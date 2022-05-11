@@ -4,6 +4,7 @@
   "description": "Common ground for the Ambire apps",
   "private": true,
   "devDependencies": {
+    "prettier": "2.5.0",
     "typescript": "~4.3.5"
   }
 }
