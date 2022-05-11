@@ -1,3 +1,3 @@
-import networks from "./networks";
+import networks from './networks'
 
-export default networks;
+export default networks
