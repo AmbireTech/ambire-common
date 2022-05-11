@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "display": "Ambire",
+  "compilerOptions": {
+    "baseUrl": "src/",
+    "noEmit": false,
+    "noEmitOnError": true,
+    "noEmitHelpers": true,
+    "target": "es2021",
+    "lib": [
+      "es2021"
+    ],
+    "jsx": "react-native",
+    "moduleResolution": "node",
+    "allowSyntheticDefaultImports": true,
+    "skipLibCheck": true,
+    "allowJs": true,
+    "checkJs": false,
+    "declaration": true,
+    "declarationMap": true,
+    "emitDecoratorMetadata": true,
+    "experimentalDecorators": true,
+    "forceConsistentCasingInFileNames": true,
+    "importHelpers": true,
+    "noFallthroughCasesInSwitch": true,
+    "inlineSources": true,
+    "noImplicitAny": true,
+    "noImplicitReturns": true,
+    "noImplicitThis": true,
+    "strictNullChecks": true,
+    "removeComments": false,
+    "sourceMap": true,
+    "esModuleInterop": true,
+    "isolatedModules": true,
+    "strict": true,
+    "strictPropertyInitialization": true
+  },
+  "exclude": [
+    "node_modules"
+  ]
+}
