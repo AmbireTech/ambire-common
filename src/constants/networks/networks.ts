@@ -15,7 +15,17 @@ export enum NETWORKS {
   'aurora' = 'aurora'
 }
 
-const networks = [
+export type NetworkType = {
+  id: string
+  chainId: number
+  rpc: string
+  nativeAssetSymbol: string
+  name: string
+  explorerUrl: string
+  unstoppableDomainsChain: string
+}
+
+const networks: NetworkType[] = [
   {
     id: NETWORKS.ethereum,
     chainId: 1,
