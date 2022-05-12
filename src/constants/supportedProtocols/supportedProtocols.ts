@@ -1,13 +1,13 @@
 // List of all supported protocols by networks: https://api.zapper.fi/v1/protocols/balances/supported?api_key=5d1237c2-3840-4733-8e92-c5a58fe81b88
 
-export type Props = {
+export type SupportedProtocolType = {
   network: string
   protocols?: string[]
   balancesProvider: string
   nftsProvider?: string
 }
 
-const suportedProtocols: Props[] = [
+const supportedProtocols: SupportedProtocolType[] = [
   {
     network: 'ethereum',
     // protocols: ['1inch', 'aave-v2', 'alchemix', 'badger', 'balancer-v2', 'compound', 'cream', 'curve', 'sushiswap', 'uniswap-v2', 'uniswap-v3', 'nft'],
@@ -94,4 +94,4 @@ const suportedProtocols: Props[] = [
   // }
 ]
 
-export default suportedProtocols
+export default supportedProtocols
