@@ -15,8 +15,10 @@ export enum NETWORKS {
   'aurora' = 'aurora'
 }
 
+type IdType = keyof typeof NETWORKS
+
 export type NetworkType = {
-  id: string
+  id: IdType
   chainId: number
   rpc: string
   nativeAssetSymbol: string
