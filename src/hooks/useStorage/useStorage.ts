@@ -6,13 +6,15 @@ interface Storage {
   removeItem(key: string): void
 }
 
-type HookProps = {
+export type UseStorageProps = {
   storage: Storage
   key: string
   defaultValue?: any
   isStringStorage?: boolean
   setInit?: (item: any) => any
 }
+
+export type UseStorageReturnType = [any, (item: any) => void, () => void]
 
 const setInitDefault = (item: any): any => item
 
@@ -33,7 +35,7 @@ export default function useStorage({
   defaultValue = null,
   isStringStorage = false,
   setInit = setInitDefault
-}: HookProps): [any, (item: any) => void, () => void] {
+}: UseStorageProps): UseStorageReturnType {
   const [item, set] = useState(() => {
     // In case the item is not set in the storage, we just fall back to `defaultValue`
     if (!storage.getItem(key)) return setInit(defaultValue)
