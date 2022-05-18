@@ -4,7 +4,10 @@
   "description": "Common ground for the Ambire apps",
   "private": true,
   "peerDependencies": {
-    "react": "^17.0.0"
+    "react": "^17.0.0",
+    "ethers": "^5.5.2",
+    "ethereumjs-util": "^7.1.3",
+    "adex-protocol-eth": "git+https://git@github.com/AmbireTech/adex-protocol-eth.git#773e55f90a77121cc9c5f3210c915b10b21d7245"
   },
   "devDependencies": {
     "react": "17.0.1",
