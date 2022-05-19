@@ -1,16 +1,12 @@
 {
   "$schema": "https://json.schemastore.org/tsconfig",
-  "display": "Ambire",
   "compilerOptions": {
     "baseUrl": "src/",
     "noEmit": false,
     "noEmitOnError": true,
     "noEmitHelpers": true,
-    "target": "es2021",
-    "lib": [
-      "es2021"
-    ],
-    "jsx": "react-native",
+    "lib": ["ESNext"],
+    "target": "ESNext",
     "moduleResolution": "node",
     "allowSyntheticDefaultImports": true,
     "skipLibCheck": true,
@@ -33,9 +29,8 @@
     "esModuleInterop": true,
     "isolatedModules": true,
     "strict": true,
-    "strictPropertyInitialization": true
+    "strictPropertyInitialization": true,
+    "resolveJsonModule": true
   },
-  "exclude": [
-    "node_modules"
-  ]
+  "exclude": ["node_modules"]
 }
