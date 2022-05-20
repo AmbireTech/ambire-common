@@ -36,9 +36,9 @@ interface Props {
   addToast: any
 }
 
-interface UseAccountsReturnType {
+export interface UseAccountsReturnType {
   accounts: Account[]
-  account: Account
+  account: Account | {}
   selectedAcc: string
   onSelectAcc: (accountId: Account['id']) => void
   onAddAccount: (acc: Account, opts: onAddAccountOptions) => void
