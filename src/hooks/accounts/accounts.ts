@@ -5,11 +5,17 @@ import {
 import { useCallback, useMemo } from 'react'
 
 interface Props {
-  onAdd: (opts: any) => void
+  onAdd: (opts: onAddAccountOptions) => void
   onRemoveLastAccount: () => void
   useStorage: (p: Omit<UseStorageProps, 'storage'>) => UseStorageReturnType
   // TODO:
   addToast: any
+}
+
+export type onAddAccountOptions = {
+  shouldRedirect?: boolean
+  isNew?: boolean
+  select?: boolean
 }
 
 interface UseAccountsReturnType {
@@ -17,7 +23,7 @@ interface UseAccountsReturnType {
   account: any
   selectedAcc: string
   onSelectAcc: (accountAddress: string) => void
-  onAddAccount: () => void
+  onAddAccount: (acc: any, opts: onAddAccountOptions) => void
   onRemoveAccount: () => void
 }
 
@@ -61,7 +67,9 @@ export default function useAccounts({
   )
 
   const onAddAccount = useCallback(
-    (acc, opts = {}) => {
+    (acc: any, _opts: onAddAccountOptions = {}) => {
+      const opts = { shouldRedirect: true, ..._opts }
+
       if (!(acc.id && acc.signer)) throw new Error('account: internal err: missing ID or signer')
 
       const existing = accounts.find((x) => x.id.toLowerCase() === acc.id.toLowerCase())
