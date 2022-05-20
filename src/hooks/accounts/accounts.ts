@@ -4,18 +4,28 @@ import {
 } from 'ambire-common/src/hooks/useStorage/useStorage'
 import { useCallback } from 'react'
 
-export default function useAccounts({
-  onAdd,
-  onRemoveLastAccount,
-  useStorage,
-  addToast
-}: {
+interface Props {
   onAdd: (opts: any) => void
   onRemoveLastAccount: () => void
   useStorage: (p: Omit<UseStorageProps, 'storage'>) => UseStorageReturnType
   // TODO:
   addToast: any
-}) {
+}
+
+interface UseAccountsReturnType {
+  accounts: any[]
+  selectedAcc: string
+  onSelectAcc: (accountAddress: string) => void
+  onAddAccount: () => void
+  onRemoveAccount: () => void
+}
+
+export default function useAccounts({
+  onAdd,
+  onRemoveLastAccount,
+  useStorage,
+  addToast
+}: Props): UseAccountsReturnType {
   const [accounts, setAccounts] = useStorage({
     key: 'accounts',
     defaultValue: [],
@@ -48,6 +58,7 @@ export default function useAccounts({
     },
     [setSelectedAcc]
   )
+
   const onAddAccount = useCallback(
     (acc, opts = {}) => {
       if (!(acc.id && acc.signer)) throw new Error('account: internal err: missing ID or signer')
