@@ -4,27 +4,45 @@ import {
 } from 'ambire-common/src/hooks/useStorage/useStorage'
 import { useCallback, useMemo } from 'react'
 
-interface Props {
-  onAdd: (opts: onAddAccountOptions) => void
-  onRemoveLastAccount: () => void
-  useStorage: (p: Omit<UseStorageProps, 'storage'>) => UseStorageReturnType
-  // TODO:
-  addToast: any
-}
-
 export type onAddAccountOptions = {
   shouldRedirect?: boolean
   isNew?: boolean
   select?: boolean
 }
 
+export type Account = {
+  baseIdentityAddr: string
+  bytecode: string
+  email: string
+  id: string
+  identityFactoryAddr: string
+  primaryKeyBackup: string
+  salt: string
+  signer: {
+    one: string
+    quickAccManager: string
+    timelock: number
+    two: string
+    // Sometimes passed as an extra prop
+    address?: string
+  }
+}
+
+interface Props {
+  onAdd: (opts: onAddAccountOptions) => void
+  onRemoveLastAccount: () => void
+  useStorage: (p: Omit<UseStorageProps, 'storage'>) => UseStorageReturnType
+  // TODO: missing type
+  addToast: any
+}
+
 interface UseAccountsReturnType {
-  accounts: any[]
-  account: any
+  accounts: Account[]
+  account: Account
   selectedAcc: string
-  onSelectAcc: (accountAddress: string) => void
-  onAddAccount: (acc: any, opts: onAddAccountOptions) => void
-  onRemoveAccount: () => void
+  onSelectAcc: (accountId: Account['id']) => void
+  onAddAccount: (acc: Account, opts: onAddAccountOptions) => void
+  onRemoveAccount: (accountId: Account['id']) => void
 }
 
 export default function useAccounts({
@@ -51,7 +69,7 @@ export default function useAccounts({
     defaultValue: '',
     isStringStorage: true,
     setInit: (initialSelectedAcc) => {
-      if (!initialSelectedAcc || !accounts.find((x) => x.id === initialSelectedAcc)) {
+      if (!initialSelectedAcc || !accounts.find((x: Account) => x.id === initialSelectedAcc)) {
         return accounts[0] ? accounts[0].id : ''
       }
 
@@ -67,12 +85,12 @@ export default function useAccounts({
   )
 
   const onAddAccount = useCallback(
-    (acc: any, _opts: onAddAccountOptions = {}) => {
+    (acc: Account, _opts: onAddAccountOptions = {}) => {
       const opts = { shouldRedirect: true, ..._opts }
 
       if (!(acc.id && acc.signer)) throw new Error('account: internal err: missing ID or signer')
 
-      const existing = accounts.find((x) => x.id.toLowerCase() === acc.id.toLowerCase())
+      const existing = accounts.find((x: Account) => x.id.toLowerCase() === acc.id.toLowerCase())
       if (existing) {
         addToast(
           JSON.stringify(existing) === JSON.stringify(acc)
@@ -108,14 +126,14 @@ export default function useAccounts({
     (id) => {
       if (!id) throw new Error('account: internal err: missing ID/Address')
 
-      const account = accounts.find((account) => account.id === id)
+      const account = accounts.find((account: Account) => account.id === id)
       if (account && account.email && account.cloudBackupOptout && !account.downloadedBackup)
         return addToast(
           'You have opted out of Ambire Cloud Backup. Please backup your account before logging out.',
           { error: true, route: '/wallet/security' }
         )
 
-      const clearedAccounts = accounts.filter((account) => account.id !== id)
+      const clearedAccounts = accounts.filter((account: Account) => account.id !== id)
       setAccounts([...clearedAccounts])
 
       if (!clearedAccounts.length) onRemoveLastAccount()
@@ -124,8 +142,8 @@ export default function useAccounts({
     [accounts, onSelectAcc, addToast, setAccounts]
   )
 
-  const account = useMemo(
-    () => accounts.find((x) => x.id === selectedAcc) || {},
+  const account: Account = useMemo(
+    () => accounts.find((x: Account) => x.id === selectedAcc) || {},
     [selectedAcc, accounts.length]
   )
 
