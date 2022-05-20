@@ -10,7 +10,7 @@ export default function useAccounts({
   useStorage,
   addToast
 }: {
-  onAdd: () => void
+  onAdd: (opts: any) => void
   onRemoveLastAccount: () => void
   useStorage: (p: Omit<UseStorageProps, 'storage'>) => UseStorageReturnType
   // TODO:
@@ -78,7 +78,7 @@ export default function useAccounts({
 
       if (opts.select) onSelectAcc(acc.id)
       if (Object.keys(accounts).length) {
-        onAdd()
+        onAdd(opts)
       }
     },
     [accounts, addToast, onSelectAcc, setAccounts]
