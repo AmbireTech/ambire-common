@@ -2,7 +2,7 @@ import {
   UseStorageProps,
   UseStorageReturnType
 } from 'ambire-common/src/hooks/useStorage/useStorage'
-import { useCallback } from 'react'
+import { useCallback, useMemo } from 'react'
 
 interface Props {
   onAdd: (opts: any) => void
@@ -14,6 +14,7 @@ interface Props {
 
 interface UseAccountsReturnType {
   accounts: any[]
+  account: any
   selectedAcc: string
   onSelectAcc: (accountAddress: string) => void
   onAddAccount: () => void
@@ -115,5 +116,10 @@ export default function useAccounts({
     [accounts, onSelectAcc, addToast, setAccounts]
   )
 
-  return { accounts, selectedAcc, onSelectAcc, onAddAccount, onRemoveAccount }
+  const account = useMemo(
+    () => accounts.find((x) => x.id === selectedAcc) || {},
+    [selectedAcc, accounts.length]
+  )
+
+  return { accounts, selectedAcc, account, onSelectAcc, onAddAccount, onRemoveAccount }
 }
