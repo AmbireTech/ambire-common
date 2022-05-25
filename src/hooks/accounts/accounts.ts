@@ -1,8 +1,7 @@
-import {
-  UseStorageProps,
-  UseStorageReturnType
-} from 'ambire-common/src/hooks/useStorage/useStorage'
-import { useCallback, useMemo } from 'react'
+import React, { useCallback, useMemo } from 'react'
+
+import { UseToastsReturnType } from '../toasts'
+import { UseStorageProps, UseStorageReturnType } from '../useStorage'
 
 export type onAddAccountOptions = {
   shouldRedirect?: boolean
@@ -32,8 +31,7 @@ interface Props {
   onAdd: (opts: onAddAccountOptions) => void
   onRemoveLastAccount: () => void
   useStorage: (p: Omit<UseStorageProps, 'storage'>) => UseStorageReturnType
-  // TODO: missing type
-  useToasts: any
+  useToasts: () => UseToastsReturnType
 }
 
 export interface UseAccountsReturnType {
