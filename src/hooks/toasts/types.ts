@@ -15,9 +15,6 @@ export interface ToastType extends UseToastsOptions {
 }
 
 export type UseToastsReturnType = {
-  addToast: (
-    text?: ToastType['text'] | null,
-    options?: Omit<UseToastsOptions, 'id'>
-  ) => ToastType['id']
+  addToast: (text: ToastType['text'], options?: Omit<UseToastsOptions, 'id'>) => ToastType['id']
   removeToast: (id: ToastType['id']) => void
 }
