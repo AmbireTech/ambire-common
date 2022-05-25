@@ -5,7 +5,7 @@ export type UseToastsOptions = {
   url?: string
   error?: boolean
   sticky?: boolean
-  badge?: JSX.Element
+  badge?: number | string
   timeout?: number
   onClick?: () => any
 }
@@ -15,6 +15,9 @@ export interface ToastType extends UseToastsOptions {
 }
 
 export type UseToastsReturnType = {
-  addToast: (text?: ToastType['text'], options?: UseToastsOptions) => ToastType['id']
+  addToast: (
+    text?: ToastType['text'] | null,
+    options?: Omit<UseToastsOptions, 'id'>
+  ) => ToastType['id']
   removeToast: (id: ToastType['id']) => void
 }
