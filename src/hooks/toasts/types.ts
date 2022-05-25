@@ -10,11 +10,11 @@ export type UseToastsOptions = {
   onClick?: () => any
 }
 
-export type UseToastsReturnType = {
-  addToast: (text?: string | number, options?: UseToastsOptions) => any
-  removeToast: (id: number) => any
-}
-
 export interface ToastType extends UseToastsOptions {
   text: string | number
+}
+
+export type UseToastsReturnType = {
+  addToast: (text?: ToastType['text'], options?: UseToastsOptions) => ToastType['id']
+  removeToast: (id: ToastType['id']) => void
 }
