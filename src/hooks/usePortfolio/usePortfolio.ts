@@ -4,11 +4,11 @@
 /* eslint-disable @typescript-eslint/no-shadow */
 // @ts-nocheck
 
-import { checkTokenList, getTokenListBalance, tokenList } from 'lib/balanceOracle'
-import { roundFloatingNumber } from 'lib/formatters'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import supportedProtocols from '../../constants/supportedProtocols'
+import { checkTokenList, getTokenListBalance, tokenList } from '../../services/balanceOracle'
+import { roundFloatingNumber } from '../../services/formatter'
 import { setKnownAddresses, setKnownTokens } from '../../services/humanReadableTransactions'
 
 let lastOtherProcolsRefresh = null
