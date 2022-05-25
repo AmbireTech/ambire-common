@@ -33,7 +33,7 @@ interface Props {
   onRemoveLastAccount: () => void
   useStorage: (p: Omit<UseStorageProps, 'storage'>) => UseStorageReturnType
   // TODO: missing type
-  addToast: any
+  useToasts: any
 }
 
 export interface UseAccountsReturnType {
@@ -49,8 +49,9 @@ export default function useAccounts({
   onAdd,
   onRemoveLastAccount,
   useStorage,
-  addToast
+  useToasts
 }: Props): UseAccountsReturnType {
+  const { addToast } = useToasts()
   const [accounts, setAccounts] = useStorage({
     key: 'accounts',
     defaultValue: [],
