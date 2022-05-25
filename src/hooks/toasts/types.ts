@@ -1,16 +1,20 @@
 import React from 'react'
 
-type OptionsProps = {
+export type UseToastsOptions = {
   id: number
   url?: string
   error?: boolean
   sticky?: boolean
-  badge?: null | JSX.Element
+  badge?: JSX.Element
   timeout?: number
   onClick?: () => any
 }
 
 export type UseToastsReturnType = {
-  addToast: (text?: string | number, options?: OptionsProps) => any
+  addToast: (text?: string | number, options?: UseToastsOptions) => any
   removeToast: (id: number) => any
+}
+
+export interface ToastType extends UseToastsOptions {
+  text: string | number
 }
