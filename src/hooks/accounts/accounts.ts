@@ -137,8 +137,10 @@ export default function useAccounts({
       const clearedAccounts = accounts.filter((account: Account) => account.id !== id)
       setAccounts([...clearedAccounts])
 
-      if (!clearedAccounts.length) onRemoveLastAccount()
-      else onSelectAcc(clearedAccounts[0].id)
+      if (!clearedAccounts.length) {
+        setSelectedAcc('')
+        onRemoveLastAccount()
+      } else onSelectAcc(clearedAccounts[0].id)
     },
     [accounts, onSelectAcc, addToast, setAccounts]
   )
