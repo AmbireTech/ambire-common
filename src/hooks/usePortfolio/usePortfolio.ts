@@ -10,6 +10,7 @@ import supportedProtocols from '../../constants/supportedProtocols'
 import { checkTokenList, getTokenListBalance, tokenList } from '../../services/balanceOracle'
 import { roundFloatingNumber } from '../../services/formatter'
 import { setKnownAddresses, setKnownTokens } from '../../services/humanReadableTransactions'
+import { UsePortfolioType } from './types'
 
 let lastOtherProcolsRefresh = null
 
@@ -85,7 +86,7 @@ export default function usePortfolio({
   isVisible,
   onMessage,
   getBalances
-}) {
+}): UsePortfolioType {
   const rpcTokensLastUpdated = useRef()
   const currentAccount = useRef()
   const [balancesByNetworksLoading, setBalancesByNetworksLoading] = useState({})
@@ -489,19 +490,19 @@ export default function usePortfolio({
     return tokens
   }
 
+  async function loadBalance() {
+    if (!account) return
+    await fetchTokens(account, false, true, tokensByNetworks)
+  }
+
+  async function loadProtocols() {
+    if (!account) return
+    await fetchOtherProtocols(account, false, otherProtocolsByNetworks)
+  }
+
   // Fetch balances and protocols on account change
   useEffect(() => {
     currentAccount.current = account
-
-    async function loadBalance() {
-      if (!account) return
-      await fetchTokens(account, false, true, tokensByNetworks)
-    }
-
-    async function loadProtocols() {
-      if (!account) return
-      await fetchOtherProtocols(account, false, otherProtocolsByNetworks)
-    }
 
     loadBalance()
     loadProtocols()
@@ -621,7 +622,9 @@ export default function usePortfolio({
     isCurrNetworkBalanceLoading: balancesByNetworksLoading[currentNetwork],
     areAllNetworksBalancesLoading,
     otherProtocolsByNetworksLoading,
-    isCurrNetworkProtocolsLoading: otherProtocolsByNetworksLoading[currentNetwork]
+    isCurrNetworkProtocolsLoading: otherProtocolsByNetworksLoading[currentNetwork],
+    loadBalance,
+    loadProtocols
     // updatePortfolio//TODO find a non dirty way to be able to reply to getSafeBalances from the dapps, after the first refresh
   }
 }
