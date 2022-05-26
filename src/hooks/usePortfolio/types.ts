@@ -34,11 +34,11 @@ export type UsePortfolioReturnTypes = {
   loadProtocols: any
 }
 
-export type UsePortfolioType = (
-  currentNetwork: any,
-  account: any,
-  useStorage: any,
-  isVisible: boolean,
-  onMessage: any,
+export type UsePortfolioProps = {
+  currentNetwork: any
+  account: any
+  useStorage: any
+  isVisible: boolean
+  onMessage: any
   getBalances: any
-) => UsePortfolioReturnTypes
+}
