@@ -391,11 +391,11 @@ export default function usePortfolio({
   const refreshTokensIfVisible = useCallback(
     (showLoadingState = false) => {
       if (!account) return
-      if (!document[hidden] && !areAllNetworksBalancesLoading())
+      if (isVisible && !areAllNetworksBalancesLoading())
         fetchTokens(account, currentNetwork, showLoadingState, tokensByNetworks)
       // eslint-disable-next-line react-hooks/exhaustive-deps
     },
-    [account, fetchTokens, currentNetwork]
+    [account, fetchTokens, currentNetwork, isVisible]
   )
 
   const requestOtherProtocolsRefresh = async () => {
