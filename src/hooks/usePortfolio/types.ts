@@ -1,5 +1,7 @@
 // TODO: fill in the missing types
 
+import { UseToastsReturnType } from '../toasts/types'
+
 export type Token = {
   account: string
   address: string
@@ -39,6 +41,6 @@ export type UsePortfolioProps = {
   account: any
   useStorage: any
   isVisible: boolean
-  onMessage: any
+  useToasts: () => UseToastsReturnType
   getBalances: any
 }

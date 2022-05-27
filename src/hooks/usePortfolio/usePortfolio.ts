@@ -84,9 +84,10 @@ export default function usePortfolio({
   account,
   useStorage,
   isVisible,
-  onMessage,
+  useToasts,
   getBalances
 }: UsePortfolioProps): UsePortfolioReturnTypes {
+  const { addToast } = useToasts()
   const rpcTokensLastUpdated = useRef()
   const currentAccount = useRef()
   const [balancesByNetworksLoading, setBalancesByNetworksLoading] = useState({})
@@ -277,7 +278,7 @@ export default function usePortfolio({
         return true
       } catch (error) {
         console.error(error)
-        onMessage(error.message, { error: true })
+        addToast(error.message, { error: true })
         // In case of error set all loading indicators to false
         supportedProtocols.map(
           async (network) =>
@@ -286,7 +287,7 @@ export default function usePortfolio({
         return false
       }
     },
-    [fetchSupplementTokenData, getExtraTokensAssets, hiddenTokens, onMessage]
+    [fetchSupplementTokenData, getExtraTokensAssets, hiddenTokens, addToast]
   )
 
   const fetchOtherProtocols = useCallback(
@@ -381,12 +382,12 @@ export default function usePortfolio({
           async (network) =>
             await setOtherProtocolsByNetworksLoading((prev) => ({ ...prev, [network]: false }))
         )
-        onMessage(error.message, { error: true })
+        addToast(error.message, { error: true })
 
         return false
       }
     },
-    [onMessage]
+    [addToast]
   )
 
   const refreshTokensIfVisible = useCallback(
@@ -421,16 +422,16 @@ export default function usePortfolio({
   const onAddExtraToken = (extraToken) => {
     const { address, name, symbol } = extraToken
     if (extraTokens.map(({ address }) => address).includes(address))
-      return onMessage(`${name} (${symbol}) is already added to your wallet.`)
+      return addToast(`${name} (${symbol}) is already added to your wallet.`)
     if (
       Object.values(tokenList)
         .flat(1)
         .map(({ address }) => address)
         .includes(address)
     )
-      return onMessage(`${name} (${symbol}) is already handled by your wallet.`)
+      return addToast(`${name} (${symbol}) is already handled by your wallet.`)
     if (tokens.map(({ address }) => address).includes(address))
-      return onMessage(`You already have ${name} (${symbol}) in your wallet.`)
+      return addToast(`You already have ${name} (${symbol}) in your wallet.`)
 
     const updatedExtraTokens = [
       ...extraTokens,
@@ -441,7 +442,7 @@ export default function usePortfolio({
     ]
 
     setExtraTokens(updatedExtraTokens)
-    onMessage(`${name} (${symbol}) token added to your wallet!`)
+    addToast(`${name} (${symbol}) token added to your wallet!`)
   }
 
   const onAddHiddenToken = (hiddenToken) => {
@@ -455,27 +456,27 @@ export default function usePortfolio({
     ]
 
     setHiddenTokens(updatedHiddenTokens)
-    onMessage(`${symbol} token is hidden from your assets list!`)
+    addToast(`${symbol} token is hidden from your assets list!`)
   }
 
   const onRemoveHiddenToken = (address) => {
     const token = hiddenTokens.find((t) => t.address === address)
-    if (!token) return onMessage(`${address} is not present in your assets list.`)
+    if (!token) return addToast(`${address} is not present in your assets list.`)
 
     const updatedHiddenTokens = hiddenTokens.filter((t) => t.address !== address)
 
     setHiddenTokens(updatedHiddenTokens)
-    onMessage(`${token.symbol} is shown to your assets list.`)
+    addToast(`${token.symbol} is shown to your assets list.`)
   }
 
   const onRemoveExtraToken = (address) => {
     const token = extraTokens.find((t) => t.address === address)
-    if (!token) return onMessage(`${address} is not present in your wallet.`)
+    if (!token) return addToast(`${address} is not present in your wallet.`)
 
     const updatedExtraTokens = extraTokens.filter((t) => t.address !== address)
 
     setExtraTokens(updatedExtraTokens)
-    onMessage(`${token.name} (${token.symbol}) was removed from your wallet.`)
+    addToast(`${token.name} (${token.symbol}) was removed from your wallet.`)
   }
 
   const removeDuplicatedAssets = (tokens) => {
@@ -568,9 +569,9 @@ export default function usePortfolio({
       }
     } catch (e) {
       console.error(e)
-      onMessage(e.message || e, { error: true })
+      addToast(e.message || e, { error: true })
     }
-  }, [currentNetwork, tokensByNetworks, otherProtocolsByNetworks, onMessage])
+  }, [currentNetwork, tokensByNetworks, otherProtocolsByNetworks, addToast])
 
   // Reset `rpcTokensLastUpdated` on a network change, because its value is regarding the previous network,
   // and it's not useful for the current network.
