@@ -9,14 +9,14 @@ import { getProvider } from '../provider'
 const ERC20Interface = new Interface(ERC20ABI)
 
 const approveToken = async (
-  scope,
-  networkId,
-  accountId,
-  address,
-  tokenAddress,
-  addRequestTxn,
-  addToast,
-  bigNumberHexAmount = constants.MaxUint256
+  scope: any,
+  networkId: string | number,
+  accountId: string | number,
+  address: string,
+  tokenAddress: string,
+  addRequestTxn: any,
+  addToast: any,
+  bigNumberHexAmount: any = constants.MaxUint256
 ) => {
   try {
     const prefixId = scope.toLowerCase().replace(/' '/g, '_')
