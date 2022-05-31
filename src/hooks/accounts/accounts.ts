@@ -118,7 +118,7 @@ export default function useAccounts({
         onAdd(opts)
       }
     },
-    [accounts, addToast, onSelectAcc, setAccounts]
+    [accounts, addToast, onSelectAcc, setAccounts, onAdd]
   )
 
   const onRemoveAccount = useCallback(
@@ -140,12 +140,12 @@ export default function useAccounts({
         onRemoveLastAccount()
       } else onSelectAcc(clearedAccounts[0].id)
     },
-    [accounts, onSelectAcc, addToast, setAccounts]
+    [accounts, onSelectAcc, addToast, onRemoveLastAccount, setAccounts, setSelectedAcc]
   )
 
   const account: Account = useMemo(
     () => accounts.find((x: Account) => x.id === selectedAcc) || {},
-    [selectedAcc, accounts.length]
+    [selectedAcc, accounts]
   )
 
   return { accounts, selectedAcc, account, onSelectAcc, onAddAccount, onRemoveAccount }
