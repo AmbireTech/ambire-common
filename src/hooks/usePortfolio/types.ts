@@ -19,14 +19,14 @@ export type UsePortfolioReturnTypes = {
   otherBalances: any
   tokens: Token[]
   protocols: any
-  extraTokens: any
-  hiddenTokens: any
+  extraTokens: Token[]
+  hiddenTokens: Token[]
   collectibles: any
   requestOtherProtocolsRefresh: () => Promise<any>
-  onAddExtraToken: (extraToken: any) => void
-  onRemoveExtraToken: (address: any) => void
-  onAddHiddenToken: (hiddenToken: any) => void
-  onRemoveHiddenToken: (address: any) => void
+  onAddExtraToken: (extraToken: Token) => void
+  onRemoveExtraToken: (address: Token['address']) => void
+  onAddHiddenToken: (hiddenToken: Token) => void
+  onRemoveHiddenToken: (address: Token['address']) => void
   balancesByNetworksLoading: any
   isCurrNetworkBalanceLoading: boolean
   areAllNetworksBalancesLoading: () => boolean
