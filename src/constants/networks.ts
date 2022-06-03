@@ -11,6 +11,7 @@ export enum NETWORKS {
   'kucoin' = 'kucoin',
   'optimism' = 'optimism',
   'andromeda' = 'andromeda',
+  'rinkeby' = 'rinkeby',
   'cronos' = 'cronos',
   'aurora' = 'aurora'
 }
@@ -133,7 +134,7 @@ const networks: NetworkType[] = [
     name: 'Optimism',
     explorerUrl: 'https://optimistic.etherscan.io',
     unstoppableDomainsChain: 'ERC20'
-  }
+  },
   // {
   // 	id: NETWORKS.andromeda,
   // 	chainId: 1088,
@@ -143,6 +144,16 @@ const networks: NetworkType[] = [
   // 	explorerUrl: 'https://andromeda-explorer.metis.io',
   // 	unstoppableDomainsChain: 'ERC20'
   // },
+  {
+    id: 'rinkeby',
+    chainId: 4,
+    rpc: 'https://rinkeby.infura.io/v3/4409badb714444b299066870e0f7b631',
+    nativeAssetSymbol: 'ETH',
+    name: 'Rinkeby',
+    explorerUrl: 'https://rinkeby.etherscan.io',
+    unstoppableDomainsChain: 'ERC20',
+    hide: true
+  }
   // {
   // 	id: NETWORKS.cronos,
   // 	chainId: 25,
