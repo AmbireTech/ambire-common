@@ -11,6 +11,7 @@ export enum NETWORKS {
   'kucoin' = 'kucoin',
   'optimism' = 'optimism',
   'andromeda' = 'andromeda',
+  'rinkeby' = 'rinkeby',
   'cronos' = 'cronos',
   'aurora' = 'aurora'
 }
@@ -25,6 +26,7 @@ export type NetworkType = {
   name: string
   explorerUrl: string
   unstoppableDomainsChain: string
+  hide?: boolean
 }
 
 const networks: NetworkType[] = [
@@ -96,19 +98,19 @@ const networks: NetworkType[] = [
     explorerUrl: 'https://moonriver.moonscan.io/',
     unstoppableDomainsChain: 'ERC20'
   },
-  // {
-  // 	id: NETWORKS.arbitrum,
-  // 	chainId: 42161,
-  // 	rpc: 'https://arb1.arbitrum.io/rpc',
-  // 	nativeAssetSymbol: 'AETH',
-  // 	name: 'Arbitrum',
-  // 	explorerUrl: 'https://arbiscan.io',
-  // 	unstoppableDomainsChain: 'ERC20'
-  // },
+  {
+    id: NETWORKS.arbitrum,
+    chainId: 42161,
+    rpc: 'https://arb1.arbitrum.io/rpc',
+    nativeAssetSymbol: 'AETH',
+    name: 'Arbitrum',
+    explorerUrl: 'https://arbiscan.io',
+    unstoppableDomainsChain: 'ERC20'
+  },
   {
     id: NETWORKS.gnosis,
     chainId: 100,
-    rpc: 'https://rpc.xdaichain.com',
+    rpc: 'https://rpc.ankr.com/gnosis',
     nativeAssetSymbol: 'XDAI',
     name: 'Gnosis Chain',
     explorerUrl: 'https://blockscout.com',
@@ -121,7 +123,8 @@ const networks: NetworkType[] = [
     nativeAssetSymbol: 'KCS',
     name: 'KCC KuCoin',
     explorerUrl: 'https://explorer.kcc.io',
-    unstoppableDomainsChain: 'ERC20'
+    unstoppableDomainsChain: 'ERC20',
+    hide: true
   },
   {
     id: NETWORKS.optimism,
@@ -131,7 +134,7 @@ const networks: NetworkType[] = [
     name: 'Optimism',
     explorerUrl: 'https://optimistic.etherscan.io',
     unstoppableDomainsChain: 'ERC20'
-  }
+  },
   // {
   // 	id: NETWORKS.andromeda,
   // 	chainId: 1088,
@@ -141,6 +144,16 @@ const networks: NetworkType[] = [
   // 	explorerUrl: 'https://andromeda-explorer.metis.io',
   // 	unstoppableDomainsChain: 'ERC20'
   // },
+  {
+    id: 'rinkeby',
+    chainId: 4,
+    rpc: 'https://rinkeby.infura.io/v3/4409badb714444b299066870e0f7b631',
+    nativeAssetSymbol: 'ETH',
+    name: 'Rinkeby',
+    explorerUrl: 'https://rinkeby.etherscan.io',
+    unstoppableDomainsChain: 'ERC20',
+    hide: true
+  }
   // {
   // 	id: NETWORKS.cronos,
   // 	chainId: 25,
