@@ -25,6 +25,7 @@ export type NetworkType = {
   name: string
   explorerUrl: string
   unstoppableDomainsChain: string
+  hide?: boolean
 }
 
 const networks: NetworkType[] = [
@@ -108,7 +109,7 @@ const networks: NetworkType[] = [
   {
     id: NETWORKS.gnosis,
     chainId: 100,
-    rpc: 'https://rpc.xdaichain.com',
+    rpc: 'https://rpc.ankr.com/gnosis',
     nativeAssetSymbol: 'XDAI',
     name: 'Gnosis Chain',
     explorerUrl: 'https://blockscout.com',
@@ -121,7 +122,8 @@ const networks: NetworkType[] = [
     nativeAssetSymbol: 'KCS',
     name: 'KCC KuCoin',
     explorerUrl: 'https://explorer.kcc.io',
-    unstoppableDomainsChain: 'ERC20'
+    unstoppableDomainsChain: 'ERC20',
+    hide: true
   },
   {
     id: NETWORKS.optimism,
