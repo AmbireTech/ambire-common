@@ -419,65 +419,77 @@ export default function usePortfolio({
     setKnownTokens(tokensList)
   }
 
-  const onAddExtraToken = (extraToken) => {
-    const { address, name, symbol } = extraToken
-    if (extraTokens.map(({ address }) => address).includes(address))
-      return addToast(`${name} (${symbol}) is already added to your wallet.`)
-    if (
-      Object.values(tokenList)
-        .flat(1)
-        .map(({ address }) => address)
-        .includes(address)
-    )
-      return addToast(`${name} (${symbol}) is already handled by your wallet.`)
-    if (tokens.map(({ address }) => address).includes(address))
-      return addToast(`You already have ${name} (${symbol}) in your wallet.`)
+  const onAddExtraToken = useCallback(
+    (extraToken) => {
+      const { address, name, symbol } = extraToken
+      if (extraTokens.map(({ address }) => address).includes(address))
+        return addToast(`${name} (${symbol}) is already added to your wallet.`)
+      if (
+        Object.values(tokenList)
+          .flat(1)
+          .map(({ address }) => address)
+          .includes(address)
+      )
+        return addToast(`${name} (${symbol}) is already handled by your wallet.`)
+      if (tokens.map(({ address }) => address).includes(address))
+        return addToast(`You already have ${name} (${symbol}) in your wallet.`)
 
-    const updatedExtraTokens = [
-      ...extraTokens,
-      {
-        ...extraToken,
-        coingeckoId: null
-      }
-    ]
+      const updatedExtraTokens = [
+        ...extraTokens,
+        {
+          ...extraToken,
+          coingeckoId: null
+        }
+      ]
 
-    setExtraTokens(updatedExtraTokens)
-    addToast(`${name} (${symbol}) token added to your wallet!`)
-  }
+      setExtraTokens(updatedExtraTokens)
+      addToast(`${name} (${symbol}) token added to your wallet!`)
+    },
+    [setExtraTokens, tokens, extraTokens]
+  )
 
-  const onAddHiddenToken = (hiddenToken) => {
-    const { symbol } = hiddenToken
-    const updatedHiddenTokens = [
-      ...hiddenTokens,
-      {
-        ...hiddenToken,
-        isHidden: true
-      }
-    ]
+  const onAddHiddenToken = useCallback(
+    (hiddenToken) => {
+      const { symbol } = hiddenToken
+      const updatedHiddenTokens = [
+        ...hiddenTokens,
+        {
+          ...hiddenToken,
+          isHidden: true
+        }
+      ]
 
-    setHiddenTokens(updatedHiddenTokens)
-    addToast(`${symbol} token is hidden from your assets list!`)
-  }
+      setHiddenTokens(updatedHiddenTokens)
+      addToast(`${symbol} token is hidden from your assets list!`)
+    },
+    [hiddenTokens, setHiddenTokens]
+  )
 
-  const onRemoveHiddenToken = (address) => {
-    const token = hiddenTokens.find((t) => t.address === address)
-    if (!token) return addToast(`${address} is not present in your assets list.`)
+  const onRemoveHiddenToken = useCallback(
+    (address) => {
+      const token = hiddenTokens.find((t) => t.address === address)
+      if (!token) return addToast(`${address} is not present in your assets list.`)
 
-    const updatedHiddenTokens = hiddenTokens.filter((t) => t.address !== address)
+      const updatedHiddenTokens = hiddenTokens.filter((t) => t.address !== address)
 
-    setHiddenTokens(updatedHiddenTokens)
-    addToast(`${token.symbol} is shown to your assets list.`)
-  }
+      setHiddenTokens(updatedHiddenTokens)
+      addToast(`${token.symbol} is shown to your assets list.`)
+    },
+    [hiddenTokens, setHiddenTokens]
+  )
 
-  const onRemoveExtraToken = (address) => {
-    const token = extraTokens.find((t) => t.address === address)
-    if (!token) return addToast(`${address} is not present in your wallet.`)
+  const onRemoveExtraToken = useCallback(
+    (address) => {
+      const token = extraTokens.find((t) => t.address === address)
+      if (!token) return addToast(`${address} is not present in your wallet.`)
 
-    const updatedExtraTokens = extraTokens.filter((t) => t.address !== address)
+      const updatedExtraTokens = extraTokens.filter((t) => t.address !== address)
 
-    setExtraTokens(updatedExtraTokens)
-    addToast(`${token.name} (${token.symbol}) was removed from your wallet.`)
-  }
+      setExtraTokens(updatedExtraTokens)
+      addToast(`${token.name} (${token.symbol}) was removed from your wallet.`)
+    },
+    [extraTokens, setExtraTokens]
+  )
 
   const removeDuplicatedAssets = (tokens) => {
     const lookup = tokens.reduce((a, e) => {
