@@ -49,7 +49,21 @@ export type Protocols = {
   label: string
 }
 
-export type UsePortfolioReturnTypes = {
+export type UsePortfolioProps = {
+  currentNetwork: Network
+  account: string
+  useStorage: (p: Omit<UseStorageProps, 'storage'>) => UseStorageReturnType
+  isVisible: boolean
+  useToasts: () => UseToastsReturnType
+  getBalances: (
+    network: SupportedProtocolType['network'],
+    protocol: string,
+    address: string,
+    provider?: SupportedProtocolType['balancesProvider']
+  ) => Promise<any>
+}
+
+export type UsePortfolioReturnType = {
   balance: Balance
   otherBalances: Balance[]
   tokens: Token[]
@@ -73,18 +87,4 @@ export type UsePortfolioReturnTypes = {
   isCurrNetworkProtocolsLoading: boolean
   loadBalance: () => void
   loadProtocols: () => void
-}
-
-export type UsePortfolioProps = {
-  currentNetwork: Network
-  account: string
-  useStorage: (p: Omit<UseStorageProps, 'storage'>) => UseStorageReturnType
-  isVisible: boolean
-  useToasts: () => UseToastsReturnType
-  getBalances: (
-    network: SupportedProtocolType['network'],
-    protocol: string,
-    address: string,
-    provider?: SupportedProtocolType['balancesProvider']
-  ) => Promise<any>
 }
