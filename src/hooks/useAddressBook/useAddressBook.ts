@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { isKnownTokenOrContract, isValidAddress } from '../../services/address'
 import { setKnownAddresses } from '../../services/humanReadableTransactions'
-import { UseAddressBookProps, UseAddressBookReturnProps } from './types'
+import { UseAddressBookProps, UseAddressBookReturnTypes } from './types'
 
 const accountType = ({ email, signerExtra }: any): string => {
   const walletType =
@@ -20,7 +20,7 @@ const useAddressBook = ({
   useAccounts,
   useStorage,
   useToasts
-}: UseAddressBookProps): UseAddressBookReturnProps => {
+}: UseAddressBookProps): UseAddressBookReturnTypes => {
   const { accounts } = useAccounts()
   const { addToast } = useToasts()
   const [storageAddresses, setStorageAddresses] = useStorage({ key: 'addresses', defaultValue: [] })

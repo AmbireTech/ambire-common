@@ -14,7 +14,7 @@ export interface UseAddressBookProps {
   useToasts: () => UseToastsReturnType
 }
 
-export interface UseAddressBookReturnProps {
+export interface UseAddressBookReturnTypes {
   addresses: Address[]
   addAddress: (name: Address['name'], address: Address['address'], isUD: Address['isUD']) => void
   removeAddress: (name: Address['name'], address: Address['address'], isUD: Address['isUD']) => void
