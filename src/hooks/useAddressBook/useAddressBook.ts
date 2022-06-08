@@ -3,17 +3,9 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { isKnownTokenOrContract, isValidAddress } from '../../services/address'
 import { setKnownAddresses } from '../../services/humanReadableTransactions'
-import { UseAccountsReturnType } from '../accounts'
-import { UseToastsReturnType } from '../toasts'
-import { UseStorageProps, UseStorageReturnType } from '../useStorage'
+import { UseAddressBookProps, UseAddressBookReturnProps } from './types'
 
-interface Props {
-  useAccounts: () => UseAccountsReturnType
-  useStorage: (p: Omit<UseStorageProps, 'storage'>) => UseStorageReturnType
-  useToasts: () => UseToastsReturnType
-}
-
-const accountType = ({ email, signerExtra }: any) => {
+const accountType = ({ email, signerExtra }: any): string => {
   const walletType =
     // eslint-disable-next-line no-nested-ternary
     signerExtra && signerExtra.type === 'ledger'
@@ -24,7 +16,11 @@ const accountType = ({ email, signerExtra }: any) => {
   return email ? `Ambire account for ${email}` : `Ambire account (${walletType})`
 }
 
-const useAddressBook = ({ useAccounts, useStorage, useToasts }: Props) => {
+const useAddressBook = ({
+  useAccounts,
+  useStorage,
+  useToasts
+}: UseAddressBookProps): UseAddressBookReturnProps => {
   const { accounts } = useAccounts()
   const { addToast } = useToasts()
   const [storageAddresses, setStorageAddresses] = useStorage({ key: 'addresses', defaultValue: [] })
