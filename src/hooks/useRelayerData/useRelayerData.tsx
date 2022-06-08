@@ -3,8 +3,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { fetchCaught } from '../../services/fetch'
 import { UseRelayerDataReturnType } from './types'
 
-// 250ms after we've triggered a load of another URL, we will clear the data
-//  so that the component that uses this hook can display the loading spinner
+// Threshold after a load of another URL is triggered, we will clear the data
+// so that the component that uses this hook can display the loading spinner.
 const RESET_DATA_AFTER = 250
 
 export default function useRelayerData(fetch: any, url: string | null): UseRelayerDataReturnType {
