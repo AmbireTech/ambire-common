@@ -51,7 +51,7 @@ export default function useRelayerData(fetch: any, url: string | null): UseRelay
 
   // In case we want to refetch the data without changing the url prop
   // e.g. pull to refresh
-  const forceRefresh = () => {
+  const forceRefresh = useCallback(() => {
     if (!url) return
 
     // Data reset: if some time passes before we load the next piece of data, and the URL is different,
@@ -66,7 +66,7 @@ export default function useRelayerData(fetch: any, url: string | null): UseRelay
         clearTimeout(resetDataTimer)
         setLoading(false)
       })
-  }
+  }, [updateData, url])
 
   return { data, isLoading, errMsg: err, forceRefresh }
 }
