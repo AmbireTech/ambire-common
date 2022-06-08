@@ -10,7 +10,7 @@ import supportedProtocols from '../../constants/supportedProtocols'
 import { checkTokenList, getTokenListBalance, tokenList } from '../../services/balanceOracle'
 import { roundFloatingNumber } from '../../services/formatter'
 import { setKnownAddresses, setKnownTokens } from '../../services/humanReadableTransactions'
-import { UsePortfolioProps, UsePortfolioReturnTypes } from './types'
+import { UsePortfolioProps, UsePortfolioReturnType } from './types'
 
 let lastOtherProcolsRefresh = null
 
@@ -86,7 +86,7 @@ export default function usePortfolio({
   isVisible,
   useToasts,
   getBalances
-}: UsePortfolioProps): UsePortfolioReturnTypes {
+}: UsePortfolioProps): UsePortfolioReturnType {
   const { addToast } = useToasts()
   const rpcTokensLastUpdated = useRef()
   const currentAccount = useRef()
