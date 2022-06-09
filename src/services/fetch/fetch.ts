@@ -23,16 +23,14 @@ export async function fetchCaught(_fetch: any, url: any, params?: any) {
   try {
     resp = await fetch(url, params)
   } catch (e: any) {
-    // TODO:
-    // console.error(e)
+    console.error(e)
     return { errMsg: `Unexpected error: ${e && e.message}` }
   }
   let body
   try {
     body = await resp.json()
   } catch (e: any) {
-    // TODO:
-    // console.error(e)
+    console.error(e)
     return { errMsg: `Unexpected error: ${resp.status}, ${e && e.message}`, resp }
   }
   return { body, resp, errMsg: '' }
