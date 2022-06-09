@@ -178,7 +178,7 @@ export default function usePortfolio({
 
   const fetchTokens = useCallback(
     // eslint-disable-next-line default-param-last
-    async (account, currentNetwork = false, showLoadingState, tokensByNetworks) => {
+    async (account, currentNetwork = false, showLoadingState, tokensByNetworks = []) => {
       // Prevent race conditions
       if (currentAccount.current !== account) return
 
