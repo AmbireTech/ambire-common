@@ -89,7 +89,7 @@ export default function usePortfolio({
   getBalances
 }: UsePortfolioProps): UsePortfolioReturnType {
   const { addToast } = useToasts()
-  const rpcTokensLastUpdated = useRef()
+  const rpcTokensLastUpdated = useRef<number>(0)
   const currentAccount = useRef<string>()
   const [balancesByNetworksLoading, setBalancesByNetworksLoading] = useState({})
   const [otherProtocolsByNetworksLoading, setOtherProtocolsByNetworksLoading] = useState({})
@@ -589,7 +589,7 @@ export default function usePortfolio({
   // Reset `rpcTokensLastUpdated` on a network change, because its value is regarding the previous network,
   // and it's not useful for the current network.
   useEffect(() => {
-    rpcTokensLastUpdated.current = null
+    rpcTokensLastUpdated.current = 0
   }, [currentNetwork])
 
   // Refresh tokens on network change and when window is focused
