@@ -4,12 +4,12 @@ import supportedProtocols from '../../constants/supportedProtocols'
 import { checkTokenList, getTokenListBalance, tokenList } from '../../services/balanceOracle'
 import { roundFloatingNumber } from '../../services/formatter'
 import { setKnownAddresses, setKnownTokens } from '../../services/humanReadableTransactions'
-import { UsePortfolioProps, UsePortfolioReturnType } from './types'
+import { Token, UsePortfolioProps, UsePortfolioReturnType } from './types'
 
-let lastOtherProtocolsRefresh: number | null = null
+let lastOtherProtocolsRefresh: number = 0
 
 // use Balance Oracle
-function paginateArray(input, limit) {
+function paginateArray(input: any[], limit: number) {
   const pages = []
   let from = 0
   for (let i = 1; i <= Math.ceil(input.length / limit); i++) {
@@ -19,7 +19,7 @@ function paginateArray(input, limit) {
   return pages
 }
 
-const filterByHiddenTokens = (tokens, hiddenTokens) => {
+const filterByHiddenTokens = (tokens: Token[], hiddenTokens: Token[]) => {
   return tokens
     .map((t) => {
       return hiddenTokens.find((ht) => t.address === ht.address) || { ...t, isHidden: false }
@@ -68,7 +68,7 @@ async function supplementTokensDataFromNetwork({
   )
     .flat()
     .filter((t) => {
-      return extraTokens.some((et) => t.address === et.address) ? true : t.balanceRaw > 0
+      return extraTokens.some((et: Token) => t.address === et.address) ? true : t.balanceRaw > 0
     })
   return tokenBalances
 }
@@ -83,7 +83,7 @@ export default function usePortfolio({
 }: UsePortfolioProps): UsePortfolioReturnType {
   const { addToast } = useToasts()
   const rpcTokensLastUpdated = useRef()
-  const currentAccount = useRef()
+  const currentAccount = useRef<string>()
   const [balancesByNetworksLoading, setBalancesByNetworksLoading] = useState({})
   const [otherProtocolsByNetworksLoading, setOtherProtocolsByNetworksLoading] = useState({})
 
@@ -116,8 +116,8 @@ export default function usePortfolio({
   const getExtraTokensAssets = useCallback(
     (account, network) =>
       extraTokens
-        .filter((extra) => extra.account === account && extra.network === network)
-        .map((extraToken) => ({
+        .filter((extra: Token) => extra.account === account && extra.network === network)
+        .map((extraToken: Token) => ({
           ...extraToken,
           type: 'base',
           price: 0,
@@ -130,7 +130,7 @@ export default function usePortfolio({
   const fetchSupplementTokenData = useCallback(
     async (updatedTokens) => {
       const currentNetworkTokens = updatedTokens.find(
-        ({ network }) => network === currentNetwork
+        ({ network }: Token) => network === currentNetwork
       ) || { network: currentNetwork, meta: [], assets: [] }
 
       if (!updatedTokens.length) {
