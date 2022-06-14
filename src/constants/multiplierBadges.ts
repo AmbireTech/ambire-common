@@ -33,3 +33,6 @@ export const multiplierBadges: MultiplierBadge[] = [
     link: 'https://blog.ambire.com/win-a-cryptotesters-nft-with-ambire-and-get-into-one-of-the-hottest-web3-communities-c9d7185760b1'
   }
 ]
+
+export const MULTIPLIERS_READ_MORE_URL =
+  'https://blog.ambire.com/announcing-the-wallet-token-a137aeda9747'
