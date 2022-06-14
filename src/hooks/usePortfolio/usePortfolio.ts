@@ -91,8 +91,12 @@ export default function usePortfolio({
   const { addToast } = useToasts()
   const rpcTokensLastUpdated = useRef<number>(0)
   const currentAccount = useRef<string>()
-  const [balancesByNetworksLoading, setBalancesByNetworksLoading] = useState({})
-  const [otherProtocolsByNetworksLoading, setOtherProtocolsByNetworksLoading] = useState({})
+  const [balancesByNetworksLoading, setBalancesByNetworksLoading] = useState<{
+    [key in Network]: boolean
+  }>({})
+  const [otherProtocolsByNetworksLoading, setOtherProtocolsByNetworksLoading] = useState<{
+    [key in Network]: boolean
+  }>({})
 
   const [tokensByNetworks, setTokensByNetworks] = useState([])
   // Added unsupported networks (fantom and moonbeam) as default values with empty arrays to prevent crashes
@@ -302,7 +306,10 @@ export default function usePortfolio({
           : supportedProtocols
 
         let failedRequests = 0
-        const requestsCount = protocols.reduce((acc, curr) => curr.protocols.length + acc, 0)
+        const requestsCount = protocols.reduce(
+          (acc, curr) => (curr && curr.protocols ? curr.protocols?.length : 0) + acc,
+          0
+        )
         if (requestsCount === 0) return true
 
         await Promise.all(
