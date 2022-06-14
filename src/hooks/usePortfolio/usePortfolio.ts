@@ -42,7 +42,7 @@ async function supplementTokensDataFromNetwork({
   updateBalance?: string
   hiddenTokens: Token[]
 }) {
-  if (!walletAddr || walletAddr === '' || !network || network === '') return []
+  if (!walletAddr || walletAddr === '' || !network) return []
   // eslint-disable-next-line no-param-reassign
   if (!tokensData || !tokensData[0]) tokensData = checkTokenList(tokensData || []) // tokensData check and populate for test if undefind
   // eslint-disable-next-line no-param-reassign
