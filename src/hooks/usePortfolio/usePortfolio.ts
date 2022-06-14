@@ -4,7 +4,7 @@ import supportedProtocols from '../../constants/supportedProtocols'
 import { checkTokenList, getTokenListBalance, tokenList } from '../../services/balanceOracle'
 import { roundFloatingNumber } from '../../services/formatter'
 import { setKnownAddresses, setKnownTokens } from '../../services/humanReadableTransactions'
-import { Token, UsePortfolioProps, UsePortfolioReturnType } from './types'
+import { Network, Token, UsePortfolioProps, UsePortfolioReturnType } from './types'
 
 let lastOtherProtocolsRefresh: number = 0
 
@@ -34,7 +34,14 @@ async function supplementTokensDataFromNetwork({
   extraTokens,
   updateBalance,
   hiddenTokens
-}: any) {
+}: {
+  walletAddr: Token['address']
+  network: Network
+  tokensData: Token[]
+  extraTokens: Token[]
+  updateBalance?: string
+  hiddenTokens: Token[]
+}) {
   if (!walletAddr || walletAddr === '' || !network || network === '') return []
   // eslint-disable-next-line no-param-reassign
   if (!tokensData || !tokensData[0]) tokensData = checkTokenList(tokensData || []) // tokensData check and populate for test if undefind
@@ -172,7 +179,7 @@ export default function usePortfolio({
 
   const fetchTokens = useCallback(
     // eslint-disable-next-line default-param-last
-    async (account, currentNetwork = false, showLoadingState, tokensByNetworks = []) => {
+    async (account, currentNetwork = false, showLoadingState = false, tokensByNetworks = []) => {
       // Prevent race conditions
       if (currentAccount.current !== account) return
 

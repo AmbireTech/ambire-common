@@ -18,7 +18,7 @@ export type Token = {
   tokenImageUrl: string
 }
 
-type Network = keyof typeof NETWORKS
+export type Network = keyof typeof NETWORKS
 
 export type Balance = {
   network: Network
