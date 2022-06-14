@@ -1,9 +1,3 @@
-/* eslint-disable no-unsafe-optional-chaining */
-/* eslint-disable @typescript-eslint/return-await */
-/* eslint-disable no-return-assign */
-/* eslint-disable @typescript-eslint/no-shadow */
-// @ts-nocheck
-
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import supportedProtocols from '../../constants/supportedProtocols'
@@ -12,7 +6,7 @@ import { roundFloatingNumber } from '../../services/formatter'
 import { setKnownAddresses, setKnownTokens } from '../../services/humanReadableTransactions'
 import { UsePortfolioProps, UsePortfolioReturnType } from './types'
 
-let lastOtherProcolsRefresh = null
+let lastOtherProtocolsRefresh: number | null = null
 
 // use Balance Oracle
 function paginateArray(input, limit) {
@@ -370,12 +364,12 @@ export default function usePortfolio({
           })
         )
 
-        lastOtherProcolsRefresh = Date.now()
+        lastOtherProtocolsRefresh = Date.now()
         if (failedRequests >= requestsCount)
           throw new Error('Failed to fetch other Protocols from API')
         return true
       } catch (error) {
-        lastOtherProcolsRefresh = Date.now()
+        lastOtherProtocolsRefresh = Date.now()
         console.error(error)
         // In case of error set all loading indicators to false
         supportedProtocols.map(
@@ -403,7 +397,7 @@ export default function usePortfolio({
   const requestOtherProtocolsRefresh = async () => {
     if (!account) return
     if (
-      Date.now() - lastOtherProcolsRefresh > 30000 &&
+      Date.now() - lastOtherProtocolsRefresh > 30000 &&
       !otherProtocolsByNetworksLoading[currentNetwork]
     )
       await fetchOtherProtocols(account, currentNetwork, otherProtocolsByNetworks)
