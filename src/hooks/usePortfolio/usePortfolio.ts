@@ -35,7 +35,7 @@ async function supplementTokensDataFromNetwork({
   updateBalance,
   hiddenTokens
 }: {
-  walletAddr: Token['address']
+  walletAddr: string
   network: Network
   tokensData: Token[]
   extraTokens: Token[]
