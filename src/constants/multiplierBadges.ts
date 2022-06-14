@@ -1,4 +1,4 @@
-type Badge = {
+export type MultiplierBadge = {
   id: string
   name: string
   icon: string
@@ -7,7 +7,7 @@ type Badge = {
   link: string
 }
 
-export const multiplierBadges: Badge[] = [
+export const multiplierBadges: MultiplierBadge[] = [
   {
     id: 'beta-tester',
     name: 'Beta Testers',
