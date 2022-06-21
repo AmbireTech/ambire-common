@@ -1,6 +1,6 @@
-import { UseAccountsReturnType } from '../accounts'
-import { UseToastsReturnType } from '../toasts'
+import { UseAccountsReturnType } from '../useAccounts'
 import { UseStorageProps, UseStorageReturnType } from '../useStorage'
+import { UseToastsReturnType } from '../useToasts'
 
 export type Address = {
   name: string

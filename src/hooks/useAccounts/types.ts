@@ -1,5 +1,5 @@
-import { UseToastsReturnType } from '../toasts'
 import { UseStorageProps, UseStorageReturnType } from '../useStorage'
+import { UseToastsReturnType } from '../useToasts'
 
 export type OnAddAccountOptions = {
   shouldRedirect?: boolean
