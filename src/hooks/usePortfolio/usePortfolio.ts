@@ -1,21 +1,15 @@
-/* eslint-disable no-unsafe-optional-chaining */
-/* eslint-disable @typescript-eslint/return-await */
-/* eslint-disable no-return-assign */
-/* eslint-disable @typescript-eslint/no-shadow */
-// @ts-nocheck
-
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import supportedProtocols from '../../constants/supportedProtocols'
 import { checkTokenList, getTokenListBalance, tokenList } from '../../services/balanceOracle'
 import { roundFloatingNumber } from '../../services/formatter'
 import { setKnownAddresses, setKnownTokens } from '../../services/humanReadableTransactions'
-import { UsePortfolioProps, UsePortfolioReturnTypes } from './types'
+import { Network, Token, UsePortfolioProps, UsePortfolioReturnType } from './types'
 
-let lastOtherProcolsRefresh = null
+let lastOtherProtocolsRefresh: number = 0
 
 // use Balance Oracle
-function paginateArray(input, limit) {
+function paginateArray(input: any[], limit: number) {
   const pages = []
   let from = 0
   for (let i = 1; i <= Math.ceil(input.length / limit); i++) {
@@ -25,7 +19,7 @@ function paginateArray(input, limit) {
   return pages
 }
 
-const filterByHiddenTokens = (tokens, hiddenTokens) => {
+const filterByHiddenTokens = (tokens: Token[], hiddenTokens: Token[]) => {
   return tokens
     .map((t) => {
       return hiddenTokens.find((ht) => t.address === ht.address) || { ...t, isHidden: false }
@@ -40,8 +34,15 @@ async function supplementTokensDataFromNetwork({
   extraTokens,
   updateBalance,
   hiddenTokens
-}: any) {
-  if (!walletAddr || walletAddr === '' || !network || network === '') return []
+}: {
+  walletAddr: string
+  network: Network
+  tokensData: Token[]
+  extraTokens: Token[]
+  updateBalance?: string
+  hiddenTokens: Token[]
+}) {
+  if (!walletAddr || walletAddr === '' || !network) return []
   // eslint-disable-next-line no-param-reassign
   if (!tokensData || !tokensData[0]) tokensData = checkTokenList(tokensData || []) // tokensData check and populate for test if undefind
   // eslint-disable-next-line no-param-reassign
@@ -74,7 +75,7 @@ async function supplementTokensDataFromNetwork({
   )
     .flat()
     .filter((t) => {
-      return extraTokens.some((et) => t.address === et.address) ? true : t.balanceRaw > 0
+      return extraTokens.some((et: Token) => t.address === et.address) ? true : t.balanceRaw > 0
     })
   return tokenBalances
 }
@@ -86,12 +87,16 @@ export default function usePortfolio({
   isVisible,
   useToasts,
   getBalances
-}: UsePortfolioProps): UsePortfolioReturnTypes {
+}: UsePortfolioProps): UsePortfolioReturnType {
   const { addToast } = useToasts()
-  const rpcTokensLastUpdated = useRef()
-  const currentAccount = useRef()
-  const [balancesByNetworksLoading, setBalancesByNetworksLoading] = useState({})
-  const [otherProtocolsByNetworksLoading, setOtherProtocolsByNetworksLoading] = useState({})
+  const rpcTokensLastUpdated = useRef<number>(0)
+  const currentAccount = useRef<string>()
+  const [balancesByNetworksLoading, setBalancesByNetworksLoading] = useState<{
+    [key in Network]: boolean
+  }>({})
+  const [otherProtocolsByNetworksLoading, setOtherProtocolsByNetworksLoading] = useState<{
+    [key in Network]: boolean
+  }>({})
 
   const [tokensByNetworks, setTokensByNetworks] = useState([])
   // Added unsupported networks (fantom and moonbeam) as default values with empty arrays to prevent crashes
@@ -122,8 +127,8 @@ export default function usePortfolio({
   const getExtraTokensAssets = useCallback(
     (account, network) =>
       extraTokens
-        .filter((extra) => extra.account === account && extra.network === network)
-        .map((extraToken) => ({
+        .filter((extra: Token) => extra.account === account && extra.network === network)
+        .map((extraToken: Token) => ({
           ...extraToken,
           type: 'base',
           price: 0,
@@ -136,7 +141,7 @@ export default function usePortfolio({
   const fetchSupplementTokenData = useCallback(
     async (updatedTokens) => {
       const currentNetworkTokens = updatedTokens.find(
-        ({ network }) => network === currentNetwork
+        ({ network }: Token) => network === currentNetwork
       ) || { network: currentNetwork, meta: [], assets: [] }
 
       if (!updatedTokens.length) {
@@ -178,7 +183,7 @@ export default function usePortfolio({
 
   const fetchTokens = useCallback(
     // eslint-disable-next-line default-param-last
-    async (account, currentNetwork = false, showLoadingState, tokensByNetworks) => {
+    async (account, currentNetwork = false, showLoadingState = false, tokensByNetworks = []) => {
       // Prevent race conditions
       if (currentAccount.current !== account) return
 
@@ -301,7 +306,10 @@ export default function usePortfolio({
           : supportedProtocols
 
         let failedRequests = 0
-        const requestsCount = protocols.reduce((acc, curr) => curr.protocols.length + acc, 0)
+        const requestsCount = protocols.reduce(
+          (acc, curr) => (curr && curr.protocols ? curr.protocols?.length : 0) + acc,
+          0
+        )
         if (requestsCount === 0) return true
 
         await Promise.all(
@@ -370,12 +378,12 @@ export default function usePortfolio({
           })
         )
 
-        lastOtherProcolsRefresh = Date.now()
+        lastOtherProtocolsRefresh = Date.now()
         if (failedRequests >= requestsCount)
           throw new Error('Failed to fetch other Protocols from API')
         return true
       } catch (error) {
-        lastOtherProcolsRefresh = Date.now()
+        lastOtherProtocolsRefresh = Date.now()
         console.error(error)
         // In case of error set all loading indicators to false
         supportedProtocols.map(
@@ -403,7 +411,7 @@ export default function usePortfolio({
   const requestOtherProtocolsRefresh = async () => {
     if (!account) return
     if (
-      Date.now() - lastOtherProcolsRefresh > 30000 &&
+      Date.now() - lastOtherProtocolsRefresh > 30000 &&
       !otherProtocolsByNetworksLoading[currentNetwork]
     )
       await fetchOtherProtocols(account, currentNetwork, otherProtocolsByNetworks)
@@ -419,65 +427,77 @@ export default function usePortfolio({
     setKnownTokens(tokensList)
   }
 
-  const onAddExtraToken = (extraToken) => {
-    const { address, name, symbol } = extraToken
-    if (extraTokens.map(({ address }) => address).includes(address))
-      return addToast(`${name} (${symbol}) is already added to your wallet.`)
-    if (
-      Object.values(tokenList)
-        .flat(1)
-        .map(({ address }) => address)
-        .includes(address)
-    )
-      return addToast(`${name} (${symbol}) is already handled by your wallet.`)
-    if (tokens.map(({ address }) => address).includes(address))
-      return addToast(`You already have ${name} (${symbol}) in your wallet.`)
+  const onAddExtraToken = useCallback(
+    (extraToken) => {
+      const { address, name, symbol } = extraToken
+      if (extraTokens.map(({ address }) => address).includes(address))
+        return addToast(`${name} (${symbol}) is already added to your wallet.`)
+      if (
+        Object.values(tokenList)
+          .flat(1)
+          .map(({ address }) => address)
+          .includes(address)
+      )
+        return addToast(`${name} (${symbol}) is already handled by your wallet.`)
+      if (tokens.map(({ address }) => address).includes(address))
+        return addToast(`You already have ${name} (${symbol}) in your wallet.`)
 
-    const updatedExtraTokens = [
-      ...extraTokens,
-      {
-        ...extraToken,
-        coingeckoId: null
-      }
-    ]
+      const updatedExtraTokens = [
+        ...extraTokens,
+        {
+          ...extraToken,
+          coingeckoId: null
+        }
+      ]
 
-    setExtraTokens(updatedExtraTokens)
-    addToast(`${name} (${symbol}) token added to your wallet!`)
-  }
+      setExtraTokens(updatedExtraTokens)
+      addToast(`${name} (${symbol}) token added to your wallet!`)
+    },
+    [setExtraTokens, tokens, extraTokens]
+  )
 
-  const onAddHiddenToken = (hiddenToken) => {
-    const { symbol } = hiddenToken
-    const updatedHiddenTokens = [
-      ...hiddenTokens,
-      {
-        ...hiddenToken,
-        isHidden: true
-      }
-    ]
+  const onAddHiddenToken = useCallback(
+    (hiddenToken) => {
+      const { symbol } = hiddenToken
+      const updatedHiddenTokens = [
+        ...hiddenTokens,
+        {
+          ...hiddenToken,
+          isHidden: true
+        }
+      ]
 
-    setHiddenTokens(updatedHiddenTokens)
-    addToast(`${symbol} token is hidden from your assets list!`)
-  }
+      setHiddenTokens(updatedHiddenTokens)
+      addToast(`${symbol} token is hidden from your assets list!`)
+    },
+    [hiddenTokens, setHiddenTokens]
+  )
 
-  const onRemoveHiddenToken = (address) => {
-    const token = hiddenTokens.find((t) => t.address === address)
-    if (!token) return addToast(`${address} is not present in your assets list.`)
+  const onRemoveHiddenToken = useCallback(
+    (address) => {
+      const token = hiddenTokens.find((t) => t.address === address)
+      if (!token) return addToast(`${address} is not present in your assets list.`)
 
-    const updatedHiddenTokens = hiddenTokens.filter((t) => t.address !== address)
+      const updatedHiddenTokens = hiddenTokens.filter((t) => t.address !== address)
 
-    setHiddenTokens(updatedHiddenTokens)
-    addToast(`${token.symbol} is shown to your assets list.`)
-  }
+      setHiddenTokens(updatedHiddenTokens)
+      addToast(`${token.symbol} is shown to your assets list.`)
+    },
+    [hiddenTokens, setHiddenTokens]
+  )
 
-  const onRemoveExtraToken = (address) => {
-    const token = extraTokens.find((t) => t.address === address)
-    if (!token) return addToast(`${address} is not present in your wallet.`)
+  const onRemoveExtraToken = useCallback(
+    (address) => {
+      const token = extraTokens.find((t) => t.address === address)
+      if (!token) return addToast(`${address} is not present in your wallet.`)
 
-    const updatedExtraTokens = extraTokens.filter((t) => t.address !== address)
+      const updatedExtraTokens = extraTokens.filter((t) => t.address !== address)
 
-    setExtraTokens(updatedExtraTokens)
-    addToast(`${token.name} (${token.symbol}) was removed from your wallet.`)
-  }
+      setExtraTokens(updatedExtraTokens)
+      addToast(`${token.name} (${token.symbol}) was removed from your wallet.`)
+    },
+    [extraTokens, setExtraTokens]
+  )
 
   const removeDuplicatedAssets = (tokens) => {
     const lookup = tokens.reduce((a, e) => {
@@ -576,7 +596,7 @@ export default function usePortfolio({
   // Reset `rpcTokensLastUpdated` on a network change, because its value is regarding the previous network,
   // and it's not useful for the current network.
   useEffect(() => {
-    rpcTokensLastUpdated.current = null
+    rpcTokensLastUpdated.current = 0
   }, [currentNetwork])
 
   // Refresh tokens on network change and when window is focused

@@ -1,15 +1,12 @@
 import { useCallback } from 'react'
 
-import networks, { NetworkId, NETWORKS, NetworkType } from '../../constants/networks'
-import { UseStorageProps, UseStorageReturnType } from '../useStorage/useStorage'
+import networks, { NETWORKS, NetworkType } from '../../constants/networks'
+import { UseNetworkProps, UseNetworkReturnType } from './types'
 
 export default function useNetwork({
   defaultNetwork = NETWORKS.ethereum,
   useStorage
-}: {
-  defaultNetwork: NetworkId
-  useStorage: (p: Omit<UseStorageProps, 'storage'>) => UseStorageReturnType
-}) {
+}: UseNetworkProps): UseNetworkReturnType {
   const [networkId, setNetworkId] = useStorage({
     key: 'network',
     defaultValue: defaultNetwork,
@@ -19,7 +16,7 @@ export default function useNetwork({
   })
 
   const setNetwork = useCallback(
-    (networkIdentifier) => {
+    (networkIdentifier: string | number) => {
       const network = networks.find(
         (n) =>
           n.id === networkIdentifier ||

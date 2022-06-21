@@ -1,47 +1,6 @@
-import React, { useCallback, useMemo } from 'react'
+import { useCallback, useMemo } from 'react'
 
-import { UseToastsReturnType } from '../toasts'
-import { UseStorageProps, UseStorageReturnType } from '../useStorage'
-
-export type onAddAccountOptions = {
-  shouldRedirect?: boolean
-  isNew?: boolean
-  select?: boolean
-}
-
-export type Account = {
-  baseIdentityAddr: string
-  bytecode: string
-  email: string
-  id: string
-  identityFactoryAddr: string
-  primaryKeyBackup: string
-  salt: string
-  signer: {
-    one: string
-    quickAccManager: string
-    timelock: number
-    two: string
-    // Sometimes passed as an extra prop
-    address?: string
-  }
-}
-
-export interface UseAccountsProps {
-  onAdd: (opts: onAddAccountOptions) => void
-  onRemoveLastAccount: () => void
-  useStorage: (p: Omit<UseStorageProps, 'storage'>) => UseStorageReturnType
-  useToasts: () => UseToastsReturnType
-}
-
-export interface UseAccountsReturnType {
-  accounts: Account[]
-  account: Account | {}
-  selectedAcc: string
-  onSelectAcc: (accountId: Account['id']) => void
-  onAddAccount: (acc: Account, opts: onAddAccountOptions) => void
-  onRemoveAccount: (accountId: Account['id']) => void
-}
+import { Account, OnAddAccountOptions, UseAccountsProps, UseAccountsReturnType } from './types'
 
 export default function useAccounts({
   onAdd,
@@ -84,7 +43,7 @@ export default function useAccounts({
   )
 
   const onAddAccount = useCallback(
-    (acc: Account, _opts: onAddAccountOptions = {}) => {
+    (acc: Account, _opts: OnAddAccountOptions = {}) => {
       const opts = { shouldRedirect: true, ..._opts }
 
       if (!(acc.id && acc.signer)) throw new Error('account: internal err: missing ID or signer')
