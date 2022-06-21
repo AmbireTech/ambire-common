@@ -499,6 +499,15 @@ export default function useWalletConnect({
     dispatch({ type: 'requestsResolved', ids })
   }
 
+  // Side effects on init
+  useEffect(() => {
+    state.connections.forEach(({ uri, session }: Connection) => {
+      if (!connectors[uri]) connect({ uri, session })
+    })
+    // we specifically want to run this only once despite depending on state
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connect])
+
   return {
     connections: state.connections,
     requests: state.requests,
