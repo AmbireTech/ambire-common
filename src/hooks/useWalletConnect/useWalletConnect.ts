@@ -1,7 +1,3 @@
-/* eslint-disable no-param-reassign */
-/* eslint-disable no-multi-assign */
-/* eslint-disable @typescript-eslint/no-shadow */
-/* eslint-disable no-restricted-syntax */
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 
 import WalletConnectCore from '@walletconnect/core'
@@ -76,6 +72,7 @@ export default function useWalletConnect({
   const [stateStorage, setStateStorage] = useStorage({ key: STORAGE_KEY })
 
   const [state, dispatch] = useReducer(
+    // eslint-disable-next-line @typescript-eslint/no-shadow
     (state: any, action: any) => {
       if (action.type === 'updateConnections') return { ...state, connections: action.connections }
       if (action.type === 'connectedNewSession') {
@@ -98,6 +95,7 @@ export default function useWalletConnect({
           return { ...state }
 
         const newRequests = []
+        // eslint-disable-next-line no-restricted-syntax
         for (const ix in action.batchRequest.txns) {
           if (action.batchRequest.txns[ix].to || action.batchRequest.txns[ix].data) {
             newRequests.push({
@@ -192,6 +190,7 @@ export default function useWalletConnect({
       }
       let connector: any
       try {
+        // eslint-disable-next-line no-multi-assign
         connector = connectors[connectorOpts.uri] = new WalletConnectCore({
           connectorOpts,
           cryptoLib,
