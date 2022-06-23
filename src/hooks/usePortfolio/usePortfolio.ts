@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
+import networks from '../../constants/networks'
 import supportedProtocols from '../../constants/supportedProtocols'
 import { checkTokenList, getTokenListBalance, tokenList } from '../../services/balanceOracle'
 import { roundFloatingNumber } from '../../services/formatter'
@@ -567,7 +568,21 @@ export default function usePortfolio({
       const balance = balanceByNetworks.find(({ network }) => network === currentNetwork)
       if (balance) {
         setBalance(balance)
-        setOtherBalances(balanceByNetworks.filter(({ network }) => network !== currentNetwork))
+        setOtherBalances(
+          balanceByNetworks
+            .filter(({ network }) => network !== currentNetwork)
+            // When switching networks, the balances order is not persisted.
+            // This creates an annoying jump effect sometimes in the list
+            // of the positive other balances for the account. So always sort
+            // the other balances, to make sure their order in the list is
+            // the same on every network switch.
+            .sort((a, b) =>
+              networks.find(({ id }) => id === a.network)?.chainId <
+              networks.find(({ id }) => id === b.network)?.chainId
+                ? -1
+                : 1
+            )
+        )
       }
 
       updateHumanizerData(tokensByNetworks)
