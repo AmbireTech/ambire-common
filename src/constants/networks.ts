@@ -135,15 +135,15 @@ const networks: NetworkType[] = [
     explorerUrl: 'https://optimistic.etherscan.io',
     unstoppableDomainsChain: 'ERC20'
   },
-  // {
-  // 	id: NETWORKS.andromeda,
-  // 	chainId: 1088,
-  // 	rpc: 'https://andromeda.metis.io/?owner=1088',
-  // 	nativeAssetSymbol: 'METIS',
-  // 	name: 'Andromeda',
-  // 	explorerUrl: 'https://andromeda-explorer.metis.io',
-  // 	unstoppableDomainsChain: 'ERC20'
-  // },
+  {
+    id: NETWORKS.andromeda,
+    chainId: 1088,
+    rpc: 'https://andromeda.metis.io/?owner=1088',
+    nativeAssetSymbol: 'METIS',
+    name: 'Andromeda',
+    explorerUrl: 'https://andromeda-explorer.metis.io',
+    unstoppableDomainsChain: 'ERC20sp'
+  },
   {
     id: 'rinkeby',
     chainId: 4,
