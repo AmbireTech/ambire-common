@@ -3,8 +3,8 @@
 import { NETWORKS } from 'constants/networks'
 import { SupportedProtocolType } from 'constants/supportedProtocols'
 
-import { UseToastsReturnType } from '../toasts/types'
 import { UseStorageProps, UseStorageReturnType } from '../useStorage'
+import { UseToastsReturnType } from '../useToasts'
 
 export type Token = {
   account: string
@@ -18,7 +18,7 @@ export type Token = {
   tokenImageUrl: string
 }
 
-export type Network = keyof typeof NETWORKS
+type Network = keyof typeof NETWORKS
 
 export type Balance = {
   network: Network

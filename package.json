@@ -1,17 +1,21 @@
 {
-  "version": "0.7.0",
+  "version": "0.8.0",
   "name": "ambire-common",
   "description": "Common ground for the Ambire apps",
   "private": true,
   "peerDependencies": {
+    "@unstoppabledomains/resolution": "^7.1.4",
+    "@walletconnect/client": "^1.7.1",
     "react": "^17.0.0",
     "ethers": "^5.5.2",
     "ethereumjs-util": "^7.1.3",
-    "adex-protocol-eth": "git+https://git@github.com/AmbireTech/adex-protocol-eth.git#773e55f90a77121cc9c5f3210c915b10b21d7245",
-    "@unstoppabledomains/resolution": "^7.1.4",
+    "adex-protocol-eth": "git+https://git@github.com/AmbireTech/adex-protocol-eth.git#e507e75ac4ddbec2aa4a444c675b38ee9d26190c",
     "validator": "^13.7.0"
   },
   "devDependencies": {
+    "@typescript-eslint/eslint-plugin": "5.5.0",
+    "@typescript-eslint/parser": "5.5.0",
+    "@types/validator": "^13.7.0",
     "react": "17.0.1",
     "eslint": "8.3.0",
     "eslint-config-airbnb": "19.0.1",
@@ -22,10 +26,7 @@
     "eslint-plugin-prettier": "4.0.0",
     "eslint-plugin-react": "7.27.1",
     "eslint-plugin-react-hooks": "4.3.0",
-    "@typescript-eslint/eslint-plugin": "5.5.0",
-    "@typescript-eslint/parser": "5.5.0",
     "prettier": "2.5.0",
-    "typescript": "~4.3.5",
-    "@types/validator": "^13.7.0"
+    "typescript": "~4.3.5"
   }
 }
