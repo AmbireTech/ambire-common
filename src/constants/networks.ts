@@ -27,20 +27,22 @@ export type NetworkType = {
   explorerUrl: string
   unstoppableDomainsChain: string
   hide?: boolean
+  isGasTankAvailable: boolean
 }
 
 const networks: NetworkType[] = [
   {
     id: NETWORKS.ethereum,
     chainId: 1,
-    //rpc: 'https://mainnet.infura.io/v3/3d22938fd7dd41b7af4197752f83e8a1',
-    //rpc: 'https://morning-wild-water.quiknode.pro/66011d2c6bdebc583cade5365086c8304c13366c/',
-    //rpc: 'https://mainnet.infura.io/v3/d4319c39c4df452286d8bf6d10de28ae',
+    // rpc: 'https://mainnet.infura.io/v3/3d22938fd7dd41b7af4197752f83e8a1',
+    // rpc: 'https://morning-wild-water.quiknode.pro/66011d2c6bdebc583cade5365086c8304c13366c/',
+    // rpc: 'https://mainnet.infura.io/v3/d4319c39c4df452286d8bf6d10de28ae',
     rpc: 'https://eth-mainnet.alchemyapi.io/v2/e5Gr8LP_EH0SBPZiNCcC08OuEDrvgoYK',
     nativeAssetSymbol: 'ETH',
     name: 'Ethereum',
     explorerUrl: 'https://etherscan.io',
-    unstoppableDomainsChain: 'ERC20'
+    unstoppableDomainsChain: 'ERC20',
+    isGasTankAvailable: true
   },
   {
     id: NETWORKS.polygon,
@@ -50,7 +52,8 @@ const networks: NetworkType[] = [
     nativeAssetSymbol: 'MATIC',
     name: 'Polygon',
     explorerUrl: 'https://polygonscan.com',
-    unstoppableDomainsChain: 'MATIC'
+    unstoppableDomainsChain: 'MATIC',
+    isGasTankAvailable: true
   },
   {
     id: NETWORKS.avalanche,
@@ -59,7 +62,8 @@ const networks: NetworkType[] = [
     nativeAssetSymbol: 'AVAX',
     name: 'Avalanche',
     explorerUrl: 'https://snowtrace.io',
-    unstoppableDomainsChain: 'ERC20'
+    unstoppableDomainsChain: 'ERC20',
+    isGasTankAvailable: true
   },
   {
     // to match the zapper ID
@@ -69,7 +73,8 @@ const networks: NetworkType[] = [
     nativeAssetSymbol: 'BNB',
     name: 'Binance Smart Chain',
     explorerUrl: 'https://bscscan.com',
-    unstoppableDomainsChain: 'BEP20'
+    unstoppableDomainsChain: 'BEP20',
+    isGasTankAvailable: true
   },
   {
     id: NETWORKS.fantom,
@@ -78,7 +83,8 @@ const networks: NetworkType[] = [
     nativeAssetSymbol: 'FTM',
     name: 'Fantom Opera',
     explorerUrl: 'https://ftmscan.com',
-    unstoppableDomainsChain: 'ERC20'
+    unstoppableDomainsChain: 'ERC20',
+    isGasTankAvailable: true
   },
   {
     id: NETWORKS.moonbeam,
@@ -87,7 +93,8 @@ const networks: NetworkType[] = [
     nativeAssetSymbol: 'GLMR',
     name: 'Moonbeam',
     explorerUrl: 'https://moonscan.io/',
-    unstoppableDomainsChain: 'ERC20'
+    unstoppableDomainsChain: 'ERC20',
+    isGasTankAvailable: true
   },
   {
     id: NETWORKS.moonriver,
@@ -96,7 +103,8 @@ const networks: NetworkType[] = [
     nativeAssetSymbol: 'MOVR',
     name: 'Moonriver',
     explorerUrl: 'https://moonriver.moonscan.io/',
-    unstoppableDomainsChain: 'ERC20'
+    unstoppableDomainsChain: 'ERC20',
+    isGasTankAvailable: true
   },
   {
     id: NETWORKS.arbitrum,
@@ -105,7 +113,8 @@ const networks: NetworkType[] = [
     nativeAssetSymbol: 'AETH',
     name: 'Arbitrum',
     explorerUrl: 'https://arbiscan.io',
-    unstoppableDomainsChain: 'ERC20'
+    unstoppableDomainsChain: 'ERC20',
+    isGasTankAvailable: true
   },
   {
     id: NETWORKS.gnosis,
@@ -114,7 +123,8 @@ const networks: NetworkType[] = [
     nativeAssetSymbol: 'XDAI',
     name: 'Gnosis Chain',
     explorerUrl: 'https://blockscout.com',
-    unstoppableDomainsChain: 'ERC20'
+    unstoppableDomainsChain: 'ERC20',
+    isGasTankAvailable: true
   },
   {
     id: NETWORKS.kucoin,
@@ -124,7 +134,8 @@ const networks: NetworkType[] = [
     name: 'KCC KuCoin',
     explorerUrl: 'https://explorer.kcc.io',
     unstoppableDomainsChain: 'ERC20',
-    hide: true
+    hide: true,
+    isGasTankAvailable: false
   },
   {
     id: NETWORKS.optimism,
@@ -133,7 +144,8 @@ const networks: NetworkType[] = [
     nativeAssetSymbol: 'ETH',
     name: 'Optimism',
     explorerUrl: 'https://optimistic.etherscan.io',
-    unstoppableDomainsChain: 'ERC20'
+    unstoppableDomainsChain: 'ERC20',
+    isGasTankAvailable: true
   },
   {
     id: NETWORKS.andromeda,
@@ -142,7 +154,8 @@ const networks: NetworkType[] = [
     nativeAssetSymbol: 'METIS',
     name: 'Andromeda',
     explorerUrl: 'https://andromeda-explorer.metis.io',
-    unstoppableDomainsChain: 'ERC20sp'
+    unstoppableDomainsChain: 'ERC20sp',
+    isGasTankAvailable: false
   },
   {
     id: 'rinkeby',
@@ -152,7 +165,8 @@ const networks: NetworkType[] = [
     name: 'Rinkeby',
     explorerUrl: 'https://rinkeby.etherscan.io',
     unstoppableDomainsChain: 'ERC20',
-    hide: true
+    hide: true,
+    isGasTankAvailable: false
   }
   // {
   // 	id: NETWORKS.cronos,
@@ -161,7 +175,8 @@ const networks: NetworkType[] = [
   // 	nativeAssetSymbol: 'CRO',
   // 	name: 'Cronos',
   // 	explorerUrl: 'https://cronoscan.com',
-  // 	unstoppableDomainsChain: 'ERC20'
+  // 	unstoppableDomainsChain: 'ERC20',
+  // isGasTankAvailable: false
   // },
   // {
   // 	id: NETWORKS.aurora,
@@ -170,7 +185,8 @@ const networks: NetworkType[] = [
   // 	nativeAssetSymbol: 'ETH',
   // 	name: 'NEAR Aurora',
   // 	explorerUrl: 'https://aurorascan.dev',
-  // 	unstoppableDomainsChain: 'ERC20'
+  // 	unstoppableDomainsChain: 'ERC20',
+  // isGasTankAvailable: false
   // }
 ]
 
