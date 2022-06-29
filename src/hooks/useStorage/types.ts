@@ -12,4 +12,4 @@ export type UseStorageProps = {
   setInit?: (item: any) => any
 }
 
-export type UseStorageReturnType = [any, (item: any) => void, () => void]
+export type UseStorageReturnType<ValueType> = [ValueType, (item: ValueType) => void, () => void]
