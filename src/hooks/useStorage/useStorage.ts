@@ -21,7 +21,7 @@ export default function useStorage<ValueType>({
   defaultValue = null,
   isStringStorage = false,
   setInit = setInitDefault
-}: UseStorageProps): UseStorageReturnType<ValueType | null> {
+}: UseStorageProps<ValueType>): UseStorageReturnType<ValueType | null> {
   const [item, set] = useState<ValueType | null>(() => {
     // In case the item is not set in the storage, we just fall back to `defaultValue`
     if (!storage.getItem(key)) return setInit(defaultValue)
