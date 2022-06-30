@@ -9,7 +9,7 @@
     "react": "^17.0.0",
     "ethers": "^5.5.2",
     "ethereumjs-util": "^7.1.3",
-    "adex-protocol-eth": "git+https://git@github.com/AmbireTech/adex-protocol-eth.git#e507e75ac4ddbec2aa4a444c675b38ee9d26190c",
+    "adex-protocol-eth": "git+https://git@github.com/AmbireTech/adex-protocol-eth.git",
     "validator": "^13.7.0"
   },
   "devDependencies": {
