@@ -155,7 +155,7 @@ const networks: NetworkType[] = [
     name: 'Andromeda',
     explorerUrl: 'https://andromeda-explorer.metis.io',
     unstoppableDomainsChain: 'ERC20sp',
-    isGasTankAvailable: false
+    isGasTankAvailable: true
   },
   {
     id: 'rinkeby',
