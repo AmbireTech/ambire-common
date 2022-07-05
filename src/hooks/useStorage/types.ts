@@ -4,12 +4,12 @@ interface Storage {
   removeItem(key: string): void
 }
 
-export type UseStorageProps = {
+export type UseStorageProps<ValueType> = {
   storage: Storage
   key: string
-  defaultValue?: any
+  defaultValue?: ValueType | null
   isStringStorage?: boolean
-  setInit?: (item: any) => any
+  setInit?: (item: ValueType | null) => ValueType
 }
 
-export type UseStorageReturnType = [any, (item: any) => void, () => void]
+export type UseStorageReturnType<ValueType> = [ValueType, (item: ValueType) => void, () => void]

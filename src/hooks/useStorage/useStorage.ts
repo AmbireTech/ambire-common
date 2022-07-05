@@ -15,14 +15,14 @@ const setInitDefault = (item: any): any => item
  * @param setInit - In some advanced cases, we need to perform additional logic for setting the defaultValue, based on the Storage item parsed value.
  * setInit function will provide us quick access to the parsed Storage item and based on its value we can return the needed default/init value of the hook.
  */
-export default function useStorage({
+export default function useStorage<ValueType>({
   storage,
   key,
   defaultValue = null,
   isStringStorage = false,
   setInit = setInitDefault
-}: UseStorageProps): UseStorageReturnType {
-  const [item, set] = useState(() => {
+}: UseStorageProps<ValueType>): UseStorageReturnType<ValueType | null> {
+  const [item, set] = useState<ValueType | null>(() => {
     // In case the item is not set in the storage, we just fall back to `defaultValue`
     if (!storage.getItem(key)) return setInit(defaultValue)
 
@@ -44,7 +44,7 @@ export default function useStorage({
   })
 
   const setItem = useCallback(
-    (value: any): void => {
+    (value: ValueType | null): void => {
       set((prevState: any) => {
         const itemValue = typeof value === 'function' ? value(prevState) : value
 
