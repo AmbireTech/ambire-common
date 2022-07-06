@@ -2271,6 +2271,12 @@
   ],
   "moonbeam": [
     {
+      "address": "0x0000000000000000000000000000000000000000",
+      "symbol": "GLMR",
+      "coingeckoId": null,
+      "decimals": 18
+    },
+    {
       "address": "0xacc15dc74880c9944775448304b263d191c6077f",
       "symbol": "wglmr",
       "coingeckoId": "wrapped-moonbeam",
@@ -2327,9 +2333,21 @@
   ],
   "moonriver": [
     {
+      "address": "0x0000000000000000000000000000000000000000",
+      "symbol": "MOVR",
+      "coingeckoId": null,
+      "decimals": 18
+    },
+    {
       "address": "0x0cae51e1032e8461f4806e26332c030e34de3adb",
       "symbol": "mim",
       "coingeckoId": "magic-internet-money",
+      "decimals": 18
+    },
+    {
+      "address": "0xf390830df829cf22c53c8840554b98eafc5dcbc2",
+      "symbol": "SUSHI",
+      "coingeckoId": "sushi",
       "decimals": 18
     },
     {
@@ -2484,6 +2502,12 @@
     }
   ],
   "gnosis": [
+    {
+      "address": "0x0000000000000000000000000000000000000000",
+      "symbol": "XDAI",
+      "coingeckoId": null,
+      "decimals": 18
+    },
     {
       "address": "0x9c58bacc331c9aa871afd802db6379a98e80cedb",
       "symbol": "gno",
@@ -2655,6 +2679,12 @@
   ],
   "kucoin": [
     {
+      "address": "0x0000000000000000000000000000000000000000",
+      "symbol": "KCS",
+      "coingeckoId": null,
+      "decimals": 18
+    },
+    {
       "address": "0x6665d66afa48f527d86623723342cfa258cb8666",
       "symbol": "kudo",
       "coingeckoId": "kudoge",
@@ -2686,6 +2716,12 @@
     }
   ],
   "aurora": [
+    {
+      "address": "0x0000000000000000000000000000000000000000",
+      "symbol": "ETH",
+      "coingeckoId": null,
+      "decimals": 18
+    },
     {
       "address": "0x8bec47865ade3b172a928df8f990bc7f2a3b9f79",
       "symbol": "aurora",
@@ -2862,6 +2898,12 @@
     }
   ],
   "cronos": [
+    {
+      "address": "0x0000000000000000000000000000000000000000",
+      "symbol": "CRO",
+      "coingeckoId": null,
+      "decimals": 18
+    },
     {
       "address": "0x98936bde1cf1bff1e7a8012cee5e2583851f2067",
       "symbol": "ann",
@@ -3267,16 +3309,16 @@
   ],
   "andromeda": [
     {
+      "address": "0x0000000000000000000000000000000000000000",
+      "symbol": "METIS",
+      "coingeckoId": null,
+      "decimals": 18
+    },
+    {
       "address": "0x3405a1bd46b85c5c029483fbecf2f3e611026e45",
       "symbol": "bios",
       "coingeckoId": "bios",
       "decmals": 18
-    },
-    {
-      "address": "0xdeaddeaddeaddeaddeaddeaddeaddeaddead0000",
-      "symbol": "metis",
-      "coingeckoId": "metis-token",
-      "decimals": 18
     },
     {
       "address": "0xfe282af5f9eb59c30a3f78789eeffa704188bdd4",
@@ -3426,6 +3468,22 @@
       "address": "0x259ef6776648500d7f1a8aba3651e38b1121e65e",
       "symbol": "pro",
       "coingeckoId": "prometheus-token",
+      "decimals": 18
+    }
+  ],
+  "optimism": [
+    {
+      "address": "0x0000000000000000000000000000000000000000",
+      "symbol": "ETH",
+      "coingeckoId": null,
+      "decimals": 18
+    }
+  ],
+  "rinkeby": [
+    {
+      "address": "0x0000000000000000000000000000000000000000",
+      "symbol": "ETH",
+      "coingeckoId": null,
       "decimals": 18
     }
   ]
