@@ -242,7 +242,8 @@ const contracts = [
     network: 'ethereum',
     addr: '0x7Be8076f4EA4A4AD08075C2508e481d6C946D12b',
     abiName: 'WyvernExchange'
-  }
+  },
+  { name: 'Gas Tank', addr: '0x942f9CE5D9a33a82F88D233AEb3292E680230348' }
 ]
 const tokenlists = [
   'https://github.com/trustwallet/assets/raw/master/blockchains/ethereum/tokenlist.json',
