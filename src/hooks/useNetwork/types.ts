@@ -1,9 +1,9 @@
 import { NetworkId, NetworkType } from '../../constants/networks'
-import { UseStorageProps, UseStorageReturnType } from '../useStorage'
+import { UseStorageType } from '../useStorage'
 
 export type UseNetworkProps = {
   defaultNetwork: NetworkId
-  useStorage: (p: Omit<UseStorageProps, 'storage'>) => UseStorageReturnType
+  useStorage: UseStorageType
 }
 
 export type UseNetworkReturnType = {

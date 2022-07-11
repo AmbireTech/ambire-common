@@ -3,7 +3,7 @@
 import { NETWORKS } from 'constants/networks'
 import { SupportedProtocolType } from 'constants/supportedProtocols'
 
-import { UseStorageProps, UseStorageReturnType } from '../useStorage'
+import { UseStorageType } from '../useStorage'
 import { UseToastsReturnType } from '../useToasts'
 
 export type Token = {
@@ -52,7 +52,7 @@ export type Protocols = {
 export type UsePortfolioProps = {
   currentNetwork: Network
   account: string
-  useStorage: (p: Omit<UseStorageProps, 'storage'>) => UseStorageReturnType
+  useStorage: UseStorageType
   isVisible: boolean
   useToasts: () => UseToastsReturnType
   getBalances: (

@@ -1,8 +1,8 @@
-import { UseStorageProps, UseStorageReturnType } from '../useStorage'
+import { UseStorageType } from '../useStorage'
 
 export type UseGasTankProps = {
   selectedAcc: string
-  useStorage: (p: Omit<UseStorageProps, 'storage'>) => UseStorageReturnType
+  useStorage: UseStorageType
 }
 
 export type GasTankEntryType = {
