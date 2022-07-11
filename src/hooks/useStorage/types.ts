@@ -9,7 +9,7 @@ export type UseStorageProps<ValueType> = {
   key: string
   defaultValue?: ValueType | null
   isStringStorage?: boolean
-  setInit?: (item: ValueType | null | string) => ValueType
+  setInit?: (item: ValueType | null) => ValueType
 }
 
 export type UseStorageReturnType<ValueType> = [ValueType, (item: ValueType) => void, () => void]
