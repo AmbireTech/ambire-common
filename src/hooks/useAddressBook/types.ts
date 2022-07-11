@@ -1,5 +1,5 @@
 import { UseAccountsReturnType } from '../useAccounts'
-import { UseStorageProps, UseStorageReturnType } from '../useStorage'
+import { UseStorageType } from '../useStorage'
 import { UseToastsReturnType } from '../useToasts'
 
 export type Address = {
@@ -10,7 +10,7 @@ export type Address = {
 
 export interface UseAddressBookProps {
   useAccounts: () => UseAccountsReturnType
-  useStorage: (p: Omit<UseStorageProps, 'storage'>) => UseStorageReturnType
+  useStorage: UseStorageType
   useToasts: () => UseToastsReturnType
 }
 

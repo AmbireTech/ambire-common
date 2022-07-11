@@ -1,8 +1,11 @@
 {
-  "version": "0.8.3",
+  "version": "0.9.0",
   "name": "ambire-common",
   "description": "Common ground for the Ambire apps",
   "private": true,
+  "scripts": {
+    "generate:contractInfo": "node scripts/generateContractInfo.js > src/constants/humanizerInfo.json"
+  },
   "peerDependencies": {
     "@unstoppabledomains/resolution": "^7.1.4",
     "@walletconnect/client": "^1.7.1",
@@ -27,6 +30,8 @@
     "eslint-plugin-react": "7.27.1",
     "eslint-plugin-react-hooks": "4.3.0",
     "prettier": "2.5.0",
-    "typescript": "~4.3.5"
+    "typescript": "~4.3.5",
+    "node-fetch": "^2.3.0",
+    "adex-protocol-eth": "git+https://git@github.com/AmbireTech/adex-protocol-eth.git#ef2f88f26824c64c1eb12c02a389baec2b2c3889"
   }
 }

@@ -1,11 +1,11 @@
 import { UseAccountsReturnType } from '../useAccounts'
 import { UseNetworkReturnType } from '../useNetwork'
-import { UseStorageProps, UseStorageReturnType } from '../useStorage'
+import { UseStorageType } from '../useStorage'
 import { UseToastsReturnType } from '../useToasts'
 
 export type UseWalletConnectProps = {
   useAccounts: () => UseAccountsReturnType
-  useStorage: (p: Omit<UseStorageProps, 'storage'>) => UseStorageReturnType
+  useStorage: UseStorageType
   useToasts: () => UseToastsReturnType
   useNetwork: () => UseNetworkReturnType
   clearWcClipboard?: () => void

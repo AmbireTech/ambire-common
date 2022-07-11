@@ -1,4 +1,4 @@
-import { UseStorageProps, UseStorageReturnType } from '../useStorage'
+import { UseStorageType } from '../useStorage'
 import { UseToastsReturnType } from '../useToasts'
 
 export type OnAddAccountOptions = {
@@ -28,7 +28,7 @@ export type Account = {
 export interface UseAccountsProps {
   onAdd: (opts: OnAddAccountOptions) => void
   onRemoveLastAccount: () => void
-  useStorage: (p: Omit<UseStorageProps, 'storage'>) => UseStorageReturnType
+  useStorage: UseStorageType
   useToasts: () => UseToastsReturnType
 }
 
