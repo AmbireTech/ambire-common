@@ -13,3 +13,7 @@ export type UseStorageProps<ValueType> = {
 }
 
 export type UseStorageReturnType<ValueType> = [ValueType, (item: ValueType) => void, () => void]
+
+export type UseStorageType = <ValueType>(
+  p: Omit<UseStorageProps<ValueType>, 'storage'>
+) => UseStorageReturnType<ValueType>

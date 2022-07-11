@@ -1,7 +1,7 @@
-import { UseStorageProps, UseStorageReturnType } from '../useStorage'
+import { UseStorageType } from '../useStorage'
 
 export type UsePrivateModeProps = {
-  useStorage: (p: Omit<UseStorageProps, 'storage'>) => UseStorageReturnType
+  useStorage: UseStorageType
 }
 
 export type UsePrivateModeReturnType = {

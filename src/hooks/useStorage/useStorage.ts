@@ -2,7 +2,7 @@ import { useCallback, useState } from 'react'
 
 import { UseStorageProps, UseStorageReturnType } from './types'
 
-const setInitDefault = (item: any): any => item
+const setInitDefault = <ValueType>(item: ValueType): ValueType => item
 
 /**
  * The main role of this hook is to hide the Storage provider we are using under the hood (AsyncStorage/localStorage).
@@ -24,8 +24,12 @@ export default function useStorage<ValueType>({
 }: UseStorageProps<ValueType>): UseStorageReturnType<ValueType | null> {
   const [item, set] = useState<ValueType | null>(() => {
     // In case the item is not set in the storage, we just fall back to `defaultValue`
+    // @ts-ignore FIXME: figure out how to use better type for `setInit`,
+    // so that TypeScript doesn't complain
     if (!storage.getItem(key)) return setInit(defaultValue)
 
+    // @ts-ignore FIXME: figure out how to use better type for `setInit`,
+    // so that TypeScript doesn't complain
     if (isStringStorage) return setInit(storage.getItem(key))
 
     // Here we are going to keep the parsed item value.
