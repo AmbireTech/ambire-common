@@ -4,13 +4,22 @@ export interface UseCacheBreakReturnType {
   cacheBreak: number
 }
 
+type UseCacheBreakProps = {
+  breakPoint: number
+  refreshInterval: number
+}
+
 export default function useCacheBreak(
-  breakPoint: number = 5000,
-  refreshInterval: number = 30000
+  props: UseCacheBreakProps = {
+    breakPoint: 5000,
+    refreshInterval: 30000
+  }
 ): UseCacheBreakReturnType {
   const [cacheBreak, setCacheBreak] = useState(() => Date.now())
 
   useEffect(() => {
+    const { breakPoint, refreshInterval } = props
+
     if (Date.now() - cacheBreak > breakPoint) setCacheBreak(Date.now())
     const intvl = setTimeout(() => setCacheBreak(Date.now()), refreshInterval)
 
