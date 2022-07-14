@@ -20,6 +20,7 @@ export default function useStorage<ValueType>({
   key,
   defaultValue = null,
   isStringStorage = false,
+  // @ts-ignore FIXME: Figure out why TypeScript complains
   setInit = setInitDefault
 }: UseStorageProps<ValueType>): UseStorageReturnType<ValueType | null> {
   const [item, set] = useState<ValueType | null>(() => {

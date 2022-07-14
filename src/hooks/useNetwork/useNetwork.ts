@@ -11,6 +11,7 @@ export default function useNetwork({
     key: 'network',
     defaultValue: defaultNetwork,
     isStringStorage: true,
+    // @ts-ignore FIXME: Figure out why TypeScript complains
     setInit: (_networkId: NetworkType['id']) =>
       networks.find((n) => n.id === _networkId) ? _networkId : defaultNetwork
   })
