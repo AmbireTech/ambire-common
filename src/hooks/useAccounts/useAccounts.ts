@@ -5,6 +5,7 @@ import { Account, OnAddAccountOptions, UseAccountsProps, UseAccountsReturnType }
 export default function useAccounts({
   onAdd,
   onRemoveLastAccount,
+  onRemoveAccountWithoutBackingItUp = () => {},
   useStorage,
   useToasts
 }: UseAccountsProps): UseAccountsReturnType {
@@ -88,8 +89,9 @@ export default function useAccounts({
       if (account && account.email && account.cloudBackupOptout && !account.downloadedBackup) {
         addToast(
           'You have opted out of Ambire Cloud Backup. Please backup your account before logging out.',
-          { error: true, route: '/wallet/security' }
+          { error: true }
         )
+        onRemoveAccountWithoutBackingItUp()
 
         return
       }
