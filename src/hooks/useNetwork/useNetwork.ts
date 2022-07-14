@@ -32,7 +32,6 @@ export default function useNetwork({
 
   return {
     setNetwork,
-    network: networks.find((n) => n.id === networkId),
-    allNetworks: networks
+    network: networks.find((n) => n.id === networkId)
   }
 }
