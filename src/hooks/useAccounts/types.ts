@@ -30,6 +30,7 @@ export type Account = {
 export interface UseAccountsProps {
   onAdd: (opts: OnAddAccountOptions) => void
   onRemoveLastAccount: () => void
+  onRemoveAccountWithoutBackingItUp?: () => void
   useStorage: UseStorageType
   useToasts: () => UseToastsReturnType
 }
