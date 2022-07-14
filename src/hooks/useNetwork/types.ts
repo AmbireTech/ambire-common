@@ -4,6 +4,7 @@ import { UseStorageType } from '../useStorage'
 export type UseNetworkProps = {
   defaultNetwork: NetworkId
   useStorage: UseStorageType
+  allNetworks: NetworkType[]
 }
 
 export type UseNetworkReturnType = {

@@ -5,19 +5,20 @@ import { UseNetworkProps, UseNetworkReturnType } from './types'
 
 export default function useNetwork({
   defaultNetwork = NETWORKS.ethereum,
-  useStorage
+  useStorage,
+  allNetworks = networks
 }: UseNetworkProps): UseNetworkReturnType {
   const [networkId, setNetworkId] = useStorage({
     key: 'network',
     defaultValue: defaultNetwork,
     isStringStorage: true,
     setInit: (_networkId: NetworkType['id']) =>
-      networks.find((n) => n.id === _networkId) ? _networkId : defaultNetwork
+      allNetworks.find((n) => n.id === _networkId) ? _networkId : defaultNetwork
   })
 
   const setNetwork = useCallback(
     (networkIdentifier: string | number) => {
-      const network = networks.find(
+      const network = allNetworks.find(
         (n) =>
           n.id === networkIdentifier ||
           n.name === networkIdentifier ||
@@ -32,7 +33,7 @@ export default function useNetwork({
 
   return {
     setNetwork,
-    network: networks.find((n) => n.id === networkId),
-    allNetworks: networks
+    network: allNetworks.find((n) => n.id === networkId),
+    allNetworks
   }
 }
