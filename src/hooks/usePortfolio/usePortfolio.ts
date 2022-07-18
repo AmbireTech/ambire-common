@@ -5,6 +5,7 @@ import supportedProtocols from '../../constants/supportedProtocols'
 import { checkTokenList, getTokenListBalance, tokenList } from '../../services/balanceOracle'
 import { roundFloatingNumber } from '../../services/formatter'
 import { setKnownAddresses, setKnownTokens } from '../../services/humanReadableTransactions'
+import usePrevious from '../usePrevious'
 import { Network, Token, UsePortfolioProps, UsePortfolioReturnType } from './types'
 
 let lastOtherProtocolsRefresh: number = 0
@@ -92,6 +93,7 @@ export default function usePortfolio({
   const { addToast } = useToasts()
   const rpcTokensLastUpdated = useRef<number>(0)
   const currentAccount = useRef<string>()
+  const prevNetwork = usePrevious(currentNetwork)
   const [balancesByNetworksLoading, setBalancesByNetworksLoading] = useState<{
     [key in Network]: boolean
   }>({})
@@ -399,15 +401,18 @@ export default function usePortfolio({
     [addToast]
   )
 
-  const refreshTokensIfVisible = useCallback(
-    (showLoadingState = false) => {
-      if (!account) return
-      if (isVisible && !areAllNetworksBalancesLoading())
-        fetchTokens(account, currentNetwork, showLoadingState, tokensByNetworks)
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    },
-    [account, fetchTokens, currentNetwork, isVisible]
-  )
+  const refreshTokensIfVisible = useCallback(() => {
+    if (!account) return
+    if (isVisible && !areAllNetworksBalancesLoading()) {
+      // Show loading only when switching between networks,
+      // since showing it always when tokens are fetched is annoying
+      // taking into consideration that refreshing happens automatically
+      // on a certain interval or when user window (app) gets back in focus.
+      const showLoadingState = prevNetwork !== currentNetwork
+
+      fetchTokens(account, currentNetwork, showLoadingState, tokensByNetworks)
+    }
+  }, [account, fetchTokens, currentNetwork, isVisible])
 
   const requestOtherProtocolsRefresh = async () => {
     if (!account) return
@@ -614,9 +619,9 @@ export default function usePortfolio({
     rpcTokensLastUpdated.current = 0
   }, [currentNetwork])
 
-  // Refresh tokens on network change and when window is focused
+  // Refresh tokens on network change or when the window (app) is considered to be visible to the user
   useEffect(() => {
-    refreshTokensIfVisible(true)
+    refreshTokensIfVisible()
   }, [currentNetwork, isVisible, refreshTokensIfVisible])
 
   // Refresh balance every 90s if visible
@@ -660,8 +665,7 @@ export default function usePortfolio({
     otherProtocolsByNetworksLoading,
     isCurrNetworkProtocolsLoading: otherProtocolsByNetworksLoading[currentNetwork],
     loadBalance,
-    loadProtocols,
-    refreshTokensIfVisible
+    loadProtocols
     // updatePortfolio//TODO find a non dirty way to be able to reply to getSafeBalances from the dapps, after the first refresh
   }
 }
