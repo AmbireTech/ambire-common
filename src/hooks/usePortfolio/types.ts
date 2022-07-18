@@ -87,4 +87,5 @@ export type UsePortfolioReturnType = {
   isCurrNetworkProtocolsLoading: boolean
   loadBalance: () => void
   loadProtocols: () => void
+  refreshTokensIfVisible: () => void
 }

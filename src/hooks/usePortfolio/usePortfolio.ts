@@ -660,7 +660,8 @@ export default function usePortfolio({
     otherProtocolsByNetworksLoading,
     isCurrNetworkProtocolsLoading: otherProtocolsByNetworksLoading[currentNetwork],
     loadBalance,
-    loadProtocols
+    loadProtocols,
+    refreshTokensIfVisible
     // updatePortfolio//TODO find a non dirty way to be able to reply to getSafeBalances from the dapps, after the first refresh
   }
 }
