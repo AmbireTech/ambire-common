@@ -31,7 +31,7 @@ const approveToken = async (
         data: ERC20Interface.encodeFunctionData('approve', [address, bigNumberHexAmount])
       })
     }
-  } catch (e) {
+  } catch (e: any) {
     console.error(e)
     addToast(`${scope} Approve Error: ${e.message || e}`, { error: true })
   }
