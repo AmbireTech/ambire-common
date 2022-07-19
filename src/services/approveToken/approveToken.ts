@@ -1,7 +1,9 @@
-// TODO: add types
-
 import ERC20ABI from 'adex-protocol-eth/abi/ERC20.json'
-import { constants, Contract } from 'ethers'
+import { NetworkId } from 'ambire-common/src/constants/networks'
+import { Account } from 'ambire-common/src/hooks/useAccounts'
+import { Token } from 'ambire-common/src/hooks/usePortfolio'
+import { UseToastsReturnType } from 'ambire-common/src/hooks/useToasts'
+import { BigNumber, constants, Contract } from 'ethers'
 import { Interface } from 'ethers/lib/utils'
 
 import { getProvider } from '../provider'
@@ -9,14 +11,14 @@ import { getProvider } from '../provider'
 const ERC20Interface = new Interface(ERC20ABI)
 
 const approveToken = async (
-  scope: any,
-  networkId: string | number,
-  accountId: string | number,
+  scope: string,
+  networkId: NetworkId,
+  accountId: Account['id'],
   address: string,
-  tokenAddress: string,
-  addRequestTxn: any,
-  addToast: any,
-  bigNumberHexAmount: any = constants.MaxUint256
+  tokenAddress: Token['address'],
+  addRequestTxn: any, // TODO: add type
+  addToast: UseToastsReturnType['addToast'],
+  bigNumberHexAmount: BigNumber = constants.MaxUint256
 ) => {
   try {
     const prefixId = scope.toLowerCase().replace(/' '/g, '_')
