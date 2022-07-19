@@ -77,9 +77,10 @@ async function getTokenListBalance({
   const result = await call({ walletAddr, tokens, network })
   if (result.success) {
     const newBalance = tokens.map((t) => {
-      // @ts-ignore TODO: Check if `result.data` is string
+      // @ts-ignore `result.data` is string only when `result.success` is `false`
+      // So `result.data.filter` should always work just fine in this scope.
       const newTokenBalance = result.data.filter(
-        (r) => r.address === t.address && parseFloat(r.balance) > 0
+        (r: Token) => r.address === t.address && parseFloat(r.balance) > 0
       )[0]
       return newTokenBalance
         ? {
