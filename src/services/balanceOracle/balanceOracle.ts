@@ -130,7 +130,7 @@ async function getErrMsg(provider: any, txParams: any, blockTag: any) {
     return returnData.startsWith(ERROR_SIG)
       ? new AbiCoder().decode(['string'], `0x${returnData.slice(10)}`)[0]
       : returnData
-  } catch (e) {
+  } catch (e: any) {
     // weird infura case
     if (e.code === 'UNPREDICTABLE_GAS_LIMIT' && e.error) return e.error.message.slice(20)
     if (e.code === 'CALL_EXCEPTION')
