@@ -16,7 +16,7 @@ const approveToken = async (
   accountId: Account['id'],
   address: string,
   tokenAddress: Token['address'],
-  addRequestTxn: any, // TODO: add type
+  addRequestTxn: (id: string, txn: { to: string; value: string; data: string }) => any,
   addToast: UseToastsReturnType['addToast'],
   bigNumberHexAmount: BigNumber = constants.MaxUint256
 ) => {
@@ -34,7 +34,6 @@ const approveToken = async (
       })
     }
   } catch (e: any) {
-    console.error(e)
     addToast(`${scope} Approve Error: ${e.message || e}`, { error: true })
   }
 }
