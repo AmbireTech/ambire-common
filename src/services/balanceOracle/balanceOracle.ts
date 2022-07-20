@@ -13,6 +13,15 @@ const SPOOFER = '0x0000000000000000000000000000000000000001'
 const blockTag = 'pending'
 const remainingBalancesOracleAddr = '0xF1628de74193Dde3Eed716aB0Ef31Ca2b6347eB1'
 
+// Signature of Error(string)
+const ERROR_SIG = '0x08c379a0'
+// Signature of Panic(uint256)
+const PANIC_SIG = '0x4e487b71'
+
+function isErr(hex: string) {
+  return hex.startsWith(ERROR_SIG) || hex.startsWith(PANIC_SIG)
+}
+
 // ToDo check for missing data and double check for incompleted returns
 async function call({
   walletAddr,
@@ -110,22 +119,13 @@ async function getTokenListBalance({
   return tokens
 }
 
-// Signature of Error(string)
-const ERROR_SIG = '0x08c379a0'
-// Signature of Panic(uint256)
-const PANIC_SIG = '0x4e487b71'
-
-function isErr(hex: string) {
-  return hex.startsWith(ERROR_SIG) || hex.startsWith(PANIC_SIG)
-}
-
 // TODO: Fill in missing types
-async function getErrMsg(provider: any, txParams: any, blockTag: any) {
+async function getErrMsg(provider: any, txParams: any, _blockTag: any) {
   // .call always returisErrns a hex string with ethers
   try {
     // uncomment if you need HEVM debugging
-    // console.log(`hevm exec --caller ${txParams.from} --address ${txParams.to} --calldata ${txParams.data} --gas 1000000 --debug --rpc ${provider.connection.rpc} ${!isNaN(blockTag) && blockTag ? '--block '+blockTag : ''}`)
-    const returnData = await provider.call(txParams, blockTag)
+    // console.log(`hevm exec --caller ${txParams.from} --address ${txParams.to} --calldata ${txParams.data} --gas 1000000 --debug --rpc ${provider.connection.rpc} ${!isNaN(_blockTag) && _blockTag ? '--block '+_blockTag : ''}`)
+    const returnData = await provider.call(txParams, _blockTag)
     if (returnData.startsWith(PANIC_SIG)) return returnData.slice(10)
     return returnData.startsWith(ERROR_SIG)
       ? new AbiCoder().decode(['string'], `0x${returnData.slice(10)}`)[0]
