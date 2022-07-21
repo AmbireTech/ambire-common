@@ -1,3 +1,4 @@
+// @ts-nocheck TODO: Fill in all missing types before enabling the TS check again
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import networks, { NetworkId } from '../../constants/networks'
