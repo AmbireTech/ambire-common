@@ -1,12 +1,19 @@
+// @ts-nocheck TODO: Fill in all missing types before enabling the TS check again
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-import networks from '../../constants/networks'
+import networks, { NetworkId } from '../../constants/networks'
 import supportedProtocols from '../../constants/supportedProtocols'
 import { checkTokenList, getTokenListBalance, tokenList } from '../../services/balanceOracle'
 import { roundFloatingNumber } from '../../services/formatter'
 import { setKnownAddresses, setKnownTokens } from '../../services/humanReadableTransactions'
 import usePrevious from '../usePrevious'
-import { Network, Token, UsePortfolioProps, UsePortfolioReturnType } from './types'
+import {
+  Network,
+  Token,
+  TokenWithIsHiddenFlag,
+  UsePortfolioProps,
+  UsePortfolioReturnType
+} from './types'
 
 let lastOtherProtocolsRefresh: number = 0
 
@@ -21,7 +28,7 @@ function paginateArray(input: any[], limit: number) {
   return pages
 }
 
-const filterByHiddenTokens = (tokens: Token[], hiddenTokens: Token[]) => {
+const filterByHiddenTokens = (tokens: Token[], hiddenTokens: TokenWithIsHiddenFlag[]) => {
   return tokens
     .map((t) => {
       return hiddenTokens.find((ht) => t.address === ht.address) || { ...t, isHidden: false }
@@ -42,7 +49,7 @@ async function supplementTokensDataFromNetwork({
   tokensData: Token[]
   extraTokens: Token[]
   updateBalance?: string
-  hiddenTokens: Token[]
+  hiddenTokens: TokenWithIsHiddenFlag[]
 }) {
   if (!walletAddr || walletAddr === '' || !network) return []
   // eslint-disable-next-line no-param-reassign
@@ -52,6 +59,7 @@ async function supplementTokensDataFromNetwork({
 
   // concat predefined token list with extraTokens list (extraTokens are certainly ERC20)
   const fullTokenList = [
+    // @ts-ignore figure out how to add types for the `tokenList`
     ...new Set(tokenList[network] ? tokenList[network].concat(extraTokens) : [...extraTokens])
   ]
   const tokens = fullTokenList.map((t: any) => {
@@ -128,7 +136,7 @@ export default function usePortfolio({
   )
 
   const getExtraTokensAssets = useCallback(
-    (account, network) =>
+    (account: string, network: NetworkId) =>
       extraTokens
         .filter((extra: Token) => extra.account === account && extra.network === network)
         .map((extraToken: Token) => ({
@@ -142,7 +150,7 @@ export default function usePortfolio({
   )
 
   const fetchSupplementTokenData = useCallback(
-    async (updatedTokens) => {
+    async (updatedTokens: any[]) => {
       const currentNetworkTokens = updatedTokens.find(
         ({ network }: Token) => network === currentNetwork
       ) || { network: currentNetwork, meta: [], assets: [] }
@@ -157,7 +165,9 @@ export default function usePortfolio({
           walletAddr: account,
           network: currentNetwork,
           tokensData: currentNetworkTokens
-            ? currentNetworkTokens.assets.filter(({ isExtraToken }) => !isExtraToken)
+            ? currentNetworkTokens.assets.filter(
+                ({ isExtraToken }: { isExtraToken: boolean }) => !isExtraToken
+              )
             : [], // Filter out extraTokens
           extraTokens: extraTokensAssets,
           hiddenTokens
@@ -186,7 +196,12 @@ export default function usePortfolio({
 
   const fetchTokens = useCallback(
     // eslint-disable-next-line default-param-last
-    async (account, currentNetwork = false, showLoadingState = false, tokensByNetworks = []) => {
+    async (
+      account: string,
+      currentNetwork: NetworkId,
+      showLoadingState = false,
+      tokensByNetworks = []
+    ) => {
       // Prevent race conditions
       if (currentAccount.current !== account) return
 
@@ -225,9 +240,9 @@ export default function usePortfolio({
                 const extraTokensAssets = getExtraTokensAssets(account, network) // Add user added extra token to handle
                 let assets = [
                   ...products
-                    .map(({ assets }) =>
-                      assets.map(({ tokens }) =>
-                        tokens.map((token) => ({
+                    .map(({ assets }: any) =>
+                      assets.map(({ tokens }: any) =>
+                        tokens.map((token: any) => ({
                           ...token,
                           // balanceOracle fixes the number to the 10 decimal places, so here we should also fix it
                           balance: Number(token.balance.toFixed(10)),
@@ -270,7 +285,7 @@ export default function usePortfolio({
           return (networkTokens.assets = filterByHiddenTokens(networkTokens.assets, hiddenTokens))
         })
 
-        const updatedNetworks = updatedTokens.map(({ network }) => network)
+        const updatedNetworks = updatedTokens.map(({ network }: any) => network)
 
         // Prevent race conditions
         if (currentAccount.current !== account) return
@@ -284,7 +299,7 @@ export default function usePortfolio({
 
         if (failedRequests >= requestsCount) throw new Error('Failed to fetch Tokens from API')
         return true
-      } catch (error) {
+      } catch (error: any) {
         console.error(error)
         addToast(error.message, { error: true })
         // In case of error set all loading indicators to false
