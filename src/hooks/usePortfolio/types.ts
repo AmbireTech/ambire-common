@@ -18,6 +18,12 @@ export type Token = {
   tokenImageUrl: string
 }
 
+// TODO: Temporary type. Token doesn't always have this flag.
+// Figure out in which use-cases it's needed.
+export interface TokenWithIsHiddenFlag extends Token {
+  isHidden: boolean
+}
+
 type Network = keyof typeof NETWORKS
 
 export type Balance = {
