@@ -5,11 +5,12 @@ import { Account, OnAddAccountOptions, UseAccountsProps, UseAccountsReturnType }
 export default function useAccounts({
   onAdd,
   onRemoveLastAccount,
+  onRemoveAccountWithoutBackingItUp = () => {},
   useStorage,
   useToasts
 }: UseAccountsProps): UseAccountsReturnType {
   const { addToast } = useToasts()
-  const [accounts, setAccounts] = useStorage({
+  const [accounts, setAccounts] = useStorage<Account[]>({
     key: 'accounts',
     defaultValue: [],
     setInit: (initialAccounts) => {
@@ -22,7 +23,7 @@ export default function useAccounts({
       return initialAccounts
     }
   })
-  const [selectedAcc, setSelectedAcc] = useStorage({
+  const [selectedAcc, setSelectedAcc] = useStorage<string>({
     key: 'selectedAcc',
     defaultValue: '',
     isStringStorage: true,
@@ -36,7 +37,7 @@ export default function useAccounts({
   })
 
   const onSelectAcc = useCallback(
-    (selected) => {
+    (selected: Account['id']) => {
       setSelectedAcc(selected)
     },
     [setSelectedAcc]
@@ -65,7 +66,7 @@ export default function useAccounts({
         )
       }
 
-      const existingIdx = accounts.indexOf(existing)
+      const existingIdx = existing ? accounts.indexOf(existing) : -1
       if (existingIdx === -1) accounts.push(acc)
       else accounts[existingIdx] = acc
 
@@ -81,15 +82,19 @@ export default function useAccounts({
   )
 
   const onRemoveAccount = useCallback(
-    (id) => {
+    (id: Account['id']) => {
       if (!id) throw new Error('account: internal err: missing ID/Address')
 
       const account = accounts.find((account: Account) => account.id === id)
-      if (account && account.email && account.cloudBackupOptout && !account.downloadedBackup)
-        return addToast(
+      if (account && account.email && account.cloudBackupOptout && !account.downloadedBackup) {
+        addToast(
           'You have opted out of Ambire Cloud Backup. Please backup your account before logging out.',
-          { error: true, route: '/wallet/security' }
+          { error: true }
         )
+        onRemoveAccountWithoutBackingItUp()
+
+        return
+      }
 
       const clearedAccounts = accounts.filter((account: Account) => account.id !== id)
       setAccounts([...clearedAccounts])
@@ -102,7 +107,7 @@ export default function useAccounts({
     [accounts, onSelectAcc, addToast, onRemoveLastAccount, setAccounts, setSelectedAcc]
   )
 
-  const account: Account = useMemo(
+  const account: Account | {} = useMemo(
     () => accounts.find((x: Account) => x.id === selectedAcc) || {},
     [selectedAcc, accounts]
   )

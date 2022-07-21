@@ -23,11 +23,14 @@ export type Account = {
     // Sometimes passed as an extra prop
     address?: string
   }
+  cloudBackupOptout?: boolean
+  downloadedBackup?: boolean
 }
 
 export interface UseAccountsProps {
   onAdd: (opts: OnAddAccountOptions) => void
   onRemoveLastAccount: () => void
+  onRemoveAccountWithoutBackingItUp?: () => void
   useStorage: UseStorageType
   useToasts: () => UseToastsReturnType
 }

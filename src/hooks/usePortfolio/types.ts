@@ -1,8 +1,7 @@
 // TODO: fill in the collectibles types
 
-import { NETWORKS } from 'constants/networks'
-import { SupportedProtocolType } from 'constants/supportedProtocols'
-
+import { NETWORKS } from '../../constants/networks'
+import { SupportedProtocolType } from '../../constants/supportedProtocols'
 import { UseStorageType } from '../useStorage'
 import { UseToastsReturnType } from '../useToasts'
 
@@ -18,7 +17,13 @@ export type Token = {
   tokenImageUrl: string
 }
 
-type Network = keyof typeof NETWORKS
+// TODO: Temporary type. Token doesn't always have this flag.
+// Figure out in which use-cases it's needed.
+export interface TokenWithIsHiddenFlag extends Token {
+  isHidden: boolean
+}
+
+export type Network = keyof typeof NETWORKS
 
 export type Balance = {
   network: Network

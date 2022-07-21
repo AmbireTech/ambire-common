@@ -1,4 +1,8 @@
-export function formatFloatTokenAmount(amount, useGrouping = true, maximumFractionDigits = 18) {
+export function formatFloatTokenAmount(
+  amount: any,
+  useGrouping = true,
+  maximumFractionDigits = 18
+) {
   if (
     Number.isNaN(amount) ||
     Number.isNaN(parseFloat(amount)) ||
@@ -20,7 +24,7 @@ export function formatFloatTokenAmount(amount, useGrouping = true, maximumFracti
 }
 
 // Round a floating point number to a specific decimal places, i.e. 1.156 => 1.16
-export function roundFloatingNumber(number, places = 2) {
+export function roundFloatingNumber(number: number, places = 2) {
   const decimals = 10 ** places
 
   return Math.round((number + Number.EPSILON) * decimals) / decimals

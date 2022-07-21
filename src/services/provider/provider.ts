@@ -2,13 +2,13 @@
 
 import { providers } from 'ethers'
 
-import networks from '../../constants/networks'
+import networks, { NetworkId } from '../../constants/networks'
 
 // Cache provider instances by a network id
 // For instance: { 'ethereum': new providers.StaticJsonRpcProvider }
 const providersByNetwork = {}
 
-export function getProvider(networkId: any) {
+export function getProvider(networkId: NetworkId) {
   const network = networks.find(({ id }) => id === networkId)
   if (!network) throw new Error(`getProvider called with non-existent network: ${networkId}`)
 

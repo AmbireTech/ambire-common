@@ -1,7 +1,9 @@
 import oracle from 'adex-protocol-eth/abi/RemainingBalancesOracle.json'
 import { ethers } from 'ethers'
 
+import { NetworkId } from '../../constants/networks'
 import tokenList from '../../constants/tokenList.json'
+import { Token, TokenWithIsHiddenFlag } from '../../hooks/usePortfolio'
 import { getTokenIcon } from '../icons'
 import { getProvider } from '../provider'
 
@@ -11,8 +13,25 @@ const SPOOFER = '0x0000000000000000000000000000000000000001'
 const blockTag = 'pending'
 const remainingBalancesOracleAddr = '0xF1628de74193Dde3Eed716aB0Ef31Ca2b6347eB1'
 
+// Signature of Error(string)
+const ERROR_SIG = '0x08c379a0'
+// Signature of Panic(uint256)
+const PANIC_SIG = '0x4e487b71'
+
+function isErr(hex: string) {
+  return hex.startsWith(ERROR_SIG) || hex.startsWith(PANIC_SIG)
+}
+
 // ToDo check for missing data and double check for incompleted returns
-async function call({ walletAddr, tokens, network }) {
+async function call({
+  walletAddr,
+  tokens,
+  network
+}: {
+  walletAddr: string
+  tokens: Token[]
+  network: NetworkId
+}) {
   if (!isAddress(walletAddr))
     return { success: false, data: walletAddr, message: 'Wallet address is not valide eth address' }
   const provider = getProvider(network)
@@ -53,12 +72,24 @@ async function call({ walletAddr, tokens, network }) {
   return { success: true, data: result }
 }
 
-async function getTokenListBalance({ walletAddr, tokens, network, updateBalance }) {
+async function getTokenListBalance({
+  walletAddr,
+  tokens,
+  network,
+  updateBalance
+}: {
+  walletAddr: string
+  tokens: TokenWithIsHiddenFlag[]
+  network: NetworkId
+  updateBalance: (token: Token | {}) => any
+}) {
   const result = await call({ walletAddr, tokens, network })
   if (result.success) {
     const newBalance = tokens.map((t) => {
+      // @ts-ignore `result.data` is string only when `result.success` is `false`
+      // So `result.data.filter` should always work just fine in this scope.
       const newTokenBalance = result.data.filter(
-        (r) => r.address === t.address && parseFloat(r.balance) > 0
+        (r: Token) => r.address === t.address && parseFloat(r.balance) > 0
       )[0]
       return newTokenBalance
         ? {
@@ -72,6 +103,7 @@ async function getTokenListBalance({ walletAddr, tokens, network, updateBalance 
             balanceRaw: newTokenBalance.balanceRaw,
             updateAt: new Date().toString(),
             balanceUSD: Number(
+              // @ts-ignore not sure why a TS warn happens
               parseFloat(newTokenBalance.price * newTokenBalance.balance || 0).toFixed(2)
             ),
             tokenImageUrl:
@@ -87,26 +119,18 @@ async function getTokenListBalance({ walletAddr, tokens, network, updateBalance 
   return tokens
 }
 
-// Signature of Error(string)
-const ERROR_SIG = '0x08c379a0'
-// Signature of Panic(uint256)
-const PANIC_SIG = '0x4e487b71'
-
-function isErr(hex) {
-  return hex.startsWith(ERROR_SIG) || hex.startsWith(PANIC_SIG)
-}
-
-async function getErrMsg(provider, txParams, blockTag) {
+// TODO: Fill in missing types
+async function getErrMsg(provider: any, txParams: any, _blockTag: any) {
   // .call always returisErrns a hex string with ethers
   try {
     // uncomment if you need HEVM debugging
-    // console.log(`hevm exec --caller ${txParams.from} --address ${txParams.to} --calldata ${txParams.data} --gas 1000000 --debug --rpc ${provider.connection.rpc} ${!isNaN(blockTag) && blockTag ? '--block '+blockTag : ''}`)
-    const returnData = await provider.call(txParams, blockTag)
+    // console.log(`hevm exec --caller ${txParams.from} --address ${txParams.to} --calldata ${txParams.data} --gas 1000000 --debug --rpc ${provider.connection.rpc} ${!isNaN(_blockTag) && _blockTag ? '--block '+_blockTag : ''}`)
+    const returnData = await provider.call(txParams, _blockTag)
     if (returnData.startsWith(PANIC_SIG)) return returnData.slice(10)
     return returnData.startsWith(ERROR_SIG)
       ? new AbiCoder().decode(['string'], `0x${returnData.slice(10)}`)[0]
       : returnData
-  } catch (e) {
+  } catch (e: any) {
     // weird infura case
     if (e.code === 'UNPREDICTABLE_GAS_LIMIT' && e.error) return e.error.message.slice(20)
     if (e.code === 'CALL_EXCEPTION')
@@ -116,7 +140,7 @@ async function getErrMsg(provider, txParams, blockTag) {
   }
 }
 
-function checkTokenList(list) {
+function checkTokenList(list: Token[]) {
   return list.filter((t) => {
     return isAddress(t.address)
   })
