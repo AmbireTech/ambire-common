@@ -6,7 +6,13 @@ import { checkTokenList, getTokenListBalance, tokenList } from '../../services/b
 import { roundFloatingNumber } from '../../services/formatter'
 import { setKnownAddresses, setKnownTokens } from '../../services/humanReadableTransactions'
 import usePrevious from '../usePrevious'
-import { Network, Token, UsePortfolioProps, UsePortfolioReturnType } from './types'
+import {
+  Network,
+  Token,
+  TokenWithIsHiddenFlag,
+  UsePortfolioProps,
+  UsePortfolioReturnType
+} from './types'
 
 let lastOtherProtocolsRefresh: number = 0
 
@@ -21,7 +27,7 @@ function paginateArray(input: any[], limit: number) {
   return pages
 }
 
-const filterByHiddenTokens = (tokens: Token[], hiddenTokens: Token[]) => {
+const filterByHiddenTokens = (tokens: Token[], hiddenTokens: TokenWithIsHiddenFlag[]) => {
   return tokens
     .map((t) => {
       return hiddenTokens.find((ht) => t.address === ht.address) || { ...t, isHidden: false }
@@ -42,7 +48,7 @@ async function supplementTokensDataFromNetwork({
   tokensData: Token[]
   extraTokens: Token[]
   updateBalance?: string
-  hiddenTokens: Token[]
+  hiddenTokens: TokenWithIsHiddenFlag[]
 }) {
   if (!walletAddr || walletAddr === '' || !network) return []
   // eslint-disable-next-line no-param-reassign
@@ -52,6 +58,7 @@ async function supplementTokensDataFromNetwork({
 
   // concat predefined token list with extraTokens list (extraTokens are certainly ERC20)
   const fullTokenList = [
+    // @ts-ignore figure out how to add types for the `tokenList`
     ...new Set(tokenList[network] ? tokenList[network].concat(extraTokens) : [...extraTokens])
   ]
   const tokens = fullTokenList.map((t: any) => {
