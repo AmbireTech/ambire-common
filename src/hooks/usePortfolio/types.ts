@@ -1,8 +1,7 @@
 // TODO: fill in the collectibles types
 
-import { NETWORKS } from 'constants/networks'
-import { SupportedProtocolType } from 'constants/supportedProtocols'
-
+import { NETWORKS } from '../../constants/networks'
+import { SupportedProtocolType } from '../../constants/supportedProtocols'
 import { UseStorageType } from '../useStorage'
 import { UseToastsReturnType } from '../useToasts'
 
@@ -24,7 +23,7 @@ export interface TokenWithIsHiddenFlag extends Token {
   isHidden: boolean
 }
 
-type Network = keyof typeof NETWORKS
+export type Network = keyof typeof NETWORKS
 
 export type Balance = {
   network: Network
