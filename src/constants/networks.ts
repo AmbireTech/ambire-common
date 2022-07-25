@@ -24,6 +24,7 @@ export type NetworkType = {
   rpc: string
   nativeAssetSymbol: string
   name: string
+  ensName?: string
   explorerUrl: string
   unstoppableDomainsChain: string
   hide?: boolean
@@ -40,6 +41,7 @@ const networks: NetworkType[] = [
     rpc: 'https://eth-mainnet.alchemyapi.io/v2/e5Gr8LP_EH0SBPZiNCcC08OuEDrvgoYK',
     nativeAssetSymbol: 'ETH',
     name: 'Ethereum',
+    ensName: 'homestead',
     explorerUrl: 'https://etherscan.io',
     unstoppableDomainsChain: 'ERC20',
     isGasTankAvailable: true
