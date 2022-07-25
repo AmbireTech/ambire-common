@@ -180,7 +180,6 @@ const networks: NetworkType[] = [
   // 	name: 'Cronos',
   // 	explorerUrl: 'https://cronoscan.com',
   // 	unstoppableDomainsChain: 'ERC20',
-  // isGasTankAvailable: false
   // },
   // {
   // 	id: NETWORKS.aurora,
@@ -190,7 +189,6 @@ const networks: NetworkType[] = [
   // 	name: 'NEAR Aurora',
   // 	explorerUrl: 'https://aurorascan.dev',
   // 	unstoppableDomainsChain: 'ERC20',
-  // isGasTankAvailable: false
   // }
 ]
 
