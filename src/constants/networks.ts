@@ -24,6 +24,7 @@ export type NetworkType = {
   rpc: string
   nativeAssetSymbol: string
   name: string
+  ensName?: string
   explorerUrl: string
   unstoppableDomainsChain: string
   hide?: boolean
@@ -40,6 +41,7 @@ const networks: NetworkType[] = [
     rpc: 'https://eth-mainnet.alchemyapi.io/v2/e5Gr8LP_EH0SBPZiNCcC08OuEDrvgoYK',
     nativeAssetSymbol: 'ETH',
     name: 'Ethereum',
+    ensName: 'homestead',
     explorerUrl: 'https://etherscan.io',
     unstoppableDomainsChain: 'ERC20',
     isGasTankAvailable: true
@@ -120,6 +122,7 @@ const networks: NetworkType[] = [
   {
     id: NETWORKS.gnosis,
     chainId: 100,
+    // rpc: 'https://rpc.xdaichain.com',
     rpc: 'https://rpc.ankr.com/gnosis',
     nativeAssetSymbol: 'XDAI',
     name: 'Gnosis Chain',
@@ -155,7 +158,7 @@ const networks: NetworkType[] = [
     nativeAssetSymbol: 'METIS',
     name: 'Andromeda',
     explorerUrl: 'https://andromeda-explorer.metis.io',
-    unstoppableDomainsChain: 'ERC20sp',
+    unstoppableDomainsChain: 'ERC20',
     isGasTankAvailable: true
   },
   {
@@ -177,7 +180,6 @@ const networks: NetworkType[] = [
   // 	name: 'Cronos',
   // 	explorerUrl: 'https://cronoscan.com',
   // 	unstoppableDomainsChain: 'ERC20',
-  // isGasTankAvailable: false
   // },
   // {
   // 	id: NETWORKS.aurora,
@@ -187,7 +189,6 @@ const networks: NetworkType[] = [
   // 	name: 'NEAR Aurora',
   // 	explorerUrl: 'https://aurorascan.dev',
   // 	unstoppableDomainsChain: 'ERC20',
-  // isGasTankAvailable: false
   // }
 ]
 
