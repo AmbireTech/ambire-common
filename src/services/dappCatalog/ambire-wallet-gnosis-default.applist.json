@@ -1,0 +1,69 @@
+{
+  "name": "Ambire Wallet default gnosis apps list",
+  "timestamp": "2022-07-26T14:40:12.109Z",
+  "version": {
+    "major": 0,
+    "minor": 1,
+    "patch": 0
+  },
+  "logoUri": "logo-uri",
+  "keywords": [
+    "ambire",
+    "wallet",
+    "default",
+    "app",
+    "list"
+  ],
+  "apps": [
+    {
+      "id": "transaction_builder",
+      "url": "https://safe-apps.dev.gnosisdev.com/tx-builder/",
+      "name": "Transaction Builder",
+      "iconUrl": "https://safe-apps.dev.gnosisdev.com/tx-builder/tx-builder.png",
+      "description": "Build your transaction from scratch (Power users)",
+      "providedBy": {
+        "name": "gnosisdev",
+        "url": "https://gnosis.io/"
+      },
+      "networks": [
+        "ethereum",
+        "polygon",
+        "avalanche",
+        "fantom",
+        "arbitrum",
+        "harmony",
+        "optimism"
+      ]
+    },
+    {
+      "id": "uniswap",
+      "url": "https://app.uniswap.org",
+      "name": "Uniswap",
+      "iconUrl": "https://app.uniswap.org/favicon.png",
+      "description": "Uniswap decentralised exchange",
+      "providedBy": {
+        "name": "Uniswap",
+        "url": "https://uniswap.org/"
+      },
+      "networks": [
+        "ethereum",
+        "polygon"
+      ]
+    },
+    {
+      "id": "yearn.finance",
+      "url": "https://yearn.finance/",
+      "name": "Yearn Vaults",
+      "iconUrl": "https://cloudflare-ipfs.com/ipfs/Qme9HuPPhgCtgfj1CktvaDKhTesMueGCV2Kui1Sqna3Xs9/logo.svg",
+      "description": "Safe App for interacting with Yearn Vaults",
+      "iconPath": "logo.svg",
+      "providedBy": {
+        "name": "Yearn Finance",
+        "url": "https://yearn.finance"
+      },
+      "networks": [
+        1
+      ]
+    }
+  ]
+}

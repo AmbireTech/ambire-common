@@ -1,0 +1,74 @@
+{
+  "name": "Ambire Wallet walletconnect gnosis apps list",
+  "timestamp": "2022-07-27T14:04:42.99Z",
+  "version": {
+    "major": 0,
+    "minor": 1,
+    "patch": 0
+  },
+  "logoUri": "logo-uri",
+  "keywords": [
+    "ambire",
+    "wallet",
+    "default",
+    "app",
+    "list"
+  ],
+  "apps": [
+    {
+      "id": "pancakeswap",
+      "url": "https://pancakeswap.finance/",
+      "name": "PancakeSwap",
+      "iconUrl": "https://safe-apps.dev.gnosisdev.com/tx-builder/tx-builder.png",
+      "description": "PancakeSwap decentralized exchange",
+      "providedBy": {
+        "name": "pancakeswap",
+        "url": "https://pancakeswap.finance/"
+      },
+      "networks": [
+        "binance-smart-chain"
+      ]
+    },
+    {
+      "id": "quickswap",
+      "url": "https://quickswap.exchange",
+      "name": "Quickswap",
+      "iconUrl": "https://app.uniswap.org/favicon.png",
+      "description": "Quickswap decentralized exchange",
+      "providedBy": {
+        "name": "Quickswap",
+        "url": "https://quickswap.exchange"
+      },
+      "networks": [
+        "polygon"
+      ]
+    },
+    {
+      "id": "evm_sigtools",
+      "url": "https://ambiretech.github.io/evm-sigtools-public/",
+      "name": "EVM Sigtools",
+      "iconUrl": "https://ambiretech.github.io/evm-sigtools-public/img/signature-validator-logo-flat.png",
+      "description": "Sign, verify and share ethereum messages",
+      "iconPath": "/img/signature-validator-logo-flat.png",
+      "providedBy": {
+        "name": "Ambire",
+        "url": "https://www.ambire.com/"
+      },
+      "networks": [
+        "ethereum",
+        "polygon",
+        "avalanche",
+        "fantom",
+        "arbitrum",
+        "harmony",
+        "optimism",
+        "binance-smart-chain",
+        "gnosis",
+        "andromeda",
+        "rinkeby",
+        "cromos",
+        "aurora"
+      ]
+    }
+  ]
+}
