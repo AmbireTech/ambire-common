@@ -5,15 +5,14 @@ import {
   getWalletWalletconnectDefaultList
 } from './dappCatalogUtils'
 
-function getWalletDappCatalog(): AmbireDappManifest[] {
+export async function getWalletDappCatalog(): Promise<Array<AmbireDappManifest>> {
   const dappCatalog = getWalletGnosisDefaultList()
     .concat(getGnosisDefaultList())
     .concat(getWalletWalletconnectDefaultList())
 
-  return dappCatalog
+    //NOTE: make ir async just in case for future separate service/call with validated dapps
+  return Promise.resolve(dappCatalog)
 }
 
 export * from './types'
 export * from './dappCatalogUtils'
-
-export default getWalletDappCatalog

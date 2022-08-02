@@ -1,5 +1,5 @@
 import { useState, useCallback, useMemo, useEffect } from 'react'
-import getWalletDappCatalog from '../../services/dappCatalog'
+import { getWalletDappCatalog } from '../../services/dappCatalog'
 import { UseDappsProps, UseDappsReturnType, DappManifestData, Category } from './types'
 
 const CATEGORIES: Array<Category> = [
@@ -32,8 +32,7 @@ const withCategory = (dapp: DappManifestData) => ({
 
 export default function useDapps({ useStorage }: UseDappsProps): UseDappsReturnType {
   const categories = useMemo(() => CATEGORIES, [])
-  const defaultCatalog = useMemo(() => getWalletDappCatalog(), [])
-
+  const [defaultCatalog, setDefaultCatalog] = useState([])
   const [isDappMode, setIsDappMode] = useStorage<boolean>({ key: 'isDappMode' })
   const [sideBarOpen, setSideBarOpen] = useState(false)
   const [currentDappData, setCurrentDappData] = useStorage<DappManifestData | null>({
@@ -57,6 +56,15 @@ export default function useDapps({ useStorage }: UseDappsProps): UseDappsReturnT
   )
 
   const [filteredCatalog, setFilteredItems] = useState(catalog)
+
+  useEffect(() => {
+    async function getCatalog() {
+      const walletCatalog = await getWalletDappCatalog()
+      setDefaultCatalog(walletCatalog)
+    }
+
+    getCatalog()
+  }, [])
 
   const toggleDappMode = useCallback(() => {
     setIsDappMode(!isDappMode)
