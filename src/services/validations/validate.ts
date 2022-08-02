@@ -40,7 +40,7 @@ const validateSendTransferAddress = (
   selectedAcc: any,
   addressConfirmed: any,
   isKnownAddress: any,
-  isUDAddress?: boolean
+  isUDAddress?: boolean,
   isEnsAddress?: boolean
 ) => {
   const isValidAddr = validateAddress(address)
@@ -72,8 +72,7 @@ const validateSendTransferAddress = (
     const name = isUDAddress ? 'Unstoppable domain' : 'Ethereum Name Service'
     return {
       success: false,
-      message:
-        `You're trying to send to an unknown ${name}. If you really trust the person who gave it to you, confirm using the checkbox below.`
+      message: `You're trying to send to an unknown ${name}. If you really trust the person who gave it to you, confirm using the checkbox below.`
     }
   }
 
