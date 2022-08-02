@@ -35,8 +35,9 @@ const useAddressBook = ({
           name: accountType(account),
           address: account.id
         })),
-        ...addresses.map((entry) => ({
-          ...entry
+        ...addresses.map((entry: any) => ({
+          ...entry,
+          type: entry.type || (entry.isUd ? 'ud' : 'pub')
         }))
       ]
     } catch (e) {
@@ -76,17 +77,20 @@ const useAddressBook = ({
   )
 
   const addAddress = useCallback(
-    (name: string, address: string, isUD: boolean = false) => {
+    (name: string, address: string, { type }: { type: 'ens' | 'ud' }) => {
       if (!name || !address) throw new Error('Address Book: invalid arguments supplied')
 
-      if (isUD) {
+      if (type === 'ens' || type === 'ud') {
         const isFound = addresses.find(
           (item: any) => item.address.toLowerCase() === address.toLowerCase()
         )
         if (isFound)
-          return addToast('Address Book: The UD is already added to the Address book', {
-            error: true
-          })
+          return addToast(
+            `Address Book: The ${type.toUpperCase()} is already added to the Address book`,
+            {
+              error: true
+            }
+          )
       } else {
         const isFound = addresses.find(
           (item: any) => item.address.toLowerCase() === address.toLowerCase()
@@ -105,7 +109,7 @@ const useAddressBook = ({
         {
           name,
           address,
-          isUD
+          type
         }
       ]
 
@@ -117,10 +121,10 @@ const useAddressBook = ({
   )
 
   const removeAddress = useCallback(
-    (name: string, address: string, isUD: boolean = false) => {
+    (name: string, address: string, type: 'ens' | 'ud') => {
       if (!name || !address) throw new Error('Address Book: invalid arguments supplied')
 
-      if (!isUD) {
+      if (type === 'ud' || type === 'ens') {
         if (!isValidAddress(address)) throw new Error('Address Book: invalid address format')
       }
 
