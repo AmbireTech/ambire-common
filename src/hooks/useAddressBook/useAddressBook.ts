@@ -63,15 +63,21 @@ const useAddressBook = ({
 
   const isKnownAddress = useCallback(
     (address: string) => {
-      return [
-        // eslint-disable-next-line @typescript-eslint/no-shadow
-        ...addresses.map(({ address }: { address: string }) => {
-          return address.startsWith('0x') && address.indexOf('.') === -1 ? sha256(address) : address
-        }),
-        ...accounts.map(({ id }) => sha256(id))
-      ].includes(
-        address.startsWith('0x') && address.indexOf('.') === -1 ? sha256(address) : address
-      )
+      try {
+        return [
+          // eslint-disable-next-line @typescript-eslint/no-shadow
+          ...addresses.map(({ address }: { address: string }) => {
+            return address.startsWith('0x') && address.indexOf('.') === -1
+              ? sha256(address)
+              : address
+          }),
+          ...accounts.map(({ id }) => sha256(id))
+        ].includes(
+          address.startsWith('0x') && address.indexOf('.') === -1 ? sha256(address) : address
+        )
+      } catch (e) {
+        console.error(e)
+      }
     },
     [addresses, accounts]
   )
