@@ -45,4 +45,5 @@ export type UseDappsReturnType = {
   onSearchChange: (value: string | null) => void
   categories: Array<Category>
   categoryFilter: Category
+  isDappInCatalog: (dappUrl: string) => boolean
 }

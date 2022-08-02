@@ -1,4 +1,4 @@
-import isURL from 'validator/es/lib/isURL'
+import isURL from 'validator/lib/isURL'
 import { AmbireDappManifest } from '../dappCatalog/types'
 
 export function isValidUrl(input: string): boolean {
@@ -18,7 +18,7 @@ export function isValidCustomDappData(input: AmbireDappManifest): {
   const hasNetworksSelected = !!networks.length
 
   return {
-    success: hasValidUrl && hasValidName && validConnectionType,
+    success: hasValidUrl && hasValidName && validConnectionType && hasValidIconUrl && hasNetworksSelected,
     errors: {
       ...(hasValidUrl ? {} : { url: 'Invalid Url' }),
       ...(hasValidIconUrl ? {} : { iconUrl: 'Invalid icon Url' }),

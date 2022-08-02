@@ -1,4 +1,5 @@
 import { useState, useCallback, useMemo, useEffect } from 'react'
+import url from 'url'
 import { getWalletDappCatalog } from '../../services/dappCatalog'
 import { UseDappsProps, UseDappsReturnType, DappManifestData, Category } from './types'
 
@@ -50,7 +51,7 @@ export default function useDapps({ useStorage }: UseDappsProps): UseDappsReturnT
     defaultValue: {}
   })
 
-  const catalog = useMemo(
+  const catalog: Array<DappManifestData> = useMemo(
     () => [...defaultCatalog, ...customDapps].map(withCategory),
     [customDapps, defaultCatalog]
   )
@@ -104,7 +105,12 @@ export default function useDapps({ useStorage }: UseDappsProps): UseDappsReturnT
     [customDapps, updateCustomDapps]
   )
 
-  //   const isDappInCatalog = (dapp: DappManifestData) => {}
+  const isDappInCatalog = (dappUrl: string) => {
+    const dappHost = url.parse(dappUrl).host
+
+    const isInCatalog = catalog.some(({ url: cDappUrl }) => url.parse(cDappUrl).host === dappHost)
+    return isInCatalog
+  }
 
   const toggleFavorite = useCallback(
     (dapp: DappManifestData) => {
@@ -161,6 +167,7 @@ export default function useDapps({ useStorage }: UseDappsProps): UseDappsReturnT
     search,
     onSearchChange,
     categories,
-    categoryFilter
+    categoryFilter,
+    isDappInCatalog
   }
 }
