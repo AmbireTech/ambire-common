@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { isKnownTokenOrContract, isValidAddress } from '../../services/address'
 import { setKnownAddresses } from '../../services/humanReadableTransactions'
-import { UseAddressBookProps, UseAddressBookReturnType } from './types'
+import { Address, UseAddressBookProps, UseAddressBookReturnType } from './types'
 
 const accountType = ({ email, signerExtra }: any): string => {
   const walletType =
@@ -83,7 +83,7 @@ const useAddressBook = ({
   )
 
   const addAddress = useCallback(
-    (name: string, address: string, { type }: { type: 'ens' | 'ud' }) => {
+    (name: Address['name'], address: Address['address'], type: Address['type']) => {
       if (!name || !address) throw new Error('Address Book: invalid arguments supplied')
 
       if (type === 'ens' || type === 'ud') {
@@ -127,7 +127,7 @@ const useAddressBook = ({
   )
 
   const removeAddress = useCallback(
-    (name: string, address: string, type: 'ens' | 'ud') => {
+    (name: Address['name'], address: Address['address'], type: Address['type']) => {
       if (!name || !address) throw new Error('Address Book: invalid arguments supplied')
 
       if (type === 'ud' || type === 'ens') {
