@@ -283,7 +283,7 @@ export default function usePortfolio({
         ).filter((data) => data)
 
         const outdatedBalancesByNetworks = updatedTokens.filter(
-          ({ systemInfo }) => systemInfo.cache && systemInfo.cache
+          ({ systemInfo }) => systemInfo.cache
         )
         setCachedBalancesByNetworks(outdatedBalancesByNetworks)
 
