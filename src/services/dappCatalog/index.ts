@@ -10,7 +10,7 @@ export async function getWalletDappCatalog(): Promise<Array<AmbireDappManifest>>
     .concat(getGnosisDefaultList())
     .concat(getWalletWalletconnectDefaultList())
 
-    //NOTE: make ir async just in case for future separate service/call with validated dapps
+  // NOTE: make it async just in case for future separate service/call with validated dapps
   return Promise.resolve(dappCatalog)
 }
 
