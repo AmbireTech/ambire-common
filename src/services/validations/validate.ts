@@ -40,7 +40,8 @@ const validateSendTransferAddress = (
   selectedAcc: any,
   addressConfirmed: any,
   isKnownAddress: any,
-  isUDAddress?: boolean
+  isUDAddress?: boolean,
+  isEnsAddress?: boolean
 ) => {
   const isValidAddr = validateAddress(address)
   if (!isValidAddr.success) return isValidAddr
@@ -59,7 +60,7 @@ const validateSendTransferAddress = (
     }
   }
 
-  if (address && !isKnownAddress(address) && !addressConfirmed && !isUDAddress) {
+  if (address && !isKnownAddress(address) && !addressConfirmed && !isUDAddress && !isEnsAddress) {
     return {
       success: false,
       message:
@@ -67,11 +68,11 @@ const validateSendTransferAddress = (
     }
   }
 
-  if (address && !isKnownAddress(address) && !addressConfirmed && isUDAddress) {
+  if (address && !isKnownAddress(address) && !addressConfirmed && (isUDAddress || isEnsAddress)) {
+    const name = isUDAddress ? 'Unstoppable domain' : 'Ethereum Name Service'
     return {
       success: false,
-      message:
-        "You're trying to send to an unknown unstoppable domain. If you really trust the person who gave it to you, confirm using the checkbox below."
+      message: `You're trying to send to an unknown ${name}. If you really trust the person who gave it to you, confirm using the checkbox below.`
     }
   }
 
@@ -123,14 +124,16 @@ const validateSendNftAddress = (
   metadata: any,
   selectedNetwork: any,
   network: any,
-  isUDAddress: boolean
+  isUDAddress?: boolean,
+  isEnsAddress?: boolean
 ) => {
   const isValidAddr = validateSendTransferAddress(
     address,
     selectedAcc,
     addressConfirmed,
     isKnownAddress,
-    isUDAddress
+    isUDAddress,
+    isEnsAddress
   )
   if (!isValidAddr.success) return isValidAddr
 
