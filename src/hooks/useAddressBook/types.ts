@@ -5,7 +5,7 @@ import { UseToastsReturnType } from '../useToasts'
 export type Address = {
   name: string
   address: string
-  isUD: boolean
+  type: 'ens' | 'ud' | 'pub'
 }
 
 export interface UseAddressBookProps {
@@ -16,7 +16,7 @@ export interface UseAddressBookProps {
 
 export interface UseAddressBookReturnType {
   addresses: Address[]
-  addAddress: (name: Address['name'], address: Address['address'], isUD: Address['isUD']) => void
-  removeAddress: (name: Address['name'], address: Address['address'], isUD: Address['isUD']) => void
+  addAddress: (name: Address['name'], address: Address['address'], type: Address['type']) => void
+  removeAddress: (name: Address['name'], address: Address['address'], type: Address['type']) => void
   isKnownAddress: (address: Address['address']) => boolean
 }

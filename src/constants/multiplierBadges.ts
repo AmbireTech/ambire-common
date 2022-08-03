@@ -31,6 +31,14 @@ export const multiplierBadges: MultiplierBadge[] = [
     color: '#b200e1',
     multiplier: 1.25,
     link: 'https://blog.ambire.com/win-a-cryptotesters-nft-with-ambire-and-get-into-one-of-the-hottest-web3-communities-c9d7185760b1'
+  },
+  {
+    id: 'gasTankNft',
+    name: 'GasTankNFT',
+    icon: '⛽',
+    color: '#b18045',
+    multiplier: 1.25,
+    link: 'https://blog.ambire.com/ambire-gas-tank-launches-with-exclusive-nft-drop-2a4eb29f2f07'
   }
 ]
 
