@@ -47,22 +47,46 @@
       },
       "networks": [
         "ethereum",
-        "polygon"
+        "polygon",
+        "optimism",
+        "arbitrum",
+        "celo"
       ]
     },
     {
-      "id": "yearn.finance",
-      "url": "https://yearn.finance/",
-      "name": "Yearn Vaults",
-      "iconUrl": "https://cloudflare-ipfs.com/ipfs/Qme9HuPPhgCtgfj1CktvaDKhTesMueGCV2Kui1Sqna3Xs9/logo.svg",
-      "description": "Safe App for interacting with Yearn Vaults",
-      "iconPath": "logo.svg",
+      "id": "aave",
+      "url": "https://app.aave.com",
+      "name": "Aave",
+      "iconUrl": "https://app.aave.com/aave.svg",
+      "description": "Non-custodial liquidity protocol",
       "providedBy": {
-        "name": "Yearn Finance",
-        "url": "https://yearn.finance"
+        "name": "Aave",
+        "url": "https://aave.com/"
       },
       "networks": [
-        1
+        "ethereum",
+        "polygon",
+        "optimism",
+        "arbitrum",
+        "avalanche",
+        "harmony",
+        "fantom"
+      ]
+    },
+    {
+      "id": "cowswap",
+      "url": "https://cowswap.exchange/",
+      "name": "CowSwap",
+      "iconUrl": "https://cowswap.exchange/favicon.png",
+      "description": "Save money on token swaps by trading directly with peers and avoiding front-running attacks",
+      "providedBy": {
+        "name": "CoW Protocol",
+        "url": "https://cow.fi/"
+      },
+      "networks": [
+        "ethereum",
+        "rikeby",
+        "gnosis"
       ]
     }
   ]

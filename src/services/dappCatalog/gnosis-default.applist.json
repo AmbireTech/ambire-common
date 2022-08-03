@@ -16,23 +16,6 @@
   ],
   "apps": [
     {
-      "id": "{\"url\":\"https://app.1inch.io/\",\"name\":\"1inch Network\"}",
-      "url": "https://app.1inch.io/",
-      "name": "1inch Network",
-      "iconUrl": "https://app.1inch.io/assets/images/1inch_logo_without_text.svg",
-      "description": "The most efficient defi aggregator",
-      "iconPath": "assets/images/1inch_logo_without_text.svg",
-      "providedBy": {
-        "name": "1inch network",
-        "url": "https://1inch.io"
-      },
-      "networks": [
-        1,
-        56,
-        137
-      ]
-    },
-    {
       "id": "{\"url\":\"https://app.defisaver.com/\",\"name\":\"DeFi Saver\"}",
       "url": "https://app.defisaver.com/",
       "name": "DeFi Saver",
@@ -44,22 +27,8 @@
         "url": "https://defisaver.com"
       },
       "networks": [
-        1
-      ]
-    },
-    {
-      "id": "{\"url\":\"https://app.dhedge.org/\",\"name\":\"dHEDGE\"}",
-      "url": "https://app.dhedge.org/",
-      "name": "dHEDGE",
-      "iconUrl": "https://app.dhedge.org/logo.svg",
-      "description": "Decentralized asset management",
-      "iconPath": "logo.svg",
-      "providedBy": {
-        "name": "dHEDGE",
-        "url": "https://www.dhedge.org/"
-      },
-      "networks": [
-        1
+        1,
+        10
       ]
     },
     {
