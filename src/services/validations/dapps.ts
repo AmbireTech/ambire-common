@@ -12,7 +12,8 @@ export function isValidCustomDappData(input: AmbireDappManifest): {
 } {
   const { url, name, iconUrl, connectionType, networks } = input
   const hasValidUrl = isValidUrl(url)
-  const hasValidIconUrl = isValidUrl(iconUrl)
+  // NOTE: './resources/dapps.svg' is added in the wallet form when user input icon url fails to load
+  const hasValidIconUrl = isValidUrl(iconUrl) || iconUrl === './resources/dapps.svg'
   const hasValidName = !!name.length
   const validConnectionType = !!connectionType
   const hasNetworksSelected = !!networks.length
