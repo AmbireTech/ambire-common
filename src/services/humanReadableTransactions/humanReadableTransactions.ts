@@ -3,6 +3,7 @@
 
 import { constants } from 'ethers'
 import { formatUnits } from 'ethers/lib/utils'
+
 import { names, tokens } from '../../constants/humanizerInfo.json'
 
 // address (lowercase) => name
@@ -10,7 +11,7 @@ const knownAliases = {}
 // address (lowercase) => [symbol, decimals]
 const knownTokens = {}
 // address (lowercase) => name
-const knownUDomains = {}
+const knownAddressNames = {}
 
 export const formatNativeTokenAddress = (address) =>
   address.toLowerCase() === `0x${'e'.repeat(40)}` ? `0x${'0'.repeat(40)}` : address.toLowerCase()
@@ -22,7 +23,7 @@ export function getName(addr, network) {
     names[address] ||
     (tokens[address] ? `${tokens[address][0]} token` : null) ||
     knownAliases[address] ||
-    knownUDomains[address] ||
+    knownAddressNames[address] ||
     addr
   )
 }
@@ -90,10 +91,10 @@ export function nativeToken(network, amount, extended = false) {
       }
 }
 
-export function setKnownUDomains(uDomains) {
+export function setKnownAddressNames(uDomains) {
   uDomains.forEach(
     // eslint-disable-next-line no-return-assign
-    ({ address, addressLabel }) => (knownUDomains[address.toLowerCase()] = addressLabel)
+    ({ address, addressLabel }) => (knownAddressNames[address.toLowerCase()] = addressLabel)
   )
 }
 

@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { isKnownTokenOrContract, isValidAddress } from '../../services/address'
 import { setKnownAddresses } from '../../services/humanReadableTransactions'
-import { UseAddressBookProps, UseAddressBookReturnType } from './types'
+import { Address, UseAddressBookProps, UseAddressBookReturnType } from './types'
 
 const accountType = ({ email, signerExtra }: any): string => {
   const walletType =
@@ -35,8 +35,9 @@ const useAddressBook = ({
           name: accountType(account),
           address: account.id
         })),
-        ...addresses.map((entry) => ({
-          ...entry
+        ...addresses.map((entry: any) => ({
+          ...entry,
+          type: entry.type || (entry.isUd ? 'ud' : 'pub')
         }))
       ]
     } catch (e) {
@@ -62,31 +63,40 @@ const useAddressBook = ({
 
   const isKnownAddress = useCallback(
     (address: string) => {
-      return [
-        // eslint-disable-next-line @typescript-eslint/no-shadow
-        ...addresses.map(({ address }: { address: string }) => {
-          return address.startsWith('0x') && address.indexOf('.') === -1 ? sha256(address) : address
-        }),
-        ...accounts.map(({ id }) => sha256(id))
-      ].includes(
-        address.startsWith('0x') && address.indexOf('.') === -1 ? sha256(address) : address
-      )
+      try {
+        return [
+          // eslint-disable-next-line @typescript-eslint/no-shadow
+          ...addresses.map(({ address }: { address: string }) => {
+            return address.startsWith('0x') && address.indexOf('.') === -1
+              ? sha256(address)
+              : address
+          }),
+          ...accounts.map(({ id }) => sha256(id))
+        ].includes(
+          address.startsWith('0x') && address.indexOf('.') === -1 ? sha256(address) : address
+        )
+      } catch (e) {
+        console.error(e)
+      }
     },
     [addresses, accounts]
   )
 
   const addAddress = useCallback(
-    (name: string, address: string, isUD: boolean = false) => {
+    (name: Address['name'], address: Address['address'], type: Address['type']) => {
       if (!name || !address) throw new Error('Address Book: invalid arguments supplied')
 
-      if (isUD) {
+      if (type === 'ens' || type === 'ud') {
         const isFound = addresses.find(
           (item: any) => item.address.toLowerCase() === address.toLowerCase()
         )
         if (isFound)
-          return addToast('Address Book: The UD is already added to the Address book', {
-            error: true
-          })
+          return addToast(
+            `Address Book: The ${type.toUpperCase()} is already added to the Address book`,
+            {
+              error: true
+            }
+          )
       } else {
         const isFound = addresses.find(
           (item: any) => item.address.toLowerCase() === address.toLowerCase()
@@ -105,7 +115,7 @@ const useAddressBook = ({
         {
           name,
           address,
-          isUD
+          type
         }
       ]
 
@@ -117,10 +127,10 @@ const useAddressBook = ({
   )
 
   const removeAddress = useCallback(
-    (name: string, address: string, isUD: boolean = false) => {
+    (name: Address['name'], address: Address['address'], type: Address['type']) => {
       if (!name || !address) throw new Error('Address Book: invalid arguments supplied')
 
-      if (!isUD) {
+      if (type !== 'ud' && type !== 'ens') {
         if (!isValidAddress(address)) throw new Error('Address Book: invalid address format')
       }
 
