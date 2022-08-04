@@ -1,6 +1,6 @@
 import { useState, useCallback, useMemo, useEffect } from 'react'
 import url from 'url'
-import { getWalletDappCatalog } from '../../services/dappCatalog'
+import { AmbireDappManifest, getWalletDappCatalog } from '../../services/dappCatalog'
 import { UseDappsProps, UseDappsReturnType, DappManifestData, Category } from './types'
 
 const CATEGORIES: Array<Category> = [
@@ -33,7 +33,7 @@ const withCategory = (dapp: DappManifestData) => ({
 
 export default function useDapps({ useStorage }: UseDappsProps): UseDappsReturnType {
   const categories = useMemo(() => CATEGORIES, [])
-  const [defaultCatalog, setDefaultCatalog] = useState([])
+  const [defaultCatalog, setDefaultCatalog] = useState<Array<AmbireDappManifest>>([])
   const [isDappMode, setIsDappMode] = useStorage<boolean>({ key: 'isDappMode' })
   const [sideBarOpen, setSideBarOpen] = useState(false)
   const [currentDappData, setCurrentDappData] = useStorage<DappManifestData | null>({

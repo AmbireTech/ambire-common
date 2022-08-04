@@ -17,5 +17,5 @@ export type AmbireDappManifest = {
     name: string
     url: string
   }
-  networks: NetworkId[]
+  networks: Array<NetworkId>
 }
