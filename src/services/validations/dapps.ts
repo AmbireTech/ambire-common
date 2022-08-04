@@ -1,4 +1,5 @@
 import isURL from 'validator/lib/isURL'
+
 import { AmbireDappManifest } from '../dappCatalog/types'
 
 export function isValidUrl(input: string): boolean {
@@ -12,8 +13,8 @@ export function isValidCustomDappData(input: AmbireDappManifest): {
 } {
   const { url, name, iconUrl, connectionType, networks } = input
   const hasValidUrl = isValidUrl(url)
-  // NOTE: './resources/dapps.svg' is added in the wallet form when user input icon url fails to load
-  const hasValidIconUrl = isValidUrl(iconUrl) || iconUrl === './resources/dapps.svg'
+  // NOTE: empty string for iconUrl means error on user input url - please make validation on app side
+  const hasValidIconUrl = isValidUrl(iconUrl) || iconUrl === ''
   const hasValidName = !!name.length
   const validConnectionType = !!connectionType
   const hasNetworksSelected = !!networks.length
