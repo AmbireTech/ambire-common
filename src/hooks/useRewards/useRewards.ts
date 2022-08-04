@@ -2,19 +2,19 @@ import { useEffect, useState } from 'react'
 
 import useCacheBreak from '../useCacheBreak'
 
-export enum RewardIds {
-  ADX_REWARDS = 'adx-rewards',
-  BALANCE_REWARDS = 'balance-rewards'
-}
-
-export default function useRewards({ useAccounts, useRelayerData, useClaimableWalletToken }) {
+export default function useRewards({
+  relayerURL,
+  useAccounts,
+  useRelayerData,
+  useClaimableWalletToken
+}) {
   const claimableWalletToken = useClaimableWalletToken()
   const { account, selectedAcc } = useAccounts()
   const { cacheBreak } = useCacheBreak()
 
   const rewardsUrl =
-    CONFIG.RELAYER_URL && selectedAcc
-      ? `${CONFIG.RELAYER_URL}/wallet-token/rewards/${selectedAcc}?cacheBreak=${cacheBreak}`
+    relayerURL && selectedAcc
+      ? `${relayerURL}/wallet-token/rewards/${selectedAcc}?cacheBreak=${cacheBreak}`
       : null
   const rewardsData = useRelayerData(rewardsUrl)
 
