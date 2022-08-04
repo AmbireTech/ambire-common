@@ -1,8 +1,8 @@
-import gnosisDefaultList from './gnosis-default.applist.json'
+import networks, { NetworkId } from '../../constants/networks'
 import walletGnosisDefaultCatalog from './ambire-wallet-gnosis-default.applist.json'
 import walletWalletconnectDefaultCatalog from './ambire-wallet-walletconnect-default.applist.json'
+import gnosisDefaultList from './gnosis-default.applist.json'
 import { AmbireDappManifest, WalletConnectionType } from './types'
-import networks, { NetworkId } from '../../constants/networks'
 
 export const chainIdToWalletNetworkId = (chainId: number): NetworkId | null => {
   return networks.find((n) => n.chainId === chainId)?.id || null

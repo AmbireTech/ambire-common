@@ -1,9 +1,9 @@
-import { AmbireDappManifest } from './types'
 import {
-  getWalletGnosisDefaultList,
   getGnosisDefaultList,
+  getWalletGnosisDefaultList,
   getWalletWalletconnectDefaultList
 } from './dappCatalogUtils'
+import { AmbireDappManifest } from './types'
 
 export async function getWalletDappCatalog(): Promise<Array<AmbireDappManifest>> {
   const dappCatalog = getWalletGnosisDefaultList()

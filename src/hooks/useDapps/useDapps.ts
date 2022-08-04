@@ -1,7 +1,8 @@
-import { useState, useCallback, useMemo, useEffect } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import url from 'url'
+
 import { AmbireDappManifest, getWalletDappCatalog } from '../../services/dappCatalog'
-import { UseDappsProps, UseDappsReturnType, DappManifestData, Category } from './types'
+import { Category, DappManifestData, UseDappsProps, UseDappsReturnType } from './types'
 
 const CATEGORIES: Array<Category> = [
   {
