@@ -6,11 +6,16 @@ import WALLETSupplyControllerABI from '../../constants/abis/WALLETSupplyControll
 import WALLETInitialClaimableRewards from '../../constants/WALLETInitialClaimableRewards.json'
 import WALLETVestings from '../../constants/WALLETVestings.json'
 import { getProvider } from '../../services/provider'
+import { UseClaimableWalletTokenProps } from './types'
 
 const supplyControllerAddress = '0xc53af25f831f31ad6256a742b3f0905bc214a430'
 const supplyControllerInterface = new Interface(WALLETSupplyControllerABI)
 
-const useClaimableWalletToken = ({ useAccounts, useNetwork, useRequests }) => {
+const useClaimableWalletToken = ({
+  useAccounts,
+  useNetwork,
+  useRequests
+}: UseClaimableWalletTokenProps) => {
   const { account } = useAccounts()
   const { network } = useNetwork()
   const { addRequest } = useRequests()

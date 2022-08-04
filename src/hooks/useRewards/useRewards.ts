@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react'
 
 import useCacheBreak from '../useCacheBreak'
+import { UseRewardsProps } from './types'
 
 export default function useRewards({
   relayerURL,
   useAccounts,
   useRelayerData,
   useClaimableWalletToken
-}) {
+}: UseRewardsProps) {
   const claimableWalletToken = useClaimableWalletToken()
   const { account, selectedAcc } = useAccounts()
   const { cacheBreak } = useCacheBreak()
