@@ -13,10 +13,13 @@ export default function useRewards({
   const { account, selectedAcc } = useAccounts()
   const { cacheBreak } = useCacheBreak()
 
+  // TODO: Convert this to a `useEffect` hook
   const rewardsUrl =
     relayerURL && selectedAcc
       ? `${relayerURL}/wallet-token/rewards/${selectedAcc}?cacheBreak=${cacheBreak}`
       : null
+  // TODO: Types of the rewards data.
+  // TODO: Skip if `null`.
   const rewardsData = useRelayerData(rewardsUrl)
 
   const totalLifetimeRewards = rewardsData.data?.rewards
@@ -32,9 +35,11 @@ export default function useRewards({
           (claimableWalletToken.currentClaimStatus.mintableVesting || 0)
         ).toFixed(3)
       : '...'
+  // TODO: type for this state
   const [rewards, setRewards] = useState({})
   const { isLoading, data, errMsg } = rewardsData
 
+  // TODO: Double check if this is disabled on the web app too
   // const showWalletTokenModal = useDynamicModal(
   //   WalletTokenModal,
   //   { claimableWalletToken, accountId: account.id },
