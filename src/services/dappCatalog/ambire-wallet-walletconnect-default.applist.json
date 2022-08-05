@@ -33,7 +33,7 @@
       "id": "quickswap",
       "url": "https://quickswap.exchange",
       "name": "Quickswap",
-      "iconUrl": "https://app.uniswap.org/favicon.png",
+      "iconUrl": "https://quickswap.exchange/logo_circle.png",
       "description": "Quickswap decentralized exchange",
       "providedBy": {
         "name": "Quickswap",
@@ -85,6 +85,28 @@
         "ethereum",
         "fantom",
         "arbitrum"
+      ]
+    },
+    {
+      "id": "1inch",
+      "url": "https://app.1inch.io/",
+      "name": "1inch Network",
+      "iconUrl": "https://app.1inch.io/assets/images/1inch_logo_without_text.svg",
+      "description": "The most efficient defi aggregator",
+      "iconPath": "/assets/images/1inch_logo_without_text.svg",
+      "providedBy": {
+        "name": "1inch Network",
+        "url": "https://1inch.io/"
+      },
+      "networks": [
+        "ethereum",
+        "fantom",
+        "arbitrum",
+        "binance-smart-chain",
+        "polygon",
+        "optimism",
+        "avalanche",
+        "gnosis"
       ]
     }
   ]

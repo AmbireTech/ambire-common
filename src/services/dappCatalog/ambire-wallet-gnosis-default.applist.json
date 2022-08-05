@@ -17,9 +17,9 @@
   "apps": [
     {
       "id": "transaction_builder",
-      "url": "https://safe-apps.dev.gnosisdev.com/tx-builder/",
+      "url": "https://apps.gnosis-safe.io/tx-builder/",
       "name": "Transaction Builder",
-      "iconUrl": "https://safe-apps.dev.gnosisdev.com/tx-builder/tx-builder.png",
+      "iconUrl": "https://apps.gnosis-safe.io/tx-builder/tx-builder.png",
       "description": "Build your transaction from scratch (Power users)",
       "providedBy": {
         "name": "gnosisdev",
