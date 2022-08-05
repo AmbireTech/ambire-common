@@ -16,6 +16,31 @@
   ],
   "apps": [
     {
+      "id": "snapshot",
+      "url": "https://snapshot.org/",
+      "name": "Snapshot",
+      "iconUrl": "https://snapshot.org/icon.svg",
+      "description": "Where decisions get made",
+      "networks": [
+        "ethereum",
+        "polygon",
+        "avalanche",
+        "binance-smart-chain",
+        "fantom",
+        "moonbeam",
+        "moonriver",
+        "arbitrum",
+        "gnosis",
+        "kucoin",
+        "optimism",
+        "andromeda",
+        "rikeby",
+        "harmony",
+        "cronos",
+        "aurora"
+      ]
+    },
+    {
       "id": "transaction_builder",
       "url": "https://apps.gnosis-safe.io/tx-builder/",
       "name": "Transaction Builder",
@@ -87,6 +112,33 @@
         "ethereum",
         "rikeby",
         "gnosis"
+      ]
+    },
+    {
+      "id": "balancer",
+      "url": "https://app.balancer.fi/",
+      "name": "Balancer",
+      "iconUrl": "https://cdn.stamp.fyi/space/balancer.eth?s=160&cb=f07b6ca4e700c150",
+      "description": "Swap tokens and manage your assets on Balancer Protocol",
+      "networks": [
+        "ethereum",
+        "polygon",
+        "arbitrum"
+      ]
+    },
+    {
+      "id": "aelin",
+      "url": "https://app.aelin.xyz/",
+      "name": "Aelin",
+      "iconUrl": "https://app.aelin.xyz/favicon/android-chrome-192x192.png",
+      "description": "A permissionless multi-chain protocol for capital raises and OTC deals. No need for VC's, Aelin decentralizes fundraising",
+      "providedBy": {
+        "name": "Aelin",
+        "url": "https://aelin.xyz/"
+      },
+      "networks": [
+        "ethereum",
+        "optimism"
       ]
     }
   ]
