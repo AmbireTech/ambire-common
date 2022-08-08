@@ -26,19 +26,15 @@ export default function useRewards({
   const claimableWalletToken = useClaimableWalletToken()
   const { account, selectedAcc } = useAccounts()
   const { cacheBreak } = useCacheBreak()
-  const [{ isLoading, data, errMsg }, setRewardsData] = useState<RewardsData>(rewardsInitialState)
   // TODO: type for this state
   const [rewards, setRewards] = useState({})
 
-  useEffect(() => {
-    if (!relayerURL || !selectedAcc) return
-
-    const rewardsUrl = `${relayerURL}/wallet-token/rewards/${selectedAcc}?cacheBreak=${cacheBreak}`
-    // FIXME: This breaks the hooks concept
-    const rewardsData = useRelayerData(rewardsUrl) as RewardsData
-
-    setRewardsData(rewardsData)
-  }, [selectedAcc, relayerURL, cacheBreak, useRelayerData])
+  const rewardsUrl =
+    !!relayerURL &&
+    !!selectedAcc &&
+    `${relayerURL}/wallet-token/rewards/${selectedAcc}?cacheBreak=${cacheBreak}`
+  const { isLoading, data, errMsg } =
+    (useRelayerData(rewardsUrl) as RewardsData) || rewardsInitialState
 
   useEffect(() => {
     if (errMsg || !data || !data.success) return
