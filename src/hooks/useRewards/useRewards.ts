@@ -34,7 +34,6 @@ export default function useRewards({
     if (!relayerURL || !selectedAcc) return
 
     const rewardsUrl = `${relayerURL}/wallet-token/rewards/${selectedAcc}?cacheBreak=${cacheBreak}`
-    console.log('fire')
     // FIXME: This breaks the hooks concept
     const rewardsData = useRelayerData(rewardsUrl) as RewardsData
 
@@ -49,6 +48,7 @@ export default function useRewards({
     const rewardsDetails = Object.fromEntries(
       data.rewards.map(({ _id, rewards: r }) => [_id, r[account.id] || 0])
     )
+    // TODO: Figure out why types mismatch
     rewardsDetails.multipliers = data.multipliers
     rewardsDetails.walletTokenAPY = data.walletTokenAPY
     rewardsDetails.adxTokenAPY = data.adxTokenAPY
