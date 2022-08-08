@@ -1,7 +1,49 @@
 import { useEffect, useState } from 'react'
 
+import { Account } from '../useAccounts/types'
 import useCacheBreak from '../useCacheBreak'
 import { UseRewardsProps } from './types'
+
+type Multiplier = {
+  mul: number
+  name: Text
+}
+
+type Reward = {
+  _id: string
+  rewards: {
+    [key in Account['id']]: number
+  }
+  updated: string // timestamp
+}
+
+type RewardsData = {
+  data: {
+    adxTokenAPY: number
+    multipliers: Multiplier[]
+    rewards: Reward[]
+    success: boolean
+    usdPrice: number
+    walletTokenAPY: number
+    xWALLETAPY: number
+  }
+  errMsg: null
+  isLoading: boolean
+}
+
+const rewardsInitialState = {
+  data: {
+    adxTokenAPY: 0,
+    multipliers: [],
+    rewards: [],
+    success: false,
+    usdPrice: 0,
+    walletTokenAPY: 0,
+    xWALLETAPY: 0
+  },
+  errMsg: null,
+  isLoading: true
+}
 
 export default function useRewards({
   relayerURL,
@@ -22,7 +64,7 @@ export default function useRewards({
   // TODO: Skip if `null`.
   const rewardsData = useRelayerData(rewardsUrl)
 
-  const totalLifetimeRewards = rewardsData.data?.rewards
+  const totalLifetimeRewards = rewardsData.data.rewards
     ?.map((x) => (typeof x.rewards[account.id] === 'number' ? x.rewards[account.id] : 0))
     .reduce((a, b) => a + b, 0)
 
