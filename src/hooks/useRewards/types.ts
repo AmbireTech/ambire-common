@@ -10,7 +10,7 @@ export enum RewardIds {
 export type UseRewardsProps = {
   relayerURL: string
   useAccounts: () => UseAccountsReturnType
-  useRelayerData: (url: string | null) => UseRelayerDataReturnType
+  useRelayerData: (url: string | null | boolean) => UseRelayerDataReturnType
   useClaimableWalletToken: () => any // TODO
 }
 
