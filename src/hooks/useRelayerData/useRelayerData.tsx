@@ -7,6 +7,7 @@ import { UseRelayerDataReturnType } from './types'
 // so that the component that uses this hook can display the loading spinner.
 const RESET_DATA_AFTER = 250
 
+// TODO: Figure out if hook is the best approach for implementing this one.
 export default function useRelayerData(fetch: any, url: string | null): UseRelayerDataReturnType {
   const [isLoading, setLoading] = useState<boolean>(true)
   const [data, setData] = useState<any>(null)
