@@ -1,35 +1,7 @@
 import { useEffect, useState } from 'react'
 
-import { Account } from '../useAccounts/types'
 import useCacheBreak from '../useCacheBreak'
-import { UseRewardsProps } from './types'
-
-type Multiplier = {
-  mul: number
-  name: Text
-}
-
-type Reward = {
-  _id: string
-  rewards: {
-    [key in Account['id']]: number
-  }
-  updated: string // timestamp
-}
-
-type RewardsData = {
-  data: {
-    adxTokenAPY: number
-    multipliers: Multiplier[]
-    rewards: Reward[]
-    success: boolean
-    usdPrice: number
-    walletTokenAPY: number
-    xWALLETAPY: number
-  }
-  errMsg: null
-  isLoading: boolean
-}
+import { RewardsData, UseRewardsProps } from './types'
 
 const rewardsInitialState = {
   data: {
@@ -54,17 +26,38 @@ export default function useRewards({
   const claimableWalletToken = useClaimableWalletToken()
   const { account, selectedAcc } = useAccounts()
   const { cacheBreak } = useCacheBreak()
+  const [{ isLoading, data, errMsg }, setRewardsData] = useState<RewardsData>(rewardsInitialState)
+  // TODO: type for this state
+  const [rewards, setRewards] = useState({})
 
-  // TODO: Convert this to a `useEffect` hook
-  const rewardsUrl =
-    relayerURL && selectedAcc
-      ? `${relayerURL}/wallet-token/rewards/${selectedAcc}?cacheBreak=${cacheBreak}`
-      : null
-  // TODO: Types of the rewards data.
-  // TODO: Skip if `null`.
-  const rewardsData = useRelayerData(rewardsUrl)
+  useEffect(() => {
+    if (!relayerURL || !selectedAcc) return
 
-  const totalLifetimeRewards = rewardsData.data.rewards
+    const rewardsUrl = `${relayerURL}/wallet-token/rewards/${selectedAcc}?cacheBreak=${cacheBreak}`
+    console.log('fire')
+    // FIXME: This breaks the hooks concept
+    const rewardsData = useRelayerData(rewardsUrl) as RewardsData
+
+    setRewardsData(rewardsData)
+  }, [selectedAcc, relayerURL, cacheBreak, useRelayerData])
+
+  useEffect(() => {
+    if (errMsg || !data || !data.success) return
+    if (!data?.rewards?.length) return
+    if (account?.id) return
+
+    const rewardsDetails = Object.fromEntries(
+      data.rewards.map(({ _id, rewards: r }) => [_id, r[account.id] || 0])
+    )
+    rewardsDetails.multipliers = data.multipliers
+    rewardsDetails.walletTokenAPY = data.walletTokenAPY
+    rewardsDetails.adxTokenAPY = data.adxTokenAPY
+    rewardsDetails.walletUsdPrice = data.usdPrice
+    rewardsDetails.xWALLETAPY = data.xWALLETAPY
+    setRewards(rewardsDetails)
+  }, [account.id, data, errMsg])
+
+  const totalLifetimeRewards = data.rewards
     ?.map((x) => (typeof x.rewards[account.id] === 'number' ? x.rewards[account.id] : 0))
     .reduce((a, b) => a + b, 0)
 
@@ -77,32 +70,6 @@ export default function useRewards({
           (claimableWalletToken.currentClaimStatus.mintableVesting || 0)
         ).toFixed(3)
       : '...'
-  // TODO: type for this state
-  const [rewards, setRewards] = useState({})
-  const { isLoading, data, errMsg } = rewardsData
-
-  // TODO: Double check if this is disabled on the web app too
-  // const showWalletTokenModal = useDynamicModal(
-  //   WalletTokenModal,
-  //   { claimableWalletToken, accountId: account.id },
-  //   { rewards }
-  // )
-
-  useEffect(() => {
-    if (errMsg || !data || !data.success) return
-
-    if (!data.rewards.length) return
-
-    const rewardsDetails = Object.fromEntries(
-      data.rewards.map(({ _id, rewards }) => [_id, rewards[account.id] || 0])
-    )
-    rewardsDetails.multipliers = data.multipliers
-    rewardsDetails.walletTokenAPY = data.walletTokenAPY
-    rewardsDetails.adxTokenAPY = data.adxTokenAPY
-    rewardsDetails.walletUsdPrice = data.usdPrice
-    rewardsDetails.xWALLETAPY = data.xWALLETAPY
-    setRewards(rewardsDetails)
-  }, [data, errMsg, account])
 
   return {
     isLoading,
