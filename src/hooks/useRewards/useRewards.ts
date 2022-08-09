@@ -8,7 +8,7 @@ const initialState = {
     adxTokenAPY: 0,
     multipliers: [],
     rewards: [],
-    success: false,
+    success: true,
     usdPrice: 0,
     walletTokenAPY: 0,
     xWALLETAPY: 0
@@ -51,7 +51,6 @@ export default function useRewards({
   const claimableWalletToken = useClaimableWalletToken()
   const { selectedAcc } = useAccounts()
   const { cacheBreak } = useCacheBreak()
-  // TODO: type for this state
   const [rewards, setRewards] = useState<RewardsState>(rewardsInitialState)
 
   const rewardsUrl =
@@ -61,15 +60,12 @@ export default function useRewards({
   const { isLoading, data, errMsg } = useRelayerData(rewardsUrl, initialState) as RelayerRewardsData
 
   useEffect(() => {
-    if (errMsg || !data || !data.success) return
-    // TODO: Figure out if these are still needed
-    // if (!data.rewards.length) return
-    // if (account?.id) return
+    if (errMsg || !data.success || isLoading) return
+    if (!data.rewards.length) return
 
     const rewardsDetails = Object.fromEntries<
       string | number | Multiplier[] | { [key in RewardIds]: number }
     >(data.rewards.map(({ _id, rewards: r }) => [_id, r[selectedAcc] || 0]))
-    // TODO: Figure out why types mismatch
     rewardsDetails.multipliers = data.multipliers
     rewardsDetails.walletTokenAPY = data.walletTokenAPY
     rewardsDetails.walletTokenAPYPercentage = data.walletTokenAPY
@@ -89,7 +85,7 @@ export default function useRewards({
         '...'
 
     setRewards(rewardsDetails as RewardsState)
-  }, [selectedAcc, data, errMsg])
+  }, [selectedAcc, data, errMsg, isLoading])
 
   const totalLifetimeRewards = data.rewards
     ?.map((x) => (typeof x.rewards[selectedAcc] === 'number' ? x.rewards[selectedAcc] : 0))
