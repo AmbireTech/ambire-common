@@ -74,13 +74,13 @@ export default function useRewards({
         '...'
     rewardsDetails.adxTokenAPY = data.adxTokenAPY
     rewardsDetails.adxTokenAPYPercentage = data.adxTokenAPY
-      ? (data.adxTokenAPY * 100).toFixed(2)
+      ? `${(data.adxTokenAPY * 100).toFixed(2)}%`
       : // TODO: Check if displaying 0 is better
         '...'
     rewardsDetails.walletUsdPrice = data.usdPrice || 0
     rewardsDetails.xWALLETAPY = data.xWALLETAPY
     rewardsDetails.xWALLETAPYPercentage = data.xWALLETAPY
-      ? (data.xWALLETAPY * 100).toFixed(2)
+      ? `${(data.xWALLETAPY * 100).toFixed(2)}%`
       : // TODO: Check if displaying 0 is better
         '...'
 
