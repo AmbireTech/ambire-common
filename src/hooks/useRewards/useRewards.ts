@@ -27,7 +27,8 @@ const rewardsInitialState = {
   adxTokenAPYPercentage: '...',
   walletUsdPrice: 0,
   xWALLETAPY: 0,
-  xWALLETAPYPercentage: '...'
+  xWALLETAPYPercentage: '...',
+  totalLifetimeRewards: 0
 }
 
 type RewardsState = {
@@ -40,6 +41,7 @@ type RewardsState = {
   walletUsdPrice: number
   xWALLETAPY: number
   xWALLETAPYPercentage: string
+  totalLifetimeRewards: number
 }
 
 export default function useRewards({ relayerURL, useAccounts, useRelayerData }: UseRewardsProps) {
@@ -61,34 +63,33 @@ export default function useRewards({ relayerURL, useAccounts, useRelayerData }: 
       string | number | Multiplier[] | { [key in RewardIds]: number }
     >(data.rewards.map(({ _id, rewards: r }) => [_id, r[selectedAcc] || 0]))
     rewardsDetails.multipliers = data.multipliers
-    rewardsDetails.walletTokenAPY = data.walletTokenAPY
+    rewardsDetails.walletTokenAPY = data.walletTokenAPY // TODO: Remove if not used anyhwere else raw
     rewardsDetails.walletTokenAPYPercentage = data.walletTokenAPY
       ? `${(data.walletTokenAPY * 100).toFixed(2)}%`
       : // TODO: Check if displaying 0 is better
         '...'
-    rewardsDetails.adxTokenAPY = data.adxTokenAPY
+    rewardsDetails.adxTokenAPY = data.adxTokenAPY // TODO: Remove if not used anyhwere else raw
     rewardsDetails.adxTokenAPYPercentage = data.adxTokenAPY
       ? `${(data.adxTokenAPY * 100).toFixed(2)}%`
       : // TODO: Check if displaying 0 is better
         '...'
-    rewardsDetails.walletUsdPrice = data.usdPrice || 0
+    rewardsDetails.walletUsdPrice = data.usdPrice || 0 // TODO: Remove if not used anyhwere else raw
     rewardsDetails.xWALLETAPY = data.xWALLETAPY
     rewardsDetails.xWALLETAPYPercentage = data.xWALLETAPY
       ? `${(data.xWALLETAPY * 100).toFixed(2)}%`
       : // TODO: Check if displaying 0 is better
         '...'
 
+    rewardsDetails.totalLifetimeRewards = data.rewards
+      .map((x) => (typeof x.rewards[selectedAcc] === 'number' ? x.rewards[selectedAcc] : 0))
+      .reduce((a, b) => a + b, 0)
+
     setRewards(rewardsDetails as RewardsState)
   }, [selectedAcc, data, errMsg, isLoading])
-
-  const totalLifetimeRewards = data.rewards
-    .map((x) => (typeof x.rewards[selectedAcc] === 'number' ? x.rewards[selectedAcc] : 0))
-    .reduce((a, b) => a + b, 0)
 
   return {
     isLoading,
     errMsg,
-    rewards,
-    totalLifetimeRewards
+    rewards
   }
 }
