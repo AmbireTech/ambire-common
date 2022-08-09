@@ -40,3 +40,22 @@ export type RelayerRewardsData = {
   errMsg: null
   isLoading: boolean
 }
+
+export type RewardsState = {
+  [key in RewardIds]: number
+} & {
+  multipliers: Multiplier[]
+  walletTokenAPY: number
+  walletTokenAPYPercentage: string
+  adxTokenAPYPercentage: string
+  walletUsdPrice: number
+  xWALLETAPY: number
+  xWALLETAPYPercentage: string
+  totalLifetimeRewards: number
+}
+
+export interface UseRewardsReturnType {
+  isLoading: boolean
+  errMsg: null | any
+  rewards: RewardsState
+}

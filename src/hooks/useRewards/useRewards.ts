@@ -1,7 +1,14 @@
 import { useEffect, useState } from 'react'
 
 import useCacheBreak from '../useCacheBreak'
-import { Multiplier, RelayerRewardsData, RewardIds, UseRewardsProps } from './types'
+import {
+  Multiplier,
+  RelayerRewardsData,
+  RewardIds,
+  RewardsState,
+  UseRewardsProps,
+  UseRewardsReturnType
+} from './types'
 
 const initialState = {
   data: {
@@ -31,20 +38,11 @@ const rewardsInitialState = {
   totalLifetimeRewards: 0
 }
 
-type RewardsState = {
-  [key in RewardIds]: number
-} & {
-  multipliers: Multiplier[]
-  walletTokenAPY: number
-  walletTokenAPYPercentage: string
-  adxTokenAPYPercentage: string
-  walletUsdPrice: number
-  xWALLETAPY: number
-  xWALLETAPYPercentage: string
-  totalLifetimeRewards: number
-}
-
-export default function useRewards({ relayerURL, useAccounts, useRelayerData }: UseRewardsProps) {
+export default function useRewards({
+  relayerURL,
+  useAccounts,
+  useRelayerData
+}: UseRewardsProps): UseRewardsReturnType {
   const { selectedAcc } = useAccounts()
   const { cacheBreak } = useCacheBreak()
   const [rewards, setRewards] = useState<RewardsState>(rewardsInitialState)
