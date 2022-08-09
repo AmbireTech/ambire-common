@@ -1,3 +1,4 @@
+import useCacheBreak from 'ambire-common/src/hooks/useCacheBreak'
 import { Contract } from 'ethers'
 import { Interface } from 'ethers/lib/utils'
 import { useCallback, useEffect, useMemo, useState } from 'react'
@@ -16,7 +17,7 @@ const useClaimableWalletToken = ({
   useNetwork,
   useRequests
 }: UseClaimableWalletTokenProps) => {
-  const { account } = useAccounts()
+  const { selectedAcc } = useAccounts()
   const { network } = useNetwork()
   const { addRequest } = useRequests()
 
@@ -25,9 +26,9 @@ const useClaimableWalletToken = ({
     () => new Contract(supplyControllerAddress, WALLETSupplyControllerABI, provider),
     [provider]
   )
-  const initialClaimableEntry = WALLETInitialClaimableRewards.find((x) => x.addr === account.id)
+  const initialClaimableEntry = WALLETInitialClaimableRewards.find((x) => x.addr === selectedAcc)
   const initialClaimable = initialClaimableEntry ? initialClaimableEntry.totalClaimable / 1e18 : 0
-  const vestingEntry = WALLETVestings.find((x) => x.addr === account.id)
+  const vestingEntry = WALLETVestings.find((x) => x.addr === selectedAcc)
 
   const [currentClaimStatus, setCurrentClaimStatus] = useState({
     loading: true,
@@ -35,8 +36,9 @@ const useClaimableWalletToken = ({
     mintableVesting: 0,
     error: null
   })
-  // by adding this to the deps, we make it refresh every 10 mins
-  const refreshSlot = Math.floor(Date.now() / 60000)
+
+  // By adding this to the deps, we make it refresh every 10 mins
+  const { cacheBreak } = useCacheBreak({ refreshInterval: 10000, breakPoint: 5000 })
   useEffect(() => {
     setCurrentClaimStatus({ loading: true, claimed: 0, mintableVesting: 0, error: null })
     ;(async () => {
@@ -65,7 +67,7 @@ const useClaimableWalletToken = ({
         console.error('getting claim status', e)
         setCurrentClaimStatus({ error: e.message || e })
       })
-  }, [supplyController, vestingEntry, initialClaimableEntry, refreshSlot])
+  }, [supplyController, vestingEntry, initialClaimableEntry, cacheBreak])
 
   const claimableNow =
     initialClaimable - (currentClaimStatus.claimed || 0) < 0
@@ -84,7 +86,7 @@ const useClaimableWalletToken = ({
         id: `claim_${Date.now()}`,
         chainId: network.chainId,
         type: 'eth_sendTransaction',
-        account: account.id,
+        account: selectedAcc,
         txn: {
           to: supplyControllerAddress,
           value: '0x0',
@@ -97,13 +99,13 @@ const useClaimableWalletToken = ({
         }
       })
     },
-    [initialClaimableEntry, network.chainId, account.id, addRequest]
+    [initialClaimableEntry, network.chainId, selectedAcc, addRequest]
   )
   const claimVesting = useCallback(() => {
     addRequest({
       id: `claimVesting_${Date.now()}`,
       chainId: network.chainId,
-      account: account.id,
+      account: selectedAcc,
       type: 'eth_sendTransaction',
       txn: {
         to: supplyControllerAddress,
@@ -115,7 +117,7 @@ const useClaimableWalletToken = ({
         ])
       }
     })
-  }, [vestingEntry, network.chainId, account.id, addRequest])
+  }, [vestingEntry, network.chainId, selectedAcc, addRequest])
 
   return {
     vestingEntry,
