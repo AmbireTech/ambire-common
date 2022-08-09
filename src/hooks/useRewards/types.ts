@@ -12,7 +12,6 @@ export type UseRewardsProps = {
   relayerURL: string
   useAccounts: () => UseAccountsReturnType
   useRelayerData: (url: string | null | boolean, initialState?: any) => UseRelayerDataReturnType
-  useClaimableWalletToken: () => any // TODO
 }
 
 export type Multiplier = {

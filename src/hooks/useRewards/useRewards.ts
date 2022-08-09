@@ -42,13 +42,7 @@ type RewardsState = {
   xWALLETAPYPercentage: string
 }
 
-export default function useRewards({
-  relayerURL,
-  useAccounts,
-  useRelayerData,
-  useClaimableWalletToken
-}: UseRewardsProps) {
-  const claimableWalletToken = useClaimableWalletToken()
+export default function useRewards({ relayerURL, useAccounts, useRelayerData }: UseRewardsProps) {
   const { selectedAcc } = useAccounts()
   const { cacheBreak } = useCacheBreak()
   const [rewards, setRewards] = useState<RewardsState>(rewardsInitialState)
@@ -88,24 +82,13 @@ export default function useRewards({
   }, [selectedAcc, data, errMsg, isLoading])
 
   const totalLifetimeRewards = data.rewards
-    ?.map((x) => (typeof x.rewards[selectedAcc] === 'number' ? x.rewards[selectedAcc] : 0))
+    .map((x) => (typeof x.rewards[selectedAcc] === 'number' ? x.rewards[selectedAcc] : 0))
     .reduce((a, b) => a + b, 0)
-
-  const pendingTokensTotal =
-    claimableWalletToken.currentClaimStatus && !claimableWalletToken.currentClaimStatus.loading
-      ? (
-          (totalLifetimeRewards || 0) -
-          (claimableWalletToken.currentClaimStatus.claimed || 0) -
-          (claimableWalletToken.currentClaimStatus.claimedInitial || 0) +
-          (claimableWalletToken.currentClaimStatus.mintableVesting || 0)
-        ).toFixed(3)
-      : '...'
 
   return {
     isLoading,
     errMsg,
     rewards,
-    pendingTokensTotal,
-    claimableWalletToken
+    totalLifetimeRewards
   }
 }
