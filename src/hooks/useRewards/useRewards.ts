@@ -23,8 +23,11 @@ const rewardsInitialState = {
   [RewardIds.ADX_TOKEN_APY]: 0,
   multipliers: [],
   walletTokenAPY: 0,
+  walletTokenAPYPercentage: '...',
+  adxTokenAPYPercentage: '...',
   walletUsdPrice: 0,
-  xWALLETAPY: 0
+  xWALLETAPY: 0,
+  xWALLETAPYPercentage: '...'
 }
 
 type RewardsState = {
@@ -32,8 +35,11 @@ type RewardsState = {
 } & {
   multipliers: Multiplier[]
   walletTokenAPY: number
+  walletTokenAPYPercentage: string
+  adxTokenAPYPercentage: string
   walletUsdPrice: number
   xWALLETAPY: number
+  xWALLETAPYPercentage: string
 }
 
 export default function useRewards({
@@ -60,15 +66,28 @@ export default function useRewards({
     // if (!data.rewards.length) return
     // if (account?.id) return
 
-    const rewardsDetails = Object.fromEntries(
+    const rewardsDetails = Object.fromEntries<string | number | Multiplier[]>(
       data.rewards.map(({ _id, rewards: r }) => [_id, r[selectedAcc] || 0])
     )
     // TODO: Figure out why types mismatch
     rewardsDetails.multipliers = data.multipliers
     rewardsDetails.walletTokenAPY = data.walletTokenAPY
+    rewardsDetails.walletTokenAPYPercentage = data.walletTokenAPY
+      ? `${(data.walletTokenAPY * 100).toFixed(2)}%`
+      : // TODO: Check if displaying 0 is better
+        '...'
     rewardsDetails.adxTokenAPY = data.adxTokenAPY
-    rewardsDetails.walletUsdPrice = data.usdPrice
+    rewardsDetails.adxTokenAPYPercentage = data.adxTokenAPY
+      ? (data.adxTokenAPY * 100).toFixed(2)
+      : // TODO: Check if displaying 0 is better
+        '...'
+    rewardsDetails.walletUsdPrice = data.usdPrice || 0
     rewardsDetails.xWALLETAPY = data.xWALLETAPY
+    rewardsDetails.xWALLETAPYPercentage = rewards.xWALLETAPY
+      ? (data.xWALLETAPY * 100).toFixed(2)
+      : // TODO: Check if displaying 0 is better
+        '...'
+
     setRewards(rewardsDetails)
   }, [selectedAcc, data, errMsg])
 
