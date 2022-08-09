@@ -4,17 +4,18 @@ import { UseRelayerDataReturnType } from '../useRelayerData'
 
 export enum RewardIds {
   ADX_REWARDS = 'adx-rewards',
-  BALANCE_REWARDS = 'balance-rewards'
+  BALANCE_REWARDS = 'balance-rewards',
+  ADX_TOKEN_APY = 'adxTokenAPY'
 }
 
 export type UseRewardsProps = {
   relayerURL: string
   useAccounts: () => UseAccountsReturnType
-  useRelayerData: (url: string | null | boolean) => UseRelayerDataReturnType
+  useRelayerData: (url: string | null | boolean, initialState?: any) => UseRelayerDataReturnType
   useClaimableWalletToken: () => any // TODO
 }
 
-type Multiplier = {
+export type Multiplier = {
   mul: number
   name: Text
 }

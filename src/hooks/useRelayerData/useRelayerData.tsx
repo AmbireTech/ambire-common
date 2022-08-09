@@ -11,10 +11,11 @@ const RESET_DATA_AFTER = 250
 // TODO: Figure out if a package like https://use-http.com will fit better
 export default function useRelayerData(
   fetch: any,
-  url: string | null | boolean
+  url: string | null | boolean,
+  initialState: any = null
 ): UseRelayerDataReturnType {
   const [isLoading, setLoading] = useState<boolean>(true)
-  const [data, setData] = useState<any>(null)
+  const [data, setData] = useState<any>(initialState)
   const [err, setErr] = useState<any>(null)
   const prevUrl = useRef('')
 
@@ -34,7 +35,7 @@ export default function useRelayerData(
     let resetDataTimer: any = null
     const stripQuery = (x: any) => x.split('?')[0]
     if (stripQuery(prevUrl.current) !== stripQuery(url)) {
-      resetDataTimer = setTimeout(() => setData(null), RESET_DATA_AFTER)
+      resetDataTimer = setTimeout(() => setData(initialState), RESET_DATA_AFTER)
     }
     prevUrl.current = url
 
@@ -61,7 +62,7 @@ export default function useRelayerData(
 
     // Data reset: if some time passes before we load the next piece of data, and the URL is different,
     // we will reset the data so that the UI knows to display a loading indicator
-    const resetDataTimer: any = setTimeout(() => setData(null), RESET_DATA_AFTER)
+    const resetDataTimer: any = setTimeout(() => setData(initialState), RESET_DATA_AFTER)
     setLoading(true)
     setErr(null)
     updateData()
