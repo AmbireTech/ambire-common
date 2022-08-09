@@ -66,9 +66,9 @@ export default function useRewards({
     // if (!data.rewards.length) return
     // if (account?.id) return
 
-    const rewardsDetails = Object.fromEntries<string | number | Multiplier[]>(
-      data.rewards.map(({ _id, rewards: r }) => [_id, r[selectedAcc] || 0])
-    )
+    const rewardsDetails = Object.fromEntries<
+      string | number | Multiplier[] | { [key in RewardIds]: number }
+    >(data.rewards.map(({ _id, rewards: r }) => [_id, r[selectedAcc] || 0]))
     // TODO: Figure out why types mismatch
     rewardsDetails.multipliers = data.multipliers
     rewardsDetails.walletTokenAPY = data.walletTokenAPY
@@ -83,12 +83,12 @@ export default function useRewards({
         '...'
     rewardsDetails.walletUsdPrice = data.usdPrice || 0
     rewardsDetails.xWALLETAPY = data.xWALLETAPY
-    rewardsDetails.xWALLETAPYPercentage = rewards.xWALLETAPY
+    rewardsDetails.xWALLETAPYPercentage = data.xWALLETAPY
       ? (data.xWALLETAPY * 100).toFixed(2)
       : // TODO: Check if displaying 0 is better
         '...'
 
-    setRewards(rewardsDetails)
+    setRewards(rewardsDetails as RewardsState)
   }, [selectedAcc, data, errMsg])
 
   const totalLifetimeRewards = data.rewards
