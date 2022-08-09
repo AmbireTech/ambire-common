@@ -43,7 +43,7 @@ export default function useRewards({
   useClaimableWalletToken
 }: UseRewardsProps) {
   const claimableWalletToken = useClaimableWalletToken()
-  const { account, selectedAcc } = useAccounts()
+  const { selectedAcc } = useAccounts()
   const { cacheBreak } = useCacheBreak()
   // TODO: type for this state
   const [rewards, setRewards] = useState<RewardsState>(rewardsInitialState)
@@ -61,7 +61,7 @@ export default function useRewards({
     // if (account?.id) return
 
     const rewardsDetails = Object.fromEntries(
-      data.rewards.map(({ _id, rewards: r }) => [_id, r[account.id] || 0])
+      data.rewards.map(({ _id, rewards: r }) => [_id, r[selectedAcc] || 0])
     )
     // TODO: Figure out why types mismatch
     rewardsDetails.multipliers = data.multipliers
@@ -70,10 +70,10 @@ export default function useRewards({
     rewardsDetails.walletUsdPrice = data.usdPrice
     rewardsDetails.xWALLETAPY = data.xWALLETAPY
     setRewards(rewardsDetails)
-  }, [account.id, data, errMsg])
+  }, [selectedAcc, data, errMsg])
 
   const totalLifetimeRewards = data.rewards
-    ?.map((x) => (typeof x.rewards[account.id] === 'number' ? x.rewards[account.id] : 0))
+    ?.map((x) => (typeof x.rewards[selectedAcc] === 'number' ? x.rewards[selectedAcc] : 0))
     .reduce((a, b) => a + b, 0)
 
   const pendingTokensTotal =
