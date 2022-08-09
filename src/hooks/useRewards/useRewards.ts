@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 
 import useCacheBreak from '../useCacheBreak'
-import { RewardsData, UseRewardsProps } from './types'
+import { Multiplier, RewardIds, RewardsData, UseRewardsProps } from './types'
 
 const rewardsInitialState = {
   data: {
@@ -27,19 +27,29 @@ export default function useRewards({
   const { account, selectedAcc } = useAccounts()
   const { cacheBreak } = useCacheBreak()
   // TODO: type for this state
-  const [rewards, setRewards] = useState({})
+  const [rewards, setRewards] = useState<
+    | {
+        [key in RewardIds]: number
+      }
+    | {
+        multipliers: Multiplier[]
+        walletTokenAPY: number
+        walletUsdPrice: number
+        xWALLETAPY: number
+      }
+  >({})
 
   const rewardsUrl =
     !!relayerURL &&
     !!selectedAcc &&
     `${relayerURL}/wallet-token/rewards/${selectedAcc}?cacheBreak=${cacheBreak}`
-  const { isLoading, data, errMsg } =
-    (useRelayerData(rewardsUrl) as RewardsData) || rewardsInitialState
+  const { isLoading, data, errMsg } = useRelayerData(rewardsUrl, rewardsInitialState) as RewardsData
 
   useEffect(() => {
     if (errMsg || !data || !data.success) return
-    if (!data?.rewards?.length) return
-    if (account?.id) return
+    // TODO: Figure out if these are still needed
+    // if (!data.rewards.length) return
+    // if (account?.id) return
 
     const rewardsDetails = Object.fromEntries(
       data.rewards.map(({ _id, rewards: r }) => [_id, r[account.id] || 0])
