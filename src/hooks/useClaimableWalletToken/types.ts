@@ -6,3 +6,23 @@ export type UseClaimableWalletTokenProps = {
   useNetwork: () => UseNetworkReturnType
   useRequests: () => any // TODO
 }
+
+export type UseClaimableWalletTokenReturnType = {
+  vestingEntry?: {
+    addr: string
+    rate: string
+    start: number
+    end: number
+  }
+  currentClaimStatus: {
+    loading: boolean
+    claimed: number
+    mintableVesting: number
+    error: null | any
+  }
+  claimableNow: number
+  disabledReason: string
+  claimDisabledReason: string
+  claimEarlyRewards: (withoutBurn: boolean) => void
+  claimVesting: () => void
+}
