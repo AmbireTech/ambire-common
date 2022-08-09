@@ -106,12 +106,27 @@ export default function useDapps({ useStorage }: UseDappsProps): UseDappsReturnT
     [customDapps, updateCustomDapps]
   )
 
-  const isDappInCatalog = (dappUrl: string) => {
+  const getDappFromCatalog = useCallback((dappUrl: string): DappManifestData | undefined => {
     const dappHost = url.parse(dappUrl).host
 
-    const isInCatalog = catalog.some(({ url: cDappUrl }) => url.parse(cDappUrl).host === dappHost)
-    return isInCatalog
-  }
+    const dapp = catalog.find(({ url: cDappUrl }) => url.parse(cDappUrl).host === dappHost)
+    return dapp
+  }, [catalog])
+
+  const isDappInCatalog = useCallback((dappUrl: string): boolean => {
+    return !!getDappFromCatalog(dappUrl)
+  }, [getDappFromCatalog])
+
+  const loadDappFromUrl = useCallback((dappUrl: string): boolean => {
+    const dapp = getDappFromCatalog(dappUrl)
+
+    if (dapp) {
+      loadCurrentDappData(dapp)
+      return true
+    } else {
+      return false
+    }
+  }, [getDappFromCatalog])
 
   const toggleFavorite = useCallback(
     (dapp: DappManifestData) => {
@@ -169,6 +184,7 @@ export default function useDapps({ useStorage }: UseDappsProps): UseDappsReturnT
     onSearchChange,
     categories,
     categoryFilter,
-    isDappInCatalog
+    isDappInCatalog,
+    loadDappFromUrl
   }
 }
