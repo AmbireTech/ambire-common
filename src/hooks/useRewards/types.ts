@@ -28,7 +28,7 @@ type Reward = {
   updated: string // timestamp
 }
 
-export type RewardsData = {
+export type RelayerRewardsData = {
   data: {
     adxTokenAPY: number
     multipliers: Multiplier[]

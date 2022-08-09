@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
 
 import useCacheBreak from '../useCacheBreak'
-import { Multiplier, RewardIds, RewardsData, UseRewardsProps } from './types'
+import { Multiplier, RelayerRewardsData, RewardIds, UseRewardsProps } from './types'
 
-const rewardsInitialState = {
+const initialState = {
   data: {
     adxTokenAPY: 0,
     multipliers: [],
@@ -17,6 +17,25 @@ const rewardsInitialState = {
   isLoading: true
 }
 
+const rewardsInitialState = {
+  [RewardIds.ADX_REWARDS]: 0,
+  [RewardIds.BALANCE_REWARDS]: 0,
+  [RewardIds.ADX_TOKEN_APY]: 0,
+  multipliers: [],
+  walletTokenAPY: 0,
+  walletUsdPrice: 0,
+  xWALLETAPY: 0
+}
+
+type RewardsState = {
+  [key in RewardIds]: number
+} & {
+  multipliers: Multiplier[]
+  walletTokenAPY: number
+  walletUsdPrice: number
+  xWALLETAPY: number
+}
+
 export default function useRewards({
   relayerURL,
   useAccounts,
@@ -27,23 +46,13 @@ export default function useRewards({
   const { account, selectedAcc } = useAccounts()
   const { cacheBreak } = useCacheBreak()
   // TODO: type for this state
-  const [rewards, setRewards] = useState<
-    | {
-        [key in RewardIds]: number
-      }
-    | {
-        multipliers: Multiplier[]
-        walletTokenAPY: number
-        walletUsdPrice: number
-        xWALLETAPY: number
-      }
-  >({})
+  const [rewards, setRewards] = useState<RewardsState>(rewardsInitialState)
 
   const rewardsUrl =
     !!relayerURL &&
     !!selectedAcc &&
     `${relayerURL}/wallet-token/rewards/${selectedAcc}?cacheBreak=${cacheBreak}`
-  const { isLoading, data, errMsg } = useRelayerData(rewardsUrl, rewardsInitialState) as RewardsData
+  const { isLoading, data, errMsg } = useRelayerData(rewardsUrl, initialState) as RelayerRewardsData
 
   useEffect(() => {
     if (errMsg || !data || !data.success) return
