@@ -18,6 +18,7 @@ export type UseClaimableWalletTokenReturnType = {
     loading: boolean
     claimed: number
     mintableVesting: number
+    claimedInitial: number
     error: null | any
   }
   claimableNow: number

@@ -35,13 +35,20 @@ const useClaimableWalletToken = ({
     loading: true,
     claimed: 0,
     mintableVesting: 0,
+    claimedInitial: 0,
     error: null
   })
 
   // By adding this to the deps, we make it refresh every 10 mins
   const { cacheBreak } = useCacheBreak({ refreshInterval: 10000, breakPoint: 5000 })
   useEffect(() => {
-    setCurrentClaimStatus({ loading: true, claimed: 0, mintableVesting: 0, error: null })
+    setCurrentClaimStatus({
+      loading: true,
+      claimed: 0,
+      mintableVesting: 0,
+      claimedInitial: 0,
+      error: null
+    })
     ;(async () => {
       const toNum = (x: string | number) => parseInt(x.toString(), 10) / 1e18
       const [mintableVesting, claimed] = await Promise.all([
@@ -59,7 +66,7 @@ const useClaimableWalletToken = ({
         ? (initialClaimableEntry.fromBalanceClaimable || 0) +
           (initialClaimableEntry.fromADXClaimable || 0) -
           toNum(initialClaimableEntry.totalClaimable || 0)
-        : null
+        : 0
 
       return { mintableVesting, claimed, claimedInitial }
     })()
@@ -71,7 +78,8 @@ const useClaimableWalletToken = ({
           error: e.message || e,
           loading: false,
           claimed: 0,
-          mintableVesting: 0
+          mintableVesting: 0,
+          claimedInitial: 0
         })
       })
   }, [supplyController, vestingEntry, initialClaimableEntry, cacheBreak])
