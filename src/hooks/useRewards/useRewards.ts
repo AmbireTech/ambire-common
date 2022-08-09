@@ -104,7 +104,6 @@ export default function useRewards({
   return {
     isLoading,
     errMsg,
-    data,
     rewards,
     pendingTokensTotal,
     claimableWalletToken
