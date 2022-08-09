@@ -27,7 +27,7 @@ const useClaimableWalletToken = ({
     [provider]
   )
   const initialClaimableEntry = WALLETInitialClaimableRewards.find((x) => x.addr === selectedAcc)
-  const initialClaimable = initialClaimableEntry ? initialClaimableEntry.totalClaimable / 1e18 : 0
+  const initialClaimable = initialClaimableEntry ? +initialClaimableEntry.totalClaimable / 1e18 : 0
   const vestingEntry = WALLETVestings.find((x) => x.addr === selectedAcc)
 
   const [currentClaimStatus, setCurrentClaimStatus] = useState({
