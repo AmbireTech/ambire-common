@@ -348,7 +348,8 @@ const useSignMessage = ({
     hasProviderError,
     typeDataErr,
     isDeployed,
-    dataV4
+    dataV4,
+    requestedNetwork
   }
 }
 

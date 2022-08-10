@@ -1,3 +1,5 @@
+import { NetworkType } from 'constants/networks'
+
 import { UseAccountsReturnType } from '../useAccounts'
 import { UseToastsReturnType } from '../useToasts'
 
@@ -26,4 +28,5 @@ export type UseSignMessageReturnType = {
   typeDataErr: any
   isDeployed: boolean | null
   dataV4: any
+  requestedNetwork: NetworkType | undefined
 }
