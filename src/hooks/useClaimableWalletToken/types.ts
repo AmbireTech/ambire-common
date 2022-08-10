@@ -27,7 +27,7 @@ export type UseClaimableWalletTokenReturnType = {
   claimableNow: number
   disabledReason: string
   claimDisabledReason: string
-  claimEarlyRewards: (withoutBurn: boolean) => void
+  claimEarlyRewards: (withoutBurn?: boolean) => void
   claimVesting: () => void
   pendingTokensTotal: string
   claimableNowUsd: string
