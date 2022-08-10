@@ -32,4 +32,5 @@ export type UseClaimableWalletTokenReturnType = {
   pendingTokensTotal: string
   claimableNowUsd: string
   mintableVestingUsd: string
+  claimingDisabled: boolean
 }

@@ -117,6 +117,8 @@ const useClaimableWalletToken = ({
     disabledReason = `Claim status error: ${currentClaimStatus.error}`
   }
   const claimDisabledReason = claimableNow === 0 ? 'No rewards are claimable' : ''
+  const claimingDisabled = !!(claimDisabledReason || disabledReason)
+
   const claimEarlyRewards = useCallback(
     (withoutBurn = true) => {
       addRequest({
@@ -167,7 +169,8 @@ const useClaimableWalletToken = ({
     claimVesting,
     pendingTokensTotal,
     claimableNowUsd,
-    mintableVestingUsd
+    mintableVestingUsd,
+    claimingDisabled
   }
 }
 
