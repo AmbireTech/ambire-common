@@ -11,7 +11,7 @@ export type UseSignMessageProps = {
   onConfirmationCodeRequired: (
     confCodeRequired: 'email' | 'otp' | null,
     approveQuickAcc?: (confCode: number) => void
-  ) => void
+  ) => Promise<any>
   onLastMessageSign: () => void
   getHardwareWallet: (device?: any) => any
 }
