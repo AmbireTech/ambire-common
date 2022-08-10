@@ -349,7 +349,8 @@ const useSignMessage = ({
     typeDataErr,
     isDeployed,
     dataV4,
-    requestedNetwork
+    requestedNetwork,
+    requestedChainId
   }
 }
 

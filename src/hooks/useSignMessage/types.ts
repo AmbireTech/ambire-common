@@ -29,4 +29,5 @@ export type UseSignMessageReturnType = {
   isDeployed: boolean | null
   dataV4: any
   requestedNetwork: NetworkType | undefined
+  requestedChainId: NetworkType['chainId']
 }
