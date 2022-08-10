@@ -1,6 +1,6 @@
 import { Contract } from 'ethers'
 import { formatUnits, Interface } from 'ethers/lib/utils'
-import React, { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
 import WalletStakingPoolABI from '../../constants/abis/WalletStakingPoolABI.json'
 import { NETWORKS } from '../../constants/networks'
