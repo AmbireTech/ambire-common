@@ -221,10 +221,10 @@ const useSignMessage = ({
           return
         }
         if (confCodeRequired) {
-          setLoading(false)
           !!onConfirmationCodeRequired &&
             onConfirmationCodeRequired(confCodeRequired, approveQuickAcc)
 
+          setLoading(false)
           return
         }
 
