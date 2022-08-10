@@ -1,0 +1,29 @@
+import { UseAccountsReturnType } from '../useAccounts'
+import { UseToastsReturnType } from '../useToasts'
+
+export type UseSignMessageProps = {
+  fetch: any
+  account: UseAccountsReturnType['account']
+  everythingToSign: any[]
+  relayerURL?: string
+  addToast: UseToastsReturnType['addToast']
+  resolve: (outcome: any) => void
+  onConfirmationCodeRequired: (
+    confCodeRequired: 'email' | 'otp' | null,
+    approveQuickAcc?: (confCode: number) => void
+  ) => void
+  onLastMessageSign: () => void
+  getHardwareWallet: (device?: any) => any
+}
+
+export type UseSignMessageReturnType = {
+  approve: (credentials: any, device?: any) => Promise<any>
+  approveQuickAcc: (credentials: any) => Promise<any>
+  toSign: any
+  isLoading: boolean
+  hasPrivileges: boolean | null
+  hasProviderError: any
+  typeDataErr: any
+  isDeployed: boolean | null
+  dataV4: any
+}
