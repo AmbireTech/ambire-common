@@ -17,7 +17,8 @@ const useClaimableWalletToken = ({
   useAccounts,
   useNetwork,
   useRequests,
-  totalLifetimeRewards
+  totalLifetimeRewards,
+  walletUsdPrice
 }: UseClaimableWalletTokenProps): UseClaimableWalletTokenReturnType => {
   const { selectedAcc } = useAccounts()
   const { network } = useNetwork()
@@ -97,6 +98,9 @@ const useClaimableWalletToken = ({
       ? 0
       : initialClaimable - (currentClaimStatus.claimed || 0)
 
+  const claimableNowUsd = (walletUsdPrice * claimableNow).toFixed(2)
+  const mintableVestingUsd = (walletUsdPrice * currentClaimStatus.mintableVesting).toFixed(2)
+
   const pendingTokensTotal = (
     totalLifetimeRewards -
     currentClaimStatus.claimed -
@@ -158,7 +162,9 @@ const useClaimableWalletToken = ({
     claimDisabledReason,
     claimEarlyRewards,
     claimVesting,
-    pendingTokensTotal
+    pendingTokensTotal,
+    claimableNowUsd,
+    mintableVestingUsd
   }
 }
 
