@@ -16,6 +16,31 @@
   ],
   "apps": [
     {
+      "id": "snapshot",
+      "url": "https://snapshot.org/",
+      "name": "Snapshot",
+      "iconUrl": "https://snapshot.org/icon.svg",
+      "description": "Where decisions get made",
+      "networks": [
+        "ethereum",
+        "polygon",
+        "avalanche",
+        "binance-smart-chain",
+        "fantom",
+        "moonbeam",
+        "moonriver",
+        "arbitrum",
+        "gnosis",
+        "kucoin",
+        "optimism",
+        "andromeda",
+        "rikeby",
+        "harmony",
+        "cronos",
+        "aurora"
+      ]
+    },
+    {
       "id": "pancakeswap",
       "url": "https://pancakeswap.finance/",
       "name": "PancakeSwap",
