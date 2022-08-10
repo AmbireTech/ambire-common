@@ -5,6 +5,7 @@ export type UseClaimableWalletTokenProps = {
   useAccounts: () => UseAccountsReturnType
   useNetwork: () => UseNetworkReturnType
   useRequests: () => any // TODO
+  totalLifetimeRewards: number
 }
 
 export type UseClaimableWalletTokenReturnType = {
@@ -26,4 +27,5 @@ export type UseClaimableWalletTokenReturnType = {
   claimDisabledReason: string
   claimEarlyRewards: (withoutBurn: boolean) => void
   claimVesting: () => void
+  pendingTokensTotal: string
 }

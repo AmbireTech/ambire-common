@@ -16,7 +16,8 @@ const supplyControllerInterface = new Interface(WALLETSupplyControllerABI)
 const useClaimableWalletToken = ({
   useAccounts,
   useNetwork,
-  useRequests
+  useRequests,
+  totalLifetimeRewards
 }: UseClaimableWalletTokenProps): UseClaimableWalletTokenReturnType => {
   const { selectedAcc } = useAccounts()
   const { network } = useNetwork()
@@ -96,6 +97,13 @@ const useClaimableWalletToken = ({
       ? 0
       : initialClaimable - (currentClaimStatus.claimed || 0)
 
+  const pendingTokensTotal = (
+    totalLifetimeRewards -
+    currentClaimStatus.claimed -
+    currentClaimStatus.claimedInitial +
+    currentClaimStatus.mintableVesting
+  ).toFixed(3)
+
   let disabledReason = ''
   if (network?.id !== NETWORKS.ethereum) {
     disabledReason = 'Switch to Ethereum to claim'
@@ -149,7 +157,8 @@ const useClaimableWalletToken = ({
     disabledReason,
     claimDisabledReason,
     claimEarlyRewards,
-    claimVesting
+    claimVesting,
+    pendingTokensTotal
   }
 }
 
