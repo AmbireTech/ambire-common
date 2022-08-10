@@ -7,6 +7,7 @@
     "generate:contractInfo": "node scripts/generateContractInfo.js > src/constants/humanizerInfo.json"
   },
   "peerDependencies": {
+    "@ambire/signature-validator": "^1.0.3",
     "@ensdomains/eth-ens-namehash": "^2.0.15",
     "@unstoppabledomains/resolution": "^7.1.4",
     "@walletconnect/client": "^1.7.1",
