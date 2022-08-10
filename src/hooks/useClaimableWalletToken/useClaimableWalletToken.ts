@@ -27,9 +27,15 @@ const useClaimableWalletToken = ({
     () => new Contract(supplyControllerAddress, WALLETSupplyControllerABI, provider),
     [provider]
   )
-  const initialClaimableEntry = WALLETInitialClaimableRewards.find((x) => x.addr === selectedAcc)
-  const initialClaimable = initialClaimableEntry ? +initialClaimableEntry.totalClaimable / 1e18 : 0
-  const vestingEntry = WALLETVestings.find((x) => x.addr === selectedAcc)
+  const initialClaimableEntry = useMemo(
+    () => WALLETInitialClaimableRewards.find((x) => x.addr === selectedAcc),
+    [selectedAcc]
+  )
+
+  const vestingEntry = useMemo(
+    () => WALLETVestings.find((x) => x.addr === selectedAcc),
+    [selectedAcc]
+  )
 
   const [currentClaimStatus, setCurrentClaimStatus] = useState({
     loading: true,
@@ -84,6 +90,7 @@ const useClaimableWalletToken = ({
       })
   }, [supplyController, vestingEntry, initialClaimableEntry, cacheBreak])
 
+  const initialClaimable = initialClaimableEntry ? +initialClaimableEntry.totalClaimable / 1e18 : 0
   const claimableNow =
     initialClaimable - (currentClaimStatus.claimed || 0) < 0
       ? 0
