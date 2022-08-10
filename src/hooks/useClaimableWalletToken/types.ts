@@ -16,6 +16,7 @@ export type UseClaimableWalletTokenReturnType = {
     start: number
     end: number
   }
+  shouldDisplayMintableVesting: boolean
   currentClaimStatus: {
     loading: boolean
     claimed: number

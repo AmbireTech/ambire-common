@@ -108,6 +108,8 @@ const useClaimableWalletToken = ({
     currentClaimStatus.mintableVesting
   ).toFixed(3)
 
+  const shouldDisplayMintableVesting = !!currentClaimStatus.mintableVesting && !!vestingEntry
+
   let disabledReason = ''
   if (network?.id !== NETWORKS.ethereum) {
     disabledReason = 'Switch to Ethereum to claim'
@@ -156,6 +158,7 @@ const useClaimableWalletToken = ({
 
   return {
     vestingEntry,
+    shouldDisplayMintableVesting,
     currentClaimStatus,
     claimableNow,
     disabledReason,
