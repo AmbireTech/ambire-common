@@ -55,7 +55,6 @@ export default function useRewards({
 
   useEffect(() => {
     if (errMsg || !data.success || isLoading) return
-    if (!data.rewards.length) return
 
     const rewardsDetails = Object.fromEntries<
       string | number | Multiplier[] | { [key in RewardIds]: number }
