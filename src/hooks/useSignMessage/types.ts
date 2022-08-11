@@ -11,7 +11,7 @@ export type UseSignMessageProps = {
   addToast: UseToastsReturnType['addToast']
   resolve: (outcome: any) => void
   onConfirmationCodeRequired: (
-    confCodeRequired: 'email' | 'otp' | null,
+    confCodeRequired?: 'email' | 'otp' | null,
     approveQuickAcc?: (confCode: number) => void
   ) => Promise<any>
   onLastMessageSign: () => void
