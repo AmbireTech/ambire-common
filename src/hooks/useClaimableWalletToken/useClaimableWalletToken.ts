@@ -14,30 +14,23 @@ const supplyControllerAddress = '0xc53af25f831f31ad6256a742b3f0905bc214a430'
 const supplyControllerInterface = new Interface(WALLETSupplyControllerABI)
 
 const useClaimableWalletToken = ({
-  useAccounts,
-  useNetwork,
-  useRequests,
+  accountId,
+  network,
+  addRequest,
   totalLifetimeRewards,
   walletUsdPrice
 }: UseClaimableWalletTokenProps): UseClaimableWalletTokenReturnType => {
-  const { selectedAcc } = useAccounts()
-  const { network } = useNetwork()
-  const { addRequest } = useRequests()
-
   const provider = useMemo(() => getProvider('ethereum'), [])
   const supplyController = useMemo(
     () => new Contract(supplyControllerAddress, WALLETSupplyControllerABI, provider),
     [provider]
   )
   const initialClaimableEntry = useMemo(
-    () => WALLETInitialClaimableRewards.find((x) => x.addr === selectedAcc),
-    [selectedAcc]
+    () => WALLETInitialClaimableRewards.find((x) => x.addr === accountId),
+    [accountId]
   )
 
-  const vestingEntry = useMemo(
-    () => WALLETVestings.find((x) => x.addr === selectedAcc),
-    [selectedAcc]
-  )
+  const vestingEntry = useMemo(() => WALLETVestings.find((x) => x.addr === accountId), [accountId])
 
   const [currentClaimStatus, setCurrentClaimStatus] = useState({
     loading: true,
@@ -125,7 +118,7 @@ const useClaimableWalletToken = ({
         id: `claim_${Date.now()}`,
         chainId: network?.chainId,
         type: 'eth_sendTransaction',
-        account: selectedAcc,
+        account: accountId,
         txn: {
           to: supplyControllerAddress,
           value: '0x0',
@@ -138,13 +131,13 @@ const useClaimableWalletToken = ({
         }
       })
     },
-    [initialClaimableEntry, network?.chainId, selectedAcc, addRequest]
+    [initialClaimableEntry, network?.chainId, accountId, addRequest]
   )
   const claimVesting = useCallback(() => {
     addRequest({
       id: `claimVesting_${Date.now()}`,
       chainId: network?.chainId,
-      account: selectedAcc,
+      account: accountId,
       type: 'eth_sendTransaction',
       txn: {
         to: supplyControllerAddress,
@@ -156,7 +149,7 @@ const useClaimableWalletToken = ({
         ])
       }
     })
-  }, [vestingEntry, network?.chainId, selectedAcc, addRequest])
+  }, [vestingEntry, network?.chainId, accountId, addRequest])
 
   return {
     vestingEntry,
