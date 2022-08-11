@@ -82,7 +82,7 @@ export const getManifestFromDappUrl = async (fetch: any, dAppUrl: string): Promi
   const manifest = hasManifest ? {
     name: body.name,
     description: body.description || body.name,
-    iconUrl: body.iconUrl || (url + '/' + body.iconPath?.replace(/^\//, '')),
+    iconUrl: body.iconUrl || (url + '/' + (body.iconPath || body.icons[0]?.src).replace(/^\//, '')),
     connectionType: isGnosisManifest ? 'gnosis' : 'walletconnect',
     networks: (body.networks || []).map(chainIdToWalletNetworkId),
     isWalletPlugin,
