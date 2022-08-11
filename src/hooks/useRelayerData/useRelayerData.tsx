@@ -28,7 +28,7 @@ export default function useRelayerData({
   }, [url])
 
   useEffect(() => {
-    if (!url) return
+    if (!url || typeof url !== 'string') return
 
     // Data reset: if some time passes before we load the next piece of data, and the URL is different,
     // we will reset the data so that the UI knows to display a loading indicator
@@ -58,7 +58,7 @@ export default function useRelayerData({
   // In case we want to refetch the data without changing the url prop
   // e.g. pull to refresh
   const forceRefresh = useCallback(() => {
-    if (!url) return
+    if (!url || typeof url !== 'string') return
 
     // Data reset: if some time passes before we load the next piece of data, and the URL is different,
     // we will reset the data so that the UI knows to display a loading indicator
