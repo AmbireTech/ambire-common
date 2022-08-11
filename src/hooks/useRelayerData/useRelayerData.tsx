@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { fetchCaught } from '../../services/fetch'
-import { UseRelayerDataReturnType } from './types'
+import { UseRelayerDataProps, UseRelayerDataReturnType } from './types'
 
 // Threshold after a load of another URL is triggered, we will clear the data
 // so that the component that uses this hook can display the loading spinner.
@@ -9,11 +9,11 @@ const RESET_DATA_AFTER = 250
 
 // TODO: Figure out if hook is the best approach for implementing this one.
 // TODO: Figure out if a package like https://use-http.com will fit better
-export default function useRelayerData(
-  fetch: any,
-  url: string | null | boolean,
-  initialState: any = null
-): UseRelayerDataReturnType {
+export default function useRelayerData({
+  fetch,
+  url,
+  initialState = null
+}: UseRelayerDataProps): UseRelayerDataReturnType {
   const [isLoading, setLoading] = useState<boolean>(true)
   const [data, setData] = useState<any>(initialState)
   const [err, setErr] = useState<any>(null)
