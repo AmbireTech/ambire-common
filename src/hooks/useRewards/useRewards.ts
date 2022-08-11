@@ -51,7 +51,10 @@ export default function useRewards({
     !!relayerURL &&
     !!selectedAcc &&
     `${relayerURL}/wallet-token/rewards/${selectedAcc}?cacheBreak=${cacheBreak}`
-  const { isLoading, data, errMsg } = useRelayerData(rewardsUrl, initialState) as RelayerRewardsData
+  const { isLoading, data, errMsg } = useRelayerData({
+    url: rewardsUrl,
+    initialState
+  }) as RelayerRewardsData
 
   useEffect(() => {
     if (errMsg || !data.success || isLoading) return

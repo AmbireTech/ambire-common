@@ -1,6 +1,6 @@
 import { UseAccountsReturnType } from '../useAccounts'
 import { Account } from '../useAccounts/types'
-import { UseRelayerDataReturnType } from '../useRelayerData'
+import { UseRelayerDataProps, UseRelayerDataReturnType } from '../useRelayerData'
 
 export enum RewardIds {
   ADX_REWARDS = 'adx-rewards',
@@ -11,7 +11,7 @@ export enum RewardIds {
 export type UseRewardsProps = {
   relayerURL: string
   useAccounts: () => UseAccountsReturnType
-  useRelayerData: (url: string | null | boolean, initialState?: any) => UseRelayerDataReturnType
+  useRelayerData: (props: Omit<UseRelayerDataProps, 'fetch'>) => UseRelayerDataReturnType
 }
 
 export type Multiplier = {
