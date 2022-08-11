@@ -1,7 +1,7 @@
-import { UseAccountsReturnType } from '../useAccounts'
+import { Account } from '../useAccounts'
 
 export type UseStakedWalletTokenProps = {
-  useAccounts: () => UseAccountsReturnType
+  accountId: Account['id']
 }
 
 export type UseStakedWalletTokenReturnType = {

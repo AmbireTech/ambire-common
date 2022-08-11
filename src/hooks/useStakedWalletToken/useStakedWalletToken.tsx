@@ -18,15 +18,14 @@ const stakingWalletContract = new Contract(
 )
 
 const useStakedWalletToken = ({
-  useAccounts
+  accountId
 }: UseStakedWalletTokenProps): UseStakedWalletTokenReturnType => {
-  const { selectedAcc } = useAccounts()
   const [stakedAmount, setStakedAmount] = useState(0)
 
   const fetchStakedWalletData = useCallback(async () => {
     try {
       const [balanceOf, shareValue] = await Promise.all([
-        stakingWalletContract.balanceOf(selectedAcc),
+        stakingWalletContract.balanceOf(accountId),
         stakingWalletContract.shareValue()
       ])
 
@@ -35,7 +34,7 @@ const useStakedWalletToken = ({
     } catch (e) {
       // Fail silently
     }
-  }, [selectedAcc])
+  }, [accountId])
 
   useEffect(() => {
     fetchStakedWalletData()
