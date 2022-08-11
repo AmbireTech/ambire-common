@@ -350,7 +350,8 @@ const useSignMessage = ({
     isDeployed,
     dataV4,
     requestedNetwork,
-    requestedChainId
+    requestedChainId,
+    isTypedData
   }
 }
 

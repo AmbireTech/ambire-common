@@ -30,4 +30,5 @@ export type UseSignMessageReturnType = {
   dataV4: any
   requestedNetwork: NetworkType | undefined
   requestedChainId: NetworkType['chainId']
+  isTypedData: boolean
 }
