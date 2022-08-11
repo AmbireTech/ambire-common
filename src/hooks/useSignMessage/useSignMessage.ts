@@ -41,6 +41,7 @@ const useSignMessage = ({
   const [isDeployed, setIsDeployed] = useState<null | boolean>(null)
   const [hasPrivileges, setHasPrivileges] = useState<null | boolean>(null)
   const [hasProviderError, setHasProviderError] = useState(null)
+  const [confirmationType, setConfirmationType] = useState<'email' | 'otp' | null>(null)
 
   const toSign = useMemo(() => everythingToSign[0] || {}, [everythingToSign])
 
@@ -218,9 +219,13 @@ const useSignMessage = ({
           addToast(`Second signature error: ${message}`, {
             error: true
           })
+          setConfirmationType(null)
+
           return
         }
         if (confCodeRequired) {
+          setConfirmationType(confCodeRequired)
+
           if (onConfirmationCodeRequired) {
             await onConfirmationCodeRequired(confCodeRequired, approveQuickAcc)
           }
@@ -351,7 +356,8 @@ const useSignMessage = ({
     dataV4,
     requestedNetwork,
     requestedChainId,
-    isTypedData
+    isTypedData,
+    confirmationType
   }
 }
 

@@ -31,4 +31,5 @@ export type UseSignMessageReturnType = {
   requestedNetwork: NetworkType | undefined
   requestedChainId: NetworkType['chainId']
   isTypedData: boolean
+  confirmationType: 'email' | 'otp' | null
 }
