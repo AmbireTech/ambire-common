@@ -220,6 +220,7 @@ const useSignMessage = ({
             error: true
           })
           setConfirmationType(null)
+          setLoading(false)
 
           return
         }
