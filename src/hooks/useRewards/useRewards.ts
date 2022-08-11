@@ -40,17 +40,16 @@ const rewardsInitialState = {
 
 export default function useRewards({
   relayerURL,
-  useAccounts,
+  accountId,
   useRelayerData
 }: UseRewardsProps): UseRewardsReturnType {
-  const { selectedAcc } = useAccounts()
   const { cacheBreak } = useCacheBreak()
   const [rewards, setRewards] = useState<RewardsState>(rewardsInitialState)
 
   const rewardsUrl =
     !!relayerURL &&
-    !!selectedAcc &&
-    `${relayerURL}/wallet-token/rewards/${selectedAcc}?cacheBreak=${cacheBreak}`
+    !!accountId &&
+    `${relayerURL}/wallet-token/rewards/${accountId}?cacheBreak=${cacheBreak}`
   const { isLoading, data, errMsg } = useRelayerData({
     url: rewardsUrl,
     initialState
@@ -61,7 +60,7 @@ export default function useRewards({
 
     const rewardsDetails = Object.fromEntries<
       string | number | Multiplier[] | { [key in RewardIds]: number }
-    >(data.rewards.map(({ _id, rewards: r }) => [_id, r[selectedAcc] || 0]))
+    >(data.rewards.map(({ _id, rewards: r }) => [_id, r[accountId] || 0]))
     rewardsDetails.multipliers = data.multipliers
     rewardsDetails.walletTokenAPY = data.walletTokenAPY // TODO: Remove if not used anyhwere else raw
     rewardsDetails.walletTokenAPYPercentage = data.walletTokenAPY
@@ -81,11 +80,11 @@ export default function useRewards({
         '...'
 
     rewardsDetails.totalLifetimeRewards = data.rewards
-      .map((x) => (typeof x.rewards[selectedAcc] === 'number' ? x.rewards[selectedAcc] : 0))
+      .map((x) => (typeof x.rewards[accountId] === 'number' ? x.rewards[accountId] : 0))
       .reduce((a, b) => a + b, 0)
 
     setRewards(rewardsDetails as RewardsState)
-  }, [selectedAcc, data, errMsg, isLoading])
+  }, [accountId, data, errMsg, isLoading])
 
   return {
     isLoading,

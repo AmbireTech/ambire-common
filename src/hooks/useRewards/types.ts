@@ -1,4 +1,3 @@
-import { UseAccountsReturnType } from '../useAccounts'
 import { Account } from '../useAccounts/types'
 import { UseRelayerDataProps, UseRelayerDataReturnType } from '../useRelayerData'
 
@@ -10,7 +9,7 @@ export enum RewardIds {
 
 export type UseRewardsProps = {
   relayerURL: string
-  useAccounts: () => UseAccountsReturnType
+  accountId: Account['id']
   useRelayerData: (props: Omit<UseRelayerDataProps, 'fetch'>) => UseRelayerDataReturnType
 }
 
