@@ -57,7 +57,7 @@ export const getNormalizedUrl = (inputStr: string): string => {
 }
 
 export const canOpenInIframe = async (fetch: any, url: string): Promise<boolean> => {
-  const res = await fetchCaught(url, { method: 'HEAD' })
+  const res = await fetchCaught(fetch, url, { method: 'HEAD' })
 
   // NOTE: looks like it enough to open it in iframe 
   // It fails for cors and x-frame-options
