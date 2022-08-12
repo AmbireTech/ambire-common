@@ -28,7 +28,7 @@ export type UseDappsReturnType = {
   catalog: Array<DappManifestData>
   filteredCatalog: Array<DappManifestData>
   onCategorySelect: (category: Category) => void
-  search: string | null
+  search?: string
   onSearchChange: (value: string | null) => void
   categories: Array<Category>
   categoryFilter: Category

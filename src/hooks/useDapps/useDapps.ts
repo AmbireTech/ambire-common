@@ -45,7 +45,7 @@ export default function useDapps({ useStorage }: UseDappsProps): UseDappsReturnT
     defaultValue: []
   })
 
-  const [search, setSearch] = useState<string | null>(null)
+  const [search, setSearch] = useState<string>('')
   const [categoryFilter, setCategoryFilter] = useState<Category>(categories[0])
   const [favorites, setFavorites] = useStorage<{ [key: string]: boolean }>({
     key: 'dappCatalog-faves',
