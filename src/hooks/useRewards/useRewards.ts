@@ -19,7 +19,8 @@ const initialState = {
     success: true,
     usdPrice: 0,
     walletTokenAPY: 0,
-    xWALLETAPY: 0
+    xWALLETAPY: 0,
+    promo: []
   },
   errMsg: null,
   isLoading: true
@@ -36,8 +37,7 @@ const rewardsInitialState = {
   walletUsdPrice: 0,
   xWALLETAPY: 0,
   xWALLETAPYPercentage: '...',
-  totalLifetimeRewards: 0,
-  promo: []
+  totalLifetimeRewards: 0
 }
 
 export default function useRewards({
