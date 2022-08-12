@@ -27,5 +27,6 @@ export type AmbireDappManifest = {
   }
   networks: Array<NetworkId>,
   web3Connectivity?: Array<Web3ConnectivityId>,
-  isWalletPlugin?: boolean 
+  isWalletPlugin?: boolean ,
+  featured?: boolean
 }

@@ -76,17 +76,19 @@ export const getManifestFromDappUrl = async (fetch: any, dAppUrl: string): Promi
   const hasManifest = !!body && body.name && (Array.isArray(body.icons) || body.iconPath)
 
   const isGnosisManifest = hasManifest && body.description && body.iconPath
-  const isWalletPlugin = hasManifest && body.name && body.description && Array.isArray(body.Networks)
+  const isWalletPlugin = hasManifest && body.name && body.description && Array.isArray(body.networks)
     && (isGnosisManifest || (Array.isArray(body.web3Connectivity) && body.web3Connectivity.includes(SupportedWeb3Connectivity.gnosis)))
 
   const manifest = hasManifest ? {
+    url,
     name: body.name,
     description: body.description || body.name,
     iconUrl: body.iconUrl || (url + '/' + (body.iconPath || body.icons[0]?.src).replace(/^\//, '')),
     connectionType: isGnosisManifest ? 'gnosis' : 'walletconnect',
     networks: (body.networks || []).map(chainIdToWalletNetworkId),
     isWalletPlugin,
-    web3Connectivity: body.web3Connectivity
+    web3Connectivity: body.web3Connectivity,
+    providedBy: body.providedBy,
   } as AmbireDappManifest : null
 
   return manifest
