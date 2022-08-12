@@ -56,7 +56,7 @@ export default function useRewards({
   }) as RelayerRewardsData
 
   useEffect(() => {
-    if (errMsg || !data.success || isLoading) return
+    if (errMsg || !data?.success || isLoading) return
 
     const rewardsDetails = Object.fromEntries<
       string | number | Multiplier[] | { [key in RewardIds]: number }
