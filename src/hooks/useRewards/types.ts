@@ -26,6 +26,25 @@ type Reward = {
   updated: string // timestamp
 }
 
+export type Promo = {
+  // TODO: Double-check if these are all incoming props fro the Relayer
+  text: string
+  resources: {
+    link1: {
+      href: string
+      label: string
+    }
+    emojies?: {
+      [key in 'e1' | 'e2' | 'e3']: { text: string; size: string }
+    }
+  }
+  period: {
+    from: number
+    to: number
+    timer: boolean
+  }
+}
+
 export type RelayerRewardsData = {
   data: {
     adxTokenAPY: number
@@ -35,6 +54,7 @@ export type RelayerRewardsData = {
     usdPrice: number
     walletTokenAPY: number
     xWALLETAPY: number
+    promo?: Promo[]
   }
   errMsg: null
   isLoading: boolean
