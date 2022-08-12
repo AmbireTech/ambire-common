@@ -16,6 +16,36 @@
   ],
   "apps": [
     {
+      "id": "lido",
+      "url": "https://stake.lido.fi/",
+      "name": "Lido Staking Widget",
+      "iconUrl": "https://stake.lido.fi/favicon-192x192.png",
+      "description": "Lido is the liquid staking solution for Ethereum.",
+      "providedBy": {
+        "name": "Lido",
+        "url": "https://lido.fi/"
+      },
+      "networks": [
+        "ethereum"
+      ],
+      "featured": true
+    },
+    {
+      "id": "lido-polygon",
+      "url": "https://polygon.lido.fi/",
+      "name": "Lido on Polygon",
+      "iconUrl": "https://polygon.lido.fi/favicon-194x194.png",
+      "description": "Stake your MATIC and receive stMATIC.",
+      "providedBy": {
+        "name": "Lido",
+        "url": "https://lido.fi/"
+      },
+      "networks": [
+        "ethereum"
+      ],
+      "featured": true
+    },
+    {
       "id": "transaction_builder",
       "url": "https://apps.gnosis-safe.io/tx-builder/",
       "name": "Transaction Builder",
