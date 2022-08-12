@@ -20,7 +20,7 @@ const initialState = {
     usdPrice: 0,
     walletTokenAPY: 0,
     xWALLETAPY: 0,
-    promo: []
+    promo: null
   },
   errMsg: null,
   isLoading: true
@@ -38,7 +38,7 @@ const rewardsInitialState = {
   xWALLETAPY: 0,
   xWALLETAPYPercentage: '...',
   totalLifetimeRewards: 0,
-  promo: []
+  promo: null
 }
 
 export default function useRewards({
@@ -62,7 +62,7 @@ export default function useRewards({
     if (errMsg || !data?.success || isLoading) return
 
     const rewardsDetails = Object.fromEntries<
-      string | number | Multiplier[] | Promo[] | { [key in RewardIds]: number }
+      string | number | Multiplier[] | Promo | { [key in RewardIds]: number }
     >(data.rewards.map(({ _id, rewards: r }) => [_id, r[accountId] || 0]))
     rewardsDetails.multipliers = data.multipliers
     rewardsDetails.walletTokenAPY = data.walletTokenAPY // TODO: Remove if not used anyhwere else raw
@@ -86,7 +86,7 @@ export default function useRewards({
       .map((x) => (typeof x.rewards[accountId] === 'number' ? x.rewards[accountId] : 0))
       .reduce((a, b) => a + b, 0)
 
-    rewardsDetails.promo = data.promo || []
+    rewardsDetails.promo = (data.promo as Promo) || null
 
     setRewards(rewardsDetails as RewardsState)
   }, [accountId, data, errMsg, isLoading])

@@ -54,7 +54,7 @@ export type RelayerRewardsData = {
     usdPrice: number
     walletTokenAPY: number
     xWALLETAPY: number
-    promo?: Promo[]
+    promo?: null | Promo
   }
   errMsg: null
   isLoading: boolean
@@ -71,6 +71,7 @@ export type RewardsState = {
   xWALLETAPY: number
   xWALLETAPYPercentage: string
   totalLifetimeRewards: number
+  promo?: null | Promo
 }
 
 export interface UseRewardsReturnType {
