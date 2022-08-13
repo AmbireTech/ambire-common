@@ -61,7 +61,7 @@ const networks: NetworkType[] = [
   {
     id: NETWORKS.avalanche,
     chainId: 43114,
-    rpc: 'https://api.avax.network/ext/bc/C/rpc',
+    rpc: 'https://rpc.ankr.com/avalanche',
     nativeAssetSymbol: 'AVAX',
     name: 'Avalanche',
     explorerUrl: 'https://snowtrace.io',
