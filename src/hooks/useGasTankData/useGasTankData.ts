@@ -1,3 +1,4 @@
+import { formatUnits } from 'ethers/lib/utils'
 import { useMemo } from 'react'
 
 import { getAddedGas } from '../../helpers/sendTxnHelpers'
@@ -85,15 +86,22 @@ export default function useGasTankData({
     () =>
       gasTankTxns &&
       gasTankTxns.length &&
-      gasTankTxns
-        .map((item: any) => {
-          const feeTokenDetails = feeAssetsRes
-            ? feeAssetsRes.find((i: any) => i.symbol === item.feeToken)
-            : null
-          const savedGas = feeTokenDetails ? getAddedGas(feeTokenDetails) : null
-          return savedGas ? item.feeInUSDPerGas * savedGas : 0.0
-        })
-        .reduce((a: any, b: any) => a + b),
+      gasTankTxns.map((item: any) => {
+        const feeTokenDetails = feeAssetsRes
+          ? feeAssetsRes.find((i: any) => i.symbol === item.feeToken)
+          : null
+        const savedGas = feeTokenDetails ? getAddedGas(feeTokenDetails) : null
+        return {
+          saved: savedGas ? item.feeInUSDPerGas * savedGas : 0.0,
+          cashback:
+            item.gasTankFee && item.gasTankFee.cashback
+              ? formatUnits(
+                  item.gasTankFee.cashback.toString(),
+                  feeTokenDetails?.decimals
+                ).toString() * feeTokenDetails?.price
+              : 0.0
+        }
+      }),
     [feeAssetsRes, gasTankTxns]
   )
 
