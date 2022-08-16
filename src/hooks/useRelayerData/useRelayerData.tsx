@@ -1,15 +1,21 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { fetchCaught } from '../../services/fetch'
-import { UseRelayerDataReturnType } from './types'
+import { UseRelayerDataProps, UseRelayerDataReturnType } from './types'
 
 // Threshold after a load of another URL is triggered, we will clear the data
 // so that the component that uses this hook can display the loading spinner.
 const RESET_DATA_AFTER = 250
 
-export default function useRelayerData(fetch: any, url: string | null): UseRelayerDataReturnType {
+// TODO: Figure out if hook is the best approach for implementing this one.
+// TODO: Figure out if a package like https://use-http.com will fit better
+export default function useRelayerData({
+  fetch,
+  url,
+  initialState = null
+}: UseRelayerDataProps): UseRelayerDataReturnType {
   const [isLoading, setLoading] = useState<boolean>(true)
-  const [data, setData] = useState<any>(null)
+  const [data, setData] = useState<any>(initialState)
   const [err, setErr] = useState<any>(null)
   const prevUrl = useRef('')
 
@@ -22,14 +28,14 @@ export default function useRelayerData(fetch: any, url: string | null): UseRelay
   }, [url])
 
   useEffect(() => {
-    if (!url) return
+    if (!url || typeof url !== 'string') return
 
     // Data reset: if some time passes before we load the next piece of data, and the URL is different,
     // we will reset the data so that the UI knows to display a loading indicator
     let resetDataTimer: any = null
     const stripQuery = (x: any) => x.split('?')[0]
     if (stripQuery(prevUrl.current) !== stripQuery(url)) {
-      resetDataTimer = setTimeout(() => setData(null), RESET_DATA_AFTER)
+      resetDataTimer = setTimeout(() => setData(initialState), RESET_DATA_AFTER)
     }
     prevUrl.current = url
 
@@ -52,11 +58,11 @@ export default function useRelayerData(fetch: any, url: string | null): UseRelay
   // In case we want to refetch the data without changing the url prop
   // e.g. pull to refresh
   const forceRefresh = useCallback(() => {
-    if (!url) return
+    if (!url || typeof url !== 'string') return
 
     // Data reset: if some time passes before we load the next piece of data, and the URL is different,
     // we will reset the data so that the UI knows to display a loading indicator
-    const resetDataTimer: any = setTimeout(() => setData(null), RESET_DATA_AFTER)
+    const resetDataTimer: any = setTimeout(() => setData(initialState), RESET_DATA_AFTER)
     setLoading(true)
     setErr(null)
     updateData()

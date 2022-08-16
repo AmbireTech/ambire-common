@@ -27,9 +27,9 @@ export default function useGasTankData({
     ? `${relayerURL}/identity/${account}/${network?.id}/transactions`
     : null
 
-  const { data: balancesRes, isLoading } = useRelayerData(urlGetBalance)
-  const { data: feeAssetsRes } = useRelayerData(urlGetFeeAssets)
-  const { data: executedTxnsRes } = useRelayerData(urlGetTransactions)
+  const { data: balancesRes, isLoading } = useRelayerData({ url: urlGetBalance })
+  const { data: feeAssetsRes } = useRelayerData({ url: urlGetFeeAssets })
+  const { data: executedTxnsRes } = useRelayerData({ url: urlGetTransactions })
 
   const gasTankBalances = useMemo(
     () =>
