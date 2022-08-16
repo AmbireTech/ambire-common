@@ -7,7 +7,6 @@
     "noEmitHelpers": true,
     "lib": ["ESNext"],
     "target": "ESNext",
-    "module": "commonjs",
     "moduleResolution": "node",
     "allowSyntheticDefaultImports": true,
     "skipLibCheck": true,
@@ -31,9 +30,7 @@
     "isolatedModules": true,
     "strict": true,
     "strictPropertyInitialization": true,
-    "resolveJsonModule": true,
-    "rootDir": "src",
+    "resolveJsonModule": true
   },
-  "include": ["src/**/*"],
   "exclude": ["node_modules"]
 }
