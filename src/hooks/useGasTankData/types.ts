@@ -1,6 +1,6 @@
 import { UseNetworkReturnType } from 'hooks/useNetwork'
 import { UsePortfolioReturnType } from 'hooks/usePortfolio'
-import { UseRelayerDataReturnType } from 'hooks/useRelayerData'
+import { UseRelayerDataProps, UseRelayerDataReturnType } from 'hooks/useRelayerData'
 
 import { UseAccountsReturnType } from '../useAccounts'
 
@@ -9,7 +9,7 @@ export interface UseGasTankDataProps {
   useAccounts: () => UseAccountsReturnType
   useNetwork: () => UseNetworkReturnType
   usePortfolio: () => UsePortfolioReturnType
-  useRelayerData: (url: string | null) => UseRelayerDataReturnType
+  useRelayerData: (props: Omit<UseRelayerDataProps, 'fetch'>) => UseRelayerDataReturnType
 }
 
 // TODO: add return types

@@ -21,7 +21,7 @@ export async function fetchGet(_fetch: any, url: string) {
 export async function fetchCaught(_fetch: any, url: any, params?: any) {
   let resp
   try {
-    resp = await fetch(url, params)
+    resp = await _fetch(url, params)
   } catch (e: any) {
     console.error(e)
     return { errMsg: `Unexpected error: ${e && e.message}` }
