@@ -1,3 +1,5 @@
+import { NetworkType } from 'constants/networks'
+
 import { UseAccountsReturnType } from '../useAccounts'
 import { UseToastsReturnType } from '../useToasts'
 
@@ -9,9 +11,9 @@ export type UseSignMessageProps = {
   addToast: UseToastsReturnType['addToast']
   resolve: (outcome: any) => void
   onConfirmationCodeRequired: (
-    confCodeRequired: 'email' | 'otp' | null,
+    confCodeRequired?: 'email' | 'otp' | null,
     approveQuickAcc?: (confCode: number) => void
-  ) => void
+  ) => Promise<any>
   onLastMessageSign: () => void
   getHardwareWallet: (device?: any) => any
 }
@@ -26,4 +28,8 @@ export type UseSignMessageReturnType = {
   typeDataErr: any
   isDeployed: boolean | null
   dataV4: any
+  requestedNetwork: NetworkType | undefined
+  requestedChainId: NetworkType['chainId']
+  isTypedData: boolean
+  confirmationType: 'email' | 'otp' | null
 }

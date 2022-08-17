@@ -1,3 +1,4 @@
+import { formatUnits } from 'ethers/lib/utils'
 import { useMemo } from 'react'
 
 import { getAddedGas } from '../../helpers/sendTxnHelpers'
@@ -7,29 +8,27 @@ import { UseGasTankDataProps, UseGasTankDataReturnType } from './types'
 
 export default function useGasTankData({
   relayerURL,
-  useAccounts,
-  useNetwork,
-  usePortfolio,
+  selectedAcc,
+  network,
+  portfolio,
   useRelayerData
 }: UseGasTankDataProps): UseGasTankDataReturnType {
   const { cacheBreak } = useCacheBreak()
-  const { selectedAcc: account } = useAccounts()
-  const { network } = useNetwork()
-  const { tokens } = usePortfolio()
+  const { tokens } = portfolio
 
   const urlGetBalance = relayerURL
-    ? `${relayerURL}/gas-tank/${account}/getBalance?cacheBreak=${cacheBreak}`
+    ? `${relayerURL}/gas-tank/${selectedAcc}/getBalance?cacheBreak=${cacheBreak}`
     : null
   const urlGetFeeAssets = relayerURL
     ? `${relayerURL}/gas-tank/assets?cacheBreak=${cacheBreak}`
     : null
   const urlGetTransactions = relayerURL
-    ? `${relayerURL}/identity/${account}/${network?.id}/transactions`
+    ? `${relayerURL}/identity/${selectedAcc}/${network?.id}/transactions`
     : null
 
-  const { data: balancesRes, isLoading } = useRelayerData(urlGetBalance)
-  const { data: feeAssetsRes } = useRelayerData(urlGetFeeAssets)
-  const { data: executedTxnsRes } = useRelayerData(urlGetTransactions)
+  const { data: balancesRes, isLoading } = useRelayerData({ url: urlGetBalance })
+  const { data: feeAssetsRes } = useRelayerData({ url: urlGetFeeAssets })
+  const { data: executedTxnsRes } = useRelayerData({ url: urlGetTransactions })
 
   const gasTankBalances = useMemo(
     () =>
@@ -65,35 +64,55 @@ export default function useGasTankData({
     () =>
       feeAssetsPerNetwork?.map((item: any) => {
         const isFound = tokens?.find((x) => x.address.toLowerCase() === item.address.toLowerCase())
-        if (isFound) return isFound
-        return { ...item, balance: 0, balanceUSD: 0, decimals: 0 }
+        if (isFound)
+          return {
+            ...isFound,
+            tokenImageUrl: item.icon,
+            decimals: item.decimals,
+            symbol: item.symbol,
+            balance: isFound.balance,
+            balanceUSD:
+              parseFloat(isFound.balance) *
+              parseFloat(
+                feeAssetsPerNetwork.find(
+                  (x: any) => x.address.toLowerCase() === isFound.address.toLowerCase()
+                ).price || 0
+              )
+          }
+
+        return {
+          ...item,
+          tokenImageUrl: item.icon,
+          balance: 0,
+          balanceUSD: 0,
+          decimals: 0,
+          address: item.address.toLowerCase(),
+          symbol: item.symbol.toUpperCase()
+        }
       }),
     [feeAssetsPerNetwork, tokens]
-  )
-
-  const sortedTokens = useMemo(
-    () =>
-      availableFeeAssets?.sort((a: any, b: any) => {
-        const decreasing = b.balanceUSD - a.balanceUSD
-        if (decreasing === 0) return a.symbol.localeCompare(b.symbol)
-        return decreasing
-      }),
-    [availableFeeAssets]
   )
 
   const totalSavedResult = useMemo(
     () =>
       gasTankTxns &&
       gasTankTxns.length &&
-      gasTankTxns
-        .map((item: any) => {
-          const feeTokenDetails = feeAssetsRes
-            ? feeAssetsRes.find((i: any) => i.symbol === item.feeToken)
-            : null
-          const savedGas = feeTokenDetails ? getAddedGas(feeTokenDetails) : null
-          return savedGas ? item.feeInUSDPerGas * savedGas : 0.0
-        })
-        .reduce((a: any, b: any) => a + b),
+      gasTankTxns.map((item: any) => {
+        const feeTokenDetails = feeAssetsRes
+          ? feeAssetsRes.find((i: any) => i.symbol === item.feeToken)
+          : null
+        const savedGas = feeTokenDetails ? getAddedGas(feeTokenDetails) : null
+        return {
+          saved: savedGas ? item.feeInUSDPerGas * savedGas : 0.0,
+          cashback:
+            item.gasTankFee && item.gasTankFee.cashback
+              ? formatUnits(
+                  item.gasTankFee.cashback.toString(),
+                  feeTokenDetails?.decimals
+                ).toString() * feeTokenDetails?.price
+              : 0.0
+        }
+      }),
     [feeAssetsRes, gasTankTxns]
   )
 
@@ -101,10 +120,10 @@ export default function useGasTankData({
     balancesRes,
     gasTankBalances,
     isLoading,
-    sortedTokens,
     gasTankTxns,
     feeAssetsRes,
     gasTankFilledTxns,
-    totalSavedResult
+    totalSavedResult,
+    availableFeeAssets
   }
 }
