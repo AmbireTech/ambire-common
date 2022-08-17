@@ -8,7 +8,7 @@ import { UseGasTankDataProps, UseGasTankDataReturnType } from './types'
 
 export default function useGasTankData({
   relayerURL,
-  account,
+  selectedAcc,
   network,
   portfolio,
   useRelayerData
@@ -17,13 +17,13 @@ export default function useGasTankData({
   const { tokens } = portfolio
 
   const urlGetBalance = relayerURL
-    ? `${relayerURL}/gas-tank/${account}/getBalance?cacheBreak=${cacheBreak}`
+    ? `${relayerURL}/gas-tank/${selectedAcc}/getBalance?cacheBreak=${cacheBreak}`
     : null
   const urlGetFeeAssets = relayerURL
     ? `${relayerURL}/gas-tank/assets?cacheBreak=${cacheBreak}`
     : null
   const urlGetTransactions = relayerURL
-    ? `${relayerURL}/identity/${account}/${network?.id}/transactions`
+    ? `${relayerURL}/identity/${selectedAcc}/${network?.id}/transactions`
     : null
 
   const { data: balancesRes, isLoading } = useRelayerData({ url: urlGetBalance })
