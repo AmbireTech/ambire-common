@@ -1,17 +1,16 @@
-import {
-  getGnosisDefaultList,
-  getWalletGnosisDefaultList,
-  getWalletWalletconnectDefaultList
-} from './dappCatalogUtils'
+import { fetchGet } from '../fetch'
 import { AmbireDappManifest } from './types'
 
-export async function getWalletDappCatalog(): Promise<Array<AmbireDappManifest>> {
-  const dappCatalog = getWalletGnosisDefaultList()
-    .concat(getGnosisDefaultList())
-    .concat(getWalletWalletconnectDefaultList())
+export const DEFAULT_DAPP_CATALOG_URL =
+  'https://dappcatalog.ambire.com/ambire-wallet-dapp-catalog.json'
 
-  // NOTE: make it async just in case for future separate service/call with validated dapps
-  return Promise.resolve(dappCatalog)
+export async function getWalletDappCatalog(
+  fetch: any,
+  catalogUrl?: string
+): Promise<Array<AmbireDappManifest>> {
+  const catalog = await fetchGet(fetch, catalogUrl || DEFAULT_DAPP_CATALOG_URL)
+
+  return catalog
 }
 
 export * from './types'
