@@ -117,4 +117,14 @@ export function isKnown(txn, from) {
   return !!(knownAliases[address] || names[address] || tokens[address] || knownTokens[address])
 }
 
+
+export const updateHumanizerData = (tokensByNetworks) => {
+  const tokensList = Object.values(tokensByNetworks)
+    .map(({ assets }) => assets)
+    .flat(1)
+  const knownAliases = tokensList.map(({ address, symbol }) => ({ address, name: symbol }))
+  setKnownAddresses(knownAliases)
+  setKnownTokens(tokensList)
+}
+
 export { knownAliases, knownTokens }
