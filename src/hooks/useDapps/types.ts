@@ -3,6 +3,7 @@ import { UseStorageType } from '../useStorage'
 
 export type UseDappsProps = {
   useStorage: UseStorageType
+  fetch: any
 }
 
 export type DappManifestData = AmbireDappManifest & { custom?: boolean }

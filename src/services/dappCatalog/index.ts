@@ -1,4 +1,4 @@
-import { fetchGet } from '../fetch'
+import { fetchCaught } from '../fetch'
 import { AmbireDappManifest } from './types'
 
 export const DEFAULT_DAPP_CATALOG_URL =
@@ -8,9 +8,9 @@ export async function getWalletDappCatalog(
   fetch: any,
   catalogUrl?: string
 ): Promise<Array<AmbireDappManifest>> {
-  const catalog = await fetchGet(fetch, catalogUrl || DEFAULT_DAPP_CATALOG_URL)
+  const catalog = await fetchCaught(fetch, catalogUrl || DEFAULT_DAPP_CATALOG_URL)
 
-  return catalog
+  return catalog.body || []
 }
 
 export * from './types'

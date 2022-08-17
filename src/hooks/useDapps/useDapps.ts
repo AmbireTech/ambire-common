@@ -32,7 +32,7 @@ const withCategory = (dapp: DappManifestData) => ({
   category: dapp.connectionType === 'gnosis' ? 'integrated' : dapp.connectionType
 })
 
-export default function useDapps({ useStorage }: UseDappsProps): UseDappsReturnType {
+export default function useDapps({ useStorage, fetch }: UseDappsProps): UseDappsReturnType {
   const categories = useMemo(() => CATEGORIES, [])
   const [defaultCatalog, setDefaultCatalog] = useState<Array<AmbireDappManifest>>([])
   const [isDappMode, setIsDappMode] = useStorage<boolean>({ key: 'isDappMode' })
@@ -61,7 +61,7 @@ export default function useDapps({ useStorage }: UseDappsProps): UseDappsReturnT
 
   useEffect(() => {
     async function getCatalog() {
-      const walletCatalog = await getWalletDappCatalog()
+      const walletCatalog = await getWalletDappCatalog(fetch)
       setDefaultCatalog(walletCatalog)
     }
 
@@ -106,27 +106,35 @@ export default function useDapps({ useStorage }: UseDappsProps): UseDappsReturnT
     [customDapps, updateCustomDapps]
   )
 
-  const getDappFromCatalog = useCallback((dappUrl: string): DappManifestData | undefined => {
-    const dappHost = url.parse(dappUrl).host
+  const getDappFromCatalog = useCallback(
+    (dappUrl: string): DappManifestData | undefined => {
+      const dappHost = url.parse(dappUrl).host
 
-    const dapp = catalog.find(({ url: cDappUrl }) => url.parse(cDappUrl).host === dappHost)
-    return dapp
-  }, [catalog])
+      const dapp = catalog.find(({ url: cDappUrl }) => url.parse(cDappUrl).host === dappHost)
+      return dapp
+    },
+    [catalog]
+  )
 
-  const isDappInCatalog = useCallback((dappUrl: string): boolean => {
-    return !!getDappFromCatalog(dappUrl)
-  }, [getDappFromCatalog])
+  const isDappInCatalog = useCallback(
+    (dappUrl: string): boolean => {
+      return !!getDappFromCatalog(dappUrl)
+    },
+    [getDappFromCatalog]
+  )
 
-  const loadDappFromUrl = useCallback((dappUrl: string): boolean => {
-    const dapp = getDappFromCatalog(dappUrl)
+  const loadDappFromUrl = useCallback(
+    (dappUrl: string): boolean => {
+      const dapp = getDappFromCatalog(dappUrl)
 
-    if (dapp) {
-      loadCurrentDappData(dapp)
-      return true
-    } else {
+      if (dapp) {
+        loadCurrentDappData(dapp)
+        return true
+      }
       return false
-    }
-  }, [getDappFromCatalog])
+    },
+    [getDappFromCatalog, loadCurrentDappData]
+  )
 
   const toggleFavorite = useCallback(
     (dapp: DappManifestData) => {
