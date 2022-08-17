@@ -17,9 +17,9 @@ export interface UseGasTankDataReturnType {
   balancesRes: any
   gasTankBalances: any
   isLoading: any
-  sortedTokens: any
   gasTankTxns: any
   feeAssetsRes: any
   gasTankFilledTxns: any
   totalSavedResult: any
+  availableFeeAssets: any
 }

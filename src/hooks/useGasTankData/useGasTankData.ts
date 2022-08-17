@@ -64,20 +64,33 @@ export default function useGasTankData({
     () =>
       feeAssetsPerNetwork?.map((item: any) => {
         const isFound = tokens?.find((x) => x.address.toLowerCase() === item.address.toLowerCase())
-        if (isFound) return isFound
-        return { ...item, balance: 0, balanceUSD: 0, decimals: 0 }
+        if (isFound)
+          return {
+            ...isFound,
+            tokenImageUrl: item.icon,
+            decimals: item.decimals,
+            symbol: item.symbol,
+            balance: isFound.balance,
+            balanceUSD:
+              parseFloat(isFound.balance) *
+              parseFloat(
+                feeAssetsPerNetwork.find(
+                  (x: any) => x.address.toLowerCase() === isFound.address.toLowerCase()
+                ).price || 0
+              )
+          }
+
+        return {
+          ...item,
+          tokenImageUrl: item.icon,
+          balance: 0,
+          balanceUSD: 0,
+          decimals: 0,
+          address: item.address.toLowerCase(),
+          symbol: item.symbol.toUpperCase()
+        }
       }),
     [feeAssetsPerNetwork, tokens]
-  )
-
-  const sortedTokens = useMemo(
-    () =>
-      availableFeeAssets?.sort((a: any, b: any) => {
-        const decreasing = b.balanceUSD - a.balanceUSD
-        if (decreasing === 0) return a.symbol.localeCompare(b.symbol)
-        return decreasing
-      }),
-    [availableFeeAssets]
   )
 
   const totalSavedResult = useMemo(
@@ -107,10 +120,10 @@ export default function useGasTankData({
     balancesRes,
     gasTankBalances,
     isLoading,
-    sortedTokens,
     gasTankTxns,
     feeAssetsRes,
     gasTankFilledTxns,
-    totalSavedResult
+    totalSavedResult,
+    availableFeeAssets
   }
 }
