@@ -8,15 +8,13 @@ import { UseGasTankDataProps, UseGasTankDataReturnType } from './types'
 
 export default function useGasTankData({
   relayerURL,
-  useAccounts,
-  useNetwork,
-  usePortfolio,
+  account,
+  network,
+  portfolio,
   useRelayerData
 }: UseGasTankDataProps): UseGasTankDataReturnType {
   const { cacheBreak } = useCacheBreak()
-  const { selectedAcc: account } = useAccounts()
-  const { network } = useNetwork()
-  const { tokens } = usePortfolio()
+  const { tokens } = portfolio
 
   const urlGetBalance = relayerURL
     ? `${relayerURL}/gas-tank/${account}/getBalance?cacheBreak=${cacheBreak}`
