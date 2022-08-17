@@ -6,9 +6,9 @@ import { UseAccountsReturnType } from '../useAccounts'
 
 export interface UseGasTankDataProps {
   relayerURL: string
-  useAccounts: () => UseAccountsReturnType
-  useNetwork: () => UseNetworkReturnType
-  usePortfolio: () => UsePortfolioReturnType
+  selectedAcc: UseAccountsReturnType['selectedAcc']
+  network: UseNetworkReturnType['network']
+  portfolio: UsePortfolioReturnType
   useRelayerData: (props: Omit<UseRelayerDataProps, 'fetch'>) => UseRelayerDataReturnType
 }
 
@@ -17,9 +17,9 @@ export interface UseGasTankDataReturnType {
   balancesRes: any
   gasTankBalances: any
   isLoading: any
-  sortedTokens: any
   gasTankTxns: any
   feeAssetsRes: any
   gasTankFilledTxns: any
   totalSavedResult: any
+  availableFeeAssets: any
 }
