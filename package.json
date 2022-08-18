@@ -36,7 +36,6 @@
     "prettier": "2.5.0",
     "typescript": "~4.3.5",
     "node-fetch": "^2.3.0",
-    "adex-protocol-eth": "git+https://git@github.com/AmbireTech/adex-protocol-eth.git#ef2f88f26824c64c1eb12c02a389baec2b2c3889",
-    "tslib": "^2.4.0"
+    "adex-protocol-eth": "git+https://git@github.com/AmbireTech/adex-protocol-eth.git#ef2f88f26824c64c1eb12c02a389baec2b2c3889"
   }
 }
