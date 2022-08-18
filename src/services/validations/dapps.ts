@@ -1,4 +1,4 @@
-import isURL from 'validator/lib/isURL'
+import isURL from 'validator/es/lib/isURL'
 
 import { AmbireDappManifest } from '../dappCatalog/types'
 
