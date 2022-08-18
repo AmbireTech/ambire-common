@@ -3,6 +3,7 @@ import { UseStorageType } from '../useStorage'
 
 export type UseDappsProps = {
   useStorage: UseStorageType
+  fetch: any
 }
 
 export type DappManifestData = AmbireDappManifest & { custom?: boolean }
@@ -28,9 +29,10 @@ export type UseDappsReturnType = {
   catalog: Array<DappManifestData>
   filteredCatalog: Array<DappManifestData>
   onCategorySelect: (category: Category) => void
-  search: string | null
+  search?: string
   onSearchChange: (value: string | null) => void
   categories: Array<Category>
   categoryFilter: Category
   isDappInCatalog: (dappUrl: string) => boolean
+  loadDappFromUrl: (dappUrl: string) => boolean
 }
