@@ -42,6 +42,19 @@ export default function usePortfolio({
   // ] 
   const [assets, setAssetsByAccount] = useState({})
 
+  // Implementation of state handling and fetching of all balances by other networks (without current one)
+  // balance: [
+  //   totals: [
+  //     { network: 'polygon', total: 2345.33 },
+  //     { network: 'avalanche', total: 8.49 },
+  //     { network: 'binance', total: 0 },
+  //     { network: 'fantom', total: 5.33 }
+  //   ],
+  //   systemInfo: {},
+  //   error: null
+  // ]
+  const [balances, setBalances] = useState({})
+
   // To be removed: This all state updates wont be needed with our new structure
   const [balancesByNetworksLoading, setBalancesByNetworksLoading] = useState<{
     [key in Network]: boolean
