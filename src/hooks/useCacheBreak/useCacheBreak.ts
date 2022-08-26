@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
+import React, { useEffect, useState } from 'react'
 
 export interface UseCacheBreakReturnType {
   cacheBreak: number
+  setCacheBreak: React.Dispatch<React.SetStateAction<any>>
 }
 
 type UseCacheBreakProps = {
@@ -27,6 +28,7 @@ export default function useCacheBreak(
   }, [cacheBreak])
 
   return {
-    cacheBreak
+    cacheBreak,
+    setCacheBreak
   }
 }
