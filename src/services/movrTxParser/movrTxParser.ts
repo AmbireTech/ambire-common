@@ -1,3 +1,5 @@
+// TODO: add more specific types
+
 import { Interface } from 'ethers/lib/utils'
 
 import { abis, tokens } from '../../constants/humanizerInfo.json'
