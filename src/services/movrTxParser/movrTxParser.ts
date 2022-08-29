@@ -1,9 +1,7 @@
-// TODO: add more specific types
-
 import { Interface } from 'ethers/lib/utils'
 
 import { abis, tokens } from '../../constants/humanizerInfo.json'
-import networks from '../../constants/networks'
+import networks, { NetworkType } from '../../constants/networks'
 import { formatNativeTokenAddress, knownTokens } from '../humanReadableTransactions'
 import { getTokenIcon } from '../icons'
 
@@ -23,11 +21,14 @@ const getAssetIcon = (address: any, chainId: any) => {
 }
 
 const formatTx = (
-  fromChainId: any,
+  fromChainId: NetworkType['chainId'],
   toChainId: any,
-  inputToken: any,
-  outputToken: any,
-  amount: any
+  inputToken: string,
+  outputToken: string,
+  amount: {
+    hex: string
+    type: string
+  }
 ) => {
   const fromAsset = getAssetInfo(inputToken)
   const toAsset = getAssetInfo(outputToken)
@@ -60,18 +61,18 @@ const formatTx = (
 
 const movrTxParser = {
   [MovrAnyswapInterface.getSighash('outboundTransferTo')]: (
-    value: any,
-    data: any,
-    currentNetwork: any
+    value: string,
+    data: string,
+    currentNetwork: NetworkType
   ) => {
     const { middlewareInputToken, amount, tokenToBridge, toChainId } =
       MovrAnyswapInterface.parseTransaction({ data, value }).args[0]
     return formatTx(currentNetwork.chainId, toChainId, middlewareInputToken, tokenToBridge, amount)
   },
   [MovrRouterInterface.getSighash('outboundTransferTo')]: (
-    value: any,
-    data: any,
-    currentNetwork: any
+    value: string,
+    data: string,
+    currentNetwork: NetworkType
   ) => {
     const { middlewareRequest, amount, bridgeRequest, toChainId } =
       MovrRouterInterface.parseTransaction({ data, value }).args[0]

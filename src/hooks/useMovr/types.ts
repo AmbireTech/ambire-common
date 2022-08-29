@@ -1,44 +1,48 @@
-// TODO: Add more specific types
+import { NetworkType } from 'constants/networks'
 
 export interface UseMovrProps {
   fetchGet: any
 }
 
 export interface UseMovrReturnType {
-  fetchChains: (from: any, to: any) => Promise<any>
-  fetchToTokens: (from: any, to: any) => Promise<any>
-  fetchFromTokens: (from: any, to: any) => Promise<any>
+  fetchChains: () => Promise<any>
+  fetchToTokens: (from: NetworkType['chainId'], to: NetworkType['chainId']) => Promise<any>
+  fetchFromTokens: (from: NetworkType['chainId'], to: NetworkType['chainId']) => Promise<any>
   fetchQuotes: (
-    fromAsset: any,
-    fromChainId: any,
-    toAsset: any,
-    toChainId: any,
+    fromAsset: string,
+    fromChainId: NetworkType['chainId'],
+    toAsset: string,
+    toChainId: NetworkType['chainId'],
     amount: any,
     excludeBridges: any,
     sort?: any
   ) => Promise<any>
   checkApprovalAllowance: (
-    chainID: any,
+    chainID: NetworkType['chainId'],
     owner: any,
     allowanceTarget: any,
     tokenAddress: any
   ) => Promise<any>
   approvalBuildTx: (
-    chainID: any,
+    chainID: NetworkType['chainId'],
     owner: any,
     allowanceTarget: any,
     tokenAddress: any,
     amount: any
   ) => Promise<any>
   sendBuildTx: (
-    recipient: any,
-    fromAsset: any,
-    fromChainId: any,
-    toAsset: any,
-    toChainId: any,
+    recipient: string,
+    fromAsset: string,
+    fromChainId: NetworkType['chainId'],
+    toAsset: string,
+    toChainId: NetworkType['chainId'],
     amount: any,
     output: any,
     routePath: any
   ) => Promise<any>
-  checkTxStatus: (transactionHash: any, fromChainId: any, toChainId: any) => Promise<any>
+  checkTxStatus: (
+    transactionHash: any,
+    fromChainId: NetworkType['chainId'],
+    toChainId: NetworkType['chainId']
+  ) => Promise<any>
 }

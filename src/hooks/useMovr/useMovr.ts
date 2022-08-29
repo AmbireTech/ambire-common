@@ -1,5 +1,6 @@
 // TODO: Add more specific types
 
+import { NetworkType } from 'constants/networks'
 import { useCallback } from 'react'
 
 import { UseMovrProps, UseMovrReturnType } from './types'
@@ -15,7 +16,7 @@ const useMovr = ({ fetchGet }: UseMovrProps): UseMovrReturnType => {
   }, [fetchGet])
 
   const fetchFromTokens = useCallback(
-    async (from: any, to: any) => {
+    async (from: NetworkType['chainId'], to: NetworkType['chainId']) => {
       const response = await fetchGet(
         `${baseURL}/supported/from-token-list?fromChainId=${from}&toChainId=${to}`
       )
@@ -26,7 +27,7 @@ const useMovr = ({ fetchGet }: UseMovrProps): UseMovrReturnType => {
   )
 
   const fetchToTokens = useCallback(
-    async (from: any, to: any) => {
+    async (from: NetworkType['chainId'], to: NetworkType['chainId']) => {
       const response = await fetchGet(
         `${baseURL}/supported/to-token-list?fromChainId=${from}&toChainId=${to}`
       )
