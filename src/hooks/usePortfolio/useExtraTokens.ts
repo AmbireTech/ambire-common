@@ -22,7 +22,7 @@ export default function useExtraTokens({ useStorage, useToasts, tokens }: UseExt
         .filter((extra: Token) => extra.account === account && extra.network === network)
         .map((extraToken: Token) => ({
           ...extraToken,
-          type: 'base',
+          type: 'token',
           price: 0,
           balanceUSD: 0,
           isExtraToken: true

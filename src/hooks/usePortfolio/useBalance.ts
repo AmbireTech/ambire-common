@@ -3,56 +3,61 @@
 import { useEffect, useMemo, useState } from 'react'
 import networks from '../../constants/networks'
 
-export default function useBalance(tokensByNetworks, currentNetwork) { 
-    const balanceByNetworks = useMemo(() => {
-        return tokensByNetworks?.map(({ network, meta, assets }) => {
-            const totalUSD = assets.reduce((acc, curr) => acc + curr.balanceUSD, 0)
-            const balanceUSD = totalUSD + meta.find(({ label }) => label === 'Debt')?.value
-            if (!balanceUSD)
-            return {
-                network,
-                total: {
-                    full: 0,
-                    truncated: 0,
-                    decimals: '00'
-                    }
-                }
+const defaultTotal = (network) => ({
+    network: network,
+    total: {
+        full: 0,
+        truncated: 0,
+        decimals: '00'
+    }
+})
+
+export default function useBalance(balances, assets, currentNetwork) {
+    const balanceByNetworks = useMemo(() => {     
+        return balances?.data?.map(({ network, tokens }) => {
+            const totalUSD = tokens?.reduce((acc, curr) => acc + curr.balanceUSD, 0)
+    
+            if (!totalUSD) return defaultTotal(network)
                 
-            const [truncated, decimals] = Number(balanceUSD.toString()).toFixed(2).split('.')
+            const [truncated, decimals] = Number(totalUSD.toString()).toFixed(2).split('.')
             return {
                 network,
                 total: {
-                    full: balanceUSD,
+                    full: totalUSD,
                     truncated: Number(truncated).toLocaleString('en-US'),
                     decimals
                 }
             }
-        })  
-    }, [tokensByNetworks]);
-    
+        }) || []
+    }, [balances, currentNetwork]);
+
     const currBalance = useMemo(() => {
-        const currNetworkB = balanceByNetworks?.find(({ network }) => network === currentNetwork)
-        return currNetworkB ? currNetworkB : {
+        const totalUSD = assets?.tokens?.reduce((acc, curr) => acc + curr.balanceUSD, 0)
+
+        if (!totalUSD) return defaultTotal(currentNetwork)
+
+        const [truncated, decimals] = Number(totalUSD.toString()).toFixed(2).split('.')
+
+        return {
+            network: currentNetwork,
             total: {
-                full: 0,
-                truncated: 0,
-                decimals: '00'
-            },
-            network: ''
+                full: totalUSD,
+                truncated: Number(truncated).toLocaleString('en-US'),
+                decimals
+            }
         }
-    }, [balanceByNetworks, currentNetwork]);
+    }, [assets, currentNetwork]);
         
     const balancesByNetworks = useMemo(() => {
         if (currBalance) {
             return (
                 balanceByNetworks
-                .filter(({ network }) => network !== currentNetwork)
                 // When switching networks, the balances order is not persisted.
                 // This creates an annoying jump effect sometimes in the list
                 // of the positive other balances for the account. So always sort
                 // the other balances, to make sure their order in the list is
                 // the same on every network switch.
-                .sort((a, b) =>
+                ?.sort((a, b) =>
                 networks.find(({ id }) => id === a.network)?.chainId <
                 networks.find(({ id }) => id === b.network)?.chainId
                 ? -1
@@ -65,7 +70,7 @@ export default function useBalance(tokensByNetworks, currentNetwork) {
         
     const [balance, setBalance] = useState(currBalance)
     const [otherBalances, setOtherBalances] = useState(balancesByNetworks)
-    
+
     useEffect(() => {
         setBalance(currBalance)
     }, [currBalance])
@@ -74,5 +79,8 @@ export default function useBalance(tokensByNetworks, currentNetwork) {
         setOtherBalances(balancesByNetworks)
     }, [balancesByNetworks])
 
-    return { balance, otherBalances }
+    return {
+        balance,
+        otherBalances
+    }
 }
