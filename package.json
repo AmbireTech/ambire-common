@@ -1,6 +1,6 @@
 {
   "version": "0.14.5",
-  "name": "@ambire/ambire-common",
+  "name": "ambire-common",
   "description": "Common ground for the Ambire apps",
   "scripts": {
     "generate:contractInfo": "node scripts/generateContractInfo.js > src/constants/humanizerInfo.json"
