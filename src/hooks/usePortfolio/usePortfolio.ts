@@ -44,7 +44,7 @@ export default function usePortfolio({
   
   // All fetching logic required in our portfolio
   const {
-    fetchSupplementTokenData, fetchOtherNetworksBalances, fetchTokens
+    fetchSupplementTokenData, fetchOtherNetworksBalances, fetchTokens, fetchCoingeckoPrices
   } = usePortfolioFetch({
     account, currentAccount, currentNetwork, hiddenTokens, setAssetsByAccount, getExtraTokensAssets, getBalances, setBalances, addToast, rpcTokensLastUpdated, getOtherNetworksTotals,
     getCoingeckoPrices
@@ -102,6 +102,20 @@ export default function usePortfolio({
     const refreshInterval = setInterval(refreshTokensIfVisible, 90000)
     return () => clearInterval(refreshInterval)
   }, [refreshTokensIfVisible])
+
+  // TODO: Check if prices are 2 min old and fetch new ones
+  useEffect(() => {
+    const coingeckoTokensToUpdate = assets[`${account}-${currentNetwork}`]?.tokens?.filter(token => token.coingeckoId).some(token => { 
+      if (((new Date().valueOf() - token.priceUpdate) >= 2*60*1000)) {
+        return token
+      }
+    })
+
+    if (coingeckoTokensToUpdate && !assets[`${account}-${currentNetwork}`]?.loading) {
+      console.log(coingeckoTokensToUpdate, assets[`${account}-${currentNetwork}`])
+      // fetchCoingeckoPrices(assets[`${account}-${currentNetwork}`])
+    }
+  }, [assets[`${account}-${currentNetwork}`]])
 
   // Refresh balance every 150s if hidden
   useEffect(() => {

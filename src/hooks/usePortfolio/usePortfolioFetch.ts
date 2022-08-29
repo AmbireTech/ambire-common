@@ -113,6 +113,7 @@ export default function useProtocolsFetch({
             ...token,
             price: response[token.coingeckoId].usd,
             balanceUSD: parseFloat(token.balance * response[token.coingeckoId].usd),
+            priceUpdate: new Date().valueOf()
           }
         } else return token
       })  
@@ -125,7 +126,6 @@ export default function useProtocolsFetch({
           tokens: tokensWithNewPrices,
           collectibles: velcroResponse.nfts,
           loading: false,
-          priceUpdate: new Date().valueOf()
         }
       }))
 
@@ -284,7 +284,6 @@ export default function useProtocolsFetch({
           }))
         }
 
-
         // Show error in case we have some
         // if (error) addToast(error, { error: true })
         
@@ -311,6 +310,7 @@ export default function useProtocolsFetch({
   return {
     fetchTokens,
     fetchSupplementTokenData,
-    fetchOtherNetworksBalances
+    fetchOtherNetworksBalances,
+    fetchCoingeckoPrices
   }
 }
