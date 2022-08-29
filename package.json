@@ -1,7 +1,7 @@
 {
+  "version": "0.14.5",
   "name": "ambire-common",
   "description": "Common ground for the Ambire apps",
-  "private": true,
   "scripts": {
     "generate:contractInfo": "node scripts/generateContractInfo.js > src/constants/humanizerInfo.json"
   },
@@ -36,5 +36,11 @@
     "prettier": "2.5.0",
     "react": "17.0.1",
     "typescript": "~4.3.5"
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://git@github.com/AmbireTech/ambire-common.git"
+  },
+  "author": "Ivo Georgiev",
+  "license": "MIT"
 }
