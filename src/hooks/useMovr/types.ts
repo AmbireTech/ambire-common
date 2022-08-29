@@ -1,7 +1,7 @@
 import { NetworkType } from 'constants/networks'
 
 export interface UseMovrProps {
-  fetchGet: any
+  fetch: any
 }
 
 export interface UseMovrReturnType {
