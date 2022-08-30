@@ -87,7 +87,8 @@ export default function useProtocolsFetch({
   setBalances,
   setAssetsByAccount,
   getOtherNetworksTotals,
-  getCoingeckoPrices
+  getCoingeckoPrices,
+  setPricesFetching
 }) {
   const extraTokensAssets = useMemo(
     () => getExtraTokensAssets(account, currentNetwork),
@@ -103,6 +104,8 @@ export default function useProtocolsFetch({
     }).map(token => token.coingeckoId)
 
     if (!coingeckoTokensToUpdate.length) return null
+
+    setPricesFetching(true)
     try {
       const response = await getCoingeckoPrices(coingeckoTokensToUpdate.join(','))
       if (!response) return null
@@ -128,10 +131,12 @@ export default function useProtocolsFetch({
           loading: false,
         }
       }))
+      setPricesFetching(false)
 
     } catch (e) {
       addToast(e.message, { error: true })
-      setBalances(prev => ({ ...prev, loading: false }))
+      setPricesFetching(false)
+      setAssetsByAccount(prev => ({ ...prev, loading: false }))
     }
   }, [account, currentNetwork])
 
