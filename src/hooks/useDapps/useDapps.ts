@@ -66,7 +66,7 @@ export default function useDapps({ useStorage, fetch }: UseDappsProps): UseDapps
     }
 
     getCatalog()
-  }, [])
+  }, [fetch])
 
   const toggleDappMode = useCallback(() => {
     setIsDappMode(!isDappMode)
@@ -161,7 +161,7 @@ export default function useDapps({ useStorage, fetch }: UseDappsProps): UseDapps
   // refresh list from filters
   useEffect(() => {
     setFilteredItems(
-      catalog.filter((item: any) => {
+      [...catalog].sort((a, b) => Number(!!b.featured) - Number(!!a.featured)).filter((item: any) => {
         let match = true
         if (categoryFilter) {
           match = categoryFilter.filter(item, favorites)
