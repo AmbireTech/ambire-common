@@ -84,15 +84,15 @@ export default function useProtocolsFetch({
   getBalances,
   addToast,
   rpcTokensLastUpdated,
-  setBalances,
   setAssetsByAccount,
-  getOtherNetworksTotals,
   getCoingeckoPrices,
-  setPricesFetching
+  setPricesFetching,
+  filterByHiddenTokens,
+  extraTokens
 }) {
   const extraTokensAssets = useMemo(
     () => getExtraTokensAssets(account, currentNetwork),
-    [account, currentNetwork]
+    [account, extraTokens, currentNetwork]
   )
     
   const fetchCoingeckoPrices = useCallback(async(velcroResponse) => {
@@ -141,18 +141,65 @@ export default function useProtocolsFetch({
   }, [account, currentNetwork])
 
   const fetchOtherNetworksBalances = useCallback(async (account, currentNetwork) => {
-    const network = supportedProtocols.find(({ network }) => network === currentNetwork)
-
-    setBalances(prev => ({ ...prev, loading: true }))
+    const networksToFetch = supportedProtocols.filter(({ network }) => network !== currentNetwork)
     
     try {
-      const response = await getOtherNetworksTotals(currentNetwork, account, network.balancesProvider)
-      if (!response) return null
+      Promise.all(
+        networksToFetch.map(async ({ network, balancesProvider }) => {
 
-      setBalances(prev => ({ ...prev, loading: false, data: response.data }))
+          setAssetsByAccount(prev => ({
+            ...prev,
+            [`${account}-${network}`]: {
+              ...prev[`${account}-${network}`],
+              loading: true
+            }
+          }))
+
+          const response = await getBalances(network, account, balancesProvider)
+
+          if (!response) return null
+
+          const { tokens, nfts } = response.data
+
+          let formattedTokens = [
+            ...tokens
+              .map((token: any) => ({
+                  ...token,
+                  // balanceOracle fixes the number to the 10 decimal places, so here we should also fix it
+                  balance: Number(token.balance.toFixed(10)),
+                  // balanceOracle rounds to the second decimal places, so here we should also round it
+                  balanceUSD: roundFloatingNumber(token.balanceUSD),
+                  price: token.price || null,
+                  network: network
+              })),
+          ]
+
+          formattedTokens = filterByHiddenTokens(formattedTokens)
+
+          setAssetsByAccount(prev => ({
+            ...prev,
+            [`${account}-${network}`]: {
+              ...prev[`${account}-${network}`],
+              tokens: formattedTokens,
+              collectibles: nfts,
+              loading: false,
+              network: network
+            }
+          }))
+        
+        })
+      )
+
     } catch (e) {
       addToast(e.message, { error: true })
-      setBalances(prev => ({ ...prev, loading: false }))
+
+      setAssetsByAccount(prev => ({
+        ...prev,
+        [`${account}-${network}`]: {
+          ...prev[`${account}-${network}`],
+          loading: false
+        }
+    }))
     }
   }, [currentNetwork])
 
@@ -262,10 +309,13 @@ export default function useProtocolsFetch({
                   balance: Number(token.balance.toFixed(10)),
                   // balanceOracle rounds to the second decimal places, so here we should also round it
                   balanceUSD: roundFloatingNumber(token.balanceUSD),
-                  price: token.price || null
+                  price: token.price || null,
+                  network: network?.network
                 })),
           ...extraTokensAssets
         ]
+
+        formattedTokens = filterByHiddenTokens(formattedTokens)
 
         const coingeckoTokensToUpdate = tokens.filter(token => token.coingeckoId).some(token => { 
           if (((new Date().valueOf() - token.priceUpdate) >= 2*60*1000)) {

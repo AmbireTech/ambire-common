@@ -4,16 +4,9 @@ import {
     TokenWithIsHiddenFlag,
 } from '../usePortfolio/types'
 
-export default function useHiddenTokens({ useToasts, useStorage, tokens }: any): any {
+export default function useHiddenTokens({ useToasts, useStorage }: any): any {
   const [hiddenTokens, setHiddenTokens] = useStorage({ key: 'hiddenTokens', defaultValue: [] })
   const { addToast } = useToasts()
-
-  const filteredTokens = useMemo(() => {
-    return tokens?.map((t: Token) => {
-      return hiddenTokens?.find((ht: Token) => t.address === ht.address && t.network === ht.network) || { ...t, isHidden: false }
-    })
-    .filter((t: TokenWithIsHiddenFlag) => !t.isHidden)
-  }, [tokens, hiddenTokens])
 
   const onAddHiddenToken = useCallback(
     (hiddenToken: TokenWithIsHiddenFlag) => {
@@ -31,6 +24,14 @@ export default function useHiddenTokens({ useToasts, useStorage, tokens }: any):
     },
     [hiddenTokens, setHiddenTokens]
   )
+
+  const filterByHiddenTokens = useCallback((_tokens: Token[]) => {
+    return _tokens
+      .map((t: Token) => {
+        return hiddenTokens.find((ht: TokenWithIsHiddenFlag) => t.address === ht.address) || { ...t, isHidden: false }
+      })
+      .filter((t) => !t.isHidden)
+  }, [hiddenTokens])
 
   const onRemoveHiddenToken = useCallback(
     (address: string) => {
@@ -50,6 +51,6 @@ export default function useHiddenTokens({ useToasts, useStorage, tokens }: any):
     onRemoveHiddenToken,
     setHiddenTokens,
     hiddenTokens,
-    filteredTokens,
+    filterByHiddenTokens,
   }
 }

@@ -1,11 +1,12 @@
 // @ts-nocheck TODO: Fill in all missing types before enabling the TS check again
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import useBalance from './useBalance'
 import usePrevious from '../usePrevious'
 import useExtraTokens from './useExtraTokens'
 import usePortfolioFetch from './usePortfolioFetch'
+import useHiddenTokens from '../../hooks/useHiddenTokens'
 
 import {
   Network,
@@ -17,11 +18,9 @@ export default function usePortfolio({
   currentNetwork,
   account,
   useStorage,
-  hiddenTokens,
   isVisible,
   useToasts,
   getBalances,
-  getOtherNetworksTotals,
   getCoingeckoPrices
 }: UsePortfolioProps): UsePortfolioReturnType {
   const { addToast } = useToasts()
@@ -44,17 +43,30 @@ export default function usePortfolio({
     tokens: assets[`${account}-${currentNetwork}`]?.tokens || []
   })
   
+  const {
+    onAddHiddenToken,
+    onRemoveHiddenToken,
+    setHiddenTokens,
+    hiddenTokens,
+    filterByHiddenTokens,
+  } = useHiddenTokens({
+    useToasts,
+    useStorage,
+  })
+  
   // All fetching logic required in our portfolio
   const {
     fetchSupplementTokenData, fetchOtherNetworksBalances, fetchTokens, fetchCoingeckoPrices
   } = usePortfolioFetch({
-    account, currentAccount, currentNetwork, hiddenTokens, setAssetsByAccount, getExtraTokensAssets, getBalances, setBalances, addToast, rpcTokensLastUpdated, getOtherNetworksTotals,
+    account, currentAccount, currentNetwork, hiddenTokens, getExtraTokensAssets, getBalances, addToast, rpcTokensLastUpdated, setAssetsByAccount,
     getCoingeckoPrices,
-    setPricesFetching
+    setPricesFetching,
+    filterByHiddenTokens,
+    extraTokens
   })
 
   // Implementation of balances calculation
-  const { balance, otherBalances } = useBalance(balances, assets[`${account}-${currentNetwork}`], currentNetwork)
+  const { balance, otherBalances } = useBalance(account, assets, assets[`${account}-${currentNetwork}`], currentNetwork)
 
   const refreshTokensIfVisible = useCallback(() => {
     if (!account) return
@@ -137,6 +149,16 @@ export default function usePortfolio({
     return () => clearInterval(refreshInterval)
   }, [fetchSupplementTokenData, assets[`${account}-${currentNetwork}`]])
 
+  // We need to be sure we get the latest balancesByNetworksLoading here
+  const balancesByNetworksLoading = useMemo(
+    () => {
+      return Object.keys(assets).filter(key => {
+        return key.includes(account) && !key.includes(currentNetwork)
+      }).every(key => assets[key]?.loading)
+    },
+    [assets, account, currentNetwork]
+  )
+
   return {
     balance,
     otherBalances,
@@ -144,9 +166,13 @@ export default function usePortfolio({
     tokens: assets[`${account}-${currentNetwork}`]?.tokens || [],
     collectibles: assets[`${account}-${currentNetwork}`]?.collectibles || [],
     isCurrNetworkBalanceLoading: assets[`${account}-${currentNetwork}`]?.loading,
-    balancesByNetworksLoading: balances?.loading,
+    balancesByNetworksLoading,
     extraTokens,
     onAddExtraToken,
     onRemoveExtraToken,
+    onAddHiddenToken,
+    onRemoveHiddenToken,
+    setHiddenTokens,
+    hiddenTokens,
   }
 }
