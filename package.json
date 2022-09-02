@@ -1,12 +1,12 @@
 {
-  "version": "0.13.0",
+  "version": "0.14.8",
   "name": "ambire-common",
   "description": "Common ground for the Ambire apps",
-  "private": true,
   "scripts": {
     "generate:contractInfo": "node scripts/generateContractInfo.js > src/constants/humanizerInfo.json"
   },
   "peerDependencies": {
+    "@ambire/signature-validator": "^1.0.3",
     "@ensdomains/eth-ens-namehash": "^2.0.15",
     "@unstoppabledomains/resolution": "^7.1.4",
     "@walletconnect/client": "^1.7.1",

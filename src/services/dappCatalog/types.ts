@@ -5,6 +5,14 @@ export enum WalletConnectionType {
   'walletconnect' = 'walletconnect'
 }
 
+export enum SupportedWeb3Connectivity {
+  'gnosis' = 'gnosis',
+  'walletconnect' = 'walletconnect',
+  'injected' = 'injected'
+}
+
+export type Web3ConnectivityId = keyof typeof SupportedWeb3Connectivity
+
 export type AmbireDappManifest = {
   id: string
   name: string
@@ -18,4 +26,8 @@ export type AmbireDappManifest = {
     url: string
   }
   networks: Array<NetworkId>
+  web3Connectivity?: Array<Web3ConnectivityId>
+  isWalletPlugin?: boolean
+  featured?: boolean
+  forceInternal?: boolean
 }
