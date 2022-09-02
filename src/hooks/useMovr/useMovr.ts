@@ -1,9 +1,9 @@
 // TODO: Add more specific types
 
-import { NetworkType } from 'constants/networks'
 import { useCallback } from 'react'
-import { fetchGet } from 'services/fetch'
 
+import { NetworkType } from '../../constants/networks'
+import { fetchGet } from '../../services/fetch'
 import { UseMovrProps, UseMovrReturnType } from './types'
 
 const baseURL = 'https://backend.movr.network/v1'
