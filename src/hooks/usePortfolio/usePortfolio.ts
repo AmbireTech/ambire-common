@@ -6,7 +6,7 @@ import useBalance from './useBalance'
 import usePrevious from '../usePrevious'
 import useExtraTokens from './useExtraTokens'
 import usePortfolioFetch from './usePortfolioFetch'
-import useHiddenTokens from '../../hooks/useHiddenTokens'
+import useHiddenTokens from './useHiddenTokens'
 
 import {
   Network,
