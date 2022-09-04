@@ -95,7 +95,7 @@ export default function useProtocolsFetch({
     [account, extraTokens, currentNetwork]
   )
     
-  const fetchCoingeckoPrices = useCallback(async(velcroResponse) => {
+  const fetchCoingeckoPrices = useCallback(async(velcroResponse, resolve) => {
     const { tokens } = velcroResponse
     const coingeckoTokensToUpdate = tokens?.filter(token => token.coingeckoId).filter(token => { 
       if (((new Date().valueOf() - token.priceUpdate ) >= 2*60*1000)) {
@@ -133,6 +133,8 @@ export default function useProtocolsFetch({
       }))
       setPricesFetching(false)
 
+      resolve && resolve(tokensWithNewPrices)
+
     } catch (e) {
       addToast(e.message, { error: true })
       setPricesFetching(false)
@@ -169,7 +171,8 @@ export default function useProtocolsFetch({
                   balanceUSD: roundFloatingNumber(token.balanceUSD),
                   price: token.price || null,
                   network: network
-              })),
+              }))
+              .filter((token: any) => !!token.name && !!token.symbol),
           ]
 
           formattedTokens = filterByHiddenTokens(formattedTokens)
@@ -224,7 +227,7 @@ export default function useProtocolsFetch({
             : [], // Filter out extraTokens
           extraTokens: extraTokensAssets,
           hiddenTokens
-        })        
+        })      
 
         setAssetsByAccount(prev => ({
           ...prev,
@@ -274,18 +277,24 @@ export default function useProtocolsFetch({
       }
 
       const network = supportedProtocols.find(({ network }) => network === currentNetwork)
-
+      
       try {
-        const response = await getBalances(currentNetwork, account, network.balancesProvider)
+        const quickResponse = showLoadingState || !assets?.tokens?.length
+        const response = await getBalances(currentNetwork, account, network.balancesProvider, quickResponse)
         if (!response) return null
 
-        const { cache, cacheTime, tokens, nfts, error, provider } = response.data
+        let { cache, cacheTime, tokens, nfts, partial, error, provider } = response.data
+
+
+        tokens = filterByHiddenTokens(tokens)
 
         // We should skip the tokens update for the current network,
         // in the case Velcro returns a cached data, which is more outdated than the already fetched RPC data.
         const shouldSkipUpdate =
           cache &&
-          cacheTime < rpcTokensLastUpdated.current
+          cacheTime < rpcTokensLastUpdated.current || partial
+
+        // In case we have cached data from covalent - call balance oracle
 
         if (shouldSkipUpdate) {
           if (showLoadingState || !assets?.tokens?.length) {
@@ -299,42 +308,45 @@ export default function useProtocolsFetch({
           } else return null
         }
 
-        let formattedTokens = []
-
-        if (provider === 'useBalanceOracleCustomTokens') {
+        let formattedTokens = []        
+        
+        if (provider === 'balanceOracle') {
           // Fetch balances from Balance oracle
           formattedTokens = [
             ...assets?.tokens || [],
             ...tokens
           ]
-          fetchSupplementTokenData({ tokens: formattedTokens })
-        } else {
+        }
+        formattedTokens = [
+          ...tokens
+            .map((token: any) => ({
+              ...token,
+              // balanceOracle fixes the number to the 10 decimal places, so here we should also fix it
+              balance: Number(token.balance.toFixed(10)),
+              // balanceOracle rounds to the second decimal places, so here we should also round it
+              balanceUSD: roundFloatingNumber(token.balanceUSD),
+              price: token.price || null,
+              network: network?.network
+            }))
+            .filter((token: any) => !!token.name && !!token.symbol),
+          ...extraTokensAssets
+        ]
 
-          formattedTokens = [
-            ...tokens
-              .map((token: any) => ({
-                ...token,
-                // balanceOracle fixes the number to the 10 decimal places, so here we should also fix it
-                balance: Number(token.balance.toFixed(10)),
-                // balanceOracle rounds to the second decimal places, so here we should also round it
-                balanceUSD: roundFloatingNumber(token.balanceUSD),
-                price: token.price || null,
-                network: network?.network
-              })),
-            ...extraTokensAssets
-          ]
-  
-          formattedTokens = filterByHiddenTokens(formattedTokens)
-  
-          const coingeckoTokensToUpdate = tokens.filter(token => token.coingeckoId).some(token => { 
-            if (((new Date().valueOf() - token.priceUpdate) >= 2*60*1000)) {
-              return token
-            }
+        // Update coingecko tokens which are 2 mins old
+        const coingeckoTokensToUpdate = formattedTokens.filter(token => token.coingeckoId).some(token => { 
+          if (((new Date().valueOf() - token.priceUpdate) >= 2*60*1000)) {
+            return token
+          }
+        })
+
+        if (coingeckoTokensToUpdate) {
+          new Promise((resolve) => {
+            fetchCoingeckoPrices({ ...response.data, tokens: formattedTokens }, resolve)
+          }).then(res => {
+            fetchSupplementTokenData({ tokens: res })
           })
-  
-          if (coingeckoTokensToUpdate)  {
-            fetchCoingeckoPrices({ ...response.data, tokens: formattedTokens }) }
-          else {
+        } else {
+          Promise.all([
             setAssetsByAccount(prev => ({
               ...prev,
               [`${account}-${currentNetwork}`]: {
@@ -345,11 +357,11 @@ export default function useProtocolsFetch({
                 cacheTime,
                 loading: false
               }
-            }))
-          }
+            })),
+            fetchSupplementTokenData({ tokens: formattedTokens })
+          ])
         }
         
-
         // Show error in case we have some
         // if (error) addToast(error, { error: true })
         

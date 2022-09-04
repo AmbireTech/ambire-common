@@ -96,7 +96,6 @@ async function getTokenListBalance({
         ? {
             type: 'token',
             ...t,
-            price: newTokenBalance.price || 0,
             balance: Number(newTokenBalance.balance),
             balanceRaw: newTokenBalance.balanceRaw,
             updateAt: new Date().toString(),
@@ -113,7 +112,6 @@ async function getTokenListBalance({
     if (updateBalance && typeof updateBalance === 'function') updateBalance(newBalance)
     return newBalance
   }
-  console.error(result.message, result.data)
   return tokens
 }
 

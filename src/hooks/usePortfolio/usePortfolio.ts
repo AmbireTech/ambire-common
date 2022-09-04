@@ -63,7 +63,7 @@ export default function usePortfolio({
   })
 
   // Implementation of balances calculation
-  const { balance, otherBalances } = useBalance(account, assets, assets[`${account}-${currentNetwork}`], currentNetwork)
+  const { balance, otherBalances } = useBalance(account, assets, assets[`${account}-${currentNetwork}`], currentNetwork, filterByHiddenTokens)
 
   const refreshTokensIfVisible = useCallback(() => {
     if (!account) return
@@ -87,16 +87,18 @@ export default function usePortfolio({
     await fetchOtherNetworksBalances(account, currentNetwork)
   }
 
-  // Fetch balances and protocols on account change
+  // Fetch balances and protocols on account and network change
   useEffect(() => {
     currentAccount.current = account
     loadBalance()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [account, currentNetwork])
-
+  
+  // Fetch other networks balances on account change
   useEffect(() => {
     loadOtherNetworksBalances()
   }, [account])
+
   // Reset `rpcTokensLastUpdated` on a network change, because its value is regarding the previous network,
   // and it's not useful for the current network.
   useEffect(() => {
@@ -132,6 +134,12 @@ export default function usePortfolio({
     const refreshInterval = setInterval(refreshPrices, 20000)
     return () => clearInterval(refreshInterval)
   }, [assets[`${account}-${currentNetwork}`]])
+  
+  // Fetch other networks assets every 20 seconds
+  useEffect(() => {
+    const refreshInterval = setInterval(loadOtherNetworksBalances, 20000)
+    return () => clearInterval(refreshInterval)
+  }, [])
 
   // Refresh balance every 150s if hidden
   useEffect(() => {
@@ -161,7 +169,7 @@ export default function usePortfolio({
     balance,
     otherBalances,
     ...assets[`${account}-${currentNetwork}`],
-    tokens: assets[`${account}-${currentNetwork}`]?.tokens || [],
+    tokens: filterByHiddenTokens(assets[`${account}-${currentNetwork}`]?.tokens || []) || [],
     collectibles: assets[`${account}-${currentNetwork}`]?.collectibles || [],
     isCurrNetworkBalanceLoading: assets[`${account}-${currentNetwork}`]?.loading,
     balancesByNetworksLoading,
