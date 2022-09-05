@@ -1,5 +1,4 @@
-import { NetworkType } from 'constants/networks'
-
+import { NetworkType } from '../../constants/networks'
 import { UseAccountsReturnType } from '../useAccounts'
 import { UseToastsReturnType } from '../useToasts'
 

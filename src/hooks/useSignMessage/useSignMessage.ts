@@ -1,3 +1,4 @@
+// @ts-nocheck TODO: Fill in all missing types before enabling the TS check again
 import { Bundle, signMessage, signMessage712 } from 'adex-protocol-eth/js/Bundle'
 import { Wallet } from 'ethers'
 import {

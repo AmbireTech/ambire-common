@@ -1,3 +1,4 @@
+// @ts-nocheck TODO: Fill in all missing types before enabling the TS check again
 import ERC20ABI from 'adex-protocol-eth/abi/ERC20.json'
 import { BigNumber } from 'ethers'
 import { Interface } from 'ethers/lib/utils'

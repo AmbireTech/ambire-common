@@ -1,3 +1,4 @@
+// @ts-nocheck TODO: Fill in all missing types before enabling the TS check again
 // It costs around 19k to send a token, if that token was interacted with before in the same transaction,
 // because of SLOAD costs - they depend on whether a slot has been read
 // however, it costs 30k if the token has not been interacted with
