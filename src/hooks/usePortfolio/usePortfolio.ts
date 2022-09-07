@@ -50,6 +50,8 @@ export default function usePortfolio({
     useToasts,
     useStorage,
   })
+
+  const tokens = useMemo(() => filterByHiddenTokens(assets[`${account}-${currentNetwork}`]?.tokens || []) || [], [hiddenTokens]);
   
   // All fetching logic required in our portfolio
   const {
@@ -147,7 +149,7 @@ export default function usePortfolio({
       !isVisible && !assets[`${account}-${currentNetwork}`]?.loading ? fetchTokens(account, currentNetwork) : null
     const refreshInterval = setInterval(refreshIfHidden, 150000)
     return () => clearInterval(refreshInterval)
-  }, [account, currentNetwork, isVisible, fetchTokens])
+  }, [account, currentNetwork, isVisible, fetchTokens, assets[`${account}-${currentNetwork}`]])
 
   // Get supplement tokens data every 20s
   useEffect(() => {
@@ -169,7 +171,7 @@ export default function usePortfolio({
     balance,
     otherBalances,
     ...assets[`${account}-${currentNetwork}`],
-    tokens: filterByHiddenTokens(assets[`${account}-${currentNetwork}`]?.tokens || []) || [],
+    tokens: tokens,
     collectibles: assets[`${account}-${currentNetwork}`]?.collectibles || [],
     isCurrNetworkBalanceLoading: assets[`${account}-${currentNetwork}`]?.loading,
     balancesByNetworksLoading,

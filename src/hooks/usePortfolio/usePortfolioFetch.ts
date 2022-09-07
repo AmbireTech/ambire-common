@@ -205,7 +205,7 @@ export default function useProtocolsFetch({
   }, [currentNetwork])
 
   const fetchSupplementTokenData = useCallback(
-    async (updatedTokens: any[]) => {      
+    async (updatedTokens: any[]) => {   
       if (!updatedTokens?.tokens?.length) {
         setAssetsByAccount(prev => ({
           ...prev,
