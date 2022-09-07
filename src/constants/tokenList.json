@@ -961,12 +961,6 @@
       "decimals": 18
     },
     {
-      "address": "0xc8e36f0a44fbeca89fdd5970439cbe62eb4b5d03",
-      "symbol": "ADX",
-      "coingeckoId": "adex",
-      "decimals": 18
-    },
-    {
       "address": "0xc2132d05d31c914a87c6611c10748aeb04b58e8f",
       "symbol": "USDT",
       "decimals": 6,
