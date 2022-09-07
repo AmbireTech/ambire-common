@@ -287,22 +287,24 @@ export default function useProtocolsFetch({
 
 
         tokens = filterByHiddenTokens(tokens)
+        const prevCacheTime = assets?.cacheTime
 
         // We should skip the tokens update for the current network,
         // in the case Velcro returns a cached data, which is more outdated than the already fetched RPC data.
         const shouldSkipUpdate =
           cache &&
-          cacheTime < rpcTokensLastUpdated.current || partial
+          cacheTime < prevCacheTime || partial
 
+        cache = shouldSkipUpdate
         // In case we have cached data from covalent - call balance oracle
-
         if (shouldSkipUpdate) {
           if (showLoadingState || !assets?.tokens?.length) {
             setAssetsByAccount(prev => ({
               ...prev,
               [`${account}-${currentNetwork}`]: {
                 ...prev[`${account}-${currentNetwork}`],
-                loading: false
+                loading: false, 
+                cache
               }
             }))
           } else return null
@@ -341,7 +343,7 @@ export default function useProtocolsFetch({
 
         if (coingeckoTokensToUpdate) {
           new Promise((resolve) => {
-            fetchCoingeckoPrices({ ...response.data, tokens: formattedTokens }, resolve)
+            fetchCoingeckoPrices({ ...response.data, cache, tokens: formattedTokens }, resolve)
           }).then(res => {
             fetchSupplementTokenData({ tokens: res })
           })
@@ -353,8 +355,8 @@ export default function useProtocolsFetch({
                 ...prev[`${account}-${currentNetwork}`],
                 tokens: formattedTokens,
                 collectibles: nfts,
-                cache,
-                cacheTime,
+                cache: cache || false,
+                cacheTime: cacheTime || new Date().valueOf(),
                 loading: false
               }
             })),
