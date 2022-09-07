@@ -106,7 +106,8 @@ export default function useGasTankData({
           saved: savedGas ? item.feeInUSDPerGas * savedGas : 0.0,
           cashback:
             item.gasTankFee && item.gasTankFee.cashback
-              ? formatUnits(
+              ? // @ts-ignore FIXME: Figure out why TypeScript complains
+                formatUnits(
                   item.gasTankFee.cashback.toString(),
                   feeTokenDetails?.decimals
                 ).toString() * feeTokenDetails?.price

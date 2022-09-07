@@ -6,8 +6,8 @@ export default function useGasTank({
   selectedAcc,
   useStorage
 }: UseGasTankProps): UseGasTankReturnType {
-  const defaultGasTankState: [GasTankEntryType] = [{ account: selectedAcc, isEnabled: false }]
-  const [state, setState] = useStorage({
+  const defaultGasTankState: GasTankEntryType[] = [{ account: selectedAcc, isEnabled: false }]
+  const [state, setState] = useStorage<GasTankEntryType[]>({
     key: 'gasTankState',
     defaultValue: defaultGasTankState
   })
