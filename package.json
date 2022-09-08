@@ -1,5 +1,5 @@
 {
-  "version": "0.15",
+  "version": "0.15.0",
   "name": "ambire-common",
   "description": "Common ground for the Ambire apps",
   "peerDependencies": {
