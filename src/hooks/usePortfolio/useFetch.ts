@@ -73,8 +73,16 @@ function paginateArray(input: any[], limit: number) {
 // TODO: Implement relayerless mode fetching mechanism here
 // TODO: check props - account / currentAccount
 export default function useFetch(
-    account, currentAccount, currentNetwork, hiddenTokens, getExtraTokensAssets, setTokensByNetworks, setOtherProtocolsByNetworks, getBalances, addToast, rpcTokensLastUpdated, otherProtocolsByNetworks, setBalancesByNetworksLoading, balancesByNetworksLoading, otherProtocolsByNetworksLoading, cachedBalancesByNetworks, setOtherProtocolsByNetworksLoading, setCachedBalancesByNetworks
+    account, currentAccount, currentNetwork, hiddenTokens, getExtraTokensAssets, setTokensByNetworks, getBalances, setCachedBalancesByNetworks, setOtherProtocolsByNetworksLoading, addToast, rpcTokensLastUpdated
     ) { 
+    
+    const [balancesByNetworksLoading, setBalancesByNetworksLoading] = useState<{
+        [key in Network]: boolean
+    }>({})
+    const [otherProtocolsByNetworksLoading, setOtherProtocolsByNetworksLoading] = useState<{
+        [key in Network]: boolean
+    }>({})
+    const [cachedBalancesByNetworks, setCachedBalancesByNetworks] = useState([])
 
     const fetchSupplementTokenData = useCallback(
         async (updatedTokens: any[]) => {
@@ -100,7 +108,7 @@ export default function useFetch(
               extraTokens: extraTokensAssets,
               hiddenTokens
             })
-
+    
             currentNetworkTokens.assets = rcpTokenData
     
             setTokensByNetworks((tokensByNetworks) => [
@@ -132,7 +140,7 @@ export default function useFetch(
         ) => {
           // Prevent race conditions
           if (currentAccount.current !== account) return
-          console.log('showLoadingState', showLoadingState)
+
           try {
             const networks = currentNetwork
               ? [supportedProtocols.find(({ network }) => network === currentNetwork)]
@@ -145,16 +153,7 @@ export default function useFetch(
                 networks.map(async ({ network, balancesProvider }) => {
                   // Show loading state only on network change, initial fetch and account change
                   if (showLoadingState || !tokensByNetworks.length) {
-                    console.log('fetchTokens: changing too setLoading curr netw true', tokensByNetworks)
-    
                     setBalancesByNetworksLoading((prev) => ({ ...prev, [network]: true }))
-                    // setTokensByAccount(prev => ({
-                    //   ...prev,
-                    //   [`${account}-${network}`]: {
-                    //     ...prev[`${account}-${network}`],
-                    //     loading: true
-                    //   }
-                    // }))
                   }
     
                   try {
@@ -193,15 +192,6 @@ export default function useFetch(
                     ]
     
                     const updatedNetwork = network
-    
-                    // setTokensByAccount(prev => ({
-                    //   ...prev,
-                    //   [`${account}-${network}`]: {
-                    //     ...prev[`${account}-${network}`],
-                    //     tokens: assets,
-                    //     loading: false
-                    //   }
-                    // }))
     
                     setTokensByNetworks((tokensByNetworks) => [
                       ...tokensByNetworks.filter(({ network }) => network !== updatedNetwork),
@@ -366,11 +356,11 @@ export default function useFetch(
       )
 
     return {
-        // fetchTokens,
-        // fetchOtherProtocols,
+        fetchTokens,
+        fetchOtherProtocols,
         fetchSupplementTokenData,
-        // balancesByNetworksLoading,
-        // otherProtocolsByNetworksLoading,
-        // cachedBalancesByNetworks
+        balancesByNetworksLoading,
+        otherProtocolsByNetworksLoading,
+        cachedBalancesByNetworks
     }
 }
