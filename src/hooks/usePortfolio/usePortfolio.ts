@@ -7,6 +7,7 @@ import usePrevious from '../usePrevious'
 import useExtraTokens from './useExtraTokens'
 import usePortfolioFetch from './usePortfolioFetch'
 import useHiddenTokens from './useHiddenTokens'
+import useTransactions from './useTransactions'
 
 import {
   Network,
@@ -21,12 +22,16 @@ export default function usePortfolio({
   isVisible,
   useToasts,
   getBalances,
-  getCoingeckoPrices
+  getCoingeckoPrices,
+  relayerURL,
+  useRelayerData
 }: UsePortfolioProps): UsePortfolioReturnType {
   const { addToast } = useToasts()
   const rpcTokensLastUpdated = useRef<number>(0)
   const currentAccount = useRef<string>()
   const prevNetwork = usePrevious(currentNetwork)
+
+  // console.log('relayerURL', relayerURL)
 
   // Implementation of structure that contains all assets by account and network
   const [assets, setAssetsByAccount] = useStorage({ key: 'assets', defaultValue: {} })
@@ -39,7 +44,14 @@ export default function usePortfolio({
     useToasts,
     tokens: assets[`${account}-${currentNetwork}`]?.tokens || []
   })
-  
+
+  const transactions = useTransactions({
+    relayerURL,
+    account,
+    currentNetwork,
+    useRelayerData
+  })
+
   const {
     onAddHiddenToken,
     onRemoveHiddenToken,
