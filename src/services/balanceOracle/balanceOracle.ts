@@ -93,7 +93,7 @@ async function getTokenListBalance({
       )[0]
       return newTokenBalance
         ? {
-            type: 'token',
+            type: 'base',
             network,
             address: newTokenBalance.address,
             decimals: newTokenBalance.decimals,
@@ -110,10 +110,7 @@ async function getTokenListBalance({
               newTokenBalance.tokenImageUrl || getTokenIcon(network, newTokenBalance.address),
             isHidden: t.isHidden
           }
-        : {
-          type: 'token',
-          ...t 
-        }
+        : t
     })
     if (updateBalance && typeof updateBalance === 'function') updateBalance(newBalance)
     return newBalance
