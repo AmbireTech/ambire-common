@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { fetchGet } from 'services/fetch'
+
+import { fetchGet } from '../../services/fetch'
 import { ConstantsType, UseFetchConstantsProps, UseFetchConstantsReturnType } from './types'
 
 const useFetchConstants = ({ fetch }: UseFetchConstantsProps): UseFetchConstantsReturnType => {
