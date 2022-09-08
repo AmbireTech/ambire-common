@@ -12,12 +12,12 @@ const defaultTotal = (network) => ({
     }
 })
 
-export default function useBalance(account, assets, assetsCurrentAccount, currentNetwork, filterByHiddenTokens) {
+export default function useBalance(account, assets, assetsCurrentAccount, currentNetwork) {
     const balanceByNetworks = useMemo(() => {     
         return Object.keys(assets).filter(key => key.includes(account) && !key.includes(currentNetwork)).map((key) => {
             
             const network =  assets[key]?.network            
-            const totalUSD = filterByHiddenTokens(assets[key]?.tokens || [])?.reduce((acc, curr) => acc + curr.balanceUSD, 0)
+            const totalUSD = assets[key]?.tokens?.reduce((acc, curr) => acc + curr.balanceUSD, 0)
     
             if (!totalUSD) return defaultTotal(network)
                 
@@ -34,7 +34,7 @@ export default function useBalance(account, assets, assetsCurrentAccount, curren
     }, [assets, currentNetwork]);
 
     const currBalance = useMemo(() => {
-        const totalUSD = filterByHiddenTokens(assetsCurrentAccount?.tokens || [])?.reduce((acc, curr) => acc + curr.balanceUSD, 0)
+        const totalUSD = assetsCurrentAccount?.tokens?.reduce((acc, curr) => acc + curr.balanceUSD, 0)
 
         if (!totalUSD) return defaultTotal(currentNetwork)
 
@@ -48,7 +48,7 @@ export default function useBalance(account, assets, assetsCurrentAccount, curren
                 decimals
             }
         }
-    }, [assetsCurrentAccount, currentNetwork, filterByHiddenTokens]);
+    }, [assetsCurrentAccount, currentNetwork]);
         
     const balancesByNetworks = useMemo(() => {
         if (currBalance) {
