@@ -91,11 +91,13 @@ async function getTokenListBalance({
       const newTokenBalance = result.data.filter(
         (r: Token) => r.address === t.address && parseFloat(r.balance) > 0
       )[0]
-
       return newTokenBalance
         ? {
             type: 'token',
-            ...t,
+            network,
+            address: newTokenBalance.address,
+            decimals: newTokenBalance.decimals,
+            symbol: newTokenBalance.symbol,
             price: newTokenBalance.price || 0,
             balance: Number(newTokenBalance.balance),
             balanceRaw: newTokenBalance.balanceRaw,
@@ -104,6 +106,9 @@ async function getTokenListBalance({
               // @ts-ignore not sure why a TS warn happens
               parseFloat(newTokenBalance.price * newTokenBalance.balance || 0).toFixed(2)
             ),
+            tokenImageUrl:
+              newTokenBalance.tokenImageUrl || getTokenIcon(network, newTokenBalance.address),
+            isHidden: t.isHidden
           }
         : {
           type: 'token',
