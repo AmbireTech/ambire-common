@@ -1,8 +1,8 @@
-import { useCallback } from 'react'
+import { useCallback, useMemo } from 'react'
 import {
     Token,
     TokenWithIsHiddenFlag,
-} from './types'
+} from '../usePortfolio/types'
 
 export default function useHiddenTokens({ useToasts, useStorage }: any): any {
   const [hiddenTokens, setHiddenTokens] = useStorage({ key: 'hiddenTokens', defaultValue: [] })
