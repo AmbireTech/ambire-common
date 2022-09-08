@@ -142,9 +142,11 @@ export default function useProtocolsFetch({
 
   const fetchOtherNetworksBalances = useCallback(async (account, currentNetwork) => {
     const networksToFetch = supportedProtocols.filter(({ network }) => network !== currentNetwork)
+    
     try {
       Promise.all(
         networksToFetch.map(async ({ network, balancesProvider }) => {
+
           setAssetsByAccount(prev => ({
             ...prev,
             [`${account}-${network}`]: {
@@ -279,7 +281,7 @@ export default function useProtocolsFetch({
         const response = await getBalances(currentNetwork, account, network.balancesProvider)
         if (!response) return null
 
-        const { cache, cacheTime, tokens, nfts, error, provider } = response.data
+        const { cache, cacheTime, tokens, nfts, error } = response.data
 
         // We should skip the tokens update for the current network,
         // in the case Velcro returns a cached data, which is more outdated than the already fetched RPC data.
@@ -298,57 +300,44 @@ export default function useProtocolsFetch({
             }))
           } else return null
         }
-
-        let formattedTokens = []
-
-        if (provider === 'useBalanceOracleCustomTokens') {
-          // Fetch balances from Balance oracle
-          formattedTokens = [
-            ...assets?.tokens || [],
-            ...tokens
-          ]
-          fetchSupplementTokenData({ tokens: formattedTokens })
-        } else {
-
-          formattedTokens = [
-            ...tokens
-              .map((token: any) => ({
-                ...token,
-                // balanceOracle fixes the number to the 10 decimal places, so here we should also fix it
-                balance: Number(token.balance.toFixed(10)),
-                // balanceOracle rounds to the second decimal places, so here we should also round it
-                balanceUSD: roundFloatingNumber(token.balanceUSD),
-                price: token.price || null,
-                network: network?.network
-              })),
-            ...extraTokensAssets
-          ]
-  
-          formattedTokens = filterByHiddenTokens(formattedTokens)
-  
-          const coingeckoTokensToUpdate = tokens.filter(token => token.coingeckoId).some(token => { 
-            if (((new Date().valueOf() - token.priceUpdate) >= 2*60*1000)) {
-              return token
-            }
-          })
-  
-          if (coingeckoTokensToUpdate)  {
-            fetchCoingeckoPrices({ ...response.data, tokens: formattedTokens }) }
-          else {
-            setAssetsByAccount(prev => ({
-              ...prev,
-              [`${account}-${currentNetwork}`]: {
-                ...prev[`${account}-${currentNetwork}`],
-                tokens: formattedTokens,
-                collectibles: nfts,
-                cache,
-                cacheTime,
-                loading: false
-              }
-            }))
-          }
-        }
         
+        let formattedTokens = [
+          ...tokens
+            .map((token: any) => ({
+                  ...token,
+                  // balanceOracle fixes the number to the 10 decimal places, so here we should also fix it
+                  balance: Number(token.balance.toFixed(10)),
+                  // balanceOracle rounds to the second decimal places, so here we should also round it
+                  balanceUSD: roundFloatingNumber(token.balanceUSD),
+                  price: token.price || null,
+                  network: network?.network
+                })),
+          ...extraTokensAssets
+        ]
+
+        formattedTokens = filterByHiddenTokens(formattedTokens)
+
+        const coingeckoTokensToUpdate = tokens.filter(token => token.coingeckoId).some(token => { 
+          if (((new Date().valueOf() - token.priceUpdate) >= 2*60*1000)) {
+            return token
+          }
+        })
+
+        if (coingeckoTokensToUpdate)  {
+          fetchCoingeckoPrices({ ...response.data, tokens: formattedTokens }) }
+        else {
+          setAssetsByAccount(prev => ({
+            ...prev,
+            [`${account}-${currentNetwork}`]: {
+              ...prev[`${account}-${currentNetwork}`],
+              tokens: formattedTokens,
+              collectibles: nfts,
+              cache,
+              cacheTime,
+              loading: false
+            }
+          }))
+        }
 
         // Show error in case we have some
         // if (error) addToast(error, { error: true })

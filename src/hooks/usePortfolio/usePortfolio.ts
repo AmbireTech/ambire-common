@@ -29,7 +29,10 @@ export default function usePortfolio({
   const prevNetwork = usePrevious(currentNetwork)
 
   // Implementation of structure that contains all assets by account and network
-  const [assets, setAssetsByAccount] = useStorage({ key: 'assets', defaultValue: {} })
+  const [assets, setAssetsByAccount] = useState({})
+
+  // Implementation of state handling and fetching of all balances by other networks (without current one)
+  const [balances, setBalances] = useState({})
 
   const [pricesFetching, setPricesFetching] = useState(false)
 
@@ -84,19 +87,18 @@ export default function usePortfolio({
 
   async function loadOtherNetworksBalances() {
     if (!account) return
-    await fetchOtherNetworksBalances(account, currentNetwork)
+    await fetchOtherNetworksBalances(account, currentNetwork, balances)
   }
 
   // Fetch balances and protocols on account change
   useEffect(() => {
     currentAccount.current = account
+
     loadBalance()
+    loadOtherNetworksBalances()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [account, currentNetwork])
 
-  useEffect(() => {
-    loadOtherNetworksBalances()
-  }, [account])
   // Reset `rpcTokensLastUpdated` on a network change, because its value is regarding the previous network,
   // and it's not useful for the current network.
   useEffect(() => {
