@@ -51,7 +51,7 @@ export default function usePortfolio({
     useStorage,
   })
 
-  const tokens = useMemo(() => filterByHiddenTokens(assets[`${account}-${currentNetwork}`]?.tokens || []) || [], [hiddenTokens]);
+  const tokens = useMemo(() => filterByHiddenTokens(assets[`${account}-${currentNetwork}`]?.tokens || []) || [], [hiddenTokens, account, currentNetwork]);
   
   // All fetching logic required in our portfolio
   const {
@@ -136,12 +136,12 @@ export default function usePortfolio({
     const refreshInterval = setInterval(refreshPrices, 20000)
     return () => clearInterval(refreshInterval)
   }, [assets[`${account}-${currentNetwork}`]])
-  
+
   // Fetch other networks assets every 20 seconds
   useEffect(() => {
     const refreshInterval = setInterval(loadOtherNetworksBalances, 20000)
     return () => clearInterval(refreshInterval)
-  }, [])
+  }, [account, currentNetwork])
 
   // Refresh balance every 150s if hidden
   useEffect(() => {

@@ -143,6 +143,7 @@ export default function useProtocolsFetch({
   }, [account, currentNetwork])
 
   const fetchOtherNetworksBalances = useCallback(async (account, currentNetwork) => {
+    console.log(account, currentNetwork)
     const networksToFetch = supportedProtocols.filter(({ network }) => network !== currentNetwork)
     try {
       Promise.all(
@@ -202,7 +203,7 @@ export default function useProtocolsFetch({
         }
     }))
     }
-  }, [currentNetwork])
+  }, [account, currentNetwork])
 
   const fetchSupplementTokenData = useCallback(
     async (updatedTokens: any[]) => {   
