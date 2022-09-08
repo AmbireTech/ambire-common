@@ -2,19 +2,22 @@
 // @ts-nocheck
 
 import { Interface } from 'ethers/lib/utils'
-import { abis } from '../../constants/humanizerInfo.json'
+import { HumanizerInfoType } from 'hooks/useFetchConstants'
 
 import { nativeToken } from '../humanReadableTransactions'
 
-const iface = new Interface(abis.WETH)
-const WETHMapping = {
-  [iface.getSighash('deposit')]: (txn, network) => {
-    const { value } = iface.parseTransaction(txn)
-    return [`Wrap ${nativeToken(network, value)}`]
-  },
-  [iface.getSighash('withdraw')]: (txn, network) => {
-    const [amount] = iface.parseTransaction(txn).args
-    return [`Unwrap ${nativeToken(network, amount)}`]
+const WETHMapping = (humanizerInfo:HumanizerInfoType) => {
+  const iface = new Interface(humanizerInfo.abis.WETH)
+
+  return {
+    [iface.getSighash('deposit')]: (txn, network) => {
+      const { value } = iface.parseTransaction(txn)
+      return [`Wrap ${nativeToken(network, value)}`]
+    },
+    [iface.getSighash('withdraw')]: (txn, network) => {
+      const [amount] = iface.parseTransaction(txn).args
+      return [`Unwrap ${nativeToken(network, amount)}`]
+    }
   }
 }
 export default WETHMapping

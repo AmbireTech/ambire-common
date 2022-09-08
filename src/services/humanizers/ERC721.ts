@@ -2,16 +2,13 @@
 // @ts-nocheck
 
 import { Interface } from 'ethers/lib/utils'
-import { abis } from '../../constants/humanizerInfo.json'
-
+import { HumanizerInfoType } from 'hooks/useFetchConstants'
 import { getName } from '../humanReadableTransactions'
-
-const iface = new Interface(abis.ERC721)
 
 const fromText = (from, txnFrom) =>
   from.toLowerCase() !== txnFrom.toLowerCase() ? ` from ${from}` : ''
 
-const toExtended = (tokenId, from, to, txn, network) => [
+const toExtended = (humanizerInfo:HumanizerInfoType, tokenId, from, to, txn, network) => [
   [
     'Send',
     {
@@ -25,59 +22,65 @@ const toExtended = (tokenId, from, to, txn, network) => [
     {
       type: 'address',
       address: to,
-      name: getName(to, network)
+      name: getName(humanizerInfo, to, network)
     }
   ]
 ]
 
-const ERC721Mapping = {
-  [iface.getSighash('transferFrom')]: (txn, network, { extended = false }) => {
-    const [from, to, tokenId] = iface.parseTransaction(txn).args
-    return !extended
-      ? [
-          `Send token #${tokenId.toString(10)}${fromText(from, txn.from)} to ${getName(
-            to,
-            network
-          )}`
-        ]
-      : toExtended(tokenId, from, to, txn, network)
-  },
-  [iface.getSighash('safeTransferFrom(address,address,uint256)')]: (
-    txn,
-    network,
-    { extended = false }
-  ) => {
-    const [from, to, tokenId] = iface.parseTransaction(txn).args
-    return !extended
-      ? [
-          `Send token #${tokenId.toString(10)}${fromText(from, txn.from)} to ${getName(
-            to,
-            network
-          )}`
-        ]
-      : toExtended(tokenId, from, to, txn, network)
-  },
-  [iface.getSighash('setApprovalForAll')]: (txn, network, { extended = false }) => {
-    const [operator, approved] = iface.parseTransaction(txn).args
-    const name = getName(operator, network)
-    if (approved) {
+const ERC721Mapping = (humanizerInfo:HumanizerInfoType) => {
+  const iface = new Interface(humanizerInfo.abis.ERC721)
+
+  return {
+    [iface.getSighash('transferFrom')]: (txn, network, { extended = false }) => {
+      const [from, to, tokenId] = iface.parseTransaction(txn).args
+      return !extended
+        ? [
+            `Send token #${tokenId.toString(10)}${fromText(from, txn.from)} to ${getName(
+              humanizerInfo,
+              to,
+              network
+            )}`
+          ]
+        : toExtended(humanizerInfo, tokenId, from, to, txn, network)
+    },
+    [iface.getSighash('safeTransferFrom(address,address,uint256)')]: (
+      txn,
+      network,
+      { extended = false }
+    ) => {
+      const [from, to, tokenId] = iface.parseTransaction(txn).args
+      return !extended
+        ? [
+            `Send token #${tokenId.toString(10)}${fromText(from, txn.from)} to ${getName(
+              humanizerInfo,
+              to,
+              network
+            )}`
+          ]
+        : toExtended(humanizerInfo, tokenId, from, to, txn, network)
+    },
+    [iface.getSighash('setApprovalForAll')]: (txn, network, { extended = false }) => {
+      const [operator, approved] = iface.parseTransaction(txn).args
+      const name = getName(humanizerInfo, operator, network)
+      if (approved) {
+        return extended
+          ? [
+              'Approve',
+              { type: 'address', name, address: operator },
+              'to use/spend any NFT from collection',
+              { type: 'address', name: getName(humanizerInfo, txn.to), address: txn.to }
+            ]
+          : `Approve ${name} to spend NFT collection ${getName(humanizerInfo, txn.to)}`
+      }
       return extended
         ? [
-            'Approve',
+            'Revoke approval for',
             { type: 'address', name, address: operator },
             'to use/spend any NFT from collection',
-            { type: 'address', name: getName(txn.to), address: txn.to }
+            { type: 'address', name: getName(humanizerInfo, txn.to), address: txn.to }
           ]
-        : `Approve ${name} to spend NFT collection ${getName(txn.to)}`
+        : `Revoke approval for ${name} to spend NFT collection ${getName(humanizerInfo, txn.to)}`
     }
-    return extended
-      ? [
-          'Revoke approval for',
-          { type: 'address', name, address: operator },
-          'to use/spend any NFT from collection',
-          { type: 'address', name: getName(txn.to), address: txn.to }
-        ]
-      : `Revoke approval for ${name} to spend NFT collection ${getName(txn.to)}`
   }
 }
 export default ERC721Mapping

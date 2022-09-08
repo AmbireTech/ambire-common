@@ -2,6 +2,7 @@
 // @ts-nocheck
 
 import { Interface } from 'ethers/lib/utils'
+import { HumanizerInfoType } from 'hooks/useFetchConstants'
 import accountPresets from '../../constants/accountPresets'
 import privilegesOptions from '../../constants/privilegesOptions'
 
@@ -9,10 +10,10 @@ import { getName } from '../humanReadableTransactions'
 
 const iface = new Interface(require('adex-protocol-eth/abi/Identity5.2'))
 
-const IdentityMapping = {
+const IdentityMapping = (humanizerInfo:HumanizerInfoType) => ({
   [iface.getSighash('setAddrPrivilege')]: (txn, network) => {
     const [addr, privLevel] = iface.parseTransaction(txn).args
-    const name = getName(addr, network)
+    const name = getName(humanizerInfo, addr, network)
     const isQuickAccManager = addr.toLowerCase() === accountPresets.quickAccManager.toLowerCase()
     if (privLevel === privilegesOptions.false) {
       if (isQuickAccManager) return ['Revoke email/password access']
@@ -25,5 +26,6 @@ const IdentityMapping = {
     if (isQuickAccManager) return ['Add a new email/password signer']
     return [`Set special authorization for ${name}`]
   }
-}
+})
+
 export default IdentityMapping

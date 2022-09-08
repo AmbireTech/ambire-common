@@ -1,7 +1,7 @@
 // TODO: add types
 // @ts-nocheck
 
-import { names, tokens } from '../../constants/humanizerInfo.json'
+import { HumanizerInfoType } from 'hooks/useFetchConstants'
 import networks from '../../constants/networks'
 
 import humanizers from '../humanizers'
@@ -14,7 +14,7 @@ import { getName, nativeToken } from './humanReadableTransactions'
 //   2) humanizers/index.ts ->
 //   3) humanizers/YearnVault.ts (and all others) ->
 //   4) humanReadableTransactions/index.ts
-export function getTransactionSummary(txn, networkId, accountAddr, opts = {}) {
+export function getTransactionSummary(humanizerInfo:HumanizerInfoType, txn, networkId, accountAddr, opts = {}) {
   const [to, value, data = '0x'] = txn
   const network = networks.find((x) => x.id === networkId || x.chainId === networkId)
   if (!network) return 'Unknown network (unable to parse)'
@@ -23,8 +23,8 @@ export function getTransactionSummary(txn, networkId, accountAddr, opts = {}) {
     return 'Deploy contract'
   }
 
-  const tokenInfo = tokens[to.toLowerCase()]
-  const name = names[to.toLowerCase()]
+  const tokenInfo = humanizerInfo.tokens[to.toLowerCase()]
+  const name = humanizerInfo.names[to.toLowerCase()]
 
   if (data === '0x' && to.toLowerCase() === accountAddr.toLowerCase()) {
     // Doesn't matter what the value is, this is always a no-op
@@ -46,7 +46,7 @@ export function getTransactionSummary(txn, networkId, accountAddr, opts = {}) {
           {
             type: 'address',
             address: to,
-            name: getName(to, network)
+            name: getName(humanizerInfo, to, network)
           }
         ]
 
@@ -64,7 +64,7 @@ export function getTransactionSummary(txn, networkId, accountAddr, opts = {}) {
         ]
 
     const sigHash = data.slice(0, 10)
-    const humanizer = humanizers[sigHash]
+    const humanizer = humanizers(humanizerInfo)[sigHash]
     if (humanizer) {
       try {
         const actions = humanizer({ to, value, data, from: accountAddr }, network, opts)

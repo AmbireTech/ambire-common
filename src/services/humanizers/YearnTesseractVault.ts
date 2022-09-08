@@ -2,10 +2,8 @@
 // @ts-nocheck
 
 import { Interface } from 'ethers/lib/utils'
-import { abis, yearnVaults, tesseractVaults } from '../../constants/humanizerInfo.json'
+import { HumanizerInfoType } from 'hooks/useFetchConstants'
 import { token } from '../humanReadableTransactions'
-
-const iface = new Interface(abis.YearnVault)
 
 const vaultNames = { ethereum: 'Yearn', polygon: 'Tesseract' }
 const tokenPrefixes = { ethereum: 'y', polygon: 'tv' }
@@ -15,15 +13,15 @@ const addTokenPrefix = (token, network) =>
     .split(' ')
     .map((x, i) => (i === 1 ? tokenPrefixes[network] + x : x))
     .join(' ')
-const getVaultInfo = ({ to }) =>
+const getVaultInfo = (yearnVaults, tesseractVaults, { to }) =>
   yearnVaults.find((x) => x.addr === to) || tesseractVaults.find((x) => x.addr === to)
 
-const toExtendedRich = (action, word, vaultInfo, amount) => [
+const toExtendedRich = (humanizerInfo:HumanizerInfoType, action, word, vaultInfo, amount) => [
   [
     action,
     {
       type: 'token',
-      ...token(vaultInfo.baseToken, amount, true)
+      ...token(humanizerInfo, vaultInfo.baseToken, amount, true)
     },
     word,
     {
@@ -50,32 +48,38 @@ const toExtended = (action, word, network, amount) => [
   ]
 ]
 
-const YearnTesseractMapping = {
-  [iface.getSighash('deposit(uint256,address)')]: (txn, network, { extended = false }) => {
-    const [amount] = iface.parseTransaction(txn).args
-    const vaultInfo = getVaultInfo(txn)
-    if (vaultInfo)
+const YearnTesseractMapping = (humanizerInfo: HumanizerInfoType) => {
+  const { abis, yearnVaults, tesseractVaults } = humanizerInfo
+
+  const iface = new Interface(abis.YearnVault)
+  
+  return {
+    [iface.getSighash('deposit(uint256,address)')]: (txn, network, { extended = false }) => {
+      const [amount] = iface.parseTransaction(txn).args
+      const vaultInfo = getVaultInfo(yearnVaults, tesseractVaults, txn)
+      if (vaultInfo)
+        return !extended
+          ? [`Deposit ${token(humanizerInfo, vaultInfo.baseToken, amount)} to ${vaultInfo.name}`]
+          : toExtendedRich(humanizerInfo, 'Deposit', 'to', vaultInfo, amount)
       return !extended
-        ? [`Deposit ${token(vaultInfo.baseToken, amount)} to ${vaultInfo.name}`]
-        : toExtendedRich('Deposit', 'to', vaultInfo, amount)
-    return !extended
-      ? [`Deposit ${amount} units to ${vaultNames[network.id]}`]
-      : toExtended('Deposit', 'to', network, amount)
-  },
-  [iface.getSighash('withdraw(uint256,address)')]: (txn, network, { extended = false }) => {
-    const [amount] = iface.parseTransaction(txn).args
-    const vaultInfo = getVaultInfo(txn)
-    if (vaultInfo)
+        ? [`Deposit ${amount} units to ${vaultNames[network.id]}`]
+        : toExtended('Deposit', 'to', network, amount)
+    },
+    [iface.getSighash('withdraw(uint256,address)')]: (txn, network, { extended = false }) => {
+      const [amount] = iface.parseTransaction(txn).args
+      const vaultInfo = getVaultInfo(yearnVaults, tesseractVaults, txn)
+      if (vaultInfo)
+        return !extended
+          ? [
+              `Withdraw ${addTokenPrefix(token(humanizerInfo, vaultInfo.baseToken, amount), network.id)} from ${
+                vaultInfo.name
+              }`
+            ]
+          : toExtendedRich(humanizerInfo, 'Withdraw', 'from', vaultInfo, amount)
       return !extended
-        ? [
-            `Withdraw ${addTokenPrefix(token(vaultInfo.baseToken, amount), network.id)} from ${
-              vaultInfo.name
-            }`
-          ]
-        : toExtendedRich('Withdraw', 'from', vaultInfo, amount)
-    return !extended
-      ? [`Withdraw ${amount} units from ${vaultNames[network.id]}`]
-      : toExtended('Withdraw', 'from', network, amount)
+        ? [`Withdraw ${amount} units from ${vaultNames[network.id]}`]
+        : toExtended('Withdraw', 'from', network, amount)
+    }
   }
 }
 export default YearnTesseractMapping

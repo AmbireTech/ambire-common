@@ -55,6 +55,7 @@ export type Protocols = {
 }
 
 export type UsePortfolioProps = {
+  fetch: any
   currentNetwork: Network
   account: string
   useStorage: UseStorageType

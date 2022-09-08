@@ -10,7 +10,7 @@ const toExtended = (isExtended, action, details = '') => {
   return isExtended ? [[action, details]] : [action, details]
 }
 
-const WALLETSupplyControllerMapping = {
+const WALLETSupplyControllerMapping = () => ({
   [iface.getSighash('claim')]: (txn, network, { extended = false }) => {
     const { toBurnBps } = iface.parseTransaction(txn).args
     const burnPercentage = toBurnBps.toString() / 100
@@ -23,5 +23,5 @@ const WALLETSupplyControllerMapping = {
   [iface.getSighash('mintVesting')]: (txn, network, { extended = false }) => {
     return toExtended(extended, 'claim vested tokens')
   }
-}
+})
 export default WALLETSupplyControllerMapping

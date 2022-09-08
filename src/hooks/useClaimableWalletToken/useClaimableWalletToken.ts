@@ -1,11 +1,11 @@
 import useCacheBreak from 'ambire-common/src/hooks/useCacheBreak'
 import { Contract } from 'ethers'
 import { Interface } from 'ethers/lib/utils'
+import useFetchConstants from 'hooks/useFetchConstants'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import WALLETSupplyControllerABI from '../../constants/abis/WALLETSupplyControllerABI.json'
 import { NETWORKS } from '../../constants/networks'
-import WALLETInitialClaimableRewards from '../../constants/WALLETInitialClaimableRewards.json'
 import WALLETVestings from '../../constants/WALLETVestings.json'
 import { getProvider } from '../../services/provider'
 import { UseClaimableWalletTokenProps, UseClaimableWalletTokenReturnType } from './types'
@@ -14,20 +14,29 @@ const supplyControllerAddress = '0xc53af25f831f31ad6256a742b3f0905bc214a430'
 const supplyControllerInterface = new Interface(WALLETSupplyControllerABI)
 
 const useClaimableWalletToken = ({
+  fetch,
   accountId,
   network,
   addRequest,
   totalLifetimeRewards,
   walletUsdPrice
 }: UseClaimableWalletTokenProps): UseClaimableWalletTokenReturnType => {
+  const { isLoading, constants } = useFetchConstants({ fetch })
   const provider = useMemo(() => getProvider('ethereum'), [])
   const supplyController = useMemo(
     () => new Contract(supplyControllerAddress, WALLETSupplyControllerABI, provider),
     [provider]
   )
   const initialClaimableEntry = useMemo(
-    () => WALLETInitialClaimableRewards.find((x) => x.addr === accountId),
-    [accountId]
+    () => {
+      if (!isLoading && typeof constants?.WALLETInitialClaimableRewards === 'object') {
+        if ('WALLETInitialClaimableRewards' in constants) {
+          return constants.WALLETInitialClaimableRewards.find((x) => x.addr === accountId)
+        }
+        return null
+      }
+      return null
+    }, [accountId]
   )
 
   const vestingEntry = useMemo(() => WALLETVestings.find((x) => x.addr === accountId), [accountId])

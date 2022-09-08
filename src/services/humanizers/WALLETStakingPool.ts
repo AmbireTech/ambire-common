@@ -5,6 +5,7 @@ import { Interface } from 'ethers/lib/utils'
 
 import { token } from '../humanReadableTransactions'
 import WalletStakingPoolABI from '../../constants/abis/WalletStakingPoolABI.json'
+import { HumanizerInfoType } from 'hooks/useFetchConstants'
 
 const STAKING_POOLS = {
   '0x47cd7e91c3cbaaf266369fe8518345fc4fc12935': {
@@ -42,13 +43,13 @@ const toExtended = (action, word, token, txn) => {
   ]
 }
 
-const WALLETStakingPool = {
+const WALLETStakingPool = (humanizerInfo:HumanizerInfoType) => ({
   [iface.getSighash('enter')]: (txn, network, { extended = false }) => {
     const { amount } = iface.parseTransaction(txn).args
     if (extended)
-      return toExtended('Deposit', 'to', token(STAKING_POOLS[txn.to].baseToken, amount, true), txn)
+      return toExtended('Deposit', 'to', token(humanizerInfo, STAKING_POOLS[txn.to].baseToken, amount, true), txn)
     return [
-      `Deposit ${token(STAKING_POOLS[txn.to].baseToken, amount)} to ${STAKING_POOLS[txn.to].name}`
+      `Deposit ${token(humanizerInfo, STAKING_POOLS[txn.to].baseToken, amount)} to ${STAKING_POOLS[txn.to].name}`
     ]
   },
   [iface.getSighash('leave')]: (txn, network, { extended = false }) => {
@@ -68,13 +69,14 @@ const WALLETStakingPool = {
   },
   [iface.getSighash('withdraw')]: (txn, network, { extended = false }) => {
     const { shares } = iface.parseTransaction(txn).args
-    if (extended) return toExtended('Withdraw', 'from', token(txn.to, shares, true), txn)
-    return [`Withdraw ${token(txn.to, shares)} to ${STAKING_POOLS[txn.to].name}`]
+    if (extended) return toExtended('Withdraw', 'from', token(humanizerInfo, txn.to, shares, true), txn)
+    return [`Withdraw ${token(humanizerInfo, txn.to, shares)} to ${STAKING_POOLS[txn.to].name}`]
   },
   [iface.getSighash('rageLeave')]: (txn, network, { extended = false }) => {
     const { shares } = iface.parseTransaction(txn).args
-    if (extended) return toExtended('Rage Leave', 'from', token(txn.to, shares, true), txn)
-    return [`Rage Leave ${token(txn.to, shares)} to ${STAKING_POOLS[txn.to].name}`]
+    if (extended) return toExtended('Rage Leave', 'from', token(humanizerInfo, txn.to, shares, true), txn)
+    return [`Rage Leave ${token(humanizerInfo, txn.to, shares)} to ${STAKING_POOLS[txn.to].name}`]
   }
-}
+})
+
 export default WALLETStakingPool

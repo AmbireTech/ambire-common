@@ -12,21 +12,23 @@ import WALLETSupplyController from './WALLETSupplyController'
 import AmbireBatcher from './AmbireBatcher'
 import WALLETStakingPool from './WALLETStakingPool'
 import AaveWethGatewayV2 from './AaveWethGatewayV2'
+// Types
+import { HumanizerInfoType } from 'hooks/useFetchConstants'
 
-const all = {
-  ...UniRouters,
-  ...AaveLendingPoolV2,
-  ...AaveWethGatewayV2,
-  ...ERC20,
-  ...ERC721,
-  ...WETH,
-  ...AmbireIdentity,
-  ...AmbireFactory,
-  ...YearnTesseractVault,
-  ...Movr,
-  ...OpenSea,
-  ...WALLETSupplyController,
-  ...AmbireBatcher,
-  ...WALLETStakingPool
-}
+const all = (humanizerInfo:HumanizerInfoType) => ({
+  ...UniRouters(humanizerInfo),
+  ...AaveLendingPoolV2(humanizerInfo),
+  ...AaveWethGatewayV2(humanizerInfo),
+  ...ERC20(humanizerInfo),
+  ...ERC721(humanizerInfo),
+  ...WETH(humanizerInfo),
+  ...AmbireIdentity(humanizerInfo),
+  ...AmbireFactory(),
+  ...YearnTesseractVault(humanizerInfo),
+  ...Movr(humanizerInfo),
+  ...OpenSea(humanizerInfo),
+  ...WALLETSupplyController(),
+  ...AmbireBatcher(humanizerInfo),
+  ...WALLETStakingPool(humanizerInfo)
+})
 export default all

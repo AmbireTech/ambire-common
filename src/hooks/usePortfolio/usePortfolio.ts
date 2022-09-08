@@ -1,9 +1,10 @@
 // @ts-nocheck TODO: Fill in all missing types before enabling the TS check again
+import useFetchConstants, { ConstantsType } from 'hooks/useFetchConstants'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import networks, { NetworkId } from '../../constants/networks'
 import supportedProtocols from '../../constants/supportedProtocols'
-import { checkTokenList, getTokenListBalance, tokenList } from '../../services/balanceOracle'
+import { checkTokenList, getTokenListBalance } from '../../services/balanceOracle'
 import { roundFloatingNumber } from '../../services/formatter'
 import { setKnownAddresses, setKnownTokens } from '../../services/humanReadableTransactions'
 import usePrevious from '../usePrevious'
@@ -37,6 +38,7 @@ const filterByHiddenTokens = (tokens: Token[], hiddenTokens: TokenWithIsHiddenFl
 }
 
 async function supplementTokensDataFromNetwork({
+  constants,
   walletAddr,
   network,
   tokensData,
@@ -44,6 +46,7 @@ async function supplementTokensDataFromNetwork({
   updateBalance,
   hiddenTokens
 }: {
+  constants: ConstantsType
   walletAddr: string
   network: Network
   tokensData: Token[]
@@ -51,6 +54,7 @@ async function supplementTokensDataFromNetwork({
   updateBalance?: string
   hiddenTokens: TokenWithIsHiddenFlag[]
 }) {
+
   if (!walletAddr || walletAddr === '' || !network) return []
   // eslint-disable-next-line no-param-reassign
   if (!tokensData || !tokensData[0]) tokensData = checkTokenList(tokensData || []) // tokensData check and populate for test if undefind
@@ -60,7 +64,7 @@ async function supplementTokensDataFromNetwork({
   // concat predefined token list with extraTokens list (extraTokens are certainly ERC20)
   const fullTokenList = [
     // @ts-ignore figure out how to add types for the `tokenList`
-    ...new Set(tokenList[network] ? tokenList[network].concat(extraTokens) : [...extraTokens])
+    ...new Set(constants?.tokenList[network] ? constants.tokenList[network].concat(extraTokens) : [...extraTokens])
   ]
   const tokens = fullTokenList.map((t: any) => {
     return tokensData.find((td) => td.address === t.address) || t
@@ -91,6 +95,7 @@ async function supplementTokensDataFromNetwork({
 }
 
 export default function usePortfolio({
+  fetch, 
   currentNetwork,
   account,
   useStorage,
@@ -98,6 +103,7 @@ export default function usePortfolio({
   useToasts,
   getBalances
 }: UsePortfolioProps): UsePortfolioReturnType {
+  const { constants, isLoading } = useFetchConstants({ fetch })
   const { addToast } = useToasts()
   const rpcTokensLastUpdated = useRef<number>(0)
   const currentAccount = useRef<string>()
@@ -163,6 +169,7 @@ export default function usePortfolio({
       const extraTokensAssets = getExtraTokensAssets(account, currentNetwork)
       try {
         const rcpTokenData = await supplementTokensDataFromNetwork({
+          constants,
           walletAddr: account,
           network: currentNetwork,
           tokensData: currentNetworkTokens
@@ -459,8 +466,8 @@ export default function usePortfolio({
       const { address, name, symbol } = extraToken
       if (extraTokens.map(({ address }) => address).includes(address))
         return addToast(`${name} (${symbol}) is already added to your wallet.`)
-      if (
-        Object.values(tokenList)
+      if (constants?.tokenList &&
+        Object.values(constants.tokenList)
           .flat(1)
           .map(({ address }) => address)
           .includes(address)
