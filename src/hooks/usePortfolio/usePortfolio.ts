@@ -197,7 +197,7 @@ export default function usePortfolio({
   useEffect(() => {
     const refreshIfHidden = () =>
       !isVisible && !areAllNetworksBalancesLoading() ? fetchTokens(account, currentNetwork) : null
-    const refreshInterval = setInterval(refreshIfHidden, 150000)
+    const refreshInterval = setInterval(refreshIfHidden, 1500)
     return () => clearInterval(refreshInterval)
   }, [account, currentNetwork, isVisible, fetchTokens])
 
