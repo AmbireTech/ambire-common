@@ -9,7 +9,8 @@ const useFetchConstants = ({ fetch }: UseFetchConstantsProps): UseFetchConstants
 
   useEffect(() => {
     const fetchConstants = async () => {
-      const cacheResp = await fetchGet(fetch, 'https://jason.ambire.com/cache.json')
+      const endpoint = 'https://jason.ambire.com/'
+      const cacheResp = await fetchGet(fetch, `${endpoint}cache.json`)
 
       if (!cacheResp) {
         setIsLoading(false)
@@ -19,10 +20,10 @@ const useFetchConstants = ({ fetch }: UseFetchConstantsProps): UseFetchConstants
       const cache = cacheResp.result
 
       if ((typeof cache === 'object' && cache.lastUpdated > Date.now()) || !data) {
-        const resultResp = await fetchGet(fetch, 'https://jason.ambire.com/result.json')
+        const resultResp = await fetchGet(fetch, `${endpoint}result.json`)
         const adexToStakingTransfersLogsResp = await fetchGet(
           fetch,
-          'https://jason.ambire.com/adexToStakingTransfers.json'
+          `${endpoint}adexToStakingTransfers.json`
         )
 
         if (!resultResp || !adexToStakingTransfersLogsResp) {
