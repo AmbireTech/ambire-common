@@ -16,7 +16,8 @@
     "adex-protocol-eth": "git+https://git@github.com/AmbireTech/adex-protocol-eth.git",
     "url": "^0.11.0",
     "validator": "^13.7.0",
-    "bip44-constants": "^128.0.0"
+    "bip44-constants": "^128.0.0",
+    "@types/validator": "^13.7.0"
   },
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "5.5.0",
