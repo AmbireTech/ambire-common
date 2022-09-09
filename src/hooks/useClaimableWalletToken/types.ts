@@ -3,7 +3,8 @@ import { UseNetworkReturnType } from 'ambire-common/src/hooks/useNetwork'
 import { Account } from '../useAccounts'
 
 export type UseClaimableWalletTokenProps = {
-  fetch: any
+  // TODO: Add type
+  useFetchConstants: any
   accountId: Account['id']
   network: UseNetworkReturnType['network']
   addRequest: any // TODO
