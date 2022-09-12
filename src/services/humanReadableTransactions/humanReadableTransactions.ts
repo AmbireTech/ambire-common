@@ -3,7 +3,8 @@
 
 import { constants } from 'ethers'
 import { formatUnits } from 'ethers/lib/utils'
-import { HumanizerInfoType } from 'hooks/useFetchConstants'
+
+import { HumanizerInfoType } from '../../hooks/useFetchConstants'
 
 // address (lowercase) => name
 const knownAliases = {}
@@ -16,7 +17,7 @@ export const formatNativeTokenAddress = (address) =>
   address.toLowerCase() === `0x${'e'.repeat(40)}` ? `0x${'0'.repeat(40)}` : address.toLowerCase()
 
 // Currently takes network because one day we may be seeing the same addresses used on different networks
-export function getName(humanizerInfo:HumanizerInfoType, addr, network) {
+export function getName(humanizerInfo: HumanizerInfoType, addr, network) {
   const address = addr.toLowerCase()
   return (
     humanizerInfo.names[address] ||
@@ -27,7 +28,7 @@ export function getName(humanizerInfo:HumanizerInfoType, addr, network) {
   )
 }
 
-export function token(humanizerInfo:HumanizerInfoType, addr, amount, extended = false) {
+export function token(humanizerInfo: HumanizerInfoType, addr, amount, extended = false) {
   const address = addr.toLowerCase()
   const assetInfo = humanizerInfo.tokens[address] || knownTokens[address]
   if (assetInfo) {
