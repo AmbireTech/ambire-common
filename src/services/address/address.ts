@@ -2,17 +2,18 @@ import { HumanizerInfoType } from 'hooks/useFetchConstants'
 
 const isValidAddress = (address: string) => /^0x[a-fA-F0-9]{40}$/.test(address)
 
-const isKnownTokenOrContract = (humanizerInfo:HumanizerInfoType, address: string) => {
+const isKnownTokenOrContract = (humanizerInfo: HumanizerInfoType, address: string) => {
   if (humanizerInfo?.names && humanizerInfo?.abis) {
     const addressToLowerCase = address.toLowerCase()
     const tokensAddresses = Object.keys(humanizerInfo.tokens)
     const contractsAddresses = Object.keys(humanizerInfo.names)
     return (
-      tokensAddresses.includes(addressToLowerCase) || contractsAddresses.includes(addressToLowerCase)
+      tokensAddresses.includes(addressToLowerCase) ||
+      contractsAddresses.includes(addressToLowerCase)
     )
-  } else {
-    return false
   }
+
+  return false
 }
 
 export { isValidAddress, isKnownTokenOrContract }
