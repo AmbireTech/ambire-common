@@ -9,6 +9,8 @@ export type Address = {
 }
 
 export interface UseAddressBookProps {
+  // TODO: Add type
+  useFetchConstants: any
   useAccounts: () => UseAccountsReturnType
   useStorage: UseStorageType
   useToasts: () => UseToastsReturnType
