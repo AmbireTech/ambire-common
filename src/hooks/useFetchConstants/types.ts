@@ -51,9 +51,11 @@ export interface ConstantsType {
   WALLETInitialClaimableRewards: WALLETInitialClaimableRewardsType[]
   tokenList: object
   humanizerInfo: HumanizerInfoType
+  lastFetched: number
 }
 
 export interface UseFetchConstantsReturnType {
   constants: ConstantsType | null
   isLoading: boolean
+  retryFetch: () => void
 }
