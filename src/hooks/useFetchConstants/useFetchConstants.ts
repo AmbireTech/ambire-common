@@ -9,14 +9,12 @@ const useFetchConstants = ({ fetch }: UseFetchConstantsProps): UseFetchConstants
 
   const fetchConstants = useCallback(async () => {
     const endpoint = 'https://jason.ambire.com/'
-    const cacheResp = await fetchGet(fetch, `${endpoint}cache.json`)
+    const cache = await fetchGet(fetch, `${endpoint}cache.json`)
 
-    if (!cacheResp) {
+    if (!cache) {
       setIsLoading(false)
       return
     }
-
-    const cache = cacheResp.result
 
     if ((typeof cache === 'object' && cache.lastUpdated > Date.now()) || !data) {
       const result = await fetchGet(fetch, `${endpoint}result.json`)
