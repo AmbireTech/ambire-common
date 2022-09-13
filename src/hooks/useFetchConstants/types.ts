@@ -12,19 +12,16 @@ export interface WALLETInitialClaimableRewardsType {
 }
 
 export interface HumanizerInfoTokensType {
-  [key: string]: [
-    string,
-    number
-  ]
+  [key: string]: [string, number]
 }
 
 export interface HumanizerInfoAbisType {
   ['AaveWethGatewayV2']: object[]
-  ['PancakeRouter']: object[],
-  ['UniV2Router']: object[],
-  ['UniV3Router']: object[],
-  ['UniV3Router2']: object[],
-  ['WETH']: object[],
+  ['PancakeRouter']: object[]
+  ['UniV2Router']: object[]
+  ['UniV3Router']: object[]
+  ['UniV3Router2']: object[]
+  ['WETH']: object[]
   ['AaveLendingPoolV2']: object[]
   ['MovrRouter']: object[]
   ['MovrAnyswap']: object[]
@@ -37,11 +34,11 @@ export interface HumanizerInfoAbisType {
   ['ERC20']: object[]
 }
 
-export interface HumanizerInfoType  {
-  abis: HumanizerInfoAbisType,
-  tokens: HumanizerInfoTokensType,
-  names: object,
-  yearnVaults: object[],
+export interface HumanizerInfoType {
+  abis: HumanizerInfoAbisType
+  tokens: HumanizerInfoTokensType
+  names: object
+  yearnVaults: object[]
   tesseractVaults: object[]
 }
 
@@ -53,7 +50,7 @@ export interface ConstantsType {
   }
   WALLETInitialClaimableRewards: WALLETInitialClaimableRewardsType[]
   tokenList: object
-  humanizerInfo: object
+  humanizerInfo: HumanizerInfoType
 }
 
 export interface UseFetchConstantsReturnType {
