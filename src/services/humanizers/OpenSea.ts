@@ -8,7 +8,7 @@ import { nativeToken, token } from '../humanReadableTransactions'
 
 const WyvernExchange = new Interface(abis.WyvernExchange)
 
-const MovrMapping = {
+const OpenSeaMapping = {
   [WyvernExchange.getSighash('atomicMatch_')]: (txn, network, { extended = false }) => {
     const { addrs, uints } = WyvernExchange.parseTransaction(txn).args
     const seller = addrs[1]
@@ -66,4 +66,4 @@ const MovrMapping = {
         ]
   }
 }
-export default MovrMapping
+export default OpenSeaMapping
