@@ -1,44 +1,41 @@
 import { useCallback, useEffect, useState } from 'react'
 
 import { fetchGet } from '../../services/fetch'
-import { ConstantsType, UseFetchConstantsProps, UseFetchConstantsReturnType } from './types'
+import {
+  AdexToStakingTransfersLogsType,
+  ConstantsType,
+  UseFetchConstantsProps,
+  UseFetchConstantsReturnType
+} from './types'
 
 const useFetchConstants = ({ fetch }: UseFetchConstantsProps): UseFetchConstantsReturnType => {
   const [data, setData] = useState<ConstantsType | null>(null)
-  const [isLoading, setIsLoading] = useState(true)
+  const [hasError, setHasError] = useState<boolean>(false)
+  const [isLoading, setIsLoading] = useState<boolean>(true)
 
   const fetchConstants = useCallback(async () => {
     const endpoint = 'https://jason.ambire.com/'
-    const cache = await fetchGet(fetch, `${endpoint}cache.json`)
 
-    if (!cache) {
-      setIsLoading(false)
-      return
-    }
-
-    if ((typeof cache === 'object' && cache.lastUpdated > Date.now()) || !data) {
-      const result = await fetchGet(fetch, `${endpoint}result.json`)
-      const adexToStakingTransfersLogs = await fetchGet(
-        fetch,
-        `${endpoint}adexToStakingTransfers.json`
-      )
-
-      if (!result || !adexToStakingTransfersLogs) {
-        setIsLoading(false)
-        return
-      }
+    try {
+      const [{ tokenList, humanizerInfo, WALLETInitialClaimableRewards}, adexToStakingTransfersLogs] = await Promise.all([
+        fetchGet(fetch, `${endpoint}result.json`),
+        fetchGet(fetch, `${endpoint}adexToStakingTransfers.json`)
+      ])
 
       setIsLoading(() => {
         setData({
-          tokenList: result.tokenList,
-          humanizerInfo: result.humanizerInfo,
-          WALLETInitialClaimableRewards: result.WALLETInitialClaimableRewards,
-          adexToStakingTransfersLogs,
+          tokenList: tokenList,
+          humanizerInfo: humanizerInfo,
+          WALLETInitialClaimableRewards: WALLETInitialClaimableRewards,
+          adexToStakingTransfersLogs: adexToStakingTransfersLogs,
           lastFetched: Date.now()
         })
+        setHasError(false)
         return false
       })
-    } else {
+    } catch {
+      setHasError(true)
+      setData(null)
       setIsLoading(false)
     }
   }, [data, fetch])
@@ -50,7 +47,8 @@ const useFetchConstants = ({ fetch }: UseFetchConstantsProps): UseFetchConstants
   return {
     constants: data,
     isLoading,
-    retryFetch: fetchConstants
+    retryFetch: fetchConstants,
+    hasError
   }
 }
 
