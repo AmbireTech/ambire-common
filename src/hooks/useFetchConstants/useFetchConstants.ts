@@ -40,7 +40,7 @@ const useFetchConstants = ({ fetch }: UseFetchConstantsProps): UseFetchConstants
 
   useEffect(() => {
     fetchConstants()
-  }, [fetch, data, fetchConstants])
+  }, [fetchConstants])
 
   return {
     constants: data,
