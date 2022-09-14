@@ -3,14 +3,13 @@
 
 import { constants } from 'ethers'
 import { Interface } from 'ethers/lib/utils'
-import { HumanizerInfoType } from 'hooks/useFetchConstants'
 
+import { HumanizerInfoType } from '../../hooks/useFetchConstants'
 import { getName, token } from '../humanReadableTransactions'
 
-
-const ERC20Mapping = (humanizerInfo:HumanizerInfoType) => {
+const ERC20Mapping = (humanizerInfo: HumanizerInfoType) => {
   const iface = new Interface(humanizerInfo.abis.ERC20)
-  
+
   return {
     [iface.getSighash('approve')]: (txn, network, { extended = false }) => {
       const [approvedAddress, amount] = iface.parseTransaction(txn).args
@@ -77,7 +76,9 @@ const ERC20Mapping = (humanizerInfo:HumanizerInfoType) => {
           ]
         ]
 
-      return [`Send ${token(humanizerInfo, txn.to, amount)} to ${to === name ? to : `${name} (${to})`}`]
+      return [
+        `Send ${token(humanizerInfo, txn.to, amount)} to ${to === name ? to : `${name} (${to})`}`
+      ]
     }
   }
   /*

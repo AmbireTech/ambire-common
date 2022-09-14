@@ -2,15 +2,15 @@
 // @ts-nocheck
 
 import { Interface } from 'ethers/lib/utils'
-import { HumanizerInfoType } from 'hooks/useFetchConstants'
+
 import accountPresets from '../../constants/accountPresets'
 import privilegesOptions from '../../constants/privilegesOptions'
-
+import { HumanizerInfoType } from '../../hooks/useFetchConstants'
 import { getName } from '../humanReadableTransactions'
 
 const iface = new Interface(require('adex-protocol-eth/abi/Identity5.2'))
 
-const IdentityMapping = (humanizerInfo:HumanizerInfoType) => ({
+const IdentityMapping = (humanizerInfo: HumanizerInfoType) => ({
   [iface.getSighash('setAddrPrivilege')]: (txn, network) => {
     const [addr, privLevel] = iface.parseTransaction(txn).args
     const name = getName(humanizerInfo, addr, network)

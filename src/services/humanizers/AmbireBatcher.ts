@@ -2,13 +2,12 @@
 // @ts-nocheck
 
 import { Interface } from 'ethers/lib/utils'
-import { HumanizerInfoType } from 'hooks/useFetchConstants'
 
+import { HumanizerInfoType } from '../../hooks/useFetchConstants'
 // eslint-disable-next-line import/no-useless-path-segments
 import humanizers from './'
 
-
-const AmbireBatcher = (humanizerInfo:HumanizerInfoType) => {
+const AmbireBatcher = (humanizerInfo: HumanizerInfoType) => {
   const iface = new Interface(humanizerInfo.abis.Batcher)
 
   return {

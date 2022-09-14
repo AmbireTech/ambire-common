@@ -2,7 +2,8 @@
 // @ts-nocheck
 
 import { Interface } from 'ethers/lib/utils'
-import { HumanizerInfoType } from 'hooks/useFetchConstants'
+
+import { HumanizerInfoType } from '../../hooks/useFetchConstants'
 import { token } from '../humanReadableTransactions'
 
 const vaultNames = { ethereum: 'Yearn', polygon: 'Tesseract' }
@@ -16,7 +17,7 @@ const addTokenPrefix = (token, network) =>
 const getVaultInfo = (yearnVaults, tesseractVaults, { to }) =>
   yearnVaults.find((x) => x.addr === to) || tesseractVaults.find((x) => x.addr === to)
 
-const toExtendedRich = (humanizerInfo:HumanizerInfoType, action, word, vaultInfo, amount) => [
+const toExtendedRich = (humanizerInfo: HumanizerInfoType, action, word, vaultInfo, amount) => [
   [
     action,
     {
@@ -52,7 +53,7 @@ const YearnTesseractMapping = (humanizerInfo: HumanizerInfoType) => {
   const { abis, yearnVaults, tesseractVaults } = humanizerInfo
 
   const iface = new Interface(abis.YearnVault)
-  
+
   return {
     [iface.getSighash('deposit(uint256,address)')]: (txn, network, { extended = false }) => {
       const [amount] = iface.parseTransaction(txn).args
@@ -71,9 +72,10 @@ const YearnTesseractMapping = (humanizerInfo: HumanizerInfoType) => {
       if (vaultInfo)
         return !extended
           ? [
-              `Withdraw ${addTokenPrefix(token(humanizerInfo, vaultInfo.baseToken, amount), network.id)} from ${
-                vaultInfo.name
-              }`
+              `Withdraw ${addTokenPrefix(
+                token(humanizerInfo, vaultInfo.baseToken, amount),
+                network.id
+              )} from ${vaultInfo.name}`
             ]
           : toExtendedRich(humanizerInfo, 'Withdraw', 'from', vaultInfo, amount)
       return !extended

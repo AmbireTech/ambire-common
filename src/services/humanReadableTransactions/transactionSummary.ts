@@ -1,11 +1,9 @@
 // TODO: add types
 // @ts-nocheck
 
-import { HumanizerInfoType } from 'hooks/useFetchConstants'
 import networks from '../../constants/networks'
-
+import { HumanizerInfoType } from '../../hooks/useFetchConstants'
 import humanizers from '../humanizers'
-
 import { getName, nativeToken } from './humanReadableTransactions'
 
 // This function is moved away from the `humanReadableTransactions` main file,
@@ -14,7 +12,13 @@ import { getName, nativeToken } from './humanReadableTransactions'
 //   2) humanizers/index.ts ->
 //   3) humanizers/YearnVault.ts (and all others) ->
 //   4) humanReadableTransactions/index.ts
-export function getTransactionSummary(humanizerInfo:HumanizerInfoType, txn, networkId, accountAddr, opts = {}) {
+export function getTransactionSummary(
+  humanizerInfo: HumanizerInfoType,
+  txn,
+  networkId,
+  accountAddr,
+  opts = {}
+) {
   const [to, value, data = '0x'] = txn
   const network = networks.find((x) => x.id === networkId || x.chainId === networkId)
   if (!network) return 'Unknown network (unable to parse)'

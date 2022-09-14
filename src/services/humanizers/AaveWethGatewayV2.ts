@@ -2,8 +2,9 @@
 // @ts-nocheck
 
 import { Interface } from 'ethers/lib/utils'
+
+import { HumanizerInfoType } from '../../hooks/useFetchConstants'
 import { nativeToken } from '../humanReadableTransactions'
-import { HumanizerInfoType } from 'hooks/useFetchConstants'
 
 const onBehalfText = (onBehalf, txnFrom) =>
   onBehalf.toLowerCase() !== txnFrom.toLowerCase() ? ` on behalf of ${onBehalf}` : ''
@@ -27,7 +28,7 @@ const toExtended = (action, word, token, txn, onBehalf) => {
   ]
 }
 
-const AaveMapping = (humanizerInfo:HumanizerInfoType) => {
+const AaveMapping = (humanizerInfo: HumanizerInfoType) => {
   const iface = new Interface(humanizerInfo.abis.AaveWethGatewayV2)
 
   return {
@@ -44,9 +45,13 @@ const AaveMapping = (humanizerInfo:HumanizerInfoType) => {
     },
     [iface.getSighash('withdrawETH')]: (txn, network, { extended }) => {
       const [, /* lendingPool */ amount, to] = iface.parseTransaction(txn).args
-      if (extended) return toExtended('Withdraw', 'from', nativeToken(network, amount, true), txn, to)
+      if (extended)
+        return toExtended('Withdraw', 'from', nativeToken(network, amount, true), txn, to)
       return [
-        `Withdraw ${nativeToken(network, amount)} from Aave lending pool${onBehalfText(to, txn.from)}`
+        `Withdraw ${nativeToken(network, amount)} from Aave lending pool${onBehalfText(
+          to,
+          txn.from
+        )}`
       ]
     },
     [iface.getSighash('repayETH')]: (txn, network, { extended }) => {

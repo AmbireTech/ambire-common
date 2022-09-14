@@ -2,11 +2,11 @@
 // @ts-nocheck
 
 import { Interface } from 'ethers/lib/utils'
-import { HumanizerInfoType } from 'hooks/useFetchConstants'
 
+import { HumanizerInfoType } from '../../hooks/useFetchConstants'
 import { nativeToken } from '../humanReadableTransactions'
 
-const WETHMapping = (humanizerInfo:HumanizerInfoType) => {
+const WETHMapping = (humanizerInfo: HumanizerInfoType) => {
   const iface = new Interface(humanizerInfo.abis.WETH)
 
   return {

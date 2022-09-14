@@ -1,6 +1,7 @@
 import { parseUnits } from 'ethers/lib/utils'
 import isEmail from 'validator/es/lib/isEmail'
 
+import { ConstantsType } from '../../hooks/useFetchConstants'
 import { isKnownTokenOrContract, isValidAddress } from '../address'
 
 const validateAddress = (address: string) => {
@@ -40,6 +41,7 @@ const validateSendTransferAddress = (
   selectedAcc: any,
   addressConfirmed: any,
   isKnownAddress: any,
+  humanizerInfo: ConstantsType['humanizerInfo'],
   isUDAddress?: boolean,
   isEnsAddress?: boolean
 ) => {
@@ -53,7 +55,7 @@ const validateSendTransferAddress = (
     }
   }
 
-  if (address && isKnownTokenOrContract(address)) {
+  if (address && isKnownTokenOrContract(humanizerInfo, address)) {
     return {
       success: false,
       message: 'You are trying to send tokens to a smart contract. Doing so would burn them.'
@@ -124,6 +126,7 @@ const validateSendNftAddress = (
   metadata: any,
   selectedNetwork: any,
   network: any,
+  humanizerInfo: ConstantsType['humanizerInfo'],
   isUDAddress?: boolean,
   isEnsAddress?: boolean
 ) => {
@@ -132,6 +135,7 @@ const validateSendNftAddress = (
     selectedAcc,
     addressConfirmed,
     isKnownAddress,
+    humanizerInfo,
     isUDAddress,
     isEnsAddress
   )

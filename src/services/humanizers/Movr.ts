@@ -2,14 +2,14 @@
 // @ts-nocheck
 
 import { Interface } from 'ethers/lib/utils'
-import { HumanizerInfoType } from 'hooks/useFetchConstants'
-import networks from '../../constants/networks'
 
+import networks from '../../constants/networks'
+import { HumanizerInfoType } from '../../hooks/useFetchConstants'
 import { formatNativeTokenAddress, token } from '../humanReadableTransactions'
 
 const getNetwork = (chainId) => networks.find((n) => n.chainId === Number(chainId)).name
 
-const MovrMapping = (humanizerInfo:HumanizerInfoType) => {
+const MovrMapping = (humanizerInfo: HumanizerInfoType) => {
   const MovrAnyswapInterface = new Interface(humanizerInfo.abis.MovrAnyswap)
   const MovrRouterInterface = new Interface(humanizerInfo.abis.MovrRouter)
 
@@ -18,10 +18,9 @@ const MovrMapping = (humanizerInfo:HumanizerInfoType) => {
       const { middlewareInputToken, amount, tokenToBridge, toChainId } =
         MovrAnyswapInterface.parseTransaction(txn).args[0]
       return [
-        `Transfer ${token(humanizerInfo, middlewareInputToken, amount)} to ${getNetwork(toChainId)} for ${token(
-          humanizerInfo,
-          tokenToBridge
-        )}`
+        `Transfer ${token(humanizerInfo, middlewareInputToken, amount)} to ${getNetwork(
+          toChainId
+        )} for ${token(humanizerInfo, tokenToBridge)}`
       ]
     },
     [MovrRouterInterface.getSighash('outboundTransferTo')]: (txn, network) => {
@@ -30,9 +29,14 @@ const MovrMapping = (humanizerInfo:HumanizerInfoType) => {
       const { inputToken } = middlewareRequest
       const { inputToken: outputToken } = bridgeRequest
       return [
-        `Transfer ${token(humanizerInfo, formatNativeTokenAddress(inputToken), amount)} to ${getNetwork(
-          toChainId
-        )} for ${token(humanizerInfo, formatNativeTokenAddress(outputToken))}`
+        `Transfer ${token(
+          humanizerInfo,
+          formatNativeTokenAddress(inputToken),
+          amount
+        )} to ${getNetwork(toChainId)} for ${token(
+          humanizerInfo,
+          formatNativeTokenAddress(outputToken)
+        )}`
       ]
     }
   }

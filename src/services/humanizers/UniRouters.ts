@@ -2,8 +2,8 @@
 // @ts-nocheck
 
 import { Interface } from 'ethers/lib/utils'
-import { HumanizerInfoType } from 'hooks/useFetchConstants'
 
+import { HumanizerInfoType } from '../../hooks/useFetchConstants'
 import { nativeToken, token } from '../humanReadableTransactions'
 
 const recipientText = (recipient, txnFrom, extended = false) =>
@@ -51,7 +51,7 @@ const toExtended = (fromToken, toToken, recipient, expires, atLeast = true) => {
   ]
 }
 
-const uniV2Mapping = (humanizerInfo:HumanizerInfoType) => {
+const uniV2Mapping = (humanizerInfo: HumanizerInfoType) => {
   const iface = new Interface(humanizerInfo.abis.UniV2Router)
 
   return {
@@ -62,7 +62,7 @@ const uniV2Mapping = (humanizerInfo:HumanizerInfoType) => {
       return !opts.extended
         ? [
             `Swap ${token(humanizerInfo, path[0], amountIn)} for at least ${token(
-              humanizerInfo, 
+              humanizerInfo,
               outputAsset,
               amountOutMin
             )}${recipientText(to, txn.from)}${deadlineText(deadline, opts.mined)}`
@@ -80,7 +80,7 @@ const uniV2Mapping = (humanizerInfo:HumanizerInfoType) => {
       return !opts.extended
         ? [
             `Swap up to ${token(humanizerInfo, path[0], amountInMax)} for ${token(
-              humanizerInfo, 
+              humanizerInfo,
               outputAsset,
               amountOut
             )}${recipientText(to, txn.from)}${deadlineText(deadline, opts.mined)}`
@@ -101,7 +101,7 @@ const uniV2Mapping = (humanizerInfo:HumanizerInfoType) => {
       return !opts.extended
         ? [
             `Swap ${nativeToken(network, value)} for at least ${token(
-              humanizerInfo, 
+              humanizerInfo,
               outputAsset,
               amountOutMin
             )}${recipientText(to, txn.from)}${deadlineText(deadline, opts.mined)}`
@@ -154,7 +154,7 @@ const uniV2Mapping = (humanizerInfo:HumanizerInfoType) => {
       return !opts.extended
         ? [
             `Swap up to ${nativeToken(network, value)} for ${token(
-              humanizerInfo, 
+              humanizerInfo,
               outputAsset,
               amountOut
             )}${recipientText(to, txn.from)}${deadlineText(deadline, opts.mined)}`
@@ -181,7 +181,7 @@ const uniV2Mapping = (humanizerInfo:HumanizerInfoType) => {
       ] = iface.parseTransaction(txn).args
       return [
         `Add liquidity: ${token(humanizerInfo, tokenA, amountADesired)} and ${token(
-          humanizerInfo, 
+          humanizerInfo,
           tokenB,
           amountBDesired
         )}${recipientText(to, txn.from)}${deadlineText(deadline, opts.mined)}`
@@ -203,7 +203,7 @@ const uniV2Mapping = (humanizerInfo:HumanizerInfoType) => {
         iface.parseTransaction(txn).args
       return [
         `Remove liquidity: at least ${token(humanizerInfo, tokenA, amountAMin)} and ${token(
-          humanizerInfo, 
+          humanizerInfo,
           tokenB,
           amountBMin
         )}${recipientText(to, txn.from)}${deadlineText(deadline, opts.mined)}`
@@ -213,10 +213,14 @@ const uniV2Mapping = (humanizerInfo:HumanizerInfoType) => {
       const [token /* liquidity */, , amountTokenMin, amountETHMin, to, deadline] =
         iface.parseTransaction(txn).args
       return [
-        `Remove liquidity: at least ${token(humanizerInfo, token, amountTokenMin)} and ${nativeToken(
-          network,
-          amountETHMin
-        )}${recipientText(to, txn.from)}${deadlineText(deadline, opts.mined)}`
+        `Remove liquidity: at least ${token(
+          humanizerInfo,
+          token,
+          amountTokenMin
+        )} and ${nativeToken(network, amountETHMin)}${recipientText(to, txn.from)}${deadlineText(
+          deadline,
+          opts.mined
+        )}`
       ]
     }
   }
@@ -235,7 +239,7 @@ const parsePath = (pathBytes) => {
   return path
 }
 
-const uniV3Mapping = (humanizerInfo:HumanizerInfoType) => {
+const uniV3Mapping = (humanizerInfo: HumanizerInfoType) => {
   const ifaceV3 = new Interface(humanizerInfo.abis.UniV3Router)
 
   return {
@@ -260,7 +264,7 @@ const uniV3Mapping = (humanizerInfo:HumanizerInfoType) => {
       // @TODO: consider fees
       return [
         `Swap ${token(humanizerInfo, params.tokenIn, params.amountIn)} for at least ${token(
-          humanizerInfo, 
+          humanizerInfo,
           params.tokenOut,
           params.amountOutMinimum
         )}${recipientText(params.recipient, txn.from)}${deadlineText(params.deadline, opts.mined)}`
@@ -271,7 +275,7 @@ const uniV3Mapping = (humanizerInfo:HumanizerInfoType) => {
       const path = parsePath(params.path)
       return [
         `Swap ${token(humanizerInfo, path[0], params.amountIn)} for at least ${token(
-          humanizerInfo, 
+          humanizerInfo,
           path[path.length - 1],
           params.amountOutMinimum
         )}${recipientText(params.recipient, txn.from)}${deadlineText(params.deadline, opts.mined)}`
@@ -281,7 +285,7 @@ const uniV3Mapping = (humanizerInfo:HumanizerInfoType) => {
       const [params] = ifaceV3.parseTransaction(txn).args
       return [
         `Swap up to ${token(humanizerInfo, params.tokenIn, params.amountInMaximum)} for ${token(
-          humanizerInfo, 
+          humanizerInfo,
           params.tokenOut,
           params.amountOut
         )}${recipientText(params.recipient, txn.from)}${deadlineText(params.deadline, opts.mined)}`
@@ -292,7 +296,7 @@ const uniV3Mapping = (humanizerInfo:HumanizerInfoType) => {
       const path = parsePath(params.path)
       return [
         `Swap up to ${token(humanizerInfo, path[0], params.amountInMaximum)} for ${token(
-          humanizerInfo, 
+          humanizerInfo,
           path[path.length - 1],
           params.amountOut
         )}${recipientText(params.recipient, txn.from)}${deadlineText(params.deadline, opts.mined)}`
@@ -307,7 +311,7 @@ const uniV3Mapping = (humanizerInfo:HumanizerInfoType) => {
   }
 }
 
-const uniV32Mapping = (humanizerInfo:HumanizerInfoType) => {
+const uniV32Mapping = (humanizerInfo: HumanizerInfoType) => {
   const ifaceV32 = new Interface(humanizerInfo.abis.UniV3Router2)
 
   return {
@@ -336,7 +340,7 @@ const uniV32Mapping = (humanizerInfo:HumanizerInfoType) => {
       // @TODO: consider fees
       return [
         `Swap ${token(humanizerInfo, params.tokenIn, params.amountIn)} for at least ${token(
-          humanizerInfo, 
+          humanizerInfo,
           params.tokenOut,
           params.amountOutMinimum
         )}${recipientText(params.recipient, txn.from)}`
@@ -347,7 +351,7 @@ const uniV32Mapping = (humanizerInfo:HumanizerInfoType) => {
       const path = parsePath(params.path)
       return [
         `Swap ${token(humanizerInfo, path[0], params.amountIn)} for at least ${token(
-          humanizerInfo, 
+          humanizerInfo,
           path[path.length - 1],
           params.amountOutMinimum
         )}${recipientText(params.recipient, txn.from)}`
@@ -357,7 +361,7 @@ const uniV32Mapping = (humanizerInfo:HumanizerInfoType) => {
       const [params] = ifaceV32.parseTransaction(txn).args
       return [
         `Swap up to ${token(humanizerInfo, params.tokenIn, params.amountInMaximum)} for ${token(
-          humanizerInfo, 
+          humanizerInfo,
           params.tokenOut,
           params.amountOut
         )}${recipientText(params.recipient, txn.from)}`
@@ -368,7 +372,7 @@ const uniV32Mapping = (humanizerInfo:HumanizerInfoType) => {
       const path = parsePath(params.path)
       return [
         `Swap up to ${token(humanizerInfo, path[0], params.amountInMaximum)} for ${token(
-          humanizerInfo, 
+          humanizerInfo,
           path[path.length - 1],
           params.amountOut
         )}${recipientText(params.recipient, txn.from)}}`
@@ -379,7 +383,7 @@ const uniV32Mapping = (humanizerInfo:HumanizerInfoType) => {
       const { amountOut, amountInMax, path, to } = ifaceV32.parseTransaction(txn).args
       return [
         `Swap up to ${token(humanizerInfo, path[0], amountInMax)} for ${token(
-          humanizerInfo, 
+          humanizerInfo,
           path[path.length - 1],
           amountOut
         )}${recipientText(to, txn.from)}}`
@@ -390,7 +394,7 @@ const uniV32Mapping = (humanizerInfo:HumanizerInfoType) => {
       const { amountIn, amountOutMin, path, to } = ifaceV32.parseTransaction(txn).args
       return [
         `Swap ${token(humanizerInfo, path[0], amountIn)} for at least ${token(
-          humanizerInfo, 
+          humanizerInfo,
           path[path.length - 1],
           amountOutMin
         )}${recipientText(to, txn.from)}`
@@ -409,5 +413,9 @@ const uniV32Mapping = (humanizerInfo:HumanizerInfoType) => {
   }
 }
 
-const mapping = (humanizerInfo:HumanizerInfoType) => ({ ...uniV2Mapping(humanizerInfo), ...uniV3Mapping(humanizerInfo), ...uniV32Mapping(humanizerInfo) })
+const mapping = (humanizerInfo: HumanizerInfoType) => ({
+  ...uniV2Mapping(humanizerInfo),
+  ...uniV3Mapping(humanizerInfo),
+  ...uniV32Mapping(humanizerInfo)
+})
 export default mapping

@@ -2,14 +2,13 @@
 // @ts-nocheck
 
 import { Interface } from 'ethers/lib/utils'
-import { HumanizerInfoType } from 'hooks/useFetchConstants'
 
+import { HumanizerInfoType } from '../../hooks/useFetchConstants'
 import { nativeToken, token } from '../humanReadableTransactions'
 
-
-const MovrMapping = (humanizerInfo:HumanizerInfoType) => {
+const MovrMapping = (humanizerInfo: HumanizerInfoType) => {
   const WyvernExchange = new Interface(humanizerInfo.abis.WyvernExchange)
-  
+
   return {
     [WyvernExchange.getSighash('atomicMatch_')]: (txn, network, { extended = false }) => {
       const { addrs, uints } = WyvernExchange.parseTransaction(txn).args

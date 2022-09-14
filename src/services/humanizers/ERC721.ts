@@ -2,13 +2,14 @@
 // @ts-nocheck
 
 import { Interface } from 'ethers/lib/utils'
-import { HumanizerInfoType } from 'hooks/useFetchConstants'
+
+import { HumanizerInfoType } from '../../hooks/useFetchConstants'
 import { getName } from '../humanReadableTransactions'
 
 const fromText = (from, txnFrom) =>
   from.toLowerCase() !== txnFrom.toLowerCase() ? ` from ${from}` : ''
 
-const toExtended = (humanizerInfo:HumanizerInfoType, tokenId, from, to, txn, network) => [
+const toExtended = (humanizerInfo: HumanizerInfoType, tokenId, from, to, txn, network) => [
   [
     'Send',
     {
@@ -27,7 +28,7 @@ const toExtended = (humanizerInfo:HumanizerInfoType, tokenId, from, to, txn, net
   ]
 ]
 
-const ERC721Mapping = (humanizerInfo:HumanizerInfoType) => {
+const ERC721Mapping = (humanizerInfo: HumanizerInfoType) => {
   const iface = new Interface(humanizerInfo.abis.ERC721)
 
   return {
