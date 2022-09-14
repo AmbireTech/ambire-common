@@ -1,11 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 
-import { fetchGet } from '../../services/fetch'
-import {
-  ConstantsType,
-  UseFetchConstantsProps,
-  UseFetchConstantsReturnType
-} from './types'
+import { fetchCaught } from '../../services/fetch'
+import { ConstantsType, UseFetchConstantsProps, UseFetchConstantsReturnType } from './types'
 
 const useFetchConstants = ({ fetch }: UseFetchConstantsProps): UseFetchConstantsReturnType => {
   const [data, setData] = useState<ConstantsType | null>(null)
@@ -17,8 +13,8 @@ const useFetchConstants = ({ fetch }: UseFetchConstantsProps): UseFetchConstants
 
     try {
       const [{ tokenList, humanizerInfo, WALLETInitialClaimableRewards}, adexToStakingTransfersLogs] = await Promise.all([
-        fetchGet(fetch, `${endpoint}result.json`),
-        fetchGet(fetch, `${endpoint}adexToStakingTransfers.json`)
+        fetchCaught(fetch, `${endpoint}result.json`).then((res) => res.body),
+        fetchCaught(fetch, `${endpoint}adexToStakingTransfers.json`).then((res) => res.body)
       ])
 
       setIsLoading(() => {
@@ -32,7 +28,7 @@ const useFetchConstants = ({ fetch }: UseFetchConstantsProps): UseFetchConstants
         setHasError(false)
         return false
       })
-    } catch {
+    } catch (e) {
       setHasError(true)
       setData(null)
       setIsLoading(false)
