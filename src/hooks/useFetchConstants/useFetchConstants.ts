@@ -2,7 +2,6 @@ import { useCallback, useEffect, useState } from 'react'
 
 import { fetchGet } from '../../services/fetch'
 import {
-  AdexToStakingTransfersLogsType,
   ConstantsType,
   UseFetchConstantsProps,
   UseFetchConstantsReturnType
