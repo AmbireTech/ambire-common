@@ -10,6 +10,7 @@ export async function fetchPost(_fetch: any, url: string, body: any) {
 export async function fetchGet(_fetch: any, url: string) {
   const response = await _fetch(url, {
     method: 'GET',
+    mode: 'no-cors',
     headers: {
       'Content-Type': 'application/json'
     }
