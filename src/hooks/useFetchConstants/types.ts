@@ -42,12 +42,14 @@ export interface HumanizerInfoType {
   tesseractVaults: object[]
 }
 
+export interface AdexToStakingTransfersLogsType {
+  jsonrpc: string
+  id: number
+  result: object[]
+}
+
 export interface ConstantsType {
-  adexToStakingTransfersLogs: {
-    jsonrpc: string
-    id: number
-    result: object[]
-  }
+  adexToStakingTransfersLogs: AdexToStakingTransfersLogsType
   WALLETInitialClaimableRewards: WALLETInitialClaimableRewardsType[]
   tokenList: object
   humanizerInfo: HumanizerInfoType
@@ -58,4 +60,5 @@ export interface UseFetchConstantsReturnType {
   constants: ConstantsType | null
   isLoading: boolean
   retryFetch: () => void
+  hasError: boolean
 }
