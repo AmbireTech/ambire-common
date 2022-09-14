@@ -12,17 +12,20 @@ const useFetchConstants = ({ fetch }: UseFetchConstantsProps): UseFetchConstants
     const endpoint = 'https://jason.ambire.com/'
 
     try {
-      const [{ tokenList, humanizerInfo, WALLETInitialClaimableRewards}, adexToStakingTransfersLogs] = await Promise.all([
+      const [
+        { tokenList, humanizerInfo, WALLETInitialClaimableRewards },
+        adexToStakingTransfersLogs
+      ] = await Promise.all([
         fetchCaught(fetch, `${endpoint}result.json`).then((res) => res.body),
         fetchCaught(fetch, `${endpoint}adexToStakingTransfers.json`).then((res) => res.body)
       ])
 
       setIsLoading(() => {
         setData({
-          tokenList: tokenList,
-          humanizerInfo: humanizerInfo,
-          WALLETInitialClaimableRewards: WALLETInitialClaimableRewards,
-          adexToStakingTransfersLogs: adexToStakingTransfersLogs,
+          tokenList,
+          humanizerInfo,
+          WALLETInitialClaimableRewards,
+          adexToStakingTransfersLogs,
           lastFetched: Date.now()
         })
         setHasError(false)
@@ -33,7 +36,7 @@ const useFetchConstants = ({ fetch }: UseFetchConstantsProps): UseFetchConstants
       setData(null)
       setIsLoading(false)
     }
-  }, [data, fetch])
+  }, [fetch])
 
   useEffect(() => {
     fetchConstants()
