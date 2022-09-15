@@ -2,6 +2,7 @@
 
 import { NETWORKS } from '../../constants/networks'
 import { SupportedProtocolType } from '../../constants/supportedProtocols'
+import { UseConstantsReturnType } from '../useConstants'
 import { UseStorageType } from '../useStorage'
 import { UseToastsReturnType } from '../useToasts'
 
@@ -55,8 +56,7 @@ export type Protocols = {
 }
 
 export type UsePortfolioProps = {
-  // TODO: Add type
-  useConstants: any
+  useConstants: () => UseConstantsReturnType
   currentNetwork: Network
   account: string
   useStorage: UseStorageType
