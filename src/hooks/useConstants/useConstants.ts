@@ -6,7 +6,7 @@ import {
 import { fetchCaught } from 'ambire-common/src/services/fetch'
 import { useCallback, useEffect, useState } from 'react'
 
-const useConstants = ({ fetch, endpoint = 'https://jason.ambire.com/' }: UseConstantsProps): UseConstantsReturnType => {
+const useConstants = ({ fetch, endpoint }: UseConstantsProps): UseConstantsReturnType => {
   const [data, setData] = useState<ConstantsType | null>(null)
   const [hasError, setHasError] = useState<boolean>(false)
   const [isLoading, setIsLoading] = useState<boolean>(true)
@@ -17,8 +17,8 @@ const useConstants = ({ fetch, endpoint = 'https://jason.ambire.com/' }: UseCons
         { tokenList, humanizerInfo, WALLETInitialClaimableRewards },
         adexToStakingTransfersLogs
       ] = await Promise.all([
-        fetchCaught(fetch, `${endpoint}result.json`).then((res) => res.body),
-        fetchCaught(fetch, `${endpoint}adexToStakingTransfers.json`).then((res) => res.body)
+        fetchCaught(fetch, `${endpoint}/result.json`).then((res) => res.body),
+        fetchCaught(fetch, `${endpoint}/adexToStakingTransfers.json`).then((res) => res.body)
       ])
 
       setIsLoading(() => {
