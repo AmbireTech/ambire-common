@@ -1,4 +1,4 @@
-import useFetchConstants from './useFetchConstants'
+import useConstants from './useConstants'
 
 export * from './types'
-export default useFetchConstants
+export default useConstants

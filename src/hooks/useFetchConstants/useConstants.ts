@@ -1,16 +1,18 @@
+import {
+  ConstantsType,
+  UseConstantsProps,
+  UseConstantsReturnType
+} from 'ambire-common/src/hooks/useFetchConstants/types'
+import { fetchCaught } from 'ambire-common/src/services/fetch'
 import { useCallback, useEffect, useState } from 'react'
 
-import { fetchCaught } from '../../services/fetch'
-import { ConstantsType, UseFetchConstantsProps, UseFetchConstantsReturnType } from './types'
-
-const useFetchConstants = ({ fetch }: UseFetchConstantsProps): UseFetchConstantsReturnType => {
+const useConstants = ({ fetch }: UseConstantsProps): UseConstantsReturnType => {
+  const endpoint = 'https://jason.ambire.com/'
   const [data, setData] = useState<ConstantsType | null>(null)
   const [hasError, setHasError] = useState<boolean>(false)
   const [isLoading, setIsLoading] = useState<boolean>(true)
 
   const fetchConstants = useCallback(async () => {
-    const endpoint = 'https://jason.ambire.com/'
-
     try {
       const [
         { tokenList, humanizerInfo, WALLETInitialClaimableRewards },
@@ -50,4 +52,4 @@ const useFetchConstants = ({ fetch }: UseFetchConstantsProps): UseFetchConstants
   }
 }
 
-export default useFetchConstants
+export default useConstants

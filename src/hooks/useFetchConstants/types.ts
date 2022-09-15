@@ -1,4 +1,4 @@
-export interface UseFetchConstantsProps {
+export interface UseConstantsProps {
   fetch: any
 }
 
@@ -56,7 +56,7 @@ export interface ConstantsType {
   lastFetched: number
 }
 
-export interface UseFetchConstantsReturnType {
+export interface UseConstantsReturnType {
   constants: ConstantsType | null
   isLoading: boolean
   retryFetch: () => void
