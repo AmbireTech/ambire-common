@@ -110,10 +110,15 @@ export function setKnownTokens(tokens) {
   )
 }
 
-export function isKnown(txn, from) {
+export function isKnown(humanizerInfo: HumanizerInfoType, txn, from) {
   if (txn[0] === from) return true
   const address = txn[0].toLowerCase()
-  return !!(knownAliases[address] || names[address] || tokens[address] || knownTokens[address])
+  return !!(
+    knownAliases[address] ||
+    humanizerInfo.names[address] ||
+    humanizerInfo.tokens[address] ||
+    knownTokens[address]
+  )
 }
 
 export { knownAliases, knownTokens }
