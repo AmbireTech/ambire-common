@@ -56,7 +56,7 @@ export type Protocols = {
 
 export type UsePortfolioProps = {
   // TODO: Add type
-  useFetchConstants: any
+  useConstants: any
   currentNetwork: Network
   account: string
   useStorage: UseStorageType

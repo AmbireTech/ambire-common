@@ -1,5 +1,5 @@
 import { Interface } from 'ethers/lib/utils'
-import { HumanizerInfoTokensType, HumanizerInfoType } from 'hooks/useFetchConstants'
+import { HumanizerInfoTokensType, HumanizerInfoType } from 'hooks/useConstants'
 
 import networks, { NetworkType } from '../../constants/networks'
 import { formatNativeTokenAddress, knownTokens } from '../humanReadableTransactions'

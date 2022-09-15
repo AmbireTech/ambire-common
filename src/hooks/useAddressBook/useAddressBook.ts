@@ -17,7 +17,7 @@ const accountType = ({ email, signerExtra }: any): string => {
 }
 
 const useAddressBook = ({
-  useFetchConstants,
+  useConstants,
   useAccounts,
   useStorage,
   useToasts
@@ -25,7 +25,7 @@ const useAddressBook = ({
   const { accounts } = useAccounts()
   const { addToast } = useToasts()
   const [storageAddresses, setStorageAddresses] = useStorage({ key: 'addresses', defaultValue: [] })
-  const { constants, isLoading: areConstantsLoading } = useFetchConstants()
+  const { constants, isLoading: areConstantsLoading } = useConstants()
 
   const addressList = useMemo(() => {
     try {

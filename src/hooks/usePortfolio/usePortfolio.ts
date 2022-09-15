@@ -1,5 +1,5 @@
 // @ts-nocheck TODO: Fill in all missing types before enabling the TS check again
-import { ConstantsType } from 'hooks/useFetchConstants'
+import { ConstantsType } from 'hooks/useConstants'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import networks, { NetworkId } from '../../constants/networks'
@@ -98,7 +98,7 @@ async function supplementTokensDataFromNetwork({
 }
 
 export default function usePortfolio({
-  useFetchConstants,
+  useConstants,
   currentNetwork,
   account,
   useStorage,
@@ -106,7 +106,7 @@ export default function usePortfolio({
   useToasts,
   getBalances
 }: UsePortfolioProps): UsePortfolioReturnType {
-  const { constants, isLoading } = useFetchConstants()
+  const { constants, isLoading } = useConstants()
   const { addToast } = useToasts()
   const rpcTokensLastUpdated = useRef<number>(0)
   const currentAccount = useRef<string>()

@@ -4,7 +4,7 @@ import { Account } from '../useAccounts'
 
 export type UseClaimableWalletTokenProps = {
   // TODO: Add type
-  useFetchConstants: any
+  useConstants: any
   accountId: Account['id']
   network: UseNetworkReturnType['network']
   addRequest: any // TODO
