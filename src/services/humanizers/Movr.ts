@@ -1,10 +1,10 @@
 // TODO: add types
 // @ts-nocheck
 
+import { HumanizerInfoType } from 'ambire-common/src/hooks/useConstants'
 import { Interface } from 'ethers/lib/utils'
 
 import networks from '../../constants/networks'
-import { HumanizerInfoType } from '../../hooks/useFetchConstants'
 import { formatNativeTokenAddress, token } from '../humanReadableTransactions'
 
 const getNetwork = (chainId) => networks.find((n) => n.chainId === Number(chainId)).name

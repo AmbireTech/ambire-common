@@ -2,7 +2,7 @@ import {
   ConstantsType,
   UseConstantsProps,
   UseConstantsReturnType
-} from 'ambire-common/src/hooks/useFetchConstants/types'
+} from 'ambire-common/src/hooks/useConstants/types'
 import { fetchCaught } from 'ambire-common/src/services/fetch'
 import { useCallback, useEffect, useState } from 'react'
 

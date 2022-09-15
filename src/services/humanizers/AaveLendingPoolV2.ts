@@ -1,9 +1,9 @@
 // TODO: add types and fix (dependency cycle warning)
 // @ts-nocheck
 
+import { HumanizerInfoType } from 'ambire-common/src/hooks/useConstants'
 import { Interface } from 'ethers/lib/utils'
 
-import { HumanizerInfoType } from '../../hooks/useFetchConstants'
 import { token } from '../humanReadableTransactions'
 
 const onBehalfText = (onBehalf, txnFrom) =>

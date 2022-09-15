@@ -1,10 +1,9 @@
 // TODO: add types
 // @ts-nocheck
 
+import { HumanizerInfoType } from 'ambire-common/src/hooks/useConstants'
 import { constants } from 'ethers'
 import { formatUnits } from 'ethers/lib/utils'
-
-import { HumanizerInfoType } from '../../hooks/useFetchConstants'
 
 // address (lowercase) => name
 const knownAliases = {}

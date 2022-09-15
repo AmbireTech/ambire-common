@@ -1,9 +1,9 @@
 // TODO: add types
 // @ts-nocheck
 
+import { HumanizerInfoType } from 'ambire-common/src/hooks/useConstants'
 import { Interface } from 'ethers/lib/utils'
 
-import { HumanizerInfoType } from '../../hooks/useFetchConstants'
 import { nativeToken } from '../humanReadableTransactions'
 
 const WETHMapping = (humanizerInfo: HumanizerInfoType) => {

@@ -1,11 +1,11 @@
 // TODO: add types
 // @ts-nocheck
 
+import { HumanizerInfoType } from 'ambire-common/src/hooks/useConstants'
 import { Interface } from 'ethers/lib/utils'
 
 import accountPresets from '../../constants/accountPresets'
 import privilegesOptions from '../../constants/privilegesOptions'
-import { HumanizerInfoType } from '../../hooks/useFetchConstants'
 import { getName } from '../humanReadableTransactions'
 
 const iface = new Interface(require('adex-protocol-eth/abi/Identity5.2'))
