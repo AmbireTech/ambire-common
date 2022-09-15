@@ -37,7 +37,7 @@ const useConstants = ({ fetch, endpoint }: UseConstantsProps): UseConstantsRetur
       setData(null)
       setIsLoading(false)
     }
-  }, [fetch])
+  }, [fetch, endpoint])
 
   useEffect(() => {
     fetchConstants()
