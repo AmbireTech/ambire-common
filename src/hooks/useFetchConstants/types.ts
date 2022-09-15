@@ -1,5 +1,6 @@
 export interface UseConstantsProps {
   fetch: any
+  endpoint: string
 }
 
 export interface WALLETInitialClaimableRewardsType {

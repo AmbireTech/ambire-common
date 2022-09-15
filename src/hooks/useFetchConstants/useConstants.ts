@@ -6,8 +6,7 @@ import {
 import { fetchCaught } from 'ambire-common/src/services/fetch'
 import { useCallback, useEffect, useState } from 'react'
 
-const useConstants = ({ fetch }: UseConstantsProps): UseConstantsReturnType => {
-  const endpoint = 'https://jason.ambire.com/'
+const useConstants = ({ fetch, endpoint = 'https://jason.ambire.com/' }: UseConstantsProps): UseConstantsReturnType => {
   const [data, setData] = useState<ConstantsType | null>(null)
   const [hasError, setHasError] = useState<boolean>(false)
   const [isLoading, setIsLoading] = useState<boolean>(true)
