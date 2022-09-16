@@ -6,7 +6,7 @@ import { Interface } from 'ethers/lib/utils'
 import { HumanizerInfoType } from '../../hooks/useConstants'
 import { nativeToken, token } from '../humanReadableTransactions'
 
-const MovrMapping = (humanizerInfo: HumanizerInfoType) => {
+const OpenSeaMapping = (humanizerInfo: HumanizerInfoType) => {
   const WyvernExchange = new Interface(humanizerInfo.abis.WyvernExchange)
 
   return {
@@ -68,4 +68,4 @@ const MovrMapping = (humanizerInfo: HumanizerInfoType) => {
     }
   }
 }
-export default MovrMapping
+export default OpenSeaMapping
