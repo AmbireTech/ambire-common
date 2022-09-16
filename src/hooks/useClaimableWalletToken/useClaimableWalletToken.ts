@@ -1,4 +1,3 @@
-import useCacheBreak from 'ambire-common/src/hooks/useCacheBreak'
 import { Contract } from 'ethers'
 import { Interface } from 'ethers/lib/utils'
 import { useCallback, useEffect, useMemo, useState } from 'react'
@@ -7,6 +6,7 @@ import WALLETSupplyControllerABI from '../../constants/abis/WALLETSupplyControll
 import { NETWORKS } from '../../constants/networks'
 import WALLETVestings from '../../constants/WALLETVestings.json'
 import { getProvider } from '../../services/provider'
+import useCacheBreak from '../useCacheBreak'
 import { UseClaimableWalletTokenProps, UseClaimableWalletTokenReturnType } from './types'
 
 const supplyControllerAddress = '0xc53af25f831f31ad6256a742b3f0905bc214a430'

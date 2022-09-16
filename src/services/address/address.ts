@@ -1,4 +1,4 @@
-import { HumanizerInfoType } from 'ambire-common/src/hooks/useConstants'
+import { HumanizerInfoType } from '../../hooks/useConstants'
 
 const isValidAddress = (address: string) => /^0x[a-fA-F0-9]{40}$/.test(address)
 

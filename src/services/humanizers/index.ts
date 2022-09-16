@@ -1,6 +1,4 @@
-// Types
-import { HumanizerInfoType } from 'ambire-common/src/hooks/useConstants'
-
+import { HumanizerInfoType } from '../../hooks/useConstants'
 import AaveLendingPoolV2 from './AaveLendingPoolV2'
 import AaveWethGatewayV2 from './AaveWethGatewayV2'
 import AmbireBatcher from './AmbireBatcher'

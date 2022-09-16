@@ -1,9 +1,9 @@
 // TODO: add types
 // @ts-nocheck
 
-import { HumanizerInfoType } from 'ambire-common/src/hooks/useConstants'
 import { Interface } from 'ethers/lib/utils'
 
+import { HumanizerInfoType } from '../../hooks/useConstants'
 import { getName } from '../humanReadableTransactions'
 
 const fromText = (from, txnFrom) =>

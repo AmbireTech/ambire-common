@@ -1,9 +1,8 @@
 // TODO: add types
 // @ts-nocheck
 
-import { HumanizerInfoType } from 'ambire-common/src/hooks/useConstants'
-
 import networks from '../../constants/networks'
+import { HumanizerInfoType } from '../../hooks/useConstants'
 import humanizers from '../humanizers'
 import { getName, nativeToken } from './humanReadableTransactions'
 

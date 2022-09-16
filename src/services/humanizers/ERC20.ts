@@ -1,10 +1,10 @@
 // TODO: add types
 // @ts-nocheck
 
-import { HumanizerInfoType } from 'ambire-common/src/hooks/useConstants'
 import { constants } from 'ethers'
 import { Interface } from 'ethers/lib/utils'
 
+import { HumanizerInfoType } from '../../hooks/useConstants'
 import { getName, token } from '../humanReadableTransactions'
 
 const ERC20Mapping = (humanizerInfo: HumanizerInfoType) => {

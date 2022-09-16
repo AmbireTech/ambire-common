@@ -1,10 +1,10 @@
 // TODO: add types
 // @ts-nocheck
 
-import { HumanizerInfoType } from 'ambire-common/src/hooks/useConstants'
 import { Interface } from 'ethers/lib/utils'
 
 import WalletStakingPoolABI from '../../constants/abis/WalletStakingPoolABI.json'
+import { HumanizerInfoType } from '../../hooks/useConstants'
 import { token } from '../humanReadableTransactions'
 
 const STAKING_POOLS = {

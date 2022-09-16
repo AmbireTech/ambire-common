@@ -1,7 +1,7 @@
-import { ConstantsType } from 'ambire-common/src/hooks/useConstants'
 import { parseUnits } from 'ethers/lib/utils'
 import isEmail from 'validator/es/lib/isEmail'
 
+import { ConstantsType } from '../../hooks/useConstants'
 import { isKnownTokenOrContract, isValidAddress } from '../address'
 
 const validateAddress = (address: string) => {

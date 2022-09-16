@@ -1,11 +1,11 @@
 import ERC20ABI from 'adex-protocol-eth/abi/ERC20.json'
-import { NetworkId } from 'ambire-common/src/constants/networks'
-import { Account } from 'ambire-common/src/hooks/useAccounts'
-import { Token } from 'ambire-common/src/hooks/usePortfolio'
-import { UseToastsReturnType } from 'ambire-common/src/hooks/useToasts'
 import { BigNumber, constants, Contract } from 'ethers'
 import { Interface } from 'ethers/lib/utils'
 
+import { NetworkId } from '../../constants/networks'
+import { Account } from '../../hooks/useAccounts'
+import { Token } from '../../hooks/usePortfolio'
+import { UseToastsReturnType } from '../../hooks/useToasts'
 import { getProvider } from '../provider'
 
 const ERC20Interface = new Interface(ERC20ABI)

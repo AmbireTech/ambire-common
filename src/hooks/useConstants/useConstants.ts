@@ -1,10 +1,7 @@
-import {
-  ConstantsType,
-  UseConstantsProps,
-  UseConstantsReturnType
-} from 'ambire-common/src/hooks/useConstants/types'
-import { fetchCaught } from 'ambire-common/src/services/fetch'
 import { useCallback, useEffect, useState } from 'react'
+
+import { fetchCaught } from '../../services/fetch'
+import { ConstantsType, UseConstantsProps, UseConstantsReturnType } from './types'
 
 const useConstants = ({ fetch, endpoint }: UseConstantsProps): UseConstantsReturnType => {
   const [data, setData] = useState<ConstantsType | null>(null)
