@@ -125,7 +125,7 @@ const useAddressBook = ({
 
       addToast(`${address} added to your Address Book.`)
     },
-    [addresses, addToast, updateAddresses]
+    [addresses, addToast, updateAddresses, constants?.humanizerInfo]
   )
 
   const removeAddress = useCallback(

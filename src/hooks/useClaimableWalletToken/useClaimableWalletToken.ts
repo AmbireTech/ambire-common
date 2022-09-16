@@ -32,7 +32,7 @@ const useClaimableWalletToken = ({
     }
 
     return constants.WALLETInitialClaimableRewards.find((x) => x.addr === accountId)
-  }, [accountId])
+  }, [accountId, constants?.WALLETInitialClaimableRewards])
 
   const vestingEntry = useMemo(() => WALLETVestings.find((x) => x.addr === accountId), [accountId])
 
