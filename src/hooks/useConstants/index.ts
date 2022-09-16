@@ -1,4 +1,4 @@
-import useConstants from 'ambire-common/src/hooks/useConstants/useConstants'
+import useConstants from './useConstants'
 
-export * from 'ambire-common/src/hooks/useConstants/types'
+export * from './types'
 export default useConstants
