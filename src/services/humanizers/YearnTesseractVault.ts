@@ -14,8 +14,11 @@ const addTokenPrefix = (token, network) =>
     .split(' ')
     .map((x, i) => (i === 1 ? tokenPrefixes[network] + x : x))
     .join(' ')
-const getVaultInfo = (yearnVaults, tesseractVaults, { to }) =>
-  yearnVaults.find((x) => x.addr === to) || tesseractVaults.find((x) => x.addr === to)
+const getVaultInfo = (
+  yearnVaults: HumanizerInfoType['yearnVaults'],
+  tesseractVaults: HumanizerInfoType['tesseractVaults'],
+  { to }
+) => yearnVaults.find((x) => x.addr === to) || tesseractVaults.find((x) => x.addr === to)
 
 const toExtendedRich = (humanizerInfo: HumanizerInfoType, action, word, vaultInfo, amount) => [
   [
