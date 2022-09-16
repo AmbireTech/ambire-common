@@ -20,20 +20,18 @@ const useClaimableWalletToken = ({
   totalLifetimeRewards,
   walletUsdPrice
 }: UseClaimableWalletTokenProps): UseClaimableWalletTokenReturnType => {
-  const { isLoading, constants } = useConstants()
+  const { constants } = useConstants()
   const provider = useMemo(() => getProvider('ethereum'), [])
   const supplyController = useMemo(
     () => new Contract(supplyControllerAddress, WALLETSupplyControllerABI, provider),
     [provider]
   )
   const initialClaimableEntry = useMemo(() => {
-    if (!isLoading && typeof constants?.WALLETInitialClaimableRewards === 'object') {
-      if ('WALLETInitialClaimableRewards' in constants) {
-        return constants.WALLETInitialClaimableRewards.find((x) => x.addr === accountId)
-      }
+    if (!constants?.WALLETInitialClaimableRewards) {
       return null
     }
-    return null
+
+    return constants.WALLETInitialClaimableRewards.find((x) => x.addr === accountId)
   }, [accountId])
 
   const vestingEntry = useMemo(() => WALLETVestings.find((x) => x.addr === accountId), [accountId])
