@@ -1,13 +1,11 @@
 import { Interface } from 'ethers/lib/utils'
-import { HumanizerInfoTokensType, HumanizerInfoType } from 'hooks/useConstants'
 
 import networks, { NetworkType } from '../../constants/networks'
+import { HumanizerInfoTokensType, HumanizerInfoType } from '../../hooks/useConstants'
 import { formatNativeTokenAddress, knownTokens } from '../humanReadableTransactions'
 import { getTokenIcon } from '../icons'
 
-getTokenIcon
-
-const getAssetInfo = (tokens:HumanizerInfoTokensType, address: any) => {
+const getAssetInfo = (tokens: HumanizerInfoTokensType, address: any) => {
   const formattedAddress = formatNativeTokenAddress(address)
   // @ts-ignore
   return tokens[formattedAddress] || knownTokens[formattedAddress] || ['Unknown', 0]
@@ -19,7 +17,7 @@ const getAssetIcon = (address: any, chainId: any) => {
 }
 
 const formatTx = (
-  tokens:HumanizerInfoTokensType,
+  tokens: HumanizerInfoTokensType,
   fromChainId: NetworkType['chainId'],
   toChainId: any,
   inputToken: string,
@@ -58,7 +56,7 @@ const formatTx = (
   }
 }
 
-const movrTxParser = (humanizerInfo:HumanizerInfoType) => {
+const movrTxParser = (humanizerInfo: HumanizerInfoType) => {
   const MovrAnyswapInterface = new Interface(humanizerInfo.abis.MovrAnyswap)
   const MovrRouterInterface = new Interface(humanizerInfo.abis.MovrRouter)
 
@@ -70,7 +68,14 @@ const movrTxParser = (humanizerInfo:HumanizerInfoType) => {
     ) => {
       const { middlewareInputToken, amount, tokenToBridge, toChainId } =
         MovrAnyswapInterface.parseTransaction({ data, value }).args[0]
-      return formatTx(humanizerInfo.tokens, currentNetwork.chainId, toChainId, middlewareInputToken, tokenToBridge, amount)
+      return formatTx(
+        humanizerInfo.tokens,
+        currentNetwork.chainId,
+        toChainId,
+        middlewareInputToken,
+        tokenToBridge,
+        amount
+      )
     },
     [MovrRouterInterface.getSighash('outboundTransferTo')]: (
       value: string,
@@ -81,7 +86,14 @@ const movrTxParser = (humanizerInfo:HumanizerInfoType) => {
         MovrRouterInterface.parseTransaction({ data, value }).args[0]
       const { inputToken } = middlewareRequest
       const { inputToken: outputToken } = bridgeRequest
-      return formatTx(humanizerInfo.tokens, currentNetwork.chainId, toChainId, inputToken, outputToken, amount)
+      return formatTx(
+        humanizerInfo.tokens,
+        currentNetwork.chainId,
+        toChainId,
+        inputToken,
+        outputToken,
+        amount
+      )
     }
   }
 }
