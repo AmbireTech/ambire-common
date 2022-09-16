@@ -38,7 +38,7 @@ const filterByHiddenTokens = (tokens: Token[], hiddenTokens: TokenWithIsHiddenFl
 }
 
 async function supplementTokensDataFromNetwork({
-  constants,
+  tokenList = {},
   walletAddr,
   network,
   tokensData,
@@ -46,7 +46,7 @@ async function supplementTokensDataFromNetwork({
   updateBalance,
   hiddenTokens
 }: {
-  constants: ConstantsType
+  tokenList: ConstantsType['tokenList']
   walletAddr: string
   network: Network
   tokensData: Token[]
@@ -63,11 +63,7 @@ async function supplementTokensDataFromNetwork({
   // concat predefined token list with extraTokens list (extraTokens are certainly ERC20)
   const fullTokenList = [
     // @ts-ignore figure out how to add types for the `tokenList`
-    ...new Set(
-      constants?.tokenList[network]
-        ? constants.tokenList[network].concat(extraTokens)
-        : [...extraTokens]
-    )
+    ...new Set(tokenList[network] ? tokenList[network].concat(extraTokens) : [...extraTokens])
   ]
   const tokens = fullTokenList.map((t: any) => {
     return tokensData.find((td) => td.address === t.address) || t
@@ -172,7 +168,7 @@ export default function usePortfolio({
       const extraTokensAssets = getExtraTokensAssets(account, currentNetwork)
       try {
         const rcpTokenData = await supplementTokensDataFromNetwork({
-          constants,
+          tokenList: constants?.tokenList,
           walletAddr: account,
           network: currentNetwork,
           tokensData: currentNetworkTokens
