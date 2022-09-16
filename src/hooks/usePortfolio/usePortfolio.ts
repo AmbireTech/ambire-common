@@ -1,3 +1,4 @@
+// @ts-nocheck TODO: Fill in all missing types before enabling the TS check again
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import networks, { NetworkId } from '../../constants/networks'
@@ -5,7 +6,6 @@ import supportedProtocols from '../../constants/supportedProtocols'
 import { checkTokenList, getTokenListBalance } from '../../services/balanceOracle'
 import { roundFloatingNumber } from '../../services/formatter'
 import { setKnownAddresses, setKnownTokens } from '../../services/humanReadableTransactions'
-// @ts-nocheck TODO: Fill in all missing types before enabling the TS check again
 import { ConstantsType } from '../useConstants'
 import usePrevious from '../usePrevious'
 import {
