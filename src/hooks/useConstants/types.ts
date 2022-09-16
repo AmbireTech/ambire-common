@@ -37,23 +37,26 @@ export interface HumanizerInfoAbiType {
   type: string
 }
 
-export interface HumanizerInfoAbisType {
-  ['AaveWethGatewayV2']: HumanizerInfoAbiType[]
-  ['PancakeRouter']: HumanizerInfoAbiType[]
-  ['UniV2Router']: HumanizerInfoAbiType[]
-  ['UniV3Router']: HumanizerInfoAbiType[]
-  ['UniV3Router2']: HumanizerInfoAbiType[]
-  ['WETH']: HumanizerInfoAbiType[]
-  ['AaveLendingPoolV2']: HumanizerInfoAbiType[]
-  ['MovrRouter']: HumanizerInfoAbiType[]
-  ['MovrAnyswap']: HumanizerInfoAbiType[]
-  ['ERC721']: HumanizerInfoAbiType[]
-  ['YearnVault']: HumanizerInfoAbiType[]
-  ['IdentityFactory']: HumanizerInfoAbiType[]
-  ['Batcher']: HumanizerInfoAbiType[]
-  ['StakingPool']: HumanizerInfoAbiType[]
-  ['WyvernExchange']: HumanizerInfoAbiType[]
-  ['ERC20']: HumanizerInfoAbiType[]
+export type HumanizerInfoAbisKeysType =
+  | 'AaveWethGatewayV2'
+  | 'PancakeRouter'
+  | 'UniV2Router'
+  | 'UniV3Router'
+  | 'UniV3Router2'
+  | 'WETH'
+  | 'AaveLendingPoolV2'
+  | 'MovrRouter'
+  | 'MovrAnyswap'
+  | 'ERC721'
+  | 'YearnVault'
+  | 'IdentityFactory'
+  | 'Batcher'
+  | 'StakingPool'
+  | 'WyvernExchange'
+  | 'ERC20'
+
+export type HumanizerInfoAbisType = {
+  [key in HumanizerInfoAbisKeysType]: HumanizerInfoAbiType[]
 }
 
 export interface HumanizerInfoType {
