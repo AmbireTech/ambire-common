@@ -16,24 +16,35 @@ export interface HumanizerInfoTokensType {
   [key: string]: [string, number]
 }
 
+export interface HumanizerInfoAbiType {
+  inputs: [
+    {
+      internalType: string
+      name: string
+      type: string
+    }
+  ]
+  stateMutability: string
+  type: string
+}
+
 export interface HumanizerInfoAbisType {
-  // TODO: Fill in the missing types.
-  ['AaveWethGatewayV2']: object[]
-  ['PancakeRouter']: object[]
-  ['UniV2Router']: object[]
-  ['UniV3Router']: object[]
-  ['UniV3Router2']: object[]
-  ['WETH']: object[]
-  ['AaveLendingPoolV2']: object[]
-  ['MovrRouter']: object[]
-  ['MovrAnyswap']: object[]
-  ['ERC721']: object[]
-  ['YearnVault']: object[]
-  ['IdentityFactory']: object[]
-  ['Batcher']: object[]
-  ['StakingPool']: object[]
-  ['WyvernExchange']: object[]
-  ['ERC20']: object[]
+  ['AaveWethGatewayV2']: HumanizerInfoAbiType[]
+  ['PancakeRouter']: HumanizerInfoAbiType[]
+  ['UniV2Router']: HumanizerInfoAbiType[]
+  ['UniV3Router']: HumanizerInfoAbiType[]
+  ['UniV3Router2']: HumanizerInfoAbiType[]
+  ['WETH']: HumanizerInfoAbiType[]
+  ['AaveLendingPoolV2']: HumanizerInfoAbiType[]
+  ['MovrRouter']: HumanizerInfoAbiType[]
+  ['MovrAnyswap']: HumanizerInfoAbiType[]
+  ['ERC721']: HumanizerInfoAbiType[]
+  ['YearnVault']: HumanizerInfoAbiType[]
+  ['IdentityFactory']: HumanizerInfoAbiType[]
+  ['Batcher']: HumanizerInfoAbiType[]
+  ['StakingPool']: HumanizerInfoAbiType[]
+  ['WyvernExchange']: HumanizerInfoAbiType[]
+  ['ERC20']: HumanizerInfoAbiType[]
 }
 
 export interface HumanizerInfoType {
