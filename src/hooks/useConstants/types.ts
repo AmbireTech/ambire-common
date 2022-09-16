@@ -17,6 +17,7 @@ export interface HumanizerInfoTokensType {
 }
 
 export interface HumanizerInfoAbisType {
+  // TODO: Fill in the missing types.
   ['AaveWethGatewayV2']: object[]
   ['PancakeRouter']: object[]
   ['UniV2Router']: object[]
