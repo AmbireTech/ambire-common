@@ -17,7 +17,16 @@ export interface HumanizerInfoTokensType {
 }
 
 export interface HumanizerInfoAbiType {
-  inputs: [
+  constant?: boolean
+  payable?: boolean
+  anonymous?: boolean
+  outputs?: [
+    {
+      name: string
+      type: string
+    }
+  ]
+  inputs?: [
     {
       internalType: string
       name: string
