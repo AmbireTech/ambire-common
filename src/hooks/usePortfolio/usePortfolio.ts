@@ -106,7 +106,7 @@ export default function usePortfolio({
   useToasts,
   getBalances
 }: UsePortfolioProps): UsePortfolioReturnType {
-  const { constants, isLoading } = useConstants()
+  const { constants } = useConstants()
   const { addToast } = useToasts()
   const rpcTokensLastUpdated = useRef<number>(0)
   const currentAccount = useRef<string>()
