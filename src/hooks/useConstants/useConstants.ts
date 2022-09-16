@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useState } from 'react'
 
 import { fetchCaught } from '../../services/fetch'
-import { ConstantsType, UseConstantsProps, UseConstantsReturnType } from './types'
+import {
+  ConstantsType,
+  ResultEndpointResponse,
+  UseConstantsProps,
+  UseConstantsReturnType
+} from './types'
 
 const useConstants = ({ fetch, endpoint }: UseConstantsProps): UseConstantsReturnType => {
   const [data, setData] = useState<ConstantsType | null>(null)
@@ -13,7 +18,9 @@ const useConstants = ({ fetch, endpoint }: UseConstantsProps): UseConstantsRetur
       const [
         { tokenList, humanizerInfo, WALLETInitialClaimableRewards },
         adexToStakingTransfersLogs
-      ] = await Promise.all([
+      ] = await Promise.all<
+        [Promise<ResultEndpointResponse>, Promise<ConstantsType['adexToStakingTransfersLogs']>]
+      >([
         fetchCaught(fetch, `${endpoint}/result.json`).then((res) => res.body),
         fetchCaught(fetch, `${endpoint}/adexToStakingTransfers.json`).then((res) => res.body)
       ])

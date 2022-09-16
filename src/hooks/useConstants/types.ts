@@ -64,3 +64,9 @@ export interface UseConstantsReturnType {
   retryFetch: () => void
   hasError: boolean
 }
+
+export interface ResultEndpointResponse {
+  tokenList: ConstantsType['tokenList']
+  humanizerInfo: ConstantsType['humanizerInfo']
+  WALLETInitialClaimableRewards: ConstantsType['WALLETInitialClaimableRewards']
+}
