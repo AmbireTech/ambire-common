@@ -41,7 +41,7 @@ export const multiplierBadges: MultiplierBadge[] = [
     link: 'https://blog.ambire.com/ambire-gas-tank-launches-with-exclusive-nft-drop-2a4eb29f2f07'
   },
   {
-    id: '10TxnsIn30Days',
+    id: 'powerUserMultiplier',
     name: 'Power User Multiplier',
     icon: '💸',
     color: '#658f3f',
