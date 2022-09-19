@@ -18,7 +18,7 @@ export default function useBalance(account, assets, assetsCurrentAccount, curren
             
             const network =  assets[key]?.network            
             const totalUSD = filterByHiddenTokens(assets[key]?.tokens || [])?.reduce((acc, curr) => acc + curr.balanceUSD, 0)
-    
+
             if (!totalUSD) return defaultTotal(network)
                 
             const [truncated, decimals] = Number(totalUSD.toString()).toFixed(2).split('.')

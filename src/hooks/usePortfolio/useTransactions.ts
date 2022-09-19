@@ -1,3 +1,5 @@
+// @ts-nocheck TODO: Fill in all missing types before enabling the TS check again
+
 import { useCallback } from 'react'
 import {
     Token,
@@ -5,14 +7,18 @@ import {
 } from './types'
 
 export default function useTransactions({ account, currentNetwork, relayerURL, useRelayerData }: any): any {
-    //   console.log(relayerURL)
 
     const url = relayerURL
     ? `${relayerURL}/identity/${account}/${currentNetwork}/transactions`
     : null
     const { data, errMsg, isLoading } = useRelayerData({ url })
     console.log(data)
+    // Pending transactions which aren't executed yet
+    const allPending = data && data.txns.filter(tx => !tx.executed && !tx.replaced && !tx.executed?.mined)
+
+    console.log('allPending', allPending)
+
     return {
-        transactions: data
+        pendingTransactions: allPending,
     }
 }

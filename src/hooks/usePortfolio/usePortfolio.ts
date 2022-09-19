@@ -27,7 +27,6 @@ export default function usePortfolio({
   useRelayerData
 }: UsePortfolioProps): UsePortfolioReturnType {
   const { addToast } = useToasts()
-  const rpcTokensLastUpdated = useRef<number>(0)
   const currentAccount = useRef<string>()
   const prevNetwork = usePrevious(currentNetwork)
 
@@ -45,13 +44,6 @@ export default function usePortfolio({
     tokens: assets[`${account}-${currentNetwork}`]?.tokens || []
   })
 
-  const transactions = useTransactions({
-    relayerURL,
-    account,
-    currentNetwork,
-    useRelayerData
-  })
-
   const {
     onAddHiddenToken,
     onRemoveHiddenToken,
@@ -63,13 +55,13 @@ export default function usePortfolio({
     useStorage,
   })
 
-  const tokens = useMemo(() => filterByHiddenTokens(assets[`${account}-${currentNetwork}`]?.tokens || []) || [], [hiddenTokens, account, currentNetwork]);
+  const tokens = useMemo(() => filterByHiddenTokens(assets[`${account}-${currentNetwork}`]?.tokens || []) || [], [hiddenTokens, account, currentNetwork, assets[`${account}-${currentNetwork}`]]);
   
   // All fetching logic required in our portfolio
   const {
-    fetchSupplementTokenData, fetchOtherNetworksBalances, fetchTokens, fetchCoingeckoPrices
+    updateCoingeckoAndSupplementData, fetchOtherNetworksBalances, fetchTokens
   } = usePortfolioFetch({
-    account, currentAccount, currentNetwork, hiddenTokens, getExtraTokensAssets, getBalances, addToast, rpcTokensLastUpdated, setAssetsByAccount,
+    account, currentAccount, currentNetwork, hiddenTokens, getExtraTokensAssets, getBalances, addToast, setAssetsByAccount,
     getCoingeckoPrices,
     setPricesFetching,
     filterByHiddenTokens,
@@ -98,7 +90,7 @@ export default function usePortfolio({
 
   async function loadOtherNetworksBalances() {
     if (!account) return
-    await fetchOtherNetworksBalances(account, currentNetwork)
+    await fetchOtherNetworksBalances(account)
   }
 
   // Fetch balances and protocols on account and network change
@@ -113,12 +105,6 @@ export default function usePortfolio({
     loadOtherNetworksBalances()
   }, [account])
 
-  // Reset `rpcTokensLastUpdated` on a network change, because its value is regarding the previous network,
-  // and it's not useful for the current network.
-  useEffect(() => {
-    rpcTokensLastUpdated.current = 0
-  }, [currentNetwork])
-
   // Refresh tokens on network change or when the window (app) is considered to be visible to the user
   useEffect(() => {
     refreshTokensIfVisible()
@@ -132,42 +118,27 @@ export default function usePortfolio({
     return () => clearInterval(refreshInterval)
   }, [refreshTokensIfVisible])
 
-  // Check if prices are 2 min old and fetch new ones on every 20 seconds
-  useEffect(() => {
-    function refreshPrices() {
-      const coingeckoTokensToUpdate = assets[`${account}-${currentNetwork}`]?.tokens?.filter(token => token.coingeckoId).some(token => { 
-        if (((new Date().valueOf() - token.priceUpdate) >= 2*60*1000)) {
-          return token
-        }
-      })
-      
-      if (coingeckoTokensToUpdate && !assets[`${account}-${currentNetwork}`]?.loading && !pricesFetching) {
-        fetchCoingeckoPrices(assets[`${account}-${currentNetwork}`])
-      }
-    }
-    const refreshInterval = setInterval(refreshPrices, 20000)
-    return () => clearInterval(refreshInterval)
-  }, [assets[`${account}-${currentNetwork}`]])
-
   // Fetch other networks assets every 20 seconds
   useEffect(() => {
     const refreshInterval = setInterval(loadOtherNetworksBalances, 20000)
     return () => clearInterval(refreshInterval)
-  }, [account, currentNetwork])
+  }, [])
 
   // Refresh balance every 150s if hidden
   useEffect(() => {
     const refreshIfHidden = () =>
-      !isVisible && !assets[`${account}-${currentNetwork}`]?.loading ? fetchTokens(account, currentNetwork) : null
+      !isVisible && !assets[`${account}-${currentNetwork}`]?.loading ? fetchTokens(account, currentNetwork, false, assets[`${account}-${currentNetwork}`]) : null
     const refreshInterval = setInterval(refreshIfHidden, 150000)
     return () => clearInterval(refreshInterval)
-  }, [account, currentNetwork, isVisible, fetchTokens, assets[`${account}-${currentNetwork}`]])
+  }, [account, currentNetwork, isVisible, fetchTokens])
 
-  // Get supplement tokens data every 20s
+  // Get supplement tokens data every 20s and check if prices are 2 min old and fetch new ones
   useEffect(() => {
-    const refreshInterval = setInterval(() => fetchSupplementTokenData(assets[`${account}-${currentNetwork}`]), 20000)
+    const refreshInterval = setInterval(() => {
+      updateCoingeckoAndSupplementData(assets[`${account}-${currentNetwork}`])
+    }, 20000)
     return () => clearInterval(refreshInterval)
-  }, [fetchSupplementTokenData, assets[`${account}-${currentNetwork}`]])
+  }, [])
 
   // We need to be sure we get the latest balancesByNetworksLoading here
   const balancesByNetworksLoading = useMemo(

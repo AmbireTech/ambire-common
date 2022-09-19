@@ -101,7 +101,7 @@ async function getTokenListBalance({
             updateAt: new Date().toString(),
             balanceUSD: Number(
               // @ts-ignore not sure why a TS warn happens
-              parseFloat(newTokenBalance.price * newTokenBalance.balance || 0).toFixed(2)
+              parseFloat(t.price * newTokenBalance.balance || 0).toFixed(2)
             ),
           }
         : {

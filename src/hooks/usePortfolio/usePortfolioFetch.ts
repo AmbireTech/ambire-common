@@ -83,7 +83,6 @@ export default function useProtocolsFetch({
   getExtraTokensAssets,
   getBalances,
   addToast,
-  rpcTokensLastUpdated,
   setAssetsByAccount,
   getCoingeckoPrices,
   setPricesFetching,
@@ -94,57 +93,106 @@ export default function useProtocolsFetch({
     () => getExtraTokensAssets(account, currentNetwork),
     [account, extraTokens, currentNetwork]
   )
-    
-  const fetchCoingeckoPrices = useCallback(async(velcroResponse, resolve) => {
-    const { tokens } = velcroResponse
+
+  const fetchAndSetSupplementTokenData = async (assets) => {
+    await new Promise((resolve) => fetchSupplementTokenData(assets, resolve))
+    .then(oracleResponse => {
+      setAssetsByAccount(prev => ({
+        ...prev,
+        [`${account}-${currentNetwork}`]: {
+          ...prev[`${account}-${currentNetwork}`],
+          tokens: oracleResponse,
+          loading: false
+        }
+      }))
+    })
+  }
+
+  const updateCoingeckoAndSupplementData = async (assets) => {
+    const tokens = assets?.tokens || []
+    // Check for not updated prices from coingecko
+    const coingeckoTokensToUpdate = tokens.filter(token => token.coingeckoId).some(token => { 
+      if (((new Date().valueOf() - token.priceUpdate) >= 2*60*1000)) {
+        return token
+      }
+    })
+
+    // Update prices from coingecko and balance from balance oracle
+    if (coingeckoTokensToUpdate) {
+      const coingeckoPrices = new Promise((resolve, reject) => fetchCoingeckoPrices( tokens, resolve))
+      const balanceOracle = new Promise(( resolve, reject) => fetchSupplementTokenData({ tokens: tokens }, resolve))
+
+      Promise.all([coingeckoPrices, balanceOracle]).then((results) => {
+        const coingeckoResponse = results[0]
+        const balanceOracleResponse = results[1]
+
+        const updatedBalance = balanceOracleResponse.map(t => {
+          if (coingeckoResponse.hasOwnProperty(t.coingeckoId)) {
+            return {
+              ...t,
+              price: coingeckoResponse[t.coingeckoId].usd,
+              balanceUSD: Number(parseFloat(t.balance * coingeckoResponse[t.coingeckoId].usd || 0).toFixed(2)),
+              priceUpdate: new Date().valueOf()
+            }
+          } else return t
+        })            
+
+        updateHumanizerData(updatedBalance)
+
+        setAssetsByAccount(prev => ({
+          ...prev,
+          [`${account}-${currentNetwork}`]: {
+            ...prev[`${account}-${currentNetwork}`],
+            tokens: updatedBalance,
+          }
+        }))
+      
+      })  
+    } else {
+      // Update only balance from balance oracle
+      new Promise((resolve) => {
+        fetchSupplementTokenData({ tokens: tokens }, resolve)
+      }).then(oracleResponse => {
+        updateHumanizerData(oracleResponse)
+        setAssetsByAccount(prev => ({
+          ...prev,
+          [`${account}-${currentNetwork}`]: {
+            ...prev[`${account}-${currentNetwork}`],
+            tokens: oracleResponse,
+            loading: false
+          }
+        }))
+      }) 
+    }
+  }
+  
+  const fetchCoingeckoPrices = useCallback(async(tokens, resolve) => {
     const coingeckoTokensToUpdate = tokens?.filter(token => token.coingeckoId).filter(token => { 
       if (((new Date().valueOf() - token.priceUpdate ) >= 2*60*1000)) {
         return token
       }
     }).map(token => token.coingeckoId)
-
     if (!coingeckoTokensToUpdate.length) return null
 
     setPricesFetching(true)
     try {
       const response = await getCoingeckoPrices(coingeckoTokensToUpdate.join(','))
       if (!response) return null
-
-      const tokensWithNewPrices = tokens.map(token => {
-        if (response.hasOwnProperty(token.coingeckoId)) {
-          return {
-            ...token,
-            price: response[token.coingeckoId].usd,
-            balanceUSD: parseFloat(token.balance * response[token.coingeckoId].usd),
-            priceUpdate: new Date().valueOf()
-          }
-        } else return token
-      })  
-      
-      setAssetsByAccount(prev => ({
-        ...prev,
-        [`${account}-${currentNetwork}`]: {
-          ...prev[`${account}-${currentNetwork}`],
-          ...velcroResponse,
-          tokens: tokensWithNewPrices,
-          collectibles: velcroResponse.nfts,
-          loading: false,
-        }
-      }))
+      resolve && resolve(response)
       setPricesFetching(false)
-
-      resolve && resolve(tokensWithNewPrices)
 
     } catch (e) {
       addToast(e.message, { error: true })
       setPricesFetching(false)
+      resolve && resolve([])
+
       setAssetsByAccount(prev => ({ ...prev, loading: false }))
     }
   }, [account, currentNetwork])
 
-  const fetchOtherNetworksBalances = useCallback(async (account, currentNetwork) => {
-    console.log(account, currentNetwork)
+  const fetchOtherNetworksBalances = useCallback(async (account) => {
     const networksToFetch = supportedProtocols.filter(({ network }) => network !== currentNetwork)
+
     try {
       Promise.all(
         networksToFetch.map(async ({ network, balancesProvider }) => {
@@ -206,7 +254,8 @@ export default function useProtocolsFetch({
   }, [account, currentNetwork])
 
   const fetchSupplementTokenData = useCallback(
-    async (updatedTokens: any[]) => {   
+    async (updatedTokens: any[], resolve) => {   
+
       if (!updatedTokens?.tokens?.length) {
         setAssetsByAccount(prev => ({
           ...prev,
@@ -228,20 +277,12 @@ export default function useProtocolsFetch({
             : [], // Filter out extraTokens
           extraTokens: extraTokensAssets,
           hiddenTokens
-        })      
-
-        setAssetsByAccount(prev => ({
-          ...prev,
-          [`${account}-${currentNetwork}`]: {
-            ...prev[`${account}-${currentNetwork}`],
-            tokens: rcpTokenData,
-            loading: false
-          }
-        }))
-
-        rpcTokensLastUpdated.current = Date.now()
+        })    
+        
+        resolve && resolve(rcpTokenData)
       } catch (e) {
         console.error('supplementTokensDataFromNetwork failed', e)
+        resolve([])
         // In case of error set loading indicator to false
         setAssetsByAccount(prev => ({
           ...prev,
@@ -255,7 +296,8 @@ export default function useProtocolsFetch({
     },
     [currentNetwork, account, extraTokensAssets, hiddenTokens]
   )
-
+  
+  // Full update of tokens
   const fetchTokens = useCallback(
     // eslint-disable-next-line default-param-last
     async (
@@ -280,46 +322,40 @@ export default function useProtocolsFetch({
       const network = supportedProtocols.find(({ network }) => network === currentNetwork)
       
       try {
-        const quickResponse = showLoadingState || !assets?.tokens?.length
+        const quickResponse = !assets?.tokens?.length
         const response = await getBalances(currentNetwork, account, network.balancesProvider, quickResponse)
         if (!response) return null
 
         let { cache, cacheTime, tokens, nfts, partial, error, provider } = response.data
 
-
         tokens = filterByHiddenTokens(tokens)
         const prevCacheTime = assets?.cacheTime
-
+        // provider = "balanceOracle"
         // We should skip the tokens update for the current network,
-        // in the case Velcro returns a cached data, which is more outdated than the already fetched RPC data.
+        // in the case Velcro returns a cached data, which is more outdated than the already fetched data.
         const shouldSkipUpdate =
           cache &&
-          cacheTime < prevCacheTime || partial
+          (new Date(cacheTime) < new Date(prevCacheTime)) || partial
 
-        cache = shouldSkipUpdate
-        // In case we have cached data from covalent - call balance oracle
-        if (shouldSkipUpdate) {
-          if (showLoadingState || !assets?.tokens?.length) {
-            setAssetsByAccount(prev => ({
-              ...prev,
-              [`${account}-${currentNetwork}`]: {
-                ...prev[`${account}-${currentNetwork}`],
-                loading: false, 
-                cache
-              }
-            }))
-          } else return null
-        }
+        cache = shouldSkipUpdate || false
+        let formattedTokens = [...tokens]
 
-        let formattedTokens = []        
-        
+        // velcro provider is balanceOracle and tokens may not be full
+        // repopulate with current tokens and pass them to balanceOracle
         if (provider === 'balanceOracle') {
-          // Fetch balances from Balance oracle
           formattedTokens = [
             ...assets?.tokens || [],
-            ...tokens
+            ...formattedTokens,
           ]
         }
+
+        // In case we have cached data from covalent - call balance oracle
+        if (shouldSkipUpdate) {
+          // Update only balance from balance oracle
+          fetchAndSetSupplementTokenData({ tokens: formattedTokens })
+          return 
+        }
+
         formattedTokens = [
           ...tokens
             .map((token: any) => ({
@@ -335,41 +371,41 @@ export default function useProtocolsFetch({
           ...extraTokensAssets
         ]
 
-        // Update coingecko tokens which are 2 mins old
-        const coingeckoTokensToUpdate = formattedTokens.filter(token => token.coingeckoId).some(token => { 
-          if (((new Date().valueOf() - token.priceUpdate) >= 2*60*1000)) {
-            return token
-          }
-        })
-
-        if (coingeckoTokensToUpdate) {
-          new Promise((resolve) => {
-            fetchCoingeckoPrices({ ...response.data, cache, tokens: formattedTokens }, resolve)
-          }).then(res => {
-            fetchSupplementTokenData({ tokens: res })
-          })
+        // Set the new data from velcro if we don't have any tokens yet
+        // this can happen on first data update and we need to set our state
+        // so the user doesnt wait too long seeing the loading state
+        if (!assets?.tokens?.length) {
+          setAssetsByAccount(prev => ({
+            ...prev,
+            [`${account}-${currentNetwork}`]: {
+              ...prev[`${account}-${currentNetwork}`],
+              tokens: formattedTokens,
+              collectibles: nfts,
+              cache: cache || false,
+              cacheTime: cacheTime || new Date().valueOf(),
+              loading: false
+            }
+          }))
         } else {
-          Promise.all([
-            setAssetsByAccount(prev => ({
-              ...prev,
-              [`${account}-${currentNetwork}`]: {
-                ...prev[`${account}-${currentNetwork}`],
-                tokens: formattedTokens,
-                collectibles: nfts,
-                cache: cache || false,
-                cacheTime: cacheTime || new Date().valueOf(),
-                loading: false
-              }
-            })),
-            fetchSupplementTokenData({ tokens: formattedTokens })
-          ])
+          // Otherwise wait for balance Oracle to set our tokens in state,
+          // but still there is a need to update the loading state and other data.
+          setAssetsByAccount(prev => ({
+            ...prev,
+            [`${account}-${currentNetwork}`]: {
+              ...prev[`${account}-${currentNetwork}`],
+              collectibles: nfts,
+              cache: cache || false,
+              cacheTime: cacheTime || new Date().valueOf(),
+              loading: false
+            }
+          }))
         }
+
+        updateCoingeckoAndSupplementData({ tokens: formattedTokens })
         
         // Show error in case we have some
         // if (error) addToast(error, { error: true })
         
-        updateHumanizerData(formattedTokens)
-
       } catch (e) {
         console.error('Balances API error', e)
         addToast(e.message, { error: true })
@@ -392,6 +428,8 @@ export default function useProtocolsFetch({
     fetchTokens,
     fetchSupplementTokenData,
     fetchOtherNetworksBalances,
-    fetchCoingeckoPrices
+    fetchCoingeckoPrices,
+    fetchAndSetSupplementTokenData,
+    updateCoingeckoAndSupplementData
   }
 }
