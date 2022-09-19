@@ -138,7 +138,7 @@ const networks: NetworkType[] = [
     name: 'KCC KuCoin',
     explorerUrl: 'https://explorer.kcc.io',
     unstoppableDomainsChain: 'ERC20',
-    hide: true,
+    hide: false,
     isGasTankAvailable: false
   },
   {
