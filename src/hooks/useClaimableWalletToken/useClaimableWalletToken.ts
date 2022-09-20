@@ -129,7 +129,7 @@ const useClaimableWalletToken = ({
           data: supplyControllerInterface.encodeFunctionData('claim', [
             initialClaimableEntry?.totalClaimable,
             initialClaimableEntry?.proof,
-            withoutBurn ? 0 : 3000, // penalty bps, at the moment we run with 0; it's a safety feature to hardcode it
+            withoutBurn ? 0 : 5000, // penalty bps, at the moment we run with 0; it's a safety feature to hardcode it
             '0x47cd7e91c3cbaaf266369fe8518345fc4fc12935' // staking pool addr
           ])
         }

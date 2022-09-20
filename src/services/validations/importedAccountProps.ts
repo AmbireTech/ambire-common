@@ -1,5 +1,6 @@
 // TODO: add types
 
+import { Account } from 'ambire-common/src/hooks/useAccounts'
 import { getAddress, hexDataLength } from 'ethers/lib/utils'
 
 import { isEmail } from './validate'
@@ -24,7 +25,7 @@ const isValidTimeLock = (timelock: any) => {
   )
 }
 const isValidSalt = (salt: any) => hexDataLength(salt) === HEX_DATA_LENGTH
-const validateAccountProps = (acc: any) =>
+const validateAccountProps = (acc: Account) =>
   NEEDED_KEYS.every((key) => Object.keys(acc).includes(key))
 const fileSizeValidator = (file: any) => {
   if (file.size > MAX_FILE_SIZE) {
@@ -37,7 +38,7 @@ const fileSizeValidator = (file: any) => {
   return null
 }
 
-const validateImportedAccountProps = (acc) => {
+const validateImportedAccountProps = (acc: Account) => {
   if (!(acc && validateAccountProps(acc))) {
     return {
       success: false,
