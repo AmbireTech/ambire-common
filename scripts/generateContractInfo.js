@@ -243,7 +243,31 @@ const contracts = [
     addr: '0x7Be8076f4EA4A4AD08075C2508e481d6C946D12b',
     abiName: 'WyvernExchange'
   },
-  { name: 'Gas Tank', addr: '0x942f9CE5D9a33a82F88D233AEb3292E680230348' }
+  { name: 'Gas Tank', addr: '0x942f9CE5D9a33a82F88D233AEb3292E680230348' },
+  {
+    name: 'Swappin',
+    network: 'ethereum',
+    addr: '0x1111111254fb6c44bAC0beD2854e76F90643097d',
+    abiName: 'Swappin'
+  },
+  {
+    name: 'Swappin',
+    network: 'polygon',
+    addr: '0x1111111254fb6c44bAC0beD2854e76F90643097d',
+    abiName: 'Swappin'
+  },
+  {
+    name: 'Swappin',
+    network: 'bsc',
+    addr: '0x1111111254fb6c44bAC0beD2854e76F90643097d',
+    abiName: 'Swappin'
+  },
+  {
+    name: 'Swappin',
+    network: 'avalanche',
+    addr: '0x1111111254fb6c44bAC0beD2854e76F90643097d',
+    abiName: 'Swappin'
+  }
 ]
 const tokenlists = [
   'https://github.com/trustwallet/assets/raw/master/blockchains/ethereum/tokenlist.json',
