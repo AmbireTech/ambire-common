@@ -13,7 +13,8 @@ export enum NETWORKS {
   'andromeda' = 'andromeda',
   'rinkeby' = 'rinkeby',
   'cronos' = 'cronos',
-  'aurora' = 'aurora'
+  'aurora' = 'aurora',
+  'ethereum-pow' = 'ethereum-pow'
 }
 
 export type NetworkId = keyof typeof NETWORKS
@@ -171,6 +172,18 @@ const networks: NetworkType[] = [
     unstoppableDomainsChain: 'ERC20',
     hide: true,
     isGasTankAvailable: false
+  },
+  {
+    icon: networkIconsById.ethereum,
+    id: 'ethereum-pow',
+    chainId: 10001,
+    rpc: 'https://mainnet.ethereumpow.org',
+    nativeAssetSymbol: 'ETHW',
+    name: 'ETHPoW',
+    explorerUrl: 'https://mainnet.ethwscan.com',
+    unstoppableDomainsChain: 'ERC20',
+    isGasTankAvailable: false,
+    relayerlessOnly: true
   }
   // {
   // 	id: NETWORKS.cronos,
