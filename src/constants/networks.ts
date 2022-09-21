@@ -174,7 +174,6 @@ const networks: NetworkType[] = [
     isGasTankAvailable: false
   },
   {
-    icon: networkIconsById.ethereum,
     id: 'ethereum-pow',
     chainId: 10001,
     rpc: 'https://mainnet.ethereumpow.org',
