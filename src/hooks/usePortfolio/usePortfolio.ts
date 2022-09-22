@@ -86,9 +86,7 @@ async function supplementTokensDataFromNetwork({
 
   const tokenBalances = (
     await Promise.all(
-      calls.map((callTokens) => {
-        console.log({ walletAddr, tokens: callTokens, network, updateBalance });
-        
+      calls.map((callTokens) => {    
         return getTokenListBalance({ walletAddr, tokens: callTokens, network, updateBalance })
       })
     )
@@ -183,9 +181,6 @@ export default function usePortfolio({
           extraTokens: extraTokensAssets,
           hiddenTokens
         })
-
-console.log(rcpTokenData);
-
 
         currentNetworkTokens.assets = rcpTokenData
 
