@@ -90,7 +90,7 @@ const supportedProtocols: SupportedProtocolType[] = [
     network: 'ethereum-pow',
     protocols: [],
     balancesProvider: '',
-    nftsProvider: ''
+    nftsProvider: '' 
   }
   // {
   //     network: 'cronos',
