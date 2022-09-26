@@ -13,7 +13,8 @@ export enum NETWORKS {
   'andromeda' = 'andromeda',
   'rinkeby' = 'rinkeby',
   'cronos' = 'cronos',
-  'aurora' = 'aurora'
+  'aurora' = 'aurora',
+  'ethereum-pow' = 'ethereum-pow'
 }
 
 export type NetworkId = keyof typeof NETWORKS
@@ -29,6 +30,13 @@ export type NetworkType = {
   unstoppableDomainsChain: string
   hide?: boolean
   isGasTankAvailable: boolean
+  relayerlessOnly: boolean
+  nativeAsset: {
+    address: string
+    symbol: string,
+    coingeckoId: any,
+    decimals: number
+  }
 }
 
 const networks: NetworkType[] = [
@@ -44,7 +52,14 @@ const networks: NetworkType[] = [
     ensName: 'homestead',
     explorerUrl: 'https://etherscan.io',
     unstoppableDomainsChain: 'ERC20',
-    isGasTankAvailable: true
+    isGasTankAvailable: true,
+    relayerlessOnly: false,
+    nativeAsset: {
+      address: "0x0000000000000000000000000000000000000000",
+      symbol: "ETH",
+      coingeckoId: null,
+      decimals: 18
+    }
   },
   {
     id: NETWORKS.polygon,
@@ -56,7 +71,14 @@ const networks: NetworkType[] = [
     name: 'Polygon',
     explorerUrl: 'https://polygonscan.com',
     unstoppableDomainsChain: 'MATIC',
-    isGasTankAvailable: true
+    isGasTankAvailable: true,
+    relayerlessOnly: false,
+    nativeAsset: {
+      address: "0x0000000000000000000000000000000000000000",
+      symbol: "MATIC",
+      coingeckoId: null,
+      decimals: 18
+    }
   },
   {
     id: NETWORKS.avalanche,
@@ -66,7 +88,14 @@ const networks: NetworkType[] = [
     name: 'Avalanche',
     explorerUrl: 'https://snowtrace.io',
     unstoppableDomainsChain: 'ERC20',
-    isGasTankAvailable: true
+    isGasTankAvailable: true,
+    relayerlessOnly: false,
+    nativeAsset: {
+      address: "0x0000000000000000000000000000000000000000",
+      symbol: "AVAX",
+      coingeckoId: null,
+      decimals: 18
+    }
   },
   {
     // to match the zapper ID
@@ -77,7 +106,14 @@ const networks: NetworkType[] = [
     name: 'Binance Smart Chain',
     explorerUrl: 'https://bscscan.com',
     unstoppableDomainsChain: 'BEP20',
-    isGasTankAvailable: true
+    isGasTankAvailable: true,
+    relayerlessOnly: false,
+    nativeAsset: {
+      address: "0x0000000000000000000000000000000000000000",
+      symbol: "BNB",
+      coingeckoId: null,
+      decimals: 18
+    }
   },
   {
     id: NETWORKS.fantom,
@@ -87,7 +123,14 @@ const networks: NetworkType[] = [
     name: 'Fantom Opera',
     explorerUrl: 'https://ftmscan.com',
     unstoppableDomainsChain: 'ERC20',
-    isGasTankAvailable: true
+    isGasTankAvailable: true,
+    relayerlessOnly: false,
+    nativeAsset: {
+      address: "0x0000000000000000000000000000000000000000",
+      symbol: "FTM",
+      coingeckoId: null,
+      decimals: 18
+    }
   },
   {
     id: NETWORKS.moonbeam,
@@ -97,7 +140,14 @@ const networks: NetworkType[] = [
     name: 'Moonbeam',
     explorerUrl: 'https://moonscan.io/',
     unstoppableDomainsChain: 'ERC20',
-    isGasTankAvailable: true
+    isGasTankAvailable: true,
+    relayerlessOnly: false,
+    nativeAsset: {
+      address: "0x0000000000000000000000000000000000000000",
+      symbol: "GLMR",
+      coingeckoId: null,
+      decimals: 18
+    }
   },
   {
     id: NETWORKS.moonriver,
@@ -107,7 +157,14 @@ const networks: NetworkType[] = [
     name: 'Moonriver',
     explorerUrl: 'https://moonriver.moonscan.io/',
     unstoppableDomainsChain: 'ERC20',
-    isGasTankAvailable: true
+    isGasTankAvailable: true,
+    relayerlessOnly: false,
+    nativeAsset: {
+      address: "0x0000000000000000000000000000000000000000",
+      symbol: "MOVR",
+      coingeckoId: null,
+      decimals: 18
+    }
   },
   {
     id: NETWORKS.arbitrum,
@@ -117,7 +174,14 @@ const networks: NetworkType[] = [
     name: 'Arbitrum',
     explorerUrl: 'https://arbiscan.io',
     unstoppableDomainsChain: 'ERC20',
-    isGasTankAvailable: true
+    isGasTankAvailable: true,
+    relayerlessOnly: false,
+    nativeAsset: {
+      address: "0x0000000000000000000000000000000000000000",
+      symbol: "AETH",
+      coingeckoId: null,
+      decimals: 18
+    }
   },
   {
     id: NETWORKS.gnosis,
@@ -128,7 +192,14 @@ const networks: NetworkType[] = [
     name: 'Gnosis Chain',
     explorerUrl: 'https://blockscout.com',
     unstoppableDomainsChain: 'ERC20',
-    isGasTankAvailable: true
+    isGasTankAvailable: true,
+    relayerlessOnly: false,
+    nativeAsset: {
+      address: "0x0000000000000000000000000000000000000000",
+      symbol: "XDAI",
+      coingeckoId: null,
+      decimals: 18
+    }
   },
   {
     id: NETWORKS.kucoin,
@@ -139,7 +210,14 @@ const networks: NetworkType[] = [
     explorerUrl: 'https://explorer.kcc.io',
     unstoppableDomainsChain: 'ERC20',
     hide: false,
-    isGasTankAvailable: false
+    isGasTankAvailable: false,
+    relayerlessOnly: false,
+    nativeAsset: {
+      address: "0x0000000000000000000000000000000000000000",
+      symbol: "KCS",
+      coingeckoId: null,
+      decimals: 18
+    }
   },
   {
     id: NETWORKS.optimism,
@@ -149,7 +227,14 @@ const networks: NetworkType[] = [
     name: 'Optimism',
     explorerUrl: 'https://optimistic.etherscan.io',
     unstoppableDomainsChain: 'ERC20',
-    isGasTankAvailable: true
+    isGasTankAvailable: true,
+    relayerlessOnly: false,
+    nativeAsset: {
+      address: "0x0000000000000000000000000000000000000000",
+      symbol: "ETH",
+      coingeckoId: null,
+      decimals: 18
+    }
   },
   {
     id: NETWORKS.andromeda,
@@ -159,7 +244,14 @@ const networks: NetworkType[] = [
     name: 'Andromeda',
     explorerUrl: 'https://andromeda-explorer.metis.io',
     unstoppableDomainsChain: 'ERC20',
-    isGasTankAvailable: true
+    isGasTankAvailable: true,
+    relayerlessOnly: false,
+    nativeAsset: {
+      address: "0x0000000000000000000000000000000000000000",
+      symbol: "METIS",
+      coingeckoId: null,
+      decimals: 18
+    }
   },
   {
     id: 'rinkeby',
@@ -170,8 +262,32 @@ const networks: NetworkType[] = [
     explorerUrl: 'https://rinkeby.etherscan.io',
     unstoppableDomainsChain: 'ERC20',
     hide: true,
-    isGasTankAvailable: false
-  }
+    isGasTankAvailable: false,
+    relayerlessOnly: false,
+    nativeAsset: {
+      address: "0x0000000000000000000000000000000000000000",
+      symbol: "ETH",
+      coingeckoId: null,
+      decimals: 18
+    }
+  },
+  {
+    id: 'ethereum-pow',
+    chainId: 10001,
+    rpc: 'https://mainnet.ethereumpow.org',
+    nativeAssetSymbol: 'ETHW',
+    name: 'ETHPoW',
+    explorerUrl: 'https://mainnet.ethwscan.com',
+    unstoppableDomainsChain: 'ERC20',
+    isGasTankAvailable: false,
+    relayerlessOnly: true,
+    nativeAsset: {
+      address: "0x0000000000000000000000000000000000000000",
+      symbol: "ETH",
+      coingeckoId: null,
+      decimals: 18
+    }
+  },
   // {
   // 	id: NETWORKS.cronos,
   // 	chainId: 25,
