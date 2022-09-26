@@ -42,7 +42,7 @@ export const multiplierBadges: MultiplierBadge[] = [
   },
   {
     id: 'powerUserMultiplier',
-    name: 'Power User Multiplier',
+    name: 'Power User',
     icon: '💸',
     color: '#658f3f',
     multiplier: 1.25,
