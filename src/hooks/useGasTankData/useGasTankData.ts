@@ -71,7 +71,7 @@ export default function useGasTankData({
             decimals: item.decimals,
             symbol: item.symbol,
             balance: isFound.balance,
-            disable: !!item.disable,
+            disableGasTankDeposit: !!item.disableGasTankDeposit,
             balanceUSD:
               parseFloat(isFound.balance) *
               parseFloat(
