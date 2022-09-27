@@ -24,13 +24,14 @@ export default function usePortfolio({
   getBalances,
   getCoingeckoPrices,
   relayerURL,
-  useRelayerData
+  useRelayerData,
+  eligibleRequests,
+  requests,
+  selectedAccount
 }: UsePortfolioProps): UsePortfolioReturnType {
   const { addToast } = useToasts()
   const currentAccount = useRef<string>()
   const prevNetwork = usePrevious(currentNetwork)
-
-  // console.log('relayerURL', relayerURL)
 
   // Implementation of structure that contains all assets by account and network
   const [assets, setAssetsByAccount] = useStorage({ key: 'assets', defaultValue: {} })
@@ -42,6 +43,15 @@ export default function usePortfolio({
     useStorage,
     useToasts,
     tokens: assets[`${account}-${currentNetwork}`]?.tokens || []
+  })
+
+  const { pendingTransactions } = useTransactions({
+    account,
+    currentNetwork,
+    relayerURL,
+    useRelayerData,
+    eligibleRequests,
+    requests
   })
 
   const {
@@ -59,13 +69,14 @@ export default function usePortfolio({
   
   // All fetching logic required in our portfolio
   const {
-    updateCoingeckoAndSupplementData, fetchOtherNetworksBalances, fetchTokens
+    updateCoingeckoAndSupplementData, fetchOtherNetworksBalances, fetchAndSetSupplementTokenData, fetchTokens
   } = usePortfolioFetch({
     account, currentAccount, currentNetwork, hiddenTokens, getExtraTokensAssets, getBalances, addToast, setAssetsByAccount,
     getCoingeckoPrices,
     setPricesFetching,
     filterByHiddenTokens,
-    extraTokens
+    extraTokens,
+    pendingTransactions, eligibleRequests, selectedAccount
   })
 
   // Implementation of balances calculation
@@ -138,7 +149,11 @@ export default function usePortfolio({
       updateCoingeckoAndSupplementData(assets[`${account}-${currentNetwork}`])
     }, 20000)
     return () => clearInterval(refreshInterval)
-  }, [])
+  }, [eligibleRequests, pendingTransactions])
+
+  useEffect(() => {
+    fetchAndSetSupplementTokenData(assets[`${account}-${currentNetwork}`])
+  }, [requests,`${eligibleRequests}`, `${pendingTransactions}`])
 
   // We need to be sure we get the latest balancesByNetworksLoading here
   const balancesByNetworksLoading = useMemo(

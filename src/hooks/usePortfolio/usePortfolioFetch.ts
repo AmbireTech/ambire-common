@@ -4,7 +4,9 @@ import { useMemo, useCallback } from 'react'
 import supportedProtocols from 'ambire-common/src/constants/supportedProtocols'
 import { roundFloatingNumber } from 'ambire-common/src/services/formatter'
 import { checkTokenList, getTokenListBalance, tokenList } from 'ambire-common/src/services/balanceOracle'
-import { setKnownAddresses, setKnownTokens } from '../../services/humanReadableTransactions'
+import { setKnownAddresses, setKnownTokens, token } from '../../services/humanReadableTransactions'
+
+import tokensList from '../../constants/tokenList.json'
 
 // use Balance Oracle
 function paginateArray(input: any[], limit: number) {
@@ -22,13 +24,19 @@ async function supplementTokensDataFromNetwork({
   network,
   tokensData,
   extraTokens,
-  updateBalance
+  updateBalance,
+  pendingTransactions,
+  selectedAccount,
+  state
 }: {
   walletAddr: string
   network: Network
   tokensData: Token[]
   extraTokens: Token[]
   updateBalance?: string
+  pendingTransactions: []
+  selectedAccount: {}
+  state: string
 }) {
   if (!walletAddr || walletAddr === '' || !network) return []
   // eslint-disable-next-line no-param-reassign
@@ -55,7 +63,7 @@ async function supplementTokensDataFromNetwork({
   const tokenBalances = (
     await Promise.all(
       calls.map((callTokens) => {
-        return getTokenListBalance({ walletAddr, tokens: callTokens, network, updateBalance })
+        return getTokenListBalance({ walletAddr, tokens: callTokens, network, updateBalance, pendingTransactions, selectedAccount, state })
       })
     )
   )
@@ -68,10 +76,10 @@ async function supplementTokensDataFromNetwork({
 
 
 // Make humanizer 'learn' about new tokens and aliases
-const updateHumanizerData = (tokensList) => {
-  const knownAliases = tokensList.map(({ address, symbol }) => ({ address, name: symbol }))
+const updateHumanizerData = (_tokensList) => {
+  const knownAliases = _tokensList.map(({ address, symbol }) => ({ address, name: symbol }))
   setKnownAddresses(knownAliases)
-  setKnownTokens(tokensList)
+  setKnownTokens(_tokensList)
 }
 
 // All fetching logic required in our portfolio.
@@ -87,7 +95,10 @@ export default function useProtocolsFetch({
   getCoingeckoPrices,
   setPricesFetching,
   filterByHiddenTokens,
-  extraTokens
+  extraTokens,
+  pendingTransactions,
+  eligibleRequests,
+  selectedAccount
 }) {
   const extraTokensAssets = useMemo(
     () => getExtraTokensAssets(account, currentNetwork),
@@ -95,7 +106,7 @@ export default function useProtocolsFetch({
   )
 
   const fetchAndSetSupplementTokenData = async (assets) => {
-    await new Promise((resolve) => fetchSupplementTokenData(assets, resolve))
+    await new Promise((resolve) => fetchAllSupplementTokenData(assets, resolve))
     .then(oracleResponse => {
       setAssetsByAccount(prev => ({
         ...prev,
@@ -120,7 +131,7 @@ export default function useProtocolsFetch({
     // Update prices from coingecko and balance from balance oracle
     if (coingeckoTokensToUpdate) {
       const coingeckoPrices = new Promise((resolve, reject) => fetchCoingeckoPrices( tokens, resolve))
-      const balanceOracle = new Promise(( resolve, reject) => fetchSupplementTokenData({ tokens: tokens }, resolve))
+      const balanceOracle = new Promise(( resolve, reject) => fetchAllSupplementTokenData({ tokens: tokens }, resolve))
 
       Promise.all([coingeckoPrices, balanceOracle]).then((results) => {
         const coingeckoResponse = results[0]
@@ -151,7 +162,7 @@ export default function useProtocolsFetch({
     } else {
       // Update only balance from balance oracle
       new Promise((resolve) => {
-        fetchSupplementTokenData({ tokens: tokens }, resolve)
+        fetchAllSupplementTokenData({ tokens: tokens }, resolve)
       }).then(oracleResponse => {
         updateHumanizerData(oracleResponse)
         setAssetsByAccount(prev => ({
@@ -253,9 +264,61 @@ export default function useProtocolsFetch({
     }
   }, [account, currentNetwork])
 
-  const fetchSupplementTokenData = useCallback(
-    async (updatedTokens: any[], resolve) => {   
+  const removeDuplicatedAssets = (tokens) => {
+    const lookup = tokens.reduce((a, e) => {
+      a[e.address] = ++a[e.address] || 0
+      return a
+    }, {})
 
+    // filters by non duplicated objects or takes the one of dup but with a price greater than 0
+    tokens = tokens.filter((e) => !lookup[e.address] || (lookup[e.address] && e.price))
+
+    return tokens
+  }
+
+  const fetchAllSupplementTokenData = useCallback(
+    async (updatedTokens: any[], _resolve) => {         
+      const tokenList = removeDuplicatedAssets([
+        ...tokensList[currentNetwork],
+        ...updatedTokens?.tokens
+      ])
+      
+      const unconfirmedRequests = eligibleRequests.map(t => ({ ...t, txns: [t.txn.to, t.txn.value, t.txn.data] }) ).map(t => t.txns)
+    
+      // 1. Fetch Latest
+      const balanceOracleLatest = new Promise((resolve, reject) => fetchSupplementTokenData({ tokens: updatedTokens?.tokens }, resolve, [], 'latest'))
+      // 2. Fetch Pending
+      const balanceOraclePending = pendingTransactions?.length && new Promise((resolve, reject) => fetchSupplementTokenData({ tokens: tokenList }, resolve, [], 'pending'))
+      // TODO: Parse eligibleRequests transactions with humanizer to check for swap and pass the two tokens to balance oracle
+      // 3. Fetch Unconfirmed
+      const balanceOracleUnconfirmed =  unconfirmedRequests?.length  && new Promise((resolve, reject) => fetchSupplementTokenData({ tokens: tokenList }, resolve, unconfirmedRequests, 'unconfirmed'))
+
+      const promises = [
+        balanceOracleLatest,
+        pendingTransactions?.length ? balanceOraclePending : null,
+        unconfirmedRequests?.length ? balanceOracleUnconfirmed : null
+      ]
+  
+      Promise.all([...promises]).then((results) => {
+        const latest = results[0]
+        const pending = results[1]
+        const unconfirmed = results[2]
+
+        const response = latest.map((t, i) => ({
+          ...t,
+          ...pending && { ['pending']: pending[i] },
+          ...unconfirmed && { ['unconfirmed']: unconfirmed[i] },
+        }))
+
+        _resolve && _resolve(response)
+      
+      })
+    },
+    [currentNetwork, account, extraTokensAssets, hiddenTokens, pendingTransactions, eligibleRequests]
+  )
+
+  const fetchSupplementTokenData = useCallback(
+    async (updatedTokens: any[], resolve, pendingTransactions = [], state = 'latest') => {   
       if (!updatedTokens?.tokens?.length) {
         setAssetsByAccount(prev => ({
           ...prev,
@@ -265,7 +328,7 @@ export default function useProtocolsFetch({
           }
         }))
       }
-      
+
       try {
         let rcpTokenData = await supplementTokensDataFromNetwork({
           walletAddr: account,
@@ -276,9 +339,12 @@ export default function useProtocolsFetch({
               )
             : [], // Filter out extraTokens
           extraTokens: extraTokensAssets,
-          hiddenTokens
+          hiddenTokens,
+          pendingTransactions: pendingTransactions,
+          selectedAccount,
+          state
         })    
-        
+
         resolve && resolve(rcpTokenData)
       } catch (e) {
         console.error('supplementTokensDataFromNetwork failed', e)
@@ -294,7 +360,7 @@ export default function useProtocolsFetch({
         }))
       }
     },
-    [currentNetwork, account, extraTokensAssets, hiddenTokens]
+    [currentNetwork, account, extraTokensAssets, hiddenTokens, selectedAccount]
   )
   
   // Full update of tokens
@@ -430,6 +496,7 @@ export default function useProtocolsFetch({
     fetchOtherNetworksBalances,
     fetchCoingeckoPrices,
     fetchAndSetSupplementTokenData,
-    updateCoingeckoAndSupplementData
+    updateCoingeckoAndSupplementData,
+    fetchAllSupplementTokenData
   }
 }

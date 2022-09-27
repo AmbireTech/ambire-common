@@ -1,24 +1,23 @@
 // @ts-nocheck TODO: Fill in all missing types before enabling the TS check again
 
-import { useCallback } from 'react'
-import {
-    Token,
-    TokenWithIsHiddenFlag,
-} from './types'
+import { useMemo, useEffect } from "react"
 
-export default function useTransactions({ account, currentNetwork, relayerURL, useRelayerData }: any): any {
+export default function useTransactions({ account, currentNetwork, relayerURL, useRelayerData, eligibleRequests, requests }: any): any {
 
     const url = relayerURL
     ? `${relayerURL}/identity/${account}/${currentNetwork}/transactions`
     : null
-    const { data, errMsg, isLoading } = useRelayerData({ url })
-    console.log(data)
-    // Pending transactions which aren't executed yet
-    const allPending = data && data.txns.filter(tx => !tx.executed && !tx.replaced && !tx.executed?.mined)
+    const { data, forceRefresh } = useRelayerData({ url })
 
-    console.log('allPending', allPending)
+    // Pending transactions which aren't executed yet
+    const allPending = useMemo(() => data && data.txns.filter(x => !x.executed && !x.replaced)
+    , [data?.txns])
+
+    useEffect(() => {
+        forceRefresh()
+    },[requests])
 
     return {
-        pendingTransactions: allPending,
+        pendingTransactions: allPending?.length ? [allPending] : [],
     }
 }
