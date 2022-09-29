@@ -18,23 +18,16 @@ const useConstants = ({ fetch, endpoint }: UseConstantsProps): UseConstantsRetur
 
   const fetchConstants = useCallback(async () => {
     try {
-      const [
-        { tokenList, humanizerInfo, WALLETInitialClaimableRewards }
-        // adexToStakingTransfersLogs
-      ] = await Promise.all<
-        // [Promise<ResultEndpointResponse>, Promise<ConstantsType['adexToStakingTransfersLogs']>]
-        [Promise<ResultEndpointResponse>]
-      >([
-        fetchCaught(fetch, `${endpoint}/result.json`).then((res) => res.body)
-        // fetchCaught(fetch, `${endpoint}/adexToStakingTransfers.json`).then((res) => res.body)
-      ])
+      const { tokenList, humanizerInfo, WALLETInitialClaimableRewards } =
+        await fetchCaught<ResultEndpointResponse>(fetch, `${endpoint}/result.json`).then(
+          (res) => res.body
+        )
 
       setIsLoading(() => {
         setData({
           tokenList,
           humanizerInfo,
           WALLETInitialClaimableRewards,
-          // adexToStakingTransfersLogs,
           lastFetched: Date.now()
         })
         setHasError(false)
@@ -51,13 +44,14 @@ const useConstants = ({ fetch, endpoint }: UseConstantsProps): UseConstantsRetur
     fetchConstants()
   }, [fetchConstants])
 
-  const getAdexToStakingTransfers = async () => {
+  const getAdexToStakingTransfersLogs = async () => {
     if (adexToStakingTransfers) return adexToStakingTransfers
 
     try {
-      const [adexToStakingTransfersLogs] = await Promise.all<
-        [Promise<AdexToStakingTransfersLogsType>]
-      >([fetchCaught(fetch, `${endpoint}/adexToStakingTransfers.json`).then((res) => res.body)])
+      const adexToStakingTransfersLogs = await fetchCaught<AdexToStakingTransfersLogsType>(
+        fetch,
+        `${endpoint}/adexToStakingTransfers.json`
+      ).then((res) => res.body)
 
       setAdexToStakingTransfers(adexToStakingTransfersLogs)
       return adexToStakingTransfersLogs
@@ -68,7 +62,7 @@ const useConstants = ({ fetch, endpoint }: UseConstantsProps): UseConstantsRetur
 
   return {
     constants: data,
-    getAdexToStakingTransfers,
+    getAdexToStakingTransfersLogs,
     isLoading,
     retryFetch: fetchConstants,
     hasError

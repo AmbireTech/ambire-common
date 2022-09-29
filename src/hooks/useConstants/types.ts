@@ -84,7 +84,7 @@ export interface UseConstantsReturnType {
   constants: ConstantsType | null
   isLoading: boolean
   retryFetch: () => void
-  getAdexToStakingTransfersLogsType: () => Promise<AdexToStakingTransfersLogsType | null>
+  getAdexToStakingTransfersLogs: () => Promise<AdexToStakingTransfersLogsType | null>
   hasError: boolean
 }
 
