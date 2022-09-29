@@ -18,10 +18,14 @@ const useConstants = ({ fetch, endpoint }: UseConstantsProps): UseConstantsRetur
 
   const fetchConstants = useCallback(async () => {
     try {
-      const { tokenList, humanizerInfo, WALLETInitialClaimableRewards } =
-        await fetchCaught<ResultEndpointResponse>(fetch, `${endpoint}/result.json`).then(
-          (res) => res.body
-        )
+      const response = await fetchCaught<ResultEndpointResponse>(
+        fetch,
+        `${endpoint}/result.json`
+      ).then((res) => res.body)
+
+      if (!response) throw new Error('Failed to get the constants.')
+
+      const { tokenList, humanizerInfo, WALLETInitialClaimableRewards } = response
 
       setIsLoading(() => {
         setData({
@@ -51,7 +55,7 @@ const useConstants = ({ fetch, endpoint }: UseConstantsProps): UseConstantsRetur
       const adexToStakingTransfersLogs = await fetchCaught<AdexToStakingTransfersLogsType>(
         fetch,
         `${endpoint}/adexToStakingTransfers.json`
-      ).then((res) => res.body)
+      ).then((res) => res.body || null)
 
       setAdexToStakingTransfers(adexToStakingTransfersLogs)
       return adexToStakingTransfersLogs
