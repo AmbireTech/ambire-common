@@ -74,7 +74,6 @@ export interface AdexToStakingTransfersLogsType {
 }
 
 export interface ConstantsType {
-  adexToStakingTransfersLogs: AdexToStakingTransfersLogsType
   WALLETInitialClaimableRewards: WALLETInitialClaimableRewardsType[]
   tokenList: object
   humanizerInfo: HumanizerInfoType
@@ -85,6 +84,7 @@ export interface UseConstantsReturnType {
   constants: ConstantsType | null
   isLoading: boolean
   retryFetch: () => void
+  getAdexToStakingTransfersLogs: () => Promise<AdexToStakingTransfersLogsType | null>
   hasError: boolean
 }
 
