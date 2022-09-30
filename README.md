@@ -10,9 +10,15 @@ yarn install
 
 ## Workflow
 
-1. When a change is needed, submit a PR against the `develop` branch (or against the `main` branch, in case it's a hotfix).
+1. Release cycle: every Monday.
 
-2. When a new version for ambire-common is needed, create a new git tag, issue a new [release](https://github.com/AmbireTech/ambire-common/releases) and describe what has changed. Follow semantic versioning when choosing a tag name.
+1. When a change is needed, if you need it fast (hot), PR against `main`
+
+1. When a change is needed, if you can wait until Monday - PR against `develop`
+
+1. If needed, introduce a release branch (example: `release/0.16.0`). Merge multiple changes needed for the web or mobile apps QA in there.
+
+1. When a new version for ambire-common is needed, create a new git tag, issue a new [release](https://github.com/AmbireTech/ambire-common/releases) and describe what has changed. Follow semantic versioning when choosing a tag name.
 
 ## Rules
 
