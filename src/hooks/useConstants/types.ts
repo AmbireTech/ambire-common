@@ -1,3 +1,18 @@
+export interface ConstantsType {
+  WALLETInitialClaimableRewards: WALLETInitialClaimableRewardsType[]
+  tokenList: { [key: string]: TokenList[] }
+  humanizerInfo: HumanizerInfoType
+  lastFetched: number
+}
+
+interface TokenList {
+  address: string
+  symbol: string
+  coingeckoId?: null | string
+  decimals?: number
+  decmals?: number
+}
+
 export interface UseConstantsProps {
   fetch: any
   endpoint: string
@@ -71,13 +86,6 @@ export interface AdexToStakingTransfersLogsType {
   jsonrpc: string
   id: number
   result: object[]
-}
-
-export interface ConstantsType {
-  WALLETInitialClaimableRewards: WALLETInitialClaimableRewardsType[]
-  tokenList: object
-  humanizerInfo: HumanizerInfoType
-  lastFetched: number
 }
 
 export interface UseConstantsReturnType {
