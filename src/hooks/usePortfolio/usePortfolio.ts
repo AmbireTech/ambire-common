@@ -3,9 +3,10 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 import networks, { NetworkId } from '../../constants/networks'
 import supportedProtocols from '../../constants/supportedProtocols'
-import { checkTokenList, getTokenListBalance, tokenList } from '../../services/balanceOracle'
+import { checkTokenList, getTokenListBalance } from '../../services/balanceOracle'
 import { roundFloatingNumber } from '../../services/formatter'
 import { setKnownAddresses, setKnownTokens } from '../../services/humanReadableTransactions'
+import { ConstantsType } from '../useConstants'
 import usePrevious from '../usePrevious'
 import {
   Network,
@@ -37,6 +38,7 @@ const filterByHiddenTokens = (tokens: Token[], hiddenTokens: TokenWithIsHiddenFl
 }
 
 async function supplementTokensDataFromNetwork({
+  tokenList = {},
   walletAddr,
   network,
   tokensData,
@@ -44,6 +46,7 @@ async function supplementTokensDataFromNetwork({
   updateBalance,
   hiddenTokens
 }: {
+  tokenList: ConstantsType['tokenList']
   walletAddr: string
   network: Network
   tokensData: Token[]
@@ -99,6 +102,7 @@ async function supplementTokensDataFromNetwork({
 }
 
 export default function usePortfolio({
+  useConstants,
   currentNetwork,
   account,
   useStorage,
@@ -106,6 +110,7 @@ export default function usePortfolio({
   useToasts,
   getBalances
 }: UsePortfolioProps): UsePortfolioReturnType {
+  const { constants } = useConstants()
   const { addToast } = useToasts()
   const rpcTokensLastUpdated = useRef<number>(0)
   const currentAccount = useRef<string>()
@@ -171,6 +176,7 @@ export default function usePortfolio({
       const extraTokensAssets = getExtraTokensAssets(account, currentNetwork)
       try {
         const rcpTokenData = await supplementTokensDataFromNetwork({
+          tokenList: constants?.tokenList,
           walletAddr: account,
           network: currentNetwork,
           tokensData: currentNetworkTokens
@@ -471,7 +477,8 @@ export default function usePortfolio({
       if (extraTokens.map(({ address }) => address).includes(address))
         return addToast(`${name} (${symbol}) is already added to your wallet.`)
       if (
-        Object.values(tokenList)
+        constants?.tokenList &&
+        Object.values(constants.tokenList)
           .flat(1)
           .map(({ address }) => address)
           .includes(address)

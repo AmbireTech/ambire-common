@@ -18,7 +18,15 @@ export async function fetchGet(_fetch: any, url: string) {
   return response.json()
 }
 
-export async function fetchCaught(_fetch: any, url: any, params?: any) {
+export async function fetchCaught<R>(
+  _fetch: any,
+  url: any,
+  params?: any
+): Promise<{
+  body?: R
+  resp?: any
+  errMsg: string
+}> {
   let resp
   try {
     resp = await _fetch(url, params)
