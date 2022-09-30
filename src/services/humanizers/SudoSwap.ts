@@ -12,34 +12,61 @@ const SudoSwapRouter = new Interface(abis.SudoSwapRouter)
 
 const SudoSwapMapping = {
   [SudoSwapFactory.getSighash('createPairETH')]: (txn, network, {extended = false}) => {
-    const {_nft} = SudoSwapFactory.parseTransaction(txn).args
-    const price = txn.value
-    const paymentToken = nativeToken(network, price, true)
-    return !extended
-      ? [`Make an offer for ${_nft} for ${paymentToken.amount} ETH on SudoSwap`]
-      : [
-        [
-          'Make an offer',
-          'for the NFT',
-          {
-            type: 'erc721',
-            address: _nft
-          },
-          'for',
-          {
-            type: 'token',
-            ...paymentToken
-          },
-          'on SudoSwap'
+    const {_nft, _spotPrice, _poolType, _initialNFTIDs} = SudoSwapFactory.parseTransaction(txn).args
+
+    if (_poolType === 0) { // making collection offer
+
+      const price = txn.value
+
+      // the amount of nfts in the offer
+      const nftPieces = price / _spotPrice
+
+      const paymentToken = nativeToken(network, price, true)
+
+      return !extended
+        ? [`${_poolType} Make an offer of ${nftPieces} NFTs for ${_nft} for ${paymentToken.amount} ETH`]
+        : [[
+            'Make an offer',
+            `of ${nftPieces} NFTs for`,
+            {
+              type: 'address',
+              address: _nft
+            },
+            'for',
+            {
+              type: 'token',
+              ...paymentToken
+            }
+          ]
         ]
-      ]
+    } else if (_poolType === 1) { // listing nft
+
+      const paymentToken = nativeToken(network, _spotPrice, true)
+      return !extended
+        ? [`List NFT ${_nft} #${_initialNFTIDs.join(',')} for ${paymentToken.amount} ETH`]
+        : [
+          [
+            'List NFT',
+            {
+              type: 'address',
+              address: _nft,
+            },
+            `#${_initialNFTIDs.join(',')}`,
+            'for',
+            {
+              type: 'token',
+              ...paymentToken
+            },
+          ]
+        ]
+    }
   },
   [SudoSwapFactory.getSighash('createPairERC20')]: (txn, network, {extended = false}) => {
     const {params} = SudoSwapFactory.parseTransaction(txn).args
     const paymentToken = token(params.token, params.spotPrice, true)
 
     return !extended
-      ? [`Make an offer for ${params.nft} id ${params.initialNFTIDs.join(',')} for ${paymentToken.amount} ${paymentToken.symbol || 'Unknown token'} on SudoSwap`]
+      ? [`Make an offer for ${params.nft} #${params.initialNFTIDs.join(',')} for ${paymentToken.amount} ${paymentToken.symbol || 'Unknown token'}`]
       : [
         [
           'Make an offer',
@@ -53,7 +80,6 @@ const SudoSwapMapping = {
             type: 'token',
             ...paymentToken
           },
-          'on SudoSwap'
         ]
       ]
   },
@@ -61,7 +87,7 @@ const SudoSwapMapping = {
     const {_nft, ids} = SudoSwapFactory.parseTransaction(txn).args
     const nfts = ids.map(id => ({address: _nft, id}))
     return !extended
-      ? [`Deposit NFT ${_nft} id ${ids.join(',')}`]
+      ? [`Deposit NFT ${_nft} #${ids.join(',')}`]
       : [
         [
           'Deposit NFT',
@@ -78,7 +104,7 @@ const SudoSwapMapping = {
     const price = txn.value
     const paymentToken = nativeToken(network, price, true)
 
-    if (!extended) return [`Buy NFT from vaults ${swapList.map(i => i[0] + ' #' + i[1]).join(',')} for ${paymentToken.amount} ETH on SudoSwap`]
+    if (!extended) return [`Buy NFT from vaults ${swapList.map(i => i[0] + ' #' + i[1]).join(',')} for ${paymentToken.amount} ETH`]
 
     let extendedResult = [
       'Buy NFT',
@@ -116,7 +142,7 @@ const SudoSwapMapping = {
     })
 
     if (!extended) {
-      return [`Buy NFT from vault ${vaults.map(v => v.address + ' id ' + v.ids.join(',')).join(', ')} for ${paymentToken.amount} ETH on SudoSwap`]
+      return [`Buy NFT from vault ${vaults.map(v => v.address + ' #' + v.ids.join(',')).join(', ')} for ${paymentToken.amount} ETH`]
     }
 
     let extendedResult = [
@@ -129,7 +155,7 @@ const SudoSwapMapping = {
         type: 'address',
         address: v.address
       })
-      extendedResult.push('id ' + v.ids.join(','))
+      extendedResult.push('#' + v.ids.join(','))
     })
 
     return [extendedResult]
@@ -146,7 +172,7 @@ const SudoSwapMapping = {
     const paymentToken = nativeToken(network, minOutput, true)
 
     if (!extended) {
-      return [`Sell NFT to vault ${vaults.map(v => v.address + ' id ' + v.ids.join(',')).join(', ')} for ${paymentToken.amount} ETH on SudoSwap`]
+      return [`Sell NFT to vault ${vaults.map(v => v.address + ' #' + v.ids.join(',')).join(', ')} for ${paymentToken.amount} ETH`]
     }
 
     let extendedResult = [
@@ -159,7 +185,7 @@ const SudoSwapMapping = {
         type: 'address',
         address: v.address
       })
-      extendedResult.push('id ' + v.ids.join(','))
+      extendedResult.push('#' + v.ids.join(','))
     })
 
     extendedResult.push('for')
@@ -198,7 +224,6 @@ const SudoSwapMapping = {
     return [extendedResult]
 
   },
-
 }
 
 export default SudoSwapMapping
