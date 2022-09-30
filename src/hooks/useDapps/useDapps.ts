@@ -155,22 +155,24 @@ export default function useDapps({ useStorage, fetch }: UseDappsProps): UseDapps
   }, [])
 
   const onSearchChange = useCallback((val: string | null) => {
-    setSearch(val)
+    setSearch(val || '')
   }, [])
 
   // refresh list from filters
   useEffect(() => {
     setFilteredItems(
-      [...catalog].sort((a, b) => Number(!!b.featured) - Number(!!a.featured)).filter((item: any) => {
-        let match = true
-        if (categoryFilter) {
-          match = categoryFilter.filter(item, favorites)
-        }
-        if (search && match) {
-          match = item.name.toLowerCase().includes(search?.toLowerCase())
-        }
-        return match
-      })
+      [...catalog]
+        .sort((a, b) => Number(!!b.featured) - Number(!!a.featured))
+        .filter((item: any) => {
+          let match = true
+          if (categoryFilter) {
+            match = categoryFilter.filter(item, favorites)
+          }
+          if (search && match) {
+            match = item.name.toLowerCase().includes(search?.toLowerCase())
+          }
+          return match
+        })
     )
   }, [catalog, search, categoryFilter, favorites])
 

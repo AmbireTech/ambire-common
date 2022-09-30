@@ -3,9 +3,10 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 import networks, { NetworkId } from '../../constants/networks'
 import supportedProtocols from '../../constants/supportedProtocols'
-import { checkTokenList, getTokenListBalance, tokenList } from '../../services/balanceOracle'
+import { checkTokenList, getTokenListBalance } from '../../services/balanceOracle'
 import { roundFloatingNumber } from '../../services/formatter'
 import { setKnownAddresses, setKnownTokens } from '../../services/humanReadableTransactions'
+import { ConstantsType } from '../useConstants'
 import usePrevious from '../usePrevious'
 import {
   Network,
@@ -37,6 +38,7 @@ const filterByHiddenTokens = (tokens: Token[], hiddenTokens: TokenWithIsHiddenFl
 }
 
 async function supplementTokensDataFromNetwork({
+  tokenList = {},
   walletAddr,
   network,
   tokensData,
@@ -44,6 +46,7 @@ async function supplementTokensDataFromNetwork({
   updateBalance,
   hiddenTokens
 }: {
+  tokenList: ConstantsType['tokenList']
   walletAddr: string
   network: Network
   tokensData: Token[]
@@ -57,17 +60,25 @@ async function supplementTokensDataFromNetwork({
   // eslint-disable-next-line no-param-reassign
   if (!extraTokens || !extraTokens[0]) extraTokens = checkTokenList(extraTokens || []) // extraTokens check and populate for test if undefind
 
+  function getNativeAsset(){
+    const net = networks.find(({id}) => id === network)
+    return net && net.nativeAsset ? [net.nativeAsset] : []
+  }
+
   // concat predefined token list with extraTokens list (extraTokens are certainly ERC20)
   const fullTokenList = [
     // @ts-ignore figure out how to add types for the `tokenList`
-    ...new Set(tokenList[network] ? tokenList[network].concat(extraTokens) : [...extraTokens])
+    ...new Set(tokenList[network] ? tokenList[network].concat(extraTokens) : [...extraTokens, ...getNativeAsset(extraTokens)])
   ]
+  
   const tokens = fullTokenList.map((t: any) => {
     return tokensData.find((td) => td.address === t.address) || t
   })
+  
   const tokensNotInList = tokensData.filter((td) => {
     return !tokens.some((t) => t.address === td.address)
   })
+
   const filteredByHiddenTokensInList = filterByHiddenTokens(tokens, hiddenTokens)
   const filteredByHiddenTokensNotInList = filterByHiddenTokens(tokensNotInList, hiddenTokens)
   // tokensNotInList: call separately to prevent errors from non-erc20 tokens
@@ -78,7 +89,7 @@ async function supplementTokensDataFromNetwork({
 
   const tokenBalances = (
     await Promise.all(
-      calls.map((callTokens) => {
+      calls.map((callTokens) => {    
         return getTokenListBalance({ walletAddr, tokens: callTokens, network, updateBalance })
       })
     )
@@ -91,6 +102,7 @@ async function supplementTokensDataFromNetwork({
 }
 
 export default function usePortfolio({
+  useConstants,
   currentNetwork,
   account,
   useStorage,
@@ -98,6 +110,7 @@ export default function usePortfolio({
   useToasts,
   getBalances
 }: UsePortfolioProps): UsePortfolioReturnType {
+  const { constants } = useConstants()
   const { addToast } = useToasts()
   const rpcTokensLastUpdated = useRef<number>(0)
   const currentAccount = useRef<string>()
@@ -163,6 +176,7 @@ export default function usePortfolio({
       const extraTokensAssets = getExtraTokensAssets(account, currentNetwork)
       try {
         const rcpTokenData = await supplementTokensDataFromNetwork({
+          tokenList: constants?.tokenList,
           walletAddr: account,
           network: currentNetwork,
           tokensData: currentNetworkTokens
@@ -181,9 +195,7 @@ export default function usePortfolio({
           currentNetworkTokens
         ])
 
-        if (!updatedTokens.length) {
-          setBalancesByNetworksLoading((prev) => ({ ...prev, [currentNetwork]: false }))
-        }
+        setBalancesByNetworksLoading((prev) => ({ ...prev, [currentNetwork]: false }))
 
         rpcTokensLastUpdated.current = Date.now()
       } catch (e) {
@@ -207,15 +219,15 @@ export default function usePortfolio({
       if (currentAccount.current !== account) return
 
       try {
-        const networks = currentNetwork
+        const networksForBalance = currentNetwork
           ? [supportedProtocols.find(({ network }) => network === currentNetwork)]
-          : supportedProtocols
+          : supportedProtocols.filter(({ network }) => !networks.find(({id}) => id === network)?.relayerlessOnly)
 
         let failedRequests = 0
-        const requestsCount = networks.length
+        const requestsCount = networksForBalance.length
         const updatedTokens = (
           await Promise.all(
-            networks.map(async ({ network, balancesProvider }) => {
+            networksForBalance.map(async ({ network, balancesProvider }) => {
               // Show loading state only on network change, initial fetch and account change
               if (showLoadingState || !tokensByNetworks.length) {
                 setBalancesByNetworksLoading((prev) => ({ ...prev, [network]: true }))
@@ -302,6 +314,11 @@ export default function usePortfolio({
         ])
 
         if (!currentNetwork) fetchSupplementTokenData(updatedTokens)
+
+        supportedProtocols.map(
+          async (network) =>
+            await setBalancesByNetworksLoading((prev) => ({ ...prev, [network]: false }))
+        )
 
         if (failedRequests >= requestsCount) throw new Error('Failed to fetch Tokens from API')
         return true
@@ -460,7 +477,8 @@ export default function usePortfolio({
       if (extraTokens.map(({ address }) => address).includes(address))
         return addToast(`${name} (${symbol}) is already added to your wallet.`)
       if (
-        Object.values(tokenList)
+        constants?.tokenList &&
+        Object.values(constants.tokenList)
           .flat(1)
           .map(({ address }) => address)
           .includes(address)

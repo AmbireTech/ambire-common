@@ -1,34 +1,36 @@
-import UniRouters from './UniRouters'
-import ERC20 from './ERC20'
+import { HumanizerInfoType } from '../../hooks/useConstants'
 import AaveLendingPoolV2 from './AaveLendingPoolV2'
-import ERC721 from './ERC721'
-import WETH from './WETH'
-import AmbireIdentity from './AmbireIdentity'
+import AaveWethGatewayV2 from './AaveWethGatewayV2'
+import AmbireBatcher from './AmbireBatcher'
 import AmbireFactory from './AmbireFactory'
-import YearnTesseractVault from './YearnTesseractVault'
+import AmbireIdentity from './AmbireIdentity'
+import ERC20 from './ERC20'
+import ERC721 from './ERC721'
 import Movr from './Movr'
 import OpenSea from './OpenSea'
-import WALLETSupplyController from './WALLETSupplyController'
-import AmbireBatcher from './AmbireBatcher'
+import UniRouters from './UniRouters'
 import WALLETStakingPool from './WALLETStakingPool'
-import AaveWethGatewayV2 from './AaveWethGatewayV2'
+import WALLETSupplyController from './WALLETSupplyController'
+import WETH from './WETH'
+import YearnTesseractVault from './YearnTesseractVault'
 import SudoSwap from './SudoSwap'
 
-const all = {
-  ...UniRouters,
-  ...AaveLendingPoolV2,
-  ...AaveWethGatewayV2,
-  ...ERC20,
-  ...ERC721,
-  ...WETH,
-  ...AmbireIdentity,
-  ...AmbireFactory,
-  ...YearnTesseractVault,
-  ...Movr,
-  ...OpenSea,
-  ...WALLETSupplyController,
-  ...AmbireBatcher,
-  ...WALLETStakingPool,
-  ...SudoSwap
-}
+const all = (humanizerInfo: HumanizerInfoType) => ({
+  ...UniRouters(humanizerInfo),
+  ...AaveLendingPoolV2(humanizerInfo),
+  ...AaveWethGatewayV2(humanizerInfo),
+  ...ERC20(humanizerInfo),
+  ...ERC721(humanizerInfo),
+  ...WETH(humanizerInfo),
+  ...AmbireIdentity(humanizerInfo),
+  ...AmbireFactory(),
+  ...YearnTesseractVault(humanizerInfo),
+  ...Movr(humanizerInfo),
+  ...OpenSea(humanizerInfo),
+  ...WALLETSupplyController(),
+  ...AmbireBatcher(humanizerInfo),
+  ...WALLETStakingPool(humanizerInfo),
+  ...SudoSwap(humanizerInfo)
+})
+
 export default all

@@ -2,36 +2,43 @@
 // @ts-nocheck
 
 import { Interface } from 'ethers/lib/utils'
-import { abis } from '../../constants/humanizerInfo.json'
+
 import networks from '../../constants/networks'
-
+import { HumanizerInfoType } from '../../hooks/useConstants'
 import { formatNativeTokenAddress, token } from '../humanReadableTransactions'
-
-const MovrAnyswapInterface = new Interface(abis.MovrAnyswap)
-const MovrRouterInterface = new Interface(abis.MovrRouter)
 
 const getNetwork = (chainId) => networks.find((n) => n.chainId === Number(chainId)).name
 
-const MovrMapping = {
-  [MovrAnyswapInterface.getSighash('outboundTransferTo')]: (txn, network) => {
-    const { middlewareInputToken, amount, tokenToBridge, toChainId } =
-      MovrAnyswapInterface.parseTransaction(txn).args[0]
-    return [
-      `Transfer ${token(middlewareInputToken, amount)} to ${getNetwork(toChainId)} for ${token(
-        tokenToBridge
-      )}`
-    ]
-  },
-  [MovrRouterInterface.getSighash('outboundTransferTo')]: (txn, network) => {
-    const { middlewareRequest, amount, bridgeRequest, toChainId } =
-      MovrRouterInterface.parseTransaction(txn).args[0]
-    const { inputToken } = middlewareRequest
-    const { inputToken: outputToken } = bridgeRequest
-    return [
-      `Transfer ${token(formatNativeTokenAddress(inputToken), amount)} to ${getNetwork(
-        toChainId
-      )} for ${token(formatNativeTokenAddress(outputToken))}`
-    ]
+const MovrMapping = (humanizerInfo: HumanizerInfoType) => {
+  const MovrAnyswapInterface = new Interface(humanizerInfo.abis.MovrAnyswap)
+  const MovrRouterInterface = new Interface(humanizerInfo.abis.MovrRouter)
+
+  return {
+    [MovrAnyswapInterface.getSighash('outboundTransferTo')]: (txn, network) => {
+      const { middlewareInputToken, amount, tokenToBridge, toChainId } =
+        MovrAnyswapInterface.parseTransaction(txn).args[0]
+      return [
+        `Transfer ${token(humanizerInfo, middlewareInputToken, amount)} to ${getNetwork(
+          toChainId
+        )} for ${token(humanizerInfo, tokenToBridge)}`
+      ]
+    },
+    [MovrRouterInterface.getSighash('outboundTransferTo')]: (txn, network) => {
+      const { middlewareRequest, amount, bridgeRequest, toChainId } =
+        MovrRouterInterface.parseTransaction(txn).args[0]
+      const { inputToken } = middlewareRequest
+      const { inputToken: outputToken } = bridgeRequest
+      return [
+        `Transfer ${token(
+          humanizerInfo,
+          formatNativeTokenAddress(inputToken),
+          amount
+        )} to ${getNetwork(toChainId)} for ${token(
+          humanizerInfo,
+          formatNativeTokenAddress(outputToken)
+        )}`
+      ]
+    }
   }
 }
 export default MovrMapping

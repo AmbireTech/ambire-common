@@ -52,6 +52,13 @@ const useSignMessage = ({
   const isTypedData = ['eth_signTypedData_v4', 'eth_signTypedData'].indexOf(toSign?.type) !== -1
   if (isTypedData) {
     dataV4 = toSign.txn
+    try {
+      if (dataV4.startsWith('{')) {
+        dataV4 = JSON.parse(toSign.txn)
+      }
+    } catch (error) {
+      dataV4 = toSign.txn
+    }
     if (typeof dataV4 === 'object' && dataV4 !== null) {
       try {
         if (dataV4?.types?.EIP712Domain) {

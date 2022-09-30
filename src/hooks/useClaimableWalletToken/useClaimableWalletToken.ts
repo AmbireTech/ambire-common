@@ -1,34 +1,38 @@
-import useCacheBreak from 'ambire-common/src/hooks/useCacheBreak'
 import { Contract } from 'ethers'
 import { Interface } from 'ethers/lib/utils'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import WALLETSupplyControllerABI from '../../constants/abis/WALLETSupplyControllerABI.json'
 import { NETWORKS } from '../../constants/networks'
-import WALLETInitialClaimableRewards from '../../constants/WALLETInitialClaimableRewards.json'
 import WALLETVestings from '../../constants/WALLETVestings.json'
 import { getProvider } from '../../services/provider'
+import useCacheBreak from '../useCacheBreak'
 import { UseClaimableWalletTokenProps, UseClaimableWalletTokenReturnType } from './types'
 
 const supplyControllerAddress = '0xc53af25f831f31ad6256a742b3f0905bc214a430'
 const supplyControllerInterface = new Interface(WALLETSupplyControllerABI)
 
 const useClaimableWalletToken = ({
+  useConstants,
   accountId,
   network,
   addRequest,
   totalLifetimeRewards,
   walletUsdPrice
 }: UseClaimableWalletTokenProps): UseClaimableWalletTokenReturnType => {
+  const { constants } = useConstants()
   const provider = useMemo(() => getProvider('ethereum'), [])
   const supplyController = useMemo(
     () => new Contract(supplyControllerAddress, WALLETSupplyControllerABI, provider),
     [provider]
   )
-  const initialClaimableEntry = useMemo(
-    () => WALLETInitialClaimableRewards.find((x) => x.addr === accountId),
-    [accountId]
-  )
+  const initialClaimableEntry = useMemo(() => {
+    if (!constants?.WALLETInitialClaimableRewards) {
+      return null
+    }
+
+    return constants.WALLETInitialClaimableRewards.find((x) => x.addr === accountId)
+  }, [accountId, constants?.WALLETInitialClaimableRewards])
 
   const vestingEntry = useMemo(() => WALLETVestings.find((x) => x.addr === accountId), [accountId])
 
@@ -125,7 +129,7 @@ const useClaimableWalletToken = ({
           data: supplyControllerInterface.encodeFunctionData('claim', [
             initialClaimableEntry?.totalClaimable,
             initialClaimableEntry?.proof,
-            withoutBurn ? 0 : 3000, // penalty bps, at the moment we run with 0; it's a safety feature to hardcode it
+            withoutBurn ? 0 : 5000, // penalty bps, at the moment we run with 0; it's a safety feature to hardcode it
             '0x47cd7e91c3cbaaf266369fe8518345fc4fc12935' // staking pool addr
           ])
         }
