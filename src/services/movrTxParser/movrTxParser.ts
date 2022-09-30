@@ -1,11 +1,11 @@
 import { Interface } from 'ethers/lib/utils'
 
 import networks, { NetworkType } from '../../constants/networks'
-import { HumanizerInfoTokensType, HumanizerInfoType } from '../../hooks/useConstants'
+import { HumanizerInfoType } from '../../hooks/useConstants'
 import { formatNativeTokenAddress, knownTokens } from '../humanReadableTransactions'
 import { getTokenIcon } from '../icons'
 
-const getAssetInfo = (tokens: HumanizerInfoTokensType, address: any) => {
+const getAssetInfo = (tokens: HumanizerInfoType['tokens'], address: any) => {
   const formattedAddress = formatNativeTokenAddress(address)
   // @ts-ignore
   return tokens[formattedAddress] || knownTokens[formattedAddress] || ['Unknown', 0]
@@ -17,7 +17,7 @@ const getAssetIcon = (address: any, chainId: any) => {
 }
 
 const formatTx = (
-  tokens: HumanizerInfoTokensType,
+  tokens: HumanizerInfoType['tokens'],
   fromChainId: NetworkType['chainId'],
   toChainId: any,
   inputToken: string,
