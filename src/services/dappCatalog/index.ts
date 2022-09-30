@@ -8,7 +8,7 @@ export async function getWalletDappCatalog(
   fetch: any,
   catalogUrl?: string
 ): Promise<Array<AmbireDappManifest>> {
-  const catalog = await fetchCaught(fetch, catalogUrl || DEFAULT_DAPP_CATALOG_URL)
+  const catalog = await fetchCaught<any>(fetch, catalogUrl || DEFAULT_DAPP_CATALOG_URL)
 
   return catalog.body || []
 }

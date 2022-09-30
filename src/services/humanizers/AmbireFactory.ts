@@ -7,7 +7,7 @@ import { getAddress, hexConcat, Interface } from 'ethers/lib/utils'
 // the factory can be used for deploying contracts from Ambire
 const iface = new Interface(require('adex-protocol-eth/abi/IdentityFactory'))
 
-const FactoryMapping = {
+const FactoryMapping = () => ({
   [iface.getSighash('deploy')]: (txn, network) => {
     const [code, salt] = iface.parseTransaction(txn).args
     const addr = getAddress(
@@ -20,5 +20,6 @@ const FactoryMapping = {
     )
     return [`Deploy contract with address ${addr}`]
   }
-}
+})
+
 export default FactoryMapping
