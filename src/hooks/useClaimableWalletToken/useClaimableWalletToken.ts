@@ -13,26 +13,33 @@ const supplyControllerAddress = '0xc53af25f831f31ad6256a742b3f0905bc214a430'
 const supplyControllerInterface = new Interface(WALLETSupplyControllerABI)
 
 const useClaimableWalletToken = ({
-  useConstants,
+  // useConstants,
+  relayerURL,
+  useRelayerData,
   accountId,
   network,
   addRequest,
   totalLifetimeRewards,
   walletUsdPrice
 }: UseClaimableWalletTokenProps): UseClaimableWalletTokenReturnType => {
-  const { constants } = useConstants()
+  //const { constants } = useConstants()
+  const urlIdentityRewards = relayerURL
+    ? `${relayerURL}/wallet-token/rewards/${accountId}/getBalance?cacheBreak=${useCacheBreak()}`
+    : null
+
+  const { data: claimableRewardsData } = useRelayerData({ url: urlIdentityRewards })
   const provider = useMemo(() => getProvider('ethereum'), [])
   const supplyController = useMemo(
     () => new Contract(supplyControllerAddress, WALLETSupplyControllerABI, provider),
     [provider]
   )
   const initialClaimableEntry = useMemo(() => {
-    if (!constants?.WALLETInitialClaimableRewards) {
+    if (!claimableRewardsData) {
       return null
     }
 
-    return constants.WALLETInitialClaimableRewards.find((x) => x.addr === accountId)
-  }, [accountId, constants?.WALLETInitialClaimableRewards])
+    return claimableRewardsData //.find((x) => x.addr === accountId)
+  }, [accountId, claimableRewardsData])
 
   const vestingEntry = useMemo(() => WALLETVestings.find((x) => x.addr === accountId), [accountId])
 
@@ -126,12 +133,21 @@ const useClaimableWalletToken = ({
         txn: {
           to: supplyControllerAddress,
           value: '0x0',
-          data: supplyControllerInterface.encodeFunctionData('claim', [
+          data: supplyControllerInterface.encodeFunctionData('claimWithRootUpdate', [
             initialClaimableEntry?.totalClaimable,
             initialClaimableEntry?.proof,
             withoutBurn ? 0 : 5000, // penalty bps, at the moment we run with 0; it's a safety feature to hardcode it
-            '0x47cd7e91c3cbaaf266369fe8518345fc4fc12935' // staking pool addr
+            '0x47cd7e91c3cbaaf266369fe8518345fc4fc12935', // staking pool addr
+            initialClaimableEntry?.root,
+            initialClaimableEntry?.signedRoot,
           ])
+          // data: supplyControllerInterface.encodeFunctionData('claim', [
+          //   initialClaimableEntry?.totalClaimable,
+          //   initialClaimableEntry?.proof,
+          //   withoutBurn ? 0 : 5000, // penalty bps, at the moment we run with 0; it's a safety feature to hardcode it
+          //   '0x47cd7e91c3cbaaf266369fe8518345fc4fc12935' // staking pool addr
+          // ])
+
         }
       })
     },
