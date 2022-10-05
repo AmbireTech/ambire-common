@@ -13,7 +13,7 @@ import { UseClaimableWalletTokenProps, UseClaimableWalletTokenReturnType } from 
 const supplyControllerAddress = '0xc53af25f831f31ad6256a742b3f0905bc214a430'
 const WALLET_STAKING_ADDR = '0x47Cd7E91C3CBaAF266369fe8518345fc4FC12935'
 const supplyControllerInterface = new Interface(WALLETSupplyControllerABI)
-const NETWORK_NAME = 'ethereum'
+const NETWORK_NAME = NETWORKS.ethereum
 
 const useClaimableWalletToken = ({
   relayerURL,
@@ -24,25 +24,21 @@ const useClaimableWalletToken = ({
   totalLifetimeRewards,
   walletUsdPrice
 }: UseClaimableWalletTokenProps): UseClaimableWalletTokenReturnType => {
-  const {cacheBreak: relayerCacheBreak} = useCacheBreak()
+  const { cacheBreak: relayerCacheBreak } = useCacheBreak()
   const urlIdentityRewards = relayerURL
     ? `${relayerURL}/wallet-token/rewards/${accountId}?cacheBreak=${relayerCacheBreak}`
     : null
 
   const rewardsData = useRelayerData({ url: urlIdentityRewards })
-  const claimableRewardsData = rewardsData?.data?.claimableRewardsData
+  const claimableRewardsData = rewardsData?.data?.claimableRewardsData || null
   const provider = useMemo(() => getProvider(NETWORK_NAME), [])
   const supplyController = useMemo(
     () => new Contract(supplyControllerAddress, WALLETSupplyControllerABI, provider),
     [provider]
   )
   const initialClaimableEntry = useMemo(() => {
-    if (!claimableRewardsData) {
-      return null
-    }
-
     return claimableRewardsData //.find((x) => x.addr === accountId)
-  }, [accountId, claimableRewardsData])
+  }, [claimableRewardsData])
 
   const vestingEntry = useMemo(() => WALLETVestings.find((x) => x.addr === accountId), [accountId])
 
@@ -66,7 +62,6 @@ const useClaimableWalletToken = ({
     })
     ;(async () => {
       const toNum = (x: string | number) => parseInt(x.toString(), 10) / 1e18
-  
       const [mintableVesting, claimed] = await Promise.all([
         vestingEntry
           ? await supplyController
