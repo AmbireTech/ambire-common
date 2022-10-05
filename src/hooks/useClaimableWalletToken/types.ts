@@ -1,9 +1,7 @@
 import { Account } from '../useAccounts'
-import { UseConstantsReturnType } from '../useConstants'
 import { UseNetworkReturnType } from '../useNetwork'
 
 export type UseClaimableWalletTokenProps = {
-  // useConstants: () => UseConstantsReturnType
   relayerURL: string,
   useRelayerData: any,
   accountId: Account['id']
