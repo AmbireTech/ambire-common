@@ -36,9 +36,6 @@ const useClaimableWalletToken = ({
     () => new Contract(supplyControllerAddress, WALLETSupplyControllerABI, provider),
     [provider]
   )
-  const initialClaimableEntry = useMemo(() => {
-    return claimableRewardsData //.find((x) => x.addr === accountId)
-  }, [claimableRewardsData])
 
   const vestingEntry = useMemo(() => WALLETVestings.find((x) => x.addr === accountId), [accountId])
 
@@ -68,17 +65,17 @@ const useClaimableWalletToken = ({
               .mintableVesting(vestingEntry.addr, vestingEntry.end, vestingEntry.rate)
               .then(toNum)
           : null,
-        initialClaimableEntry
-          ? await supplyController.claimed(initialClaimableEntry.addr).then(toNum)
+        claimableRewardsData
+          ? await supplyController.claimed(claimableRewardsData.addr).then(toNum)
           : null
       ])
       // fromBalanceClaimable - all time claimable from balance
       // fromADXClaimable - all time claimable from ADX Staking
       // totalClaimable - all time claimable tolkens + already claimed from prev versions of supplyController contract
-      const claimedInitial = initialClaimableEntry
-        ? (initialClaimableEntry.fromBalanceClaimable || 0) +
-          (initialClaimableEntry.fromADXClaimable || 0) -
-          toNum(initialClaimableEntry.totalClaimable || 0)
+      const claimedInitial = claimableRewardsData
+        ? (claimableRewardsData.fromBalanceClaimable || 0) +
+          (claimableRewardsData.fromADXClaimable || 0) -
+          toNum(claimableRewardsData.totalClaimable || 0)
         : 0
 
       return { mintableVesting, claimed, claimedInitial }
@@ -96,9 +93,9 @@ const useClaimableWalletToken = ({
         })
       })
 
-  }, [supplyController, vestingEntry, initialClaimableEntry, cacheBreak])
+  }, [supplyController, vestingEntry, claimableRewardsData, cacheBreak])
 
-  const initialClaimable = initialClaimableEntry ? +initialClaimableEntry.totalClaimable / 1e18 : 0
+  const initialClaimable = claimableRewardsData ? +claimableRewardsData.totalClaimable / 1e18 : 0
   const claimableNow =
     initialClaimable - (currentClaimStatus.claimed || 0) < 0
       ? 0
@@ -136,17 +133,17 @@ const useClaimableWalletToken = ({
           to: supplyControllerAddress,
           value: '0x0',
           data: supplyControllerInterface.encodeFunctionData('claimWithRootUpdate', [
-            initialClaimableEntry?.totalClaimable,
-            initialClaimableEntry?.proof,
+            claimableRewardsData?.totalClaimable,
+            claimableRewardsData?.proof,
             withoutBurn ? 0 : 5000, // penalty bps, at the moment we run with 0; it's a safety feature to hardcode it
             WALLET_STAKING_ADDR, // staking pool addr
-            initialClaimableEntry?.root,
-            initialClaimableEntry?.signedRoot,
+            claimableRewardsData?.root,
+            claimableRewardsData?.signedRoot,
           ])
         }
       })
     },
-    [initialClaimableEntry, network?.chainId, accountId, addRequest]
+    [claimableRewardsData, network?.chainId, accountId, addRequest]
   )
   const claimVesting = useCallback(() => {
     addRequest({
