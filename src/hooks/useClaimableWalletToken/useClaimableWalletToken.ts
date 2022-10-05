@@ -9,11 +9,12 @@ import { getProvider } from '../../services/provider'
 import useCacheBreak from '../useCacheBreak'
 import { UseClaimableWalletTokenProps, UseClaimableWalletTokenReturnType } from './types'
 
+// const supplyControllerAddress = '0xF8cF66BbF7fe152b8177B61855E8be9a6279C8A1' //test polygon
 const supplyControllerAddress = '0xc53af25f831f31ad6256a742b3f0905bc214a430'
 const supplyControllerInterface = new Interface(WALLETSupplyControllerABI)
+const NETWORK_NAME = 'ethereum'
 
 const useClaimableWalletToken = ({
-  // useConstants,
   relayerURL,
   useRelayerData,
   accountId,
@@ -22,13 +23,14 @@ const useClaimableWalletToken = ({
   totalLifetimeRewards,
   walletUsdPrice
 }: UseClaimableWalletTokenProps): UseClaimableWalletTokenReturnType => {
-  //const { constants } = useConstants()
+  const {cacheBreak: relayerCacheBreak} = useCacheBreak()
   const urlIdentityRewards = relayerURL
-    ? `${relayerURL}/wallet-token/rewards/${accountId}/getBalance?cacheBreak=${useCacheBreak()}`
+    ? `${relayerURL}/wallet-token/rewards/${accountId}?cacheBreak=${relayerCacheBreak}`
     : null
 
-  const { data: claimableRewardsData } = useRelayerData({ url: urlIdentityRewards })
-  const provider = useMemo(() => getProvider('ethereum'), [])
+  const rewardsData = useRelayerData({ url: urlIdentityRewards })
+  const claimableRewardsData = rewardsData?.data?.claimableRewardsData
+  const provider = useMemo(() => getProvider(NETWORK_NAME), [])
   const supplyController = useMemo(
     () => new Contract(supplyControllerAddress, WALLETSupplyControllerABI, provider),
     [provider]
@@ -63,6 +65,7 @@ const useClaimableWalletToken = ({
     })
     ;(async () => {
       const toNum = (x: string | number) => parseInt(x.toString(), 10) / 1e18
+  
       const [mintableVesting, claimed] = await Promise.all([
         vestingEntry
           ? await supplyController
@@ -73,7 +76,9 @@ const useClaimableWalletToken = ({
           ? await supplyController.claimed(initialClaimableEntry.addr).then(toNum)
           : null
       ])
-
+      // fromBalanceClaimable - all time claimable from balance
+      // fromADXClaimable - all time claimable from ADX Staking
+      // totalClaimable - all time claimable tolkens + already claimed from prev versions of supplyController contract
       const claimedInitial = initialClaimableEntry
         ? (initialClaimableEntry.fromBalanceClaimable || 0) +
           (initialClaimableEntry.fromADXClaimable || 0) -
@@ -94,6 +99,7 @@ const useClaimableWalletToken = ({
           claimedInitial: 0
         })
       })
+
   }, [supplyController, vestingEntry, initialClaimableEntry, cacheBreak])
 
   const initialClaimable = initialClaimableEntry ? +initialClaimableEntry.totalClaimable / 1e18 : 0
@@ -141,13 +147,6 @@ const useClaimableWalletToken = ({
             initialClaimableEntry?.root,
             initialClaimableEntry?.signedRoot,
           ])
-          // data: supplyControllerInterface.encodeFunctionData('claim', [
-          //   initialClaimableEntry?.totalClaimable,
-          //   initialClaimableEntry?.proof,
-          //   withoutBurn ? 0 : 5000, // penalty bps, at the moment we run with 0; it's a safety feature to hardcode it
-          //   '0x47cd7e91c3cbaaf266369fe8518345fc4fc12935' // staking pool addr
-          // ])
-
         }
       })
     },
