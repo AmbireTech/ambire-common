@@ -96,10 +96,8 @@ const useClaimableWalletToken = ({
   }, [supplyController, vestingEntry, claimableRewardsData, cacheBreak])
 
   const initialClaimable = claimableRewardsData ? +claimableRewardsData.totalClaimable / 1e18 : 0
-  const claimableNow =
-    initialClaimable - (currentClaimStatus.claimed || 0) < 0
-      ? 0
-      : initialClaimable - (currentClaimStatus.claimed || 0)
+  const claimableNowRounded = +(initialClaimable - (currentClaimStatus.claimed || 0)).toFixed(6)
+  const claimableNow = claimableNowRounded < 0 ? 0 : claimableNowRounded
 
   const claimableNowUsd = (walletUsdPrice * claimableNow).toFixed(2)
   const mintableVestingUsd = (walletUsdPrice * currentClaimStatus.mintableVesting).toFixed(2)
