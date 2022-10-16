@@ -78,7 +78,7 @@ export default function usePortfolio({
     getCoingeckoAssetPlatforms,
     filterByHiddenTokens,
     extraTokens,
-    pendingTransactions, eligibleRequests, selectedAccount, humanizers
+    pendingTransactions, eligibleRequests, selectedAccount
   })
 
   // Implementation of balances calculation
