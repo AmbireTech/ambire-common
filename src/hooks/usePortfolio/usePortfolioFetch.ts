@@ -2,11 +2,12 @@
 
 import { useMemo, useCallback } from 'react'
 import supportedProtocols from 'ambire-common/src/constants/supportedProtocols'
+import networks from 'ambire-common/src/constants/networks'
+
 import { roundFloatingNumber } from 'ambire-common/src/services/formatter'
 import { checkTokenList, getTokenListBalance, tokenList } from 'ambire-common/src/services/balanceOracle'
-import { setKnownAddresses, setKnownTokens, token } from '../../services/humanReadableTransactions'
-
-import tokensList from '../../constants/tokenList.json'
+import { setKnownAddresses, setKnownTokens, getTransactionSummary } from '../../services/humanReadableTransactions'
+import { toBundleTxn } from 'ambire-common/src/services/requestToBundleTxn'
 
 // use Balance Oracle
 function paginateArray(input: any[], limit: number) {
@@ -17,6 +18,18 @@ function paginateArray(input: any[], limit: number) {
     from += limit
   }
   return pages
+}
+
+const removeDuplicatedAssets = (tokens) => {
+  const lookup = tokens.reduce((a, e) => {
+    a[e.address] = ++a[e.address] || 0
+    return a
+  }, {})
+
+  // filters by non duplicated objects or takes the one of dup but with a price greater than 0
+  tokens = tokens.filter((e) => !lookup[e.address] || (lookup[e.address] && e.price))
+
+  return tokens
 }
 
 async function supplementTokensDataFromNetwork({
@@ -71,7 +84,7 @@ async function supplementTokensDataFromNetwork({
     .filter((t) => {
       return extraTokens.some((et: Token) => t.address === et.address) ? true : t.balanceRaw > 0
     })
-  return tokenBalances
+  return { tokens: tokenBalances, state }
 }
 
 
@@ -93,7 +106,8 @@ export default function useProtocolsFetch({
   addToast,
   setAssetsByAccount,
   getCoingeckoPrices,
-  setPricesFetching,
+  getCoingeckoPriceByContract,
+  getCoingeckoAssetPlatforms,
   filterByHiddenTokens,
   extraTokens,
   pendingTransactions,
@@ -119,7 +133,7 @@ export default function useProtocolsFetch({
     })
   }
 
-  const updateCoingeckoAndSupplementData = async (assets) => {
+  const updateCoingeckoAndSupplementData = useCallback(async (assets) => {
     const tokens = assets?.tokens || []
     // Check for not updated prices from coingecko
     const coingeckoTokensToUpdate = tokens.filter(token => token.coingeckoId).some(token => { 
@@ -130,8 +144,8 @@ export default function useProtocolsFetch({
 
     // Update prices from coingecko and balance from balance oracle
     if (coingeckoTokensToUpdate) {
-      const coingeckoPrices = new Promise((resolve, reject) => fetchCoingeckoPrices( tokens, resolve))
-      const balanceOracle = new Promise(( resolve, reject) => fetchAllSupplementTokenData({ tokens: tokens }, resolve))
+      const coingeckoPrices = new Promise((resolve) => fetchCoingeckoPrices( tokens, resolve))
+      const balanceOracle = new Promise((resolve) => fetchAllSupplementTokenData({ tokens: tokens }, resolve))
 
       Promise.all([coingeckoPrices, balanceOracle]).then((results) => {
         const coingeckoResponse = results[0]
@@ -148,7 +162,7 @@ export default function useProtocolsFetch({
           } else return t
         })            
 
-        updateHumanizerData(updatedBalance)
+        updatedBalance.length && updateHumanizerData(updatedBalance)
 
         setAssetsByAccount(prev => ({
           ...prev,
@@ -164,7 +178,7 @@ export default function useProtocolsFetch({
       new Promise((resolve) => {
         fetchAllSupplementTokenData({ tokens: tokens }, resolve)
       }).then(oracleResponse => {
-        updateHumanizerData(oracleResponse)
+        oracleResponse.length && updateHumanizerData(oracleResponse)
         setAssetsByAccount(prev => ({
           ...prev,
           [`${account}-${currentNetwork}`]: {
@@ -175,7 +189,7 @@ export default function useProtocolsFetch({
         }))
       }) 
     }
-  }
+  }, [pendingTransactions, eligibleRequests])
   
   const fetchCoingeckoPrices = useCallback(async(tokens, resolve) => {
     const coingeckoTokensToUpdate = tokens?.filter(token => token.coingeckoId).filter(token => { 
@@ -185,18 +199,53 @@ export default function useProtocolsFetch({
     }).map(token => token.coingeckoId)
     if (!coingeckoTokensToUpdate.length) return null
 
-    setPricesFetching(true)
     try {
       const response = await getCoingeckoPrices(coingeckoTokensToUpdate.join(','))
       if (!response) return null
       resolve && resolve(response)
-      setPricesFetching(false)
 
     } catch (e) {
       addToast(e.message, { error: true })
-      setPricesFetching(false)
       resolve && resolve([])
 
+      setAssetsByAccount(prev => ({ ...prev, loading: false }))
+    }
+  }, [account, currentNetwork])
+
+  const fetchCoingeckoAsset = async () => {
+    const network = networks.find(({ id }) => id === currentNetwork)
+    try {
+      const response = await getCoingeckoAssetPlatforms()
+      if (!response) return null
+      const current = response.find(ntw => ntw.chain_identifier === network?.chainId)
+      return current?.id
+    } catch (e) {
+      addToast(e.message, { error: true })
+
+      resolve && resolve('')
+      setAssetsByAccount(prev => ({ ...prev, loading: false }))
+    }
+  }
+
+  const fetchCoingeckoPricesByContractAddress = useCallback(async(tokens, resolve) => {
+    const assetPlatform = await fetchCoingeckoAsset()
+    const coingeckoTokensToUpdate = tokens.map(token => token.address)
+    try {
+      Promise.all(coingeckoTokensToUpdate.map(async (addr) => {
+        const response = await getCoingeckoPriceByContract(assetPlatform, addr)
+        if (!response) return null
+        return {
+          address: response?.platforms[assetPlatform],
+          tokenImageUrls: response?.image,
+          tokenImageUrl: response?.image?.small,
+          symbol: response?.symbol.toUpperCase(),
+          price: response?.market_data.current_price.usd,
+          isHidden: false,
+        }
+      })).then(res => resolve({ tokens: res, state: 'coingecko' }))
+    } catch (e) {
+      addToast(e.message, { error: true })
+      resolve && resolve({})
       setAssetsByAccount(prev => ({ ...prev, loading: false }))
     }
   }, [account, currentNetwork])
@@ -219,11 +268,10 @@ export default function useProtocolsFetch({
 
           if (!response) return null
 
-          const { tokens, nfts } = response.data
+          const { tokens = [], nfts } = response.data
 
           let formattedTokens = [
-            ...tokens
-              .map((token: any) => ({
+            ...tokens.map((token: any) => ({
                   ...token,
                   // balanceOracle fixes the number to the 10 decimal places, so here we should also fix it
                   balance: Number(token.balance.toFixed(10)),
@@ -264,54 +312,89 @@ export default function useProtocolsFetch({
     }
   }, [account, currentNetwork])
 
-  const removeDuplicatedAssets = (tokens) => {
-    const lookup = tokens.reduce((a, e) => {
-      a[e.address] = ++a[e.address] || 0
-      return a
-    }, {})
-
-    // filters by non duplicated objects or takes the one of dup but with a price greater than 0
-    tokens = tokens.filter((e) => !lookup[e.address] || (lookup[e.address] && e.price))
-
-    return tokens
-  }
-
   const fetchAllSupplementTokenData = useCallback(
-    async (updatedTokens: any[], _resolve) => {         
-      const tokenList = removeDuplicatedAssets([
-        ...tokensList[currentNetwork],
-        ...updatedTokens?.tokens
+    async (updatedTokens: any[], _resolve) => { 
+      const tokensList = removeDuplicatedAssets([
+        ...tokenList[currentNetwork],
+        ...(updatedTokens && updatedTokens.tokens?.length && updatedTokens.tokens || [])
       ])
       
-      const unconfirmedRequests = eligibleRequests.map(t => ({ ...t, txns: [t.txn.to, t.txn.value, t.txn.data] }) ).map(t => t.txns)
-    
-      // 1. Fetch Latest
-      const balanceOracleLatest = new Promise((resolve, reject) => fetchSupplementTokenData({ tokens: updatedTokens?.tokens }, resolve, [], 'latest'))
-      // 2. Fetch Pending
-      const balanceOraclePending = pendingTransactions?.length && new Promise((resolve, reject) => fetchSupplementTokenData({ tokens: tokenList }, resolve, [], 'pending'))
-      // TODO: Parse eligibleRequests transactions with humanizer to check for swap and pass the two tokens to balance oracle
-      // 3. Fetch Unconfirmed
-      const balanceOracleUnconfirmed =  unconfirmedRequests?.length  && new Promise((resolve, reject) => fetchSupplementTokenData({ tokens: tokenList }, resolve, unconfirmedRequests, 'unconfirmed'))
+      const unsignedRequests = eligibleRequests.map(t => ({ ...t, txns: [t.txn.to, t.txn.value, t.txn.data] }) ).map(t => t.txns)
 
+      // 1. Fetch latest balance data from balanceOracle
+      const balanceOracleLatest = new Promise((resolve) => fetchSupplementTokenData({ tokens: updatedTokens?.tokens }, resolve, [], 'latest'))
+
+      // 2. Fetch pending balance data from balanceOracle
+      const balanceOraclePending = pendingTransactions?.length && new Promise((resolve) => fetchSupplementTokenData({ tokens: tokensList }, resolve, [], 'pending'))
+
+      // 3. Fetching of unconfirmed/unsigned token data from balanceOracle
+      const extendedSummary = eligibleRequests?.length && eligibleRequests.map(req => {
+        const txn = toBundleTxn(req.txn, account)
+        return getTransactionSummary(txn, currentNetwork, account, { extended: true })
+      }).flat()
+
+      const tokensToFetchPrices = []
+      // Check if not signed request contains tokens from swap which arent in portfolio yet
+      extendedSummary.length && extendedSummary.map(s => {
+        if (s[0] === 'Swap') {
+          
+          // Find if tokens are in portfolio currently in order to fetch prices from coingecko
+          const isTokenFromInPortfolio = updatedTokens?.tokens?.find(token => token.address === s[1].address)
+          const isTokenToInPortfolio = updatedTokens?.tokens?.find(token => token.address === s[3].address)
+
+          if (!isTokenFromInPortfolio) {
+            tokensToFetchPrices.push(s[1])
+            tokensList.push({ ...s[1], balance: 0 })
+          }
+          
+          if (!isTokenToInPortfolio) {
+            tokensToFetchPrices.push(s[3])
+            tokensList.push({ ...s[3], balance: 0 })
+          }
+        }
+      })
+
+      const balanceOracleUnconfirmed = unsignedRequests?.length  && new Promise((resolve) => fetchSupplementTokenData({ tokens: tokensList }, resolve, unsignedRequests, 'unconfirmed'))
+      // Fetch coingecko prices for newly acquired tokens from swap transaction 
+      const coingeckoPrices = tokensToFetchPrices?.length && new Promise((resolve, reject) => fetchCoingeckoPricesByContractAddress(tokensToFetchPrices, resolve))
+      
       const promises = [
         balanceOracleLatest,
-        pendingTransactions?.length ? balanceOraclePending : null,
-        unconfirmedRequests?.length ? balanceOracleUnconfirmed : null
+        pendingTransactions?.length ? balanceOraclePending : [],
+        unsignedRequests?.length ? balanceOracleUnconfirmed : [],
+        tokensToFetchPrices?.length ? coingeckoPrices : []
       ]
-  
-      Promise.all([...promises]).then((results) => {
-        const latest = results[0]
-        const pending = results[1]
-        const unconfirmed = results[2]
 
-        const response = latest.map((t, i) => ({
-          ...t,
-          ...pending && { ['pending']: pending[i] },
-          ...unconfirmed && { ['unconfirmed']: unconfirmed[i] },
-        }))
+      Promise.all([...promises]).then(results => {
+        // Fetched prices from coingecko
+        const prices = results && results.length && results.find(el => el.state === 'coingecko') 
+        if (prices) results.pop()
+        
+        const latestResponse = results.find(({ state }) => state === 'latest')
+        // Remove empty array for not send promises
+        const res = results.flat()
+
+        const response = res.map(_res => {
+          return _res && _res.tokens && _res.tokens.length && _res.tokens.map((t, i) => {
+            const priceUpdate = prices && prices?.tokens?.length && prices.tokens.find(pt => pt.address.toLowerCase() === t.address.toLowerCase())
+            const { unconfirmed, pending } = t
+            const latest = latestResponse?.tokens?.find(token => token.address === t.address)
+            return {
+            ...t,
+            ...(priceUpdate ? {
+              ...priceUpdate,
+              balanceUSD: Number(parseFloat(t.balance * priceUpdate.price || 0).toFixed(2))
+            } : {}),
+            ...((latest?.balance !== t.balance || !latest) && {
+              [_res.state]: {
+                balanceUSD: priceUpdate ? Number(parseFloat(t.balance * priceUpdate.price || 0).toFixed(2)) : t.balanceUSD,
+                balance: t.balance,
+              }}
+            )
+          }})
+        })[res.length - 1] || []
 
         _resolve && _resolve(response)
-      
       })
     },
     [currentNetwork, account, extraTokensAssets, hiddenTokens, pendingTransactions, eligibleRequests]
