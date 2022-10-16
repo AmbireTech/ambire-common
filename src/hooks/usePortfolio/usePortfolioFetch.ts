@@ -323,7 +323,7 @@ export default function useProtocolsFetch({
   const fetchAllSupplementTokenData = useCallback(
     async (updatedTokens: any[], _resolve) => { 
       const tokensList = removeDuplicatedAssets([
-        ...tokenList[currentNetwork],
+        ...constants?.tokenList[currentNetwork],
         ...(updatedTokens && updatedTokens.tokens?.length && updatedTokens.tokens || [])
       ])
       
