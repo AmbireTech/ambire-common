@@ -5,7 +5,7 @@ import { constants } from 'ethers'
 import { formatUnits } from 'ethers/lib/utils'
 
 import networks from '../../constants/networks'
-import { names, tokens } from '../../constants/humanizerInfo.json'
+import { HumanizerInfoType } from '../../hooks/useConstants'
 import humanizers from '../humanizers'
 
 // address (lowercase) => name
@@ -19,11 +19,11 @@ export const formatNativeTokenAddress = (address) =>
   address.toLowerCase() === `0x${'e'.repeat(40)}` ? `0x${'0'.repeat(40)}` : address.toLowerCase()
 
 // Currently takes network because one day we may be seeing the same addresses used on different networks
-export function getName(addr, network) {
+export function getName(humanizerInfo: HumanizerInfoType, addr, network) {
   const address = addr.toLowerCase()
   return (
-    names[address] ||
-    (tokens[address] ? `${tokens[address][0]} token` : null) ||
+    humanizerInfo.names[address] ||
+    (humanizerInfo.tokens[address] ? `${humanizerInfo.tokens[address][0]} token` : null) ||
     knownAliases[address] ||
     knownAddressNames[address] ||
     addr
@@ -94,9 +94,9 @@ export function getTransactionSummary(txn, networkId, accountAddr, opts = {}) {
   return !opts.extended ? filteredSummary.join(', ') : filteredSummary
 }
 
-export function token(addr, amount, extended = false) {
+export function token(humanizerInfo: HumanizerInfoType, addr, amount, extended = false) {
   const address = addr.toLowerCase()
-  const assetInfo = tokens[address] || knownTokens[address]
+  const assetInfo = humanizerInfo.tokens[address] || knownTokens[address]
   if (assetInfo) {
     const extendedToken = {
       address,
@@ -177,10 +177,15 @@ export function setKnownTokens(tokens) {
   )
 }
 
-export function isKnown(txn, from) {
+export function isKnown(humanizerInfo: HumanizerInfoType, txn, from) {
   if (txn[0] === from) return true
   const address = txn[0].toLowerCase()
-  return !!(knownAliases[address] || names[address] || tokens[address] || knownTokens[address])
+  return !!(
+    knownAliases[address] ||
+    humanizerInfo.names[address] ||
+    humanizerInfo.tokens[address] ||
+    knownTokens[address]
+  )
 }
 
 export { knownAliases, knownTokens }

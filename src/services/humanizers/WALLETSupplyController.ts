@@ -10,18 +10,25 @@ const toExtended = (isExtended, action, details = '') => {
   return isExtended ? [[action, details]] : [action, details]
 }
 
-const WALLETSupplyControllerMapping = {
+const getWalletClaimHumanizerMessage = (txn, extended) => {
+  const { toBurnBps } = iface.parseTransaction(txn).args
+  const burnPercentage = toBurnBps.toString() / 100
+  return toExtended(
+    extended,
+    'claim rewards',
+    burnPercentage > 0 ? `with ${burnPercentage}% burn` : ''
+  )
+}
+
+const WALLETSupplyControllerMapping = () => ({
   [iface.getSighash('claim')]: (txn, network, { extended = false }) => {
-    const { toBurnBps } = iface.parseTransaction(txn).args
-    const burnPercentage = toBurnBps.toString() / 100
-    return toExtended(
-      extended,
-      'claim rewards',
-      burnPercentage > 0 ? `with ${burnPercentage}% burn` : ''
-    )
+    return getWalletClaimHumanizerMessage(txn, extended)
+  },
+  [iface.getSighash('claimWithRootUpdate')]: (txn, network, { extended = false }) => {
+    return getWalletClaimHumanizerMessage(txn, extended)
   },
   [iface.getSighash('mintVesting')]: (txn, network, { extended = false }) => {
     return toExtended(extended, 'claim vested tokens')
   }
-}
+})
 export default WALLETSupplyControllerMapping

@@ -1,4 +1,5 @@
 import { UseAccountsReturnType } from '../useAccounts'
+import { UseConstantsReturnType } from '../useConstants'
 import { UseStorageType } from '../useStorage'
 import { UseToastsReturnType } from '../useToasts'
 
@@ -9,6 +10,7 @@ export type Address = {
 }
 
 export interface UseAddressBookProps {
+  useConstants: () => UseConstantsReturnType
   useAccounts: () => UseAccountsReturnType
   useStorage: UseStorageType
   useToasts: () => UseToastsReturnType

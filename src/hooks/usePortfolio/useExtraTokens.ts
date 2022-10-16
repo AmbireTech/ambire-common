@@ -5,13 +5,12 @@ import {
     Token,
     UseExtraTokensProps,
 } from './types'
-import { tokenList } from '../../services/balanceOracle'
 import { NetworkId } from 'ambire-common/src/constants/networks'
 
 interface UpdatedExtraToken extends Token {
   coingeckoId: string;
 }
-export default function useExtraTokens({ useStorage, useToasts, tokens }: UseExtraTokensProps) {
+export default function useExtraTokens({ useStorage, useToasts, tokens, constants }: UseExtraTokensProps) {
   const [extraTokens, setExtraTokens] = useStorage({ key: 'extraTokens', defaultValue: [] })
 
   const { addToast } = useToasts()
@@ -37,7 +36,7 @@ export default function useExtraTokens({ useStorage, useToasts, tokens }: UseExt
       if (extraTokens.map(({ address }: any) => address).includes(address))
         return addToast(`${name} (${symbol}) is already added to your wallet.`)
       if (
-        Object.values(tokenList)
+        constants?.tokenList && Object.values(constants.tokenList)
           .flat(1)
           .map(({ address }: any) => address)
           .includes(address)

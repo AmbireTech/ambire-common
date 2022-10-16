@@ -5,9 +5,10 @@ import supportedProtocols from 'ambire-common/src/constants/supportedProtocols'
 import networks from 'ambire-common/src/constants/networks'
 
 import { roundFloatingNumber } from 'ambire-common/src/services/formatter'
-import { checkTokenList, getTokenListBalance, tokenList } from 'ambire-common/src/services/balanceOracle'
+import { checkTokenList, getTokenListBalance } from 'ambire-common/src/services/balanceOracle'
 import { setKnownAddresses, setKnownTokens, getTransactionSummary } from '../../services/humanReadableTransactions'
 import { toBundleTxn } from 'ambire-common/src/services/requestToBundleTxn'
+import { ConstantsType } from '../useConstants'
 
 // use Balance Oracle
 function paginateArray(input: any[], limit: number) {
@@ -33,6 +34,7 @@ const removeDuplicatedAssets = (tokens) => {
 }
 
 async function supplementTokensDataFromNetwork({
+  tokenList = {},
   walletAddr,
   network,
   tokensData,
@@ -42,6 +44,7 @@ async function supplementTokensDataFromNetwork({
   selectedAccount,
   state
 }: {
+  tokenList: ConstantsType['tokenList']
   walletAddr: string
   network: Network
   tokensData: Token[]
@@ -57,10 +60,15 @@ async function supplementTokensDataFromNetwork({
   // eslint-disable-next-line no-param-reassign
   if (!extraTokens || !extraTokens[0]) extraTokens = checkTokenList(extraTokens || []) // extraTokens check and populate for test if undefind
 
+  function getNativeAsset(){
+    const net = networks.find(({id}) => id === network)
+    return net && net.nativeAsset ? [net.nativeAsset] : []
+  }
+
   // concat predefined token list with extraTokens list (extraTokens are certainly ERC20)
   const fullTokenList = [
     // @ts-ignore figure out how to add types for the `tokenList`
-    ...new Set(tokenList[network] ? tokenList[network].concat(extraTokens) : [...extraTokens])
+    ...new Set(tokenList[network] ? tokenList[network].concat(extraTokens) : [...extraTokens, ...getNativeAsset(extraTokens)])
   ]
   const tokens = fullTokenList.map((t: any) => {
     return tokensData.find((td) => td.address === t.address) || t
@@ -112,7 +120,8 @@ export default function useProtocolsFetch({
   extraTokens,
   pendingTransactions,
   eligibleRequests,
-  selectedAccount
+  selectedAccount,
+  constants
 }) {
   const extraTokensAssets = useMemo(
     () => getExtraTokensAssets(account, currentNetwork),
@@ -251,8 +260,7 @@ export default function useProtocolsFetch({
   }, [account, currentNetwork])
 
   const fetchOtherNetworksBalances = useCallback(async (account) => {
-    const networksToFetch = supportedProtocols.filter(({ network }) => network !== currentNetwork)
-
+    const networksToFetch = supportedProtocols.filter(({ network }) => network !== currentNetwork).filter(({ network }) => !networks.find(({id}) => id === network)?.relayerlessOnly)
     try {
       Promise.all(
         networksToFetch.map(async ({ network, balancesProvider }) => {
@@ -414,6 +422,7 @@ export default function useProtocolsFetch({
 
       try {
         let rcpTokenData = await supplementTokensDataFromNetwork({
+          tokenList: constants?.tokenList,
           walletAddr: account,
           network: currentNetwork,
           tokensData: updatedTokens?.tokens?.length

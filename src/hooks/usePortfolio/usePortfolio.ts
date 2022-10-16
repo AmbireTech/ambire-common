@@ -16,6 +16,7 @@ import {
 } from './types'
 
 export default function usePortfolio({
+  useConstants,
   currentNetwork,
   account,
   useStorage,
@@ -31,6 +32,7 @@ export default function usePortfolio({
   requests,
   selectedAccount
 }: UsePortfolioProps): UsePortfolioReturnType {
+  const { constants } = useConstants()
   const { addToast } = useToasts()
   const currentAccount = useRef<string>()
   const prevNetwork = usePrevious(currentNetwork)
@@ -43,7 +45,8 @@ export default function usePortfolio({
   const { extraTokens, getExtraTokensAssets, onAddExtraToken, onRemoveExtraToken } = useExtraTokens({
     useStorage,
     useToasts,
-    tokens: currentAssets?.tokens || []
+    tokens: currentAssets?.tokens || [],
+    constants
   })
 
   const { pendingTransactions } = useTransactions({
@@ -78,7 +81,7 @@ export default function usePortfolio({
     getCoingeckoAssetPlatforms,
     filterByHiddenTokens,
     extraTokens,
-    pendingTransactions, eligibleRequests, selectedAccount
+    pendingTransactions, eligibleRequests, selectedAccount, constants
   })
 
   // Implementation of balances calculation

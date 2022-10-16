@@ -4,7 +4,6 @@ import oracle from 'adex-protocol-eth/abi/RemainingBalancesOracle.json'
 import { ethers } from 'ethers'
 
 import { NetworkId } from '../../constants/networks'
-import tokenList from '../../constants/tokenList.json'
 import { Token, TokenWithIsHiddenFlag } from '../../hooks/usePortfolio'
 import { getProvider } from '../provider'
 
@@ -170,4 +169,4 @@ function checkTokenList(list: Token[]) {
   })
 }
 
-export { call, tokenList, getErrMsg, checkTokenList, getTokenListBalance }
+export { call, getErrMsg, checkTokenList, getTokenListBalance }
