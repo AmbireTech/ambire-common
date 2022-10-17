@@ -158,7 +158,7 @@ export default function usePortfolio({
 
   useEffect(() => {
     fetchAndSetSupplementTokenData(currentAssets)
-  }, [requests, `${eligibleRequests}`, `${pendingTransactions}`])
+  }, [requests, eligibleRequests, pendingTransactions])
 
   // We need to be sure we get the latest balancesByNetworksLoading here
   const balancesByNetworksLoading = useMemo(

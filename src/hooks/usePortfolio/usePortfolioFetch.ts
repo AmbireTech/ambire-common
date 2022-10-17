@@ -6,7 +6,8 @@ import networks from 'ambire-common/src/constants/networks'
 
 import { roundFloatingNumber } from 'ambire-common/src/services/formatter'
 import { checkTokenList, getTokenListBalance } from 'ambire-common/src/services/balanceOracle'
-import { setKnownAddresses, setKnownTokens, getTransactionSummary } from '../../services/humanReadableTransactions'
+import { setKnownAddresses, setKnownTokens } from '../../services/humanReadableTransactions'
+import { getTransactionSummary } from '../../services/humanReadableTransactions/transactionSummary' 
 import { toBundleTxn } from 'ambire-common/src/services/requestToBundleTxn'
 import { ConstantsType } from '../useConstants'
 
@@ -326,7 +327,7 @@ export default function useProtocolsFetch({
         ...constants?.tokenList[currentNetwork],
         ...(updatedTokens && updatedTokens.tokens?.length && updatedTokens.tokens || [])
       ])
-      
+
       const unsignedRequests = eligibleRequests.map(t => ({ ...t, txns: [t.txn.to, t.txn.value, t.txn.data] }) ).map(t => t.txns)
 
       // 1. Fetch latest balance data from balanceOracle
@@ -338,7 +339,7 @@ export default function useProtocolsFetch({
       // 3. Fetching of unconfirmed/unsigned token data from balanceOracle
       const extendedSummary = eligibleRequests?.length && eligibleRequests.map(req => {
         const txn = toBundleTxn(req.txn, account)
-        return getTransactionSummary(txn, currentNetwork, account, { extended: true })
+        return getTransactionSummary(constants.humanizerInfo, txn, currentNetwork, account, { extended: true })
       }).flat()
 
       const tokensToFetchPrices = []
@@ -383,20 +384,21 @@ export default function useProtocolsFetch({
         const res = results.flat()
 
         const response = res.map(_res => {
-          return _res && _res.tokens && _res.tokens.length && _res.tokens.map((t, i) => {
+          return _res && _res.tokens && _res.tokens.length && _res.tokens.map((_t, i) => {
             const priceUpdate = prices && prices?.tokens?.length && prices.tokens.find(pt => pt.address.toLowerCase() === t.address.toLowerCase())
-            const { unconfirmed, pending } = t
-            const latest = latestResponse?.tokens?.find(token => token.address === t.address)
+            const { unconfirmed, pending } = _t
+
+            const latest = latestResponse?.tokens?.find(token => token.address === _t.address)
             return {
-            ...t,
+            ..._t,
             ...(priceUpdate ? {
               ...priceUpdate,
-              balanceUSD: Number(parseFloat(t.balance * priceUpdate.price || 0).toFixed(2))
+              balanceUSD: Number(parseFloat(_t.balance * priceUpdate.price || 0).toFixed(2))
             } : {}),
-            ...((latest?.balance !== t.balance || !latest) && {
+            ...((latest?.balance !== _t.balance || !latest) && {
               [_res.state]: {
-                balanceUSD: priceUpdate ? Number(parseFloat(t.balance * priceUpdate.price || 0).toFixed(2)) : t.balanceUSD,
-                balance: t.balance,
+                balanceUSD: priceUpdate ? Number(parseFloat(_t.balance * priceUpdate.price || 0).toFixed(2)) : _t.balanceUSD,
+                balance: _t.balance,
               }}
             )
           }})
