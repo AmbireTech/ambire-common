@@ -386,11 +386,10 @@ export default function useProtocolsFetch({
         const response = res.map(_res => {
           return _res && _res.tokens && _res.tokens.length && _res.tokens.map((_t, i) => {
             const priceUpdate = prices && prices?.tokens?.length && prices.tokens.find(pt => pt.address.toLowerCase() === t.address.toLowerCase())
-            const { unconfirmed, pending } = _t
-
+            const { unconfirmed, pending, ...newToken } = _t
             const latest = latestResponse?.tokens?.find(token => token.address === _t.address)
             return {
-            ..._t,
+            ...newToken,
             ...(priceUpdate ? {
               ...priceUpdate,
               balanceUSD: Number(parseFloat(_t.balance * priceUpdate.price || 0).toFixed(2))
