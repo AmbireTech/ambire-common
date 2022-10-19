@@ -30,7 +30,8 @@ export default function usePortfolio({
   useRelayerData,
   eligibleRequests,
   requests,
-  selectedAccount
+  selectedAccount,
+  sentTxn
 }: UsePortfolioProps): UsePortfolioReturnType {
   const { constants } = useConstants()
   const { addToast } = useToasts()
@@ -54,8 +55,8 @@ export default function usePortfolio({
     currentNetwork,
     relayerURL,
     useRelayerData,
-    eligibleRequests,
-    requests
+    requests,
+    sentTxn
   })
 
   const {
@@ -64,10 +65,17 @@ export default function usePortfolio({
     setHiddenTokens,
     hiddenTokens,
     filterByHiddenTokens,
+    onAddHiddenCollectible,
+    onRemoveHiddenCollectible,
+    setHiddenCollectibles,
+    hiddenCollectibles,
+    filterByHiddenCollectibles,
   } = useHiddenTokens({
     useToasts,
     useStorage,
   })
+
+  const collectibles = useMemo(() => filterByHiddenCollectibles(currentAssets?.collectibles || []) || [], [hiddenCollectibles, account, currentNetwork, currentAssets]);
 
   const tokens = useMemo(() => filterByHiddenTokens(currentAssets?.tokens || []) || [], [hiddenTokens, account, currentNetwork, currentAssets]);
   
@@ -175,7 +183,7 @@ export default function usePortfolio({
     otherBalances,
     ...currentAssets,
     tokens: tokens,
-    collectibles: currentAssets?.collectibles || [],
+    collectibles: collectibles,
     isCurrNetworkBalanceLoading: currentAssets?.loading,
     balancesByNetworksLoading,
     extraTokens,
@@ -185,5 +193,9 @@ export default function usePortfolio({
     onRemoveHiddenToken,
     setHiddenTokens,
     hiddenTokens,
+    onAddHiddenCollectible,
+    onRemoveHiddenCollectible,
+    setHiddenCollectibles,
+    hiddenCollectibles
   }
 }

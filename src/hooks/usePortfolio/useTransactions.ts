@@ -2,7 +2,7 @@
 
 import { useMemo, useEffect } from "react"
 
-export default function useTransactions({ account, currentNetwork, relayerURL, useRelayerData, eligibleRequests, requests }: any): any {
+export default function useTransactions({ account, currentNetwork, relayerURL, useRelayerData, requests, sentTxn }: any): any {
 
     const url = relayerURL
     ? `${relayerURL}/identity/${account}/${currentNetwork}/transactions`
@@ -15,7 +15,7 @@ export default function useTransactions({ account, currentNetwork, relayerURL, u
 
     useEffect(() => {
         forceRefresh()
-    },[requests])
+    },[requests, sentTxn])
 
     return {
         pendingTransactions: allPending?.length ? [allPending] : [],

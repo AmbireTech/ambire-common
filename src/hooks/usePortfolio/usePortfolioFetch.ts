@@ -10,6 +10,7 @@ import { setKnownAddresses, setKnownTokens } from '../../services/humanReadableT
 import { getTransactionSummary } from '../../services/humanReadableTransactions/transactionSummary' 
 import { toBundleTxn } from 'ambire-common/src/services/requestToBundleTxn'
 import { ConstantsType } from '../useConstants'
+import { Token, Network } from './types'
 
 // use Balance Oracle
 function paginateArray(input: any[], limit: number) {
@@ -50,7 +51,7 @@ async function supplementTokensDataFromNetwork({
   network: Network
   tokensData: Token[]
   extraTokens: Token[]
-  updateBalance?: string
+  updateBalance?: (token: Token | {}) => any
   pendingTransactions: []
   selectedAccount: {}
   state: string
@@ -232,7 +233,6 @@ export default function useProtocolsFetch({
     } catch (e) {
       addToast(e.message, { error: true })
 
-      resolve && resolve('')
       setAssetsByAccount(prev => ({ ...prev, loading: false }))
     }
   }
@@ -384,12 +384,15 @@ export default function useProtocolsFetch({
         const res = results.flat()
 
         const response = res.map(_res => {
-          return _res && _res.tokens && _res.tokens.length && _res.tokens.map((_t, i) => {
+          return _res && _res.tokens && _res.tokens.length && _res.tokens.map((_t: Token, i) => {
             const priceUpdate = prices && prices?.tokens?.length && prices.tokens.find(pt => pt.address.toLowerCase() === _t.address.toLowerCase())
+
             const { unconfirmed, pending, ...newToken } = _t
             const latest = latestResponse?.tokens?.find(token => token.address === _t.address)
+
             return {
             ...newToken,
+            network: currentNetwork,
             ...(priceUpdate ? {
               ...priceUpdate,
               balanceUSD: Number(parseFloat(_t.balance * priceUpdate.price || 0).toFixed(2))
@@ -402,7 +405,7 @@ export default function useProtocolsFetch({
             )
           }})
         })[res.length - 1] || []
-
+        console.log(res, response)
         _resolve && _resolve(response)
       })
     },
