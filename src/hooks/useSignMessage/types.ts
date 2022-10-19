@@ -14,7 +14,8 @@ export type UseSignMessageProps = {
     approveQuickAcc?: (confCode: number) => void
   ) => Promise<any>
   onLastMessageSign: () => void
-  getHardwareWallet: (device?: any) => any
+  getHardwareWallet: (device?: any) => any,
+  connections: any[]
 }
 
 export type UseSignMessageReturnType = {
@@ -31,4 +32,5 @@ export type UseSignMessageReturnType = {
   requestedChainId: NetworkType['chainId']
   isTypedData: boolean
   confirmationType: 'email' | 'otp' | null
+  dApp: any
 }
