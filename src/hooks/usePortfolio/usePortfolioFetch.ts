@@ -232,8 +232,6 @@ export default function useProtocolsFetch({
       return current?.id
     } catch (e) {
       addToast(e.message, { error: true })
-
-      setAssetsByAccount(prev => ({ ...prev, loading: false }))
     }
   }
 
@@ -254,9 +252,7 @@ export default function useProtocolsFetch({
         }
       })).then(res => resolve({ tokens: res, state: 'coingecko' }))
     } catch (e) {
-      addToast(e.message, { error: true })
-      resolve && resolve({})
-      setAssetsByAccount(prev => ({ ...prev, loading: false }))
+      resolve && resolve({ tokens: {}, state: 'coingecko' })
     }
   }, [account, currentNetwork])
 
@@ -323,46 +319,51 @@ export default function useProtocolsFetch({
 
   const fetchAllSupplementTokenData = useCallback(
     async (updatedTokens: any[], _resolve) => { 
-      const tokensList = removeDuplicatedAssets([
-        ...constants?.tokenList[currentNetwork],
-        ...(updatedTokens && updatedTokens.tokens?.length && updatedTokens.tokens || [])
-      ])
-
+     
+      console.log('eligibleRequests', eligibleRequests, pendingTransactions)
       const unsignedRequests = eligibleRequests.map(t => ({ ...t, txns: [t.txn.to, t.txn.value, t.txn.data] }) ).map(t => t.txns)
 
-      // 1. Fetch latest balance data from balanceOracle
-      const balanceOracleLatest = new Promise((resolve) => fetchSupplementTokenData({ tokens: updatedTokens?.tokens }, resolve, [], 'latest'))
-
-      // 2. Fetch pending balance data from balanceOracle
-      const balanceOraclePending = pendingTransactions?.length && new Promise((resolve) => fetchSupplementTokenData({ tokens: tokensList }, resolve, [], 'pending'))
-
-      // 3. Fetching of unconfirmed/unsigned token data from balanceOracle
       const extendedSummary = eligibleRequests?.length && eligibleRequests.map(req => {
         const txn = toBundleTxn(req.txn, account)
         return getTransactionSummary(constants.humanizerInfo, txn, currentNetwork, account, { extended: true })
       }).flat()
 
+      let tokensList = removeDuplicatedAssets([
+        ...constants?.tokenList[currentNetwork],
+        ...(updatedTokens && updatedTokens.tokens?.length && updatedTokens.tokens || [])
+      ])
+
       const tokensToFetchPrices = []
       // Check if not signed request contains tokens from swap which arent in portfolio yet
       extendedSummary.length && extendedSummary.map(s => {
         if (s[0] === 'Swap') {
-          
-          // Find if tokens are in portfolio currently in order to fetch prices from coingecko
-          const isTokenFromInPortfolio = updatedTokens?.tokens?.find(token => token.address === s[1].address)
-          const isTokenToInPortfolio = updatedTokens?.tokens?.find(token => token.address === s[3].address)
-
-          if (!isTokenFromInPortfolio) {
-            tokensToFetchPrices.push(s[1])
-            tokensList.push({ ...s[1], balance: 0 })
-          }
-          
-          if (!isTokenToInPortfolio) {
-            tokensToFetchPrices.push(s[3])
-            tokensList.push({ ...s[3], balance: 0 })
-          }
+          s.map((el) => {
+            if (el?.type === 'token') {
+              const isInPortfolio = updatedTokens?.tokens?.find(token => token.address === el.address)
+              if (!isInPortfolio || !isInPortfolio.price) {
+                tokensToFetchPrices.push(el)
+                tokensList.push({ ...s[3], balance: 0 })
+              }
+            }
+          })
         }
       })
 
+      // Only tokens which should be fetched with the latest state
+      // In the case we have unconfirmed values and pending values, but no latest => this means user didnt have this token originally.
+      // In the case we dont have nor latest, nor unconfirmed, nor pending => this is first fetch from balance oracle
+      const latestTokens = tokensToFetchPrices.length ? updatedTokens?.tokens
+      .filter(t => t.address.toLowerCase() !== tokensToFetchPrices.find((tk) => tk.address.toLowerCase() === t.address.toLowerCase()) && (((t.unconfirmed || t.pending) && !t.latest) || (!t.latest && (!t.unconfirmed || !t.pending)))) : updatedTokens?.tokens
+      console.log('tokensToFetchPrices', tokensToFetchPrices, 'latestTokens', latestTokens)
+
+      // Remove unconfirmed and pending tokens from latest request.
+      // 1. Fetch latest balance data from balanceOracle
+      const balanceOracleLatest = new Promise((resolve) => fetchSupplementTokenData({ tokens: latestTokens }, resolve, [], 'latest'))
+
+      // 2. Fetch pending balance data from balanceOracle
+      const balanceOraclePending = pendingTransactions?.length && new Promise((resolve) => fetchSupplementTokenData({ tokens: tokensList }, resolve, [], 'pending'))
+
+      // 3. Fetching of unconfirmed/unsigned token data from balanceOracle
       const balanceOracleUnconfirmed = unsignedRequests?.length  && new Promise((resolve) => fetchSupplementTokenData({ tokens: tokensList }, resolve, unsignedRequests, 'unconfirmed'))
       // Fetch coingecko prices for newly acquired tokens from swap transaction 
       const coingeckoPrices = tokensToFetchPrices?.length && new Promise((resolve, reject) => fetchCoingeckoPricesByContractAddress(tokensToFetchPrices, resolve))
@@ -387,8 +388,8 @@ export default function useProtocolsFetch({
           return _res && _res.tokens && _res.tokens.length && _res.tokens.map((_t: Token, i) => {
             const priceUpdate = prices && prices?.tokens?.length && prices.tokens.find(pt => pt.address.toLowerCase() === _t.address.toLowerCase())
 
-            const { unconfirmed, pending, ...newToken } = _t
-            const latest = latestResponse?.tokens?.find(token => token.address === _t.address)
+            const { unconfirmed, latest, pending, ...newToken } = _t
+            const latestBalance = latestResponse?.tokens?.find(token => token.address === _t.address)
 
             return {
             ...newToken,
@@ -397,7 +398,8 @@ export default function useProtocolsFetch({
               ...priceUpdate,
               balanceUSD: Number(parseFloat(_t.balance * priceUpdate.price || 0).toFixed(2))
             } : {}),
-            ...((latest?.balance !== _t.balance || !latest) && {
+            ...(latestBalance && {['latest']: { balanceUSD: latestBalance.balanceUSD, balance: latestBalance.balance}}),
+            ...((latestBalance?.balance !== _t.balance || !latestBalance) && {
               [_res.state]: {
                 balanceUSD: priceUpdate ? Number(parseFloat(_t.balance * priceUpdate.price || 0).toFixed(2)) : _t.balanceUSD,
                 balance: _t.balance,
@@ -456,7 +458,7 @@ export default function useProtocolsFetch({
         }))
       }
     },
-    [currentNetwork, account, extraTokensAssets, hiddenTokens, selectedAccount]
+    [currentNetwork, account, extraTokensAssets, hiddenTokens, selectedAccount, eligibleRequests]
   )
   
   // Full update of tokens
@@ -583,7 +585,7 @@ export default function useProtocolsFetch({
       }
       
     },
-    [fetchSupplementTokenData, hiddenTokens, extraTokensAssets, addToast]
+    [fetchSupplementTokenData, hiddenTokens, extraTokensAssets, addToast, eligibleRequests]
   )
 
   return {
