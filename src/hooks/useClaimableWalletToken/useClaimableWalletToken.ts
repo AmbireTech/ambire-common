@@ -10,7 +10,7 @@ import useCacheBreak from '../useCacheBreak'
 import { UseClaimableWalletTokenProps, UseClaimableWalletTokenReturnType } from './types'
 
 // const supplyControllerAddress = '0xF8cF66BbF7fe152b8177B61855E8be9a6279C8A1' //test polygon
-const supplyControllerAddress = '0xc53af25f831f31ad6256a742b3f0905bc214a430'
+const supplyControllerAddress = '0xA23C1bf0D0988DF467E9156a33A32f6BA6a9AF52'
 const WALLET_STAKING_ADDR = '0x47Cd7E91C3CBaAF266369fe8518345fc4FC12935'
 const supplyControllerInterface = new Interface(WALLETSupplyControllerABI)
 const NETWORK_NAME = NETWORKS.ethereum
