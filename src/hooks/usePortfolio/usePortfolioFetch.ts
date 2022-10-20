@@ -342,7 +342,7 @@ export default function useProtocolsFetch({
               const isInPortfolio = updatedTokens?.tokens?.find(token => token.address === el.address)
               if (!isInPortfolio || !isInPortfolio.price) {
                 tokensToFetchPrices.push(el)
-                tokensList.push({ ...s[3], balance: 0 })
+                tokensList.push({ ...el, balance: 0 })
               }
             }
           })
