@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import useCacheBreak from '../useCacheBreak'
 import {
   Multiplier,
-  Promo,
+  Promo, RelayerRewardsBalance,
   RelayerRewardsData,
   RewardIds,
   RewardsState,
@@ -20,7 +20,12 @@ const initialState = {
     usdPrice: 0,
     walletTokenAPY: 0,
     xWALLETAPY: 0,
-    promo: null
+    promo: null,
+    balance: {
+      balanceFromADX: 0,
+      balanceInUSD: 0,
+      effectiveBalanceInUSD: 0
+    }
   },
   errMsg: null,
   isLoading: true
@@ -38,7 +43,12 @@ const rewardsInitialState = {
   xWALLETAPY: 0,
   xWALLETAPYPercentage: '...',
   totalLifetimeRewards: 0,
-  promo: null
+  promo: null,
+  balance: {
+    balanceFromADX: 0,
+    balanceInUSD: 0,
+    effectiveBalanceInUSD: 0
+  }
 }
 
 export default function useRewards({
@@ -62,7 +72,7 @@ export default function useRewards({
     if (errMsg || !data?.success || isLoading) return
 
     const rewardsDetails = Object.fromEntries<
-      string | number | Multiplier[] | Promo | { [key in RewardIds]: number }
+      string | number | Multiplier[] | Promo | { [key in RewardIds]: number | RelayerRewardsBalance }
     >(data.rewards.map(({ _id, rewards: r }) => [_id, r[accountId] || 0]))
     rewardsDetails.multipliers = data.multipliers
     rewardsDetails.walletTokenAPY = data.walletTokenAPY // TODO: Remove if not used anyhwere else raw
@@ -81,6 +91,8 @@ export default function useRewards({
       ? `${(data.xWALLETAPY * 100).toFixed(2)}%`
       : // TODO: Check if displaying 0 is better
         '...'
+
+    rewardsDetails.balance = data.balance
 
     rewardsDetails.totalLifetimeRewards = data.rewards
       .map((x) => (typeof x.rewards[accountId] === 'number' ? x.rewards[accountId] : 0))

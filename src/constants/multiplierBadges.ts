@@ -47,7 +47,15 @@ export const multiplierBadges: MultiplierBadge[] = [
     color: '#658f3f',
     multiplier: 1.25,
     link: 'https://blog.ambire.com/new-wallet-rewards-multiplier-live-in-ambire-power-users-now-get-special-perks-e47bb1000aeb'
-}
+  },
+  {
+    id: 'adxStakingApy',
+    name: 'ADX staking rewards',
+    icon: 'ADX',
+    color: '#28879c',
+    multiplier: 0,
+    link: 'https://blog.ambire.com/wallet-rewards-mechanism-explained-start-accumulating-value-before-the-token-is-launched-5e9ee36cefdd'
+  },
 ]
 
 export const MULTIPLIERS_READ_MORE_URL =
