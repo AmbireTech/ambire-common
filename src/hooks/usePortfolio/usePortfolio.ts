@@ -162,11 +162,14 @@ export default function usePortfolio({
       updateCoingeckoAndSupplementData(currentAssets)
     }, 20000)
     return () => clearInterval(refreshInterval)
-  }, [requests, eligibleRequests, pendingTransactions])
+  }, [])
 
   useEffect(() => {
     fetchAndSetSupplementTokenData(currentAssets)
-  }, [requests, `${eligibleRequests}`, `${pendingTransactions}`])
+    // In order to have an array in dependency we need to stringify it,
+    // so we can be subscribed to changes of objects inside our arrays. 
+    // https://stackoverflow.com/a/59468261/8335898
+  }, [JSON.stringify(eligibleRequests), JSON.stringify(pendingTransactions)])
 
   // We need to be sure we get the latest balancesByNetworksLoading here
   const balancesByNetworksLoading = useMemo(

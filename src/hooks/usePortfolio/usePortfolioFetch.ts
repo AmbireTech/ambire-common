@@ -349,12 +349,9 @@ export default function useProtocolsFetch({
         }
       })
 
-      // Only tokens which should be fetched with the latest state
-      // In the case we have unconfirmed values and pending values, but no latest => this means user didnt have this token originally.
-      // In the case we dont have nor latest, nor unconfirmed, nor pending => this is first fetch from balance oracle
-      const latestTokens = tokensToFetchPrices.length ? updatedTokens?.tokens
-      .filter(t => t.address.toLowerCase() !== tokensToFetchPrices.find((tk) => tk.address.toLowerCase() === t.address.toLowerCase()) && (((t.unconfirmed || t.pending) && !t.latest) || (!t.latest && (!t.unconfirmed || !t.pending)))) :  updatedTokens?.tokens.filter(el => (((el.unconfirmed || el.pending) && !el.latest) || (!el.latest && (!el.unconfirmed || !el.pending))))
-      console.log('tokensToFetchPrices', tokensToFetchPrices, 'latestTokens', latestTokens)
+      // Remove unconfirmed and pending tokens from latest request,
+      // оnly tokens which should be fetched with the latest state
+      const latestTokens = updatedTokens?.tokens.filter(t => (!t.unconfirmed || !t.pending)).map(t => ({ ...t.latest ? {...t } : { ...t } }))
 
       // Remove unconfirmed and pending tokens from latest request.
       // 1. Fetch latest balance data from balanceOracle
