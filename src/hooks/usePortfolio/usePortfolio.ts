@@ -168,8 +168,8 @@ export default function usePortfolio({
     fetchAndSetSupplementTokenData(currentAssets)
     // In order to have an array in dependency we need to stringify it,
     // so we can be subscribed to changes of objects inside our arrays. 
-    // https://stackoverflow.com/a/59468261/8335898
-  }, [JSON.stringify(eligibleRequests), JSON.stringify(pendingTransactions)])
+    // https://stackoverflow.com/a/65728647/8335898
+  }, [`${eligibleRequests}`, `${pendingTransactions}`])
 
   // We need to be sure we get the latest balancesByNetworksLoading here
   const balancesByNetworksLoading = useMemo(
