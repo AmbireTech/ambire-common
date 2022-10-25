@@ -290,7 +290,8 @@ const useSignMessage = ({
             typed: isTypedData,
             signer: account.signer,
             message: toSign.txn,
-            dApp
+            signature: sig,
+            dApp,
           }]
         )
 
@@ -364,7 +365,8 @@ const useSignMessage = ({
             typed: isTypedData,
             signer: account.signer,
             message: toSign.txn,
-            dApp
+            signature: sig,
+            dApp,
           }]
         )
 
