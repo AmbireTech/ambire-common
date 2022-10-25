@@ -1,12 +1,10 @@
 // @ts-nocheck TODO: Fill in all missing types before enabling the TS check again
 
-import { useMemo, useCallback } from 'react'
-import supportedProtocols from 'ambire-common/src/constants/supportedProtocols'
-import networks from 'ambire-common/src/constants/networks'
+import { useMemo } from 'react'
 
-import { roundFloatingNumber } from 'ambire-common/src/services/formatter'
 import useCoingeckoFetch from 'ambire-common/src/hooks/usePortfolio/usePortfolioFetch/useCoingeckoFetch'
 import useBalanceOracleFetch from 'ambire-common/src/hooks/usePortfolio/usePortfolioFetch/useBalanceOracleFetch'
+import useVelcroFetch from 'ambire-common/src/hooks/usePortfolio/usePortfolioFetch/useVelcroFetch'
 
 import { Token, Network } from 'ambire-common/src/hooks/usePortfolio/types'
 
@@ -67,12 +65,11 @@ export default function useProtocolsFetch({
   })
 
   // Remaining logic - velcro balance fetching 
-  const { fetchAllSupplementTokenData,
-    fetchSupplementTokenData,
-    fetchAndSetSupplementTokenData,
-    updateCoingeckoAndSupplementData
+  const { fetchOtherNetworksBalances,
+    fetchTokens
   } = useVelcroFetch({
     account,
+    currentAccount,
     currentNetwork,
     setAssetsByAccount,
     addToast,

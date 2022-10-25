@@ -147,9 +147,9 @@ export default function useBalanceOracleFetch({
     
           // Remove unconfirmed and pending tokens from latest request,
           // оnly tokens which should be fetched with the latest state
-          const latestTokens = updatedTokens?.tokens.filter(t => (!t.unconfirmed || !t.pending)).map(t => ({ ...t.latest ? {...t } : { ...t } }))
-    
-          // Remove unconfirmed and pending tokens from latest request.
+          // If the token has a latest state - leave it as main one for balance oracle
+          const latestTokens = updatedTokens?.tokens.filter(t => (!t.unconfirmed || !t.pending)).map(t => ({ ...t.latest ? {...t, ...t.latest } : { ...t } }))
+
           // 1. Fetch latest balance data from balanceOracle
           const balanceOracleLatest = new Promise((resolve) => fetchSupplementTokenData({ tokens: latestTokens }, resolve, [], 'latest'))
     
@@ -191,10 +191,10 @@ export default function useBalanceOracleFetch({
                   ...priceUpdate,
                   balanceUSD: Number(parseFloat(_t.balance * priceUpdate.price || 0).toFixed(2))
                 } : {}),
-                ...(latestBalance && {['latest']: { balanceUSD: latestBalance.balanceUSD, balance: latestBalance.balance}}),
+                ...(latestBalance && {['latest']: { balanceUSD: Number(parseFloat(latestBalance.balance * latestBalance.price || 0).toFixed(2)), balance: latestBalance.balance}}),
                 ...((latestBalance?.balance !== _t.balance || !latestBalance) && {
                   [_res.state]: {
-                    balanceUSD: priceUpdate ? Number(parseFloat(_t.balance * priceUpdate.price || 0).toFixed(2)) : _t.balanceUSD,
+                    balanceUSD: priceUpdate ? Number(parseFloat(_t.balance * priceUpdate.price || 0).toFixed(2)) : Number(parseFloat(_t.balance * _t.price || 0).toFixed(2)),
                     balance: _t.balance,
                   }}
                 )
@@ -255,7 +255,7 @@ export default function useBalanceOracleFetch({
     )
 
 
-    const fetchAndSetSupplementTokenData = async (assets) => {
+    const fetchAndSetSupplementTokenData = useCallback(async (assets) => {
         await new Promise((resolve) => fetchAllSupplementTokenData(assets, resolve))
         .then(oracleResponse => {
           setAssetsByAccount(prev => ({
@@ -267,7 +267,7 @@ export default function useBalanceOracleFetch({
             }
           }))
         })
-    }
+    }, [eligibleRequests])
     
     const updateCoingeckoAndSupplementData = useCallback(async (assets) => {
         const tokens = assets?.tokens || []

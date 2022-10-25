@@ -8,6 +8,7 @@ import { roundFloatingNumber } from 'ambire-common/src/services/formatter'
 
 export default function useVelcroFetch({
     account,
+    currentAccount,
     currentNetwork,
     setAssetsByAccount,
     addToast,

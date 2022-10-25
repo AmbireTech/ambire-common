@@ -40,7 +40,7 @@ export default function usePortfolio({
 
   // Implementation of structure that contains all assets by account and network
   const [assets, setAssetsByAccount] = useStorage({ key: 'assets', defaultValue: {} })
-  const currentAssets = assets[`${account}-${currentNetwork}`]
+  const currentAssets = useMemo(() => assets[`${account}-${currentNetwork}`], [account, currentNetwork])
 
   // Handle logic for extra tokens
   const { extraTokens, getExtraTokensAssets, onAddExtraToken, onRemoveExtraToken } = useExtraTokens({
@@ -122,7 +122,7 @@ export default function usePortfolio({
     currentAccount.current = account
     loadBalance()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [account, currentNetwork])
+  }, [account, currentNetwork, eligibleRequests])
   
   // Fetch other networks balances on account change
   useEffect(() => {
@@ -132,7 +132,7 @@ export default function usePortfolio({
   // Refresh tokens on network change or when the window (app) is considered to be visible to the user
   useEffect(() => {
     refreshTokensIfVisible()
-  }, [currentNetwork, isVisible, refreshTokensIfVisible])
+  }, [currentNetwork, isVisible, refreshTokensIfVisible, eligibleRequests])
 
   // Refresh balance every 90s if visible
   // NOTE: this must be synced (a multiple of) supplementing, otherwise we can end up with weird inconsistencies
@@ -154,7 +154,7 @@ export default function usePortfolio({
       !isVisible && !currentAssets?.loading ? fetchTokens(account, currentNetwork, false, currentAssets) : null
     const refreshInterval = setInterval(refreshIfHidden, 150000)
     return () => clearInterval(refreshInterval)
-  }, [account, currentNetwork, isVisible, fetchTokens])
+  }, [account, currentNetwork, isVisible, fetchTokens, eligibleRequests])
 
   // Get supplement tokens data every 20s and check if prices are 2 min old and fetch new ones
   useEffect(() => {
@@ -162,7 +162,7 @@ export default function usePortfolio({
       updateCoingeckoAndSupplementData(currentAssets)
     }, 20000)
     return () => clearInterval(refreshInterval)
-  }, [])
+  }, [currentAssets, eligibleRequests])
 
   useEffect(() => {
     fetchAndSetSupplementTokenData(currentAssets)

@@ -1,6 +1,7 @@
 // @ts-nocheck TODO: Fill in all missing types before enabling the TS check again
 
 import { useCallback } from 'react'
+import networks from 'ambire-common/src/constants/networks'
 
 export default function useCoingeckoFetch({
     account,
