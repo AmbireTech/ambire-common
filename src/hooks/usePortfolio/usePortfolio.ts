@@ -40,7 +40,7 @@ export default function usePortfolio({
 
   // Implementation of structure that contains all assets by account and network
   const [assets, setAssetsByAccount] = useStorage({ key: 'assets', defaultValue: {} })
-  const currentAssets = useMemo(() => assets[`${account}-${currentNetwork}`], [account, currentNetwork])
+  const currentAssets = useMemo(() => assets[`${account}-${currentNetwork}`], [account, currentNetwork, assets[`${account}-${currentNetwork}`]])
 
   // Handle logic for extra tokens
   const { extraTokens, getExtraTokensAssets, onAddExtraToken, onRemoveExtraToken } = useExtraTokens({
