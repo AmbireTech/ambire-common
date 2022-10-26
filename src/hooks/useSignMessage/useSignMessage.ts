@@ -38,7 +38,6 @@ const useSignMessage = ({
   onLastMessageSign,
   getHardwareWallet,
   useStorage,
-  connections,
 }: UseSignMessageProps): UseSignMessageReturnType => {
   const [isLoading, setLoading] = useState<boolean>(false)
   const [isDeployed, setIsDeployed] = useState<null | boolean>(null)
@@ -53,8 +52,7 @@ const useSignMessage = ({
     defaultValue: []
   })
 
-  const connection = connections?.find(({ uri }) => uri === toSign.wcUri)
-  const dApp = connection ? connection?.session?.peerMeta || null : null
+  const dApp = toSign.dapp
 
   let typeDataErr
   let dataV4: any
