@@ -128,28 +128,28 @@ export default function useBalanceOracleFetch({
             ...constants?.tokenList[currentNetwork],
             ...(updatedTokens && updatedTokens.tokens?.length && updatedTokens.tokens || [])
           ])
-    
+
+          // Remove unconfirmed and pending tokens from latest request,
+          // оnly tokens which should be fetched with the latest state
+          // If the token has a latest state - leave it as main one for balance oracle
+          const latestTokens = updatedTokens?.tokens.filter(t => ((!t.unconfirmed || !t.pending) && !(t.unconfirmed && !t.latest) && !(t.pending && !t.latest))).map(t => ({ ...t.latest ? {...t, ...t.latest } : { ...t } }))
+
           const tokensToFetchPrices = []
           // Check if not signed request contains tokens from swap which arent in portfolio yet
           extendedSummary.length && extendedSummary.map(s => {
-            if (s[0] === 'Swap') {
-              s.map((el) => {
+              s && Array.isArray(s) && s.length && s.map((el) => {
                 if (el?.type === 'token') {
-                  const isInPortfolio = updatedTokens?.tokens?.find(token => token.address === el.address)
+                  const isInPortfolio = latestTokens?.find(token => token.address === el.address)
                   if (!isInPortfolio || !isInPortfolio.price) {
                     tokensToFetchPrices.push(el)
                     tokensList.push({ ...el, balance: 0 })
                   }
                 }
               })
-            }
           })
     
-          // Remove unconfirmed and pending tokens from latest request,
-          // оnly tokens which should be fetched with the latest state
-          // If the token has a latest state - leave it as main one for balance oracle
-          const latestTokens = updatedTokens?.tokens.filter(t => (!t.unconfirmed || !t.pending)).map(t => ({ ...t.latest ? {...t, ...t.latest } : { ...t } }))
-
+          
+          
           // 1. Fetch latest balance data from balanceOracle
           const balanceOracleLatest = new Promise((resolve) => fetchSupplementTokenData({ tokens: latestTokens }, resolve, [], 'latest'))
     
