@@ -22,6 +22,13 @@ function isErr(hex: string) {
   return hex.startsWith(ERROR_SIG) || hex.startsWith(PANIC_SIG)
 }
 
+function hex2a (hexx) {
+	var hex = hexx.toString()
+	var str = ''
+	for (var i = 0; i < hex.length; i += 2) { str += String.fromCharCode(parseInt(hex.substr(i, 2), 16)) }
+	return str
+}
+
 // ToDo check for missing data and double check for incompleted returns
 async function call({
   walletAddr,
@@ -79,8 +86,9 @@ async function call({
     data: RemainingBalancesOracle.encodeFunctionData('getRemainingBalances', args)
   }
   const callResult = await provider.call(txParams, blockTag)
-  if (isErr(callResult))
-    throw new Error('probably one ot following tokens is not ERC20 and missing balanceOf()')
+  if (isErr(callResult)) {
+    throw new Error(`---${hex2a(callResult)}--- probably one ot following tokens is not ERC20 and missing balanceOf()`)
+  }
   const balances = coder.decode(['uint[]'], callResult)[0]
   const result = tokens.map((x, i) => ({
       ...x,
