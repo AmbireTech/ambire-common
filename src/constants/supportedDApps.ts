@@ -3,7 +3,7 @@ const supportedDApps: string[] = [
   'https://guild.xyz',
   'https://sudoswap.xyz',
   'https://evm-sigtools.ambire.com',
-  'https://staging.swappin.gifts/ref/ambire'
+  'https://app.swappin.gifts/ref/ambire'
 ]
 
 export default supportedDApps
