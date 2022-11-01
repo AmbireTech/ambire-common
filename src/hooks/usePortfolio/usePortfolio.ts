@@ -146,7 +146,7 @@ export default function usePortfolio({
   useEffect(() => {
     const refreshInterval = setInterval(loadOtherNetworksBalances, 20000)
     return () => clearInterval(refreshInterval)
-  }, [])
+  }, [account, currentNetwork])
 
   // Refresh balance every 150s if hidden
   useEffect(() => {
@@ -162,7 +162,7 @@ export default function usePortfolio({
       updateCoingeckoAndSupplementData(currentAssets)
     }, 20000)
     return () => clearInterval(refreshInterval)
-  }, [currentAssets])
+  }, [currentAssets, currentNetwork])
 
   useEffect(() => {
     fetchAndSetSupplementTokenData(currentAssets)

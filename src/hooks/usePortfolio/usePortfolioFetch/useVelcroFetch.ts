@@ -20,7 +20,7 @@ export default function useVelcroFetch({
     extraTokensAssets,
     eligibleRequests
 }) {
-    const fetchOtherNetworksBalances = useCallback(async (account) => {
+    const fetchOtherNetworksBalances = async (account) => {
         const networksToFetch = supportedProtocols.filter(({ network }) => network !== currentNetwork).filter(({ network }) => !networks.find(({id}) => id === network)?.relayerlessOnly)
         try {
           Promise.all(
@@ -82,8 +82,8 @@ export default function useVelcroFetch({
           addToast(e.message, { error: true })
         }
         
-    }, [account, currentNetwork])
-      
+    }
+
     // Full update of tokens
     const fetchTokens = useCallback(
         // eslint-disable-next-line default-param-last
