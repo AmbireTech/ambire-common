@@ -3,6 +3,8 @@
 import { useCallback } from 'react'
 import networks from 'ambire-common/src/constants/networks'
 
+const NATIVE_ADDRESS = '0x0000000000000000000000000000000000000000'
+
 export default function useCoingeckoFetch({
     account,
     currentNetwork,
@@ -50,10 +52,12 @@ export default function useCoingeckoFetch({
         const coingeckoTokensToUpdate = tokens.map(token => token.address)
         try {
         Promise.all(coingeckoTokensToUpdate.map(async (addr) => {
-            const response = await getCoingeckoPriceByContract(assetPlatform, addr)
+            let isNative = false
+            if (NATIVE_ADDRESS === addr) isNative = true
+            const response = await getCoingeckoPriceByContract(assetPlatform, isNative ? '0x0000000000000000000000000000000000001010' : addr)
             if (!response) return null
             return {
-                address: response?.platforms[assetPlatform],
+                address: isNative ? addr : response?.platforms[assetPlatform],
                 tokenImageUrls: response?.image,
                 tokenImageUrl: response?.image?.small,
                 symbol: response?.symbol.toUpperCase(),
