@@ -14,11 +14,11 @@ const SwappinMapping = (humanizerInfo: HumanizerInfoType) => {
       const paymentSrcToken =
         Number(desc.srcToken) === 0
           ? nativeToken(network, desc.amount, true)
-          : token(desc.srcToken, parseFloat(desc.amount), true)
+          : token(humanizerInfo, desc.srcToken, parseFloat(desc.amount), true)
       const paymentToken =
         Number(desc.dstToken) === 0
           ? nativeToken(network, desc.minReturnAmount, true)
-          : token(desc.dstToken, parseFloat(desc.minReturnAmount), true)
+          : token(humanizerInfo, desc.dstToken, parseFloat(desc.minReturnAmount), true)
 
       return !extended
         ? [`Swap ${paymentSrcToken} for at least ${paymentToken} on Swappin`]
