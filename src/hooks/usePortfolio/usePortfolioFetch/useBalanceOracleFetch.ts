@@ -192,6 +192,8 @@ export default function useBalanceOracleFetch({
               [_res.state]: {
                 balanceUSD: priceUpdate ? Number(parseFloat(_t.balance * priceUpdate.price || 0).toFixed(2)) : Number(parseFloat(_t.balance * _t.price || 0).toFixed(2)),
                 balance: _t.balance,
+                difference: Number(Math.abs(_t.balance - latestBalance.balance).toFixed(10)),
+                balanceIncrease: !!(_t.balance > latestBalance.balance)
               }}
             )
           }})
