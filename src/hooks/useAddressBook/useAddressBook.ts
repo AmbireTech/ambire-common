@@ -17,6 +17,7 @@ const accountType = ({ email, signerExtra }: any): string => {
 }
 
 const useAddressBook = ({
+  useConstants,
   useAccounts,
   useStorage,
   useToasts
@@ -24,6 +25,7 @@ const useAddressBook = ({
   const { accounts } = useAccounts()
   const { addToast } = useToasts()
   const [storageAddresses, setStorageAddresses] = useStorage({ key: 'addresses', defaultValue: [] })
+  const { constants } = useConstants()
 
   const addressList = useMemo(() => {
     try {
@@ -106,7 +108,7 @@ const useAddressBook = ({
             error: true
           })
         if (!isValidAddress(address)) throw new Error('Address Book: invalid address format')
-        if (isKnownTokenOrContract(address))
+        if (!!constants?.humanizerInfo && isKnownTokenOrContract(constants.humanizerInfo, address))
           return addToast("The address you're trying to add is a smart contract.", { error: true })
       }
 
@@ -123,7 +125,7 @@ const useAddressBook = ({
 
       addToast(`${address} added to your Address Book.`)
     },
-    [addresses, addToast, updateAddresses]
+    [addresses, addToast, updateAddresses, constants?.humanizerInfo]
   )
 
   const removeAddress = useCallback(

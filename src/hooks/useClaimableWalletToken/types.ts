@@ -1,8 +1,10 @@
-import { UseNetworkReturnType } from 'ambire-common/src/hooks/useNetwork'
-
 import { Account } from '../useAccounts'
+import { UseRelayerDataProps, UseRelayerDataReturnType } from '../useRelayerData'
+import { UseNetworkReturnType } from '../useNetwork'
 
 export type UseClaimableWalletTokenProps = {
+  relayerURL: string,
+  useRelayerData: (props: Omit<UseRelayerDataProps, 'fetch'>) => UseRelayerDataReturnType,
   accountId: Account['id']
   network: UseNetworkReturnType['network']
   addRequest: any // TODO

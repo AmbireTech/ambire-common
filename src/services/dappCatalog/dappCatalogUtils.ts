@@ -33,7 +33,7 @@ export const getManifestFromDappUrl = async (
   const url = normalizedUrl.replace(/\/$/, '')
   const manifestUrl = `${url}/manifest.json?${Date.now()}`
 
-  const { body } = await fetchCaught(fetch, manifestUrl)
+  const { body } = await fetchCaught<any>(fetch, manifestUrl)
 
   const hasManifest = !!body && body.name && (Array.isArray(body.icons) || body.iconPath)
 

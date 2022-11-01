@@ -1,10 +1,7 @@
 {
-  "version": "0.14.13",
+  "version": "0.17.2",
   "name": "ambire-common",
   "description": "Common ground for the Ambire apps",
-  "scripts": {
-    "generate:contractInfo": "node scripts/generateContractInfo.js > src/constants/humanizerInfo.json"
-  },
   "peerDependencies": {
     "@ambire/signature-validator": "^1.0.3",
     "@ensdomains/eth-ens-namehash": "^2.0.15",
