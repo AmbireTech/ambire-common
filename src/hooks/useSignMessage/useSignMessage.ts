@@ -366,7 +366,8 @@ const useSignMessage = ({
     requestedNetwork,
     requestedChainId,
     isTypedData,
-    confirmationType
+    confirmationType,
+    verifySignature
   }
 }
 
