@@ -322,7 +322,9 @@ const useSignMessage = ({
       toSign,
       verifySignature,
       dApp,
-      requestedChainId
+      requestedChainId,
+      setSignedMessages,
+      signedMessages
     ]
   )
   // Passing hardware device is required only for the mobile app
