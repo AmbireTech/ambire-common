@@ -282,7 +282,7 @@ const useSignMessage = ({
         addToast('Successfully signed!')
 
         setSignedMessages( [...signedMessages, {
-            account: account.id,
+            accountId: account.id,
             networkId: requestedChainId,
             date: new Date().getTime(),
             typed: isTypedData,
@@ -296,6 +296,8 @@ const useSignMessage = ({
         if (everythingToSign.length === 1) {
           !!onLastMessageSign && onLastMessageSign()
         }
+
+        // keeping resolve at the very end, because it can trigger components unmounting, and code after resolve may or may not run
         resolve({ success: true, result: sig })
       } catch (e) {
         handleSigningErr(e)
@@ -316,7 +318,9 @@ const useSignMessage = ({
       requestedNetwork,
       resolve,
       toSign,
-      verifySignature
+      verifySignature,
+      dApp,
+      requestedChainId
     ]
   )
   // Passing hardware device is required only for the mobile app
@@ -339,8 +343,6 @@ const useSignMessage = ({
         // Unfortunately that isn't possible, because isValidSignature only takes a bytes32 hash; so to sign this with
         // a personal message, we need to be signing the hash itself as binary data such that we match 'Ethereum signed message:\n32<hash binary data>' on the contract
 
-        const isTypedData = toSign.type === 'eth_signTypedData_v4' || toSign.type === 'eth_signTypedData'
-
         const sig = await (isTypedData
           ? signMessage712(
               wallet,
@@ -357,7 +359,7 @@ const useSignMessage = ({
         addToast('Successfully signed!')
 
         setSignedMessages( [...signedMessages, {
-            account: account.id,
+            accountId: account.id,
             networkId: requestedChainId,
             date: new Date().getTime(),
             typed: isTypedData,
@@ -368,6 +370,7 @@ const useSignMessage = ({
           }]
         )
 
+        // keeping resolve at the very end, because it can trigger components unmounting, and code after resolve may or may not run
         resolve({ success: true, result: sig })
 
       } catch (e) {
@@ -385,9 +388,12 @@ const useSignMessage = ({
       requestedNetwork?.id,
       resolve,
       toSign,
+      isTypedData,
       verifySignature,
       signedMessages,
-      setSignedMessages
+      setSignedMessages,
+      dApp,
+      requestedChainId
     ]
   )
 

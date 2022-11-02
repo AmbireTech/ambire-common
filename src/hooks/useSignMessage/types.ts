@@ -15,7 +15,6 @@ export type UseSignMessageProps = {
   ) => Promise<any>
   onLastMessageSign: () => void
   getHardwareWallet: (device?: any) => any,
-  connections: any[]
 }
 
 export type UseSignMessageReturnType = {
@@ -32,5 +31,10 @@ export type UseSignMessageReturnType = {
   requestedChainId: NetworkType['chainId']
   isTypedData: boolean
   confirmationType: 'email' | 'otp' | null
-  dApp: any
+  dApp: {
+    name: string,
+    description: string,
+    url: string,
+    icons: string[],
+  }
 }
