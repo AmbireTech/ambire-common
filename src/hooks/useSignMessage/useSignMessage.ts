@@ -37,7 +37,7 @@ const useSignMessage = ({
   onConfirmationCodeRequired,
   onLastMessageSign,
   getHardwareWallet,
-  useStorage,
+  useStorage
 }: UseSignMessageProps): UseSignMessageReturnType => {
   const [isLoading, setLoading] = useState<boolean>(false)
   const [isDeployed, setIsDeployed] = useState<null | boolean>(null)
@@ -281,7 +281,9 @@ const useSignMessage = ({
 
         addToast('Successfully signed!')
 
-        setSignedMessages( [...signedMessages, {
+        setSignedMessages([
+          ...signedMessages,
+          {
             accountId: account.id,
             networkId: requestedChainId,
             date: new Date().getTime(),
@@ -289,9 +291,9 @@ const useSignMessage = ({
             signer: account.signer,
             message: toSign.txn,
             signature: sig,
-            dApp,
-          }]
-        )
+            dApp
+          }
+        ])
 
         if (everythingToSign.length === 1) {
           !!onLastMessageSign && onLastMessageSign()
@@ -358,7 +360,9 @@ const useSignMessage = ({
 
         addToast('Successfully signed!')
 
-        setSignedMessages( [...signedMessages, {
+        setSignedMessages([
+          ...signedMessages,
+          {
             accountId: account.id,
             networkId: requestedChainId,
             date: new Date().getTime(),
@@ -366,13 +370,12 @@ const useSignMessage = ({
             signer: account.signer,
             message: toSign.txn,
             signature: sig,
-            dApp,
-          }]
-        )
+            dApp
+          }
+        ])
 
         // keeping resolve at the very end, because it can trigger components unmounting, and code after resolve may or may not run
         resolve({ success: true, result: sig })
-
       } catch (e) {
         handleSigningErr(e)
       }
@@ -411,7 +414,7 @@ const useSignMessage = ({
     requestedChainId,
     isTypedData,
     confirmationType,
-    dApp,
+    dApp
   }
 }
 
