@@ -1,6 +1,6 @@
-import { NetworkType } from 'constants/networks'
 import { Interface } from 'ethers/lib/utils'
 
+import { NetworkType } from '../../constants/networks'
 import { HumanizerInfoType } from '../../hooks/useConstants'
 import { nativeToken, token } from '../humanReadableTransactions'
 
