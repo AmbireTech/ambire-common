@@ -26,11 +26,17 @@ const SwappinMapping = (humanizerInfo: HumanizerInfoType) => {
               'Swap',
               {
                 type: 'token',
+                // @ts-ignore: this type mismatch is a consistent issue with all
+                // humanizers, not just this one. Temporary ignore it.
+                // FIXME: handle this potential issue for all humanizers
                 ...paymentSrcToken
               },
               'for at least',
               {
                 type: 'token',
+                // @ts-ignore: this type mismatch is a consistent issue with all
+                // humanizers, not just this one. Temporary ignore it.
+                // FIXME: handle this potential issue for all humanizers
                 ...paymentToken
               },
               'on Swappin'
