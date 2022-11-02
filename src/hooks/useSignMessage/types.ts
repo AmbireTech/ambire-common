@@ -1,3 +1,5 @@
+import { UseStorageType } from 'hooks/useStorage'
+
 import { NetworkType } from '../../constants/networks'
 import { UseAccountsReturnType } from '../useAccounts'
 import { UseToastsReturnType } from '../useToasts'
@@ -15,6 +17,7 @@ export type UseSignMessageProps = {
   ) => Promise<any>
   onLastMessageSign: () => void
   getHardwareWallet: (device?: any) => any
+  useStorage: UseStorageType
 }
 
 export type UseSignMessageReturnType = {
