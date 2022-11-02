@@ -1,7 +1,6 @@
-import { UseStorageType } from 'hooks/useStorage'
-
 import { NetworkType } from '../../constants/networks'
 import { UseAccountsReturnType } from '../useAccounts'
+import { UseStorageType } from '../useStorage'
 import { UseToastsReturnType } from '../useToasts'
 
 export type UseSignMessageProps = {
