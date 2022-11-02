@@ -48,7 +48,7 @@ const useClaimableWalletToken = ({
   })
 
   // By adding this to the deps, we make it refresh every 10 mins
-  const { cacheBreak } = useCacheBreak({ refreshInterval: 10000, breakPoint: 5000 })
+  const { cacheBreak } = useCacheBreak({ refreshInterval: 600000, breakPoint: 5000 })
   useEffect(() => {
     setCurrentClaimStatus((prev) => ({ ...prev, loading: true, error: null }))
     ;(async () => {
