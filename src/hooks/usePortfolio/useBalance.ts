@@ -70,19 +70,8 @@ export default function useBalance(account, assets, assetsCurrentAccount, curren
             
     }, [balanceByNetworks, currentNetwork]);
         
-    const [balance, setBalance] = useState(currBalance)
-    const [otherBalances, setOtherBalances] = useState(balancesByNetworks)
-
-    useEffect(() => {
-        setBalance(currBalance)
-    }, [currBalance])
-
-    useEffect(() => {
-        setOtherBalances(balancesByNetworks)
-    }, [balancesByNetworks])
-
     return {
-        balance,
-        otherBalances
+        balance: currBalance,
+        otherBalances: balancesByNetworks
     }
 }
