@@ -54,17 +54,27 @@ export default function useCoingeckoFetch({
         Promise.all(coingeckoTokensToUpdate.map(async (addr) => {
             let isNative = false
             if (NATIVE_ADDRESS === addr) isNative = true
-            const response = await getCoingeckoPriceByContract(assetPlatform, isNative ? '0x0000000000000000000000000000000000001010' : addr)
-            if (!response) return null
-            return {
-                address: isNative ? addr : response?.platforms[assetPlatform],
-                tokenImageUrls: response?.image,
-                tokenImageUrl: response?.image?.small,
-                symbol: response?.symbol.toUpperCase(),
-                price: response?.market_data.current_price.usd,
-                isHidden: false,
+            try { 
+                const response = await getCoingeckoPriceByContract(assetPlatform, isNative ? '0x0000000000000000000000000000000000001010' : addr)
+
+                if (!response || response?.error) return null
+                return {
+                    address: isNative ? addr : response?.platforms[assetPlatform],
+                    tokenImageUrls: response?.image,
+                    tokenImageUrl: response?.image?.small,
+                    symbol: response?.symbol.toUpperCase(),
+                    price: response?.market_data.current_price.usd,
+                    isHidden: false,
+                }
+                
+            } catch(e) {
+                console.log(e)
+                return null
             }
-        })).then(res => resolve({ tokens: res, state: 'coingecko' }))
+        })).then(res => {
+            res = res.filter(t => t)
+            resolve({ tokens: res, state: 'coingecko' })
+        })
         } catch (e) {
             resolve && resolve({ tokens: {}, state: 'coingecko' })
         }
