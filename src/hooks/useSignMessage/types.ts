@@ -31,6 +31,7 @@ export type UseSignMessageReturnType = {
   requestedChainId: NetworkType['chainId']
   isTypedData: boolean
   confirmationType: 'email' | 'otp' | null
+  verifySignature: (toSign: any, sig: any, networkId: any) => Promise<any>
   dApp: {
     name: string
     description: string

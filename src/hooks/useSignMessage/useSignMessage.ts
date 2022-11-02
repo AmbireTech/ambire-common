@@ -416,6 +416,7 @@ const useSignMessage = ({
     requestedChainId,
     isTypedData,
     confirmationType,
+    verifySignature,
     dApp
   }
 }

@@ -13,6 +13,7 @@ import WALLETStakingPool from './WALLETStakingPool'
 import WALLETSupplyController from './WALLETSupplyController'
 import WETH from './WETH'
 import YearnTesseractVault from './YearnTesseractVault'
+import SwappinMapping from './Swappin'
 
 const all = (humanizerInfo: HumanizerInfoType) => ({
   ...UniRouters(humanizerInfo),
@@ -28,6 +29,7 @@ const all = (humanizerInfo: HumanizerInfoType) => ({
   ...OpenSea(humanizerInfo),
   ...WALLETSupplyController(),
   ...AmbireBatcher(humanizerInfo),
-  ...WALLETStakingPool(humanizerInfo)
+  ...WALLETStakingPool(humanizerInfo),
+  ...SwappinMapping(humanizerInfo)
 })
 export default all
