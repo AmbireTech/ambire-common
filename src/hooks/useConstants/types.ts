@@ -146,6 +146,7 @@ type HumanizerInfoAbisKeysType =
   | 'Batcher'
   | 'StakingPool'
   | 'WyvernExchange'
+  | 'Swappin'
   | 'ERC20'
 
 type HumanizerInfoAbisType = {
