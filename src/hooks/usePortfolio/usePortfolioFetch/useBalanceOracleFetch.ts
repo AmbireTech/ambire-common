@@ -1,7 +1,5 @@
 // @ts-nocheck TODO: Fill in all missing types before enabling the TS check again
 
-import { useCallback } from 'react'
-
 import networks from 'ambire-common/src/constants/networks'
 import { getTransactionSummary } from 'ambire-common/src/services/humanReadableTransactions/transactionSummary' 
 import { toBundleTxn } from 'ambire-common/src/services/requestToBundleTxn'
@@ -122,25 +120,28 @@ export default function useBalanceOracleFetch({
         return getTransactionSummary(constants.humanizerInfo, txn, currentNetwork, account, { extended: true })
       }).flat()
 
-      let tokensList = removeDuplicatedAssets([
+      let tokensList = [
         ...constants?.tokenList[currentNetwork],
         ...(updatedTokens && updatedTokens.tokens?.length && updatedTokens.tokens || [])
-      ])
+      ]
 
       // Remove unconfirmed and pending tokens from latest request,
       // оnly tokens which should be fetched with the latest state
       // If the token has a latest state - leave it as main one for balance oracle
-      const latestTokens = updatedTokens?.tokens.filter(t => ((!t.unconfirmed || !t.pending) && !(t.unconfirmed && !t.latest) && !(t.pending && !t.latest))).map(t => ({ ...t.latest ? {...t, ...t.latest } : { ...t } }))
+      const latestTokens = removeDuplicatedAssets(updatedTokens?.tokens.filter(t => ((!t.unconfirmed || !t.pending) && !(t.unconfirmed && !t.latest) && !(t.pending && !t.latest))).map(t => ({ ...t.latest ? {...t, ...t.latest } : { ...t } })))
 
       const tokensToFetchPrices = []
       // Check if not signed request contains tokens from swap which arent in portfolio yet
       extendedSummary.length && extendedSummary.map(s => {
           s && Array.isArray(s) && s.length && s.map((el) => {
             if (el?.type === 'token') {
-              const isInPortfolio = latestTokens?.find(token => token.address === el.address)
-              if (!isInPortfolio || !isInPortfolio.price) {
+              const tokenInPortfolio = latestTokens?.find(token => token.address === el.address)
+
+              if (!tokenInPortfolio || !tokenInPortfolio.price) {
                 tokensToFetchPrices.push(el)
-                tokensList.push({ ...el, balance: 0 })
+                if (!tokenInPortfolio) {
+                  tokensList.push({ ...el, balance: 0 })
+                }
               }
             }
           })
@@ -153,7 +154,7 @@ export default function useBalanceOracleFetch({
       const balanceOraclePending = pendingTransactions?.length && new Promise((resolve) => fetchSupplementTokenData({ tokens: tokensList }, resolve, [], 'pending'))
 
       // 3. Fetching of unconfirmed/unsigned token data from balanceOracle
-      const balanceOracleUnconfirmed = unsignedRequests?.length  && new Promise((resolve) => fetchSupplementTokenData({ tokens: tokensList }, resolve, unsignedRequests, 'unconfirmed'))
+      const balanceOracleUnconfirmed = unsignedRequests?.length  && new Promise((resolve) => fetchSupplementTokenData({ tokens: removeDuplicatedAssets(tokensList) }, resolve, unsignedRequests, 'unconfirmed'))
       // Fetch coingecko prices for newly acquired tokens from swap transaction
       const coingeckoPrices = tokensToFetchPrices?.length && new Promise((resolve, reject) => fetchCoingeckoPricesByContractAddress(tokensToFetchPrices, resolve))
       
@@ -166,7 +167,7 @@ export default function useBalanceOracleFetch({
 
       Promise.all([...promises]).then(results => {
         // Fetched prices from coingecko
-        const prices = results && results.length && results.find(el => el.state === 'coingecko') 
+        const prices = results && results.length && results.find(el => el.state === 'coingecko')
         if (prices) results.pop()
         
         const latestResponse = results.find(({ state }) => state === 'latest')
