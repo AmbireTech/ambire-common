@@ -33,8 +33,8 @@ export type NetworkType = {
   relayerlessOnly: boolean
   nativeAsset: {
     address: string
-    symbol: string,
-    coingeckoId: any,
+    symbol: string
+    coingeckoId: any
     decimals: number
   }
 }
@@ -46,7 +46,7 @@ const networks: NetworkType[] = [
     // rpc: 'https://mainnet.infura.io/v3/3d22938fd7dd41b7af4197752f83e8a1',
     // rpc: 'https://morning-wild-water.quiknode.pro/66011d2c6bdebc583cade5365086c8304c13366c/',
     // rpc: 'https://mainnet.infura.io/v3/d4319c39c4df452286d8bf6d10de28ae',
-    rpc: 'https://eth-mainnet.alchemyapi.io/v2/e5Gr8LP_EH0SBPZiNCcC08OuEDrvgoYK',
+    rpc: 'https://eth-mainnet.alchemyapi.io/v2/SBG22nxioGnHZCCFJ9C93SIN82e9TUHS',
     nativeAssetSymbol: 'ETH',
     name: 'Ethereum',
     ensName: 'homestead',
@@ -55,8 +55,8 @@ const networks: NetworkType[] = [
     isGasTankAvailable: true,
     relayerlessOnly: false,
     nativeAsset: {
-      address: "0x0000000000000000000000000000000000000000",
-      symbol: "ETH",
+      address: '0x0000000000000000000000000000000000000000',
+      symbol: 'ETH',
       coingeckoId: null,
       decimals: 18
     }
@@ -74,8 +74,8 @@ const networks: NetworkType[] = [
     isGasTankAvailable: true,
     relayerlessOnly: false,
     nativeAsset: {
-      address: "0x0000000000000000000000000000000000000000",
-      symbol: "MATIC",
+      address: '0x0000000000000000000000000000000000000000',
+      symbol: 'MATIC',
       coingeckoId: null,
       decimals: 18
     }
@@ -91,8 +91,8 @@ const networks: NetworkType[] = [
     isGasTankAvailable: true,
     relayerlessOnly: false,
     nativeAsset: {
-      address: "0x0000000000000000000000000000000000000000",
-      symbol: "AVAX",
+      address: '0x0000000000000000000000000000000000000000',
+      symbol: 'AVAX',
       coingeckoId: null,
       decimals: 18
     }
@@ -109,8 +109,8 @@ const networks: NetworkType[] = [
     isGasTankAvailable: true,
     relayerlessOnly: false,
     nativeAsset: {
-      address: "0x0000000000000000000000000000000000000000",
-      symbol: "BNB",
+      address: '0x0000000000000000000000000000000000000000',
+      symbol: 'BNB',
       coingeckoId: null,
       decimals: 18
     }
@@ -126,8 +126,8 @@ const networks: NetworkType[] = [
     isGasTankAvailable: true,
     relayerlessOnly: false,
     nativeAsset: {
-      address: "0x0000000000000000000000000000000000000000",
-      symbol: "FTM",
+      address: '0x0000000000000000000000000000000000000000',
+      symbol: 'FTM',
       coingeckoId: null,
       decimals: 18
     }
@@ -143,8 +143,8 @@ const networks: NetworkType[] = [
     isGasTankAvailable: true,
     relayerlessOnly: false,
     nativeAsset: {
-      address: "0x0000000000000000000000000000000000000000",
-      symbol: "GLMR",
+      address: '0x0000000000000000000000000000000000000000',
+      symbol: 'GLMR',
       coingeckoId: null,
       decimals: 18
     }
@@ -160,8 +160,8 @@ const networks: NetworkType[] = [
     isGasTankAvailable: true,
     relayerlessOnly: false,
     nativeAsset: {
-      address: "0x0000000000000000000000000000000000000000",
-      symbol: "MOVR",
+      address: '0x0000000000000000000000000000000000000000',
+      symbol: 'MOVR',
       coingeckoId: null,
       decimals: 18
     }
@@ -177,8 +177,8 @@ const networks: NetworkType[] = [
     isGasTankAvailable: true,
     relayerlessOnly: false,
     nativeAsset: {
-      address: "0x0000000000000000000000000000000000000000",
-      symbol: "AETH",
+      address: '0x0000000000000000000000000000000000000000',
+      symbol: 'AETH',
       coingeckoId: null,
       decimals: 18
     }
@@ -195,8 +195,8 @@ const networks: NetworkType[] = [
     isGasTankAvailable: true,
     relayerlessOnly: false,
     nativeAsset: {
-      address: "0x0000000000000000000000000000000000000000",
-      symbol: "XDAI",
+      address: '0x0000000000000000000000000000000000000000',
+      symbol: 'XDAI',
       coingeckoId: null,
       decimals: 18
     }
@@ -213,8 +213,8 @@ const networks: NetworkType[] = [
     isGasTankAvailable: false,
     relayerlessOnly: false,
     nativeAsset: {
-      address: "0x0000000000000000000000000000000000000000",
-      symbol: "KCS",
+      address: '0x0000000000000000000000000000000000000000',
+      symbol: 'KCS',
       coingeckoId: null,
       decimals: 18
     }
@@ -230,8 +230,8 @@ const networks: NetworkType[] = [
     isGasTankAvailable: true,
     relayerlessOnly: false,
     nativeAsset: {
-      address: "0x0000000000000000000000000000000000000000",
-      symbol: "ETH",
+      address: '0x0000000000000000000000000000000000000000',
+      symbol: 'ETH',
       coingeckoId: null,
       decimals: 18
     }
@@ -247,8 +247,8 @@ const networks: NetworkType[] = [
     isGasTankAvailable: true,
     relayerlessOnly: false,
     nativeAsset: {
-      address: "0x0000000000000000000000000000000000000000",
-      symbol: "METIS",
+      address: '0x0000000000000000000000000000000000000000',
+      symbol: 'METIS',
       coingeckoId: null,
       decimals: 18
     }
@@ -265,8 +265,8 @@ const networks: NetworkType[] = [
     isGasTankAvailable: false,
     relayerlessOnly: false,
     nativeAsset: {
-      address: "0x0000000000000000000000000000000000000000",
-      symbol: "ETH",
+      address: '0x0000000000000000000000000000000000000000',
+      symbol: 'ETH',
       coingeckoId: null,
       decimals: 18
     }
@@ -282,12 +282,12 @@ const networks: NetworkType[] = [
     isGasTankAvailable: false,
     relayerlessOnly: true,
     nativeAsset: {
-      address: "0x0000000000000000000000000000000000000000",
-      symbol: "ETH",
+      address: '0x0000000000000000000000000000000000000000',
+      symbol: 'ETH',
       coingeckoId: null,
       decimals: 18
     }
-  },
+  }
   // {
   // 	id: NETWORKS.cronos,
   // 	chainId: 25,
