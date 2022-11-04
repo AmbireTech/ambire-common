@@ -46,6 +46,7 @@ const useClaimableWalletToken = ({
     claimedInitial: 0,
     error: null
   })
+  const [pendingTokensTotal, setPendingTokensTotal] = useState('')
 
   // By adding this to the deps, we make it refresh every 10 mins
   const { cacheBreak } = useCacheBreak({ refreshInterval: 600000, breakPoint: 5000 })
@@ -96,12 +97,16 @@ const useClaimableWalletToken = ({
   const claimableNowUsd = (walletUsdPrice * claimableNow).toFixed(2)
   const mintableVestingUsd = (walletUsdPrice * currentClaimStatus.mintableVesting).toFixed(2)
 
-  const pendingTokensTotal = (
+  const pendingTokensTotalCalc = (
     totalLifetimeRewards -
     currentClaimStatus.claimed -
     currentClaimStatus.claimedInitial +
     currentClaimStatus.mintableVesting
   ).toFixed(3)
+
+  useEffect(() => {
+    if (!currentClaimStatus.loading) setPendingTokensTotal(pendingTokensTotalCalc)
+  }, [currentClaimStatus.loading, pendingTokensTotalCalc])
 
   const shouldDisplayMintableVesting = !!currentClaimStatus.mintableVesting && !!vestingEntry
 
