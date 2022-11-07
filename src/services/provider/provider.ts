@@ -4,8 +4,8 @@ import { NetworkId } from '../../constants/networks'
 // For instance: { 'ethereum': new providers.StaticJsonRpcProvider }
 let rpcProviders: { [key in NetworkId]: any }
 
-export const initRpcProviders = (prov: { [key in NetworkId]: any }) => {
-  rpcProviders = prov
+export const initRpcProviders = (providers: { [key in NetworkId]: any }) => {
+  rpcProviders = providers
 }
 
 export function getProvider(networkId: NetworkId) {
