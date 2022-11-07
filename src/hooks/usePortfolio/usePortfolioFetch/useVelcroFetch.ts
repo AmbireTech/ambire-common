@@ -93,8 +93,9 @@ export default function useVelcroFetch({
           showLoadingState = false,
           assets = []
         ) => {
-          // Prevent race conditions
-          if (currentAccount.current !== account) return
+
+          // Prevent race conditions and multiple fetchings
+          if (currentAccount.current !== account || assets?.fetchingVelcro) return
         
           if (showLoadingState || !assets?.tokens?.length) {
             setAssetsByAccount(prev => ({
@@ -102,6 +103,15 @@ export default function useVelcroFetch({
               [`${account}-${currentNetwork}`]: {
                 ...prev[`${account}-${currentNetwork}`],
                 loading: true,
+                fetchingVelcro: true
+              }
+            }))
+          } else {
+            setAssetsByAccount(prev => ({
+              ...prev,
+              [`${account}-${currentNetwork}`]: {
+                ...prev[`${account}-${currentNetwork}`],
+                fetchingVelcro: true,
               }
             }))
           }
@@ -112,7 +122,7 @@ export default function useVelcroFetch({
             const quickResponse = !assets?.tokens?.length
             const response = await getBalances(currentNetwork, account, network.balancesProvider, quickResponse)
             if (!response) return null
-    
+
             let { cache, cacheTime, tokens, nfts, partial, error, provider } = response.data
     
             tokens = filterByHiddenTokens(tokens)
@@ -125,8 +135,12 @@ export default function useVelcroFetch({
               (new Date(cacheTime) < new Date(prevCacheTime)) || partial
     
             cache = shouldSkipUpdate || false
-            let formattedTokens = [...tokens]
-    
+
+            // Tokens with balanceUpdate newer than balanceOracles update
+            const tokensToUpdateBalance = tokens.filter(newToken => assets?.tokens.find(t => t.address === newToken.address && newToken.balanceUpdate > t?.balanceOracleUpdate))
+            
+            let formattedTokens = quickResponse || !tokensToUpdateBalance?.length ? [...assets?.tokens] : [...tokens]
+            
             // velcro provider is balanceOracle and tokens may not be full
             // repopulate with current tokens and pass them to balanceOracle
             if (provider === 'balanceOracle') {
@@ -136,15 +150,15 @@ export default function useVelcroFetch({
               ]
             }
     
-            // In case we have cached data from covalent - call balance oracle
-            if (shouldSkipUpdate) {
+            // In case we have cached data from velcro - call balance oracle
+            if (shouldSkipUpdate || !tokensToUpdateBalance.length) {
               // Update only balance from balance oracle
-              fetchAndSetSupplementTokenData({ tokens: formattedTokens })
+              updateCoingeckoAndSupplementData({ tokens: formattedTokens })
               return 
             }
-    
+
             formattedTokens = [
-              ...tokens
+              ...formattedTokens
                 .map((token: any) => ({
                   ...token,
                   // balanceOracle fixes the number to the 10 decimal places, so here we should also fix it
@@ -169,8 +183,10 @@ export default function useVelcroFetch({
                   tokens: formattedTokens,
                   collectibles: nfts,
                   cache: cache || false,
-                  cacheTime: cacheTime || new Date().valueOf(),
-                  loading: false
+                  cacheTime: cacheTime || prevCacheTime,
+                  loading: false,
+                  fetchingVelcro: false,
+
                 }
               }))
             } else {
@@ -182,8 +198,9 @@ export default function useVelcroFetch({
                   ...prev[`${account}-${currentNetwork}`],
                   collectibles: nfts,
                   cache: cache || false,
-                  cacheTime: cacheTime || new Date().valueOf(),
-                  loading: false
+                  cacheTime: cacheTime || prevCacheTime,
+                  loading: false,
+                  fetchingVelcro: false,
                 }
               }))
             }
@@ -202,7 +219,8 @@ export default function useVelcroFetch({
                 [`${account}-${network}`]: {
                   ...prev[`${account}-${network}`],
                   error: e,
-                  loading: false
+                  loading: false,
+                  fetchingVelcro: false,
                 }
             }))
           }

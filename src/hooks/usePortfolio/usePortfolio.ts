@@ -37,6 +37,7 @@ export default function usePortfolio({
   const { addToast } = useToasts()
   const currentAccount = useRef<string>()
   const prevNetwork = usePrevious(currentNetwork)
+  const isInitialMount = useRef(true);
 
   // Implementation of structure that contains all assets by account and network
   const [assets, setAssetsByAccount] = useStorage({ key: 'assets', defaultValue: {} })
@@ -98,18 +99,13 @@ export default function usePortfolio({
   const refreshTokensIfVisible = useCallback(() => {
     if (!account) return
     if (isVisible && !currentAssets?.loading) {
-      // Show loading only when switching between networks,
-      // since showing it always when tokens are fetched is annoying
-      // taking into consideration that refreshing happens automatically
-      // on a certain interval or when user window (app) gets back in focus.
-      const showLoadingState = prevNetwork !== currentNetwork
-      fetchTokens(account, currentNetwork, showLoadingState, currentAssets)
+      fetchTokens(account, currentNetwork, false, currentAssets)
     }
   }, [account, fetchTokens, prevNetwork, currentNetwork, isVisible])
 
   async function loadBalance() {
     if (!account) return
-    await fetchTokens(account, currentNetwork, true, currentAssets)
+    await fetchTokens(account, currentNetwork, false, currentAssets)
   }
 
   async function loadOtherNetworksBalances() {
@@ -165,7 +161,12 @@ export default function usePortfolio({
   }, [currentAssets, currentNetwork])
 
   useEffect(() => {
-    fetchAndSetSupplementTokenData(currentAssets)
+    if (isInitialMount.current) {
+      isInitialMount.current = false;
+    } else {
+      // Your useEffect code here to be run on update
+      fetchAndSetSupplementTokenData(currentAssets)
+    }
     // In order to have an array in dependency we need to stringify it,
     // so we can be subscribed to changes of objects inside our arrays. 
     // https://stackoverflow.com/a/65728647/8335898

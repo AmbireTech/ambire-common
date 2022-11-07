@@ -302,6 +302,8 @@ export default function useBalanceOracleFetch({
               [`${account}-${currentNetwork}`]: {
                 ...prev[`${account}-${currentNetwork}`],
                 tokens: updatedBalance,
+                loading: false,
+                fetchingVelcro: false,
               }
             }))
           
@@ -317,7 +319,8 @@ export default function useBalanceOracleFetch({
               [`${account}-${currentNetwork}`]: {
                 ...prev[`${account}-${currentNetwork}`],
                 tokens: oracleResponse,
-                loading: false
+                loading: false,
+                fetchingVelcro: false,
               }
             }))
           }) 

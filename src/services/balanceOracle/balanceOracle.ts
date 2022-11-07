@@ -87,13 +87,14 @@ async function call({
   }
   const callResult = await provider.call(txParams, blockTag)
   if (isErr(callResult)) {
-    throw new Error(`---${hex2a(callResult)}--- probably one ot following tokens is not ERC20 and missing balanceOf()`)
+    throw new Error(`---${hex2a(callResult)}---`)
   }
   const balances = coder.decode(['uint[]'], callResult)[0]
   const result = tokens.map((x, i) => ({
       ...x,
       balanceRaw: balances[i].toString(),
-      balance: parseFloat(formatUnits(balances[i], x.decimals)).toFixed(10) 
+      balance: parseFloat(formatUnits(balances[i], x.decimals)).toFixed(10),
+      balanceOracleUpdate: new Date().valueOf()
     })
   )
   return { success: true, data: result }
