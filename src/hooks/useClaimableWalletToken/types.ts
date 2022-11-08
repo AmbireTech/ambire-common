@@ -1,6 +1,7 @@
 import { Account } from '../useAccounts'
 import { UseRelayerDataProps, UseRelayerDataReturnType } from '../useRelayerData'
 import { UseNetworkReturnType } from '../useNetwork'
+import { UseRewardsReturnType } from 'ambire-common/src/hooks/useRewards/types'
 
 export type UseClaimableWalletTokenProps = {
   relayerURL: string
@@ -10,6 +11,7 @@ export type UseClaimableWalletTokenProps = {
   addRequest: any // TODO
   totalLifetimeRewards: number
   walletUsdPrice: number
+  rewardsLastUpdated: UseRewardsReturnType['lastUpdated']
 }
 
 export type UseClaimableWalletTokenReturnType = {

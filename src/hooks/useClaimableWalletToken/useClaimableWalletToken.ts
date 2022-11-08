@@ -22,7 +22,8 @@ const useClaimableWalletToken = ({
   network,
   addRequest,
   totalLifetimeRewards,
-  walletUsdPrice
+  walletUsdPrice,
+  rewardsLastUpdated
 }: UseClaimableWalletTokenProps): UseClaimableWalletTokenReturnType => {
   const { cacheBreak: relayerCacheBreak } = useCacheBreak()
   const urlIdentityRewards = relayerURL
@@ -49,11 +50,17 @@ const useClaimableWalletToken = ({
     error: null,
     lastUpdated: null
   })
-  const [pendingTokensTotal, setPendingTokensTotal] = useState('')
 
   // By adding this to the deps, we make it refresh every 10 mins
   const { cacheBreak } = useCacheBreak({ refreshInterval: 600000, breakPoint: 5000 })
   useEffect(() => {
+    // Wait before the rewards are loaded first, because the claimable amount
+    // is calculated based on the rewards. If the rewards are not loaded yet,
+    // we don't want to show the claimable amount as 0.
+    if (!rewardsLastUpdated) {
+      return
+    }
+
     setCurrentClaimStatus((prev) => ({ ...prev, loading: true, error: null }))
     ;(async () => {
       const toNum = (x: string | number) => parseInt(x.toString(), 10) / 1e18
@@ -95,7 +102,7 @@ const useClaimableWalletToken = ({
           error: e?.message || e || 'Failed getting claim status.'
         }))
       })
-  }, [supplyController, vestingEntry, claimableRewardsData, cacheBreak])
+  }, [supplyController, vestingEntry, claimableRewardsData, cacheBreak, rewardsLastUpdated])
 
   const initialClaimable = claimableRewardsData ? +claimableRewardsData.totalClaimable / 1e18 : 0
   const claimableNowRounded = +(initialClaimable - (currentClaimStatus.claimed || 0)).toFixed(6)
@@ -104,16 +111,12 @@ const useClaimableWalletToken = ({
   const claimableNowUsd = (walletUsdPrice * claimableNow).toFixed(2)
   const mintableVestingUsd = (walletUsdPrice * currentClaimStatus.mintableVesting).toFixed(2)
 
-  const pendingTokensTotalCalc = (
+  const pendingTokensTotal = (
     totalLifetimeRewards -
     currentClaimStatus.claimed -
     currentClaimStatus.claimedInitial +
     currentClaimStatus.mintableVesting
   ).toFixed(3)
-
-  useEffect(() => {
-    if (!currentClaimStatus.loading) setPendingTokensTotal(pendingTokensTotalCalc)
-  }, [currentClaimStatus.loading, pendingTokensTotalCalc])
 
   const shouldDisplayMintableVesting = !!currentClaimStatus.mintableVesting && !!vestingEntry
 
