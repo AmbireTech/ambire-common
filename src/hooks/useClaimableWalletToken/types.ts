@@ -3,8 +3,8 @@ import { UseRelayerDataProps, UseRelayerDataReturnType } from '../useRelayerData
 import { UseNetworkReturnType } from '../useNetwork'
 
 export type UseClaimableWalletTokenProps = {
-  relayerURL: string,
-  useRelayerData: (props: Omit<UseRelayerDataProps, 'fetch'>) => UseRelayerDataReturnType,
+  relayerURL: string
+  useRelayerData: (props: Omit<UseRelayerDataProps, 'fetch'>) => UseRelayerDataReturnType
   accountId: Account['id']
   network: UseNetworkReturnType['network']
   addRequest: any // TODO
@@ -26,6 +26,7 @@ export type UseClaimableWalletTokenReturnType = {
     mintableVesting: number
     claimedInitial: number
     error: null | any
+    lastUpdated: null | number
   }
   claimableNow: number
   disabledReason: string

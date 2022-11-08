@@ -39,12 +39,15 @@ const useClaimableWalletToken = ({
 
   const vestingEntry = useMemo(() => WALLETVestings.find((x) => x.addr === accountId), [accountId])
 
-  const [currentClaimStatus, setCurrentClaimStatus] = useState({
+  const [currentClaimStatus, setCurrentClaimStatus] = useState<
+    UseClaimableWalletTokenReturnType['currentClaimStatus']
+  >({
     loading: true,
     claimed: 0,
     mintableVesting: 0,
     claimedInitial: 0,
-    error: null
+    error: null,
+    lastUpdated: null
   })
   const [pendingTokensTotal, setPendingTokensTotal] = useState('')
 
@@ -75,7 +78,14 @@ const useClaimableWalletToken = ({
 
       return { mintableVesting, claimed, claimedInitial }
     })()
-      .then((status) => setCurrentClaimStatus({ error: null, loading: false, ...status }))
+      .then((status) =>
+        setCurrentClaimStatus({
+          error: null,
+          loading: false,
+          lastUpdated: Date.now(),
+          ...status
+        })
+      )
       .catch((e) => {
         console.error('getting claim status', e)
 
