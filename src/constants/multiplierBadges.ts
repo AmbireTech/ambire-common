@@ -35,7 +35,7 @@ export const multiplierBadges: MultiplierBadge[] = [
     link: 'https://blog.ambire.com/win-a-cryptotesters-nft-with-ambire-and-get-into-one-of-the-hottest-web3-communities-c9d7185760b1',
     icon_svg: 'rewards-crypto-tester'
   },
-  {
+  /*{
     id: 'gasTankNft',
     name: 'GasTankNFT',
     icon: '⛽',
@@ -43,7 +43,7 @@ export const multiplierBadges: MultiplierBadge[] = [
     multiplier: 1.25,
     link: 'https://blog.ambire.com/ambire-gas-tank-launches-with-exclusive-nft-drop-2a4eb29f2f07',
     icon_svg: 'rewards-gas-tank'
-  },
+  },*/
   {
     id: 'powerUserMultiplier',
     name: 'Power User',
