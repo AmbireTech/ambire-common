@@ -98,7 +98,7 @@ const useClaimableWalletToken = ({
 
         setCurrentClaimStatus((prev) => ({
           ...prev,
-          loading: true,
+          loading: false,
           error: e?.message || e || 'Failed getting claim status.'
         }))
       })
