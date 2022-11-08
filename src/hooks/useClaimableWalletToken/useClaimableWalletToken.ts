@@ -79,15 +79,12 @@ const useClaimableWalletToken = ({
       .catch((e) => {
         console.error('getting claim status', e)
 
-        setCurrentClaimStatus({
-          error: e.message || e,
-          loading: false,
-          claimed: 0,
-          mintableVesting: 0,
-          claimedInitial: 0
-        })
+        setCurrentClaimStatus((prev) => ({
+          ...prev,
+          loading: true,
+          error: e?.message || e || 'Failed getting claim status.'
+        }))
       })
-
   }, [supplyController, vestingEntry, claimableRewardsData, cacheBreak])
 
   const initialClaimable = claimableRewardsData ? +claimableRewardsData.totalClaimable / 1e18 : 0
@@ -135,7 +132,7 @@ const useClaimableWalletToken = ({
             withoutBurn ? 0 : 5000, // penalty bps, at the moment we run with 0; it's a safety feature to hardcode it
             WALLET_STAKING_ADDR, // staking pool addr
             claimableRewardsData?.root,
-            claimableRewardsData?.signedRoot,
+            claimableRewardsData?.signedRoot
           ])
         }
       })
