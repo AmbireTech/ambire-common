@@ -97,7 +97,7 @@ const useSignMessage = ({
       signer: account?.signer
     })
 
-    const provider = await getProvider(requestedNetwork?.id)
+    const provider = getProvider(requestedNetwork?.id)
 
     let privilegeAddress: any
     let quickAccAccountHash: any
