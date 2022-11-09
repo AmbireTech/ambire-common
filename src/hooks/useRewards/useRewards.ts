@@ -72,7 +72,7 @@ export default function useRewards({
     if (errMsg || !data?.success || isLoading) return
 
     const rewardsDetails = Object.fromEntries<
-      string | number | Multiplier[] | Promo | { [key in RewardIds]: number | RelayerRewardsBalance }
+      string | number | Multiplier[] | Promo | { [key in RewardIds]: number } | RelayerRewardsBalance
     >(data.rewards.map(({ _id, rewards: r }) => [_id, r[accountId] || 0]))
     rewardsDetails.multipliers = data.multipliers
     rewardsDetails.walletTokenAPY = data.walletTokenAPY // TODO: Remove if not used anyhwere else raw
