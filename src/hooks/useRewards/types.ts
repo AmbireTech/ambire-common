@@ -49,6 +49,9 @@ export type RelayerRewardsBalance = {
   balanceFromADX: number
   balanceInUSD: number
   effectiveBalanceInUSD: number
+  adxRewards?: number
+  balanceRewards?: number
+  adxTokenAPY?: number
 }
 
 export type RelayerRewardsData = {
@@ -74,6 +77,7 @@ export type RewardsState = {
   walletTokenAPY: number
   walletTokenAPYPercentage: string
   adxTokenAPYPercentage: string
+  adxTokenAPY: number
   walletUsdPrice: number
   xWALLETAPY: number
   xWALLETAPYPercentage: string
