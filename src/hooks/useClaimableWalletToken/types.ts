@@ -1,7 +1,7 @@
 import { Account } from '../useAccounts'
-import { UseRelayerDataProps, UseRelayerDataReturnType } from '../useRelayerData'
 import { UseNetworkReturnType } from '../useNetwork'
-import { UseRewardsReturnType } from 'ambire-common/src/hooks/useRewards/types'
+import { UseRelayerDataProps, UseRelayerDataReturnType } from '../useRelayerData'
+import { UseRewardsReturnType } from '../useRewards/types'
 
 export type UseClaimableWalletTokenProps = {
   relayerURL: string
