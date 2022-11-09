@@ -75,6 +75,7 @@ export type RewardsState = {
 }
 
 export interface UseRewardsReturnType {
+  lastUpdated: null | number
   isLoading: boolean
   errMsg: null | any
   rewards: RewardsState
