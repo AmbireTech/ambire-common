@@ -5,6 +5,7 @@ export type MultiplierBadge = {
   color: string
   multiplier: number
   link: string
+  icon_svg: string
 }
 
 export const multiplierBadges: MultiplierBadge[] = [
