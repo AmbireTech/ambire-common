@@ -1,6 +1,6 @@
 // @ts-nocheck TODO: Fill in all missing types before enabling the TS check again
 
-import { useCallback, useEffect, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useState, useRef } from 'react'
 
 import useBalance from './useBalance'
 import usePrevious from '../usePrevious'
@@ -31,18 +31,25 @@ export default function usePortfolio({
   eligibleRequests,
   requests,
   selectedAccount,
-  sentTxn
+  sentTxn,
+  useIndexedDBStorage
 }: UsePortfolioProps): UsePortfolioReturnType {
   const { constants } = useConstants()
   const { addToast } = useToasts()
   const currentAccount = useRef<string>()
   const prevNetwork = usePrevious(currentNetwork)
   const isInitialMount = useRef(true);
+  const [assets, setItems, isLoading, shouldStartFetching] = useIndexedDBStorage({ dbName: 'ambire-assets', version: 1 })
 
   // Implementation of structure that contains all assets by account and network
-  const [assets, setAssetsByAccount] = useStorage({ key: 'assets', defaultValue: {} })
-  const currentAssets = useMemo(() => assets[`${account}-${currentNetwork}`], [account, currentNetwork, assets[`${account}-${currentNetwork}`]])
+  const [assetsByAccounts, setAssetsByAccount] = useState(assets)
+  const currentAssets = useMemo(() => assetsByAccounts[`${account}-${currentNetwork}`] || assets[`${account}-${currentNetwork}`], [account, currentNetwork, assetsByAccounts[`${account}-${currentNetwork}`], assets[`${account}-${currentNetwork}`]])
+  const accountsAssets = useMemo(() => assetsByAccounts || assets, [assetsByAccounts, assets])
 
+  useEffect(() => {
+    setAssetsByAccount(assets)
+  }, [isLoading])
+  
   // Handle logic for extra tokens
   const { extraTokens, getExtraTokensAssets, onAddExtraToken, onRemoveExtraToken } = useExtraTokens({
     useStorage,
@@ -90,27 +97,28 @@ export default function usePortfolio({
     getCoingeckoAssetPlatforms,
     filterByHiddenTokens,
     extraTokens,
-    pendingTransactions, eligibleRequests, selectedAccount, constants
+    pendingTransactions, eligibleRequests, selectedAccount, constants,
+    setItems
   })
 
   // Implementation of balances calculation
-  const { balance, otherBalances } = useBalance(account, assets, currentAssets, currentNetwork, filterByHiddenTokens)
+  const { balance, otherBalances } = useBalance(account, accountsAssets, currentAssets, currentNetwork, filterByHiddenTokens)
 
   const refreshTokensIfVisible = useCallback(() => {
-    if (!account) return
+    if (!account || !shouldStartFetching) return
     if (isVisible && !currentAssets?.loading) {
       fetchTokens(account, currentNetwork, false, currentAssets)
     }
   }, [account, fetchTokens, prevNetwork, currentNetwork, isVisible])
-
+  
   async function loadBalance() {
-    if (!account) return
+    if (!account || !shouldStartFetching) return
     await fetchTokens(account, currentNetwork, false, currentAssets)
   }
 
   async function loadOtherNetworksBalances() {
-    if (!account) return
-    await fetchOtherNetworksBalances(account)
+    if (!account || !shouldStartFetching) return
+    await fetchOtherNetworksBalances(account, accountsAssets)
   }
 
   // Fetch balances and protocols on account and network change
@@ -118,12 +126,12 @@ export default function usePortfolio({
     currentAccount.current = account
     loadBalance()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [account, currentNetwork])
+  }, [account, currentNetwork, shouldStartFetching])
   
   // Fetch other networks balances on account change
   useEffect(() => {
     loadOtherNetworksBalances()
-  }, [account])
+  }, [account, shouldStartFetching])
 
   // Refresh tokens on network change or when the window (app) is considered to be visible to the user
   useEffect(() => {
@@ -138,23 +146,23 @@ export default function usePortfolio({
     return () => clearInterval(refreshInterval)
   }, [refreshTokensIfVisible])
 
-  // Fetch other networks assets every 20 seconds
+  // Fetch other networks assets every 60 seconds
   useEffect(() => {
-    const refreshInterval = setInterval(loadOtherNetworksBalances, 20000)
+    const refreshInterval = setInterval(loadOtherNetworksBalances, 60000)
     return () => clearInterval(refreshInterval)
   }, [account, currentNetwork])
 
   // Refresh balance every 150s if hidden
   useEffect(() => {
     const refreshIfHidden = () =>
-      !isVisible && !currentAssets?.loading ? fetchTokens(account, currentNetwork, false, currentAssets) : null
+      !isVisible && !currentAssets?.loading || (!shouldStartFetching) ? fetchTokens(account, currentNetwork, false, currentAssets) : null
     const refreshInterval = setInterval(refreshIfHidden, 150000)
     return () => clearInterval(refreshInterval)
   }, [account, currentNetwork, isVisible, fetchTokens])
 
   // Get supplement tokens data every 20s and check if prices are 2 min old and fetch new ones
   useEffect(() => {
-    const refreshInterval = setInterval(() => {
+    const refreshInterval = !shouldStartFetching && setInterval(() => {
       updateCoingeckoAndSupplementData(currentAssets)
     }, 20000)
     return () => clearInterval(refreshInterval)
@@ -165,7 +173,7 @@ export default function usePortfolio({
       isInitialMount.current = false;
     } else {
       // Your useEffect code here to be run on update
-      fetchAndSetSupplementTokenData(currentAssets)
+      !isLoading && fetchAndSetSupplementTokenData(currentAssets)
     }
     // In order to have an array in dependency we need to stringify it,
     // so we can be subscribed to changes of objects inside our arrays. 
@@ -175,11 +183,11 @@ export default function usePortfolio({
   // We need to be sure we get the latest balancesByNetworksLoading here
   const balancesByNetworksLoading = useMemo(
     () => {
-      return Object.keys(assets).filter(key => {
+      return Object.keys(assetsByAccounts).filter(key => {
         return key.includes(account) && !key.includes(currentNetwork)
-      }).every(key => assets[key]?.loading)
+      }).every(key => assetsByAccounts[key]?.loading)
     },
-    [assets, account, currentNetwork]
+    [assetsByAccounts, account, currentNetwork]
   )
 
   return {
@@ -188,7 +196,7 @@ export default function usePortfolio({
     ...currentAssets,
     tokens: tokens,
     collectibles: collectibles,
-    isCurrNetworkBalanceLoading: currentAssets?.loading,
+    isCurrNetworkBalanceLoading: isLoading || currentAssets?.loading,
     balancesByNetworksLoading,
     extraTokens,
     onAddExtraToken,

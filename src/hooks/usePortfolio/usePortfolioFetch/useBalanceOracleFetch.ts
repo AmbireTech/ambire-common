@@ -110,7 +110,8 @@ export default function useBalanceOracleFetch({
     hiddenTokens,
     constants,
     fetchCoingeckoPricesByContractAddress,
-    fetchCoingeckoPrices
+    fetchCoingeckoPrices,
+    setItems
 }) {
     const fetchAllSupplementTokenData = async (updatedTokens: any, _resolve: () => {}) => { 
       const unsignedRequests = eligibleRequests.map(t => ({ ...t, txns: [t.txn.to, t.txn.value, t.txn.data] }) ).map(t => t.txns)
@@ -253,6 +254,14 @@ export default function useBalanceOracleFetch({
     const fetchAndSetSupplementTokenData = async (assets) => {
         await new Promise((resolve) => fetchAllSupplementTokenData(assets, resolve))
         .then(oracleResponse => {
+          // Set Items in IndexedDB
+          setItems({ assetsByAccount: {
+            ...assets,
+            tokens: oracleResponse,
+            collectibles: nfts,
+            loading: false,
+            network: network
+          }, key: `${account}-${network}`})
           setAssetsByAccount(prev => ({
             ...prev,
             [`${account}-${currentNetwork}`]: {
@@ -295,12 +304,19 @@ export default function useBalanceOracleFetch({
                 }
               } else return t
             })            
-    
             updatedBalance.length && updateHumanizerData(updatedBalance)
+            // Set Items in IndexedDB
+            setItems({ assetsByAccount: {
+              ...assets,
+              tokens: updatedBalance,
+              loading: false,
+              network: currentNetwork
+            }, key: `${account}-${currentNetwork}`})
             setAssetsByAccount(prev => ({
               ...prev,
               [`${account}-${currentNetwork}`]: {
                 ...prev[`${account}-${currentNetwork}`],
+                ...assets,
                 tokens: updatedBalance,
                 loading: false,
                 fetchingVelcro: false,
@@ -314,10 +330,18 @@ export default function useBalanceOracleFetch({
             fetchAllSupplementTokenData({ tokens: tokens }, resolve)
           }).then(oracleResponse => {
             oracleResponse.length && updateHumanizerData(oracleResponse)
+            // Set Items in IndexedDB
+            setItems({ assetsByAccount: {
+              ...assets,
+              tokens: oracleResponse,
+              loading: false,
+              network: currentNetwork
+            }, key: `${account}-${currentNetwork}`})
             setAssetsByAccount(prev => ({
               ...prev,
               [`${account}-${currentNetwork}`]: {
                 ...prev[`${account}-${currentNetwork}`],
+                ...assets,
                 tokens: oracleResponse,
                 loading: false,
                 fetchingVelcro: false,

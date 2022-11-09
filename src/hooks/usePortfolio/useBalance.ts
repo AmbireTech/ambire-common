@@ -13,7 +13,7 @@ const defaultTotal = (network) => ({
 })
 
 export default function useBalance(account, assets, assetsCurrentAccount, currentNetwork, filterByHiddenTokens) {
-    const balanceByNetworks = useMemo(() => {     
+    const balanceByNetworks = useMemo(() => { 
         return Object.keys(assets).filter(key => key.includes(account) && !key.includes(currentNetwork)).map((key) => {
             
             const network =  assets[key]?.network            
@@ -69,7 +69,7 @@ export default function useBalance(account, assets, assetsCurrentAccount, curren
         } else return []
             
     }, [balanceByNetworks, currentNetwork]);
-        
+
     return {
         balance: currBalance,
         otherBalances: balancesByNetworks

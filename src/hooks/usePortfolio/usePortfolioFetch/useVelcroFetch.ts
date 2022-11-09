@@ -18,9 +18,10 @@ export default function useVelcroFetch({
     fetchAndSetSupplementTokenData,
     hiddenTokens,
     extraTokensAssets,
-    eligibleRequests
+    eligibleRequests,
+    setItems
 }) {
-    const fetchOtherNetworksBalances = async (account) => {
+    const fetchOtherNetworksBalances = async (account, assets) => {
         const networksToFetch = supportedProtocols.filter(({ network }) => network !== currentNetwork).filter(({ network }) => !networks.find(({id}) => id === network)?.relayerlessOnly)
         try {
           Promise.all(
@@ -36,28 +37,45 @@ export default function useVelcroFetch({
               try {
                   const response = await getBalances(network, account, balancesProvider)
                   if (!response) return null
+                  const currentAssetsKey = Object.keys(assets).length && Object.keys(assets).filter(key => key.includes(account) && key.includes(network))
+
+                  const prevCacheTime = currentAssetsKey && assets[currentAssetsKey]?.cacheTime || null
+                  let { tokens = [], nfts, cache, cacheTime } = response.data
                   
-                  const { tokens = [], nfts } = response.data
-                  
+                  const shouldSkipUpdate = cache && (new Date(cacheTime) < new Date(prevCacheTime))
+                  cache = shouldSkipUpdate || false
+
                   let formattedTokens = [
                       ...tokens.map((token: any) => ({
                           ...token,
-                      // balanceOracle fixes the number to the 10 decimal places, so here we should also fix it
-                      balance: Number(token.balance.toFixed(10)),
-                      // balanceOracle rounds to the second decimal places, so here we should also round it
-                      balanceUSD: roundFloatingNumber(token.balanceUSD),
-                      price: token.price || null,
-                      network: network
+                        // balanceOracle fixes the number to the 10 decimal places, so here we should also fix it
+                        balance: Number(token.balance.toFixed(10)),
+                        // balanceOracle rounds to the second decimal places, so here we should also round it
+                        balanceUSD: roundFloatingNumber(token.balanceUSD),
+                        price: token.price || null,
+                        network: network
                     }))
                     .filter((token: any) => !!token.name && !!token.symbol),
                 ]
                 
                 formattedTokens = filterByHiddenTokens(formattedTokens)
-                
+                // Set Items in IndexedDB
+                setItems({ assetsByAccount: {
+                  ...response.data,
+                  cache: cache || false,
+                  cacheTime: cacheTime || prevCacheTime,
+                  tokens: formattedTokens,
+                  collectibles: nfts,
+                  loading: false,
+                  network: network,
+                }, key: `${account}-${network}`})
+
                 setAssetsByAccount(prev => ({
                     ...prev,
                     [`${account}-${network}`]: {
                         ...prev[`${account}-${network}`],
+                        cache: cache || false,
+                        cacheTime: cacheTime || prevCacheTime,
                         tokens: formattedTokens,
                         collectibles: nfts,
                         loading: false,
@@ -81,7 +99,6 @@ export default function useVelcroFetch({
         catch (e) {
           addToast(e.message, { error: true })
         }
-        
     }
 
     // Full update of tokens
@@ -93,7 +110,6 @@ export default function useVelcroFetch({
           showLoadingState = false,
           assets = []
         ) => {
-
           // Prevent race conditions and multiple fetchings
           if (currentAccount.current !== account || assets?.fetchingVelcro) return
         
@@ -137,9 +153,9 @@ export default function useVelcroFetch({
             cache = shouldSkipUpdate || false
 
             // Tokens with balanceUpdate newer than balanceOracles update
-            const tokensToUpdateBalance = tokens.filter(newToken => assets?.tokens.find(t => t.address === newToken.address && newToken.balanceUpdate > t?.balanceOracleUpdate))
+            const tokensToUpdateBalance = tokens.filter(newToken => assets?.tokens?.length ? assets?.tokens.find(t => t.address === newToken.address && newToken.balanceUpdate > t?.balanceOracleUpdate) : newToken)
             
-            let formattedTokens = quickResponse || !tokensToUpdateBalance?.length ? [...assets?.tokens] : [...tokens]
+            let formattedTokens = !tokensToUpdateBalance?.length ? assets?.tokens && assets.tokens.length && [...assets?.tokens] : [...tokens]
             
             // velcro provider is balanceOracle and tokens may not be full
             // repopulate with current tokens and pass them to balanceOracle
@@ -153,7 +169,10 @@ export default function useVelcroFetch({
             // In case we have cached data from velcro - call balance oracle
             if (shouldSkipUpdate || !tokensToUpdateBalance.length) {
               // Update only balance from balance oracle
-              updateCoingeckoAndSupplementData({ tokens: formattedTokens })
+              updateCoingeckoAndSupplementData({ ...response.data, ...response.data,
+                collectibles: nfts,
+                cache: cache || false,
+                cacheTime: cacheTime || prevCacheTime, tokens: formattedTokens })
               return 
             }
 
@@ -176,6 +195,17 @@ export default function useVelcroFetch({
             // this can happen on first data update and we need to set our state
             // so the user doesnt wait too long seeing the loading state
             if (!assets?.tokens?.length) {
+              setItems({ assetsByAccount: {
+                ...response.data,
+                tokens: formattedTokens,
+                collectibles: nfts,
+                cache: cache || false,
+                cacheTime: cacheTime || prevCacheTime,
+                loading: false,
+                fetchingVelcro: false,
+                network: currentNetwork
+              }, key: `${account}-${currentNetwork}`})
+
               setAssetsByAccount(prev => ({
                 ...prev,
                 [`${account}-${currentNetwork}`]: {
@@ -186,10 +216,20 @@ export default function useVelcroFetch({
                   cacheTime: cacheTime || prevCacheTime,
                   loading: false,
                   fetchingVelcro: false,
-
+                  network: currentNetwork,
                 }
               }))
             } else {
+              setItems({ assetsByAccount: {
+                ...response.data,
+                tokens: formattedTokens,
+                cache: cache || false,
+                cacheTime: cacheTime || prevCacheTime,
+                collectibles: nfts,
+                loading: false,
+                fetchingVelcro: false,
+                network: currentNetwork
+              }, key: `${account}-${currentNetwork}`})
               // Otherwise wait for balance Oracle to set our tokens in state,
               // but still there is a need to update the loading state and other data.
               setAssetsByAccount(prev => ({
@@ -201,11 +241,15 @@ export default function useVelcroFetch({
                   cacheTime: cacheTime || prevCacheTime,
                   loading: false,
                   fetchingVelcro: false,
+                  network: currentNetwork
                 }
               }))
             }
     
-            updateCoingeckoAndSupplementData({ tokens: formattedTokens })
+            updateCoingeckoAndSupplementData({ ...response.data,
+              collectibles: nfts,
+              cache: cache || false,
+              cacheTime: cacheTime || prevCacheTime, tokens: formattedTokens })
             
             // Show error in case we have some
             // if (error) addToast(error, { error: true })
