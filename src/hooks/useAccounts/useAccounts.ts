@@ -104,7 +104,7 @@ export default function useAccounts({
       const clearedAccounts = accounts.filter((account: Account) => account.id !== id)
       setAccounts([...clearedAccounts])
 
-      const clearedMessages = signedMessages.filter(msg => msg.accountId != account.id)
+      const clearedMessages = signedMessages.filter(msg => msg.accountId != account?.id)
       setSignedMessages(clearedMessages)
 
       if (!clearedAccounts.length) {
