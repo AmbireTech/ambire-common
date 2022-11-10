@@ -3,7 +3,7 @@
   "name": "ambire-common",
   "description": "Common ground for the Ambire apps",
   "scripts": {
-    "install:peers": "install-peers"
+    "install:peers": "install-peers -f"
   },
   "peerDependencies": {
     "@ambire/signature-validator": "^1.0.3",
