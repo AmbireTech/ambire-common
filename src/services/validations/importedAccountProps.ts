@@ -1,8 +1,8 @@
 // TODO: add types
 
-import { Account } from 'ambire-common/src/hooks/useAccounts'
 import { getAddress, hexDataLength } from 'ethers/lib/utils'
 
+import { Account } from '../../hooks/useAccounts'
 import { isEmail } from './validate'
 
 const NUMBER_STRING_REGEX = /^([0-9]+\.?[0-9]*)$/
