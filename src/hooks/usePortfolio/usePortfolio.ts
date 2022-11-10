@@ -109,7 +109,7 @@ export default function usePortfolio({
     if (isVisible && !currentAssets?.loading) {
       fetchTokens(account, currentNetwork, false, currentAssets)
     }
-  }, [account, fetchTokens, prevNetwork, currentNetwork, isVisible])
+  }, [account, fetchTokens, prevNetwork, currentNetwork, isVisible, shouldStartFetching])
   
   async function loadBalance() {
     if (!account || !shouldStartFetching) return
@@ -150,30 +150,30 @@ export default function usePortfolio({
   useEffect(() => {
     const refreshInterval = setInterval(loadOtherNetworksBalances, 60000)
     return () => clearInterval(refreshInterval)
-  }, [account, currentNetwork])
+  }, [account, currentNetwork, shouldStartFetching])
 
   // Refresh balance every 150s if hidden
   useEffect(() => {
     const refreshIfHidden = () =>
-      !isVisible && !currentAssets?.loading || (!shouldStartFetching) ? fetchTokens(account, currentNetwork, false, currentAssets) : null
+      !isVisible && !currentAssets?.loading || shouldStartFetching ? fetchTokens(account, currentNetwork, false, currentAssets) : null
     const refreshInterval = setInterval(refreshIfHidden, 150000)
     return () => clearInterval(refreshInterval)
-  }, [account, currentNetwork, isVisible, fetchTokens])
+  }, [account, currentNetwork, isVisible, fetchTokens, shouldStartFetching])
 
   // Get supplement tokens data every 20s and check if prices are 2 min old and fetch new ones
   useEffect(() => {
-    const refreshInterval = !shouldStartFetching && setInterval(() => {
+    const refreshInterval = shouldStartFetching && setInterval(() => {
       updateCoingeckoAndSupplementData(currentAssets)
     }, 20000)
     return () => clearInterval(refreshInterval)
-  }, [currentAssets, currentNetwork])
+  }, [currentAssets, currentNetwork, shouldStartFetching])
 
   useEffect(() => {
     if (isInitialMount.current) {
       isInitialMount.current = false;
     } else {
       // Your useEffect code here to be run on update
-      !isLoading && fetchAndSetSupplementTokenData(currentAssets)
+      fetchAndSetSupplementTokenData(currentAssets)
     }
     // In order to have an array in dependency we need to stringify it,
     // so we can be subscribed to changes of objects inside our arrays. 
