@@ -12,7 +12,7 @@ yarn install
 
 ### Option 1: clone ambire-common in parent's node_modules
 
-Tip during development: After cloning the web or the mobile app and doing `npm install` (or `yarn install`), delete the `node_modules/ambire-common` directory and git clone the ambire-common (this) repository into `node_modules/ambire-common` instead. This way you can modify and commit changes to ambire-common and they will be instantly visible on the web or the mobile app during development.
+After cloning the web or the mobile app and doing `npm install` (or `yarn install`), delete the `node_modules/ambire-common` directory and git clone the ambire-common (this) repository into `node_modules/ambire-common` instead.
 
 ### Option 2: use `npm link`
 
