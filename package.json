@@ -16,7 +16,7 @@
     "@walletconnect/client": "^1.7.1",
     "adex-protocol-eth": "git+https://git@github.com/AmbireTech/adex-protocol-eth.git",
     "bip44-constants": "^128.0.0",
-    "eslint": "8.3.0",
+    "eslint": "^7.11.0",
     "eslint-config-airbnb": "19.0.1",
     "eslint-config-airbnb-typescript": "16.0.0",
     "eslint-config-prettier": "8.3.0",
