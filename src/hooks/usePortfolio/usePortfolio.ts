@@ -39,7 +39,7 @@ export default function usePortfolio({
   const currentAccount = useRef<string>()
   const prevNetwork = usePrevious(currentNetwork)
   const isInitialMount = useRef(true);
-  const [assets, setItems, isLoading, shouldStartFetching] = useIndexedDBStorage({ dbName: 'ambire-assets', version: 1 })
+  const [assets, setItems, isLoading, shouldStartFetching] = useIndexedDBStorage({ dbName: 'ambire-assets', version: 1, account, network: currentNetwork })
 
   // Implementation of structure that contains all assets by account and network
   const [assetsByAccounts, setAssetsByAccount] = useState(assets)
@@ -155,7 +155,7 @@ export default function usePortfolio({
   // Refresh balance every 150s if hidden
   useEffect(() => {
     const refreshIfHidden = () =>
-      !isVisible && !currentAssets?.loading || shouldStartFetching ? fetchTokens(account, currentNetwork, false, currentAssets) : null
+      !isVisible && !currentAssets?.loading && shouldStartFetching ? fetchTokens(account, currentNetwork, false, currentAssets) : null
     const refreshInterval = setInterval(refreshIfHidden, 150000)
     return () => clearInterval(refreshInterval)
   }, [account, currentNetwork, isVisible, fetchTokens, shouldStartFetching])

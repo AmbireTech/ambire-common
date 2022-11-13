@@ -257,26 +257,29 @@ export default function useBalanceOracleFetch({
           // Set Items in IndexedDB
           setItems({ assetsByAccount: {
             ...assets,
-            tokens: oracleResponse,
+            tokens: oracleResponse?.length ? oracleResponse : assets?.tokens,
             collectibles: nfts,
             loading: false,
-            network: network
+            network: network,
+            fetchingVelcro: false,
           }, key: `${account}-${network}`})
           setAssetsByAccount(prev => ({
             ...prev,
             [`${account}-${currentNetwork}`]: {
               ...prev[`${account}-${currentNetwork}`],
-              tokens: oracleResponse,
-              loading: false
+              tokens: oracleResponse?.length ? oracleResponse : assets?.tokens,
+              loading: false,
+              fetchingVelcro: false,
             }
           }))
     })}
     
-    const updateCoingeckoAndSupplementData = async (assets) => {
+    const updateCoingeckoAndSupplementData = async (assets, minutes) => {
         const tokens = assets?.tokens || []
+        const minutesToUpdateChekUpdate = minutes ? 5*60*1000 : 2*60*1000
         // Check for not updated prices from coingecko in the last 2 minutes
         const coingeckoTokensToUpdate = tokens.filter(token => token.coingeckoId).filter(token => { 
-          if (((new Date().valueOf() - token.priceUpdate) >= 2*60*1000)) {
+          if (((new Date().valueOf() - token.priceUpdate) >= minutesToUpdateChekUpdate)) {
             return token
           }
         })
@@ -289,7 +292,7 @@ export default function useBalanceOracleFetch({
           Promise.all([coingeckoPrices, balanceOracle]).then((results) => {
             const coingeckoResponse = results[0]
             const balanceOracleResponse = results[1]
-    
+
             const updatedBalance = balanceOracleResponse.map(t => {
               if (coingeckoResponse.hasOwnProperty(t.coingeckoId)) {
                 return {
@@ -308,8 +311,9 @@ export default function useBalanceOracleFetch({
             // Set Items in IndexedDB
             setItems({ assetsByAccount: {
               ...assets,
-              tokens: updatedBalance,
+              tokens: updatedBalance?.length ? updatedBalance : assets?.tokens,
               loading: false,
+              fetchingVelcro: false,
               network: currentNetwork
             }, key: `${account}-${currentNetwork}`})
             setAssetsByAccount(prev => ({
@@ -317,7 +321,7 @@ export default function useBalanceOracleFetch({
               [`${account}-${currentNetwork}`]: {
                 ...prev[`${account}-${currentNetwork}`],
                 ...assets,
-                tokens: updatedBalance,
+                tokens: updatedBalance?.length ? updatedBalance : assets?.tokens,
                 loading: false,
                 fetchingVelcro: false,
               }
@@ -333,7 +337,7 @@ export default function useBalanceOracleFetch({
             // Set Items in IndexedDB
             setItems({ assetsByAccount: {
               ...assets,
-              tokens: oracleResponse,
+              tokens: oracleResponse?.length ? oracleResponse : assets?.tokens,
               loading: false,
               network: currentNetwork
             }, key: `${account}-${currentNetwork}`})
@@ -342,7 +346,7 @@ export default function useBalanceOracleFetch({
               [`${account}-${currentNetwork}`]: {
                 ...prev[`${account}-${currentNetwork}`],
                 ...assets,
-                tokens: oracleResponse,
+                tokens: oracleResponse?.length ? oracleResponse : assets?.tokens,
                 loading: false,
                 fetchingVelcro: false,
               }

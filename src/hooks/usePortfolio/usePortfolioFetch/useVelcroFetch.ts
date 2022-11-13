@@ -155,8 +155,8 @@ export default function useVelcroFetch({
             // Tokens with balanceUpdate newer than balanceOracles update
             const tokensToUpdateBalance = tokens.filter(newToken => assets?.tokens?.length ? assets?.tokens.find(t => t.address === newToken.address && newToken.balanceUpdate > t?.balanceOracleUpdate) : newToken)
             
-            let formattedTokens = !tokensToUpdateBalance?.length ? assets?.tokens && assets.tokens.length && [...assets?.tokens] : [...tokens]
-            
+            let formattedTokens = []
+
             // velcro provider is balanceOracle and tokens may not be full
             // repopulate with current tokens and pass them to balanceOracle
             if (provider === 'balanceOracle') {
@@ -165,29 +165,65 @@ export default function useVelcroFetch({
                 ...formattedTokens,
               ]
             }
-    
-            // In case we have cached data from velcro - call balance oracle
-            if (shouldSkipUpdate || !tokensToUpdateBalance.length) {
+
+
+             // In case we have cached data from velcro - call balance oracle
+             if (shouldSkipUpdate || !tokensToUpdateBalance.length) {
+              formattedTokens = !tokensToUpdateBalance?.length ? assets?.tokens && assets.tokens.length && [...assets?.tokens] : [...tokens]
               // Update only balance from balance oracle
-              updateCoingeckoAndSupplementData({ ...response.data, ...response.data,
+              updateCoingeckoAndSupplementData(
+                { ...response.data,
                 collectibles: nfts,
                 cache: cache || false,
-                cacheTime: cacheTime || prevCacheTime, tokens: formattedTokens })
+                cacheTime: cacheTime || prevCacheTime, tokens: formattedTokens
+                },
+                5
+                )
               return 
             }
+            
 
             formattedTokens = [
-              ...formattedTokens
-                .map((token: any) => ({
-                  ...token,
-                  // balanceOracle fixes the number to the 10 decimal places, so here we should also fix it
-                  balance: Number(token.balance.toFixed(10)),
-                  // balanceOracle rounds to the second decimal places, so here we should also round it
-                  balanceUSD: roundFloatingNumber(token.balanceUSD),
-                  price: token.price || null,
-                  network: network?.network
-                }))
-                .filter((token: any) => !!token.name && !!token.symbol),
+              ...tokens.map((token: any) => {
+              const prevToken = assets?.tokens?.length && assets?.tokens.find(t => t.address === token.address)
+              let updatedData = {}
+              if (!prevToken) updatedData = { ...token }
+              const { balance, balanceUpdate, price, priceUpdate, ...newData } = token
+              updatedData = {
+                ...prevToken,
+                ...newData,
+              }
+
+              if (!prevToken?.balanceOracleUpdate || token.balanceUpdate > prevToken?.balanceOracleUpdate ) {
+                // update balance 
+                updatedData = {
+                  ...updatedData,
+                  balance,
+                  balanceUpdate,
+                }
+              }
+                            
+              if (!token.priceUpdate || !prevToken?.priceUpdate || (token.priceUpdate > prevToken?.priceUpdate) && ((token.priceUpdate - prevToken?.priceUpdate) >= 5*60*1000)) {
+                // update price
+                updatedData = {
+                  ...updatedData,
+                  price,
+                  priceUpdate,
+                }
+              }
+
+              return updatedData
+              
+            }).map((token: any) => ({
+                ...token,
+                // balanceOracle fixes the number to the 10 decimal places, so here we should also fix it
+                balance: Number(token.balance.toFixed(10)),
+                // balanceOracle rounds to the second decimal places, so here we should also round it
+                balanceUSD: roundFloatingNumber(token.balanceUSD),
+                price: token.price || null,
+                network: network?.network
+              }))
+              .filter((token: any) => !!token.name && !!token.symbol),
               ...extraTokensAssets
             ]
     
@@ -249,7 +285,7 @@ export default function useVelcroFetch({
             updateCoingeckoAndSupplementData({ ...response.data,
               collectibles: nfts,
               cache: cache || false,
-              cacheTime: cacheTime || prevCacheTime, tokens: formattedTokens })
+              cacheTime: cacheTime || prevCacheTime, tokens: formattedTokens }, 5)
             
             // Show error in case we have some
             // if (error) addToast(error, { error: true })
