@@ -258,15 +258,16 @@ export default function useBalanceOracleFetch({
           setItems({ assetsByAccount: {
             ...assets,
             tokens: oracleResponse?.length ? oracleResponse : assets?.tokens,
-            collectibles: nfts,
+            collectibles: assets.nfts,
             loading: false,
-            network: network,
+            network: currentNetwork,
             fetchingVelcro: false,
-          }, key: `${account}-${network}`})
+          }, key: `${account}-${currentNetwork}`})
           setAssetsByAccount(prev => ({
             ...prev,
             [`${account}-${currentNetwork}`]: {
               ...prev[`${account}-${currentNetwork}`],
+              collectibles: assets.nfts,
               tokens: oracleResponse?.length ? oracleResponse : assets?.tokens,
               loading: false,
               fetchingVelcro: false,
@@ -313,6 +314,7 @@ export default function useBalanceOracleFetch({
               ...assets,
               tokens: updatedBalance?.length ? updatedBalance : assets?.tokens,
               loading: false,
+              collectibles: assets.nfts,
               fetchingVelcro: false,
               network: currentNetwork
             }, key: `${account}-${currentNetwork}`})
@@ -321,6 +323,7 @@ export default function useBalanceOracleFetch({
               [`${account}-${currentNetwork}`]: {
                 ...prev[`${account}-${currentNetwork}`],
                 ...assets,
+                collectibles: assets.nfts,
                 tokens: updatedBalance?.length ? updatedBalance : assets?.tokens,
                 loading: false,
                 fetchingVelcro: false,
@@ -339,6 +342,7 @@ export default function useBalanceOracleFetch({
               ...assets,
               tokens: oracleResponse?.length ? oracleResponse : assets?.tokens,
               loading: false,
+              collectibles: assets.nfts,
               network: currentNetwork
             }, key: `${account}-${currentNetwork}`})
             setAssetsByAccount(prev => ({
@@ -346,6 +350,7 @@ export default function useBalanceOracleFetch({
               [`${account}-${currentNetwork}`]: {
                 ...prev[`${account}-${currentNetwork}`],
                 ...assets,
+                collectibles: assets.nfts,
                 tokens: oracleResponse?.length ? oracleResponse : assets?.tokens,
                 loading: false,
                 fetchingVelcro: false,
