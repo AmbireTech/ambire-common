@@ -7,7 +7,6 @@ import networks from 'ambire-common/src/constants/networks'
 import { roundFloatingNumber } from 'ambire-common/src/services/formatter'
 
 export default function useVelcroFetch({
-    account,
     currentAccount,
     currentNetwork,
     setAssetsByAccount,
@@ -15,12 +14,53 @@ export default function useVelcroFetch({
     getBalances,
     filterByHiddenTokens,
     updateCoingeckoAndSupplementData,
-    fetchAndSetSupplementTokenData,
     hiddenTokens,
     extraTokensAssets,
     eligibleRequests,
-    setItems
 }) {
+    const formatTokensResponse = (tokens, assets, network) => {
+      return [
+        ...tokens.map((token: any) => {
+        const prevToken = assets?.tokens?.length && assets?.tokens.find(t => t.address === token.address)
+        let updatedData = {}
+        if (!prevToken) return updatedData = { ...token }
+        const { balance, balanceUSD, balanceUpdate, price, priceUpdate, ...newData } = token
+        updatedData = {
+          ...prevToken,
+          ...newData,
+        }
+
+        if (!prevToken?.balanceOracleUpdate || token.balanceUpdate > prevToken?.balanceOracleUpdate || token.balanceUpdate > prevToken?.balanceUpdate) {
+          // update balance 
+          updatedData = {
+            ...updatedData,
+            balance,
+            balanceUpdate,
+          }
+        }
+
+        if (!token.priceUpdate || !prevToken?.priceUpdate || (token.priceUpdate > prevToken?.priceUpdate) && ((token.priceUpdate - prevToken?.priceUpdate) >= 5*60*1000)) {
+          // update price
+          updatedData = {
+            ...updatedData,
+            price,
+            priceUpdate,
+          }
+        }
+        return updatedData
+      }).map((token: any) => ({
+          ...token,
+          // balanceOracle fixes the number to the 10 decimal places, so here we should also fix it
+          balance: Number(token.balance.toFixed(10)),
+          // Update balanceUSD in case its old but price is new
+          balanceUSD: roundFloatingNumber(Number(parseFloat(token.balance * token.price || 0).toFixed(2))),
+          price: token.price || null,
+          network: network
+        }))
+        .filter((token: any) => !!token.name && !!token.symbol),
+        ...extraTokensAssets.filter(t => t.network === network)
+      ]
+    }
     const fetchOtherNetworksBalances = async (account, assets) => {
         const networksToFetch = supportedProtocols.filter(({ network }) => network !== currentNetwork).filter(({ network }) => !networks.find(({id}) => id === network)?.relayerlessOnly)
         try {
@@ -38,51 +78,27 @@ export default function useVelcroFetch({
                   const response = await getBalances(network, account, balancesProvider)
                   if (!response) return null
                   const currentAssetsKey = Object.keys(assets).length && Object.keys(assets).filter(key => key.includes(account) && key.includes(network))
-
                   const prevCacheTime = currentAssetsKey && assets[currentAssetsKey]?.cacheTime || null
                   let { tokens = [], nfts, cache, cacheTime } = response.data
-                  
+
                   const shouldSkipUpdate = cache && (new Date(cacheTime) < new Date(prevCacheTime))
                   cache = shouldSkipUpdate || false
-
-                  let formattedTokens = [
-                      ...tokens.map((token: any) => ({
-                          ...token,
-                        // balanceOracle fixes the number to the 10 decimal places, so here we should also fix it
-                        balance: Number(token.balance.toFixed(10)),
-                        // balanceOracle rounds to the second decimal places, so here we should also round it
-                        balanceUSD: roundFloatingNumber(token.balanceUSD),
-                        price: token.price || null,
-                        network: network
-                    }))
-                    .filter((token: any) => !!token.name && !!token.symbol),
-                ]
-                
-                formattedTokens = filterByHiddenTokens(formattedTokens)
-                // Set Items in IndexedDB
-                setItems({ assetsByAccount: {
-                  ...response.data,
-                  cache: cache || false,
-                  cacheTime: cacheTime || prevCacheTime,
-                  tokens: formattedTokens,
-                  collectibles: nfts,
-                  loading: false,
-                  network: network,
-                }, key: `${account}-${network}`})
-
-                setAssetsByAccount(prev => ({
-                    ...prev,
-                    [`${account}-${network}`]: {
-                        ...prev[`${account}-${network}`],
-                        cache: cache || false,
-                        cacheTime: cacheTime || prevCacheTime,
-                        tokens: formattedTokens,
-                        collectibles: nfts,
-                        loading: false,
-                        network: network
-                    }
-                }))
-                return true
+            
+                  let formattedTokens = formatTokensResponse(tokens, assets[currentAssetsKey], network)
+                  formattedTokens = filterByHiddenTokens(formattedTokens)
+                  setAssetsByAccount(prev => ({
+                      ...prev,
+                      [`${account}-${network}`]: {
+                          ...prev[`${account}-${network}`],
+                          cache: cache || false,
+                          cacheTime: cacheTime || prevCacheTime,
+                          tokens: formattedTokens,
+                          collectibles: nfts,
+                          loading: false,
+                          network: network
+                      }
+                  }))
+                  return true
             } catch (e) {
                 addToast(e.message, { error: true })
           
@@ -111,7 +127,7 @@ export default function useVelcroFetch({
           assets = []
         ) => {
           // Prevent race conditions and multiple fetchings
-          if (currentAccount.current !== account || assets?.fetchingVelcro) return
+          if (currentAccount.current !== account) return
         
           if (showLoadingState || !assets?.tokens?.length) {
             setAssetsByAccount(prev => ({
@@ -119,15 +135,6 @@ export default function useVelcroFetch({
               [`${account}-${currentNetwork}`]: {
                 ...prev[`${account}-${currentNetwork}`],
                 loading: true,
-                fetchingVelcro: true
-              }
-            }))
-          } else {
-            setAssetsByAccount(prev => ({
-              ...prev,
-              [`${account}-${currentNetwork}`]: {
-                ...prev[`${account}-${currentNetwork}`],
-                fetchingVelcro: true,
               }
             }))
           }
@@ -139,8 +146,8 @@ export default function useVelcroFetch({
             const response = await getBalances(currentNetwork, account, network.balancesProvider, quickResponse)
             if (!response) return null
 
-            let { cache, cacheTime, tokens, nfts, partial, error, provider } = response.data
-    
+            let { cache, cacheTime, tokens, nfts, partial, provider, error } = response.data
+
             tokens = filterByHiddenTokens(tokens)
             const prevCacheTime = assets?.cacheTime
             // provider = "balanceOracle"
@@ -162,10 +169,9 @@ export default function useVelcroFetch({
             if (provider === 'balanceOracle') {
               formattedTokens = [
                 ...assets?.tokens || [],
-                ...formattedTokens,
+                ...tokens,
               ]
             }
-
 
              // In case we have cached data from velcro - call balance oracle
              if (shouldSkipUpdate || !tokensToUpdateBalance.length) {
@@ -178,70 +184,14 @@ export default function useVelcroFetch({
                 cacheTime: cacheTime || prevCacheTime, tokens: formattedTokens
                 },
                 5
-                )
+              )
               return 
             }
-            
-
-            formattedTokens = [
-              ...tokens.map((token: any) => {
-              const prevToken = assets?.tokens?.length && assets?.tokens.find(t => t.address === token.address)
-              let updatedData = {}
-              if (!prevToken) updatedData = { ...token }
-              const { balance, balanceUpdate, price, priceUpdate, ...newData } = token
-              updatedData = {
-                ...prevToken,
-                ...newData,
-              }
-
-              if (!prevToken?.balanceOracleUpdate || token.balanceUpdate > prevToken?.balanceOracleUpdate ) {
-                // update balance 
-                updatedData = {
-                  ...updatedData,
-                  balance,
-                  balanceUpdate,
-                }
-              }
-                            
-              if (!token.priceUpdate || !prevToken?.priceUpdate || (token.priceUpdate > prevToken?.priceUpdate) && ((token.priceUpdate - prevToken?.priceUpdate) >= 5*60*1000)) {
-                // update price
-                updatedData = {
-                  ...updatedData,
-                  price,
-                  priceUpdate,
-                }
-              }
-
-              return updatedData
-              
-            }).map((token: any) => ({
-                ...token,
-                // balanceOracle fixes the number to the 10 decimal places, so here we should also fix it
-                balance: Number(token.balance.toFixed(10)),
-                // balanceOracle rounds to the second decimal places, so here we should also round it
-                balanceUSD: roundFloatingNumber(token.balanceUSD),
-                price: token.price || null,
-                network: network?.network
-              }))
-              .filter((token: any) => !!token.name && !!token.symbol),
-              ...extraTokensAssets
-            ]
-    
+            formattedTokens = formatTokensResponse(tokens, assets, network?.network)
             // Set the new data from velcro if we don't have any tokens yet
             // this can happen on first data update and we need to set our state
             // so the user doesnt wait too long seeing the loading state
             if (!assets?.tokens?.length) {
-              setItems({ assetsByAccount: {
-                ...response.data,
-                tokens: formattedTokens,
-                collectibles: nfts,
-                cache: cache || false,
-                cacheTime: cacheTime || prevCacheTime,
-                loading: false,
-                fetchingVelcro: false,
-                network: currentNetwork
-              }, key: `${account}-${currentNetwork}`})
-
               setAssetsByAccount(prev => ({
                 ...prev,
                 [`${account}-${currentNetwork}`]: {
@@ -251,21 +201,10 @@ export default function useVelcroFetch({
                   cache: cache || false,
                   cacheTime: cacheTime || prevCacheTime,
                   loading: false,
-                  fetchingVelcro: false,
                   network: currentNetwork,
                 }
               }))
             } else {
-              setItems({ assetsByAccount: {
-                ...response.data,
-                tokens: formattedTokens,
-                cache: cache || false,
-                cacheTime: cacheTime || prevCacheTime,
-                collectibles: nfts,
-                loading: false,
-                fetchingVelcro: false,
-                network: currentNetwork
-              }, key: `${account}-${currentNetwork}`})
               // Otherwise wait for balance Oracle to set our tokens in state,
               // but still there is a need to update the loading state and other data.
               setAssetsByAccount(prev => ({
@@ -276,7 +215,6 @@ export default function useVelcroFetch({
                   cache: cache || false,
                   cacheTime: cacheTime || prevCacheTime,
                   loading: false,
-                  fetchingVelcro: false,
                   network: currentNetwork
                 }
               }))
@@ -300,7 +238,6 @@ export default function useVelcroFetch({
                   ...prev[`${account}-${network}`],
                   error: e,
                   loading: false,
-                  fetchingVelcro: false,
                 }
             }))
           }
