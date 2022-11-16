@@ -11,8 +11,6 @@ const ETH_ID = 'ethereum'
 const BIP44_BASE_VALUE = 2147483648
 const ADDRESS_ZERO = '0x0000000000000000000000000000000000000000'
 
-const provider = getProvider(ETH_ID)
-
 const normalizeDomain = (domain) => {
   try {
     return normalize(domain)
@@ -41,6 +39,7 @@ function isCorrectAddress(address) {
 async function resolveENSDomain(domain, bip44Item) {
   const normalizedDomainName = normalizeDomain(domain)
   if (!normalizedDomainName) return null
+  const provider = getProvider(ETH_ID)
   const resolver = await provider.getResolver(normalizedDomainName)
   if (!resolver) return null
   const ethAddress = await resolver.getAddress()
