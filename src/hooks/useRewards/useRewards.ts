@@ -48,6 +48,7 @@ export default function useRewards({
 }: UseRewardsProps): UseRewardsReturnType {
   const { cacheBreak } = useCacheBreak()
   const [rewards, setRewards] = useState<RewardsState>(rewardsInitialState)
+  const [lastUpdated, setLastUpdated] = useState<null | number>(null)
 
   const rewardsUrl =
     !!relayerURL &&
@@ -89,9 +90,11 @@ export default function useRewards({
     rewardsDetails.promo = (data.promo as Promo) || null
 
     setRewards(rewardsDetails as RewardsState)
+    setLastUpdated(Date.now())
   }, [accountId, data, errMsg, isLoading])
 
   return {
+    lastUpdated,
     isLoading,
     errMsg,
     rewards
