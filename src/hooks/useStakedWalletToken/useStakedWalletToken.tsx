@@ -10,13 +10,6 @@ import { UseStakedWalletTokenProps, UseStakedWalletTokenReturnType } from './typ
 const WALLET_STAKING_ADDRESS = '0x47cd7e91c3cbaaf266369fe8518345fc4fc12935'
 const WALLET_STAKING_POOL_INTERFACE = new Interface(WalletStakingPoolABI)
 
-const provider = getProvider(NETWORKS.ethereum)
-const stakingWalletContract = new Contract(
-  WALLET_STAKING_ADDRESS,
-  WALLET_STAKING_POOL_INTERFACE,
-  provider
-)
-
 const useStakedWalletToken = ({
   accountId
 }: UseStakedWalletTokenProps): UseStakedWalletTokenReturnType => {
@@ -24,6 +17,13 @@ const useStakedWalletToken = ({
 
   const fetchStakedWalletData = useCallback(async () => {
     try {
+      const provider = getProvider(NETWORKS.ethereum)
+      const stakingWalletContract = new Contract(
+        WALLET_STAKING_ADDRESS,
+        WALLET_STAKING_POOL_INTERFACE,
+        provider
+      )
+
       const [balanceOf, shareValue] = await Promise.all([
         stakingWalletContract.balanceOf(accountId),
         stakingWalletContract.shareValue()
