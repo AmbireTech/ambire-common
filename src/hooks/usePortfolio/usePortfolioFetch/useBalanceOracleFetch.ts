@@ -111,8 +111,17 @@ export default function useBalanceOracleFetch({
     constants,
     fetchCoingeckoPricesByContractAddress,
     fetchCoingeckoPrices,
+    fetchingAssets,
+    setFetchingAssets
 }) {
-    const fetchAllSupplementTokenData = async (updatedTokens: any, _resolve: () => {}) => { 
+    const fetchAllSupplementTokenData = async (updatedTokens: any, _resolve: () => {}) => {
+      setFetchingAssets(prev => ({
+        ...prev,
+        [`${account}-${currentNetwork}`]: {
+          ...prev[`${account}-${currentNetwork}`],
+          rpc: true,
+        }
+      }))
       const unsignedRequests = eligibleRequests.map(t => ({ ...t, txns: [t.txn.to, t.txn.value, t.txn.data] }) ).map(t => t.txns)
 
       const extendedSummary = eligibleRequests?.length && eligibleRequests.map(req => {
@@ -205,7 +214,7 @@ export default function useBalanceOracleFetch({
     }
     
     const fetchSupplementTokenData =
-        async (updatedTokens: any, resolve, pendingTransactions = [], state = 'latest') => {   
+        async (updatedTokens: any, resolve, pendingTransactions = [], state = 'latest') => {
           if (!updatedTokens?.tokens?.length) {
             setAssetsByAccount(prev => ({
               ...prev,
@@ -246,6 +255,13 @@ export default function useBalanceOracleFetch({
                 error: e.message
               }
             }))
+            setFetchingAssets(prev => ({
+              ...prev,
+              [`${account}-${currentNetwork}`]: {
+                ...prev[`${account}-${currentNetwork}`],
+                rpc: false,
+              }
+            }))
           }
         }
 
@@ -253,6 +269,13 @@ export default function useBalanceOracleFetch({
     const fetchAndSetSupplementTokenData = async (assets) => {
         await new Promise((resolve) => fetchAllSupplementTokenData(assets, resolve))
         .then(oracleResponse => {
+          setFetchingAssets(prev => ({
+            ...prev,
+            [`${account}-${currentNetwork}`]: {
+              ...prev[`${account}-${currentNetwork}`],
+              rpc: false,
+            }
+          }))
           setAssetsByAccount(prev => ({
             ...prev,
             [`${account}-${currentNetwork}`]: {
@@ -265,6 +288,7 @@ export default function useBalanceOracleFetch({
     })}
     
     const updateCoingeckoAndSupplementData = async (assets, minutes) => {
+        if (fetchingAssets[`${account}-${currentNetwork}`]?.rpc) return
         const tokens = assets?.tokens || []
         const minutesToUpdateChekUpdate = minutes ? 5*60*1000 : 2*60*1000
         // Check for not updated prices from coingecko in the last 2 minutes
@@ -308,6 +332,14 @@ export default function useBalanceOracleFetch({
                 loading: false,
               }
             }))
+            setFetchingAssets(prev => ({
+              ...prev,
+              [`${account}-${currentNetwork}`]: {
+                ...prev[`${account}-${currentNetwork}`],
+                rpc: false,
+              }
+            }))
+            
           
           })  
         } else {
@@ -316,6 +348,13 @@ export default function useBalanceOracleFetch({
             fetchAllSupplementTokenData({ tokens: tokens }, resolve)
           }).then(oracleResponse => {
             oracleResponse.length && updateHumanizerData(oracleResponse)
+            setFetchingAssets(prev => ({
+              ...prev,
+              [`${account}-${currentNetwork}`]: {
+                ...prev[`${account}-${currentNetwork}`],
+                rpc: false,
+              }
+            }))
             setAssetsByAccount(prev => ({
               ...prev,
               [`${account}-${currentNetwork}`]: {

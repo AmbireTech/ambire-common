@@ -17,6 +17,8 @@ export default function useVelcroFetch({
     hiddenTokens,
     extraTokensAssets,
     eligibleRequests,
+    fetchingAssets,
+    setFetchingAssets
 }) {
     const formatTokensResponse = (tokens, assets, network) => {
       return [
@@ -127,7 +129,15 @@ export default function useVelcroFetch({
           assets = []
         ) => {
           // Prevent race conditions and multiple fetchings
-          if (currentAccount.current !== account) return
+          if (currentAccount.current !== account || fetchingAssets[`${account}-${currentNetwork}`]?.velcro) return
+
+          setFetchingAssets(prev => ({
+            ...prev,
+            [`${account}-${currentNetwork}`]: { 
+              ...prev[`${account}-${currentNetwork}`],
+              velcro: true,
+            }
+          }))
         
           if (showLoadingState || !assets?.tokens?.length) {
             setAssetsByAccount(prev => ({
@@ -150,15 +160,15 @@ export default function useVelcroFetch({
 
             tokens = filterByHiddenTokens(tokens)
             const prevCacheTime = assets?.cacheTime
-            // provider = "balanceOracle"
             // We should skip the tokens update for the current network,
-            // in the case Velcro returns a cached data, which is more outdated than the already fetched data.
+            // in the case Velcro returns a cached data, which is more outdated than the already fetched data or we have partial data.
             const shouldSkipUpdate =
               cache &&
               (new Date(cacheTime) < new Date(prevCacheTime)) || partial
-    
-            cache = shouldSkipUpdate || false
+            
+            if (cacheTime === prevCacheTime) return
 
+            cache = shouldSkipUpdate || false
             // Tokens with balanceUpdate newer than balanceOracles update
             const tokensToUpdateBalance = tokens.filter(newToken => assets?.tokens?.length ? assets?.tokens.find(t => t.address === newToken.address && newToken.balanceUpdate > t?.balanceOracleUpdate) : newToken)
             
@@ -166,17 +176,24 @@ export default function useVelcroFetch({
 
             // velcro provider is balanceOracle and tokens may not be full
             // repopulate with current tokens and pass them to balanceOracle
-            if (provider === 'balanceOracle') {
+            if (provider === 'balanceOracle' || partial) {
               formattedTokens = [
                 ...assets?.tokens || [],
                 ...tokens,
               ]
             }
-
-             // In case we have cached data from velcro - call balance oracle
-             if (shouldSkipUpdate || !tokensToUpdateBalance.length) {
-              formattedTokens = !tokensToUpdateBalance?.length ? assets?.tokens && assets.tokens.length && [...assets?.tokens] : [...tokens]
+            
+            // In case we have cached data from velcro - call balance oracle
+            if (shouldSkipUpdate || !tokensToUpdateBalance.length) {
+              formattedTokens = [...formattedTokens, ...assets?.tokens]
               // Update only balance from balance oracle
+              setFetchingAssets(prev => ({
+                ...prev,
+                [`${account}-${currentNetwork}`]: { 
+                  ...prev[`${account}-${currentNetwork}`],
+                  velcro: false,
+                }
+              }))
               updateCoingeckoAndSupplementData(
                 { ...response.data,
                 collectibles: nfts,
@@ -204,6 +221,13 @@ export default function useVelcroFetch({
                   network: currentNetwork,
                 }
               }))
+              setFetchingAssets(prev => ({
+                ...prev,
+                [`${account}-${currentNetwork}`]: { 
+                  ...prev[`${account}-${currentNetwork}`],
+                  velcro: false,
+                }
+              }))
             } else {
               // Otherwise wait for balance Oracle to set our tokens in state,
               // but still there is a need to update the loading state and other data.
@@ -218,8 +242,21 @@ export default function useVelcroFetch({
                   network: currentNetwork
                 }
               }))
+              setFetchingAssets(prev => ({
+                ...prev,
+                [`${account}-${currentNetwork}`]: { 
+                  ...prev[`${account}-${currentNetwork}`],
+                  velcro: false,
+                }
+              }))
             }
-    
+            setFetchingAssets(prev => ({
+              ...prev,
+              [`${account}-${currentNetwork}`]: { 
+                ...prev[`${account}-${currentNetwork}`],
+                velcro: false,
+              }
+            }))
             updateCoingeckoAndSupplementData({ ...response.data,
               collectibles: nfts,
               cache: cache || false,
@@ -231,7 +268,15 @@ export default function useVelcroFetch({
           } catch (e) {
             console.error('Balances API error', e)
             addToast(e.message, { error: true })
-    
+
+            setFetchingAssets(prev => ({
+              ...prev,
+              [`${account}-${currentNetwork}`]: { 
+                ...prev[`${account}-${currentNetwork}`],
+                velcro: false,
+              }
+            }))
+
             setAssetsByAccount(prev => ({
                 ...prev,
                 [`${account}-${network}`]: {

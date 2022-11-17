@@ -27,6 +27,8 @@ export default function useProtocolsFetch({
   eligibleRequests,
   selectedAccount,
   constants,
+  fetchingAssets,
+  setFetchingAssets
 }) {
   const extraTokensAssets = useMemo(
     () => getExtraTokensAssets(account, currentNetwork),
@@ -62,6 +64,8 @@ export default function useProtocolsFetch({
     constants,
     fetchCoingeckoPricesByContractAddress,
     fetchCoingeckoPrices,
+    fetchingAssets,
+    setFetchingAssets
   })
 
   // Remaining logic - velcro balance fetching 
@@ -78,6 +82,8 @@ export default function useProtocolsFetch({
     hiddenTokens,
     extraTokensAssets,
     eligibleRequests,
+    fetchingAssets,
+    setFetchingAssets
   })
 
   return {
