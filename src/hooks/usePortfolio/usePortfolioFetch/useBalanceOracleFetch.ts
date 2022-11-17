@@ -19,6 +19,7 @@ const removeDuplicatedAssets = (tokens: Token[]) => {
   
     return tokens
 }
+const NATIVE_ADDRESS = '0x0000000000000000000000000000000000000000'
 
 async function supplementTokensDataFromNetwork({
     tokenList = {},
@@ -132,12 +133,21 @@ export default function useBalanceOracleFetch({
       let tokensList = [
         ...constants?.tokenList[currentNetwork],
         ...(updatedTokens && updatedTokens.tokens?.length && updatedTokens.tokens || [])
-      ]
+      ].map(t => {
 
+        if (t.address === NATIVE_ADDRESS && currentNetwork === 'polygon') {
+            t.address = '0x0000000000000000000000000000000000001010'
+        }
+        return t
+        
+      })
       // Remove unconfirmed and pending tokens from latest request,
       // оnly tokens which should be fetched with the latest state
       // If the token has a latest state - leave it as main one for balance oracle
-      const latestTokens = removeDuplicatedAssets(updatedTokens?.tokens.filter(t => ((!t.unconfirmed || !t.pending) && !(t.unconfirmed && !t.latest) && !(t.pending && !t.latest))).map(t => ({ ...t.latest ? {...t, ...t.latest } : { ...t } })))
+      const latestTokens = removeDuplicatedAssets(updatedTokens?.tokens.filter(t => ((!t.unconfirmed || !t.pending) && !(t.unconfirmed && !t.latest) && !(t.pending && !t.latest))).map(t => ({ ...t.latest ? {...t, ...t.latest } : { ...t } })).map(t => {if (t.address === NATIVE_ADDRESS && currentNetwork === 'polygon') {
+        t.address = '0x0000000000000000000000000000000000001010'
+      }
+      return t}))
 
       const tokensToFetchPrices = []
       // Check if not signed request contains tokens from swap which arent in portfolio yet
@@ -182,16 +192,23 @@ export default function useBalanceOracleFetch({
         const latestResponse = results.find(({ state }) => state === 'latest')
         // Remove empty array for not send promises
         const res = results.flat()
-
         const response = res.map(_res => {
           return _res && _res.tokens && _res.tokens.length && _res.tokens.map((_t: Token, i) => {
             const priceUpdate = prices && prices?.tokens?.length && prices.tokens.find(pt => pt.address.toLowerCase() === _t.address.toLowerCase())
+            const isNative = _t.address === NATIVE_ADDRESS || _t.address === '0x0000000000000000000000000000000000001010' 
 
             const { unconfirmed, latest, pending, ...newToken } = _t
-            const latestBalance = latestResponse?.tokens?.find(token => token.address === _t.address)
+            const latestBalance = latestResponse?.tokens.map(t => t === isNative ? {...t, address: NATIVE_ADDRESS} : t).find(token => {    
+              return token.address === _t.address ? {...token} : (
+                isNative && (token.address === NATIVE_ADDRESS || '0x0000000000000000000000000000000000001010') && {...token, address: token.address}
+                )
+            })
+              
+            
+            console.log(latestBalance.balance, _t.balance)
 
             return {
-            ...newToken,
+            ...(isNative ? ({...newToken, address: latestBalance.address}) : {...newToken}),
             network: currentNetwork,
             ...(priceUpdate ? {
               ...priceUpdate,

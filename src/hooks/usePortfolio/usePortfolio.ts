@@ -166,8 +166,10 @@ export default function usePortfolio({
   }, [currentAssets, currentNetwork, isInitializing])
 
   useEffect(() => {
-    if (isInitialMount.current || !isInitializing) {
-      isInitialMount.current = false;
+    if (isInitialMount.current) {
+      if (!isInitializing) {
+        isInitialMount.current = false;
+      }
     } else {
       // Your useEffect code here to be run on update
       fetchAndSetSupplementTokenData(currentAssets)
