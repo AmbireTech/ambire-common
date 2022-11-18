@@ -4,15 +4,15 @@ import { NetworkType } from '../../constants/networks'
 import { HumanizerInfoType } from '../../hooks/useConstants'
 import { nativeToken, token } from '../humanReadableTransactions'
 
-const SwappinMapping = (humanizerInfo: HumanizerInfoType) => {
+const OneInchMapping = (humanizerInfo: HumanizerInfoType) => {
   // @ts-ignore: this type mismatch is a consistent issue with all
   // humanizers, not just this one. Temporary ignore it.
   // FIXME: handle this potential issue for all humanizers
-  const swappin = new Interface(humanizerInfo.abis.Swappin)
+  const iface = new Interface(humanizerInfo.abis.OneInch)
 
   return {
-    [swappin.getSighash('swap')]: (txn: any, network: NetworkType, { extended = false }) => {
-      const { desc } = swappin.parseTransaction(txn).args
+    [iface.getSighash('swap')]: (txn: any, network: NetworkType, { extended = false }) => {
+      const { desc } = iface.parseTransaction(txn).args
       const paymentSrcToken =
         Number(desc.srcToken) === 0
           ? nativeToken(network, desc.amount, extended)
@@ -23,7 +23,7 @@ const SwappinMapping = (humanizerInfo: HumanizerInfoType) => {
           : token(humanizerInfo, desc.dstToken, parseFloat(desc.minReturnAmount), extended)
 
       return !extended
-        ? [`Swap ${paymentSrcToken} for at least ${paymentToken} on Swappin`]
+        ? [`Swap ${paymentSrcToken} for at least ${paymentToken} on 1inch`]
         : [
             [
               'Swap',
@@ -42,11 +42,11 @@ const SwappinMapping = (humanizerInfo: HumanizerInfoType) => {
                 // FIXME: handle this potential issue for all humanizers
                 ...paymentToken
               },
-              'on Swappin'
+              'on 1inch'
             ]
           ]
     }
   }
 }
 
-export default SwappinMapping
+export default OneInchMapping
