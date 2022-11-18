@@ -28,7 +28,9 @@ export default function useProtocolsFetch({
   selectedAccount,
   constants,
   fetchingAssets,
-  setFetchingAssets
+  setFetchingAssets,
+  оtherNetworksFetching,
+  setOtherNetworksFetching
 }) {
   const extraTokensAssets = useMemo(
     () => getExtraTokensAssets(account, currentNetwork),
@@ -83,7 +85,9 @@ export default function useProtocolsFetch({
     extraTokensAssets,
     eligibleRequests,
     fetchingAssets,
-    setFetchingAssets
+    setFetchingAssets,
+    оtherNetworksFetching,
+    setOtherNetworksFetching
   })
 
   return {

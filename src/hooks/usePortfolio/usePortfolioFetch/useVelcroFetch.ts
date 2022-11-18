@@ -18,7 +18,9 @@ export default function useVelcroFetch({
     extraTokensAssets,
     eligibleRequests,
     fetchingAssets,
-    setFetchingAssets
+    setFetchingAssets,
+    оtherNetworksFetching,
+    setOtherNetworksFetching
 }) {
     const formatTokensResponse = (tokens, assets, network) => {
       return [
@@ -64,18 +66,13 @@ export default function useVelcroFetch({
       ]
     }
     const fetchOtherNetworksBalances = async (account, assets) => {
+        if (!оtherNetworksFetching) {
+          setOtherNetworksFetching(true)
+        }
         const networksToFetch = supportedProtocols.filter(({ network }) => network !== currentNetwork).filter(({ network }) => !networks.find(({id}) => id === network)?.relayerlessOnly)
         try {
           Promise.all(
-            networksToFetch.map(async ({ network, balancesProvider }) => {
-              setAssetsByAccount(prev => ({
-                ...prev,
-                [`${account}-${network}`]: {
-                  ...prev[`${account}-${network}`],
-                  loading: true
-                }
-              }))
-              
+            networksToFetch.map(async ({ network, balancesProvider }) => { 
               try {
                   const response = await getBalances(network, account, balancesProvider)
                   if (!response) return null
@@ -101,9 +98,7 @@ export default function useVelcroFetch({
                       }
                   }))
                   return true
-            } catch (e) {
-                addToast(e.message, { error: true })
-          
+            } catch (e) {          
                 setAssetsByAccount(prev => ({
                   ...prev,
                   [`${account}-${network}`]: {
@@ -113,8 +108,12 @@ export default function useVelcroFetch({
               }))
               return false
             }
-        }))}
+        })).then(() => {
+          setOtherNetworksFetching(false)
+        })
+      }
         catch (e) {
+          setOtherNetworksFetching(false)
           addToast(e.message, { error: true })
         }
     }
@@ -221,13 +220,6 @@ export default function useVelcroFetch({
                   network: currentNetwork,
                 }
               }))
-              setFetchingAssets(prev => ({
-                ...prev,
-                [`${account}-${currentNetwork}`]: { 
-                  ...prev[`${account}-${currentNetwork}`],
-                  velcro: false,
-                }
-              }))
             } else {
               // Otherwise wait for balance Oracle to set our tokens in state,
               // but still there is a need to update the loading state and other data.
@@ -240,13 +232,6 @@ export default function useVelcroFetch({
                   cacheTime: cacheTime || prevCacheTime,
                   loading: false,
                   network: currentNetwork
-                }
-              }))
-              setFetchingAssets(prev => ({
-                ...prev,
-                [`${account}-${currentNetwork}`]: { 
-                  ...prev[`${account}-${currentNetwork}`],
-                  velcro: false,
                 }
               }))
             }

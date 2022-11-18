@@ -196,6 +196,7 @@ export default function useBalanceOracleFetch({
           return _res && _res.tokens && _res.tokens.length && _res.tokens.map((_t: Token, i) => {
             const priceUpdate = prices && prices?.tokens?.length && prices.tokens.find(pt => pt.address.toLowerCase() === _t.address.toLowerCase())
             const isNative = _t.address === NATIVE_ADDRESS || _t.address === '0x0000000000000000000000000000000000001010' 
+            const tokenNativeOriginal = updatedTokens?.tokens.find(t => t.address === isNative)
 
             const { unconfirmed, latest, pending, ...newToken } = _t
             const latestBalance = latestResponse?.tokens.map(t => t === isNative ? {...t, address: NATIVE_ADDRESS} : t).find(token => {    
@@ -204,11 +205,8 @@ export default function useBalanceOracleFetch({
                 )
             })
               
-            
-            console.log(latestBalance.balance, _t.balance)
-
             return {
-            ...(isNative ? ({...newToken, address: latestBalance.address}) : {...newToken}),
+            ...(isNative ? ({...newToken, address: tokenNativeOriginal ? tokenNativeOriginal.address : latestBalance.address}) : {...newToken}),
             network: currentNetwork,
             ...(priceUpdate ? {
               ...priceUpdate,

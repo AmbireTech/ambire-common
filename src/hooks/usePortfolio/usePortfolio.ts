@@ -38,16 +38,14 @@ export default function usePortfolio({
   const { constants } = useConstants()
   const { addToast } = useToasts()
   const currentAccount = useRef<string>()
-  const prevNetwork = usePrevious(currentNetwork)
   const isInitialMount = useRef(true);
 
   // Implementation of structure that contains all assets by account and network
   const [assets, setAssetsByAccount, isInitializing] = useCacheStorage({ key: 'ambire-assets', data: { accounts} })
-
   const [fetchingAssets, setFetchingAssets] = useState({})
+  const [оtherNetworksFetching, setOtherNetworksFetching] = useState(false)
 
   const currentAssets = useMemo(() => assets[`${account}-${currentNetwork}`], [account, currentNetwork, assets[`${account}-${currentNetwork}`]])
-  const accountsAssets = useMemo(() => assets, [assets])
   
   // Handle logic for extra tokens
   const { extraTokens, getExtraTokensAssets, onAddExtraToken, onRemoveExtraToken } = useExtraTokens({
@@ -98,11 +96,13 @@ export default function usePortfolio({
     extraTokens,
     pendingTransactions, eligibleRequests, selectedAccount, constants,
     fetchingAssets,
-    setFetchingAssets
+    setFetchingAssets,
+    оtherNetworksFetching,
+    setOtherNetworksFetching
   })
 
   // Implementation of balances calculation
-  const { balance, otherBalances } = useBalance(account, accountsAssets, currentAssets, currentNetwork, filterByHiddenTokens)
+  const { balance, otherBalances } = useBalance(account, assets, currentAssets, currentNetwork, filterByHiddenTokens)
 
   const refreshTokensIfVisible = useCallback(() => {
     if (!account || isInitializing) return
@@ -118,7 +118,7 @@ export default function usePortfolio({
 
   async function loadOtherNetworksBalances() {
     if (!account || isInitializing) return
-    await fetchOtherNetworksBalances(account, accountsAssets)
+    await fetchOtherNetworksBalances(account, assets)
   }
 
   // Fetch balances on account change
@@ -132,8 +132,14 @@ export default function usePortfolio({
 
   // Refresh tokens on network change or when the window (app) is considered to be visible to the user
   useEffect(() => {
-    refreshTokensIfVisible()
-  }, [currentNetwork, isVisible, refreshTokensIfVisible])
+    if (isInitialMount.current) {
+      if (!isInitializing) {
+        isInitialMount.current = false;
+      }
+    } else {
+      refreshTokensIfVisible()
+    }
+  }, [currentNetwork, isVisible, refreshTokensIfVisible, isInitializing])
 
   // Refresh balance every 90s if visible
   // NOTE: this must be synced (a multiple of) supplementing, otherwise we can end up with weird inconsistencies
@@ -179,16 +185,6 @@ export default function usePortfolio({
     // https://stackoverflow.com/a/65728647/8335898
   }, [`${eligibleRequests}`, `${pendingTransactions}`, isInitializing])
 
-  // We need to be sure we get the latest balancesByNetworksLoading here
-  const balancesByNetworksLoading = useMemo(
-    () => {
-      return Object.keys(assets).filter(key => {
-        return key.includes(account) && !key.includes(currentNetwork)
-      }).every(key => assets[key]?.loading)
-    },
-    [assets, account, currentNetwork]
-  )
-
   return {
     balance,
     otherBalances,
@@ -196,7 +192,7 @@ export default function usePortfolio({
     tokens: tokens,
     collectibles: collectibles,
     isCurrNetworkBalanceLoading: isInitializing || currentAssets?.loading,
-    balancesByNetworksLoading,
+    balancesByNetworksLoading: оtherNetworksFetching,
     extraTokens,
     onAddExtraToken,
     onRemoveExtraToken,
