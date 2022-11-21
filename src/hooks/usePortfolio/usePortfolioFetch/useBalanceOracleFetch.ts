@@ -19,7 +19,6 @@ const removeDuplicatedAssets = (tokens: Token[]) => {
   
     return tokens
 }
-const NATIVE_ADDRESS = '0x0000000000000000000000000000000000000000'
 
 async function supplementTokensDataFromNetwork({
     tokenList = {},
@@ -293,6 +292,7 @@ export default function useBalanceOracleFetch({
               collectibles: assets?.nfts,
               tokens: oracleResponse?.length ? oracleResponse : assets?.tokens,
               loading: false,
+              resultTime: new Date().valueOf()
             }
           }))
     })}
@@ -340,6 +340,7 @@ export default function useBalanceOracleFetch({
                 collectibles: assets?.nfts,
                 tokens: updatedBalance?.length ? updatedBalance : assets?.tokens,
                 loading: false,
+                resultTime: new Date().valueOf()
               }
             }))
             setFetchingAssets(prev => ({
@@ -373,6 +374,7 @@ export default function useBalanceOracleFetch({
                 collectibles: assets?.nfts,
                 tokens: oracleResponse?.length ? oracleResponse : assets?.tokens,
                 loading: false,
+                resultTime: new Date().valueOf()
               }
             }))
           }) 
