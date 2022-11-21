@@ -133,21 +133,13 @@ export default function useBalanceOracleFetch({
       let tokensList = [
         ...constants?.tokenList[currentNetwork],
         ...(updatedTokens && updatedTokens.tokens?.length && updatedTokens.tokens || [])
-      ].map(t => {
+      ]
 
-        if (t.address === NATIVE_ADDRESS && currentNetwork === 'polygon') {
-            t.address = '0x0000000000000000000000000000000000001010'
-        }
-        return t
-        
-      })
       // Remove unconfirmed and pending tokens from latest request,
       // оnly tokens which should be fetched with the latest state
       // If the token has a latest state - leave it as main one for balance oracle
-      const latestTokens = removeDuplicatedAssets(updatedTokens?.tokens.filter(t => ((!t.unconfirmed || !t.pending) && !(t.unconfirmed && !t.latest) && !(t.pending && !t.latest))).map(t => ({ ...t.latest ? {...t, ...t.latest } : { ...t } })).map(t => {if (t.address === NATIVE_ADDRESS && currentNetwork === 'polygon') {
-        t.address = '0x0000000000000000000000000000000000001010'
-      }
-      return t}))
+      const latestTokens = removeDuplicatedAssets(updatedTokens?.tokens.filter(t => ((!t.unconfirmed || !t.pending) && !(t.unconfirmed && !t.latest) && !(t.pending && !t.latest))).map(t => ({ ...t.latest ? {...t, ...t.latest } : { ...t } })))
+
 
       const tokensToFetchPrices = []
       // Check if not signed request contains tokens from swap which arent in portfolio yet
@@ -183,6 +175,9 @@ export default function useBalanceOracleFetch({
         unsignedRequests?.length ? balanceOracleUnconfirmed : [],
         tokensToFetchPrices?.length ? coingeckoPrices : []
       ]
+      
+      // Don't show difference if is smaller or to the 5 point
+      // or token is from aave
 
       Promise.all([...promises]).then(results => {
         // Fetched prices from coingecko
@@ -195,25 +190,25 @@ export default function useBalanceOracleFetch({
         const response = res.map(_res => {
           return _res && _res.tokens && _res.tokens.length && _res.tokens.map((_t: Token, i) => {
             const priceUpdate = prices && prices?.tokens?.length && prices.tokens.find(pt => pt.address.toLowerCase() === _t.address.toLowerCase())
-            const isNative = _t.address === NATIVE_ADDRESS || _t.address === '0x0000000000000000000000000000000000001010' 
-            const tokenNativeOriginal = updatedTokens?.tokens.find(t => t.address === isNative)
 
             const { unconfirmed, latest, pending, ...newToken } = _t
-            const latestBalance = latestResponse?.tokens.map(t => t === isNative ? {...t, address: NATIVE_ADDRESS} : t).find(token => {    
-              return token.address === _t.address ? {...token} : (
-                isNative && (token.address === NATIVE_ADDRESS || '0x0000000000000000000000000000000000001010') && {...token, address: token.address}
-                )
-            })
-              
+
+            const latestBalance = latestResponse?.tokens.find(token => token.address === _t.address)
+
+            const difference = Math.abs((Number(latestBalance?.balance).toFixed(5)) - (Number(_t?.balance).toFixed(5)))
+            const isAaveToken = _t?.coingeckoId?.startsWith('aave') 
+
+            const shouldDisplayState = (latestBalance?.balance !== _t.balance || !latestBalance) && (isAaveToken ? (isAaveToken && difference) : true)
+
             return {
-            ...(isNative ? ({...newToken, address: tokenNativeOriginal ? tokenNativeOriginal.address : latestBalance.address}) : {...newToken}),
+            ...newToken,
             network: currentNetwork,
             ...(priceUpdate ? {
               ...priceUpdate,
               balanceUSD: Number(parseFloat(_t.balance * priceUpdate.price || 0).toFixed(2))
             } : {}),
             ...(latestBalance && {['latest']: { balanceUSD: Number(parseFloat(latestBalance.balance * latestBalance.price || 0).toFixed(2)), balance: latestBalance.balance}}),
-            ...((latestBalance?.balance !== _t.balance || !latestBalance) && {
+            ...(shouldDisplayState && {
               [_res.state]: {
                 balanceUSD: priceUpdate ? Number(parseFloat(_t.balance * priceUpdate.price || 0).toFixed(2)) : Number(parseFloat(_t.balance * _t.price || 0).toFixed(2)),
                 balance: _t.balance,
