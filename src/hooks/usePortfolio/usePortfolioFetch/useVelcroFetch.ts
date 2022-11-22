@@ -43,7 +43,7 @@ export default function useVelcroFetch({
           }
         }
 
-        if (!token.priceUpdate || !prevToken?.priceUpdate || (token.priceUpdate > prevToken?.priceUpdate) && ((token.priceUpdate - prevToken?.priceUpdate) >= 5*60*1000)) {
+        if (!prevToken?.priceUpdate || (token?.priceUpdate > prevToken?.priceUpdate) && ((token?.priceUpdate - prevToken?.priceUpdate) >= 5*60*1000)) {
           // update price
           updatedData = {
             ...updatedData,
