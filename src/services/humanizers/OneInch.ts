@@ -8,7 +8,7 @@ const OneInchMapping = (humanizerInfo: HumanizerInfoType) => {
   // @ts-ignore: this type mismatch is a consistent issue with all
   // humanizers, not just this one. Temporary ignore it.
   // FIXME: handle this potential issue for all humanizers
-  const iface = new Interface(humanizerInfo.abis.OneInch)
+  const iface = new Interface(humanizerInfo.abis.Swappin)
 
   return {
     [iface.getSighash('swap')]: (txn: any, network: NetworkType, { extended = false }) => {
