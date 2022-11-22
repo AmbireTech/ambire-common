@@ -77,7 +77,7 @@ async function supplementTokensDataFromNetwork({
     )
       .flat()
       .filter((t) => {
-        return extraTokens.some((et: Token) => t.address === et.address) ? true : t.balanceRaw > 0
+        return extraTokens.some((et: Token) => t.address === et.address) ? true : (tokensData.find(token => t.address === token.address) ? true : false)
       })
     return { tokens: tokenBalances, state }
 }
@@ -174,10 +174,6 @@ export default function useBalanceOracleFetch({
         unsignedRequests?.length ? balanceOracleUnconfirmed : [],
         tokensToFetchPrices?.length ? coingeckoPrices : []
       ]
-      
-      // Don't show difference if is smaller or to the 5 point
-      // or token is from aave
-
       Promise.all([...promises]).then(results => {
         // Fetched prices from coingecko
         const prices = results && results.length && results.find(el => el.state === 'coingecko')
@@ -199,6 +195,8 @@ export default function useBalanceOracleFetch({
 
             const shouldDisplayState = (latestBalance?.balance !== _t.balance || !latestBalance) && (isAaveToken ? (isAaveToken && difference) : true)
 
+            const shouldDisplayToken = latestBalance || _t.balance > 0
+            if (!shouldDisplayToken) return
             return {
             ...newToken,
             network: currentNetwork,
@@ -215,7 +213,7 @@ export default function useBalanceOracleFetch({
                 balanceIncrease: !!(_t.balance > (latestBalance?.balance || 0))
               }}
             )
-          }})
+          }}).filter(t => t)
         })[res.length - 1] || []
 
         _resolve && _resolve(response)

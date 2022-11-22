@@ -123,12 +123,13 @@ async function getTokenListBalance({
       // @ts-ignore `result.data` is string only when `result.success` is `false`
       // So `result.data.filter` should always work just fine in this scope.
       const newTokenBalance = result.data.filter(
-        (r: Token) => r.address === t.address && parseFloat(r.balance) > 0
+        (r: Token) => r.address === t.address
       )[0]
 
       return newTokenBalance
         ? {
             type: 'token',
+            ...t,
             ...newTokenBalance,
             balance: Number(newTokenBalance.balance),
             balanceRaw: newTokenBalance.balanceRaw,
