@@ -36,7 +36,9 @@ export const multiplierBadges: MultiplierBadge[] = [
     link: 'https://blog.ambire.com/win-a-cryptotesters-nft-with-ambire-and-get-into-one-of-the-hottest-web3-communities-c9d7185760b1',
     icon_svg: 'rewards-crypto-tester'
   },
-  /*{
+  /*
+  NFT Multiplier incentive not activated at the moment
+  {
     id: 'gasTankNft',
     name: 'GasTankNFT',
     icon: '⛽',
@@ -54,7 +56,11 @@ export const multiplierBadges: MultiplierBadge[] = [
     link: 'https://blog.ambire.com/new-wallet-rewards-multiplier-live-in-ambire-power-users-now-get-special-perks-e47bb1000aeb',
     icon_svg: 'reward-power-user'
   },
-  /*{
+  /*
+  Originally planned to display the ADX bonus badge.
+  No icon / badge asset for ADX at the moment.
+  ADX Data is used in the table below in web app for now.
+  {
     id: 'adxStakingApy',
     name: 'ADX staking rewards',
     icon: 'ADX',
