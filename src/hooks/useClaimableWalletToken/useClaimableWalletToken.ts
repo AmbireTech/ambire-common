@@ -10,7 +10,7 @@ import useCacheBreak from '../useCacheBreak'
 import { UseClaimableWalletTokenProps, UseClaimableWalletTokenReturnType } from './types'
 
 // const supplyControllerAddress = '0xF8cF66BbF7fe152b8177B61855E8be9a6279C8A1' //test polygon
-const supplyControllerAddress = '0xA23C1bf0D0988DF467E9156a33A32f6BA6a9AF52'
+const supplyControllerAddress = '0x6FDb43bca2D8fe6284242d92620156205d4fA028'
 const WALLET_STAKING_ADDR = '0x47Cd7E91C3CBaAF266369fe8518345fc4FC12935'
 const supplyControllerInterface = new Interface(WALLETSupplyControllerABI)
 const NETWORK_NAME = NETWORKS.ethereum
@@ -22,7 +22,8 @@ const useClaimableWalletToken = ({
   network,
   addRequest,
   totalLifetimeRewards,
-  walletUsdPrice
+  walletUsdPrice,
+  rewardsLastUpdated
 }: UseClaimableWalletTokenProps): UseClaimableWalletTokenReturnType => {
   const { cacheBreak: relayerCacheBreak } = useCacheBreak()
   const urlIdentityRewards = relayerURL
@@ -39,17 +40,27 @@ const useClaimableWalletToken = ({
 
   const vestingEntry = useMemo(() => WALLETVestings.find((x) => x.addr === accountId), [accountId])
 
-  const [currentClaimStatus, setCurrentClaimStatus] = useState({
+  const [currentClaimStatus, setCurrentClaimStatus] = useState<
+    UseClaimableWalletTokenReturnType['currentClaimStatus']
+  >({
     loading: true,
     claimed: 0,
     mintableVesting: 0,
     claimedInitial: 0,
-    error: null
+    error: null,
+    lastUpdated: null
   })
 
   // By adding this to the deps, we make it refresh every 10 mins
-  const { cacheBreak } = useCacheBreak({ refreshInterval: 10000, breakPoint: 5000 })
+  const { cacheBreak } = useCacheBreak({ refreshInterval: 600000, breakPoint: 5000 })
   useEffect(() => {
+    // Wait before the rewards are loaded first, because the claimable amount
+    // is calculated based on the rewards. If the rewards are not loaded yet,
+    // we don't want to show the claimable amount as 0.
+    if (!rewardsLastUpdated) {
+      return
+    }
+
     setCurrentClaimStatus((prev) => ({ ...prev, loading: true, error: null }))
     ;(async () => {
       const toNum = (x: string | number) => parseInt(x.toString(), 10) / 1e18
@@ -74,20 +85,24 @@ const useClaimableWalletToken = ({
 
       return { mintableVesting, claimed, claimedInitial }
     })()
-      .then((status) => setCurrentClaimStatus({ error: null, loading: false, ...status }))
+      .then((status) =>
+        setCurrentClaimStatus({
+          error: null,
+          loading: false,
+          lastUpdated: Date.now(),
+          ...status
+        })
+      )
       .catch((e) => {
         console.error('getting claim status', e)
 
-        setCurrentClaimStatus({
-          error: e.message || e,
+        setCurrentClaimStatus((prev) => ({
+          ...prev,
           loading: false,
-          claimed: 0,
-          mintableVesting: 0,
-          claimedInitial: 0
-        })
+          error: e?.message || e || 'Failed getting claim status.'
+        }))
       })
-
-  }, [supplyController, vestingEntry, claimableRewardsData, cacheBreak])
+  }, [supplyController, vestingEntry, claimableRewardsData, cacheBreak, rewardsLastUpdated])
 
   const initialClaimable = claimableRewardsData ? +claimableRewardsData.totalClaimable / 1e18 : 0
   const claimableNowRounded = +(initialClaimable - (currentClaimStatus.claimed || 0)).toFixed(6)
@@ -130,7 +145,7 @@ const useClaimableWalletToken = ({
             withoutBurn ? 0 : 5000, // penalty bps, at the moment we run with 0; it's a safety feature to hardcode it
             WALLET_STAKING_ADDR, // staking pool addr
             claimableRewardsData?.root,
-            claimableRewardsData?.signedRoot,
+            claimableRewardsData?.signedRoot
           ])
         }
       })

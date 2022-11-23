@@ -36,7 +36,8 @@ const useSignMessage = ({
   resolve,
   onConfirmationCodeRequired,
   onLastMessageSign,
-  getHardwareWallet
+  getHardwareWallet,
+  useStorage
 }: UseSignMessageProps): UseSignMessageReturnType => {
   const [isLoading, setLoading] = useState<boolean>(false)
   const [isDeployed, setIsDeployed] = useState<null | boolean>(null)
@@ -45,6 +46,13 @@ const useSignMessage = ({
   const [confirmationType, setConfirmationType] = useState<'email' | 'otp' | null>(null)
 
   const toSign = useMemo(() => everythingToSign[0] || {}, [everythingToSign])
+
+  const [signedMessages, setSignedMessages] = useStorage({
+    key: 'signedMessages',
+    defaultValue: []
+  })
+
+  const dApp = toSign.dapp
 
   let typeDataErr
   let dataV4: any
@@ -89,7 +97,7 @@ const useSignMessage = ({
       signer: account?.signer
     })
 
-    const provider = await getProvider(requestedNetwork?.id)
+    const provider = getProvider(requestedNetwork?.id)
 
     let privilegeAddress: any
     let quickAccAccountHash: any
@@ -271,11 +279,28 @@ const useSignMessage = ({
 
         await verifySignature(toSign, sig, requestedNetwork?.id)
 
-        resolve({ success: true, result: sig })
         addToast('Successfully signed!')
+
+        setSignedMessages([
+          ...signedMessages,
+          {
+            accountId: account.id,
+            networkId: requestedChainId,
+            date: new Date().getTime(),
+            typed: isTypedData,
+            signer: account.signer,
+            message: toSign.txn,
+            signature: sig,
+            dApp
+          }
+        ])
+
         if (everythingToSign.length === 1) {
           !!onLastMessageSign && onLastMessageSign()
         }
+
+        // keeping resolve at the very end, because it can trigger components unmounting, and code after resolve may or may not run
+        resolve({ success: true, result: sig })
       } catch (e) {
         handleSigningErr(e)
       }
@@ -295,7 +320,11 @@ const useSignMessage = ({
       requestedNetwork,
       resolve,
       toSign,
-      verifySignature
+      verifySignature,
+      dApp,
+      requestedChainId,
+      setSignedMessages,
+      signedMessages
     ]
   )
   // Passing hardware device is required only for the mobile app
@@ -318,8 +347,7 @@ const useSignMessage = ({
         // Unfortunately that isn't possible, because isValidSignature only takes a bytes32 hash; so to sign this with
         // a personal message, we need to be signing the hash itself as binary data such that we match 'Ethereum signed message:\n32<hash binary data>' on the contract
 
-        const sig = await (toSign.type === 'eth_signTypedData_v4' ||
-        toSign.type === 'eth_signTypedData'
+        const sig = await (isTypedData
           ? signMessage712(
               wallet,
               account.id,
@@ -332,8 +360,24 @@ const useSignMessage = ({
 
         await verifySignature(toSign, sig, requestedNetwork?.id)
 
-        resolve({ success: true, result: sig })
         addToast('Successfully signed!')
+
+        setSignedMessages([
+          ...signedMessages,
+          {
+            accountId: account.id,
+            networkId: requestedChainId,
+            date: new Date().getTime(),
+            typed: isTypedData,
+            signer: account.signer,
+            message: toSign.txn,
+            signature: sig,
+            dApp
+          }
+        ])
+
+        // keeping resolve at the very end, because it can trigger components unmounting, and code after resolve may or may not run
+        resolve({ success: true, result: sig })
       } catch (e) {
         handleSigningErr(e)
       }
@@ -349,7 +393,12 @@ const useSignMessage = ({
       requestedNetwork?.id,
       resolve,
       toSign,
-      verifySignature
+      isTypedData,
+      verifySignature,
+      signedMessages,
+      setSignedMessages,
+      dApp,
+      requestedChainId
     ]
   )
 
@@ -366,7 +415,9 @@ const useSignMessage = ({
     requestedNetwork,
     requestedChainId,
     isTypedData,
-    confirmationType
+    confirmationType,
+    verifySignature,
+    dApp
   }
 }
 
