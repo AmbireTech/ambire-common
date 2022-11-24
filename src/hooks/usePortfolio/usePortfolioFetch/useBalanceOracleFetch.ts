@@ -9,13 +9,13 @@ import { ConstantsType } from 'ambire-common/src/hooks/useConstants'
 import { Token, Network } from 'ambire-common/src/hooks/usePortfolio/types'
 
 const removeDuplicatedAssets = (tokens: Token[]) => {
-    const lookup = tokens.reduce((a: Token, e: Token) => {
+    const lookup = tokens?.length && tokens.reduce((a: Token, e: Token) => {
       a[e.address] = ++a[e.address] || 0
       return a
     }, {})
   
     // filters by non duplicated objects or takes the one of dup but with a price greater than 0
-    tokens = tokens.filter((e) => !lookup[e.address] || (lookup[e.address] && e.price))
+    tokens = tokens?.length && tokens.filter((e) => !lookup[e.address] || (lookup[e.address] && e.price))
   
     return tokens
 }
@@ -137,7 +137,7 @@ export default function useBalanceOracleFetch({
       // Remove unconfirmed and pending tokens from latest request,
       // оnly tokens which should be fetched with the latest state
       // If the token has a latest state - leave it as main one for balance oracle
-      const latestTokens = removeDuplicatedAssets(updatedTokens?.tokens.filter(t => ((!t.unconfirmed || !t.pending) && !(t.unconfirmed && !t.latest) && !(t.pending && !t.latest))).map(t => ({ ...t.latest ? {...t, ...t.latest } : { ...t } })))
+      const latestTokens = removeDuplicatedAssets(updatedTokens?.tokens?.length && updatedTokens.tokens.filter(t => ((!t.unconfirmed || !t.pending) && !(t.unconfirmed && !t.latest) && !(t.pending && !t.latest))).map(t => ({ ...t.latest ? {...t, ...t.latest } : { ...t } })))
 
 
       const tokensToFetchPrices = []

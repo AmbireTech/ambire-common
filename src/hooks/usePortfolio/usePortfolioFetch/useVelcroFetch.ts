@@ -5,6 +5,19 @@ import { useCallback } from 'react'
 import supportedProtocols from 'ambire-common/src/constants/supportedProtocols'
 import networks from 'ambire-common/src/constants/networks'
 import { roundFloatingNumber } from 'ambire-common/src/services/formatter'
+import { ethers } from 'ethers'
+
+const removeDuplicatedAssets = (tokens: Token[]) => {
+  const lookup = tokens?.length && tokens.reduce((a: Token, e: Token) => {
+    a[e.address] = ++a[e.address] || 0
+    return a
+  }, {})
+
+  // filters by non duplicated objects or takes the one of dup but with a price greater than 0
+  tokens = tokens?.length && tokens.filter((e) => !lookup[e.address] || (lookup[e.address] && e.price))
+
+  return tokens
+}
 
 export default function useVelcroFetch({
     currentAccount,
@@ -23,7 +36,7 @@ export default function useVelcroFetch({
     setOtherNetworksFetching
 }) {
     const formatTokensResponse = (tokens, assets, network) => {
-      return [
+      return removeDuplicatedAssets([
         ...tokens.map((token: any) => {
         const prevToken = assets?.tokens?.length && assets?.tokens.find(t => t.address === token.address)
         let updatedData = {}
@@ -55,15 +68,15 @@ export default function useVelcroFetch({
       }).map((token: any) => ({
           ...token,
           // balanceOracle fixes the number to the 10 decimal places, so here we should also fix it
-          balance: Number(token.balance.toFixed(10)),
+          balance: token?.balance ? Number(token?.balance?.toFixed(10)) : Number(ethers.utils.formatUnits(token?.balanceRaw, token?.decimals)).toFixed(10),
           // Update balanceUSD in case its old but price is new
-          balanceUSD: roundFloatingNumber(Number(parseFloat(token.balance * token.price || 0).toFixed(2))),
-          price: token.price || null,
+          balanceUSD: roundFloatingNumber(Number(parseFloat(token?.balance * token?.price || 0).toFixed(2))),
+          price: token?.price || null,
           network: network
         }))
         .filter((token: any) => !!token.name && !!token.symbol),
         ...extraTokensAssets.filter(t => t.network === network)
-      ]
+      ])
     }
     const fetchOtherNetworksBalances = async (account, assets) => {
         if (!оtherNetworksFetching) {
