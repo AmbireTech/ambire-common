@@ -51,7 +51,7 @@ export interface SignedMessageType {
     description: string
     url: string
     icons: string[]
-  },
+  }
   date: number
   message: string
   networkId: number
