@@ -77,7 +77,7 @@ async function supplementTokensDataFromNetwork({
     )
       .flat()
       .filter((t) => {
-        return extraTokens.some((et: Token) => t.address === et.address) ? true : (tokensData.find(token => t.address === token.address) ? true : false)
+        return extraTokens.some((et: Token) => t.address === et.address) ? true : (state === 'latest' ?(tokensData.find(token => t.address === token.address) || t.balanceRaw > 0 ? true : false) : true)
       })
     return { tokens: tokenBalances, state }
 }
