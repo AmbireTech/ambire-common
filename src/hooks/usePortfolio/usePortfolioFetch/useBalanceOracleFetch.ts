@@ -190,10 +190,11 @@ export default function useBalanceOracleFetch({
 
             const latestBalance = latestResponse?.tokens.find(token => token.address === _t.address)
 
-            const difference = Math.abs((Number(latestBalance?.balance).toFixed(5)) - (Number(_t?.balance).toFixed(5)))
-            const isAaveToken = _t?.coingeckoId?.startsWith('aave') 
+            const difference = Math.abs((Number(latestBalance?.balance).toFixed(4)) - (Number(_t?.balance).toFixed(4))).toFixed(4)
+            
+            const isAaveToken = _t?.coingeckoId?.startsWith('aave-') 
 
-            const shouldDisplayState = (latestBalance?.balance !== _t.balance || !latestBalance) && (isAaveToken ? (isAaveToken && difference) : true)
+            const shouldDisplayState = (latestBalance?.balance !== _t.balance || !latestBalance) && (isAaveToken ? !!(isAaveToken && difference > 0) : true)
 
             const shouldDisplayToken = latestBalance || _t.balance > 0
             if (!shouldDisplayToken) return
@@ -274,6 +275,7 @@ export default function useBalanceOracleFetch({
 
 
     const fetchAndSetSupplementTokenData = async (assets) => {
+        if (!account) return
         await new Promise((resolve) => fetchAllSupplementTokenData(assets, resolve))
         .then(oracleResponse => {
           setFetchingAssets(prev => ({
@@ -296,12 +298,13 @@ export default function useBalanceOracleFetch({
     })}
     
     const updateCoingeckoAndSupplementData = async (assets, minutes) => {
-        if (fetchingAssets[`${account}-${currentNetwork}`]?.rpc) return
+        if (fetchingAssets[`${account}-${currentNetwork}`]?.rpc || !account) return
         const tokens = assets?.tokens || []
-        const minutesToUpdateChekUpdate = minutes ? 5*60*1000 : 2*60*1000
+
+        const minutesToCheckForUpdate = minutes ? 5*60*1000 : 2*60*1000
         // Check for not updated prices from coingecko in the last 2 minutes
         const coingeckoTokensToUpdate = tokens.filter(token => token.coingeckoId).filter(token => { 
-          if (((new Date().valueOf() - token.priceUpdate) >= minutesToUpdateChekUpdate)) {
+          if (!token?.priceUpdate || ((new Date().valueOf() - token.priceUpdate) >= minutesToCheckForUpdate)) {
             return token
           }
         })

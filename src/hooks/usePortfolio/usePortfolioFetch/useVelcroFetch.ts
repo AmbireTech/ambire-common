@@ -197,7 +197,7 @@ export default function useVelcroFetch({
             
             // In case we have cached data from velcro - call balance oracle
             if (shouldSkipUpdate || !tokensToUpdateBalance.length) {
-              formattedTokens = [...formattedTokens, ...assets?.tokens]
+              formattedTokens = [...(formattedTokens?.length ? formattedTokens: []), ...(assets?.tokens?.length ? assets?.tokens : [])]
               // Update only balance from balance oracle
               setFetchingAssets(prev => ({
                 ...prev,
