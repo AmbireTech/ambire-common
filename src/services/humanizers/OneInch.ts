@@ -4,26 +4,34 @@ import { NetworkType } from '../../constants/networks'
 import { HumanizerInfoType } from '../../hooks/useConstants'
 import { nativeToken, token } from '../humanReadableTransactions'
 
-const SwappinMapping = (humanizerInfo: HumanizerInfoType) => {
+const parseZeroAddressIfNeeded = (address: string) => {
+  return address.toLowerCase() === '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee'
+    ? '0x0000000000000000000000000000000000000000'
+    : address
+}
+
+const OneInchMapping = (humanizerInfo: HumanizerInfoType) => {
   // @ts-ignore: this type mismatch is a consistent issue with all
   // humanizers, not just this one. Temporary ignore it.
   // FIXME: handle this potential issue for all humanizers
-  const swappin = new Interface(humanizerInfo.abis.Swappin)
+  const iface = new Interface(humanizerInfo.abis.Swappin)
 
   return {
-    [swappin.getSighash('swap')]: (txn: any, network: NetworkType, { extended = false }) => {
-      const { desc } = swappin.parseTransaction(txn).args
+    [iface.getSighash('swap')]: (txn: any, network: NetworkType, { extended = false }) => {
+      const { desc } = iface.parseTransaction(txn).args
+      const srcToken = parseZeroAddressIfNeeded(desc.srcToken)
+      const dstToken = parseZeroAddressIfNeeded(desc.dstToken)
       const paymentSrcToken =
-        Number(desc.srcToken) === 0
+        Number(srcToken) === 0
           ? nativeToken(network, desc.amount, extended)
-          : token(humanizerInfo, desc.srcToken, parseFloat(desc.amount), extended)
+          : token(humanizerInfo, srcToken, desc.amount, extended)
       const paymentToken =
-        Number(desc.dstToken) === 0
+        Number(dstToken) === 0
           ? nativeToken(network, desc.minReturnAmount, extended)
-          : token(humanizerInfo, desc.dstToken, parseFloat(desc.minReturnAmount), extended)
+          : token(humanizerInfo, dstToken, desc.minReturnAmount, extended)
 
       return !extended
-        ? [`Swap ${paymentSrcToken} for at least ${paymentToken} on Swappin`]
+        ? [`Swap ${paymentSrcToken} for at least ${paymentToken} on 1inch`]
         : [
             [
               'Swap',
@@ -42,11 +50,11 @@ const SwappinMapping = (humanizerInfo: HumanizerInfoType) => {
                 // FIXME: handle this potential issue for all humanizers
                 ...paymentToken
               },
-              'on Swappin'
+              'on 1inch'
             ]
           ]
     }
   }
 }
 
-export default SwappinMapping
+export default OneInchMapping
