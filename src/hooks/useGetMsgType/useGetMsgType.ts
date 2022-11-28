@@ -51,7 +51,6 @@ const useGetMsgType = ({ msgToSign }: UseGetMsgTypeProps): UseGetMsgTypeReturnTy
     }
   }, [isTypedData, msgToSign])
 
-  console.log(isTypedData, typeData.dataV4, typeData.typeDataErr, requestedChainId)
   return {
     isTypedData,
     dataV4: typeData.dataV4,
