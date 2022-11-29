@@ -93,7 +93,7 @@ const networks: NetworkType[] = [
     id: NETWORKS['binance-smart-chain'],
     chainId: 56,
     nativeAssetSymbol: 'BNB',
-    name: 'Binance Smart Chain',
+    name: 'BNB Chain',
     explorerUrl: 'https://bscscan.com',
     unstoppableDomainsChain: 'BEP20',
     isGasTankAvailable: true,
