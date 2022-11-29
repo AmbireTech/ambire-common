@@ -189,16 +189,15 @@ export default function useVelcroFetch({
             // velcro provider is balanceOracle and tokens may not be full
             // repopulate with current tokens and pass them to balanceOracle
             if (provider === 'balanceOracle' || partial) {
-              formattedTokens = [
+              formattedTokens = removeDuplicatedAssets([
                 ...assets?.tokens || [],
                 ...tokens,
-              ]
+              ])
             }
             
             // In case we have cached data from velcro - call balance oracle
             if (shouldSkipUpdate || !tokensToUpdateBalance.length) {
-              formattedTokens = [...(formattedTokens?.length ? formattedTokens: []), ...(assets?.tokens?.length ? assets?.tokens : [])]
-              // Update only balance from balance oracle
+              formattedTokens = removeDuplicatedAssets([...(formattedTokens?.length ? formattedTokens: assets?.tokens)])
               setFetchingAssets(prev => ({
                 ...prev,
                 [`${account}-${currentNetwork}`]: { 
