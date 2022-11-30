@@ -8,6 +8,10 @@ export const initRpcProviders = (providers: { [key in NetworkId]: any }) => {
   rpcProviders = providers
 }
 
+export const areRpcProvidersInitialized = () => {
+  return !!Object.keys(rpcProviders).length
+}
+
 export function getProvider(networkId: NetworkId) {
   const providersByNetwork = rpcProviders[networkId]
 
