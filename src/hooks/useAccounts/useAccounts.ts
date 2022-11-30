@@ -1,6 +1,12 @@
 import { useCallback, useMemo } from 'react'
 
-import {Account, OnAddAccountOptions, SignedMessageType, UseAccountsProps, UseAccountsReturnType} from './types'
+import {
+  Account,
+  OnAddAccountOptions,
+  SignedMessageType,
+  UseAccountsProps,
+  UseAccountsReturnType
+} from './types'
 
 export default function useAccounts({
   onAdd,
@@ -104,7 +110,7 @@ export default function useAccounts({
       const clearedAccounts = accounts.filter((account: Account) => account.id !== id)
       setAccounts([...clearedAccounts])
 
-      const clearedMessages = signedMessages.filter(msg => msg.accountId != account?.id)
+      const clearedMessages = signedMessages.filter((msg) => msg.accountId != account?.id)
       setSignedMessages(clearedMessages)
 
       if (!clearedAccounts.length) {
@@ -112,13 +118,38 @@ export default function useAccounts({
         onRemoveLastAccount()
       } else onSelectAcc(clearedAccounts[0].id)
     },
-    [accounts, onSelectAcc, addToast, onRemoveLastAccount, setAccounts, setSelectedAcc, signedMessages, setSignedMessages]
+    [
+      accounts,
+      onSelectAcc,
+      addToast,
+      onRemoveLastAccount,
+      setAccounts,
+      setSelectedAcc,
+      signedMessages,
+      setSignedMessages,
+      onRemoveAccountWithoutBackingItUp
+    ]
   )
+
+  const onRemoveAllAccounts = useCallback(() => {
+    setAccounts([])
+    setSignedMessages([])
+    setSelectedAcc('')
+    onRemoveLastAccount()
+  }, [onRemoveLastAccount, setAccounts, setSelectedAcc, setSignedMessages])
 
   const account: Account | {} = useMemo(
     () => accounts.find((x: Account) => x.id === selectedAcc) || {},
     [selectedAcc, accounts]
   )
 
-  return { accounts, selectedAcc, account, onSelectAcc, onAddAccount, onRemoveAccount }
+  return {
+    accounts,
+    selectedAcc,
+    account,
+    onSelectAcc,
+    onAddAccount,
+    onRemoveAccount,
+    onRemoveAllAccounts
+  }
 }
