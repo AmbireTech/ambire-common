@@ -1,6 +1,6 @@
 import { Contract } from 'ethers'
 import { Interface } from 'ethers/lib/utils'
-import { useCallback, useEffect, useMemo, useState, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import WALLETSupplyControllerABI from '../../constants/abis/WALLETSupplyControllerABI.json'
 import { NETWORKS } from '../../constants/networks'
@@ -66,11 +66,20 @@ const useClaimableWalletToken = ({
     // Check lastUpdate so we won't refetch on every hook update, but every 5 minutes.
     // But still check if current account is changed to reset lastUpdated timestamp
     // and fetch new data for the new account from supply controller
-    if (!accountChanged && (currentClaimStatus?.lastUpdated && (currentClaimStatus?.lastUpdated > (new Date().getTime() - 300000)))) {
+    if (
+      !accountChanged &&
+      currentClaimStatus?.lastUpdated &&
+      currentClaimStatus?.lastUpdated > new Date().getTime() - 300000
+    ) {
       return
     }
     // Reset lastUpdated on account change
-    setCurrentClaimStatus((prev) => ({ ...prev, loading: true, error: null, lastUpdated: accountChanged ? null : prev.lastUpdated}))
+    setCurrentClaimStatus((prev) => ({
+      ...prev,
+      loading: true,
+      error: null,
+      lastUpdated: accountChanged ? null : prev.lastUpdated
+    }))
     ;(async () => {
       const toNum = (x: string | number) => parseInt(x.toString(), 10) / 1e18
       const [mintableVesting, claimed] = await Promise.all([
@@ -111,7 +120,14 @@ const useClaimableWalletToken = ({
           error: e?.message || e || 'Failed getting claim status.'
         }))
       })
-  }, [supplyController, vestingEntry, claimableRewardsData, cacheBreak, rewardsLastUpdated, accountId])
+  }, [
+    supplyController,
+    vestingEntry,
+    claimableRewardsData,
+    cacheBreak,
+    rewardsLastUpdated,
+    accountId
+  ])
 
   const initialClaimable = claimableRewardsData ? +claimableRewardsData.totalClaimable / 1e18 : 0
   const claimableNowRounded = +(initialClaimable - (currentClaimStatus.claimed || 0)).toFixed(6)
