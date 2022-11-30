@@ -126,7 +126,9 @@ const useClaimableWalletToken = ({
     claimableRewardsData,
     cacheBreak,
     rewardsLastUpdated,
-    accountId
+    accountId,
+    prevAccountId,
+    currentClaimStatus?.lastUpdated
   ])
 
   const initialClaimable = claimableRewardsData ? +claimableRewardsData.totalClaimable / 1e18 : 0
