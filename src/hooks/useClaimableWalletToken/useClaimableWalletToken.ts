@@ -1,6 +1,6 @@
 import { Contract } from 'ethers'
 import { Interface } from 'ethers/lib/utils'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import WALLETSupplyControllerABI from '../../constants/abis/WALLETSupplyControllerABI.json'
 import { NETWORKS } from '../../constants/networks'
