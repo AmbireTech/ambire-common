@@ -53,20 +53,20 @@ const useClaimableWalletToken = ({
     lastUpdated: null
   })
 
-  // By adding this to the deps, we make it refresh every 10 mins
-  const { cacheBreak } = useCacheBreak({ refreshInterval: 600000, breakPoint: 5000 })
+  // By adding this to the deps, we make it refresh every 5 mins
+  const { cacheBreak } = useCacheBreak({ refreshInterval: 300000, breakPoint: 5000 })
   useEffect(() => {
     const accountChanged = !!prevAccountId && prevAccountId !== accountId
     // Wait before the rewards are loaded first, because the claimable amount
     // is calculated based on the rewards. If the rewards are not loaded yet,
     // we don't want to show the claimable amount as 0.
-    // Check lastUpdate so we won't refetch on every hook update, but every 10 minutes.
-    // But still check if current account is changed to reset lastUpdated timestamp
-    // and fetch new data for the new account from supply controller
     if (!rewardsLastUpdated) {
       return
     }
-    if (!accountChanged && (currentClaimStatus?.lastUpdated && (currentClaimStatus?.lastUpdated > (new Date().getTime() - 600000)))) {
+    // Check lastUpdate so we won't refetch on every hook update, but every 5 minutes.
+    // But still check if current account is changed to reset lastUpdated timestamp
+    // and fetch new data for the new account from supply controller
+    if (!accountChanged && (currentClaimStatus?.lastUpdated && (currentClaimStatus?.lastUpdated > (new Date().getTime() - 300000)))) {
       return
     }
     // Reset lastUpdated on account change
