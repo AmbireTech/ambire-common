@@ -1,6 +1,5 @@
-import { NetworkId } from 'constants/networks'
-import { Account } from 'hooks/useAccounts'
-
+import { NetworkId } from '../../constants/networks'
+import { Account } from '../useAccounts'
 import { UseToastsReturnType } from '../useToasts'
 
 export type UseAccSignMsgStatusProps = {
@@ -12,6 +11,8 @@ export type UseAccSignMsgStatusProps = {
 }
 
 export type UseAccSignMsgStatusReturnType = {
+  /** Is the contract deployed on the selected chain. Msgs can be signed with deployed contracts only */
   isDeployed: boolean | null
+  /** Whether the signer has privileges to sign a message */
   hasPrivileges: boolean | null
 }
