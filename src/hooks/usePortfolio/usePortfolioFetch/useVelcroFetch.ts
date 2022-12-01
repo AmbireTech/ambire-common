@@ -2,22 +2,12 @@
 
 import { useCallback } from 'react'
 
+import { ethers } from 'ethers'
 import supportedProtocols from 'ambire-common/src/constants/supportedProtocols'
 import networks from 'ambire-common/src/constants/networks'
 import { roundFloatingNumber } from 'ambire-common/src/services/formatter'
-import { ethers } from 'ethers'
+import { removeDuplicatedAssets } from 'ambire-common/src/hooks/usePortfolio/usePortfolioFetch/useBalanceOracleFetch'
 
-const removeDuplicatedAssets = (tokens: Token[]) => {
-  const lookup = tokens?.length && tokens.reduce((a: Token, e: Token) => {
-    a[e.address] = ++a[e.address] || 0
-    return a
-  }, {})
-
-  // filters by non duplicated objects or takes the one of dup but with a price greater than 0
-  tokens = tokens?.length && tokens.filter((e) => !lookup[e.address] || (lookup[e.address] && e.price))
-
-  return tokens
-}
 
 export default function useVelcroFetch({
     currentAccount,
@@ -196,8 +186,8 @@ export default function useVelcroFetch({
             }
             
             // In case we have cached data from velcro - call balance oracle
-            if (shouldSkipUpdate || !tokensToUpdateBalance.length) {
-              formattedTokens = removeDuplicatedAssets([...(formattedTokens?.length ? formattedTokens: assets?.tokens)])
+            if (!quickResponse && shouldSkipUpdate || !tokensToUpdateBalance.length) {
+              formattedTokens = removeDuplicatedAssets([...(formattedTokens?.length ? formattedTokens : assets?.tokens ? assets?.tokens : [])])
               setFetchingAssets(prev => ({
                 ...prev,
                 [`${account}-${currentNetwork}`]: { 
