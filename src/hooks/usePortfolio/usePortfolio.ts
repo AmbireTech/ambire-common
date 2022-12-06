@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState, useRef } from 'react'
 
 import useBalance from './useBalance'
 import useExtraTokens from './useExtraTokens'
+import useExtraCollectibles from './useExtraCollectibles'
 import usePortfolioFetch from './usePortfolioFetch'
 import useHiddenTokens from './useHiddenTokens'
 import useTransactions from './useTransactions'
@@ -51,6 +52,14 @@ export default function usePortfolio({
     useStorage,
     useToasts,
     tokens: currentAssets?.tokens || [],
+    constants
+  })
+
+  // Handle logic for extra collectibles
+  const { extraCollectibles, getExtraCollectiblesAssets, onAddExtraCollectible, onRemoveExtraCollectible } = useExtraCollectibles({
+    useStorage,
+    useToasts,
+    collectibles: currentAssets?.collectibles || [],
     constants
   })
 
@@ -202,6 +211,7 @@ export default function usePortfolio({
     onAddHiddenCollectible,
     onRemoveHiddenCollectible,
     setHiddenCollectibles,
-    hiddenCollectibles
+    hiddenCollectibles,
+    extraCollectibles, getExtraCollectiblesAssets, onAddExtraCollectible, onRemoveExtraCollectible
   }
 }
