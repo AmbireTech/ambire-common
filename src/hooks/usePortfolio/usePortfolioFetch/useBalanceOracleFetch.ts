@@ -8,7 +8,7 @@ import { setKnownAddresses, setKnownTokens } from 'ambire-common/src/services/hu
 import { ConstantsType } from 'ambire-common/src/hooks/useConstants'
 import { Token, Network } from 'ambire-common/src/hooks/usePortfolio/types'
 
-const removeDuplicatedAssets = (tokens: Token[]) => {
+export const removeDuplicatedAssets = (tokens: Token[]) => {
     const lookup = tokens?.length && tokens.reduce((a: Token, e: Token) => {
       a[e.address] = ++a[e.address] || 0
       return a
@@ -161,7 +161,7 @@ export default function useBalanceOracleFetch({
       const balanceOracleLatest = new Promise((resolve) => fetchSupplementTokenData({ tokens: latestTokens }, resolve, [], 'latest'))
 
       // 2. Fetch pending balance data from balanceOracle
-      const balanceOraclePending = pendingTransactions?.length && new Promise((resolve) => fetchSupplementTokenData({ tokens: tokensList }, resolve, [], 'pending'))
+      const balanceOraclePending = pendingTransactions?.length && new Promise((resolve) => fetchSupplementTokenData({ tokens: removeDuplicatedAssets(tokensList) }, resolve, [], 'pending'))
 
       // 3. Fetching of unconfirmed/unsigned token data from balanceOracle
       const balanceOracleUnconfirmed = unsignedRequests?.length  && new Promise((resolve) => fetchSupplementTokenData({ tokens: removeDuplicatedAssets(tokensList) }, resolve, unsignedRequests, 'unconfirmed'))
