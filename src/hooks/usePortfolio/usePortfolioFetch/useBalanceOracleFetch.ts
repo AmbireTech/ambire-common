@@ -205,7 +205,7 @@ export default function useBalanceOracleFetch({
               ...priceUpdate,
               balanceUSD: Number(parseFloat(_t.balance * priceUpdate.price || 0).toFixed(2))
             } : {}),
-            ...(latestBalance && {['latest']: { balanceUSD: Number(parseFloat(latestBalance.balance * latestBalance.price || 0).toFixed(2)), balance: latestBalance.balance}}),
+            ...(latestBalance && {['latest']: { balanceUSD: Number(parseFloat(latestBalance.balance * latestBalance.price || 0).toFixed(2)), balance: latestBalance.balance, balanceRaw: latestBalance.balanceRaw }}),
             ...(shouldDisplayState && {
               [_res.state]: {
                 balanceUSD: priceUpdate ? Number(parseFloat(_t.balance * priceUpdate.price || 0).toFixed(2)) : Number(parseFloat(_t.balance * _t.price || 0).toFixed(2)),
@@ -328,6 +328,7 @@ export default function useBalanceOracleFetch({
                   ...(t.latest && { latest: {
                     balanceUSD: Number(parseFloat(t.latest.balance * coingeckoResponse[t.coingeckoId].usd || 0).toFixed(2)),
                     balance: t.latest.balance,
+                    balanceRaw: t.latest.balanceRaw
                   }})
                 }
               } else return t
