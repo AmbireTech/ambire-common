@@ -19,12 +19,14 @@ export default function useVelcroFetch({
     updateCoingeckoAndSupplementData,
     hiddenTokens,
     extraTokensAssets,
+    extraCollectiblesAssets,
     eligibleRequests,
     fetchingAssets,
     setFetchingAssets,
     оtherNetworksFetching,
     setOtherNetworksFetching
 }) {
+    console.log({ extraCollectiblesAssets })
     const formatTokensResponse = (tokens, assets, network) => {
       return removeDuplicatedAssets([
         ...tokens.map((token: any) => {
@@ -95,7 +97,7 @@ export default function useVelcroFetch({
                           cache: cache || false,
                           cacheTime: cacheTime || prevCacheTime,
                           tokens: formattedTokens,
-                          collectibles: nfts,
+                          collectibles: [ ...nfts, ...extraCollectiblesAssets],
                           loading: false,
                           network: network
                       }
@@ -197,7 +199,7 @@ export default function useVelcroFetch({
               }))
               updateCoingeckoAndSupplementData(
                 { ...response.data,
-                collectibles: nfts,
+                collectibles: [...nfts, ...extraCollectiblesAssets],
                 cache: cache || false,
                 cacheTime: cacheTime || prevCacheTime, tokens: formattedTokens
                 },
@@ -215,7 +217,7 @@ export default function useVelcroFetch({
                 [`${account}-${currentNetwork}`]: {
                   ...prev[`${account}-${currentNetwork}`],
                   tokens: formattedTokens,
-                  collectibles: nfts,
+                  collectibles: [...nfts, ...extraCollectiblesAssets],
                   cache: cache || false,
                   cacheTime: cacheTime || prevCacheTime,
                   loading: false,
@@ -229,7 +231,7 @@ export default function useVelcroFetch({
                 ...prev,
                 [`${account}-${currentNetwork}`]: {
                   ...prev[`${account}-${currentNetwork}`],
-                  collectibles: nfts,
+                  collectibles: [...nfts, ...extraCollectiblesAssets],
                   cache: cache || false,
                   cacheTime: cacheTime || prevCacheTime,
                   loading: false,
@@ -245,7 +247,7 @@ export default function useVelcroFetch({
               }
             }))
             updateCoingeckoAndSupplementData({ ...response.data,
-              collectibles: nfts,
+              collectibles: [...nfts, ...extraCollectiblesAssets],
               cache: cache || false,
               cacheTime: cacheTime || prevCacheTime, tokens: formattedTokens }, 5)
             
@@ -275,7 +277,7 @@ export default function useVelcroFetch({
           }
           
         },
-        [hiddenTokens, extraTokensAssets, addToast, eligibleRequests]
+        [hiddenTokens, extraTokensAssets, extraCollectiblesAssets, addToast, eligibleRequests]
     )
     return {
         fetchOtherNetworksBalances,

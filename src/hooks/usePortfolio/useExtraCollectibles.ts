@@ -1,10 +1,7 @@
 // @ts-nocheck TODO: Fill in all missing types before enabling the TS check again
 
 import { useCallback } from 'react'
-import { Contract } from 'ethers'
 
-import ERC1155Abi from 'ambire-common/src/constants/abis/ERC1155Abi'
-// import ERC721Abi from '../../constants/abis/ERC721Abi'
 import { getProvider } from '../../services/provider'
 
 
@@ -37,9 +34,9 @@ export default function useExtraCollectibles({ useStorage, useToasts, collectibl
       if (extraCollectibles.some(x =>  x.address === collectionAddress && x.tokenId === tokenId))
         return addToast(`Collectible ${collectionAddress} (${tokenId}) is already added to your wallet.`)
 
-      const collectible = collectibles?.find((t: any) => t.address === collectionAddress)
-      const asset = collectible.assets.find((asset: any) => asset.tokenId === tokenId)
-      debugger
+      let collectible = collectibles?.find((t: any) => t.address.toLowerCase() === collectionAddress.toLowerCase())
+      const asset = collectible?.assets.find((asset: any) => asset.tokenId === tokenId)
+
       if (collectible && asset) {
         return addToast(`${collectionAddress} (${tokenId}) is already handled by your wallet.`)
       }
@@ -47,7 +44,7 @@ export default function useExtraCollectibles({ useStorage, useToasts, collectibl
       const updatedExtraCollectibles = [
         ...extraCollectibles,
         {
-          ...extraCollectible,
+          ...(extraCollectible),
           coingeckoId: null
         }
       ]
@@ -65,9 +62,10 @@ export default function useExtraCollectibles({ useStorage, useToasts, collectibl
       if (!collectible) return addToast(`${address} is not present in your wallet.`)
 
       const updatedExtraCollectibles = extraCollectibles.filter((t) => t.address !== address)
-
+      console.log('updatedExtraCollectibles', updatedExtraCollectibles)
+      // debugger
       setExtraCollectibles(updatedExtraCollectibles)
-      addToast(`${token.name} (${token.symbol}) was removed from your wallet.`)
+      addToast(`${collectible.address} (${collectible.tokenId}) was removed from your wallet.`)
     },
     [extraCollectibles, setExtraCollectibles]
   )

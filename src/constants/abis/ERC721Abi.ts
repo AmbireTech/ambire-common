@@ -3,7 +3,8 @@ const ERC721Abi: string[] = [
   'function tokenURI(uint256 _tokenId) view returns (string memory)',
   'function uri(uint256 _tokenId) view returns (string memory)',
   'function ownerOf(uint256 tokenId) view returns (address)',
-  'function transferFrom(address from, address to, uint256 tokenId)'
+  'function transferFrom(address from, address to, uint256 tokenId)',
+  'function balanceOf(address _owner) view returns (uint256)'
 ]
 
 export default ERC721Abi

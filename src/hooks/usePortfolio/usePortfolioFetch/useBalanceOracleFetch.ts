@@ -289,7 +289,7 @@ export default function useBalanceOracleFetch({
             ...prev,
             [`${account}-${currentNetwork}`]: {
               ...prev[`${account}-${currentNetwork}`],
-              collectibles: assets?.nfts,
+              collectibles: assets?.collectibles,
               tokens: oracleResponse?.length ? oracleResponse : assets?.tokens,
               loading: false,
               resultTime: new Date().valueOf()
@@ -331,14 +331,14 @@ export default function useBalanceOracleFetch({
                   }})
                 }
               } else return t
-            })            
+            })
             updatedBalance.length && updateHumanizerData(updatedBalance)
             setAssetsByAccount(prev => ({
               ...prev,
               [`${account}-${currentNetwork}`]: {
                 ...prev[`${account}-${currentNetwork}`],
                 ...assets,
-                collectibles: assets?.nfts,
+                collectibles: assets?.collectibles,
                 tokens: updatedBalance?.length ? updatedBalance : assets?.tokens,
                 loading: false,
                 resultTime: new Date().valueOf()
@@ -372,7 +372,7 @@ export default function useBalanceOracleFetch({
               [`${account}-${currentNetwork}`]: {
                 ...prev[`${account}-${currentNetwork}`],
                 ...assets,
-                collectibles: assets?.nfts,
+                collectibles: assets?.collectibles,
                 tokens: oracleResponse?.length ? oracleResponse : assets?.tokens,
                 loading: false,
                 resultTime: new Date().valueOf()

@@ -88,7 +88,8 @@ export default function usePortfolio({
     useStorage,
   })
 
-  const collectibles = useMemo(() => filterByHiddenCollectibles(currentAssets?.collectibles || []) || [], [hiddenCollectibles, account, currentNetwork, currentAssets]);
+  console.log(currentAssets?.collectibles, getExtraCollectiblesAssets(account, currentNetwork))
+  const collectibles = useMemo(() => filterByHiddenCollectibles((currentAssets?.collectibles || []), ...getExtraCollectiblesAssets(account, currentNetwork)) || [], [hiddenCollectibles, account, currentNetwork, currentAssets, extraCollectibles]);
 
   const tokens = useMemo(() => filterByHiddenTokens(currentAssets?.tokens || []) || [], [hiddenTokens, account, currentNetwork, currentAssets]);
   
@@ -96,7 +97,9 @@ export default function usePortfolio({
   const {
     updateCoingeckoAndSupplementData, fetchOtherNetworksBalances, fetchAndSetSupplementTokenData, fetchTokens
   } = usePortfolioFetch({
-    account, currentAccount, currentNetwork, hiddenTokens, getExtraTokensAssets, getBalances, addToast, setAssetsByAccount,
+    account, currentAccount, currentNetwork, hiddenTokens, getExtraTokensAssets, getExtraCollectiblesAssets,
+    extraCollectibles,
+    getBalances, addToast, setAssetsByAccount,
     getCoingeckoPrices,
     getCoingeckoPriceByContract,
     getCoingeckoAssetPlatforms,
