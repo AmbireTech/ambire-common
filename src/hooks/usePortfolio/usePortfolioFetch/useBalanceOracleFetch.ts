@@ -185,6 +185,7 @@ export default function useBalanceOracleFetch({
         const response = res.map(_res => {
           return _res && _res.tokens && _res.tokens.length && _res.tokens.map((_t: Token, i) => {
             const priceUpdate = prices && prices?.tokens?.length && prices.tokens.find(pt => pt.address.toLowerCase() === _t.address.toLowerCase())
+            const currTokenInPortfolio = updatedTokens?.tokens?.length && updatedTokens?.tokens?.find(tk => tk.address.toLowerCase() === _t.address.toLowerCase())
 
             const { unconfirmed, latest, pending, ...newToken } = _t
 
@@ -204,7 +205,7 @@ export default function useBalanceOracleFetch({
             ...(priceUpdate ? {
               ...priceUpdate,
               balanceUSD: Number(parseFloat(_t.balance * priceUpdate.price || 0).toFixed(2))
-            } : {}),
+            } : (currTokenInPortfolio?.price ? { price: currTokenInPortfolio?.price } : {} )),
             ...(latestBalance && {['latest']: { balanceUSD: Number(parseFloat(latestBalance.balance * latestBalance.price || 0).toFixed(2)), balance: latestBalance.balance, balanceRaw: latestBalance.balanceRaw }}),
             ...(shouldDisplayState && {
               [_res.state]: {
@@ -311,7 +312,7 @@ export default function useBalanceOracleFetch({
 
         // Update prices from coingecko and balance from balance oracle
         if (coingeckoTokensToUpdate?.length) {
-          const coingeckoPrices = new Promise((resolve) => fetchCoingeckoPrices( tokens, resolve))
+          const coingeckoPrices = new Promise((resolve) => fetchCoingeckoPrices( coingeckoTokensToUpdate, resolve))
           const balanceOracle = new Promise((resolve) => fetchAllSupplementTokenData({ tokens: tokens }, resolve))
     
           Promise.all([coingeckoPrices, balanceOracle]).then((results) => {
