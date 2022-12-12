@@ -180,7 +180,7 @@ export default function useVelcroFetch({
                 ...prev,
                 [`${account}-${currentNetwork}`]: {
                   ...prev[`${account}-${currentNetwork}`],
-                  tokens: removeDuplicatedAssets([...assets?.tokens, ...extraTokensAssets]),
+                  tokens: removeDuplicatedAssets([...(assets?.tokens ? assets?.tokens : []), ...(extraTokensAssets?.length ? extraTokensAssets : [])]),
                 }
               }))
             }
@@ -202,7 +202,7 @@ export default function useVelcroFetch({
             
             // In case we have cached data from velcro - call balance oracle
             if (!quickResponse && shouldSkipUpdate || !tokensToUpdateBalance.length) {
-              formattedTokens = removeDuplicatedAssets([...(formattedTokens?.length ? formattedTokens : assets?.tokens ? assets?.tokens : []), ...extraTokensAssets])
+              formattedTokens = removeDuplicatedAssets([...(formattedTokens?.length ? formattedTokens : assets?.tokens ? assets?.tokens : []), ...(extraTokensAssets?.length ? extraTokensAssets : [])])
               setFetchingAssets(prev => ({
                 ...prev,
                 [`${account}-${currentNetwork}`]: { 
@@ -214,7 +214,8 @@ export default function useVelcroFetch({
                 { ...response.data,
                 collectibles: nfts,
                 cache: cache || false,
-                cacheTime: cacheTime || prevCacheTime, tokens: formattedTokens
+                cacheTime: cacheTime || prevCacheTime,
+                tokens: formattedTokens
                 },
                 5
               )
