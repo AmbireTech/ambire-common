@@ -46,9 +46,9 @@ const useClaimableWalletToken = ({
     UseClaimableWalletTokenReturnType['currentClaimStatus']
   >({
     loading: true,
-    claimed: 0,
-    mintableVesting: 0,
-    claimedInitial: 0,
+    claimed: null,
+    mintableVesting: null,
+    claimedInitial: null,
     error: null,
     lastUpdated: null
   })
@@ -76,6 +76,9 @@ const useClaimableWalletToken = ({
     // Reset lastUpdated on account change
     setCurrentClaimStatus((prev) => ({
       ...prev,
+      claimed: null,
+      mintableVesting: null,
+      claimedInitial: null,
       loading: true,
       error: null,
       lastUpdated: accountChanged ? null : prev.lastUpdated
@@ -83,23 +86,24 @@ const useClaimableWalletToken = ({
     ;(async () => {
       const toNum = (x: string | number) => parseInt(x.toString(), 10) / 1e18
       const [mintableVesting, claimed] = await Promise.all([
-        vestingEntry
+        vestingEntry && vestingEntry.addr.toLowerCase() === accountId.toLowerCase()
           ? await supplyController
               .mintableVesting(vestingEntry.addr, vestingEntry.end, vestingEntry.rate)
               .then(toNum)
           : null,
-        claimableRewardsData
+        claimableRewardsData && claimableRewardsData.addr.toLowerCase() === accountId.toLowerCase()
           ? await supplyController.claimed(claimableRewardsData.addr).then(toNum)
           : null
       ])
       // fromBalanceClaimable - all time claimable from balance
       // fromADXClaimable - all time claimable from ADX Staking
       // totalClaimable - all time claimable tolkens + already claimed from prev versions of supplyController contract
-      const claimedInitial = claimableRewardsData
-        ? (claimableRewardsData.fromBalanceClaimable || 0) +
-          (claimableRewardsData.fromADXClaimable || 0) -
-          toNum(claimableRewardsData.totalClaimable || 0)
-        : 0
+      const claimedInitial =
+        claimableRewardsData && claimableRewardsData.addr.toLowerCase() === accountId.toLowerCase()
+          ? (claimableRewardsData.fromBalanceClaimable || 0) +
+            (claimableRewardsData.fromADXClaimable || 0) -
+            toNum(claimableRewardsData.totalClaimable || 0)
+          : null
 
       return { mintableVesting, claimed, claimedInitial }
     })()
@@ -136,13 +140,13 @@ const useClaimableWalletToken = ({
   const claimableNow = claimableNowRounded < 0 ? 0 : claimableNowRounded
 
   const claimableNowUsd = (walletUsdPrice * claimableNow).toFixed(2)
-  const mintableVestingUsd = (walletUsdPrice * currentClaimStatus.mintableVesting).toFixed(2)
+  const mintableVestingUsd = (walletUsdPrice * (currentClaimStatus.mintableVesting || 0)).toFixed(2)
 
   const pendingTokensTotal = (
     totalLifetimeRewards -
-    currentClaimStatus.claimed -
-    currentClaimStatus.claimedInitial +
-    currentClaimStatus.mintableVesting
+    (currentClaimStatus.claimed || 0) -
+    (currentClaimStatus.claimedInitial || 0) +
+    (currentClaimStatus.mintableVesting || 0)
   ).toFixed(3)
 
   const shouldDisplayMintableVesting = !!currentClaimStatus.mintableVesting && !!vestingEntry
