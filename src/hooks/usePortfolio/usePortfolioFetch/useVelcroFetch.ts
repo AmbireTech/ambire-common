@@ -168,7 +168,22 @@ export default function useVelcroFetch({
               cache &&
               (new Date(cacheTime) < new Date(prevCacheTime)) || partial
             
-            if (cacheTime === prevCacheTime) return
+            if (cacheTime === prevCacheTime) {
+              setFetchingAssets(prev => ({
+                ...prev,
+                [`${account}-${currentNetwork}`]: { 
+                  ...prev[`${account}-${currentNetwork}`],
+                  velcro: false,
+                }
+              }))
+              setAssetsByAccount(prev => ({
+                ...prev,
+                [`${account}-${currentNetwork}`]: {
+                  ...prev[`${account}-${currentNetwork}`],
+                  tokens: removeDuplicatedAssets([...assets?.tokens, ...extraTokensAssets]),
+                }
+              }))
+            }
 
             cache = shouldSkipUpdate || false
             // Tokens with balanceUpdate newer than balanceOracles update
@@ -187,7 +202,7 @@ export default function useVelcroFetch({
             
             // In case we have cached data from velcro - call balance oracle
             if (!quickResponse && shouldSkipUpdate || !tokensToUpdateBalance.length) {
-              formattedTokens = removeDuplicatedAssets([...(formattedTokens?.length ? formattedTokens : assets?.tokens ? assets?.tokens : [])])
+              formattedTokens = removeDuplicatedAssets([...(formattedTokens?.length ? formattedTokens : assets?.tokens ? assets?.tokens : []), ...extraTokensAssets])
               setFetchingAssets(prev => ({
                 ...prev,
                 [`${account}-${currentNetwork}`]: { 
