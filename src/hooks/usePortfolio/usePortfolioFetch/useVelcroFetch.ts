@@ -81,7 +81,7 @@ export default function useVelcroFetch({
                   if (!response) return null
                   const currentAssetsKey = Object.keys(assets).length && Object.keys(assets).filter(key => key.includes(account) && key.includes(network))
                   const prevCacheTime = currentAssetsKey && assets[currentAssetsKey]?.cacheTime || null
-                  let { tokens = [], nfts, cache, cacheTime } = response.data
+                  let { tokens = [], nfts, cache, cacheTime, resultTime } = response.data
 
                   const shouldSkipUpdate = cache && (new Date(cacheTime) < new Date(prevCacheTime))
                   cache = shouldSkipUpdate || false
@@ -92,6 +92,7 @@ export default function useVelcroFetch({
                       ...prev,
                       [`${account}-${network}`]: {
                           ...prev[`${account}-${network}`],
+                          resultTime,
                           cache: cache || false,
                           cacheTime: cacheTime || prevCacheTime,
                           tokens: formattedTokens,

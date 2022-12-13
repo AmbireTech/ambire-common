@@ -16,10 +16,7 @@ export default function useCoingeckoFetch({
 }) {
 
     const fetchCoingeckoPrices = useCallback(async(tokens, resolve) => {
-        const coingeckoTokensToUpdate = tokens?.filter(token => token.coingeckoId).filter(token => { 
-        if (((new Date().valueOf() - token.priceUpdate ) >= 2*60*1000)) {
-            return token
-        }}).map(token => token.coingeckoId)
+        const coingeckoTokensToUpdate = tokens?.map(token => token.coingeckoId)
         if (!coingeckoTokensToUpdate.length) return null
 
         try {
