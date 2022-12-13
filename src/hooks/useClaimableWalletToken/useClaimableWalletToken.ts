@@ -86,6 +86,10 @@ const useClaimableWalletToken = ({
     ;(async () => {
       const toNum = (x: string | number) => parseInt(x.toString(), 10) / 1e18
       const [mintableVesting, claimed] = await Promise.all([
+        // Checks if the vestingEntry.addr and claimableRewardsData.addr
+        // are equal to the current account address.
+        // That's how we prevent making RPC calls for the previous selected account
+        // and receiving wrong data.
         vestingEntry && vestingEntry.addr.toLowerCase() === accountId.toLowerCase()
           ? await supplyController
               .mintableVesting(vestingEntry.addr, vestingEntry.end, vestingEntry.rate)
