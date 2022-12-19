@@ -2,11 +2,16 @@
 
 import { useMemo } from 'react'
 
-import useCoingeckoFetch from 'ambire-common/src/hooks/usePortfolio/usePortfolioFetch/useCoingeckoFetch'
-import useBalanceOracleFetch from 'ambire-common/src/hooks/usePortfolio/usePortfolioFetch/useBalanceOracleFetch'
-import useVelcroFetch from 'ambire-common/src/hooks/usePortfolio/usePortfolioFetch/useVelcroFetch'
-
-import { Token, Network } from 'ambire-common/src/hooks/usePortfolio/types'
+import useCoingeckoFetch from './useCoingeckoFetch'
+import useBalanceOracleFetch from './useBalanceOracleFetch'
+import useVelcroFetch from './useVelcroFetch'
+import { setKnownAddresses, setKnownTokens } from '../../../services/humanReadableTransactions'
+// eslint-disable-next-line import/no-cycle
+import {
+  checkTokenList,
+  getTokenListBalance,
+  removeDuplicatedAssets
+} from '../../../services/balanceOracle'
 
 // All fetching logic required in our portfolio.
 export default function useProtocolsFetch({
@@ -34,23 +39,23 @@ export default function useProtocolsFetch({
 }) {
   const extraTokensAssets = useMemo(
     () => getExtraTokensAssets(account, currentNetwork),
-    [account, extraTokens, currentNetwork]
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [account, extraTokens, currentNetwork, getExtraTokensAssets]
   )
-  
+
   // All logic and functions required for coingecko fetching
-  const { fetchCoingeckoPrices,
-    fetchCoingeckoPricesByContractAddress } = useCoingeckoFetch({
-    account,
+  const { fetchCoingeckoPrices, fetchCoingeckoPricesByContractAddress } = useCoingeckoFetch({
     currentNetwork,
     setAssetsByAccount,
     addToast,
     getCoingeckoPrices,
     getCoingeckoPriceByContract,
-    getCoingeckoAssetPlatforms,
+    getCoingeckoAssetPlatforms
   })
 
   // All balance oracle functions which we need
-  const { fetchAllSupplementTokenData,
+  const {
+    fetchAllSupplementTokenData,
     fetchSupplementTokenData,
     fetchAndSetSupplementTokenData,
     updateCoingeckoAndSupplementData
@@ -67,13 +72,16 @@ export default function useProtocolsFetch({
     fetchCoingeckoPricesByContractAddress,
     fetchCoingeckoPrices,
     fetchingAssets,
-    setFetchingAssets
+    setFetchingAssets,
+    removeDuplicatedAssets,
+    setKnownAddresses,
+    setKnownTokens,
+    getTokenListBalance,
+    checkTokenList
   })
 
-  // Remaining logic - velcro balance fetching 
-  const { fetchOtherNetworksBalances,
-    fetchTokens
-  } = useVelcroFetch({
+  // Remaining logic - velcro balance fetching
+  const { fetchOtherNetworksBalances, fetchTokens } = useVelcroFetch({
     currentAccount,
     currentNetwork,
     setAssetsByAccount,
@@ -81,13 +89,13 @@ export default function useProtocolsFetch({
     getBalances,
     filterByHiddenTokens,
     updateCoingeckoAndSupplementData,
-    hiddenTokens,
     extraTokensAssets,
     eligibleRequests,
     fetchingAssets,
     setFetchingAssets,
     оtherNetworksFetching,
-    setOtherNetworksFetching
+    setOtherNetworksFetching,
+    removeDuplicatedAssets
   })
 
   return {

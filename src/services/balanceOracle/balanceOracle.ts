@@ -4,6 +4,7 @@ import oracle from 'adex-protocol-eth/abi/RemainingBalancesOracle.json'
 import { ethers } from 'ethers'
 
 import { NetworkId } from '../../constants/networks'
+// eslint-disable-next-line import/no-cycle
 import { Token, TokenWithIsHiddenFlag } from '../../hooks/usePortfolio'
 import { getProvider } from '../provider'
 
@@ -22,11 +23,13 @@ function isErr(hex: string) {
   return hex.startsWith(ERROR_SIG) || hex.startsWith(PANIC_SIG)
 }
 
-function hex2a (hexx) {
-	var hex = hexx.toString()
-	var str = ''
-	for (var i = 0; i < hex.length; i += 2) { str += String.fromCharCode(parseInt(hex.substr(i, 2), 16)) }
-	return str
+function hex2a(hexx) {
+  const hex = hexx.toString()
+  let str = ''
+  for (let i = 0; i < hex.length; i += 2) {
+    str += String.fromCharCode(parseInt(hex.substr(i, 2), 16))
+  }
+  return str
 }
 
 // ToDo check for missing data and double check for incompleted returns
@@ -51,10 +54,15 @@ async function call({
   const coder = new AbiCoder()
   const signer = selectedAccount.signer?.address || selectedAccount.signer?.quickAccManager
 
-  const bytecode = Object.keys(selectedAccount).length !== 0 ? selectedAccount?.bytecode : '0x6080604052348015600f57600080fd5b50604880601d6000396000f3fe6080604052348015600f57600080fd5b5000fea2646970667358221220face6a0e4f251ee8ded32eb829598230ad218691166fa0a46bc85583c202c60c64736f6c634300080a0033'
-	const spoofSig = signer ? coder.encode(['address'], [signer]) + SPOOF_SIGTYPE : '0x000000000000000000000000000000000000000000000000000000000000000000'
+  const bytecode =
+    Object.keys(selectedAccount).length !== 0
+      ? selectedAccount?.bytecode
+      : '0x6080604052348015600f57600080fd5b50604880601d6000396000f3fe6080604052348015600f57600080fd5b5000fea2646970667358221220face6a0e4f251ee8ded32eb829598230ad218691166fa0a46bc85583c202c60c64736f6c634300080a0033'
+  const spoofSig = signer
+    ? coder.encode(['address'], [signer]) + SPOOF_SIGTYPE
+    : '0x000000000000000000000000000000000000000000000000000000000000000000'
 
-  // 1rst state - latest 
+  // 1rst state - latest
   // 2nd state - pending
   // 3rd state - unconfirmed with not signed transactions
   // In both last states we need to pass block tag = pending
@@ -68,11 +76,15 @@ async function call({
     // salt
     '0x0000000000000000000000000000000000000000000000000000000000000001',
     // txns
-    pendingTransactions?.length ? pendingTransactions: [[
-      '0x0000000000000000000000000000000000000000',
-      '0x0',
-      '0x0000000000000000000000000000000000000000'
-    ]],
+    pendingTransactions?.length
+      ? pendingTransactions
+      : [
+          [
+            '0x0000000000000000000000000000000000000000',
+            '0x0',
+            '0x0000000000000000000000000000000000000000'
+          ]
+        ],
     // signature
     spoofSig,
     // identity
@@ -91,12 +103,11 @@ async function call({
   }
   const balances = coder.decode(['uint[]'], callResult)[0]
   const result = tokens.map((x, i) => ({
-      ...x,
-      balanceRaw: balances[i].toString(),
-      balance: parseFloat(formatUnits(balances[i], x.decimals)).toFixed(10),
-      balanceOracleUpdate: new Date().valueOf()
-    })
-  )
+    ...x,
+    balanceRaw: balances[i].toString(),
+    balance: parseFloat(formatUnits(balances[i], x.decimals)).toFixed(10),
+    balanceOracleUpdate: new Date().valueOf()
+  }))
   return { success: true, data: result }
 }
 
@@ -117,14 +128,19 @@ async function getTokenListBalance({
   selectedAccount: {}
   state: string
 }) {
-  const result = await call({ walletAddr, tokens, network, pendingTransactions, selectedAccount, state })
+  const result = await call({
+    walletAddr,
+    tokens,
+    network,
+    pendingTransactions,
+    selectedAccount,
+    state
+  })
   if (result.success) {
     const newBalance = tokens.map((t) => {
       // @ts-ignore `result.data` is string only when `result.success` is `false`
       // So `result.data.filter` should always work just fine in this scope.
-      const newTokenBalance = result.data.filter(
-        (r: Token) => r.address === t.address
-      )[0]
+      const newTokenBalance = result.data.filter((r: Token) => r.address === t.address)[0]
 
       return newTokenBalance
         ? {
@@ -142,9 +158,9 @@ async function getTokenListBalance({
             price: t.price
           }
         : {
-          type: 'token',
-          ...t 
-        }
+            type: 'token',
+            ...t
+          }
     })
     if (updateBalance && typeof updateBalance === 'function') updateBalance(newBalance)
     return newBalance
@@ -179,4 +195,20 @@ function checkTokenList(list: Token[]) {
   })
 }
 
-export { call, getErrMsg, checkTokenList, getTokenListBalance }
+const removeDuplicatedAssets = (_tokens: Token[]) => {
+  let tokens = _tokens
+  const lookup =
+    tokens?.length &&
+    tokens.reduce((a: Token, e: Token) => {
+      a[e.address] = ++a[e.address] || 0
+      return a
+    }, {})
+
+  // filters by non duplicated objects or takes the one of dup but with a price greater than 0
+  tokens =
+    tokens?.length && tokens.filter((e) => !lookup[e.address] || (lookup[e.address] && e.price))
+
+  return tokens
+}
+
+export { call, getErrMsg, checkTokenList, getTokenListBalance, removeDuplicatedAssets }
