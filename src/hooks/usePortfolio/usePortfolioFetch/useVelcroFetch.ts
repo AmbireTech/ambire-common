@@ -16,6 +16,7 @@ export default function useVelcroFetch({
   filterByHiddenTokens,
   updateCoingeckoAndSupplementData,
   extraTokensAssets,
+  getExtraTokensAssets,
   eligibleRequests,
   fetchingAssets,
   setFetchingAssets,
@@ -23,7 +24,8 @@ export default function useVelcroFetch({
   setOtherNetworksFetching,
   removeDuplicatedAssets
 }) {
-  const formatTokensResponse = (tokens, assets, network) => {
+  const formatTokensResponse = (tokens, assets, network, account) => {
+    const extraTokens = getExtraTokensAssets(account, network)
     return removeDuplicatedAssets([
       ...tokens
         .map((token: any) => {
@@ -78,7 +80,7 @@ export default function useVelcroFetch({
           network
         }))
         .filter((token: any) => !!token.name && !!token.symbol),
-      ...extraTokensAssets.filter((t) => t.network === network)
+      ...extraTokens
     ])
   }
   const fetchOtherNetworksBalances = async (account, assets) => {
@@ -104,7 +106,12 @@ export default function useVelcroFetch({
             const shouldSkipUpdate = cache && new Date(cacheTime) < new Date(prevCacheTime)
             cache = shouldSkipUpdate || false
 
-            let formattedTokens = formatTokensResponse(tokens, assets[currentAssetsKey], network)
+            let formattedTokens = formatTokensResponse(
+              tokens,
+              assets[currentAssetsKey],
+              network,
+              account
+            )
             formattedTokens = filterByHiddenTokens(formattedTokens)
             setAssetsByAccount((prev) => ({
               ...prev,
@@ -257,7 +264,7 @@ export default function useVelcroFetch({
           )
           return
         }
-        formattedTokens = formatTokensResponse(tokens, assets, networkToFetch?.network)
+        formattedTokens = formatTokensResponse(tokens, assets, networkToFetch?.network, account)
         // Set the new data from velcro if we don't have any tokens yet
         // this can happen on first data update and we need to set our state
         // so the user doesnt wait too long seeing the loading state

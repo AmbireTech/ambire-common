@@ -90,6 +90,7 @@ export default function useProtocolsFetch({
     filterByHiddenTokens,
     updateCoingeckoAndSupplementData,
     extraTokensAssets,
+    getExtraTokensAssets,
     eligibleRequests,
     fetchingAssets,
     setFetchingAssets,
