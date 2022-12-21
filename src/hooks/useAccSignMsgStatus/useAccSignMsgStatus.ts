@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { Bundle } from 'adex-protocol-eth/js/Bundle'
 import { AbiCoder, keccak256 } from 'ethers/lib/utils'
 import { useEffect, useState } from 'react'
