@@ -60,7 +60,11 @@ const useClaimableWalletToken = ({
     // Check if the claimableRewardsData response data is for the current account.
     // If not sets all the values to null.
     // That's how we don't show claimableRewards data for previous account.
-    if (!claimableRewardsData || (claimableRewardsData && !(claimableRewardsData.addr.toLowerCase() === accountId.toLowerCase()))) {
+    if (
+      !claimableRewardsData ||
+      (claimableRewardsData &&
+        !(claimableRewardsData.addr.toLowerCase() === accountId.toLowerCase()))
+    ) {
       setCurrentClaimStatus((prev) => ({
         ...prev,
         claimed: null,
@@ -104,11 +108,12 @@ const useClaimableWalletToken = ({
       // are equal to the current account address.
       // That's how we prevent making RPC calls for the previous selected account
       // and receiving wrong data.
-      const mintableVesting = (vestingEntry && (vestingEntry.addr.toLowerCase() === accountId.toLowerCase()))
-        ? await supplyController
-            .mintableVesting(vestingEntry.addr, vestingEntry.end, vestingEntry.rate)
-            .then(toNum)
-        : null
+      const mintableVesting =
+        vestingEntry && vestingEntry.addr.toLowerCase() === accountId.toLowerCase()
+          ? await supplyController
+              .mintableVesting(vestingEntry.addr, vestingEntry.end, vestingEntry.rate)
+              .then(toNum)
+          : null
 
       const claimed = claimableRewardsData
         ? await supplyController.claimed(claimableRewardsData.addr).then(toNum)
@@ -117,12 +122,11 @@ const useClaimableWalletToken = ({
       // fromBalanceClaimable - all time claimable from balance
       // fromADXClaimable - all time claimable from ADX Staking
       // totalClaimable - all time claimable tolkens + already claimed from prev versions of supplyController contract
-      const claimedInitial =
-        claimableRewardsData
-          ? (claimableRewardsData.fromBalanceClaimable || 0) +
-            (claimableRewardsData.fromADXClaimable || 0) -
-            toNum(claimableRewardsData.totalClaimable || 0)
-          : null
+      const claimedInitial = claimableRewardsData
+        ? (claimableRewardsData.fromBalanceClaimable || 0) +
+          (claimableRewardsData.fromADXClaimable || 0) -
+          toNum(claimableRewardsData.totalClaimable || 0)
+        : null
 
       return { mintableVesting, claimed, claimedInitial }
     })()
