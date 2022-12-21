@@ -32,6 +32,7 @@ const initialState = {
 }
 
 const rewardsInitialState = {
+  accountAddr: '',
   [RewardIds.ADX_REWARDS]: 0,
   [RewardIds.BALANCE_REWARDS]: 0,
   [RewardIds.ADX_TOKEN_APY]: 0,
@@ -75,6 +76,7 @@ export default function useRewards({
     const rewardsDetails = Object.fromEntries<
       string | number | Multiplier[] | Promo | { [key in RewardIds]: number } | RelayerRewardsBalance
     >(data.rewards.map(({ _id, rewards: r }) => [_id, r[accountId] || 0]))
+    rewardsDetails.accountAddr = data.claimableRewardsData.addr
     rewardsDetails.multipliers = data.multipliers
     rewardsDetails.walletTokenAPY = data.walletTokenAPY // TODO: Remove if not used anyhwere else raw
     rewardsDetails.walletTokenAPYPercentage = data.walletTokenAPY
