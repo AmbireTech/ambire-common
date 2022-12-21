@@ -57,6 +57,21 @@ const useClaimableWalletToken = ({
   const { cacheBreak } = useCacheBreak({ refreshInterval: 300000, breakPoint: 5000 })
   useEffect(() => {
     const accountChanged = !!prevAccountId && prevAccountId !== accountId
+    // Check if the claimableRewardsData response data is for the current account.
+    // If not sets all the values to null.
+    // That's how we don't show claimableRewards data for previous account.
+    if (!claimableRewardsData || (claimableRewardsData && !(claimableRewardsData.addr.toLowerCase() === accountId.toLowerCase()))) {
+      setCurrentClaimStatus((prev) => ({
+        ...prev,
+        claimed: null,
+        mintableVesting: null,
+        claimedInitial: null,
+        loading: true,
+        error: null,
+        lastUpdated: accountChanged ? null : prev.lastUpdated
+      }))
+      return
+    }
     // Wait before the rewards are loaded first, because the claimable amount
     // is calculated based on the rewards. If the rewards are not loaded yet,
     // we don't want to show the claimable amount as 0.
@@ -85,25 +100,25 @@ const useClaimableWalletToken = ({
     }))
     ;(async () => {
       const toNum = (x: string | number) => parseInt(x.toString(), 10) / 1e18
-      const [mintableVesting, claimed] = await Promise.all([
-        // Checks if the vestingEntry.addr and claimableRewardsData.addr
-        // are equal to the current account address.
-        // That's how we prevent making RPC calls for the previous selected account
-        // and receiving wrong data.
-        vestingEntry && vestingEntry.addr.toLowerCase() === accountId.toLowerCase()
-          ? await supplyController
-              .mintableVesting(vestingEntry.addr, vestingEntry.end, vestingEntry.rate)
-              .then(toNum)
-          : null,
-        claimableRewardsData && claimableRewardsData.addr.toLowerCase() === accountId.toLowerCase()
-          ? await supplyController.claimed(claimableRewardsData.addr).then(toNum)
-          : null
-      ])
+      // Checks if the vestingEntry.addr and claimableRewardsData.addr
+      // are equal to the current account address.
+      // That's how we prevent making RPC calls for the previous selected account
+      // and receiving wrong data.
+      const mintableVesting = (vestingEntry && (vestingEntry.addr.toLowerCase() === accountId.toLowerCase()))
+        ? await supplyController
+            .mintableVesting(vestingEntry.addr, vestingEntry.end, vestingEntry.rate)
+            .then(toNum)
+        : null
+
+      const claimed = claimableRewardsData
+        ? await supplyController.claimed(claimableRewardsData.addr).then(toNum)
+        : null
+
       // fromBalanceClaimable - all time claimable from balance
       // fromADXClaimable - all time claimable from ADX Staking
       // totalClaimable - all time claimable tolkens + already claimed from prev versions of supplyController contract
       const claimedInitial =
-        claimableRewardsData && claimableRewardsData.addr.toLowerCase() === accountId.toLowerCase()
+        claimableRewardsData
           ? (claimableRewardsData.fromBalanceClaimable || 0) +
             (claimableRewardsData.fromADXClaimable || 0) -
             toNum(claimableRewardsData.totalClaimable || 0)
