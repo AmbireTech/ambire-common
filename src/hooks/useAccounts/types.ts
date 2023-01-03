@@ -42,6 +42,7 @@ export interface UseAccountsReturnType {
   onSelectAcc: (accountId: Account['id']) => void
   onAddAccount: (acc: Account, opts: OnAddAccountOptions) => void
   onRemoveAccount: (accountId: Account['id']) => void
+  onRemoveAllAccounts: () => void
 }
 
 export interface SignedMessageType {
@@ -51,7 +52,7 @@ export interface SignedMessageType {
     description: string
     url: string
     icons: string[]
-  },
+  }
   date: number
   message: string
   networkId: number

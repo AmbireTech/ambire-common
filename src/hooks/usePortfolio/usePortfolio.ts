@@ -9,11 +9,7 @@ import usePortfolioFetch from './usePortfolioFetch'
 import useHiddenTokens from './useHiddenTokens'
 import useTransactions from './useTransactions'
 
-import {
-  Network,
-  UsePortfolioProps,
-  UsePortfolioReturnType
-} from './types'
+import { UsePortfolioProps, UsePortfolioReturnType } from './types'
 
 export default function usePortfolio({
   useConstants,
@@ -38,25 +34,38 @@ export default function usePortfolio({
   const { constants } = useConstants()
   const { addToast } = useToasts()
   const currentAccount = useRef<string>()
-  const isInitialMount = useRef(true);
+  const isInitialMount = useRef(true)
 
   // Implementation of structure that contains all assets by account and network
-  const [assets, setAssetsByAccount, isInitializing] = useCacheStorage({ key: 'ambire-assets', data: { accounts} })
+  const [assets, setAssetsByAccount, isInitializing] = useCacheStorage({
+    key: 'ambire-assets',
+    data: { accounts }
+  })
   const [fetchingAssets, setFetchingAssets] = useState({})
   const [оtherNetworksFetching, setOtherNetworksFetching] = useState(false)
 
-  const currentAssets = useMemo(() => assets[`${account}-${currentNetwork}`], [account, currentNetwork, assets[`${account}-${currentNetwork}`]])
-  
+  const currentAssets = useMemo(
+    () => assets[`${account}-${currentNetwork}`],
+    [assets, account, currentNetwork]
+  )
+
   // Handle logic for extra tokens
-  const { extraTokens, getExtraTokensAssets, onAddExtraToken, onRemoveExtraToken } = useExtraTokens({
-    useStorage,
-    useToasts,
-    tokens: currentAssets?.tokens || [],
-    constants
-  })
+  const { extraTokens, getExtraTokensAssets, onAddExtraToken, onRemoveExtraToken } = useExtraTokens(
+    {
+      useStorage,
+      useToasts,
+      tokens: currentAssets?.tokens || [],
+      constants
+    }
+  )
 
   // Handle logic for extra collectibles
-  const { extraCollectibles, getExtraCollectiblesAssets, onAddExtraCollectible, onRemoveExtraCollectible } = useExtraCollectibles({
+  const {
+    extraCollectibles,
+    getExtraCollectiblesAssets,
+    onAddExtraCollectible,
+    onRemoveExtraCollectible
+  } = useExtraCollectibles({
     useStorage,
     useToasts,
     collectibles: currentAssets?.collectibles || [],
@@ -82,30 +91,48 @@ export default function usePortfolio({
     onRemoveHiddenCollectible,
     setHiddenCollectibles,
     hiddenCollectibles,
-    filterByHiddenCollectibles,
+    filterByHiddenCollectibles
   } = useHiddenTokens({
     useToasts,
-    useStorage,
+    useStorage
   })
 
-  console.log(currentAssets?.collectibles, getExtraCollectiblesAssets(account, currentNetwork))
-  const collectibles = useMemo(() => filterByHiddenCollectibles((currentAssets?.collectibles || []), ...getExtraCollectiblesAssets(account, currentNetwork)) || [], [hiddenCollectibles, account, currentNetwork, currentAssets, extraCollectibles]);
+  const collectibles = useMemo(
+    () => filterByHiddenCollectibles(currentAssets?.collectibles || []) || [],
+    [filterByHiddenCollectibles, currentAssets]
+  )
 
-  const tokens = useMemo(() => filterByHiddenTokens(currentAssets?.tokens || []) || [], [hiddenTokens, account, currentNetwork, currentAssets]);
-  
+  const tokens = useMemo(
+    () => filterByHiddenTokens(currentAssets?.tokens || []) || [],
+    [filterByHiddenTokens, currentAssets]
+  )
+
   // All fetching logic required in our portfolio
   const {
-    updateCoingeckoAndSupplementData, fetchOtherNetworksBalances, fetchAndSetSupplementTokenData, fetchTokens
+    updateCoingeckoAndSupplementData,
+    fetchOtherNetworksBalances,
+    fetchAndSetSupplementTokenData,
+    fetchTokens
   } = usePortfolioFetch({
-    account, currentAccount, currentNetwork, hiddenTokens, getExtraTokensAssets, getExtraCollectiblesAssets,
+    account,
+    currentAccount,
+    currentNetwork,
+    hiddenTokens,
+    getExtraTokensAssets,
+    getExtraCollectiblesAssets,
     extraCollectibles,
-    getBalances, addToast, setAssetsByAccount,
+    getBalances,
+    addToast,
+    setAssetsByAccount,
     getCoingeckoPrices,
     getCoingeckoPriceByContract,
     getCoingeckoAssetPlatforms,
     filterByHiddenTokens,
     extraTokens,
-    pendingTransactions, eligibleRequests, selectedAccount, constants,
+    pendingTransactions,
+    eligibleRequests,
+    selectedAccount,
+    constants,
     fetchingAssets,
     setFetchingAssets,
     оtherNetworksFetching,
@@ -113,21 +140,32 @@ export default function usePortfolio({
   })
 
   // Implementation of balances calculation
-  const { balance, otherBalances } = useBalance(account, assets, currentAssets, currentNetwork, filterByHiddenTokens)
+  const { balance, otherBalances } = useBalance(
+    account,
+    assets,
+    currentAssets,
+    currentNetwork,
+    filterByHiddenTokens
+  )
 
   const refreshTokensIfVisible = useCallback(() => {
     if (!account || isInitializing) return
-    if (isVisible && !currentAssets?.loading && !fetchingAssets[`${account}-${currentNetwork}`]?.velcro) {
+    if (
+      isVisible &&
+      !currentAssets?.loading &&
+      !fetchingAssets[`${account}-${currentNetwork}`]?.velcro
+    ) {
       fetchTokens(account, currentNetwork, false, currentAssets)
     }
-  }, [account, fetchTokens, currentNetwork, isVisible, isInitializing])
-  
-  async function loadBalance() {
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [account, currentNetwork, isVisible, isInitializing])
+
+  const loadBalance = async () => {
     if (!account || isInitializing) return
     await fetchTokens(account, currentNetwork, false, currentAssets)
   }
 
-  async function loadOtherNetworksBalances() {
+  const loadOtherNetworksBalances = async () => {
     if (!account || isInitializing) return
     await fetchOtherNetworksBalances(account, assets)
   }
@@ -145,7 +183,7 @@ export default function usePortfolio({
   useEffect(() => {
     if (isInitialMount.current) {
       if (!isInitializing) {
-        isInitialMount.current = false;
+        isInitialMount.current = false
       }
     } else {
       refreshTokensIfVisible()
@@ -155,7 +193,6 @@ export default function usePortfolio({
   // Refresh balance every 90s if visible
   // NOTE: this must be synced (a multiple of) supplementing, otherwise we can end up with weird inconsistencies
   useEffect(() => {
-    // eslint-disable-next-line @typescript-eslint/no-implied-eval
     const refreshInterval = setInterval(refreshTokensIfVisible, 90000)
     return () => clearInterval(refreshInterval)
   }, [refreshTokensIfVisible])
@@ -164,44 +201,51 @@ export default function usePortfolio({
   useEffect(() => {
     const refreshInterval = setInterval(loadOtherNetworksBalances, 60000)
     return () => clearInterval(refreshInterval)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [account, currentNetwork, isInitializing])
 
   // Refresh balance every 150s if hidden
   useEffect(() => {
     const refreshIfHidden = () =>
-      !isVisible && !currentAssets?.loading && !isInitializing ? fetchTokens(account, currentNetwork, false, currentAssets) : null
+      !isVisible && !currentAssets?.loading && !isInitializing
+        ? fetchTokens(account, currentNetwork, false, currentAssets)
+        : null
     const refreshInterval = setInterval(refreshIfHidden, 150000)
     return () => clearInterval(refreshInterval)
-  }, [account, currentNetwork, isVisible, fetchTokens, isInitializing])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [account, currentNetwork, isVisible, isInitializing])
 
   // Get supplement tokens data every 20s and check if prices are 2 min old and fetch new ones
   useEffect(() => {
-    const refreshInterval = !isInitializing && setInterval(() => {
-      updateCoingeckoAndSupplementData(currentAssets)
-    }, 20000)
+    const refreshInterval =
+      !isInitializing &&
+      setInterval(() => {
+        updateCoingeckoAndSupplementData(currentAssets)
+      }, 20000)
     return () => clearInterval(refreshInterval)
   }, [currentAssets, currentNetwork, isInitializing])
 
   useEffect(() => {
     if (isInitialMount.current) {
       if (!isInitializing) {
-        isInitialMount.current = false;
+        isInitialMount.current = false
       }
     } else {
       // Your useEffect code here to be run on update
       fetchAndSetSupplementTokenData(currentAssets)
     }
     // In order to have an array in dependency we need to stringify it,
-    // so we can be subscribed to changes of objects inside our arrays. 
+    // so we can be subscribed to changes of objects inside our arrays.
     // https://stackoverflow.com/a/65728647/8335898
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [`${eligibleRequests}`, `${pendingTransactions}`, isInitializing])
 
   return {
     balance,
     otherBalances,
     ...currentAssets,
-    tokens: tokens,
-    collectibles: collectibles,
+    tokens,
+    collectibles,
     isCurrNetworkBalanceLoading: isInitializing || currentAssets?.loading,
     balancesByNetworksLoading: оtherNetworksFetching,
     extraTokens,
@@ -215,6 +259,9 @@ export default function usePortfolio({
     onRemoveHiddenCollectible,
     setHiddenCollectibles,
     hiddenCollectibles,
-    extraCollectibles, getExtraCollectiblesAssets, onAddExtraCollectible, onRemoveExtraCollectible
+    extraCollectibles,
+    getExtraCollectiblesAssets,
+    onAddExtraCollectible,
+    onRemoveExtraCollectible
   }
 }

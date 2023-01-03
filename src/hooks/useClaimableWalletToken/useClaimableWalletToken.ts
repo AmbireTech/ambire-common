@@ -7,6 +7,7 @@ import { NETWORKS } from '../../constants/networks'
 import WALLETVestings from '../../constants/WALLETVestings.json'
 import { getProvider } from '../../services/provider'
 import useCacheBreak from '../useCacheBreak'
+import usePrevious from '../usePrevious'
 import { UseClaimableWalletTokenProps, UseClaimableWalletTokenReturnType } from './types'
 
 // const supplyControllerAddress = '0xF8cF66BbF7fe152b8177B61855E8be9a6279C8A1' //test polygon
@@ -25,6 +26,7 @@ const useClaimableWalletToken = ({
   walletUsdPrice,
   rewardsLastUpdated
 }: UseClaimableWalletTokenProps): UseClaimableWalletTokenReturnType => {
+  const prevAccountId = usePrevious(accountId)
   const { cacheBreak: relayerCacheBreak } = useCacheBreak()
   const urlIdentityRewards = relayerURL
     ? `${relayerURL}/wallet-token/rewards/${accountId}?cacheBreak=${relayerCacheBreak}`
@@ -51,17 +53,33 @@ const useClaimableWalletToken = ({
     lastUpdated: null
   })
 
-  // By adding this to the deps, we make it refresh every 10 mins
-  const { cacheBreak } = useCacheBreak({ refreshInterval: 600000, breakPoint: 5000 })
+  // By adding this to the deps, we make it refresh every 5 mins
+  const { cacheBreak } = useCacheBreak({ refreshInterval: 300000, breakPoint: 5000 })
   useEffect(() => {
+    const accountChanged = !!prevAccountId && prevAccountId !== accountId
     // Wait before the rewards are loaded first, because the claimable amount
     // is calculated based on the rewards. If the rewards are not loaded yet,
     // we don't want to show the claimable amount as 0.
     if (!rewardsLastUpdated) {
       return
     }
-
-    setCurrentClaimStatus((prev) => ({ ...prev, loading: true, error: null }))
+    // Check lastUpdate so we won't refetch on every hook update, but every 5 minutes.
+    // But still check if current account is changed to reset lastUpdated timestamp
+    // and fetch new data for the new account from supply controller
+    if (
+      !accountChanged &&
+      currentClaimStatus?.lastUpdated &&
+      currentClaimStatus?.lastUpdated > new Date().getTime() - 300000
+    ) {
+      return
+    }
+    // Reset lastUpdated on account change
+    setCurrentClaimStatus((prev) => ({
+      ...prev,
+      loading: true,
+      error: null,
+      lastUpdated: accountChanged ? null : prev.lastUpdated
+    }))
     ;(async () => {
       const toNum = (x: string | number) => parseInt(x.toString(), 10) / 1e18
       const [mintableVesting, claimed] = await Promise.all([
@@ -102,7 +120,16 @@ const useClaimableWalletToken = ({
           error: e?.message || e || 'Failed getting claim status.'
         }))
       })
-  }, [supplyController, vestingEntry, claimableRewardsData, cacheBreak, rewardsLastUpdated])
+  }, [
+    supplyController,
+    vestingEntry,
+    claimableRewardsData,
+    cacheBreak,
+    rewardsLastUpdated,
+    accountId,
+    prevAccountId,
+    currentClaimStatus?.lastUpdated
+  ])
 
   const initialClaimable = claimableRewardsData ? +claimableRewardsData.totalClaimable / 1e18 : 0
   const claimableNowRounded = +(initialClaimable - (currentClaimStatus.claimed || 0)).toFixed(6)

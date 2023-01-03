@@ -1,16 +1,15 @@
 // @ts-nocheck TODO: Fill in all missing types before enabling the TS check again
 
 import { useCallback } from 'react'
-import {
-    Token,
-    UseExtraTokensProps,
-} from './types'
-import { NetworkId } from 'ambire-common/src/constants/networks'
+import { NetworkId } from '../../constants/networks'
+import { Token, UseExtraTokensProps } from './types'
 
-interface UpdatedExtraToken extends Token {
-  coingeckoId: string;
-}
-export default function useExtraTokens({ useStorage, useToasts, tokens, constants }: UseExtraTokensProps) {
+export default function useExtraTokens({
+  useStorage,
+  useToasts,
+  tokens,
+  constants
+}: UseExtraTokensProps) {
   const [extraTokens, setExtraTokens] = useStorage({ key: 'extraTokens', defaultValue: [] })
 
   const { addToast } = useToasts()
@@ -29,20 +28,20 @@ export default function useExtraTokens({ useStorage, useToasts, tokens, constant
     [extraTokens]
   )
 
-
   const onAddExtraToken = useCallback(
     (extraToken: Token) => {
-      const { address, name, symbol } = extraToken
-      if (extraTokens.map(({ address }: any) => address).includes(address))
+      const { address: extraTokenAddress, name, symbol } = extraToken
+      if (extraTokens.map(({ address }: any) => address).includes(extraTokenAddress))
         return addToast(`${name} (${symbol}) is already added to your wallet.`)
       if (
-        constants?.tokenList && Object.values(constants.tokenList)
+        constants?.tokenList &&
+        Object.values(constants.tokenList)
           .flat(1)
           .map(({ address }: any) => address)
-          .includes(address)
+          .includes(extraTokenAddress)
       )
         return addToast(`${name} (${symbol}) is already handled by your wallet.`)
-      if (tokens.map(({ address }) => address).includes(address))
+      if (tokens.map(({ address }) => address).includes(extraTokenAddress))
         return addToast(`You already have ${name} (${symbol}) in your wallet.`)
 
       const updatedExtraTokens = [
@@ -56,7 +55,7 @@ export default function useExtraTokens({ useStorage, useToasts, tokens, constant
       setExtraTokens(updatedExtraTokens)
       addToast(`${name} (${symbol}) token added to your wallet!`)
     },
-    [setExtraTokens, tokens, extraTokens]
+    [setExtraTokens, tokens, extraTokens, addToast, constants?.tokenList]
   )
 
   const onRemoveExtraToken = useCallback(
@@ -69,14 +68,13 @@ export default function useExtraTokens({ useStorage, useToasts, tokens, constant
       setExtraTokens(updatedExtraTokens)
       addToast(`${token.name} (${token.symbol}) was removed from your wallet.`)
     },
-    [extraTokens, setExtraTokens]
+    [setExtraTokens, extraTokens, addToast]
   )
-
 
   return {
     onAddExtraToken,
     onRemoveExtraToken,
     extraTokens,
-    getExtraTokensAssets,
+    getExtraTokensAssets
   }
 }
