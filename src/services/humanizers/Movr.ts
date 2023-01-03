@@ -20,7 +20,7 @@ const MovrMapping = (humanizerInfo: HumanizerInfoType) => {
       return [
         `Transfer ${token(humanizerInfo, middlewareInputToken, amount)} to ${getNetwork(
           toChainId
-        )} for ${token(humanizerInfo, tokenToBridge)}`
+        )} for ${token(humanizerInfo, tokenToBridge, null)}`
       ]
     },
     [MovrRouterInterface.getSighash('outboundTransferTo')]: (txn, network) => {
@@ -35,7 +35,8 @@ const MovrMapping = (humanizerInfo: HumanizerInfoType) => {
           amount
         )} to ${getNetwork(toChainId)} for ${token(
           humanizerInfo,
-          formatNativeTokenAddress(outputToken)
+          formatNativeTokenAddress(outputToken),
+          null
         )}`
       ]
     }
