@@ -20,8 +20,6 @@ export default function useProtocolsFetch({
   currentNetwork,
   hiddenTokens,
   getExtraTokensAssets,
-  getExtraCollectiblesAssets,
-  extraCollectibles,
   getBalances,
   addToast,
   setAssetsByAccount,
@@ -43,12 +41,6 @@ export default function useProtocolsFetch({
     () => getExtraTokensAssets(account, currentNetwork),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [account, extraTokens, currentNetwork, getExtraTokensAssets]
-  )
-
-  const extraCollectiblesAssets = useMemo(
-    () => getExtraCollectiblesAssets(account, currentNetwork),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [account, extraCollectibles, currentNetwork, getExtraCollectiblesAssets]
   )
 
   // All logic and functions required for coingecko fetching
@@ -98,7 +90,6 @@ export default function useProtocolsFetch({
     filterByHiddenTokens,
     updateCoingeckoAndSupplementData,
     extraTokensAssets,
-    extraCollectiblesAssets,
     getExtraTokensAssets,
     eligibleRequests,
     fetchingAssets,

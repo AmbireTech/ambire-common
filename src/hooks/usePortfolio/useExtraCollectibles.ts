@@ -2,11 +2,11 @@
 
 import { useCallback } from 'react'
 
-import { getProvider } from '../../services/provider'
-
-
 export default function useExtraCollectibles({ useStorage, useToasts, collectibles }: any) {
-  const [extraCollectibles, setExtraCollectibles] = useStorage({ key: 'extraCollectibles', defaultValue: [] })
+  const [extraCollectibles, setExtraCollectibles] = useStorage({
+    key: 'extraCollectibles',
+    defaultValue: []
+  })
 
   const { addToast } = useToasts()
 
@@ -26,16 +26,17 @@ export default function useExtraCollectibles({ useStorage, useToasts, collectibl
 
   const onAddExtraCollectible = useCallback(
     (extraCollectible) => {
-      // 
       const { collectionAddress, tokenId } = extraCollectible
-      //TODO: get nft data - collectionName, collectionImg, assetName, assetImg, balanceUSD - use relayer or custom fn (getCollectibleData)
-      // const { balance, data } = getCollectibleData(collectionAddress, tokenId, network, address)
 
-      if (extraCollectibles.some(x =>  x.address === collectionAddress && x.tokenId === tokenId))
-        return addToast(`Collectible ${collectionAddress} (${tokenId}) is already added to your wallet.`)
+      if (extraCollectibles.some((x) => x.address === collectionAddress && x.tokenId === tokenId))
+        return addToast(
+          `Collectible ${collectionAddress} (${tokenId}) is already added to your wallet.`
+        )
 
-      let collectible = collectibles?.find((t: any) => t.address.toLowerCase() === collectionAddress.toLowerCase())
-      const asset = collectible?.assets.find((asset: any) => asset.tokenId === tokenId)
+      const collectible = collectibles?.find(
+        (t: any) => t.address.toLowerCase() === collectionAddress.toLowerCase()
+      )
+      const asset = collectible?.assets.find((item: any) => item.tokenId === tokenId)
 
       if (collectible && asset) {
         return addToast(`${collectionAddress} (${tokenId}) is already handled by your wallet.`)
@@ -44,7 +45,7 @@ export default function useExtraCollectibles({ useStorage, useToasts, collectibl
       const updatedExtraCollectibles = [
         ...extraCollectibles,
         {
-          ...(extraCollectible),
+          ...extraCollectible,
           coingeckoId: null
         }
       ]
@@ -52,28 +53,30 @@ export default function useExtraCollectibles({ useStorage, useToasts, collectibl
       setExtraCollectibles(updatedExtraCollectibles)
       addToast(`${collectionAddress} (${tokenId}) is added to your wallet!`)
     },
-    [setExtraCollectibles, collectibles, extraCollectibles]
+    [addToast, setExtraCollectibles, collectibles, extraCollectibles]
   )
-  
 
   const onRemoveExtraCollectible = useCallback(
     (address, tokenId) => {
-      const collectible = extraCollectibles.find((t) => t.address === address)
-      if (!collectible) return addToast(`${address} is not present in your wallet.`)
+      const collectible = extraCollectibles.find(
+        (t) => t.address === address && t?.assets.find((item: any) => item.tokenId === tokenId)
+      )
 
-      const updatedExtraCollectibles = extraCollectibles.filter((t) => t.address !== address)
-      console.log('updatedExtraCollectibles', updatedExtraCollectibles)
-      // debugger
+      if (!collectible) return addToast(`${address} is not present in your wallet.`)
+      const updatedExtraCollectibles = extraCollectibles.filter(
+        (coll) => coll.address === address && coll.assets.find((item) => item.tokenId !== tokenId)
+      )
+
       setExtraCollectibles(updatedExtraCollectibles)
       addToast(`${collectible.address} (${collectible.tokenId}) was removed from your wallet.`)
     },
-    [extraCollectibles, setExtraCollectibles]
+    [addToast, setExtraCollectibles, extraCollectibles]
   )
 
   return {
     extraCollectibles,
     getExtraCollectiblesAssets,
     onAddExtraCollectible,
-    onRemoveExtraCollectible,
+    onRemoveExtraCollectible
   }
 }

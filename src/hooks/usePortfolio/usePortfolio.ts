@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useState, useRef } from 'react'
 import useBalance from './useBalance'
 import useExtraTokens from './useExtraTokens'
 import useExtraCollectibles from './useExtraCollectibles'
+// eslint-disable-next-line import/no-cycle
 import usePortfolioFetch from './usePortfolioFetch'
 import useHiddenTokens from './useHiddenTokens'
 import useTransactions from './useTransactions'
@@ -97,6 +98,12 @@ export default function usePortfolio({
     useStorage
   })
 
+  const extraCollectiblesAssets = useMemo(
+    () => getExtraCollectiblesAssets(account, currentNetwork),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [account, extraCollectibles, currentNetwork, getExtraCollectiblesAssets]
+  )
+
   const collectibles = useMemo(
     () => filterByHiddenCollectibles(currentAssets?.collectibles || []) || [],
     [filterByHiddenCollectibles, currentAssets]
@@ -119,8 +126,6 @@ export default function usePortfolio({
     currentNetwork,
     hiddenTokens,
     getExtraTokensAssets,
-    getExtraCollectiblesAssets,
-    extraCollectibles,
     getBalances,
     addToast,
     setAssetsByAccount,
@@ -223,6 +228,7 @@ export default function usePortfolio({
         updateCoingeckoAndSupplementData(currentAssets)
       }, 20000)
     return () => clearInterval(refreshInterval)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentAssets, currentNetwork, isInitializing])
 
   useEffect(() => {
@@ -245,7 +251,7 @@ export default function usePortfolio({
     otherBalances,
     ...currentAssets,
     tokens,
-    collectibles,
+    collectibles: [...collectibles, ...extraCollectiblesAssets],
     isCurrNetworkBalanceLoading: isInitializing || currentAssets?.loading,
     balancesByNetworksLoading: оtherNetworksFetching,
     extraTokens,
