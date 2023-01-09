@@ -41,7 +41,7 @@ const useGetMsgType = ({ msgToSign }: UseGetMsgTypeProps): UseGetMsgTypeReturnTy
           typeDataErr = '.txn should be a TypedData object'
         }
       }
-    } catch (error) {
+    } catch (error: any) {
       typeDataErr = error.message || error
     }
 
