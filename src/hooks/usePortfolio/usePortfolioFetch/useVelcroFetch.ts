@@ -242,7 +242,7 @@ export default function useVelcroFetch({
             formattedTokens = assets?.tokens
           }
           formattedTokens = removeDuplicatedAssets([
-            ...formattedTokens,
+            ...(formattedTokens || []),
             ...(extraTokensAssets?.length ? extraTokensAssets : [])
           ])
           setFetchingAssets((prev) => ({
