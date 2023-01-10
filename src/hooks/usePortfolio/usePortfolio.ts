@@ -143,7 +143,7 @@ export default function usePortfolio({
       fetchTokens(account, currentNetwork, false, currentAssets)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [account, currentNetwork, isVisible, isInitializing])
+  }, [account, currentNetwork, eligibleRequests, isVisible, isInitializing])
 
   const loadBalance = async () => {
     if (!account || isInitializing) return
@@ -208,7 +208,7 @@ export default function usePortfolio({
         updateCoingeckoAndSupplementData(currentAssets)
       }, 20000)
     return () => clearInterval(refreshInterval)
-  }, [currentAssets, currentNetwork, isInitializing])
+  }, [currentAssets, currentNetwork, isInitializing, updateCoingeckoAndSupplementData])
 
   useEffect(() => {
     if (isInitialMount.current) {
