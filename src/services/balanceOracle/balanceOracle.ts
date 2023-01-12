@@ -206,8 +206,13 @@ const removeDuplicatedAssets = (_tokens: Token[]) => {
 
   // filters by non duplicated objects or takes the one of dup but with a price greater than 0
   tokens =
-    tokens?.length && tokens.filter((e) => !lookup[e.address] || (lookup[e.address] && e.price))
-
+    tokens?.length &&
+    tokens
+      .filter((e) => !lookup[e.address] || (lookup[e.address] && e.price))
+      // Actually remove if duplicated tokens are passed.
+      .filter(function ({ address }) {
+        return !this.has(address) && this.add(address)
+      }, new Set())
   return tokens
 }
 

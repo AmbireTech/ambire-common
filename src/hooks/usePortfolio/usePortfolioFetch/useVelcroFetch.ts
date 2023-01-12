@@ -99,15 +99,41 @@ export default function useVelcroFetch({
             const currentAssetsKey =
               Object.keys(assets).length &&
               Object.keys(assets).filter((key) => key.includes(account) && key.includes(network))
+            const currentAssets = assets[currentAssetsKey]
             const prevCacheTime = (currentAssetsKey && assets[currentAssetsKey]?.cacheTime) || null
             // eslint-disable-next-line prefer-const
-            let { tokens = [], nfts, cache, cacheTime, resultTime } = response.data
+            let { tokens = [], nfts, cache, cacheTime, resultTime, provider } = response.data
 
             const shouldSkipUpdate = cache && new Date(cacheTime) < new Date(prevCacheTime)
             cache = shouldSkipUpdate || false
 
-            let formattedTokens = formatTokensResponse(
-              tokens,
+            if (cacheTime === prevCacheTime) {
+              setAssetsByAccount((prev) => ({
+                ...prev,
+                [`${account}-${network}`]: {
+                  ...prev[`${account}-${network}`],
+                  tokens: removeDuplicatedAssets([
+                    ...(currentAssets?.tokens ? currentAssets.tokens : []),
+                    ...(extraTokensAssets?.length ? extraTokensAssets : [])
+                  ])
+                }
+              }))
+              return true
+            }
+
+            let formattedTokens = []
+
+            // velcro provider is balanceOracle and tokens may not be full
+            // repopulate with current tokens
+            if (provider === 'balanceOracle') {
+              formattedTokens = removeDuplicatedAssets([
+                ...(currentAssets?.tokens || []),
+                ...tokens
+              ])
+            }
+
+            formattedTokens = formatTokensResponse(
+              formattedTokens.length ? [...(formattedTokens || [])] : [...tokens] || [],
               assets[currentAssetsKey],
               network,
               account
