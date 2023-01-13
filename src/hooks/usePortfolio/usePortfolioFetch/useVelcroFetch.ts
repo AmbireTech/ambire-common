@@ -115,14 +115,18 @@ export default function useVelcroFetch({
               Object.keys(assets).length &&
               Object.keys(assets).filter((key) => key.includes(account) && key.includes(network))
             const currentAssets = assets[currentAssetsKey]
+
             const prevCacheTime = (currentAssetsKey && assets[currentAssetsKey]?.cacheTime) || null
             // eslint-disable-next-line prefer-const
-            let { tokens = [], nfts, cache, cacheTime, resultTime, provider } = response.data
+            const { tokens = [], nfts, cacheTime, resultTime, provider, partial } = response.data
+            let { cache } = response.data
 
-            const shouldSkipUpdate = cache && new Date(cacheTime) < new Date(prevCacheTime)
+            const shouldSkipUpdate =
+              (cache && new Date(cacheTime) < new Date(prevCacheTime)) ||
+              cacheTime === prevCacheTime
             cache = shouldSkipUpdate || false
 
-            if (cacheTime === prevCacheTime) {
+            if (shouldSkipUpdate) {
               const tokensToRefresh = formatTokensResponse(
                 currentAssets?.tokens,
                 currentAssets,
@@ -135,7 +139,8 @@ export default function useVelcroFetch({
                 ...prev,
                 [`${account}-${network}`]: {
                   ...prev[`${account}-${network}`],
-                  tokens: tokensToRefresh || []
+                  tokens: tokensToRefresh || [],
+                  loading: false
                 }
               }))
               return true
@@ -145,7 +150,7 @@ export default function useVelcroFetch({
 
             // velcro provider is balanceOracle and tokens may not be full
             // repopulate with current tokens
-            if (provider === 'balanceOracle') {
+            if (provider === 'balanceOracle' || partial) {
               formattedTokens = removeDuplicatedAssets([
                 ...(currentAssets?.tokens || []),
                 ...tokens
@@ -159,6 +164,7 @@ export default function useVelcroFetch({
               account,
               true
             )
+
             formattedTokens = filterByHiddenTokens(formattedTokens)
             setAssetsByAccount((prev) => ({
               ...prev,
