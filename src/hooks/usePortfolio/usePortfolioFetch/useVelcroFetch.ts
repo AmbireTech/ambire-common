@@ -24,7 +24,7 @@ export default function useVelcroFetch({
   setOtherNetworksFetching,
   removeDuplicatedAssets
 }) {
-  const formatTokensResponse = (tokens, assets, network, account) => {
+  const formatTokensResponse = (tokens, assets, network, account, otherNetworksFetch) => {
     const extraTokens = getExtraTokensAssets(account, network)
     return removeDuplicatedAssets([
       ...tokens
@@ -77,7 +77,22 @@ export default function useVelcroFetch({
             Number(parseFloat((token?.balance || 0) * (token?.price || 0)).toFixed(2))
           ),
           price: token?.price || null,
-          network
+          network,
+          ...(token?.latest && otherNetworksFetch
+            ? {
+                latest: {
+                  balanceRaw: token?.balanceRaw,
+                  balance: token?.balance
+                    ? Number(token?.balance?.toFixed(10))
+                    : Number(ethers.utils.formatUnits(token?.balanceRaw, token?.decimals)).toFixed(
+                        10
+                      ),
+                  balanceUSD: roundFloatingNumber(
+                    Number(parseFloat((token?.balance || 0) * (token?.price || 0)).toFixed(2))
+                  )
+                }
+              }
+            : {})
         }))
         .filter((token: any) => !!token.name && !!token.symbol),
       ...extraTokens
@@ -108,14 +123,19 @@ export default function useVelcroFetch({
             cache = shouldSkipUpdate || false
 
             if (cacheTime === prevCacheTime) {
+              const tokensToRefresh = formatTokensResponse(
+                currentAssets?.tokens,
+                currentAssets,
+                network,
+                account,
+                true
+              )
+
               setAssetsByAccount((prev) => ({
                 ...prev,
                 [`${account}-${network}`]: {
                   ...prev[`${account}-${network}`],
-                  tokens: removeDuplicatedAssets([
-                    ...(currentAssets?.tokens ? currentAssets.tokens : []),
-                    ...(extraTokensAssets?.length ? extraTokensAssets : [])
-                  ])
+                  tokens: tokensToRefresh || []
                 }
               }))
               return true
@@ -136,7 +156,8 @@ export default function useVelcroFetch({
               formattedTokens.length ? [...(formattedTokens || [])] : [...tokens] || [],
               assets[currentAssetsKey],
               network,
-              account
+              account,
+              true
             )
             formattedTokens = filterByHiddenTokens(formattedTokens)
             setAssetsByAccount((prev) => ({
