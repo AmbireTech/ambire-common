@@ -22,11 +22,12 @@ export default function useCoingeckoFetch({
         if (!response) return null
         resolve && resolve(response)
       } catch (e) {
-        addToast(e.message, { error: true })
+        // Temporarily dont show this error because of coingecko limitations 10-50 calls per minute
+        // addToast(e.message, { error: true })
         resolve && resolve([])
       }
     },
-    [addToast, getCoingeckoPrices]
+    [getCoingeckoPrices]
   )
 
   const fetchCoingeckoAsset = useCallback(async () => {
