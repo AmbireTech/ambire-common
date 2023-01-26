@@ -10,7 +10,8 @@ export default function useCoingeckoFetch({
   addToast,
   getCoingeckoPrices,
   getCoingeckoPriceByContract,
-  getCoingeckoAssetPlatforms
+  getCoingeckoAssetPlatforms,
+  getCoingeckoCoin
 }) {
   const fetchCoingeckoPrices = useCallback(
     async (tokens, resolve) => {
@@ -28,6 +29,21 @@ export default function useCoingeckoFetch({
       }
     },
     [getCoingeckoPrices]
+  )
+
+  const fetchCoingeckoCoin = useCallback(
+    async (token) => {
+      if (!token || !token.coingeckoId) return null
+
+      try {
+        const response = await getCoingeckoCoin(token.coingeckoId)
+        if (!response) return null
+        return response
+      } catch (e) {
+        addToast(e.message, { error: true })
+      }
+    },
+    [getCoingeckoCoin, addToast]
   )
 
   const fetchCoingeckoAsset = useCallback(async () => {
@@ -51,12 +67,26 @@ export default function useCoingeckoFetch({
           coingeckoTokensToUpdate.map(async (addr) => {
             let isNative = false
             if (NATIVE_ADDRESS === addr) isNative = true
-            try {
-              const response = await getCoingeckoPriceByContract(
-                assetPlatform,
-                isNative ? '0x0000000000000000000000000000000000001010' : addr
-              )
 
+            let contract = false
+            if (isNative) {
+              if (currentNetwork === 'ethereum') contract = ''
+              if (currentNetwork === 'polygon')
+                contract = '0x0000000000000000000000000000000000001010'
+            } else {
+              contract = addr
+            }
+
+            // debugger
+            try {
+              let response = {}
+              if (isNative && !contract) {
+                const nativeAsset = networks.find(({ id }) => id === currentNetwork)?.nativeAsset
+                response = await fetchCoingeckoCoin(nativeAsset)
+              } else {
+                response = await getCoingeckoPriceByContract(assetPlatform, contract)
+              }
+              // debugger
               if (!response || response?.error) return null
               return {
                 address: isNative ? addr : response?.platforms[assetPlatform],
@@ -78,7 +108,7 @@ export default function useCoingeckoFetch({
         resolve && resolve({ tokens: {}, state: 'coingecko' })
       }
     },
-    [getCoingeckoPriceByContract, fetchCoingeckoAsset]
+    [getCoingeckoPriceByContract, fetchCoingeckoAsset, fetchCoingeckoCoin, currentNetwork]
   )
 
   return {

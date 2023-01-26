@@ -52,7 +52,7 @@ const networks: NetworkType[] = [
     nativeAsset: {
       address: '0x0000000000000000000000000000000000000000',
       symbol: 'ETH',
-      coingeckoId: null,
+      coingeckoId: 'ethereum',
       decimals: 18
     }
   },
@@ -68,7 +68,7 @@ const networks: NetworkType[] = [
     nativeAsset: {
       address: '0x0000000000000000000000000000000000000000',
       symbol: 'MATIC',
-      coingeckoId: null,
+      coingeckoId: 'matic-network',
       decimals: 18
     }
   },
@@ -84,7 +84,7 @@ const networks: NetworkType[] = [
     nativeAsset: {
       address: '0x0000000000000000000000000000000000000000',
       symbol: 'AVAX',
-      coingeckoId: null,
+      coingeckoId: 'avalanche-2',
       decimals: 18
     }
   },
@@ -101,7 +101,7 @@ const networks: NetworkType[] = [
     nativeAsset: {
       address: '0x0000000000000000000000000000000000000000',
       symbol: 'BNB',
-      coingeckoId: null,
+      coingeckoId: 'binancecoin',
       decimals: 18
     }
   },
@@ -117,7 +117,7 @@ const networks: NetworkType[] = [
     nativeAsset: {
       address: '0x0000000000000000000000000000000000000000',
       symbol: 'FTM',
-      coingeckoId: null,
+      coingeckoId: 'fantom',
       decimals: 18
     }
   },
@@ -133,7 +133,7 @@ const networks: NetworkType[] = [
     nativeAsset: {
       address: '0x0000000000000000000000000000000000000000',
       symbol: 'GLMR',
-      coingeckoId: null,
+      coingeckoId: 'moonbeam',
       decimals: 18
     }
   },
@@ -149,7 +149,7 @@ const networks: NetworkType[] = [
     nativeAsset: {
       address: '0x0000000000000000000000000000000000000000',
       symbol: 'MOVR',
-      coingeckoId: null,
+      coingeckoId: 'moonriver',
       decimals: 18
     }
   },
@@ -165,7 +165,7 @@ const networks: NetworkType[] = [
     nativeAsset: {
       address: '0x0000000000000000000000000000000000000000',
       symbol: 'AETH',
-      coingeckoId: null,
+      coingeckoId: 'ethereum',
       decimals: 18
     }
   },
@@ -181,7 +181,7 @@ const networks: NetworkType[] = [
     nativeAsset: {
       address: '0x0000000000000000000000000000000000000000',
       symbol: 'XDAI',
-      coingeckoId: null,
+      coingeckoId: 'xdai',
       decimals: 18
     }
   },
@@ -198,7 +198,7 @@ const networks: NetworkType[] = [
     nativeAsset: {
       address: '0x0000000000000000000000000000000000000000',
       symbol: 'KCS',
-      coingeckoId: null,
+      coingeckoId: 'kucoin-shares',
       decimals: 18
     }
   },
@@ -214,7 +214,7 @@ const networks: NetworkType[] = [
     nativeAsset: {
       address: '0x0000000000000000000000000000000000000000',
       symbol: 'ETH',
-      coingeckoId: null,
+      coingeckoId: 'ethereum',
       decimals: 18
     }
   },
@@ -230,7 +230,7 @@ const networks: NetworkType[] = [
     nativeAsset: {
       address: '0x0000000000000000000000000000000000000000',
       symbol: 'METIS',
-      coingeckoId: null,
+      coingeckoId: 'metis-token',
       decimals: 18
     }
   },

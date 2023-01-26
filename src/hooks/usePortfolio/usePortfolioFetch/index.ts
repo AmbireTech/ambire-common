@@ -35,7 +35,8 @@ export default function useProtocolsFetch({
   fetchingAssets,
   setFetchingAssets,
   оtherNetworksFetching,
-  setOtherNetworksFetching
+  setOtherNetworksFetching,
+  getCoingeckoCoin
 }) {
   const extraTokensAssets = useMemo(
     () => getExtraTokensAssets(account, currentNetwork),
@@ -49,7 +50,8 @@ export default function useProtocolsFetch({
     addToast,
     getCoingeckoPrices,
     getCoingeckoPriceByContract,
-    getCoingeckoAssetPlatforms
+    getCoingeckoAssetPlatforms,
+    getCoingeckoCoin
   })
 
   // All balance oracle functions which we need
