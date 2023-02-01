@@ -284,7 +284,6 @@ export default function useBalanceOracleFetch({
           s.map((el) => {
             if (el?.type === 'token') {
               const tokenInPortfolio = latestTokens?.find((token) => token.address === el.address)
-
               if (!tokenInPortfolio || !tokenInPortfolio.price) {
                 tokensToFetchPrices.push(el)
                 if (!tokenInPortfolio) {
@@ -293,8 +292,6 @@ export default function useBalanceOracleFetch({
               }
 
               const customTokenToUpdate = constants?.customTokens?.find((ct) => {
-                if (ct.baseToken && ct.baseToken.toLowerCase() === el.address.toLowerCase())
-                  return ct.baseToken.toLowerCase() === el.address.toLowerCase()
                 if (ct.platforms && ct.customPrice) {
                   return Object.values(ct.platforms).includes(el.address.toLowerCase())
                 }
@@ -426,7 +423,6 @@ export default function useBalanceOracleFetch({
         // Fetched prices from coingecko
         const prices = results && results.length && results.find((el) => el.state === 'coingecko')
         if (prices) results.pop()
-
         const latestResponse = results.find(({ state }) => state === 'latest')
         // Remove empty array for not send promises
         const res = results.flat()
@@ -438,8 +434,11 @@ export default function useBalanceOracleFetch({
               tokensToFetchPrices.filter((t) =>
                 constants?.customTokens?.find(
                   (ct) =>
-                    t.address.toLowerCase() ===
-                      ct.platforms[coingeckoNets[currentNetwork]].toLowerCase() && ct.customPrice
+                    ct.platforms &&
+                    ct.platforms[coingeckoNets[currentNetwork]] &&
+                    t.address?.toLowerCase() ===
+                      ct.platforms[coingeckoNets[currentNetwork]].toLowerCase() &&
+                    ct.customPrice
                 )
               )
             const customTokensPrices =
