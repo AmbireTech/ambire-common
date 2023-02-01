@@ -145,7 +145,16 @@ export default function usePortfolio({
       fetchTokens(account, currentNetwork, false, currentAssets)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [account, currentNetwork, eligibleRequests, isVisible, isInitializing])
+  }, [
+    account,
+    currentNetwork,
+    isVisible,
+    isInitializing,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    `${eligibleRequests}`,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    `${pendingTransactions}`
+  ])
 
   const loadBalance = async () => {
     if (!account || isInitializing) return
@@ -202,15 +211,26 @@ export default function usePortfolio({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [account, currentNetwork, isVisible, isInitializing])
 
+  const refreshPricesAndBalance = useCallback(() => {
+    updateCoingeckoAndSupplementData(currentAssets, 'usePOrtfolio')
+  }, [
+    currentAssets,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    `${eligibleRequests}`,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    `${pendingTransactions}`,
+    updateCoingeckoAndSupplementData
+  ])
+
   // Get supplement tokens data every 20s and check if prices are 2 min old and fetch new ones
   useEffect(() => {
     const refreshInterval =
       !isInitializing &&
       setInterval(() => {
-        updateCoingeckoAndSupplementData(currentAssets)
+        refreshPricesAndBalance(currentAssets)
       }, 20000)
     return () => clearInterval(refreshInterval)
-  }, [currentAssets, currentNetwork, isInitializing, updateCoingeckoAndSupplementData])
+  }, [currentAssets, currentNetwork, isInitializing, refreshPricesAndBalance])
 
   useEffect(() => {
     if (isInitialMount.current) {

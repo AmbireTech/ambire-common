@@ -96,7 +96,10 @@ async function supplementTokensDataFromNetwork({
         return true
       }
       if (state === 'latest') {
-        return !!(tokensData.find((token) => t.address === token.address) || t.balanceRaw > 0)
+        return !!(
+          tokensData.find((token) => t.address === token.address && t.balanceRaw > 0) ||
+          t.balanceRaw > 0
+        )
       }
       return true
     })
@@ -418,6 +421,8 @@ export default function useBalanceOracleFetch({
       unsignedRequests?.length ? balanceOracleUnconfirmed : [],
       tokensToFetchPrices?.length ? coingeckoPrices : []
     ]
+    console.log({ balanceOracleLatest, pendingTransactions, unsignedRequests, tokensToFetchPrices })
+    // debugger
     Promise.all([...promises])
       .then((results) => {
         // Fetched prices from coingecko
@@ -426,6 +431,7 @@ export default function useBalanceOracleFetch({
         const latestResponse = results.find(({ state }) => state === 'latest')
         // Remove empty array for not send promises
         const res = results.flat()
+        console.log(res)
         const response =
           res.map(async (_res) => {
             const customTokens =
