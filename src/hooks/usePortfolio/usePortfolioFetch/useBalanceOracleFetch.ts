@@ -3,7 +3,7 @@
 
 import { Contract } from 'ethers'
 
-import networks from '../../../constants/networks'
+import networks, { coingeckoNets } from '../../../constants/networks'
 import { getProvider } from '../../../services/provider'
 import { getTransactionSummary } from '../../../services/humanReadableTransactions/transactionSummary'
 import { toBundleTxn } from '../../../services/requestToBundleTxn'
@@ -130,6 +130,24 @@ export default function useBalanceOracleFetch({
   getTokenListBalance,
   checkTokenList
 }) {
+  const findPrice = (contractAddress, priceList) => {
+    const currPrice = priceList.filter(
+      (t) => t.address.toLowerCase() === contractAddress.toLowerCase()
+    )[0]
+    return currPrice ? currPrice.price : 0
+  }
+
+  const yearnishGetPrice = async (token, prices) => {
+    if (!token || !token.abiFunction || !currentNetwork) return 0
+    const provider = getProvider(currentNetwork)
+    const contractAddress = token.shareProviderContractAddress || Object.values(token.platforms)[0]
+    const contract = new Contract(contractAddress, [token.abi], provider)
+    return (
+      (findPrice(token.baseToken, prices) * (await contract[token.abiFunction]()).toString()) /
+      10 ** token.decimals
+    )
+  }
+
   const fetchSupplementTokenData = async (
     updatedTokens: any,
     resolve,
@@ -189,6 +207,21 @@ export default function useBalanceOracleFetch({
       }))
       reject(e)
     }
+  }
+
+  const calculateCustomTokensPrice = async (customTokens, prices) => {
+    const customTokensWithAbi =
+      customTokens &&
+      customTokens?.length &&
+      customTokens.filter((ct) => ct.abiFunction && ct.platforms[coingeckoNets[currentNetwork]])
+    const customTokensPrices = await (
+      await Promise.all(customTokensWithAbi.map((ct) => yearnishGetPrice(ct, prices)))
+    ).map((price, i) => ({
+      ...customTokensWithAbi[i],
+      price,
+      priceUpdate: new Date().getTime()
+    }))
+    return customTokensPrices
   }
 
   const fetchAllSupplementTokenData = async (
@@ -258,6 +291,87 @@ export default function useBalanceOracleFetch({
                   tokensList.push({ ...el, balance: 0 })
                 }
               }
+
+              const customTokenToUpdate = constants?.customTokens?.find((ct) => {
+                if (ct.baseToken && ct.baseToken.toLowerCase() === el.address.toLowerCase())
+                  return ct.baseToken.toLowerCase() === el.address.toLowerCase()
+                if (ct.platforms && ct.customPrice) {
+                  return Object.values(ct.platforms).includes(el.address.toLowerCase())
+                }
+                return false
+              })
+
+              if (!customTokenToUpdate) return
+
+              const customTokenIsInPortfolio =
+                customTokenToUpdate &&
+                latestTokens?.find(
+                  (token) =>
+                    token.address === customTokenToUpdate.platforms[coingeckoNets[currentNetwork]]
+                )
+              const baseTokenIsInPortfolio =
+                customTokenToUpdate &&
+                latestTokens?.find((token) => token.address === customTokenToUpdate.baseToken)
+
+              if (!customTokenIsInPortfolio) {
+                const customToken =
+                  constants?.tokenList &&
+                  constants?.tokenList[currentNetwork].find(
+                    (t) =>
+                      t.address === customTokenToUpdate.platforms[coingeckoNets[currentNetwork]]
+                  )
+                tokensToFetchPrices.push(customToken)
+              }
+
+              if (!baseTokenIsInPortfolio) {
+                const baseToken =
+                  constants?.tokenList &&
+                  constants?.tokenList[currentNetwork].find(
+                    (t) => t.address === customTokenToUpdate.baseToken
+                  )
+                tokensToFetchPrices.push(baseToken)
+              }
+            } else if (el?.type === 'address') {
+              // In case we have a custom token
+              const customTokenToUpdate = constants?.customTokens?.find((ct) => {
+                if (ct.baseToken && ct.baseToken.toLowerCase() === el.address.toLowerCase())
+                  return ct.baseToken.toLowerCase() === el.address.toLowerCase()
+                if (ct.platforms && ct.customPrice) {
+                  return Object.values(ct.platforms).includes(el.address.toLowerCase())
+                }
+                return false
+              })
+
+              if (!customTokenToUpdate) return
+
+              const customTokenIsInPortfolio =
+                customTokenToUpdate &&
+                latestTokens?.find(
+                  (token) =>
+                    token.address === customTokenToUpdate.platforms[coingeckoNets[currentNetwork]]
+                )
+              const baseTokenIsInPortfolio =
+                customTokenToUpdate &&
+                latestTokens?.find((token) => token.address === customTokenToUpdate.baseToken)
+
+              if (!customTokenIsInPortfolio) {
+                const customToken =
+                  constants?.tokenList &&
+                  constants?.tokenList[currentNetwork].find(
+                    (t) =>
+                      t.address === customTokenToUpdate.platforms[coingeckoNets[currentNetwork]]
+                  )
+                tokensToFetchPrices.push(customToken)
+              }
+
+              if (!baseTokenIsInPortfolio) {
+                const baseToken =
+                  constants?.tokenList &&
+                  constants?.tokenList[currentNetwork].find(
+                    (t) => t.address === customTokenToUpdate.baseToken
+                  )
+                tokensToFetchPrices.push(baseToken)
+              }
             }
 
             return el
@@ -317,19 +431,69 @@ export default function useBalanceOracleFetch({
         // Remove empty array for not send promises
         const res = results.flat()
         const response =
-          res.map((_res) => {
+          res.map(async (_res) => {
+            const customTokens =
+              tokensToFetchPrices &&
+              tokensToFetchPrices?.length &&
+              tokensToFetchPrices.filter((t) =>
+                constants?.customTokens?.find(
+                  (ct) =>
+                    t.address.toLowerCase() ===
+                      ct.platforms[coingeckoNets[currentNetwork]].toLowerCase() && ct.customPrice
+                )
+              )
+            const customTokensPrices =
+              customTokens &&
+              customTokens?.length &&
+              (await calculateCustomTokensPrice(customTokens, [
+                ...(prices ? prices.tokens : []),
+                ...latestResponse.tokens
+              ]))
             return (
               _res &&
               _res.tokens &&
               _res.tokens.length &&
               _res.tokens
                 .map((_t: Token) => {
-                  const priceUpdate =
+                  const customToken = constants?.customTokens?.find((ct) =>
+                    ct.platforms && ct.customPrice
+                      ? Object.values(ct.platforms).includes(_t.address.toLowerCase())
+                      : false
+                  )
+                  const customTokenIsInPortfolio =
+                    customToken &&
+                    latestResponse &&
+                    latestResponse?.tokens &&
+                    latestResponse.tokens?.length &&
+                    latestResponse.tokens.find(
+                      (token) =>
+                        token.address === customToken.platforms[coingeckoNets[currentNetwork]]
+                    )
+                  let priceUpdate = {}
+
+                  priceUpdate =
                     prices &&
                     prices?.tokens?.length &&
                     prices.tokens.find(
                       (pt) => pt.address.toLowerCase() === _t.address.toLowerCase()
                     )
+
+                  if (customToken && !customTokenIsInPortfolio) {
+                    const tokenPrice =
+                      customTokensPrices &&
+                      customTokensPrices.find(
+                        (ct) => ct.id === _t.coingeckoId || ct.name === _t.symbol
+                      )
+                    priceUpdate = tokenPrice && {
+                      price: tokenPrice?.price,
+                      priceUpdate: tokenPrice?.priceUpdate,
+                      tokenImageUrls: tokenPrice?.image,
+                      tokenImageUrl: tokenPrice?.image?.large,
+                      symbol: tokenPrice?.symbol.toUpperCase(),
+                      isHidden: false
+                    }
+                  }
+
                   const currTokenInPortfolio =
                     updatedTokens?.tokens?.length &&
                     updatedTokens?.tokens?.find(
@@ -401,14 +565,17 @@ export default function useBalanceOracleFetch({
         _resolve && _resolve(response)
       })
       .catch(() => {
-        const updatedBalance = assets?.tokens.map((t) =>
-          t.latest
-            ? {
-                ...t,
-                latest: { balance: t.balance, balanceUSD: t.balanceUSD, balanceRaw: t.balanceRaw }
-              }
-            : t
-        )
+        const updatedBalance =
+          updatedTokens?.tokens &&
+          updatedTokens?.tokens?.length &&
+          updatedTokens?.tokens.map((t) =>
+            t.latest
+              ? {
+                  ...t,
+                  latest: { balance: t.balance, balanceUSD: t.balanceUSD, balanceRaw: t.balanceRaw }
+                }
+              : t
+          )
         _reject && _reject(updatedBalance)
       })
   }
@@ -438,14 +605,17 @@ export default function useBalanceOracleFetch({
         }))
       })
       .catch(() => {
-        const updatedBalance = assets?.tokens.map((t) =>
-          t.latest
-            ? {
-                ...t,
-                latest: { balance: t.balance, balanceUSD: t.balanceUSD, balanceRaw: t.balanceRaw }
-              }
-            : t
-        )
+        const updatedBalance =
+          assets?.tokens &&
+          assets?.tokens?.length &&
+          assets.tokens.map((t) =>
+            t.latest
+              ? {
+                  ...t,
+                  latest: { balance: t.balance, balanceUSD: t.balanceUSD, balanceRaw: t.balanceRaw }
+                }
+              : t
+          )
         setAssetsByAccount((prev) => ({
           ...prev,
           [`${account}-${currentNetwork}`]: {
@@ -466,36 +636,6 @@ export default function useBalanceOracleFetch({
       })
   }
 
-  const findPrice = (contractAddress, priceList) => {
-    // console.log(contractAddress, priceList)
-    // const currPrice = priceList.filter((t) =>
-    //   t.platforms ? Object.values(t.platforms).includes(contractAddress.toLowerCase()) : false
-    // )[0]
-    const currPrice = priceList.filter(
-      (t) => t.address.toLowerCase() === contractAddress.toLowerCase()
-    )
-    console.log(currPrice)
-    return currPrice ? currPrice.price : 0
-  }
-
-  const yearnishGetPrice = async (token, prices) => {
-    const provider = getProvider(currentNetwork)
-    if (!token || !token.abiFunction || !currentNetwork) return 0
-    const contractAddress = token.shareProviderContractAddress || Object.values(token.platforms)[0]
-    const contract = new Contract(contractAddress, [token.abi], provider)
-    console.log(
-      findPrice(token.contract_address, prices),
-      (await contract[token.abiFunction]()).toString(),
-      token.decimals
-    )
-    debugger
-    return (
-      (findPrice(token.contract_address, prices) *
-        (await contract[token.abiFunction]()).toString()) /
-      10 ** token.decimals
-    )
-  }
-
   const updateCoingeckoAndSupplementData = async (assets, minutes) => {
     if (fetchingAssets[`${account}-${currentNetwork}`]?.rpc || !account) return
     const tokens = assets?.tokens || []
@@ -507,22 +647,33 @@ export default function useBalanceOracleFetch({
         (token) =>
           !token?.priceUpdate || new Date().valueOf() - token.priceUpdate >= minutesToCheckForUpdate
       )
-    console.log(tokens, constants?.customTokens, coingeckoTokensToUpdate)
+    const customTokens = constants?.customTokens
+      ?.filter(
+        (ct) =>
+          tokens.find((t) => t.address === ct.platforms[coingeckoNets[currentNetwork]]) &&
+          ct.customPrice
+      )
+      .filter(
+        (token) =>
+          !token?.priceUpdate || new Date().valueOf() - token.priceUpdate >= minutesToCheckForUpdate
+      )
+    // The base token is needed for calculating custom token price
+    const baseTokensNotInPortfolio =
+      (customTokens &&
+        customTokens?.length &&
+        customTokens
+          .filter((token) => !tokens.find((t) => t.address === token.baseToken))
+          .map((t) => {
+            const baseToken =
+              constants?.tokenList &&
+              constants?.tokenList[currentNetwork].find((bt) => bt.address === t.baseToken)
+            coingeckoTokensToUpdate.push(baseToken)
+            return baseToken
+          })) ||
+      []
 
-    // Update custom tokens from ABI
-    const customTokensToUpdate = constants?.customTokens?.filter(
-      (t) => assets?.tokens.find((token) => token.coingeckoId === t.id) && t.abiFunction
-    )
-
-    // const customTokensPrices = (
-    //   await Promise.all(
-    //     customTokensToUpdate.map((ct) => yearnishGetPrice(ct, coingeckoTokensToUpdate))
-    //   )
-    // ).map((price, i) => ({ ...customTokensToUpdate[i], price, priceUpdate: new Date().getTime() }))
-    // console.log(customTokensToUpdate, customTokensPrices)
-    // debugger
     // Update prices from coingecko and balance from balance oracle
-    if (coingeckoTokensToUpdate?.length) {
+    if (coingeckoTokensToUpdate?.length || customTokens?.length) {
       const coingeckoPrices = new Promise((resolve, reject) => {
         fetchCoingeckoPrices(coingeckoTokensToUpdate, resolve, reject)
       })
@@ -531,37 +682,81 @@ export default function useBalanceOracleFetch({
       })
 
       Promise.all([coingeckoPrices, balanceOracle])
-        .then((results) => {
+        .then(async (results) => {
           const coingeckoResponse = results[0]
           const balanceOracleResponse = results[1]
 
-          const updatedBalance = balanceOracleResponse
-            .map((t) => {
-              // eslint-disable-next-line no-prototype-builtins
-              if (coingeckoResponse.hasOwnProperty(t.coingeckoId)) {
-                return {
-                  ...t,
-                  price: coingeckoResponse[t.coingeckoId].usd,
-                  balanceUSD: Number(
-                    parseFloat(t.balance * coingeckoResponse[t.coingeckoId].usd || 0).toFixed(2)
-                  ),
-                  priceUpdate: new Date().valueOf(),
-                  ...(t.latest && {
-                    latest: {
-                      balanceUSD: Number(
-                        parseFloat(
-                          t.latest.balance * coingeckoResponse[t.coingeckoId].usd || 0
-                        ).toFixed(2)
-                      ),
-                      balance: t.latest.balance,
-                      balanceRaw: t.latest.balanceRaw
-                    }
-                  })
-                }
+          let updatedBalance = balanceOracleResponse.map((t) => {
+            // eslint-disable-next-line no-prototype-builtins
+            if (coingeckoResponse.hasOwnProperty(t.coingeckoId)) {
+              return {
+                ...t,
+                price: coingeckoResponse[t.coingeckoId].usd,
+                balanceUSD: Number(
+                  parseFloat(t.balance * coingeckoResponse[t.coingeckoId].usd || 0).toFixed(2)
+                ),
+                priceUpdate: new Date().valueOf(),
+                ...(t.latest && {
+                  latest: {
+                    balanceUSD: Number(
+                      parseFloat(
+                        t.latest.balance * coingeckoResponse[t.coingeckoId].usd || 0
+                      ).toFixed(2)
+                    ),
+                    balance: t.latest.balance,
+                    balanceRaw: t.latest.balanceRaw
+                  }
+                })
               }
-              return t
-            })
-            .map((t) => customTokensPrices.find((ct) => ct.id === t.coingeckoId) || t)
+            }
+            return t
+          })
+
+          const customTokensPrices =
+            customTokens &&
+            customTokens?.length &&
+            (await calculateCustomTokensPrice(customTokens, [
+              ...(baseTokensNotInPortfolio &&
+                baseTokensNotInPortfolio.length &&
+                baseTokensNotInPortfolio.map((bt) => ({
+                  ...bt,
+                  price:
+                    coingeckoResponse &&
+                    coingeckoResponse &&
+                    coingeckoResponse[bt?.coingeckoId] &&
+                    coingeckoResponse[bt?.coingeckoId].usd
+                }))),
+              ...updatedBalance
+            ]))
+
+          updatedBalance =
+            (customTokens &&
+              customTokens?.length &&
+              updatedBalance.map((t) => {
+                const customT = customTokensPrices.find(
+                  (ct) => (ct.id === t.coingeckoId) !== (ct.name === t.symbol)
+                )
+                if (customT) {
+                  return {
+                    ...t,
+                    price: customT.price,
+                    balanceUSD: Number(parseFloat(t.balance * customT.price || 0).toFixed(2)),
+                    priceUpdate: new Date().valueOf(),
+                    ...(t.latest && {
+                      latest: {
+                        balanceUSD: Number(
+                          parseFloat(t.latest.balance * customT.price || 0).toFixed(2)
+                        ),
+                        balance: t.latest.balance,
+                        balanceRaw: t.latest.balanceRaw
+                      }
+                    })
+                  }
+                }
+                return t
+              })) ||
+            updatedBalance
+
           updatedBalance.length &&
             updateHumanizerData(updatedBalance, setKnownAddresses, setKnownTokens)
           setAssetsByAccount((prev) => ({
@@ -584,14 +779,21 @@ export default function useBalanceOracleFetch({
           }))
         })
         .catch(() => {
-          const updatedBalance = assets?.tokens.map((t) =>
-            t.latest
-              ? {
-                  ...t,
-                  latest: { balance: t.balance, balanceUSD: t.balanceUSD, balanceRaw: t.balanceRaw }
-                }
-              : t
-          )
+          const updatedBalance =
+            assets?.tokens &&
+            assets?.tokens?.length &&
+            assets?.tokens.map((t) =>
+              t.latest
+                ? {
+                    ...t,
+                    latest: {
+                      balance: t.balance,
+                      balanceUSD: t.balanceUSD,
+                      balanceRaw: t.balanceRaw
+                    }
+                  }
+                : t
+            )
           setAssetsByAccount((prev) => ({
             ...prev,
             [`${account}-${currentNetwork}`]: {
@@ -638,14 +840,21 @@ export default function useBalanceOracleFetch({
           }))
         })
         .catch(() => {
-          const updatedBalance = assets?.tokens.map((t) =>
-            t.latest
-              ? {
-                  ...t,
-                  latest: { balance: t.balance, balanceUSD: t.balanceUSD, balanceRaw: t.balanceRaw }
-                }
-              : t
-          )
+          const updatedBalance =
+            assets?.tokens &&
+            assets?.tokens?.length &&
+            assets?.tokens.map((t) =>
+              t.latest
+                ? {
+                    ...t,
+                    latest: {
+                      balance: t.balance,
+                      balanceUSD: t.balanceUSD,
+                      balanceRaw: t.balanceRaw
+                    }
+                  }
+                : t
+            )
           setAssetsByAccount((prev) => ({
             ...prev,
             [`${account}-${currentNetwork}`]: {

@@ -285,4 +285,27 @@ const networks: NetworkType[] = [
   // }
 ]
 
+export const coingeckoNets = {
+  ethereum: 'ethereum',
+  'polygon-pos': 'polygon',
+  polygon: 'polygon-pos',
+  'binance-smart-chain': 'binance-smart-chain',
+  avalanche: 'avalanche',
+  fantom: 'fantom',
+  moonbeam: 'moonbeam',
+  moonriver: 'moonriver',
+  'arbitrum-one': 'arbitrum',
+  arbitrum: 'arbitrum-one',
+  gnosis: 'xdai',
+  xdai: 'gnosis',
+  'kucoin-community-chain': 'kucoin',
+  kucoin: 'kucoin-community-chain',
+  'metis-andromeda': 'andromeda',
+  andromeda: 'metis-andromeda',
+  cronos: 'cronos',
+  aurora: 'aurora',
+  optimism: 'optimistic-ethereum',
+  'optimistic-ethereum': 'optimism'
+}
+
 export default networks
