@@ -65,28 +65,17 @@ export default function useCoingeckoFetch({
       try {
         Promise.all(
           coingeckoTokensToUpdate.map(async (addr) => {
-            let isNative = false
-            if (NATIVE_ADDRESS === addr) isNative = true
+            const nativeAsset = networks.find(({ id }) => id === currentNetwork)?.nativeAsset
+            const isNative = addr === nativeAsset.address
+            const contract = addr
 
-            let contract = false
-            if (isNative) {
-              if (currentNetwork === 'ethereum') contract = ''
-              if (currentNetwork === 'polygon')
-                contract = '0x0000000000000000000000000000000000001010'
-            } else {
-              contract = addr
-            }
-
-            // debugger
             try {
               let response = {}
-              if (isNative && !contract) {
-                const nativeAsset = networks.find(({ id }) => id === currentNetwork)?.nativeAsset
+              if (isNative) {
                 response = await fetchCoingeckoCoin(nativeAsset)
               } else {
                 response = await getCoingeckoPriceByContract(assetPlatform, contract)
               }
-              // debugger
               if (!response || response?.error) return null
               return {
                 address: isNative ? addr : response?.platforms[assetPlatform],
