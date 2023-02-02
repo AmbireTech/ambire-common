@@ -212,7 +212,7 @@ export default function usePortfolio({
   }, [account, currentNetwork, isVisible, isInitializing])
 
   const refreshPricesAndBalance = useCallback(() => {
-    updateCoingeckoAndSupplementData(currentAssets, 'usePOrtfolio')
+    updateCoingeckoAndSupplementData(currentAssets)
   }, [
     currentAssets,
     // eslint-disable-next-line react-hooks/exhaustive-deps
