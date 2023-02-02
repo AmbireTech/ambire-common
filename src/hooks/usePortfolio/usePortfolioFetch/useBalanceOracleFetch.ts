@@ -649,17 +649,16 @@ export default function useBalanceOracleFetch({
         (token) =>
           !token?.priceUpdate || new Date().valueOf() - token.priceUpdate >= minutesToCheckForUpdate
       )
-    const customTokens = constants?.customTokens?.filter(
-      (ct) =>
-        tokens.find(
-          (t) =>
-            t.address ===
-            ct.platforms[
-              (coingeckoNets[currentNetwork] && !t?.priceUpdate) ||
-                new Date().valueOf() - t.priceUpdate >= minutesToCheckForUpdate
-            ]
-        ) && ct.customPrice
-    )
+    const customTokens = constants?.customTokens?.filter((ct) => {
+      const tokenToUpdate = tokens.find(
+        (t) =>
+          t.address === ct.platforms[coingeckoNets[currentNetwork]] &&
+          (!t?.priceUpdate || new Date().valueOf() - t.priceUpdate >= minutesToCheckForUpdate)
+      )
+
+      if (tokenToUpdate && ct.customPrice) return ct
+      return false
+    })
 
     // The base token is needed for calculating custom token price
     const baseTokensNotInPortfolio =
