@@ -477,7 +477,7 @@ export default function useBalanceOracleFetch({
                     prices &&
                     prices?.tokens?.length &&
                     prices.tokens.find(
-                      (pt) => pt.address.toLowerCase() === _t.address.toLowerCase()
+                      (pt) => pt.address?.toLowerCase() === _t.address.toLowerCase()
                     )
 
                   if (customToken && !customTokenIsInPortfolio) {
