@@ -10,6 +10,19 @@ const parseZeroAddressIfNeeded = (address: string) => {
     : address
 }
 
+const toExtended = (action: string, word: string, fromToken: any) => {
+  return [
+    [
+      action,
+      {
+        type: 'token',
+        ...fromToken
+      },
+      word
+    ]
+  ]
+}
+
 const OneInchMapping = (humanizerInfo: HumanizerInfoType) => {
   // @ts-ignore: this type mismatch is a consistent issue with all
   // humanizers, not just this one. Temporary ignore it.
@@ -57,4 +70,56 @@ const OneInchMapping = (humanizerInfo: HumanizerInfoType) => {
   }
 }
 
-export default OneInchMapping
+const SwappinMapping = (humanizerInfo: HumanizerInfoType) => {
+  const SwappinInterface = new Interface(humanizerInfo.abis.SwappinOwn)
+
+  return {
+    [SwappinInterface.getSighash('payWithEth')]: (txn: any, network: NetworkType, opts: any) => {
+      const { amountFrom } = SwappinInterface.parseTransaction(txn).args
+      return !opts.extended
+        ? [`Pay with ${nativeToken(network, amountFrom, opts.extended)} for a gift card`]
+        : toExtended(
+            'Swapping',
+            'for a gift card on Swappin.gifts',
+            nativeToken(network, amountFrom, opts.extended)
+          )
+    },
+    [SwappinInterface.getSighash('payWithUsdToken')]: (
+      txn: any,
+      network: NetworkType,
+      opts: any
+    ) => {
+      const { amount, token: destToken } = SwappinInterface.parseTransaction(txn).args
+      return !opts.extended
+        ? [`Pay with ${token(humanizerInfo, destToken, amount)} for a gift card`]
+        : toExtended(
+            'Swapping',
+            'for a gift card on Swappin.gifts',
+            token(humanizerInfo, destToken, amount, opts.extended)
+          )
+    },
+    [SwappinInterface.getSighash('payWithAnyToken')]: (
+      txn: any,
+      network: NetworkType,
+      opts: any
+    ) => {
+      const { amountFrom, tokenFrom } = SwappinInterface.parseTransaction(txn).args
+      return !opts.extended
+        ? [`Pay with ${token(humanizerInfo, tokenFrom, amountFrom, opts.extended)} for a gift card`]
+        : toExtended(
+            'Swapping',
+            'for a gift card on Swappin.gifts',
+            token(humanizerInfo, tokenFrom, amountFrom, opts.extended)
+          )
+    }
+  }
+}
+
+const mapping = (humanizerInfo: HumanizerInfoType) => {
+  return {
+    ...OneInchMapping(humanizerInfo),
+    ...SwappinMapping(humanizerInfo)
+  }
+}
+
+export default mapping
