@@ -459,7 +459,7 @@ export default function useBalanceOracleFetch({
                 .map((_t: Token) => {
                   const customToken = constants?.customTokens?.find((ct) =>
                     ct.platforms && ct.customPrice
-                      ? Object.values(ct.platforms).includes(_t.address.toLowerCase())
+                      ? Object.values(ct.platforms).includes(_t.address?.toLowerCase())
                       : false
                   )
                   const customTokenIsInPortfolio =
@@ -477,7 +477,7 @@ export default function useBalanceOracleFetch({
                     prices &&
                     prices?.tokens?.length &&
                     prices.tokens.find(
-                      (pt) => pt.address?.toLowerCase() === _t.address.toLowerCase()
+                      (pt) => pt.address?.toLowerCase() === _t.address?.toLowerCase()
                     )
 
                   if (customToken && !customTokenIsInPortfolio) {
@@ -525,7 +525,9 @@ export default function useBalanceOracleFetch({
                   if (priceUpdate) {
                     tokenPrice = {
                       ...priceUpdate,
-                      balanceUSD: Number(parseFloat(_t.balance * priceUpdate.price || 0).toFixed(2))
+                      balanceUSD: Number(
+                        parseFloat(_t.balance * (priceUpdate.price || 0)).toFixed(2)
+                      )
                     }
                   } else if (currTokenInPortfolio?.price) {
                     tokenPrice = {
@@ -540,7 +542,7 @@ export default function useBalanceOracleFetch({
                     ...(latestBalance && {
                       latest: {
                         balanceUSD: Number(
-                          parseFloat(latestBalance.balance * latestBalance.price || 0).toFixed(2)
+                          parseFloat(latestBalance.balance * (latestBalance.price || 0)).toFixed(2)
                         ),
                         balance: latestBalance.balance,
                         balanceRaw: latestBalance.balanceRaw
@@ -566,7 +568,8 @@ export default function useBalanceOracleFetch({
 
         _resolve && _resolve(response)
       })
-      .catch(() => {
+      .catch((e) => {
+        console.error(e)
         const updatedBalance =
           updatedTokens?.tokens &&
           updatedTokens?.tokens?.length &&
@@ -606,7 +609,8 @@ export default function useBalanceOracleFetch({
           }
         }))
       })
-      .catch(() => {
+      .catch((e) => {
+        console.error(e)
         const updatedBalance =
           assets?.tokens &&
           assets?.tokens?.length &&
@@ -719,16 +723,16 @@ export default function useBalanceOracleFetch({
             customTokens &&
             customTokens?.length &&
             (await calculateCustomTokensPrice(customTokens, [
-              ...(baseTokensNotInPortfolio &&
-                baseTokensNotInPortfolio.length &&
-                baseTokensNotInPortfolio.map((bt) => ({
-                  ...bt,
-                  price:
-                    coingeckoResponse &&
-                    coingeckoResponse &&
-                    coingeckoResponse[bt?.coingeckoId] &&
-                    coingeckoResponse[bt?.coingeckoId].usd
-                }))),
+              ...(baseTokensNotInPortfolio && baseTokensNotInPortfolio.length
+                ? baseTokensNotInPortfolio.map((bt) => ({
+                    ...bt,
+                    price:
+                      coingeckoResponse &&
+                      coingeckoResponse &&
+                      coingeckoResponse[bt?.coingeckoId] &&
+                      coingeckoResponse[bt?.coingeckoId].usd
+                  }))
+                : []),
               ...updatedBalance
             ]))
 
@@ -781,7 +785,8 @@ export default function useBalanceOracleFetch({
             }
           }))
         })
-        .catch(() => {
+        .catch((e) => {
+          console.error(e)
           const updatedBalance =
             assets?.tokens &&
             assets?.tokens?.length &&
@@ -842,7 +847,8 @@ export default function useBalanceOracleFetch({
             }
           }))
         })
-        .catch(() => {
+        .catch((e) => {
+          console.error(e)
           const updatedBalance =
             assets?.tokens &&
             assets?.tokens?.length &&
