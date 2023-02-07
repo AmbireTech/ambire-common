@@ -25,7 +25,6 @@ export default function useProtocolsFetch({
   setAssetsByAccount,
   getCoingeckoPrices,
   getCoingeckoPriceByContract,
-  getCoingeckoAssetPlatforms,
   filterByHiddenTokens,
   extraTokens,
   pendingTransactions,
@@ -50,7 +49,6 @@ export default function useProtocolsFetch({
     addToast,
     getCoingeckoPrices,
     getCoingeckoPriceByContract,
-    getCoingeckoAssetPlatforms,
     getCoingeckoCoin
   })
 

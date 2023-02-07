@@ -1,16 +1,13 @@
 // @ts-nocheck TODO: Fill in all missing types before enabling the TS check again
 
 import { useCallback } from 'react'
-import networks from '../../../constants/networks'
-
-const NATIVE_ADDRESS = '0x0000000000000000000000000000000000000000'
+import networks, { coingeckoNets } from '../../../constants/networks'
 
 export default function useCoingeckoFetch({
   currentNetwork,
   addToast,
   getCoingeckoPrices,
   getCoingeckoPriceByContract,
-  getCoingeckoAssetPlatforms,
   getCoingeckoCoin
 }) {
   const fetchCoingeckoPrices = useCallback(
@@ -46,21 +43,8 @@ export default function useCoingeckoFetch({
     [getCoingeckoCoin, addToast]
   )
 
-  const fetchCoingeckoAsset = useCallback(async () => {
-    const network = networks.find(({ id }) => id === currentNetwork)
-    try {
-      const response = await getCoingeckoAssetPlatforms()
-      if (!response) return null
-      const current = response.find((ntw) => ntw.chain_identifier === network?.chainId)
-      return current?.id
-    } catch (e) {
-      addToast(e.message, { error: true })
-    }
-  }, [addToast, currentNetwork, getCoingeckoAssetPlatforms])
-
   const fetchCoingeckoPricesByContractAddress = useCallback(
     async (tokens, resolve) => {
-      const assetPlatform = await fetchCoingeckoAsset()
       const coingeckoTokensToUpdate = tokens.map((token) => token.address)
       try {
         Promise.all(
@@ -74,11 +58,15 @@ export default function useCoingeckoFetch({
               if (isNative) {
                 response = await fetchCoingeckoCoin(nativeAsset)
               } else {
-                response = await getCoingeckoPriceByContract(assetPlatform, contract)
+                response = await getCoingeckoPriceByContract(
+                  coingeckoNets[currentNetwork],
+                  contract
+                )
               }
+
               if (!response || response?.error) return null
               return {
-                address: isNative ? addr : response?.platforms[assetPlatform],
+                address: isNative ? addr : response?.platforms[coingeckoNets[currentNetwork]],
                 tokenImageUrls: response?.image,
                 tokenImageUrl: response?.image?.small,
                 symbol: response?.symbol.toUpperCase(),
@@ -94,10 +82,10 @@ export default function useCoingeckoFetch({
           resolve({ tokens: response, state: 'coingecko' })
         })
       } catch (e) {
-        resolve && resolve({ tokens: {}, state: 'coingecko' })
+        resolve && resolve({ tokens: [], state: 'coingecko' })
       }
     },
-    [getCoingeckoPriceByContract, fetchCoingeckoAsset, fetchCoingeckoCoin, currentNetwork]
+    [getCoingeckoPriceByContract, fetchCoingeckoCoin, currentNetwork]
   )
 
   return {
