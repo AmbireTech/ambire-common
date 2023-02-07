@@ -169,7 +169,9 @@ export default function useDapps({ useStorage, fetch }: UseDappsProps): UseDapps
             match = categoryFilter.filter(item, favorites)
           }
           if (search && match) {
-            match = item.name.toLowerCase().includes(search?.toLowerCase())
+            const matchedName = item.name.toLowerCase().includes(search?.toLowerCase())
+            const matchedDescription = item?.description.toLowerCase().includes(search?.toLowerCase())
+            match = matchedName || matchedDescription
           }
           return match
         })
