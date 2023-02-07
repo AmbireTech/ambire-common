@@ -21,7 +21,6 @@ export default function usePortfolio({
   getBalances,
   getCoingeckoPrices,
   getCoingeckoPriceByContract,
-  getCoingeckoAssetPlatforms,
   getCoingeckoCoin,
   relayerURL,
   useRelayerData,
@@ -112,7 +111,6 @@ export default function usePortfolio({
     setAssetsByAccount,
     getCoingeckoPrices,
     getCoingeckoPriceByContract,
-    getCoingeckoAssetPlatforms,
     getCoingeckoCoin,
     filterByHiddenTokens,
     extraTokens,
@@ -184,14 +182,16 @@ export default function usePortfolio({
     } else {
       refreshTokensIfVisible()
     }
-  }, [currentNetwork, isVisible, refreshTokensIfVisible, isInitializing])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentNetwork, isVisible, isInitializing])
 
   // Refresh balance every 90s if visible
   // NOTE: this must be synced (a multiple of) supplementing, otherwise we can end up with weird inconsistencies
   useEffect(() => {
     const refreshInterval = setInterval(refreshTokensIfVisible, 90000)
     return () => clearInterval(refreshInterval)
-  }, [refreshTokensIfVisible])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Fetch other networks assets every 60 seconds
   useEffect(() => {
