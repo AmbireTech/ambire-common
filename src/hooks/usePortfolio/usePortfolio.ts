@@ -516,19 +516,11 @@ export default function usePortfolio({
 
   const onAddExtraToken = useCallback(
     (extraToken) => {
-      const { address, name, symbol } = extraToken
-      if (extraTokens.map(({ address }) => address).includes(address))
-        return addToast(`${name} (${symbol}) is already added to your wallet.`)
-      if (
-        constants?.tokenList &&
-        Object.values(constants.tokenList)
-          .flat(1)
-          .map(({ address }) => address)
-          .includes(address)
-      )
-        return addToast(`${name} (${symbol}) is already handled by your wallet.`)
-      if (tokens.map(({ address }) => address).includes(address))
-        return addToast(`You already have ${name} (${symbol}) in your wallet.`)
+      const eligibleStatus = checkIsTokenEligibleForAddingAsExtraToken(extraToken)
+
+      if (!eligibleStatus.isEligible) {
+        return addToast(eligibleStatus.reason)
+      }
 
       const updatedExtraTokens = [
         ...extraTokens,
@@ -539,9 +531,9 @@ export default function usePortfolio({
       ]
 
       setExtraTokens(updatedExtraTokens)
-      addToast(`${name} (${symbol}) token added to your wallet!`)
+      addToast(`${extraToken.name} (${extraToken.symbol}) token added to your wallet!`)
     },
-    [setExtraTokens, tokens, extraTokens]
+    [checkIsTokenEligibleForAddingAsExtraToken, extraTokens, setExtraTokens, addToast]
   )
 
   const onAddHiddenToken = useCallback(
