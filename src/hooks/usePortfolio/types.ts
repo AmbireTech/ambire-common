@@ -123,6 +123,10 @@ export type UsePortfolioProps = {
 }
 
 export type UseExtraTokensProps = {
+  checkIsTokenEligibleForAddingAsExtraToken: (extraToken: Token) => {
+    isEligible: boolean
+    reason?: string
+  }
   tokens: Token[]
   useStorage: UseStorageType
   useToasts: () => UseToastsReturnType
@@ -138,6 +142,7 @@ export type UsePortfolioReturnType = {
   hiddenCollectibles: Collectible[]
   onAddExtraToken: (extraToken: Token) => void
   onRemoveExtraToken: (address: Token['address']) => void
+  checkIsTokenEligibleForAddingAsExtraToken: UseExtraTokensProps['checkIsTokenEligibleForAddingAsExtraToken']
   onAddHiddenToken: (hiddenToken: Token) => void
   onAddHiddenCollectible: (
     hiddenCollectible: Collectible,
