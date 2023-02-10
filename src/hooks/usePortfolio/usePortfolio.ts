@@ -132,7 +132,7 @@ export default function usePortfolio({
     currentNetwork,
     filterByHiddenTokens
   )
-
+  // TODO: Should optimize extraTokens in dependencies
   const refreshTokensIfVisible = useCallback(() => {
     if (!account || isInitializing) return
     if (
@@ -143,7 +143,7 @@ export default function usePortfolio({
       fetchTokens(account, currentNetwork, false, currentAssets)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [account, currentNetwork, eligibleRequests, isVisible, isInitializing])
+  }, [account, currentNetwork, eligibleRequests, isVisible, isInitializing, extraTokens])
 
   const loadBalance = async () => {
     if (!account || isInitializing) return
@@ -198,7 +198,7 @@ export default function usePortfolio({
     const refreshInterval = setInterval(refreshIfHidden, 150000)
     return () => clearInterval(refreshInterval)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [account, currentNetwork, isVisible, isInitializing])
+  }, [account, currentNetwork, isVisible, isInitializing, extraTokens])
 
   // Get supplement tokens data every 20s and check if prices are 2 min old and fetch new ones
   useEffect(() => {
@@ -208,7 +208,7 @@ export default function usePortfolio({
         updateCoingeckoAndSupplementData(currentAssets)
       }, 20000)
     return () => clearInterval(refreshInterval)
-  }, [currentAssets, currentNetwork, isInitializing, updateCoingeckoAndSupplementData])
+  }, [currentAssets, currentNetwork, isInitializing, updateCoingeckoAndSupplementData, extraTokens])
 
   useEffect(() => {
     if (isInitialMount.current) {
@@ -223,7 +223,7 @@ export default function usePortfolio({
     // so we can be subscribed to changes of objects inside our arrays.
     // https://stackoverflow.com/a/65728647/8335898
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [`${eligibleRequests}`, `${pendingTransactions}`, isInitializing])
+  }, [`${eligibleRequests}`, `${pendingTransactions}`, isInitializing, extraTokens])
 
   return {
     balance,
