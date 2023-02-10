@@ -27,7 +27,10 @@ export default function useStorage<ValueType>({
     // In case the item is not set in the storage, we just fall back to `defaultValue`
     // @ts-ignore FIXME: figure out how to use better type for `setInit`,
     // so that TypeScript doesn't complain
-    if (!storage.getItem(key)) return setInit(defaultValue)
+    if (!storage.getItem(key)) {
+      setItem(defaultValue)
+      return setInit(defaultValue)
+    }
 
     // @ts-ignore FIXME: figure out how to use better type for `setInit`,
     // so that TypeScript doesn't complain
