@@ -7,7 +7,6 @@ const NATIVE_ADDRESS = '0x0000000000000000000000000000000000000000'
 
 export default function useCoingeckoFetch({
   currentNetwork,
-  setAssetsByAccount,
   addToast,
   getCoingeckoPrices,
   getCoingeckoPriceByContract,
@@ -23,13 +22,12 @@ export default function useCoingeckoFetch({
         if (!response) return null
         resolve && resolve(response)
       } catch (e) {
-        addToast(e.message, { error: true })
+        // Temporarily dont show this error because of coingecko limitations 10-50 calls per minute
+        // addToast(e.message, { error: true })
         resolve && resolve([])
-
-        setAssetsByAccount((prev) => ({ ...prev, loading: false }))
       }
     },
-    [addToast, setAssetsByAccount, getCoingeckoPrices]
+    [getCoingeckoPrices]
   )
 
   const fetchCoingeckoAsset = useCallback(async () => {

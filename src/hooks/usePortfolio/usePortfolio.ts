@@ -163,7 +163,7 @@ export default function usePortfolio({
       fetchTokens(account, currentNetwork, false, currentAssets)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [account, currentNetwork, isVisible, isInitializing])
+  }, [account, currentNetwork, eligibleRequests, isVisible, isInitializing])
 
   const loadBalance = async () => {
     if (!account || isInitializing) return

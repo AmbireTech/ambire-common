@@ -8,7 +8,7 @@ export default function useNetwork({
   useStorage
 }: UseNetworkProps): UseNetworkReturnType {
   const [networkId, setNetworkId] = useStorage({
-    key: 'network',
+    key: 'networkId',
     defaultValue: defaultNetwork,
     isStringStorage: true,
     // @ts-ignore FIXME: Figure out why TypeScript complains

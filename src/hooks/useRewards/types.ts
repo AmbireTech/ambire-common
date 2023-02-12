@@ -56,6 +56,7 @@ export type RelayerRewardsBalance = {
 
 export type RelayerRewardsData = {
   data: {
+    claimableRewardsData: any
     adxTokenAPY: number
     multipliers: Multiplier[]
     rewards: Reward[]

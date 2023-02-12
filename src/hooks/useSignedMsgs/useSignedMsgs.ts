@@ -9,7 +9,7 @@ const useSignedMsgs = ({ useStorage }: UseSignedMsgsProps): UseSignedMsgsReturnT
   })
 
   const addSignedMessage = useCallback(
-    (msg) => {
+    (msg: any) => {
       setSignedMessages([...signedMessages, msg])
     },
     [setSignedMessages, signedMessages]

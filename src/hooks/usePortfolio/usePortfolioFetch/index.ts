@@ -46,7 +46,6 @@ export default function useProtocolsFetch({
   // All logic and functions required for coingecko fetching
   const { fetchCoingeckoPrices, fetchCoingeckoPricesByContractAddress } = useCoingeckoFetch({
     currentNetwork,
-    setAssetsByAccount,
     addToast,
     getCoingeckoPrices,
     getCoingeckoPriceByContract,

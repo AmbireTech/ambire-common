@@ -24,7 +24,7 @@ export default function useVelcroFetch({
   setOtherNetworksFetching,
   removeDuplicatedAssets
 }) {
-  const formatTokensResponse = (tokens, assets, network, account) => {
+  const formatTokensResponse = (tokens, assets, network, account, otherNetworksFetch) => {
     const extraTokens = getExtraTokensAssets(account, network)
     return removeDuplicatedAssets([
       ...tokens
@@ -77,7 +77,22 @@ export default function useVelcroFetch({
             Number(parseFloat((token?.balance || 0) * (token?.price || 0)).toFixed(2))
           ),
           price: token?.price || null,
-          network
+          network,
+          ...(token?.latest && otherNetworksFetch
+            ? {
+                latest: {
+                  balanceRaw: token?.balanceRaw,
+                  balance: token?.balance
+                    ? Number(token?.balance?.toFixed(10))
+                    : Number(ethers.utils.formatUnits(token?.balanceRaw, token?.decimals)).toFixed(
+                        10
+                      ),
+                  balanceUSD: roundFloatingNumber(
+                    Number(parseFloat((token?.balance || 0) * (token?.price || 0)).toFixed(2))
+                  )
+                }
+              }
+            : {})
         }))
         .filter((token: any) => !!token.name && !!token.symbol),
       ...extraTokens
@@ -99,19 +114,57 @@ export default function useVelcroFetch({
             const currentAssetsKey =
               Object.keys(assets).length &&
               Object.keys(assets).filter((key) => key.includes(account) && key.includes(network))
+            const currentAssets = assets[currentAssetsKey]
+
             const prevCacheTime = (currentAssetsKey && assets[currentAssetsKey]?.cacheTime) || null
             // eslint-disable-next-line prefer-const
-            let { tokens = [], nfts, cache, cacheTime, resultTime } = response.data
+            const { tokens = [], nfts, cacheTime, resultTime, provider, partial } = response.data
+            let { cache } = response.data
 
-            const shouldSkipUpdate = cache && new Date(cacheTime) < new Date(prevCacheTime)
+            const shouldSkipUpdate =
+              (cache && new Date(cacheTime) < new Date(prevCacheTime)) ||
+              cacheTime === prevCacheTime
             cache = shouldSkipUpdate || false
 
-            let formattedTokens = formatTokensResponse(
-              tokens,
+            if (shouldSkipUpdate) {
+              const tokensToRefresh = formatTokensResponse(
+                currentAssets?.tokens,
+                currentAssets,
+                network,
+                account,
+                true
+              )
+
+              setAssetsByAccount((prev) => ({
+                ...prev,
+                [`${account}-${network}`]: {
+                  ...prev[`${account}-${network}`],
+                  tokens: tokensToRefresh || [],
+                  loading: false
+                }
+              }))
+              return true
+            }
+
+            let formattedTokens = []
+
+            // velcro provider is balanceOracle and tokens may not be full
+            // repopulate with current tokens
+            if (provider === 'balanceOracle' || partial) {
+              formattedTokens = removeDuplicatedAssets([
+                ...(currentAssets?.tokens || []),
+                ...tokens
+              ])
+            }
+
+            formattedTokens = formatTokensResponse(
+              formattedTokens.length ? [...(formattedTokens || [])] : [...tokens] || [],
               assets[currentAssetsKey],
               network,
-              account
+              account,
+              true
             )
+
             formattedTokens = filterByHiddenTokens(formattedTokens)
             setAssetsByAccount((prev) => ({
               ...prev,
@@ -242,7 +295,7 @@ export default function useVelcroFetch({
             formattedTokens = assets?.tokens
           }
           formattedTokens = removeDuplicatedAssets([
-            ...formattedTokens,
+            ...(formattedTokens || []),
             ...(extraTokensAssets?.length ? extraTokensAssets : [])
           ])
           setFetchingAssets((prev) => ({
