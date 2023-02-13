@@ -1,16 +1,18 @@
+// @ts-nocheck TODO: Fill in all missing types before enabling the TS check again
+
 import oracle from 'adex-protocol-eth/abi/RemainingBalancesOracle.json'
 import { ethers } from 'ethers'
 
 import { NetworkId } from '../../constants/networks'
+// eslint-disable-next-line import/no-cycle
 import { Token, TokenWithIsHiddenFlag } from '../../hooks/usePortfolio'
-import { getTokenIcon } from '../icons'
 import { getProvider } from '../provider'
 
 const { Interface, AbiCoder, formatUnits, hexlify, isAddress } = ethers.utils
 const RemainingBalancesOracle = new Interface(oracle)
 const SPOOFER = '0x0000000000000000000000000000000000000001'
-const blockTag = 'pending'
 const remainingBalancesOracleAddr = '0xF1628de74193Dde3Eed716aB0Ef31Ca2b6347eB1'
+const SPOOF_SIGTYPE = '03'
 
 // Signature of Error(string)
 const ERROR_SIG = '0x08c379a0'
@@ -21,37 +23,73 @@ function isErr(hex: string) {
   return hex.startsWith(ERROR_SIG) || hex.startsWith(PANIC_SIG)
 }
 
+function hex2a(hexx) {
+  const hex = hexx.toString()
+  let str = ''
+  for (let i = 0; i < hex.length; i += 2) {
+    str += String.fromCharCode(parseInt(hex.substr(i, 2), 16))
+  }
+  return str
+}
+
 // ToDo check for missing data and double check for incompleted returns
 async function call({
   walletAddr,
   tokens,
-  network
+  network,
+  pendingTransactions,
+  selectedAccount,
+  state
 }: {
   walletAddr: string
   tokens: Token[]
   network: NetworkId
+  pendingTransactions: []
+  selectedAccount: {}
+  state: string
 }) {
   if (!isAddress(walletAddr))
     return { success: false, data: walletAddr, message: 'Wallet address is not valide eth address' }
   const provider = getProvider(network)
   const coder = new AbiCoder()
+  const signer = selectedAccount.signer?.address || selectedAccount.signer?.quickAccManager
+
+  const bytecode =
+    Object.keys(selectedAccount).length !== 0
+      ? selectedAccount?.bytecode
+      : '0x6080604052348015600f57600080fd5b50604880601d6000396000f3fe6080604052348015600f57600080fd5b5000fea2646970667358221220face6a0e4f251ee8ded32eb829598230ad218691166fa0a46bc85583c202c60c64736f6c634300080a0033'
+  const spoofSig = signer
+    ? coder.encode(['address'], [signer]) + SPOOF_SIGTYPE
+    : '0x000000000000000000000000000000000000000000000000000000000000000000'
+
+  // 1rst state - latest
+  // 2nd state - pending
+  // 3rd state - unconfirmed with not signed transactions
+  // In both last states we need to pass block tag = pending
+  const blockTag = state === 'latest' ? 'latest' : 'pending'
+
   const args = [
     // identityFactoryAddr
     '0xBf07a0Df119Ca234634588fbDb5625594E2a5BCA',
     // bytecode dummy.sol
-    '0x6080604052348015600f57600080fd5b50604880601d6000396000f3fe6080604052348015600f57600080fd5b5000fea2646970667358221220face6a0e4f251ee8ded32eb829598230ad218691166fa0a46bc85583c202c60c64736f6c634300080a0033',
+    bytecode,
     // salt
     '0x0000000000000000000000000000000000000000000000000000000000000001',
     // txns
-    [
-      [
-        '0x0000000000000000000000000000000000000000',
-        '0x0',
-        '0x0000000000000000000000000000000000000000'
-      ]
-    ],
-    '0x000000000000000000000000000000000000000000000000000000000000000000',
+    pendingTransactions?.length
+      ? pendingTransactions
+      : [
+          [
+            '0x0000000000000000000000000000000000000000',
+            '0x0',
+            '0x0000000000000000000000000000000000000000'
+          ]
+        ],
+    // signature
+    spoofSig,
+    // identity
     walletAddr,
+    // tokens
     tokens.map((x) => x.address)
   ]
   const txParams = {
@@ -60,13 +98,15 @@ async function call({
     data: RemainingBalancesOracle.encodeFunctionData('getRemainingBalances', args)
   }
   const callResult = await provider.call(txParams, blockTag)
-  if (isErr(callResult))
-    throw new Error('probably one ot following tokens is not ERC20 and missing balanceOf()')
+  if (isErr(callResult)) {
+    throw new Error(`---${hex2a(callResult)}---`)
+  }
   const balances = coder.decode(['uint[]'], callResult)[0]
   const result = tokens.map((x, i) => ({
     ...x,
     balanceRaw: balances[i].toString(),
-    balance: parseFloat(formatUnits(balances[i], x.decimals)).toFixed(10)
+    balance: parseFloat(formatUnits(balances[i], x.decimals)).toFixed(10),
+    balanceOracleUpdate: new Date().valueOf()
   }))
   return { success: true, data: result }
 }
@@ -75,46 +115,56 @@ async function getTokenListBalance({
   walletAddr,
   tokens,
   network,
-  updateBalance
+  updateBalance,
+  pendingTransactions,
+  selectedAccount,
+  state
 }: {
   walletAddr: string
   tokens: TokenWithIsHiddenFlag[]
   network: NetworkId
   updateBalance: (token: Token | {}) => any
+  pendingTransactions: []
+  selectedAccount: {}
+  state: string
 }) {
-  const result = await call({ walletAddr, tokens, network })
+  const result = await call({
+    walletAddr,
+    tokens,
+    network,
+    pendingTransactions,
+    selectedAccount,
+    state
+  })
   if (result.success) {
     const newBalance = tokens.map((t) => {
       // @ts-ignore `result.data` is string only when `result.success` is `false`
       // So `result.data.filter` should always work just fine in this scope.
-      const newTokenBalance = result.data.filter(
-        (r: Token) => r.address === t.address && parseFloat(r.balance) > 0
-      )[0]
+      const newTokenBalance = result.data.filter((r: Token) => r.address === t.address)[0]
+
       return newTokenBalance
         ? {
-            type: 'base',
-            network,
-            address: newTokenBalance.address,
-            decimals: newTokenBalance.decimals,
-            symbol: newTokenBalance.symbol,
-            price: newTokenBalance.price || 0,
+            type: 'token',
+            ...t,
+            ...newTokenBalance,
             balance: Number(newTokenBalance.balance),
             balanceRaw: newTokenBalance.balanceRaw,
             updateAt: new Date().toString(),
             balanceUSD: Number(
               // @ts-ignore not sure why a TS warn happens
-              parseFloat(newTokenBalance.price * newTokenBalance.balance || 0).toFixed(2)
+              parseFloat(t.price * newTokenBalance.balance || 0).toFixed(2)
             ),
-            tokenImageUrl:
-              newTokenBalance.tokenImageUrl || getTokenIcon(network, newTokenBalance.address),
-            isHidden: t.isHidden
+            // @ts-ignore not sure why a TS warn happens
+            price: t.price
           }
-        : t
+        : {
+            type: 'token',
+            ...t
+          }
     })
     if (updateBalance && typeof updateBalance === 'function') updateBalance(newBalance)
     return newBalance
   }
-  console.error(result.message, result.data)
   return tokens
 }
 
@@ -145,4 +195,30 @@ function checkTokenList(list: Token[]) {
   })
 }
 
-export { call, getErrMsg, checkTokenList, getTokenListBalance }
+const removeDuplicatedAssets = (_tokens: Token[]) => {
+  let tokens = _tokens
+  const lookup =
+    tokens?.length &&
+    tokens.reduce((a: Token, e: Token) => {
+      a[e.address] = ++a[e.address] || 0
+      return a
+    }, {})
+
+  // filters by non duplicated objects or takes the one of dup but with a price or price greater than 0
+  tokens =
+    tokens?.length &&
+    tokens
+      .filter(
+        (e) =>
+          !lookup[e.address] ||
+          (lookup[e.address] && e.price !== undefined) ||
+          (lookup[e.address] && e.price)
+      )
+      // Actually remove if duplicated tokens are passed.
+      .filter(function ({ address }) {
+        return !this.has(address) && this.add(address)
+      }, new Set())
+  return tokens
+}
+
+export { call, getErrMsg, checkTokenList, getTokenListBalance, removeDuplicatedAssets }
