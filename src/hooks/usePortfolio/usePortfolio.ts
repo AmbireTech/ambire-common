@@ -1,14 +1,15 @@
 // @ts-nocheck TODO: Fill in all missing types before enabling the TS check again
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, useRef } from 'react'
 
-import { UsePortfolioProps, UsePortfolioReturnType } from './types'
 import useBalance from './useBalance'
 import useExtraTokens from './useExtraTokens'
-import useHiddenTokens from './useHiddenTokens'
 // eslint-disable-next-line import/no-cycle
 import usePortfolioFetch from './usePortfolioFetch'
+import useHiddenTokens from './useHiddenTokens'
 import useTransactions from './useTransactions'
+
+import { UsePortfolioProps, UsePortfolioReturnType } from './types'
 
 export default function usePortfolio({
   useConstants,

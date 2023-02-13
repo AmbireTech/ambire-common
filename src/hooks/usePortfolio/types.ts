@@ -87,10 +87,6 @@ export type UsePortfolioReturnType = {
   requestOtherProtocolsRefresh: () => Promise<any>
   onAddExtraToken: (extraToken: Token) => void
   onRemoveExtraToken: (address: Token['address']) => void
-  checkIsTokenEligibleForAddingAsExtraToken: (extraToken: Token) => {
-    isEligible: boolean
-    reason?: string
-  }
   onAddHiddenToken: (hiddenToken: Token) => void
   onRemoveHiddenToken: (address: Token['address']) => void
   balancesByNetworksLoading: Partial<{
