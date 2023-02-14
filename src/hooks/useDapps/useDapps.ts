@@ -170,7 +170,9 @@ export default function useDapps({ useStorage, fetch }: UseDappsProps): UseDapps
           }
           if (search && match) {
             const matchedName = item.name.toLowerCase().includes(search?.toLowerCase())
-            const matchedDescription = item?.description.toLowerCase().includes(search?.toLowerCase())
+            const matchedDescription = item.description
+              ?.toLowerCase()
+              .includes(search?.toLowerCase())
             match = matchedName || matchedDescription
           }
           return match
