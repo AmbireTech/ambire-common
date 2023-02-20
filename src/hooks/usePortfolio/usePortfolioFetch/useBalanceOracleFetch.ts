@@ -229,6 +229,7 @@ export default function useBalanceOracleFetch({
 
   const fetchAllSupplementTokenData = async (
     updatedTokens: any,
+    requestPendingState,
     _resolve: () => {},
     _reject: () => {}
   ) => {
@@ -385,7 +386,7 @@ export default function useBalanceOracleFetch({
 
     // 2. Fetch pending balance data from balanceOracle
     const balanceOraclePending =
-      pendingTransactions?.length &&
+      (pendingTransactions?.length || requestPendingState?.current) &&
       new Promise((resolve) => {
         fetchSupplementTokenData(
           { tokens: removeDuplicatedAssets(tokensList) },
@@ -417,7 +418,7 @@ export default function useBalanceOracleFetch({
 
     const promises = [
       balanceOracleLatest,
-      pendingTransactions?.length ? balanceOraclePending : [],
+      pendingTransactions?.length || requestPendingState?.current ? balanceOraclePending : [],
       unsignedRequests?.length ? balanceOracleUnconfirmed : [],
       tokensToFetchPrices?.length ? coingeckoPrices : []
     ]
@@ -585,10 +586,10 @@ export default function useBalanceOracleFetch({
       })
   }
 
-  const fetchAndSetSupplementTokenData = async (assets) => {
+  const fetchAndSetSupplementTokenData = async (assets, requestPendingState) => {
     if (!account) return
     await new Promise((resolve, reject) => {
-      fetchAllSupplementTokenData(assets, resolve, reject)
+      fetchAllSupplementTokenData(assets, requestPendingState, resolve, reject)
     })
       .then((oracleResponse) => {
         setFetchingAssets((prev) => ({
@@ -642,7 +643,7 @@ export default function useBalanceOracleFetch({
       })
   }
 
-  const updateCoingeckoAndSupplementData = async (assets, minutes) => {
+  const updateCoingeckoAndSupplementData = async (assets, minutes, requestPendingState) => {
     if (fetchingAssets[`${account}-${currentNetwork}`]?.rpc || !account) return
     const tokens = assets?.tokens || []
     const minutesToCheckForUpdate = minutes ? 5 * 60 * 1000 : 2 * 60 * 1000
@@ -685,7 +686,7 @@ export default function useBalanceOracleFetch({
         fetchCoingeckoPrices(coingeckoTokensToUpdate, resolve, reject)
       })
       const balanceOracle = new Promise((resolve, reject) => {
-        fetchAllSupplementTokenData({ tokens }, resolve, reject)
+        fetchAllSupplementTokenData({ tokens }, requestPendingState, resolve, reject)
       })
 
       Promise.all([coingeckoPrices, balanceOracle])
@@ -823,7 +824,7 @@ export default function useBalanceOracleFetch({
     } else {
       // Update only balance from balance oracle
       new Promise((resolve, reject) => {
-        fetchAllSupplementTokenData({ tokens }, resolve, reject)
+        fetchAllSupplementTokenData({ tokens }, requestPendingState, resolve, reject)
       })
         .then((oracleResponse) => {
           oracleResponse.length &&

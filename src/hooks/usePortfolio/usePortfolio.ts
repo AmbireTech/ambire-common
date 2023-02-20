@@ -29,7 +29,8 @@ export default function usePortfolio({
   selectedAccount,
   sentTxn,
   useCacheStorage,
-  accounts
+  accounts,
+  requestPendingState
 }: UsePortfolioProps): UsePortfolioReturnType {
   const { constants } = useConstants()
   const { addToast } = useToasts()
@@ -121,7 +122,8 @@ export default function usePortfolio({
     fetchingAssets,
     setFetchingAssets,
     оtherNetworksFetching,
-    setOtherNetworksFetching
+    setOtherNetworksFetching,
+    requestPendingState
   })
 
   // Implementation of balances calculation
@@ -212,9 +214,10 @@ export default function usePortfolio({
   }, [account, currentNetwork, isVisible, isInitializing])
 
   const refreshPricesAndBalance = useCallback(() => {
-    updateCoingeckoAndSupplementData(currentAssets)
+    updateCoingeckoAndSupplementData(currentAssets, false, requestPendingState)
   }, [
     currentAssets,
+    requestPendingState,
     // eslint-disable-next-line react-hooks/exhaustive-deps
     `${eligibleRequests}`,
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -239,13 +242,13 @@ export default function usePortfolio({
       }
     } else {
       // Your useEffect code here to be run on update
-      fetchAndSetSupplementTokenData(currentAssets)
+      fetchAndSetSupplementTokenData(currentAssets, requestPendingState)
     }
     // In order to have an array in dependency we need to stringify it,
     // so we can be subscribed to changes of objects inside our arrays.
     // https://stackoverflow.com/a/65728647/8335898
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [`${eligibleRequests}`, `${pendingTransactions}`, isInitializing])
+  }, [`${eligibleRequests}`, `${pendingTransactions}`, requestPendingState, isInitializing])
 
   return {
     balance,

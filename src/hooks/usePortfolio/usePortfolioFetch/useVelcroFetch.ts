@@ -18,11 +18,13 @@ export default function useVelcroFetch({
   extraTokensAssets,
   getExtraTokensAssets,
   eligibleRequests,
+  pendingTransactions,
   fetchingAssets,
   setFetchingAssets,
   оtherNetworksFetching,
   setOtherNetworksFetching,
-  removeDuplicatedAssets
+  removeDuplicatedAssets,
+  requestPendingState
 }) {
   const formatTokensResponse = (tokens, assets, network, account, otherNetworksFetch) => {
     const extraTokens = getExtraTokensAssets(account, network)
@@ -313,7 +315,8 @@ export default function useVelcroFetch({
               cacheTime: cacheTime || prevCacheTime,
               tokens: formattedTokens
             },
-            5
+            5,
+            requestPendingState
           )
           return
         }
@@ -364,7 +367,8 @@ export default function useVelcroFetch({
             cacheTime: cacheTime || prevCacheTime,
             tokens: formattedTokens
           },
-          5
+          5,
+          requestPendingState
         )
 
         // Show error in case we have some
@@ -392,7 +396,14 @@ export default function useVelcroFetch({
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [extraTokensAssets, addToast, eligibleRequests, currentAccount, formatTokensResponse]
+    [
+      extraTokensAssets,
+      addToast,
+      eligibleRequests,
+      pendingTransactions,
+      currentAccount,
+      formatTokensResponse
+    ]
   )
   return {
     fetchOtherNetworksBalances,
