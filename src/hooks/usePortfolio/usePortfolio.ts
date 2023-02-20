@@ -134,7 +134,7 @@ export default function usePortfolio({
     currentNetwork,
     filterByHiddenTokens
   )
-
+  // TODO: Should optimize extraTokens in dependencies
   const refreshTokensIfVisible = useCallback(() => {
     if (!account || isInitializing) return
     if (
@@ -153,7 +153,8 @@ export default function usePortfolio({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     `${eligibleRequests}`,
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    `${pendingTransactions}`
+    `${pendingTransactions}`,
+    extraTokens
   ])
 
   const loadBalance = async () => {
@@ -211,7 +212,7 @@ export default function usePortfolio({
     const refreshInterval = setInterval(refreshIfHidden, 150000)
     return () => clearInterval(refreshInterval)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [account, currentNetwork, isVisible, isInitializing])
+  }, [account, currentNetwork, isVisible, isInitializing, extraTokens])
 
   const refreshPricesAndBalance = useCallback(() => {
     updateCoingeckoAndSupplementData(currentAssets, false, requestPendingState)
@@ -233,7 +234,7 @@ export default function usePortfolio({
         refreshPricesAndBalance(currentAssets)
       }, 20000)
     return () => clearInterval(refreshInterval)
-  }, [currentAssets, currentNetwork, isInitializing, refreshPricesAndBalance])
+  }, [currentAssets, currentNetwork, isInitializing, refreshPricesAndBalance, extraTokens])
 
   useEffect(() => {
     if (isInitialMount.current) {
@@ -248,7 +249,13 @@ export default function usePortfolio({
     // so we can be subscribed to changes of objects inside our arrays.
     // https://stackoverflow.com/a/65728647/8335898
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [`${eligibleRequests}`, `${pendingTransactions}`, requestPendingState, isInitializing])
+  }, [
+    `${eligibleRequests}`,
+    `${pendingTransactions}`,
+    requestPendingState,
+    extraTokens,
+    isInitializing
+  ])
 
   return {
     balance,
