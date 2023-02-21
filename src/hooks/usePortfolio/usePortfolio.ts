@@ -228,8 +228,7 @@ export default function usePortfolio({
         updateCoingeckoAndSupplementData(currentAssets)
       }, 20000)
     return () => clearInterval(refreshInterval)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentAssets, currentNetwork, isInitializing])
+  }, [currentAssets, currentNetwork, isInitializing, updateCoingeckoAndSupplementData])
 
   useEffect(() => {
     if (isInitialMount.current) {
