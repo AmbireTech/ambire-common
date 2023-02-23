@@ -81,7 +81,7 @@ const useAccSignMsgStatus = ({
         .catch((err) => {
           // as raw XHR calls, reverts are not caught, but only have .error prop
           // this should be a network error
-          addToast(err.message)
+          addToast(err.message, { error: true })
         })
     })()
   }, [networkId, accountSigner, accountId, addToast, fetch])
