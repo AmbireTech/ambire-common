@@ -20,6 +20,10 @@ const useAccSignMsgStatus = ({
 
   useEffect(() => {
     ;(() => {
+      // When the sign request gets rejected, hook re-renders and fires errors.
+      // Missing `networkId`, means rejected or missing sign request data.
+      if (!networkId) return
+
       const bundle = new Bundle({
         network: networkId,
         identity: accountId,
