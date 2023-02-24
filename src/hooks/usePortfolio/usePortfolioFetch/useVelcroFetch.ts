@@ -24,7 +24,9 @@ export default function useVelcroFetch({
   оtherNetworksFetching,
   setOtherNetworksFetching,
   removeDuplicatedAssets,
-  requestPendingState
+  requestPendingState,
+  pendingTokens,
+  setPendingTokens
 }) {
   const formatTokensResponse = (tokens, assets, network, account, otherNetworksFetch) => {
     const extraTokens = getExtraTokensAssets(account, network)
@@ -246,6 +248,14 @@ export default function useVelcroFetch({
         // eslint-disable-next-line prefer-const
         let { cache, cacheTime, tokens, nfts, partial, provider } = response.data
 
+        const tokensInPendingListReceived = pendingTokens?.filter((t) =>
+          tokens.find((token) => token.address === t.address)
+        )
+        if (tokensInPendingListReceived?.length) {
+          setPendingTokens((prev) => [
+            ...(prev && prev.filter((t) => !tokens.find((token) => token.address === t.address)))
+          ])
+        }
         tokens = filterByHiddenTokens(tokens)
         const prevCacheTime = assets?.cacheTime
         // We should skip the tokens update for the current network,
@@ -402,7 +412,8 @@ export default function useVelcroFetch({
       eligibleRequests,
       pendingTransactions,
       currentAccount,
-      formatTokensResponse
+      formatTokensResponse,
+      pendingTokens
     ]
   )
   return {

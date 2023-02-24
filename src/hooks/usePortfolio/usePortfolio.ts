@@ -36,7 +36,8 @@ export default function usePortfolio({
   const { addToast } = useToasts()
   const currentAccount = useRef<string>()
   const isInitialMount = useRef(true)
-
+  // Pending tokens which arent in constants tokenList
+  const [pendingTokens, setPendingTokens] = useState([])
   // Implementation of structure that contains all assets by account and network
   const [assets, setAssetsByAccount, isInitializing] = useCacheStorage({
     key: 'ambire-assets',
@@ -123,7 +124,9 @@ export default function usePortfolio({
     setFetchingAssets,
     оtherNetworksFetching,
     setOtherNetworksFetching,
-    requestPendingState
+    requestPendingState,
+    pendingTokens,
+    setPendingTokens
   })
 
   // Implementation of balances calculation
@@ -154,7 +157,8 @@ export default function usePortfolio({
     `${eligibleRequests}`,
     // eslint-disable-next-line react-hooks/exhaustive-deps
     `${pendingTransactions}`,
-    extraTokens
+    extraTokens,
+    pendingTokens
   ])
 
   const loadBalance = async () => {
@@ -194,7 +198,7 @@ export default function usePortfolio({
     const refreshInterval = setInterval(refreshTokensIfVisible, 90000)
     return () => clearInterval(refreshInterval)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [refreshTokensIfVisible])
 
   // Fetch other networks assets every 60 seconds
   useEffect(() => {
@@ -212,7 +216,16 @@ export default function usePortfolio({
     const refreshInterval = setInterval(refreshIfHidden, 150000)
     return () => clearInterval(refreshInterval)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [account, currentNetwork, isVisible, isInitializing, extraTokens])
+  }, [
+    account,
+    currentNetwork,
+    isVisible,
+    isInitializing,
+    extraTokens, // eslint-disable-next-line react-hooks/exhaustive-deps
+    `${eligibleRequests}`,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    `${pendingTransactions}`
+  ])
 
   const refreshPricesAndBalance = useCallback(() => {
     updateCoingeckoAndSupplementData(currentAssets, false, requestPendingState)
@@ -250,7 +263,9 @@ export default function usePortfolio({
     // https://stackoverflow.com/a/65728647/8335898
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     `${eligibleRequests}`,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     `${pendingTransactions}`,
     requestPendingState,
     extraTokens,

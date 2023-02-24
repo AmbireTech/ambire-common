@@ -131,7 +131,9 @@ export default function useBalanceOracleFetch({
   setKnownAddresses,
   setKnownTokens,
   getTokenListBalance,
-  checkTokenList
+  checkTokenList,
+  pendingTokens,
+  setPendingTokens
 }) {
   const findPrice = (contractAddress, priceList) => {
     const currPrice = priceList.filter(
@@ -255,11 +257,21 @@ export default function useBalanceOracleFetch({
         })
         .flat()
 
+    // Full token list to pass to balance oracle
+    // Update with pendingTokens - which arent in tokenList
+    // in order to receive their balance sooner than velcro update after swap.
+    // Currently velcro cache updates in 2 minutes, but some transactions take less time
     const tokensList = [
       ...(constants?.tokenList && constants?.tokenList[currentNetwork]
         ? constants.tokenList[currentNetwork]
         : []),
-      ...((updatedTokens && updatedTokens.tokens?.length && updatedTokens.tokens) || [])
+      ...((updatedTokens && updatedTokens.tokens?.length && updatedTokens.tokens) || []),
+      ...((pendingTokens &&
+        pendingTokens?.length &&
+        pendingTokens.filter(
+          (t) => !updatedTokens?.tokens.find((token) => token.address === t.address)
+        )) ||
+        [])
     ]
 
     // Remove unconfirmed and pending tokens from latest request,
@@ -276,7 +288,7 @@ export default function useBalanceOracleFetch({
           )
           .map((t) => ({ ...(t.latest ? { ...t, ...t.latest } : { ...t }) }))
     )
-
+    const pendingTokensFound = []
     const tokensToFetchPrices = []
     // Check if not signed request contains tokens from swap which arent in portfolio yet
     extendedSummary.length &&
@@ -290,8 +302,19 @@ export default function useBalanceOracleFetch({
               const tokenInPortfolio = latestTokens?.find((token) => token.address === el.address)
               if (!tokenInPortfolio || !tokenInPortfolio.price) {
                 tokensToFetchPrices.push(el)
-                if (!tokenInPortfolio) {
+
+                const tokenIsInTokensList = tokensList.find((t) => t.address === el.address)
+                const tokenIsInPendingList =
+                  (pendingTokens?.length && pendingTokens?.find((t) => t.address === el.address)) ||
+                  false
+
+                if (!tokenInPortfolio && !tokenIsInTokensList) {
                   tokensList.push({ ...el, balance: 0 })
+
+                  if (!tokenIsInPendingList) {
+                    pendingTokensFound.push({ ...el, balance: 0 })
+                    setPendingTokens((prev) => [...prev, { ...el, balance: 0 }])
+                  }
                 }
               }
 
@@ -380,8 +403,26 @@ export default function useBalanceOracleFetch({
       )
 
     // 1. Fetch latest balance data from balanceOracle
+
+    // Pass pending tokens with our portfolio tokens
+    // so we receive their balance update sooner
     const balanceOracleLatest = new Promise((resolve) => {
-      fetchSupplementTokenData({ tokens: latestTokens }, resolve, _reject, [], 'latest')
+      fetchSupplementTokenData(
+        {
+          tokens: [
+            ...(latestTokens && latestTokens),
+            ...((pendingTokens &&
+              pendingTokens?.filter(
+                (t) => !latestTokens.find((token) => token.address === t.address)
+              )) ||
+              [])
+          ]
+        },
+        resolve,
+        _reject,
+        [],
+        'latest'
+      )
     })
 
     // 2. Fetch pending balance data from balanceOracle
@@ -426,6 +467,36 @@ export default function useBalanceOracleFetch({
       .then((results) => {
         // Fetched prices from coingecko
         const prices = results && results.length && results.find((el) => el.state === 'coingecko')
+
+        // Check if token in pendingState is in prices fetched to update it.
+        // In order to handle the case with a missing symbol from humanizer we use the symbol from coingecko
+        const pendingInPrices =
+          (pendingTokensFound?.length &&
+            prices?.tokens?.length &&
+            prices?.tokens.filter((t) =>
+              pendingTokensFound.find((token) => t.address === token.address && !token.symbol)
+            )) ||
+          [] ||
+          (pendingTokens?.length &&
+            prices?.tokens?.length &&
+            prices?.tokens.filter((t) =>
+              pendingTokens.find((token) => t.address === token.address && !token.symbol)
+            ))
+
+        if (pendingInPrices.length) {
+          pendingTokensFound.map((t) => ({
+            ...(pendingInPrices.find((token) => t.address === token.address) || []),
+            balance: 0
+          }))
+          setPendingTokens(
+            (prev) =>
+              prev &&
+              prev.map((t) => ({
+                ...(pendingInPrices.find((token) => t.address === token.address) || []),
+                balance: 0
+              }))
+          )
+        }
         if (prices) results.pop()
         const latestResponse = results.find(({ state }) => state === 'latest')
         // Remove empty array for not send promises
@@ -519,7 +590,9 @@ export default function useBalanceOracleFetch({
                     (latestBalance?.balance !== _t.balance || !latestBalance) &&
                     (isAaveToken ? !!(isAaveToken && difference > 0) : true)
 
-                  const shouldDisplayToken = latestBalance || _t.balance > 0
+                  const shouldDisplayToken =
+                    latestBalance || _t.balance > 0 || (!priceUpdate?.symbol && !_t.symbol)
+
                   if (!shouldDisplayToken) return
 
                   let tokenPrice = {}

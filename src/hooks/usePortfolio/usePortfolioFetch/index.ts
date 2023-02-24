@@ -36,7 +36,9 @@ export default function useProtocolsFetch({
   оtherNetworksFetching,
   setOtherNetworksFetching,
   getCoingeckoCoin,
-  requestPendingState
+  requestPendingState,
+  pendingTokens,
+  setPendingTokens
 }) {
   const extraTokensAssets = useMemo(
     () => getExtraTokensAssets(account, currentNetwork),
@@ -78,7 +80,9 @@ export default function useProtocolsFetch({
     setKnownTokens,
     getTokenListBalance,
     checkTokenList,
-    requestPendingState
+    requestPendingState,
+    pendingTokens,
+    setPendingTokens
   })
 
   // Remaining logic - velcro balance fetching
@@ -99,7 +103,9 @@ export default function useProtocolsFetch({
     оtherNetworksFetching,
     setOtherNetworksFetching,
     removeDuplicatedAssets,
-    requestPendingState
+    requestPendingState,
+    pendingTokens,
+    setPendingTokens
   })
 
   return {
