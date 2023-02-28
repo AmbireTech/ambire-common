@@ -49,8 +49,8 @@ type MainKeyEncryptedWithSecret = {
 }
 
 type MainKey = {
-	key: string;
-	iv: string;
+	key: Uint8Array;
+	iv: Uint8Array;
 }
 
 // Not using class here because we can't encapsulate mainKey securely
@@ -81,7 +81,7 @@ export class Keystore {
 		const mac = keccak256(concat([ macPrefix, aesEncrypted.ciphertext ]))
 		if (mac !== aesEncrypted.mac) throw new Error('keystore: wrong secret')
 		const decrypted = aesCtr.decrypt(arrayify(aesEncrypted.ciphertext))
-		this.#mainKey = { key: hexlify(decrypted.slice(0, 16)), iv: hexlify(decrypted.slice(16, 32)) }
+		this.#mainKey = { key: decrypted.slice(0, 16), iv: decrypted.slice(16, 32) }
 		console.log('mainKey decrypted', this.#mainKey)
 	}
 	async addSecret(secretId: string, secret: string) {
@@ -93,8 +93,8 @@ export class Keystore {
 			if (!secrets.length) {
 				const key = arrayify(keccak256(concat([ randomBytes(32), toUtf8Bytes(''+Date.now()) ]))).slice(0, 16)
 				mainKey = {
-					key: hexlify(key),
-					iv: hexlify(randomBytes(16))
+					key,
+					iv: randomBytes(16)
 				}
 			} else throw new Error('keystore: must unlock keystore before adding secret')
 		}
