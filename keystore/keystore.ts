@@ -38,7 +38,7 @@ type ScryptParams = {
 type AESEncrypted = {
 	cipherType: "aes-128-ctr";
 	ciphertext: string;
-	cipheriv: string;
+	iv: string;
 	mac: string;
 }
 
@@ -66,9 +66,18 @@ export class Keystore {
 		if (!secretEntry) throw new Error(`keystore: secret ${secretId} not found`)
 		console.log('secret entry', secretEntry)
 		const { scryptParams, aesEncrypted } = secretEntry
+		if (aesEncrypted.cipherType !== 'aes-128-ctr') throw Error(`keystore: unsupproted cipherType ${aesEncrypted.cipherType}`)
 		// @TODO: progressCallback?
 		const key = await scrypt.scrypt(getBytesForSecret(secret), arrayify(scryptParams.salt), scryptParams.N, scryptParams.r, scryptParams.p, scryptParams.dkLen, () => {})
-
+		const iv = arrayify(aesEncrypted.iv)
+		const derivedKey = key.slice(0, 16)
+		const macPrefix = key.slice(16, 32)
+		const counter = new aes.Counter(iv)
+		const aesCtr = new aes.ModeOfOperation.ctr(derivedKey, counter)
+		const mac = keccak256(concat([ macPrefix, aesEncrypted.ciphertext ]))
+		if (mac !== aesEncrypted.mac) throw new Error('keystore: wrong secret')
+		this.#mainKey = aesCtr.decrypt(arrayify(aesEncrypted.ciphertext))
+		console.log('mainKey decrypted', this.#mainKey)
 	}
 	async addSecret(secretId: string, secret: string) {
 		if (!this.#mainKey) {
@@ -99,7 +108,7 @@ export class Keystore {
 		secrets.push({
 			id: secretId,
 			scryptParams: { salt: hexlify(salt), N: 262144, r: 8, p: 1, dkLen: 64 },
-			aesEncrypted: { cipherType: 'aes-128-ctr', ciphertext: hexlify(ciphertext), cipheriv: hexlify(iv), mac: hexlify(mac) }
+			aesEncrypted: { cipherType: 'aes-128-ctr', ciphertext: hexlify(ciphertext), iv: hexlify(iv), mac: hexlify(mac) }
 		})
 		await this.storage.set('keystoreSecrets', secrets)
 	}
@@ -144,6 +153,11 @@ async function main() {
 	console.log('is unlocked: true', keystore.isUnlocked())
 	keystore.lock()
 	console.log('is unlocked: false', keystore.isUnlocked())
+	try {
+		await keystore.unlockWithSecret('passphrase', pass+'1')
+	} catch(e) {
+		console.error('must return an error', e)
+	}
 	await keystore.unlockWithSecret('passphrase', pass)
 	console.log('is unlocked: true', keystore.isUnlocked())
 }
