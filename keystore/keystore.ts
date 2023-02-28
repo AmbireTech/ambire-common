@@ -1,6 +1,6 @@
 import aes from "aes-js";
 import scrypt from "scrypt-js";
-import { arrayify, hexlify, isHexString, keccak256, randomBytes, toUtf8Bytes, UnicodeNormalizationForm, concat } from 'ethers/lib/utils'
+import { arrayify, hexlify, isHexString, keccak256, randomBytes, toUtf8Bytes, toUtf8String, UnicodeNormalizationForm, concat } from 'ethers/lib/utils'
 
 // @TODO
 // - define all the function signatures
@@ -43,15 +43,19 @@ type AESEncrypted = {
 }
 
 type MainKeyEncryptedWithSecret = {
-	id: string,
+	id: string;
 	scryptParams: ScryptParams;
 	aesEncrypted: AESEncrypted;
 }
 
+type MainKey = {
+	key: string;
+	iv: string;
+}
+
 // Not using class here because we can't encapsulate mainKey securely
 export class Keystore {
-	// @TODO: string?
-	#mainKey: Uint8Array | null;
+	#mainKey: MainKey | null;
 	storage: Storage;
 	constructor(_storage: Storage) {
 		this.storage = _storage;
@@ -76,22 +80,25 @@ export class Keystore {
 		const aesCtr = new aes.ModeOfOperation.ctr(derivedKey, counter)
 		const mac = keccak256(concat([ macPrefix, aesEncrypted.ciphertext ]))
 		if (mac !== aesEncrypted.mac) throw new Error('keystore: wrong secret')
-		this.#mainKey = aesCtr.decrypt(arrayify(aesEncrypted.ciphertext))
+		const decrypted = aesCtr.decrypt(arrayify(aesEncrypted.ciphertext))
+		this.#mainKey = { key: hexlify(decrypted.slice(0, 16)), iv: hexlify(decrypted.slice(16, 32)) }
 		console.log('mainKey decrypted', this.#mainKey)
 	}
 	async addSecret(secretId: string, secret: string) {
-		if (!this.#mainKey) {
-			// @TODO: 16 byte AES key - is that OK?
-			// @TODO: this randomness function - is it ok? how about we add some entropy?
-			this.#mainKey = randomBytes(16)
-			console.log('mainkey 1', this.#mainKey)
-			// @TODO entropy
-			this.#mainKey = arrayify(
-					keccak256(concat([ randomBytes(32), toUtf8Bytes(''+Date.now()) ]))
-				)
-				.slice(0, 16)
-			console.log('mainkey 2', this.#mainKey)
+		// @TODO: DRY?
+		const secrets: [MainKeyEncryptedWithSecret] = await this.storage.get('keystoreSecrets', [])
+		let mainKey: MainKey | null = this.#mainKey
+		// We are not not unlocked
+		if (!mainKey) {
+			if (!secrets.length) {
+				const key = arrayify(keccak256(concat([ randomBytes(32), toUtf8Bytes(''+Date.now()) ]))).slice(0, 16)
+				mainKey = {
+					key: hexlify(key),
+					iv: hexlify(randomBytes(16))
+				}
+			} else throw new Error('keystore: must unlock keystore before adding secret')
 		}
+		console.log('mainKey on addSecret', mainKey)
 
 		const salt = randomBytes(32)
 		const key = await scrypt.scrypt(getBytesForSecret(secret), salt, 262144, 8, 1, 64, () => {})
@@ -100,11 +107,9 @@ export class Keystore {
 		const macPrefix = key.slice(16, 32)
 		const counter = new aes.Counter(iv)
 		const aesCtr = new aes.ModeOfOperation.ctr(derivedKey, counter)
-		const ciphertext = arrayify(aesCtr.encrypt(this.#mainKey))
+		const ciphertext = aesCtr.encrypt(concat([ mainKey.key, mainKey.iv ]))
 		const mac = keccak256(concat([ macPrefix, ciphertext ]))
 
-		// @TODO: DRY?
-		const secrets: [MainKeyEncryptedWithSecret] = await this.storage.get('keystoreSecrets', [])
 		secrets.push({
 			id: secretId,
 			scryptParams: { salt: hexlify(salt), N: 262144, r: 8, p: 1, dkLen: 64 },
@@ -150,8 +155,6 @@ async function main() {
 
 	// @TODO test
 	await keystore.addSecret('passphrase', pass)
-	console.log('is unlocked: true', keystore.isUnlocked())
-	keystore.lock()
 	console.log('is unlocked: false', keystore.isUnlocked())
 	try {
 		await keystore.unlockWithSecret('passphrase', pass+'1')
