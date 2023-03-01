@@ -3,6 +3,7 @@ import scrypt from 'scrypt-js'
 import { arrayify, hexlify, isHexString, keccak256, randomBytes, toUtf8Bytes, toUtf8String, UnicodeNormalizationForm, concat } from 'ethers/lib/utils'
 
 const scryptDefaults = { N: 262144, r: 8, p: 1, dkLen: 64 }
+const CIPHER = 'aes-128-ctr'
 // @TODO
 // - define all the function signatures
 // - tests
@@ -33,7 +34,7 @@ type ScryptParams = {
 }
 
 type AESEncrypted = {
-	cipherType: 'aes-128-ctr';
+	cipherType: string
 	ciphertext: string;
 	iv: string;
 	mac: string;
@@ -70,7 +71,7 @@ export class Keystore {
 		if (!secretEntry) throw new Error(`keystore: secret ${secretId} not found`)
 
 		const { scryptParams, aesEncrypted } = secretEntry
-		if (aesEncrypted.cipherType !== 'aes-128-ctr') throw Error(`keystore: unsupproted cipherType ${aesEncrypted.cipherType}`)
+		if (aesEncrypted.cipherType !== CIPHER) throw Error(`keystore: unsupproted cipherType ${aesEncrypted.cipherType}`)
 		// @TODO: progressCallback?
 		const key = await scrypt.scrypt(getBytesForSecret(secret), arrayify(scryptParams.salt), scryptParams.N, scryptParams.r, scryptParams.p, scryptParams.dkLen, () => {})
 		const iv = arrayify(aesEncrypted.iv)
@@ -85,6 +86,7 @@ export class Keystore {
 	}
 	async addSecret(secretId: string, secret: string, extraEntropy: string = '') {
 		const secrets = await this.getMainKeyEncryptedWithSecrets()
+		// @TODO test
 		if (secrets.find(x => x.id === secretId)) throw new Error(`keystore: trying to add duplicate secret ${secretId}`)
 
 		let mainKey: MainKey | null = this.#mainKey
@@ -112,7 +114,7 @@ export class Keystore {
 		secrets.push({
 			id: secretId,
 			scryptParams: { salt: hexlify(salt), ...scryptDefaults },
-			aesEncrypted: { cipherType: 'aes-128-ctr', ciphertext: hexlify(ciphertext), iv: hexlify(iv), mac: hexlify(mac) }
+			aesEncrypted: { cipherType: CIPHER, ciphertext: hexlify(ciphertext), iv: hexlify(iv), mac: hexlify(mac) }
 		})
 		// Persist the new secrets
 		await this.storage.set('keystoreSecrets', secrets)
