@@ -2,6 +2,7 @@ import aes from "aes-js";
 import scrypt from "scrypt-js";
 import { arrayify, hexlify, isHexString, keccak256, randomBytes, toUtf8Bytes, toUtf8String, UnicodeNormalizationForm, concat } from 'ethers/lib/utils'
 
+const scryptDefaults = { N: 262144, r: 8, p: 1, dkLen: 64 }
 // @TODO
 // - define all the function signatures
 // - tests
@@ -12,20 +13,16 @@ import { arrayify, hexlify, isHexString, keccak256, randomBytes, toUtf8Bytes, to
 // - All individual keys are encrypted with the mainKey
 // - The mainKey is kept in memory, but only for the unlockedTime
 
+// Design decisions
+// - decided to store all keys in the Keystore, even if the private key itself is not stored there; simply because it's called a Keystore and the name implies the functionality
+// - handle HW wallets in it, so that we handle everything uniformly with a single API; also, it allows future flexibility to have the concept of optional unlocking built-in; if we have interactivity, we can add `keystore.signExtraInputRequired(key)` which returns what we need from the user
+// - `signWithkey` is presumed to be non-interactive at least from `Keystore` point of view (requiring no extra user inputs). This could be wrong, if hardware wallets require extra input - they normally always do, but with the web SDKs we "outsource" this to the HW wallet software itself; this may not be true on mobile
+
+
 interface Storage {
 	get(key: string, defaultValue: any): Promise<any>;
 	set(key: string, value: any): Promise<null>;
 }
-
-
-interface SecretStored {
-
-}
-interface KeyStored {
-}
-interface Key {
-}
-
 
 type ScryptParams = {
 	salt: string;
@@ -61,10 +58,13 @@ export class Keystore {
 		this.storage = _storage;
 		this.#mainKey = null;
 	}
+	async getMainKeyEncryptedWithSecrets(): Promise<[MainKeyEncryptedWithSecret]> {
+		return await this.storage.get('keystoreSecrets', [])
+	}
 	// @TODO time before unlocking
 	async unlockWithSecret(secretId: string, secret: string) {
 		// @TODO should we check if already locked? probably not cause this function can  be used in order to verify if a secret is correct
-		const secrets: [MainKeyEncryptedWithSecret] = await this.storage.get('keystoreSecrets', [])
+		const secrets = await this.getMainKeyEncryptedWithSecrets()
 		if (!secrets.length) throw new Error('keystore: no secrets yet')
 		const secretEntry = secrets.find(x => x.id === secretId)
 		if (!secretEntry) throw new Error(`keystore: secret ${secretId} not found`)
@@ -85,8 +85,7 @@ export class Keystore {
 		console.log('mainKey decrypted', this.#mainKey)
 	}
 	async addSecret(secretId: string, secret: string, extraEntropy: string = '') {
-		// @TODO: DRY?
-		const secrets: [MainKeyEncryptedWithSecret] = await this.storage.get('keystoreSecrets', [])
+		const secrets = await this.getMainKeyEncryptedWithSecrets()
 		let mainKey: MainKey | null = this.#mainKey
 		// We are not not unlocked
 		if (!mainKey) {
@@ -101,7 +100,7 @@ export class Keystore {
 		console.log('mainKey on addSecret', mainKey)
 
 		const salt = randomBytes(32)
-		const key = await scrypt.scrypt(getBytesForSecret(secret), salt, 262144, 8, 1, 64, () => {})
+		const key = await scrypt.scrypt(getBytesForSecret(secret), salt, scryptDefaults.N, scryptDefaults.r, scryptDefaults.p, scryptDefaults.dkLen, () => {})
 		const iv = randomBytes(16)
 		const derivedKey = key.slice(0, 16)
 		const macPrefix = key.slice(16, 32)
@@ -112,10 +111,13 @@ export class Keystore {
 
 		secrets.push({
 			id: secretId,
-			scryptParams: { salt: hexlify(salt), N: 262144, r: 8, p: 1, dkLen: 64 },
+			scryptParams: { salt: hexlify(salt), ...scryptDefaults },
 			aesEncrypted: { cipherType: 'aes-128-ctr', ciphertext: hexlify(ciphertext), iv: hexlify(iv), mac: hexlify(mac) }
 		})
 		await this.storage.set('keystoreSecrets', secrets)
+	}
+	async isReadyToStoreKeys(): Promise<boolean> {
+		return (await this.getMainKeyEncryptedWithSecrets()).length > 0
 	}
 	lock() {
 		this.#mainKey = null
@@ -123,6 +125,7 @@ export class Keystore {
 	isUnlocked() {
 		return !!this.#mainKey
 	}
+
 }
 function getBytesForSecret(secret: string): ArrayLike<number> {
 	// see https://github.com/ethers-io/ethers.js/blob/v5/packages/json-wallets/src.ts/utils.ts#L19-L24
