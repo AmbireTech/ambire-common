@@ -63,7 +63,7 @@ export class Keystore {
 	}
 	// @TODO time before unlocking
 	async unlockWithSecret(secretId: string, secret: string) {
-		// @TODO should we check if already locked?
+		// @TODO should we check if already locked? probably not cause this function can  be used in order to verify if a secret is correct
 		const secrets: [MainKeyEncryptedWithSecret] = await this.storage.get('keystoreSecrets', [])
 		if (!secrets.length) throw new Error('keystore: no secrets yet')
 		const secretEntry = secrets.find(x => x.id === secretId)
@@ -84,14 +84,14 @@ export class Keystore {
 		this.#mainKey = { key: decrypted.slice(0, 16), iv: decrypted.slice(16, 32) }
 		console.log('mainKey decrypted', this.#mainKey)
 	}
-	async addSecret(secretId: string, secret: string) {
+	async addSecret(secretId: string, secret: string, extraEntropy: string = '') {
 		// @TODO: DRY?
 		const secrets: [MainKeyEncryptedWithSecret] = await this.storage.get('keystoreSecrets', [])
 		let mainKey: MainKey | null = this.#mainKey
 		// We are not not unlocked
 		if (!mainKey) {
 			if (!secrets.length) {
-				const key = arrayify(keccak256(concat([ randomBytes(32), toUtf8Bytes(''+Date.now()) ]))).slice(0, 16)
+				const key = arrayify(keccak256(concat([ randomBytes(32), toUtf8Bytes(extraEntropy) ]))).slice(0, 16)
 				mainKey = {
 					key,
 					iv: randomBytes(16)
@@ -132,7 +132,7 @@ function getBytesForSecret(secret: string): ArrayLike<number> {
 const keystore = new Keystore(produceMemoryStore())
 console.log(keystore)
 // @TODO test
-console.log((keystore as any)['#mainKey'])
+console.log((keystore as any)['#mainKey'], 'must be undefined')
 
 // Helpers/testing
 function produceMemoryStore(): Storage {
