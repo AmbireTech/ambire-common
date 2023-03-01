@@ -148,6 +148,7 @@ type HumanizerInfoAbisKeysType =
   | 'WyvernExchange'
   | 'Swappin'
   | 'ERC20'
+  | 'SwappinOwn'
 
 type HumanizerInfoAbisType = {
   [key in HumanizerInfoAbisKeysType]: HumanizerInfoAbiType[]
