@@ -12,6 +12,7 @@ export enum NETWORKS {
   'optimism' = 'optimism',
   'andromeda' = 'andromeda',
   'rinkeby' = 'rinkeby',
+  'mumbai' = 'mumbai',
   'cronos' = 'cronos',
   'aurora' = 'aurora',
   'ethereum-pow' = 'ethereum-pow'
@@ -247,6 +248,23 @@ const networks: NetworkType[] = [
     nativeAsset: {
       address: '0x0000000000000000000000000000000000000000',
       symbol: 'ETH',
+      coingeckoId: null,
+      decimals: 18
+    }
+  },
+  {
+    id: NETWORKS.mumbai,
+    chainId: 80001,
+    nativeAssetSymbol: 'MATIC',
+    name: 'Mumbai',
+    explorerUrl: 'https://mumbai.polygonscan.com/',
+    unstoppableDomainsChain: 'ERC20',
+    hide: true,
+    isGasTankAvailable: false,
+    relayerlessOnly: false,
+    nativeAsset: {
+      address: '0x0000000000000000000000000000000000000000',
+      symbol: 'MATIC',
       coingeckoId: null,
       decimals: 18
     }
