@@ -165,8 +165,16 @@ export class Keystore {
 	}
 
 	async addKeyExternallyStored(id: string, type: string, meta: object) {
+		// @TODO
 	}
-	// @TODO remove key
+
+	async addKey(privateKey: string) {
+		// @TODO
+	}
+
+	async function removeKey(id: string) {
+		// @TODO
+	}
 }
 function getBytesForSecret(secret: string): ArrayLike<number> {
 	// see https://github.com/ethers-io/ethers.js/blob/v5/packages/json-wallets/src.ts/utils.ts#L19-L24
