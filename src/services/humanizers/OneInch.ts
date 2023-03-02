@@ -1,3 +1,5 @@
+// TODO: add types
+// @ts-nocheck
 import { Interface } from 'ethers/lib/utils'
 
 import { NetworkType } from '../../constants/networks'
