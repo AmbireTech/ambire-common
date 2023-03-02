@@ -1,6 +1,7 @@
 import aes from 'aes-js'
 import scrypt from 'scrypt-js'
 import { arrayify, hexlify, isHexString, keccak256, randomBytes, toUtf8Bytes, toUtf8String, UnicodeNormalizationForm, concat } from 'ethers/lib/utils'
+import { Wallet } from 'ethers'
 
 const scryptDefaults = { N: 262144, r: 8, p: 1, dkLen: 64 }
 const CIPHER = 'aes-128-ctr'
@@ -164,16 +165,32 @@ export class Keystore {
 			} as Key))
 	}
 
-	async addKeyExternallyStored(id: string, type: string, meta: object) {
-		// @TODO
+	async addKeyExternallyStored(id: string, type: string, label: string, meta: object) {
+		const keys: [StoredKey] = await this.storage.get('keystoreKeys', [])
+		keys.push({
+			id, type, label, meta,
+			privKey: null,
+		})
+		await this.storage.set('keystoreKeys', keys)
 	}
 
-	async addKey(privateKey: string) {
-		// @TODO
+	async addKey(privateKey: string, label: string) {
+		const wallet = new Wallet(privateKey)
+		const keys: [StoredKey] = await this.storage.get('keystoreKeys', [])
+		keys.push({
+			id: wallet.address,
+			type: 'internal',
+			label,
+			privKey: privateKey,
+			meta: null
+		})
+		await this.storage.set('keystoreKeys', keys)
 	}
 
-	async function removeKey(id: string) {
-		// @TODO
+	async removeKey(id: string) {
+		const keys: [StoredKey] = await this.storage.get('keystoreKeys', [])
+		if (!keys.find(x => x.id === id)) throw new Error(`keystore: trying to remove key that does not exist ${id}}`)
+		this.storage.set('keystoreKeys', keys.filter(x => x.id !== id))
 	}
 }
 function getBytesForSecret(secret: string): ArrayLike<number> {
