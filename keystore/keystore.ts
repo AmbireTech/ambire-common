@@ -4,6 +4,8 @@ import { arrayify, hexlify, isHexString, keccak256, randomBytes, toUtf8Bytes, to
 
 const scryptDefaults = { N: 262144, r: 8, p: 1, dkLen: 64 }
 const CIPHER = 'aes-128-ctr'
+const SUPPORTED_KEY_TYPES = ['internal', 'trezor', 'ledger', 'lattice']
+
 // @TODO
 // - define all the function signatures
 // - tests
@@ -51,17 +53,45 @@ type MainKey = {
 	iv: Uint8Array;
 }
 
+type Key = {
+	// normally in the form of an Ethereum address
+	id: string
+	type: string
+	label: string
+	isExternallyStored: boolean
+}
+type StoredKey = {
+	id: string
+	type: string
+	label: string
+	privKey: string | null
+	// denotes additional info like HW wallet derivation path
+	meta: object | null
+}
 // Not using class here because we can't encapsulate mainKey securely
 export class Keystore {
 	#mainKey: MainKey | null;
 	storage: Storage;
+
 	constructor(_storage: Storage) {
 		this.storage = _storage;
 		this.#mainKey = null;
 	}
-	async getMainKeyEncryptedWithSecrets(): Promise<[MainKeyEncryptedWithSecret]> {
+
+	lock() {
+		this.#mainKey = null
+	}
+	isUnlocked() {
+		return !!this.#mainKey
+	}
+
+	async getMainKeyEncryptedWithSecrets(): Promise<MainKeyEncryptedWithSecret[]> {
 		return await this.storage.get('keystoreSecrets', [])
 	}
+	async isReadyToStoreKeys(): Promise<boolean> {
+		return (await this.getMainKeyEncryptedWithSecrets()).length > 0
+	}
+
 	// @TODO time before unlocking
 	async unlockWithSecret(secretId: string, secret: string) {
 		// @TODO should we check if already locked? probably not cause this function can  be used in order to verify if a secret is correct
@@ -125,16 +155,18 @@ export class Keystore {
 		if (!secrets.find(x => x.id === secretId)) throw new Error(`keystore: secret$ ${secretId} not found`)
 		await this.storage.set('keystoreSecrets', secrets.filter(x => x.id !== secretId))
 	}
-	async isReadyToStoreKeys(): Promise<boolean> {
-		return (await this.getMainKeyEncryptedWithSecrets()).length > 0
-	}
-	lock() {
-		this.#mainKey = null
-	}
-	isUnlocked() {
-		return !!this.#mainKey
+
+	async getKeys(): Promise<Key[]> {
+		const keys: [StoredKey] = await this.storage.get('keystoreKeys', [])
+		return keys
+			.map(({ id, label, type }) => ({
+				id, label, type, isExternallyStored: type !== 'internal'
+			} as Key))
 	}
 
+	async addKeyExternallyStored(id: string, type: string, meta: object) {
+	}
+	// @TODO remove key
 }
 function getBytesForSecret(secret: string): ArrayLike<number> {
 	// see https://github.com/ethers-io/ethers.js/blob/v5/packages/json-wallets/src.ts/utils.ts#L19-L24
