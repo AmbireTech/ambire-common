@@ -175,13 +175,21 @@ export class Keystore {
 	}
 
 	async addKey(privateKey: string, label: string) {
+		if (this.#mainKey === null) throw new Error('keystore: needs to be unlocked')
+
+		// Set up the cipher
+		const counter = new aes.Counter(this.#mainKey.iv)
+		const aesCtr = new aes.ModeOfOperation.ctr(this.#mainKey.key, counter)
+
+		// Store the key
 		const wallet = new Wallet(privateKey)
 		const keys: [StoredKey] = await this.storage.get('keystoreKeys', [])
 		keys.push({
 			id: wallet.address,
 			type: 'internal',
 			label,
-			privKey: privateKey,
+			// @TODO: consider an MAC?
+			privKey: hexlify(aesCtr.encrypt(arrayify(privateKey))),
 			meta: null
 		})
 		await this.storage.set('keystoreKeys', keys)
