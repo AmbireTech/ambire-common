@@ -771,7 +771,7 @@ const uniUniversalRouter = (humanizerInfo: HumanizerInfoType) => {
                   recipientText(humanizerInfo, params.recipient, txn.from, true)
                 )
           )
-        }
+        } else parsed.push([`Unknown Uni V3 interaction`])
       })
 
       return parsed.flat()
