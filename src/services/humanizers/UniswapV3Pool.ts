@@ -87,7 +87,7 @@ const UniswapV3Pool = (humanizerInfo: HumanizerInfoType) => {
             recipientText(humanizerInfo, params.recipient, txn.from, true)
           )
     },
-    [ifaceV3.getSighash('unwrapWETH9')]: (txn, network, opts = {}) => {
+    [ifaceV3.getSighash('unwrapWETH9')]: (txn, network, opts = { extended: true }) => {
       const [amountMinimum, recipient] = ifaceV3.parseTransaction(txn).args
 
       return !opts.extended
@@ -105,7 +105,7 @@ const UniswapV3Pool = (humanizerInfo: HumanizerInfoType) => {
             recipientText(humanizerInfo, recipient, txn.from, true)
           )
     },
-    [ifaceV3.getSighash('sweepToken')]: (txn, network, opts = {}) => {
+    [ifaceV3.getSighash('sweepToken')]: (txn, network, opts = { extended: true }) => {
       const [tokenA, amountMinimum, recipient] = ifaceV3.parseTransaction(txn).args
 
       return !opts.extended
