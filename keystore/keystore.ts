@@ -23,7 +23,7 @@ const SUPPORTED_KEY_TYPES = ['internal', 'trezor', 'ledger', 'lattice']
 // - `signWithkey` is presumed to be non-interactive at least from `Keystore` point of view (requiring no extra user inputs). This could be wrong, if hardware wallets require extra input - they normally always do, but with the web SDKs we "outsource" this to the HW wallet software itself; this may not be true on mobile
 
 
-interface Storage {
+export interface Storage {
 	get(key: string, defaultValue: any): Promise<any>;
 	set(key: string, value: any): Promise<null>;
 }
@@ -102,7 +102,7 @@ export class Keystore {
 		if (!secretEntry) throw new Error(`keystore: secret ${secretId} not found`)
 
 		const { scryptParams, aesEncrypted } = secretEntry
-		if (aesEncrypted.cipherType !== CIPHER) throw Error(`keystore: unsupproted cipherType ${aesEncrypted.cipherType}`)
+		if (aesEncrypted.cipherType !== CIPHER) throw Error(`keystore: unsupported cipherType ${aesEncrypted.cipherType}`)
 		// @TODO: progressCallback?
 		const key = await scrypt.scrypt(getBytesForSecret(secret), arrayify(scryptParams.salt), scryptParams.N, scryptParams.r, scryptParams.p, scryptParams.dkLen, () => {})
 		const iv = arrayify(aesEncrypted.iv)
@@ -182,6 +182,7 @@ export class Keystore {
 		const aesCtr = new aes.ModeOfOperation.ctr(this.#mainKey.key, counter)
 
 		// Store the key
+		// Terminology: this private key represents an EOA wallet, which is why ethers calls it Wallet, but we treat it as a key here
 		const wallet = new Wallet(privateKey)
 		const keys: [StoredKey] = await this.storage.get('keystoreKeys', [])
 		keys.push({
@@ -205,40 +206,3 @@ function getBytesForSecret(secret: string): ArrayLike<number> {
 	// see https://github.com/ethers-io/ethers.js/blob/v5/packages/json-wallets/src.ts/utils.ts#L19-L24
 	return toUtf8Bytes(secret, UnicodeNormalizationForm.NFKC)
 }
-
-const keystore = new Keystore(produceMemoryStore())
-console.log(keystore)
-// @TODO test
-console.log((keystore as any)['#mainKey'], 'must be undefined')
-
-// Helpers/testing
-function produceMemoryStore(): Storage {
-	const storage = new Map()
-	return {
-		get: (key, defaultValue): any => {
-			const serialized = storage.get(key)
-			return  Promise.resolve(serialized ? JSON.parse(serialized) : defaultValue)
-		},
-		set: (key, value) => { storage.set(key, JSON.stringify(value)); return Promise.resolve(null) }
-	}
-}
-async function main() {
-	const pass = 'hoi'
-	try {
-		await keystore.unlockWithSecret('passphrase', pass)
-	} catch(e) {
-		console.log('must return  an error', e)
-	}
-
-	// @TODO test
-	await keystore.addSecret('passphrase', pass)
-	console.log('is unlocked: false', keystore.isUnlocked())
-	try {
-		await keystore.unlockWithSecret('passphrase', pass+'1')
-	} catch(e) {
-		console.error('must return an error', e)
-	}
-	await keystore.unlockWithSecret('passphrase', pass)
-	console.log('is unlocked: true', keystore.isUnlocked())
-}
-main().then(() => console.log('OK'))
