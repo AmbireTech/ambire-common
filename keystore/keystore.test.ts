@@ -27,7 +27,7 @@ describe('Keystore', () => {
     try {
       await keystore.unlockWithSecret('passphrase', pass)
     } catch(e) {
-      expect(e).toThrowError('keystore: no secrets yet')
+      expect(e.message).toBe('keystore: no secrets yet')
     }
   })
 
@@ -41,16 +41,16 @@ describe('Keystore', () => {
     try {
       await keystore.unlockWithSecret('playstation', '')
     } catch(e) {
-      expect(e).toThrowError('keystore: secret playstation not found')
+      expect(e.message).toBe('keystore: secret playstation not found')
     }
   })
 
   test('cannot unlock with wrong secret', async () => {
-    expect.assertions(1)
+    expect.assertions(2)
     try {
       await keystore.unlockWithSecret('passphrase', pass+'1')
     } catch(e) {
-      expect(e).toThrowError('keystore: wrong secret')
+      expect(e.message).toBe('keystore: wrong secret')
     }
     expect(keystore.isUnlocked()).toBe(false)
   })
