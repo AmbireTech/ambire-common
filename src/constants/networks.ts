@@ -175,7 +175,7 @@ const networks: NetworkType[] = [
     chainId: 100,
     nativeAssetSymbol: 'XDAI',
     name: 'Gnosis Chain',
-    explorerUrl: 'https://blockscout.com',
+    explorerUrl: 'https://gnosisscan.io',
     unstoppableDomainsChain: 'ERC20',
     isGasTankAvailable: true,
     relayerlessOnly: false,
