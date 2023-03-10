@@ -34,7 +34,6 @@ export default function usePortfolio({
 }: UsePortfolioProps): UsePortfolioReturnType {
   const { constants } = useConstants()
   const { addToast } = useToasts()
-  const currentAccount = useRef<string>()
   const isInitialMount = useRef(true)
   // Pending tokens which arent in constants tokenList
   const [pendingTokens, setPendingTokens] = useState([])
@@ -50,6 +49,33 @@ export default function usePortfolio({
     () => assets[`${account}-${currentNetwork}`],
     [assets, account, currentNetwork]
   )
+
+  // In next lines, we are creating refs to already existing state variables,
+  // in order to prevent useEffect circular dependencies (loops).
+  // For example, useFetch accepts `assets` as parameter
+  // and the same time useFetch is updating the `assets` via `setAssetsByAccount` internally.
+  // In that case, if we add `assets` in the dep array of the wrapping useEffect hook,
+  // it will result in an infinitive loop/updates.
+  // Because of that - we are keeping part of the state in refs.
+  const assetsRef = useRef<string>()
+  useEffect(() => {
+    assetsRef.current = assets
+  }, [assets])
+
+  const currentAssetsRef = useRef<string>()
+  useEffect(() => {
+    currentAssetsRef.current = currentAssets
+  }, [currentAssets])
+
+  const fetchingAssetsRef = useRef<string>()
+  useEffect(() => {
+    fetchingAssetsRef.current = fetchingAssets[`${account}-${currentNetwork}`]
+  }, [fetchingAssets[`${account}-${currentNetwork}`]])
+
+  const currentAccount = useRef<string>()
+  useEffect(() => {
+    currentAccount.current = account
+  }, [account])
 
   // Handle logic for extra tokens
   const { extraTokens, getExtraTokensAssets, onAddExtraToken, onRemoveExtraToken } = useExtraTokens(
@@ -137,81 +163,64 @@ export default function usePortfolio({
     currentNetwork,
     filterByHiddenTokens
   )
-  // TODO: Should optimize extraTokens in dependencies
-  const refreshTokensIfVisible = useCallback(() => {
+
+  // Fetch tokens:
+  // 1. After initialization
+  // 2. On Network and account change
+  useEffect(() => {
     if (!account || isInitializing) return
-    if (
-      isVisible &&
-      !currentAssets?.loading &&
-      !fetchingAssets[`${account}-${currentNetwork}`]?.velcro
-    ) {
-      fetchTokens(account, currentNetwork, false, currentAssets)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+
+    // Prevent triggering the same request twice, if there is an ongoing one already triggered
+    if (currentAssetsRef.current?.loading || fetchingAssetsRef.current?.velcro) return
+
+    fetchTokens(account, currentNetwork, false, currentAssetsRef.current)
   }, [
+    isInitializing,
     account,
     currentNetwork,
-    isVisible,
-    isInitializing,
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    `${eligibleRequests}`,
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    `${pendingTransactions}`,
-    extraTokens,
-    pendingTokens
+    fetchTokens
   ])
 
-  const loadBalance = async () => {
-    if (!account || isInitializing) return
-    await fetchTokens(account, currentNetwork, false, currentAssets)
-  }
-
-  const loadOtherNetworksBalances = async () => {
-    if (!account || isInitializing) return
-    await fetchOtherNetworksBalances(account, assets)
-  }
-
-  // Fetch balances on account change
-  // Fetch other networks balances on account change
+  // Fetch other network balances:
+  // 1. After initialization
+  // 2. On Account change
   useEffect(() => {
-    currentAccount.current = account
-    loadBalance()
-    loadOtherNetworksBalances()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [account, isInitializing])
+    if (!account || isInitializing) return
 
-  // Refresh tokens on network change or when the window (app) is considered to be visible to the user
-  useEffect(() => {
-    if (isInitialMount.current) {
-      if (!isInitializing) {
-        isInitialMount.current = false
-      }
-    } else {
-      refreshTokensIfVisible()
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentNetwork, isVisible, isInitializing])
+    fetchOtherNetworksBalances(account, assetsRef)
+  }, [
+    account,
+    isInitializing
+  ])
 
   // Refresh balance every 90s if visible
   // NOTE: this must be synced (a multiple of) supplementing, otherwise we can end up with weird inconsistencies
   useEffect(() => {
-    const refreshInterval = setInterval(refreshTokensIfVisible, 90000)
+    const refreshInterval = setInterval(() => {
+      if (!isVisible) return
+
+      fetchTokens(account, currentNetwork, false, currentAssetsRef.current)
+    }, 90000)
     return () => clearInterval(refreshInterval)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [refreshTokensIfVisible])
+  }, [account, currentNetwork, isVisible])
 
   // Fetch other networks assets every 60 seconds
   useEffect(() => {
-    const refreshInterval = setInterval(loadOtherNetworksBalances, 60000)
+    const refreshInterval = setInterval(() => {
+      if (!account) return
+
+      fetchOtherNetworksBalances(account, assetsRef)
+    }, 60000)
     return () => clearInterval(refreshInterval)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [account, currentNetwork, isInitializing])
+  }, [account])
 
   // Refresh balance every 150s if hidden
   useEffect(() => {
     const refreshIfHidden = () =>
-      !isVisible && !currentAssets?.loading && !isInitializing
-        ? fetchTokens(account, currentNetwork, false, currentAssets)
+      !isVisible && !currentAssetsRef.current?.loading && !isInitializing
+        ? fetchTokens(account, currentNetwork, false, currentAssetsRef.current)
         : null
     const refreshInterval = setInterval(refreshIfHidden, 150000)
     return () => clearInterval(refreshInterval)
@@ -221,10 +230,7 @@ export default function usePortfolio({
     currentNetwork,
     isVisible,
     isInitializing,
-    extraTokens, // eslint-disable-next-line react-hooks/exhaustive-deps
-    `${eligibleRequests}`,
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    `${pendingTransactions}`
+    fetchTokens
   ])
 
   const refreshPricesAndBalance = useCallback(() => {
@@ -256,17 +262,15 @@ export default function usePortfolio({
       }
     } else {
       // Your useEffect code here to be run on update
-      fetchAndSetSupplementTokenData(currentAssets, requestPendingState)
+      fetchAndSetSupplementTokenData(currentAssetsRef, requestPendingState)
     }
     // In order to have an array in dependency we need to stringify it,
     // so we can be subscribed to changes of objects inside our arrays.
     // https://stackoverflow.com/a/65728647/8335898
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    `${eligibleRequests}`,
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    `${pendingTransactions}`,
+    eligibleRequests.toString(),
+    pendingTransactions.toString(),
     requestPendingState,
     extraTokens,
     isInitializing

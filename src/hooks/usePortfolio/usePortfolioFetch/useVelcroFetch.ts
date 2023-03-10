@@ -28,7 +28,7 @@ export default function useVelcroFetch({
   pendingTokens,
   setPendingTokens
 }) {
-  const formatTokensResponse = (tokens, assets, network, account, otherNetworksFetch) => {
+  const formatTokensResponse = useCallback((tokens, assets, network, account, otherNetworksFetch) => {
     const extraTokens = getExtraTokensAssets(account, network)
     return removeDuplicatedAssets([
       ...tokens
@@ -101,7 +101,8 @@ export default function useVelcroFetch({
         .filter((token: any) => !!token.name && !!token.symbol),
       ...extraTokens
     ])
-  }
+  }, [getExtraTokensAssets, removeDuplicatedAssets, roundFloatingNumber])
+
   const fetchOtherNetworksBalances = async (account, assets) => {
     if (!оtherNetworksFetching) {
       setOtherNetworksFetching(true)
@@ -275,7 +276,7 @@ export default function useVelcroFetch({
             [`${account}-${currentNetwork}`]: {
               ...prev[`${account}-${currentNetwork}`],
               tokens: removeDuplicatedAssets([
-                ...(assets?.tokens ? assets.tokens : []),
+                ...(prev[`${account}-${currentNetwork}`]?.tokens ? prev[`${account}-${currentNetwork}`].tokens : []),
                 ...(extraTokensAssets?.length ? extraTokensAssets : [])
               ])
             }
@@ -409,11 +410,14 @@ export default function useVelcroFetch({
     [
       extraTokensAssets,
       addToast,
-      eligibleRequests,
-      pendingTransactions,
       currentAccount,
       formatTokensResponse,
-      pendingTokens
+      pendingTokens,
+      // TODO - next 2 deps are being used from child functions (i.e. updateCoingeckoAndSupplementData)
+      //  - it would be better to refactor these functions as callBack functions and refer them in the dep array,
+      //  instead of referring every single child dep here.
+      eligibleRequests.toString(),
+      pendingTransactions.toString(),
     ]
   )
   return {
