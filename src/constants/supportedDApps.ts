@@ -4,7 +4,8 @@ const supportedDApps: string[] = [
   'https://sudoswap.xyz',
   'https://sigtool.ambire.com/',
   'https://app.swappin.gifts',
-  'https://app.swappin.gifts/ref/ambire'
+  'https://app.swappin.gifts/ref/ambire',
+  'https://app.uniswap.org'
 ]
 
 export default supportedDApps
