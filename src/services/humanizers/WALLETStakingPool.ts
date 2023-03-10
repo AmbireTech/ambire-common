@@ -1,7 +1,7 @@
 // TODO: add types
 // @ts-nocheck
 
-import { Interface } from 'ethers/lib/utils'
+import { Interface, parseUnits } from 'ethers/lib/utils'
 
 import WalletStakingPoolABI from '../../constants/abis/WalletStakingPoolABI.json'
 import { HumanizerInfoType } from '../../hooks/useConstants'
@@ -23,6 +23,7 @@ const STAKING_POOLS = {
   }
 }
 
+const WALLET_TOKEN_ADDR = '0x88800092ff476844f74dc2fc427974bbee2794ae'
 const iface = new Interface(WalletStakingPoolABI)
 
 const toExtended = (action, word, token, txn) => {
@@ -74,11 +75,33 @@ const WALLETStakingPool = (humanizerInfo: HumanizerInfoType) => ({
       ]
     return ['Leave the WALLET Staking Pool']
   },
-  [iface.getSighash('withdraw')]: (txn, network, { extended = false }) => {
+  [iface.getSighash('withdraw')]: (txn, network, opts) => {
     const { shares } = iface.parseTransaction(txn).args
-    if (extended)
-      return toExtended('Withdraw', 'from', token(humanizerInfo, txn.to, shares, true), txn)
-    return [`Withdraw ${token(humanizerInfo, txn.to, shares)} to ${STAKING_POOLS[txn.to].name}`]
+    let params = {
+      amount: shares,
+      tokenAddr: txn.to
+    }
+    // If walletValue prop is passed via the metadata we show wallet amount for the txn humanizer
+    // Otherwise we use xWallet as default value for amount
+    if (opts.meta && opts.meta.xWallet && opts.meta.xWallet.walletValue) {
+      params = {
+        amount: parseUnits(opts.meta.xWallet.walletValue, 18),
+        tokenAddr: WALLET_TOKEN_ADDR
+      }
+    }
+
+    if (opts.extended)
+      return toExtended(
+        'Withdraw',
+        'from',
+        token(humanizerInfo, params.tokenAddr, params.amount, true),
+        txn
+      )
+    return [
+      `Withdraw ${token(humanizerInfo, params.tokenAddr, params.amount)} to ${
+        STAKING_POOLS[txn.to].name
+      }`
+    ]
   },
   [iface.getSighash('rageLeave')]: (txn, network, { extended = false }) => {
     const { shares } = iface.parseTransaction(txn).args
