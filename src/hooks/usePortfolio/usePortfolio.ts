@@ -43,7 +43,7 @@ export default function usePortfolio({
     data: { accounts }
   })
   const [fetchingAssets, setFetchingAssets] = useState({})
-  const [оtherNetworksFetching, setOtherNetworksFetching] = useState(false)
+  const [otherNetworksFetching, setOtherNetworksFetching] = useState(false)
 
   const currentAssets = useMemo(
     () => assets[`${account}-${currentNetwork}`],
@@ -148,7 +148,7 @@ export default function usePortfolio({
     constants,
     fetchingAssets,
     setFetchingAssets,
-    оtherNetworksFetching,
+    otherNetworksFetching,
     setOtherNetworksFetching,
     requestPendingState,
     pendingTokens,
@@ -283,7 +283,7 @@ export default function usePortfolio({
     tokens,
     collectibles,
     isCurrNetworkBalanceLoading: isInitializing || currentAssets?.loading,
-    balancesByNetworksLoading: оtherNetworksFetching,
+    balancesByNetworksLoading: otherNetworksFetching,
     extraTokens,
     onAddExtraToken,
     onRemoveExtraToken,

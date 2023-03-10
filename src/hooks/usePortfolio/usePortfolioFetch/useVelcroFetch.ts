@@ -21,7 +21,7 @@ export default function useVelcroFetch({
   pendingTransactions,
   fetchingAssets,
   setFetchingAssets,
-  оtherNetworksFetching,
+  otherNetworksFetching,
   setOtherNetworksFetching,
   removeDuplicatedAssets,
   requestPendingState,
@@ -104,7 +104,7 @@ export default function useVelcroFetch({
   }, [getExtraTokensAssets, removeDuplicatedAssets, roundFloatingNumber])
 
   const fetchOtherNetworksBalances = async (account, assets) => {
-    if (!оtherNetworksFetching) {
+    if (!otherNetworksFetching) {
       setOtherNetworksFetching(true)
     }
     const networksToFetch = supportedProtocols
