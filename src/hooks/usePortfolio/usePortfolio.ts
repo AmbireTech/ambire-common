@@ -52,8 +52,8 @@ export default function usePortfolio({
 
   // In next lines, we are creating refs to already existing state variables,
   // in order to prevent useEffect circular dependencies (loops).
-  // For example, useFetch accepts `assets` as parameter
-  // and the same time useFetch is updating the `assets` via `setAssetsByAccount` internally.
+  // For example, fetchTokens accepts `assets` as parameter
+  // and the same time fetchTokens is updating the `assets` via `setAssetsByAccount` internally.
   // In that case, if we add `assets` in the dep array of the wrapping useEffect hook,
   // it will result in an infinitive loop/updates.
   // Because of that - we are keeping part of the state in refs.
