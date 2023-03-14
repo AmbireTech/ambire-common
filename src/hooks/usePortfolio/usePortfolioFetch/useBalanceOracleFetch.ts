@@ -581,7 +581,7 @@ export default function useBalanceOracleFetch({
                   )
 
                   const difference = Math.abs(
-                    Number(latestBalance?.balance).toFixed(4) - Number(_t?.balance).toFixed(4)
+                    Number(latestBalance?.balance || 0).toFixed(4) - Number(_t?.balance).toFixed(4)
                   ).toFixed(4)
 
                   const isAaveToken = _t?.coingeckoId?.startsWith('aave-')
