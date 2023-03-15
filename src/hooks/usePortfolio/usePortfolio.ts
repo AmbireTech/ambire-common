@@ -187,7 +187,7 @@ export default function usePortfolio({
   useEffect(() => {
     if (!account || isInitializing) return
 
-    fetchOtherNetworksBalances(account, assetsRef)
+    fetchOtherNetworksBalances(account, assetsRef.current)
   }, [
     account,
     isInitializing
@@ -203,14 +203,14 @@ export default function usePortfolio({
     }, 90000)
     return () => clearInterval(refreshInterval)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [account, currentNetwork, isVisible])
+  }, [account, currentNetwork, isVisible, fetchTokens])
 
   // Fetch other networks assets every 60 seconds
   useEffect(() => {
     const refreshInterval = setInterval(() => {
       if (!account) return
 
-      fetchOtherNetworksBalances(account, assetsRef)
+      fetchOtherNetworksBalances(account, assetsRef.current)
     }, 60000)
     return () => clearInterval(refreshInterval)
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -262,7 +262,7 @@ export default function usePortfolio({
       }
     } else {
       // Your useEffect code here to be run on update
-      fetchAndSetSupplementTokenData(currentAssetsRef, requestPendingState)
+      fetchAndSetSupplementTokenData(currentAssetsRef.current, requestPendingState)
     }
     // In order to have an array in dependency we need to stringify it,
     // so we can be subscribed to changes of objects inside our arrays.
