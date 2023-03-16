@@ -1,46 +1,53 @@
-import { Contract } from 'ethers'
-import { formatUnits, Interface } from 'ethers/lib/utils'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
-import WalletStakingPoolABI from '../../constants/abis/WalletStakingPoolABI.json'
-import { NETWORKS } from '../../constants/networks'
-import { getProvider } from '../../services/provider'
+import getStats from './getStats'
 import { UseStakedWalletTokenProps, UseStakedWalletTokenReturnType } from './types'
-
-const WALLET_STAKING_ADDRESS = '0x47cd7e91c3cbaaf266369fe8518345fc4fc12935'
-const WALLET_STAKING_POOL_INTERFACE = new Interface(WalletStakingPoolABI)
 
 const useStakedWalletToken = ({
   accountId
 }: UseStakedWalletTokenProps): UseStakedWalletTokenReturnType => {
-  const [stakedAmount, setStakedAmount] = useState(0)
+  const isMounted = useRef(true)
+  const [response, setResponse] = useState({
+    isLoading: true,
+    error: '',
+    stakedAmount: 0
+  })
 
-  const fetchStakedWalletData = useCallback(async () => {
+  const getData = useCallback(async () => {
+    if (!accountId || !isMounted.current) return
+
+    setResponse({
+      stakedAmount: 0,
+      isLoading: true,
+      error: ''
+    })
+
     try {
-      const provider = getProvider(NETWORKS.ethereum)
-      const stakingWalletContract = new Contract(
-        WALLET_STAKING_ADDRESS,
-        WALLET_STAKING_POOL_INTERFACE,
-        provider
-      )
+      const stakedAmount = await getStats(accountId)
 
-      const [balanceOf, shareValue] = await Promise.all([
-        stakingWalletContract.balanceOf(accountId),
-        stakingWalletContract.shareValue()
-      ])
+      if (!isMounted.current) return
 
-      const amount = +formatUnits(balanceOf.toString(), 18) * +formatUnits(shareValue, 18)
-      setStakedAmount(amount)
+      setResponse({
+        stakedAmount,
+        isLoading: false,
+        error: ''
+      })
     } catch (e) {
-      // Fail silently
+      if (!isMounted.current) return
+
+      setResponse({
+        stakedAmount: 0,
+        isLoading: false,
+        error: "Couldn't get staked amount"
+      })
     }
-  }, [accountId])
+  }, [accountId, setResponse])
 
   useEffect(() => {
-    fetchStakedWalletData()
-  }, [fetchStakedWalletData])
+    getData()
+  }, [getData])
 
-  return { stakedAmount }
+  return response
 }
 
 export default useStakedWalletToken
