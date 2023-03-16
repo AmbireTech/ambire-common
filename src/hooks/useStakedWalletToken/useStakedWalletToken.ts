@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-import getStats from './getStats'
+import getStats from './getStats/getStats'
 import { UseStakedWalletTokenProps, UseStakedWalletTokenReturnType } from './types'
 
 const useStakedWalletToken = ({

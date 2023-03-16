@@ -1,12 +1,13 @@
+// @ts-ignore
 import { BigNumber, Contract, utils } from 'ethers'
 
 // Constants
-import WalletStakingPoolABI from '../../constants/abis/WalletStakingPoolABI.json'
-import WalletTokenABI from '../../constants/abis/walletTokenABI.json'
-import { getProvider } from '../../services/provider'
+import WalletStakingPoolABI from '../../../constants/abis/WalletStakingPoolABI.json'
+import WalletTokenABI from '../../../constants/abis/walletTokenABI.json'
+import { getProvider } from '../../../services/provider'
 // Types
-import { Account } from '../useAccounts'
-import { ByHash, LogType } from './types'
+import { Account } from '../../useAccounts'
+import { ByHash, LogType, ParsedLogType } from './types'
 
 const WALLET_TOKEN_ADDRESS = '0x88800092ff476844f74dc2fc427974bbee2794ae'
 const WALLET_STAKING_ADDRESS = '0x47cd7e91c3cbaaf266369fe8518345fc4fc12935'
@@ -81,7 +82,7 @@ const getStats = async (accountId: Account['id']) => {
     }, {})
 
   const sharesTokensTransfersIn = sharesTokensTransfersInLogs.map((log: LogType) => {
-    const parsedLog = xWalletContract.interface.parseLog(log)
+    const parsedLog: any = xWalletContract.interface.parseLog(log)
 
     const {
       from, // [0]
@@ -102,9 +103,9 @@ const getStats = async (accountId: Account['id']) => {
 
   // Only out txns as we have logs for RageLEave and Withdraw and they only burns shares
   // TODO: detect innerBurn transactions to ZERO_ADDR (burned by the user itself)
-  const sharesTokensTransfersOut = sharesTokensTransfersOutLogs
+  let sharesTokensTransfersOut = sharesTokensTransfersOutLogs
     .map((log: LogType) => {
-      const parsedLog = xWalletContract.interface.parseLog(log)
+      const parsedLog: any = xWalletContract.interface.parseLog(log)
 
       const {
         to, // [1]
@@ -119,10 +120,10 @@ const getStats = async (accountId: Account['id']) => {
         to
       }
     })
-    .filter((x) => x.to !== ZERO_ADDR)
+    .filter((x: ParsedLogType) => x.to !== ZERO_ADDR)
 
   const { shareTokensTransfersInByTxHash } = sharesTokensTransfersIn.reduce(
-    (txns, event) => {
+    (txns: any, event: any) => {
       const txnsNew = { ...txns }
       if (event.type === STAKING_POOL_EVENT_TYPES.enter) {
         txnsNew.shareTokensEnterMintByHash[event.transactionHash] = event
@@ -140,10 +141,12 @@ const getStats = async (accountId: Account['id']) => {
     }
   )
 
-  const sharesTokensTransfersInFromExternal = Object.values(shareTokensTransfersInByTxHash)
+  let sharesTokensTransfersInFromExternal: Array<any> = Object.values(
+    shareTokensTransfersInByTxHash
+  )
 
   const userWithdraws = withdrawLogs.map((log: LogType) => {
-    const parsedWithdrawLog = xWalletContract.interface.parseLog(log)
+    const parsedWithdrawLog: any = xWalletContract.interface.parseLog(log)
     const { shares, unlocksAt, maxTokens, receivedTokens } = parsedWithdrawLog.args
 
     return {
@@ -161,12 +164,12 @@ const getStats = async (accountId: Account['id']) => {
 
   const userLeaves = await Promise.all(
     leaveLogs.map(async (log: LogType) => {
-      const parsedLog = xWalletContract.interface.parseLog(log)
+      const parsedLog: any = xWalletContract.interface.parseLog(log)
 
       const { shares, unlocksAt, maxTokens } = parsedLog.args
 
       const withdrawTx = userWithdraws.find(
-        (event) =>
+        (event: any) =>
           event.unlocksAt.toString() === unlocksAt.toString() &&
           event.shares.toString() === shares.toString() &&
           event.maxTokens.toString() === maxTokens.toString()
@@ -210,7 +213,7 @@ const getStats = async (accountId: Account['id']) => {
   if (leavesReadyToWithdraw.length) leavePendingToUnlockOrReadyToWithdraw = leavesReadyToWithdraw[0]
   else if (leavesPendingToUnlock.length)
     leavePendingToUnlockOrReadyToWithdraw = leavesPendingToUnlock[0]
-  const [latestLog] = leaveLogs.sort((a, b) => b.blockNumber - a.blockNumber)
+  const [latestLog] = leaveLogs.sort((a: LogType, b: LogType) => b.blockNumber - a.blockNumber)
   let remainingTime
   if (leavePendingToUnlockOrReadyToWithdraw && latestLog) {
     const { unlocksAt } = leavePendingToUnlockOrReadyToWithdraw
@@ -221,7 +224,7 @@ const getStats = async (accountId: Account['id']) => {
   }
 
   if (sharesTokensTransfersOut.length || sharesTokensTransfersInFromExternal.length) {
-    const fromBlock = Math.min(
+    const fromBlockNotZero = Math.min(
       sharesTokensTransfersOut[0]
         ? sharesTokensTransfersOut[0].blockNumber
         : Number.MAX_SAFE_INTEGER,
@@ -233,31 +236,32 @@ const getStats = async (accountId: Account['id']) => {
     const [allLeaveLogs, allWithdrawLogs, allRageLeaveLogs, allEnterSharesTokensTransfersInLogs] =
       await Promise.all([
         ethProvider.getLogs({
-          fromBlock,
+          fromBlockNotZero,
           ...xWalletContract.filters.LogLeave(null, null, null, null)
         }),
         ethProvider.getLogs({
-          fromBlock,
+          fromBlockNotZero,
           ...xWalletContract.filters.LogWithdraw(null, null, null, null, null)
         }),
         ethProvider.getLogs({
-          fromBlock,
+          fromBlockNotZero,
           ...xWalletContract.filters.LogRageLeave(null, null, null, null)
         }),
         ethProvider.getLogs({
-          fromBlock,
+          fromBlockNotZero,
           ...xWalletContract.filters.Transfer(ZERO_ADDR, null, null)
         })
       ])
 
     const allEnters = allEnterSharesTokensTransfersInLogs
-      .map((sharesMintEvent) => {
+      .map((sharesMintEvent: any) => {
         const walletTokenTransfersLog = enterWalletTokensByTxHash[sharesMintEvent.transactionHash]
 
         if (walletTokenTransfersLog) {
-          const parsedLog = walletContract.interface.parseLog(walletTokenTransfersLog)
+          const parsedLog: any = walletContract.interface.parseLog(walletTokenTransfersLog)
           const amount = parsedLog.args.amount
-          const { amount: shares } = xWalletContract.interface.parseLog(sharesMintEvent).args
+          const parsedSharesMint: any = xWalletContract.interface.parseLog(sharesMintEvent)
+          const { amount: shares } = parsedSharesMint.args
 
           return {
             blockNumber: sharesMintEvent.blockNumber,
@@ -271,7 +275,7 @@ const getStats = async (accountId: Account['id']) => {
       .filter(Boolean)
 
     const allWithdraws = allWithdrawLogs.map((log: LogType) => {
-      const parsedWithdrawLog = xWalletContract.interface.parseLog(log)
+      const parsedWithdrawLog: any = xWalletContract.interface.parseLog(log)
       const { shares, maxTokens } = parsedWithdrawLog.args
 
       return {
@@ -283,7 +287,7 @@ const getStats = async (accountId: Account['id']) => {
     })
 
     const allRageLeaves = allRageLeaveLogs.map((log: LogType) => {
-      const parsedRageLeaveLog = xWalletContract.interface.parseLog(log)
+      const parsedRageLeaveLog: any = xWalletContract.interface.parseLog(log)
 
       const { shares, maxTokens } = parsedRageLeaveLog.args
 
@@ -296,7 +300,7 @@ const getStats = async (accountId: Account['id']) => {
     })
 
     const allLeaves = allLeaveLogs.map((log: LogType) => {
-      const parsedLog = xWalletContract.interface.parseLog(log)
+      const parsedLog: any = xWalletContract.interface.parseLog(log)
       const { shares, maxTokens } = parsedLog.args
       return {
         blockNumber: log.blockNumber,
@@ -310,24 +314,27 @@ const getStats = async (accountId: Account['id']) => {
       .concat(allWithdraws)
       .concat(allLeaves)
       .concat(allRageLeaves)
-      .sort((a, b) => a.blockNumber - b.blockNumber)
+      .sort((a: LogType, b: LogType) => a.blockNumber - b.blockNumber)
 
-    const withWalletAmount = (events) =>
-      events.forEach((transferLog, i) => {
+    const withWalletAmount = (events: any) =>
+      events.map((transferLog: any, i: number) => {
+        const newEvents = [...events]
         const nextLog =
           allLogs.find((log: LogType) => log.blockNumber >= transferLog.blockNumber) || {}
 
         const bestShareValue = nextLog.shareValue || shareValue
 
         // approximate share value
-        events[i].shareValue = bestShareValue
-        events[i].walletAmount = transferLog.shares
+        newEvents[i].shareValue = bestShareValue
+        newEvents[i].walletAmount = transferLog.shares
           .mul(bestShareValue)
           .div(POOL_SHARES_TOKEN_DECIMALS_MUL)
+
+        return newEvents[i]
       })
 
-    withWalletAmount(sharesTokensTransfersOut)
-    withWalletAmount(sharesTokensTransfersInFromExternal)
+    sharesTokensTransfersOut = withWalletAmount(sharesTokensTransfersOut)
+    sharesTokensTransfersInFromExternal = withWalletAmount(sharesTokensTransfersInFromExternal)
   }
 
   const totalLockedSharesCheck = [...userLeaves]
@@ -335,6 +342,7 @@ const getStats = async (accountId: Account['id']) => {
     .reduce((a, b) => a.add(b.shares), ZERO)
 
   if (!totalLockedSharesCheck.eq(lockedShares)) {
+    // eslint-disable-next-line no-console
     console.error(
       'locked shares different than check sum, user balance can be incorrect',
       'lockedShares:',

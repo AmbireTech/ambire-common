@@ -9,19 +9,3 @@ export type UseStakedWalletTokenReturnType = {
   isLoading: boolean
   error: string
 }
-
-export type LogType = {
-  address: string
-  blockHash: string
-  blockNumber: number
-  data: string
-  logIndex: number
-  removed: boolean
-  topics: string[]
-  transactionHash: string
-  transactionIndex: number
-}
-
-export type ByHash = {
-  [key: string]: LogType
-}
