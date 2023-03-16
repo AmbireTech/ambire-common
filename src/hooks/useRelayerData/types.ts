@@ -1,7 +1,8 @@
 export interface UseRelayerDataProps {
   fetch: any
   url: string | null | boolean
-  initialState?: any
+  initialState?: any,
+  useOfflineStatus: any
 }
 
 export interface UseRelayerDataReturnType {
