@@ -25,9 +25,9 @@ const STAKING_POOL_EVENT_TYPES = {
   shareTokensTransferOut: 'shareTokensTransferOut'
 }
 
-const ethProvider = getProvider('ethereum')
-
 const getStats = async (accountId: Account['id']) => {
+  const ethProvider = getProvider('ethereum')
+
   const xWalletContract = new Contract(WALLET_STAKING_ADDRESS, WalletStakingPoolABI, ethProvider)
   const walletContract = new Contract(WALLET_TOKEN_ADDRESS, WalletTokenABI, ethProvider)
   const fromBlock = 0
