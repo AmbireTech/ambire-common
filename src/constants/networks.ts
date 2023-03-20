@@ -241,7 +241,7 @@ const networks: NetworkType[] = [
     id: NETWORKS.okc,
     chainId: 66,
     nativeAssetSymbol: 'OTK',
-    name: 'OKC',
+    name: 'OKX Chain',
     explorerUrl: 'https://www.oklink.com/en/okc',
     unstoppableDomainsChain: 'ERC20',
     isGasTankAvailable: true,
