@@ -1,14 +1,17 @@
 import { Account } from '../useAccounts'
-import { UseConstantsReturnType } from '../useConstants'
 import { UseNetworkReturnType } from '../useNetwork'
+import { UseRelayerDataProps, UseRelayerDataReturnType } from '../useRelayerData'
+import { UseRewardsReturnType } from '../useRewards/types'
 
 export type UseClaimableWalletTokenProps = {
-  useConstants: () => UseConstantsReturnType
+  relayerURL: string
+  useRelayerData: (props: Omit<UseRelayerDataProps, 'fetch'>) => UseRelayerDataReturnType
   accountId: Account['id']
   network: UseNetworkReturnType['network']
   addRequest: any // TODO
   totalLifetimeRewards: number
   walletUsdPrice: number
+  rewardsLastUpdated: UseRewardsReturnType['lastUpdated']
 }
 
 export type UseClaimableWalletTokenReturnType = {
@@ -21,10 +24,11 @@ export type UseClaimableWalletTokenReturnType = {
   shouldDisplayMintableVesting: boolean
   currentClaimStatus: {
     loading: boolean
-    claimed: number
-    mintableVesting: number
-    claimedInitial: number
+    claimed: number | null
+    mintableVesting: number | null
+    claimedInitial: number | null
     error: null | any
+    lastUpdated: null | number
   }
   claimableNow: number
   disabledReason: string

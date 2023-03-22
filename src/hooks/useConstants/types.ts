@@ -20,7 +20,6 @@ export interface AdexToStakingTransfersLogsType {
 export interface ResultEndpointResponse {
   tokenList: ConstantsType['tokenList']
   humanizerInfo: ConstantsType['humanizerInfo']
-  WALLETInitialClaimableRewards: ConstantsType['WALLETInitialClaimableRewards']
 }
 
 // All the below types are generated with the help of QuickType app.
@@ -30,7 +29,6 @@ export interface ResultEndpointResponse {
 // {@link https://app.quicktype.io/}
 export interface ConstantsType {
   tokenList: { [key: string]: TokenList[] }
-  WALLETInitialClaimableRewards: WALLETInitialClaimableRewardsType[]
   humanizerInfo: HumanizerInfoType
   lastFetched: number
 }
@@ -41,15 +39,6 @@ interface TokenList {
   coingeckoId?: null | string
   decimals?: number
   decmals?: number
-}
-
-interface WALLETInitialClaimableRewardsType {
-  addr: string
-  fromBalanceClaimable: number
-  fromADXClaimable: number
-  totalClaimable: string
-  leaf: string
-  proof: string[]
 }
 
 export interface HumanizerInfoType {
@@ -157,7 +146,9 @@ type HumanizerInfoAbisKeysType =
   | 'Batcher'
   | 'StakingPool'
   | 'WyvernExchange'
+  | 'Swappin'
   | 'ERC20'
+  | 'SwappinOwn'
 
 type HumanizerInfoAbisType = {
   [key in HumanizerInfoAbisKeysType]: HumanizerInfoAbiType[]

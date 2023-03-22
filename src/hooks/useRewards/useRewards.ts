@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import useCacheBreak from '../useCacheBreak'
 import {
   Multiplier,
-  Promo,
+  Promo, RelayerRewardsBalance,
   RelayerRewardsData,
   RewardIds,
   RewardsState,
@@ -20,13 +20,19 @@ const initialState = {
     usdPrice: 0,
     walletTokenAPY: 0,
     xWALLETAPY: 0,
-    promo: null
+    promo: null,
+    balance: {
+      balanceFromADX: 0,
+      balanceInUSD: 0,
+      effectiveBalanceInUSD: 0
+    }
   },
   errMsg: null,
   isLoading: true
 }
 
 const rewardsInitialState = {
+  accountAddr: '',
   [RewardIds.ADX_REWARDS]: 0,
   [RewardIds.BALANCE_REWARDS]: 0,
   [RewardIds.ADX_TOKEN_APY]: 0,
@@ -38,7 +44,12 @@ const rewardsInitialState = {
   xWALLETAPY: 0,
   xWALLETAPYPercentage: '...',
   totalLifetimeRewards: 0,
-  promo: null
+  promo: null,
+  balance: {
+    balanceFromADX: 0,
+    balanceInUSD: 0,
+    effectiveBalanceInUSD: 0
+  }
 }
 
 export default function useRewards({
@@ -48,6 +59,7 @@ export default function useRewards({
 }: UseRewardsProps): UseRewardsReturnType {
   const { cacheBreak } = useCacheBreak()
   const [rewards, setRewards] = useState<RewardsState>(rewardsInitialState)
+  const [lastUpdated, setLastUpdated] = useState<null | number>(null)
 
   const rewardsUrl =
     !!relayerURL &&
@@ -62,8 +74,9 @@ export default function useRewards({
     if (errMsg || !data?.success || isLoading) return
 
     const rewardsDetails = Object.fromEntries<
-      string | number | Multiplier[] | Promo | { [key in RewardIds]: number }
+      string | number | Multiplier[] | Promo | { [key in RewardIds]: number } | RelayerRewardsBalance
     >(data.rewards.map(({ _id, rewards: r }) => [_id, r[accountId] || 0]))
+    rewardsDetails.accountAddr = data.claimableRewardsData.addr
     rewardsDetails.multipliers = data.multipliers
     rewardsDetails.walletTokenAPY = data.walletTokenAPY // TODO: Remove if not used anyhwere else raw
     rewardsDetails.walletTokenAPYPercentage = data.walletTokenAPY
@@ -82,6 +95,8 @@ export default function useRewards({
       : // TODO: Check if displaying 0 is better
         '...'
 
+    rewardsDetails.balance = data.balance
+
     rewardsDetails.totalLifetimeRewards = data.rewards
       .map((x) => (typeof x.rewards[accountId] === 'number' ? x.rewards[accountId] : 0))
       .reduce((a, b) => a + b, 0)
@@ -89,9 +104,11 @@ export default function useRewards({
     rewardsDetails.promo = (data.promo as Promo) || null
 
     setRewards(rewardsDetails as RewardsState)
+    setLastUpdated(Date.now())
   }, [accountId, data, errMsg, isLoading])
 
   return {
+    lastUpdated,
     isLoading,
     errMsg,
     rewards

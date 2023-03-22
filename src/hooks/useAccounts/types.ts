@@ -42,4 +42,21 @@ export interface UseAccountsReturnType {
   onSelectAcc: (accountId: Account['id']) => void
   onAddAccount: (acc: Account, opts: OnAddAccountOptions) => void
   onRemoveAccount: (accountId: Account['id']) => void
+  onRemoveAllAccounts: () => void
+}
+
+export interface SignedMessageType {
+  accountId: Account['id']
+  dApp: {
+    name: string
+    description: string
+    url: string
+    icons: string[]
+  }
+  date: number
+  message: string
+  networkId: number
+  signature: string
+  signer: Account['signer']
+  typed: boolean
 }

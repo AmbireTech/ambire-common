@@ -7,102 +7,169 @@ import { NETWORKS } from '../../constants/networks'
 import WALLETVestings from '../../constants/WALLETVestings.json'
 import { getProvider } from '../../services/provider'
 import useCacheBreak from '../useCacheBreak'
+import usePrevious from '../usePrevious'
 import { UseClaimableWalletTokenProps, UseClaimableWalletTokenReturnType } from './types'
 
-const supplyControllerAddress = '0xc53af25f831f31ad6256a742b3f0905bc214a430'
+// const supplyControllerAddress = '0xF8cF66BbF7fe152b8177B61855E8be9a6279C8A1' //test polygon
+const supplyControllerAddress = '0x6FDb43bca2D8fe6284242d92620156205d4fA028'
+const WALLET_STAKING_ADDR = '0x47Cd7E91C3CBaAF266369fe8518345fc4FC12935'
 const supplyControllerInterface = new Interface(WALLETSupplyControllerABI)
+const NETWORK_NAME = NETWORKS.ethereum
 
 const useClaimableWalletToken = ({
-  useConstants,
+  relayerURL,
+  useRelayerData,
   accountId,
   network,
   addRequest,
   totalLifetimeRewards,
-  walletUsdPrice
+  walletUsdPrice,
+  rewardsLastUpdated
 }: UseClaimableWalletTokenProps): UseClaimableWalletTokenReturnType => {
-  const { constants } = useConstants()
-  const provider = useMemo(() => getProvider('ethereum'), [])
+  const prevAccountId = usePrevious(accountId)
+  const { cacheBreak: relayerCacheBreak } = useCacheBreak()
+  const urlIdentityRewards = relayerURL
+    ? `${relayerURL}/wallet-token/rewards/${accountId}?cacheBreak=${relayerCacheBreak}`
+    : null
+
+  const rewardsData = useRelayerData({ url: urlIdentityRewards })
+  const claimableRewardsData = rewardsData?.data?.claimableRewardsData || null
+  const provider = useMemo(() => getProvider(NETWORK_NAME), [])
   const supplyController = useMemo(
     () => new Contract(supplyControllerAddress, WALLETSupplyControllerABI, provider),
     [provider]
   )
-  const initialClaimableEntry = useMemo(() => {
-    if (!constants?.WALLETInitialClaimableRewards) {
-      return null
-    }
-
-    return constants.WALLETInitialClaimableRewards.find((x) => x.addr === accountId)
-  }, [accountId, constants?.WALLETInitialClaimableRewards])
 
   const vestingEntry = useMemo(() => WALLETVestings.find((x) => x.addr === accountId), [accountId])
 
-  const [currentClaimStatus, setCurrentClaimStatus] = useState({
+  const [currentClaimStatus, setCurrentClaimStatus] = useState<
+    UseClaimableWalletTokenReturnType['currentClaimStatus']
+  >({
     loading: true,
-    claimed: 0,
-    mintableVesting: 0,
-    claimedInitial: 0,
-    error: null
+    claimed: null,
+    mintableVesting: null,
+    claimedInitial: null,
+    error: null,
+    lastUpdated: null
   })
 
-  // By adding this to the deps, we make it refresh every 10 mins
-  const { cacheBreak } = useCacheBreak({ refreshInterval: 10000, breakPoint: 5000 })
+  // By adding this to the deps, we make it refresh every 5 mins
+  const { cacheBreak } = useCacheBreak({ refreshInterval: 300000, breakPoint: 5000 })
   useEffect(() => {
-    setCurrentClaimStatus({
+    const accountChanged = !!prevAccountId && prevAccountId !== accountId
+    // Check if the claimableRewardsData response data is for the current account.
+    // If not sets all the values to null.
+    // That's how we don't show claimableRewards data for previous account.
+    if (
+      !claimableRewardsData ||
+      (claimableRewardsData &&
+        !(claimableRewardsData.addr.toLowerCase() === accountId.toLowerCase()))
+    ) {
+      setCurrentClaimStatus((prev) => ({
+        ...prev,
+        claimed: null,
+        mintableVesting: null,
+        claimedInitial: null,
+        loading: true,
+        error: null,
+        lastUpdated: accountChanged ? null : prev.lastUpdated
+      }))
+      return
+    }
+    // Wait before the rewards are loaded first, because the claimable amount
+    // is calculated based on the rewards. If the rewards are not loaded yet,
+    // we don't want to show the claimable amount as 0.
+    if (!rewardsLastUpdated) {
+      return
+    }
+    // Check lastUpdate so we won't refetch on every hook update, but every 5 minutes.
+    // But still check if current account is changed to reset lastUpdated timestamp
+    // and fetch new data for the new account from supply controller
+    if (
+      !accountChanged &&
+      currentClaimStatus?.lastUpdated &&
+      currentClaimStatus?.lastUpdated > new Date().getTime() - 300000
+    ) {
+      return
+    }
+    // Reset lastUpdated on account change
+    setCurrentClaimStatus((prev) => ({
+      ...prev,
+      claimed: null,
+      mintableVesting: null,
+      claimedInitial: null,
       loading: true,
-      claimed: 0,
-      mintableVesting: 0,
-      claimedInitial: 0,
-      error: null
-    })
+      error: null,
+      lastUpdated: accountChanged ? null : prev.lastUpdated
+    }))
     ;(async () => {
       const toNum = (x: string | number) => parseInt(x.toString(), 10) / 1e18
-      const [mintableVesting, claimed] = await Promise.all([
-        vestingEntry
+      // Checks if the vestingEntry.addr and claimableRewardsData.addr
+      // are equal to the current account address.
+      // That's how we prevent making RPC calls for the previous selected account
+      // and receiving wrong data.
+      const mintableVesting =
+        vestingEntry && vestingEntry.addr.toLowerCase() === accountId.toLowerCase()
           ? await supplyController
               .mintableVesting(vestingEntry.addr, vestingEntry.end, vestingEntry.rate)
               .then(toNum)
-          : null,
-        initialClaimableEntry
-          ? await supplyController.claimed(initialClaimableEntry.addr).then(toNum)
           : null
-      ])
 
-      const claimedInitial = initialClaimableEntry
-        ? (initialClaimableEntry.fromBalanceClaimable || 0) +
-          (initialClaimableEntry.fromADXClaimable || 0) -
-          toNum(initialClaimableEntry.totalClaimable || 0)
-        : 0
+      const claimed = claimableRewardsData
+        ? await supplyController.claimed(claimableRewardsData.addr).then(toNum)
+        : null
+
+      // fromBalanceClaimable - all time claimable from balance
+      // fromADXClaimable - all time claimable from ADX Staking
+      // totalClaimable - all time claimable tolkens + already claimed from prev versions of supplyController contract
+      const claimedInitial = claimableRewardsData
+        ? (claimableRewardsData.fromBalanceClaimable || 0) +
+          (claimableRewardsData.fromADXClaimable || 0) -
+          toNum(claimableRewardsData.totalClaimable || 0)
+        : null
 
       return { mintableVesting, claimed, claimedInitial }
     })()
-      .then((status) => setCurrentClaimStatus({ error: null, loading: false, ...status }))
+      .then((status) =>
+        setCurrentClaimStatus({
+          error: null,
+          loading: false,
+          lastUpdated: Date.now(),
+          ...status
+        })
+      )
       .catch((e) => {
         console.error('getting claim status', e)
 
-        setCurrentClaimStatus({
-          error: e.message || e,
+        setCurrentClaimStatus((prev) => ({
+          ...prev,
           loading: false,
-          claimed: 0,
-          mintableVesting: 0,
-          claimedInitial: 0
-        })
+          error: e?.message || e || 'Failed getting claim status.'
+        }))
       })
-  }, [supplyController, vestingEntry, initialClaimableEntry, cacheBreak])
+  }, [
+    supplyController,
+    vestingEntry,
+    claimableRewardsData,
+    cacheBreak,
+    rewardsLastUpdated,
+    accountId,
+    prevAccountId,
+    currentClaimStatus?.lastUpdated
+  ])
 
-  const initialClaimable = initialClaimableEntry ? +initialClaimableEntry.totalClaimable / 1e18 : 0
-  const claimableNow =
-    initialClaimable - (currentClaimStatus.claimed || 0) < 0
-      ? 0
-      : initialClaimable - (currentClaimStatus.claimed || 0)
+  const initialClaimable = claimableRewardsData ? +claimableRewardsData.totalClaimable / 1e18 : 0
+  const claimableNowRounded = +(initialClaimable - (currentClaimStatus.claimed || 0)).toFixed(6)
+  const claimableNow = claimableNowRounded < 0 ? 0 : claimableNowRounded
 
   const claimableNowUsd = (walletUsdPrice * claimableNow).toFixed(2)
-  const mintableVestingUsd = (walletUsdPrice * currentClaimStatus.mintableVesting).toFixed(2)
+  const mintableVestingUsd = (walletUsdPrice * (currentClaimStatus.mintableVesting || 0)).toFixed(2)
 
   const pendingTokensTotal = (
     totalLifetimeRewards -
-    currentClaimStatus.claimed -
-    currentClaimStatus.claimedInitial +
-    currentClaimStatus.mintableVesting
+    (currentClaimStatus.claimed || 0) -
+    (currentClaimStatus.claimedInitial || 0) +
+    (currentClaimStatus.mintableVesting || 0)
   ).toFixed(3)
 
   const shouldDisplayMintableVesting = !!currentClaimStatus.mintableVesting && !!vestingEntry
@@ -120,26 +187,30 @@ const useClaimableWalletToken = ({
     (withoutBurn = true) => {
       addRequest({
         id: `claim_${Date.now()}`,
+        dateAdded: new Date().valueOf(),
         chainId: network?.chainId,
         type: 'eth_sendTransaction',
         account: accountId,
         txn: {
           to: supplyControllerAddress,
           value: '0x0',
-          data: supplyControllerInterface.encodeFunctionData('claim', [
-            initialClaimableEntry?.totalClaimable,
-            initialClaimableEntry?.proof,
+          data: supplyControllerInterface.encodeFunctionData('claimWithRootUpdate', [
+            claimableRewardsData?.totalClaimable,
+            claimableRewardsData?.proof,
             withoutBurn ? 0 : 5000, // penalty bps, at the moment we run with 0; it's a safety feature to hardcode it
-            '0x47cd7e91c3cbaaf266369fe8518345fc4fc12935' // staking pool addr
+            WALLET_STAKING_ADDR, // staking pool addr
+            claimableRewardsData?.root,
+            claimableRewardsData?.signedRoot
           ])
         }
       })
     },
-    [initialClaimableEntry, network?.chainId, accountId, addRequest]
+    [claimableRewardsData, network?.chainId, accountId, addRequest]
   )
   const claimVesting = useCallback(() => {
     addRequest({
       id: `claimVesting_${Date.now()}`,
+      dateAdded: new Date().valueOf(),
       chainId: network?.chainId,
       account: accountId,
       type: 'eth_sendTransaction',

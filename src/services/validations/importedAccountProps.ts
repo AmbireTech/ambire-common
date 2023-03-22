@@ -1,8 +1,8 @@
 // TODO: add types
 
-import { Account } from 'ambire-common/src/hooks/useAccounts'
 import { getAddress, hexDataLength } from 'ethers/lib/utils'
 
+import { Account } from '../../hooks/useAccounts'
 import { isEmail } from './validate'
 
 const NUMBER_STRING_REGEX = /^([0-9]+\.?[0-9]*)$/
@@ -53,13 +53,6 @@ const validateImportedAccountProps = (acc: Account) => {
     }
   }
 
-  if (!(acc.email && isEmail(acc.email))) {
-    return {
-      success: false,
-      message: 'Failed to import JSON file: invalid email'
-    }
-  }
-
   if (!(acc.signer && isValidAddress(acc.signer.address || acc.signer.quickAccManager))) {
     return {
       success: false,
@@ -68,6 +61,12 @@ const validateImportedAccountProps = (acc: Account) => {
   }
 
   if (acc.signer.quickAccManager) {
+    if (typeof acc.email !== 'string' || !isEmail(acc.email)) {
+      return {
+        success: false,
+        message: 'Failed to import JSON file: invalid email'
+      }
+    }
     if (!(acc.signer.timelock && isValidTimeLock(acc.signer.timelock))) {
       return {
         success: false,

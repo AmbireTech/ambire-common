@@ -32,6 +32,8 @@ export const multiplierBadges: MultiplierBadge[] = [
     multiplier: 1.25,
     link: 'https://blog.ambire.com/win-a-cryptotesters-nft-with-ambire-and-get-into-one-of-the-hottest-web3-communities-c9d7185760b1'
   },
+  /*
+  because the promotion is ended we will hide this and when we start a promotion again will will show it.
   {
     id: 'gasTankNft',
     name: 'GasTankNFT',
@@ -39,7 +41,7 @@ export const multiplierBadges: MultiplierBadge[] = [
     color: '#b18045',
     multiplier: 1.25,
     link: 'https://blog.ambire.com/ambire-gas-tank-launches-with-exclusive-nft-drop-2a4eb29f2f07'
-  },
+  },*/
   {
     id: 'powerUserMultiplier',
     name: 'Power User',
@@ -47,7 +49,7 @@ export const multiplierBadges: MultiplierBadge[] = [
     color: '#658f3f',
     multiplier: 1.25,
     link: 'https://blog.ambire.com/new-wallet-rewards-multiplier-live-in-ambire-power-users-now-get-special-perks-e47bb1000aeb'
-}
+  }
 ]
 
 export const MULTIPLIERS_READ_MORE_URL =
