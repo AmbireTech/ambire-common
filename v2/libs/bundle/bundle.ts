@@ -4,8 +4,7 @@ interface Network {
 	name: string;
 }
 
-// @TODO better name instead of Txn
-interface Txn {
+interface Call {
 	to: string;
 	// @TODO: hex?
 	value: string;
@@ -27,12 +26,14 @@ interface GasFeePayment {
 }
 
 // @TODO class
+// Equivalent to ERC-4337 UserOp, but more 'general' than it since a Bundle can be transformed to
+// a UserOp, or to a direct EOA transaction, or relayed through the Ambire relayer
 export interface Bundle {
 	accountAddr: string;
 	network: Network;
 	signingKeyAddr: string;
 	nonce: number;
-	txns: [Txn];
+	calls: [Call];
 	gasLimit: number | null;
 	signature: string | null;
 	minFeeInUSDPerGas: number;
