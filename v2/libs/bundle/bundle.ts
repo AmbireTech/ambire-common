@@ -1,7 +1,7 @@
-// @TODO: separate Network object; or use the ethers type (which is practically the same)
+// ethers does not export their Network type it seems
 interface Network {
 	chainId: number;
-	id: string;
+	name: string;
 }
 
 // @TODO better name instead of Txn
@@ -10,6 +10,20 @@ interface Txn {
 	// @TODO: hex?
 	value: string;
 	data: string;
+}
+
+enum GasFeePaymentType {
+	// when a paymaster is used, we put it in the `paidBy` instead of the accountAddr
+	ERC4337 = 'erc4337',
+	AmbireRelayer = 'ambireRelayer',
+	AmbireGasTank = 'ambireGasTank',
+	EOA = 'eoa'
+}
+interface GasFeePayment {
+	feePaymentType: GasFeePaymentType;
+	paidBy: string;
+	inToken: string;
+	amount: number;
 }
 
 // @TODO class
@@ -23,12 +37,6 @@ export interface Bundle {
 	signature: string | null;
 	minFeeInUSDPerGas: number;
 	// @TODO separate interface
-	gasFeePayment: {
-		// @TODO enum 
-		feePaymentType: string; // 4337, 4337Paymaster, ambireRelayer, ambireGasTank, eoa
-		paidBy: string;
-		inToken: string;
-		amount: number;
-	}
+	gasFeePayment: GasFeePayment | null
 	// @TODO: meta?
 }
