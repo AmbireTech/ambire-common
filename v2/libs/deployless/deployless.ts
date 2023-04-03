@@ -1,5 +1,5 @@
 import { Interface, concat, AbiCoder } from 'ethers/lib/utils'
-import { JsonRpcProvider } from '@ethersproject/providers'
+import { JsonRpcProvider, BaseProvider } from '@ethersproject/providers'
 
 // this is a magic contract that is constructed like `constructor(bytes memory contractCode, bytes memory data)` and returns the result from the call
 // compiled from relayer:a7ea373559d8c419577ac05527bd37fbee8856ae/src/velcro-v3/contracts/Deployless.sol with solc 0.8.17
@@ -16,9 +16,9 @@ enum DeploylessMode { Detect, ProxyContract, StateOverride }
 export class Deployless {
 	private iface: Interface;
 	private contractCode: string;
-	private provider: JsonRpcProvider;
+	private provider: JsonRpcProvider | BaseProvider;
 	// We need to detect whether the provider supports state override
-	private detectionPromise: Promise<void>;
+	private detectionPromise?: Promise<void>;
 	private stateOverrideSupported?: boolean;
 	private contractCodeDeployed?: string;
 
@@ -26,17 +26,19 @@ export class Deployless {
 		return !this.stateOverrideSupported
 	}
 
-	constructor (provider: JsonRpcProvider, abi: any, code: string) {
+	constructor (provider: JsonRpcProvider | BaseProvider, abi: any, code: string) {
 		this.contractCode = code
 		this.provider = provider
 		this.iface = new Interface(abi)
-		this.detectionPromise = this.detectStateOverride()
 	}
 
 	// this will detect whether the provider supports state override and also retrieve the actual code of the contract we are using
 	private async detectStateOverride (): Promise<void> {
+		if (!(this.provider instanceof JsonRpcProvider)) {
+			throw new Error('state override mode (or auto-detect) not available unless you use JsonRpcProvider')
+		}
 		const codeAtIface = new Interface(codeAtAbi)
-		const code = await this.provider.send('eth_call', [
+		const code = await (this.provider as JsonRpcProvider).send('eth_call', [
 			{ to: codeAtAddr, data: codeAtIface.encodeFunctionData('codeAt', [codeAtAddr]) },
 			'latest',
 			{ [codeAtAddr]: { code: codeAtCode } }
@@ -45,6 +47,9 @@ export class Deployless {
 	}
 
 	async call (methodName: string, args: any[], opts: { mode: DeploylessMode, tag?: string } = { mode: DeploylessMode.Detect }): Promise<any> {
+		if (!this.detectionPromise && opts.mode !== DeploylessMode.ProxyContract) {
+			this.detectionPromise = this.detectStateOverride()
+		}
 		await this.detectionPromise
 		const callData = this.iface.encodeFunctionData(methodName, args)
 		const returnDataRaw = await this.provider.call({

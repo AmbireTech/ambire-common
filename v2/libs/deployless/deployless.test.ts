@@ -1,6 +1,6 @@
 import { Deployless } from './deployless'
 import { describe, expect, test } from '@jest/globals'
-import { JsonRpcProvider } from '@ethersproject/providers'
+import { JsonRpcProvider, getDefaultProvider } from '@ethersproject/providers'
 
 const helloWorld = {
 	abi: [{"inputs":[],"name":"helloWorld","outputs":[{"internalType":"string","name":"","type":"string"}],"stateMutability":"view","type":"function"}],
@@ -17,5 +17,14 @@ describe('Deployless', () => {
 	test('invoke a method', async () => {
 		const result = await deployless.call('helloWorld', [])
 		expect(result).toBe('hello world')
+	})
+
+	test('detection should not be available with BaseProvider', async () => {
+		const provider = getDefaultProvider('homestead')
+		expect.assertions(1)
+		const deployless = new Deployless(provider, helloWorld.abi, helloWorld.bin)
+		try { await deployless.call('helloWorld', []) } catch (e) {
+			expect(e.message).toBe('state override mode (or auto-detect) not available unless you use JsonRpcProvider')
+		}
 	})
 })
