@@ -19,6 +19,15 @@ describe('Deployless', () => {
 	test('invoke a method: proxy mode', async () => {
 		const result = await deployless.call('helloWorld', [], { mode: DeploylessMode.ProxyContract })
 		expect(result).toBe('hello world')
+		// We still haven't detected support for state override
+		expect(deployless.isLimitedAt24kbData).toBe(true)
+	})
+
+	test('invoke a method: detect mode', async () => {
+		const result = await deployless.call('helloWorld', [])
+		expect(result).toBe('hello world')
+		// We detected support for state override
+		expect(deployless.isLimitedAt24kbData).toBe(false)
 	})
 
 	test('detection should not be available with BaseProvider', async () => {
@@ -38,4 +47,7 @@ describe('Deployless', () => {
 			expect(e.message).toBe('contract deploy failed')
 		}
 	})
+
+	// @TODO: custom blockTag
+	// @TODO deploy error in state override mode
 })
