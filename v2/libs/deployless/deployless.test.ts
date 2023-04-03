@@ -1,5 +1,6 @@
 import { Deployless } from './deployless'
 import { describe, expect, test } from '@jest/globals'
+import { getDefaultProvider } from 'ethers'
 
 const helloWorld = {
 	abi: [{"inputs":[],"name":"helloWorld","outputs":[{"internalType":"string","name":"","type":"string"}],"stateMutability":"view","type":"function"}],
@@ -8,11 +9,13 @@ const helloWorld = {
 describe('Deployless', () => {
 	let deployless: Deployless
 	test('construct an object', () => {
-		deployless = new Deployless(helloWorld.abi, helloWorld.bin)
+		const provider = getDefaultProvider('homestead')
+		deployless = new Deployless(provider, helloWorld.abi, helloWorld.bin)
 		expect(deployless.isLimitedAt24kbData).toBe(true)
 	})
 
-	test('invoke a method', () => {
-		deployless.helloWorld(1, 2)
+	test('invoke a method', async () => {
+		const result = await deployless.call('helloWorld', [])
+		expect(result).toBe('hello world')
 	})
 })
