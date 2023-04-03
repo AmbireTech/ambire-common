@@ -44,6 +44,7 @@ export class Deployless {
 			{ to: arbitraryAddr, data: codeOfIface.encodeFunctionData('codeOf', [this.contractCode]) },
 			'latest',
 			{ [arbitraryAddr]: { code: codeOfContractCode } }
+		// @TODO more elegant mapping
 		]).catch(e => (e.error && e.error.data) || Promise.reject(e))
 		// any response bigger than 0x is sufficient to know that state override worked
 		this.stateOverrideSupported = code.length > 2
@@ -58,6 +59,7 @@ export class Deployless {
 
 		// First, start by detecting which modes are available, unless we're forcing the proxy mode
 		// if we use state override, we do need detection to run still so it can populate contractCodeWhenDeployed
+		// @TODO edge case: if we pass in contractCodeWhenDeployed, we should be able to skip detection altogether if mode is set too
 		if (!this.detectionPromise && !forceProxy) {
 			this.detectionPromise = this.detectStateOverride()
 		}
