@@ -41,10 +41,20 @@ describe('Deployless', () => {
 
 	test('deploy error: proxy mode', async () => {
 		const provider = new JsonRpcProvider('https://mainnet.infura.io/v3/84842078b09946638c03157f83405213')
-		deployless = new Deployless(provider, helloWorld.abi, deployErrBin)
+		const deployless = new Deployless(provider, helloWorld.abi, deployErrBin)
 		expect.assertions(1)
 		try { await deployless.call('helloWorld', [], { mode: DeploylessMode.ProxyContract }) } catch (e) {
 			expect(e.message).toBe('contract deploy failed')
+		}
+	})
+
+	test('deploy error: state override mode', async () => {
+		const provider = new JsonRpcProvider('https://mainnet.infura.io/v3/84842078b09946638c03157f83405213')
+		const deployless = new Deployless(provider, helloWorld.abi, deployErrBin)
+		expect.assertions(2)
+		try { await deployless.call('helloWorld', []) } catch (e) {
+			expect(e.message).toBe('contract deploy failed')
+			expect(deployless.isLimitedAt24kbData).toBe(false)
 		}
 	})
 

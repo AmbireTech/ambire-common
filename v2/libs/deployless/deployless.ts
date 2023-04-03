@@ -44,9 +44,11 @@ export class Deployless {
 			{ to: arbitraryAddr, data: codeOfIface.encodeFunctionData('codeOf', [this.contractCode]) },
 			'latest',
 			{ [arbitraryAddr]: { code: codeOfContractCode } }
-		])
-		if (code === deployErrorSig) throw new Error('contract deploy failed')
+		]).catch(e => (e.error && e.error.data) || Promise.reject(e))
+		// any response bigger than 0x is sufficient to know that state override worked
 		this.stateOverrideSupported = code.length > 2
+		// but this particular resposne means that the contract deploy failed
+		if (code === deployErrorSig) throw new Error('contract deploy failed')
 		this.contractCodeWhenDeployed = code
 	}
 
@@ -67,12 +69,13 @@ export class Deployless {
 		}
 
 		const callData = this.iface.encodeFunctionData(methodName, args)
+		// @TODO preemtively test the 24kb limit in proxy mode
 		const callPromise = (this.stateOverrideSupported && !forceProxy)
 			? (this.provider as JsonRpcProvider).send('eth_call', [
 				{ to: arbitraryAddr, data: callData },
 				opts.blockTag,
 				{ [arbitraryAddr]: { code: this.contractCodeWhenDeployed } }
-			])
+			]) // @TODO map errors here
 			: this.provider.call({
 				data: concat([
 					deploylessProxyBin,
