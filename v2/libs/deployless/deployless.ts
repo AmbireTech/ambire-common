@@ -10,7 +10,7 @@ const deployErrorSig = '0xb4f54111'
 const codeOfContractCode = '0x608060405234801561001057600080fd5b506004361061002b5760003560e01c80631e05758f14610030575b600080fd5b61004a60048036038101906100459190610248565b61004c565b005b60008151602083016000f0905060008173ffffffffffffffffffffffffffffffffffffffff163b036100aa576040517fb4f5411100000000000000000000000000000000000000000000000000000000815260040160405180910390fd5b60008173ffffffffffffffffffffffffffffffffffffffff16803b806020016040519081016040528181526000908060200190933c90506000815190508060208301f35b6000604051905090565b600080fd5b600080fd5b600080fd5b600080fd5b6000601f19601f8301169050919050565b7f4e487b7100000000000000000000000000000000000000000000000000000000600052604160045260246000fd5b6101558261010c565b810181811067ffffffffffffffff821117156101745761017361011d565b5b80604052505050565b60006101876100ee565b9050610193828261014c565b919050565b600067ffffffffffffffff8211156101b3576101b261011d565b5b6101bc8261010c565b9050602081019050919050565b82818337600083830152505050565b60006101eb6101e684610198565b61017d565b90508281526020810184848401111561020757610206610107565b5b6102128482856101c9565b509392505050565b600082601f83011261022f5761022e610102565b5b813561023f8482602086016101d8565b91505092915050565b60006020828403121561025e5761025d6100f8565b5b600082013567ffffffffffffffff81111561027c5761027b6100fd565b5b6102888482850161021a565b9150509291505056fea2646970667358221220de4923c71abcedf68454c251a9becff7e8a4f8db4adee6fdb16d583f509c63bb64736f6c63430008120033'
 const codeOfContractAbi = ['function codeOf(bytes deployCode) external view']
 // any made up addr would work
-const stateOverrideContractAddr = '0x0000000000000000000000000000000000696969'
+const arbitraryAddr = '0x0000000000000000000000000000000000696969'
 const abiCoder = new AbiCoder()
 
 export enum DeploylessMode { Detect, ProxyContract, StateOverride }
@@ -41,16 +41,17 @@ export class Deployless {
 		}
 		const codeOfIface = new Interface(codeOfContractAbi)
 		const code = await (this.provider as JsonRpcProvider).send('eth_call', [
-			{ to: stateOverrideContractAddr, data: codeOfIface.encodeFunctionData('codeOf', [this.contractCode]) },
+			{ to: arbitraryAddr, data: codeOfIface.encodeFunctionData('codeOf', [this.contractCode]) },
 			'latest',
-			{ [stateOverrideContractAddr]: { code: codeOfContractCode } }
+			{ [arbitraryAddr]: { code: codeOfContractCode } }
 		])
 		if (code === deployErrorSig) throw new Error('contract deploy failed')
 		this.stateOverrideSupported = code.length > 2
 		this.contractCodeWhenDeployed = code
 	}
 
-	async call (methodName: string, args: any[], opts: { mode: DeploylessMode, tag?: string } = { mode: DeploylessMode.Detect }): Promise<any> {
+	// @TODO: options need to be de-uglified
+	async call (methodName: string, args: any[], opts: { mode: DeploylessMode, blockTag?: string | number } = { mode: DeploylessMode.Detect, blockTag: 'latest' }): Promise<any> {
 		const forceProxy = opts.mode === DeploylessMode.ProxyContract
 
 		// First, start by detecting which modes are available, unless we're forcing the proxy mode
@@ -66,12 +67,19 @@ export class Deployless {
 		}
 
 		const callData = this.iface.encodeFunctionData(methodName, args)
-		const returnDataRaw = await this.provider.call({
-			data: concat([
-				deploylessProxyBin,
-				abiCoder.encode(['bytes', 'bytes'], [this.contractCode, callData])
+		const callPromise = (this.stateOverrideSupported && !forceProxy)
+			? (this.provider as JsonRpcProvider).send('eth_call', [
+				{ to: arbitraryAddr, data: callData },
+				opts.blockTag,
+				{ [arbitraryAddr]: { code: this.contractCodeWhenDeployed } }
 			])
-		})
+			: this.provider.call({
+				data: concat([
+					deploylessProxyBin,
+					abiCoder.encode(['bytes', 'bytes'], [this.contractCode, callData])
+				])
+			}, opts.blockTag)
+		const returnDataRaw = await callPromise
 		if (returnDataRaw === deployErrorSig) throw new Error('contract deploy failed')
 		return this.iface.decodeFunctionResult(methodName, returnDataRaw)[0]
 	}
