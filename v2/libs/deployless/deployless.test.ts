@@ -1,6 +1,6 @@
 import { Deployless } from './deployless'
 import { describe, expect, test } from '@jest/globals'
-import { getDefaultProvider } from 'ethers'
+import { JsonRpcProvider } from '@ethersproject/providers'
 
 const helloWorld = {
 	abi: [{"inputs":[],"name":"helloWorld","outputs":[{"internalType":"string","name":"","type":"string"}],"stateMutability":"view","type":"function"}],
@@ -9,7 +9,7 @@ const helloWorld = {
 describe('Deployless', () => {
 	let deployless: Deployless
 	test('construct an object', () => {
-		const provider = getDefaultProvider('homestead')
+		const provider = new JsonRpcProvider('https://mainnet.infura.io/v3/84842078b09946638c03157f83405213')
 		deployless = new Deployless(provider, helloWorld.abi, helloWorld.bin)
 		expect(deployless.isLimitedAt24kbData).toBe(true)
 	})
