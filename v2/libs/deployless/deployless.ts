@@ -64,6 +64,8 @@ export class Deployless {
 
 	// @TODO: options need to be de-uglified
 	async call (methodName: string, args: any[], opts: { mode: DeploylessMode, blockTag?: string | number } = { mode: DeploylessMode.Detect, blockTag: 'latest' }): Promise<any> {
+		// @TODO deuglify opts
+		opts.blockTag = opts.blockTag || 'latest'
 		const forceProxy = opts.mode === DeploylessMode.ProxyContract
 
 		// First, start by detecting which modes are available, unless we're forcing the proxy mode
