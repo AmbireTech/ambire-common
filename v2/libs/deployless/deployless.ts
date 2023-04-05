@@ -1,7 +1,7 @@
 import { Interface, concat, AbiCoder } from 'ethers/lib/utils'
 import { JsonRpcProvider, BaseProvider } from '@ethersproject/providers'
 
-// this is a magic contract that is constructed like `constructor(bytes memory contractCode, bytes memory data)` and returns the result from the call
+// this is a magic contract that is constructed like `constructor(bytes memory contractBytecode, bytes memory data)` and returns the result from the call
 // compiled from relayer:a7ea373559d8c419577ac05527bd37fbee8856ae/src/velcro-v3/contracts/Deployless.sol with solc 0.8.17
 const deploylessProxyBin = '0x608060405234801561001057600080fd5b506040516103563803806103568339818101604052810190610032919061027f565b60008251602084016000f0905060008173ffffffffffffffffffffffffffffffffffffffff163b03610090576040517fb4f5411100000000000000000000000000000000000000000000000000000000815260040160405180910390fd5b60008173ffffffffffffffffffffffffffffffffffffffff16836040516100b7919061033e565b6000604051808303816000865af19150503d80600081146100f4576040519150601f19603f3d011682016040523d82523d6000602084013e6100f9565b606091505b509150506000815190508060208301f35b6000604051905090565b600080fd5b600080fd5b600080fd5b600080fd5b6000601f19601f8301169050919050565b7f4e487b7100000000000000000000000000000000000000000000000000000000600052604160045260246000fd5b61017182610128565b810181811067ffffffffffffffff821117156101905761018f610139565b5b80604052505050565b60006101a361010a565b90506101af8282610168565b919050565b600067ffffffffffffffff8211156101cf576101ce610139565b5b6101d882610128565b9050602081019050919050565b60005b838110156102035780820151818401526020810190506101e8565b60008484015250505050565b600061022261021d846101b4565b610199565b90508281526020810184848401111561023e5761023d610123565b5b6102498482856101e5565b509392505050565b600082601f8301126102665761026561011e565b5b815161027684826020860161020f565b91505092915050565b6000806040838503121561029657610295610114565b5b600083015167ffffffffffffffff8111156102b4576102b3610119565b5b6102c085828601610251565b925050602083015167ffffffffffffffff8111156102e1576102e0610119565b5b6102ed85828601610251565b9150509250929050565b600081519050919050565b600081905092915050565b6000610318826102f7565b6103228185610302565b93506103328185602086016101e5565b80840191505092915050565b600061034a828461030d565b91508190509291505056fe'
 const deployErrorSig = '0xb4f54111'
@@ -17,24 +17,24 @@ export enum DeploylessMode { Detect, ProxyContract, StateOverride }
 
 export class Deployless {
 	private iface: Interface;
-	private contractCode: string;
+	private contractBytecode: string;
 	private provider: JsonRpcProvider | BaseProvider;
 	// We need to detect whether the provider supports state override
 	private detectionPromise?: Promise<void>;
 	private stateOverrideSupported?: boolean;
-	private contractCodeWhenDeployed?: string;
+	private contractBytecodeWhenDeployed?: string;
 
 	public get isLimitedAt24kbData() {
 		return !this.stateOverrideSupported
 	}
 
 	constructor (provider: JsonRpcProvider | BaseProvider, abi: any, code: string, codeWhenDeployed?: string) {
-		this.contractCode = code
+		this.contractBytecode = code
 		this.provider = provider
 		this.iface = new Interface(abi)
 		if (codeWhenDeployed !== undefined) {
 			this.stateOverrideSupported = true
-			this.contractCodeWhenDeployed = codeWhenDeployed
+			this.contractBytecodeWhenDeployed = codeWhenDeployed
 		}
 	}
 
@@ -45,7 +45,7 @@ export class Deployless {
 		}
 		const codeOfIface = new Interface(codeOfContractAbi)
 		const code = await (this.provider as JsonRpcProvider).send('eth_call', [
-			{ to: arbitraryAddr, data: codeOfIface.encodeFunctionData('codeOf', [this.contractCode]) },
+			{ to: arbitraryAddr, data: codeOfIface.encodeFunctionData('codeOf', [this.contractBytecode]) },
 			'latest',
 			{ [arbitraryAddr]: { code: codeOfContractCode } }
 		// @TODO more elegant mapping
@@ -54,7 +54,7 @@ export class Deployless {
 		this.stateOverrideSupported = code.length > 2
 		// but this particular resposne means that the contract deploy failed
 		if (code === deployErrorSig) throw new Error('contract deploy failed')
-		this.contractCodeWhenDeployed = code
+		this.contractBytecodeWhenDeployed = code
 	}
 
 	// @TODO: options need to be de-uglified
@@ -62,8 +62,8 @@ export class Deployless {
 		const forceProxy = opts.mode === DeploylessMode.ProxyContract
 
 		// First, start by detecting which modes are available, unless we're forcing the proxy mode
-		// if we use state override, we do need detection to run still so it can populate contractCodeWhenDeployed
-		if (!this.detectionPromise && !forceProxy && this.contractCodeWhenDeployed === undefined) {
+		// if we use state override, we do need detection to run still so it can populate contractBytecodeWhenDeployed
+		if (!this.detectionPromise && !forceProxy && this.contractBytecodeWhenDeployed === undefined) {
 			this.detectionPromise = this.detectStateOverride()
 		}
 		await this.detectionPromise
@@ -79,12 +79,12 @@ export class Deployless {
 			? (this.provider as JsonRpcProvider).send('eth_call', [
 				{ to: arbitraryAddr, data: callData },
 				opts.blockTag,
-				{ [arbitraryAddr]: { code: this.contractCodeWhenDeployed } }
+				{ [arbitraryAddr]: { code: this.contractBytecodeWhenDeployed } }
 			])
 			: this.provider.call({
 				data: concat([
 					deploylessProxyBin,
-					abiCoder.encode(['bytes', 'bytes'], [this.contractCode, callData])
+					abiCoder.encode(['bytes', 'bytes'], [this.contractBytecode, callData])
 				])
 			}, opts.blockTag)
 		const returnDataRaw = await callPromise
