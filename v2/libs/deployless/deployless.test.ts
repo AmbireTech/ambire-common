@@ -58,6 +58,7 @@ describe('Deployless', () => {
 		}
 	})
 
+	// @TODO: test state override mode when we are pre-passing the contract code when deployed
+	// @TODO: error/panic parsing
 	// @TODO: custom blockTag
-	// @TODO deploy error in state override mode
 })

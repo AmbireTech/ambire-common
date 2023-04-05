@@ -28,10 +28,14 @@ export class Deployless {
 		return !this.stateOverrideSupported
 	}
 
-	constructor (provider: JsonRpcProvider | BaseProvider, abi: any, code: string) {
+	constructor (provider: JsonRpcProvider | BaseProvider, abi: any, code: string, codeWhenDeployed?: string) {
 		this.contractCode = code
 		this.provider = provider
 		this.iface = new Interface(abi)
+		if (codeWhenDeployed !== undefined) {
+			this.stateOverrideSupported = true
+			this.contractCodeWhenDeployed = codeWhenDeployed
+		}
 	}
 
 	// this will detect whether the provider supports state override and also retrieve the actual code of the contract we are using
@@ -59,8 +63,7 @@ export class Deployless {
 
 		// First, start by detecting which modes are available, unless we're forcing the proxy mode
 		// if we use state override, we do need detection to run still so it can populate contractCodeWhenDeployed
-		// @TODO edge case: if we pass in contractCodeWhenDeployed, we should be able to skip detection altogether if mode is set too
-		if (!this.detectionPromise && !forceProxy) {
+		if (!this.detectionPromise && !forceProxy && this.contractCodeWhenDeployed === undefined) {
 			this.detectionPromise = this.detectStateOverride()
 		}
 		await this.detectionPromise
@@ -77,7 +80,7 @@ export class Deployless {
 				{ to: arbitraryAddr, data: callData },
 				opts.blockTag,
 				{ [arbitraryAddr]: { code: this.contractCodeWhenDeployed } }
-			]) // @TODO map errors here
+			])
 			: this.provider.call({
 				data: concat([
 					deploylessProxyBin,
