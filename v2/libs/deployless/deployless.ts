@@ -11,6 +11,11 @@ const codeOfContractAbi = ['function codeOf(bytes deployCode) external view']
 // The custom error that both these contracts will raise in case the deploy process of the contract goes wrong
 // error DeployFailed();
 const deployErrorSig = '0xb4f54111'
+// Signature of Error(string)
+const errorSig = '0x08c379a0'
+// Signature of Panic(uint256)
+const panicSig = '0x4e487b71'
+
 // any made up addr would work
 const arbitraryAddr = '0x0000000000000000000000000000000000696969'
 const abiCoder = new AbiCoder()
@@ -120,6 +125,23 @@ async function mapError(callPromise: Promise<string>): Promise<string> {
 
 function mapResponse(data: string): string {
 	if (data === deployErrorSig) throw new Error('contract deploy failed')
+	if (data.startsWith(panicSig)) {
+		// https://docs.soliditylang.org/en/v0.8.11/control-structures.html#panic-via-assert-and-error-via-require
+		const num = parseInt('0x' + data.slice(10))
+		if (num === 0x00) return 'generic compiler error'
+		if (num === 0x01) return 'solidity assert error'
+		if (num === 0x11) return 'arithmetic error'
+		if (num === 0x12) return 'division by zero'
+		return `panic error: 0x${num.toString(16)}`
+	}
+	try {
+		return data.startsWith(errorSig)
+			? abiCoder.decode(['string'], '0x' + data.slice(10))[0]
+			: data
+	} catch (e) {
+		if (e.code === 'BUFFER_OVERRUN' || e.code === 'NUMERIC_FAULT') return data.slice(10)
+		else throw e
+	}
 	return data
 }
 
