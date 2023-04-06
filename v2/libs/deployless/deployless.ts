@@ -93,11 +93,12 @@ export class Deployless {
 		// @TODO preemtively test the 24kb limit in proxy mode
 		const callPromise = (this.stateOverrideSupported && !forceProxy)
 			? (this.provider as JsonRpcProvider).send('eth_call', [
-				{ to: arbitraryAddr, data: callData },
+				{ to: arbitraryAddr, data: callData, from: opts.from },
 				opts.blockTag,
 				{ [arbitraryAddr]: { code: this.contractRuntimeCode } }
 			])
 			: this.provider.call({
+				from: opts.from,
 				data: concat([
 					deploylessProxyBin,
 					abiCoder.encode(['bytes', 'bytes'], [this.contractBytecode, callData])
