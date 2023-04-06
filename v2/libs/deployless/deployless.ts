@@ -16,6 +16,16 @@ const arbitraryAddr = '0x0000000000000000000000000000000000696969'
 const abiCoder = new AbiCoder()
 
 export enum DeploylessMode { Detect, ProxyContract, StateOverride }
+export type CallOptions = {
+	mode: DeploylessMode,
+	blockTag: string | number,
+	from?: string,
+}
+const defaultOptions: CallOptions = {
+	mode: DeploylessMode.Detect,
+	blockTag: 'latest',
+	from: undefined,
+}
 
 export class Deployless {
 	private iface: Interface;
@@ -63,9 +73,8 @@ export class Deployless {
 	}
 
 	// @TODO: options need to be de-uglified
-	async call (methodName: string, args: any[], opts: { mode: DeploylessMode, blockTag?: string | number } = { mode: DeploylessMode.Detect, blockTag: 'latest' }): Promise<any> {
-		// @TODO deuglify opts
-		opts.blockTag = opts.blockTag || 'latest'
+	async call (methodName: string, args: any[], opts: Partial<CallOptions> = {}): Promise<any> {
+		opts = { ...defaultOptions, ...opts }
 		const forceProxy = opts.mode === DeploylessMode.ProxyContract
 
 		// First, start by detecting which modes are available, unless we're forcing the proxy mode
