@@ -55,6 +55,7 @@ describe('Deployless', () => {
 		expect.assertions(2)
 		try { await deployless.call('helloWorld', []) } catch (e) {
 			expect(e.message).toBe('contract deploy failed')
+			// detection stil succeeded
 			expect(deployless.isLimitedAt24kbData).toBe(false)
 		}
 	})

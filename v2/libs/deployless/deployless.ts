@@ -60,17 +60,14 @@ export class Deployless {
 			throw new Error('state override mode (or auto-detect) not available unless you use JsonRpcProvider')
 		}
 		const codeOfIface = new Interface(codeOfContractAbi)
-		const code = await (this.provider as JsonRpcProvider).send('eth_call', [
+		const code = await mapError((this.provider as JsonRpcProvider).send('eth_call', [
 			{ to: arbitraryAddr, data: codeOfIface.encodeFunctionData('codeOf', [this.contractBytecode]) },
 			'latest',
 			{ [arbitraryAddr]: { code: codeOfContractCode } }
-		// @TODO more elegant mapping
-		]).catch(e => (e.error && e.error.data) || Promise.reject(e))
+		]))
 		// any response bigger than 0x is sufficient to know that state override worked
 		this.stateOverrideSupported = code.length > 2
-		// but this particular response means that the contract deploy failed
-		if (code === deployErrorSig) throw new Error('contract deploy failed')
-		this.contractRuntimeCode = code
+		this.contractRuntimeCode = mapResponse(code)
 	}
 
 	// @TODO: options need to be de-uglified
@@ -104,21 +101,26 @@ export class Deployless {
 					abiCoder.encode(['bytes', 'bytes'], [this.contractBytecode, callData])
 				]))
 			}, opts.blockTag)
-		const returnDataRaw = await mapError(callPromise)
+		const returnDataRaw = mapResponse(await mapError(callPromise))
 		return this.iface.decodeFunctionResult(methodName, returnDataRaw)[0]
 	}
 }
 
 async function mapError(callPromise: Promise<string>): Promise<string> {
 	try {
-		const data = await callPromise
-		if (data === deployErrorSig) throw new Error('contract deploy failed')
-		return data
+		return await callPromise
 	} catch (e) {
+		// e.error.data is usually our eth_call output in case of execution reverted
+		if (e.error && e.error.data) return e.error.data
 		// unwrap the wrapping that ethers adds to this type of error in case of provider.call
 		if (e.code === 'CALL_EXCEPTION' && e.error) throw e.error
 		throw e
 	}
+}
+
+function mapResponse(data: string): string {
+	if (data === deployErrorSig) throw new Error('contract deploy failed')
+	return data
 }
 
 function checkDataSize (data: Uint8Array): Uint8Array {
