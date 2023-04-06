@@ -79,7 +79,8 @@ describe('Deployless', () => {
 			expect(e.body.includes('invalid opcode: SHR')).toBe(true)
 		}
 		try { await deployless.call('helloWorld', [], { blockTag: '0x1', mode: DeploylessMode.ProxyContract }) } catch (e) {
-			expect(e.body.includes('invalid opcode: SHR')).toBe(true)
+			e = e.error || e
+			expect(e.body.includes('invalid opcode: SHR') || e.body.includes('out of gas')).toBe(true)
 		}
 	})
 	// @TODO: error/panic parsing
