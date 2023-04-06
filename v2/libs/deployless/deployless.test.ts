@@ -79,7 +79,7 @@ describe('Deployless', () => {
 			expect(e.body.includes('invalid opcode: SHR')).toBe(true)
 		}
 		try { await deployless.call('helloWorld', [], { blockTag: '0x1', mode: DeploylessMode.ProxyContract }) } catch (e) {
-			e = e.error || e
+			// ethers wraps the error if we use the BaseProvider; perhaps we should un-wrap it
 			expect(e.body.includes('invalid opcode: SHR') || e.body.includes('out of gas')).toBe(true)
 		}
 	})

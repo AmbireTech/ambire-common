@@ -68,7 +68,7 @@ export class Deployless {
 		]).catch(e => (e.error && e.error.data) || Promise.reject(e))
 		// any response bigger than 0x is sufficient to know that state override worked
 		this.stateOverrideSupported = code.length > 2
-		// but this particular resposne means that the contract deploy failed
+		// but this particular response means that the contract deploy failed
 		if (code === deployErrorSig) throw new Error('contract deploy failed')
 		this.contractRuntimeCode = code
 	}
@@ -104,9 +104,20 @@ export class Deployless {
 					abiCoder.encode(['bytes', 'bytes'], [this.contractBytecode, callData])
 				]))
 			}, opts.blockTag)
-		const returnDataRaw = await callPromise
-		if (returnDataRaw === deployErrorSig) throw new Error('contract deploy failed')
+		const returnDataRaw = await mapError(callPromise)
 		return this.iface.decodeFunctionResult(methodName, returnDataRaw)[0]
+	}
+}
+
+async function mapError(callPromise: Promise<string>): Promise<string> {
+	try {
+		const data = await callPromise
+		if (data === deployErrorSig) throw new Error('contract deploy failed')
+		return data
+	} catch (e) {
+		// unwrap the wrapping that ethers adds to this type of error in case of provider.call
+		if (e.code === 'CALL_EXCEPTION' && e.error) throw e.error
+		throw e
 	}
 }
 
