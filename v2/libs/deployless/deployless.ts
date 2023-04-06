@@ -101,11 +101,18 @@ export class Deployless {
 				from: opts.from,
 				data: concat([
 					deploylessProxyBin,
-					abiCoder.encode(['bytes', 'bytes'], [this.contractBytecode, callData])
+					checkDataSize(abiCoder.encode(['bytes', 'bytes'], [this.contractBytecode, callData]))
 				])
 			}, opts.blockTag)
 		const returnDataRaw = await callPromise
 		if (returnDataRaw === deployErrorSig) throw new Error('contract deploy failed')
 		return this.iface.decodeFunctionResult(methodName, returnDataRaw)[0]
 	}
+}
+
+function checkDataSize (data: string): string {
+	// multiply by 2 cause it's hex
+	// @TODO test this
+	if (data.length - 2 >= 2 * 24576) throw new Error('24kb call data size limit reached, use StateOverride mode')
+	return data
 }
