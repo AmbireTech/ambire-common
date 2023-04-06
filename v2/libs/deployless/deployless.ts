@@ -18,6 +18,7 @@ const abiCoder = new AbiCoder()
 export enum DeploylessMode { Detect, ProxyContract, StateOverride }
 export type CallOptions = {
 	mode: DeploylessMode,
+	// Note: some RPCs don't seem to like numbers, we can use hex strings for them
 	blockTag: string | number,
 	from?: string,
 }
@@ -90,7 +91,6 @@ export class Deployless {
 		}
 
 		const callData = this.iface.encodeFunctionData(methodName, args)
-		// @TODO preemtively test the 24kb limit in proxy mode
 		const callPromise = (this.stateOverrideSupported && !forceProxy)
 			? (this.provider as JsonRpcProvider).send('eth_call', [
 				{ to: arbitraryAddr, data: callData, from: opts.from },

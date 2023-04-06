@@ -69,6 +69,18 @@ describe('Deployless', () => {
 		const result2 = await deployless.call('helloWorld', [])
 		expect(result2).toBe('hello world')
 	})
+
+	test('custom block tag', async () => {
+		const provider = new JsonRpcProvider('https://mainnet.infura.io/v3/84842078b09946638c03157f83405213')
+		const deployless = new Deployless(provider, helloWorld.abi, helloWorld.bin, helloWorld.binRuntime)
+		expect.assertions(2)
+		try { await deployless.call('helloWorld', [], { blockTag: '0x1' }) } catch (e) {
+			// we are relying on the fact that we do not have the SHR opcode in block 0x1
+			expect(e.body.includes('invalid opcode: SHR')).toBe(true)
+		}
+		try { await deployless.call('helloWorld', [], { blockTag: '0x1', mode: DeploylessMode.ProxyContract }) } catch (e) {
+			expect(e.body.includes('invalid opcode: SHR')).toBe(true)
+		}
+	})
 	// @TODO: error/panic parsing
-	// @TODO: custom blockTag
 })
