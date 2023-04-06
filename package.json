@@ -4,7 +4,8 @@
   "description": "Common ground for the Ambire apps",
   "scripts": {
     "generate:contractInfo": "node scripts/generateContractInfo.js > src/constants/humanizerInfo.json",
-    "test": "jest"
+    "test": "jest",
+    "build": "tsc v2/libs/deployless/deployless.ts -t es5"
   },
   "peerDependencies": {
     "@ambire/signature-validator": "^1.0.3",
