@@ -1,6 +1,6 @@
 import aes from 'aes-js'
 import scrypt from 'scrypt-js'
-import { arrayify, hexlify, isHexString, keccak256, randomBytes, toUtf8Bytes, toUtf8String, UnicodeNormalizationForm, concat } from 'ethers/lib/utils'
+import { getBytes, toQuantity, isHexString, keccak256, randomBytes, toUtf8Bytes, toUtf8String, UnicodeNormalizationForm, concat } from 'ethers'
 import { Wallet } from 'ethers'
 
 const scryptDefaults = { N: 262144, r: 8, p: 1, dkLen: 64 }
@@ -104,15 +104,15 @@ export class Keystore {
 		const { scryptParams, aesEncrypted } = secretEntry
 		if (aesEncrypted.cipherType !== CIPHER) throw Error(`keystore: unsupported cipherType ${aesEncrypted.cipherType}`)
 		// @TODO: progressCallback?
-		const key = await scrypt.scrypt(getBytesForSecret(secret), arrayify(scryptParams.salt), scryptParams.N, scryptParams.r, scryptParams.p, scryptParams.dkLen, () => {})
-		const iv = arrayify(aesEncrypted.iv)
+		const key = await scrypt.scrypt(getBytesForSecret(secret), getBytes(scryptParams.salt), scryptParams.N, scryptParams.r, scryptParams.p, scryptParams.dkLen, () => {})
+		const iv = getBytes(aesEncrypted.iv)
 		const derivedKey = key.slice(0, 16)
 		const macPrefix = key.slice(16, 32)
 		const counter = new aes.Counter(iv)
 		const aesCtr = new aes.ModeOfOperation.ctr(derivedKey, counter)
 		const mac = keccak256(concat([ macPrefix, aesEncrypted.ciphertext ]))
 		if (mac !== aesEncrypted.mac) throw new Error('keystore: wrong secret')
-		const decrypted = aesCtr.decrypt(arrayify(aesEncrypted.ciphertext))
+		const decrypted = aesCtr.decrypt(getBytes(aesEncrypted.ciphertext))
 		this.#mainKey = { key: decrypted.slice(0, 16), iv: decrypted.slice(16, 32) }
 	}
 	async addSecret(secretId: string, secret: string, extraEntropy: string = '') {
@@ -124,7 +124,7 @@ export class Keystore {
 		// We are not not unlocked
 		if (!mainKey) {
 			if (!secrets.length) {
-				const key = arrayify(keccak256(concat([ randomBytes(32), toUtf8Bytes(extraEntropy) ]))).slice(0, 16)
+				const key = getBytes(keccak256(concat([ randomBytes(32), toUtf8Bytes(extraEntropy) ]))).slice(0, 16)
 				mainKey = {
 					key,
 					iv: randomBytes(16)
@@ -139,13 +139,13 @@ export class Keystore {
 		const macPrefix = key.slice(16, 32)
 		const counter = new aes.Counter(iv)
 		const aesCtr = new aes.ModeOfOperation.ctr(derivedKey, counter)
-		const ciphertext = aesCtr.encrypt(concat([ mainKey.key, mainKey.iv ]))
+		const ciphertext = aesCtr.encrypt(getBytes(concat([ mainKey.key, mainKey.iv ])))
 		const mac = keccak256(concat([ macPrefix, ciphertext ]))
 
 		secrets.push({
 			id: secretId,
-			scryptParams: { salt: hexlify(salt), ...scryptDefaults },
-			aesEncrypted: { cipherType: CIPHER, ciphertext: hexlify(ciphertext), iv: hexlify(iv), mac: hexlify(mac) }
+			scryptParams: { salt: toQuantity(salt), ...scryptDefaults },
+			aesEncrypted: { cipherType: CIPHER, ciphertext: toQuantity(ciphertext), iv: toQuantity(iv), mac: toQuantity(mac) }
 		})
 		// Persist the new secrets
 		await this.storage.set('keystoreSecrets', secrets)
@@ -190,7 +190,7 @@ export class Keystore {
 			type: 'internal',
 			label,
 			// @TODO: consider an MAC?
-			privKey: hexlify(aesCtr.encrypt(arrayify(privateKey))),
+			privKey: toQuantity(aesCtr.encrypt(getBytes(privateKey))),
 			meta: null
 		})
 		await this.storage.set('keystoreKeys', keys)
@@ -204,5 +204,5 @@ export class Keystore {
 }
 function getBytesForSecret(secret: string): ArrayLike<number> {
 	// see https://github.com/ethers-io/ethers.js/blob/v5/packages/json-wallets/src.ts/utils.ts#L19-L24
-	return toUtf8Bytes(secret, UnicodeNormalizationForm.NFKC)
+	return toUtf8Bytes(secret, 'NFKC')
 }

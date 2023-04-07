@@ -46,9 +46,9 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
         if (op[0] & 5) throw op[1]; return { value: op[0] ? op[1] : void 0, done: true };
     }
 };
-exports.__esModule = true;
+Object.defineProperty(exports, "__esModule", { value: true });
 exports.Deployless = exports.DeploylessMode = void 0;
-var utils_1 = require("ethers/lib/utils");
+var ethers_1 = require("ethers");
 var providers_1 = require("@ethersproject/providers");
 // this is a magic contract that is constructed like `constructor(bytes memory contractBytecode, bytes memory data)` and returns the result from the call
 // compiled from relayer:a7ea373559d8c419577ac05527bd37fbee8856ae/src/velcro-v3/contracts/Deployless.sol with solc 0.8.17
@@ -66,7 +66,7 @@ var errorSig = '0x08c379a0';
 var panicSig = '0x4e487b71';
 // any made up addr would work
 var arbitraryAddr = '0x0000000000000000000000000000000000696969';
-var abiCoder = new utils_1.AbiCoder();
+var abiCoder = new ethers_1.AbiCoder();
 var DeploylessMode;
 (function (DeploylessMode) {
     DeploylessMode[DeploylessMode["Detect"] = 0] = "Detect";
@@ -76,13 +76,13 @@ var DeploylessMode;
 var defaultOptions = {
     mode: DeploylessMode.Detect,
     blockTag: 'latest',
-    from: undefined
+    from: undefined,
 };
 var Deployless = /** @class */ (function () {
     function Deployless(provider, abi, code, codeWhenDeployed) {
         this.contractBytecode = code;
         this.provider = provider;
-        this.iface = new utils_1.Interface(abi);
+        this.iface = new ethers_1.Interface(abi);
         if (codeWhenDeployed !== undefined) {
             this.stateOverrideSupported = true;
             this.contractRuntimeCode = codeWhenDeployed;
@@ -106,7 +106,7 @@ var Deployless = /** @class */ (function () {
                         if (!(this.provider instanceof providers_1.JsonRpcProvider)) {
                             throw new Error('state override mode (or auto-detect) not available unless you use JsonRpcProvider');
                         }
-                        codeOfIface = new utils_1.Interface(codeOfContractAbi);
+                        codeOfIface = new ethers_1.Interface(codeOfContractAbi);
                         return [4 /*yield*/, mapError(this.provider.send('eth_call', [
                                 { to: arbitraryAddr, data: codeOfIface.encodeFunctionData('codeOf', [this.contractBytecode]) },
                                 'latest',
@@ -156,10 +156,10 @@ var Deployless = /** @class */ (function () {
                             ])
                             : this.provider.call({
                                 from: opts.from,
-                                data: checkDataSize(utils_1.concat([
+                                data: checkDataSize(ethers_1.getBytes(ethers_1.concat([
                                     deploylessProxyBin,
                                     abiCoder.encode(['bytes', 'bytes'], [this.contractBytecode, callData])
-                                ]))
+                                ])))
                             }, opts.blockTag);
                         _a = mapResponse;
                         return [4 /*yield*/, mapError(callPromise)];

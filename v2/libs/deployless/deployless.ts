@@ -1,4 +1,4 @@
-import { Interface, concat, AbiCoder } from 'ethers/lib/utils'
+import { Interface, concat, AbiCoder, getBytes } from 'ethers'
 import { JsonRpcProvider, BaseProvider } from '@ethersproject/providers'
 
 // this is a magic contract that is constructed like `constructor(bytes memory contractBytecode, bytes memory data)` and returns the result from the call
@@ -101,10 +101,10 @@ export class Deployless {
 			])
 			: this.provider.call({
 				from: opts.from,
-				data: checkDataSize(concat([
+				data: checkDataSize(getBytes(concat([
 					deploylessProxyBin,
 					abiCoder.encode(['bytes', 'bytes'], [this.contractBytecode, callData])
-				]))
+				])))
 			}, opts.blockTag)
 		const returnDataRaw = mapResponse(await mapError(callPromise))
 		return this.iface.decodeFunctionResult(methodName, returnDataRaw)[0]
