@@ -16,7 +16,7 @@ export class Portfolio {
 		// @TODO block tag
 		const n = Date.now()
 		const [ erc20s, erc721s ] = await Promise.all([
-			deployless.call('getBalances', [accountAddr, hints.erc20s]),
+			deployless.call('getBalances', [accountAddr, hints.erc20s.concat('0x0000000000000000000000000000000000000000')]),
 			deployless.call('getAllNFTs', [
 				accountAddr,
 				Object.keys(hints.erc721s),
