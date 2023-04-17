@@ -6,15 +6,13 @@ const ELASTICITY_MULTIPLIER = 2n
 
 // multipliers from the old: https://github.com/AmbireTech/relayer/blob/wallet-v2/src/utils/gasOracle.js#L64-L76
 // 2x, 2x*0.4, 2x*0.2 - all of them divided by 8 so 0.25, 0.1, 0.05 - those seem usable; with a slight tweak for the ape
+// @TODO we may not use the gasPriceMultiplierBps in this form
 const speeds = [
-	{ name: 'slow', baseFeeMultiplierBps: 0n },	
-	{ name: 'medium', baseFeeMultiplierBps: 500n },	
-	{ name: 'fast', baseFeeMultiplierBps: 1000n },	
-	{ name: 'ape', baseFeeMultiplierBps: 1500n },	
+	{ name: 'slow', baseFeeAddBps: 0n, gasPriceMultiplierBps: 9000n },	
+	{ name: 'medium', baseFeeAddBps: 500n, gasPriceMultiplierBps: 10000n },
+	{ name: 'fast', baseFeeAddBps: 1000n, gasPriceMultiplierBps: 11000n },	
+	{ name: 'ape', baseFeeAddBps: 1500n, gasPriceMultiplierBps: 11500n },
 ]
-
-
-
 // @TODO return type
 export async function getGasPriceRecommendations (provider: Provider, blockTag: string | number = -1): Promise<any> {
 	const lastBlock = await provider.getBlock(blockTag, true)
@@ -24,20 +22,19 @@ export async function getGasPriceRecommendations (provider: Provider, blockTag: 
 		// https://eips.ethereum.org/EIPS/eip-1559
 		const gasTarget = lastBlock.gasLimit / ELASTICITY_MULTIPLIER
 		const baseFeePerGas = lastBlock.baseFeePerGas
+		const getBaseFeeDelta = (delta: bigint) => baseFeePerGas * delta / gasTarget / BASE_FEE_MAX_CHANGE_DENOMINATOR
 		let expectedBaseFee = baseFeePerGas
 		if (lastBlock.gasUsed > gasTarget) {
-			const delta = lastBlock.gasUsed - gasTarget
-			const baseFeeDelta = lastBlock.baseFeePerGas * delta / gasTarget / BASE_FEE_MAX_CHANGE_DENOMINATOR
+			const baseFeeDelta = getBaseFeeDelta(lastBlock.gasUsed - gasTarget)
 			expectedBaseFee += baseFeeDelta === 0n ? 1n : baseFeeDelta
 		} else if (lastBlock.gasUsed < gasTarget) {
-			const delta = gasTarget - lastBlock.gasUsed
-			const baseFeeDelta = lastBlock.baseFeePerGas * delta / gasTarget / BASE_FEE_MAX_CHANGE_DENOMINATOR
+			const baseFeeDelta = getBaseFeeDelta(gasTarget - lastBlock.gasUsed)
 			expectedBaseFee -= baseFeeDelta
 		}
 
-		return speeds.map(({ name, baseFeeMultiplierBps }) => ({
+		return speeds.map(({ name, baseFeeAddBps }) => ({
 			name,
-			baseFeePerGas: expectedBaseFee + expectedBaseFee * baseFeeMultiplierBps / 10000n
+			baseFeePerGas: expectedBaseFee + expectedBaseFee * baseFeeAddBps / 10000n
 		}))
 	} else {
 		const txns = lastBlock.prefetchedTransactions.filter(x => x.gasPrice > 0)
