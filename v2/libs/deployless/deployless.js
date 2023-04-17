@@ -49,7 +49,6 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.Deployless = exports.DeploylessMode = void 0;
 var ethers_1 = require("ethers");
-var providers_1 = require("@ethersproject/providers");
 // this is a magic contract that is constructed like `constructor(bytes memory contractBytecode, bytes memory data)` and returns the result from the call
 // compiled from relayer:a7ea373559d8c419577ac05527bd37fbee8856ae/src/velcro-v3/contracts/Deployless.sol with solc 0.8.17
 var deploylessProxyBin = '0x608060405234801561001057600080fd5b506040516103563803806103568339818101604052810190610032919061027f565b60008251602084016000f0905060008173ffffffffffffffffffffffffffffffffffffffff163b03610090576040517fb4f5411100000000000000000000000000000000000000000000000000000000815260040160405180910390fd5b60008173ffffffffffffffffffffffffffffffffffffffff16836040516100b7919061033e565b6000604051808303816000865af19150503d80600081146100f4576040519150601f19603f3d011682016040523d82523d6000602084013e6100f9565b606091505b509150506000815190508060208301f35b6000604051905090565b600080fd5b600080fd5b600080fd5b600080fd5b6000601f19601f8301169050919050565b7f4e487b7100000000000000000000000000000000000000000000000000000000600052604160045260246000fd5b61017182610128565b810181811067ffffffffffffffff821117156101905761018f610139565b5b80604052505050565b60006101a361010a565b90506101af8282610168565b919050565b600067ffffffffffffffff8211156101cf576101ce610139565b5b6101d882610128565b9050602081019050919050565b60005b838110156102035780820151818401526020810190506101e8565b60008484015250505050565b600061022261021d846101b4565b610199565b90508281526020810184848401111561023e5761023d610123565b5b6102498482856101e5565b509392505050565b600082601f8301126102665761026561011e565b5b815161027684826020860161020f565b91505092915050565b6000806040838503121561029657610295610114565b5b600083015167ffffffffffffffff8111156102b4576102b3610119565b5b6102c085828601610251565b925050602083015167ffffffffffffffff8111156102e1576102e0610119565b5b6102ed85828601610251565b9150509250929050565b600081519050919050565b600081905092915050565b6000610318826102f7565b6103228185610302565b93506103328185602086016101e5565b80840191505092915050565b600061034a828461030d565b91508190509291505056fe';
@@ -103,7 +102,7 @@ var Deployless = /** @class */ (function () {
             return __generator(this, function (_b) {
                 switch (_b.label) {
                     case 0:
-                        if (!(this.provider instanceof providers_1.JsonRpcProvider)) {
+                        if (!(this.provider instanceof ethers_1.JsonRpcProvider)) {
                             throw new Error('state override mode (or auto-detect) not available unless you use JsonRpcProvider');
                         }
                         codeOfIface = new ethers_1.Interface(codeOfContractAbi);
@@ -155,12 +154,13 @@ var Deployless = /** @class */ (function () {
                                 (_b = {}, _b[arbitraryAddr] = { code: this.contractRuntimeCode }, _b)
                             ])
                             : this.provider.call({
+                                blockTag: opts.blockTag,
                                 from: opts.from,
-                                data: checkDataSize(ethers_1.getBytes(ethers_1.concat([
+                                data: checkDataSize(ethers_1.concat([
                                     deploylessProxyBin,
                                     abiCoder.encode(['bytes', 'bytes'], [this.contractBytecode, callData])
-                                ])))
-                            }, opts.blockTag);
+                                ]))
+                            });
                         _a = mapResponse;
                         return [4 /*yield*/, mapError(callPromise)];
                     case 2:
@@ -184,14 +184,17 @@ function mapError(callPromise) {
                 case 1: return [2 /*return*/, _a.sent()];
                 case 2:
                     e_1 = _a.sent();
-                    // e.error.data is usually our eth_call output in case of execution reverted
+                    // ethers v5 provider: e.error.data is usually our eth_call output in case of execution reverted
                     if (e_1.error && e_1.error.data)
                         return [2 /*return*/, e_1.error.data
-                            // unwrap the wrapping that ethers adds to this type of error in case of provider.call
+                            // ethers v5 provider: unwrap the wrapping that ethers adds to this type of error in case of provider.call
                         ];
-                    // unwrap the wrapping that ethers adds to this type of error in case of provider.call
+                    // ethers v5 provider: unwrap the wrapping that ethers adds to this type of error in case of provider.call
                     if (e_1.code === 'CALL_EXCEPTION' && e_1.error)
                         throw e_1.error;
+                    // ethers v6 provider: wrapping the error in case of execution reverted
+                    if (e_1.code === 'CALL_EXCEPTION' && e_1.data)
+                        return [2 /*return*/, e_1.data];
                     throw e_1;
                 case 3: return [2 /*return*/];
             }
@@ -228,7 +231,7 @@ function mapResponse(data) {
     return data;
 }
 function checkDataSize(data) {
-    if (data.length >= 24576)
+    if (ethers_1.getBytes(data).length >= 24576)
         throw new Error('24kb call data size limit reached, use StateOverride mode');
     return data;
 }

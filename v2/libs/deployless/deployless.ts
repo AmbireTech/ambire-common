@@ -1,5 +1,4 @@
-import { Interface, concat, AbiCoder, getBytes } from 'ethers'
-import { JsonRpcProvider, BaseProvider } from '@ethersproject/providers'
+import { Interface, concat, AbiCoder, getBytes, Provider, JsonRpcProvider } from 'ethers'
 
 // this is a magic contract that is constructed like `constructor(bytes memory contractBytecode, bytes memory data)` and returns the result from the call
 // compiled from relayer:a7ea373559d8c419577ac05527bd37fbee8856ae/src/velcro-v3/contracts/Deployless.sol with solc 0.8.17
@@ -37,7 +36,7 @@ export class Deployless {
 	private iface: Interface;
 	// the contract deploy (constructor) code: this is the code that tjhe solidity compiler outputs
 	private contractBytecode: string;
-	private provider: JsonRpcProvider | BaseProvider;
+	private provider: JsonRpcProvider | Provider;
 	// We need to detect whether the provider supports state override
 	private detectionPromise?: Promise<void>;
 	private stateOverrideSupported?: boolean;
@@ -49,7 +48,7 @@ export class Deployless {
 		return !this.stateOverrideSupported
 	}
 
-	constructor (provider: JsonRpcProvider | BaseProvider, abi: any, code: string, codeWhenDeployed?: string) {
+	constructor (provider: JsonRpcProvider | Provider, abi: any, code: string, codeWhenDeployed?: string) {
 		this.contractBytecode = code
 		this.provider = provider
 		this.iface = new Interface(abi)
@@ -100,12 +99,13 @@ export class Deployless {
 				{ [arbitraryAddr]: { code: this.contractRuntimeCode } }
 			])
 			: this.provider.call({
+				blockTag: opts.blockTag,
 				from: opts.from,
-				data: checkDataSize(getBytes(concat([
+				data: checkDataSize(concat([
 					deploylessProxyBin,
 					abiCoder.encode(['bytes', 'bytes'], [this.contractBytecode, callData])
-				])))
-			}, opts.blockTag)
+				]))
+			})
 		const returnDataRaw = mapResponse(await mapError(callPromise))
 		return this.iface.decodeFunctionResult(methodName, returnDataRaw)[0]
 	}
@@ -115,10 +115,12 @@ async function mapError(callPromise: Promise<string>): Promise<string> {
 	try {
 		return await callPromise
 	} catch (e) {
-		// e.error.data is usually our eth_call output in case of execution reverted
+		// ethers v5 provider: e.error.data is usually our eth_call output in case of execution reverted
 		if (e.error && e.error.data) return e.error.data
-		// unwrap the wrapping that ethers adds to this type of error in case of provider.call
+		// ethers v5 provider: unwrap the wrapping that ethers adds to this type of error in case of provider.call
 		if (e.code === 'CALL_EXCEPTION' && e.error) throw e.error
+		// ethers v6 provider: wrapping the error in case of execution reverted
+		if (e.code === 'CALL_EXCEPTION' && e.data) return e.data
 		throw e
 	}
 }
@@ -145,7 +147,7 @@ function mapResponse(data: string): string {
 	return data
 }
 
-function checkDataSize (data: Uint8Array): Uint8Array {
-	if (data.length >= 24576) throw new Error('24kb call data size limit reached, use StateOverride mode')
+function checkDataSize (data: string): string {
+	if (getBytes(data).length >= 24576) throw new Error('24kb call data size limit reached, use StateOverride mode')
 	return data
 }

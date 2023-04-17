@@ -1,6 +1,6 @@
 import { Deployless, DeploylessMode } from './deployless'
 import { describe, expect, test } from '@jest/globals'
-import { JsonRpcProvider, getDefaultProvider } from '@ethersproject/providers'
+import { JsonRpcProvider, getDefaultProvider } from 'ethers'
 
 const helloWorld = {
 	abi: [{"inputs":[],"name":"helloWorld","outputs":[{"internalType":"string","name":"","type":"string"}],"stateMutability":"view","type":"function"}],
@@ -31,7 +31,7 @@ describe('Deployless', () => {
 		expect(deployless.isLimitedAt24kbData).toBe(false)
 	})
 
-	test('detection should not be available with BaseProvider', async () => {
+	test('detection should not be available with Provider', async () => {
 		const provider = getDefaultProvider('homestead')
 		expect.assertions(1)
 		const deployless = new Deployless(provider, helloWorld.abi, helloWorld.bin)
@@ -77,11 +77,12 @@ describe('Deployless', () => {
 		expect.assertions(2)
 		try { await deployless.call('helloWorld', [], { blockTag: '0x1' }) } catch (e) {
 			// we are relying on the fact that we do not have the SHR opcode in block 0x1
-			expect(e.body.includes('invalid opcode: SHR')).toBe(true)
+			expect(e.info.error.message.includes('invalid opcode: SHR')).toBe(true)
 		}
 		try { await deployless.call('helloWorld', [], { blockTag: '0x1', mode: DeploylessMode.ProxyContract }) } catch (e) {
-			// ethers wraps the error if we use the BaseProvider; perhaps we should un-wrap it
-			expect(e.body.includes('invalid opcode: SHR') || e.body.includes('out of gas')).toBe(true)
+			// ethers wraps the error if we use the Provider; perhaps we should un-wrap it
+			// fails with out-of-gas when wrapped in the ProxyContract mode
+			expect(e.info.error.message.includes('out of gas')).toBe(true)
 		}
 	})
 	// @TODO: error/panic parsing
