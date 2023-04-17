@@ -2,7 +2,7 @@
 pragma solidity ^0.8.7;
 
 import "./AmbireAccount.sol";
-import "./interfaces/IERC20.sol";
+import "./libs/IERC20.sol";
 
 contract AmbireAccountFactory {
 	event LogDeployed(address addr, uint256 salt);
