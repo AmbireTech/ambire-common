@@ -1,12 +1,11 @@
 // @TODO velcro batching
 import fetch from 'node-fetch'
-import { JsonRpcBatchProvider, JsonRpcProvider, BaseProvider } from '@ethersproject/providers'
+import { JsonRpcProvider, Provider } from 'ethers'
 import { Deployless, DeploylessMode } from '../deployless/deployless'
 import { multiOracle } from './multiOracle.json'
-type Provider = BaseProvider | JsonRpcBatchProvider | JsonRpcProvider
 
 export class Portfolio {
-	async update(provider: Provider, networkId: string, accountAddr: string) {
+	async update(provider: Provider | JsonRpcProvider, networkId: string, accountAddr: string) {
 		const hintsBody = await fetch(`https://relayer.ambire.com/velcro-v3/${networkId}/${accountAddr}/hints`)
 		const hints = await hintsBody.json()
 		// @TODO: pass binRuntime only if stateOverride is supported
@@ -35,7 +34,7 @@ BigInt.prototype.toJSON = function() { return this.toString() }
 
 //const url = 'http://localhost:8545'
 const url = 'https://mainnet.infura.io/v3/d4319c39c4df452286d8bf6d10de28ae'
-const provider = new JsonRpcBatchProvider(url)
+const provider = new JsonRpcProvider(url)
 new Portfolio()
 	.update(provider, 'ethereum',
 		'0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
