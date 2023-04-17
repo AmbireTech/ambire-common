@@ -33,10 +33,10 @@ export interface Bundle {
 	network: Network;
 	signingKeyAddr: string;
 	nonce: number;
+	// @TODO: nonce namespace? it is dependent on gasFeePayment
 	calls: [Call];
 	gasLimit: number | null;
 	signature: string | null;
-	minFeeInUSDPerGas: number;
 	// @TODO separate interface
 	gasFeePayment: GasFeePayment | null
 	// @TODO: meta?
