@@ -1,5 +1,20 @@
 # High-level overview
 
+## Why classes instead of state containers
+We chose simple ES6 classes to implement controllers (shared business logic) rather than state containers.
+
+Stateful classes can be easy to use, easy to implement, readable and can help with separation of concerns.
+
+Generally, state containers carry two benefits over a stateful ES6 class: thanks to state immutability we know exactly what changed (therefore we can optimize rendering) and we can time-travel (replay any events) and test easier. They do add a lot of overengineering and complexity though.
+
+However, classes are truly framework-agnostic, which is a requirement for the common repo. Combining state containers with this requirement leads to a lot more complexity.
+
+* class benefits: easy to write and read; not too hard to test (if all side effect generating methods are passed externally); truly framework-agnostic
+* class drawbacks: unable to know which properties changed, no time-travel
+
+See also: https://medium.com/swlh/what-is-the-best-state-container-library-for-react-b6989a45f236
+
+
 ## Libraries
 
 ### deployless.ts
