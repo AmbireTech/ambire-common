@@ -43,7 +43,6 @@ export async function getGasPriceRecommendations (provider: Provider, blockTag: 
 			expectedBaseFee -= baseFeeDelta
 		}
 
-		// calculate the tips
 		const tips = filterOutliers(txns.map(x => x.maxPriorityFeePerGas!).filter(x => x > 0))
 		return speeds.map(({ name, baseFeeAddBps }, i) => ({
 			name,
@@ -82,13 +81,3 @@ function nthGroup (data: bigint[], n: number, outOf: number): bigint[] {
 function average (data: bigint[]): bigint {
 	return data.reduce((a, b) => a + b, 0n) / BigInt(data.length)
 }
-
-// temporary test
-const { JsonRpcProvider } = require('ethers')
-const provider = new JsonRpcProvider('https://mainnet.infura.io/v3/d4319c39c4df452286d8bf6d10de28ae')
-getGasPriceRecommendations(provider)
-	.then(x => console.log('ethereum', x))
-
-getGasPriceRecommendations(new JsonRpcProvider('https://bsc-dataseed1.binance.org'))
-	.then(x => console.log('bsc', x))
-
