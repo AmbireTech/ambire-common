@@ -60,6 +60,7 @@ type Key = {
 	type: string
 	label: string
 	isExternallyStored: boolean
+	meta: object | null
 }
 type StoredKey = {
 	id: string
@@ -160,8 +161,8 @@ export class Keystore {
 	async getKeys(): Promise<Key[]> {
 		const keys: [StoredKey] = await this.storage.get('keystoreKeys', [])
 		return keys
-			.map(({ id, label, type }) => ({
-				id, label, type, isExternallyStored: type !== 'internal'
+			.map(({ id, label, type, meta }) => ({
+				id, label, type, meta, isExternallyStored: type !== 'internal'
 			} as Key))
 	}
 
