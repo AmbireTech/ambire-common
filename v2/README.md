@@ -14,6 +14,49 @@ However, classes are truly framework-agnostic, which is a requirement for the co
 
 See also: https://medium.com/swlh/what-is-the-best-state-container-library-for-react-b6989a45f236
 
+## How account recovery/restore works in Ambire
+
+### What's an email vault
+**TODO **
+
+### Recovery/backup methods
+There are 3 types of account recovery/restoration in Ambire 2.0:
+
+### On-chain account recovery
+This works via [recovery signatures](https://github.com/AmbireTech/ambire-common/blob/984e9f1d77c1756292dc6304baf98080211f97b0/contracts/AmbireAccount.sol#L108-L141) and is very similar in operation to the legacy `QuickAccManager` recoveries.
+
+This recovery must be performed for each network (chain) individually because it involves on-chain state, and is intended to have a timelock.
+
+The way it works is the following:
+1. When a key is authorized, you set `privileges[keyAddr]` to a hash of a struct that contains recovery data (`recoveryInfo`) - the keys that can recover this account and the timelock (let's call those "recovery keys")
+2. If access to that authorized key is lost (or access to the account in general), any of the recovery keys can sign a bundle with a special kind of signature (called recovery signature)
+3. You can `execute()` this bundle with this signature, but it will not execute immediately - instead, it will start the timelock
+4. Once the timelock is mature, you can `execute()` the same bundle with the same signature - this time, it will execute
+
+The intended use case is as follows:
+1. An email account is created for the user; we generate a fresh key and we store it in the keystore; and we set the `recoveryInfo` to a 72 hour timelock and one key, which is the key of the email vault (held by the relayer)
+2. If the user loses their keystore (eg their SSD fails, or they lose their passphrase), they may trigger the recovery using the email vault on every network individually; triggering the recovery involves creating a new local key, and signing a bundle to authorize it via the email vault key; let's call this bundle "the recovery bundle"
+3. Once the recovery timelock is mature, the relayer will simply execute the recovery bundle BEFORE any normal bundle that the user wants to execute that they're signing with their new local key
+
+### Keystore recovery
+This is an off-chain recovery method that allows regaining access to your local keystore if you have forgotten the keystore passphrase.
+
+This only works if you still have the keystore in local storage, but it works across all chains as it's performed off-chain.
+
+The keystore itself supports encryption via multiple secrets. This method works by simply generating a random secret and encrypting the keystore with it as well, and then uploading this secret in the email vault without storing it locally. This way, the relayer can unlock that secret following email confirmation, and you can set a new passphrase for the local keystore now that you have it unlocked.
+
+The UX will be simple:
+1. Enable keystore recovery via the email vault (if you have an email vault)
+2. If you forget your passphrase, you click a button/link to set a new one and you receive an email asking you if you really want to do that
+3. You click the confirmation button on the email, and it forwards you to the extension again, where you can set a new passphrase
+4. Done
+
+### Ambire Cloud
+This is not an account/keystore recovery method but rather a way to log into the same email account on multiple devices (sync it across devices).
+
+When enabled, the one and only default private key (you can add more signer keys manually, but every email acc will start with one "default" key) associated with a specific email account is encrypted with the keystore passphrase and uploaded to the email vault.
+
+This allows you to import this account on different devices (or "log in").
 
 ## Libraries
 
