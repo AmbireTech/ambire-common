@@ -17,7 +17,9 @@ See also: https://medium.com/swlh/what-is-the-best-state-container-library-for-r
 ## How account recovery/restore works in Ambire
 
 ### What's an email vault
-**TODO **
+**TODO** But you can read [this](https://github.com/AmbireTech/ambire-app/issues/834) for some background.
+
+An email vault is a mechanism on the relayer to safeguard arbitrary secrets and a recovery key, via your email.
 
 ### Recovery/backup methods
 There are 3 types of account recovery/restoration in Ambire 2.0:
