@@ -75,7 +75,7 @@ function filterOutliers (data: bigint[]): bigint[] {
 function nthGroup (data: bigint[], n: number, outOf: number): bigint[] {
 	const step = Math.floor(data.length / outOf)
 	const at = n * step
-	return data.slice(at, at + step)
+	return data.slice(at, at + Math.max(1, step))
 }
 
 function average (data: bigint[]): bigint {
