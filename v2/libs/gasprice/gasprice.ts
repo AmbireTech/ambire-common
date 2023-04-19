@@ -79,5 +79,6 @@ function nthGroup (data: bigint[], n: number, outOf: number): bigint[] {
 }
 
 function average (data: bigint[]): bigint {
+	if (data.length === 0) return 0n
 	return data.reduce((a, b) => a + b, 0n) / BigInt(data.length)
 }
