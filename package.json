@@ -4,7 +4,7 @@
   "description": "Common ground for the Ambire apps",
   "scripts": {
     "generate:contractInfo": "node scripts/generateContractInfo.js > src/constants/humanizerInfo.json",
-    "test": "jest",
+    "test": "NODE_ENV=test mocha",
     "build": "tsc v2/libs/deployless/deployless.ts -t es5"
   },
   "peerDependencies": {
@@ -29,6 +29,7 @@
     "@typescript-eslint/eslint-plugin": "5.5.0",
     "@typescript-eslint/parser": "5.5.0",
     "adex-protocol-eth": "git+https://git@github.com/AmbireTech/adex-protocol-eth.git#ef2f88f26824c64c1eb12c02a389baec2b2c3889",
+    "chai": "^4.3.7",
     "eslint": "8.3.0",
     "eslint-config-airbnb": "19.0.1",
     "eslint-config-airbnb-typescript": "16.0.0",
@@ -40,6 +41,7 @@
     "eslint-plugin-react-hooks": "4.3.0",
     "ethereum-waffle": "^4.0.10",
     "jest": "^29.5.0",
+    "mocha": "^10.2.0",
     "node-fetch": "^2.3.0",
     "prettier": "2.5.0",
     "react": "17.0.1",
