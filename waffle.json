@@ -1,0 +1,12 @@
+{
+  "compilerType": "solcjs",
+  "compilerVersion": "0.8.17",
+  "outputDirectory": "./artifacts",
+  "compilerOptions": {
+    "viaIR": true,
+    "optimizer": {
+      "enabled": true,
+      "runs": 1000
+    }
+  }
+}
