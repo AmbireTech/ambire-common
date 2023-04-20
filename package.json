@@ -22,6 +22,7 @@
     "validator": "^13.7.0"
   },
   "devDependencies": {
+    "@borislav.itskov/schnorrkel.js": "^1.0.0",
     "@jest/globals": "^29.5.0",
     "@types/aes-js": "^3.1.1",
     "@types/node-fetch": "^2.6.3",

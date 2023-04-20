@@ -1,15 +1,16 @@
 const { ethers } = require('ethers')
 const { expect } = require('chai')
-const pk1 = '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80'
-const pk2 = '0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d'
-const addressOne = '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266'
-const addressTwo = '0x70997970C51812dc3A010C7d01b50e0d17dc79C8'
-const AmbireAccount = require('../../artifacts/contracts/AmbireAccount.sol/AmbireAccount.json')
-const localhost = 'http://localhost:8545'
-const validSig = '0x1626ba7e'
-const invalidSig = '0xffffffff'
-const provider = new ethers.JsonRpcProvider(localhost)
-const wallet = new ethers.Wallet(pk1, provider)
+const {
+  pk2,
+  AmbireAccount,
+  validSig,
+  invalidSig,
+  wallet,
+  addressOne,
+  addressTwo,
+  provider,
+} = require('../config')
+const {wrapEIP712, wrapMultiSig} = require('../ambireSign')
 const wallet2 = new ethers.Wallet(pk2, provider)
 
 /**
@@ -25,26 +26,6 @@ function getMsAddress(accounts = []) {
     finalSigner = ethers.toQuantity(ethers.getBytes(kecak).slice(12, 32))
   }
   return finalSigner
-}
-
-/**
- * SignatureMode.EIP712 sign
- *
- * @param BytesLike sig 
- * @returns BytesLike
- */
-function wrapSig(sig) {
-  return `${sig}${'00'}`
-}
-
-/**
- * SignatureMode.Multisig sign
- *
- * @param BytesLike sig
- * @returns BytesLike
- */
-function wrapMultiSig(sig) {
-  return `${sig}${'05'}`
 }
 
 let ambireAccountAddress = null
@@ -80,8 +61,8 @@ describe('Two of two multisignature tests', function () {
     const {contract} = await getCachedAmbireAccount()
     
     const msg = 'test'
-    const sigOne = wrapSig(await wallet.signMessage(msg))
-    const sigTwo = wrapSig(await wallet2.signMessage(msg))
+    const sigOne = wrapEIP712(await wallet.signMessage(msg))
+    const sigTwo = wrapEIP712(await wallet2.signMessage(msg))
     const abi = new ethers.AbiCoder()
     const signature = abi.encode(['bytes[]'], [[sigOne, sigTwo]])
     const ambireSig = wrapMultiSig(signature)
@@ -91,8 +72,8 @@ describe('Two of two multisignature tests', function () {
     const {contract} = await getCachedAmbireAccount()
     
     const msg = 'test'
-    const sigOne = wrapSig(await wallet.signMessage(msg))
-    const sigTwo = wrapSig(await wallet2.signMessage(msg))
+    const sigOne = wrapEIP712(await wallet.signMessage(msg))
+    const sigTwo = wrapEIP712(await wallet2.signMessage(msg))
     const abi = new ethers.AbiCoder()
     const signature = abi.encode(['bytes[]'], [[sigTwo, sigOne]])
     const ambireSig = wrapMultiSig(signature)
@@ -102,7 +83,7 @@ describe('Two of two multisignature tests', function () {
     const {contract} = await getCachedAmbireAccount()
     
     const msg = 'test'
-    const sigOne = wrapSig(await wallet.signMessage(msg))
+    const sigOne = wrapEIP712(await wallet.signMessage(msg))
     const abi = new ethers.AbiCoder()
     const signature = abi.encode(['bytes[]'], [[sigOne]])
     const ambireSig = wrapMultiSig(signature)
@@ -112,15 +93,15 @@ describe('Two of two multisignature tests', function () {
     const {contract} = await getCachedAmbireAccount()
     
     const msg = 'test'
-    const sigOne = wrapSig(await wallet.signMessage(msg))
+    const sigOne = wrapEIP712(await wallet.signMessage(msg))
     expect(await contract.isValidSignature(ethers.hashMessage(msg), sigOne)).to.equal(invalidSig)
   })
   it('fails validation when a single signer passes two signatures', async function () {
     const {contract} = await getCachedAmbireAccount()
     
     const msg = 'test'
-    const sigOne = wrapSig(await wallet.signMessage(msg))
-    const sigTwo = wrapSig(await wallet.signMessage(msg))
+    const sigOne = wrapEIP712(await wallet.signMessage(msg))
+    const sigTwo = wrapEIP712(await wallet.signMessage(msg))
     const abi = new ethers.AbiCoder()
     const signature = abi.encode(['bytes[]'], [[sigOne, sigTwo]])
     const ambireSig = wrapMultiSig(signature)
@@ -131,8 +112,8 @@ describe('Two of two multisignature tests', function () {
     
     const msg = 'test'
     const msg2 = 'test2'
-    const sigOne = wrapSig(await wallet.signMessage(msg))
-    const sigTwo = wrapSig(await wallet2.signMessage(msg2))
+    const sigOne = wrapEIP712(await wallet.signMessage(msg))
+    const sigTwo = wrapEIP712(await wallet2.signMessage(msg2))
     const abi = new ethers.AbiCoder()
     const signature = abi.encode(['bytes[]'], [[sigOne, sigTwo]])
     const ambireSig = wrapMultiSig(signature)
@@ -152,9 +133,9 @@ describe('Three of three multisignature tests', function () {
     const {contract} = await getCachedAmbireAccount()
 
     const msg = 'test'
-    const sigOne = wrapSig(await wallet.signMessage(msg))
-    const sigTwo = wrapSig(await wallet2.signMessage(msg))
-    const sigThree = wrapSig(await wallet3.signMessage(msg))
+    const sigOne = wrapEIP712(await wallet.signMessage(msg))
+    const sigTwo = wrapEIP712(await wallet2.signMessage(msg))
+    const sigThree = wrapEIP712(await wallet3.signMessage(msg))
     const abi = new ethers.AbiCoder()
     const signature = abi.encode(['bytes[]'], [[sigOne, sigTwo, sigThree]])
     const ambireSig = wrapMultiSig(signature)
@@ -164,9 +145,9 @@ describe('Three of three multisignature tests', function () {
     const {contract} = await getCachedAmbireAccount()
     
     const msg = 'test'
-    const sigOne = wrapSig(await wallet.signMessage(msg))
-    const sigTwo = wrapSig(await wallet2.signMessage(msg))
-    const sigThree = wrapSig(await wallet3.signMessage(msg))
+    const sigOne = wrapEIP712(await wallet.signMessage(msg))
+    const sigTwo = wrapEIP712(await wallet2.signMessage(msg))
+    const sigThree = wrapEIP712(await wallet3.signMessage(msg))
     const abi = new ethers.AbiCoder()
     const signature = abi.encode(['bytes[]'], [[sigOne, sigThree, sigTwo]])
     const ambireSig = wrapMultiSig(signature)
@@ -176,8 +157,8 @@ describe('Three of three multisignature tests', function () {
     const {contract} = await getCachedAmbireAccount()
     
     const msg = 'test'
-    const sigOne = wrapSig(await wallet.signMessage(msg))
-    const sigTwo = wrapSig(await wallet2.signMessage(msg))
+    const sigOne = wrapEIP712(await wallet.signMessage(msg))
+    const sigTwo = wrapEIP712(await wallet2.signMessage(msg))
     const abi = new ethers.AbiCoder()
     const signature = abi.encode(['bytes[]'], [[sigOne, sigTwo]])
     const ambireSig = wrapMultiSig(signature)
@@ -188,9 +169,9 @@ describe('Three of three multisignature tests', function () {
     
     const msg = 'test'
     const msg2 = 'test2'
-    const sigOne = wrapSig(await wallet.signMessage(msg))
-    const sigTwo = wrapSig(await wallet2.signMessage(msg))
-    const sigThree = wrapSig(await wallet3.signMessage(msg2))
+    const sigOne = wrapEIP712(await wallet.signMessage(msg))
+    const sigTwo = wrapEIP712(await wallet2.signMessage(msg))
+    const sigThree = wrapEIP712(await wallet3.signMessage(msg2))
     const abi = new ethers.AbiCoder()
     const signature = abi.encode(['bytes[]'], [[sigOne, sigTwo, sigThree]])
     const ambireSig = wrapMultiSig(signature)
