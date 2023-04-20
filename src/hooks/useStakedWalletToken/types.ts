@@ -5,5 +5,7 @@ export type UseStakedWalletTokenProps = {
 }
 
 export type UseStakedWalletTokenReturnType = {
-  stakedAmount: number
+  stakedAmount: any // TODO: add type
+  isLoading: boolean
+  error: string
 }
