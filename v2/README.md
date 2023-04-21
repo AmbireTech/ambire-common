@@ -74,3 +74,28 @@ Let's look into both of them:
 * [state override set](https://github.com/ethereum/go-ethereum/issues/19836): this is a little known feature of `eth_call` that lets us pass any state overrides that will be applied before executing the call, like overriding an address' balance, contract code, or even parts of it's state; it is not supported by all RPC nodes
 
 The library can auto-select which one to chose based on the availability of the state override set.
+
+
+### portfolio.ts
+
+TODO
+
+#### Velcro V3 return format
+
+Token discovery hints: `https://relayer.ambire.com/velcro-v3/ethereum/0xa07D75aacEFd11b425AF7181958F0F85c312f143/hints`.
+
+Return format: ```
+{
+    networkId: string,
+    accountAddr: string,
+    // array of addresses of erc20 tokens discovered for this address; some of them may have zero balance (the address has had them in the past); Velcro V3 filters those results to include only ones that are included on Coingecko, as a form of spam/scam detection
+    erc20s: string[],
+    // object containing objects describing erc721s (NFTs)
+    erc721s: {
+        // this is either { isKnown: boolean, enumerable: true } or { isKnown: boolean, enumerable: false, tokens: string[] }
+        // in case enumerable is false, tokens will be an array of all token IDs that are discovered for this NFT collection
+        [nftAddr]: { isKnown: boolean, enumerable: boolean, tokens?: string[] }
+    }
+
+}
+```
