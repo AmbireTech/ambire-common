@@ -82,9 +82,11 @@ TODO
 
 #### Velcro V3 return format
 
-Token discovery hints: `https://relayer.ambire.com/velcro-v3/ethereum/0xa07D75aacEFd11b425AF7181958F0F85c312f143/hints`.
+##### Token discovery hints: `https://relayer.ambire.com/velcro-v3/ethereum/0xa07D75aacEFd11b425AF7181958F0F85c312f143/hints`
 
-Return format: ```
+Return format:
+
+```javascript
 {
     networkId: string,
     accountAddr: string,
