@@ -21,7 +21,7 @@ export default function batcher (fetch: Function, urlGenerator: (queue: any[]) =
 			if (Array.isArray(body)) {
 				if (body.length !== queueCopy.length) throw new Error('internal error: queue length and response length mismatch')
 				queueCopy.forEach(({ resolve }, i) => resolve(body[i]))
-			} else if (queueCopy.every(x => typeof x.data['responseIdentitier'] === 'string')) {
+			} else if (queueCopy.every(x => typeof x.data['responseIdentifier'] === 'string')) {
 				queueCopy.forEach(({ resolve, data }) => resolve(body[data.responseIdentifier as string]))
 			} else throw body
 		} catch (e) { queueCopy.forEach(({ reject }) => reject(e)) }
