@@ -83,12 +83,12 @@ export class Portfolio {
 		}))
 
 		console.log('2: ' + (Date.now()-n))
-
 		return {
 			tokens,
 			tokenErrors: tokensWithErr
-				.filter(([error]) => error != '0x')
-				.map(([error, result]) => ({ error, address: result.address })),
+				// NOTE: would be better to filter first, but somehow it produces a wonky result when empty
+				.map(([error, result]) => ({ error, address: result.address }))
+				.filter(({ error }) => error != '0x'),
 			collectibles: (collectibles as any[])
 				.filter(x => x.nfts.length)
 		}
