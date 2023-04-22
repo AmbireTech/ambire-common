@@ -15,32 +15,44 @@ const LIMITS = {
 interface TokenResult {
 	amount: bigint,
 	decimals: number,
-	symbol: string
+	symbol: string,
+	address: string,
+	priceUsd: number
 }
 
 // @TODO: can this be better/be eliminated? at worst, we'll just move it out of this file
+// maps our own networkId to coingeckoPlatform
+const geckoMapping = (x: string) => ({
+	polygon: 'polygon-pos',
+	arbitrum: 'arbitrum-one'
+})[x] || x
+
 // @TODO cached hints, fallback
 
 // auto-pagination
 // return and cache formats
 export class Portfolio {
-	private batchedVelcro: Function;
+	private batchedVelcroDiscovery: Function;
+	private batchedGecko: Map<string, Function>;
 
 	constructor (fetch: Function) {
-		this.batchedVelcro = batcher(fetch, queue => `https://relayer.ambire.com/velcro-v3/multi-hints?networks=${queue.map(x => x.networkId).join(',')}&accounts=${queue.map(x => x.accountAddr).join(',')}`)
+		this.batchedVelcroDiscovery = batcher(fetch, queue => `https://relayer.ambire.com/velcro-v3/multi-hints?networks=${queue.map(x => x.networkId).join(',')}&accounts=${queue.map(x => x.accountAddr).join(',')}`)
+		this.batchedGecko = new Map()
 	}
 
 	// @TODO options
 	async update(provider: Provider | JsonRpcProvider, networkId: string, accountAddr: string) {
-		const hints = await this.batchedVelcro({ networkId, accountAddr })
+		const hints = await this.batchedVelcroDiscovery({ networkId, accountAddr })
 		// @TODO: pass binRuntime only if stateOverride is supported
 		const deployless = new Deployless(provider, multiOracle.abi, multiOracle.bin, multiOracle.binRuntime)
 		// @TODO: limits
-		// @TODO: return format
+		// @TODO: return format for NFTs
 		// @TODO block tag; segment cache by the block tag/simulation mode
 		const n = Date.now()
-		const [ erc20s, erc721s ] = await Promise.all([
-			deployless.call('getBalances', [accountAddr, hints.erc20s.concat('0x0000000000000000000000000000000000000000')]),
+		// Add the native token
+		const requestedTokens = hints.erc20s.concat('0x0000000000000000000000000000000000000000')
+		const [ tokenBalances, collectibles ] = await Promise.all([
+			deployless.call('getBalances', [accountAddr, requestedTokens]),
 			deployless.call('getAllNFTs', [
 				accountAddr,
 				Object.keys(hints.erc721s),
@@ -49,13 +61,35 @@ export class Portfolio {
 				50
 			])
 		])
-		console.log(Date.now()-n)
+		const tokensWithErr = (tokenBalances as any[])
+			.map((x, i) => [
+				x.error,
+				({ amount: x.amount, decimals: new Number(x.decimals), symbol: x.symbol, address: requestedTokens[i] }) as TokenResult
+			])
+		console.log('1: ' + (Date.now()-n))
+		const tokens = tokensWithErr
+			// @TODO: error handling; fourth item is an error for erc20s
+			.filter(([error, result]) => result.amount > 0 && error == '0x')
+			.map(([_, result]) => result)
+		if (!this.batchedGecko.has(networkId)) {
+			// @TODO: API key
+			const geckoPlatform = geckoMapping(networkId)
+			this.batchedGecko.set(networkId, batcher(fetch, queue => `https://api.coingecko.com/api/v3/simple/token_price/${geckoPlatform}?contract_addresses=${queue.map(x => x.address).join('%2C')}&vs_currencies=usd`))
+		}
+
+		await Promise.all(tokens.map(async token => {
+			const priceData = await this.batchedGecko.get(networkId)!({ ...token, responseIdentifier: token.address.toLowerCase() })
+			token.priceUsd = priceData?.usd
+		}))
+
+		console.log('2: ' + (Date.now()-n))
+
 		return {
-			erc20s: (erc20s as any[])
-				// @TODO: error handling; fourth item is an error for erc20s
-				.filter(x => x.amount > 0 && x.error === '0x')
-				.map(x => ({ amount: x.amount, decimals: new Number(x.decimals), symbol: x.symbol }) as TokenResult),
-			erc721s: (erc721s as any[])
+			tokens,
+			tokenErrors: tokensWithErr
+				.filter(([error]) => error != '0x')
+				.map(([error, result]) => ({ error, address: result.address })),
+			collectibles: (collectibles as any[])
 				.filter(x => x.nfts.length)
 		}
 	}
@@ -64,14 +98,17 @@ export class Portfolio {
 //const url = 'http://localhost:8545'
 const url = 'https://mainnet.infura.io/v3/d4319c39c4df452286d8bf6d10de28ae'
 const provider = new JsonRpcProvider(url)
-new Portfolio(fetch)
+const portfolio = new Portfolio(fetch)
+portfolio
 	.update(provider, 'ethereum',
 		'0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
 		)
 	.then(console.log)
+	.catch(console.error)
 
-new Portfolio(fetch)
+portfolio
 	.update(provider, 'ethereum',
 		'0x8F493C12c4F5FF5Fd510549E1e28EA3dD101E850'
 		)
 	.then(console.log)
+	.catch(console.error)
