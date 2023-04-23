@@ -32,8 +32,8 @@ const geckoMapping = (x: string) => ({
 // auto-pagination
 // return and cache formats
 export class Portfolio {
-	private batchedVelcroDiscovery: Function;
-	private batchedGecko: Map<string, Function>;
+	private batchedVelcroDiscovery: Function
+	private batchedGecko: Map<string, Function>
 
 	constructor (fetch: Function) {
 		this.batchedVelcroDiscovery = batcher(fetch, queue => `https://relayer.ambire.com/velcro-v3/multi-hints?networks=${queue.map(x => x.networkId).join(',')}&accounts=${queue.map(x => x.accountAddr).join(',')}`)
@@ -61,15 +61,15 @@ export class Portfolio {
 				50
 			])
 		])
-		const tokensWithErr = (tokenBalances as any[])
+		// we do [ ... ] to get rid of the ethers Result type
+		const tokensWithErr = [ ...(tokenBalances as any[]) ]
 			.map((x, i) => [
 				x.error,
 				({ amount: x.amount, decimals: new Number(x.decimals), symbol: x.symbol, address: requestedTokens[i] }) as TokenResult
 			])
 		console.log('1: ' + (Date.now()-n))
 		const tokens = tokensWithErr
-			// @TODO: error handling; fourth item is an error for erc20s
-			.filter(([error, result]) => result.amount > 0 && error == '0x')
+			.filter(([error, result]) => result.amount > 0 && error == '0x' && result.symbol !== '')
 			.map(([_, result]) => result)
 		if (!this.batchedGecko.has(networkId)) {
 			// @TODO: API key
@@ -86,10 +86,9 @@ export class Portfolio {
 		return {
 			tokens,
 			tokenErrors: tokensWithErr
-				// NOTE: would be better to filter first, but somehow it produces a wonky result when empty
-				.map(([error, result]) => ({ error, address: result.address }))
-				.filter(({ error }) => error != '0x'),
-			collectibles: (collectibles as any[])
+				.filter(([ error, result ]) => error !== '0x' || result.symbol === '')
+				.map(([error, result]) => ({ error, address: result.address })),
+			collectibles: [ ...(collectibles as any[]) ]
 				.filter(x => x.nfts.length)
 		}
 	}
