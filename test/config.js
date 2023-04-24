@@ -10,6 +10,7 @@ const validSig = '0x1626ba7e'
 const invalidSig = '0xffffffff'
 const provider = new ethers.JsonRpcProvider(localhost)
 const wallet = new ethers.Wallet(pk1, provider)
+const chainId = 31337
 
 module.exports = {
   pk1,
@@ -21,5 +22,6 @@ module.exports = {
   provider,
   wallet,
   addressOne,
-  addressTwo
+  addressTwo,
+  chainId
 }

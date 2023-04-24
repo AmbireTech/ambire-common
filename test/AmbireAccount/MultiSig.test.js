@@ -11,6 +11,7 @@ const {
   provider,
 } = require('../config')
 const {wrapEIP712, wrapMultiSig} = require('../ambireSign')
+const { wait } = require('../polling')
 const wallet2 = new ethers.Wallet(pk2, provider)
 
 /**
@@ -33,10 +34,7 @@ async function deployAmbireAccount(accounts = []) {
   const factory = new ethers.ContractFactory(AmbireAccount.abi, AmbireAccount.bytecode, wallet)
   const msAddress = getMsAddress(accounts)
   const contract = await factory.deploy([msAddress])
-  // we wait for the deployment to end to be sure the nonce goes up
-  // else we might face race conditions in tests
-  await contract.waitForDeployment()
-  expect(await contract.getAddress()).to.not.be.null
+  await wait(wallet, contract)
   const isSigner = await contract.privileges(msAddress)
   expect(isSigner).to.equal('0x0000000000000000000000000000000000000000000000000000000000000001')
 
@@ -50,7 +48,7 @@ async function getCachedAmbireAccount() {
     return {contract}
   }
 
-  return deployAmbireAccount()
+  return await deployAmbireAccount()
 }
 
 describe('Two of two multisignature tests', function () {

@@ -10,6 +10,7 @@ const {
 } = require('../config')
 const {wrapSchnorr} = require('../ambireSign')
 const Schnorrkel = require('@borislav.itskov/schnorrkel.js')
+const { wait } = require('../polling')
 const schnorrkel = new Schnorrkel()
 
 /**
@@ -20,17 +21,16 @@ const schnorrkel = new Schnorrkel()
 function getSchnorrAddress() {
   const publicKey = ethers.getBytes(ethers.SigningKey.computePublicKey(ethers.getBytes(pk1), true))
   const px = ethers.toQuantity(publicKey.slice(1, 33))
-  return "0x" + px.slice(px.length - 40, px.length);
+  return '0x' + px.slice(px.length - 40, px.length);
 }
 
 let ambireAccountAddress = null
 async function deployAmbireAccount() {
   const factory = new ethers.ContractFactory(AmbireAccount.abi, AmbireAccount.bytecode, wallet)
   const schnorrAddress = getSchnorrAddress()
+
   const contract = await factory.deploy([schnorrAddress])
-  // we wait for the deployment to end to be sure the nonce goes up
-  // else we might face race conditions in tests
-  await contract.waitForDeployment()
+  await wait(wallet, contract)
   expect(await contract.getAddress()).to.not.be.null
   const isSigner = await contract.privileges(schnorrAddress)
   expect(isSigner).to.equal('0x0000000000000000000000000000000000000000000000000000000000000001')
