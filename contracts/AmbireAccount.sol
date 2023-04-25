@@ -14,9 +14,9 @@ contract AmbireAccount {
 	// Events
 	event LogPrivilegeChanged(address indexed addr, bytes32 priv);
 	event LogErr(address indexed to, uint value, bytes data, bytes returnData); // only used in tryCatch
-	event LogScheduled(bytes32 indexed txnHash, bytes32 indexed recoveryHash, address indexed recoveryKey, uint nonce, uint time, Transaction[] txns);
-	event LogCancelled(bytes32 indexed txnHash, bytes32 indexed recoveryHash, address indexed recoveryKey, uint time);
-	event LogExecScheduled(bytes32 indexed txnHash, bytes32 indexed recoveryHash, uint time);
+	event LogRecoveryScheduled(bytes32 indexed txnHash, bytes32 indexed recoveryHash, address indexed recoveryKey, uint nonce, uint time, Transaction[] txns);
+	event LogRecoveryCancelled(bytes32 indexed txnHash, bytes32 indexed recoveryHash, address indexed recoveryKey, uint time);
+	event LogRecoveryFinalized(bytes32 indexed txnHash, bytes32 indexed recoveryHash, uint time);
 
 	// Transaction structure
 	// we handle replay protection separately by requiring (address(this), chainID, nonce) as part of the sig
@@ -118,7 +118,7 @@ contract AmbireAccount {
 				signerKey = signerKeyToCheckPostRecovery;
 				require(block.timestamp > scheduled, 'RECOVERY_NOT_READY');
 				delete scheduledRecoveries[hash];
-				emit LogExecScheduled(hash, recoveryInfoHash, block.timestamp);
+				emit LogRecoveryFinalized(hash, recoveryInfoHash, block.timestamp);
 			} else {
 				address recoveryKey = SignatureValidator.recoverAddr(hash, recoverySignature);
 				bool isIn;
@@ -128,11 +128,11 @@ contract AmbireAccount {
 				require(isIn, 'RECOVERY_NOT_AUTHORIZED');
 				if (isCancellation) {
 					delete scheduledRecoveries[hash];
-					emit LogCancelled(hash, recoveryInfoHash, recoveryKey, block.timestamp);
+					emit LogRecoveryCancelled(hash, recoveryInfoHash, recoveryKey, block.timestamp);
 				} else {
 					require(scheduled == 0, 'RECOVERY_ALREADY_SCHEDULED');
 					scheduledRecoveries[hash] = block.timestamp + recoveryInfo.timelock;
-					emit LogScheduled(hash, recoveryInfoHash, recoveryKey, currentNonce, block.timestamp, txns);
+					emit LogRecoveryScheduled(hash, recoveryInfoHash, recoveryKey, currentNonce, block.timestamp, txns);
 				}
 				return;
 			}

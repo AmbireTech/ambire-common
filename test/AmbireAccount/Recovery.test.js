@@ -74,7 +74,7 @@ function getRecoveryTxn(contractAddress) {
   return [contractAddress, 0, calldata]
 }
 
-describe('Recovery tests', function () {
+describe('Recovery basic schedule and execute', function () {
   it('successfully deploys the ambire account', async function () {
     await deployAmbireAccount()
   })
@@ -110,10 +110,8 @@ describe('Recovery tests', function () {
     const recovery = await contract.scheduledRecoveries(msgHash)
     expect(recovery.toString()).to.equal((block.timestamp + timelock).toString())
   })
-  it('successfully execute a timelock transaction', async function () {
+  it('successfully finalize a timelock transaction', async function () {
     const {contract, ambireAccountAddress} = await getCachedAmbireAccount()
-
-    // recovery
     const {timelockAddress} = getTimelockData()
     const nonce = await contract.nonce()
     const recoveryTxns = [getRecoveryTxn(ambireAccountAddress)];
@@ -143,5 +141,69 @@ describe('Recovery tests', function () {
     expect(recovery.toString()).to.equal("0")
     const newKeyCanSign = await contract.privileges(addressThree)
     expect(newKeyCanSign).to.equal('0x0000000000000000000000000000000000000000000000000000000000000001')
+  })
+})
+
+describe('Recovery complex tests', function () {
+  // tests:
+  // try to add txns to the execute with the same signature - it should fail
+  // try to grief - it should fail
+  // test cancelation - it should pass
+  // make the timelock bigger and try to execute before it has passed - it should fail
+
+  it('successfully schedule and finalize a timelock transaction with the same signature but fail on the third txn', async function () {
+    it('successfully deploys the ambire account', async function () {
+      await deployAmbireAccount()
+    })
+    const {contract, ambireAccountAddress} = await getCachedAmbireAccount()
+    const {timelockAddress} = getTimelockData()
+    const nonce = await contract.nonce()
+    const recoveryTxns = [getRecoveryTxn(ambireAccountAddress)];
+    const msgHash = ethers.keccak256(
+      abiCoder.encode(['address', 'uint', 'uint', 'tuple(address, uint, bytes)[]'], [ambireAccountAddress, chainId, nonce, recoveryTxns])
+    )
+    const msg = ethers.getBytes(msgHash)
+    const s = wrapEthSign(await wallet2.signMessage(msg))
+    const signature = abiCoder.encode(
+      [
+        'tuple(address[], uint)',
+        'bytes',
+        'address',
+        'address'
+      ],
+      [
+        recoveryInfo,
+        s,
+        timelockAddress,
+        timelockAddress
+      ]
+    )
+    const ambireSignature = wrapRecover(signature)
+
+    // schedule
+    const scheduleTxn = await contract.execute(recoveryTxns, ambireSignature)
+    await wait(wallet, scheduleTxn)
+    const receipt = await scheduleTxn.wait()
+    const block = await provider.getBlock(receipt.blockNumber)
+    const recovery = await contract.scheduledRecoveries(msgHash)
+    expect(recovery.toString()).to.equal((block.timestamp + timelock).toString())
+
+    // finalize
+    const finalizeTxn = await contract.execute(recoveryTxns, ambireSignature)
+    await wait(wallet, finalizeTxn)
+    const recoveryFinalized = await contract.scheduledRecoveries(msgHash)
+    expect(recoveryFinalized.toString()).to.equal("0")
+    const newKeyCanSign = await contract.privileges(addressThree)
+    expect(newKeyCanSign).to.equal('0x0000000000000000000000000000000000000000000000000000000000000001')
+
+    // try to schedule but fail because the nonce has moved up
+    let errorCaught = false
+    try {
+      await contract.execute(recoveryTxns, ambireSignature)
+    } catch (error) {
+      expect(error.reason).to.equal('RECOVERY_NOT_AUTHORIZED')
+      errorCaught = true
+    }
+    expect(errorCaught).to.be.true
   })
 })
