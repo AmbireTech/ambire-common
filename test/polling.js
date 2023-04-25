@@ -10,7 +10,9 @@
 // * for a txn mine, if we are sending a txn
 // Afterwards, we need to check whether the mempool has been cleared
 // and our wallet's nonce has caught up.
-// We do so by caching the last nonce sent by the wallet
+// We do so by caching the last nonce sent by the wallet and checking
+// if the next wallet nonce is ahead of the cached one in both transaction count
+// and pending transaction count
 
 const { provider } = require("./config")
 
@@ -34,9 +36,12 @@ async function wait(wallet, waitable = null) {
 }
 
 async function waitWaitable(waitable) {
+  // indicating wait for a transaction to be mined
   if ('wait' in waitable) {
     await waitable.wait()
   }
+
+  // indicating wait for a contract to be deployed
   if ('waitForDeployment' in waitable) {
     await waitable.waitForDeployment()
   }

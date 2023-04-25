@@ -100,12 +100,11 @@ contract AmbireAccount {
 		uint currentNonce = nonce;
 		// NOTE: abi.encode is safer than abi.encodePacked in terms of collision safety
 		bytes32 hash = keccak256(abi.encode(address(this), block.chainid, currentNonce, txns));
-		// We have to increment before execution cause it protects from reentrancies
-		nonce = currentNonce + 1;
 
 		address signerKey;
 		// Recovery signature: allows to perform timelocked txns
 		uint8 sigMode = uint8(signature[signature.length - 1]);
+
 		if (sigMode == SIGMODE_RECOVER || sigMode == SIGMODE_CANCEL) {
 			(bytes memory sig,) = SignatureValidator.splitSignature(signature);
 			(RecoveryInfo memory recoveryInfo, bytes memory recoverySignature, address signerKeyToRecover, address signerKeyToCheckPostRecovery) = abi.decode(sig, (RecoveryInfo, bytes, address, address));
@@ -113,6 +112,7 @@ contract AmbireAccount {
 			bytes32 recoveryInfoHash = keccak256(abi.encode(recoveryInfo));
 			require(privileges[signerKeyToRecover] == recoveryInfoHash, 'RECOVERY_NOT_AUTHORIZED');
 			uint scheduled = scheduledRecoveries[hash];
+
 			if (scheduled != 0 && !isCancellation) {
 				// signerKey is set to signerKeyToCheckPostRecovery so that the anti-bricking check can pass
 				signerKey = signerKeyToCheckPostRecovery;
@@ -130,6 +130,7 @@ contract AmbireAccount {
 					delete scheduledRecoveries[hash];
 					emit LogCancelled(hash, recoveryInfoHash, recoveryKey, block.timestamp);
 				} else {
+					require(scheduled == 0, 'RECOVERY_ALREADY_SCHEDULED');
 					scheduledRecoveries[hash] = block.timestamp + recoveryInfo.timelock;
 					emit LogScheduled(hash, recoveryInfoHash, recoveryKey, currentNonce, block.timestamp, txns);
 				}
@@ -140,7 +141,12 @@ contract AmbireAccount {
 			require(privileges[signerKey] != bytes32(0), 'INSUFFICIENT_PRIVILEGE');
 		}
 
+		// we increment the nonce to prevent reentrancy
+		// also, we do it here as we want to reuse the previous nonce
+		// and respectively hash upon recovery / canceling
+		nonce = currentNonce + 1;
 		executeBatch(txns);
+
 		// The actual anti-bricking mechanism - do not allow a signerKey to drop their own priviledges
 		require(privileges[signerKey] != bytes32(0), 'PRIVILEGE_NOT_DOWNGRADED');
 	}
