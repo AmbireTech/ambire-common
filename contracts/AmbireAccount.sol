@@ -130,7 +130,6 @@ contract AmbireAccount {
 					delete scheduledRecoveries[hash];
 					emit LogRecoveryCancelled(hash, recoveryInfoHash, recoveryKey, block.timestamp);
 				} else {
-					require(scheduled == 0, 'RECOVERY_ALREADY_SCHEDULED');
 					scheduledRecoveries[hash] = block.timestamp + recoveryInfo.timelock;
 					emit LogRecoveryScheduled(hash, recoveryInfoHash, recoveryKey, currentNonce, block.timestamp, txns);
 				}

@@ -1,3 +1,5 @@
+const { ethers } = require("ethers")
+
 /**
  * SignatureMode.EIP712 sign
  *
@@ -48,10 +50,21 @@ function wrapRecover(sig) {
   return `${sig}${'fe'}`
 }
 
+/**
+ * SIGMODE_CANCEL
+ *
+ * @param BytesLike sig
+ * @returns BytesLike
+ */
+function wrapCancel(sig) {
+  return `${sig}${'ff'}`
+}
+
 module.exports = {
   wrapEIP712,
   wrapEthSign,
   wrapSchnorr,
   wrapMultiSig,
-  wrapRecover
+  wrapRecover,
+  wrapCancel
 }
