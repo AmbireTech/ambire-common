@@ -35,6 +35,8 @@ async function deployAmbireAccount(newRecoveryInfo = recoveryInfo) {
   expect(contractAddress).to.not.be.null
   const singularKeyCanSign = await contract.privileges(addressOne)
   expect(singularKeyCanSign).to.equal('0x0000000000000000000000000000000000000000000000000000000000000001')
+  const secondAddressCannotSign = await contract.privileges(addressTwo)
+  expect(secondAddressCannotSign).to.equal('0x0000000000000000000000000000000000000000000000000000000000000000')
 
   const setAddrPrivilegeABI = [
     'function setAddrPrivilege(address addr, bytes32 priv)'
@@ -137,7 +139,7 @@ describe('Recovery basic schedule and execute', function () {
     const resultTxn = await contract.execute(recoveryTxns, ambireSignature)
     await wait(wallet, resultTxn)
     const recovery = await contract.scheduledRecoveries(msgHash)
-    expect(recovery.toString()).to.equal("0")
+    expect(recovery.toString()).to.equal('0')
     const newKeyCanSign = await contract.privileges(addressThree)
     expect(newKeyCanSign).to.equal('0x0000000000000000000000000000000000000000000000000000000000000001')
   })
@@ -185,7 +187,7 @@ describe('Recovery complex tests', function () {
     const finalizeTxn = await contract.execute(recoveryTxns, ambireSignature)
     await wait(wallet, finalizeTxn)
     const recoveryFinalized = await contract.scheduledRecoveries(msgHash)
-    expect(recoveryFinalized.toString()).to.equal("0")
+    expect(recoveryFinalized.toString()).to.equal('0')
     const newKeyCanSign = await contract.privileges(addressThree)
     expect(newKeyCanSign).to.equal('0x0000000000000000000000000000000000000000000000000000000000000001')
 
@@ -238,7 +240,7 @@ describe('Recovery complex tests', function () {
     const cancelTxn = await contract.execute(recoveryTxns, cancelSignature)
     await wait(wallet, cancelTxn)
     const canceled = await contract.scheduledRecoveries(msgHash)
-    expect(canceled.toString()).to.equal("0")
+    expect(canceled.toString()).to.equal('0')
     const newKeyCanSign = await contract.privileges(addressFour)
     expect(newKeyCanSign).to.equal('0x0000000000000000000000000000000000000000000000000000000000000000')
   })
