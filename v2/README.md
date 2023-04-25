@@ -24,7 +24,7 @@ An email vault is a mechanism on the relayer to safeguard arbitrary secrets and 
 ### Recovery/backup methods
 There are 3 types of account recovery/restoration in Ambire 2.0:
 
-### On-chain account recovery
+### On-chain account recovery via email
 This works via [recovery signatures](https://github.com/AmbireTech/ambire-common/blob/984e9f1d77c1756292dc6304baf98080211f97b0/contracts/AmbireAccount.sol#L108-L141) and is very similar in operation to the legacy `QuickAccManager` recoveries.
 
 This recovery must be performed for each network (chain) individually because it involves on-chain state, and is intended to have a timelock.
@@ -40,7 +40,7 @@ The intended use case is as follows:
 2. If the user loses their keystore (eg their SSD fails, or they lose their passphrase), they may trigger the recovery using the email vault on every network individually; triggering the recovery involves creating a new local key, and signing a bundle to authorize it via the email vault key; let's call this bundle "the recovery bundle"
 3. Once the recovery timelock is mature, the relayer will simply execute the recovery bundle BEFORE any normal bundle that the user wants to execute that they're signing with their new local key
 
-### Keystore recovery
+### Keystore recovery via email
 This is an off-chain recovery method that allows regaining access to your local keystore if you have forgotten the keystore passphrase.
 
 This only works if you still have the keystore in local storage, but it works across all chains as it's performed off-chain.
