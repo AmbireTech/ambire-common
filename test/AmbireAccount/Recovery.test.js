@@ -54,19 +54,7 @@ async function deployAmbireAccount(newRecoveryInfo = recoveryInfo) {
   expect(isTimelockSet).to.equal(hash)
 
   ambireAccountAddress = contractAddress
-  return {contract, ambireAccountAddress}
-}
-
-// Using this function gets the deployed contract along with all
-// the state changes the tests have executed upon it
-// If you want a clean state, use deployAmbireAccount() instead
-async function getCachedAmbireAccount() {
-  if (ambireAccountAddress) {
-    const contract = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, wallet)
-    return {contract, ambireAccountAddress}
-  }
-
-  return await deployAmbireAccount()
+  return {contract}
 }
 
 function getRecoveryTxn(contractAddress, privAddress = addressThree) {
@@ -83,7 +71,7 @@ describe('Recovery basic schedule and execute', function () {
     await deployAmbireAccount()
   })
   it('successfully schedule a timelock transaction', async function () {
-    const {contract, ambireAccountAddress} = await getCachedAmbireAccount()
+    const contract = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, wallet)
     const {timelockAddress} = getTimelockData()
     const nonce = await contract.nonce()
     const recoveryTxns = [getRecoveryTxn(ambireAccountAddress)]
@@ -115,7 +103,7 @@ describe('Recovery basic schedule and execute', function () {
     expect(recovery.toString()).to.equal((block.timestamp + timelock).toString())
   })
   it('successfully finalize a timelock transaction', async function () {
-    const {contract, ambireAccountAddress} = await getCachedAmbireAccount()
+    const contract = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, wallet)
     const {timelockAddress} = getTimelockData()
     const nonce = await contract.nonce()
     const recoveryTxns = [getRecoveryTxn(ambireAccountAddress)]
@@ -153,7 +141,7 @@ describe('Recovery complex tests', function () {
     await deployAmbireAccount()
   })
   it('successfully schedule and finalize a timelock transaction with the same signature but fail on the third txn', async function () {
-    const {contract, ambireAccountAddress} = await getCachedAmbireAccount()
+    const contract = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, wallet)
     const {timelockAddress} = getTimelockData()
     const nonce = await contract.nonce()
     const recoveryTxns = [getRecoveryTxn(ambireAccountAddress)]
@@ -205,7 +193,7 @@ describe('Recovery complex tests', function () {
     expect(errorCaught).to.be.true
   })
   it('successfully cancels a recovery transaction', async function () {
-    const {contract, ambireAccountAddress} = await getCachedAmbireAccount()
+    const contract = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, wallet)
     const {timelockAddress} = getTimelockData()
     const nonce = await contract.nonce()
     const recoveryTxns = [getRecoveryTxn(ambireAccountAddress, addressFour)]
@@ -248,7 +236,7 @@ describe('Recovery complex tests', function () {
     expect(newKeyCanSign).to.equal('0x0000000000000000000000000000000000000000000000000000000000000000')
   })
   it('fails on trying to add unsigned transactions to finalize recovery after initial schedule', async function () {
-    const {contract, ambireAccountAddress} = await getCachedAmbireAccount()
+    const contract = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, wallet)
     const {timelockAddress} = getTimelockData()
     const nonce = await contract.nonce()
     const recoveryTxns = [getRecoveryTxn(ambireAccountAddress)]
@@ -294,7 +282,7 @@ describe('Recovery complex tests', function () {
     expect(errorCaught).to.be.true
   })
   it('should execute multiple after schedule, the first txn beign the recovery and the second being a random one with the signature from the recovered key', async function() {
-    const {contract, ambireAccountAddress} = await getCachedAmbireAccount()
+    const contract = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, wallet)
     const {timelockAddress} = getTimelockData()
     const nonce = await contract.nonce()
     const recoveryTxns = [getRecoveryTxn(ambireAccountAddress, addressTwo)]
@@ -360,7 +348,7 @@ describe('Bigger timelock recovery tests', function() {
   it('fail on finalizing the recovery before the timelock', async function () {
     const twoMinutesTimelock = 120
     const recoveryInfo = [[addressOne, addressTwo], twoMinutesTimelock]
-    const {contract, ambireAccountAddress} = await deployAmbireAccount(recoveryInfo)
+    const {contract} = await deployAmbireAccount(recoveryInfo)
     const {timelockAddress} = getTimelockData(recoveryInfo)
     const nonce = await contract.nonce()
     const recoveryTxns = [getRecoveryTxn(ambireAccountAddress, addressFour)]
@@ -411,7 +399,7 @@ describe('Bigger timelock recovery tests', function() {
 // as the contract nonce gets updated and we can no longer recover the hash
 describe('Bricking Recovery', function() {
   it('recovery hash is made unaccessible forever by sending a normal transaction after scheduling a recovery', async function(){
-    const {contract, ambireAccountAddress} = await deployAmbireAccount()
+    const {contract} = await deployAmbireAccount()
     const {timelockAddress} = getTimelockData()
 
     const nonce = await contract.nonce()

@@ -42,21 +42,12 @@ async function deployAmbireAccount(accounts = []) {
   return {contract}
 }
 
-async function getCachedAmbireAccount() {
-  if (ambireAccountAddress) {
-    const contract = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, wallet)
-    return {contract}
-  }
-
-  return await deployAmbireAccount()
-}
-
 describe('Two of two multisignature tests', function () {
   it('successfully deploys the ambire account', async function () {
     await deployAmbireAccount()
   });
   it('validates successfully a basic two-of-two multisig test', async function () {
-    const {contract} = await getCachedAmbireAccount()
+    const contract = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, wallet)
     
     const msg = 'test'
     const sigOne = wrapEIP712(await wallet.signMessage(msg))
@@ -67,7 +58,7 @@ describe('Two of two multisignature tests', function () {
     expect(await contract.isValidSignature(ethers.hashMessage(msg), ambireSig)).to.equal(validSig)
   })
   it('fails validation when the order of the passed signatures is not correct', async function () {
-    const {contract} = await getCachedAmbireAccount()
+    const contract = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, wallet)
     
     const msg = 'test'
     const sigOne = wrapEIP712(await wallet.signMessage(msg))
@@ -78,7 +69,7 @@ describe('Two of two multisignature tests', function () {
     expect(await contract.isValidSignature(ethers.hashMessage(msg), ambireSig)).to.equal(invalidSig)
   })
   it('fails when only a single signature is passed to the multisig', async function () {
-    const {contract} = await getCachedAmbireAccount()
+    const contract = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, wallet)
     
     const msg = 'test'
     const sigOne = wrapEIP712(await wallet.signMessage(msg))
@@ -88,14 +79,14 @@ describe('Two of two multisignature tests', function () {
     expect(await contract.isValidSignature(ethers.hashMessage(msg), ambireSig)).to.equal(invalidSig)
   })
   it('fails when only a single signature is passed to EIP712 validation', async function () {
-    const {contract} = await getCachedAmbireAccount()
+    const contract = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, wallet)
     
     const msg = 'test'
     const sigOne = wrapEIP712(await wallet.signMessage(msg))
     expect(await contract.isValidSignature(ethers.hashMessage(msg), sigOne)).to.equal(invalidSig)
   })
   it('fails validation when a single signer passes two signatures', async function () {
-    const {contract} = await getCachedAmbireAccount()
+    const contract = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, wallet)
     
     const msg = 'test'
     const sigOne = wrapEIP712(await wallet.signMessage(msg))
@@ -106,7 +97,7 @@ describe('Two of two multisignature tests', function () {
     expect(await contract.isValidSignature(ethers.hashMessage(msg), ambireSig)).to.equal(invalidSig)
   })
   it('fails validation when the message of the second signer is different', async function () {
-    const {contract} = await getCachedAmbireAccount()
+    const contract = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, wallet)
     
     const msg = 'test'
     const msg2 = 'test2'
@@ -128,7 +119,7 @@ describe('Three of three multisignature tests', function () {
     await deployAmbireAccount([addressOne, addressTwo, addressThree])
   });
   it('validates successfully a basic three-of-three multisig test', async function () {    
-    const {contract} = await getCachedAmbireAccount()
+    const contract = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, wallet)
 
     const msg = 'test'
     const sigOne = wrapEIP712(await wallet.signMessage(msg))
@@ -140,7 +131,7 @@ describe('Three of three multisignature tests', function () {
     expect(await contract.isValidSignature(ethers.hashMessage(msg), ambireSig)).to.equal(validSig)
   })
   it('fails validation when the order of the passed signatures is not correct', async function () {
-    const {contract} = await getCachedAmbireAccount()
+    const contract = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, wallet)
     
     const msg = 'test'
     const sigOne = wrapEIP712(await wallet.signMessage(msg))
@@ -152,7 +143,7 @@ describe('Three of three multisignature tests', function () {
     expect(await contract.isValidSignature(ethers.hashMessage(msg), ambireSig)).to.equal(invalidSig)
   })
   it('fails when two of three signatures are passed to the multisig', async function () {
-    const {contract} = await getCachedAmbireAccount()
+    const contract = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, wallet)
     
     const msg = 'test'
     const sigOne = wrapEIP712(await wallet.signMessage(msg))
@@ -163,7 +154,7 @@ describe('Three of three multisignature tests', function () {
     expect(await contract.isValidSignature(ethers.hashMessage(msg), ambireSig)).to.equal(invalidSig)
   })
   it('fails when one of the signers signs a different message', async function () {
-    const {contract} = await getCachedAmbireAccount()
+    const contract = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, wallet)
     
     const msg = 'test'
     const msg2 = 'test2'

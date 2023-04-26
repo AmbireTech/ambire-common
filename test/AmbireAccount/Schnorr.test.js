@@ -39,21 +39,12 @@ async function deployAmbireAccount() {
   return {contract}
 }
 
-async function getCachedAmbireAccount() {
-  if (ambireAccountAddress) {
-    const contract = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, wallet)
-    return {contract}
-  }
-
-  return deployAmbireAccount()
-}
-
 describe('Schnorr tests', function () {
   it('successfully deploys the ambire account', async function () {
     await deployAmbireAccount()
   })
   it('successfully validate a basic schnorr signature', async function () {
-    const {contract} = await getCachedAmbireAccount()
+    const contract = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, wallet)
     const msg = 'test'
     const {s, e} = schnorrkel.sign(msg, ethers.getBytes(pk1))
 
@@ -74,7 +65,7 @@ describe('Schnorr tests', function () {
     expect(await contract.isValidSignature(hash, ambireSignature)).to.equal(validSig)
   })
   it('fails validation when an unauthorized private key signs', async function () {
-    const {contract} = await getCachedAmbireAccount()
+    const contract = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, wallet)
     const msg = 'test'
     const {s, e} = schnorrkel.sign(msg, ethers.getBytes(pk2))
 
@@ -95,7 +86,7 @@ describe('Schnorr tests', function () {
     expect(await contract.isValidSignature(hash, ambireSignature)).to.equal(invalidSig)
   })
   it('fails validation when the message is different', async function () {
-    const {contract} = await getCachedAmbireAccount()
+    const contract = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, wallet)
     const msg = 'test'
     const {s, e} = schnorrkel.sign(msg, ethers.getBytes(pk1))
 
