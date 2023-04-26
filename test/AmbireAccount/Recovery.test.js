@@ -13,6 +13,7 @@ const {
 } = require('../config')
 const {wrapEthSign, wrapRecover, wrapCancel} = require('../ambireSign')
 const { wait } = require('../polling')
+const { sendFunds, getPriviledgeTxn } = require('../helpers')
 const timelock = 1
 const recoveryInfo = [[addressOne, addressTwo], timelock]
 const abiCoder = new ethers.AbiCoder()
@@ -56,15 +57,6 @@ async function deployAmbireAccount(newRecoveryInfo = recoveryInfo) {
   return {contract}
 }
 
-function getRecoveryTxn(contractAddress, privAddress = addressThree) {
-  const setAddrPrivilegeABI = [
-    'function setAddrPrivilege(address addr, bytes32 priv)'
-  ]
-  const iface = new ethers.Interface(setAddrPrivilegeABI)
-  const calldata = iface.encodeFunctionData('setAddrPrivilege', [ privAddress, ethers.toBeHex(1, 32) ])
-  return [contractAddress, 0, calldata]
-}
-
 describe('Recovery basic schedule and execute', function () {
   it('successfully deploys the ambire account', async function () {
     await deployAmbireAccount()
@@ -73,7 +65,7 @@ describe('Recovery basic schedule and execute', function () {
     const contract = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, wallet)
     const {timelockAddress} = getTimelockData()
     const nonce = await contract.nonce()
-    const recoveryTxns = [getRecoveryTxn(ambireAccountAddress)]
+    const recoveryTxns = [getPriviledgeTxn(ambireAccountAddress, addressThree)]
     const msgHash = ethers.keccak256(
       abiCoder.encode(['address', 'uint', 'uint', 'tuple(address, uint, bytes)[]'], [ambireAccountAddress, chainId, nonce, recoveryTxns])
     )
@@ -105,7 +97,7 @@ describe('Recovery basic schedule and execute', function () {
     const contract = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, wallet)
     const {timelockAddress} = getTimelockData()
     const nonce = await contract.nonce()
-    const recoveryTxns = [getRecoveryTxn(ambireAccountAddress)]
+    const recoveryTxns = [getPriviledgeTxn(ambireAccountAddress, addressThree)]
     const msgHash = ethers.keccak256(
       abiCoder.encode(['address', 'uint', 'uint', 'tuple(address, uint, bytes)[]'], [ambireAccountAddress, chainId, nonce, recoveryTxns])
     )
@@ -143,7 +135,7 @@ describe('Recovery complex tests', function () {
     const contract = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, wallet)
     const {timelockAddress} = getTimelockData()
     const nonce = await contract.nonce()
-    const recoveryTxns = [getRecoveryTxn(ambireAccountAddress)]
+    const recoveryTxns = [getPriviledgeTxn(ambireAccountAddress, addressThree)]
     const msgHash = ethers.keccak256(
       abiCoder.encode(['address', 'uint', 'uint', 'tuple(address, uint, bytes)[]'], [ambireAccountAddress, chainId, nonce, recoveryTxns])
     )
@@ -195,7 +187,7 @@ describe('Recovery complex tests', function () {
     const contract = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, wallet)
     const {timelockAddress} = getTimelockData()
     const nonce = await contract.nonce()
-    const recoveryTxns = [getRecoveryTxn(ambireAccountAddress, addressFour)]
+    const recoveryTxns = [getPriviledgeTxn(ambireAccountAddress, addressFour)]
     const msgHash = ethers.keccak256(
       abiCoder.encode(['address', 'uint', 'uint', 'tuple(address, uint, bytes)[]'], [ambireAccountAddress, chainId, nonce, recoveryTxns])
     )
@@ -238,7 +230,7 @@ describe('Recovery complex tests', function () {
     const contract = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, wallet)
     const {timelockAddress} = getTimelockData()
     const nonce = await contract.nonce()
-    const recoveryTxns = [getRecoveryTxn(ambireAccountAddress)]
+    const recoveryTxns = [getPriviledgeTxn(ambireAccountAddress, addressThree)]
     const msgHash = ethers.keccak256(
       abiCoder.encode(['address', 'uint', 'uint', 'tuple(address, uint, bytes)[]'], [ambireAccountAddress, chainId, nonce, recoveryTxns])
     )
@@ -284,7 +276,7 @@ describe('Recovery complex tests', function () {
     const contract = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, wallet)
     const {timelockAddress} = getTimelockData()
     const nonce = await contract.nonce()
-    const recoveryTxns = [getRecoveryTxn(ambireAccountAddress, addressTwo)]
+    const recoveryTxns = [getPriviledgeTxn(ambireAccountAddress, addressTwo)]
     const msgHash = ethers.keccak256(
       abiCoder.encode(['address', 'uint', 'uint', 'tuple(address, uint, bytes)[]'], [ambireAccountAddress, chainId, nonce, recoveryTxns])
     )
@@ -316,11 +308,7 @@ describe('Recovery complex tests', function () {
     expect(secondAddressCannotSign).to.equal('0x0000000000000000000000000000000000000000000000000000000000000000')
 
     // send funds to the contract
-    const sendFunds = await wallet.sendTransaction({
-      to: ambireAccountAddress,
-      value: ethers.parseEther('1'),
-    })
-    await wait(wallet, sendFunds)
+    await sendFunds(ambireAccountAddress, 1)
 
     // send a normal txn
     const normalTxns = [[addressFour, ethers.parseEther('0.01'), '0x00']]
@@ -350,7 +338,7 @@ describe('Bigger timelock recovery tests', function() {
     const {contract} = await deployAmbireAccount(recoveryInfo)
     const {timelockAddress} = getTimelockData(recoveryInfo)
     const nonce = await contract.nonce()
-    const recoveryTxns = [getRecoveryTxn(ambireAccountAddress, addressFour)]
+    const recoveryTxns = [getPriviledgeTxn(ambireAccountAddress, addressFour)]
     const msgHash = ethers.keccak256(
       abiCoder.encode(['address', 'uint', 'uint', 'tuple(address, uint, bytes)[]'], [ambireAccountAddress, chainId, nonce, recoveryTxns])
     )
@@ -402,7 +390,7 @@ describe('Bricking Recovery', function() {
     const {timelockAddress} = getTimelockData()
 
     const nonce = await contract.nonce()
-    const recoveryTxns = [getRecoveryTxn(ambireAccountAddress)]
+    const recoveryTxns = [getPriviledgeTxn(ambireAccountAddress, addressThree)]
     const msgHash = ethers.keccak256(
       abiCoder.encode(['address', 'uint', 'uint', 'tuple(address, uint, bytes)[]'], [ambireAccountAddress, chainId, nonce, recoveryTxns])
     )
@@ -431,11 +419,7 @@ describe('Bricking Recovery', function() {
     expect(recovery.toString()).to.equal((block.timestamp + timelock).toString())
 
     // send funds to the contract
-    const sendFunds = await wallet.sendTransaction({
-      to: ambireAccountAddress,
-      value: ethers.parseEther('1'),
-    })
-    await wait(wallet, sendFunds)
+    await sendFunds(ambireAccountAddress, 1)
 
     // send a normal txn
     const otherTxns = [[addressFour, ethers.parseEther('0.01'), '0x00']]
