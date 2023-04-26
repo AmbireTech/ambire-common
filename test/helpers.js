@@ -1,5 +1,5 @@
 const { ethers } = require("ethers")
-const { wallet } = require("./config")
+const { wallet, addressOne, addressTwo, abiCoder } = require("./config")
 const { wait } = require("./polling")
 
 async function sendFunds(to, ether) {
@@ -20,7 +20,16 @@ function getPriviledgeTxn(ambireAccountAddr, privAddress, hasPriv = true) {
   return [ambireAccountAddr, 0, calldata]
 }
 
+const timelock = 1 // a 1 second timelock default
+const defaultRecoveryInfo = [[addressOne, addressTwo], timelock]
+function getTimelockData(recoveryInfo = defaultRecoveryInfo) {
+  const hash = ethers.keccak256(abiCoder.encode(['tuple(address[], uint)'], [recoveryInfo]))
+  const timelockAddress = '0x' + hash.slice(hash.length - 40, hash.length)
+  return {hash, timelockAddress}
+}
+
 module.exports = {
   sendFunds,
-  getPriviledgeTxn
+  getPriviledgeTxn,
+  getTimelockData
 }

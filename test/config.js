@@ -16,6 +16,7 @@ const provider = new ethers.JsonRpcProvider(localhost)
 const wallet = new ethers.Wallet(pk1, provider)
 const wallet2 = new ethers.Wallet(pk2, provider)
 const chainId = 31337
+const abiCoder = new ethers.AbiCoder()
 
 module.exports = {
   pk1,
@@ -33,5 +34,6 @@ module.exports = {
   addressTwo,
   addressThree,
   addressFour,
+  abiCoder,
   chainId
 }
