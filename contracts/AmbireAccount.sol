@@ -143,6 +143,7 @@ contract AmbireAccount {
 		// we increment the nonce to prevent reentrancy
 		// also, we do it here as we want to reuse the previous nonce
 		// and respectively hash upon recovery / canceling
+		// doing this after sig verification is fine because sig verification can only do STATICCALLS
 		nonce = currentNonce + 1;
 		executeBatch(txns);
 
