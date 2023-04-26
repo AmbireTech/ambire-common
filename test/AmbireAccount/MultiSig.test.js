@@ -1,18 +1,17 @@
 const { ethers } = require('ethers')
 const { expect } = require('chai')
 const {
-  pk2,
   AmbireAccount,
   validSig,
   invalidSig,
   wallet,
+  wallet2,
   addressOne,
   addressTwo,
   provider,
 } = require('../config')
 const {wrapEIP712, wrapMultiSig} = require('../ambireSign')
 const { wait } = require('../polling')
-const wallet2 = new ethers.Wallet(pk2, provider)
 
 /**
  * Generate the multisig address that will have permissions to sign

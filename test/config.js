@@ -8,11 +8,13 @@ const addressTwo = '0x70997970C51812dc3A010C7d01b50e0d17dc79C8'
 const addressThree = '0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC'
 const addressFour = '0x90F79bf6EB2c4f870365E785982E1f101E93b906'
 const AmbireAccount = require('../artifacts/contracts/AmbireAccount.sol/AmbireAccount.json')
+const AmbireAccountFactory = require('../artifacts/contracts/AmbireAccountFactory.sol/AmbireAccountFactory.json')
 const localhost = 'http://localhost:8545'
 const validSig = '0x1626ba7e'
 const invalidSig = '0xffffffff'
 const provider = new ethers.JsonRpcProvider(localhost)
 const wallet = new ethers.Wallet(pk1, provider)
+const wallet2 = new ethers.Wallet(pk2, provider)
 const chainId = 31337
 
 module.exports = {
@@ -20,11 +22,13 @@ module.exports = {
   pk2,
   pk3,
   AmbireAccount,
+  AmbireAccountFactory,
   localhost,
   validSig,
   invalidSig,
   provider,
   wallet,
+  wallet2,
   addressOne,
   addressTwo,
   addressThree,

@@ -1,10 +1,10 @@
 const { ethers } = require('ethers')
 const { expect } = require('chai')
 const {
-  pk2,
   chainId,
   AmbireAccount,
   wallet,
+  wallet2,
   provider,
   addressOne,
   addressTwo,
@@ -13,7 +13,6 @@ const {
 } = require('../config')
 const {wrapEthSign, wrapRecover, wrapCancel} = require('../ambireSign')
 const { wait } = require('../polling')
-const wallet2 = new ethers.Wallet(pk2, provider)
 const timelock = 1
 const recoveryInfo = [[addressOne, addressTwo], timelock]
 const abiCoder = new ethers.AbiCoder()

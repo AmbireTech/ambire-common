@@ -20,8 +20,10 @@ contract AmbireAccountFactory {
 	// if it's already deployed, or call `deployAndExecute` if the account is still counterfactual
 	// we can't have deployAndExecuteBySender, because the sender will be the factory
 	function deployAndExecute(
-		bytes calldata code, uint256 salt,
-		AmbireAccount.Transaction[] calldata txns, bytes calldata signature
+		bytes calldata code,
+		uint256 salt,
+		AmbireAccount.Transaction[] calldata txns,
+		bytes calldata signature
 	) external {
 		address payable addr = payable(deploySafe(code, salt));
 		AmbireAccount(addr).execute(txns, signature);
