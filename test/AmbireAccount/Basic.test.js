@@ -1,4 +1,4 @@
-const { ethers } = require('ethers')
+const { ethers, assert } = require('ethers')
 const { expect } = require('chai')
 const {
   AmbireAccount,
@@ -7,7 +7,10 @@ const {
   addressTwo,
   chainId,
   wallet2,
-  abiCoder
+  abiCoder,
+  addressThree,
+  addressFour,
+  provider
 } = require('../config')
 const { wait } = require('../polling')
 const { sendFunds, getPriviledgeTxn, getTimelockData } = require('../helpers')
@@ -198,5 +201,35 @@ describe('Basic Ambire Account tests', function () {
       errorCaught = true
     }
     expect(errorCaught).to.be.true
+  })
+  it('should successfully executeMultiple', async function() {
+    const contract = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, wallet)
+    await sendFunds(ambireAccountAddress, 1)
+    const nonce = await contract.nonce()
+    const firstBatch = [
+      [addressTwo, ethers.parseEther('0.01'), '0x00'],
+      [addressThree, ethers.parseEther('0.01'), '0x00'],
+    ]
+    const msg = ethers.getBytes(ethers.keccak256(
+      abiCoder.encode(['address', 'uint', 'uint', 'tuple(address, uint, bytes)[]'], [ambireAccountAddress, chainId, nonce, firstBatch])
+    ))
+    const s = wrapEthSign(await wallet.signMessage(msg))
+    const secondBatch = [
+      [addressOne, ethers.parseEther('0.01'), '0x00'],
+      [addressFour, ethers.parseEther('0.01'), '0x00'],
+    ]
+    const msg2 = ethers.getBytes(ethers.keccak256(
+      abiCoder.encode(['address', 'uint', 'uint', 'tuple(address, uint, bytes)[]'], [ambireAccountAddress, chainId, nonce + ethers.toBigInt(1), secondBatch])
+    ))
+    const s2 = wrapEthSign(await wallet.signMessage(msg2))
+    const balance = await provider.getBalance(ambireAccountAddress)
+    const multipleTxn = await contract.executeMultiple([
+      [firstBatch, s],
+      [secondBatch, s2]
+    ])
+    await wait(wallet, multipleTxn)
+    const receipt = await multipleTxn.wait()
+    const postBalance = await provider.getBalance(ambireAccountAddress, receipt.blockNumber)
+    expect(balance - postBalance).to.equal(ethers.parseEther('0.04'))
   })
 })
