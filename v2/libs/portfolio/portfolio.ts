@@ -45,7 +45,7 @@ export class Portfolio {
 	}
 
 	// @TODO options
-	async update(provider: Provider | JsonRpcProvider, networkId: string, accountAddr: string) {
+	async update(provider: Provider | JsonRpcProvider, networkId: string, accountAddr: string, baseCurrency: string = 'usd') {
 		const hints = await this.batchedVelcroDiscovery({ networkId, accountAddr })
 		// @TODO: pass binRuntime only if stateOverride is supported
 		const deployless = new Deployless(provider, multiOracle.abi, multiOracle.bin, multiOracle.binRuntime)
@@ -78,12 +78,12 @@ export class Portfolio {
 		if (!this.batchedGecko.has(networkId)) {
 			// @TODO: API key
 			const geckoPlatform = geckoMapping(networkId)
-			this.batchedGecko.set(networkId, batcher(fetch, queue => `https://api.coingecko.com/api/v3/simple/token_price/${geckoPlatform}?contract_addresses=${queue.map(x => x.address).join('%2C')}&vs_currencies=usd`))
+			this.batchedGecko.set(networkId, batcher(fetch, queue => `https://api.coingecko.com/api/v3/simple/token_price/${geckoPlatform}?contract_addresses=${queue.map(x => x.address).join('%2C')}&vs_currencies=${baseCurrency}`))
 		}
 
 		await Promise.all(tokens.map(async token => {
 			const priceData = await this.batchedGecko.get(networkId)!({ ...token, responseIdentifier: token.address.toLowerCase() })
-			token.priceIn = [{ baseCurrency: 'usd', price: priceData?.usd }]
+			token.priceIn = Object.entries(priceData || {}).map(([ baseCurrency, price ]) => ({ baseCurrency, price }))
 		}))
 
 		console.log('2: ' + (Date.now()-n))
