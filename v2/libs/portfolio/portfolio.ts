@@ -12,12 +12,16 @@ const LIMITS = {
 }
 
 // @TODO: another file?
+interface Price {
+	baseCurrency: string,
+	price: number
+}
 interface TokenResult {
 	amount: bigint,
 	decimals: number,
 	symbol: string,
 	address: string,
-	priceUsd: number
+	priceIn: Price[]
 }
 
 // @TODO: can this be better/be eliminated? at worst, we'll just move it out of this file
@@ -79,7 +83,7 @@ export class Portfolio {
 
 		await Promise.all(tokens.map(async token => {
 			const priceData = await this.batchedGecko.get(networkId)!({ ...token, responseIdentifier: token.address.toLowerCase() })
-			token.priceUsd = priceData?.usd
+			token.priceIn = [{ baseCurrency: 'usd', price: priceData?.usd }]
 		}))
 
 		console.log('2: ' + (Date.now()-n))
@@ -102,12 +106,12 @@ portfolio
 	.update(provider, 'ethereum',
 		'0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
 		)
-	.then(console.log)
+	.then(x => console.dir(x, { depth: null }))
 	.catch(console.error)
 
 portfolio
 	.update(provider, 'ethereum',
 		'0x8F493C12c4F5FF5Fd510549E1e28EA3dD101E850'
 		)
-	.then(console.log)
+	.then(x => console.dir(x, { depth: null }))
 	.catch(console.error)
