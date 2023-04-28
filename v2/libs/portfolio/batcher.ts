@@ -5,7 +5,7 @@ interface QueueElement {
 	data: any
 }
 
-export default function batcher (fetch: Function, urlGenerator: (queue: any[]) => string): Function {
+export default function batcher (fetch: Function, urlGenerator: (queue: any[]) => string, batchDebounce: number = 0): Function {
 	let queue: QueueElement[] = []
 	async function resolveQueue() {
 		// Note: intentionally just using the first values in the queue
@@ -28,7 +28,7 @@ export default function batcher (fetch: Function, urlGenerator: (queue: any[]) =
 	}
 	return async (data: any): Promise<any> => {
 		// always do the setTimeout - if it's a second or third batchedCall within a tick, all setTimeouts will fire but only the first will perform work
-		setTimeout(resolveQueue, 0)
+		setTimeout(resolveQueue, batchDebounce)
 		return new Promise((resolve, reject) => queue.push({ resolve, reject, fetch, data }))
 	}
 }
