@@ -101,3 +101,22 @@ Return format:
 
 }
 ```
+
+
+### keystore.ts
+
+The keystore is a library that can store two types of keys: external and internal. External keys are recorded merely with metadata, and do not require the keystore locking to be initiated. Internal keys are stored in the form of encrypted private keys. Encryption works via one master key which is itself stored encrypted via any number of secrets.
+
+Unlocking the keystore works by decrypting and loading the main encryption key into memory. Anything could be a secret, but in reality it's the user's passphrase or a special recovery secret stored in the email vault (to enable email-based keystore recovery).
+
+By having a separate main encryption key, we enable multiple secrets (passphrase AND email-based keystore recovery), and we also ensure that there's no copy of the user's passphrase kept in memory.
+
+
+#### Design decisions
+- decided to store all keys in the Keystore, even if the private key itself is not stored there; simply because it's called a Keystore and the name implies the functionality
+- handle HW wallets in it, so that we handle everything uniformly with a single API; also, it allows future flexibility to have the concept of optional unlocking built-in; if we have interactivity, we can add `keystore.signExtraInputRequired(key)` which returns what we need from the user
+- signing is presumed to be non-interactive at least from `Keystore` point of view (requiring no extra user inputs). This could be wrong, if hardware wallets require extra input - they normally always do, but with the web SDKs we "outsource" this to the HW wallet software itself; this may not be true on mobile. In case we require interactivity, we'll implement `signExtraInputRequired`.
+- awareness of key type and multisigs: key meta should contain what type of key it is
+- no multiple components of private keys, one key is one private key; if it's part of a multisig, this should be reflected via meta
+- no need for separata methods to load from storage, we will always load on demand, since every method is async anyway
+- the keystore will only store single keys and will not concern itself with multisigs or recovery info, even if we use it in an identity as part of a multisig (like QuickAccs, even tho we won't use them in the extension); this will be handled by a separate mapping in the Account object
