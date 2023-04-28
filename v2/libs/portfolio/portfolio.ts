@@ -102,16 +102,22 @@ export class Portfolio {
 const url = 'https://mainnet.infura.io/v3/d4319c39c4df452286d8bf6d10de28ae'
 const provider = new JsonRpcProvider(url)
 const portfolio = new Portfolio(fetch)
+const appraise = (tokens: TokenResult[], inBase: string) => tokens.map(x => {
+	const priceEntry = x.priceIn.find(y => y.baseCurrency === inBase)
+	const price = priceEntry ? priceEntry.price : 0
+	return Number(x.amount) / Math.pow(10, x.decimals) * price
+}).reduce((a, b) => a + b, 0)
+
 portfolio
 	.update(provider, 'ethereum',
 		'0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
 		)
-	.then(x => console.dir(x, { depth: null }))
+	.then(x => console.dir({ total: appraise(x.tokens, 'usd'), ...x }, { depth: null }))
 	.catch(console.error)
 
 portfolio
 	.update(provider, 'ethereum',
 		'0x8F493C12c4F5FF5Fd510549E1e28EA3dD101E850'
 		)
-	.then(x => console.dir(x, { depth: null }))
+	.then(x => console.dir({ total: appraise(x.tokens, 'usd'), ...x }, { depth: null }))
 	.catch(console.error)
