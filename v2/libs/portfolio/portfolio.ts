@@ -28,7 +28,7 @@ interface TokenResult {
 
 // @TODO: can this be better/be eliminated? at worst, we'll just move it out of this file
 // maps our own networkId to coingeckoPlatform
-const geckoMapping = (x: string) => ({
+const geckoNetworkIdMapper = (x: string) => ({
 	polygon: 'polygon-pos',
 	arbitrum: 'arbitrum-one'
 })[x] || x
@@ -84,8 +84,10 @@ export class Portfolio {
 
 		// Update prices
 		if (!this.batchedGecko.has(networkId)) {
+			const geckoPlatform = geckoNetworkIdMapper(networkId)
 			// @TODO: API key
-			const geckoPlatform = geckoMapping(networkId)
+			// @TODO: THIS IS A BUG: we either have to construct the portfolio with baseCurrency (because batchedGecko is scoped to portfolio and cached)
+			// or we have to put the baseCurrency in the queue
 			this.batchedGecko.set(networkId, batcher(fetch, queue => `https://api.coingecko.com/api/v3/simple/token_price/${geckoPlatform}?contract_addresses=${queue.map(x => x.address).join('%2C')}&vs_currencies=${baseCurrency}`))
 		}
 
