@@ -10,7 +10,8 @@ const LIMITS = {
 	// proxy mode input is limited to 24kb
 	deploylessProxyMode: { erc20: 100, erc721: 30, erc721TokensInput: 20, erc721Tokens: 50 },
 	// theoretical capacity is 1666/450
-	deploylessStateOverrideMode: { erc20: 500, erc721: 100, erc721TokensInput: 100, erc721Tokens: 100 }
+	deploylessStateOverrideMode: { erc20: 500, erc721: 100, erc721TokensInput: 100, erc721Tokens: 100 },
+	coingecko: { prices: 50 },
 }
 
 // @TODO: another file?
@@ -68,14 +69,18 @@ export class Portfolio {
 				segments[segmentId].push(queueItem)
 			}
 			// deduplicating is OK because we use a key-based mapping (responseIdentifier) to map the responses
+			// @TODO deduplication should happen BEFORE the pagination but without dropping items from queueSegment
+			const pages = Object.entries(segments).map(([key, queueSegment]) =>
+				paginate(queueSegment, LIMITS.coingecko.prices).map(page => ({ key, queueSegment: page }))
+			).flat(1)
 			const dedup = (x: any[]) => x.filter((y, i) => x.indexOf(y) === i)
-			return Object.entries(segments).map(([key, queueSegment]) => {
+			return pages.map(({ key, queueSegment }) => {
 				// This is OK because we're segmented by baseCurrency
 				const baseCurrency = queueSegment[0]!.data.baseCurrency
 				const geckoPlatform = geckoNetworkIdMapper(queueSegment[0]!.data.networkId)
 				// @TODO: API Key
 				let url
-				if (key.endsWith('natives')) url = `https://api.coingecko.com/api/v3/simple/price?ids=${dedup(queueSegment.map(x => geckoIdMapper(x.data.address, x.data.networkId)))}&vs_currencies=${baseCurrency}`
+				if (key.endsWith('natives')) url = `https://api.coingecko.com/api/v3/simple/price?ids=${dedup(queueSegment.map(x => geckoIdMapper(x.data.address, x.data.networkId))).join('%2C')}&vs_currencies=${baseCurrency}`
 				else url = `https://api.coingecko.com/api/v3/simple/token_price/${geckoPlatform}?contract_addresses=${dedup(queueSegment.map(x => x.data.address)).join('%2C')}&vs_currencies=${baseCurrency}`
 				return { url, queueSegment }
 			})
