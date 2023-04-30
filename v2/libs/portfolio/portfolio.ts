@@ -6,9 +6,11 @@ import { multiOracle } from './multiOracle.json'
 import batcher from './batcher'
 
 const LIMITS = {
-	deploylessProxyMode: { erc20: 100, erc721: 50 },
+	// we have to be conservative with erc721Tokens because if we pass 30x20 (worst case) tokenIds, that's 30x20 extra words which is 19kb
+	// proxy mode input is limited to 24kb
+	deploylessProxyMode: { erc20: 100, erc721: 30, erc721TokensInput: 20, erc721Tokens: 50 },
 	// theoretical capacity is 1666/450
-	deploylessStateOverrideMode: { erc20: 500, erc721: 200 }
+	deploylessStateOverrideMode: { erc20: 500, erc721: 100, erc721TokensInput: 100, erc721Tokens: 100 }
 }
 
 // @TODO: another file?
@@ -54,15 +56,19 @@ export class Portfolio {
 		const start = Date.now()
 		// Add the native token
 		const requestedTokens = hints.erc20s.concat('0x0000000000000000000000000000000000000000')
+		const limits = deployless.isLimitedAt24kbData ? LIMITS.deploylessProxyMode : LIMITS.deploylessStateOverrideMode
 		const [ tokenBalances, collectibles ] = await Promise.all([
-			deployless.call('getBalances', [accountAddr, requestedTokens]),
-			deployless.call('getAllNFTs', [
-				accountAddr,
-				Object.keys(hints.erc721s),
-				(Object.values(hints.erc721s) as any[]).map(x => x.enumerable ? [] : x.tokens),
-				// @TODO get rid of this hardcode
-				50
-			])
+			flattenResults(paginate(requestedTokens, limits.erc20)
+				.map(page => deployless.call('getBalances', [accountAddr, page]))),
+			flattenResults(paginate(Object.entries(hints.erc721s), limits.erc721)
+				.map(page => deployless.call('getAllNFTs', [
+					accountAddr,
+					page.map(([address]) => address),
+					page.map(
+						([_, x]) => x.enumerable ? [] : x.tokens.slice(0, limits.erc721TokensInput)
+					),
+					limits.erc721Tokens
+				])))
 		])
 		// we do [ ... ] to get rid of the ethers Result type
 		const tokensWithErr = [ ...(tokenBalances as any[]) ]
@@ -102,7 +108,7 @@ export class Portfolio {
 	}
 }
 
-function paginateArray (input: any[], limit: number): any[][] {
+function paginate (input: any[], limit: number): any[][] {
 	let pages = []
 	let from = 0
 	for (let i = 1; i <= Math.ceil(input.length / limit); i++) {
@@ -110,6 +116,10 @@ function paginateArray (input: any[], limit: number): any[][] {
 		from += limit
 	}
 	return pages
+}
+
+async function flattenResults(everything: Promise<any[]>[]): Promise<any[]> {
+	return Promise.all(everything).then(results => results.flat())
 }
 
 //const url = 'http://localhost:8545'
