@@ -50,9 +50,8 @@ export class Portfolio {
 		// @TODO: pass binRuntime only if stateOverride is supported
 		const deployless = new Deployless(provider, multiOracle.abi, multiOracle.bin, multiOracle.binRuntime)
 		// @TODO: limits
-		// @TODO: return format for NFTs
 		// @TODO block tag; segment cache by the block tag/simulation mode
-		const n = Date.now()
+		const start = Date.now()
 		// Add the native token
 		const requestedTokens = hints.erc20s.concat('0x0000000000000000000000000000000000000000')
 		const [ tokenBalances, collectibles ] = await Promise.all([
@@ -71,10 +70,13 @@ export class Portfolio {
 				x.error,
 				({ amount: x.amount, decimals: new Number(x.decimals), symbol: x.symbol, address: requestedTokens[i] }) as TokenResult
 			])
-		console.log('1: ' + (Date.now()-n))
+		const oracleCallTime = Date.now() - start
+
 		const tokens = tokensWithErr
 			.filter(([error, result]) => result.amount > 0 && error == '0x' && result.symbol !== '')
 			.map(([_, result]) => result)
+
+		// Update prices
 		if (!this.batchedGecko.has(networkId)) {
 			// @TODO: API key
 			const geckoPlatform = geckoMapping(networkId)
@@ -85,9 +87,11 @@ export class Portfolio {
 			const priceData = await this.batchedGecko.get(networkId)!({ ...token, responseIdentifier: token.address.toLowerCase() })
 			token.priceIn = Object.entries(priceData || {}).map(([ baseCurrency, price ]) => ({ baseCurrency, price }))
 		}))
+		const priceUpdateTime = Date.now() - start - oracleCallTime
 
-		console.log('2: ' + (Date.now()-n))
 		return {
+			oracleCallTime,
+			priceUpdateTime,
 			tokens,
 			tokenErrors: tokensWithErr
 				.filter(([ error, result ]) => error !== '0x' || result.symbol === '')
@@ -96,6 +100,16 @@ export class Portfolio {
 				.filter(x => x.nfts.length)
 		}
 	}
+}
+
+function paginateArray (input: any[], limit: number): any[][] {
+	let pages = []
+	let from = 0
+	for (let i = 1; i <= Math.ceil(input.length / limit); i++) {
+		pages.push(input.slice(from, i * limit))
+		from += limit
+	}
+	return pages
 }
 
 //const url = 'http://localhost:8545'
@@ -112,12 +126,12 @@ portfolio
 	.update(provider, 'ethereum',
 		'0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
 		)
-	.then(x => console.dir({ total: appraise(x.tokens, 'usd'), ...x }, { depth: null }))
+	.then(x => console.dir({ valueInUSD: appraise(x.tokens, 'usd'), ...x }, { depth: null }))
 	.catch(console.error)
 
 portfolio
 	.update(provider, 'ethereum',
 		'0x8F493C12c4F5FF5Fd510549E1e28EA3dD101E850'
 		)
-	.then(x => console.dir({ total: appraise(x.tokens, 'usd'), ...x }, { depth: null }))
+	.then(x => console.dir({ valueInUSD: appraise(x.tokens, 'usd'), ...x }, { depth: null }))
 	.catch(console.error)
