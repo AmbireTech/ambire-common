@@ -56,6 +56,7 @@ export class Portfolio {
 
 	constructor (fetch: Function) {
 		this.batchedVelcroDiscovery = batcher(fetch, queue => [{ queueSegment: queue, url: `https://relayer.ambire.com/velcro-v3/multi-hints?networks=${queue.map(x => x.data.networkId).join(',')}&accounts=${queue.map(x => x.data.accountAddr).join(',')}` }])
+		// @TODO: move this segmenter function out of here into a coingecko module?
 		this.batchedGecko = batcher(fetch, queue => {
 			const segments: {[key: string]: any[]} = {}
 			for (const queueItem of queue) {
@@ -66,14 +67,16 @@ export class Portfolio {
 				if (!segments[segmentId]) segments[segmentId] = []
 				segments[segmentId].push(queueItem)
 			}
+			// deduplicating is OK because we use a key-based mapping (responseIdentifier) to map the responses
+			const dedup = (x: any[]) => x.filter((y, i) => x.indexOf(y) === i)
 			return Object.entries(segments).map(([key, queueSegment]) => {
 				// This is OK because we're segmented by baseCurrency
 				const baseCurrency = queueSegment[0]!.data.baseCurrency
 				const geckoPlatform = geckoNetworkIdMapper(queueSegment[0]!.data.networkId)
 				// @TODO: API Key
 				let url
-				if (key.endsWith('natives')) url = `https://api.coingecko.com/api/v3/simple/price?ids=${queueSegment.map(x => geckoIdMapper(x.data.address, x.data.networkId))}&vs_currencies=${baseCurrency}`
-				else url = `https://api.coingecko.com/api/v3/simple/token_price/${geckoPlatform}?contract_addresses=${queueSegment.map(x => x.data.address).join('%2C')}&vs_currencies=${baseCurrency}`
+				if (key.endsWith('natives')) url = `https://api.coingecko.com/api/v3/simple/price?ids=${dedup(queueSegment.map(x => geckoIdMapper(x.data.address, x.data.networkId)))}&vs_currencies=${baseCurrency}`
+				else url = `https://api.coingecko.com/api/v3/simple/token_price/${geckoPlatform}?contract_addresses=${dedup(queueSegment.map(x => x.data.address)).join('%2C')}&vs_currencies=${baseCurrency}`
 				return { url, queueSegment }
 			})
 		})
