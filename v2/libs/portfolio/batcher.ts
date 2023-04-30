@@ -1,16 +1,18 @@
-interface QueueElement {
+export interface QueueElement {
 	resolve: Function,
 	reject: Function,
 	fetch: Function,
 	data: any
 }
 
-interface Request {
+export interface Request {
 	url: string,
 	queueSegment: QueueElement[]
 }
 
-export default function batcher (fetch: Function, requestGenerator: (queue: any[]) => Request[], batchDebounce: number = 0): Function {
+export type RequestGenerator = (queue: QueueElement[]) => Request[]
+
+export default function batcher (fetch: Function, requestGenerator: RequestGenerator, batchDebounce: number = 0): Function {
 	let queue: QueueElement[] = []
 	async function resolveQueue() {
 		// Note: intentionally just using the first values in the queue
