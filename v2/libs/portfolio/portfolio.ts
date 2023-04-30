@@ -32,6 +32,19 @@ const geckoNetworkIdMapper = (x: string) => ({
 	polygon: 'polygon-pos',
 	arbitrum: 'arbitrum-one'
 })[x] || x
+// @TODO some form of a constants list
+const geckoIdMapper = (address: string, networkId: string): string | null => {
+	if (address === '0x0000000000000000000000000000000000000000') return ({
+		polygon: 'matic-network',
+		'binance-smart-chain': 'binancecoin',
+		avalanche: 'avalanche-2',
+		arbitrum: 'ethereum',
+		metis: 'metis-token',
+		optimism: 'ethereum',
+		// kucoin, gnosis, kc not added
+	})[networkId] || networkId
+	return null
+}
 
 // @TODO cached hints, fallback
 
@@ -39,11 +52,31 @@ const geckoNetworkIdMapper = (x: string) => ({
 // return and cache formats
 export class Portfolio {
 	private batchedVelcroDiscovery: Function
-	private batchedGecko: Map<string, Function>
+	private batchedGecko: Function
 
 	constructor (fetch: Function) {
-		this.batchedVelcroDiscovery = batcher(fetch, queue => `https://relayer.ambire.com/velcro-v3/multi-hints?networks=${queue.map(x => x.networkId).join(',')}&accounts=${queue.map(x => x.accountAddr).join(',')}`)
-		this.batchedGecko = new Map()
+		this.batchedVelcroDiscovery = batcher(fetch, queue => [{ queueSegment: queue, url: `https://relayer.ambire.com/velcro-v3/multi-hints?networks=${queue.map(x => x.data.networkId).join(',')}&accounts=${queue.map(x => x.data.accountAddr).join(',')}` }])
+		this.batchedGecko = batcher(fetch, queue => {
+			const segments: {[key: string]: any[]} = {}
+			for (const queueItem of queue) {
+				let segmentId: string = queueItem.data.baseCurrency
+				const geckoId = geckoIdMapper(queueItem.data.address, queueItem.data.networkId)
+				if (geckoId) segmentId += ':natives'
+				else segmentId += `:${queueItem.data.networkId}`
+				if (!segments[segmentId]) segments[segmentId] = []
+				segments[segmentId].push(queueItem)
+			}
+			return Object.entries(segments).map(([key, queueSegment]) => {
+				// This is OK because we're segmented by baseCurrency
+				const baseCurrency = queueSegment[0]!.data.baseCurrency
+				const geckoPlatform = geckoNetworkIdMapper(queueSegment[0]!.data.networkId)
+				// @TODO: API Key
+				let url
+				if (key.endsWith('natives')) url = `https://api.coingecko.com/api/v3/simple/price?ids=${queueSegment.map(x => geckoIdMapper(x.data.address, x.data.networkId))}&vs_currencies=${baseCurrency}`
+				else url = `https://api.coingecko.com/api/v3/simple/token_price/${geckoPlatform}?contract_addresses=${queueSegment.map(x => x.data.address).join('%2C')}&vs_currencies=${baseCurrency}`
+				return { url, queueSegment }
+			})
+		})
 	}
 
 	// @TODO options
@@ -51,7 +84,6 @@ export class Portfolio {
 		const hints = await this.batchedVelcroDiscovery({ networkId, accountAddr })
 		// @TODO: pass binRuntime only if stateOverride is supported
 		const deployless = new Deployless(provider, multiOracle.abi, multiOracle.bin, multiOracle.binRuntime)
-		// @TODO: limits
 		// @TODO block tag; segment cache by the block tag/simulation mode
 		const start = Date.now()
 		// Add the native token
@@ -82,17 +114,14 @@ export class Portfolio {
 			.filter(([error, result]) => result.amount > 0 && error == '0x' && result.symbol !== '')
 			.map(([_, result]) => result)
 
-		// Update prices
-		if (!this.batchedGecko.has(networkId)) {
-			const geckoPlatform = geckoNetworkIdMapper(networkId)
-			// @TODO: API key
-			// @TODO: THIS IS A BUG: we either have to construct the portfolio with baseCurrency (because batchedGecko is scoped to portfolio and cached)
-			// or we have to put the baseCurrency in the queue
-			this.batchedGecko.set(networkId, batcher(fetch, queue => `https://api.coingecko.com/api/v3/simple/token_price/${geckoPlatform}?contract_addresses=${queue.map(x => x.address).join('%2C')}&vs_currencies=${baseCurrency}`))
-		}
-
 		await Promise.all(tokens.map(async token => {
-			const priceData = await this.batchedGecko.get(networkId)!({ ...token, responseIdentifier: token.address.toLowerCase() })
+			const priceData = await this.batchedGecko({
+				...token,
+				networkId,
+				baseCurrency,
+				// this is what to look for in the coingecko response object
+				responseIdentifier: geckoIdMapper(token.address, networkId) || token.address.toLowerCase()
+			})
 			token.priceIn = Object.entries(priceData || {}).map(([ baseCurrency, price ]) => ({ baseCurrency, price }))
 		}))
 		const priceUpdateTime = Date.now() - start - oracleCallTime
