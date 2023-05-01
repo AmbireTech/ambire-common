@@ -40,11 +40,12 @@ export class Portfolio {
 
 	// @TODO options
 	async update(provider: Provider | JsonRpcProvider, networkId: string, accountAddr: string, baseCurrency: string = 'usd') {
+		const start = Date.now()
 		const hints = await this.batchedVelcroDiscovery({ networkId, accountAddr })
+		const discoveryDone = Date.now()
 		// @TODO: pass binRuntime only if stateOverride is supported
 		const deployless = new Deployless(provider, multiOracle.abi, multiOracle.bin, multiOracle.binRuntime)
 		// @TODO block tag; segment cache by the block tag/simulation mode
-		const start = Date.now()
 		// Add the native token
 		const requestedTokens = hints.erc20s.concat('0x0000000000000000000000000000000000000000')
 		const limits = deployless.isLimitedAt24kbData ? LIMITS.deploylessProxyMode : LIMITS.deploylessStateOverrideMode
@@ -67,7 +68,7 @@ export class Portfolio {
 				x.error,
 				({ amount: x.amount, decimals: new Number(x.decimals), symbol: x.symbol, address: requestedTokens[i] }) as TokenResult
 			])
-		const oracleCallTime = Date.now() - start
+		const oracleCallDone = Date.now()
 
 		const tokens = tokensWithErr
 			.filter(([error, result]) => result.amount > 0 && error == '0x' && result.symbol !== '')
@@ -83,11 +84,12 @@ export class Portfolio {
 			})
 			token.priceIn = Object.entries(priceData || {}).map(([ baseCurrency, price ]) => ({ baseCurrency, price }))
 		}))
-		const priceUpdateTime = Date.now() - start - oracleCallTime
+		const priceUpdateDone = Date.now()
 
 		return {
-			oracleCallTime,
-			priceUpdateTime,
+			discoveryTime: discoveryDone - start,
+			oracleCallTime: oracleCallDone - discoveryDone,
+			priceUpdateTime: priceUpdateDone - oracleCallDone,
 			tokens,
 			tokenErrors: tokensWithErr
 				.filter(([ error, result ]) => error !== '0x' || result.symbol === '')
