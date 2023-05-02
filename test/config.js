@@ -15,6 +15,7 @@ const invalidSig = '0xffffffff'
 const provider = new ethers.JsonRpcProvider(localhost)
 const wallet = new ethers.Wallet(pk1, provider)
 const wallet2 = new ethers.Wallet(pk2, provider)
+const wallet3 = new ethers.Wallet(pk3, provider)
 const chainId = 31337
 const abiCoder = new ethers.AbiCoder()
 
@@ -30,6 +31,7 @@ module.exports = {
   provider,
   wallet,
   wallet2,
+  wallet3,
   addressOne,
   addressTwo,
   addressThree,
