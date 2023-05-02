@@ -64,7 +64,8 @@ library SignatureValidator {
 			// s := schnorr signature
 			// parity := public key y-coord parity (27 or 28)
 			// last uint8 is for the Ambire sig mode - it's ignored
-			(bytes32 px, bytes32 e, bytes32 s, uint8 parity,) = abi.decode(sig, (bytes32, bytes32, bytes32, uint8, uint8));
+			sig.trimToSize(sig.length - 1);
+			(bytes32 px, bytes32 e, bytes32 s, uint8 parity) = abi.decode(sig, (bytes32, bytes32, bytes32, uint8));
 			// ecrecover = (m, v, r, s);
 			bytes32 sp = bytes32(Q - mulmod(uint256(s), uint256(px), Q));
 			bytes32 ep = bytes32(Q - mulmod(uint256(e), uint256(px), Q));

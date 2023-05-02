@@ -14,9 +14,9 @@ contract AmbireAccount {
 	// Events
 	event LogPrivilegeChanged(address indexed addr, bytes32 priv);
 	event LogErr(address indexed to, uint value, bytes data, bytes returnData); // only used in tryCatch
-	event LogScheduled(bytes32 indexed txnHash, bytes32 indexed recoveryHash, address indexed recoveryKey, uint nonce, uint time, Transaction[] txns);
-	event LogCancelled(bytes32 indexed txnHash, bytes32 indexed recoveryHash, address indexed recoveryKey, uint time);
-	event LogExecScheduled(bytes32 indexed txnHash, bytes32 indexed recoveryHash, uint time);
+	event LogRecoveryScheduled(bytes32 indexed txnHash, bytes32 indexed recoveryHash, address indexed recoveryKey, uint nonce, uint time, Transaction[] txns);
+	event LogRecoveryCancelled(bytes32 indexed txnHash, bytes32 indexed recoveryHash, address indexed recoveryKey, uint time);
+	event LogRecoveryFinalized(bytes32 indexed txnHash, bytes32 indexed recoveryHash, uint time);
 
 	// Transaction structure
 	// we handle replay protection separately by requiring (address(this), chainID, nonce) as part of the sig
@@ -100,12 +100,11 @@ contract AmbireAccount {
 		uint currentNonce = nonce;
 		// NOTE: abi.encode is safer than abi.encodePacked in terms of collision safety
 		bytes32 hash = keccak256(abi.encode(address(this), block.chainid, currentNonce, txns));
-		// We have to increment before execution cause it protects from reentrancies
-		nonce = currentNonce + 1;
 
 		address signerKey;
 		// Recovery signature: allows to perform timelocked txns
 		uint8 sigMode = uint8(signature[signature.length - 1]);
+
 		if (sigMode == SIGMODE_RECOVER || sigMode == SIGMODE_CANCEL) {
 			(bytes memory sig,) = SignatureValidator.splitSignature(signature);
 			(RecoveryInfo memory recoveryInfo, bytes memory innerRecoverySig, address signerKeyToRecover, address signerKeyToCheckPostRecovery) = abi.decode(sig, (RecoveryInfo, bytes, address, address));
@@ -113,12 +112,13 @@ contract AmbireAccount {
 			bytes32 recoveryInfoHash = keccak256(abi.encode(recoveryInfo));
 			require(privileges[signerKeyToRecover] == recoveryInfoHash, 'RECOVERY_NOT_AUTHORIZED');
 			uint scheduled = scheduledRecoveries[hash];
+
 			if (scheduled != 0 && !isCancellation) {
 				// signerKey is set to signerKeyToCheckPostRecovery so that the anti-bricking check can pass
 				signerKey = signerKeyToCheckPostRecovery;
 				require(block.timestamp > scheduled, 'RECOVERY_NOT_READY');
 				delete scheduledRecoveries[hash];
-				emit LogExecScheduled(hash, recoveryInfoHash, block.timestamp);
+				emit LogRecoveryFinalized(hash, recoveryInfoHash, block.timestamp);
 			} else {
 				address recoveryKey = SignatureValidator.recoverAddr(hash, innerRecoverySig);
 				bool isIn;
@@ -128,10 +128,10 @@ contract AmbireAccount {
 				require(isIn, 'RECOVERY_NOT_AUTHORIZED');
 				if (isCancellation) {
 					delete scheduledRecoveries[hash];
-					emit LogCancelled(hash, recoveryInfoHash, recoveryKey, block.timestamp);
+					emit LogRecoveryCancelled(hash, recoveryInfoHash, recoveryKey, block.timestamp);
 				} else {
 					scheduledRecoveries[hash] = block.timestamp + recoveryInfo.timelock;
-					emit LogScheduled(hash, recoveryInfoHash, recoveryKey, currentNonce, block.timestamp, txns);
+					emit LogRecoveryScheduled(hash, recoveryInfoHash, recoveryKey, currentNonce, block.timestamp, txns);
 				}
 				return;
 			}
@@ -140,7 +140,13 @@ contract AmbireAccount {
 			require(privileges[signerKey] != bytes32(0), 'INSUFFICIENT_PRIVILEGE');
 		}
 
+		// we increment the nonce to prevent reentrancy
+		// also, we do it here as we want to reuse the previous nonce
+		// and respectively hash upon recovery / canceling
+		// doing this after sig verification is fine because sig verification can only do STATICCALLS
+		nonce = currentNonce + 1;
 		executeBatch(txns);
+
 		// The actual anti-bricking mechanism - do not allow a signerKey to drop their own priviledges
 		require(privileges[signerKey] != bytes32(0), 'PRIVILEGE_NOT_DOWNGRADED');
 	}
