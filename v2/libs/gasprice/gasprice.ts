@@ -47,6 +47,7 @@ export async function getGasPriceRecommendations (provider: Provider, blockTag: 
 		return speeds.map(({ name, baseFeeAddBps }, i) => ({
 			name,
 			baseFeePerGas: expectedBaseFee + expectedBaseFee * baseFeeAddBps / 10000n,
+			// 1000000000 + 1125000000 * 500 / 10000
 			maxPriorityFeePerGas: average(nthGroup(tips, i, speeds.length))
 		}))
 	} else {
