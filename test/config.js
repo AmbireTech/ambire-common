@@ -19,6 +19,14 @@ const wallet3 = new ethers.Wallet(pk3, provider)
 const chainId = 31337
 const abiCoder = new ethers.AbiCoder()
 
+// setup chai so it could count assertions made:
+// assertion.expectExpects()
+const chai = require('chai');
+const chaiAssertionsCount = require('chai-assertions-count');
+chai.use(chaiAssertionsCount);
+const expect = chai.expect
+const assertion = chai.Assertion
+
 module.exports = {
   pk1,
   pk2,
@@ -37,5 +45,7 @@ module.exports = {
   addressThree,
   addressFour,
   abiCoder,
-  chainId
+  chainId,
+  expect,
+  assertion
 }

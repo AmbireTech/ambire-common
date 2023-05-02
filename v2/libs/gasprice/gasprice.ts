@@ -33,7 +33,7 @@ export async function getGasPriceRecommendations (provider: Provider, blockTag: 
 		// https://eips.ethereum.org/EIPS/eip-1559
 		const gasTarget = lastBlock.gasLimit / ELASTICITY_MULTIPLIER
 		const baseFeePerGas = lastBlock.baseFeePerGas
-    const getBaseFeeDelta = (delta: bigint) => baseFeePerGas * delta / gasTarget / BASE_FEE_MAX_CHANGE_DENOMINATOR
+    	const getBaseFeeDelta = (delta: bigint) => baseFeePerGas * delta / gasTarget / BASE_FEE_MAX_CHANGE_DENOMINATOR
 		let expectedBaseFee = baseFeePerGas
 		if (lastBlock.gasUsed > gasTarget) {
 			const baseFeeDelta = getBaseFeeDelta(lastBlock.gasUsed - gasTarget)
@@ -43,8 +43,7 @@ export async function getGasPriceRecommendations (provider: Provider, blockTag: 
 			expectedBaseFee -= baseFeeDelta
 		}
 
-		const filteredTxns = txns.map(x => x.maxPriorityFeePerGas!).filter(x => x > 0)
-		const tips = filterOutliers(filteredTxns)
+		const tips = filterOutliers(txns.map(x => x.maxPriorityFeePerGas!).filter(x => x > 0))
 		return speeds.map(({ name, baseFeeAddBps }, i) => ({
 			name,
 			baseFeePerGas: expectedBaseFee + expectedBaseFee * baseFeeAddBps / 10000n,

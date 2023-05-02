@@ -1,5 +1,4 @@
 const { ethers } = require('ethers')
-const { expect } = require('chai')
 const {
   chainId,
   AmbireAccount,
@@ -10,6 +9,8 @@ const {
   addressTwo,
   addressThree,
   addressFour,
+  expect,
+  assertion,
 } = require('../config')
 const {wrapEthSign, wrapRecover, wrapCancel} = require('../ambireSign')
 const { wait } = require('../polling')
@@ -132,6 +133,7 @@ describe('Recovery complex tests', function () {
     await deployAmbireAccount()
   })
   it('successfully schedule and finalize a timelock transaction with the same signature but fail on the third txn', async function () {
+    assertion.expectExpects(4)
     const contract = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, wallet)
     const {timelockAddress} = getTimelockData()
     const nonce = await contract.nonce()
@@ -174,14 +176,11 @@ describe('Recovery complex tests', function () {
     expect(newKeyCanSign).to.equal('0x0000000000000000000000000000000000000000000000000000000000000001')
 
     // try to schedule but fail because the nonce has moved up
-    let errorCaught = false
     try {
       await contract.execute(recoveryTxns, ambireSignature)
     } catch (error) {
       expect(error.reason).to.equal('RECOVERY_NOT_AUTHORIZED')
-      errorCaught = true
     }
-    expect(errorCaught).to.be.true
   })
   it('successfully cancels a recovery transaction', async function () {
     const contract = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, wallet)
@@ -227,6 +226,7 @@ describe('Recovery complex tests', function () {
     expect(newKeyCanSign).to.equal('0x0000000000000000000000000000000000000000000000000000000000000000')
   })
   it('fails on trying to add unsigned transactions to finalize recovery after initial schedule', async function () {
+    assertion.expectExpects(2)
     const contract = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, wallet)
     const {timelockAddress} = getTimelockData()
     const nonce = await contract.nonce()
@@ -263,14 +263,11 @@ describe('Recovery complex tests', function () {
     // finalize
     const otherTxn = [addressTwo, 0, '0x00']
     const otherTxns = [...recoveryTxns, otherTxn]
-    let errorCaught = false
     try {
       await await contract.execute(otherTxns, ambireSignature)
     } catch (error) {
       expect(error.reason).to.equal('RECOVERY_NOT_AUTHORIZED')
-      errorCaught = true
     }
-    expect(errorCaught).to.be.true
   })
   it('should execute multiple after schedule, the first txn beign the recovery and the second being a random one with the signature from the recovered key', async function() {
     const contract = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, wallet)
@@ -333,6 +330,7 @@ describe('Recovery complex tests', function () {
 
 describe('Bigger timelock recovery tests', function() {
   it('fail on finalizing the recovery before the timelock', async function () {
+    assertion.expectExpects(2)
     const twoMinutesTimelock = 120
     const recoveryInfo = [[addressOne, addressTwo], twoMinutesTimelock]
     const {contract} = await deployAmbireAccount(recoveryInfo)
@@ -369,14 +367,11 @@ describe('Bigger timelock recovery tests', function() {
     expect(recovery.toString()).to.equal((block.timestamp + twoMinutesTimelock).toString())
 
     // try to execute immediatelly but fail because 2 minutes lock have not passed
-    let errorCaught = false
     try {
       await contract.execute(recoveryTxns, ambireSignature)
     } catch (error) {
       expect(error.reason).to.equal('RECOVERY_NOT_READY')
-      errorCaught = true
     }
-    expect(errorCaught).to.be.true
   })
 })
 
@@ -386,6 +381,7 @@ describe('Bigger timelock recovery tests', function() {
 // as the contract nonce gets updated and we can no longer recover the hash
 describe('Bricking Recovery', function() {
   it('recovery hash is made unaccessible forever by sending a normal transaction after scheduling a recovery', async function(){
+    assertion.expectExpects(3)
     const {contract} = await deployAmbireAccount()
     const {timelockAddress} = getTimelockData()
 
@@ -434,12 +430,10 @@ describe('Bricking Recovery', function() {
     // can no longer finalize
     const reConfirmRecoveryThere = await contract.scheduledRecoveries(msgHash)
     expect(reConfirmRecoveryThere.toString()).to.equal((block.timestamp + timelock).toString())
-    let errorCaught = false
     try {
       await contract.execute(recoveryTxns, ambireSignature)
     } catch (error) {
       expect(error.reason).to.equal('RECOVERY_NOT_AUTHORIZED')
-      errorCaught = true
     }
   })
 })

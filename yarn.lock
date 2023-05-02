@@ -3104,12 +3104,17 @@ cbor@^5.1.0:
     bignumber.js "^9.0.1"
     nofilter "^1.0.4"
 
+chai-assertions-count@^1.0.2:
+  version "1.0.2"
+  resolved "https://registry.npmjs.org/chai-assertions-count/-/chai-assertions-count-1.0.2.tgz"
+  integrity sha512-TnhoI68Mh7GYsdrvQuxK+kKOTfEXQZjePP8lTvYhXGv8KOKY+GaOY3PemMq8mBAa0gqQRKsISdi7QFJ/Lxdt+g==
+
 chai-bn@^0.2.1:
   version "0.2.2"
   resolved "https://registry.npmjs.org/chai-bn/-/chai-bn-0.2.2.tgz"
   integrity sha512-MzjelH0p8vWn65QKmEq/DLBG1Hle4WeyqT79ANhXZhn/UxRWO0OogkAxi5oGGtfzwU9bZR8mvbvYdoqNVWQwFg==
 
-chai@^4.0.0, chai@^4.2.0, chai@^4.3.7:
+chai@*, chai@^4.0.0, chai@^4.2.0, chai@^4.3.7:
   version "4.3.7"
   resolved "https://registry.npmjs.org/chai/-/chai-4.3.7.tgz"
   integrity sha512-HLnAzZ2iupm25PlN0xFreAlBA5zaBSv3og0DdeGA4Ar6h6rJ3A0rolRUKJhSF2V10GZKDgWF/VmAEsNWjCRB+A==
