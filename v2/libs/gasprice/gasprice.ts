@@ -44,12 +44,13 @@ export async function getGasPriceRecommendations (provider: Provider, blockTag: 
 		}
 
 		const tips = filterOutliers(txns.map(x => x.maxPriorityFeePerGas!).filter(x => x > 0))
-		return speeds.map(({ name, baseFeeAddBps }, i) => ({
-			name,
-			baseFeePerGas: expectedBaseFee + expectedBaseFee * baseFeeAddBps / 10000n,
-			// 1000000000 + 1125000000 * 500 / 10000
-			maxPriorityFeePerGas: average(nthGroup(tips, i, speeds.length))
-		}))
+		return speeds.map(({ name, baseFeeAddBps }, i) => {
+			return {
+				name,
+				baseFeePerGas: expectedBaseFee + expectedBaseFee * baseFeeAddBps / 10000n,
+				maxPriorityFeePerGas: getMaxPriorityFeePerGas(tips, i)
+			}
+		})
 	} else {
 		const prices = filterOutliers(txns.map(x => x.gasPrice!).filter(x => x > 0))
 		return speeds.map(({ name }, i) => ({
@@ -87,4 +88,9 @@ function average (data: bigint[]): bigint {
 	if (!data.length) return ethers.toBigInt(0)
 
 	return data.reduce((a, b) => a + b, 0n) / BigInt(data.length)
+}
+
+function getMaxPriorityFeePerGas(tips: bigint[], i: number): bigint {
+	const avg = average(nthGroup(tips, i, speeds.length))
+	return avg != 0n ? avg : 1n
 }
