@@ -48,7 +48,7 @@ export async function getGasPriceRecommendations (provider: Provider, blockTag: 
 			return {
 				name,
 				baseFeePerGas: expectedBaseFee + expectedBaseFee * baseFeeAddBps / 10000n,
-				maxPriorityFeePerGas: getMaxPriorityFeePerGas(tips, i)
+				maxPriorityFeePerGas: average(nthGroup(tips, i, speeds.length))
 			}
 		})
 	} else {
@@ -62,7 +62,7 @@ export async function getGasPriceRecommendations (provider: Provider, blockTag: 
 
 // https://stackoverflow.com/questions/20811131/javascript-remove-outlier-from-an-array
 function filterOutliers (data: bigint[]): bigint[] {
-	if (!data.length) return data
+	if (data.length < 4) return data
 
 	// numeric sort, a - b doesn't work for bigint
 	data.sort((a, b) => a == b ? 0 : (a > b ? 1 : -1))
@@ -77,7 +77,7 @@ function filterOutliers (data: bigint[]): bigint[] {
 }
 
 function nthGroup (data: bigint[], n: number, outOf: number): bigint[] {
-	if (!data.length) return [ethers.toBigInt(0)]
+	if (data.length < 4) return [ethers.toBigInt(0)]
 
 	const step = Math.floor(data.length / outOf)
 	const at = n * step
@@ -85,12 +85,10 @@ function nthGroup (data: bigint[], n: number, outOf: number): bigint[] {
 }
 
 function average (data: bigint[]): bigint {
-	if (!data.length) return ethers.toBigInt(0)
-
 	return data.reduce((a, b) => a + b, 0n) / BigInt(data.length)
 }
 
-function getMaxPriorityFeePerGas(tips: bigint[], i: number): bigint {
-	const avg = average(nthGroup(tips, i, speeds.length))
-	return avg != 0n ? avg : 1n
-}
+// function getMaxPriorityFeePerGas(tips: bigint[], i: number): bigint {
+// 	const avg = average(nthGroup(tips, i, speeds.length))
+// 	return avg != 0n ? avg : 1n
+// }

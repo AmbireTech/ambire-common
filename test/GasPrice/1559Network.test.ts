@@ -180,16 +180,16 @@ describe('1559 Network gas price tests', function() {
     const gasPrice = await getGasPriceRecommendations(provider)
     const expectations = {
       slow: {
-        maxPriorityFeePerGas: 1n,
+        maxPriorityFeePerGas: 0n,
       },
       medium: {
-        maxPriorityFeePerGas: 1n,
+        maxPriorityFeePerGas: 0n,
       },
       fast: {
-        maxPriorityFeePerGas: 1n,
+        maxPriorityFeePerGas: 0n,
       },
       ape: {
-        maxPriorityFeePerGas: 1n,
+        maxPriorityFeePerGas: 0n,
       },
     }
     const slow: any = gasPrice[0]
@@ -201,22 +201,25 @@ describe('1559 Network gas price tests', function() {
     const ape: any = gasPrice[3]
     expect(ape.maxPriorityFeePerGas).to.equal(expectations.ape.maxPriorityFeePerGas)
   })
-  it('makes a maxPriorityFeePerGas prediction with an empty block and returns 1n for maxPriorityFeePerGas', async function(){
+  it('makes a maxPriorityFeePerGas prediction with an empty block and returns 0n for maxPriorityFeePerGas', async function(){
     const params = {
       transactions: []
     }
     const provider = MockProvider.init(params)
     const gasPrice = await getGasPriceRecommendations(provider)
     const slow: any = gasPrice[0]
-    expect(slow.maxPriorityFeePerGas).to.equal(1n)
+    expect(slow.maxPriorityFeePerGas).to.equal(0n)
     const medium: any = gasPrice[1]
-    expect(medium.maxPriorityFeePerGas).to.equal(1n)
+    expect(medium.maxPriorityFeePerGas).to.equal(0n)
     const fast: any = gasPrice[2]
-    expect(fast.maxPriorityFeePerGas).to.equal(1n)
+    expect(fast.maxPriorityFeePerGas).to.equal(0n)
     const ape: any = gasPrice[3]
-    expect(ape.maxPriorityFeePerGas).to.equal(1n)
+    expect(ape.maxPriorityFeePerGas).to.equal(0n)
   })
   it('makes a maxPriorityFeePerGas prediction with 4 transactions but one is an outlier and still returns 1n', async function(){
+    // total: 17 txns
+    // the last will get removed - remaining 16
+    // 4 per speed step
     const params = {
       transactions: [
         { maxPriorityFeePerGas: 10n },
@@ -235,7 +238,7 @@ describe('1559 Network gas price tests', function() {
         { maxPriorityFeePerGas: 50n },
         { maxPriorityFeePerGas: 100n },
         { maxPriorityFeePerGas: 100n },
-        { maxPriorityFeePerGas: 10000n }, // this will get removed
+        { maxPriorityFeePerGas: 10000n }, // this should get removed
       ]
     }
     const provider = MockProvider.init(params)
@@ -248,5 +251,40 @@ describe('1559 Network gas price tests', function() {
     expect(fast.maxPriorityFeePerGas).to.equal(20n)
     const ape: any = gasPrice[3]
     expect(ape.maxPriorityFeePerGas).to.equal(75n)
+  })
+  it('makes a maxPriorityFeePerGas prediction with 4 transactions but one is an outlier and still returns 1n', async function(){
+    const params = {
+      transactions: [
+        { maxPriorityFeePerGas: 1n }, // removed as an outlier
+        { maxPriorityFeePerGas: 1n }, // removed as an outlier
+        { maxPriorityFeePerGas: 100n },
+        { maxPriorityFeePerGas: 100n },
+        { maxPriorityFeePerGas: 100n },
+        { maxPriorityFeePerGas: 110n },
+        { maxPriorityFeePerGas: 110n },
+        { maxPriorityFeePerGas: 110n },
+        { maxPriorityFeePerGas: 110n },
+        { maxPriorityFeePerGas: 110n },
+        { maxPriorityFeePerGas: 110n },
+        { maxPriorityFeePerGas: 110n },
+        { maxPriorityFeePerGas: 120n },
+        { maxPriorityFeePerGas: 120n },
+        { maxPriorityFeePerGas: 120n }, // disregarded as the step is 3
+        { maxPriorityFeePerGas: 150n }, // disregarded as the step is 3
+        { maxPriorityFeePerGas: 150n }, // disregarded as the step is 3
+        { maxPriorityFeePerGas: 10000n }, // removed as an outlier
+        { maxPriorityFeePerGas: 20000n }, // removed as an outlier
+      ]
+    }
+    const provider = MockProvider.init(params)
+    const gasPrice = await getGasPriceRecommendations(provider)
+    const slow: any = gasPrice[0]
+    expect(slow.maxPriorityFeePerGas).to.equal(100n)
+    const medium: any = gasPrice[1]
+    expect(medium.maxPriorityFeePerGas).to.equal(110n)
+    const fast: any = gasPrice[2]
+    expect(fast.maxPriorityFeePerGas).to.equal(110n)
+    const ape: any = gasPrice[3]
+    expect(ape.maxPriorityFeePerGas).to.equal(116n)
   })
 })
