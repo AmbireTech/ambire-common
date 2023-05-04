@@ -1,6 +1,7 @@
 import { Deployless, DeploylessMode } from './deployless'
 import { describe, expect, test } from '@jest/globals'
 import { JsonRpcProvider, getDefaultProvider } from 'ethers'
+import { compileFromContracts } from './compile'
 
 const helloWorld = {
 	abi: [{"inputs":[],"name":"helloWorld","outputs":[{"internalType":"string","name":"","type":"string"}],"stateMutability":"view","type":"function"}],
@@ -85,5 +86,13 @@ describe('Deployless', () => {
 			expect(e.info.error.message.includes('out of gas')).toBe(true)
 		}
 	})
+
+	test('compile a contract', async () => {
+		const json = compileFromContracts('AmbireAccount')
+		expect(json).toHaveProperty('abi')
+		expect(json).toHaveProperty('bytecode')
+		expect(json).toHaveProperty('deployBytecode')
+	})
+
 	// @TODO: error/panic parsing
 })
