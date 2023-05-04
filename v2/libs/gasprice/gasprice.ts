@@ -1,4 +1,4 @@
-import { Provider, ethers } from 'ethers'
+import { Provider } from 'ethers'
 
 // https://eips.ethereum.org/EIPS/eip-1559
 const BASE_FEE_MAX_CHANGE_DENOMINATOR = 8n
@@ -22,7 +22,7 @@ export interface Gas1559Recommendation {
 	baseFeePerGas: bigint,
 	maxPriorityFeePerGas: bigint
 }
-export type GasRecommendation = GasPriceRecommendation | Gas1559Recommendation
+export type GasRecommendation = GasPriceRecommendation | Gas1559Recommendation;
 
 export async function getGasPriceRecommendations (provider: Provider, blockTag: string | number = -1): Promise<GasRecommendation[]> {
 	const lastBlock = await provider.getBlock(blockTag, true)
@@ -33,7 +33,7 @@ export async function getGasPriceRecommendations (provider: Provider, blockTag: 
 		// https://eips.ethereum.org/EIPS/eip-1559
 		const gasTarget = lastBlock.gasLimit / ELASTICITY_MULTIPLIER
 		const baseFeePerGas = lastBlock.baseFeePerGas
-    	const getBaseFeeDelta = (delta: bigint) => baseFeePerGas * delta / gasTarget / BASE_FEE_MAX_CHANGE_DENOMINATOR
+		const getBaseFeeDelta = (delta: bigint) => baseFeePerGas * delta / gasTarget / BASE_FEE_MAX_CHANGE_DENOMINATOR
 		let expectedBaseFee = baseFeePerGas
 		if (lastBlock.gasUsed > gasTarget) {
 			const baseFeeDelta = getBaseFeeDelta(lastBlock.gasUsed - gasTarget)
@@ -44,13 +44,11 @@ export async function getGasPriceRecommendations (provider: Provider, blockTag: 
 		}
 
 		const tips = filterOutliers(txns.map(x => x.maxPriorityFeePerGas!).filter(x => x > 0))
-		return speeds.map(({ name, baseFeeAddBps }, i) => {
-			return {
-				name,
-				baseFeePerGas: expectedBaseFee + expectedBaseFee * baseFeeAddBps / 10000n,
-				maxPriorityFeePerGas: average(nthGroup(tips, i, speeds.length))
-			}
-		})
+		return speeds.map(({ name, baseFeeAddBps }, i) => ({
+			name,
+			baseFeePerGas: expectedBaseFee + expectedBaseFee * baseFeeAddBps / 10000n,
+			maxPriorityFeePerGas: average(nthGroup(tips, i, speeds.length))
+		}))
 	} else {
 		const prices = filterOutliers(txns.map(x => x.gasPrice!).filter(x => x > 0))
 		return speeds.map(({ name }, i) => ({
@@ -62,7 +60,7 @@ export async function getGasPriceRecommendations (provider: Provider, blockTag: 
 
 // https://stackoverflow.com/questions/20811131/javascript-remove-outlier-from-an-array
 function filterOutliers (data: bigint[]): bigint[] {
-	if (data.length < 4) return data
+	if (!data.length) return []
 
 	// numeric sort, a - b doesn't work for bigint
 	data.sort((a, b) => a == b ? 0 : (a > b ? 1 : -1))
@@ -77,18 +75,12 @@ function filterOutliers (data: bigint[]): bigint[] {
 }
 
 function nthGroup (data: bigint[], n: number, outOf: number): bigint[] {
-	if (data.length < 4) return [ethers.toBigInt(0)]
-
 	const step = Math.floor(data.length / outOf)
 	const at = n * step
-	return data.slice(at, at + step)
+	return data.slice(at, at + Math.max(1, step))
 }
 
 function average (data: bigint[]): bigint {
+	if (data.length === 0) return 0n
 	return data.reduce((a, b) => a + b, 0n) / BigInt(data.length)
 }
-
-// function getMaxPriorityFeePerGas(tips: bigint[], i: number): bigint {
-// 	const avg = average(nthGroup(tips, i, speeds.length))
-// 	return avg != 0n ? avg : 1n
-// }

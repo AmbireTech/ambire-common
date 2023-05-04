@@ -4,7 +4,7 @@ import { getGasPriceRecommendations } from "../../v2/libs/gasprice/gasprice"
 import MockProvider from "./MockProvider"
 
 describe('1559 Network gas price tests', function() {
-  it('makes a gas price prediction on an empty block and returns 0n', async function(){
+  it('should return 0n for gasPrice on an empty block', async function(){
     const params = {
       baseFeePerGas: null,
       transactions: []
@@ -20,27 +20,27 @@ describe('1559 Network gas price tests', function() {
     const ape: any = gasPrice[3]
     expect(ape.gasPrice).to.equal(0n)
   })
-  it('makes a gas price prediction on a block with less than 4 transactions', async function(){
+  it('should return the lowest maxPriorityFeePerGas for a block with less than 4 txns', async function(){
     const params = {
       baseFeePerGas: null,
       transactions: [
-        { gasPrice: 100n },
-        { gasPrice: 100n },
+        { gasPrice: 800n }, // this gets disregarded
+        { gasPrice: 500n }, // this gets disregarded
         { gasPrice: 100n },
       ]
     }
     const provider = MockProvider.init(params)
     const gasPrice = await getGasPriceRecommendations(provider)
     const slow: any = gasPrice[0]
-    expect(slow.gasPrice).to.equal(0n)
+    expect(slow.gasPrice).to.equal(100n)
     const medium: any = gasPrice[1]
-    expect(medium.gasPrice).to.equal(0n)
+    expect(medium.gasPrice).to.equal(100n)
     const fast: any = gasPrice[2]
-    expect(fast.gasPrice).to.equal(0n)
+    expect(fast.gasPrice).to.equal(100n)
     const ape: any = gasPrice[3]
-    expect(ape.gasPrice).to.equal(0n)
+    expect(ape.gasPrice).to.equal(100n)
   })
-  it('makes a gas price prediction with gasUsed 30M, base fee should increase by 12.5%', async function(){
+  it('should remove outliers from a group of 19, making the group 15, and return an average for each speed at a step of 3, meaning 12 of 15 will enter the calculation and the top 3 will get disregarded', async function(){
     const params = {
       baseFeePerGas: null,
       transactions: [
