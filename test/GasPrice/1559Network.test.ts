@@ -243,4 +243,42 @@ describe('1559 Network gas price tests', function() {
     const ape: any = gasPrice[3]
     expect(ape.maxPriorityFeePerGas).to.equal(116n)
   })
+  it('should remove 0s from maxPriorityFeePerGas but should keep 1s because they are not outliers, and should calculate an average of every group of 4, disregarding the 17th element', async function(){
+    const params = {
+      transactions: [
+        { maxPriorityFeePerGas: 0n }, // removed because no 0s are allowed
+        { maxPriorityFeePerGas: 0n }, // removed because no 0s are allowed
+        { maxPriorityFeePerGas: 0n }, // removed because no 0s are allowed
+        { maxPriorityFeePerGas: 1n },
+        { maxPriorityFeePerGas: 1n },
+        { maxPriorityFeePerGas: 40n },
+        { maxPriorityFeePerGas: 40n },
+        { maxPriorityFeePerGas: 45n },
+        { maxPriorityFeePerGas: 50n },
+        { maxPriorityFeePerGas: 50n },
+        { maxPriorityFeePerGas: 50n },
+        { maxPriorityFeePerGas: 55n },
+        { maxPriorityFeePerGas: 55n },
+        { maxPriorityFeePerGas: 55n },
+        { maxPriorityFeePerGas: 55n },
+        { maxPriorityFeePerGas: 70n },
+        { maxPriorityFeePerGas: 70n },
+        { maxPriorityFeePerGas: 72n },
+        { maxPriorityFeePerGas: 85n },
+        { maxPriorityFeePerGas: 85n }, // disregarded as the step is 4
+        { maxPriorityFeePerGas: 500n }, // removed as an outlier
+        { maxPriorityFeePerGas: 500n }, // removed as an outlier
+      ]
+    }
+    const provider = MockProvider.init(params)
+    const gasPrice = await getGasPriceRecommendations(provider)
+    const slow: any = gasPrice[0]
+    expect(slow.maxPriorityFeePerGas).to.equal(20n)
+    const medium: any = gasPrice[1]
+    expect(medium.maxPriorityFeePerGas).to.equal(48n)
+    const fast: any = gasPrice[2]
+    expect(fast.maxPriorityFeePerGas).to.equal(55n)
+    const ape: any = gasPrice[3]
+    expect(ape.maxPriorityFeePerGas).to.equal(74n)
+  })
 })
