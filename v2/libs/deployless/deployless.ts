@@ -114,7 +114,7 @@ export class Deployless {
 async function mapError(callPromise: Promise<string>): Promise<string> {
 	try {
 		return await callPromise
-	} catch (e) {
+	} catch (e: any) {
 		// ethers v5 provider: e.error.data is usually our eth_call output in case of execution reverted
 		if (e.error && e.error.data) return e.error.data
 		// ethers v5 provider: unwrap the wrapping that ethers adds to this type of error in case of provider.call
@@ -140,11 +140,10 @@ function mapResponse(data: string): string {
 		return data.startsWith(errorSig)
 			? abiCoder.decode(['string'], '0x' + data.slice(10))[0]
 			: data
-	} catch (e) {
+	} catch (e: any) {
 		if (e.code === 'BUFFER_OVERRUN' || e.code === 'NUMERIC_FAULT') return data.slice(10)
 		else throw e
 	}
-	return data
 }
 
 function checkDataSize (data: string): string {

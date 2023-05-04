@@ -35,7 +35,7 @@ describe('Deployless', () => {
 		const provider = getDefaultProvider('homestead')
 		expect.assertions(1)
 		const deployless = new Deployless(provider, helloWorld.abi, helloWorld.bin)
-		try { await deployless.call('helloWorld', []) } catch (e) {
+		try { await deployless.call('helloWorld', []) } catch (e: any) {
 			expect(e.message).toBe('state override mode (or auto-detect) not available unless you use JsonRpcProvider')
 		}
 	})
@@ -44,7 +44,7 @@ describe('Deployless', () => {
 		const provider = new JsonRpcProvider('https://mainnet.infura.io/v3/84842078b09946638c03157f83405213')
 		const deployless = new Deployless(provider, helloWorld.abi, deployErrBin)
 		expect.assertions(1)
-		try { await deployless.call('helloWorld', [], { mode: DeploylessMode.ProxyContract }) } catch (e) {
+		try { await deployless.call('helloWorld', [], { mode: DeploylessMode.ProxyContract }) } catch (e: any) {
 			expect(e.message).toBe('contract deploy failed')
 		}
 	})
@@ -53,7 +53,7 @@ describe('Deployless', () => {
 		const provider = new JsonRpcProvider('https://mainnet.infura.io/v3/84842078b09946638c03157f83405213')
 		const deployless = new Deployless(provider, helloWorld.abi, deployErrBin)
 		expect.assertions(2)
-		try { await deployless.call('helloWorld', []) } catch (e) {
+		try { await deployless.call('helloWorld', []) } catch (e: any) {
 			expect(e.message).toBe('contract deploy failed')
 			// detection stil succeeded
 			expect(deployless.isLimitedAt24kbData).toBe(false)
@@ -75,11 +75,11 @@ describe('Deployless', () => {
 		const provider = new JsonRpcProvider('https://mainnet.infura.io/v3/84842078b09946638c03157f83405213')
 		const deployless = new Deployless(provider, helloWorld.abi, helloWorld.bin, helloWorld.binRuntime)
 		expect.assertions(2)
-		try { await deployless.call('helloWorld', [], { blockTag: '0x1' }) } catch (e) {
+		try { await deployless.call('helloWorld', [], { blockTag: '0x1' }) } catch (e: any) {
 			// we are relying on the fact that we do not have the SHR opcode in block 0x1
 			expect(e.info.error.message.includes('invalid opcode: SHR')).toBe(true)
 		}
-		try { await deployless.call('helloWorld', [], { blockTag: '0x1', mode: DeploylessMode.ProxyContract }) } catch (e) {
+		try { await deployless.call('helloWorld', [], { blockTag: '0x1', mode: DeploylessMode.ProxyContract }) } catch (e: any) {
 			// ethers wraps the error if we use the Provider; perhaps we should un-wrap it
 			// fails with out-of-gas when wrapped in the ProxyContract mode
 			expect(e.info.error.message.includes('out of gas')).toBe(true)
