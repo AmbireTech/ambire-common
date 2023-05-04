@@ -1,49 +1,8 @@
 // https://eips.ethereum.org/EIPS/eip-1559
-import { Block, BlockTag, FetchRequest, JsonRpcApiProviderOptions, JsonRpcProvider, Networkish, ethers } from "ethers"
-import { abiCoder, addressOne, expect, localhost } from "../config"
+import { ethers } from "ethers"
+import { expect } from "../config"
 import { getGasPriceRecommendations } from "../../v2/libs/gasprice/gasprice"
-const speeds = [
-	{ baseFeeAddBps: 0n },
-	{ baseFeeAddBps: 500n },
-	{ baseFeeAddBps: 1000n },
-	{ baseFeeAddBps: 1500n },
-]
-const ELASTICITY_MULTIPLIER = 2n
-const gasLimit = 30000000n
-const gasTarget = gasLimit / ELASTICITY_MULTIPLIER
-
-class MockProvider extends JsonRpcProvider {
-
-  blockParams: any;
-
-  constructor(url?: string | FetchRequest, network?: Networkish, options?: JsonRpcApiProviderOptions, blockParams: any = {}) {
-    super(url, network, options)
-    this.blockParams = blockParams
-  }
-
-  static init(params: {}): MockProvider {
-    return new MockProvider(localhost, 1, {}, params)
-  }
-
-  async getBlock(block: BlockTag | string, prefetchTxs?: boolean): Promise<null | Block> {
-
-    const params = {
-      hash: this.blockParams.hash ?? null,
-      number: this.blockParams.number ?? 0,
-      timestamp: this.blockParams.timestamp ?? 30000000,
-      parentHash: this.blockParams.parentHash ?? ethers.keccak256(abiCoder.encode(['string'], ['random hash'])),
-      nonce: this.blockParams.nonce ?? '0',
-      difficulty: this.blockParams.difficulty ?? 1n,
-      gasLimit: this.blockParams.gasLimit ?? gasLimit,
-      gasUsed: this.blockParams.gasUsed ?? 30000000n,
-      miner: this.blockParams.miner ?? addressOne,
-      extraData: this.blockParams.extraData ?? 'extra data',
-      baseFeePerGas: this.blockParams.baseFeePerGas ?? ethers.parseUnits('1', 'gwei'),
-      transactions: this.blockParams.transactions ?? []
-    }
-    return new Block(params, this)
-  }
-}
+import MockProvider from "./MockProvider"
 
 describe('1559 Network gas price tests', function() {
   it('makes a gas price prediction with gasUsed 30M, base fee should increase by 12.5%', async function(){
