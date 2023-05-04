@@ -18,11 +18,15 @@ export default function useVelcroFetch({
   extraTokensAssets,
   getExtraTokensAssets,
   eligibleRequests,
+  pendingTransactions,
   fetchingAssets,
   setFetchingAssets,
   оtherNetworksFetching,
   setOtherNetworksFetching,
-  removeDuplicatedAssets
+  removeDuplicatedAssets,
+  requestPendingState,
+  pendingTokens,
+  setPendingTokens
 }) {
   const formatTokensResponse = (tokens, assets, network, account, otherNetworksFetch) => {
     const extraTokens = getExtraTokensAssets(account, network)
@@ -244,6 +248,14 @@ export default function useVelcroFetch({
         // eslint-disable-next-line prefer-const
         let { cache, cacheTime, tokens, nfts, partial, provider } = response.data
 
+        const tokensInPendingListReceived = pendingTokens?.filter((t) =>
+          tokens.find((token) => token.address === t.address)
+        )
+        if (tokensInPendingListReceived?.length) {
+          setPendingTokens((prev) => [
+            ...(prev && prev.filter((t) => !tokens.find((token) => token.address === t.address)))
+          ])
+        }
         tokens = filterByHiddenTokens(tokens)
         const prevCacheTime = assets?.cacheTime
         // We should skip the tokens update for the current network,
@@ -313,7 +325,8 @@ export default function useVelcroFetch({
               cacheTime: cacheTime || prevCacheTime,
               tokens: formattedTokens
             },
-            5
+            5,
+            requestPendingState
           )
           return
         }
@@ -364,7 +377,8 @@ export default function useVelcroFetch({
             cacheTime: cacheTime || prevCacheTime,
             tokens: formattedTokens
           },
-          5
+          5,
+          requestPendingState
         )
 
         // Show error in case we have some
@@ -392,7 +406,15 @@ export default function useVelcroFetch({
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [extraTokensAssets, addToast, eligibleRequests, currentAccount, formatTokensResponse]
+    [
+      extraTokensAssets,
+      addToast,
+      eligibleRequests,
+      pendingTransactions,
+      currentAccount,
+      formatTokensResponse,
+      pendingTokens
+    ]
   )
   return {
     fetchOtherNetworksBalances,
