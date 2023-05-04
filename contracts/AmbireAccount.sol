@@ -107,7 +107,7 @@ contract AmbireAccount {
 
 		if (sigMode == SIGMODE_RECOVER || sigMode == SIGMODE_CANCEL) {
 			(bytes memory sig,) = SignatureValidator.splitSignature(signature);
-			(RecoveryInfo memory recoveryInfo, bytes memory recoverySignature, address signerKeyToRecover, address signerKeyToCheckPostRecovery) = abi.decode(sig, (RecoveryInfo, bytes, address, address));
+			(RecoveryInfo memory recoveryInfo, bytes memory innerRecoverySig, address signerKeyToRecover, address signerKeyToCheckPostRecovery) = abi.decode(sig, (RecoveryInfo, bytes, address, address));
 			bool isCancellation = sigMode == SIGMODE_CANCEL;
 			bytes32 recoveryInfoHash = keccak256(abi.encode(recoveryInfo));
 			require(privileges[signerKeyToRecover] == recoveryInfoHash, 'RECOVERY_NOT_AUTHORIZED');
@@ -120,7 +120,7 @@ contract AmbireAccount {
 				delete scheduledRecoveries[hash];
 				emit LogRecoveryFinalized(hash, recoveryInfoHash, block.timestamp);
 			} else {
-				address recoveryKey = SignatureValidator.recoverAddr(hash, recoverySignature);
+				address recoveryKey = SignatureValidator.recoverAddr(hash, innerRecoverySig);
 				bool isIn;
 				for (uint i=0; i<recoveryInfo.keys.length; i++) {
 					if (recoveryInfo.keys[i] == recoveryKey) { isIn = true; break; }
