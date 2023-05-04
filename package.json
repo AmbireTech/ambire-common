@@ -5,7 +5,8 @@
   "scripts": {
     "generate:contractInfo": "node scripts/generateContractInfo.js > src/constants/humanizerInfo.json",
     "test": "jest",
-    "build": "tsc v2/libs/deployless/deployless.ts -t es5"
+    "build": "tsc v2/libs/deployless/deployless.ts -t es5",
+    "lint:fix": "eslint ./src/** --ext .js,.jsx,.ts,.tsx --fix"
   },
   "peerDependencies": {
     "@ambire/signature-validator": "^1.0.3",
