@@ -1,4 +1,4 @@
-import { Interface, concat, AbiCoder, Provider, JsonRpcProvider, toBeHex, toUtf8Bytes, getBytes, isBytesLike } from 'ethers'
+import { Interface, concat, AbiCoder, Provider, JsonRpcProvider, getBytes } from 'ethers'
 
 // this is a magic contract that is constructed like `constructor(bytes memory contractBytecode, bytes memory data)` and returns the result from the call
 // compiled from relayer:a7ea373559d8c419577ac05527bd37fbee8856ae/src/velcro-v3/contracts/Deployless.sol with solc 0.8.17
@@ -31,6 +31,7 @@ const defaultOptions: CallOptions = {
 	blockTag: 'latest',
 	from: undefined,
 }
+const removePanicSig = (data: string) => data.slice(10)
 
 export class Deployless {
 	private iface: Interface;
@@ -107,9 +108,7 @@ export class Deployless {
 				]))
 			})
 		const returnDataRaw = mapResponse(await mapError(callPromise))
-		return isBytesLike(returnDataRaw)
-			? this.iface.decodeFunctionResult(methodName, returnDataRaw)[0]
-			: returnDataRaw
+		return this.iface.decodeFunctionResult(methodName, returnDataRaw)[0]
 	}
 }
 
@@ -131,19 +130,19 @@ function mapResponse(data: string): string {
 	if (data === deployErrorSig) throw new Error('contract deploy failed')
 	if (data.startsWith(panicSig)) {
 		// https://docs.soliditylang.org/en/v0.8.11/control-structures.html#panic-via-assert-and-error-via-require
-		const num = parseInt('0x' + data.slice(10))
-		if (num === 0x00) return 'generic compiler error'
-		if (num === 0x01) {return 'solidity assert error';}
-		if (num === 0x11) return 'arithmetic error'
-		if (num === 0x12) return 'division by zero'
-		return `panic error: 0x${num.toString(16)}`
+		const num = parseInt('0x' + removePanicSig(data))
+		if (num === 0x00) throw new Error('generic compiler error')
+		if (num === 0x01) throw new Error('solidity assert error')
+		if (num === 0x11) throw new Error('arithmetic error')
+		if (num === 0x12) throw new Error('division by zero')
+		throw new Error(`panic error: 0x${num.toString(16)}`)
 	}
 	try {
 		return data.startsWith(errorSig)
-			? abiCoder.decode(['string'], '0x' + data.slice(10))[0]
+			? abiCoder.decode(['string'], '0x' + removePanicSig(data))[0]
 			: data
 	} catch (e: any) {
-		if (e.code === 'BUFFER_OVERRUN' || e.code === 'NUMERIC_FAULT') return data.slice(10)
+		if (e.code === 'BUFFER_OVERRUN' || e.code === 'NUMERIC_FAULT') return removePanicSig(data)
 		else throw e
 	}
 }

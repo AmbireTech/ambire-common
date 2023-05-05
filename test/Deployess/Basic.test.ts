@@ -1,4 +1,4 @@
-import { AbiCoder, JsonRpcProvider, concat, getDefaultProvider, toBeHex } from 'ethers'
+import { AbiCoder, JsonRpcProvider, concat, getDefaultProvider, randomBytes, toBeHex } from 'ethers'
 import { Deployless, DeploylessMode } from '../../v2/libs/deployless/deployless'
 import { compile } from '../../v2/libs/deployless/compile'
 import { addressOne, expect } from '../config'
@@ -119,10 +119,30 @@ describe('Deployless', () => {
     }
   })
 
-  it('should throw an assert error', async function() {
+  it('should throw an solidity assert error', async function() {
+    assertion.expectExpects(1)
     const provider = new JsonRpcProvider('https://mainnet.infura.io/v3/84842078b09946638c03157f83405213')
     const contract = new Deployless(provider, helloWorld.abi, helloWorld.bytecode, helloWorld.deployBytecode)
-    const result = await contract.call('throwAssertErorr', [])
-    expect(result).to.equal('solidity assert error')
+    try { await contract.call('throwAssertError', []) } catch(e: any) {
+      expect(e.message).to.equal('solidity assert error')
+    }
+  })
+
+  it('should throw an arithmetic error', async function() {
+    assertion.expectExpects(1)
+    const provider = new JsonRpcProvider('https://mainnet.infura.io/v3/84842078b09946638c03157f83405213')
+    const contract = new Deployless(provider, helloWorld.abi, helloWorld.bytecode, helloWorld.deployBytecode)
+    try { await contract.call('throwArithmeticError', []) } catch(e: any) {
+      expect(e.message).to.equal('arithmetic error')
+    }
+  })
+
+  it('should throw a division by zero error', async function() {
+    assertion.expectExpects(1)
+    const provider = new JsonRpcProvider('https://mainnet.infura.io/v3/84842078b09946638c03157f83405213')
+    const contract = new Deployless(provider, helloWorld.abi, helloWorld.bytecode, helloWorld.deployBytecode)
+    try { await contract.call('throwDivisionByZeroError', []) } catch(e: any) {
+      expect(e.message).to.equal('division by zero')
+    }
   })
 })

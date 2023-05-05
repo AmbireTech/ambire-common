@@ -3,8 +3,26 @@ contract HelloWorld {
 		return "hello world";
 	}
 
-    function throwAssertErorr() external view returns (uint) {
+    function throwAssertError() external view returns (uint) {
         assert(1 > 1);
         return 1;
+    }
+
+    function throwArithmeticError() external view returns (uint) {
+        uint8 z = 240;
+        uint8 x = 240;
+        unchecked {
+            z = z + x;
+        }
+        return z;
+    }
+
+    function throwDivisionByZeroError() external view returns (uint) {
+        uint8 z = 240;
+        uint8 x = 0;
+        unchecked {
+            z = z / x;
+        }
+        return z;
     }
 }
