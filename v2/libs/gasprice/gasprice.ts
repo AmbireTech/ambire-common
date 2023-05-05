@@ -77,7 +77,13 @@ function filterOutliers (data: bigint[]): bigint[] {
 function nthGroup (data: bigint[], n: number, outOf: number): bigint[] {
 	const step = Math.floor(data.length / outOf)
 	const at = n * step
-	return data.slice(at, at + Math.max(1, step))
+
+	// if n is 3 (ape speed) and we have at least 4 txns in the previous block,
+	// we want to include the remaining high cost transactions in the group.
+	// Example: 15 txns make 3 groups of 3 for slow, medium and fast, totalling 9
+	// the remaining 6 get included in the ape calculation
+	const end = (n != 3 || data.length < 4) ? at + Math.max(1, step) : data.length
+	return data.slice(at, end)
 }
 
 function average (data: bigint[]): bigint {

@@ -39,7 +39,7 @@ describe('1559 Network gas price tests', function() {
     const ape: any = gasPrice[3]
     expect(ape.gasPrice).to.equal(100n)
   })
-  it('should remove outliers from a group of 19, making the group 15, and return an average for each speed at a step of 3, meaning 12 of 15 will enter the calculation and the top 3 will get disregarded', async function(){
+  it('should remove outliers from a group of 19, making the group 15, and return an average for each speed at a step of 3 for slow, medium and fast, and an avg of the remaining 6 for ape', async function(){
     const params = {
       baseFeePerGas: null,
       transactions: [
@@ -57,9 +57,9 @@ describe('1559 Network gas price tests', function() {
         { gasPrice: 110n },
         { gasPrice: 120n },
         { gasPrice: 120n },
-        { gasPrice: 120n }, // disregarded as the step is 3
-        { gasPrice: 150n }, // disregarded as the step is 3
-        { gasPrice: 150n }, // disregarded as the step is 3
+        { gasPrice: 120n },
+        { gasPrice: 150n },
+        { gasPrice: 150n },
         { gasPrice: 10000n }, // removed as an outlier
         { gasPrice: 20000n }, // removed as an outlier
       ]
@@ -73,9 +73,9 @@ describe('1559 Network gas price tests', function() {
     const fast: any = gasPrice[2]
     expect(fast.gasPrice).to.equal(110n)
     const ape: any = gasPrice[3]
-    expect(ape.gasPrice).to.equal(116n)
+    expect(ape.gasPrice).to.equal(128n)
   })
-  it('should remove 0s from gasPrice but should keep 1s because they are not outliers, and should calculate an average of every group of 4, disregarding the 17th element', async function(){
+  it('should remove 0s from gasPrice but should keep 1s because they are not outliers, and should calculate an average of every group of 4 for slow, medium and fast, and an average of the remaining 5 for ape', async function(){
     const params = {
       baseFeePerGas: null,
       transactions: [
@@ -98,7 +98,7 @@ describe('1559 Network gas price tests', function() {
         { gasPrice: 70n },
         { gasPrice: 72n },
         { gasPrice: 85n },
-        { gasPrice: 85n }, // disregarded as the step is 4
+        { gasPrice: 85n },
         { gasPrice: 500n }, // removed as an outlier
         { gasPrice: 500n }, // removed as an outlier
       ]
@@ -112,6 +112,6 @@ describe('1559 Network gas price tests', function() {
     const fast: any = gasPrice[2]
     expect(fast.gasPrice).to.equal(55n)
     const ape: any = gasPrice[3]
-    expect(ape.gasPrice).to.equal(74n)
+    expect(ape.gasPrice).to.equal(76n)
   })
 })
