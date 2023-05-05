@@ -60,7 +60,7 @@ export function compileFromContracts(contractName: string, options: Options = {f
 
   return {
     abi: output.contracts[contractName][contractName].abi,
-    bytecode: output.contracts[contractName][contractName].evm.bytecode, // bin
-    deployBytecode: output.contracts[contractName][contractName].evm.deployBytecode, // binRuntime
+    bytecode: '0x' + output.contracts[contractName][contractName].evm.bytecode.object, // bin
+    deployBytecode: '0x' + output.contracts[contractName][contractName].evm.deployedBytecode.object, // binRuntime
   }
 }
