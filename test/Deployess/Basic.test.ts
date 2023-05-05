@@ -1,21 +1,19 @@
 import { AbiCoder, JsonRpcProvider, concat, getDefaultProvider, toBeHex } from 'ethers'
 import { Deployless, DeploylessMode } from '../../v2/libs/deployless/deployless'
-import { compileFromContracts } from '../../v2/libs/deployless/compile'
+import { compile } from '../../v2/libs/deployless/compile'
 import { addressOne, expect } from '../config'
 import { assertion } from '../config'
 
-const helloWorld = {
-  abi: [{"inputs":[],"name":"helloWorld","outputs":[{"internalType":"string","name":"","type":"string"}],"stateMutability":"view","type":"function"}],
-  bin: '0x608060405234801561001057600080fd5b50610173806100206000396000f3fe608060405234801561001057600080fd5b506004361061002b5760003560e01c8063c605f76c14610030575b600080fd5b61003861004e565b604051610045919061011b565b60405180910390f35b60606040518060400160405280600b81526020017f68656c6c6f20776f726c64000000000000000000000000000000000000000000815250905090565b600081519050919050565b600082825260208201905092915050565b60005b838110156100c55780820151818401526020810190506100aa565b60008484015250505050565b6000601f19601f8301169050919050565b60006100ed8261008b565b6100f78185610096565b93506101078185602086016100a7565b610110816100d1565b840191505092915050565b6000602082019050818103600083015261013581846100e2565b90509291505056fea264697066735822122077b66d0a3ada4c8d652f3595b556ed1843dd4a3e3d51d9b16b767577f90d8b8d64736f6c63430008110033',
-  binRuntime: '0x608060405234801561001057600080fd5b506004361061002b5760003560e01c8063c605f76c14610030575b600080fd5b61003861004e565b604051610045919061011b565b60405180910390f35b60606040518060400160405280600b81526020017f68656c6c6f20776f726c64000000000000000000000000000000000000000000815250905090565b600081519050919050565b600082825260208201905092915050565b60005b838110156100c55780820151818401526020810190506100aa565b60008484015250505050565b6000601f19601f8301169050919050565b60006100ed8261008b565b6100f78185610096565b93506101078185602086016100a7565b610110816100d1565b840191505092915050565b6000602082019050818103600083015261013581846100e2565b90509291505056fea264697066735822122077b66d0a3ada4c8d652f3595b556ed1843dd4a3e3d51d9b16b767577f90d8b8d64736f6c63430008110033'
-}
+const helloWorld = compile('HelloWorld', {
+  contractsFolder: 'test/contracts'
+})
 const deployErrBin = '0x6080604052348015600f57600080fd5b600080fdfe'
 
 describe('Deployless', () => {
   let deployless: Deployless
   it('should construct an object', () => {
     const provider = new JsonRpcProvider('https://mainnet.infura.io/v3/84842078b09946638c03157f83405213')
-    deployless = new Deployless(provider, helloWorld.abi, helloWorld.bin)
+    deployless = new Deployless(provider, helloWorld.abi, helloWorld.bytecode)
     expect(deployless.isLimitedAt24kbData).to.equal(true)
   })
 
@@ -36,7 +34,7 @@ describe('Deployless', () => {
   it('should detection should not be available with Provider', async () => {
     const provider = getDefaultProvider('homestead')
     assertion.expectExpects(1)
-    const deployless = new Deployless(provider, helloWorld.abi, helloWorld.bin)
+    const deployless = new Deployless(provider, helloWorld.abi, helloWorld.bytecode)
     try { await deployless.call('helloWorld', []) } catch (e: any) {
       expect(e.message).to.equal('state override mode (or auto-detect) not available unless you use JsonRpcProvider')
     }
@@ -64,7 +62,7 @@ describe('Deployless', () => {
 
   it('should deploy error: state override without detection', async () => {
     const provider = new JsonRpcProvider('https://mainnet.infura.io/v3/84842078b09946638c03157f83405213')
-    const deployless = new Deployless(provider, helloWorld.abi, helloWorld.bin, helloWorld.binRuntime)
+    const deployless = new Deployless(provider, helloWorld.abi, helloWorld.bytecode, helloWorld.deployBytecode)
     // we should already be aware that we are not limited by the 24kb limit
     expect(deployless.isLimitedAt24kbData).to.equal(false)
     const result = await deployless.call('helloWorld', [], { mode: DeploylessMode.StateOverride })
@@ -75,7 +73,7 @@ describe('Deployless', () => {
 
   it('should custom block tag', async () => {
     const provider = new JsonRpcProvider('https://mainnet.infura.io/v3/84842078b09946638c03157f83405213')
-    const deployless = new Deployless(provider, helloWorld.abi, helloWorld.bin, helloWorld.binRuntime)
+    const deployless = new Deployless(provider, helloWorld.abi, helloWorld.bytecode, helloWorld.deployBytecode)
     assertion.expectExpects(2)
     try { await deployless.call('helloWorld', [], { blockTag: '0x1' }) } catch (e: any) {
       // we are relying on the fact that we do not have the SHR opcode in block 0x1
@@ -89,7 +87,7 @@ describe('Deployless', () => {
   })
 
   it('should compile a contract', async () => {
-    const json = compileFromContracts('AmbireAccount')
+    const json = compile('AmbireAccount')
     expect(json).to.haveOwnProperty('abi').to.not.be.null
     expect(json).to.haveOwnProperty('bytecode').to.not.be.null
     expect(json).to.haveOwnProperty('deployBytecode').to.not.be.null
@@ -98,7 +96,7 @@ describe('Deployless', () => {
   it('should throw an error for max 24 kb contract size in DeploylessMode.ProxyContract and not throw it in DeploylessMode.StateOverride', async () => {
     assertion.expectExpects(2)
     const provider = new JsonRpcProvider('https://mainnet.infura.io/v3/84842078b09946638c03157f83405213')
-    const factory = compileFromContracts('AmbireAccountFactory')
+    const factory = compile('AmbireAccountFactory')
     const abiCoder = new AbiCoder()
     const bytecodeAndArgs = toBeHex(
       concat([
@@ -120,5 +118,11 @@ describe('Deployless', () => {
       expect(e.message).to.not.equal('24kb call data size limit reached, use StateOverride mode')
     }
   })
-  // @TODO: error/panic parsing
+
+  it('should throw an assert error', async function() {
+    const provider = new JsonRpcProvider('https://mainnet.infura.io/v3/84842078b09946638c03157f83405213')
+    const contract = new Deployless(provider, helloWorld.abi, helloWorld.bytecode, helloWorld.deployBytecode)
+    const result = await contract.call('throwAssertErorr', [])
+    expect(result).to.equal('solidity assert error')
+  })
 })

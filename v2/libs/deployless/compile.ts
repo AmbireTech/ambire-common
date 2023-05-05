@@ -11,7 +11,8 @@ function getSolc(): any {
 }
 
 interface Options {
-  fileName: null | string
+  fileName?: null | string,
+  contractsFolder?: null | string,
 }
 
 // a function that compiles a contract at run time as long
@@ -21,10 +22,11 @@ interface Options {
 // options
 //   - fileName - if the name of the file is different than the name
 // of the contract, it should be passed along as we cannot guess it
-export function compileFromContracts(contractName: string, options: Options = {fileName: null}) {
+export function compile(contractName: string, options: Options = {}) {
   const fileName = options.fileName ? options.fileName : contractName + '.sol'
+  const contractsFolder = options.contractsFolder ? options.contractsFolder : 'contracts'
 
-  const contractPath = path.resolve(__dirname + '../../../../', 'contracts', fileName)
+  const contractPath = path.resolve(__dirname + '../../../../', contractsFolder, fileName)
   const contractSource = fs.readFileSync(contractPath, {encoding: 'utf8'})
 
   const input = {

@@ -1,4 +1,4 @@
-import { Interface, concat, AbiCoder, getBytes, Provider, JsonRpcProvider } from 'ethers'
+import { Interface, concat, AbiCoder, Provider, JsonRpcProvider, toBeHex, toUtf8Bytes, getBytes, isBytesLike } from 'ethers'
 
 // this is a magic contract that is constructed like `constructor(bytes memory contractBytecode, bytes memory data)` and returns the result from the call
 // compiled from relayer:a7ea373559d8c419577ac05527bd37fbee8856ae/src/velcro-v3/contracts/Deployless.sol with solc 0.8.17
@@ -107,7 +107,9 @@ export class Deployless {
 				]))
 			})
 		const returnDataRaw = mapResponse(await mapError(callPromise))
-		return this.iface.decodeFunctionResult(methodName, returnDataRaw)[0]
+		return isBytesLike(returnDataRaw)
+			? this.iface.decodeFunctionResult(methodName, returnDataRaw)[0]
+			: returnDataRaw
 	}
 }
 
@@ -131,7 +133,7 @@ function mapResponse(data: string): string {
 		// https://docs.soliditylang.org/en/v0.8.11/control-structures.html#panic-via-assert-and-error-via-require
 		const num = parseInt('0x' + data.slice(10))
 		if (num === 0x00) return 'generic compiler error'
-		if (num === 0x01) return 'solidity assert error'
+		if (num === 0x01) {return 'solidity assert error';}
 		if (num === 0x11) return 'arithmetic error'
 		if (num === 0x12) return 'division by zero'
 		return `panic error: 0x${num.toString(16)}`
