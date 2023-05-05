@@ -1,6 +1,18 @@
-const solc = require('solc')
-const fs = require('fs')
-const path = require('path')
+import fs from 'fs'
+import path from 'path'
+
+// solc js doesn't support typescript so we hack it
+let _solc: any = null;
+function getSolc(): any {
+  if (!_solc) {
+    _solc = require("solc");
+  }
+  return _solc;
+}
+
+interface Options {
+  fileName: null | string
+}
 
 // a function that compiles a contract at run time as long
 // as that contract and all its includes are in the /contracts folder
@@ -9,11 +21,11 @@ const path = require('path')
 // options
 //   - fileName - if the name of the file is different than the name
 // of the contract, it should be passed along as we cannot guess it
-function compileFromContracts(contractName, options = {}) {
-  const fileName = 'fileName' in options ? options.fileName : contractName + '.sol'
+export function compileFromContracts(contractName: string, options: Options = {fileName: null}) {
+  const fileName = options.fileName ? options.fileName : contractName + '.sol'
 
   const contractPath = path.resolve(__dirname + '../../../../', 'contracts', fileName)
-  const contractSource = fs.readFileSync(contractPath, 'UTF-8')
+  const contractSource = fs.readFileSync(contractPath, {encoding: 'utf8'})
 
   const input = {
     language: 'Solidity',
@@ -36,14 +48,14 @@ function compileFromContracts(contractName, options = {}) {
     }
   }
   
-  function findImports(libPath) {
+  function findImports(libPath: string) {
     return {
-      contents: fs.readFileSync(path.resolve(__dirname + '../../../../', 'contracts', libPath), 'UTF-8')
+      contents: fs.readFileSync(path.resolve(__dirname + '../../../../', 'contracts', libPath), {encoding: 'utf8'})
     }
   }
   
   const output = JSON.parse(
-    solc.compile(JSON.stringify(input), { import: findImports })
+    getSolc().compile(JSON.stringify(input), { import: findImports })
   )
 
   return {
@@ -51,8 +63,4 @@ function compileFromContracts(contractName, options = {}) {
     bytecode: output.contracts[contractName][contractName].evm.bytecode, // bin
     deployBytecode: output.contracts[contractName][contractName].evm.deployBytecode, // binRuntime
   }
-}
-
-module.exports = {
-  compileFromContracts
 }
