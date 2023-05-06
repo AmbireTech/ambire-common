@@ -6,6 +6,7 @@ import { multiOracle } from './multiOracle.json'
 import batcher from './batcher'
 import { geckoRequestBatcher, geckoResponseIdentifier } from './gecko'
 import { flattenResults, paginate } from './pagination'
+import { AccountOp } from '../accountOp/accountOp'
 
 const LIMITS = {
 	// we have to be conservative with erc721Tokens because if we pass 30x20 (worst case) tokenIds, that's 30x20 extra words which is 19kb
@@ -15,18 +16,32 @@ const LIMITS = {
 	deploylessStateOverrideMode: { erc20: 500, erc721: 100, erc721TokensInput: 100, erc721Tokens: 100 }
 }
 
-// @TODO: another file?
-interface Price {
+export interface Price {
 	baseCurrency: string,
 	price: number
 }
+
 export interface TokenResult {
-	amount: bigint,
-	decimals: number,
-	symbol: string,
 	address: string,
-	priceIn: Price[]
+	symbol: string,
+	amount: bigint,
+	amountPostSimulation?: bigint,
+	decimals: number,
+	priceIn: Price[],
+	// only applicable for NFTs
+	name?: string,
+	// tokens?:
 }
+
+export interface UpdateOptions {
+	baseCurrency: string,
+	blockTag: string | number,
+}
+const defaultOptions: UpdateOptions = {
+	baseCurrency: 'usd',
+	blockTag: 'latest'
+}
+
 // auto-pagination
 // return and cache formats
 export class Portfolio {
@@ -38,8 +53,10 @@ export class Portfolio {
 		this.batchedGecko = batcher(fetch, geckoRequestBatcher) 
 	}
 
-	// @TODO options
-	async update(provider: Provider | JsonRpcProvider, networkId: string, accountAddr: string, baseCurrency: string = 'usd') {
+	async update(provider: Provider | JsonRpcProvider, networkId: string, accountAddr: string, opts: Partial<UpdateOptions> = {}) {
+		opts = { ...defaultOptions, ...opts }
+		const { blockTag, baseCurrency } = opts
+
 		const start = Date.now()
 		const hints = await this.batchedVelcroDiscovery({ networkId, accountAddr })
 		const discoveryDone = Date.now()
@@ -49,9 +66,10 @@ export class Portfolio {
 		// Add the native token
 		const requestedTokens = hints.erc20s.concat('0x0000000000000000000000000000000000000000')
 		const limits = deployless.isLimitedAt24kbData ? LIMITS.deploylessProxyMode : LIMITS.deploylessStateOverrideMode
+		const deploylessOpts = { blockTag }
 		const [ tokenBalances, collectibles ] = await Promise.all([
 			flattenResults(paginate(requestedTokens, limits.erc20)
-				.map(page => deployless.call('getBalances', [accountAddr, page]))),
+				.map(page => deployless.call('getBalances', [accountAddr, page], deploylessOpts))),
 			flattenResults(paginate(Object.entries(hints.erc721s), limits.erc721)
 				.map(page => deployless.call('getAllNFTs', [
 					accountAddr,
@@ -60,7 +78,7 @@ export class Portfolio {
 						([_, x]) => x.enumerable ? [] : x.tokens.slice(0, limits.erc721TokensInput)
 					),
 					limits.erc721Tokens
-				])))
+				], deploylessOpts)))
 		])
 		// we do [ ... ] to get rid of the ethers Result type
 		const tokensWithErr = [ ...(tokenBalances as any[]) ]
