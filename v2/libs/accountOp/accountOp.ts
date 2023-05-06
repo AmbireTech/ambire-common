@@ -25,10 +25,10 @@ interface GasFeePayment {
 	amount: number;
 }
 
-// @TODO class
-// Equivalent to ERC-4337 UserOp, but more 'general' than it since a Bundle can be transformed to
+// Equivalent to ERC-4337 UserOp, but more universal than it since a AccountOp can be transformed to
 // a UserOp, or to a direct EOA transaction, or relayed through the Ambire relayer
-export interface Bundle {
+// it is more precisely defined than a UserOp though - UserOp just has calldata and this has individual `calls`
+export interface AccountOp {
 	accountAddr: string;
 	network: Network;
 	signingKeyAddr: string;
