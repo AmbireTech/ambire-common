@@ -21,6 +21,11 @@ export interface Price {
 	price: number
 }
 
+export interface Collectable {
+	url: string,
+	id: bigint
+}
+
 export interface TokenResult {
 	address: string,
 	symbol: string,
@@ -30,7 +35,7 @@ export interface TokenResult {
 	priceIn: Price[],
 	// only applicable for NFTs
 	name?: string,
-	// tokens?:
+	collectables?: Collectable[]
 }
 
 export interface UpdateOptions {
@@ -67,10 +72,11 @@ export class Portfolio {
 		const requestedTokens = hints.erc20s.concat('0x0000000000000000000000000000000000000000')
 		const limits = deployless.isLimitedAt24kbData ? LIMITS.deploylessProxyMode : LIMITS.deploylessStateOverrideMode
 		const deploylessOpts = { blockTag }
-		const [ tokenBalances, collectibles ] = await Promise.all([
+		const collectionsHints = Object.entries(hints.erc721s)
+		const [ tokenBalances, collectionsRaw ] = await Promise.all([
 			flattenResults(paginate(requestedTokens, limits.erc20)
 				.map(page => deployless.call('getBalances', [accountAddr, page], deploylessOpts))),
-			flattenResults(paginate(Object.entries(hints.erc721s), limits.erc721)
+			flattenResults(paginate(collectionsHints, limits.erc721)
 				.map(page => deployless.call('getAllNFTs', [
 					accountAddr,
 					page.map(([address]) => address),
@@ -86,6 +92,17 @@ export class Portfolio {
 				x.error,
 				({ amount: x.amount, decimals: new Number(x.decimals), symbol: x.symbol, address: requestedTokens[i] }) as TokenResult
 			])
+		const collections = [ ...(collectionsRaw as any[]) ]
+			.map((x, i) => ({
+				address: collectionsHints[i][0] as unknown as string,
+				name: x[0],
+				symbol: x[1],
+				amount: BigInt(x[2].length),
+				decimals: 1,
+				// @TODO: floor price
+				priceIn: [],
+				collectables: [ ...(x[2] as any[]) ].map((x: any) => ({ id: x[0], url: x[1] } as Collectable))
+			} as TokenResult))
 		const oracleCallDone = Date.now()
 
 		const tokens = tokensWithErr
@@ -112,8 +129,7 @@ export class Portfolio {
 			tokenErrors: tokensWithErr
 				.filter(([ error, result ]) => error !== '0x' || result.symbol === '')
 				.map(([error, result]) => ({ error, address: result.address })),
-			collectibles: [ ...(collectibles as any[]) ]
-				.filter(x => x.nfts.length)
+			collections: collections.filter(x => x.collectables?.length)
 		}
 	}
 }
