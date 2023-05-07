@@ -18,14 +18,14 @@ describe('Deployless', () => {
 	})
 
 	test('invoke a method: proxy mode', async () => {
-		const result = await deployless.call('helloWorld', [], { mode: DeploylessMode.ProxyContract })
+		const [ result ] = await deployless.call('helloWorld', [], { mode: DeploylessMode.ProxyContract })
 		expect(result).toBe('hello world')
 		// We still haven't detected support for state override
 		expect(deployless.isLimitedAt24kbData).toBe(true)
 	})
 
 	test('invoke a method: detect mode', async () => {
-		const result = await deployless.call('helloWorld', [])
+		const [ result ] = await deployless.call('helloWorld', [])
 		expect(result).toBe('hello world')
 		// We detected support for state override
 		expect(deployless.isLimitedAt24kbData).toBe(false)
@@ -65,9 +65,9 @@ describe('Deployless', () => {
 		const deployless = new Deployless(provider, helloWorld.abi, helloWorld.bin, helloWorld.binRuntime)
 		// we should already be aware that we are not limited by the 24kb limit
 		expect(deployless.isLimitedAt24kbData).toBe(false)
-		const result = await deployless.call('helloWorld', [], { mode: DeploylessMode.StateOverride })
+		const [ result ] = await deployless.call('helloWorld', [], { mode: DeploylessMode.StateOverride })
 		expect(result).toBe('hello world')
-		const result2 = await deployless.call('helloWorld', [])
+		const [ result2 ] = await deployless.call('helloWorld', [])
 		expect(result2).toBe('hello world')
 	})
 
