@@ -74,8 +74,12 @@ export class Portfolio {
 				const [before, after, simulationErr] = results
 				// @TODO parse simulation error
 				console.log(before, after, simulationErr)
-				if (simulationErr) throw new Error(`simulation error: ${simulationErr}`)
-				return after
+				if (simulationErr !== '0x') throw new Error(`simulation error: ${simulationErr}`)
+				if (after[1] === 0n) throw new Error(`simulation error: unknown error`)
+				if (after[1] < before[1]) throw new Error(`simulation error: internal: lower after nonce`)
+				// no simulation was performed
+				if (after[1] === before[1]) return before[0]
+				return after[0]
 			})
 			// @TODO this .then is ugly
 			: deployless.call('getBalances', [accountAddr, page], deploylessOpts).then(x => x[0])
@@ -152,7 +156,7 @@ const appraise = (tokens: TokenResult[], inBase: string) => tokens.map(x => {
 }).reduce((a, b) => a + b, 0)
 
 // @TODO batching test
-portfolio
+/*portfolio
 	.update(provider, 'ethereum', '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8')
 	.then(x => console.dir({ valueInUSD: appraise(x.tokens, 'usd'), ...x }, { depth: null }))
 	.catch(console.error)
@@ -160,6 +164,7 @@ portfolio
 	.update(provider, 'ethereum', '0x8F493C12c4F5FF5Fd510549E1e28EA3dD101E850')
 	.then(x => console.dir({ valueInUSD: appraise(x.tokens, 'usd'), ...x }, { depth: null }))
 	.catch(console.error)
+*/
 
 const accountOp = {
 	accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
@@ -169,10 +174,9 @@ const accountOp = {
 	network: { chainId: 0, name: 'ethereum' },
 	nonce: 6,
 	signature: '0x000000000000000000000000e5a4Dad2Ea987215460379Ab285DF87136E83BEA03',
-	calls: [{ to: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48', value: BigInt(0), data: '0x000000000000000000000000e5a4dad2ea987215460379ab285df87136e83bea00000000000000000000000000000000000000000000000000000000005040aa' }]
+	calls: [{ to: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48', value: BigInt(0), data: '0xa9059cbb000000000000000000000000e5a4dad2ea987215460379ab285df87136e83bea00000000000000000000000000000000000000000000000000000000005040aa' }]
 }
-/*portfolio
+portfolio
 	.update(provider, 'ethereum', '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', { simulation: { accountOps: [accountOp]  } })
 	.then(x => console.dir({ valueInUSD: appraise(x.tokens, 'usd'), ...x }, { depth: null }))
 	.catch(console.error)
-*/
