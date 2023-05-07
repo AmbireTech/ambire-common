@@ -6,8 +6,7 @@ interface Network {
 
 interface Call {
 	to: string;
-	// @TODO: hex?
-	value: string;
+	value: bigint;
 	data: string;
 }
 
@@ -34,7 +33,7 @@ export interface AccountOp {
 	signingKeyAddr: string;
 	nonce: number;
 	// @TODO: nonce namespace? it is dependent on gasFeePayment
-	calls: [Call];
+	calls: Call[];
 	gasLimit: number | null;
 	signature: string | null;
 	// @TODO separate interface

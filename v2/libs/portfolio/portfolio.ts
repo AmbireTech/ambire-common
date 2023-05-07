@@ -17,10 +17,16 @@ const LIMITS = {
 	deploylessStateOverrideMode: { erc20: 500, erc721: 100, erc721TokensInput: 100, erc721Tokens: 100 }
 }
 
+export interface UpdateOptionsSimulation {
+	accountOps: AccountOp[],
+	// @TODO account
+	// account: Account
+}
+
 export interface UpdateOptions {
 	baseCurrency: string,
 	blockTag: string | number,
-	accountOpsToSimulate?: AccountOp[],
+	simulation?: UpdateOptionsSimulation,
 }
 
 const defaultOptions: UpdateOptions = {
@@ -43,6 +49,9 @@ export class Portfolio {
 		opts = { ...defaultOptions, ...opts }
 		const { blockTag, baseCurrency } = opts
 
+		// @TODO: check account addr consistency
+		//if (opts.simulation && opts.simulation.account.id !== accountAddr) throw new Error('wrong account passed')
+
 		const start = Date.now()
 		const hints = await this.batchedVelcroDiscovery({ networkId, accountAddr })
 		const discoveryDone = Date.now()
@@ -54,9 +63,25 @@ export class Portfolio {
 		const requestedTokens = hints.erc20s.concat('0x0000000000000000000000000000000000000000')
 		const limits = deployless.isLimitedAt24kbData ? LIMITS.deploylessProxyMode : LIMITS.deploylessStateOverrideMode
 		const collectionsHints = Object.entries(hints.erc721s)
+		const getBalances = (page: string[]) => opts.simulation ?
+			deployless.call('simulateAndGetBalances', [
+				accountAddr, page,
+				// @TODO factory, factoryCalldata
+				'0x0000000000000000000000000000000000000000', '0x00',
+				// @TODO beautify
+				opts.simulation.accountOps.map(({ nonce, calls, signature }) => [nonce, calls.map(x => [x.to, x.value, x.data]), signature])
+			], deploylessOpts).then(results => {
+				const [before, after, simulationErr] = results
+				// @TODO parse simulation error
+				console.log(before, after, simulationErr)
+				if (simulationErr) throw new Error(`simulation error: ${simulationErr}`)
+				return after
+			})
+			// @TODO this .then is ugly
+			: deployless.call('getBalances', [accountAddr, page], deploylessOpts).then(x => x[0])
 		const [ tokenBalances, collectionsRaw ] = await Promise.all([
 			flattenResults(paginate(requestedTokens, limits.erc20)
-				.map(page => deployless.call('getBalances', [accountAddr, page], deploylessOpts))),
+				.map(getBalances)),
 			flattenResults(paginate(collectionsHints, limits.erc721)
 				.map(page => deployless.call('getAllNFTs', [
 					accountAddr,
@@ -65,7 +90,8 @@ export class Portfolio {
 						([_, x]) => x.enumerable ? [] : x.tokens.slice(0, limits.erc721TokensInput)
 					),
 					limits.erc721Tokens
-				], deploylessOpts)))
+					// @TODO this .then is ugly
+				], deploylessOpts).then(x => x[0])))
 		])
 		// we do [ ... ] to get rid of the ethers Result type
 		const tokensWithErr = [ ...(tokenBalances as any[]) ]
@@ -125,16 +151,28 @@ const appraise = (tokens: TokenResult[], inBase: string) => tokens.map(x => {
 	return Number(x.amount) / Math.pow(10, x.decimals) * price
 }).reduce((a, b) => a + b, 0)
 
+// @TODO batching test
 portfolio
-	.update(provider, 'ethereum',
-		'0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
-		)
+	.update(provider, 'ethereum', '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8')
+	.then(x => console.dir({ valueInUSD: appraise(x.tokens, 'usd'), ...x }, { depth: null }))
+	.catch(console.error)
+portfolio
+	.update(provider, 'ethereum', '0x8F493C12c4F5FF5Fd510549E1e28EA3dD101E850')
 	.then(x => console.dir({ valueInUSD: appraise(x.tokens, 'usd'), ...x }, { depth: null }))
 	.catch(console.error)
 
-portfolio
-	.update(provider, 'ethereum',
-		'0x8F493C12c4F5FF5Fd510549E1e28EA3dD101E850'
-		)
+const accountOp = {
+	accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+	signingKeyAddr: '0xe5a4Dad2Ea987215460379Ab285DF87136E83BEA',
+	gasLimit: null,
+	gasFeePayment: null,
+	network: { chainId: 0, name: 'ethereum' },
+	nonce: 6,
+	signature: '0x000000000000000000000000e5a4Dad2Ea987215460379Ab285DF87136E83BEA03',
+	calls: [{ to: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48', value: BigInt(0), data: '0x000000000000000000000000e5a4dad2ea987215460379ab285df87136e83bea00000000000000000000000000000000000000000000000000000000005040aa' }]
+}
+/*portfolio
+	.update(provider, 'ethereum', '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', { simulation: { accountOps: [accountOp]  } })
 	.then(x => console.dir({ valueInUSD: appraise(x.tokens, 'usd'), ...x }, { depth: null }))
 	.catch(console.error)
+*/
