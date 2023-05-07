@@ -2,11 +2,12 @@
 import fetch from 'node-fetch'
 import { JsonRpcProvider, Provider } from 'ethers'
 import { Deployless, DeploylessMode } from '../deployless/deployless'
+import { AccountOp } from '../accountOp/accountOp'
 import { multiOracle } from './multiOracle.json'
 import batcher from './batcher'
 import { geckoRequestBatcher, geckoResponseIdentifier } from './gecko'
 import { flattenResults, paginate } from './pagination'
-import { AccountOp } from '../accountOp/accountOp'
+import { TokenResult, Collectable, Price } from './interfaces'
 
 const LIMITS = {
 	// we have to be conservative with erc721Tokens because if we pass 30x20 (worst case) tokenIds, that's 30x20 extra words which is 19kb
@@ -16,32 +17,12 @@ const LIMITS = {
 	deploylessStateOverrideMode: { erc20: 500, erc721: 100, erc721TokensInput: 100, erc721Tokens: 100 }
 }
 
-export interface Price {
-	baseCurrency: string,
-	price: number
-}
-
-export interface Collectable {
-	url: string,
-	id: bigint
-}
-
-export interface TokenResult {
-	address: string,
-	symbol: string,
-	amount: bigint,
-	amountPostSimulation?: bigint,
-	decimals: number,
-	priceIn: Price[],
-	// only applicable for NFTs
-	name?: string,
-	collectables?: Collectable[]
-}
-
 export interface UpdateOptions {
 	baseCurrency: string,
 	blockTag: string | number,
+	accountOpsToSimulate?: AccountOp[],
 }
+
 const defaultOptions: UpdateOptions = {
 	baseCurrency: 'usd',
 	blockTag: 'latest'
@@ -67,11 +48,11 @@ export class Portfolio {
 		const discoveryDone = Date.now()
 		// @TODO: pass binRuntime only if stateOverride is supported
 		const deployless = new Deployless(provider, multiOracle.abi, multiOracle.bin, multiOracle.binRuntime)
-		// @TODO block tag; segment cache by the block tag/simulation mode
+		// 0x00..01 is the address from which simulation signatures are valid
+		const deploylessOpts = { blockTag, from: '0x0000000000000000000000000000000000000001' }
 		// Add the native token
 		const requestedTokens = hints.erc20s.concat('0x0000000000000000000000000000000000000000')
 		const limits = deployless.isLimitedAt24kbData ? LIMITS.deploylessProxyMode : LIMITS.deploylessStateOverrideMode
-		const deploylessOpts = { blockTag }
 		const collectionsHints = Object.entries(hints.erc721s)
 		const [ tokenBalances, collectionsRaw ] = await Promise.all([
 			flattenResults(paginate(requestedTokens, limits.erc20)
@@ -133,7 +114,6 @@ export class Portfolio {
 		}
 	}
 }
-
 
 //const url = 'http://localhost:8545'
 const url = 'https://mainnet.infura.io/v3/d4319c39c4df452286d8bf6d10de28ae'
