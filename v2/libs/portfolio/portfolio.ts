@@ -141,9 +141,9 @@ async function getTokens (deployless: Deployless, opts: Partial<UpdateOptions>, 
 		opts.simulation.accountOps.map(({ nonce, calls, signature }) => [nonce, calls.map(x => [x.to, x.value, x.data]), signature])
 	], deploylessOpts)
 	
-	if (simulationErr !== '0x') throw new Error(`simulation error: ${simulationErr}`)
-	if (after[1] === 0n) throw new Error(`simulation error: unknown error`)
-	if (after[1] < before[1]) throw new Error(`simulation error: internal: lower after nonce`)
+	if (simulationErr !== '0x') throw new SimulationError(simulationErr)
+	if (after[1] === 0n) throw new SimulationError('unknown error')
+	if (after[1] < before[1]) throw new SimulationError('lower "after" nonce')
 	// no simulation was performed if the nonce is the same
 	const results = (after[1] === before[1]) ? before[0] : after[0]
 	return [ ...results ]
@@ -156,4 +156,12 @@ async function getTokens (deployless: Deployless, opts: Partial<UpdateOptions>, 
 				symbol: x.symbol, address: tokenAddrs[i]
 			}) as TokenResult
 		])
+}
+
+class SimulationError extends Error {
+	public simulationErrorMsg: string
+	constructor (message: string) {
+		super(`simulation error: ${message}`)
+		this.simulationErrorMsg = message
+	}
 }
