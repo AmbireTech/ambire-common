@@ -108,8 +108,7 @@ export class Portfolio {
 				symbol: x[1],
 				amount: BigInt(x[2].length),
 				decimals: 1,
-				// @TODO: floor price
-				priceIn: [],
+				priceIn: [], // @TODO floor price
 				collectables: [ ...(x[2] as any[]) ].map((x: any) => ({ id: x[0], url: x[1] } as Collectable))
 			} as TokenResult))
 		const oracleCallDone = Date.now()
@@ -138,11 +137,16 @@ export class Portfolio {
 			tokenErrors: tokensWithErr
 				.filter(([ error, result ]) => error !== '0x' || result.symbol === '')
 				.map(([error, result]) => ({ error, address: result.address })),
-			collections: collections.filter(x => x.collectables?.length)
+			collections: collections.filter(x => x.collectables?.length),
+			total: tokens.reduce((cur, token) => {
+				for (const x of token.priceIn) {
+					cur[x.baseCurrency] = (cur[x.baseCurrency] || 0) + Number(token.amount) / (10 ** token.decimals) * x.price
+				}
+				return cur
+			}, {})
 		}
 	}
 }
-// @TODO batching test
 /*
 const accountOp = {
 	accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
@@ -156,7 +160,7 @@ const accountOp = {
 }
 portfolio
 	.update(provider, 'ethereum', '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', { simulation: { accountOps: [accountOp]  } })
-	.then(x => console.dir({ valueInUSD: appraise(x.tokens, 'usd'), ...x }, { depth: null }))
+	.then(x => console.dir(x, { depth: null }))
 	.catch(console.error)
 
 */

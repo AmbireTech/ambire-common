@@ -4,13 +4,6 @@ import { Portfolio } from './portfolio'
 import { TokenResult } from './interfaces'
 import { describe, expect, test } from '@jest/globals'
 
-// @TODO maybe appraise() should be part of the lib
-const appraise = (tokens: TokenResult[], inBase: string) => tokens.map(x => {
-	const priceEntry = x.priceIn.find(y => y.baseCurrency === inBase)
-	const price = priceEntry ? priceEntry.price : 0
-	return Number(x.amount) / Math.pow(10, x.decimals) * price
-}).reduce((a, b) => a + b, 0)
-
 describe('Portfolio', () => {
 	//const url = 'http://localhost:8545'
 	const url = 'https://mainnet.infura.io/v3/d4319c39c4df452286d8bf6d10de28ae'
