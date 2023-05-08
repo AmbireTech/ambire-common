@@ -1,6 +1,4 @@
-// @TODO velcro batching
-import fetch from 'node-fetch'
-import { JsonRpcProvider, Provider } from 'ethers'
+import { Provider, JsonRpcProvider } from 'ethers'
 import { Deployless, DeploylessMode } from '../deployless/deployless'
 import { AccountOp } from '../accountOp/accountOp'
 import { multiOracle } from './multiOracle.json'
@@ -144,28 +142,8 @@ export class Portfolio {
 		}
 	}
 }
-
-//const url = 'http://localhost:8545'
-const url = 'https://mainnet.infura.io/v3/d4319c39c4df452286d8bf6d10de28ae'
-const provider = new JsonRpcProvider(url)
-const portfolio = new Portfolio(fetch)
-const appraise = (tokens: TokenResult[], inBase: string) => tokens.map(x => {
-	const priceEntry = x.priceIn.find(y => y.baseCurrency === inBase)
-	const price = priceEntry ? priceEntry.price : 0
-	return Number(x.amount) / Math.pow(10, x.decimals) * price
-}).reduce((a, b) => a + b, 0)
-
 // @TODO batching test
-/*portfolio
-	.update(provider, 'ethereum', '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8')
-	.then(x => console.dir({ valueInUSD: appraise(x.tokens, 'usd'), ...x }, { depth: null }))
-	.catch(console.error)
-portfolio
-	.update(provider, 'ethereum', '0x8F493C12c4F5FF5Fd510549E1e28EA3dD101E850')
-	.then(x => console.dir({ valueInUSD: appraise(x.tokens, 'usd'), ...x }, { depth: null }))
-	.catch(console.error)
-*/
-
+/*
 const accountOp = {
 	accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
 	signingKeyAddr: '0xe5a4Dad2Ea987215460379Ab285DF87136E83BEA',
@@ -180,3 +158,5 @@ portfolio
 	.update(provider, 'ethereum', '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', { simulation: { accountOps: [accountOp]  } })
 	.then(x => console.dir({ valueInUSD: appraise(x.tokens, 'usd'), ...x }, { depth: null }))
 	.catch(console.error)
+
+*/
