@@ -14,6 +14,8 @@ const LIMITS = {
 	// theoretical capacity is 1666/450
 	deploylessStateOverrideMode: { erc20: 500, erc721: 100, erc721TokensInput: 100, erc721Tokens: 100 }
 }
+// 0x00..01 is the address from which simulation signatures are valid
+const DEPLOYLESS_SIMULATION_FROM = '0x0000000000000000000000000000000000000001'
 
 export interface UpdateOptionsSimulation {
 	accountOps: AccountOp[],
@@ -31,9 +33,6 @@ const defaultOptions: UpdateOptions = {
 	baseCurrency: 'usd',
 	blockTag: 'latest'
 }
-
-// auto-pagination
-// return and cache formats
 export class Portfolio {
 	private batchedVelcroDiscovery: Function
 	private batchedGecko: Function
@@ -45,7 +44,7 @@ export class Portfolio {
 
 	async update(provider: Provider | JsonRpcProvider, networkId: string, accountAddr: string, opts: Partial<UpdateOptions> = {}) {
 		opts = { ...defaultOptions, ...opts }
-		const { blockTag, baseCurrency } = opts
+		const { baseCurrency } = opts
 
 		// @TODO: check account addr consistency
 		//if (opts.simulation && opts.simulation.account.id !== accountAddr) throw new Error('wrong account passed')
@@ -55,35 +54,14 @@ export class Portfolio {
 		const discoveryDone = Date.now()
 		// @TODO: pass binRuntime only if stateOverride is supported
 		const deployless = new Deployless(provider, multiOracle.abi, multiOracle.bin, multiOracle.binRuntime)
-		// 0x00..01 is the address from which simulation signatures are valid
-		const deploylessOpts = { blockTag, from: '0x0000000000000000000000000000000000000001' }
+		const deploylessOpts = { blockTag: opts.blockTag, from: DEPLOYLESS_SIMULATION_FROM }
 		// Add the native token
 		const requestedTokens = hints.erc20s.concat('0x0000000000000000000000000000000000000000')
 		const limits = deployless.isLimitedAt24kbData ? LIMITS.deploylessProxyMode : LIMITS.deploylessStateOverrideMode
 		const collectionsHints = Object.entries(hints.erc721s)
-		const getBalances = (page: string[]) => opts.simulation ?
-			deployless.call('simulateAndGetBalances', [
-				accountAddr, page,
-				// @TODO factory, factoryCalldata
-				'0x0000000000000000000000000000000000000000', '0x00',
-				// @TODO beautify
-				opts.simulation.accountOps.map(({ nonce, calls, signature }) => [nonce, calls.map(x => [x.to, x.value, x.data]), signature])
-			], deploylessOpts).then(results => {
-				const [before, after, simulationErr] = results
-				// @TODO parse simulation error
-				console.log(before, after, simulationErr)
-				if (simulationErr !== '0x') throw new Error(`simulation error: ${simulationErr}`)
-				if (after[1] === 0n) throw new Error(`simulation error: unknown error`)
-				if (after[1] < before[1]) throw new Error(`simulation error: internal: lower after nonce`)
-				// no simulation was performed
-				if (after[1] === before[1]) return before[0]
-				return after[0]
-			})
-			// @TODO this .then is ugly
-			: deployless.call('getBalances', [accountAddr, page], deploylessOpts).then(x => x[0])
-		const [ tokenBalances, collectionsRaw ] = await Promise.all([
+		const [ tokensWithErr, collectionsRaw ] = await Promise.all([
 			flattenResults(paginate(requestedTokens, limits.erc20)
-				.map(getBalances)),
+				.map(page => getTokens(deployless, opts, accountAddr, page))),
 			flattenResults(paginate(collectionsHints, limits.erc721)
 				.map(page => deployless.call('getAllNFTs', [
 					accountAddr,
@@ -95,12 +73,6 @@ export class Portfolio {
 					// @TODO this .then is ugly
 				], deploylessOpts).then(x => x[0])))
 		])
-		// we do [ ... ] to get rid of the ethers Result type
-		const tokensWithErr = [ ...(tokenBalances as any[]) ]
-			.map((x, i) => [
-				x.error,
-				({ amount: x.amount, decimals: new Number(x.decimals), symbol: x.symbol, address: requestedTokens[i] }) as TokenResult
-			])
 		const collections = [ ...(collectionsRaw as any[]) ]
 			.map((x, i) => ({
 				address: collectionsHints[i][0] as unknown as string,
@@ -147,20 +119,41 @@ export class Portfolio {
 		}
 	}
 }
-/*
-const accountOp = {
-	accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
-	signingKeyAddr: '0xe5a4Dad2Ea987215460379Ab285DF87136E83BEA',
-	gasLimit: null,
-	gasFeePayment: null,
-	network: { chainId: 0, name: 'ethereum' },
-	nonce: 6,
-	signature: '0x000000000000000000000000e5a4Dad2Ea987215460379Ab285DF87136E83BEA03',
-	calls: [{ to: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48', value: BigInt(0), data: '0xa9059cbb000000000000000000000000e5a4dad2ea987215460379ab285df87136e83bea00000000000000000000000000000000000000000000000000000000005040aa' }]
-}
-portfolio
-	.update(provider, 'ethereum', '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', { simulation: { accountOps: [accountOp]  } })
-	.then(x => console.dir(x, { depth: null }))
-	.catch(console.error)
 
-*/
+
+async function getTokens (deployless: Deployless, opts: Partial<UpdateOptions>, accountAddr: string, tokenAddrs: string[]): Promise<any[]> {
+	const deploylessOpts = { blockTag: opts.blockTag, from: DEPLOYLESS_SIMULATION_FROM }
+	if (!opts.simulation) {
+		const [ results ] = await deployless.call('getBalances', [accountAddr, tokenAddrs], deploylessOpts)
+		// we do [ ... ] to get rid of the ethers Result type
+		return [ ...(results as any[]) ]
+			.map((x, i) => [
+				x.error,
+				({ amount: x.amount, decimals: new Number(x.decimals), symbol: x.symbol, address: tokenAddrs[i] }) as TokenResult
+			])
+
+	}
+	const [before, after, simulationErr] = await deployless.call('simulateAndGetBalances', [
+		accountAddr, tokenAddrs,
+		// @TODO factory, factoryCalldata
+		'0x0000000000000000000000000000000000000000', '0x00',
+		// @TODO beautify
+		opts.simulation.accountOps.map(({ nonce, calls, signature }) => [nonce, calls.map(x => [x.to, x.value, x.data]), signature])
+	], deploylessOpts)
+	
+	if (simulationErr !== '0x') throw new Error(`simulation error: ${simulationErr}`)
+	if (after[1] === 0n) throw new Error(`simulation error: unknown error`)
+	if (after[1] < before[1]) throw new Error(`simulation error: internal: lower after nonce`)
+	// no simulation was performed if the nonce is the same
+	const results = (after[1] === before[1]) ? before[0] : after[0]
+	return [ ...results ]
+		.map((x, i) => [
+			x.error,
+			({
+				amount: before[0][i].amount,
+				amountPostSimulation: x.amount,
+				decimals: new Number(x.decimals),
+				symbol: x.symbol, address: tokenAddrs[i]
+			}) as TokenResult
+		])
+}
