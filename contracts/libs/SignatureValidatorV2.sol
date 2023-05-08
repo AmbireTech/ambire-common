@@ -45,6 +45,7 @@ library SignatureValidator {
 		require(modeRaw < uint8(SignatureMode.LastUnused), "SV_SIGMODE");
 		SignatureMode mode = SignatureMode(modeRaw);
 
+		// @TODO: if we reorder these, we might save on gas
 		// {r}{s}{v}{mode}
 		if (mode == SignatureMode.EIP712 || mode == SignatureMode.EthSign) {
 			require(sig.length == 66, "SV_LEN");
