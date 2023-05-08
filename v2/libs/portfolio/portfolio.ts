@@ -121,7 +121,7 @@ export class Portfolio {
 }
 
 
-async function getTokens (deployless: Deployless, opts: Partial<UpdateOptions>, accountAddr: string, tokenAddrs: string[]): Promise<any[]> {
+async function getTokens (deployless: Deployless, opts: Partial<UpdateOptions>, accountAddr: string, tokenAddrs: string[]): Promise<[number, TokenResult][]> {
 	const deploylessOpts = { blockTag: opts.blockTag, from: DEPLOYLESS_SIMULATION_FROM }
 	if (!opts.simulation) {
 		const [ results ] = await deployless.call('getBalances', [accountAddr, tokenAddrs], deploylessOpts)
