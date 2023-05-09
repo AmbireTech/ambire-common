@@ -165,7 +165,7 @@ var Deployless = /** @class */ (function () {
                         return [4 /*yield*/, mapError(callPromise)];
                     case 2:
                         returnDataRaw = _a.apply(void 0, [_c.sent()]);
-                        return [2 /*return*/, this.iface.decodeFunctionResult(methodName, returnDataRaw)[0]];
+                        return [2 /*return*/, this.iface.decodeFunctionResult(methodName, returnDataRaw)];
                 }
             });
         });

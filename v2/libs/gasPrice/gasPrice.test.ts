@@ -1,6 +1,6 @@
 import { describe, expect, test } from '@jest/globals'
 import { JsonRpcProvider } from 'ethers'
-import { getGasPriceRecommendations } from './gasprice'
+import { getGasPriceRecommendations } from './gasPrice'
 
 describe('Gas price', () => {
 	test('get gas price for an EIP1559 network', async () => {
