@@ -1,16 +1,16 @@
-const { ethers } = require('ethers')
-const { expect } = require('chai')
-const {
+import { ethers } from 'ethers'
+import {
   pk1,
   pk2,
+  expect,
   AmbireAccount,
   validSig,
   invalidSig,
   wallet
-} = require('../config')
-const {wrapSchnorr} = require('../ambireSign')
+} from '../config'
+import {wrapSchnorr} from '../ambireSign'
+import { wait } from '../polling'
 const Schnorrkel = require('@borislav.itskov/schnorrkel.js')
-const { wait } = require('../polling')
 const schnorrkel = new Schnorrkel()
 
 /**
@@ -24,12 +24,12 @@ function getSchnorrAddress() {
   return '0x' + px.slice(px.length - 40, px.length);
 }
 
-let ambireAccountAddress = null
+let ambireAccountAddress: string
 async function deployAmbireAccount() {
   const factory = new ethers.ContractFactory(AmbireAccount.abi, AmbireAccount.bytecode, wallet)
   const schnorrAddress = getSchnorrAddress()
 
-  const contract = await factory.deploy([schnorrAddress])
+  const contract: any = await factory.deploy([schnorrAddress])
   await wait(wallet, contract)
   expect(await contract.getAddress()).to.not.be.null
   const isSigner = await contract.privileges(schnorrAddress)
@@ -44,7 +44,7 @@ describe('Schnorr tests', function () {
     await deployAmbireAccount()
   })
   it('successfully validate a basic schnorr signature', async function () {
-    const contract = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, wallet)
+    const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, wallet)
     const msg = 'test'
     const {s, e} = schnorrkel.sign(msg, ethers.getBytes(pk1))
 
@@ -65,7 +65,7 @@ describe('Schnorr tests', function () {
     expect(await contract.isValidSignature(hash, ambireSignature)).to.equal(validSig)
   })
   it('fails validation when an unauthorized private key signs', async function () {
-    const contract = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, wallet)
+    const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, wallet)
     const msg = 'test'
     const {s, e} = schnorrkel.sign(msg, ethers.getBytes(pk2))
 
@@ -86,7 +86,7 @@ describe('Schnorr tests', function () {
     expect(await contract.isValidSignature(hash, ambireSignature)).to.equal(invalidSig)
   })
   it('fails validation when the message is different', async function () {
-    const contract = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, wallet)
+    const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, wallet)
     const msg = 'test'
     const {s, e} = schnorrkel.sign(msg, ethers.getBytes(pk1))
 
