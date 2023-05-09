@@ -141,9 +141,9 @@ async function getTokens (deployless: Deployless, opts: Partial<UpdateOptions>, 
 		opts.simulation.accountOps.map(({ nonce, calls, signature }) => [nonce, calls.map(x => [x.to, x.value, x.data]), signature])
 	], deploylessOpts)
 	
-	if (simulationErr !== '0x') throw new SimulationError(parseErr(simulationErr) || simulationErr)
-	if (after[1] === 0n) throw new SimulationError('unknown error: simulation reverted')
-	if (after[1] < before[1]) throw new SimulationError('lower "after" nonce')
+	if (simulationErr !== '0x') throw new SimulationError(parseErr(simulationErr) || simulationErr, before[1], after[1])
+	if (after[1] === 0n) throw new SimulationError('unknown error: simulation reverted', before[1], after[1])
+	if (after[1] < before[1]) throw new SimulationError('lower "after" nonce', before[1], after[1])
 	// no simulation was performed if the nonce is the same
 	const results = (after[1] === before[1]) ? before[0] : after[0]
 	return [ ...results ]
@@ -160,8 +160,12 @@ async function getTokens (deployless: Deployless, opts: Partial<UpdateOptions>, 
 
 class SimulationError extends Error {
 	public simulationErrorMsg: string
-	constructor (message: string) {
+	public beforeNonce: bigint
+	public afterNonce: bigint
+	constructor (message: string, beforeNonce: bigint, afterNonce: bigint) {
 		super(`simulation error: ${message}`)
 		this.simulationErrorMsg = message
+		this.beforeNonce = beforeNonce
+		this.afterNonce = afterNonce
 	}
 }
