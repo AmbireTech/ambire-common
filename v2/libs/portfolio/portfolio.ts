@@ -1,5 +1,5 @@
 import { Provider, JsonRpcProvider } from 'ethers'
-import { Deployless, DeploylessMode } from '../deployless/deployless'
+import { Deployless, DeploylessMode, parseErr } from '../deployless/deployless'
 import { AccountOp } from '../accountOp/accountOp'
 import { multiOracle } from './multiOracle.json'
 import batcher from './batcher'
@@ -141,8 +141,8 @@ async function getTokens (deployless: Deployless, opts: Partial<UpdateOptions>, 
 		opts.simulation.accountOps.map(({ nonce, calls, signature }) => [nonce, calls.map(x => [x.to, x.value, x.data]), signature])
 	], deploylessOpts)
 	
-	if (simulationErr !== '0x') throw new SimulationError(simulationErr)
-	if (after[1] === 0n) throw new SimulationError('unknown error')
+	if (simulationErr !== '0x') throw new SimulationError(parseErr(simulationErr) || simulationErr)
+	if (after[1] === 0n) throw new SimulationError('unknown error: simulation reverted')
 	if (after[1] < before[1]) throw new SimulationError('lower "after" nonce')
 	// no simulation was performed if the nonce is the same
 	const results = (after[1] === before[1]) ? before[0] : after[0]
