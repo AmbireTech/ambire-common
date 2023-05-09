@@ -1,6 +1,7 @@
 import { Provider, JsonRpcProvider } from 'ethers'
 import { Deployless, DeploylessMode, parseErr } from '../deployless/deployless'
-import { AccountOp } from '../accountOp/accountOp'
+import { AccountOp, callToTuple } from '../accountOp/accountOp'
+import { Account, getAccountDeployParams } from '../account/account'
 import { multiOracle } from './multiOracle.json'
 import batcher from './batcher'
 import { geckoRequestBatcher, geckoResponseIdentifier } from './gecko'
@@ -19,8 +20,7 @@ const DEPLOYLESS_SIMULATION_FROM = '0x0000000000000000000000000000000000000001'
 
 export interface UpdateOptionsSimulation {
 	accountOps: AccountOp[],
-	// @TODO account
-	// account: Account
+	account: Account
 }
 
 export interface UpdateOptions {
@@ -46,8 +46,7 @@ export class Portfolio {
 		opts = { ...defaultOptions, ...opts }
 		const { baseCurrency } = opts
 
-		// @TODO: check account addr consistency
-		//if (opts.simulation && opts.simulation.account.id !== accountAddr) throw new Error('wrong account passed')
+		if (opts.simulation && opts.simulation.account.addr !== accountAddr) throw new Error('wrong account passed')
 
 		const start = Date.now()
 		const hints = await this.batchedVelcroDiscovery({ networkId, accountAddr })
@@ -133,12 +132,12 @@ async function getTokens (deployless: Deployless, opts: Partial<UpdateOptions>, 
 			])
 
 	}
+	const { accountOps, account } = opts.simulation
+	const [factory, factoryCalldata] = getAccountDeployParams(account)
 	const [before, after, simulationErr] = await deployless.call('simulateAndGetBalances', [
 		accountAddr, tokenAddrs,
-		// @TODO factory, factoryCalldata
-		'0x0000000000000000000000000000000000000000', '0x00',
-		// @TODO beautify
-		opts.simulation.accountOps.map(({ nonce, calls, signature }) => [nonce, calls.map(x => [x.to, x.value, x.data]), signature])
+		factory, factoryCalldata,
+		accountOps.map(({ nonce, calls, signature }) => [nonce, calls.map(callToTuple), signature])
 	], deploylessOpts)
 	
 	if (simulationErr !== '0x') throw new SimulationError(parseErr(simulationErr) || simulationErr, before[1], after[1])
