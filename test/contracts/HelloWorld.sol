@@ -25,4 +25,9 @@ contract HelloWorld {
         }
         return z;
     }
+
+    function throwCompilerPanic() external view returns (string memory) {
+        string[] memory outOfRange;
+        return outOfRange[1];
+    }
 }

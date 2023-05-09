@@ -31,7 +31,6 @@ const defaultOptions: CallOptions = {
 	blockTag: 'latest',
 	from: undefined,
 }
-const removePanicSig = (data: string) => data.slice(10)
 
 export class Deployless {
 	private iface: Interface;
@@ -126,25 +125,33 @@ async function mapError(callPromise: Promise<string>): Promise<string> {
 	}
 }
 
-function mapResponse(data: string): string {
+function mapResponse (data: string): string {
 	if (data === deployErrorSig) throw new Error('contract deploy failed')
+	const err = parseErr(data)
+	if (err) throw err
+	return data
+}
+
+function parseErr (data: string): string | null {
+	const dataNoPrefix = data.slice(10)
 	if (data.startsWith(panicSig)) {
 		// https://docs.soliditylang.org/en/v0.8.11/control-structures.html#panic-via-assert-and-error-via-require
-		const num = parseInt('0x' + removePanicSig(data))
-		if (num === 0x00) throw new Error('generic compiler error')
-		if (num === 0x01) throw new Error('solidity assert error')
-		if (num === 0x11) throw new Error('arithmetic error')
-		if (num === 0x12) throw new Error('division by zero')
-		throw new Error(`panic error: 0x${num.toString(16)}`)
+		const num = parseInt('0x' + dataNoPrefix)
+		if (num === 0x00) return 'generic compiler error'
+		if (num === 0x01) return 'solidity assert error'
+		if (num === 0x11) return 'arithmetic error'
+		if (num === 0x12) return 'division by zero'
+		return `panic error: 0x${num.toString(16)}`
 	}
-	try {
-		return data.startsWith(errorSig)
-			? abiCoder.decode(['string'], '0x' + removePanicSig(data))[0]
-			: data
-	} catch (e: any) {
-		if (e.code === 'BUFFER_OVERRUN' || e.code === 'NUMERIC_FAULT') return removePanicSig(data)
-		else throw e
+	if (data.startsWith(errorSig)) {
+		try {
+			return abiCoder.decode(['string'], '0x' + dataNoPrefix)[0]
+		} catch (e: any) {
+			if (e.code === 'BUFFER_OVERRUN' || e.code === 'NUMERIC_FAULT') return dataNoPrefix
+			else throw e
+		}
 	}
+	return null
 }
 
 function checkDataSize (data: string): string {
