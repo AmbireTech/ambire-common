@@ -1,5 +1,4 @@
-const { ethers, assert } = require('ethers')
-const { expect } = require('chai')
+const { ethers } = require('ethers')
 const {
   AmbireAccount,
   wallet,
@@ -10,7 +9,9 @@ const {
   abiCoder,
   addressThree,
   addressFour,
-  provider
+  provider,
+  expect,
+  assertion
 } = require('../config')
 const { wait } = require('../polling')
 const { sendFunds, getPriviledgeTxn, getTimelockData } = require('../helpers')
@@ -33,50 +34,43 @@ describe('Basic Ambire Account tests', function () {
     await deployAmbireAccount()
   })
   it('ONLY_IDENTITY_CAN_CALL on setAddrPrivilege', async function () {
+    assertion.expectExpects(1)
     const contract = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, wallet)
-    let errorCaught = false
     try {
       await contract.setAddrPrivilege(addressTwo, ethers.toBeHex(1, 32))
     } catch (error) {
       expect(error.reason).to.equal('ONLY_IDENTITY_CAN_CALL')
-      errorCaught = true
     }
-    expect(errorCaught).to.be.true
   })
   it('ONLY_IDENTITY_CAN_CALL on tryCatch', async function () {
+    assertion.expectExpects(1)
     const contract = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, wallet)
-    let errorCaught = false
     try {
       await contract.tryCatch(addressTwo, 1, '0x00')
     } catch (error) {
       expect(error.reason).to.equal('ONLY_IDENTITY_CAN_CALL')
-      errorCaught = true
     }
-    expect(errorCaught).to.be.true
   })
   it('ONLY_IDENTITY_CAN_CALL on tryCatchLimit', async function () {
+    assertion.expectExpects(1)
     const contract = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, wallet)
-    let errorCaught = false
     try {
       await contract.tryCatchLimit(addressTwo, 1, '0x00', 100000)
     } catch (error) {
       expect(error.reason).to.equal('ONLY_IDENTITY_CAN_CALL')
-      errorCaught = true
     }
-    expect(errorCaught).to.be.true
   })
   it('ONLY_IDENTITY_CAN_CALL on executeBySelf', async function () {
+    assertion.expectExpects(1)
     const contract = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, wallet)
-    let errorCaught = false
     try {
       await contract.executeBySelf([[addressTwo, 1, '0x00']])
     } catch (error) {
       expect(error.reason).to.equal('ONLY_IDENTITY_CAN_CALL')
-      errorCaught = true
     }
-    expect(errorCaught).to.be.true
   })
   it('execute should fail if the account does not have priviledges', async function () {
+    assertion.expectExpects(1)
     const contract = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, wallet)
     await sendFunds(ambireAccountAddress, 1)
     const nonce = await contract.nonce()
@@ -85,16 +79,14 @@ describe('Basic Ambire Account tests', function () {
       abiCoder.encode(['address', 'uint', 'uint', 'tuple(address, uint, bytes)[]'], [ambireAccountAddress, chainId, nonce, normalTxns])
     ))
     const s = wrapEthSign(await wallet2.signMessage(msg))
-    let errorCaught = false
     try {
       await contract.execute(normalTxns, s)
     } catch (error) {
       expect(error.reason).to.equal('INSUFFICIENT_PRIVILEGE')
-      errorCaught = true
     }
-    expect(errorCaught).to.be.true
   })
   it('fail on downgrading my own key priviledge', async function () {
+    assertion.expectExpects(1)
     const contract = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, wallet)
     const txns = [getPriviledgeTxn(ambireAccountAddress, addressOne, false)]
     const nonce = await contract.nonce()
@@ -102,16 +94,14 @@ describe('Basic Ambire Account tests', function () {
       abiCoder.encode(['address', 'uint', 'uint', 'tuple(address, uint, bytes)[]'], [ambireAccountAddress, chainId, nonce, txns])
     ))
     const s = wrapEthSign(await wallet.signMessage(msg))
-    let errorCaught = false
     try {
       await contract.execute(txns, s)
     } catch (error) {
       expect(error.reason).to.equal('PRIVILEGE_NOT_DOWNGRADED')
-      errorCaught = true
     }
-    expect(errorCaught).to.be.true
   })
   it('fail on trying to set the timelock permissions to 1 - the only thing that will happen is the timelock will get invalidated', async function () {
+    assertion.expectExpects(2)
     const contract = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, wallet)
 
     // first, add the timelock
@@ -138,14 +128,11 @@ describe('Basic Ambire Account tests', function () {
       value: 0,
       data: calldata2
     }]
-    let errorCaught = false
     try {
       await contract.executeBySender(unsetPrivTxn)
     } catch (error) {
       expect(error.reason).to.equal('UNSETTING_SPECIAL_DATA')
-      errorCaught = true
     }
-    expect(errorCaught).to.be.true
   })
   it('successfully remove the timelock', async function () {
     const contract = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, wallet)
@@ -180,27 +167,23 @@ describe('Basic Ambire Account tests', function () {
     expect(noTimelock).to.equal('0x0000000000000000000000000000000000000000000000000000000000000000')
   })
   it('executeBySender should fail if the account does not have priviledges', async function () {
+    assertion.expectExpects(1)
     const contract = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, wallet2)
-    let errorCaught = false
     try {
       const txns = [[addressOne, 1, '0x00']]
       await contract.executeBySender(txns)
     } catch (error) {
       expect(error.reason).to.equal('INSUFFICIENT_PRIVILEGE')
-      errorCaught = true
     }
-    expect(errorCaught).to.be.true
   })
   it('executeBatch should fail if an empty array is passed', async function () {
+    assertion.expectExpects(1)
     const contract = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, wallet)
-    let errorCaught = false
     try {
       await contract.executeBySender([])
     } catch (error) {
       expect(error.reason).to.equal('MUST_PASS_TX')
-      errorCaught = true
     }
-    expect(errorCaught).to.be.true
   })
   it('should successfully executeMultiple', async function() {
     const contract = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, wallet)

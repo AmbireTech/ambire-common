@@ -15,8 +15,17 @@ const invalidSig = '0xffffffff'
 const provider = new ethers.JsonRpcProvider(localhost)
 const wallet = new ethers.Wallet(pk1, provider)
 const wallet2 = new ethers.Wallet(pk2, provider)
+const wallet3 = new ethers.Wallet(pk3, provider)
 const chainId = 31337
 const abiCoder = new ethers.AbiCoder()
+
+// setup chai so it could count assertions made:
+// assertion.expectExpects()
+const chai = require('chai');
+const chaiAssertionsCount = require('chai-assertions-count');
+chai.use(chaiAssertionsCount);
+const expect = chai.expect
+const assertion = chai.Assertion
 
 module.exports = {
   pk1,
@@ -30,10 +39,13 @@ module.exports = {
   provider,
   wallet,
   wallet2,
+  wallet3,
   addressOne,
   addressTwo,
   addressThree,
   addressFour,
   abiCoder,
-  chainId
+  chainId,
+  expect,
+  assertion
 }
