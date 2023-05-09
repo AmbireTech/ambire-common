@@ -108,7 +108,7 @@ export class Deployless {
 				]))
 			})
 		const returnDataRaw = mapResponse(await mapError(callPromise))
-		return this.iface.decodeFunctionResult(methodName, returnDataRaw)[0]
+		return this.iface.decodeFunctionResult(methodName, returnDataRaw)
 	}
 }
 

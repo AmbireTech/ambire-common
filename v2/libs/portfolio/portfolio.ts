@@ -1,11 +1,11 @@
-// @TODO velcro batching
-import fetch from 'node-fetch'
-import { JsonRpcProvider, Provider } from 'ethers'
+import { Provider, JsonRpcProvider } from 'ethers'
 import { Deployless, DeploylessMode } from '../deployless/deployless'
+import { AccountOp } from '../accountOp/accountOp'
 import { multiOracle } from './multiOracle.json'
 import batcher from './batcher'
 import { geckoRequestBatcher, geckoResponseIdentifier } from './gecko'
 import { flattenResults, paginate } from './pagination'
+import { TokenResult, Collectable, Price } from './interfaces'
 
 const LIMITS = {
 	// we have to be conservative with erc721Tokens because if we pass 30x20 (worst case) tokenIds, that's 30x20 extra words which is 19kb
@@ -14,21 +14,25 @@ const LIMITS = {
 	// theoretical capacity is 1666/450
 	deploylessStateOverrideMode: { erc20: 500, erc721: 100, erc721TokensInput: 100, erc721Tokens: 100 }
 }
+// 0x00..01 is the address from which simulation signatures are valid
+const DEPLOYLESS_SIMULATION_FROM = '0x0000000000000000000000000000000000000001'
 
-// @TODO: another file?
-interface Price {
+export interface UpdateOptionsSimulation {
+	accountOps: AccountOp[],
+	// @TODO account
+	// account: Account
+}
+
+export interface UpdateOptions {
 	baseCurrency: string,
-	price: number
+	blockTag: string | number,
+	simulation?: UpdateOptionsSimulation,
 }
-export interface TokenResult {
-	amount: bigint,
-	decimals: number,
-	symbol: string,
-	address: string,
-	priceIn: Price[]
+
+const defaultOptions: UpdateOptions = {
+	baseCurrency: 'usd',
+	blockTag: 'latest'
 }
-// auto-pagination
-// return and cache formats
 export class Portfolio {
 	private batchedVelcroDiscovery: Function
 	private batchedGecko: Function
@@ -38,21 +42,27 @@ export class Portfolio {
 		this.batchedGecko = batcher(fetch, geckoRequestBatcher) 
 	}
 
-	// @TODO options
-	async update(provider: Provider | JsonRpcProvider, networkId: string, accountAddr: string, baseCurrency: string = 'usd') {
+	async update(provider: Provider | JsonRpcProvider, networkId: string, accountAddr: string, opts: Partial<UpdateOptions> = {}) {
+		opts = { ...defaultOptions, ...opts }
+		const { baseCurrency } = opts
+
+		// @TODO: check account addr consistency
+		//if (opts.simulation && opts.simulation.account.id !== accountAddr) throw new Error('wrong account passed')
+
 		const start = Date.now()
 		const hints = await this.batchedVelcroDiscovery({ networkId, accountAddr })
 		const discoveryDone = Date.now()
 		// @TODO: pass binRuntime only if stateOverride is supported
 		const deployless = new Deployless(provider, multiOracle.abi, multiOracle.bin, multiOracle.binRuntime)
-		// @TODO block tag; segment cache by the block tag/simulation mode
+		const deploylessOpts = { blockTag: opts.blockTag, from: DEPLOYLESS_SIMULATION_FROM }
 		// Add the native token
 		const requestedTokens = hints.erc20s.concat('0x0000000000000000000000000000000000000000')
 		const limits = deployless.isLimitedAt24kbData ? LIMITS.deploylessProxyMode : LIMITS.deploylessStateOverrideMode
-		const [ tokenBalances, collectibles ] = await Promise.all([
+		const collectionsHints = Object.entries(hints.erc721s)
+		const [ tokensWithErr, collectionsRaw ] = await Promise.all([
 			flattenResults(paginate(requestedTokens, limits.erc20)
-				.map(page => deployless.call('getBalances', [accountAddr, page]))),
-			flattenResults(paginate(Object.entries(hints.erc721s), limits.erc721)
+				.map(page => getTokens(deployless, opts, accountAddr, page))),
+			flattenResults(paginate(collectionsHints, limits.erc721)
 				.map(page => deployless.call('getAllNFTs', [
 					accountAddr,
 					page.map(([address]) => address),
@@ -60,14 +70,19 @@ export class Portfolio {
 						([_, x]) => x.enumerable ? [] : x.tokens.slice(0, limits.erc721TokensInput)
 					),
 					limits.erc721Tokens
-				])))
+					// @TODO this .then is ugly
+				], deploylessOpts).then(x => x[0])))
 		])
-		// we do [ ... ] to get rid of the ethers Result type
-		const tokensWithErr = [ ...(tokenBalances as any[]) ]
-			.map((x, i) => [
-				x.error,
-				({ amount: x.amount, decimals: new Number(x.decimals), symbol: x.symbol, address: requestedTokens[i] }) as TokenResult
-			])
+		const collections = [ ...(collectionsRaw as any[]) ]
+			.map((x, i) => ({
+				address: collectionsHints[i][0] as unknown as string,
+				name: x[0],
+				symbol: x[1],
+				amount: BigInt(x[2].length),
+				decimals: 1,
+				priceIn: [], // @TODO floor price
+				collectables: [ ...(x[2] as any[]) ].map((x: any) => ({ id: x[0], url: x[1] } as Collectable))
+			} as TokenResult))
 		const oracleCallDone = Date.now()
 
 		const tokens = tokensWithErr
@@ -94,33 +109,59 @@ export class Portfolio {
 			tokenErrors: tokensWithErr
 				.filter(([ error, result ]) => error !== '0x' || result.symbol === '')
 				.map(([error, result]) => ({ error, address: result.address })),
-			collectibles: [ ...(collectibles as any[]) ]
-				.filter(x => x.nfts.length)
+			collections: collections.filter(x => x.collectables?.length),
+			total: tokens.reduce((cur, token) => {
+				for (const x of token.priceIn) {
+					cur[x.baseCurrency] = (cur[x.baseCurrency] || 0) + Number(token.amount) / (10 ** token.decimals) * x.price
+				}
+				return cur
+			}, {})
 		}
 	}
 }
 
 
-//const url = 'http://localhost:8545'
-const url = 'https://mainnet.infura.io/v3/d4319c39c4df452286d8bf6d10de28ae'
-const provider = new JsonRpcProvider(url)
-const portfolio = new Portfolio(fetch)
-const appraise = (tokens: TokenResult[], inBase: string) => tokens.map(x => {
-	const priceEntry = x.priceIn.find(y => y.baseCurrency === inBase)
-	const price = priceEntry ? priceEntry.price : 0
-	return Number(x.amount) / Math.pow(10, x.decimals) * price
-}).reduce((a, b) => a + b, 0)
+async function getTokens (deployless: Deployless, opts: Partial<UpdateOptions>, accountAddr: string, tokenAddrs: string[]): Promise<[number, TokenResult][]> {
+	const deploylessOpts = { blockTag: opts.blockTag, from: DEPLOYLESS_SIMULATION_FROM }
+	if (!opts.simulation) {
+		const [ results ] = await deployless.call('getBalances', [accountAddr, tokenAddrs], deploylessOpts)
+		// we do [ ... ] to get rid of the ethers Result type
+		return [ ...(results as any[]) ]
+			.map((x, i) => [
+				x.error,
+				({ amount: x.amount, decimals: new Number(x.decimals), symbol: x.symbol, address: tokenAddrs[i] }) as TokenResult
+			])
 
-portfolio
-	.update(provider, 'ethereum',
-		'0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
-		)
-	.then(x => console.dir({ valueInUSD: appraise(x.tokens, 'usd'), ...x }, { depth: null }))
-	.catch(console.error)
+	}
+	const [before, after, simulationErr] = await deployless.call('simulateAndGetBalances', [
+		accountAddr, tokenAddrs,
+		// @TODO factory, factoryCalldata
+		'0x0000000000000000000000000000000000000000', '0x00',
+		// @TODO beautify
+		opts.simulation.accountOps.map(({ nonce, calls, signature }) => [nonce, calls.map(x => [x.to, x.value, x.data]), signature])
+	], deploylessOpts)
+	
+	if (simulationErr !== '0x') throw new SimulationError(simulationErr)
+	if (after[1] === 0n) throw new SimulationError('unknown error')
+	if (after[1] < before[1]) throw new SimulationError('lower "after" nonce')
+	// no simulation was performed if the nonce is the same
+	const results = (after[1] === before[1]) ? before[0] : after[0]
+	return [ ...results ]
+		.map((x, i) => [
+			x.error,
+			({
+				amount: before[0][i].amount,
+				amountPostSimulation: x.amount,
+				decimals: new Number(x.decimals),
+				symbol: x.symbol, address: tokenAddrs[i]
+			}) as TokenResult
+		])
+}
 
-portfolio
-	.update(provider, 'ethereum',
-		'0x8F493C12c4F5FF5Fd510549E1e28EA3dD101E850'
-		)
-	.then(x => console.dir({ valueInUSD: appraise(x.tokens, 'usd'), ...x }, { depth: null }))
-	.catch(console.error)
+class SimulationError extends Error {
+	public simulationErrorMsg: string
+	constructor (message: string) {
+		super(`simulation error: ${message}`)
+		this.simulationErrorMsg = message
+	}
+}
