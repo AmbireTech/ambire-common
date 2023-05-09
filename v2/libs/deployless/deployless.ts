@@ -1,4 +1,4 @@
-import { Interface, concat, AbiCoder, getBytes, Provider, JsonRpcProvider } from 'ethers'
+import { Interface, concat, AbiCoder, Provider, JsonRpcProvider, getBytes } from 'ethers'
 
 // this is a magic contract that is constructed like `constructor(bytes memory contractBytecode, bytes memory data)` and returns the result from the call
 // compiled from relayer:a7ea373559d8c419577ac05527bd37fbee8856ae/src/velcro-v3/contracts/Deployless.sol with solc 0.8.17
@@ -114,7 +114,7 @@ export class Deployless {
 async function mapError(callPromise: Promise<string>): Promise<string> {
 	try {
 		return await callPromise
-	} catch (e) {
+	} catch (e: any) {
 		// ethers v5 provider: e.error.data is usually our eth_call output in case of execution reverted
 		if (e.error && e.error.data) return e.error.data
 		// ethers v5 provider: unwrap the wrapping that ethers adds to this type of error in case of provider.call
@@ -125,26 +125,33 @@ async function mapError(callPromise: Promise<string>): Promise<string> {
 	}
 }
 
-function mapResponse(data: string): string {
+function mapResponse (data: string): string {
 	if (data === deployErrorSig) throw new Error('contract deploy failed')
+	const err = parseErr(data)
+	if (err) throw err
+	return data
+}
+
+function parseErr (data: string): string | null {
+	const dataNoPrefix = data.slice(10)
 	if (data.startsWith(panicSig)) {
 		// https://docs.soliditylang.org/en/v0.8.11/control-structures.html#panic-via-assert-and-error-via-require
-		const num = parseInt('0x' + data.slice(10))
+		const num = parseInt('0x' + dataNoPrefix)
 		if (num === 0x00) return 'generic compiler error'
 		if (num === 0x01) return 'solidity assert error'
 		if (num === 0x11) return 'arithmetic error'
 		if (num === 0x12) return 'division by zero'
 		return `panic error: 0x${num.toString(16)}`
 	}
-	try {
-		return data.startsWith(errorSig)
-			? abiCoder.decode(['string'], '0x' + data.slice(10))[0]
-			: data
-	} catch (e) {
-		if (e.code === 'BUFFER_OVERRUN' || e.code === 'NUMERIC_FAULT') return data.slice(10)
-		else throw e
+	if (data.startsWith(errorSig)) {
+		try {
+			return abiCoder.decode(['string'], '0x' + dataNoPrefix)[0]
+		} catch (e: any) {
+			if (e.code === 'BUFFER_OVERRUN' || e.code === 'NUMERIC_FAULT') return dataNoPrefix
+			else throw e
+		}
 	}
-	return data
+	return null
 }
 
 function checkDataSize (data: string): string {
