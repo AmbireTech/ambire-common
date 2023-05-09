@@ -110,6 +110,8 @@ library SignatureValidator {
 			require(tx.origin == address(1) || tx.origin == address(6969), "SV_SPOOF_ORIGIN");
 			require(sig.length == 33, "SV_SPOOF_LEN");
 			sig.trimToSize(32);
+			// To simulate the gas usage; check is just to silence unused warning
+			require(ecrecover(0, 0, 0, 0) != address(6969));
 			return abi.decode(sig, (address));
 		}
 		// should be impossible to get here
