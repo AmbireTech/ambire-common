@@ -28,6 +28,7 @@ export default function batcher (fetch: Function, requestGenerator: RequestGener
 				try {
 					const resp = await fetch(url)
 					const body = await resp.json()
+					if (resp.status !== 200) throw body
 					if (body.hasOwnProperty('message')) throw body
 					if (body.hasOwnProperty('error')) throw body
 					if (Array.isArray(body)) {
