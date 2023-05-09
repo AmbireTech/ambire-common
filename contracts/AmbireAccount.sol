@@ -120,7 +120,7 @@ contract AmbireAccount {
 				delete scheduledRecoveries[hash];
 				emit LogRecoveryFinalized(hash, recoveryInfoHash, block.timestamp);
 			} else {
-				address recoveryKey = SignatureValidator.recoverAddr(hash, innerRecoverySig);
+				address recoveryKey = SignatureValidator.recoverAddrImpl(hash, innerRecoverySig, true);
 				bool isIn;
 				for (uint i=0; i<recoveryInfo.keys.length; i++) {
 					if (recoveryInfo.keys[i] == recoveryKey) { isIn = true; break; }
