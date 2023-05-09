@@ -8,7 +8,8 @@ const {
   wallet2,
   addressOne,
   addressTwo,
-  provider,
+  addressThree,
+  wallet3,
 } = require('../config')
 const {wrapEIP712, wrapMultiSig} = require('../ambireSign')
 const { wait } = require('../polling')
@@ -110,10 +111,6 @@ describe('Two of two multisignature tests', function () {
 })
 
 describe('Three of three multisignature tests', function () {
-  addressThree = '0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC'
-  pk3 = '0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a'
-  const wallet3 = new ethers.Wallet(pk3, provider)
-
   it('successfully deploys the ambire account', async function () {
     await deployAmbireAccount([addressOne, addressTwo, addressThree])
   });
