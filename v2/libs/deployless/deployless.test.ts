@@ -1,7 +1,7 @@
 import { AbiCoder, JsonRpcProvider, concat, getDefaultProvider, toBeHex } from 'ethers'
-import { compile } from '../compile'
-import { addressOne, localhost } from '../../../../test/config'
-import { Deployless, DeploylessMode } from '../deployless'
+import { compile } from './compile'
+import { addressOne, localhost } from '../../../test/config'
+import { Deployless, DeploylessMode } from './deployless'
 import { describe, expect, test } from '@jest/globals'
 
 const helloWorld = compile('HelloWorld', {
