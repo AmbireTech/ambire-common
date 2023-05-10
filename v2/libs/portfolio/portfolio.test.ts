@@ -49,4 +49,11 @@ describe('Portfolio', () => {
 		const entry = postSimulation.tokens.find(x => x.symbol === 'USDC')
 		expect(entry.amount - entry.amountPostSimulation).toBe(5259434n)
 	})
+
+	test('price cache works', async () => {
+		const { priceCache } = await portfolio.update(provider, 'ethereum', '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8')
+		const resultTwo = await portfolio.update(provider, 'ethereum', '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', { priceCache, priceRecency: 60000 })
+		expect(resultTwo.priceUpdateTime).toBeLessThanOrEqual(3)
+		expect(resultTwo.tokens.every(x => x.priceIn.length)).toBe(true)
+	})
 })
