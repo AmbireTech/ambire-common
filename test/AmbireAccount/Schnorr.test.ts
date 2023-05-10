@@ -2,7 +2,6 @@ import { ethers } from 'ethers'
 import {
   pk1,
   pk2,
-  expect,
   AmbireAccount,
   validSig,
   invalidSig,
@@ -10,6 +9,7 @@ import {
 } from '../config'
 import {wrapSchnorr} from '../ambireSign'
 import { wait } from '../polling'
+import { describe, expect, test } from '@jest/globals'
 const Schnorrkel = require('@borislav.itskov/schnorrkel.js')
 const schnorrkel = new Schnorrkel()
 
@@ -31,9 +31,9 @@ async function deployAmbireAccount() {
 
   const contract: any = await factory.deploy([schnorrAddress])
   await wait(wallet, contract)
-  expect(await contract.getAddress()).to.not.be.null
+  expect(await contract.getAddress()).not.toBe(null)
   const isSigner = await contract.privileges(schnorrAddress)
-  expect(isSigner).to.equal('0x0000000000000000000000000000000000000000000000000000000000000001')
+  expect(isSigner).toBe('0x0000000000000000000000000000000000000000000000000000000000000001')
 
   ambireAccountAddress = await contract.getAddress()
   return {contract}
@@ -62,7 +62,7 @@ describe('Schnorr tests', function () {
     ])
     const ambireSignature = wrapSchnorr(sigData)
     const hash = ethers.solidityPackedKeccak256(['string'], [msg])
-    expect(await contract.isValidSignature(hash, ambireSignature)).to.equal(validSig)
+    expect(await contract.isValidSignature(hash, ambireSignature)).toBe(validSig)
   })
   it('fails validation when an unauthorized private key signs', async function () {
     const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, wallet)
@@ -83,7 +83,7 @@ describe('Schnorr tests', function () {
     ])
     const ambireSignature = wrapSchnorr(sigData)
     const hash = ethers.solidityPackedKeccak256(['string'], [msg])
-    expect(await contract.isValidSignature(hash, ambireSignature)).to.equal(invalidSig)
+    expect(await contract.isValidSignature(hash, ambireSignature)).toBe(invalidSig)
   })
   it('fails validation when the message is different', async function () {
     const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, wallet)
@@ -105,6 +105,6 @@ describe('Schnorr tests', function () {
     const ambireSignature = wrapSchnorr(sigData)
     const msg2 = 'test2'
     const hash = ethers.solidityPackedKeccak256(['string'], [msg2])
-    expect(await contract.isValidSignature(hash, ambireSignature)).to.equal(invalidSig)
+    expect(await contract.isValidSignature(hash, ambireSignature)).toBe(invalidSig)
   })
 })

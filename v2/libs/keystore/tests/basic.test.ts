@@ -1,5 +1,5 @@
-import { Keystore, Storage } from '../../v2/libs/keystore/keystore'
-import { assertion, expect } from '../config'
+import { Keystore, Storage } from '../keystore'
+import { describe, expect, test } from "@jest/globals"
 
 // Helpers/testing
 function produceMemoryStore(): Storage {
@@ -17,47 +17,47 @@ let keystore: Keystore
 const pass = 'hoiHoi'
 
 describe('Keystore', () => {
-  it('should initialize keystore', () => {
+  test('should initialize keystore', () => {
     keystore = new Keystore(produceMemoryStore())
-    expect((keystore as any)['#mainKey']).to.equal(undefined)
+    expect((keystore as any)['#mainKey']).toBe(undefined)
   })
 
-  it('should not unlock when empty', async () => {
-    assertion.expectExpects(1)
+  test('should not unlock when empty', async () => {
+    expect.assertions(1)
     try {
       await keystore.unlockWithSecret('passphrase', pass)
     } catch(e: any) {
-      expect(e.message).to.equal('keystore: no secrets yet')
+      expect(e.message).toBe('keystore: no secrets yet')
     }
   })
 
-  it('should add a secret', async () => {
+  test('should add a secret', async () => {
     await keystore.addSecret('passphrase', pass)
-    expect(keystore.isUnlocked()).to.equal(false)
+    expect(keystore.isUnlocked()).toBe(false)
   })
 
-  it('should not unlock with non-existant secret', async () => {
-    assertion.expectExpects(1)
+  test('should not unlock with non-existant secret', async () => {
+    expect.assertions(1)
     try {
       await keystore.unlockWithSecret('playstation', '')
     } catch(e: any) {
-      expect(e.message).to.equal('keystore: secret playstation not found')
+      expect(e.message).toBe('keystore: secret playstation not found')
     }
   })
 
-  it('should not unlock with wrong secret', async () => {
-    assertion.expectExpects(2)
+  test('should not unlock with wrong secret', async () => {
+    expect.assertions(2)
     try {
       await keystore.unlockWithSecret('passphrase', pass+'1')
     } catch(e: any) {
-      expect(e.message).to.equal('keystore: wrong secret')
+      expect(e.message).toBe('keystore: wrong secret')
     }
-    expect(keystore.isUnlocked()).to.equal(false)
+    expect(keystore.isUnlocked()).toBe(false)
   })
 
-  it('should unlock with secret', async () => {
+  test('should unlock with secret', async () => {
   	await keystore.unlockWithSecret('passphrase', pass)
-    expect(keystore.isUnlocked()).to.equal(true)
+    expect(keystore.isUnlocked()).toBe(true)
   })
 
   // @TODO: secret not found

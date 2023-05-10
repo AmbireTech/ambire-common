@@ -8,12 +8,10 @@ contract HelloWorld {
         return 1;
     }
 
-    function throwArithmeticError() external view returns (uint) {
+    function throwArithmeticError() external view returns (uint8) {
         uint8 z = 240;
         uint8 x = 240;
-        unchecked {
-            z = z + x;
-        }
+        z = z + x;
         return z;
     }
 

@@ -1,9 +1,9 @@
-import { expect} from "../config"
-import { getGasPriceRecommendations } from "../../v2/libs/gasPrice/gasPrice"
+import { getGasPriceRecommendations } from "../gasPrice"
 import MockProvider from "./MockProvider"
+import { describe, expect, test } from "@jest/globals"
 
 describe('1559 Network gas price tests', function() {
-  it('should return 0n for gasPrice on an empty block', async function(){
+  test('should return 0n for gasPrice on an empty block', async function(){
     const params = {
       baseFeePerGas: null,
       transactions: []
@@ -11,15 +11,15 @@ describe('1559 Network gas price tests', function() {
     const provider = MockProvider.init(params)
     const gasPrice = await getGasPriceRecommendations(provider)
     const slow: any = gasPrice[0]
-    expect(slow.gasPrice).to.equal(0n)
+    expect(slow.gasPrice).toBe(0n)
     const medium: any = gasPrice[1]
-    expect(medium.gasPrice).to.equal(0n)
+    expect(medium.gasPrice).toBe(0n)
     const fast: any = gasPrice[2]
-    expect(fast.gasPrice).to.equal(0n)
+    expect(fast.gasPrice).toBe(0n)
     const ape: any = gasPrice[3]
-    expect(ape.gasPrice).to.equal(0n)
+    expect(ape.gasPrice).toBe(0n)
   })
-  it('should return the lowest maxPriorityFeePerGas for a block with less than 4 txns', async function(){
+  test('should return the lowest maxPriorityFeePerGas for a block with less than 4 txns', async function(){
     const params = {
       baseFeePerGas: null,
       transactions: [
@@ -31,15 +31,15 @@ describe('1559 Network gas price tests', function() {
     const provider = MockProvider.init(params)
     const gasPrice = await getGasPriceRecommendations(provider)
     const slow: any = gasPrice[0]
-    expect(slow.gasPrice).to.equal(100n)
+    expect(slow.gasPrice).toBe(100n)
     const medium: any = gasPrice[1]
-    expect(medium.gasPrice).to.equal(100n)
+    expect(medium.gasPrice).toBe(100n)
     const fast: any = gasPrice[2]
-    expect(fast.gasPrice).to.equal(100n)
+    expect(fast.gasPrice).toBe(100n)
     const ape: any = gasPrice[3]
-    expect(ape.gasPrice).to.equal(100n)
+    expect(ape.gasPrice).toBe(100n)
   })
-  it('should remove outliers from a group of 19, making the group 15, and return an average for each speed at a step of 3 for slow, medium and fast, and an avg of the remaining 6 for ape', async function(){
+  test('should remove outliers from a group of 19, making the group 15, and return an average for each speed at a step of 3 for slow, medium and fast, and an avg of the remaining 6 for ape', async function(){
     const params = {
       baseFeePerGas: null,
       transactions: [
@@ -67,15 +67,15 @@ describe('1559 Network gas price tests', function() {
     const provider = MockProvider.init(params)
     const gasPrice = await getGasPriceRecommendations(provider)
     const slow: any = gasPrice[0]
-    expect(slow.gasPrice).to.equal(100n)
+    expect(slow.gasPrice).toBe(100n)
     const medium: any = gasPrice[1]
-    expect(medium.gasPrice).to.equal(110n)
+    expect(medium.gasPrice).toBe(110n)
     const fast: any = gasPrice[2]
-    expect(fast.gasPrice).to.equal(110n)
+    expect(fast.gasPrice).toBe(110n)
     const ape: any = gasPrice[3]
-    expect(ape.gasPrice).to.equal(128n)
+    expect(ape.gasPrice).toBe(128n)
   })
-  it('should remove 0s from gasPrice but should keep 1s because they are not outliers, and should calculate an average of every group of 4 for slow, medium and fast, and an average of the remaining 5 for ape', async function(){
+  test('should remove 0s from gasPrice but should keep 1s because they are not outliers, and should calculate an average of every group of 4 for slow, medium and fast, and an average of the remaining 5 for ape', async function(){
     const params = {
       baseFeePerGas: null,
       transactions: [
@@ -106,12 +106,12 @@ describe('1559 Network gas price tests', function() {
     const provider = MockProvider.init(params)
     const gasPrice = await getGasPriceRecommendations(provider)
     const slow: any = gasPrice[0]
-    expect(slow.gasPrice).to.equal(20n)
+    expect(slow.gasPrice).toBe(20n)
     const medium: any = gasPrice[1]
-    expect(medium.gasPrice).to.equal(48n)
+    expect(medium.gasPrice).toBe(48n)
     const fast: any = gasPrice[2]
-    expect(fast.gasPrice).to.equal(55n)
+    expect(fast.gasPrice).toBe(55n)
     const ape: any = gasPrice[3]
-    expect(ape.gasPrice).to.equal(76n)
+    expect(ape.gasPrice).toBe(76n)
   })
 })

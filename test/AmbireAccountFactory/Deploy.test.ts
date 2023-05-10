@@ -6,11 +6,11 @@ import {
   wallet2,
   addressOne,
   addressTwo,
-  expect,
   chainId
 } from '../config'
 import { wait } from '../polling'
 import { wrapEthSign } from '../ambireSign'
+import { describe, expect, test } from '@jest/globals'
 const salt = 0
 const abiCoder = new ethers.AbiCoder()
 
@@ -22,16 +22,16 @@ function getAmbireAccountAddress(bytecode: string) {
 }
 
 describe('AmbireAccountFactory tests', function(){
-  it('deploys the factory', async function(){
+  test('deploys the factory', async function(){
     const contractFactory = new ethers.ContractFactory(AmbireAccountFactory.abi, AmbireAccountFactory.bytecode, wallet)
     const factory = await contractFactory.deploy(addressOne)
     await wait(wallet, factory)
-    expect(await factory.getAddress()).to.not.be.null
+    expect(await factory.getAddress()).not.toBe(null)
 
     factoryAddress = await factory.getAddress()
     factoryContract = new ethers.BaseContract(factoryAddress, AmbireAccountFactory.abi, wallet)
   })
-  it('deploys the ambire account via the factory; no revert upon redeploy to same address', async function(){
+  test('deploys the ambire account via the factory; no revert upon redeploy to same address', async function(){
     const data = abiCoder.encode(['address[]'], [[addressOne]])
     const bytecode = ethers.concat([
       AmbireAccount.bytecode,
@@ -42,13 +42,13 @@ describe('AmbireAccountFactory tests', function(){
     await wait(wallet, factoryDeploy)
     const ambireAccount: any = new ethers.BaseContract(accountAddr, AmbireAccount.abi, wallet)
     const canSign = await ambireAccount.privileges(addressOne)
-    expect(canSign).to.equal('0x0000000000000000000000000000000000000000000000000000000000000001')
+    expect(canSign).toBe('0x0000000000000000000000000000000000000000000000000000000000000001')
 
     // just confirm that no reverts happen
     const reDeploy = await factoryContract.deploy(bytecode, salt)
     await wait(wallet, reDeploy)
   })
-  it('deploy the contract and execute a transaction along with the deploy', async function(){
+  test('deploy the contract and execute a transaction along with the deploy', async function(){
     const data = abiCoder.encode(['address[]'], [[addressTwo]])
     const bytecode = ethers.concat([
       AmbireAccount.bytecode,
@@ -70,11 +70,11 @@ describe('AmbireAccountFactory tests', function(){
     await wait(wallet, factoryDeployAndExecute)
     const ambireAccount: any = new ethers.BaseContract(accountAddr, AmbireAccount.abi, wallet)
     const canSignOne = await ambireAccount.privileges(addressOne)
-    expect(canSignOne).to.equal('0x0000000000000000000000000000000000000000000000000000000000000001')
+    expect(canSignOne).toBe('0x0000000000000000000000000000000000000000000000000000000000000001')
     const canSignTwo = await ambireAccount.privileges(addressTwo)
-    expect(canSignTwo).to.equal('0x0000000000000000000000000000000000000000000000000000000000000001')
+    expect(canSignTwo).toBe('0x0000000000000000000000000000000000000000000000000000000000000001')
   })
-  it('deploy and execute on an already deployed contract - it should execute the call', async function(){
+  test('deploy and execute on an already deployed contract - it should execute the call', async function(){
     const data = abiCoder.encode(['address[]'], [[addressOne]])
     const bytecode = ethers.concat([
       AmbireAccount.bytecode,
@@ -96,6 +96,6 @@ describe('AmbireAccountFactory tests', function(){
     await wait(wallet, factoryDeployAndExecute)
     const ambireAccount: any = new ethers.BaseContract(accountAddr, AmbireAccount.abi, wallet)
     const canSignTwo = await ambireAccount.privileges(addressTwo)
-    expect(canSignTwo).to.equal('0x0000000000000000000000000000000000000000000000000000000000000001')
+    expect(canSignTwo).toBe('0x0000000000000000000000000000000000000000000000000000000000000001')
   })
 })
