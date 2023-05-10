@@ -7,9 +7,9 @@ import {
   addressOne,
   addressTwo,
   chainId
-} from '../config'
-import { wait } from '../polling'
-import { wrapEthSign } from '../ambireSign'
+} from '../../../test/config'
+import { wait } from '../../../test/polling'
+import { wrapEthSign } from '../../../test/ambireSign'
 import { describe, expect, test } from '@jest/globals'
 const salt = 0
 const abiCoder = new ethers.AbiCoder()

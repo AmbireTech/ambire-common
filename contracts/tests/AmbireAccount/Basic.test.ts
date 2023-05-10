@@ -10,10 +10,10 @@ import {
   addressThree,
   addressFour,
   provider,
-} from '../config'
-import { wait } from '../polling'
-import { sendFunds, getPriviledgeTxn, getTimelockData } from '../helpers'
-import { wrapEthSign } from '../ambireSign'
+} from '../../../test/config'
+import { wait } from '../../../test/polling'
+import { sendFunds, getPriviledgeTxn, getTimelockData } from '../../../test/helpers'
+import { wrapEthSign } from '../../../test/ambireSign'
 import { describe, expect, test } from '@jest/globals'
 
 let ambireAccountAddress: string

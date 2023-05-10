@@ -9,10 +9,10 @@ import {
   addressTwo,
   addressThree,
   addressFour,
-} from '../config'
-import {wrapEthSign, wrapRecover, wrapCancel} from '../ambireSign'
-import { wait } from '../polling'
-import { sendFunds, getPriviledgeTxn } from '../helpers'
+} from '../../../test/config'
+import {wrapEthSign, wrapRecover, wrapCancel} from '../../../test/ambireSign'
+import { wait } from '../../../test/polling'
+import { sendFunds, getPriviledgeTxn } from '../../../test/helpers'
 import { describe, expect, test } from '@jest/globals'
 const timelock = 1
 const recoveryInfo = [[addressOne, addressTwo], timelock]

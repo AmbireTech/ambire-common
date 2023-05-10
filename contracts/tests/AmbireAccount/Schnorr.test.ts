@@ -6,9 +6,9 @@ import {
   validSig,
   invalidSig,
   wallet
-} from '../config'
-import {wrapSchnorr} from '../ambireSign'
-import { wait } from '../polling'
+} from '../../../test/config'
+import {wrapSchnorr} from '../../../test/ambireSign'
+import { wait } from '../../../test/polling'
 import { describe, expect, test } from '@jest/globals'
 const Schnorrkel = require('@borislav.itskov/schnorrkel.js')
 const schnorrkel = new Schnorrkel()

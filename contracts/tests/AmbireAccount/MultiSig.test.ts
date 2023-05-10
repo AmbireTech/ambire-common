@@ -9,9 +9,9 @@ import {
   addressTwo,
   addressThree,
   wallet3,
-} from '../config'
-import {wrapEIP712, wrapMultiSig} from '../ambireSign'
-import { wait } from '../polling'
+} from '../../../test/config'
+import {wrapEIP712, wrapMultiSig} from '../../../test/ambireSign'
+import { wait } from '../../../test/polling'
 import { describe, expect, test } from '@jest/globals'
 
 /**
