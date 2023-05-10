@@ -83,6 +83,16 @@ export class Portfolio {
 				], deploylessOpts))[0]))
 		])
 		// Re-map/filter into our format
+		const getPriceFromCache = (address: string) => {
+			const cached = priceCache.get(address)
+			if (!cached) return null
+			const [ timestamp, entry ] = cached
+			const eligible = entry.filter(x => x.baseCurrency === baseCurrency)
+			// by using `start` instead of `Date.now()`, we make sure that prices updated from Velcro will not be updated again
+			// even if priceRecency is 0
+			if ((start - timestamp) < opts.priceRecency! && eligible.length) return eligible
+			return null
+		}
 		const collections = [ ...(collectionsRaw as any[]) ]
 			.map((x, i) => {
 				const address = collectionsHints[i][0] as unknown as string
@@ -92,7 +102,7 @@ export class Portfolio {
 					symbol: x[1],
 					amount: BigInt(x[2].length),
 					decimals: 1,
-					priceIn: [],
+					priceIn: getPriceFromCache(address) || [],
 					collectables: [ ...(x[2] as any[]) ].map((x: any) => ({ id: x[0], url: x[1] } as Collectable))
 				} as TokenResult
 			})
@@ -103,11 +113,9 @@ export class Portfolio {
 
 		// Update prices
 		await Promise.all(tokens.map(async token => {
-			const cachedEntry = priceCache.get(token.address)
-			// by using `start` instead of `Date.now()`, we make sure that prices updated from Velcro will not be updated again
-			// even if priceRecency is 0
-			if (cachedEntry && (start - cachedEntry[0]) < opts.priceRecency!) {
-				token.priceIn = cachedEntry[1]
+			const cachedPriceIn = getPriceFromCache(token.address)
+			if (cachedPriceIn) {
+				token.priceIn = cachedPriceIn
 				return
 			}
 			const priceData = await this.batchedGecko({
