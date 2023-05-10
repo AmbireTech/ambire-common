@@ -1,4 +1,4 @@
-import { Keystore, Storage } from '../keystore'
+import { Keystore, Storage } from './keystore'
 import { describe, expect, test } from "@jest/globals"
 
 // Helpers/testing
