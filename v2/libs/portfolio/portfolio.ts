@@ -23,16 +23,22 @@ export interface UpdateOptionsSimulation {
 	account: Account
 }
 
+type PriceCache = Map<string, [number, Price[]]>
+
 export interface UpdateOptions {
 	baseCurrency: string,
 	blockTag: string | number,
 	simulation?: UpdateOptionsSimulation,
+	priceCache?: PriceCache,
+	priceRecency: number
 }
 
 const defaultOptions: UpdateOptions = {
 	baseCurrency: 'usd',
-	blockTag: 'latest'
+	blockTag: 'latest',
+	priceRecency: 0
 }
+
 export class Portfolio {
 	private batchedVelcroDiscovery: Function
 	private batchedGecko: Function
@@ -88,7 +94,13 @@ export class Portfolio {
 			.filter(([error, result]) => result.amount > 0 && error == '0x' && result.symbol !== '')
 			.map(([_, result]) => result)
 
+		const priceCache: PriceCache = opts.priceCache || new Map()
 		await Promise.all(tokens.map(async token => {
+			const cachedEntry = priceCache.get(token.address)
+			if (cachedEntry && (Date.now() - cachedEntry[0]) < opts.priceRecency!) {
+				token.priceIn = cachedEntry[1]
+				return
+			}
 			const priceData = await this.batchedGecko({
 				...token,
 				networkId,
@@ -96,7 +108,10 @@ export class Portfolio {
 				// this is what to look for in the coingecko response object
 				responseIdentifier: geckoResponseIdentifier(token.address, networkId)
 			})
-			token.priceIn = Object.entries(priceData || {}).map(([ baseCurrency, price ]) => ({ baseCurrency, price }))
+			const priceIn: Price[] = Object.entries(priceData || {})
+				.map(([ baseCurrency, price ]) => ({ baseCurrency, price: price as number }))
+			priceCache.set(token.address, [Date.now(), priceIn])
+			token.priceIn = priceIn
 		}))
 		const priceUpdateDone = Date.now()
 
@@ -104,6 +119,7 @@ export class Portfolio {
 			discoveryTime: discoveryDone - start,
 			oracleCallTime: oracleCallDone - discoveryDone,
 			priceUpdateTime: priceUpdateDone - oracleCallDone,
+			priceCache,
 			tokens,
 			tokenErrors: tokensWithErr
 				.filter(([ error, result ]) => error !== '0x' || result.symbol === '')
