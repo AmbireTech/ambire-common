@@ -40,3 +40,7 @@ export interface AccountOp {
 	gasFeePayment: GasFeePayment | null
 	// @TODO: meta?
 }
+
+export function callToTuple (call: Call): [string, bigint, string] {
+	return [call.to, call.value, call.data]
+}

@@ -132,7 +132,7 @@ function mapResponse (data: string): string {
 	return data
 }
 
-function parseErr (data: string): string | null {
+export function parseErr (data: string): string | null {
 	const dataNoPrefix = data.slice(10)
 	if (data.startsWith(panicSig)) {
 		// https://docs.soliditylang.org/en/v0.8.11/control-structures.html#panic-via-assert-and-error-via-require

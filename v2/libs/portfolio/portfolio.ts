@@ -1,6 +1,7 @@
 import { Provider, JsonRpcProvider } from 'ethers'
-import { Deployless, DeploylessMode } from '../deployless/deployless'
-import { AccountOp } from '../accountOp/accountOp'
+import { Deployless, DeploylessMode, parseErr } from '../deployless/deployless'
+import { AccountOp, callToTuple } from '../accountOp/accountOp'
+import { Account, getAccountDeployParams } from '../account/account'
 import { multiOracle } from './multiOracle.json'
 import batcher from './batcher'
 import { geckoRequestBatcher, geckoResponseIdentifier } from './gecko'
@@ -19,20 +20,25 @@ const DEPLOYLESS_SIMULATION_FROM = '0x0000000000000000000000000000000000000001'
 
 export interface UpdateOptionsSimulation {
 	accountOps: AccountOp[],
-	// @TODO account
-	// account: Account
+	account: Account
 }
+
+type PriceCache = Map<string, [number, Price[]]>
 
 export interface UpdateOptions {
 	baseCurrency: string,
 	blockTag: string | number,
 	simulation?: UpdateOptionsSimulation,
+	priceCache?: PriceCache,
+	priceRecency: number
 }
 
 const defaultOptions: UpdateOptions = {
 	baseCurrency: 'usd',
-	blockTag: 'latest'
+	blockTag: 'latest',
+	priceRecency: 0
 }
+
 export class Portfolio {
 	private batchedVelcroDiscovery: Function
 	private batchedGecko: Function
@@ -46,8 +52,7 @@ export class Portfolio {
 		opts = { ...defaultOptions, ...opts }
 		const { baseCurrency } = opts
 
-		// @TODO: check account addr consistency
-		//if (opts.simulation && opts.simulation.account.id !== accountAddr) throw new Error('wrong account passed')
+		if (opts.simulation && opts.simulation.account.addr !== accountAddr) throw new Error('wrong account passed')
 
 		const start = Date.now()
 		const hints = await this.batchedVelcroDiscovery({ networkId, accountAddr })
@@ -89,7 +94,13 @@ export class Portfolio {
 			.filter(([error, result]) => result.amount > 0 && error == '0x' && result.symbol !== '')
 			.map(([_, result]) => result)
 
+		const priceCache: PriceCache = opts.priceCache || new Map()
 		await Promise.all(tokens.map(async token => {
+			const cachedEntry = priceCache.get(token.address)
+			if (cachedEntry && (Date.now() - cachedEntry[0]) < opts.priceRecency!) {
+				token.priceIn = cachedEntry[1]
+				return
+			}
 			const priceData = await this.batchedGecko({
 				...token,
 				networkId,
@@ -97,7 +108,10 @@ export class Portfolio {
 				// this is what to look for in the coingecko response object
 				responseIdentifier: geckoResponseIdentifier(token.address, networkId)
 			})
-			token.priceIn = Object.entries(priceData || {}).map(([ baseCurrency, price ]) => ({ baseCurrency, price }))
+			const priceIn: Price[] = Object.entries(priceData || {})
+				.map(([ baseCurrency, price ]) => ({ baseCurrency, price: price as number }))
+			priceCache.set(token.address, [Date.now(), priceIn])
+			token.priceIn = priceIn
 		}))
 		const priceUpdateDone = Date.now()
 
@@ -105,6 +119,7 @@ export class Portfolio {
 			discoveryTime: discoveryDone - start,
 			oracleCallTime: oracleCallDone - discoveryDone,
 			priceUpdateTime: priceUpdateDone - oracleCallDone,
+			priceCache,
 			tokens,
 			tokenErrors: tokensWithErr
 				.filter(([ error, result ]) => error !== '0x' || result.symbol === '')
@@ -133,17 +148,17 @@ async function getTokens (deployless: Deployless, opts: Partial<UpdateOptions>, 
 			])
 
 	}
+	const { accountOps, account } = opts.simulation
+	const [factory, factoryCalldata] = getAccountDeployParams(account)
 	const [before, after, simulationErr] = await deployless.call('simulateAndGetBalances', [
 		accountAddr, tokenAddrs,
-		// @TODO factory, factoryCalldata
-		'0x0000000000000000000000000000000000000000', '0x00',
-		// @TODO beautify
-		opts.simulation.accountOps.map(({ nonce, calls, signature }) => [nonce, calls.map(x => [x.to, x.value, x.data]), signature])
+		factory, factoryCalldata,
+		accountOps.map(({ nonce, calls, signature }) => [nonce, calls.map(callToTuple), signature])
 	], deploylessOpts)
 	
-	if (simulationErr !== '0x') throw new SimulationError(simulationErr)
-	if (after[1] === 0n) throw new SimulationError('unknown error')
-	if (after[1] < before[1]) throw new SimulationError('lower "after" nonce')
+	if (simulationErr !== '0x') throw new SimulationError(parseErr(simulationErr) || simulationErr, before[1], after[1])
+	if (after[1] === 0n) throw new SimulationError('unknown error: simulation reverted', before[1], after[1])
+	if (after[1] < before[1]) throw new SimulationError('lower "after" nonce', before[1], after[1])
 	// no simulation was performed if the nonce is the same
 	const results = (after[1] === before[1]) ? before[0] : after[0]
 	return [ ...results ]
@@ -160,8 +175,12 @@ async function getTokens (deployless: Deployless, opts: Partial<UpdateOptions>, 
 
 class SimulationError extends Error {
 	public simulationErrorMsg: string
-	constructor (message: string) {
+	public beforeNonce: bigint
+	public afterNonce: bigint
+	constructor (message: string, beforeNonce: bigint, afterNonce: bigint) {
 		super(`simulation error: ${message}`)
 		this.simulationErrorMsg = message
+		this.beforeNonce = beforeNonce
+		this.afterNonce = afterNonce
 	}
 }
