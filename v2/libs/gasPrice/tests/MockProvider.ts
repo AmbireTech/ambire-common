@@ -1,12 +1,12 @@
 import { Block, BlockTag, FetchRequest, JsonRpcApiProviderOptions, JsonRpcProvider, Networkish, ethers } from "ethers"
-import { abiCoder, addressOne, localhost } from "../config"
+import { abiCoder, addressOne, localhost } from "../../../../test/config"
 const ELASTICITY_MULTIPLIER = 2n
 const gasLimit = 30000000n
 const gasTarget = gasLimit / ELASTICITY_MULTIPLIER
 
 export default class MockProvider extends JsonRpcProvider {
 
-    blockParams: any;
+    blockParams: any
   
     constructor(url?: string | FetchRequest, network?: Networkish, options?: JsonRpcApiProviderOptions, blockParams: any = {}) {
       super(url, network, options)

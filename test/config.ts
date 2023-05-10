@@ -1,4 +1,5 @@
-const { ethers } = require('ethers')
+import { ethers } from "ethers"
+
 
 const pk1 = '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80'
 const pk2 = '0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d'
@@ -19,15 +20,7 @@ const wallet3 = new ethers.Wallet(pk3, provider)
 const chainId = 31337
 const abiCoder = new ethers.AbiCoder()
 
-// setup chai so it could count assertions made:
-// assertion.expectExpects()
-const chai = require('chai');
-const chaiAssertionsCount = require('chai-assertions-count');
-chai.use(chaiAssertionsCount);
-const expect = chai.expect
-const assertion = chai.Assertion
-
-module.exports = {
+export {
   pk1,
   pk2,
   pk3,
@@ -46,6 +39,4 @@ module.exports = {
   addressFour,
   abiCoder,
   chainId,
-  expect,
-  assertion
 }

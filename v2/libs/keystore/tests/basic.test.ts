@@ -1,6 +1,5 @@
-import { Keystore, Storage } from './keystore'
-import { describe, expect, test } from '@jest/globals'
-
+import { Keystore, Storage } from '../keystore'
+import { describe, expect, test } from "@jest/globals"
 
 // Helpers/testing
 function produceMemoryStore(): Storage {
@@ -14,48 +13,49 @@ function produceMemoryStore(): Storage {
 	}
 }
 
+let keystore: Keystore
+const pass = 'hoiHoi'
+
 describe('Keystore', () => {
-  let keystore: Keystore
-  const pass = 'hoiHoi'
-  test('initialize keystore', () => {
+  test('should initialize keystore', () => {
     keystore = new Keystore(produceMemoryStore())
     expect((keystore as any)['#mainKey']).toBe(undefined)
   })
 
-  test('does not unlock when empty', async () => {
+  test('should not unlock when empty', async () => {
     expect.assertions(1)
     try {
       await keystore.unlockWithSecret('passphrase', pass)
-    } catch(e) {
+    } catch(e: any) {
       expect(e.message).toBe('keystore: no secrets yet')
     }
   })
 
-  test('add secret', async () => {
+  test('should add a secret', async () => {
     await keystore.addSecret('passphrase', pass)
     expect(keystore.isUnlocked()).toBe(false)
   })
 
-  test('cannot unlock with non-existant secret', async () => {
+  test('should not unlock with non-existant secret', async () => {
     expect.assertions(1)
     try {
       await keystore.unlockWithSecret('playstation', '')
-    } catch(e) {
+    } catch(e: any) {
       expect(e.message).toBe('keystore: secret playstation not found')
     }
   })
 
-  test('cannot unlock with wrong secret', async () => {
+  test('should not unlock with wrong secret', async () => {
     expect.assertions(2)
     try {
       await keystore.unlockWithSecret('passphrase', pass+'1')
-    } catch(e) {
+    } catch(e: any) {
       expect(e.message).toBe('keystore: wrong secret')
     }
     expect(keystore.isUnlocked()).toBe(false)
   })
 
-  test('unlock with secret', async () => {
+  test('should unlock with secret', async () => {
   	await keystore.unlockWithSecret('passphrase', pass)
     expect(keystore.isUnlocked()).toBe(true)
   })

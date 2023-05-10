@@ -6,7 +6,7 @@ const { ethers } = require("ethers")
  * @param BytesLike sig
  * @returns BytesLike
  */
-function wrapEIP712(sig) {
+function wrapEIP712(sig: string) {
   return `${sig}${'00'}`
 }
 
@@ -16,7 +16,7 @@ function wrapEIP712(sig) {
  * @param BytesLike sig
  * @returns BytesLike
  */
-function wrapEthSign(sig) {
+function wrapEthSign(sig: string) {
   return `${sig}${'01'}`
 }
 
@@ -26,7 +26,7 @@ function wrapEthSign(sig) {
  * @param BytesLike sig
  * @returns BytesLike
  */
-function wrapSchnorr(sig) {
+function wrapSchnorr(sig: string) {
   return `${sig}${'04'}`
 }
 
@@ -36,7 +36,7 @@ function wrapSchnorr(sig) {
  * @param BytesLike sig
  * @returns BytesLike
  */
-function wrapMultiSig(sig) {
+function wrapMultiSig(sig: string) {
   return `${sig}${'05'}`
 }
 
@@ -46,7 +46,7 @@ function wrapMultiSig(sig) {
  * @param BytesLike sig
  * @returns BytesLike
  */
-function wrapRecover(sig) {
+function wrapRecover(sig: string) {
   return `${sig}${'fe'}`
 }
 
@@ -56,11 +56,11 @@ function wrapRecover(sig) {
  * @param BytesLike sig
  * @returns BytesLike
  */
-function wrapCancel(sig) {
+function wrapCancel(sig: string) {
   return `${sig}${'ff'}`
 }
 
-module.exports = {
+export {
   wrapEIP712,
   wrapEthSign,
   wrapSchnorr,

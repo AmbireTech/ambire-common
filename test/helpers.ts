@@ -1,8 +1,8 @@
-const { ethers } = require("ethers")
-const { wallet, addressOne, addressTwo, abiCoder } = require("./config")
-const { wait } = require("./polling")
+import { ethers } from "ethers"
+import { wallet, addressOne, addressTwo, abiCoder } from "./config"
+import { wait } from "./polling"
 
-async function sendFunds(to, ether) {
+async function sendFunds(to: string, ether: number) {
   const txn = await wallet.sendTransaction({
     to: to,
     value: ethers.parseEther(ether.toString()),
@@ -10,7 +10,7 @@ async function sendFunds(to, ether) {
   await wait(wallet, txn)
 }
 
-function getPriviledgeTxn(ambireAccountAddr, privAddress, hasPriv = true) {
+function getPriviledgeTxn(ambireAccountAddr: string, privAddress: string, hasPriv: boolean = true) {
   const setAddrPrivilegeABI = [
     'function setAddrPrivilege(address addr, bytes32 priv)'
   ]
@@ -28,7 +28,7 @@ function getTimelockData(recoveryInfo = defaultRecoveryInfo) {
   return {hash, timelockAddress}
 }
 
-module.exports = {
+export {
   sendFunds,
   getPriviledgeTxn,
   getTimelockData
