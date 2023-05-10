@@ -51,11 +51,12 @@ export class Portfolio {
 	async update(provider: Provider | JsonRpcProvider, networkId: string, accountAddr: string, opts: Partial<UpdateOptions> = {}) {
 		opts = { ...defaultOptions, ...opts }
 		const { baseCurrency } = opts
-
 		if (opts.simulation && opts.simulation.account.addr !== accountAddr) throw new Error('wrong account passed')
 
+		// Get hints (addresses to check on-chain) via Velcro
 		const start = Date.now()
 		const hints = await this.batchedVelcroDiscovery({ networkId, accountAddr })
+		// This also allows getting prices, this is used for more exotic tokens that cannot be retrieved via Coingecko
 		const priceCache: PriceCache = opts.priceCache || new Map()
 		for (const addr in (hints.prices || {})) priceCache.set(addr, [start, hints.prices[addr]])
 		const discoveryDone = Date.now()
@@ -67,30 +68,34 @@ export class Portfolio {
 		const requestedTokens = hints.erc20s.concat('0x0000000000000000000000000000000000000000')
 		const limits = deployless.isLimitedAt24kbData ? LIMITS.deploylessProxyMode : LIMITS.deploylessStateOverrideMode
 		const collectionsHints = Object.entries(hints.erc721s)
+		// Get balances and metadata from the provider directly
 		const [ tokensWithErr, collectionsRaw ] = await Promise.all([
 			flattenResults(paginate(requestedTokens, limits.erc20)
 				.map(page => getTokens(deployless, opts, accountAddr, page))),
 			flattenResults(paginate(collectionsHints, limits.erc721)
-				.map(page => deployless.call('getAllNFTs', [
+				.map(async page => (await deployless.call('getAllNFTs', [
 					accountAddr,
 					page.map(([address]) => address),
 					page.map(
 						([_, x]) => x.enumerable ? [] : x.tokens.slice(0, limits.erc721TokensInput)
 					),
 					limits.erc721Tokens
-					// @TODO this .then is ugly
-				], deploylessOpts).then(x => x[0])))
+				], deploylessOpts))[0]))
 		])
+		// Re-map/filter into our format
 		const collections = [ ...(collectionsRaw as any[]) ]
-			.map((x, i) => ({
-				address: collectionsHints[i][0] as unknown as string,
-				name: x[0],
-				symbol: x[1],
-				amount: BigInt(x[2].length),
-				decimals: 1,
-				priceIn: [], // @TODO floor price
-				collectables: [ ...(x[2] as any[]) ].map((x: any) => ({ id: x[0], url: x[1] } as Collectable))
-			} as TokenResult))
+			.map((x, i) => {
+				const address = collectionsHints[i][0] as unknown as string
+				return {
+					address: address,
+					name: x[0],
+					symbol: x[1],
+					amount: BigInt(x[2].length),
+					decimals: 1,
+					priceIn: [],
+					collectables: [ ...(x[2] as any[]) ].map((x: any) => ({ id: x[0], url: x[1] } as Collectable))
+				} as TokenResult
+			})
 		const tokens = tokensWithErr
 			.filter(([error, result]) => result.amount > 0 && error == '0x' && result.symbol !== '')
 			.map(([_, result]) => result)
