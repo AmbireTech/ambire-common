@@ -1,23 +1,23 @@
-const { ethers } = require('ethers')
-const { expect } = require('chai')
-const {
+import { ethers } from 'ethers'
+import {
   AmbireAccount,
   AmbireAccountFactory,
   wallet,
   wallet2,
   addressOne,
   addressTwo,
+  expect,
   chainId
-} = require('../config')
-const { wait } = require('../polling')
-const { wrapEthSign } = require('../ambireSign')
+} from '../config'
+import { wait } from '../polling'
+import { wrapEthSign } from '../ambireSign'
 const salt = 0
 const abiCoder = new ethers.AbiCoder()
 
-let factoryAddress = null
-let factoryContract = null
+let factoryAddress: string
+let factoryContract: any
 
-function getAmbireAccountAddress(bytecode) {
+function getAmbireAccountAddress(bytecode: string) {
   return ethers.getCreate2Address(factoryAddress, ethers.toBeHex(salt, 32), ethers.keccak256(bytecode))
 }
 
@@ -40,7 +40,7 @@ describe('AmbireAccountFactory tests', function(){
     const accountAddr = getAmbireAccountAddress(bytecode)
     const factoryDeploy = await factoryContract.deploy(bytecode, salt)
     await wait(wallet, factoryDeploy)
-    const ambireAccount = new ethers.BaseContract(accountAddr, AmbireAccount.abi, wallet)
+    const ambireAccount: any = new ethers.BaseContract(accountAddr, AmbireAccount.abi, wallet)
     const canSign = await ambireAccount.privileges(addressOne)
     expect(canSign).to.equal('0x0000000000000000000000000000000000000000000000000000000000000001')
 
@@ -68,7 +68,7 @@ describe('AmbireAccountFactory tests', function(){
     const s = wrapEthSign(await wallet2.signMessage(msg))
     const factoryDeployAndExecute = await factoryContract.deployAndExecute(bytecode, salt, setPrivTxn, s)
     await wait(wallet, factoryDeployAndExecute)
-    const ambireAccount = new ethers.BaseContract(accountAddr, AmbireAccount.abi, wallet)
+    const ambireAccount: any = new ethers.BaseContract(accountAddr, AmbireAccount.abi, wallet)
     const canSignOne = await ambireAccount.privileges(addressOne)
     expect(canSignOne).to.equal('0x0000000000000000000000000000000000000000000000000000000000000001')
     const canSignTwo = await ambireAccount.privileges(addressTwo)
@@ -94,7 +94,7 @@ describe('AmbireAccountFactory tests', function(){
     const s = wrapEthSign(await wallet.signMessage(msg))
     const factoryDeployAndExecute = await factoryContract.deployAndExecute(bytecode, salt, setPrivTxn, s)
     await wait(wallet, factoryDeployAndExecute)
-    const ambireAccount = new ethers.BaseContract(accountAddr, AmbireAccount.abi, wallet)
+    const ambireAccount: any = new ethers.BaseContract(accountAddr, AmbireAccount.abi, wallet)
     const canSignTwo = await ambireAccount.privileges(addressTwo)
     expect(canSignTwo).to.equal('0x0000000000000000000000000000000000000000000000000000000000000001')
   })

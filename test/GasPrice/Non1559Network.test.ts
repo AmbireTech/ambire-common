@@ -1,5 +1,5 @@
 import { expect} from "../config"
-import { getGasPriceRecommendations } from "../../v2/libs/gasprice/gasprice"
+import { getGasPriceRecommendations } from "../../v2/libs/gasPrice/gasPrice"
 import MockProvider from "./MockProvider"
 
 describe('1559 Network gas price tests', function() {

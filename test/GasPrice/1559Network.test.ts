@@ -1,8 +1,8 @@
 // https://eips.ethereum.org/EIPS/eip-1559
 import { ethers } from "ethers"
 import { expect } from "../config"
-import { getGasPriceRecommendations } from "../../v2/libs/gasprice/gasprice"
 import MockProvider from "./MockProvider"
+import { getGasPriceRecommendations } from "../../v2/libs/gasPrice/gasPrice"
 
 describe('1559 Network gas price tests', function() {
   it('should make a prediction for a previous block of 30M gas (max), should increase the baseFeePerGas by 12.5% for slow, and increase gradually by baseFeeAddBps, defined in speeds in gasprice.ts for the remaining speeds', async function(){
