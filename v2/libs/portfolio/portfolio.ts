@@ -56,7 +56,10 @@ export class Portfolio {
 
 		const start = Date.now()
 		const hints = await this.batchedVelcroDiscovery({ networkId, accountAddr })
+		const priceCache: PriceCache = opts.priceCache || new Map()
+		for (const addr in (hints.prices || {})) priceCache.set(addr, [Date.now(), hints.prices[addr]])
 		const discoveryDone = Date.now()
+
 		// @TODO: pass binRuntime only if stateOverride is supported
 		const deployless = new Deployless(provider, multiOracle.abi, multiOracle.bin, multiOracle.binRuntime)
 		const deploylessOpts = { blockTag: opts.blockTag, from: DEPLOYLESS_SIMULATION_FROM }
@@ -88,13 +91,12 @@ export class Portfolio {
 				priceIn: [], // @TODO floor price
 				collectables: [ ...(x[2] as any[]) ].map((x: any) => ({ id: x[0], url: x[1] } as Collectable))
 			} as TokenResult))
-		const oracleCallDone = Date.now()
-
 		const tokens = tokensWithErr
 			.filter(([error, result]) => result.amount > 0 && error == '0x' && result.symbol !== '')
 			.map(([_, result]) => result)
+		const oracleCallDone = Date.now()
 
-		const priceCache: PriceCache = opts.priceCache || new Map()
+		// Update prices
 		await Promise.all(tokens.map(async token => {
 			const cachedEntry = priceCache.get(token.address)
 			if (cachedEntry && (Date.now() - cachedEntry[0]) < opts.priceRecency!) {
