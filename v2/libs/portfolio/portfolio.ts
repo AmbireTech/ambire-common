@@ -57,7 +57,7 @@ export class Portfolio {
 		const start = Date.now()
 		const hints = await this.batchedVelcroDiscovery({ networkId, accountAddr })
 		const priceCache: PriceCache = opts.priceCache || new Map()
-		for (const addr in (hints.prices || {})) priceCache.set(addr, [Date.now(), hints.prices[addr]])
+		for (const addr in (hints.prices || {})) priceCache.set(addr, [start, hints.prices[addr]])
 		const discoveryDone = Date.now()
 
 		// @TODO: pass binRuntime only if stateOverride is supported
@@ -99,7 +99,9 @@ export class Portfolio {
 		// Update prices
 		await Promise.all(tokens.map(async token => {
 			const cachedEntry = priceCache.get(token.address)
-			if (cachedEntry && (Date.now() - cachedEntry[0]) < opts.priceRecency!) {
+			// by using `start` instead of `Date.now()`, we make sure that prices updated from Velcro will not be updated again
+			// even if priceRecency is 0
+			if (cachedEntry && (start - cachedEntry[0]) < opts.priceRecency!) {
 				token.priceIn = cachedEntry[1]
 				return
 			}
