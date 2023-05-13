@@ -88,7 +88,7 @@ export class Portfolio {
 					accountAddr,
 					page.map(([address]) => address),
 					page.map(
-						([_, x]) => x.enumerable ? [] : x.tokens.slice(0, limits.erc721TokensInput)
+						([_, x]) => (x.enumerable || true) ? [] : x.tokens.slice(0, limits.erc721TokensInput)
 					),
 					limits.erc721Tokens
 				], deploylessOpts))[0]))
@@ -101,7 +101,7 @@ export class Portfolio {
 			const eligible = entry.filter(x => x.baseCurrency === baseCurrency)
 			// by using `start` instead of `Date.now()`, we make sure that prices updated from Velcro will not be updated again
 			// even if priceRecency is 0
-			if ((start - timestamp) < opts.priceRecency! && eligible.length) return eligible
+			if ((start - timestamp) <= opts.priceRecency! && eligible.length) return eligible
 			return null
 		}
 		const collections = [ ...(collectionsRaw as any[]) ]
