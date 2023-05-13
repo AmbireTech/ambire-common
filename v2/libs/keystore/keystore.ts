@@ -1,6 +1,6 @@
 import aes from 'aes-js'
 import scrypt from 'scrypt-js'
-import { getBytes, toQuantity, isHexString, keccak256, randomBytes, toUtf8Bytes, toUtf8String, UnicodeNormalizationForm, concat } from 'ethers'
+import { getBytes, keccak256, randomBytes, toUtf8Bytes, concat, hexlify } from 'ethers'
 import { Wallet } from 'ethers'
 
 const scryptDefaults = { N: 262144, r: 8, p: 1, dkLen: 64 }
@@ -145,8 +145,8 @@ export class Keystore {
 
 		secrets.push({
 			id: secretId,
-			scryptParams: { salt: toQuantity(salt), ...scryptDefaults },
-			aesEncrypted: { cipherType: CIPHER, ciphertext: toQuantity(ciphertext), iv: toQuantity(iv), mac: toQuantity(mac) }
+			scryptParams: { salt: hexlify(salt), ...scryptDefaults },
+			aesEncrypted: { cipherType: CIPHER, ciphertext: hexlify(ciphertext), iv: hexlify(iv), mac: hexlify(mac) }
 		})
 		// Persist the new secrets
 		await this.storage.set('keystoreSecrets', secrets)
@@ -191,7 +191,7 @@ export class Keystore {
 			type: 'internal',
 			label,
 			// @TODO: consider an MAC?
-			privKey: toQuantity(aesCtr.encrypt(getBytes(privateKey))),
+			privKey: hexlify(aesCtr.encrypt(getBytes(privateKey))),
 			meta: null
 		})
 		await this.storage.set('keystoreKeys', keys)
