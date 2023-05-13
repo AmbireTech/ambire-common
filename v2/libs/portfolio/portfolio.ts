@@ -44,7 +44,14 @@ export class Portfolio {
 	private batchedGecko: Function
 
 	constructor (fetch: Function) {
-		this.batchedVelcroDiscovery = batcher(fetch, queue => [{ queueSegment: queue, url: `https://relayer.ambire.com/velcro-v3/multi-hints?networks=${queue.map(x => x.data.networkId).join(',')}&accounts=${queue.map(x => x.data.accountAddr).join(',')}` }])
+		this.batchedVelcroDiscovery = batcher(fetch, queue => {
+			const baseCurrencies = [ ...new Set(queue.map(x => x.data.baseCurrency)) ]
+			return baseCurrencies.map(baseCurrency => {
+				const queueSegment = queue.filter(x => x.data.baseCurrency === baseCurrency)
+				const url = `https://relayer.ambire.com/velcro-v3/multi-hints?networks=${queueSegment.map(x => x.data.networkId).join(',')}&accounts=${queueSegment.map(x => x.data.accountAddr).join(',')}&baseCurrency=${baseCurrency}`
+				return { queueSegment, url }
+			})
+		})
 		this.batchedGecko = batcher(fetch, geckoRequestBatcher) 
 	}
 
@@ -55,9 +62,10 @@ export class Portfolio {
 
 		// Get hints (addresses to check on-chain) via Velcro
 		const start = Date.now()
-		const hints = await this.batchedVelcroDiscovery({ networkId, accountAddr })
+		const hints = await this.batchedVelcroDiscovery({ networkId, accountAddr, baseCurrency })
 		// This also allows getting prices, this is used for more exotic tokens that cannot be retrieved via Coingecko
 		const priceCache: PriceCache = opts.priceCache || new Map()
+		// @TODO consider validating the external response here, before doing the .set; or validating the whole velcro response
 		for (const addr in (hints.prices || {})) priceCache.set(addr, [start, hints.prices[addr]])
 		const discoveryDone = Date.now()
 
