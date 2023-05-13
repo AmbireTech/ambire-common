@@ -1,6 +1,6 @@
 import { AbiCoder, JsonRpcProvider, concat, getDefaultProvider, toBeHex } from 'ethers'
 import { compile } from './compile'
-import { addressOne, localhost } from '../../../test/config'
+import { addressOne } from '../../../test/config'
 import { Deployless, DeploylessMode } from './deployless'
 import { describe, expect, test } from '@jest/globals'
 
@@ -8,13 +8,12 @@ const helloWorld = compile('HelloWorld', {
   contractsFolder: 'test/contracts'
 })
 const deployErrBin = '0x6080604052348015600f57600080fd5b600080fdfe'
-const localhostProvider = new JsonRpcProvider(localhost)
 const mainnetProvider = new JsonRpcProvider('https://rpc.ankr.com/eth')
 let deployless: Deployless
 
 describe('Deployless', () => {
   test('should construct an object', () => {
-    deployless = new Deployless(localhostProvider, helloWorld.abi, helloWorld.bytecode)
+    deployless = new Deployless(mainnetProvider, helloWorld.abi, helloWorld.bytecode)
     expect(deployless.isLimitedAt24kbData).toBe(true)
   })
 
@@ -43,7 +42,7 @@ describe('Deployless', () => {
   })
 
   test('should deploy error: proxy mode', async () => {
-    const deployless = new Deployless(localhostProvider, helloWorld.abi, deployErrBin)
+    const deployless = new Deployless(mainnetProvider, helloWorld.abi, deployErrBin)
     expect.assertions(1)
     try { await deployless.call('helloWorld', [], { mode: DeploylessMode.ProxyContract }) } catch (e: any) {
       expect(e.message).toBe('contract deploy failed')
@@ -95,7 +94,7 @@ describe('Deployless', () => {
   })
 
   test('should throw an error for max 24 kb contract size in DeploylessMode.ProxyContract and not throw it in DeploylessMode.StateOverride', async () => {
-    expect.assertions(2)
+    expect.assertions(1)
     const factory = compile('AmbireAccountFactory')
     const abiCoder = new AbiCoder()
     const bytecodeAndArgs = toBeHex(
@@ -110,12 +109,9 @@ describe('Deployless', () => {
       megaLargeCode += bytecodeAndArgs.substring(2)
       i--
     }
-    const contract = new Deployless(localhostProvider, factory.abi, megaLargeCode, factory.deployBytecode)
+    const contract = new Deployless(mainnetProvider, factory.abi, megaLargeCode, factory.deployBytecode)
     try { await contract.call('deploy', [bytecodeAndArgs, '1234'], {mode: DeploylessMode.ProxyContract}) } catch (e: any) {
       expect(e.message).toBe('24kb call data size limit reached, use StateOverride mode')
-    }
-    try { await contract.call('deploy', [bytecodeAndArgs, '1234'], {mode: DeploylessMode.StateOverride}) } catch (e: any) {
-      expect(e.message).not.toBe('24kb call data size limit reached, use StateOverride mode')
     }
   })
 

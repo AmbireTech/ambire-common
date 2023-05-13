@@ -1,5 +1,11 @@
 # High-level overview
 
+## How to test
+```
+npx hardhat compile
+npm test
+```
+
 ## Why classes instead of state containers
 We chose simple ES6 classes to implement controllers (shared business logic) rather than state containers.
 
