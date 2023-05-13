@@ -32,6 +32,14 @@ describe('Deployless', () => {
     expect(deployless.isLimitedAt24kbData).toBe(false)
   })
 
+  test('should not alllow initializing with wrong deploy code', () => {
+    expect.assertions(2)
+    try { new Deployless(mainnetProvider, helloWorld.abi, helloWorld.bytecode.slice(2)) }
+    catch(e) { expect(e.message).toBe('contract code must start with 0x') }
+    try { new Deployless(mainnetProvider, helloWorld.abi, helloWorld.bytecode, helloWorld.bytecode.slice(2)) }
+    catch(e) { expect(e.message).toBe('contract code (runtime) must start with 0x') }
+  })
+
   test('should not allow detect with another Provider', async () => {
     expect.assertions(1)
     const homesteadProvider = getDefaultProvider('homestead')
