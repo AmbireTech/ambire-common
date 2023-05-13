@@ -65,8 +65,11 @@ export class Portfolio {
 		const hints = await this.batchedVelcroDiscovery({ networkId, accountAddr, baseCurrency })
 		// This also allows getting prices, this is used for more exotic tokens that cannot be retrieved via Coingecko
 		const priceCache: PriceCache = opts.priceCache || new Map()
-		// @TODO consider validating the external response here, before doing the .set; or validating the whole velcro response
-		for (const addr in (hints.prices || {})) priceCache.set(addr, [start, hints.prices[addr]])
+		for (const addr in (hints.prices || {})) {
+			const priceHint = hints.prices[addr]
+			// @TODO consider validating the external response here, before doing the .set; or validating the whole velcro response
+			priceCache.set(addr, [start, Array.isArray(priceHint) ? priceHint : [priceHint]])
+		}
 		const discoveryDone = Date.now()
 
 		// @TODO: pass binRuntime only if stateOverride is supported
