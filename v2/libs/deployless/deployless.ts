@@ -1,4 +1,5 @@
 import { Interface, concat, AbiCoder, Provider, JsonRpcProvider, getBytes } from 'ethers'
+import assert from 'assert'
 
 // this is a magic contract that is constructed like `constructor(bytes memory contractBytecode, bytes memory data)` and returns the result from the call
 // compiled from relayer:a7ea373559d8c419577ac05527bd37fbee8856ae/src/velcro-v3/contracts/Deployless.sol with solc 0.8.17
@@ -48,13 +49,15 @@ export class Deployless {
 		return !this.stateOverrideSupported
 	}
 
-	constructor (provider: JsonRpcProvider | Provider, abi: any, code: string, codeWhenDeployed?: string) {
+	constructor (provider: JsonRpcProvider | Provider, abi: any, code: string, codeAtRuntime?: string) {
+		assert.ok(code.startsWith('0x'), 'contract code must start with 0x')
 		this.contractBytecode = code
 		this.provider = provider
 		this.iface = new Interface(abi)
-		if (codeWhenDeployed !== undefined) {
+		if (codeAtRuntime !== undefined) {
+			assert.ok(codeAtRuntime.startsWith('0x'), 'contract code (runtime) must start with 0x')
 			this.stateOverrideSupported = true
-			this.contractRuntimeCode = codeWhenDeployed
+			this.contractRuntimeCode = codeAtRuntime
 		}
 	}
 
