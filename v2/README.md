@@ -1,6 +1,13 @@
 # High-level overview
 
 ## How to test
+Run separately:
+```
+npx hardhat node
+```
+
+And then:
+
 ```
 npx hardhat compile
 npm test
