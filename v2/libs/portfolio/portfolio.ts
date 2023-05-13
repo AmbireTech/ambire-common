@@ -90,7 +90,7 @@ export class Portfolio {
 					accountAddr,
 					page.map(([address]) => address),
 					page.map(
-						([_, x]) => (x.enumerable || true) ? [] : x.tokens.slice(0, limits.erc721TokensInput)
+						([_, x]) => x.enumerable ? [] : x.tokens.slice(0, limits.erc721TokensInput)
 					),
 					limits.erc721Tokens
 				], deploylessOpts))[0]))
