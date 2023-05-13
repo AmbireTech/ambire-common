@@ -2,7 +2,7 @@ import { Provider, JsonRpcProvider } from 'ethers'
 import { Deployless, DeploylessMode, parseErr } from '../deployless/deployless'
 import { AccountOp, callToTuple } from '../accountOp/accountOp'
 import { Account, getAccountDeployParams } from '../account/account'
-import { multiOracle } from './multiOracle.json'
+import { nftOracle, balanceOracle } from './multiOracle.json'
 import batcher from './batcher'
 import { geckoRequestBatcher, geckoResponseIdentifier } from './gecko'
 import { flattenResults, paginate } from './pagination'
@@ -73,18 +73,20 @@ export class Portfolio {
 		const discoveryDone = Date.now()
 
 		// @TODO: pass binRuntime only if stateOverride is supported
-		const deployless = new Deployless(provider, multiOracle.abi, multiOracle.bin, multiOracle.binRuntime)
+		const deploylessTokens = new Deployless(provider, balanceOracle.abi, balanceOracle.bin, balanceOracle.binRuntime)
+		const deploylessNfts = new Deployless(provider, nftOracle.abi, nftOracle.bin, nftOracle.binRuntime)
 		const deploylessOpts = { blockTag: opts.blockTag, from: DEPLOYLESS_SIMULATION_FROM }
 		// Add the native token
 		const requestedTokens = hints.erc20s.concat('0x0000000000000000000000000000000000000000')
-		const limits = deployless.isLimitedAt24kbData ? LIMITS.deploylessProxyMode : LIMITS.deploylessStateOverrideMode
+		// .isLimitedAt24kbData should be the same for both instances; @TODO more elegant check?
+		const limits = deploylessTokens.isLimitedAt24kbData ? LIMITS.deploylessProxyMode : LIMITS.deploylessStateOverrideMode
 		const collectionsHints = Object.entries(hints.erc721s)
 		// Get balances and metadata from the provider directly
 		const [ tokensWithErr, collectionsRaw ] = await Promise.all([
 			flattenResults(paginate(requestedTokens, limits.erc20)
-				.map(page => getTokens(deployless, opts, accountAddr, page))),
+				.map(page => getTokens(deploylessTokens, opts, accountAddr, page))),
 			flattenResults(paginate(collectionsHints, limits.erc721)
-				.map(async page => (await deployless.call('getAllNFTs', [
+				.map(async page => (await deploylessNfts.call('getAllNFTs', [
 					accountAddr,
 					page.map(([address]) => address),
 					page.map(
