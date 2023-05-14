@@ -146,6 +146,7 @@ export class Portfolio {
 		const priceUpdateDone = Date.now()
 
 		return {
+			updateStarted: start,
 			discoveryTime: discoveryDone - start,
 			oracleCallTime: oracleCallDone - discoveryDone,
 			priceUpdateTime: priceUpdateDone - oracleCallDone,
