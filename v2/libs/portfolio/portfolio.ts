@@ -138,7 +138,7 @@ export class Portfolio {
 			})
 			const priceIn: Price[] = Object.entries(priceData || {})
 				.map(([ baseCurrency, price ]) => ({ baseCurrency, price: price as number }))
-			priceCache.set(token.address, [Date.now(), priceIn])
+			if (priceIn.length) priceCache.set(token.address, [Date.now(), priceIn])
 			token.priceIn = priceIn
 		}))
 		const priceUpdateDone = Date.now()
