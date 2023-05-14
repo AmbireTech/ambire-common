@@ -7,13 +7,13 @@ import { describe, expect, test } from '@jest/globals'
 describe('Portfolio', () => {
 	const url = 'https://rpc.ankr.com/eth'
 	const provider = new JsonRpcProvider(url)
-	const portfolio = new Portfolio(fetch)
+	const portfolio = new Portfolio(fetch, provider, 'ethereum')
 
 	test('batching works', async () => {
 		const [resultOne, resultTwo, resultThree] = await Promise.all([
-			portfolio.update(provider, 'ethereum', '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'),
-			portfolio.update(provider, 'ethereum', '0x8F493C12c4F5FF5Fd510549E1e28EA3dD101E850'),
-			portfolio.update(provider, 'ethereum', '0x62d00bf1f291be434AC01b3Dc75fA84Af963370A')
+			portfolio.update('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'),
+			portfolio.update('0x8F493C12c4F5FF5Fd510549E1e28EA3dD101E850'),
+			portfolio.update('0x62d00bf1f291be434AC01b3Dc75fA84Af963370A')
 		])
 
 		expect(Math.abs(resultOne.discoveryTime - resultTwo.discoveryTime)).toBeLessThanOrEqual(5)
@@ -50,14 +50,14 @@ describe('Portfolio', () => {
 			salt: '0x2ee01d932ede47b0b2fb1b6af48868de9f86bfc9a5be2f0b42c0111cf261d04c'
 		}
 		const postSimulation = await portfolio
-			.update(provider, 'ethereum', '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', { simulation: { accountOps: [accountOp], account } })
+			.update('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', { simulation: { accountOps: [accountOp], account } })
 		const entry = postSimulation.tokens.find(x => x.symbol === 'USDC')
 		expect(entry.amount - entry.amountPostSimulation).toBe(5259434n)
 	})
 
 	test('price cache works', async () => {
-		const { priceCache } = await portfolio.update(provider, 'ethereum', '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8')
-		const resultTwo = await portfolio.update(provider, 'ethereum', '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', { priceCache, priceRecency: 60000 })
+		const { priceCache } = await portfolio.update('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8')
+		const resultTwo = await portfolio.update('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', { priceCache, priceRecency: 60000 })
 		expect(resultTwo.priceUpdateTime).toBeLessThanOrEqual(3)
 		expect(resultTwo.tokens.every(x => x.priceIn.length)).toBe(true)
 	})

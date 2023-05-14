@@ -42,8 +42,11 @@ const defaultOptions: UpdateOptions = {
 export class Portfolio {
 	private batchedVelcroDiscovery: Function
 	private batchedGecko: Function
+	private provider: Provider | JsonRpcProvider
+	private networkId: string
 
-	constructor (fetch: Function) {
+	// @TODO: networkDEscriptor instead of networkId
+	constructor (fetch: Function, provider: Provider | JsonRpcProvider, networkId: string) {
 		this.batchedVelcroDiscovery = batcher(fetch, queue => {
 			const baseCurrencies = [ ...new Set(queue.map(x => x.data.baseCurrency)) ]
 			return baseCurrencies.map(baseCurrency => {
@@ -53,15 +56,18 @@ export class Portfolio {
 			})
 		})
 		this.batchedGecko = batcher(fetch, geckoRequestBatcher) 
+		this.provider = provider
+		this.networkId = networkId
 	}
 
-	async update(provider: Provider | JsonRpcProvider, networkId: string, accountAddr: string, opts: Partial<UpdateOptions> = {}) {
+	async update(accountAddr: string, opts: Partial<UpdateOptions> = {}) {
 		opts = { ...defaultOptions, ...opts }
 		const { baseCurrency } = opts
 		if (opts.simulation && opts.simulation.account.addr !== accountAddr) throw new Error('wrong account passed')
 
 		// Get hints (addresses to check on-chain) via Velcro
 		const start = Date.now()
+		const networkId = this.networkId
 		const hints = await this.batchedVelcroDiscovery({ networkId, accountAddr, baseCurrency })
 		// This also allows getting prices, this is used for more exotic tokens that cannot be retrieved via Coingecko
 		const priceCache: PriceCache = opts.priceCache || new Map()
@@ -73,8 +79,8 @@ export class Portfolio {
 		const discoveryDone = Date.now()
 
 		// @TODO: pass binRuntime only if stateOverride is supported
-		const deploylessTokens = new Deployless(provider, balanceOracle.abi, balanceOracle.bin, balanceOracle.binRuntime)
-		const deploylessNfts = new Deployless(provider, nftOracle.abi, nftOracle.bin, nftOracle.binRuntime)
+		const deploylessTokens = new Deployless(this.provider, balanceOracle.abi, balanceOracle.bin, balanceOracle.binRuntime)
+		const deploylessNfts = new Deployless(this.provider, nftOracle.abi, nftOracle.bin, nftOracle.binRuntime)
 		const deploylessOpts = { blockTag: opts.blockTag, from: DEPLOYLESS_SIMULATION_FROM }
 		// .isLimitedAt24kbData should be the same for both instances; @TODO more elegant check?
 		const limits = deploylessTokens.isLimitedAt24kbData ? LIMITS.deploylessProxyMode : LIMITS.deploylessStateOverrideMode
