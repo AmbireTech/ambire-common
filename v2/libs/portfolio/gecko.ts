@@ -52,10 +52,11 @@ export function geckoRequestBatcher (queue: QueueElement[]): Request[] {
 		// This is OK because we're segmented by baseCurrency
 		const baseCurrency = queueSegment[0]!.data.baseCurrency
 		const geckoPlatform = geckoNetworkIdMapper(queueSegment[0]!.data.networkId)
-		// @TODO: API Key
+		// @TODO API key, customizable
+		const apiKeyString = ''//`x_cg_pro_api_key=`
 		let url
-		if (key.endsWith('natives')) url = `https://api.coingecko.com/api/v3/simple/price?ids=${dedup(queueSegment.map(x => geckoIdMapper(x.data.address, x.data.networkId))).join('%2C')}&vs_currencies=${baseCurrency}`
-		else url = `https://api.coingecko.com/api/v3/simple/token_price/${geckoPlatform}?contract_addresses=${dedup(queueSegment.map(x => x.data.address)).join('%2C')}&vs_currencies=${baseCurrency}`
+		if (key.endsWith('natives')) url = `https://api.coingecko.com/api/v3/simple/price?ids=${dedup(queueSegment.map(x => geckoIdMapper(x.data.address, x.data.networkId))).join('%2C')}&vs_currencies=${baseCurrency}${apiKeyString}`
+		else url = `https://api.coingecko.com/api/v3/simple/token_price/${geckoPlatform}?contract_addresses=${dedup(queueSegment.map(x => x.data.address)).join('%2C')}&vs_currencies=${baseCurrency}${apiKeyString}`
 		return { url, queueSegment }
 	})
 }
