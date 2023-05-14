@@ -2,14 +2,12 @@ import aes from 'aes-js'
 import scrypt from 'scrypt-js'
 import { getBytes, keccak256, randomBytes, toUtf8Bytes, concat, hexlify } from 'ethers'
 import { Wallet } from 'ethers'
-
+import { Storage } from '../../interfaces/storage'
 const scryptDefaults = { N: 262144, r: 8, p: 1, dkLen: 64 }
 const CIPHER = 'aes-128-ctr'
 const SUPPORTED_KEY_TYPES = ['internal', 'trezor', 'ledger', 'lattice']
 
 // @TODO
-// - define all the function signatures
-// - tests
 // - use the storage interface that ambire-common uses
 
 // DOCS
@@ -21,12 +19,6 @@ const SUPPORTED_KEY_TYPES = ['internal', 'trezor', 'ledger', 'lattice']
 // - decided to store all keys in the Keystore, even if the private key itself is not stored there; simply because it's called a Keystore and the name implies the functionality
 // - handle HW wallets in it, so that we handle everything uniformly with a single API; also, it allows future flexibility to have the concept of optional unlocking built-in; if we have interactivity, we can add `keystore.signExtraInputRequired(key)` which returns what we need from the user
 // - `signWithkey` is presumed to be non-interactive at least from `Keystore` point of view (requiring no extra user inputs). This could be wrong, if hardware wallets require extra input - they normally always do, but with the web SDKs we "outsource" this to the HW wallet software itself; this may not be true on mobile
-
-
-export interface Storage {
-	get(key: string, defaultValue: any): Promise<any>;
-	set(key: string, value: any): Promise<null>;
-}
 
 type ScryptParams = {
 	salt: string;

@@ -1,5 +1,6 @@
-import { Keystore, Storage } from './keystore'
-import { describe, expect, test } from "@jest/globals"
+import { Keystore } from './keystore'
+import { describe, expect, test } from '@jest/globals'
+import { Storage } from '../../interfaces/storage'
 
 // Helpers/testing
 function produceMemoryStore(): Storage {
