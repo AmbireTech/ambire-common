@@ -76,14 +76,12 @@ export class Portfolio {
 		const deploylessTokens = new Deployless(provider, balanceOracle.abi, balanceOracle.bin, balanceOracle.binRuntime)
 		const deploylessNfts = new Deployless(provider, nftOracle.abi, nftOracle.bin, nftOracle.binRuntime)
 		const deploylessOpts = { blockTag: opts.blockTag, from: DEPLOYLESS_SIMULATION_FROM }
-		// Add the native token
-		const requestedTokens = hints.erc20s.concat('0x0000000000000000000000000000000000000000')
 		// .isLimitedAt24kbData should be the same for both instances; @TODO more elegant check?
 		const limits = deploylessTokens.isLimitedAt24kbData ? LIMITS.deploylessProxyMode : LIMITS.deploylessStateOverrideMode
 		const collectionsHints = Object.entries(hints.erc721s)
 		// Get balances and metadata from the provider directly
 		const [ tokensWithErr, collectionsRaw ] = await Promise.all([
-			flattenResults(paginate(requestedTokens, limits.erc20)
+			flattenResults(paginate(hints.erc20s, limits.erc20)
 				.map(page => getTokens(deploylessTokens, opts, accountAddr, page))),
 			flattenResults(paginate(collectionsHints, limits.erc721)
 				.map(async page => (await deploylessNfts.call('getAllNFTs', [
