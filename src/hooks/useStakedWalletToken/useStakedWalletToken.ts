@@ -42,7 +42,7 @@ const useStakedWalletToken = ({
         error: "Couldn't get staked amount"
       })
     }
-  }, [accountId, setResponse])
+  }, [accountId, setResponse, provider])
 
   useEffect(() => {
     getData()
