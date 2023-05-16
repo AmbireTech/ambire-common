@@ -4,7 +4,6 @@ import { BigNumber, Contract, utils } from 'ethers'
 // Constants
 import WalletStakingPoolABI from '../../../constants/abis/WalletStakingPoolABI.json'
 import WalletTokenABI from '../../../constants/abis/walletTokenABI.json'
-import { getProvider } from '../../../services/provider'
 // Types
 import { Account } from '../../useAccounts'
 import { ByHash, LogType, ParsedLogType } from './types'
@@ -25,8 +24,8 @@ const STAKING_POOL_EVENT_TYPES = {
   shareTokensTransferOut: 'shareTokensTransferOut'
 }
 
-const getStats = async (accountId: Account['id']) => {
-  const ethProvider = getProvider('ethereum')
+const getStats = async (accountId: Account['id'], provider: any) => {
+  const ethProvider = provider
 
   const xWalletContract = new Contract(WALLET_STAKING_ADDRESS, WalletStakingPoolABI, ethProvider)
   const walletContract = new Contract(WALLET_TOKEN_ADDRESS, WalletTokenABI, ethProvider)
