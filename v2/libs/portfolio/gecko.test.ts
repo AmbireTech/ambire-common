@@ -1,6 +1,6 @@
 import { describe, expect, test } from '@jest/globals'
 import { geckoRequestBatcher, geckoResponseIdentifier } from './gecko'
-import { QueueElement } from './batcher'
+import batcher, { QueueElement } from './batcher'
 import fetch from 'node-fetch'
 
 let queue: QueueElement[] = []
@@ -13,19 +13,22 @@ interface QueueElementOption {
     baseCurrency?: string,
     responseIdentifier?: string,
 }
-function generateQueueElement(opt: QueueElementOption): void {
+function getQueueElement(opt: QueueElementOption): {} {
     const defaults = {
         amount: 1n,
         decimals: [18],
         networkId: 'ethereum',
         baseCurrency: 'usd',
-        responseIdentifier: null
+        responseIdentifier: geckoResponseIdentifier(opt.address, opt.networkId ?? 'ethereum')
     }
-    const el = {...defaults, ...opt}
+    return {...defaults, ...opt}
+}
+function generateQueueElement(opt: QueueElementOption): void {
+    const el = getQueueElement(opt)
     new Promise((resolve, reject) => queue.push({ resolve, reject, fetch, data: el }))
 }
 
-describe('Gecko tests', () => {
+describe('Gecko batcher tests for url and segment', () => {
     beforeEach(() => queue = [])
 
 	test('should group the requets by baseCurrency (same chain): 1 request with 3 segments for usd tokens; 1 request for native with usd; 1 request with 1 segment for eur tokens', async () => {
@@ -36,8 +39,7 @@ describe('Gecko tests', () => {
         })
         generateQueueElement({
             symbol: 'ETH',
-            address: '0x0000000000000000000000000000000000000000',
-            responseIdentifier: geckoResponseIdentifier('0x0000000000000000000000000000000000000000', 'ethereum')
+            address: '0x0000000000000000000000000000000000000000'
         })
         generateQueueElement({
             symbol: 'BAL',
@@ -140,12 +142,10 @@ describe('Gecko tests', () => {
         generateQueueElement({
             symbol: 'ETH',
             address: '0x0000000000000000000000000000000000000000',
-            responseIdentifier: geckoResponseIdentifier('0x0000000000000000000000000000000000000000', 'ethereum')
         })
         generateQueueElement({
             symbol: 'ETH',
             address: '0x0000000000000000000000000000000000000000',
-            responseIdentifier: geckoResponseIdentifier('0x0000000000000000000000000000000000000000', 'ethereum')
         })
 
 		const result = geckoRequestBatcher(queue)
@@ -159,4 +159,51 @@ describe('Gecko tests', () => {
 	})
 
     // to do: test not passing a token address or another property - it should probably throw an error?
+})
+
+describe('Gecko execute batcher tests', () => {
+	test('should execute the batcher and correctly fetch the prices for native and erc20 in usd and eur', async () => {
+        const batchedGecko = batcher(fetch, geckoRequestBatcher)
+        const [resultOne, resultTwo, resultThree, resultFour, resultFive] = await Promise.all([
+		    batchedGecko(
+                getQueueElement({
+                    symbol: 'USDC',
+                    address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+                    decimals: [6],
+                })
+            ),
+            batchedGecko(
+                getQueueElement({
+                    symbol: 'ETH',
+                    address: '0x0000000000000000000000000000000000000000',
+                })
+            ),
+            batchedGecko(
+                getQueueElement({
+                    symbol: 'BAL',
+                    address: '0xba100000625a3754423978a60c9317c58a424e3D',
+                })
+            ),
+            batchedGecko(
+                getQueueElement({
+                    symbol: 'ETH',
+                    address: '0x0000000000000000000000000000000000000000',
+                    baseCurrency: 'eur'
+                })
+            ),
+            batchedGecko(
+                getQueueElement({
+                    symbol: 'USDC',
+                    address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+                    decimals: [6],
+                    baseCurrency: 'eur'
+                })
+            ),
+		])
+        expect(resultOne).toHaveProperty('usd')
+        expect(resultTwo).toHaveProperty('usd')
+        expect(resultThree).toHaveProperty('usd')
+        expect(resultFour).toHaveProperty('eur')
+        expect(resultFive).toHaveProperty('eur')
+	})
 })
