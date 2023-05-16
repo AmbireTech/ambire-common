@@ -4,7 +4,8 @@ import getStats from './getStats/getStats'
 import { UseStakedWalletTokenProps, UseStakedWalletTokenReturnType } from './types'
 
 const useStakedWalletToken = ({
-  accountId
+  accountId,
+  provider
 }: UseStakedWalletTokenProps): UseStakedWalletTokenReturnType => {
   const isMounted = useRef(true)
   const [response, setResponse] = useState({
@@ -23,7 +24,7 @@ const useStakedWalletToken = ({
     })
 
     try {
-      const stakedAmount = await getStats(accountId)
+      const stakedAmount = await getStats(accountId, provider)
 
       if (!isMounted.current) return
 
@@ -41,7 +42,7 @@ const useStakedWalletToken = ({
         error: "Couldn't get staked amount"
       })
     }
-  }, [accountId, setResponse])
+  }, [accountId, setResponse, provider])
 
   useEffect(() => {
     getData()
