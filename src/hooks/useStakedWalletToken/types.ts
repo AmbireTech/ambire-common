@@ -1,7 +1,8 @@
 import { Account } from '../useAccounts'
 
 export type UseStakedWalletTokenProps = {
-  accountId: Account['id']
+  accountId: Account['id'],
+  provider: any // TODO: add type
 }
 
 export type UseStakedWalletTokenReturnType = {
