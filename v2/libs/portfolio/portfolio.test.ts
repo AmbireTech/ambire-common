@@ -3,11 +3,13 @@ import { JsonRpcProvider } from 'ethers'
 import { Portfolio } from './portfolio'
 import { TokenResult } from './interfaces'
 import { describe, expect, test } from '@jest/globals'
+import { networks } from '../../consts/networks'
 
 describe('Portfolio', () => {
-	const url = 'https://rpc.ankr.com/eth'
-	const provider = new JsonRpcProvider(url)
-	const portfolio = new Portfolio(fetch, provider, 'ethereum')
+	const ethereum = networks.find(x => x.id === 'ethereum')
+	if (!ethereum) throw new Error('unable to find ethereum network in consts')
+	const provider = new JsonRpcProvider(ethereum.rpcUrl)
+	const portfolio = new Portfolio(fetch, provider, ethereum)
 
 	test('batching works', async () => {
 		const [resultOne, resultTwo, resultThree] = await Promise.all([

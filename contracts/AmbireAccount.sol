@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: agpl-3.0
 pragma solidity ^0.8.7;
 
-import "./libs/SignatureValidatorV2.sol";
+import "./libs/SignatureValidator.sol";
 
 contract AmbireAccount {
 	address private constant FALLBACK_HANDLER_SLOT = address(0x6969);
@@ -46,9 +46,9 @@ contract AmbireAccount {
 	// This contract can accept ETH without calldata
 	receive() external payable {}
 	// To support EIP 721 and EIP 1155, we need to respond to those methods with their own method signature
-	function onERC721Received(address, address, uint256, bytes memory) external pure returns (bytes4) { return this.onERC721Received.selector; }
-	function onERC1155Received(address, address, uint256, uint256, bytes memory) external pure returns (bytes4) { return this.onERC1155Received.selector; }
-	function onERC1155BatchReceived(address, address, uint256[] memory, uint256[] memory, bytes memory) external pure returns (bytes4) {  return this.onERC1155BatchReceived.selector;  }
+	function onERC721Received(address, address, uint256, bytes calldata) external pure returns (bytes4) { return this.onERC721Received.selector; }
+	function onERC1155Received(address, address, uint256, uint256, bytes calldata) external pure returns (bytes4) { return this.onERC1155Received.selector; }
+	function onERC1155BatchReceived(address, address, uint256[] memory, uint256[] memory, bytes calldata) external pure returns (bytes4) {  return this.onERC1155BatchReceived.selector;  }
 
 	// This contract can accept ETH with calldata
 	fallback() external payable {

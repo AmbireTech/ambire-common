@@ -3,6 +3,7 @@ import { Deployless, DeploylessMode, parseErr } from '../deployless/deployless'
 import { AccountOp, callToTuple } from '../accountOp/accountOp'
 import { getAccountDeployParams } from '../account/account'
 import { Account } from '../../interfaces/account'
+import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { nftOracle, balanceOracle } from './multiOracle.json'
 import batcher from './batcher'
 import { geckoRequestBatcher, geckoResponseIdentifier } from './gecko'
@@ -43,11 +44,11 @@ const defaultOptions: UpdateOptions = {
 export class Portfolio {
 	private batchedVelcroDiscovery: Function
 	private batchedGecko: Function
-	private provider: Provider | JsonRpcProvider
-	private networkId: string
+	private network: NetworkDescriptor
+	private deploylessTokens: Deployless
+	private deploylessNfts: Deployless
 
-	// @TODO: networkDEscriptor instead of networkId
-	constructor (fetch: Function, provider: Provider | JsonRpcProvider, networkId: string) {
+	constructor (fetch: Function, provider: Provider | JsonRpcProvider, network: NetworkDescriptor) {
 		this.batchedVelcroDiscovery = batcher(fetch, queue => {
 			const baseCurrencies = [ ...new Set(queue.map(x => x.data.baseCurrency)) ]
 			return baseCurrencies.map(baseCurrency => {
@@ -57,8 +58,9 @@ export class Portfolio {
 			})
 		})
 		this.batchedGecko = batcher(fetch, geckoRequestBatcher) 
-		this.provider = provider
-		this.networkId = networkId
+		this.network = network
+		this.deploylessTokens = new Deployless(provider, balanceOracle.abi, balanceOracle.bin, network.rpcNoStateOverride ? undefined : balanceOracle.binRuntime)
+		this.deploylessNfts = new Deployless(provider, nftOracle.abi, nftOracle.bin, network.rpcNoStateOverride ? undefined : nftOracle.binRuntime)
 	}
 
 	async update(accountAddr: string, opts: Partial<UpdateOptions> = {}) {
@@ -68,7 +70,7 @@ export class Portfolio {
 
 		// Get hints (addresses to check on-chain) via Velcro
 		const start = Date.now()
-		const networkId = this.networkId
+		const networkId = this.network.id
 		const hints = await this.batchedVelcroDiscovery({ networkId, accountAddr, baseCurrency })
 		// This also allows getting prices, this is used for more exotic tokens that cannot be retrieved via Coingecko
 		const priceCache: PriceCache = opts.priceCache || new Map()
@@ -79,19 +81,16 @@ export class Portfolio {
 		}
 		const discoveryDone = Date.now()
 
-		// @TODO: pass binRuntime only if stateOverride is supported
-		const deploylessTokens = new Deployless(this.provider, balanceOracle.abi, balanceOracle.bin, balanceOracle.binRuntime)
-		const deploylessNfts = new Deployless(this.provider, nftOracle.abi, nftOracle.bin, nftOracle.binRuntime)
 		const deploylessOpts = { blockTag: opts.blockTag, from: DEPLOYLESS_SIMULATION_FROM }
 		// .isLimitedAt24kbData should be the same for both instances; @TODO more elegant check?
-		const limits = deploylessTokens.isLimitedAt24kbData ? LIMITS.deploylessProxyMode : LIMITS.deploylessStateOverrideMode
+		const limits = this.deploylessTokens.isLimitedAt24kbData ? LIMITS.deploylessProxyMode : LIMITS.deploylessStateOverrideMode
 		const collectionsHints = Object.entries(hints.erc721s)
 		// Get balances and metadata from the provider directly
 		const [ tokensWithErr, collectionsRaw ] = await Promise.all([
 			flattenResults(paginate(hints.erc20s, limits.erc20)
-				.map(page => getTokens(deploylessTokens, opts, accountAddr, page))),
+				.map(page => getTokens(this.deploylessTokens, opts, accountAddr, page))),
 			flattenResults(paginate(collectionsHints, limits.erc721)
-				.map(async page => (await deploylessNfts.call('getAllNFTs', [
+				.map(async page => (await this.deploylessNfts.call('getAllNFTs', [
 					accountAddr,
 					page.map(([address]) => address),
 					page.map(
