@@ -3,6 +3,9 @@ pragma solidity 0.8.20;
 
 import './libs/SignatureValidator.sol';
 
+// @dev All external/public functions (that are not view/pure) use `payable` because AmbireAccount
+// is a wallet contract, and any ETH sent to it is not lost, but on the other hand not having `payable`
+// makes the Solidity compiler add an extra check for `msg.value`, which in this case is wasted gas
 contract AmbireAccount {
 	address private constant FALLBACK_HANDLER_SLOT = address(0x6969);
 
