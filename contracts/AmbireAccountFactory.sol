@@ -2,7 +2,6 @@
 pragma solidity 0.8.20;
 
 import "./AmbireAccount.sol";
-import "./libs/IERC20.sol";
 
 contract AmbireAccountFactory {
 	event LogDeployed(address addr, uint256 salt);
@@ -61,12 +60,11 @@ contract AmbireAccountFactory {
 	}
 
 
-	// Withdraw the earnings from various fees (deploy fees and execute fees earned cause of `deployAndExecute`)
-	// although we do not use this since we no longer receive fees on the factory, it's good to have this for safety
-	// In practice, we (almost) never receive fees on the factory, but there's one exception: QuickAccManager EIP 712 methods (sendTransfer) + deployAndCall
-	function withdraw(IERC20 token, address to, uint256 tokenAmount) external {
+	// This method can be used to withdraw stuck tokens or airdrops
+	function call(address to, uint256 value, bytes calldata data, uint gas) external {
 		require(msg.sender == allowedToDrain, 'ONLY_AUTHORIZED');
-		token.transfer(to, tokenAmount);
+		(bool success, bytes memory err) = to.call{ gas: gas, value: value }(data);
+		require(success, string(err));
 	}
 
 	// This is done to mitigate possible frontruns where, for example, deploying the same code/salt via deploy()
