@@ -46,9 +46,9 @@ contract AmbireAccount {
 	// This contract can accept ETH without calldata
 	receive() external payable {}
 	// To support EIP 721 and EIP 1155, we need to respond to those methods with their own method signature
-	function onERC721Received(address, address, uint256, bytes memory) external pure returns (bytes4) { return this.onERC721Received.selector; }
-	function onERC1155Received(address, address, uint256, uint256, bytes memory) external pure returns (bytes4) { return this.onERC1155Received.selector; }
-	function onERC1155BatchReceived(address, address, uint256[] memory, uint256[] memory, bytes memory) external pure returns (bytes4) {  return this.onERC1155BatchReceived.selector;  }
+	function onERC721Received(address, address, uint256, bytes calldata) external pure returns (bytes4) { return this.onERC721Received.selector; }
+	function onERC1155Received(address, address, uint256, uint256, bytes calldata) external pure returns (bytes4) { return this.onERC1155Received.selector; }
+	function onERC1155BatchReceived(address, address, uint256[] memory, uint256[] memory, bytes calldata) external pure returns (bytes4) {  return this.onERC1155BatchReceived.selector;  }
 
 	// This contract can accept ETH with calldata
 	fallback() external payable {
