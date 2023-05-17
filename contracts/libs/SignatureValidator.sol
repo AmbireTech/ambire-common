@@ -38,7 +38,7 @@ library SignatureValidator {
 	}
 
 	function recoverAddrImpl(bytes32 hash, bytes memory sig, bool allowSpoofing) internal view returns (address) {
-		require(sig.length >= 1, "SV_SIGLEN");
+		require(sig.length != 0, "SV_SIGLEN");
 		uint8 modeRaw;
 		unchecked { modeRaw = uint8(sig[sig.length - 1]); }
 		// Ensure we're in bounds for mode; Solidity does this as well but it will just silently blow up rather than showing a decent error
