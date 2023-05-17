@@ -2,6 +2,7 @@ import { Portfolio } from '../libs/portfolio'
 import { Storage } from '../interfaces/storage'
 import { NetworkDescriptor } from '../interfaces/networkDescriptor'
 import { Account } from '../interfaces/account'
+import { AccountOp } from '../libs/accountOp/accountOp'
 
 type NetworkId = string
 type AccountId = string
@@ -20,14 +21,17 @@ class PortfolioController {
 	// controller doesn't have to update this controller every time that those are updated
 
 	// The recommended behavior of the application that this API encourages is:
-	// 1) when the user selects an account, update it's portfolio on all networks: updateAccountOnAllNetworks
+	// 1) when the user selects an account, update it's portfolio on all networks (latest state only) by calling updateSelectedAccount
 	// 2) every time the user has a change in their pending (to be signed or to be mined) bundle(s) on a
-	// certain network, update this network only: updateAccountOnOneNetwork
-	
-	// @TODO every time we update latest, we need to clear or update pending
-	// the purpose of this function is to call it when a new account is selected
-	async updateLatestOnAllNetworks(accounts: Account[], networks: NetworkDescriptor[], accountId: AccountId) {
-		console.log(accounts, networks)	
+	// certain network, call updateSelectedAccount again with those bundles; it will update the portfolio balance
+	// on each network where there are bundles, and it will update both `latest` and `pending` states on said networks
+	// it will also use a high `priceRecency` to make sure we don't lose time in updating prices (since we care about running the simulations)
+
+	// the purpose of this function is to call it when an account is selected or the queue of accountOps changes
+	async updateSelectedAccount(accounts: Account[], networks: NetworkDescriptor[], accountId: AccountId, accountOps: AccountOp[]) {
+		if (!accounts.find(x => x.addr === accountId)) throw new Error('selected account does not exist')
+		console.log(accounts, networks, accountOps)
+
 	}
 	// @TODO every time we update on one network, update both pending and latest but with high priceRecency
 	// @TODO: come up with a new name for this function - it's purpose is to always call it when we have a change in transaction state
@@ -60,4 +64,4 @@ const account = {
 }
 
 const controller = new PortfolioController(produceMemoryStore())
-controller.updateLatestOnAllNetworks([account], networks, account.addr)
+controller.updateSelectedAccount([account], networks, account.addr, [])
