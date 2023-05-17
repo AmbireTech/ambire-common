@@ -132,7 +132,7 @@ contract AmbireAccount {
 	// @notice execute: this method is used to execute a single bundle of calls that are signed with a key
 	// that is authorized to execute on this account (in `privileges`)
 	// @dev: WARNING: if the signature of this is changed, we have to change AmbireAccountFactory
-	function execute(Transaction[] calldata txns, bytes calldata signature) public {
+	function execute(Transaction[] calldata txns, bytes calldata signature) public payable {
 		uint256 currentNonce = nonce;
 		// NOTE: abi.encode is safer than abi.encodePacked in terms of collision safety
 		bytes32 hash = keccak256(abi.encode(address(this), block.chainid, currentNonce, txns));
@@ -196,13 +196,13 @@ contract AmbireAccount {
 	}
 
 	// @notice allows executing multiple bundles of calls (batch together multiple executes)
-	function executeMultiple(ExecuteArgs[] calldata toExec) external {
+	function executeMultiple(ExecuteArgs[] calldata toExec) external payable {
 		for (uint256 i = 0; i != toExec.length; i++) execute(toExec[i].txns, toExec[i].signature);
 	}
 
 	// @notice Allows executing calls if the caller itself is authorized
 	// @dev no need for nonce management here cause we're not dealing with sigs
-	function executeBySender(Transaction[] calldata txns) external {
+	function executeBySender(Transaction[] calldata txns) external payable {
 		require(privileges[msg.sender] != bytes32(0), 'INSUFFICIENT_PRIVILEGE');
 		executeBatch(txns);
 		// again, anti-bricking
@@ -211,7 +211,7 @@ contract AmbireAccount {
 
 	// @notice allows the contract itself to execute a batch of calls
 	// self-calling is useful in cases like wanting to do multiple things in a tryCatchLimit
-	function executeBySelf(Transaction[] calldata txns) external {
+	function executeBySelf(Transaction[] calldata txns) external payable {
 		require(msg.sender == address(this), 'ONLY_IDENTITY_CAN_CALL');
 		executeBatch(txns);
 	}
