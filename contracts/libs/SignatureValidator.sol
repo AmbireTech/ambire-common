@@ -55,8 +55,7 @@ library SignatureValidator {
 			bytes32 r = sig.readBytes32(0);
 			bytes32 s = sig.readBytes32(32);
 			uint8 v = uint8(sig[64]);
-			if (mode == SignatureMode.EthSign)
-				hash = keccak256(abi.encodePacked('\x19Ethereum Signed Message:\n32', hash));
+			if (mode == SignatureMode.EthSign) hash = keccak256(abi.encodePacked('\x19Ethereum Signed Message:\n32', hash));
 			address signer = ecrecover(hash, v, r, s);
 			require(signer != address(0), 'SV_ZERO_SIG');
 			return signer;
@@ -79,10 +78,7 @@ library SignatureValidator {
 			// check if they're zero.
 			address R = ecrecover(sp, parity, px, ep);
 			require(R != address(0), 'ecrecover failed');
-			return
-				e == keccak256(abi.encodePacked(R, uint8(parity), px, hash))
-					? address(uint160(uint256(px)))
-					: address(0);
+			return e == keccak256(abi.encodePacked(R, uint8(parity), px, hash)) ? address(uint160(uint256(px))) : address(0);
 		} else if (mode == SignatureMode.Multisig) {
 			sig.trimToSize(sig.length - 1);
 			bytes[] memory signatures = abi.decode(sig, (bytes[]));

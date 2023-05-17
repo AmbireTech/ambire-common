@@ -32,6 +32,7 @@ contract AmbireAccount {
 
 	// Transaction structure
 	// we handle replay protection separately by requiring (address(this), chainID, nonce) as part of the sig
+	// @dev a better name for this would be `Call`, but we are keeping `Transaction` for backwards compatibility
 	struct Transaction {
 		address to;
 		uint256 value;
@@ -40,6 +41,11 @@ contract AmbireAccount {
 	struct RecoveryInfo {
 		address[] keys;
 		uint256 timelock;
+	}
+	// built-in batching of multiple execute()'s; useful when performing timelocked recoveries
+	struct ExecuteArgs {
+		Transaction[] txns;
+		bytes signature;
 	}
 
 	// Recovery mode constants
@@ -77,7 +83,9 @@ contract AmbireAccount {
 		return this.onERC1155BatchReceived.selector;
 	}
 
-	// This contract can accept ETH with calldata
+	// @notice fallback method: currently used to call the fallback handler
+	// which is set by the user and can be changed
+	// @dev this contract can accept ETH with calldata, hence payable
 	fallback() external payable {
 		// We store the fallback handler at this magic slot
 		address fallbackHandler = address(uint160(uint(privileges[FALLBACK_HANDLER_SLOT])));
@@ -95,6 +103,9 @@ contract AmbireAccount {
 		}
 	}
 
+	// @notice used to set the privilege of a key (by `addr`); normal signatures will be considered valid if the
+	// `addr` they are signed with has non-zero (not 0x000..000) privilege set; we can set the privilege to
+	// a hash of the recovery keys and timelock (see `RecoveryInfo`) to enable recovery signatures
 	function setAddrPrivilege(address addr, bytes32 priv) external {
 		require(msg.sender == address(this), 'ONLY_IDENTITY_CAN_CALL');
 		// Anti-bricking measure: if the privileges slot is used for special data (not 0x01),
@@ -104,20 +115,23 @@ contract AmbireAccount {
 		emit LogPrivilegeChanged(addr, priv);
 	}
 
-	// Useful when we need to do multiple operations but ignore failures in some of them
+	// @notice Useful when we need to do multiple operations but ignore failures in some of them
 	function tryCatch(address to, uint256 value, bytes calldata data) external {
 		require(msg.sender == address(this), 'ONLY_IDENTITY_CAN_CALL');
 		(bool success, bytes memory returnData) = to.call{ value: value, gas: gasleft() }(data);
 		if (!success) emit LogErr(to, value, data, returnData);
 	}
 
+	// @notice same as `tryCatch` but with a gas limit
 	function tryCatchLimit(address to, uint256 value, bytes calldata data, uint256 gasLimit) external {
 		require(msg.sender == address(this), 'ONLY_IDENTITY_CAN_CALL');
 		(bool success, bytes memory returnData) = to.call{ value: value, gas: gasLimit }(data);
 		if (!success) emit LogErr(to, value, data, returnData);
 	}
 
-	// WARNING: if the signature of this is changed, we have to change IdentityFactory
+	// @notice execute: this method is used to execute a single bundle of calls that are signed with a key
+	// that is authorized to execute on this account (in `privileges`)
+	// @dev: WARNING: if the signature of this is changed, we have to change AmbireAccountFactory
 	function execute(Transaction[] calldata txns, bytes calldata signature) public {
 		uint256 currentNonce = nonce;
 		// NOTE: abi.encode is safer than abi.encodePacked in terms of collision safety
@@ -181,17 +195,13 @@ contract AmbireAccount {
 		require(privileges[signerKey] != bytes32(0), 'PRIVILEGE_NOT_DOWNGRADED');
 	}
 
-	// built-in batching of multiple execute()'s; useful when performing timelocked recoveries
-	struct ExecuteArgs {
-		Transaction[] txns;
-		bytes signature;
-	}
-
+	// @notice allows executing multiple bundles of calls (batch together multiple executes)
 	function executeMultiple(ExecuteArgs[] calldata toExec) external {
 		for (uint256 i = 0; i != toExec.length; i++) execute(toExec[i].txns, toExec[i].signature);
 	}
 
-	// no need for nonce management here cause we're not dealing with sigs
+	// @notice Allows executing calls if the caller itself is authorized
+	// @dev no need for nonce management here cause we're not dealing with sigs
 	function executeBySender(Transaction[] calldata txns) external {
 		require(privileges[msg.sender] != bytes32(0), 'INSUFFICIENT_PRIVILEGE');
 		executeBatch(txns);
@@ -199,6 +209,8 @@ contract AmbireAccount {
 		require(privileges[msg.sender] != bytes32(0), 'PRIVILEGE_NOT_DOWNGRADED');
 	}
 
+	// @notice allows the contract itself to execute a batch of calls
+	// self-calling is useful in cases like wanting to do multiple things in a tryCatchLimit
 	function executeBySelf(Transaction[] calldata txns) external {
 		require(msg.sender == address(this), 'ONLY_IDENTITY_CAN_CALL');
 		executeBatch(txns);
@@ -227,7 +239,7 @@ contract AmbireAccount {
 		}
 	}
 
-	// EIP 1271 implementation
+	// @notice EIP-1271 implementation
 	// see https://eips.ethereum.org/EIPS/eip-1271
 	function isValidSignature(bytes32 hash, bytes calldata signature) external view returns (bytes4) {
 		if (privileges[SignatureValidator.recoverAddr(hash, signature)] != bytes32(0)) {
@@ -238,7 +250,7 @@ contract AmbireAccount {
 		}
 	}
 
-	// EIP 1155 implementation
+	// @notice EIP-1155 implementation
 	// we pretty much only need to signal that we support the interface for 165, but for 1155 we also need the fallback function
 	function supportsInterface(bytes4 interfaceID) external pure returns (bool) {
 		return
