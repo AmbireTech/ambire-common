@@ -37,14 +37,22 @@ class PortfolioController {
 		const selectedAccount = accounts.find(x => x.addr === accountId)
 		if (!selectedAccount) throw new Error('selected account does not exist')
 		if (!this.latest.has(accountId)) this.latest.set(accountId, new Map())
+		const accountState = this.latest.get(accountId)!
 		await Promise.all(networks.map(async network => {
 			const key = `${network.id}:${accountId}`
 			if (!this.portfolioLibs.has(key)) {
 				const provider = new JsonRpcProvider(network.rpcUrl)
 				this.portfolioLibs.set(key, new Portfolio(fetch, provider, network))
 			}
-			console.log(network)
+			const portfolioLib = this.portfolioLibs.get(key)!
+			// @TODO state handling
+			// @TODO priceCache caching
+			// @TODO discoveredTokens fallback
+			// @TODO: error handling
+			const results = await portfolioLib.update(accountId)
+			accountState.set(network.id, results)
 		}))
+		console.log(this.latest)
 		// console.log(accounts, networks, accountOps)
 
 	}
