@@ -55,7 +55,7 @@ class PortfolioController {
 			if (state.isLoading) return
 			state.isLoading = true
 			try {
-				const results = await portfolioLib.update(accountId)
+				const results = await portfolioLib.update(accountId, { priceRecency: 60000, priceCache: state.priceCache })
 				accountState.set(network.id, { isReady: true, isLoading: false, ...results })
 			} catch (e) {
 				state.isLoading = false
