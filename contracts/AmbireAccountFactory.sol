@@ -52,15 +52,11 @@ contract AmbireAccountFactory {
 			calldatacopy(dataPtr, data.offset, data.length)
 			let result := call(gas(), callee, 0, dataPtr, data.length, 0, 0)
 
-			switch result
-			case 0 {
+			if eq(result, 0) {
 				let size := returndatasize()
 				let ptr := mload(0x40)
 				returndatacopy(ptr, 0, size)
 				revert(ptr, size)
-			}
-			default {
-
 			}
 		}
 	}
