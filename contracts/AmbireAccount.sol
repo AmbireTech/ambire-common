@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: agpl-3.0
 pragma solidity ^0.8.7;
 
-import "./libs/SignatureValidatorV2.sol";
+import "./libs/SignatureValidator.sol";
 
 contract AmbireAccount {
 	address private constant FALLBACK_HANDLER_SLOT = address(0x6969);

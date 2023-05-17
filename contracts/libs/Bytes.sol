@@ -2,7 +2,7 @@
 pragma solidity ^0.8.7;
 
 // @TODO: Formatting
-library LibBytes {
+library Bytes {
   // @TODO: see if we can just set .length = 
   function trimToSize(bytes memory b, uint newLen)
     internal

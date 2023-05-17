@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: agpl-3.0
 pragma solidity ^0.8.7;
 
-import "./BytesLib.sol";
+import "./Bytes.sol";
 
 interface IERC1271Wallet {
 	function isValidSignature(bytes32 hash, bytes calldata signature) external view returns (bytes4 magicValue);
 }
 
 library SignatureValidator {
-	using LibBytes for bytes;
+	using Bytes for bytes;
 
 	enum SignatureMode {
 		EIP712,
