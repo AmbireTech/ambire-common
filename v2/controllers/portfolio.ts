@@ -36,6 +36,7 @@ class PortfolioController {
 	async updateSelectedAccount(accounts: Account[], networks: NetworkDescriptor[], accountId: AccountId, accountOps: AccountOp[]) {
 		const selectedAccount = accounts.find(x => x.addr === accountId)
 		if (!selectedAccount) throw new Error('selected account does not exist')
+		// @TODO update pending AND latest state together in case we have accountOps
 		if (!this.latest.has(accountId)) this.latest.set(accountId, new Map())
 		const accountState = this.latest.get(accountId)!
 		await Promise.all(networks.map(async network => {
@@ -58,9 +59,6 @@ class PortfolioController {
 		// console.log(accounts, networks, accountOps)
 
 	}
-	// @TODO every time we update on one network, update both pending and latest but with high priceRecency
-	// @TODO: come up with a new name for this function - it's purpose is to always call it when we have a change in transaction state
-	// updatePendingOnOneNetwork(accounts, networks, accountId, networkId, simulationBundles)
 }
 
 
