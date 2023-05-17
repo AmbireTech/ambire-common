@@ -8,26 +8,26 @@ contract AmbireAccount {
 
 	// Variables
 	mapping (address => bytes32) public privileges;
-	uint public nonce;
+	uint256 public nonce;
 	mapping (bytes32 => uint) public scheduledRecoveries;
 
 	// Events
 	event LogPrivilegeChanged(address indexed addr, bytes32 priv);
-	event LogErr(address indexed to, uint value, bytes data, bytes returnData); // only used in tryCatch
-	event LogRecoveryScheduled(bytes32 indexed txnHash, bytes32 indexed recoveryHash, address indexed recoveryKey, uint nonce, uint time, Transaction[] txns);
-	event LogRecoveryCancelled(bytes32 indexed txnHash, bytes32 indexed recoveryHash, address indexed recoveryKey, uint time);
-	event LogRecoveryFinalized(bytes32 indexed txnHash, bytes32 indexed recoveryHash, uint time);
+	event LogErr(address indexed to, uint256 value, bytes data, bytes returnData); // only used in tryCatch
+	event LogRecoveryScheduled(bytes32 indexed txnHash, bytes32 indexed recoveryHash, address indexed recoveryKey, uint256 nonce, uint256 time, Transaction[] txns);
+	event LogRecoveryCancelled(bytes32 indexed txnHash, bytes32 indexed recoveryHash, address indexed recoveryKey, uint256 time);
+	event LogRecoveryFinalized(bytes32 indexed txnHash, bytes32 indexed recoveryHash, uint256 time);
 
 	// Transaction structure
 	// we handle replay protection separately by requiring (address(this), chainID, nonce) as part of the sig
 	struct Transaction {
 		address to;
-		uint value;
+		uint256 value;
 		bytes data;
 	}
 	struct RecoveryInfo {
 		address[] keys;
-		uint timelock;
+		uint256 timelock;
 	}
 
 	// Recovery mode constants
@@ -35,8 +35,8 @@ contract AmbireAccount {
 	uint8 private constant SIGMODE_CANCEL = 255;
 
 	constructor(address[] memory addrs) {
-		uint len = addrs.length;
-		for (uint i=0; i<len; i++) {
+		uint256 len = addrs.length;
+		for (uint256 i=0; i<len; i++) {
 			// NOTE: privileges[] can be set to any arbitrary value, but for this we SSTORE directly through the proxy creator
 			privileges[addrs[i]] = bytes32(uint(1));
 			emit LogPrivilegeChanged(addrs[i], bytes32(uint(1)));
@@ -78,14 +78,14 @@ contract AmbireAccount {
 	}
 
 	// Useful when we need to do multiple operations but ignore failures in some of them
-	function tryCatch(address to, uint value, bytes calldata data)
+	function tryCatch(address to, uint256 value, bytes calldata data)
 		external
 	{
 		require(msg.sender == address(this), 'ONLY_IDENTITY_CAN_CALL');
 		(bool success, bytes memory returnData) = to.call{value: value, gas: gasleft()}(data);
 		if (!success) emit LogErr(to, value, data, returnData);
 	}
-	function tryCatchLimit(address to, uint value, bytes calldata data, uint gasLimit)
+	function tryCatchLimit(address to, uint256 value, bytes calldata data, uint256 gasLimit)
 		external
 	{
 		require(msg.sender == address(this), 'ONLY_IDENTITY_CAN_CALL');
@@ -97,7 +97,7 @@ contract AmbireAccount {
 	function execute(Transaction[] calldata txns, bytes calldata signature)
 		public
 	{
-		uint currentNonce = nonce;
+		uint256 currentNonce = nonce;
 		// NOTE: abi.encode is safer than abi.encodePacked in terms of collision safety
 		bytes32 hash = keccak256(abi.encode(address(this), block.chainid, currentNonce, txns));
 
@@ -111,7 +111,7 @@ contract AmbireAccount {
 			bool isCancellation = sigMode == SIGMODE_CANCEL;
 			bytes32 recoveryInfoHash = keccak256(abi.encode(recoveryInfo));
 			require(privileges[signerKeyToRecover] == recoveryInfoHash, 'RECOVERY_NOT_AUTHORIZED');
-			uint scheduled = scheduledRecoveries[hash];
+			uint256 scheduled = scheduledRecoveries[hash];
 
 			if (scheduled != 0 && !isCancellation) {
 				// signerKey is set to signerKeyToCheckPostRecovery so that the anti-bricking check can pass
@@ -122,7 +122,7 @@ contract AmbireAccount {
 			} else {
 				address recoveryKey = SignatureValidator.recoverAddrImpl(hash, innerRecoverySig, true);
 				bool isIn;
-				for (uint i=0; i<recoveryInfo.keys.length; i++) {
+				for (uint256 i=0; i<recoveryInfo.keys.length; i++) {
 					if (recoveryInfo.keys[i] == recoveryKey) { isIn = true; break; }
 				}
 				require(isIn, 'RECOVERY_NOT_AUTHORIZED');
@@ -154,7 +154,7 @@ contract AmbireAccount {
 	// built-in batching of multiple execute()'s; useful when performing timelocked recoveries
 	struct ExecuteArgs { Transaction[] txns; bytes signature; }
 	function executeMultiple(ExecuteArgs[] calldata toExec) external {
-		for (uint i = 0; i != toExec.length; i++) execute(toExec[i].txns, toExec[i].signature);
+		for (uint256 i = 0; i != toExec.length; i++) execute(toExec[i].txns, toExec[i].signature);
 	}
 
 	// no need for nonce management here cause we're not dealing with sigs
@@ -172,8 +172,8 @@ contract AmbireAccount {
 
 	function executeBatch(Transaction[] memory txns) internal {
 		require(txns.length > 0, 'MUST_PASS_TX');
-		uint len = txns.length;
-		for (uint i=0; i<len; i++) {
+		uint256 len = txns.length;
+		for (uint256 i=0; i<len; i++) {
 			Transaction memory txn = txns[i];
 			executeCall(txn.to, txn.value, txn.data);
 		}

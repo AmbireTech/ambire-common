@@ -2,7 +2,7 @@
 pragma solidity 0.8.20;
 
 library Bytes {
-	function trimToSize(bytes memory b, uint newLen)
+	function trimToSize(bytes memory b, uint256 newLen)
 		internal
 		pure
 	{

@@ -81,7 +81,7 @@ library SignatureValidator {
 			sig.trimToSize(sig.length - 1);
 			(bytes[] memory signatures) = abi.decode(sig, (bytes[]));
 			address signer;
-			for (uint i = 0; i != signatures.length; i++) {
+			for (uint256 i = 0; i != signatures.length; i++) {
 				signer = address(uint160(uint256(
 					keccak256(abi.encodePacked(signer, recoverAddrImpl(hash, signatures[i], false)))
 				)));
@@ -90,7 +90,7 @@ library SignatureValidator {
 		} else if (mode == SignatureMode.SmartWallet) {
 			// 32 bytes for the addr, 1 byte for the type = 33
 			require(sig.length > 33, "SV_LEN_WALLET");
-			uint newLen;
+			uint256 newLen;
 			unchecked {
 				newLen = sig.length - 33;
 			}

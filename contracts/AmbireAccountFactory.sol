@@ -61,7 +61,7 @@ contract AmbireAccountFactory {
 
 
 	// This method can be used to withdraw stuck tokens or airdrops
-	function call(address to, uint256 value, bytes calldata data, uint gas) external {
+	function call(address to, uint256 value, bytes calldata data, uint256 gas) external {
 		require(msg.sender == allowedToDrain, 'ONLY_AUTHORIZED');
 		(bool success, bytes memory err) = to.call{ gas: gas, value: value }(data);
 		require(success, string(err));
@@ -74,7 +74,7 @@ contract AmbireAccountFactory {
 		address expectedAddr = address(uint160(uint256(
 			keccak256(abi.encodePacked(bytes1(0xff), address(this), salt, keccak256(code)))
 		)));
-		uint size;
+		uint256 size;
 		assembly { size := extcodesize(expectedAddr) }
 		// If there is code at that address, we can assume it's the one we were about to deploy,
 		// because of how CREATE2 and keccak256 works
