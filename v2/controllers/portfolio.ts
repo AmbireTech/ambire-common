@@ -1,8 +1,11 @@
-import { Portfolio } from '../libs/portfolio'
+import { Portfolio } from '../libs/portfolio/portfolio'
 import { Storage } from '../interfaces/storage'
 import { NetworkDescriptor } from '../interfaces/networkDescriptor'
 import { Account } from '../interfaces/account'
 import { AccountOp } from '../libs/accountOp/accountOp'
+
+import fetch from 'node-fetch'
+import { JsonRpcProvider } from 'ethers'
 
 type NetworkId = string
 type AccountId = string
@@ -12,10 +15,12 @@ type PortfolioState = Map<AccountId, Map<NetworkId, any>>
 class PortfolioController {
 	latest: PortfolioState
 	pending: PortfolioState
+	private portfolioLibs: Map<string, Portfolio>
 
 	constructor(storage: Storage) {
 		this.latest = new Map()
 		this.pending = new Map()
+		this.portfolioLibs = new Map()
 	}
 	// NOTE: we always pass in all `accounts` and `networks` to ensure that the user of this
 	// controller doesn't have to update this controller every time that those are updated
@@ -33,6 +38,11 @@ class PortfolioController {
 		if (!selectedAccount) throw new Error('selected account does not exist')
 		if (!this.latest.has(accountId)) this.latest.set(accountId, new Map())
 		await Promise.all(networks.map(async network => {
+			const key = `${network.id}:${accountId}`
+			if (!this.portfolioLibs.has(key)) {
+				const provider = new JsonRpcProvider(network.rpcUrl)
+				this.portfolioLibs.set(key, new Portfolio(fetch, provider, network))
+			}
 			console.log(network)
 		}))
 		// console.log(accounts, networks, accountOps)
@@ -70,3 +80,4 @@ const account = {
 
 const controller = new PortfolioController(produceMemoryStore())
 controller.updateSelectedAccount([account], networks, account.addr, [])
+	.then(x => controller.updateSelectedAccount([account], networks, account.addr, []))
