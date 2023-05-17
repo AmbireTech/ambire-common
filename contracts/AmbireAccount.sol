@@ -147,7 +147,7 @@ contract AmbireAccount {
 		nonce = currentNonce + 1;
 		executeBatch(txns);
 
-		// The actual anti-bricking mechanism - do not allow a signerKey to drop their own priviledges
+		// The actual anti-bricking mechanism - do not allow a signerKey to drop their own privileges
 		require(privileges[signerKey] != bytes32(0), 'PRIVILEGE_NOT_DOWNGRADED');
 	}
 
