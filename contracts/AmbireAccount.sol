@@ -76,8 +76,8 @@ contract AmbireAccount {
 	function onERC1155BatchReceived(
 		address,
 		address,
-		uint256[] memory,
-		uint256[] memory,
+		uint256[] calldata,
+		uint256[] calldata,
 		bytes calldata
 	) external pure returns (bytes4) {
 		return this.onERC1155BatchReceived.selector;
