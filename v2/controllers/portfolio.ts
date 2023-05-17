@@ -46,9 +46,11 @@ class PortfolioController {
 			}
 			const portfolioLib = this.portfolioLibs.get(key)!
 			// @TODO state handling
+			// @TODO only one loading at a time, ensure there are no race conditions
 			// @TODO priceCache caching
 			// @TODO discoveredTokens fallback
 			// @TODO: error handling
+			accountState.set(network.id, { ...(accountState.get(network.id) || {}), loading: 1 })
 			const results = await portfolioLib.update(accountId)
 			accountState.set(network.id, results)
 		}))
