@@ -31,14 +31,14 @@ contract AmbireAccountFactory {
 		AmbireAccount(addr).execute(txns, signature);
 	}
 
-	// This method can be used to withdraw stuck tokens or airdrops
+	// @notice This method can be used to withdraw stuck tokens or airdrops
 	function call(address to, uint256 value, bytes calldata data, uint256 gas) external {
 		require(msg.sender == allowedToDrain, 'ONLY_AUTHORIZED');
 		(bool success, bytes memory err) = to.call{ gas: gas, value: value }(data);
 		require(success, string(err));
 	}
 
-	// This is done to mitigate possible frontruns where, for example, deploying the same code/salt via deploy()
+	// @dev This is done to mitigate possible frontruns where, for example, deploying the same code/salt via deploy()
 	// would make a pending deployAndExecute fail
 	// The way we mitigate that is by checking if the contract is already deployed and if so, we continue execution
 	function deploySafe(bytes memory code, uint256 salt) internal returns (address) {
