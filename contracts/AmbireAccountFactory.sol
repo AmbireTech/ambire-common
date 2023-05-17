@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: agpl-3.0
 pragma solidity 0.8.20;
 
-import "./AmbireAccount.sol";
+import './AmbireAccount.sol';
 
 contract AmbireAccountFactory {
 	event LogDeployed(address addr, uint256 salt);
 
 	address public immutable allowedToDrain;
+
 	constructor(address allowed) {
 		allowedToDrain = allowed;
 	}
@@ -27,6 +28,7 @@ contract AmbireAccountFactory {
 		address payable addr = payable(deploySafe(code, salt));
 		AmbireAccount(addr).execute(txns, signature);
 	}
+
 	// but for the quick accounts we need this
 	function deployAndCall(bytes calldata code, uint256 salt, address callee, bytes calldata data) external {
 		deploySafe(code, salt);
@@ -38,27 +40,30 @@ contract AmbireAccountFactory {
 			method := and(calldataload(data.offset), 0xffffffff00000000000000000000000000000000000000000000000000000000)
 		}
 		require(
-			method == 0x6171d1c9 // execute((address,uint256,bytes)[],bytes)
-			|| method == 0x534255ff // send(address,(uint256,address,address),(bool,bytes,bytes),(address,uint256,bytes)[])
-			|| method == 0x4b776c6d // sendTransfer(address,(uint256,address,address),(bytes,bytes),(address,address,uint256,uint256))
-			|| method == 0x63486689 // sendTxns(address,(uint256,address,address),(bytes,bytes),(string,address,uint256,bytes)[])
-		, 'INVALID_METHOD');
+			method == 0x6171d1c9 || // execute((address,uint256,bytes)[],bytes)
+				method == 0x534255ff || // send(address,(uint256,address,address),(bool,bytes,bytes),(address,uint256,bytes)[])
+				method == 0x4b776c6d || // sendTransfer(address,(uint256,address,address),(bytes,bytes),(address,address,uint256,uint256))
+				method == 0x63486689, // sendTxns(address,(uint256,address,address),(bytes,bytes),(string,address,uint256,bytes)[])
+			'INVALID_METHOD'
+		);
 
 		assembly {
 			let dataPtr := mload(0x40)
 			calldatacopy(dataPtr, data.offset, data.length)
 			let result := call(gas(), callee, 0, dataPtr, data.length, 0, 0)
 
-			switch result case 0 {
+			switch result
+			case 0 {
 				let size := returndatasize()
 				let ptr := mload(0x40)
 				returndatacopy(ptr, 0, size)
 				revert(ptr, size)
 			}
-			default {}
+			default {
+
+			}
 		}
 	}
-
 
 	// This method can be used to withdraw stuck tokens or airdrops
 	function call(address to, uint256 value, bytes calldata data, uint256 gas) external {
@@ -71,16 +76,20 @@ contract AmbireAccountFactory {
 	// would make a pending deployAndExecute fail
 	// The way we mitigate that is by checking if the contract is already deployed and if so, we continue execution
 	function deploySafe(bytes memory code, uint256 salt) internal returns (address) {
-		address expectedAddr = address(uint160(uint256(
-			keccak256(abi.encodePacked(bytes1(0xff), address(this), salt, keccak256(code)))
-		)));
+		address expectedAddr = address(
+			uint160(uint256(keccak256(abi.encodePacked(bytes1(0xff), address(this), salt, keccak256(code)))))
+		);
 		uint256 size;
-		assembly { size := extcodesize(expectedAddr) }
+		assembly {
+			size := extcodesize(expectedAddr)
+		}
 		// If there is code at that address, we can assume it's the one we were about to deploy,
 		// because of how CREATE2 and keccak256 works
 		if (size == 0) {
 			address addr;
-			assembly { addr := create2(0, add(code, 0x20), mload(code), salt) }
+			assembly {
+				addr := create2(0, add(code, 0x20), mload(code), salt)
+			}
 			require(addr != address(0), 'FAILED_DEPLOYING');
 			require(addr == expectedAddr, 'FAILED_MATCH');
 			emit LogDeployed(addr, salt);

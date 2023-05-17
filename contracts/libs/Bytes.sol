@@ -2,16 +2,12 @@
 pragma solidity 0.8.20;
 
 library Bytes {
-	function trimToSize(bytes memory b, uint256 newLen)
-		internal
-		pure
-	{
-		require(b.length > newLen, "BytesLib: only shrinking");
+	function trimToSize(bytes memory b, uint256 newLen) internal pure {
+		require(b.length > newLen, 'BytesLib: only shrinking');
 		assembly {
 			mstore(b, newLen)
 		}
 	}
-
 
 	/***********************************|
 	|        Read Bytes Functions       |
@@ -23,18 +19,11 @@ library Bytes {
 	 * @param index Index in byte array of bytes32 value.
 	 * @return result bytes32 value from byte array.
 	 */
-	function readBytes32(
-		bytes memory b,
-		uint256 index
-	)
-		internal
-		pure
-		returns (bytes32 result)
-	{
+	function readBytes32(bytes memory b, uint256 index) internal pure returns (bytes32 result) {
 		// Arrays are prefixed by a 256 bit length parameter
 		index += 32;
 
-		require(b.length >= index, "BytesLib: length");
+		require(b.length >= index, 'BytesLib: length');
 
 		// Read the bytes32 from array memory
 		assembly {
@@ -43,4 +32,3 @@ library Bytes {
 		return result;
 	}
 }
-

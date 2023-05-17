@@ -1,21 +1,33 @@
 // SPDX-License-Identifier: agpl-3.0
 pragma solidity 0.8.20;
 
-import "./libs/SignatureValidator.sol";
+import './libs/SignatureValidator.sol';
 
 contract AmbireAccount {
 	address private constant FALLBACK_HANDLER_SLOT = address(0x6969);
 
 	// Variables
-	mapping (address => bytes32) public privileges;
+	mapping(address => bytes32) public privileges;
 	uint256 public nonce;
-	mapping (bytes32 => uint) public scheduledRecoveries;
+	mapping(bytes32 => uint) public scheduledRecoveries;
 
 	// Events
 	event LogPrivilegeChanged(address indexed addr, bytes32 priv);
 	event LogErr(address indexed to, uint256 value, bytes data, bytes returnData); // only used in tryCatch
-	event LogRecoveryScheduled(bytes32 indexed txnHash, bytes32 indexed recoveryHash, address indexed recoveryKey, uint256 nonce, uint256 time, Transaction[] txns);
-	event LogRecoveryCancelled(bytes32 indexed txnHash, bytes32 indexed recoveryHash, address indexed recoveryKey, uint256 time);
+	event LogRecoveryScheduled(
+		bytes32 indexed txnHash,
+		bytes32 indexed recoveryHash,
+		address indexed recoveryKey,
+		uint256 nonce,
+		uint256 time,
+		Transaction[] txns
+	);
+	event LogRecoveryCancelled(
+		bytes32 indexed txnHash,
+		bytes32 indexed recoveryHash,
+		address indexed recoveryKey,
+		uint256 time
+	);
 	event LogRecoveryFinalized(bytes32 indexed txnHash, bytes32 indexed recoveryHash, uint256 time);
 
 	// Transaction structure
@@ -36,7 +48,7 @@ contract AmbireAccount {
 
 	constructor(address[] memory addrs) {
 		uint256 len = addrs.length;
-		for (uint256 i=0; i<len; i++) {
+		for (uint256 i = 0; i < len; i++) {
 			// NOTE: privileges[] can be set to any arbitrary value, but for this we SSTORE directly through the proxy creator
 			privileges[addrs[i]] = bytes32(uint(1));
 			emit LogPrivilegeChanged(addrs[i], bytes32(uint(1)));
@@ -45,10 +57,25 @@ contract AmbireAccount {
 
 	// This contract can accept ETH without calldata
 	receive() external payable {}
+
 	// To support EIP 721 and EIP 1155, we need to respond to those methods with their own method signature
-	function onERC721Received(address, address, uint256, bytes calldata) external pure returns (bytes4) { return this.onERC721Received.selector; }
-	function onERC1155Received(address, address, uint256, uint256, bytes calldata) external pure returns (bytes4) { return this.onERC1155Received.selector; }
-	function onERC1155BatchReceived(address, address, uint256[] memory, uint256[] memory, bytes calldata) external pure returns (bytes4) {  return this.onERC1155BatchReceived.selector;  }
+	function onERC721Received(address, address, uint256, bytes calldata) external pure returns (bytes4) {
+		return this.onERC721Received.selector;
+	}
+
+	function onERC1155Received(address, address, uint256, uint256, bytes calldata) external pure returns (bytes4) {
+		return this.onERC1155Received.selector;
+	}
+
+	function onERC1155BatchReceived(
+		address,
+		address,
+		uint256[] memory,
+		uint256[] memory,
+		bytes calldata
+	) external pure returns (bytes4) {
+		return this.onERC1155BatchReceived.selector;
+	}
 
 	// This contract can accept ETH with calldata
 	fallback() external payable {
@@ -61,14 +88,14 @@ contract AmbireAccount {
 			let result := delegatecall(gas(), fallbackHandler, 0, calldatasize(), 0, 0)
 			let size := returndatasize()
 			returndatacopy(0, 0, size)
-			if eq(result, 0) { revert(0, size) }
+			if eq(result, 0) {
+				revert(0, size)
+			}
 			return(0, size)
 		}
 	}
 
-	function setAddrPrivilege(address addr, bytes32 priv)
-		external
-	{
+	function setAddrPrivilege(address addr, bytes32 priv) external {
 		require(msg.sender == address(this), 'ONLY_IDENTITY_CAN_CALL');
 		// Anti-bricking measure: if the privileges slot is used for special data (not 0x01),
 		// don't allow to set it to true
@@ -78,25 +105,20 @@ contract AmbireAccount {
 	}
 
 	// Useful when we need to do multiple operations but ignore failures in some of them
-	function tryCatch(address to, uint256 value, bytes calldata data)
-		external
-	{
+	function tryCatch(address to, uint256 value, bytes calldata data) external {
 		require(msg.sender == address(this), 'ONLY_IDENTITY_CAN_CALL');
-		(bool success, bytes memory returnData) = to.call{value: value, gas: gasleft()}(data);
+		(bool success, bytes memory returnData) = to.call{ value: value, gas: gasleft() }(data);
 		if (!success) emit LogErr(to, value, data, returnData);
 	}
-	function tryCatchLimit(address to, uint256 value, bytes calldata data, uint256 gasLimit)
-		external
-	{
+
+	function tryCatchLimit(address to, uint256 value, bytes calldata data, uint256 gasLimit) external {
 		require(msg.sender == address(this), 'ONLY_IDENTITY_CAN_CALL');
-		(bool success, bytes memory returnData) = to.call{value: value, gas: gasLimit}(data);
+		(bool success, bytes memory returnData) = to.call{ value: value, gas: gasLimit }(data);
 		if (!success) emit LogErr(to, value, data, returnData);
 	}
 
 	// WARNING: if the signature of this is changed, we have to change IdentityFactory
-	function execute(Transaction[] calldata txns, bytes calldata signature)
-		public
-	{
+	function execute(Transaction[] calldata txns, bytes calldata signature) public {
 		uint256 currentNonce = nonce;
 		// NOTE: abi.encode is safer than abi.encodePacked in terms of collision safety
 		bytes32 hash = keccak256(abi.encode(address(this), block.chainid, currentNonce, txns));
@@ -106,8 +128,13 @@ contract AmbireAccount {
 		uint8 sigMode = uint8(signature[signature.length - 1]);
 
 		if (sigMode == SIGMODE_RECOVER || sigMode == SIGMODE_CANCEL) {
-			(bytes memory sig,) = SignatureValidator.splitSignature(signature);
-			(RecoveryInfo memory recoveryInfo, bytes memory innerRecoverySig, address signerKeyToRecover, address signerKeyToCheckPostRecovery) = abi.decode(sig, (RecoveryInfo, bytes, address, address));
+			(bytes memory sig, ) = SignatureValidator.splitSignature(signature);
+			(
+				RecoveryInfo memory recoveryInfo,
+				bytes memory innerRecoverySig,
+				address signerKeyToRecover,
+				address signerKeyToCheckPostRecovery
+			) = abi.decode(sig, (RecoveryInfo, bytes, address, address));
 			bool isCancellation = sigMode == SIGMODE_CANCEL;
 			bytes32 recoveryInfoHash = keccak256(abi.encode(recoveryInfo));
 			require(privileges[signerKeyToRecover] == recoveryInfoHash, 'RECOVERY_NOT_AUTHORIZED');
@@ -122,8 +149,11 @@ contract AmbireAccount {
 			} else {
 				address recoveryKey = SignatureValidator.recoverAddrImpl(hash, innerRecoverySig, true);
 				bool isIn;
-				for (uint256 i=0; i<recoveryInfo.keys.length; i++) {
-					if (recoveryInfo.keys[i] == recoveryKey) { isIn = true; break; }
+				for (uint256 i = 0; i < recoveryInfo.keys.length; i++) {
+					if (recoveryInfo.keys[i] == recoveryKey) {
+						isIn = true;
+						break;
+					}
 				}
 				require(isIn, 'RECOVERY_NOT_AUTHORIZED');
 				if (isCancellation) {
@@ -152,7 +182,11 @@ contract AmbireAccount {
 	}
 
 	// built-in batching of multiple execute()'s; useful when performing timelocked recoveries
-	struct ExecuteArgs { Transaction[] txns; bytes signature; }
+	struct ExecuteArgs {
+		Transaction[] txns;
+		bytes signature;
+	}
+
 	function executeMultiple(ExecuteArgs[] calldata toExec) external {
 		for (uint256 i = 0; i != toExec.length; i++) execute(toExec[i].txns, toExec[i].signature);
 	}
@@ -173,16 +207,14 @@ contract AmbireAccount {
 	function executeBatch(Transaction[] memory txns) internal {
 		require(txns.length > 0, 'MUST_PASS_TX');
 		uint256 len = txns.length;
-		for (uint256 i=0; i<len; i++) {
+		for (uint256 i = 0; i < len; i++) {
 			Transaction memory txn = txns[i];
 			executeCall(txn.to, txn.value, txn.data);
 		}
 	}
 
 	// we shouldn't use address.call(), cause: https://github.com/ethereum/solidity/issues/2884
-	function executeCall(address to, uint256 value, bytes memory data)
-		internal
-	{
+	function executeCall(address to, uint256 value, bytes memory data) internal {
 		assembly {
 			let result := call(gas(), to, value, add(data, 0x20), mload(data), 0, 0)
 
@@ -210,7 +242,7 @@ contract AmbireAccount {
 	// we pretty much only need to signal that we support the interface for 165, but for 1155 we also need the fallback function
 	function supportsInterface(bytes4 interfaceID) external pure returns (bool) {
 		return
-			interfaceID == 0x01ffc9a7 ||    // ERC-165 support (i.e. `bytes4(keccak256('supportsInterface(bytes4)'))`).
-			interfaceID == 0x4e2312e0;      // ERC-1155 `ERC1155TokenReceiver` support (i.e. `bytes4(keccak256("onERC1155Received(address,address,uint256,uint256,bytes)")) ^ bytes4(keccak256("onERC1155BatchReceived(address,address,uint256[],uint256[],bytes)"))`).
+			interfaceID == 0x01ffc9a7 || // ERC-165 support (i.e. `bytes4(keccak256('supportsInterface(bytes4)'))`).
+			interfaceID == 0x4e2312e0; // ERC-1155 `ERC1155TokenReceiver` support (i.e. `bytes4(keccak256("onERC1155Received(address,address,uint256,uint256,bytes)")) ^ bytes4(keccak256("onERC1155BatchReceived(address,address,uint256[],uint256[],bytes)"))`).
 	}
 }
