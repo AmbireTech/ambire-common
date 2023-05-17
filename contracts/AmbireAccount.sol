@@ -202,7 +202,7 @@ contract AmbireAccount {
 
 	// @notice Allows executing calls if the caller itself is authorized
 	// @dev no need for nonce management here cause we're not dealing with sigs
-	function executeBySender(Transaction[] calldata txns) external payable {
+	function executeBySender(Transaction[] calldata txns) external {
 		require(privileges[msg.sender] != bytes32(0), 'INSUFFICIENT_PRIVILEGE');
 		executeBatch(txns);
 		// again, anti-bricking
