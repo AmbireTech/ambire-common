@@ -11,6 +11,11 @@ export enum SupportedWeb3Connectivity {
   'injected' = 'injected'
 }
 
+export enum ApplicationType {
+  'web' = 'web',
+  'mobile' = 'mobile'
+}
+
 export type Web3ConnectivityId = keyof typeof SupportedWeb3Connectivity
 
 export type AmbireDappManifest = {
@@ -30,4 +35,5 @@ export type AmbireDappManifest = {
   isWalletPlugin?: boolean
   featured?: boolean
   forceInternal?: boolean
+  applicationType: Array<keyof typeof ApplicationType>
 }
