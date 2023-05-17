@@ -46,14 +46,22 @@ class PortfolioController {
 				this.portfolioLibs.set(key, new Portfolio(fetch, provider, network))
 			}
 			const portfolioLib = this.portfolioLibs.get(key)!
-			// @TODO state handling
-			// @TODO only one loading at a time, ensure there are no race conditions
+			// @TODO full state handling
 			// @TODO priceCache caching
 			// @TODO discoveredTokens fallback
-			// @TODO: error handling
-			accountState.set(network.id, { ...(accountState.get(network.id) || {}), loading: 1 })
-			const results = await portfolioLib.update(accountId)
-			accountState.set(network.id, results)
+			if (!accountState.get(network.id)) accountState.set(network.id, { isReady: false, isLoading: false })
+			const state = accountState.get(network.id)!
+			// Only one loading at a time, ensure there are no race conditions
+			if (state.isLoading) return
+			state.isLoading = true
+			try {
+				const results = await portfolioLib.update(accountId)
+				accountState.set(network.id, { isReady: true, isLoading: false, ...results })
+			} catch (e) {
+				state.isLoading = false
+				if (!state.isReady) state.criticalError = e
+				else state.errors = [e]
+			}
 		}))
 		console.log(this.latest)
 		// console.log(accounts, networks, accountOps)
