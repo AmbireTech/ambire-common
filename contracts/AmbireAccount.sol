@@ -186,13 +186,12 @@ contract AmbireAccount {
 		assembly {
 			let result := call(gas(), to, value, add(data, 0x20), mload(data), 0, 0)
 
-			switch result case 0 {
+			if eq(result, 0) {
 				let size := returndatasize()
 				let ptr := mload(0x40)
 				returndatacopy(ptr, 0, size)
 				revert(ptr, size)
 			}
-			default {}
 		}
 	}
 
