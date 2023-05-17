@@ -10,6 +10,7 @@ import Movr from './Movr'
 import OneInch from './OneInch'
 import OpenSea from './OpenSea'
 import UniRouters from './UniRouters'
+import UniswapV3Pool from './UniswapV3Pool'
 import WALLETStakingPool from './WALLETStakingPool'
 import WALLETSupplyController from './WALLETSupplyController'
 import WETH from './WETH'
@@ -30,6 +31,7 @@ const all = (humanizerInfo: HumanizerInfoType) => ({
   ...WALLETSupplyController(),
   ...AmbireBatcher(humanizerInfo),
   ...WALLETStakingPool(humanizerInfo),
-  ...OneInch(humanizerInfo)
+  ...OneInch(humanizerInfo),
+  ...UniswapV3Pool(humanizerInfo)
 })
 export default all

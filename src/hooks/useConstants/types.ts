@@ -20,6 +20,7 @@ export interface AdexToStakingTransfersLogsType {
 export interface ResultEndpointResponse {
   tokenList: ConstantsType['tokenList']
   humanizerInfo: ConstantsType['humanizerInfo']
+  customTokens: ConstantsType['customTokens']
 }
 
 // All the below types are generated with the help of QuickType app.
@@ -31,6 +32,25 @@ export interface ConstantsType {
   tokenList: { [key: string]: TokenList[] }
   humanizerInfo: HumanizerInfoType
   lastFetched: number
+  customTokens: CustomToken[]
+}
+
+interface CustomToken {
+  id: string
+  customPrice: boolean
+  symbol: string
+  name: string
+  image: {
+    [key: string]: string
+  }
+  platforms: {
+    [key: string]: string
+  }
+  contract_address: string
+  baseToken: string
+  decimals: number
+  abi: string
+  abiFunction: string
 }
 
 interface TokenList {
@@ -148,6 +168,7 @@ type HumanizerInfoAbisKeysType =
   | 'WyvernExchange'
   | 'Swappin'
   | 'ERC20'
+  | 'SwappinOwn'
 
 type HumanizerInfoAbisType = {
   [key in HumanizerInfoAbisKeysType]: HumanizerInfoAbiType[]

@@ -70,6 +70,12 @@ export type UsePortfolioProps = {
   ) => Promise<any>
 }
 
+export type UseExtraTokensProps = {
+  tokens: Token[]
+  useStorage: UseStorageType
+  useToasts: () => UseToastsReturnType
+}
+
 export type UsePortfolioReturnType = {
   balance: Balance
   otherBalances: Balance[]
