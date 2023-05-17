@@ -106,7 +106,7 @@ contract AmbireAccount {
 	// @notice used to set the privilege of a key (by `addr`); normal signatures will be considered valid if the
 	// `addr` they are signed with has non-zero (not 0x000..000) privilege set; we can set the privilege to
 	// a hash of the recovery keys and timelock (see `RecoveryInfo`) to enable recovery signatures
-	function setAddrPrivilege(address addr, bytes32 priv) external {
+	function setAddrPrivilege(address addr, bytes32 priv) external payable {
 		require(msg.sender == address(this), 'ONLY_IDENTITY_CAN_CALL');
 		// Anti-bricking measure: if the privileges slot is used for special data (not 0x01),
 		// don't allow to set it to true
@@ -116,14 +116,14 @@ contract AmbireAccount {
 	}
 
 	// @notice Useful when we need to do multiple operations but ignore failures in some of them
-	function tryCatch(address to, uint256 value, bytes calldata data) external {
+	function tryCatch(address to, uint256 value, bytes calldata data) external payable {
 		require(msg.sender == address(this), 'ONLY_IDENTITY_CAN_CALL');
 		(bool success, bytes memory returnData) = to.call{ value: value, gas: gasleft() }(data);
 		if (!success) emit LogErr(to, value, data, returnData);
 	}
 
 	// @notice same as `tryCatch` but with a gas limit
-	function tryCatchLimit(address to, uint256 value, bytes calldata data, uint256 gasLimit) external {
+	function tryCatchLimit(address to, uint256 value, bytes calldata data, uint256 gasLimit) external payable {
 		require(msg.sender == address(this), 'ONLY_IDENTITY_CAN_CALL');
 		(bool success, bytes memory returnData) = to.call{ value: value, gas: gasLimit }(data);
 		if (!success) emit LogErr(to, value, data, returnData);
@@ -202,7 +202,7 @@ contract AmbireAccount {
 
 	// @notice Allows executing calls if the caller itself is authorized
 	// @dev no need for nonce management here cause we're not dealing with sigs
-	function executeBySender(Transaction[] calldata txns) external {
+	function executeBySender(Transaction[] calldata txns) external payable {
 		require(privileges[msg.sender] != bytes32(0), 'INSUFFICIENT_PRIVILEGE');
 		executeBatch(txns);
 		// again, anti-bricking
