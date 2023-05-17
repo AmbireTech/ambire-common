@@ -1,4 +1,5 @@
 export interface NetworkDescriptor {
+	id: string
 	name: string
 	nativeAssetSymbol: string
 	chainId: bigint

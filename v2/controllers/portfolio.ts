@@ -29,8 +29,13 @@ class PortfolioController {
 
 	// the purpose of this function is to call it when an account is selected or the queue of accountOps changes
 	async updateSelectedAccount(accounts: Account[], networks: NetworkDescriptor[], accountId: AccountId, accountOps: AccountOp[]) {
-		if (!accounts.find(x => x.addr === accountId)) throw new Error('selected account does not exist')
-		console.log(accounts, networks, accountOps)
+		const selectedAccount = accounts.find(x => x.addr === accountId)
+		if (!selectedAccount) throw new Error('selected account does not exist')
+		if (!this.latest.has(accountId)) this.latest.set(accountId, new Map())
+		await Promise.all(networks.map(async network => {
+			console.log(network)
+		}))
+		// console.log(accounts, networks, accountOps)
 
 	}
 	// @TODO every time we update on one network, update both pending and latest but with high priceRecency
