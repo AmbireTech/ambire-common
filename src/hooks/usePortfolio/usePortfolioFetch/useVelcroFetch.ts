@@ -236,7 +236,7 @@ export default function useVelcroFetch({
       const networkToFetch = supportedProtocols.find(({ network }) => network === currentNetwork)
 
       try {
-        const quickResponse = !assets?.tokens?.length
+        const quickResponse = !assets || !assets?.tokens
         const response = await getBalances(
           currentNetwork,
           account,

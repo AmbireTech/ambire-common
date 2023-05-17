@@ -410,7 +410,7 @@ export default function useBalanceOracleFetch({
       fetchSupplementTokenData(
         {
           tokens: [
-            ...(latestTokens && latestTokens),
+            ...(latestTokens && latestTokens?.length ? latestTokens : []),
             ...((pendingTokens &&
               pendingTokens?.filter(
                 (t) => !latestTokens.find((token) => token.address === t.address)
