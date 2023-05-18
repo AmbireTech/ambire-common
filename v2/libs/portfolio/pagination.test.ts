@@ -15,5 +15,5 @@ describe('Pagination tests', () => {
         const startArray = [1,2,3]
         const result = paginate(startArray, 2)
         expect(result.length).toBe(2)
-	})
+    })
 })

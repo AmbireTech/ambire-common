@@ -9,12 +9,19 @@ class MockResponse extends Response {
     }
 
     json(): Promise<any> {
-        return new Promise((resolve, reject) => resolve(this.jsonOb))
+        return new Promise((resolve, reject) => {
+            return resolve(this.jsonOb)
+        })
     }
 }
 
-// whatever json you pass to the fetch method, that is what
-// you will get after calling the json() method
-export async function fetch(data: {}): Promise<Response> {
+export async function fetch(url: string): Promise<Response> {
+    let data: {}
+    if (url == 'example') {
+        data = {
+            example: 'test_success'
+        }
+    }
+
     return new Promise((resolve, reject) => resolve(new MockResponse(data)))
 }
