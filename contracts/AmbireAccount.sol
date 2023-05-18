@@ -111,9 +111,6 @@ contract AmbireAccount {
 	// a hash of the recovery keys and timelock (see `RecoveryInfo`) to enable recovery signatures
 	function setAddrPrivilege(address addr, bytes32 priv) external payable {
 		require(msg.sender == address(this), 'ONLY_IDENTITY_CAN_CALL');
-		// Anti-bricking measure: if the privileges slot is used for special data (not 0x01),
-		// don't allow to set it to true
-		if (uint(privileges[addr]) > 1) require(priv != bytes32(uint(1)), 'UNSETTING_SPECIAL_DATA');
 		privileges[addr] = priv;
 		emit LogPrivilegeChanged(addr, priv);
 	}
