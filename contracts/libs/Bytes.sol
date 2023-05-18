@@ -1,48 +1,34 @@
 // SPDX-License-Identifier: agpl-3.0
-pragma solidity ^0.8.7;
+pragma solidity 0.8.20;
 
-// @TODO: Formatting
 library Bytes {
-  // @TODO: see if we can just set .length = 
-  function trimToSize(bytes memory b, uint newLen)
-    internal
-    pure
-  {
-    require(b.length > newLen, "BytesLib: only shrinking");
-    assembly {
-      mstore(b, newLen)
-    }
-  }
+	function trimToSize(bytes memory b, uint256 newLen) internal pure {
+		require(b.length > newLen, 'BytesLib: only shrinking');
+		assembly {
+			mstore(b, newLen)
+		}
+	}
 
+	/***********************************|
+	|        Read Bytes Functions       |
+	|__________________________________*/
 
-  /***********************************|
-  |        Read Bytes Functions       |
-  |__________________________________*/
+	/**
+	 * @dev Reads a bytes32 value from a position in a byte array.
+	 * @param b Byte array containing a bytes32 value.
+	 * @param index Index in byte array of bytes32 value.
+	 * @return result bytes32 value from byte array.
+	 */
+	function readBytes32(bytes memory b, uint256 index) internal pure returns (bytes32 result) {
+		// Arrays are prefixed by a 256 bit length parameter
+		index += 32;
 
-  /**
-   * @dev Reads a bytes32 value from a position in a byte array.
-   * @param b Byte array containing a bytes32 value.
-   * @param index Index in byte array of bytes32 value.
-   * @return result bytes32 value from byte array.
-   */
-  function readBytes32(
-    bytes memory b,
-    uint256 index
-  )
-    internal
-    pure
-    returns (bytes32 result)
-  {
-    // Arrays are prefixed by a 256 bit length parameter
-    index += 32;
+		require(b.length >= index, 'BytesLib: length');
 
-    require(b.length >= index, "BytesLib: length");
-
-    // Read the bytes32 from array memory
-    assembly {
-      result := mload(add(b, index))
-    }
-    return result;
-  }
+		// Read the bytes32 from array memory
+		assembly {
+			result := mload(add(b, index))
+		}
+		return result;
+	}
 }
-

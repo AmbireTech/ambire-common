@@ -68,7 +68,7 @@ describe('Basic Ambire Account tests', function () {
       expect(error.reason).toBe('ONLY_IDENTITY_CAN_CALL')
     }
   })
-  test('execute should fail if the account does not have priviledges', async function () {
+  test('execute should fail if the account does not have privileges', async function () {
     expect.assertions(1)
     const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, wallet)
     await sendFunds(ambireAccountAddress, 1)
@@ -165,7 +165,7 @@ describe('Basic Ambire Account tests', function () {
     const noTimelock = await contract.privileges(timelockAddress)
     expect(noTimelock).toBe('0x0000000000000000000000000000000000000000000000000000000000000000')
   })
-  test('executeBySender should fail if the account does not have priviledges', async function () {
+  test('executeBySender should fail if the account does not have privileges', async function () {
     expect.assertions(1)
     const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, wallet2)
     try {

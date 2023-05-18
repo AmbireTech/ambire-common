@@ -39,6 +39,9 @@ class PortfolioController {
 		// @TODO update pending AND latest state together in case we have accountOps
 		if (!this.latest.has(accountId)) this.latest.set(accountId, new Map())
 		const accountState = this.latest.get(accountId)!
+		for (const networkId of accountState.keys()) {
+			if (!networks.find(x => x.id === networkId)) accountState.delete(networkId)
+		}
 		await Promise.all(networks.map(async network => {
 			const key = `${network.id}:${accountId}`
 			if (!this.portfolioLibs.has(key)) {

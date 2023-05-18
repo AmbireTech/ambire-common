@@ -88,7 +88,7 @@ export class Portfolio {
 		// Get balances and metadata from the provider directly
 		const [ tokensWithErr, collectionsRaw ] = await Promise.all([
 			flattenResults(paginate(hints.erc20s, limits.erc20)
-				.map(page => getTokens(this.deploylessTokens, opts, accountAddr, page))),
+				.map(page => getTokens(this.network, this.deploylessTokens, opts, accountAddr, page))),
 			flattenResults(paginate(collectionsHints, limits.erc721)
 				.map(async page => (await this.deploylessNfts.call('getAllNFTs', [
 					accountAddr,
@@ -171,16 +171,19 @@ export class Portfolio {
 }
 
 
-async function getTokens (deployless: Deployless, opts: Partial<UpdateOptions>, accountAddr: string, tokenAddrs: string[]): Promise<[number, TokenResult][]> {
+async function getTokens (network: NetworkDescriptor, deployless: Deployless, opts: Partial<UpdateOptions>, accountAddr: string, tokenAddrs: string[]): Promise<[number, TokenResult][]> {
+	const mapToken = (x: any, address: string) => ({
+		amount: x.amount,
+		decimals: new Number(x.decimals),
+		symbol: address === '0x0000000000000000000000000000000000000000' ? network.nativeAssetSymbol : x.symbol,
+		address
+	}) as TokenResult
 	const deploylessOpts = { blockTag: opts.blockTag, from: DEPLOYLESS_SIMULATION_FROM }
 	if (!opts.simulation) {
 		const [ results ] = await deployless.call('getBalances', [accountAddr, tokenAddrs], deploylessOpts)
 		// we do [ ... ] to get rid of the ethers Result type
 		return [ ...(results as any[]) ]
-			.map((x, i) => [
-				x.error,
-				({ amount: x.amount, decimals: new Number(x.decimals), symbol: x.symbol, address: tokenAddrs[i] }) as TokenResult
-			])
+			.map((x, i) => [x.error, mapToken(x, tokenAddrs[i])])
 
 	}
 	const { accountOps, account } = opts.simulation
@@ -195,16 +198,11 @@ async function getTokens (deployless: Deployless, opts: Partial<UpdateOptions>, 
 	if (after[1] === 0n) throw new SimulationError('unknown error: simulation reverted', before[1], after[1])
 	if (after[1] < before[1]) throw new SimulationError('lower "after" nonce', before[1], after[1])
 	// no simulation was performed if the nonce is the same
-	const results = (after[1] === before[1]) ? before[0] : after[0]
-	return [ ...results ]
+	const postSimulationAmounts = (after[1] === before[1]) ? before[0] : after[0]
+	return [ ...before[0] ]
 		.map((x, i) => [
 			x.error,
-			({
-				amount: before[0][i].amount,
-				amountPostSimulation: x.amount,
-				decimals: new Number(x.decimals),
-				symbol: x.symbol, address: tokenAddrs[i]
-			}) as TokenResult
+			{ ...mapToken(x, tokenAddrs[i]), amountPostSimulation: postSimulationAmounts[i].amount }
 		])
 }
 
