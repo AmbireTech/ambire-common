@@ -3,7 +3,7 @@ import { describe, expect, test } from '@jest/globals'
 
 describe('Compile', () => {
   test('should compile a contract', async () => {
-    const json = await compile('AmbireAccount')
+    const json = compile('AmbireAccount')
     expect(json).toHaveProperty('abi')
     expect(json).toHaveProperty('bytecode')
     expect(json).toHaveProperty('deployBytecode')

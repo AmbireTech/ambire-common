@@ -82,7 +82,7 @@ describe('Deployless', () => {
     expect.assertions(2)
     try { await deployless.call('helloWorld', [], { blockTag: '0x1' }) } catch (e: any) {
       // we are relying on the fact that we do not have the SHR opcode in block 0x1
-      expect(e.info.error.message.includes('invalid opcode: SHR')).toBe(true)
+      expect(e.info.error.message.includes('invalid opcode: PUSH0')).toBe(true)
     }
     try { await deployless.call('helloWorld', [], { blockTag: '0x1', mode: DeploylessMode.ProxyContract }) } catch (e: any) {
       // ethers wraps the error if we use the Provider; perhaps we should un-wrap it
@@ -102,7 +102,7 @@ describe('Deployless', () => {
       ])
     );
     let megaLargeCode = bytecodeAndArgs;
-    let i = 8
+    let i = 12
     while (i > 0) {
       megaLargeCode += bytecodeAndArgs.substring(2)
       i--
