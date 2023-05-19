@@ -99,8 +99,7 @@ describe('Basic Ambire Account tests', function () {
       expect(error.reason).toBe('PRIVILEGE_NOT_DOWNGRADED')
     }
   })
-  test('fail on trying to set the timelock permissions to 1 - the only thing that will happen is the timelock will get invalidated', async function () {
-    expect.assertions(2)
+  test('should successfully set the timelock permission to 1', async function () {
     const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, wallet)
 
     // first, add the timelock
@@ -127,11 +126,10 @@ describe('Basic Ambire Account tests', function () {
       value: 0,
       data: calldata2
     }]
-    try {
-      await contract.executeBySender(unsetPrivTxn)
-    } catch (error: any) {
-      expect(error.reason).toBe('UNSETTING_SPECIAL_DATA')
-    }
+    const fulPerm = contract.executeBySender(unsetPrivTxn)
+    await wait(wallet, fulPerm)
+    const noTimelock = await contract.privileges(timelockAddress)
+    expect(noTimelock).toBe('0x0000000000000000000000000000000000000000000000000000000000000001')
   })
   test('successfully remove the timelock', async function () {
     const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, wallet)
