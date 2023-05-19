@@ -52,6 +52,7 @@ contract AmbireAccount {
 	}
 
 	// Recovery mode constants
+	uint8 private constant SIGMODE_CANCEL = 254;
 	uint8 private constant SIGMODE_RECOVER = 255;
 
 	constructor(address[] memory addrs) {
@@ -140,7 +141,7 @@ contract AmbireAccount {
 		// Recovery signature: allows to perform timelocked txns
 		uint8 sigMode = uint8(signature[signature.length - 1]);
 
-		if (sigMode == SIGMODE_RECOVER) {
+		if (sigMode == SIGMODE_RECOVER || sigMode == SIGMODE_CANCEL) {
 			(bytes memory sig, ) = SignatureValidator.splitSignature(signature);
 			(
 				RecoveryInfo memory recoveryInfo,
@@ -148,16 +149,18 @@ contract AmbireAccount {
 				address signerKeyToRecover
 			) = abi.decode(sig, (RecoveryInfo, bytes, address));
 			signerKey = signerKeyToRecover;
+			bool isCancellation = sigMode == SIGMODE_CANCEL;
 			bytes32 recoveryInfoHash = keccak256(abi.encode(recoveryInfo));
 			require(privileges[signerKeyToRecover] == recoveryInfoHash, 'RECOVERY_NOT_AUTHORIZED');
 			uint256 scheduled = scheduledRecoveries[hash];
 
-			if (scheduled != 0) {
+			if (scheduled != 0 && !isCancellation) {
 				require(block.timestamp > scheduled, 'RECOVERY_NOT_READY');
 				delete scheduledRecoveries[hash];
 				emit LogRecoveryFinalized(hash, recoveryInfoHash, block.timestamp);
 			} else {
-				address recoveryKey = SignatureValidator.recoverAddrImpl(hash, innerRecoverySig, true);
+				bytes32 hashToSign = isCancellation ? keccak256(abi.encode(hash, 0x63616E63)) : hash;
+				address recoveryKey = SignatureValidator.recoverAddrImpl(hashToSign, innerRecoverySig, true);
 				bool isIn;
 				for (uint256 i = 0; i < recoveryInfo.keys.length; i++) {
 					if (recoveryInfo.keys[i] == recoveryKey) {
@@ -166,8 +169,14 @@ contract AmbireAccount {
 					}
 				}
 				require(isIn, 'RECOVERY_NOT_AUTHORIZED');
-				scheduledRecoveries[hash] = block.timestamp + recoveryInfo.timelock;
-				emit LogRecoveryScheduled(hash, recoveryInfoHash, recoveryKey, currentNonce, block.timestamp, txns);
+				if (isCancellation) {
+					delete scheduledRecoveries[hash];
+					emit LogRecoveryCancelled(hash, recoveryInfoHash, recoveryKey, block.timestamp);
+				} else {
+					scheduledRecoveries[hash] = block.timestamp + recoveryInfo.timelock;
+					emit LogRecoveryScheduled(hash, recoveryInfoHash, recoveryKey, currentNonce, block.timestamp, txns);
+				}
+				return;
 			}
 		} else {
 			signerKey = SignatureValidator.recoverAddrImpl(hash, signature, true);
