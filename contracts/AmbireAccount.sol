@@ -143,17 +143,16 @@ contract AmbireAccount {
 
 		if (sigMode == SIGMODE_RECOVER || sigMode == SIGMODE_CANCEL) {
 			(bytes memory sig, ) = SignatureValidator.splitSignature(signature);
-			(
-				RecoveryInfo memory recoveryInfo,
-				bytes memory innerRecoverySig,
-				address signerKeyToRecover
-			) = abi.decode(sig, (RecoveryInfo, bytes, address));
+			(RecoveryInfo memory recoveryInfo, bytes memory innerRecoverySig, address signerKeyToRecover) = abi.decode(
+				sig,
+				(RecoveryInfo, bytes, address)
+			);
 			signerKey = signerKeyToRecover;
 			bool isCancellation = sigMode == SIGMODE_CANCEL;
 			bytes32 recoveryInfoHash = keccak256(abi.encode(recoveryInfo));
 			require(privileges[signerKeyToRecover] == recoveryInfoHash, 'RECOVERY_NOT_AUTHORIZED');
-			uint256 scheduled = scheduledRecoveries[hash];
 
+			uint256 scheduled = scheduledRecoveries[hash];
 			if (scheduled != 0 && !isCancellation) {
 				require(block.timestamp > scheduled, 'RECOVERY_NOT_READY');
 				delete scheduledRecoveries[hash];
