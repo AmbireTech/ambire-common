@@ -145,16 +145,14 @@ contract AmbireAccount {
 			(
 				RecoveryInfo memory recoveryInfo,
 				bytes memory innerRecoverySig,
-				address signerKeyToRecover,
-				address signerKeyToCheckPostRecovery
-			) = abi.decode(sig, (RecoveryInfo, bytes, address, address));
+				address signerKeyToRecover
+			) = abi.decode(sig, (RecoveryInfo, bytes, address));
+			signerKey = signerKeyToRecover;
 			bytes32 recoveryInfoHash = keccak256(abi.encode(recoveryInfo));
 			require(privileges[signerKeyToRecover] == recoveryInfoHash, 'RECOVERY_NOT_AUTHORIZED');
 			uint256 scheduled = scheduledRecoveries[hash];
 
 			if (scheduled != 0) {
-				// signerKey is set to signerKeyToCheckPostRecovery so that the anti-bricking check can pass
-				signerKey = signerKeyToCheckPostRecovery;
 				require(block.timestamp > scheduled, 'RECOVERY_NOT_READY');
 				delete scheduledRecoveries[hash];
 				emit LogRecoveryFinalized(hash, recoveryInfoHash, block.timestamp);
