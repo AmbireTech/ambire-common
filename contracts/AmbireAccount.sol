@@ -52,8 +52,7 @@ contract AmbireAccount {
 	}
 
 	// Recovery mode constants
-	uint8 private constant SIGMODE_RECOVER = 254;
-	uint8 private constant SIGMODE_CANCEL = 255;
+	uint8 private constant SIGMODE_RECOVER = 255;
 
 	constructor(address[] memory addrs) {
 		uint256 len = addrs.length;
@@ -141,7 +140,7 @@ contract AmbireAccount {
 		// Recovery signature: allows to perform timelocked txns
 		uint8 sigMode = uint8(signature[signature.length - 1]);
 
-		if (sigMode == SIGMODE_RECOVER || sigMode == SIGMODE_CANCEL) {
+		if (sigMode == SIGMODE_RECOVER) {
 			(bytes memory sig, ) = SignatureValidator.splitSignature(signature);
 			(
 				RecoveryInfo memory recoveryInfo,
@@ -149,12 +148,11 @@ contract AmbireAccount {
 				address signerKeyToRecover,
 				address signerKeyToCheckPostRecovery
 			) = abi.decode(sig, (RecoveryInfo, bytes, address, address));
-			bool isCancellation = sigMode == SIGMODE_CANCEL;
 			bytes32 recoveryInfoHash = keccak256(abi.encode(recoveryInfo));
 			require(privileges[signerKeyToRecover] == recoveryInfoHash, 'RECOVERY_NOT_AUTHORIZED');
 			uint256 scheduled = scheduledRecoveries[hash];
 
-			if (scheduled != 0 && !isCancellation) {
+			if (scheduled != 0) {
 				// signerKey is set to signerKeyToCheckPostRecovery so that the anti-bricking check can pass
 				signerKey = signerKeyToCheckPostRecovery;
 				require(block.timestamp > scheduled, 'RECOVERY_NOT_READY');
@@ -170,14 +168,8 @@ contract AmbireAccount {
 					}
 				}
 				require(isIn, 'RECOVERY_NOT_AUTHORIZED');
-				if (isCancellation) {
-					delete scheduledRecoveries[hash];
-					emit LogRecoveryCancelled(hash, recoveryInfoHash, recoveryKey, block.timestamp);
-				} else {
-					scheduledRecoveries[hash] = block.timestamp + recoveryInfo.timelock;
-					emit LogRecoveryScheduled(hash, recoveryInfoHash, recoveryKey, currentNonce, block.timestamp, txns);
-				}
-				return;
+				scheduledRecoveries[hash] = block.timestamp + recoveryInfo.timelock;
+				emit LogRecoveryScheduled(hash, recoveryInfoHash, recoveryKey, currentNonce, block.timestamp, txns);
 			}
 		} else {
 			signerKey = SignatureValidator.recoverAddrImpl(hash, signature, true);
