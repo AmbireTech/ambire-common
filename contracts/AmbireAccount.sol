@@ -215,7 +215,6 @@ contract AmbireAccount {
 	}
 
 	function executeBatch(Transaction[] memory txns) internal {
-		require(txns.length > 0, 'MUST_PASS_TX');
 		uint256 len = txns.length;
 		for (uint256 i = 0; i < len; i++) {
 			Transaction memory txn = txns[i];
