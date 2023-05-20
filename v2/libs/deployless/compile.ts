@@ -49,7 +49,7 @@ export function compile(contractName: string, options: Options = {}) {
       }
     }
   }
-  
+
   function findImports(libPath: string) {
     return {
       contents: fs.readFileSync(path.resolve(__dirname + '../../../../', 'contracts', libPath), {encoding: 'utf8'})

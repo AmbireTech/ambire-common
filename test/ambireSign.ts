@@ -47,7 +47,7 @@ function wrapMultiSig(sig: string) {
  * @returns BytesLike
  */
 function wrapRecover(sig: string) {
-  return `${sig}${'fe'}`
+  return `${sig}${'ff'}`
 }
 
 /**
@@ -57,7 +57,7 @@ function wrapRecover(sig: string) {
  * @returns BytesLike
  */
 function wrapCancel(sig: string) {
-  return `${sig}${'ff'}`
+  return `${sig}${'fe'}`
 }
 
 export {

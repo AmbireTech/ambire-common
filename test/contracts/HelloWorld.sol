@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: agpl-3.0
+pragma solidity 0.8.20;
+
 contract HelloWorld {
 	function helloWorld() external pure returns (string memory) {
 		return "hello world";

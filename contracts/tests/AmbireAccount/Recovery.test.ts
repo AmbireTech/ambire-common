@@ -75,13 +75,11 @@ describe('Recovery basic schedule and execute', function () {
       [
         'tuple(address[], uint)',
         'bytes',
-        'address',
         'address'
       ],
       [
         recoveryInfo,
         s,
-        timelockAddress,
         timelockAddress
       ]
     )
@@ -107,13 +105,11 @@ describe('Recovery basic schedule and execute', function () {
       [
         'tuple(address[], uint)',
         'bytes',
-        'address',
         'address'
       ],
       [
         recoveryInfo,
         s,
-        timelockAddress,
         timelockAddress
       ]
     )
@@ -153,13 +149,11 @@ describe('Recovery complex tests', function () {
       [
         'tuple(address[], uint)',
         'bytes',
-        'address',
         'address'
       ],
       [
         recoveryInfo,
         s,
-        timelockAddress,
         timelockAddress
       ]
     )
@@ -195,24 +189,24 @@ describe('Recovery complex tests', function () {
     const recoveryTxns = [getPriviledgeTxn(ambireAccountAddress, addressFour)]
     const msgHash = ethers.keccak256(
       abiCoder.encode(['address', 'uint', 'uint', 'tuple(address, uint, bytes)[]'], [ambireAccountAddress, chainId, nonce, recoveryTxns])
-    )
-    const msg = ethers.getBytes(msgHash)
-    const s = wrapEthSign(await wallet2.signMessage(msg))
+    )    
+    const s = wrapEthSign(await wallet2.signMessage(ethers.getBytes(msgHash)))
     const signature = abiCoder.encode(
       [
         'tuple(address[], uint)',
         'bytes',
-        'address',
         'address'
       ],
       [
         recoveryInfo,
         s,
-        timelockAddress,
         timelockAddress
       ]
     )
     const ambireSignature = wrapRecover(signature)
+
+    const confirmNoScheduled = await contract.scheduledRecoveries(msgHash)
+    expect(confirmNoScheduled.toString()).toBe('0')
 
     // schedule
     const scheduleTxn = await contract.execute(recoveryTxns, ambireSignature)
@@ -223,8 +217,24 @@ describe('Recovery complex tests', function () {
     expect(recovery.toString()).toBe((block.timestamp + timelock).toString())
 
     // cancel
-    const cancelSignature = wrapCancel(signature)
-    const cancelTxn = await contract.execute(recoveryTxns, cancelSignature)
+    await new Promise(r => setTimeout(r, 500)) //sleep
+    const cancelHash = ethers.keccak256(abiCoder.encode(['bytes32', 'uint'], [msgHash, '0x63616E63']))
+    const cancelSig = wrapEthSign(await wallet2.signMessage(ethers.getBytes(cancelHash)))
+    const cancelSignature = abiCoder.encode(
+      [
+        'tuple(address[], uint)',
+        'bytes',
+        'address'
+      ],
+      [
+        recoveryInfo,
+        cancelSig,
+        timelockAddress
+      ]
+    )
+
+    const wrapped = wrapCancel(cancelSignature)
+    const cancelTxn = await contract.execute(recoveryTxns, wrapped)
     await wait(wallet, cancelTxn)
     const canceled = await contract.scheduledRecoveries(msgHash)
     expect(canceled.toString()).toBe('0')
@@ -246,13 +256,11 @@ describe('Recovery complex tests', function () {
       [
         'tuple(address[], uint)',
         'bytes',
-        'address',
         'address'
       ],
       [
         recoveryInfo,
         s,
-        timelockAddress,
         timelockAddress
       ]
     )
@@ -289,13 +297,11 @@ describe('Recovery complex tests', function () {
       [
         'tuple(address[], uint)',
         'bytes',
-        'address',
         'address'
       ],
       [
         recoveryInfo,
         s,
-        timelockAddress,
         timelockAddress
       ]
     )
@@ -352,13 +358,11 @@ describe('Bigger timelock recovery tests', function() {
       [
         'tuple(address[], uint)',
         'bytes',
-        'address',
         'address'
       ],
       [
         recoveryInfo,
         s,
-        timelockAddress,
         timelockAddress
       ]
     )
@@ -402,13 +406,11 @@ describe('Bricking Recovery', function() {
     [
         'tuple(address[], uint)',
         'bytes',
-        'address',
         'address'
     ],
     [
         recoveryInfo,
         s,
-        timelockAddress,
         timelockAddress
     ]
     )
