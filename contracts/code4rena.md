@@ -16,8 +16,8 @@ _The Web3 wallet that makes crypto self-custody easy and secure for everyone._
 - Join [C4 Discord](https://discord.gg/EY5dvm3evD) to register
 - Submit findings [using the C4 form](https://code423n4.com/2021-10-Ambire-contest/submit)
 - [Read our guidelines for more details](https://docs.code4rena.com/roles/wardens)
-- Starts October 15, 2021 00:00 UTC
-- Ends October 17, 2021 23:59 UTC
+- Starts May 22, 2023 20:00 UTC
+- Ends May 25, 2023 20:0 UTC
 
 # Hello Wardens 👋
 
@@ -49,7 +49,7 @@ This very system is used by `QuickAccManager`, which is a simple 2/2 multisig, t
 
 There are two ways for a user bundle to get executed:
 * Directly, when a user's EOA pays for gas
-* Through a Relayer that takes the signed message that authorizes a user bundle, and broadcasts it itself, paying for gas. The user bundle will have to contain an ERC20 transaction that pays the Relayer to reimburse it for gas. Currently we have a proprietary relayer that does all of this.
+* Through a Relayer that takes the signed message that authorizes a user bundle, and broadcasts it itself, paying for gas. The user bundle will have to contain an ERC-20 transaction that pays the Relayer to reimburse it for gas. Currently we have a proprietary relayer that does all of this.
 
 The actual proxy for each account is deployed counterfactually, when the first user bundle is executed.
 
@@ -86,14 +86,14 @@ There's a few methods that can only be called by the AmbireAccount itself, which
 It's only dependency is an internal one, `SignatureValidator`.
 
 ### SignatureValidator.sol
-Validates signatures in a few modes: EIP 712, EthSign, SmartWallet and Spoof. The first two verify signed messages using `ecrecover`, the only difference being that EthSign expects the "Ethereum signed message:" prefix. SmartWallet is for ERC 1271 signatures (smart contract signatures), and Spoof is for spoofed signatures that only work when `tx.origin == address(1)`.
+Validates signatures in a few modes: EIP-712, EthSign, SmartWallet and Spoof. The first two verify signed messages using `ecrecover`, the only difference being that EthSign expects the "Ethereum signed message:" prefix. SmartWallet is for ERC-1271 signatures (smart contract signatures), and Spoof is for spoofed signatures that only work when `tx.origin == address(1)`.
 
 ### AmbireAccountFactory.sol
 A simple CREATE2 factory contract designed to deploy minimal proxies for users. The most notable point here is `deploySafe`, which is a method that protects us from griefing conditions: `CREATE2` will fail if a contract has already been deployed, and this method essentially ensures a contract is deployed without failing if it already is.
 
 The use case of this is counterfactual deployment: the proxy of each account will be deployed when the first user bundle is executed, but we don't want to fail the whole bundle in case the contract has already been deployed.
 
-There is a method to drain the contract of ERC20 tokens.
+There is a method to drain the contract of ERC-20 tokens.
 
 ### wallet/QuickAccManager.sol
 This contract facilitates a 2/2 multisig scheme described in the aforementioned security model document.
@@ -109,11 +109,11 @@ And two EIP-712 methods: `sendTransfer` and `sendTxns`, which only allow 2/2 sig
 
 **NOTE**: "bundle"/"user bundle" in this context means array of AmbireAccount-level transactions (`AmbireAccount.Transaction[]`)
 
-* **QuickAccManager security model**: QuickAccManager allows users to control their wallets through a 2/2 multisig (see [security model](https://gist.github.com/Ivshti/fe86f13c3adff3404a1f5ce1e364304c)), with one of the keys in their own custody and the other key on the Ambire Relayer, with a possibility of the user backing it up. Timelocked transactions can be sent or cancelled by only 1/2 keys. This means that if the Ambire key is compromised AND lost, the attacker can cause grief by cancelling every attempt of the user to recover their funds. This can be avoided if the user backs up their key, which we recommend anyway for guaranteed full custody.
+* **Account recovery security model**: QuickAccManager allows users to control their wallets through a 2/2 multisig (see [security model](https://gist.github.com/Ivshti/fe86f13c3adff3404a1f5ce1e364304c)), with one of the keys in their own custody and the other key on the Ambire Relayer, with a possibility of the user backing it up. Timelocked transactions can be sent or cancelled by only 1/2 keys. This means that if the Ambire key is compromised AND lost, the attacker can cause grief by cancelling every attempt of the user to recover their funds. This can be avoided if the user backs up their key, which we recommend anyway for guaranteed full custody.
 * **Storing additional data in `privileges`:** instead of boolean values, we use `bytes32` for the `privileges` mapping and treat any nonzero value as `true`. This is because we utilize the storage space for periphery contracts such as `QuickAccManager` or a planned `MultiSigManager` in the future. Utilizing a storage slot has the same gas costs no matter if `true` or hash is stored.
-* **ERC20 fees taken through the transaction batch:** there's no special mechanism for reimbursing the relayer for the gas fee. Instead, the relayer looks at the bundle (`Transactions[]`) and sees if one or more of those transactions are ERC20 `transfer`s that send tokens to it. The relayer is responsible for checking whether the fee token and amount is acceptable for it, as well as checking it the transaction will execute before broadcasting it to the mempool. This is also a tradeoff cause the internal transactions may fail, in which case the whole bundle reverts and the fee is not paid, but the relayer will pay for gas. This is worked around on the Relayer end by utilizing Flashbots and Eden to avoid mining failing transactions, and by simulating the transactions right before trying to mine them. The reason we don't try/catch the errors int he `AmbireAccount` is because we want user bundles to succeed/fail as a whole (atomically), and the transaction to show as failing on Etherscan.
+* **ERC-4337 support left for a later stage:** while we do have ERC-4337 support [implemented](https://github.com/AmbireTech/wallet/blob/v2-improvements/contracts/ERC4337Manager.sol), we are choosing not to include it in the scope so as to keep things simple for the intial launch, which will use our own relayer instead of ERC-4337 anyway
+* **ERC-20 fees taken through the transaction batch:** there's no special mechanism for reimbursing the relayer for the gas fee. Instead, the relayer looks at the bundle (`Transactions[]`) and sees if one or more of those transactions are ERC-20 `transfer`s that send tokens to it. The relayer is responsible for checking whether the fee token and amount is acceptable for it, as well as checking it the transaction will execute before broadcasting it to the mempool. This is also a tradeoff cause the internal transactions may fail, in which case the whole bundle reverts and the fee is not paid, but the relayer will pay for gas. This is worked around on the Relayer end by utilizing Flashbots and Eden to avoid mining failing transactions, and by simulating the transactions right before trying to mine them. The reason we don't try/catch the errors int he `AmbireAccount` is because we want user bundles to succeed/fail as a whole (atomically), and the transaction to show as failing on Etherscan.
 * **Signature spoof mode:** the `SignatureValidator.sol` contract has a mode which allows signatures to be spoofed. The purpose of this is to allow easier simulation through `eth_call` and `eth_estimateGas` before having a signature from the user, since without this we would have a cyclical dependency that takes two steps to resolve (fee is unknown, user signs once to estimate the fee, then user signs a second time cause the bundle changed). This spoofing should not be allowed when calling through anywhere else other than `AmbireAccount(account).execute`, and it only works if `tx.origin == address(1)`.
-* **QuickAccManager bricking:** an account may be bricked by changing the `privileges[quickAccManager]` entry to a different value; this is something that has to be tackled off-chain, and it's a fundamental issue of such contracts in general
 * **Signature validation before deployment:** due to the nature of EIP 1271, signatures cannot be validated before the user account is deployed. In Ambire, the user account (proxy) is deployed when the user performs their first transaction.
 
 ## How to run the tests
