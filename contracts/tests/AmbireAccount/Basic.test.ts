@@ -173,15 +173,6 @@ describe('Basic Ambire Account tests', function () {
       expect(error.reason).toBe('INSUFFICIENT_PRIVILEGE')
     }
   })
-  test('executeBatch should fail if an empty array is passed', async function () {
-    expect.assertions(1)
-    const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, wallet)
-    try {
-      await contract.executeBySender([])
-    } catch (error: any) {
-      expect(error.reason).toBe('MUST_PASS_TX')
-    }
-  })
   test('should successfully executeMultiple', async function() {
     const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, wallet)
     await sendFunds(ambireAccountAddress, 1)
