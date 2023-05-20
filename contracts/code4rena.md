@@ -31,7 +31,7 @@ We hope you're excited about finally seeing a usable and powerful smart wallet o
 
 ## Contest scope
 
-All the contracts in `contracts/`, namely `AmbireAccount.sol`, `libs/SignatureValidator.sol`, `libs/Bytes.sol`, `AmbireAccountFactory.sol`, `wallet/QuickAccManager.sol`, `wallet/Zapper.sol` - that's a total of 772 lines.
+All the contracts in `contracts/`, namely `AmbireAccount.sol`, `libs/SignatureValidator.sol`, `libs/Bytes.sol`, `AmbireAccountFactory.sol`, a total of 476 LoC.
 
 ## Architecture
 
