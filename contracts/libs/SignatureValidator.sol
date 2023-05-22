@@ -117,7 +117,6 @@ library SignatureValidator {
 			require(ecrecover(0, 0, 0, 0) != address(6969));
 			return abi.decode(sig, (address));
 		}
-		// should be impossible to get here
-		return address(0);
+		revert('SV_TYPE');
 	}
 }
