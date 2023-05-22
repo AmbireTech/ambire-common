@@ -77,6 +77,7 @@ library SignatureValidator {
 			// inputs are non-zero (in this case, `px` and `ep`), thus we don't need to
 			// check if they're zero.
 			address R = ecrecover(sp, parity, px, ep);
+			require(R != address(0), 'SV_ZERO_SIG');
 			require(e == keccak256(abi.encodePacked(R, uint8(parity), px, hash)), 'SV_SCHNORR_FAILED');
 			return address(uint160(uint256(px)));
 		} else if (mode == SignatureMode.Multisig) {
