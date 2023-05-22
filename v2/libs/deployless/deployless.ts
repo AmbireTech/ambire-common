@@ -95,7 +95,7 @@ export class Deployless {
 		}
 
 		const callData = this.iface.encodeFunctionData(methodName, args)
-		const callPromise = (this.stateOverrideSupported && !forceProxy)
+		const callPromise = (!!this.stateOverrideSupported && !forceProxy)
 			? (this.provider as JsonRpcProvider).send('eth_call', [
 				{ to: arbitraryAddr, data: callData, from: opts.from },
 				opts.blockTag,

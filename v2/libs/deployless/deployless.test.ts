@@ -1,6 +1,6 @@
 import { AbiCoder, JsonRpcProvider, concat, getDefaultProvider, toBeHex } from 'ethers'
 import { compile } from './compile'
-import { addressOne } from '../../../test/config'
+import { addressOne, provider } from '../../../test/config'
 import { Deployless, DeploylessMode } from './deployless'
 import { describe, expect, test } from '@jest/globals'
 
@@ -18,10 +18,11 @@ describe('Deployless', () => {
   })
 
   test('should invoke a method: proxy mode', async () => {
-    const [ result ] = await deployless.call('helloWorld', [], { mode: DeploylessMode.ProxyContract })
+    const localDeployless = new Deployless(provider, helloWorld.abi, helloWorld.bytecode)
+    const [ result ] = await localDeployless.call('helloWorld', [], { mode: DeploylessMode.ProxyContract })
     expect(result).toBe('hello world')
     // We still haven't detected support for state override
-    expect(deployless.isLimitedAt24kbData).toBe(true)
+    expect(localDeployless.isLimitedAt24kbData).toBe(true)
   })
 
   test('should invoke a method: detect mode', async () => {
@@ -50,9 +51,9 @@ describe('Deployless', () => {
   })
 
   test('should deploy error: proxy mode', async () => {
-    const deployless = new Deployless(mainnetProvider, helloWorld.abi, deployErrBin)
+    const localDeployless = new Deployless(provider, helloWorld.abi, deployErrBin)
     expect.assertions(1)
-    try { await deployless.call('helloWorld', [], { mode: DeploylessMode.ProxyContract }) } catch (e: any) {
+    try { await localDeployless.call('helloWorld', [], { mode: DeploylessMode.ProxyContract }) } catch (e: any) {
       expect(e.message).toBe('contract deploy failed')
     }
   })
@@ -107,7 +108,7 @@ describe('Deployless', () => {
       megaLargeCode += bytecodeAndArgs.substring(2)
       i--
     }
-    const contract = new Deployless(mainnetProvider, factory.abi, megaLargeCode, factory.deployBytecode)
+    const contract = new Deployless(provider, factory.abi, megaLargeCode, factory.deployBytecode)
     try { await contract.call('deploy', [bytecodeAndArgs, '1234'], {mode: DeploylessMode.ProxyContract}) } catch (e: any) {
       expect(e.message).toBe('24kb call data size limit reached, use StateOverride mode')
     }
