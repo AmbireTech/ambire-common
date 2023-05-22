@@ -115,14 +115,19 @@ describe('Recovery basic schedule and execute', function () {
       ]
     )
     const ambireSignature = wrapRecover(signature)
+
     let resultTxn
-    try {
-      resultTxn = await contract.execute(recoveryTxns, ambireSignature)
-    } catch (e: any) {
-      await new Promise(r => setTimeout(r, 1000)) //sleep
-      resultTxn = await contract.execute(recoveryTxns, ambireSignature)
+    let tryToFinalize = 5
+    while (tryToFinalize > 0) {
+      try {
+        resultTxn = await contract.execute(recoveryTxns, ambireSignature)
+        break
+      } catch (e: any) {
+        tryToFinalize--
+        await new Promise(r => setTimeout(r, 1000)) //sleep
+      }
     }
-    
+
     await wait(wallet, resultTxn)
     const recovery = await contract.scheduledRecoveries(msgHash)
     expect(recovery.toString()).to.equal('0')
