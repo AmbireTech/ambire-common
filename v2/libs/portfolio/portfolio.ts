@@ -57,7 +57,7 @@ export class Portfolio {
 				return { queueSegment, url }
 			})
 		})
-		this.batchedGecko = batcher(fetch, geckoRequestBatcher) 
+		this.batchedGecko = batcher(fetch, geckoRequestBatcher)
 		this.network = network
 		this.deploylessTokens = new Deployless(provider, balanceOracle.abi, balanceOracle.bin, network.rpcNoStateOverride ? undefined : balanceOracle.binRuntime)
 		this.deploylessNfts = new Deployless(provider, nftOracle.abi, nftOracle.bin, network.rpcNoStateOverride ? undefined : nftOracle.binRuntime)
@@ -86,19 +86,34 @@ export class Portfolio {
 		const limits = this.deploylessTokens.isLimitedAt24kbData ? LIMITS.deploylessProxyMode : LIMITS.deploylessStateOverrideMode
 		const collectionsHints = Object.entries(hints.erc721s)
 		// Get balances and metadata from the provider directly
-		const [ tokensWithErr, collectionsRaw ] = await Promise.all([
-			flattenResults(paginate(hints.erc20s, limits.erc20)
-				.map(page => getTokens(this.network, this.deploylessTokens, opts, accountAddr, page))),
-			flattenResults(paginate(collectionsHints, limits.erc721)
-				.map(async page => (await this.deploylessNfts.call('getAllNFTs', [
-					accountAddr,
-					page.map(([address]) => address),
-					page.map(
-						([_, x]) => x.enumerable ? [] : x.tokens.slice(0, limits.erc721TokensInput)
-					),
-					limits.erc721Tokens
-				], deploylessOpts))[0]))
-		])
+		
+		const tokensWithErr = await flattenResults(paginate(hints.erc20s, limits.erc20)
+			.map(page => getTokens(this.network, this.deploylessTokens, opts, accountAddr, page)))
+			
+		const collectionsRaw = await flattenResults(paginate(collectionsHints, limits.erc721)
+			.map(async page => (await this.deploylessNfts.call('getAllNFTs', [
+				accountAddr,
+				page.map(([address]) => address),
+				page.map(
+					([_, x]) => x.enumerable ? [] : x.tokens.slice(0, limits.erc721TokensInput)
+				),
+				limits.erc721Tokens
+			], deploylessOpts))[0]))
+		
+		// const [ tokensWithErr, collectionsRaw ] = await Promise.all([
+		// 	flattenResults(paginate(hints.erc20s, limits.erc20)
+		// 		.map(page => getTokens(this.network, this.deploylessTokens, opts, accountAddr, page))),
+		// 	flattenResults(paginate(collectionsHints, limits.erc721)
+		// 		.map(async page => (await this.deploylessNfts.call('getAllNFTs', [
+		// 			accountAddr,
+		// 			page.map(([address]) => address),
+		// 			page.map(
+		// 				([_, x]) => x.enumerable ? [] : x.tokens.slice(0, limits.erc721TokensInput)
+		// 			),
+		// 			limits.erc721Tokens
+		// 		], deploylessOpts))[0]))
+		// ])		
+
 		// Re-map/filter into our format
 		const getPriceFromCache = (address: string) => {
 			const cached = priceCache.get(address)
