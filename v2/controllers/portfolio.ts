@@ -50,7 +50,6 @@ class PortfolioController {
 			}
 			const portfolioLib = this.portfolioLibs.get(key)!
 			// @TODO full state handling
-			// @TODO priceCache caching
 			// @TODO discoveredTokens fallback
 			if (!accountState.get(network.id)) accountState.set(network.id, { isReady: false, isLoading: false })
 			const state = accountState.get(network.id)!
