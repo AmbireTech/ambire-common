@@ -77,8 +77,9 @@ library SignatureValidator {
 			// inputs are non-zero (in this case, `px` and `ep`), thus we don't need to
 			// check if they're zero.
 			address R = ecrecover(sp, parity, px, ep);
-			require(R != address(0), 'ecrecover failed');
-			return e == keccak256(abi.encodePacked(R, uint8(parity), px, hash)) ? address(uint160(uint256(px))) : address(0);
+			require(R != address(0), 'SV_ZERO_SIG');
+			require(e == keccak256(abi.encodePacked(R, uint8(parity), px, hash)), 'SV_SCHNORR_FAILED');
+			return address(uint160(uint256(px)));
 		} else if (mode == SignatureMode.Multisig) {
 			sig.trimToSize(sig.length - 1);
 			bytes[] memory signatures = abi.decode(sig, (bytes[]));
@@ -88,6 +89,7 @@ library SignatureValidator {
 					uint160(uint256(keccak256(abi.encodePacked(signer, recoverAddrImpl(hash, signatures[i], false)))))
 				);
 			}
+			require(signer != address(0), 'SV_ZERO_SIG');
 			return signer;
 		} else if (mode == SignatureMode.SmartWallet) {
 			// 32 bytes for the addr, 1 byte for the type = 33
@@ -99,7 +101,9 @@ library SignatureValidator {
 			IERC1271Wallet wallet = IERC1271Wallet(address(uint160(uint256(sig.readBytes32(newLen)))));
 			sig.trimToSize(newLen);
 			require(ERC1271_MAGICVALUE_BYTES32 == wallet.isValidSignature(hash, sig), 'SV_WALLET_INVALID');
-			return address(wallet);
+			address signer = address(wallet);
+			require(signer != address(0), 'SV_ZERO_SIG');
+			return signer;
 			// {address}{mode}; the spoof mode is used when simulating calls
 		} else if (mode == SignatureMode.Spoof && allowSpoofing) {
 			// This is safe cause it's specifically intended for spoofing sigs in simulation conditions, where tx.origin can be controlled
@@ -113,7 +117,6 @@ library SignatureValidator {
 			require(ecrecover(0, 0, 0, 0) != address(6969));
 			return abi.decode(sig, (address));
 		}
-		// should be impossible to get here
-		return address(0);
+		revert('SV_TYPE');
 	}
 }

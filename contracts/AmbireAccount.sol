@@ -52,8 +52,8 @@ contract AmbireAccount {
 	}
 
 	// Recovery mode constants
-	uint8 private constant SIGMODE_RECOVER = 254;
-	uint8 private constant SIGMODE_CANCEL = 255;
+	uint8 private constant SIGMODE_CANCEL = 254;
+	uint8 private constant SIGMODE_RECOVER = 255;
 
 	constructor(address[] memory addrs) {
 		uint256 len = addrs.length;
@@ -111,9 +111,6 @@ contract AmbireAccount {
 	// a hash of the recovery keys and timelock (see `RecoveryInfo`) to enable recovery signatures
 	function setAddrPrivilege(address addr, bytes32 priv) external payable {
 		require(msg.sender == address(this), 'ONLY_IDENTITY_CAN_CALL');
-		// Anti-bricking measure: if the privileges slot is used for special data (not 0x01),
-		// don't allow to set it to true
-		if (uint(privileges[addr]) > 1) require(priv != bytes32(uint(1)), 'UNSETTING_SPECIAL_DATA');
 		privileges[addr] = priv;
 		emit LogPrivilegeChanged(addr, priv);
 	}
@@ -146,25 +143,23 @@ contract AmbireAccount {
 
 		if (sigMode == SIGMODE_RECOVER || sigMode == SIGMODE_CANCEL) {
 			(bytes memory sig, ) = SignatureValidator.splitSignature(signature);
-			(
-				RecoveryInfo memory recoveryInfo,
-				bytes memory innerRecoverySig,
-				address signerKeyToRecover,
-				address signerKeyToCheckPostRecovery
-			) = abi.decode(sig, (RecoveryInfo, bytes, address, address));
+			(RecoveryInfo memory recoveryInfo, bytes memory innerRecoverySig, address signerKeyToRecover) = abi.decode(
+				sig,
+				(RecoveryInfo, bytes, address)
+			);
+			signerKey = signerKeyToRecover;
 			bool isCancellation = sigMode == SIGMODE_CANCEL;
 			bytes32 recoveryInfoHash = keccak256(abi.encode(recoveryInfo));
 			require(privileges[signerKeyToRecover] == recoveryInfoHash, 'RECOVERY_NOT_AUTHORIZED');
-			uint256 scheduled = scheduledRecoveries[hash];
 
+			uint256 scheduled = scheduledRecoveries[hash];
 			if (scheduled != 0 && !isCancellation) {
-				// signerKey is set to signerKeyToCheckPostRecovery so that the anti-bricking check can pass
-				signerKey = signerKeyToCheckPostRecovery;
 				require(block.timestamp > scheduled, 'RECOVERY_NOT_READY');
 				delete scheduledRecoveries[hash];
 				emit LogRecoveryFinalized(hash, recoveryInfoHash, block.timestamp);
 			} else {
-				address recoveryKey = SignatureValidator.recoverAddrImpl(hash, innerRecoverySig, true);
+				bytes32 hashToSign = isCancellation ? keccak256(abi.encode(hash, 0x63616E63)) : hash;
+				address recoveryKey = SignatureValidator.recoverAddrImpl(hashToSign, innerRecoverySig, true);
 				bool isIn;
 				for (uint256 i = 0; i < recoveryInfo.keys.length; i++) {
 					if (recoveryInfo.keys[i] == recoveryKey) {
@@ -220,7 +215,6 @@ contract AmbireAccount {
 	}
 
 	function executeBatch(Transaction[] memory txns) internal {
-		require(txns.length > 0, 'MUST_PASS_TX');
 		uint256 len = txns.length;
 		for (uint256 i = 0; i < len; i++) {
 			Transaction memory txn = txns[i];
