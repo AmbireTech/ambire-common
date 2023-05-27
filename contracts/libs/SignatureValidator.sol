@@ -72,7 +72,7 @@ library SignatureValidator {
 			bytes32 sp = bytes32(Q - mulmod(uint256(s), uint256(px), Q));
 			bytes32 ep = bytes32(Q - mulmod(uint256(e), uint256(px), Q));
 
-			require(sp != 0);
+			require(sp != bytes32(Q));
 			// the ecrecover precompile implementation checks that the `r` and `s`
 			// inputs are non-zero (in this case, `px` and `ep`), thus we don't need to
 			// check if they're zero.
