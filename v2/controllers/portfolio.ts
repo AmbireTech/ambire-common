@@ -1,4 +1,5 @@
 import { Portfolio } from '../libs/portfolio/portfolio'
+import { TokenResult } from '../libs/portfolio/interfaces'
 import { Storage } from '../interfaces/storage'
 import { NetworkDescriptor } from '../interfaces/networkDescriptor'
 import { Account } from '../interfaces/account'
@@ -58,6 +59,8 @@ class PortfolioController {
 			state.isLoading = true
 			try {
 				const results = await portfolioLib.update(accountId, { priceRecency: 60000, priceCache: state.priceCache })
+				const previousHints = getHints(results)
+				console.log(previousHints)
 				accountState.set(network.id, { isReady: true, isLoading: false, ...results })
 			} catch (e) {
 				state.isLoading = false
@@ -71,7 +74,14 @@ class PortfolioController {
 	}
 }
 
-
+function getHints(results: { tokens: TokenResult[], collections: TokenResult[] }) {
+	return {
+		erc20s: results.tokens.map((x: TokenResult) => x.address),
+		erc721s: Object.fromEntries(results.collections.map(
+			(x: TokenResult) => [x.address, { tokens: x.collectables!.map(y => `${y.id}`) }]
+		))
+	}
+}
 
 // @TODO: move this into utils
 function produceMemoryStore(): Storage {
