@@ -31,7 +31,7 @@ function generateQueueElement(opt: QueueElementOption): void {
 describe('Gecko batcher tests for url and segment', () => {
     beforeEach(() => queue = [])
 
-	test('should group the requets by baseCurrency (same chain): 1 request with 3 segments for usd tokens; 1 request for native with usd; 1 request with 1 segment for eur tokens', async () => {
+    test('should group the requets by baseCurrency (same chain): 1 request with 3 segments for usd tokens; 1 request for native with usd; 1 request with 1 segment for eur tokens', async () => {
         generateQueueElement({
             symbol: 'USDC',
             address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
@@ -58,7 +58,7 @@ describe('Gecko batcher tests for url and segment', () => {
             baseCurrency: 'eur'
         })
 
-		const result = geckoRequestBatcher(queue)
+        const result = geckoRequestBatcher(queue)
         expect(result.length).toBe(3)
         expect(result[0].queueSegment.length).toBe(3)
         const contractAddresses = result[0].url.substring(
@@ -84,7 +84,7 @@ describe('Gecko batcher tests for url and segment', () => {
         expect(contractAddressesEuro.length).toBe(42)
         const baseCurrencyThree = result[2].url.substring(result[2].url.indexOf('vs_currencies=') + "vs_currencies=".length)
         expect(baseCurrencyThree).toBe('eur')
-	})
+    })
 
     test('should not group the requets by baseCurrency if they are on different chains', async () => {
         expect.assertions(7)
@@ -101,7 +101,7 @@ describe('Gecko batcher tests for url and segment', () => {
             networkId: 'polygon'
         })
 
-		const result = geckoRequestBatcher(queue)
+        const result = geckoRequestBatcher(queue)
         expect(result.length).toBe(2)
 
         result.map((el) => {
@@ -114,7 +114,7 @@ describe('Gecko batcher tests for url and segment', () => {
             let baseCurr = el.url.substring(el.url.indexOf('vs_currencies=') + "vs_currencies=".length)
             expect(baseCurr).toBe('usd')
         })
-	})
+    })
 
     test('should remove duplicates - token version', async () => {
         generateQueueElement({
@@ -128,7 +128,7 @@ describe('Gecko batcher tests for url and segment', () => {
             decimals: [6],
         })
 
-		const result = geckoRequestBatcher(queue)
+        const result = geckoRequestBatcher(queue)
         expect(result.length).toBe(1)
         expect(result[0].queueSegment.length).toBe(2)
         const contractAddress = result[0].url.substring(
@@ -136,7 +136,7 @@ describe('Gecko batcher tests for url and segment', () => {
             result[0].url.indexOf('&vs_currencies=')
         )
         expect(contractAddress.length).toBe(42)
-	})
+    })
 
     test('should remove duplicates - native version', async () => {
         generateQueueElement({
@@ -148,7 +148,7 @@ describe('Gecko batcher tests for url and segment', () => {
             address: '0x0000000000000000000000000000000000000000',
         })
 
-		const result = geckoRequestBatcher(queue)
+        const result = geckoRequestBatcher(queue)
         expect(result.length).toBe(1)
         expect(result[0].queueSegment.length).toBe(2)
         const contractAddress = result[0].url.substring(
@@ -156,16 +156,16 @@ describe('Gecko batcher tests for url and segment', () => {
             result[0].url.indexOf('&vs_currencies=')
         )
         expect(contractAddress).toBe('ethereum')
-	})
+    })
 
     // to do: test not passing a token address or another property - it should probably throw an error?
 })
 
 describe('Gecko execute batcher tests', () => {
-	test('should execute the batcher and correctly fetch the prices for native and erc20 in usd and eur', async () => {
+    test('should execute the batcher and correctly fetch the prices for native and erc20 in usd and eur', async () => {
         const batchedGecko = batcher(fetch, geckoRequestBatcher)
         const [resultOne, resultTwo, resultThree, resultFour, resultFive] = await Promise.all([
-		    batchedGecko(
+            batchedGecko(
                 getQueueElement({
                     symbol: 'USDC',
                     address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
@@ -199,11 +199,11 @@ describe('Gecko execute batcher tests', () => {
                     baseCurrency: 'eur'
                 })
             ),
-		])
+        ])
         expect(resultOne).toHaveProperty('usd')
         expect(resultTwo).toHaveProperty('usd')
         expect(resultThree).toHaveProperty('usd')
         expect(resultFour).toHaveProperty('eur')
         expect(resultFive).toHaveProperty('eur')
-	})
+    })
 })
