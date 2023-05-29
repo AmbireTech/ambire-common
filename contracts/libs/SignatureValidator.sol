@@ -79,7 +79,7 @@ library SignatureValidator {
 			address R = ecrecover(sp, parity, px, ep);
 			require(R != address(0), 'SV_ZERO_SIG');
 			require(e == keccak256(abi.encodePacked(R, uint8(parity), px, hash)), 'SV_SCHNORR_FAILED');
-			return address(uint160(uint256(px)));
+			return address(uint160(uint256(keccak256(abi.encodePacked('SCHNORR', px)))));
 		} else if (mode == SignatureMode.Multisig) {
 			sig.trimToSize(sig.length - 1);
 			bytes[] memory signatures = abi.decode(sig, (bytes[]));

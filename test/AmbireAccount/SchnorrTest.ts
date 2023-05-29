@@ -7,7 +7,8 @@ import {
   invalidSig,
   wallet,
   expect,
-  assertion
+  assertion,
+  abiCoder
 } from '../config'
 import {wrapSchnorr} from '../ambireSign'
 import { wait } from '../polling'
@@ -22,7 +23,8 @@ const schnorrkel = new Schnorrkel()
 function getSchnorrAddress() {
   const publicKey = ethers.getBytes(ethers.SigningKey.computePublicKey(ethers.getBytes(pk1), true))
   const px = ethers.toQuantity(publicKey.slice(1, 33))
-  return '0x' + px.slice(px.length - 40, px.length);
+  const hash = ethers.keccak256(ethers.solidityPacked(['string', 'bytes'], ['SCHNORR', px]))
+  return '0x' + hash.slice(hash.length - 40, hash.length);
 }
 
 let ambireAccountAddress: string
