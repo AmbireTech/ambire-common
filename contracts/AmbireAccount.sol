@@ -7,6 +7,9 @@ import './libs/SignatureValidator.sol';
 // is a wallet contract, and any ETH sent to it is not lost, but on the other hand not having `payable`
 // makes the Solidity compiler add an extra check for `msg.value`, which in this case is wasted gas
 contract AmbireAccount {
+	// @dev We do not have a constructor. This contract cannot be initialized with any valid `privileges` by itself!
+	// The indended use case is to deploy one base implementation contract, and create a minimal proxy for each user wallet, by
+	// using our own code generation to insert SSTOREs to initialize `privileges` (IdentityProxyDeploy.js)
 	address private constant FALLBACK_HANDLER_SLOT = address(0x6969);
 
 	// Variables
@@ -54,15 +57,6 @@ contract AmbireAccount {
 	// Recovery mode constants
 	uint8 private constant SIGMODE_CANCEL = 254;
 	uint8 private constant SIGMODE_RECOVER = 255;
-
-	constructor(address[] memory addrs) {
-		uint256 len = addrs.length;
-		for (uint256 i = 0; i < len; i++) {
-			// NOTE: privileges[] can be set to any arbitrary value, but for this we SSTORE directly through the proxy creator
-			privileges[addrs[i]] = bytes32(uint(1));
-			emit LogPrivilegeChanged(addrs[i], bytes32(uint(1)));
-		}
-	}
 
 	// This contract can accept ETH without calldata
 	receive() external payable {}
