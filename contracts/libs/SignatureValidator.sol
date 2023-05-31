@@ -61,6 +61,8 @@ library SignatureValidator {
 			return signer;
 			// {sig}{verifier}{mode}
 		} else if (mode == SignatureMode.Schnorr) {
+			// Based on https://hackmd.io/@nZ-twauPRISEa6G9zg3XRw/SyjJzSLt9
+			// You can use this library to produce signatures: https://github.com/borislav-itskov/schnorrkel.js
 			// px := public key x-coord
 			// e := schnorr signature challenge
 			// s := schnorr signature
