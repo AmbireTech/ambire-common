@@ -7,19 +7,21 @@ import {
   addressOne,
   addressTwo,
   chainId,
-  expect
+  expect,
+  deploySalt,
+  deployGasLimit,
+  buildInfo,
+  addressFour
 } from '../config'
 import { wait } from '../polling'
 import { wrapEthSign } from '../ambireSign'
-const salt = 0
+import { getProxyDeployBytecode, getStorageSlotsFromArtifact } from '../../v2/libs/proxyDeploy/deploy'
+import { getAmbireAccountAddress } from '../implementations'
 const abiCoder = new ethers.AbiCoder()
 
 let factoryAddress: string
 let factoryContract: any
-
-function getAmbireAccountAddress(bytecode: string) {
-  return ethers.getCreate2Address(factoryAddress, ethers.toBeHex(salt, 32), ethers.keccak256(bytecode))
-}
+let dummyBytecode: any
 
 describe('AmbireAccountFactory tests', function(){
   it('deploys the factory', async function(){
@@ -32,70 +34,65 @@ describe('AmbireAccountFactory tests', function(){
     factoryContract = new ethers.BaseContract(factoryAddress, AmbireAccountFactory.abi, wallet)
   })
   it('deploys the ambire account via the factory; no revert upon redeploy to same address', async function(){
-    const data = abiCoder.encode(['address[]'], [[addressOne]])
-    const bytecode = ethers.concat([
-      AmbireAccount.bytecode,
-      data
-    ])
-    const accountAddr = getAmbireAccountAddress(bytecode)
-    const factoryDeploy = await factoryContract.deploy(bytecode, salt)
+    const bytecode = AmbireAccount.bytecode
+    const accountAddr = getAmbireAccountAddress(factoryAddress, bytecode)
+    const factoryDeploy = await factoryContract.deploy(bytecode, deploySalt)
     await wait(wallet, factoryDeploy)
     const ambireAccount: any = new ethers.BaseContract(accountAddr, AmbireAccount.abi, wallet)
     const canSign = await ambireAccount.privileges(addressOne)
-    expect(canSign).to.equal('0x0000000000000000000000000000000000000000000000000000000000000001')
+    expect(canSign).to.equal('0x0000000000000000000000000000000000000000000000000000000000000000')
 
     // just confirm that no reverts happen
-    const reDeploy = await factoryContract.deploy(bytecode, salt)
+    const reDeploy = await factoryContract.deploy(bytecode, deploySalt)
     await wait(wallet, reDeploy)
   })
   it('deploy the contract and execute a transaction along with the deploy', async function(){
-    const data = abiCoder.encode(['address[]'], [[addressTwo]])
-    const bytecode = ethers.concat([
-      AmbireAccount.bytecode,
-      data
-    ])
-    const accountAddr = getAmbireAccountAddress(bytecode)
+    // take the correct bytecode
+    const ambireAccountFactory = new ethers.ContractFactory(AmbireAccount.abi, AmbireAccount.bytecode, wallet)
+    const contract: any = await ambireAccountFactory.deploy()
+    await wait(wallet, contract)
+    const bytecode = getProxyDeployBytecode(await contract.getAddress(), [{addr: addressTwo, hash: true}], {
+      ...getStorageSlotsFromArtifact(buildInfo)
+    })
+    dummyBytecode = bytecode
+    const ambireAccountAddress = getAmbireAccountAddress(factoryAddress, bytecode)
 
     const setAddrPrivilegeABI = [
       'function setAddrPrivilege(address addr, bytes32 priv)'
     ]
     const iface = new ethers.Interface(setAddrPrivilegeABI)
     const calldata = iface.encodeFunctionData('setAddrPrivilege', [ addressOne, ethers.toBeHex(1, 32) ])
-    const setPrivTxn = [[accountAddr, 0, calldata]]
+    const setPrivTxn = [[ambireAccountAddress, 0, calldata]]
     const msg = ethers.getBytes(ethers.keccak256(
-      abiCoder.encode(['address', 'uint', 'uint', 'tuple(address, uint, bytes)[]'], [accountAddr, chainId, 0, setPrivTxn])
+      abiCoder.encode(['address', 'uint', 'uint', 'tuple(address, uint, bytes)[]'], [ambireAccountAddress, chainId, 0, setPrivTxn])
     ))
     const s = wrapEthSign(await wallet2.signMessage(msg))
-    const factoryDeployAndExecute = await factoryContract.deployAndExecute(bytecode, salt, setPrivTxn, s)
+
+    const factoryDeployAndExecute = await factoryContract.deployAndExecute(bytecode, deploySalt, setPrivTxn, s, { deployGasLimit })
     await wait(wallet, factoryDeployAndExecute)
-    const ambireAccount: any = new ethers.BaseContract(accountAddr, AmbireAccount.abi, wallet)
+    const ambireAccount: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, wallet)
     const canSignOne = await ambireAccount.privileges(addressOne)
     expect(canSignOne).to.equal('0x0000000000000000000000000000000000000000000000000000000000000001')
     const canSignTwo = await ambireAccount.privileges(addressTwo)
     expect(canSignTwo).to.equal('0x0000000000000000000000000000000000000000000000000000000000000001')
   })
   it('deploy and execute on an already deployed contract - it should execute the call', async function(){
-    const data = abiCoder.encode(['address[]'], [[addressOne]])
-    const bytecode = ethers.concat([
-      AmbireAccount.bytecode,
-      data
-    ])
-    const accountAddr = getAmbireAccountAddress(bytecode)
+    const accountAddr = getAmbireAccountAddress(factoryAddress, dummyBytecode)
 
     const setAddrPrivilegeABI = [
       'function setAddrPrivilege(address addr, bytes32 priv)'
     ]
     const iface = new ethers.Interface(setAddrPrivilegeABI)
-    const calldata = iface.encodeFunctionData('setAddrPrivilege', [ addressTwo, ethers.toBeHex(1, 32) ])
+    const calldata = iface.encodeFunctionData('setAddrPrivilege', [ addressFour, ethers.toBeHex(1, 32) ])
     const setPrivTxn = [[accountAddr, 0, calldata]]
     const msg = ethers.getBytes(ethers.keccak256(
-      abiCoder.encode(['address', 'uint', 'uint', 'tuple(address, uint, bytes)[]'], [accountAddr, chainId, 0, setPrivTxn])
+      abiCoder.encode(['address', 'uint', 'uint', 'tuple(address, uint, bytes)[]'], [accountAddr, chainId, 1, setPrivTxn])
     ))
-    const s = wrapEthSign(await wallet.signMessage(msg))
-    const factoryDeployAndExecute = await factoryContract.deployAndExecute(bytecode, salt, setPrivTxn, s)
+    const s = wrapEthSign(await wallet2.signMessage(msg))
+    const factoryDeployAndExecute = await factoryContract.deployAndExecute(dummyBytecode, deploySalt, setPrivTxn, s)
     await wait(wallet, factoryDeployAndExecute)
     const ambireAccount: any = new ethers.BaseContract(accountAddr, AmbireAccount.abi, wallet)
-    const canSignTwo = await ambireAccount.privileges(addressTwo)
+    const canSignTwo = await ambireAccount.privileges(addressFour)
     expect(canSignTwo).to.equal('0x0000000000000000000000000000000000000000000000000000000000000001')
   })
 })
