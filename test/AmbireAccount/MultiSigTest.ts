@@ -12,7 +12,7 @@ import {
   expect,
 } from '../config'
 import {wrapEIP712, wrapMultiSig} from '../ambireSign'
-import { wait } from '../polling'
+import { deployAmbireAccount } from '../implementations'
 
 /**
  * Generate the multisig address that will have permissions to sign
@@ -30,21 +30,13 @@ function getMsAddress(accounts: string[] = []) {
 }
 
 let ambireAccountAddress: string
-async function deployAmbireAccount(accounts: string[] = []) {
-  const factory = new ethers.ContractFactory(AmbireAccount.abi, AmbireAccount.bytecode, wallet)
-  const msAddress = getMsAddress(accounts)
-  const contract: any = await factory.deploy([msAddress])
-  await wait(wallet, contract)
-  const isSigner = await contract.privileges(msAddress)
-  expect(isSigner).to.equal('0x0000000000000000000000000000000000000000000000000000000000000001')
-
-  ambireAccountAddress = await contract.getAddress()
-  return {contract}
-}
 
 describe('Two of two multisignature tests', function () {
   it('successfully deploys the ambire account', async function () {
-    await deployAmbireAccount()
+    const {ambireAccountAddress: addr} = await deployAmbireAccount([
+      {addr: getMsAddress(), hash: true}
+    ])
+    ambireAccountAddress = addr
   })
   it('validates successfully a basic two-of-two multisig test', async function () {
     const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, wallet)
@@ -112,7 +104,10 @@ describe('Two of two multisignature tests', function () {
 
 describe('Three of three multisignature tests', function () {
   it('successfully deploys the ambire account', async function () {
-    await deployAmbireAccount([addressOne, addressTwo, addressThree])
+    const {ambireAccountAddress: addr} = await deployAmbireAccount([
+      {addr: getMsAddress([addressOne, addressTwo, addressThree]), hash: true}
+    ])
+    ambireAccountAddress = addr
   })
   it('validates successfully a basic three-of-three multisig test', async function () {    
     const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, wallet)

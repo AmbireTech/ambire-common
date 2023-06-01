@@ -11,27 +11,21 @@ import {
   addressFour,
   provider,
   expect,
-  assertion,
+  assertion
 } from '../config'
 import { wait } from '../polling'
 import { sendFunds, getPriviledgeTxn, getTimelockData } from '../helpers'
 import { wrapEthSign } from '../ambireSign'
+import { deployAmbireAccount } from '../implementations'
 
 let ambireAccountAddress: string
-async function deployAmbireAccount() {
-  const factory = new ethers.ContractFactory(AmbireAccount.abi, AmbireAccount.bytecode, wallet)
-  const contract: any = await factory.deploy([addressOne])
-  await wait(wallet, contract)
-  expect(await contract.getAddress()).not.to.be.null
-  const isSigner = await contract.privileges(addressOne)
-  expect(isSigner).to.equal('0x0000000000000000000000000000000000000000000000000000000000000001')
-  ambireAccountAddress = await contract.getAddress()
-  return {contract}
-}
 
 describe('Basic Ambire Account tests', function () {
   it('successfully deploys the ambire account', async function () {
-    await deployAmbireAccount()
+    const {ambireAccountAddress: addr} = await deployAmbireAccount([
+      {addr: addressOne, hash: true}
+    ])
+    ambireAccountAddress = addr
   })
   it('ONLY_IDENTITY_CAN_CALL on setAddrPrivilege', async function () {
     assertion.expectExpects(1)

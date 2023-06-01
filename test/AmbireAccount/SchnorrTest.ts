@@ -4,14 +4,12 @@ import {
   pk2,
   AmbireAccount,
   validSig,
-  invalidSig,
   wallet,
   expect,
   assertion,
-  abiCoder
 } from '../config'
 import {wrapSchnorr} from '../ambireSign'
-import { wait } from '../polling'
+import { deployAmbireAccount } from '../implementations'
 const Schnorrkel = require('@borislav.itskov/schnorrkel.js')
 const schnorrkel = new Schnorrkel()
 
@@ -28,23 +26,13 @@ function getSchnorrAddress() {
 }
 
 let ambireAccountAddress: string
-async function deployAmbireAccount() {
-  const factory = new ethers.ContractFactory(AmbireAccount.abi, AmbireAccount.bytecode, wallet)
-  const schnorrAddress = getSchnorrAddress()
-
-  const contract: any = await factory.deploy([schnorrAddress])
-  await wait(wallet, contract)
-  expect(await contract.getAddress()).to.not.be.null
-  const isSigner = await contract.privileges(schnorrAddress)
-  expect(isSigner).to.equal('0x0000000000000000000000000000000000000000000000000000000000000001')
-
-  ambireAccountAddress = await contract.getAddress()
-  return {contract}
-}
 
 describe('Schnorr tests', function () {
   it('successfully deploys the ambire account', async function () {
-    await deployAmbireAccount()
+    const {ambireAccountAddress: addr} = await deployAmbireAccount([
+      {addr: getSchnorrAddress(), hash: true}
+    ])
+    ambireAccountAddress = addr
   })
   it('successfully validate a basic schnorr signature', async function () {
     const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, wallet)

@@ -23,6 +23,11 @@ const wallet3 = new ethers.Wallet(pk3, provider)
 const chainId = 31337
 const abiCoder = new ethers.AbiCoder()
 const assertion = chai.Assertion
+const deploySalt = 0
+const deployGasLimit = 1000000
+
+var normalizedPath = require("path").join(__dirname, "../artifacts/build-info");
+const buildInfo = require("../artifacts/build-info/" + require("fs").readdirSync(normalizedPath)[0]);
 
 export {
   pk1,
@@ -44,5 +49,8 @@ export {
   abiCoder,
   chainId,
   expect,
+  buildInfo,
+  deploySalt,
+  deployGasLimit,
   assertion
 }
