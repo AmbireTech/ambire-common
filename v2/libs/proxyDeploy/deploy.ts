@@ -51,6 +51,7 @@ export function getProxyDeployBytecode(masterContractAddr: string, privLevels: P
 }
 
 export function getStorageSlotsFromArtifact(buildInfo: any) {
+	if (!buildInfo) return { privSlot: 0}
 	const ambireAccountArtifact = buildInfo.output.sources['contracts/AmbireAccount.sol']
 	const identityNode = ambireAccountArtifact.ast.nodes.find(
 		(el: any) => el.nodeType === 'ContractDefinition' && el.name === 'AmbireAccount'

@@ -27,7 +27,8 @@ const deploySalt = 0
 const deployGasLimit = 1000000
 
 var normalizedPath = require("path").join(__dirname, "../artifacts/build-info");
-const buildInfo = require("../artifacts/build-info/" + require("fs").readdirSync(normalizedPath)[0]);
+const buildInfoFiles = require("../artifacts/build-info/" + require("fs").readdirSync(normalizedPath));
+const buildInfo = buildInfoFiles.length ? buildInfoFiles[0] : null;
 
 export {
   pk1,
