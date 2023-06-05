@@ -1,12 +1,13 @@
+/* eslint-disable new-cap */
 import aes from 'aes-js'
 import { concat, getBytes, hexlify, keccak256, randomBytes, toUtf8Bytes, Wallet } from 'ethers'
 import scrypt from 'scrypt-js'
 
+import { KeystoreSigner } from '../../interfaces/keystore'
 import { Storage } from '../../interfaces/storage'
 
 const scryptDefaults = { N: 262144, r: 8, p: 1, dkLen: 64 }
 const CIPHER = 'aes-128-ctr'
-const SUPPORTED_KEY_TYPES = ['internal', 'trezor', 'ledger', 'lattice']
 
 // @TODO
 // - use the storage interface that ambire-common uses
@@ -47,30 +48,44 @@ type MainKey = {
   iv: Uint8Array
 }
 
+type SupportedKeyTypes = 'internal' | 'trezor' | 'ledger' | 'lattice'
+
 type Key = {
   // normally in the form of an Ethereum address
   id: string
-  type: string
+  type: SupportedKeyTypes
   label: string
   isExternallyStored: boolean
   meta: object | null
 }
 type StoredKey = {
   id: string
-  type: string
+  type: SupportedKeyTypes
   label: string
   privKey: string | null
   // denotes additional info like HW wallet derivation path
   meta: object | null
 }
-// Not using class here because we can't encapsulate mainKey securely
+
+type KeystoreSignerType = (key: Key, privateKey?: string) => KeystoreSigner
+
+type KeystoreSignersType = {
+  internal: KeystoreSignerType
+  ledger?: KeystoreSignerType
+  trezor?: KeystoreSignerType
+  lattice?: KeystoreSignerType
+}
+
 export class Keystore {
   #mainKey: MainKey | null
 
   storage: Storage
 
-  constructor(_storage: Storage) {
+  keystoreSigners: KeystoreSignersType
+
+  constructor(_storage: Storage, _keystoreSigners: KeystoreSignersType) {
     this.storage = _storage
+    this.keystoreSigners = _keystoreSigners
     this.#mainKey = null
   }
 
@@ -189,7 +204,7 @@ export class Keystore {
     )
   }
 
-  async addKeyExternallyStored(id: string, type: string, label: string, meta: object) {
+  async addKeyExternallyStored(id: string, type: SupportedKeyTypes, label: string, meta: object) {
     const keys: [StoredKey] = await this.storage.get('keystoreKeys', [])
     keys.push({
       id,
@@ -230,6 +245,35 @@ export class Keystore {
       'keystoreKeys',
       keys.filter((x) => x.id !== id)
     )
+  }
+
+  async getSigner(keyId: string) {
+    const storedKey = (await this.storage.get('keystoreKeys', [])).find((x: StoredKey) => x.id === keyId) as StoredKey
+    const key = {
+      id: storedKey.id,
+      label: storedKey.label,
+      type: storedKey.type,
+      meta: storedKey.meta,
+      isExternallyStored: storedKey.type !== 'internal'
+    }
+
+    const initializer = this.keystoreSigners[key.type]
+    if (!initializer) throw new Error('keystore: unsupported singer')
+    if (key.type === 'internal' && !this.isUnlocked()) throw new Error('keystore: not unlocked')
+
+    if (key.type === 'internal') {
+      const encryptedBytes = aes.utils.hex.toBytes(storedKey.privKey as string)
+      // @ts-ignore
+      const counter = new aes.Counter(this.#mainKey.iv)
+      // @ts-ignore
+      const aesCtr = new aes.ModeOfOperation.ctr(this.#mainKey.key, counter)
+      const decryptedBytes = aesCtr.decrypt(encryptedBytes)
+      const decryptedPrivateKey = aes.utils.utf8.fromBytes(decryptedBytes)
+
+      return initializer(key, decryptedPrivateKey)
+    }
+
+    return initializer(key)
   }
 }
 function getBytesForSecret(secret: string): ArrayLike<number> {
