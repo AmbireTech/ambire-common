@@ -1,4 +1,5 @@
-import { ethers } from "ethers"
+import { BaseContract, ethers } from "ethers"
+const { ethers: hardhatEthers } = require('hardhat')
 import { wallet, addressOne, AmbireAccountFactory, AmbireAccount, expect, buildInfo, deploySalt, deployGasLimit, assertion } from "./config"
 import { wait } from "./polling"
 import { getProxyDeployBytecode, getStorageSlotsFromArtifact } from "../v2/libs/proxyDeploy/deploy"
@@ -43,7 +44,41 @@ async function deployAmbireAccount(priLevels: PrivLevels[]) {
   return {ambireAccount, ambireAccountAddress}
 }
 
+async function deployAmbireAccountHardhatNetwork(priLevels: PrivLevels[]) {
+  // assertion.expectExpects(1 + priLevels.length)
+
+  // deploy the factory
+  const contractFactory = await hardhatEthers.getContractFactory("AmbireAccountFactory")
+  const factory: any = await contractFactory.deploy(addressOne)
+
+  // deploy the contract as is it
+  // const ambireAccountFactory = new ethers.ContractFactory(AmbireAccount.abi, AmbireAccount.bytecode, wallet)
+  // const contract: any = await ambireAccountFactory.deploy()
+  // await wait(wallet, contract)
+  // const addr = await contract.getAddress()
+  // expect(addr).not.to.be.null
+
+  // // get the bytecode and deploy it
+  // const bytecode = getProxyDeployBytecode(addr, priLevels, {
+  //   ...getStorageSlotsFromArtifact(buildInfo)
+  // })
+  // const deployTxn = await factory.deploy(bytecode, deploySalt, { deployGasLimit })
+  // await wait(wallet, deployTxn)
+
+  // const ambireAccountAddress = getAmbireAccountAddress(await factory.getAddress(), bytecode)
+  // const ambireAccount: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, wallet)
+
+  // const promises = priLevels.map(priv => ambireAccount.privileges(priv.addr))
+  // const result = await Promise.all(promises)
+  // result.map((res, index) => {
+  //   const expected = priLevels[index].hash === true ? ethers.toBeHex(1, 32) : priLevels[index].hash
+  //   expect(res).to.equal(expected)
+  // })
+  // return {ambireAccount, ambireAccountAddress}
+}
+
 export {
   getAmbireAccountAddress,
+  deployAmbireAccountHardhatNetwork,
   deployAmbireAccount
 }

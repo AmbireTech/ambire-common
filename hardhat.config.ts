@@ -1,4 +1,5 @@
-import { HardhatUserConfig } from "hardhat/config";
+import { HardhatUserConfig } from "hardhat/config"
+import "@nomicfoundation/hardhat-ethers"
 import "hardhat-gas-reporter"
 
 const config: HardhatUserConfig = {
@@ -19,6 +20,6 @@ const config: HardhatUserConfig = {
     coinmarketcap: 'c47b3b52-863b-4ffe-8673-955a09a393c2',
     token: 'ETH'
   }
-};
+}
 
-export default config;
+export default config
