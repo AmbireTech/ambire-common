@@ -25,8 +25,8 @@ export default function useExtraCollectibles({ useStorage, useToasts, collectibl
   )
 
   const onAddExtraCollectible = useCallback(
-    (extraCollectible) => {
-      const { collectionAddress, tokenId } = extraCollectible
+    (extraCollectible, tokenId) => {
+      const { collectionAddress } = extraCollectible
 
       if (extraCollectibles.some((x) => x.address === collectionAddress && x.tokenId === tokenId))
         return addToast(
@@ -42,15 +42,13 @@ export default function useExtraCollectibles({ useStorage, useToasts, collectibl
         return addToast(`${collectionAddress} (${tokenId}) is already handled by your wallet.`)
       }
 
-      const updatedExtraCollectibles = [
-        ...extraCollectibles,
+      setExtraCollectibles((prev) => [
+        ...prev,
         {
           ...extraCollectible,
           coingeckoId: null
         }
-      ]
-
-      setExtraCollectibles(updatedExtraCollectibles)
+      ])
       addToast(`${collectionAddress} (${tokenId}) is added to your wallet!`)
     },
     [addToast, setExtraCollectibles, collectibles, extraCollectibles]
@@ -63,12 +61,13 @@ export default function useExtraCollectibles({ useStorage, useToasts, collectibl
       )
 
       if (!collectible) return addToast(`${address} is not present in your wallet.`)
-      const updatedExtraCollectibles = extraCollectibles.filter(
-        (coll) => coll.address === address && coll.assets.find((item) => item.tokenId !== tokenId)
-      )
 
-      setExtraCollectibles(updatedExtraCollectibles)
-      addToast(`${collectible.address} (${collectible.tokenId}) was removed from your wallet.`)
+      setExtraCollectibles((prev) =>
+        prev.filter(
+          (coll) => coll.address === address && coll.assets.find((item) => item.tokenId !== tokenId)
+        )
+      )
+      addToast(`${collectible.address} (${tokenId}) was removed from your wallet.`)
     },
     [addToast, setExtraCollectibles, extraCollectibles]
   )
