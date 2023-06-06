@@ -20,267 +20,267 @@ const CIPHER = 'aes-128-ctr'
 // - `signWithkey` is presumed to be non-interactive at least from `Keystore` point of view (requiring no extra user inputs). This could be wrong, if hardware wallets require extra input - they normally always do, but with the web SDKs we "outsource" this to the HW wallet software itself; this may not be true on mobile
 
 type ScryptParams = {
-  salt: string
-  N: number
-  r: number
-  p: number
-  dkLen: number
+	salt: string
+	N: number
+	r: number
+	p: number
+	dkLen: number
 }
 
 type AESEncrypted = {
-  cipherType: string
-  ciphertext: string
-  iv: string
-  mac: string
+	cipherType: string
+	ciphertext: string
+	iv: string
+	mac: string
 }
 
 type MainKeyEncryptedWithSecret = {
-  id: string
-  scryptParams: ScryptParams
-  aesEncrypted: AESEncrypted
+	id: string
+	scryptParams: ScryptParams
+	aesEncrypted: AESEncrypted
 }
 
 type MainKey = {
-  key: Uint8Array
-  iv: Uint8Array
+	key: Uint8Array
+	iv: Uint8Array
 }
 
 export type SupportedKeyTypes = 'internal' | 'trezor' | 'ledger' | 'lattice'
 
 export type Key = {
-  // normally in the form of an Ethereum address
-  id: string
-  type: SupportedKeyTypes
-  label: string
-  isExternallyStored: boolean
-  meta: object | null
+	// normally in the form of an Ethereum address
+	id: string
+	type: SupportedKeyTypes
+	label: string
+	isExternallyStored: boolean
+	meta: object | null
 }
 
 export type StoredKey = {
-  id: string
-  type: SupportedKeyTypes
-  label: string
-  privKey: string | null
-  // denotes additional info like HW wallet derivation path
-  meta: object | null
+	id: string
+	type: SupportedKeyTypes
+	label: string
+	privKey: string | null
+	// denotes additional info like HW wallet derivation path
+	meta: object | null
 }
 
 type KeystoreSignerType = {
-  new (key: Key, privateKey?: string): KeystoreSigner
+	new (key: Key, privateKey?: string): KeystoreSigner
 }
 
 type KeystoreSignersType = {
-  internal: KeystoreSignerType
-  ledger?: KeystoreSignerType
-  trezor?: KeystoreSignerType
-  lattice?: KeystoreSignerType
+	internal: KeystoreSignerType
+	ledger?: KeystoreSignerType
+	trezor?: KeystoreSignerType
+	lattice?: KeystoreSignerType
 }
 
 export class Keystore {
-  #mainKey: MainKey | null
+	#mainKey: MainKey | null
 
-  storage: Storage
+	storage: Storage
 
-  keystoreSigners: KeystoreSignersType
+	keystoreSigners: KeystoreSignersType
 
-  constructor(_storage: Storage, _keystoreSigners: KeystoreSignersType) {
-    this.storage = _storage
-    this.keystoreSigners = _keystoreSigners
-    this.#mainKey = null
-  }
+	constructor(_storage: Storage, _keystoreSigners: KeystoreSignersType) {
+		this.storage = _storage
+		this.keystoreSigners = _keystoreSigners
+		this.#mainKey = null
+	}
 
-  lock() {
-    this.#mainKey = null
-  }
+	lock() {
+		this.#mainKey = null
+	}
 
-  isUnlocked() {
-    return !!this.#mainKey
-  }
+	isUnlocked() {
+		return !!this.#mainKey
+	}
 
-  async getMainKeyEncryptedWithSecrets(): Promise<MainKeyEncryptedWithSecret[]> {
-    return this.storage.get('keystoreSecrets', [])
-  }
+	async getMainKeyEncryptedWithSecrets(): Promise<MainKeyEncryptedWithSecret[]> {
+		return this.storage.get('keystoreSecrets', [])
+	}
 
-  async isReadyToStoreKeys(): Promise<boolean> {
-    return (await this.getMainKeyEncryptedWithSecrets()).length > 0
-  }
+	async isReadyToStoreKeys(): Promise<boolean> {
+		return (await this.getMainKeyEncryptedWithSecrets()).length > 0
+	}
 
-  // @TODO time before unlocking
-  async unlockWithSecret(secretId: string, secret: string) {
-    // @TODO should we check if already locked? probably not cause this function can  be used in order to verify if a secret is correct
-    const secrets = await this.getMainKeyEncryptedWithSecrets()
-    if (!secrets.length) throw new Error('keystore: no secrets yet')
-    const secretEntry = secrets.find((x) => x.id === secretId)
-    if (!secretEntry) throw new Error(`keystore: secret ${secretId} not found`)
+	// @TODO time before unlocking
+	async unlockWithSecret(secretId: string, secret: string) {
+		// @TODO should we check if already locked? probably not cause this function can  be used in order to verify if a secret is correct
+		const secrets = await this.getMainKeyEncryptedWithSecrets()
+		if (!secrets.length) throw new Error('keystore: no secrets yet')
+		const secretEntry = secrets.find((x) => x.id === secretId)
+		if (!secretEntry) throw new Error(`keystore: secret ${secretId} not found`)
 
-    const { scryptParams, aesEncrypted } = secretEntry
-    if (aesEncrypted.cipherType !== CIPHER) throw Error(`keystore: unsupported cipherType ${aesEncrypted.cipherType}`)
-    // @TODO: progressCallback?
-    const key = await scrypt.scrypt(
-      getBytesForSecret(secret),
-      getBytes(scryptParams.salt),
-      scryptParams.N,
-      scryptParams.r,
-      scryptParams.p,
-      scryptParams.dkLen,
-      () => {}
-    )
-    const iv = getBytes(aesEncrypted.iv)
-    const derivedKey = key.slice(0, 16)
-    const macPrefix = key.slice(16, 32)
-    const counter = new aes.Counter(iv)
-    const aesCtr = new aes.ModeOfOperation.ctr(derivedKey, counter)
-    const mac = keccak256(concat([macPrefix, aesEncrypted.ciphertext]))
-    if (mac !== aesEncrypted.mac) throw new Error('keystore: wrong secret')
-    const decrypted = aesCtr.decrypt(getBytes(aesEncrypted.ciphertext))
-    this.#mainKey = { key: decrypted.slice(0, 16), iv: decrypted.slice(16, 32) }
-  }
+		const { scryptParams, aesEncrypted } = secretEntry
+		if (aesEncrypted.cipherType !== CIPHER) throw Error(`keystore: unsupported cipherType ${aesEncrypted.cipherType}`)
+		// @TODO: progressCallback?
+		const key = await scrypt.scrypt(
+			getBytesForSecret(secret),
+			getBytes(scryptParams.salt),
+			scryptParams.N,
+			scryptParams.r,
+			scryptParams.p,
+			scryptParams.dkLen,
+			() => {}
+		)
+		const iv = getBytes(aesEncrypted.iv)
+		const derivedKey = key.slice(0, 16)
+		const macPrefix = key.slice(16, 32)
+		const counter = new aes.Counter(iv)
+		const aesCtr = new aes.ModeOfOperation.ctr(derivedKey, counter)
+		const mac = keccak256(concat([macPrefix, aesEncrypted.ciphertext]))
+		if (mac !== aesEncrypted.mac) throw new Error('keystore: wrong secret')
+		const decrypted = aesCtr.decrypt(getBytes(aesEncrypted.ciphertext))
+		this.#mainKey = { key: decrypted.slice(0, 16), iv: decrypted.slice(16, 32) }
+	}
 
-  async addSecret(secretId: string, secret: string, extraEntropy: string = '') {
-    const secrets = await this.getMainKeyEncryptedWithSecrets()
-    // @TODO test
-    if (secrets.find((x) => x.id === secretId)) throw new Error(`keystore: trying to add duplicate secret ${secretId}`)
+	async addSecret(secretId: string, secret: string, extraEntropy: string = '') {
+		const secrets = await this.getMainKeyEncryptedWithSecrets()
+		// @TODO test
+		if (secrets.find((x) => x.id === secretId)) throw new Error(`keystore: trying to add duplicate secret ${secretId}`)
 
-    let mainKey: MainKey | null = this.#mainKey
-    // We are not not unlocked
-    if (!mainKey) {
-      if (!secrets.length) {
-        const key = getBytes(keccak256(concat([randomBytes(32), toUtf8Bytes(extraEntropy)]))).slice(0, 16)
-        mainKey = {
-          key,
-          iv: randomBytes(16)
-        }
-      } else throw new Error('keystore: must unlock keystore before adding secret')
-    }
+		let mainKey: MainKey | null = this.#mainKey
+		// We are not not unlocked
+		if (!mainKey) {
+			if (!secrets.length) {
+				const key = getBytes(keccak256(concat([randomBytes(32), toUtf8Bytes(extraEntropy)]))).slice(0, 16)
+				mainKey = {
+					key,
+					iv: randomBytes(16)
+				}
+			} else throw new Error('keystore: must unlock keystore before adding secret')
+		}
 
-    const salt = randomBytes(32)
-    const key = await scrypt.scrypt(
-      getBytesForSecret(secret),
-      salt,
-      scryptDefaults.N,
-      scryptDefaults.r,
-      scryptDefaults.p,
-      scryptDefaults.dkLen,
-      () => {}
-    )
-    const iv = randomBytes(16)
-    const derivedKey = key.slice(0, 16)
-    const macPrefix = key.slice(16, 32)
-    const counter = new aes.Counter(iv)
-    const aesCtr = new aes.ModeOfOperation.ctr(derivedKey, counter)
-    const ciphertext = aesCtr.encrypt(getBytes(concat([mainKey.key, mainKey.iv])))
-    const mac = keccak256(concat([macPrefix, ciphertext]))
+		const salt = randomBytes(32)
+		const key = await scrypt.scrypt(
+			getBytesForSecret(secret),
+			salt,
+			scryptDefaults.N,
+			scryptDefaults.r,
+			scryptDefaults.p,
+			scryptDefaults.dkLen,
+			() => {}
+		)
+		const iv = randomBytes(16)
+		const derivedKey = key.slice(0, 16)
+		const macPrefix = key.slice(16, 32)
+		const counter = new aes.Counter(iv)
+		const aesCtr = new aes.ModeOfOperation.ctr(derivedKey, counter)
+		const ciphertext = aesCtr.encrypt(getBytes(concat([mainKey.key, mainKey.iv])))
+		const mac = keccak256(concat([macPrefix, ciphertext]))
 
-    secrets.push({
-      id: secretId,
-      scryptParams: { salt: hexlify(salt), ...scryptDefaults },
-      aesEncrypted: { cipherType: CIPHER, ciphertext: hexlify(ciphertext), iv: hexlify(iv), mac: hexlify(mac) }
-    })
-    // Persist the new secrets
-    await this.storage.set('keystoreSecrets', secrets)
-  }
+		secrets.push({
+			id: secretId,
+			scryptParams: { salt: hexlify(salt), ...scryptDefaults },
+			aesEncrypted: { cipherType: CIPHER, ciphertext: hexlify(ciphertext), iv: hexlify(iv), mac: hexlify(mac) }
+		})
+		// Persist the new secrets
+		await this.storage.set('keystoreSecrets', secrets)
+	}
 
-  async removeSecret(secretId: string) {
-    const secrets = await this.getMainKeyEncryptedWithSecrets()
-    if (secrets.length <= 1) throw new Error('keystore: there would be no remaining secrets after removal')
-    if (!secrets.find((x) => x.id === secretId)) throw new Error(`keystore: secret$ ${secretId} not found`)
-    await this.storage.set(
-      'keystoreSecrets',
-      secrets.filter((x) => x.id !== secretId)
-    )
-  }
+	async removeSecret(secretId: string) {
+		const secrets = await this.getMainKeyEncryptedWithSecrets()
+		if (secrets.length <= 1) throw new Error('keystore: there would be no remaining secrets after removal')
+		if (!secrets.find((x) => x.id === secretId)) throw new Error(`keystore: secret$ ${secretId} not found`)
+		await this.storage.set(
+			'keystoreSecrets',
+			secrets.filter((x) => x.id !== secretId)
+		)
+	}
 
-  async getKeys(): Promise<Key[]> {
-    const keys: [StoredKey] = await this.storage.get('keystoreKeys', [])
-    return keys.map(
-      ({ id, label, type, meta }) =>
-        ({
-          id,
-          label,
-          type,
-          meta,
-          isExternallyStored: type !== 'internal'
-        } as Key)
-    )
-  }
+	async getKeys(): Promise<Key[]> {
+		const keys: [StoredKey] = await this.storage.get('keystoreKeys', [])
+		return keys.map(
+			({ id, label, type, meta }) =>
+				({
+					id,
+					label,
+					type,
+					meta,
+					isExternallyStored: type !== 'internal'
+				} as Key)
+		)
+	}
 
-  async addKeyExternallyStored(id: string, type: SupportedKeyTypes, label: string, meta: object) {
-    const keys: [StoredKey] = await this.storage.get('keystoreKeys', [])
-    keys.push({
-      id,
-      type,
-      label,
-      meta,
-      privKey: null
-    })
-    await this.storage.set('keystoreKeys', keys)
-  }
+	async addKeyExternallyStored(id: string, type: SupportedKeyTypes, label: string, meta: object) {
+		const keys: [StoredKey] = await this.storage.get('keystoreKeys', [])
+		keys.push({
+			id,
+			type,
+			label,
+			meta,
+			privKey: null
+		})
+		await this.storage.set('keystoreKeys', keys)
+	}
 
-  async addKey(privateKey: string, label: string) {
-    if (this.#mainKey === null) throw new Error('keystore: needs to be unlocked')
+	async addKey(privateKey: string, label: string) {
+		if (this.#mainKey === null) throw new Error('keystore: needs to be unlocked')
 
-    // Set up the cipher
-    const counter = new aes.Counter(this.#mainKey.iv)
-    const aesCtr = new aes.ModeOfOperation.ctr(this.#mainKey.key, counter)
+		// Set up the cipher
+		const counter = new aes.Counter(this.#mainKey.iv)
+		const aesCtr = new aes.ModeOfOperation.ctr(this.#mainKey.key, counter)
 
-    // Store the key
-    // Terminology: this private key represents an EOA wallet, which is why ethers calls it Wallet, but we treat it as a key here
-    const wallet = new Wallet(privateKey)
-    const keys: [StoredKey] = await this.storage.get('keystoreKeys', [])
-    keys.push({
-      id: wallet.address,
-      type: 'internal',
-      label,
-      // @TODO: consider an MAC?
-      privKey: hexlify(aesCtr.encrypt(aes.utils.hex.toBytes(privateKey))),
-      meta: null
-    })
-    await this.storage.set('keystoreKeys', keys)
-  }
+		// Store the key
+		// Terminology: this private key represents an EOA wallet, which is why ethers calls it Wallet, but we treat it as a key here
+		const wallet = new Wallet(privateKey)
+		const keys: [StoredKey] = await this.storage.get('keystoreKeys', [])
+		keys.push({
+			id: wallet.address,
+			type: 'internal',
+			label,
+			// @TODO: consider an MAC?
+			privKey: hexlify(aesCtr.encrypt(aes.utils.hex.toBytes(privateKey))),
+			meta: null
+		})
+		await this.storage.set('keystoreKeys', keys)
+	}
 
-  async removeKey(id: string) {
-    const keys: [StoredKey] = await this.storage.get('keystoreKeys', [])
-    if (!keys.find((x) => x.id === id)) throw new Error(`keystore: trying to remove key that does not exist ${id}}`)
-    this.storage.set(
-      'keystoreKeys',
-      keys.filter((x) => x.id !== id)
-    )
-  }
+	async removeKey(id: string) {
+		const keys: [StoredKey] = await this.storage.get('keystoreKeys', [])
+		if (!keys.find((x) => x.id === id)) throw new Error(`keystore: trying to remove key that does not exist ${id}}`)
+		this.storage.set(
+			'keystoreKeys',
+			keys.filter((x) => x.id !== id)
+		)
+	}
 
-  async getSigner(keyId: string) {
-    const storedKey: StoredKey = (await this.storage.get('keystoreKeys', [])).find((x: StoredKey) => x.id === keyId)
+	async getSigner(keyId: string) {
+		const storedKey: StoredKey = (await this.storage.get('keystoreKeys', [])).find((x: StoredKey) => x.id === keyId)
 
-    if (!storedKey) throw new Error('keystore: key not found')
-    const { id, label, type, meta } = storedKey
+		if (!storedKey) throw new Error('keystore: key not found')
+		const { id, label, type, meta } = storedKey
 
-    const key = {
-      id,
-      label,
-      type,
-      meta,
-      isExternallyStored: type !== 'internal'
-    }
+		const key = {
+			id,
+			label,
+			type,
+			meta,
+			isExternallyStored: type !== 'internal'
+		}
 
-    const signerInitializer = this.keystoreSigners[key.type]
-    if (!signerInitializer) throw new Error('keystore: unsupported singer')
-    if (key.type === 'internal' && !this.isUnlocked()) throw new Error('keystore: not unlocked')
+		const signerInitializer = this.keystoreSigners[key.type]
+		if (!signerInitializer) throw new Error('keystore: unsupported singer')
+		if (key.type === 'internal' && !this.isUnlocked()) throw new Error('keystore: not unlocked')
 
-    if (key.type === 'internal') {
-      const encryptedBytes = getBytes(storedKey.privKey as string)
-      // @ts-ignore
-      const counter = new aes.Counter(this.#mainKey.iv)
-      // @ts-ignore
-      const aesCtr = new aes.ModeOfOperation.ctr(this.#mainKey.key, counter)
-      const decryptedBytes = aesCtr.decrypt(encryptedBytes)
-      const decryptedPrivateKey = aes.utils.hex.fromBytes(decryptedBytes)
+		if (key.type === 'internal') {
+			const encryptedBytes = getBytes(storedKey.privKey as string)
+			// @ts-ignore
+			const counter = new aes.Counter(this.#mainKey.iv)
+			// @ts-ignore
+			const aesCtr = new aes.ModeOfOperation.ctr(this.#mainKey.key, counter)
+			const decryptedBytes = aesCtr.decrypt(encryptedBytes)
+			const decryptedPrivateKey = aes.utils.hex.fromBytes(decryptedBytes)
 
-      return new signerInitializer(key, decryptedPrivateKey)
-    }
+			return new signerInitializer(key, decryptedPrivateKey)
+		}
 
-    return new signerInitializer(key)
-  }
+		return new signerInitializer(key)
+	}
 }
 function getBytesForSecret(secret: string): ArrayLike<number> {
-  // see https://github.com/ethers-io/ethers.js/blob/v5/packages/json-wallets/src.ts/utils.ts#L19-L24
-  return toUtf8Bytes(secret, 'NFKC')
+	// see https://github.com/ethers-io/ethers.js/blob/v5/packages/json-wallets/src.ts/utils.ts#L19-L24
+	return toUtf8Bytes(secret, 'NFKC')
 }
