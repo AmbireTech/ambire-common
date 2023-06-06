@@ -45,9 +45,9 @@ type MainKey = {
   iv: Uint8Array
 }
 
-type SupportedKeyTypes = 'internal' | 'trezor' | 'ledger' | 'lattice'
+export type SupportedKeyTypes = 'internal' | 'trezor' | 'ledger' | 'lattice'
 
-type Key = {
+export type Key = {
   // normally in the form of an Ethereum address
   id: string
   type: SupportedKeyTypes
@@ -55,7 +55,8 @@ type Key = {
   isExternallyStored: boolean
   meta: object | null
 }
-type StoredKey = {
+
+export type StoredKey = {
   id: string
   type: SupportedKeyTypes
   label: string
@@ -231,7 +232,7 @@ export class Keystore {
       type: 'internal',
       label,
       // @TODO: consider an MAC?
-      privKey: hexlify(aesCtr.encrypt(getBytes(privateKey))),
+      privKey: hexlify(aesCtr.encrypt(aes.utils.hex.toBytes(privateKey))),
       meta: null
     })
     await this.storage.set('keystoreKeys', keys)
@@ -265,13 +266,13 @@ export class Keystore {
     if (key.type === 'internal' && !this.isUnlocked()) throw new Error('keystore: not unlocked')
 
     if (key.type === 'internal') {
-      const encryptedBytes = aes.utils.hex.toBytes(storedKey.privKey as string)
+      const encryptedBytes = getBytes(storedKey.privKey as string)
       // @ts-ignore
       const counter = new aes.Counter(this.#mainKey.iv)
       // @ts-ignore
       const aesCtr = new aes.ModeOfOperation.ctr(this.#mainKey.key, counter)
       const decryptedBytes = aesCtr.decrypt(encryptedBytes)
-      const decryptedPrivateKey = aes.utils.utf8.fromBytes(decryptedBytes)
+      const decryptedPrivateKey = aes.utils.hex.fromBytes(decryptedBytes)
 
       return new signerInitializer(key, decryptedPrivateKey)
     }
