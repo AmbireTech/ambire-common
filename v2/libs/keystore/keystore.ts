@@ -9,9 +9,6 @@ import { Storage } from '../../interfaces/storage'
 const scryptDefaults = { N: 262144, r: 8, p: 1, dkLen: 64 }
 const CIPHER = 'aes-128-ctr'
 
-// @TODO
-// - use the storage interface that ambire-common uses
-
 // DOCS
 // - Secrets are strings that are used to encrypt the mainKey; the mainKey could be encrypted with many secrets
 // - All individual keys are encrypted with the mainKey
@@ -67,7 +64,9 @@ type StoredKey = {
   meta: object | null
 }
 
-type KeystoreSignerType = (key: Key, privateKey?: string) => KeystoreSigner
+type KeystoreSignerType = {
+  new (key: Key, privateKey?: string): KeystoreSigner
+}
 
 type KeystoreSignersType = {
   internal: KeystoreSignerType
@@ -248,17 +247,21 @@ export class Keystore {
   }
 
   async getSigner(keyId: string) {
-    const storedKey = (await this.storage.get('keystoreKeys', [])).find((x: StoredKey) => x.id === keyId) as StoredKey
+    const storedKey: StoredKey = (await this.storage.get('keystoreKeys', [])).find((x: StoredKey) => x.id === keyId)
+
+    if (!storedKey) throw new Error('keystore: key not found')
+    const { id, label, type, meta } = storedKey
+
     const key = {
-      id: storedKey.id,
-      label: storedKey.label,
-      type: storedKey.type,
-      meta: storedKey.meta,
-      isExternallyStored: storedKey.type !== 'internal'
+      id,
+      label,
+      type,
+      meta,
+      isExternallyStored: type !== 'internal'
     }
 
-    const initializer = this.keystoreSigners[key.type]
-    if (!initializer) throw new Error('keystore: unsupported singer')
+    const signerInitializer = this.keystoreSigners[key.type]
+    if (!signerInitializer) throw new Error('keystore: unsupported singer')
     if (key.type === 'internal' && !this.isUnlocked()) throw new Error('keystore: not unlocked')
 
     if (key.type === 'internal') {
@@ -270,10 +273,10 @@ export class Keystore {
       const decryptedBytes = aesCtr.decrypt(encryptedBytes)
       const decryptedPrivateKey = aes.utils.utf8.fromBytes(decryptedBytes)
 
-      return initializer(key, decryptedPrivateKey)
+      return new signerInitializer(key, decryptedPrivateKey)
     }
 
-    return initializer(key)
+    return new signerInitializer(key)
   }
 }
 function getBytesForSecret(secret: string): ArrayLike<number> {
