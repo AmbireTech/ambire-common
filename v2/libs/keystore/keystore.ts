@@ -69,21 +69,14 @@ type KeystoreSignerType = {
 	new (key: Key, privateKey?: string): KeystoreSigner
 }
 
-type KeystoreSignersType = {
-	internal: KeystoreSignerType
-	ledger?: KeystoreSignerType
-	trezor?: KeystoreSignerType
-	lattice?: KeystoreSignerType
-}
-
 export class Keystore {
 	#mainKey: MainKey | null
 
 	storage: Storage
 
-	keystoreSigners: KeystoreSignersType
+	keystoreSigners: { [key: string]: KeystoreSignerType }
 
-	constructor(_storage: Storage, _keystoreSigners: KeystoreSignersType) {
+	constructor(_storage: Storage, _keystoreSigners: { [key: string]: KeystoreSignerType }) {
 		this.storage = _storage
 		this.keystoreSigners = _keystoreSigners
 		this.#mainKey = null
