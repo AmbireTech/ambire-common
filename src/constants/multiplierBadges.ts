@@ -47,7 +47,7 @@ export const multiplierBadges: MultiplierBadge[] = [
     color: '#658f3f',
     multiplier: 1.25,
     link: 'https://blog.ambire.com/new-wallet-rewards-multiplier-live-in-ambire-power-users-now-get-special-perks-e47bb1000aeb'
-}
+  }
 ]
 
 export const MULTIPLIERS_READ_MORE_URL =

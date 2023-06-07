@@ -1,11 +1,11 @@
 // https://eips.ethereum.org/EIPS/eip-1559
-import { ethers } from "ethers"
-import MockProvider from "./MockProvider"
-import { getGasPriceRecommendations } from "../gasPrice"
-import { describe, expect, test } from "@jest/globals"
+import { ethers } from 'ethers'
+import MockProvider from './MockProvider'
+import { getGasPriceRecommendations } from '../gasPrice'
+import { describe, expect, test } from '@jest/globals'
 
-describe('1559 Network gas price tests', function() {
-  test('should make a prediction for a previous block of 30M gas (max), should increase the baseFeePerGas by 12.5% for slow, and increase gradually by baseFeeAddBps, defined in speeds in gasprice.ts for the remaining speeds', async function(){
+describe('1559 Network gas price tests', function () {
+  test('should make a prediction for a previous block of 30M gas (max), should increase the baseFeePerGas by 12.5% for slow, and increase gradually by baseFeeAddBps, defined in speeds in gasprice.ts for the remaining speeds', async function () {
     const params = {
       gasUsed: 30000000n
     }
@@ -16,7 +16,7 @@ describe('1559 Network gas price tests', function() {
       slow: ethers.parseUnits('1.125', 'gwei'),
       medium: ethers.parseUnits('1.18125', 'gwei'),
       fast: ethers.parseUnits('1.2375', 'gwei'),
-      ape: ethers.parseUnits('1.29375', 'gwei'),
+      ape: ethers.parseUnits('1.29375', 'gwei')
     }
     const slow: any = gasPrice[0]
     expect(slow.baseFeePerGas).toBe(expectations.slow)
@@ -27,7 +27,7 @@ describe('1559 Network gas price tests', function() {
     const ape: any = gasPrice[3]
     expect(ape.baseFeePerGas).toBe(expectations.ape)
   })
-  test('should make a prediction for a previous block of 15M gas (the target gas), should not change the baseFeePerGas from the previous block for slow, and increase gradually by baseFeeAddBps, defined in speeds in gasprice.ts for the remaining speeds', async function(){
+  test('should make a prediction for a previous block of 15M gas (the target gas), should not change the baseFeePerGas from the previous block for slow, and increase gradually by baseFeeAddBps, defined in speeds in gasprice.ts for the remaining speeds', async function () {
     const params = {
       gasUsed: 15000000n
     }
@@ -38,7 +38,7 @@ describe('1559 Network gas price tests', function() {
       slow: ethers.parseUnits('1', 'gwei'),
       medium: ethers.parseUnits('1.05', 'gwei'),
       fast: ethers.parseUnits('1.1', 'gwei'),
-      ape: ethers.parseUnits('1.15', 'gwei'),
+      ape: ethers.parseUnits('1.15', 'gwei')
     }
     const slow: any = gasPrice[0]
     expect(slow.baseFeePerGas).toBe(expectations.slow)
@@ -49,7 +49,7 @@ describe('1559 Network gas price tests', function() {
     const ape: any = gasPrice[3]
     expect(ape.baseFeePerGas).toBe(expectations.ape)
   })
-  test('should make a prediction for an empty previous block, should decrease the baseFeePerGas by 12.5% for slow, and increase gradually by baseFeeAddBps, defined in speeds in gasprice.ts for the remaining speeds', async function(){
+  test('should make a prediction for an empty previous block, should decrease the baseFeePerGas by 12.5% for slow, and increase gradually by baseFeeAddBps, defined in speeds in gasprice.ts for the remaining speeds', async function () {
     const params = {
       gasUsed: 0n
     }
@@ -60,7 +60,7 @@ describe('1559 Network gas price tests', function() {
       slow: ethers.parseUnits('0.875', 'gwei'),
       medium: ethers.parseUnits('0.91875', 'gwei'),
       fast: ethers.parseUnits('0.9625', 'gwei'),
-      ape: ethers.parseUnits('1.00625', 'gwei'),
+      ape: ethers.parseUnits('1.00625', 'gwei')
     }
     const slow: any = gasPrice[0]
     expect(slow.baseFeePerGas).toBe(expectations.slow)
@@ -71,7 +71,7 @@ describe('1559 Network gas price tests', function() {
     const ape: any = gasPrice[3]
     expect(ape.baseFeePerGas).toBe(expectations.ape)
   })
-  test('should make a prediction for a previous block of 10M gas, should decrease the baseFeePerGas by 4.16% for slow, and increase gradually by baseFeeAddBps, defined in speeds in gasprice.ts for the remaining speeds', async function(){
+  test('should make a prediction for a previous block of 10M gas, should decrease the baseFeePerGas by 4.16% for slow, and increase gradually by baseFeeAddBps, defined in speeds in gasprice.ts for the remaining speeds', async function () {
     const params = {
       gasUsed: 10000000n
     }
@@ -84,7 +84,7 @@ describe('1559 Network gas price tests', function() {
       slow: ethers.parseUnits('0.958333334', 'gwei'),
       medium: ethers.parseUnits('1.006250000', 'gwei'),
       fast: ethers.parseUnits('1.054166667', 'gwei'),
-      ape: ethers.parseUnits('1.102083334', 'gwei'),
+      ape: ethers.parseUnits('1.102083334', 'gwei')
     }
     const slow: any = gasPrice[0]
     expect(slow.baseFeePerGas).toBe(expectations.slow)
@@ -95,7 +95,7 @@ describe('1559 Network gas price tests', function() {
     const ape: any = gasPrice[3]
     expect(ape.baseFeePerGas).toBe(expectations.ape)
   })
-  test('should make a prediction for a previous block of 18.5M gas, should increase the gas by 2.9% for slow, and increase gradually by baseFeeAddBps, defined in speeds in gasprice.ts for the remaining speeds', async function(){
+  test('should make a prediction for a previous block of 18.5M gas, should increase the gas by 2.9% for slow, and increase gradually by baseFeeAddBps, defined in speeds in gasprice.ts for the remaining speeds', async function () {
     const params = {
       gasUsed: 18500000n
     }
@@ -116,7 +116,7 @@ describe('1559 Network gas price tests', function() {
       },
       ape: {
         gasPrice: ethers.parseUnits('1.183541665', 'gwei')
-      },
+      }
     }
     const slow: any = gasPrice[0]
     expect(slow.baseFeePerGas).toBe(expectations.slow.gasPrice)
@@ -127,7 +127,7 @@ describe('1559 Network gas price tests', function() {
     const ape: any = gasPrice[3]
     expect(ape.baseFeePerGas).toBe(expectations.ape.gasPrice)
   })
-  test('should return the lowest maxPriorityFeePerGas for a block with less than 4 txns', async function(){
+  test('should return the lowest maxPriorityFeePerGas for a block with less than 4 txns', async function () {
     const params = {
       transactions: [
         { maxPriorityFeePerGas: 100n },
@@ -139,17 +139,17 @@ describe('1559 Network gas price tests', function() {
     const gasPrice = await getGasPriceRecommendations(provider)
     const expectations = {
       slow: {
-        maxPriorityFeePerGas: 98n,
+        maxPriorityFeePerGas: 98n
       },
       medium: {
-        maxPriorityFeePerGas: 98n,
+        maxPriorityFeePerGas: 98n
       },
       fast: {
-        maxPriorityFeePerGas: 98n,
+        maxPriorityFeePerGas: 98n
       },
       ape: {
-        maxPriorityFeePerGas: 98n,
-      },
+        maxPriorityFeePerGas: 98n
+      }
     }
     const slow: any = gasPrice[0]
     expect(slow.maxPriorityFeePerGas).toBe(expectations.slow.maxPriorityFeePerGas)
@@ -160,7 +160,7 @@ describe('1559 Network gas price tests', function() {
     const ape: any = gasPrice[3]
     expect(ape.maxPriorityFeePerGas).toBe(expectations.ape.maxPriorityFeePerGas)
   })
-  test('makes a maxPriorityFeePerGas prediction with an empty block and returns 0n for maxPriorityFeePerGas', async function(){
+  test('makes a maxPriorityFeePerGas prediction with an empty block and returns 0n for maxPriorityFeePerGas', async function () {
     const params = {
       transactions: []
     }
@@ -175,7 +175,7 @@ describe('1559 Network gas price tests', function() {
     const ape: any = gasPrice[3]
     expect(ape.maxPriorityFeePerGas).toBe(0n)
   })
-  test('should remove an outlier from a group of 17, making the group 16, and calculate average at a step of 4, disregarding none', async function(){
+  test('should remove an outlier from a group of 17, making the group 16, and calculate average at a step of 4, disregarding none', async function () {
     const params = {
       transactions: [
         { maxPriorityFeePerGas: 10n },
@@ -194,7 +194,7 @@ describe('1559 Network gas price tests', function() {
         { maxPriorityFeePerGas: 50n },
         { maxPriorityFeePerGas: 100n },
         { maxPriorityFeePerGas: 100n },
-        { maxPriorityFeePerGas: 10000n }, // removed as an outlier
+        { maxPriorityFeePerGas: 10000n } // removed as an outlier
       ]
     }
     const provider = MockProvider.init(params)
@@ -208,7 +208,7 @@ describe('1559 Network gas price tests', function() {
     const ape: any = gasPrice[3]
     expect(ape.maxPriorityFeePerGas).toBe(75n)
   })
-  test('should remove outliers from a group of 19, making the group 15, and return an average for each speed at a step of 3 for slow, medium and fast, and an avg of the remaining 6 for ape', async function(){
+  test('should remove outliers from a group of 19, making the group 15, and return an average for each speed at a step of 3 for slow, medium and fast, and an avg of the remaining 6 for ape', async function () {
     const params = {
       transactions: [
         { maxPriorityFeePerGas: 1n }, // removed as an outlier
@@ -229,7 +229,7 @@ describe('1559 Network gas price tests', function() {
         { maxPriorityFeePerGas: 150n },
         { maxPriorityFeePerGas: 150n },
         { maxPriorityFeePerGas: 10000n }, // removed as an outlier
-        { maxPriorityFeePerGas: 20000n }, // removed as an outlier
+        { maxPriorityFeePerGas: 20000n } // removed as an outlier
       ]
     }
     const provider = MockProvider.init(params)
@@ -243,7 +243,7 @@ describe('1559 Network gas price tests', function() {
     const ape: any = gasPrice[3]
     expect(ape.maxPriorityFeePerGas).toBe(128n)
   })
-  test('should remove 0s from maxPriorityFeePerGas but should keep 1s because they are not outliers, and should calculate an average of every group of 4 for slow, medium and fast, and an average of the remaining 5 for ape', async function(){
+  test('should remove 0s from maxPriorityFeePerGas but should keep 1s because they are not outliers, and should calculate an average of every group of 4 for slow, medium and fast, and an average of the remaining 5 for ape', async function () {
     const params = {
       transactions: [
         { maxPriorityFeePerGas: 0n }, // removed because no 0s are allowed
@@ -267,7 +267,7 @@ describe('1559 Network gas price tests', function() {
         { maxPriorityFeePerGas: 85n },
         { maxPriorityFeePerGas: 85n },
         { maxPriorityFeePerGas: 500n }, // removed as an outlier
-        { maxPriorityFeePerGas: 500n }, // removed as an outlier
+        { maxPriorityFeePerGas: 500n } // removed as an outlier
       ]
     }
     const provider = MockProvider.init(params)
