@@ -1,8 +1,8 @@
-import { ethers } from "ethers"
-import chai from 'chai';
-import chaiAssertionsCount from 'chai-assertions-count';
-chai.use(chaiAssertionsCount);
-import { expect } from "chai";
+import { ethers } from 'ethers'
+import chai from 'chai'
+import chaiAssertionsCount from 'chai-assertions-count'
+chai.use(chaiAssertionsCount)
+import { expect } from 'chai'
 
 const pk1 = '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80'
 const pk2 = '0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d'
@@ -26,9 +26,10 @@ const assertion = chai.Assertion
 const deploySalt = 0
 const deployGasLimit = 1000000
 
-var normalizedPath = require("path").join(__dirname, "../artifacts/build-info");
-const buildInfoFiles = require("../artifacts/build-info/" + require("fs").readdirSync(normalizedPath));
-const buildInfo = buildInfoFiles.length ? buildInfoFiles[0] : null;
+var normalizedPath = require('path').join(__dirname, '../artifacts/build-info')
+const buildInfoFiles = require('../artifacts/build-info/' +
+  require('fs').readdirSync(normalizedPath))
+const buildInfo = buildInfoFiles.length ? buildInfoFiles[0] : null
 
 export {
   pk1,
