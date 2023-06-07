@@ -45,12 +45,10 @@ type MainKey = {
 	iv: Uint8Array
 }
 
-export type SupportedKeyTypes = 'internal' | 'trezor' | 'ledger' | 'lattice'
-
 export type Key = {
 	// normally in the form of an Ethereum address
 	id: string
-	type: SupportedKeyTypes
+	type: string
 	label: string
 	isExternallyStored: boolean
 	meta: object | null
@@ -58,7 +56,7 @@ export type Key = {
 
 export type StoredKey = {
 	id: string
-	type: SupportedKeyTypes
+	type: string
 	label: string
 	privKey: string | null
 	// denotes additional info like HW wallet derivation path
@@ -197,7 +195,7 @@ export class Keystore {
 		)
 	}
 
-	async addKeyExternallyStored(id: string, type: SupportedKeyTypes, label: string, meta: object) {
+	async addKeyExternallyStored(id: string, type: string, label: string, meta: object) {
 		const keys: [StoredKey] = await this.storage.get('keystoreKeys', [])
 		keys.push({
 			id,
@@ -241,7 +239,8 @@ export class Keystore {
 	}
 
 	async getSigner(keyId: string) {
-		const storedKey: StoredKey = (await this.storage.get('keystoreKeys', [])).find((x: StoredKey) => x.id === keyId)
+		const keys = await this.storage.get('keystoreKeys', [])
+		const storedKey: StoredKey = keys.find((x: StoredKey) => x.id === keyId)
 
 		if (!storedKey) throw new Error('keystore: key not found')
 		const { id, label, type, meta } = storedKey
@@ -255,10 +254,11 @@ export class Keystore {
 		}
 
 		const signerInitializer = this.keystoreSigners[key.type]
-		if (!signerInitializer) throw new Error('keystore: unsupported singer')
-		if (key.type === 'internal' && !this.isUnlocked()) throw new Error('keystore: not unlocked')
+		if (!signerInitializer) throw new Error('keystore: unsupported signer type')
 
 		if (key.type === 'internal') {
+			if (!this.isUnlocked()) throw new Error('keystore: not unlocked')
+
 			const encryptedBytes = getBytes(storedKey.privKey as string)
 			// @ts-ignore
 			const counter = new aes.Counter(this.#mainKey.iv)
