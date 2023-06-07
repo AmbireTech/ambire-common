@@ -57,21 +57,25 @@ async function supplementTokensDataFromNetwork({
   // eslint-disable-next-line no-param-reassign
   if (!extraTokens || !extraTokens[0]) extraTokens = checkTokenList(extraTokens || []) // extraTokens check and populate for test if undefind
 
-  function getNativeAsset(){
-    const net = networks.find(({id}) => id === network)
+  function getNativeAsset() {
+    const net = networks.find(({ id }) => id === network)
     return net && net.nativeAsset ? [net.nativeAsset] : []
   }
 
   // concat predefined token list with extraTokens list (extraTokens are certainly ERC20)
   const fullTokenList = [
     // @ts-ignore figure out how to add types for the `tokenList`
-    ...new Set(tokenList[network] ? tokenList[network].concat(extraTokens) : [...extraTokens, ...getNativeAsset(extraTokens)])
+    ...new Set(
+      tokenList[network]
+        ? tokenList[network].concat(extraTokens)
+        : [...extraTokens, ...getNativeAsset(extraTokens)]
+    )
   ]
-  
+
   const tokens = fullTokenList.map((t: any) => {
     return tokensData.find((td) => td.address === t.address) || t
   })
-  
+
   const tokensNotInList = tokensData.filter((td) => {
     return !tokens.some((t) => t.address === td.address)
   })
@@ -86,7 +90,7 @@ async function supplementTokensDataFromNetwork({
 
   const tokenBalances = (
     await Promise.all(
-      calls.map((callTokens) => {    
+      calls.map((callTokens) => {
         return getTokenListBalance({ walletAddr, tokens: callTokens, network, updateBalance })
       })
     )
@@ -215,7 +219,9 @@ export default function usePortfolio({
       try {
         const networksForBalance = currentNetwork
           ? [supportedProtocols.find(({ network }) => network === currentNetwork)]
-          : supportedProtocols.filter(({ network }) => !networks.find(({id}) => id === network)?.relayerlessOnly)
+          : supportedProtocols.filter(
+              ({ network }) => !networks.find(({ id }) => id === network)?.relayerlessOnly
+            )
 
         let failedRequests = 0
         const requestsCount = networksForBalance.length

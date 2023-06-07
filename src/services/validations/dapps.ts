@@ -20,7 +20,8 @@ export function isValidCustomDappData(input: AmbireDappManifest): {
   const hasNetworksSelected = !!networks.length
 
   return {
-    success: hasValidUrl && hasValidName && validConnectionType && hasValidIconUrl && hasNetworksSelected,
+    success:
+      hasValidUrl && hasValidName && validConnectionType && hasValidIconUrl && hasNetworksSelected,
     errors: {
       ...(hasValidUrl ? {} : { url: 'Invalid Url' }),
       ...(hasValidIconUrl ? {} : { iconUrl: 'Invalid icon Url' }),

@@ -14,27 +14,23 @@
 // if the next wallet nonce is ahead of the cached one in both transaction count
 // and pending transaction count
 
-import { BaseWallet, BaseContract, ContractTransactionResponse, TransactionResponse } from "ethers"
-import { provider } from "./config"
+import { BaseWallet, BaseContract, ContractTransactionResponse, TransactionResponse } from 'ethers'
+import { provider } from './config'
 
-let lastNonce: {[key: string]: number} = {}
+let lastNonce: { [key: string]: number } = {}
 export type Waitable = BaseContract | ContractTransactionResponse | TransactionResponse
 
 export async function wait(wallet: BaseWallet, waitable: Waitable | null = null): Promise<void> {
   if (waitable) await waitWaitable(waitable)
-  
+
   const finished = await provider.getTransactionCount(wallet.address)
   const pending = await provider.getTransactionCount(wallet.address, 'pending')
   const hasCachedNonce = wallet.address in lastNonce
-  if (
-    finished == pending &&
-    (!hasCachedNonce || lastNonce[wallet.address] < finished)
-    
-  ) {
+  if (finished == pending && (!hasCachedNonce || lastNonce[wallet.address] < finished)) {
     lastNonce[wallet.address] = finished
     return
   }
-  await new Promise(r => setTimeout(r, 500)) //sleep
+  await new Promise((r) => setTimeout(r, 500)) //sleep
   return await wait(wallet)
 }
 
