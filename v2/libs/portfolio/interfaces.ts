@@ -1,3 +1,6 @@
+import { AccountOp } from '../accountOp/accountOp'
+import { Account } from '../../interfaces/account'
+
 export interface Price {
   baseCurrency: string
   price: number
@@ -6,6 +9,11 @@ export interface Price {
 export interface Collectable {
   url: string
   id: bigint
+}
+
+export interface GetOptionsSimulation {
+  accountOps: AccountOp[]
+  account: Account
 }
 
 export interface TokenResult {
@@ -20,14 +28,28 @@ export interface TokenResult {
   collectables?: Collectable[]
 }
 
-export type LimitsOptions = {
+export type PriceCache = Map<string, [number, Price[]]>
+
+export interface PortfolioGetResult {
+  updateStarted: number
+  discoveryTime: number
+  oracleCallTime: number
+  priceUpdateTime: number
+  priceCache: PriceCache
+  tokens: TokenResult[]
+  tokenErrors: { error: string; address: string }[]
+  collections: TokenResult[]
+  total: bigint
+}
+
+export interface LimitsOptions {
   erc20: number
   erc721: number
   erc721TokensInput: number
   erc721Tokens: number
 }
 
-export type Limits = {
+export interface Limits {
   deploylessProxyMode: LimitsOptions
   deploylessStateOverrideMode: LimitsOptions
 }
