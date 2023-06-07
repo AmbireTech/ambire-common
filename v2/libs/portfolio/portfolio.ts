@@ -107,21 +107,8 @@ export class Portfolio {
       ? LIMITS.deploylessProxyMode
       : LIMITS.deploylessStateOverrideMode
     const collectionsHints = Object.entries(hints.erc721s)
+
     // Get balances and metadata from the provider directly
-
-    // const tokensWithErr = await flattenResults(paginate(hints.erc20s, limits.erc20)
-    // 	.map(page => getTokens(this.network, this.deploylessTokens, opts, accountAddr, page)))
-
-    // const collectionsRaw = await flattenResults(paginate(collectionsHints, limits.erc721)
-    // 	.map(async page => (await this.deploylessNfts.call('getAllNFTs', [
-    // 		accountAddr,
-    // 		page.map(([address]) => address),
-    // 		page.map(
-    // 			([_, x]) => x.enumerable ? [] : x.tokens.slice(0, limits.erc721TokensInput)
-    // 		),
-    // 		limits.erc721Tokens
-    // 	], deploylessOpts))[0]))
-
     const [tokensWithErr, collectionsRaw] = await Promise.all([
       flattenResults(
         paginate(hints.erc20s, limits.erc20).map((page) =>
