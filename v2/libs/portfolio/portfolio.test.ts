@@ -63,6 +63,11 @@ describe('Portfolio', () => {
       simulation: { accountOps: [accountOp], account }
     })
     const entry = postSimulation.tokens.find((x) => x.symbol === 'USDC')
+
+    if (!entry || entry.amountPostSimulation === undefined) {
+      throw new Error('Token not found or `amountPostSimulation` is not calculated')
+    }
+
     expect(entry.amount - entry.amountPostSimulation).toBe(5259434n)
   })
 

@@ -1,13 +1,19 @@
 import { Provider, JsonRpcProvider } from 'ethers'
 import { Deployless } from '../deployless/deployless'
-import { AccountOp } from '../accountOp/accountOp'
-import { Account } from '../../interfaces/account'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { nftOracle, balanceOracle } from './multiOracle.json'
 import batcher from './batcher'
 import { geckoRequestBatcher, geckoResponseIdentifier } from './gecko'
 import { flattenResults, paginate } from './pagination'
-import { TokenResult, Price, Limits, LimitsOptions } from './interfaces'
+import {
+  TokenResult,
+  Price,
+  Limits,
+  LimitsOptions,
+  GetOptionsSimulation,
+  PriceCache,
+  PortfolioGetResult
+} from './interfaces'
 import { getNFTs, getTokens } from './getOnchainBalances'
 
 const LIMITS: Limits = {
@@ -22,13 +28,6 @@ const LIMITS: Limits = {
     erc721Tokens: 100
   }
 }
-
-export interface GetOptionsSimulation {
-  accountOps: AccountOp[]
-  account: Account
-}
-
-type PriceCache = Map<string, [number, Price[]]>
 
 export interface GetOptions {
   baseCurrency: string
@@ -80,7 +79,7 @@ export class Portfolio {
     )
   }
 
-  async get(accountAddr: string, opts: Partial<GetOptions> = {}) {
+  async get(accountAddr: string, opts: Partial<GetOptions> = {}): Promise<PortfolioGetResult> {
     opts = { ...defaultOptions, ...opts }
     const { baseCurrency } = opts
     if (opts.simulation && opts.simulation.account.addr !== accountAddr)
