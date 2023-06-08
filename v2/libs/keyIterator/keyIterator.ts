@@ -1,6 +1,8 @@
 /* eslint-disable new-cap */
 import { HDNodeWallet, Mnemonic, Wallet } from 'ethers'
 
+import { KeyIterator as KeyIteratorInterface } from '../../interfaces/keyIterator'
+
 // DOCS
 // - Serves for retrieving a range of addresses/keys from a given private key or seed phrase
 
@@ -18,7 +20,7 @@ function isValidPrivateKey(value: string) {
   return true
 }
 
-export class KeyIterator {
+export class KeyIterator implements KeyIteratorInterface {
   #privateKey: string | null = null
 
   #seedPhrase: string | null = null
