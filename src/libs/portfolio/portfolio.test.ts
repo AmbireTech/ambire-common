@@ -1,7 +1,7 @@
 import fetch from 'node-fetch'
 import { AbiCoder, ethers, JsonRpcProvider } from 'ethers'
-import { Portfolio } from './portfolio'
 import { describe, expect, test } from '@jest/globals'
+import { Portfolio } from './portfolio'
 import { networks } from '../../consts/networks'
 import { AmbireAccount } from '../../../test/config'
 

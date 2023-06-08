@@ -11,8 +11,8 @@ import {
   assertion
 } from './config'
 import { wait } from './polling'
-import { getProxyDeployBytecode, getStorageSlotsFromArtifact } from '../v2/libs/proxyDeploy/deploy'
-import { PrivLevels } from '../v2/libs/proxyDeploy/deploy'
+import { getProxyDeployBytecode, getStorageSlotsFromArtifact } from '../src/libs/proxyDeploy/deploy'
+import { PrivLevels } from '../src/libs/proxyDeploy/deploy'
 
 // get the expect address after the contract is deployed by the deployer
 function getAmbireAccountAddress(factoryAddress: string, bytecode: string) {

@@ -18,7 +18,7 @@ import { wrapEthSign } from '../ambireSign'
 import {
   getProxyDeployBytecode,
   getStorageSlotsFromArtifact
-} from '../../v2/libs/proxyDeploy/deploy'
+} from '../../src/libs/proxyDeploy/deploy'
 import { getAmbireAccountAddress } from '../implementations'
 const abiCoder = new ethers.AbiCoder()
 
