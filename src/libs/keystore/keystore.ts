@@ -271,6 +271,7 @@ export class Keystore {
     const storedKey: StoredKey = keys.find((x: StoredKey) => x.id === keyId)
 
     if (!storedKey) throw new Error('keystore: key not found')
+    if (storedKey.type !== 'internal') throw new Error('keystore: key does not have privateKey')
 
     const encryptedBytes = getBytes(storedKey.privKey as string)
     // @ts-ignore
