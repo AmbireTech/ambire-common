@@ -19,3 +19,15 @@ export interface TokenResult {
   name?: string
   collectables?: Collectable[]
 }
+
+export type LimitsOptions = {
+  erc20: number
+  erc721: number
+  erc721TokensInput: number
+  erc721Tokens: number
+}
+
+export type Limits = {
+  deploylessProxyMode: LimitsOptions
+  deploylessStateOverrideMode: LimitsOptions
+}

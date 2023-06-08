@@ -1,16 +1,16 @@
 import { Provider, JsonRpcProvider } from 'ethers'
-import { Deployless, DeploylessMode, parseErr } from '../deployless/deployless'
-import { AccountOp, callToTuple } from '../accountOp/accountOp'
-import { getAccountDeployParams } from '../account/account'
+import { Deployless } from '../deployless/deployless'
+import { AccountOp } from '../accountOp/accountOp'
 import { Account } from '../../interfaces/account'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { nftOracle, balanceOracle } from './multiOracle.json'
 import batcher from './batcher'
 import { geckoRequestBatcher, geckoResponseIdentifier } from './gecko'
 import { flattenResults, paginate } from './pagination'
-import { TokenResult, Collectable, Price } from './interfaces'
+import { TokenResult, Price, Limits, LimitsOptions } from './interfaces'
+import { getNFTs, getTokens } from './getOnchainBalances'
 
-const LIMITS = {
+const LIMITS: Limits = {
   // we have to be conservative with erc721Tokens because if we pass 30x20 (worst case) tokenIds, that's 30x20 extra words which is 19kb
   // proxy mode input is limited to 24kb
   deploylessProxyMode: { erc20: 100, erc721: 30, erc721TokensInput: 20, erc721Tokens: 50 },
@@ -22,25 +22,23 @@ const LIMITS = {
     erc721Tokens: 100
   }
 }
-// 0x00..01 is the address from which simulation signatures are valid
-const DEPLOYLESS_SIMULATION_FROM = '0x0000000000000000000000000000000000000001'
 
-export interface UpdateOptionsSimulation {
+export interface GetOptionsSimulation {
   accountOps: AccountOp[]
   account: Account
 }
 
 type PriceCache = Map<string, [number, Price[]]>
 
-export interface UpdateOptions {
+export interface GetOptions {
   baseCurrency: string
   blockTag: string | number
-  simulation?: UpdateOptionsSimulation
+  simulation?: GetOptionsSimulation
   priceCache?: PriceCache
   priceRecency: number
 }
 
-const defaultOptions: UpdateOptions = {
+const defaultOptions: GetOptions = {
   baseCurrency: 'usd',
   blockTag: 'latest',
   priceRecency: 0
@@ -82,7 +80,7 @@ export class Portfolio {
     )
   }
 
-  async update(accountAddr: string, opts: Partial<UpdateOptions> = {}) {
+  async get(accountAddr: string, opts: Partial<GetOptions> = {}) {
     opts = { ...defaultOptions, ...opts }
     const { baseCurrency } = opts
     if (opts.simulation && opts.simulation.account.addr !== accountAddr)
@@ -101,37 +99,21 @@ export class Portfolio {
     }
     const discoveryDone = Date.now()
 
-    const deploylessOpts = { blockTag: opts.blockTag, from: DEPLOYLESS_SIMULATION_FROM }
     // .isLimitedAt24kbData should be the same for both instances; @TODO more elegant check?
-    const limits = this.deploylessTokens.isLimitedAt24kbData
+    const limits: LimitsOptions = this.deploylessTokens.isLimitedAt24kbData
       ? LIMITS.deploylessProxyMode
       : LIMITS.deploylessStateOverrideMode
     const collectionsHints = Object.entries(hints.erc721s)
 
-    // Get balances and metadata from the provider directly
-    const [tokensWithErr, collectionsRaw] = await Promise.all([
+    const [tokensWithErr, collectionsWithErr] = await Promise.all([
       flattenResults(
         paginate(hints.erc20s, limits.erc20).map((page) =>
           getTokens(this.network, this.deploylessTokens, opts, accountAddr, page)
         )
       ),
       flattenResults(
-        paginate(collectionsHints, limits.erc721).map(
-          async (page) =>
-            (
-              await this.deploylessNfts.call(
-                'getAllNFTs',
-                [
-                  accountAddr,
-                  page.map(([address]) => address),
-                  page.map(([_, x]) =>
-                    x.enumerable ? [] : x.tokens.slice(0, limits.erc721TokensInput)
-                  ),
-                  limits.erc721Tokens
-                ],
-                deploylessOpts
-              )
-            )[0]
+        paginate(collectionsHints, limits.erc721).map((page) =>
+          getNFTs(this.deploylessNfts, opts, accountAddr, page, limits)
         )
       )
     ])
@@ -147,21 +129,21 @@ export class Portfolio {
       if (start - timestamp <= opts.priceRecency! && eligible.length) return eligible
       return null
     }
-    const collections = [...(collectionsRaw as any[])].map((x, i) => {
+
+    const tokenFilter = ([error, result]: [string, TokenResult]): boolean =>
+      result.amount > 0 && error == '0x' && result.symbol !== ''
+
+    const tokens = tokensWithErr.filter(tokenFilter).map(([_, result]) => result)
+
+    const collections = collectionsWithErr.filter(tokenFilter).map(([_, x], i) => {
       const address = collectionsHints[i][0] as unknown as string
       return {
+        ...x,
         address: address,
-        name: x[0],
-        symbol: x[1],
-        amount: BigInt(x[2].length),
-        decimals: 1,
-        priceIn: getPriceFromCache(address) || [],
-        collectables: [...(x[2] as any[])].map((x: any) => ({ id: x[0], url: x[1] } as Collectable))
+        priceIn: getPriceFromCache(address) || []
       } as TokenResult
     })
-    const tokens = tokensWithErr
-      .filter(([error, result]) => result.amount > 0 && error == '0x' && result.symbol !== '')
-      .map(([_, result]) => result)
+
     const oracleCallDone = Date.now()
 
     // Update prices
@@ -208,71 +190,5 @@ export class Portfolio {
         return cur
       }, {})
     }
-  }
-}
-
-async function getTokens(
-  network: NetworkDescriptor,
-  deployless: Deployless,
-  opts: Partial<UpdateOptions>,
-  accountAddr: string,
-  tokenAddrs: string[]
-): Promise<[number, TokenResult][]> {
-  const mapToken = (x: any, address: string) =>
-    ({
-      amount: x.amount,
-      decimals: new Number(x.decimals),
-      symbol:
-        address === '0x0000000000000000000000000000000000000000'
-          ? network.nativeAssetSymbol
-          : x.symbol,
-      address
-    } as TokenResult)
-  const deploylessOpts = { blockTag: opts.blockTag, from: DEPLOYLESS_SIMULATION_FROM }
-  if (!opts.simulation) {
-    const [results] = await deployless.call(
-      'getBalances',
-      [accountAddr, tokenAddrs],
-      deploylessOpts
-    )
-    // we do [ ... ] to get rid of the ethers Result type
-    return [...(results as any[])].map((x, i) => [x.error, mapToken(x, tokenAddrs[i])])
-  }
-  const { accountOps, account } = opts.simulation
-  const [factory, factoryCalldata] = getAccountDeployParams(account)
-  const [before, after, simulationErr] = await deployless.call(
-    'simulateAndGetBalances',
-    [
-      accountAddr,
-      tokenAddrs,
-      factory,
-      factoryCalldata,
-      accountOps.map(({ nonce, calls, signature }) => [nonce, calls.map(callToTuple), signature])
-    ],
-    deploylessOpts
-  )
-
-  if (simulationErr !== '0x')
-    throw new SimulationError(parseErr(simulationErr) || simulationErr, before[1], after[1])
-  if (after[1] === 0n)
-    throw new SimulationError('unknown error: simulation reverted', before[1], after[1])
-  if (after[1] < before[1]) throw new SimulationError('lower "after" nonce', before[1], after[1])
-  // no simulation was performed if the nonce is the same
-  const postSimulationAmounts = after[1] === before[1] ? before[0] : after[0]
-  return [...before[0]].map((x, i) => [
-    x.error,
-    { ...mapToken(x, tokenAddrs[i]), amountPostSimulation: postSimulationAmounts[i].amount }
-  ])
-}
-
-class SimulationError extends Error {
-  public simulationErrorMsg: string
-  public beforeNonce: bigint
-  public afterNonce: bigint
-  constructor(message: string, beforeNonce: bigint, afterNonce: bigint) {
-    super(`simulation error: ${message}`)
-    this.simulationErrorMsg = message
-    this.beforeNonce = beforeNonce
-    this.afterNonce = afterNonce
   }
 }

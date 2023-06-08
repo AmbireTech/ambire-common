@@ -65,7 +65,7 @@ class PortfolioController {
         if (state.isLoading) return
         state.isLoading = true
         try {
-          const results = await portfolioLib.update(accountId, {
+          const results = await portfolioLib.get(accountId, {
             priceRecency: 60000,
             priceCache: state.priceCache
           })
