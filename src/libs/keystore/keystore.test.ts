@@ -6,6 +6,7 @@ import { describe, expect, test } from '@jest/globals'
 
 import { Storage } from '../../interfaces/storage'
 import { Key, Keystore } from './keystore'
+import { Wallet } from 'ethers'
 
 // Helpers/testing
 function produceMemoryStore(): Storage {
@@ -82,6 +83,14 @@ describe('Keystore', () => {
     }
   })
 
+  test('should not return uid until there are no secrets yet', async () => {
+    try {
+      await keystore.getKeyStoreUid()
+    } catch (e: any) {
+      expect(e.message).toBe('keystore: adding secret before get uid')
+    }
+  })
+
   test('should add a secret', async () => {
     await keystore.addSecret('passphrase', pass)
     expect(keystore.isUnlocked()).toBe(false)
@@ -141,6 +150,18 @@ describe('Keystore', () => {
     } catch (e: any) {
       expect(e.message).toBe('keystore: not unlocked')
     }
+  })
+
+  test('should export key backup, create wallet and compare public address', async () => {
+    await keystore.unlockWithSecret('passphrase', pass)
+    const keyBackup = await keystore.exportKeyWithPasscode(keyPublicAddress, 'goshoPazara')
+    const wallet = await Wallet.fromEncryptedJson(JSON.parse(keyBackup), 'goshoPazara')
+    expect(wallet.address).toBe(keyPublicAddress)
+  })
+
+  test('should return uid', async () => {
+    const keystoreUid = await keystore.getKeyStoreUid()
+    expect(keystoreUid.length).toBe(32)
   })
   // @TODO: secret not found
 })
