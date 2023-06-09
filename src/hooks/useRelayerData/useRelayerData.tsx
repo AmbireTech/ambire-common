@@ -13,13 +13,12 @@ export default function useRelayerData({
   fetch,
   url,
   initialState = null,
-  useOfflineStatus = null
+  isOffline = false
 }: UseRelayerDataProps): UseRelayerDataReturnType {
   const [isLoading, setLoading] = useState<boolean>(true)
   const [data, setData] = useState<any>(initialState)
   const [err, setErr] = useState<any>(null)
   const prevUrl = useRef('')
-  const isOffline = (!!useOfflineStatus && useOfflineStatus()) || false
 
   const updateData = useCallback(async () => {
     const { resp, body, errMsg } = await fetchCaught(fetch, url)
@@ -55,7 +54,7 @@ export default function useRelayerData({
       unloaded = true
       clearTimeout(resetDataTimer)
     }
-  }, [url, updateData])
+  }, [url, updateData, isOffline])
 
   // In case we want to refetch the data without changing the url prop
   // e.g. pull to refresh
