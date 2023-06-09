@@ -45,10 +45,10 @@ export class KeyIterator implements KeyIteratorInterface {
     if ((!from && from !== 0) || (!to && to !== 0) || !derivation)
       throw new Error('keyIterator: invalid or missing arguments')
 
-    const addresses: string[] = []
+    const keys: string[] = []
 
     if (this.#privateKey) {
-      addresses.push(new Wallet(this.#privateKey).address)
+      keys.push(new Wallet(this.#privateKey).address)
     }
 
     if (this.#seedPhrase) {
@@ -56,10 +56,10 @@ export class KeyIterator implements KeyIteratorInterface {
       const wallet = HDNodeWallet.fromMnemonic(mnemonic)
 
       for (let i = from; i <= to; i++) {
-        addresses.push(wallet.derivePath(`${derivation}/${i}`).address)
+        keys.push(wallet.derivePath(`${derivation}/${i}`).address)
       }
     }
 
-    return addresses
+    return keys
   }
 }
