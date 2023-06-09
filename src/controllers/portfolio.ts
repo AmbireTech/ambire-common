@@ -13,15 +13,21 @@ type AccountId = string
 // @TODO fix the any
 type PortfolioState = Map<AccountId, Map<NetworkId, any>>
 
-class PortfolioController {
+export class PortfolioController {
   latest: PortfolioState
   pending: PortfolioState
   private portfolioLibs: Map<string, Portfolio>
+  // @TODO - typescript interface
+  // It's Object, instead of Map, because Map can't be serialized in the storage
+  private previousHints: { [name: string]: any }
+  private storage: any
 
   constructor(storage: Storage) {
     this.latest = new Map()
     this.pending = new Map()
     this.portfolioLibs = new Map()
+    this.previousHints = {}
+    this.storage = storage
   }
   // NOTE: we always pass in all `accounts` and `networks` to ensure that the user of this
   // controller doesn't have to update this controller every time that those are updated
@@ -40,6 +46,12 @@ class PortfolioController {
     accountId: AccountId,
     accountOps: AccountOp[]
   ) {
+    // Load storage cached hints
+    const storagePreviousHints = await this.storage.get('previousHints', {})
+    if (Object.keys(storagePreviousHints).length && !Object.keys(this.previousHints).length) {
+      this.previousHints = storagePreviousHints
+    }
+
     const selectedAccount = accounts.find((x) => x.addr === accountId)
     if (!selectedAccount) throw new Error('selected account does not exist')
     // @TODO update pending AND latest state together in case we have accountOps
@@ -67,10 +79,10 @@ class PortfolioController {
         try {
           const results = await portfolioLib.get(accountId, {
             priceRecency: 60000,
-            priceCache: state.priceCache
+            priceCache: state.priceCache,
+            previousHints: this.previousHints[key]
           })
-          const previousHints = getHints(results)
-          console.log(previousHints)
+          this.previousHints[key] = getHints(results)
           accountState.set(network.id, { isReady: true, isLoading: false, ...results })
         } catch (e) {
           state.isLoading = false
@@ -79,7 +91,11 @@ class PortfolioController {
         }
       })
     )
-    console.log(this.latest)
+
+    // Persist previousHints in the disk storage for further requests
+    // TODO - in case of failed hints request, should we update the storage?
+    await this.storage.set('previousHints', this.previousHints)
+    // console.log(this.latest)
     // console.log(accounts, networks, accountOps)
   }
 }
@@ -97,7 +113,7 @@ function getHints(results: { tokens: TokenResult[]; collections: TokenResult[] }
 }
 
 // @TODO: move this into utils
-function produceMemoryStore(): Storage {
+export function produceMemoryStore(): Storage {
   const storage = new Map()
   return {
     get: (key, defaultValue): any => {

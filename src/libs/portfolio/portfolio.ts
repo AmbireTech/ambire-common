@@ -35,6 +35,7 @@ export interface GetOptions {
   simulation?: GetOptionsSimulation
   priceCache?: PriceCache
   priceRecency: number
+  previousHints?: any
 }
 
 const defaultOptions: GetOptions = {
@@ -88,7 +89,29 @@ export class Portfolio {
     // Get hints (addresses to check on-chain) via Velcro
     const start = Date.now()
     const networkId = this.network.id
-    const hints = await this.batchedVelcroDiscovery({ networkId, accountAddr, baseCurrency })
+
+    // Make sure portfolio lib still works, even in the case Velcro discovery fails.
+    // Because of this, we fall back to Velcro default response.
+    let hints
+    try {
+      hints = await this.batchedVelcroDiscovery({ networkId, accountAddr, baseCurrency })
+    } catch (error) {
+      hints = {
+        networkId: networkId,
+        accountAddr: accountAddr,
+        erc20s: [],
+        erc721s: {},
+        prices: {},
+        hasHints: false,
+        error
+      }
+    }
+
+    // Enrich hints with the previously found and cached hints, especially in the case the Velcro discovery fails.
+    if (opts.previousHints) {
+      hints = { ...hints, ...opts.previousHints }
+    }
+
     // This also allows getting prices, this is used for more exotic tokens that cannot be retrieved via Coingecko
     const priceCache: PriceCache = opts.priceCache || new Map()
     for (const addr in hints.prices || {}) {

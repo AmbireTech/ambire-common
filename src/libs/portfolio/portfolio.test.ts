@@ -1,6 +1,6 @@
 import fetch from 'node-fetch'
 import { AbiCoder, ethers, JsonRpcProvider } from 'ethers'
-import { describe, expect, test } from '@jest/globals'
+import { describe, expect, test, jest } from '@jest/globals'
 import { Portfolio } from './portfolio'
 import { networks } from '../../consts/networks'
 import { AmbireAccount } from '../../../test/config'
@@ -127,5 +127,48 @@ describe('Portfolio', () => {
     })
     expect(resultTwo.priceUpdateTime).toBeLessThanOrEqual(3)
     expect(resultTwo.tokens.every((x) => x.priceIn.length)).toBe(true)
+  })
+
+  test('portfolio works with previously cached hints, even if Velcro Discovery request fails', async () => {
+    // Here we are mocking multi-hints route only, in order to simulate Velcro Discovery failure
+    jest.mock('node-fetch', () => {
+      return jest.fn((url) => {
+        // @ts-ignore
+        const { Response } = jest.requireActual('node-fetch')
+        if (url.includes('https://relayer.ambire.com/velcro-v3/multi-hints')) {
+          const body = JSON.stringify({ message: 'API error' })
+          const headers = { status: 200 }
+
+          return Promise.resolve(new Response(body, headers))
+        }
+
+        // @ts-ignore
+        return jest.requireActual('node-fetch')(url)
+      })
+    })
+
+    const portfolio = new Portfolio(fetch, provider, ethereum)
+    const previousHints = {
+      erc20s: [
+        '0x0000000000000000000000000000000000000000',
+        '0xba100000625a3754423978a60c9317c58a424e3D',
+        '0x4da27a545c0c5B758a6BA100e3a049001de870f5',
+        '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'
+      ],
+      erc721s: {}
+    }
+    const result = await portfolio.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', {
+      previousHints
+    })
+
+    // Restore node-fetch module
+    jest.mock('node-fetch', () => {
+      return jest.fn().mockImplementation(jest.requireActual('node-fetch'))
+    })
+
+    expect(result.tokens.map((token) => token.address)).toEqual(previousHints.erc20s)
+    // Portfolio should determine the tokens' balances and prices
+    // @ts-ignore
+    expect(result.total.usd).toBeGreaterThan(100)
   })
 })
