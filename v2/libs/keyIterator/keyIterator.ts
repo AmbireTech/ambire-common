@@ -41,7 +41,7 @@ export class KeyIterator implements KeyIteratorInterface {
     throw new Error('keyIterator: invalid argument provided to constructor')
   }
 
-  async retrieve(from: number, to: number, derivation: string) {
+  async retrieve(from: number, to: number, derivation: string = "m/44'/60'/0'") {
     if ((!from && from !== 0) || (!to && to !== 0) || !derivation)
       throw new Error('keyIterator: invalid or missing arguments')
 
