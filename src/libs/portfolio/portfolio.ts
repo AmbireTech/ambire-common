@@ -2,6 +2,7 @@ import { Provider, JsonRpcProvider } from 'ethers'
 import { Deployless } from '../deployless/deployless'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { nftOracle, balanceOracle } from './multiOracle.json'
+import lodashMergeWith from 'lodash.mergewith'
 import batcher from './batcher'
 import { geckoRequestBatcher, geckoResponseIdentifier } from './gecko'
 import { flattenResults, paginate } from './pagination'
@@ -109,7 +110,20 @@ export class Portfolio {
 
     // Enrich hints with the previously found and cached hints, especially in the case the Velcro discovery fails.
     if (opts.previousHints) {
-      hints = { ...hints, ...opts.previousHints }
+      // Deep nested merge. Here's an example if we merge hints + previousHints:
+      // hints: { erc20s: [ "0x83e6f1E41cdd28eAcEB20Cb649155049Fac3D5Aa" ], erc721s: { "0xcF30DEf37DcB65d244F14E075Dc0ce875ccFa065": { isKnown: false, "tokens": [ "2442" ] } } }
+      // previousHints: { erc20s: [ "0x83e6f1E41cdd28eAcEB20Cb649155049Fac3D5Aa", "0xEE1CeA7665bA7aa97e982EdeaeCb26B59a04d035" ], erc721s: { "0xcF30DEf37DcB65d244F14E075Dc0ce875ccFa065": { "tokens": [ "1111" ] } } }
+      // result:  { erc20s: [ "0x83e6f1E41cdd28eAcEB20Cb649155049Fac3D5Aa", "0xEE1CeA7665bA7aa97e982EdeaeCb26B59a04d035" ], erc721s: { "0xcF30DEf37DcB65d244F14E075Dc0ce875ccFa065": { isKnown: false, "tokens": [ "2442", "1111" ] } } }
+      hints = lodashMergeWith(
+        hints,
+        opts.previousHints,
+        (hintValue: any, previousHintValue: any): Array<any> | void => {
+          // In case of Array, get the unique set of hint and previousHint items
+          if (Array.isArray(hintValue)) {
+            return [...new Set([...hintValue, ...previousHintValue])]
+          }
+        }
+      )
     }
 
     // This also allows getting prices, this is used for more exotic tokens that cannot be retrieved via Coingecko
