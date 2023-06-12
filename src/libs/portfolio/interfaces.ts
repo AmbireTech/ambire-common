@@ -40,6 +40,7 @@ export interface PortfolioGetResult {
   tokenErrors: { error: string; address: string }[]
   collections: TokenResult[]
   total: { [name: string]: bigint }
+  error?: string
 }
 
 export interface LimitsOptions {

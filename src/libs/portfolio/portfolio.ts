@@ -221,7 +221,9 @@ export class Portfolio {
             (cur[x.baseCurrency] || 0) + (Number(token.amount) / 10 ** token.decimals) * x.price
         }
         return cur
-      }, {})
+      }, {}),
+      // Add error field conditionally
+      ...{ ...(hints.error ? { error: hints.error } : {}) }
     }
   }
 }

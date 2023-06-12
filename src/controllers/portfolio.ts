@@ -13,13 +13,17 @@ type AccountId = string
 // @TODO fix the any
 type PortfolioState = Map<AccountId, Map<NetworkId, any>>
 
+interface Hints {
+  erc20s: string[]
+  erc721s: { [name: string]: { tokens: string[] } }
+}
+
 export class PortfolioController {
   latest: PortfolioState
   pending: PortfolioState
   private portfolioLibs: Map<string, Portfolio>
-  // @TODO - typescript interface
   // It's Object, instead of Map, because Map can't be serialized in the storage
-  private previousHints: { [name: string]: any }
+  private previousHints: { [name: string]: Hints }
   private storage: any
 
   constructor(storage: Storage) {
@@ -82,7 +86,10 @@ export class PortfolioController {
             priceCache: state.priceCache,
             previousHints: this.previousHints[key]
           })
-          this.previousHints[key] = getHints(results)
+          // Don't update previous hints (cache), if the hints request fails
+          if (!results.error) {
+            this.previousHints[key] = getHints(results)
+          }
           accountState.set(network.id, { isReady: true, isLoading: false, ...results })
         } catch (e) {
           state.isLoading = false
@@ -93,14 +100,13 @@ export class PortfolioController {
     )
 
     // Persist previousHints in the disk storage for further requests
-    // TODO - in case of failed hints request, should we update the storage?
     await this.storage.set('previousHints', this.previousHints)
     // console.log(this.latest)
     // console.log(accounts, networks, accountOps)
   }
 }
 
-function getHints(results: { tokens: TokenResult[]; collections: TokenResult[] }) {
+function getHints(results: { tokens: TokenResult[]; collections: TokenResult[] }): Hints {
   return {
     erc20s: results.tokens.map((x: TokenResult) => x.address),
     erc721s: Object.fromEntries(
