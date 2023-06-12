@@ -12,7 +12,8 @@ import {
   LimitsOptions,
   GetOptionsSimulation,
   PriceCache,
-  PortfolioGetResult
+  PortfolioGetResult,
+  Hints
 } from './interfaces'
 import { getNFTs, getTokens } from './getOnchainBalances'
 
@@ -29,16 +30,7 @@ const LIMITS: Limits = {
   }
 }
 
-interface EmptyHints {
-  networkId: string
-  accountAddr: string
-  erc20s: []
-  erc721s: {}
-  prices: {}
-  hasHints: boolean
-}
-
-const getEmptyHints = (networkId: string, accountAddr: string): EmptyHints => ({
+const getEmptyHints = (networkId: string, accountAddr: string): Hints => ({
   networkId: networkId,
   accountAddr: accountAddr,
   erc20s: [],
@@ -110,7 +102,7 @@ export class Portfolio {
 
     // Make sure portfolio lib still works, even in the case Velcro discovery fails.
     // Because of this, we fall back to Velcro default response.
-    let hints
+    let hints: Hints
     try {
       hints = await this.batchedVelcroDiscovery({ networkId, accountAddr, baseCurrency })
     } catch (error) {
@@ -218,6 +210,8 @@ export class Portfolio {
     const priceUpdateDone = Date.now()
 
     return {
+      // Raw hints response
+      hints,
       updateStarted: start,
       discoveryTime: discoveryDone - start,
       oracleCallTime: oracleCallDone - discoveryDone,

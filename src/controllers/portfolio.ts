@@ -1,5 +1,5 @@
 import { Portfolio } from '../libs/portfolio/portfolio'
-import { TokenResult } from '../libs/portfolio/interfaces'
+import { Hints } from '../libs/portfolio/interfaces'
 import { Storage } from '../interfaces/storage'
 import { NetworkDescriptor } from '../interfaces/networkDescriptor'
 import { Account } from '../interfaces/account'
@@ -13,17 +13,17 @@ type AccountId = string
 // @TODO fix the any
 type PortfolioState = Map<AccountId, Map<NetworkId, any>>
 
-interface Hints {
-  erc20s: string[]
-  erc721s: { [name: string]: { tokens: string[] } }
-}
-
 export class PortfolioController {
   latest: PortfolioState
   pending: PortfolioState
   private portfolioLibs: Map<string, Portfolio>
   // It's Object, instead of Map, because Map can't be serialized in the storage
-  private previousHints: { [name: string]: Hints }
+  private previousHints: {
+    [name: string]: {
+      erc20s: Hints['erc20s']
+      erc721s: Hints['erc721s']
+    }
+  }
   private storage: any
 
   constructor(storage: Storage) {
@@ -88,7 +88,10 @@ export class PortfolioController {
           })
           // Don't update previous hints (cache), if the hints request fails
           if (!results.error) {
-            this.previousHints[key] = getHints(results)
+            this.previousHints[key] = {
+              erc20s: results.hints.erc20s,
+              erc721s: results.hints.erc721s
+            }
           }
           accountState.set(network.id, { isReady: true, isLoading: false, ...results })
         } catch (e) {
@@ -103,18 +106,6 @@ export class PortfolioController {
     await this.storage.set('previousHints', this.previousHints)
     // console.log(this.latest)
     // console.log(accounts, networks, accountOps)
-  }
-}
-
-function getHints(results: { tokens: TokenResult[]; collections: TokenResult[] }): Hints {
-  return {
-    erc20s: results.tokens.map((x: TokenResult) => x.address),
-    erc721s: Object.fromEntries(
-      results.collections.map((x: TokenResult) => [
-        x.address,
-        { tokens: x.collectables!.map((y) => `${y.id}`) }
-      ])
-    )
   }
 }
 
