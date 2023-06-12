@@ -29,6 +29,24 @@ const LIMITS: Limits = {
   }
 }
 
+interface EmptyHints {
+  networkId: string
+  accountAddr: string
+  erc20s: []
+  erc721s: {}
+  prices: {}
+  hasHints: boolean
+}
+
+const getEmptyHints = (networkId: string, accountAddr: string): EmptyHints => ({
+  networkId: networkId,
+  accountAddr: accountAddr,
+  erc20s: [],
+  erc721s: {},
+  prices: {},
+  hasHints: false
+})
+
 export interface GetOptions {
   baseCurrency: string
   blockTag: string | number
@@ -97,12 +115,7 @@ export class Portfolio {
       hints = await this.batchedVelcroDiscovery({ networkId, accountAddr, baseCurrency })
     } catch (error) {
       hints = {
-        networkId: networkId,
-        accountAddr: accountAddr,
-        erc20s: [],
-        erc721s: {},
-        prices: {},
-        hasHints: false,
+        ...getEmptyHints(networkId, accountAddr),
         error
       }
     }
