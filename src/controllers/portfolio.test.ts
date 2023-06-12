@@ -21,8 +21,6 @@ describe('Portfolio Controller ', () => {
     await controller.updateSelectedAccount([account], networks, account.addr, [])
     const storagePreviousHints = await storage.get('previousHints', {})
 
-    console.log(storagePreviousHints[`ethereum:${account.addr}`])
-
     expect(storagePreviousHints[`ethereum:${account.addr}`]).toEqual({
       erc20s: [
         '0x0000000000000000000000000000000000000000',

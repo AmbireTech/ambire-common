@@ -2,7 +2,6 @@ import { Provider, JsonRpcProvider } from 'ethers'
 import { Deployless } from '../deployless/deployless'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { nftOracle, balanceOracle } from './multiOracle.json'
-import lodashMergeWith from 'lodash.mergewith'
 import batcher from './batcher'
 import { geckoRequestBatcher, geckoResponseIdentifier } from './gecko'
 import { flattenResults, paginate } from './pagination'
@@ -110,20 +109,18 @@ export class Portfolio {
 
     // Enrich hints with the previously found and cached hints, especially in the case the Velcro discovery fails.
     if (opts.previousHints) {
-      // Deep nested merge. Here's an example if we merge hints + previousHints:
-      // hints: { erc20s: [ "0x83e6f1E41cdd28eAcEB20Cb649155049Fac3D5Aa" ], erc721s: { "0xcF30DEf37DcB65d244F14E075Dc0ce875ccFa065": { isKnown: false, "tokens": [ "2442" ] } } }
-      // previousHints: { erc20s: [ "0x83e6f1E41cdd28eAcEB20Cb649155049Fac3D5Aa", "0xEE1CeA7665bA7aa97e982EdeaeCb26B59a04d035" ], erc721s: { "0xcF30DEf37DcB65d244F14E075Dc0ce875ccFa065": { "tokens": [ "1111" ] } } }
-      // result:  { erc20s: [ "0x83e6f1E41cdd28eAcEB20Cb649155049Fac3D5Aa", "0xEE1CeA7665bA7aa97e982EdeaeCb26B59a04d035" ], erc721s: { "0xcF30DEf37DcB65d244F14E075Dc0ce875ccFa065": { isKnown: false, "tokens": [ "2442", "1111" ] } } }
-      hints = lodashMergeWith(
-        hints,
-        opts.previousHints,
-        (hintValue: any, previousHintValue: any): Array<any> | void => {
-          // In case of Array, get the unique set of hint and previousHint items
-          if (Array.isArray(hintValue)) {
-            return [...new Set([...hintValue, ...previousHintValue])]
-          }
-        }
-      )
+      hints = {
+        ...hints,
+        // Unique list of previously discovered and currently discovered erc20s
+        erc20s: [...new Set([...opts.previousHints.erc20s, ...hints.erc20s])],
+        // Please note 2 things:
+        // 1. Velcro hints data takes advantage over previous hints because, in most cases, Velcro data is more up-to-date than the previously cached hints.
+        // 2. There is only one use-case where the previous hints data is more recent, and that is when we find an NFT token via a pending simulation.
+        // In order to support it, we have to apply a complex deep merging algorithm (which may become problematic if the Velcro API changes)
+        // and also have to introduce an algorithm for self-cleaning outdated/previous NFT tokens.
+        // However, we have chosen to keep it as simple as possible and disregard this rare case.
+        erc721s: { ...opts.previousHints.erc721s, ...hints.erc721s }
+      }
     }
 
     // This also allows getting prices, this is used for more exotic tokens that cannot be retrieved via Coingecko
