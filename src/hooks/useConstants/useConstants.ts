@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 
-import { fetchCaught } from '../../fetch'
+import { fetchCaught } from '../../services/fetch'
 import {
   AdexToStakingTransfersLogsType,
   ConstantsType,
