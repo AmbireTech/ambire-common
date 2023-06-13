@@ -12,7 +12,8 @@ import {
   LimitsOptions,
   GetOptionsSimulation,
   PriceCache,
-  PortfolioGetResult
+  PortfolioGetResult,
+  Hints
 } from './interfaces'
 import { getNFTs, getTokens } from './getOnchainBalances'
 
@@ -29,12 +30,25 @@ const LIMITS: Limits = {
   }
 }
 
+export const getEmptyHints = (networkId: string, accountAddr: string): Hints => ({
+  networkId: networkId,
+  accountAddr: accountAddr,
+  erc20s: [],
+  erc721s: {},
+  prices: {},
+  hasHints: false
+})
+
 export interface GetOptions {
   baseCurrency: string
   blockTag: string | number
   simulation?: GetOptionsSimulation
   priceCache?: PriceCache
   priceRecency: number
+  previousHints?: {
+    erc20s: Hints['erc20s']
+    erc721s: Hints['erc721s']
+  }
 }
 
 const defaultOptions: GetOptions = {
@@ -88,7 +102,35 @@ export class Portfolio {
     // Get hints (addresses to check on-chain) via Velcro
     const start = Date.now()
     const networkId = this.network.id
-    const hints = await this.batchedVelcroDiscovery({ networkId, accountAddr, baseCurrency })
+
+    // Make sure portfolio lib still works, even in the case Velcro discovery fails.
+    // Because of this, we fall back to Velcro default response.
+    let hints: Hints
+    try {
+      hints = await this.batchedVelcroDiscovery({ networkId, accountAddr, baseCurrency })
+    } catch (error) {
+      hints = {
+        ...getEmptyHints(networkId, accountAddr),
+        error
+      }
+    }
+
+    // Enrich hints with the previously found and cached hints, especially in the case the Velcro discovery fails.
+    if (opts.previousHints) {
+      hints = {
+        ...hints,
+        // Unique list of previously discovered and currently discovered erc20s
+        erc20s: [...new Set([...opts.previousHints.erc20s, ...hints.erc20s])],
+        // Please note 2 things:
+        // 1. Velcro hints data takes advantage over previous hints because, in most cases, Velcro data is more up-to-date than the previously cached hints.
+        // 2. There is only one use-case where the previous hints data is more recent, and that is when we find an NFT token via a pending simulation.
+        // In order to support it, we have to apply a complex deep merging algorithm (which may become problematic if the Velcro API changes)
+        // and also have to introduce an algorithm for self-cleaning outdated/previous NFT tokens.
+        // However, we have chosen to keep it as simple as possible and disregard this rare case.
+        erc721s: { ...opts.previousHints.erc721s, ...hints.erc721s }
+      }
+    }
+
     // This also allows getting prices, this is used for more exotic tokens that cannot be retrieved via Coingecko
     const priceCache: PriceCache = opts.priceCache || new Map()
     for (const addr in hints.prices || {}) {
@@ -171,6 +213,8 @@ export class Portfolio {
     const priceUpdateDone = Date.now()
 
     return {
+      // Raw hints response
+      hints,
       updateStarted: start,
       discoveryTime: discoveryDone - start,
       oracleCallTime: oracleCallDone - discoveryDone,
@@ -187,7 +231,9 @@ export class Portfolio {
             (cur[x.baseCurrency] || 0) + (Number(token.amount) / 10 ** token.decimals) * x.price
         }
         return cur
-      }, {})
+      }, {}),
+      // Add error field conditionally
+      ...{ ...(hints.error ? { error: hints.error } : {}) }
     }
   }
 }

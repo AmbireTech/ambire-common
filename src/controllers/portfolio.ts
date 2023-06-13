@@ -1,5 +1,5 @@
 import { Portfolio } from '../libs/portfolio/portfolio'
-import { TokenResult } from '../libs/portfolio/interfaces'
+import { Hints, PortfolioGetResult } from '../libs/portfolio/interfaces'
 import { Storage } from '../interfaces/storage'
 import { NetworkDescriptor } from '../interfaces/networkDescriptor'
 import { Account } from '../interfaces/account'
@@ -13,15 +13,17 @@ type AccountId = string
 // @TODO fix the any
 type PortfolioState = Map<AccountId, Map<NetworkId, any>>
 
-class PortfolioController {
+export class PortfolioController {
   latest: PortfolioState
   pending: PortfolioState
   private portfolioLibs: Map<string, Portfolio>
+  private storage: any
 
   constructor(storage: Storage) {
     this.latest = new Map()
     this.pending = new Map()
     this.portfolioLibs = new Map()
+    this.storage = storage
   }
   // NOTE: we always pass in all `accounts` and `networks` to ensure that the user of this
   // controller doesn't have to update this controller every time that those are updated
@@ -40,6 +42,9 @@ class PortfolioController {
     accountId: AccountId,
     accountOps: AccountOp[]
   ) {
+    // Load storage cached hints
+    const storagePreviousHints = await this.storage.get('previousHints', {})
+
     const selectedAccount = accounts.find((x) => x.addr === accountId)
     if (!selectedAccount) throw new Error('selected account does not exist')
     // @TODO update pending AND latest state together in case we have accountOps
@@ -67,10 +72,15 @@ class PortfolioController {
         try {
           const results = await portfolioLib.get(accountId, {
             priceRecency: 60000,
-            priceCache: state.priceCache
+            priceCache: state.priceCache,
+            previousHints: storagePreviousHints[key]
           })
-          const previousHints = getHints(results)
-          console.log(previousHints)
+          // Don't update previous hints (cache), if the hints request fails
+          if (!results.error) {
+            // Persist previousHints in the disk storage for further requests
+            storagePreviousHints[key] = getHintsWithBalance(results)
+            await this.storage.set('previousHints', storagePreviousHints)
+          }
           accountState.set(network.id, { isReady: true, isLoading: false, ...results })
         } catch (e) {
           state.isLoading = false
@@ -79,25 +89,34 @@ class PortfolioController {
         }
       })
     )
-    console.log(this.latest)
+    // console.log(this.latest)
     // console.log(accounts, networks, accountOps)
   }
 }
 
-function getHints(results: { tokens: TokenResult[]; collections: TokenResult[] }) {
+// We already know that `results.tokens` and `result.collections` tokens have a balance (this is handled by the portfolio lib).
+// Based on that, we can easily find out which hint tokens also have a balance.
+function getHintsWithBalance(result: PortfolioGetResult): {
+  erc20s: Hints['erc20s']
+  erc721s: Hints['erc721s']
+} {
+  const erc20s = result.tokens.map((token) => token.address)
+
+  const erc721s = Object.fromEntries(
+    result.collections.map((collection) => [
+      collection.address,
+      result.hints.erc721s[collection.address]
+    ])
+  )
+
   return {
-    erc20s: results.tokens.map((x: TokenResult) => x.address),
-    erc721s: Object.fromEntries(
-      results.collections.map((x: TokenResult) => [
-        x.address,
-        { tokens: x.collectables!.map((y) => `${y.id}`) }
-      ])
-    )
+    erc20s,
+    erc721s
   }
 }
 
 // @TODO: move this into utils
-function produceMemoryStore(): Storage {
+export function produceMemoryStore(): Storage {
   const storage = new Map()
   return {
     get: (key, defaultValue): any => {
