@@ -186,9 +186,9 @@ export class Keystore {
     // Persist the new secrets
     await this.storage.set('keystoreSecrets', secrets)
 
-    // produce uid if not exist (should created when first secret added)
+    // produce uid if one doesn't exist (should be created when the first secret is added)
     if (!(await this.storage.get('uid', null))) {
-      const uid = keccak256(randomBytes(32)).slice(2, 34)
+      const uid = keccak256(mainKey.key).slice(2, 34)
       await this.storage.set('uid', uid)
     }
   }
@@ -265,8 +265,7 @@ export class Keystore {
   }
 
   async exportKeyWithPasscode(keyId: string, passphrase: string) {
-    if (!this.isUnlocked()) throw new Error('keystore: not unlocked')
-
+    if (this.#mainKey === null) throw new Error('keystore: needs to be unlocked')
     const keys = await this.storage.get('keystoreKeys', [])
     const storedKey: StoredKey = keys.find((x: StoredKey) => x.id === keyId)
 
@@ -274,9 +273,7 @@ export class Keystore {
     if (storedKey.type !== 'internal') throw new Error('keystore: key does not have privateKey')
 
     const encryptedBytes = getBytes(storedKey.privKey as string)
-    // @ts-ignore
     const counter = new aes.Counter(this.#mainKey.iv)
-    // @ts-ignore
     const aesCtr = new aes.ModeOfOperation.ctr(this.#mainKey.key, counter)
     const decryptedBytes = aesCtr.decrypt(encryptedBytes)
     const decryptedPrivateKey = aes.utils.hex.fromBytes(decryptedBytes)
