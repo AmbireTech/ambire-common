@@ -1,5 +1,5 @@
 import { Portfolio } from '../libs/portfolio/portfolio'
-import { Hints } from '../libs/portfolio/interfaces'
+import { Hints, PortfolioGetResult } from '../libs/portfolio/interfaces'
 import { Storage } from '../interfaces/storage'
 import { NetworkDescriptor } from '../interfaces/networkDescriptor'
 import { Account } from '../interfaces/account'
@@ -17,20 +17,12 @@ export class PortfolioController {
   latest: PortfolioState
   pending: PortfolioState
   private portfolioLibs: Map<string, Portfolio>
-  // It's Object, instead of Map, because Map can't be serialized in the storage
-  private previousHints: {
-    [name: string]: {
-      erc20s: Hints['erc20s']
-      erc721s: Hints['erc721s']
-    }
-  }
   private storage: any
 
   constructor(storage: Storage) {
     this.latest = new Map()
     this.pending = new Map()
     this.portfolioLibs = new Map()
-    this.previousHints = {}
     this.storage = storage
   }
   // NOTE: we always pass in all `accounts` and `networks` to ensure that the user of this
@@ -52,9 +44,6 @@ export class PortfolioController {
   ) {
     // Load storage cached hints
     const storagePreviousHints = await this.storage.get('previousHints', {})
-    if (Object.keys(storagePreviousHints).length && !Object.keys(this.previousHints).length) {
-      this.previousHints = storagePreviousHints
-    }
 
     const selectedAccount = accounts.find((x) => x.addr === accountId)
     if (!selectedAccount) throw new Error('selected account does not exist')
@@ -84,14 +73,13 @@ export class PortfolioController {
           const results = await portfolioLib.get(accountId, {
             priceRecency: 60000,
             priceCache: state.priceCache,
-            previousHints: this.previousHints[key]
+            previousHints: storagePreviousHints[key]
           })
           // Don't update previous hints (cache), if the hints request fails
           if (!results.error) {
-            this.previousHints[key] = {
-              erc20s: results.hints.erc20s,
-              erc721s: results.hints.erc721s
-            }
+            // Persist previousHints in the disk storage for further requests
+            storagePreviousHints[key] = getHintsWithBalance(results)
+            await this.storage.set('previousHints', storagePreviousHints)
           }
           accountState.set(network.id, { isReady: true, isLoading: false, ...results })
         } catch (e) {
@@ -101,11 +89,29 @@ export class PortfolioController {
         }
       })
     )
-
-    // Persist previousHints in the disk storage for further requests
-    await this.storage.set('previousHints', this.previousHints)
     // console.log(this.latest)
     // console.log(accounts, networks, accountOps)
+  }
+}
+
+// We already know that `results.tokens` and `result.collections` tokens have a balance (this is handled by the portfolio lib).
+// Based on that, we can easily find out which hint tokens also have a balance.
+function getHintsWithBalance(result: PortfolioGetResult): {
+  erc20s: Hints['erc20s']
+  erc721s: Hints['erc721s']
+} {
+  const erc20s = result.tokens.map((token) => token.address)
+
+  const erc721s = Object.fromEntries(
+    result.collections.map((collection) => [
+      collection.address,
+      result.hints.erc721s[collection.address]
+    ])
+  )
+
+  return {
+    erc20s,
+    erc721s
   }
 }
 

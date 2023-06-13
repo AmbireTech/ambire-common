@@ -30,7 +30,7 @@ const LIMITS: Limits = {
   }
 }
 
-const getEmptyHints = (networkId: string, accountAddr: string): Hints => ({
+export const getEmptyHints = (networkId: string, accountAddr: string): Hints => ({
   networkId: networkId,
   accountAddr: accountAddr,
   erc20s: [],
@@ -45,7 +45,10 @@ export interface GetOptions {
   simulation?: GetOptionsSimulation
   priceCache?: PriceCache
   priceRecency: number
-  previousHints?: any
+  previousHints?: {
+    erc20s: Hints['erc20s']
+    erc721s: Hints['erc721s']
+  }
 }
 
 const defaultOptions: GetOptions = {
