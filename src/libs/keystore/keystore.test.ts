@@ -87,7 +87,7 @@ describe('Keystore', () => {
     try {
       await keystore.getKeyStoreUid()
     } catch (e: any) {
-      expect(e.message).toBe('keystore: adding secret before get uid')
+      expect(e.message).toBe('keystore: uid unavailable before adding the first secret')
     }
   })
 
