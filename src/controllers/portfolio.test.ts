@@ -1,6 +1,22 @@
 import { describe, expect } from '@jest/globals'
-import { PortfolioController, produceMemoryStore } from './portfolio'
+import { PortfolioController } from './portfolio'
 import { networks } from '../consts/networks'
+import { Storage } from '../interfaces/storage'
+
+// @TODO: maybe this should be shared with the rest of the tests?
+export function produceMemoryStore(): Storage {
+  const storage = new Map()
+  return {
+    get: (key, defaultValue): any => {
+      const serialized = storage.get(key)
+      return Promise.resolve(serialized ? JSON.parse(serialized) : defaultValue)
+    },
+    set: (key, value) => {
+      storage.set(key, JSON.stringify(value))
+      return Promise.resolve(null)
+    }
+  }
+}
 
 describe('Portfolio Controller ', () => {
   const account = {
