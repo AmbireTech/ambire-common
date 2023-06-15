@@ -1,15 +1,13 @@
 import { Portfolio } from '../libs/portfolio/portfolio'
 import { Hints, PortfolioGetResult } from '../libs/portfolio/interfaces'
 import { Storage } from '../interfaces/storage'
-import { NetworkDescriptor } from '../interfaces/networkDescriptor'
-import { Account } from '../interfaces/account'
+import { NetworkDescriptor, NetworkId } from '../interfaces/networkDescriptor'
+import { Account, AccountId } from '../interfaces/account'
 import { AccountOp } from '../libs/accountOp/accountOp'
 
 import fetch from 'node-fetch'
 import { JsonRpcProvider } from 'ethers'
 
-type NetworkId = string
-type AccountId = string
 // @TODO fix the any
 type PortfolioState = Map<AccountId, Map<NetworkId, any>>
 

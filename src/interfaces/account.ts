@@ -1,5 +1,7 @@
+export type AccountId = string
+
 export interface Account {
-  addr: string
+  addr: AccountId
   label: string
   // URL (https, ipfs or nft721://contractAddr/tokenId)
   pfp: string
