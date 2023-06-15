@@ -112,7 +112,9 @@ contract AmbireAccount {
 	// @notice Useful when we need to do multiple operations but ignore failures in some of them
 	function tryCatch(address to, uint256 value, bytes calldata data) external payable {
 		require(msg.sender == address(this), 'ONLY_IDENTITY_CAN_CALL');
-		(bool success, bytes memory returnData) = to.call{ value: value, gas: gasleft() }(data);
+		uint256 gasBefore = gasleft();
+		(bool success, bytes memory returnData) = to.call{ value: value, gas: gasBefore }(data);
+		require(gasleft() > gasBefore/64, 'TRYCATCH_OOG');
 		if (!success) emit LogErr(to, value, data, returnData);
 	}
 
