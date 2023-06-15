@@ -9,13 +9,13 @@ import { requestMagicLink } from './magicLink'
 
 const playstationEmail = 'playstation'
 const exMagicLinkKey = 'b12239309b38294f4075463ff131ac8cfe32ef2f99fc'
-const email = 'emil+playstation@ambire.com'
+const email = 'yosif+playstation@ambire.com'
 const relayerUrl = 'http://localhost:1934'
 
 describe('MagicLink', () => {
   test('should return key for session', async () => {
     const result = await requestMagicLink(email, relayerUrl, fetch)
-    expect(result.key as String)
+    expect(result.key).not.toBe('')
   })
 
   test('should return invalid email', async () => {
