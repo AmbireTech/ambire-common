@@ -25,7 +25,8 @@ export type UniversalMessage = Message | TypedMessage
 export interface UserRequest {
   id: bigint
   added: bigint // timestamp
-  chainId: bigint
+  // @TODO should this be chainId; or should we change it in all places?
+  networkId: bigint
   accountId: AccountId
   // either-or here between call and a message, plus different types of messages
   action: Call | Message | TypedMessage
@@ -43,7 +44,8 @@ export class MainController {
   selectedAccount: string | null = null
 
   userRequests: UserRequest[] = []
-  accountOpsToBeSigned: Map<AccountId, Map<NetworkId, AccountOp[]>> = new Map()
+  // @TODO: clean
+  // accountOpsToBeSigned: Map<AccountId, Map<NetworkId, AccountOp[]>> = new Map()
   accountOpsToBeMined: Map<AccountId, Map<NetworkId, AccountOp[]>> = new Map()
   messagesToBeSigned: Map<AccountId, UniversalMessage[]> = new Map()
 
@@ -53,4 +55,14 @@ export class MainController {
     // @TODO
   }
 
+  public get accountOpsToBeSigned(): Map<AccountId, Map<NetworkId, any>> {
+    const result = new Map()
+    for (const req of this.userRequests)  {
+      if (req.action.kind !== 'call') continue
+      if (!result.has(req.accountId)) result.set(req.accountId, new Map())
+      if (!result.get(req.accountId)!.has(req.networkId)) result.get(req.accountId)!.set(req.networkId, [])
+      result.get(req.accountId)!.get(req.networkId)!.push(req)
+    }
+    return result
+  }
 }
