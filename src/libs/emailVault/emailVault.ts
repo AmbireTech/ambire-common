@@ -38,7 +38,7 @@ export class EmailVault {
     )
     const result: EmailVaultFetchResult = await resp.json()
     if (!result.success)
-      throw new Error(`emailvault: getting rekovery key address: ${result.message}`)
+      throw new Error(`emailvault: getting recovery key address: ${result.message}`)
 
     return result.data
   }
@@ -56,14 +56,13 @@ export class EmailVault {
         headers: {
           'Content-Type': 'application/json'
         },
-        body: {
+        body: JSON.stringify({
           secret,
           uid: keyStoreUid
-        }
+        })
       }
     )
     const result: EmailVaultFetchResult = await resp.json()
-
     if (!result.success)
       throw new Error(`emailvault: error adding key store secret: ${result.message}`)
 
@@ -80,7 +79,7 @@ export class EmailVault {
     )
     const result: EmailVaultFetchResult = await resp.json()
     if (!result.success)
-      throw new Error(`emailvault: getting rekovery key address: ${result.message}`)
+      throw new Error(`emailvault: getting recovery key address: ${result.message}`)
 
     return result.data
   }
@@ -88,9 +87,10 @@ export class EmailVault {
   async addKeyBackup(
     email: String,
     authKey: String,
-    keyAddress: Address,
+    keyAddress: String,
     privateKeyEncryptedJSON: String
   ): Promise<Boolean> {
+    console.log('starting request')
     const resp = await this.fetch(
       `${this.relayerUrl}/email-vault/addKeyBackup/${email}/${authKey}`,
       {
@@ -98,10 +98,10 @@ export class EmailVault {
         headers: {
           'Content-Type': 'application/json'
         },
-        body: {
+        body: JSON.stringify({
           keyAddress,
           encryptedBackup: privateKeyEncryptedJSON
-        }
+        })
       }
     )
     const result: EmailVaultFetchResult = await resp.json()
