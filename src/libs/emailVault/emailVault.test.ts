@@ -10,6 +10,7 @@ import { EmailVault } from './emailVault'
 import { requestMagicLink } from '../magicLink/magicLink'
 
 let email: String
+let email2: String
 
 // Relayer have to be start with NODE_ENV === 'testing' to can retrive the secret
 const relayerUrl = 'http://localhost:1934'
@@ -20,6 +21,20 @@ let authSecret: String // this will not be return in prod mode
 let recoveryKey: String
 const keyBackup: String = JSON.stringify({ a: 1 })
 const keyStoreSecret = 'keyStoreSecretHere'
+
+const initEmailVaultTest = async () => {
+  email = `yosif+${Wallet.createRandom().address.slice(12, 20)}@ambire.com`
+  email2 = `yosif+${Wallet.createRandom().address.slice(12, 20)}@ambire.com`
+  const keys1 = await requestMagicLink(email, relayerUrl, fetch)
+  authKey = keys1.key
+  authSecret = keys1.secret
+  const keys2 = await requestMagicLink(email2, relayerUrl, fetch)
+  authKey = keys2.key
+  authSecret = keys2.secret
+
+  await fetch(`${relayerUrl}/email-vault/confirmationKey/${email}/${authKey}/${authSecret}`)
+}
+
 describe('Email vault', () => {
   describe('positive tests', () => {
     beforeAll(async () => {
@@ -65,6 +80,64 @@ describe('Email vault', () => {
     test('add keyBackup', async () => {
       const success = await emailVault.addKeyBackup(email, authKey, recoveryKey, keyBackup)
       expect(success).toBeTruthy()
+    })
+  })
+
+  describe('negative tests', () => {
+    describe('create', () => {
+      beforeEach(initEmailVaultTest)
+      test('no email', async () => {})
+      test('invalid email', async () => {})
+      test('no  key', async () => {})
+      test('not confirmed', async () => {})
+    })
+
+    describe('getRecoveryKeyAddress', () => {
+      beforeEach(initEmailVaultTest)
+      test('no email', async () => {})
+      test('invalid email', async () => {})
+      test('no  key', async () => {})
+      test('not confirmed', async () => {})
+      test('vault not created', async () => {})
+    })
+    describe('addKeyStoreSecret', () => {
+      beforeEach(initEmailVaultTest)
+      test('no email', async () => {})
+      test('invalid email', async () => {})
+      test('no  key', async () => {})
+      test('not confirmed', async () => {})
+      test('no uid', async () => {})
+      test('vault not created', async () => {})
+      test('no secret in body', async () => {})
+    })
+    describe('retrieveKeyStoreSecret', () => {
+      beforeEach(initEmailVaultTest)
+      test('no email', async () => {})
+      test('invalid email', async () => {})
+      test('no  key', async () => {})
+      test('not confirmed', async () => {})
+      test('vault not created', async () => {})
+      test('no secret uploaded', async () => {})
+    })
+
+    describe('addKeyBackup', () => {
+      beforeEach(initEmailVaultTest)
+      test('no email', async () => {})
+      test('invalid email', async () => {})
+      test('no  key', async () => {})
+      test('not confirmed', async () => {})
+      test('vault not created', async () => {})
+      test('no keyBackup in body', async () => {})
+    })
+
+    describe('retrieveKeyBackup', () => {
+      beforeEach(initEmailVaultTest)
+      test('no email', async () => {})
+      test('invalid email', async () => {})
+      test('no  key', async () => {})
+      test('not confirmed', async () => {})
+      test('vault not created', async () => {})
+      test('no backup uploaded', async () => {})
     })
   })
 })
