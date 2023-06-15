@@ -1,6 +1,6 @@
 import { Storage } from '../../interfaces/storage'
-import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
-import { Account } from '../../interfaces/account'
+import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
+import { Account, AccountId } from '../../interfaces/account'
 import { AccountOp } from '../../libs/accountOp/accountOp'
 import { TypedDataDomain, TypedDataField } from 'ethers'
 
@@ -20,12 +20,13 @@ export interface TypedMessage {
   types: Record<string, Array<TypedDataField>>
   value: Record<string, any>
 }
+export type UniversalMessage = Message | TypedMessage
 
 export interface UserRequest {
   id: bigint
   added: bigint // timestamp
   chainId: bigint
-  accountId: string
+  accountId: AccountId
   // either-or here between call and a message, plus different types of messages
   action: Call | Message | TypedMessage
 }
@@ -36,7 +37,15 @@ export interface UserRequest {
 
 export class MainController {
   private storage: any
+  // @TODO emailVaults
+  // @TODO read networks from settings
+  accounts: Account[] = []
+  selectedAccount: string | null = null
+
   userRequests: UserRequest[] = []
+  accountOpsToBeSigned: Map<AccountId, Map<NetworkId, AccountOp[]>> = new Map()
+  accountOpsToBeMined: Map<AccountId, Map<NetworkId, AccountOp[]>> = new Map()
+  messagesToBeSigned: Map<AccountId, UniversalMessage[]> = new Map()
 
   constructor(storage: Storage) {
     this.storage = storage
@@ -44,5 +53,4 @@ export class MainController {
     // @TODO
   }
 
-  
 }
