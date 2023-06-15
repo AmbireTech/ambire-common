@@ -5,14 +5,17 @@ import { AccountOp } from '../../libs/accountOp/accountOp'
 import { TypedDataDomain, TypedDataField } from 'ethers'
 
 export interface Call {
+  kind: 'call'
   to: string
   value: bigint
   data: string
 }
 export interface Message {
+  kind: 'message'
   message: string | Uint8Array
 }
 export interface TypedMessage {
+  kind: 'typedMessage'
   domain: TypedDataDomain
   types: Record<string, Array<TypedDataField>>,
   value: Record<string, any>
