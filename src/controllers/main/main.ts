@@ -2,15 +2,20 @@ import { Storage } from '../../interfaces/storage'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { Account } from '../../interfaces/account'
 import { AccountOp } from '../../libs/accountOp/accountOp'
+import { TypedDataDomain, TypedDataField } from 'ethers'
 
 export interface Call {
   to: string
   value: bigint
   data: string
 }
-// @TODO: typed message
 export interface Message {
-  content: string
+  message: string | Uint8Array
+}
+export interface TypedMessage {
+  domain: TypedDataDomain
+  types: Record<string, Array<TypedDataField>>,
+  value: Record<string, any>
 }
 
 export interface UserRequest {
@@ -19,7 +24,7 @@ export interface UserRequest {
   chainId: bigint
   accountId: string
   // either-or here between call and a message, plus different types of messages
-  action: Call | Message
+  action: Call | Message | TypedMessage
 }
 // import fetch from 'node-fetch'
 // import { JsonRpcProvider } from 'ethers'
