@@ -96,6 +96,12 @@ export class Keystore {
     return (await this.getMainKeyEncryptedWithSecrets()).length > 0
   }
 
+  async getKeyStoreUid() {
+    const uid = await this.storage.get('uid', null)
+    if (!uid) throw new Error('keystore: adding secret before get uid')
+    return uid
+  }
+
   // @TODO time before unlocking
   async unlockWithSecret(secretId: string, secret: string) {
     // @TODO should we check if already locked? probably not cause this function can  be used in order to verify if a secret is correct
@@ -179,6 +185,12 @@ export class Keystore {
     })
     // Persist the new secrets
     await this.storage.set('keystoreSecrets', secrets)
+
+    // produce uid if one doesn't exist (should be created when the first secret is added)
+    if (!(await this.storage.get('uid', null))) {
+      const uid = keccak256(mainKey.key).slice(2, 34)
+      await this.storage.set('uid', uid)
+    }
   }
 
   async removeSecret(secretId: string) {
@@ -242,6 +254,7 @@ export class Keystore {
   }
 
   async removeKey(id: string) {
+    if (!this.isUnlocked()) throw new Error('keystore: not unlocked')
     const keys: [StoredKey] = await this.storage.get('keystoreKeys', [])
     if (!keys.find((x) => x.id === id))
       throw new Error(`keystore: trying to remove key that does not exist ${id}}`)
@@ -249,6 +262,24 @@ export class Keystore {
       'keystoreKeys',
       keys.filter((x) => x.id !== id)
     )
+  }
+
+  async exportKeyWithPasscode(keyId: string, passphrase: string) {
+    if (this.#mainKey === null) throw new Error('keystore: needs to be unlocked')
+    const keys = await this.storage.get('keystoreKeys', [])
+    const storedKey: StoredKey = keys.find((x: StoredKey) => x.id === keyId)
+
+    if (!storedKey) throw new Error('keystore: key not found')
+    if (storedKey.type !== 'internal') throw new Error('keystore: key does not have privateKey')
+
+    const encryptedBytes = getBytes(storedKey.privKey as string)
+    const counter = new aes.Counter(this.#mainKey.iv)
+    const aesCtr = new aes.ModeOfOperation.ctr(this.#mainKey.key, counter)
+    const decryptedBytes = aesCtr.decrypt(encryptedBytes)
+    const decryptedPrivateKey = aes.utils.hex.fromBytes(decryptedBytes)
+    const wallet = new Wallet(decryptedPrivateKey)
+    const keyBackup = await wallet.encrypt(passphrase)
+    return JSON.stringify(keyBackup)
   }
 
   async getSigner(keyId: string) {
