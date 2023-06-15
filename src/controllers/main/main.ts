@@ -17,7 +17,7 @@ export interface Message {
 export interface TypedMessage {
   kind: 'typedMessage'
   domain: TypedDataDomain
-  types: Record<string, Array<TypedDataField>>,
+  types: Record<string, Array<TypedDataField>>
   value: Record<string, any>
 }
 
@@ -35,10 +35,14 @@ export interface UserRequest {
 // type State = Map<AccountId, Map<NetworkId, any>>
 
 export class MainController {
-  // pending: PortfolioState
   private storage: any
+  userRequests: UserRequest[] = []
 
   constructor(storage: Storage) {
     this.storage = storage
+    // Load userRequests from storage and emit that we have updated
+    // @TODO
   }
+
+  
 }
