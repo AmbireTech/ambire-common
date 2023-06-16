@@ -4,6 +4,16 @@ pragma solidity 0.8.19;
 import "./IAmbireAccount.sol";
 
 contract Estimation {
+  struct DeploymentOutcome {
+    uint gasUsed;
+    bool success;
+    bytes err;
+  }
+
+  struct EstimationOutcome {
+    DeploymentOutcome deployment;
+  }
+
   function makeSpoofSignature(address account) internal pure returns (bytes memory spoofSig) {
     spoofSig = abi.encodePacked(uint256(uint160(account)), uint8(0x03));
   }
@@ -11,12 +21,12 @@ contract Estimation {
   function simulateDeployment(
     IAmbireAccount account,
     address factory, bytes memory factoryCalldata
-  ) public returns (uint gasUsed, bool success, bytes memory error) {
+  ) public returns (DeploymentOutcome memory outcome) {
     uint gasInitial = gasleft();
     if (address(account).code.length == 0) {
-      (success, error) = factory.call(factoryCalldata);
+      (outcome.success, outcome.err) = factory.call(factoryCalldata);
     }
-    gasUsed = gasInitial - gasleft();
+    outcome.gasUsed = gasInitial - gasleft();
   }
 
   function simulateSigned() public {
