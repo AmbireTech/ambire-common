@@ -37,8 +37,6 @@ contract Estimation {
     FeeTokenOutcome[] feeTokenOutcomes;
     bool[] isKeyAuthorized;
     uint[] nativeAssetBalances;
-    uint gasPrice;
-    // uint baseFee;
   }
 
   function makeSpoofSignature(address key) internal pure returns (bytes memory spoofSig) {
@@ -55,7 +53,7 @@ contract Estimation {
     AccountOp memory op,
     address[] memory associatedKeys,
     // Only needed in case we simulate fee tokens
-    // @TODO: perhaps we ca nwrap this in a struct
+    // @TODO: perhaps we can wrap this in a struct
     address[] memory feeTokens,
     address relayer,
     address[] memory checkNativeAssetOn
@@ -67,10 +65,6 @@ contract Estimation {
     for (uint i=0; i!=checkNativeAssetOn.length; i++) {
       outcome.nativeAssetBalances[i] = checkNativeAssetOn[i].balance;
     }
-
-    // @TODO will this block.basefee thing blow up on networks that don't support it?
-    // outcome.baseFee = block.basefee;
-    outcome.gasPrice = tx.gasprice;
 
     // Do all the simulations
     outcome.deployment = simulateDeployment(account, factory, factoryCalldata);
