@@ -3,6 +3,11 @@ pragma solidity 0.8.19;
 
 import "./IAmbireAccount.sol";
 
+interface IERC20Balance {
+  function balanceOf(address account) external view returns (uint256);
+}
+
+
 contract Estimation {
   struct AccountOp {
     IAmbireAccount account;
@@ -103,7 +108,25 @@ contract Estimation {
     public
     returns (FeeTokenOutcome[] memory feeTokenOutcomes)
   {
+    // @TODO calculate base consumption
+    for (uint i=0; i!=feeTokens.length; i++) {
+      address feeToken = feeTokens[i];
+      if (feeToken == address(0)) {
+        feeTokenOutcomes[i].amount = address(account).balance;
+      } else {
+        try this.getERC20Balance(IERC20Balance(feeToken), address(account)) returns (uint amount) {
+          feeTokenOutcomes[i].amount = amount;
+        // Ignore errors on purpose here, we just leave the amount 0
+        } catch {}
+      }
+    }
   }
+
+  // We need this function so that we can try-catch the parsing of the return value as well
+  function getERC20Balance(IERC20Balance token, address addr) external view returns (uint) {
+    return token.balanceOf(addr);
+  }
+
 
   // @TODO simulateFeePayments
   // @TODO nativeBalances
