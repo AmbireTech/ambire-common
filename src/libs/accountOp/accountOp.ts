@@ -1,8 +1,4 @@
-// ethers does not export their Network type it seems
-interface Network {
-  chainId: number
-  name: string
-}
+import { NetworkId } from '../../interfaces/networkDescriptor'
 
 interface Call {
   to: string
@@ -29,8 +25,9 @@ interface GasFeePayment {
 // it is more precisely defined than a UserOp though - UserOp just has calldata and this has individual `calls`
 export interface AccountOp {
   accountAddr: string
-  network: Network
-  signingKeyAddr: string
+  networkId: NetworkId
+  // this may not be defined, in case the user has not picked a key yet
+  signingKeyAddr: string | null
   nonce: number
   // @TODO: nonce namespace? it is dependent on gasFeePayment
   calls: Call[]
@@ -39,6 +36,9 @@ export interface AccountOp {
   // @TODO separate interface
   gasFeePayment: GasFeePayment | null
   // @TODO: meta?
+  // This is used when we have an account recovery to finalize before executing the AccountOp,
+  // And we set this to the recovery finalization AccountOp; could be used in other scenarios too in the future
+  accountOpToExecuteBefore: AccountOp | null
 }
 
 export function callToTuple(call: Call): [string, bigint, string] {

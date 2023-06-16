@@ -1,27 +1,27 @@
 import { Portfolio } from '../libs/portfolio/portfolio'
-import { TokenResult } from '../libs/portfolio/interfaces'
+import { Hints, PortfolioGetResult } from '../libs/portfolio/interfaces'
 import { Storage } from '../interfaces/storage'
-import { NetworkDescriptor } from '../interfaces/networkDescriptor'
-import { Account } from '../interfaces/account'
+import { NetworkDescriptor, NetworkId } from '../interfaces/networkDescriptor'
+import { Account, AccountId } from '../interfaces/account'
 import { AccountOp } from '../libs/accountOp/accountOp'
 
 import fetch from 'node-fetch'
 import { JsonRpcProvider } from 'ethers'
 
-type NetworkId = string
-type AccountId = string
 // @TODO fix the any
 type PortfolioState = Map<AccountId, Map<NetworkId, any>>
 
-class PortfolioController {
+export class PortfolioController {
   latest: PortfolioState
   pending: PortfolioState
   private portfolioLibs: Map<string, Portfolio>
+  private storage: any
 
   constructor(storage: Storage) {
     this.latest = new Map()
     this.pending = new Map()
     this.portfolioLibs = new Map()
+    this.storage = storage
   }
   // NOTE: we always pass in all `accounts` and `networks` to ensure that the user of this
   // controller doesn't have to update this controller every time that those are updated
@@ -40,6 +40,9 @@ class PortfolioController {
     accountId: AccountId,
     accountOps: AccountOp[]
   ) {
+    // Load storage cached hints
+    const storagePreviousHints = await this.storage.get('previousHints', {})
+
     const selectedAccount = accounts.find((x) => x.addr === accountId)
     if (!selectedAccount) throw new Error('selected account does not exist')
     // @TODO update pending AND latest state together in case we have accountOps
@@ -67,10 +70,15 @@ class PortfolioController {
         try {
           const results = await portfolioLib.get(accountId, {
             priceRecency: 60000,
-            priceCache: state.priceCache
+            priceCache: state.priceCache,
+            previousHints: storagePreviousHints[key]
           })
-          const previousHints = getHints(results)
-          console.log(previousHints)
+          // Don't update previous hints (cache), if the hints request fails
+          if (!results.error) {
+            // Persist previousHints in the disk storage for further requests
+            storagePreviousHints[key] = getHintsWithBalance(results)
+            await this.storage.set('previousHints', storagePreviousHints)
+          }
           accountState.set(network.id, { isReady: true, isLoading: false, ...results })
         } catch (e) {
           state.isLoading = false
@@ -79,51 +87,28 @@ class PortfolioController {
         }
       })
     )
-    console.log(this.latest)
+    // console.log(this.latest)
     // console.log(accounts, networks, accountOps)
   }
 }
 
-function getHints(results: { tokens: TokenResult[]; collections: TokenResult[] }) {
+// We already know that `results.tokens` and `result.collections` tokens have a balance (this is handled by the portfolio lib).
+// Based on that, we can easily find out which hint tokens also have a balance.
+function getHintsWithBalance(result: PortfolioGetResult): {
+  erc20s: Hints['erc20s']
+  erc721s: Hints['erc721s']
+} {
+  const erc20s = result.tokens.map((token) => token.address)
+
+  const erc721s = Object.fromEntries(
+    result.collections.map((collection) => [
+      collection.address,
+      result.hints.erc721s[collection.address]
+    ])
+  )
+
   return {
-    erc20s: results.tokens.map((x: TokenResult) => x.address),
-    erc721s: Object.fromEntries(
-      results.collections.map((x: TokenResult) => [
-        x.address,
-        { tokens: x.collectables!.map((y) => `${y.id}`) }
-      ])
-    )
+    erc20s,
+    erc721s
   }
 }
-
-// @TODO: move this into utils
-function produceMemoryStore(): Storage {
-  const storage = new Map()
-  return {
-    get: (key, defaultValue): any => {
-      const serialized = storage.get(key)
-      return Promise.resolve(serialized ? JSON.parse(serialized) : defaultValue)
-    },
-    set: (key, value) => {
-      storage.set(key, JSON.stringify(value))
-      return Promise.resolve(null)
-    }
-  }
-}
-
-import { networks } from '../consts/networks'
-const account = {
-  addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
-  label: '',
-  pfp: '',
-  associatedKeys: [],
-  factoryAddr: '0xBf07a0Df119Ca234634588fbDb5625594E2a5BCA',
-  bytecode:
-    '0x7f00000000000000000000000000000000000000000000000000000000000000017f02c94ba85f2ea274a3869293a0a9bf447d073c83c617963b0be7c862ec2ee44e553d602d80604d3d3981f3363d3d373d3d3d363d732a2b85eb1054d6f0c6c2e37da05ed3e5fea684ef5af43d82803e903d91602b57fd5bf3',
-  salt: '0x2ee01d932ede47b0b2fb1b6af48868de9f86bfc9a5be2f0b42c0111cf261d04c'
-}
-
-const controller = new PortfolioController(produceMemoryStore())
-controller
-  .updateSelectedAccount([account], networks, account.addr, [])
-  .then((x) => controller.updateSelectedAccount([account], networks, account.addr, []))

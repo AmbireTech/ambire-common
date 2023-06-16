@@ -30,6 +30,33 @@ export interface TokenResult {
 
 export type PriceCache = Map<string, [number, Price[]]>
 
+interface ERC721Enumerable {
+  isKnown: boolean
+  enumerable: boolean
+}
+interface ERC721Innumerable {
+  isKnown: boolean
+  tokens: string[]
+}
+
+interface ERC721s {
+  [name: string]: ERC721Enumerable | ERC721Innumerable
+}
+
+export interface Hints {
+  networkId: string
+  accountAddr: string
+  erc20s: string[]
+  erc721s: ERC721s
+  prices: {
+    [name: string]: Price
+  }
+  hasHints: boolean
+  // Attached by the application error handling logic.
+  // All other props, are provided by Velcro Discovery request.
+  error?: string
+}
+
 export interface PortfolioGetResult {
   updateStarted: number
   discoveryTime: number
@@ -39,7 +66,9 @@ export interface PortfolioGetResult {
   tokens: TokenResult[]
   tokenErrors: { error: string; address: string }[]
   collections: TokenResult[]
-  total: bigint
+  total: { [name: string]: bigint }
+  hints: Hints
+  error?: string
 }
 
 export interface LimitsOptions {
