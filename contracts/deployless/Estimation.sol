@@ -45,7 +45,8 @@ contract Estimation {
     spoofSig = abi.encodePacked(uint256(uint160(key)), uint8(0x03));
   }
 
-  // @TODO set gasPrice, baseFee, nativeAsset
+  // `estimate` takes the `accountOpToExecuteBefore` parameters separately because it's simulated via `simulateSigned`
+  // vs the regular accountOp for which we use simulateUnsigned
   function estimate(
     IAmbireAccount account,
     address factory, bytes memory factoryCalldata,
@@ -158,11 +159,5 @@ contract Estimation {
   function getERC20Balance(IERC20Subset token, address addr) external view returns (uint) {
     return token.balanceOf(addr);
   }
-
-
-  // @TODO simulateFeePayments
   // @TODO nativeBalances
-  // @TODO `estimate` takes the `accountOpToExecuteBefore` parameters separately because it's simulated via `simulateSigned`
-  // vs the regular accountOp for which we use siimulateNonSigned
-
 }
