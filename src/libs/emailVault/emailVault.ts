@@ -1,4 +1,4 @@
-import { Address } from 'ethereumjs-util'
+// @NOTE<Yosif> Should keyAddress, keyStoreUid and recoveryKey be of type Address and not String?
 
 export interface EmailVaultFetchResult {
   success: Boolean
@@ -6,6 +6,7 @@ export interface EmailVaultFetchResult {
   message: String
 }
 
+// @NOTE<Yosif> Should key be of type Address and not String?
 export interface VaultEntry {
   key: String
   value: String
