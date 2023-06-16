@@ -7,7 +7,6 @@ interface IERC20Balance {
   function balanceOf(address account) external view returns (uint256);
 }
 
-
 contract Estimation {
   struct AccountOp {
     IAmbireAccount account;
@@ -34,6 +33,7 @@ contract Estimation {
     SimulationOutcome deployment;
     SimulationOutcome accountOpToExecuteBefore;
     SimulationOutcome op;
+    FeeTokenOutcome[] feeTokenOutcomes;
     bool[] isKeyAuthorized;
     uint gasPrice;
     // uint baseFee;
@@ -51,7 +51,8 @@ contract Estimation {
     // @TODO is there a more elegant way than passing those in full
     AccountOp memory preExecute,
     AccountOp memory op,
-    address[] memory associatedKeys
+    address[] memory associatedKeys,
+    address[] memory feeTokens
   ) external returns (EstimationOutcome memory outcome) {
     outcome.nativeAsset = msg.sender.balance;
     // @TODO will this block.basefee thing blow up on networks that don't support it?
@@ -63,6 +64,8 @@ contract Estimation {
     if (preExecute.calls.length != 0) outcome.accountOpToExecuteBefore = simulateSigned(op);
     if (!outcome.accountOpToExecuteBefore.success) return outcome;
     (outcome.op, outcome.isKeyAuthorized) = simulateUnsigned(op, associatedKeys);
+    // @TODO: spoof signature, since Solidity copies the memory arguments and we can't just read the one set by simulateUnsigned
+    if (feeTokens.length != 0) outcome.feeTokenOutcomes = simulateFeePayments(account, feeTokens, op.signature);
   }
 
   function simulateDeployment(
@@ -104,11 +107,12 @@ contract Estimation {
     outcome.gasUsed = gasInitial - gasleft();
   }
 
-  function simulateFeePayments(IAmbireAccount account, address[] memory feeTokens)
+  function simulateFeePayments(IAmbireAccount account, address[] memory feeTokens, bytes memory spoofSig)
     public
     returns (FeeTokenOutcome[] memory feeTokenOutcomes)
   {
     // @TODO calculate base consumption
+
     for (uint i=0; i!=feeTokens.length; i++) {
       address feeToken = feeTokens[i];
       if (feeToken == address(0)) {
