@@ -90,7 +90,6 @@ export class EmailVault {
     keyAddress: String,
     privateKeyEncryptedJSON: String
   ): Promise<Boolean> {
-    console.log('starting request')
     const resp = await this.fetch(
       `${this.relayerUrl}/email-vault/addKeyBackup/${email}/${authKey}`,
       {
@@ -110,11 +109,7 @@ export class EmailVault {
     return true
   }
 
-  async retrieveKeyBackup(
-    email: String,
-    authKey: String,
-    keyAddress: Address
-  ): Promise<VaultEntry> {
+  async retrieveKeyBackup(email: String, authKey: String, keyAddress: String): Promise<VaultEntry> {
     const resp = await this.fetch(
       `${this.relayerUrl}/email-vault/retrieveKeyBackup/${email}/${keyAddress}/${authKey}`
     )
