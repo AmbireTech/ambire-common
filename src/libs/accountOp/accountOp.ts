@@ -36,6 +36,9 @@ export interface AccountOp {
   // @TODO separate interface
   gasFeePayment: GasFeePayment | null
   // @TODO: meta?
+  // This is used when we have an account recovery to finalize before executing the AccountOp,
+  // And we set this to the recovery finalization AccountOp; could be used in other scenarios too in the future
+  accountOpToExecuteBefore: AccountOp | null
 }
 
 export function callToTuple(call: Call): [string, bigint, string] {
