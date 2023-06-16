@@ -20,13 +20,44 @@ contract Estimation {
     bytes err;
   }
 
+  struct FeeTokenOutcome {
+    uint gasUsed;
+    uint amount;
+  }
+
   struct EstimationOutcome {
     SimulationOutcome deployment;
     SimulationOutcome accountOpToExecuteBefore;
+    SimulationOutcome op;
+    bool[] isKeyAuthorized;
+    uint gasPrice;
+    // uint baseFee;
+    uint nativeAsset;
   }
 
   function makeSpoofSignature(address key) internal pure returns (bytes memory spoofSig) {
     spoofSig = abi.encodePacked(uint256(uint160(key)), uint8(0x03));
+  }
+
+  // @TODO set gasPrice, baseFee, nativeAsset
+  function estimate(
+    IAmbireAccount account,
+    address factory, bytes memory factoryCalldata,
+    // @TODO is there a more elegant way than passing those in full
+    AccountOp memory preExecute,
+    AccountOp memory op,
+    address[] memory associatedKeys
+  ) external returns (EstimationOutcome memory outcome) {
+    outcome.nativeAsset = msg.sender.balance;
+    // @TODO will this block.basefee thing blow up on networks that don't support it?
+    // outcome.baseFee = block.basefee;
+    outcome.gasPrice = tx.gasprice;
+    // Do all the simulations
+    outcome.deployment = simulateDeployment(account, factory, factoryCalldata);
+    if (!outcome.deployment.success) return outcome;
+    if (preExecute.calls.length != 0) outcome.accountOpToExecuteBefore = simulateSigned(op);
+    if (!outcome.accountOpToExecuteBefore.success) return outcome;
+    (outcome.op, outcome.isKeyAuthorized) = simulateUnsigned(op, associatedKeys);
   }
 
   function simulateDeployment(
@@ -68,9 +99,14 @@ contract Estimation {
     outcome.gasUsed = gasInitial - gasleft();
   }
 
+  function simulateFeePayments(IAmbireAccount account, address[] memory feeTokens)
+    public
+    returns (FeeTokenOutcome[] memory feeTokenOutcomes)
+  {
+  }
+
   // @TODO simulateFeePayments
   // @TODO nativeBalances
-  // @TODO simulateComplete that also returns gasPrice, nativeBalance
   // @TODO `estimate` takes the `accountOpToExecuteBefore` parameters separately because it's simulated via `simulateSigned`
   // vs the regular accountOp for which we use siimulateNonSigned
 
