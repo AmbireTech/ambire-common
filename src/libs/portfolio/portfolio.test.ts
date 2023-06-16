@@ -38,7 +38,7 @@ describe('Portfolio', () => {
       signingKeyAddr: '0xe5a4Dad2Ea987215460379Ab285DF87136E83BEA',
       gasLimit: null,
       gasFeePayment: null,
-      network: { chainId: 0, name: 'ethereum' },
+      networkId: 'ethereum',
       nonce: 6,
       signature: '0x000000000000000000000000e5a4Dad2Ea987215460379Ab285DF87136E83BEA03',
       calls: [
@@ -90,7 +90,7 @@ describe('Portfolio', () => {
       signingKeyAddr: '0x5Be214147EA1AE3653f289E17fE7Dc17A73AD175',
       gasLimit: null,
       gasFeePayment: null,
-      network: { chainId: 0, name: 'ethereum' },
+      networkId: 'ethereum',
       nonce: await getNonce('0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'),
       signature: spoofSig,
       calls: [{ to: '0x18Ce9CF7156584CDffad05003410C3633EFD1ad0', value: BigInt(0), data }]

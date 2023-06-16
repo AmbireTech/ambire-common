@@ -25,9 +25,9 @@ export type UniversalMessage = Message | TypedMessage
 export interface UserRequest {
   id: bigint
   added: bigint // timestamp
-  // @TODO should this be chainId; or should we change it in all places?
-  networkId: bigint
+  networkId: NetworkId
   accountId: AccountId
+  forceNonce: bigint | null
   // either-or here between call and a message, plus different types of messages
   action: Call | Message | TypedMessage
 }

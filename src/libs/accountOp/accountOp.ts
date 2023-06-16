@@ -1,8 +1,4 @@
-// ethers does not export their Network type it seems
-interface Network {
-  chainId: number
-  name: string
-}
+import { NetworkId } from '../../interfaces/networkDescriptor'
 
 interface Call {
   to: string
@@ -29,7 +25,7 @@ interface GasFeePayment {
 // it is more precisely defined than a UserOp though - UserOp just has calldata and this has individual `calls`
 export interface AccountOp {
   accountAddr: string
-  network: Network
+  networkId: NetworkId
   signingKeyAddr: string
   nonce: number
   // @TODO: nonce namespace? it is dependent on gasFeePayment
