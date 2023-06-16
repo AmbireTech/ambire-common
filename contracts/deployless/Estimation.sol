@@ -112,6 +112,11 @@ contract Estimation {
     returns (FeeTokenOutcome[] memory feeTokenOutcomes)
   {
     // @TODO calculate base consumption
+    AccountOp memory emptyOp;
+    emptyOp.signature = spoofSig;
+    SimulationOutcome memory outcome = simulateSigned(emptyOp);
+    require(outcome.success, outcome.err.length > 0 ? string(outcome.err) : "FEE_BASE_GASUSED");
+    uint baseGasConsumption = outcome.gasUsed;
 
     for (uint i=0; i!=feeTokens.length; i++) {
       address feeToken = feeTokens[i];
