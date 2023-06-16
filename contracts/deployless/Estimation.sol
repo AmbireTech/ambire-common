@@ -67,9 +67,11 @@ contract Estimation {
     for (uint i=0; i!=checkNativeAssetOn.length; i++) {
       outcome.nativeAssetBalances[i] = checkNativeAssetOn[i].balance;
     }
+
     // @TODO will this block.basefee thing blow up on networks that don't support it?
     // outcome.baseFee = block.basefee;
     outcome.gasPrice = tx.gasprice;
+
     // Do all the simulations
     outcome.deployment = simulateDeployment(account, factory, factoryCalldata);
     if (!outcome.deployment.success) return outcome;
@@ -78,6 +80,13 @@ contract Estimation {
     (outcome.op, outcome.isKeyAuthorized) = simulateUnsigned(op, associatedKeys);
     // @TODO: spoof signature, since Solidity copies the memory arguments and we can't just read the one set by simulateUnsigned
     if (feeTokens.length != 0) outcome.feeTokenOutcomes = simulateFeePayments(account, feeTokens, op.signature, relayer);
+
+    // Safety check: anti-bricking
+    bool isOk;
+    for (uint i=0; i!=associatedKeys.length; i++) {
+      if (op.account.privileges(associatedKeys[i]) != bytes32(0)) { isOk = true; break; }
+    }
+    require(isOk, "ANTI_BRICKING_FAILED");
   }
 
   function simulateDeployment(
