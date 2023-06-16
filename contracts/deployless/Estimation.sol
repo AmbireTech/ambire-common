@@ -3,8 +3,9 @@ pragma solidity 0.8.19;
 
 import "./IAmbireAccount.sol";
 
-interface IERC20Balance {
+interface IERC20Subset {
   function balanceOf(address account) external view returns (uint256);
+  function transfer(address recipient, uint256 amount) external returns (bool);
 }
 
 contract Estimation {
@@ -52,7 +53,10 @@ contract Estimation {
     AccountOp memory preExecute,
     AccountOp memory op,
     address[] memory associatedKeys,
-    address[] memory feeTokens
+    // Only needed in case we simulate fee tokens
+    // @TODO: perhaps we ca nwrap this in a struct
+    address[] memory feeTokens,
+    address relayer
   ) external returns (EstimationOutcome memory outcome) {
     outcome.nativeAsset = msg.sender.balance;
     // @TODO will this block.basefee thing blow up on networks that don't support it?
@@ -65,7 +69,7 @@ contract Estimation {
     if (!outcome.accountOpToExecuteBefore.success) return outcome;
     (outcome.op, outcome.isKeyAuthorized) = simulateUnsigned(op, associatedKeys);
     // @TODO: spoof signature, since Solidity copies the memory arguments and we can't just read the one set by simulateUnsigned
-    if (feeTokens.length != 0) outcome.feeTokenOutcomes = simulateFeePayments(account, feeTokens, op.signature);
+    if (feeTokens.length != 0) outcome.feeTokenOutcomes = simulateFeePayments(account, feeTokens, op.signature, relayer);
   }
 
   function simulateDeployment(
@@ -107,32 +111,51 @@ contract Estimation {
     outcome.gasUsed = gasInitial - gasleft();
   }
 
-  function simulateFeePayments(IAmbireAccount account, address[] memory feeTokens, bytes memory spoofSig)
+  function simulateFeePayments(IAmbireAccount account, address[] memory feeTokens, bytes memory spoofSig, address relayer)
     public
     returns (FeeTokenOutcome[] memory feeTokenOutcomes)
   {
     // @TODO calculate base consumption
     AccountOp memory emptyOp;
     emptyOp.signature = spoofSig;
-    SimulationOutcome memory outcome = simulateSigned(emptyOp);
-    require(outcome.success, outcome.err.length > 0 ? string(outcome.err) : "FEE_BASE_GASUSED");
-    uint baseGasConsumption = outcome.gasUsed;
+    SimulationOutcome memory emptyOpOutcome = simulateSigned(emptyOp);
+    require(
+      emptyOpOutcome.success,
+      emptyOpOutcome.err.length > 0 ? string(emptyOpOutcome.err) : "FEE_BASE_GASUSED"
+    );
+    uint baseGasConsumption = emptyOpOutcome.gasUsed;
 
     for (uint i=0; i!=feeTokens.length; i++) {
       address feeToken = feeTokens[i];
+      AccountOp memory simulationOp;
+      simulationOp.calls = new IAmbireAccount.Transaction[](1);
+
       if (feeToken == address(0)) {
         feeTokenOutcomes[i].amount = address(account).balance;
+        simulationOp.calls[0].to = relayer;
+        simulationOp.calls[0].value = 1;
       } else {
-        try this.getERC20Balance(IERC20Balance(feeToken), address(account)) returns (uint amount) {
+        simulationOp.calls[0].to = feeToken;
+        simulationOp.calls[0].data = abi.encodeWithSelector(IERC20Subset.transfer.selector, relayer, 1);
+        try this.getERC20Balance(IERC20Subset(feeToken), address(account)) returns (uint amount) {
           feeTokenOutcomes[i].amount = amount;
         // Ignore errors on purpose here, we just leave the amount 0
         } catch {}
+      }
+
+      // Only simulate if the amount is nonzero
+      if (feeTokenOutcomes[i].amount > 0) {
+        SimulationOutcome memory outcome = simulateSigned(simulationOp);
+        // We ignore the errors here on purpose, we will just leave gasUsed as 0
+        // We only care about `gasUsed - baseGasConsumption` because paying the fee will be a part of
+        // another AccountOp, so we don't care about the base AccountOp overhead
+        feeTokenOutcomes[i].gasUsed = outcome.gasUsed - baseGasConsumption;
       }
     }
   }
 
   // We need this function so that we can try-catch the parsing of the return value as well
-  function getERC20Balance(IERC20Balance token, address addr) external view returns (uint) {
+  function getERC20Balance(IERC20Subset token, address addr) external view returns (uint) {
     return token.balanceOf(addr);
   }
 
