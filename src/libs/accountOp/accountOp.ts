@@ -26,7 +26,8 @@ interface GasFeePayment {
 export interface AccountOp {
   accountAddr: string
   networkId: NetworkId
-  signingKeyAddr: string
+  // this may not be defined, in case the user has not picked a key yet
+  signingKeyAddr: string | null
   nonce: number
   // @TODO: nonce namespace? it is dependent on gasFeePayment
   calls: Call[]
