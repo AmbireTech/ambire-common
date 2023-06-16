@@ -25,8 +25,8 @@ contract Estimation {
     SimulationOutcome accountOpToExecuteBefore;
   }
 
-  function makeSpoofSignature(address account) internal pure returns (bytes memory spoofSig) {
-    spoofSig = abi.encodePacked(uint256(uint160(account)), uint8(0x03));
+  function makeSpoofSignature(address key) internal pure returns (bytes memory spoofSig) {
+    spoofSig = abi.encodePacked(uint256(uint160(key)), uint8(0x03));
   }
 
   function simulateDeployment(
@@ -38,6 +38,21 @@ contract Estimation {
       (outcome.success, outcome.err) = factory.call(factoryCalldata);
     }
     outcome.gasUsed = gasInitial - gasleft();
+  }
+
+  function simulateUnsigned(AccountOp memory op, address[] memory associatedKeys)
+    public
+    returns (SimulationOutcome memory outcome, bool[] memory isKeyAuthorized)
+  {
+    isKeyAuthorized = new bool[](associatedKeys.length);
+    for (uint i=0; i!=associatedKeys.length; i++) {
+      address key = associatedKeys[i];
+      if (op.account.privileges(key) != bytes32(0)) {
+        isKeyAuthorized[i] = true;
+        if (op.signature.length == 0) op.signature = makeSpoofSignature(key);
+      }
+    }
+    outcome = simulateSigned(op);
   }
 
   function simulateSigned(AccountOp memory op) public returns (SimulationOutcome memory outcome) {
