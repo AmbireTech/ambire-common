@@ -104,6 +104,7 @@ contract Estimation {
     public
     returns (SimulationOutcome memory outcome, bool[] memory isKeyAuthorized, bytes memory spoofSig)
   {
+    op.nonce = op.account.nonce();
     isKeyAuthorized = new bool[](associatedKeys.length);
     for (uint i=0; i!=associatedKeys.length; i++) {
       address key = associatedKeys[i];

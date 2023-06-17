@@ -21,7 +21,7 @@ export async function estimate(provider: Provider, network: NetworkDescriptor, a
     ...getAccountDeployParams(account),
     // @TODO can pass 0 here for the addr
     [account.addr, 0n, [], '0x'],
-    [account.addr, op.nonce || 348n, op.calls, '0x'],
+    [account.addr, op.nonce || 0, op.calls, '0x'],
     account.associatedKeys,
 
     feeTokens,
