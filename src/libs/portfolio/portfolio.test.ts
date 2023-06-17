@@ -33,7 +33,7 @@ describe('Portfolio', () => {
   })
 
   test('token simulation', async () => {
-    const accountOp = {
+    const accountOp: any = {
       accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
       signingKeyAddr: '0xe5a4Dad2Ea987215460379Ab285DF87136E83BEA',
       gasLimit: null,
@@ -85,7 +85,7 @@ describe('Portfolio', () => {
       new AbiCoder().encode(['address'], ['0x5Be214147EA1AE3653f289E17fE7Dc17A73AD175']) +
       SPOOF_SIGTYPE
 
-    const accountOp = {
+    const accountOp: any = {
       accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
       signingKeyAddr: '0x5Be214147EA1AE3653f289E17fE7Dc17A73AD175',
       gasLimit: null,
@@ -132,7 +132,7 @@ describe('Portfolio', () => {
   test('portfolio works with previously cached hints, even if Velcro Discovery request fails', async () => {
     // Here we are mocking multi-hints route only, in order to simulate Velcro Discovery failure
     jest.mock('node-fetch', () => {
-      return jest.fn((url) => {
+      return jest.fn((url: any) => {
         // @ts-ignore
         const { Response } = jest.requireActual('node-fetch')
         if (url.includes('https://relayer.ambire.com/velcro-v3/multi-hints')) {
