@@ -69,8 +69,10 @@ contract Estimation {
     // Do all the simulations
     outcome.deployment = simulateDeployment(account, factory, factoryCalldata);
     if (!outcome.deployment.success) return outcome;
-    if (preExecute.calls.length != 0) outcome.accountOpToExecuteBefore = simulateSigned(op);
-    if (!outcome.accountOpToExecuteBefore.success) return outcome;
+    if (preExecute.calls.length != 0) {
+      outcome.accountOpToExecuteBefore = simulateSigned(op);
+      if (!outcome.accountOpToExecuteBefore.success) return outcome;
+    }
     (outcome.op, outcome.isKeyAuthorized) = simulateUnsigned(op, associatedKeys);
     // @TODO: spoof signature, since Solidity copies the memory arguments and we can't just read the one set by simulateUnsigned
     if (feeTokens.length != 0) outcome.feeTokenOutcomes = simulateFeePayments(account, feeTokens, op.signature, relayer);
