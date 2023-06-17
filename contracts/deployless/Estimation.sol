@@ -167,6 +167,7 @@ contract Estimation {
       }
 
       // Only simulate if the amount is nonzero
+      /*
       if (feeTokenOutcomes[i].amount > 0) {
         SimulationOutcome memory outcome = simulateSigned(simulationOp);
         // We ignore the errors here on purpose, we will just leave gasUsed as 0
@@ -177,6 +178,7 @@ contract Estimation {
           feeTokenOutcomes[i].gasUsed = outcome.gasUsed - baseGasConsumption;
         }
       }
+      */
     }
   }
 
