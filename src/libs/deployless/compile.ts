@@ -62,7 +62,7 @@ export function compile(contractName: string, options: Options = {}) {
 
   return {
     abi: output.contracts[contractName][contractName].abi,
-    bytecode: '0x' + output.contracts[contractName][contractName].evm.bytecode.object, // bin
-    deployBytecode: '0x' + output.contracts[contractName][contractName].evm.deployedBytecode.object // binRuntime
+    bin: '0x' + output.contracts[contractName][contractName].evm.bytecode.object, // bin
+    binRuntime: '0x' + output.contracts[contractName][contractName].evm.deployedBytecode.object // binRuntime
   }
 }
