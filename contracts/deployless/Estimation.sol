@@ -87,10 +87,12 @@ contract Estimation {
     IAmbireAccount account,
     address factory, bytes memory factoryCalldata
   ) public returns (SimulationOutcome memory outcome) {
-    uint gasInitial = gasleft();
-    if (address(account).code.length == 0) {
-      (outcome.success, outcome.err) = factory.call(factoryCalldata);
+    if (address(account).code.length > 0) {
+      outcome.success = true;
+      return outcome;
     }
+    uint gasInitial = gasleft();
+    (outcome.success, outcome.err) = factory.call(factoryCalldata);
     outcome.gasUsed = gasInitial - gasleft();
   }
 
