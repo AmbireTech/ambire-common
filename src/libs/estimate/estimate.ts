@@ -1,4 +1,4 @@
-import { Deployless, parseErr } from '../deployless/deployless'
+import { fromDescriptor, parseErr } from '../deployless/deployless'
 import { getAccountDeployParams } from '../account/account'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { AccountOp, callToTuple } from '../accountOp/accountOp'
@@ -9,7 +9,7 @@ import estimator from './estimator.json'
 // @TODO return type
 export async function estimate(provider: Provider, network: NetworkDescriptor, op: AccountOp): Promise<any> {
   // @TODO construrct Deployless instance
-  const deploylessEstimator = new Deployless(provider, estimator.abi, estimator.bin, network.rpcNoStateOverride ? undefined : estimator.binRuntime)
+  const deploylessEstimator = fromDescriptor(provider, estimator, !network.rpcNoStateOverride)
 }
 
 // @TODO test
