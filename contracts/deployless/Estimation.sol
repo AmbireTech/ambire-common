@@ -75,9 +75,10 @@ contract Estimation {
       outcome.accountOpToExecuteBefore = simulateSigned(op);
       if (!outcome.accountOpToExecuteBefore.success) return outcome;
     }
-    (outcome.op, outcome.isKeyAuthorized) = simulateUnsigned(op, associatedKeys);
-    // @TODO: spoof signature, since Solidity copies the memory arguments and we can't just read the one set by simulateUnsigned
-    if (feeTokens.length != 0) outcome.feeTokenOutcomes = simulateFeePayments(account, feeTokens, op.signature, relayer);
+    bytes memory spoofSig;
+    (outcome.op, outcome.isKeyAuthorized, spoofSig) = simulateUnsigned(op, associatedKeys);
+    if (feeTokens.length != 0) outcome.feeTokenOutcomes = simulateFeePayments(account, feeTokens, spoofSig, relayer);
+
     // Safety check: anti-bricking
     bool isOk;
     for (uint i=0; i!=associatedKeys.length; i++) {
@@ -101,16 +102,17 @@ contract Estimation {
 
   function simulateUnsigned(AccountOp memory op, address[] memory associatedKeys)
     public
-    returns (SimulationOutcome memory outcome, bool[] memory isKeyAuthorized)
+    returns (SimulationOutcome memory outcome, bool[] memory isKeyAuthorized, bytes memory spoofSig)
   {
     isKeyAuthorized = new bool[](associatedKeys.length);
     for (uint i=0; i!=associatedKeys.length; i++) {
       address key = associatedKeys[i];
       if (op.account.privileges(key) != bytes32(0)) {
         isKeyAuthorized[i] = true;
-        if (op.signature.length == 0) op.signature = makeSpoofSignature(key);
+        if (spoofSig.length == 0) spoofSig = makeSpoofSignature(key);
       }
     }
+    op.signature = spoofSig;
     outcome = simulateSigned(op);
   }
 
@@ -120,6 +122,8 @@ contract Estimation {
       return outcome;
     }
     uint gasInitial = gasleft();
+    // @TODO: if `account` is not a valid acc, this will blow up; consider wrapping it in an internal call,
+    // but we prob won't do this cuz of the gas overhead that will distort the overall estimation
     try op.account.execute(op.calls, op.signature) {
       outcome.success = true;
     } catch (bytes memory err) {
@@ -132,10 +136,11 @@ contract Estimation {
     public
     returns (FeeTokenOutcome[] memory feeTokenOutcomes)
   {
-    /*
     AccountOp memory emptyOp;
-    emptyOp.signature = spoofSig;
+    emptyOp.account = account;
+    emptyOp.nonce = account.nonce();
     emptyOp.calls = new IAmbireAccount.Transaction[](1);
+    emptyOp.signature = spoofSig;
     emptyOp.calls[0].to = address(account);
     SimulationOutcome memory emptyOpOutcome = simulateSigned(emptyOp);
     require(
@@ -143,15 +148,17 @@ contract Estimation {
       // @TODO: fix: it is wrong to cast this as string since we'll double-wrap it in Error()
       emptyOpOutcome.err.length > 0 ? string(emptyOpOutcome.err) : "FEE_BASE_GASUSED"
     );
-    */
 
-    uint baseGasConsumption = 0;//emptyOpOutcome.gasUsed;
+    uint baseGasConsumption = emptyOpOutcome.gasUsed;
 
     feeTokenOutcomes = new FeeTokenOutcome[](feeTokens.length);
     for (uint i=0; i!=feeTokens.length; i++) {
       address feeToken = feeTokens[i];
       AccountOp memory simulationOp;
+      simulationOp.account = account;
+      simulationOp.nonce = account.nonce();
       simulationOp.calls = new IAmbireAccount.Transaction[](1);
+      simulationOp.signature = spoofSig;
 
       if (feeToken == address(0)) {
         feeTokenOutcomes[i].amount = address(account).balance;
@@ -167,7 +174,6 @@ contract Estimation {
       }
 
       // Only simulate if the amount is nonzero
-      /*
       if (feeTokenOutcomes[i].amount > 0) {
         SimulationOutcome memory outcome = simulateSigned(simulationOp);
         // We ignore the errors here on purpose, we will just leave gasUsed as 0
@@ -178,7 +184,6 @@ contract Estimation {
           feeTokenOutcomes[i].gasUsed = outcome.gasUsed - baseGasConsumption;
         }
       }
-      */
     }
   }
 
