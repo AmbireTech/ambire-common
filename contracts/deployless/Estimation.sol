@@ -69,6 +69,8 @@ contract Estimation {
     // Do all the simulations
     outcome.deployment = simulateDeployment(account, factory, factoryCalldata);
     if (!outcome.deployment.success) return outcome;
+    // NOTE: if we don't have a preExecute accountOp, .success will still be false, but
+    // the estimate lib only cares about the final success (outcome.op.success)
     if (preExecute.calls.length != 0) {
       outcome.accountOpToExecuteBefore = simulateSigned(op);
       if (!outcome.accountOpToExecuteBefore.success) return outcome;
