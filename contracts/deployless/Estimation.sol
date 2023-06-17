@@ -78,7 +78,6 @@ contract Estimation {
     (outcome.op, outcome.isKeyAuthorized) = simulateUnsigned(op, associatedKeys);
     // @TODO: spoof signature, since Solidity copies the memory arguments and we can't just read the one set by simulateUnsigned
     if (feeTokens.length != 0) outcome.feeTokenOutcomes = simulateFeePayments(account, feeTokens, op.signature, relayer);
-
     // Safety check: anti-bricking
     bool isOk;
     for (uint i=0; i!=associatedKeys.length; i++) {
@@ -118,6 +117,7 @@ contract Estimation {
   function simulateSigned(AccountOp memory op) public returns (SimulationOutcome memory outcome) {
     if (op.nonce != op.account.nonce()) {
       outcome.err = bytes("NONCE_ERROR");
+      return outcome;
     }
     uint gasInitial = gasleft();
     try op.account.execute(op.calls, op.signature) {
@@ -132,16 +132,22 @@ contract Estimation {
     public
     returns (FeeTokenOutcome[] memory feeTokenOutcomes)
   {
-    // @TODO calculate base consumption
+    /*
     AccountOp memory emptyOp;
     emptyOp.signature = spoofSig;
+    emptyOp.calls = new IAmbireAccount.Transaction[](1);
+    emptyOp.calls[0].to = address(account);
     SimulationOutcome memory emptyOpOutcome = simulateSigned(emptyOp);
     require(
       emptyOpOutcome.success,
+      // @TODO: fix: it is wrong to cast this as string since we'll double-wrap it in Error()
       emptyOpOutcome.err.length > 0 ? string(emptyOpOutcome.err) : "FEE_BASE_GASUSED"
     );
-    uint baseGasConsumption = emptyOpOutcome.gasUsed;
+    */
 
+    uint baseGasConsumption = 0;//emptyOpOutcome.gasUsed;
+
+    feeTokenOutcomes = new FeeTokenOutcome[](feeTokens.length);
     for (uint i=0; i!=feeTokens.length; i++) {
       address feeToken = feeTokens[i];
       AccountOp memory simulationOp;
@@ -166,7 +172,10 @@ contract Estimation {
         // We ignore the errors here on purpose, we will just leave gasUsed as 0
         // We only care about `gasUsed - baseGasConsumption` because paying the fee will be a part of
         // another AccountOp, so we don't care about the base AccountOp overhead
-        feeTokenOutcomes[i].gasUsed = outcome.gasUsed - baseGasConsumption;
+        if (outcome.gasUsed > 0) {
+          require(outcome.gasUsed >= baseGasConsumption, "IMPOSSIBLE_GAS_CONSUMPTION");
+          feeTokenOutcomes[i].gasUsed = outcome.gasUsed - baseGasConsumption;
+        }
       }
     }
   }
