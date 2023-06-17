@@ -28,7 +28,8 @@ export interface AccountOp {
   networkId: NetworkId
   // this may not be defined, in case the user has not picked a key yet
   signingKeyAddr: string | null
-  nonce: number
+  // this may not be set in case we haven't set it yet
+  nonce: number | null
   // @TODO: nonce namespace? it is dependent on gasFeePayment
   calls: Call[]
   gasLimit: number | null
