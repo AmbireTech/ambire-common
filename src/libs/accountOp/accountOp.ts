@@ -38,7 +38,8 @@ export interface AccountOp {
   gasFeePayment: GasFeePayment | null
   // @TODO: meta?
   // This is used when we have an account recovery to finalize before executing the AccountOp,
-  // And we set this to the recovery finalization AccountOp; could be used in other scenarios too in the future
+  // And we set this to the recovery finalization AccountOp; could be used in other scenarios too in the future,
+  // for example account migration (from v1 QuickAcc to v2)
   accountOpToExecuteBefore: AccountOp | null
 }
 
