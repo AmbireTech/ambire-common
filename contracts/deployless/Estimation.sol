@@ -191,7 +191,11 @@ contract Estimation {
     emptyOp.calls = new IAmbireAccount.Transaction[](1);
     emptyOp.signature = spoofSig;
     // `account` is guaranteed to be in the accessList, so there should be minimum overhead
-    emptyOp.calls[0].to = address(account);
+    emptyOp.calls[0].to = address(this);
+    // NOTE: we can call this twice and use the second result, to negate the fact that
+    // the first time the account may not be added to the accessList which will distort the difference
+    // However, if the previous simulations have been successful it will be, and if they're not, we don't care
+    // about the accuracy of the baseGas
     SimulationOutcome memory emptyOpOutcome = simulateSigned(emptyOp);
     require(
       emptyOpOutcome.success,
@@ -201,8 +205,8 @@ contract Estimation {
     AccountOp memory twoCallOp = emptyOp;
     twoCallOp.nonce = account.nonce();
     twoCallOp.calls = new IAmbireAccount.Transaction[](2);
-    twoCallOp.calls[0].to = address(account);
-    twoCallOp.calls[1].to = address(account);
+    twoCallOp.calls[0].to = address(this);
+    twoCallOp.calls[1].to = address(this);
     SimulationOutcome memory twoCallOpOutcome = simulateSigned(twoCallOp);
     require(
       twoCallOpOutcome.success,
@@ -222,5 +226,8 @@ contract Estimation {
   function getERC20Balance(IERC20Subset token, address addr) external view returns (uint) {
     return token.balanceOf(addr);
   }
-  // @TODO nativeBalances
+
+  // Empty fallback so we can call ourselves from the account
+  fallback() external payable {}
+  receive() external payable {}
 }
