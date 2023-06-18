@@ -34,6 +34,7 @@ contract Estimation {
     SimulationOutcome deployment;
     SimulationOutcome accountOpToExecuteBefore;
     SimulationOutcome op;
+    uint nonce;
     FeeTokenOutcome[] feeTokenOutcomes;
     bool[] isKeyAuthorized;
     uint[] nativeAssetBalances;
@@ -77,6 +78,8 @@ contract Estimation {
     }
     bytes memory spoofSig;
     (outcome.op, outcome.isKeyAuthorized, spoofSig) = simulateUnsigned(op, associatedKeys);
+    outcome.nonce = op.account.nonce();
+    // Get fee tokens amounts after the simulation, and simulate their gas cost for transfer
     if (feeTokens.length != 0) outcome.feeTokenOutcomes = simulateFeePayments(account, feeTokens, spoofSig, relayer);
 
     // Safety check: anti-bricking
