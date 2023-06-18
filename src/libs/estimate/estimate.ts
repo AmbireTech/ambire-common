@@ -8,6 +8,8 @@ import estimator from './estimator.json'
 
 // @TODO return type
 export async function estimate(provider: Provider, network: NetworkDescriptor, acc: Account, op: AccountOp): Promise<any> {
+  //@ TODO implement EOAs
+  if (!acc.creation) throw new Error('EOA not supported yet')
   const deploylessEstimator = fromDescriptor(provider, estimator, !network.rpcNoStateOverride)
 
   // @TODO this is temp
