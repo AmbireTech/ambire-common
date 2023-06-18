@@ -12,11 +12,11 @@ enum GasFeePaymentType {
   AmbireRelayer = 'ambireRelayer',
   AmbireGasTank = 'ambireGasTank',
   // we use this in two cases: 1) Ambire account, fee paid by an EOA 2) account itself is an EAO
-  // when the account itself is an EOA, feePaymentType equals accountAddr
+  // when the account itself is an EOA, paymentType equals accountAddr
   EOA = 'eoa'
 }
 interface GasFeePayment {
-  feePaymentType: GasFeePaymentType
+  paymentType: GasFeePaymentType
   paidBy: string
   inToken: string
   amount: number
