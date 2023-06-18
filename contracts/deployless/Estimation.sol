@@ -209,6 +209,11 @@ contract Estimation {
       // @TODO: fix: it is wrong to cast this as string since we'll double-wrap it in Error()
       twoCallOpOutcome.err.length > 0 ? string(twoCallOpOutcome.err) : "FEE_BASE_GASUSED"
     );
+
+    // This will happen if we haven't accessed the account before. As such, the second one will
+    // be the more accurate because subsequent simulations will have accessed the account
+    if (emptyOpOutcome.gasUsed > twoCallOpOutcome.gasUsed) return twoCallOpOutcome.gasUsed;
+
     uint diff = twoCallOpOutcome.gasUsed - emptyOpOutcome.gasUsed;
     return emptyOpOutcome.gasUsed - diff;
   }
