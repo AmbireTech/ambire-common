@@ -36,7 +36,7 @@ contract Estimation {
     SimulationOutcome op;
     uint nonce;
     FeeTokenOutcome[] feeTokenOutcomes;
-    bool[] isKeyAuthorized;
+    bytes32[] associatedKeyPrivileges;
     uint[] scheduledRecoveries;
     uint[] nativeAssetBalances;
   }
@@ -78,7 +78,7 @@ contract Estimation {
       if (!outcome.accountOpToExecuteBefore.success) return outcome;
     }
     bytes memory spoofSig;
-    (outcome.op, outcome.isKeyAuthorized, spoofSig) = simulateUnsigned(op, associatedKeys);
+    (outcome.op, outcome.associatedKeyPrivileges, spoofSig) = simulateUnsigned(op, associatedKeys);
     outcome.nonce = op.account.nonce();
     // Get fee tokens amounts after the simulation, and simulate their gas cost for transfer
     if (feeTokens.length != 0) outcome.feeTokenOutcomes = simulateFeePayments(account, feeTokens, spoofSig, relayer);
@@ -110,14 +110,15 @@ contract Estimation {
 
   function simulateUnsigned(AccountOp memory op, address[] memory associatedKeys)
     public
-    returns (SimulationOutcome memory outcome, bool[] memory isKeyAuthorized, bytes memory spoofSig)
+    returns (SimulationOutcome memory outcome, bytes32[] memory associatedKeyPrivileges, bytes memory spoofSig)
   {
     op.nonce = op.account.nonce();
-    isKeyAuthorized = new bool[](associatedKeys.length);
+    associatedKeyPrivileges = new bytes32[](associatedKeys.length);
     for (uint i=0; i!=associatedKeys.length; i++) {
       address key = associatedKeys[i];
-      if (op.account.privileges(key) != bytes32(0)) {
-        isKeyAuthorized[i] = true;
+      bytes32 value = op.account.privileges(key);
+      associatedKeyPrivileges[i] = value; 
+      if (value != bytes32(0)) {
         if (spoofSig.length == 0) spoofSig = makeSpoofSignature(key);
       }
     }
