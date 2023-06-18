@@ -137,35 +137,7 @@ contract Estimation {
     public
     returns (FeeTokenOutcome[] memory feeTokenOutcomes)
   {
-    // Ambire v1 contracts do not support zero-call execute()s, so we have to make
-    // two separate measures of execute(), one with one empty call, the other with two,
-    // to calculate the base gas used by execute()
-    AccountOp memory emptyOp;
-    emptyOp.account = account;
-    emptyOp.nonce = account.nonce();
-    emptyOp.calls = new IAmbireAccount.Transaction[](1);
-    emptyOp.signature = spoofSig;
-    // tx.origin is already in the accessList, and it is not a contract, so there should be minimum overhead
-    emptyOp.calls[0].to = address(account);
-    SimulationOutcome memory emptyOpOutcome = simulateSigned(emptyOp);
-    require(
-      emptyOpOutcome.success,
-      // @TODO: fix: it is wrong to cast this as string since we'll double-wrap it in Error()
-      emptyOpOutcome.err.length > 0 ? string(emptyOpOutcome.err) : "FEE_BASE_GASUSED"
-    );
-    AccountOp memory twoCallOp = emptyOp;
-    twoCallOp.nonce = account.nonce();
-    twoCallOp.calls = new IAmbireAccount.Transaction[](2);
-    twoCallOp.calls[0].to = address(account);
-    twoCallOp.calls[1].to = address(account);
-    SimulationOutcome memory twoCallOpOutcome = simulateSigned(twoCallOp);
-    require(
-      twoCallOpOutcome.success,
-      // @TODO: fix: it is wrong to cast this as string since we'll double-wrap it in Error()
-      twoCallOpOutcome.err.length > 0 ? string(twoCallOpOutcome.err) : "FEE_BASE_GASUSED"
-    );
-    uint diff = twoCallOpOutcome.gasUsed - emptyOpOutcome.gasUsed;
-    uint baseGasConsumption = emptyOpOutcome.gasUsed - diff;
+    uint baseGasConsumption = calculateBaseGas(account, spoofSig);
 
     feeTokenOutcomes = new FeeTokenOutcome[](feeTokens.length);
     for (uint i=0; i!=feeTokens.length; i++) {
@@ -201,6 +173,38 @@ contract Estimation {
         }
       }
     }
+  }
+
+  function calculateBaseGas(IAmbireAccount account, bytes memory spoofSig) internal returns (uint) {
+    // Ambire v1 contracts do not support zero-call execute()s, so we have to make
+    // two separate measures of execute(), one with one empty call, the other with two,
+    // to calculate the base gas used by execute()
+    AccountOp memory emptyOp;
+    emptyOp.account = account;
+    emptyOp.nonce = account.nonce();
+    emptyOp.calls = new IAmbireAccount.Transaction[](1);
+    emptyOp.signature = spoofSig;
+    // `account` is guaranteed to be in the accessList, so there should be minimum overhead
+    emptyOp.calls[0].to = address(account);
+    SimulationOutcome memory emptyOpOutcome = simulateSigned(emptyOp);
+    require(
+      emptyOpOutcome.success,
+      // @TODO: fix: it is wrong to cast this as string since we'll double-wrap it in Error()
+      emptyOpOutcome.err.length > 0 ? string(emptyOpOutcome.err) : "FEE_BASE_GASUSED"
+    );
+    AccountOp memory twoCallOp = emptyOp;
+    twoCallOp.nonce = account.nonce();
+    twoCallOp.calls = new IAmbireAccount.Transaction[](2);
+    twoCallOp.calls[0].to = address(account);
+    twoCallOp.calls[1].to = address(account);
+    SimulationOutcome memory twoCallOpOutcome = simulateSigned(twoCallOp);
+    require(
+      twoCallOpOutcome.success,
+      // @TODO: fix: it is wrong to cast this as string since we'll double-wrap it in Error()
+      twoCallOpOutcome.err.length > 0 ? string(twoCallOpOutcome.err) : "FEE_BASE_GASUSED"
+    );
+    uint diff = twoCallOpOutcome.gasUsed - emptyOpOutcome.gasUsed;
+    return emptyOpOutcome.gasUsed - diff;
   }
 
   // We need this function so that we can try-catch the parsing of the return value as well
