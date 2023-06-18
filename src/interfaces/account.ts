@@ -5,8 +5,14 @@ export interface Account {
   label: string
   // URL (https, ipfs or nft721://contractAddr/tokenId)
   pfp: string
+  // Associated keys that can control thte account
+  // For EOAs thits must be set to [account.addr]
   associatedKeys: string[]
-  // Creation data
+  // Creation data; `null` in case of an EOA
+  creation: AccountCreation | null
+}
+
+export interface AccountCreation {
   factoryAddr: string
   bytecode: string
   salt: string

@@ -11,6 +11,8 @@ enum GasFeePaymentType {
   ERC4337 = 'erc4337',
   AmbireRelayer = 'ambireRelayer',
   AmbireGasTank = 'ambireGasTank',
+  // we use this in two cases: 1) Ambire account, fee paid by an EOA 2) account itself is an EAO
+  // when the account itself is an EOA, feePaymentType equals accountAddr
   EOA = 'eoa'
 }
 interface GasFeePayment {
