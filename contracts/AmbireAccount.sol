@@ -84,7 +84,6 @@ contract AmbireAccount {
 	// which is set by the user and can be changed
 	// @dev this contract can accept ETH with calldata, hence payable
 	fallback() external payable {
-		if (msg.data.length < 4) return;
 		// We store the fallback handler at this magic slot
 		address fallbackHandler = address(uint160(uint(privileges[FALLBACK_HANDLER_SLOT])));
 		if (fallbackHandler == address(0)) return;

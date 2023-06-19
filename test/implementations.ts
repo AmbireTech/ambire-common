@@ -46,6 +46,11 @@ async function deployAmbireAccount(priLevels: PrivLevels[]) {
   const addr = await contract.getAddress()
   expect(addr).not.to.be.null
 
+  // push full privs to this addr
+  priLevels.push({
+    addr: '0x0000000000000000000000000000000000006969',
+    hash: true
+  })
   // get the bytecode and deploy it
   const bytecode = getProxyDeployBytecode(addr, priLevels, {
     ...getStorageSlotsFromArtifact(buildInfo)
