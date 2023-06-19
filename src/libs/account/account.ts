@@ -20,8 +20,8 @@ export class AccountController {
     this.relayerUrl = relayerUrl
   }
 
-  async createAccount(acc: any, expectedAddr: string, privileges: PrivLevels[]): Promise<any> {
-    const newPrivs = privileges.map((el) => [el.addr, el.hash])
+  async createAccount(acc: any, expectedAddr: string): Promise<any> {
+    const newPrivs = acc.privileges.map((el: any) => [el.addr, el.hash])
     const args = {
       salt: acc.salt,
       bytecode: acc.bytecode,
@@ -40,7 +40,19 @@ export class AccountController {
       body: JSON.stringify(args)
     })
     const result: any = await resp.json()
-    if (!result.success) throw new Error(`accountController: create account: ${result.message}`)
-    return result.data
+    if (!result.success) return `accountController: create account: ${result.message}`
+    return result
+  }
+
+  async getAccount(identity: string): Promise<any> {
+    const resp = await this.fetch(`${this.relayerUrl}/identity/${identity}`, {
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    })
+    const result: any = await resp.json()
+
+    if (result.errType) throw new Error(`accountController: get account: ${result.errType}`)
+    return result
   }
 }
