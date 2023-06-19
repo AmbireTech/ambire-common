@@ -46,7 +46,7 @@ export class MainController {
   userRequests: UserRequest[] = []
   // @TODO: clean
   // accountOpsToBeSigned: Map<AccountId, Map<NetworkId, AccountOp[]>> = new Map()
-  accountOpsToBeMined: Map<AccountId, Map<NetworkId, AccountOp[]>> = new Map()
+  accountOpsToBeConfirmed: Map<AccountId, Map<NetworkId, AccountOp[]>> = new Map()
   messagesToBeSigned: Map<AccountId, UniversalMessage[]> = new Map()
 
   constructor(storage: Storage) {

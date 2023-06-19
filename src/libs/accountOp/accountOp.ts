@@ -11,10 +11,12 @@ enum GasFeePaymentType {
   ERC4337 = 'erc4337',
   AmbireRelayer = 'ambireRelayer',
   AmbireGasTank = 'ambireGasTank',
+  // we use this in two cases: 1) Ambire account, fee paid by an EOA 2) account itself is an EAO
+  // when the account itself is an EOA, paymentType equals accountAddr
   EOA = 'eoa'
 }
 interface GasFeePayment {
-  feePaymentType: GasFeePaymentType
+  paymentType: GasFeePaymentType
   paidBy: string
   inToken: string
   amount: number
@@ -28,7 +30,8 @@ export interface AccountOp {
   networkId: NetworkId
   // this may not be defined, in case the user has not picked a key yet
   signingKeyAddr: string | null
-  nonce: number
+  // this may not be set in case we haven't set it yet
+  nonce: number | null
   // @TODO: nonce namespace? it is dependent on gasFeePayment
   calls: Call[]
   gasLimit: number | null
@@ -37,7 +40,8 @@ export interface AccountOp {
   gasFeePayment: GasFeePayment | null
   // @TODO: meta?
   // This is used when we have an account recovery to finalize before executing the AccountOp,
-  // And we set this to the recovery finalization AccountOp; could be used in other scenarios too in the future
+  // And we set this to the recovery finalization AccountOp; could be used in other scenarios too in the future,
+  // for example account migration (from v1 QuickAcc to v2)
   accountOpToExecuteBefore: AccountOp | null
 }
 
