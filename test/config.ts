@@ -13,7 +13,6 @@ const addressThree = '0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC'
 const addressFour = '0x90F79bf6EB2c4f870365E785982E1f101E93b906'
 const AmbireAccount = require('../artifacts/contracts/AmbireAccount.sol/AmbireAccount.json')
 const AmbireAccountFactory = require('../artifacts/contracts/AmbireAccountFactory.sol/AmbireAccountFactory.json')
-const Identity = require('../artifacts/contracts/Identity.sol/Identity.json')
 const localhost = 'http://127.0.0.1:8545'
 const validSig = '0x1626ba7e'
 const invalidSig = '0xffffffff'
@@ -53,6 +52,5 @@ export {
   buildInfo,
   deploySalt,
   deployGasLimit,
-  assertion,
-  Identity
+  assertion
 }
