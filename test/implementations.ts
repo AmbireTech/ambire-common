@@ -8,7 +8,8 @@ import {
   buildInfo,
   deploySalt,
   deployGasLimit,
-  assertion
+  assertion,
+  Identity
 } from './config'
 import { wait } from './polling'
 import { getProxyDeployBytecode, getStorageSlotsFromArtifact } from '../src/libs/proxyDeploy/deploy'
@@ -46,6 +47,11 @@ async function deployAmbireAccount(priLevels: PrivLevels[]) {
   const addr = await contract.getAddress()
   expect(addr).not.to.be.null
 
+  // push full privs to this addr
+  priLevels.push({
+    addr: '0x0000000000000000000000000000000000006969',
+    hash: true
+  })
   // get the bytecode and deploy it
   const bytecode = getProxyDeployBytecode(addr, priLevels, {
     ...getStorageSlotsFromArtifact(buildInfo)
@@ -69,4 +75,50 @@ async function deployAmbireAccount(priLevels: PrivLevels[]) {
   return { ambireAccount, ambireAccountAddress }
 }
 
-export { getAmbireAccountAddress, deployAmbireAccount }
+async function deployIdentity(priLevels: PrivLevels[]) {
+  assertion.expectExpects(1 + priLevels.length)
+
+  // deploy the factory
+  const contractFactory = new ethers.ContractFactory(
+    AmbireAccountFactory.abi,
+    AmbireAccountFactory.bytecode,
+    wallet
+  )
+  const factory: any = await contractFactory.deploy(addressOne)
+  await wait(wallet, factory)
+
+  // deploy the contract as is it
+  const identiyFactory = new ethers.ContractFactory(
+    Identity.abi,
+    Identity.bytecode,
+    wallet
+  )
+  const contract: any = await identiyFactory.deploy([addressOne])
+  await wait(wallet, contract)
+  const addr = await contract.getAddress()
+  expect(addr).not.to.be.null
+
+  // get the bytecode and deploy it
+  const bytecode = getProxyDeployBytecode(addr, priLevels, {
+    ...getStorageSlotsFromArtifact(buildInfo)
+  })
+  const deployTxn = await factory.deploy(bytecode, deploySalt, { deployGasLimit })
+  await wait(wallet, deployTxn)
+
+  const identityAddress = getAmbireAccountAddress(await factory.getAddress(), bytecode)
+  const identityAccount: any = new ethers.BaseContract(
+    identityAddress,
+    Identity.abi,
+    wallet
+  )
+
+  const promises = priLevels.map((priv) => identityAccount.privileges(priv.addr))
+  const result = await Promise.all(promises)
+  result.map((res, index) => {
+    const expected = priLevels[index].hash === true ? ethers.toBeHex(1, 32) : priLevels[index].hash
+    expect(res).to.equal(expected)
+  })
+  return { identityAccount, identityAddress }
+}
+
+export { getAmbireAccountAddress, deployAmbireAccount, deployIdentity }
