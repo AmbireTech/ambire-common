@@ -13,12 +13,12 @@ let deployless: Deployless
 
 describe('Deployless', () => {
   test('should construct an object', () => {
-    deployless = new Deployless(mainnetProvider, helloWorld.abi, helloWorld.bytecode)
+    deployless = new Deployless(mainnetProvider, helloWorld.abi, helloWorld.bin)
     expect(deployless.isLimitedAt24kbData).toBe(true)
   })
 
   test('should invoke a method: proxy mode', async () => {
-    const localDeployless = new Deployless(provider, helloWorld.abi, helloWorld.bytecode)
+    const localDeployless = new Deployless(provider, helloWorld.abi, helloWorld.bin)
     const [result] = await localDeployless.call('helloWorld', [], {
       mode: DeploylessMode.ProxyContract
     })
@@ -28,7 +28,7 @@ describe('Deployless', () => {
   })
 
   test('should invoke a method: detect mode', async () => {
-    deployless = new Deployless(mainnetProvider, helloWorld.abi, helloWorld.bytecode)
+    deployless = new Deployless(mainnetProvider, helloWorld.abi, helloWorld.bin)
     const [result] = await deployless.call('helloWorld', [])
     expect(result).toBe('hello world')
     // We detected support for state override
@@ -38,7 +38,7 @@ describe('Deployless', () => {
   test('should not alllow initializing with wrong deploy code', () => {
     expect.assertions(2)
     try {
-      new Deployless(mainnetProvider, helloWorld.abi, helloWorld.bytecode.slice(2))
+      new Deployless(mainnetProvider, helloWorld.abi, helloWorld.bin.slice(2))
     } catch (e: any) {
       expect(e.message).toBe('contract code must start with 0x')
     }
@@ -46,8 +46,8 @@ describe('Deployless', () => {
       new Deployless(
         mainnetProvider,
         helloWorld.abi,
-        helloWorld.bytecode,
-        helloWorld.bytecode.slice(2)
+        helloWorld.bin,
+        helloWorld.bin.slice(2)
       )
     } catch (e: any) {
       expect(e.message).toBe('contract code (runtime) must start with 0x')
@@ -57,7 +57,7 @@ describe('Deployless', () => {
   test('should not allow detect with another Provider', async () => {
     expect.assertions(1)
     const homesteadProvider = getDefaultProvider('homestead')
-    const deployless = new Deployless(homesteadProvider, helloWorld.abi, helloWorld.bytecode)
+    const deployless = new Deployless(homesteadProvider, helloWorld.abi, helloWorld.bin)
     try {
       await deployless.call('helloWorld', [])
     } catch (e: any) {
@@ -93,8 +93,8 @@ describe('Deployless', () => {
     const deployless = new Deployless(
       mainnetProvider,
       helloWorld.abi,
-      helloWorld.bytecode,
-      helloWorld.deployBytecode
+      helloWorld.bin,
+      helloWorld.binRuntime
     )
     // we should already be aware that we are not limited by the 24kb limit
     expect(deployless.isLimitedAt24kbData).toBe(false)
@@ -108,8 +108,8 @@ describe('Deployless', () => {
     const deployless = new Deployless(
       mainnetProvider,
       helloWorld.abi,
-      helloWorld.bytecode,
-      helloWorld.deployBytecode
+      helloWorld.bin,
+      helloWorld.binRuntime
     )
     expect.assertions(2)
     try {
@@ -135,7 +135,7 @@ describe('Deployless', () => {
     const factory = compile('AmbireAccountFactory')
     const abiCoder = new AbiCoder()
     const bytecodeAndArgs = toBeHex(
-      concat([factory.bytecode, abiCoder.encode(['address'], [addressOne])])
+      concat([factory.bin, abiCoder.encode(['address'], [addressOne])])
     )
     let megaLargeCode = bytecodeAndArgs
     let i = 12
@@ -143,7 +143,7 @@ describe('Deployless', () => {
       megaLargeCode += bytecodeAndArgs.substring(2)
       i--
     }
-    const contract = new Deployless(provider, factory.abi, megaLargeCode, factory.deployBytecode)
+    const contract = new Deployless(provider, factory.abi, megaLargeCode, factory.binRuntime)
     try {
       await contract.call('deploy', [bytecodeAndArgs, '1234'], {
         mode: DeploylessMode.ProxyContract
@@ -158,8 +158,8 @@ describe('Deployless', () => {
     const contract = new Deployless(
       mainnetProvider,
       helloWorld.abi,
-      helloWorld.bytecode,
-      helloWorld.deployBytecode
+      helloWorld.bin,
+      helloWorld.binRuntime
     )
     try {
       await contract.call('throwAssertError', [])
@@ -173,8 +173,8 @@ describe('Deployless', () => {
     const contract = new Deployless(
       mainnetProvider,
       helloWorld.abi,
-      helloWorld.bytecode,
-      helloWorld.deployBytecode
+      helloWorld.bin,
+      helloWorld.binRuntime
     )
     try {
       await contract.call('throwArithmeticError', [])
@@ -188,8 +188,8 @@ describe('Deployless', () => {
     const contract = new Deployless(
       mainnetProvider,
       helloWorld.abi,
-      helloWorld.bytecode,
-      helloWorld.deployBytecode
+      helloWorld.bin,
+      helloWorld.binRuntime
     )
     try {
       await contract.call('throwDivisionByZeroError', [])
@@ -203,8 +203,8 @@ describe('Deployless', () => {
     const contract = new Deployless(
       mainnetProvider,
       helloWorld.abi,
-      helloWorld.bytecode,
-      helloWorld.deployBytecode
+      helloWorld.bin,
+      helloWorld.binRuntime
     )
     try {
       await contract.call('throwCompilerPanic', [])

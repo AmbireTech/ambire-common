@@ -10,10 +10,12 @@ const DEPLOYLESS_SIMULATION_FROM = '0x0000000000000000000000000000000000000001'
 
 const handleSimulationError = (error: string, beforeNonce: bigint, afterNonce: bigint) => {
   if (error !== '0x') throw new SimulationError(parseErr(error) || error, beforeNonce, afterNonce)
+  // If the afterNonce is 0, it means that we reverted, even if the error is empty
+  // In both BalanceOracle and NFTOracle, afterSimulation and therefore afterNonce will be left empty
   if (afterNonce === 0n)
     throw new SimulationError('unknown error: simulation reverted', beforeNonce, afterNonce)
   if (afterNonce < beforeNonce)
-    throw new SimulationError('lower "after" nonce', beforeNonce, afterNonce)
+    throw new SimulationError('lower "after" nonce, should not be possible', beforeNonce, afterNonce)
 }
 
 export async function getNFTs(

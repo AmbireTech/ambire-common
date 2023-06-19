@@ -135,6 +135,14 @@ export class Deployless {
   }
 }
 
+export function fromDescriptor(
+  provider: JsonRpcProvider | Provider,
+  desc: { abi: any, bin: string, binRuntime: string },
+  supportStateOverride: boolean
+): Deployless {
+  return new Deployless(provider, desc.abi, desc.bin, supportStateOverride ? desc.binRuntime : undefined)
+}
+
 async function mapError(callPromise: Promise<string>): Promise<string> {
   try {
     return await callPromise
