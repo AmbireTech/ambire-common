@@ -34,6 +34,7 @@ describe('Portfolio', () => {
 
   test('token simulation', async () => {
     const accountOp = {
+      id: 'not-important-for-this-test',
       accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
       signingKeyAddr: '0xe5a4Dad2Ea987215460379Ab285DF87136E83BEA',
       gasLimit: null,
@@ -86,6 +87,7 @@ describe('Portfolio', () => {
       SPOOF_SIGTYPE
 
     const accountOp = {
+      id: 'not-important-for-this-test',
       accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
       signingKeyAddr: '0x5Be214147EA1AE3653f289E17fE7Dc17A73AD175',
       gasLimit: null,

@@ -7,7 +7,7 @@ const networks: NetworkDescriptor[] = [
     nativeAssetSymbol: 'ETH',
     rpcUrl: 'https://rpc.ankr.com/eth',
     rpcNoStateOverride: false,
-    chainId: 1n
+    chainId: 1
   }
 ]
 

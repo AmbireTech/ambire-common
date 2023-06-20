@@ -1,4 +1,4 @@
-import { Portfolio } from '../libs/portfolio/portfolio'
+import { Portfolio, GetOptions } from '../libs/portfolio/portfolio'
 import { Hints, PortfolioGetResult } from '../libs/portfolio/interfaces'
 import { Storage } from '../interfaces/storage'
 import { NetworkDescriptor } from '../interfaces/networkDescriptor'
@@ -18,12 +18,16 @@ export class PortfolioController {
   pending: PortfolioState
   private portfolioLibs: Map<string, Portfolio>
   private storage: any
+  private minUpdateInterval: number = 20000 // 20 seconds
+  // @TODO - ts type
+  private simulatedAccountOpsIds: Map<string, any>
 
   constructor(storage: Storage) {
     this.latest = new Map()
     this.pending = new Map()
     this.portfolioLibs = new Map()
     this.storage = storage
+    this.simulatedAccountOpsIds = new Map()
   }
   // NOTE: we always pass in all `accounts` and `networks` to ensure that the user of this
   // controller doesn't have to update this controller every time that those are updated
@@ -40,19 +44,76 @@ export class PortfolioController {
     accounts: Account[],
     networks: NetworkDescriptor[],
     accountId: AccountId,
-    accountOps: AccountOp[]
+    accountOps: AccountOp[] = [],
+    opts?: {
+      forceUpdate: boolean
+    }
   ) {
     // Load storage cached hints
     const storagePreviousHints = await this.storage.get('previousHints', {})
 
     const selectedAccount = accounts.find((x) => x.addr === accountId)
     if (!selectedAccount) throw new Error('selected account does not exist')
-    // @TODO update pending AND latest state together in case we have accountOps
+
     if (!this.latest.has(accountId)) this.latest.set(accountId, new Map())
+    if (!this.pending.has(accountId)) this.pending.set(accountId, new Map())
+
     const accountState = this.latest.get(accountId)!
     for (const networkId of accountState.keys()) {
       if (!networks.find((x) => x.id === networkId)) accountState.delete(networkId)
     }
+
+    const pendingState = this.pending.get(accountId)!
+    for (const networkId of pendingState.keys()) {
+      if (!networks.find((x) => x.id === networkId)) pendingState.delete(networkId)
+    }
+
+    const updatePortfolioState = async (
+      accountState: Map<NetworkId, any>,
+      network: NetworkDescriptor,
+      portfolioLib: Portfolio,
+      portfolioProps: Partial<GetOptions>,
+      forceUpdate: boolean,
+      onSuccess?: (results: PortfolioGetResult) => void
+    ): Promise<void> => {
+      if (!accountState.get(network.id))
+        accountState.set(network.id, { isReady: false, isLoading: false })
+
+      const state = accountState.get(network.id)!
+
+      // When the portfolio was called lastly
+      const lastUpdateStartedAt = state?.updateStarted
+      if (
+        lastUpdateStartedAt &&
+        Date.now() - lastUpdateStartedAt <= this.minUpdateInterval &&
+        !forceUpdate
+      )
+        return
+
+      // Only one loading at a time, ensure there are no race conditions
+      if (state.isLoading && !forceUpdate) return
+
+      state.isLoading = true
+
+      try {
+        const results = await portfolioLib.get(accountId, {
+          priceRecency: 60000,
+          priceCache: state.priceCache,
+          ...portfolioProps
+        })
+
+        if (!results.error && onSuccess) {
+          onSuccess(results)
+        }
+
+        accountState.set(network.id, { isReady: true, isLoading: false, ...results })
+      } catch (e) {
+        state.isLoading = false
+        if (!state.isReady) state.criticalError = e
+        else state.errors = [e]
+      }
+    }
+
     await Promise.all(
       networks.map(async (network) => {
         const key = `${network.id}:${accountId}`
@@ -61,37 +122,75 @@ export class PortfolioController {
           this.portfolioLibs.set(key, new Portfolio(fetch, provider, network))
         }
         const portfolioLib = this.portfolioLibs.get(key)!
-        // @TODO full state handling
-        // @TODO discoveredTokens fallback
-        if (!accountState.get(network.id))
-          accountState.set(network.id, { isReady: false, isLoading: false })
-        const state = accountState.get(network.id)!
-        // Only one loading at a time, ensure there are no race conditions
-        if (state.isLoading) return
-        state.isLoading = true
-        try {
-          const results = await portfolioLib.get(accountId, {
-            priceRecency: 60000,
-            priceCache: state.priceCache,
-            previousHints: storagePreviousHints[key]
-          })
-          // Don't update previous hints (cache), if the hints request fails
-          if (!results.error) {
-            // Persist previousHints in the disk storage for further requests
-            storagePreviousHints[key] = getHintsWithBalance(results)
-            await this.storage.set('previousHints', storagePreviousHints)
-          }
-          accountState.set(network.id, { isReady: true, isLoading: false, ...results })
-        } catch (e) {
-          state.isLoading = false
-          if (!state.isReady) state.criticalError = e
-          else state.errors = [e]
+
+        if (!this.simulatedAccountOpsIds.get(key)) {
+          this.simulatedAccountOpsIds.set(key, [])
         }
+
+        const networkAccountOps = accountOps?.filter(
+          (accountOp) => accountOp.network.chainId === network.chainId
+        )
+        const networkAccountOpsIds = networkAccountOps.map((accountOp) => accountOp.id)
+        const haveAccountOpsChanged = doArraysDiffer(
+          networkAccountOpsIds,
+          this.simulatedAccountOpsIds.get(key)
+        )
+
+        const forceUpdate = opts?.forceUpdate || haveAccountOpsChanged
+
+        await Promise.all([
+          // Latest state update
+          (async () => {
+            await updatePortfolioState(
+              accountState,
+              network,
+              portfolioLib,
+              {
+                blockTag: 'latest',
+                previousHints: storagePreviousHints[key]
+              },
+              forceUpdate,
+              async (results) => {
+                // Persist previousHints in the disk storage for further requests
+                storagePreviousHints[key] = getHintsWithBalance(results)
+                await this.storage.set('previousHints', storagePreviousHints)
+              }
+            )
+          })(),
+          // Pending state update
+          (async () => {
+            // We are updating the pending state, only if AccountOps are changed or the application logic requests a force update
+            if (!forceUpdate) return
+
+            await updatePortfolioState(
+              pendingState,
+              network,
+              portfolioLib,
+              {
+                blockTag: 'pending',
+                previousHints: storagePreviousHints[key],
+                simulation: {
+                  account: selectedAccount,
+                  accountOps: networkAccountOps
+                }
+              },
+              forceUpdate,
+              async () => this.simulatedAccountOpsIds.set(key, networkAccountOpsIds)
+            )
+          })()
+        ])
       })
     )
-    // console.log(this.latest)
-    // console.log(accounts, networks, accountOps)
+
+    // console.log({ latest: this.latest, pending: this.pending })
   }
+}
+
+// @TODO: move this into utils
+// It checks for symmetric array difference
+function doArraysDiffer(arr1: (string | number)[], arr2: (string | number)[]): boolean {
+  return !!arr1.filter((x) => !arr2.includes(x)).concat(arr2.filter((x) => !arr1.includes(x)))
+    .length
 }
 
 // We already know that `results.tokens` and `result.collections` tokens have a balance (this is handled by the portfolio lib).
@@ -129,20 +228,3 @@ export function produceMemoryStore(): Storage {
     }
   }
 }
-
-import { networks } from '../consts/networks'
-const account = {
-  addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
-  label: '',
-  pfp: '',
-  associatedKeys: [],
-  factoryAddr: '0xBf07a0Df119Ca234634588fbDb5625594E2a5BCA',
-  bytecode:
-    '0x7f00000000000000000000000000000000000000000000000000000000000000017f02c94ba85f2ea274a3869293a0a9bf447d073c83c617963b0be7c862ec2ee44e553d602d80604d3d3981f3363d3d373d3d3d363d732a2b85eb1054d6f0c6c2e37da05ed3e5fea684ef5af43d82803e903d91602b57fd5bf3',
-  salt: '0x2ee01d932ede47b0b2fb1b6af48868de9f86bfc9a5be2f0b42c0111cf261d04c'
-}
-
-const controller = new PortfolioController(produceMemoryStore())
-controller
-  .updateSelectedAccount([account], networks, account.addr, [])
-  .then((x) => controller.updateSelectedAccount([account], networks, account.addr, []))
