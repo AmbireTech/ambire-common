@@ -48,3 +48,16 @@ export interface AccountOp {
 export function callToTuple(call: Call): [string, bigint, string] {
   return [call.to, call.value, call.data]
 }
+
+export function canBroadcast(op: AccountOp, accountIsEOA: boolean): boolean {
+  if (op.signingKeyAddr === null) throw new Error('missing signingKeyAddr')
+  if (op.signature === null) throw new Error('missing signature')
+  if (op.gasFeePayment === null) throw new Error('missing gasFeePayment')
+  if (op.gasLimit === null) throw new Error('missing gasLimit')
+  if (op.nonce === null) throw new Error('missing nonce')
+  if (accountIsEOA) {
+    if (op.gasFeePayment.paymentType !== GasFeePaymentType.EOA) throw new Error('gas fee payment type is not EOA')
+    if (op.gasFeePayment.paidBy !== op.accountAddr) throw new Error('gas fee payment cannot be paid by anyone other than the EOA that signed it')
+  }
+  return true
+}
