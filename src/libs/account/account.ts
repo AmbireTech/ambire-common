@@ -21,7 +21,11 @@ export class AccountController {
     this.relayerUrl = relayerUrl
   }
 
-  async createAccount(acc: any, expectedAddr: string): Promise<any> {
+  async createAccount(
+    acc: any,
+    expectedAddr: string,
+    emailArgs: { email: string; authKey: string }
+  ): Promise<any> {
     const newPrivs = acc.privileges.map((el: any) => [el.addr, el.hash])
     const args = {
       salt: acc.salt,
@@ -31,7 +35,9 @@ export class AccountController {
       referralAddr: expectedAddr,
       registeredFrom: null,
       baseIdentityAddr: acc.baseIdentityAddr,
-      privileges: newPrivs
+      privileges: newPrivs,
+      email: emailArgs.email,
+      magicLinkKey: emailArgs.authKey
     }
     const resp = await this.fetch(`${this.relayerUrl}/v2/identity/${expectedAddr}`, {
       headers: {
@@ -57,3 +63,10 @@ export class AccountController {
     return result
   }
 }
+
+// privs (returned from velcro)
+// modify
+// privs
+// add signer
+// remove signer
+// recoveyr tx
