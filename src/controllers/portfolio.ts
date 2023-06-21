@@ -8,26 +8,40 @@ import { AccountOp } from '../libs/accountOp/accountOp'
 import fetch from 'node-fetch'
 import { JsonRpcProvider } from 'ethers'
 
-type NetworkId = string
 type AccountId = string
-// @TODO fix the any
-type PortfolioState = Map<AccountId, Map<NetworkId, any>>
+
+type AccountState = {
+  // network id
+  [key: string]:
+    | {
+        isReady: boolean
+        isLoading: boolean
+        criticalError?: Error
+        errors?: Error[]
+        result?: PortfolioGetResult
+        // already simulated AccountOp
+        accountOps?: AccountOp[]
+      }
+    | undefined
+}
+// account => network => PortfolioGetResult, extra fields
+type PortfolioControllerState = {
+  // account id
+  [key: string]: AccountState
+}
 
 export class PortfolioController {
-  latest: PortfolioState
-  pending: PortfolioState
+  latest: PortfolioControllerState
+  pending: PortfolioControllerState
   private portfolioLibs: Map<string, Portfolio>
   private storage: any
   private minUpdateInterval: number = 20000 // 20 seconds
-  // @TODO - ts type
-  private simulatedAccountOpsIds: Map<string, any>
 
   constructor(storage: Storage) {
-    this.latest = new Map()
-    this.pending = new Map()
+    this.latest = {}
+    this.pending = {}
     this.portfolioLibs = new Map()
     this.storage = storage
-    this.simulatedAccountOpsIds = new Map()
   }
   // NOTE: we always pass in all `accounts` and `networks` to ensure that the user of this
   // controller doesn't have to update this controller every time that those are updated
@@ -44,7 +58,8 @@ export class PortfolioController {
     accounts: Account[],
     networks: NetworkDescriptor[],
     accountId: AccountId,
-    accountOps: AccountOp[] = [],
+    // account => network => AccountOp[]
+    accountOps?: { [key: string]: { [key: string]: AccountOp[] } },
     opts?: {
       forceUpdate: boolean
     }
@@ -55,34 +70,33 @@ export class PortfolioController {
     const selectedAccount = accounts.find((x) => x.addr === accountId)
     if (!selectedAccount) throw new Error('selected account does not exist')
 
-    if (!this.latest.has(accountId)) this.latest.set(accountId, new Map())
-    if (!this.pending.has(accountId)) this.pending.set(accountId, new Map())
+    if (!this.latest[accountId]) this.latest[accountId] = {}
+    if (!this.pending[accountId]) this.pending[accountId] = {}
 
-    const accountState = this.latest.get(accountId)!
-    for (const networkId of accountState.keys()) {
-      if (!networks.find((x) => x.id === networkId)) accountState.delete(networkId)
+    const accountState = this.latest[accountId]
+    for (const networkId of Object.keys(accountState)) {
+      if (!networks.find((x) => x.id === networkId)) delete accountState[networkId]
     }
 
-    const pendingState = this.pending.get(accountId)!
-    for (const networkId of pendingState.keys()) {
-      if (!networks.find((x) => x.id === networkId)) pendingState.delete(networkId)
+    const pendingState = this.pending[accountId]
+    for (const networkId of Object.keys(pendingState)) {
+      if (!networks.find((x) => x.id === networkId)) delete pendingState[networkId]
     }
 
     const updatePortfolioState = async (
-      accountState: Map<NetworkId, any>,
+      accountState: AccountState,
       network: NetworkDescriptor,
       portfolioLib: Portfolio,
       portfolioProps: Partial<GetOptions>,
       forceUpdate: boolean,
       onSuccess?: (results: PortfolioGetResult) => void
     ): Promise<void> => {
-      if (!accountState.get(network.id))
-        accountState.set(network.id, { isReady: false, isLoading: false })
+      if (!accountState[network.id]) accountState[network.id] = { isReady: false, isLoading: false }
 
-      const state = accountState.get(network.id)!
+      const state = accountState[network.id]!
 
       // When the portfolio was called lastly
-      const lastUpdateStartedAt = state?.updateStarted
+      const lastUpdateStartedAt = state.result?.updateStarted
       if (
         lastUpdateStartedAt &&
         Date.now() - lastUpdateStartedAt <= this.minUpdateInterval &&
@@ -96,17 +110,17 @@ export class PortfolioController {
       state.isLoading = true
 
       try {
-        const results = await portfolioLib.get(accountId, {
+        const result = await portfolioLib.get(accountId, {
           priceRecency: 60000,
-          priceCache: state.priceCache,
+          priceCache: state.result?.priceCache,
           ...portfolioProps
         })
 
-        if (!results.error && onSuccess) {
-          onSuccess(results)
-        }
+        accountState[network.id] = { isReady: true, isLoading: false, result }
 
-        accountState.set(network.id, { isReady: true, isLoading: false, ...results })
+        if (!result.error && onSuccess) {
+          onSuccess(result)
+        }
       } catch (e) {
         state.isLoading = false
         if (!state.isReady) state.criticalError = e
@@ -123,20 +137,12 @@ export class PortfolioController {
         }
         const portfolioLib = this.portfolioLibs.get(key)!
 
-        if (!this.simulatedAccountOpsIds.get(key)) {
-          this.simulatedAccountOpsIds.set(key, [])
-        }
+        const currentAccountOps = accountOps?.[accountId]?.[network.id]
+        const simulatedAccountOps = pendingState[network.id]?.accountOps
 
-        const networkAccountOps = accountOps?.filter(
-          (accountOp) => accountOp.network.chainId === network.chainId
-        )
-        const networkAccountOpsIds = networkAccountOps.map((accountOp) => accountOp.id)
-        const haveAccountOpsChanged = doArraysDiffer(
-          networkAccountOpsIds,
-          this.simulatedAccountOpsIds.get(key)
-        )
-
-        const forceUpdate = opts?.forceUpdate || haveAccountOpsChanged
+        const forceUpdate =
+          opts?.forceUpdate ||
+          stringifyWithBigInt(currentAccountOps) !== stringifyWithBigInt(simulatedAccountOps)
 
         await Promise.all([
           // Latest state update
@@ -169,13 +175,17 @@ export class PortfolioController {
               {
                 blockTag: 'pending',
                 previousHints: storagePreviousHints[key],
-                simulation: {
-                  account: selectedAccount,
-                  accountOps: networkAccountOps
-                }
+                ...(currentAccountOps && {
+                  simulation: {
+                    account: selectedAccount,
+                    accountOps: currentAccountOps
+                  }
+                })
               },
               forceUpdate,
-              async () => this.simulatedAccountOpsIds.set(key, networkAccountOpsIds)
+              async () => {
+                pendingState[network.id]!.accountOps = currentAccountOps
+              }
             )
           })()
         ])
@@ -186,11 +196,13 @@ export class PortfolioController {
   }
 }
 
+// By default, JSON.stringify doesn't stringifies BigInt.
+// Because of this, we are adding support for BigInt values with this utility function.
 // @TODO: move this into utils
-// It checks for symmetric array difference
-function doArraysDiffer(arr1: (string | number)[], arr2: (string | number)[]): boolean {
-  return !!arr1.filter((x) => !arr2.includes(x)).concat(arr2.filter((x) => !arr1.includes(x)))
-    .length
+function stringifyWithBigInt(value: any): string {
+  return JSON.stringify(value, (key, value) =>
+    typeof value === 'bigint' ? value.toString() : value
+  )
 }
 
 // We already know that `results.tokens` and `result.collections` tokens have a balance (this is handled by the portfolio lib).

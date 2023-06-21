@@ -1,7 +1,7 @@
-import { describe, expect, jest } from '@jest/globals'
+import { describe, expect } from '@jest/globals'
 import { PortfolioController, produceMemoryStore } from './portfolio'
 import { networks } from '../consts/networks'
-import { AbiCoder, ethers, JsonRpcProvider, keccak256, toUtf8Bytes } from 'ethers'
+import { AbiCoder, ethers, JsonRpcProvider } from 'ethers'
 import { AmbireAccount } from '../../test/config'
 import { TokenResult } from '../libs/portfolio'
 
@@ -40,28 +40,25 @@ describe('Portfolio Controller ', () => {
       new AbiCoder().encode(['address'], ['0x5Be214147EA1AE3653f289E17fE7Dc17A73AD175']) +
       SPOOF_SIGTYPE
 
-    const network = { chainId: 1, name: 'ethereum' }
+    const network = { chainId: 1n, name: 'ethereum' }
     const nonce = await getNonce('0xB674F3fd5F43464dB0448a57529eAF37F04cceA5')
     const calls = [{ to: '0x18Ce9CF7156584CDffad05003410C3633EFD1ad0', value: BigInt(0), data }]
 
     return {
-      id: keccak256(
-        toUtf8Bytes(
-          JSON.stringify({
+      '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5': {
+        ethereum: [
+          {
+            accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
+            signingKeyAddr: '0x5Be214147EA1AE3653f289E17fE7Dc17A73AD175',
+            gasLimit: null,
+            gasFeePayment: null,
             network,
-            nonce: nonce.toString(),
-            calls: calls.map((call: any) => ({ ...call, value: call.value.toString() }))
-          })
-        )
-      ),
-      accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
-      signingKeyAddr: '0x5Be214147EA1AE3653f289E17fE7Dc17A73AD175',
-      gasLimit: null,
-      gasFeePayment: null,
-      network,
-      nonce,
-      signature: spoofSig,
-      calls
+            nonce,
+            signature: spoofSig,
+            calls
+          }
+        ]
+      }
     }
   }
 
@@ -80,7 +77,7 @@ describe('Portfolio Controller ', () => {
     const storage = produceMemoryStore()
     const controller = new PortfolioController(storage)
 
-    await controller.updateSelectedAccount([account], networks, account.addr, [])
+    await controller.updateSelectedAccount([account], networks, account.addr)
     const storagePreviousHints = await storage.get('previousHints', {})
 
     expect(storagePreviousHints[`ethereum:${account.addr}`]).toEqual({
@@ -100,18 +97,14 @@ describe('Portfolio Controller ', () => {
       const controller = new PortfolioController(storage)
       await controller.updateSelectedAccount([account], networks, account.addr)
 
-      const latestState = controller.latest
-        .get('0xB674F3fd5F43464dB0448a57529eAF37F04cceA5')
-        ?.get('ethereum')
-      const pendingState = controller.pending
-        .get('0xB674F3fd5F43464dB0448a57529eAF37F04cceA5')
-        ?.get('ethereum')
+      const latestState = controller.latest['0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'].ethereum!
+      const pendingState = controller.pending['0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'].ethereum
 
       expect(latestState.isReady).toEqual(true)
-      expect(latestState.tokens.length).toBeGreaterThan(0)
-      expect(latestState.collections.length).toBeGreaterThan(0)
-      expect(latestState.hints).toBeTruthy()
-      expect(latestState.total.usd).toBeGreaterThan(1000)
+      expect(latestState.result?.tokens.length).toBeGreaterThan(0)
+      expect(latestState.result?.collections.length).toBeGreaterThan(0)
+      expect(latestState.result?.hints).toBeTruthy()
+      expect(latestState.result?.total.usd).toBeGreaterThan(1000)
       expect(pendingState).toBeFalsy()
     })
 
@@ -120,9 +113,7 @@ describe('Portfolio Controller ', () => {
       const controller = new PortfolioController(storage)
       await controller.updateSelectedAccount([account], networks, account.addr)
 
-      const latestState1 = controller.latest
-        .get('0xB674F3fd5F43464dB0448a57529eAF37F04cceA5')
-        ?.get('ethereum')
+      const latestState1 = controller.latest['0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'].ethereum!
 
       // @TODO - we should use fake timers.
       //   For some reason, when we enable them,
@@ -133,38 +124,33 @@ describe('Portfolio Controller ', () => {
       await new Promise((resolve) => setTimeout(() => resolve(true), 1000))
 
       await controller.updateSelectedAccount([account], networks, account.addr)
-      const latestState2 = controller.latest
-        .get('0xB674F3fd5F43464dB0448a57529eAF37F04cceA5')
-        ?.get('ethereum')
+      const latestState2 = controller.latest['0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'].ethereum!
 
-      expect(latestState1.updateStarted).toEqual(latestState2.updateStarted)
+      expect(latestState1.result?.updateStarted).toEqual(latestState2.result?.updateStarted)
     })
 
     test('Latest and Pending are fetched, because `forceUpdate` flag is set', async () => {
       const storage = produceMemoryStore()
       const controller = new PortfolioController(storage)
-      await controller.updateSelectedAccount([account], networks, account.addr, [], {
+      await controller.updateSelectedAccount([account], networks, account.addr, undefined, {
         forceUpdate: true
       })
 
-      const latestState = controller.latest
-        .get('0xB674F3fd5F43464dB0448a57529eAF37F04cceA5')
-        ?.get('ethereum')
-      const pendingState = controller.pending
-        .get('0xB674F3fd5F43464dB0448a57529eAF37F04cceA5')
-        ?.get('ethereum')
+      const latestState = controller.latest['0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'].ethereum!
+      const pendingState =
+        controller.pending['0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'].ethereum!
 
       expect(latestState.isReady).toEqual(true)
-      expect(latestState.tokens.length).toBeGreaterThan(0)
-      expect(latestState.collections.length).toBeGreaterThan(0)
-      expect(latestState.hints).toBeTruthy()
-      expect(latestState.total.usd).toBeGreaterThan(1000)
+      expect(latestState.result?.tokens.length).toBeGreaterThan(0)
+      expect(latestState.result?.collections.length).toBeGreaterThan(0)
+      expect(latestState.result?.hints).toBeTruthy()
+      expect(latestState.result?.total.usd).toBeGreaterThan(1000)
 
       expect(pendingState.isReady).toEqual(true)
-      expect(pendingState.tokens.length).toBeGreaterThan(0)
-      expect(pendingState.collections.length).toBeGreaterThan(0)
-      expect(pendingState.hints).toBeTruthy()
-      expect(pendingState.total.usd).toBeGreaterThan(1000)
+      expect(pendingState.result?.tokens.length).toBeGreaterThan(0)
+      expect(pendingState.result?.collections.length).toBeGreaterThan(0)
+      expect(pendingState.result?.hints).toBeTruthy()
+      expect(pendingState.result?.total.usd).toBeGreaterThan(1000)
     })
   })
 
@@ -175,22 +161,22 @@ describe('Portfolio Controller ', () => {
       const storage = produceMemoryStore()
       const controller = new PortfolioController(storage)
 
-      await controller.updateSelectedAccount([account], networks, account.addr, [accountOp])
+      await controller.updateSelectedAccount([account], networks, account.addr, accountOp)
 
-      const pendingState = controller.pending
-        .get('0xB674F3fd5F43464dB0448a57529eAF37F04cceA5')
-        ?.get('ethereum')
-      const collection = pendingState.collections.find(
+      const pendingState =
+        controller.pending['0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'].ethereum!
+
+      const collection = pendingState.result?.collections.find(
         (c: TokenResult) => c.symbol === 'NFT Fiesta'
       )
 
       expect(pendingState.isReady).toEqual(true)
-      expect(pendingState.tokens.length).toBeGreaterThan(0)
-      expect(pendingState.collections.length).toBeGreaterThan(0)
-      expect(pendingState.hints).toBeTruthy()
-      expect(pendingState.total.usd).toBeGreaterThan(1000)
+      expect(pendingState.result?.tokens.length).toBeGreaterThan(0)
+      expect(pendingState.result?.collections.length).toBeGreaterThan(0)
+      expect(pendingState.result?.hints).toBeTruthy()
+      expect(pendingState.result?.total.usd).toBeGreaterThan(1000)
       // Expect amount post simulation to be calculated correctly
-      expect(collection.amountPostSimulation).toBe(0n)
+      expect(collection?.amountPostSimulation).toBe(0n)
     })
 
     test('Pending tokens are fetched only once if AccountOp is the same during the calls', async () => {
@@ -199,17 +185,15 @@ describe('Portfolio Controller ', () => {
       const storage = produceMemoryStore()
       const controller = new PortfolioController(storage)
 
-      await controller.updateSelectedAccount([account], networks, account.addr, [accountOp])
-      const pendingState1 = controller.pending
-        .get('0xB674F3fd5F43464dB0448a57529eAF37F04cceA5')
-        ?.get('ethereum')
+      await controller.updateSelectedAccount([account], networks, account.addr, accountOp)
+      const pendingState1 =
+        controller.pending['0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'].ethereum!
 
-      await controller.updateSelectedAccount([account], networks, account.addr, [accountOp])
-      const pendingState2 = controller.pending
-        .get('0xB674F3fd5F43464dB0448a57529eAF37F04cceA5')
-        ?.get('ethereum')
+      await controller.updateSelectedAccount([account], networks, account.addr, accountOp)
+      const pendingState2 =
+        controller.pending['0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'].ethereum!
 
-      expect(pendingState1.updateStarted).toEqual(pendingState2.updateStarted)
+      expect(pendingState1.result?.updateStarted).toEqual(pendingState2.result?.updateStarted)
     })
 
     test('Pending tokens are re-fetched, if `forceUpdate` flag is set, no matter if AccountOp is the same or changer', async () => {
@@ -218,19 +202,19 @@ describe('Portfolio Controller ', () => {
       const storage = produceMemoryStore()
       const controller = new PortfolioController(storage)
 
-      await controller.updateSelectedAccount([account], networks, account.addr, [accountOp])
-      const pendingState1 = controller.pending
-        .get('0xB674F3fd5F43464dB0448a57529eAF37F04cceA5')
-        ?.get('ethereum')
+      await controller.updateSelectedAccount([account], networks, account.addr, accountOp)
+      const pendingState1 =
+        controller.pending['0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'].ethereum!
 
-      await controller.updateSelectedAccount([account], networks, account.addr, [accountOp], {
+      await controller.updateSelectedAccount([account], networks, account.addr, accountOp, {
         forceUpdate: true
       })
-      const pendingState2 = controller.pending
-        .get('0xB674F3fd5F43464dB0448a57529eAF37F04cceA5')
-        ?.get('ethereum')
+      const pendingState2 =
+        controller.pending['0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'].ethereum!
 
-      expect(pendingState2.updateStarted).toBeGreaterThan(pendingState1.updateStarted)
+      expect(pendingState2.result?.updateStarted).toBeGreaterThan(
+        pendingState1.result?.updateStarted!
+      )
     })
 
     test('Pending tokens are re-fetched if AccountOp is changed', async () => {
@@ -239,17 +223,17 @@ describe('Portfolio Controller ', () => {
       const storage = produceMemoryStore()
       const controller = new PortfolioController(storage)
 
-      await controller.updateSelectedAccount([account], networks, account.addr, [accountOp])
-      const pendingState1 = controller.pending
-        .get('0xB674F3fd5F43464dB0448a57529eAF37F04cceA5')
-        ?.get('ethereum')
+      await controller.updateSelectedAccount([account], networks, account.addr, accountOp)
+      const pendingState1 =
+        controller.pending['0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'].ethereum!
 
-      await controller.updateSelectedAccount([account], networks, account.addr, [])
-      const pendingState2 = controller.pending
-        .get('0xB674F3fd5F43464dB0448a57529eAF37F04cceA5')
-        ?.get('ethereum')
+      await controller.updateSelectedAccount([account], networks, account.addr)
+      const pendingState2 =
+        controller.pending['0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'].ethereum!
 
-      expect(pendingState2.updateStarted).toBeGreaterThan(pendingState1.updateStarted)
+      expect(pendingState2.result?.updateStarted).toBeGreaterThan(
+        pendingState1.result?.updateStarted!
+      )
     })
   })
 })
