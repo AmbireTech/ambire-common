@@ -36,7 +36,7 @@ export interface UserRequest {
   id: bigint
   added: bigint // timestamp
   networkId: NetworkId
-  accountId: AccountId
+  accountAddr: AccountId
   forceNonce: bigint | null
   // either-or here between call and a message, plus different types of messages
   action: Call | PlainTextMessage | TypedMessage
@@ -68,11 +68,38 @@ export class MainController {
 
   addUserRequest(req: UserRequest) {
     this.userRequests.push(req)
-    if (req.action.kind === 'call') {
+    const { action, accountAddr, networkId } = req
+    if (action.kind === 'call') {
+      if (!this.accountOpsToBeSigned[accountAddr]) this.accountOpsToBeSigned[accountAddr] = {}
+      if (!this.accountOpsToBeSigned[accountAddr][networkId]) {
+        this.accountOpsToBeSigned[accountAddr][networkId] = {
+          accountAddr,
+          networkId,
+          signingKeyAddr: null,
+          gasLimit: null,
+          gasFeePayment: null,
+          // @TODO: from monitored nonce? or use the estimate to determine?
+          nonce: null,
+          signature: null,
+          // @TODO from pending recoveries
+          accountOpToExecuteBefore: null,
+          calls: []
+        }
+      }
+      const accountOp = this.accountOpsToBeSigned[accountAddr][networkId]
+      accountOp.calls.push({ ...action, fromUserRequestId: req.id })
       // @TODO
     } else {
+      if (!this.messagesToBeSigned[accountAddr]) this.messagesToBeSigned[accountAddr] = []
+      if (this.messagesToBeSigned[accountAddr].find(x => x.fromUserRequestId === req.id)) return
+      this.messagesToBeSigned[accountAddr].push({
+        content: action,
+        fromUserRequestId: req.id,
+        signature: null
+      })
       // @TODO
     }
+    // @TODO fire update
   }
 
   resolveAccountOp() {
