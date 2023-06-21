@@ -4,6 +4,10 @@ interface Call {
   to: string
   value: bigint
   data: string
+  // if this call is associated with a particular user request
+  // multiple calls can be associated with the same user request, for example
+  // when a batching request is made
+  fromUserRequestId?: bigint
 }
 
 enum GasFeePaymentType {

@@ -25,7 +25,7 @@ export interface TypedMessage {
 export interface SignedMessage {
   content: PlainTextMessage | TypedMessage
   signature: string | null
-  fromUserRequestId: bigint | null
+  fromUserRequestId?: bigint
 }
 
 export interface UserRequest {
