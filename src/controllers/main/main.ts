@@ -23,6 +23,10 @@ export interface TypedMessage {
 export type UniversalMessage = Message | TypedMessage
 
 export interface UserRequest {
+  // Unlike the AccountOp, which we compare by content,
+  // we need a distinct identifier here that's set by whoever is posting the request
+  // the requests cannot be compared by content because it's valid for a user to post two or more identical ones
+  // while for AccountOps we do only care about their content in the context of simulations
   id: bigint
   added: bigint // timestamp
   networkId: NetworkId
@@ -44,10 +48,11 @@ export class MainController {
   selectedAccount: string | null = null
 
   userRequests: UserRequest[] = []
-  // @TODO: clean
-  // accountOpsToBeSigned: Map<AccountId, Map<NetworkId, AccountOp[]>> = new Map()
-  accountOpsToBeConfirmed: Map<AccountId, Map<NetworkId, AccountOp[]>> = new Map()
-  messagesToBeSigned: Map<AccountId, UniversalMessage[]> = new Map()
+  // accountAddr => networkId => accountOp
+  accountOpsToBeSigned: { [key: string]: { [key: string]: AccountOp }} = {}
+  accountOpsToBeConfirmed: { [key: string]: { [key: string]: AccountOp }} = {}
+  // accountAddr => UniversalMessage[]
+  messagesToBeSigned: { [key: string]: UniversalMessage[] } = {}
 
   constructor(storage: Storage) {
     this.storage = storage
@@ -55,14 +60,18 @@ export class MainController {
     // @TODO
   }
 
-  public get accountOpsToBeSigned(): Map<AccountId, Map<NetworkId, any>> {
-    const result = new Map()
-    for (const req of this.userRequests)  {
-      if (req.action.kind !== 'call') continue
-      if (!result.has(req.accountId)) result.set(req.accountId, new Map())
-      if (!result.get(req.accountId)!.has(req.networkId)) result.get(req.accountId)!.set(req.networkId, [])
-      result.get(req.accountId)!.get(req.networkId)!.push(req)
+  addUserRequest(req: UserRequest) {
+    this.userRequests.push(req)
+    if (req.action.kind === 'call') {
+      // @TODO
+    } else {
+      // @TODO
     }
-    return result
+  }
+
+  resolveAccountOp() {
+  }
+
+  resolveMessage() {
   }
 }
