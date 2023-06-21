@@ -7,7 +7,13 @@ import { Provider } from 'ethers'
 import estimator from './estimator.json'
 
 // @TODO return type
-export async function estimate(provider: Provider, network: NetworkDescriptor, acc: Account, op: AccountOp): Promise<any> {
+export async function estimate(
+  provider: Provider,
+  network: NetworkDescriptor,
+  acc: Account,
+  op: AccountOp,
+  blockTag: string | number = 'latest'
+): Promise<any> {
   //@ TODO implement EOAs
   if (!acc.creation) throw new Error('EOA not supported yet')
   const deploylessEstimator = fromDescriptor(provider, estimator, !network.rpcNoStateOverride)
@@ -31,10 +37,8 @@ export async function estimate(provider: Provider, network: NetworkDescriptor, a
     '0x942f9CE5D9a33a82F88D233AEb3292E680230348',
     nativeToCheck
   ]
-  console.log(args)
-  // @TODO blockTag?
-  const [ estimationResult ] = await deploylessEstimator.call('estimate', args, { from: '0x0000000000000000000000000000000000000001' })
-  console.log(estimationResult)
+  const [ estimationResult ] = await deploylessEstimator.call('estimate', args, { from: '0x0000000000000000000000000000000000000001', blockTag })
+  return estimationResult
 }
 
 // @TODO test
@@ -74,4 +78,5 @@ const op = {
 }
 
 estimate(provider, ethereum, account, op)
+  .then(console.log)
   .catch(e => console.error('caught', e))
