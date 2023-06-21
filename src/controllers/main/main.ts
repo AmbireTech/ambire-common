@@ -10,7 +10,7 @@ export interface Call {
   value: bigint
   data: string
 }
-export interface Message {
+export interface PlainTextMessage {
   kind: 'message'
   message: string | Uint8Array
 }
@@ -20,7 +20,13 @@ export interface TypedMessage {
   types: Record<string, Array<TypedDataField>>
   value: Record<string, any>
 }
-export type UniversalMessage = Message | TypedMessage
+// @TODO: move this type and it's deps (PlainTextMessage, TypedMessage) to another place,
+// probably interfaces
+export interface SignedMessage {
+  content: PlainTextMessage | TypedMessage
+  signature: string | null
+  fromUserRequestId: bigint | null
+}
 
 export interface UserRequest {
   // Unlike the AccountOp, which we compare by content,
@@ -33,7 +39,7 @@ export interface UserRequest {
   accountId: AccountId
   forceNonce: bigint | null
   // either-or here between call and a message, plus different types of messages
-  action: Call | Message | TypedMessage
+  action: Call | PlainTextMessage | TypedMessage
 }
 // import fetch from 'node-fetch'
 // import { JsonRpcProvider } from 'ethers'
@@ -52,7 +58,7 @@ export class MainController {
   accountOpsToBeSigned: { [key: string]: { [key: string]: AccountOp }} = {}
   accountOpsToBeConfirmed: { [key: string]: { [key: string]: AccountOp }} = {}
   // accountAddr => UniversalMessage[]
-  messagesToBeSigned: { [key: string]: UniversalMessage[] } = {}
+  messagesToBeSigned: { [key: string]: SignedMessage[] } = {}
 
   constructor(storage: Storage) {
     this.storage = storage
