@@ -2,7 +2,7 @@ export interface NetworkDescriptor {
   id: string
   name: string
   nativeAssetSymbol: string
-  chainId: number
+  chainId: bigint
   rpcUrl: string
   rpcNoStateOverride: boolean
   // NOTE: should this be here? keep in mind networks can be user-inputted, so it's prob better to have

@@ -1,6 +1,6 @@
 // ethers does not export their Network type it seems
 interface Network {
-  chainId: number
+  chainId: bigint
   name: string
 }
 
@@ -28,7 +28,6 @@ interface GasFeePayment {
 // a UserOp, or to a direct EOA transaction, or relayed through the Ambire relayer
 // it is more precisely defined than a UserOp though - UserOp just has calldata and this has individual `calls`
 export interface AccountOp {
-  id: string
   accountAddr: string
   network: Network
   signingKeyAddr: string
