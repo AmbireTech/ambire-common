@@ -151,7 +151,6 @@ contract AmbireAccount {
 			uint256 scheduled = scheduledRecoveries[hash];
 			if (scheduled != 0 && !isCancellation) {
 				require(block.timestamp > scheduled, 'RECOVERY_NOT_READY');
-				nonce++;
 				delete scheduledRecoveries[hash];
 				emit LogRecoveryFinalized(hash, recoveryInfoHash, block.timestamp);
 			} else {
@@ -167,6 +166,7 @@ contract AmbireAccount {
 				require(isIn, 'RECOVERY_NOT_AUTHORIZED');
 				if (isCancellation) {
 					delete scheduledRecoveries[hash];
+					nonce = currentNonce + 1;
 					emit LogRecoveryCancelled(hash, recoveryInfoHash, recoveryKey, block.timestamp);
 				} else {
 					scheduledRecoveries[hash] = block.timestamp + recoveryInfo.timelock;
