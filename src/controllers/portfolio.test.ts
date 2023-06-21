@@ -5,6 +5,7 @@ import { AbiCoder, ethers, JsonRpcProvider } from 'ethers'
 import { AmbireAccount } from '../../test/config'
 import { TokenResult } from '../libs/portfolio'
 import { Storage } from '../interfaces/storage'
+import { AccountOp } from '../libs/accountOp/accountOp'
 
 // @TODO: maybe this should be shared with the rest of the tests?
 export function produceMemoryStore(): Storage {
@@ -34,7 +35,7 @@ describe('Portfolio Controller ', () => {
     creation: {
       factoryAddr: '0xBf07a0Df119Ca234634588fbDb5625594E2a5BCA',
       bytecode:
-          '0x7f00000000000000000000000000000000000000000000000000000000000000017f02c94ba85f2ea274a3869293a0a9bf447d073c83c617963b0be7c862ec2ee44e553d602d80604d3d3981f3363d3d373d3d3d363d732a2b85eb1054d6f0c6c2e37da05ed3e5fea684ef5af43d82803e903d91602b57fd5bf3',
+        '0x7f00000000000000000000000000000000000000000000000000000000000000017f02c94ba85f2ea274a3869293a0a9bf447d073c83c617963b0be7c862ec2ee44e553d602d80604d3d3981f3363d3d373d3d3d363d732a2b85eb1054d6f0c6c2e37da05ed3e5fea684ef5af43d82803e903d91602b57fd5bf3',
       salt: '0x2ee01d932ede47b0b2fb1b6af48868de9f86bfc9a5be2f0b42c0111cf261d04c'
     }
   }
@@ -58,7 +59,6 @@ describe('Portfolio Controller ', () => {
       new AbiCoder().encode(['address'], ['0x5Be214147EA1AE3653f289E17fE7Dc17A73AD175']) +
       SPOOF_SIGTYPE
 
-    const network = { chainId: 1n, name: 'ethereum' }
     const nonce = await getNonce('0xB674F3fd5F43464dB0448a57529eAF37F04cceA5')
     const calls = [{ to: '0x18Ce9CF7156584CDffad05003410C3633EFD1ad0', value: BigInt(0), data }]
 
@@ -70,11 +70,11 @@ describe('Portfolio Controller ', () => {
             signingKeyAddr: '0x5Be214147EA1AE3653f289E17fE7Dc17A73AD175',
             gasLimit: null,
             gasFeePayment: null,
-            network,
+            networkId: 'ethereum',
             nonce,
             signature: spoofSig,
             calls
-          }
+          } as AccountOp
         ]
       }
     }
@@ -86,10 +86,12 @@ describe('Portfolio Controller ', () => {
       label: '',
       pfp: '',
       associatedKeys: [],
-      factoryAddr: '0xBf07a0Df119Ca234634588fbDb5625594E2a5BCA',
-      bytecode:
-        '0x7f00000000000000000000000000000000000000000000000000000000000000017f02c94ba85f2ea274a3869293a0a9bf447d073c83c617963b0be7c862ec2ee44e553d602d80604d3d3981f3363d3d373d3d3d363d732a2b85eb1054d6f0c6c2e37da05ed3e5fea684ef5af43d82803e903d91602b57fd5bf3',
-      salt: '0x2ee01d932ede47b0b2fb1b6af48868de9f86bfc9a5be2f0b42c0111cf261d04c'
+      creation: {
+        factoryAddr: '0xBf07a0Df119Ca234634588fbDb5625594E2a5BCA',
+        bytecode:
+          '0x7f00000000000000000000000000000000000000000000000000000000000000017f02c94ba85f2ea274a3869293a0a9bf447d073c83c617963b0be7c862ec2ee44e553d602d80604d3d3981f3363d3d373d3d3d363d732a2b85eb1054d6f0c6c2e37da05ed3e5fea684ef5af43d82803e903d91602b57fd5bf3',
+        salt: '0x2ee01d932ede47b0b2fb1b6af48868de9f86bfc9a5be2f0b42c0111cf261d04c'
+      }
     }
 
     const storage = produceMemoryStore()
