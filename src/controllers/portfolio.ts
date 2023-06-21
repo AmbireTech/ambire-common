@@ -2,13 +2,11 @@ import { Portfolio, GetOptions } from '../libs/portfolio/portfolio'
 import { Hints, PortfolioGetResult } from '../libs/portfolio/interfaces'
 import { Storage } from '../interfaces/storage'
 import { NetworkDescriptor } from '../interfaces/networkDescriptor'
-import { Account } from '../interfaces/account'
+import { Account, AccountId } from '../interfaces/account'
 import { AccountOp } from '../libs/accountOp/accountOp'
 
 import fetch from 'node-fetch'
 import { JsonRpcProvider } from 'ethers'
-
-type AccountId = string
 
 type AccountState = {
   // network id

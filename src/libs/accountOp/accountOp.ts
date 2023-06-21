@@ -1,13 +1,13 @@
-// ethers does not export their Network type it seems
-interface Network {
-  chainId: bigint
-  name: string
-}
+import { NetworkId } from '../../interfaces/networkDescriptor'
 
 interface Call {
   to: string
   value: bigint
   data: string
+  // if this call is associated with a particular user request
+  // multiple calls can be associated with the same user request, for example
+  // when a batching request is made
+  fromUserRequestId?: bigint
 }
 
 enum GasFeePaymentType {
@@ -15,10 +15,12 @@ enum GasFeePaymentType {
   ERC4337 = 'erc4337',
   AmbireRelayer = 'ambireRelayer',
   AmbireGasTank = 'ambireGasTank',
+  // we use this in two cases: 1) Ambire account, fee paid by an EOA 2) account itself is an EAO
+  // when the account itself is an EOA, paymentType equals accountAddr
   EOA = 'eoa'
 }
 interface GasFeePayment {
-  feePaymentType: GasFeePaymentType
+  paymentType: GasFeePaymentType
   paidBy: string
   inToken: string
   amount: number
@@ -29,9 +31,11 @@ interface GasFeePayment {
 // it is more precisely defined than a UserOp though - UserOp just has calldata and this has individual `calls`
 export interface AccountOp {
   accountAddr: string
-  network: Network
-  signingKeyAddr: string
-  nonce: number
+  networkId: NetworkId
+  // this may not be defined, in case the user has not picked a key yet
+  signingKeyAddr: string | null
+  // this may not be set in case we haven't set it yet
+  nonce: number | null
   // @TODO: nonce namespace? it is dependent on gasFeePayment
   calls: Call[]
   gasLimit: number | null
@@ -39,8 +43,25 @@ export interface AccountOp {
   // @TODO separate interface
   gasFeePayment: GasFeePayment | null
   // @TODO: meta?
+  // This is used when we have an account recovery to finalize before executing the AccountOp,
+  // And we set this to the recovery finalization AccountOp; could be used in other scenarios too in the future,
+  // for example account migration (from v1 QuickAcc to v2)
+  accountOpToExecuteBefore: AccountOp | null
 }
 
 export function callToTuple(call: Call): [string, bigint, string] {
   return [call.to, call.value, call.data]
+}
+
+export function canBroadcast(op: AccountOp, accountIsEOA: boolean): boolean {
+  if (op.signingKeyAddr === null) throw new Error('missing signingKeyAddr')
+  if (op.signature === null) throw new Error('missing signature')
+  if (op.gasFeePayment === null) throw new Error('missing gasFeePayment')
+  if (op.gasLimit === null) throw new Error('missing gasLimit')
+  if (op.nonce === null) throw new Error('missing nonce')
+  if (accountIsEOA) {
+    if (op.gasFeePayment.paymentType !== GasFeePaymentType.EOA) throw new Error('gas fee payment type is not EOA')
+    if (op.gasFeePayment.paidBy !== op.accountAddr) throw new Error('gas fee payment cannot be paid by anyone other than the EOA that signed it')
+  }
+  return true
 }

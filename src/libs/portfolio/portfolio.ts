@@ -1,5 +1,5 @@
 import { Provider, JsonRpcProvider } from 'ethers'
-import { Deployless } from '../deployless/deployless'
+import { Deployless, fromDescriptor } from '../deployless/deployless'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { nftOracle, balanceOracle } from './multiOracle.json'
 import batcher from './batcher'
@@ -79,18 +79,8 @@ export class Portfolio {
     })
     this.batchedGecko = batcher(fetch, geckoRequestBatcher)
     this.network = network
-    this.deploylessTokens = new Deployless(
-      provider,
-      balanceOracle.abi,
-      balanceOracle.bin,
-      network.rpcNoStateOverride ? undefined : balanceOracle.binRuntime
-    )
-    this.deploylessNfts = new Deployless(
-      provider,
-      nftOracle.abi,
-      nftOracle.bin,
-      network.rpcNoStateOverride ? undefined : nftOracle.binRuntime
-    )
+    this.deploylessTokens = fromDescriptor(provider, balanceOracle, !network.rpcNoStateOverride)
+    this.deploylessNfts = fromDescriptor(provider, nftOracle, !network.rpcNoStateOverride)
   }
 
   async get(accountAddr: string, opts: Partial<GetOptions> = {}): Promise<PortfolioGetResult> {

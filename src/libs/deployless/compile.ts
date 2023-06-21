@@ -60,9 +60,14 @@ export function compile(contractName: string, options: Options = {}) {
 
   const output = JSON.parse(getSolc().compile(JSON.stringify(input), { import: findImports }))
 
+  if (output.errors) {
+    const error = output.errors.map((err: any) => err.formattedMessage + ' ')
+    throw new Error(error)
+  }
+
   return {
     abi: output.contracts[contractName][contractName].abi,
-    bytecode: '0x' + output.contracts[contractName][contractName].evm.bytecode.object, // bin
-    deployBytecode: '0x' + output.contracts[contractName][contractName].evm.deployedBytecode.object // binRuntime
+    bin: '0x' + output.contracts[contractName][contractName].evm.bytecode.object, // bin
+    binRuntime: '0x' + output.contracts[contractName][contractName].evm.deployedBytecode.object // binRuntime
   }
 }
