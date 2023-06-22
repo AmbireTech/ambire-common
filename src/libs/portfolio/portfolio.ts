@@ -223,7 +223,7 @@ export class Portfolio {
         return cur
       }, {}),
       // Add error field conditionally
-      ...(hints.error && { error: hints.error })
+      ...(hints.error && { hintsError: hints.error })
     }
   }
 }

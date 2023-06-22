@@ -17,7 +17,9 @@ type AccountState = {
         criticalError?: Error
         errors?: Error[]
         result?: PortfolioGetResult
-        // already simulated AccountOp
+        // We store the previously simulated AccountOps only for the pending state.
+        // Prior to triggering a pending state update, we compare the newly passed AccountOp[] (updateSelectedAccount) with the cached version.
+        // If there are no differences, the update is canceled unless the `forceUpdate` flag is set.
         accountOps?: AccountOp[]
       }
     | undefined
@@ -87,8 +89,7 @@ export class PortfolioController {
       portfolioLib: Portfolio,
       portfolioProps: Partial<GetOptions>,
       forceUpdate: boolean,
-      onSuccess?: (results: PortfolioGetResult) => void
-    ): Promise<void> => {
+    ): Promise<boolean> => {
       if (!accountState[network.id]) accountState[network.id] = { isReady: false, isLoading: false }
 
       const state = accountState[network.id]!
@@ -100,10 +101,10 @@ export class PortfolioController {
         Date.now() - lastUpdateStartedAt <= this.minUpdateInterval &&
         !forceUpdate
       )
-        return
+        return false
 
       // Only one loading at a time, ensure there are no race conditions
-      if (state.isLoading && !forceUpdate) return
+      if (state.isLoading && !forceUpdate) return false
 
       state.isLoading = true
 
@@ -116,13 +117,13 @@ export class PortfolioController {
 
         accountState[network.id] = { isReady: true, isLoading: false, result }
 
-        if (!result.error && onSuccess) {
-          onSuccess(result)
-        }
+        return true
       } catch (e) {
         state.isLoading = false
         if (!state.isReady) state.criticalError = e
         else state.errors = [e]
+
+        return false
       }
     }
 
@@ -142,10 +143,9 @@ export class PortfolioController {
           opts?.forceUpdate ||
           stringifyWithBigInt(currentAccountOps) !== stringifyWithBigInt(simulatedAccountOps)
 
-        await Promise.all([
+        const [isSuccessfulLatestUpdate, isSuccessfulPendingUpdate] = await Promise.all([
           // Latest state update
-          (async () => {
-            await updatePortfolioState(
+          updatePortfolioState(
               accountState,
               network,
               portfolioLib,
@@ -153,20 +153,11 @@ export class PortfolioController {
                 blockTag: 'latest',
                 previousHints: storagePreviousHints[key]
               },
-              forceUpdate,
-              async (results) => {
-                // Persist previousHints in the disk storage for further requests
-                storagePreviousHints[key] = getHintsWithBalance(results)
-                await this.storage.set('previousHints', storagePreviousHints)
-              }
-            )
-          })(),
+              forceUpdate
+          ),
           // Pending state update
-          (async () => {
-            // We are updating the pending state, only if AccountOps are changed or the application logic requests a force update
-            if (!forceUpdate) return
-
-            await updatePortfolioState(
+          // We are updating the pending state, only if AccountOps are changed or the application logic requests a force update
+          forceUpdate ? await updatePortfolioState(
               pendingState,
               network,
               portfolioLib,
@@ -180,13 +171,23 @@ export class PortfolioController {
                   }
                 })
               },
-              forceUpdate,
-              async () => {
-                pendingState[network.id]!.accountOps = currentAccountOps
-              }
-            )
-          })()
+              forceUpdate
+          ): Promise.resolve(false)
         ])
+
+        // Persist previousHints in the disk storage for further requests, when:
+        // Latest state was updated successful and hints were fetched successful too (no errors from portfolio result)
+        if (isSuccessfulLatestUpdate && !accountState[network.id]!.result!.hintsError) {
+          storagePreviousHints[key] = getHintsWithBalance(accountState[network.id]!.result!)
+          await this.storage.set('previousHints', storagePreviousHints)
+        }
+
+        // We cache the previously simulated AccountOps
+        // in order to compare them with the newly passed AccountOps before executing a new updatePortfolioState.
+        // This allows us to identify any differences between the two.
+        if (isSuccessfulPendingUpdate && currentAccountOps) {
+          pendingState[network.id]!.accountOps = currentAccountOps
+        }
       })
     )
 
