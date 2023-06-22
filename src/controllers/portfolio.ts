@@ -70,25 +70,26 @@ export class PortfolioController {
     const selectedAccount = accounts.find((x) => x.addr === accountId)
     if (!selectedAccount) throw new Error('selected account does not exist')
 
-    if (!this.latest[accountId]) this.latest[accountId] = {}
-    if (!this.pending[accountId]) this.pending[accountId] = {}
+    const prepareState = (state: PortfolioControllerState): void => {
+      if (!state[accountId]) state[accountId] = {}
 
+      const accountState = state[accountId]
+      for (const networkId of Object.keys(accountState)) {
+        if (!networks.find((x) => x.id === networkId)) delete accountState[networkId]
+      }
+    }
+
+    prepareState(this.latest)
+    prepareState(this.pending)
     const accountState = this.latest[accountId]
-    for (const networkId of Object.keys(accountState)) {
-      if (!networks.find((x) => x.id === networkId)) delete accountState[networkId]
-    }
-
     const pendingState = this.pending[accountId]
-    for (const networkId of Object.keys(pendingState)) {
-      if (!networks.find((x) => x.id === networkId)) delete pendingState[networkId]
-    }
 
     const updatePortfolioState = async (
       accountState: AccountState,
       network: NetworkDescriptor,
       portfolioLib: Portfolio,
       portfolioProps: Partial<GetOptions>,
-      forceUpdate: boolean,
+      forceUpdate: boolean
     ): Promise<boolean> => {
       if (!accountState[network.id]) accountState[network.id] = { isReady: false, isLoading: false }
 
@@ -146,37 +147,39 @@ export class PortfolioController {
         const [isSuccessfulLatestUpdate, isSuccessfulPendingUpdate] = await Promise.all([
           // Latest state update
           updatePortfolioState(
-              accountState,
-              network,
-              portfolioLib,
-              {
-                blockTag: 'latest',
-                previousHints: storagePreviousHints[key]
-              },
-              forceUpdate
+            accountState,
+            network,
+            portfolioLib,
+            {
+              blockTag: 'latest',
+              previousHints: storagePreviousHints[key]
+            },
+            forceUpdate
           ),
           // Pending state update
           // We are updating the pending state, only if AccountOps are changed or the application logic requests a force update
-          forceUpdate ? await updatePortfolioState(
-              pendingState,
-              network,
-              portfolioLib,
-              {
-                blockTag: 'pending',
-                previousHints: storagePreviousHints[key],
-                ...(currentAccountOps && {
-                  simulation: {
-                    account: selectedAccount,
-                    accountOps: currentAccountOps
-                  }
-                })
-              },
-              forceUpdate
-          ): Promise.resolve(false)
+          forceUpdate
+            ? await updatePortfolioState(
+                pendingState,
+                network,
+                portfolioLib,
+                {
+                  blockTag: 'pending',
+                  previousHints: storagePreviousHints[key],
+                  ...(currentAccountOps && {
+                    simulation: {
+                      account: selectedAccount,
+                      accountOps: currentAccountOps
+                    }
+                  })
+                },
+                forceUpdate
+              )
+            : Promise.resolve(false)
         ])
 
         // Persist previousHints in the disk storage for further requests, when:
-        // Latest state was updated successful and hints were fetched successful too (no errors from portfolio result)
+        // latest state was updated successful and hints were fetched successful too (no hintsError from portfolio result)
         if (isSuccessfulLatestUpdate && !accountState[network.id]!.result!.hintsError) {
           storagePreviousHints[key] = getHintsWithBalance(accountState[network.id]!.result!)
           await this.storage.set('previousHints', storagePreviousHints)
