@@ -52,7 +52,7 @@ export class AccountController {
   }
 
   async getAccount(identity: string): Promise<any> {
-    const resp = await this.fetch(`${this.relayerUrl}/identity/${identity}`, {
+    const resp = await this.fetch(`${this.relayerUrl}/v2/identity/${identity}`, {
       headers: {
         'Content-Type': 'application/json'
       }
@@ -60,6 +60,19 @@ export class AccountController {
     const result: any = await resp.json()
 
     if (result.errType) throw new Error(`accountController: get account: ${result.errType}`)
+    return result
+  }
+
+  async getAccountsByEmail(email: string, authKey: string): Promise<any> {
+    const resp = await this.fetch(`${this.relayerUrl}/v2/identity/by-email/${email}/${authKey}`, {
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    })
+    const result: any = await resp.json()
+
+    if (result.errType)
+      throw new Error(`accountController: get account by email: ${result.errType}`)
     return result
   }
 }

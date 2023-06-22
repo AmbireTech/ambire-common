@@ -38,6 +38,7 @@ describe('account controller', () => {
       byte.toString(16).padStart(2, '0')
     ).join('')}`
     user = ethers.computeAddress(pk)
+
     email = `yosif+${randomString(5)}@ambire.com`
   })
   describe('positive tests', () => {
@@ -123,6 +124,58 @@ describe('account controller', () => {
       expect(res).toHaveProperty('identityFactoryAddr', identityFactoryAddr)
       expect(res).toHaveProperty('salt', salt)
       expect(res).toHaveProperty('created')
+    })
+    test('get accounts by email', async () => {
+      const keys = await requestMagicLink(email, relayerUrl, fetch)
+      const authKey = keys.key as string
+      const authSecret = keys.secret
+      await fetch(`${relayerUrl}/email-vault/confirmationKey/${email}/${authKey}/${authSecret}`)
+      await emailVault.create(email, authKey)
+
+      // create account
+      const privileges: PrivLevels[] = [
+        { addr: baseIdentityAddr, hash: ethers.toBeHex(1, 32) },
+        { addr: user, hash: ethers.toBeHex(2, 32) }
+      ]
+
+      const accountPresets = {
+        salt,
+        identityFactoryAddr,
+        baseIdentityAddr,
+        feeCollector,
+        bytecode: '',
+        quickAccTimelock: threeDays,
+        privileges
+      }
+
+      const bytecode = getProxyDeployBytecode(baseIdentityAddr, privileges, {
+        privSlot: 0
+      })
+
+      const expectedAddr = ethers.getAddress(
+        `0x${generateAddress2(
+          Buffer.from(identityFactoryAddr.slice(2), 'hex'),
+          Buffer.from(salt.slice(2), 'hex'),
+          Buffer.from(bytecode.slice(2), 'hex')
+        ).toString('hex')}`
+      )
+
+      accountPresets.bytecode = bytecode
+
+      await accountController.createAccount(accountPresets, expectedAddr, {
+        email,
+        authKey: authKey as string
+      })
+
+      const res = await accountController.getAccountsByEmail(email, authKey)
+      const record = res[0]
+      expect(record).toHaveProperty('_id', expectedAddr)
+      expect(record).toHaveProperty('baseIdentityAddr', baseIdentityAddr)
+      expect(record).toHaveProperty('bytecode')
+      expect(record).toHaveProperty('identityFactoryAddr', identityFactoryAddr)
+      expect(record).toHaveProperty('salt', salt)
+      expect(record).toHaveProperty('created')
+      expect(record).toHaveProperty('meta', { email })
     })
   })
   describe('negative tests', () => {
