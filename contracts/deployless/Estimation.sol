@@ -38,6 +38,10 @@ contract Estimation {
     FeeTokenOutcome[] feeTokenOutcomes;
     bytes32[] associatedKeyPrivileges;
     uint[] nativeAssetBalances;
+    // This is not really relevant when it comes to how much an accountOp
+    // would cost (that would be `deployment.gasUsed + accountOpToExecuteBefore.gasUsed + op.gasUsed`)
+    // ...but we still need it in order to compare with the same call but through eth_estimateGas, to calculate the exact gas refund
+    uint gasLeft;
   }
 
   function makeSpoofSignature(address key) internal pure returns (bytes memory spoofSig) {
@@ -69,18 +73,18 @@ contract Estimation {
 
     // Do all the simulations
     outcome.deployment = simulateDeployment(account, factory, factoryCalldata);
-    if (!outcome.deployment.success) return outcome;
     // NOTE: if we don't have a preExecute accountOp, .success will still be false, but
     // the estimate lib only cares about the final success (outcome.op.success)
-    if (preExecute.calls.length != 0) {
+    if (outcome.deployment.success && preExecute.calls.length != 0) {
       outcome.accountOpToExecuteBefore = simulateSigned(op);
-      if (!outcome.accountOpToExecuteBefore.success) return outcome;
     }
-    bytes memory spoofSig;
-    (outcome.op, outcome.associatedKeyPrivileges, spoofSig) = simulateUnsigned(op, associatedKeys);
-    outcome.nonce = op.account.nonce();
-    // Get fee tokens amounts after the simulation, and simulate their gas cost for transfer
-    if (feeTokens.length != 0) outcome.feeTokenOutcomes = simulateFeePayments(account, feeTokens, spoofSig, relayer);
+    if (outcome.deployment.success && (preExecute.calls.length == 0 || outcome.accountOpToExecuteBefore.success)) {
+      bytes memory spoofSig;
+      (outcome.op, outcome.associatedKeyPrivileges, spoofSig) = simulateUnsigned(op, associatedKeys);
+      outcome.nonce = op.account.nonce();
+      // Get fee tokens amounts after the simulation, and simulate their gas cost for transfer
+      if (feeTokens.length != 0) outcome.feeTokenOutcomes = simulateFeePayments(account, feeTokens, spoofSig, relayer);
+    }
 
     if (associatedKeys.length != 0) {
       // Safety check: anti-bricking
@@ -90,6 +94,8 @@ contract Estimation {
       }
       require(isOk, "ANTI_BRICKING_FAILED");
     }
+
+    outcome.gasLeft = gasleft();
   }
 
   function simulateDeployment(

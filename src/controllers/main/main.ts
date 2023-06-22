@@ -10,7 +10,7 @@ export interface Call {
   value: bigint
   data: string
 }
-export interface Message {
+export interface PlainTextMessage {
   kind: 'message'
   message: string | Uint8Array
 }
@@ -20,16 +20,26 @@ export interface TypedMessage {
   types: Record<string, Array<TypedDataField>>
   value: Record<string, any>
 }
-export type UniversalMessage = Message | TypedMessage
+// @TODO: move this type and it's deps (PlainTextMessage, TypedMessage) to another place,
+// probably interfaces
+export interface SignedMessage {
+  content: PlainTextMessage | TypedMessage
+  signature: string | null
+  fromUserRequestId?: bigint
+}
 
 export interface UserRequest {
+  // Unlike the AccountOp, which we compare by content,
+  // we need a distinct identifier here that's set by whoever is posting the request
+  // the requests cannot be compared by content because it's valid for a user to post two or more identical ones
+  // while for AccountOps we do only care about their content in the context of simulations
   id: bigint
   added: bigint // timestamp
   networkId: NetworkId
-  accountId: AccountId
+  accountAddr: AccountId
   forceNonce: bigint | null
   // either-or here between call and a message, plus different types of messages
-  action: Call | Message | TypedMessage
+  action: Call | PlainTextMessage | TypedMessage
 }
 // import fetch from 'node-fetch'
 // import { JsonRpcProvider } from 'ethers'
@@ -44,10 +54,11 @@ export class MainController {
   selectedAccount: string | null = null
 
   userRequests: UserRequest[] = []
-  // @TODO: clean
-  // accountOpsToBeSigned: Map<AccountId, Map<NetworkId, AccountOp[]>> = new Map()
-  accountOpsToBeConfirmed: Map<AccountId, Map<NetworkId, AccountOp[]>> = new Map()
-  messagesToBeSigned: Map<AccountId, UniversalMessage[]> = new Map()
+  // accountAddr => networkId => accountOp
+  accountOpsToBeSigned: { [key: string]: { [key: string]: AccountOp }} = {}
+  accountOpsToBeConfirmed: { [key: string]: { [key: string]: AccountOp }} = {}
+  // accountAddr => UniversalMessage[]
+  messagesToBeSigned: { [key: string]: SignedMessage[] } = {}
 
   constructor(storage: Storage) {
     this.storage = storage
@@ -55,14 +66,45 @@ export class MainController {
     // @TODO
   }
 
-  public get accountOpsToBeSigned(): Map<AccountId, Map<NetworkId, any>> {
-    const result = new Map()
-    for (const req of this.userRequests)  {
-      if (req.action.kind !== 'call') continue
-      if (!result.has(req.accountId)) result.set(req.accountId, new Map())
-      if (!result.get(req.accountId)!.has(req.networkId)) result.get(req.accountId)!.set(req.networkId, [])
-      result.get(req.accountId)!.get(req.networkId)!.push(req)
+  addUserRequest(req: UserRequest) {
+    this.userRequests.push(req)
+    const { action, accountAddr, networkId } = req
+    if (action.kind === 'call') {
+      if (!this.accountOpsToBeSigned[accountAddr]) this.accountOpsToBeSigned[accountAddr] = {}
+      if (!this.accountOpsToBeSigned[accountAddr][networkId]) {
+        this.accountOpsToBeSigned[accountAddr][networkId] = {
+          accountAddr,
+          networkId,
+          signingKeyAddr: null,
+          gasLimit: null,
+          gasFeePayment: null,
+          // @TODO: from monitored nonce? or use the estimate to determine?
+          nonce: null,
+          signature: null,
+          // @TODO from pending recoveries
+          accountOpToExecuteBefore: null,
+          calls: []
+        }
+      }
+      const accountOp = this.accountOpsToBeSigned[accountAddr][networkId]
+      accountOp.calls.push({ ...action, fromUserRequestId: req.id })
+      // @TODO
+    } else {
+      if (!this.messagesToBeSigned[accountAddr]) this.messagesToBeSigned[accountAddr] = []
+      if (this.messagesToBeSigned[accountAddr].find(x => x.fromUserRequestId === req.id)) return
+      this.messagesToBeSigned[accountAddr].push({
+        content: action,
+        fromUserRequestId: req.id,
+        signature: null
+      })
+      // @TODO
     }
-    return result
+    // @TODO fire update
+  }
+
+  resolveAccountOp() {
+  }
+
+  resolveMessage() {
   }
 }
