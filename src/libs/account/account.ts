@@ -77,6 +77,16 @@ export class AccountController {
     if (result.errType) throw new Error(`accountController: get priviliges: ${result.errType}`)
     return result
   }
+
+  async getAccountNonce(identity: string, network: string): Promise<any> {
+    const resp = await this.fetch(
+      `${this.relayerUrl}/v2/identity/${identity}/${network}/next-nonce`
+    )
+    const result: any = await resp.json()
+
+    if (result.errType) throw new Error(`accountController: get account nonce: ${result.errType}`)
+    return result
+  }
 }
 
 // modify
