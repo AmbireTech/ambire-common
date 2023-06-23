@@ -87,6 +87,23 @@ export class AccountController {
     if (result.errType) throw new Error(`accountController: get account nonce: ${result.errType}`)
     return result
   }
+
+  async estimate(identity: string, network: string, args: any): Promise<any> {
+    const resp = await this.fetch(
+      `${this.relayerUrl}/v2/identity/${identity}/${network}/estimate`,
+      {
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        method: 'POST',
+        body: JSON.stringify(args)
+      }
+    )
+    const result: any = await resp.json()
+
+    if (result.errType) throw new Error(`accountController: get account nonce: ${result.errType}`)
+    return result
+  }
 }
 
 // modify
