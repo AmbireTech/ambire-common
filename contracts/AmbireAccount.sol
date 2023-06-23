@@ -121,6 +121,7 @@ contract AmbireAccount {
 	// @notice same as `tryCatch` but with a gas limit
 	function tryCatchLimit(address to, uint256 value, bytes calldata data, uint256 gasLimit) external payable {
 		require(msg.sender == address(this), 'ONLY_IDENTITY_CAN_CALL');
+		uint256 gasBefore = gasleft();
 		(bool success, bytes memory returnData) = to.call{ value: value, gas: gasLimit }(data);
 		require(gasleft() > gasBefore/64, 'TRYCATCH_OOG');
 		if (!success) emit LogErr(to, value, data, returnData);
@@ -247,10 +248,14 @@ contract AmbireAccount {
 
 	// @notice EIP-1155 implementation
 	// we pretty much only need to signal that we support the interface for 165, but for 1155 we also need the fallback function
-	function supportsInterface(bytes4 interfaceID) external pure returns (bool) {
-		return
+	function supportsInterface(bytes4 interfaceID) external view returns (bool) {
+		bool supported =
 			interfaceID == 0x01ffc9a7 || // ERC-165 support (i.e. `bytes4(keccak256('supportsInterface(bytes4)'))`).
 			interfaceID == 0x150b7a02 || // ERC721TokenReceiver
 			interfaceID == 0x4e2312e0; // ERC-1155 `ERC1155TokenReceiver` support (i.e. `bytes4(keccak256("onERC1155Received(address,address,uint256,uint256,bytes)")) ^ bytes4(keccak256("onERC1155BatchReceived(address,address,uint256[],uint256[],bytes)"))`).
+		if (supported) return true;
+		address payable fallbackHandler = payable(address(uint160(uint(privileges[FALLBACK_HANDLER_SLOT]))));
+		if (fallbackHandler == address(0)) return false;
+		return AmbireAccount(fallbackHandler).supportsInterface(interfaceID);
 	}
 }
