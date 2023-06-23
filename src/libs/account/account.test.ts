@@ -18,7 +18,7 @@ const feeCollector = '0x942f9CE5D9a33a82F88D233AEb3292E680230348'
 const threeDays = 259200
 let identity: string
 let email: string
-
+let pk: string
 function randomString(len: number) {
   let result = ''
   const characters = 'abcdefghijklmnopqrstuvwxyz0123456789'
@@ -34,9 +34,9 @@ function randomString(len: number) {
 describe('account controller', () => {
   // @TODO: RELAYER BREAKS ON BAD REQUESTS
   beforeEach(() => {
-    const pk = `0x${Array.from(ethers.randomBytes(32), (byte) =>
-      byte.toString(16).padStart(2, '0')
-    ).join('')}`
+    pk = `0x${Array.from(ethers.randomBytes(32), (byte) => byte.toString(16).padStart(2, '0')).join(
+      ''
+    )}`
     user = ethers.computeAddress(pk)
 
     email = `yosif+${randomString(5)}@ambire.com`
@@ -317,7 +317,66 @@ describe('account controller', () => {
       const signer = { address: expectedAddr }
       const args = { txns, signer }
       const res = await accountController.estimate(expectedAddr, 'ethereum', args)
-      console.log(res)
+      expect(res.success).toBeTruthy()
+    })
+    test('get identities from signer', async () => {
+      const keys = await requestMagicLink(email, relayerUrl, fetch)
+      const authKey = keys.key as string
+      const authSecret = keys.secret
+      await fetch(`${relayerUrl}/email-vault/confirmationKey/${email}/${authKey}/${authSecret}`)
+      await emailVault.create(email, authKey)
+
+      // create account
+      const privileges: PrivLevels[] = [
+        { addr: baseIdentityAddr, hash: ethers.toBeHex(1, 32) },
+        { addr: user, hash: ethers.toBeHex(2, 32) }
+      ]
+
+      const accountPresets = {
+        salt,
+        identityFactoryAddr,
+        baseIdentityAddr,
+        feeCollector,
+        bytecode: '',
+        quickAccTimelock: threeDays,
+        privileges
+      }
+
+      const bytecode = getProxyDeployBytecode(baseIdentityAddr, privileges, {
+        privSlot: 0
+      })
+
+      const expectedAddr = ethers.getAddress(
+        `0x${generateAddress2(
+          Buffer.from(identityFactoryAddr.slice(2), 'hex'),
+          Buffer.from(salt.slice(2), 'hex'),
+          Buffer.from(bytecode.slice(2), 'hex')
+        ).toString('hex')}`
+      )
+
+      accountPresets.bytecode = bytecode
+
+      await accountController.createAccount(accountPresets, expectedAddr, {
+        email,
+        authKey: authKey as string
+      })
+      const signer = new ethers.Wallet(pk)
+
+      const signature = await signer.signMessage('get_identity_from_signer')
+
+      const res = await accountController.getAccountsBySigner(signature)
+      const newPrivs = accountPresets.privileges.map((el: any) => [el.addr, el.hash])
+      expect(res.success).toBeTruthy()
+      // .toEqual instead of .toBE
+      expect(res.identities[0]).toEqual({
+        id: expectedAddr,
+        baseIdentityAddr: accountPresets.baseIdentityAddr,
+        identityFactoryAddr: accountPresets.identityFactoryAddr,
+        email,
+        salt: accountPresets.salt,
+        bytecode: accountPresets.bytecode,
+        privileges: newPrivs
+      })
     })
   })
   describe('negative tests', () => {

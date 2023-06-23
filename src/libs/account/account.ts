@@ -101,7 +101,15 @@ export class AccountController {
     )
     const result: any = await resp.json()
 
-    if (result.errType) throw new Error(`accountController: get account nonce: ${result.errType}`)
+    if (result.errType) throw new Error(`accountController: estimate txn: ${result.errType}`)
+    return result
+  }
+
+  async getAccountsBySigner(signature: string): Promise<any> {
+    const resp = await this.fetch(`${this.relayerUrl}/v2/account-by-signer/${signature}`)
+    const result: any = await resp.json()
+    if (result.errType)
+      throw new Error(`accountController: get identities from signer: ${result.errType}`)
     return result
   }
 }
