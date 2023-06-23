@@ -122,6 +122,7 @@ contract AmbireAccount {
 	function tryCatchLimit(address to, uint256 value, bytes calldata data, uint256 gasLimit) external payable {
 		require(msg.sender == address(this), 'ONLY_IDENTITY_CAN_CALL');
 		(bool success, bytes memory returnData) = to.call{ value: value, gas: gasLimit }(data);
+		require(gasleft() > gasBefore/64, 'TRYCATCH_OOG');
 		if (!success) emit LogErr(to, value, data, returnData);
 	}
 
