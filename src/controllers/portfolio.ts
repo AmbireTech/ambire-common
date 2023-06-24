@@ -1,25 +1,45 @@
-import { Portfolio } from '../libs/portfolio/portfolio'
+import { Portfolio, GetOptions } from '../libs/portfolio/portfolio'
 import { Hints, PortfolioGetResult } from '../libs/portfolio/interfaces'
 import { Storage } from '../interfaces/storage'
-import { NetworkDescriptor, NetworkId } from '../interfaces/networkDescriptor'
+import { NetworkDescriptor } from '../interfaces/networkDescriptor'
 import { Account, AccountId } from '../interfaces/account'
 import { AccountOp } from '../libs/accountOp/accountOp'
 
 import fetch from 'node-fetch'
 import { JsonRpcProvider } from 'ethers'
 
-// @TODO fix the any
-type PortfolioState = Map<AccountId, Map<NetworkId, any>>
+type AccountState = {
+  // network id
+  [key: string]:
+    | {
+        isReady: boolean
+        isLoading: boolean
+        criticalError?: Error
+        errors?: Error[]
+        result?: PortfolioGetResult
+        // We store the previously simulated AccountOps only for the pending state.
+        // Prior to triggering a pending state update, we compare the newly passed AccountOp[] (updateSelectedAccount) with the cached version.
+        // If there are no differences, the update is canceled unless the `forceUpdate` flag is set.
+        accountOps?: AccountOp[]
+      }
+    | undefined
+}
+// account => network => PortfolioGetResult, extra fields
+type PortfolioControllerState = {
+  // account id
+  [key: string]: AccountState
+}
 
 export class PortfolioController {
-  latest: PortfolioState
-  pending: PortfolioState
+  latest: PortfolioControllerState
+  pending: PortfolioControllerState
   private portfolioLibs: Map<string, Portfolio>
   private storage: any
+  private minUpdateInterval: number = 20000 // 20 seconds
 
   constructor(storage: Storage) {
-    this.latest = new Map()
-    this.pending = new Map()
+    this.latest = {}
+    this.pending = {}
     this.portfolioLibs = new Map()
     this.storage = storage
   }
@@ -38,19 +58,76 @@ export class PortfolioController {
     accounts: Account[],
     networks: NetworkDescriptor[],
     accountId: AccountId,
-    accountOps: AccountOp[]
+    // account => network => AccountOp[]
+    accountOps?: { [key: string]: { [key: string]: AccountOp[] } },
+    opts?: {
+      forceUpdate: boolean
+    }
   ) {
     // Load storage cached hints
     const storagePreviousHints = await this.storage.get('previousHints', {})
 
     const selectedAccount = accounts.find((x) => x.addr === accountId)
     if (!selectedAccount) throw new Error('selected account does not exist')
-    // @TODO update pending AND latest state together in case we have accountOps
-    if (!this.latest.has(accountId)) this.latest.set(accountId, new Map())
-    const accountState = this.latest.get(accountId)!
-    for (const networkId of accountState.keys()) {
-      if (!networks.find((x) => x.id === networkId)) accountState.delete(networkId)
+
+    const prepareState = (state: PortfolioControllerState): void => {
+      if (!state[accountId]) state[accountId] = {}
+
+      const accountState = state[accountId]
+      for (const networkId of Object.keys(accountState)) {
+        if (!networks.find((x) => x.id === networkId)) delete accountState[networkId]
+      }
     }
+
+    prepareState(this.latest)
+    prepareState(this.pending)
+    const accountState = this.latest[accountId]
+    const pendingState = this.pending[accountId]
+
+    const updatePortfolioState = async (
+      accountState: AccountState,
+      network: NetworkDescriptor,
+      portfolioLib: Portfolio,
+      portfolioProps: Partial<GetOptions>,
+      forceUpdate: boolean
+    ): Promise<boolean> => {
+      if (!accountState[network.id]) accountState[network.id] = { isReady: false, isLoading: false }
+
+      const state = accountState[network.id]!
+
+      // When the portfolio was called lastly
+      const lastUpdateStartedAt = state.result?.updateStarted
+      if (
+        lastUpdateStartedAt &&
+        Date.now() - lastUpdateStartedAt <= this.minUpdateInterval &&
+        !forceUpdate
+      )
+        return false
+
+      // Only one loading at a time, ensure there are no race conditions
+      if (state.isLoading && !forceUpdate) return false
+
+      state.isLoading = true
+
+      try {
+        const result = await portfolioLib.get(accountId, {
+          priceRecency: 60000,
+          priceCache: state.result?.priceCache,
+          ...portfolioProps
+        })
+
+        accountState[network.id] = { isReady: true, isLoading: false, result }
+
+        return true
+      } catch (e) {
+        state.isLoading = false
+        if (!state.isReady) state.criticalError = e
+        else state.errors = [e]
+
+        return false
+      }
+    }
+
     await Promise.all(
       networks.map(async (network) => {
         const key = `${network.id}:${accountId}`
@@ -59,37 +136,75 @@ export class PortfolioController {
           this.portfolioLibs.set(key, new Portfolio(fetch, provider, network))
         }
         const portfolioLib = this.portfolioLibs.get(key)!
-        // @TODO full state handling
-        // @TODO discoveredTokens fallback
-        if (!accountState.get(network.id))
-          accountState.set(network.id, { isReady: false, isLoading: false })
-        const state = accountState.get(network.id)!
-        // Only one loading at a time, ensure there are no race conditions
-        if (state.isLoading) return
-        state.isLoading = true
-        try {
-          const results = await portfolioLib.get(accountId, {
-            priceRecency: 60000,
-            priceCache: state.priceCache,
-            previousHints: storagePreviousHints[key]
-          })
-          // Don't update previous hints (cache), if the hints request fails
-          if (!results.error) {
-            // Persist previousHints in the disk storage for further requests
-            storagePreviousHints[key] = getHintsWithBalance(results)
-            await this.storage.set('previousHints', storagePreviousHints)
-          }
-          accountState.set(network.id, { isReady: true, isLoading: false, ...results })
-        } catch (e) {
-          state.isLoading = false
-          if (!state.isReady) state.criticalError = e
-          else state.errors = [e]
+
+        const currentAccountOps = accountOps?.[accountId]?.[network.id]
+        const simulatedAccountOps = pendingState[network.id]?.accountOps
+
+        const forceUpdate =
+          opts?.forceUpdate ||
+          stringifyWithBigInt(currentAccountOps) !== stringifyWithBigInt(simulatedAccountOps)
+
+        const [isSuccessfulLatestUpdate, isSuccessfulPendingUpdate] = await Promise.all([
+          // Latest state update
+          updatePortfolioState(
+            accountState,
+            network,
+            portfolioLib,
+            {
+              blockTag: 'latest',
+              previousHints: storagePreviousHints[key]
+            },
+            forceUpdate
+          ),
+          // Pending state update
+          // We are updating the pending state, only if AccountOps are changed or the application logic requests a force update
+          forceUpdate
+            ? await updatePortfolioState(
+                pendingState,
+                network,
+                portfolioLib,
+                {
+                  blockTag: 'pending',
+                  previousHints: storagePreviousHints[key],
+                  ...(currentAccountOps && {
+                    simulation: {
+                      account: selectedAccount,
+                      accountOps: currentAccountOps
+                    }
+                  })
+                },
+                forceUpdate
+              )
+            : Promise.resolve(false)
+        ])
+
+        // Persist previousHints in the disk storage for further requests, when:
+        // latest state was updated successful and hints were fetched successful too (no hintsError from portfolio result)
+        if (isSuccessfulLatestUpdate && !accountState[network.id]!.result!.hintsError) {
+          storagePreviousHints[key] = getHintsWithBalance(accountState[network.id]!.result!)
+          await this.storage.set('previousHints', storagePreviousHints)
+        }
+
+        // We cache the previously simulated AccountOps
+        // in order to compare them with the newly passed AccountOps before executing a new updatePortfolioState.
+        // This allows us to identify any differences between the two.
+        if (isSuccessfulPendingUpdate && currentAccountOps) {
+          pendingState[network.id]!.accountOps = currentAccountOps
         }
       })
     )
-    // console.log(this.latest)
-    // console.log(accounts, networks, accountOps)
+
+    // console.log({ latest: this.latest, pending: this.pending })
   }
+}
+
+// By default, JSON.stringify doesn't stringifies BigInt.
+// Because of this, we are adding support for BigInt values with this utility function.
+// @TODO: move this into utils
+function stringifyWithBigInt(value: any): string {
+  return JSON.stringify(value, (key, value) =>
+    typeof value === 'bigint' ? value.toString() : value
+  )
 }
 
 // We already know that `results.tokens` and `result.collections` tokens have a balance (this is handled by the portfolio lib).
@@ -110,5 +225,20 @@ function getHintsWithBalance(result: PortfolioGetResult): {
   return {
     erc20s,
     erc721s
+  }
+}
+
+// @TODO: move this into utils
+export function produceMemoryStore(): Storage {
+  const storage = new Map()
+  return {
+    get: (key, defaultValue): any => {
+      const serialized = storage.get(key)
+      return Promise.resolve(serialized ? JSON.parse(serialized) : defaultValue)
+    },
+    set: (key, value) => {
+      storage.set(key, JSON.stringify(value))
+      return Promise.resolve(null)
+    }
   }
 }
