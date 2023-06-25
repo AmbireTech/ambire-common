@@ -34,7 +34,7 @@ export class PortfolioController {
   latest: PortfolioControllerState
   pending: PortfolioControllerState
   private portfolioLibs: Map<string, Portfolio>
-  private storage: any
+  private storage: Storage
   private minUpdateInterval: number = 20000 // 20 seconds
 
   constructor(storage: Storage) {

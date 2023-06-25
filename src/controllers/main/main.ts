@@ -4,6 +4,7 @@ import { Account, AccountId } from '../../interfaces/account'
 import { AccountOp } from '../../libs/accountOp/accountOp'
 import { TypedDataDomain, TypedDataField } from 'ethers'
 import { PortfolioController } from '../portfolio'
+import { Keystore } from '../../libs/keystore/keystore'
 
 // @TODO move to interfaces?
 export interface Call {
@@ -49,7 +50,8 @@ export interface UserRequest {
 // type State = Map<AccountId, Map<NetworkId, any>>
 
 export class MainController {
-  private storage: any
+  private storage: Storage
+  private keystore: Keystore
   // @TODO emailVaults
   // @TODO read networks from settings
   accounts: Account[] = []
@@ -70,8 +72,13 @@ export class MainController {
   constructor(storage: Storage) {
     this.storage = storage
     this.portfolio = new PortfolioController(storage)
+    // @TODO: KeystoreSigners
+    this.keystore = new Keystore(storage, {})
     // Load userRequests from storage and emit that we have updated
     // @TODO
+  }
+
+  init() {
   }
 
   addUserRequest(req: UserRequest) {
