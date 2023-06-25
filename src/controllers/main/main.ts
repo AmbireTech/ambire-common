@@ -4,7 +4,7 @@ import { Account, AccountId } from '../../interfaces/account'
 import { AccountOp } from '../../libs/accountOp/accountOp'
 import { TypedDataDomain, TypedDataField } from 'ethers'
 import { PortfolioController } from '../portfolio'
-import { Keystore } from '../../libs/keystore/keystore'
+import { Keystore, Key } from '../../libs/keystore/keystore'
 
 // @TODO move to interfaces?
 export interface Call {
@@ -52,13 +52,14 @@ export interface UserRequest {
 export class MainController {
   private storage: Storage
   private keystore: Keystore
-  private initialLoadPromise: Promise<void> | null = null
+  private initialLoadPromise: Promise<void>
 
   // this is not private cause you're supposed to directly access it
   portfolio: PortfolioController
   // @TODO emailVaults
   // @TODO read networks from settings
   accounts: Account[] = []
+  keys: Key[] = []
   selectedAccount: string | null = null
 
   userRequests: UserRequest[] = []
@@ -72,11 +73,13 @@ export class MainController {
   messagesToBeSigned: { [key: string]: SignedMessage[] } = {}
 
   private async load(): Promise<void> {
-    // @TODO
+    await Promise.all([
+      this.keystore.getKeys().then(keys => this.keys = keys),
+      this.storage.get('accounts', []).then(accs => this.accounts = accs)
+    ])
   }
 
   public get isReady(): boolean {
-    if (this.initialLoadPromise === null) return false
     let isReady = false
     // if it's ready, this will execute in the same tick
     this.initialLoadPromise.then(() => isReady = true)
@@ -88,7 +91,7 @@ export class MainController {
     this.portfolio = new PortfolioController(storage)
     // @TODO: KeystoreSigners
     this.keystore = new Keystore(storage, {})
-    this.initialLoad
+    this.initialLoadPromise = this.load()
     // Load userRequests from storage and emit that we have updated
     // @TODO
   }
