@@ -3,6 +3,7 @@ import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor
 import { Account, AccountId } from '../../interfaces/account'
 import { AccountOp } from '../../libs/accountOp/accountOp'
 import { TypedDataDomain, TypedDataField } from 'ethers'
+import { PortfolioController } from '../portfolio'
 
 export interface Call {
   kind: 'call'
@@ -60,8 +61,11 @@ export class MainController {
   // accountAddr => UniversalMessage[]
   messagesToBeSigned: { [key: string]: SignedMessage[] } = {}
 
+  portfolio: PortfolioController
+
   constructor(storage: Storage) {
     this.storage = storage
+    this.portfolio = new PortfolioController(storage)
     // Load userRequests from storage and emit that we have updated
     // @TODO
   }
@@ -88,7 +92,8 @@ export class MainController {
       }
       const accountOp = this.accountOpsToBeSigned[accountAddr][networkId]
       accountOp.calls.push({ ...action, fromUserRequestId: req.id })
-      // @TODO
+      // this.portfolio.updateSelectedAccount( /* TODO */)
+      // @TODO refresh the portfolio and the estimation
     } else {
       if (!this.messagesToBeSigned[accountAddr]) this.messagesToBeSigned[accountAddr] = []
       if (this.messagesToBeSigned[accountAddr].find(x => x.fromUserRequestId === req.id)) return
