@@ -52,6 +52,10 @@ export interface UserRequest {
 export class MainController {
   private storage: Storage
   private keystore: Keystore
+  private initialLoadPromise: Promise<void> | null = null
+
+  // this is not private cause you're supposed to directly access it
+  portfolio: PortfolioController
   // @TODO emailVaults
   // @TODO read networks from settings
   accounts: Account[] = []
@@ -67,18 +71,26 @@ export class MainController {
   // accountAddr => UniversalMessage[]
   messagesToBeSigned: { [key: string]: SignedMessage[] } = {}
 
-  portfolio: PortfolioController
+  private async load(): Promise<void> {
+    // @TODO
+  }
+
+  public get isReady(): boolean {
+    if (this.initialLoadPromise === null) return false
+    let isReady = false
+    // if it's ready, this will execute in the same tick
+    this.initialLoadPromise.then(() => isReady = true)
+    return isReady
+  }
 
   constructor(storage: Storage) {
     this.storage = storage
     this.portfolio = new PortfolioController(storage)
     // @TODO: KeystoreSigners
     this.keystore = new Keystore(storage, {})
+    this.initialLoad
     // Load userRequests from storage and emit that we have updated
     // @TODO
-  }
-
-  init() {
   }
 
   addUserRequest(req: UserRequest) {
