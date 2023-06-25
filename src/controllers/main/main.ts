@@ -55,6 +55,9 @@ export class MainController {
   selectedAccount: string | null = null
 
   userRequests: UserRequest[] = []
+  // The reason we use a map structure and not a flat array is:
+  // 1) it's easier in the UI to deal with structured data rather than having to .find/.filter/etc. all the time
+  // 2) it's easier to mutate this - to add/remove accountOps, to find the right accountOp to extend, etc.
   // accountAddr => networkId => accountOp
   accountOpsToBeSigned: { [key: string]: { [key: string]: AccountOp }} = {}
   accountOpsToBeConfirmed: { [key: string]: { [key: string]: AccountOp }} = {}
@@ -92,7 +95,7 @@ export class MainController {
       }
       const accountOp = this.accountOpsToBeSigned[accountAddr][networkId]
       accountOp.calls.push({ ...action, fromUserRequestId: req.id })
-      // this.portfolio.updateSelectedAccount( /* TODO */)
+      // this.portfolio.updateSelectedAccount([], networks, accountAddr, this.accountOpsToBeSigned)
       // @TODO refresh the portfolio and the estimation
     } else {
       if (!this.messagesToBeSigned[accountAddr]) this.messagesToBeSigned[accountAddr] = []
