@@ -5,6 +5,7 @@ import { AccountOp } from '../../libs/accountOp/accountOp'
 import { TypedDataDomain, TypedDataField } from 'ethers'
 import { PortfolioController } from '../portfolio'
 
+// @TODO move to interfaces?
 export interface Call {
   kind: 'call'
   to: string
@@ -95,6 +96,7 @@ export class MainController {
       }
       const accountOp = this.accountOpsToBeSigned[accountAddr][networkId]
       accountOp.calls.push({ ...action, fromUserRequestId: req.id })
+      // @TODO call an async function that calls the initial promise first
       // this.portfolio.updateSelectedAccount([], networks, accountAddr, this.accountOpsToBeSigned)
       // @TODO refresh the portfolio and the estimation
     } else {

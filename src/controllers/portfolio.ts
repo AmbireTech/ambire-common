@@ -227,18 +227,3 @@ function getHintsWithBalance(result: PortfolioGetResult): {
     erc721s
   }
 }
-
-// @TODO: move this into utils
-export function produceMemoryStore(): Storage {
-  const storage = new Map()
-  return {
-    get: (key, defaultValue): any => {
-      const serialized = storage.get(key)
-      return Promise.resolve(serialized ? JSON.parse(serialized) : defaultValue)
-    },
-    set: (key, value) => {
-      storage.set(key, JSON.stringify(value))
-      return Promise.resolve(null)
-    }
-  }
-}
