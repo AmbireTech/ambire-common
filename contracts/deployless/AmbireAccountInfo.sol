@@ -3,59 +3,41 @@ pragma solidity 0.8.19;
 
 import "./IAmbireAccount.sol";
 
-struct Account {
+struct AccountInput {
     address addr;
     address[] associatedKeys;
     address factory;
     bytes factoryCalldata;
 }
 
-struct AssociatedKey {
-    address key;
-    bool privileges;
-}
-
 struct AccountInfo {
-    address account;
+    bool isDeployed;
     uint nonce;
-    bool deployed;
-    AssociatedKey[] associatedKeys;
-}
-
-struct SimulationOutcome {
-    bool success;
-    bytes err;
+    bytes32[] associatedKeyPriviliges;
 }
 
 contract AmbireAccountInfo {
-
-    function simulateDeployment(address factory, bytes memory factoryCalldata) public returns (SimulationOutcome memory outcome) {
-        (outcome.success, outcome.err) = factory.call(factoryCalldata);
-    }
-
-    function getAccountsInfo(Account[] memory accounts) external returns (AccountInfo[] memory accountResult) {
+    function getAccountsInfo(AccountInput[] memory accounts) external returns (AccountInfo[] memory accountResult) {
         accountResult = new AccountInfo[](accounts.length);
         for (uint i=0; i!=accounts.length; i++) {
-            accountResult[i].account = accounts[i].addr;
-            accountResult[i].associatedKeys = new AssociatedKey[](accounts[i].associatedKeys.length);
+            AccountInput memory account = accounts[i];
             // is contract deployed
             if (address(accounts[i].addr).code.length > 0) {
-                accountResult[i].deployed = true;
+                accountResult[i].isDeployed = true;
             } else {
-                accountResult[i].deployed = false;
+                accountResult[i].isDeployed = false;
                 // deploy contract to can check nonce and associatedKeys
-                simulateDeployment(accounts[i].factory, accounts[i].factoryCalldata);
+                (bool success,) = account.factory.call(account.factoryCalldata);
+                // we leave associateKeys empty and nonce == 0, so that the library can know that the deployment failed
+                // we do not care about the exact error because this is a very rare case
+                if (!success) continue;
             }
+            accountResult[i].associatedKeyPriviliges = new bytes32[](account.associatedKeys.length);
             // get nonce - if contract is not deployed than nonce is zero
-            accountResult[i].nonce = IAmbireAccount(accounts[i].addr).nonce();
-            // get signer information
-            for (uint j=0; j!=accountResult[i].associatedKeys.length; j++) {
-                accountResult[i].associatedKeys[j].key = accounts[i].associatedKeys[j];
-                if (IAmbireAccount(accounts[i].addr).privileges(accounts[i].associatedKeys[j]) != bytes32(0)) { 
-                    accountResult[i].associatedKeys[j].privileges = true;
-                } else {
-                    accountResult[i].associatedKeys[j].privileges = false;
-                }
+            accountResult[i].nonce = IAmbireAccount(account.addr).nonce();
+            // get key privilege information
+            for (uint j=0; j!=account.associatedKeys.length; j++) {
+                accountResult[i].associatedKeyPriviliges[j] = IAmbireAccount(account.addr).privileges(account.associatedKeys[j]);
             }
         }
         return accountResult;
