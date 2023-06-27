@@ -139,7 +139,7 @@ export default function usePortfolio({
     },
     tokens: []
   })
-  const [otherBalances, setOtherBalances] = useState([])
+  const [allBalances, setAllBalances] = useState([])
   const [tokens, setTokens] = useState([])
   const [protocols, setProtocols] = useState([])
   const [collectibles, setCollectibles] = useState([])
@@ -647,20 +647,18 @@ export default function usePortfolio({
       const balance = balanceByNetworks.find(({ network }) => network === currentNetwork)
       if (balance) {
         setBalance(balance)
-        setOtherBalances(
-          balanceByNetworks
-            .filter(({ network }) => network !== currentNetwork)
-            // When switching networks, the balances order is not persisted.
-            // This creates an annoying jump effect sometimes in the list
-            // of the positive other balances for the account. So always sort
-            // the other balances, to make sure their order in the list is
-            // the same on every network switch.
-            .sort((a, b) =>
-              networks.find(({ id }) => id === a.network)?.chainId <
-              networks.find(({ id }) => id === b.network)?.chainId
-                ? -1
-                : 1
-            )
+        // When switching networks, the balances order is not persisted.
+        // This creates an annoying jump effect sometimes in the list
+        // of the positive other balances for the account. So always sort
+        // the other balances, to make sure their order in the list is
+        // the same on every network switch.
+        setAllBalances(
+          balanceByNetworks.sort((a, b) =>
+            networks.find(({ id }) => id === a.network)?.chainId <
+            networks.find(({ id }) => id === b.network)?.chainId
+              ? -1
+              : 1
+          )
         )
       }
 
@@ -722,7 +720,7 @@ export default function usePortfolio({
 
   return {
     balance,
-    otherBalances,
+    allBalances,
     tokens,
     extraTokens,
     hiddenTokens,
