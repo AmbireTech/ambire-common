@@ -87,9 +87,9 @@ export class MainController {
   }
 
   private async load(): Promise<void> {
-    await Promise.all([
-      this.keystore.getKeys().then(keys => this.keys = keys),
-      this.storage.get('accounts', []).then(accs => this.accounts = accs)
+    [this.keys, this.accounts] = await Promise.all([
+      this.keystore.getKeys(),
+      this.storage.get('accounts', [])
     ])
   }
 
