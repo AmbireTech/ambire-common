@@ -23,6 +23,8 @@ let authKey: string
 let expectedAddr: string
 let accountPresets: any
 let privileges: PrivLevels[]
+
+const abiCoder = new ethers.AbiCoder()
 function randomString(len: number) {
   let result = ''
   const characters = 'abcdefghijklmnopqrstuvwxyz0123456789'
@@ -147,8 +149,7 @@ describe('account controller', () => {
         expect(res.success).toBeTruthy()
       })
       test('get identities from signer', async () => {
-        const signer = new ethers.Wallet(pk)
-        const signature = await signer.signMessage('get_identity_from_signer')
+        const signature = await new ethers.Wallet(pk).signMessage('get_identity_from_signer')
         const res = await accountController.getAccountsBySigner(signature)
         const newPrivs = accountPresets.privileges.map((el: any) => [el.addr, el.hash])
         expect(res.success).toBeTruthy()
@@ -162,6 +163,39 @@ describe('account controller', () => {
           bytecode: accountPresets.bytecode,
           privileges: newPrivs
         })
+      })
+      test('identity submit', async () => {
+        const { nonce } = await accountController.getAccountNonce(expectedAddr, 'ethereum')
+        // 0x942f9CE5D9a33a82F88D233AEb3292E680230348 is feeCollector
+        const txns = [
+          [expectedAddr, 0, '0x00'],
+          ['0x942f9CE5D9a33a82F88D233AEb3292E680230348', 4503599627000000, '0x00']
+        ]
+
+        const signer = { address: user }
+        const encoded = abiCoder.encode(
+          ['address', 'uint', 'uint', 'tuple(address, uint256, bytes)[]'],
+          [expectedAddr, 1, nonce, txns]
+        )
+        const hash = ethers.keccak256(encoded)
+        const signature = await new ethers.Wallet(pk).signMessage(hash)
+        const gasTankFee = null // { assetId: 1, value: 1 }
+
+        const args = { nonce, txns, gasLimit: 100000, signature, signer, gasTankFee }
+        const res = await accountController.submit(expectedAddr, 'ethereum', args)
+
+        console.log(res)
+        expect(res.success).toBeTruthy()
+        // TODO: more expects
+        // TODO: fix test/route
+      })
+      test('identity cancel', async () => {
+        const { nonce } = await accountController.getAccountNonce(expectedAddr, 'ethereum')
+        const args = { nonce }
+        const res = await accountController.cancel(expectedAddr, 'ethereum', args)
+
+        console.log(res)
+        expect(res.success).toBeTruthy()
       })
     })
   })

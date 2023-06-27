@@ -112,6 +112,34 @@ export class AccountController {
       throw new Error(`accountController: get identities from signer: ${result.errType}`)
     return result
   }
+
+  async submit(identity: string, network: string, args: any): Promise<any> {
+    const resp = await this.fetch(`${this.relayerUrl}/v2/identity/${identity}/${network}/submit`, {
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      method: 'POST',
+      body: JSON.stringify(args)
+    })
+    const result: any = await resp.json()
+    if (result.errType)
+      throw new Error(`accountController: get identities from signer: ${result.errType}`)
+    return result
+  }
+
+  async cancel(identity: string, network: string, args: any): Promise<any> {
+    const resp = await this.fetch(`${this.relayerUrl}/v2/identity/${identity}/${network}/cancel`, {
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      method: 'POST',
+      body: JSON.stringify(args)
+    })
+    const result: any = await resp.json()
+    if (result.errType)
+      throw new Error(`accountController: get identities from signer: ${result.errType}`)
+    return result
+  }
 }
 
 // modify
