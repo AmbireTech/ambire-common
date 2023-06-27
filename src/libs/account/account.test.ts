@@ -141,6 +141,7 @@ describe('account controller', () => {
         expect(res).toHaveProperty('nextNonMinedNonce', 0)
         expect(res).toHaveProperty('pendingBundle', null)
       })
+      // @TODO fix
       test('estimate', async () => {
         const txns = [[expectedAddr, '0x01', '0x00']]
         const signer = { address: expectedAddr }
@@ -164,6 +165,8 @@ describe('account controller', () => {
           privileges: newPrivs
         })
       })
+
+      // @TODO fix
       test('identity submit', async () => {
         const { nonce } = await accountController.getAccountNonce(expectedAddr, 'ethereum')
         // 0x942f9CE5D9a33a82F88D233AEb3292E680230348 is feeCollector
@@ -189,6 +192,8 @@ describe('account controller', () => {
         // TODO: more expects
         // TODO: fix test/route
       })
+
+      // @TODO fix
       test('identity cancel', async () => {
         const { nonce } = await accountController.getAccountNonce(expectedAddr, 'ethereum')
         const args = { nonce }

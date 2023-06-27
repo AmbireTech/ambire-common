@@ -122,8 +122,7 @@ export class AccountController {
       body: JSON.stringify(args)
     })
     const result: any = await resp.json()
-    if (result.errType)
-      throw new Error(`accountController: get identities from signer: ${result.errType}`)
+    if (result.errType) throw new Error(`accountController: submit: ${result.errType}`)
     return result
   }
 
@@ -136,8 +135,7 @@ export class AccountController {
       body: JSON.stringify(args)
     })
     const result: any = await resp.json()
-    if (result.errType)
-      throw new Error(`accountController: get identities from signer: ${result.errType}`)
+    if (result.errType) throw new Error(`accountController: cancel: ${result.errType}`)
     return result
   }
 }
