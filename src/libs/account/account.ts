@@ -1,5 +1,8 @@
 import { Interface, ethers } from 'ethers'
 import { PrivLevels } from 'libs/proxyDeploy/deploy'
+import { AccountOp } from 'libs/accountOp/accountOp'
+import { NetworkDescriptor } from 'interfaces/networkDescriptor'
+import { estimate } from '../estimate/estimate'
 import { Account } from '../../interfaces/account'
 // returns to, data
 export function getAccountDeployParams(account: Account): [string, string] {
@@ -16,9 +19,12 @@ export class AccountController {
 
   private relayerUrl: string
 
-  constructor(fetch: Function, relayerUrl: string) {
+  private provider: any
+
+  constructor(fetch: Function, relayerUrl: string, provider: any) {
     this.fetch = fetch
     this.relayerUrl = relayerUrl
+    this.provider = provider
   }
 
   async createAccount(
@@ -78,33 +84,6 @@ export class AccountController {
     return result
   }
 
-  async getAccountNonce(identity: string, network: string): Promise<any> {
-    const resp = await this.fetch(
-      `${this.relayerUrl}/v2/identity/${identity}/${network}/next-nonce`
-    )
-    const result: any = await resp.json()
-
-    if (result.errType) throw new Error(`accountController: get account nonce: ${result.errType}`)
-    return result
-  }
-
-  async estimate(identity: string, network: string, args: any): Promise<any> {
-    const resp = await this.fetch(
-      `${this.relayerUrl}/v2/identity/${identity}/${network}/estimate`,
-      {
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        method: 'POST',
-        body: JSON.stringify(args)
-      }
-    )
-    const result: any = await resp.json()
-
-    if (result.errType) throw new Error(`accountController: estimate txn: ${result.errType}`)
-    return result
-  }
-
   async getAccountsBySigner(signature: string): Promise<any> {
     const resp = await this.fetch(`${this.relayerUrl}/v2/account-by-signer/${signature}`)
     const result: any = await resp.json()
@@ -140,7 +119,7 @@ export class AccountController {
   }
 }
 
-// modify
+// estimate from estimator
 // privs
 // add signer
 // remove signer
