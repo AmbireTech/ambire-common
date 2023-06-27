@@ -63,20 +63,18 @@ describe('Portfolio Controller ', () => {
     const calls = [{ to: '0x18Ce9CF7156584CDffad05003410C3633EFD1ad0', value: BigInt(0), data }]
 
     return {
-      '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5': {
-        ethereum: [
-          {
-            accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
-            signingKeyAddr: '0x5Be214147EA1AE3653f289E17fE7Dc17A73AD175',
-            gasLimit: null,
-            gasFeePayment: null,
-            networkId: 'ethereum',
-            nonce,
-            signature: spoofSig,
-            calls
-          } as AccountOp
-        ]
-      }
+      ethereum: [
+        {
+          accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
+          signingKeyAddr: '0x5Be214147EA1AE3653f289E17fE7Dc17A73AD175',
+          gasLimit: null,
+          gasFeePayment: null,
+          networkId: 'ethereum',
+          nonce,
+          signature: spoofSig,
+          calls
+        } as AccountOp
+      ]
     }
   }
 
