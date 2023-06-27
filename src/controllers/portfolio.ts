@@ -58,8 +58,8 @@ export class PortfolioController {
     accounts: Account[],
     networks: NetworkDescriptor[],
     accountId: AccountId,
-    // account => network => AccountOp[]
-    accountOps?: { [key: string]: { [key: string]: AccountOp[] } },
+    // network => AccountOp
+    accountOps?: { [key: string]: AccountOp[] },
     opts?: {
       forceUpdate: boolean
     }
@@ -137,7 +137,7 @@ export class PortfolioController {
         }
         const portfolioLib = this.portfolioLibs.get(key)!
 
-        const currentAccountOps = accountOps?.[accountId]?.[network.id]
+        const currentAccountOps = accountOps?.[network.id]
         const simulatedAccountOps = pendingState[network.id]?.accountOps
 
         const forceUpdate =

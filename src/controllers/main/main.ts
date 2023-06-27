@@ -5,6 +5,7 @@ import { AccountOp } from '../../libs/accountOp/accountOp'
 import { TypedDataDomain, TypedDataField } from 'ethers'
 import { PortfolioController } from '../portfolio'
 import { Keystore, Key } from '../../libs/keystore/keystore'
+import { networks } from '../../consts/networks'
 
 // @TODO move to interfaces?
 export interface Call {
@@ -61,6 +62,8 @@ export class MainController {
   accounts: Account[] = []
   keys: Key[] = []
   selectedAccount: string | null = null
+  // @TODO: structure
+  settings: { networks: NetworkDescriptor[] }
 
   userRequests: UserRequest[] = []
   // The reason we use a map structure and not a flat array is:
@@ -71,6 +74,17 @@ export class MainController {
   accountOpsToBeConfirmed: { [key: string]: { [key: string]: AccountOp }} = {}
   // accountAddr => UniversalMessage[]
   messagesToBeSigned: { [key: string]: SignedMessage[] } = {}
+
+  constructor(storage: Storage) {
+    this.storage = storage
+    this.portfolio = new PortfolioController(storage)
+    // @TODO: KeystoreSigners
+    this.keystore = new Keystore(storage, {})
+    this.initialLoadPromise = this.load()
+    this.settings = { networks }
+    // Load userRequests from storage and emit that we have updated
+    // @TODO
+  }
 
   private async load(): Promise<void> {
     await Promise.all([
@@ -84,16 +98,6 @@ export class MainController {
     // if it's ready, this will execute in the same tick
     this.initialLoadPromise.then(() => isReady = true)
     return isReady
-  }
-
-  constructor(storage: Storage) {
-    this.storage = storage
-    this.portfolio = new PortfolioController(storage)
-    // @TODO: KeystoreSigners
-    this.keystore = new Keystore(storage, {})
-    this.initialLoadPromise = this.load()
-    // Load userRequests from storage and emit that we have updated
-    // @TODO
   }
 
   addUserRequest(req: UserRequest) {
@@ -118,9 +122,6 @@ export class MainController {
       }
       const accountOp = this.accountOpsToBeSigned[accountAddr][networkId]
       accountOp.calls.push({ ...action, fromUserRequestId: req.id })
-      // @TODO call an async function that calls the initial promise first
-      // this.portfolio.updateSelectedAccount([], networks, accountAddr, this.accountOpsToBeSigned)
-      // @TODO refresh the portfolio and the estimation
     } else {
       if (!this.messagesToBeSigned[accountAddr]) this.messagesToBeSigned[accountAddr] = []
       if (this.messagesToBeSigned[accountAddr].find(x => x.fromUserRequestId === req.id)) return
@@ -134,9 +135,29 @@ export class MainController {
     // @TODO fire update
   }
 
+  private async updateAccountOp(accountOp: AccountOp) {
+    await this.initialLoadPromise
+    await Promise.all([
+      this.portfolio.updateSelectedAccount(
+        this.accounts,
+        this.settings.networks,
+        accountOp.accountAddr,
+        Object.fromEntries(Object.entries(
+          this.accountOpsToBeSigned[accountOp.accountAddr])
+            .map(([networkId, accountOp]) => [networkId, [accountOp]])
+        )
+      )
+      // @TODO refresh the estimation
+    ])
+    // const provider = 
+  }
+
+  // when an accountOp is signed; should this be private and be called by
+  // the method that signs it?
   resolveAccountOp() {
   }
 
+  // when a message is signed; same comment applies: should this be private?
   resolveMessage() {
   }
 }
