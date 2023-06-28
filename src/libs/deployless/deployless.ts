@@ -95,7 +95,6 @@ export class Deployless {
     this.contractRuntimeCode = mapResponse(code)
   }
 
-  // @TODO: options need to be de-uglified
   async call(methodName: string, args: any[], opts: Partial<CallOptions> = {}): Promise<any> {
     opts = { ...defaultOptions, ...opts }
     const forceProxy = opts.mode === DeploylessMode.ProxyContract
