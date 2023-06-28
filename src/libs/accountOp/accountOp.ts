@@ -42,11 +42,15 @@ export interface AccountOp {
   signature: string | null
   // @TODO separate interface
   gasFeePayment: GasFeePayment | null
-  // @TODO: meta?
   // This is used when we have an account recovery to finalize before executing the AccountOp,
   // And we set this to the recovery finalization AccountOp; could be used in other scenarios too in the future,
   // for example account migration (from v1 QuickAcc to v2)
   accountOpToExecuteBefore: AccountOp | null
+  // This is fed into the humanizer to help visualize the accountOp
+  // This can contain info like the value of specific share tokens at the time of signing,
+  // or any other data that needs to otherwise be retrieved in an async manner and/or needs to be
+  // "remembered" at the time of signing in order to visualize history properly
+  humanizerMeta?: { [key: string]: any }
 }
 
 export function callToTuple(call: Call): [string, bigint, string] {
