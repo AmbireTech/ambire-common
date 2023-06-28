@@ -1,23 +1,15 @@
 import fetch, { Headers } from 'node-fetch'
 
-export enum RequestMethod {
-  GET = 'GET',
-  POST = 'POST',
-  PUT = 'PUT',
-  DELETE = 'DELETE',
-  PATCH = 'PATCH',
-  HEAD = 'HEAD',
-  OPTIONS = 'OPTIONS'
-}
-
 export async function relayerCall(
   url: string,
-  method: RequestMethod = RequestMethod.GET,
+  method: string = 'GET',
   body: any = null,
   headers: any = null
 ): Promise<any> {
-  if (!url) return { success: false, message: 'no path' }
-  if (body && [RequestMethod.GET, RequestMethod.DELETE, RequestMethod.HEAD].includes(method))
+  if (['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS'].includes(method))
+    return { success: false, message: 'bad method' }
+  if (!url) return { success: false, data: 'no path' }
+  if (body && ['GET', 'DELETE', 'HEAD'].includes(method))
     return { success: false, message: 'should not have a body' }
   const res = await fetch(url, {
     method,
@@ -39,12 +31,3 @@ export async function relayerCall(
     return { success: okStatus, data: text, status: res.status }
   }
 }
-
-// relayerCall('https://httpstat.us/404', RequestMethod.GET).then(console.log)
-// relayerCall('https://httpstat.us/200', RequestMethod.GET).then(console.log)
-// relayerCall('https://jsonplaceholder.typicode.com/posts/1', RequestMethod.GET).then(console.log)
-// relayerCall('https://jsonplaceholder.typicode.com/posts', RequestMethod.POST, {
-//   title: 'foo',
-//   body: 'bar',
-//   userId: 1
-// }).then(console.log)
