@@ -26,7 +26,7 @@ export async function relayerCall(
   try {
     const json = JSON.parse(text)
     const success = okStatus && json.success === true
-    return { success, data: JSON.parse(text), status: res.status }
+    return { success, data: json, status: res.status }
   } catch (e) {
     return { success: okStatus, data: text, status: res.status }
   }
