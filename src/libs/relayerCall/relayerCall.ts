@@ -55,11 +55,3 @@ export async function relayerCall(
     throw new RelayerError(res.message, { url: this.url, path, method, body, headers }, { res })
   return res
 }
-
-/*
-    const resp = await this.fetch(`${this.relayerUrl}/v2/identity/${identity}`)
-    const result: any = await resp.json()
-
-    if (result.errType) throw new Error(`accountController: get account: ${result.errType}`)
-    return result
-*/
