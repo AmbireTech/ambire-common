@@ -1,4 +1,4 @@
-import fetch, { Headers } from 'node-fetch'
+import fetch from 'node-fetch'
 
 export async function relayerCall(
   url: string,
