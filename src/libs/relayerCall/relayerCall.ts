@@ -1,19 +1,20 @@
 import fetch from 'node-fetch'
 
 export async function relayerCall(
-  url: string,
+  this: { url: string },
+  path: string,
   method: string = 'GET',
   body: any = null,
   headers: any = null
 ): Promise<any> {
   if (!['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS'].includes(method))
     return { success: false, message: 'bad method' }
-  if (!url) return { success: false, message: 'no url' }
+  if (!path || !this.url) return { success: false, message: 'no url or path' }
   if (body && ['GET', 'DELETE', 'HEAD'].includes(method))
     return { success: false, message: 'should not have a body' }
   // TODO join base url and path
   // TODO do with bind
-  const res = await fetch(url, {
+  const res = await fetch(this.url + path, {
     method,
     headers: {
       'Content-Type': 'application/json',
