@@ -6,8 +6,8 @@ import { AccountOp } from '../../libs/accountOp/accountOp'
 import { PortfolioController } from '../portfolio'
 import { Keystore, Key } from '../../libs/keystore/keystore'
 import { networks } from '../../consts/networks'
-import { getAccountInfo } from '../../libs/accountInfo/accountInfo'
 import EventEmitter from '../eventEmitter'
+import { getAccountState } from '../../libs/accountState/accountState'
 
 // @TODO move to interfaces/userRequest.ts?
 export interface Call {
@@ -61,6 +61,7 @@ export class MainController extends EventEmitter {
   private keystore: Keystore
 
   private initialLoadPromise: Promise<void>
+
   isReady: boolean = false
 
   // this is not private cause you're supposed to directly access it
@@ -113,19 +114,24 @@ export class MainController extends EventEmitter {
     this.isReady = true
   }
 
+  public get currentAccountStates(): AccountStates {
+    return this.accountStates
+  }
+
   private async getAccountsInfo(accounts: Account[]): Promise<AccountStates> {
-    // const accountsAddrs: AccountId[] = accounts.map((acc) => acc.addr)
     const result = await Promise.all(
       this.settings.networks.map((network: NetworkDescriptor) => {
         const provider = new JsonRpcProvider(network.rpcUrl)
-        return getAccountInfo(provider, network, accounts)
+        return getAccountState(provider, network, accounts)
       })
     )
 
-    const states = result.map((res: AccountOnchainState[], index: number) => {
+    const states = accounts.map((acc: Account, accIndex: number) => {
       return [
-        this.settings.networks[index].id,
-        res.map((accInfo) => [accInfo.accountAddr, accInfo])
+        acc.addr,
+        this.settings.networks.map((network: NetworkDescriptor, netIndex: number) => {
+          return [network.id, result[netIndex][accIndex]]
+        })
       ]
     })
 
@@ -176,6 +182,10 @@ export class MainController extends EventEmitter {
     // it knows which ones are authenticated, and it can generate it's own spoofSig
     // @TODO
     // accountOp.signature = `${}03`
+
+    // TODO check if needed data in accountStates are available
+    // this.accountStates[accountOp.accountAddr][accountOp.networkId].
+
     await Promise.all([
       // NOTE: we are not emitting an update here because the portfolio controller will do that
       this.portfolio.updateSelectedAccount(

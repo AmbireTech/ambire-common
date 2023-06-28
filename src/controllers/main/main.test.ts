@@ -60,5 +60,10 @@ describe('Main Controller ', () => {
   storage.set('accounts', accounts)
   test('Init controller', async () => {
     const controller = new MainController(storage)
+    setInterval(() => {
+      const states = controller.currentAccountStates
+      console.log(states)
+    }, 1000)
+    // expect(states).to
   })
 })
