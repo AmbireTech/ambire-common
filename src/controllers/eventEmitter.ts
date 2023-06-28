@@ -1,7 +1,7 @@
 export default class EventEmitter {
   private callbacks: (() => void)[] = []
 
-  private update() {
+  private emitUpdate() {
     for (const cb of this.callbacks) cb()
   }
 
