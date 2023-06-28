@@ -24,6 +24,6 @@ export interface AccountOnchainState {
   accountAddr: string
   isDeployed: boolean
   nonce: number
-  associatedKeys: string[]
+  associatedKeys: { [key: string]: string }
   deployError: boolean
 }

@@ -26,11 +26,16 @@ export async function getAccountInfo(
   })
 
   const result: AccountOnchainState[] = accountInfoResult.map((acc: any, index: number) => {
+    const associatedKeys = acc.associatedKeyPriviliges.map(
+      (privilege: string, keyIndex: number) => {
+        return [accounts[index].associatedKeys[keyIndex], privilege]
+      }
+    )
     return {
       accountAddr: accounts[index].addr,
       nonce: parseInt(acc.nonce, 10),
       isDeployed: acc.isDeployed,
-      associatedKeys: acc.associatedKeyPriviliges,
+      associatedKeys: Object.fromEntries(associatedKeys),
       deployError: !(acc.associatedKeyPriviliges.length > 0)
     }
   })

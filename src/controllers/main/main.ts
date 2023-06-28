@@ -1,4 +1,5 @@
 import { TypedDataDomain, TypedDataField, JsonRpcProvider } from 'ethers'
+import { BinaryOperatorToken } from 'typescript'
 import { Storage } from '../../interfaces/storage'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
 import { Account, AccountId, AccountOnchainState } from '../../interfaces/account'
@@ -111,8 +112,11 @@ export class MainController {
     this.isReady = true
   }
 
+  public get currentAccountStates(): AccountStates {
+    return this.accountStates
+  }
+
   private async getAccountsInfo(accounts: Account[]): Promise<AccountStates> {
-    // const accountsAddrs: AccountId[] = accounts.map((acc) => acc.addr)
     const result = await Promise.all(
       this.settings.networks.map((network: NetworkDescriptor) => {
         const provider = new JsonRpcProvider(network.rpcUrl)
@@ -120,10 +124,12 @@ export class MainController {
       })
     )
 
-    const states = result.map((res: AccountOnchainState[], index: number) => {
+    const states = accounts.map((acc: Account, accIndex: number) => {
       return [
-        this.settings.networks[index].id,
-        res.map((accInfo) => [accInfo.accountAddr, accInfo])
+        acc.addr,
+        this.settings.networks.map((network: NetworkDescriptor, netIndex: number) => {
+          return [network.id, result[netIndex][accIndex]]
+        })
       ]
     })
 
