@@ -148,8 +148,9 @@ export class MainController {
           signingKeyAddr: null,
           gasLimit: null,
           gasFeePayment: null,
-          // @TODO: from monitored nonce? or use the estimate to determine?
+          // @TODO: use the AccountInfo to determine; alternatively, can we use the Estimator and not need a nonce before that?
           nonce: null,
+          // this will be set to a spoofSig in updateAccountOp
           signature: null,
           // @TODO from pending recoveries
           accountOpToExecuteBefore: null,
@@ -158,6 +159,7 @@ export class MainController {
       }
       const accountOp = this.accountOpsToBeSigned[accountAddr][networkId]
       accountOp.calls.push({ ...action, fromUserRequestId: req.id })
+      updateAccountOp(accountOp)
     } else {
       if (!this.messagesToBeSigned[accountAddr]) this.messagesToBeSigned[accountAddr] = []
       if (this.messagesToBeSigned[accountAddr].find((x) => x.fromUserRequestId === req.id)) return
@@ -168,12 +170,18 @@ export class MainController {
       })
       // @TODO
     }
-    // @TODO fire update
+    // @TODO emit update
   }
 
   private async updateAccountOp(accountOp: AccountOp) {
     await this.initialLoadPromise
+    // new accountOps should have spoof signatures so that they can be easily simulated
+    // this is not used by the Estimator, because it iterates through all associatedKeys and
+    // it knows which ones are authenticated, and it can generate it's own spoofSig
+    // @TODO
+    // accountOp.signature = `${}03`
     await Promise.all([
+      // NOTE: we are not emitting an update here because the portfolio controller will do that
       this.portfolio.updateSelectedAccount(
         this.accounts,
         this.settings.networks,
