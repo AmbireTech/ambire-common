@@ -7,6 +7,7 @@ import { PortfolioController } from '../portfolio'
 import { Keystore, Key } from '../../libs/keystore/keystore'
 import { networks } from '../../consts/networks'
 import { getAccountInfo } from '../../libs/accountInfo/accountInfo'
+import EventEmitter from '../eventEmitter'
 
 // @TODO move to interfaces/userRequest.ts?
 export interface Call {
@@ -54,7 +55,7 @@ export type AccountStates = {
   }
 }
 
-export class MainController {
+export class MainController extends EventEmitter {
   private storage: Storage
 
   private keystore: Keystore
@@ -92,6 +93,7 @@ export class MainController {
   messagesToBeSigned: { [key: string]: SignedMessage[] } = {}
 
   constructor(storage: Storage) {
+    super()
     this.storage = storage
     this.portfolio = new PortfolioController(storage)
     // @TODO: KeystoreSigners
@@ -153,7 +155,7 @@ export class MainController {
       }
       const accountOp = this.accountOpsToBeSigned[accountAddr][networkId]
       accountOp.calls.push({ ...action, fromUserRequestId: req.id })
-      updateAccountOp(accountOp)
+      this.updateAccountOp(accountOp)
     } else {
       if (!this.messagesToBeSigned[accountAddr]) this.messagesToBeSigned[accountAddr] = []
       if (this.messagesToBeSigned[accountAddr].find((x) => x.fromUserRequestId === req.id)) return
