@@ -8,7 +8,7 @@ export async function relayerCall(
 ): Promise<any> {
   if (['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS'].includes(method))
     return { success: false, message: 'bad method' }
-  if (!url) return { success: false, data: 'no path' }
+  if (!url) return { success: false, message: 'no url' }
   if (body && ['GET', 'DELETE', 'HEAD'].includes(method))
     return { success: false, message: 'should not have a body' }
   const res = await fetch(url, {
