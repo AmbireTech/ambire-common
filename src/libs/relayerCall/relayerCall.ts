@@ -1,20 +1,30 @@
 import fetch from 'node-fetch'
 
-export async function relayerCall(
-  this: { url: string },
-  path: string,
+class RelayerError extends Error {
+  public input: any
+
+  public output: any
+
+  constructor(message: string, input: any, output: any) {
+    super(`relayer call error: ${message}`)
+    this.input = input
+    this.output = output
+  }
+}
+
+export async function relayerCallUncaught(
+  url: string,
   method: string = 'GET',
   body: any = null,
   headers: any = null
-): Promise<any> {
+) {
   if (!['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS'].includes(method))
     return { success: false, message: 'bad method' }
-  if (!path || !this.url) return { success: false, message: 'no url or path' }
+  if (!url) return { success: false, message: 'no url or path' }
   if (body && ['GET', 'DELETE', 'HEAD'].includes(method))
     return { success: false, message: 'should not have a body' }
-  // TODO join base url and path
-  // TODO do with bind
-  const res = await fetch(this.url + path, {
+
+  const res = await fetch(url, {
     method,
     headers: {
       'Content-Type': 'application/json',
@@ -32,3 +42,24 @@ export async function relayerCall(
     return { success: false, data: text, status: res.status, message: 'no json in res' }
   }
 }
+
+export async function relayerCall(
+  this: { url: string },
+  path: string,
+  method: string = 'GET',
+  body: any = null,
+  headers: any = null
+): Promise<any> {
+  const res = await relayerCallUncaught(this.url + path, method, body, headers)
+  if (!res.success)
+    throw new RelayerError(res.message, { url: this.url, path, method, body, headers }, { res })
+  return res
+}
+
+/*
+    const resp = await this.fetch(`${this.relayerUrl}/v2/identity/${identity}`)
+    const result: any = await resp.json()
+
+    if (result.errType) throw new Error(`accountController: get account: ${result.errType}`)
+    return result
+*/

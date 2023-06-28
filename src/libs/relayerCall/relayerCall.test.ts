@@ -1,18 +1,14 @@
 import { describe, expect, test } from '@jest/globals'
-import { relayerCall } from './relayerCall'
+import { relayerCallUncaught } from './relayerCall'
 
-describe('relayerCall tests', () => {
+describe('relayerCallUncaught tests', () => {
   test('GET, pass no body,200', async () => {
-    const relayerOptions = { url: 'https://httpstat.us' }
-    const callFunc = relayerCall.bind(relayerOptions)
-    const res = await callFunc('/200')
+    const res = await relayerCallUncaught('https://httpstat.us/200')
 
     expect(res).toEqual({ success: false, data: '200 OK', status: 200, message: 'no json in res' })
   })
   test('GET, pass no body,404', async () => {
-    const relayerOptions = { url: 'https://httpstat.us' }
-    const callFunc = relayerCall.bind(relayerOptions)
-    const res = await callFunc('/404')
+    const res = await relayerCallUncaught('https://httpstat.us/404')
 
     expect(res).toEqual({
       success: false,
@@ -22,9 +18,7 @@ describe('relayerCall tests', () => {
     })
   })
   test('GET, pass no body, get body', async () => {
-    const relayerOptions = { url: 'https://jsonplaceholder.typicode.com' }
-    const callFunc = relayerCall.bind(relayerOptions)
-    const res = await callFunc('/posts/1')
+    const res = await relayerCallUncaught('https://jsonplaceholder.typicode.com/posts/1')
 
     expect(res).toEqual({
       // should have success if from relayer
@@ -45,9 +39,11 @@ describe('relayerCall tests', () => {
       body: 'bar',
       userId: 1
     }
-    const relayerOptions = { url: 'https://jsonplaceholder.typicode.com' }
-    const getPosts = relayerCall.bind(relayerOptions)
-    const res = await getPosts('/posts', 'POST', body)
+    const res = await relayerCallUncaught(
+      'https://jsonplaceholder.typicode.com/posts',
+      'POST',
+      body
+    )
     expect(res).toHaveProperty('title', body.title)
     expect(res).toHaveProperty('body', body.body)
     expect(res).toHaveProperty('userId', body.userId)
