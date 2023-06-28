@@ -60,6 +60,7 @@ export class MainController {
   private keystore: Keystore
 
   private initialLoadPromise: Promise<void>
+  isReady: boolean = false
 
   // this is not private cause you're supposed to directly access it
   portfolio: PortfolioController
@@ -107,13 +108,7 @@ export class MainController {
       this.storage.get('accounts', [])
     ])
     this.accountStates = await this.getAccountsInfo(this.accounts)
-  }
-
-  public get isReady(): boolean {
-    let isReady = false
-    // if it's ready, this will execute in the same tick
-    this.initialLoadPromise.then(() => (isReady = true))
-    return isReady
+    this.isReady = true
   }
 
   private async getAccountsInfo(accounts: Account[]): Promise<AccountStates> {
