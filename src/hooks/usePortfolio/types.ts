@@ -72,7 +72,7 @@ export type UsePortfolioProps = {
 
 export type UsePortfolioReturnType = {
   balance: Balance
-  otherBalances: Balance[]
+  allBalances: Balance[]
   tokens: Token[]
   protocols: Protocols
   extraTokens: Token[]
