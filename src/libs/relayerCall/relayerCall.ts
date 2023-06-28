@@ -37,6 +37,11 @@ export async function relayerCallUncaught(
 
   try {
     const json = JSON.parse(text)
+    if (!Object.keys(json).includes('success')) {
+      if (res.status < 300 && res.status >= 200)
+        return { success: true, ...json, status: res.status }
+      return { success: false, ...json, status: res.status }
+    }
     return { ...json, status: res.status }
   } catch (e) {
     return { success: false, data: text, status: res.status, message: 'no json in res' }
