@@ -5,15 +5,15 @@ import { fromDescriptor } from '../deployless/deployless'
 import { getAccountDeployParams } from '../account/account'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { Account, AccountOnchainState } from '../../interfaces/account'
-import accountInfo from './accountInfo.json'
+import accountState from './accountStateDeployless.json'
 
-export async function getAccountInfo(
+export async function getAccountState(
   provider: Provider,
   network: NetworkDescriptor,
   accounts: Account[],
   blockTag: string | number = 'latest'
 ): Promise<AccountOnchainState[]> {
-  const deploylessAccountInfo = fromDescriptor(provider, accountInfo, !network.rpcNoStateOverride)
+  const deploylessAccountState = fromDescriptor(provider, accountState, !network.rpcNoStateOverride)
 
   const args = accounts.map((account) => [
     account.addr,
@@ -21,11 +21,11 @@ export async function getAccountInfo(
     ...getAccountDeployParams(account)
   ])
 
-  const [accountInfoResult] = await deploylessAccountInfo.call('getAccountsInfo', [args], {
+  const [accountStateResult] = await deploylessAccountState.call('getAccountsState', [args], {
     blockTag
   })
 
-  const result: AccountOnchainState[] = accountInfoResult.map((acc: any, index: number) => {
+  const result: AccountOnchainState[] = accountStateResult.map((acc: any, index: number) => {
     const associatedKeys = acc.associatedKeyPriviliges.map(
       (privilege: string, keyIndex: number) => {
         return [accounts[index].associatedKeys[keyIndex], privilege]
@@ -73,6 +73,6 @@ export async function getAccountInfo(
 //   }
 // }
 
-// getAccountInfo(provider, ethereum, [account, notDeployedAccount])
+// getAccountState(provider, ethereum, [account, notDeployedAccount])
 //   .then((res: any) => console.log(JSON.stringify(res, null, 2)))
 //   .catch((e) => console.error('caught', e))

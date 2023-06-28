@@ -17,7 +17,7 @@ struct AccountInfo {
 }
 
 contract AmbireAccountInfo {
-    function getAccountsInfo(AccountInput[] memory accounts) external returns (AccountInfo[] memory accountResult) {
+    function getAccountsState(AccountInput[] memory accounts) external returns (AccountInfo[] memory accountResult) {
         accountResult = new AccountInfo[](accounts.length);
         for (uint i=0; i!=accounts.length; i++) {
             AccountInput memory account = accounts[i];
