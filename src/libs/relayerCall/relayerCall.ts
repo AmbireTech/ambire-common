@@ -29,11 +29,14 @@ export async function relayerCall(
   })
 
   const text = await res.text()
-  const success = res.status >= 200 && res.status < 300
+
+  const okStatus = res.status >= 200 && res.status < 300
   try {
+    const json = JSON.parse(text)
+    const success = okStatus && json.success === true
     return { success, data: JSON.parse(text), status: res.status }
   } catch (e) {
-    return { success, data: text, status: res.status }
+    return { success: okStatus, data: text, status: res.status }
   }
 }
 
