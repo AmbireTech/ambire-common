@@ -38,10 +38,6 @@ contract Estimation {
     FeeTokenOutcome[] feeTokenOutcomes;
     bytes32[] associatedKeyPrivileges;
     uint[] nativeAssetBalances;
-    // This is not really relevant when it comes to how much an accountOp
-    // would cost (that would be `deployment.gasUsed + accountOpToExecuteBefore.gasUsed + op.gasUsed`)
-    // ...but we still need it in order to compare with the same call but through eth_estimateGas, to calculate the exact gas refund
-    uint gasUsed;
   }
 
   function makeSpoofSignature(address key) internal pure returns (bytes memory spoofSig) {
@@ -63,10 +59,6 @@ contract Estimation {
     address relayer,
     address[] memory checkNativeAssetOn
   ) external returns (EstimationOutcome memory outcome) {
-    // We set this to the initial gasleft so that we can deduct the gasleft at the end to find the used gas
-    // not completely accurate cause calldata and arg parsing doesn't go into this `gasUsed`
-    outcome.gasUsed = gasleft();
-
     // This has two purposes: 1) when we're about to send a txn via an EOA, we need to know the native asset balances
     // 2) sometimes we need to check the balance of the simulation `from` addr in order to calculate
     // txn fee anomalies (like in Optimism, paying the L1 calldata fee)
@@ -98,8 +90,6 @@ contract Estimation {
       }
       require(isOk, "ANTI_BRICKING_FAILED");
     }
-
-    outcome.gasUsed -= gasleft();
   }
 
   function simulateDeployment(
