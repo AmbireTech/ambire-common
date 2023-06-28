@@ -22,12 +22,10 @@ export async function relayerCall(
 
   const text = await res.text()
 
-  const okStatus = res.status >= 200 && res.status < 300
   try {
     const json = JSON.parse(text)
-    const success = okStatus && json.success
-    return { success, data: json, status: res.status }
+    return { ...json, status: res.status }
   } catch (e) {
-    return { success: okStatus, data: text, status: res.status }
+    return { success: false, data: text, status: res.status, message: 'no json in res' }
   }
 }
