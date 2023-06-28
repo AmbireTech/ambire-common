@@ -1,3 +1,5 @@
+/* eslint-disable no-prototype-builtins */
+
 import fetch from 'node-fetch'
 
 class RelayerError extends Error {
@@ -34,15 +36,13 @@ export async function relayerCallUncaught(
   })
 
   const text = await res.text()
-
+  const isStatusOk = res.status < 300 && res.status >= 200
   try {
     const json = JSON.parse(text)
-    if (!Object.keys(json).includes('success')) {
-      if (res.status < 300 && res.status >= 200)
-        return { success: true, ...json, status: res.status }
-      return { success: false, ...json, status: res.status }
+    if (!json.hasOwnProperty('success')) {
+      return { success: isStatusOk, ...json, status: res.status }
     }
-    return { ...json, status: res.status }
+    return { ...json, success: json.success && isStatusOk, status: res.status }
   } catch (e) {
     return { success: false, data: text, status: res.status, message: 'no json in res' }
   }
