@@ -11,6 +11,8 @@ export async function relayerCall(
   if (!url) return { success: false, message: 'no url' }
   if (body && ['GET', 'DELETE', 'HEAD'].includes(method))
     return { success: false, message: 'should not have a body' }
+  // TODO join base url and path
+  // TODO do with bind
   const res = await fetch(url, {
     method,
     headers: {
