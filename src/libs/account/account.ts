@@ -2,6 +2,7 @@ import { Interface, ethers } from 'ethers'
 import { PrivLevels } from 'libs/proxyDeploy/deploy'
 import { AccountOp } from 'libs/accountOp/accountOp'
 import { NetworkDescriptor } from 'interfaces/networkDescriptor'
+import { relayerCall } from '../relayerCall/relayerCall'
 import { estimate } from '../estimate/estimate'
 import { Account } from '../../interfaces/account'
 // returns to, data
@@ -21,10 +22,13 @@ export class AccountController {
 
   private provider: any
 
+  private callRelayer: Function
+
   constructor(fetch: Function, relayerUrl: string, provider: any) {
     this.fetch = fetch
     this.relayerUrl = relayerUrl
     this.provider = provider
+    this.callRelayer = relayerCall.bind({ url: relayerUrl })
   }
 
   async createAccount(
@@ -45,77 +49,31 @@ export class AccountController {
       email: emailArgs.email,
       magicLinkKey: emailArgs.authKey
     }
-    const resp = await this.fetch(`${this.relayerUrl}/v2/identity/${expectedAddr}`, {
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      method: 'POST',
-      body: JSON.stringify(args)
-    })
-    const result: any = await resp.json()
-    if (!result.success) return `accountController: create account: ${result.message}`
-    return result
+    return this.callRelayer(`/v2/identity/${expectedAddr}`, 'POST', args)
   }
 
   async getAccount(identity: string): Promise<any> {
-    const resp = await this.fetch(`${this.relayerUrl}/v2/identity/${identity}`)
-    const result: any = await resp.json()
-
-    if (result.errType) throw new Error(`accountController: get account: ${result.errType}`)
-    return result
+    return this.callRelayer(`/v2/identity/${identity}`)
   }
 
   async getAccountsByEmail(email: string, authKey: string): Promise<any> {
-    const resp = await this.fetch(`${this.relayerUrl}/v2/identity/by-email/${email}/${authKey}`)
-    const result: any = await resp.json()
-
-    if (result.errType)
-      throw new Error(`accountController: get account by email: ${result.errType}`)
-    return result
+    return this.callRelayer(`/v2/identity/by-email/${email}/${authKey}`)
   }
 
   async getPrivileges(identity: string, network: string): Promise<any> {
-    const resp = await this.fetch(
-      `${this.relayerUrl}/v2/identity/${identity}/${network}/privileges`
-    )
-    const result: any = await resp.json()
-
-    if (result.errType) throw new Error(`accountController: get priviliges: ${result.errType}`)
-    return result
+    return this.callRelayer(`/v2/identity/${identity}/${network}/privileges`)
   }
 
   async getAccountsBySigner(signature: string): Promise<any> {
-    const resp = await this.fetch(`${this.relayerUrl}/v2/account-by-signer/${signature}`)
-    const result: any = await resp.json()
-    if (result.errType)
-      throw new Error(`accountController: get identities from signer: ${result.errType}`)
-    return result
+    return this.callRelayer(`/v2/account-by-signer/${signature}`)
   }
 
   async submit(identity: string, network: string, args: any): Promise<any> {
-    const resp = await this.fetch(`${this.relayerUrl}/v2/identity/${identity}/${network}/submit`, {
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      method: 'POST',
-      body: JSON.stringify(args)
-    })
-    const result: any = await resp.json()
-    if (result.errType) throw new Error(`accountController: submit: ${result.errType}`)
-    return result
+    return this.callRelayer(`/v2/identity/${identity}/${network}/submit`, 'POST', args)
   }
 
   async cancel(identity: string, network: string, args: any): Promise<any> {
-    const resp = await this.fetch(`${this.relayerUrl}/v2/identity/${identity}/${network}/cancel`, {
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      method: 'POST',
-      body: JSON.stringify(args)
-    })
-    const result: any = await resp.json()
-    if (result.errType) throw new Error(`accountController: cancel: ${result.errType}`)
-    return result
+    return this.callRelayer(`/v2/identity/${identity}/${network}/cancel`, 'POST', args)
   }
 }
 

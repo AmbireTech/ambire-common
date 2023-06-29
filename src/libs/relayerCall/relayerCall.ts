@@ -2,7 +2,7 @@
 
 import fetch from 'node-fetch'
 
-class RelayerError extends Error {
+export class RelayerError extends Error {
   public input: any
 
   public output: any
