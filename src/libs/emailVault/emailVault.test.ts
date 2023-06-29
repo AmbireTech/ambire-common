@@ -16,7 +16,7 @@ let email2: String
 const relayerUrl = 'http://localhost:1934'
 
 const emailVault = new EmailVault(fetch, relayerUrl)
-const errorPrefix = 'elayer call error:'
+const errorPrefix = 'relayer call error:'
 let authKey: String
 let authSecret: String // this will not be return in prod mode
 let recoveryKey: String
