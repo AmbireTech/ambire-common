@@ -16,17 +16,11 @@ export function getAccountDeployParams(account: Account): [string, string] {
 }
 
 export class AccountController {
-  private fetch: Function
-
-  private relayerUrl: string
-
   private provider: any
 
   private callRelayer: Function
 
-  constructor(fetch: Function, relayerUrl: string, provider: any) {
-    this.fetch = fetch
-    this.relayerUrl = relayerUrl
+  constructor(relayerUrl: string, provider: any) {
     this.provider = provider
     this.callRelayer = relayerCall.bind({ url: relayerUrl })
   }

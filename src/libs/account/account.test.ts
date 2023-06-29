@@ -20,7 +20,7 @@ const params = {
   ]
 }
 const provider = MockProvider.init(params)
-const accountController = new AccountController(fetch, relayerUrl, provider)
+const accountController = new AccountController(relayerUrl, provider)
 const baseIdentityAddr = '0x2A2b85EB1054d6f0c6c2E37dA05eD3E5feA684EF'
 const emailVault = new EmailVault(fetch, relayerUrl)
 let user: string
