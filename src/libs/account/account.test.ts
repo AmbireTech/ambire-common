@@ -154,7 +154,7 @@ describe('account controller', () => {
 
       test('get identities from signer', async () => {
         const signature = await new ethers.Wallet(pk).signMessage('get_identity_from_signer')
-        const res = await accountController.getAccountsBySigner(signature)
+        const res = await accountController.getAccountsByKey(signature)
         const newPrivs = accountPresets.privileges.map((el: any) => [el.addr, el.hash])
         expect(res.success).toBeTruthy()
         // .toEqual instead of .toBE
