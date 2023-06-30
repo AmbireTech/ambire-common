@@ -59,7 +59,7 @@ export class AccountController {
   }
 
   async getAccountsByKey(signature: string): Promise<any> {
-    return this.callRelayer(`/v2/account-by-signer/${signature}`)
+    return this.callRelayer(`/v2/account-by-key/${signature}`)
   }
 
   async submit(identity: string, network: string, args: any): Promise<any> {
