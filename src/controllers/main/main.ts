@@ -8,6 +8,7 @@ import { Keystore, Key } from '../../libs/keystore/keystore'
 import { networks } from '../../consts/networks'
 import EventEmitter from '../eventEmitter'
 import { getAccountState } from '../../libs/accountState/accountState'
+import { estimate } from '../../libs/estimate/estimate'
 
 // @TODO move to interfaces/userRequest.ts?
 export interface Call {
@@ -110,6 +111,7 @@ export class MainController extends EventEmitter {
       this.keystore.getKeys(),
       this.storage.get('accounts', [])
     ])
+    // @TODO reload those
     this.accountStates = await this.getAccountsInfo(this.accounts)
     this.isReady = true
   }
@@ -121,6 +123,7 @@ export class MainController extends EventEmitter {
   private async getAccountsInfo(accounts: Account[]): Promise<AccountStates> {
     const result = await Promise.all(
       this.settings.networks.map((network: NetworkDescriptor) => {
+        // @TODO cache provider
         const provider = new JsonRpcProvider(network.rpcUrl)
         return getAccountState(provider, network, accounts)
       })
@@ -141,6 +144,7 @@ export class MainController extends EventEmitter {
   addUserRequest(req: UserRequest) {
     this.userRequests.push(req)
     const { action, accountAddr, networkId } = req
+    if (!this.settings.networks.find(x => x.id === networkId)) throw new Error(`addUserRequest: ${networkId}: network does not exist`)
     if (action.kind === 'call') {
       if (!this.accountOpsToBeSigned[accountAddr]) this.accountOpsToBeSigned[accountAddr] = {}
       if (!this.accountOpsToBeSigned[accountAddr][networkId]) {
@@ -185,8 +189,13 @@ export class MainController extends EventEmitter {
 
     // TODO check if needed data in accountStates are available
     // this.accountStates[accountOp.accountAddr][accountOp.networkId].
-
-    await Promise.all([
+    const account = this.accounts.find(x => x.addr = accountOp.accountAddr)
+    if (!account) throw new Error(`updateAccountOp: ${accountOp.accountAddr}: account does not exist`)
+    const network = this.settings.networks.find(x => x.id === accountOp.networkId)
+    if (!network) throw new Error(`updateAccountOp: ${accountOp.networkId}: network does not exist`)
+    // @TODO cache providers
+    const provider = new JsonRpcProvider(network.rpcUrl)
+    const [, estimation] = await Promise.all([
       // NOTE: we are not emitting an update here because the portfolio controller will do that
       this.portfolio.updateSelectedAccount(
         this.accounts,
@@ -197,10 +206,11 @@ export class MainController extends EventEmitter {
             ([networkId, accountOp]) => [networkId, [accountOp]]
           )
         )
-      )
+      ),
+      estimate(provider, network, account, accountOp)
       // @TODO refresh the estimation
     ])
-    // const provider =
+    console.log(estimation)
   }
 
   // when an accountOp is signed; should this be private and be called by
