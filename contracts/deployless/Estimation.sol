@@ -79,7 +79,7 @@ contract Estimation {
     // NOTE: if we don't have a preExecute accountOp, .success will still be false, but
     // the estimate lib only cares about the final success (outcome.op.success)
     if (outcome.deployment.success && preExecute.calls.length != 0) {
-      outcome.accountOpToExecuteBefore = simulateSigned(op);
+      outcome.accountOpToExecuteBefore = simulateSigned(preExecute);
     }
     if (outcome.deployment.success && (preExecute.calls.length == 0 || outcome.accountOpToExecuteBefore.success)) {
       bytes memory spoofSig;
@@ -123,7 +123,7 @@ contract Estimation {
     for (uint i=0; i!=associatedKeys.length; i++) {
       address key = associatedKeys[i];
       bytes32 value = op.account.privileges(key);
-      associatedKeyPrivileges[i] = value; 
+      associatedKeyPrivileges[i] = value;
       if (value != bytes32(0)) {
         if (spoofSig.length == 0) spoofSig = makeSpoofSignature(key);
       }
