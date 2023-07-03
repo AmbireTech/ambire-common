@@ -27,8 +27,8 @@ const keyBackup: String = JSON.stringify({ a: 1 })
 const keyStoreSecret = 'keyStoreSecretHere'
 
 const initEmailVaultTest = async () => {
-  email = `yosif+${Wallet.createRandom().address.slice(12, 20)}@ambire.com`
-  email2 = `yosif+${Wallet.createRandom().address.slice(12, 20)}@ambire.com`
+  email = `yosif+${Wallet.createRandom().address.slice(12, 20)}@ambire.com`.toLowerCase()
+  email2 = `yosif+${Wallet.createRandom().address.slice(12, 20)}@ambire.com`.toLowerCase()
   const keys1 = await requestMagicLink(email, relayerUrl, fetch)
   authKey = keys1.key
   authSecret = keys1.secret
@@ -41,7 +41,7 @@ const initEmailVaultTest = async () => {
 describe('Email vault', () => {
   describe('positive tests', () => {
     beforeAll(async () => {
-      email = `yosif+${Wallet.createRandom().address.slice(12, 20)}@ambire.com`
+      email = `yosif+${Wallet.createRandom().address.slice(12, 20)}@ambire.com`.toLowerCase()
       const result = await requestMagicLink(email, relayerUrl, fetch)
       authKey = result.key
       authSecret = result.secret
@@ -83,6 +83,18 @@ describe('Email vault', () => {
     test('add keyBackup', async () => {
       const success = await emailVault.addKeyBackup(email, authKey, recoveryKey, keyBackup)
       expect(success).toBeTruthy()
+    })
+
+    test('getEmailVau;tInfo', async () => {
+      const res = await emailVault.getInfo(email, authKey)
+      expect(res).toHaveProperty('_id', email)
+      expect(res.secrets.length).toBe(3)
+      expect(res.secrets[0].type).toBe('recoveryKey')
+      expect(res.secrets[1].type).toBe('keyStore')
+      expect(res.secrets[2].type).toBe('keyBackup')
+      res.secrets.forEach((s) => {
+        expect(s).toHaveProperty('key')
+      })
     })
   })
 

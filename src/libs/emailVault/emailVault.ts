@@ -15,6 +15,17 @@ export interface VaultEntry {
   type: String
 }
 
+export interface Secret {
+  key: String
+  type: String
+}
+
+export interface EmailVaultInfo {
+  _id: String
+  secrets: Secret[]
+  version: number
+}
+
 export class EmailVault {
   private callRelayer: Function
 
@@ -80,5 +91,9 @@ export class EmailVault {
     return (
       await this.callRelayer(`/email-vault/retrieveKeyBackup/${email}/${keyAddress}/${authKey}`)
     ).data
+  }
+
+  async getInfo(email: String, authKey: String): Promise<EmailVaultInfo> {
+    return (await this.callRelayer(`/email-vault/emailVaultInfo/${email}/${authKey}`)).data
   }
 }
