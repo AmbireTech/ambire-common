@@ -125,7 +125,7 @@ describe('estimate', () => {
         gasFeePayment: null,
         networkId: 'ethereum',
         // @TODO - read it from Contract
-        nonce: 357,
+        nonce: 360,
         signature: spoofSig,
         calls: [{ to, value: BigInt(0), data }],
         accountOpToExecuteBefore: null

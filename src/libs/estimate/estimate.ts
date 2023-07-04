@@ -58,14 +58,14 @@ export async function estimate(
   ]
 
   // eslint-disable-next-line prefer-const
-  let [[, , , , feeTokenOutcomes, , nativeAssetBalances, gasUsed]] = await deploylessEstimator.call(
-    'estimate',
-    args,
-    {
-      from: blockFrom,
-      blockTag
-    }
-  )
+  const [
+    [deployment, accountOpToExecuteBefore, accountOp, , feeTokenOutcomes, , nativeAssetBalances]
+  ] = await deploylessEstimator.call('estimate', args, {
+    from: blockFrom,
+    blockTag
+  })
+
+  let gasUsed = deployment.gasUsed + accountOpToExecuteBefore.gasUsed + accountOp.gasUsed
 
   if (opts?.calculateRefund) {
     const IAmbireAccount = new Interface(AmbireAccount.abi)
