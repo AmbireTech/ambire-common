@@ -8,18 +8,17 @@ import { Key } from '../keystore/keystore'
 export class KeystoreSigner implements KeystoreSignerInterface {
   key: Key
 
-  #privKey: string
+  #signer: Wallet
 
   constructor(_key: Key, _privKey: string) {
-    if (!_key) throw new Error('keystoreSigner: no key provided in constructor')
+    if (!_key || !_privKey) throw new Error('keystoreSigner: no key provided in constructor')
 
     this.key = _key
-    this.#privKey = _privKey
+    this.#signer = new Wallet(_privKey)
   }
 
   async signRawTransaction(params: any) {
-    const singer = new Wallet(this.#privKey)
-    const sig = await singer.signTransaction(params)
+    const sig = await this.#signer.signTransaction(params)
 
     return sig
   }
@@ -27,17 +26,16 @@ export class KeystoreSigner implements KeystoreSignerInterface {
   async signTypedData(
     domain: TypedDataDomain,
     types: Record<string, Array<TypedDataField>>,
-    message: Record<string, any>
+    value: Record<string, any>
   ) {
-    const singer = new Wallet(this.#privKey)
-    const sig = await singer.signTypedData(domain, types, message)
+    // @ts-ignore
+    const sig = await this.#signer.signTypedData(domain, types, value)
 
     return sig
   }
 
   async signMessage(hash: string) {
-    const singer = new Wallet(this.#privKey)
-    const sig = await singer.signMessage(hash)
+    const sig = await this.#signer.signMessage(hash)
 
     return sig
   }
