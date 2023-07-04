@@ -146,6 +146,7 @@ export class MainController extends EventEmitter {
     const { action, accountAddr, networkId } = req
     if (!this.settings.networks.find(x => x.id === networkId)) throw new Error(`addUserRequest: ${networkId}: network does not exist`)
     if (action.kind === 'call') {
+      // @TODO: if EOA, only one call per accountOp
       if (!this.accountOpsToBeSigned[accountAddr]) this.accountOpsToBeSigned[accountAddr] = {}
       if (!this.accountOpsToBeSigned[accountAddr][networkId]) {
         this.accountOpsToBeSigned[accountAddr][networkId] = {
