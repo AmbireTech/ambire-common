@@ -1,5 +1,5 @@
 /* eslint-disable new-cap */
-import { Wallet } from 'ethers'
+import { TransactionRequest, Wallet } from 'ethers'
 
 import type { TypedDataDomain, TypedDataField } from '@ethersproject/abstract-signer'
 import { KeystoreSigner as KeystoreSignerInterface } from '../../interfaces/keystore'
@@ -19,7 +19,7 @@ export class KeystoreSigner implements KeystoreSignerInterface {
     this.#signer = new Wallet(_privKey)
   }
 
-  async signRawTransaction(params: any) {
+  async signRawTransaction(params: TransactionRequest) {
     const sig = await this.#signer.signTransaction(params)
 
     return sig
