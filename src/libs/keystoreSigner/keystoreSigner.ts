@@ -11,7 +11,9 @@ export class KeystoreSigner implements KeystoreSignerInterface {
   #signer: Wallet
 
   constructor(_key: Key, _privKey: string) {
-    if (!_key || !_privKey) throw new Error('keystoreSigner: no key provided in constructor')
+    if (!_key) throw new Error('keystoreSigner: no key provided in constructor')
+    if (!_privKey)
+      throw new Error('keystoreSigner: no decrypted private key provided in constructor')
 
     this.key = _key
     this.#signer = new Wallet(_privKey)
