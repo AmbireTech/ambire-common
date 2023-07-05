@@ -7,11 +7,19 @@ export enum RewardIds {
   ADX_TOKEN_APY = 'adxTokenAPY'
 }
 
+export enum RewardsSource {
+  UNSET = 'unset',
+  WEB = 'web',
+  ANDROID = 'android',
+  IOS = 'ios',
+  EXTENSION = 'extension'
+}
+
 export type UseRewardsProps = {
   relayerURL: string
   accountId: Account['id']
   useRelayerData: (props: Omit<UseRelayerDataProps, 'fetch'>) => UseRelayerDataReturnType
-  source?: 'unset' | 'web' | 'android' | 'ios' | 'extension'
+  source?: RewardsSource
 }
 
 export type Multiplier = {

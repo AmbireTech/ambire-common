@@ -7,6 +7,7 @@ import {
   RelayerRewardsBalance,
   RelayerRewardsData,
   RewardIds,
+  RewardsSource,
   RewardsState,
   UseRewardsProps,
   UseRewardsReturnType
@@ -57,7 +58,7 @@ export default function useRewards({
   relayerURL,
   accountId,
   useRelayerData,
-  source = 'unset'
+  source = RewardsSource.UNSET
 }: UseRewardsProps): UseRewardsReturnType {
   const { cacheBreak } = useCacheBreak()
   const [rewards, setRewards] = useState<RewardsState>(rewardsInitialState)
