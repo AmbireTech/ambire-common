@@ -60,9 +60,13 @@ describe('Main Controller ', () => {
   storage.set('accounts', accounts)
   test('Init controller', async () => {
     const controller = new MainController(storage)
+    controller.onUpdate((res) => {
+        console.log()
+    })
     setInterval(() => {
       const states = controller.currentAccountStates
-      console.log(states)
+      console.log(states, controller.lastUpdate)
+      controller.pushUpdate()
     }, 1000)
     // expect(states).to
   })

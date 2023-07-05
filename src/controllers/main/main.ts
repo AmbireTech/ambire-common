@@ -1,53 +1,16 @@
-import { TypedDataDomain, TypedDataField, JsonRpcProvider } from 'ethers'
+import { JsonRpcProvider } from 'ethers'
 import { Storage } from '../../interfaces/storage'
-import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
-import { Account, AccountId, AccountOnchainState } from '../../interfaces/account'
+import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
+import { Account, AccountOnchainState } from '../../interfaces/account'
 import { AccountOp } from '../../libs/accountOp/accountOp'
 import { PortfolioController } from '../portfolio'
 import { Keystore, Key } from '../../libs/keystore/keystore'
 import { networks } from '../../consts/networks'
 import EventEmitter from '../eventEmitter'
 import { getAccountState } from '../../libs/accountState/accountState'
+import { SignedMessage, UserRequest } from '../../interfaces/userRequest'
 
 // @TODO move to interfaces/userRequest.ts?
-export interface Call {
-  kind: 'call'
-  to: string
-  value: bigint
-  data: string
-}
-export interface PlainTextMessage {
-  kind: 'message'
-  message: string | Uint8Array
-}
-export interface TypedMessage {
-  kind: 'typedMessage'
-  domain: TypedDataDomain
-  types: Record<string, Array<TypedDataField>>
-  value: Record<string, any>
-}
-// @TODO: move this type and it's deps (PlainTextMessage, TypedMessage) to another place,
-// probably interfaces
-export interface SignedMessage {
-  content: PlainTextMessage | TypedMessage
-  signature: string | null
-  fromUserRequestId?: bigint
-}
-
-export interface UserRequest {
-  // Unlike the AccountOp, which we compare by content,
-  // we need a distinct identifier here that's set by whoever is posting the request
-  // the requests cannot be compared by content because it's valid for a user to post two or more identical ones
-  // while for AccountOps we do only care about their content in the context of simulations
-  id: bigint
-  added: bigint // timestamp
-  networkId: NetworkId
-  accountAddr: AccountId
-  forceNonce: bigint | null
-  // either-or here between call and a message, plus different types of messages
-  action: Call | PlainTextMessage | TypedMessage
-}
-// type State = Map<AccountId, Map<NetworkId, any>>
 
 export type AccountStates = {
   [accountId: string]: {
@@ -68,6 +31,8 @@ export class MainController extends EventEmitter {
   portfolio: PortfolioController
 
   // @TODO emailVaults
+  emailVaults: EmailValut[]
+
   // @TODO read networks from settings
   accounts: Account[] = []
 
@@ -93,6 +58,8 @@ export class MainController extends EventEmitter {
   // accountAddr => UniversalMessage[]
   messagesToBeSigned: { [key: string]: SignedMessage[] } = {}
 
+  lastUpdate: Date = new Date()
+
   constructor(storage: Storage) {
     super()
     this.storage = storage
@@ -112,6 +79,7 @@ export class MainController extends EventEmitter {
     ])
     this.accountStates = await this.getAccountsInfo(this.accounts)
     this.isReady = true
+    this.lastUpdate = new Date()
   }
 
   public get currentAccountStates(): AccountStates {
@@ -136,6 +104,18 @@ export class MainController extends EventEmitter {
     })
 
     return Object.fromEntries(states)
+  }
+
+  async updateAccountStates() {
+    this.accountStates = await this.getAccountsInfo(this.accounts)
+    this.lastUpdate = new Date()
+    this.emitUpdate()
+  }
+
+  selectAccount(toAccountAddr: string) {
+    if (!this.accounts.find((acc) => acc.addr === toAccountAddr))
+      throw new Error(`try to switch to not exist account: ${toAccountAddr}`)
+    this.selectedAccount = toAccountAddr
   }
 
   addUserRequest(req: UserRequest) {
