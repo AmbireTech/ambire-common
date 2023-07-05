@@ -1,5 +1,6 @@
 import { Contract } from 'ethers'
 import { Interface } from 'ethers/lib/utils'
+import { RewardsSource } from 'hooks/useRewards/types'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import WALLETSupplyControllerABI from '../../constants/abis/WALLETSupplyControllerABI.json'
@@ -24,12 +25,13 @@ const useClaimableWalletToken = ({
   addRequest,
   totalLifetimeRewards,
   walletUsdPrice,
-  rewardsLastUpdated
+  rewardsLastUpdated,
+  source = RewardsSource.UNSET
 }: UseClaimableWalletTokenProps): UseClaimableWalletTokenReturnType => {
   const prevAccountId = usePrevious(accountId)
   const { cacheBreak: relayerCacheBreak } = useCacheBreak()
   const urlIdentityRewards = relayerURL
-    ? `${relayerURL}/wallet-token/rewards/${accountId}?cacheBreak=${relayerCacheBreak}`
+    ? `${relayerURL}/wallet-token/rewards/${accountId}?cacheBreak=${relayerCacheBreak}&source=${source}`
     : null
 
   const rewardsData = useRelayerData({ url: urlIdentityRewards })
