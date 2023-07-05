@@ -11,6 +11,7 @@ export type UseRewardsProps = {
   relayerURL: string
   accountId: Account['id']
   useRelayerData: (props: Omit<UseRelayerDataProps, 'fetch'>) => UseRelayerDataReturnType
+  source?: 'unset' | 'web' | 'android' | 'ios' | 'extension'
 }
 
 export type Multiplier = {
