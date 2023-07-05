@@ -1,6 +1,5 @@
 import { Contract } from 'ethers'
 import { Interface } from 'ethers/lib/utils'
-import { RewardsSource } from 'hooks/useRewards/types'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import WALLETSupplyControllerABI from '../../constants/abis/WALLETSupplyControllerABI.json'
@@ -9,6 +8,7 @@ import WALLETVestings from '../../constants/WALLETVestings.json'
 import { getProvider } from '../../services/provider'
 import useCacheBreak from '../useCacheBreak'
 import usePrevious from '../usePrevious'
+import { RewardsSource } from '../useRewards/types'
 import { UseClaimableWalletTokenProps, UseClaimableWalletTokenReturnType } from './types'
 
 // const supplyControllerAddress = '0xF8cF66BbF7fe152b8177B61855E8be9a6279C8A1' //test polygon
