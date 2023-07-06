@@ -114,6 +114,7 @@ export class MainController extends EventEmitter {
     // @TODO reload those
     this.accountStates = await this.getAccountsInfo(this.accounts)
     this.isReady = true
+    this.emitUpdate()
   }
 
   private async getAccountsInfo(accounts: Account[]): Promise<AccountStates> {
