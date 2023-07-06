@@ -145,6 +145,7 @@ export class MainController extends EventEmitter {
       // @TODO: if EOA, only one call per accountOp
       if (!this.accountOpsToBeSigned[accountAddr]) this.accountOpsToBeSigned[accountAddr] = {}
       if (!this.accountOpsToBeSigned[accountAddr][networkId]) {
+        // @TODO handle the case when this.accountStates[accountAddr][networkId] is not defined, re-calculate on update
         this.accountOpsToBeSigned[accountAddr][networkId] = {
           accountAddr,
           networkId,
