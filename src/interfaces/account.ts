@@ -19,3 +19,11 @@ export interface AccountCreation {
   // baseIdentityAddr is intentionally omitted because it's not used anywhere
   // and because it can be retrieved from the bytecode
 }
+
+export interface AccountOnchainState {
+  accountAddr: string
+  isDeployed: boolean
+  nonce: number
+  associatedKeys: { [key: string]: string }
+  deployError: boolean
+}
