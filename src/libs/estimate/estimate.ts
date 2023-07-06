@@ -62,7 +62,7 @@ export async function estimate(
     calculateAnomalies ? [fromAddrHavingNative].concat(nativeToCheck) : nativeToCheck
   ]
 
-  const simulationGasPrice = 1000n
+  const simulationGasPrice = 500000000n
   const simulationGasLimit = 500000n
   const gasPrice = `0x${Number(simulationGasPrice).toString(16)}`
   const gasLimit = `0x${Number(simulationGasLimit).toString(16)}`
