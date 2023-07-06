@@ -116,10 +116,6 @@ export class MainController extends EventEmitter {
     this.isReady = true
   }
 
-  public get currentAccountStates(): AccountStates {
-    return this.accountStates
-  }
-
   private async getAccountsInfo(accounts: Account[]): Promise<AccountStates> {
     const result = await Promise.all(
       this.settings.networks.map((network: NetworkDescriptor) => {

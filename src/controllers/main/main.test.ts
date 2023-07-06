@@ -79,14 +79,14 @@ describe('Main Controller ', () => {
   let controller: MainController
   test('Init controller', async () => {
     controller = new MainController(storage)
-    await new Promise(resolve => setTimeout(resolve, 3000))
-    console.dir(controller.currentAccountStates, { depth: null })
+    await new Promise(resolve => controller.onUpdate(() => resolve(null)))
+    console.dir(controller.accountStates, { depth: null })
     // @TODO
     // expect(states).to
   })
 
   test('Add an accountOp', async () => {
-    accountOp.nonce = controller.currentAccountStates[accountOp.accountAddr][accountOp.networkId].nonce
+    accountOp.nonce = controller.accountStates[accountOp.accountAddr][accountOp.networkId].nonce
     // @TODO test if nonce is correctly set
 
   })
