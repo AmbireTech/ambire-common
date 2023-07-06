@@ -38,6 +38,7 @@ contract Estimation {
     FeeTokenOutcome[] feeTokenOutcomes;
     bytes32[] associatedKeyPrivileges;
     uint[] nativeAssetBalances;
+    uint gasUsed;
   }
 
   function makeSpoofSignature(address key) internal pure returns (bytes memory spoofSig) {
