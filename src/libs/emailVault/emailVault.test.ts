@@ -49,18 +49,18 @@ describe('Email vault', () => {
     })
 
     test('create an email vault', async () => {
-      const { key, type, value } = await emailVault.create(email, authKey)
-      expect(key).not.toBe('')
-      expect(type).toBe('recoveryKey')
-      expect(value).toBeFalsy()
+      const res = await emailVault.create(email, authKey)
+      expect(res.key).not.toBe('')
+      expect(res.type).toBe('recoveryKey')
+      expect(res).not.toHaveProperty('value')
     })
 
     test('get recoveryKey address', async () => {
-      const { key, type, value } = await emailVault.getRecoveryKeyAddress(email, authKey)
-      expect(key).not.toBe('')
-      expect(type).toBe('recoveryKey')
-      expect(value).toBeFalsy()
-      recoveryKey = key
+      const res = await emailVault.getRecoveryKeyAddress(email, authKey)
+      expect(res.key).not.toBe('')
+      expect(res.type).toBe('recoveryKey')
+      expect(res).not.toHaveProperty('value')
+      recoveryKey = res.key
     })
 
     test('add keyStoreSecret', async () => {
@@ -87,7 +87,7 @@ describe('Email vault', () => {
 
     test('getEmailVau;tInfo', async () => {
       const res = await emailVault.getInfo(email, authKey)
-      expect(res).toHaveProperty('_id', email)
+      expect(res).toHaveProperty('email', email)
       expect(res.secrets.length).toBe(3)
       expect(res.secrets[0].type).toBe('recoveryKey')
       expect(res.secrets[1].type).toBe('keyStore')
