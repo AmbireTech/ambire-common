@@ -38,7 +38,6 @@ contract Estimation {
     FeeTokenOutcome[] feeTokenOutcomes;
     bytes32[] associatedKeyPrivileges;
     uint[] nativeAssetBalances;
-    uint gasUsed;
   }
 
   function makeSpoofSignature(address key) internal pure returns (bytes memory spoofSig) {
@@ -60,8 +59,6 @@ contract Estimation {
     address relayer,
     address[] memory checkNativeAssetOn
   ) external returns (EstimationOutcome memory outcome) {
-    // We set this to the initial gasleft so that we can deduct the gasleft at the end to find the used gas
-    outcome.gasUsed = gasleft();
 
     // This has two purposes: 1) when we're about to send a txn via an EOA, we need to know the native asset balances
     // 2) sometimes we need to check the balance of the simulation `from` addr in order to calculate
