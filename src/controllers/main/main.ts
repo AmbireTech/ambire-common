@@ -132,9 +132,9 @@ export class MainController extends EventEmitter {
     const states = accounts.map((acc: Account, accIndex: number) => {
       return [
         acc.addr,
-        this.settings.networks.map((network: NetworkDescriptor, netIndex: number) => {
+        Object.fromEntries(this.settings.networks.map((network: NetworkDescriptor, netIndex: number) => {
           return [network.id, result[netIndex][accIndex]]
-        })
+        }))
       ]
     })
 
