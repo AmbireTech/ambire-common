@@ -155,8 +155,8 @@ export class MainController extends EventEmitter {
           signingKeyAddr: null,
           gasLimit: null,
           gasFeePayment: null,
-          // @TODO: use the AccountInfo to determine; alternatively, can we use the Estimator and not need a nonce before that?
-          nonce: null,
+          // We use the AccountInfo to determine; alternatively, can we use the Estimator and not need a nonce before that?
+          nonce: this.accountStates[accountAddr][networkId].nonce,
           // this will be set to a spoofSig in updateAccountOp
           signature: null,
           // @TODO from pending recoveries
