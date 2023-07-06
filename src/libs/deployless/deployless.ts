@@ -32,6 +32,8 @@ export type CallOptions = {
   // Note: some RPCs don't seem to like numbers, we can use hex strings for them
   blockTag: string | number
   from?: string
+  gasPrice?: string
+  gasLimit?: string
 }
 const defaultOptions: CallOptions = {
   mode: DeploylessMode.Detect,
@@ -116,13 +118,21 @@ export class Deployless {
     const callPromise =
       !!this.stateOverrideSupported && !forceProxy
         ? (this.provider as JsonRpcProvider).send('eth_call', [
-            { to: arbitraryAddr, data: callData, from: opts.from },
+            {
+              to: arbitraryAddr,
+              data: callData,
+              from: opts.from,
+              gasPrice: opts?.gasPrice,
+              gas: opts?.gasLimit
+            },
             opts.blockTag,
             { [arbitraryAddr]: { code: this.contractRuntimeCode } }
           ])
         : this.provider.call({
             blockTag: opts.blockTag,
             from: opts.from,
+            gasPrice: opts?.gasPrice,
+            gasLimit: opts?.gasLimit,
             data: checkDataSize(
               concat([
                 deploylessProxyBin,

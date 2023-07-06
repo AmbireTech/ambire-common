@@ -9,6 +9,7 @@ import { AmbireAccount, AmbireAccountFactory } from '../../../test/config'
 
 export interface EstimateResult {
   gasUsed: bigint
+  addedNative?: bigint
   feeTokenOutcome: {
     address: string
     gasUsed: bigint
@@ -29,7 +30,9 @@ export async function estimate(
   feeTokens: string[],
   opts?: {
     calculateRefund?: boolean
+    calculateAnomalies?: boolean
   },
+  fromAddrHavingNative?: string,
   blockFrom: string = '0x0000000000000000000000000000000000000001',
   blockTag: string | number = 'latest'
 ): Promise<EstimateResult> {
@@ -39,6 +42,8 @@ export async function estimate(
 
   // @TODO - .env or passed as parameter?
   const relayerAddress = '0x942f9CE5D9a33a82F88D233AEb3292E680230348'
+
+  const calculateAnomalies = opts?.calculateAnomalies && fromAddrHavingNative
 
   const args = [
     account.addr,
@@ -54,15 +59,22 @@ export async function estimate(
     account.associatedKeys,
     feeTokens,
     relayerAddress,
-    nativeToCheck
+    calculateAnomalies ? [fromAddrHavingNative].concat(nativeToCheck) : nativeToCheck
   ]
 
-  // eslint-disable-next-line prefer-const
-  const [
+  const simulationGasPrice = 1000n
+  const simulationGasLimit = 500000n
+  const gasPrice = `0x${Number(simulationGasPrice).toString(16)}`
+  const gasLimit = `0x${Number(simulationGasLimit).toString(16)}`
+
+  let [
+    // eslint-disable-next-line prefer-const
     [deployment, accountOpToExecuteBefore, accountOp, , feeTokenOutcomes, , nativeAssetBalances]
   ] = await deploylessEstimator.call('estimate', args, {
     from: blockFrom,
-    blockTag
+    blockTag,
+    gasPrice: calculateAnomalies ? gasPrice : undefined,
+    gasLimit: calculateAnomalies ? gasLimit : undefined
   })
 
   let gasUsed = deployment.gasUsed + accountOpToExecuteBefore.gasUsed + accountOp.gasUsed
@@ -96,16 +108,25 @@ export async function estimate(
     const estimatedRefund = gasUsed - estimatedGas
 
     // As of EIP-3529, the max refund is 1/5th of the entire cost
-    // @TODO - in case of accountOpToExecuteBefore, estimatedRefund is a negative number.
-    // 1. Check data we pass for accountOpToExecuteBefore (maybe it's wrong)
-    // 2. Is there any possibility for such negative case? How do will handle it?
     if (estimatedRefund <= gasUsed / 5n && estimatedRefund > 0n) gasUsed = estimatedGas
   }
 
-  // @TODO - addedNative
+  let addedNative
+  if (calculateAnomalies) {
+    const nativeFromBalance = await provider.getBalance(fromAddrHavingNative!)
+
+    // @TODO - Both balances are equal, but they shouldn't be as the contract balance should include the fee
+    console.log({ nativeFromBalance, contractNativeFromBalance: nativeAssetBalances[0] })
+
+    addedNative =
+      nativeFromBalance - (nativeAssetBalances[0] - simulationGasPrice * simulationGasLimit)
+
+    nativeAssetBalances = nativeAssetBalances.slice(1)
+  }
 
   return {
     gasUsed,
+    addedNative,
     feeTokenOutcome: feeTokenOutcomes.map((token: any, key: number) => ({
       address: feeTokens[key],
       gasUsed: token.gasUsed,

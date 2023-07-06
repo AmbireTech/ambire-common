@@ -5,10 +5,13 @@ import { estimate, EstimateResult } from './estimate'
 
 import { networks } from '../../consts/networks'
 import { Portfolio } from '../portfolio/portfolio'
+import { getNonce } from '../../../test/helpers'
 
 const ethereum = networks.find((x) => x.id === 'ethereum')
-if (!ethereum) throw new Error('no eth')
+const optimism = networks.find((x) => x.id === 'optimism')
+if (!ethereum || !optimism) throw new Error('no network')
 const provider = new JsonRpcProvider(ethereum.rpcUrl)
+const providerOptimism = new JsonRpcProvider(optimism.rpcUrl)
 
 const account = {
   addr: '0xa07D75aacEFd11b425AF7181958F0F85c312f143',
@@ -124,8 +127,7 @@ describe('estimate', () => {
         gasLimit: null,
         gasFeePayment: null,
         networkId: 'ethereum',
-        // @TODO - read it from Contract
-        nonce: 360,
+        nonce: await getNonce(account.addr, provider),
         signature: spoofSig,
         calls: [{ to, value: BigInt(0), data }],
         accountOpToExecuteBefore: null
@@ -145,5 +147,49 @@ describe('estimate', () => {
 
     // Gas used in case of `accountOpToExecuteBefore` should be greater, because more AccountOps are simulated
     expect(responseWithExecuteBefore.gasUsed).toBeGreaterThan(response.gasUsed)
+  })
+
+  it('estimates with `addedNative`', async () => {
+    const fromAddrHavingNative = '0xebe80f029b1c02862b9e8a70a7e5317c06f62cae'
+
+    const accountOptimism = {
+      addr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
+      label: '',
+      pfp: '',
+      associatedKeys: ['0x5Be214147EA1AE3653f289E17fE7Dc17A73AD175'],
+      creation: {
+        factoryAddr: '0xBf07a0Df119Ca234634588fbDb5625594E2a5BCA',
+        bytecode:
+          '0x7f00000000000000000000000000000000000000000000000000000000000000017fc00d23fd13e6cc01978ac25779646c3ba8aa974211c51a8b0f257a4593a6b7d3553d602d80604d3d3981f3363d3d373d3d3d363d732a2b85eb1054d6f0c6c2e37da05ed3e5fea684ef5af43d82803e903d91602b57fd5bf3',
+        salt: '0x0000000000000000000000000000000000000000000000000000000000000001'
+      }
+    }
+
+    const dataOptimism = `0x5ae401dc${expire}00000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000e404e45aaf000000000000000000000000420000000000000000000000000000000000004200000000000000000000000094b008aa00579c1307b0ef2c499ad98a8ce58e580000000000000000000000000000000000000000000000000000000000000bb8000000000000000000000000b674f3fd5f43464db0448a57529eaf37f04ccea50000000000000000000000000000000000000000000000000de0b6b3a7640000000000000000000000000000000000000000000000000000000000000012dde3000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000`
+
+    const opOptimism = {
+      accountAddr: accountOptimism.addr,
+      signingKeyAddr: null,
+      gasLimit: null,
+      gasFeePayment: null,
+      networkId: 'optimism',
+      nonce: null, // does not matter when estimating
+      signature: spoofSig,
+      calls: [{ to, value: BigInt(0), data: dataOptimism }],
+      accountOpToExecuteBefore: null
+    }
+
+    const response = await estimate(
+      providerOptimism,
+      ethereum,
+      accountOptimism,
+      opOptimism,
+      nativeToCheck,
+      feeTokens,
+      { calculateAnomalies: true },
+      fromAddrHavingNative
+    )
+
+    expect(response.addedNative).toBeGreaterThan(0n)
   })
 })

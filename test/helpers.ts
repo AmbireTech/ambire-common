@@ -1,10 +1,10 @@
-import { ethers } from 'ethers'
-import { wallet, addressOne, addressTwo, abiCoder } from './config'
+import { ethers, JsonRpcProvider } from 'ethers'
+import { wallet, addressOne, addressTwo, abiCoder, AmbireAccount } from './config'
 import { wait } from './polling'
 
 async function sendFunds(to: string, ether: number) {
   const txn = await wallet.sendTransaction({
-    to: to,
+    to,
     value: ethers.parseEther(ether.toString())
   })
   await wait(wallet, txn)
@@ -25,8 +25,13 @@ const timelock = 1 // a 1 second timelock default
 const defaultRecoveryInfo = [[addressOne, addressTwo], timelock]
 function getTimelockData(recoveryInfo = defaultRecoveryInfo) {
   const hash = ethers.keccak256(abiCoder.encode(['tuple(address[], uint)'], [recoveryInfo]))
-  const timelockAddress = '0x' + hash.slice(hash.length - 40, hash.length)
+  const timelockAddress = `0x${hash.slice(hash.length - 40, hash.length)}`
   return { hash, timelockAddress }
 }
 
-export { sendFunds, getPriviledgeTxn, getTimelockData }
+async function getNonce(ambireAccountAddr: string, provider: JsonRpcProvider) {
+  const accountContract = new ethers.Contract(ambireAccountAddr, AmbireAccount.abi, provider)
+  return accountContract.nonce()
+}
+
+export { sendFunds, getPriviledgeTxn, getTimelockData, getNonce }
