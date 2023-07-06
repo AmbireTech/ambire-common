@@ -135,7 +135,14 @@ Unlocking the keystore works by decrypting and loading the main encryption key i
 
 By having a separate main encryption key, we enable multiple secrets (passphrase AND email-based keystore recovery), and we also ensure that there's no copy of the user's passphrase kept in memory.
 
-#### Design decisions
+### deployless.ts
+
+This is how to generate a JSON for a deployless contract:
+```
+ts-node src/libs/deployless/compileUtil.ts  > src/libs/estimate/estimator.json
+```
+
+#### Design decisions (mostly about keystore)
 
 - decided to store all keys in the Keystore, even if the private key itself is not stored there; simply because it's called a Keystore and the name implies the functionality
 - handle HW wallets in it, so that we handle everything uniformly with a single API; also, it allows future flexibility to have the concept of optional unlocking built-in; if we have interactivity, we can add `keystore.signExtraInputRequired(key)` which returns what we need from the user

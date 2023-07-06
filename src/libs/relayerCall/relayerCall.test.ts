@@ -21,8 +21,7 @@ describe('relayerCallUncaught tests', () => {
     const res = await relayerCallUncaught('https://jsonplaceholder.typicode.com/posts/1')
 
     expect(res).toEqual({
-      // should have success if from relayer
-      //   success: true,
+      success: true,
       ...{
         userId: 1,
         id: 1,
