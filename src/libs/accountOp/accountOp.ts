@@ -57,6 +57,12 @@ export function callToTuple(call: Call): [string, bigint, string] {
   return [call.to, call.value, call.data]
 }
 
+export function isEOA(op: AccountOp): boolean {
+  if (op.gasFeePayment === null) throw new Error('missing gasFeePayment')
+  return op.gasFeePayment.paymentType === GasFeePaymentType.EOA
+    && op.gasFeePayment.paidBy === op.accountAddr
+}
+
 export function canBroadcast(op: AccountOp, accountIsEOA: boolean): boolean {
   if (op.signingKeyAddr === null) throw new Error('missing signingKeyAddr')
   if (op.signature === null) throw new Error('missing signature')

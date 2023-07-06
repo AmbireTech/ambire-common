@@ -38,10 +38,6 @@ contract Estimation {
     FeeTokenOutcome[] feeTokenOutcomes;
     bytes32[] associatedKeyPrivileges;
     uint[] nativeAssetBalances;
-    // This is not really relevant when it comes to how much an accountOp
-    // would cost (that would be `deployment.gasUsed + accountOpToExecuteBefore.gasUsed + op.gasUsed`)
-    // ...but we still need it in order to compare with the same call but through eth_estimateGas, to calculate the exact gas refund
-    uint gasUsed;
   }
 
   function makeSpoofSignature(address key) internal pure returns (bytes memory spoofSig) {
@@ -97,8 +93,6 @@ contract Estimation {
       }
       require(isOk, "ANTI_BRICKING_FAILED");
     }
-
-    outcome.gasUsed -= gasleft();
   }
 
   function simulateDeployment(
