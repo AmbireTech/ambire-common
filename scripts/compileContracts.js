@@ -32,7 +32,7 @@ async function run() {
     contractName = contractName.slice(0, contractName.length - 4)
 
     const output = compile(contractName, {
-      contractsFolder: `${contractsDir}`
+      contractsFolder: contractsDir
     })
 
     fs.writeFileSync(`${outputDir}/${contractName}.json`, JSON.stringify(output))
