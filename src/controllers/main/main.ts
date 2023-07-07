@@ -10,6 +10,7 @@ import EventEmitter from '../eventEmitter'
 import { getAccountState } from '../../libs/accountState/accountState'
 import { SignedMessage, UserRequest } from '../../interfaces/userRequest'
 import { estimate } from '../../libs/estimate/estimate'
+import { EmailVault } from '../../interfaces/emailVault'
 
 // @TODO move to interfaces/userRequest.ts?
 
@@ -32,7 +33,7 @@ export class MainController extends EventEmitter {
   portfolio: PortfolioController
 
   // @TODO emailVaults
-  emailVaults: EmailValut[]
+  emailVaults: EmailVault[]
 
   // @TODO read networks from settings
   accounts: Account[] = []

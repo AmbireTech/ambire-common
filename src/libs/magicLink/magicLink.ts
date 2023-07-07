@@ -1,5 +1,5 @@
 export interface MagicLinkData {
-  key: String
+  key: string
   secret: String // this will not be return in prod mode
 }
 

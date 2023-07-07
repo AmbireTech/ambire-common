@@ -1,19 +1,7 @@
 // @NOTE<Yosif> Should keyAddress, keyStoreUid and recoveryKey be of type Address and not String?
 
 import { relayerCall } from '../relayerCall/relayerCall'
-
-export interface EmailVaultFetchResult {
-  success: Boolean
-  data: VaultEntry
-  message: String
-}
-
-// @NOTE<Yosif> Should key be of type Address and not String?
-export interface VaultEntry {
-  key: String
-  value: String
-  type: String
-}
+import { EmailVaultData, EmailVaultSecrters } from '../../interfaces/emailVault'
 
 export class EmailVault {
   private callRelayer: Function
@@ -28,12 +16,16 @@ export class EmailVault {
     this.fetch = fetch
   }
 
-  async create(email: String, authKey: String): Promise<VaultEntry> {
+  async create(email: String, authKey: String): Promise<EmailVaultSecrters> {
     return (await this.callRelayer(`/email-vault/create/${email}/${authKey}`)).data
   }
 
-  async getRecoveryKeyAddress(email: String, authKey: String): Promise<VaultEntry> {
+  async getRecoveryKeyAddress(email: String, authKey: String): Promise<EmailVaultSecrters> {
     return (await this.callRelayer(`/email-vault/getRecoveryKey/${email}/${authKey}`)).data
+  }
+
+  async getEmailVaultInfo(email: String, authKey: String): Promise<EmailVaultData> {
+    return (await this.callRelayer(`/email-vault/emailVaultInfo/${email}/${authKey}`)).data
   }
 
   async addKeyStoreSecret(
@@ -54,7 +46,7 @@ export class EmailVault {
     email: String,
     authKey: String,
     keyStoreUid: String
-  ): Promise<VaultEntry> {
+  ): Promise<EmailVaultSecrters> {
     return (
       await this.callRelayer(
         `/email-vault/retrieveKeyStoreSecret/${email}/${keyStoreUid}/${authKey}`
@@ -76,7 +68,11 @@ export class EmailVault {
     ).success
   }
 
-  async retrieveKeyBackup(email: String, authKey: String, keyAddress: String): Promise<VaultEntry> {
+  async retrieveKeyBackup(
+    email: String,
+    authKey: String,
+    keyAddress: String
+  ): Promise<EmailVaultSecrters> {
     return (
       await this.callRelayer(`/email-vault/retrieveKeyBackup/${email}/${keyAddress}/${authKey}`)
     ).data
