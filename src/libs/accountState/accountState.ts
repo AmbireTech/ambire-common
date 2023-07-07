@@ -1,11 +1,10 @@
 import { Provider } from 'ethers'
-// import { networks } from '../../consts/networks'
 
 import { fromDescriptor } from '../deployless/deployless'
 import { getAccountDeployParams } from '../account/account'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { Account, AccountOnchainState } from '../../interfaces/account'
-import accountState from './accountStateDeployless.json'
+import AmbireAccountState from '../../../contracts/compiled/AmbireAccountState.json'
 
 export async function getAccountState(
   provider: Provider,
@@ -13,7 +12,7 @@ export async function getAccountState(
   accounts: Account[],
   blockTag: string | number = 'latest'
 ): Promise<AccountOnchainState[]> {
-  const deploylessAccountState = fromDescriptor(provider, accountState, !network.rpcNoStateOverride)
+  const deploylessAccountState = fromDescriptor(provider, AmbireAccountState, !network.rpcNoStateOverride)
 
   const args = accounts.map((account) => [
     account.addr,

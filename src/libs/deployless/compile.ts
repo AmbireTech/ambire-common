@@ -23,10 +23,10 @@ interface Options {
 //   - fileName - if the name of the file is different than the name
 // of the contract, it should be passed along as we cannot guess it
 export function compile(contractName: string, options: Options = {}) {
-  const fileName = options.fileName ? options.fileName : contractName + '.sol'
+  const fileName = options.fileName ? options.fileName : `${contractName}.sol`
   const contractsFolder = options.contractsFolder ? options.contractsFolder : 'contracts'
 
-  const contractPath = path.resolve(__dirname + '../../../../', contractsFolder, fileName)
+  const contractPath = path.resolve(`${__dirname}../../../../`, contractsFolder, fileName)
   const contractSource = fs.readFileSync(contractPath, { encoding: 'utf8' })
 
   const input = {
@@ -52,22 +52,25 @@ export function compile(contractName: string, options: Options = {}) {
 
   function findImports(libPath: string) {
     return {
-      contents: fs.readFileSync(path.resolve(__dirname + '../../../../', 'contracts', libPath), {
-        encoding: 'utf8'
-      })
+      contents: fs.readFileSync(
+        path.resolve(`${__dirname}../../../../`, contractsFolder, libPath),
+        {
+          encoding: 'utf8'
+        }
+      )
     }
   }
 
   const output = JSON.parse(getSolc().compile(JSON.stringify(input), { import: findImports }))
 
   if (output.errors) {
-    const error = output.errors.map((err: any) => err.formattedMessage + ' ')
+    const error = output.errors.map((err: any) => `${err.formattedMessage} `)
     throw new Error(error)
   }
 
   return {
     abi: output.contracts[contractName][contractName].abi,
-    bin: '0x' + output.contracts[contractName][contractName].evm.bytecode.object, // bin
-    binRuntime: '0x' + output.contracts[contractName][contractName].evm.deployedBytecode.object // binRuntime
+    bin: `0x${output.contracts[contractName][contractName].evm.bytecode.object}`, // bin
+    binRuntime: `0x${output.contracts[contractName][contractName].evm.deployedBytecode.object}` // binRuntime
   }
 }

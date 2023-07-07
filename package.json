@@ -4,6 +4,7 @@
   "description": "Common ground for the Ambire apps",
   "scripts": {
     "generate:contractInfo": "node scripts/generateContractInfo.js > src/constants/humanizerInfo.json",
+    "compile:contracts": "ts-node scripts/compileContracts.js",
     "test": "npx hardhat compile; npx hardhat test; jest",
     "jest": "jest",
     "build": "tsc src/libs/deployless/deployless.ts -t es5",
