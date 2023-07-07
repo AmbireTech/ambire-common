@@ -22,10 +22,12 @@ export interface Secret {
   type: String
 }
 
+// NOTE: its a quick fix. Will be updated in other branch
 export interface EmailVaultInfo {
   email: String
-  secrets: Secret[]
-  version: number
+  recoveryKey: String
+  availableSecrets: Secret[]
+  availableAccounts: any
 }
 
 export class EmailVault {
