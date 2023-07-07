@@ -1,4 +1,4 @@
-import { ethers } from 'ethers'
+import { ethers } from 'hardhat'
 import {
   wallet,
   addressOne,
@@ -74,41 +74,35 @@ async function deployAmbireAccount(priLevels: PrivLevels[]) {
   return { ambireAccount, ambireAccountAddress }
 }
 
-// async function deployAmbireAccountHardhatNetwork(priLevels: PrivLevels[]) {
-//   // assertion.expectExpects(1 + priLevels.length)
+async function deployAmbireAccountHardhatNetwork(priLevels: PrivLevels[]) {
+  assertion.expectExpects(1 + priLevels.length)
+  const [signer] = await ethers.getSigners()
 
-//   // deploy the factory
-//   const contractFactory = await hardhatEthers.getContractFactory("AmbireAccountFactory")
-//   const factory: any = await contractFactory.deploy(addressOne)
+  const factory = await ethers.deployContract('AmbireAccountFactory', [signer.address])
+  const contract: any = await ethers.deployContract('AmbireAccount')
+  const addr = await contract.getAddress()
+  expect(addr).not.to.be.null
 
-  // deploy the contract as is it
-  // const ambireAccountFactory = new ethers.ContractFactory(AmbireAccount.abi, AmbireAccount.bytecode, wallet)
-  // const contract: any = await ambireAccountFactory.deploy()
-  // await wait(wallet, contract)
-  // const addr = await contract.getAddress()
-  // expect(addr).not.to.be.null
+  // get the bytecode and deploy it
+  const bytecode = getProxyDeployBytecode(addr, priLevels, {
+    ...getStorageSlotsFromArtifact(buildInfo)
+  })
+  await factory.deploy(bytecode, deploySalt, { deployGasLimit })
 
-  // // get the bytecode and deploy it
-  // const bytecode = getProxyDeployBytecode(addr, priLevels, {
-  //   ...getStorageSlotsFromArtifact(buildInfo)
-  // })
-  // const deployTxn = await factory.deploy(bytecode, deploySalt, { deployGasLimit })
-  // await wait(wallet, deployTxn)
+  const ambireAccountAddress = getAmbireAccountAddress(await factory.getAddress(), bytecode)
+  const ambireAccount: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signer)
 
-  // const ambireAccountAddress = getAmbireAccountAddress(await factory.getAddress(), bytecode)
-  // const ambireAccount: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, wallet)
-
-  // const promises = priLevels.map(priv => ambireAccount.privileges(priv.addr))
-  // const result = await Promise.all(promises)
-  // result.map((res, index) => {
-  //   const expected = priLevels[index].hash === true ? ethers.toBeHex(1, 32) : priLevels[index].hash
-  //   expect(res).to.equal(expected)
-  // })
-  // return {ambireAccount, ambireAccountAddress}
-// }
+  const promises = priLevels.map(priv => ambireAccount.privileges(priv.addr))
+  const result = await Promise.all(promises)
+  result.map((res, index) => {
+    const expected = priLevels[index].hash === true ? ethers.toBeHex(1, 32) : priLevels[index].hash
+    expect(res).to.equal(expected)
+  })
+  return {ambireAccount, ambireAccountAddress}
+}
 
 export {
   getAmbireAccountAddress,
-  // deployAmbireAccountHardhatNetwork,
+  deployAmbireAccountHardhatNetwork,
   deployAmbireAccount
 }

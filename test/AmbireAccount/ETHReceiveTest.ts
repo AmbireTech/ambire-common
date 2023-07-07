@@ -1,23 +1,22 @@
-import { ethers } from 'ethers'
+import { ethers } from 'hardhat'
 import {
-  wallet,
   addressOne,
   expect,
 } from '../config'
-import { wait } from '../polling'
-import { deployAmbireAccount } from '../implementations'
+import { deployAmbireAccountHardhatNetwork } from '../implementations'
 
 let ambireAccountAddress: string
-let identityAddress: string
 
 describe('Receive ETH tests', function () {
   it('should successfully deploy the ambire account', async function () {
-    const { ambireAccountAddress: addr } = await deployAmbireAccount([
-      { addr: addressOne, hash: true }
+    const [signer] = await ethers.getSigners()
+    const { ambireAccountAddress: addr } = await deployAmbireAccountHardhatNetwork([
+      { addr: signer.address, hash: true }
     ])
     ambireAccountAddress = addr
   })
   it('should receive ETH via the fallback method of the AmbireAccount and check gas cost', async function () {
+    const [signer] = await ethers.getSigners()
     let abi = [
       "function methodNoExist(address, address, uint256, bytes calldata) external pure returns (bytes4)"
     ];
@@ -29,21 +28,20 @@ describe('Receive ETH tests', function () {
       ethers.getBytes(addressOne)
     ])
     
-    const txn = await wallet.sendTransaction({
+    const txn = await signer.sendTransaction({
       to: ambireAccountAddress,
       value: ethers.parseEther('1'),
       data: calldata
     })
-    await wait(wallet, txn)
     const receipt: any = await txn.wait()
     expect(parseInt(receipt.gasUsed)).to.be.lessThan(32000)
   })
   it('should receive ETH via the receive method of the AmbireAccount and check gas cost', async function () {
-    const txn = await wallet.sendTransaction({
+    const [signer] = await ethers.getSigners()
+    const txn = await signer.sendTransaction({
       to: ambireAccountAddress,
       value: ethers.parseEther('1')
     })
-    await wait(wallet, txn)
     const receipt: any = await txn.wait()
     expect(parseInt(receipt.gasUsed)).to.be.lessThan(24000)
   })

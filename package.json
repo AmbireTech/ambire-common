@@ -27,8 +27,9 @@
     "validator": "^13.7.0"
   },
   "devDependencies": {
-    "@borislav.itskov/schnorrkel.js": "^1.0.0",
+    "@borislav.itskov/schnorrkel.js": "1.0.0",
     "@jest/globals": "^29.5.0",
+    "@nomicfoundation/hardhat-chai-matchers": "^2.0.1",
     "@nomicfoundation/hardhat-ethers": "^3.0.0",
     "@types/aes-js": "^3.1.1",
     "@types/chai": "^4.3.4",

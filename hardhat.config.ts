@@ -1,8 +1,9 @@
 import { HardhatUserConfig } from "hardhat/config";
+import "@nomicfoundation/hardhat-ethers"
+import "@nomicfoundation/hardhat-chai-matchers"
 import "hardhat-gas-reporter"
 
 const config: HardhatUserConfig = {
-  defaultNetwork: "localhost",
   solidity: {
     version: "0.8.19",
     settings: {
