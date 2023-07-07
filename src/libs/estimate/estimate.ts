@@ -4,7 +4,7 @@ import { getAccountDeployParams } from '../account/account'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { AccountOp } from '../accountOp/accountOp'
 import { Account } from '../../interfaces/account'
-import estimator from './estimator.json'
+import Estimation from '../../../contracts/compiled/Estimation.json'
 import { AmbireAccount, AmbireAccountFactory } from '../../../test/config'
 
 export interface EstimateResult {
@@ -38,7 +38,7 @@ export async function estimate(
 ): Promise<EstimateResult> {
   // @ TODO implement EOAs
   if (!account.creation) throw new Error('EOA not supported yet')
-  const deploylessEstimator = fromDescriptor(provider, estimator, !network.rpcNoStateOverride)
+  const deploylessEstimator = fromDescriptor(provider, Estimation, !network.rpcNoStateOverride)
 
   // @TODO - .env or passed as parameter?
   const relayerAddress = '0x942f9CE5D9a33a82F88D233AEb3292E680230348'
