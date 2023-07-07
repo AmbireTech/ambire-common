@@ -1,13 +1,13 @@
-import { ethers, JsonRpcProvider } from 'ethers'
-import { wallet, addressOne, addressTwo, abiCoder, AmbireAccount } from './config'
-import { wait } from './polling'
+import { ethers } from 'hardhat'
+import { addressOne, addressTwo, abiCoder, AmbireAccount } from './config'
+import { JsonRpcProvider } from 'ethers'
 
 async function sendFunds(to: string, ether: number) {
-  const txn = await wallet.sendTransaction({
-    to,
+  const [signer] = await ethers.getSigners()
+  await signer.sendTransaction({
+    to: to,
     value: ethers.parseEther(ether.toString())
   })
-  await wait(wallet, txn)
 }
 
 function getPriviledgeTxn(ambireAccountAddr: string, privAddress: string, hasPriv: boolean = true) {

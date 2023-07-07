@@ -1,6 +1,6 @@
 import { AbiCoder, JsonRpcProvider, concat, getDefaultProvider, toBeHex } from 'ethers'
 import { compile } from './compile'
-import { addressOne, provider } from '../../../test/config'
+import { addressOne } from '../../../test/config'
 import { Deployless, DeploylessMode } from './deployless'
 import { describe, expect, test } from '@jest/globals'
 
@@ -18,7 +18,7 @@ describe('Deployless', () => {
   })
 
   test('should invoke a method: proxy mode', async () => {
-    const localDeployless = new Deployless(provider, helloWorld.abi, helloWorld.bin)
+    const localDeployless = new Deployless(mainnetProvider, helloWorld.abi, helloWorld.bin)
     const [result] = await localDeployless.call('helloWorld', [], {
       mode: DeploylessMode.ProxyContract
     })
@@ -68,7 +68,7 @@ describe('Deployless', () => {
   })
 
   test('should deploy error: proxy mode', async () => {
-    const localDeployless = new Deployless(provider, helloWorld.abi, deployErrBin)
+    const localDeployless = new Deployless(mainnetProvider, helloWorld.abi, deployErrBin)
     expect.assertions(1)
     try {
       await localDeployless.call('helloWorld', [], { mode: DeploylessMode.ProxyContract })
@@ -143,7 +143,7 @@ describe('Deployless', () => {
       megaLargeCode += bytecodeAndArgs.substring(2)
       i--
     }
-    const contract = new Deployless(provider, factory.abi, megaLargeCode, factory.binRuntime)
+    const contract = new Deployless(mainnetProvider, factory.abi, megaLargeCode, factory.binRuntime)
     try {
       await contract.call('deploy', [bytecodeAndArgs, '1234'], {
         mode: DeploylessMode.ProxyContract
