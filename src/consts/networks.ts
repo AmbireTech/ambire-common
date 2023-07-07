@@ -16,6 +16,14 @@ const networks: NetworkDescriptor[] = [
     rpcUrl: 'https://rpc.ankr.com/polygon',
     rpcNoStateOverride: false,
     chainId: 137n
+  },
+  {
+    id: 'optimism',
+    name: 'Optimism',
+    nativeAssetSymbol: 'ETH',
+    rpcUrl: 'https://rpc.ankr.com/optimism',
+    rpcNoStateOverride: false,
+    chainId: 10n
   }
 ]
 
