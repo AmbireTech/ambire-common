@@ -4,6 +4,7 @@
   "description": "Common ground for the Ambire apps",
   "scripts": {
     "generate:contractInfo": "node scripts/generateContractInfo.js > src/constants/humanizerInfo.json",
+    "compile:contracts": "ts-node scripts/compileContracts.js",
     "test": "npx hardhat compile; npx hardhat test; jest",
     "jest": "jest",
     "build": "tsc src/libs/portfolio/getOnchainBalances.ts -t es2020 -m commonjs --esModuleInterop true --sourceMap true --resolveJsonModule true && tsc src/libs/deployless/deployless.ts -t es2020 -m commonjs --esModuleInterop true --sourceMap true",
@@ -27,8 +28,10 @@
     "validator": "^13.7.0"
   },
   "devDependencies": {
-    "@borislav.itskov/schnorrkel.js": "^1.0.0",
+    "@borislav.itskov/schnorrkel.js": "1.0.0",
     "@jest/globals": "^29.5.0",
+    "@nomicfoundation/hardhat-chai-matchers": "^2.0.1",
+    "@nomicfoundation/hardhat-ethers": "^3.0.0",
     "@types/aes-js": "^3.1.1",
     "@types/chai": "^4.3.4",
     "@types/mocha": "^10.0.1",

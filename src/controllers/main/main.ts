@@ -10,7 +10,7 @@ import EventEmitter from '../eventEmitter'
 import { getAccountState } from '../../libs/accountState/accountState'
 import { SignedMessage, UserRequest } from '../../interfaces/userRequest'
 import { estimate } from '../../libs/estimate/estimate'
-import { EmailVault } from '../../interfaces/emailVault'
+import { EmailVaultData } from '../../interfaces/emailVault'
 
 // @TODO move to interfaces/userRequest.ts?
 
@@ -33,7 +33,7 @@ export class MainController extends EventEmitter {
   portfolio: PortfolioController
 
   // @TODO emailVaults
-  emailVaults: EmailVault[]
+  emailVaults: EmailVaultData[]
 
   // @TODO read networks from settings
   accounts: Account[] = []
@@ -82,11 +82,7 @@ export class MainController extends EventEmitter {
     // @TODO reload those
     this.accountStates = await this.getAccountsInfo(this.accounts)
     this.isReady = true
-    this.lastUpdate = new Date()
-  }
-
-  public get currentAccountStates(): AccountStates {
-    return this.accountStates
+    this.emitUpdate()
   }
 
   private async getAccountsInfo(accounts: Account[]): Promise<AccountStates> {
@@ -101,9 +97,11 @@ export class MainController extends EventEmitter {
     const states = accounts.map((acc: Account, accIndex: number) => {
       return [
         acc.addr,
-        this.settings.networks.map((network: NetworkDescriptor, netIndex: number) => {
-          return [network.id, result[netIndex][accIndex]]
-        })
+        Object.fromEntries(
+          this.settings.networks.map((network: NetworkDescriptor, netIndex: number) => {
+            return [network.id, result[netIndex][accIndex]]
+          })
+        )
       ]
     })
 
@@ -125,19 +123,21 @@ export class MainController extends EventEmitter {
   addUserRequest(req: UserRequest) {
     this.userRequests.push(req)
     const { action, accountAddr, networkId } = req
-    if (!this.settings.networks.find(x => x.id === networkId)) throw new Error(`addUserRequest: ${networkId}: network does not exist`)
+    if (!this.settings.networks.find((x) => x.id === networkId))
+      throw new Error(`addUserRequest: ${networkId}: network does not exist`)
     if (action.kind === 'call') {
       // @TODO: if EOA, only one call per accountOp
       if (!this.accountOpsToBeSigned[accountAddr]) this.accountOpsToBeSigned[accountAddr] = {}
       if (!this.accountOpsToBeSigned[accountAddr][networkId]) {
+        // @TODO handle the case when this.accountStates[accountAddr][networkId] is not defined, re-calculate on update
         this.accountOpsToBeSigned[accountAddr][networkId] = {
           accountAddr,
           networkId,
           signingKeyAddr: null,
           gasLimit: null,
           gasFeePayment: null,
-          // @TODO: use the AccountInfo to determine; alternatively, can we use the Estimator and not need a nonce before that?
-          nonce: null,
+          // We use the AccountInfo to determine; alternatively, can we use the Estimator and not need a nonce before that?
+          nonce: this.accountStates[accountAddr][networkId].nonce,
           // this will be set to a spoofSig in updateAccountOp
           signature: null,
           // @TODO from pending recoveries
@@ -171,9 +171,10 @@ export class MainController extends EventEmitter {
 
     // TODO check if needed data in accountStates are available
     // this.accountStates[accountOp.accountAddr][accountOp.networkId].
-    const account = this.accounts.find(x => x.addr = accountOp.accountAddr)
-    if (!account) throw new Error(`updateAccountOp: ${accountOp.accountAddr}: account does not exist`)
-    const network = this.settings.networks.find(x => x.id === accountOp.networkId)
+    const account = this.accounts.find((x) => (x.addr = accountOp.accountAddr))
+    if (!account)
+      throw new Error(`updateAccountOp: ${accountOp.accountAddr}: account does not exist`)
+    const network = this.settings.networks.find((x) => x.id === accountOp.networkId)
     if (!network) throw new Error(`updateAccountOp: ${accountOp.networkId}: network does not exist`)
     // @TODO cache providers
     const provider = new JsonRpcProvider(network.rpcUrl)

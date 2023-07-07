@@ -16,7 +16,7 @@ struct AccountInfo {
     bytes32[] associatedKeyPriviliges;
 }
 
-contract AmbireAccountInfo {
+contract AmbireAccountState {
     function getAccountsState(AccountInput[] memory accounts) external returns (AccountInfo[] memory accountResult) {
         accountResult = new AccountInfo[](accounts.length);
         for (uint i=0; i!=accounts.length; i++) {

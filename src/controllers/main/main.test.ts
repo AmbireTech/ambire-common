@@ -1,6 +1,7 @@
 import { describe, expect, test } from '@jest/globals'
-import { MainController } from './main'
+import { MainController, UserRequest } from './main'
 import { Storage } from '../../interfaces/storage'
+import { AccountOp } from '../../libs/accountOp/accountOp'
 
 export function produceMemoryStore(): Storage {
   const storage = new Map()
@@ -58,16 +59,33 @@ describe('Main Controller ', () => {
 
   const storage = produceMemoryStore()
   storage.set('accounts', accounts)
+  let controller: MainController
   test('Init controller', async () => {
-    const controller = new MainController(storage)
-    controller.onUpdate((res) => {
-        console.log()
-    })
-    setInterval(() => {
-      const states = controller.currentAccountStates
-      console.log(states, controller.lastUpdate)
-      controller.pushUpdate()
-    }, 1000)
+    controller = new MainController(storage)
+    await new Promise((resolve) => controller.onUpdate(() => resolve(null)))
+    console.dir(controller.accountStates, { depth: null })
+    // @TODO
     // expect(states).to
   })
+
+  test('Add a user request', async () => {
+    const req: UserRequest = {
+      id: 0n,
+      // @TODO: more elegant way of setting this?
+      added: BigInt(Date.now()),
+      accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      networkId: 'ethereum',
+      forceNonce: null,
+      action: {
+        kind: 'call',
+        to: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+        value: BigInt(0),
+        data: '0xa9059cbb000000000000000000000000e5a4dad2ea987215460379ab285df87136e83bea00000000000000000000000000000000000000000000000000000000005040aa'
+      }
+    }
+    controller.addUserRequest(req)
+    // @TODO test if nonce is correctly set
+
+  })
+
 })
