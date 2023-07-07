@@ -8,8 +8,7 @@
     "jest": "jest",
     "build": "tsc src/libs/deployless/deployless.ts -t es5",
     "prettier": "prettier --write 'contracts/**/*.sol'",
-    "lint:fix": "eslint ./src/** --ext .js,.jsx,.ts,.tsx --fix",
-    "compile": "tsc src/libs/portfolio/getOnchainBalances.ts -t es2020 -m commonjs --esModuleInterop true --sourceMap true --resolveJsonModule true"
+    "lint:fix": "eslint ./src/** --ext .js,.jsx,.ts,.tsx --fix"
   },
   "peerDependencies": {
     "@ambire/signature-validator": "^1.0.3",
