@@ -1,8 +1,8 @@
 import { describe, expect } from '@jest/globals'
+import { AbiCoder, ethers, JsonRpcProvider } from 'ethers'
 import { PortfolioController } from './portfolio'
 import { networks } from '../consts/networks'
-import { AbiCoder, ethers, JsonRpcProvider } from 'ethers'
-import { AmbireAccount } from '../../test/config'
+import { getNonce } from '../../test/helpers'
 import { TokenResult } from '../libs/portfolio'
 import { Storage } from '../interfaces/storage'
 import { AccountOp } from '../libs/accountOp/accountOp'
@@ -40,11 +40,6 @@ describe('Portfolio Controller ', () => {
     }
   }
 
-  async function getNonce(address: string) {
-    const accountContract = new ethers.Contract(address, AmbireAccount.abi, provider)
-    return accountContract.nonce()
-  }
-
   async function getAccountOp() {
     const ABI = ['function transferFrom(address from, address to, uint256 tokenId)']
     const iface = new ethers.Interface(ABI)
@@ -59,7 +54,7 @@ describe('Portfolio Controller ', () => {
       new AbiCoder().encode(['address'], ['0x5Be214147EA1AE3653f289E17fE7Dc17A73AD175']) +
       SPOOF_SIGTYPE
 
-    const nonce = await getNonce('0xB674F3fd5F43464dB0448a57529eAF37F04cceA5')
+    const nonce = await getNonce('0xB674F3fd5F43464dB0448a57529eAF37F04cceA5', provider)
     const calls = [{ to: '0x18Ce9CF7156584CDffad05003410C3633EFD1ad0', value: BigInt(0), data }]
 
     return {
@@ -79,7 +74,7 @@ describe('Portfolio Controller ', () => {
   }
 
   test('Previous tokens are persisted in the storage', async () => {
-    const account = {
+    const account2 = {
       addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
       label: '',
       pfp: '',
@@ -95,10 +90,10 @@ describe('Portfolio Controller ', () => {
     const storage = produceMemoryStore()
     const controller = new PortfolioController(storage)
 
-    await controller.updateSelectedAccount([account], networks, account.addr)
+    await controller.updateSelectedAccount([account2], networks, account2.addr)
     const storagePreviousHints = await storage.get('previousHints', {})
 
-    expect(storagePreviousHints[`ethereum:${account.addr}`]).toEqual({
+    expect(storagePreviousHints[`ethereum:${account2.addr}`]).toEqual({
       erc20s: [
         '0x0000000000000000000000000000000000000000',
         '0xba100000625a3754423978a60c9317c58a424e3D',
@@ -139,6 +134,7 @@ describe('Portfolio Controller ', () => {
       // jest.useFakeTimers()
       // jest.runAllTimers();
       // jest.runAllTicks()
+      // eslint-disable-next-line no-promise-executor-return
       await new Promise((resolve) => setTimeout(() => resolve(true), 1000))
 
       await controller.updateSelectedAccount([account], networks, account.addr)

@@ -1,21 +1,17 @@
-import { ethers } from 'ethers'
+import { ethers } from 'hardhat'
 import {
   chainId,
   AmbireAccount,
-  wallet,
-  wallet2,
   provider,
   addressOne,
   addressTwo,
   addressThree,
   addressFour,
-  expect,
-  assertion
+  expect
 } from '../config'
 import { wrapEthSign, wrapRecover, wrapCancel } from '../ambireSign'
-import { wait } from '../polling'
 import { sendFunds, getPriviledgeTxn } from '../helpers'
-import { deployAmbireAccount } from '../implementations'
+import { deployAmbireAccountHardhatNetwork } from '../implementations'
 const timelock = 1
 const abiCoder = new ethers.AbiCoder()
 
@@ -31,15 +27,17 @@ let ambireAccountAddress: string
 describe('Recovery basic schedule and execute', function () {
   it('successfully deploys the ambire account', async function () {
     const { hash, timelockAddress } = getTimelockData()
+    const [signer] = await ethers.getSigners()
 
-    const { ambireAccountAddress: addr } = await deployAmbireAccount([
-      { addr: addressOne, hash: true },
+    const { ambireAccountAddress: addr } = await deployAmbireAccountHardhatNetwork([
+      { addr: signer.address, hash: true },
       { addr: timelockAddress, hash: hash }
     ])
     ambireAccountAddress = addr
   })
   it('successfully schedule a timelock transaction', async function () {
-    const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, wallet)
+    const [signer, signer2] = await ethers.getSigners()
+    const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signer)
     const { timelockAddress } = getTimelockData()
     const nonce = await contract.nonce()
     const recoveryTxns = [getPriviledgeTxn(ambireAccountAddress, addressThree)]
@@ -50,21 +48,21 @@ describe('Recovery basic schedule and execute', function () {
       )
     )
     const msg = ethers.getBytes(msgHash)
-    const s = wrapEthSign(await wallet2.signMessage(msg))
+    const s = wrapEthSign(await signer2.signMessage(msg))
     const signature = abiCoder.encode(
       ['tuple(address[], uint)', 'bytes', 'address'],
       [recoveryInfo, s, timelockAddress]
     )
     const ambireSignature = wrapRecover(signature)
     const resultTxn = await contract.execute(recoveryTxns, ambireSignature)
-    await wait(wallet, resultTxn)
     const receipt = await resultTxn.wait()
     const block: any = await provider.getBlock(receipt.blockNumber)
     const recovery = await contract.scheduledRecoveries(msgHash)
     expect(recovery.toString()).to.equal((block.timestamp + timelock).toString())
   })
   it('successfully finalize a timelock transaction', async function () {
-    const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, wallet)
+    const [signer, signer2] = await ethers.getSigners()
+    const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signer)
     const { timelockAddress } = getTimelockData()
     const nonce = await contract.nonce()
     const recoveryTxns = [getPriviledgeTxn(ambireAccountAddress, addressThree)]
@@ -75,7 +73,7 @@ describe('Recovery basic schedule and execute', function () {
       )
     )
     const msg = ethers.getBytes(msgHash)
-    const s = wrapEthSign(await wallet2.signMessage(msg))
+    const s = wrapEthSign(await signer2.signMessage(msg))
     const signature = abiCoder.encode(
       ['tuple(address[], uint)', 'bytes', 'address'],
       [recoveryInfo, s, timelockAddress]
@@ -94,7 +92,6 @@ describe('Recovery basic schedule and execute', function () {
       }
     }
 
-    await wait(wallet, resultTxn)
     const recovery = await contract.scheduledRecoveries(msgHash)
     expect(recovery.toString()).to.equal('0')
     const newKeyCanSign = await contract.privileges(addressThree)
@@ -108,15 +105,15 @@ describe('Recovery complex tests', function () {
   it('successfully deploys the ambire account', async function () {
     const { hash, timelockAddress } = getTimelockData()
 
-    const { ambireAccountAddress: addr } = await deployAmbireAccount([
+    const { ambireAccountAddress: addr } = await deployAmbireAccountHardhatNetwork([
       { addr: addressOne, hash: true },
       { addr: timelockAddress, hash: hash }
     ])
     ambireAccountAddress = addr
   })
   it('successfully schedule and finalize a timelock transaction with the same signature but fail on the third txn', async function () {
-    assertion.expectExpects(4)
-    const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, wallet)
+    const [signer, signer2] = await ethers.getSigners()
+    const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signer)
     const { timelockAddress } = getTimelockData()
     const nonce = await contract.nonce()
     const recoveryTxns = [getPriviledgeTxn(ambireAccountAddress, addressThree)]
@@ -127,7 +124,7 @@ describe('Recovery complex tests', function () {
       )
     )
     const msg = ethers.getBytes(msgHash)
-    const s = wrapEthSign(await wallet2.signMessage(msg))
+    const s = wrapEthSign(await signer2.signMessage(msg))
     const signature = abiCoder.encode(
       ['tuple(address[], uint)', 'bytes', 'address'],
       [recoveryInfo, s, timelockAddress]
@@ -136,7 +133,6 @@ describe('Recovery complex tests', function () {
 
     // schedule
     const scheduleTxn = await contract.execute(recoveryTxns, ambireSignature)
-    await wait(wallet, scheduleTxn)
     const receipt = await scheduleTxn.wait()
     const block: any = await provider.getBlock(receipt.blockNumber)
     const recovery = await contract.scheduledRecoveries(msgHash)
@@ -157,7 +153,6 @@ describe('Recovery complex tests', function () {
       }
     }
 
-    await wait(wallet, finalizeTxn)
     const recoveryFinalized = await contract.scheduledRecoveries(msgHash)
     expect(recoveryFinalized.toString()).to.equal('0')
     const newKeyCanSign = await contract.privileges(addressThree)
@@ -165,15 +160,12 @@ describe('Recovery complex tests', function () {
       '0x0000000000000000000000000000000000000000000000000000000000000001'
     )
 
-    // try to schedule but fail because the nonce has moved up
-    try {
-      await contract.execute(recoveryTxns, ambireSignature)
-    } catch (error: any) {
-      expect(error.reason).to.equal('RECOVERY_NOT_AUTHORIZED')
-    }
+    await expect(contract.execute(recoveryTxns, ambireSignature))
+      .to.be.revertedWith('RECOVERY_NOT_AUTHORIZED')
   })
   it('successfully cancels a recovery transaction', async function () {
-    const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, wallet)
+    const [signer, signer2] = await ethers.getSigners()
+    const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signer)
     const { timelockAddress } = getTimelockData()
     const nonce = await contract.nonce()
     const recoveryTxns = [getPriviledgeTxn(ambireAccountAddress, addressFour)]
@@ -183,7 +175,7 @@ describe('Recovery complex tests', function () {
         [ambireAccountAddress, chainId, nonce, recoveryTxns]
       )
     )
-    const s = wrapEthSign(await wallet2.signMessage(ethers.getBytes(msgHash)))
+    const s = wrapEthSign(await signer2.signMessage(ethers.getBytes(msgHash)))
     const signature = abiCoder.encode(
       ['tuple(address[], uint)', 'bytes', 'address'],
       [recoveryInfo, s, timelockAddress]
@@ -195,7 +187,6 @@ describe('Recovery complex tests', function () {
 
     // schedule
     const scheduleTxn = await contract.execute(recoveryTxns, ambireSignature)
-    await wait(wallet, scheduleTxn)
     const receipt = await scheduleTxn.wait()
     const block: any = await provider.getBlock(receipt.blockNumber)
     const recovery = await contract.scheduledRecoveries(msgHash)
@@ -206,15 +197,14 @@ describe('Recovery complex tests', function () {
     const cancelHash = ethers.keccak256(
       abiCoder.encode(['bytes32', 'uint'], [msgHash, '0x63616E63'])
     )
-    const cancelSig = wrapEthSign(await wallet2.signMessage(ethers.getBytes(cancelHash)))
+    const cancelSig = wrapEthSign(await signer2.signMessage(ethers.getBytes(cancelHash)))
     const cancelSignature = abiCoder.encode(
       ['tuple(address[], uint)', 'bytes', 'address'],
       [recoveryInfo, cancelSig, timelockAddress]
     )
 
     const wrapped = wrapCancel(cancelSignature)
-    const cancelTxn = await contract.execute(recoveryTxns, wrapped)
-    await wait(wallet, cancelTxn)
+    await contract.execute(recoveryTxns, wrapped)
     const canceled = await contract.scheduledRecoveries(msgHash)
     expect(canceled.toString()).to.equal('0')
     const newKeyCanSign = await contract.privileges(addressFour)
@@ -223,8 +213,8 @@ describe('Recovery complex tests', function () {
     )
   })
   it('fails on trying to add unsigned transactions to finalize recovery after initial schedule', async function () {
-    assertion.expectExpects(2)
-    const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, wallet)
+    const [signer, signer2] = await ethers.getSigners()
+    const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signer)
     const { timelockAddress } = getTimelockData()
     const nonce = await contract.nonce()
     const recoveryTxns = [getPriviledgeTxn(ambireAccountAddress, addressThree)]
@@ -235,7 +225,7 @@ describe('Recovery complex tests', function () {
       )
     )
     const msg = ethers.getBytes(msgHash)
-    const s = wrapEthSign(await wallet2.signMessage(msg))
+    const s = wrapEthSign(await signer2.signMessage(msg))
     const signature = abiCoder.encode(
       ['tuple(address[], uint)', 'bytes', 'address'],
       [recoveryInfo, s, timelockAddress]
@@ -244,7 +234,6 @@ describe('Recovery complex tests', function () {
 
     // schedule
     const scheduleTxn = await contract.execute(recoveryTxns, ambireSignature)
-    await wait(wallet, scheduleTxn)
     const receipt = await scheduleTxn.wait()
     const block: any = await provider.getBlock(receipt.blockNumber)
     const recovery = await contract.scheduledRecoveries(msgHash)
@@ -253,14 +242,12 @@ describe('Recovery complex tests', function () {
     // finalize
     const otherTxn = [addressTwo, 0, '0x00']
     const otherTxns = [...recoveryTxns, otherTxn]
-    try {
-      await await contract.execute(otherTxns, ambireSignature)
-    } catch (error: any) {
-      expect(error.reason).to.equal('RECOVERY_NOT_AUTHORIZED')
-    }
+    await expect(contract.execute(otherTxns, ambireSignature))
+      .to.be.revertedWith('RECOVERY_NOT_AUTHORIZED')
   })
   it('should execute multiple after schedule, the first txn beign the recovery and the second being a random one with the signature from the recovered key', async function () {
-    const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, wallet)
+    const [signer, signer2,,signerFour] = await ethers.getSigners()
+    const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signer)
     const { timelockAddress } = getTimelockData()
     const nonce = await contract.nonce()
     const recoveryTxns = [getPriviledgeTxn(ambireAccountAddress, addressTwo)]
@@ -271,14 +258,13 @@ describe('Recovery complex tests', function () {
       )
     )
     const msg = ethers.getBytes(msgHash)
-    const s = wrapEthSign(await wallet2.signMessage(msg))
+    const s = wrapEthSign(await signer2.signMessage(msg))
     const signature = abiCoder.encode(
       ['tuple(address[], uint)', 'bytes', 'address'],
       [recoveryInfo, s, timelockAddress]
     )
     const ambireSignature = wrapRecover(signature)
     const resultTxn = await contract.execute(recoveryTxns, ambireSignature)
-    await wait(wallet, resultTxn)
     const receipt = await resultTxn.wait()
     const block: any = await provider.getBlock(receipt.blockNumber)
     const recovery = await contract.scheduledRecoveries(msgHash)
@@ -293,7 +279,7 @@ describe('Recovery complex tests', function () {
     await sendFunds(ambireAccountAddress, 1)
 
     // send a normal txn
-    const normalTxns = [[addressFour, ethers.parseEther('0.01'), '0x00']]
+    const normalTxns = [[signerFour.address, ethers.parseEther('0.01'), '0x00']]
     const incrementedNonce = nonce + ethers.toBigInt(1)
     const secondHash = ethers.keccak256(
       abiCoder.encode(
@@ -302,14 +288,13 @@ describe('Recovery complex tests', function () {
       )
     )
     const secondMsg = ethers.getBytes(secondHash)
-    const addressTwoSig = wrapEthSign(await wallet2.signMessage(secondMsg))
+    const addressTwoSig = wrapEthSign(await signer2.signMessage(secondMsg))
     const multiple = [
       [recoveryTxns, ambireSignature],
       [normalTxns, addressTwoSig]
     ]
     const balance = await provider.getBalance(ambireAccountAddress)
-    const multipleTxn = await contract.executeMultiple(multiple)
-    await wait(wallet, multipleTxn)
+    await contract.executeMultiple(multiple)
     const postBalance = await provider.getBalance(ambireAccountAddress)
     const sentAmount = balance - postBalance
     expect(sentAmount).to.equal(ethers.parseEther('0.01'))
@@ -318,12 +303,12 @@ describe('Recovery complex tests', function () {
 
 describe('Bigger timelock recovery tests', function () {
   it('fail on finalizing the recovery before the timelock', async function () {
-    assertion.expectExpects(6)
+    const [,signer2] = await ethers.getSigners() 
     const twoMinutesTimelock = 120
     const twoMinsRecoveryInfo = [[addressOne, addressTwo], twoMinutesTimelock]
     const { timelockAddress, hash } = getTimelockData(twoMinsRecoveryInfo)
 
-    const { ambireAccount: contract, ambireAccountAddress: addr } = await deployAmbireAccount([
+    const { ambireAccount: contract, ambireAccountAddress: addr } = await deployAmbireAccountHardhatNetwork([
       { addr: addressOne, hash: true },
       { addr: timelockAddress, hash: hash }
     ])
@@ -338,7 +323,7 @@ describe('Bigger timelock recovery tests', function () {
       )
     )
     const msg = ethers.getBytes(msgHash)
-    const s = wrapEthSign(await wallet2.signMessage(msg))
+    const s = wrapEthSign(await signer2.signMessage(msg))
     const signature = abiCoder.encode(
       ['tuple(address[], uint)', 'bytes', 'address'],
       [twoMinsRecoveryInfo, s, timelockAddress]
@@ -347,18 +332,13 @@ describe('Bigger timelock recovery tests', function () {
 
     // schedule
     const scheduleTxn = await contract.execute(recoveryTxns, ambireSignature)
-    await wait(wallet, scheduleTxn)
     const receipt = await scheduleTxn.wait()
     const block: any = await provider.getBlock(receipt.blockNumber)
     const recovery = await contract.scheduledRecoveries(msgHash)
     expect(recovery.toString()).to.equal((block.timestamp + twoMinutesTimelock).toString())
 
-    // try to execute immediatelly but fail because 2 minutes lock have not passed
-    try {
-      await contract.execute(recoveryTxns, ambireSignature)
-    } catch (error: any) {
-      expect(error.reason).to.equal('RECOVERY_NOT_READY')
-    }
+    await expect(contract.execute(recoveryTxns, ambireSignature))
+      .to.be.revertedWith('RECOVERY_NOT_READY')
   })
 })
 
@@ -368,10 +348,10 @@ describe('Bigger timelock recovery tests', function () {
 // as the contract nonce gets updated and we can no longer recover the hash
 describe('Bricking Recovery', function () {
   it('recovery hash is made unaccessible forever by sending a normal transaction after scheduling a recovery', async function () {
-    assertion.expectExpects(7)
+    const [signer, signer2] = await ethers.getSigners()
     const { hash, timelockAddress } = getTimelockData()
 
-    const { ambireAccount: contract, ambireAccountAddress: addr } = await deployAmbireAccount([
+    const { ambireAccount: contract, ambireAccountAddress: addr } = await deployAmbireAccountHardhatNetwork([
       { addr: addressOne, hash: true },
       { addr: timelockAddress, hash: hash }
     ])
@@ -386,14 +366,13 @@ describe('Bricking Recovery', function () {
       )
     )
     const msg = ethers.getBytes(msgHash)
-    const s = wrapEthSign(await wallet2.signMessage(msg))
+    const s = wrapEthSign(await signer2.signMessage(msg))
     const signature = abiCoder.encode(
       ['tuple(address[], uint)', 'bytes', 'address'],
       [recoveryInfo, s, timelockAddress]
     )
     const ambireSignature = wrapRecover(signature)
     const resultTxn = await contract.execute(recoveryTxns, ambireSignature)
-    await wait(wallet, resultTxn)
     const receipt = await resultTxn.wait()
     const block: any = await provider.getBlock(receipt.blockNumber)
     const recovery = await contract.scheduledRecoveries(msgHash)
@@ -411,17 +390,14 @@ describe('Bricking Recovery', function () {
       )
     )
     const secondMsg = ethers.getBytes(secondHash)
-    const normalSign = wrapEthSign(await wallet.signMessage(secondMsg))
-    const normalTxn = await contract.execute(otherTxns, normalSign)
-    await wait(wallet, normalTxn)
+    const normalSign = wrapEthSign(await signer.signMessage(secondMsg))
+    await contract.execute(otherTxns, normalSign)
 
     // can no longer finalize
     const reConfirmRecoveryThere = await contract.scheduledRecoveries(msgHash)
     expect(reConfirmRecoveryThere.toString()).to.equal((block.timestamp + timelock).toString())
-    try {
-      await contract.execute(recoveryTxns, ambireSignature)
-    } catch (error: any) {
-      expect(error.reason).to.equal('RECOVERY_NOT_AUTHORIZED')
-    }
+
+    await expect(contract.execute(recoveryTxns, ambireSignature))
+      .to.be.revertedWith('RECOVERY_NOT_AUTHORIZED')
   })
 })

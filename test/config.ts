@@ -1,4 +1,4 @@
-import { ethers } from 'ethers'
+import { ethers } from 'hardhat'
 import chai from 'chai'
 import chaiAssertionsCount from 'chai-assertions-count'
 chai.use(chaiAssertionsCount)
@@ -16,7 +16,7 @@ const AmbireAccountFactory = require('../artifacts/contracts/AmbireAccountFactor
 const localhost = 'http://127.0.0.1:8545'
 const validSig = '0x1626ba7e'
 const invalidSig = '0xffffffff'
-const provider = new ethers.JsonRpcProvider(localhost)
+const provider = ethers.provider
 const wallet = new ethers.Wallet(pk1, provider)
 const wallet2 = new ethers.Wallet(pk2, provider)
 const wallet3 = new ethers.Wallet(pk3, provider)
@@ -25,8 +25,8 @@ const abiCoder = new ethers.AbiCoder()
 const assertion = chai.Assertion
 const deploySalt = 0
 const deployGasLimit = 1000000
-const fs = require('fs');
-const filenames = fs.readdirSync(__dirname + '/../artifacts/build-info');
+const fs = require('fs')
+const filenames = fs.readdirSync(__dirname + '/../artifacts/build-info')
 const buildInfo = filenames.length ? require('../artifacts/build-info/' + filenames[0]) : null
 
 export {

@@ -1,71 +1,56 @@
-import { ethers } from 'ethers'
+import { ethers } from 'hardhat'
 import {
   AmbireAccount,
-  wallet,
   addressOne,
   addressTwo,
   chainId,
-  wallet2,
   abiCoder,
   addressThree,
   addressFour,
   provider,
-  expect,
-  assertion
+  expect
 } from '../config'
-import { wait } from '../polling'
 import { sendFunds, getPriviledgeTxn, getTimelockData } from '../helpers'
 import { wrapEthSign } from '../ambireSign'
-import { deployAmbireAccount } from '../implementations'
+import { deployAmbireAccountHardhatNetwork } from '../implementations'
 
 let ambireAccountAddress: string
 
 describe('Basic Ambire Account tests', function () {
   it('successfully deploys the ambire account', async function () {
-    const { ambireAccountAddress: addr } = await deployAmbireAccount([
-      { addr: addressOne, hash: true }
+    const [signer] = await ethers.getSigners()
+    const { ambireAccountAddress: addr } = await deployAmbireAccountHardhatNetwork([
+      { addr: signer.address, hash: true }
     ])
     ambireAccountAddress = addr
   })
   it('ONLY_IDENTITY_CAN_CALL on setAddrPrivilege', async function () {
-    assertion.expectExpects(1)
-    const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, wallet)
-    try {
-      await contract.setAddrPrivilege(addressTwo, ethers.toBeHex(1, 32))
-    } catch (error: any) {
-      expect(error.reason).to.equal('ONLY_IDENTITY_CAN_CALL')
-    }
+    const [signer] = await ethers.getSigners()
+    const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signer)
+    await expect(contract.setAddrPrivilege(addressTwo, ethers.toBeHex(1, 32)))
+      .to.be.revertedWith('ONLY_IDENTITY_CAN_CALL')
   })
   it('ONLY_IDENTITY_CAN_CALL on tryCatch', async function () {
-    assertion.expectExpects(1)
-    const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, wallet)
-    try {
-      await contract.tryCatch(addressTwo, 1, '0x00')
-    } catch (error: any) {
-      expect(error.reason).to.equal('ONLY_IDENTITY_CAN_CALL')
-    }
+    const [signer] = await ethers.getSigners()
+    const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signer)
+    await expect(contract.tryCatch(addressTwo, 1, '0x00'))
+      .to.be.revertedWith('ONLY_IDENTITY_CAN_CALL')
   })
   it('ONLY_IDENTITY_CAN_CALL on tryCatchLimit', async function () {
-    assertion.expectExpects(1)
-    const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, wallet)
-    try {
-      await contract.tryCatchLimit(addressTwo, 1, '0x00', 100000)
-    } catch (error: any) {
-      expect(error.reason).to.equal('ONLY_IDENTITY_CAN_CALL')
-    }
+    const [signer] = await ethers.getSigners()
+    const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signer)
+    await expect(contract.tryCatchLimit(addressTwo, 1, '0x00', 100000))
+      .to.be.revertedWith('ONLY_IDENTITY_CAN_CALL')
   })
   it('ONLY_IDENTITY_CAN_CALL on executeBySelf', async function () {
-    assertion.expectExpects(1)
-    const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, wallet)
-    try {
-      await contract.executeBySelf([[addressTwo, 1, '0x00']])
-    } catch (error: any) {
-      expect(error.reason).to.equal('ONLY_IDENTITY_CAN_CALL')
-    }
+    const [signer] = await ethers.getSigners()
+    const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signer)
+    await expect(contract.executeBySelf([[addressTwo, 1, '0x00']]))
+      .to.be.revertedWith('ONLY_IDENTITY_CAN_CALL')
   })
   it('execute should fail if the account does not have privileges', async function () {
-    assertion.expectExpects(1)
-    const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, wallet)
+    const [signer, signer2] = await ethers.getSigners()
+    const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signer)
     await sendFunds(ambireAccountAddress, 1)
     const nonce = await contract.nonce()
     const normalTxns = [[addressTwo, ethers.parseEther('0.01'), '0x00']]
@@ -77,16 +62,13 @@ describe('Basic Ambire Account tests', function () {
         )
       )
     )
-    const s = wrapEthSign(await wallet2.signMessage(msg))
-    try {
-      await contract.execute(normalTxns, s)
-    } catch (error: any) {
-      expect(error.reason).to.equal('INSUFFICIENT_PRIVILEGE')
-    }
+    const s = wrapEthSign(await signer2.signMessage(msg))
+    await expect(contract.execute(normalTxns, s))
+      .to.be.revertedWith('INSUFFICIENT_PRIVILEGE')
   })
   it('fail on downgrading my own key priviledge', async function () {
-    assertion.expectExpects(1)
-    const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, wallet)
+    const [signer] = await ethers.getSigners()
+    const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signer)
     const txns = [getPriviledgeTxn(ambireAccountAddress, addressOne, false)]
     const nonce = await contract.nonce()
     const msg = ethers.getBytes(
@@ -97,15 +79,13 @@ describe('Basic Ambire Account tests', function () {
         )
       )
     )
-    const s = wrapEthSign(await wallet.signMessage(msg))
-    try {
-      await contract.execute(txns, s)
-    } catch (error: any) {
-      expect(error.reason).to.equal('PRIVILEGE_NOT_DOWNGRADED')
-    }
+    const s = wrapEthSign(await signer.signMessage(msg))
+    await expect(contract.execute(txns, s))
+      .to.be.revertedWith('PRIVILEGE_NOT_DOWNGRADED')
   })
   it('should successfully set the timelock permission to 1', async function () {
-    const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, wallet)
+    const [signer] = await ethers.getSigners()
+    const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signer)
 
     // first, add the timelock
     const { hash, timelockAddress } = getTimelockData()
@@ -119,8 +99,7 @@ describe('Basic Ambire Account tests', function () {
         data: calldata
       }
     ]
-    const txn = await contract.executeBySender(setPrivTxn)
-    await wait(wallet, txn)
+    await contract.executeBySender(setPrivTxn)
     const hasTimelock = await contract.privileges(timelockAddress)
     expect(hasTimelock).to.equal(hash)
 
@@ -136,15 +115,15 @@ describe('Basic Ambire Account tests', function () {
         data: calldata2
       }
     ]
-    const fulPerm = contract.executeBySender(unsetPrivTxn)
-    await wait(wallet, fulPerm)
+    await contract.executeBySender(unsetPrivTxn)
     const noTimelock = await contract.privileges(timelockAddress)
     expect(noTimelock).to.equal(
       '0x0000000000000000000000000000000000000000000000000000000000000001'
     )
   })
   it('successfully remove the timelock', async function () {
-    const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, wallet)
+    const [signer] = await ethers.getSigners()
+    const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signer)
 
     // first, add the timelock
     const { hash, timelockAddress } = getTimelockData()
@@ -158,8 +137,7 @@ describe('Basic Ambire Account tests', function () {
         data: calldata
       }
     ]
-    const txn = await contract.executeBySender(setPrivTxn)
-    await wait(wallet, txn)
+    await contract.executeBySender(setPrivTxn)
     const hasTimelock = await contract.privileges(timelockAddress)
     expect(hasTimelock).to.equal(hash)
 
@@ -175,25 +153,22 @@ describe('Basic Ambire Account tests', function () {
         data: calldata2
       }
     ]
-    const unsetTxn = await contract.executeBySender(unsetPrivTxn)
-    await wait(wallet, unsetTxn)
+    await contract.executeBySender(unsetPrivTxn)
     const noTimelock = await contract.privileges(timelockAddress)
     expect(noTimelock).to.equal(
       '0x0000000000000000000000000000000000000000000000000000000000000000'
     )
   })
   it('executeBySender should fail if the account does not have privileges', async function () {
-    assertion.expectExpects(1)
-    const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, wallet2)
-    try {
-      const txns = [[addressOne, 1, '0x00']]
-      await contract.executeBySender(txns)
-    } catch (error: any) {
-      expect(error.reason).to.equal('INSUFFICIENT_PRIVILEGE')
-    }
+    const [, signer2] = await ethers.getSigners()
+    const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signer2)
+    const txns = [[addressOne, 1, '0x00']]
+    await expect(contract.executeBySender(txns))
+      .to.be.revertedWith('INSUFFICIENT_PRIVILEGE')
   })
   it('should successfully executeMultiple', async function () {
-    const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, wallet)
+    const [signer] = await ethers.getSigners()
+    const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signer)
     await sendFunds(ambireAccountAddress, 1)
     const nonce = await contract.nonce()
     const firstBatch = [
@@ -208,7 +183,7 @@ describe('Basic Ambire Account tests', function () {
         )
       )
     )
-    const s = wrapEthSign(await wallet.signMessage(msg))
+    const s = wrapEthSign(await signer.signMessage(msg))
     const secondBatch = [
       [addressOne, ethers.parseEther('0.01'), '0x00'],
       [addressFour, ethers.parseEther('0.01'), '0x00']
@@ -221,13 +196,12 @@ describe('Basic Ambire Account tests', function () {
         )
       )
     )
-    const s2 = wrapEthSign(await wallet.signMessage(msg2))
+    const s2 = wrapEthSign(await signer.signMessage(msg2))
     const balance = await provider.getBalance(ambireAccountAddress)
     const multipleTxn = await contract.executeMultiple([
       [firstBatch, s],
       [secondBatch, s2]
     ])
-    await wait(wallet, multipleTxn)
     const receipt = await multipleTxn.wait()
     const postBalance = await provider.getBalance(ambireAccountAddress, receipt.blockNumber)
     expect(balance - postBalance).to.equal(ethers.parseEther('0.04'))
