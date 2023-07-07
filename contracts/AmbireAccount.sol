@@ -26,7 +26,7 @@ contract AmbireAccount {
 		address indexed recoveryKey,
 		uint256 nonce,
 		uint256 time,
-		Transaction[] txns
+		Transaction[] calls
 	);
 	event LogRecoveryCancelled(
 		bytes32 indexed txnHash,
@@ -50,7 +50,7 @@ contract AmbireAccount {
 	}
 	// built-in batching of multiple execute()'s; useful when performing timelocked recoveries
 	struct ExecuteArgs {
-		Transaction[] txns;
+		Transaction[] calls;
 		bytes signature;
 	}
 
@@ -112,27 +112,31 @@ contract AmbireAccount {
 	// @notice Useful when we need to do multiple operations but ignore failures in some of them
 	function tryCatch(address to, uint256 value, bytes calldata data) external payable {
 		require(msg.sender == address(this), 'ONLY_IDENTITY_CAN_CALL');
-		(bool success, bytes memory returnData) = to.call{ value: value, gas: gasleft() }(data);
+		uint256 gasBefore = gasleft();
+		(bool success, bytes memory returnData) = to.call{ value: value, gas: gasBefore }(data);
+		require(gasleft() > gasBefore/64, 'TRYCATCH_OOG');
 		if (!success) emit LogErr(to, value, data, returnData);
 	}
 
 	// @notice same as `tryCatch` but with a gas limit
 	function tryCatchLimit(address to, uint256 value, bytes calldata data, uint256 gasLimit) external payable {
 		require(msg.sender == address(this), 'ONLY_IDENTITY_CAN_CALL');
+		uint256 gasBefore = gasleft();
 		(bool success, bytes memory returnData) = to.call{ value: value, gas: gasLimit }(data);
+		require(gasleft() > gasBefore/64, 'TRYCATCH_OOG');
 		if (!success) emit LogErr(to, value, data, returnData);
 	}
 
 	// @notice execute: this method is used to execute a single bundle of calls that are signed with a key
 	// that is authorized to execute on this account (in `privileges`)
 	// @dev: WARNING: if the signature of this is changed, we have to change AmbireAccountFactory
-	function execute(Transaction[] calldata txns, bytes calldata signature) public payable {
+	function execute(Transaction[] calldata calls, bytes calldata signature) public payable {
 		uint256 currentNonce = nonce;
 		// NOTE: abi.encode is safer than abi.encodePacked in terms of collision safety
-		bytes32 hash = keccak256(abi.encode(address(this), block.chainid, currentNonce, txns));
+		bytes32 hash = keccak256(abi.encode(address(this), block.chainid, currentNonce, calls));
 
 		address signerKey;
-		// Recovery signature: allows to perform timelocked txns
+		// Recovery signature: allows to perform timelocked calls
 		uint8 sigMode = uint8(signature[signature.length - 1]);
 
 		if (sigMode == SIGMODE_RECOVER || sigMode == SIGMODE_CANCEL) {
@@ -149,7 +153,6 @@ contract AmbireAccount {
 			uint256 scheduled = scheduledRecoveries[hash];
 			if (scheduled != 0 && !isCancellation) {
 				require(block.timestamp > scheduled, 'RECOVERY_NOT_READY');
-				nonce++;
 				delete scheduledRecoveries[hash];
 				emit LogRecoveryFinalized(hash, recoveryInfoHash, block.timestamp);
 			} else {
@@ -165,10 +168,11 @@ contract AmbireAccount {
 				require(isIn, 'RECOVERY_NOT_AUTHORIZED');
 				if (isCancellation) {
 					delete scheduledRecoveries[hash];
+					nonce = currentNonce + 1;
 					emit LogRecoveryCancelled(hash, recoveryInfoHash, recoveryKey, block.timestamp);
 				} else {
 					scheduledRecoveries[hash] = block.timestamp + recoveryInfo.timelock;
-					emit LogRecoveryScheduled(hash, recoveryInfoHash, recoveryKey, currentNonce, block.timestamp, txns);
+					emit LogRecoveryScheduled(hash, recoveryInfoHash, recoveryKey, currentNonce, block.timestamp, calls);
 				}
 				return;
 			}
@@ -182,7 +186,7 @@ contract AmbireAccount {
 		// and respectively hash upon recovery / canceling
 		// doing this after sig verification is fine because sig verification can only do STATICCALLS
 		nonce = currentNonce + 1;
-		executeBatch(txns);
+		executeBatch(calls);
 
 		// The actual anti-bricking mechanism - do not allow a signerKey to drop their own privileges
 		require(privileges[signerKey] != bytes32(0), 'PRIVILEGE_NOT_DOWNGRADED');
@@ -190,30 +194,30 @@ contract AmbireAccount {
 
 	// @notice allows executing multiple bundles of calls (batch together multiple executes)
 	function executeMultiple(ExecuteArgs[] calldata toExec) external payable {
-		for (uint256 i = 0; i != toExec.length; i++) execute(toExec[i].txns, toExec[i].signature);
+		for (uint256 i = 0; i != toExec.length; i++) execute(toExec[i].calls, toExec[i].signature);
 	}
 
 	// @notice Allows executing calls if the caller itself is authorized
 	// @dev no need for nonce management here cause we're not dealing with sigs
-	function executeBySender(Transaction[] calldata txns) external payable {
+	function executeBySender(Transaction[] calldata calls) external payable {
 		require(privileges[msg.sender] != bytes32(0), 'INSUFFICIENT_PRIVILEGE');
-		executeBatch(txns);
+		executeBatch(calls);
 		// again, anti-bricking
 		require(privileges[msg.sender] != bytes32(0), 'PRIVILEGE_NOT_DOWNGRADED');
 	}
 
 	// @notice allows the contract itself to execute a batch of calls
 	// self-calling is useful in cases like wanting to do multiple things in a tryCatchLimit
-	function executeBySelf(Transaction[] calldata txns) external payable {
+	function executeBySelf(Transaction[] calldata calls) external payable {
 		require(msg.sender == address(this), 'ONLY_IDENTITY_CAN_CALL');
-		executeBatch(txns);
+		executeBatch(calls);
 	}
 
-	function executeBatch(Transaction[] memory txns) internal {
-		uint256 len = txns.length;
+	function executeBatch(Transaction[] memory calls) internal {
+		uint256 len = calls.length;
 		for (uint256 i = 0; i < len; i++) {
-			Transaction memory txn = txns[i];
-			executeCall(txn.to, txn.value, txn.data);
+			Transaction memory call = calls[i];
+			executeCall(call.to, call.value, call.data);
 		}
 	}
 
@@ -244,10 +248,14 @@ contract AmbireAccount {
 
 	// @notice EIP-1155 implementation
 	// we pretty much only need to signal that we support the interface for 165, but for 1155 we also need the fallback function
-	function supportsInterface(bytes4 interfaceID) external pure returns (bool) {
-		return
+	function supportsInterface(bytes4 interfaceID) external view returns (bool) {
+		bool supported =
 			interfaceID == 0x01ffc9a7 || // ERC-165 support (i.e. `bytes4(keccak256('supportsInterface(bytes4)'))`).
 			interfaceID == 0x150b7a02 || // ERC721TokenReceiver
 			interfaceID == 0x4e2312e0; // ERC-1155 `ERC1155TokenReceiver` support (i.e. `bytes4(keccak256("onERC1155Received(address,address,uint256,uint256,bytes)")) ^ bytes4(keccak256("onERC1155BatchReceived(address,address,uint256[],uint256[],bytes)"))`).
+		if (supported) return true;
+		address payable fallbackHandler = payable(address(uint160(uint(privileges[FALLBACK_HANDLER_SLOT]))));
+		if (fallbackHandler == address(0)) return false;
+		return AmbireAccount(fallbackHandler).supportsInterface(interfaceID);
 	}
 }
