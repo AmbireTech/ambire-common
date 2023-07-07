@@ -6,7 +6,7 @@ enum SecretType {
   keyBackup
 }
 
-export interface EmailVaultSecrters {
+export interface EmailVaultSecrets {
   key: String
   value?: String
   type: SecretType
@@ -26,5 +26,5 @@ export interface EmailVaultData {
   recoveryKey: String
   email: string
   availableAccounts: EmailVaultAccountInfo[]
-  availableSecrets: EmailVaultSecrters[]
+  availableSecrets: EmailVaultSecrets[]
 }

@@ -1,7 +1,7 @@
 // @NOTE<Yosif> Should keyAddress, keyStoreUid and recoveryKey be of type Address and not String?
 
 import { relayerCall } from '../relayerCall/relayerCall'
-import { EmailVaultData, EmailVaultSecrters } from '../../interfaces/emailVault'
+import { EmailVaultData, EmailVaultSecrets } from '../../interfaces/emailVault'
 
 export class EmailVault {
   private callRelayer: Function
@@ -16,11 +16,11 @@ export class EmailVault {
     this.fetch = fetch
   }
 
-  async create(email: String, authKey: String): Promise<EmailVaultSecrters> {
+  async create(email: String, authKey: String): Promise<EmailVaultSecrets> {
     return (await this.callRelayer(`/email-vault/create/${email}/${authKey}`)).data
   }
 
-  async getRecoveryKeyAddress(email: String, authKey: String): Promise<EmailVaultSecrters> {
+  async getRecoveryKeyAddress(email: String, authKey: String): Promise<EmailVaultSecrets> {
     return (await this.callRelayer(`/email-vault/getRecoveryKey/${email}/${authKey}`)).data
   }
 
@@ -46,7 +46,7 @@ export class EmailVault {
     email: String,
     authKey: String,
     keyStoreUid: String
-  ): Promise<EmailVaultSecrters> {
+  ): Promise<EmailVaultSecrets> {
     return (
       await this.callRelayer(
         `/email-vault/retrieveKeyStoreSecret/${email}/${keyStoreUid}/${authKey}`
@@ -72,7 +72,7 @@ export class EmailVault {
     email: String,
     authKey: String,
     keyAddress: String
-  ): Promise<EmailVaultSecrters> {
+  ): Promise<EmailVaultSecrets> {
     return (
       await this.callRelayer(`/email-vault/retrieveKeyBackup/${email}/${keyAddress}/${authKey}`)
     ).data
