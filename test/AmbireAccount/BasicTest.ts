@@ -28,25 +28,25 @@ describe('Basic Ambire Account tests', function () {
     const [signer] = await ethers.getSigners()
     const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signer)
     await expect(contract.setAddrPrivilege(addressTwo, ethers.toBeHex(1, 32)))
-      .to.be.revertedWith("ONLY_IDENTITY_CAN_CALL")
+      .to.be.revertedWith('ONLY_IDENTITY_CAN_CALL')
   })
   it('ONLY_IDENTITY_CAN_CALL on tryCatch', async function () {
     const [signer] = await ethers.getSigners()
     const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signer)
     await expect(contract.tryCatch(addressTwo, 1, '0x00'))
-      .to.be.revertedWith("ONLY_IDENTITY_CAN_CALL")
+      .to.be.revertedWith('ONLY_IDENTITY_CAN_CALL')
   })
   it('ONLY_IDENTITY_CAN_CALL on tryCatchLimit', async function () {
     const [signer] = await ethers.getSigners()
     const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signer)
     await expect(contract.tryCatchLimit(addressTwo, 1, '0x00', 100000))
-      .to.be.revertedWith("ONLY_IDENTITY_CAN_CALL")
+      .to.be.revertedWith('ONLY_IDENTITY_CAN_CALL')
   })
   it('ONLY_IDENTITY_CAN_CALL on executeBySelf', async function () {
     const [signer] = await ethers.getSigners()
     const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signer)
     await expect(contract.executeBySelf([[addressTwo, 1, '0x00']]))
-      .to.be.revertedWith("ONLY_IDENTITY_CAN_CALL")
+      .to.be.revertedWith('ONLY_IDENTITY_CAN_CALL')
   })
   it('execute should fail if the account does not have privileges', async function () {
     const [signer, signer2] = await ethers.getSigners()
@@ -64,7 +64,7 @@ describe('Basic Ambire Account tests', function () {
     )
     const s = wrapEthSign(await signer2.signMessage(msg))
     await expect(contract.execute(normalTxns, s))
-      .to.be.revertedWith("INSUFFICIENT_PRIVILEGE")
+      .to.be.revertedWith('INSUFFICIENT_PRIVILEGE')
   })
   it('fail on downgrading my own key priviledge', async function () {
     const [signer] = await ethers.getSigners()
@@ -81,7 +81,7 @@ describe('Basic Ambire Account tests', function () {
     )
     const s = wrapEthSign(await signer.signMessage(msg))
     await expect(contract.execute(txns, s))
-      .to.be.revertedWith("PRIVILEGE_NOT_DOWNGRADED")
+      .to.be.revertedWith('PRIVILEGE_NOT_DOWNGRADED')
   })
   it('should successfully set the timelock permission to 1', async function () {
     const [signer] = await ethers.getSigners()
@@ -164,7 +164,7 @@ describe('Basic Ambire Account tests', function () {
     const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signer2)
     const txns = [[addressOne, 1, '0x00']]
     await expect(contract.executeBySender(txns))
-      .to.be.revertedWith("INSUFFICIENT_PRIVILEGE")
+      .to.be.revertedWith('INSUFFICIENT_PRIVILEGE')
   })
   it('should successfully executeMultiple', async function () {
     const [signer] = await ethers.getSigners()

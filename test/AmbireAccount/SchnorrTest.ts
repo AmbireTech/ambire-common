@@ -64,7 +64,7 @@ describe('Schnorr tests', function () {
     const hash = ethers.solidityPackedKeccak256(['string'], [msg])
 
     await expect(contract.isValidSignature(hash, ambireSignature))
-      .to.be.revertedWith("SV_SCHNORR_FAILED")
+      .to.be.revertedWith('SV_SCHNORR_FAILED')
   })
   it('fails validation when the message is different', async function () {
     const [signer] = await ethers.getSigners()
@@ -86,6 +86,6 @@ describe('Schnorr tests', function () {
     const hash = ethers.solidityPackedKeccak256(['string'], [msg2])
 
     await expect(contract.isValidSignature(hash, ambireSignature))
-      .to.be.revertedWith("SV_SCHNORR_FAILED")
+      .to.be.revertedWith('SV_SCHNORR_FAILED')
   })
 })

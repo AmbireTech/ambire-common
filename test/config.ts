@@ -25,8 +25,8 @@ const abiCoder = new ethers.AbiCoder()
 const assertion = chai.Assertion
 const deploySalt = 0
 const deployGasLimit = 1000000
-const fs = require('fs');
-const filenames = fs.readdirSync(__dirname + '/../artifacts/build-info');
+const fs = require('fs')
+const filenames = fs.readdirSync(__dirname + '/../artifacts/build-info')
 const buildInfo = filenames.length ? require('../artifacts/build-info/' + filenames[0]) : null
 
 export {

@@ -161,7 +161,7 @@ describe('Recovery complex tests', function () {
     )
 
     await expect(contract.execute(recoveryTxns, ambireSignature))
-      .to.be.revertedWith("RECOVERY_NOT_AUTHORIZED")
+      .to.be.revertedWith('RECOVERY_NOT_AUTHORIZED')
   })
   it('successfully cancels a recovery transaction', async function () {
     const [signer, signer2] = await ethers.getSigners()
@@ -243,7 +243,7 @@ describe('Recovery complex tests', function () {
     const otherTxn = [addressTwo, 0, '0x00']
     const otherTxns = [...recoveryTxns, otherTxn]
     await expect(contract.execute(otherTxns, ambireSignature))
-      .to.be.revertedWith("RECOVERY_NOT_AUTHORIZED")
+      .to.be.revertedWith('RECOVERY_NOT_AUTHORIZED')
   })
   it('should execute multiple after schedule, the first txn beign the recovery and the second being a random one with the signature from the recovered key', async function () {
     const [signer, signer2,,signerFour] = await ethers.getSigners()
@@ -338,7 +338,7 @@ describe('Bigger timelock recovery tests', function () {
     expect(recovery.toString()).to.equal((block.timestamp + twoMinutesTimelock).toString())
 
     await expect(contract.execute(recoveryTxns, ambireSignature))
-      .to.be.revertedWith("RECOVERY_NOT_READY")
+      .to.be.revertedWith('RECOVERY_NOT_READY')
   })
 })
 
@@ -398,6 +398,6 @@ describe('Bricking Recovery', function () {
     expect(reConfirmRecoveryThere.toString()).to.equal((block.timestamp + timelock).toString())
 
     await expect(contract.execute(recoveryTxns, ambireSignature))
-      .to.be.revertedWith("RECOVERY_NOT_AUTHORIZED")
+      .to.be.revertedWith('RECOVERY_NOT_AUTHORIZED')
   })
 })

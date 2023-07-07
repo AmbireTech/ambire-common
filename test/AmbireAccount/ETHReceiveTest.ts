@@ -18,8 +18,8 @@ describe('Receive ETH tests', function () {
   it('should receive ETH via the fallback method of the AmbireAccount and check gas cost', async function () {
     const [signer] = await ethers.getSigners()
     let abi = [
-      "function methodNoExist(address, address, uint256, bytes calldata) external pure returns (bytes4)"
-    ];
+      'function methodNoExist(address, address, uint256, bytes calldata) external pure returns (bytes4)'
+    ]
     let iface = new ethers.Interface(abi)
     const calldata = iface.encodeFunctionData('methodNoExist', [
       addressOne,
