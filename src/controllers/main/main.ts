@@ -146,7 +146,14 @@ export class MainController extends EventEmitter {
       // @TODO: if EOA, only one call per accountOp
       if (!this.accountOpsToBeSigned[accountAddr]) this.accountOpsToBeSigned[accountAddr] = {}
       if (!this.accountOpsToBeSigned[accountAddr][networkId]) {
-        // @TODO handle the case when this.accountStates[accountAddr][networkId] is not defined, re-calculate on update
+        // @TODO: check if accountStates[accountAddr][networkId] exists, if not, recalculate at the next update
+        // for now we jsut return
+        // one solution would be to, instead of checking, have a promise that we always await here, that is responsible for fetching
+        // account data; however, this won't work with EOA accountOps, which have to always pick the first userRequest for a particular acc/network,
+        // and be recalculated when one gets dismissed
+        // although it could work like this: 1) await the promise, 2) check if exists 3) if not, re-trigger the promise; 
+        // 4) manage recalc on removeUserRequest too in order to handle EOAs
+        if (!this.accountStates[accountAddr]?.[networkId]) return
         this.accountOpsToBeSigned[accountAddr][networkId] = {
           accountAddr,
           networkId,
@@ -206,7 +213,9 @@ export class MainController extends EventEmitter {
           )
         )
       ),
-      estimate(provider, network, account, accountOp)
+      // @TODO nativeToCheck: pass all EOAs,
+      // @TODO feeTokens: pass a hardcoded list from settings
+      estimate(provider, network, account, accountOp, [], [])
       // @TODO refresh the estimation
     ])
     console.log(estimation)
