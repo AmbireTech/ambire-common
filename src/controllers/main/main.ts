@@ -57,26 +57,29 @@ export type AccountStates = {
 }
 
 export class MainController extends EventEmitter {
+  // Private library instances
   private storage: Storage
-
   private keystore: Keystore
+  // Private sub-structures
+  private providers: { [key: string]: JsonRpcProvider } = {}
 
+  // Load-related stuff
   private initialLoadPromise: Promise<void>
-
   isReady: boolean = false
 
+  // Subcontrollers
   // this is not private cause you're supposed to directly access it
   portfolio: PortfolioController
 
+  // Public sub-structures
   // @TODO emailVaults
   // @TODO read networks from settings
   accounts: Account[] = []
+  selectedAccount: string | null = null
 
   accountStates: AccountStates = {}
 
   keys: Key[] = []
-
-  selectedAccount: string | null = null
 
   // @TODO: structure
   settings: { networks: NetworkDescriptor[] }
@@ -89,7 +92,6 @@ export class MainController extends EventEmitter {
   // accountAddr => networkId => accountOp
   // @TODO consider getting rid of the `| null` ugliness, but then we need to auto-delete
   accountOpsToBeSigned: { [key: string]: { [key: string]: AccountOp | null } } = {}
-
   accountOpsToBeConfirmed: { [key: string]: { [key: string]: AccountOp } } = {}
 
   // accountAddr => UniversalMessage[]
@@ -112,6 +114,10 @@ export class MainController extends EventEmitter {
       this.keystore.getKeys(),
       this.storage.get('accounts', [])
     ])
+    this.providers = Object.fromEntries(this.settings.networks.map(network => ([
+      network.id,
+      new JsonRpcProvider(network.rpcUrl)
+    ])))
     // @TODO reload those
     // @TODO error handling here
     this.accountStates = await this.getAccountsInfo(this.accounts)
@@ -121,11 +127,7 @@ export class MainController extends EventEmitter {
 
   private async getAccountsInfo(accounts: Account[]): Promise<AccountStates> {
     const result = await Promise.all(
-      this.settings.networks.map((network: NetworkDescriptor) => {
-        // @TODO cache provider
-        const provider = new JsonRpcProvider(network.rpcUrl)
-        return getAccountState(provider, network, accounts)
-      })
+      this.settings.networks.map(network => getAccountState(this.providers[network.id], network, accounts))
     )
 
     const states = accounts.map((acc: Account, accIndex: number) => {
@@ -260,10 +262,9 @@ export class MainController extends EventEmitter {
     if (!account) throw new Error(`estimateAccountOp: ${accountOp.accountAddr}: account does not exist`)
     const network = this.settings.networks.find(x => x.id === accountOp.networkId)
     if (!network) throw new Error(`estimateAccountOp: ${accountOp.networkId}: network does not exist`)
-    // @TODO cache providers
-    const provider = new JsonRpcProvider(network.rpcUrl)
     const [, estimation] = await Promise.all([
       // NOTE: we are not emitting an update here because the portfolio controller will do that
+      // @TODO portfolio should take a provider
       this.portfolio.updateSelectedAccount(
         this.accounts,
         this.settings.networks,
@@ -278,7 +279,7 @@ export class MainController extends EventEmitter {
       ),
       // @TODO nativeToCheck: pass all EOAs,
       // @TODO feeTokens: pass a hardcoded list from settings
-      estimate(provider, network, account, accountOp, [], [])
+      estimate(this.providers[accountOp.networkId], network, account, accountOp, [], [])
       // @TODO refresh the estimation
     ])
     console.log(estimation)
