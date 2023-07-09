@@ -24,18 +24,18 @@ export async function getAccountState(
     blockTag
   })
 
-  const result: AccountOnchainState[] = accountStateResult.map((acc: any, index: number) => {
-    const associatedKeys = acc.associatedKeyPriviliges.map(
+  const result: AccountOnchainState[] = accountStateResult.map((accResult: any, index: number) => {
+    const associatedKeys = accResult.associatedKeyPriviliges.map(
       (privilege: string, keyIndex: number) => {
         return [accounts[index].associatedKeys[keyIndex], privilege]
       }
     )
     return {
       accountAddr: accounts[index].addr,
-      nonce: parseInt(acc.nonce, 10),
-      isDeployed: acc.isDeployed,
+      nonce: parseInt(accResult.nonce, 10),
+      isDeployed: accResult.isDeployed,
       associatedKeys: Object.fromEntries(associatedKeys),
-      deployError: !(acc.associatedKeyPriviliges.length > 0)
+      deployError: accounts[index].associatedKeys.length > 0 && accResult.associatedKeyPriviliges.length === 0
     }
   })
 
