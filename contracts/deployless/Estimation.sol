@@ -90,7 +90,7 @@ contract Estimation {
       for (uint i=0; i!=associatedKeys.length; i++) {
         if (op.account.privileges(associatedKeys[i]) != bytes32(0)) { isOk = true; break; }
       }
-      require(isOk, "ANTI_BRICKING_FAILED");
+      require(isOk, "Anti-bricking check failed, this means that none of the passed associatedKeys has privileges after simulation");
     }
   }
 
@@ -202,7 +202,7 @@ contract Estimation {
     require(
       emptyOpOutcome.success,
       // @TODO: fix: it is wrong to cast this as string since we'll double-wrap it in Error()
-      emptyOpOutcome.err.length > 0 ? string(emptyOpOutcome.err) : "FEE_BASE_GASUSED"
+      emptyOpOutcome.err.length > 0 ? string(emptyOpOutcome.err) : "calculateBaseFee: unable to execute emptyOpOutcome, cannot calc base fee"
     );
     AccountOp memory twoCallOp = emptyOp;
     twoCallOp.nonce = account.nonce();
@@ -213,7 +213,7 @@ contract Estimation {
     require(
       twoCallOpOutcome.success,
       // @TODO: fix: it is wrong to cast this as string since we'll double-wrap it in Error()
-      twoCallOpOutcome.err.length > 0 ? string(twoCallOpOutcome.err) : "FEE_BASE_GASUSED"
+      twoCallOpOutcome.err.length > 0 ? string(twoCallOpOutcome.err) : "calculateBaseFee: unable to execute twoCallOpOutcome, cannot calc base fee"
     );
 
     // This will happen if we haven't accessed the account before. As such, the second one will
