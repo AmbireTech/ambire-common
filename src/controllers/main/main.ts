@@ -151,6 +151,42 @@ export class MainController extends EventEmitter {
     if (!this.accountStates[accountAddr]?.[networkId]) throw new Error(`ensureAccountInfo: acc info for ${accountAddr} on ${networkId} was not retrieved`)
   }
 
+  private getAccountOp(accountAddr: AccountId, networkId: NetworkId): AccountOp {
+    const account = this.accounts.find(x => x.addr === accountAddr)
+    if (!account) throw new Error(`getAccountOp: tried to run for non-existant account ${accountAddr}`)
+    // @TODO consider bringing back functional style if we can figure out how not to trip up the TS compiler
+    /*const calls = this.userRequests
+        .filter(req => req.action.kind === 'call' && req.networkId === networkId && req.accountAddr === accountAddr)
+        .map(req => ({ ...req.action, fromUserRequestId: req.id }))
+        // only take the first one for EOAs
+        .slice(0, account.creation ? Infinity : 1)
+    */
+    const calls = []
+    for (const req of this.userRequests) {
+      if (req.action.kind === 'call' && req.networkId === networkId && req.accountAddr === accountAddr) {
+        calls.push({ ...req.action, fromUserRequestId: req.id })
+      }
+      // only the first one for EOAs
+      if (!account.creation) break;
+    }
+
+    // @TODO keep old properties from the current one!
+    return {
+      accountAddr,
+      networkId,
+      signingKeyAddr: null,
+      gasLimit: null,
+      gasFeePayment: null,
+      // We use the AccountInfo to determine
+      nonce: this.accountStates[accountAddr][networkId].nonce,
+      // @TODO set this to a spoofSig based on accountState
+      signature: null,
+      // @TODO from pending recoveries
+      accountOpToExecuteBefore: null,
+      calls
+     }
+  }
+
   async addUserRequest(req: UserRequest) {
     this.userRequests.push(req)
     const { action, accountAddr, networkId } = req
@@ -158,33 +194,16 @@ export class MainController extends EventEmitter {
     if (action.kind === 'call') {
       // @TODO: if EOA, only one call per accountOp
       if (!this.accountOpsToBeSigned[accountAddr]) this.accountOpsToBeSigned[accountAddr] = {}
-      if (!this.accountOpsToBeSigned[accountAddr][networkId]) {
-        // @TODO
-        // one solution would be to, instead of checking, have a promise that we always await here, that is responsible for fetching
-        // account data; however, this won't work with EOA accountOps, which have to always pick the first userRequest for a particular acc/network,
-        // and be recalculated when one gets dismissed
-        // although it could work like this: 1) await the promise, 2) check if exists 3) if not, re-trigger the promise; 
-        // 4) manage recalc on removeUserRequest too in order to handle EOAs
-        await this.ensureAccountInfo(accountAddr, networkId)
-        this.accountOpsToBeSigned[accountAddr][networkId] = {
-          accountAddr,
-          networkId,
-          signingKeyAddr: null,
-          gasLimit: null,
-          gasFeePayment: null,
-          // We use the AccountInfo to determine; alternatively, can we use the Estimator and not need a nonce before that?
-          nonce: this.accountStates[accountAddr][networkId].nonce,
-          // this will be set to a spoofSig in updateAccountOp
-          signature: null,
-          // @TODO from pending recoveries
-          accountOpToExecuteBefore: null,
-          calls: []
-        }
-      }
-      const accountOp = this.accountOpsToBeSigned[accountAddr][networkId]
-      accountOp.calls.push({ ...action, fromUserRequestId: req.id })
+      // @TODO
+      // one solution would be to, instead of checking, have a promise that we always await here, that is responsible for fetching
+      // account data; however, this won't work with EOA accountOps, which have to always pick the first userRequest for a particular acc/network,
+      // and be recalculated when one gets dismissed
+      // although it could work like this: 1) await the promise, 2) check if exists 3) if not, re-trigger the promise; 
+      // 4) manage recalc on removeUserRequest too in order to handle EOAs
+      await this.ensureAccountInfo(accountAddr, networkId)
+      this.accountOpsToBeSigned[accountAddr][networkId] = this.getAccountOp(accountAddr, networkId)
       try {
-        await this.updateAccountOp(accountOp)
+        await this.estimateAccountOp(this.accountOpsToBeSigned[accountAddr][networkId])
       } catch(e) {
         // @TODO: unified wrapper for controller errors
         console.error(e)
@@ -197,12 +216,13 @@ export class MainController extends EventEmitter {
         fromUserRequestId: req.id,
         signature: null
       })
-      // @TODO
+      // @iTODO
     }
     // @TODO emit update
   }
 
-  private async updateAccountOp(accountOp: AccountOp) {
+  // @TODO: protect this from race conditions/simultanous executions
+  private async estimateAccountOp(accountOp: AccountOp) {
     await this.initialLoadPromise
     // new accountOps should have spoof signatures so that they can be easily simulated
     // this is not used by the Estimator, because it iterates through all associatedKeys and
@@ -213,9 +233,9 @@ export class MainController extends EventEmitter {
     // TODO check if needed data in accountStates are available
     // this.accountStates[accountOp.accountAddr][accountOp.networkId].
     const account = this.accounts.find(x => x.addr === accountOp.accountAddr)
-    if (!account) throw new Error(`updateAccountOp: ${accountOp.accountAddr}: account does not exist`)
+    if (!account) throw new Error(`estimateAccountOp: ${accountOp.accountAddr}: account does not exist`)
     const network = this.settings.networks.find(x => x.id === accountOp.networkId)
-    if (!network) throw new Error(`updateAccountOp: ${accountOp.networkId}: network does not exist`)
+    if (!network) throw new Error(`estimateAccountOp: ${accountOp.networkId}: network does not exist`)
     // @TODO cache providers
     const provider = new JsonRpcProvider(network.rpcUrl)
     const [, estimation] = await Promise.all([
