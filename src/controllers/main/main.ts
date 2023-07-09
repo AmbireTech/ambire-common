@@ -221,6 +221,19 @@ export class MainController extends EventEmitter {
     // @TODO emit update
   }
 
+  removeUserRequest(id: bigint) {
+    const req = this.userRequests.find(req => req.id === id)
+    if (!req) throw new Error(`removeUserRequest: request with id ${id} not found`)
+
+    // remove from the request queue
+    this.userRequests.splice(this.userRequests.indexOf(req), 1)
+
+    // update the pending stuff to be signed
+    const { action, accountAddr, networkId } = req
+    if (action.kind === 'call') this.accountOpsToBeSigned[accountAddr][networkId] = this.getAccountOp(accountAddr, networkId)
+    else this.messagesToBeSigned[accountAddr] = this.messagesToBeSigned[accountAddr].filter(x => x.fromUserRequestId !== id)
+  }
+
   // @TODO: protect this from race conditions/simultanous executions
   private async estimateAccountOp(accountOp: AccountOp) {
     await this.initialLoadPromise
