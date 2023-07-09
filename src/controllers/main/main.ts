@@ -112,6 +112,7 @@ export class MainController extends EventEmitter {
       this.storage.get('accounts', [])
     ])
     // @TODO reload those
+    // @TODO error handling here
     this.accountStates = await this.getAccountsInfo(this.accounts)
     this.isReady = true
     this.emitUpdate()
