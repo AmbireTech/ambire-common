@@ -164,10 +164,11 @@ export class MainController extends EventEmitter {
     const calls = []
     for (const req of this.userRequests) {
       if (req.action.kind === 'call' && req.networkId === networkId && req.accountAddr === accountAddr) {
-        calls.push({ ...req.action, fromUserRequestId: req.id })
+        const { to, value, data } = req.action
+        calls.push({ to, value, data, fromUserRequestId: req.id })
       }
       // only the first one for EOAs
-      if (!account.creation) break;
+      if (!account.creation) break
     }
 
     // @TODO keep old properties from the current one!
@@ -216,7 +217,6 @@ export class MainController extends EventEmitter {
         fromUserRequestId: req.id,
         signature: null
       })
-      // @iTODO
     }
     // @TODO emit update
   }

@@ -84,6 +84,7 @@ describe('Main Controller ', () => {
       }
     }
     await controller.addUserRequest(req)
+    console.dir(controller.accountOpsToBeSigned, { depth: null })
     // @TODO test if nonce is correctly set
 
   })
