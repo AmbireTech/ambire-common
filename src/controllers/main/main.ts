@@ -87,7 +87,7 @@ export class MainController extends EventEmitter {
   // 1) it's easier in the UI to deal with structured data rather than having to .find/.filter/etc. all the time
   // 2) it's easier to mutate this - to add/remove accountOps, to find the right accountOp to extend, etc.
   // accountAddr => networkId => accountOp
-  accountOpsToBeSigned: { [key: string]: { [key: string]: AccountOp } } = {}
+  accountOpsToBeSigned: { [key: string]: { [key: string]: AccountOp | null } } = {}
 
   accountOpsToBeConfirmed: { [key: string]: { [key: string]: AccountOp } } = {}
 
@@ -151,7 +151,7 @@ export class MainController extends EventEmitter {
     if (!this.accountStates[accountAddr]?.[networkId]) throw new Error(`ensureAccountInfo: acc info for ${accountAddr} on ${networkId} was not retrieved`)
   }
 
-  private getAccountOp(accountAddr: AccountId, networkId: NetworkId): AccountOp {
+  private getAccountOp(accountAddr: AccountId, networkId: NetworkId): AccountOp | null {
     const account = this.accounts.find(x => x.addr === accountAddr)
     if (!account) throw new Error(`getAccountOp: tried to run for non-existant account ${accountAddr}`)
     // @TODO consider bringing back functional style if we can figure out how not to trip up the TS compiler
@@ -170,6 +170,8 @@ export class MainController extends EventEmitter {
       // only the first one for EOAs
       if (!account.creation) break
     }
+
+    if (!calls.length) return null
 
     // @TODO keep old properties from the current one!
     return {
@@ -202,9 +204,10 @@ export class MainController extends EventEmitter {
       // although it could work like this: 1) await the promise, 2) check if exists 3) if not, re-trigger the promise; 
       // 4) manage recalc on removeUserRequest too in order to handle EOAs
       await this.ensureAccountInfo(accountAddr, networkId)
-      this.accountOpsToBeSigned[accountAddr][networkId] = this.getAccountOp(accountAddr, networkId)
+      const accountOp = this.getAccountOp(accountAddr, networkId)
+      this.accountOpsToBeSigned[accountAddr][networkId] = accountOp
       try {
-        await this.estimateAccountOp(this.accountOpsToBeSigned[accountAddr][networkId])
+        if (accountOp) await this.estimateAccountOp(accountOp)
       } catch(e) {
         // @TODO: unified wrapper for controller errors
         console.error(e)
@@ -230,7 +233,10 @@ export class MainController extends EventEmitter {
 
     // update the pending stuff to be signed
     const { action, accountAddr, networkId } = req
-    if (action.kind === 'call') this.accountOpsToBeSigned[accountAddr][networkId] = this.getAccountOp(accountAddr, networkId)
+    if (action.kind === 'call') {
+      // @TODO ensure acc info, re-estimate
+      this.accountOpsToBeSigned[accountAddr][networkId] = this.getAccountOp(accountAddr, networkId)
+    }
     else this.messagesToBeSigned[accountAddr] = this.messagesToBeSigned[accountAddr].filter(x => x.fromUserRequestId !== id)
   }
 
@@ -258,8 +264,10 @@ export class MainController extends EventEmitter {
         this.settings.networks,
         accountOp.accountAddr,
         Object.fromEntries(
-          Object.entries(this.accountOpsToBeSigned[accountOp.accountAddr]).map(
-            ([networkId, accountOp]) => [networkId, [accountOp]]
+          Object.entries(this.accountOpsToBeSigned[accountOp.accountAddr])
+          .filter(([_, accountOp]) => accountOp)
+          .map(
+            ([networkId, accountOp]) => [networkId, [accountOp!]]
           )
         )
       ),
