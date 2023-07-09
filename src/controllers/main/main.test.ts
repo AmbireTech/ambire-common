@@ -83,7 +83,7 @@ describe('Main Controller ', () => {
         data: '0xa9059cbb000000000000000000000000e5a4dad2ea987215460379ab285df87136e83bea00000000000000000000000000000000000000000000000000000000005040aa'
       }
     }
-    controller.addUserRequest(req)
+    await controller.addUserRequest(req)
     // @TODO test if nonce is correctly set
 
   })
