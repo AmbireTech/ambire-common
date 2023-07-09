@@ -138,7 +138,19 @@ export class MainController extends EventEmitter {
     return Object.fromEntries(states)
   }
 
-  addUserRequest(req: UserRequest) {
+  private async ensureAccountInfo(accountAddr: AccountId, networkId: NetworkId) {
+    // Wait for the current load to complete
+    await this.initialLoadPromise
+    // Initial sanity check: does this account even exist?
+    if (!this.accounts.find(x => x.addr === accountAddr)) throw new Error(`ensureAccountInfo: called for non-existant acc ${accountAddr}`)
+    // If this still didn't work, re-load
+    // @TODO: should we re-start the whole load or only specific things?
+    if (!this.accountStates[accountAddr]?.[networkId]) await (this.initialLoadPromise = this.load())
+    // If this still didn't work, throw error: this prob means that we're calling for a non-existant acc/network
+    if (!this.accountStates[accountAddr]?.[networkId]) throw new Error(`ensureAccountInfo: acc info for ${accountAddr} on ${networkId} was not retrieved`)
+  }
+
+  async addUserRequest(req: UserRequest) {
     this.userRequests.push(req)
     const { action, accountAddr, networkId } = req
     if (!this.settings.networks.find(x => x.id === networkId)) throw new Error(`addUserRequest: ${networkId}: network does not exist`)
@@ -146,14 +158,13 @@ export class MainController extends EventEmitter {
       // @TODO: if EOA, only one call per accountOp
       if (!this.accountOpsToBeSigned[accountAddr]) this.accountOpsToBeSigned[accountAddr] = {}
       if (!this.accountOpsToBeSigned[accountAddr][networkId]) {
-        // @TODO: check if accountStates[accountAddr][networkId] exists, if not, recalculate at the next update
-        // for now we jsut return
+        // @TODO
         // one solution would be to, instead of checking, have a promise that we always await here, that is responsible for fetching
         // account data; however, this won't work with EOA accountOps, which have to always pick the first userRequest for a particular acc/network,
         // and be recalculated when one gets dismissed
         // although it could work like this: 1) await the promise, 2) check if exists 3) if not, re-trigger the promise; 
         // 4) manage recalc on removeUserRequest too in order to handle EOAs
-        if (!this.accountStates[accountAddr]?.[networkId]) return
+        await this.ensureAccountInfo(accountAddr, networkId)
         this.accountOpsToBeSigned[accountAddr][networkId] = {
           accountAddr,
           networkId,
@@ -171,7 +182,12 @@ export class MainController extends EventEmitter {
       }
       const accountOp = this.accountOpsToBeSigned[accountAddr][networkId]
       accountOp.calls.push({ ...action, fromUserRequestId: req.id })
-      this.updateAccountOp(accountOp)
+      try {
+        await this.updateAccountOp(accountOp)
+      } catch(e) {
+        // @TODO: unified wrapper for controller errors
+        console.error(e)
+      }
     } else {
       if (!this.messagesToBeSigned[accountAddr]) this.messagesToBeSigned[accountAddr] = []
       if (this.messagesToBeSigned[accountAddr].find((x) => x.fromUserRequestId === req.id)) return
