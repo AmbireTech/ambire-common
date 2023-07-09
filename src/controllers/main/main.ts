@@ -87,6 +87,7 @@ export class MainController extends EventEmitter {
   // 1) it's easier in the UI to deal with structured data rather than having to .find/.filter/etc. all the time
   // 2) it's easier to mutate this - to add/remove accountOps, to find the right accountOp to extend, etc.
   // accountAddr => networkId => accountOp
+  // @TODO consider getting rid of the `| null` ugliness, but then we need to auto-delete
   accountOpsToBeSigned: { [key: string]: { [key: string]: AccountOp | null } } = {}
 
   accountOpsToBeConfirmed: { [key: string]: { [key: string]: AccountOp } } = {}
@@ -203,6 +204,7 @@ export class MainController extends EventEmitter {
       // and be recalculated when one gets dismissed
       // although it could work like this: 1) await the promise, 2) check if exists 3) if not, re-trigger the promise; 
       // 4) manage recalc on removeUserRequest too in order to handle EOAs
+      // @TODO consider re-using this whole block in removeUserRequest
       await this.ensureAccountInfo(accountAddr, networkId)
       const accountOp = this.getAccountOp(accountAddr, networkId)
       this.accountOpsToBeSigned[accountAddr][networkId] = accountOp
@@ -224,6 +226,9 @@ export class MainController extends EventEmitter {
     // @TODO emit update
   }
 
+  // @TODO allow this to remove multiple OR figure out a way to debounce re-estimations
+  // first one sounds more reasonble
+  // although the second one can't hurt and can help (or no debounce, just a one-at-a-time queue)
   removeUserRequest(id: bigint) {
     const req = this.userRequests.find(req => req.id === id)
     if (!req) throw new Error(`removeUserRequest: request with id ${id} not found`)
