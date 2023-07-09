@@ -174,13 +174,13 @@ export class MainController extends EventEmitter {
 
     if (!calls.length) return null
 
-    // @TODO keep old properties from the current one!
+    const currentAccountOp = this.accountOpsToBeSigned[accountAddr][networkId]
     return {
       accountAddr,
       networkId,
-      signingKeyAddr: null,
-      gasLimit: null,
-      gasFeePayment: null,
+      signingKeyAddr: currentAccountOp?.signingKeyAddr || null,
+      gasLimit: currentAccountOp?.gasLimit || null,
+      gasFeePayment: currentAccountOp?.gasFeePayment || null,
       // We use the AccountInfo to determine
       nonce: this.accountStates[accountAddr][networkId].nonce,
       // @TODO set this to a spoofSig based on accountState
