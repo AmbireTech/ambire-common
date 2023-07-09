@@ -37,6 +37,7 @@ Classes for controllers are supposed to be stateful and be used directly in the 
 - they should expose all state needed for rendering
 - they should be responsible for the business logic but not responsible for app logic (for example, business logic is when to hide tokens from the portfolio but view logic is when to update the portfolio)
 - they should avoid public methods that return values, and instead everything should be updated in the state
+- errors that are fatal and related to unexpected/non-recoverable state should just `throw`, while errors that may happen in realistic conditions (eg async errors when calling `provider`) should all be caught
 
 See also: https://medium.com/swlh/what-is-the-best-state-container-library-for-react-b6989a45f236
 
