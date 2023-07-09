@@ -212,7 +212,7 @@ export class MainController extends EventEmitter {
 
     // TODO check if needed data in accountStates are available
     // this.accountStates[accountOp.accountAddr][accountOp.networkId].
-    const account = this.accounts.find(x => x.addr = accountOp.accountAddr)
+    const account = this.accounts.find(x => x.addr === accountOp.accountAddr)
     if (!account) throw new Error(`updateAccountOp: ${accountOp.accountAddr}: account does not exist`)
     const network = this.settings.networks.find(x => x.id === accountOp.networkId)
     if (!network) throw new Error(`updateAccountOp: ${accountOp.networkId}: network does not exist`)
