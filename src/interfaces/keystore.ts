@@ -5,7 +5,8 @@ export interface KeystoreSigner {
   signTypedData: (
     domain: TypedDataDomain,
     types: Record<string, Array<TypedDataField>>,
-    message: Record<string, any>
+    message: Record<string, any>,
+    primaryType?: string
   ) => Promise<string>
   signMessage: (hash: string) => Promise<string>
 }

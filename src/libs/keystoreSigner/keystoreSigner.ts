@@ -28,10 +28,10 @@ export class KeystoreSigner implements KeystoreSignerInterface {
   async signTypedData(
     domain: TypedDataDomain,
     types: Record<string, Array<TypedDataField>>,
-    value: Record<string, any>
+    message: Record<string, any>
   ) {
     // @ts-ignore
-    const sig = await this.#signer.signTypedData(domain, types, value)
+    const sig = await this.#signer.signTypedData(domain, types, message)
 
     return sig
   }
