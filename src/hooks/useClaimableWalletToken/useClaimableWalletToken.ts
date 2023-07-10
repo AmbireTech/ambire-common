@@ -110,12 +110,20 @@ const useClaimableWalletToken = ({
       // are equal to the current account address.
       // That's how we prevent making RPC calls for the previous selected account
       // and receiving wrong data.
-      const mintableVesting =
-        vestingEntry && vestingEntry.addr.toLowerCase() === accountId.toLowerCase()
-          ? await supplyController
-              .mintableVesting(vestingEntry.addr, vestingEntry.end, vestingEntry.rate)
-              .then(toNum)
-          : null
+
+      let mintableVesting = null
+
+      if (vestingEntry && vestingEntry.addr.toLowerCase() === accountId.toLowerCase()) {
+        try {
+          mintableVesting = await supplyController.mintableVesting(
+            vestingEntry.addr,
+            vestingEntry.end,
+            vestingEntry.rate
+          )
+        } catch (e) {
+          console.log('mintableVestingErr: ', e)
+        }
+      }
 
       const claimed = claimableRewardsData
         ? await supplyController.claimed(claimableRewardsData.addr).then(toNum)
