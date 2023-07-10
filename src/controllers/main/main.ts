@@ -2,7 +2,7 @@ import { TypedDataDomain, TypedDataField, JsonRpcProvider } from 'ethers'
 import { Storage } from '../../interfaces/storage'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
 import { Account, AccountId, AccountOnchainState } from '../../interfaces/account'
-import { AccountOp } from '../../libs/accountOp/accountOp'
+import { AccountOp, Call as AccountOpCall } from '../../libs/accountOp/accountOp'
 import { PortfolioController } from '../portfolio'
 import { Keystore, Key } from '../../libs/keystore/keystore'
 import { networks } from '../../consts/networks'
@@ -158,21 +158,17 @@ export class MainController extends EventEmitter {
     const account = this.accounts.find(x => x.addr === accountAddr)
     if (!account) throw new Error(`getAccountOp: tried to run for non-existant account ${accountAddr}`)
     // @TODO consider bringing back functional style if we can figure out how not to trip up the TS compiler
-    /*const calls = this.userRequests
-        .filter(req => req.action.kind === 'call' && req.networkId === networkId && req.accountAddr === accountAddr)
-        .map(req => ({ ...req.action, fromUserRequestId: req.id }))
-        // only take the first one for EOAs
-        .slice(0, account.creation ? Infinity : 1)
-    */
-    const calls = []
-    for (const req of this.userRequests) {
+    // Note: we use reduce instead of filter/map so that the compiler can deduce that we're checking .kind
+    const calls = this.userRequests.reduce((calls: AccountOpCall[], req) => {
+      // only the first one for EOAs
+      if (!account.creation && calls.length > 0) return calls
+
       if (req.action.kind === 'call' && req.networkId === networkId && req.accountAddr === accountAddr) {
         const { to, value, data } = req.action
         calls.push({ to, value, data, fromUserRequestId: req.id })
       }
-      // only the first one for EOAs
-      if (!account.creation) break
-    }
+      return calls
+    }, [])
 
     if (!calls.length) return null
 

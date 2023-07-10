@@ -1,6 +1,6 @@
 import { NetworkId } from '../../interfaces/networkDescriptor'
 
-interface Call {
+export interface Call {
   to: string
   value: bigint
   data: string
@@ -10,7 +10,7 @@ interface Call {
   fromUserRequestId?: bigint
 }
 
-enum GasFeePaymentType {
+export enum GasFeePaymentType {
   // when a paymaster is used, we put it in the `paidBy` instead of the accountAddr
   ERC4337 = 'erc4337',
   AmbireRelayer = 'ambireRelayer',
@@ -19,7 +19,7 @@ enum GasFeePaymentType {
   // when the account itself is an EOA, paymentType equals accountAddr
   EOA = 'eoa'
 }
-interface GasFeePayment {
+export interface GasFeePayment {
   paymentType: GasFeePaymentType
   paidBy: string
   inToken: string
