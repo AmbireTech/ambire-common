@@ -2,7 +2,7 @@ import { Provider, JsonRpcProvider, Interface } from 'ethers'
 import { fromDescriptor } from '../deployless/deployless'
 import { getAccountDeployParams } from '../account/account'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
-import { AccountOp } from '../accountOp/accountOp'
+import { AccountOp, isEOA } from '../accountOp/accountOp'
 import { Account } from '../../interfaces/account'
 import Estimation from '../../../contracts/compiled/Estimation.json'
 import { AmbireAccount, AmbireAccountFactory } from '../../../test/config'
@@ -10,12 +10,12 @@ import { AmbireAccount, AmbireAccountFactory } from '../../../test/config'
 export interface EstimateResult {
   gasUsed: bigint
   addedNative?: bigint
-  feeTokenOutcome: {
+  feeTokenOutcome?: {
     address: string
     gasUsed: bigint
     balance: bigint
   }[]
-  nativeAssetBalances: {
+  nativeAssetBalances?: {
     address: string
     balance: bigint
   }[]
@@ -36,8 +36,37 @@ export async function estimate(
   blockFrom: string = '0x0000000000000000000000000000000000000001',
   blockTag: string | number = 'latest'
 ): Promise<EstimateResult> {
-  // @ TODO implement EOAs
-  if (!account.creation) throw new Error('EOA not supported yet')
+  if (!account.creation && isEOA(op)) {
+    if (op.calls.length !== 1) {
+      throw new Error("EOA can't have more than one call!")
+    }
+
+    const call = op.calls[0]
+
+    const gasUsed = await provider.estimateGas({
+      from: account.addr,
+      to: call.to,
+      value: call.value,
+      data: call.data
+    })
+
+    const balance = await provider.getBalance(account.addr)
+
+    return {
+      gasUsed,
+      nativeAssetBalances: [
+        {
+          address: account.addr,
+          balance
+        }
+      ]
+    }
+  }
+
+  if (!account.creation) {
+    throw new Error('Account creation props required for Smart accounts!')
+  }
+
   const deploylessEstimator = fromDescriptor(provider, Estimation, !network.rpcNoStateOverride)
 
   // @TODO - .env or passed as parameter?

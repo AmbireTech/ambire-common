@@ -10,7 +10,7 @@ interface Call {
   fromUserRequestId?: bigint
 }
 
-enum GasFeePaymentType {
+export enum GasFeePaymentType {
   // when a paymaster is used, we put it in the `paidBy` instead of the accountAddr
   ERC4337 = 'erc4337',
   AmbireRelayer = 'ambireRelayer',
