@@ -15,6 +15,11 @@ npx hardhat compile
 npm test
 ```
 
+To re-compile the deployless contracts, do this:
+```
+npm run compile:contracts
+```
+
 ## Why classes instead of state containers
 
 We chose simple ES6 classes to implement controllers (shared business logic) rather than state containers.
@@ -27,6 +32,13 @@ However, classes are truly framework-agnostic, which is a requirement for the co
 
 - class benefits: easy to write and read; not too hard to test (if all side effect generating methods are passed externally); truly framework-agnostic
 - class drawbacks: unable to know which properties changed, no time-travel
+
+Classes for controllers are supposed to be stateful and be used directly in the application, which means:
+- they should expose all state needed for rendering
+- they should be responsible for the business logic but not responsible for app logic (for example, business logic is when to hide tokens from the portfolio but view logic is when to update the portfolio)
+- they should avoid public methods that return values, and instead everything should be updated in the state
+- errors that are fatal and related to unexpected/non-recoverable state should just `throw`, while errors that may happen in realistic conditions (eg async errors when calling `provider`) should all be caught
+- methods may be asynchronous for two purposes: 1) using `await` in them and 2) knowing when their work is done in tests; those methods should absolutely not be awaited in the UI, and instead we should rely on update events and state changes
 
 See also: https://medium.com/swlh/what-is-the-best-state-container-library-for-react-b6989a45f236
 

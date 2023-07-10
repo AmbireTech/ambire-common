@@ -1,7 +1,7 @@
 import { JsonRpcProvider } from 'ethers'
 import { Storage } from '../../interfaces/storage'
-import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
-import { Account, AccountOnchainState } from '../../interfaces/account'
+import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
+import { Account, AccountOnchainState, AccountId } from '../../interfaces/account'
 import { AccountOp } from '../../libs/accountOp/accountOp'
 import { PortfolioController } from '../portfolio'
 import { Keystore, Key } from '../../libs/keystore/keystore'
@@ -21,28 +21,35 @@ export type AccountStates = {
 }
 
 export class MainController extends EventEmitter {
+  // Private library instances
   private storage: Storage
 
   private keystore: Keystore
 
+  // Private sub-structures
+  private providers: { [key: string]: JsonRpcProvider } = {}
+
+  // Load-related stuff
   private initialLoadPromise: Promise<void>
 
   isReady: boolean = false
 
+  // Subcontrollers
   // this is not private cause you're supposed to directly access it
   portfolio: PortfolioController
 
+  // Public sub-structures
   // @TODO emailVaults
   emailVaults: EmailVaultData[]
 
   // @TODO read networks from settings
   accounts: Account[] = []
 
+  selectedAccount: string | null = null
+
   accountStates: AccountStates = {}
 
   keys: Key[] = []
-
-  selectedAccount: string | null = null
 
   // @TODO: structure
   settings: { networks: NetworkDescriptor[] }
@@ -53,7 +60,8 @@ export class MainController extends EventEmitter {
   // 1) it's easier in the UI to deal with structured data rather than having to .find/.filter/etc. all the time
   // 2) it's easier to mutate this - to add/remove accountOps, to find the right accountOp to extend, etc.
   // accountAddr => networkId => accountOp
-  accountOpsToBeSigned: { [key: string]: { [key: string]: AccountOp } } = {}
+  // @TODO consider getting rid of the `| null` ugliness, but then we need to auto-delete
+  accountOpsToBeSigned: { [key: string]: { [key: string]: AccountOp | null } } = {}
 
   accountOpsToBeConfirmed: { [key: string]: { [key: string]: AccountOp } } = {}
 
@@ -79,7 +87,11 @@ export class MainController extends EventEmitter {
       this.keystore.getKeys(),
       this.storage.get('accounts', [])
     ])
+    this.providers = Object.fromEntries(
+      this.settings.networks.map((network) => [network.id, new JsonRpcProvider(network.rpcUrl)])
+    )
     // @TODO reload those
+    // @TODO error handling here
     this.accountStates = await this.getAccountsInfo(this.accounts)
     this.isReady = true
     this.emitUpdate()
@@ -87,11 +99,9 @@ export class MainController extends EventEmitter {
 
   private async getAccountsInfo(accounts: Account[]): Promise<AccountStates> {
     const result = await Promise.all(
-      this.settings.networks.map((network: NetworkDescriptor) => {
-        // @TODO cache provider
-        const provider = new JsonRpcProvider(network.rpcUrl)
-        return getAccountState(provider, network, accounts)
-      })
+      this.settings.networks.map((network) =>
+        getAccountState(this.providers[network.id], network, accounts)
+      )
     )
 
     const states = accounts.map((acc: Account, accIndex: number) => {
@@ -120,7 +130,67 @@ export class MainController extends EventEmitter {
     this.selectedAccount = toAccountAddr
   }
 
-  addUserRequest(req: UserRequest) {
+  private async ensureAccountInfo(accountAddr: AccountId, networkId: NetworkId) {
+    // Wait for the current load to complete
+    await this.initialLoadPromise
+    // Initial sanity check: does this account even exist?
+    if (!this.accounts.find((x) => x.addr === accountAddr))
+      throw new Error(`ensureAccountInfo: called for non-existant acc ${accountAddr}`)
+    // If this still didn't work, re-load
+    // @TODO: should we re-start the whole load or only specific things?
+    if (!this.accountStates[accountAddr]?.[networkId]) await (this.initialLoadPromise = this.load())
+    // If this still didn't work, throw error: this prob means that we're calling for a non-existant acc/network
+    if (!this.accountStates[accountAddr]?.[networkId])
+      throw new Error(
+        `ensureAccountInfo: acc info for ${accountAddr} on ${networkId} was not retrieved`
+      )
+  }
+
+  private getAccountOp(accountAddr: AccountId, networkId: NetworkId): AccountOp | null {
+    const account = this.accounts.find((x) => x.addr === accountAddr)
+    if (!account)
+      throw new Error(`getAccountOp: tried to run for non-existant account ${accountAddr}`)
+    // @TODO consider bringing back functional style if we can figure out how not to trip up the TS compiler
+    /* const calls = this.userRequests
+        .filter(req => req.action.kind === 'call' && req.networkId === networkId && req.accountAddr === accountAddr)
+        .map(req => ({ ...req.action, fromUserRequestId: req.id }))
+        // only take the first one for EOAs
+        .slice(0, account.creation ? Infinity : 1)
+    */
+    const calls = []
+    for (const req of this.userRequests) {
+      if (
+        req.action.kind === 'call' &&
+        req.networkId === networkId &&
+        req.accountAddr === accountAddr
+      ) {
+        const { to, value, data } = req.action
+        calls.push({ to, value, data, fromUserRequestId: req.id })
+      }
+      // only the first one for EOAs
+      if (!account.creation) break
+    }
+
+    if (!calls.length) return null
+
+    const currentAccountOp = this.accountOpsToBeSigned[accountAddr][networkId]
+    return {
+      accountAddr,
+      networkId,
+      signingKeyAddr: currentAccountOp?.signingKeyAddr || null,
+      gasLimit: currentAccountOp?.gasLimit || null,
+      gasFeePayment: currentAccountOp?.gasFeePayment || null,
+      // We use the AccountInfo to determine
+      nonce: this.accountStates[accountAddr][networkId].nonce,
+      // @TODO set this to a spoofSig based on accountState
+      signature: null,
+      // @TODO from pending recoveries
+      accountOpToExecuteBefore: null,
+      calls
+    }
+  }
+
+  async addUserRequest(req: UserRequest) {
     this.userRequests.push(req)
     const { action, accountAddr, networkId } = req
     if (!this.settings.networks.find((x) => x.id === networkId))
@@ -128,26 +198,22 @@ export class MainController extends EventEmitter {
     if (action.kind === 'call') {
       // @TODO: if EOA, only one call per accountOp
       if (!this.accountOpsToBeSigned[accountAddr]) this.accountOpsToBeSigned[accountAddr] = {}
-      if (!this.accountOpsToBeSigned[accountAddr][networkId]) {
-        // @TODO handle the case when this.accountStates[accountAddr][networkId] is not defined, re-calculate on update
-        this.accountOpsToBeSigned[accountAddr][networkId] = {
-          accountAddr,
-          networkId,
-          signingKeyAddr: null,
-          gasLimit: null,
-          gasFeePayment: null,
-          // We use the AccountInfo to determine; alternatively, can we use the Estimator and not need a nonce before that?
-          nonce: this.accountStates[accountAddr][networkId].nonce,
-          // this will be set to a spoofSig in updateAccountOp
-          signature: null,
-          // @TODO from pending recoveries
-          accountOpToExecuteBefore: null,
-          calls: []
-        }
+      // @TODO
+      // one solution would be to, instead of checking, have a promise that we always await here, that is responsible for fetching
+      // account data; however, this won't work with EOA accountOps, which have to always pick the first userRequest for a particular acc/network,
+      // and be recalculated when one gets dismissed
+      // although it could work like this: 1) await the promise, 2) check if exists 3) if not, re-trigger the promise;
+      // 4) manage recalc on removeUserRequest too in order to handle EOAs
+      // @TODO consider re-using this whole block in removeUserRequest
+      await this.ensureAccountInfo(accountAddr, networkId)
+      const accountOp = this.getAccountOp(accountAddr, networkId)
+      this.accountOpsToBeSigned[accountAddr][networkId] = accountOp
+      try {
+        if (accountOp) await this.estimateAccountOp(accountOp)
+      } catch (e) {
+        // @TODO: unified wrapper for controller errors
+        console.error(e)
       }
-      const accountOp = this.accountOpsToBeSigned[accountAddr][networkId]
-      accountOp.calls.push({ ...action, fromUserRequestId: req.id })
-      this.updateAccountOp(accountOp)
     } else {
       if (!this.messagesToBeSigned[accountAddr]) this.messagesToBeSigned[accountAddr] = []
       if (this.messagesToBeSigned[accountAddr].find((x) => x.fromUserRequestId === req.id)) return
@@ -156,12 +222,33 @@ export class MainController extends EventEmitter {
         fromUserRequestId: req.id,
         signature: null
       })
-      // @TODO
     }
     // @TODO emit update
   }
 
-  private async updateAccountOp(accountOp: AccountOp) {
+  // @TODO allow this to remove multiple OR figure out a way to debounce re-estimations
+  // first one sounds more reasonble
+  // although the second one can't hurt and can help (or no debounce, just a one-at-a-time queue)
+  removeUserRequest(id: bigint) {
+    const req = this.userRequests.find((req) => req.id === id)
+    if (!req) throw new Error(`removeUserRequest: request with id ${id} not found`)
+
+    // remove from the request queue
+    this.userRequests.splice(this.userRequests.indexOf(req), 1)
+
+    // update the pending stuff to be signed
+    const { action, accountAddr, networkId } = req
+    if (action.kind === 'call') {
+      // @TODO ensure acc info, re-estimate
+      this.accountOpsToBeSigned[accountAddr][networkId] = this.getAccountOp(accountAddr, networkId)
+    } else
+      this.messagesToBeSigned[accountAddr] = this.messagesToBeSigned[accountAddr].filter(
+        (x) => x.fromUserRequestId !== id
+      )
+  }
+
+  // @TODO: protect this from race conditions/simultanous executions
+  private async estimateAccountOp(accountOp: AccountOp) {
     await this.initialLoadPromise
     // new accountOps should have spoof signatures so that they can be easily simulated
     // this is not used by the Estimator, because it iterates through all associatedKeys and
@@ -171,26 +258,29 @@ export class MainController extends EventEmitter {
 
     // TODO check if needed data in accountStates are available
     // this.accountStates[accountOp.accountAddr][accountOp.networkId].
-    const account = this.accounts.find((x) => (x.addr = accountOp.accountAddr))
+    const account = this.accounts.find((x) => x.addr === accountOp.accountAddr)
     if (!account)
-      throw new Error(`updateAccountOp: ${accountOp.accountAddr}: account does not exist`)
+      throw new Error(`estimateAccountOp: ${accountOp.accountAddr}: account does not exist`)
     const network = this.settings.networks.find((x) => x.id === accountOp.networkId)
-    if (!network) throw new Error(`updateAccountOp: ${accountOp.networkId}: network does not exist`)
-    // @TODO cache providers
-    const provider = new JsonRpcProvider(network.rpcUrl)
+    if (!network)
+      throw new Error(`estimateAccountOp: ${accountOp.networkId}: network does not exist`)
     const [, estimation] = await Promise.all([
       // NOTE: we are not emitting an update here because the portfolio controller will do that
+      // NOTE: the portfolio controller has it's own logic of constructing/caching providers, this is intentional, as
+      // it may have different needs
       this.portfolio.updateSelectedAccount(
         this.accounts,
         this.settings.networks,
         accountOp.accountAddr,
         Object.fromEntries(
-          Object.entries(this.accountOpsToBeSigned[accountOp.accountAddr]).map(
-            ([networkId, accountOp]) => [networkId, [accountOp]]
-          )
+          Object.entries(this.accountOpsToBeSigned[accountOp.accountAddr])
+            .filter(([_, accountOp]) => accountOp)
+            .map(([networkId, accountOp]) => [networkId, [accountOp!]])
         )
       ),
-      estimate(provider, network, account, accountOp)
+      // @TODO nativeToCheck: pass all EOAs,
+      // @TODO feeTokens: pass a hardcoded list from settings
+      estimate(this.providers[accountOp.networkId], network, account, accountOp, [], [])
       // @TODO refresh the estimation
     ])
     console.log(estimation)

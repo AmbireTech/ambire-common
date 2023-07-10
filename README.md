@@ -28,6 +28,8 @@ Tip during development: There is another way to link `ambire-common`. The way it
 
 Tip for hotfixes: In case you immediately need the change on PROD, you can simply (temporarily) ref in app's `package.json` instead a tag (`"ambire-common": "github:AmbireTech/ambire-common#v0.11.2"`) a specific commit SHA (`"ambire-common": "github:AmbireTech/ambire-common#2e8639e004044bda3fe7efa3290672d63bfe5f8a"`).
 
+How to compile files to the dist folder: tsc src/libs/portfolio/getOnchainBalances.ts -t es2020 -m commonjs --esModuleInterop true --sourceMap true --resolveJsonModule true --outDir ./dist
+
 ## Update contract/token info (generates `humanizerInfo.json`)
 
 ```
