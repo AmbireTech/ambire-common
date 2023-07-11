@@ -113,11 +113,9 @@ const useClaimableWalletToken = ({
 
       if (vestingEntry && vestingEntry.addr.toLowerCase() === accountId.toLowerCase()) {
         try {
-          mintableVesting = await supplyController.mintableVesting(
-            vestingEntry.addr,
-            vestingEntry.end,
-            vestingEntry.rate
-          )
+          mintableVesting = await supplyController
+            .mintableVesting(vestingEntry.addr, vestingEntry.end, vestingEntry.rate)
+            .then(toNum)
         } catch (e) {
           console.log('mintableVestingErr: ', e)
         }
