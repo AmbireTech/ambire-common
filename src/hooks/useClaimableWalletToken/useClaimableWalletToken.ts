@@ -173,7 +173,6 @@ const useClaimableWalletToken = ({
   const claimableNowUsd = (walletUsdPrice * claimableNow).toFixed(2)
   const mintableVestingUsd = (walletUsdPrice * (currentClaimStatus.mintableVesting || 0)).toFixed(2)
 
-  console.log(currentClaimStatus)
   const pendingTokensTotal = (
     totalLifetimeRewards -
     (currentClaimStatus.claimed || 0) -
