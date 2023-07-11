@@ -115,11 +115,9 @@ const useClaimableWalletToken = ({
 
       if (vestingEntry && vestingEntry.addr.toLowerCase() === accountId.toLowerCase()) {
         try {
-          mintableVesting = await supplyController.mintableVesting(
-            vestingEntry.addr,
-            vestingEntry.end,
-            vestingEntry.rate
-          )
+          mintableVesting = await supplyController
+            .mintableVesting(vestingEntry.addr, vestingEntry.end, vestingEntry.rate)
+            .then(toNum)
         } catch (e) {
           console.log('mintableVestingErr: ', e)
         }
@@ -175,6 +173,7 @@ const useClaimableWalletToken = ({
   const claimableNowUsd = (walletUsdPrice * claimableNow).toFixed(2)
   const mintableVestingUsd = (walletUsdPrice * (currentClaimStatus.mintableVesting || 0)).toFixed(2)
 
+  console.log(currentClaimStatus)
   const pendingTokensTotal = (
     totalLifetimeRewards -
     (currentClaimStatus.claimed || 0) -
