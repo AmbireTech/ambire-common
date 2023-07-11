@@ -54,12 +54,14 @@ const feeTokens = [
 const portfolio = new Portfolio(fetch, provider, ethereum)
 
 describe('estimate', () => {
-  const checkBalance = (
-    responseTokens: EstimateResult['nativeAssetBalances'],
+  const checkNativeBalance = (
+    responseTokens: EstimateResult['feePaymentOptions'],
     tokenAddresses: string[]
   ) => {
     tokenAddresses.forEach((tokenAddress) => {
-      expect(responseTokens!.find((t) => t.address === tokenAddress)!.balance).toBeGreaterThan(0n)
+      expect(
+        responseTokens!.find((t) => t.paidBy === tokenAddress)!.availableAmount
+      ).toBeGreaterThan(0n)
     })
   }
 
@@ -99,7 +101,8 @@ describe('estimate', () => {
 
     // This is the min gas unit we can spend
     expect(response.gasUsed).toBeGreaterThan(21000n)
-    expect(response.nativeAssetBalances![0].balance).toBeGreaterThan(0)
+    expect(response.feePaymentOptions![0].availableAmount).toBeGreaterThan(0)
+    expect(response.nonce).toBeGreaterThan(1)
   })
 
   it('estimates gasUsage, fee and native tokens outcome', async () => {
@@ -124,19 +127,20 @@ describe('estimate', () => {
     )
 
     const response = await estimate(provider, ethereum, account, op, nativeToCheck, feeTokens)
-    const usdtOutcome = response.feeTokenOutcome!.find(
+    const usdtOutcome = response.feePaymentOptions!.find(
       (token) => token.address === '0xdAC17F958D2ee523a2206206994597C13D831ec7'
     )
-    const usdcOutcome = response.feeTokenOutcome!.find(
+    const usdcOutcome = response.feePaymentOptions!.find(
       (token) => token.address === '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'
     )
 
     // This is the min gas unit we can spend, but we expect more than that having in mind that multiple computations happens in the Contract
     expect(response.gasUsed).toBeGreaterThan(21000n)
     // As we swap 1 USDT for 1 USDC, we expect the estimate (outcome) balance of USDC to be greater than before the estimate (portfolio value)
-    expect(usdcOutcome!.balance).toBeGreaterThan(usdc!.amount)
-    expect(usdtOutcome!.balance).toBeLessThan(usdt!.amount)
-    checkBalance(response.nativeAssetBalances, nativeToCheck)
+    expect(usdcOutcome!.availableAmount).toBeGreaterThan(usdc!.amount)
+    expect(usdtOutcome!.availableAmount).toBeLessThan(usdt!.amount)
+    checkNativeBalance(response.feePaymentOptions, nativeToCheck)
+    expect(response.nonce).toBeGreaterThan(1)
   })
 
   it('estimates with `accountOpToExecuteBefore`', async () => {
