@@ -5,9 +5,9 @@ import { Storage } from '../interfaces/storage'
 import EventEmitter from './eventEmitter'
 
 enum State {
-  'loading',
-  'waitingEmailConfirmation',
-  'ready'
+  Loading,
+  WaitingEmailConfirmation,
+  Ready
 }
 
 export type MagicLinkKey = {
@@ -25,9 +25,17 @@ export class EmailVaultController extends EventEmitter {
 
   private initialLoadPromise: Promise<void>
 
-  magicLinkLifeTime: number = 300000
+  #isWaitingEmailConfirmation: boolean = false
 
-  magicLinkKeys: MagicLinkKeys = {}
+  #emailVault: EmailVault
+
+  #magicLinkLifeTime: number = 300000
+
+  #magicLinkKeys: MagicLinkKeys = {}
+
+  #fetch: Function
+
+  #relayerUrl: string
 
   isReady: boolean = false
 
@@ -35,29 +43,24 @@ export class EmailVaultController extends EventEmitter {
 
   emailVaultStates: EmailVaultData[] = []
 
-  isWaitingEmailConfirmation: boolean = false
-
-  fetch: Function
-
-  relayerUrl: string
-
-  emailVault: EmailVault
-
   constructor(storage: Storage, fetch: Function, relayerUrl: string) {
     super()
-    this.fetch = fetch
-    this.relayerUrl = relayerUrl
+    this.#fetch = fetch
+    this.#relayerUrl = relayerUrl
     this.storage = storage
-    this.emailVault = new EmailVault(fetch, relayerUrl)
+    this.#emailVault = new EmailVault(fetch, relayerUrl)
     this.initialLoadPromise = this.load()
   }
 
   private async load(): Promise<void> {
     this.isReady = false
-    ;[this.emailVaultStates, this.magicLinkKeys] = await Promise.all([
+    const results = await Promise.all([
       this.storage.get('emailVault', []),
       this.storage.get('magicLinkKeys', {})
     ])
+
+    this.emailVaultStates = results[0]
+    this.#magicLinkKeys = results[1]
 
     this.lastUpdate = new Date()
     this.isReady = true
@@ -65,36 +68,37 @@ export class EmailVaultController extends EventEmitter {
   }
 
   verifiedMagicLinkKey(email: string) {
-    if (!this.magicLinkKeys[email]) return
-    this.magicLinkKeys[email].confirmed = true
+    if (!this.#magicLinkKeys[email]) return
+    this.#magicLinkKeys[email].confirmed = true
+    this.storage.set('magicLinkKeys', this.#magicLinkKeys)
   }
 
-  getCurrentState(): string {
-    if (!this.isReady) return State[0]
-    if (this.isWaitingEmailConfirmation) return State[1]
-    return State[2]
+  getCurrentState(): State {
+    if (!this.isReady) return State.Loading
+    if (this.#isWaitingEmailConfirmation) return State.WaitingEmailConfirmation
+    return State.Ready
   }
 
   async requestNewMagicLinkKey(email: string) {
     await this.initialLoadPromise
-    const result = await requestMagicLink(email, this.relayerUrl, this.fetch)
+    const result = await requestMagicLink(email, this.#relayerUrl, this.#fetch)
     const newKey = {
       key: result.key,
       requestedAt: new Date(),
       confirmed: false
     }
-    this.magicLinkKeys[email] = {
+    this.#magicLinkKeys[email] = {
       ...newKey,
       confirmed: false
     }
-    return this.magicLinkKeys[email]
+    return this.#magicLinkKeys[email]
   }
 
   async getMagicLinkKey(email: string): Promise<MagicLinkKey | null> {
     await this.initialLoadPromise
-    const result = this.magicLinkKeys[email]
+    const result = this.#magicLinkKeys[email]
     if (!result) return null
-    if (new Date().getTime() - result.requestedAt.getTime() > this.magicLinkLifeTime) return null
+    if (new Date().getTime() - result.requestedAt.getTime() > this.#magicLinkLifeTime) return null
     return result
   }
 
@@ -111,15 +115,15 @@ export class EmailVaultController extends EventEmitter {
   }
 
   async loginProceed(email: string): Promise<boolean | null> {
-    this.isWaitingEmailConfirmation = true
-    if (!this.magicLinkKeys[email]) {
+    this.#isWaitingEmailConfirmation = true
+    if (!this.#magicLinkKeys[email]) {
       this.emitUpdate()
       return false
     }
 
     // ToDo if result not success
-    const result: EmailVaultData | null = await this.emailVault
-      .getEmailVaultInfo(email, this.magicLinkKeys[email].key)
+    const result: EmailVaultData | null = await this.#emailVault
+      .getEmailVaultInfo(email, this.#magicLinkKeys[email].key)
       .catch(() => null)
 
     if (!result) {
@@ -137,7 +141,8 @@ export class EmailVaultController extends EventEmitter {
     }
 
     // this will trigger the update event
-    this.isWaitingEmailConfirmation = false
+    this.#isWaitingEmailConfirmation = false
+    this.verifiedMagicLinkKey(email)
     this.emitUpdate()
     return true
   }

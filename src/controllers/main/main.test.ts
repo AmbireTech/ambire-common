@@ -1,5 +1,7 @@
-import { describe, expect, test } from '@jest/globals'
-import { MainController, UserRequest } from './main'
+import { beforeAll, describe, expect, test } from '@jest/globals'
+import fetch from 'node-fetch'
+import { UserRequest } from '../../interfaces/userRequest'
+import { MainController } from './main'
 import { Storage } from '../../interfaces/storage'
 import { AccountOp } from '../../libs/accountOp/accountOp'
 
@@ -58,10 +60,11 @@ describe('Main Controller ', () => {
   ]
 
   const storage = produceMemoryStore()
+  const relayerUrl = 'https://staging-relayer.ambire.com'
   storage.set('accounts', accounts)
   let controller: MainController
   test('Init controller', async () => {
-    controller = new MainController(storage)
+    controller = new MainController(storage, fetch, relayerUrl)
     await new Promise((resolve) => controller.onUpdate(() => resolve(null)))
     console.dir(controller.accountStates, { depth: null })
     // @TODO
@@ -86,7 +89,12 @@ describe('Main Controller ', () => {
     await controller.addUserRequest(req)
     console.dir(controller.accountOpsToBeSigned, { depth: null })
     // @TODO test if nonce is correctly set
-
   })
 
+  // test('login with emailVault', async () => {
+  //   controller.onUpdate(() => {
+  //     console.log(JSON.stringify(controller.accountStates, null, 2))
+  //   })
+  //   controller.emailVault.login('emil@ambire.com')
+  // })
 })

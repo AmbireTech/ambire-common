@@ -99,7 +99,7 @@ export class Portfolio {
     let hints: Hints
     try {
       hints = await this.batchedVelcroDiscovery({ networkId, accountAddr, baseCurrency })
-    } catch (error) {
+    } catch (error: any) {
       hints = {
         ...getEmptyHints(networkId, accountAddr),
         error

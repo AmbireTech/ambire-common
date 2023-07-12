@@ -1,12 +1,11 @@
+import fetch from 'node-fetch'
+import { JsonRpcProvider } from 'ethers'
 import { Portfolio, GetOptions } from '../libs/portfolio/portfolio'
 import { Hints, PortfolioGetResult } from '../libs/portfolio/interfaces'
 import { Storage } from '../interfaces/storage'
 import { NetworkDescriptor } from '../interfaces/networkDescriptor'
 import { Account, AccountId } from '../interfaces/account'
 import { AccountOp } from '../libs/accountOp/accountOp'
-
-import fetch from 'node-fetch'
-import { JsonRpcProvider } from 'ethers'
 
 type AccountState = {
   // network id
@@ -32,9 +31,13 @@ type PortfolioControllerState = {
 
 export class PortfolioController {
   latest: PortfolioControllerState
+
   pending: PortfolioControllerState
+
   private portfolioLibs: Map<string, Portfolio>
+
   private storage: Storage
+
   private minUpdateInterval: number = 20000 // 20 seconds
 
   constructor(storage: Storage) {
@@ -119,7 +122,7 @@ export class PortfolioController {
         accountState[network.id] = { isReady: true, isLoading: false, result }
 
         return true
-      } catch (e) {
+      } catch (e: any) {
         state.isLoading = false
         if (!state.isReady) state.criticalError = e
         else state.errors = [e]

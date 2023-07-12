@@ -1,4 +1,5 @@
 import { JsonRpcProvider } from 'ethers'
+import { EmailVaultController } from '../emailVault'
 import { Storage } from '../../interfaces/storage'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
 import { Account, AccountId, AccountOnchainState } from '../../interfaces/account'
@@ -10,7 +11,6 @@ import EventEmitter from '../eventEmitter'
 import { getAccountState } from '../../libs/accountState/accountState'
 import { SignedMessage, UserRequest } from '../../interfaces/userRequest'
 import { estimate } from '../../libs/estimate/estimate'
-import { EmailVaultData } from '../../interfaces/emailVault'
 
 // @TODO move to interfaces/userRequest.ts?
 
@@ -32,6 +32,8 @@ export class MainController extends EventEmitter {
   // Load-related stuff
   private initialLoadPromise: Promise<void>
 
+  accountStates: AccountStates = {}
+
   isReady: boolean = false
 
   // Subcontrollers
@@ -40,14 +42,12 @@ export class MainController extends EventEmitter {
 
   // Public sub-structures
   // @TODO emailVaults
-  emailVaults: EmailVaultData[]
+  emailVault: EmailVaultController
 
   // @TODO read networks from settings
   accounts: Account[] = []
 
   selectedAccount: string | null = null
-
-  accountStates: AccountStates = {}
 
   keys: Key[] = []
 
@@ -70,7 +70,35 @@ export class MainController extends EventEmitter {
 
   lastUpdate: Date = new Date()
 
-  constructor(storage: Storage) {
+  async onUpdateEmailVault() {
+    if (!this.emailVault || !this.emailVault.isReady) return
+    let toUpdateAccountStates = false
+    const currentState = this.emailVault.emailVaultStates
+    const availableAccounts = currentState.map((ev) => ev.availableAccounts).flat()
+    // check for new accounts in emailVaults
+    availableAccounts.forEach((evAccount) => {
+      if (!this.accounts.find((acc) => acc.addr === evAccount.addr)) {
+        toUpdateAccountStates = true
+        this.accounts.push({
+          addr: evAccount.addr,
+          label: '',
+          pfp: '',
+          associatedKeys: [
+            ...new Set([
+              ...Object.entries(evAccount.associatedKeys)
+                .map(([, x]) => Object.keys(x))
+                .flat()
+            ])
+          ],
+          creation: evAccount.creation
+        })
+      }
+    })
+
+    if (toUpdateAccountStates) this.updateAccountStates()
+  }
+
+  constructor(storage: Storage, fetch: Function, relayerUrl: string) {
     super()
     this.storage = storage
     this.portfolio = new PortfolioController(storage)
@@ -78,6 +106,8 @@ export class MainController extends EventEmitter {
     this.keystore = new Keystore(storage, {})
     this.initialLoadPromise = this.load()
     this.settings = { networks }
+    this.emailVault = new EmailVaultController(storage, fetch, relayerUrl)
+    this.emailVault.onUpdate(this.onUpdateEmailVault.bind(this))
     // Load userRequests from storage and emit that we have updated
     // @TODO
   }
@@ -152,9 +182,9 @@ export class MainController extends EventEmitter {
       throw new Error(`getAccountOp: tried to run for non-existant account ${accountAddr}`)
     // @TODO consider bringing back functional style if we can figure out how not to trip up the TS compiler
     // Note: we use reduce instead of filter/map so that the compiler can deduce that we're checking .kind
-    const calls = this.userRequests.reduce((calls: AccountOpCall[], req) => {
+    const calls = this.userRequests.reduce((uCalls: AccountOpCall[], req) => {
       // only the first one for EOAs
-      if (!account.creation && calls.length > 0) return calls
+      if (!account.creation && uCalls.length > 0) return uCalls
 
       if (
         req.action.kind === 'call' &&
@@ -162,9 +192,9 @@ export class MainController extends EventEmitter {
         req.accountAddr === accountAddr
       ) {
         const { to, value, data } = req.action
-        calls.push({ to, value, data, fromUserRequestId: req.id })
+        uCalls.push({ to, value, data, fromUserRequestId: req.id })
       }
-      return calls
+      return uCalls
     }, [])
 
     if (!calls.length) return null
@@ -226,7 +256,7 @@ export class MainController extends EventEmitter {
   // first one sounds more reasonble
   // although the second one can't hurt and can help (or no debounce, just a one-at-a-time queue)
   removeUserRequest(id: bigint) {
-    const req = this.userRequests.find((req) => req.id === id)
+    const req = this.userRequests.find((uReq) => uReq.id === id)
     if (!req) throw new Error(`removeUserRequest: request with id ${id} not found`)
 
     // remove from the request queue
@@ -270,8 +300,8 @@ export class MainController extends EventEmitter {
         accountOp.accountAddr,
         Object.fromEntries(
           Object.entries(this.accountOpsToBeSigned[accountOp.accountAddr])
-            .filter(([_, accountOp]) => accountOp)
-            .map(([networkId, accountOp]) => [networkId, [accountOp!]])
+            .filter(([, accOp]) => accOp)
+            .map(([networkId, accOp]) => [networkId, [accOp!]])
         )
       ),
       // @TODO nativeToCheck: pass all EOAs,
