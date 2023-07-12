@@ -11,7 +11,6 @@ export enum NETWORKS {
   'kucoin' = 'kucoin',
   'optimism' = 'optimism',
   'andromeda' = 'andromeda',
-  'rinkeby' = 'rinkeby',
   'cronos' = 'cronos',
   'aurora' = 'aurora',
   'ethereum-pow' = 'ethereum-pow'
@@ -230,23 +229,6 @@ const networks: NetworkType[] = [
     nativeAsset: {
       address: '0x0000000000000000000000000000000000000000',
       symbol: 'METIS',
-      coingeckoId: null,
-      decimals: 18
-    }
-  },
-  {
-    id: 'rinkeby',
-    chainId: 4,
-    nativeAssetSymbol: 'ETH',
-    name: 'Rinkeby',
-    explorerUrl: 'https://rinkeby.etherscan.io',
-    unstoppableDomainsChain: 'ERC20',
-    hide: true,
-    isGasTankAvailable: false,
-    relayerlessOnly: false,
-    nativeAsset: {
-      address: '0x0000000000000000000000000000000000000000',
-      symbol: 'ETH',
       coingeckoId: null,
       decimals: 18
     }

@@ -81,16 +81,10 @@ const supportedProtocols: SupportedProtocolType[] = [
     nftsProvider: 'velcro'
   },
   {
-    network: 'rinkeby',
-    protocols: [],
-    balancesProvider: 'velcro',
-    nftsProvider: 'velcro'
-  },
-  {
     network: 'ethereum-pow',
     protocols: [],
     balancesProvider: '',
-    nftsProvider: '' 
+    nftsProvider: ''
   }
   // {
   //     network: 'cronos',
