@@ -2,6 +2,7 @@
 pragma solidity 0.8.19;
 
 import "./IAmbireAccount.sol";
+import "hardhat/console.sol";
 
 struct AccountInput {
     address addr;
@@ -55,13 +56,13 @@ contract AmbireAccountState {
         scheduledRecoveries = new uint[](associatedKeys.length);
         uint currentNonce = account.nonce();
         for (uint i=0; i!=associatedKeys.length; i++) {
-        address key = associatedKeys[i];
-        IAmbireAccount.Transaction[] memory calls = new IAmbireAccount.Transaction[](1);
-        calls[0].to = address(account);
-        // @TODO the value of setAddrPrivilege is not necessarily 1 cause of the recovery
-        calls[0].data = abi.encodeWithSelector(IAmbireAccount.setAddrPrivilege.selector, key, privValue);
-        bytes32 hash = keccak256(abi.encode(address(account), block.chainid, currentNonce, calls));
-        scheduledRecoveries[i] = account.scheduledRecoveries(hash);
+            address key = associatedKeys[i];
+            IAmbireAccount.Transaction[] memory calls = new IAmbireAccount.Transaction[](1);
+            calls[0].to = address(account);
+            // @TODO the value of setAddrPrivilege is not necessarily 1 cause of the recovery
+            calls[0].data = abi.encodeWithSelector(IAmbireAccount.setAddrPrivilege.selector, key, privValue);
+            bytes32 hash = keccak256(abi.encode(address(account), block.chainid, currentNonce, calls));
+            scheduledRecoveries[i] = account.scheduledRecoveries(hash);
         }
     }
 
