@@ -60,6 +60,22 @@ export async function isAmbireV2(
   }
 }
 
+export async function getScheduledRecoveries(
+  provider: Provider,
+  network: NetworkDescriptor,
+  account: Account,
+  opts = {}
+) {
+  const deploylessOpts = { blockTag: 'latest', ...opts }
+  const deploylessAccountState = fromDescriptor(provider, AmbireAccountState, !network.rpcNoStateOverride)
+  const scheduledRecoveries = await deploylessAccountState.call('getScheduledRecoveries', [
+    account.addr,
+    account.associatedKeys,
+    ethers.toBeHex(1, 32)
+  ], deploylessOpts)
+  return scheduledRecoveries[0]
+}
+
 // const ethereum = networks.find((x) => x.id === 'ethereum')
 // if (!ethereum) throw new Error('no eth')
 // const provider = new JsonRpcProvider(ethereum.rpcUrl)
