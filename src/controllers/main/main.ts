@@ -94,7 +94,9 @@ export class MainController extends EventEmitter {
         })
       }
     })
-
+    // TODO check for available keys per account from emailVault and match them to available keys in KeyStore
+    // TODO Recovery option for keyStore check current keyStore uid and match to emailVault
+    // (if exists) request it from emailVault and unlock keyStore
     if (toUpdateAccountStates) this.updateAccountStates()
   }
 
