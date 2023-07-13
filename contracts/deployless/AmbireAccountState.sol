@@ -2,7 +2,6 @@
 pragma solidity 0.8.19;
 
 import "./IAmbireAccount.sol";
-import "hardhat/console.sol";
 
 struct AccountInput {
     address addr;

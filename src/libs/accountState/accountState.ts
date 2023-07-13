@@ -5,6 +5,7 @@ import { getAccountDeployParams } from '../account/account'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { Account, AccountOnchainState } from '../../interfaces/account'
 import AmbireAccountState from '../../../contracts/compiled/AmbireAccountState.json'
+import { ethers } from 'hardhat'
 
 export async function getAccountState(
   provider: Provider,
@@ -40,6 +41,23 @@ export async function getAccountState(
   })
 
   return result
+}
+
+export async function isAmbireV2(
+  provider: Provider,
+  network: NetworkDescriptor,
+  account: Account,
+  blockTag: string | number = 'latest'
+) {
+  const deploylessAccountState = fromDescriptor(provider, AmbireAccountState, !network.rpcNoStateOverride)
+  try {
+    await deploylessAccountState.call('ambireV2Check', [account.addr], {
+      blockTag
+    })
+    return true
+  } catch (e: any) {
+    return false
+  }
 }
 
 // const ethereum = networks.find((x) => x.id === 'ethereum')

@@ -9,7 +9,6 @@ import {
   provider
 } from '../config'
 import { deployAmbireAccountHardhatNetwork } from '../implementations'
-import { Contract } from 'ethers'
 import { getPriviledgeTxn, getTimelockData } from '../helpers'
 import { wrapEthSign, wrapRecover } from '../ambireSign'
 
