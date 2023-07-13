@@ -1,5 +1,5 @@
 import fetch from 'node-fetch'
-import { EmailVaultController } from './emailVault'
+import { EmailVaultController,  EmailVaultState} from './emailVault'
 import { Storage } from '../interfaces/storage'
 
 export function produceMemoryStore(): Storage {
@@ -22,7 +22,7 @@ const relayerUrl = 'https://staging-relayer.ambire.com'
 const emailVaultController = new EmailVaultController(storage, fetch, relayerUrl)
 
 emailVaultController.onUpdate(() => {
-  console.log(emailVaultController.getCurrentState())
+  console.log(EmailVaultState[emailVaultController.getCurrentState()])
   //   console.log('isWaitingEmailConfirmation', emailVaultController.isWaitingEmailConfirmation)
   emailVaultController.emailVaultStates.length > 0 &&
     console.log(JSON.stringify(emailVaultController.emailVaultStates, null, 2))

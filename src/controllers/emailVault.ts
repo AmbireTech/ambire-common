@@ -4,7 +4,7 @@ import { EmailVaultData } from '../interfaces/emailVault'
 import { Storage } from '../interfaces/storage'
 import EventEmitter from './eventEmitter'
 
-enum State {
+export enum EmailVaultState {
   Loading,
   WaitingEmailConfirmation,
   Ready
@@ -73,10 +73,10 @@ export class EmailVaultController extends EventEmitter {
     this.storage.set('magicLinkKeys', this.#magicLinkKeys)
   }
 
-  getCurrentState(): State {
-    if (!this.isReady) return State.Loading
-    if (this.#isWaitingEmailConfirmation) return State.WaitingEmailConfirmation
-    return State.Ready
+  getCurrentState(): EmailVaultState {
+    if (!this.isReady) return EmailVaultState.Loading
+    if (this.#isWaitingEmailConfirmation) return EmailVaultState.WaitingEmailConfirmation
+    return EmailVaultState.Ready
   }
 
   async requestNewMagicLinkKey(email: string) {
