@@ -9,15 +9,13 @@ import { AmbireAccount, AmbireAccountFactory } from '../../../test/config'
 
 export interface EstimateResult {
   gasUsed: bigint
+  nonce: number
   addedNative?: bigint
-  feeTokenOutcome: {
-    address: string
-    gasUsed: bigint
-    balance: bigint
-  }[]
-  nativeAssetBalances: {
-    address: string
-    balance: bigint
+  feePaymentOptions: {
+    availableAmount: bigint
+    paidBy: string
+    address?: string
+    gasUsed?: bigint
   }[]
 }
 
@@ -36,8 +34,37 @@ export async function estimate(
   blockFrom: string = '0x0000000000000000000000000000000000000001',
   blockTag: string | number = 'latest'
 ): Promise<EstimateResult> {
-  // @ TODO implement EOAs
-  if (!account.creation) throw new Error('EOA not supported yet')
+  if (!account.creation) {
+    if (op.calls.length !== 1) {
+      throw new Error("EOA can't have more than one call!")
+    }
+
+    const call = op.calls[0]
+    const nonce = await provider.getTransactionCount(account.addr)
+
+    const [gasUsed, balance] = await Promise.all([
+      provider.estimateGas({
+        from: account.addr,
+        to: call.to,
+        value: call.value,
+        data: call.data,
+        nonce
+      }),
+      provider.getBalance(account.addr)
+    ])
+
+    return {
+      gasUsed,
+      nonce,
+      feePaymentOptions: [
+        {
+          paidBy: account.addr,
+          availableAmount: balance
+        }
+      ]
+    }
+  }
+
   const deploylessEstimator = fromDescriptor(provider, Estimation, !network.rpcNoStateOverride)
 
   // @TODO - .env or passed as parameter?
@@ -68,15 +95,24 @@ export async function estimate(
   const gasPrice = `0x${Number(simulationGasPrice).toString(16)}`
   const gasLimit = `0x${Number(simulationGasLimit).toString(16)}`
 
+  /* eslint-disable prefer-const */
   let [
-    // eslint-disable-next-line prefer-const
-    [deployment, accountOpToExecuteBefore, accountOp, , feeTokenOutcomes, , nativeAssetBalances]
+    [
+      deployment,
+      accountOpToExecuteBefore,
+      accountOp,
+      nonce,
+      feeTokenOutcomes,
+      ,
+      nativeAssetBalances
+    ]
   ] = await deploylessEstimator.call('estimate', args, {
     from: blockFrom,
     blockTag,
     gasPrice: calculateAnomalies ? gasPrice : undefined,
     gasLimit: calculateAnomalies ? gasLimit : undefined
   })
+  /* eslint-enable prefer-const */
 
   let gasUsed = deployment.gasUsed + accountOpToExecuteBefore.gasUsed + accountOp.gasUsed
 
@@ -125,17 +161,22 @@ export async function estimate(
     nativeAssetBalances = nativeAssetBalances.slice(1)
   }
 
+  const feeTokenOptions = feeTokenOutcomes.map((token: any, key: number) => ({
+    address: feeTokens[key],
+    paidBy: account.addr,
+    availableAmount: token.amount,
+    gasUsed: token.gasUsed
+  }))
+
+  const nativeTokenOptions = nativeAssetBalances.map((balance: bigint, key: number) => ({
+    paidBy: nativeToCheck[key],
+    availableAmount: balance
+  }))
+
   return {
     gasUsed,
+    nonce,
     addedNative,
-    feeTokenOutcome: feeTokenOutcomes.map((token: any, key: number) => ({
-      address: feeTokens[key],
-      gasUsed: token.gasUsed,
-      balance: token.amount
-    })),
-    nativeAssetBalances: nativeAssetBalances.map((balance: bigint, key: number) => ({
-      address: nativeToCheck[key],
-      balance
-    }))
+    feePaymentOptions: [...feeTokenOptions, ...nativeTokenOptions]
   }
 }

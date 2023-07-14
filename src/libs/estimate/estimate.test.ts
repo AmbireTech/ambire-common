@@ -6,6 +6,7 @@ import { estimate, EstimateResult } from './estimate'
 import { networks } from '../../consts/networks'
 import { Portfolio } from '../portfolio/portfolio'
 import { getNonce } from '../../../test/helpers'
+import { GasFeePaymentType } from '../accountOp/accountOp'
 
 const ethereum = networks.find((x) => x.id === 'ethereum')
 const optimism = networks.find((x) => x.id === 'optimism')
@@ -53,14 +54,56 @@ const feeTokens = [
 const portfolio = new Portfolio(fetch, provider, ethereum)
 
 describe('estimate', () => {
-  const checkBalance = (
-    responseTokens: EstimateResult['nativeAssetBalances'],
+  const checkNativeBalance = (
+    responseTokens: EstimateResult['feePaymentOptions'],
     tokenAddresses: string[]
   ) => {
     tokenAddresses.forEach((tokenAddress) => {
-      expect(responseTokens.find((t) => t.address === tokenAddress)!.balance).toBeGreaterThan(0n)
+      expect(
+        responseTokens!.find((t) => t.paidBy === tokenAddress)!.availableAmount
+      ).toBeGreaterThan(0n)
     })
   }
+
+  it('estimates gasUsage and native balance for EOA', async () => {
+    const EOAAccount = {
+      addr: '0x40b38765696e3d5d8d9d834d8aad4bb6e418e489',
+      label: '',
+      pfp: '',
+      associatedKeys: ['0x40b38765696e3d5d8d9d834d8aad4bb6e418e489'],
+      creation: null
+    }
+
+    const call = {
+      to: '0x40b38765696e3d5d8d9d834d8aad4bb6e418e489',
+      value: BigInt(1),
+      data: '0xabc5345e000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000020000000000000000000000000e750fff1aa867dfb52c9f98596a0fab5e05d30a60000000000000000000000000000000000000000000000000de0b6b3a764000000000000000000000000000000000000000000000000000000000000000000600000000000000000000000000000000000000000000000000000000000000000'
+    }
+
+    const op = {
+      accountAddr: EOAAccount.addr,
+      signingKeyAddr: null,
+      gasLimit: null,
+      gasFeePayment: {
+        paymentType: GasFeePaymentType.EOA,
+        paidBy: EOAAccount.addr,
+        inToken: '0x0000000000000000000000000000000000000000',
+        amount: 1
+      },
+      networkId: 'ethereum',
+      nonce: null,
+      signature: null,
+      calls: [call],
+      accountOpToExecuteBefore: null
+    }
+
+    const response = await estimate(provider, ethereum, EOAAccount, op, [], [])
+
+    // This is the min gas unit we can spend
+    expect(response.gasUsed).toBeGreaterThan(21000n)
+    expect(response.feePaymentOptions![0].availableAmount).toBeGreaterThan(0)
+    expect(response.nonce).toBeGreaterThan(1)
+  })
 
   it('estimates gasUsage, fee and native tokens outcome', async () => {
     const op = {
@@ -84,19 +127,20 @@ describe('estimate', () => {
     )
 
     const response = await estimate(provider, ethereum, account, op, nativeToCheck, feeTokens)
-    const usdtOutcome = response.feeTokenOutcome.find(
+    const usdtOutcome = response.feePaymentOptions!.find(
       (token) => token.address === '0xdAC17F958D2ee523a2206206994597C13D831ec7'
     )
-    const usdcOutcome = response.feeTokenOutcome.find(
+    const usdcOutcome = response.feePaymentOptions!.find(
       (token) => token.address === '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'
     )
 
     // This is the min gas unit we can spend, but we expect more than that having in mind that multiple computations happens in the Contract
     expect(response.gasUsed).toBeGreaterThan(21000n)
     // As we swap 1 USDT for 1 USDC, we expect the estimate (outcome) balance of USDC to be greater than before the estimate (portfolio value)
-    expect(usdcOutcome!.balance).toBeGreaterThan(usdc!.amount)
-    expect(usdtOutcome!.balance).toBeLessThan(usdt!.amount)
-    checkBalance(response.nativeAssetBalances, nativeToCheck)
+    expect(usdcOutcome!.availableAmount).toBeGreaterThan(usdc!.amount)
+    expect(usdtOutcome!.availableAmount).toBeLessThan(usdt!.amount)
+    checkNativeBalance(response.feePaymentOptions, nativeToCheck)
+    expect(response.nonce).toBeGreaterThan(1)
   })
 
   it('estimates with `accountOpToExecuteBefore`', async () => {
