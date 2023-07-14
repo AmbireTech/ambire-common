@@ -25,7 +25,16 @@ export class EmailVault {
   }
 
   async getEmailVaultInfo(email: String, authKey: String): Promise<EmailVaultData> {
-    return (await this.callRelayer(`/email-vault/emailVaultInfo/${email}/${authKey}`)).data
+    const result = (await this.callRelayer(`/email-vault/emailVaultInfo/${email}/${authKey}`)).data
+    return {
+      ...result,
+      availableAccounts: Object.fromEntries(
+        result.availableAccounts.map((acc: any) => [acc.addr, acc])
+      ),
+      availableSecrets: Object.fromEntries(
+        result.availableSecrets.map((secret: any) => [secret.key, secret])
+      )
+    }
   }
 
   async addKeyStoreSecret(

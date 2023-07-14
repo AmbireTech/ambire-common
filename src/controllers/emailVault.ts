@@ -1,7 +1,8 @@
 import { EmailVault } from '../libs/emailVault/emailVault'
 import { requestMagicLink } from '../libs/magicLink/magicLink'
-import { EmailVaultData } from '../interfaces/emailVault'
+import { EmailVaultData, SecretType, EmailVaultSecrets } from '../interfaces/emailVault'
 import { Storage } from '../interfaces/storage'
+import { Keystore } from '../libs/keystore/keystore'
 import EventEmitter from './eventEmitter'
 
 export enum EmailVaultState {
@@ -15,6 +16,10 @@ export type MagicLinkKey = {
   requestedAt: Date
   confirmed: boolean
 }
+
+const RECOVERY_SECRET_ID = 'EmailVaultRecoverySecret'
+const EMAIL_VAULT_STORAGE_KEY = 'emailVault'
+const MAGIC_LINK_STORAGE_KEY = 'magicLinkKeys'
 
 export type MagicLinkKeys = {
   [email: string]: MagicLinkKey
@@ -37,30 +42,35 @@ export class EmailVaultController extends EventEmitter {
 
   #relayerUrl: string
 
+  #keyStore: Keystore
+
   isReady: boolean = false
 
   lastUpdate: Date = new Date()
 
-  emailVaultStates: EmailVaultData[] = []
+  emailVaultStates: {
+    [email: string]: EmailVaultData
+  } = {}
 
-  constructor(storage: Storage, fetch: Function, relayerUrl: string) {
+  constructor(storage: Storage, fetch: Function, relayerUrl: string, keyStore: Keystore) {
     super()
     this.#fetch = fetch
     this.#relayerUrl = relayerUrl
     this.storage = storage
     this.#emailVault = new EmailVault(fetch, relayerUrl)
+    this.#keyStore = keyStore
     this.initialLoadPromise = this.load()
   }
 
   private async load(): Promise<void> {
     this.isReady = false
-    const results = await Promise.all([
-      this.storage.get('emailVault', []),
-      this.storage.get('magicLinkKeys', {})
+    const result = await Promise.all([
+      this.storage.get(EMAIL_VAULT_STORAGE_KEY, {}),
+      this.storage.get(MAGIC_LINK_STORAGE_KEY, {})
     ])
 
-    this.emailVaultStates = results[0]
-    this.#magicLinkKeys = results[1]
+    this.emailVaultStates = result[0]
+    this.#magicLinkKeys = result[1]
 
     this.lastUpdate = new Date()
     this.isReady = true
@@ -70,7 +80,7 @@ export class EmailVaultController extends EventEmitter {
   verifiedMagicLinkKey(email: string) {
     if (!this.#magicLinkKeys[email]) return
     this.#magicLinkKeys[email].confirmed = true
-    this.storage.set('magicLinkKeys', this.#magicLinkKeys)
+    this.storage.set(MAGIC_LINK_STORAGE_KEY, this.#magicLinkKeys)
   }
 
   getCurrentState(): EmailVaultState {
@@ -82,15 +92,12 @@ export class EmailVaultController extends EventEmitter {
   async requestNewMagicLinkKey(email: string) {
     await this.initialLoadPromise
     const result = await requestMagicLink(email, this.#relayerUrl, this.#fetch)
-    const newKey = {
+    this.#magicLinkKeys[email] = {
       key: result.key,
       requestedAt: new Date(),
-      confirmed: false
+      confirmed: !!result.secret
     }
-    this.#magicLinkKeys[email] = {
-      ...newKey,
-      confirmed: false
-    }
+    this.storage.set(MAGIC_LINK_STORAGE_KEY, this.#magicLinkKeys)
     return this.#magicLinkKeys[email]
   }
 
@@ -102,19 +109,130 @@ export class EmailVaultController extends EventEmitter {
     return result
   }
 
+  async backupRecoveryKeyStoreSecret(email: string) {
+    if (!this.emailVaultStates[email]) {
+      await this.login(email)
+    }
+
+    const newSecret = new Array(32)
+      .fill(null)
+      .map(() =>
+        'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'.charAt(
+          Math.floor(Math.random() * 32)
+        )
+      )
+      .join('')
+
+    await this.#keyStore.addSecret(RECOVERY_SECRET_ID, newSecret)
+    const keyStoreUid = await this.#keyStore.getKeyStoreUid()
+    const existsMagicKey = await this.getMagicLinkKey(email)
+
+    const magicKey = existsMagicKey || (await this.requestNewMagicLinkKey(email))
+    if (magicKey.confirmed) {
+      await this.#emailVault.addKeyStoreSecret(email, magicKey.key, keyStoreUid, newSecret)
+    }
+    await this.pooling(this.addKeyStoreSecretProceed.bind(this), [
+      email,
+      magicKey.key,
+      keyStoreUid,
+      newSecret
+    ])
+
+    await this.getEmailVaultInfo(email)
+  }
+
+  async addKeyStoreSecretProceed(
+    email: string,
+    magicKey: string,
+    keyStoreUid: string,
+    newSecret: string
+  ) {
+    this.#isWaitingEmailConfirmation = true
+    if (!this.#magicLinkKeys[email]) {
+      this.emitUpdate()
+      return false
+    }
+
+    const result: Boolean | null = await this.#emailVault
+      .addKeyStoreSecret(email, magicKey, keyStoreUid, newSecret)
+      .catch(() => null)
+
+    if (!result) {
+      this.emitUpdate()
+      return false
+    }
+
+    this.#isWaitingEmailConfirmation = false
+    this.verifiedMagicLinkKey(email)
+    return true
+  }
+
+  async recoverKeyStore(email: string) {
+    if (!this.emailVaultStates[email]) {
+      await this.login(email)
+    }
+    const keyStoreUid = await this.#keyStore.getKeyStoreUid()
+    const availableSecrets = this.emailVaultStates[email].availableSecrets
+    const keyStoreSecret = Object.keys(availableSecrets).find(async (secretKey: string) => {
+      return availableSecrets[secretKey].key === keyStoreUid
+    })
+    if (this.emailVaultStates[email] && keyStoreSecret) {
+      const secretKey = await this.getRecoverKeyStoreSecret(email, keyStoreUid)
+      await this.#keyStore.unlockWithSecret(RECOVERY_SECRET_ID, secretKey.value)
+    }
+  }
+
+  async getRecoverKeyStoreSecret(email: string, uid: string): Promise<any> {
+    const state = this.emailVaultStates
+    if (
+      !state[email] ||
+      !state[email].availableSecrets[uid] ||
+      state[email].availableSecrets[uid].type !== SecretType.KeyStore
+    )
+      return
+
+    const existsMagicKey = await this.getMagicLinkKey(email)
+    const key = existsMagicKey || (await this.requestNewMagicLinkKey(email))
+
+    if (key.confirmed) {
+      return this.getRecoverKeyStoreSecretProceed(email, uid)
+    }
+    return this.pooling(this.getRecoverKeyStoreSecretProceed.bind(this), [email, uid])
+  }
+
+  async getRecoverKeyStoreSecretProceed(email: string, uid: string) {
+    this.#isWaitingEmailConfirmation = true
+    if (!this.#magicLinkKeys[email]) {
+      this.emitUpdate()
+      return false
+    }
+
+    const result: EmailVaultSecrets | null = await this.#emailVault
+      .retrieveKeyStoreSecret(email, this.#magicLinkKeys[email].key, uid)
+      .catch(() => null)
+
+    if (!result) {
+      this.emitUpdate()
+      return false
+    }
+    this.#isWaitingEmailConfirmation = false
+    this.verifiedMagicLinkKey(email)
+    this.emitUpdate()
+    return result
+  }
+
   async login(email: string) {
     const existsMagicKey = await this.getMagicLinkKey(email)
 
     const key = existsMagicKey || (await this.requestNewMagicLinkKey(email))
-    // await this.loginProceed(email)
     if (key.confirmed) {
-      await this.loginProceed(email)
+      await this.getEmailVaultInfo(email)
     } else {
-      await this.pooling(this.loginProceed.bind(this), [email])
+      await this.pooling(this.getEmailVaultInfo.bind(this), [email])
     }
   }
 
-  async loginProceed(email: string): Promise<boolean | null> {
+  async getEmailVaultInfo(email: string): Promise<boolean | null> {
     this.#isWaitingEmailConfirmation = true
     if (!this.#magicLinkKeys[email]) {
       this.emitUpdate()
@@ -131,15 +249,9 @@ export class EmailVaultController extends EventEmitter {
       return false
     }
 
-    if (!this.emailVaultStates.find((ev: EmailVaultData) => ev.email === result.email)) {
-      this.emailVaultStates.push(result)
-    } else {
-      this.emailVaultStates = this.emailVaultStates.map((ev: EmailVaultData) => {
-        if (ev.email !== result.email) return ev
-        return result
-      })
-    }
+    this.emailVaultStates[email] = result
 
+    this.storage.set(EMAIL_VAULT_STORAGE_KEY, this.emailVaultStates)
     // this will trigger the update event
     this.#isWaitingEmailConfirmation = false
     this.verifiedMagicLinkKey(email)
@@ -150,7 +262,7 @@ export class EmailVaultController extends EventEmitter {
   async pooling(fn: Function, params: any) {
     setTimeout(async () => {
       const result = await fn(...params)
-      if (result) return true
+      if (result) return result
       return this.pooling(fn, params)
     }, 2000)
   }

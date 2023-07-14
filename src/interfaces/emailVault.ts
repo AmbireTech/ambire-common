@@ -1,14 +1,14 @@
 import { AccountCreation, AccountId } from './account'
 
-enum SecretType {
-  recoveryKey,
-  keyStore,
-  keyBackup
+export enum SecretType {
+  RecoveryKey = 'recoveryKey',
+  KeyStore = 'keyStore',
+  keyBackup = 'keyBackup'
 }
 
 export interface EmailVaultSecrets {
-  key: String
-  value?: String
+  key: string
+  value?: string
   type: SecretType
 }
 
@@ -23,8 +23,10 @@ export interface EmailVaultAccountInfo {
 }
 
 export interface EmailVaultData {
-  recoveryKey: String
+  recoveryKey: string
   email: string
-  availableAccounts: EmailVaultAccountInfo[]
-  availableSecrets: EmailVaultSecrets[]
+  availableAccounts: { [addr: string]: EmailVaultAccountInfo }
+  availableSecrets: { [key: string]: EmailVaultSecrets }
+  criticalError?: Error
+  errors?: Error[]
 }

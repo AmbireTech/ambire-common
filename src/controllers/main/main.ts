@@ -70,36 +70,6 @@ export class MainController extends EventEmitter {
 
   lastUpdate: Date = new Date()
 
-  async onUpdateEmailVault() {
-    if (!this.emailVault || !this.emailVault.isReady) return
-    let toUpdateAccountStates = false
-    const currentState = this.emailVault.emailVaultStates
-    const availableAccounts = currentState.map((ev) => ev.availableAccounts).flat()
-    // check for new accounts in emailVaults
-    availableAccounts.forEach((evAccount) => {
-      if (!this.accounts.find((acc) => acc.addr === evAccount.addr)) {
-        toUpdateAccountStates = true
-        this.accounts.push({
-          addr: evAccount.addr,
-          label: '',
-          pfp: '',
-          associatedKeys: [
-            ...new Set([
-              ...Object.entries(evAccount.associatedKeys)
-                .map(([, x]) => Object.keys(x))
-                .flat()
-            ])
-          ],
-          creation: evAccount.creation
-        })
-      }
-    })
-    // TODO check for available keys per account from emailVault and match them to available keys in KeyStore
-    // TODO Recovery option for keyStore check current keyStore uid and match to emailVault
-    // (if exists) request it from emailVault and unlock keyStore
-    if (toUpdateAccountStates) this.updateAccountStates()
-  }
-
   constructor(storage: Storage, fetch: Function, relayerUrl: string) {
     super()
     this.storage = storage
@@ -108,8 +78,7 @@ export class MainController extends EventEmitter {
     this.keystore = new Keystore(storage, {})
     this.initialLoadPromise = this.load()
     this.settings = { networks }
-    this.emailVault = new EmailVaultController(storage, fetch, relayerUrl)
-    this.emailVault.onUpdate(this.onUpdateEmailVault.bind(this))
+    this.emailVault = new EmailVaultController(storage, fetch, relayerUrl, this.keystore)
     // Load userRequests from storage and emit that we have updated
     // @TODO
   }
@@ -252,6 +221,14 @@ export class MainController extends EventEmitter {
       })
     }
     // @TODO emit update
+  }
+
+  lock() {
+    this.keystore.lock()
+  }
+
+  isUnlock() {
+    return this.keystore.isUnlocked()
   }
 
   // @TODO allow this to remove multiple OR figure out a way to debounce re-estimations
