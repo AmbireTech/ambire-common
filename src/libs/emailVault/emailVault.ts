@@ -1,5 +1,3 @@
-// @NOTE<Yosif> Should keyAddress, keyStoreUid and recoveryKey be of type Address and not String?
-
 import { relayerCall } from '../relayerCall/relayerCall'
 
 export interface EmailVaultFetchResult {
@@ -8,11 +6,28 @@ export interface EmailVaultFetchResult {
   message: String
 }
 
-// @NOTE<Yosif> Should key be of type Address and not String?
+export interface RecoveryKey {
+  key: String
+  type: String
+}
+
 export interface VaultEntry {
   key: String
   value: String
   type: String
+}
+
+export interface Secret {
+  key: String
+  type: String
+}
+
+// NOTE: its a quick fix. Will be updated in other branch
+export interface EmailVaultInfo {
+  email: String
+  recoveryKey: String
+  availableSecrets: Secret[]
+  availableAccounts: any
 }
 
 export class EmailVault {
@@ -28,11 +43,11 @@ export class EmailVault {
     this.fetch = fetch
   }
 
-  async create(email: String, authKey: String): Promise<VaultEntry> {
+  async create(email: String, authKey: String): Promise<RecoveryKey> {
     return (await this.callRelayer(`/email-vault/create/${email}/${authKey}`)).data
   }
 
-  async getRecoveryKeyAddress(email: String, authKey: String): Promise<VaultEntry> {
+  async getRecoveryKeyAddress(email: String, authKey: String): Promise<RecoveryKey> {
     return (await this.callRelayer(`/email-vault/getRecoveryKey/${email}/${authKey}`)).data
   }
 
@@ -80,5 +95,9 @@ export class EmailVault {
     return (
       await this.callRelayer(`/email-vault/retrieveKeyBackup/${email}/${keyAddress}/${authKey}`)
     ).data
+  }
+
+  async getInfo(email: String, authKey: String): Promise<EmailVaultInfo> {
+    return (await this.callRelayer(`/email-vault/emailVaultInfo/${email}/${authKey}`)).data
   }
 }
