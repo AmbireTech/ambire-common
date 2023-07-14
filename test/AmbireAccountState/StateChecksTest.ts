@@ -11,21 +11,28 @@ import {
 import { deployAmbireAccountHardhatNetwork } from '../implementations'
 import { getPriviledgeTxn, getTimelockData } from '../helpers'
 import { wrapEthSign, wrapRecover } from '../ambireSign'
+import { getAccountDeployParams } from '../../dist/src/libs/account/account'
 
 let ambireAccountAddress: string
 const timelock = 120 // a 1 second timelock default
 const recovery = [[addressOne, addressTwo], timelock]
 let blockTimestamp = 0
+let factoryAddr: any
+let addrBytecode: any
+let salt: any
 
 describe('Account state checks tests', function () {
   it('should successfully deploys the ambire account and the account state', async function () {
     const [signer] = await ethers.getSigners()
     const { hash, timelockAddress } = getTimelockData(recovery)
-    const { ambireAccountAddress: addr } = await deployAmbireAccountHardhatNetwork([
+    const { ambireAccountAddress: addr, factoryAddress, bytecode, deploySalt } = await deployAmbireAccountHardhatNetwork([
       { addr: signer.address, hash: true },
       { addr: timelockAddress, hash: hash }
     ])
     ambireAccountAddress = addr
+    factoryAddr = factoryAddress
+    addrBytecode = bytecode
+    salt = deploySalt
   })
   it('should call ambireV2Check with a v2 address and confirm it returns a zero', async function () {
     const [signer] = await ethers.getSigners()
@@ -144,5 +151,45 @@ describe('Account state checks tests', function () {
     const abiCoder = new ethers.AbiCoder()
     const res = abiCoder.decode(['uint[]'], deploylessResult)[0]
     expect(res[0]).to.equal((blockTimestamp + timelock).toString())
+  })
+  it('should call getAccountsState with a v2 address and confirm it returns a zero', async function () {
+    const [signer] = await ethers.getSigners()
+
+    const account = {
+      addr: ambireAccountAddress,
+      label: 'test account',
+      pfp: 'pfp',
+      associatedKeys: [signer.address],
+      creation: {
+        factoryAddr,
+        bytecode: addrBytecode,
+        salt
+      }
+    }
+    const accounts = [account]
+    const args = accounts.map((account) => [
+      account.addr,
+      account.associatedKeys,
+      ...getAccountDeployParams(account)
+    ])
+
+    const abi = ['function getAccountsState(tuple(address, address[], address, bytes)[]) external']
+    const iface = new ethers.Interface(abi)
+    const callData = iface.encodeFunctionData('getAccountsState', [args])
+
+    const AmbireAccountState = await ethers.deployContract("AmbireAccountState");
+    const result = await signer.call({
+      to: await AmbireAccountState.getAddress(),
+      data: callData,
+    })
+    const decoded = abiCoder.decode(['tuple(bool, uint, bytes32[], bool)[]'], result)[0]
+    expect(decoded.length).to.equal(1)
+    decoded.map((oneAcc: any) => {
+      expect(oneAcc[0]).to.equal(true)
+      expect(oneAcc[1]).to.equal(0n)
+      expect(oneAcc[2].length).to.equal(1)
+      oneAcc[2].map((priv: any) => expect(priv).to.equal(ethers.toBeHex(1, 32)))
+      expect(oneAcc[3]).to.equal(true)
+    })
   })
 })

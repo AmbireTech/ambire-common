@@ -1,11 +1,10 @@
-import { Provider } from 'ethers'
+import { ethers, Provider } from 'ethers'
 
 import { fromDescriptor } from '../deployless/deployless'
 import { getAccountDeployParams } from '../account/account'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { Account, AccountOnchainState } from '../../interfaces/account'
 import AmbireAccountState from '../../../contracts/compiled/AmbireAccountState.json'
-import { ethers } from 'hardhat'
 
 export async function getAccountState(
   provider: Provider,
@@ -36,44 +35,13 @@ export async function getAccountState(
       nonce: parseInt(accResult.nonce, 10),
       isDeployed: accResult.isDeployed,
       associatedKeys: Object.fromEntries(associatedKeys),
+      isV2: accResult.isV2,
+      scheduledRecoveries: accResult.scheduledRecoveries,
       deployError: accounts[index].associatedKeys.length > 0 && accResult.associatedKeyPriviliges.length === 0
     }
   })
 
   return result
-}
-
-export async function isAmbireV2(
-  provider: Provider,
-  network: NetworkDescriptor,
-  account: Account,
-  blockTag: string | number = 'latest'
-) {
-  const deploylessAccountState = fromDescriptor(provider, AmbireAccountState, !network.rpcNoStateOverride)
-  try {
-    await deploylessAccountState.call('ambireV2Check', [account.addr], {
-      blockTag
-    })
-    return true
-  } catch (e: any) {
-    return false
-  }
-}
-
-export async function getScheduledRecoveries(
-  provider: Provider,
-  network: NetworkDescriptor,
-  account: Account,
-  opts = {}
-) {
-  const deploylessOpts = { blockTag: 'latest', ...opts }
-  const deploylessAccountState = fromDescriptor(provider, AmbireAccountState, !network.rpcNoStateOverride)
-  const scheduledRecoveries = await deploylessAccountState.call('getScheduledRecoveries', [
-    account.addr,
-    account.associatedKeys,
-    ethers.toBeHex(1, 32)
-  ], deploylessOpts)
-  return scheduledRecoveries[0]
 }
 
 // const ethereum = networks.find((x) => x.id === 'ethereum')

@@ -14,6 +14,8 @@ struct AccountInfo {
     bool isDeployed;
     uint nonce;
     bytes32[] associatedKeyPriviliges;
+    bool isV2;
+    uint[] scheduledRecoveries;
 }
 
 contract AmbireAccountState {
@@ -22,7 +24,7 @@ contract AmbireAccountState {
         for (uint i=0; i!=accounts.length; i++) {
             AccountInput memory account = accounts[i];
             // is contract deployed
-            if (address(accounts[i].addr).code.length > 0) {
+            if (address(account.addr).code.length > 0) {
                 accountResult[i].isDeployed = true;
             } else {
                 accountResult[i].isDeployed = false;
@@ -38,6 +40,20 @@ contract AmbireAccountState {
             // get key privilege information
             for (uint j=0; j!=account.associatedKeys.length; j++) {
                 accountResult[i].associatedKeyPriviliges[j] = IAmbireAccount(account.addr).privileges(account.associatedKeys[j]);
+            }
+
+            // v2 has a method called scheduledRecoveries. If it does not exist,
+            // it is v1. That's what we're doing here
+            bool isV2 = false;
+            try this.ambireV2Check(IAmbireAccount(account.addr)) returns (uint) {
+                isV2 = true;
+            } catch  {}
+
+            accountResult[i].isV2 = isV2;
+            if (isV2) {
+                accountResult[i].scheduledRecoveries = getScheduledRecoveries(IAmbireAccount(account.addr), account.associatedKeys, bytes32(uint256(1)));
+            } else {
+                accountResult[i].scheduledRecoveries = new uint[](0);
             }
         }
         return accountResult;
