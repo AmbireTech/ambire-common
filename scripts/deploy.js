@@ -8,7 +8,7 @@ const provider = new JsonRpcProvider(polygonUrl)
 
 // This is a deploy script that deploys a proxy AmbireAccount, not the original one.
 // this one doesn't have any priviledges, nor can be configured.
-// Here's a mined one already: 
+// You can get a mined one in deploy.ts (PROXY_AMBIRE_ACCOUNT)
 async function generateAmbireProxyDeploy (gasPrice) {
 	const txn = {}
 	const pk = process.env.DEPLOY_PRIVATE_KEY
