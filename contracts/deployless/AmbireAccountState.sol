@@ -47,7 +47,7 @@ contract AmbireAccountState {
             bool isV2 = false;
             try this.ambireV2Check(IAmbireAccount(account.addr)) returns (uint) {
                 isV2 = true;
-            } catch  {}
+            } catch {}
 
             accountResult[i].isV2 = isV2;
             if (isV2) {
@@ -63,10 +63,6 @@ contract AmbireAccountState {
         public
         returns (uint[] memory scheduledRecoveries)
     {
-        // Don't do this if we're not ambire v2
-        try this.ambireV2Check(account) {}
-        catch { return scheduledRecoveries; }
-
         // Check if there's a pending recovery that sets any of the associatedKeys
         scheduledRecoveries = new uint[](associatedKeys.length);
         uint currentNonce = account.nonce();

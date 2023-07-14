@@ -4,12 +4,13 @@ import { networks } from '../../consts/networks'
 import { JsonRpcProvider, ethers } from 'ethers'
 import { getBytecode } from '../../libs/proxyDeploy/bytecode'
 import { getAmbireAccountAddress } from '../../libs/proxyDeploy/getAmbireAddressTwo'
+import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 const polygon = networks.find((x) => x.id === 'polygon')
 if (!polygon) throw new Error('unable to find polygon network in consts')
 const provider = new JsonRpcProvider(polygon.rpcUrl)
 
 describe('AccountState', () => {
-  test('should get the account state and confirm v1 address is not returned as a v2', async () => {
+  test('should get the account state and check if a v1 address and v2 address (not deployed) are returned correctly', async () => {
     const account = {
       addr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
       label: '',
@@ -25,17 +26,17 @@ describe('AccountState', () => {
 
     const signerAddr = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
     const priv = { addr: signerAddr, hash: true }
-    const bytecode = getBytecode(polygon, [priv])
+    const bytecode = await getBytecode(polygon, [priv])
     const accountNotDeployed = {
       addr: getAmbireAccountAddress(
-        '0xF9c2504741f0116f7aff6015b6E210058A8Ac1e4',
+        AMBIRE_ACCOUNT_FACTORY,
         bytecode
       ),
       label: 'test account',
       pfp: 'pfp',
       associatedKeys: [signerAddr],
       creation: {
-        factoryAddr: '0xF9c2504741f0116f7aff6015b6E210058A8Ac1e4',
+        factoryAddr: AMBIRE_ACCOUNT_FACTORY,
         bytecode,
         salt: ethers.toBeHex(0, 32)
       }
