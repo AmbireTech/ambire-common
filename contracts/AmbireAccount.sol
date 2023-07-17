@@ -3,6 +3,11 @@ pragma solidity 0.8.19;
 
 import './libs/SignatureValidator.sol';
 
+// @TODO sollint
+interface ExternalSigValidator {
+  function validateSig(address accountAddr, bytes calldata data, bytes calldata sig, uint nonce, AmbireAccount.Transaction[] calldata calls) external returns (bool shouldExecute);
+}
+
 // @dev All external/public functions (that are not view/pure) use `payable` because AmbireAccount
 // is a wallet contract, and any ETH sent to it is not lost, but on the other hand not having `payable`
 // makes the Solidity compiler add an extra check for `msg.value`, which in this case is wasted gas
@@ -20,21 +25,6 @@ contract AmbireAccount {
 	// Events
 	event LogPrivilegeChanged(address indexed addr, bytes32 priv);
 	event LogErr(address indexed to, uint256 value, bytes data, bytes returnData); // only used in tryCatch
-	event LogRecoveryScheduled(
-		bytes32 indexed txnHash,
-		bytes32 indexed recoveryHash,
-		address indexed recoveryKey,
-		uint256 nonce,
-		uint256 time,
-		Transaction[] calls
-	);
-	event LogRecoveryCancelled(
-		bytes32 indexed txnHash,
-		bytes32 indexed recoveryHash,
-		address indexed recoveryKey,
-		uint256 time
-	);
-	event LogRecoveryFinalized(bytes32 indexed txnHash, bytes32 indexed recoveryHash, uint256 time);
 
 	// Transaction structure
 	// we handle replay protection separately by requiring (address(this), chainID, nonce) as part of the sig
@@ -44,19 +34,14 @@ contract AmbireAccount {
 		uint256 value;
 		bytes data;
 	}
-	struct RecoveryInfo {
-		address[] keys;
-		uint256 timelock;
-	}
 	// built-in batching of multiple execute()'s; useful when performing timelocked recoveries
 	struct ExecuteArgs {
 		Transaction[] calls;
 		bytes signature;
 	}
 
-	// Recovery mode constants
-	uint8 private constant SIGMODE_CANCEL = 254;
-	uint8 private constant SIGMODE_RECOVER = 255;
+  // Externally validated signatures
+	uint8 private constant SIGMODE_EXTERNALLY_VALIDATED = 255;
 
 	// This contract can accept ETH without calldata
 	receive() external payable {}
@@ -132,58 +117,32 @@ contract AmbireAccount {
 	// @dev: WARNING: if the signature of this is changed, we have to change AmbireAccountFactory
 	function execute(Transaction[] calldata calls, bytes calldata signature) public payable {
 		uint256 currentNonce = nonce;
-		// NOTE: abi.encode is safer than abi.encodePacked in terms of collision safety
-		bytes32 hash = keccak256(abi.encode(address(this), block.chainid, currentNonce, calls));
-
 		address signerKey;
-		// Recovery signature: allows to perform timelocked calls
+		// Externally validated signature
 		uint8 sigMode = uint8(signature[signature.length - 1]);
-
-		if (sigMode == SIGMODE_RECOVER || sigMode == SIGMODE_CANCEL) {
+		if (sigMode == SIGMODE_EXTERNALLY_VALIDATED) {
 			(bytes memory sig, ) = SignatureValidator.splitSignature(signature);
-			(RecoveryInfo memory recoveryInfo, bytes memory innerRecoverySig, address signerKeyToRecover) = abi.decode(
-				sig,
-				(RecoveryInfo, bytes, address)
+			address validatorAddr;
+			bytes memory validatorData;
+			(signerKey, validatorAddr, validatorData) = abi.decode(sig, (address, address, bytes));
+			require(
+				privileges[signerKey] == keccak256(abi.encode(validatorAddr, validatorData)),
+				'EXTERNAL_VALIDATION_NOT_SET'
 			);
-			signerKey = signerKeyToRecover;
-			bool isCancellation = sigMode == SIGMODE_CANCEL;
-			bytes32 recoveryInfoHash = keccak256(abi.encode(recoveryInfo));
-			require(privileges[signerKeyToRecover] == recoveryInfoHash, 'RECOVERY_NOT_AUTHORIZED');
-
-			uint256 scheduled = scheduledRecoveries[hash];
-			if (scheduled != 0 && !isCancellation) {
-				require(block.timestamp >= scheduled, 'RECOVERY_NOT_READY');
-				delete scheduledRecoveries[hash];
-				emit LogRecoveryFinalized(hash, recoveryInfoHash, block.timestamp);
-			} else {
-				bytes32 hashToSign = isCancellation ? keccak256(abi.encode(hash, 0x63616E63)) : hash;
-				address recoveryKey = SignatureValidator.recoverAddrImpl(hashToSign, innerRecoverySig, true);
-				bool isIn;
-				for (uint256 i = 0; i < recoveryInfo.keys.length; i++) {
-					if (recoveryInfo.keys[i] == recoveryKey) {
-						isIn = true;
-						break;
-					}
-				}
-				require(isIn, 'RECOVERY_NOT_AUTHORIZED');
-				if (isCancellation) {
-					delete scheduledRecoveries[hash];
-					nonce = currentNonce + 1;
-					emit LogRecoveryCancelled(hash, recoveryInfoHash, recoveryKey, block.timestamp);
-				} else {
-					scheduledRecoveries[hash] = block.timestamp + recoveryInfo.timelock;
-					emit LogRecoveryScheduled(hash, recoveryInfoHash, recoveryKey, currentNonce, block.timestamp, calls);
-				}
+			// The sig validator itself should throw when a signature isn't valdiated successfully
+			// the return value just indicates whether we want to execute the current calls
+			// @TODO what about reentrancy for externally validated signatures
+			if (!ExternalSigValidator(validatorAddr).validateSig(address(this), validatorData, sig, currentNonce, calls))
 				return;
-			}
 		} else {
+			// NOTE: abi.encode is safer than abi.encodePacked in terms of collision safety
+			bytes32 hash = keccak256(abi.encode(address(this), block.chainid, currentNonce, calls));
 			signerKey = SignatureValidator.recoverAddrImpl(hash, signature, true);
 			require(privileges[signerKey] != bytes32(0), 'INSUFFICIENT_PRIVILEGE');
 		}
 
 		// we increment the nonce to prevent reentrancy
 		// also, we do it here as we want to reuse the previous nonce
-		// and respectively hash upon recovery / canceling
 		// doing this after sig verification is fine because sig verification can only do STATICCALLS
 		nonce = currentNonce + 1;
 		executeBatch(calls);
