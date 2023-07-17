@@ -28,7 +28,7 @@ export class EmailVault {
     this.fetch = fetch
   }
 
-  async create(email: String, authKey: String): Promise<RecoveryKey> {
+  async create(email: String, authKey: String): Promise<EmailVaultSecrets> {
     return (await this.callRelayer(`/email-vault/create/${email}/${authKey}`)).data
   }
 
