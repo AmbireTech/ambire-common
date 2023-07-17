@@ -30,3 +30,8 @@ export interface EmailVaultData {
   criticalError?: Error
   errors?: Error[]
 }
+
+export interface RecoveryKey {
+  key: String
+  type: String
+}

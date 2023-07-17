@@ -42,7 +42,7 @@ export async function getAccountState(
       deployError:
         accounts[index].associatedKeys.length > 0 && accResult.associatedKeyPriviliges.length === 0,
       isV2: accResult.isV2,
-      scheduledRecoveries: accResult.scheduledRecoveries,
+      scheduledRecoveries: accResult.scheduledRecoveries
     }
   })
 

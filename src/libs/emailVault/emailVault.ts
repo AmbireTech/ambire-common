@@ -1,23 +1,6 @@
 import { relayerCall } from '../relayerCall/relayerCall'
-import { EmailVaultData, EmailVaultSecrets } from '../../interfaces/emailVault'
+import { EmailVaultData, EmailVaultSecrets, RecoveryKey } from '../../interfaces/emailVault'
 import { NetworkDescriptor } from 'interfaces/networkDescriptor'
-
-export interface EmailVaultFetchResult {
-  success: Boolean
-  data: VaultEntry
-  message: String
-}
-
-export interface RecoveryKey {
-  key: String
-  type: String
-}
-
-export interface VaultEntry {
-  key: String
-  value: String
-  type: String
-}
 
 export interface Secret {
   key: String
