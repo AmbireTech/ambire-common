@@ -26,7 +26,6 @@ contract AmbireAccount {
 	// Variables
 	mapping(address => bytes32) public privileges;
 	uint256 public nonce;
-	mapping(bytes32 => uint) public scheduledRecoveries;
 
 	// Events
 	event LogPrivilegeChanged(address indexed addr, bytes32 priv);
