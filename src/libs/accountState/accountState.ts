@@ -1,4 +1,4 @@
-import { Provider } from 'ethers'
+import { ethers, Provider } from 'ethers'
 
 import { fromDescriptor } from '../deployless/deployless'
 import { getAccountDeployParams } from '../account/account'
@@ -38,9 +38,10 @@ export async function getAccountState(
       accountAddr: accounts[index].addr,
       nonce: parseInt(accResult.nonce, 10),
       isDeployed: accResult.isDeployed,
-      associatedKeysPriviliges: Object.fromEntries(associatedKeys),
-      deployError:
-        accounts[index].associatedKeys.length > 0 && accResult.associatedKeyPriviliges.length === 0
+      associatedKeys: Object.fromEntries(associatedKeys),
+      isV2: accResult.isV2,
+      scheduledRecoveries: accResult.scheduledRecoveries,
+      deployError: accounts[index].associatedKeys.length > 0 && accResult.associatedKeyPriviliges.length === 0
     }
   })
 
