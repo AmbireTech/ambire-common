@@ -99,25 +99,25 @@ describe('Main Controller ', () => {
   })
 
   test('backup keyStore secret emailVault', async () => {
-    console.log(
-      JSON.stringify(controller.emailVault.emailVaultStates[email].availableSecrets, null, 2)
-    )
+    // console.log(
+    //   JSON.stringify(controller.emailVault.emailVaultStates[email].availableSecrets, null, 2)
+    // )
     controller.emailVault.backupRecoveryKeyStoreSecret(email)
     await new Promise((resolve) => controller.emailVault.onUpdate(() => resolve(null)))
-    console.log(
-      JSON.stringify(controller.emailVault.emailVaultStates[email].availableSecrets, null, 2)
-    )
+    // console.log(
+    //   JSON.stringify(controller.emailVault.emailVaultStates[email].availableSecrets, null, 2)
+    // )
   })
 
   test('unlock keyStore with recovery secret emailVault', async () => {
     async function wait(ms: number) {
       return new Promise((resolve) => setTimeout(() => resolve(null), ms))
     }
-    controller.lock()
+    // controller.lock()
     controller.emailVault.recoverKeyStore(email)
-    console.log('isUnlock ==>', controller.isUnlock())
+    // console.log('isUnlock ==>', controller.isUnlock())
     await new Promise((resolve) => controller.emailVault.onUpdate(() => resolve(null)))
     await wait(10000)
-    console.log('isUnlock ==>', controller.isUnlock())
+    // console.log('isUnlock ==>', controller.isUnlock())
   })
 })

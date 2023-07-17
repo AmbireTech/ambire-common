@@ -1,3 +1,4 @@
+import crypto from 'crypto'
 import { EmailVault } from '../libs/emailVault/emailVault'
 import { requestMagicLink } from '../libs/magicLink/magicLink'
 import { EmailVaultData, SecretType, EmailVaultSecrets } from '../interfaces/emailVault'
@@ -115,14 +116,7 @@ export class EmailVaultController extends EventEmitter {
       await this.login(email)
     }
 
-    const newSecret = new Array(32)
-      .fill(null)
-      .map(() =>
-        'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'.charAt(
-          Math.floor(Math.random() * 32)
-        )
-      )
-      .join('')
+    const newSecret = crypto.randomBytes(32).toString('base64url')
 
     await this.#keyStore.addSecret(RECOVERY_SECRET_ID, newSecret)
     const keyStoreUid = await this.#keyStore.getKeyStoreUid()
@@ -132,7 +126,7 @@ export class EmailVaultController extends EventEmitter {
     if (magicKey.confirmed) {
       await this.#emailVault.addKeyStoreSecret(email, magicKey.key, keyStoreUid, newSecret)
     }
-    await this.pooling(this.addKeyStoreSecretProceed.bind(this), [
+    await this.polling(this.addKeyStoreSecretProceed.bind(this), [
       email,
       magicKey.key,
       keyStoreUid,
@@ -198,7 +192,7 @@ export class EmailVaultController extends EventEmitter {
     if (key.confirmed) {
       return this.getRecoverKeyStoreSecretProceed(email, uid)
     }
-    return this.pooling(this.getRecoverKeyStoreSecretProceed.bind(this), [email, uid])
+    return this.polling(this.getRecoverKeyStoreSecretProceed.bind(this), [email, uid])
   }
 
   async getRecoverKeyStoreSecretProceed(email: string, uid: string) {
@@ -229,7 +223,7 @@ export class EmailVaultController extends EventEmitter {
     if (key.confirmed) {
       await this.getEmailVaultInfo(email)
     } else {
-      await this.pooling(this.getEmailVaultInfo.bind(this), [email])
+      await this.polling(this.getEmailVaultInfo.bind(this), [email])
     }
   }
 
@@ -271,7 +265,7 @@ export class EmailVaultController extends EventEmitter {
     if (key.confirmed) {
       await this.scheduleRecoveryPostValidation(email, accAddress, newKeyAddr)
     } else {
-      await this.pooling(this.scheduleRecoveryPostValidation.bind(this), [email, accAddress, newKeyAddr])
+      await this.polling(this.scheduleRecoveryPostValidation.bind(this), [email, accAddress, newKeyAddr])
     }
   }
 
@@ -301,11 +295,11 @@ export class EmailVaultController extends EventEmitter {
     return true
   }
 
-  async pooling(fn: Function, params: any) {
+  async polling(fn: Function, params: any) {
     setTimeout(async () => {
       const result = await fn(...params)
       if (result) return result
-      return this.pooling(fn, params)
+      return this.polling(fn, params)
     }, 2000)
   }
 }
