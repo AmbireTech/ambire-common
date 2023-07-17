@@ -5,6 +5,7 @@
   "scripts": {
     "generate:contractInfo": "node scripts/generateContractInfo.js > src/constants/humanizerInfo.json",
     "compile:contracts": "ts-node scripts/compileContracts.js",
+    "deploy:localhost": "ts-node scripts/deployToLocalhost.js",
     "test": "npx hardhat compile; npx hardhat test; jest",
     "jest": "jest --forceExit",
     "build": "tsc src/libs/portfolio/getOnchainBalances.ts -t es2020 -m commonjs --esModuleInterop true --sourceMap true --resolveJsonModule true && tsc src/libs/deployless/deployless.ts -t es2020 -m commonjs --esModuleInterop true --sourceMap true",

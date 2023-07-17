@@ -1,6 +1,5 @@
 import { relayerCall } from '../relayerCall/relayerCall'
 import { EmailVaultData, EmailVaultSecrets, RecoveryKey } from '../../interfaces/emailVault'
-import { NetworkDescriptor } from 'interfaces/networkDescriptor'
 
 export interface Secret {
   key: String
@@ -113,16 +112,12 @@ export class EmailVault {
     email: String,
     authKey: String,
     accAddress: String,
-    network: NetworkDescriptor,
     newKeyAddr: String
-  ): Promise<Boolean> {
-    return (
-      await this.callRelayer(`/email-vault/scheduleRecovery/${email}/${authKey}`, 'POST', {
-        newKey: newKeyAddr,
-        accAddress,
-        networkName: network.id
-      })
-    ).success
+  ): Promise<any> {
+    return await this.callRelayer(`/email-vault/scheduleRecovery/${email}/${authKey}`, 'POST', {
+      newKey: newKeyAddr,
+      accAddress
+    })
   }
 
   async getInfo(email: String, authKey: String): Promise<EmailVaultInfo> {

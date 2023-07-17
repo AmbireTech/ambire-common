@@ -10,6 +10,11 @@ export interface Account {
   associatedKeys: string[]
   // Creation data; `null` in case of an EOA
   creation: AccountCreation | null
+  recoveryTxns: { [network: string]: {
+    to: string,
+    value: number,
+    data: string,
+  }}
 }
 
 export interface AccountCreation {

@@ -4,7 +4,6 @@ import { EmailVaultData, SecretType, EmailVaultSecrets } from '../interfaces/ema
 import { Storage } from '../interfaces/storage'
 import { Keystore } from '../libs/keystore/keystore'
 import EventEmitter from './eventEmitter'
-import { NetworkDescriptor } from 'interfaces/networkDescriptor'
 import { Account } from 'interfaces/account'
 
 export enum EmailVaultState {
@@ -264,30 +263,28 @@ export class EmailVaultController extends EventEmitter {
   async scheduleRecovery(
     email: string,
     accAddress: string,
-    network: NetworkDescriptor,
     newKeyAddr: string
   ) {
     const existsMagicKey = await this.getMagicLinkKey(email)
 
     const key = existsMagicKey || (await this.requestNewMagicLinkKey(email))
     if (key.confirmed) {
-      await this.scheduleRecoveryPostValidation(email, accAddress, network, newKeyAddr)
+      await this.scheduleRecoveryPostValidation(email, accAddress, newKeyAddr)
     } else {
-      await this.pooling(this.scheduleRecoveryPostValidation.bind(this), [email, accAddress, network, newKeyAddr])
+      await this.pooling(this.scheduleRecoveryPostValidation.bind(this), [email, accAddress, newKeyAddr])
     }
   }
 
   private async scheduleRecoveryPostValidation(
     email: string,
     accAddress: string,
-    network: NetworkDescriptor,
     newKeyAddr: string
   ) {
-    const result: Boolean = await this.#emailVault
-      .scheduleRecovery(email, this.#magicLinkKeys[email].key, accAddress, network, newKeyAddr)
+    const result: any = await this.#emailVault
+      .scheduleRecovery(email, this.#magicLinkKeys[email].key, accAddress, newKeyAddr)
       .catch(() => false)
 
-    if (result) {
+    if (result.success) {
       this.emitUpdate()
       return false
     }
@@ -295,7 +292,7 @@ export class EmailVaultController extends EventEmitter {
     const accounts = await this.storage.get('accounts', [])
     const accountsWithNewKey = accounts.map((acc: Account) => {
       if (acc.addr === accAddress) {
-        acc.associatedKeys.push(newKeyAddr)
+        acc.recoveryTxns = result.data
       }
       return acc
     })
