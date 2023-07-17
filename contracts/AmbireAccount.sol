@@ -3,7 +3,6 @@ pragma solidity 0.8.19;
 
 import './libs/SignatureValidator.sol';
 
-// @TODO sollint
 interface ExternalSigValidator {
 	function validateSig(
 		address accountAddr,
