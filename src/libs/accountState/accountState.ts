@@ -12,7 +12,11 @@ export async function getAccountState(
   accounts: Account[],
   blockTag: string | number = 'latest'
 ): Promise<AccountOnchainState[]> {
-  const deploylessAccountState = fromDescriptor(provider, AmbireAccountState, !network.rpcNoStateOverride)
+  const deploylessAccountState = fromDescriptor(
+    provider,
+    AmbireAccountState,
+    !network.rpcNoStateOverride
+  )
 
   const args = accounts.map((account) => [
     account.addr,
