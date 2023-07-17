@@ -5,25 +5,25 @@ import './AmbireAccount.sol';
 import './libs/SignatureValidator.sol';
 
 contract RecoverySigValidator is ExternalSigValidator {
-	mapping(bytes32 => uint) public scheduledRecoveries;
-	event LogRecoveryScheduled(
-		bytes32 indexed txnHash,
-		address indexed recoveryKey,
-		uint256 nonce,
-		uint256 time,
-		AmbireAccount.Transaction[] calls
-	);
-	event LogRecoveryCancelled(
-		bytes32 indexed txnHash,
-		address indexed recoveryKey,
-		uint256 time
-	);
-	event LogRecoveryFinalized(bytes32 indexed txnHash, uint256 time);
+  mapping(bytes32 => uint) public scheduledRecoveries;
+  event LogRecoveryScheduled(
+    bytes32 indexed txnHash,
+    address indexed recoveryKey,
+    uint256 nonce,
+    uint256 time,
+    AmbireAccount.Transaction[] calls
+  );
+  event LogRecoveryCancelled(
+    bytes32 indexed txnHash,
+    address indexed recoveryKey,
+    uint256 time
+  );
+  event LogRecoveryFinalized(bytes32 indexed txnHash, uint256 time);
 
   struct RecoveryInfo {
-		address[] keys;
-		uint256 timelock;
-	}
+    address[] keys;
+    uint256 timelock;
+  }
 
   function validateSig(
     address accountAddr,
@@ -51,7 +51,7 @@ contract RecoverySigValidator is ExternalSigValidator {
       if (scheduled > 0) {
         require(block.timestamp >= scheduled, 'RECOVERY_NOT_READY');
         delete scheduledRecoveries[hash];
-				emit LogRecoveryFinalized(hash, block.timestamp);
+        emit LogRecoveryFinalized(hash, block.timestamp);
         // Allow execution to proceed
         return true;
       } else {
