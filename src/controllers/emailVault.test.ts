@@ -1,9 +1,8 @@
 import { beforeAll, describe, expect, test } from '@jest/globals'
 import fetch from 'node-fetch'
-import { UserRequest } from '../../interfaces/userRequest'
-import { MainController } from './main'
-import { Storage } from '../../interfaces/storage'
-import { AccountOp } from '../../libs/accountOp/accountOp'
+import { UserRequest } from '../interfaces/userRequest'
+import { MainController } from './main/main'
+import { Storage } from '../interfaces/storage'
 
 export function produceMemoryStore(): Storage {
   const storage = new Map()
@@ -64,60 +63,19 @@ describe('Main Controller ', () => {
   const email = 'emil@ambire.com'
   storage.set('accounts', accounts)
   let controller: MainController
+
   test('Init controller', async () => {
     controller = new MainController(storage, fetch, relayerUrl)
     await new Promise((resolve) => controller.onUpdate(() => resolve(null)))
-    // console.dir(controller.accountStates, { depth: null })
-    // @TODO
-    // expect(states).to
   })
 
-  test('Add a user request', async () => {
-    const req: UserRequest = {
-      id: 0n,
-      // @TODO: more elegant way of setting this?
-      added: BigInt(Date.now()),
-      accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
-      networkId: 'ethereum',
-      forceNonce: null,
-      action: {
-        kind: 'call',
-        to: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
-        value: BigInt(0),
-        data: '0xa9059cbb000000000000000000000000e5a4dad2ea987215460379ab285df87136e83bea00000000000000000000000000000000000000000000000000000000005040aa'
-      }
-    }
-    await controller.addUserRequest(req)
-    // console.dir(controller.accountOpsToBeSigned, { depth: null })
-    // @TODO test if nonce is correctly set
-  })
-
-  test('login with emailVault', async () => {
+  test('login wit hemailVault', async () => {
     controller.emailVault.login(email)
     await new Promise((resolve) => controller.emailVault.onUpdate(() => resolve(null)))
-    // console.log(controller.emailVault.emailVaultStates)
   })
 
   test('backup keyStore secret emailVault', async () => {
-    console.log(
-      JSON.stringify(controller.emailVault.emailVaultStates[email].availableSecrets, null, 2)
-    )
-    controller.emailVault.backupRecoveryKeyStoreSecret(email)
-    await new Promise((resolve) => controller.emailVault.onUpdate(() => resolve(null)))
-    console.log(
-      JSON.stringify(controller.emailVault.emailVaultStates[email].availableSecrets, null, 2)
-    )
-  })
-
-  test('unlock keyStore with recovery secret emailVault', async () => {
-    async function wait(ms: number) {
-      return new Promise((resolve) => setTimeout(() => resolve(null), ms))
-    }
-    controller.lock()
-    controller.emailVault.recoverKeyStore(email)
-    console.log('isUnlock ==>', controller.isUnlock())
-    await new Promise((resolve) => controller.emailVault.onUpdate(() => resolve(null)))
-    await wait(10000)
-    console.log('isUnlock ==>', controller.isUnlock())
+    
+    controller.emailVault.scheduleRecovery(email, accounts[0].addr, )
   })
 })
