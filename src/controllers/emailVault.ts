@@ -1,3 +1,4 @@
+import crypto from 'crypto'
 import { EmailVault } from '../libs/emailVault/emailVault'
 import { requestMagicLink } from '../libs/magicLink/magicLink'
 import { EmailVaultData, SecretType, EmailVaultSecrets } from '../interfaces/emailVault'
@@ -114,14 +115,7 @@ export class EmailVaultController extends EventEmitter {
       await this.login(email)
     }
 
-    const newSecret = new Array(32)
-      .fill(null)
-      .map(() =>
-        'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'.charAt(
-          Math.floor(Math.random() * 32)
-        )
-      )
-      .join('')
+    const newSecret = crypto.randomBytes(32).toString('base64url')
 
     await this.#keyStore.addSecret(RECOVERY_SECRET_ID, newSecret)
     const keyStoreUid = await this.#keyStore.getKeyStoreUid()
