@@ -20,9 +20,9 @@ contract BalanceGetter is Simulation {
     }
 
     function getERC20TokenInfo(IAmbireAccount account, IERC20 token) external view returns (TokenInfo memory info) {
-	info.amount = token.balanceOf(address(account));
-	info.symbol = token.symbol();
-	info.decimals = token.decimals();
+        info.amount = token.balanceOf(address(account));
+        info.symbol = token.symbol();
+        info.decimals = token.decimals();
     }
 
     function getBalances(

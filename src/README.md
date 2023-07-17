@@ -20,7 +20,7 @@ To re-compile the deployless contracts, do this:
 npm run compile:contracts
 ```
 
-## Why classes instead of state containers
+## Why class-based state containers instead of state container libraries
 
 We chose simple ES6 classes to implement controllers (shared business logic) rather than state containers.
 
@@ -33,6 +33,8 @@ However, classes are truly framework-agnostic, which is a requirement for the co
 - class benefits: easy to write and read; not too hard to test (if all side effect generating methods are passed externally); truly framework-agnostic
 - class drawbacks: unable to know which properties changed, no time-travel
 
+See also: https://medium.com/swlh/what-is-the-best-state-container-library-for-react-b6989a45f236
+
 Classes for controllers are supposed to be stateful and be used directly in the application, which means:
 - they should expose all state needed for rendering
 - they should be responsible for the business logic but not responsible for app logic (for example, business logic is when to hide tokens from the portfolio but view logic is when to update the portfolio)
@@ -40,7 +42,14 @@ Classes for controllers are supposed to be stateful and be used directly in the 
 - errors that are fatal and related to unexpected/non-recoverable state should just `throw`, while errors that may happen in realistic conditions (eg async errors when calling `provider`) should all be caught
 - methods may be asynchronous for two purposes: 1) using `await` in them and 2) knowing when their work is done in tests; those methods should absolutely not be awaited in the UI, and instead we should rely on update events and state changes
 
-See also: https://medium.com/swlh/what-is-the-best-state-container-library-for-react-b6989a45f236
+Here are some related design decisions:
+* The main controller is a singleton master controller, and all other controllers are supposed to be initialized by it: this is due to the fact that the app will have initialization/startup logic, and we **do not want to handle this** in the app itself. Whether the app is loaded will be reflected in the state exposed by the main controller.
+* When it comes to calling the controllers for various functionalities, you can call sub-controllers of the main controller directly and this is by design. For example, to update the portfolio, we'd call `mainCtrl.portfolio.updateAccount(...)` rather than wire it through the main controller itself
+  * whenever there's a mild inter-dependency, for example the main controller depending on the portfolio controller's output, it should watch it itself for updates and update it's own state accordingly
+  * whenever there's a hard inter-dependency, for example one that affects more than one sub-controller, it will be best to wire the specific action through the main controller itself (`mainController.doSomething(...)`) because it's role is to effectively orchestrate such complex actions
+  * the main controller can call or watch sub-controllers, but not vice versa, to maintain a directional relationship
+  * for simplicity, we'll avoid passing data between sub-controllers internally and leave this to the app itself whenever possible; as a practical example, the `AccountAdder` will expose a list of accounts that can be added, but instead of internally having a method that will add those accounts on the main controller (which breaks the unidirectionality of the previous point), we'll just expose them - then, the app can call `mainController.addAccounts(mainController.accountAdder.selectedAccounts)`
+* Properties that are not meant to be exposed or serialized should start with `#` in order to [make them private](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Classes/Private_class_fields). The public/private modifiers in TypeScript do not achieve the same effect since they only serve as guidelines for the TS compiler itself, but they should be used alongside `#` anyway
 
 ## How account recovery/restore works in Ambire
 
