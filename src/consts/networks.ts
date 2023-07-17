@@ -24,6 +24,14 @@ const networks: NetworkDescriptor[] = [
     rpcUrl: 'https://rpc.ankr.com/optimism',
     rpcNoStateOverride: false,
     chainId: 10n
+  },
+  {
+    id: 'hardhat',
+    name: 'Hardhat',
+    nativeAssetSymbol: 'ETH',
+    rpcUrl: 'http::/localhost:8545',
+    rpcNoStateOverride: true,
+    chainId: 31337n
   }
 ]
 

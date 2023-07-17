@@ -1,6 +1,5 @@
-import { beforeAll, describe, expect, test } from '@jest/globals'
+import { describe, expect, test } from '@jest/globals'
 import fetch from 'node-fetch'
-import { UserRequest } from '../interfaces/userRequest'
 import { MainController } from './main/main'
 import { Storage } from '../interfaces/storage'
 import { ethers } from 'ethers'
@@ -88,4 +87,15 @@ describe('Main Controller ', () => {
     const account = storageAccounts.filter((acc: Account) => acc.addr == accounts[0].addr)[0]
     expect(account.associatedKeys[account.associatedKeys.length-1]).toEqual(randomAddr)
   })
+
+  // NOTE<Bobby>: Pls do not delete
+  // useful when wanting to test schedule recovery quickly on localhost
+  // test('should succcessfully schedule a recovery and confirm the new key address is added to associatedKeys', async () => {
+  //   const hardhat = networks.find((x) => x.id === 'hardhat')
+  //   if (!hardhat) throw new Error('unable to find hardhat network in consts')
+  //   const privAddr = '0x5d8DD39A360E5d5219f965695f9C0290862CA24A'
+
+  //   const emailVault = new EmailVault(fetch, 'http://localhost:1934')
+  //   await emailVault.scheduleRecovery('6wtp12slyi@uv6tg.aso', 'alabala', '0x18c2e785f3019995cb719245c47d8d8860286e96', hardhat, privAddr)
+  // })
 })
