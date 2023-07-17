@@ -43,7 +43,7 @@ async function deployAmbireAccountHardhatNetwork(priLevels: PrivLevels[]) {
     const expected = priLevels[index].hash === true ? ethers.toBeHex(1, 32) : priLevels[index].hash
     expect(res).to.equal(expected)
   })
-  return {ambireAccount, ambireAccountAddress}
+  return {ambireAccount, ambireAccountAddress, factoryAddress: await factory.getAddress(), bytecode, deploySalt}
 }
 
 export {
