@@ -5,7 +5,13 @@ import './libs/SignatureValidator.sol';
 
 // @TODO sollint
 interface ExternalSigValidator {
-  function validateSig(address accountAddr, bytes calldata data, bytes calldata sig, uint nonce, AmbireAccount.Transaction[] calldata calls) external returns (bool shouldExecute);
+	function validateSig(
+		address accountAddr,
+		bytes calldata data,
+		bytes calldata sig,
+		uint nonce,
+		AmbireAccount.Transaction[] calldata calls
+	) external returns (bool shouldExecute);
 }
 
 // @dev All external/public functions (that are not view/pure) use `payable` because AmbireAccount
@@ -40,7 +46,7 @@ contract AmbireAccount {
 		bytes signature;
 	}
 
-  // Externally validated signatures
+	// Externally validated signatures
 	uint8 private constant SIGMODE_EXTERNALLY_VALIDATED = 255;
 
 	// This contract can accept ETH without calldata
@@ -99,7 +105,7 @@ contract AmbireAccount {
 		require(msg.sender == address(this), 'ONLY_IDENTITY_CAN_CALL');
 		uint256 gasBefore = gasleft();
 		(bool success, bytes memory returnData) = to.call{ value: value, gas: gasBefore }(data);
-		require(gasleft() > gasBefore/64, 'TRYCATCH_OOG');
+		require(gasleft() > gasBefore / 64, 'TRYCATCH_OOG');
 		if (!success) emit LogErr(to, value, data, returnData);
 	}
 
@@ -108,7 +114,7 @@ contract AmbireAccount {
 		require(msg.sender == address(this), 'ONLY_IDENTITY_CAN_CALL');
 		uint256 gasBefore = gasleft();
 		(bool success, bytes memory returnData) = to.call{ value: value, gas: gasLimit }(data);
-		require(gasleft() > gasBefore/64, 'TRYCATCH_OOG');
+		require(gasleft() > gasBefore / 64, 'TRYCATCH_OOG');
 		if (!success) emit LogErr(to, value, data, returnData);
 	}
 
@@ -132,8 +138,9 @@ contract AmbireAccount {
 			// The sig validator itself should throw when a signature isn't valdiated successfully
 			// the return value just indicates whether we want to execute the current calls
 			// @TODO what about reentrancy for externally validated signatures
-			if (!ExternalSigValidator(validatorAddr).validateSig(address(this), validatorData, sig, currentNonce, calls))
-				return;
+			if (
+				!ExternalSigValidator(validatorAddr).validateSig(address(this), validatorData, sig, currentNonce, calls)
+			) return;
 		} else {
 			// NOTE: abi.encode is safer than abi.encodePacked in terms of collision safety
 			bytes32 hash = keccak256(abi.encode(address(this), block.chainid, currentNonce, calls));
@@ -208,8 +215,7 @@ contract AmbireAccount {
 	// @notice EIP-1155 implementation
 	// we pretty much only need to signal that we support the interface for 165, but for 1155 we also need the fallback function
 	function supportsInterface(bytes4 interfaceID) external view returns (bool) {
-		bool supported =
-			interfaceID == 0x01ffc9a7 || // ERC-165 support (i.e. `bytes4(keccak256('supportsInterface(bytes4)'))`).
+		bool supported = interfaceID == 0x01ffc9a7 || // ERC-165 support (i.e. `bytes4(keccak256('supportsInterface(bytes4)'))`).
 			interfaceID == 0x150b7a02 || // ERC721TokenReceiver
 			interfaceID == 0x4e2312e0; // ERC-1155 `ERC1155TokenReceiver` support (i.e. `bytes4(keccak256("onERC1155Received(address,address,uint256,uint256,bytes)")) ^ bytes4(keccak256("onERC1155BatchReceived(address,address,uint256[],uint256[],bytes)"))`).
 		if (supported) return true;
