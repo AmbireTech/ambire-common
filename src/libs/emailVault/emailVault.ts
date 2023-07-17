@@ -2,6 +2,7 @@
 
 import { relayerCall } from '../relayerCall/relayerCall'
 import { EmailVaultData, EmailVaultSecrets } from '../../interfaces/emailVault'
+import { NetworkDescriptor } from 'interfaces/networkDescriptor'
 
 export class EmailVault {
   private callRelayer: Function
@@ -85,5 +86,31 @@ export class EmailVault {
     return (
       await this.callRelayer(`/email-vault/retrieveKeyBackup/${email}/${keyAddress}/${authKey}`)
     ).data
+  }
+
+  /**
+   * Schedule a recovery
+   *
+   * @param email - the email vault email
+   * @param authKey - the magic link key
+   * @param accAddress - the address we're scheduling for
+   * @param networkName - the network we're scheduling for
+   * @param newKeyAddr - the address that will have priv after recovery is complete
+   * @returns bool
+   */
+  async scheduleRecovery(
+    email: String,
+    authKey: String,
+    accAddress: String,
+    network: NetworkDescriptor,
+    newKeyAddr: String
+  ): Promise<Boolean> {
+    return (
+      await this.callRelayer(`/email-vault/scheduleRecovery/${email}/${authKey}`, 'POST', {
+        newKey: newKeyAddr,
+        accAddress,
+        networkName: network.id
+      })
+    ).success
   }
 }

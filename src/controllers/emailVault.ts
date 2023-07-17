@@ -4,6 +4,8 @@ import { EmailVaultData, SecretType, EmailVaultSecrets } from '../interfaces/ema
 import { Storage } from '../interfaces/storage'
 import { Keystore } from '../libs/keystore/keystore'
 import EventEmitter from './eventEmitter'
+import { NetworkDescriptor } from 'interfaces/networkDescriptor'
+import { Account } from 'interfaces/account'
 
 export enum EmailVaultState {
   Loading,
@@ -232,7 +234,7 @@ export class EmailVaultController extends EventEmitter {
     }
   }
 
-  async getEmailVaultInfo(email: string): Promise<boolean | null> {
+  private async getEmailVaultInfo(email: string): Promise<boolean | null> {
     this.#isWaitingEmailConfirmation = true
     if (!this.#magicLinkKeys[email]) {
       this.emitUpdate()
@@ -255,6 +257,49 @@ export class EmailVaultController extends EventEmitter {
     // this will trigger the update event
     this.#isWaitingEmailConfirmation = false
     this.verifiedMagicLinkKey(email)
+    this.emitUpdate()
+    return true
+  }
+
+  async scheduleRecovery(
+    email: string,
+    accAddress: string,
+    network: NetworkDescriptor,
+    newKeyAddr: string
+  ) {
+    const existsMagicKey = await this.getMagicLinkKey(email)
+
+    const key = existsMagicKey || (await this.requestNewMagicLinkKey(email))
+    if (key.confirmed) {
+      await this.scheduleRecoveryPostValidation(email, accAddress, network, newKeyAddr)
+    } else {
+      await this.pooling(this.scheduleRecoveryPostValidation.bind(this), [email, accAddress, network, newKeyAddr])
+    }
+  }
+
+  private async scheduleRecoveryPostValidation(
+    email: string,
+    accAddress: string,
+    network: NetworkDescriptor,
+    newKeyAddr: string
+  ) {
+    const result: Boolean = await this.#emailVault
+      .scheduleRecovery(email, this.#magicLinkKeys[email].key, accAddress, network, newKeyAddr)
+      .catch(() => false)
+
+    if (result) {
+      this.emitUpdate()
+      return false
+    }
+
+    const accounts = await this.storage.get('accounts', [])
+    const accountsWithNewKey = accounts.map((acc: Account) => {
+      if (acc.addr === accAddress) {
+        acc.associatedKeys.push(newKeyAddr)
+      }
+      return acc
+    })
+    this.storage.set('accounts', accountsWithNewKey)
     this.emitUpdate()
     return true
   }
