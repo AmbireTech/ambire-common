@@ -125,7 +125,7 @@ export class EmailVaultController extends EventEmitter {
     if (magicKey.confirmed) {
       await this.#emailVault.addKeyStoreSecret(email, magicKey.key, keyStoreUid, newSecret)
     }
-    await this.pooling(this.addKeyStoreSecretProceed.bind(this), [
+    await this.polling(this.addKeyStoreSecretProceed.bind(this), [
       email,
       magicKey.key,
       keyStoreUid,
@@ -191,7 +191,7 @@ export class EmailVaultController extends EventEmitter {
     if (key.confirmed) {
       return this.getRecoverKeyStoreSecretProceed(email, uid)
     }
-    return this.pooling(this.getRecoverKeyStoreSecretProceed.bind(this), [email, uid])
+    return this.polling(this.getRecoverKeyStoreSecretProceed.bind(this), [email, uid])
   }
 
   async getRecoverKeyStoreSecretProceed(email: string, uid: string) {
@@ -222,7 +222,7 @@ export class EmailVaultController extends EventEmitter {
     if (key.confirmed) {
       await this.getEmailVaultInfo(email)
     } else {
-      await this.pooling(this.getEmailVaultInfo.bind(this), [email])
+      await this.polling(this.getEmailVaultInfo.bind(this), [email])
     }
   }
 
@@ -253,11 +253,11 @@ export class EmailVaultController extends EventEmitter {
     return true
   }
 
-  async pooling(fn: Function, params: any) {
+  async polling(fn: Function, params: any) {
     setTimeout(async () => {
       const result = await fn(...params)
       if (result) return result
-      return this.pooling(fn, params)
+      return this.polling(fn, params)
     }, 2000)
   }
 }

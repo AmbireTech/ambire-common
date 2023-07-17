@@ -12,8 +12,6 @@ import { getAccountState } from '../../libs/accountState/accountState'
 import { SignedMessage, UserRequest } from '../../interfaces/userRequest'
 import { estimate } from '../../libs/estimate/estimate'
 
-// @TODO move to interfaces/userRequest.ts?
-
 export type AccountStates = {
   [accountId: string]: {
     [networkId: string]: AccountOnchainState
