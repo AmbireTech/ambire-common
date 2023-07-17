@@ -3,6 +3,9 @@ import fetch from 'node-fetch'
 import { UserRequest } from '../interfaces/userRequest'
 import { MainController } from './main/main'
 import { Storage } from '../interfaces/storage'
+import { ethers } from 'ethers'
+import { networks } from '../consts/networks'
+import { Account } from 'interfaces/account'
 
 export function produceMemoryStore(): Storage {
   const storage = new Map()
@@ -69,13 +72,20 @@ describe('Main Controller ', () => {
     await new Promise((resolve) => controller.onUpdate(() => resolve(null)))
   })
 
-  test('login wit hemailVault', async () => {
+  test('login wit emailVault', async () => {
     controller.emailVault.login(email)
     await new Promise((resolve) => controller.emailVault.onUpdate(() => resolve(null)))
   })
 
-  test('backup keyStore secret emailVault', async () => {
-    
-    controller.emailVault.scheduleRecovery(email, accounts[0].addr, )
+  test('should succcessfully schedule a recovery and confirm the new key address is added to associatedKeys', async () => {
+    const ethereum = networks.find((x) => x.id === 'ethereum')
+    if (!ethereum) throw new Error('unable to find ethereum network in consts')
+    const randomAddr = ethers.computeAddress(ethers.hexlify(ethers.randomBytes(32)))
+    controller.emailVault.scheduleRecovery(email, accounts[0].addr, ethereum, randomAddr)
+    await new Promise((resolve) => controller.emailVault.onUpdate(() => resolve(null)))
+
+    const storageAccounts = await storage.get('accounts', [])
+    const account = storageAccounts.filter((acc: Account) => acc.addr == accounts[0].addr)[0]
+    expect(account.associatedKeys[account.associatedKeys.length-1]).toEqual(randomAddr)
   })
 })
