@@ -35,33 +35,33 @@ contract RecoverySigValidator is ExternalSigValidator {
     (RecoveryInfo memory recoveryInfo) = abi.decode(data, (RecoveryInfo));
     (bytes32 cancellationHash, bytes memory innerSig) = abi.decode(sig, (bytes32, bytes));
 
-    if (cancellationHash != bytes32(0)) {
-      bytes32 hash = keccak256(abi.encode(cancellationHash, 0x63616E63));
-      address recoveryKey = SignatureValidator.recoverAddrImpl(hash, innerSig, true);
+    uint256 scheduled = scheduledRecoveries[hash];
+
+    if (cancellationHash != bytes32(0) && scheduled > 0) {
+      bytes32 hashToSign = keccak256(abi.encode(cancellationHash, 0x63616E63));
+      address recoveryKey = SignatureValidator.recoverAddrImpl(hashToSign, innerSig, true);
       require(isIn(recoveryKey, recoveryInfo.keys), 'RecoverySig: cancellation not signed');
       delete scheduledRecoveries[cancellationHash];
       emit LogRecoveryCancelled(cancellationHash, recoveryKey, block.timestamp);
       // Allow execution to proceed; this is safe beecause we have checked that calls are zero length
       require(calls.length == 0, 'RecoverySig: cancellation should have no calls');
       return true;
+    }
+
+    bytes32 hash = keccak256(abi.encode(accountAddr, block.chainid, nonce, calls));
+    if (scheduled > 0) {
+      require(block.timestamp >= scheduled, 'RECOVERY_NOT_READY');
+      delete scheduledRecoveries[hash];
+      emit LogRecoveryFinalized(hash, block.timestamp);
+      // Allow execution to proceed
+      return true;
     } else {
-      bytes32 hash = keccak256(abi.encode(accountAddr, block.chainid, nonce, calls));
-      uint256 scheduled = scheduledRecoveries[hash];
-      
-      if (scheduled > 0) {
-        require(block.timestamp >= scheduled, 'RECOVERY_NOT_READY');
-        delete scheduledRecoveries[hash];
-        emit LogRecoveryFinalized(hash, block.timestamp);
-        // Allow execution to proceed
-        return true;
-      } else {
-        address recoveryKey = SignatureValidator.recoverAddrImpl(hash, innerSig, true);
-        require(isIn(recoveryKey, recoveryInfo.keys), 'RecoverySig: not signed by the correct key');
-        scheduledRecoveries[hash] = block.timestamp + recoveryInfo.timelock;
-        emit LogRecoveryScheduled(hash, recoveryKey, nonce, block.timestamp, calls);
-        // Do not allow execution to proceeed
-        return false;
-      }
+      address recoveryKey = SignatureValidator.recoverAddrImpl(hash, innerSig, true);
+      require(isIn(recoveryKey, recoveryInfo.keys), 'RecoverySig: not signed by the correct key');
+      scheduledRecoveries[hash] = block.timestamp + recoveryInfo.timelock;
+      emit LogRecoveryScheduled(hash, recoveryKey, nonce, block.timestamp, calls);
+      // Do not allow execution to proceeed
+      return false;
     }
   }
 
