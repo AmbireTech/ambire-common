@@ -128,7 +128,8 @@ contract AmbireAccount {
 			(bytes memory sig, ) = SignatureValidator.splitSignature(signature);
 			address validatorAddr;
 			bytes memory validatorData;
-			(signerKey, validatorAddr, validatorData) = abi.decode(sig, (address, address, bytes));
+			bytes memory innerSig;
+			(signerKey, validatorAddr, validatorData, innerSig) = abi.decode(sig, (address, address, bytes, bytes));
 			require(
 				privileges[signerKey] == keccak256(abi.encode(validatorAddr, validatorData)),
 				'EXTERNAL_VALIDATION_NOT_SET'
@@ -137,7 +138,7 @@ contract AmbireAccount {
 			// the return value just indicates whether we want to execute the current calls
 			// @TODO what about reentrancy for externally validated signatures
 			if (
-				!ExternalSigValidator(validatorAddr).validateSig(address(this), validatorData, sig, currentNonce, calls)
+				!ExternalSigValidator(validatorAddr).validateSig(address(this), validatorData, innerSig, currentNonce, calls)
 			) return;
 		} else {
 			// NOTE: abi.encode is safer than abi.encodePacked in terms of collision safety
