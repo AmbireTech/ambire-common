@@ -16,7 +16,6 @@ class AccountAdder {
 
   accounts: Account[]
 
-  // keyIterator implements keyIterator and accepts the same props
   keyIterator?: (from: number, to: number, derivation?: string) => string[]
 
   // optional because there is default derivationPath for each keyIterator
