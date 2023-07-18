@@ -3,6 +3,8 @@ import aes from 'aes-js'
 import { concat, getBytes, hexlify, keccak256, randomBytes, toUtf8Bytes, Wallet } from 'ethers'
 import scrypt from 'scrypt-js'
 
+// import { ethers } from 'hardhat'
+import { publicKeyByPrivateKey } from 'eth-crypto'
 import { KeystoreSigner } from '../../interfaces/keystore'
 import { Storage } from '../../interfaces/storage'
 
@@ -65,6 +67,11 @@ export type StoredKey = {
 
 type KeystoreSignerType = {
   new (key: Key, privateKey?: string): KeystoreSigner
+}
+
+function getBytesForSecret(secret: string): ArrayLike<number> {
+  // see https://github.com/ethers-io/ethers.js/blob/v5/packages/json-wallets/src.ts/utils.ts#L19-L24
+  return toUtf8Bytes(secret, 'NFKC')
 }
 
 export class Keystore {
@@ -145,13 +152,13 @@ export class Keystore {
     // We are not not unlocked
     if (!mainKey) {
       if (!secrets.length) {
-        const key = getBytes(keccak256(concat([randomBytes(32), toUtf8Bytes(extraEntropy)]))).slice(
-          0,
-          16
-        )
+        const source = getBytes(keccak256(concat([randomBytes(32), toUtf8Bytes(extraEntropy)])))
+        // console.log('======>', hexlify(source))
+        const key = source.slice(0, 16)
+        const iv = source.slice(16, 32)
         mainKey = {
           key,
-          iv: randomBytes(16)
+          iv
         }
       } else throw new Error('keystore: must unlock keystore before adding secret')
     }
@@ -189,7 +196,7 @@ export class Keystore {
 
     // produce uid if one doesn't exist (should be created when the first secret is added)
     if (!(await this.storage.get('keyStoreUid', null))) {
-      const uid = keccak256(mainKey.key).slice(2, 34)
+      const uid = publicKeyByPrivateKey(hexlify(getBytes(concat([mainKey.key, mainKey.iv]))))
       await this.storage.set('keyStoreUid', uid)
     }
   }
@@ -317,8 +324,4 @@ export class Keystore {
 
     return new signerInitializer(key)
   }
-}
-function getBytesForSecret(secret: string): ArrayLike<number> {
-  // see https://github.com/ethers-io/ethers.js/blob/v5/packages/json-wallets/src.ts/utils.ts#L19-L24
-  return toUtf8Bytes(secret, 'NFKC')
 }

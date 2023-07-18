@@ -4,9 +4,9 @@
 /* eslint-disable max-classes-per-file */
 import { describe, expect, test } from '@jest/globals'
 
+import { Wallet } from 'ethers'
 import { Storage } from '../../interfaces/storage'
 import { Key, Keystore } from './keystore'
-import { Wallet } from 'ethers'
 
 // Helpers/testing
 function produceMemoryStore(): Storage {
@@ -161,7 +161,7 @@ describe('Keystore', () => {
 
   test('should return uid', async () => {
     const keystoreUid = await keystore.getKeyStoreUid()
-    expect(keystoreUid.length).toBe(32)
+    expect(keystoreUid.length).toBe(128)
   })
   // @TODO: secret not found
 })
