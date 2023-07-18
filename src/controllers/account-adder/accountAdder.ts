@@ -1,13 +1,10 @@
-import { ethers, JsonRpcProvider } from 'ethers'
+import { JsonRpcProvider } from 'ethers'
 import { NetworkDescriptor, NetworkId } from 'interfaces/networkDescriptor'
 
-import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
-import { networks } from '../../consts/networks'
 import { Account } from '../../interfaces/account'
 import { Storage } from '../../interfaces/storage'
+import { getLegacyAccount, getSmartAccount } from '../../libs/account/account'
 import { getAccountState } from '../../libs/accountState/accountState'
-import { getBytecode } from '../../libs/proxyDeploy/bytecode'
-import { getAmbireAccountAddress } from '../../libs/proxyDeploy/getAmbireAddressTwo'
 
 const PAGE_SIZE = 5
 
@@ -91,9 +88,9 @@ class AccountAdder {
 
     keys.forEach(async (key) => {
       // TODO: impl getSmartAccount in lib/account
-      const smartAccount: Account = await this.getSmartAccount(key)
+      const smartAccount: Account = await getSmartAccount(key)
 
-      accounts.push(this.getLegacyAccount(key))
+      accounts.push(getLegacyAccount(key))
       accounts.push(smartAccount)
     })
 
@@ -153,39 +150,6 @@ class AccountAdder {
 
     this.page = pageIndex
     return this.iterateAccounts()
-  }
-
-  // TODO: move to lib/account
-  getLegacyAccount(key: string): Account {
-    return {
-      addr: key,
-      label: '',
-      pfp: '',
-      associatedKeys: [key],
-      creation: null
-    }
-  }
-
-  async getSmartAccount(address: string): Promise<Account> {
-    // Temporarily use the polygon network,
-    // to be discussed which network we would use for
-    // getBytocode once the contract is deployed on all of them
-    const polygon = networks.find((x) => x.id === 'polygon')
-    if (!polygon) throw new Error('unable to find polygon network in consts')
-
-    const priv = { addr: address, hash: true }
-    const bytecode = await getBytecode(polygon, [priv])
-    return {
-      addr: getAmbireAccountAddress(AMBIRE_ACCOUNT_FACTORY, bytecode),
-      label: '',
-      pfp: '',
-      associatedKeys: [address],
-      creation: {
-        factoryAddr: AMBIRE_ACCOUNT_FACTORY,
-        bytecode,
-        salt: ethers.toBeHex(0, 32)
-      }
-    }
   }
 }
 
