@@ -108,13 +108,13 @@ export class EmailVault {
    * @param newKeyAddr - the address that will have priv after recovery is complete
    * @returns bool
    */
-  async scheduleRecovery(
+  async getRecoveryTxns(
     email: String,
     authKey: String,
     accAddress: String,
     newKeyAddr: String
   ): Promise<any> {
-    return await this.callRelayer(`/email-vault/scheduleRecovery/${email}/${authKey}`, 'POST', {
+    return await this.callRelayer(`/email-vault/getRecoveryTxns/${email}/${authKey}`, 'POST', {
       newKey: newKeyAddr,
       accAddress
     })

@@ -254,7 +254,7 @@ export class EmailVaultController extends EventEmitter {
     return true
   }
 
-  async scheduleRecovery(
+  async getRecoveryTxns(
     email: string,
     accAddress: string,
     newKeyAddr: string
@@ -263,19 +263,19 @@ export class EmailVaultController extends EventEmitter {
 
     const key = existsMagicKey || (await this.requestNewMagicLinkKey(email))
     if (key.confirmed) {
-      await this.scheduleRecoveryPostValidation(email, accAddress, newKeyAddr)
+      await this.getRecoveryTxnsPostValidation(email, accAddress, newKeyAddr)
     } else {
-      await this.polling(this.scheduleRecoveryPostValidation.bind(this), [email, accAddress, newKeyAddr])
+      await this.polling(this.getRecoveryTxnsPostValidation.bind(this), [email, accAddress, newKeyAddr])
     }
   }
 
-  private async scheduleRecoveryPostValidation(
+  private async getRecoveryTxnsPostValidation(
     email: string,
     accAddress: string,
     newKeyAddr: string
   ) {
     const result: any = await this.#emailVault
-      .scheduleRecovery(email, this.#magicLinkKeys[email].key, accAddress, newKeyAddr)
+      .getRecoveryTxns(email, this.#magicLinkKeys[email].key, accAddress, newKeyAddr)
       .catch(() => false)
 
     if (result.success) {

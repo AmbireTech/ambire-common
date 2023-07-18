@@ -79,7 +79,7 @@ describe('Main Controller ', () => {
 
   test('should succcessfully schedule a recovery and confirm the new key address is added to associatedKeys', async () => {
     const randomAddr = ethers.computeAddress(ethers.hexlify(ethers.randomBytes(32)))
-    controller.emailVault.scheduleRecovery(email, accounts[0].addr, randomAddr)
+    controller.emailVault.getRecoveryTxns(email, accounts[0].addr, randomAddr)
     await new Promise((resolve) => controller.emailVault.onUpdate(() => resolve(null)))
 
     const storageAccounts = await storage.get('accounts', [])
@@ -90,13 +90,10 @@ describe('Main Controller ', () => {
   // NOTE<Bobby>: Pls do not delete
   // useful when wanting to test schedule recovery quickly on localhost
   // test('should succcessfully schedule a recovery and confirm the new key address is added to associatedKeys', async () => {
-  //   const hardhat = networks.find((x) => x.id === 'hardhat')
-  //   if (!hardhat) throw new Error('unable to find hardhat network in consts')
   //   const privAddr = '0x14469F2e8D23044a3aB2b69702eb57B688ff13A5'
-
   //   const emailVault = new EmailVault(fetch, 'http://localhost:1934')
-  //   const signedTxns = await emailVault.scheduleRecovery('6wtp12slyi@uv6tg.aso', 'alabala', '0x2151E1f1fe11Db2042FA32523A72C733Fd9C3DED', hardhat, privAddr)
-  //   console.log(signedTxns)
+  //   const signedTxns = await emailVault.getRecoveryTxns('6wtp12slyi@uv6tg.aso', 'alabala', '0x2151E1f1fe11Db2042FA32523A72C733Fd9C3DED', privAddr)
+  //   console.log(signedTxns.data)
   // })
 
   // test('send', async () => {
