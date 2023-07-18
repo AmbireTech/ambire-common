@@ -63,15 +63,6 @@ class AccountAdder {
     this.derivationPath = _derivationPath
   }
 
-  reset(): void {
-    this.page = 1
-    this.pageSize = PAGE_SIZE
-    this.selectedAccounts = []
-    this.preselectedAccounts = []
-    this.derivationPath = undefined
-    this.keyIterator = undefined
-  }
-
   async iterateAccounts(): Promise<Account[]> {
     if (!this.keyIterator) {
       throw new Error('accountAdder: keyIterator not initialized')
