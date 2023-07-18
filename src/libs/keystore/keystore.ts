@@ -4,7 +4,7 @@ import { concat, getBytes, hexlify, keccak256, randomBytes, toUtf8Bytes, Wallet 
 import scrypt from 'scrypt-js'
 
 // import { ethers } from 'hardhat'
-import { publicKeyByPrivateKey } from 'eth-crypto'
+import { publicKeyByPrivateKey, encryptWithPublicKey } from 'eth-crypto' // decryptWithPrivateKey
 import { KeystoreSigner } from '../../interfaces/keystore'
 import { Storage } from '../../interfaces/storage'
 
@@ -270,6 +270,23 @@ export class Keystore {
       'keystoreKeys',
       keys.filter((x) => x.id !== id)
     )
+  }
+
+  async exportKeyWithPublicKeyEncryption(keyId: string, publicKey: string) {
+    if (this.#mainKey === null) throw new Error('keystore: needs to be unlocked')
+    const keys = await this.storage.get('keystoreKeys', [])
+    const storedKey: StoredKey = keys.find((x: StoredKey) => x.id === keyId)
+
+    if (!storedKey) throw new Error('keystore: key not found')
+    if (storedKey.type !== 'internal') throw new Error('keystore: key does not have privateKey')
+    const encryptedBytes = getBytes(storedKey.privKey as string)
+    const counter = new aes.Counter(this.#mainKey.iv)
+    const aesCtr = new aes.ModeOfOperation.ctr(this.#mainKey.key, counter)
+    const decryptedBytes = aesCtr.decrypt(encryptedBytes)
+    const decryptedPrivateKey = aes.utils.hex.fromBytes(decryptedBytes)
+
+    const result = await encryptWithPublicKey(publicKey, decryptedPrivateKey)
+    return result
   }
 
   async exportKeyWithPasscode(keyId: string, passphrase: string) {

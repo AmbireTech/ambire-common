@@ -3,6 +3,7 @@
 /* eslint-disable @typescript-eslint/no-useless-constructor */
 /* eslint-disable max-classes-per-file */
 import { describe, expect, test } from '@jest/globals'
+import { decryptWithPrivateKey, createIdentity } from 'eth-crypto'
 
 import { Wallet } from 'ethers'
 import { Storage } from '../../interfaces/storage'
@@ -47,7 +48,7 @@ class InternalSigner {
 }
 
 class LedgerSigner {
-  constructor(_key: Key) {}
+  // constructor(_key: Key) {}
 
   signRawTransaction() {
     return Promise.resolve('')
@@ -162,6 +163,16 @@ describe('Keystore', () => {
   test('should return uid', async () => {
     const keystoreUid = await keystore.getKeyStoreUid()
     expect(keystoreUid.length).toBe(128)
+  })
+
+  test('export Key With Public Key Encryption', async () => {
+    const newDeviceKeyStore = createIdentity()
+    const encryptedKey = await keystore.exportKeyWithPublicKeyEncryption(
+      '0xB6C923c6586eDb44fc4CC0AE4F60869271e75407',
+      newDeviceKeyStore.publicKey
+    )
+    const decryptedKey = await decryptWithPrivateKey(newDeviceKeyStore.privateKey, encryptedKey)
+    expect(decryptedKey).toBe(privKey)
   })
   // @TODO: secret not found
 })
