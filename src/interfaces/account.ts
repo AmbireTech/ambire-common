@@ -26,4 +26,6 @@ export interface AccountOnchainState {
   nonce: number
   associatedKeysPriviliges: { [key: string]: string }
   deployError: boolean
+  balance: bigint
+  isEOA: boolean
 }
