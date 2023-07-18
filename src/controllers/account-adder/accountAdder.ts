@@ -8,16 +8,11 @@ import { getAccountState } from '../../libs/accountState/accountState'
 
 const PAGE_SIZE = 5
 
+type ExtendedAccount = Account & { usedOnNetworks: NetworkDescriptor[] }
 class AccountAdder {
   storage: Storage
 
-  providers: { [key: string]: JsonRpcProvider }
-
-  networks: NetworkDescriptor[]
-
-  accounts: Account[]
-
-  keyIterator?: (from: number, to: number, derivation?: string) => string[]
+  #keyIterator?: (from: number, to: number, derivation?: string) => string[]
 
   // optional because there is default derivationPath for each keyIterator
   derivationPath?: string
@@ -30,16 +25,8 @@ class AccountAdder {
 
   preselectedAccounts: Account[] = []
 
-  constructor(
-    _storage: Storage,
-    _providers: { [key: string]: JsonRpcProvider },
-    _networks: NetworkDescriptor[],
-    _accounts: Account[]
-  ) {
+  constructor(_storage: Storage) {
     this.storage = _storage
-    this.providers = _providers
-    this.networks = _networks
-    this.accounts = _accounts
   }
 
   init({
@@ -55,7 +42,7 @@ class AccountAdder {
     _pageSize?: number
     _derivationPath?: string
   }): void {
-    this.keyIterator = _keyIterator
+    this.#keyIterator = _keyIterator
     this.preselectedAccounts = _preselectedAccounts
     this.selectedAccounts = []
     this.page = _page || 1
@@ -63,8 +50,14 @@ class AccountAdder {
     this.derivationPath = _derivationPath
   }
 
-  async iterateAccounts(): Promise<Account[]> {
-    if (!this.keyIterator) {
+  async iterateAccounts({
+    networks,
+    providers
+  }: {
+    networks: NetworkDescriptor[]
+    providers: { [key: string]: JsonRpcProvider }
+  }): Promise<ExtendedAccount[]> {
+    if (!this.#keyIterator) {
       throw new Error('accountAdder: keyIterator not initialized')
     }
 
@@ -74,8 +67,8 @@ class AccountAdder {
     const endIdx = (this.page - 1) * PAGE_SIZE + (PAGE_SIZE - 1)
 
     const keys = this.derivationPath
-      ? await this.keyIterator(startIdx, endIdx)
-      : await this.keyIterator(startIdx, endIdx, this.derivationPath)
+      ? await this.#keyIterator(startIdx, endIdx)
+      : await this.#keyIterator(startIdx, endIdx, this.derivationPath)
 
     keys.forEach(async (key) => {
       // TODO: impl getSmartAccount in lib/account
@@ -85,28 +78,42 @@ class AccountAdder {
       accounts.push(smartAccount)
     })
 
-    return accounts
+    const accountsWithNetworks = await this.getAccountsUsedNetworks({
+      accounts,
+      networks,
+      providers
+    })
+
+    return accountsWithNetworks
   }
 
-  // Key refers to the public key of a given account
-  async getAccountUsedNetworks(key: string): Promise<NetworkDescriptor[]> {
-    const usedOnNetworks: NetworkDescriptor[] = []
+  // eslint-disable-next-line class-methods-use-this
+  async getAccountsUsedNetworks({
+    accounts,
+    networks,
+    providers
+  }: {
+    accounts: Account[]
+    networks: NetworkDescriptor[]
+    providers: { [key: string]: JsonRpcProvider }
+  }): Promise<ExtendedAccount[]> {
+    const accountsObj: { [key: string]: ExtendedAccount } = Object.fromEntries(
+      accounts.map((a) => [a.addr, { ...a, usedOnNetworks: [] }])
+    )
 
-    Object.keys(this.providers).forEach(async (providerKey: NetworkId) => {
-      const network = this.networks.find((n) => n.id === providerKey) as NetworkDescriptor
-      const account = this.accounts.find((a) => a.addr === key) as Account
-      const [balance, accountState] = await Promise.all([
-        this.providers[providerKey].getBalance(key),
-        getAccountState(this.providers[providerKey], network, [account])
-      ])
-      const nonce = accountState[0].nonce
-
-      if (balance !== BigInt(0) && nonce > 0) {
-        usedOnNetworks.push(network)
+    Object.keys(providers).forEach(async (providerKey: NetworkId) => {
+      const network = networks.find((n) => n.id === providerKey) as NetworkDescriptor
+      if (network) {
+        const accountState = await getAccountState(providers[providerKey], network, accounts)
+        accountState.forEach((acc) => {
+          if (acc.balance > BigInt(0) || acc.nonce > 0) {
+            accountsObj[acc.accountAddr].usedOnNetworks.push(network)
+          }
+        })
       }
     })
 
-    return usedOnNetworks
+    return Object.values(accountsObj)
   }
 
   setDerivationPath(path: string): void {
