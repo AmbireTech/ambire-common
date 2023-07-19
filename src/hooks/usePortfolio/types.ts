@@ -85,8 +85,8 @@ export type UsePortfolioReturnType = {
     isEligible: boolean
     reason?: string
   }
-  onAddHiddenToken: (hiddenToken: Token) => void
-  onRemoveHiddenToken: (address: Token['address']) => void
+  onAddHiddenToken: (hiddenTokens: Token[]) => void
+  onRemoveHiddenToken: (addresses: Token['address'][]) => void
   balancesByNetworksLoading: Partial<{
     [key in Network]: boolean
   }>

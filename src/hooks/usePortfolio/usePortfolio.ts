@@ -536,33 +536,41 @@ export default function usePortfolio({
     [checkIsTokenEligibleForAddingAsExtraToken, extraTokens, setExtraTokens, addToast]
   )
 
-  const onAddHiddenToken = useCallback(
-    (hiddenToken) => {
+  const onAddHiddenToken = useCallback<UsePortfolioReturnType['onAddHiddenToken']>(
+    (_hiddenTokens = []) => {
       setHiddenTokens((prevTokens) => [
         // Make sure there are no duplicates
-        ...prevTokens.filter((t) => t.address !== hiddenToken.address),
-        {
-          ...hiddenToken,
-          isHidden: true
-        }
+        ...prevTokens.filter((t) => t.address !== _hiddenTokens.includes(t.address)),
+        ..._hiddenTokens.map((t) => ({ ...t, isHidden: true }))
       ])
 
-      addToast(`${hiddenToken.symbol} token is hidden from your assets list!`)
+      _hiddenTokens.forEach((t) => {
+        addToast(`${t.symbol} token is hidden from your assets list!`)
+      })
     },
     [addToast, setHiddenTokens]
   )
 
-  const onRemoveHiddenToken = useCallback(
-    (address) => {
+  const onRemoveHiddenToken = useCallback<UsePortfolioReturnType['onRemoveHiddenToken']>(
+    (addresses) => {
       setHiddenTokens((prevTokens) => {
-        const token = prevTokens.find((t) => t.address === address)
-        if (!token) {
-          addToast(`${address} is not present in your assets list.`)
-          return prevTokens
-        }
+        const updatedHiddenTokens = prevTokens.filter((t) => !addresses.includes(t.address))
 
-        const updatedHiddenTokens = prevTokens.filter((t) => t.address !== address)
-        addToast(`${token.symbol} is shown in your assets list.`)
+        // Identify removed tokens for toast messages
+        const removedTokens = prevTokens.filter((t) => addresses.includes(t.address))
+
+        // Send toast for each removed token
+        removedTokens.forEach((token) => {
+          addToast(`${token.symbol} is shown in your assets list.`)
+        })
+
+        // If some addresses weren't in the prevTokens, warn the user
+        const notFoundAddresses = addresses.filter(
+          (address) => !prevTokens.some((t) => t.address === address)
+        )
+        notFoundAddresses.forEach((address) => {
+          addToast(`${address} is not present in your assets list.`)
+        })
 
         return updatedHiddenTokens
       })
