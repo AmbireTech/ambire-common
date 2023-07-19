@@ -44,7 +44,7 @@ describe('AccountAdder', () => {
     try {
       const accountAdder = new AccountAdder(produceMemoryStore())
       await accountAdder.getPage({ page: 1, networks, providers })
-    } catch (e) {
+    } catch (e: any) {
       expect(e.message).toBe('accountAdder: keyIterator not initialized')
     }
   })
@@ -53,8 +53,17 @@ describe('AccountAdder', () => {
     const accountAdder = new AccountAdder(produceMemoryStore())
     const keyIterator = new KeyIterator(seedPhrase)
     accountAdder.init({ _keyIterator: keyIterator, _preselectedAccounts: [] })
-
     expect((accountAdder as any)['#keyIterator']).toBe(undefined)
     expect((accountAdder as any).isReady).toBeTruthy()
+  })
+  test('should get first page', async () => {
+    expect.assertions(2)
+    const accountAdder = new AccountAdder(produceMemoryStore())
+    const keyIterator = new KeyIterator(seedPhrase)
+    accountAdder.init({ _keyIterator: keyIterator, _preselectedAccounts: [], _pageSize: 1 })
+    const accounts = await accountAdder.getPage({ page: 1, networks, providers })
+    // Page size is 1 but for each slot there should be one legacy and one smart acc
+    expect(accounts.length).toEqual(2)
+    expect(accounts[0].addr).toEqual(keyPublicAddress)
   })
 })

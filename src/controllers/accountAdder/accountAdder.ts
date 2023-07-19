@@ -68,18 +68,20 @@ export class AccountAdder {
 
     const accounts: Account[] = []
 
-    const startIdx = (this.page - 1) * PAGE_SIZE
-    const endIdx = (this.page - 1) * PAGE_SIZE + (PAGE_SIZE - 1)
+    const startIdx = (this.page - 1) * this.pageSize
+    const endIdx = (this.page - 1) * this.pageSize + (this.pageSize - 1)
 
     const keys = this.derivationPath
       ? await this.#keyIterator.retrieve(startIdx, endIdx)
       : await this.#keyIterator.retrieve(startIdx, endIdx, this.derivationPath)
 
-    keys.forEach(async (key) => {
-      const smartAccount: Account = await getSmartAccount(key)
+    // eslint-disable-next-line no-restricted-syntax
+    for (const key of keys) {
+      // eslint-disable-next-line no-await-in-loop
+      const smartAccount = await getSmartAccount(key)
       accounts.push(getLegacyAccount(key))
       accounts.push(smartAccount)
-    })
+    }
 
     const accountsWithNetworks = await this.getAccountsUsedNetworks({
       accounts,
@@ -107,7 +109,18 @@ export class AccountAdder {
     Object.keys(providers).forEach(async (providerKey: NetworkId) => {
       const network = networks.find((n) => n.id === providerKey) as NetworkDescriptor
       if (network) {
-        const accountState = await getAccountState(providers[providerKey], network, accounts)
+        const accountState = await getAccountState(
+          providers[providerKey],
+          network,
+          accounts.map((acc: Account) => ({
+            ...acc,
+            creation: {
+              factoryAddr: '0x0000000000000000000000000000000000000000',
+              bytecode: '0x00',
+              salt: '0x0'
+            }
+          }))
+        )
         accountState.forEach((acc) => {
           if (acc.balance > BigInt(0) || acc.nonce > 0) {
             accountsObj[acc.accountAddr].usedOnNetworks.push(network)
@@ -153,7 +166,7 @@ export class AccountAdder {
   }
 
   async getPage({
-    page,
+    page = this.page,
     networks,
     providers
   }: {
