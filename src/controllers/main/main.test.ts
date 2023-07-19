@@ -1,5 +1,7 @@
-import { describe, expect, test } from '@jest/globals'
-import { MainController, UserRequest } from './main'
+import { beforeAll, describe, expect, test } from '@jest/globals'
+import fetch from 'node-fetch'
+import { UserRequest } from '../../interfaces/userRequest'
+import { MainController } from './main'
 import { Storage } from '../../interfaces/storage'
 import { AccountOp } from '../../libs/accountOp/accountOp'
 
@@ -58,12 +60,14 @@ describe('Main Controller ', () => {
   ]
 
   const storage = produceMemoryStore()
+  const relayerUrl = 'https://staging-relayer.ambire.com'
+  const email = 'emil@ambire.com'
   storage.set('accounts', accounts)
   let controller: MainController
   test('Init controller', async () => {
-    controller = new MainController(storage)
-    await new Promise(resolve => controller.onUpdate(() => resolve(null)))
-    console.dir(controller.accountStates, { depth: null })
+    controller = new MainController(storage, fetch, relayerUrl)
+    await new Promise((resolve) => controller.onUpdate(() => resolve(null)))
+    // console.dir(controller.accountStates, { depth: null })
     // @TODO
     // expect(states).to
   })
@@ -84,9 +88,36 @@ describe('Main Controller ', () => {
       }
     }
     await controller.addUserRequest(req)
-    console.dir(controller.accountOpsToBeSigned, { depth: null })
+    // console.dir(controller.accountOpsToBeSigned, { depth: null })
     // @TODO test if nonce is correctly set
-
   })
 
+  test('login with emailVault', async () => {
+    controller.emailVault.login(email)
+    await new Promise((resolve) => controller.emailVault.onUpdate(() => resolve(null)))
+    // console.log(controller.emailVault.emailVaultStates)
+  })
+
+  test('beckup keyStore secret emailVault', async () => {
+    // console.log(
+    //   JSON.stringify(controller.emailVault.emailVaultStates[email].availableSecrets, null, 2)
+    // )
+    controller.emailVault.backupRecoveryKeyStoreSecret(email)
+    await new Promise((resolve) => controller.emailVault.onUpdate(() => resolve(null)))
+    // console.log(
+    //   JSON.stringify(controller.emailVault.emailVaultStates[email].availableSecrets, null, 2)
+    // )
+  })
+
+  test('unlock keyStore with recovery secret emailVault', async () => {
+    async function wait(ms: number) {
+      return new Promise((resolve) => setTimeout(() => resolve(null), ms))
+    }
+    // controller.lock()
+    controller.emailVault.recoverKeyStore(email)
+    // console.log('isUnlock ==>', controller.isUnlock())
+    await new Promise((resolve) => controller.emailVault.onUpdate(() => resolve(null)))
+    await wait(10000)
+    // console.log('isUnlock ==>', controller.isUnlock())
+  })
 })

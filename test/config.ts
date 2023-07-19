@@ -1,8 +1,8 @@
 import { ethers } from 'hardhat'
-import chai from 'chai'
+import chai, { expect } from 'chai'
 import chaiAssertionsCount from 'chai-assertions-count'
+
 chai.use(chaiAssertionsCount)
-import { expect } from 'chai'
 
 const pk1 = '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80'
 const pk2 = '0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d'
@@ -13,6 +13,7 @@ const addressThree = '0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC'
 const addressFour = '0x90F79bf6EB2c4f870365E785982E1f101E93b906'
 const AmbireAccount = require('../artifacts/contracts/AmbireAccount.sol/AmbireAccount.json')
 const AmbireAccountFactory = require('../artifacts/contracts/AmbireAccountFactory.sol/AmbireAccountFactory.json')
+
 const localhost = 'http://127.0.0.1:8545'
 const validSig = '0x1626ba7e'
 const invalidSig = '0xffffffff'
@@ -26,8 +27,9 @@ const assertion = chai.Assertion
 const deploySalt = 0
 const deployGasLimit = 1000000
 const fs = require('fs')
-const filenames = fs.readdirSync(__dirname + '/../artifacts/build-info')
-const buildInfo = filenames.length ? require('../artifacts/build-info/' + filenames[0]) : null
+
+const filenames = fs.readdirSync(`${__dirname}/../artifacts/build-info`)
+const buildInfo = filenames.length ? require(`../artifacts/build-info/${filenames[0]}`) : null
 
 export {
   pk1,

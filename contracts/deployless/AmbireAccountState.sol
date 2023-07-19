@@ -14,6 +14,10 @@ struct AccountInfo {
     bool isDeployed;
     uint nonce;
     bytes32[] associatedKeyPriviliges;
+    bool isV2;
+    uint[] scheduledRecoveries;
+    uint256 balance;
+    bool isEOA; 
 }
 
 contract AmbireAccountState {
@@ -21,8 +25,14 @@ contract AmbireAccountState {
         accountResult = new AccountInfo[](accounts.length);
         for (uint i=0; i!=accounts.length; i++) {
             AccountInput memory account = accounts[i];
+            accountResult[i].balance = address(account.addr).balance;
+            // check for EOA
+            if (account.factory == address(0)) {
+                accountResult[i].isEOA = true;
+                continue;
+            }
             // is contract deployed
-            if (address(accounts[i].addr).code.length > 0) {
+            if (address(account.addr).code.length > 0) {
                 accountResult[i].isDeployed = true;
             } else {
                 accountResult[i].isDeployed = false;
@@ -39,7 +49,43 @@ contract AmbireAccountState {
             for (uint j=0; j!=account.associatedKeys.length; j++) {
                 accountResult[i].associatedKeyPriviliges[j] = IAmbireAccount(account.addr).privileges(account.associatedKeys[j]);
             }
+
+            // v2 has a method called scheduledRecoveries. If it does not exist,
+            // it is v1. That's what we're doing here
+            bool isV2 = false;
+            try this.ambireV2Check(IAmbireAccount(account.addr)) returns (uint) {
+                isV2 = true;
+            } catch {}
+
+            accountResult[i].isV2 = isV2;
+            if (isV2) {
+                accountResult[i].scheduledRecoveries = getScheduledRecoveries(IAmbireAccount(account.addr), account.associatedKeys, bytes32(uint256(1)));
+            } else {
+                accountResult[i].scheduledRecoveries = new uint[](0);
+            }
         }
         return accountResult;
+    }
+
+    function getScheduledRecoveries(IAmbireAccount account, address[] memory associatedKeys, bytes32 privValue)
+        public
+        returns (uint[] memory scheduledRecoveries)
+    {
+        // Check if there's a pending recovery that sets any of the associatedKeys
+        scheduledRecoveries = new uint[](associatedKeys.length);
+        uint currentNonce = account.nonce();
+        for (uint i=0; i!=associatedKeys.length; i++) {
+            address key = associatedKeys[i];
+            IAmbireAccount.Transaction[] memory calls = new IAmbireAccount.Transaction[](1);
+            calls[0].to = address(account);
+            // @TODO the value of setAddrPrivilege is not necessarily 1 cause of the recovery
+            calls[0].data = abi.encodeWithSelector(IAmbireAccount.setAddrPrivilege.selector, key, privValue);
+            bytes32 hash = keccak256(abi.encode(address(account), block.chainid, currentNonce, calls));
+            scheduledRecoveries[i] = account.scheduledRecoveries(hash);
+        }
+    }
+
+    function ambireV2Check(IAmbireAccount account) external returns (uint) {
+        return account.scheduledRecoveries(bytes32(0));
     }
 }
