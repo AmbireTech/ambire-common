@@ -11,6 +11,7 @@ export type Token = {
   address: string
   balance: string
   balanceRaw: string
+  balanceUSD: number
   decimals: number
   name: string
   network: string
