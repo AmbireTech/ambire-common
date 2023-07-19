@@ -156,9 +156,12 @@ export class AccountAdder {
 
   async deselectAccount(account: Account) {
     const accIdx = this.selectedAccounts.findIndex((acc) => acc.addr === account.addr)
+    const accPreselectedIdx = this.preselectedAccounts.findIndex((acc) => acc.addr === account.addr)
 
-    if (accIdx !== -1) {
+    if (accIdx !== -1 && accPreselectedIdx === -1) {
       this.selectedAccounts = this.selectedAccounts.filter((_, i) => i !== accIdx)
+    } else if (accPreselectedIdx !== -1) {
+      throw new Error('accountAdder: a preselected account cannot be deselected')
     } else {
       throw new Error('accountAdder: account not found. Cannot deselect.')
     }
@@ -167,6 +170,10 @@ export class AccountAdder {
   async addAccounts(): Promise<void> {
     const accounts = await this.storage.get('accounts', [])
     this.storage.set('accounts', [...accounts, ...this.selectedAccounts])
+    this.selectedAccounts = []
+
+    // TODO: add the newly created smart accounts to the relayer
+    // should we add some data about the legacy accounts as well?
   }
 
   async getPage({

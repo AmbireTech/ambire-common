@@ -1,4 +1,5 @@
 import { JsonRpcProvider } from 'ethers'
+import { Account } from 'interfaces/account'
 
 /* eslint-disable no-new */
 import { describe, expect, test } from '@jest/globals'
@@ -34,6 +35,14 @@ const seedPhrase =
   'brisk rich glide impose category stuff company you appear remain decorate monkey'
 const privKey = '0x574f261b776b26b1ad75a991173d0e8ca2ca1d481bd7822b2b58b2ef8a969f12'
 const keyPublicAddress = '0x9188fdd757Df66B4F693D624Ed6A13a15Cf717D7'
+
+const legacyAccount: Account = {
+  addr: keyPublicAddress,
+  label: '',
+  pfp: '',
+  associatedKeys: [keyPublicAddress],
+  creation: null
+}
 
 describe('AccountAdder', () => {
   test('should initialize accountAdder', () => {
@@ -74,5 +83,32 @@ describe('AccountAdder', () => {
     // Page size is 1 but for each slot there should be one legacy and one smart acc
     expect(accounts.length).toEqual(2)
     expect(accounts[0].addr).toEqual(keyPublicAddress)
+  })
+  test('should select account', async () => {
+    expect.assertions(1)
+    const keyIterator = new KeyIterator(seedPhrase)
+    accountAdder.init({ _keyIterator: keyIterator, _preselectedAccounts: [], _pageSize: 1 })
+    accountAdder.selectAccount(legacyAccount)
+    expect(accountAdder.selectedAccounts[0].addr).toBe(keyPublicAddress)
+  })
+  test('should deselect account', async () => {
+    expect.assertions(1)
+    accountAdder.deselectAccount(legacyAccount)
+    expect(accountAdder.selectedAccounts[0]).toBe(undefined)
+  })
+  test('should not be able to deselect a preselected account', async () => {
+    expect.assertions(1)
+    try {
+      const keyIterator = new KeyIterator(seedPhrase)
+      accountAdder.init({
+        _keyIterator: keyIterator,
+        _preselectedAccounts: [legacyAccount],
+        _pageSize: 1
+      })
+      accountAdder.selectedAccounts = [legacyAccount]
+      await accountAdder.deselectAccount(legacyAccount)
+    } catch (e: any) {
+      expect(e.message).toBe('accountAdder: a preselected account cannot be deselected')
+    }
   })
 })
