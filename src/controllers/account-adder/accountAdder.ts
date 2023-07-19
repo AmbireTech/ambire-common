@@ -50,6 +50,7 @@ class AccountAdder {
     this.derivationPath = _derivationPath
   }
 
+  // inner func. When getting accounts call getPage instead
   async iterateAccounts({
     networks,
     providers
@@ -71,9 +72,7 @@ class AccountAdder {
       : await this.#keyIterator(startIdx, endIdx, this.derivationPath)
 
     keys.forEach(async (key) => {
-      // TODO: impl getSmartAccount in lib/account
       const smartAccount: Account = await getSmartAccount(key)
-
       accounts.push(getLegacyAccount(key))
       accounts.push(smartAccount)
     })
