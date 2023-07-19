@@ -116,10 +116,18 @@ class AccountAdder {
     return Object.values(accountsObj)
   }
 
-  setDerivationPath(path: string): void {
+  setDerivationPath({
+    path,
+    networks,
+    providers
+  }: {
+    path: string
+    networks: NetworkDescriptor[]
+    providers: { [key: string]: JsonRpcProvider }
+  }): void {
     this.derivationPath = path
     // get the first page with the new derivationPath
-    this.getPage(1)
+    this.getPage({ page: 1, networks, providers })
   }
 
   selectAccount(account: Account) {
@@ -141,13 +149,21 @@ class AccountAdder {
     this.storage.set('accounts', [...accounts, ...this.selectedAccounts])
   }
 
-  async getPage(pageIndex: number): Promise<Account[]> {
-    if (pageIndex <= 0) {
+  async getPage({
+    page,
+    networks,
+    providers
+  }: {
+    page: number
+    networks: NetworkDescriptor[]
+    providers: { [key: string]: JsonRpcProvider }
+  }): Promise<Account[]> {
+    if (page <= 0) {
       throw new Error('accountAdder: page must be a positive number')
     }
 
-    this.page = pageIndex
-    return this.iterateAccounts()
+    this.page = page
+    return this.iterateAccounts({ networks, providers })
   }
 }
 
