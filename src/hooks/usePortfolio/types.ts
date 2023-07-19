@@ -82,7 +82,10 @@ export type UsePortfolioReturnType = {
   requestOtherProtocolsRefresh: () => Promise<any>
   onAddExtraToken: (extraToken: Token) => void
   onRemoveExtraToken: (address: Token['address']) => void
-  checkIsTokenEligibleForAddingAsExtraToken: (extraToken: Token) => {
+  checkIsTokenEligibleForAddingAsExtraToken: (
+    extraToken: Token,
+    extraTokens: Token[]
+  ) => {
     isEligible: boolean
     reason?: string
   }

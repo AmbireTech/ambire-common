@@ -480,10 +480,10 @@ export default function usePortfolio({
   const checkIsTokenEligibleForAddingAsExtraToken = useCallback<
     UsePortfolioReturnType['checkIsTokenEligibleForAddingAsExtraToken']
   >(
-    (extraToken) => {
-      const { address, name, symbol } = extraToken
+    (_extraToken, _extraTokens) => {
+      const { address, name, symbol } = _extraToken
 
-      if (extraTokens.map((t) => t.address).includes(address))
+      if (_extraTokens.map((t) => t.address).includes(address))
         return {
           isEligible: false,
           reason: `${name} (${symbol}) is already added to your wallet.`
@@ -511,29 +511,32 @@ export default function usePortfolio({
         isEligible: true
       }
     },
-    [extraTokens, constants.tokenList, tokens]
+    [constants.tokenList, tokens]
   )
 
-  const onAddExtraToken = useCallback(
+  const onAddExtraToken = useCallback<UsePortfolioReturnType['onAddExtraToken']>(
     (extraToken) => {
-      const eligibleStatus = checkIsTokenEligibleForAddingAsExtraToken(extraToken)
+      setExtraTokens((prevTokens) => {
+        const eligibleStatus = checkIsTokenEligibleForAddingAsExtraToken(extraToken, prevTokens)
 
-      if (!eligibleStatus.isEligible) {
-        return addToast(eligibleStatus.reason)
-      }
-
-      const updatedExtraTokens = [
-        ...extraTokens,
-        {
-          ...extraToken,
-          coingeckoId: null
+        if (!eligibleStatus.isEligible) {
+          addToast(eligibleStatus.reason)
+          return prevTokens
         }
-      ]
 
-      setExtraTokens(updatedExtraTokens)
-      addToast(`${extraToken.name} (${extraToken.symbol}) token added to your wallet!`)
+        const updatedExtraTokens = [
+          ...prevTokens,
+          {
+            ...extraToken,
+            coingeckoId: null
+          }
+        ]
+
+        addToast(`${extraToken.name} (${extraToken.symbol}) token added to your wallet!`)
+        return updatedExtraTokens // Return the updated state.
+      })
     },
-    [checkIsTokenEligibleForAddingAsExtraToken, extraTokens, setExtraTokens, addToast]
+    [setExtraTokens, checkIsTokenEligibleForAddingAsExtraToken, addToast]
   )
 
   const onAddHiddenToken = useCallback<UsePortfolioReturnType['onAddHiddenToken']>(
@@ -578,7 +581,7 @@ export default function usePortfolio({
     [addToast, setHiddenTokens]
   )
 
-  const onRemoveExtraToken = useCallback(
+  const onRemoveExtraToken = useCallback<UsePortfolioReturnType['onRemoveExtraToken']>(
     (address) => {
       setExtraTokens((prevTokens) => {
         const token = prevTokens.find((t) => t.address === address)
