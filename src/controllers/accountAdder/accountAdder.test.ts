@@ -6,8 +6,8 @@ import { describe, expect, test } from '@jest/globals'
 
 import { networks } from '../../consts/networks'
 import { Storage } from '../../interfaces/storage'
+import { getLegacyAccount } from '../../libs/account/account'
 import { KeyIterator } from '../../libs/keyIterator/keyIterator'
-import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { AccountAdder } from './accountAdder'
 
 const providers = Object.fromEntries(
@@ -28,8 +28,7 @@ function produceMemoryStore(): Storage {
   }
 }
 
-const relayerUrl = 'http://localhost:1934'
-const callRelayer = relayerCall.bind({ url: relayerUrl })
+const relayerUrl = 'https://relayer.ambire.com'
 const accountAdder = new AccountAdder(produceMemoryStore(), relayerUrl)
 const seedPhrase =
   'brisk rich glide impose category stuff company you appear remain decorate monkey'
@@ -75,14 +74,13 @@ describe('AccountAdder', () => {
     expect(accounts.length).toEqual(2)
     expect(accounts[0].addr).toEqual(keyPublicAddress)
   })
-  test('should get first page', async () => {
-    expect.assertions(2)
+  test('search for linked accounts', async () => {
+    expect.assertions(1)
     const keyIterator = new KeyIterator(seedPhrase)
     accountAdder.init({ _keyIterator: keyIterator, _preselectedAccounts: [], _pageSize: 1 })
-    const accounts = await accountAdder.getPage({ page: 1, networks, providers })
-    // Page size is 1 but for each slot there should be one legacy and one smart acc
-    expect(accounts.length).toEqual(2)
-    expect(accounts[0].addr).toEqual(keyPublicAddress)
+    const acc = getLegacyAccount(keyPublicAddress)
+    const accounts = await accountAdder.searchForLinkedAccounts([acc])
+    expect(accounts.length).toEqual(0)
   })
   test('should select account', async () => {
     expect.assertions(1)

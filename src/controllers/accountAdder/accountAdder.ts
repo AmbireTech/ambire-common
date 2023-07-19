@@ -229,10 +229,10 @@ export class AccountAdder {
 
     await Promise.all(
       eoas.map(async (acc: Account) => {
-        const resp = await this.#callRelayer(
+        const { status, success, ...rest } = await this.#callRelayer(
           `/identity/any/by-owner/${acc.addr}?includeFormerlyOwned=true`
         )
-        const privEntries = Object.entries(await resp.json())
+        const privEntries = Object.entries(await rest)
         privEntries.forEach(([entryId, _]) => {
           allUniqueOwned[entryId] = getAddress(acc.addr)
         })
