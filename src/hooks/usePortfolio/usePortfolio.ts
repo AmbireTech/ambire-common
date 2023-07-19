@@ -580,15 +580,20 @@ export default function usePortfolio({
 
   const onRemoveExtraToken = useCallback(
     (address) => {
-      const token = extraTokens.find((t) => t.address === address)
-      if (!token) return addToast(`${address} is not present in your wallet.`)
+      setExtraTokens((prevTokens) => {
+        const token = prevTokens.find((t) => t.address === address)
+        if (!token) {
+          addToast(`${address} is not present in your wallet.`)
+          return prevTokens
+        }
 
-      const updatedExtraTokens = extraTokens.filter((t) => t.address !== address)
+        const updatedExtraTokens = prevTokens.filter((t) => t.address !== address)
+        addToast(`${token.name} (${token.symbol}) was removed from your wallet.`)
 
-      setExtraTokens(updatedExtraTokens)
-      addToast(`${token.name} (${token.symbol}) was removed from your wallet.`)
+        return updatedExtraTokens
+      })
     },
-    [extraTokens, setExtraTokens]
+    [addToast, setExtraTokens]
   )
 
   const removeDuplicatedAssets = (tokens) => {
