@@ -2,7 +2,7 @@ import { getAddress, JsonRpcProvider } from 'ethers'
 import { KeyIterator } from 'interfaces/keyIterator'
 import { NetworkDescriptor, NetworkId } from 'interfaces/networkDescriptor'
 
-import { Account } from '../../interfaces/account'
+import { Account, AccountOnchainState } from '../../interfaces/account'
 import { Storage } from '../../interfaces/storage'
 import { getLegacyAccount, getSmartAccount } from '../../libs/account/account'
 import { getAccountState } from '../../libs/accountState/accountState'
@@ -125,7 +125,7 @@ export class AccountAdder {
             }
           }))
         )
-        accountState.forEach((acc) => {
+        accountState.forEach((acc: AccountOnchainState) => {
           if (acc.balance > BigInt(0) || acc.nonce > 0) {
             accountsObj[acc.accountAddr].usedOnNetworks.push(network)
           }
