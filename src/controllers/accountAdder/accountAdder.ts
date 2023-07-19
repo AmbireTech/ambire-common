@@ -9,7 +9,7 @@ import { getAccountState } from '../../libs/accountState/accountState'
 const PAGE_SIZE = 5
 
 type ExtendedAccount = Account & { usedOnNetworks: NetworkDescriptor[] }
-class AccountAdder {
+export class AccountAdder {
   storage: Storage
 
   #keyIterator?: (from: number, to: number, derivation?: string) => string[]
