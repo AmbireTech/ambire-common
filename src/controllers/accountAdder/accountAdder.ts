@@ -1,4 +1,5 @@
 import { JsonRpcProvider } from 'ethers'
+import { KeyIterator } from 'interfaces/keyIterator'
 import { NetworkDescriptor, NetworkId } from 'interfaces/networkDescriptor'
 
 import { Account } from '../../interfaces/account'
@@ -12,10 +13,12 @@ type ExtendedAccount = Account & { usedOnNetworks: NetworkDescriptor[] }
 export class AccountAdder {
   storage: Storage
 
-  #keyIterator?: (from: number, to: number, derivation?: string) => string[]
+  #keyIterator?: KeyIterator
 
   // optional because there is default derivationPath for each keyIterator
   derivationPath?: string
+
+  isReady: boolean = false
 
   page: number = 1
 
@@ -36,7 +39,7 @@ export class AccountAdder {
     _pageSize,
     _derivationPath
   }: {
-    _keyIterator: (from: number, to: number, derivation?: string) => string[]
+    _keyIterator: KeyIterator
     _preselectedAccounts: Account[]
     _page?: number
     _pageSize?: number
@@ -48,6 +51,7 @@ export class AccountAdder {
     this.page = _page || 1
     this.pageSize = _pageSize || PAGE_SIZE
     this.derivationPath = _derivationPath
+    this.isReady = true
   }
 
   // inner func. When getting accounts call getPage instead
@@ -68,8 +72,8 @@ export class AccountAdder {
     const endIdx = (this.page - 1) * PAGE_SIZE + (PAGE_SIZE - 1)
 
     const keys = this.derivationPath
-      ? await this.#keyIterator(startIdx, endIdx)
-      : await this.#keyIterator(startIdx, endIdx, this.derivationPath)
+      ? await this.#keyIterator.retrieve(startIdx, endIdx)
+      : await this.#keyIterator.retrieve(startIdx, endIdx, this.derivationPath)
 
     keys.forEach(async (key) => {
       const smartAccount: Account = await getSmartAccount(key)

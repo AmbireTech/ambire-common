@@ -2,6 +2,7 @@
 import { describe, expect, test } from '@jest/globals'
 
 import { Storage } from '../../interfaces/storage'
+import { KeyIterator } from '../../libs/keyIterator/keyIterator'
 import { AccountAdder } from './accountAdder'
 
 const seedPhrase =
@@ -31,5 +32,14 @@ describe('AccountAdder', () => {
     expect((accountAdder as any)['#keyIterator']).toBe(undefined)
     expect((accountAdder as any).derivationPath).toBe(undefined)
     expect((accountAdder as any).page).toEqual(1)
+  })
+  test('should init keyIterator', () => {
+    expect.assertions(2)
+    const accountAdder = new AccountAdder(produceMemoryStore())
+    const keyIterator = new KeyIterator(seedPhrase)
+    accountAdder.init({ _keyIterator: keyIterator, _preselectedAccounts: [] })
+
+    expect((accountAdder as any)['#keyIterator']).toBe(undefined)
+    expect((accountAdder as any).isReady).toBeTruthy()
   })
 })
