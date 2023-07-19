@@ -62,7 +62,7 @@ export class AccountAdder {
     networks: NetworkDescriptor[]
     providers: { [key: string]: JsonRpcProvider }
   }): Promise<ExtendedAccount[]> {
-    if (!this.#keyIterator) {
+    if (!this.#keyIterator || !this.isReady) {
       throw new Error('accountAdder: keyIterator not initialized')
     }
 
