@@ -1,4 +1,4 @@
-import { JsonRpcProvider } from 'ethers'
+import { getAddress, JsonRpcProvider } from 'ethers'
 import { KeyIterator } from 'interfaces/keyIterator'
 import { NetworkDescriptor, NetworkId } from 'interfaces/networkDescriptor'
 
@@ -6,11 +6,14 @@ import { Account } from '../../interfaces/account'
 import { Storage } from '../../interfaces/storage'
 import { getLegacyAccount, getSmartAccount } from '../../libs/account/account'
 import { getAccountState } from '../../libs/accountState/accountState'
+import { relayerCall } from '../../libs/relayerCall/relayerCall'
 
 const PAGE_SIZE = 5
 
 type ExtendedAccount = Account & { usedOnNetworks: NetworkDescriptor[] }
 export class AccountAdder {
+  private callRelayer: Function
+
   storage: Storage
 
   #keyIterator?: KeyIterator
@@ -28,8 +31,12 @@ export class AccountAdder {
 
   preselectedAccounts: Account[] = []
 
-  constructor(_storage: Storage) {
+  relayerUrl: string
+
+  constructor(_storage: Storage, _relayerUrl: string) {
     this.storage = _storage
+    this.relayerUrl = _relayerUrl
+    this.callRelayer = relayerCall.bind({ url: this.relayerUrl })
   }
 
   init({
@@ -167,6 +174,23 @@ export class AccountAdder {
 
     this.page = page
     return this.iterateAccounts({ networks, providers })
+  }
+
+  async searchForLinkedAccounts(eoas: Account[], authKey: string) {
+    const allUniqueOwned: { [key: string]: string } = {}
+
+    await Promise.all(
+      eoas.map(async (acc: Account) => {
+        const resp = await this.callRelayer(
+          `/identity/any/by-owner/${acc.addr}/${authKey}?includeFormerlyOwned=true`
+        )
+        const privEntries = Object.entries(await resp.json())
+        privEntries.forEach(([entryId, _]) => {
+          allUniqueOwned[entryId] = getAddress(acc.addr)
+        })
+      })
+    )
+    return Promise.all(Object.entries(allUniqueOwned))
   }
 }
 
