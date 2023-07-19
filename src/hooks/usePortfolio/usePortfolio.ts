@@ -554,15 +554,20 @@ export default function usePortfolio({
 
   const onRemoveHiddenToken = useCallback(
     (address) => {
-      const token = hiddenTokens.find((t) => t.address === address)
-      if (!token) return addToast(`${address} is not present in your assets list.`)
+      setHiddenTokens((prevTokens) => {
+        const token = prevTokens.find((t) => t.address === address)
+        if (!token) {
+          addToast(`${address} is not present in your assets list.`)
+          return prevTokens
+        }
 
-      const updatedHiddenTokens = hiddenTokens.filter((t) => t.address !== address)
+        const updatedHiddenTokens = prevTokens.filter((t) => t.address !== address)
+        addToast(`${token.symbol} is shown in your assets list.`)
 
-      setHiddenTokens(updatedHiddenTokens)
-      addToast(`${token.symbol} is shown to your assets list.`)
+        return updatedHiddenTokens
+      })
     },
-    [hiddenTokens, setHiddenTokens]
+    [addToast, setHiddenTokens]
   )
 
   const onRemoveExtraToken = useCallback(
