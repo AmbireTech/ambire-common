@@ -12,7 +12,7 @@ const PAGE_SIZE = 5
 
 type ExtendedAccount = Account & { usedOnNetworks: NetworkDescriptor[] }
 export class AccountAdder {
-  private callRelayer: Function
+  #callRelayer: Function
 
   storage: Storage
 
@@ -31,12 +31,9 @@ export class AccountAdder {
 
   preselectedAccounts: Account[] = []
 
-  relayerUrl: string
-
   constructor(_storage: Storage, _relayerUrl: string) {
     this.storage = _storage
-    this.relayerUrl = _relayerUrl
-    this.callRelayer = relayerCall.bind({ url: this.relayerUrl })
+    this.#callRelayer = relayerCall.bind({ url: _relayerUrl })
   }
 
   init({
@@ -189,13 +186,44 @@ export class AccountAdder {
     return this.iterateAccounts({ networks, providers })
   }
 
-  async searchForLinkedAccounts(eoas: Account[], authKey: string) {
+  async getAccountByAddr({
+    idAddr,
+    signerAddr,
+    authKey
+  }: {
+    idAddr: string
+    signerAddr: string
+    authKey: string
+  }) {
+    // In principle, we need these values to be able to operate in relayerless mode,
+    // so we just store them in all cases
+    // Plus, in the future this call may be used to retrieve other things
+    const { salt, identityFactoryAddr, baseIdentityAddr, bytecode } = await this.#callRelayer(
+      `/identity/${idAddr}`,
+      'GET',
+      {
+        authKey
+      }
+    ).then((r: any) => r.json())
+    if (!(salt && identityFactoryAddr && baseIdentityAddr && bytecode))
+      throw new Error(`Incomplete data from relayer for ${idAddr}`)
+    return {
+      addr: idAddr,
+      salt,
+      identityFactoryAddr,
+      baseIdentityAddr,
+      bytecode,
+      signer: { address: signerAddr }
+    }
+  }
+
+  async searchForLinkedAccounts(eoas: Account[]) {
     const allUniqueOwned: { [key: string]: string } = {}
 
     await Promise.all(
       eoas.map(async (acc: Account) => {
-        const resp = await this.callRelayer(
-          `/identity/any/by-owner/${acc.addr}/${authKey}?includeFormerlyOwned=true`
+        const resp = await this.#callRelayer(
+          `/identity/any/by-owner/${acc.addr}?includeFormerlyOwned=true`
         )
         const privEntries = Object.entries(await resp.json())
         privEntries.forEach(([entryId, _]) => {
