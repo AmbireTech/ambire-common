@@ -1,5 +1,7 @@
+import { describe, expect, test } from '@jest/globals'
+
 import { AccountOp } from '../accountOp/accountOp'
-import { callsToIr } from './mainHumanizer'
+import { callsToIr, Ir, genericErc20Humanizer } from './mainHumanizer'
 
 const accountOp: AccountOp = {
   accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
@@ -25,11 +27,9 @@ const accountOp: AccountOp = {
   humanizerMeta: {}
 }
 
-describe('call to ir', () => {
+describe('generc tests for structure', () => {
+  let ir: Ir
   beforeEach(() => {
-    accountOp.calls = []
-  })
-  test('simple convert', () => {
     accountOp.calls = [
       // simple transafer
       { to: '0xc4Ce03B36F057591B2a360d773eDB9896255051e', value: BigInt(10 ** 18), data: '0x' },
@@ -40,9 +40,25 @@ describe('call to ir', () => {
         data: '0xa9059cbb00000000000000000000000046705dfff24256421a05d056c29e81bdc09723b80000000000000000000000000000000000000000000000000000000016789040'
       }
     ]
-
-    const ir = callsToIr(accountOp)
-    console.log(ir)
+    ir = callsToIr(accountOp)
+  })
+  test('simple convert to Ir', () => {
+    expect(ir.calls[0]).toEqual({
+      data: '0x',
+      to: '0xc4Ce03B36F057591B2a360d773eDB9896255051e',
+      value: 1000000000000000000n,
+      fullVisualization: null
+    })
+    expect(ir.calls[1]).toEqual({
+      data: '0xa9059cbb00000000000000000000000046705dfff24256421a05d056c29e81bdc09723b80000000000000000000000000000000000000000000000000000000016789040',
+      to: '0xdac17f958d2ee523a2206206994597c13d831ec7',
+      value: 1000000000000000000n,
+      fullVisualization: null
+    })
+  })
+  test('erc20Humanizer', () => {
+    const irCallss = genericErc20Humanizer(accountOp, ir)[0].calls
+    expect(irCallss[1].fullVisualization.length).toBe(4)
   })
 })
 

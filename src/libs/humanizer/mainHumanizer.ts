@@ -1,5 +1,6 @@
+import { ethers } from 'ethers'
 import { AccountOp } from '../accountOp/accountOp'
-
+import IERC20 from '../../../contracts/compiled/IERC20.json'
 /*
 // types of transactions to account for
 
@@ -21,63 +22,92 @@ import { AccountOp } from '../accountOp/accountOp'
 // sending tokens to contracts
 // sending funds to unused addresses
 */
-interface IR {
-  data: {
-    funcSig: string | null
-    args: string | null
-    type: string | null
-  }
-  from: string
+export interface IrCall {
+  data: string
   to: string
-  amount: bigint
-  asset: string | null
+  value: bigint
+  fullVisualization: any
 }
 
-export function callsToIr(accountOp: AccountOp): IR[] {
-  return accountOp.calls.map((call) => {
-    const data = {
-      funcSig: call.data.slice(0, 10),
-      args: call.data.slice(10),
-      // could be Swap/Approve/Mint/Buy/Trnsfer/etc
-      type: null
-    }
-    const from = accountOp.accountAddr
-    const to = call.to
-    const amount = call.value
+export interface Ir {
+  calls: IrCall[]
+}
+
+export function callsToIr(accountOp: AccountOp): Ir {
+  const irCalls: IrCall[] = accountOp.calls.map((call) => {
     return {
-      data,
-      from,
-      to,
-      amount,
-      asset: null
+      data: call.data,
+      to: call.to,
+      value: call.value,
+      fullVisualization: null
     }
   })
+  return { calls: irCalls }
 }
 
 // second to last
 // converts all addresses to names
-export function naming() {}
+// export function naming(accountOp: AccountOp, currentIr: IR[]): [IR[], Promise<any>[]] {}
 
 // last
 // converts all ir to FE-readable format
-export function finalizer() {}
+// export function finalizer() {}
 
-// export async function mainHumanizer(accountOp: AccountOp) {
-//   const humanizerModules = [genericHumanizer]
+export function genericErc20Humanizer(accountOp: AccountOp, currentIr: Ir): [Ir, Promise<any>[]] {
+  // @TODO: check if ${to} is ERC20 (will be done asyncly and returned as promise)
+  // @TODO: check if ${to} is contract when Transfer
+  const iface = new ethers.Interface(IERC20.abi)
+  const matcher = {
+    [`${iface.getFunction('approve')?.selector}`]: (call: IrCall) => {
+      const args = iface.parseTransaction(call)?.args.toArray() || []
+      return args[1] === BigInt(0)
+        ? [
+            { type: 'action', content: 'Grant approval' },
+            { type: 'token', address: call.to, amount: args[1] },
+            { type: 'label', content: 'to' },
+            { type: 'address', address: args[0] }
+          ]
+        : [
+            { type: 'action', content: 'Revoke approval' },
+            { type: 'token', address: call.to, amount: args[1] },
+            { type: 'label', content: 'for' },
+            { type: 'address', address: args[0] }
+          ]
+    },
+    [`${iface.getFunction('transfer')?.selector}`]: (call: IrCall) => {
+      const args = iface.parseTransaction(call)?.args.toArray() || []
+      return [
+        { type: 'action', content: 'Transfer' },
+        { type: 'token', address: call.to, amount: args[1] },
+        { type: 'label', content: 'to' },
+        { type: 'address', address: args[0] }
+      ]
+    }
+  }
+  iface.getFunction('approve')?.selector
+  const newCalls = currentIr.calls.map((call) => {
+    return matcher[call.data.substring(0, 10)]
+      ? {
+          ...call,
+          fullVisualization: matcher[call.data.substring(0, 10)](call)
+        }
+      : call
+  })
+  const newIr = { calls: newCalls }
+  return [newIr, []]
+}
 
-//   let currentIr: IR = accountOp.calls.map((call) => ({}))
+export async function humanize(accountOp: AccountOp) {
+  const humanizerModules = [genericErc20Humanizer]
 
-//   // asyncOps all data that has to be retrieved asyncly
-//   const asyncOps = []
+  let currentIr: Ir = callsToIr(accountOp)
 
-//   humanizerModules.forEach((hm) => {
-//     let promises = []
-//     ;[currentIr, promises] = hm(accountOp, currentIr)
+  // asyncOps all data that has to be retrieved asyncly
+  let asyncOps: any[] = []
 
-//     if (promises.length) promises.forEach((p) => asyncOps.push(p))
-//   })
-// }
-
-// function humanize(accountOp, { ...CONSTANTS, addressBook: mainController.addressBook }): [outputIR, Promise<newMeta>] {
-//     mainHumanizer()
-// }
+  humanizerModules.forEach((hm) => {
+    let promises = []
+    ;[currentIr, promises] = hm(accountOp, currentIr)
+    asyncOps = [...asyncOps, ...promises]
+  })
+}
