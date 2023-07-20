@@ -111,7 +111,7 @@ export class Keystore {
 
   // @TODO time before unlocking
   async unlockWithSecret(secretId: string, secret: string) {
-    // @TODO should we check if already locked? probably not cause this function can  be used in order to verify if a secret is correct
+    // @TODO should we check if already locked? probably not cause this function can be used in order to verify if a secret is correct
     const secrets = await this.getMainKeyEncryptedWithSecrets()
     if (!secrets.length) throw new Error('keystore: no secrets yet')
     const secretEntry = secrets.find((x) => x.id === secretId)
