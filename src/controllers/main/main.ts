@@ -1,4 +1,3 @@
-import AccountAdderController from 'controllers/accountAdder/accountAdder'
 import { JsonRpcProvider } from 'ethers'
 
 import { networks } from '../../consts/networks'
@@ -10,6 +9,7 @@ import { AccountOp, Call as AccountOpCall } from '../../libs/accountOp/accountOp
 import { getAccountState } from '../../libs/accountState/accountState'
 import { estimate } from '../../libs/estimate/estimate'
 import { Key, Keystore } from '../../libs/keystore/keystore'
+import { AccountAdderController } from '../accountAdder/accountAdder'
 import { EmailVaultController } from '../emailVault'
 import EventEmitter from '../eventEmitter'
 import { PortfolioController } from '../portfolio'
