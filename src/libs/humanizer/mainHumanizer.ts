@@ -60,7 +60,7 @@ export function genericErc20Humanizer(accountOp: AccountOp, currentIr: Ir): [Ir,
   const matcher = {
     [`${iface.getFunction('approve')?.selector}`]: (call: IrCall) => {
       const args = iface.parseTransaction(call)?.args.toArray() || []
-      return args[1] === BigInt(0)
+      return args[1] !== BigInt(0)
         ? [
             { type: 'action', content: 'Grant approval' },
             { type: 'token', address: call.to, amount: args[1] },
@@ -82,9 +82,36 @@ export function genericErc20Humanizer(accountOp: AccountOp, currentIr: Ir): [Ir,
         { type: 'label', content: 'to' },
         { type: 'address', address: args[0] }
       ]
+    },
+    [`${iface.getFunction('transferFrom')?.selector}`]: (call: IrCall) => {
+      const args = iface.parseTransaction(call)?.args.toArray() || []
+      // @NOTE: accountOp has module scope, while call has property scope
+      if (args[0] === accountOp.accountAddr) {
+        return [
+          { type: 'action', content: 'Transfer' },
+          { type: 'token', address: call.to, amount: args[2] },
+          { type: 'label', content: 'to' },
+          { type: 'address', address: args[1] }
+        ]
+      }
+      if (args[1] === accountOp.accountAddr) {
+        return [
+          { type: 'action', content: 'Take' },
+          { type: 'token', address: call.to, amount: args[2] },
+          { type: 'label', content: 'from' },
+          { type: 'address', address: args[0] }
+        ]
+      }
+      return [
+        { type: 'action', content: 'Move' },
+        { type: 'token', address: call.to, amount: args[2] },
+        { type: 'label', content: 'from' },
+        { type: 'address', address: args[0] },
+        { type: 'label', content: 'to' },
+        { type: 'address', address: args[1] }
+      ]
     }
   }
-  iface.getFunction('approve')?.selector
   const newCalls = currentIr.calls.map((call) => {
     return matcher[call.data.substring(0, 10)]
       ? {
