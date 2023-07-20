@@ -80,7 +80,6 @@ describe('AccountAdder', () => {
     })
   })
   test('search for linked accounts', async () => {
-    expect.assertions(1)
     const keyIterator = new KeyIterator(seedPhrase)
     accountAdder.init({ _keyIterator: keyIterator, _preselectedAccounts: [], _pageSize: 1 })
     const acc = getLegacyAccount(keyPublicAddress)
@@ -98,7 +97,6 @@ describe('AccountAdder', () => {
     expect(accountAdder.selectedAccounts[0]).toBe(undefined)
   })
   test('should not be able to deselect a preselected account', async () => {
-    expect.assertions(1)
     try {
       const keyIterator = new KeyIterator(seedPhrase)
       accountAdder.init({

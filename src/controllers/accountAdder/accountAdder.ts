@@ -62,6 +62,60 @@ export class AccountAdderController extends EventEmitter {
     this.pageSize = _pageSize || PAGE_SIZE
     this.derivationPath = _derivationPath
     this.isReady = true
+    this.emitUpdate()
+  }
+
+  setDerivationPath({
+    path,
+    networks,
+    providers
+  }: {
+    path: string
+    networks: NetworkDescriptor[]
+    providers: { [key: string]: JsonRpcProvider }
+  }): void {
+    this.derivationPath = path
+    // get the first page with the new derivationPath
+    this.getPage({ page: 1, networks, providers })
+  }
+
+  selectAccount(account: Account) {
+    this.selectedAccounts.push(account)
+    this.emitUpdate()
+  }
+
+  async deselectAccount(account: Account) {
+    const accIdx = this.selectedAccounts.findIndex((acc) => acc.addr === account.addr)
+    const accPreselectedIdx = this.preselectedAccounts.findIndex((acc) => acc.addr === account.addr)
+
+    if (accIdx !== -1 && accPreselectedIdx === -1) {
+      this.selectedAccounts = this.selectedAccounts.filter((_, i) => i !== accIdx)
+      this.emitUpdate()
+    } else if (accPreselectedIdx !== -1) {
+      throw new Error('accountAdder: a preselected account cannot be deselected')
+    } else {
+      throw new Error('accountAdder: account not found. Cannot deselect.')
+    }
+  }
+
+  async getPage({
+    page = this.page,
+    networks,
+    providers
+  }: {
+    page: number
+    networks: NetworkDescriptor[]
+    providers: { [key: string]: JsonRpcProvider }
+  }): Promise<ExtendedAccount[]> {
+    if (page <= 0) {
+      throw new Error('accountAdder: page must be a positive number')
+    }
+
+    this.page = page
+    const pageAddresses = await this.iterateAccounts({ networks, providers })
+    this.pageAddresses = pageAddresses
+    this.emitUpdate()
+    return pageAddresses
   }
 
   // inner func. When getting accounts call getPage instead
@@ -102,6 +156,7 @@ export class AccountAdderController extends EventEmitter {
     return accountsWithNetworks
   }
 
+  // inner func
   // eslint-disable-next-line class-methods-use-this
   async getAccountsUsedNetworks({
     accounts,
@@ -140,69 +195,6 @@ export class AccountAdderController extends EventEmitter {
     })
 
     return Object.values(accountsObj)
-  }
-
-  setDerivationPath({
-    path,
-    networks,
-    providers
-  }: {
-    path: string
-    networks: NetworkDescriptor[]
-    providers: { [key: string]: JsonRpcProvider }
-  }): void {
-    this.derivationPath = path
-    // get the first page with the new derivationPath
-    this.getPage({ page: 1, networks, providers })
-  }
-
-  selectAccount(account: Account) {
-    this.selectedAccounts.push(account)
-    this.emitUpdate()
-  }
-
-  async deselectAccount(account: Account) {
-    const accIdx = this.selectedAccounts.findIndex((acc) => acc.addr === account.addr)
-    const accPreselectedIdx = this.preselectedAccounts.findIndex((acc) => acc.addr === account.addr)
-
-    if (accIdx !== -1 && accPreselectedIdx === -1) {
-      this.selectedAccounts = this.selectedAccounts.filter((_, i) => i !== accIdx)
-      this.emitUpdate()
-    } else if (accPreselectedIdx !== -1) {
-      throw new Error('accountAdder: a preselected account cannot be deselected')
-    } else {
-      throw new Error('accountAdder: account not found. Cannot deselect.')
-    }
-  }
-
-  async addAccounts(): Promise<void> {
-    const accounts = await this.storage.get('accounts', [])
-    this.storage.set('accounts', [...accounts, ...this.selectedAccounts])
-    this.selectedAccounts = []
-
-    // TODO: add the newly created smart accounts to the relayer
-    // TODO: store the personalized data for each account on the relayer
-    // should we add some data about the legacy accounts as well?
-  }
-
-  async getPage({
-    page = this.page,
-    networks,
-    providers
-  }: {
-    page: number
-    networks: NetworkDescriptor[]
-    providers: { [key: string]: JsonRpcProvider }
-  }): Promise<ExtendedAccount[]> {
-    if (page <= 0) {
-      throw new Error('accountAdder: page must be a positive number')
-    }
-
-    this.page = page
-    const pageAddresses = await this.iterateAccounts({ networks, providers })
-    this.pageAddresses = pageAddresses
-    this.emitUpdate()
-    return pageAddresses
   }
 
   async getAccountByAddr({
