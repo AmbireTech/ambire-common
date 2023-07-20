@@ -1,5 +1,4 @@
-// SPDX-License-Identifier: agpl-3.0
-pragma solidity ^0.8.19;
+pragma solidity ^0.8.4;
 
 /**
  * @dev An interface for contracts implementing a DNSSEC digest.
@@ -14,5 +13,5 @@ interface Digest {
     function verify(
         bytes calldata data,
         bytes calldata hash
-    ) external pure returns (bool);
+    ) external view virtual returns (bool);
 }

@@ -1,5 +1,4 @@
-// SPDX-License-Identifier: agpl-3.0
-pragma solidity ^0.8.19;
+pragma solidity ^0.8.4;
 
 /**
  * @dev An interface for contracts implementing a DNSSEC (signing) algorithm.
@@ -16,5 +15,5 @@ interface Algorithm {
         bytes calldata key,
         bytes calldata data,
         bytes calldata signature
-    ) external view returns (bool);
+    ) external view virtual returns (bool);
 }

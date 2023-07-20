@@ -1,14 +1,15 @@
-// SPDX-License-Identifier: agpl-3.0
-pragma solidity ^0.8.19;
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.4;
 pragma experimental ABIEncoderV2;
 
 import "./Owned.sol";
 import "./BytesUtils.sol";
 import "./RRUtils.sol";
-import "./AbstractDNSSec.sol";
+import "./DNSSEC.sol";
 import "./Algorithm.sol";
 import "./Digest.sol";
 import "./Buffer.sol";
+import 'hardhat/console.sol';
 
 /*
  * @dev An oracle contract that verifies and stores DNSSEC-validated DNS records.
@@ -19,7 +20,7 @@ import "./Buffer.sol";
  *       - Canonical form of names is not checked; in ENS this is done on the frontend, so submitting
  *         proofs with non-canonical names will only result in registering unresolvable ENS names.
  */
-contract DNSSecValidator is AbstractDNSSec, Owned {
+contract DNSSECImpl is DNSSEC, Owned {
     using Buffer for Buffer.buffer;
     using BytesUtils for bytes;
     using RRUtils for *;
@@ -93,20 +94,20 @@ contract DNSSecValidator is AbstractDNSSec, Owned {
         override
         returns (bytes memory rrs, uint32 inception)
     {
-        return verifyRRSet(input, block.timestamp);
+        return verifyRRSetTimestamp(input, block.timestamp);
     }
 
     /**
      * @dev Takes a chain of signed DNS records, verifies them, and returns the data from the last record set in the chain.
      *      Reverts if the records do not form an unbroken chain of trust to the DNSSEC anchor records.
      * @param input A list of signed RRSets.
-     * @param timestamp The Unix timestamp to validate the records at.
+     * @param now The Unix timestamp to validate the records at.
      * @return rrs The RRData from the last RRSet in the chain.
      * @return inception The inception time of the signed record set.
      */
-    function verifyRRSet(
+    function verifyRRSetTimestamp(
         RRSetWithSignature[] memory input,
-        uint256 timestamp
+        uint256 now
     )
         public
         view
@@ -119,7 +120,7 @@ contract DNSSecValidator is AbstractDNSSec, Owned {
             RRUtils.SignedSet memory rrset = validateSignedSet(
                 input[i],
                 proof,
-                timestamp
+                now
             );
             proof = rrset.data;
             inception = rrset.inception;
@@ -135,12 +136,12 @@ contract DNSSecValidator is AbstractDNSSec, Owned {
      *        data, followed by a series of canonicalised RR records that the signature
      *        applies to.
      * @param proof The DNSKEY or DS to validate the signature against.
-     * @param timestamp The current timestamp.
+     * @param now The current timestamp.
      */
     function validateSignedSet(
         RRSetWithSignature memory input,
         bytes memory proof,
-        uint256 timestamp
+        uint256 now
     ) internal view returns (RRUtils.SignedSet memory rrset) {
         rrset = input.rrset.readSignedSet();
 
@@ -157,14 +158,14 @@ contract DNSSecValidator is AbstractDNSSec, Owned {
 
         // o  The validator's notion of the current time MUST be less than or
         //    equal to the time listed in the RRSIG RR's Expiration field.
-        if (!RRUtils.serialNumberGte(rrset.expiration, uint32(timestamp))) {
-            revert SignatureExpired(rrset.expiration, uint32(timestamp));
+        if (!RRUtils.serialNumberGte(rrset.expiration, uint32(now))) {
+            revert SignatureExpired(rrset.expiration, uint32(now));
         }
 
         // o  The validator's notion of the current time MUST be greater than or
         //    equal to the time listed in the RRSIG RR's Inception field.
-        if (!RRUtils.serialNumberGte(uint32(timestamp), rrset.inception)) {
-            revert SignatureNotValidYet(rrset.inception, uint32(timestamp));
+        if (!RRUtils.serialNumberGte(uint32(now), rrset.inception)) {
+            revert SignatureNotValidYet(rrset.inception, uint32(now));
         }
 
         // Validate the signature
@@ -181,7 +182,7 @@ contract DNSSecValidator is AbstractDNSSec, Owned {
     function validateRRs(
         RRUtils.SignedSet memory rrset,
         uint16 typecovered
-    ) internal pure returns (bytes memory name) {
+    ) internal view returns (bytes memory name) {
         // Iterate over all the RRs
         for (
             RRUtils.RRIterator memory iter = rrset.rrs();
@@ -228,6 +229,7 @@ contract DNSSecValidator is AbstractDNSSec, Owned {
         RRSetWithSignature memory data,
         bytes memory proof
     ) internal view {
+
         // o  The RRSIG RR's Signer's Name field MUST be the name of the zone
         //    that contains the RRset.
         if (!name.isSubdomainOf(rrset.signerName)) {
@@ -332,7 +334,9 @@ contract DNSSecValidator is AbstractDNSSec, Owned {
         RRSetWithSignature memory data,
         RRUtils.RRIterator memory proof
     ) internal view {
+
         uint256 proofOffset = proof.offset;
+
         for (
             RRUtils.RRIterator memory iter = rrset.rrs();
             !iter.done();
@@ -347,6 +351,7 @@ contract DNSSecValidator is AbstractDNSSec, Owned {
                 0,
                 keyrdata.length
             );
+
             if (verifySignatureWithKey(dnskey, keyrdata, rrset, data)) {
                 // It's self-signed - look for a DS record to verify it.
                 if (

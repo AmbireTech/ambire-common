@@ -1,8 +1,8 @@
-// SPDX-License-Identifier: agpl-3.0
-pragma solidity ^0.8.19;
+pragma solidity ^0.8.4;
 
 import "./BytesUtils.sol";
 import "./Buffer.sol";
+import 'hardhat/console.sol';
 
 /**
  * @dev RRUtils is a library that provides utilities for parsing DNS resource records.
@@ -20,7 +20,7 @@ library RRUtils {
     function nameLength(
         bytes memory self,
         uint256 offset
-    ) internal pure returns (uint256) {
+    ) internal view returns (uint256) {
         uint256 idx = offset;
         while (true) {
             assert(idx < self.length);
@@ -42,7 +42,7 @@ library RRUtils {
     function readName(
         bytes memory self,
         uint256 offset
-    ) internal pure returns (bytes memory ret) {
+    ) internal view returns (bytes memory ret) {
         uint256 len = nameLength(self, offset);
         return self.substring(offset, len);
     }
@@ -56,7 +56,7 @@ library RRUtils {
     function labelCount(
         bytes memory self,
         uint256 offset
-    ) internal pure returns (uint256) {
+    ) internal view returns (uint256) {
         uint256 count = 0;
         while (true) {
             assert(offset < self.length);
@@ -94,7 +94,7 @@ library RRUtils {
 
     function readSignedSet(
         bytes memory data
-    ) internal pure returns (SignedSet memory self) {
+    ) internal view returns (SignedSet memory self) {
         self.typeCovered = data.readUint16(RRSIG_TYPE);
         self.algorithm = data.readUint8(RRSIG_ALGORITHM);
         self.labels = data.readUint8(RRSIG_LABELS);
@@ -111,7 +111,7 @@ library RRUtils {
 
     function rrs(
         SignedSet memory rrset
-    ) internal pure returns (RRIterator memory) {
+    ) internal view returns (RRIterator memory) {
         return iterateRRs(rrset.data, 0);
     }
 
@@ -137,7 +137,7 @@ library RRUtils {
     function iterateRRs(
         bytes memory self,
         uint256 offset
-    ) internal pure returns (RRIterator memory ret) {
+    ) internal view returns (RRIterator memory ret) {
         ret.data = self;
         ret.nextOffset = offset;
         next(ret);
@@ -148,7 +148,7 @@ library RRUtils {
      * @param iter The iterator to check.
      * @return True iff the iterator has finished.
      */
-    function done(RRIterator memory iter) internal pure returns (bool) {
+    function done(RRIterator memory iter) internal view returns (bool) {
         return iter.offset >= iter.data.length;
     }
 
@@ -156,7 +156,7 @@ library RRUtils {
      * @dev Moves the iterator to the next resource record.
      * @param iter The iterator to advance.
      */
-    function next(RRIterator memory iter) internal pure {
+    function next(RRIterator memory iter) internal view {
         iter.offset = iter.nextOffset;
         if (iter.offset >= iter.data.length) {
             return;
@@ -185,7 +185,7 @@ library RRUtils {
      * @param iter The iterator.
      * @return A new bytes object containing the owner name from the RR.
      */
-    function name(RRIterator memory iter) internal pure returns (bytes memory) {
+    function name(RRIterator memory iter) internal view returns (bytes memory) {
         return
             iter.data.substring(
                 iter.offset,
@@ -200,7 +200,7 @@ library RRUtils {
      */
     function rdata(
         RRIterator memory iter
-    ) internal pure returns (bytes memory) {
+    ) internal view returns (bytes memory) {
         return
             iter.data.substring(
                 iter.rdataOffset,
@@ -224,7 +224,7 @@ library RRUtils {
         bytes memory data,
         uint256 offset,
         uint256 length
-    ) internal pure returns (DNSKEY memory self) {
+    ) internal view returns (DNSKEY memory self) {
         self.flags = data.readUint16(offset + DNSKEY_FLAGS);
         self.protocol = data.readUint8(offset + DNSKEY_PROTOCOL);
         self.algorithm = data.readUint8(offset + DNSKEY_ALGORITHM);
@@ -250,7 +250,7 @@ library RRUtils {
         bytes memory data,
         uint256 offset,
         uint256 length
-    ) internal pure returns (DS memory self) {
+    ) internal view returns (DS memory self) {
         self.keytag = data.readUint16(offset + DS_KEY_TAG);
         self.algorithm = data.readUint8(offset + DS_ALGORITHM);
         self.digestType = data.readUint8(offset + DS_DIGEST_TYPE);
@@ -260,7 +260,7 @@ library RRUtils {
     function isSubdomainOf(
         bytes memory self,
         bytes memory other
-    ) internal pure returns (bool) {
+    ) internal view returns (bool) {
         uint256 off = 0;
         uint256 counts = labelCount(self, 0);
         uint256 othercounts = labelCount(other, 0);
@@ -276,7 +276,7 @@ library RRUtils {
     function compareNames(
         bytes memory self,
         bytes memory other
-    ) internal pure returns (int256) {
+    ) internal view returns (int256) {
         if (self.equals(other)) {
             return 0;
         }
@@ -333,7 +333,7 @@ library RRUtils {
     function serialNumberGte(
         uint32 i1,
         uint32 i2
-    ) internal pure returns (bool) {
+    ) internal view returns (bool) {
         unchecked {
             return int32(i1) - int32(i2) >= 0;
         }
@@ -342,7 +342,7 @@ library RRUtils {
     function progress(
         bytes memory body,
         uint256 off
-    ) internal pure returns (uint256) {
+    ) internal view returns (uint256) {
         return off + 1 + body.readUint8(off);
     }
 
@@ -351,12 +351,12 @@ library RRUtils {
      * @param data The data to compute a keytag for.
      * @return The computed key tag.
      */
-    function computeKeytag(bytes memory data) internal pure returns (uint16) {
+    function computeKeytag(bytes memory data) internal view returns (uint16) {
         /* This function probably deserves some explanation.
          * The DNSSEC keytag function is a checksum that relies on summing up individual bytes
          * from the input string, with some mild bitshifting. Here's a Naive solidity implementation:
          *
-         *     function computeKeytag(bytes memory data) internal pure returns (uint16) {
+         *     function computeKeytag(bytes memory data) internal view returns (uint16) {
          *         uint ac;
          *         for (uint i = 0; i < data.length; i++) {
          *             ac += i & 1 == 0 ? uint16(data.readUint8(i)) << 8 : data.readUint8(i);

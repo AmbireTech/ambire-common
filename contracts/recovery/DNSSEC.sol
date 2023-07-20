@@ -1,7 +1,8 @@
-// SPDX-License-Identifier: agpl-3.0
-pragma solidity ^0.8.19;
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.4;
+pragma experimental ABIEncoderV2;
 
-abstract contract AbstractDNSSec {
+abstract contract DNSSEC {
     bytes public anchors;
 
     struct RRSetWithSignature {
@@ -16,7 +17,7 @@ abstract contract AbstractDNSSec {
         RRSetWithSignature[] memory input
     ) external view virtual returns (bytes memory rrs, uint32 inception);
 
-    function verifyRRSet(
+    function verifyRRSetTimestamp(
         RRSetWithSignature[] memory input,
         uint256 now
     ) public view virtual returns (bytes memory rrs, uint32 inception);

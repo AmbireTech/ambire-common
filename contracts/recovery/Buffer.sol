@@ -1,5 +1,5 @@
-// SPDX-License-Identifier: agpl-3.0
-pragma solidity ^0.8.19;
+// SPDX-License-Identifier: BSD-2-Clause
+pragma solidity ^0.8.4;
 
 /**
 * @dev A library for working with mutable byte buffers in Solidity.
@@ -26,7 +26,7 @@ library Buffer {
     * @param capacity The number of bytes of space to allocate the buffer.
     * @return The buffer, for chaining.
     */
-    function init(buffer memory buf, uint capacity) internal pure returns(buffer memory) {
+    function init(buffer memory buf, uint capacity) internal view returns(buffer memory) {
         if (capacity % 32 != 0) {
             capacity += 32 - (capacity % 32);
         }
@@ -51,14 +51,14 @@ library Buffer {
     * @param b The bytes object to initialize the buffer with.
     * @return A new buffer.
     */
-    function fromBytes(bytes memory b) internal pure returns(buffer memory) {
+    function fromBytes(bytes memory b) internal view returns(buffer memory) {
         buffer memory buf;
         buf.buf = b;
         buf.capacity = b.length;
         return buf;
     }
 
-    function resize(buffer memory buf, uint capacity) private pure {
+    function resize(buffer memory buf, uint capacity) private view {
         bytes memory oldbuf = buf.buf;
         init(buf, capacity);
         append(buf, oldbuf);
@@ -69,7 +69,7 @@ library Buffer {
     * @param buf The buffer to truncate.
     * @return The original buffer, for chaining..
     */
-    function truncate(buffer memory buf) internal pure returns (buffer memory) {
+    function truncate(buffer memory buf) internal view returns (buffer memory) {
         assembly {
             let bufptr := mload(buf)
             mstore(bufptr, 0)
@@ -85,7 +85,7 @@ library Buffer {
     * @param len The number of bytes to copy.
     * @return The original buffer, for chaining.
     */
-    function append(buffer memory buf, bytes memory data, uint len) internal pure returns(buffer memory) {
+    function append(buffer memory buf, bytes memory data, uint len) internal view returns(buffer memory) {
         require(len <= data.length);
 
         uint off = buf.buf.length;
@@ -139,7 +139,7 @@ library Buffer {
     * @param data The data to append.
     * @return The original buffer, for chaining.
     */
-    function append(buffer memory buf, bytes memory data) internal pure returns (buffer memory) {
+    function append(buffer memory buf, bytes memory data) internal view returns (buffer memory) {
         return append(buf, data, data.length);
     }
 
@@ -150,7 +150,7 @@ library Buffer {
     * @param data The data to append.
     * @return The original buffer, for chaining.
     */
-    function appendUint8(buffer memory buf, uint8 data) internal pure returns(buffer memory) {
+    function appendUint8(buffer memory buf, uint8 data) internal view returns(buffer memory) {
         uint off = buf.buf.length;
         uint offPlusOne = off + 1;
         if (off >= buf.capacity) {
@@ -180,7 +180,7 @@ library Buffer {
     * @param len The number of bytes to write (left-aligned).
     * @return The original buffer, for chaining.
     */
-    function append(buffer memory buf, bytes32 data, uint len) private pure returns(buffer memory) {
+    function append(buffer memory buf, bytes32 data, uint len) private view returns(buffer memory) {
         uint off = buf.buf.length;
         uint newCapacity = len + off;
         if (newCapacity > buf.capacity) {
@@ -213,7 +213,7 @@ library Buffer {
     * @param data The data to append.
     * @return The original buffer, for chhaining.
     */
-    function appendBytes20(buffer memory buf, bytes20 data) internal pure returns (buffer memory) {
+    function appendBytes20(buffer memory buf, bytes20 data) internal view returns (buffer memory) {
         return append(buf, bytes32(data), 20);
     }
 
@@ -224,7 +224,7 @@ library Buffer {
     * @param data The data to append.
     * @return The original buffer, for chaining.
     */
-    function appendBytes32(buffer memory buf, bytes32 data) internal pure returns (buffer memory) {
+    function appendBytes32(buffer memory buf, bytes32 data) internal view returns (buffer memory) {
         return append(buf, data, 32);
     }
 
@@ -236,7 +236,7 @@ library Buffer {
      * @param len The number of bytes to write (right-aligned).
      * @return The original buffer.
      */
-    function appendInt(buffer memory buf, uint data, uint len) internal pure returns(buffer memory) {
+    function appendInt(buffer memory buf, uint data, uint len) internal view returns(buffer memory) {
         uint off = buf.buf.length;
         uint newCapacity = len + off;
         if (newCapacity > buf.capacity) {
