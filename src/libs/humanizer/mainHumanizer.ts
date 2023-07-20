@@ -1,6 +1,20 @@
 import { ethers } from 'ethers'
 import { AccountOp } from '../accountOp/accountOp'
 import IERC20 from '../../../contracts/compiled/IERC20.json'
+
+function getLable(content: string) {
+  return { type: 'lable', content }
+}
+function getAction(content: string) {
+  return { type: 'action', content }
+}
+function getAddress(address: string, name?: string) {
+  return name ? { type: 'address', address, name } : { type: 'address', address }
+}
+
+function getToken(address: string, amount: bigint) {
+  return { type: 'token', address, amount }
+}
 /*
 // types of transactions to account for
 
@@ -45,14 +59,6 @@ export function callsToIr(accountOp: AccountOp): Ir {
   return { calls: irCalls }
 }
 
-// second to last
-// converts all addresses to names
-// export function naming(accountOp: AccountOp, currentIr: IR[]): [IR[], Promise<any>[]] {}
-
-// last
-// converts all ir to FE-readable format
-// export function finalizer() {}
-
 export function genericErc20Humanizer(accountOp: AccountOp, currentIr: Ir): [Ir, Promise<any>[]] {
   // @TODO: check if ${to} is ERC20 (if not in available humanizer data - will be done asyncly and returned as promise)
   // @TODO: check if ${to} is contract when Transfer or transferFrom(_,contract,_)
@@ -63,25 +69,25 @@ export function genericErc20Humanizer(accountOp: AccountOp, currentIr: Ir): [Ir,
       const args = iface.parseTransaction(call)?.args.toArray() || []
       return args[1] !== BigInt(0)
         ? [
-            { type: 'action', content: 'Grant approval' },
-            { type: 'token', address: call.to, amount: args[1] },
-            { type: 'label', content: 'to' },
-            { type: 'address', address: args[0] }
+            getAction('Grant approval'),
+            getToken(call.to, args[1]),
+            getLable('to'),
+            getAddress(args[0])
           ]
         : [
-            { type: 'action', content: 'Revoke approval' },
-            { type: 'token', address: call.to, amount: args[1] },
-            { type: 'label', content: 'for' },
-            { type: 'address', address: args[0] }
+            getAction('Revoke approval'),
+            getToken(call.to, args[1]),
+            getLable('for'),
+            getAddress(args[0])
           ]
     },
     [`${iface.getFunction('transfer')?.selector}`]: (call: IrCall) => {
       const args = iface.parseTransaction(call)?.args.toArray() || []
       return [
-        { type: 'action', content: 'Transfer' },
-        { type: 'token', address: call.to, amount: args[1] },
-        { type: 'label', content: 'to' },
-        { type: 'address', address: args[0] }
+        getAction('Transfer'),
+        getToken(call.to, args[1]),
+        getLable('to'),
+        getAddress(args[0])
       ]
     },
     [`${iface.getFunction('transferFrom')?.selector}`]: (call: IrCall) => {
@@ -89,27 +95,27 @@ export function genericErc20Humanizer(accountOp: AccountOp, currentIr: Ir): [Ir,
       // @NOTE: accountOp has module scope, while call has property scope
       if (args[0] === accountOp.accountAddr) {
         return [
-          { type: 'action', content: 'Transfer' },
-          { type: 'token', address: call.to, amount: args[2] },
-          { type: 'label', content: 'to' },
-          { type: 'address', address: args[1] }
+          getAction('Transfer'),
+          getToken(call.to, args[2]),
+          getLable('to'),
+          getAddress(args[1])
         ]
       }
       if (args[1] === accountOp.accountAddr) {
         return [
-          { type: 'action', content: 'Take' },
-          { type: 'token', address: call.to, amount: args[2] },
-          { type: 'label', content: 'from' },
-          { type: 'address', address: args[0] }
+          getAction('Take'),
+          getToken(call.to, args[2]),
+          getLable('from'),
+          getAddress(args[0])
         ]
       }
       return [
-        { type: 'action', content: 'Move' },
-        { type: 'token', address: call.to, amount: args[2] },
-        { type: 'label', content: 'from' },
-        { type: 'address', address: args[0] },
-        { type: 'label', content: 'to' },
-        { type: 'address', address: args[1] }
+        getAction('Move'),
+        getToken(call.to, args[2]),
+        getLable('from'),
+        getAddress(args[0]),
+        getLable('to'),
+        getAddress(args[1])
       ]
     }
   }
@@ -149,23 +155,20 @@ export function initialHumanizer(accountOp: AccountOp, currentIr: Ir): [Ir, Prom
     let fullVisualization
     if (call.data === '0x') {
       fullVisualization = [
-        { type: 'action', content: 'Sending' },
-        { type: 'token', address: ethers.ZeroAddress, amount: call.value },
-        { type: 'lable', content: 'to' },
-        { type: 'address', address: call.to }
+        getAction('Sending'),
+        getToken(ethers.ZeroAddress, call.value),
+        getLable('to'),
+        getAddress(call.to)
       ]
     } else if (call.value === BigInt(0)) {
-      fullVisualization = [
-        { type: 'action', content: 'Interacting with' },
-        { type: 'address', address: call.to }
-      ]
+      fullVisualization = [getAction('Interacting with'), getAddress(call.to)]
     } else {
       fullVisualization = [
-        { type: 'action', content: 'Interacting with' },
-        { type: 'address', address: call.to },
-        { type: 'lable', content: 'and' },
-        { type: 'action', content: 'Sending' },
-        { type: 'token', address: ethers.ZeroAddress, amount: call.value }
+        getAction('Interacting with'),
+        getAddress(call.to),
+        getLable('and'),
+        getAction('Sending'),
+        getToken(ethers.ZeroAddress, call.value)
       ]
     }
     return { ...call, fullVisualization }

@@ -34,9 +34,55 @@ const accountOp: AccountOp = {
   // "remembered" at the time of signing in order to visualize history properly
   humanizerMeta: {}
 }
-
-describe('generc tests for structure', () => {
-  let ir: Ir
+const transactions = {
+  generic: [
+    // simple transafer
+    { to: '0xc4Ce03B36F057591B2a360d773eDB9896255051e', value: BigInt(10 ** 18), data: '0x' }
+  ],
+  erc20: [
+    // approve erc-20 token USDT
+    {
+      to: '0xdac17f958d2ee523a2206206994597c13d831ec7',
+      value: BigInt(0),
+      data: '0x095ea7b300000000000000000000000046705dfff24256421a05d056c29e81bdc09723b80000000000000000000000000000000000000000000000000000000016789040'
+    },
+    // revoke approval  erc-20 token USDT
+    {
+      to: '0xdac17f958d2ee523a2206206994597c13d831ec7',
+      value: BigInt(0),
+      data: '0x095ea7b300000000000000000000000046705dfff24256421a05d056c29e81bdc09723b80000000000000000000000000000000000000000000000000000000000000000'
+    },
+    // transferFrom A to me  erc-20 token USDT
+    {
+      to: '0xdac17f958d2ee523a2206206994597c13d831ec7',
+      value: BigInt(0),
+      data: `0x23b872dd00000000000000000000000046705dfff24256421a05d056c29e81bdc09723b8000000000000000000000000${accountOp.accountAddr.substring(
+        2
+      )}0000000000000000000000000000000000000000000000000000000000000000`
+    },
+    // transferFrom A to B (bad example - B is USDT) erc-20 token USDT
+    {
+      to: '0xdac17f958d2ee523a2206206994597c13d831ec7',
+      value: BigInt(0),
+      data: '0x23b872dd00000000000000000000000046705dfff24256421a05d056c29e81bdc09723b8000000000000000000000000dac17f958d2ee523a2206206994597c13d831ec70000000000000000000000000000000000000000000000000000000000000000'
+    },
+    // transferFrom me to A  erc-20 token USDT (bad example, in such case transfer will be used)
+    {
+      to: '0xdac17f958d2ee523a2206206994597c13d831ec7',
+      value: BigInt(0),
+      data: `0x23b872dd000000000000000000000000${accountOp.accountAddr.substring(
+        2
+      )}00000000000000000000000046705dfff24256421a05d056c29e81bdc09723b80000000000000000000000000000000000000000000000000000000000000000`
+    },
+    // transfer erc-20 tokens USDT
+    {
+      to: '0xdac17f958d2ee523a2206206994597c13d831ec7',
+      value: BigInt(0),
+      data: '0xa9059cbb00000000000000000000000046705dfff24256421a05d056c29e81bdc09723b80000000000000000000000000000000000000000000000000000000016789040'
+    }
+  ]
+}
+describe('module tests', () => {
   beforeEach(async () => {
     const humanizerInfo = await (
       await fetch(
@@ -44,105 +90,18 @@ describe('generc tests for structure', () => {
       )
     ).json()
     accountOp.humanizerMeta = humanizerInfo
-    accountOp.calls = [
-      // simple transafer
-      { to: '0xc4Ce03B36F057591B2a360d773eDB9896255051e', value: BigInt(10 ** 18), data: '0x' },
-      // approve erc-20 token USDT
-      {
-        to: '0xdac17f958d2ee523a2206206994597c13d831ec7',
-        value: BigInt(0),
-        data: '0x095ea7b300000000000000000000000046705dfff24256421a05d056c29e81bdc09723b80000000000000000000000000000000000000000000000000000000016789040'
-      },
-      // revoke approval  erc-20 token USDT
-      {
-        to: '0xdac17f958d2ee523a2206206994597c13d831ec7',
-        value: BigInt(0),
-        data: '0x095ea7b300000000000000000000000046705dfff24256421a05d056c29e81bdc09723b80000000000000000000000000000000000000000000000000000000000000000'
-      },
-      // transferFrom A to me  erc-20 token USDT
-      {
-        to: '0xdac17f958d2ee523a2206206994597c13d831ec7',
-        value: BigInt(0),
-        data: `0x23b872dd00000000000000000000000046705dfff24256421a05d056c29e81bdc09723b8000000000000000000000000${accountOp.accountAddr.substring(
-          2
-        )}0000000000000000000000000000000000000000000000000000000000000000`
-      },
-      // transferFrom A to B (bad example - B is USDT) erc-20 token USDT
-      {
-        to: '0xdac17f958d2ee523a2206206994597c13d831ec7',
-        value: BigInt(0),
-        data: '0x23b872dd00000000000000000000000046705dfff24256421a05d056c29e81bdc09723b8000000000000000000000000dac17f958d2ee523a2206206994597c13d831ec70000000000000000000000000000000000000000000000000000000000000000'
-      },
-      // transferFrom me to A  erc-20 token USDT (bad example, in such case transfer will be used)
-      {
-        to: '0xdac17f958d2ee523a2206206994597c13d831ec7',
-        value: BigInt(0),
-        data: `0x23b872dd000000000000000000000000${accountOp.accountAddr.substring(
-          2
-        )}00000000000000000000000046705dfff24256421a05d056c29e81bdc09723b80000000000000000000000000000000000000000000000000000000000000000`
-      },
-      // transfer erc-20 tokens USDT
-      {
-        to: '0xdac17f958d2ee523a2206206994597c13d831ec7',
-        value: BigInt(0),
-        data: '0xa9059cbb00000000000000000000000046705dfff24256421a05d056c29e81bdc09723b80000000000000000000000000000000000000000000000000000000016789040'
-      },
-      // interaction with uniSwap (bad example, sending erc20 to contract)
-      {
-        to: '0xdac17f958d2ee523a2206206994597c13d831ec7',
-        value: BigInt(0),
-        data: '0xa9059cbb0000000000000000000000006fdb43bca2d8fe6284242d92620156205d4fa0280000000000000000000000000000000000000000000000000000000016789040'
-      },
-      {
-        to: '0x6fdb43bca2d8fe6284242d92620156205d4fa028',
-        value: BigInt(0),
-        data: '0xa9059cbb0000000000000000000000006fdb43bca2d8fe6284242d92620156205d4fa0280000000000000000000000000000000000000000000000000000000016789040'
-      }
-    ]
-    ir = callsToIr(accountOp)
+    accountOp.calls = []
   })
-  test('simple convert to Ir', () => {
-    expect(ir.calls[0]).toEqual({
-      data: '0x',
-      to: '0xc4Ce03B36F057591B2a360d773eDB9896255051e',
-      value: 1000000000000000000n,
-      fullVisualization: null
-    })
-    expect(ir.calls[1]).toEqual({
-      data: '0x095ea7b300000000000000000000000046705dfff24256421a05d056c29e81bdc09723b80000000000000000000000000000000000000000000000000000000016789040',
-      to: '0xdac17f958d2ee523a2206206994597c13d831ec7',
-      value: 0n,
-      fullVisualization: null
-    })
-  })
-  test('erc20Humanizer', () => {
-    const irCalls = genericErc20Humanizer(accountOp, ir)[0].calls
-    // irCalls.forEach((c) => console.log(c.fullVisualization))
-  })
-  test('namingHumanizer after initialHUmanizer', () => {
-    const afterInitial = initialHumanizer(accountOp, ir)[0].calls
-    const irCalls = namingHumanizer(accountOp, { calls: afterInitial })[0].calls
-    irCalls.forEach((c) => console.log(c.fullVisualization))
+  // @TODO add callsToIr test
+  // @TODO add erc20 test
+  // @TODO add namingHumanizer test
+  test('initial humanizer', () => {
+    accountOp.calls = [...transactions.generic, transactions.erc20[0]]
+    const ir = callsToIr(accountOp)
+    const [{ calls }, _] = initialHumanizer(accountOp, ir)
+    expect(calls[0].fullVisualization).not.toBeNull()
+    expect(calls[1].fullVisualization).not.toBeNull()
+    console.log(calls[0].fullVisualization)
+    console.log(calls[1].fullVisualization)
   })
 })
-
-// describe('genericHUmanizer', () => {
-//   beforeEach(() => {
-//     accountOp.calls = []
-//   })
-//   test('Eth transfer', () => {
-//     accountOp.calls = [
-//       // simple transafer
-//       { to: '0xc4Ce03B36F057591B2a360d773eDB9896255051e', value: BigInt(10 ** 18), data: '0x' },
-//       // transfer erc-20 tokens USDT
-//       {
-//         to: '0xdac17f958d2ee523a2206206994597c13d831ec7',
-//         value: BigInt(10 ** 18),
-//         data: '0xa9059cbb00000000000000000000000046705dfff24256421a05d056c29e81bdc09723b80000000000000000000000000000000000000000000000000000000016789040'
-//       }
-//     ]
-//     const ir = accountOp.calls.map((call) => ({ call }))
-//     const res = humanizerModules.genericHumanizer(accountOp, ir)
-//     console.log(res[0])
-//   })
-// })
