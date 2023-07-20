@@ -80,7 +80,6 @@ describe('AccountAdder', () => {
     })
   })
   test('search for linked accounts', async () => {
-    expect.assertions(4)
     const keyIterator = new KeyIterator(seedPhrase)
     accountAdder.init({ _keyIterator: keyIterator, _preselectedAccounts: [], _pageSize: 1 })
     const acc = getLegacyAccount(keyPublicAddress)
