@@ -1,5 +1,6 @@
 import { describe, expect, test } from '@jest/globals'
 
+import fetch from 'node-fetch'
 import { AccountOp } from '../accountOp/accountOp'
 import { callsToIr, Ir, genericErc20Humanizer } from './mainHumanizer'
 
@@ -30,7 +31,13 @@ const accountOp: AccountOp = {
 
 describe('generc tests for structure', () => {
   let ir: Ir
-  beforeEach(() => {
+  beforeEach(async () => {
+    const humanizerInfo = await (
+      await fetch(
+        'https://raw.githubusercontent.com/AmbireTech/ambire-constants/master/constants/humanizerInfo.json'
+      )
+    ).json()
+    accountOp.humanizerMeta = humanizerInfo
     accountOp.calls = [
       // simple transafer
       { to: '0xc4Ce03B36F057591B2a360d773eDB9896255051e', value: BigInt(10 ** 18), data: '0x' },

@@ -54,8 +54,9 @@ export function callsToIr(accountOp: AccountOp): Ir {
 // export function finalizer() {}
 
 export function genericErc20Humanizer(accountOp: AccountOp, currentIr: Ir): [Ir, Promise<any>[]] {
-  // @TODO: check if ${to} is ERC20 (will be done asyncly and returned as promise)
-  // @TODO: check if ${to} is contract when Transfer
+  // @TODO: check if ${to} is ERC20 (if not in available humanizer data - will be done asyncly and returned as promise)
+  // @TODO: check if ${to} is contract when Transfer or transferFrom(_,contract,_)
+  // @TODO parse amount according to decimals
   const iface = new ethers.Interface(IERC20.abi)
   const matcher = {
     [`${iface.getFunction('approve')?.selector}`]: (call: IrCall) => {
@@ -113,7 +114,8 @@ export function genericErc20Humanizer(accountOp: AccountOp, currentIr: Ir): [Ir,
     }
   }
   const newCalls = currentIr.calls.map((call) => {
-    return matcher[call.data.substring(0, 10)]
+    console.log(accountOp.humanizerMeta?.tokens[call.to])
+    return matcher[call.data.substring(0, 10)] && accountOp.humanizerMeta?.tokens[call.to]
       ? {
           ...call,
           fullVisualization: matcher[call.data.substring(0, 10)](call)
