@@ -2,7 +2,13 @@ import { describe, expect, test } from '@jest/globals'
 
 import fetch from 'node-fetch'
 import { AccountOp } from '../accountOp/accountOp'
-import { callsToIr, Ir, genericErc20Humanizer } from './mainHumanizer'
+import {
+  callsToIr,
+  Ir,
+  genericErc20Humanizer,
+  namingHumanizer,
+  initialHumanizer
+} from './mainHumanizer'
 
 // @НNOTE all tests pass regardless offunctionality
 const accountOp: AccountOp = {
@@ -44,19 +50,19 @@ describe('generc tests for structure', () => {
       // approve erc-20 token USDT
       {
         to: '0xdac17f958d2ee523a2206206994597c13d831ec7',
-        value: BigInt(10 ** 18),
+        value: BigInt(0),
         data: '0x095ea7b300000000000000000000000046705dfff24256421a05d056c29e81bdc09723b80000000000000000000000000000000000000000000000000000000016789040'
       },
       // revoke approval  erc-20 token USDT
       {
         to: '0xdac17f958d2ee523a2206206994597c13d831ec7',
-        value: BigInt(10 ** 18),
+        value: BigInt(0),
         data: '0x095ea7b300000000000000000000000046705dfff24256421a05d056c29e81bdc09723b80000000000000000000000000000000000000000000000000000000000000000'
       },
       // transferFrom A to me  erc-20 token USDT
       {
         to: '0xdac17f958d2ee523a2206206994597c13d831ec7',
-        value: BigInt(10 ** 18),
+        value: BigInt(0),
         data: `0x23b872dd00000000000000000000000046705dfff24256421a05d056c29e81bdc09723b8000000000000000000000000${accountOp.accountAddr.substring(
           2
         )}0000000000000000000000000000000000000000000000000000000000000000`
@@ -64,13 +70,13 @@ describe('generc tests for structure', () => {
       // transferFrom A to B (bad example - B is USDT) erc-20 token USDT
       {
         to: '0xdac17f958d2ee523a2206206994597c13d831ec7',
-        value: BigInt(10 ** 18),
+        value: BigInt(0),
         data: '0x23b872dd00000000000000000000000046705dfff24256421a05d056c29e81bdc09723b8000000000000000000000000dac17f958d2ee523a2206206994597c13d831ec70000000000000000000000000000000000000000000000000000000000000000'
       },
-      // transferFrom me to A  erc-20 token USDT
+      // transferFrom me to A  erc-20 token USDT (bad example, in such case transfer will be used)
       {
         to: '0xdac17f958d2ee523a2206206994597c13d831ec7',
-        value: BigInt(10 ** 18),
+        value: BigInt(0),
         data: `0x23b872dd000000000000000000000000${accountOp.accountAddr.substring(
           2
         )}00000000000000000000000046705dfff24256421a05d056c29e81bdc09723b80000000000000000000000000000000000000000000000000000000000000000`
@@ -78,8 +84,19 @@ describe('generc tests for structure', () => {
       // transfer erc-20 tokens USDT
       {
         to: '0xdac17f958d2ee523a2206206994597c13d831ec7',
-        value: BigInt(10 ** 18),
+        value: BigInt(0),
         data: '0xa9059cbb00000000000000000000000046705dfff24256421a05d056c29e81bdc09723b80000000000000000000000000000000000000000000000000000000016789040'
+      },
+      // interaction with uniSwap (bad example, sending erc20 to contract)
+      {
+        to: '0xdac17f958d2ee523a2206206994597c13d831ec7',
+        value: BigInt(0),
+        data: '0xa9059cbb0000000000000000000000006fdb43bca2d8fe6284242d92620156205d4fa0280000000000000000000000000000000000000000000000000000000016789040'
+      },
+      {
+        to: '0x6fdb43bca2d8fe6284242d92620156205d4fa028',
+        value: BigInt(0),
+        data: '0xa9059cbb0000000000000000000000006fdb43bca2d8fe6284242d92620156205d4fa0280000000000000000000000000000000000000000000000000000000016789040'
       }
     ]
     ir = callsToIr(accountOp)
@@ -94,12 +111,17 @@ describe('generc tests for structure', () => {
     expect(ir.calls[1]).toEqual({
       data: '0x095ea7b300000000000000000000000046705dfff24256421a05d056c29e81bdc09723b80000000000000000000000000000000000000000000000000000000016789040',
       to: '0xdac17f958d2ee523a2206206994597c13d831ec7',
-      value: 1000000000000000000n,
+      value: 0n,
       fullVisualization: null
     })
   })
   test('erc20Humanizer', () => {
     const irCalls = genericErc20Humanizer(accountOp, ir)[0].calls
+    // irCalls.forEach((c) => console.log(c.fullVisualization))
+  })
+  test('namingHumanizer after initialHUmanizer', () => {
+    const afterInitial = initialHumanizer(accountOp, ir)[0].calls
+    const irCalls = namingHumanizer(accountOp, { calls: afterInitial })[0].calls
     irCalls.forEach((c) => console.log(c.fullVisualization))
   })
 })

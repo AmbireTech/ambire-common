@@ -114,7 +114,6 @@ export function genericErc20Humanizer(accountOp: AccountOp, currentIr: Ir): [Ir,
     }
   }
   const newCalls = currentIr.calls.map((call) => {
-    console.log(accountOp.humanizerMeta?.tokens[call.to])
     return matcher[call.data.substring(0, 10)] && accountOp.humanizerMeta?.tokens[call.to]
       ? {
           ...call,
@@ -125,9 +124,58 @@ export function genericErc20Humanizer(accountOp: AccountOp, currentIr: Ir): [Ir,
   const newIr = { calls: newCalls }
   return [newIr, []]
 }
+function shortenAddress(addr: string): string {
+  return addr ? `${addr.slice(0, 5)}...${addr.slice(-3)}` : ''
+}
+export function namingHumanizer(accountOp: AccountOp, currentIr: Ir): [Ir, Promise<any>[]] {
+  const newCalls = currentIr.calls.map((call) => {
+    const newVisualization = call.fullVisualization?.map((v: any) => {
+      return v.type === 'address'
+        ? {
+            ...v,
+            name:
+              accountOp.humanizerMeta?.names[v.address.toLowerCase()] || shortenAddress(v.address)
+          }
+        : v
+    })
+    return { ...call, fullVisualization: newVisualization || call.fullVisualization }
+  })
+  const newIr = { ...currentIr, calls: newCalls }
+  return [newIr, []]
+}
+
+export function initialHumanizer(accountOp: AccountOp, currentIr: Ir): [Ir, Promise<any>[]] {
+  const newCalls = currentIr.calls.map((call) => {
+    let fullVisualization
+    if (call.data === '0x') {
+      fullVisualization = [
+        { type: 'action', content: 'Sending' },
+        { type: 'token', address: ethers.ZeroAddress, amount: call.value },
+        { type: 'lable', content: 'to' },
+        { type: 'address', address: call.to }
+      ]
+    } else if (call.value === BigInt(0)) {
+      fullVisualization = [
+        { type: 'action', content: 'Interacting with' },
+        { type: 'address', address: call.to }
+      ]
+    } else {
+      fullVisualization = [
+        { type: 'action', content: 'Interacting with' },
+        { type: 'address', address: call.to },
+        { type: 'lable', content: 'and' },
+        { type: 'action', content: 'Sending' },
+        { type: 'token', address: ethers.ZeroAddress, amount: call.value }
+      ]
+    }
+    return { ...call, fullVisualization }
+  })
+  const newIr = { calls: newCalls }
+  return [newIr, []]
+}
 
 export async function humanize(accountOp: AccountOp) {
-  const humanizerModules = [genericErc20Humanizer]
+  const humanizerModules = [initialHumanizer, genericErc20Humanizer, namingHumanizer]
 
   let currentIr: Ir = callsToIr(accountOp)
 
