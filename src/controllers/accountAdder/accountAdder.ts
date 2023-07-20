@@ -36,6 +36,10 @@ export class AccountAdderController extends EventEmitter {
   // The result of getPage
   pageAddresses: ExtendedAccount[] = []
 
+  linkedAccounts: { [key: string]: string }[] = []
+
+  isSearchReady: boolean = false
+
   constructor(_storage: Storage, _relayerUrl: string) {
     super()
     this.storage = _storage
@@ -228,21 +232,22 @@ export class AccountAdderController extends EventEmitter {
     }
   }
 
-  async searchForLinkedAccounts(eoas: Account[]) {
-    const allUniqueOwned: { [key: string]: string } = {}
-
+  async searchForLinkedAccounts(accounts: Account[]) {
     await Promise.all(
-      eoas.map(async (acc: Account) => {
+      accounts.map(async (acc: Account) => {
         const { status, success, ...rest } = await this.#callRelayer(
           `/identity/any/by-owner/${acc.addr}?includeFormerlyOwned=true`
         )
         const privEntries = Object.entries(await rest)
         privEntries.forEach(([entryId, _]) => {
-          allUniqueOwned[entryId] = getAddress(acc.addr)
+          this.linkedAccounts.push({ [getAddress(acc.addr)]: entryId })
+          this.emitUpdate()
         })
       })
-    )
-    return Promise.all(Object.entries(allUniqueOwned))
+    ).then(() => {
+      this.isSearchReady = true
+      this.emitUpdate()
+    })
   }
 }
 
