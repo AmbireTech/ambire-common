@@ -88,7 +88,7 @@ describe('AccountAdder', () => {
     await new Promise((resolve) => {
       accountAdder.onUpdate(() => {
         expect(accountAdder.linkedAccounts.length).toEqual(0)
-        expect(accountAdder.isSearchReady).toBe(true)
+        expect(accountAdder.searchingLinkedAccounts).toBe(false)
         resolve(null)
       })
     })

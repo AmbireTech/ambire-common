@@ -38,7 +38,7 @@ export class AccountAdderController extends EventEmitter {
 
   linkedAccounts: { [key: string]: string }[] = []
 
-  isSearchReady: boolean = false
+  searchingLinkedAccounts: boolean = false
 
   constructor(_storage: Storage, _relayerUrl: string) {
     super()
@@ -233,6 +233,8 @@ export class AccountAdderController extends EventEmitter {
   }
 
   async searchForLinkedAccounts(accounts: Account[]) {
+    this.searchingLinkedAccounts = true
+    this.emitUpdate()
     await Promise.all(
       accounts.map(async (acc: Account) => {
         const { status, success, ...rest } = await this.#callRelayer(
@@ -245,7 +247,7 @@ export class AccountAdderController extends EventEmitter {
         })
       })
     ).then(() => {
-      this.isSearchReady = true
+      this.searchingLinkedAccounts = false
       this.emitUpdate()
     })
   }
