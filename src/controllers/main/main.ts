@@ -1,16 +1,18 @@
+import AccountAdderController from 'controllers/accountAdder/accountAdder'
 import { JsonRpcProvider } from 'ethers'
-import { EmailVaultController } from '../emailVault'
-import { Storage } from '../../interfaces/storage'
-import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
-import { Account, AccountId, AccountOnchainState } from '../../interfaces/account'
-import { AccountOp, Call as AccountOpCall } from '../../libs/accountOp/accountOp'
-import { PortfolioController } from '../portfolio'
-import { Keystore, Key } from '../../libs/keystore/keystore'
+
 import { networks } from '../../consts/networks'
-import EventEmitter from '../eventEmitter'
-import { getAccountState } from '../../libs/accountState/accountState'
+import { Account, AccountId, AccountOnchainState } from '../../interfaces/account'
+import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
+import { Storage } from '../../interfaces/storage'
 import { SignedMessage, UserRequest } from '../../interfaces/userRequest'
+import { AccountOp, Call as AccountOpCall } from '../../libs/accountOp/accountOp'
+import { getAccountState } from '../../libs/accountState/accountState'
 import { estimate } from '../../libs/estimate/estimate'
+import { Key, Keystore } from '../../libs/keystore/keystore'
+import { EmailVaultController } from '../emailVault'
+import EventEmitter from '../eventEmitter'
+import { PortfolioController } from '../portfolio'
 
 export type AccountStates = {
   [accountId: string]: {
@@ -33,6 +35,8 @@ export class MainController extends EventEmitter {
   accountStates: AccountStates = {}
 
   isReady: boolean = false
+
+  accountAdder: AccountAdderController
 
   // Subcontrollers
   // this is not private cause you're supposed to directly access it
@@ -77,6 +81,7 @@ export class MainController extends EventEmitter {
     this.initialLoadPromise = this.load()
     this.settings = { networks }
     this.emailVault = new EmailVaultController(storage, fetch, relayerUrl, this.keystore)
+    this.accountAdder = new AccountAdderController(storage, relayerUrl)
     // Load userRequests from storage and emit that we have updated
     // @TODO
   }
