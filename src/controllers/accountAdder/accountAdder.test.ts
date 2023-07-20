@@ -8,7 +8,7 @@ import { networks } from '../../consts/networks'
 import { Storage } from '../../interfaces/storage'
 import { KeyIterator } from '../../libs/keyIterator/keyIterator'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
-import { AccountAdder } from './accountAdder'
+import { AccountAdderController } from './accountAdder'
 
 const providers = Object.fromEntries(
   networks.map((network) => [network.id, new JsonRpcProvider(network.rpcUrl)])
@@ -30,7 +30,7 @@ function produceMemoryStore(): Storage {
 
 const relayerUrl = 'http://localhost:1934'
 const callRelayer = relayerCall.bind({ url: relayerUrl })
-const accountAdder = new AccountAdder(produceMemoryStore(), relayerUrl)
+const accountAdder = new AccountAdderController(produceMemoryStore(), relayerUrl)
 const seedPhrase =
   'brisk rich glide impose category stuff company you appear remain decorate monkey'
 const privKey = '0x574f261b776b26b1ad75a991173d0e8ca2ca1d481bd7822b2b58b2ef8a969f12'

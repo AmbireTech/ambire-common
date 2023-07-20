@@ -7,11 +7,12 @@ import { Storage } from '../../interfaces/storage'
 import { getLegacyAccount, getSmartAccount } from '../../libs/account/account'
 import { getAccountState } from '../../libs/accountState/accountState'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
+import EventEmitter from '../eventEmitter'
 
 const PAGE_SIZE = 5
 
 type ExtendedAccount = Account & { usedOnNetworks: NetworkDescriptor[] }
-export class AccountAdder {
+export class AccountAdderController extends EventEmitter {
   #callRelayer: Function
 
   storage: Storage
@@ -23,6 +24,7 @@ export class AccountAdder {
 
   isReady: boolean = false
 
+  // This is only the index of the current page
   page: number = 1
 
   pageSize: number = PAGE_SIZE
@@ -31,7 +33,11 @@ export class AccountAdder {
 
   preselectedAccounts: Account[] = []
 
+  // The result of getPage
+  pageAddresses: ExtendedAccount[] = []
+
   constructor(_storage: Storage, _relayerUrl: string) {
+    super()
     this.storage = _storage
     this.#callRelayer = relayerCall.bind({ url: _relayerUrl })
   }
@@ -152,6 +158,7 @@ export class AccountAdder {
 
   selectAccount(account: Account) {
     this.selectedAccounts.push(account)
+    this.emitUpdate()
   }
 
   async deselectAccount(account: Account) {
@@ -160,6 +167,7 @@ export class AccountAdder {
 
     if (accIdx !== -1 && accPreselectedIdx === -1) {
       this.selectedAccounts = this.selectedAccounts.filter((_, i) => i !== accIdx)
+      this.emitUpdate()
     } else if (accPreselectedIdx !== -1) {
       throw new Error('accountAdder: a preselected account cannot be deselected')
     } else {
@@ -173,6 +181,7 @@ export class AccountAdder {
     this.selectedAccounts = []
 
     // TODO: add the newly created smart accounts to the relayer
+    // TODO: store the personalized data for each account on the relayer
     // should we add some data about the legacy accounts as well?
   }
 
@@ -184,13 +193,15 @@ export class AccountAdder {
     page: number
     networks: NetworkDescriptor[]
     providers: { [key: string]: JsonRpcProvider }
-  }): Promise<Account[]> {
+  }): Promise<void> {
     if (page <= 0) {
       throw new Error('accountAdder: page must be a positive number')
     }
 
     this.page = page
-    return this.iterateAccounts({ networks, providers })
+    const pageAddresses = await this.iterateAccounts({ networks, providers })
+    this.pageAddresses = pageAddresses
+    this.emitUpdate()
   }
 
   async getAccountByAddr({
@@ -240,6 +251,13 @@ export class AccountAdder {
     )
     return Promise.all(Object.entries(allUniqueOwned))
   }
+
+  personalizeAccount(updatedAccount: Account) {
+    const accIdx = this.selectedAccounts.findIndex((acc) => acc.addr === updatedAccount.addr)
+
+    this.selectedAccounts[accIdx] = updatedAccount
+    this.emitUpdate()
+  }
 }
 
-export default AccountAdder
+export default AccountAdderController
