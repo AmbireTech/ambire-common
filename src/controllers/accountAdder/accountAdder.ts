@@ -244,13 +244,6 @@ export class AccountAdderController extends EventEmitter {
     )
     return Promise.all(Object.entries(allUniqueOwned))
   }
-
-  personalizeAccount(updatedAccount: Account) {
-    const accIdx = this.selectedAccounts.findIndex((acc) => acc.addr === updatedAccount.addr)
-
-    this.selectedAccounts[accIdx] = updatedAccount
-    this.emitUpdate()
-  }
 }
 
 export default AccountAdderController
