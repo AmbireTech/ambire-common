@@ -193,7 +193,7 @@ export class AccountAdderController extends EventEmitter {
     page: number
     networks: NetworkDescriptor[]
     providers: { [key: string]: JsonRpcProvider }
-  }): Promise<void> {
+  }): Promise<ExtendedAccount[]> {
     if (page <= 0) {
       throw new Error('accountAdder: page must be a positive number')
     }
@@ -202,6 +202,7 @@ export class AccountAdderController extends EventEmitter {
     const pageAddresses = await this.iterateAccounts({ networks, providers })
     this.pageAddresses = pageAddresses
     this.emitUpdate()
+    return pageAddresses
   }
 
   async getAccountByAddr({

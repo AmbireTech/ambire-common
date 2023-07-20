@@ -69,10 +69,15 @@ describe('AccountAdder', () => {
     expect.assertions(2)
     const keyIterator = new KeyIterator(seedPhrase)
     accountAdder.init({ _keyIterator: keyIterator, _preselectedAccounts: [], _pageSize: 1 })
-    const accounts = await accountAdder.getPage({ page: 1, networks, providers })
-    // Page size is 1 but for each slot there should be one legacy and one smart acc
-    expect(accounts.length).toEqual(2)
-    expect(accounts[0].addr).toEqual(keyPublicAddress)
+    accountAdder.getPage({ page: 1, networks, providers })
+    await new Promise((resolve) => {
+      accountAdder.onUpdate(() => {
+        // Page size is 1 but for each slot there should be one legacy and one smart acc
+        expect(accountAdder.pageAddresses.length).toEqual(2)
+        expect(accountAdder.pageAddresses[0].addr).toEqual(keyPublicAddress)
+        resolve(null)
+      })
+    })
   })
   test('search for linked accounts', async () => {
     expect.assertions(1)
@@ -83,14 +88,12 @@ describe('AccountAdder', () => {
     expect(accounts.length).toEqual(0)
   })
   test('should select account', async () => {
-    expect.assertions(1)
     const keyIterator = new KeyIterator(seedPhrase)
     accountAdder.init({ _keyIterator: keyIterator, _preselectedAccounts: [], _pageSize: 1 })
     accountAdder.selectAccount(legacyAccount)
     expect(accountAdder.selectedAccounts[0].addr).toBe(keyPublicAddress)
   })
   test('should deselect account', async () => {
-    expect.assertions(1)
     accountAdder.deselectAccount(legacyAccount)
     expect(accountAdder.selectedAccounts[0]).toBe(undefined)
   })
