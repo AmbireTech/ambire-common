@@ -133,14 +133,22 @@ export function genericErc20Humanizer(accountOp: AccountOp, currentIr: Ir): [Ir,
 function shortenAddress(addr: string): string {
   return addr ? `${addr.slice(0, 5)}...${addr.slice(-3)}` : ''
 }
+
+// adds 'name' proeprty to visualization of addresses (needs initialHumanizer to work on unparsed transactions)
 export function namingHumanizer(accountOp: AccountOp, currentIr: Ir): [Ir, Promise<any>[]] {
   const newCalls = currentIr.calls.map((call) => {
     const newVisualization = call.fullVisualization?.map((v: any) => {
       return v.type === 'address'
         ? {
             ...v,
+            // in case of more sophisticated name resolutions
+            // new name function so it can be getName() || shortenAddress() ????????
             name:
-              accountOp.humanizerMeta?.names[v.address.toLowerCase()] || shortenAddress(v.address)
+              accountOp.humanizerMeta?.names[v.address.toLowerCase()] ||
+              (accountOp.humanizerMeta?.tokens[v.address.toLowerCase()]
+                ? `${accountOp.humanizerMeta?.tokens[v.address.toLowerCase()]?.[0]} contract`
+                : null) ||
+              shortenAddress(v.address)
           }
         : v
     })
@@ -150,6 +158,7 @@ export function namingHumanizer(accountOp: AccountOp, currentIr: Ir): [Ir, Promi
   return [newIr, []]
 }
 
+// goes over all transactions to provide basic visuzlization
 export function initialHumanizer(accountOp: AccountOp, currentIr: Ir): [Ir, Promise<any>[]] {
   const newCalls = currentIr.calls.map((call) => {
     let fullVisualization
