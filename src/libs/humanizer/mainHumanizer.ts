@@ -1,6 +1,7 @@
 import { ethers } from 'ethers'
 import { AccountOp } from '../accountOp/accountOp'
 import IERC20 from '../../../contracts/compiled/IERC20.json'
+import IERC721 from '../../../contracts/compiled/IERC721.json'
 
 function getLable(content: string) {
   return { type: 'lable', content }
@@ -14,6 +15,10 @@ function getAddress(address: string, name?: string) {
 
 function getToken(address: string, amount: bigint) {
   return { type: 'token', address, amount }
+}
+
+function getNft(address: string, id: bigint) {
+  return { type: 'nft', address, id }
 }
 /*
 // types of transactions to account for
@@ -59,7 +64,35 @@ export function callsToIr(accountOp: AccountOp): Ir {
   return { calls: irCalls }
 }
 
-// export function genericErc721Humanizer(account: AccountOp, currentIr: Ir): [Ir, Promise<any>[]] {}
+export function genericErc721Humanizer(accountOp: AccountOp, currentIr: Ir): [Ir, Promise<any>[]] {
+  // @TODO safety checks, some retured as promises
+  const iface = new ethers.Interface(IERC721.abi)
+  const matcher = {
+    [`${iface.getFunction('approve')?.selector}`]: (call: IrCall) => {
+      const args = iface.parseTransaction(call)?.args.toArray() || []
+      return args[0] === ethers.ZeroAddress
+        ? [getAction('Revoke approval'), getLable('for'), getNft(call.to, args[1])]
+        : [
+            getAction('Grant approval'),
+            getLable('for'),
+            getNft(call.to, args[1]),
+            getLable('to'),
+            getAddress(args[0])
+          ]
+    }
+  }
+
+  const newCalls = currentIr.calls.map((call) => {
+    return matcher[call.data.substring(0, 10)] // could do additional check if it is actually NFT contract
+      ? {
+          ...call,
+          fullVisualization: matcher[call.data.substring(0, 10)](call)
+        }
+      : call
+  })
+  const newIr = { calls: newCalls }
+  return [newIr, []]
+}
 
 export function genericErc20Humanizer(accountOp: AccountOp, currentIr: Ir): [Ir, Promise<any>[]] {
   // @TODO: check if ${to} is ERC20 (if not in available humanizer data - will be done asyncly and returned as promise)

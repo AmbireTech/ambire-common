@@ -8,7 +8,8 @@ import {
   Ir,
   genericErc20Humanizer,
   namingHumanizer,
-  initialHumanizer
+  initialHumanizer,
+  genericErc721Humanizer
 } from './mainHumanizer'
 
 // @НNOTE all tests pass regardless offunctionality
@@ -89,6 +90,22 @@ const transactions = {
       data: '0xa9059cbb00000000000000000000000046705dfff24256421a05d056c29e81bdc09723b8000000000000000000000000000000000000000000000000000000003b9aca00'
     }
   ],
+  erc721: [
+    // grant approval nft 1
+    {
+      to: '0x59468516a8259058bad1ca5f8f4bff190d30e066',
+      value: BigInt(0),
+      data: '0x095ea7b300000000000000000000000046705dfff24256421a05d056c29e81bdc09723b80000000000000000000000000000000000000000000000000000000000000001'
+    },
+    // revoke approval nft 1
+    {
+      to: '0x59468516a8259058bad1ca5f8f4bff190d30e066',
+      value: BigInt(0),
+      data: `0x095ea7b3000000000000000000000000${ethers.ZeroAddress.substring(
+        2
+      )}0000000000000000000000000000000000000000000000000000000000000001`
+    }
+  ],
   toKnownAddresses: [
     // ETH to uniswap (bad example, sending eth to contract)
     {
@@ -100,7 +117,7 @@ const transactions = {
     {
       to: '0xdac17f958d2ee523a2206206994597c13d831ec7',
       value: BigInt(0),
-      data: '0xa9059cbb0000000000000000000000007a250d5630b4cf539739df2c5dacb4c659f2488d000000000000000000000000000000000000000000000000000000003b9aca00'
+      data: '0xa9059cbb000000000000000000000000B674F3fd5F43464dB0448a57529eAF37F04cceA5000000000000000000000000000000000000000000000000000000003b9aca00'
     }
   ]
 }
@@ -156,12 +173,26 @@ describe('module tests', () => {
 
     expect(newCalls.length).toBe(transactions.toKnownAddresses.length)
     newCalls.forEach((c) => {
-      console.log(c.fullVisualization.find((v: any) => v.type === 'address'))
       expect(c.fullVisualization.find((v: any) => v.type === 'address')).toMatchObject({
         type: 'address',
         address: expect.anything(),
         name: expect.not.stringMatching(/^0x[a-fA-F0-9]{3}\.{3}[a-fA-F0-9]{3}$/)
       })
+    })
+  })
+  test('genericErc721Humanizer', () => {
+    accountOp.calls = [...transactions.erc721]
+    let ir = callsToIr(accountOp)
+    ;[ir] = initialHumanizer(accountOp, ir)
+    const [{ calls: newCalls }] = genericErc721Humanizer(accountOp, ir)
+
+    expect(newCalls.length).toBe(transactions.erc721.length)
+    newCalls.forEach((c) => {
+      console.log(c.fullVisualization)
+      // expect(c.fullVisualization.find((v: any) => v.type === 'address')).toMatchObject({
+      //   type: 'address',
+      //   address: expect.anything(),
+      //   name: expect.not.stringMatching(/^0x[a-fA-F0-9]{3}\.{3}[a-fA-F0-9]{3}$/)
     })
   })
 })
