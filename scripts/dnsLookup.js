@@ -12,10 +12,10 @@ async function getData(domain, type) {
 }
 
 async function run() {
-    // const textDomain = '20221208._domainkey.gmail.com'
-    // const prover = DNSProver.create("https://cloudflare-dns.com/dns-query")
-    // const result = await prover.queryWithProof('TXT', textDomain)
-    // console.log(result)
+    const textDomain = 'Google._domainKey.Ambire.com'
+    const prover = DNSProver.create("https://cloudflare-dns.com/dns-query")
+    const result = await prover.queryWithProof('TXT', textDomain)
+    console.log(result)
 
     // const domainName = '20221208._domainkey.gmail.com'
     // const type = 'TXT'
@@ -28,16 +28,16 @@ async function run() {
     // console.log(json)
 
     // const domainName = 'cyberciti.biz.'
-    const domainName = '20221208._domainkey.gmail.com'
-    const type = 'TXT'
-    const doValue = true
-    const result = await fetch(`https://dns.google/resolve?name=${domainName}&type=${type}&do=${doValue}`, {
-        headers: {
-            'Accept': 'application/dns-json'
-        }
-    })
-    const json = await result.json()
-    console.log(json)
+    // const domainName = 'Google._domainKey.Ambire.com'
+    // const type = 'TXT'
+    // const doValue = true
+    // const result = await fetch(`https://dns.google/resolve?name=${domainName}&type=${type}&do=${doValue}`, {
+    //     headers: {
+    //         'Accept': 'application/dns-json'
+    //     }
+    // })
+    // const json = await result.json()
+    // console.log(json)
 }
 
 run()
