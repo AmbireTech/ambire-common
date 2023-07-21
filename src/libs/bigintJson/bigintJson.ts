@@ -13,18 +13,16 @@
 
 export function stringify(obj: any): string {
   return JSON.stringify(obj, (key, value) => {
-    // Note: If we consider that concatenating `n` is not secure enough, we can include additional symbols
-    return typeof value === 'bigint' ? `${value.toString()}n` : value
+    return typeof value === 'bigint' ? { $bigint: value.toString() } : value
   })
 }
 
 export function parse(json: string) {
   return JSON.parse(json, (key, value) => {
-    // Validating for a numeric value, ending with n, i.e. `5000n`.
-    if (typeof value === 'string' && /^\d+n$/.test(value)) {
-      // Remove the last concatenated `n`
-      return BigInt(value.substr(0, value.length - 1))
+    if (value?.$bigint) {
+      return BigInt(value.$bigint)
     }
+
     return value
   })
 }

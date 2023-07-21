@@ -1,5 +1,5 @@
 import { describe, expect } from '@jest/globals'
-import { parse, stringify } from './bigintJson'
+import { stringify, parse } from './bigintJson'
 
 describe('bigintJson', () => {
   it('stringify/parse bigint object values', async () => {
@@ -8,6 +8,34 @@ describe('bigintJson', () => {
 
   it('stringify/parse bigint object array values', async () => {
     expect(parse(stringify({ num: [1n, 2n, 3n] }))).toEqual({ num: [1n, 2n, 3n] })
+  })
+
+  it('it stringify/parse 0n', async () => {
+    expect(parse(stringify({ num: 0n }))).toEqual({ num: 0n })
+  })
+
+  it('it stringify/parse deeply nested object', async () => {
+    const obj = {
+      op: {
+        calls: [
+          {
+            to: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+            value: BigInt(100),
+            data: '0xa9059cbb000000000000000000000000e5a4dad2ea987215460379ab285df87136e83bea00000000000000000000000000000000000000000000000000000000005040aa'
+          },
+          {
+            to: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+            value: BigInt(200),
+            data: '0xa9059cbb000000000000000000000000e5a4dad2ea987215460379ab285df87136e83bea00000000000000000000000000000000000000000000000000000000005040aa'
+          }
+        ]
+      },
+      tokens: [
+        { address: '0x', amount: 10n },
+        { address: '0xdac17f958d2ee523a2206206994597c13d831ec7', amount: 5n }
+      ]
+    }
+    expect(parse(stringify(obj))).toEqual(obj)
   })
 
   it("it doesn't cast integer numbers to bigint", async () => {
@@ -51,7 +79,7 @@ describe('bigintJson', () => {
 
     const end = Date.now()
 
-    // For 1k items, we expect no more of 50ms overhead
+    // For 1k items, we expect no more of 50ms processing
     expect(end - start).toBeLessThan(50)
   })
 })
