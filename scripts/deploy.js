@@ -1,5 +1,5 @@
 const { ethers, JsonRpcProvider } = require("ethers")
-const AmbireAccount = require("../artifacts/contracts/AmbireAccount.sol/AmbireAccount.json");
+const AmbireAccount = require("../contracts/compiled/AmbireAccount.json");
 require('dotenv').config();
 
 const polygonUrl = 'https://rpc.ankr.com/polygon'
