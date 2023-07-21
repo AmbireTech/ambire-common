@@ -3,7 +3,7 @@ import { AbiCoder, ethers, JsonRpcProvider } from 'ethers'
 import { describe, expect, test, jest } from '@jest/globals'
 import { Portfolio } from './portfolio'
 import { networks } from '../../consts/networks'
-import { AmbireAccount } from '../../../test/config'
+import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 
 describe('Portfolio', () => {
   const ethereum = networks.find((x) => x.id === 'ethereum')
