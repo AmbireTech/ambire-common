@@ -5,7 +5,8 @@ import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { AccountOp } from '../accountOp/accountOp'
 import { Account } from '../../interfaces/account'
 import Estimation from '../../../contracts/compiled/Estimation.json'
-import { AmbireAccount, AmbireAccountFactory } from '../../../test/config'
+import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
+import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFactory.json'
 
 export interface EstimateResult {
   gasUsed: bigint
