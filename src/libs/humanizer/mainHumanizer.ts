@@ -59,6 +59,8 @@ export function callsToIr(accountOp: AccountOp): Ir {
   return { calls: irCalls }
 }
 
+// export function genericErc721Humanizer(account: AccountOp, currentIr: Ir): [Ir, Promise<any>[]] {}
+
 export function genericErc20Humanizer(accountOp: AccountOp, currentIr: Ir): [Ir, Promise<any>[]] {
   // @TODO: check if ${to} is ERC20 (if not in available humanizer data - will be done asyncly and returned as promise)
   // @TODO: check if ${to} is contract when Transfer or transferFrom(_,contract,_)
