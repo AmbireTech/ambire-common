@@ -67,6 +67,19 @@ export function callsToIr(accountOp: AccountOp): Ir {
 export function genericErc721Humanizer(accountOp: AccountOp, currentIr: Ir): [Ir, Promise<any>[]] {
   // @TODO safety checks, some retured as promises
   const iface = new ethers.Interface(IERC721.abi)
+  const nftTransferVisualization = (call: IrCall) => {
+    const args = iface.parseTransaction(call)?.args.toArray() || []
+    return args[0] === accountOp.accountAddr
+      ? [getAction('Transfer'), getNft(call.to, args[2]), getLable('to'), getAddress(args[1])]
+      : [
+          getAction('Transfer'),
+          getNft(call.to, args[2]),
+          getLable('from'),
+          getAddress(args[0]),
+          getLable('to'),
+          getAddress(args[1])
+        ]
+  }
   const matcher = {
     [`${iface.getFunction('approve')?.selector}`]: (call: IrCall) => {
       const args = iface.parseTransaction(call)?.args.toArray() || []
@@ -79,7 +92,28 @@ export function genericErc721Humanizer(accountOp: AccountOp, currentIr: Ir): [Ir
             getLable('to'),
             getAddress(args[0])
           ]
-    }
+    },
+    [`${iface.getFunction('setApprovalForAll')?.selector}`]: (call: IrCall) => {
+      const args = iface.parseTransaction(call)?.args.toArray() || []
+      return args[1]
+        ? [
+            getAction('Grant approval'),
+            getLable('for all nfts'),
+            getNft(call.to, args[1]),
+            getLable('to'),
+            getAddress(args[0])
+          ]
+        : [getAction('Revoke approval'), getLable('for all nfts'), getAddress(args[0])]
+    },
+    // not in tests
+    [`${iface.getFunction('safeTransferFrom', ['address', 'address', 'uint256'])?.selector}`]:
+      nftTransferVisualization,
+    // [`${
+    //   iface.getFunction('safeTransferFrom', ['address', 'address', 'uint256', 'bytes'])
+    //     ?.selector
+    // }`]: nftTransferVisualization,
+    [`${iface.getFunction('transferFrom', ['address', 'address', 'uint256'])?.selector}`]:
+      nftTransferVisualization
   }
 
   const newCalls = currentIr.calls.map((call) => {
