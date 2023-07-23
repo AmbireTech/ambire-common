@@ -12,6 +12,8 @@ import {
   genericErc721Humanizer
 } from './mainHumanizer'
 
+const humanizerInfo = require('./humanizerInfo.json')
+
 // @НNOTE all tests pass regardless offunctionality
 const accountOp: AccountOp = {
   accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
@@ -153,11 +155,11 @@ const transactions = {
 }
 describe('module tests', () => {
   beforeEach(async () => {
-    const humanizerInfo = await (
-      await fetch(
-        'https://raw.githubusercontent.com/AmbireTech/ambire-constants/master/constants/humanizerInfo.json'
-      )
-    ).json()
+    // const humanizerInfo = await (
+    //   await fetch(
+    //     'https://raw.githubusercontent.com/AmbireTech/ambire-constants/master/constants/humanizerInfo.json'
+    //   )
+    // ).json()
     accountOp.humanizerMeta = humanizerInfo
     accountOp.calls = []
   })
