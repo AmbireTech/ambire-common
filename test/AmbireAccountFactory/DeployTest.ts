@@ -31,7 +31,7 @@ describe('AmbireAccountFactory tests', function () {
   })
   it('deploys the ambire account via the factory; no revert upon redeploy to same address', async function () {
     const [signer] = await ethers.getSigners()
-    const bytecode = AmbireAccount.bytecode
+    const bytecode = AmbireAccount.bin
     const accountAddr = getAmbireAccountAddress(factoryAddress, bytecode)
     await factoryContract.deploy(bytecode, deploySalt)
     const ambireAccount: any = new ethers.BaseContract(accountAddr, AmbireAccount.abi, signer)

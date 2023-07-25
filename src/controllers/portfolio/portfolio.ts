@@ -1,12 +1,12 @@
 import fetch from 'node-fetch'
 import { JsonRpcProvider } from 'ethers'
-import { Portfolio, GetOptions } from '../libs/portfolio/portfolio'
-import { Hints, PortfolioGetResult } from '../libs/portfolio/interfaces'
-import { Storage } from '../interfaces/storage'
-import { NetworkDescriptor } from '../interfaces/networkDescriptor'
-import { Account, AccountId } from '../interfaces/account'
-import { AccountOp } from '../libs/accountOp/accountOp'
-import { stringify } from '../libs/bigintJson/bigintJson'
+import { Portfolio, GetOptions } from '../../libs/portfolio/portfolio'
+import { Hints, PortfolioGetResult } from '../../libs/portfolio/interfaces'
+import { Storage } from '../../interfaces/storage'
+import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
+import { Account, AccountId } from '../../interfaces/account'
+import { AccountOp } from '../../libs/accountOp/accountOp'
+import { stringify } from '../../libs/bigintJson/bigintJson'
 
 type AccountState = {
   // network id
