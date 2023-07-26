@@ -1,4 +1,4 @@
-import { ethers, Provider } from 'ethers'
+import { Provider } from 'ethers'
 
 import { fromDescriptor } from '../deployless/deployless'
 import { getAccountDeployParams } from '../account/account'
@@ -12,7 +12,11 @@ export async function getAccountState(
   accounts: Account[],
   blockTag: string | number = 'latest'
 ): Promise<AccountOnchainState[]> {
-  const deploylessAccountState = fromDescriptor(provider, AmbireAccountState, !network.rpcNoStateOverride)
+  const deploylessAccountState = fromDescriptor(
+    provider,
+    AmbireAccountState,
+    !network.rpcNoStateOverride
+  )
 
   const args = accounts.map((account) => [
     account.addr,
@@ -37,7 +41,10 @@ export async function getAccountState(
       associatedKeys: Object.fromEntries(associatedKeys),
       isV2: accResult.isV2,
       scheduledRecoveries: accResult.scheduledRecoveries,
-      deployError: accounts[index].associatedKeys.length > 0 && accResult.associatedKeyPriviliges.length === 0
+      balance: accResult.balance,
+      isEOA: accResult.isEOA,
+      deployError:
+        accounts[index].associatedKeys.length > 0 && accResult.associatedKeyPriviliges.length === 0
     }
   })
 

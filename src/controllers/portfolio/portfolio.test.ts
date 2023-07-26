@@ -1,11 +1,11 @@
 import { describe, expect } from '@jest/globals'
 import { AbiCoder, ethers, JsonRpcProvider } from 'ethers'
 import { PortfolioController } from './portfolio'
-import { networks } from '../consts/networks'
-import { getNonce } from '../../test/helpers'
-import { TokenResult } from '../libs/portfolio'
-import { Storage } from '../interfaces/storage'
-import { AccountOp } from '../libs/accountOp/accountOp'
+import { networks } from '../../consts/networks'
+import { getNonce } from '../../../test/helpers'
+import { TokenResult } from '../../libs/portfolio'
+import { Storage } from '../../interfaces/storage'
+import { AccountOp } from '../../libs/accountOp/accountOp'
 
 // @TODO: maybe this should be shared with the rest of the tests?
 export function produceMemoryStore(): Storage {

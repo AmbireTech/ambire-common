@@ -16,6 +16,8 @@ struct AccountInfo {
     bytes32[] associatedKeyPriviliges;
     bool isV2;
     uint[] scheduledRecoveries;
+    uint256 balance;
+    bool isEOA; 
 }
 
 contract AmbireAccountState {
@@ -23,6 +25,12 @@ contract AmbireAccountState {
         accountResult = new AccountInfo[](accounts.length);
         for (uint i=0; i!=accounts.length; i++) {
             AccountInput memory account = accounts[i];
+            accountResult[i].balance = address(account.addr).balance;
+            // check for EOA
+            if (account.factory == address(0)) {
+                accountResult[i].isEOA = true;
+                continue;
+            }
             // is contract deployed
             if (address(account.addr).code.length > 0) {
                 accountResult[i].isDeployed = true;

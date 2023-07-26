@@ -97,7 +97,7 @@ export class Keystore {
   }
 
   async getKeyStoreUid() {
-    const uid = await this.storage.get('uid', null)
+    const uid = await this.storage.get('keyStoreUid', null)
     if (!uid) throw new Error('keystore: adding secret before get uid')
     return uid
   }
@@ -114,6 +114,7 @@ export class Keystore {
     if (aesEncrypted.cipherType !== CIPHER)
       throw Error(`keystore: unsupported cipherType ${aesEncrypted.cipherType}`)
     // @TODO: progressCallback?
+
     const key = await scrypt.scrypt(
       getBytesForSecret(secret),
       getBytes(scryptParams.salt),
@@ -187,9 +188,9 @@ export class Keystore {
     await this.storage.set('keystoreSecrets', secrets)
 
     // produce uid if one doesn't exist (should be created when the first secret is added)
-    if (!(await this.storage.get('uid', null))) {
+    if (!(await this.storage.get('keyStoreUid', null))) {
       const uid = keccak256(mainKey.key).slice(2, 34)
-      await this.storage.set('uid', uid)
+      await this.storage.set('keyStoreUid', uid)
     }
   }
 

@@ -24,6 +24,8 @@ export interface AccountOnchainState {
   accountAddr: string
   isDeployed: boolean
   nonce: number
-  associatedKeys: { [key: string]: string }
+  associatedKeysPriviliges: { [key: string]: string }
   deployError: boolean
+  balance: bigint
+  isEOA: boolean
 }
