@@ -1,11 +1,12 @@
 import fetch from 'node-fetch'
 import { JsonRpcProvider } from 'ethers'
-import { Portfolio, GetOptions } from '../libs/portfolio/portfolio'
-import { Hints, PortfolioGetResult } from '../libs/portfolio/interfaces'
-import { Storage } from '../interfaces/storage'
-import { NetworkDescriptor } from '../interfaces/networkDescriptor'
-import { Account, AccountId } from '../interfaces/account'
-import { AccountOp } from '../libs/accountOp/accountOp'
+import { Portfolio, GetOptions } from '../../libs/portfolio/portfolio'
+import { Hints, PortfolioGetResult } from '../../libs/portfolio/interfaces'
+import { Storage } from '../../interfaces/storage'
+import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
+import { Account, AccountId } from '../../interfaces/account'
+import { AccountOp } from '../../libs/accountOp/accountOp'
+import { stringify } from '../../libs/bigintJson/bigintJson'
 
 type AccountState = {
   // network id
@@ -144,8 +145,7 @@ export class PortfolioController {
         const simulatedAccountOps = pendingState[network.id]?.accountOps
 
         const forceUpdate =
-          opts?.forceUpdate ||
-          stringifyWithBigInt(currentAccountOps) !== stringifyWithBigInt(simulatedAccountOps)
+          opts?.forceUpdate || stringify(currentAccountOps) !== stringify(simulatedAccountOps)
 
         const [isSuccessfulLatestUpdate, isSuccessfulPendingUpdate] = await Promise.all([
           // Latest state update
@@ -199,15 +199,6 @@ export class PortfolioController {
 
     // console.log({ latest: this.latest, pending: this.pending })
   }
-}
-
-// By default, JSON.stringify doesn't stringifies BigInt.
-// Because of this, we are adding support for BigInt values with this utility function.
-// @TODO: move this into utils
-function stringifyWithBigInt(value: any): string {
-  return JSON.stringify(value, (key, value) =>
-    typeof value === 'bigint' ? value.toString() : value
-  )
 }
 
 // We already know that `results.tokens` and `result.collections` tokens have a balance (this is handled by the portfolio lib).
