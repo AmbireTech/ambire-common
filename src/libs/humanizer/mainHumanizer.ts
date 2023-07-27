@@ -3,24 +3,9 @@ import { AccountOp } from '../accountOp/accountOp'
 // @TODO use humanizer info
 import IERC20 from '../../../contracts/compiled/IERC20.json'
 import IERC721 from '../../../contracts/compiled/IERC721.json'
-
-function getLable(content: string) {
-  return { type: 'lable', content }
-}
-function getAction(content: string) {
-  return { type: 'action', content }
-}
-function getAddress(address: string, name?: string) {
-  return name ? { type: 'address', address, name } : { type: 'address', address }
-}
-
-function getToken(address: string, amount: bigint) {
-  return { type: 'token', address, amount }
-}
-
-function getNft(address: string, id: bigint) {
-  return { type: 'nft', address, id }
-}
+import { uniswapHumanizer } from './modules/Uniswap'
+import { IrCall, Ir } from './interfaces'
+import { getLable, getAction, getAddress, getNft, getToken } from './utils'
 /*
 // types of transactions to account for
 
@@ -42,16 +27,6 @@ function getNft(address: string, id: bigint) {
 // sending tokens to contracts
 // sending funds to unused addresses
 */
-export interface IrCall {
-  data: string
-  to: string
-  value: bigint
-  fullVisualization: any
-}
-
-export interface Ir {
-  calls: IrCall[]
-}
 
 export function callsToIr(accountOp: AccountOp): Ir {
   const irCalls: IrCall[] = accountOp.calls.map((call) => {
@@ -200,6 +175,7 @@ export function genericErc20Humanizer(accountOp: AccountOp, currentIr: Ir): [Ir,
   const newIr = { calls: newCalls }
   return [newIr, []]
 }
+
 function shortenAddress(addr: string): string {
   return addr ? `${addr.slice(0, 5)}...${addr.slice(-3)}` : ''
 }
@@ -257,7 +233,13 @@ export function initialHumanizer(accountOp: AccountOp, currentIr: Ir): [Ir, Prom
 }
 
 export async function humanize(accountOp: AccountOp) {
-  const humanizerModules = [initialHumanizer, genericErc20Humanizer, namingHumanizer]
+  // IDEA humanizer that adds {expected: } (should a txn have value or not, should txn be to contract or not to contract, add warning)
+  const humanizerModules = [
+    initialHumanizer,
+    genericErc20Humanizer,
+    uniswapHumanizer,
+    namingHumanizer
+  ]
 
   let currentIr: Ir = callsToIr(accountOp)
 
