@@ -27,7 +27,7 @@ export class EmailVault {
   private relayerUrl: string
 
   constructor(fetch: Function, relayerUrl: string) {
-    this.callRelayer = relayerCall.bind({ url: relayerUrl })
+    this.callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
     this.relayerUrl = relayerUrl
     this.fetch = fetch
   }

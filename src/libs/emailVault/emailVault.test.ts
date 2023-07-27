@@ -11,7 +11,7 @@ let email2: String
 
 // Relayer have to be start with NODE_ENV === 'testing' to can retrive the secret
 const relayerUrl = 'http://localhost:1934'
-const callRelayer = relayerCall.bind({ url: relayerUrl })
+const callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
 const emailVault = new EmailVault(fetch, relayerUrl)
 const errorPrefix = 'relayer call error:'
 let authKey: String
@@ -28,10 +28,10 @@ const initEmailVaultTest = async () => {
   email2 = `yosif+${Wallet.createRandom().address.slice(12, 20)}@ambire.com`.toLowerCase()
   const keys1 = await requestMagicLink(email, relayerUrl, fetch)
   authKey = keys1.key
-  authSecret = keys1.secret
+  authSecret = keys1.secret!
   const keys2 = await requestMagicLink(email2, relayerUrl, fetch)
   authKey2 = keys2.key
-  authSecret2 = keys2.secret
+  authSecret2 = keys2.secret!
   await callRelayer(`/email-vault/confirmationKey/${email}/${authKey}/${authSecret}`)
 }
 
@@ -41,7 +41,7 @@ describe('Email vault', () => {
       email = `yosif+${Wallet.createRandom().address.slice(12, 20)}@ambire.com`.toLowerCase()
       const result = await requestMagicLink(email, relayerUrl, fetch)
       authKey = result.key
-      authSecret = result.secret
+      authSecret = result.secret!
       await callRelayer(`/email-vault/confirmationKey/${email}/${authKey}/${authSecret}`)
     })
 
