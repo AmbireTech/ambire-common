@@ -60,7 +60,8 @@ describe('Main Controller ', () => {
   ]
 
   const storage = produceMemoryStore()
-  const relayerUrl = 'https://staging-relayer.ambire.com'
+  // const relayerUrl = 'https://staging-relayer.ambire.com'
+  const relayerUrl = 'http://localhost:1934'
   const email = 'emil@ambire.com'
   storage.set('accounts', accounts)
   let controller: MainController
@@ -95,7 +96,7 @@ describe('Main Controller ', () => {
   test('login with emailVault', async () => {
     controller.emailVault.getEmailVaultInfo(email)
     await new Promise((resolve) => controller.emailVault.onUpdate(() => resolve(null)))
-    // console.log(controller.emailVault.emailVaultStates)
+    console.log(controller.emailVault.emailVaultStates)
   })
 
   test('beckup keyStore secret emailVault', async () => {

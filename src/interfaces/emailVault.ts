@@ -6,7 +6,7 @@ export enum SecretType {
   keyBackup = 'keyBackup'
 }
 
-export interface EmailVaultSecrets {
+export interface EmailVaultSecret {
   key: string
   value?: string
   type: SecretType
@@ -38,7 +38,7 @@ export interface EmailVaultData {
   recoveryKey: string
   email: string
   availableAccounts: { [addr: string]: EmailVaultAccountInfo }
-  availableSecrets: { [key: string]: EmailVaultSecrets }
+  availableSecrets: { [key: string]: EmailVaultSecret }
   operations: Operation[]
   criticalError?: Error
   errors?: Error[]

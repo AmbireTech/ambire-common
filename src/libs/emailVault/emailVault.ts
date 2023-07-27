@@ -1,7 +1,7 @@
 import { relayerCall } from '../relayerCall/relayerCall'
 import {
   EmailVaultData,
-  EmailVaultSecrets,
+  EmailVaultSecret,
   RecoveryKey,
   Operation
 } from '../../interfaces/emailVault'
@@ -32,7 +32,7 @@ export class EmailVault {
     this.fetch = fetch
   }
 
-  async create(email: String, authKey: String): Promise<EmailVaultSecrets> {
+  async create(email: String, authKey: String): Promise<EmailVaultSecret> {
     return (await this.callRelayer(`/email-vault/create/${email}/${authKey}`)).data
   }
 
@@ -83,7 +83,7 @@ export class EmailVault {
     email: String,
     authKey: String,
     keyStoreUid: String
-  ): Promise<EmailVaultSecrets> {
+  ): Promise<EmailVaultSecret> {
     return (
       await this.callRelayer(
         `/email-vault/retrieveKeyStoreSecret/${email}/${keyStoreUid}/${authKey}`
@@ -109,7 +109,7 @@ export class EmailVault {
     email: String,
     authKey: String,
     keyAddress: String
-  ): Promise<EmailVaultSecrets> {
+  ): Promise<EmailVaultSecret> {
     return (
       await this.callRelayer(`/email-vault/retrieveKeyBackup/${email}/${keyAddress}/${authKey}`)
     ).data
