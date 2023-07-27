@@ -12,7 +12,7 @@ import { Key, Keystore } from '../../libs/keystore/keystore'
 import { AccountAdderController } from '../accountAdder/accountAdder'
 import { EmailVaultController } from '../emailVault'
 import EventEmitter from '../eventEmitter'
-import { PortfolioController } from '../portfolio'
+import { PortfolioController } from '../portfolio/portfolio'
 
 export type AccountStates = {
   [accountId: string]: {

@@ -1,14 +1,15 @@
+import fetch from 'node-fetch'
 import { describe, expect, test } from '@jest/globals'
 import { relayerCallUncaught } from './relayerCall'
 
 describe('relayerCallUncaught tests', () => {
   test('GET, pass no body,200', async () => {
-    const res = await relayerCallUncaught('https://httpstat.us/200')
+    const res = await relayerCallUncaught('https://httpstat.us/200', fetch)
 
     expect(res).toEqual({ success: false, data: '200 OK', status: 200, message: 'no json in res' })
   })
   test('GET, pass no body,404', async () => {
-    const res = await relayerCallUncaught('https://httpstat.us/404')
+    const res = await relayerCallUncaught('https://httpstat.us/404', fetch)
 
     expect(res).toEqual({
       success: false,
@@ -18,7 +19,7 @@ describe('relayerCallUncaught tests', () => {
     })
   })
   test('GET, pass no body, get body', async () => {
-    const res = await relayerCallUncaught('https://jsonplaceholder.typicode.com/posts/1')
+    const res = await relayerCallUncaught('https://jsonplaceholder.typicode.com/posts/1', fetch)
 
     expect(res).toEqual({
       success: true,
@@ -40,6 +41,7 @@ describe('relayerCallUncaught tests', () => {
     }
     const res = await relayerCallUncaught(
       'https://jsonplaceholder.typicode.com/posts',
+      fetch,
       'POST',
       body
     )
