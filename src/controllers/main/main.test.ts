@@ -93,7 +93,7 @@ describe('Main Controller ', () => {
   })
 
   test('login with emailVault', async () => {
-    controller.emailVault.login(email)
+    controller.emailVault.getEmailVaultInfo(email)
     await new Promise((resolve) => controller.emailVault.onUpdate(() => resolve(null)))
     // console.log(controller.emailVault.emailVaultStates)
   })

@@ -1,5 +1,10 @@
 import { relayerCall } from '../relayerCall/relayerCall'
-import { EmailVaultData, EmailVaultSecrets, RecoveryKey } from '../../interfaces/emailVault'
+import {
+  EmailVaultData,
+  EmailVaultSecrets,
+  RecoveryKey,
+  Operation
+} from '../../interfaces/emailVault'
 
 export interface Secret {
   key: String
@@ -35,6 +40,10 @@ export class EmailVault {
     return (await this.callRelayer(`/email-vault/getRecoveryKey/${email}/${authKey}`)).data
   }
 
+  async getSessionKey(email: String, authKey: String): Promise<string> {
+    return (await this.callRelayer(`/email-vault/emailVaultInfo/${email}/${authKey}`)).data
+  }
+
   async getEmailVaultInfo(email: String, authKey: String): Promise<EmailVaultData> {
     const result = (await this.callRelayer(`/email-vault/emailVaultInfo/${email}/${authKey}`)).data
     return {
@@ -46,6 +55,14 @@ export class EmailVault {
         result.availableSecrets.map((secret: any) => [secret.key, secret])
       )
     }
+  }
+
+  async operations(email: String, authKey: String, operations: Operation[]): Promise<Boolean> {
+    return (
+      await this.callRelayer(`/email-vault/addKeyStoreSecret/${email}/${authKey}`, 'POST', {
+        operations
+      })
+    ).success
   }
 
   async addKeyStoreSecret(

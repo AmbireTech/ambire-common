@@ -7,7 +7,7 @@ import { AccountOp, Call as AccountOpCall } from '../../libs/accountOp/accountOp
 import { PortfolioController } from '../portfolio'
 import { Keystore, Key } from '../../libs/keystore/keystore'
 import { networks } from '../../consts/networks'
-import EventEmitter from '../eventEmitter'
+import EventEmitter from '../../libs/eventEmitter/eventEmitter'
 import { getAccountState } from '../../libs/accountState/accountState'
 import { SignedMessage, UserRequest } from '../../interfaces/userRequest'
 import { estimate } from '../../libs/estimate/estimate'

@@ -36,6 +36,9 @@ const defaultOptions = {
     from: undefined
 };
 class Deployless {
+    get isLimitedAt24kbData() {
+        return !this.stateOverrideSupported;
+    }
     constructor(provider, abi, code, codeAtRuntime) {
         assert_1.default.ok(code.startsWith('0x'), 'contract code must start with 0x');
         this.contractBytecode = code;
@@ -46,9 +49,6 @@ class Deployless {
             this.stateOverrideSupported = true;
             this.contractRuntimeCode = codeAtRuntime;
         }
-    }
-    get isLimitedAt24kbData() {
-        return !this.stateOverrideSupported;
     }
     // this will detect whether the provider supports state override and also retrieve the actual code of the contract we are using
     async detectStateOverride() {
@@ -99,7 +99,7 @@ class Deployless {
                 from: opts.from,
                 gasPrice: opts?.gasPrice,
                 gasLimit: opts?.gasLimit,
-                data: checkDataSize(ethers_1.concat([
+                data: checkDataSize((0, ethers_1.concat)([
                     deploylessProxyBin,
                     abiCoder.encode(['bytes', 'bytes'], [this.contractBytecode, callData])
                 ]))
@@ -168,7 +168,7 @@ function parseErr(data) {
 }
 exports.parseErr = parseErr;
 function checkDataSize(data) {
-    if (ethers_1.getBytes(data).length >= 24576)
+    if ((0, ethers_1.getBytes)(data).length >= 24576)
         throw new Error('24kb call data size limit reached, use StateOverride mode');
     return data;
 }

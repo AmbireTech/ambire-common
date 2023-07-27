@@ -4,7 +4,8 @@ import { requestMagicLink } from '../libs/magicLink/magicLink'
 import { EmailVaultData, SecretType, EmailVaultSecrets } from '../interfaces/emailVault'
 import { Storage } from '../interfaces/storage'
 import { Keystore } from '../libs/keystore/keystore'
-import EventEmitter from './eventEmitter'
+import EventEmitter from '../libs/eventEmitter/eventEmitter'
+import { Polling } from '../libs/polling/polling'
 
 export enum EmailVaultState {
   Loading,
@@ -21,9 +22,14 @@ export type MagicLinkKey = {
 const RECOVERY_SECRET_ID = 'EmailVaultRecoverySecret'
 const EMAIL_VAULT_STORAGE_KEY = 'emailVault'
 const MAGIC_LINK_STORAGE_KEY = 'magicLinkKeys'
+const SESSION_KEYS_STORAGE_KEY = 'sessionKeys'
 
 export type MagicLinkKeys = {
   [email: string]: MagicLinkKey
+}
+
+export type SessionKeys = {
+  [email: string]: string
 }
 
 export class EmailVaultController extends EventEmitter {
@@ -38,6 +44,8 @@ export class EmailVaultController extends EventEmitter {
   #magicLinkLifeTime: number = 300000
 
   #magicLinkKeys: MagicLinkKeys = {}
+
+  #sessionKeys: SessionKeys = {}
 
   #fetch: Function
 
@@ -84,10 +92,18 @@ export class EmailVaultController extends EventEmitter {
     return EmailVaultState.Ready
   }
 
-  #verifiedMagicLinkKey(email: string) {
+  async #verifiedMagicLinkKey(email: string) {
     if (!this.#magicLinkKeys[email]) return
     this.#magicLinkKeys[email].confirmed = true
-    this.storage.set(MAGIC_LINK_STORAGE_KEY, this.#magicLinkKeys)
+    this.#sessionKeys[email] = await this.#emailVault.getSessionKey(
+      email,
+      this.#magicLinkKeys[email].key
+    )
+    await Promise.all([
+      this.storage.set(MAGIC_LINK_STORAGE_KEY, this.#magicLinkKeys),
+      this.storage.set(SESSION_KEYS_STORAGE_KEY, this.#sessionKeys),
+      this.getEmailVaultInfo(email)
+    ])
   }
 
   async #requestNewMagicLinkKey(email: string) {
@@ -102,6 +118,11 @@ export class EmailVaultController extends EventEmitter {
     return this.#magicLinkKeys[email]
   }
 
+  async #getSessionKey(email: string): Promise<string | null> {
+    await this.initialLoadPromise
+    return this.#sessionKeys[email]
+  }
+
   async #getMagicLinkKey(email: string): Promise<MagicLinkKey | null> {
     await this.initialLoadPromise
     const result = this.#magicLinkKeys[email]
@@ -112,7 +133,7 @@ export class EmailVaultController extends EventEmitter {
 
   async backupRecoveryKeyStoreSecret(email: string) {
     if (!this.emailVaultStates[email]) {
-      await this.login(email)
+      await this.getEmailVaultInfo(email)
     }
 
     const newSecret = crypto.randomBytes(32).toString('base64url')
@@ -125,14 +146,14 @@ export class EmailVaultController extends EventEmitter {
     if (magicKey.confirmed) {
       await this.#emailVault.addKeyStoreSecret(email, magicKey.key, keyStoreUid, newSecret)
     }
-    await this.polling(this.#addKeyStoreSecretProceed.bind(this), [
+    await this.oldPolling(this.#addKeyStoreSecretProceed.bind(this), [
       email,
       magicKey.key,
       keyStoreUid,
       newSecret
     ])
 
-    await this.getEmailVaultInfo(email)
+    // await this.getEmailVaultInfo(email, magicKey.key)
   }
 
   async #addKeyStoreSecretProceed(
@@ -157,13 +178,13 @@ export class EmailVaultController extends EventEmitter {
     }
 
     this.#isWaitingEmailConfirmation = false
-    this.#verifiedMagicLinkKey(email)
+    await this.#verifiedMagicLinkKey(email)
     return true
   }
 
   async recoverKeyStore(email: string) {
     if (!this.emailVaultStates[email]) {
-      await this.login(email)
+      await this.getEmailVaultInfo(email)
     }
     const keyStoreUid = await this.#keyStore.getKeyStoreUid()
     const availableSecrets = this.emailVaultStates[email].availableSecrets
@@ -191,7 +212,7 @@ export class EmailVaultController extends EventEmitter {
     if (key.confirmed) {
       return this.#getRecoverKeyStoreSecretProceed(email, uid)
     }
-    return this.polling(this.#getRecoverKeyStoreSecretProceed.bind(this), [email, uid])
+    return this.oldPolling(this.#getRecoverKeyStoreSecretProceed.bind(this), [email, uid])
   }
 
   async #getRecoverKeyStoreSecretProceed(email: string, uid: string) {
@@ -210,54 +231,113 @@ export class EmailVaultController extends EventEmitter {
       return false
     }
     this.#isWaitingEmailConfirmation = false
-    this.#verifiedMagicLinkKey(email)
+    await this.#verifiedMagicLinkKey(email)
     this.emitUpdate()
     return result
   }
 
-  async login(email: string) {
-    const existsMagicKey = await this.#getMagicLinkKey(email)
-
-    const key = existsMagicKey || (await this.#requestNewMagicLinkKey(email))
-    if (key.confirmed) {
-      await this.getEmailVaultInfo(email)
-    } else {
-      await this.polling(this.getEmailVaultInfo.bind(this), [email])
-    }
-  }
-
   async getEmailVaultInfo(email: string): Promise<boolean | null> {
-    this.#isWaitingEmailConfirmation = true
-    if (!this.#magicLinkKeys[email]) {
-      this.emitUpdate()
-      return false
+    const [existsSessionKey, existsMagicKey] = await Promise.all([
+      this.#getSessionKey(email),
+      this.#getMagicLinkKey(email)
+    ])
+
+    const magicLinkKey = existsMagicKey || (await this.#requestNewMagicLinkKey(email))
+    const key = existsSessionKey || magicLinkKey.key
+
+    let result: EmailVaultData | null
+
+    if (!!existsSessionKey || magicLinkKey.confirmed) {
+      result = await this.#emailVault.getEmailVaultInfo(email, key).catch(() => null)
+    } else {
+      this.#isWaitingEmailConfirmation = true
+      const polling = new Polling()
+      polling.onUpdate(() => {
+        if (polling.state.error.output.res.status === 401) {
+          this.#isWaitingEmailConfirmation = true
+          return null
+        }
+        if (polling.state.isError) return null // TODO add errors prop
+      })
+
+      result = await polling.exec(this.#emailVault.getEmailVaultInfo, [email, key])
     }
 
-    // ToDo if result not success
-    const result: EmailVaultData | null = await this.#emailVault
-      .getEmailVaultInfo(email, this.#magicLinkKeys[email].key)
-      .catch(() => null)
-
-    if (!result) {
-      this.emitUpdate()
-      return false
-    }
-
-    this.emailVaultStates[email] = result
+    this.emailVaultStates[email] = result!
 
     this.storage.set(EMAIL_VAULT_STORAGE_KEY, this.emailVaultStates)
     // this will trigger the update event
     this.#isWaitingEmailConfirmation = false
-    this.#verifiedMagicLinkKey(email)
+    if (!existsMagicKey && !magicLinkKey.confirmed) await this.#verifiedMagicLinkKey(email)
     this.emitUpdate()
     return true
   }
 
-  async polling(fn: Function, params: any) {
+  // async login(email: string) {
+  //   const [existsSessionKey, existsMagicKey] = await Promise.all([
+  //     this.#getSessionKey(email),
+  //     this.#getMagicLinkKey(email)
+  //   ])
+
+  //   const magicLinkKey = existsMagicKey || (await this.#requestNewMagicLinkKey(email))
+  //   const key = existsSessionKey || magicLinkKey.key
+  //   if (existsSessionKey || magicLinkKey.confirmed) {
+  //     await this.getEmailVaultInfo1(email, key)
+  //   } else {
+  //     await this.polling(this.getEmailVaultInfo1.bind(this), [email, key])
+  //   }
+  // }
+
+  // async getEmailVaultInfo1(email: string, key: string): Promise<boolean | null> {
+  //   this.#isWaitingEmailConfirmation = true
+
+  //   // ToDo if result not success
+  //   const result: EmailVaultData | null = await this.#emailVault
+  //     .getEmailVaultInfo(email, key)
+  //     .catch(() => null)
+
+  //   if (!result) {
+  //     this.emitUpdate()
+  //     return false
+  //   }
+
+  //   this.emailVaultStates[email] = result
+
+  //   this.storage.set(EMAIL_VAULT_STORAGE_KEY, this.emailVaultStates)
+  //   // this will trigger the update event
+  //   this.#isWaitingEmailConfirmation = false
+  //   await this.#verifiedMagicLinkKey(email)
+  //   this.emitUpdate()
+  //   return true
+  // }
+
+  async requestKeysSync(email: string, keys: string[]) {
+    const [existsMagicKey, keyStoreUid] = await Promise.all([
+      this.#getMagicLinkKey(email),
+      this.#keyStore.getKeyStoreUid()
+    ])
+
+    const magicLinkKey = existsMagicKey || (await this.#requestNewMagicLinkKey(email))
+    const authKey = magicLinkKey.key
+
+    const operations = keys.map((key) => ({
+      requestType: 'requestKeySync',
+      requester: keyStoreUid,
+      key
+    }))
+
+    if (magicLinkKey.confirmed) {
+      await this.#emailVault.operations(email, authKey, operations)
+    } else {
+      // await this.polling(this.getEmailVaultInfo.bind(this), [email, key])
+    }
+  }
+
+  async oldPolling(fn: Function, params: any) {
     setTimeout(async () => {
       const result = await fn(...params)
       if (result) return result
-      return this.polling(fn, params)
+      return this.oldPolling(fn, params)
     }, 2000)
   }
 }
