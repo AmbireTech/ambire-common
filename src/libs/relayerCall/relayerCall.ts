@@ -1,7 +1,5 @@
 /* eslint-disable no-prototype-builtins */
 
-import fetch from 'node-fetch'
-
 class RelayerError extends Error {
   public input: any
 
@@ -16,6 +14,7 @@ class RelayerError extends Error {
 
 export async function relayerCallUncaught(
   url: string,
+  fetch: Function,
   method: string = 'GET',
   body: any = null,
   headers: any = null
@@ -49,13 +48,16 @@ export async function relayerCallUncaught(
 }
 
 export async function relayerCall(
-  this: { url: string },
+  this: {
+    url: string
+    fetch: Function
+  },
   path: string,
   method: string = 'GET',
   body: any = null,
   headers: any = null
 ): Promise<any> {
-  const res = await relayerCallUncaught(this.url + path, method, body, headers)
+  const res = await relayerCallUncaught(this.url + path, this.fetch, method, body, headers)
   if (!res.success)
     throw new RelayerError(res.message, { url: this.url, path, method, body, headers }, { res })
   return res
