@@ -9,6 +9,7 @@ import { getAccountState } from '../../libs/accountState/accountState'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import EventEmitter from '../eventEmitter'
 
+const INITIAL_PAGE_INDEX = 1
 const PAGE_SIZE = 5
 
 type ExtendedAccount = Account & { usedOnNetworks: NetworkDescriptor[] }
@@ -22,10 +23,10 @@ export class AccountAdderController extends EventEmitter {
   // optional because there is default derivationPath for each keyIterator
   derivationPath?: string
 
-  isReady: boolean = false
+  isInitialized: boolean = false
 
   // This is only the index of the current page
-  page: number = 1
+  page: number = INITIAL_PAGE_INDEX
 
   pageSize: number = PAGE_SIZE
 
@@ -33,12 +34,13 @@ export class AccountAdderController extends EventEmitter {
 
   preselectedAccounts: Account[] = []
 
-  // The result of getPage
-  pageAddresses: ExtendedAccount[] = []
+  accountsLoading: boolean = false
 
-  linkedAccounts: { [key: string]: string }[] = []
+  linkedAccountsLoading: boolean = false
 
-  searchingLinkedAccounts: boolean = false
+  #calculatedAccounts: { account: ExtendedAccount; type: 'legacy' | 'smart'; slot: number }[] = []
+
+  #linkedAccounts: { account: ExtendedAccount; type: 'legacy'; slot: number }[] = []
 
   constructor(_storage: Storage, _relayerUrl: string) {
     super()
@@ -46,26 +48,35 @@ export class AccountAdderController extends EventEmitter {
     this.#callRelayer = relayerCall.bind({ url: _relayerUrl })
   }
 
+  get accountsOnPage(): {
+    account: ExtendedAccount
+    type: 'linked' | 'legacy' | 'smart'
+    slot: number
+  }[] {
+    // TODO:
+    return this.#calculatedAccounts
+  }
+
   init({
-    _keyIterator,
-    _preselectedAccounts,
-    _page,
-    _pageSize,
-    _derivationPath
+    keyIterator,
+    preselectedAccounts,
+    page,
+    pageSize,
+    derivationPath
   }: {
-    _keyIterator: KeyIterator
-    _preselectedAccounts: Account[]
-    _page?: number
-    _pageSize?: number
-    _derivationPath?: string
+    keyIterator: KeyIterator
+    preselectedAccounts: Account[]
+    page?: number
+    pageSize?: number
+    derivationPath?: string
   }): void {
-    this.#keyIterator = _keyIterator
-    this.preselectedAccounts = _preselectedAccounts
+    this.#keyIterator = keyIterator
+    this.preselectedAccounts = preselectedAccounts
     this.selectedAccounts = []
-    this.page = _page || 1
-    this.pageSize = _pageSize || PAGE_SIZE
-    this.derivationPath = _derivationPath
-    this.isReady = true
+    this.page = page || INITIAL_PAGE_INDEX
+    this.pageSize = pageSize || PAGE_SIZE
+    this.derivationPath = derivationPath
+    this.isInitialized = true
     this.emitUpdate()
   }
 
@@ -79,8 +90,10 @@ export class AccountAdderController extends EventEmitter {
     providers: { [key: string]: JsonRpcProvider }
   }): void {
     this.derivationPath = path
+    this.page = INITIAL_PAGE_INDEX
+    this.emitUpdate()
     // get the first page with the new derivationPath
-    this.getPage({ page: 1, networks, providers })
+    this.setPage({ page: INITIAL_PAGE_INDEX, networks, providers })
   }
 
   selectAccount(account: Account) {
@@ -102,7 +115,7 @@ export class AccountAdderController extends EventEmitter {
     }
   }
 
-  async getPage({
+  async setPage({
     page = this.page,
     networks,
     providers
@@ -110,31 +123,39 @@ export class AccountAdderController extends EventEmitter {
     page: number
     networks: NetworkDescriptor[]
     providers: { [key: string]: JsonRpcProvider }
-  }): Promise<ExtendedAccount[]> {
+  }): Promise<void> {
     if (page <= 0) {
       throw new Error('accountAdder: page must be a positive number')
     }
-
     this.page = page
-    const pageAddresses = await this.iterateAccounts({ networks, providers })
-    this.pageAddresses = pageAddresses
+    const calculatedAccounts = await this.#calculateAccounts({ networks, providers })
+    this.#calculatedAccounts = calculatedAccounts
     this.emitUpdate()
-    return pageAddresses
+    const linkedAccounts = await this.#searchForLinkedAccounts(
+      this.#calculatedAccounts.map((acc) => ({
+        ...acc.account
+      }))
+    )
   }
 
-  // inner func. When getting accounts call getPage instead
-  async iterateAccounts({
+  async #calculateAccounts({
     networks,
     providers
   }: {
     networks: NetworkDescriptor[]
     providers: { [key: string]: JsonRpcProvider }
-  }): Promise<ExtendedAccount[]> {
-    if (!this.#keyIterator || !this.isReady) {
+  }): Promise<
+    {
+      account: ExtendedAccount
+      type: 'legacy' | 'smart'
+      slot: number
+    }[]
+  > {
+    if (!this.#keyIterator || !this.isInitialized) {
       throw new Error('accountAdder: keyIterator not initialized')
     }
 
-    const accounts: Account[] = []
+    const accounts: { account: Account; type: 'legacy' | 'smart'; slot: number }[] = []
 
     const startIdx = (this.page - 1) * this.pageSize
     const endIdx = (this.page - 1) * this.pageSize + (this.pageSize - 1)
@@ -144,14 +165,14 @@ export class AccountAdderController extends EventEmitter {
       : await this.#keyIterator.retrieve(startIdx, endIdx, this.derivationPath)
 
     // eslint-disable-next-line no-restricted-syntax
-    for (const key of keys) {
+    for (const [index, key] of keys.entries()) {
       // eslint-disable-next-line no-await-in-loop
       const smartAccount = await getSmartAccount(key)
-      accounts.push(getLegacyAccount(key))
-      accounts.push(smartAccount)
+      accounts.push({ account: getLegacyAccount(key), type: 'legacy', slot: index + 1 })
+      accounts.push({ account: smartAccount, type: 'smart', slot: index + 1 })
     }
 
-    const accountsWithNetworks = await this.getAccountsUsedNetworks({
+    const accountsWithNetworks = await this.#getAccountsUsedOnNetworks({
       accounts,
       networks,
       providers
@@ -162,17 +183,19 @@ export class AccountAdderController extends EventEmitter {
 
   // inner func
   // eslint-disable-next-line class-methods-use-this
-  async getAccountsUsedNetworks({
+  async #getAccountsUsedOnNetworks({
     accounts,
     networks,
     providers
   }: {
-    accounts: Account[]
+    accounts: { account: Account; type: 'legacy' | 'smart'; slot: number }[]
     networks: NetworkDescriptor[]
     providers: { [key: string]: JsonRpcProvider }
-  }): Promise<ExtendedAccount[]> {
-    const accountsObj: { [key: string]: ExtendedAccount } = Object.fromEntries(
-      accounts.map((a) => [a.addr, { ...a, usedOnNetworks: [] }])
+  }): Promise<{ account: ExtendedAccount; type: 'legacy' | 'smart'; slot: number }[]> {
+    const accountsObj: {
+      [key: string]: { account: ExtendedAccount; type: 'legacy' | 'smart'; slot: number }
+    } = Object.fromEntries(
+      accounts.map((a) => [a.account.addr, { ...a, account: { ...a.account, usedOnNetworks: [] } }])
     )
 
     Object.keys(providers).forEach(async (providerKey: NetworkId) => {
@@ -181,8 +204,8 @@ export class AccountAdderController extends EventEmitter {
         const accountState = await getAccountState(
           providers[providerKey],
           network,
-          accounts.map((acc: Account) => ({
-            ...acc,
+          accounts.map((acc: { account: Account; type: 'legacy' | 'smart'; slot: number }) => ({
+            ...acc.account,
             creation: {
               factoryAddr: '0x0000000000000000000000000000000000000000',
               bytecode: '0x00',
@@ -192,7 +215,7 @@ export class AccountAdderController extends EventEmitter {
         )
         accountState.forEach((acc: AccountOnchainState) => {
           if (acc.balance > BigInt(0) || acc.nonce > 0) {
-            accountsObj[acc.accountAddr].usedOnNetworks.push(network)
+            accountsObj[acc.accountAddr].account.usedOnNetworks.push(network)
           }
         })
       }
@@ -201,39 +224,8 @@ export class AccountAdderController extends EventEmitter {
     return Object.values(accountsObj)
   }
 
-  async getAccountByAddr({
-    idAddr,
-    signerAddr,
-    authKey
-  }: {
-    idAddr: string
-    signerAddr: string
-    authKey: string
-  }) {
-    // In principle, we need these values to be able to operate in relayerless mode,
-    // so we just store them in all cases
-    // Plus, in the future this call may be used to retrieve other things
-    const { salt, identityFactoryAddr, baseIdentityAddr, bytecode } = await this.#callRelayer(
-      `/identity/${idAddr}`,
-      'GET',
-      {
-        authKey
-      }
-    ).then((r: any) => r.json())
-    if (!(salt && identityFactoryAddr && baseIdentityAddr && bytecode))
-      throw new Error(`Incomplete data from relayer for ${idAddr}`)
-    return {
-      addr: idAddr,
-      salt,
-      identityFactoryAddr,
-      baseIdentityAddr,
-      bytecode,
-      signer: { address: signerAddr }
-    }
-  }
-
-  async searchForLinkedAccounts(accounts: Account[]) {
-    this.searchingLinkedAccounts = true
+  async #searchForLinkedAccounts(accounts: Account[]) {
+    this.linkedAccountsLoading = true
     this.emitUpdate()
     await Promise.all(
       accounts.map(async (acc: Account) => {
@@ -241,13 +233,14 @@ export class AccountAdderController extends EventEmitter {
           `/identity/any/by-owner/${acc.addr}?includeFormerlyOwned=true`
         )
         const privEntries = Object.entries(await rest)
+        console.log('privEntries', privEntries)
         privEntries.forEach(([entryId, _]) => {
-          this.linkedAccounts.push({ [getAddress(acc.addr)]: entryId })
-          this.emitUpdate()
+          // this.#linkedAccounts.push({ [getAddress(acc.addr)]: entryId })
         })
       })
-    ).then(() => {
-      this.searchingLinkedAccounts = false
+    ).then((linkedAccs) => {
+      console.log('linkedAccs', linkedAccs)
+      this.linkedAccountsLoading = false
       this.emitUpdate()
     })
   }
