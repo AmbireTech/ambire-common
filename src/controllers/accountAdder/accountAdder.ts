@@ -1,4 +1,4 @@
-import { getAddress, JsonRpcProvider } from 'ethers'
+import { JsonRpcProvider } from 'ethers'
 import { KeyIterator } from 'interfaces/keyIterator'
 import { NetworkDescriptor, NetworkId } from 'interfaces/networkDescriptor'
 
@@ -128,8 +128,12 @@ export class AccountAdderController extends EventEmitter {
       throw new Error('accountAdder: page must be a positive number')
     }
     this.page = page
+    this.#calculatedAccounts = []
+    this.#linkedAccounts = []
+    this.accountsLoading = true
     const calculatedAccounts = await this.#calculateAccounts({ networks, providers })
     this.#calculatedAccounts = calculatedAccounts
+    this.accountsLoading = false
     this.emitUpdate()
     const linkedAccounts = await this.#searchForLinkedAccounts(
       this.#calculatedAccounts.map((acc) => ({
