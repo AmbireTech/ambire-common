@@ -79,12 +79,21 @@ describe('AccountAdder', () => {
     let counter = 0
     await new Promise((resolve) => {
       accountAdder.onUpdate(() => {
-        if (counter < 2) {
-          // No linked accounts yet. Only legacy and smart
+        if (counter === 0) {
+          // First emit is triggered when account calculation is done
           expect(accountAdder.accountsOnPage.length).toEqual(2)
-        } else {
-          // On the third emit there have to be linked accounts fetched
+          expect(accountAdder.accountsLoading).toBe(false)
+          expect(accountAdder.linkedAccountsLoading).toBe(false)
+        }
+        if (counter === 1) {
+          // This emit should start the searching for linked accounts
+          expect(accountAdder.accountsOnPage.length).toEqual(2)
+          expect(accountAdder.linkedAccountsLoading).toBe(true)
+        }
+        if (counter >= 2) {
+          // On the third emit there should be linked accounts fetched
           expect(accountAdder.accountsOnPage.length).toEqual(3)
+          expect(accountAdder.linkedAccountsLoading).toBe(false)
           resolve(null)
         }
         counter++
