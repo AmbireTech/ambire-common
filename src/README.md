@@ -38,9 +38,17 @@ See also: https://medium.com/swlh/what-is-the-best-state-container-library-for-r
 Classes for controllers are supposed to be stateful and be used directly in the application, which means:
 - they should expose all state needed for rendering
 - they should be responsible for the business logic but not responsible for app logic (for example, business logic is when to hide tokens from the portfolio but view logic is when to update the portfolio)
-- they should avoid public methods that return values, and instead everything should be updated in the state
+- they should avoid public methods that return values, and instead everything should be updated in the state; the user of the controller (the application or background process) **must never** expect/consume a result from a controller function
+  - there may be internal functions that return results
+  - there must not be public functions that return results (but they may be async in case they need to perform async work)
+- they may keep internal state that is "hidden" (using `#` for private properties and functions) that is more convenient to work with, but expose a different state shape via getters to the application
+- there should be *unidirectionality*: the main controller may listen to `onUpdate` from it's children, but the opposite must not happen; when a child controller needs to learn some new information that the main controller handles, the main controller should call the child's update function and pass that information along
+- controllers should not do any work by themselves (implicit intervals, timeouts, etc.); it's acceptable to do long-term async work (like polling) if triggered by the user or the application; if the controller needs to be periodically updated, expose an `update` or `refresh` function that the application or parent controller must call
 - errors that are fatal and related to unexpected/non-recoverable state should just `throw`, while errors that may happen in realistic conditions (eg async errors when calling `provider`) should all be caught
 - methods may be asynchronous for two purposes: 1) using `await` in them and 2) knowing when their work is done in tests; those methods should absolutely not be awaited in the UI, and instead we should rely on update events and state changes
+- `emitUpdate` should be called by each controller every time it updates it's own properties; it may be called onlhy once for multiple property updates as long as they happen in the same tick
+- the controllers must not take any rich objects (instances of non-standard JS types) as arguments, every input should be fully serializable
+- do not be afraid of nesting data for the controller state - sometimes it makes a lot of sense (eg pagination-speciffic properties)
 
 Here are some related design decisions:
 * The main controller is a singleton master controller, and all other controllers are supposed to be initialized by it: this is due to the fact that the app will have initialization/startup logic, and we **do not want to handle this** in the app itself. Whether the app is loaded will be reflected in the state exposed by the main controller.
