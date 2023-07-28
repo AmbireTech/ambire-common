@@ -1,14 +1,33 @@
 import { JsonRpcProvider } from 'ethers'
 import { Account } from 'interfaces/account'
+import fetch from 'node-fetch'
 
 /* eslint-disable no-new */
-import { describe, expect, test } from '@jest/globals'
+import { describe, expect, jest, test } from '@jest/globals'
 
 import { networks } from '../../consts/networks'
 import { Storage } from '../../interfaces/storage'
-import { getLegacyAccount } from '../../libs/account/account'
 import { KeyIterator } from '../../libs/keyIterator/keyIterator'
 import { AccountAdderController } from './accountAdder'
+
+jest.mock('node-fetch', () => {
+  return jest.fn((url: any) => {
+    // @ts-ignore
+    const { Response } = jest.requireActual('node-fetch')
+    if (url.includes('/identity/any/by-owner/')) {
+      const body = JSON.stringify({
+        '0x87C825a897C65F4E5D8FA2FECE428c41BbfdB772':
+          '0x0000000000000000000000000000000000000000000000000000000000000001'
+      })
+      const headers = { status: 200 }
+
+      return Promise.resolve(new Response(body, headers))
+    }
+
+    // @ts-ignore
+    return jest.requireActual('node-fetch')(url)
+  })
+})
 
 const providers = Object.fromEntries(
   networks.map((network) => [network.id, new JsonRpcProvider(network.rpcUrl)])
@@ -29,7 +48,18 @@ function produceMemoryStore(): Storage {
 }
 
 const relayerUrl = 'https://relayer.ambire.com'
-const accountAdder = new AccountAdderController(produceMemoryStore(), relayerUrl)
+// const fetch = () =>
+//   Promise.resolve({
+//     status: 200,
+//     success: true
+//   })
+
+const accountAdder = new AccountAdderController({
+  storage: produceMemoryStore(),
+  relayerUrl,
+  fetch
+})
+
 const seedPhrase =
   'brisk rich glide impose category stuff company you appear remain decorate monkey'
 const privKey = '0x574f261b776b26b1ad75a991173d0e8ca2ca1d481bd7822b2b58b2ef8a969f12'
