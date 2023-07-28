@@ -1,7 +1,8 @@
 import { ethers } from 'ethers'
-import { AccountOp } from '../../accountOp/accountOp'
-import { Ir, IrCall } from '../interfaces'
-import { getAction, getLable, getToken, getRecipientText, parsePath, getAddress } from '../utils'
+import { getAction, getLable, getToken, getRecipientText, parsePath, getAddress } from '../../utils'
+
+import { AccountOp } from '../../../accountOp/accountOp'
+import { IrCall } from '../../interfaces'
 
 const deadlineText = (deadlineSecs: number, mined = false) => {
   if (mined) return getLable('')
@@ -362,15 +363,4 @@ const uniV3Mappinig = (humanizerInfo: any) => {
   }
 }
 
-export function uniswapHumanizer(accountOp: AccountOp, currentIr: Ir): [Ir, Promise<any>[]] {
-  // @TODO: Unify using imported abis vs abis from accountOp
-  const matcher = {
-    ...uniV3Mappinig(accountOp.humanizerMeta),
-    ...uniV32Mapping(accountOp.humanizerMeta)
-  }
-  const newCalls = currentIr.calls.map((call: IrCall) => {
-    return { ...call, fullVisualization: matcher[call.data.substring(0, 10)](accountOp, call) }
-  })
-  const newIr = { calls: newCalls }
-  return [newIr, []]
-}
+export { uniV32Mapping, uniV3Mappinig }
