@@ -5,9 +5,14 @@ import { Interface } from 'ethers/lib/utils'
 
 import networks from '../../constants/networks'
 import { HumanizerInfoType } from '../../hooks/useConstants'
-import { formatNativeTokenAddress, token } from '../humanReadableTransactions'
+import { formatNativeTokenAddress, nativeToken, token } from '../humanReadableTransactions'
 
 const getNetwork = (chainId) => networks.find((n) => n.chainId === Number(chainId)).name
+const ZERO_ADDRESS = `0x${'0'.repeat(40)}`
+const getTokenDetails = (humInfo, network, tokenAddress, amount, extended = false) =>
+  tokenAddress === ZERO_ADDRESS
+    ? nativeToken(network, amount, extended)
+    : token(humInfo, tokenAddress, amount, extended)
 
 const MovrMapping = (humanizerInfo: HumanizerInfoType) => {
   const MovrAnyswapInterface = new Interface(humanizerInfo.abis.MovrAnyswap)
@@ -29,13 +34,16 @@ const MovrMapping = (humanizerInfo: HumanizerInfoType) => {
       const { inputToken } = middlewareRequest
       const { inputToken: outputToken } = bridgeRequest
       return [
-        `Transfer ${token(
+        `Transfer ${getTokenDetails(
           humanizerInfo,
+          network,
           formatNativeTokenAddress(inputToken),
           amount
-        )} to ${getNetwork(toChainId)} for ${token(
+        )} to ${getNetwork(toChainId)} for ${getTokenDetails(
           humanizerInfo,
-          formatNativeTokenAddress(outputToken)
+          network,
+          formatNativeTokenAddress(outputToken),
+          null
         )}`
       ]
     }
