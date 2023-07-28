@@ -32,4 +32,28 @@ const parsePath = (pathBytes: any) => {
   return path
 }
 
-export { getLable, getAction, getAddress, getToken, getNft, getRecipientText, parsePath }
+const getDeadlineText = (deadlineSecs: number, mined = false) => {
+  if (mined) return getLable('')
+  const minute = 60000
+  const deadline = deadlineSecs * 1000
+  const diff = deadline - Date.now()
+  if (diff < 0 && diff > -minute * 2) return getLable(', expired just now')
+  // Disabled this: this is a bit of a hack cause we don't want it to show for mined txns
+  // we don't really need it for pending ones, simply because we'll show the big error message instead
+  // if (diff < 0) return getLable(`, expired ${Math.floor(-diff / minute)} minutes ago`
+  if (diff < 0) return getLable('')
+  if (diff < minute) return getLable(', expires in less than a minute')
+  if (diff < 10 * minute) return getLable(`, expires in ${Math.floor(diff / minute)} minutes`)
+  return getLable('')
+}
+
+export {
+  getLable,
+  getAction,
+  getAddress,
+  getToken,
+  getNft,
+  getRecipientText,
+  parsePath,
+  getDeadlineText
+}

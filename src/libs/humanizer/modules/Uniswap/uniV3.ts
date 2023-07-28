@@ -1,23 +1,16 @@
 import { ethers } from 'ethers'
-import { getAction, getLable, getToken, getRecipientText, parsePath, getAddress } from '../../utils'
+import {
+  getAction,
+  getLable,
+  getToken,
+  getRecipientText,
+  parsePath,
+  getAddress,
+  getDeadlineText
+} from '../../utils'
 
 import { AccountOp } from '../../../accountOp/accountOp'
 import { IrCall } from '../../interfaces'
-
-const deadlineText = (deadlineSecs: number, mined = false) => {
-  if (mined) return getLable('')
-  const minute = 60000
-  const deadline = deadlineSecs * 1000
-  const diff = deadline - Date.now()
-  if (diff < 0 && diff > -minute * 2) return getLable(', expired just now')
-  // Disabled this: this is a bit of a hack cause we don't want it to show for mined txns
-  // we don't really need it for pending ones, simply because we'll show the big error message instead
-  // if (diff < 0) return getLable(`, expired ${Math.floor(-diff / minute)} minutes ago`
-  if (diff < 0) return getLable('')
-  if (diff < minute) return getLable(', expires in less than a minute')
-  if (diff < 10 * minute) return getLable(`, expires in ${Math.floor(diff / minute)} minutes`)
-  return getLable('')
-}
 
 // @TODO func selectors for both routers seem to be the same
 
@@ -44,7 +37,7 @@ const uniV32Mapping = (humanizerInfo: any) => {
         .flat()
         .filter((x: any) => x)
       return (parsed.length ? parsed : getLable('Unknown Uni V3 interaction'))
-        .concat([deadlineText(Number(deadline))])
+        .concat([getDeadlineText(Number(deadline))])
         .filter((x: any) => x)
     },
     // 0xac9650d8
@@ -287,7 +280,7 @@ const uniV3Mappinig = (humanizerInfo: any) => {
         getLable('for at least'),
         getToken(params.tokenOut, params.amountOutMin),
         ...getRecipientText(accountOp.accountAddr, params.recipient),
-        deadlineText(params.deadline)
+        getDeadlineText(params.deadline)
       ]
     },
     // 0xc04b8d59
@@ -300,7 +293,7 @@ const uniV3Mappinig = (humanizerInfo: any) => {
         getLable('for at least'),
         getToken(path[path.length - 1], params.amountOutMinimum),
         getRecipientText(accountOp.accountAddr, params.recipient),
-        deadlineText(params.deadline)
+        getDeadlineText(params.deadline)
       ]
     },
     // 0xdb3e2198
@@ -315,7 +308,7 @@ const uniV3Mappinig = (humanizerInfo: any) => {
         getLable('for'),
         getToken(params.tokenOut, params.amountOut),
         getRecipientText(accountOp.accountAddr, params.recipient),
-        deadlineText(params.deadline)
+        getDeadlineText(params.deadline)
       ]
     },
     // 0xf28c0498
@@ -328,7 +321,7 @@ const uniV3Mappinig = (humanizerInfo: any) => {
         getLable('for'),
         getToken(path[0], params.amountOut),
         getRecipientText(accountOp.accountAddr, params.recipient),
-        deadlineText(params.deadline)
+        getDeadlineText(params.deadline)
       ]
     },
     // @NOTE moaybe ethers.ZeroAddress should be replaced with WETH address in all unwraps?
