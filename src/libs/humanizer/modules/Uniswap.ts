@@ -25,6 +25,7 @@ const uniV32Mapping = (humanizerInfo: any) => {
   const ifaceV32 = new ethers.Interface(humanizerInfo.abis.UniV3Router2)
   return {
     // uint256 is deadline
+    // 0x5ae401dc
     [`${ifaceV32.getFunction('multicall(uint256,bytes[])')?.selector}`]: (
       accountOp: AccountOp,
       call: IrCall
@@ -45,6 +46,7 @@ const uniV32Mapping = (humanizerInfo: any) => {
         .concat([deadlineText(Number(deadline))])
         .filter((x: any) => x)
     },
+    // 0xac9650d8
     [`${ifaceV32.getFunction('multicall(bytes[])')?.selector}`]: (
       accountOp: AccountOp,
       call: IrCall
@@ -64,6 +66,7 @@ const uniV32Mapping = (humanizerInfo: any) => {
       return parsed.length ? parsed : getLable('Unknown Uni V3 interaction')
     },
     // bytes32 is prevBlockHash
+    // 0x1f0464d1
     [`${ifaceV32.getFunction('multicall(bytes32, bytes[])')?.selector}`]: (
       accountOp: AccountOp,
       call: IrCall
@@ -85,6 +88,7 @@ const uniV32Mapping = (humanizerInfo: any) => {
       )
     },
     // NOTE: selfPermit is not supported cause it requires an ecrecover signature
+    // 0x04e45aaf
     [`${ifaceV32.getFunction('exactInputSingle')?.selector}`]: (
       accountOp: AccountOp,
       call: IrCall
@@ -99,6 +103,7 @@ const uniV32Mapping = (humanizerInfo: any) => {
         ...getRecipientText(accountOp.accountAddr, params.recipient)
       ]
     },
+    // 0xb858183f
     [`${ifaceV32.getFunction('exactInput')?.selector}`]: (accountOp: AccountOp, call: IrCall) => {
       const [params] = ifaceV32.parseTransaction(call)?.args || []
       const path = parsePath(params.path)
@@ -110,6 +115,7 @@ const uniV32Mapping = (humanizerInfo: any) => {
         ...getRecipientText(accountOp.accountAddr, params.recipient)
       ]
     },
+    // 0x5023b4df
     [`${ifaceV32.getFunction('exactOutputSingle')?.selector}`]: (
       accountOp: AccountOp,
       call: IrCall
@@ -123,6 +129,7 @@ const uniV32Mapping = (humanizerInfo: any) => {
         ...getRecipientText(accountOp.accountAddr, params.recipient)
       ]
     },
+    // 0x09b81346
     [`${ifaceV32.getFunction('exactOutput')?.selector}`]: (accountOp: AccountOp, call: IrCall) => {
       const [params] = ifaceV32.parseTransaction(call)?.args || []
       const path = parsePath(params.path)
@@ -134,6 +141,7 @@ const uniV32Mapping = (humanizerInfo: any) => {
         ...getRecipientText(accountOp.accountAddr, params.recipient)
       ]
     },
+    // 0x42712a67
     [`${ifaceV32.getFunction('swapTokensForExactTokens')?.selector}`]: (
       accountOp: AccountOp,
       call: IrCall
@@ -148,6 +156,7 @@ const uniV32Mapping = (humanizerInfo: any) => {
         ...getRecipientText(accountOp.accountAddr, to)
       ]
     },
+    // 0x472b43f3
     [`${ifaceV32.getFunction('swapExactTokensForTokens')?.selector}`]: (
       accountOp: AccountOp,
       call: IrCall
@@ -162,6 +171,7 @@ const uniV32Mapping = (humanizerInfo: any) => {
         ...getRecipientText(accountOp.accountAddr, to)
       ]
     },
+    // 0x49616997
     [`${ifaceV32.getFunction('unwrapWETH9(uint256)')?.selector}`]: (
       accountOp: AccountOp,
       call: IrCall
@@ -170,6 +180,7 @@ const uniV32Mapping = (humanizerInfo: any) => {
       return [getAction('Unwrap at least'), getToken(ethers.ZeroAddress, amountMin)]
     },
     // address is recipient
+    // 0x49404b7c
     [`${ifaceV32.getFunction('unwrapWETH9(uint256,address)')?.selector}`]: (
       accountOp: AccountOp,
       call: IrCall
@@ -181,6 +192,7 @@ const uniV32Mapping = (humanizerInfo: any) => {
         ...getRecipientText(accountOp.accountAddr, recipient)
       ]
     },
+    // 0xe90a182f
     [`${ifaceV32.getFunction('sweepToken(address,uint256)')?.selector}`]: (
       accountOp: AccountOp,
       call: IrCall
@@ -188,6 +200,7 @@ const uniV32Mapping = (humanizerInfo: any) => {
       const [token, amountMinimum] = ifaceV32.parseTransaction(call)?.args || []
       return [getAction('Sweep'), getLable('at least'), getToken(token, amountMinimum)]
     },
+    // 0xdf2ab5bb
     [`${ifaceV32.getFunction('sweepToken(address,uint256,address)')?.selector}`]: (
       accountOp: AccountOp,
       call: IrCall
@@ -200,6 +213,7 @@ const uniV32Mapping = (humanizerInfo: any) => {
         ...getRecipientText(accountOp.accountAddr, recipient)
       ]
     },
+    // 0x3068c554
     [`${ifaceV32.getFunction('sweepTokenWithFee(address,uint256,uint256,address)')?.selector}`]: (
       accountOp: AccountOp,
       call: IrCall
@@ -216,6 +230,7 @@ const uniV32Mapping = (humanizerInfo: any) => {
         getAddress(feeRecipient)
       ]
     },
+    // 0xe0e189a0
     [`${
       ifaceV32.getFunction('sweepTokenWithFee(address,uint256,address,uint256,address)')?.selector
     }`]: (accountOp: AccountOp, call: IrCall) => {
@@ -239,6 +254,7 @@ const uniV32Mapping = (humanizerInfo: any) => {
 const uniV3Mappinig = (humanizerInfo: any) => {
   const ifaceV3 = new ethers.Interface(humanizerInfo.abis.UniV3Router)
   return {
+    // 0xac9650d8
     [`${ifaceV3.getFunction('multicall')?.selector}`]: (accountOp: AccountOp, call: IrCall) => {
       const args = ifaceV3.parseTransaction(call)?.args || []
       const calls = args[args.length - 1]
@@ -256,6 +272,7 @@ const uniV3Mappinig = (humanizerInfo: any) => {
       return parsed.length ? parsed : getLable('Unknown Uni V3 interaction')
     },
     // NOTE: selfPermit is not supported cause it requires an ecrecover signature
+    // 0x414bf389
     [`${ifaceV3.getFunction('exactInputSingle')?.selector}`]: (
       accountOp: AccountOp,
       call: IrCall
@@ -271,6 +288,7 @@ const uniV3Mappinig = (humanizerInfo: any) => {
         deadlineText(params.deadline)
       ]
     },
+    // 0xc04b8d59
     [`${ifaceV3.getFunction('exactInput')?.selector}`]: (accountOp: AccountOp, call: IrCall) => {
       const [params] = ifaceV3.parseTransaction(call)?.args || []
       const path = parsePath(params.path)
@@ -283,6 +301,7 @@ const uniV3Mappinig = (humanizerInfo: any) => {
         deadlineText(params.deadline)
       ]
     },
+    // 0xdb3e2198
     [`${ifaceV3.getFunction('exactOutputSingle')?.selector}`]: (
       accountOp: AccountOp,
       call: IrCall
@@ -297,7 +316,8 @@ const uniV3Mappinig = (humanizerInfo: any) => {
         deadlineText(params.deadline)
       ]
     },
-    [`${ifaceV3.getFunction('exactOutput')}`]: (accountOp: AccountOp, call: IrCall) => {
+    // 0xf28c0498
+    [`${ifaceV3.getFunction('exactOutput')?.selector}`]: (accountOp: AccountOp, call: IrCall) => {
       const [params] = ifaceV3.parseTransaction(call)?.args || []
       const path = parsePath(params.path)
       return [
@@ -310,7 +330,8 @@ const uniV3Mappinig = (humanizerInfo: any) => {
       ]
     },
     // @NOTE moaybe ethers.ZeroAddress should be replaced with WETH address in all unwraps?
-    [`${ifaceV3.getFunction('unwrapWETH9')}`]: (accountOp: AccountOp, call: IrCall) => {
+    // 0x49404b7c
+    [`${ifaceV3.getFunction('unwrapWETH9')?.selector}`]: (accountOp: AccountOp, call: IrCall) => {
       const [amountMin, recipient] = ifaceV3.parseTransaction(call)?.args || []
       return [
         getAction('Unwrap at least'),
@@ -318,7 +339,11 @@ const uniV3Mappinig = (humanizerInfo: any) => {
         getRecipientText(accountOp.accountAddr, recipient)
       ]
     },
-    [`${ifaceV3.getFunction('unwrapWETH9WithFee')}`]: (accountOp: AccountOp, call: IrCall) => {
+    // 0x9b2c0a37
+    [`${ifaceV3.getFunction('unwrapWETH9WithFee')?.selector}`]: (
+      accountOp: AccountOp,
+      call: IrCall
+    ) => {
       const [amountMin, recipient, feeBips, feeRecipient] =
         ifaceV3.parseTransaction(call)?.args || []
       return [
