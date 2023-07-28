@@ -81,7 +81,7 @@ export class MainController extends EventEmitter {
     this.initialLoadPromise = this.load()
     this.settings = { networks }
     this.emailVault = new EmailVaultController(storage, fetch, relayerUrl, this.keystore)
-    this.accountAdder = new AccountAdderController(storage, relayerUrl)
+    this.accountAdder = new AccountAdderController({ storage, relayerUrl, fetch })
     // Load userRequests from storage and emit that we have updated
     // @TODO
   }

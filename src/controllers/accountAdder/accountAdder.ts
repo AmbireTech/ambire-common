@@ -49,7 +49,7 @@ export class AccountAdderController extends EventEmitter {
     slot: number
   }[] = []
 
-  #linkedAccounts: { account: ExtendedAccount; type: AccountType }[] = []
+  linkedAccounts: { account: ExtendedAccount; type: AccountType }[] = []
 
   constructor({
     storage,
@@ -77,32 +77,33 @@ export class AccountAdderController extends EventEmitter {
     }[] = []
 
     this.#calculatedAccounts.forEach((calculatedAccount) => {
-      if (calculatedAccount.type === 'legacy') {
+      const linkedAccountDuplication: any = this.linkedAccounts.find(
+        (linkedAcc) => linkedAcc.account.addr === calculatedAccount.account.addr
+      )
+
+      if (linkedAccountDuplication) {
+        const uniqueKeys = new Set([
+          ...linkedAccountDuplication.account.associatedKeys,
+          ...calculatedAccount.account.associatedKeys
+        ])
+        linkedAccountDuplication.account.associatedKeys = Array.from(uniqueKeys)
+        linkedAccountDuplication.slot = calculatedAccount.slot
+        mergedAccounts.push(linkedAccountDuplication)
+      } else if (calculatedAccount.type === 'smart') {
         mergedAccounts.push(calculatedAccount)
-      }
-
-      if (calculatedAccount.type === 'smart') {
-        const smartLinkedAccount = this.#linkedAccounts.find(
-          (linkedAcc) => linkedAcc.account.addr === calculatedAccount.account.addr
-        )
-
-        if (smartLinkedAccount) {
-          const uniqueKeys = new Set([
-            ...smartLinkedAccount.account.associatedKeys,
-            ...calculatedAccount.account.associatedKeys
-          ])
-          smartLinkedAccount.account.associatedKeys = Array.from(uniqueKeys)
-        } else {
-          mergedAccounts.push(calculatedAccount)
-          this.#linkedAccounts.forEach((linked) => {
-            if (linked.account.associatedKeys.includes(calculatedAccount.account.addr)) {
-              mergedAccounts.push({
-                ...linked,
-                slot: calculatedAccount.slot
-              })
-            }
-          })
-        }
+        this.linkedAccounts.forEach((linked) => {
+          const legacyAccOnSameSlot = this.#calculatedAccounts.find(
+            (acc) => acc.slot === calculatedAccount.slot && acc.type === 'legacy'
+          )
+          if (linked.account.associatedKeys.includes(legacyAccOnSameSlot!.account.addr)) {
+            mergedAccounts.push({
+              ...linked,
+              slot: calculatedAccount.slot
+            })
+          }
+        })
+      } else {
+        mergedAccounts.push(calculatedAccount)
       }
     })
 
@@ -188,7 +189,7 @@ export class AccountAdderController extends EventEmitter {
     }
     this.page = page
     this.#calculatedAccounts = []
-    this.#linkedAccounts = []
+    this.linkedAccounts = []
     this.accountsLoading = true
     const calculatedAccounts = await this.#calculateAccounts({ networks, providers })
     this.#calculatedAccounts = calculatedAccounts
@@ -196,7 +197,7 @@ export class AccountAdderController extends EventEmitter {
     this.emitUpdate()
     this.#searchForLinkedAccounts({
       accounts: this.#calculatedAccounts
-        .filter((acc) => acc.type === 'smart')
+        .filter((acc) => acc.type === 'legacy')
         .map((acc) => acc.account),
       networks,
       providers
@@ -311,11 +312,26 @@ export class AccountAdderController extends EventEmitter {
     this.emitUpdate()
 
     async function getLinkedAccounts(
-      entries: any
+      entries: [string, unknown][],
+      signer: string,
+      callRelayer: Function
     ): Promise<{ account: Account; type: AccountType }[]> {
       const linkedAccounts: { account: Account; type: AccountType }[] = []
       for (const [linkedAddress] of entries) {
-        const linkedSmartAccount: Account = await getSmartAccount(linkedAddress)
+        const { salt, identityFactoryAddr, bytecode } = await callRelayer(
+          `/identity/${linkedAddress}`
+        )
+        const linkedSmartAccount: Account = {
+          addr: linkedAddress,
+          label: '',
+          pfp: '',
+          associatedKeys: [signer],
+          creation: {
+            factoryAddr: identityFactoryAddr,
+            bytecode,
+            salt
+          }
+        }
         linkedAccounts.push({ account: linkedSmartAccount, type: 'linked' })
       }
       return linkedAccounts
@@ -326,7 +342,7 @@ export class AccountAdderController extends EventEmitter {
         `/identity/any/by-owner/${acc.addr}?includeFormerlyOwned=true`
       )
       const privEntries = Object.entries(await rest)
-      return getLinkedAccounts(privEntries)
+      return getLinkedAccounts(privEntries, acc.addr, this.#callRelayer)
     })
 
     const linkedAccountsArrays: { account: Account; type: AccountType }[][] = await Promise.all(
@@ -338,7 +354,7 @@ export class AccountAdderController extends EventEmitter {
       networks,
       providers
     })
-    this.#linkedAccounts = linkedAccountsWithNetworks
+    this.linkedAccounts = linkedAccountsWithNetworks
     this.linkedAccountsLoading = false
     this.emitUpdate()
   }
