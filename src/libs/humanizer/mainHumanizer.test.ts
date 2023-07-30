@@ -2,16 +2,11 @@ import { describe, expect, test } from '@jest/globals'
 
 import { ethers } from 'ethers'
 import { AccountOp } from '../accountOp/accountOp'
-import {
-  callsToIr,
-  genericErc20Humanizer,
-  namingHumanizer,
-  initialHumanizer,
-  genericErc721Humanizer
-} from './mainHumanizer'
+import { callsToIr, namingHumanizer, initialHumanizer } from './mainHumanizer'
 
 import { uniswapHumanizer } from './modules/Uniswap'
 import { Ir } from './interfaces'
+import { genericErc20Humanizer, genericErc721Humanizer } from './modules/tokens'
 
 const humanizerInfo = require('./humanizerInfo.json')
 

@@ -47,6 +47,10 @@ const getDeadlineText = (deadlineSecs: number, mined = false) => {
   return getLable('')
 }
 
+const shortenAddress = (addr: string) => {
+  return addr ? `${addr.slice(0, 5)}...${addr.slice(-3)}` : ''
+}
+
 export {
   getLable,
   getAction,
@@ -55,5 +59,6 @@ export {
   getNft,
   getRecipientText,
   parsePath,
-  getDeadlineText
+  getDeadlineText,
+  shortenAddress
 }

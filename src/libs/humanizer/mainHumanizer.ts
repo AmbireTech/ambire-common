@@ -1,34 +1,15 @@
 import { ethers } from 'ethers'
 import { AccountOp } from '../accountOp/accountOp'
 // @TODO use humanizer info
-import IERC20 from '../../../contracts/compiled/IERC20.json'
-import IERC721 from '../../../contracts/compiled/IERC721.json'
+import { genericErc20Humanizer, genericErc721Humanizer } from './modules/tokens'
 import { uniswapHumanizer } from './modules/Uniswap'
 import { IrCall, Ir } from './interfaces'
-import { getLable, getAction, getAddress, getNft, getToken } from './utils'
+import { getLable, getAction, getAddress, getToken, shortenAddress } from './utils'
 
 // @TODO humanize signed messages
-/*
-// types of transactions to account for
-
-// primary transaction types
-// sending eth
-// contract calls
-// contract deployment and destruction
-
-// secondary transaction types
-// sending ERC-20 or NFTs
-// other contract calls (/w & /wo eth)
-// overriding gas
-
-// honorable mentions
-// swapping
-
-// warnings
-// sending eth to contracts
-// sending tokens to contracts
-// sending funds to unused addresses
-*/
+// @TODO add checks for sending eth to contracts
+// @TODO add checks for sending tokens to contracts
+// @TODO add checks for sending eth to unused addresses
 
 export function callsToIr(accountOp: AccountOp): Ir {
   const irCalls: IrCall[] = accountOp.calls.map((call) => {
@@ -40,146 +21,6 @@ export function callsToIr(accountOp: AccountOp): Ir {
     }
   })
   return { calls: irCalls }
-}
-
-export function genericErc721Humanizer(accountOp: AccountOp, currentIr: Ir): [Ir, Promise<any>[]] {
-  // @TODO safety checks, some retured as promises
-  const iface = new ethers.Interface(IERC721.abi)
-  const nftTransferVisualization = (call: IrCall) => {
-    const args = iface.parseTransaction(call)?.args.toArray() || []
-    return args[0] === accountOp.accountAddr
-      ? [getAction('Transfer'), getNft(call.to, args[2]), getLable('to'), getAddress(args[1])]
-      : [
-          getAction('Transfer'),
-          getNft(call.to, args[2]),
-          getLable('from'),
-          getAddress(args[0]),
-          getLable('to'),
-          getAddress(args[1])
-        ]
-  }
-  const matcher = {
-    [`${iface.getFunction('approve')?.selector}`]: (call: IrCall) => {
-      const args = iface.parseTransaction(call)?.args.toArray() || []
-      return args[0] === ethers.ZeroAddress
-        ? [getAction('Revoke approval'), getLable('for'), getNft(call.to, args[1])]
-        : [
-            getAction('Grant approval'),
-            getLable('for'),
-            getNft(call.to, args[1]),
-            getLable('to'),
-            getAddress(args[0])
-          ]
-    },
-    [`${iface.getFunction('setApprovalForAll')?.selector}`]: (call: IrCall) => {
-      const args = iface.parseTransaction(call)?.args.toArray() || []
-      return args[1]
-        ? [
-            getAction('Grant approval'),
-            getLable('for all nfts'),
-            getNft(call.to, args[1]),
-            getLable('to'),
-            getAddress(args[0])
-          ]
-        : [getAction('Revoke approval'), getLable('for all nfts'), getAddress(args[0])]
-    },
-    // not in tests
-    [`${iface.getFunction('safeTransferFrom', ['address', 'address', 'uint256'])?.selector}`]:
-      nftTransferVisualization,
-    // [`${
-    //   iface.getFunction('safeTransferFrom', ['address', 'address', 'uint256', 'bytes'])
-    //     ?.selector
-    // }`]: nftTransferVisualization,
-    [`${iface.getFunction('transferFrom', ['address', 'address', 'uint256'])?.selector}`]:
-      nftTransferVisualization
-  }
-
-  const newCalls = currentIr.calls.map((call) => {
-    return matcher[call.data.substring(0, 10)] // could do additional check if it is actually NFT contract
-      ? {
-          ...call,
-          fullVisualization: matcher[call.data.substring(0, 10)](call)
-        }
-      : call
-  })
-  const newIr = { calls: newCalls }
-  return [newIr, []]
-}
-
-export function genericErc20Humanizer(accountOp: AccountOp, currentIr: Ir): [Ir, Promise<any>[]] {
-  // @TODO: check if ${to} is ERC20 (if not in available humanizer data - will be done asyncly and returned as promise)
-  // @TODO: check if ${to} is contract when Transfer or transferFrom(_,contract,_)
-  // @TODO parse amount according to decimals
-  const iface = new ethers.Interface(IERC20.abi)
-  const matcher = {
-    [`${iface.getFunction('approve')?.selector}`]: (call: IrCall) => {
-      const args = iface.parseTransaction(call)?.args.toArray() || []
-      return args[1] !== BigInt(0)
-        ? [
-            getAction('Grant approval'),
-            getToken(call.to, args[1]),
-            getLable('to'),
-            getAddress(args[0])
-          ]
-        : [
-            getAction('Revoke approval'),
-            getToken(call.to, args[1]),
-            getLable('for'),
-            getAddress(args[0])
-          ]
-    },
-    [`${iface.getFunction('transfer')?.selector}`]: (call: IrCall) => {
-      const args = iface.parseTransaction(call)?.args.toArray() || []
-      return [
-        getAction('Transfer'),
-        getToken(call.to, args[1]),
-        getLable('to'),
-        getAddress(args[0])
-      ]
-    },
-    [`${iface.getFunction('transferFrom')?.selector}`]: (call: IrCall) => {
-      const args = iface.parseTransaction(call)?.args.toArray() || []
-      // @NOTE: accountOp has module scope, while call has property scope
-      if (args[0] === accountOp.accountAddr) {
-        return [
-          getAction('Transfer'),
-          getToken(call.to, args[2]),
-          getLable('to'),
-          getAddress(args[1])
-        ]
-      }
-      if (args[1] === accountOp.accountAddr) {
-        return [
-          getAction('Take'),
-          getToken(call.to, args[2]),
-          getLable('from'),
-          getAddress(args[0])
-        ]
-      }
-      return [
-        getAction('Move'),
-        getToken(call.to, args[2]),
-        getLable('from'),
-        getAddress(args[0]),
-        getLable('to'),
-        getAddress(args[1])
-      ]
-    }
-  }
-  const newCalls = currentIr.calls.map((call) => {
-    return matcher[call.data.substring(0, 10)] && accountOp.humanizerMeta?.tokens[call.to]
-      ? {
-          ...call,
-          fullVisualization: matcher[call.data.substring(0, 10)](call)
-        }
-      : call
-  })
-  const newIr = { calls: newCalls }
-  return [newIr, []]
-}
-
-function shortenAddress(addr: string): string {
-  return addr ? `${addr.slice(0, 5)}...${addr.slice(-3)}` : ''
 }
 
 // adds 'name' proeprty to visualization of addresses (needs initialHumanizer to work on unparsed transactions)
@@ -239,6 +80,7 @@ export async function humanize(accountOp: AccountOp) {
   const humanizerModules = [
     initialHumanizer,
     genericErc20Humanizer,
+    genericErc721Humanizer,
     uniswapHumanizer,
     namingHumanizer
   ]
