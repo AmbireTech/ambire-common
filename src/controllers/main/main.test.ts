@@ -1,23 +1,8 @@
-import { beforeAll, describe, expect, test } from '@jest/globals'
+import { describe, test } from '@jest/globals'
 import fetch from 'node-fetch'
 import { UserRequest } from '../../interfaces/userRequest'
 import { MainController } from './main'
-import { Storage } from '../../interfaces/storage'
-import { AccountOp } from '../../libs/accountOp/accountOp'
-
-export function produceMemoryStore(): Storage {
-  const storage = new Map()
-  return {
-    get: (key, defaultValue): any => {
-      const serialized = storage.get(key)
-      return Promise.resolve(serialized ? JSON.parse(serialized) : defaultValue)
-    },
-    set: (key, value) => {
-      storage.set(key, JSON.stringify(value))
-      return Promise.resolve(null)
-    }
-  }
-}
+import { produceMemoryStore } from '../../../test/helpers'
 
 describe('Main Controller ', () => {
   const accounts = [
