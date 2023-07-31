@@ -1,7 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
-/* eslint-disable class-methods-use-this */
-/* eslint-disable @typescript-eslint/no-useless-constructor */
-/* eslint-disable max-classes-per-file */
 import { beforeAll, describe, expect, test } from '@jest/globals'
 import fetch from 'node-fetch'
 import { Wallet } from 'ethers'

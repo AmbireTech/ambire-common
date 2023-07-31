@@ -1,21 +1,5 @@
 import { relayerCall } from '../relayerCall/relayerCall'
-
-export interface EmailVaultFetchResult {
-  success: Boolean
-  data: VaultEntry
-  message: String
-}
-
-export interface RecoveryKey {
-  key: String
-  type: String
-}
-
-export interface VaultEntry {
-  key: String
-  value: String
-  type: String
-}
+import { EmailVaultData, EmailVaultSecrets, RecoveryKey } from '../../interfaces/emailVault'
 
 export interface Secret {
   key: String
@@ -43,12 +27,25 @@ export class EmailVault {
     this.fetch = fetch
   }
 
-  async create(email: String, authKey: String): Promise<RecoveryKey> {
+  async create(email: String, authKey: String): Promise<EmailVaultSecrets> {
     return (await this.callRelayer(`/email-vault/create/${email}/${authKey}`)).data
   }
 
   async getRecoveryKeyAddress(email: String, authKey: String): Promise<RecoveryKey> {
     return (await this.callRelayer(`/email-vault/getRecoveryKey/${email}/${authKey}`)).data
+  }
+
+  async getEmailVaultInfo(email: String, authKey: String): Promise<EmailVaultData> {
+    const result = (await this.callRelayer(`/email-vault/emailVaultInfo/${email}/${authKey}`)).data
+    return {
+      ...result,
+      availableAccounts: Object.fromEntries(
+        result.availableAccounts.map((acc: any) => [acc.addr, acc])
+      ),
+      availableSecrets: Object.fromEntries(
+        result.availableSecrets.map((secret: any) => [secret.key, secret])
+      )
+    }
   }
 
   async addKeyStoreSecret(
@@ -69,7 +66,7 @@ export class EmailVault {
     email: String,
     authKey: String,
     keyStoreUid: String
-  ): Promise<VaultEntry> {
+  ): Promise<EmailVaultSecrets> {
     return (
       await this.callRelayer(
         `/email-vault/retrieveKeyStoreSecret/${email}/${keyStoreUid}/${authKey}`
@@ -91,7 +88,11 @@ export class EmailVault {
     ).success
   }
 
-  async retrieveKeyBackup(email: String, authKey: String, keyAddress: String): Promise<VaultEntry> {
+  async retrieveKeyBackup(
+    email: String,
+    authKey: String,
+    keyAddress: String
+  ): Promise<EmailVaultSecrets> {
     return (
       await this.callRelayer(`/email-vault/retrieveKeyBackup/${email}/${keyAddress}/${authKey}`)
     ).data

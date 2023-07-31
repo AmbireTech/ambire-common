@@ -82,7 +82,9 @@ The intended use case is as follows:
 2. If the user loses their keystore (eg their SSD fails, or they lose their passphrase), they may trigger the recovery using the email vault on every network individually; triggering the recovery involves creating a new local key, and signing a bundle to authorize it via the email vault key; let's call this bundle "the recovery bundle"
 3. Once the recovery timelock is mature, the relayer will simply execute the recovery bundle BEFORE any normal bundle that the user wants to execute that they're signing with their new local key
 
-### Keystore recovery via email
+**TODO:** update for [DKIM recovery](https://github.com/AmbireTech/ambire-app/issues/1087)
+
+### Keystore password reset via email
 
 This is an off-chain recovery method that allows regaining access to your local keystore if you have forgotten the keystore passphrase.
 
@@ -97,13 +99,16 @@ The UX will be simple:
 3. You click the confirmation button on the email, and it forwards you to the extension again, where you can set a new passphrase
 4. Done
 
-### Ambire Cloud
+### Key sync
 
-This is not an account/keystore recovery method but rather a way to log into the same email account on multiple devices (sync it across devices).
+This is not an account/keystore recovery method but rather a way to use the same account on multiple devices.
 
-When enabled, the one and only default private key (you can add more signer keys manually, but every email acc will start with one "default" key) associated with a specific email account is encrypted with the keystore passphrase and uploaded to the email vault.
+When adding an email vault on a new device, you'll be given the option to add all accounts associated with that email vault (initially only one will be allowed).
 
-This allows you to import this account on different devices (or "log in").
+By default, this will add the account in read-only mode. To enable signing transactions and messages, there will be a procedure in which you will be prompted on the original device to authorize the new device. If the user agrees, the original device will encrypt the underlying key with the public key of the new device and send it through the Ambire backend.
+
+This is fully secure as the device private key (keystore `mainKey`) has really high entropy, and the backend only stores the encrypted data for 3 minutes.
+
 
 ## Libraries
 
