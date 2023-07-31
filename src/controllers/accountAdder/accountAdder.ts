@@ -230,14 +230,13 @@ export class AccountAdderController extends EventEmitter {
       ? await this.#keyIterator.retrieve(startIdx, endIdx)
       : await this.#keyIterator.retrieve(startIdx, endIdx, this.derivationPath)
 
-    const smartAccountPromises = keys.map((key, index) => getSmartAccount(key))
-
-    const smartAccounts = await Promise.all(smartAccountPromises)
-
-    keys.forEach((key, index) => {
+    // eslint-disable-next-line no-restricted-syntax
+    for (const [index, key] of keys.entries()) {
+      // eslint-disable-next-line no-await-in-loop
+      const smartAccount = await getSmartAccount(key)
       accounts.push({ account: getLegacyAccount(key), type: 'legacy', slot: index + 1 })
-      accounts.push({ account: smartAccounts[index], type: 'smart', slot: index + 1 })
-    })
+      accounts.push({ account: smartAccount, type: 'smart', slot: index + 1 })
+    }
 
     const accountsWithNetworks = await this.#getAccountsUsedOnNetworks({
       accounts,
