@@ -357,6 +357,13 @@ export class AccountAdderController extends EventEmitter {
     this.linkedAccountsLoading = false
     this.emitUpdate()
   }
+
+  toJSON() {
+    return {
+      ...this,
+      accountsOnPage: this.accountsOnPage // includes the getter in the stringified instance
+    }
+  }
 }
 
 export default AccountAdderController
