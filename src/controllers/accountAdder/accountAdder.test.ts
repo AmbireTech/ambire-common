@@ -117,7 +117,7 @@ describe('AccountAdder', () => {
   })
   test('should find linked accounts', (done) => {
     const keyIterator = new KeyIterator(seedPhrase)
-    accountAdder.init({ keyIterator, preselectedAccounts: [], pageSize: 1 })
+    accountAdder.init({ keyIterator, preselectedAccounts: [], pageSize: 3 })
     accountAdder.setPage({ page: 1, networks, providers })
 
     let emitCounter = 0
@@ -126,8 +126,17 @@ describe('AccountAdder', () => {
       // second emit it should start the searching for linked accounts,
       // on the third emit there should be linked accounts fetched
       if (emitCounter === 2) {
-        expect(accountAdder.accountsOnPage.length).toEqual(3)
         expect(accountAdder.linkedAccountsLoading).toBe(false)
+        const linkedAccountsOnPage = accountAdder.accountsOnPage.filter(
+          ({ type }) => type === 'linked'
+        )
+        expect(linkedAccountsOnPage.length).toEqual(3)
+
+        // One linked account on slot 1 and 2 linked accounts on slot 3.
+        expect(linkedAccountsOnPage.filter(({ slot }) => slot === 1).length).toEqual(1)
+        expect(linkedAccountsOnPage.filter(({ slot }) => slot === 2).length).toEqual(0)
+        expect(linkedAccountsOnPage.filter(({ slot }) => slot === 3).length).toEqual(2)
+
         done()
       }
       emitCounter++
