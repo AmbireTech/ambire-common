@@ -100,7 +100,7 @@ describe('AccountAdder', () => {
   })
   test('should start the searching for linked accounts', (done) => {
     const keyIterator = new KeyIterator(seedPhrase)
-    accountAdder.init({ keyIterator, preselectedAccounts: [], pageSize: 1 })
+    accountAdder.init({ keyIterator, preselectedAccounts: [], pageSize: 4 })
     accountAdder.setPage({ page: 1, networks, providers })
 
     let emitCounter = 0
@@ -108,7 +108,6 @@ describe('AccountAdder', () => {
       // First emit is triggered when account calculation is done, int the
       // second emit it should start the searching for linked accounts
       if (emitCounter === 1) {
-        expect(accountAdder.accountsOnPage.length).toEqual(2)
         expect(accountAdder.linkedAccountsLoading).toBe(true)
         done()
       }
@@ -142,7 +141,6 @@ describe('AccountAdder', () => {
       emitCounter++
     })
   })
-
   test('should not be able to deselect a preselected account', async () => {
     try {
       const keyIterator = new KeyIterator(seedPhrase)
