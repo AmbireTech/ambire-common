@@ -34,8 +34,8 @@ const seedPhrase =
   'brisk rich glide impose category stuff company you appear remain decorate monkey'
 // const privKey = '0x574f261b776b26b1ad75a991173d0e8ca2ca1d481bd7822b2b58b2ef8a969f12'
 const key1PublicAddress = '0x9188fdd757Df66B4F693D624Ed6A13a15Cf717D7'
-const key2PublicAddress = '0xE4166d78C834367B186Ce6492993ac8D52De738F'
-const key3PublicAddress = '0xcC48f0C6d79b6E79F90a3228E284324b5F2cC529'
+// const key2PublicAddress = '0xE4166d78C834367B186Ce6492993ac8D52De738F'
+// const key3PublicAddress = '0xcC48f0C6d79b6E79F90a3228E284324b5F2cC529'
 
 const legacyAccount: Account = {
   addr: key1PublicAddress,
@@ -130,12 +130,12 @@ describe('AccountAdder', () => {
         const linkedAccountsOnPage = accountAdder.accountsOnPage.filter(
           ({ type }) => type === 'linked'
         )
-        expect(linkedAccountsOnPage.length).toEqual(3)
+        expect(linkedAccountsOnPage.length).toEqual(4)
 
-        // One linked account on slot 1 and 2 linked accounts on slot 3.
+        // One linked account on slot 1 and 3 linked accounts on slot 3.
         expect(linkedAccountsOnPage.filter(({ slot }) => slot === 1).length).toEqual(1)
         expect(linkedAccountsOnPage.filter(({ slot }) => slot === 2).length).toEqual(0)
-        expect(linkedAccountsOnPage.filter(({ slot }) => slot === 3).length).toEqual(2)
+        expect(linkedAccountsOnPage.filter(({ slot }) => slot === 3).length).toEqual(3)
 
         done()
       }
@@ -143,39 +143,6 @@ describe('AccountAdder', () => {
     })
   })
 
-  // test('should get first page', async () => {
-  //   const keyIterator = new KeyIterator(seedPhrase)
-  //   const PAGE_SIZE = 3
-  //   accountAdder.init({ keyIterator, preselectedAccounts: [], pageSize: PAGE_SIZE })
-  //   accountAdder.setPage({ page: 1, networks, providers })
-  //   let counter = 0
-  //   await new Promise((resolve) => {
-  //     accountAdder.onUpdate(() => {
-  //       if (counter === 0) {
-  //         console.log('accountAdder.accountsOnPage', accountAdder.accountsOnPage)
-  //         // First emit is triggered when account calculation is done
-  //         expect(accountAdder.accountsOnPage.length).toEqual(
-  //           // One smart account for every legacy account
-  //           PAGE_SIZE * 2
-  //         )
-  //         expect(accountAdder.accountsLoading).toBe(false)
-  //         expect(accountAdder.linkedAccountsLoading).toBe(false)
-  //       }
-  //       if (counter === 1) {
-  //         // This emit should start the searching for linked accounts
-  //         expect(accountAdder.accountsOnPage.length).toEqual(2)
-  //         expect(accountAdder.linkedAccountsLoading).toBe(true)
-  //       }
-  //       if (counter >= 2) {
-  //         // On the third emit there should be linked accounts fetched
-  //         expect(accountAdder.accountsOnPage.length).toEqual(3)
-  //         expect(accountAdder.linkedAccountsLoading).toBe(false)
-  //         resolve(null)
-  //       }
-  //       counter++
-  //     })
-  //   })
-  // })
   test('should not be able to deselect a preselected account', async () => {
     try {
       const keyIterator = new KeyIterator(seedPhrase)
