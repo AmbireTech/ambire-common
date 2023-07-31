@@ -191,6 +191,7 @@ export class AccountAdderController extends EventEmitter {
     this.#calculatedAccounts = []
     this.linkedAccounts = []
     this.accountsLoading = true
+    this.emitUpdate()
     const calculatedAccounts = await this.#calculateAccounts({ networks, providers })
     this.#calculatedAccounts = calculatedAccounts
     this.accountsLoading = false
