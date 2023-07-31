@@ -230,6 +230,8 @@ export class AccountAdderController extends EventEmitter {
       ? await this.#keyIterator.retrieve(startIdx, endIdx)
       : await this.#keyIterator.retrieve(startIdx, endIdx, this.derivationPath)
 
+    // Replace the parallel getKeys with foreach to prevent issues with Ledger,
+    // which can only handle one request at a time.
     // eslint-disable-next-line no-restricted-syntax
     for (const [index, key] of keys.entries()) {
       // eslint-disable-next-line no-await-in-loop
