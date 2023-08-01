@@ -18,24 +18,21 @@ contract DKIMValidator is ExternalSigValidator, Recoveries, DKIM {
         AmbireAccount.Transaction[] calldata calls
     ) external returns (bool shouldExecute) {
 
-        // TO DO: CALCULATE THE HASH ONCHAIN
-        // hash = sha256(join(canonizedHeaders.concat([hash(emailBody)])))
-
-        // plan...
-        // receive the headers as a string
-        // get the email-to or smt
-        // check if it's the same as the one in account info
-
         (bytes memory selector, bytes memory dkimSig, address newKeyToSet, string memory headers) = abi.decode(sig, (bytes, bytes, address, string));
         AmbireAccount ambireAccount = AmbireAccount(payable(accountAddr));
         AmbireAccount.AccountInfo memory accountInfo = ambireAccount.getAccountInfo();
 
-        Strings.slice memory headersSlice = headers.toSlice();
-        Strings.slice memory to = 'from:YouTube <no-reply@youtube.com>'.toSlice();
-        require(headersSlice.contains(to), 'No such from address');
-
-        bytes32 hash = sha256(bytes(headers));
         if (keccak256(selector) == keccak256(accountInfo.dkimKey.keySelector)) {
+            // this is what we have in the headers from field:
+            // from:Name Surname <email@provider.com>
+            // we split from "from" to ">" and check if the email is
+            // registered in account info
+            Strings.slice memory headersSlice = headers.toSlice();
+            headersSlice.splitNeedle('from:'.toSlice());
+            Strings.slice memory afterSplit = headersSlice.splitNeedle('>'.toSlice());
+            if (! afterSplit.contains(accountInfo.emailFrom.toSlice())) return false;
+
+            bytes32 hash = sha256(bytes(headers));
             return RSASHA256.verify(hash, dkimSig, accountInfo.dkimKey.publicKey.exponent, accountInfo.dkimKey.publicKey.modulus);
 
         //     const dateAdded = dkimKeys[keccak256(signature.dkimKey)]

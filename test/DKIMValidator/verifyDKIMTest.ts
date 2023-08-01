@@ -58,7 +58,7 @@ describe('DKIM', function () {
   })
 
   it('successfully parses a gmail email and verify it onchain', async function () {
-    const gmail = await readFile(path.join(emailsPath, 'youtube.eml'), {
+    const gmail = await readFile(path.join(emailsPath, 'to-myself.eml'), {
         encoding: 'ascii'
     })
     const parsedContents: any = await parseEmail(gmail)
