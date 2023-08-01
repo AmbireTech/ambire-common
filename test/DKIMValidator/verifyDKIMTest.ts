@@ -77,8 +77,8 @@ describe('DKIM', function () {
     const exponent = ethers.toBeHex(parsedContents[0].exponent)
     const modulus = parsedContents[0].solidity.modulus
     const dkimSig = parsedContents[0].solidity.signature
-    const processedHeader = ethers.toUtf8Bytes(parsedContents[0].processedHeader)
-    const sig = abiCoder.encode(['bytes', 'bytes', 'address', 'bytes'], [
+    const processedHeader = parsedContents[0].processedHeader
+    const sig = abiCoder.encode(['bytes', 'bytes', 'address', 'string'], [
       selector,
       dkimSig,
       signer.address,

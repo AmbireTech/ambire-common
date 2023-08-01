@@ -4,8 +4,11 @@ pragma solidity 0.8.19;
 import './Recoveries.sol';
 import './dkim/RSASHA256.sol';
 import './dkim/DKIM.sol';
+import 'hardhat/console.sol';
+import './libs/Strings.sol';
 
 contract DKIMValidator is ExternalSigValidator, Recoveries, DKIM {
+    using Strings for *;
 
     function validateSig(
         address accountAddr,
@@ -18,11 +21,20 @@ contract DKIMValidator is ExternalSigValidator, Recoveries, DKIM {
         // TO DO: CALCULATE THE HASH ONCHAIN
         // hash = sha256(join(canonizedHeaders.concat([hash(emailBody)])))
 
-        (bytes memory selector, bytes memory dkimSig, address newKeyToSet, bytes memory headers) = abi.decode(sig, (bytes, bytes, address, bytes));
+        // plan...
+        // receive the headers as a string
+        // get the email-to or smt
+        // check if it's the same as the one in account info
+
+        (bytes memory selector, bytes memory dkimSig, address newKeyToSet, string memory headers) = abi.decode(sig, (bytes, bytes, address, string));
         AmbireAccount ambireAccount = AmbireAccount(payable(accountAddr));
         AmbireAccount.AccountInfo memory accountInfo = ambireAccount.getAccountInfo();
-        bytes32 hash = sha256(headers);
 
+        Strings.slice memory headersSlice = headers.toSlice();
+        Strings.slice memory to = 'from:YouTube <no-reply@youtube.com>'.toSlice();
+        require(headersSlice.contains(to), 'No such from address');
+
+        bytes32 hash = sha256(bytes(headers));
         if (keccak256(selector) == keccak256(accountInfo.dkimKey.keySelector)) {
             return RSASHA256.verify(hash, dkimSig, accountInfo.dkimKey.publicKey.exponent, accountInfo.dkimKey.publicKey.modulus);
 
