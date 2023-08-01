@@ -20,11 +20,11 @@ contract DKIMValidator is ExternalSigValidator, Recoveries, DKIM {
 
         (bytes memory selector, bytes memory dkimSig, address newKeyToSet, bytes memory headers) = abi.decode(sig, (bytes, bytes, address, bytes));
         AmbireAccount ambireAccount = AmbireAccount(payable(accountAddr));
-        AmbireAccount.DKIMKey memory dkimKey = ambireAccount.getDKIMKey();
+        AmbireAccount.AccountInfo memory accountInfo = ambireAccount.getAccountInfo();
         bytes32 hash = sha256(headers);
 
-        if (keccak256(selector) == keccak256(dkimKey.keySelector)) {
-            return RSASHA256.verify(hash, dkimSig, dkimKey.publicKey.exponent, dkimKey.publicKey.modulus);
+        if (keccak256(selector) == keccak256(accountInfo.dkimKey.keySelector)) {
+            return RSASHA256.verify(hash, dkimSig, accountInfo.dkimKey.publicKey.exponent, accountInfo.dkimKey.publicKey.modulus);
 
         //     const dateAdded = dkimKeys[keccak256(signature.dkimKey)]
         //     if (dateAdded == 0) {

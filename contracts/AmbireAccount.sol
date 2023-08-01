@@ -31,6 +31,7 @@ contract AmbireAccount is DKIM {
 	event LogPrivilegeChanged(address indexed addr, bytes32 priv);
 	event LogErr(address indexed to, uint256 value, bytes data, bytes returnData); // only used in tryCatch
 	event LogDKIMKeyChanged(bytes keySelector, bytes exponent, bytes modulus);
+	event LogEmailFromChanged(string email);
 
 	// Transaction structure
 	// we handle replay protection separately by requiring (address(this), chainID, nonce) as part of the sig
@@ -51,21 +52,35 @@ contract AmbireAccount is DKIM {
 		PublicKey publicKey;
 	}
 
-	DKIMKey dkimKey;
+	struct AccountInfo {
+		DKIMKey dkimKey;
+		string emailFrom;
+	}
 
-	function getDKIMKey() public view returns (DKIMKey memory) {
-		return dkimKey;
+	AccountInfo accountInfo;
+
+	function getAccountInfo() public view returns (AccountInfo memory) {
+		return accountInfo;
 	}
 
 	function setDKIMKey(bytes calldata keySelector, bytes calldata exponent, bytes calldata modulus) public {
 		require(msg.sender == address(this), 'ONLY_IDENTITY_CAN_CALL');
 
-		dkimKey.keySelector = keySelector;
+		accountInfo.dkimKey.keySelector = keySelector;
 		PublicKey memory publicKey = PublicKey(exponent, modulus);
-		dkimKey.publicKey = publicKey;
+		accountInfo.dkimKey.publicKey = publicKey;
 
 		// TO DO: Think if we should include old values in the event
 		emit LogDKIMKeyChanged(keySelector, exponent, modulus);
+	}
+
+	function setEmailFrom(string calldata email) public {
+		require(msg.sender == address(this), 'ONLY_IDENTITY_CAN_CALL');
+
+		accountInfo.emailFrom = email;
+
+		// TO DO: Think if we should include old values in the event
+		emit LogEmailFromChanged(email);
 	}
 
 	// Externally validated signatures

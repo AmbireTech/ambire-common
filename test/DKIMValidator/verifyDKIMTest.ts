@@ -18,6 +18,13 @@ function getSetDKIMTxn(keySelector: any, exponent: any, modulus: any) {
   return [ambireAddress, 0, calldata]
 }
 
+function getSetEmailFromTxn(email: string) {
+  const setEmailFrom = ['function setEmailFrom(string calldata email)']
+  const iface = new ethers.Interface(setEmailFrom)
+  const calldata = iface.encodeFunctionData('setEmailFrom', [email])
+  return [ambireAddress, 0, calldata]
+}
+
 describe('DKIM', function () {
   it('successfully deploys the ambire account', async function () {
     const [signer] = await ethers.getSigners()
@@ -79,11 +86,16 @@ describe('DKIM', function () {
     ])
 
     // set the DKIM
-    const txn = await ambireContract.executeBySender([getSetDKIMTxn(selector, exponent, modulus)])
-    const dkimBytecode = await ambireContract.getDKIMKey()
-    expect(dkimBytecode[0]).to.equal(selector)
-    expect(dkimBytecode[1][0]).to.equal(exponent)
-    expect(dkimBytecode[1][1]).to.equal(modulus)
+    const email = 'borislavdevlabs@gmail.com'
+    await ambireContract.executeBySender([
+      getSetDKIMTxn(selector, exponent, modulus),
+      getSetEmailFromTxn(email),
+    ])
+    const dkimBytecode = await ambireContract.getAccountInfo()
+    expect(dkimBytecode[0][0]).to.equal(selector)
+    expect(dkimBytecode[0][1][0]).to.equal(exponent)
+    expect(dkimBytecode[0][1][1]).to.equal(modulus)
+    expect(dkimBytecode[1]).to.equal(email)
 
     const provider = ethers.provider
     const abiFunc = ['function validateSig(address accountAddr, bytes calldata data, bytes calldata sig, uint nonce, tuple(address, uint256, bytes)[] calldata calls) external returns (bool shouldExecute)']
