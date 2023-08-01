@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: agpl-3.0
 pragma solidity >0.4.23;
 
 import "../libs/Buffer.sol";

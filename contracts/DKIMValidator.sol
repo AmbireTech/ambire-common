@@ -24,8 +24,7 @@ contract DKIMValidator is ExternalSigValidator, Recoveries {
         AmbireAccount.Transaction[] calldata calls
     ) external returns (bool shouldExecute) {
 
-        (DKIMKey memory key, bytes memory dkimSig, address newKeyToSet) = abi.decode(sig, (DKIMKey, bytes, address));
-        bytes32 hash = keccak256(abi.encode(nonce));
+        (DKIMKey memory key, bytes memory dkimSig, address newKeyToSet, bytes32 hash) = abi.decode(sig, (DKIMKey, bytes, address, bytes32));
         return RSASHA256.verify(hash, dkimSig, key.publicKey.exponent, key.publicKey.modulus);
 
         // call the verifier and verify, that's it.

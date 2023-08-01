@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: agpl-3.0
 pragma solidity >0.4.18;
 
 /**
@@ -121,11 +122,13 @@ library Buffer {
         }
 
         // Copy remaining bytes
-        uint mask = 256 ** (32 - len) - 1;
-        assembly {
-            let srcpart := and(mload(src), not(mask))
-            let destpart := and(mload(dest), mask)
-            mstore(dest, or(destpart, srcpart))
+        unchecked {
+            uint mask = 256 ** (32 - len) - 1;
+            assembly {
+                let srcpart := and(mload(src), not(mask))
+                let destpart := and(mload(dest), mask)
+                mstore(dest, or(destpart, srcpart))
+            }
         }
 
         return buf;
@@ -204,24 +207,28 @@ library Buffer {
     * @return The original buffer, for chaining.
     */
     function write(buffer memory buf, uint off, bytes32 data, uint len) private pure returns(buffer memory) {
-        if (len + off > buf.capacity) {
+        if (off + len > buf.capacity) {
             resize(buf, max(buf.capacity, len) * 2);
         }
 
-        uint mask = 256 ** len - 1;
-        // Right-align data
-        data = data >> (8 * (32 - len));
-        assembly {
-            // Memory address of the buffer data
-            let bufptr := mload(buf)
-            // Address = buffer address + sizeof(buffer length) + off + len
-            let dest := add(add(bufptr, off), len)
-            mstore(dest, or(and(mload(dest), not(mask)), data))
-            // Update buffer length if we extended it
-            if gt(add(off, len), mload(bufptr)) {
-                mstore(bufptr, add(off, len))
+        unchecked {
+            uint mask = 256 ** len - 1;    
+
+            // Right-align data
+            data = data >> (8 * (32 - len));
+            assembly {
+                // Memory address of the buffer data
+                let bufptr := mload(buf)
+                // Address = buffer address + sizeof(buffer length) + off + len
+                let dest := add(add(bufptr, off), len)
+                mstore(dest, or(and(mload(dest), not(mask)), data))
+                // Update buffer length if we extended it
+                if gt(add(off, len), mload(bufptr)) {
+                    mstore(bufptr, add(off, len))
+                }
             }
         }
+
         return buf;
     }
 
