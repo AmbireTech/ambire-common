@@ -16,12 +16,15 @@ contract DKIMValidator is ExternalSigValidator, Recoveries, DKIM {
     ) external returns (bool shouldExecute) {
 
         // TO DO: CALCULATE THE HASH ONCHAIN
+        // hash = sha256(join(canonizedHeaders.concat([hash(emailBody)])))
 
-        (bytes memory selector, PublicKey memory publicKey, bytes memory dkimSig, address newKeyToSet, bytes32 hash) = abi.decode(sig, (bytes, PublicKey, bytes, address, bytes32));
-
+        (bytes memory selector, bytes memory dkimSig, address newKeyToSet, bytes memory headers) = abi.decode(sig, (bytes, bytes, address, bytes));
         AmbireAccount ambireAccount = AmbireAccount(payable(accountAddr));
-        if (keccak256(selector) == keccak256(ambireAccount.getDKIMKey().keySelector)) {
-            return RSASHA256.verify(hash, dkimSig, publicKey.exponent, publicKey.modulus);
+        AmbireAccount.DKIMKey memory dkimKey = ambireAccount.getDKIMKey();
+        bytes32 hash = sha256(headers);
+
+        if (keccak256(selector) == keccak256(dkimKey.keySelector)) {
+            return RSASHA256.verify(hash, dkimSig, dkimKey.publicKey.exponent, dkimKey.publicKey.modulus);
 
         //     const dateAdded = dkimKeys[keccak256(signature.dkimKey)]
         //     if (dateAdded == 0) {

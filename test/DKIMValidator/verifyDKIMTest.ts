@@ -32,22 +32,13 @@ describe('DKIM', function () {
         encoding: 'ascii'
     })
     const parsedContents: any = await parseEmail(gmail)
-    const selector = ethers.hexlify(ethers.toUtf8Bytes(parsedContents[0].selector))
 
     const rsasha256 = await ethers.deployContract('RSASHA256')
 
-    const [signer] = await ethers.getSigners()
-    const abiCoder = new ethers.AbiCoder()
     const exponent = ethers.toBeHex(parsedContents[0].exponent)
     const modulus = parsedContents[0].solidity.modulus
     const dkimSig = parsedContents[0].solidity.signature
     const hash = parsedContents[0].solidity.hash
-    const sig = abiCoder.encode(['tuple(bytes, tuple(bytes, bytes))', 'bytes', 'address', 'bytes32'], [
-      [selector, [exponent, modulus]],
-      dkimSig,
-      signer.address,
-      hash,
-    ])
     const provider = ethers.provider
     const abiFunc = ['function verify(bytes32 hash, bytes calldata sig, bytes calldata exponent, bytes calldata modulus) external view returns (bool)']
     const iface = new ethers.Interface(abiFunc)
@@ -79,13 +70,12 @@ describe('DKIM', function () {
     const exponent = ethers.toBeHex(parsedContents[0].exponent)
     const modulus = parsedContents[0].solidity.modulus
     const dkimSig = parsedContents[0].solidity.signature
-    const hash = parsedContents[0].solidity.hash
-    const sig = abiCoder.encode(['bytes', 'tuple(bytes, bytes)', 'bytes', 'address', 'bytes32'], [
+    const processedHeader = ethers.toUtf8Bytes(parsedContents[0].processedHeader)
+    const sig = abiCoder.encode(['bytes', 'bytes', 'address', 'bytes'], [
       selector,
-      [exponent, modulus],
       dkimSig,
       signer.address,
-      hash,
+      processedHeader,
     ])
 
     // set the DKIM
