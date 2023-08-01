@@ -163,6 +163,30 @@ const transactions = {
     }
   ]
 }
+
+describe('asyncOps tests', () => {
+  beforeEach(async () => {
+    accountOp.humanizerMeta = { ...humanizerInfo }
+    accountOp.calls = []
+  })
+
+  // @TODO async ops not done
+  // test('getTokenInfo', async () => {
+  //   accountOp.calls = transactions.erc20
+  //   if (accountOp.humanizerMeta) accountOp.humanizerMeta.tokens = {}
+  //   const ir = callsToIr(accountOp)
+  //   let [newIr, asyncOps] = genericErc20Humanizer(accountOp, ir)
+  //   console.log(newIr.calls.length)
+  //   expect(asyncOps.length).toBe(new Set(newIr.calls.map((c) => c.to)).size)
+
+  //   asyncOps = await Promise.all(asyncOps)
+  //   console.log(accountOp.humanizerMeta?.tokens)
+  //   await accountOp.humanizerMeta?.tokens[accountOp.calls[0].to]
+  //   console.log(accountOp.humanizerMeta?.tokens)
+  //   expect(accountOp.humanizerMeta?.tokens[accountOp.calls[0].to]).toBe(['USDT', 6])
+  // })
+})
+
 describe('module tests', () => {
   beforeEach(async () => {
     // const humanizerInfo = await (
@@ -170,7 +194,7 @@ describe('module tests', () => {
     //     'https://raw.githubusercontent.com/AmbireTech/ambire-constants/master/constants/humanizerInfo.json'
     //   )
     // ).json()
-    accountOp.humanizerMeta = humanizerInfo
+    accountOp.humanizerMeta = { ...humanizerInfo }
     accountOp.calls = []
   })
   // @TODO add erc20 test

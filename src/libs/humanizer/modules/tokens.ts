@@ -1,7 +1,30 @@
 import { ethers } from 'ethers'
 import { AccountOp } from 'libs/accountOp/accountOp'
+// @TODO fetch from sonewhere else
+// eslint-disable-next-line import/no-extraneous-dependencies
+import fetch from 'node-fetch'
 import { Ir, IrCall } from '../interfaces'
 import { getLable, getAction, getAddress, getNft, getToken } from '../utils'
+
+async function getTokenInfo(address: string) {
+  try {
+    const response = await // @NOTE network change
+    (await fetch(`https://api.coingecko.com/api/v3/coins/ethereum/contract/${address}`)).json()
+    if (response.symbol && response.detail_platforms?.ethereum.decimal_place)
+      return {
+        tokens: {
+          [address]: [
+            response.symbol.toUpperCase(),
+            response.detail_platforms?.ethereum.decimal_place
+          ]
+        }
+      }
+    return {}
+  } catch (e) {
+    console.log('err on fetching ')
+    return {}
+  }
+}
 
 function genericErc721Humanizer(accountOp: AccountOp, currentIr: Ir): [Ir, Promise<any>[]] {
   // @TODO safety checks, some retured as promises
@@ -71,6 +94,7 @@ function genericErc20Humanizer(accountOp: AccountOp, currentIr: Ir): [Ir, Promis
   // @TODO: check if ${to} is ERC20 (if not in available humanizer data - will be done asyncly and returned as promise)
   // @TODO: check if ${to} is contract when Transfer or transferFrom(_,contract,_)
   // @TODO parse amount according to decimals
+  const asyncOps: Promise<any>[] = []
   const iface = new ethers.Interface(accountOp.humanizerMeta?.abis.ERC20)
   const matcher = {
     [`${iface.getFunction('approve')?.selector}`]: (call: IrCall) => {
@@ -128,6 +152,18 @@ function genericErc20Humanizer(accountOp: AccountOp, currentIr: Ir): [Ir, Promis
     }
   }
   const newCalls = currentIr.calls.map((call) => {
+    // TODO async ops not done
+    // if proper func selector and no such token found in meta
+    if (matcher[call.data.substring(0, 10)] && !accountOp.humanizerMeta?.tokens[call.to]) {
+      const asyncTokenInfo = getTokenInfo(call.to)
+      asyncOps.push(asyncTokenInfo)
+      // @TODO reconsider
+      // eslint-disable-next-line no-param-reassign
+      accountOp.humanizerMeta = {
+        ...accountOp.humanizerMeta,
+        tokens: { ...accountOp.humanizerMeta?.tokens, [call.to]: asyncTokenInfo }
+      }
+    }
     return matcher[call.data.substring(0, 10)] && accountOp.humanizerMeta?.tokens[call.to]
       ? {
           ...call,
@@ -136,7 +172,7 @@ function genericErc20Humanizer(accountOp: AccountOp, currentIr: Ir): [Ir, Promis
       : call
   })
   const newIr = { calls: newCalls }
-  return [newIr, []]
+  return [newIr, asyncOps]
 }
 
 export { genericErc20Humanizer, genericErc721Humanizer }

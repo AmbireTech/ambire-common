@@ -91,8 +91,9 @@ export async function humanize(accountOp: AccountOp) {
   let asyncOps: any[] = []
 
   humanizerModules.forEach((hm) => {
-    let promises = []
-    ;[currentIr, promises] = hm(accountOp, currentIr)
-    asyncOps = [...asyncOps, ...promises]
+    let newPromises = []
+    ;[currentIr, newPromises] = hm(accountOp, currentIr)
+    asyncOps = [...asyncOps, ...newPromises]
   })
+  return [currentIr, asyncOps]
 }
