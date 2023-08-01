@@ -2,6 +2,7 @@
 pragma solidity 0.8.19;
 
 import './libs/SignatureValidator.sol';
+import './dkim/DKIM.sol';
 
 interface ExternalSigValidator {
 	function validateSig(
@@ -16,7 +17,7 @@ interface ExternalSigValidator {
 // @dev All external/public functions (that are not view/pure) use `payable` because AmbireAccount
 // is a wallet contract, and any ETH sent to it is not lost, but on the other hand not having `payable`
 // makes the Solidity compiler add an extra check for `msg.value`, which in this case is wasted gas
-contract AmbireAccount {
+contract AmbireAccount is DKIM {
 	// @dev We do not have a constructor. This contract cannot be initialized with any valid `privileges` by itself!
 	// The indended use case is to deploy one base implementation contract, and create a minimal proxy for each user wallet, by
 	// using our own code generation to insert SSTOREs to initialize `privileges` (IdentityProxyDeploy.js)
@@ -29,6 +30,7 @@ contract AmbireAccount {
 	// Events
 	event LogPrivilegeChanged(address indexed addr, bytes32 priv);
 	event LogErr(address indexed to, uint256 value, bytes data, bytes returnData); // only used in tryCatch
+	event LogDKIMKeyChanged(bytes keySelector, bytes exponent, bytes modulus);
 
 	// Transaction structure
 	// we handle replay protection separately by requiring (address(this), chainID, nonce) as part of the sig
@@ -42,6 +44,28 @@ contract AmbireAccount {
 	struct ExecuteArgs {
 		Transaction[] calls;
 		bytes signature;
+	}
+
+	struct DKIMKey {
+		bytes keySelector;
+		PublicKey publicKey;
+	}
+
+	DKIMKey dkimKey;
+
+	function getDKIMKey() public view returns (DKIMKey memory) {
+		return dkimKey;
+	}
+
+	function setDKIMKey(bytes calldata keySelector, bytes calldata exponent, bytes calldata modulus) public {
+		require(msg.sender == address(this), 'ONLY_IDENTITY_CAN_CALL');
+
+		dkimKey.keySelector = keySelector;
+		PublicKey memory publicKey = PublicKey(exponent, modulus);
+		dkimKey.publicKey = publicKey;
+
+		// TO DO: Think if we should include old values in the event
+		emit LogDKIMKeyChanged(keySelector, exponent, modulus);
 	}
 
 	// Externally validated signatures

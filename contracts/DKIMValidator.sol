@@ -3,18 +3,9 @@ pragma solidity 0.8.19;
 
 import './Recoveries.sol';
 import './dkim/RSASHA256.sol';
+import './dkim/DKIM.sol';
 
-contract DKIMValidator is ExternalSigValidator, Recoveries {
-
-    struct RSAPK {
-        bytes exponent;
-        bytes modulus;
-    }
-
-    struct DKIMKey {
-        bytes selector;
-        RSAPK publicKey;
-    }
+contract DKIMValidator is ExternalSigValidator, Recoveries, DKIM {
 
     function validateSig(
         address accountAddr,
@@ -24,12 +15,14 @@ contract DKIMValidator is ExternalSigValidator, Recoveries {
         AmbireAccount.Transaction[] calldata calls
     ) external returns (bool shouldExecute) {
 
-        (DKIMKey memory key, bytes memory dkimSig, address newKeyToSet, bytes32 hash) = abi.decode(sig, (DKIMKey, bytes, address, bytes32));
-        return RSASHA256.verify(hash, dkimSig, key.publicKey.exponent, key.publicKey.modulus);
+        // TO DO: CALCULATE THE HASH ONCHAIN
 
-        // call the verifier and verify, that's it.
-        // DKIMKey dkimKey = accInfo.dkimKey;
-        // if (signature.dkimKey.selector !== dkimKey.selector) {
+        (bytes memory selector, PublicKey memory publicKey, bytes memory dkimSig, address newKeyToSet, bytes32 hash) = abi.decode(sig, (bytes, PublicKey, bytes, address, bytes32));
+
+        AmbireAccount ambireAccount = AmbireAccount(payable(accountAddr));
+        if (keccak256(selector) == keccak256(ambireAccount.getDKIMKey().keySelector)) {
+            return RSASHA256.verify(hash, dkimSig, publicKey.exponent, publicKey.modulus);
+
         //     const dateAdded = dkimKeys[keccak256(signature.dkimKey)]
         //     if (dateAdded == 0) {
         //     require(signature.rrSets.length > 0, 'no DNSSec proof and no valid DKIM key')
@@ -38,6 +31,8 @@ contract DKIMValidator is ExternalSigValidator, Recoveries {
         //     require(block.timestamp > dateAdded + accInfo.timelockForUnknownKeys, 'key added too recently, timelock not ready yet')
         //     dkimKey = signature.dkimKey
         //     }
-        // }
+        }
+
+        return false;
     }
 }
