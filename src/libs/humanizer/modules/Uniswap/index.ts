@@ -1,5 +1,6 @@
 import { AccountOp } from '../../../accountOp/accountOp'
 import { Ir, IrCall } from '../../interfaces'
+import { uniUniversalRouter } from './uniUnivarsalRouter'
 import { uniV2Mapping } from './uniV2'
 import { uniV32Mapping, uniV3Mappinig } from './uniV3'
 
@@ -8,7 +9,8 @@ export function uniswapHumanizer(accountOp: AccountOp, currentIr: Ir): [Ir, Prom
   const matcher = {
     ...uniV2Mapping(accountOp.humanizerMeta),
     ...uniV3Mappinig(accountOp.humanizerMeta),
-    ...uniV32Mapping(accountOp.humanizerMeta)
+    ...uniV32Mapping(accountOp.humanizerMeta),
+    ...uniUniversalRouter(accountOp.humanizerMeta)
   }
   const newCalls = currentIr.calls.map((call: IrCall) => {
     // check against sus contracts with same func selectors
