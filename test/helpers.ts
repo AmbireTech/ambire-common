@@ -11,7 +11,7 @@ async function sendFunds(to: string, ether: number) {
 }
 
 function getPriviledgeTxn(ambireAccountAddr: string, privAddress: string, hasPriv: boolean = true) {
-  const setAddrPrivilegeABI = ['function setAddrPrivilege(address addr, bytes32 priv)']
+  const setAddrPrivilegeABI = ['function setAddrPrivilege(address addr, bytes32 priv) external payable']
   const iface = new ethers.Interface(setAddrPrivilegeABI)
   const priv = hasPriv ? 1 : 0
   const calldata = iface.encodeFunctionData('setAddrPrivilege', [

@@ -5,6 +5,9 @@ import { promisify } from 'util'
 import { ethers } from 'hardhat'
 import { expect } from 'chai'
 import { deployAmbireAccountHardhatNetwork } from '../implementations'
+import { getPriviledgeTxn, getTimelockData } from '../helpers'
+import { wrapEthSign } from '../ambireSign'
+import { abiCoder } from '../config'
 const readFile = promisify(fs.readFile)
 const emailsPath = path.join(__dirname, 'emails')
 
@@ -28,8 +31,10 @@ function getSetEmailFromTxn(email: string) {
 describe('DKIM', function () {
   it('successfully deploys the ambire account', async function () {
     const [signer] = await ethers.getSigners()
+    const { hash, timelockAddress } = getTimelockData()
     const { ambireAccount, ambireAccountAddress } = await deployAmbireAccountHardhatNetwork([
-      { addr: signer.address, hash: true }
+      { addr: signer.address, hash: true },
+      { addr: timelockAddress, hash: hash }
     ])
     ambireContract = ambireAccount
     ambireAddress = ambireAccountAddress
@@ -62,7 +67,7 @@ describe('DKIM', function () {
         encoding: 'ascii'
     })
     const parsedContents: any = await parseEmail(gmail)
-    const selector = ethers.hexlify(ethers.toUtf8Bytes(parsedContents[0].selector))
+    const dkimSelector = ethers.hexlify(ethers.toUtf8Bytes(parsedContents[0].selector))
 
     const rsasha256 = await ethers.deployContract('RSASHA256')
     const contractFactory = await ethers.getContractFactory("DKIMValidator", {
@@ -72,27 +77,40 @@ describe('DKIM', function () {
     })
     const validator = await contractFactory.deploy()
 
-    const [signer] = await ethers.getSigners()
-    const abiCoder = new ethers.AbiCoder()
+    const [signer, signerTwo, signerThree] = await ethers.getSigners()
+
+    // sign with timelocked signer
+    const txns = [getPriviledgeTxn(ambireAddress, signerThree.address, true)]
+    const msgHash = ethers.keccak256(
+      abiCoder.encode(
+        ['address', 'uint', 'uint', 'tuple(address, uint, bytes)[]'],
+        [ambireAddress, 31337, 0, txns]
+      )
+    )
+    const msg = ethers.getBytes(msgHash)
+    const secondarySig = wrapEthSign(await signerTwo.signMessage(msg))
+
     const exponent = ethers.toBeHex(parsedContents[0].exponent)
     const modulus = parsedContents[0].solidity.modulus
     const dkimSig = parsedContents[0].solidity.signature
     const processedHeader = parsedContents[0].processedHeader
-    const sig = abiCoder.encode(['bytes', 'bytes', 'address', 'string'], [
-      selector,
+    // bytes, bytes, bytes, address, string
+    const sig = abiCoder.encode(['bytes', 'bytes', 'bytes', 'address', 'string'], [
+      dkimSelector,
       dkimSig,
-      signer.address,
+      secondarySig,
+      signerThree.address,
       processedHeader,
     ])
 
     // set the DKIM
     const email = 'borislavdevlabs@gmail.com'
     await ambireContract.executeBySender([
-      getSetDKIMTxn(selector, exponent, modulus),
+      getSetDKIMTxn(dkimSelector, exponent, modulus),
       getSetEmailFromTxn(email),
     ])
     const dkimBytecode = await ambireContract.getAccountInfo()
-    expect(dkimBytecode[0][0]).to.equal(selector)
+    expect(dkimBytecode[0][0]).to.equal(dkimSelector)
     expect(dkimBytecode[0][1][0]).to.equal(exponent)
     expect(dkimBytecode[0][1][1]).to.equal(modulus)
     expect(dkimBytecode[1]).to.equal(email)
@@ -100,8 +118,9 @@ describe('DKIM', function () {
     const provider = ethers.provider
     const abiFunc = ['function validateSig(address accountAddr, bytes calldata data, bytes calldata sig, uint nonce, tuple(address, uint256, bytes)[] calldata calls) external returns (bool shouldExecute)']
     const iface = new ethers.Interface(abiFunc)
+    const recoveryData = abiCoder.encode(['tuple(address[], uint256)'], [[[signer.address, signerTwo.address], 1]]);
     const calldata = iface.encodeFunctionData('validateSig', [
-      ambireAddress, '0x00', sig, 1, []
+      ambireAddress, recoveryData, sig, 0, txns
     ])
     const isValid = await provider.call({
       to: await validator.getAddress(),
