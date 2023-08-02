@@ -1,7 +1,10 @@
+import { JsonRpcProvider } from 'ethers'
 import EventEmitter from '../eventEmitter'
 import { Storage } from '../../interfaces/storage'
-import { AccountOp } from '../../libs/accountOp/accountOp'
+import { AccountOp, AccountOpStatus } from '../../libs/accountOp/accountOp'
 import { SignedMessage } from '../../interfaces/userRequest'
+import { networks } from '../../consts/networks'
+import { AccountStates } from '../main/main'
 
 interface Pagination {
   fromPage: number
@@ -15,8 +18,13 @@ interface PaginationResult {
   maxPages: number
 }
 
+export interface SubmittedAccountOp extends AccountOp {
+  txnId: string
+  nonce: number
+}
+
 interface AccountsOps extends PaginationResult {
-  items: AccountOp[]
+  items: SubmittedAccountOp[]
 }
 interface SignedMessages extends PaginationResult {
   items: SignedMessage[]
@@ -28,8 +36,8 @@ interface Filters {
 }
 
 interface InternalAccountsOps {
-  // account => network => AccountOp[]
-  [key: string]: { [key: string]: AccountOp[] }
+  // account => network => SubmittedAccountOp[]
+  [key: string]: { [key: string]: SubmittedAccountOp[] }
 }
 
 interface InternalSignedMessages {
@@ -41,6 +49,8 @@ export class ActivityController extends EventEmitter {
   private storage: Storage
 
   private initialLoadPromise: Promise<void>
+
+  private accounts: AccountStates
 
   #accountsOps: InternalAccountsOps = {}
 
@@ -62,9 +72,10 @@ export class ActivityController extends EventEmitter {
 
   filters: Filters
 
-  constructor(storage: Storage, filters: Filters) {
+  constructor(storage: Storage, accounts: AccountStates, filters: Filters) {
     super()
     this.storage = storage
+    this.accounts = accounts
     this.filters = filters
     this.initialLoadPromise = this.load()
   }
@@ -102,8 +113,7 @@ export class ActivityController extends EventEmitter {
     }
   }
 
-  // @TODO: Implement AccountOp status - pending | confirmed | failed
-  async addAccountOp(accountOp: AccountOp) {
+  async addAccountOp(accountOp: SubmittedAccountOp) {
     await this.initialLoadPromise
 
     const account = accountOp.accountAddr
@@ -112,10 +122,46 @@ export class ActivityController extends EventEmitter {
     if (!this.#accountsOps[account]) this.#accountsOps[account] = {}
     if (!this.#accountsOps[account][network]) this.#accountsOps[account][network] = []
 
-    this.#accountsOps[account][network].push(accountOp)
+    this.#accountsOps[account][network].push({ ...accountOp, status: AccountOpStatus.Pending })
     this.accountsOps = this.filterAndPaginate(this.#accountsOps, this.accountsOpsPagination)
 
     await this.storage.set('accountsOps', this.#accountsOps)
+    this.emitUpdate()
+  }
+
+  /**
+   * Update AccountsOps statuses (inner and public state, and storage)
+   *
+   * Here is the algorithm:
+   * 0. Once we add a new AccountOp to ActivityController via `addAccountOp`, we are setting its status to AccountOpStatus.Pending.
+   * 1. Here, we firstly rely on `getTransactionReceipt` for determining the status (success or failure).
+   * 2. If we don't manage to determine its status, we are comparing AccountOp and Account nonce.
+   */
+  async updateAccountsOpsStatuses() {
+    const accountsOps = this.#accountsOps?.[this.filters.account]?.[this.filters.network] || []
+    const network = networks.find((x) => x.id === this.filters.network)
+    const provider = new JsonRpcProvider(network!.rpcUrl)
+
+    // We are updating Pending AccountsOps only, because we already updated the rest AccountsOps
+    await Promise.all(
+      accountsOps
+        .filter((accountOp) => accountOp.status === AccountOpStatus.Pending)
+        .map(async (accountOp, index) => {
+          const receipt = await provider.getTransactionReceipt(accountOp.txnId)
+
+          if (receipt) {
+            accountsOps[index].status = receipt.status
+              ? AccountOpStatus.Success
+              : AccountOpStatus.Failure
+          } else if (
+            this.accounts[accountOp.accountAddr][accountOp.networkId].nonce > accountOp.nonce
+          ) {
+            accountsOps[index].status = AccountOpStatus.NotConfirmed
+          }
+        })
+    )
+    await this.storage.set('accountsOps', this.#accountsOps)
+    this.accountsOps = this.filterAndPaginate(this.#accountsOps, this.accountsOpsPagination)
     this.emitUpdate()
   }
 
@@ -161,5 +207,9 @@ export class ActivityController extends EventEmitter {
       this.signedMessagesPagination
     )
     this.emitUpdate()
+  }
+
+  setAccounts(accounts: AccountStates) {
+    this.accounts = accounts
   }
 }

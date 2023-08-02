@@ -26,6 +26,14 @@ export interface GasFeePayment {
   amount: number
 }
 
+export enum AccountOpStatus {
+  Pending = 'pending',
+  Success = 'success',
+  Failure = 'failure',
+  // @TODO: better status naming
+  NotConfirmed = 'not-confirmed'
+}
+
 // Equivalent to ERC-4337 UserOp, but more universal than it since a AccountOp can be transformed to
 // a UserOp, or to a direct EOA transaction, or relayed through the Ambire relayer
 // it is more precisely defined than a UserOp though - UserOp just has calldata and this has individual `calls`
@@ -51,6 +59,8 @@ export interface AccountOp {
   // or any other data that needs to otherwise be retrieved in an async manner and/or needs to be
   // "remembered" at the time of signing in order to visualize history properly
   humanizerMeta?: { [key: string]: any }
+  txnId: string | null
+  status: AccountOpStatus | null
 }
 
 export function callToTuple(call: Call): [string, bigint, string] {

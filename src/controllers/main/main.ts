@@ -181,7 +181,9 @@ export class MainController extends EventEmitter {
       signature: null,
       // @TODO from pending recoveries
       accountOpToExecuteBefore: null,
-      calls
+      calls,
+      txnId: null,
+      status: null
     }
   }
 

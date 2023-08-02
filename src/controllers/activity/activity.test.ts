@@ -1,13 +1,29 @@
 import { describe, expect } from '@jest/globals'
-import { AccountOp } from '../../libs/accountOp/accountOp'
-import { ActivityController } from './activity'
+import { ActivityController, SubmittedAccountOp } from './activity'
 import { SignedMessage } from '../../interfaces/userRequest'
 import { produceMemoryStore } from '../../../test/helpers'
+import { AccountStates } from '../main/main'
 
 describe('Activity Controller ', () => {
+  const accounts = {
+    '0xa07D75aacEFd11b425AF7181958F0F85c312f143': {
+      ethereum: {
+        accountAddr: '0xa07D75aacEFd11b425AF7181958F0F85c312f143',
+        nonce: 379,
+        isDeployed: true,
+        associatedKeys: ['0xd6e371526cdaeE04cd8AF225D42e37Bc14688D9E'],
+        isV2: false,
+        scheduledRecoveries: [],
+        balance: 0n,
+        isEOA: false,
+        deployError: false
+      }
+    }
+  } as unknown as AccountStates
+
   test('AccountsOps - retrieved from Controller and persisted in Storage', async () => {
     const storage = produceMemoryStore()
-    const controller = new ActivityController(storage, {
+    const controller = new ActivityController(storage, accounts, {
       account: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
       network: 'ethereum'
     })
@@ -26,27 +42,28 @@ describe('Activity Controller ', () => {
           value: BigInt(0),
           data: '0x23b872dd000000000000000000000000b674f3fd5f43464db0448a57529eaf37f04ccea500000000000000000000000077777777789a8bbee6c64381e5e89e501fb0e4c80000000000000000000000000000000000000000000000000000000000000089'
         }
-      ]
-    } as AccountOp
+      ],
+      txnId: '0x891e12877c24a8292fd73fd741897682f38a7bcd497374a6b68e8add89e1c0fb'
+    } as SubmittedAccountOp
 
     await controller.addAccountOp(accountOp)
     const controllerAccountsOps = controller.accountsOps
     const storageAccountsOps = await storage.get('accountsOps', {})
 
     expect(controllerAccountsOps).toEqual({
-      items: [accountOp],
+      items: [{ ...accountOp, status: 'pending' }], // everytime we add a new AccountOp, it gets pending status
       itemsTotal: 1,
       currentPage: 0,
       maxPages: 1
     })
     expect(storageAccountsOps['0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'].ethereum).toEqual([
-      accountOp
+      { ...accountOp, status: 'pending' }
     ])
   })
 
   test('AccountsOps - pagination and filtration handled correctly', async () => {
     const storage = produceMemoryStore()
-    const controller = new ActivityController(storage, {
+    const controller = new ActivityController(storage, accounts, {
       account: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
       network: 'ethereum'
     })
@@ -66,7 +83,8 @@ describe('Activity Controller ', () => {
             value: BigInt(0),
             data: '0x23b872dd000000000000000000000000b674f3fd5f43464db0448a57529eaf37f04ccea500000000000000000000000077777777789a8bbee6c64381e5e89e501fb0e4c80000000000000000000000000000000000000000000000000000000000000089'
           }
-        ]
+        ],
+        txnId: '0x891e12877c24a8292fd73fd741897682f38a7bcd497374a6b68e8add89e1c0fb'
       },
       {
         accountAddr: '0x40b38765696e3d5d8d9d834d8aad4bb6e418e489',
@@ -82,7 +100,8 @@ describe('Activity Controller ', () => {
             value: BigInt(0),
             data: '0x23b872dd000000000000000000000000b674f3fd5f43464db0448a57529eaf37f04ccea500000000000000000000000077777777789a8bbee6c64381e5e89e501fb0e4c80000000000000000000000000000000000000000000000000000000000000089'
           }
-        ]
+        ],
+        txnId: '0x891e12877c24a8292fd73fd741897682f38a7bcd497374a6b68e8add89e1c0fb'
       },
       {
         accountAddr: '0x40b38765696e3d5d8d9d834d8aad4bb6e418e489',
@@ -98,7 +117,8 @@ describe('Activity Controller ', () => {
             value: BigInt(0),
             data: '0x23b872dd000000000000000000000000b674f3fd5f43464db0448a57529eaf37f04ccea500000000000000000000000077777777789a8bbee6c64381e5e89e501fb0e4c80000000000000000000000000000000000000000000000000000000000000089'
           }
-        ]
+        ],
+        txnId: '0x891e12877c24a8292fd73fd741897682f38a7bcd497374a6b68e8add89e1c0fb'
       },
       {
         accountAddr: '0x40b38765696e3d5d8d9d834d8aad4bb6e418e489',
@@ -114,9 +134,10 @@ describe('Activity Controller ', () => {
             value: BigInt(0),
             data: '0x23b872dd000000000000000000000000b674f3fd5f43464db0448a57529eaf37f04ccea500000000000000000000000077777777789a8bbee6c64381e5e89e501fb0e4c80000000000000000000000000000000000000000000000000000000000000089'
           }
-        ]
+        ],
+        txnId: '0x891e12877c24a8292fd73fd741897682f38a7bcd497374a6b68e8add89e1c0fb'
       }
-    ] as AccountOp[]
+    ] as SubmittedAccountOp[]
 
     // eslint-disable-next-line no-restricted-syntax
     for (const accountOp of accountsOps) {
@@ -149,7 +170,9 @@ describe('Activity Controller ', () => {
               value: BigInt(0),
               data: '0x23b872dd000000000000000000000000b674f3fd5f43464db0448a57529eaf37f04ccea500000000000000000000000077777777789a8bbee6c64381e5e89e501fb0e4c80000000000000000000000000000000000000000000000000000000000000089'
             }
-          ]
+          ],
+          status: 'pending', // everytime we add a new AccountOp, it gets pending status
+          txnId: '0x891e12877c24a8292fd73fd741897682f38a7bcd497374a6b68e8add89e1c0fb'
         }
       ],
       itemsTotal: 2,
@@ -158,9 +181,123 @@ describe('Activity Controller ', () => {
     })
   })
 
+  test('AccountsOps - `success` status is set correctly', async () => {
+    const storage = produceMemoryStore()
+    const controller = new ActivityController(storage, accounts, {
+      account: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
+      network: 'ethereum'
+    })
+
+    const accountOp = {
+      accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
+      signingKeyAddr: '0x5Be214147EA1AE3653f289E17fE7Dc17A73AD175',
+      gasLimit: null,
+      gasFeePayment: null,
+      networkId: 'ethereum',
+      nonce: 225,
+      signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503',
+      calls: [
+        {
+          to: '0x18Ce9CF7156584CDffad05003410C3633EFD1ad0',
+          value: BigInt(0),
+          data: '0x23b872dd000000000000000000000000b674f3fd5f43464db0448a57529eaf37f04ccea500000000000000000000000077777777789a8bbee6c64381e5e89e501fb0e4c80000000000000000000000000000000000000000000000000000000000000089'
+        }
+      ],
+      // this txn is already mined and has `success` status
+      txnId: '0x891e12877c24a8292fd73fd741897682f38a7bcd497374a6b68e8add89e1c0fb'
+    } as SubmittedAccountOp
+
+    await controller.addAccountOp(accountOp)
+    await controller.updateAccountsOpsStatuses()
+    const controllerAccountsOps = controller.accountsOps
+
+    expect(controllerAccountsOps).toEqual({
+      items: [{ ...accountOp, status: 'success' }], //  we expect success here
+      itemsTotal: 1,
+      currentPage: 0,
+      maxPages: 1
+    })
+  })
+
+  test('AccountsOps - `failed` status is set correctly', async () => {
+    const storage = produceMemoryStore()
+    const controller = new ActivityController(storage, accounts, {
+      account: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
+      network: 'ethereum'
+    })
+
+    const accountOp = {
+      accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
+      signingKeyAddr: '0x5Be214147EA1AE3653f289E17fE7Dc17A73AD175',
+      gasLimit: null,
+      gasFeePayment: null,
+      networkId: 'ethereum',
+      nonce: 225,
+      signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503',
+      calls: [
+        {
+          to: '0x18Ce9CF7156584CDffad05003410C3633EFD1ad0',
+          value: BigInt(0),
+          data: '0x23b872dd000000000000000000000000b674f3fd5f43464db0448a57529eaf37f04ccea500000000000000000000000077777777789a8bbee6c64381e5e89e501fb0e4c80000000000000000000000000000000000000000000000000000000000000089'
+        }
+      ],
+      // this txn is already mined, but has `fail` status
+      txnId: '0x67ec3acc5274a88c50d1e79e9b9d4c2c3d5e0e3ba3cc33b32d65f3fdb3b5a258'
+    } as SubmittedAccountOp
+
+    await controller.addAccountOp(accountOp)
+    await controller.updateAccountsOpsStatuses()
+    const controllerAccountsOps = controller.accountsOps
+
+    expect(controllerAccountsOps).toEqual({
+      items: [{ ...accountOp, status: 'failure' }], // we expect failure here
+      itemsTotal: 1,
+      currentPage: 0,
+      maxPages: 1
+    })
+  })
+
+  test.only('AccountsOps - `not confirmed` status is set correctly', async () => {
+    const storage = produceMemoryStore()
+    const controller = new ActivityController(storage, accounts, {
+      account: '0xa07D75aacEFd11b425AF7181958F0F85c312f143',
+      network: 'ethereum'
+    })
+
+    const accountOp = {
+      accountAddr: '0xa07D75aacEFd11b425AF7181958F0F85c312f143',
+      signingKeyAddr: '0x5Be214147EA1AE3653f289E17fE7Dc17A73AD175',
+      gasLimit: null,
+      gasFeePayment: null,
+      networkId: 'ethereum',
+      nonce: 225,
+      signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503',
+      calls: [
+        {
+          to: '0x18Ce9CF7156584CDffad05003410C3633EFD1ad0',
+          value: BigInt(0),
+          data: '0x23b872dd000000000000000000000000b674f3fd5f43464db0448a57529eaf37f04ccea500000000000000000000000077777777789a8bbee6c64381e5e89e501fb0e4c80000000000000000000000000000000000000000000000000000000000000089'
+        }
+      ],
+      // wrong txn id, so we can simulate nullish getTransactionReceipt()
+      txnId: '0x0000000000000000000000000000000000000000000000000000000000000001'
+    } as SubmittedAccountOp
+
+    await controller.addAccountOp(accountOp)
+    await controller.updateAccountsOpsStatuses()
+    const controllerAccountsOps = controller.accountsOps
+
+    expect(controllerAccountsOps).toEqual({
+      items: [{ ...accountOp, status: 'not-confirmed' }], // we expect not-confirmed status here
+      itemsTotal: 1,
+      currentPage: 0,
+      maxPages: 1
+    })
+  })
+
   test('SignedMessages - retrieved from Controller and persisted in Storage', async () => {
     const storage = produceMemoryStore()
-    const controller = new ActivityController(storage, {
+    const controller = new ActivityController(storage, accounts, {
       account: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
       network: 'ethereum'
     })
@@ -195,7 +332,7 @@ describe('Activity Controller ', () => {
 
   test('SignedMessages - pagination and filtration handled correctly', async () => {
     const storage = produceMemoryStore()
-    const controller = new ActivityController(storage, {
+    const controller = new ActivityController(storage, accounts, {
       account: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
       network: 'ethereum'
     })
