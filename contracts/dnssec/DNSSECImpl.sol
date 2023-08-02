@@ -101,13 +101,13 @@ contract DNSSECImpl is DNSSEC, Owned {
      * @dev Takes a chain of signed DNS records, verifies them, and returns the data from the last record set in the chain.
      *      Reverts if the records do not form an unbroken chain of trust to the DNSSEC anchor records.
      * @param input A list of signed RRSets.
-     * @param now The Unix timestamp to validate the records at.
+     * @param nowTime The Unix timestamp to validate the records at.
      * @return rrs The RRData from the last RRSet in the chain.
      * @return inception The inception time of the signed record set.
      */
     function verifyRRSetTimestamp(
         RRSetWithSignature[] memory input,
-        uint256 now
+        uint256 nowTime
     )
         public
         view
@@ -120,7 +120,7 @@ contract DNSSECImpl is DNSSEC, Owned {
             RRUtils.SignedSet memory rrset = validateSignedSet(
                 input[i],
                 proof,
-                now
+                nowTime
             );
             proof = rrset.data;
             inception = rrset.inception;
@@ -136,12 +136,12 @@ contract DNSSECImpl is DNSSEC, Owned {
      *        data, followed by a series of canonicalised RR records that the signature
      *        applies to.
      * @param proof The DNSKEY or DS to validate the signature against.
-     * @param now The current timestamp.
+     * @param nowTime The current timestamp.
      */
     function validateSignedSet(
         RRSetWithSignature memory input,
         bytes memory proof,
-        uint256 now
+        uint256 nowTime
     ) internal view returns (RRUtils.SignedSet memory rrset) {
         rrset = input.rrset.readSignedSet();
 
@@ -158,14 +158,14 @@ contract DNSSECImpl is DNSSEC, Owned {
 
         // o  The validator's notion of the current time MUST be less than or
         //    equal to the time listed in the RRSIG RR's Expiration field.
-        if (!RRUtils.serialNumberGte(rrset.expiration, uint32(now))) {
-            revert SignatureExpired(rrset.expiration, uint32(now));
+        if (!RRUtils.serialNumberGte(rrset.expiration, uint32(nowTime))) {
+            revert SignatureExpired(rrset.expiration, uint32(nowTime));
         }
 
         // o  The validator's notion of the current time MUST be greater than or
         //    equal to the time listed in the RRSIG RR's Inception field.
-        if (!RRUtils.serialNumberGte(uint32(now), rrset.inception)) {
-            revert SignatureNotValidYet(rrset.inception, uint32(now));
+        if (!RRUtils.serialNumberGte(uint32(nowTime), rrset.inception)) {
+            revert SignatureNotValidYet(rrset.inception, uint32(nowTime));
         }
 
         // Validate the signature
@@ -182,7 +182,7 @@ contract DNSSECImpl is DNSSEC, Owned {
     function validateRRs(
         RRUtils.SignedSet memory rrset,
         uint16 typecovered
-    ) internal view returns (bytes memory name) {
+    ) internal pure returns (bytes memory name) {
         // Iterate over all the RRs
         for (
             RRUtils.RRIterator memory iter = rrset.rrs();

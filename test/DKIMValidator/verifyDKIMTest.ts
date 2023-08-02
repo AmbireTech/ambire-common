@@ -29,6 +29,18 @@ function getSetEmailFromTxn(email: string) {
   return [ambireAddress, 0, calldata]
 }
 
+async function deployDnsSec() {
+  const contract = await ethers.deployContract('DNSSECImpl', ['0x00002b000100000e1000244a5c080249aac11d7b6f6446702e54a1607371607a1a41855200fd2ce1cdde32f24e8fb500002b000100000e1000244f660802e06d44b80b8f1d39a95c0b0d7c65d08458e880409bbc683457104237c7f8ec8d00002b000100000e10000404fefdfd'])
+
+  const rsaSha256 = await ethers.deployContract('RSASHA256Algorithm')
+  await contract.setAlgorithm(8, await rsaSha256.getAddress())
+
+  const digest = await ethers.deployContract('SHA256Digest')
+  await contract.setDigest(2, await digest.getAddress())
+
+  return contract;
+}
+
 describe('DKIM', function () {
   it('successfully deploys the ambire account', async function () {
     const [signer] = await ethers.getSigners()
@@ -132,5 +144,8 @@ describe('DKIM', function () {
   it('successfully upload the dnssec contract and validate ambire\'s dns', async function () {
     // const signedSetsData = await lookup('Google', 'Ambire.com')
     // to do: ...
+    const dnsSecContract = await deployDnsSec()
+    const address = await dnsSecContract.getAddress()
+    expect(address).to.not.be.null
   })
 })

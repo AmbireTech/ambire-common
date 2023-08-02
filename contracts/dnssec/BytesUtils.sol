@@ -15,7 +15,7 @@ library BytesUtils {
         bytes memory self,
         uint256 offset,
         uint256 len
-    ) internal view returns (bytes32 ret) {
+    ) internal pure returns (bytes32 ret) {
         require(offset + len <= self.length);
         assembly {
             ret := keccak256(add(add(self, 32), offset), len)
@@ -33,7 +33,7 @@ library BytesUtils {
     function compare(
         bytes memory self,
         bytes memory other
-    ) internal view returns (int256) {
+    ) internal pure returns (int256) {
         return compare(self, 0, self.length, other, 0, other.length);
     }
 
@@ -57,7 +57,7 @@ library BytesUtils {
         bytes memory other,
         uint256 otheroffset,
         uint256 otherlen
-    ) internal view returns (int256) {
+    ) internal pure returns (int256) {
         if (offset + len > self.length) {
             revert OffsetOutOfBoundsError(offset + len, self.length);
         }
@@ -115,7 +115,7 @@ library BytesUtils {
         bytes memory other,
         uint256 otherOffset,
         uint256 len
-    ) internal view returns (bool) {
+    ) internal pure returns (bool) {
         return keccak(self, offset, len) == keccak(other, otherOffset, len);
     }
 
@@ -132,7 +132,7 @@ library BytesUtils {
         uint256 offset,
         bytes memory other,
         uint256 otherOffset
-    ) internal view returns (bool) {
+    ) internal pure returns (bool) {
         return
             keccak(self, offset, self.length - offset) ==
             keccak(other, otherOffset, other.length - otherOffset);
@@ -150,7 +150,7 @@ library BytesUtils {
         bytes memory self,
         uint256 offset,
         bytes memory other
-    ) internal view returns (bool) {
+    ) internal pure returns (bool) {
         return
             self.length == offset + other.length &&
             equals(self, offset, other, 0, other.length);
@@ -165,7 +165,7 @@ library BytesUtils {
     function equals(
         bytes memory self,
         bytes memory other
-    ) internal view returns (bool) {
+    ) internal pure returns (bool) {
         return
             self.length == other.length &&
             equals(self, 0, other, 0, self.length);
@@ -180,7 +180,7 @@ library BytesUtils {
     function readUint8(
         bytes memory self,
         uint256 idx
-    ) internal view returns (uint8 ret) {
+    ) internal pure returns (uint8 ret) {
         return uint8(self[idx]);
     }
 
@@ -193,7 +193,7 @@ library BytesUtils {
     function readUint16(
         bytes memory self,
         uint256 idx
-    ) internal view returns (uint16 ret) {
+    ) internal pure returns (uint16 ret) {
         require(idx + 2 <= self.length);
         assembly {
             ret := and(mload(add(add(self, 2), idx)), 0xFFFF)
@@ -209,7 +209,7 @@ library BytesUtils {
     function readUint32(
         bytes memory self,
         uint256 idx
-    ) internal view returns (uint32 ret) {
+    ) internal pure returns (uint32 ret) {
         require(idx + 4 <= self.length);
         assembly {
             ret := and(mload(add(add(self, 4), idx)), 0xFFFFFFFF)
@@ -225,7 +225,7 @@ library BytesUtils {
     function readBytes32(
         bytes memory self,
         uint256 idx
-    ) internal view returns (bytes32 ret) {
+    ) internal pure returns (bytes32 ret) {
         require(idx + 32 <= self.length);
         assembly {
             ret := mload(add(add(self, 32), idx))
@@ -241,7 +241,7 @@ library BytesUtils {
     function readBytes20(
         bytes memory self,
         uint256 idx
-    ) internal view returns (bytes20 ret) {
+    ) internal pure returns (bytes20 ret) {
         require(idx + 20 <= self.length);
         assembly {
             ret := and(
@@ -262,7 +262,7 @@ library BytesUtils {
         bytes memory self,
         uint256 idx,
         uint256 len
-    ) internal view returns (bytes32 ret) {
+    ) internal pure returns (bytes32 ret) {
         require(len <= 32);
         require(idx + len <= self.length);
         assembly {
@@ -271,7 +271,7 @@ library BytesUtils {
         }
     }
 
-    function memcpy(uint256 dest, uint256 src, uint256 len) private view {
+    function memcpy(uint256 dest, uint256 src, uint256 len) private pure {
         // Copy word-length chunks while possible
         for (; len >= 32; len -= 32) {
             assembly {
@@ -302,7 +302,7 @@ library BytesUtils {
         bytes memory self,
         uint256 offset,
         uint256 len
-    ) internal view returns (bytes memory) {
+    ) internal pure returns (bytes memory) {
         require(offset + len <= self.length);
 
         bytes memory ret = new bytes(len);
@@ -334,7 +334,7 @@ library BytesUtils {
         bytes memory self,
         uint256 off,
         uint256 len
-    ) internal view returns (bytes32) {
+    ) internal pure returns (bytes32) {
         require(len <= 52);
 
         uint256 ret = 0;
@@ -390,7 +390,7 @@ library BytesUtils {
         uint256 off,
         uint256 len,
         bytes1 needle
-    ) internal view returns (uint256) {
+    ) internal pure returns (uint256) {
         for (uint256 idx = off; idx < off + len; idx++) {
             if (self[idx] == needle) {
                 return idx;

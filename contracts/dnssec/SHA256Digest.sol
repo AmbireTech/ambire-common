@@ -13,7 +13,7 @@ contract SHA256Digest is Digest {
     function verify(
         bytes calldata data,
         bytes calldata hash
-    ) external view override returns (bool) {
+    ) external pure override returns (bool) {
         require(hash.length == 32, "Invalid sha256 hash length");
         return sha256(data) == hash.readBytes32(0);
     }

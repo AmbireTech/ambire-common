@@ -14,5 +14,5 @@ interface Digest {
     function verify(
         bytes calldata data,
         bytes calldata hash
-    ) external view virtual returns (bool);
+    ) external view returns (bool);
 }
