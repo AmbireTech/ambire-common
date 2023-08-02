@@ -62,7 +62,6 @@ describe('DKIM', function () {
     })
     expect(isValid).to.equal(ethers.toBeHex(1, 32))
   })
-
   it('successfully parses a gmail email and verify it onchain', async function () {
     const gmail = await readFile(path.join(emailsPath, 'to-myself.eml'), {
         encoding: 'ascii'
@@ -70,8 +69,6 @@ describe('DKIM', function () {
     const parsedContents: any = await parseEmail(gmail)
     const dkimSelectorNoHex = parsedContents[0].selector
     const dkimSelector = ethers.hexlify(ethers.toUtf8Bytes(dkimSelectorNoHex))
-    const domainName = parsedContents[0].signature.domain
-    // const signedSetsData = await lookup(dkimSelectorNoHex, domainName)
 
     const rsasha256 = await ethers.deployContract('RSASHA256')
     const contractFactory = await ethers.getContractFactory("DKIMValidator", {
@@ -131,5 +128,9 @@ describe('DKIM', function () {
       data: calldata
     })
     expect(isValid).to.equal(ethers.toBeHex(1, 32))
+  })
+  it('successfully upload the dnssec contract and validate ambire\'s dns', async function () {
+    // const signedSetsData = await lookup('Google', 'Ambire.com')
+    // to do: ...
   })
 })
