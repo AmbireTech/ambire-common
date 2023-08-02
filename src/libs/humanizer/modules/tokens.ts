@@ -8,8 +8,11 @@ import { getLable, getAction, getAddress, getNft, getToken } from '../utils'
 
 async function getTokenInfo(address: string) {
   try {
-    const response = await // @NOTE network change
-    (await fetch(`https://api.coingecko.com/api/v3/coins/ethereum/contract/${address}`)).json()
+    // const response = await // @NOTE network change
+    // (await fetch(`https://api.coingecko.com/api/v3/coins/ethereum/contract/${address}`)).json()
+    // @TODO add fetch as arg
+    // @NOTE mocked
+    const response = { symbol: 'usdt', detail_platforms: { ethereum: { decimal_place: 6 } } }
     if (response.symbol && response.detail_platforms?.ethereum.decimal_place)
       return {
         tokens: {
@@ -157,12 +160,6 @@ function genericErc20Humanizer(accountOp: AccountOp, currentIr: Ir): [Ir, Promis
     if (matcher[call.data.substring(0, 10)] && !accountOp.humanizerMeta?.tokens[call.to]) {
       const asyncTokenInfo = getTokenInfo(call.to)
       asyncOps.push(asyncTokenInfo)
-      // @TODO reconsider
-      // eslint-disable-next-line no-param-reassign
-      accountOp.humanizerMeta = {
-        ...accountOp.humanizerMeta,
-        tokens: { ...accountOp.humanizerMeta?.tokens, [call.to]: asyncTokenInfo }
-      }
     }
     return matcher[call.data.substring(0, 10)] && accountOp.humanizerMeta?.tokens[call.to]
       ? {

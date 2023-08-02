@@ -2,7 +2,7 @@ import { describe, expect, test } from '@jest/globals'
 
 import { ethers } from 'ethers'
 import { AccountOp } from '../accountOp/accountOp'
-import { callsToIr, namingHumanizer, initialHumanizer } from './mainHumanizer'
+import { callsToIr, namingHumanizer, initialHumanizer, humanizerMerge } from './mainHumanizer'
 
 import { uniswapHumanizer } from './modules/Uniswap'
 import { Ir } from './interfaces'
@@ -169,22 +169,26 @@ describe('asyncOps tests', () => {
     accountOp.humanizerMeta = { ...humanizerInfo }
     accountOp.calls = []
   })
+  test('deepmerge', () => {
+    const a = { b: 1, c: { d: [1, 2] } }
+    const b = { e: 2, c: { d: [1, 2, 3], g: 2 }, f: { d: [1, 2] } }
+    const expectedRes = { b: 1, c: { d: [1, 2, 3], g: 2 }, f: { d: [1, 2] }, e: 2 }
+    expect(humanizerMerge([a, b])).toEqual(expectedRes)
+  })
 
-  // @TODO async ops not done
-  // test('getTokenInfo', async () => {
-  //   accountOp.calls = transactions.erc20
-  //   if (accountOp.humanizerMeta) accountOp.humanizerMeta.tokens = {}
-  //   const ir = callsToIr(accountOp)
-  //   let [newIr, asyncOps] = genericErc20Humanizer(accountOp, ir)
-  //   console.log(newIr.calls.length)
-  //   expect(asyncOps.length).toBe(new Set(newIr.calls.map((c) => c.to)).size)
+  test('getTokenInfo', async () => {
+    accountOp.calls = transactions.erc20
+    if (accountOp.humanizerMeta) accountOp.humanizerMeta.tokens = {}
+    const ir = callsToIr(accountOp)
+    const [newIr, asyncOps] = genericErc20Humanizer(accountOp, ir)
+    console.log(newIr.calls.length)
+    // expect(asyncOps.length).toBe(new Set(newIr.calls.map((c) => c.to)).size)
 
-  //   asyncOps = await Promise.all(asyncOps)
-  //   console.log(accountOp.humanizerMeta?.tokens)
-  //   await accountOp.humanizerMeta?.tokens[accountOp.calls[0].to]
-  //   console.log(accountOp.humanizerMeta?.tokens)
-  //   expect(accountOp.humanizerMeta?.tokens[accountOp.calls[0].to]).toBe(['USDT', 6])
-  // })
+    const asyncData = await Promise.all(asyncOps)
+    // @NOTE remove deepmerge from dependencies???
+    accountOp.humanizerMeta = humanizerMerge([accountOp.humanizerMeta, ...asyncData])
+    expect(accountOp.humanizerMeta?.tokens[accountOp.calls[0].to]).toEqual(['USDT', 6])
+  })
 })
 
 describe('module tests', () => {

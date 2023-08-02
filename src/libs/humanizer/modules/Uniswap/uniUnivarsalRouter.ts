@@ -1,13 +1,7 @@
 import { ethers } from 'ethers'
-import { AccountOp } from 'libs/accountOp/accountOp'
-import { IrCall } from 'libs/humanizer/interfaces'
-import {
-  getAction,
-  getDeadlineText,
-  getLable,
-  getRecipientText,
-  getToken
-} from 'libs/humanizer/utils'
+import { getAction, getDeadlineText, getLable, getRecipientText, getToken } from '../../utils'
+import { AccountOp } from '../../../accountOp/accountOp'
+import { IrCall } from '../../interfaces'
 import { COMMANDS, COMMANDS_DESCRIPTIONS } from './Commands'
 
 const coder = new ethers.AbiCoder()

@@ -1,4 +1,5 @@
 import { ethers } from 'ethers'
+import deepmerge from 'deepmerge'
 import { AccountOp } from '../accountOp/accountOp'
 // @TODO use humanizer info
 import { genericErc20Humanizer, genericErc721Humanizer } from './modules/tokens'
@@ -10,6 +11,16 @@ import { getLable, getAction, getAddress, getToken, shortenAddress } from './uti
 // @TODO add checks for sending eth to contracts
 // @TODO add checks for sending tokens to contracts
 // @TODO add checks for sending eth to unused addresses
+
+export function humanizerMerge(data: Array<any>): any {
+  // Custom array merging logic
+  const options = {
+    arrayMerge: (target: any[], source: any[]) => {
+      return Array.from(new Set([...target, ...source]))
+    }
+  }
+  return deepmerge.all(data, options)
+}
 
 export function callsToIr(accountOp: AccountOp): Ir {
   const irCalls: IrCall[] = accountOp.calls.map((call) => {
