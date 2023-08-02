@@ -1,11 +1,11 @@
-// SPDX-License-Identifier: agpl-3.0
-pragma solidity >0.4.18;
+// SPDX-License-Identifier: BSD-2-Clause
+pragma solidity ^0.8.4;
 
 /**
 * @dev A library for working with mutable byte buffers in Solidity.
 *
 * Byte buffers are mutable and expandable, and provide a variety of primitives
-* for writing to them. At any time you can fetch a bytes object containing the
+* for appending to them. At any time you can fetch a bytes object containing the
 * current contents of the buffer. The bytes object should not be stored between
 * operations, as it may change due to resizing of the buffer.
 */
@@ -36,7 +36,11 @@ library Buffer {
             let ptr := mload(0x40)
             mstore(buf, ptr)
             mstore(ptr, 0)
-            mstore(0x40, add(32, add(ptr, capacity)))
+            let fpm := add(32, add(ptr, capacity))
+            if lt(fpm, ptr) {
+                revert(0, 0)
+            }
+            mstore(0x40, fpm)
         }
         return buf;
     }
@@ -54,17 +58,10 @@ library Buffer {
         return buf;
     }
 
-    function resize(buffer memory buf, uint capacity) private pure {
+    function resize(buffer memory buf, uint capacity) private view {
         bytes memory oldbuf = buf.buf;
         init(buf, capacity);
         append(buf, oldbuf);
-    }
-
-    function max(uint a, uint b) private pure returns(uint) {
-        if (a > b) {
-            return a;
-        }
-        return b;
     }
 
     /**
@@ -81,19 +78,20 @@ library Buffer {
     }
 
     /**
-    * @dev Writes a byte string to a buffer. Resizes if doing so would exceed
+    * @dev Appends len bytes of a byte string to a buffer. Resizes if doing so would exceed
     *      the capacity of the buffer.
     * @param buf The buffer to append to.
-    * @param off The start offset to write to.
     * @param data The data to append.
     * @param len The number of bytes to copy.
     * @return The original buffer, for chaining.
     */
-    function write(buffer memory buf, uint off, bytes memory data, uint len) internal pure returns(buffer memory) {
+    function append(buffer memory buf, bytes memory data, uint len) internal view returns(buffer memory) {
         require(len <= data.length);
 
-        if (off + len > buf.capacity) {
-            resize(buf, max(buf.capacity, len + off) * 2);
+        uint off = buf.buf.length;
+        uint newCapacity = off + len;
+        if (newCapacity > buf.capacity) {
+            resize(buf, newCapacity * 2);
         }
 
         uint dest;
@@ -106,8 +104,8 @@ library Buffer {
             // Start address = buffer address + offset + sizeof(buffer length)
             dest := add(add(bufptr, 32), off)
             // Update buffer length if we're extending it
-            if gt(add(len, off), buflen) {
-                mstore(bufptr, add(len, off))
+            if gt(newCapacity, buflen) {
+                mstore(bufptr, newCapacity)
             }
             src := add(data, 32)
         }
@@ -123,7 +121,7 @@ library Buffer {
 
         // Copy remaining bytes
         unchecked {
-            uint mask = 256 ** (32 - len) - 1;
+            uint mask = (256 ** (32 - len)) - 1;
             assembly {
                 let srcpart := and(mload(src), not(mask))
                 let destpart := and(mload(dest), mask)
@@ -139,51 +137,10 @@ library Buffer {
     *      the capacity of the buffer.
     * @param buf The buffer to append to.
     * @param data The data to append.
-    * @param len The number of bytes to copy.
     * @return The original buffer, for chaining.
     */
-    function append(buffer memory buf, bytes memory data, uint len) internal pure returns (buffer memory) {
-        return write(buf, buf.buf.length, data, len);
-    }
-
-    /**
-    * @dev Appends a byte string to a buffer. Resizes if doing so would exceed
-    *      the capacity of the buffer.
-    * @param buf The buffer to append to.
-    * @param data The data to append.
-    * @return The original buffer, for chaining.
-    */
-    function append(buffer memory buf, bytes memory data) internal pure returns (buffer memory) {
-        return write(buf, buf.buf.length, data, data.length);
-    }
-
-    /**
-    * @dev Writes a byte to the buffer. Resizes if doing so would exceed the
-    *      capacity of the buffer.
-    * @param buf The buffer to append to.
-    * @param off The offset to write the byte at.
-    * @param data The data to append.
-    * @return The original buffer, for chaining.
-    */
-    function writeUint8(buffer memory buf, uint off, uint8 data) internal pure returns(buffer memory) {
-        if (off > buf.capacity) {
-            resize(buf, buf.capacity * 2);
-        }
-
-        assembly {
-            // Memory address of the buffer data
-            let bufptr := mload(buf)
-            // Length of existing buffer data
-            let buflen := mload(bufptr)
-            // Address = buffer address + sizeof(buffer length) + off
-            let dest := add(add(bufptr, off), 32)
-            mstore8(dest, data)
-            // Update buffer length if we extended it
-            if eq(off, buflen) {
-                mstore(bufptr, add(buflen, 1))
-            }
-        }
-        return buf;
+    function append(buffer memory buf, bytes memory data) internal view returns (buffer memory) {
+        return append(buf, data, data.length);
     }
 
     /**
@@ -193,39 +150,22 @@ library Buffer {
     * @param data The data to append.
     * @return The original buffer, for chaining.
     */
-    function appendUint8(buffer memory buf, uint8 data) internal pure returns(buffer memory) {
-        return writeUint8(buf, buf.buf.length, data);
-    }
-
-    /**
-    * @dev Writes up to 32 bytes to the buffer. Resizes if doing so would
-    *      exceed the capacity of the buffer.
-    * @param buf The buffer to append to.
-    * @param off The offset to write at.
-    * @param data The data to append.
-    * @param len The number of bytes to write (left-aligned).
-    * @return The original buffer, for chaining.
-    */
-    function write(buffer memory buf, uint off, bytes32 data, uint len) private pure returns(buffer memory) {
-        if (off + len > buf.capacity) {
-            resize(buf, max(buf.capacity, len) * 2);
+    function appendUint8(buffer memory buf, uint8 data) internal view returns(buffer memory) {
+        uint off = buf.buf.length;
+        uint offPlusOne = off + 1;
+        if (off >= buf.capacity) {
+            resize(buf, offPlusOne * 2);
         }
 
-        unchecked {
-            uint mask = 256 ** len - 1;    
-
-            // Right-align data
-            data = data >> (8 * (32 - len));
-            assembly {
-                // Memory address of the buffer data
-                let bufptr := mload(buf)
-                // Address = buffer address + sizeof(buffer length) + off + len
-                let dest := add(add(bufptr, off), len)
-                mstore(dest, or(and(mload(dest), not(mask)), data))
-                // Update buffer length if we extended it
-                if gt(add(off, len), mload(bufptr)) {
-                    mstore(bufptr, add(off, len))
-                }
+        assembly {
+            // Memory address of the buffer data
+            let bufptr := mload(buf)
+            // Address = buffer address + sizeof(buffer length) + off
+            let dest := add(add(bufptr, off), 32)
+            mstore8(dest, data)
+            // Update buffer length if we extended it
+            if gt(offPlusOne, mload(bufptr)) {
+                mstore(bufptr, offPlusOne)
             }
         }
 
@@ -233,15 +173,37 @@ library Buffer {
     }
 
     /**
-    * @dev Writes a bytes20 to the buffer. Resizes if doing so would exceed the
-    *      capacity of the buffer.
+    * @dev Appends len bytes of bytes32 to a buffer. Resizes if doing so would
+    *      exceed the capacity of the buffer.
     * @param buf The buffer to append to.
-    * @param off The offset to write at.
     * @param data The data to append.
+    * @param len The number of bytes to write (left-aligned).
     * @return The original buffer, for chaining.
     */
-    function writeBytes20(buffer memory buf, uint off, bytes20 data) internal pure returns (buffer memory) {
-        return write(buf, off, bytes32(data), 20);
+    function append(buffer memory buf, bytes32 data, uint len) private view returns(buffer memory) {
+        uint off = buf.buf.length;
+        uint newCapacity = len + off;
+        if (newCapacity > buf.capacity) {
+            resize(buf, newCapacity * 2);
+        }
+
+        unchecked {
+            uint mask = (256 ** len) - 1;
+            // Right-align data
+            data = data >> (8 * (32 - len));
+            assembly {
+                // Memory address of the buffer data
+                let bufptr := mload(buf)
+                // Address = buffer address + sizeof(buffer length) + newCapacity
+                let dest := add(bufptr, newCapacity)
+                mstore(dest, or(and(mload(dest), not(mask)), data))
+                // Update buffer length if we extended it
+                if gt(newCapacity, mload(bufptr)) {
+                    mstore(bufptr, newCapacity)
+                }
+            }
+        }
+        return buf;
     }
 
     /**
@@ -251,8 +213,8 @@ library Buffer {
     * @param data The data to append.
     * @return The original buffer, for chhaining.
     */
-    function appendBytes20(buffer memory buf, bytes20 data) internal pure returns (buffer memory) {
-        return write(buf, buf.buf.length, bytes32(data), 20);
+    function appendBytes20(buffer memory buf, bytes20 data) internal view returns (buffer memory) {
+        return append(buf, bytes32(data), 20);
     }
 
     /**
@@ -262,34 +224,35 @@ library Buffer {
     * @param data The data to append.
     * @return The original buffer, for chaining.
     */
-    function appendBytes32(buffer memory buf, bytes32 data) internal pure returns (buffer memory) {
-        return write(buf, buf.buf.length, data, 32);
+    function appendBytes32(buffer memory buf, bytes32 data) internal view returns (buffer memory) {
+        return append(buf, data, 32);
     }
 
     /**
-    * @dev Writes an integer to the buffer. Resizes if doing so would exceed
-    *      the capacity of the buffer.
-    * @param buf The buffer to append to.
-    * @param off The offset to write at.
-    * @param data The data to append.
-    * @param len The number of bytes to write (right-aligned).
-    * @return The original buffer, for chaining.
-    */
-    function writeInt(buffer memory buf, uint off, uint data, uint len) private pure returns(buffer memory) {
-        if (len + off > buf.capacity) {
-            resize(buf, max(buf.capacity, len + off) * 2);
+     * @dev Appends a byte to the end of the buffer. Resizes if doing so would
+     *      exceed the capacity of the buffer.
+     * @param buf The buffer to append to.
+     * @param data The data to append.
+     * @param len The number of bytes to write (right-aligned).
+     * @return The original buffer.
+     */
+    function appendInt(buffer memory buf, uint data, uint len) internal view returns(buffer memory) {
+        uint off = buf.buf.length;
+        uint newCapacity = len + off;
+        if (newCapacity > buf.capacity) {
+            resize(buf, newCapacity * 2);
         }
 
-        uint mask = 256 ** len - 1;
+        uint mask = (256 ** len) - 1;
         assembly {
             // Memory address of the buffer data
             let bufptr := mload(buf)
-            // Address = buffer address + off + sizeof(buffer length) + len
-            let dest := add(add(bufptr, off), len)
+            // Address = buffer address + sizeof(buffer length) + newCapacity
+            let dest := add(bufptr, newCapacity)
             mstore(dest, or(and(mload(dest), not(mask)), data))
             // Update buffer length if we extended it
-            if gt(add(off, len), mload(bufptr)) {
-                mstore(bufptr, add(off, len))
+            if gt(newCapacity, mload(bufptr)) {
+                mstore(bufptr, newCapacity)
             }
         }
         return buf;
