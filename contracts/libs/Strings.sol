@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: agpl-3.0
+
 /*
  * @title String & slice utility library for Solidity contracts.
  * @author Nick Johnson <arachnid@notdot.net>
@@ -42,9 +44,9 @@ library Strings {
         uint _ptr;
     }
 
-    function memcpy(uint dest, uint src, uint len) private pure {
+    function memcpy(uint dest, uint src, uint length) private pure {
         // Copy word-length chunks while possible
-        for(; len >= 32; len -= 32) {
+        for(; length >= 32; length -= 32) {
             assembly {
                 mstore(dest, mload(src))
             }
@@ -54,8 +56,8 @@ library Strings {
 
         // Copy remaining bytes
         uint mask = type(uint).max;
-        if (len > 0) {
-            mask = 256 ** (32 - len) - 1;
+        if (length > 0) {
+            mask = 256 ** (32 - length) - 1;
         }
         assembly {
             let srcpart := and(mload(src), not(mask))

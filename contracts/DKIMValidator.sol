@@ -16,7 +16,7 @@ contract DKIMValidator is ExternalSigValidator, Recoveries, DKIM {
         bytes calldata sig,
         uint nonce,
         AmbireAccount.Transaction[] calldata calls
-    ) external returns (bool shouldExecute) {
+    ) external view returns (bool shouldExecute) {
         require(calls.length == 1, 'Too many txns');
         AmbireAccount.Transaction memory txn = calls[0];
         require(txn.to == accountAddr, 'Wrong address');
@@ -43,8 +43,8 @@ contract DKIMValidator is ExternalSigValidator, Recoveries, DKIM {
             Strings.slice memory afterSplit = headersSlice.splitNeedle('>'.toSlice());
             if (! afterSplit.contains(accountInfo.emailFrom.toSlice())) return false;
 
-            bytes32 hash = sha256(bytes(canonizedHeaders));
-            bool verification = RSASHA256.verify(hash, dkimSig, accountInfo.dkimKey.publicKey.exponent, accountInfo.dkimKey.publicKey.modulus);
+            bytes32 dkimHash = sha256(bytes(canonizedHeaders));
+            bool verification = RSASHA256.verify(dkimHash, dkimSig, accountInfo.dkimKey.publicKey.exponent, accountInfo.dkimKey.publicKey.modulus);
             if (! verification) return false;
 
         } else {
