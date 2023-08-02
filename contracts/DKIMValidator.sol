@@ -6,9 +6,30 @@ import './dkim/RSASHA256.sol';
 import './dkim/DKIM.sol';
 import './libs/Strings.sol';
 import './libs/SignatureValidator.sol';
+import 'hardhat/console.sol';
+
+struct RRSetWithSignature {
+    bytes rrset;
+    bytes sig;
+}
+
+interface DnsSecOracle {
+	function verifyRRSet(
+        RRSetWithSignature[] memory input
+    )
+    external
+    view
+    returns (bytes memory rrs, uint32 inception);
+}
 
 contract DKIMValidator is ExternalSigValidator, Recoveries, DKIM {
     using Strings for *;
+
+    address dnsSecOracle;
+
+    constructor(address _oracle) {
+		dnsSecOracle = _oracle;
+	}
 
     function validateSig(
         address accountAddr,
@@ -21,6 +42,7 @@ contract DKIMValidator is ExternalSigValidator, Recoveries, DKIM {
         AmbireAccount.Transaction memory txn = calls[0];
         require(txn.to == accountAddr, 'Wrong address');
 
+        (RecoveryInfo memory recoveryInfo, RRSetWithSignature[] memory rrSets) = abi.decode(data, (RecoveryInfo, RRSetWithSignature[]));
         (bytes memory dkimSelector, bytes memory dkimSig, bytes memory secondarySig, address newKeySigner, string memory canonizedHeaders) = abi.decode(sig, (bytes, bytes, bytes, address, string));
 
         // make sure the call data is trying to do setAddrPrivilege and to the correct key
@@ -52,6 +74,11 @@ contract DKIMValidator is ExternalSigValidator, Recoveries, DKIM {
         } else {
             // TO DO: WRITE THE CODE FOR DNSSEC
 
+            (bytes memory rrs, ) = DnsSecOracle(dnsSecOracle).verifyRRSet(rrSets);
+            console.logBytes(rrs);
+
+            // to do: check if the rrs is the same as the last rrSets thingy
+
             //     const dateAdded = dkimKeys[keccak256(signature.dkimKey)]
             //     if (dateAdded == 0) {
             //     require(signature.rrSets.length > 0, 'no DNSSec proof and no valid DKIM key')
@@ -65,7 +92,6 @@ contract DKIMValidator is ExternalSigValidator, Recoveries, DKIM {
         // confirm everything is signed with the recovery key
         bytes32 hash = keccak256(abi.encode(address(accountAddr), block.chainid, nonce, calls));
         address recoveryKey = SignatureValidator.recoverAddrImpl(hash, secondarySig, true);
-        (RecoveryInfo memory recoveryInfo) = abi.decode(data, (RecoveryInfo));
         require(isIn(recoveryKey, recoveryInfo.keys), 'RecoverySig: not signed by the correct key');
 
         return true;
