@@ -4,7 +4,12 @@ import { uniUniversalRouter } from './uniUnivarsalRouter'
 import { uniV2Mapping } from './uniV2'
 import { uniV32Mapping, uniV3Mappinig } from './uniV3'
 
-export function uniswapHumanizer(accountOp: AccountOp, currentIr: Ir): [Ir, Promise<any>[]] {
+export function uniswapHumanizer(
+  accountOp: AccountOp,
+  currentIr: Ir,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  options?: any
+): [Ir, Promise<any>[]] {
   // @TODO: Unify using imported abis vs abis from accountOp
   const matcher = {
     ...uniV2Mapping(accountOp.humanizerMeta),

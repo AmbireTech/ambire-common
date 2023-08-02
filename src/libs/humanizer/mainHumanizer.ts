@@ -35,7 +35,12 @@ export function callsToIr(accountOp: AccountOp): Ir {
 }
 
 // adds 'name' proeprty to visualization of addresses (needs initialHumanizer to work on unparsed transactions)
-export function namingHumanizer(accountOp: AccountOp, currentIr: Ir): [Ir, Promise<any>[]] {
+export function namingHumanizer(
+  accountOp: AccountOp,
+  currentIr: Ir,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  options?: any
+): [Ir, Promise<any>[]] {
   const newCalls = currentIr.calls.map((call) => {
     const newVisualization = call.fullVisualization?.map((v: any) => {
       return v.type === 'address'
@@ -59,7 +64,12 @@ export function namingHumanizer(accountOp: AccountOp, currentIr: Ir): [Ir, Promi
 }
 
 // goes over all transactions to provide basic visuzlization
-export function initialHumanizer(accountOp: AccountOp, currentIr: Ir): [Ir, Promise<any>[]] {
+export function initialHumanizer(
+  accountOp: AccountOp,
+  currentIr: Ir,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  options?: any
+): [Ir, Promise<any>[]] {
   const newCalls = currentIr.calls.map((call) => {
     let fullVisualization
     if (call.data === '0x') {
@@ -86,7 +96,7 @@ export function initialHumanizer(accountOp: AccountOp, currentIr: Ir): [Ir, Prom
   return [newIr, []]
 }
 
-export async function humanize(accountOp: AccountOp) {
+export async function humanize(accountOp: AccountOp, options?: any) {
   // IDEA humanizer that adds {expected: } (should a txn have value or not, should txn be to contract or not to contract, add warning)
   const humanizerModules = [
     initialHumanizer,
@@ -103,7 +113,7 @@ export async function humanize(accountOp: AccountOp) {
 
   humanizerModules.forEach((hm) => {
     let newPromises = []
-    ;[currentIr, newPromises] = hm(accountOp, currentIr)
+    ;[currentIr, newPromises] = hm(accountOp, currentIr, options)
     asyncOps = [...asyncOps, ...newPromises]
   })
   return [currentIr, asyncOps]

@@ -2,17 +2,16 @@ import { ethers } from 'ethers'
 import { AccountOp } from 'libs/accountOp/accountOp'
 // @TODO fetch from sonewhere else
 // eslint-disable-next-line import/no-extraneous-dependencies
-import fetch from 'node-fetch'
 import { Ir, IrCall } from '../interfaces'
 import { getLable, getAction, getAddress, getNft, getToken } from '../utils'
 
-async function getTokenInfo(address: string) {
+async function getTokenInfo(address: string, fetch: Function) {
   try {
-    // const response = await // @NOTE network change
-    // (await fetch(`https://api.coingecko.com/api/v3/coins/ethereum/contract/${address}`)).json()
-    // @TODO add fetch as arg
-    // @NOTE mocked
-    const response = { symbol: 'usdt', detail_platforms: { ethereum: { decimal_place: 6 } } }
+    // @TODO network change
+    const response = await (
+      await fetch(`https://api.coingecko.com/api/v3/coins/ethereum/contract/${address}`)
+    ).json()
+
     if (response.symbol && response.detail_platforms?.ethereum.decimal_place)
       return {
         tokens: {
@@ -29,7 +28,12 @@ async function getTokenInfo(address: string) {
   }
 }
 
-function genericErc721Humanizer(accountOp: AccountOp, currentIr: Ir): [Ir, Promise<any>[]] {
+function genericErc721Humanizer(
+  accountOp: AccountOp,
+  currentIr: Ir,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  options?: any
+): [Ir, Promise<any>[]] {
   // @TODO safety checks, some retured as promises
   const iface = new ethers.Interface(accountOp.humanizerMeta?.abis.ERC721)
   const nftTransferVisualization = (call: IrCall) => {
@@ -93,7 +97,11 @@ function genericErc721Humanizer(accountOp: AccountOp, currentIr: Ir): [Ir, Promi
   return [newIr, []]
 }
 
-function genericErc20Humanizer(accountOp: AccountOp, currentIr: Ir): [Ir, Promise<any>[]] {
+function genericErc20Humanizer(
+  accountOp: AccountOp,
+  currentIr: Ir,
+  options?: any
+): [Ir, Promise<any>[]] {
   // @TODO: check if ${to} is ERC20 (if not in available humanizer data - will be done asyncly and returned as promise)
   // @TODO: check if ${to} is contract when Transfer or transferFrom(_,contract,_)
   // @TODO parse amount according to decimals
@@ -158,7 +166,7 @@ function genericErc20Humanizer(accountOp: AccountOp, currentIr: Ir): [Ir, Promis
     // TODO async ops not done
     // if proper func selector and no such token found in meta
     if (matcher[call.data.substring(0, 10)] && !accountOp.humanizerMeta?.tokens[call.to]) {
-      const asyncTokenInfo = getTokenInfo(call.to)
+      const asyncTokenInfo = getTokenInfo(call.to, options.fetch)
       asyncOps.push(asyncTokenInfo)
     }
     return matcher[call.data.substring(0, 10)] && accountOp.humanizerMeta?.tokens[call.to]

@@ -10,6 +10,12 @@ import { genericErc20Humanizer, genericErc721Humanizer } from './modules/tokens'
 
 const humanizerInfo = require('./humanizerInfo.json')
 
+const mockedFetchForTokens = async (url: string) => {
+  console.log(url.slice(url.length - 40, url.length))
+  return {
+    json: async () => ({ symbol: 'usdt', detail_platforms: { ethereum: { decimal_place: 6 } } })
+  }
+}
 // @НNOTE all tests pass regardless offunctionality
 const accountOp: AccountOp = {
   accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
@@ -180,8 +186,7 @@ describe('asyncOps tests', () => {
     accountOp.calls = transactions.erc20
     if (accountOp.humanizerMeta) accountOp.humanizerMeta.tokens = {}
     const ir = callsToIr(accountOp)
-    const [newIr, asyncOps] = genericErc20Humanizer(accountOp, ir)
-    console.log(newIr.calls.length)
+    const [, asyncOps] = genericErc20Humanizer(accountOp, ir, { fetch: mockedFetchForTokens })
     // expect(asyncOps.length).toBe(new Set(newIr.calls.map((c) => c.to)).size)
 
     const asyncData = await Promise.all(asyncOps)
