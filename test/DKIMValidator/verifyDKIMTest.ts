@@ -11,6 +11,7 @@ import { abiCoder } from '../config'
 import lookup from '../../src/libs/dkim/dnsLookup'
 const readFile = promisify(fs.readFile)
 const emailsPath = path.join(__dirname, 'emails')
+const SignedSet = require('@ensdomains/dnsprovejs').SignedSet
 
 let ambireContract: any
 let ambireAddress: any
@@ -35,10 +36,18 @@ async function deployDnsSec() {
   const rsaSha256 = await ethers.deployContract('RSASHA256Algorithm')
   await contract.setAlgorithm(8, await rsaSha256.getAddress())
 
+  const p256SHA256Algorithm = await ethers.deployContract('P256SHA256Algorithm')
+  await contract.setAlgorithm(13, await p256SHA256Algorithm.getAddress())
+
   const digest = await ethers.deployContract('SHA256Digest')
   await contract.setDigest(2, await digest.getAddress())
 
   return contract;
+}
+
+function hexEncodeSignedSet(rrs: any, sig: any) {
+  const ss = new SignedSet(rrs, sig)
+  return [ss.toWire(), ss.signature.data.signature]
 }
 
 describe('DKIM', function () {
@@ -142,10 +151,21 @@ describe('DKIM', function () {
     expect(isValid).to.equal(ethers.toBeHex(1, 32))
   })
   it('successfully upload the dnssec contract and validate ambire\'s dns', async function () {
-    // const signedSetsData = await lookup('Google', 'Ambire.com')
-    // to do: ...
+    const signedSetsData = await lookup('Google', 'Ambire.com')
+    const rrsets = signedSetsData.proofs.map(({records, signature}: any) => {
+      return hexEncodeSignedSet(records, signature)
+    })
+    
     const dnsSecContract = await deployDnsSec()
     const address = await dnsSecContract.getAddress()
     expect(address).to.not.be.null
+
+    const { rrs } = await dnsSecContract.verifyRRSet(rrsets)
+
+    // do the final check
+    const records = Buffer.from(ethers.hexlify(rrsets[rrsets.length - 1][0]).slice(2), 'hex')
+    const sig = Buffer.from(ethers.hexlify(rrsets[rrsets.length - 1][1]).slice(2), 'hex')
+    const combinedHex = `0x${SignedSet.fromWire(records, sig).toWire(false).toString('hex')}`
+    expect(rrs).to.equal(combinedHex)
   })
 })
