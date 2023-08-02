@@ -33,20 +33,22 @@ contract DKIMValidator is ExternalSigValidator, Recoveries, DKIM {
 
         AmbireAccount ambireAccount = AmbireAccount(payable(accountAddr));
         AmbireAccount.AccountInfo memory accountInfo = ambireAccount.getAccountInfo();
-        if (keccak256(dkimSelector) == keccak256(accountInfo.dkimKey.keySelector)) {
-            // this is what we have in the headers from field:
-            // from:Name Surname <email@provider.com>
-            // we split from "from" to ">" and check if the email is
-            // registered in account info
-            Strings.slice memory headersSlice = canonizedHeaders.toSlice();
-            headersSlice.splitNeedle('from:'.toSlice());
-            Strings.slice memory afterSplit = headersSlice.splitNeedle('>'.toSlice());
-            if (! afterSplit.contains(accountInfo.emailFrom.toSlice())) return false;
 
+        // this is what we have in the headers from field:
+        // from:Name Surname <email@provider.com>
+        // we split from "from" to ">" and check if the email is
+        // registered in account info
+        Strings.slice memory headersSlice = canonizedHeaders.toSlice();
+        headersSlice.splitNeedle('from:'.toSlice());
+        Strings.slice memory afterSplit = headersSlice.splitNeedle('>'.toSlice());
+        if (! afterSplit.contains(accountInfo.emailFrom.toSlice())) return false;
+
+        // TO DO: VALIDATE TO FIELD
+
+        if (keccak256(dkimSelector) == keccak256(accountInfo.dkimKey.keySelector)) {
             bytes32 dkimHash = sha256(bytes(canonizedHeaders));
             bool verification = RSASHA256.verify(dkimHash, dkimSig, accountInfo.dkimKey.publicKey.exponent, accountInfo.dkimKey.publicKey.modulus);
             if (! verification) return false;
-
         } else {
             // TO DO: WRITE THE CODE FOR DNSSEC
 

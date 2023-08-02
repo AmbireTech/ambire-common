@@ -8,6 +8,7 @@ import { deployAmbireAccountHardhatNetwork } from '../implementations'
 import { getPriviledgeTxn, getTimelockData } from '../helpers'
 import { wrapEthSign } from '../ambireSign'
 import { abiCoder } from '../config'
+import lookup from '../../src/libs/dkim/dnsLookup'
 const readFile = promisify(fs.readFile)
 const emailsPath = path.join(__dirname, 'emails')
 
@@ -67,7 +68,10 @@ describe('DKIM', function () {
         encoding: 'ascii'
     })
     const parsedContents: any = await parseEmail(gmail)
-    const dkimSelector = ethers.hexlify(ethers.toUtf8Bytes(parsedContents[0].selector))
+    const dkimSelectorNoHex = parsedContents[0].selector
+    const dkimSelector = ethers.hexlify(ethers.toUtf8Bytes(dkimSelectorNoHex))
+    const domainName = parsedContents[0].signature.domain
+    // const signedSetsData = await lookup(dkimSelectorNoHex, domainName)
 
     const rsasha256 = await ethers.deployContract('RSASHA256')
     const contractFactory = await ethers.getContractFactory("DKIMValidator", {
