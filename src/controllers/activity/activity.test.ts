@@ -257,7 +257,7 @@ describe('Activity Controller ', () => {
     })
   })
 
-  test.only('AccountsOps - `not confirmed` status is set correctly', async () => {
+  test('AccountsOps - `not confirmed` status is set correctly', async () => {
     const storage = produceMemoryStore()
     const controller = new ActivityController(storage, accounts, {
       account: '0xa07D75aacEFd11b425AF7181958F0F85c312f143',
