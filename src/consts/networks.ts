@@ -1,5 +1,6 @@
 import { NetworkDescriptor } from '../interfaces/networkDescriptor'
 
+// @TODO: add more networks
 const networks: NetworkDescriptor[] = [
   {
     id: 'ethereum',

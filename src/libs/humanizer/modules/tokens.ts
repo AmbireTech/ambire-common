@@ -1,14 +1,23 @@
 import { ethers } from 'ethers'
 import { AccountOp } from 'libs/accountOp/accountOp'
 // eslint-disable-next-line import/no-extraneous-dependencies
+import { NetworkDescriptor } from 'interfaces/networkDescriptor'
 import { HumanizerFragment, Ir, IrCall } from '../interfaces'
 import { getLable, getAction, getAddress, getNft, getToken } from '../utils'
+import { networks } from '../../../consts/networks'
 
-async function getTokenInfo(address: string, fetch: Function): Promise<HumanizerFragment | null> {
+async function getTokenInfo(
+  accountOp: AccountOp,
+  address: string,
+  fetch: Function
+): Promise<HumanizerFragment | null> {
+  const network = networks.find(
+    (n: NetworkDescriptor) => n.chainId === BigInt(accountOp.networkId)
+  )?.id
   try {
     // @TODO network change
     const response = await (
-      await fetch(`https://api.coingecko.com/api/v3/coins/ethereum/contract/${address}`)
+      await fetch(`https://api.coingecko.com/api/v3/coins/${network}/contract/${address}`)
     ).json()
 
     if (response.symbol && response.detail_platforms?.ethereum.decimal_place)
@@ -29,7 +38,6 @@ function genericErc721Humanizer(
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   options?: any
 ): [Ir, Promise<any>[]] {
-  // @TODO safety checks, some retured as promises
   const iface = new ethers.Interface(accountOp.humanizerMeta?.['abis:ERC721'])
   const nftTransferVisualization = (call: IrCall) => {
     const args = iface.parseTransaction(call)?.args.toArray() || []
@@ -157,7 +165,7 @@ function genericErc20Humanizer(
   const newCalls = currentIr.calls.map((call) => {
     // if proper func selector and no such token found in meta
     if (matcher[call.data.substring(0, 10)] && !accountOp.humanizerMeta?.[`tokens:${call.to}`]) {
-      const asyncTokenInfo = getTokenInfo(call.to, options.fetch)
+      const asyncTokenInfo = getTokenInfo(accountOp, call.to, options.fetch)
       asyncOps.push(asyncTokenInfo)
     }
     return matcher[call.data.substring(0, 10)] && accountOp.humanizerMeta?.[`tokens:${call.to}`]
