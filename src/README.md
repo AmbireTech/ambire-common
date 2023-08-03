@@ -92,6 +92,45 @@ The intended use case is as follows:
 
 **TODO:** update for [DKIM recovery](https://github.com/AmbireTech/ambire-app/issues/1087)
 
+#### DKIM Recovery: basic mode of operation
+The DKIM recovery replaces the timelocked recovery described above and works as follows:
+
+1. The user receives an email that includes the new key address in the subject
+2. The user replies to the email with anything
+3. The relayer extracts the signature from this email and prepares the canonized DKIM headers and body hash for submission to the on-chain code (DKIM signature validator), which verifies `subject` and `to` to prevent phishing and verify the recovery key (the new key we give privileges too) 
+4. The relayer also needs to produce another signature (normal EOA signature) and provide it alongside, for extra security - in order to provide this signature the relayer will enforce an off-chain timelock (to protect against DKIM keys getting compromised, email accounts getting compromised, etc.).
+5. The two signatures are merged and can now be used for finalizing the recovery on any chain (this signature is not replay-protected by nonces, but by uniqueness of the operation)
+
+This requires the [externally verified signatures](https://github.com/AmbireTech/ambire-common/pull/297) improvement of the Ambire contracts.
+
+
+##### Nuclear option: 1/2 recovery
+The happy path requires a compound 2/2 signature. However, in case the relayer is not available, the user needs to be able to recover their account using DKIM alone. For this case, we'll enforce an additional on-chain timelock. It's a mode of last resort, but it also needs to be secure against attack vectors like DKIM keys getting compromised, email providers getting compromised, email accounts getting compromised, etc.
+
+
+#### DKIM Recovery: public key management
+In order for DKIM recovery to work, there must be a reliable DNS oracle on-chain. For that purpose, we will use the ENS DNSSec oracle.
+
+Becase DNSSec proofs contain no time in them, it's not possible to introduce the concept of "latest DNS record" on-chain without significant compromises. This is why we'll accept any DNS TXT record of a DKIM key (`${selector}._domainKey.{$domain}`) and record it on-chain, but we'll also allow revoking of any of those keys.
+
+##### Adding
+The DKIM recovery contract will have an `authorizedToSubmit` variable, which indicates the address of whoever is authorized to submit. Initially, for safety reasons, this will be the Ambire team. Keep in mind any user can set their own DKIM accepted public keys, this is only for emails signed with unknown selectors.
+
+Later on, this could be set to a santinel value that allows *anyone* to submit records. This should be safe, because they go through a DNSSec proof, except in the case in which someone might submit a proof for an old DNS record, in which case revoking is needed. Bear in mind that because of the nature of DKIM, we expect that no email provider will ever *change* a DNS TXT DKIM record in production (due to DNS caches, this will lead to many dropped emails), so this should be a near-impossible case.
+
+Upon submitting, we will verify the DNSSec proof, parse the DNS TXT record, but only store `dkimKeys[keccak256((publicKey, domainName))] = { dateAdded, dateRevoked }` on-chain.
+
+Each user can set whether they want to accept unknown selectors, and can set the time before starting to accept newly submitted records.
+
+##### Revoking
+The DKIM recovery contract will have an `authorizedToRevoke` variable, which is an address of whoever is authorized to revoke DKIM public keys. This should be set to a multisig or a timelocked wallet, but it can be set to a regular wallet as well, because the user settings include `waitUntilAcceptRemoved` (see below).
+
+Each user can set the time they want to wait before accepting revokations (`waitUntilAcceptRemoved`), making sure that `authorizedToRevoke` cannot grief them by constantly revoking records.
+
+Once revoked, the same key cannot be added back.
+
+The `waitUntilAcceptRemoved` is *highly recommended* to be shorter than the contract timelock for accepting 1/2 signatures, because in the case that a DKIM key is compromised, we want to be able to revoke it before the attacker can take a hold of an account via the 1/2 signatures timelock.
+
 ### Keystore password reset via email
 
 This is an off-chain recovery method that allows regaining access to your local keystore if you have forgotten the keystore passphrase.
