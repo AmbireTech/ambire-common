@@ -2,8 +2,8 @@ import { ethers } from 'ethers'
 import { AccountOp } from '../accountOp/accountOp'
 import { genericErc20Humanizer, genericErc721Humanizer } from './modules/tokens'
 import { uniswapHumanizer } from './modules/Uniswap'
-import { IrCall, Ir } from './interfaces'
-import { getLable, getAction, getAddress, getToken, shortenAddress } from './utils'
+import { IrCall, Ir, HumanizerFragment } from './interfaces'
+import { shortenAddress, getAction, getLable, getToken } from './utils'
 
 // @TODO humanize signed messages
 
@@ -67,47 +67,73 @@ export function namingHumanizer(
   return [newIr, []]
 }
 
+async function fetchFuncEtherface(
+  selector: string,
+  fetch: Function
+): Promise<HumanizerFragment | null> {
+  try {
+    const res = await (
+      await fetch(`https://api.etherface.io/v1/signatures/hash/all/${selector.slice(2, 10)}/1`)
+    ).json()
+    const func = res.items[0]
+    return {
+      key: `funcSelectors:${selector}`,
+      isGlobal: false,
+      value: { text: func.text, hash: func.hash }
+    }
+  } catch (e) {
+    console.log(e)
+    return null
+  }
+}
+
 // goes over all transactions to provide basic visuzlization
-export function initialHumanizer(
+export function fallbackHumanizer(
   accountOp: AccountOp,
   currentIr: Ir,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   options?: any
 ): [Ir, Promise<any>[]] {
+  const asyncOps: any = []
   const newCalls = currentIr.calls.map((call) => {
-    let fullVisualization
-    if (call.data === '0x') {
-      fullVisualization = [
-        getAction('Sending'),
-        getToken(ethers.ZeroAddress, call.value),
-        getLable('to'),
-        getAddress(call.to)
-      ]
-    } else if (call.value === BigInt(0)) {
-      fullVisualization = [getAction('Interacting with'), getAddress(call.to)]
-    } else {
-      fullVisualization = [
-        getAction('Interacting with'),
-        getAddress(call.to),
-        getLable('and'),
-        getAction('Sending'),
-        getToken(ethers.ZeroAddress, call.value)
-      ]
+    if (
+      call.fullVisualization &&
+      JSON.stringify(call.fullVisualization.length) === JSON.stringify(getAction('Unknown action'))
+    )
+      return call
+    const visualization = []
+    if (call.data !== '0x') {
+      if (accountOp.humanizerMeta?.[`funcSelectors:${call.data.slice(0, 10)}`]) {
+        visualization.push(
+          getAction(accountOp.humanizerMeta?.[`funcSelectors:${call.data.slice(0, 10)}`].text)
+        )
+      } else {
+        const promise = fetchFuncEtherface(call.data.slice(0, 10), options.fetch)
+        promise ? asyncOps.push(promise) : null
+        return { ...call, fullVisualization: [getAction('Unknown action')] }
+      }
     }
-    return { ...call, fullVisualization }
+    if (call.value) {
+      if (call.data !== '0x') visualization.push(getLable('and'))
+      visualization.push(getAction('Sending'))
+      visualization.push(getToken(ethers.ZeroAddress, call.value))
+    }
+    visualization.push(getLable('to'))
+    visualization.push(getAction(call.to))
+    return { ...call, fullVisualization: visualization }
   })
+
   const newIr = { calls: newCalls }
-  return [newIr, []]
+  return [newIr, asyncOps]
 }
 
 export async function humanize(accountOp: AccountOp, options?: any) {
   // IDEA humanizer that adds {expected: } (should a txn have value or not, should txn be to contract or not to contract, add warning)
   const humanizerModules = [
-    initialHumanizer,
     genericErc20Humanizer,
     genericErc721Humanizer,
     uniswapHumanizer,
-    namingHumanizer
+    namingHumanizer,
+    fallbackHumanizer
   ]
 
   let currentIr: Ir = callsToIr(accountOp)

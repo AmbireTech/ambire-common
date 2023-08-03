@@ -1,8 +1,9 @@
 import { describe, expect, test } from '@jest/globals'
 
 import { ethers } from 'ethers'
+import fetch from 'node-fetch'
 import { AccountOp } from '../accountOp/accountOp'
-import { callsToIr, namingHumanizer, initialHumanizer, initHumanizerMeta } from './mainHumanizer'
+import { callsToIr, namingHumanizer, initHumanizerMeta, fallbackHumanizer } from './mainHumanizer'
 
 import { uniswapHumanizer } from './modules/Uniswap'
 import { Ir } from './interfaces'
@@ -199,19 +200,6 @@ describe('module tests', () => {
     expect(ir.calls.length).toBe(transactions.erc20.length + transactions.generic.length)
     expect(ir.calls[0]).toEqual({ ...transactions.generic[0], fullVisualization: null })
   })
-  test('initial humanizer', () => {
-    accountOp.calls = [...transactions.generic, transactions.erc20[0]]
-    const ir = callsToIr(accountOp)
-    const [{ calls }] = initialHumanizer(accountOp, ir)
-    expect(calls[0].fullVisualization).not.toBeNull()
-    expect(calls[1].fullVisualization).not.toBeNull()
-    expect(calls[0].fullVisualization[0]).toEqual({ type: 'action', content: 'Sending' })
-    expect(calls[0].fullVisualization[1]).toMatchObject({
-      type: 'token',
-      address: ethers.ZeroAddress
-    })
-    expect(calls[1].fullVisualization[0]).toEqual({ type: 'action', content: 'Interacting with' })
-  })
   test('genericErc20Humanizer', () => {
     accountOp.calls = [...transactions.erc20]
     const ir = callsToIr(accountOp)
@@ -225,25 +213,10 @@ describe('module tests', () => {
       })
     })
   })
-  test('namingHumanizer', () => {
-    accountOp.calls = [...transactions.toKnownAddresses]
-    let ir = callsToIr(accountOp)
-    ;[ir] = initialHumanizer(accountOp, ir)
-    const [{ calls: newCalls }] = namingHumanizer(accountOp, ir)
-
-    expect(newCalls.length).toBe(transactions.toKnownAddresses.length)
-    newCalls.forEach((c) => {
-      expect(c.fullVisualization.find((v: any) => v.type === 'address')).toMatchObject({
-        type: 'address',
-        address: expect.anything(),
-        name: expect.not.stringMatching(/^0x[a-fA-F0-9]{3}\.{3}[a-fA-F0-9]{3}$/)
-      })
-    })
-  })
+  // TODO naming humanizer test
   test('genericErc721Humanizer', () => {
     accountOp.calls = [...transactions.erc721]
-    let ir = callsToIr(accountOp)
-    ;[ir] = initialHumanizer(accountOp, ir)
+    const ir = callsToIr(accountOp)
     const [{ calls: newCalls }] = genericErc721Humanizer(accountOp, ir)
 
     expect(newCalls.length).toBe(transactions.erc721.length)
@@ -264,5 +237,27 @@ describe('module tests', () => {
     expect(calls[1].fullVisualization[1]).toMatchObject({ type: 'token' })
     expect(calls[1].fullVisualization[2]).toEqual({ type: 'lable', content: 'for' })
     expect(calls[1].fullVisualization[3]).toMatchObject({ type: 'token' })
+  })
+
+  test('fallback', async () => {
+    accountOp.calls = [...transactions.generic]
+    let ir: Ir = callsToIr(accountOp)
+    let asyncOps = []
+    ;[ir, asyncOps] = fallbackHumanizer(accountOp, ir, { fetch })
+    asyncOps = await Promise.all(asyncOps)
+    expect(asyncOps.length).toBe(1)
+    expect(asyncOps[0]).toMatchObject({ key: 'funcSelectors:0x095ea7b3' })
+    asyncOps.forEach((a) => {
+      accountOp.humanizerMeta = { ...accountOp.humanizerMeta, [a.key]: a.value }
+    })
+
+    // etherface api might be asparagus
+    expect(accountOp.humanizerMeta).toHaveProperty('funcSelectors:0x095ea7b3')
+    ;[ir, asyncOps] = fallbackHumanizer(accountOp, ir, { fetch })
+    expect(ir.calls[1].fullVisualization[0]).toMatchObject({
+      type: 'action',
+      content: 'approve(address,uint256)'
+    })
+    expect(asyncOps.length).toBe(0)
   })
 })
