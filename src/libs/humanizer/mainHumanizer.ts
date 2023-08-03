@@ -1,5 +1,4 @@
 import { ethers } from 'ethers'
-import deepmerge from 'deepmerge'
 import { AccountOp } from '../accountOp/accountOp'
 // @TODO use humanizer info
 import { genericErc20Humanizer, genericErc721Humanizer } from './modules/tokens'
@@ -12,14 +11,22 @@ import { getLable, getAction, getAddress, getToken, shortenAddress } from './uti
 // @TODO add checks for sending tokens to contracts
 // @TODO add checks for sending eth to unused addresses
 
-export function humanizerMerge(data: Array<any>): any {
-  // Custom array merging logic
-  const options = {
-    arrayMerge: (target: any[], source: any[]) => {
-      return Array.from(new Set([...target, ...source]))
-    }
+export function initHumanizerMeta(humanizerMeta: any) {
+  const newHumanizerMeta: any = {}
+  Object.keys(humanizerMeta.tokens).forEach((k2) => {
+    newHumanizerMeta[`tokens:${k2}`] = humanizerMeta.tokens[k2]
+  })
+  Object.keys(humanizerMeta.abis).forEach((k2) => {
+    newHumanizerMeta[`abis:${k2}`] = humanizerMeta.abis[k2]
+  })
+  Object.keys(humanizerMeta.names).forEach((k2) => {
+    newHumanizerMeta[`names:${k2}`] = humanizerMeta.names[k2]
+  })
+  return {
+    ...newHumanizerMeta,
+    yearnVaults: humanizerMeta.yearnVaults,
+    tesseractVaults: humanizerMeta.yearnVaults
   }
-  return deepmerge.all(data, options)
 }
 
 export function callsToIr(accountOp: AccountOp): Ir {
@@ -49,9 +56,10 @@ export function namingHumanizer(
             // in case of more sophisticated name resolutions
             // new name function so it can be getName() || shortenAddress() ????????
             name:
-              accountOp.humanizerMeta?.names[v.address.toLowerCase()] ||
-              (accountOp.humanizerMeta?.tokens[v.address.toLowerCase()]
-                ? `${accountOp.humanizerMeta?.tokens[v.address.toLowerCase()]?.[0]} contract`
+              accountOp.humanizerMeta?.[`names:${v.address.toLowerCase()}`] ||
+              (accountOp.humanizerMeta?.[`tokens:${v.address.toLowerCase()}`]
+                ? accountOp.humanizerMeta?.[`names:${v.address.toLowerCase()}`] ||
+                  `${accountOp.humanizerMeta?.[`tokens:${v.address.toLowerCase()}`]?.[0]} contract`
                 : null) ||
               shortenAddress(v.address)
           }

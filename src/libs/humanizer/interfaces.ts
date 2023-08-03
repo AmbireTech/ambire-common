@@ -8,3 +8,9 @@ export interface IrCall {
 export interface Ir {
   calls: IrCall[]
 }
+
+export interface HumanizerFragment {
+  key: string
+  isGlobal: boolean
+  value: string | Array<any> | object
+}

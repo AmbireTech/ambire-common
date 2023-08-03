@@ -2,10 +2,10 @@ import { ethers } from 'ethers'
 import { AccountOp } from 'libs/accountOp/accountOp'
 // @TODO fetch from sonewhere else
 // eslint-disable-next-line import/no-extraneous-dependencies
-import { Ir, IrCall } from '../interfaces'
+import { HumanizerFragment, Ir, IrCall } from '../interfaces'
 import { getLable, getAction, getAddress, getNft, getToken } from '../utils'
 
-async function getTokenInfo(address: string, fetch: Function) {
+async function getTokenInfo(address: string, fetch: Function): Promise<HumanizerFragment | null> {
   try {
     // @TODO network change
     const response = await (
@@ -14,17 +14,13 @@ async function getTokenInfo(address: string, fetch: Function) {
 
     if (response.symbol && response.detail_platforms?.ethereum.decimal_place)
       return {
-        tokens: {
-          [address]: [
-            response.symbol.toUpperCase(),
-            response.detail_platforms?.ethereum.decimal_place
-          ]
-        }
+        key: `tokens:${address}`,
+        isGlobal: true,
+        value: [response.symbol.toUpperCase(), response.detail_platforms?.ethereum.decimal_place]
       }
-    return {}
+    return null
   } catch (e) {
-    console.log('err on fetching ')
-    return {}
+    return null
   }
 }
 
@@ -35,7 +31,7 @@ function genericErc721Humanizer(
   options?: any
 ): [Ir, Promise<any>[]] {
   // @TODO safety checks, some retured as promises
-  const iface = new ethers.Interface(accountOp.humanizerMeta?.abis.ERC721)
+  const iface = new ethers.Interface(accountOp.humanizerMeta?.['abis:ERC721'])
   const nftTransferVisualization = (call: IrCall) => {
     const args = iface.parseTransaction(call)?.args.toArray() || []
     return args[0] === accountOp.accountAddr
@@ -106,7 +102,7 @@ function genericErc20Humanizer(
   // @TODO: check if ${to} is contract when Transfer or transferFrom(_,contract,_)
   // @TODO parse amount according to decimals
   const asyncOps: Promise<any>[] = []
-  const iface = new ethers.Interface(accountOp.humanizerMeta?.abis.ERC20)
+  const iface = new ethers.Interface(accountOp.humanizerMeta?.['abis:ERC20'])
   const matcher = {
     [`${iface.getFunction('approve')?.selector}`]: (call: IrCall) => {
       const args = iface.parseTransaction(call)?.args.toArray() || []
@@ -165,11 +161,11 @@ function genericErc20Humanizer(
   const newCalls = currentIr.calls.map((call) => {
     // TODO async ops not done
     // if proper func selector and no such token found in meta
-    if (matcher[call.data.substring(0, 10)] && !accountOp.humanizerMeta?.tokens[call.to]) {
+    if (matcher[call.data.substring(0, 10)] && !accountOp.humanizerMeta?.[`tokens:${call.to}`]) {
       const asyncTokenInfo = getTokenInfo(call.to, options.fetch)
       asyncOps.push(asyncTokenInfo)
     }
-    return matcher[call.data.substring(0, 10)] && accountOp.humanizerMeta?.tokens[call.to]
+    return matcher[call.data.substring(0, 10)] && accountOp.humanizerMeta?.[`tokens:${call.to}`]
       ? {
           ...call,
           fullVisualization: matcher[call.data.substring(0, 10)](call)

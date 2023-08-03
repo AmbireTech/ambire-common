@@ -16,7 +16,7 @@ import { IrCall } from '../../interfaces'
 
 // Stolen from ambire-wallet
 const uniV32Mapping = (humanizerInfo: any) => {
-  const ifaceV32 = new ethers.Interface(humanizerInfo.abis.UniV3Router2)
+  const ifaceV32 = new ethers.Interface(humanizerInfo?.['abis:UniV3Router2'])
   return {
     // uint256 is deadline
     // 0x5ae401dc
@@ -247,7 +247,7 @@ const uniV32Mapping = (humanizerInfo: any) => {
 
 // @NOTE Stolen from ambire-wallet
 const uniV3Mappinig = (humanizerInfo: any) => {
-  const ifaceV3 = new ethers.Interface(humanizerInfo.abis.UniV3Router)
+  const ifaceV3 = new ethers.Interface(humanizerInfo?.['abis:UniV3Router'])
   return {
     // 0xac9650d8
     [`${ifaceV3.getFunction('multicall')?.selector}`]: (accountOp: AccountOp, call: IrCall) => {

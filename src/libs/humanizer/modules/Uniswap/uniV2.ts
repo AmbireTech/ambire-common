@@ -5,7 +5,7 @@ import { AccountOp } from '../../../accountOp/accountOp'
 import { IrCall } from '../../interfaces'
 
 const uniV2Mapping = (humanizerInfo: any) => {
-  const iface = new ethers.Interface(humanizerInfo.abis.UniV2Router)
+  const iface = new ethers.Interface(humanizerInfo?.['abis:UniV2Router'])
 
   return {
     // ordered in the same order as the router

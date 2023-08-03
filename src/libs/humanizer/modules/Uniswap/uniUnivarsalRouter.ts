@@ -29,7 +29,7 @@ const extractParams = (inputsDetails: any, input: any) => {
 }
 
 export const uniUniversalRouter = (humanizerInfo: any) => {
-  const ifaceUniversalRouter = new ethers.Interface(humanizerInfo.abis.UniswapUniversalRouter)
+  const ifaceUniversalRouter = new ethers.Interface(humanizerInfo?.['abis:UniswapUniversalRouter'])
 
   return {
     [`${

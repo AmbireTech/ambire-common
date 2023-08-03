@@ -2,13 +2,13 @@ import { describe, expect, test } from '@jest/globals'
 
 import { ethers } from 'ethers'
 import { AccountOp } from '../accountOp/accountOp'
-import { callsToIr, namingHumanizer, initialHumanizer, humanizerMerge } from './mainHumanizer'
+import { callsToIr, namingHumanizer, initialHumanizer, initHumanizerMeta } from './mainHumanizer'
 
 import { uniswapHumanizer } from './modules/Uniswap'
 import { Ir } from './interfaces'
 import { genericErc20Humanizer, genericErc721Humanizer } from './modules/tokens'
 
-const humanizerInfo = require('./humanizerInfo.json')
+const humanizerInfo = initHumanizerMeta(require('./humanizerInfo.json'))
 
 const mockedFetchForTokens = async (url: string) => {
   const usdtAddress = '0xdac17f958d2ee523a2206206994597c13d831ec7'
@@ -18,7 +18,7 @@ const mockedFetchForTokens = async (url: string) => {
       }
     : {}
 }
-// @НNOTE all tests pass regardless offunctionality
+// @NOTE all tests pass regardless offunctionality
 const accountOp: AccountOp = {
   accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
   networkId: '1',
@@ -177,24 +177,17 @@ describe('asyncOps tests', () => {
     accountOp.humanizerMeta = { ...humanizerInfo }
     accountOp.calls = []
   })
-  test('deepmerge', () => {
-    const a = { b: 1, c: { d: [1, 2] } }
-    const b = { e: 2, c: { d: [1, 2, 3], g: 2 }, f: { d: [1, 2] } }
-    const expectedRes = { b: 1, c: { d: [1, 2, 3], g: 2 }, f: { d: [1, 2] }, e: 2 }
-    expect(humanizerMerge([a, b])).toEqual(expectedRes)
-  })
 
   test('getTokenInfo', async () => {
     accountOp.calls = transactions.erc20
-    if (accountOp.humanizerMeta) accountOp.humanizerMeta.tokens = {}
+    if (accountOp.humanizerMeta)
+      Object.keys(accountOp.humanizerMeta).forEach((k) => {
+        k.includes('tokens') ? delete accountOp.humanizerMeta?.[k] : null
+      })
     const ir = callsToIr(accountOp)
     const [, asyncOps] = genericErc20Humanizer(accountOp, ir, { fetch: mockedFetchForTokens })
-    // expect(asyncOps.length).toBe(new Set(newIr.calls.map((c) => c.to)).size)
-
     const asyncData = await Promise.all(asyncOps)
-    // @NOTE remove deepmerge from dependencies???
-    accountOp.humanizerMeta = humanizerMerge([accountOp.humanizerMeta, ...asyncData])
-    expect(accountOp.humanizerMeta?.tokens[accountOp.calls[0].to]).toEqual(['USDT', 6])
+    expect(asyncData[0]).toMatchObject({ key: `tokens:${ir.calls[0].to}`, value: ['USDT', 6] })
   })
 })
 

@@ -19,7 +19,7 @@ export function uniswapHumanizer(
   }
   const newCalls = currentIr.calls.map((call: IrCall) => {
     // check against sus contracts with same func selectors
-    return accountOp.humanizerMeta?.names[call.to] === 'Uniswap'
+    return accountOp.humanizerMeta?.[`names:${call.to}`] === 'Uniswap'
       ? { ...call, fullVisualization: matcher[call.data.substring(0, 10)](accountOp, call) }
       : call
   })
