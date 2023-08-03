@@ -3,7 +3,10 @@ const path = require('path')
 const { compile } = require('../src/libs/deployless/compile')
 
 const rootDir = path.resolve(__dirname, '..')
-const contractsDir = `${rootDir}/contracts/deployless`
+const contractsDirs = [
+  `${rootDir}/contracts`,
+  `${rootDir}/contracts/deployless`,
+]
 const outputDir = `${rootDir}/contracts/compiled`
 
 // Extract all file paths from a `dir` in a flat way.
@@ -21,7 +24,7 @@ async function walk(dir) {
   return files.filter((file) => file.slice(-4) === '.sol')
 }
 
-async function run() {
+async function compileFolder(contractsDir) {
   const files = await walk(contractsDir)
 
   console.log('📜 Contracts found: ', files)
@@ -39,6 +42,10 @@ async function run() {
 
     console.log(`✅ ${contractName} compiled successfully!`)
   })
+}
+
+async function run() {
+  await Promise.all(contractsDirs.map(contractsDir => compileFolder(contractsDir)))
 }
 
 run()
