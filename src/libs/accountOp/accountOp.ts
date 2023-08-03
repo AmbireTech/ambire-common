@@ -30,8 +30,7 @@ export enum AccountOpStatus {
   Pending = 'pending',
   Success = 'success',
   Failure = 'failure',
-  // @TODO: better status naming
-  NotConfirmed = 'not-confirmed'
+  UnknownButPastNonce = 'unknown-but-past-nonce'
 }
 
 // Equivalent to ERC-4337 UserOp, but more universal than it since a AccountOp can be transformed to
@@ -59,8 +58,8 @@ export interface AccountOp {
   // or any other data that needs to otherwise be retrieved in an async manner and/or needs to be
   // "remembered" at the time of signing in order to visualize history properly
   humanizerMeta?: { [key: string]: any }
-  txnId: string | null
-  status: AccountOpStatus | null
+  txnId?: string
+  status?: AccountOpStatus
 }
 
 export function callToTuple(call: Call): [string, bigint, string] {

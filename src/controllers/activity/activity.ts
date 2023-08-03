@@ -136,6 +136,7 @@ export class ActivityController extends EventEmitter {
    * 0. Once we add a new AccountOp to ActivityController via `addAccountOp`, we are setting its status to AccountOpStatus.Pending.
    * 1. Here, we firstly rely on `getTransactionReceipt` for determining the status (success or failure).
    * 2. If we don't manage to determine its status, we are comparing AccountOp and Account nonce.
+   * If Account nonce is greater than AccountOp, then we know that AccountOp has past nonce (AccountOpStatus.UnknownButPastNonce).
    */
   async updateAccountsOpsStatuses() {
     const accountsOps = this.#accountsOps?.[this.filters.account]?.[this.filters.network] || []
@@ -156,7 +157,7 @@ export class ActivityController extends EventEmitter {
           } else if (
             this.accounts[accountOp.accountAddr][accountOp.networkId].nonce > accountOp.nonce
           ) {
-            accountsOps[index].status = AccountOpStatus.NotConfirmed
+            accountsOps[index].status = AccountOpStatus.UnknownButPastNonce
           }
         })
     )
