@@ -11,10 +11,12 @@ import { genericErc20Humanizer, genericErc721Humanizer } from './modules/tokens'
 const humanizerInfo = require('./humanizerInfo.json')
 
 const mockedFetchForTokens = async (url: string) => {
-  console.log(url.slice(url.length - 40, url.length))
-  return {
-    json: async () => ({ symbol: 'usdt', detail_platforms: { ethereum: { decimal_place: 6 } } })
-  }
+  const usdtAddress = '0xdac17f958d2ee523a2206206994597c13d831ec7'
+  return url === `https://api.coingecko.com/api/v3/coins/ethereum/contract/${usdtAddress}`
+    ? {
+        json: async () => ({ symbol: 'usdt', detail_platforms: { ethereum: { decimal_place: 6 } } })
+      }
+    : {}
 }
 // @НNOTE all tests pass regardless offunctionality
 const accountOp: AccountOp = {
