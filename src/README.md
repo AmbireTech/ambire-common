@@ -79,18 +79,16 @@ This recovery must be performed for each network (chain) individually because it
 
 The way it works is the following:
 
-1. When a key is authorized, you set `privileges[keyAddr]` to a hash of a struct that contains recovery data (`recoveryInfo`) - the keys that can recover this account and the timelock (let's call those "recovery keys")
+1. When a key is authorized, you set `privileges[keyAddr]` to a hash of a struct that contains recovery data (`recoveryInfo`) - the keys that can recover this account and the timelock (let's call those "recovery keys"; this is normally set to the email vault key)
 2. If access to that authorized key is lost (or access to the account in general), any of the recovery keys can sign a bundle with a special kind of signature (called recovery signature)
 3. You can `execute()` this bundle with this signature, but it will not execute immediately - instead, it will start the timelock
 4. Once the timelock is mature, you can `execute()` the same bundle with the same signature - this time, it will execute
 
 The intended use case is as follows:
 
-1. An email account is created for the user; we generate a fresh key and we store it in the keystore; and we set the `recoveryInfo` to a 72 hour timelock and one key, which is the key of the email vault (held by the relayer)
+1. An email account is created for the user; we generate a fresh key and we store it in the keystore; and we set the `recoveryInfo` to a 72 hour timelock and one key, which is the key of the email vault (held by the relayer, we call this "email vault key")
 2. If the user loses their keystore (eg their SSD fails, or they lose their passphrase), they may trigger the recovery using the email vault on every network individually; triggering the recovery involves creating a new local key, and signing a bundle to authorize it via the email vault key; let's call this bundle "the recovery bundle"
 3. Once the recovery timelock is mature, the relayer will simply execute the recovery bundle BEFORE any normal bundle that the user wants to execute that they're signing with their new local key
-
-**TODO:** update for [DKIM recovery](https://github.com/AmbireTech/ambire-app/issues/1087)
 
 #### DKIM Recovery: basic mode of operation
 The DKIM recovery replaces the timelocked recovery described above and works as follows:
@@ -98,15 +96,34 @@ The DKIM recovery replaces the timelocked recovery described above and works as 
 1. The user receives an email that includes the new key address in the subject
 2. The user replies to the email with anything
 3. The relayer extracts the signature from this email and prepares the canonized DKIM headers and body hash for submission to the on-chain code (DKIM signature validator), which verifies `subject` and `to` to prevent phishing and verify the recovery key (the new key we give privileges too) 
-4. The relayer also needs to produce another signature (normal EOA signature) and provide it alongside, for extra security - in order to provide this signature the relayer will enforce an off-chain timelock (to protect against DKIM keys getting compromised, email accounts getting compromised, etc.).
+4. The relayer also needs to produce another signature via the email vault recovery key (normal EOA signature) and provide it alongside, for extra security - in order to provide this signature the relayer will enforce an off-chain timelock (to protect against DKIM keys getting compromised, email accounts getting compromised, etc.).
 5. The two signatures are merged and can now be used for finalizing the recovery on any chain (this signature is not replay-protected by nonces, but by uniqueness of the operation)
 
-This requires the [externally verified signatures](https://github.com/AmbireTech/ambire-common/pull/297) improvement of the Ambire contracts.
+This requires the [externally verified signatures](https://github.com/AmbireTech/ambire-common/pull/297) improvement of the Ambire contracts. Each user has their recovery settings set in a struct that is passed as part of the signature, and then verified against `privileges` like this: `require(privileges[key] == keccak256(abi.encode(recoveryAccInfo)))` every time a DKIM recovery signature is verified.
 
+This `accInfo` struct will include:
+```
+  dkimSelector
+  dkimPublicKey
+  // other values of the DKIM record?
+  secondaryKeyAddr // relayerAddr
+  emailFrom // or multiple
+  trustedTo // or multiple
+  waitUntilAcceptAdded // if a record has been added by `authorizedToSubmit`, we can choose to require some time to pass before accepting it
+  waitUntilAcceptRemoved // if a record has been removed by the `authorizedToRemove`, we can choose to require some time to pass before accepting that ramoval
+  acceptUnknownSelectors
+```
+
+You can think of the DKIM recovery signature as a multi-signature between the email vault backup key (held by the relayer, but we can also allow the user to have this key) and the DKIM key held by the email provider.
 
 ##### Nuclear option: 1/2 recovery
 The happy path requires a compound 2/2 signature. However, in case the relayer is not available, the user needs to be able to recover their account using DKIM alone. For this case, we'll enforce an additional on-chain timelock. It's a mode of last resort, but it also needs to be secure against attack vectors like DKIM keys getting compromised, email providers getting compromised, email accounts getting compromised, etc.
 
+##### Summarized list of all timelocks in the DKIM system
+- Nuclear option: only 1/2 signatures, on-chain timelock
+- Relayer off-chain timelock: the relayer will simply wait some time before providing the email vault key signature; this preserves the timelock UX and security benefits without having to ask the user to trigger an on-chain timelock on every chain they use the account on
+- Pseudo-timelocks for accepting the addition and revokation of DKIM public keys: each user can set in their account settings (stored as a hash in `privileges[key]`) whether they want to accept unknown (different from their originally set) selectors, and if so, how much time needs to pass before accepting the submission of a record, or the revokation of a record (read why below)
+- There may be additional timelocks implemented on-chain in the future for the `authorizedToSubmit` and `authorizedToRevoke` addresses (they may be set to a timelock contract).
 
 #### DKIM Recovery: public key management
 In order for DKIM recovery to work, there must be a reliable DNS oracle on-chain. For that purpose, we will use the ENS DNSSec oracle.
