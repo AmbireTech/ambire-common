@@ -7,6 +7,7 @@ import './dkim/DKIM.sol';
 import './libs/Strings.sol';
 import './libs/SignatureValidator.sol';
 import 'hardhat/console.sol';
+import './dnssec/RRUtils.sol';
 
 struct RRSetWithSignature {
     bytes rrset;
@@ -24,6 +25,7 @@ interface DnsSecOracle {
 
 contract DKIMValidator is ExternalSigValidator, Recoveries, DKIM {
     using Strings for *;
+    using RRUtils for *;
 
     address dnsSecOracle;
 
@@ -63,31 +65,33 @@ contract DKIMValidator is ExternalSigValidator, Recoveries, DKIM {
         Strings.slice memory headersSlice = canonizedHeaders.toSlice();
         headersSlice.splitNeedle('from:'.toSlice());
         Strings.slice memory afterSplit = headersSlice.splitNeedle('>'.toSlice());
-        if (! afterSplit.contains(accountInfo.emailFrom.toSlice())) return false;
+        Strings.slice memory emailFrom = accountInfo.emailFrom.toSlice();
+        if (! afterSplit.contains(emailFrom)) return false;
 
-        // TO DO: VALIDATE TO FIELD
+        // TO DO: validate to field and subject
 
-        if (keccak256(dkimSelector) == keccak256(accountInfo.dkimKey.keySelector)) {
-            bytes32 dkimHash = sha256(bytes(canonizedHeaders));
-            bool verification = RSASHA256.verify(dkimHash, dkimSig, accountInfo.dkimKey.publicKey.exponent, accountInfo.dkimKey.publicKey.modulus);
-            if (! verification) return false;
-        } else {
-            // TO DO: WRITE THE CODE FOR DNSSEC
+        PublicKey memory publicKey = accountInfo.dkimKey.publicKey;
 
-            (bytes memory rrs, ) = DnsSecOracle(dnsSecOracle).verifyRRSet(rrSets);
-            console.logBytes(rrs);
+        // if the selectors don't match, perform DNSSEC validation
+        if (keccak256(dkimSelector) != keccak256(accountInfo.dkimKey.keySelector)) {
+            bool isDnsValid = dnsSecVerification(rrSets, emailFrom);
+            if (! isDnsValid) return false;
 
-            // to do: check if the rrs is the same as the last rrSets thingy
-
-            //     const dateAdded = dkimKeys[keccak256(signature.dkimKey)]
-            //     if (dateAdded == 0) {
-            //     require(signature.rrSets.length > 0, 'no DNSSec proof and no valid DKIM key')
-            //     dkimKey = addDKIMKeyWithDNSSec(signature.rrSets)
-            //     } else {
-            //     require(block.timestamp > dateAdded + accInfo.timelockForUnknownKeys, 'key added too recently, timelock not ready yet')
-            //     dkimKey = signature.dkimKey
-            //     }
+            // TO DO: change the public key to the one after dnssec
         }
+
+        bytes32 dkimHash = sha256(bytes(canonizedHeaders));
+        bool verification = RSASHA256.verify(dkimHash, dkimSig, publicKey.exponent, publicKey.modulus);
+        if (! verification) return false;
+
+        //     const dateAdded = dkimKeys[keccak256(signature.dkimKey)]
+        //     if (dateAdded == 0) {
+        //     require(signature.rrSets.length > 0, 'no DNSSec proof and no valid DKIM key')
+        //     dkimKey = addDKIMKeyWithDNSSec(signature.rrSets)
+        //     } else {
+        //     require(block.timestamp > dateAdded + accInfo.timelockForUnknownKeys, 'key added too recently, timelock not ready yet')
+        //     dkimKey = signature.dkimKey
+        //     }
 
         // confirm everything is signed with the recovery key
         bytes32 hash = keccak256(abi.encode(address(accountAddr), block.chainid, nonce, calls));
@@ -102,5 +106,18 @@ contract DKIMValidator is ExternalSigValidator, Recoveries, DKIM {
             if (key == keys[i]) return true;
         }
         return false;
+    }
+
+    function dnsSecVerification(
+        RRSetWithSignature[] memory rrSets,
+        Strings.slice memory emailFrom
+    ) internal view returns (bool) {
+        if (rrSets.length == 0) return false;
+
+        // TO DO: check if the domain of the rrSets is the same as
+        // the email address of the user
+        RRUtils.SignedSet memory rrset = rrSets[rrSets.length-1].rrset.readSignedSet();
+        (bytes memory rrs, ) = DnsSecOracle(dnsSecOracle).verifyRRSet(rrSets);
+        return (keccak256(rrs) == keccak256(rrset.data));
     }
 }
