@@ -1,6 +1,5 @@
 import { ethers } from 'ethers'
 import { AccountOp } from 'libs/accountOp/accountOp'
-// @TODO fetch from sonewhere else
 // eslint-disable-next-line import/no-extraneous-dependencies
 import { HumanizerFragment, Ir, IrCall } from '../interfaces'
 import { getLable, getAction, getAddress, getNft, getToken } from '../utils'
@@ -98,9 +97,6 @@ function genericErc20Humanizer(
   currentIr: Ir,
   options?: any
 ): [Ir, Promise<any>[]] {
-  // @TODO: check if ${to} is ERC20 (if not in available humanizer data - will be done asyncly and returned as promise)
-  // @TODO: check if ${to} is contract when Transfer or transferFrom(_,contract,_)
-  // @TODO parse amount according to decimals
   const asyncOps: Promise<any>[] = []
   const iface = new ethers.Interface(accountOp.humanizerMeta?.['abis:ERC20'])
   const matcher = {
@@ -159,7 +155,6 @@ function genericErc20Humanizer(
     }
   }
   const newCalls = currentIr.calls.map((call) => {
-    // TODO async ops not done
     // if proper func selector and no such token found in meta
     if (matcher[call.data.substring(0, 10)] && !accountOp.humanizerMeta?.[`tokens:${call.to}`]) {
       const asyncTokenInfo = getTokenInfo(call.to, options.fetch)

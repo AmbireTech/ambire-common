@@ -10,7 +10,6 @@ export function uniswapHumanizer(
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   options?: any
 ): [Ir, Promise<any>[]] {
-  // @TODO: Unify using imported abis vs abis from accountOp
   const matcher = {
     ...uniV2Mapping(accountOp.humanizerMeta),
     ...uniV3Mappinig(accountOp.humanizerMeta),

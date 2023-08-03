@@ -1,15 +1,11 @@
 import { ethers } from 'ethers'
 import { AccountOp } from '../accountOp/accountOp'
-// @TODO use humanizer info
 import { genericErc20Humanizer, genericErc721Humanizer } from './modules/tokens'
 import { uniswapHumanizer } from './modules/Uniswap'
 import { IrCall, Ir } from './interfaces'
 import { getLable, getAction, getAddress, getToken, shortenAddress } from './utils'
 
 // @TODO humanize signed messages
-// @TODO add checks for sending eth to contracts
-// @TODO add checks for sending tokens to contracts
-// @TODO add checks for sending eth to unused addresses
 
 export function initHumanizerMeta(humanizerMeta: any) {
   const newHumanizerMeta: any = {}

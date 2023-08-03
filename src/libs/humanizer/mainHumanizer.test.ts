@@ -18,7 +18,6 @@ const mockedFetchForTokens = async (url: string) => {
       }
     : {}
 }
-// @NOTE all tests pass regardless offunctionality
 const accountOp: AccountOp = {
   accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
   networkId: '1',
@@ -26,11 +25,9 @@ const accountOp: AccountOp = {
   signingKeyAddr: null,
   // this may not be set in case we haven't set it yet
   nonce: null,
-  // @TODO: nonce namespace? it is dependent on gasFeePayment
   calls: [],
   gasLimit: null,
   signature: null,
-  // @TODO separate interface
   gasFeePayment: null,
   // This is used when we have an account recovery to finalize before executing the AccountOp,
   // And we set this to the recovery finalization AccountOp; could be used in other scenarios too in the future,
@@ -193,16 +190,9 @@ describe('asyncOps tests', () => {
 
 describe('module tests', () => {
   beforeEach(async () => {
-    // const humanizerInfo = await (
-    //   await fetch(
-    //     'https://raw.githubusercontent.com/AmbireTech/ambire-constants/master/constants/humanizerInfo.json'
-    //   )
-    // ).json()
     accountOp.humanizerMeta = { ...humanizerInfo }
     accountOp.calls = []
   })
-  // @TODO add erc20 test
-  // @TODO add namingHumanizer test
   test('callsToIr', () => {
     accountOp.calls = [...transactions.generic, ...transactions.erc20]
     const ir: Ir = callsToIr(accountOp)
@@ -259,10 +249,6 @@ describe('module tests', () => {
     expect(newCalls.length).toBe(transactions.erc721.length)
     newCalls.forEach((c) => {
       expect(c.fullVisualization).not.toBeNull()
-      // expect(c.fullVisualization.find((v: any) => v.type === 'address')).toMatchObject({
-      //   type: 'address',
-      //   address: expect.anything(),
-      //   name: expect.not.stringMatching(/^0x[a-fA-F0-9]{3}\.{3}[a-fA-F0-9]{3}$/)
     })
   })
   test('uniSwap', () => {

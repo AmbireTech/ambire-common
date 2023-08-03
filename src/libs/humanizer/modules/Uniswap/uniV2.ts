@@ -124,11 +124,9 @@ const uniV2Mapping = (humanizerInfo: any) => {
       ]
     },
     [`${iface.getFunction('addLiquidityETH')?.selector}`]: (accountOp: AccountOp, call: IrCall) => {
-      // @TODO fix this || {value: BigInt(0)} potential BAD
-      // @TODO fix args || [] ???
-      const { args, value } = iface.parseTransaction(call) || { value: BigInt(0) }
+      const { args, value } = iface.parseTransaction(call) || { args: [], value: BigInt(0) }
       const [token, amountTokenDesired /* amountTokenMin */ /* amountETHMin */, , , to, deadline] =
-        args || []
+        args
       return [
         getAction('Add liquidity'),
         getToken(token, amountTokenDesired),

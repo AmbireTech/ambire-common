@@ -12,8 +12,6 @@ import {
 import { AccountOp } from '../../../accountOp/accountOp'
 import { IrCall } from '../../interfaces'
 
-// @TODO func selectors for both routers seem to be the same
-
 // Stolen from ambire-wallet
 const uniV32Mapping = (humanizerInfo: any) => {
   const ifaceV32 = new ethers.Interface(humanizerInfo?.['abis:UniV3Router2'])
@@ -140,7 +138,6 @@ const uniV32Mapping = (humanizerInfo: any) => {
       accountOp: AccountOp,
       call: IrCall
     ) => {
-      // NOTE: is amountInMax set when dealing with ETH? it should be... cause value and max are not the same thing
       const [amountOut, amountInMax, path, to] = ifaceV32.parseTransaction(call)?.args || []
       return [
         getAction('Swap up to'),
@@ -155,7 +152,6 @@ const uniV32Mapping = (humanizerInfo: any) => {
       accountOp: AccountOp,
       call: IrCall
     ) => {
-      // NOTE: is amountIn set when dealing with ETH?
       const [amountIn, amountOutMin, path, to] = ifaceV32.parseTransaction(call)?.args || []
       return [
         getAction('Swap'),
@@ -245,7 +241,6 @@ const uniV32Mapping = (humanizerInfo: any) => {
   }
 }
 
-// @NOTE Stolen from ambire-wallet
 const uniV3Mappinig = (humanizerInfo: any) => {
   const ifaceV3 = new ethers.Interface(humanizerInfo?.['abis:UniV3Router'])
   return {
@@ -324,7 +319,6 @@ const uniV3Mappinig = (humanizerInfo: any) => {
         getDeadlineText(params.deadline)
       ]
     },
-    // @NOTE moaybe ethers.ZeroAddress should be replaced with WETH address in all unwraps?
     // 0x49404b7c
     [`${ifaceV3.getFunction('unwrapWETH9')?.selector}`]: (accountOp: AccountOp, call: IrCall) => {
       const [amountMin, recipient] = ifaceV3.parseTransaction(call)?.args || []
