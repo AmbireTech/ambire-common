@@ -295,6 +295,50 @@ describe('Activity Controller ', () => {
         maxPages: 1
       })
     })
+
+    test('Keeps no more than 1000 items', async () => {
+      const storage = produceMemoryStore()
+      const controller = new ActivityController(storage, accounts, {
+        account: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
+        network: 'ethereum'
+      })
+
+      const accountOp = {
+        accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
+        signingKeyAddr: '0x5Be214147EA1AE3653f289E17fE7Dc17A73AD175',
+        gasLimit: null,
+        gasFeePayment: null,
+        networkId: 'ethereum',
+        nonce: 225,
+        signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503',
+        calls: [
+          {
+            to: '0x18Ce9CF7156584CDffad05003410C3633EFD1ad0',
+            value: BigInt(0),
+            data: '0x23b872dd000000000000000000000000b674f3fd5f43464db0448a57529eaf37f04ccea500000000000000000000000077777777789a8bbee6c64381e5e89e501fb0e4c80000000000000000000000000000000000000000000000000000000000000089'
+          }
+        ],
+        txnId: '0x891e12877c24a8292fd73fd741897682f38a7bcd497374a6b68e8add89e1c0fb'
+      } as SubmittedAccountOp
+
+      const accountsOps = Array.from(Array(1500).keys()).map((key) => ({
+        ...accountOp,
+        nonce: key
+      }))
+
+      // eslint-disable-next-line no-restricted-syntax
+      for (const ao of accountsOps) {
+        // eslint-disable-next-line no-await-in-loop
+        await controller.addAccountOp(ao)
+      }
+
+      await controller.setAccountsOpsPagination({ fromPage: 0, itemsPerPage: 1000 })
+      const controllerAccountsOps = controller.accountsOps
+
+      expect(controllerAccountsOps!.itemsTotal).toEqual(1000)
+      expect(controllerAccountsOps!.items[0].nonce).toEqual(500)
+      expect(controllerAccountsOps!.items[999].nonce).toEqual(1499)
+    })
   })
 
   describe('SignedMessages', () => {
@@ -394,6 +438,45 @@ describe('Activity Controller ', () => {
         currentPage: 1, // index based
         maxPages: 2
       })
+    })
+
+    test('Keeps no more than 1000 items', async () => {
+      const storage = produceMemoryStore()
+      const controller = new ActivityController(storage, accounts, {
+        account: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
+        network: 'ethereum'
+      })
+
+      const signedMessage: SignedMessage = {
+        content: {
+          kind: 'message',
+          message: '0x123456'
+        },
+        fromUserRequestId: 1n,
+        signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503'
+      }
+
+      const signedMessages = Array.from(Array(1500).keys()).map((key) => ({
+        ...signedMessage,
+        signature: key.toString()
+      }))
+
+      // eslint-disable-next-line no-restricted-syntax
+      for (const sm of signedMessages) {
+        // eslint-disable-next-line no-await-in-loop
+        await controller.addSignedMessage(
+          sm,
+          '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
+          'ethereum'
+        )
+      }
+
+      await controller.setSignedMessagesPagination({ fromPage: 0, itemsPerPage: 1000 })
+      const controllerSignedMessages = controller.signedMessages
+
+      expect(controllerSignedMessages!.itemsTotal).toEqual(1000)
+      expect(controllerSignedMessages!.items[0].signature).toEqual('500')
+      expect(controllerSignedMessages!.items[999].signature).toEqual('1499')
     })
   })
 })

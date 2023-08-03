@@ -45,6 +45,16 @@ interface InternalSignedMessages {
   [key: string]: { [key: string]: SignedMessage[] }
 }
 
+// We are limiting items array to include no more than 1000 records,
+// as we trim out the oldest ones (in the beginning of the items array).
+// We do this to maintain optimal storage and performance.
+const trim = (items: SubmittedAccountOp[] | SignedMessage[], maxSize = 1000): void => {
+  if (items.length > maxSize) {
+    // If the array size is greater than maxSize, remove the first (oldest) item
+    items.shift()
+  }
+}
+
 export class ActivityController extends EventEmitter {
   private storage: Storage
 
@@ -123,6 +133,8 @@ export class ActivityController extends EventEmitter {
     if (!this.#accountsOps[account][network]) this.#accountsOps[account][network] = []
 
     this.#accountsOps[account][network].push({ ...accountOp, status: AccountOpStatus.Pending })
+    trim(this.#accountsOps[account][network])
+
     this.accountsOps = this.filterAndPaginate(this.#accountsOps, this.accountsOpsPagination)
 
     await this.storage.set('accountsOps', this.#accountsOps)
@@ -173,6 +185,7 @@ export class ActivityController extends EventEmitter {
     if (!this.#signedMessages[account][network]) this.#signedMessages[account][network] = []
 
     this.#signedMessages[account][network].push(signedMessage)
+    trim(this.#signedMessages[account][network])
     this.signedMessages = this.filterAndPaginate(
       this.#signedMessages,
       this.signedMessagesPagination
