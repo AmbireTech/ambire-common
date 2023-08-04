@@ -1,4 +1,4 @@
-import { JsonRpcProvider } from 'ethers'
+import { ethers, JsonRpcProvider } from 'ethers'
 
 import { networks } from '../../consts/networks'
 import { Account, AccountId, AccountOnchainState } from '../../interfaces/account'
@@ -9,6 +9,7 @@ import { AccountOp, Call as AccountOpCall } from '../../libs/accountOp/accountOp
 import { getAccountState } from '../../libs/accountState/accountState'
 import { estimate } from '../../libs/estimate/estimate'
 import { Key, Keystore } from '../../libs/keystore/keystore'
+import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { AccountAdderController } from '../accountAdder/accountAdder'
 import { EmailVaultController } from '../emailVault'
 import EventEmitter from '../eventEmitter'
@@ -31,6 +32,8 @@ export class MainController extends EventEmitter {
 
   // Load-related stuff
   private initialLoadPromise: Promise<void>
+
+  #callRelayer: Function
 
   accountStates: AccountStates = {}
 
@@ -82,6 +85,7 @@ export class MainController extends EventEmitter {
     this.settings = { networks }
     this.emailVault = new EmailVaultController(storage, fetch, relayerUrl, this.keystore)
     this.accountAdder = new AccountAdderController({ storage, relayerUrl, fetch })
+    this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
     // Load userRequests from storage and emit that we have updated
     // @TODO
   }
@@ -132,6 +136,31 @@ export class MainController extends EventEmitter {
     if (!this.accounts.find((acc) => acc.addr === toAccountAddr))
       throw new Error(`try to switch to not exist account: ${toAccountAddr}`)
     this.selectedAccount = toAccountAddr
+  }
+
+  async createAccounts(accounts: Account[] = []) {
+    const accountsToCreate = accounts.filter((acc) => acc.creation)
+
+    if (accountsToCreate.length) {
+      const body = accountsToCreate.map((acc) => ({
+        identity: acc.addr,
+        salt: acc.creation!.salt,
+        // TODO: that's the legacy account address. Check if this is all right
+        // or we should take this from the bytecode
+        baseIdentityAddr: acc.associatedKeys[0],
+        privileges: [[acc.addr, ethers.toBeHex(1, 32)]],
+        identityFactoryAddr: acc.creation!.factoryAddr
+        // TODO: Missing on the accounts, maybe add it?
+        // signerType:
+      }))
+
+      await this.#callRelayer('/v2/identity/create-multiple', 'POST', {
+        accounts: body
+      })
+    }
+
+    this.storage.set('accounts', accounts)
+    this.emitUpdate()
   }
 
   private async ensureAccountInfo(accountAddr: AccountId, networkId: NetworkId) {
