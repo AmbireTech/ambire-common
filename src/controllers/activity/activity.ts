@@ -55,6 +55,31 @@ const trim = (items: SubmittedAccountOp[] | SignedMessage[], maxSize = 1000): vo
   }
 }
 
+/**
+ * Activity Controller
+ * is responsible for keeping signed AccountsOps and Messages in the controller memory and browser storage.
+ *
+ * With its public methods and properties, you can retrieve ActivityController.accountsOps and ActivityController.signedMessages in a paginated structure.
+ *
+ * In order to set filters/pagination, we should use the following methods:
+ * `setFilters` - the same filters are reused for both AccountsOps and SignedMessages, because in terms of UI, most probably they will have the same value for both types.
+ * `setAccountsOpsPagination` - set pagination props for AccountsOps only. We don't reuse the pagination for SignedMessages too, because pagination is tightly coupled to its type.
+ * `setSignedMessagesPagination` - set pagination props for SignedMessages.
+ *
+ * 💡 For performance reasons, we have made the decision to limit the number of items per account + network to a maximum of 1000.
+ * To achieve this, we have trimmed out the oldest items, retaining only the most recent ones.
+ *
+ * Implementation decisions:
+ *
+ * 1. Before we start operating with the controller inner state, we rely on private load() function to load the browser storage and to update the inner state.
+ * 2. The filtering by account/network is reused for both AccountsOps and SignedMessages. This seems most logical from a UI perspective.
+ * 3. Pagination is not reused because the two tabs can have different states.
+ * 4. MainController passes all accounts to ActivityController (instead of a single account, i.e. the current one) so that we can know the latest nonce for each account + network. Otherwise (if we don't want to pass all accounts), when selecting an account from the UI in the Transaction History screen, MainController should subscribe and pass only one account. The first option seems to be less cumbersome.
+ * 5. Here is how we update AccountsOps statuses:
+ *   5.1. Once we add a new AccountOp to ActivityController via addAccountOp, we are setting its status to AccountOpStatus.Pending.
+ *   5.2. Here, we firstly rely on getTransactionReceipt for determining the status (success or failure).
+ *   5.3. If we don't manage to determine its status, we are comparing AccountOp and Account nonce. If Account nonce is greater than AccountOp, then we know that AccountOp has past nonce (AccountOpStatus.UnknownButPastNonce).
+ */
 export class ActivityController extends EventEmitter {
   private storage: Storage
 
