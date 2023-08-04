@@ -77,8 +77,9 @@ const trim = (items: SubmittedAccountOp[] | SignedMessage[], maxSize = 1000): vo
  * 4. MainController passes all accounts to ActivityController (instead of a single account, i.e. the current one) so that we can know the latest nonce for each account + network. Otherwise (if we don't want to pass all accounts), when selecting an account from the UI in the Transaction History screen, MainController should subscribe and pass only one account. The first option seems to be less cumbersome.
  * 5. Here is how we update AccountsOps statuses:
  *   5.1. Once we add a new AccountOp to ActivityController via addAccountOp, we are setting its status to AccountOpStatus.Pending.
- *   5.2. Here, we firstly rely on getTransactionReceipt for determining the status (success or failure).
- *   5.3. If we don't manage to determine its status, we are comparing AccountOp and Account nonce. If Account nonce is greater than AccountOp, then we know that AccountOp has past nonce (AccountOpStatus.UnknownButPastNonce).
+ *   5.2. Later, we need to call `updateAccountsOpsStatuses()` from the app.
+ *       5.2.1. Then, we firstly rely on getTransactionReceipt for determining the status (success or failure).
+ *       5.2.2. If we don't manage to determine its status, we are comparing AccountOp and Account nonce. If Account nonce is greater than AccountOp, then we know that AccountOp has past nonce (AccountOpStatus.UnknownButPastNonce).
  */
 export class ActivityController extends EventEmitter {
   private storage: Storage
