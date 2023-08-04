@@ -78,7 +78,9 @@ export class EmailVaultController extends EventEmitter {
   private async load(): Promise<void> {
     this.isReady = false
     const result = await Promise.all([
-      this.storage.get(EMAIL_VAULT_STORAGE_KEY, {}),
+      this.storage.get(EMAIL_VAULT_STORAGE_KEY, {
+        email: {}
+      }),
       this.storage.get(MAGIC_LINK_STORAGE_KEY, {})
     ])
 
@@ -105,8 +107,7 @@ export class EmailVaultController extends EventEmitter {
     )
     await Promise.all([
       this.storage.set(MAGIC_LINK_STORAGE_KEY, this.#magicLinkKeys),
-      this.storage.set(SESSION_KEYS_STORAGE_KEY, this.#sessionKeys),
-      this.getEmailVaultInfo(email)
+      this.storage.set(SESSION_KEYS_STORAGE_KEY, this.#sessionKeys)
     ])
   }
 
@@ -135,75 +136,142 @@ export class EmailVaultController extends EventEmitter {
     return result
   }
 
-  async backupRecoveryKeyStoreSecret(email: string) {
+  async getEmailVaultInfo(email: string): Promise<void> {
+    const [existsSessionKey, existsMagicKey] = await Promise.all([
+      this.#getSessionKey(email),
+      this.#getMagicLinkKey(email)
+    ])
+
+    const magicLinkKey = existsMagicKey || (await this.#requestNewMagicLinkKey(email))
+    const key = existsSessionKey || magicLinkKey.key
+
+    let result: EmailVaultData | null
+
+    if (!!existsSessionKey || magicLinkKey.confirmed) {
+      result = await this.#emailVault.getEmailVaultInfo(email, key).catch(() => null)
+    } else {
+      this.#isWaitingEmailConfirmation = true
+      const polling = new Polling()
+      polling.onUpdate(() => {
+        if (polling.state.isError && polling.state.error.output.res.status === 401) {
+          this.#isWaitingEmailConfirmation = true
+        } else if (polling.state.isError) {
+          this.emailVaultStates.errors = [polling.state.error]
+        }
+      })
+
+      result = await polling.exec(this.#emailVault.getEmailVaultInfo.bind(this.#emailVault), [
+        email,
+        key
+      ])
+    }
+
+    if (result) {
+      this.emailVaultStates.errors = []
+      this.emailVaultStates.email[email] = result
+      await this.storage.set(EMAIL_VAULT_STORAGE_KEY, this.emailVaultStates)
+      if (!existsMagicKey && !magicLinkKey.confirmed) {
+        await this.#verifiedMagicLinkKey(email)
+      }
+    } else {
+      this.emailVaultStates.errors = [new Error('error retrieving data for email vault')]
+    }
+
+    this.#isWaitingEmailConfirmation = false
+    this.emitUpdate()
+  }
+
+  async uploadKeyStoreSecret(email: string) {
     if (!this.emailVaultStates.email[email]) {
       await this.getEmailVaultInfo(email)
     }
+
+    let result: Boolean | null
 
     const newSecret = crypto.randomBytes(32).toString('base64url')
 
     await this.#keyStore.addSecret(RECOVERY_SECRET_ID, newSecret)
-    const keyStoreUid = await this.#keyStore.getKeyStoreUid()
-    const existsMagicKey = await this.#getMagicLinkKey(email)
-
-    const magicKey = existsMagicKey || (await this.#requestNewMagicLinkKey(email))
-    if (magicKey.confirmed) {
-      await this.#emailVault.addKeyStoreSecret(email, magicKey.key, keyStoreUid, newSecret)
-    }
-    await this.oldPolling(this.#addKeyStoreSecretProceed.bind(this), [
-      email,
-      magicKey.key,
-      keyStoreUid,
-      newSecret
+    const [keyStoreUid, existsMagicKey] = await Promise.all([
+      this.#keyStore.getKeyStoreUid(),
+      this.#getMagicLinkKey(email)
     ])
 
-    // await this.getEmailVaultInfo(email, magicKey.key)
-  }
+    const magicKey = existsMagicKey || (await this.#requestNewMagicLinkKey(email))
 
-  async #addKeyStoreSecretProceed(
-    email: string,
-    magicKey: string,
-    keyStoreUid: string,
-    newSecret: string
-  ) {
-    this.#isWaitingEmailConfirmation = true
-    if (!this.#magicLinkKeys[email]) {
-      this.emitUpdate()
-      return false
+    if (magicKey.confirmed) {
+      result = await this.#emailVault.addKeyStoreSecret(email, magicKey.key, keyStoreUid, newSecret)
+    } else {
+      this.#isWaitingEmailConfirmation = true
+      const polling = new Polling()
+      polling.onUpdate(() => {
+        if (polling.state.isError && polling.state.error.output.res.status === 401) {
+          this.#isWaitingEmailConfirmation = true
+        } else if (polling.state.isError) {
+          this.emailVaultStates.errors = [polling.state.error]
+        }
+      })
+
+      result = await polling.exec(this.#emailVault.addKeyStoreSecret.bind(this.#emailVault), [
+        email,
+        magicKey.key,
+        keyStoreUid,
+        newSecret
+      ])
     }
 
-    const result: Boolean | null = await this.#emailVault
-      .addKeyStoreSecret(email, magicKey, keyStoreUid, newSecret)
-      .catch(() => null)
-
-    if (!result) {
-      this.emitUpdate()
-      return false
-    }
-
-    this.#isWaitingEmailConfirmation = false
-    await this.#verifiedMagicLinkKey(email)
-    return true
-  }
-
-  async recoverKeyStore(email: string) {
-    if (!this.emailVaultStates.email[email]) {
+    if (result) {
       await this.getEmailVaultInfo(email)
-    }
-    const keyStoreUid = await this.#keyStore.getKeyStoreUid()
-    const availableSecrets = this.emailVaultStates.email[email].availableSecrets
-    const keyStoreSecret = Object.keys(availableSecrets).find(async (secretKey: string) => {
-      return availableSecrets[secretKey].key === keyStoreUid
-    })
-    if (this.emailVaultStates.email[email] && keyStoreSecret) {
-      const secretKey = await this.getRecoverKeyStoreSecret(email, keyStoreUid)
-      console.log({secretKey});
-      
-      // await this.#keyStore.unlockWithSecret(RECOVERY_SECRET_ID, secretKey.value)
+    } else {
+      this.emailVaultStates.errors = [new Error('error upload keyStore to email vault')]
     }
   }
 
-  async getRecoverKeyStoreSecret(email: string, uid: string): Promise<EmailVaultSecret | null> {
+  // unlockViaEmailVault
+
+  // async #addKeyStoreSecretProceed(
+  //   email: string,
+  //   magicKey: string,
+  //   keyStoreUid: string,
+  //   newSecret: string
+  // ) {
+  //   this.#isWaitingEmailConfirmation = true
+  //   if (!this.#magicLinkKeys[email]) {
+  //     this.emitUpdate()
+  //     return false
+  //   }
+
+  //   const result: Boolean | null = await this.#emailVault
+  //     .addKeyStoreSecret(email, magicKey, keyStoreUid, newSecret)
+  //     .catch(() => null)
+
+  //   if (!result) {
+  //     this.emitUpdate()
+  //     return false
+  //   }
+
+  //   this.#isWaitingEmailConfirmation = false
+  //   await this.#verifiedMagicLinkKey(email)
+  //   return true
+  // }
+
+  // async recoverKeyStore(email: string) {
+  //   if (!this.emailVaultStates.email[email]) {
+  //     await this.getEmailVaultInfo(email)
+  //   }
+  //   const keyStoreUid = await this.#keyStore.getKeyStoreUid()
+  //   const availableSecrets = this.emailVaultStates.email[email].availableSecrets
+  //   const keyStoreSecret = Object.keys(availableSecrets).find(async (secretKey: string) => {
+  //     return availableSecrets[secretKey].key === keyStoreUid
+  //   })
+  //   if (this.emailVaultStates.email[email] && keyStoreSecret) {
+  //     const secretKey = await this.getRecoverKeyStoreSecret(email, keyStoreUid)
+  //     console.log({ secretKey })
+
+  //     // await this.#keyStore.unlockWithSecret(RECOVERY_SECRET_ID, secretKey.value)
+  //   }
+  // }
+
+  async getKeyStoreSecret(email: string, uid: string): Promise<EmailVaultSecret | null> {
     const state = this.emailVaultStates
     if (
       !state.email[email] ||
@@ -299,44 +367,6 @@ export class EmailVaultController extends EventEmitter {
   //   this.emitUpdate()
   //   return result
   // }
-
-  async getEmailVaultInfo(email: string): Promise<boolean | null> {
-    const [existsSessionKey, existsMagicKey] = await Promise.all([
-      this.#getSessionKey(email),
-      this.#getMagicLinkKey(email)
-    ])
-
-    const magicLinkKey = existsMagicKey || (await this.#requestNewMagicLinkKey(email))
-    const key = existsSessionKey || magicLinkKey.key
-
-    let result: EmailVaultData | null
-
-    if (!!existsSessionKey || magicLinkKey.confirmed) {
-      result = await this.#emailVault.getEmailVaultInfo(email, key).catch(() => null)
-    } else {
-      this.#isWaitingEmailConfirmation = true
-      const polling = new Polling()
-      polling.onUpdate(() => {
-        if (polling.state.isError && polling.state.error.output.res.status === 401) {
-          this.#isWaitingEmailConfirmation = true
-        } else if (polling.state.isError) {
-          this.emailVaultStates.errors = [polling.state.error]
-        }
-      })
-
-      result = await polling.exec(this.#emailVault.getEmailVaultInfo, [email, key])
-    }
-
-    this.emailVaultStates.email[email] = result!
-console.log(this.emailVaultStates.email[email]);
-
-    this.storage.set(EMAIL_VAULT_STORAGE_KEY, this.emailVaultStates)
-    // this will trigger the update event
-    this.#isWaitingEmailConfirmation = false
-    if (!existsMagicKey && !magicLinkKey.confirmed) await this.#verifiedMagicLinkKey(email)
-    this.emitUpdate()
-    return true
-  }
 
   // async login(email: string) {
   //   const [existsSessionKey, existsMagicKey] = await Promise.all([

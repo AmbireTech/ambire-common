@@ -40,8 +40,6 @@ export interface EmailVaultData {
   availableAccounts: { [addr: string]: EmailVaultAccountInfo }
   availableSecrets: { [key: string]: EmailVaultSecret }
   operations: Operation[]
-  criticalError?: Error
-  errors?: Error[]
 }
 
 export interface RecoveryKey {

@@ -48,7 +48,7 @@ export class Polling extends EventEmitter {
         }
 
         if (new Date().getTime() - this.startTime >= (timeout || DEFAULT_TIMEOUT)) {
-          return resolve({ ...result, timeouted: true })
+          return resolve({ ...result, error: new Error('timeout') })
         }
 
         if (!result.isError) return resolve(result)

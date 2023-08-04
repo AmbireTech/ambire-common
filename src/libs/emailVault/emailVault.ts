@@ -22,14 +22,8 @@ export interface EmailVaultInfo {
 export class EmailVault {
   private callRelayer: Function
 
-  private fetch: Function
-
-  private relayerUrl: string
-
   constructor(fetch: Function, relayerUrl: string) {
     this.callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
-    this.relayerUrl = relayerUrl
-    this.fetch = fetch
   }
 
   async create(email: String, authKey: String): Promise<EmailVaultSecret> {
