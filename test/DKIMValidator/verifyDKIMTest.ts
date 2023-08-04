@@ -24,10 +24,10 @@ function getSetDKIMTxn(keySelector: any, exponent: any, modulus: any) {
   return [ambireAddress, 0, calldata]
 }
 
-function getSetEmailFromTxn(email: string) {
-  const setEmailFrom = ['function setEmailFrom(string calldata email)']
+function getSetEmailFromTxn(email: string, identifier: string) {
+  const setEmailFrom = ['function setEmailInfo(string calldata email, bytes memory identifier)']
   const iface = new ethers.Interface(setEmailFrom)
-  const calldata = iface.encodeFunctionData('setEmailFrom', [email])
+  const calldata = iface.encodeFunctionData('setEmailInfo', [email, identifier])
   return [ambireAddress, 0, calldata]
 }
 
@@ -132,9 +132,14 @@ describe('DKIM', function () {
 
     // set the DKIM
     const email = 'borislavdevlabs@gmail.com'
+    const signedSetsData = await lookup('Google', 'Ambire.com')
+    const rrsets = signedSetsData.proofs.map(({records, signature}: any) => {
+      return hexEncodeSignedSet(records, signature)
+    })
+    const identifier = await validator.getDomainIdentifier(rrsets[rrsets.length-1])
     await ambireContract.executeBySender([
       getSetDKIMTxn(dkimSelector, exponent, modulus),
-      getSetEmailFromTxn(email),
+      getSetEmailFromTxn(email, identifier),
     ])
     const dkimBytecode = await ambireContract.getAccountInfo()
     expect(dkimBytecode[0][0]).to.equal(dkimSelector)
@@ -220,20 +225,20 @@ describe('DKIM', function () {
     // set the DKIM
     const email = 'borislavdevlabs@gmail.com'
     const contractSelector = ethers.hexlify(ethers.toUtf8Bytes(parsedContents[0].selector))
+    const signedSetsData = await lookup('Google', 'Ambire.com')
+    const rrsets = signedSetsData.proofs.map(({records, signature}: any) => {
+      return hexEncodeSignedSet(records, signature)
+    })
+    const identifier = await validator.getDomainIdentifier(rrsets[rrsets.length-1])
     await ambireContract.executeBySender([
       getSetDKIMTxn(contractSelector, exponent, modulus),
-      getSetEmailFromTxn(email),
+      getSetEmailFromTxn(email, identifier),
     ])
     const dkimBytecode = await ambireContract.getAccountInfo()
     expect(dkimBytecode[0][0]).to.equal(contractSelector)
     expect(dkimBytecode[0][1][0]).to.equal(exponent)
     expect(dkimBytecode[0][1][1]).to.equal(modulus)
     expect(dkimBytecode[1]).to.equal(email)
-
-    const signedSetsData = await lookup('Google', 'Ambire.com')
-    const rrsets = signedSetsData.proofs.map(({records, signature}: any) => {
-      return hexEncodeSignedSet(records, signature)
-    })
 
     const provider = ethers.provider
     const abiFunc = ['function validateSig(address accountAddr, bytes calldata data, bytes calldata sig, uint nonce, tuple(address, uint256, bytes)[] calldata calls) external returns (bool shouldExecute)']

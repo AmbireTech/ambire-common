@@ -74,7 +74,7 @@ contract DKIMValidator is ExternalSigValidator, Recoveries, DKIM {
 
         // if the selectors don't match, perform DNSSEC validation
         if (keccak256(dkimSelector) != keccak256(accountInfo.dkimKey.keySelector)) {
-            bool isDnsValid = dnsSecVerification(rrSets, emailFrom);
+            bool isDnsValid = dnsSecVerification(rrSets, accountInfo.domainIdentifier);
             if (! isDnsValid) return false;
 
             // TO DO: change the public key to the one after dnssec
@@ -110,14 +110,19 @@ contract DKIMValidator is ExternalSigValidator, Recoveries, DKIM {
 
     function dnsSecVerification(
         RRSetWithSignature[] memory rrSets,
-        Strings.slice memory emailFrom
+        bytes memory domainIdentifier
     ) internal view returns (bool) {
         if (rrSets.length == 0) return false;
 
-        // TO DO: check if the domain of the rrSets is the same as
-        // the email address of the user
         RRUtils.SignedSet memory rrset = rrSets[rrSets.length-1].rrset.readSignedSet();
+        if (keccak256(rrset.signerName) != keccak256(domainIdentifier)) return false;
+
         (bytes memory rrs, ) = DnsSecOracle(dnsSecOracle).verifyRRSet(rrSets);
         return (keccak256(rrs) == keccak256(rrset.data));
+    }
+
+    function getDomainIdentifier(RRSetWithSignature memory set) public pure returns (bytes memory) {
+        RRUtils.SignedSet memory rrset = set.rrset.readSignedSet();
+        return rrset.signerName;
     }
 }
