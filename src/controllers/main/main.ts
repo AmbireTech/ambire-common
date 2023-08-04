@@ -1,5 +1,6 @@
 import { ethers, JsonRpcProvider } from 'ethers'
 
+import { PROXY_AMBIRE_ACCOUNT } from '../../consts/deploy'
 import { networks } from '../../consts/networks'
 import { Account, AccountId, AccountOnchainState } from '../../interfaces/account'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
@@ -145,13 +146,11 @@ export class MainController extends EventEmitter {
       const body = accountsToCreate.map((acc) => ({
         identity: acc.addr,
         salt: acc.creation!.salt,
-        // TODO: that's the legacy account address. Check if this is all right
-        // or we should take this from the bytecode
-        baseIdentityAddr: acc.associatedKeys[0],
-        privileges: [[acc.addr, ethers.toBeHex(1, 32)]],
-        identityFactoryAddr: acc.creation!.factoryAddr
-        // TODO: Missing on the accounts, maybe add it?
-        // signerType:
+        baseIdentityAddr: PROXY_AMBIRE_ACCOUNT,
+        privileges: [[acc.associatedKeys[0], ethers.toBeHex(1, 32)]],
+        identityFactoryAddr: acc.creation!.factoryAddr,
+        // TODO: Missing on the accounts
+        signerType: 'Web3'
       }))
 
       await this.#callRelayer('/v2/identity/create-multiple', 'POST', {
