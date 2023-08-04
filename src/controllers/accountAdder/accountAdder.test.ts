@@ -28,7 +28,7 @@ function produceMemoryStore(): Storage {
   }
 }
 
-const relayerUrl = 'https://relayer.ambire.com'
+const relayerUrl = 'https://staging-relayer.ambire.com'
 
 const seedPhrase =
   'brisk rich glide impose category stuff company you appear remain decorate monkey'
