@@ -1,12 +1,14 @@
 // NOTE: we only support RSA-SHA256 DKIM signatures, this is whhy we do not have an algorithm field atm
 
-import "./libs/IAmbireAccount.sol";
-import "./libs/SignatureValidator.sol";
+import './libs/IAmbireAccount.sol';
+import './libs/SignatureValidator.sol';
+import './dkim/RSASHA256.sol';
 
 contract DKIMRecoverySigValidator {
   struct DKIMKey {
     string domainName;
-    bytes pubKey;
+    bytes pubKeyModulus;
+    bytes pubKeyExponent;
   }
 
   struct AccInfo {
@@ -26,7 +28,8 @@ contract DKIMRecoverySigValidator {
     // whether to accept any of those signatures to be missing; if only 1/2 sigs are provided we go into the timelock tho
     bool acceptEmptyDKIMSig;
     bool acceptEmptySecondSig;
-    // @TODO BUG/ISSUE: if both of those are set to true, we can trigger the timelock without anything
+    // The timelock in case we only use 1/2 signatures
+    uint32 onlyOneSigTimelock;
   }
 
   // we need SigMode (OnlyDKIM, OnlySecond, Both) in the identifier itself, otherwise sigs are malleable (you can front-run a modified sig to trigger the timelock)
@@ -81,7 +84,7 @@ contract DKIMRecoverySigValidator {
 
     // First step: we get the DKIM record we're using
     DKIMKey memory key = sigMeta.key;
-    if (!(accInfo.key.domainName == key.domainName && accInfo.key.pubKey == key.pubKey)) {
+    if (!(accInfo.key.domainName == key.domainName && accInfo.key.pubKeyExponent == key.pubKeyExponent && accInfo.pubKeyModulus == key.pubKeyModulus)) {
       bytes32 keyId = keccak256(abi.encode(sigMeta.key));
       require(accInfo.acceptUnknownSelectors, 'account does not allow unknown selectors');
       KeyInfo storage keyInfo = dkimKeys[keyId];
@@ -91,7 +94,7 @@ contract DKIMRecoverySigValidator {
     }
 
     // @TODO validate .domainName against emailFrom
-    // @TODO check if there is only one entry left of _domainKey
+    // @TODO check if there is only one entry on the left side of _domainKey
     // @TODO maybe this will be easier if we pass selector in sigMeta
     require(
       String.endsWith(
@@ -104,29 +107,46 @@ contract DKIMRecoverySigValidator {
     if (sigMeta.mode == SigMode.Both || sigMeta.mode == SigMode.OnlyDKIM) {
       if (sigMeta.mode == SigMode.OnlyDKIM) require(accInfo.acceptEmptySecondSig, 'account disallows OnlyDKIM');;
       // @TODO parse canonizedHeaders, verify thge DKIM sig, verify the secondary sig, verify that .calls is correct (only one call to setAddrPrivilege with the newKeyToSet)
+      // this is what we have in the headers from field:
+      // from:Name Surname <email@provider.com>
+      // we split from "from" to ">" and check if the email is
+      // registered in account info
+      Strings.slice memory headersSlice = accInfo.canonizedHeaders.toSlice();
+      headersSlice.splitNeedle('from:'.toSlice());
+      Strings.slice memory afterSplit = headersSlice.splitNeedle('>'.toSlice());
+      require(afterSplit.contains(accountInfo.emailFrom.toSlice()), 'validate from');
 
+      // TO DO: VALIDATE TO FIELD
+
+      require(
+        // @TODO our rsa key is not in this format
+        RSASHA256.verify(identifier, dkimSig, key.pubKeyExponent, key.pubKeyModulus),
+        'DKIM signature verification failed',
+      )
     }
 
     if (sigMeta.mode == SigMode.Both || sigMeta.mode == SigMode.OnlySecond) {
       if (sigMeta.mode == SigMode.OnlySecond) require(accInfo.acceptEmptyDKIMSig, 'account disallows OnlySecond');;
       // @TODO should spoofing be allowed
       require(
-        SignatureValidator.recoverAddrImpl(hashToSign, innerSig, true) == accInfo.secondaryKey,
+        SignatureValidator.recoverAddrImpl(hashToSign, secondSig, true) == accInfo.secondaryKey,
         'second key validation failed'
       );
     }
 
     // In those modes, we require a timelock
     if (sigMeta.mode == SigMode.OnlySecond || sigMeta.mode == OnlyDKIM) {
+      bool shouldExecute = checkTimelock(identifier, onlyOneSigTimelock);
+      if (!shouldExecute) return false;
     }
 
-
-    // @TODO if we return true, we should flag the `identifier` as executed
+    recoveries[identifier] = true;
+    return true;
   }
 
-  function addDKIMKeyWithDNSSec(bytes[] rrSets, string txtRecord) returns (DKIMKey) {
+  function addDKIMKeyWithDNSSec(bytes rrSets, string txtRecord) returns (DKIMKey) {
     require(authorizedToSubmit == address(69) || msg.sender == authorizedToSubmit, 'not authorized to submit');
-    require(dnssecOracle.verify(rrSets, txtRecord), 'DNSSec verification failed')
+    require(DnsSecOracle(dnsSecOracle).verifyRRSet(rrSets), 'DNSSec verification failed');
 
     (DKIMKey key, string domainName) = parse(rrSets, txtRecord);
     bytes32 id = keccak256(key);
@@ -146,10 +166,6 @@ contract DKIMRecoverySigValidator {
     require(msg.sender == authorizedToRevoke);
     dkimKeys[id].dateRemoved = block.timestamp;
   }
-
-  // @TODO the sig verification logic itself
-  // @TODO check from bobi
-
 
   //
   // Timelock
