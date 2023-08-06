@@ -103,7 +103,7 @@ contract DKIMRecoverySigValidator {
       DKIMKey memory key = sigMeta.key;
       if (!(domainName == key.domainName && accInfo.dkimPubKeyExponent == key.pubKeyExponent && accInfo.dkimPubKeyModulus == key.pubKeyModulus)) {
         bytes32 keyId = keccak256(abi.encode(sigMeta.key));
-        // @TODO we need to validate sigMeta.key.domainName against the email from `from`
+        // @TODO we need to validate sigMeta.key.domainName against the email from `from`:
         require(accInfo.acceptUnknownSelectors, 'account does not allow unknown selectors');
         KeyInfo storage keyInfo = dkimKeys[keyId];
         require(keyInfo.isExisting, 'non-existant DKIM key');
@@ -111,11 +111,13 @@ contract DKIMRecoverySigValidator {
         require(block.timestamp >= keyInfo.dateAdded + accInfo.waitUntilAcceptAdded, 'DKIM key not added yet');
       }
 
-      // TO DO: VALIDATE TO FIELD
+      // @TODO: VALIDATE TO FIELD
+      // @TODO validate subject; this is one of the most important validations, as it will contain the `newKeyToSet`
 
+      bytes32 dkimHash = sha256(bytes(canonizedHeaders));
       require(
         // @TODO our rsa key is not in this format
-        RSASHA256.verify(identifier, dkimSig, key.pubKeyExponent, key.pubKeyModulus),
+        RSASHA256.verify(dkimHash, dkimSig, key.pubKeyExponent, key.pubKeyModulus),
         'DKIM signature verification failed',
       )
     }
