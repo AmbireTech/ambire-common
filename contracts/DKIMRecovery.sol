@@ -3,11 +3,17 @@
 // @TODO we need SigMode (OnlyDKIM, OnlySecond, Both) in the identifier itself, otherwise sigs are malleable (you can front-run a modified sig to trigger the timelock)
 // @TODO cyclical dependency: you need to sign `identifier` which includes hash of `Signature`
 
+
+struct DKIMKey {
+  string selector;
+  bytes pubKey;
+}
+
 struct AccInfo {
   string emailFrom;
   string emailTo;
-  string dkimSelector;
-  bytes dkimPublicKey;
+  // this contains the selector and the pubKey
+  DKIMKey dkimKey;
   // normally set to the email vault key held by the relayer
   address secondaryKey;
   // if a record has been added by `authorizedToSubmit`, we can choose to require some time to pass before accepting it
@@ -27,19 +33,20 @@ enum SigMode {
   OnlySecond
 }
 
-// @TODO struct
-signature
-  DKIMKey { selector, publicKey }
-    if it's the same as the one in accInfo, we proceed; if not, we check in the registry and we check `timelockForUnknownKeys`
-  dkimSig
-  secondarySig
-  canonizedHeaders
-  newKeyToSet
+// the signatures themselves are passed separately to avoid cyclical dependency
+struct SignatureMeta {
+  DKIMKey key;
+  string[] canonizedHeaders;
+  address newKeyToSet;
+  bytes32 newPrivilegeValue;
+}
+
 
 struct Key {
   string domainName;
   bytes pubKey;
 }
+
 struct KeyInfo {
   bool isExisting;
   bool isBridge;
