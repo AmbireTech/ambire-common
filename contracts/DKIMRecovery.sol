@@ -5,6 +5,11 @@ import './libs/SignatureValidator.sol';
 import './dkim/RSASHA256.sol';
 
 contract DKIMRecoverySigValidator {
+  struct RRSetWithSignature {
+      bytes rrset;
+      bytes sig;
+  }
+
   struct DKIMKey {
     string domainName;
     bytes pubKeyModulus;
@@ -40,6 +45,7 @@ contract DKIMRecoverySigValidator {
     OnlyDKIM,
     OnlySecond
   }
+
 
   // the signatures themselves are passed separately to avoid cyclical dependency (`identifier` is generated from this meta)
   struct SignatureMeta {
@@ -141,7 +147,7 @@ contract DKIMRecoverySigValidator {
     return true;
   }
 
-  function addDKIMKeyWithDNSSec(bytes rrSets, string txtRecord) returns (DKIMKey) {
+  function addDKIMKeyWithDNSSec(RRSetWithSignature[] rrSets, string txtRecord) returns (DKIMKey) {
     require(authorizedToSubmit == address(69) || msg.sender == authorizedToSubmit, 'not authorized to submit');
     require(DnsSecOracle(dnsSecOracle).verifyRRSet(rrSets), 'DNSSec verification failed');
 
