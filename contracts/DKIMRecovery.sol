@@ -98,12 +98,16 @@ contract DKIMRecoverySigValidator {
       // from:Name Surname <email@provider.com>
       // we split from "from" to ">" and check if the email is
       // registered in account info
+      // @TODO caninizedHeaders - we have to decide whether we use string[] and we join before hashing or just string and we split in order to parse
       Strings.slice memory headersSlice = accInfo.canonizedHeaders.toSlice();
       headersSlice.splitNeedle('from:'.toSlice());
       Strings.slice memory afterSplit = headersSlice.splitNeedle('>'.toSlice());
+      afterSplit.splitNeedle('<'.toSlice());
       require(afterSplit.contains(accountInfo.emailFrom.toSlice()), 'validate from');
 
-      // First step: we get the DKIM record we're using
+      // @TODO validate subject
+
+      // After we've checked all headers and etc., we get the DKIM key we're using
       // @TODO is afterSplit correct here?
       string domainName = String.concat(accInfo.dkimSelector, '._domainKey.', afterSplit);
       DKIMKey memory key = sigMeta.key;
