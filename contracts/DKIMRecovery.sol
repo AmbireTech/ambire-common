@@ -1,19 +1,20 @@
 // NOTE: we only support RSA-SHA256 DKIM signatures, this is whhy we do not have an algorithm field atm
 
 // @TODO we need SigMode (OnlyDKIM, OnlySecond, Both) in the identifier itself, otherwise sigs are malleable (you can front-run a modified sig to trigger the timelock)
-// @TODO cyclical dependency: you need to sign `identifier` which includes hash of `Signature`
 
+import "./AmbireAccount.sol";
 
 struct DKIMKey {
-  string selector;
+  string domainName;
   bytes pubKey;
 }
 
 struct AccInfo {
   string emailFrom;
   string emailTo;
-  // this contains the selector and the pubKey
-  DKIMKey dkimKey;
+  // DKIM info: selector and pubkey; the rest of the domainName will be parsed from `emailFrom`
+  string dkimSelector;
+  bytes dkimPubKey;
   // normally set to the email vault key held by the relayer
   address secondaryKey;
   // if a record has been added by `authorizedToSubmit`, we can choose to require some time to pass before accepting it
@@ -64,23 +65,25 @@ function validateSig(
   uint nonce,
   AmbireAccount.Transaction[] calldata calls
 ) external returns (bool shouldExecute) {
-  (RecoveryInfo memory recoveryInfo) = abi.decode(data, (RecoveryInfo));
-  (bytes32 cancellationHash, bytes memory innerSig) = abi.decode(sig, (bytes32, bytes));
+  (AccInfo memory accInfo) = abi.decode(data, (AccInfo));
+  (SignatureMeta memory sigMeta, bytes memory dkimSig, bytes memory secondSig) = abi.decode(sig, (SignatureMeta, bytes, bytes));
+  bytes32 identifier = keccak256(abi.encode(accountAddr, accInfo, sigMeta));
 
-  bytes32 identifier = keccak256(abi.encode(account, accInfo, signature));
+  // @TODO if we return true, we should flag the `identifier` as executed
 
-  
-  DKIMKey dkimKey = accInfo.dkimKey;
-  if (signature.dkimKey.selector !== dkimKey.selector) {
+  // @TODO aquire domainName so that we can compare that
+  if (sigMeta.dkimKey.selector != accInfo.dkimSelector) {
+    // @TODO
     const dateAdded = dkimKeys[keccak256(signature.dkimKey)]
     if (dateAdded == 0) {
-      require(signature.rrSets.length > 0, 'no DNSSec proof and no valid DKIM key')
-      dkimKey = addDKIMKeyWithDNSSec(signature.rrSets)
+      // require(signature.rrSets.length > 0, 'no DNSSec proof and no valid DKIM key')
+      // dkimKey = addDKIMKeyWithDNSSec(signature.rrSets)
     } else {
       require(block.timestamp > dateAdded + accInfo.timelockForUnknownKeys, 'key added too recently, timelock not ready yet')
       dkimKey = signature.dkimKey
     }
   }
+  // @TODO single sig mode, timelock
 
   // @TODO parse canonizedHeaders, verify thge DKIM sig, verify the secondary sig, verify that .calls is correcct (only one call to setAddrPrivilege with the newKeyToSet)
 
