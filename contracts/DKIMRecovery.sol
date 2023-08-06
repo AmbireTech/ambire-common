@@ -1,9 +1,9 @@
 // NOTE: we only support RSA-SHA256 DKIM signatures, this is whhy we do not have an algorithm field atm
 
-import "./AmbireAccount.sol";
+import "./libs/IAmbireAccount.sol";
+import "./libs/SignatureValidator.sol";
 
 contract DKIMRecoverySigValidator {
-  // @TODO
   struct DKIMKey {
     string domainName;
     bytes pubKey;
@@ -66,12 +66,18 @@ contract DKIMRecoverySigValidator {
     bytes calldata data,
     bytes calldata sig,
     uint nonce,
-    AmbireAccount.Transaction[] calldata calls
+    IAmbireAccount.Transaction[] calldata calls
   ) external returns (bool shouldExecute) {
     (AccInfo memory accInfo) = abi.decode(data, (AccInfo));
     (SignatureMeta memory sigMeta, bytes memory dkimSig, bytes memory secondSig) = abi.decode(sig, (SignatureMeta, bytes, bytes));
     bytes32 identifier = keccak256(abi.encode(accountAddr, accInfo, sigMeta));
     require(!recoveries[identifier], 'recovery already done');
+
+    // Validate the calls: we only allow setAddrPrivilege for the pre-set newKeyToSet and newPrivilegeValue
+    require(calls.length == 1, 'calls length must be 1');
+    require(calls[0].value == 0, 'call value must be 0');
+    require(calls[0].to == accountAddr, 'call to must be the account');
+    require(calls[0].data == abi.encodeWithSelector(IAmbireAccount.setAddrPrivilege.selector, sigMeta.newKeyToSet, sigMeta.newPrivilegeValue));
 
     // First step: we get the DKIM record we're using
     DKIMKey memory key = sigMeta.key;
@@ -95,10 +101,27 @@ contract DKIMRecoverySigValidator {
       'invalid domainName'
     );
 
+    if (sigMeta.mode == SigMode.Both || sigMeta.mode == OnlyDKIM) {
+
+    }
+
+    if (sigMeta.mode == SigMode.Both || sigMeta.mode == OnlySecond) {
+      // @TODO should spoofing be allowed
+      require(
+        SignatureValidator.recoverAddrImpl(hashToSign, innerSig, true) == accInfo.secondaryKey,
+        'second key validation failed'
+      );
+    }
+
+    // In those modes, we require a timelock
+    if (sigMeta.mode == SigMode.OnlySecond || sigMeta.mode == OnlyDKIM) {
+    }
+
+
     // @TODO if we return true, we should flag the `identifier` as executed
 
 
-    // @TODO parse canonizedHeaders, verify thge DKIM sig, verify the secondary sig, verify that .calls is correcct (only one call to setAddrPrivilege with the newKeyToSet)
+    // @TODO parse canonizedHeaders, verify thge DKIM sig, verify the secondary sig, verify that .calls is correct (only one call to setAddrPrivilege with the newKeyToSet)
   }
 
   function addDKIMKeyWithDNSSec(bytes[] rrSets, string txtRecord) returns (DKIMKey) {
