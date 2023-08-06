@@ -99,11 +99,16 @@ contract DKIMRecoverySigValidator {
       // we split from "from" to ">" and check if the email is
       // registered in account info
       // @TODO caninizedHeaders - we have to decide whether we use string[] and we join before hashing or just string and we split in order to parse
-      Strings.slice memory headersSlice = accInfo.canonizedHeaders.toSlice();
-      headersSlice.splitNeedle('from:'.toSlice());
-      Strings.slice memory afterSplit = headersSlice.splitNeedle('>'.toSlice());
-      afterSplit.splitNeedle('<'.toSlice());
-      require(afterSplit.contains(accountInfo.emailFrom.toSlice()), 'validate from');
+      Strings.slice memory canonizedHeadersBuffer;
+      for (uint i = 0; i != accInfo.canonizedHeaders.length; i++) {
+        Strings.slice memory header = accInfo.canonizedHeaders[i].toSlice();
+        canonizedHeadersBuffer = canonizedHeadersBuffer.concat(header);
+        if (header.startsWith('from:'.toSlice())) {
+          Strings.slice memory afterSplit = header.splitNeedle('>'.toSlice());
+          afterSplit.splitNeedle('<'.toSlice());
+          require(afterSplit.compare(accountInfo.emailFrom.toSlice()) == 0, 'emailFrom not valid');
+        }
+      }
 
       // @TODO validate subject
 
@@ -124,7 +129,7 @@ contract DKIMRecoverySigValidator {
       // @TODO: VALIDATE TO FIELD
       // @TODO validate subject; this is one of the most important validations, as it will contain the `newKeyToSet`
 
-      bytes32 dkimHash = sha256(bytes(canonizedHeaders));
+      bytes32 dkimHash = sha256(bytes(canonizedHeadersBuffer.toString()));
       require(
         // @TODO our rsa key is not in this format
         RSASHA256.verify(dkimHash, dkimSig, key.pubKeyExponent, key.pubKeyModulus),
