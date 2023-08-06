@@ -82,30 +82,30 @@ contract DKIMRecoverySigValidator {
     require(calls[0].to == accountAddr, 'call to must be the account');
     require(calls[0].data == abi.encodeWithSelector(IAmbireAccount.setAddrPrivilege.selector, sigMeta.newKeyToSet, sigMeta.newPrivilegeValue));
 
-    // First step: we get the DKIM record we're using
-    DKIMKey memory key = sigMeta.key;
-    if (!(accInfo.key.domainName == key.domainName && accInfo.key.pubKeyExponent == key.pubKeyExponent && accInfo.pubKeyModulus == key.pubKeyModulus)) {
-      bytes32 keyId = keccak256(abi.encode(sigMeta.key));
-      require(accInfo.acceptUnknownSelectors, 'account does not allow unknown selectors');
-      KeyInfo storage keyInfo = dkimKeys[keyId];
-      require(keyInfo.isExisting, 'non-existant DKIM key');
-      require(keyInfo.dateRemoved == 0 || block.timestamp < keyInfo.dateRemoved + accInfo.waitUntilAcceptRemoved, 'DKIM key revoked');
-      require(block.timestamp >= keyInfo.dateAdded + accInfo.waitUntilAcceptAdded, 'DKIM key not added yet');
-    }
-
-    // @TODO validate .domainName against emailFrom
-    // @TODO check if there is only one entry on the left side of _domainKey
-    // @TODO maybe this will be easier if we pass selector in sigMeta
-    require(
-      String.endsWith(
-        key.domainName,
-        String.concat('._domainKey.', String.split(accInfo.emailFrom, '@')[1]
-      ),
-      'invalid domainName'
-    );
-
     if (sigMeta.mode == SigMode.Both || sigMeta.mode == SigMode.OnlyDKIM) {
-      if (sigMeta.mode == SigMode.OnlyDKIM) require(accInfo.acceptEmptySecondSig, 'account disallows OnlyDKIM');;
+      if (sigMeta.mode == SigMode.OnlyDKIM) require(accInfo.acceptEmptySecondSig, 'account disallows OnlyDKIM');
+
+      // First step: we get the DKIM record we're using
+      DKIMKey memory key = sigMeta.key;
+      if (!(accInfo.key.domainName == key.domainName && accInfo.key.pubKeyExponent == key.pubKeyExponent && accInfo.pubKeyModulus == key.pubKeyModulus)) {
+        bytes32 keyId = keccak256(abi.encode(sigMeta.key));
+        require(accInfo.acceptUnknownSelectors, 'account does not allow unknown selectors');
+        KeyInfo storage keyInfo = dkimKeys[keyId];
+        require(keyInfo.isExisting, 'non-existant DKIM key');
+        require(keyInfo.dateRemoved == 0 || block.timestamp < keyInfo.dateRemoved + accInfo.waitUntilAcceptRemoved, 'DKIM key revoked');
+        require(block.timestamp >= keyInfo.dateAdded + accInfo.waitUntilAcceptAdded, 'DKIM key not added yet');
+      }
+
+      // @TODO validate .domainName against emailFrom
+      // @TODO check if there is only one entry on the left side of _domainKey
+      // @TODO maybe this will be easier if we pass selector in sigMeta
+      require(
+        String.endsWith(
+          key.domainName,
+          String.concat('._domainKey.', String.split(accInfo.emailFrom, '@')[1]
+        ),
+        'invalid domainName'
+      );
       // @TODO parse canonizedHeaders, verify thge DKIM sig, verify the secondary sig, verify that .calls is correct (only one call to setAddrPrivilege with the newKeyToSet)
       // this is what we have in the headers from field:
       // from:Name Surname <email@provider.com>
