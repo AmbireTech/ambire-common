@@ -100,21 +100,35 @@ contract DKIMRecoverySigValidator {
       // registered in account info
       // @TODO caninizedHeaders - we have to decide whether we use string[] and we join before hashing or just string and we split in order to parse
       Strings.slice memory canonizedHeadersBuffer;
+      bool verifiedFrom;
+      bool verifiedSubject;
       for (uint i = 0; i != accInfo.canonizedHeaders.length; i++) {
         Strings.slice memory header = accInfo.canonizedHeaders[i].toSlice();
         canonizedHeadersBuffer = canonizedHeadersBuffer.concat(header);
+        // @TODO must check if from is even present
         if (header.startsWith('from:'.toSlice())) {
-          Strings.slice memory afterSplit = header.splitNeedle('>'.toSlice());
-          afterSplit.splitNeedle('<'.toSlice());
-          require(afterSplit.compare(accountInfo.emailFrom.toSlice()) == 0, 'emailFrom not valid');
+          Strings.slice memory emailFrom = header.splitNeedle('>'.toSlice());
+          emailFrom.splitNeedle('<'.toSlice());
+          require(emailFrom.compare(accountInfo.emailFrom.toSlice()) == 0, 'emailFrom not valid');
+          verifiedFrom = true;
+        }
+        if (header.startsWith('subject:'.toSlice())) {
+          // @TODO validate subject
+
         }
       }
+      require(verifiedFrom && verifiedSubject, 'subject/from were not present');
 
-      // @TODO validate subject
 
       // After we've checked all headers and etc., we get the DKIM key we're using
       // @TODO is afterSplit correct here?
-      string domainName = String.concat(accInfo.dkimSelector, '._domainKey.', afterSplit);
+      //
+      Strings.slice emailDomain = accInfo.emailFrom.toSlice();
+      emailDomain.splitNeedle('@');
+      string domainName = accInfo.dkimSelector.toSlice()
+        .concat('._domainKey.'.toSlice())
+        .concat(emailDomain)
+        .toString();
       DKIMKey memory key = sigMeta.key;
       if (!(domainName == key.domainName && accInfo.dkimPubKeyExponent == key.pubKeyExponent && accInfo.dkimPubKeyModulus == key.pubKeyModulus)) {
         bytes32 keyId = keccak256(abi.encode(sigMeta.key));
