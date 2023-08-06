@@ -101,11 +101,14 @@ contract DKIMRecoverySigValidator {
       'invalid domainName'
     );
 
-    if (sigMeta.mode == SigMode.Both || sigMeta.mode == OnlyDKIM) {
+    if (sigMeta.mode == SigMode.Both || sigMeta.mode == SigMode.OnlyDKIM) {
+      if (sigMeta.mode == SigMode.OnlyDKIM) require(accInfo.acceptEmptySecondSig, 'account disallows OnlyDKIM');;
+      // @TODO parse canonizedHeaders, verify thge DKIM sig, verify the secondary sig, verify that .calls is correct (only one call to setAddrPrivilege with the newKeyToSet)
 
     }
 
-    if (sigMeta.mode == SigMode.Both || sigMeta.mode == OnlySecond) {
+    if (sigMeta.mode == SigMode.Both || sigMeta.mode == SigMode.OnlySecond) {
+      if (sigMeta.mode == SigMode.OnlySecond) require(accInfo.acceptEmptyDKIMSig, 'account disallows OnlySecond');;
       // @TODO should spoofing be allowed
       require(
         SignatureValidator.recoverAddrImpl(hashToSign, innerSig, true) == accInfo.secondaryKey,
@@ -119,9 +122,6 @@ contract DKIMRecoverySigValidator {
 
 
     // @TODO if we return true, we should flag the `identifier` as executed
-
-
-    // @TODO parse canonizedHeaders, verify thge DKIM sig, verify the secondary sig, verify that .calls is correct (only one call to setAddrPrivilege with the newKeyToSet)
   }
 
   function addDKIMKeyWithDNSSec(bytes[] rrSets, string txtRecord) returns (DKIMKey) {
