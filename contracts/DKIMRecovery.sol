@@ -1,12 +1,9 @@
 // NOTE: we only support RSA-SHA256 DKIM signatures, this is whhy we do not have an algorithm field atm
 
-// @TODO we need SigMode (OnlyDKIM, OnlySecond, Both) in the identifier itself, otherwise sigs are malleable (you can front-run a modified sig to trigger the timelock)
-
 import "./AmbireAccount.sol";
 
 contract DKIMRecoverySigValidator {
-
-
+  // @TODO
   struct DKIMKey {
     string domainName;
     bytes pubKey;
@@ -15,36 +12,38 @@ contract DKIMRecoverySigValidator {
   struct AccInfo {
     string emailFrom;
     string emailTo;
-    // DKIM info: selector and pubkey; the rest of the domainName will be parsed from `emailFrom`
-    string dkimSelector;
-    bytes dkimPubKey;
+    // DKIM key
+    // We have to additionally verify if it matches the domain in emailFrom
+    DKIMKey key;
     // normally set to the email vault key held by the relayer
     address secondaryKey;
+    // whether we accept selectors that are different from the one set in this struct
+    bool acceptUnknownSelectors;
     // if a record has been added by `authorizedToSubmit`, we can choose to require some time to pass before accepting it
     uint32 waitUntilAcceptAdded;
     // if a record has been removed by the `authorizedToRemove`, we can choose to require some time to pass before accepting that ramoval
     uint32 waitUntilAcceptRemoved;
-    bool acceptUnknownSelectors;
     // whether to accept any of those signatures to be missing; if only 1/2 sigs are provided we go into the timelock tho
     bool acceptEmptyDKIMSig;
     bool acceptEmptySecondSig;
     // @TODO BUG/ISSUE: if both of those are set to true, we can trigger the timelock without anything
   }
 
+  // we need SigMode (OnlyDKIM, OnlySecond, Both) in the identifier itself, otherwise sigs are malleable (you can front-run a modified sig to trigger the timelock)
   enum SigMode {
     Both,
     OnlyDKIM,
     OnlySecond
   }
 
-  // the signatures themselves are passed separately to avoid cyclical dependency
+  // the signatures themselves are passed separately to avoid cyclical dependency (`identifier` is generated from this meta)
   struct SignatureMeta {
+    SigMode mode;
     DKIMKey key;
     string[] canonizedHeaders;
     address newKeyToSet;
     bytes32 newPrivilegeValue;
   }
-
 
   struct Key {
     string domainName;
@@ -60,7 +59,6 @@ contract DKIMRecoverySigValidator {
   // keccak256(Key) => KeyInfo
   mapping dkimKeys (bytes32 => KeyInfo);
 
-
   function validateSig(
     address accountAddr,
     bytes calldata data,
@@ -73,6 +71,26 @@ contract DKIMRecoverySigValidator {
     bytes32 identifier = keccak256(abi.encode(accountAddr, accInfo, sigMeta));
 
     // First step: we get the DKIM record we're using
+    DKIMKey memory key = sigMeta.key;
+    if (!(accInfo.key.domainName == key.domainName && accInfo.key.pubKey == key.pubKey)) {
+      bytes32 keyId = keccak256(abi.encode(sigMeta.key));
+      require(accInfo.acceptUnknownSelectors, 'account does not allow unknown selectors');
+      KeyInfo storage keyInfo = dkimKeys[keyId];
+      require(keyInfo.isExisting, 'non-existant DKIM key');
+      require(keyInfo.dateRemoved == 0 || block.timestamp < keyInfo.dateRemoved + accInfo.waitUntilAcceptRemoved, 'DKIM key revoked');
+      require(block.timestamp >= keyInfo.dateAdded + accInfo.waitUntilAcceptAdded, 'DKIM key not added yet');
+    }
+
+    // @TODO validate .domainName against emailFrom
+    // @TODO check if there is only one entry left of _domainKey
+    // @TODO maybe this will be easier if we pass selector in sigMeta
+    require(
+      String.endsWith(
+        key.domainName,
+        String.concat('._domainKey.', String.split(accInfo.emailFrom, '@')[1]
+      ),
+      'invalid domainName'
+    );
 
     // @TODO if we return true, we should flag the `identifier` as executed
 
@@ -91,7 +109,6 @@ contract DKIMRecoverySigValidator {
     // @TODO single sig mode, timelock
 
     // @TODO parse canonizedHeaders, verify thge DKIM sig, verify the secondary sig, verify that .calls is correcct (only one call to setAddrPrivilege with the newKeyToSet)
-
   }
 
   function addDKIMKeyWithDNSSec(bytes[] rrSets, string txtRecord) returns (DKIMKey) {
