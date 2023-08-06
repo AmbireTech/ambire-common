@@ -58,6 +58,8 @@ contract DKIMRecoverySigValidator {
   }
   // keccak256(Key) => KeyInfo
   mapping dkimKeys (bytes32 => KeyInfo);
+  // recoveryrIdentifier => bool
+  mapping recoveries(bytes32 => bool);
 
   function validateSig(
     address accountAddr,
@@ -69,6 +71,7 @@ contract DKIMRecoverySigValidator {
     (AccInfo memory accInfo) = abi.decode(data, (AccInfo));
     (SignatureMeta memory sigMeta, bytes memory dkimSig, bytes memory secondSig) = abi.decode(sig, (SignatureMeta, bytes, bytes));
     bytes32 identifier = keccak256(abi.encode(accountAddr, accInfo, sigMeta));
+    require(!recoveries[identifier], 'recovery already done');
 
     // First step: we get the DKIM record we're using
     DKIMKey memory key = sigMeta.key;
@@ -94,19 +97,6 @@ contract DKIMRecoverySigValidator {
 
     // @TODO if we return true, we should flag the `identifier` as executed
 
-    // @TODO aquire domainName so that we can compare that
-    if (sigMeta.dkimKey.selector != accInfo.dkimSelector) {
-      // @TODO
-      const dateAdded = dkimKeys[keccak256(signature.dkimKey)]
-      if (dateAdded == 0) {
-        // require(signature.rrSets.length > 0, 'no DNSSec proof and no valid DKIM key')
-        // dkimKey = addDKIMKeyWithDNSSec(signature.rrSets)
-      } else {
-        require(block.timestamp > dateAdded + accInfo.timelockForUnknownKeys, 'key added too recently, timelock not ready yet')
-        dkimKey = signature.dkimKey
-      }
-    }
-    // @TODO single sig mode, timelock
 
     // @TODO parse canonizedHeaders, verify thge DKIM sig, verify the secondary sig, verify that .calls is correcct (only one call to setAddrPrivilege with the newKeyToSet)
   }
