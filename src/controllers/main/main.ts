@@ -289,13 +289,6 @@ export class MainController extends EventEmitter {
     return this.keystore.isUnlocked()
   }
 
-  addAcconts() {
-    const accounts = this.accountAdder.selectedAccounts
-
-    if (!accounts.length) throw new Error('main: no selected accounts to be added')
-    this.accountAdder.selectedAccounts.forEach((acc) => {})
-  }
-
   // @TODO allow this to remove multiple OR figure out a way to debounce re-estimations
   // first one sounds more reasonble
   // although the second one can't hurt and can help (or no debounce, just a one-at-a-time queue)
