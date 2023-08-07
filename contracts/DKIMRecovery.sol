@@ -113,7 +113,7 @@ contract DKIMRecoverySigValidator {
       // registered in account info
       // @TODO caninizedHeaders - we have to decide whether we use string[] and we join before hashing or just string and we split in order to parse
       Strings.slice memory canonizedHeadersBuffer;
-      bool verifliedFrom;
+      bool verifiedFrom;
       bool verifiedSubject;
       for (uint i = 0; i != sigMeta.canonizedHeaders.length; i++) {
         Strings.slice memory header = sigMeta.canonizedHeaders[i].toSlice();
@@ -123,14 +123,14 @@ contract DKIMRecoverySigValidator {
           Strings.slice memory emailFrom = header.splitNeedle('>'.toSlice());
           emailFrom.splitNeedle('<'.toSlice());
           require(emailFrom.compare(accInfo.emailFrom.toSlice()) == 0, 'emailFrom not valid');
-          verifliedFrom = true;
+          verifiedFrom = true;
         }
         if (header.startsWith('subject:'.toSlice())) {
           // @TODO validate subject
 
         }
       }
-      require(verifliedFrom && verifiedSubject, 'subject/from were not present');
+      require(verifiedFrom && verifiedSubject, 'subject/from were not present');
 
 
       // After we've checked all headers and etc., we get the DKIM key we're using
