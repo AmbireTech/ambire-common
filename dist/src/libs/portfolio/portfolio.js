@@ -39,7 +39,7 @@ const defaultOptions = {
 };
 class Portfolio {
     constructor(fetch, provider, network) {
-        this.batchedVelcroDiscovery = batcher_1.default(fetch, (queue) => {
+        this.batchedVelcroDiscovery = (0, batcher_1.default)(fetch, (queue) => {
             const baseCurrencies = [...new Set(queue.map((x) => x.data.baseCurrency))];
             return baseCurrencies.map((baseCurrency) => {
                 const queueSegment = queue.filter((x) => x.data.baseCurrency === baseCurrency);
@@ -51,10 +51,10 @@ class Portfolio {
                 return { queueSegment, url };
             });
         });
-        this.batchedGecko = batcher_1.default(fetch, gecko_1.geckoRequestBatcher);
+        this.batchedGecko = (0, batcher_1.default)(fetch, gecko_1.geckoRequestBatcher);
         this.network = network;
-        this.deploylessTokens = deployless_1.fromDescriptor(provider, BalanceGetter_json_1.default, !network.rpcNoStateOverride);
-        this.deploylessNfts = deployless_1.fromDescriptor(provider, NFTGetter_json_1.default, !network.rpcNoStateOverride);
+        this.deploylessTokens = (0, deployless_1.fromDescriptor)(provider, BalanceGetter_json_1.default, !network.rpcNoStateOverride);
+        this.deploylessNfts = (0, deployless_1.fromDescriptor)(provider, NFTGetter_json_1.default, !network.rpcNoStateOverride);
     }
     async get(accountAddr, opts = {}) {
         opts = { ...defaultOptions, ...opts };
@@ -72,7 +72,7 @@ class Portfolio {
         }
         catch (error) {
             hints = {
-                ...exports.getEmptyHints(networkId, accountAddr),
+                ...(0, exports.getEmptyHints)(networkId, accountAddr),
                 error
             };
         }
@@ -105,8 +105,8 @@ class Portfolio {
             : LIMITS.deploylessStateOverrideMode;
         const collectionsHints = Object.entries(hints.erc721s);
         const [tokensWithErr, collectionsWithErr] = await Promise.all([
-            pagination_1.flattenResults(pagination_1.paginate(hints.erc20s, limits.erc20).map((page) => getOnchainBalances_1.getTokens(this.network, this.deploylessTokens, opts, accountAddr, page))),
-            pagination_1.flattenResults(pagination_1.paginate(collectionsHints, limits.erc721).map((page) => getOnchainBalances_1.getNFTs(this.deploylessNfts, opts, accountAddr, page, limits)))
+            (0, pagination_1.flattenResults)((0, pagination_1.paginate)(hints.erc20s, limits.erc20).map((page) => (0, getOnchainBalances_1.getTokens)(this.network, this.deploylessTokens, opts, accountAddr, page))),
+            (0, pagination_1.flattenResults)((0, pagination_1.paginate)(collectionsHints, limits.erc721).map((page) => (0, getOnchainBalances_1.getNFTs)(this.deploylessNfts, opts, accountAddr, page, limits)))
         ]);
         // Re-map/filter into our format
         const getPriceFromCache = (address) => {
@@ -144,7 +144,7 @@ class Portfolio {
                 networkId,
                 baseCurrency,
                 // this is what to look for in the coingecko response object
-                responseIdentifier: gecko_1.geckoResponseIdentifier(token.address, networkId)
+                responseIdentifier: (0, gecko_1.geckoResponseIdentifier)(token.address, networkId)
             });
             const priceIn = Object.entries(priceData || {}).map(([baseCurrency, price]) => ({
                 baseCurrency,

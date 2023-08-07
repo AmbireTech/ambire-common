@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.canBroadcast = exports.isEOA = exports.callToTuple = void 0;
+exports.canBroadcast = exports.isEOA = exports.callToTuple = exports.GasFeePaymentType = void 0;
 var GasFeePaymentType;
 (function (GasFeePaymentType) {
     // when a paymaster is used, we put it in the `paidBy` instead of the accountAddr
@@ -10,7 +10,7 @@ var GasFeePaymentType;
     // we use this in two cases: 1) Ambire account, fee paid by an EOA 2) account itself is an EAO
     // when the account itself is an EOA, paymentType equals accountAddr
     GasFeePaymentType["EOA"] = "eoa";
-})(GasFeePaymentType || (GasFeePaymentType = {}));
+})(GasFeePaymentType = exports.GasFeePaymentType || (exports.GasFeePaymentType = {}));
 function callToTuple(call) {
     return [call.to, call.value, call.data];
 }
