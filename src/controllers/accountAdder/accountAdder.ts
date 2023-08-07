@@ -173,6 +173,11 @@ export class AccountAdderController extends EventEmitter {
     }
   }
 
+  resetSelectedAccounts() {
+    this.selectedAccounts.length = 0 // empties the array
+    this.emitUpdate()
+  }
+
   async setPage({
     page = this.page,
     networks,
