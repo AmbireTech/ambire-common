@@ -159,12 +159,7 @@ contract DKIMRecoverySigValidator {
 
       // @TODO: VALIDATE TO FIELD
       // @TODO validate subject; this is one of the most important validations, as it will contain the `newKeyToSet`
-
-      bytes32 dkimHash = sha256(bytes(canonizedHeadersBuffer.toString()));
-      require(
-        RSASHA256.verify(dkimHash, dkimSig, key.pubKeyExponent, key.pubKeyModulus),
-        'DKIM signature verification failed'
-      );
+      verify(canonizedHeadersBuffer, dkimSig, key);
     }
 
     bytes32 hashToSign;
@@ -222,6 +217,19 @@ contract DKIMRecoverySigValidator {
   function removeDKIMKey(bytes32 id) public {
     require(msg.sender == authorizedToRevoke);
     dkimKeys[id].dateRemoved = uint32(block.timestamp);
+  }
+
+  function verify(
+    Strings.slice memory canonizedHeadersBuffer,
+    bytes memory dkimSig,
+    DKIMKey memory key
+  ) internal returns (bool) {
+    bytes32 dkimHash = sha256(bytes(canonizedHeadersBuffer.toString()));
+    require(
+      RSASHA256.verify(dkimHash, dkimSig, key.pubKeyExponent, key.pubKeyModulus),
+      'DKIM signature verification failed'
+    );
+    return true;
   }
 
   //
