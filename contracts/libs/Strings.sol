@@ -615,7 +615,7 @@ library Strings {
      * @param needle The text to search for in `self`.
      * @return The part of `self` up to the first occurrence of `delim`.
      */
-    function splitNeedle(slice memory self, slice memory needle) internal pure returns (slice memory token) {
+    function split(slice memory self, slice memory needle) internal pure returns (slice memory token) {
         split(self, needle, token);
     }
 

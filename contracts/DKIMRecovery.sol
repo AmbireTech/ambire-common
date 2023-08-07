@@ -120,8 +120,8 @@ contract DKIMRecoverySigValidator {
         canonizedHeadersBuffer = canonizedHeadersBuffer.concat(header).toSlice();
         // @TODO must check if from is even present
         if (header.startsWith('from:'.toSlice())) {
-          Strings.slice memory emailFrom = header.splitNeedle('>'.toSlice());
-          emailFrom.splitNeedle('<'.toSlice());
+          Strings.slice memory emailFrom = header.split('>'.toSlice());
+          emailFrom.split('<'.toSlice());
           require(emailFrom.compare(accInfo.emailFrom.toSlice()) == 0, 'emailFrom not valid');
           verifiedFrom = true;
         }
@@ -137,7 +137,7 @@ contract DKIMRecoverySigValidator {
       // @TODO is afterSplit correct here?
       //
       Strings.slice memory emailDomain = accInfo.emailFrom.toSlice();
-      emailDomain.splitNeedle('@'.toSlice());
+      emailDomain.split('@'.toSlice());
       string memory domainName = accInfo.dkimSelector.toSlice()
         .concat('._domainKey.'.toSlice()).toSlice()
         .concat(emailDomain);
