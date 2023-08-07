@@ -176,8 +176,12 @@ export class MainController extends EventEmitter {
       }
     }
 
-    const prevAccounts = await this.storage.get('accounts', [])
-    await this.storage.set('accounts', [...prevAccounts, ...accounts])
+    const nextAccounts = [...this.accounts, ...accounts].filter(
+      // exclude duplicates, retain only the first occurrence of each account
+      (account, index, self) => index === self.findIndex((a) => a.addr === account.addr)
+    )
+    await this.storage.set('accounts', nextAccounts)
+    this.accounts = nextAccounts
 
     this.addAccountsStatus.type = 'SUCCESS'
     this.emitUpdate()
