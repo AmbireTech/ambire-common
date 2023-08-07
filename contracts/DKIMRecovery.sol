@@ -40,12 +40,13 @@ contract DKIMRecoverySigValidator {
   }
 
   // we need SigMode (OnlyDKIM, OnlySecond, Both) in the identifier itself, otherwise sigs are malleable (you can front-run a modified sig to trigger the timelock)
+  // Known: no cancellation because 2/2 can immediately invalidate old timelock
+  // @TODO sigMode has to go into the subject, otherwise there's a malleability 
   enum SigMode {
     Both,
     OnlyDKIM,
     OnlySecond
   }
-
 
   // the signatures themselves are passed separately to avoid cyclical dependency (`identifier` is generated from this meta)
   struct SignatureMeta {
@@ -152,7 +153,7 @@ contract DKIMRecoverySigValidator {
     }
 
     if (sigMeta.mode == SigMode.Both || sigMeta.mode == SigMode.OnlySecond) {
-      if (sigMeta.mode == SigMode.OnlySecond) require(accInfo.acceptEmptyDKIMSig, 'account disallows OnlySecond');;
+      if (sigMeta.mode == SigMode.OnlySecond) require(accInfo.acceptEmptyDKIMSig, 'account disallows OnlySecond');
       // @TODO should spoofing be allowed
       require(
         SignatureValidator.recoverAddrImpl(hashToSign, secondSig, true) == accInfo.secondaryKey,
