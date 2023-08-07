@@ -161,11 +161,10 @@ contract DKIMRecoverySigValidator {
       // @TODO validate subject; this is one of the most important validations, as it will contain the `newKeyToSet`
 
       bytes32 dkimHash = sha256(bytes(canonizedHeadersBuffer.toString()));
-      // require(
-      //   // @TODO our rsa key is not in this format
-      //   RSASHA256.verify(dkimHash, dkimSig, key.pubKeyExponent, key.pubKeyModulus),
-      //   'DKIM signature verification failed',
-      // );
+      require(
+        RSASHA256.verify(dkimHash, dkimSig, key.pubKeyExponent, key.pubKeyModulus),
+        'DKIM signature verification failed'
+      );
     }
 
     bytes32 hashToSign;
