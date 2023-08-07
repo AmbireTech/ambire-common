@@ -36,6 +36,8 @@ export class MainController extends EventEmitter {
 
   #callRelayer: Function
 
+  addAccountsStatus: { status?: 'PENDING' | 'SUCCESS' | 'ERROR'; message?: string } = {}
+
   accountStates: AccountStates = {}
 
   isReady: boolean = false
@@ -140,6 +142,10 @@ export class MainController extends EventEmitter {
   }
 
   async addAccounts(accounts: Account[] = []) {
+    this.addAccountsStatus.status = 'PENDING'
+    this.addAccountsStatus.message = ''
+    this.emitUpdate()
+
     // Identity only for the smart accounts must be created on the Relayer
     const accountsToAddOnRelayer = accounts.filter((acc) => acc.creation)
 
@@ -154,14 +160,28 @@ export class MainController extends EventEmitter {
         signerType: 'Web3'
       }))
 
-      await this.#callRelayer('/v2/identity/create-multiple', 'POST', {
-        accounts: body
-      })
+      try {
+        const res = await this.#callRelayer('/v2/identity/create-multiple', 'POST', {
+          accounts: body
+        })
+
+        if (!res.success)
+          throw new Error(
+            res?.message ||
+              'Error when adding accounts on the Ambire Relayer. Please try again later or contact support if the problem persists.'
+          )
+      } catch (e: any) {
+        this.addAccountsStatus.status = 'ERROR'
+        this.addAccountsStatus.message = e?.message
+        this.emitUpdate()
+        return
+      }
     }
 
     const prevAccounts = await this.storage.get('accounts', [])
     await this.storage.set('accounts', [...prevAccounts, ...accounts])
 
+    this.addAccountsStatus.status = 'SUCCESS'
     this.emitUpdate()
   }
 
