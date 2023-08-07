@@ -20,7 +20,7 @@ To re-compile the deployless contracts, do this:
 npm run compile:contracts
 ```
 
-## Why class-based state containers instead of state container libraries
+## Why class-based state containers instead of state container libraries (controllers)
 
 We chose simple ES6 classes to implement controllers (shared business logic) rather than state containers.
 
@@ -58,6 +58,8 @@ Here are some related design decisions:
   * the main controller can call or watch sub-controllers, but not vice versa, to maintain a directional relationship
   * for simplicity, we'll avoid passing data between sub-controllers internally and leave this to the app itself whenever possible; as a practical example, the `AccountAdder` will expose a list of accounts that can be added, but instead of internally having a method that will add those accounts on the main controller (which breaks the unidirectionality of the previous point), we'll just expose them - then, the app can call `mainController.addAccounts(mainController.accountAdder.selectedAccounts)`
 * Properties that are not meant to be exposed or serialized should start with `#` in order to [make them private](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Classes/Private_class_fields). The public/private modifiers in TypeScript do not achieve the same effect since they only serve as guidelines for the TS compiler itself, but they should be used alongside `#` anyway
+
+Those controllers are essentially classic state containers: you can call them with some actions, those methods should never return anything, but they can result in one or more state changes, which will emit an `update` event, forcing the UI to re-render with the latest state.
 
 ## How account recovery/restore works in Ambire
 
