@@ -159,8 +159,9 @@ export class MainController extends EventEmitter {
       })
     }
 
-    // TODO: Do not override the current accounts in storage, merge them instead
-    this.storage.set('accounts', accounts)
+    const prevAccounts = await this.storage.get('accounts', [])
+    await this.storage.set('accounts', [...prevAccounts, ...accounts])
+
     this.emitUpdate()
   }
 
