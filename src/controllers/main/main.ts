@@ -139,11 +139,12 @@ export class MainController extends EventEmitter {
     this.selectedAccount = toAccountAddr
   }
 
-  async createAccounts(accounts: Account[] = []) {
-    const accountsToCreate = accounts.filter((acc) => acc.creation)
+  async addAccounts(accounts: Account[] = []) {
+    // Identity only for the smart accounts must be created on the Relayer
+    const accountsToAddOnRelayer = accounts.filter((acc) => acc.creation)
 
-    if (accountsToCreate.length) {
-      const body = accountsToCreate.map((acc) => ({
+    if (accountsToAddOnRelayer.length) {
+      const body = accountsToAddOnRelayer.map((acc) => ({
         identity: acc.addr,
         salt: acc.creation!.salt,
         baseIdentityAddr: PROXY_AMBIRE_ACCOUNT,
@@ -158,6 +159,7 @@ export class MainController extends EventEmitter {
       })
     }
 
+    // TODO: Do not override the current accounts in storage, merge them instead
     this.storage.set('accounts', accounts)
     this.emitUpdate()
   }
