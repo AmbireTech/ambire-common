@@ -135,7 +135,9 @@ export class MainController extends EventEmitter {
     this.emitUpdate()
   }
 
-  selectAccount(toAccountAddr: string) {
+  async selectAccount(toAccountAddr: string) {
+    // Wait for the current load to complete
+    await this.initialLoadPromise
     if (!this.accounts.find((acc) => acc.addr === toAccountAddr))
       throw new Error(`try to switch to not exist account: ${toAccountAddr}`)
     this.selectedAccount = toAccountAddr
@@ -283,6 +285,13 @@ export class MainController extends EventEmitter {
 
   isUnlock() {
     return this.keystore.isUnlocked()
+  }
+
+  addAcconts() {
+    const accounts = this.accountAdder.selectedAccounts
+
+    if (!accounts.length) throw new Error('main: no selected accounts to be added')
+    this.accountAdder.selectedAccounts.forEach((acc) => {})
   }
 
   // @TODO allow this to remove multiple OR figure out a way to debounce re-estimations
