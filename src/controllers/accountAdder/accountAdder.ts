@@ -1,7 +1,7 @@
 /* eslint-disable no-await-in-loop */
 /* eslint-disable no-restricted-syntax */
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import { JsonRpcProvider } from 'ethers'
+import { ethers, JsonRpcProvider } from 'ethers'
 import { KeyIterator } from 'interfaces/keyIterator'
 import { NetworkDescriptor, NetworkId } from 'interfaces/networkDescriptor'
 
@@ -318,8 +318,14 @@ export class AccountAdderController extends EventEmitter {
     const linkedAccounts: { account: ExtendedAccount; type: AccountType }[] = Object.keys(
       data.accounts
     ).map((addr: any) => {
-      const { initialPrivilegesAddrs, factoryAddr, bytecode, salt, associatedKeys } =
-        data.accounts[addr]
+      const { factoryAddr, bytecode, salt, associatedKeys } = data.accounts[addr]
+      // checks whether the account.addr matches the addr generated from the factory
+      if (
+        ethers.getCreate2Address(factoryAddr, salt, ethers.keccak256(bytecode)).toLowerCase() !==
+        addr.toLowerCase()
+      ) {
+        throw new Error('accountAddr: address not generated from that factory')
+      }
       return {
         account: {
           addr,
