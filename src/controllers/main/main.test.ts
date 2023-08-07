@@ -1,6 +1,6 @@
 import fetch from 'node-fetch'
 
-import { describe, test } from '@jest/globals'
+import { describe, expect, test } from '@jest/globals'
 
 import { Storage } from '../../interfaces/storage'
 import { UserRequest } from '../../interfaces/userRequest'
@@ -122,27 +122,33 @@ describe('Main Controller ', () => {
     // console.log('isUnlock ==>', controller.isUnlock())
   })
 
-  test('should create smart accounts', (done) => {
+  test('should add smart accounts', (done) => {
     controller = new MainController(storage, fetch, relayerUrl)
 
-    controller
-      .createAccounts([
-        {
-          addr: '0x043d40D94c42Ba245d71C4ee68083e1a65c04777',
-          label: '',
-          pfp: '',
-          associatedKeys: ['0xa07D75aacEFd11b425AF7181958F0F85c312f143'],
-          creation: {
-            factoryAddr: '0xF9c2504741f0116f7aff6015b6E210058A8Ac1e4',
-            bytecode:
-              '0x7f28d4ea8f825adb036e9b306b2269570e63d2aa5bd10751437d98ed83551ba1cd7fa57498058891e98f45f8abb85dafbcd30f3d8b3ab586dfae2e0228bbb1de7018553d602d80604d3d3981f3363d3d373d3d3d363d732a2b85eb1054d6f0c6c2e37da05ed3e5fea684ef5af43d82803e903d91602b57fd5bf3',
-            salt: '0x0000000000000000000000000000000000000000000000000000000000000001'
-          }
-        }
-      ])
-      .catch(console.error)
+    const accountPendingCreation = {
+      addr: '0x043d40D94c42Ba245d71C4ee68083e1a65c04777',
+      label: '',
+      pfp: '',
+      associatedKeys: ['0xa07D75aacEFd11b425AF7181958F0F85c312f143'],
+      creation: {
+        factoryAddr: '0xF9c2504741f0116f7aff6015b6E210058A8Ac1e4',
+        bytecode:
+          '0x7f28d4ea8f825adb036e9b306b2269570e63d2aa5bd10751437d98ed83551ba1cd7fa57498058891e98f45f8abb85dafbcd30f3d8b3ab586dfae2e0228bbb1de7018553d602d80604d3d3981f3363d3d373d3d3d363d732a2b85eb1054d6f0c6c2e37da05ed3e5fea684ef5af43d82803e903d91602b57fd5bf3',
+        salt: '0x0000000000000000000000000000000000000000000000000000000000000001'
+      }
+    }
 
-    // assume the creation was successful when an update gets emitted
-    controller.onUpdate(done)
+    controller.addAccounts([accountPendingCreation]).catch(console.error)
+
+    let emitCounter = 0
+    controller.onUpdate(() => {
+      emitCounter++
+
+      if (emitCounter === 2) {
+        expect(controller.addAccountsStatus.type).toBe('SUCCESS')
+        expect(controller.accounts).toContainEqual(accountPendingCreation)
+        done()
+      }
+    })
   })
 })
