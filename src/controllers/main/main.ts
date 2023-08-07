@@ -1,6 +1,5 @@
-import { ethers, JsonRpcProvider } from 'ethers'
+import { JsonRpcProvider } from 'ethers'
 
-import { PROXY_AMBIRE_ACCOUNT } from '../../consts/deploy'
 import { networks } from '../../consts/networks'
 import { Account, AccountId, AccountOnchainState } from '../../interfaces/account'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
@@ -36,7 +35,7 @@ export class MainController extends EventEmitter {
 
   #callRelayer: Function
 
-  addAccountsStatus: { status?: 'PENDING' | 'SUCCESS' | 'ERROR'; message?: string } = {}
+  addAccountsStatus: { type?: 'PENDING' | 'SUCCESS' | 'ERROR'; message?: string } = {}
 
   accountStates: AccountStates = {}
 
@@ -142,7 +141,7 @@ export class MainController extends EventEmitter {
   }
 
   async addAccounts(accounts: Account[] = []) {
-    this.addAccountsStatus.status = 'PENDING'
+    this.addAccountsStatus.type = 'PENDING'
     this.addAccountsStatus.message = ''
     this.emitUpdate()
 
@@ -151,13 +150,12 @@ export class MainController extends EventEmitter {
 
     if (accountsToAddOnRelayer.length) {
       const body = accountsToAddOnRelayer.map((acc) => ({
-        identity: acc.addr,
-        salt: acc.creation!.salt,
-        baseIdentityAddr: PROXY_AMBIRE_ACCOUNT,
-        privileges: [[acc.associatedKeys[0], ethers.toBeHex(1, 32)]],
-        identityFactoryAddr: acc.creation!.factoryAddr,
-        // TODO: Missing on the accounts
-        signerType: 'Web3'
+        addr: acc.addr,
+        associatedKeys: acc.associatedKeys,
+        creation: {
+          factoryAddr: acc.creation!.factoryAddr,
+          salt: acc.creation!.salt
+        }
       }))
 
       try {
@@ -171,7 +169,7 @@ export class MainController extends EventEmitter {
               'Error when adding accounts on the Ambire Relayer. Please try again later or contact support if the problem persists.'
           )
       } catch (e: any) {
-        this.addAccountsStatus.status = 'ERROR'
+        this.addAccountsStatus.type = 'ERROR'
         this.addAccountsStatus.message = e?.message
         this.emitUpdate()
         return
@@ -181,7 +179,7 @@ export class MainController extends EventEmitter {
     const prevAccounts = await this.storage.get('accounts', [])
     await this.storage.set('accounts', [...prevAccounts, ...accounts])
 
-    this.addAccountsStatus.status = 'SUCCESS'
+    this.addAccountsStatus.type = 'SUCCESS'
     this.emitUpdate()
   }
 
