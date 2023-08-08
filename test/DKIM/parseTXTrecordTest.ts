@@ -3,6 +3,12 @@ import { deployAmbireAccountHardhatNetwork } from '../implementations'
 import lookup from '../../src/libs/dns/lookup'
 import { expect } from '../config'
 const SignedSet = require('@ensdomains/dnsprovejs').SignedSet
+import { promisify } from 'util'
+import fs from 'fs'
+import path from 'path'
+import parseEmail from '../../src/libs/dkim/parseEmail'
+const readFile = promisify(fs.readFile)
+const emailsPath = path.join(__dirname, 'emails')
 
 let ambireAccountAddress: string
 const ambireSets = [
@@ -70,17 +76,23 @@ describe('DKIM', function () {
     expect(await dkimRecovery.getAddress()).to.not.be.null
   })
   it('successfully validate the dnssec and execute the txt', async function () {
-    const rrsets = ambireSets.map(([set, sig]: any) => {
-      return [
-        Buffer.from(set.slice(2), 'hex'),
-        Buffer.from(sig.slice(2), 'hex'),
-      ]
+    const gmail = await readFile(path.join(emailsPath, 'youtube.eml'), {
+        encoding: 'ascii'
     })
-    rrsets.push([
-      Buffer.from(ambireTxt[0].slice(2), 'hex'),
-      Buffer.from(ambireTxt[1].slice(2), 'hex'),
-    ])
-    const res = await dkimRecovery.addDKIMKeyWithDNSSec(rrsets, 'sadas');
+    const parsedContents: any = await parseEmail(gmail)
+    console.log(parsedContents)
+
+    // const rrsets = ambireSets.map(([set, sig]: any) => {
+    //   return [
+    //     Buffer.from(set.slice(2), 'hex'),
+    //     Buffer.from(sig.slice(2), 'hex'),
+    //   ]
+    // })
+    // rrsets.push([
+    //   Buffer.from(ambireTxt[0].slice(2), 'hex'),
+    //   Buffer.from(ambireTxt[1].slice(2), 'hex'),
+    // ])
+    // const res = await dkimRecovery.addDKIMKeyWithDNSSec(rrsets, 'sadas');
 
     // const test = await lookup()
     // const maybeKey = test.answer.records[0].data
