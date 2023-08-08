@@ -61,6 +61,9 @@ describe('DKIM', function () {
     const rsaSha256 = await ethers.deployContract('RSASHA256Algorithm')
     await dnsSec.setAlgorithm(8, await rsaSha256.getAddress())
 
+    // other algo
+    const rsaSha256Other = await ethers.deployContract('RSASHA256')
+
     const p256SHA256Algorithm = await ethers.deployContract('P256SHA256Algorithm')
     await dnsSec.setAlgorithm(13, await p256SHA256Algorithm.getAddress())
 
@@ -69,34 +72,82 @@ describe('DKIM', function () {
 
     const contractFactory = await ethers.getContractFactory("DKIMRecoverySigValidator", {
       libraries: {
-        RSASHA256: await rsaSha256.getAddress(),
+        RSASHA256: await rsaSha256Other.getAddress(),
       },
     })
     dkimRecovery = await contractFactory.deploy(await dnsSec.getAddress(), signer.address, signer.address)
     expect(await dkimRecovery.getAddress()).to.not.be.null
   })
-  it('successfully validate the dnssec and execute the txt', async function () {
+
+  // deploy RSASHA256Algorithm
+  // call verify with youtube.email
+  // make it work
+  it('successfully deploy the DKIM Recovery', async function () {
     const gmail = await readFile(path.join(emailsPath, 'youtube.eml'), {
         encoding: 'ascii'
     })
     const parsedContents: any = await parseEmail(gmail)
-    console.log(parsedContents)
+    const exponent = Buffer.from(ethers.toBeHex(parsedContents[0].exponent).slice(2), 'hex')
+    const modulus = Buffer.from(parsedContents[0].solidity.modulus.slice(2), 'hex')
+    const sig = parsedContents[0].solidity.signature
+    const hash = parsedContents[0].solidity.hash
+    // const key = Buffer.concat([exponent, modulus])
+    const key = ethers
 
-    // const rrsets = ambireSets.map(([set, sig]: any) => {
-    //   return [
-    //     Buffer.from(set.slice(2), 'hex'),
-    //     Buffer.from(sig.slice(2), 'hex'),
-    //   ]
-    // })
-    // rrsets.push([
-    //   Buffer.from(ambireTxt[0].slice(2), 'hex'),
-    //   Buffer.from(ambireTxt[1].slice(2), 'hex'),
-    // ])
-    // const res = await dkimRecovery.addDKIMKeyWithDNSSec(rrsets, 'sadas');
+    console.log(exponent)
+    console.log(modulus)
+    console.log(key)
 
-    // const test = await lookup()
-    // const maybeKey = test.answer.records[0].data
-    // console.log(ethers.hexlify(maybeKey[0]))
-    // console.log(ethers.hexlify(maybeKey[1]))
-  })
+    const data = ethers.toUtf8Bytes(parsedContents[0].processedHeader)
+    const rsaSha256 = await ethers.deployContract('RSASHA256Algorithm')
+    const result = await rsaSha256.verify(key, data, sig)
+    // console.log(result)
+    // console.log('---------------')
+    // console.log(ethers.hexlify(exponent))
+    // console.log(ethers.hexlify(modulus))
+
+    const rsaSha256Other = await ethers.deployContract('RSASHA256')
+    const result2 = await rsaSha256Other.verify(hash, sig, exponent, modulus)
+    // console.log(result2)
+
+    const testData = [
+      // example.net.     3600  IN  DNSKEY  (256 3 8 AwEAAcFcGsaxxdgiuuGmCkVI
+      //                  my4h99CqT7jwY3pexPGcnUFtR2Fh36BponcwtkZ4cAgtvd4Qs8P
+      //                  kxUdp6p/DlUmObdk= );{id = 9033 (zsk), size = 512b}
+      '0x0100030803010001c15c1ac6b1c5d822bae1a60a45489b2e21f7d0aa4fb8f0637a5ec4f19c9d416d476161dfa069a27730b6467870082dbdde10b3c3e4c54769ea9fc395498e6dd9',
+      // www.example.net. 3600  IN  A  192.0.2.91
+      '0x0001080300000e1070dbd880386d43802349076578616d706c65036e65740003777777076578616d706c65036e6574000001000100000e100004c000025b',
+      // www.example.net. 3600  IN  RRSIG  (A 8 3 3600 20300101000000
+      //               20000101000000 9033 example.net. kRCOH6u7l0QGy9qpC9
+      //               l1sLncJcOKFLJ7GhiUOibu4teYp5VE9RncriShZNz85mwlMgNEa
+      //               cFYK/lPtPiVYP4bwg==);{id = 9033}
+      '0x91108e1fabbb974406cbdaa90bd975b0b9dc25c38a14b27b1a18943a26eee2d798a79544f519dcae24a164dcfce66c2532034469c1582bf94fb4f89560fe1bc2',
+    ]
+
+    const result3 = await rsaSha256.verify(testData[0], testData[1], testData[2])
+    console.log(result3)
+  });
+
+  // it('successfully validate the dnssec and execute the txt', async function () {
+  //   // const gmail = await readFile(path.join(emailsPath, 'youtube.eml'), {
+  //   //     encoding: 'ascii'
+  //   // })
+  //   // const parsedContents: any = await parseEmail(gmail)
+
+  //   // const records = Buffer.from(ambireTxt[0].slice(2), 'hex')
+  //   // const sig = Buffer.from(ambireTxt[1].slice(2), 'hex')
+  //   // const answer = SignedSet.fromWire(records, sig)
+
+  //   const rrsets = ambireSets.map(([set, sig]: any) => {
+  //     return [
+  //       Buffer.from(set.slice(2), 'hex'),
+  //       Buffer.from(sig.slice(2), 'hex'),
+  //     ]
+  //   })
+  //   rrsets.push([
+  //     Buffer.from(ambireTxt[0].slice(2), 'hex'),
+  //     Buffer.from(ambireTxt[1].slice(2), 'hex'),
+  //   ])
+  //   const res = await dkimRecovery.addDKIMKeyWithDNSSec(rrsets);
+  // })
 })

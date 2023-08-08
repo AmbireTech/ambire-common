@@ -5,6 +5,8 @@ pragma solidity 0.8.19;
 import './libs/IAmbireAccount.sol';
 import './libs/SignatureValidator.sol';
 import './libs/Strings.sol';
+// import './libs/Base64.sol';
+import './dnssec/BytesUtils.sol';
 import './dkim/RSASHA256.sol';
 import './dnssec/DNSSEC.sol';
 import './dnssec/RRUtils.sol';
@@ -13,6 +15,8 @@ import 'hardhat/console.sol';
 contract DKIMRecoverySigValidator {
   using Strings for *;
   using RRUtils for *;
+  // using Base64 for *;
+  using BytesUtils for *;
 
   struct DKIMKey {
     string domainName;
@@ -184,21 +188,16 @@ contract DKIMRecoverySigValidator {
     return true;
   }
 
-  function addDKIMKeyWithDNSSec(DNSSEC.RRSetWithSignature[] memory rrSets, string memory txtRecord) public returns (DKIMKey memory) {
+  function addDKIMKeyWithDNSSec(DNSSEC.RRSetWithSignature[] memory rrSets) public returns (DKIMKey memory) {
     require(authorizedToSubmit == address(69) || msg.sender == authorizedToSubmit, 'not authorized to submit');
 
     RRUtils.SignedSet memory rrset = rrSets[rrSets.length-1].rrset.readSignedSet();
     (bytes memory rrs, ) = oracle.verifyRRSet(rrSets);
     require(keccak256(rrs) == keccak256(rrset.data), 'DNSSec verification failed');
 
-    console.log(string(abi.encodePacked(rrset.data)));
-
-    (DKIMKey memory key, string memory domainName) = parse(rrSets, txtRecord);
+    (DKIMKey memory key, string memory domainName) = parse(rrset);
     require(keccak256(rrset.signerName) != keccak256(abi.encodePacked(domainName)), 'DNSSec verification failed');
 
-    // string domainName;
-    // bytes pubKeyModulus;
-    // bytes pubKeyExponent;
     bytes32 id = keccak256(abi.encode(key.domainName, key.pubKeyModulus, key.pubKeyExponent));
 
     KeyInfo storage keyInfo = dkimKeys[id];
@@ -214,8 +213,32 @@ contract DKIMRecoverySigValidator {
     }
   }
 
-  function parse(DNSSEC.RRSetWithSignature[] memory rrSets, string memory txtRecord) internal returns (DKIMKey memory key, string memory domainName) {
-    // TODO: create the parse function
+  function parse(RRUtils.SignedSet memory txtSet) internal returns (DKIMKey memory key, string memory domainName) {
+    Strings.slice memory publicKey = string(txtSet.data).toSlice();
+    publicKey.split('p='.toSlice());
+    bytes memory key = bytes(publicKey.toString());
+
+    bytes memory exponent;
+    bytes memory modulus;
+
+    uint16 exponentLen = uint16(key.readUint8(4));
+    if (exponentLen != 0) {
+      exponent = key.substring(5, exponentLen);
+      modulus = key.substring(
+        exponentLen + 5,
+        key.length - exponentLen - 5
+      );
+    } else {
+      exponentLen = key.readUint16(5);
+      exponent = key.substring(7, exponentLen);
+      modulus = key.substring(
+        exponentLen + 7,
+        key.length - exponentLen - 7
+      );
+    }
+
+    console.logBytes(exponent);
+    console.logBytes(modulus);
   }
 
   function removeDKIMKey(bytes32 id) public {

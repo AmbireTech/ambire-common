@@ -9,7 +9,6 @@ import "./DNSSEC.sol";
 import "./Algorithm.sol";
 import "./Digest.sol";
 import "../libs/Buffer.sol";
-import 'hardhat/console.sol';
 
 /*
  * @dev An oracle contract that verifies and stores DNSSEC-validated DNS records.

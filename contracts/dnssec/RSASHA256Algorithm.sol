@@ -4,6 +4,7 @@ pragma solidity ^0.8.4;
 import "./Algorithm.sol";
 import "./BytesUtils.sol";
 import "./RSAVerify.sol";
+import "hardhat/console.sol";
 
 /**
  * @dev Implements the DNSSEC RSASHA256 algorithm.
@@ -39,6 +40,9 @@ contract RSASHA256Algorithm is Algorithm {
         bool ok;
         bytes memory result;
         (ok, result) = RSAVerify.rsarecover(modulus, exponent, sig);
+
+        // console.logBytes(exponent);
+        // console.logBytes(modulus);
 
         // Verify it ends with the hash of our data
         return ok && sha256(data) == result.readBytes32(result.length - 32);
