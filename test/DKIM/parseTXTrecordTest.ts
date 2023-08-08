@@ -1,6 +1,7 @@
 import { ethers } from 'hardhat'
 import { deployAmbireAccountHardhatNetwork } from '../implementations'
 import lookup from '../../src/libs/dns/lookup'
+import { expect } from '../config'
 const SignedSet = require('@ensdomains/dnsprovejs').SignedSet
 
 let ambireAccountAddress: string
@@ -32,6 +33,7 @@ function hexEncodeSignedSet(rrs: any, sig: any) {
   return [ss.toWire(), ss.signature.data.signature]
 }
 
+let dkimRecovery: any
 describe('DKIM', function () {
   it('successfully deploys the ambire account', async function () {
     const [signer] = await ethers.getSigners()
@@ -40,13 +42,35 @@ describe('DKIM', function () {
     ])
     ambireAccountAddress = addr
   })
-  it('makes a lookup', async function () {
+  it('successfully deploy the DKIM Recovery', async function () {
+    const [signer] = await ethers.getSigners()
+
+    const dnsSec = await ethers.deployContract('DNSSECImpl', ['0x00002b000100000e1000244a5c080249aac11d7b6f6446702e54a1607371607a1a41855200fd2ce1cdde32f24e8fb500002b000100000e1000244f660802e06d44b80b8f1d39a95c0b0d7c65d08458e880409bbc683457104237c7f8ec8d00002b000100000e10000404fefdfd'])
+
+    const rsaSha256 = await ethers.deployContract('RSASHA256Algorithm')
+    await dnsSec.setAlgorithm(8, await rsaSha256.getAddress())
+
+    const p256SHA256Algorithm = await ethers.deployContract('P256SHA256Algorithm')
+    await dnsSec.setAlgorithm(13, await p256SHA256Algorithm.getAddress())
+
+    const digest = await ethers.deployContract('SHA256Digest')
+    await dnsSec.setDigest(2, await digest.getAddress())
+
+    const contractFactory = await ethers.getContractFactory("DKIMRecoverySigValidator", {
+      libraries: {
+        RSASHA256: await rsaSha256.getAddress(),
+      },
+    })
+    dkimRecovery = await contractFactory.deploy(await dnsSec.getAddress(), signer.address, signer.address)
+    expect(await dkimRecovery.getAddress()).to.not.be.null
+  })
+  it('successfully validate the dnssec and execute the txt', async function () {
     const rrsets = ambireSets.map(([set, sig]: any) => {
       return [
         Buffer.from(set.slice(2), 'hex'),
         Buffer.from(sig.slice(2), 'hex'),
       ]
     })
-    // to do: parse the txt validation
+    const res = await dkimRecovery.addDKIMKeyWithDNSSec(rrsets, 'sadas');
   })
 })

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: agpl-3.0
 // NOTE: we only support RSA-SHA256 DKIM signatures, this is why we do not have an algorithm field atm
+pragma solidity 0.8.19;
 
 import './libs/IAmbireAccount.sol';
 import './libs/SignatureValidator.sol';
@@ -7,6 +8,7 @@ import './libs/Strings.sol';
 import './dkim/RSASHA256.sol';
 import './dnssec/DNSSEC.sol';
 import './dnssec/RRUtils.sol';
+import 'hardhat/console.sol';
 
 contract DKIMRecoverySigValidator {
   using Strings for *;
@@ -190,7 +192,7 @@ contract DKIMRecoverySigValidator {
     require(keccak256(rrs) == keccak256(rrset.data), 'DNSSec verification failed');
 
     (DKIMKey memory key, string memory domainName) = parse(rrSets, txtRecord);
-    require(keccak256(rrset.signerName) != keccak256(abi.encodePacked(domainName)), 'DNSSec verification failed');
+    require(keccak256(rrset.signerName) == keccak256(abi.encodePacked(domainName)), 'DNSSec verification failed');
 
     // string domainName;
     // bytes pubKeyModulus;
