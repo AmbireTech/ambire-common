@@ -189,6 +189,10 @@ export class MainController extends EventEmitter {
     this.emitUpdate()
   }
 
+  resetAddAccountsStatus() {
+    this.addAccountsStatus = {}
+  }
+
   private async ensureAccountInfo(accountAddr: AccountId, networkId: NetworkId) {
     // Wait for the current load to complete
     await this.initialLoadPromise
