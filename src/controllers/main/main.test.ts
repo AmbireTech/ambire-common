@@ -138,14 +138,16 @@ describe('Main Controller ', () => {
       }
     }
 
-    controller.addAccounts([accountPendingCreation]).catch(console.error)
-
     let emitCounter = 0
     controller.onUpdate(() => {
       emitCounter++
 
+      if (emitCounter === 1 && controller.isReady) {
+        controller.accountAdder.addAccounts([accountPendingCreation]).catch(console.error)
+      }
+
       if (emitCounter === 2) {
-        expect(controller.addAccountsStatus.type).toBe('SUCCESS')
+        expect(controller.accountAdder.addAccountsStatus.type).toBe('SUCCESS')
         expect(controller.accounts).toContainEqual(accountPendingCreation)
         done()
       }

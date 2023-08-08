@@ -35,8 +35,6 @@ export class MainController extends EventEmitter {
 
   #callRelayer: Function
 
-  addAccountsStatus: { type?: 'PENDING' | 'SUCCESS' | 'ERROR'; message?: string } = {}
-
   accountStates: AccountStates = {}
 
   isReady: boolean = false
@@ -105,6 +103,12 @@ export class MainController extends EventEmitter {
     this.accountStates = await this.getAccountsInfo(this.accounts)
     this.isReady = true
     this.emitUpdate()
+
+    this.accountAdder.onUpdate(() => {
+      if (this.accountAdder.readyToAddAccounts.length) {
+        this.addAccounts(this.accountAdder.readyToAddAccounts)
+      }
+    })
   }
 
   private async getAccountsInfo(accounts: Account[]): Promise<AccountStates> {
@@ -143,41 +147,6 @@ export class MainController extends EventEmitter {
   }
 
   async addAccounts(accounts: Account[] = []) {
-    this.addAccountsStatus.type = 'PENDING'
-    this.addAccountsStatus.message = ''
-    this.emitUpdate()
-
-    // Identity only for the smart accounts must be created on the Relayer
-    const accountsToAddOnRelayer = accounts.filter((acc) => acc.creation)
-
-    if (accountsToAddOnRelayer.length) {
-      const body = accountsToAddOnRelayer.map((acc) => ({
-        addr: acc.addr,
-        associatedKeys: acc.associatedKeys,
-        creation: {
-          factoryAddr: acc.creation!.factoryAddr,
-          salt: acc.creation!.salt
-        }
-      }))
-
-      try {
-        const res = await this.#callRelayer('/v2/identity/create-multiple', 'POST', {
-          accounts: body
-        })
-
-        if (!res.success)
-          throw new Error(
-            res?.message ||
-              'Error when adding accounts on the Ambire Relayer. Please try again later or contact support if the problem persists.'
-          )
-      } catch (e: any) {
-        this.addAccountsStatus.type = 'ERROR'
-        this.addAccountsStatus.message = e?.message
-        this.emitUpdate()
-        return
-      }
-    }
-
     const nextAccounts = [...this.accounts, ...accounts].filter(
       // exclude duplicates, retain only the first occurrence of each account
       (account, index, self) => index === self.findIndex((a) => a.addr === account.addr)
@@ -185,12 +154,8 @@ export class MainController extends EventEmitter {
     await this.storage.set('accounts', nextAccounts)
     this.accounts = nextAccounts
 
-    this.addAccountsStatus.type = 'SUCCESS'
+    this.accountAdder.resetReadyToAddAccounts()
     this.emitUpdate()
-  }
-
-  resetAddAccountsStatus() {
-    this.addAccountsStatus = {}
   }
 
   private async ensureAccountInfo(accountAddr: AccountId, networkId: NetworkId) {

@@ -39,6 +39,16 @@ export class AccountAdderController extends EventEmitter {
 
   preselectedAccounts: Account[] = []
 
+  // Smart accounts which identity is created on the Relayer, and are ready
+  // to be added to the user's account list by the Main Controller
+  readyToAddAccounts: Account[] = []
+
+  addAccountsStatus:
+    | { type: 'PENDING' }
+    | { type: 'SUCCESS' }
+    | { type: 'ERROR'; message: string }
+    | { type: 'INITIAL' } = { type: 'INITIAL' }
+
   accountsLoading: boolean = false
 
   linkedAccountsLoading: boolean = false
@@ -135,6 +145,7 @@ export class AccountAdderController extends EventEmitter {
     this.pageSize = pageSize || PAGE_SIZE
     this.derivationPath = derivationPath
     this.isInitialized = true
+    this.addAccountsStatus = { type: 'INITIAL' }
     this.emitUpdate()
   }
 
@@ -206,6 +217,50 @@ export class AccountAdderController extends EventEmitter {
       networks,
       providers
     })
+  }
+
+  async addAccounts(accounts: Account[] = []) {
+    this.addAccountsStatus = { type: 'PENDING' }
+    this.emitUpdate()
+
+    // Identity only for the smart accounts must be created on the Relayer
+    const accountsToAddOnRelayer = accounts.filter((acc) => acc.creation)
+
+    if (accountsToAddOnRelayer.length) {
+      const body = accountsToAddOnRelayer.map((acc) => ({
+        addr: acc.addr,
+        associatedKeys: acc.associatedKeys,
+        creation: {
+          factoryAddr: acc.creation!.factoryAddr,
+          salt: acc.creation!.salt
+        }
+      }))
+
+      try {
+        const res = await this.#callRelayer('/v2/identity/create-multiple', 'POST', {
+          accounts: body
+        })
+
+        if (!res.success)
+          throw new Error(
+            res?.message ||
+              'Error when adding accounts on the Ambire Relayer. Please try again later or contact support if the problem persists.'
+          )
+      } catch (e: any) {
+        this.addAccountsStatus = { type: 'ERROR', message: e?.message }
+        this.emitUpdate()
+        return
+      }
+    }
+
+    this.readyToAddAccounts = [...accounts]
+    this.addAccountsStatus = { type: 'SUCCESS' }
+    this.emitUpdate()
+  }
+
+  resetReadyToAddAccounts() {
+    this.readyToAddAccounts.length = 0
+    this.emitUpdate()
   }
 
   async #calculateAccounts({
