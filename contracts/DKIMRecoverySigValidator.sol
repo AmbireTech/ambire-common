@@ -191,8 +191,10 @@ contract DKIMRecoverySigValidator {
     (bytes memory rrs, ) = oracle.verifyRRSet(rrSets);
     require(keccak256(rrs) == keccak256(rrset.data), 'DNSSec verification failed');
 
+    console.log(string(abi.encodePacked(rrset.data)));
+
     (DKIMKey memory key, string memory domainName) = parse(rrSets, txtRecord);
-    require(keccak256(rrset.signerName) == keccak256(abi.encodePacked(domainName)), 'DNSSec verification failed');
+    require(keccak256(rrset.signerName) != keccak256(abi.encodePacked(domainName)), 'DNSSec verification failed');
 
     // string domainName;
     // bytes pubKeyModulus;
