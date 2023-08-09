@@ -80,7 +80,9 @@ describe('AccountAdder', () => {
 
     let emitCounter = 0
     accountAdder.onUpdate(() => {
-      if (emitCounter === 0) {
+      emitCounter++
+
+      if (emitCounter === 1) {
         // First emit is triggered when account calculation is done
         expect(accountAdder.accountsOnPage.length).toEqual(
           // One smart account for every legacy account
@@ -90,7 +92,6 @@ describe('AccountAdder', () => {
         expect(accountAdder.linkedAccountsLoading).toBe(false)
         done()
       }
-      emitCounter++
     })
   })
   test('should start the searching for linked accounts', (done) => {
@@ -100,13 +101,14 @@ describe('AccountAdder', () => {
 
     let emitCounter = 0
     accountAdder.onUpdate(() => {
+      emitCounter++
+
       // First emit is triggered when account calculation is done, int the
       // second emit it should start the searching for linked accounts
-      if (emitCounter === 1) {
+      if (emitCounter === 2) {
         expect(accountAdder.linkedAccountsLoading).toBe(true)
         done()
       }
-      emitCounter++
     })
   })
   test('should find linked accounts', (done) => {
@@ -116,10 +118,12 @@ describe('AccountAdder', () => {
 
     let emitCounter = 0
     accountAdder.onUpdate(() => {
+      emitCounter++
+
       // First emit is triggered when account calculation is done, int the
       // second emit it should start the searching for linked accounts,
       // on the third emit there should be linked accounts fetched
-      if (emitCounter === 2) {
+      if (emitCounter === 3) {
         expect(accountAdder.linkedAccountsLoading).toBe(false)
         const linkedAccountsOnPage = accountAdder.accountsOnPage.filter(
           ({ type }) => type === 'linked'
@@ -133,7 +137,6 @@ describe('AccountAdder', () => {
 
         done()
       }
-      emitCounter++
     })
   })
   test('should not be able to deselect a preselected account', async () => {
