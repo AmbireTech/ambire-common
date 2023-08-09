@@ -147,7 +147,6 @@ describe('Main Controller ', () => {
       }
 
       if (emitCounter === 2) {
-        expect(controller.accountAdder.addAccountsStatus.type).toBe('SUCCESS')
         expect(controller.accounts).toContainEqual(accountPendingCreation)
         done()
       }

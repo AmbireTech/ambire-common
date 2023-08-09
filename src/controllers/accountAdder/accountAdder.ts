@@ -140,12 +140,26 @@ export class AccountAdderController extends EventEmitter {
   }): void {
     this.#keyIterator = keyIterator
     this.preselectedAccounts = preselectedAccounts
-    this.selectedAccounts = []
     this.page = page || INITIAL_PAGE_INDEX
     this.pageSize = pageSize || PAGE_SIZE
     this.derivationPath = derivationPath
     this.isInitialized = true
+
+    this.emitUpdate()
+  }
+
+  reset() {
+    this.#keyIterator = undefined
+    this.preselectedAccounts.length = 0
+    this.selectedAccounts.length = 0
+    this.page = INITIAL_PAGE_INDEX
+    this.pageSize = PAGE_SIZE
+    this.derivationPath = undefined
+
     this.addAccountsStatus = { type: 'INITIAL' }
+    this.readyToAddAccounts.length = 0
+    this.isInitialized = false
+
     this.emitUpdate()
   }
 
@@ -182,11 +196,6 @@ export class AccountAdderController extends EventEmitter {
     } else {
       throw new Error('accountAdder: account not found. Cannot deselect.')
     }
-  }
-
-  resetSelectedAccounts() {
-    this.selectedAccounts.length = 0 // empties the array
-    this.emitUpdate()
   }
 
   async setPage({
@@ -255,11 +264,6 @@ export class AccountAdderController extends EventEmitter {
 
     this.readyToAddAccounts = [...accounts]
     this.addAccountsStatus = { type: 'SUCCESS' }
-    this.emitUpdate()
-  }
-
-  resetReadyToAddAccounts() {
-    this.readyToAddAccounts.length = 0
     this.emitUpdate()
   }
 

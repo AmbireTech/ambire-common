@@ -104,11 +104,20 @@ export class MainController extends EventEmitter {
     this.isReady = true
     this.emitUpdate()
 
-    this.accountAdder.onUpdate(() => {
+    let isProcessing = false // ensures accounts are added only once per AccountAdder lifecycle
+    const addReadyToAddAccountsIfNeeded = () => {
+      if (isProcessing) return
+
       if (this.accountAdder.readyToAddAccounts.length) {
+        isProcessing = true
+
         this.addAccounts(this.accountAdder.readyToAddAccounts)
+        this.accountAdder.reset()
+
+        isProcessing = false
       }
-    })
+    }
+    this.accountAdder.onUpdate(addReadyToAddAccountsIfNeeded)
   }
 
   private async getAccountsInfo(accounts: Account[]): Promise<AccountStates> {
@@ -154,7 +163,6 @@ export class MainController extends EventEmitter {
     await this.storage.set('accounts', nextAccounts)
     this.accounts = nextAccounts
 
-    this.accountAdder.resetReadyToAddAccounts()
     this.emitUpdate()
   }
 
