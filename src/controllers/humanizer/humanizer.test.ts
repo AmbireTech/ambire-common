@@ -8,6 +8,8 @@ import { initHumanizerMeta } from '../../libs/humanizer/mainHumanizer'
 import { Storage } from '../../interfaces/storage'
 import { AccountOp } from '../../libs/accountOp/accountOp'
 
+const HUMANIZER_META_KEY = 'HumanizerMeta'
+
 export function produceMemoryStore(): Storage {
   const storage = new Map()
   return {
@@ -173,17 +175,12 @@ const transactions = {
 }
 
 describe('HumanizerController', () => {
-  test('normal humanize', async () => {
+  test('init HumanizerController', async () => {
     const storage = produceMemoryStore()
     const humanizerMeta = initHumanizerMeta(humanizerJSON)
-    const hc = new HumanizerController(storage, fetch, humanizerMeta)
-    const onUpdateFunc = jest.fn(() => {})
-    hc.onUpdate(onUpdateFunc)
+    await storage.set(HUMANIZER_META_KEY, humanizerMeta)
+    const hc = new HumanizerController(storage, fetch)
 
-    expect(hc.currentIr).toEqual({ calls: [] })
-
-    expect(onUpdateFunc).toHaveBeenCalledTimes(0)
-    await hc.initialLoadPromise
-    expect(onUpdateFunc).toHaveBeenCalledTimes(1)
+    expect(hc.ir).toEqual({ calls: [] })
   })
 })
