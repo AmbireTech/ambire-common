@@ -5,7 +5,7 @@ pragma solidity 0.8.19;
 import './libs/IAmbireAccount.sol';
 import './libs/SignatureValidator.sol';
 import './libs/Strings.sol';
-// import './libs/Base64.sol';
+import './libs/Base64.sol';
 import './dnssec/RecordParser.sol';
 import './dnssec/BytesUtils.sol';
 import './dkim/RSASHA256.sol';
@@ -16,7 +16,7 @@ import 'hardhat/console.sol';
 contract DKIMRecoverySigValidator {
   using Strings for *;
   using RRUtils for *;
-  // using Base64 for *;
+  using Base64 for *;
   using BytesUtils for *;
   using RecordParser for *;
 
@@ -216,21 +216,33 @@ contract DKIMRecoverySigValidator {
   }
 
   function parse(RRUtils.SignedSet memory txtSet) internal returns (DKIMKey memory key, string memory domainName) {
-    Strings.slice memory publicKey = string(txtSet.data).toSlice();
-    publicKey.split('p='.toSlice());
+    // TODO: Discuss and check which is more efficient
+    // the below two lines produce the same result as the loop afterwards
+    // Strings.slice memory publicKey = string(txtSet.data).toSlice();
+    // publicKey.split('p='.toSlice());
 
     uint offset = 0;
     bytes memory pValue;
     while (offset < txtSet.data.length) {
-      (bytes memory key, bytes memory value, uint256 nextOffset) = txtSet.data.readKeyValue(offset, txtSet.data.length - offset);
+      (bytes memory dataKey, bytes memory value, uint256 nextOffset) = txtSet.data.readKeyValue(offset, txtSet.data.length - offset);
       offset = nextOffset;
 
-      if (keccak256(key) == keccak256('p')) {
+      if (keccak256(dataKey) == keccak256('p')) {
         pValue = value;
       }
     }
 
-    console.logBytes(pValue);
+    string memory pValueOrg = string(pValue);
+
+    // TO DO: make it a recurssion
+    uint256 offsetOfInvalidUnicode = pValue.find(0, pValue.length, 0x9b);
+    if (offsetOfInvalidUnicode != type(uint256).max) {
+      bytes memory firstPartOfKey = pValue.substring(0, offsetOfInvalidUnicode);
+      bytes memory secondPartOfKey = pValue.substring(offsetOfInvalidUnicode + 1, pValue.length - 1 - offsetOfInvalidUnicode);
+      pValueOrg = string(firstPartOfKey).toSlice().concat(string(secondPartOfKey).toSlice());
+    }
+
+    bytes memory decoded = string(pValueOrg).decode();
   }
 
   function removeDKIMKey(bytes32 id) public {

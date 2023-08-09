@@ -35,8 +35,8 @@ const ambireSets = [
 ]
 
 const ambireTxt = [
-  '0x00100d040000012c64d2f42964d0350986c906616d6269726503636f6d0006676f6f676c650a5f646f6d61696e6b657906616d6269726503636f6d00001000010000012c019cff763d444b494d313b206b3d7273613b20703d4d494942496a414e42676b71686b6947397730424151454641414f43415138414d49494243674b434151454131726736375a74746c45306f587954523859507749615a54686a3455617a6e442b4d36446a34517352753873526f5050526843326269775050396f4d73453076363753676c5252496e596b6f6436396d414d557374706d776b49685577723377757a685a4663344945487673517849487a35754a497977567a646672527a7851776558612b6867444a533557756f7a654e6b6831686b686538472b4365564b7453375479734a314f6d43707a3643453634474935724a5a6a46306254714c6137589b73716d6e6469676a5132747055324e475a676c6166517171682b53363330465835704c5a386b6e56355533326e684545336d677377706c57496944496d456d51523879366e556a75646b4f57365749396670517343726b436969684a73374b72395165334a7568594767677132327448563235757632584c36374c48675575435a6f78705a714a76374c4c4f62514d6a5176307051494441514142',
-  '0xc56936b12291d4043b79848370dd74442a0420fd4db39d74e95e95d7511b510ea85cc52f55aaa479283237132a96db0ab2d232b5fb2e217058e51aa100c6fef0'
+  '0x00100d040000012c64d454ac64d1958c86c906616d6269726503636f6d0006676f6f676c650a5f646f6d61696e6b657906616d6269726503636f6d00001000010000012c019cff763d444b494d313b206b3d7273613b20703d4d494942496a414e42676b71686b6947397730424151454641414f43415138414d49494243674b434151454131726736375a74746c45306f587954523859507749615a54686a3455617a6e442b4d36446a34517352753873526f5050526843326269775050396f4d73453076363753676c5252496e596b6f6436396d414d557374706d776b49685577723377757a685a4663344945487673517849487a35754a497977567a646672527a7851776558612b6867444a533557756f7a654e6b6831686b686538472b4365564b7453375479734a314f6d43707a3643453634474935724a5a6a46306254714c6137589b73716d6e6469676a5132747055324e475a676c6166517171682b53363330465835704c5a386b6e56355533326e684545336d677377706c57496944496d456d51523879366e556a75646b4f57365749396670517343726b436969684a73374b72395165334a7568594767677132327448563235757632584c36374c48675575435a6f78705a714a76374c4c4f62514d6a5176307051494441514142',
+  '0xf9f1dd4966ddb0ba2cade9dc84b443d14dea173fbc982c65bd905c6b3a64783c687fe96b4d02113a526c3ae66ec7bebcab60f49f5783e7c358c1e1b8da2f9bb3'
 ]
 
 function hexEncodeSignedSet(rrs: any, sig: any) {
@@ -79,64 +79,60 @@ describe('DKIM', function () {
     expect(await dkimRecovery.getAddress()).to.not.be.null
   })
 
-  // deploy RSASHA256Algorithm
-  // call verify with youtube.email
-  // make it work
-  // it('successfully deploy the DKIM Recovery', async function () {
-  //   const gmail = await readFile(path.join(emailsPath, 'youtube.eml'), {
-  //       encoding: 'ascii'
-  //   })
-  //   const parsedContents: any = await parseEmail(gmail)
-  //   const exponent = Buffer.from(ethers.toBeHex(parsedContents[0].exponent).slice(2), 'hex')
-  //   const modulus = Buffer.from(parsedContents[0].solidity.modulus.slice(2), 'hex')
-  //   const sig = parsedContents[0].solidity.signature
-  //   const hash = parsedContents[0].solidity.hash
+  it('successfully deploy the DKIM Recovery', async function () {
+    const gmail = await readFile(path.join(emailsPath, 'youtube.eml'), {
+        encoding: 'ascii'
+    })
+    const parsedContents: any = await parseEmail(gmail)
+    const exponent = Buffer.from(ethers.toBeHex(parsedContents[0].exponent).slice(2), 'hex')
+    const modulus = Buffer.from(parsedContents[0].solidity.modulus.slice(2), 'hex')
+    const sig = parsedContents[0].solidity.signature
+    const hash = parsedContents[0].solidity.hash
 
-  //   const exponentHex = ethers.toBeHex(parsedContents[0].exponent)
-  //   const modulusHex = parsedContents[0].solidity.modulus
-  //   const key = exponentHex.concat(modulusHex.slice(2))
+    const exponentHex = ethers.toBeHex(parsedContents[0].exponent)
+    const modulusHex = parsedContents[0].solidity.modulus
+    const key = exponentHex.concat(modulusHex.slice(2))
 
-  //   const data = ethers.toUtf8Bytes(parsedContents[0].processedHeader)
-  //   const rsaSha256 = await ethers.deployContract('RSASHA256Algorithm')
-  //   const result = await rsaSha256.verify(key, data, sig)
+    const data = ethers.toUtf8Bytes(parsedContents[0].processedHeader)
+    const rsaSha256 = await ethers.deployContract('RSASHA256Algorithm')
+    const result = await rsaSha256.verify(key, data, sig)
 
-  //   const rsaSha256Other = await ethers.deployContract('RSASHA256')
-  //   const result2 = await rsaSha256Other.verify(hash, sig, exponent, modulus)
+    const rsaSha256Other = await ethers.deployContract('RSASHA256')
+    const result2 = await rsaSha256Other.verify(hash, sig, exponent, modulus)
 
-  //   const testData = [
-  //     // example.net.     3600  IN  DNSKEY  (256 3 8 AwEAAcFcGsaxxdgiuuGmCkVI
-  //     //                  my4h99CqT7jwY3pexPGcnUFtR2Fh36BponcwtkZ4cAgtvd4Qs8P
-  //     //                  kxUdp6p/DlUmObdk= );{id = 9033 (zsk), size = 512b}
-  //     '0x0100030803010001c15c1ac6b1c5d822bae1a60a45489b2e21f7d0aa4fb8f0637a5ec4f19c9d416d476161dfa069a27730b6467870082dbdde10b3c3e4c54769ea9fc395498e6dd9',
-  //     // www.example.net. 3600  IN  A  192.0.2.91
-  //     '0x0001080300000e1070dbd880386d43802349076578616d706c65036e65740003777777076578616d706c65036e6574000001000100000e100004c000025b',
-  //     // www.example.net. 3600  IN  RRSIG  (A 8 3 3600 20300101000000
-  //     //               20000101000000 9033 example.net. kRCOH6u7l0QGy9qpC9
-  //     //               l1sLncJcOKFLJ7GhiUOibu4teYp5VE9RncriShZNz85mwlMgNEa
-  //     //               cFYK/lPtPiVYP4bwg==);{id = 9033}
-  //     '0x91108e1fabbb974406cbdaa90bd975b0b9dc25c38a14b27b1a18943a26eee2d798a79544f519dcae24a164dcfce66c2532034469c1582bf94fb4f89560fe1bc2',
-  //   ]
+    const testData = [
+      // example.net.     3600  IN  DNSKEY  (256 3 8 AwEAAcFcGsaxxdgiuuGmCkVI
+      //                  my4h99CqT7jwY3pexPGcnUFtR2Fh36BponcwtkZ4cAgtvd4Qs8P
+      //                  kxUdp6p/DlUmObdk= );{id = 9033 (zsk), size = 512b}
+      '0x0100030803010001c15c1ac6b1c5d822bae1a60a45489b2e21f7d0aa4fb8f0637a5ec4f19c9d416d476161dfa069a27730b6467870082dbdde10b3c3e4c54769ea9fc395498e6dd9',
+      // www.example.net. 3600  IN  A  192.0.2.91
+      '0x0001080300000e1070dbd880386d43802349076578616d706c65036e65740003777777076578616d706c65036e6574000001000100000e100004c000025b',
+      // www.example.net. 3600  IN  RRSIG  (A 8 3 3600 20300101000000
+      //               20000101000000 9033 example.net. kRCOH6u7l0QGy9qpC9
+      //               l1sLncJcOKFLJ7GhiUOibu4teYp5VE9RncriShZNz85mwlMgNEa
+      //               cFYK/lPtPiVYP4bwg==);{id = 9033}
+      '0x91108e1fabbb974406cbdaa90bd975b0b9dc25c38a14b27b1a18943a26eee2d798a79544f519dcae24a164dcfce66c2532034469c1582bf94fb4f89560fe1bc2',
+    ]
 
-  //   // console.log(
-  //   //   ethers.toBeHex(256),
-  //   //   ethers.toBeHex(3),
-  //   //   ethers.toBeHex(8),
-  //   //   ethers.hexlify('AwEAAcFcGsaxxdgiuuGmCkVImy4h99CqT7jwY3pexPGcnUFtR2Fh36BponcwtkZ4cAgtvd4Qs8PkxUdp6p/DlUmObdk='),
-  //   // )
+    // console.log(
+    //   ethers.toBeHex(256),
+    //   ethers.toBeHex(3),
+    //   ethers.toBeHex(8),
+    //   ethers.hexlify('AwEAAcFcGsaxxdgiuuGmCkVImy4h99CqT7jwY3pexPGcnUFtR2Fh36BponcwtkZ4cAgtvd4Qs8PkxUdp6p/DlUmObdk='),
+    // )
 
-  //   const buffer = Buffer.from('AwEAAcFcGsaxxdgiuuGmCkVImy4h99CqT7jwY3pexPGcnUFtR2Fh36BponcwtkZ4cAgtvd4Qs8PkxUdp6p', 'base64');
-  //   const bufString = buffer.toString('hex');
-  //   console.log(bufString)
+    // const buffer = Buffer.from('MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA1rg67ZttlE0oXyTR8YPwIaZThj4UaznD+M6Dj4QsRu8sRoPPRhC2biwPP9oMsE0v67SglRRInYkod69mAMUstpmwkIhUwr3wuzhZFc4IEHvsQxIHz5uJIywVzdfrRzxQweXa+hgDJS5WuozeNkh1hkhe8G+CeVKtS7TysJ1OmCpz6CE64GI5rJZjF0bTqLa7X�sqmndigjQ2tpU2NGZglafQqqh+S630FX5pLZ8knV5U32nhEE3mgswplWIiDImEmQR8y6nUjudkOW6WI9fpQsCrkCiihJs7Kr9Qe3JuhYGggq22tHV25uv2XL67LHgUuCZoxpZqJv7LLObQMjQv0pQIDAQAB', 'base64');
+    // const bufString = `0x${buffer.toString('hex')}`
+    // console.log(bufString)
 
+    // console.log(ethers.toNumber(ethers.toBeHex(256)))
+    // console.log(ethers.toNumber(ethers.toBeHex(3)))
+    // console.log(ethers.toNumber(ethers.toBeHex(8)))
+    // console.log(ethers.toUtf8String('0x03010001c15c1ac6b1c5d822bae1a60a45489b2e21f7d0aa4fb8f0637a5ec4f19c9d416d476161dfa069a27730b6467870082dbdde10b3c3e4c54769ea9fc395498e6dd9'))
 
-  //   // console.log(ethers.toNumber(ethers.toBeHex(256)))
-  //   // console.log(ethers.toNumber(ethers.toBeHex(3)))
-  //   // console.log(ethers.toNumber(ethers.toBeHex(8)))
-  //   // console.log(ethers.toUtf8String('0x03010001c15c1ac6b1c5d822bae1a60a45489b2e21f7d0aa4fb8f0637a5ec4f19c9d416d476161dfa069a27730b6467870082dbdde10b3c3e4c54769ea9fc395498e6dd9'))
-
-  //   const result3 = await rsaSha256.verify(testData[0], testData[1], testData[2])
-  //   console.log(result3)
-  // });
+    const result3 = await rsaSha256.verify(testData[0], testData[1], testData[2])
+    console.log(result3)
+  });
 
   it('successfully validate the dnssec and execute the txt', async function () {
     // const gmail = await readFile(path.join(emailsPath, 'youtube.eml'), {
@@ -148,16 +144,8 @@ describe('DKIM', function () {
     // const sig = Buffer.from(ambireTxt[1].slice(2), 'hex')
     // const answer = SignedSet.fromWire(records, sig)
 
-    const rrsets = ambireSets.map(([set, sig]: any) => {
-      return [
-        Buffer.from(set.slice(2), 'hex'),
-        Buffer.from(sig.slice(2), 'hex'),
-      ]
-    })
-    rrsets.push([
-      Buffer.from(ambireTxt[0].slice(2), 'hex'),
-      Buffer.from(ambireTxt[1].slice(2), 'hex'),
-    ])
+    const rrsets = ambireSets.map(([set, sig]: any) => [set, sig])
+    rrsets.push(ambireTxt)
     const res = await dkimRecovery.addDKIMKeyWithDNSSec(rrsets);
   })
 })
