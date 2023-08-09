@@ -140,13 +140,12 @@ describe('AccountAdder', () => {
     })
   })
   test('should not be able to deselect a preselected account', async () => {
-    try {
-      const keyIterator = new KeyIterator(seedPhrase)
-      accountAdder.init({ keyIterator, preselectedAccounts: [legacyAccount], pageSize: 1 })
-      accountAdder.selectedAccounts = [legacyAccount]
-      await accountAdder.deselectAccount(legacyAccount)
-    } catch (e: any) {
-      expect(e.message).toBe('accountAdder: a preselected account cannot be deselected')
-    }
+    const keyIterator = new KeyIterator(seedPhrase)
+    accountAdder.init({ keyIterator, preselectedAccounts: [legacyAccount], pageSize: 1 })
+    accountAdder.selectedAccounts = [legacyAccount]
+
+    await expect(accountAdder.deselectAccount(legacyAccount)).rejects.toThrow(
+      'accountAdder: a preselected account cannot be deselected'
+    )
   })
 })
