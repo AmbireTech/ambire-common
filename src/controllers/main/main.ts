@@ -149,6 +149,8 @@ export class MainController extends EventEmitter {
   }
 
   async addAccounts(accounts: Account[] = []) {
+    if (!accounts.length) return
+
     const nextAccounts = [...this.accounts, ...accounts].filter(
       // exclude duplicates, retain only the first occurrence of each account
       (account, index, self) => index === self.findIndex((a) => a.addr === account.addr)
