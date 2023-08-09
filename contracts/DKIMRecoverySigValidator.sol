@@ -6,6 +6,7 @@ import './libs/IAmbireAccount.sol';
 import './libs/SignatureValidator.sol';
 import './libs/Strings.sol';
 // import './libs/Base64.sol';
+import './dnssec/RecordParser.sol';
 import './dnssec/BytesUtils.sol';
 import './dkim/RSASHA256.sol';
 import './dnssec/DNSSEC.sol';
@@ -17,6 +18,7 @@ contract DKIMRecoverySigValidator {
   using RRUtils for *;
   // using Base64 for *;
   using BytesUtils for *;
+  using RecordParser for *;
 
   struct DKIMKey {
     string domainName;
@@ -216,29 +218,19 @@ contract DKIMRecoverySigValidator {
   function parse(RRUtils.SignedSet memory txtSet) internal returns (DKIMKey memory key, string memory domainName) {
     Strings.slice memory publicKey = string(txtSet.data).toSlice();
     publicKey.split('p='.toSlice());
-    bytes memory key = bytes(publicKey.toString());
 
-    bytes memory exponent;
-    bytes memory modulus;
+    uint offset = 0;
+    bytes memory pValue;
+    while (offset < txtSet.data.length) {
+      (bytes memory key, bytes memory value, uint256 nextOffset) = txtSet.data.readKeyValue(offset, txtSet.data.length - offset);
+      offset = nextOffset;
 
-    uint16 exponentLen = uint16(key.readUint8(4));
-    if (exponentLen != 0) {
-      exponent = key.substring(5, exponentLen);
-      modulus = key.substring(
-        exponentLen + 5,
-        key.length - exponentLen - 5
-      );
-    } else {
-      exponentLen = key.readUint16(5);
-      exponent = key.substring(7, exponentLen);
-      modulus = key.substring(
-        exponentLen + 7,
-        key.length - exponentLen - 7
-      );
+      if (keccak256(key) == keccak256('p')) {
+        pValue = value;
+      }
     }
 
-    console.logBytes(exponent);
-    console.logBytes(modulus);
+    console.logBytes(pValue);
   }
 
   function removeDKIMKey(bytes32 id) public {
