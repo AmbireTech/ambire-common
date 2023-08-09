@@ -229,6 +229,8 @@ export class AccountAdderController extends EventEmitter {
   }
 
   async addAccounts(accounts: Account[] = []) {
+    if (!accounts.length) return
+
     this.addAccountsStatus = { type: 'PENDING' }
     this.emitUpdate()
 
