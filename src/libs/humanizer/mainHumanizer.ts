@@ -86,7 +86,14 @@ async function fetchFuncEtherface(
     return null
   }
 }
-
+const checkIfUnknowAction = (v: Array<any>) => {
+  try {
+    return v.length === 1 && v[0].type === 'action' && v[0].content === 'Unknown action'
+  } catch (e) {
+    return false
+  }
+  return false
+}
 // goes over all transactions to provide basic visuzlization
 export function fallbackHumanizer(
   accountOp: AccountOp,
@@ -95,11 +102,7 @@ export function fallbackHumanizer(
 ): [Ir, Promise<any>[]] {
   const asyncOps: any = []
   const newCalls = currentIr.calls.map((call) => {
-    if (
-      call.fullVisualization &&
-      JSON.stringify(call.fullVisualization.length) === JSON.stringify(getAction('Unknown action'))
-    )
-      return call
+    if (call.fullVisualization && !checkIfUnknowAction(call.fullVisualization)) return call
     const visualization = []
     if (call.data !== '0x') {
       if (accountOp.humanizerMeta?.[`funcSelectors:${call.data.slice(0, 10)}`]) {
