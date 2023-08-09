@@ -79,7 +79,7 @@ contract DKIMRecoverySigValidator {
     uint32 dateRemoved;
   }
   // keccak256(Key) => KeyInfo
-  mapping (bytes32 => KeyInfo) dkimKeys;
+  mapping (bytes32 => KeyInfo) public dkimKeys;
   // recoveryrIdentifier => bool
   mapping (bytes32 => bool) recoveries;
 
@@ -190,7 +190,7 @@ contract DKIMRecoverySigValidator {
     return true;
   }
 
-  function addDKIMKeyWithDNSSec(DNSSEC.RRSetWithSignature[] memory rrSets) public returns (DKIMKey memory) {
+  function addDKIMKeyWithDNSSec(DNSSEC.RRSetWithSignature[] memory rrSets) public {
     require(authorizedToSubmit == address(69) || msg.sender == authorizedToSubmit, 'not authorized to submit');
 
     RRUtils.SignedSet memory rrset = rrSets[rrSets.length-1].rrset.readSignedSet();
@@ -198,9 +198,12 @@ contract DKIMRecoverySigValidator {
     require(keccak256(rrs) == keccak256(rrset.data), 'DNSSec verification failed');
 
     (DKIMKey memory key, string memory domainName) = parse(rrset);
-    require(keccak256(rrset.signerName) != keccak256(abi.encodePacked(domainName)), 'DNSSec verification failed');
+    require(keccak256(rrset.signerName) == keccak256(bytes(domainName)), 'DNSSec verification failed');
 
     bytes32 id = keccak256(abi.encode(key.domainName, key.pubKeyModulus, key.pubKeyExponent));
+    // console.logBytes32(id);
+    console.log('be data');
+    console.logBytes(bytes(key.domainName));
 
     KeyInfo storage keyInfo = dkimKeys[id];
     require(!keyInfo.isExisting, 'key already exists');
@@ -215,7 +218,7 @@ contract DKIMRecoverySigValidator {
     }
   }
 
-  function parse(RRUtils.SignedSet memory txtSet) internal returns (DKIMKey memory key, string memory domainName) {
+  function parse(RRUtils.SignedSet memory txtSet) internal pure returns (DKIMKey memory key, string memory domainName) {
     // TODO: Discuss and check which is more efficient
     // the below two lines produce the same result as the loop afterwards
     // Strings.slice memory publicKey = string(txtSet.data).toSlice();
@@ -243,6 +246,19 @@ contract DKIMRecoverySigValidator {
     }
 
     bytes memory decoded = string(pValueOrg).decode();
+    // omit the first 32 bytes, take everything expect the last 5 bytes:
+    // - first two bytes from the last 5 is modulus header info
+    // - last three bytes is modulus
+    bytes memory modulus = decoded.substring(32, decoded.length - 32 - 5);
+    // the last 3 bytes of the decoded string is the exponent
+    bytes memory exponent = decoded.substring(decoded.length - 3, 3);
+    domainName = string(txtSet.signerName);
+    key = DKIMKey(
+      domainName,
+      modulus,
+      exponent
+    );
+    return (key, domainName);
   }
 
   function removeDKIMKey(bytes32 id) public {

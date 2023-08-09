@@ -1,12 +1,14 @@
 import { ethers } from 'hardhat'
 import { deployAmbireAccountHardhatNetwork } from '../implementations'
 import lookup from '../../src/libs/dns/lookup'
-import { expect } from '../config'
+import { abiCoder, expect } from '../config'
 const SignedSet = require('@ensdomains/dnsprovejs').SignedSet
 import { promisify } from 'util'
 import fs from 'fs'
 import path from 'path'
 import parseEmail from '../../src/libs/dkim/parseEmail'
+import getPublicKey from '../../src/libs/dkim/getPublicKey'
+import publicKeyToComponents from '../../src/libs/dkim/publicKeyToComponents'
 const readFile = promisify(fs.readFile)
 const emailsPath = path.join(__dirname, 'emails')
 
@@ -84,68 +86,30 @@ describe('DKIM', function () {
         encoding: 'ascii'
     })
     const parsedContents: any = await parseEmail(gmail)
-    const exponent = Buffer.from(ethers.toBeHex(parsedContents[0].exponent).slice(2), 'hex')
-    const modulus = Buffer.from(parsedContents[0].solidity.modulus.slice(2), 'hex')
     const sig = parsedContents[0].solidity.signature
     const hash = parsedContents[0].solidity.hash
+    const exponent = ethers.hexlify(ethers.toBeHex(parsedContents[0].exponent))
+    const modulus = ethers.hexlify(parsedContents[0].modulus)
 
-    const exponentHex = ethers.toBeHex(parsedContents[0].exponent)
-    const modulusHex = parsedContents[0].solidity.modulus
-    const key = exponentHex.concat(modulusHex.slice(2))
-
-    const data = ethers.toUtf8Bytes(parsedContents[0].processedHeader)
-    const rsaSha256 = await ethers.deployContract('RSASHA256Algorithm')
-    const result = await rsaSha256.verify(key, data, sig)
-
-    const rsaSha256Other = await ethers.deployContract('RSASHA256')
+    const rsaSha256Other = await ethers.deployContract('RSASHA256Contract')
     const result2 = await rsaSha256Other.verify(hash, sig, exponent, modulus)
-
-    const testData = [
-      // example.net.     3600  IN  DNSKEY  (256 3 8 AwEAAcFcGsaxxdgiuuGmCkVI
-      //                  my4h99CqT7jwY3pexPGcnUFtR2Fh36BponcwtkZ4cAgtvd4Qs8P
-      //                  kxUdp6p/DlUmObdk= );{id = 9033 (zsk), size = 512b}
-      '0x0100030803010001c15c1ac6b1c5d822bae1a60a45489b2e21f7d0aa4fb8f0637a5ec4f19c9d416d476161dfa069a27730b6467870082dbdde10b3c3e4c54769ea9fc395498e6dd9',
-      // www.example.net. 3600  IN  A  192.0.2.91
-      '0x0001080300000e1070dbd880386d43802349076578616d706c65036e65740003777777076578616d706c65036e6574000001000100000e100004c000025b',
-      // www.example.net. 3600  IN  RRSIG  (A 8 3 3600 20300101000000
-      //               20000101000000 9033 example.net. kRCOH6u7l0QGy9qpC9
-      //               l1sLncJcOKFLJ7GhiUOibu4teYp5VE9RncriShZNz85mwlMgNEa
-      //               cFYK/lPtPiVYP4bwg==);{id = 9033}
-      '0x91108e1fabbb974406cbdaa90bd975b0b9dc25c38a14b27b1a18943a26eee2d798a79544f519dcae24a164dcfce66c2532034469c1582bf94fb4f89560fe1bc2',
-    ]
-
-    // console.log(
-    //   ethers.toBeHex(256),
-    //   ethers.toBeHex(3),
-    //   ethers.toBeHex(8),
-    //   ethers.hexlify('AwEAAcFcGsaxxdgiuuGmCkVImy4h99CqT7jwY3pexPGcnUFtR2Fh36BponcwtkZ4cAgtvd4Qs8PkxUdp6p/DlUmObdk='),
-    // )
-
-    // const buffer = Buffer.from('MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA1rg67ZttlE0oXyTR8YPwIaZThj4UaznD+M6Dj4QsRu8sRoPPRhC2biwPP9oMsE0v67SglRRInYkod69mAMUstpmwkIhUwr3wuzhZFc4IEHvsQxIHz5uJIywVzdfrRzxQweXa+hgDJS5WuozeNkh1hkhe8G+CeVKtS7TysJ1OmCpz6CE64GI5rJZjF0bTqLa7X�sqmndigjQ2tpU2NGZglafQqqh+S630FX5pLZ8knV5U32nhEE3mgswplWIiDImEmQR8y6nUjudkOW6WI9fpQsCrkCiihJs7Kr9Qe3JuhYGggq22tHV25uv2XL67LHgUuCZoxpZqJv7LLObQMjQv0pQIDAQAB', 'base64');
-    // const bufString = `0x${buffer.toString('hex')}`
-    // console.log(bufString)
-
-    // console.log(ethers.toNumber(ethers.toBeHex(256)))
-    // console.log(ethers.toNumber(ethers.toBeHex(3)))
-    // console.log(ethers.toNumber(ethers.toBeHex(8)))
-    // console.log(ethers.toUtf8String('0x03010001c15c1ac6b1c5d822bae1a60a45489b2e21f7d0aa4fb8f0637a5ec4f19c9d416d476161dfa069a27730b6467870082dbdde10b3c3e4c54769ea9fc395498e6dd9'))
-
-    const result3 = await rsaSha256.verify(testData[0], testData[1], testData[2])
-    console.log(result3)
-  });
-
-  it('successfully validate the dnssec and execute the txt', async function () {
-    // const gmail = await readFile(path.join(emailsPath, 'youtube.eml'), {
-    //     encoding: 'ascii'
-    // })
-    // const parsedContents: any = await parseEmail(gmail)
-
-    // const records = Buffer.from(ambireTxt[0].slice(2), 'hex')
-    // const sig = Buffer.from(ambireTxt[1].slice(2), 'hex')
-    // const answer = SignedSet.fromWire(records, sig)
+    expect(result2).to.be.true
 
     const rrsets = ambireSets.map(([set, sig]: any) => [set, sig])
     rrsets.push(ambireTxt)
-    const res = await dkimRecovery.addDKIMKeyWithDNSSec(rrsets);
-  })
+    await dkimRecovery.addDKIMKeyWithDNSSec(rrsets);
+
+    const ambireShit = await getPublicKey({domain: 'Ambire.com', selector: 'Google'})
+    const key = publicKeyToComponents(ambireShit.publicKey)
+    const ambireExponent = ethers.hexlify(ethers.toBeHex(key.exponent))
+    const ambireModulus = ethers.hexlify(key.modulus)
+    const domainName = 'ambirecom'
+    const dkimHash = ethers.keccak256(abiCoder.encode(['string', 'bytes', 'bytes'], [domainName, ambireModulus, ambireExponent]));
+
+    console.log('FE DATA')
+    // console.log(dkimHash)
+    console.log(ethers.hexlify(ethers.toUtf8Bytes(domainName)))
+    const isResThere = await dkimRecovery.dkimKeys(dkimHash);
+    console.log(isResThere)
+  });
 })
