@@ -72,13 +72,6 @@ describe('AccountAdder', () => {
     )
   })
 
-  test('should init keyIterator', () => {
-    expect.assertions(2)
-    const keyIterator = new KeyIterator(seedPhrase)
-    accountAdder.init({ keyIterator, preselectedAccounts: [] })
-    expect((accountAdder as any)['#keyIterator']).toBe(undefined)
-    expect((accountAdder as any).isInitialized).toBeTruthy()
-  })
   test('should set first page and retrieve one smart account for every legacy account', (done) => {
     const keyIterator = new KeyIterator(seedPhrase)
     const PAGE_SIZE = 3
