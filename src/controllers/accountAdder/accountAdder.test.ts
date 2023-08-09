@@ -56,11 +56,14 @@ describe('AccountAdder', () => {
   })
 
   test('should initialize accountAdder', () => {
-    expect.assertions(4)
-    expect((accountAdder as any)['#keyIterator']).toBe(undefined)
-    expect((accountAdder as any).derivationPath).toBe(undefined)
-    expect((accountAdder as any).page).toEqual(1)
-    expect((accountAdder as any).isInitialized).toBeFalsy()
+    expect(accountAdder.isInitialized).toBeFalsy()
+
+    const keyIterator = new KeyIterator(seedPhrase)
+    accountAdder.init({ keyIterator, preselectedAccounts: [legacyAccount] })
+
+    expect(accountAdder.isInitialized).toBeTruthy()
+    expect(accountAdder.preselectedAccounts).toContainEqual(legacyAccount)
+    expect(accountAdder.selectedAccounts).toEqual([])
   })
   test('should throw not initialized', async () => {
     expect.assertions(1)
