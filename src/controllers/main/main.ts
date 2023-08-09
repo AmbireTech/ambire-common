@@ -104,18 +104,11 @@ export class MainController extends EventEmitter {
     this.isReady = true
     this.emitUpdate()
 
-    let isProcessing = false // ensures accounts are added only once per AccountAdder lifecycle
     const addReadyToAddAccountsIfNeeded = () => {
-      if (isProcessing) return
+      if (!this.accountAdder.readyToAddAccounts.length) return
 
-      if (this.accountAdder.readyToAddAccounts.length) {
-        isProcessing = true
-
-        this.addAccounts(this.accountAdder.readyToAddAccounts)
-        this.accountAdder.reset()
-
-        isProcessing = false
-      }
+      this.addAccounts(this.accountAdder.readyToAddAccounts)
+      this.accountAdder.reset()
     }
     this.accountAdder.onUpdate(addReadyToAddAccountsIfNeeded)
   }
