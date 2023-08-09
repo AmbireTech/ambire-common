@@ -1,6 +1,3 @@
-/* eslint-disable no-await-in-loop */
-/* eslint-disable no-restricted-syntax */
-/* eslint-disable @typescript-eslint/no-unused-vars */
 import { ethers, JsonRpcProvider } from 'ethers'
 import { KeyIterator } from 'interfaces/keyIterator'
 import { NetworkDescriptor, NetworkId } from 'interfaces/networkDescriptor'
