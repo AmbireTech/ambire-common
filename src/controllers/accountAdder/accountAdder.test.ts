@@ -65,14 +65,13 @@ describe('AccountAdder', () => {
     expect(accountAdder.preselectedAccounts).toContainEqual(legacyAccount)
     expect(accountAdder.selectedAccounts).toEqual([])
   })
-  test('should throw not initialized', async () => {
-    expect.assertions(1)
-    try {
-      await accountAdder.setPage({ page: 1, networks, providers })
-    } catch (e: any) {
-      expect(e.message).toBe('accountAdder: keyIterator not initialized')
-    }
+
+  test('should throw if operation is triggered, but the controller is not initialized yet', async () => {
+    await expect(accountAdder.setPage({ page: 1, networks, providers })).rejects.toThrow(
+      'accountAdder: keyIterator not initialized'
+    )
   })
+
   test('should init keyIterator', () => {
     expect.assertions(2)
     const keyIterator = new KeyIterator(seedPhrase)
