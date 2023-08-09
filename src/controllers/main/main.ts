@@ -146,6 +146,7 @@ export class MainController extends EventEmitter {
     if (!this.accounts.find((acc) => acc.addr === toAccountAddr))
       throw new Error(`try to switch to not exist account: ${toAccountAddr}`)
     this.selectedAccount = toAccountAddr
+    this.emitUpdate()
   }
 
   async addAccounts(accounts: Account[] = []) {
