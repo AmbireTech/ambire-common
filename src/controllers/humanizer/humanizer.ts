@@ -10,46 +10,57 @@ const HUMANIZER_META_KEY = 'HumanizerMeta'
 
 // @TODO add proper error messages everywhere
 export class HumanizerController extends EventEmitter {
-  public currentIr: Ir = { calls: [] }
+  #currentIr: Ir = { calls: [] }
+
+  #accountOp!: AccountOp
 
   #storage: Storage
 
-  #humanizerMeta: any
-
   #fetch: Function
 
+  #humanizerMeta: any
+
   #initialLoadPromise: Promise<void>
+
+  get initialLoadPromise() {
+    return this.#initialLoadPromise
+  }
+
+  get currentIr() {
+    return this.#currentIr
+  }
 
   constructor(storage: Storage, fetch: Function, humanizerMeta: any) {
     super()
     this.#storage = storage
     this.#fetch = fetch
-    this.#humanizerMeta = humanizerMeta
-    this.#initialLoadPromise = this.load()
+    this.#initialLoadPromise = this.load(humanizerMeta)
   }
 
-  private async load() {
-    this.#humanizerMeta = {
-      ...this.#humanizerMeta,
-      ...(await this.#storage.get(HUMANIZER_META_KEY, {}))
-    }
-    await this.#storage.set(HUMANIZER_META_KEY, this.#humanizerMeta)
+  private async load(humanizerMeta: any) {
+    await this.#storage.set(HUMANIZER_META_KEY, humanizerMeta)
+    this.#humanizerMeta = await this.#storage.get(HUMANIZER_META_KEY, {})
+    this.emitUpdate()
   }
 
   public humanize(accountOp: AccountOp) {
-    const [ir, asyncOps] = this.internalHumanization(accountOp)
-    this.currentIr = ir
+    this.#accountOp = {
+      ...accountOp,
+      humanizerMeta: { ...accountOp.humanizerMeta, ...this.#humanizerMeta }
+    }
+    const [ir, asyncOps] = this.internalHumanization()
+    this.#currentIr = ir
     this.emitUpdate()
 
     if (!asyncOps.length) return
     // @NOTE the only purpouse of thihs is cycling
-    this.storeAsyncFragments(asyncOps).then(() => this.repeatHumanization(accountOp))
+    this.storeAsyncFragments(asyncOps).then(() => this.repeatHumanization())
   }
 
-  private async repeatHumanization(accountOp: AccountOp) {
+  private async repeatHumanization() {
     for (let i = 0; i <= 3; i++) {
-      const [ir, newAsyncops] = this.internalHumanization(accountOp)
-      this.currentIr = ir
+      const [ir, newAsyncops] = this.internalHumanization()
+      this.#currentIr = ir
       this.emitUpdate()
       if (!newAsyncops.length) return
       // eslint-disable-next-line no-await-in-loop
@@ -57,7 +68,7 @@ export class HumanizerController extends EventEmitter {
     }
   }
 
-  private internalHumanization(accOp: AccountOp): [Ir, Array<Promise<HumanizerFragment>>] {
+  private internalHumanization(): [Ir, Array<Promise<HumanizerFragment>>] {
     const humanizerModules = [
       genericErc20Humanizer,
       genericErc721Humanizer,
@@ -67,19 +78,18 @@ export class HumanizerController extends EventEmitter {
     ]
 
     const options = { fetch: this.#fetch }
-    const accountOp: AccountOp = { ...accOp, humanizerMeta: this.#humanizerMeta }
-    let currentIr: Ir = callsToIr(accountOp)
+    let currentIr: Ir = callsToIr(this.#accountOp)
     let asyncOps: any[] = []
     humanizerModules.forEach((hm) => {
       let newPromises = []
-      ;[currentIr, newPromises] = hm(accountOp, currentIr, options)
+      ;[currentIr, newPromises] = hm(this.#accountOp, currentIr, options)
       asyncOps = [...asyncOps, ...newPromises]
     })
     return [currentIr, asyncOps]
   }
 
+  // @TODO rethik
   private async storeAsyncFragments(asyncOps: Array<Promise<HumanizerFragment>>) {
-    if (asyncOps.length) return
     const fragments: Array<HumanizerFragment> = await Promise.all(asyncOps)
     let globalFragmentData = {}
     let nonGlobalFragmentData = {}
@@ -90,9 +100,13 @@ export class HumanizerController extends EventEmitter {
         : (nonGlobalFragmentData = { ...nonGlobalFragmentData, [f.key]: f.value })
     })
 
-    const savedHumanizerMeta = await this.#storage.get(HUMANIZER_META_KEY, {})
-    this.#humanizerMeta = { ...savedHumanizerMeta, ...globalFragmentData, ...nonGlobalFragmentData }
+    const storedHumanizerMeta = await this.#storage.get(HUMANIZER_META_KEY, {})
 
-    await this.#storage.set(HUMANIZER_META_KEY, { ...savedHumanizerMeta, ...globalFragmentData })
+    this.#accountOp = {
+      ...this.#accountOp,
+      humanizerMeta: { ...storedHumanizerMeta, ...globalFragmentData, ...nonGlobalFragmentData }
+    }
+    this.#humanizerMeta = { ...storedHumanizerMeta, ...globalFragmentData }
+    await this.#storage.set(HUMANIZER_META_KEY, { ...storedHumanizerMeta, ...globalFragmentData })
   }
 }
