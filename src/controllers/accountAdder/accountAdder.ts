@@ -18,6 +18,14 @@ const PAGE_SIZE = 5
 type ExtendedAccount = Account & { usedOnNetworks: NetworkDescriptor[] }
 
 type AccountType = 'legacy' | 'smart' | 'linked'
+
+/**
+ * Account Adder Controller
+ * is responsible for listing accounts that can be selected for adding, and for
+ * adding (creating) identity for the smart accounts (if needed) on the Relayer.
+ * It uses a KeyIterator interface allow iterating all the keys in a specific
+ * underlying store such as a hardware device or an object holding a seed.
+ */
 export class AccountAdderController extends EventEmitter {
   #callRelayer: Function
 
@@ -43,6 +51,8 @@ export class AccountAdderController extends EventEmitter {
   // to be added to the user's account list by the Main Controller
   readyToAddAccounts: Account[] = []
 
+  // Identity for the smart accounts must be created on the Relayer, this
+  // represents the status of the operation, needed managing UI state
   addAccountsStatus:
     | { type: 'PENDING' }
     | { type: 'SUCCESS' }
