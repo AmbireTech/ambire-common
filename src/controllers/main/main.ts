@@ -151,10 +151,12 @@ export class MainController extends EventEmitter {
   async addAccounts(accounts: Account[] = []) {
     if (!accounts.length) return
 
-    const nextAccounts = [...this.accounts, ...accounts].filter(
-      // exclude duplicates, retain only the first occurrence of each account
-      (account, index, self) => index === self.findIndex((a) => a.addr === account.addr)
-    )
+    const alreadyAddedAddressSet = new Set(this.accounts.map((account) => account.addr))
+    const newAccounts = accounts.filter((account) => !alreadyAddedAddressSet.has(account.addr))
+
+    if (!newAccounts.length) return
+
+    const nextAccounts = [...this.accounts, ...newAccounts]
     await this.storage.set('accounts', nextAccounts)
     this.accounts = nextAccounts
 
