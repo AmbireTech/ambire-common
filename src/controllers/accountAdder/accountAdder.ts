@@ -106,6 +106,9 @@ export class AccountAdderController extends EventEmitter {
       } else if (calculatedAccount.type === 'smart') {
         // in case of no duplication but the curr acc is of type smart smart
         mergedAccounts.push(calculatedAccount) // adds the smart acc
+      }
+
+      if (calculatedAccount.type === 'smart') {
         this.#linkedAccounts.forEach((linked) => {
           const legacyAccOnSameSlot = this.#calculatedAccounts.find(
             (acc) => acc.slot === calculatedAccount.slot && acc.type === 'legacy'
