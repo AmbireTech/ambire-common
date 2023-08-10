@@ -140,7 +140,7 @@ const transactions = {
       data: '0x42842e0e000000000000000000000000C89B38119C58536d818f3Bf19a9E3870828C199400000000000000000000000046705dfff24256421a05d056c29e81bdc09723b80000000000000000000000000000000000000000000000000000000000000000'
     }
   ],
-  toKnownAddresses: [
+  namingTransactions: [
     // ETH to uniswap (bad example, sending eth to contract)
     {
       to: '0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D',
@@ -151,7 +151,13 @@ const transactions = {
     {
       to: '0xdAC17F958D2ee523a2206206994597C13D831ec7',
       value: BigInt(0),
-      data: '0xa9059cbb000000000000000000000000B674F3fd5F43464dB0448a57529eAF37F04cceA5000000000000000000000000000000000000000000000000000000003b9aca00'
+      data: '0xa9059cbb0000000000000000000000007a250d5630b4cf539739df2c5dacb4c659f2488d000000000000000000000000000000000000000000000000000000003b9aca00'
+    },
+    // ETH to arbitrary address (expects to shortened address)
+    {
+      to: '0xb674f3fd5f43464db0448a57529eaf37f04ccea5',
+      value: BigInt(10 * 18),
+      data: '0x'
     }
   ],
   uniV3: [
@@ -259,5 +265,31 @@ describe('module tests', () => {
       content: 'approve(address,uint256)'
     })
     expect(asyncOps.length).toBe(0)
+  })
+
+  test('namingHumanizer', () => {
+    accountOp.calls = [...transactions.namingTransactions]
+    let ir = callsToIr(accountOp)
+    ;[ir] = genericErc20Humanizer(accountOp, ir)
+    ;[ir] = fallbackHumanizer(accountOp, ir)
+    const [{ calls: newCalls }] = namingHumanizer(accountOp, ir)
+
+    expect(newCalls.length).toBe(transactions.namingTransactions.length)
+    console.log(newCalls.map((c) => c.fullVisualization))
+    expect(newCalls[0].fullVisualization.find((v: any) => v.type === 'address')).toMatchObject({
+      type: 'address',
+      address: expect.anything(),
+      name: expect.not.stringMatching(/^0x[a-fA-F0-9]{3}\.{3}[a-fA-F0-9]{3}$/)
+    })
+    expect(newCalls[1].fullVisualization.find((v: any) => v.type === 'address')).toMatchObject({
+      type: 'address',
+      address: expect.anything(),
+      name: expect.not.stringMatching(/^0x[a-fA-F0-9]{3}\.{3}[a-fA-F0-9]{3}$/)
+    })
+    expect(newCalls[2].fullVisualization.find((v: any) => v.type === 'address')).toMatchObject({
+      type: 'address',
+      address: expect.anything(),
+      name: expect.stringMatching(/^0x[a-fA-F0-9]{3}\.{3}[a-fA-F0-9]{3}$/)
+    })
   })
 })
