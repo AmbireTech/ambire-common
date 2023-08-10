@@ -1,5 +1,6 @@
 /* eslint-disable no-await-in-loop */
-import { HumanizerFragment, Ir } from 'libs/humanizer/interfaces'
+import { ethers } from 'ethers'
+import { HumanizerFragment, Ir } from '../../libs/humanizer/interfaces'
 import { Storage } from '../../interfaces/storage'
 import { AccountOp } from '../../libs/accountOp/accountOp'
 import { genericErc20Humanizer, genericErc721Humanizer } from '../../libs/humanizer/modules/tokens'
@@ -63,7 +64,11 @@ export class HumanizerController extends EventEmitter {
     }
   }
 
-  private internalHumanization(accountOp: AccountOp): [Ir, Array<Promise<HumanizerFragment>>] {
+  private internalHumanization(_accountOp: AccountOp): [Ir, Array<Promise<HumanizerFragment>>] {
+    const accountOp = {
+      ..._accountOp,
+      calls: _accountOp.calls.map((c) => ({ ...c, to: ethers.getAddress(c.to) }))
+    }
     const humanizerModules: Function[] = [
       genericErc20Humanizer,
       genericErc721Humanizer,

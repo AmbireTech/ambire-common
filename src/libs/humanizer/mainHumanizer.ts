@@ -3,7 +3,7 @@ import { AccountOp } from '../accountOp/accountOp'
 import { genericErc20Humanizer, genericErc721Humanizer } from './modules/tokens'
 import { uniswapHumanizer } from './modules/Uniswap'
 import { IrCall, Ir, HumanizerFragment } from './interfaces'
-import { shortenAddress, getAction, getLable, getToken } from './utils'
+import { shortenAddress, getAction, getLable, getToken, getAddress } from './utils'
 
 // @TODO humanize signed messages
 
@@ -124,7 +124,7 @@ export function fallbackHumanizer(
       visualization.push(getToken(ethers.ZeroAddress, call.value))
     }
     visualization.push(getLable('to'))
-    visualization.push(getAction(call.to))
+    visualization.push(getAddress(call.to))
     return { ...call, fullVisualization: visualization }
   })
 

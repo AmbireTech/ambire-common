@@ -219,7 +219,7 @@ describe('module tests', () => {
       })
     })
   })
-  // TODO naming humanizer test
+
   test('genericErc721Humanizer', () => {
     accountOp.calls = [...transactions.erc721]
     const ir = callsToIr(accountOp)

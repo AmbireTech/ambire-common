@@ -11,11 +11,13 @@ async function getTokenInfo(
   address: string,
   fetch: Function
 ): Promise<HumanizerFragment | null> {
+  // @TODO update networks list
   const network = networks.find(
     (n: NetworkDescriptor) => n.chainId === BigInt(accountOp.networkId)
   )?.id
   try {
     // @TODO network change
+    // @TODO update to use wrapper for coingecko api (if (no key) {free api} else {paid api})
     const response = await (
       await fetch(`https://api.coingecko.com/api/v3/coins/${network}/contract/${address}`)
     ).json()
