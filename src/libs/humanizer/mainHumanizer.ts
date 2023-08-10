@@ -9,14 +9,11 @@ import { shortenAddress, getAction, getLable, getToken } from './utils'
 
 export function initHumanizerMeta(humanizerMeta: any) {
   const newHumanizerMeta: any = {}
-  Object.keys(humanizerMeta.tokens).forEach((k2) => {
-    newHumanizerMeta[`tokens:${k2}`] = humanizerMeta.tokens[k2]
-  })
-  Object.keys(humanizerMeta.abis).forEach((k2) => {
-    newHumanizerMeta[`abis:${k2}`] = humanizerMeta.abis[k2]
-  })
-  Object.keys(humanizerMeta.names).forEach((k2) => {
-    newHumanizerMeta[`names:${k2}`] = humanizerMeta.names[k2]
+  const keysToFlatten = ['tokens', 'abis', 'names']
+  keysToFlatten.forEach((k1) => {
+    Object.keys(humanizerMeta?.[k1]).forEach((k2) => {
+      newHumanizerMeta[`${k1}:${k2}`] = humanizerMeta?.[k1]?.[k2]
+    })
   })
   return {
     ...newHumanizerMeta,
