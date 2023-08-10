@@ -102,13 +102,24 @@ export class AccountAdderController extends EventEmitter {
       if (linkedAccountDuplication) {
         linkedAccountDuplication.type = 'smart'
         linkedAccountDuplication.slot = calculatedAccount.slot
-        mergedAccounts.push(linkedAccountDuplication) // adds the linked acc as a smart acc
+
+        this.#linkedAccounts.forEach((linked) => {
+          const legacyAccOnSameSlot = this.#calculatedAccounts.find(
+            (acc) => acc.slot === calculatedAccount.slot && acc.type === 'legacy'
+          )
+          if (linked.account.associatedKeys.includes(legacyAccOnSameSlot!.account.addr)) {
+            mergedAccounts.push({
+              ...linked,
+              slot: calculatedAccount.slot
+            }) // adds the linked acc
+          }
+        })
       } else if (calculatedAccount.type === 'smart') {
+        // TODO: Figure out if this is still a valid case
+
         // in case of no duplication but the curr acc is of type smart smart
         mergedAccounts.push(calculatedAccount) // adds the smart acc
-      }
 
-      if (calculatedAccount.type === 'smart') {
         this.#linkedAccounts.forEach((linked) => {
           const legacyAccOnSameSlot = this.#calculatedAccounts.find(
             (acc) => acc.slot === calculatedAccount.slot && acc.type === 'legacy'
