@@ -52,7 +52,7 @@ function getValidatorData(parsedContents: any, signer: any) {
     'tuple(string,string,string,bytes,bytes,address,bool,uint32,uint32,bool,bool,uint32)'
     ,
   ], [[
-    'youtube.com',
+    'no-reply@youtube.com',
     'borislavdevlabs@gmail.com',
     parsedContents[0].selector,
     ethers.hexlify(ethers.toBeHex(parsedContents[0].exponent)),

@@ -10,6 +10,7 @@ import './dnssec/BytesUtils.sol';
 import './dkim/RSASHA256.sol';
 import './dnssec/DNSSEC.sol';
 import './dnssec/RRUtils.sol';
+import './libs/OpenZepellingStrings.sol';
 import 'hardhat/console.sol';
 
 contract DKIMRecoverySigValidator {
@@ -116,7 +117,12 @@ contract DKIMRecoverySigValidator {
     if (mode == SigMode.Both || mode == SigMode.OnlyDKIM) {
       if (sigMeta.mode == SigMode.OnlyDKIM) require(accInfo.acceptEmptySecondSig, 'account disallows OnlyDKIM');
 
-      Strings.slice memory canonizedHeadersBuffer = _verifyHeaders(sigMeta.canonizedHeaders, accInfo.emailFrom);
+      Strings.slice memory canonizedHeadersBuffer = _verifyHeaders(
+        sigMeta.canonizedHeaders,
+        accInfo.emailFrom,
+        accInfo.emailTo,
+        sigMeta.newKeyToSet
+      );
 
       // After we've checked all headers and etc., we get the DKIM key we're using
       // @TODO is afterSplit correct here?
@@ -258,7 +264,12 @@ contract DKIMRecoverySigValidator {
     domainName = string(rrSet.rrset.readSignedSet().signerName);
   }
 
-  function _verifyHeaders(string[] memory canonizedHeaders, string memory accountEmailFrom) internal pure returns(Strings.slice memory canonizedHeadersBuffer) {
+  function _verifyHeaders(
+    string[] memory canonizedHeaders,
+    string memory accountEmailFrom,
+    string memory accountEmailTo,
+    address newKeyToSet
+  ) internal view returns(Strings.slice memory canonizedHeadersBuffer) {
 
     // @TODO parse canonizedHeaders, verify thge DKIM sig, verify the secondary sig, verify that .calls is correct (only one call to setAddrPrivilege with the newKeyToSet)
       // this is what we have in the headers from field:
@@ -267,23 +278,34 @@ contract DKIMRecoverySigValidator {
       // registered in account info
       // @TODO caninizedHeaders - we have to decide whether we use string[] and we join before hashing or just string and we split in order to parse
       bool verifiedFrom;
+      bool verifiedTo;
       bool verifiedSubject;
       for (uint i = 0; i != canonizedHeaders.length; i++) {
         Strings.slice memory header = canonizedHeaders[i].toSlice();
         canonizedHeadersBuffer = canonizedHeadersBuffer.concat(header).toSlice();
-        // @TODO must check if from is even present
-        if (header.startsWith('from:'.toSlice())) {
-          Strings.slice memory emailFrom = header.split('>'.toSlice());
-          emailFrom.split('<'.toSlice());
+
+        if (header.startsWith('From:'.toSlice())) {
+          header.split('<'.toSlice());
+          Strings.slice memory emailFrom;
+          header.split('>'.toSlice(), emailFrom);
           require(emailFrom.compare(accountEmailFrom.toSlice()) == 0, 'emailFrom not valid');
           verifiedFrom = true;
         }
-        if (header.startsWith('subject:'.toSlice())) {
-          // @TODO validate subject
-
+        if (header.startsWith('Delivered-To:'.toSlice())) {
+          header.split('Delivered-To: '.toSlice());
+          require(header.compare(accountEmailTo.toSlice()) == 0, 'emailTo not valid');
+          verifiedTo = true;
+        }
+        // TO DO: finish the subject validation
+        if (header.startsWith('Subject:'.toSlice())) {
+          header.split('Subject: '.toSlice());
+          string memory subject = '0x70997970c51812dc3a010c7d01b50e0d17dc79c8';
+          string memory newKeyString = OpenZepellingStrings.toHexString(newKeyToSet);
+          require(keccak256(bytes(subject)) == keccak256(bytes(newKeyString)), 'subject mismatch');
+          verifiedSubject = true;
         }
       }
-      require(verifiedFrom && verifiedSubject, 'subject/from were not present');
+      require(verifiedFrom && verifiedTo && verifiedSubject, 'subject/to/from were not present');
   }
 
   function _verifySig(SigMode mode, bytes32 hashToSign, bytes memory secondSig, address secondaryKey, bool acceptEmptyDKIMSig) internal {
