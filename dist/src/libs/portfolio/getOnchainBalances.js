@@ -8,7 +8,7 @@ const accountOp_1 = require("../accountOp/accountOp");
 const DEPLOYLESS_SIMULATION_FROM = '0x0000000000000000000000000000000000000001';
 const handleSimulationError = (error, beforeNonce, afterNonce) => {
     if (error !== '0x')
-        throw new SimulationError(deployless_1.parseErr(error) || error, beforeNonce, afterNonce);
+        throw new SimulationError((0, deployless_1.parseErr)(error) || error, beforeNonce, afterNonce);
     // If the afterNonce is 0, it means that we reverted, even if the error is empty
     // In both BalanceOracle and NFTOracle, afterSimulation and therefore afterNonce will be left empty
     if (afterNonce === 0n)
@@ -37,7 +37,7 @@ async function getNFTs(deployless, opts, accountAddr, tokenAddrs, limits) {
         return collections.map((token) => [token.error, mapToken(token)]);
     }
     const { accountOps, account } = opts.simulation;
-    const [factory, factoryCalldata] = account_1.getAccountDeployParams(account);
+    const [factory, factoryCalldata] = (0, account_1.getAccountDeployParams)(account);
     const [before, after, simulationErr] = await deployless.call('simulateAndGetAllNFTs', [
         accountAddr,
         tokenAddrs.map(([address]) => address),
@@ -73,7 +73,7 @@ async function getTokens(network, deployless, opts, accountAddr, tokenAddrs) {
         return results.map((token, i) => [token.error, mapToken(token, tokenAddrs[i])]);
     }
     const { accountOps, account } = opts.simulation;
-    const [factory, factoryCalldata] = account_1.getAccountDeployParams(account);
+    const [factory, factoryCalldata] = (0, account_1.getAccountDeployParams)(account);
     const [before, after, simulationErr] = await deployless.call('simulateAndGetBalances', [
         accountAddr,
         tokenAddrs,
