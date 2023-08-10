@@ -211,8 +211,8 @@ describe('HumanizerController', () => {
         },
         { type: 'lable', content: 'to' },
         {
-          type: 'action',
-          content: '0xc4Ce03B36F057591B2a360d773eDB9896255051e'
+          type: 'address',
+          address: '0xc4Ce03B36F057591B2a360d773eDB9896255051e'
         }
       ],
       [
@@ -226,7 +226,6 @@ describe('HumanizerController', () => {
         { type: 'lable', content: 'to' },
         {
           type: 'address',
-          // buy(uint256)
           address: '0xE5c783EE536cf5E63E792988335c4255169be4E1',
           name: '0xE5c...4E1'
         }
@@ -246,13 +245,12 @@ describe('HumanizerController', () => {
   })
 
   test('unknown func selector humanize with asyncop', async () => {
-    // const ir: Ir = []
     const expectedVisualizations = [
       { type: 'action', content: 'buy(uint256)' },
       { type: 'lable', content: 'to' },
       {
-        type: 'action',
-        content: '0x519856887AF544De7e67f51A4F2271521b01432b'
+        type: 'address',
+        address: '0x519856887AF544De7e67f51A4F2271521b01432b'
       }
     ]
     let iterations = 0
