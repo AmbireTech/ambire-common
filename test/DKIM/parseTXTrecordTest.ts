@@ -81,35 +81,18 @@ describe('DKIM', function () {
     expect(await dkimRecovery.getAddress()).to.not.be.null
   })
 
-  it('successfully deploy the DKIM Recovery', async function () {
-    const gmail = await readFile(path.join(emailsPath, 'youtube.eml'), {
-        encoding: 'ascii'
-    })
-    const parsedContents: any = await parseEmail(gmail)
-    const sig = parsedContents[0].solidity.signature
-    const hash = parsedContents[0].solidity.hash
-    const exponent = ethers.hexlify(ethers.toBeHex(parsedContents[0].exponent))
-    const modulus = ethers.hexlify(parsedContents[0].modulus)
-
-    const rsaSha256Other = await ethers.deployContract('RSASHA256Contract')
-    const result2 = await rsaSha256Other.verify(hash, sig, exponent, modulus)
-    expect(result2).to.be.true
-
+  it('successfully add a DNS key through addDKIMKeyWithDNSSec', async function () {
     const rrsets = ambireSets.map(([set, sig]: any) => [set, sig])
     rrsets.push(ambireTxt)
-    await dkimRecovery.addDKIMKeyWithDNSSec(rrsets);
+    await dkimRecovery.addDKIMKeyWithDNSSec(rrsets)
 
     const ambireShit = await getPublicKey({domain: 'Ambire.com', selector: 'Google'})
     const key = publicKeyToComponents(ambireShit.publicKey)
     const ambireExponent = ethers.hexlify(ethers.toBeHex(key.exponent))
     const ambireModulus = ethers.hexlify(key.modulus)
-    const domainName = 'ambirecom'
-    const dkimHash = ethers.keccak256(abiCoder.encode(['string', 'bytes', 'bytes'], [domainName, ambireModulus, ambireExponent]));
-
-    console.log('FE DATA')
-    // console.log(dkimHash)
-    console.log(ethers.hexlify(ethers.toUtf8Bytes(domainName)))
-    const isResThere = await dkimRecovery.dkimKeys(dkimHash);
-    console.log(isResThere)
-  });
+    const domainName = await dkimRecovery.getDomainNameFromSignedSet(rrsets[rrsets.length - 1])
+    const dkimHash = ethers.keccak256(abiCoder.encode(['string', 'bytes', 'bytes'], [domainName, ambireModulus, ambireExponent]))
+    const isResThere = await dkimRecovery.dkimKeys(dkimHash)
+    expect(isResThere[0]).to.be.true
+  })
 })

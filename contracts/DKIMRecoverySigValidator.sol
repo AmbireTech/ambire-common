@@ -6,19 +6,16 @@ import './libs/IAmbireAccount.sol';
 import './libs/SignatureValidator.sol';
 import './libs/Strings.sol';
 import './libs/Base64.sol';
-import './dnssec/RecordParser.sol';
 import './dnssec/BytesUtils.sol';
 import './dkim/RSASHA256.sol';
 import './dnssec/DNSSEC.sol';
 import './dnssec/RRUtils.sol';
-import 'hardhat/console.sol';
 
 contract DKIMRecoverySigValidator {
   using Strings for *;
   using RRUtils for *;
   using Base64 for *;
   using BytesUtils for *;
-  using RecordParser for *;
 
   struct DKIMKey {
     string domainName;
@@ -182,7 +179,7 @@ contract DKIMRecoverySigValidator {
 
     // In those modes, we require a timelock
     if (sigMeta.mode == SigMode.OnlySecond || sigMeta.mode == SigMode.OnlyDKIM) {
-      bool shouldExecute = checkTimelock(identifier, accInfo.onlyOneSigTimelock);
+      shouldExecute = checkTimelock(identifier, accInfo.onlyOneSigTimelock);
       if (!shouldExecute) return false;
     }
 
@@ -201,9 +198,6 @@ contract DKIMRecoverySigValidator {
     require(keccak256(rrset.signerName) == keccak256(bytes(domainName)), 'DNSSec verification failed');
 
     bytes32 id = keccak256(abi.encode(key.domainName, key.pubKeyModulus, key.pubKeyExponent));
-    // console.logBytes32(id);
-    console.log('be data');
-    console.logBytes(bytes(key.domainName));
 
     KeyInfo storage keyInfo = dkimKeys[id];
     require(!keyInfo.isExisting, 'key already exists');
@@ -219,30 +213,17 @@ contract DKIMRecoverySigValidator {
   }
 
   function parse(RRUtils.SignedSet memory txtSet) internal pure returns (DKIMKey memory key, string memory domainName) {
-    // TODO: Discuss and check which is more efficient
-    // the below two lines produce the same result as the loop afterwards
-    // Strings.slice memory publicKey = string(txtSet.data).toSlice();
-    // publicKey.split('p='.toSlice());
-
-    uint offset = 0;
-    bytes memory pValue;
-    while (offset < txtSet.data.length) {
-      (bytes memory dataKey, bytes memory value, uint256 nextOffset) = txtSet.data.readKeyValue(offset, txtSet.data.length - offset);
-      offset = nextOffset;
-
-      if (keccak256(dataKey) == keccak256('p')) {
-        pValue = value;
-      }
-    }
+    Strings.slice memory publicKey = string(txtSet.data).toSlice();
+    publicKey.split('p='.toSlice());
+    bytes memory pValue = bytes(publicKey.toString());
 
     string memory pValueOrg = string(pValue);
-
-    // TO DO: make it a recurssion
     uint256 offsetOfInvalidUnicode = pValue.find(0, pValue.length, 0x9b);
-    if (offsetOfInvalidUnicode != type(uint256).max) {
+    while (offsetOfInvalidUnicode != type(uint256).max) {
       bytes memory firstPartOfKey = pValue.substring(0, offsetOfInvalidUnicode);
       bytes memory secondPartOfKey = pValue.substring(offsetOfInvalidUnicode + 1, pValue.length - 1 - offsetOfInvalidUnicode);
       pValueOrg = string(firstPartOfKey).toSlice().concat(string(secondPartOfKey).toSlice());
+      offsetOfInvalidUnicode = bytes(pValueOrg).find(0, bytes(pValueOrg).length, 0x9b);
     }
 
     bytes memory decoded = string(pValueOrg).decode();
@@ -270,7 +251,7 @@ contract DKIMRecoverySigValidator {
     Strings.slice memory canonizedHeadersBuffer,
     bytes memory dkimSig,
     DKIMKey memory key
-  ) internal returns (bool) {
+  ) internal view returns (bool) {
     bytes32 dkimHash = sha256(bytes(canonizedHeadersBuffer.toString()));
     require(
       RSASHA256.verify(dkimHash, dkimSig, key.pubKeyExponent, key.pubKeyModulus),
@@ -300,5 +281,9 @@ contract DKIMRecoverySigValidator {
       timelock.isExecuted = true;
       return true;
     }
+  }
+
+  function getDomainNameFromSignedSet(DNSSEC.RRSetWithSignature memory rrSet) public pure returns(string memory domainName) {
+    domainName = string(rrSet.rrset.readSignedSet().signerName);
   }
 }
