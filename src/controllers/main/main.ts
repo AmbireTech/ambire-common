@@ -102,7 +102,6 @@ export class MainController extends EventEmitter {
     // @TODO error handling here
     this.accountStates = await this.getAccountsInfo(this.accounts)
     this.isReady = true
-    this.emitUpdate()
 
     const addReadyToAddAccountsIfNeeded = () => {
       if (!this.accountAdder.readyToAddAccounts.length) return
@@ -111,6 +110,8 @@ export class MainController extends EventEmitter {
       this.accountAdder.reset()
     }
     this.accountAdder.onUpdate(addReadyToAddAccountsIfNeeded)
+
+    this.emitUpdate()
   }
 
   private async getAccountsInfo(accounts: Account[]): Promise<AccountStates> {
