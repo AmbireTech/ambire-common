@@ -9,10 +9,11 @@ import path from 'path'
 import parseEmail from '../../src/libs/dkim/parseEmail'
 import getPublicKey from '../../src/libs/dkim/getPublicKey'
 import publicKeyToComponents from '../../src/libs/dkim/publicKeyToComponents'
+import { wrapEthSign, wrapExternallyValidated } from '../ambireSign'
+import { getPriviledgeTxn } from '../helpers'
 const readFile = promisify(fs.readFile)
 const emailsPath = path.join(__dirname, 'emails')
 
-let ambireAccountAddress: string
 const ambireSets = [
   [
     '0x003008000002a30064e2a90064c6f9804f660000003000010002a30001080100030803010001c12d59ab483b77b17cddc0f969d997b01510103772b46baf02937e799c74bb7bf42dc308e175257e736f8b3ce2fd0ec7094e560f9347c56992e6329cca773d05cba262f17bb8fb3e5c6a101a352d06967eacb2982b85eeb29e6d32c1e7265cafcfd050fc24ff078bca0b97ea254d0e32193a678ca8f90626d0c5a7e1147ca80e6bc02e94a3cbb6c50bd56fb5153f2caaba12c4a5d55e78641193753b5cc1c531bfcfdc63c223dc777fff2d23d4a440bdfab5365c8b8226af27c00c09ed6e91738f51c544f44af739ec72aa1e336e6a9bc6d0f0988776d7090cdbee66f6a4dc2e7ab3054f33f9884cd75990fb8b32e0f63df0109d886bf58812db3f4e9f46210300003000010002a30001080101030803010001acffb409bcc939f831f7a1e5ec88f7a59255ec53040be432027390a4ce896d6f9086f3c5e177fbfe118163aaec7af1462c47945944c4e2c026be5e98bbcded25978272e1e3e079c5094d573f0e83c92f02b32d3513b1550b826929c80dd0f92cac966d17769fd5867b647c3f38029abdc48152eb8f207159ecc5d232c7c1537c79f4b7ac28ff11682f21681bf6d6aba555032bf6f9f036beb2aaa5b3778d6eebfba6bf9ea191be4ab0caea759e2f773a1f9029c73ecb8d5735b9321db085f1b8e2d8038fe2941992548cee0d67dd4547e11dd63af9c9fc1c5466fb684cf009d7197c2cf79e792ab501e6a8a1ca519af2cb9b5f6367e94c0d47502451357be1b5',
@@ -37,8 +38,8 @@ const ambireSets = [
 ]
 
 const ambireTxt = [
-  '0x00100d040000012c64d454ac64d1958c86c906616d6269726503636f6d0006676f6f676c650a5f646f6d61696e6b657906616d6269726503636f6d00001000010000012c019cff763d444b494d313b206b3d7273613b20703d4d494942496a414e42676b71686b6947397730424151454641414f43415138414d49494243674b434151454131726736375a74746c45306f587954523859507749615a54686a3455617a6e442b4d36446a34517352753873526f5050526843326269775050396f4d73453076363753676c5252496e596b6f6436396d414d557374706d776b49685577723377757a685a4663344945487673517849487a35754a497977567a646672527a7851776558612b6867444a533557756f7a654e6b6831686b686538472b4365564b7453375479734a314f6d43707a3643453634474935724a5a6a46306254714c6137589b73716d6e6469676a5132747055324e475a676c6166517171682b53363330465835704c5a386b6e56355533326e684545336d677377706c57496944496d456d51523879366e556a75646b4f57365749396670517343726b436969684a73374b72395165334a7568594767677132327448563235757632584c36374c48675575435a6f78705a714a76374c4c4f62514d6a5176307051494441514142',
-  '0xf9f1dd4966ddb0ba2cade9dc84b443d14dea173fbc982c65bd905c6b3a64783c687fe96b4d02113a526c3ae66ec7bebcab60f49f5783e7c358c1e1b8da2f9bb3'
+  '0x00100d040000012c64d5ccdf64d30dbf86c906616d6269726503636f6d0006676f6f676c650a5f646f6d61696e6b657906616d6269726503636f6d00001000010000012c019cff763d444b494d313b206b3d7273613b20703d4d494942496a414e42676b71686b6947397730424151454641414f43415138414d49494243674b434151454131726736375a74746c45306f587954523859507749615a54686a3455617a6e442b4d36446a34517352753873526f5050526843326269775050396f4d73453076363753676c5252496e596b6f6436396d414d557374706d776b49685577723377757a685a4663344945487673517849487a35754a497977567a646672527a7851776558612b6867444a533557756f7a654e6b6831686b686538472b4365564b7453375479734a314f6d43707a3643453634474935724a5a6a46306254714c6137589b73716d6e6469676a5132747055324e475a676c6166517171682b53363330465835704c5a386b6e56355533326e684545336d677377706c57496944496d456d51523879366e556a75646b4f57365749396670517343726b436969684a73374b72395165334a7568594767677132327448563235757632584c36374c48675575435a6f78705a714a76374c4c4f62514d6a5176307051494441514142',
+  '0x1a0161196b9186a98ecedf3633b1d5130d2519475f4c67be62ef57071425faf14f6fbc96f0df7c1688264eca470abc0421ec1e005a51c0bfdf6506bbb440bbbf'
 ]
 
 function hexEncodeSignedSet(rrs: any, sig: any) {
@@ -46,15 +47,44 @@ function hexEncodeSignedSet(rrs: any, sig: any) {
   return [ss.toWire(), ss.signature.data.signature]
 }
 
+function getValidatorData(parsedContents: any, signer: any) {
+  return abiCoder.encode([
+    'tuple(string,string,string,bytes,bytes,address,bool,uint32,uint32,bool,bool,uint32)'
+    ,
+  ], [[
+    'youtube.com',
+    'borislavdevlabs@gmail.com',
+    parsedContents[0].selector,
+    ethers.hexlify(ethers.toBeHex(parsedContents[0].exponent)),
+    ethers.hexlify(parsedContents[0].modulus),
+    signer.address,
+    false,
+    0,
+    0,
+    false,
+    false,
+    0,
+  ]])
+}
+
+function getSignerKey(validatorAddr: any, validatorData: any) {
+  const hash = ethers.keccak256(abiCoder.encode(['address', 'bytes'], [validatorAddr, validatorData]))
+  const signerKey = `0x${hash.slice(hash.length - 40, hash.length)}`
+  return {signerKey, hash}
+}
+
+async function getLatestSignature() {
+  const res = await lookup()
+  const set = hexEncodeSignedSet(res.answer.records, res.answer.signature)
+  console.log(ethers.hexlify(set[0]))
+  console.log(ethers.hexlify(set[1]))
+}
+
 let dkimRecovery: any
+let ambireAccountAddress: string
+let account: any
+
 describe('DKIM', function () {
-  it('successfully deploys the ambire account', async function () {
-    const [signer] = await ethers.getSigners()
-    const { ambireAccountAddress: addr } = await deployAmbireAccountHardhatNetwork([
-      { addr: signer.address, hash: true }
-    ])
-    ambireAccountAddress = addr
-  })
   it('successfully deploy the DKIM Recovery', async function () {
     const [signer] = await ethers.getSigners()
 
@@ -81,6 +111,21 @@ describe('DKIM', function () {
     expect(await dkimRecovery.getAddress()).to.not.be.null
   })
 
+  it('successfully deploys the ambire account', async function () {
+    const [relayer] = await ethers.getSigners()
+    const gmail = await readFile(path.join(emailsPath, 'youtube.eml'), {
+      encoding: 'ascii'
+    })
+    const parsedContents: any = await parseEmail(gmail)
+    const validatorData = getValidatorData(parsedContents, relayer)
+    const {signerKey, hash} = getSignerKey(await dkimRecovery.getAddress(), validatorData)
+    const { ambireAccount, ambireAccountAddress: addr } = await deployAmbireAccountHardhatNetwork([
+      { addr: signerKey, hash: hash }
+    ])
+    ambireAccountAddress = addr
+    account = ambireAccount
+  })
+
   it('successfully add a DNS key through addDKIMKeyWithDNSSec', async function () {
     const rrsets = ambireSets.map(([set, sig]: any) => [set, sig])
     rrsets.push(ambireTxt)
@@ -94,5 +139,50 @@ describe('DKIM', function () {
     const dkimHash = ethers.keccak256(abiCoder.encode(['string', 'bytes', 'bytes'], [domainName, ambireModulus, ambireExponent]))
     const isResThere = await dkimRecovery.dkimKeys(dkimHash)
     expect(isResThere[0]).to.be.true
+  })
+
+  it('successfully validate a DKIM signature', async function () {
+    const [relayer, newSigner] = await ethers.getSigners()
+    const gmail = await readFile(path.join(emailsPath, 'youtube.eml'), {
+      encoding: 'ascii'
+    })
+    const parsedContents: any = await parseEmail(gmail)
+    const validatorData = getValidatorData(parsedContents, relayer)
+    const validatorAddr = await dkimRecovery.getAddress()
+    const {signerKey} = getSignerKey(validatorAddr, validatorData)
+    const dkimSig = parsedContents[0].solidity.signature
+
+    const txns = [getPriviledgeTxn(ambireAccountAddress, newSigner.address, true)]
+    const msgHash = ethers.keccak256(
+      abiCoder.encode(
+        ['address', 'uint', 'uint', 'tuple(address, uint, bytes)[]'],
+        [ambireAccountAddress, 31337, 0, txns]
+      )
+    )
+    const msg = ethers.getBytes(msgHash)
+    const secondSig = wrapEthSign(await relayer.signMessage(msg))
+    const innerSig = abiCoder.encode([
+      'tuple(uint8, tuple(string, bytes, bytes), string[], address, bytes32)',
+      'bytes',
+      'bytes'
+    ], [
+      [
+        ethers.toBeHex(0, 1),
+        [
+          'youtube.com',
+          ethers.hexlify(parsedContents[0].modulus),
+          ethers.hexlify(ethers.toBeHex(parsedContents[0].exponent)),
+        ],
+        parsedContents[0].headers,
+        newSigner.address,
+        ethers.toBeHex(1, 32)
+      ],
+      dkimSig,
+      secondSig
+    ])
+    const sig = abiCoder.encode(['address', 'address', 'bytes', 'bytes'], [signerKey, validatorAddr, validatorData, innerSig])
+    const finalSig = wrapExternallyValidated(sig)
+    const validation = await account.execute(txns, finalSig)
+    console.log(validation)
   })
 })

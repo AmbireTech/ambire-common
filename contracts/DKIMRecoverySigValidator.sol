@@ -10,6 +10,7 @@ import './dnssec/BytesUtils.sol';
 import './dkim/RSASHA256.sol';
 import './dnssec/DNSSEC.sol';
 import './dnssec/RRUtils.sol';
+import 'hardhat/console.sol';
 
 contract DKIMRecoverySigValidator {
   using Strings for *;
@@ -97,46 +98,25 @@ contract DKIMRecoverySigValidator {
     uint nonce,
     IAmbireAccount.Transaction[] calldata calls
   ) external returns (bool shouldExecute) {
-    (AccInfo memory accInfo) = abi.decode(data, (AccInfo));
+
+    AccInfo memory accInfo = abi.decode(data, (AccInfo));
+
     (SignatureMeta memory sigMeta, bytes memory dkimSig, bytes memory secondSig) = abi.decode(sig, (SignatureMeta, bytes, bytes));
-    bytes32 identifier = keccak256(abi.encode(accountAddr, accInfo, sigMeta));
+    bytes32 identifier = keccak256(abi.encode(accountAddr, data, sigMeta));
     require(!recoveries[identifier], 'recovery already done');
 
     // Validate the calls: we only allow setAddrPrivilege for the pre-set newKeyToSet and newPrivilegeValue
     require(calls.length == 1, 'calls length must be 1');
-    require(calls[0].value == 0, 'call value must be 0');
-    require(calls[0].to == accountAddr, 'call to must be the account');
-    require(keccak256(calls[0].data) == keccak256(abi.encodeWithSelector(IAmbireAccount.setAddrPrivilege.selector, sigMeta.newKeyToSet, sigMeta.newPrivilegeValue)));
+    IAmbireAccount.Transaction memory txn = calls[0];
+    require(txn.value == 0, 'call value must be 0');
+    require(txn.to == accountAddr, 'call to must be the account');
+    require(keccak256(txn.data) == keccak256(abi.encodeWithSelector(IAmbireAccount.setAddrPrivilege.selector, sigMeta.newKeyToSet, sigMeta.newPrivilegeValue)));
 
-    if (sigMeta.mode == SigMode.Both || sigMeta.mode == SigMode.OnlyDKIM) {
+    SigMode mode = sigMeta.mode;
+    if (mode == SigMode.Both || mode == SigMode.OnlyDKIM) {
       if (sigMeta.mode == SigMode.OnlyDKIM) require(accInfo.acceptEmptySecondSig, 'account disallows OnlyDKIM');
 
-      // @TODO parse canonizedHeaders, verify thge DKIM sig, verify the secondary sig, verify that .calls is correct (only one call to setAddrPrivilege with the newKeyToSet)
-      // this is what we have in the headers from field:
-      // from:Name Surname <email@provider.com>
-      // we split from "from" to ">" and check if the email is
-      // registered in account info
-      // @TODO caninizedHeaders - we have to decide whether we use string[] and we join before hashing or just string and we split in order to parse
-      Strings.slice memory canonizedHeadersBuffer;
-      bool verifiedFrom;
-      bool verifiedSubject;
-      for (uint i = 0; i != sigMeta.canonizedHeaders.length; i++) {
-        Strings.slice memory header = sigMeta.canonizedHeaders[i].toSlice();
-        canonizedHeadersBuffer = canonizedHeadersBuffer.concat(header).toSlice();
-        // @TODO must check if from is even present
-        if (header.startsWith('from:'.toSlice())) {
-          Strings.slice memory emailFrom = header.split('>'.toSlice());
-          emailFrom.split('<'.toSlice());
-          require(emailFrom.compare(accInfo.emailFrom.toSlice()) == 0, 'emailFrom not valid');
-          verifiedFrom = true;
-        }
-        if (header.startsWith('subject:'.toSlice())) {
-          // @TODO validate subject
-
-        }
-      }
-      require(verifiedFrom && verifiedSubject, 'subject/from were not present');
-
+      Strings.slice memory canonizedHeadersBuffer = _verifyHeaders(sigMeta.canonizedHeaders, accInfo.emailFrom);
 
       // After we've checked all headers and etc., we get the DKIM key we're using
       // @TODO is afterSplit correct here?
@@ -148,43 +128,47 @@ contract DKIMRecoverySigValidator {
         .concat(emailDomain);
 
       DKIMKey memory key = sigMeta.key;
+      bytes memory pubKeyExponent = key.pubKeyExponent;
+      bytes memory pubKeyModulus = key.pubKeyModulus;
       if (! (
           keccak256(abi.encodePacked(domainName)) == keccak256(abi.encodePacked(key.domainName)) &&
-          keccak256(accInfo.dkimPubKeyExponent) == keccak256(key.pubKeyExponent) &&
-          keccak256(accInfo.dkimPubKeyModulus) == keccak256(key.pubKeyModulus)
+          keccak256(accInfo.dkimPubKeyExponent) == keccak256(pubKeyExponent) &&
+          keccak256(accInfo.dkimPubKeyModulus) == keccak256(pubKeyModulus)
         )) {
-        bytes32 keyId = keccak256(abi.encode(sigMeta.key));
+        bytes32 keyId = keccak256(abi.encode(key));
         // @TODO we need to validate sigMeta.key.domainName against the email from `from`:
         require(accInfo.acceptUnknownSelectors, 'account does not allow unknown selectors');
         KeyInfo storage keyInfo = dkimKeys[keyId];
         require(keyInfo.isExisting, 'non-existant DKIM key');
-        require(keyInfo.dateRemoved == 0 || block.timestamp < keyInfo.dateRemoved + accInfo.waitUntilAcceptRemoved, 'DKIM key revoked');
+        uint32 dateRemoved = keyInfo.dateRemoved;
+        require(dateRemoved == 0 || block.timestamp < dateRemoved + accInfo.waitUntilAcceptRemoved, 'DKIM key revoked');
         require(block.timestamp >= keyInfo.dateAdded + accInfo.waitUntilAcceptAdded, 'DKIM key not added yet');
       }
 
       // @TODO: VALIDATE TO FIELD
       // @TODO validate subject; this is one of the most important validations, as it will contain the `newKeyToSet`
-      verify(canonizedHeadersBuffer, dkimSig, key);
+      // verify(canonizedHeadersBuffer, dkimSig, key);
+      require(
+        RSASHA256.verify(sha256(bytes(canonizedHeadersBuffer.toString())), dkimSig, pubKeyExponent, pubKeyModulus),
+        'DKIM signature verification failed'
+      );
     }
 
-    bytes32 hashToSign;
-    if (sigMeta.mode == SigMode.Both || sigMeta.mode == SigMode.OnlySecond) {
-      if (sigMeta.mode == SigMode.OnlySecond) require(accInfo.acceptEmptyDKIMSig, 'account disallows OnlySecond');
-        // @TODO should spoofing be allowed
-        require(
-          SignatureValidator.recoverAddrImpl(hashToSign, secondSig, true) == accInfo.secondaryKey,
-          'second key validation failed'
-        );
-    }
+    _verifySig(
+      mode,
+      keccak256(abi.encode(address(accountAddr), block.chainid, nonce, calls)),
+      secondSig,
+      accInfo.secondaryKey,
+      accInfo.acceptEmptyDKIMSig
+    );
 
     // In those modes, we require a timelock
-    if (sigMeta.mode == SigMode.OnlySecond || sigMeta.mode == SigMode.OnlyDKIM) {
+    if (mode == SigMode.OnlySecond || mode == SigMode.OnlyDKIM) {
       shouldExecute = checkTimelock(identifier, accInfo.onlyOneSigTimelock);
-      if (!shouldExecute) return false;
+      if (!shouldExecute) return shouldExecute;
     }
 
     recoveries[identifier] = true;
-    return true;
   }
 
   function addDKIMKeyWithDNSSec(DNSSEC.RRSetWithSignature[] memory rrSets) public {
@@ -247,19 +231,6 @@ contract DKIMRecoverySigValidator {
     dkimKeys[id].dateRemoved = uint32(block.timestamp);
   }
 
-  function verify(
-    Strings.slice memory canonizedHeadersBuffer,
-    bytes memory dkimSig,
-    DKIMKey memory key
-  ) internal view returns (bool) {
-    bytes32 dkimHash = sha256(bytes(canonizedHeadersBuffer.toString()));
-    require(
-      RSASHA256.verify(dkimHash, dkimSig, key.pubKeyExponent, key.pubKeyModulus),
-      'DKIM signature verification failed'
-    );
-    return true;
-  }
-
   //
   // Timelock
   //
@@ -285,5 +256,45 @@ contract DKIMRecoverySigValidator {
 
   function getDomainNameFromSignedSet(DNSSEC.RRSetWithSignature memory rrSet) public pure returns(string memory domainName) {
     domainName = string(rrSet.rrset.readSignedSet().signerName);
+  }
+
+  function _verifyHeaders(string[] memory canonizedHeaders, string memory accountEmailFrom) internal pure returns(Strings.slice memory canonizedHeadersBuffer) {
+
+    // @TODO parse canonizedHeaders, verify thge DKIM sig, verify the secondary sig, verify that .calls is correct (only one call to setAddrPrivilege with the newKeyToSet)
+      // this is what we have in the headers from field:
+      // from:Name Surname <email@provider.com>
+      // we split from "from" to ">" and check if the email is
+      // registered in account info
+      // @TODO caninizedHeaders - we have to decide whether we use string[] and we join before hashing or just string and we split in order to parse
+      bool verifiedFrom;
+      bool verifiedSubject;
+      for (uint i = 0; i != canonizedHeaders.length; i++) {
+        Strings.slice memory header = canonizedHeaders[i].toSlice();
+        canonizedHeadersBuffer = canonizedHeadersBuffer.concat(header).toSlice();
+        // @TODO must check if from is even present
+        if (header.startsWith('from:'.toSlice())) {
+          Strings.slice memory emailFrom = header.split('>'.toSlice());
+          emailFrom.split('<'.toSlice());
+          require(emailFrom.compare(accountEmailFrom.toSlice()) == 0, 'emailFrom not valid');
+          verifiedFrom = true;
+        }
+        if (header.startsWith('subject:'.toSlice())) {
+          // @TODO validate subject
+
+        }
+      }
+      require(verifiedFrom && verifiedSubject, 'subject/from were not present');
+  }
+
+  function _verifySig(SigMode mode, bytes32 hashToSign, bytes memory secondSig, address secondaryKey, bool acceptEmptyDKIMSig) internal {
+    if (mode == SigMode.Both || mode == SigMode.OnlySecond) {
+      if (mode == SigMode.OnlySecond) require(acceptEmptyDKIMSig, 'account disallows OnlySecond');
+
+      // @TODO should spoofing be allowed
+      require(
+        SignatureValidator.recoverAddrImpl(hashToSign, secondSig, true) == secondaryKey,
+        'second key validation failed'
+      );
+    }
   }
 }
