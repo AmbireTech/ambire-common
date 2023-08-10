@@ -12,15 +12,11 @@ const HUMANIZER_META_KEY = 'HumanizerMeta'
 
 // @TODO add proper error messages everywhere
 export class HumanizerController extends EventEmitter {
-  #currentIr: Ir = { calls: [] }
+  ir: Ir = { calls: [] }
 
   #storage: Storage
 
   #fetch: Function
-
-  get ir() {
-    return this.#currentIr
-  }
 
   constructor(storage: Storage, fetch: Function) {
     super()
@@ -39,7 +35,7 @@ export class HumanizerController extends EventEmitter {
 
     for (let i = 0; i <= 3; i++) {
       const [ir, asyncOps] = this.internalHumanization(accountOp)
-      this.#currentIr = ir
+      this.ir = ir
       this.emitUpdate()
       if (!asyncOps.length) return
       const fragments = await Promise.all(asyncOps)
