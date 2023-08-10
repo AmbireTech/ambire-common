@@ -174,6 +174,13 @@ const transactions = {
       value: BigInt(0),
       data: '0x5ae401dc0000000000000000000000000000000000000000000000000000000064c233bf000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000012409b8134600000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000080000000000000000000000000b674f3fd5f43464db0448a57529eaf37f04ccea50000000000000000000000000000000000000000000000056bc75e2d63100000000000000000000000000000000000000000000000000025faff1f58be30f6ec00000000000000000000000000000000000000000000000000000000000000426b175474e89094c44da98b954eedeac495271d0f000064dac17f958d2ee523a2206206994597c13d831ec7000bb8ade00c28244d5ce17d72e40330b1c318cd12b7c300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000'
     }
+  ],
+  unknownFuncSelector: [
+    {
+      to: '0x519856887AF544De7e67f51A4F2271521b01432b',
+      value: BigInt(0),
+      data: '0xd96a094a0000000000000000000000000000000000000000000000000000000064c233bf'
+    }
   ]
 }
 
@@ -192,7 +199,7 @@ describe('HumanizerController', () => {
     expect(hc.ir).toEqual({ calls: [] })
   })
 
-  test('Humanize', async () => {
+  test('generic humanize', async () => {
     // const ir: Ir = []
     const expectedVisualizations = [
       [
@@ -219,6 +226,7 @@ describe('HumanizerController', () => {
         { type: 'lable', content: 'to' },
         {
           type: 'address',
+          // buy(uint256)
           address: '0xE5c783EE536cf5E63E792988335c4255169be4E1',
           name: '0xE5c...4E1'
         }
@@ -226,7 +234,6 @@ describe('HumanizerController', () => {
     ]
     const onUpdate = jest.fn(() => {
       hc.ir.calls.forEach((c, i) => {
-        console.log(c.fullVisualization)
         c.fullVisualization.forEach((v: any, j: number) => {
           expect(v).toMatchObject(expectedVisualizations[i][j])
         })
@@ -236,5 +243,37 @@ describe('HumanizerController', () => {
     hc.onUpdate(onUpdate)
     await hc.humanize(accountOp)
     expect(onUpdate).toHaveBeenCalledTimes(1)
+  })
+
+  test('unknown func selector humanize with asyncop', async () => {
+    // const ir: Ir = []
+    const expectedVisualizations = [
+      { type: 'action', content: 'buy(uint256)' },
+      { type: 'lable', content: 'to' },
+      {
+        type: 'action',
+        content: '0x519856887AF544De7e67f51A4F2271521b01432b'
+      }
+    ]
+    let iterations = 0
+    const onUpdate = jest.fn(() => {
+      if (iterations === 0) {
+        expect(hc.ir.calls[0].fullVisualization.length).toBe(1)
+        expect(hc.ir.calls[0].fullVisualization[0]).toMatchObject({
+          type: 'action',
+          content: 'Unknown action'
+        })
+      } else if (iterations === 1) {
+        expect(hc.ir.calls[0].fullVisualization.length).toBe(3)
+        hc.ir.calls[0].fullVisualization.forEach((v: any, i: number) =>
+          expect(v).toMatchObject(expectedVisualizations[i])
+        )
+      }
+      iterations += 1
+    })
+    accountOp.calls = [...transactions.unknownFuncSelector]
+    hc.onUpdate(onUpdate)
+    await hc.humanize(accountOp)
+    expect(onUpdate).toHaveBeenCalledTimes(2)
   })
 })
