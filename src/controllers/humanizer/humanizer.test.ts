@@ -23,6 +23,9 @@ export function produceMemoryStore(): Storage {
     }
   }
 }
+
+const humanizerMeta = initHumanizerMeta(humanizerJSON)
+
 const accountOp: AccountOp = {
   accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
   networkId: '1',
@@ -175,12 +178,63 @@ const transactions = {
 }
 
 describe('HumanizerController', () => {
-  test('init HumanizerController', async () => {
-    const storage = produceMemoryStore()
-    const humanizerMeta = initHumanizerMeta(humanizerJSON)
-    await storage.set(HUMANIZER_META_KEY, humanizerMeta)
-    const hc = new HumanizerController(storage, fetch)
+  let storage: Storage
 
+  let hc: HumanizerController
+  beforeEach(async () => {
+    storage = produceMemoryStore()
+    await storage.set(HUMANIZER_META_KEY, humanizerMeta)
+    accountOp.calls = []
+    hc = new HumanizerController(storage, fetch)
+    accountOp.humanizerMeta = initHumanizerMeta(humanizerJSON)
+  })
+  test('init HumanizerController', async () => {
     expect(hc.ir).toEqual({ calls: [] })
+  })
+
+  test('Humanize', async () => {
+    // const ir: Ir = []
+    const expectedVisualizations = [
+      [
+        { type: 'action', content: 'Sending' },
+        {
+          type: 'token',
+          address: '0x0000000000000000000000000000000000000000',
+          amount: 1000000000000000000n
+        },
+        { type: 'lable', content: 'to' },
+        {
+          type: 'action',
+          content: '0xc4Ce03B36F057591B2a360d773eDB9896255051e'
+        }
+      ],
+      [
+        { type: 'action', content: 'Grant approval' },
+        { type: 'lable', content: 'for' },
+        {
+          type: 'nft',
+          address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2'
+          // id: 115792089237316195423570985008687907853269984665640564039457584007913129639935n
+        },
+        { type: 'lable', content: 'to' },
+        {
+          type: 'address',
+          address: '0xE5c783EE536cf5E63E792988335c4255169be4E1',
+          name: '0xE5c...4E1'
+        }
+      ]
+    ]
+    const onUpdate = jest.fn(() => {
+      hc.ir.calls.forEach((c, i) => {
+        console.log(c.fullVisualization)
+        c.fullVisualization.forEach((v: any, j: number) => {
+          expect(v).toMatchObject(expectedVisualizations[i][j])
+        })
+      })
+    })
+    accountOp.calls = [...transactions.generic]
+    hc.onUpdate(onUpdate)
+    await hc.humanize(accountOp)
+    expect(onUpdate).toHaveBeenCalledTimes(1)
   })
 })

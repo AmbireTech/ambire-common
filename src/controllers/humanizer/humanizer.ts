@@ -28,10 +28,14 @@ export class HumanizerController extends EventEmitter {
   }
 
   public async humanize(_accountOp: AccountOp) {
-    const accountOp = {
+    const accountOp: AccountOp = {
       ..._accountOp,
-      humanizerMeta: { ..._accountOp.humanizerMeta, ...this.#storage.get(HUMANIZER_META_KEY, {}) }
+      humanizerMeta: {
+        ..._accountOp.humanizerMeta,
+        ...(await this.#storage.get(HUMANIZER_META_KEY, {}))
+      }
     }
+
     for (let i = 0; i <= 3; i++) {
       const [ir, asyncOps] = this.internalHumanization(accountOp)
       this.#currentIr = ir
@@ -60,14 +64,13 @@ export class HumanizerController extends EventEmitter {
   }
 
   private internalHumanization(accountOp: AccountOp): [Ir, Array<Promise<HumanizerFragment>>] {
-    const humanizerModules = [
+    const humanizerModules: Function[] = [
       genericErc20Humanizer,
       genericErc721Humanizer,
       uniswapHumanizer,
       namingHumanizer,
       fallbackHumanizer
     ]
-
     const options = { fetch: this.#fetch }
     let currentIr: Ir = callsToIr(accountOp)
     let asyncOps: any[] = []

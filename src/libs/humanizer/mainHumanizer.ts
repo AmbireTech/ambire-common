@@ -9,12 +9,18 @@ import { shortenAddress, getAction, getLable, getToken } from './utils'
 
 export function initHumanizerMeta(humanizerMeta: any) {
   const newHumanizerMeta: any = {}
-  const keysToFlatten = ['tokens', 'abis', 'names']
-  keysToFlatten.forEach((k1) => {
-    Object.keys(humanizerMeta?.[k1]).forEach((k2) => {
-      newHumanizerMeta[`${k1}:${k2}`] = humanizerMeta?.[k1]?.[k2]
-    })
+
+  Object.keys(humanizerMeta?.tokens).forEach((k2) => {
+    newHumanizerMeta[`tokens:${ethers.getAddress(k2)}`] = humanizerMeta.tokens?.[k2]
   })
+  Object.keys(humanizerMeta?.abis).forEach((k2) => {
+    newHumanizerMeta[`abis:${k2}`] = humanizerMeta.abis?.[k2]
+  })
+
+  Object.keys(humanizerMeta?.names).forEach((k2) => {
+    newHumanizerMeta[`names:${ethers.getAddress(k2)}`] = humanizerMeta.names?.[k2]
+  })
+
   return {
     ...newHumanizerMeta,
     yearnVaults: humanizerMeta.yearnVaults,
@@ -49,10 +55,10 @@ export function namingHumanizer(
             // in case of more sophisticated name resolutions
             // new name function so it can be getName() || shortenAddress() ????????
             name:
-              accountOp.humanizerMeta?.[`names:${v.address.toLowerCase()}`] ||
-              (accountOp.humanizerMeta?.[`tokens:${v.address.toLowerCase()}`]
-                ? accountOp.humanizerMeta?.[`names:${v.address.toLowerCase()}`] ||
-                  `${accountOp.humanizerMeta?.[`tokens:${v.address.toLowerCase()}`]?.[0]} contract`
+              accountOp.humanizerMeta?.[`names:${v.address}`] ||
+              (accountOp.humanizerMeta?.[`tokens:${v.address}`]
+                ? accountOp.humanizerMeta?.[`names:${v.address}`] ||
+                  `${accountOp.humanizerMeta?.[`tokens:${v.address}`]?.[0]} contract`
                 : null) ||
               shortenAddress(v.address)
           }
@@ -91,7 +97,7 @@ const checkIfUnknowAction = (v: Array<any>) => {
   }
   return false
 }
-// goes over all transactions to provide basic visuzlization
+
 export function fallbackHumanizer(
   accountOp: AccountOp,
   currentIr: Ir,
