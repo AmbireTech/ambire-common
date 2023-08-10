@@ -104,7 +104,11 @@ export class MainController extends EventEmitter {
     this.isReady = true
 
     const addReadyToAddAccountsIfNeeded = () => {
-      if (!this.accountAdder.readyToAddAccounts.length) return
+      if (
+        !this.accountAdder.readyToAddAccounts.length &&
+        this.accountAdder.addAccountsStatus.type !== 'SUCCESS'
+      )
+        return
 
       this.addAccounts(this.accountAdder.readyToAddAccounts)
       this.accountAdder.reset()
