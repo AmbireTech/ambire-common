@@ -109,30 +109,43 @@ describe('DKIM sigMode Both', function () {
     )
     const msg = ethers.getBytes(msgHash)
     const secondSig = wrapEthSign(await relayer.signMessage(msg))
-    const innerSig = abiCoder.encode([
-      'tuple(uint8, tuple(string, bytes, bytes), string, address, bytes32)',
-      'bytes',
-      'bytes'
-    ], [
+    const sigMetaTuple = 'tuple(uint8, tuple(string, bytes, bytes), string, address, bytes32)'
+    const sigMetaValues = [
+      ethers.toBeHex(0, 1),
       [
-        ethers.toBeHex(0, 1),
-        [
-          `${parsedContents[0].selector}._domainKey.gmail.com`,
-          ethers.hexlify(parsedContents[0].modulus),
-          ethers.hexlify(ethers.toBeHex(parsedContents[0].exponent)),
-        ],
-        parsedContents[0].processedHeader,
-        newSigner.address,
-        ethers.toBeHex(1, 32)
+        `${parsedContents[0].selector}._domainKey.gmail.com`,
+        ethers.hexlify(parsedContents[0].modulus),
+        ethers.hexlify(ethers.toBeHex(parsedContents[0].exponent)),
       ],
+      parsedContents[0].processedHeader,
+      newSigner.address,
+      ethers.toBeHex(1, 32)
+    ]
+    const innerSig = abiCoder.encode([sigMetaTuple, 'bytes', 'bytes'], [
+      sigMetaValues,
       dkimSig,
       secondSig
     ])
     const sig = abiCoder.encode(['address', 'address', 'bytes', 'bytes'], [signerKey, validatorAddr, validatorData, innerSig])
     const finalSig = wrapExternallyValidated(sig)
     await account.execute(txns, finalSig)
+
+    // txn should have completed successfully
     const hasPriv = await account.privileges(newSigner.address)
     expect(hasPriv).to.equal(ethers.toBeHex(1, 32))
+
+    // expect recovery to not have been marked as complete
+    const identifier = ethers.keccak256(abiCoder.encode(['address', 'bytes', sigMetaTuple], [
+      ambireAccountAddress,
+      validatorData,
+      sigMetaValues
+    ]))
+    const recoveryAssigned = await dkimRecovery.recoveries(identifier)
+    expect(recoveryAssigned).to.be.true
+
+    // test protection against malleability
+    await expect(account.execute(txns, finalSig))
+      .to.be.revertedWith('recovery already done')
   })
 })
 
