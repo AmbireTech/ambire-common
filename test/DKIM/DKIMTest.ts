@@ -148,6 +148,24 @@ describe('DKIM sigMode Both', function () {
     await expect(account.execute(txns, finalSig))
       .to.be.revertedWith('recovery already done')
   })
+  it('should revert if priviledges slightly do not match', async function () {
+    const [relayer, newSigner] = await ethers.getSigners()
+    const gmail = await readFile(path.join(emailsPath, 'address-permissions.eml'), {
+      encoding: 'ascii'
+    })
+    const parsedContents: any = await parseEmail(gmail)
+    const validatorData = getValidatorData(parsedContents, relayer, {
+      emptySecondSig: true
+    })
+    const validatorAddr = await dkimRecovery.getAddress()
+    const {signerKey} = getSignerKey(validatorAddr, validatorData)
+    const txns = [getPriviledgeTxn(ambireAccountAddress, newSigner.address, true)]
+    const sig = abiCoder.encode(['address', 'address', 'bytes', 'bytes'], [signerKey, validatorAddr, validatorData, ethers.toBeHex(0, 1)])
+    const finalSig = wrapExternallyValidated(sig)
+
+    await expect(account.execute(txns, finalSig))
+        .to.be.revertedWith('EXTERNAL_VALIDATION_NOT_SET')
+  })
 })
 
 describe('DKIM sigMode OnlyDKIM', function () {
