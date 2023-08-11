@@ -1,3 +1,4 @@
+/* eslint-disable no-await-in-loop */
 import { ethers } from 'ethers'
 import { AccountOp } from '../accountOp/accountOp'
 import { genericErc20Humanizer, genericErc721Humanizer } from './modules/tokens'
@@ -74,19 +75,25 @@ async function fetchFuncEtherface(
   selector: string,
   fetch: Function
 ): Promise<HumanizerFragment | null> {
-  try {
-    const res = await (
-      await fetch(`https://api.etherface.io/v1/signatures/hash/all/${selector.slice(2, 10)}/1`)
-    ).json()
-    const func = res.items[0]
-    return {
-      key: `funcSelectors:${selector}`,
-      isGlobal: false,
-      value: { text: func.text, hash: func.hash }
+  let res
+  // often fails due to timeout => loop for retrying
+  for (let i = 0; i < 3; i++) {
+    try {
+      res = await (
+        await fetch(`https://api.etherface.io/v1/signatures/hash/all/${selector.slice(2, 10)}/1`, {
+          timeout: 10000
+        })
+      ).json()
+      break
+    } catch (e: any) {
+      console.log(`fetchFuncEtherface: ${e.message}`)
     }
-  } catch (e) {
-    console.log(e)
-    return null
+  }
+  const func = res.items[0]
+  return {
+    key: `funcSelectors:${selector}`,
+    isGlobal: true,
+    value: { text: func.text, hash: func.hash }
   }
 }
 const checkIfUnknowAction = (v: Array<any>) => {
