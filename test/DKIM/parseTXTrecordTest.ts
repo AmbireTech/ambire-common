@@ -55,8 +55,8 @@ function getValidatorData(parsedContents: any, signer: any) {
     'borislavdevlabs@gmail.com',
     'borislav.ickov@gmail.com',
     parsedContents[0].selector,
-    ethers.hexlify(ethers.toBeHex(parsedContents[0].exponent)),
     ethers.hexlify(parsedContents[0].modulus),
+    ethers.hexlify(ethers.toBeHex(parsedContents[0].exponent)),
     signer.address,
     false,
     0,
@@ -169,7 +169,7 @@ describe('DKIM', function () {
       [
         ethers.toBeHex(0, 1),
         [
-          'gmail.com',
+          `${parsedContents[0].selector}._domainKey.gmail.com`,
           ethers.hexlify(parsedContents[0].modulus),
           ethers.hexlify(ethers.toBeHex(parsedContents[0].exponent)),
         ],

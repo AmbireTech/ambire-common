@@ -131,6 +131,7 @@ contract DKIMRecoverySigValidator {
       DKIMKey memory key = sigMeta.key;
       bytes memory pubKeyExponent = key.pubKeyExponent;
       bytes memory pubKeyModulus = key.pubKeyModulus;
+
       if (! (
           keccak256(abi.encodePacked(domainName)) == keccak256(abi.encodePacked(key.domainName)) &&
           keccak256(accInfo.dkimPubKeyExponent) == keccak256(pubKeyExponent) &&
@@ -179,8 +180,7 @@ contract DKIMRecoverySigValidator {
     (bytes memory rrs, ) = oracle.verifyRRSet(rrSets);
     require(keccak256(rrs) == keccak256(rrset.data), 'DNSSec verification failed');
 
-    (DKIMKey memory key, string memory domainName) = parse(rrset);
-    require(keccak256(rrset.signerName) == keccak256(bytes(domainName)), 'DNSSec verification failed');
+    (DKIMKey memory key, string memory domainName) = parse(rrSets[rrSets.length-1]);
 
     bytes32 id = keccak256(abi.encode(key.domainName, key.pubKeyModulus, key.pubKeyExponent));
 
@@ -197,7 +197,8 @@ contract DKIMRecoverySigValidator {
     }
   }
 
-  function parse(RRUtils.SignedSet memory txtSet) internal pure returns (DKIMKey memory key, string memory domainName) {
+  function parse(DNSSEC.RRSetWithSignature memory txtRset) internal pure returns (DKIMKey memory key, string memory domainName) {
+    RRUtils.SignedSet memory txtSet = txtRset.rrset.readSignedSet();
     Strings.slice memory publicKey = string(txtSet.data).toSlice();
     publicKey.split('p='.toSlice());
     bytes memory pValue = bytes(publicKey.toString());
@@ -218,13 +219,15 @@ contract DKIMRecoverySigValidator {
     bytes memory modulus = decoded.substring(32, decoded.length - 32 - 5);
     // the last 3 bytes of the decoded string is the exponent
     bytes memory exponent = decoded.substring(decoded.length - 3, 3);
-    domainName = string(txtSet.signerName);
+
+    Strings.slice memory selector = string(txtSet.data).toSlice();
+    selector.rsplit(','.toSlice());
+    domainName = getDomainNameFromSignedSet(txtRset);
     key = DKIMKey(
       domainName,
       modulus,
       exponent
     );
-    return (key, domainName);
   }
 
   function removeDKIMKey(bytes32 id) public {
@@ -255,8 +258,10 @@ contract DKIMRecoverySigValidator {
     }
   }
 
-  function getDomainNameFromSignedSet(DNSSEC.RRSetWithSignature memory rrSet) public pure returns(string memory domainName) {
-    domainName = string(rrSet.rrset.readSignedSet().signerName);
+  function getDomainNameFromSignedSet(DNSSEC.RRSetWithSignature memory rrSet) public pure returns(string memory) {
+    Strings.slice memory selector = string(rrSet.rrset.readSignedSet().data).toSlice();
+    selector.rsplit(','.toSlice());
+    return selector.toString();
   }
 
   function _verifyHeaders(
