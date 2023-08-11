@@ -287,7 +287,7 @@ const uniV3Mappinig = (humanizerInfo: any) => {
         getToken(path[0], params.amountIn),
         getLable('for at least'),
         getToken(path[path.length - 1], params.amountOutMinimum),
-        getRecipientText(accountOp.accountAddr, params.recipient),
+        ...getRecipientText(accountOp.accountAddr, params.recipient),
         getDeadlineText(params.deadline)
       ]
     },
@@ -302,7 +302,7 @@ const uniV3Mappinig = (humanizerInfo: any) => {
         getToken(params.tokenIn, params.amountInMaximum),
         getLable('for'),
         getToken(params.tokenOut, params.amountOut),
-        getRecipientText(accountOp.accountAddr, params.recipient),
+        ...getRecipientText(accountOp.accountAddr, params.recipient),
         getDeadlineText(params.deadline)
       ]
     },
@@ -315,7 +315,7 @@ const uniV3Mappinig = (humanizerInfo: any) => {
         getToken(path[path.length - 1], params.amountInMaximum),
         getLable('for'),
         getToken(path[0], params.amountOut),
-        getRecipientText(accountOp.accountAddr, params.recipient),
+        ...getRecipientText(accountOp.accountAddr, params.recipient),
         getDeadlineText(params.deadline)
       ]
     },
@@ -326,7 +326,7 @@ const uniV3Mappinig = (humanizerInfo: any) => {
         getAction('Unwrap'),
         getLable('at least'),
         getToken(ethers.ZeroAddress, amountMin),
-        getRecipientText(accountOp.accountAddr, recipient)
+        ...getRecipientText(accountOp.accountAddr, recipient)
       ]
     },
     // 0x9b2c0a37
