@@ -91,7 +91,7 @@ contract DKIMRecoverySigValidator {
     address accountAddr,
     bytes calldata data,
     bytes calldata sig,
-    uint nonce,
+    uint,
     IAmbireAccount.Transaction[] calldata calls
   ) external returns (bool shouldExecute) {
 
