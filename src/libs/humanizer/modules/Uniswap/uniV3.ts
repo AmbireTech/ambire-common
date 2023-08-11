@@ -254,13 +254,11 @@ const uniV3Mapping = (humanizerInfo: any) => {
       const parsed = calls
         .map((data: any) => {
           const sigHash = data.slice(0, 10)
-          console.log(sigHash)
           const humanizer = mappingResult[sigHash]
           return humanizer ? humanizer(accountOp, { ...call, data }) : null
         })
         .flat()
         .filter((x: any) => x)
-      console.log(parsed)
       return parsed.length ? parsed : getLable('Unknown Uni V3 interaction')
     },
     // NOTE: selfPermit is not supported cause it requires an ecrecover signature
