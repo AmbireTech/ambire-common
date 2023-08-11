@@ -10,16 +10,19 @@ export function uniswapHumanizer(
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   options?: any
 ): [Ir, Promise<any>[]] {
-  const matcher = {
-    ...uniV2Mapping(accountOp.humanizerMeta),
-    ...uniV3Mappinig(accountOp.humanizerMeta),
-    ...uniV32Mapping(accountOp.humanizerMeta),
-    ...uniUniversalRouter(accountOp.humanizerMeta)
+  const matcher: any = {
+    '0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D': uniV2Mapping(accountOp.humanizerMeta),
+    '0xE592427A0AEce92De3Edee1F18E0157C05861564': uniV3Mappinig(accountOp.humanizerMeta),
+    '0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45': uniV32Mapping(accountOp.humanizerMeta),
+    '0x4C60051384bd2d3C01bfc845Cf5F4b44bcbE9de5': uniUniversalRouter(accountOp.humanizerMeta)
   }
   const newCalls = currentIr.calls.map((call: IrCall) => {
     // check against sus contracts with same func selectors
     return accountOp.humanizerMeta?.[`names:${call.to}`] === 'Uniswap'
-      ? { ...call, fullVisualization: matcher[call.data.substring(0, 10)](accountOp, call) }
+      ? {
+          ...call,
+          fullVisualization: matcher?.[call.to]?.[call.data.substring(0, 10)](accountOp, call)
+        }
       : call
   })
   const newIr = { calls: newCalls }
