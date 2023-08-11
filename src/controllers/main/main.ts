@@ -91,9 +91,10 @@ export class MainController extends EventEmitter {
   }
 
   private async load(): Promise<void> {
-    ;[this.keys, this.accounts] = await Promise.all([
+    ;[this.keys, this.accounts, this.selectedAccount] = await Promise.all([
       this.keystore.getKeys(),
-      this.storage.get('accounts', [])
+      this.storage.get('accounts', []),
+      this.storage.get('selectedAccount', null)
     ])
     this.providers = Object.fromEntries(
       this.settings.networks.map((network) => [network.id, new JsonRpcProvider(network.rpcUrl)])
@@ -148,9 +149,14 @@ export class MainController extends EventEmitter {
   async selectAccount(toAccountAddr: string) {
     // Wait for the current load to complete
     await this.initialLoadPromise
-    if (!this.accounts.find((acc) => acc.addr === toAccountAddr))
-      throw new Error(`try to switch to not exist account: ${toAccountAddr}`)
+
+    if (!this.accounts.find((acc) => acc.addr === toAccountAddr)) {
+      // TODO: error handling, trying to switch to account that does not exist
+      return
+    }
+
     this.selectedAccount = toAccountAddr
+    await this.storage.set('selectedAccount', toAccountAddr)
     this.emitUpdate()
   }
 
