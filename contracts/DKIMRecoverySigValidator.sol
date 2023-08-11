@@ -75,7 +75,7 @@ contract DKIMRecoverySigValidator {
   // keccak256(Key) => KeyInfo
   mapping (bytes32 => KeyInfo) public dkimKeys;
   // recoveryrIdentifier => bool
-  mapping (bytes32 => bool) recoveries;
+  mapping (bytes32 => bool) public recoveries;
 
   address authorizedToSubmit;
   address authorizedToRevoke;
@@ -239,7 +239,7 @@ contract DKIMRecoverySigValidator {
     uint32 whenReady;
   }
 
-  mapping (bytes32 => Timelock) timelocks;
+  mapping (bytes32 => Timelock) public timelocks;
 
   function checkTimelock(bytes32 identifier, uint32 time) public returns (bool shouldExecute) {
     Timelock storage timelock = timelocks[identifier];
