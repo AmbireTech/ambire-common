@@ -2,7 +2,7 @@ import { AccountOp } from '../../../accountOp/accountOp'
 import { Ir, IrCall } from '../../interfaces'
 import { uniUniversalRouter } from './uniUnivarsalRouter'
 import { uniV2Mapping } from './uniV2'
-import { uniV32Mapping, uniV3Mappinig } from './uniV3'
+import { uniV32Mapping, uniV3Mapping } from './uniV3'
 
 export function uniswapHumanizer(
   accountOp: AccountOp,
@@ -12,7 +12,7 @@ export function uniswapHumanizer(
 ): [Ir, Promise<any>[]] {
   const matcher: any = {
     '0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D': uniV2Mapping(accountOp.humanizerMeta),
-    '0xE592427A0AEce92De3Edee1F18E0157C05861564': uniV3Mappinig(accountOp.humanizerMeta),
+    '0xE592427A0AEce92De3Edee1F18E0157C05861564': uniV3Mapping(accountOp.humanizerMeta),
     '0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45': uniV32Mapping(accountOp.humanizerMeta),
     '0x4C60051384bd2d3C01bfc845Cf5F4b44bcbE9de5': uniUniversalRouter(accountOp.humanizerMeta)
   }

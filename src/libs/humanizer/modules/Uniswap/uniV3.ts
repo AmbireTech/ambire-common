@@ -241,14 +241,14 @@ const uniV32Mapping = (humanizerInfo: any) => {
   }
 }
 
-const uniV3Mappinig = (humanizerInfo: any) => {
+const uniV3Mapping = (humanizerInfo: any) => {
   const ifaceV3 = new ethers.Interface(humanizerInfo?.['abis:UniV3Router'])
   return {
     // 0xac9650d8
     [`${ifaceV3.getFunction('multicall')?.selector}`]: (accountOp: AccountOp, call: IrCall) => {
       const args = ifaceV3.parseTransaction(call)?.args || []
       const calls = args[args.length - 1]
-      const mappingResult = uniV32Mapping(humanizerInfo)
+      const mappingResult = uniV3Mapping(humanizerInfo)
       // @TODO: Multicall that outputs ETH should be detected as such and displayed as one action
       // the current verbosity of "Swap ..., unwrap WETH to ETH" will be a nice pedantic quirk
       const parsed = calls
@@ -350,4 +350,4 @@ const uniV3Mappinig = (humanizerInfo: any) => {
   }
 }
 
-export { uniV32Mapping, uniV3Mappinig }
+export { uniV32Mapping, uniV3Mapping }
