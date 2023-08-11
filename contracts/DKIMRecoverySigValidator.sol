@@ -61,7 +61,7 @@ contract DKIMRecoverySigValidator {
   struct SignatureMeta {
     SigMode mode;
     DKIMKey key;
-    string[] canonizedHeaders;
+    string canonizedHeaders;
     address newKeyToSet;
     bytes32 newPrivilegeValue;
   }
@@ -112,16 +112,14 @@ contract DKIMRecoverySigValidator {
     if (mode == SigMode.Both || mode == SigMode.OnlyDKIM) {
       if (sigMeta.mode == SigMode.OnlyDKIM) require(accInfo.acceptEmptySecondSig, 'account disallows OnlyDKIM');
 
-      Strings.slice memory canonizedHeadersBuffer = _verifyHeaders(
-        sigMeta.canonizedHeaders,
+      string memory headers = sigMeta.canonizedHeaders;
+      _verifyHeaders(
+        headers,
         accInfo.emailFrom,
         accInfo.emailTo,
         sigMeta.newKeyToSet
-      );
+      );      
 
-      // After we've checked all headers and etc., we get the DKIM key we're using
-      // @TODO is afterSplit correct here?
-      //
       Strings.slice memory emailDomain = accInfo.emailFrom.toSlice();
       emailDomain.split('@'.toSlice());
       string memory domainName = accInfo.dkimSelector.toSlice()
@@ -131,7 +129,6 @@ contract DKIMRecoverySigValidator {
       DKIMKey memory key = sigMeta.key;
       bytes memory pubKeyExponent = key.pubKeyExponent;
       bytes memory pubKeyModulus = key.pubKeyModulus;
-
       if (! (
           keccak256(abi.encodePacked(domainName)) == keccak256(abi.encodePacked(key.domainName)) &&
           keccak256(accInfo.dkimPubKeyExponent) == keccak256(pubKeyExponent) &&
@@ -148,7 +145,7 @@ contract DKIMRecoverySigValidator {
       }
 
       require(
-        RSASHA256.verify(sha256(bytes(canonizedHeadersBuffer.toString())), dkimSig, pubKeyExponent, pubKeyModulus),
+        RSASHA256.verify(sha256(bytes(headers)), dkimSig, pubKeyExponent, pubKeyModulus),
         'DKIM signature verification failed'
       );
     }
@@ -265,44 +262,25 @@ contract DKIMRecoverySigValidator {
   }
 
   function _verifyHeaders(
-    string[] memory canonizedHeaders,
+    string memory canonizedHeaders,
     string memory accountEmailFrom,
     string memory accountEmailTo,
     address newKeyToSet
-  ) internal view returns(Strings.slice memory canonizedHeadersBuffer) {
+  ) internal pure {
+      // from looks like this: from: name <email>
+      // so we take what's between <> and validate it
+      Strings.slice memory fromHeader = canonizedHeaders.toSlice();
+      fromHeader.split('from:'.toSlice());
+      fromHeader.split('<'.toSlice());
+      fromHeader.rsplit('>'.toSlice());
+      require(fromHeader.compare(accountEmailFrom.toSlice()) == 0, 'emailFrom not valid');
 
-    // @TODO parse canonizedHeaders, verify thge DKIM sig, verify the secondary sig, verify that .calls is correct (only one call to setAddrPrivilege with the newKeyToSet)
-      // this is what we have in the headers from field:
-      // from:Name Surname <email@provider.com>
-      // we split from "from" to ">" and check if the email is
-      // registered in account info
-      // @TODO caninizedHeaders - we have to decide whether we use string[] and we join before hashing or just string and we split in order to parse
-      bool verifiedFrom;
-      bool verifiedTo;
-      bool verifiedSubject;
-      for (uint i = 0; i != canonizedHeaders.length; i++) {
-        Strings.slice memory header = canonizedHeaders[i].toSlice();
-        canonizedHeadersBuffer = canonizedHeadersBuffer.concat(header).toSlice();
+      // to looks like this: to:email
+      Strings.slice memory toHeader = 'to:'.toSlice().concat(accountEmailTo.toSlice()).toSlice();
+      require(canonizedHeaders.toSlice().contains(toHeader), 'emailTo not valid');
 
-        if (header.startsWith('From:'.toSlice())) {
-          header.split('<'.toSlice());
-          Strings.slice memory emailFrom;
-          header.split('>'.toSlice(), emailFrom);
-          require(emailFrom.compare(accountEmailFrom.toSlice()) == 0, 'emailFrom not valid');
-          verifiedFrom = true;
-        }
-        if (header.startsWith('Delivered-To:'.toSlice())) {
-          header.split('Delivered-To: '.toSlice());
-          require(header.compare(accountEmailTo.toSlice()) == 0, 'emailTo not valid');
-          verifiedTo = true;
-        }
-        if (header.startsWith('Subject:'.toSlice())) {
-          header.split('Subject: '.toSlice());
-          string memory newKeyString = 'Give permissions to '.toSlice().concat(OpenZepellingStrings.toHexString(newKeyToSet).toSlice());
-          require(keccak256(bytes(header.toString())) == keccak256(bytes(newKeyString)), 'subject mismatch');
-          verifiedSubject = true;
-        }
-      }
-      require(verifiedFrom && verifiedTo && verifiedSubject, 'subject/to/from were not present');
+      // subject looks like this: subject:Give permissions to address
+      Strings.slice memory newKeyString = 'subject:Give permissions to '.toSlice().concat(OpenZepellingStrings.toHexString(newKeyToSet).toSlice()).toSlice();
+      require(canonizedHeaders.toSlice().contains(newKeyString), 'emailSubject not valid');
   }
 }

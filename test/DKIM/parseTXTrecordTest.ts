@@ -162,7 +162,7 @@ describe('DKIM', function () {
     const msg = ethers.getBytes(msgHash)
     const secondSig = wrapEthSign(await relayer.signMessage(msg))
     const innerSig = abiCoder.encode([
-      'tuple(uint8, tuple(string, bytes, bytes), string[], address, bytes32)',
+      'tuple(uint8, tuple(string, bytes, bytes), string, address, bytes32)',
       'bytes',
       'bytes'
     ], [
@@ -173,7 +173,7 @@ describe('DKIM', function () {
           ethers.hexlify(parsedContents[0].modulus),
           ethers.hexlify(ethers.toBeHex(parsedContents[0].exponent)),
         ],
-        parsedContents[0].headers,
+        parsedContents[0].processedHeader,
         newSigner.address,
         ethers.toBeHex(1, 32)
       ],
@@ -183,6 +183,5 @@ describe('DKIM', function () {
     const sig = abiCoder.encode(['address', 'address', 'bytes', 'bytes'], [signerKey, validatorAddr, validatorData, innerSig])
     const finalSig = wrapExternallyValidated(sig)
     const validation = await account.execute(txns, finalSig)
-    console.log(validation)
   })
 })
