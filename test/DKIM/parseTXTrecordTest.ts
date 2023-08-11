@@ -52,8 +52,8 @@ function getValidatorData(parsedContents: any, signer: any) {
     'tuple(string,string,string,bytes,bytes,address,bool,uint32,uint32,bool,bool,uint32)'
     ,
   ], [[
-    'no-reply@youtube.com',
     'borislavdevlabs@gmail.com',
+    'borislav.ickov@gmail.com',
     parsedContents[0].selector,
     ethers.hexlify(ethers.toBeHex(parsedContents[0].exponent)),
     ethers.hexlify(parsedContents[0].modulus),
@@ -113,7 +113,7 @@ describe('DKIM', function () {
 
   it('successfully deploys the ambire account', async function () {
     const [relayer] = await ethers.getSigners()
-    const gmail = await readFile(path.join(emailsPath, 'youtube.eml'), {
+    const gmail = await readFile(path.join(emailsPath, 'address-permissions.eml'), {
       encoding: 'ascii'
     })
     const parsedContents: any = await parseEmail(gmail)
@@ -143,7 +143,7 @@ describe('DKIM', function () {
 
   it('successfully validate a DKIM signature', async function () {
     const [relayer, newSigner] = await ethers.getSigners()
-    const gmail = await readFile(path.join(emailsPath, 'youtube.eml'), {
+    const gmail = await readFile(path.join(emailsPath, 'address-permissions.eml'), {
       encoding: 'ascii'
     })
     const parsedContents: any = await parseEmail(gmail)
@@ -155,8 +155,8 @@ describe('DKIM', function () {
     const txns = [getPriviledgeTxn(ambireAccountAddress, newSigner.address, true)]
     const msgHash = ethers.keccak256(
       abiCoder.encode(
-        ['address', 'uint', 'uint', 'tuple(address, uint, bytes)[]'],
-        [ambireAccountAddress, 31337, 0, txns]
+        ['address', 'tuple(address, uint, bytes)[]'],
+        [ambireAccountAddress, txns]
       )
     )
     const msg = ethers.getBytes(msgHash)
@@ -169,7 +169,7 @@ describe('DKIM', function () {
       [
         ethers.toBeHex(0, 1),
         [
-          'youtube.com',
+          'gmail.com',
           ethers.hexlify(parsedContents[0].modulus),
           ethers.hexlify(ethers.toBeHex(parsedContents[0].exponent)),
         ],

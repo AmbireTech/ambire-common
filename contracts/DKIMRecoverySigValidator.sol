@@ -66,11 +66,6 @@ contract DKIMRecoverySigValidator {
     bytes32 newPrivilegeValue;
   }
 
-  struct Key {
-    string domainName;
-    bytes pubKey;
-  }
-
   struct KeyInfo {
     bool isExisting;
     bool isBridge;
@@ -151,22 +146,22 @@ contract DKIMRecoverySigValidator {
         require(block.timestamp >= keyInfo.dateAdded + accInfo.waitUntilAcceptAdded, 'DKIM key not added yet');
       }
 
-      // @TODO: VALIDATE TO FIELD
-      // @TODO validate subject; this is one of the most important validations, as it will contain the `newKeyToSet`
-      // verify(canonizedHeadersBuffer, dkimSig, key);
       require(
         RSASHA256.verify(sha256(bytes(canonizedHeadersBuffer.toString())), dkimSig, pubKeyExponent, pubKeyModulus),
         'DKIM signature verification failed'
       );
     }
 
-    _verifySig(
-      mode,
-      keccak256(abi.encode(address(accountAddr), block.chainid, nonce, calls)),
-      secondSig,
-      accInfo.secondaryKey,
-      accInfo.acceptEmptyDKIMSig
-    );
+    bytes32 hashToSign = keccak256(abi.encode(address(accountAddr), calls));
+    if (mode == SigMode.Both || mode == SigMode.OnlySecond) {
+      if (mode == SigMode.OnlySecond) require(accInfo.acceptEmptyDKIMSig, 'account disallows OnlySecond');
+
+      // @TODO should spoofing be allowed
+      require(
+        SignatureValidator.recoverAddrImpl(hashToSign, secondSig, true) == accInfo.secondaryKey,
+        'second key validation failed'
+      );
+    }
 
     // In those modes, we require a timelock
     if (mode == SigMode.OnlySecond || mode == SigMode.OnlyDKIM) {
@@ -296,27 +291,13 @@ contract DKIMRecoverySigValidator {
           require(header.compare(accountEmailTo.toSlice()) == 0, 'emailTo not valid');
           verifiedTo = true;
         }
-        // TO DO: finish the subject validation
         if (header.startsWith('Subject:'.toSlice())) {
           header.split('Subject: '.toSlice());
-          string memory subject = '0x70997970c51812dc3a010c7d01b50e0d17dc79c8';
-          string memory newKeyString = OpenZepellingStrings.toHexString(newKeyToSet);
-          require(keccak256(bytes(subject)) == keccak256(bytes(newKeyString)), 'subject mismatch');
+          string memory newKeyString = 'Give permissions to '.toSlice().concat(OpenZepellingStrings.toHexString(newKeyToSet).toSlice());
+          require(keccak256(bytes(header.toString())) == keccak256(bytes(newKeyString)), 'subject mismatch');
           verifiedSubject = true;
         }
       }
       require(verifiedFrom && verifiedTo && verifiedSubject, 'subject/to/from were not present');
-  }
-
-  function _verifySig(SigMode mode, bytes32 hashToSign, bytes memory secondSig, address secondaryKey, bool acceptEmptyDKIMSig) internal {
-    if (mode == SigMode.Both || mode == SigMode.OnlySecond) {
-      if (mode == SigMode.OnlySecond) require(acceptEmptyDKIMSig, 'account disallows OnlySecond');
-
-      // @TODO should spoofing be allowed
-      require(
-        SignatureValidator.recoverAddrImpl(hashToSign, secondSig, true) == secondaryKey,
-        'second key validation failed'
-      );
-    }
   }
 }
