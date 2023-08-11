@@ -172,6 +172,12 @@ const transactions = {
       to: '0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45',
       value: BigInt(0),
       data: '0x5ae401dc0000000000000000000000000000000000000000000000000000000064c233bf000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000012409b8134600000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000080000000000000000000000000b674f3fd5f43464db0448a57529eaf37f04ccea50000000000000000000000000000000000000000000000056bc75e2d63100000000000000000000000000000000000000000000000000025faff1f58be30f6ec00000000000000000000000000000000000000000000000000000000000000426b175474e89094c44da98b954eedeac495271d0f000064dac17f958d2ee523a2206206994597c13d831ec7000bb8ade00c28244d5ce17d72e40330b1c318cd12b7c300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000'
+    },
+    // multicall
+    {
+      to: '0xE592427A0AEce92De3Edee1F18E0157C05861564',
+      data: '0xac9650d800000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000001a00000000000000000000000000000000000000000000000000000000000000124f28c0498000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000a00000000000000000000000005a5be6b067d6b5b018adbcd27ee6972105b3b4000000000000000000000000000000000000000000000000000000000064d4f15700000000000000000000000000000000000000000000048a19ce0269c802800000000000000000000000000000000000000000000000000019952df3ca0a9588000000000000000000000000000000000000000000000000000000000000002b046eee2cc3188071c02bfc1745a6b17c656e3f3d000bb8c02aaa39b223fe8d0a0e5c4f27ead9083c756cc200000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000412210e8a00000000000000000000000000000000000000000000000000000000',
+      value: BigInt(0)
     }
   ]
 }
@@ -234,6 +240,59 @@ describe('module tests', () => {
     accountOp.calls = [...transactions.uniV3]
     const ir = callsToIr(accountOp)
     const [{ calls }] = uniswapHumanizer(accountOp, ir)
+    const expectedVisualization = [
+      [
+        { type: 'action', content: 'Swap' },
+        {
+          type: 'token',
+          address: '0x88800092ff476844f74dc2fc427974bbee2794ae',
+          amount: 1000000000000000000000n
+        },
+        { type: 'lable', content: 'for at least' },
+        {
+          type: 'token',
+          address: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48'
+        },
+        { type: 'lable', content: 'already expired' }
+      ],
+      [
+        { type: 'action', content: 'Swap up to' },
+        {
+          type: 'token',
+          address: '0xade00c28244d5ce17d72e40330b1c318cd12b7c3'
+        },
+        { type: 'lable', content: 'for' },
+        {
+          type: 'token',
+          address: '0x6b175474e89094c44da98b954eedeac495271d0f'
+        },
+        { type: 'lable', content: 'already expired' }
+      ],
+      [
+        { type: 'action', content: 'Swap up to' },
+        {
+          type: 'token',
+          address: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2'
+        },
+        { type: 'lable', content: 'for' },
+        {
+          type: 'token',
+          address: '0x046eee2cc3188071c02bfc1745a6b17c656e3f3d'
+        },
+        { type: 'lable', content: 'and send it to' },
+        {
+          type: 'address',
+          address: '0x5a5Be6b067d6B5B018adBCD27EE6972105B3b400'
+        },
+        { type: 'lable', content: 'already expired' }
+      ]
+    ]
+    expect(calls.length).toEqual(transactions.uniV3.length)
+    calls.forEach((c, i) =>
+      c.fullVisualization.forEach((v: any, j: number) => {
+        expect(v).toMatchObject(expectedVisualization[i][j])
+      })
+    )
     expect(calls[0].fullVisualization[0]).toEqual({ type: 'action', content: 'Swap' })
     expect(calls[0].fullVisualization[1]).toMatchObject({ type: 'token' })
     expect(calls[0].fullVisualization[2]).toEqual({ type: 'lable', content: 'for at least' })
@@ -275,7 +334,6 @@ describe('module tests', () => {
     const [{ calls: newCalls }] = namingHumanizer(accountOp, ir)
 
     expect(newCalls.length).toBe(transactions.namingTransactions.length)
-    console.log(newCalls.map((c) => c.fullVisualization))
     expect(newCalls[0].fullVisualization.find((v: any) => v.type === 'address')).toMatchObject({
       type: 'address',
       address: expect.anything(),
