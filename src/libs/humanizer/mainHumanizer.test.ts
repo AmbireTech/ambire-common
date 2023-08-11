@@ -284,24 +284,17 @@ describe('module tests', () => {
           type: 'address',
           address: '0x5a5Be6b067d6B5B018adBCD27EE6972105B3b400'
         },
-        { type: 'lable', content: 'already expired' }
+        { type: 'lable', content: 'already expired' },
+        { type: 'action', content: 'Refund' }
       ]
     ]
     expect(calls.length).toEqual(transactions.uniV3.length)
-    calls.forEach((c, i) =>
+    calls.forEach((c, i) => {
+      expect(c.fullVisualization.length).toBe(expectedVisualization[i].length)
       c.fullVisualization.forEach((v: any, j: number) => {
         expect(v).toMatchObject(expectedVisualization[i][j])
       })
-    )
-    expect(calls[0].fullVisualization[0]).toEqual({ type: 'action', content: 'Swap' })
-    expect(calls[0].fullVisualization[1]).toMatchObject({ type: 'token' })
-    expect(calls[0].fullVisualization[2]).toEqual({ type: 'lable', content: 'for at least' })
-    expect(calls[0].fullVisualization[3]).toMatchObject({ type: 'token' })
-
-    expect(calls[1].fullVisualization[0]).toEqual({ type: 'action', content: 'Swap up to' })
-    expect(calls[1].fullVisualization[1]).toMatchObject({ type: 'token' })
-    expect(calls[1].fullVisualization[2]).toEqual({ type: 'lable', content: 'for' })
-    expect(calls[1].fullVisualization[3]).toMatchObject({ type: 'token' })
+    })
   })
 
   test('fallback', async () => {

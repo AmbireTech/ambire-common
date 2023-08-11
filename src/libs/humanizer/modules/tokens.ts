@@ -16,7 +16,6 @@ async function getTokenInfo(
     (n: NetworkDescriptor) => n.chainId === BigInt(accountOp.networkId)
   )?.id
   try {
-    // @TODO network change
     // @TODO update to use wrapper for coingecko api (if (no key) {free api} else {paid api})
     const response = await (
       await fetch(`https://api.coingecko.com/api/v3/coins/${network}/contract/${address}`)
@@ -137,7 +136,6 @@ function genericErc20Humanizer(
     },
     [`${iface.getFunction('transferFrom')?.selector}`]: (call: IrCall) => {
       const args = iface.parseTransaction(call)?.args.toArray() || []
-      // @NOTE: accountOp has module scope, while call has property scope
       if (args[0] === accountOp.accountAddr) {
         return [
           getAction('Transfer'),
