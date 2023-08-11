@@ -21,7 +21,7 @@ const uniV2Mapping = (humanizerInfo: any) => {
         getLable('for at least'),
         getToken(outputAsset, amountOutMin),
         ...getRecipientText(accountOp.accountAddr, to),
-        getDeadlineText(Number(deadline))
+        getDeadlineText(deadline)
       ]
     },
     [`${iface.getFunction('swapTokensForExactTokens')?.selector}`]: (
@@ -37,7 +37,7 @@ const uniV2Mapping = (humanizerInfo: any) => {
         getLable('for at least'),
         getToken(outputAsset, amountOut),
         ...getRecipientText(accountOp.accountAddr, to),
-        getDeadlineText(Number(deadline))
+        getDeadlineText(deadline)
       ]
     },
     [`${iface.getFunction('swapExactETHForTokens')?.selector}`]: (
@@ -53,7 +53,7 @@ const uniV2Mapping = (humanizerInfo: any) => {
         getLable('for at least'),
         getToken(outputAsset, amountOutMin),
         ...getRecipientText(accountOp.accountAddr, to),
-        getDeadlineText(Number(deadline))
+        getDeadlineText(deadline)
       ]
     },
     [`${iface.getFunction('swapTokensForExactETH')?.selector}`]: (
@@ -68,7 +68,7 @@ const uniV2Mapping = (humanizerInfo: any) => {
         getLable('for at least'),
         getToken(ethers.ZeroAddress, amountOut),
         ...getRecipientText(accountOp.accountAddr, to),
-        getDeadlineText(Number(deadline))
+        getDeadlineText(deadline)
       ]
     },
     [`${iface.getFunction('swapExactTokensForETH')?.selector}`]: (
@@ -82,7 +82,7 @@ const uniV2Mapping = (humanizerInfo: any) => {
         getLable('for at least'),
         getToken(ethers.ZeroAddress, amountOutMin),
         ...getRecipientText(accountOp.accountAddr, to),
-        getDeadlineText(Number(deadline))
+        getDeadlineText(deadline)
       ]
     },
     [`${iface.getFunction('swapETHForExactTokens')?.selector}`]: (
@@ -99,7 +99,7 @@ const uniV2Mapping = (humanizerInfo: any) => {
         getLable('for at least'),
         getToken(outputAsset, amountOut),
         ...getRecipientText(accountOp.accountAddr, to),
-        getDeadlineText(Number(deadline))
+        getDeadlineText(deadline)
       ]
     },
     // Liquidity
@@ -120,7 +120,7 @@ const uniV2Mapping = (humanizerInfo: any) => {
         getLable('and'),
         getToken(tokenB, amountBDesired),
         ...getRecipientText(accountOp.accountAddr, to),
-        getDeadlineText(Number(deadline))
+        getDeadlineText(deadline)
       ]
     },
     [`${iface.getFunction('addLiquidityETH')?.selector}`]: (accountOp: AccountOp, call: IrCall) => {

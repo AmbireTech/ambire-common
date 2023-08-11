@@ -54,7 +54,7 @@ export const uniUniversalRouter = (humanizerInfo: any) => {
             getToken(path[0], params.amountIn),
             getLable('for at least'),
             getToken(path[path.length - 1], params.amountOutMin),
-            getDeadlineText(Number(deadline))
+            getDeadlineText(deadline)
           ])
         } else if (command === COMMANDS.V3_SWAP_EXACT_OUT) {
           const { inputsDetails } = COMMANDS_DESCRIPTIONS.V3_SWAP_EXACT_OUT
@@ -66,7 +66,7 @@ export const uniUniversalRouter = (humanizerInfo: any) => {
             getToken(path[path.length - 1], params.amountInMax),
             getLable('for'),
             getToken(path[0], params.amountOut),
-            getDeadlineText(Number(deadline))
+            getDeadlineText(deadline)
           ])
         } else if (command === COMMANDS.V2_SWAP_EXACT_IN) {
           const { inputsDetails } = COMMANDS_DESCRIPTIONS.V2_SWAP_EXACT_IN
@@ -78,7 +78,7 @@ export const uniUniversalRouter = (humanizerInfo: any) => {
             getToken(path[0], params.amountIn),
             getLable('for at least'),
             getToken(path[path.length - 1], params.amountOutMin),
-            getDeadlineText(Number(deadline))
+            getDeadlineText(deadline)
           ])
         } else if (command === COMMANDS.V2_SWAP_EXACT_OUT) {
           const { inputsDetails } = COMMANDS_DESCRIPTIONS.V2_SWAP_EXACT_OUT
@@ -90,7 +90,7 @@ export const uniUniversalRouter = (humanizerInfo: any) => {
             getToken(path[0], params.amountInMax),
             getLable('for'),
             getToken(path[path.length - 1], params.amountOut),
-            getDeadlineText(Number(deadline))
+            getDeadlineText(deadline)
           ])
         } else if (command === COMMANDS.PERMIT2_PERMIT) {
           parsed.push([getLable('Approved Uniswap to use the following token via signed message.')])

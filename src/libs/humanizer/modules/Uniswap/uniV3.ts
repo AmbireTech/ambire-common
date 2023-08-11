@@ -35,7 +35,7 @@ const uniV32Mapping = (humanizerInfo: any) => {
         .flat()
         .filter((x: any) => x)
       return (parsed.length ? parsed : getLable('Unknown Uni V3 interaction'))
-        .concat([getDeadlineText(Number(deadline))])
+        .concat([getDeadlineText(deadline)])
         .filter((x: any) => x)
     },
     // 0xac9650d8
