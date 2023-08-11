@@ -159,6 +159,7 @@ contract DKIMRecoverySigValidator {
         SignatureValidator.recoverAddrImpl(hashToSign, secondSig, true) == accInfo.secondaryKey,
         'second key validation failed'
       );
+      shouldExecute = true;
     }
 
     // In those modes, we require a timelock
@@ -178,9 +179,7 @@ contract DKIMRecoverySigValidator {
     require(keccak256(rrs) == keccak256(rrset.data), 'DNSSec verification failed');
 
     (DKIMKey memory key, string memory domainName) = parse(rrSets[rrSets.length-1]);
-
     bytes32 id = keccak256(abi.encode(key.domainName, key.pubKeyModulus, key.pubKeyExponent));
-
     KeyInfo storage keyInfo = dkimKeys[id];
     require(!keyInfo.isExisting, 'key already exists');
 
