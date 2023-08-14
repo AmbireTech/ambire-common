@@ -2,23 +2,9 @@ import fetch from 'node-fetch'
 
 import { describe, expect, test } from '@jest/globals'
 
-import { Storage } from '../../interfaces/storage'
+import { produceMemoryStore } from '../../../test/helpers'
 import { UserRequest } from '../../interfaces/userRequest'
 import { MainController } from './main'
-
-export function produceMemoryStore(): Storage {
-  const storage = new Map()
-  return {
-    get: (key, defaultValue): any => {
-      const serialized = storage.get(key)
-      return Promise.resolve(serialized ? JSON.parse(serialized) : defaultValue)
-    },
-    set: (key, value) => {
-      storage.set(key, JSON.stringify(value))
-      return Promise.resolve(null)
-    }
-  }
-}
 
 describe('Main Controller ', () => {
   const accounts = [
