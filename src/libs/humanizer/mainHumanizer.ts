@@ -90,11 +90,13 @@ async function fetchFuncEtherface(
     }
   }
   const func = res.items[0]
-  return {
-    key: `funcSelectors:${selector}`,
-    isGlobal: true,
-    value: { text: func.text, hash: func.hash }
-  }
+  return func
+    ? {
+        key: `funcSelectors:${selector}`,
+        isGlobal: true,
+        value: { text: func.text, hash: func.hash }
+      }
+    : null
 }
 const checkIfUnknowAction = (v: Array<any>) => {
   try {
