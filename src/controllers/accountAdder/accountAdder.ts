@@ -1,8 +1,8 @@
 import { ethers, JsonRpcProvider } from 'ethers'
-import { KeyIterator } from 'interfaces/keyIterator'
-import { NetworkDescriptor, NetworkId } from 'interfaces/networkDescriptor'
 
 import { Account, AccountOnchainState } from '../../interfaces/account'
+import { KeyIterator } from '../../interfaces/keyIterator'
+import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
 import { Storage } from '../../interfaces/storage'
 import { getLegacyAccount, getSmartAccount } from '../../libs/account/account'
 import { getAccountState } from '../../libs/accountState/accountState'
