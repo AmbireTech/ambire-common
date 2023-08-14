@@ -169,14 +169,14 @@ export class AccountAdderController extends EventEmitter {
 
   reset() {
     this.#keyIterator = undefined
-    this.preselectedAccounts.length = 0
-    this.selectedAccounts.length = 0
+    this.preselectedAccounts = []
+    this.selectedAccounts = []
     this.page = INITIAL_PAGE_INDEX
     this.pageSize = PAGE_SIZE
     this.derivationPath = undefined
 
     this.addAccountsStatus = { type: 'INITIAL' }
-    this.readyToAddAccounts.length = 0
+    this.readyToAddAccounts = []
     this.isInitialized = false
 
     this.emitUpdate()
