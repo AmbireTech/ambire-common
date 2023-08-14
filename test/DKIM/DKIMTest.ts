@@ -388,6 +388,43 @@ describe('DKIM sigMode OnlyDKIM', function () {
     await expect(account.execute(txns, finalSig))
       .to.be.revertedWith('recovery already done')
   })
+
+  it('should revert if sig mode is onlySecond', async function () {
+    const [relayer, newSigner] = await ethers.getSigners()
+    const gmail = await readFile(path.join(emailsPath, 'address-permissions.eml'), {
+      encoding: 'ascii'
+    })
+    const parsedContents: any = await parseEmail(gmail)
+    const validatorData = getValidatorData(parsedContents, relayer, {
+      emptySecondSig: true
+    })
+    const validatorAddr = await dkimRecovery.getAddress()
+    const {signerKey} = getSignerKey(validatorAddr, validatorData)
+
+    const txns = [getPriviledgeTxn(ambireAccountAddress, newSigner.address, true)]
+    const sigMetaTuple = 'tuple(uint8, tuple(string, bytes, bytes), string, address, bytes32)'
+    const sigMetaValues = [
+      ethers.toBeHex(2, 1),
+      [
+        '',
+        ethers.toBeHex(0, 1),
+        ethers.toBeHex(0, 1),
+      ],
+      '',
+      newSigner.address,
+      ethers.toBeHex(1, 32)
+    ]
+    const innerSig = abiCoder.encode([sigMetaTuple, 'bytes', 'bytes'], [
+      sigMetaValues,
+      ethers.toBeHex(0, 1),
+      ethers.toBeHex(0, 1)
+    ])
+    const sig = abiCoder.encode(['address', 'address', 'bytes', 'bytes'], [signerKey, validatorAddr, validatorData, innerSig])
+    const finalSig = wrapExternallyValidated(sig)
+
+    await expect(account.execute(txns, finalSig))
+      .to.be.revertedWith('account disallows OnlySecond')
+  })
 })
 
 describe('DKIM sigMode OnlySecond', function () {
@@ -486,6 +523,51 @@ describe('DKIM sigMode OnlySecond', function () {
 
     await expect(account.execute(txns, finalSig))
       .to.be.revertedWith('recovery already done')
+  })
+
+  it('should revert with second key validation failed if the signature is incorrect', async function () {
+    const [relayer,,newSigner] = await ethers.getSigners()
+    const gmail = await readFile(path.join(emailsPath, 'address-permissions.eml'), {
+      encoding: 'ascii'
+    })
+    const parsedContents: any = await parseEmail(gmail)
+    const validatorData = getValidatorData(parsedContents, relayer, {
+      acceptEmptyDKIMSig: true
+    })
+    const validatorAddr = await dkimRecovery.getAddress()
+    const {signerKey} = getSignerKey(validatorAddr, validatorData)
+
+    const txns = [getPriviledgeTxn(ambireAccountAddress, newSigner.address, true)]
+    const msgHash = ethers.keccak256(
+      abiCoder.encode(
+        ['address', 'tuple(address, uint, bytes)[]'],
+        [relayer.address, txns] // here we change the address to make the hash different
+      )
+    )
+    const msg = ethers.getBytes(msgHash)
+    const secondSig = wrapEthSign(await relayer.signMessage(msg))
+    const sigMetaTuple = 'tuple(uint8, tuple(string, bytes, bytes), string, address, bytes32)'
+    const sigMetaValues = [
+      ethers.toBeHex(2, 1),
+      [
+        '',
+        ethers.toBeHex(0, 1),
+        ethers.toBeHex(0, 1),
+      ],
+      '',
+      newSigner.address,
+      ethers.toBeHex(1, 32)
+    ]
+    const innerSig = abiCoder.encode([sigMetaTuple, 'bytes', 'bytes'], [
+      sigMetaValues,
+      ethers.toBeHex(0, 1),
+      secondSig
+    ])
+    const sig = abiCoder.encode(['address', 'address', 'bytes', 'bytes'], [signerKey, validatorAddr, validatorData, innerSig])
+    const finalSig = wrapExternallyValidated(sig)
+
+    await expect(account.execute(txns, finalSig))
+      .to.be.revertedWith('second key validation failed')
   })
 
   it('should revert if an OnlyDKIM sig mode is passed', async function () {
@@ -730,6 +812,19 @@ describe('DKIM sigMode Both with acceptUnknownSelectors true', function () {
     const removedKey = await dkimRecoveryForTesting.dkimKeys(dkimKey);
     expect(removedKey[0]).to.be.true
     expect(removedKey[3]).to.not.equal(0)
+  })
+
+  it('should revert on trying to revoke the DKIM key if msg sender does not have revoke rights', async function () {
+    const [,signer] = await ethers.getSigners()
+    const dkimKey = ethers.keccak256(abiCoder.encode(['tuple(string, bytes, bytes)'], [
+      [
+        '',
+        ethers.toBeHex(0, 1),
+        ethers.toBeHex(0, 1),
+      ]
+    ]))
+    await expect(dkimRecoveryForTesting.connect(signer).removeDKIMKey(dkimKey))
+      .to.be.revertedWith('Address unauthorized to revoke')
   })
 
   it('should revert if an unknown selector for the account is passed and the dkim key for it is already removed', async function () {
