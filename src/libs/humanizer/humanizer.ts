@@ -7,7 +7,7 @@ import { IrCall, Ir, HumanizerFragment } from './interfaces'
 import { shortenAddress, getAction, getLable, getToken, getAddress } from './utils'
 
 // @TODO humanize signed messages
-
+// @TODO change all console.logs to throw errs
 export function initHumanizerMeta(humanizerMeta: any) {
   const newHumanizerMeta: any = {}
 
