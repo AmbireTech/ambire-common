@@ -381,7 +381,18 @@ export class AccountAdderController extends EventEmitter {
 
     await Promise.all(promises)
 
-    return Object.values(accountsObj)
+    const finalAccountsWithNetworksArray = Object.values(accountsObj)
+
+    // Preserve the original order of networks based on usedOnNetworks
+    const sortedAccountsWithNetworksArray = finalAccountsWithNetworksArray.sort((a, b) => {
+      const networkIdsA = a.account.usedOnNetworks.map((network) => network.id)
+      const networkIdsB = b.account.usedOnNetworks.map((network) => network.id)
+      const networkIndexA = networks.findIndex((network) => networkIdsA.includes(network.id))
+      const networkIndexB = networks.findIndex((network) => networkIdsB.includes(network.id))
+      return networkIndexA - networkIndexB
+    })
+
+    return sortedAccountsWithNetworksArray
   }
 
   async #searchForLinkedAccounts({
