@@ -4,24 +4,9 @@
 /* eslint-disable max-classes-per-file */
 import { describe, expect, test } from '@jest/globals'
 
-import { Storage } from '../../interfaces/storage'
-import { Key, Keystore } from './keystore'
 import { Wallet } from 'ethers'
-
-// Helpers/testing
-function produceMemoryStore(): Storage {
-  const storage = new Map()
-  return {
-    get: (key, defaultValue): any => {
-      const serialized = storage.get(key)
-      return Promise.resolve(serialized ? JSON.parse(serialized) : defaultValue)
-    },
-    set: (key, value) => {
-      storage.set(key, JSON.stringify(value))
-      return Promise.resolve(null)
-    }
-  }
-}
+import { Key, Keystore } from './keystore'
+import { produceMemoryStore } from '../../../test/helpers'
 
 class InternalSigner {
   key

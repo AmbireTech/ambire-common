@@ -10,14 +10,12 @@ import { KeyIterator as KeyIteratorInterface } from '../../interfaces/keyIterato
 // const iterator = new KeyIterator('your-private-key-or-seed-phrase')
 // const keys = await iterator.retrieve(0, 9, "derivation-path")
 
-function isValidPrivateKey(value: string) {
+export function isValidPrivateKey(value: string): boolean {
   try {
-    // eslint-disable-next-line no-new
-    new Wallet(value)
-  } catch (e) {
+    return !!new Wallet(value)
+  } catch {
     return false
   }
-  return true
 }
 
 export class KeyIterator implements KeyIteratorInterface {

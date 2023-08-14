@@ -337,8 +337,12 @@ export class MainController extends EventEmitter {
 
   // when an accountOp is signed; should this be private and be called by
   // the method that signs it?
-  resolveAccountOp() {}
+  resolveAccountOp() {
+    // @TODO: ActivityController.addAccountOp()
+  }
 
   // when a message is signed; same comment applies: should this be private?
-  resolveMessage() {}
+  resolveMessage() {
+    // @TODO: - ActivityController.addSignedMessage()
+  }
 }

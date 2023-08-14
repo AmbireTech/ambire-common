@@ -2,25 +2,9 @@ import { describe, expect } from '@jest/globals'
 import { AbiCoder, ethers, JsonRpcProvider } from 'ethers'
 import { PortfolioController } from './portfolio'
 import { networks } from '../../consts/networks'
-import { getNonce } from '../../../test/helpers'
+import { getNonce, produceMemoryStore } from '../../../test/helpers'
 import { TokenResult } from '../../libs/portfolio'
-import { Storage } from '../../interfaces/storage'
 import { AccountOp } from '../../libs/accountOp/accountOp'
-
-// @TODO: maybe this should be shared with the rest of the tests?
-export function produceMemoryStore(): Storage {
-  const storage = new Map()
-  return {
-    get: (key, defaultValue): any => {
-      const serialized = storage.get(key)
-      return Promise.resolve(serialized ? JSON.parse(serialized) : defaultValue)
-    },
-    set: (key, value) => {
-      storage.set(key, JSON.stringify(value))
-      return Promise.resolve(null)
-    }
-  }
-}
 
 describe('Portfolio Controller ', () => {
   const ethereum = networks.find((x) => x.id === 'ethereum')
