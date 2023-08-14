@@ -68,7 +68,7 @@ describe('AccountAdder', () => {
 
   test('should throw if operation is triggered, but the controller is not initialized yet', async () => {
     await expect(accountAdder.setPage({ page: 1, networks, providers })).rejects.toThrow(
-      'accountAdder: keyIterator not initialized'
+      'Requested method `#calculateAccounts`, but the AccountAdder is not initialized'
     )
   })
 
