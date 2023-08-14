@@ -16,7 +16,6 @@ async function walk(dir) {
   files = await Promise.all(
     files.map(async (file) => {
       const filePath = path.join(dir, file)
-
       return filePath
     })
   )
@@ -45,7 +44,7 @@ async function compileFolder(contractsDir) {
 }
 
 async function run() {
-  await Promise.all(contractsDirs.map(contractsDir => compileFolder(contractsDir)))
+  await Promise.all(contractsDirs.map(contractsDir => compileFolder(contractsDir)).flat())
 }
 
 run()
