@@ -3,7 +3,6 @@ pragma solidity ^0.8.4;
 
 import "./BytesUtils.sol";
 import "../libs/Buffer.sol";
-import 'hardhat/console.sol';
 
 /**
  * @dev RRUtils is a library that provides utilities for parsing DNS resource records.

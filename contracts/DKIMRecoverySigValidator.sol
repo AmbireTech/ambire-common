@@ -11,7 +11,6 @@ import './dkim/RSASHA256.sol';
 import './dnssec/DNSSEC.sol';
 import './dnssec/RRUtils.sol';
 import './libs/OpenZepellingStrings.sol';
-import 'hardhat/console.sol';
 
 contract DKIMRecoverySigValidator {
   using Strings for *;
@@ -93,7 +92,7 @@ contract DKIMRecoverySigValidator {
     bytes calldata sig,
     uint,
     IAmbireAccount.Transaction[] calldata calls
-  ) external returns (bool shouldExecute) {
+  ) external returns (bool) {
 
     AccInfo memory accInfo = abi.decode(data, (AccInfo));
 
@@ -134,8 +133,15 @@ contract DKIMRecoverySigValidator {
           keccak256(accInfo.dkimPubKeyExponent) == keccak256(pubKeyExponent) &&
           keccak256(accInfo.dkimPubKeyModulus) == keccak256(pubKeyModulus)
         )) {
+
+        // check if sigMeta.key.domainName ends with emailDomain
+        // keyDomain should have a value and afterOccurance should be empty
+        Strings.slice memory afterOccurance;
+        Strings.slice memory keyDomain = key.domainName.toSlice();
+        keyDomain.rsplit(emailDomain, afterOccurance);
+        require(bytes(keyDomain.toString()).length > 0 && bytes(afterOccurance.toString()).length == 0, 'domain in sigMeta is not authorized for this account');
+
         bytes32 keyId = keccak256(abi.encode(key));
-        // @TODO we need to validate sigMeta.key.domainName against the email from `from`:
         require(accInfo.acceptUnknownSelectors, 'account does not allow unknown selectors');
         KeyInfo storage keyInfo = dkimKeys[keyId];
         require(keyInfo.isExisting, 'non-existant DKIM key');
@@ -159,16 +165,17 @@ contract DKIMRecoverySigValidator {
         SignatureValidator.recoverAddrImpl(hashToSign, secondSig, true) == accInfo.secondaryKey,
         'second key validation failed'
       );
-      shouldExecute = true;
     }
 
     // In those modes, we require a timelock
     if (mode == SigMode.OnlySecond || mode == SigMode.OnlyDKIM) {
-      shouldExecute = checkTimelock(identifier, accInfo.onlyOneSigTimelock);
-      if (!shouldExecute) return shouldExecute;
+      if (! checkTimelock(identifier, accInfo.onlyOneSigTimelock)) {
+        return false;
+      }
     }
 
     recoveries[identifier] = true;
+    return true;
   }
 
   function addDKIMKeyWithDNSSec(DNSSEC.RRSetWithSignature[] memory rrSets) public {
@@ -179,7 +186,7 @@ contract DKIMRecoverySigValidator {
     require(keccak256(rrs) == keccak256(rrset.data), 'DNSSec verification failed');
 
     (DKIMKey memory key, string memory domainName) = parse(rrSets[rrSets.length-1]);
-    bytes32 id = keccak256(abi.encode(key.domainName, key.pubKeyModulus, key.pubKeyExponent));
+    bytes32 id = keccak256(abi.encode(key));
     KeyInfo storage keyInfo = dkimKeys[id];
     require(!keyInfo.isExisting, 'key already exists');
 
