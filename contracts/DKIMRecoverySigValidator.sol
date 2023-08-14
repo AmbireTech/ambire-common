@@ -104,8 +104,8 @@ contract DKIMRecoverySigValidator {
     require(calls.length == 1, 'calls length must be 1');
     IAmbireAccount.Transaction memory txn = calls[0];
     require(txn.value == 0, 'call value must be 0');
-    require(txn.to == accountAddr, 'call to must be the account');
-    require(keccak256(txn.data) == keccak256(abi.encodeWithSelector(IAmbireAccount.setAddrPrivilege.selector, sigMeta.newKeyToSet, sigMeta.newPrivilegeValue)));
+    require(txn.to == accountAddr, 'call "to" must be the ambire account addr');
+    require(keccak256(txn.data) == keccak256(abi.encodeWithSelector(IAmbireAccount.setAddrPrivilege.selector, sigMeta.newKeyToSet, sigMeta.newPrivilegeValue)), 'Transaction data is not set correctly, either selector, key or priv is incorrect');
 
     SigMode mode = sigMeta.mode;
     if (mode == SigMode.Both || mode == SigMode.OnlyDKIM) {
@@ -234,31 +234,8 @@ contract DKIMRecoverySigValidator {
   }
 
   function removeDKIMKey(bytes32 id) public {
-    require(msg.sender == authorizedToRevoke);
+    require(msg.sender == authorizedToRevoke, 'Address unauthorized to revoke');
     dkimKeys[id].dateRemoved = uint32(block.timestamp);
-  }
-
-  //
-  // Timelock
-  //
-  struct Timelock {
-    bool isExecuted;
-    uint32 whenReady;
-  }
-
-  mapping (bytes32 => Timelock) public timelocks;
-
-  function checkTimelock(bytes32 identifier, uint32 time) public returns (bool shouldExecute) {
-    Timelock storage timelock = timelocks[identifier];
-    require(!timelock.isExecuted, 'timelock: already executed');
-    if (timelock.whenReady == 0) {
-      timelock.whenReady = uint32(block.timestamp) + time;
-      return false;
-    } else {
-      require(uint32(block.timestamp) >= timelock.whenReady, 'timelock: not ready yet');
-      timelock.isExecuted = true;
-      return true;
-    }
   }
 
   function getDomainNameFromSignedSet(DNSSEC.RRSetWithSignature memory rrSet) public pure returns(string memory) {
@@ -288,5 +265,28 @@ contract DKIMRecoverySigValidator {
       // subject looks like this: subject:Give permissions to address
       Strings.slice memory newKeyString = 'subject:Give permissions to '.toSlice().concat(OpenZepellingStrings.toHexString(newKeyToSet).toSlice()).toSlice();
       require(canonizedHeaders.toSlice().contains(newKeyString), 'emailSubject not valid');
+  }
+
+  //
+  // Timelock
+  //
+  struct Timelock {
+    bool isExecuted;
+    uint32 whenReady;
+  }
+
+  mapping (bytes32 => Timelock) public timelocks;
+
+  function checkTimelock(bytes32 identifier, uint32 time) public returns (bool shouldExecute) {
+    Timelock storage timelock = timelocks[identifier];
+    require(!timelock.isExecuted, 'timelock: already executed');
+    if (timelock.whenReady == 0) {
+      timelock.whenReady = uint32(block.timestamp) + time;
+      return false;
+    } else {
+      require(uint32(block.timestamp) >= timelock.whenReady, 'timelock: not ready yet');
+      timelock.isExecuted = true;
+      return true;
+    }
   }
 }
