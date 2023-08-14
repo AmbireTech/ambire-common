@@ -21,7 +21,10 @@ export function uniswapHumanizer(
     // check against sus contracts with same func selectors
     if (accountOp.humanizerMeta?.[`names:${call.to}`] === 'Uniswap') {
       const humanizedCalls = matcher?.[call.to]?.[call.data.substring(0, 10)](accountOp, call)
-      humanizedCalls.forEach((hc: IrCall) => newCalls.push(hc))
+      humanizedCalls.forEach((hc: IrCall, index: number) =>
+        // if multicall has value it shouldnt result in multiple calls with value
+        index === 0 ? newCalls.push(hc) : newCalls.push({ ...hc, value: 0n })
+      )
     } else {
       newCalls.push(call)
     }
