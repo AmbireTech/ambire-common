@@ -41,6 +41,12 @@ export function callsToIr(accountOp: AccountOp): Ir {
   return { calls: irCalls }
 }
 
+const getName = (address: string, humanizerMeta: any) => {
+  if (humanizerMeta[`addressBook:${address}`]) return humanizerMeta[`addressBook:${address}`]
+  if (humanizerMeta[`names:${address}`]) return humanizerMeta[`names:${address}`]
+  if (humanizerMeta[`tokens:${address}`]) return `${humanizerMeta[`names:${address}`]} contract`
+  return null
+}
 // adds 'name' proeprty to visualization of addresses (needs initialHumanizer to work on unparsed transactions)
 export function namingHumanizer(
   accountOp: AccountOp,
@@ -55,13 +61,7 @@ export function namingHumanizer(
             ...v,
             // in case of more sophisticated name resolutions
             // new name function so it can be getName() || shortenAddress() ????????
-            name:
-              accountOp.humanizerMeta?.[`names:${v.address}`] ||
-              (accountOp.humanizerMeta?.[`tokens:${v.address}`]
-                ? accountOp.humanizerMeta?.[`names:${v.address}`] ||
-                  `${accountOp.humanizerMeta?.[`tokens:${v.address}`]?.[0]} contract`
-                : null) ||
-              shortenAddress(v.address)
+            name: getName(v.address, accountOp.humanizerMeta) || shortenAddress(v.address)
           }
         : v
     })
