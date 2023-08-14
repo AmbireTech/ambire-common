@@ -94,46 +94,44 @@ export class AccountAdderController extends EventEmitter {
     }[] = []
 
     this.#calculatedAccounts.forEach((calculatedAccount) => {
-      const linkedAccountDuplication: any = this.#linkedAccounts.find(
-        (linkedAcc) => linkedAcc.account.addr === calculatedAccount.account.addr
+      const allLinkedForThisAccount = this.#linkedAccounts.filter(
+        (linkedAcc) =>
+          calculatedAccount.type === 'legacy' &&
+          linkedAcc.account.associatedKeys.includes(calculatedAccount.account.addr)
+      )
+      const theSmartAccountOnThisSlot: any = this.#calculatedAccounts.find(
+        (acc) => acc.slot === calculatedAccount.slot && acc.type === 'smart'
       )
 
-      // In case of duplication replace the calculated smart account with the linked account from the relayer
-      if (linkedAccountDuplication) {
-        linkedAccountDuplication.type = 'smart'
-        linkedAccountDuplication.slot = calculatedAccount.slot
+      const linkedAccountThatDuplicatesWithTheSmartAccount: any = allLinkedForThisAccount.find(
+        (linkedAcc) => linkedAcc.account.addr === theSmartAccountOnThisSlot?.account?.addr
+      )
 
-        this.#linkedAccounts.forEach((linked) => {
-          const legacyAccOnSameSlot = this.#calculatedAccounts.find(
-            (acc) => acc.slot === calculatedAccount.slot && acc.type === 'legacy'
-          )
-          if (linked.account.associatedKeys.includes(legacyAccOnSameSlot!.account.addr)) {
-            mergedAccounts.push({
-              ...linked,
-              slot: calculatedAccount.slot
-            }) // adds the linked acc
-          }
-        })
-      } else if (calculatedAccount.type === 'smart') {
-        // TODO: Figure out if this is still a valid case
+      if (calculatedAccount.type === 'legacy') {
+        mergedAccounts.push(calculatedAccount) // Add the legacy acc
 
-        // in case of no duplication but the curr acc is of type smart smart
-        mergedAccounts.push(calculatedAccount) // adds the smart acc
-
-        this.#linkedAccounts.forEach((linked) => {
-          const legacyAccOnSameSlot = this.#calculatedAccounts.find(
-            (acc) => acc.slot === calculatedAccount.slot && acc.type === 'legacy'
-          )
-          if (linked.account.associatedKeys.includes(legacyAccOnSameSlot!.account.addr)) {
-            mergedAccounts.push({
-              ...linked,
-              slot: calculatedAccount.slot
-            }) // adds the linked acc
-          }
-        })
-      } else {
-        mergedAccounts.push(calculatedAccount) // adds the legacy account
+        if (!linkedAccountThatDuplicatesWithTheSmartAccount) {
+          // Add the smart acc if there is no linked acc that is duplicated with the generated smart acc for the given slot
+          mergedAccounts.push(theSmartAccountOnThisSlot)
+        }
       }
+
+      allLinkedForThisAccount.forEach((linkedAcc) => {
+        if (
+          linkedAcc.account.addr === linkedAccountThatDuplicatesWithTheSmartAccount?.account?.addr
+        ) {
+          linkedAccountThatDuplicatesWithTheSmartAccount.type = 'smart'
+          linkedAccountThatDuplicatesWithTheSmartAccount.slot = calculatedAccount.slot
+          // Add the duplicated linked acc as a smart acc
+          mergedAccounts.push(linkedAccountThatDuplicatesWithTheSmartAccount)
+        } else {
+          // If linked acc not duplicated just add it
+          mergedAccounts.push({
+            ...linkedAcc,
+            slot: calculatedAccount.slot
+          })
+        }
+      })
     })
 
     mergedAccounts.sort((a, b) => {
