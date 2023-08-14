@@ -335,7 +335,7 @@ export class AccountAdderController extends EventEmitter {
       // eslint-disable-next-line no-await-in-loop
       const smartAccount = await getSmartAccount(key)
       accounts.push({ account: getLegacyAccount(key), isLinked: false, slot: index + 1 })
-      accounts.push({ account: smartAccount, isLinked: true, slot: index + 1 })
+      accounts.push({ account: smartAccount, isLinked: false, slot: index + 1 })
     }
 
     const accountsWithNetworks = await this.#getAccountsUsedOnNetworks({
