@@ -14,8 +14,6 @@ const PAGE_SIZE = 5
 
 type ExtendedAccount = Account & { usedOnNetworks: NetworkDescriptor[] }
 
-type AccountType = 'legacy' | 'smart' | 'linked'
-
 /**
  * Account Adder Controller
  * is responsible for listing accounts that can be selected for adding, and for
@@ -62,11 +60,11 @@ export class AccountAdderController extends EventEmitter {
 
   #calculatedAccounts: {
     account: ExtendedAccount
-    type: AccountType
+    isLinked: boolean
     slot: number
   }[] = []
 
-  #linkedAccounts: { account: ExtendedAccount; type: AccountType }[] = []
+  #linkedAccounts: { account: ExtendedAccount; isLinked: boolean }[] = []
 
   constructor({
     storage,
@@ -84,30 +82,29 @@ export class AccountAdderController extends EventEmitter {
 
   get accountsOnPage(): {
     account: ExtendedAccount
-    type: AccountType
+    isLinked: boolean
     slot: number
   }[] {
     const mergedAccounts: {
       account: ExtendedAccount
-      type: AccountType
+      isLinked: boolean
       slot: number
     }[] = []
 
     this.#calculatedAccounts.forEach((calculatedAccount) => {
       const allLinkedForThisAccount = this.#linkedAccounts.filter(
         (linkedAcc) =>
-          calculatedAccount.type === 'legacy' &&
+          !calculatedAccount.account.creation &&
           linkedAcc.account.associatedKeys.includes(calculatedAccount.account.addr)
       )
       const theSmartAccountOnThisSlot: any = this.#calculatedAccounts.find(
-        (acc) => acc.slot === calculatedAccount.slot && acc.type === 'smart'
+        (acc) => acc.account.creation !== null && acc.slot === calculatedAccount.slot
       )
-
       const linkedAccountThatDuplicatesWithTheSmartAccount: any = allLinkedForThisAccount.find(
         (linkedAcc) => linkedAcc.account.addr === theSmartAccountOnThisSlot?.account?.addr
       )
 
-      if (calculatedAccount.type === 'legacy') {
+      if (!calculatedAccount.account.creation) {
         mergedAccounts.push(calculatedAccount) // Add the legacy acc
 
         if (!linkedAccountThatDuplicatesWithTheSmartAccount) {
@@ -120,7 +117,7 @@ export class AccountAdderController extends EventEmitter {
         if (
           linkedAcc.account.addr === linkedAccountThatDuplicatesWithTheSmartAccount?.account?.addr
         ) {
-          linkedAccountThatDuplicatesWithTheSmartAccount.type = 'smart'
+          linkedAccountThatDuplicatesWithTheSmartAccount.isLinked = false
           linkedAccountThatDuplicatesWithTheSmartAccount.slot = calculatedAccount.slot
           // Add the duplicated linked acc as a smart acc
           mergedAccounts.push(linkedAccountThatDuplicatesWithTheSmartAccount)
@@ -135,10 +132,14 @@ export class AccountAdderController extends EventEmitter {
     })
 
     mergedAccounts.sort((a, b) => {
-      if (a.slot !== b.slot) return a.slot - b.slot
+      const getTypeOrder = (item: any) => {
+        if (!item.account.creation) return -1
+        if (item.isLinked) return 1
 
-      const typeOrder = { legacy: 0, smart: 1, linked: 2 }
-      return typeOrder[a.type] - typeOrder[b.type]
+        return 0
+      }
+
+      return getTypeOrder(a) - getTypeOrder(b) || a.slot - b.slot
     })
 
     return mergedAccounts
@@ -240,7 +241,7 @@ export class AccountAdderController extends EventEmitter {
     this.emitUpdate()
     this.#searchForLinkedAccounts({
       accounts: this.#calculatedAccounts
-        .filter((acc) => acc.type === 'legacy')
+        .filter((acc) => !acc.account.creation)
         .map((acc) => acc.account),
       networks,
       providers
@@ -302,7 +303,7 @@ export class AccountAdderController extends EventEmitter {
   }): Promise<
     {
       account: ExtendedAccount
-      type: AccountType
+      isLinked: boolean
       slot: number
     }[]
   > {
@@ -318,7 +319,7 @@ export class AccountAdderController extends EventEmitter {
       throw new Error('Requested method `#calculateAccounts`, but keyIterator is not initialized')
     }
 
-    const accounts: { account: Account; type: AccountType; slot: number }[] = []
+    const accounts: { account: Account; isLinked: boolean; slot: number }[] = []
 
     const startIdx = (this.page - 1) * this.pageSize
     const endIdx = (this.page - 1) * this.pageSize + (this.pageSize - 1)
@@ -333,8 +334,8 @@ export class AccountAdderController extends EventEmitter {
     for (const [index, key] of keys.entries()) {
       // eslint-disable-next-line no-await-in-loop
       const smartAccount = await getSmartAccount(key)
-      accounts.push({ account: getLegacyAccount(key), type: 'legacy', slot: index + 1 })
-      accounts.push({ account: smartAccount, type: 'smart', slot: index + 1 })
+      accounts.push({ account: getLegacyAccount(key), isLinked: false, slot: index + 1 })
+      accounts.push({ account: smartAccount, isLinked: true, slot: index + 1 })
     }
 
     const accountsWithNetworks = await this.#getAccountsUsedOnNetworks({
@@ -353,12 +354,12 @@ export class AccountAdderController extends EventEmitter {
     networks,
     providers
   }: {
-    accounts: { account: Account; type: AccountType; slot: number }[]
+    accounts: { account: Account; isLinked: boolean; slot: number }[]
     networks: NetworkDescriptor[]
     providers: { [key: string]: JsonRpcProvider }
-  }): Promise<{ account: ExtendedAccount; type: AccountType; slot: number }[]> {
+  }): Promise<{ account: ExtendedAccount; isLinked: boolean; slot: number }[]> {
     const accountsObj: {
-      [key: string]: { account: ExtendedAccount; type: AccountType; slot: number }
+      [key: string]: { account: ExtendedAccount; isLinked: boolean; slot: number }
     } = Object.fromEntries(
       accounts.map((a) => [a.account.addr, { ...a, account: { ...a.account, usedOnNetworks: [] } }])
     )
@@ -424,7 +425,7 @@ export class AccountAdderController extends EventEmitter {
     const url = `/v2/account-by-key/linked/accounts?${keys}`
 
     const { data } = await this.#callRelayer(url)
-    const linkedAccounts: { account: ExtendedAccount; type: AccountType }[] = Object.keys(
+    const linkedAccounts: { account: ExtendedAccount; isLinked: boolean }[] = Object.keys(
       data.accounts
     ).map((addr: any) => {
       const { factoryAddr, bytecode, salt, associatedKeys } = data.accounts[addr]
@@ -447,7 +448,7 @@ export class AccountAdderController extends EventEmitter {
             salt
           }
         } as ExtendedAccount,
-        type: 'linked'
+        isLinked: true
       }
     })
 

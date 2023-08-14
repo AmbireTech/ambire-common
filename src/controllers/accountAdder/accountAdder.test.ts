@@ -125,9 +125,7 @@ describe('AccountAdder', () => {
       // on the third emit there should be linked accounts fetched
       if (emitCounter === 3) {
         expect(accountAdder.linkedAccountsLoading).toBe(false)
-        const linkedAccountsOnPage = accountAdder.accountsOnPage.filter(
-          ({ type }) => type === 'linked'
-        )
+        const linkedAccountsOnPage = accountAdder.accountsOnPage.filter(({ isLinked }) => isLinked)
         expect(linkedAccountsOnPage.length).toEqual(4)
 
         // One linked account on slot 1 and 3 linked accounts on slot 3.
