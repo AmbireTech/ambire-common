@@ -4,7 +4,7 @@ import { describe, expect, jest, test } from '@jest/globals'
 
 import { HumanizerController } from './humanizer'
 import humanizerJSON from '../../libs/humanizer/humanizerInfo.json'
-import { initHumanizerMeta } from '../../libs/humanizer/mainHumanizer'
+import { initHumanizerMeta } from '../../libs/humanizer/humanizer'
 import { Storage } from '../../interfaces/storage'
 import { AccountOp } from '../../libs/accountOp/accountOp'
 

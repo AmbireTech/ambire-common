@@ -1,13 +1,10 @@
 /* eslint-disable no-await-in-loop */
 // @TODO script that compiles list of contract on build and adds the selectors to the humanizer
 // @TODO func that takes IrCall and returns the humanization as text
-import { ethers } from 'ethers'
-import { HumanizerFragment, Ir } from '../../libs/humanizer/interfaces'
+import { Ir } from '../../libs/humanizer/interfaces'
 import { Storage } from '../../interfaces/storage'
 import { AccountOp } from '../../libs/accountOp/accountOp'
-import { genericErc20Humanizer, genericErc721Humanizer } from '../../libs/humanizer/modules/tokens'
-import { uniswapHumanizer } from '../../libs/humanizer/modules/Uniswap'
-import { callsToIr, fallbackHumanizer, namingHumanizer } from '../../libs/humanizer/mainHumanizer'
+import { humanize } from '../../libs/humanizer/humanizer'
 import EventEmitter from '../eventEmitter'
 
 const HUMANIZER_META_KEY = 'HumanizerMeta'
@@ -36,7 +33,7 @@ export class HumanizerController extends EventEmitter {
     }
 
     for (let i = 0; i <= 3; i++) {
-      const [ir, asyncOps] = this.internalHumanization(accountOp)
+      const [ir, asyncOps] = humanize(accountOp, { fetch: this.#fetch })
       this.ir = ir
       this.emitUpdate()
       if (!asyncOps.length) return
@@ -60,28 +57,5 @@ export class HumanizerController extends EventEmitter {
       }
       await this.#storage.set(HUMANIZER_META_KEY, { ...storedHumanizerMeta, ...globalFragmentData })
     }
-  }
-
-  private internalHumanization(_accountOp: AccountOp): [Ir, Array<Promise<HumanizerFragment>>] {
-    const accountOp = {
-      ..._accountOp,
-      calls: _accountOp.calls.map((c) => ({ ...c, to: ethers.getAddress(c.to) }))
-    }
-    const humanizerModules: Function[] = [
-      genericErc20Humanizer,
-      genericErc721Humanizer,
-      uniswapHumanizer,
-      namingHumanizer,
-      fallbackHumanizer
-    ]
-    const options = { fetch: this.#fetch }
-    let currentIr: Ir = callsToIr(accountOp)
-    let asyncOps: any[] = []
-    humanizerModules.forEach((hm) => {
-      let newPromises = []
-      ;[currentIr, newPromises] = hm(accountOp, currentIr, options)
-      asyncOps = [...asyncOps, ...newPromises]
-    })
-    return [currentIr, asyncOps]
   }
 }

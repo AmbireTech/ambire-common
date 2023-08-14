@@ -104,7 +104,6 @@ const checkIfUnknowAction = (v: Array<any>) => {
   } catch (e) {
     return false
   }
-  return false
 }
 
 export function fallbackHumanizer(
@@ -141,21 +140,23 @@ export function fallbackHumanizer(
   return [newIr, asyncOps]
 }
 
-export async function humanize(accountOp: AccountOp, options?: any) {
-  // IDEA humanizer that adds {expected: } (should a txn have value or not, should txn be to contract or not to contract, add warning)
-  const humanizerModules = [
+export function humanize(
+  _accountOp: AccountOp,
+  options?: any
+): [Ir, Array<Promise<HumanizerFragment>>] {
+  const accountOp = {
+    ..._accountOp,
+    calls: _accountOp.calls.map((c) => ({ ...c, to: ethers.getAddress(c.to) }))
+  }
+  const humanizerModules: Function[] = [
     genericErc20Humanizer,
     genericErc721Humanizer,
     uniswapHumanizer,
-    namingHumanizer,
-    fallbackHumanizer
+    fallbackHumanizer,
+    namingHumanizer
   ]
-
   let currentIr: Ir = callsToIr(accountOp)
-
-  // asyncOps all data that has to be retrieved asyncly
   let asyncOps: any[] = []
-
   humanizerModules.forEach((hm) => {
     let newPromises = []
     ;[currentIr, newPromises] = hm(accountOp, currentIr, options)

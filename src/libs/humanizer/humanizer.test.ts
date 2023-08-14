@@ -3,7 +3,7 @@ import { describe, expect, test } from '@jest/globals'
 import { ethers } from 'ethers'
 import fetch from 'node-fetch'
 import { AccountOp } from '../accountOp/accountOp'
-import { callsToIr, namingHumanizer, initHumanizerMeta, fallbackHumanizer } from './mainHumanizer'
+import { callsToIr, namingHumanizer, initHumanizerMeta, fallbackHumanizer } from './humanizer'
 
 import { uniswapHumanizer } from './modules/Uniswap'
 import { Ir } from './interfaces'
