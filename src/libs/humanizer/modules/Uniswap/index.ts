@@ -1,5 +1,5 @@
 import { AccountOp } from '../../../accountOp/accountOp'
-import { Ir, IrCall } from '../../interfaces'
+import { HumanizerFragment, Ir, IrCall } from '../../interfaces'
 import { uniUniversalRouter } from './uniUnivarsalRouter'
 import { uniV2Mapping } from './uniV2'
 import { uniV32Mapping, uniV3Mapping } from './uniV3'
@@ -9,21 +9,22 @@ export function uniswapHumanizer(
   currentIr: Ir,
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   options?: any
-): [Ir, Promise<any>[]] {
-  const matcher: any = {
+): [Ir, Promise<HumanizerFragment>[]] {
+  const matcher: { [x: string]: { [x: string]: (a: AccountOp, c: IrCall) => IrCall[] } } = {
     '0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D': uniV2Mapping(accountOp.humanizerMeta),
     '0xE592427A0AEce92De3Edee1F18E0157C05861564': uniV3Mapping(accountOp.humanizerMeta),
     '0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45': uniV32Mapping(accountOp.humanizerMeta),
     '0x4C60051384bd2d3C01bfc845Cf5F4b44bcbE9de5': uniUniversalRouter(accountOp.humanizerMeta)
   }
-  const newCalls = currentIr.calls.map((call: IrCall) => {
+  const newCalls: IrCall[] = []
+  currentIr.calls.forEach((call: IrCall) => {
     // check against sus contracts with same func selectors
-    return accountOp.humanizerMeta?.[`names:${call.to}`] === 'Uniswap'
-      ? {
-          ...call,
-          fullVisualization: matcher?.[call.to]?.[call.data.substring(0, 10)](accountOp, call)
-        }
-      : call
+    if (accountOp.humanizerMeta?.[`names:${call.to}`] === 'Uniswap') {
+      const humanizedCalls = matcher?.[call.to]?.[call.data.substring(0, 10)](accountOp, call)
+      humanizedCalls.forEach((hc: IrCall) => newCalls.push(hc))
+    } else {
+      newCalls.push(call)
+    }
   })
   const newIr = { calls: newCalls }
   return [newIr, []]

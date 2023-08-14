@@ -284,11 +284,11 @@ describe('module tests', () => {
           type: 'address',
           address: '0x5a5Be6b067d6B5B018adBCD27EE6972105B3b400'
         },
-        { type: 'lable', content: 'already expired' },
-        { type: 'action', content: 'Refund' }
-      ]
+        { type: 'lable', content: 'already expired' }
+      ],
+      [{ type: 'action', content: 'Refund' }]
     ]
-    expect(calls.length).toEqual(transactions.uniV3.length)
+    expect(calls.length).toEqual(expectedVisualization.length)
     calls.forEach((c, i) => {
       expect(c.fullVisualization.length).toBe(expectedVisualization[i].length)
       c.fullVisualization.forEach((v: any, j: number) => {
