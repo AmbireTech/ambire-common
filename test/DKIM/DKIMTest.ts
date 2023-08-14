@@ -209,6 +209,57 @@ describe('DKIM sigMode Both', function () {
     await expect(account.execute(txns, finalSig))
       .to.be.revertedWith('account does not allow unknown selectors')
   })
+  it('should revert if there is transaction mendling - more txns; wrong new signer', async function () {
+    const [relayer, newSigner] = await ethers.getSigners()
+    const gmail = await readFile(path.join(emailsPath, 'address-permissions.eml'), {
+      encoding: 'ascii'
+    })
+    const parsedContents: any = await parseEmail(gmail)
+    const validatorData = getValidatorData(parsedContents, relayer)
+    const validatorAddr = await dkimRecovery.getAddress()
+    const {signerKey} = getSignerKey(validatorAddr, validatorData)
+
+    const txns = [
+      getPriviledgeTxn(ambireAccountAddress, relayer.address, true),
+      getPriviledgeTxn(ambireAccountAddress, newSigner.address, true)
+    ]
+    const sigMetaTuple = 'tuple(uint8, tuple(string, bytes, bytes), string, address, bytes32)'
+    const sigMetaValues = [
+      ethers.toBeHex(0, 1),
+      [
+        `unknown._domainKey.gmail.com`,
+        ethers.hexlify(parsedContents[0].modulus),
+        ethers.hexlify(ethers.toBeHex(parsedContents[0].exponent)),
+      ],
+      parsedContents[0].processedHeader,
+      newSigner.address,
+      ethers.toBeHex(1, 32)
+    ]
+    const innerSig = abiCoder.encode([sigMetaTuple, 'bytes', 'bytes'], [
+      sigMetaValues,
+      ethers.toBeHex(0, 1),
+      ethers.toBeHex(0, 1)
+    ])
+    const sig = abiCoder.encode(['address', 'address', 'bytes', 'bytes'], [signerKey, validatorAddr, validatorData, innerSig])
+    const finalSig = wrapExternallyValidated(sig)
+
+    await expect(account.execute(txns, finalSig))
+      .to.be.revertedWith('calls length must be 1')
+
+    txns.pop()
+    txns[0][1] = 1
+    await expect(account.execute(txns, finalSig))
+      .to.be.revertedWith('call value must be 0')
+
+    txns[0][1] = 0
+    txns[0][0] = newSigner.address
+    await expect(account.execute(txns, finalSig))
+      .to.be.revertedWith('call "to" must be the ambire account addr')
+
+    txns[0][0] = ambireAccountAddress
+    await expect(account.execute(txns, finalSig))
+      .to.be.revertedWith('Transaction data is not set correctly, either selector, key or priv is incorrect')
+  })
 })
 
 describe('DKIM sigMode OnlyDKIM', function () {
@@ -551,6 +602,42 @@ describe('DKIM sigMode Both with acceptUnknownSelectors true', function () {
       .to.be.revertedWith('recovery already done')
   })
 
+  it('should revert if the domain in sigMeta is different than the fromEmail domain in the accInfo', async function () {
+    const [relayer, newSigner] = await ethers.getSigners()
+    const gmail = await readFile(path.join(emailsPath, 'address-permissions.eml'), {
+      encoding: 'ascii'
+    })
+    const parsedContents: any = await parseEmail(gmail)
+    const validatorData = getValidatorData(parsedContents, relayer, {
+      acceptUnknownSelectors: true
+    })
+    const validatorAddr = await dkimRecoveryForTesting.getAddress()
+    const {signerKey} = getSignerKey(validatorAddr, validatorData)
+
+    const txns = [getPriviledgeTxn(ambireAccountAddress, newSigner.address, true)]
+    const sigMetaTuple = 'tuple(uint8, tuple(string, bytes, bytes), string, address, bytes32)'
+    const sigMetaValues = [
+      ethers.toBeHex(0, 1),
+      [
+        `nonexistent._domainKey.abv.bg`,
+        ethers.hexlify(parsedContents[0].modulus),
+        ethers.hexlify(ethers.toBeHex(parsedContents[0].exponent)),
+      ],
+      parsedContents[0].processedHeader,
+      newSigner.address,
+      ethers.toBeHex(1, 32)
+    ]
+    const innerSig = abiCoder.encode([sigMetaTuple, 'bytes', 'bytes'], [
+      sigMetaValues,
+      ethers.toBeHex(0, 1),
+      ethers.toBeHex(0, 1)
+    ])
+    const sig = abiCoder.encode(['address', 'address', 'bytes', 'bytes'], [signerKey, validatorAddr, validatorData, innerSig])
+    const finalSig = wrapExternallyValidated(sig)
+    await expect(account.execute(txns, finalSig))
+      .to.be.revertedWith('domain in sigMeta is not authorized for this account')
+  })
+
   it('should revert if an unknown selector for the account and one that does not exist in dkimKeys is passed', async function () {
     const [relayer, newSigner] = await ethers.getSigners()
     const gmail = await readFile(path.join(emailsPath, 'address-permissions.eml'), {
@@ -679,5 +766,121 @@ describe('DKIM sigMode Both with acceptUnknownSelectors true', function () {
     const finalSig = wrapExternallyValidated(sig)
     await expect(account.execute(txns, finalSig))
       .to.be.revertedWith('DKIM key not added yet')
+  })
+
+  it('should revert with non-existant DKIM key if the wrong modulus / exponent is passed', async function () {
+    const [relayer, newSigner] = await ethers.getSigners()
+    const gmail = await readFile(path.join(emailsPath, 'address-permissions.eml'), {
+      encoding: 'ascii'
+    })
+    const parsedContents: any = await parseEmail(gmail)
+    const validatorData = getValidatorData(parsedContents, relayer, {
+      acceptUnknownSelectors: true
+    })
+    const validatorAddr = await dkimRecoveryForTesting.getAddress()
+    const {signerKey} = getSignerKey(validatorAddr, validatorData)
+    const dkimSig = parsedContents[0].solidity.signature
+
+    const txns = [getPriviledgeTxn(ambireAccountAddress, newSigner.address, true)]
+    const sigMetaTuple = 'tuple(uint8, tuple(string, bytes, bytes), string, address, bytes32)'
+    const sigMetaValues = [
+      ethers.toBeHex(0, 1),
+      [
+        `unknown._domainKey.gmail.com`,
+        ethers.hexlify(parsedContents[0].modulus),
+        ethers.toBeHex(65666)
+      ],
+      parsedContents[0].processedHeader,
+      newSigner.address,
+      ethers.toBeHex(1, 32)
+    ]
+    const innerSig = abiCoder.encode([sigMetaTuple, 'bytes', 'bytes'], [
+      sigMetaValues,
+      dkimSig,
+      ethers.toBeHex(0, 1)
+    ])
+    const sig = abiCoder.encode(['address', 'address', 'bytes', 'bytes'], [signerKey, validatorAddr, validatorData, innerSig])
+    const finalSig = wrapExternallyValidated(sig)
+    await expect(account.execute(txns, finalSig))
+      .to.be.revertedWith('non-existant DKIM key')
+  })
+
+  it('should revert with DKIM signature verification failed if headers have been tampered with', async function () {
+    const [relayer, newSigner] = await ethers.getSigners()
+    const gmail = await readFile(path.join(emailsPath, 'address-permissions.eml'), {
+      encoding: 'ascii'
+    })
+    const parsedContents: any = await parseEmail(gmail)
+    const validatorData = getValidatorData(parsedContents, relayer, {
+      acceptUnknownSelectors: true
+    })
+    const validatorAddr = await dkimRecoveryForTesting.getAddress()
+    const {signerKey} = getSignerKey(validatorAddr, validatorData)
+    const dkimSig = parsedContents[0].solidity.signature
+
+    const txns = [getPriviledgeTxn(ambireAccountAddress, newSigner.address, true)]
+    const sigMetaTuple = 'tuple(uint8, tuple(string, bytes, bytes), string, address, bytes32)'
+    const sigMetaValues = [
+      ethers.toBeHex(0, 1),
+      [
+        `${parsedContents[0].selector}._domainKey.gmail.com`,
+        ethers.hexlify(parsedContents[0].modulus),
+        ethers.hexlify(ethers.toBeHex(parsedContents[0].exponent)),
+      ],
+      parsedContents[0].processedHeader.replace('mime-version:1.0', 'mime-version:1.1'),
+      newSigner.address,
+      ethers.toBeHex(1, 32)
+    ]
+    const innerSig = abiCoder.encode([sigMetaTuple, 'bytes', 'bytes'], [
+      sigMetaValues,
+      dkimSig,
+      ethers.toBeHex(0, 1)
+    ])
+    const sig = abiCoder.encode(['address', 'address', 'bytes', 'bytes'], [signerKey, validatorAddr, validatorData, innerSig])
+    const finalSig = wrapExternallyValidated(sig)
+    await expect(account.execute(txns, finalSig))
+      .to.be.revertedWith('DKIM signature verification failed')
+  })
+
+  it('should revert with DKIM signature verification failed if a different dkimSig is passed', async function () {
+    const [relayer, newSigner] = await ethers.getSigners()
+    const gmail = await readFile(path.join(emailsPath, 'address-permissions.eml'), {
+      encoding: 'ascii'
+    })
+    const parsedContents: any = await parseEmail(gmail)
+    const youtube = await readFile(path.join(emailsPath, 'youtube.eml'), {
+      encoding: 'ascii'
+    })
+    const youtubeParsedContents: any = await parseEmail(youtube)
+    const youtubeSig = youtubeParsedContents[0].solidity.signature
+
+    const validatorData = getValidatorData(parsedContents, relayer, {
+      acceptUnknownSelectors: true
+    })
+    const validatorAddr = await dkimRecoveryForTesting.getAddress()
+    const {signerKey} = getSignerKey(validatorAddr, validatorData)
+
+    const txns = [getPriviledgeTxn(ambireAccountAddress, newSigner.address, true)]
+    const sigMetaTuple = 'tuple(uint8, tuple(string, bytes, bytes), string, address, bytes32)'
+    const sigMetaValues = [
+      ethers.toBeHex(0, 1),
+      [
+        `${parsedContents[0].selector}._domainKey.gmail.com`,
+        ethers.hexlify(parsedContents[0].modulus),
+        ethers.hexlify(ethers.toBeHex(parsedContents[0].exponent)),
+      ],
+      parsedContents[0].processedHeader,
+      newSigner.address,
+      ethers.toBeHex(1, 32)
+    ]
+    const innerSig = abiCoder.encode([sigMetaTuple, 'bytes', 'bytes'], [
+      sigMetaValues,
+      youtubeSig,
+      ethers.toBeHex(0, 1)
+    ])
+    const sig = abiCoder.encode(['address', 'address', 'bytes', 'bytes'], [signerKey, validatorAddr, validatorData, innerSig])
+    const finalSig = wrapExternallyValidated(sig)
+    await expect(account.execute(txns, finalSig))
+      .to.be.revertedWith('DKIM signature verification failed')
   })
 })
