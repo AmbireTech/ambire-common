@@ -1,4 +1,6 @@
 /* eslint-disable no-await-in-loop */
+// @TODO script that compiles list of contract on build and adds the selectors to the humanizer
+// @TODO func that takes IrCall and returns the humanization as text
 import { ethers } from 'ethers'
 import { HumanizerFragment, Ir } from '../../libs/humanizer/interfaces'
 import { Storage } from '../../interfaces/storage'
