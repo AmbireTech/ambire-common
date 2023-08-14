@@ -19,13 +19,15 @@ function getValidatorData(
   const acceptEmptyDKIMSig = options.acceptEmptyDKIMSig ?? false
   const onlyOneSigTimelock = options.onlyOneSigTimelock ?? 0
   const acceptUnknownSelectors = options.acceptUnknownSelectors ?? false
+  const emailFrom = options.emailFrom ?? 'borislavdevlabs@gmail.com'
+  const emailTo = options.emailTo ?? 'borislav.ickov@gmail.com'
 
   return abiCoder.encode([
     'tuple(string,string,string,bytes,bytes,address,bool,uint32,uint32,bool,bool,uint32)'
     ,
   ], [[
-    'borislavdevlabs@gmail.com',
-    'borislav.ickov@gmail.com',
+    emailFrom,
+    emailTo,
     parsedContents[0].selector,
     ethers.hexlify(parsedContents[0].modulus),
     ethers.hexlify(ethers.toBeHex(parsedContents[0].exponent)),
@@ -259,6 +261,40 @@ describe('DKIM sigMode Both', function () {
     txns[0][0] = ambireAccountAddress
     await expect(account.execute(txns, finalSig))
       .to.be.revertedWith('Transaction data is not set correctly, either selector, key or priv is incorrect')
+  })
+  it('should revert if the cannonized headers emailSubject and the sent emailSubject are different', async function () {
+    const [relayer, newSigner] = await ethers.getSigners()
+    const gmail = await readFile(path.join(emailsPath, 'address-permissions.eml'), {
+      encoding: 'ascii'
+    })
+    const parsedContents: any = await parseEmail(gmail)
+    const validatorData = getValidatorData(parsedContents, relayer)
+    const validatorAddr = await dkimRecovery.getAddress()
+    const {signerKey} = getSignerKey(validatorAddr, validatorData)
+    const dkimSig = parsedContents[0].solidity.signature
+
+    const txns = [getPriviledgeTxn(ambireAccountAddress, relayer.address, true)]
+    const sigMetaTuple = 'tuple(uint8, tuple(string, bytes, bytes), string, address, bytes32)'
+    const sigMetaValues = [
+      ethers.toBeHex(0, 1),
+      [
+        `${parsedContents[0].selector}._domainKey.gmail.com`,
+        ethers.hexlify(parsedContents[0].modulus),
+        ethers.hexlify(ethers.toBeHex(parsedContents[0].exponent)),
+      ],
+      parsedContents[0].processedHeader,
+      relayer.address,
+      ethers.toBeHex(1, 32)
+    ]
+    const innerSig = abiCoder.encode([sigMetaTuple, 'bytes', 'bytes'], [
+      sigMetaValues,
+      dkimSig,
+      ethers.toBeHex(0, 1)
+    ])
+    const sig = abiCoder.encode(['address', 'address', 'bytes', 'bytes'], [signerKey, validatorAddr, validatorData, innerSig])
+    const finalSig = wrapExternallyValidated(sig)
+    await expect(account.execute(txns, finalSig))
+      .to.be.revertedWith('emailSubject not valid')
   })
 })
 
@@ -882,5 +918,117 @@ describe('DKIM sigMode Both with acceptUnknownSelectors true', function () {
     const finalSig = wrapExternallyValidated(sig)
     await expect(account.execute(txns, finalSig))
       .to.be.revertedWith('DKIM signature verification failed')
+  })
+})
+
+describe('DKIM sigMode Both with changed emailFrom', function () {
+  it('successfully deploys the ambire account', async function () {
+    const [relayer] = await ethers.getSigners()
+    const gmail = await readFile(path.join(emailsPath, 'address-permissions.eml'), {
+      encoding: 'ascii'
+    })
+    const parsedContents: any = await parseEmail(gmail)
+    const validatorData = getValidatorData(parsedContents, relayer, {
+      emailFrom: 'else@gmail.com'
+    })
+    const {signerKey, hash} = getSignerKey(await dkimRecovery.getAddress(), validatorData)
+    const { ambireAccount, ambireAccountAddress: addr } = await deployAmbireAccountHardhatNetwork([
+      { addr: signerKey, hash: hash }
+    ])
+    ambireAccountAddress = addr
+    account = ambireAccount
+  })
+
+  it('should revert with emailFrom not valid because the email is not sent from the correct email account', async function () {
+    const [relayer, newSigner] = await ethers.getSigners()
+    const gmail = await readFile(path.join(emailsPath, 'address-permissions.eml'), {
+      encoding: 'ascii'
+    })
+    const parsedContents: any = await parseEmail(gmail)
+    const validatorData = getValidatorData(parsedContents, relayer, {
+      emailFrom: 'else@gmail.com'
+    })
+    const validatorAddr = await dkimRecovery.getAddress()
+    const {signerKey} = getSignerKey(validatorAddr, validatorData)
+    const dkimSig = parsedContents[0].solidity.signature
+
+    const txns = [getPriviledgeTxn(ambireAccountAddress, newSigner.address, true)]
+    const sigMetaTuple = 'tuple(uint8, tuple(string, bytes, bytes), string, address, bytes32)'
+    const sigMetaValues = [
+      ethers.toBeHex(0, 1),
+      [
+        `${parsedContents[0].selector}._domainKey.gmail.com`,
+        ethers.hexlify(parsedContents[0].modulus),
+        ethers.hexlify(ethers.toBeHex(parsedContents[0].exponent)),
+      ],
+      parsedContents[0].processedHeader,
+      newSigner.address,
+      ethers.toBeHex(1, 32)
+    ]
+    const innerSig = abiCoder.encode([sigMetaTuple, 'bytes', 'bytes'], [
+      sigMetaValues,
+      dkimSig,
+      ethers.toBeHex(0, 1)
+    ])
+    const sig = abiCoder.encode(['address', 'address', 'bytes', 'bytes'], [signerKey, validatorAddr, validatorData, innerSig])
+    const finalSig = wrapExternallyValidated(sig)
+    await expect(account.execute(txns, finalSig))
+      .to.be.revertedWith('emailFrom not valid')
+  })
+})
+
+describe('DKIM sigMode Both with changed emailTo', function () {
+  it('successfully deploys the ambire account', async function () {
+    const [relayer] = await ethers.getSigners()
+    const gmail = await readFile(path.join(emailsPath, 'address-permissions.eml'), {
+      encoding: 'ascii'
+    })
+    const parsedContents: any = await parseEmail(gmail)
+    const validatorData = getValidatorData(parsedContents, relayer, {
+      emailTo: 'else@gmail.com'
+    })
+    const {signerKey, hash} = getSignerKey(await dkimRecovery.getAddress(), validatorData)
+    const { ambireAccount, ambireAccountAddress: addr } = await deployAmbireAccountHardhatNetwork([
+      { addr: signerKey, hash: hash }
+    ])
+    ambireAccountAddress = addr
+    account = ambireAccount
+  })
+
+  it('should revert with emailFrom not valid because the email is not sent from the correct email account', async function () {
+    const [relayer, newSigner] = await ethers.getSigners()
+    const gmail = await readFile(path.join(emailsPath, 'address-permissions.eml'), {
+      encoding: 'ascii'
+    })
+    const parsedContents: any = await parseEmail(gmail)
+    const validatorData = getValidatorData(parsedContents, relayer, {
+      emailTo: 'else@gmail.com'
+    })
+    const validatorAddr = await dkimRecovery.getAddress()
+    const {signerKey} = getSignerKey(validatorAddr, validatorData)
+    const dkimSig = parsedContents[0].solidity.signature
+
+    const txns = [getPriviledgeTxn(ambireAccountAddress, newSigner.address, true)]
+    const sigMetaTuple = 'tuple(uint8, tuple(string, bytes, bytes), string, address, bytes32)'
+    const sigMetaValues = [
+      ethers.toBeHex(0, 1),
+      [
+        `${parsedContents[0].selector}._domainKey.gmail.com`,
+        ethers.hexlify(parsedContents[0].modulus),
+        ethers.hexlify(ethers.toBeHex(parsedContents[0].exponent)),
+      ],
+      parsedContents[0].processedHeader,
+      newSigner.address,
+      ethers.toBeHex(1, 32)
+    ]
+    const innerSig = abiCoder.encode([sigMetaTuple, 'bytes', 'bytes'], [
+      sigMetaValues,
+      dkimSig,
+      ethers.toBeHex(0, 1)
+    ])
+    const sig = abiCoder.encode(['address', 'address', 'bytes', 'bytes'], [signerKey, validatorAddr, validatorData, innerSig])
+    const finalSig = wrapExternallyValidated(sig)
+    await expect(account.execute(txns, finalSig))
+      .to.be.revertedWith('emailTo not valid')
   })
 })
