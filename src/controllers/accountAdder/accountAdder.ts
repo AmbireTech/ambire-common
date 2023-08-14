@@ -248,6 +248,11 @@ export class AccountAdderController extends EventEmitter {
   }
 
   async addAccounts(accounts: Account[] = []) {
+    if (!this.isInitialized) {
+      // TODO: Handle the error in a way that the foreground process can catch it
+      throw new Error('Requested method `addAccounts`, but the AccountAdder is not initialized')
+    }
+
     if (!accounts.length) return
 
     this.addAccountsStatus = { type: 'PENDING' }
@@ -301,8 +306,16 @@ export class AccountAdderController extends EventEmitter {
       slot: number
     }[]
   > {
-    if (!this.#keyIterator || !this.isInitialized) {
-      throw new Error('accountAdder: keyIterator not initialized')
+    if (!this.isInitialized) {
+      // TODO: Handle the error in a way that the foreground process can catch it
+      throw new Error(
+        'Requested method `#calculateAccounts`, but the AccountAdder is not initialized'
+      )
+    }
+
+    if (!this.#keyIterator) {
+      // TODO: Handle the error in a way that the foreground process can catch it
+      throw new Error('Requested method `#calculateAccounts`, but keyIterator is not initialized')
     }
 
     const accounts: { account: Account; type: AccountType; slot: number }[] = []

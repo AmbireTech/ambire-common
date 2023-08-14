@@ -30,7 +30,7 @@ export class MainController extends EventEmitter {
   // Private sub-structures
   private providers: { [key: string]: JsonRpcProvider } = {}
 
-  // Load-related stuff
+  // Holds the initial load promise, so that one can wait until it completes
   private initialLoadPromise: Promise<void>
 
   #callRelayer: Function
@@ -147,7 +147,6 @@ export class MainController extends EventEmitter {
   }
 
   async selectAccount(toAccountAddr: string) {
-    // Wait for the current load to complete
     await this.initialLoadPromise
 
     if (!this.accounts.find((acc) => acc.addr === toAccountAddr)) {
@@ -176,7 +175,6 @@ export class MainController extends EventEmitter {
   }
 
   private async ensureAccountInfo(accountAddr: AccountId, networkId: NetworkId) {
-    // Wait for the current load to complete
     await this.initialLoadPromise
     // Initial sanity check: does this account even exist?
     if (!this.accounts.find((x) => x.addr === accountAddr))
