@@ -1,6 +1,10 @@
 /* eslint-disable no-await-in-loop */
 // @TODO script that compiles list of contract on build and adds the selectors to the humanizer
 // @TODO func that takes IrCall and returns the humanization as text
+// @TODO undo eslint updates on non-related files
+// @TODO use for of or for in instead of object.keys().map/.forEach
+// @TODO remove '.json' from json with contract abis and selectors
+// use type generics instead of any
 import { Ir } from '../../libs/humanizer/interfaces'
 import { Storage } from '../../interfaces/storage'
 import { AccountOp } from '../../libs/accountOp/accountOp'
@@ -47,8 +51,9 @@ export class HumanizerController extends EventEmitter {
           ? (globalFragmentData = { ...globalFragmentData, [f.key]: f.value })
           : (nonGlobalFragmentData = { ...nonGlobalFragmentData, [f.key]: f.value })
       })
-
       const storedHumanizerMeta = await this.#storage.get(HUMANIZER_META_KEY, {})
+
+      // @TODO not store all in accountOp
       accountOp.humanizerMeta = {
         ...accountOp.humanizerMeta,
         ...storedHumanizerMeta,

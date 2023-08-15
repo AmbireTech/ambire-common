@@ -9,55 +9,56 @@ const fs = require('fs')
 
 const path = require('path')
 
-const directoryPath = path.join(__dirname, '..', 'contracts', 'dappAddressList')
-let allAddresses = {}
+const infoSourcePath = path.join(__dirname, '..', 'contracts', 'dappAddressList.json')
+const dappSelectorsAndNamesPath = path.join(__dirname, '..', 'src', 'consts', 'dappSelectorsAndNames.json')
 
 
-const getAllDataFromFolder = async (dirPath) => {
-  const networkFolders = fs.readdirSync(dirPath)
-	await Promise.all(networkFolders.map(async (folder)=>{
-		const files = fs.readdirSync(path.join(dirPath, folder))
-		await Promise.all(files.map(async (f)=>{
-			const data = await fsPromises.readFile(path.join(dirPath, folder, f), 'utf8')
-			allAddresses = { ...allAddresses, [folder]: { ...allAddresses[folder], [f]:JSON.parse(data) } }
-	}))
-	}))
-  return allAddresses
-}
+// used for turingng revoke.cash files to json
+// const getAllDataFromFolder = async (dirPath) => {
+//   let allAddresses = {}
+//   const networkFolders = fs.readdirSync(dirPath)
+// 	await Promise.all(networkFolders.map(async (folder)=>{
+// 		const files = fs.readdirSync(path.join(dirPath, folder))
+// 		await Promise.all(files.map(async (f)=>{
+// 			const data = await fsPromises.readFile(path.join(dirPath, folder, f), 'utf8')
+// 			allAddresses = { ...allAddresses, [folder]: { ...allAddresses[folder], [f]:JSON.parse(data) } }
+// 	}))
+// 	}))
+//   return allAddresses
+// }
 
 const getFnName = (f)=>{
 	const args = f.inputs.map(i=>i.type).join(',')
 	return `${f.name}(${args})`
 }
-const main  = async () => {
-	const abiPath = path.join(__dirname, '..', 'contracts', 'dappAbiList.json')
-	const selectorsPath = path.join(__dirname, '..', 'src', 'consts', 'dappSelectors.json')
-	const abis = JSON.parse(await fsPromises.readFile(abiPath, 'utf-8'))
-	const interfaces = Object.keys(abis).map((address) => {
-		try {
 
-			const iface = new ethers.Interface(abis[address])
-			// console.log(iface)
-			return iface
-		} catch (e){
-			return null
-		}
-		// return abis[address].filter(i=>i.type === 'function')
-	}).filter((i)=>i)
+const getContractInterfaces = async (addresses) => {
+	const provider = new ethers.EtherscanProvider( ETHERSCAN_API_KEY )
+	return (await Promise.all(addresses.map((a)=>provider.getContract(a)))).filter(i=>i).map(rc=>rc.interface)
+}
+
+const main  = async () => {
+	// taking addresses from json only for mainnet
+	const initialJson = JSON.parse(await fsPromises.readFile(infoSourcePath, 'utf8'))
+	const addressListJson = initialJson?.['1']
+	const addressList = Object.keys(addressListJson).map(a=>a.slice(0, 42))
+	// takes interfaces
+	const interfaces = await getContractInterfaces(addressList)
 	const entries = []
+	const entries2 = []
 	interfaces.forEach((i)=>{
 		i.fragments.forEach((f)=>{
 			if (f.type === 'function') entries.push([`funcSelectors:${f.selector}`, getFnName(f)])
 			if (f.type === 'error') entries.push([`errorSelectors:${f.selector}`, getFnName(f)])
 		})
 	})
-	const res = Object.fromEntries(entries)
-	await fsPromises.writeFile(selectorsPath, JSON.stringify(res, null, 4), 'utf8')
-	// console.log(Object.keys(abis).length)
-	// console.log(interfaces[0].fragments[0].selector)
-	// console.log(interfaces[0].fragments[0])
-	// console.log(interfaces[0].fragments[interfaces[0].fragments.length - 1])
-	// @TODO convert abi's function to selectors
+	Object.keys(initialJson).forEach(n=>Object.keys(initialJson[n]).forEach((a)=>entries2.push([a.slice(0, 42), initialJson[n][a].appName])))
+	const fetchedSelectors = Object.fromEntries(entries)
+	const namesData = Object.fromEntries(entries2)
+	const storedData = JSON.parse(await fsPromises.readFile(dappSelectorsAndNamesPath, 'utf8'))
+	const toSave = { ...storedData, ...fetchedSelectors, ...namesData }
+	await fsPromises.writeFile(dappSelectorsAndNamesPath, JSON.stringify(toSave, null, 4), 'utf8')
+	// @TODO finish script
 }
 
 main()
