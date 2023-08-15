@@ -3,10 +3,7 @@ const path = require('path')
 const { compile } = require('../src/libs/deployless/compile')
 
 const rootDir = path.resolve(__dirname, '..')
-const contractsDirs = [
-  `${rootDir}/contracts`,
-  `${rootDir}/contracts/deployless`,
-]
+const contractsDirs = [`${rootDir}/contracts`, `${rootDir}/contracts/deployless`]
 const outputDir = `${rootDir}/contracts/compiled`
 
 // Extract all file paths from a `dir` in a flat way.
@@ -44,7 +41,7 @@ async function compileFolder(contractsDir) {
 }
 
 async function run() {
-  await Promise.all(contractsDirs.map(contractsDir => compileFolder(contractsDir)).flat())
+  await Promise.all(contractsDirs.map((contractsDir) => compileFolder(contractsDir)).flat())
 }
 
 run()
