@@ -116,7 +116,8 @@ contract DKIMRecoverySigValidator {
         headers,
         accInfo.emailFrom,
         accInfo.emailTo,
-        sigMeta.newKeyToSet
+        sigMeta.newKeyToSet,
+        sigMeta.mode
       );      
 
       Strings.slice memory emailDomain = accInfo.emailFrom.toSlice();
@@ -248,7 +249,8 @@ contract DKIMRecoverySigValidator {
     string memory canonizedHeaders,
     string memory accountEmailFrom,
     string memory accountEmailTo,
-    address newKeyToSet
+    address newKeyToSet,
+    SigMode mode
   ) internal pure {
       // from looks like this: from: name <email>
       // so we take what's between <> and validate it
@@ -262,8 +264,12 @@ contract DKIMRecoverySigValidator {
       Strings.slice memory toHeader = 'to:'.toSlice().concat(accountEmailTo.toSlice()).toSlice();
       require(canonizedHeaders.toSlice().contains(toHeader), 'emailTo not valid');
 
-      // subject looks like this: subject:Give permissions to address
-      Strings.slice memory newKeyString = 'subject:Give permissions to '.toSlice().concat(OpenZepellingStrings.toHexString(newKeyToSet).toSlice()).toSlice();
+      // subject looks like this: subject:SigMode {uint8} Give permissions to {address}
+      Strings.slice memory newKeyString = 'subject:SigMode '.toSlice()
+        .concat(OpenZepellingStrings.toString(uint8(mode)).toSlice()).toSlice()
+        .concat(' Give permissions to '.toSlice()).toSlice()
+        .concat(OpenZepellingStrings.toHexString(newKeyToSet).toSlice()).toSlice();
+
       require(canonizedHeaders.toSlice().contains(newKeyString), 'emailSubject not valid');
   }
 

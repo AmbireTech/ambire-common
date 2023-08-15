@@ -87,7 +87,7 @@ describe('DKIM Prep-up', function () {
 describe('DKIM sigMode Both', function () {
   it('successfully deploys the ambire account', async function () {
     const [relayer] = await ethers.getSigners()
-    const gmail = await readFile(path.join(emailsPath, 'address-permissions.eml'), {
+    const gmail = await readFile(path.join(emailsPath, 'sigMode0.eml'), {
       encoding: 'ascii'
     })
     const parsedContents: any = await parseEmail(gmail)
@@ -102,7 +102,7 @@ describe('DKIM sigMode Both', function () {
 
   it('successfully validate a DKIM signature and execute the recovery transaction', async function () {
     const [relayer, newSigner] = await ethers.getSigners()
-    const gmail = await readFile(path.join(emailsPath, 'address-permissions.eml'), {
+    const gmail = await readFile(path.join(emailsPath, 'sigMode0.eml'), {
       encoding: 'ascii'
     })
     const parsedContents: any = await parseEmail(gmail)
@@ -160,7 +160,7 @@ describe('DKIM sigMode Both', function () {
   })
   it('should revert if priviledges slightly do not match', async function () {
     const [relayer, newSigner] = await ethers.getSigners()
-    const gmail = await readFile(path.join(emailsPath, 'address-permissions.eml'), {
+    const gmail = await readFile(path.join(emailsPath, 'sigMode0.eml'), {
       encoding: 'ascii'
     })
     const parsedContents: any = await parseEmail(gmail)
@@ -178,7 +178,7 @@ describe('DKIM sigMode Both', function () {
   })
   it('should revert if a request with an unknown selector is sent', async function () {
     const [relayer, newSigner] = await ethers.getSigners()
-    const gmail = await readFile(path.join(emailsPath, 'address-permissions.eml'), {
+    const gmail = await readFile(path.join(emailsPath, 'sigMode0.eml'), {
       encoding: 'ascii'
     })
     const parsedContents: any = await parseEmail(gmail)
@@ -213,7 +213,7 @@ describe('DKIM sigMode Both', function () {
   })
   it('should revert if there is transaction mendling - more txns; wrong new signer', async function () {
     const [relayer, newSigner] = await ethers.getSigners()
-    const gmail = await readFile(path.join(emailsPath, 'address-permissions.eml'), {
+    const gmail = await readFile(path.join(emailsPath, 'sigMode0.eml'), {
       encoding: 'ascii'
     })
     const parsedContents: any = await parseEmail(gmail)
@@ -264,7 +264,7 @@ describe('DKIM sigMode Both', function () {
   })
   it('should revert if the cannonized headers emailSubject and the sent emailSubject are different', async function () {
     const [relayer, newSigner] = await ethers.getSigners()
-    const gmail = await readFile(path.join(emailsPath, 'address-permissions.eml'), {
+    const gmail = await readFile(path.join(emailsPath, 'sigMode0.eml'), {
       encoding: 'ascii'
     })
     const parsedContents: any = await parseEmail(gmail)
@@ -302,7 +302,7 @@ describe('DKIM sigMode OnlyDKIM', function () {
 
   it('successfully deploys the ambire account', async function () {
     const [relayer] = await ethers.getSigners()
-    const gmail = await readFile(path.join(emailsPath, 'address-permissions.eml'), {
+    const gmail = await readFile(path.join(emailsPath, 'sigMode1.eml'), {
       encoding: 'ascii'
     })
     const parsedContents: any = await parseEmail(gmail)
@@ -319,7 +319,7 @@ describe('DKIM sigMode OnlyDKIM', function () {
 
   it('should successfully schedule a timelock for the specified onlyOneSigTimelock and execute it after onlyOneSigTimelock has passed', async function () {
     const [relayer, newSigner] = await ethers.getSigners()
-    const gmail = await readFile(path.join(emailsPath, 'address-permissions.eml'), {
+    const gmail = await readFile(path.join(emailsPath, 'sigMode1.eml'), {
       encoding: 'ascii'
     })
     const parsedContents: any = await parseEmail(gmail)
@@ -389,9 +389,56 @@ describe('DKIM sigMode OnlyDKIM', function () {
       .to.be.revertedWith('recovery already done')
   })
 
+  it('should revert if the sigMode is changed to Both and the same information is passed', async function () {
+    const [relayer, newSigner] = await ethers.getSigners()
+    const gmail = await readFile(path.join(emailsPath, 'sigMode1.eml'), {
+      encoding: 'ascii'
+    })
+    const parsedContents: any = await parseEmail(gmail)
+    const validatorData = getValidatorData(parsedContents, relayer, {
+      emptySecondSig: true
+    })
+    const validatorAddr = await dkimRecovery.getAddress()
+    const {signerKey} = getSignerKey(validatorAddr, validatorData)
+    const dkimSig = parsedContents[0].solidity.signature
+
+    const txns = [getPriviledgeTxn(ambireAccountAddress, newSigner.address, true)]
+    const msgHash = ethers.keccak256(
+      abiCoder.encode(
+        ['address', 'tuple(address, uint, bytes)[]'],
+        [ambireAccountAddress, txns]
+      )
+    )
+    const msg = ethers.getBytes(msgHash)
+    const secondSig = wrapEthSign(await relayer.signMessage(msg))
+    const sigMetaTuple = 'tuple(uint8, tuple(string, bytes, bytes), string, address, bytes32)'
+    const sigMetaValues = [
+      ethers.toBeHex(0, 1),
+      [
+        `${parsedContents[0].selector}._domainKey.gmail.com`,
+        ethers.hexlify(parsedContents[0].modulus),
+        ethers.hexlify(ethers.toBeHex(parsedContents[0].exponent)),
+      ],
+      parsedContents[0].processedHeader,
+      newSigner.address,
+      ethers.toBeHex(1, 32)
+    ]
+    const innerSig = abiCoder.encode([sigMetaTuple, 'bytes', 'bytes'], [
+      sigMetaValues,
+      dkimSig,
+      secondSig
+    ])
+    const sig = abiCoder.encode(['address', 'address', 'bytes', 'bytes'], [signerKey, validatorAddr, validatorData, innerSig])
+    const finalSig = wrapExternallyValidated(sig)
+
+    // test protection against malleability
+    await expect(account.execute(txns, finalSig))
+      .to.be.revertedWith('emailSubject not valid')
+  })
+
   it('should revert if sig mode is onlySecond', async function () {
     const [relayer, newSigner] = await ethers.getSigners()
-    const gmail = await readFile(path.join(emailsPath, 'address-permissions.eml'), {
+    const gmail = await readFile(path.join(emailsPath, 'sigMode1.eml'), {
       encoding: 'ascii'
     })
     const parsedContents: any = await parseEmail(gmail)
@@ -431,7 +478,7 @@ describe('DKIM sigMode OnlySecond', function () {
 
   it('successfully deploys the ambire account', async function () {
     const [relayer] = await ethers.getSigners()
-    const gmail = await readFile(path.join(emailsPath, 'address-permissions.eml'), {
+    const gmail = await readFile(path.join(emailsPath, 'sigMode2.eml'), {
       encoding: 'ascii'
     })
     const parsedContents: any = await parseEmail(gmail)
@@ -448,7 +495,7 @@ describe('DKIM sigMode OnlySecond', function () {
 
   it('should successfully schedule a timelock for the specified onlyOneSigTimelock and execute it after onlyOneSigTimelock has passed', async function () {
     const [relayer, newSigner] = await ethers.getSigners()
-    const gmail = await readFile(path.join(emailsPath, 'address-permissions.eml'), {
+    const gmail = await readFile(path.join(emailsPath, 'sigMode2.eml'), {
       encoding: 'ascii'
     })
     const parsedContents: any = await parseEmail(gmail)
@@ -527,7 +574,7 @@ describe('DKIM sigMode OnlySecond', function () {
 
   it('should revert with second key validation failed if the signature is incorrect', async function () {
     const [relayer,,newSigner] = await ethers.getSigners()
-    const gmail = await readFile(path.join(emailsPath, 'address-permissions.eml'), {
+    const gmail = await readFile(path.join(emailsPath, 'sigMode2.eml'), {
       encoding: 'ascii'
     })
     const parsedContents: any = await parseEmail(gmail)
@@ -572,7 +619,7 @@ describe('DKIM sigMode OnlySecond', function () {
 
   it('should revert if an OnlyDKIM sig mode is passed', async function () {
     const [relayer, newSigner] = await ethers.getSigners()
-    const gmail = await readFile(path.join(emailsPath, 'address-permissions.eml'), {
+    const gmail = await readFile(path.join(emailsPath, 'sigMode2.eml'), {
       encoding: 'ascii'
     })
     const parsedContents: any = await parseEmail(gmail)
@@ -616,7 +663,7 @@ describe('DKIM sigMode Both with acceptUnknownSelectors true', function () {
         RSASHA256: rsaSha256DKIMValidatorAddr,
       },
     })
-    const gmail = await readFile(path.join(emailsPath, 'address-permissions.eml'), {
+    const gmail = await readFile(path.join(emailsPath, 'sigMode0.eml'), {
       encoding: 'ascii'
     })
     const parsedContents: any = await parseEmail(gmail)
@@ -644,7 +691,7 @@ describe('DKIM sigMode Both with acceptUnknownSelectors true', function () {
 
   it('successfully deploys the ambire account', async function () {
     const [relayer] = await ethers.getSigners()
-    const gmail = await readFile(path.join(emailsPath, 'address-permissions.eml'), {
+    const gmail = await readFile(path.join(emailsPath, 'sigMode0.eml'), {
       encoding: 'ascii'
     })
     const parsedContents: any = await parseEmail(gmail)
@@ -661,7 +708,7 @@ describe('DKIM sigMode Both with acceptUnknownSelectors true', function () {
 
   it('successfully validate an unknown selector for the account but one that exists in dkimKeys', async function () {
     const [relayer, newSigner] = await ethers.getSigners()
-    const gmail = await readFile(path.join(emailsPath, 'address-permissions.eml'), {
+    const gmail = await readFile(path.join(emailsPath, 'sigMode0.eml'), {
       encoding: 'ascii'
     })
     const parsedContents: any = await parseEmail(gmail)
@@ -722,7 +769,7 @@ describe('DKIM sigMode Both with acceptUnknownSelectors true', function () {
 
   it('should revert if the domain in sigMeta is different than the fromEmail domain in the accInfo', async function () {
     const [relayer, newSigner] = await ethers.getSigners()
-    const gmail = await readFile(path.join(emailsPath, 'address-permissions.eml'), {
+    const gmail = await readFile(path.join(emailsPath, 'sigMode0.eml'), {
       encoding: 'ascii'
     })
     const parsedContents: any = await parseEmail(gmail)
@@ -758,7 +805,7 @@ describe('DKIM sigMode Both with acceptUnknownSelectors true', function () {
 
   it('should revert if an unknown selector for the account and one that does not exist in dkimKeys is passed', async function () {
     const [relayer, newSigner] = await ethers.getSigners()
-    const gmail = await readFile(path.join(emailsPath, 'address-permissions.eml'), {
+    const gmail = await readFile(path.join(emailsPath, 'sigMode0.eml'), {
       encoding: 'ascii'
     })
     const parsedContents: any = await parseEmail(gmail)
@@ -794,7 +841,7 @@ describe('DKIM sigMode Both with acceptUnknownSelectors true', function () {
 
   it('should revoke the key in the dkimKeys with a name of "toberemoved"', async function () {
     // const [signer] = await ethers.getSigners()
-    const gmail = await readFile(path.join(emailsPath, 'address-permissions.eml'), {
+    const gmail = await readFile(path.join(emailsPath, 'sigMode0.eml'), {
       encoding: 'ascii'
     })
     const parsedContents: any = await parseEmail(gmail)
@@ -829,7 +876,7 @@ describe('DKIM sigMode Both with acceptUnknownSelectors true', function () {
 
   it('should revert if an unknown selector for the account is passed and the dkim key for it is already removed', async function () {
     const [relayer, newSigner] = await ethers.getSigners()
-    const gmail = await readFile(path.join(emailsPath, 'address-permissions.eml'), {
+    const gmail = await readFile(path.join(emailsPath, 'sigMode0.eml'), {
       encoding: 'ascii'
     })
     const parsedContents: any = await parseEmail(gmail)
@@ -865,7 +912,7 @@ describe('DKIM sigMode Both with acceptUnknownSelectors true', function () {
 
   it('should revert if the timestamp for the added key has not passed, yet', async function () {
     const [relayer, newSigner] = await ethers.getSigners()
-    const gmail = await readFile(path.join(emailsPath, 'address-permissions.eml'), {
+    const gmail = await readFile(path.join(emailsPath, 'sigMode0.eml'), {
       encoding: 'ascii'
     })
     const parsedContents: any = await parseEmail(gmail)
@@ -901,7 +948,7 @@ describe('DKIM sigMode Both with acceptUnknownSelectors true', function () {
 
   it('should revert with non-existant DKIM key if the wrong modulus / exponent is passed', async function () {
     const [relayer, newSigner] = await ethers.getSigners()
-    const gmail = await readFile(path.join(emailsPath, 'address-permissions.eml'), {
+    const gmail = await readFile(path.join(emailsPath, 'sigMode0.eml'), {
       encoding: 'ascii'
     })
     const parsedContents: any = await parseEmail(gmail)
@@ -938,7 +985,7 @@ describe('DKIM sigMode Both with acceptUnknownSelectors true', function () {
 
   it('should revert with DKIM signature verification failed if headers have been tampered with', async function () {
     const [relayer, newSigner] = await ethers.getSigners()
-    const gmail = await readFile(path.join(emailsPath, 'address-permissions.eml'), {
+    const gmail = await readFile(path.join(emailsPath, 'sigMode0.eml'), {
       encoding: 'ascii'
     })
     const parsedContents: any = await parseEmail(gmail)
@@ -975,7 +1022,7 @@ describe('DKIM sigMode Both with acceptUnknownSelectors true', function () {
 
   it('should revert with DKIM signature verification failed if a different dkimSig is passed', async function () {
     const [relayer, newSigner] = await ethers.getSigners()
-    const gmail = await readFile(path.join(emailsPath, 'address-permissions.eml'), {
+    const gmail = await readFile(path.join(emailsPath, 'sigMode0.eml'), {
       encoding: 'ascii'
     })
     const parsedContents: any = await parseEmail(gmail)
@@ -1019,7 +1066,7 @@ describe('DKIM sigMode Both with acceptUnknownSelectors true', function () {
 describe('DKIM sigMode Both with changed emailFrom', function () {
   it('successfully deploys the ambire account', async function () {
     const [relayer] = await ethers.getSigners()
-    const gmail = await readFile(path.join(emailsPath, 'address-permissions.eml'), {
+    const gmail = await readFile(path.join(emailsPath, 'sigMode0.eml'), {
       encoding: 'ascii'
     })
     const parsedContents: any = await parseEmail(gmail)
@@ -1036,7 +1083,7 @@ describe('DKIM sigMode Both with changed emailFrom', function () {
 
   it('should revert with emailFrom not valid because the email is not sent from the correct email account', async function () {
     const [relayer, newSigner] = await ethers.getSigners()
-    const gmail = await readFile(path.join(emailsPath, 'address-permissions.eml'), {
+    const gmail = await readFile(path.join(emailsPath, 'sigMode0.eml'), {
       encoding: 'ascii'
     })
     const parsedContents: any = await parseEmail(gmail)
@@ -1075,7 +1122,7 @@ describe('DKIM sigMode Both with changed emailFrom', function () {
 describe('DKIM sigMode Both with changed emailTo', function () {
   it('successfully deploys the ambire account', async function () {
     const [relayer] = await ethers.getSigners()
-    const gmail = await readFile(path.join(emailsPath, 'address-permissions.eml'), {
+    const gmail = await readFile(path.join(emailsPath, 'sigMode0.eml'), {
       encoding: 'ascii'
     })
     const parsedContents: any = await parseEmail(gmail)
@@ -1092,7 +1139,7 @@ describe('DKIM sigMode Both with changed emailTo', function () {
 
   it('should revert with emailFrom not valid because the email is not sent from the correct email account', async function () {
     const [relayer, newSigner] = await ethers.getSigners()
-    const gmail = await readFile(path.join(emailsPath, 'address-permissions.eml'), {
+    const gmail = await readFile(path.join(emailsPath, 'sigMode0.eml'), {
       encoding: 'ascii'
     })
     const parsedContents: any = await parseEmail(gmail)
@@ -1132,7 +1179,7 @@ describe('DKIM sigMode OnlySecond with a timelock of 2 minutes', function () {
 
   it('successfully deploys the ambire account', async function () {
     const [relayer] = await ethers.getSigners()
-    const gmail = await readFile(path.join(emailsPath, 'address-permissions.eml'), {
+    const gmail = await readFile(path.join(emailsPath, 'sigMode2.eml'), {
       encoding: 'ascii'
     })
     const parsedContents: any = await parseEmail(gmail)
@@ -1150,7 +1197,7 @@ describe('DKIM sigMode OnlySecond with a timelock of 2 minutes', function () {
 
   it('should successfully schedule a timelock for 2 minutes and be unable to execute the timelock if the time has not passed', async function () {
     const [relayer, newSigner] = await ethers.getSigners()
-    const gmail = await readFile(path.join(emailsPath, 'address-permissions.eml'), {
+    const gmail = await readFile(path.join(emailsPath, 'sigMode2.eml'), {
       encoding: 'ascii'
     })
     const parsedContents: any = await parseEmail(gmail)

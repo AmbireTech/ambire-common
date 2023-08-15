@@ -1,0 +1,128 @@
+Delivered-To: borislav.ickov@gmail.com
+Received: by 2002:ac8:44d5:0:b0:40e:3803:3d2e with SMTP id b21csp728087qto;
+        Tue, 15 Aug 2023 16:44:16 -0700 (PDT)
+X-Received: by 2002:a25:3c4:0:b0:c1a:5904:fe8e with SMTP id 187-20020a2503c4000000b00c1a5904fe8emr228998ybd.34.1692143055797;
+        Tue, 15 Aug 2023 16:44:15 -0700 (PDT)
+ARC-Seal: i=1; a=rsa-sha256; t=1692143055; cv=none;
+        d=google.com; s=arc-20160816;
+        b=Qiao48DgGJTBsYw2UMCvztKwy89qy+pAX/rVL8V81Q7FwdRvpAXgFg3YTaDdgFhYZC
+         NxxtbM0dF+xp0NYp/1UzyqngHBxW0gGCFIEjdiYLQVa/TlNk+6fuPmrpmjeFtPedcgOo
+         0FBKUaHtT1wKH5ExuJyYMYIsMjjohKAu6YwHRh6lDmK0VNYMhd9+7MTGdndEhoRrZeyp
+         uSRDQF/kCbatVp/dcv2yec1zThK41Y1QDFmfKSlA1itmpnUjA86z83xW0HFugjtJhDX0
+         StRL7qhcZmtcK6EQdzsPNO2ufDeQhXmeo/m/hwqXmWhUJWof67ncs+LHNRgMsT42T3yI
+         PFQw==
+ARC-Message-Signature: i=1; a=rsa-sha256; c=relaxed/relaxed; d=google.com; s=arc-20160816;
+        h=to:subject:message-id:date:from:mime-version:dkim-signature;
+        bh=GG1V+ZnEfWKoaYJpTGFE8BCQnYzqq/uHoZIoHfVzA0I=;
+        fh=ev9Gihczxq+0m69vw4wDC6qb9XXRullHVgOxX2py+Yc=;
+        b=hP4gCOKY0lyqjblQ5TkwJStW5yen9u9WSfWtjiBObgZPAVeIjlV2VvRQCawpLlzNca
+         nhjWecPeDFfZ911/j/J1OnwoHV0DtPyaOBiNbQWd+p1r9rOwmmixWv73WDoKlsZPlDA0
+         pphbKehmceSwgrpXn9gg/9K00Akt+5upJhFRu+Ed9cE+vCV3RQM1J7T1SJ9Mhv3hWtdF
+         1bXiYzzexUtY42SQ/aCbNOVKAvo3be3U2FKf3TQNBOjqIwajbwSH1kf9EZgwNnqidOSi
+         wEYVLEIp0SigBF1VQt0rKYdnLdN2yby7JmZ7G/+sMAb1d65/Pli1dYKquzo8EOn7hZ2Z
+         3U6w==
+ARC-Authentication-Results: i=1; mx.google.com;
+       dkim=pass header.i=@gmail.com header.s=20221208 header.b=HMPiLlCF;
+       spf=pass (google.com: domain of borislavdevlabs@gmail.com designates 209.85.220.41 as permitted sender) smtp.mailfrom=borislavdevlabs@gmail.com;
+       dmarc=pass (p=NONE sp=QUARANTINE dis=NONE) header.from=gmail.com
+Return-Path: <borislavdevlabs@gmail.com>
+Received: from mail-sor-f41.google.com (mail-sor-f41.google.com. [209.85.220.41])
+        by mx.google.com with SMTPS id o18-20020a254112000000b00d43e8a62401sor5574836yba.11.2023.08.15.16.44.15
+        for <borislav.ickov@gmail.com>
+        (Google Transport Security);
+        Tue, 15 Aug 2023 16:44:15 -0700 (PDT)
+Received-SPF: pass (google.com: domain of borislavdevlabs@gmail.com designates 209.85.220.41 as permitted sender) client-ip=209.85.220.41;
+Authentication-Results: mx.google.com;
+       dkim=pass header.i=@gmail.com header.s=20221208 header.b=HMPiLlCF;
+       spf=pass (google.com: domain of borislavdevlabs@gmail.com designates 209.85.220.41 as permitted sender) smtp.mailfrom=borislavdevlabs@gmail.com;
+       dmarc=pass (p=NONE sp=QUARANTINE dis=NONE) header.from=gmail.com
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20221208; t=1692143055; x=1692747855;
+        h=to:subject:message-id:date:from:mime-version:from:to:cc:subject
+         :date:message-id:reply-to;
+        bh=GG1V+ZnEfWKoaYJpTGFE8BCQnYzqq/uHoZIoHfVzA0I=;
+        b=HMPiLlCFDK8lTKCR9rFhZ+daHcbOmte1iRkOdTH+tA9u+5A8kRi72oxRMezn6h+pq6
+         oRoXPXysBgEuPnF7WwYjhvD1djhkTvCmFbm8edvFGPFH5feBg13Or1jHovT9Rx1u9VZY
+         1t/dYsLZwa1hDU3BnVcWQ0iVGaZgkbFnVGZeQOoJdOuxBNuyNiOydszSMslEhhcSumBW
+         uQsQnm7Ar1fpYB9QBau5mW09lob1GHI4JLxVaaHQ9EsRyIB8k7RLfRwvoksDQi9hniZ1
+         WOPC54ypZIz93sFkhHjQ5nHrqUtdUFe2J52LJDrKosT+VaOt+Ju5g2dQB7Op30+qaMNX
+         gWkw==
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=1e100.net; s=20221208; t=1692143055; x=1692747855;
+        h=to:subject:message-id:date:from:mime-version:x-gm-message-state
+         :from:to:cc:subject:date:message-id:reply-to;
+        bh=GG1V+ZnEfWKoaYJpTGFE8BCQnYzqq/uHoZIoHfVzA0I=;
+        b=YbF6cnyGvcyd4Hng/r/bfqN3neY462q3h9AtF//M2Y/JJfciSJaAYhiXcpqxmnRDFD
+         VCt97Z7QmJNRXyG5VBlvRD5ZWIdUQRP3P46G/xxJXAtb6ScIJZ441FxkjnUj0T1tQWZv
+         1g+RaWBcOI7sd+yLSYYsTKcej+kIJlTRGJ3lgZWXPSscm3mx3TrDSYXC871hA7BAsx/d
+         hlmfuMXIZy7TIETT7NfgUHSj1zslNPsKNy1wuADaA+nPgUodcz26Z3MQqYwjV043avfk
+         igzsea4uPfysf4FO4KtRi3j9JSstPQTJjBo9iRSxc2xusoFEmh04lceFGsk4x1SrrOv5
+         Yjxg==
+X-Gm-Message-State: AOJu0YwUfYXCr3fX1E4yf4ScCYUUpX6j8/uMpp9aSNzN3o7IoH42DJS8
+	mT6CDvdNXI5p52wsaz7mygQaYBa/GImRhIjxwSUrfBmSsHLkpA==
+X-Google-Smtp-Source: AGHT+IGVKElrQls2yjFmPQv5MYt0PAdfpVaqOUk+VvOzTRho1u1CKbHmg+g+6kJlXMLCoulTPoatHBVPV495n7sUWn8=
+X-Received: by 2002:a25:8912:0:b0:d05:f537:da99 with SMTP id
+ e18-20020a258912000000b00d05f537da99mr197099ybl.46.1692143054897; Tue, 15 Aug
+ 2023 16:44:14 -0700 (PDT)
+MIME-Version: 1.0
+From: Borislav Itskov <borislavdevlabs@gmail.com>
+Date: Wed, 16 Aug 2023 02:44:04 +0300
+Message-ID: <CAB1sa=0Uk7F9bUd+8o7jfBEBx_9e3ku0nP+0TtqhL3kB8aMZRg@mail.gmail.com>
+Subject: SigMode 0 Give permissions to 0x70997970c51812dc3a010c7d01b50e0d17dc79c8
+To: borislav.ickov@gmail.com
+Content-Type: multipart/alternative; boundary="000000000000b246ef0602fec125"
+
+--000000000000b246ef0602fec125
+Content-Type: text/plain; charset="UTF-8"
+
+SigMode 0 Give permissions to 0x70997970c51812dc3a010c7d01b50e0d17dc79c8
+
+-- 
+https://devlabs.bg/logo-for-email-template.png
+https://devlabs.bg/logo-for-email-template.png
+https://devlabs.bg/logo-for-email-template.png
+Borislav Itskov
+Back-end developer
+borislav@devlabs.bg
+
+--000000000000b246ef0602fec125
+Content-Type: text/html; charset="UTF-8"
+Content-Transfer-Encoding: quoted-printable
+
+<div dir=3D"ltr"><div class=3D"gmail_default" style=3D"font-family:trebuche=
+t ms,sans-serif">SigMode 0 Give permissions to 0x70997970c51812dc3a010c7d01=
+b50e0d17dc79c8<br clear=3D"all"></div><div><br></div><span class=3D"gmail_s=
+ignature_prefix">-- </span><br><div dir=3D"ltr" class=3D"gmail_signature" d=
+ata-smartmail=3D"gmail_signature"><div dir=3D"ltr"><div><div dir=3D"ltr"><d=
+iv><div dir=3D"ltr"><div><div dir=3D"ltr"><div><div dir=3D"ltr"><div><div d=
+ir=3D"ltr"><div style=3D"font-size:12.8px"><table border=3D"0" cellpadding=
+=3D"0" cellspacing=3D"0" style=3D"text-align:left;border-collapse:collapse;=
+color:rgb(0,0,0);font-family:&quot;Times New Roman&quot;;font-size:medium;w=
+idth:600px"><tbody><tr><td style=3D"border-collapse:collapse;direction:ltr;=
+font-size:0px;padding:20px 0px;text-align:center"><div style=3D"max-width:1=
+00%;width:600px;text-align:left;direction:ltr;display:inline-block;vertical=
+-align:top"><table border=3D"0" cellpadding=3D"0" cellspacing=3D"0" width=
+=3D"100%" style=3D"border-collapse:collapse;vertical-align:top"><tbody><tr>=
+<td style=3D"border-collapse:collapse;padding:0px 0px 13px;word-break:break=
+-word;text-align:left"><table border=3D"0" cellpadding=3D"0" cellspacing=3D=
+"0" style=3D"border-collapse:collapse;border-spacing:0px"><tbody><tr><td st=
+yle=3D"border-collapse:collapse;width:93px"></td></tr></tbody></table><a hr=
+ef=3D"https://devlabs.bg/logo-for-email-template.png" target=3D"_blank">htt=
+ps://devlabs.bg/logo-for-email-template.png</a><a href=3D"https://devlabs.b=
+g/logo-for-email-template.png" target=3D"_blank">https://devlabs.bg/logo-fo=
+r-email-template.png</a><a href=3D"https://devlabs.bg/logo-for-email-templa=
+te.png" target=3D"_blank">https://devlabs.bg/logo-for-email-template.png</a=
+><br></td></tr><tr><td style=3D"border-collapse:collapse;padding:0px 0px 10=
+px;word-break:break-word;text-align:left"><div style=3D"font-family:Ubuntu,=
+Helvetica,Arial,sans-serif;font-size:18px;font-weight:700;letter-spacing:0p=
+x;line-height:1;color:rgb(15,53,68)">Borislav Itskov<div style=3D"font-size=
+:12px;color:rgba(15,53,68,0.4);margin-top:5px">Back-end developer</div></di=
+v></td></tr><tr><td style=3D"border-collapse:collapse;padding:0px;word-brea=
+k:break-word;text-align:left"><div style=3D"font-family:Ubuntu,Helvetica,Ar=
+ial,sans-serif;font-size:14px;font-weight:600;letter-spacing:0px;line-heigh=
+t:1;color:rgb(15,53,68)"><a href=3D"mailto:borislav@devlabs.bg" style=3D"co=
+lor:rgb(15,53,68)" target=3D"_blank">borislav@devlabs.bg</a></div></td></tr=
+></tbody></table></div></td></tr></tbody></table></div></div></div></div></=
+div></div></div></div></div></div></div></div></div></div>
+
+--000000000000b246ef0602fec125--
