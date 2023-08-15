@@ -16,6 +16,7 @@ function getNft(address: string, id: bigint) {
   return { type: 'nft', address, id }
 }
 
+// @TODO on some humanization of uniswap there is recipient 0x000...000
 const getRecipientText = (from: string, recipient: string) =>
   from.toLowerCase() === recipient.toLowerCase()
     ? []

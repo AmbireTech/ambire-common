@@ -47,7 +47,6 @@ const uniV32Mapping = (
         ? parsed
         : [{ ...call, fullVisualization: [getLable('Unknown Uni V3 interaction')] }]
     },
-    // @TODO this like the one above
     // 0xac9650d8
     [`${ifaceV32.getFunction('multicall(bytes[])')?.selector}`]: (
       accountOp: AccountOp,
@@ -71,8 +70,6 @@ const uniV32Mapping = (
     },
     // bytes32 is prevBlockHash
     // 0x1f0464d1
-    // @TODO this like the first
-
     [`${ifaceV32.getFunction('multicall(bytes32, bytes[])')?.selector}`]: (
       accountOp: AccountOp,
       call: IrCall
@@ -388,7 +385,7 @@ const uniV3Mapping = (
             getAction('Swap'),
             getToken(params.tokenIn, params.amountIn),
             getLable('for at least'),
-            getToken(params.tokenOut, params.amountOutMin),
+            getToken(params.tokenOut, params.amountOutMinimum),
             ...getRecipientText(accountOp.accountAddr, params.recipient),
             getDeadlineText(params.deadline)
           ]
