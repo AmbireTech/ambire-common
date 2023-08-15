@@ -1,4 +1,4 @@
-import { describe, expect, test } from '@jest/globals'
+import { describe, test } from '@jest/globals'
 
 import { AccountOp } from '../accountOp/accountOp'
 import { callsToIr, initHumanizerMeta } from './humanizer'
