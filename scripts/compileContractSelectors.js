@@ -48,6 +48,7 @@ const main  = async () => {
 	interfaces.forEach((i)=>{
 		i.fragments.forEach((f)=>{
 			if (f.type === 'function') entries.push([`funcSelectors:${f.selector}`, getFnName(f)])
+			if (f.type === 'error') entries.push([`errorSelectors:${f.selector}`, getFnName(f)])
 		})
 	})
 	const res = Object.fromEntries(entries)
