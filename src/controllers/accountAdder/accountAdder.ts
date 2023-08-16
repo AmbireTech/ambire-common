@@ -138,9 +138,8 @@ export class AccountAdderController extends EventEmitter {
 
         return {
           ...linkedAcc,
-          // The `correspondingCalculatedAccount` should always be found, so -1
-          // is a fallback value that should never happen.
-          slot: correspondingCalculatedAccount ? correspondingCalculatedAccount.slot : -1
+          // @ts-ignore the `correspondingCalculatedAccount` should always be found
+          slot: correspondingCalculatedAccount.slot
         }
       })
 
