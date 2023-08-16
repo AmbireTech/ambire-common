@@ -11,6 +11,8 @@ const path = require('path')
 
 const infoSourcePath = path.join(__dirname, '..', 'contracts', 'dappAddressList.json')
 const dappSelectorsAndNamesPath = path.join(__dirname, '..', 'src', 'consts', 'dappSelectorsAndNames.json')
+const dappSelectorsPath = path.join(__dirname, '..', 'src', 'consts', 'dappSelectors.json')
+const dappNamesPath = path.join(__dirname, '..', 'src', 'consts', 'dappNames.json')
 
 
 // used for turingng revoke.cash files to json
@@ -33,8 +35,11 @@ const getFnName = (f)=>{
 }
 
 const getContractInterfaces = async (addresses) => {
-	const provider = new ethers.EtherscanProvider( ETHERSCAN_API_KEY )
-	return (await Promise.all(addresses.map((a)=>provider.getContract(a)))).filter(i=>i).map(rc=>rc.interface)
+	const provider = new ethers.EtherscanProvider( 'mainnet', ETHERSCAN_API_KEY )
+	const res = (await Promise.all(addresses.map((a)=>provider.getContract(a)))).filter(i=>i).map(rc=>rc.interface)
+
+	console.log(`Fetched abis from ${res.length}/${addresses.length} contracts`)
+	return res
 }
 
 const main  = async () => {
@@ -52,12 +57,13 @@ const main  = async () => {
 			if (f.type === 'error') entries.push([`errorSelectors:${f.selector}`, getFnName(f)])
 		})
 	})
-	Object.keys(initialJson).forEach(n=>Object.keys(initialJson[n]).forEach((a)=>entries2.push([a.slice(0, 42), initialJson[n][a].appName])))
+	Object.keys(initialJson).forEach(n=>Object.keys(initialJson[n]).forEach((a)=>entries2.push([`names:${a.slice(0, 42)}`, initialJson[n][a].appName])))
 	const fetchedSelectors = Object.fromEntries(entries)
 	const namesData = Object.fromEntries(entries2)
-	const storedData = JSON.parse(await fsPromises.readFile(dappSelectorsAndNamesPath, 'utf8'))
-	const toSave = { ...storedData, ...fetchedSelectors, ...namesData }
-	await fsPromises.writeFile(dappSelectorsAndNamesPath, JSON.stringify(toSave, null, 4), 'utf8')
+	const storeNamesdData = JSON.parse(await fsPromises.readFile(dappNamesPath, 'utf8'))
+	const storedSelectorsData = JSON.parse(await fsPromises.readFile(dappSelectorsPath, 'utf8'))
+	await fsPromises.writeFile(dappNamesPath, JSON.stringify({ ...storeNamesdData, ...namesData }, null, 4), 'utf8')
+	await fsPromises.writeFile(dappSelectorsPath, JSON.stringify({ ...storedSelectorsData, ...fetchedSelectors }, null, 4), 'utf8')
 	// @TODO finish script
 }
 
