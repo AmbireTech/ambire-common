@@ -94,7 +94,7 @@ async function fetchFuncEtherface(
     ? {
         key: `funcSelectors:${selector}`,
         isGlobal: true,
-        value: { text: func.text, hash: func.hash }
+        value: func.text
       }
     : null
 }
@@ -118,7 +118,7 @@ export function fallbackHumanizer(
     if (call.data !== '0x') {
       if (accountOp.humanizerMeta?.[`funcSelectors:${call.data.slice(0, 10)}`]) {
         visualization.push(
-          getAction(accountOp.humanizerMeta?.[`funcSelectors:${call.data.slice(0, 10)}`].text)
+          getAction(accountOp.humanizerMeta?.[`funcSelectors:${call.data.slice(0, 10)}`])
         )
       } else {
         const promise = fetchFuncEtherface(call.data.slice(0, 10), options.fetch)
