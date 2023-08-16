@@ -5,12 +5,9 @@ const ETHERSCAN_API_KEY = process.env.ETHERSCAN_API_KEY
 // const ALCHEMY_API_KEY = process.env.ALCHEMY_API_KEY
 const fsPromises = require('fs').promises
 
-const fs = require('fs')
-
 const path = require('path')
 
 const infoSourcePath = path.join(__dirname, '..', 'contracts', 'dappAddressList.json')
-const dappSelectorsAndNamesPath = path.join(__dirname, '..', 'src', 'consts', 'dappSelectorsAndNames.json')
 const dappSelectorsPath = path.join(__dirname, '..', 'src', 'consts', 'dappSelectors.json')
 const dappNamesPath = path.join(__dirname, '..', 'src', 'consts', 'dappNames.json')
 
@@ -23,7 +20,7 @@ const dappNamesPath = path.join(__dirname, '..', 'src', 'consts', 'dappNames.jso
 // 		const files = fs.readdirSync(path.join(dirPath, folder))
 // 		await Promise.all(files.map(async (f)=>{
 // 			const data = await fsPromises.readFile(path.join(dirPath, folder, f), 'utf8')
-// 			allAddresses = { ...allAddresses, [folder]: { ...allAddresses[folder], [f]:JSON.parse(data) } }
+// 			allAddresses = { ...allAddresses, [folder]: { ...allAddresses[folder], [f.slice(0, 42)]:JSON.parse(data) } }
 // 	}))
 // 	}))
 //   return allAddresses
@@ -46,7 +43,7 @@ const main  = async () => {
 	// taking addresses from json only for mainnet
 	const initialJson = JSON.parse(await fsPromises.readFile(infoSourcePath, 'utf8'))
 	const addressListJson = initialJson?.['1']
-	const addressList = Object.keys(addressListJson).map(a=>a.slice(0, 42))
+	const addressList = Object.keys(addressListJson)
 	// takes interfaces
 	const interfaces = await getContractInterfaces(addressList)
 	const entries = []
@@ -57,14 +54,13 @@ const main  = async () => {
 			if (f.type === 'error') entries.push([`errorSelectors:${f.selector}`, getFnName(f)])
 		})
 	})
-	Object.keys(initialJson).forEach(n=>Object.keys(initialJson[n]).forEach((a)=>entries2.push([`names:${a.slice(0, 42)}`, initialJson[n][a].appName])))
+	Object.keys(initialJson).forEach(n=>Object.keys(initialJson[n]).forEach((a)=>entries2.push([`names:${a}`, initialJson[n][a].appName])))
 	const fetchedSelectors = Object.fromEntries(entries)
 	const namesData = Object.fromEntries(entries2)
 	const storeNamesdData = JSON.parse(await fsPromises.readFile(dappNamesPath, 'utf8'))
 	const storedSelectorsData = JSON.parse(await fsPromises.readFile(dappSelectorsPath, 'utf8'))
 	await fsPromises.writeFile(dappNamesPath, JSON.stringify({ ...storeNamesdData, ...namesData }, null, 4), 'utf8')
 	await fsPromises.writeFile(dappSelectorsPath, JSON.stringify({ ...storedSelectorsData, ...fetchedSelectors }, null, 4), 'utf8')
-	// @TODO finish script
 }
 
 main()

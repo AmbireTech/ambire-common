@@ -1747,5 +1747,15 @@
     "funcSelectors:0x1959a002": "userInfo(address)",
     "funcSelectors:0x38d07436": "withdraw(uint256,bool)",
     "funcSelectors:0x1c1c6fe5": "withdrawAll(bool)",
-    "funcSelectors:0xbca8c7b5": "executeCall(address,bytes)"
+    "funcSelectors:0xbca8c7b5": "executeCall(address,bytes)",
+    "funcSelectors:0x53755b8f": "authorizeSender(address)",
+    "funcSelectors:0xbfe51c10": "authorizeSigner(address)",
+    "funcSelectors:0x2e340823": "cancel(uint256[])",
+    "funcSelectors:0x3c641910": "cancelUpTo(uint256)",
+    "funcSelectors:0xab204282": "revokeSender(address)",
+    "funcSelectors:0xc34b44a0": "revokeSigner(address)",
+    "funcSelectors:0x4f94c536": "senderAuthorizations(address,address)",
+    "funcSelectors:0x41ac49a3": "signerAuthorizations(address,address)",
+    "funcSelectors:0x5e68e11f": "signerMinimumNonce(address)",
+    "funcSelectors:0xbfb96279": "signerNonceStatus(address,uint256)"
 }
