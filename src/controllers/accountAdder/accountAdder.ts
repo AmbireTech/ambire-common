@@ -85,61 +85,76 @@ export class AccountAdderController extends EventEmitter {
     isLinked: boolean
     slot: number
   }[] {
-    const mergedAccounts: {
-      account: ExtendedAccount
-      isLinked: boolean
-      slot: number
-    }[] = []
-
-    this.#calculatedAccounts.forEach((calculatedAccount) => {
-      const allLinkedForThisAccount = this.#linkedAccounts.filter(
+    const processedAccounts = this.#calculatedAccounts.flatMap((calculatedAccount) => {
+      const associatedLinkedAccounts = this.#linkedAccounts.filter(
         (linkedAcc) =>
           !calculatedAccount.account.creation &&
           linkedAcc.account.associatedKeys.includes(calculatedAccount.account.addr)
       )
-      const theSmartAccountOnThisSlot: any = this.#calculatedAccounts.find(
+
+      const correspondingSmartAccount = this.#calculatedAccounts.find(
         (acc) => acc.account.creation !== null && acc.slot === calculatedAccount.slot
       )
-      const linkedAccountThatDuplicatesWithTheSmartAccount: any = allLinkedForThisAccount.find(
-        (linkedAcc) => linkedAcc.account.addr === theSmartAccountOnThisSlot?.account?.addr
-      )
+
+      let accountsToReturn = []
 
       if (!calculatedAccount.account.creation) {
-        mergedAccounts.push(calculatedAccount) // Add the legacy acc
+        accountsToReturn.push(calculatedAccount)
 
-        if (!linkedAccountThatDuplicatesWithTheSmartAccount) {
-          // Add the smart acc if there is no linked acc that is duplicated with the generated smart acc for the given slot
-          mergedAccounts.push(theSmartAccountOnThisSlot)
+        const duplicate = associatedLinkedAccounts.find(
+          (linkedAcc) => linkedAcc.account.addr === correspondingSmartAccount?.account?.addr
+        )
+
+        // The calculated smart account that matches the relayer's linked account
+        // should not be displayed as linked account. Use this cycle to mark it.
+        if (duplicate) duplicate.isLinked = false
+
+        if (!duplicate && correspondingSmartAccount) {
+          accountsToReturn.push(correspondingSmartAccount)
         }
       }
 
-      allLinkedForThisAccount.forEach((linkedAcc) => {
-        if (
-          linkedAcc.account.addr === linkedAccountThatDuplicatesWithTheSmartAccount?.account?.addr
-        ) {
-          linkedAccountThatDuplicatesWithTheSmartAccount.isLinked = false
-          linkedAccountThatDuplicatesWithTheSmartAccount.slot = calculatedAccount.slot
-          // Add the duplicated linked acc as a smart acc
-          mergedAccounts.push(linkedAccountThatDuplicatesWithTheSmartAccount)
-        } else {
-          // If linked acc not duplicated just add it
-          mergedAccounts.push({
-            ...linkedAcc,
-            slot: calculatedAccount.slot
-          })
-        }
-      })
+      accountsToReturn = accountsToReturn.concat(
+        associatedLinkedAccounts.map((linkedAcc) => ({
+          ...linkedAcc,
+          slot: calculatedAccount.slot
+        }))
+      )
+
+      return accountsToReturn
     })
 
+    const unprocessedLinkedAccounts = this.#linkedAccounts
+      .filter(
+        (linkedAcc) =>
+          !processedAccounts.find(
+            (processedAcc) => processedAcc.account.addr === linkedAcc.account.addr
+          )
+      )
+      .map((linkedAcc) => {
+        const correspondingCalculatedAccount = this.#calculatedAccounts.find((calculatedAcc) =>
+          linkedAcc.account.associatedKeys.includes(calculatedAcc.account.addr)
+        )
+
+        return {
+          ...linkedAcc,
+          // The `correspondingCalculatedAccount` should always be found, so -1
+          // is a fallback value that should never happen.
+          slot: correspondingCalculatedAccount ? correspondingCalculatedAccount.slot : -1
+        }
+      })
+
+    const mergedAccounts = [...processedAccounts, ...unprocessedLinkedAccounts]
+
     mergedAccounts.sort((a, b) => {
-      const getTypeOrder = (item: any) => {
+      const prioritizeAccountType = (item: any) => {
         if (!item.account.creation) return -1
         if (item.isLinked) return 1
 
         return 0
       }
 
-      return getTypeOrder(a) - getTypeOrder(b) || a.slot - b.slot
+      return prioritizeAccountType(a) - prioritizeAccountType(b) || a.slot - b.slot
     })
 
     return mergedAccounts
