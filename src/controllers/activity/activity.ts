@@ -78,11 +78,11 @@ const trim = <T>(items: T[], maxSize = 1000): void => {
  *       5.2.2. If we don't manage to determine its status, we are comparing AccountOp and Account nonce. If Account nonce is greater than AccountOp, then we know that AccountOp has past nonce (AccountOpStatus.UnknownButPastNonce).
  */
 export class ActivityController extends EventEmitter {
-  private storage: Storage
+  #storage: Storage
 
-  private initialLoadPromise: Promise<void>
+  #initialLoadPromise: Promise<void>
 
-  private accounts: AccountStates
+  #accounts: AccountStates
 
   #accountsOps: InternalAccountsOps = {}
 
@@ -106,16 +106,16 @@ export class ActivityController extends EventEmitter {
 
   constructor(storage: Storage, accounts: AccountStates, filters: Filters) {
     super()
-    this.storage = storage
-    this.accounts = accounts
+    this.#storage = storage
+    this.#accounts = accounts
     this.filters = filters
-    this.initialLoadPromise = this.load()
+    this.#initialLoadPromise = this.#load()
   }
 
-  private async load(): Promise<void> {
+  async #load(): Promise<void> {
     const [accountsOps, signedMessages] = await Promise.all([
-      this.storage.get('accountsOps', {}),
-      this.storage.get('signedMessages', {})
+      this.#storage.get('accountsOps', {}),
+      this.#storage.get('signedMessages', {})
     ])
 
     this.#accountsOps = accountsOps
@@ -148,7 +148,7 @@ export class ActivityController extends EventEmitter {
   }
 
   async addAccountOp(accountOp: SubmittedAccountOp) {
-    await this.initialLoadPromise
+    await this.#initialLoadPromise
 
     const account = accountOp.accountAddr
     const network = accountOp.networkId
@@ -161,7 +161,7 @@ export class ActivityController extends EventEmitter {
 
     this.accountsOps = this.filterAndPaginate(this.#accountsOps, this.accountsOpsPagination)
 
-    await this.storage.set('accountsOps', this.#accountsOps)
+    await this.#storage.set('accountsOps', this.#accountsOps)
     this.emitUpdate()
   }
 
@@ -191,19 +191,19 @@ export class ActivityController extends EventEmitter {
               ? AccountOpStatus.Success
               : AccountOpStatus.Failure
           } else if (
-            this.accounts[accountOp.accountAddr][accountOp.networkId].nonce > accountOp.nonce
+            this.#accounts[accountOp.accountAddr][accountOp.networkId].nonce > accountOp.nonce
           ) {
             accountsOps[index].status = AccountOpStatus.UnknownButPastNonce
           }
         })
     )
-    await this.storage.set('accountsOps', this.#accountsOps)
+    await this.#storage.set('accountsOps', this.#accountsOps)
     this.accountsOps = this.filterAndPaginate(this.#accountsOps, this.accountsOpsPagination)
     this.emitUpdate()
   }
 
   async addSignedMessage(signedMessage: SignedMessage, account: string, network: string) {
-    await this.initialLoadPromise
+    await this.#initialLoadPromise
 
     if (!this.#signedMessages[account]) this.#signedMessages[account] = {}
     if (!this.#signedMessages[account][network]) this.#signedMessages[account][network] = []
@@ -215,7 +215,7 @@ export class ActivityController extends EventEmitter {
       this.signedMessagesPagination
     )
 
-    await this.storage.set('signedMessages', this.#signedMessages)
+    await this.#storage.set('signedMessages', this.#signedMessages)
     this.emitUpdate()
   }
 
@@ -248,6 +248,6 @@ export class ActivityController extends EventEmitter {
   }
 
   setAccounts(accounts: AccountStates) {
-    this.accounts = accounts
+    this.#accounts = accounts
   }
 }
