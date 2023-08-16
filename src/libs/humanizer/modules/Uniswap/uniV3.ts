@@ -17,7 +17,6 @@ const uniV32Mapping = (
   humanizerInfo: any
 ): { [key: string]: (a: AccountOp, c: IrCall) => IrCall[] } => {
   const ifaceV32 = new ethers.Interface(humanizerInfo?.['abis:UniV3Router2'])
-  // @TODO there might be multiple txns with value when spliting them for multicalls
   return {
     // uint256 is deadline
     // 0x5ae401dc

@@ -39,7 +39,6 @@ export const uniUniversalRouter = (
         'execute(bytes calldata commands, bytes[] calldata inputs, uint256 deadline)'
       )?.selector
     }`]: (accountOp: AccountOp, call: IrCall) => {
-      // @TODO make the first? call to have the value? if any
       const [commands, inputs, deadline] = ifaceUniversalRouter.parseTransaction(call)?.args || []
       const parsedCommands = commands
         .slice(2)
