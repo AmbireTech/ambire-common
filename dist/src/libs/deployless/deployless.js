@@ -99,7 +99,7 @@ class Deployless {
                 from: opts.from,
                 gasPrice: opts?.gasPrice,
                 gasLimit: opts?.gasLimit,
-                data: checkDataSize(ethers_1.concat([
+                data: checkDataSize((0, ethers_1.concat)([
                     deploylessProxyBin,
                     abiCoder.encode(['bytes', 'bytes'], [this.contractBytecode, callData])
                 ]))
@@ -168,7 +168,7 @@ function parseErr(data) {
 }
 exports.parseErr = parseErr;
 function checkDataSize(data) {
-    if (ethers_1.getBytes(data).length >= 24576)
+    if ((0, ethers_1.getBytes)(data).length >= 24576)
         throw new Error('24kb call data size limit reached, use StateOverride mode');
     return data;
 }
