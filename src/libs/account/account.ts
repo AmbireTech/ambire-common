@@ -47,3 +47,6 @@ export async function getSmartAccount(address: string): Promise<Account> {
     }
   }
 }
+
+export const isAmbireV1LinkedAccount = (factoryAddr?: string) =>
+  factoryAddr === '0xBf07a0Df119Ca234634588fbDb5625594E2a5BCA'

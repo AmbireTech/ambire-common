@@ -4,7 +4,11 @@ import { Account, AccountOnchainState } from '../../interfaces/account'
 import { KeyIterator } from '../../interfaces/keyIterator'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
 import { Storage } from '../../interfaces/storage'
-import { getLegacyAccount, getSmartAccount } from '../../libs/account/account'
+import {
+  getLegacyAccount,
+  getSmartAccount,
+  isAmbireV1LinkedAccount
+} from '../../libs/account/account'
 import { getAccountState } from '../../libs/accountState/accountState'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import EventEmitter from '../eventEmitter'
@@ -273,8 +277,11 @@ export class AccountAdderController extends EventEmitter {
     this.addAccountsStatus = { type: 'PENDING' }
     this.emitUpdate()
 
-    // Identity only for the smart accounts must be created on the Relayer
-    const accountsToAddOnRelayer = accounts.filter((acc) => acc.creation)
+    const accountsToAddOnRelayer = accounts
+      // Identity only for the smart accounts must be created on the Relayer
+      .filter((acc) => acc.creation)
+      // Skip creating identity for Ambire v1 smart accounts
+      .filter((acc) => !isAmbireV1LinkedAccount(acc.creation?.factoryAddr))
 
     if (accountsToAddOnRelayer.length) {
       const body = accountsToAddOnRelayer.map((acc) => ({
