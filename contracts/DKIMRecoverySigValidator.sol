@@ -79,13 +79,11 @@ contract DKIMRecoverySigValidator {
   address authorizedToSubmit;
   address authorizedToRevoke;
   DNSSEC oracle;
-  bytes bridgeString;
 
-  constructor(DNSSEC _oracle, address _authorizedToSubmit, address _authorizedToRevoke, bytes memory _bridgeString) {
+  constructor(DNSSEC _oracle, address _authorizedToSubmit, address _authorizedToRevoke) {
     authorizedToSubmit = _authorizedToSubmit;
     authorizedToRevoke = _authorizedToRevoke;
     oracle = _oracle;
-    bridgeString = _bridgeString;
   }
 
   function validateSig(
@@ -189,6 +187,9 @@ contract DKIMRecoverySigValidator {
 
     keyInfo.isExisting = true;
     keyInfo.dateAdded = uint32(block.timestamp);
+
+    // the bytes representation of dnssecbridge.ambire.com read from a SignedSet
+    bytes memory bridgeString = hex"646e7373656362726964676506616d6269726503636f6d0000100001000001";
 
     if (domainName.toSlice().endsWith(string(bridgeString).toSlice())) {
       Strings.slice memory keyDomain;

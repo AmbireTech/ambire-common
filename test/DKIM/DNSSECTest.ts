@@ -4,7 +4,6 @@ import { abiCoder, expect } from '../config'
 const SignedSet = require('@ensdomains/dnsprovejs').SignedSet
 import getPublicKey from '../../src/libs/dkim/getPublicKey'
 import publicKeyToComponents from '../../src/libs/dkim/publicKeyToComponents'
-import { bridgeHex } from './consts'
 
 function hexEncodeSignedSet(rrs: any, sig: any) {
   const ss = new SignedSet(rrs, sig)
@@ -36,7 +35,7 @@ describe('DKIM', function () {
         RSASHA256: await rsaSha256Other.getAddress(),
       },
     })
-    dkimRecovery = await contractFactory.deploy(await dnsSec.getAddress(), signer.address, signer.address, bridgeHex)
+    dkimRecovery = await contractFactory.deploy(await dnsSec.getAddress(), signer.address, signer.address)
     expect(await dkimRecovery.getAddress()).to.not.be.null
   })
 

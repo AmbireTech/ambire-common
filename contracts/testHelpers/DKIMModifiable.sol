@@ -14,10 +14,9 @@ contract DKIMModifiable is DKIMRecoverySigValidator {
         uint32[] memory waitTimestamps,
         DNSSEC _oracle,
         address _authorizedToSubmit,
-        address _authorizedToRevoke,
-        bytes memory _bridgeString
+        address _authorizedToRevoke
     )
-    DKIMRecoverySigValidator(_oracle, _authorizedToSubmit, _authorizedToRevoke, _bridgeString) {
+    DKIMRecoverySigValidator(_oracle, _authorizedToSubmit, _authorizedToRevoke) {
         // set DKIM keys to help with testing
         for (uint i=0; i<keys.length; i++) {
             bytes32 keyId = keccak256(abi.encode(keys[i]));
