@@ -59,10 +59,8 @@ export function callToTuple(call: Call): [string, bigint, string] {
 
 export function isEOA(op: AccountOp): boolean {
   if (op.gasFeePayment === null) throw new Error('missing gasFeePayment')
-  return (
-    op.gasFeePayment.paymentType === GasFeePaymentType.EOA &&
-    op.gasFeePayment.paidBy === op.accountAddr
-  )
+  return op.gasFeePayment.paymentType === GasFeePaymentType.EOA
+    && op.gasFeePayment.paidBy === op.accountAddr
 }
 
 export function canBroadcast(op: AccountOp, accountIsEOA: boolean): boolean {
@@ -72,10 +70,8 @@ export function canBroadcast(op: AccountOp, accountIsEOA: boolean): boolean {
   if (op.gasLimit === null) throw new Error('missing gasLimit')
   if (op.nonce === null) throw new Error('missing nonce')
   if (accountIsEOA) {
-    if (op.gasFeePayment.paymentType !== GasFeePaymentType.EOA)
-      throw new Error('gas fee payment type is not EOA')
-    if (op.gasFeePayment.paidBy !== op.accountAddr)
-      throw new Error('gas fee payment cannot be paid by anyone other than the EOA that signed it')
+    if (op.gasFeePayment.paymentType !== GasFeePaymentType.EOA) throw new Error('gas fee payment type is not EOA')
+    if (op.gasFeePayment.paidBy !== op.accountAddr) throw new Error('gas fee payment cannot be paid by anyone other than the EOA that signed it')
   }
   return true
 }

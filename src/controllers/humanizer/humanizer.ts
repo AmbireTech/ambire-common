@@ -1,6 +1,5 @@
 /* eslint-disable no-await-in-loop */
 // @TODO func that takes IrCall and returns the humanization as text
-// @TODO undo eslint updates on non-related files
 // @TODO use for of or for in instead of object.keys().map/.forEach
 // @TODO remove '.json' from json with contract abis and selectors
 // @TODO use type generics instead of any
