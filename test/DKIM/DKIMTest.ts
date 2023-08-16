@@ -6,46 +6,9 @@ import fs from 'fs'
 import path from 'path'
 import parseEmail from '../../src/libs/dkim/parseEmail'
 import { wrapEthSign, wrapExternallyValidated } from '../ambireSign'
-import { getPriviledgeTxn } from '../helpers'
+import { getDKIMValidatorData, getPriviledgeTxn, getSignerKey } from '../helpers'
 const readFile = promisify(fs.readFile)
 const emailsPath = path.join(__dirname, 'emails')
-
-function getValidatorData(
-  parsedContents: any,
-  signer: any,
-  options: any = {}
-) {
-  const emptySecondSig = options.emptySecondSig ?? false
-  const acceptEmptyDKIMSig = options.acceptEmptyDKIMSig ?? false
-  const onlyOneSigTimelock = options.onlyOneSigTimelock ?? 0
-  const acceptUnknownSelectors = options.acceptUnknownSelectors ?? false
-  const emailFrom = options.emailFrom ?? 'borislavdevlabs@gmail.com'
-  const emailTo = options.emailTo ?? 'borislav.ickov@gmail.com'
-
-  return abiCoder.encode([
-    'tuple(string,string,string,bytes,bytes,address,bool,uint32,uint32,bool,bool,uint32)'
-    ,
-  ], [[
-    emailFrom,
-    emailTo,
-    parsedContents[0].selector,
-    ethers.hexlify(parsedContents[0].modulus),
-    ethers.hexlify(ethers.toBeHex(parsedContents[0].exponent)),
-    signer.address,
-    acceptUnknownSelectors,
-    0,
-    0,
-    acceptEmptyDKIMSig,
-    emptySecondSig,
-    onlyOneSigTimelock,
-  ]])
-}
-
-function getSignerKey(validatorAddr: any, validatorData: any) {
-  const hash = ethers.keccak256(abiCoder.encode(['address', 'bytes'], [validatorAddr, validatorData]))
-  const signerKey = `0x${hash.slice(hash.length - 40, hash.length)}`
-  return {signerKey, hash}
-}
 
 let dkimRecovery: any
 let ambireAccountAddress: string
@@ -91,7 +54,7 @@ describe('DKIM sigMode Both', function () {
       encoding: 'ascii'
     })
     const parsedContents: any = await parseEmail(gmail)
-    const validatorData = getValidatorData(parsedContents, relayer)
+    const validatorData = getDKIMValidatorData(parsedContents, relayer)
     const {signerKey, hash} = getSignerKey(await dkimRecovery.getAddress(), validatorData)
     const { ambireAccount, ambireAccountAddress: addr } = await deployAmbireAccountHardhatNetwork([
       { addr: signerKey, hash: hash }
@@ -106,7 +69,7 @@ describe('DKIM sigMode Both', function () {
       encoding: 'ascii'
     })
     const parsedContents: any = await parseEmail(gmail)
-    const validatorData = getValidatorData(parsedContents, relayer)
+    const validatorData = getDKIMValidatorData(parsedContents, relayer)
     const validatorAddr = await dkimRecovery.getAddress()
     const {signerKey} = getSignerKey(validatorAddr, validatorData)
     const dkimSig = parsedContents[0].solidity.signature
@@ -164,7 +127,7 @@ describe('DKIM sigMode Both', function () {
       encoding: 'ascii'
     })
     const parsedContents: any = await parseEmail(gmail)
-    const validatorData = getValidatorData(parsedContents, relayer, {
+    const validatorData = getDKIMValidatorData(parsedContents, relayer, {
       emptySecondSig: true
     })
     const validatorAddr = await dkimRecovery.getAddress()
@@ -182,7 +145,7 @@ describe('DKIM sigMode Both', function () {
       encoding: 'ascii'
     })
     const parsedContents: any = await parseEmail(gmail)
-    const validatorData = getValidatorData(parsedContents, relayer)
+    const validatorData = getDKIMValidatorData(parsedContents, relayer)
     const validatorAddr = await dkimRecovery.getAddress()
     const {signerKey} = getSignerKey(validatorAddr, validatorData)
 
@@ -217,7 +180,7 @@ describe('DKIM sigMode Both', function () {
       encoding: 'ascii'
     })
     const parsedContents: any = await parseEmail(gmail)
-    const validatorData = getValidatorData(parsedContents, relayer)
+    const validatorData = getDKIMValidatorData(parsedContents, relayer)
     const validatorAddr = await dkimRecovery.getAddress()
     const {signerKey} = getSignerKey(validatorAddr, validatorData)
 
@@ -268,7 +231,7 @@ describe('DKIM sigMode Both', function () {
       encoding: 'ascii'
     })
     const parsedContents: any = await parseEmail(gmail)
-    const validatorData = getValidatorData(parsedContents, relayer)
+    const validatorData = getDKIMValidatorData(parsedContents, relayer)
     const validatorAddr = await dkimRecovery.getAddress()
     const {signerKey} = getSignerKey(validatorAddr, validatorData)
     const dkimSig = parsedContents[0].solidity.signature
@@ -306,7 +269,7 @@ describe('DKIM sigMode OnlyDKIM', function () {
       encoding: 'ascii'
     })
     const parsedContents: any = await parseEmail(gmail)
-    const validatorData = getValidatorData(parsedContents, relayer, {
+    const validatorData = getDKIMValidatorData(parsedContents, relayer, {
       emptySecondSig: true
     })
     const {signerKey, hash} = getSignerKey(await dkimRecovery.getAddress(), validatorData)
@@ -323,7 +286,7 @@ describe('DKIM sigMode OnlyDKIM', function () {
       encoding: 'ascii'
     })
     const parsedContents: any = await parseEmail(gmail)
-    const validatorData = getValidatorData(parsedContents, relayer, {
+    const validatorData = getDKIMValidatorData(parsedContents, relayer, {
       emptySecondSig: true
     })
     const validatorAddr = await dkimRecovery.getAddress()
@@ -395,7 +358,7 @@ describe('DKIM sigMode OnlyDKIM', function () {
       encoding: 'ascii'
     })
     const parsedContents: any = await parseEmail(gmail)
-    const validatorData = getValidatorData(parsedContents, relayer, {
+    const validatorData = getDKIMValidatorData(parsedContents, relayer, {
       emptySecondSig: true
     })
     const validatorAddr = await dkimRecovery.getAddress()
@@ -442,7 +405,7 @@ describe('DKIM sigMode OnlyDKIM', function () {
       encoding: 'ascii'
     })
     const parsedContents: any = await parseEmail(gmail)
-    const validatorData = getValidatorData(parsedContents, relayer, {
+    const validatorData = getDKIMValidatorData(parsedContents, relayer, {
       emptySecondSig: true
     })
     const validatorAddr = await dkimRecovery.getAddress()
@@ -481,7 +444,7 @@ describe('DKIM sigMode OnlySecond', function () {
       encoding: 'ascii'
     })
     const parsedContents: any = await parseEmail(gmail)
-    const validatorData = getValidatorData(parsedContents, relayer, {
+    const validatorData = getDKIMValidatorData(parsedContents, relayer, {
       acceptEmptyDKIMSig: true
     })
     const {signerKey, hash} = getSignerKey(await dkimRecovery.getAddress(), validatorData)
@@ -498,7 +461,7 @@ describe('DKIM sigMode OnlySecond', function () {
       encoding: 'ascii'
     })
     const parsedContents: any = await parseEmail(gmail)
-    const validatorData = getValidatorData(parsedContents, relayer, {
+    const validatorData = getDKIMValidatorData(parsedContents, relayer, {
       acceptEmptyDKIMSig: true
     })
     const validatorAddr = await dkimRecovery.getAddress()
@@ -577,7 +540,7 @@ describe('DKIM sigMode OnlySecond', function () {
       encoding: 'ascii'
     })
     const parsedContents: any = await parseEmail(gmail)
-    const validatorData = getValidatorData(parsedContents, relayer, {
+    const validatorData = getDKIMValidatorData(parsedContents, relayer, {
       acceptEmptyDKIMSig: true
     })
     const validatorAddr = await dkimRecovery.getAddress()
@@ -622,7 +585,7 @@ describe('DKIM sigMode OnlySecond', function () {
       encoding: 'ascii'
     })
     const parsedContents: any = await parseEmail(gmail)
-    const validatorData = getValidatorData(parsedContents, relayer, {
+    const validatorData = getDKIMValidatorData(parsedContents, relayer, {
       acceptEmptyDKIMSig: true
     })
     const validatorAddr = await dkimRecovery.getAddress()
@@ -694,7 +657,7 @@ describe('DKIM sigMode Both with acceptUnknownSelectors true', function () {
       encoding: 'ascii'
     })
     const parsedContents: any = await parseEmail(gmail)
-    const validatorData = getValidatorData(parsedContents, relayer, {
+    const validatorData = getDKIMValidatorData(parsedContents, relayer, {
       acceptUnknownSelectors: true
     })
     const {signerKey, hash} = getSignerKey(await dkimRecoveryForTesting.getAddress(), validatorData)
@@ -711,7 +674,7 @@ describe('DKIM sigMode Both with acceptUnknownSelectors true', function () {
       encoding: 'ascii'
     })
     const parsedContents: any = await parseEmail(gmail)
-    const validatorData = getValidatorData(parsedContents, relayer, {
+    const validatorData = getDKIMValidatorData(parsedContents, relayer, {
       acceptUnknownSelectors: true
     })
     const validatorAddr = await dkimRecoveryForTesting.getAddress()
@@ -772,7 +735,7 @@ describe('DKIM sigMode Both with acceptUnknownSelectors true', function () {
       encoding: 'ascii'
     })
     const parsedContents: any = await parseEmail(gmail)
-    const validatorData = getValidatorData(parsedContents, relayer, {
+    const validatorData = getDKIMValidatorData(parsedContents, relayer, {
       acceptUnknownSelectors: true
     })
     const validatorAddr = await dkimRecoveryForTesting.getAddress()
@@ -808,7 +771,7 @@ describe('DKIM sigMode Both with acceptUnknownSelectors true', function () {
       encoding: 'ascii'
     })
     const parsedContents: any = await parseEmail(gmail)
-    const validatorData = getValidatorData(parsedContents, relayer, {
+    const validatorData = getDKIMValidatorData(parsedContents, relayer, {
       acceptUnknownSelectors: true
     })
     const validatorAddr = await dkimRecoveryForTesting.getAddress()
@@ -879,7 +842,7 @@ describe('DKIM sigMode Both with acceptUnknownSelectors true', function () {
       encoding: 'ascii'
     })
     const parsedContents: any = await parseEmail(gmail)
-    const validatorData = getValidatorData(parsedContents, relayer, {
+    const validatorData = getDKIMValidatorData(parsedContents, relayer, {
       acceptUnknownSelectors: true
     })
     const validatorAddr = await dkimRecoveryForTesting.getAddress()
@@ -915,7 +878,7 @@ describe('DKIM sigMode Both with acceptUnknownSelectors true', function () {
       encoding: 'ascii'
     })
     const parsedContents: any = await parseEmail(gmail)
-    const validatorData = getValidatorData(parsedContents, relayer, {
+    const validatorData = getDKIMValidatorData(parsedContents, relayer, {
       acceptUnknownSelectors: true
     })
     const validatorAddr = await dkimRecoveryForTesting.getAddress()
@@ -951,7 +914,7 @@ describe('DKIM sigMode Both with acceptUnknownSelectors true', function () {
       encoding: 'ascii'
     })
     const parsedContents: any = await parseEmail(gmail)
-    const validatorData = getValidatorData(parsedContents, relayer, {
+    const validatorData = getDKIMValidatorData(parsedContents, relayer, {
       acceptUnknownSelectors: true
     })
     const validatorAddr = await dkimRecoveryForTesting.getAddress()
@@ -988,7 +951,7 @@ describe('DKIM sigMode Both with acceptUnknownSelectors true', function () {
       encoding: 'ascii'
     })
     const parsedContents: any = await parseEmail(gmail)
-    const validatorData = getValidatorData(parsedContents, relayer, {
+    const validatorData = getDKIMValidatorData(parsedContents, relayer, {
       acceptUnknownSelectors: true
     })
     const validatorAddr = await dkimRecoveryForTesting.getAddress()
@@ -1031,7 +994,7 @@ describe('DKIM sigMode Both with acceptUnknownSelectors true', function () {
     const youtubeParsedContents: any = await parseEmail(youtube)
     const youtubeSig = youtubeParsedContents[0].solidity.signature
 
-    const validatorData = getValidatorData(parsedContents, relayer, {
+    const validatorData = getDKIMValidatorData(parsedContents, relayer, {
       acceptUnknownSelectors: true
     })
     const validatorAddr = await dkimRecoveryForTesting.getAddress()
@@ -1069,7 +1032,7 @@ describe('DKIM sigMode Both with changed emailFrom', function () {
       encoding: 'ascii'
     })
     const parsedContents: any = await parseEmail(gmail)
-    const validatorData = getValidatorData(parsedContents, relayer, {
+    const validatorData = getDKIMValidatorData(parsedContents, relayer, {
       emailFrom: 'else@gmail.com'
     })
     const {signerKey, hash} = getSignerKey(await dkimRecovery.getAddress(), validatorData)
@@ -1086,7 +1049,7 @@ describe('DKIM sigMode Both with changed emailFrom', function () {
       encoding: 'ascii'
     })
     const parsedContents: any = await parseEmail(gmail)
-    const validatorData = getValidatorData(parsedContents, relayer, {
+    const validatorData = getDKIMValidatorData(parsedContents, relayer, {
       emailFrom: 'else@gmail.com'
     })
     const validatorAddr = await dkimRecovery.getAddress()
@@ -1125,7 +1088,7 @@ describe('DKIM sigMode Both with changed emailTo', function () {
       encoding: 'ascii'
     })
     const parsedContents: any = await parseEmail(gmail)
-    const validatorData = getValidatorData(parsedContents, relayer, {
+    const validatorData = getDKIMValidatorData(parsedContents, relayer, {
       emailTo: 'else@gmail.com'
     })
     const {signerKey, hash} = getSignerKey(await dkimRecovery.getAddress(), validatorData)
@@ -1142,7 +1105,7 @@ describe('DKIM sigMode Both with changed emailTo', function () {
       encoding: 'ascii'
     })
     const parsedContents: any = await parseEmail(gmail)
-    const validatorData = getValidatorData(parsedContents, relayer, {
+    const validatorData = getDKIMValidatorData(parsedContents, relayer, {
       emailTo: 'else@gmail.com'
     })
     const validatorAddr = await dkimRecovery.getAddress()
@@ -1184,7 +1147,7 @@ describe('DKIM sigMode OnlySecond with a timelock of 2 minutes', function () {
       encoding: 'ascii'
     })
     const parsedContents: any = await parseEmail(gmail)
-    const validatorData = getValidatorData(parsedContents, relayer, {
+    const validatorData = getDKIMValidatorData(parsedContents, relayer, {
       acceptEmptyDKIMSig: true,
       onlyOneSigTimelock: 120
     })
@@ -1202,7 +1165,7 @@ describe('DKIM sigMode OnlySecond with a timelock of 2 minutes', function () {
       encoding: 'ascii'
     })
     const parsedContents: any = await parseEmail(gmail)
-    const validatorData = getValidatorData(parsedContents, relayer, {
+    const validatorData = getDKIMValidatorData(parsedContents, relayer, {
       acceptEmptyDKIMSig: true,
       onlyOneSigTimelock: 120
     })
@@ -1270,7 +1233,7 @@ describe('DKIM sigMode OnlySecond with a timelock of 2 minutes', function () {
       encoding: 'ascii'
     })
     const parsedContents: any = await parseEmail(gmail)
-    const validatorData = getValidatorData(parsedContents, relayer, {
+    const validatorData = getDKIMValidatorData(parsedContents, relayer, {
       acceptEmptyDKIMSig: true,
       onlyOneSigTimelock: 120
     })
@@ -1329,7 +1292,7 @@ describe('DKIM sigMode OnlySecond with a timelock of 2 minutes', function () {
       encoding: 'ascii'
     })
     const parsedContents: any = await parseEmail(gmail)
-    const validatorData = getValidatorData(parsedContents, relayer, {
+    const validatorData = getDKIMValidatorData(parsedContents, relayer, {
       acceptEmptyDKIMSig: true,
       onlyOneSigTimelock: 120
     })

@@ -34,4 +34,42 @@ async function getNonce(ambireAccountAddr: string, provider: JsonRpcProvider) {
   return accountContract.nonce()
 }
 
-export { sendFunds, getPriviledgeTxn, getTimelockData, getNonce }
+function getDKIMValidatorData(
+  parsedContents: any,
+  signer: any,
+  options: any = {}
+) {
+  const emptySecondSig = options.emptySecondSig ?? false
+  const acceptEmptyDKIMSig = options.acceptEmptyDKIMSig ?? false
+  const onlyOneSigTimelock = options.onlyOneSigTimelock ?? 0
+  const acceptUnknownSelectors = options.acceptUnknownSelectors ?? false
+  const emailFrom = options.emailFrom ?? 'borislavdevlabs@gmail.com'
+  const emailTo = options.emailTo ?? 'borislav.ickov@gmail.com'
+  const selector = options.selector ?? parsedContents[0].selector
+
+  return abiCoder.encode([
+    'tuple(string,string,string,bytes,bytes,address,bool,uint32,uint32,bool,bool,uint32)'
+    ,
+  ], [[
+    emailFrom,
+    emailTo,
+    selector,
+    ethers.hexlify(parsedContents[0].modulus),
+    ethers.hexlify(ethers.toBeHex(parsedContents[0].exponent)),
+    signer.address,
+    acceptUnknownSelectors,
+    0,
+    0,
+    acceptEmptyDKIMSig,
+    emptySecondSig,
+    onlyOneSigTimelock,
+  ]])
+}
+
+function getSignerKey(validatorAddr: any, validatorData: any) {
+  const hash = ethers.keccak256(abiCoder.encode(['address', 'bytes'], [validatorAddr, validatorData]))
+  const signerKey = `0x${hash.slice(hash.length - 40, hash.length)}`
+  return {signerKey, hash}
+}
+
+export { sendFunds, getPriviledgeTxn, getTimelockData, getNonce, getDKIMValidatorData, getSignerKey }

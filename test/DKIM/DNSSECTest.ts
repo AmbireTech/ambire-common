@@ -50,7 +50,8 @@ describe('DKIM', function () {
     const key = publicKeyToComponents(ambireKey.publicKey)
     const ambireExponent = ethers.hexlify(ethers.toBeHex(key.exponent))
     const ambireModulus = ethers.hexlify(key.modulus)
-    const domainName = await dkimRecovery.getDomainNameFromSignedSet(rrsets[rrsets.length - 1])
+    const result = await dkimRecovery.getDomainNameFromSignedSet(rrsets[rrsets.length - 1])
+    const domainName = result[0]
     const dkimHash = ethers.keccak256(abiCoder.encode(['tuple(string, bytes, bytes)'], [[domainName, ambireModulus, ambireExponent]]))
     const isResThere = await dkimRecovery.dkimKeys(dkimHash)
     expect(isResThere[0]).to.be.true

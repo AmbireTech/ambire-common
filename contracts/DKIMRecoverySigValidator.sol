@@ -180,26 +180,19 @@ contract DKIMRecoverySigValidator {
     (bytes memory rrs, ) = oracle.verifyRRSet(rrSets);
     require(keccak256(rrs) == keccak256(rrset.data), 'DNSSec verification failed');
 
-    (DKIMKey memory key, string memory domainName) = parse(rrSets[rrSets.length-1]);
+    (DKIMKey memory key, string memory domainName, bool isBridge) = parse(rrSets[rrSets.length-1]);
+    if (isBridge) key.domainName = domainName;
+
     bytes32 id = keccak256(abi.encode(key));
     KeyInfo storage keyInfo = dkimKeys[id];
     require(!keyInfo.isExisting, 'key already exists');
 
     keyInfo.isExisting = true;
     keyInfo.dateAdded = uint32(block.timestamp);
-
-    // the bytes representation of dnssecbridge.ambire.com read from a SignedSet
-    bytes memory bridgeString = hex"646e7373656362726964676506616d6269726503636f6d0000100001000001";
-
-    if (domainName.toSlice().endsWith(string(bridgeString).toSlice())) {
-      Strings.slice memory keyDomain;
-      domainName.toSlice().split(string(bridgeString).toSlice(), keyDomain);
-      key.domainName = keyDomain.toString();
-      keyInfo.isBridge = true;
-    }
+    keyInfo.isBridge = isBridge;
   }
 
-  function parse(DNSSEC.RRSetWithSignature memory txtRset) internal pure returns (DKIMKey memory key, string memory domainName) {
+  function parse(DNSSEC.RRSetWithSignature memory txtRset) internal pure returns (DKIMKey memory key, string memory domainName, bool isBridge) {
     RRUtils.SignedSet memory txtSet = txtRset.rrset.readSignedSet();
     Strings.slice memory publicKey = string(txtSet.data).toSlice();
     publicKey.split('p='.toSlice());
@@ -224,7 +217,7 @@ contract DKIMRecoverySigValidator {
 
     Strings.slice memory selector = string(txtSet.data).toSlice();
     selector.rsplit(','.toSlice());
-    domainName = getDomainNameFromSignedSet(txtRset);
+    (domainName, isBridge) = getDomainNameFromSignedSet(txtRset);
     key = DKIMKey(
       domainName,
       modulus,
@@ -237,10 +230,15 @@ contract DKIMRecoverySigValidator {
     dkimKeys[id].dateRemoved = uint32(block.timestamp);
   }
 
-  function getDomainNameFromSignedSet(DNSSEC.RRSetWithSignature memory rrSet) public pure returns(string memory) {
+  function getDomainNameFromSignedSet(DNSSEC.RRSetWithSignature memory rrSet) public pure returns(string memory, bool) {
     Strings.slice memory selector = string(rrSet.rrset.readSignedSet().data).toSlice();
     selector.rsplit(','.toSlice());
-    return selector.toString();
+
+    bytes memory bridgeString = hex"646e7373656362726964676506616d6269726503636f6d0000100001000001";
+    bool isBridge = selector.endsWith(string(bridgeString).toSlice());
+    if (isBridge) selector.rsplit(string(bridgeString).toSlice());
+
+    return (selector.toString(), isBridge);
   }
 
   function _verifyHeaders(
