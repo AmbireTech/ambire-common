@@ -118,7 +118,7 @@ contract DKIMRecoverySigValidator {
         accInfo.emailTo,
         sigMeta.newKeyToSet,
         sigMeta.mode
-      );      
+      );
 
       Strings.slice memory emailDomain = accInfo.emailFrom.toSlice();
       emailDomain.split('@'.toSlice());

@@ -475,7 +475,6 @@ describe('DKIM sigMode OnlyDKIM', function () {
 })
 
 describe('DKIM sigMode OnlySecond', function () {
-
   it('successfully deploys the ambire account', async function () {
     const [relayer] = await ethers.getSigners()
     const gmail = await readFile(path.join(emailsPath, 'sigMode2.eml'), {
@@ -1177,6 +1176,8 @@ describe('DKIM sigMode Both with changed emailTo', function () {
 
 describe('DKIM sigMode OnlySecond with a timelock of 2 minutes', function () {
 
+  let secondSigReuse: any;
+
   it('successfully deploys the ambire account', async function () {
     const [relayer] = await ethers.getSigners()
     const gmail = await readFile(path.join(emailsPath, 'sigMode2.eml'), {
@@ -1217,6 +1218,8 @@ describe('DKIM sigMode OnlySecond with a timelock of 2 minutes', function () {
     )
     const msg = ethers.getBytes(msgHash)
     const secondSig = wrapEthSign(await relayer.signMessage(msg))
+    secondSigReuse = secondSig
+
     const sigMetaTuple = 'tuple(uint8, tuple(string, bytes, bytes), string, address, bytes32)'
     const sigMetaValues = [
       ethers.toBeHex(2, 1),
@@ -1259,5 +1262,124 @@ describe('DKIM sigMode OnlySecond with a timelock of 2 minutes', function () {
     // 2 minutes timelock
     await expect(account.execute(txns, finalSig))
       .to.be.revertedWith('timelock: not ready yet')
+  })
+
+  it('??? is this okay??? it changes the SignatureMeta key and reuses the signature to set the same timelock', async function () {
+    const [relayer, newSigner] = await ethers.getSigners()
+    const gmail = await readFile(path.join(emailsPath, 'sigMode2.eml'), {
+      encoding: 'ascii'
+    })
+    const parsedContents: any = await parseEmail(gmail)
+    const validatorData = getValidatorData(parsedContents, relayer, {
+      acceptEmptyDKIMSig: true,
+      onlyOneSigTimelock: 120
+    })
+    const validatorAddr = await dkimRecovery.getAddress()
+    const {signerKey} = getSignerKey(validatorAddr, validatorData)
+
+    const txns = [getPriviledgeTxn(ambireAccountAddress, newSigner.address, true)]
+
+    const sigMetaTuple = 'tuple(uint8, tuple(string, bytes, bytes), string, address, bytes32)'
+    const sigMetaValues = [
+      ethers.toBeHex(2, 1),
+      [
+        '',
+        ethers.toBeHex(1, 1),
+        ethers.toBeHex(0, 1),
+      ],
+      '',
+      newSigner.address,
+      ethers.toBeHex(1, 32)
+    ]
+    const innerSig = abiCoder.encode([sigMetaTuple, 'bytes', 'bytes'], [
+      sigMetaValues,
+      ethers.toBeHex(0, 1),
+      secondSigReuse
+    ])
+    const sig = abiCoder.encode(['address', 'address', 'bytes', 'bytes'], [signerKey, validatorAddr, validatorData, innerSig])
+    const finalSig = wrapExternallyValidated(sig)
+    await account.execute(txns, finalSig)
+
+    // expect the txn to NOT have been executed
+    const hasPriv = await account.privileges(newSigner.address)
+    expect(hasPriv).to.equal(ethers.toBeHex(0, 32))
+
+    // expect recovery to not have been marked as complete
+    const identifier = ethers.keccak256(abiCoder.encode(['address', 'bytes', sigMetaTuple], [
+        ambireAccountAddress,
+        validatorData,
+        sigMetaValues
+    ]))
+    const recoveryAssigned = await dkimRecovery.recoveries(identifier)
+    expect(recoveryAssigned).to.be.false
+
+    // expect a timelock to have been scheduled
+    const timelock = await dkimRecovery.timelocks(identifier)
+    expect(timelock[0]).to.be.false
+    expect(timelock[1]).to.not.equal(0)
+
+    // 2 minutes timelock
+    await expect(account.execute(txns, finalSig))
+      .to.be.revertedWith('timelock: not ready yet')
+  })
+
+  it('it should revert with second key validation failed if you try to reuse the sig but set a new address or new privs', async function () {
+    const [relayer, newSigner, hacker] = await ethers.getSigners()
+    const gmail = await readFile(path.join(emailsPath, 'sigMode2.eml'), {
+      encoding: 'ascii'
+    })
+    const parsedContents: any = await parseEmail(gmail)
+    const validatorData = getValidatorData(parsedContents, relayer, {
+      acceptEmptyDKIMSig: true,
+      onlyOneSigTimelock: 120
+    })
+    const validatorAddr = await dkimRecovery.getAddress()
+    const {signerKey} = getSignerKey(validatorAddr, validatorData)
+
+    const txns = [getPriviledgeTxn(ambireAccountAddress, hacker.address, true)]
+    const sigMetaTuple = 'tuple(uint8, tuple(string, bytes, bytes), string, address, bytes32)'
+    const sigMetaValues = [
+      ethers.toBeHex(2, 1),
+      [
+        '',
+        ethers.toBeHex(1, 1),
+        ethers.toBeHex(0, 1),
+      ],
+      '',
+      hacker.address,
+      ethers.toBeHex(1, 32)
+    ]
+    const innerSig = abiCoder.encode([sigMetaTuple, 'bytes', 'bytes'], [
+      sigMetaValues,
+      ethers.toBeHex(0, 1),
+      secondSigReuse
+    ])
+    const sig = abiCoder.encode(['address', 'address', 'bytes', 'bytes'], [signerKey, validatorAddr, validatorData, innerSig])
+    const finalSig = wrapExternallyValidated(sig)
+    await expect(account.execute(txns, finalSig))
+      .to.be.revertedWith('second key validation failed')
+
+    // try to give newSigner.address false privs
+    const brickTxn = [getPriviledgeTxn(ambireAccountAddress, newSigner.address, false)]
+    const brickSigMetaValues = [
+      ethers.toBeHex(2, 1),
+      [
+        '',
+        ethers.toBeHex(1, 1),
+        ethers.toBeHex(0, 1),
+      ],
+      '',
+      newSigner.address,
+      ethers.toBeHex(0, 32)
+    ]
+    const brickInnerSig = abiCoder.encode([sigMetaTuple, 'bytes', 'bytes'], [
+      brickSigMetaValues,
+      ethers.toBeHex(0, 1),
+      secondSigReuse
+    ])
+    const brickSig = abiCoder.encode(['address', 'address', 'bytes', 'bytes'], [signerKey, validatorAddr, validatorData, brickInnerSig])
+    const finalBrickSig = wrapExternallyValidated(brickSig)
+    await expect(account.execute(brickTxn, finalBrickSig))
+      .to.be.revertedWith('second key validation failed')
   })
 })
