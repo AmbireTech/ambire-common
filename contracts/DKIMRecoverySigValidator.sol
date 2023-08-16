@@ -79,11 +79,13 @@ contract DKIMRecoverySigValidator {
   address authorizedToSubmit;
   address authorizedToRevoke;
   DNSSEC oracle;
+  bytes bridgeString;
 
-  constructor(DNSSEC _oracle, address _authorizedToSubmit, address _authorizedToRevoke) {
+  constructor(DNSSEC _oracle, address _authorizedToSubmit, address _authorizedToRevoke, bytes memory _bridgeString) {
     authorizedToSubmit = _authorizedToSubmit;
     authorizedToRevoke = _authorizedToRevoke;
     oracle = _oracle;
+    bridgeString = _bridgeString;
   }
 
   function validateSig(
@@ -134,13 +136,7 @@ contract DKIMRecoverySigValidator {
           keccak256(accInfo.dkimPubKeyExponent) == keccak256(pubKeyExponent) &&
           keccak256(accInfo.dkimPubKeyModulus) == keccak256(pubKeyModulus)
         )) {
-
-        // check if sigMeta.key.domainName ends with emailDomain
-        // keyDomain should have a value and afterOccurance should be empty
-        Strings.slice memory afterOccurance;
-        Strings.slice memory keyDomain = key.domainName.toSlice();
-        keyDomain.rsplit(emailDomain, afterOccurance);
-        require(bytes(keyDomain.toString()).length > 0 && bytes(afterOccurance.toString()).length == 0, 'domain in sigMeta is not authorized for this account');
+        require(key.domainName.toSlice().endsWith(emailDomain), 'domain in sigMeta is not authorized for this account');
 
         bytes32 keyId = keccak256(abi.encode(key));
         require(accInfo.acceptUnknownSelectors, 'account does not allow unknown selectors');
@@ -193,10 +189,11 @@ contract DKIMRecoverySigValidator {
 
     keyInfo.isExisting = true;
     keyInfo.dateAdded = uint32(block.timestamp);
-    Strings.slice memory bridgeString = '.bridge.ambire.com'.toSlice();
-    if (domainName.toSlice().endsWith(bridgeString)) {
-      // TODO: check if the below is correct
-      key.domainName = domainName.toSlice().rsplit(bridgeString).toString();
+
+    if (domainName.toSlice().endsWith(string(bridgeString).toSlice())) {
+      Strings.slice memory keyDomain;
+      domainName.toSlice().split(string(bridgeString).toSlice(), keyDomain);
+      key.domainName = keyDomain.toString();
       keyInfo.isBridge = true;
     }
   }

@@ -13,7 +13,7 @@ function hexEncodeSignedSet(rrs: any, sig: any) {
 
 let dkimRecovery: any
 
-describe('DKIM', function () {
+describe('DKIM Bridge', function () {
   it('successfully deploy the DNSSEC contracts and DKIM Recovery', async function () {
     const [signer] = await ethers.getSigners()
 
@@ -36,18 +36,25 @@ describe('DKIM', function () {
         RSASHA256: await rsaSha256Other.getAddress(),
       },
     })
-    dkimRecovery = await contractFactory.deploy(await dnsSec.getAddress(), signer.address, signer.address, bridgeHex)
+
+    dkimRecovery = await contractFactory.deploy(
+      await dnsSec.getAddress(),
+      signer.address,
+      signer.address,
+      bridgeHex
+    )
+
     expect(await dkimRecovery.getAddress()).to.not.be.null
   })
 
   it('successfully add a DNS key through addDKIMKeyWithDNSSec', async function () {
-    const res = await lookup('Google', 'Ambire.com')
+    const res = await lookup('20221208', 'gmail.com.dnssecbridge.ambire.com')
     const rrsets = res.proofs.map(({records, signature}: any) => hexEncodeSignedSet(records, signature))
     const set = hexEncodeSignedSet(res.answer.records, res.answer.signature)
     rrsets.push(set)
     await dkimRecovery.addDKIMKeyWithDNSSec(rrsets)
 
-    const ambireKey = await getPublicKey({domain: 'Ambire.com', selector: 'Google'})
+    const ambireKey = await getPublicKey({domain: 'gmail.com.dnssecbridge.ambire.com', selector: '20221208'})
     const key = publicKeyToComponents(ambireKey.publicKey)
     const ambireExponent = ethers.hexlify(ethers.toBeHex(key.exponent))
     const ambireModulus = ethers.hexlify(key.modulus)

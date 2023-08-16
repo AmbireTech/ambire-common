@@ -7,6 +7,7 @@ import path from 'path'
 import parseEmail from '../../src/libs/dkim/parseEmail'
 import { wrapEthSign, wrapExternallyValidated } from '../ambireSign'
 import { getPriviledgeTxn } from '../helpers'
+import { bridgeHex } from './consts'
 const readFile = promisify(fs.readFile)
 const emailsPath = path.join(__dirname, 'emails')
 
@@ -79,7 +80,7 @@ describe('DKIM Prep-up', function () {
       },
     })
     dnsSecAddr = await dnsSec.getAddress()
-    dkimRecovery = await contractFactory.deploy(dnsSecAddr, signer.address, signer.address)
+    dkimRecovery = await contractFactory.deploy(dnsSecAddr, signer.address, signer.address, bridgeHex)
     expect(await dkimRecovery.getAddress()).to.not.be.null
   })
 })
@@ -684,7 +685,7 @@ describe('DKIM sigMode Both with acceptUnknownSelectors true', function () {
       ]
     ]
     const waitTimestamps = [0, 0, 120];
-    dkimRecoveryForTesting = await testContractFactory.deploy(keys, waitTimestamps, dnsSecAddr, signer.address, signer.address)
+    dkimRecoveryForTesting = await testContractFactory.deploy(keys, waitTimestamps, dnsSecAddr, signer.address, signer.address, bridgeHex)
     expect(await dkimRecoveryForTesting.getAddress()).to.not.be.null
   })
 
