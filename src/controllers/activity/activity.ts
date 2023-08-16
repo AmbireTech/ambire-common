@@ -11,8 +11,8 @@ interface Pagination {
   itemsPerPage: number
 }
 
-interface PaginationResult {
-  items: any[]
+interface PaginationResult<T> {
+  items: T[]
   itemsTotal: number
   currentPage: number
   maxPages: number
@@ -23,12 +23,8 @@ export interface SubmittedAccountOp extends AccountOp {
   nonce: number
 }
 
-interface AccountsOps extends PaginationResult {
-  items: SubmittedAccountOp[]
-}
-interface SignedMessages extends PaginationResult {
-  items: SignedMessage[]
-}
+interface AccountsOps extends PaginationResult<SubmittedAccountOp> {}
+interface SignedMessages extends PaginationResult<SignedMessage> {}
 
 interface Filters {
   account: string
@@ -48,7 +44,7 @@ interface InternalSignedMessages {
 // We are limiting items array to include no more than 1000 records,
 // as we trim out the oldest ones (in the beginning of the items array).
 // We do this to maintain optimal storage and performance.
-const trim = (items: SubmittedAccountOp[] | SignedMessage[], maxSize = 1000): void => {
+const trim = <T>(items: T[], maxSize = 1000): void => {
   if (items.length > maxSize) {
     // If the array size is greater than maxSize, remove the first (oldest) item
     items.shift()
@@ -134,10 +130,12 @@ export class ActivityController extends EventEmitter {
     this.emitUpdate()
   }
 
-  private filterAndPaginate(
-    items: InternalAccountsOps | InternalSignedMessages,
+  private filterAndPaginate<T>(
+    items: {
+      [key: string]: { [key: string]: T[] } | undefined
+    },
     pagination: Pagination
-  ): PaginationResult {
+  ): PaginationResult<T> {
     const filteredItems = items?.[this.filters.account]?.[this.filters.network] || []
     const { fromPage, itemsPerPage } = pagination
 
