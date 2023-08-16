@@ -1,7 +1,6 @@
 /* eslint-disable no-await-in-loop */
 // @TODO func that takes IrCall and returns the humanization as text
 // @TODO use for of or for in instead of object.keys().map/.forEach
-// @TODO remove '.json' from json with contract abis and selectors
 // @TODO use type generics instead of any
 // @TODO include new selectors and names in controller
 import { Ir } from '../../libs/humanizer/interfaces'
@@ -36,7 +35,11 @@ export class HumanizerController extends EventEmitter {
     }
 
     for (let i = 0; i <= 3; i++) {
-      const [ir, asyncOps] = humanize(accountOp, { fetch: this.#fetch })
+      const storedHumanizerMeta = await this.#storage.get(HUMANIZER_META_KEY, {})
+      const [ir, asyncOps] = humanize(
+        { ...accountOp, humanizerMeta: { ...accountOp.humanizerMeta, ...storedHumanizerMeta } },
+        { fetch: this.#fetch }
+      )
       this.ir = ir
       this.emitUpdate()
       if (!asyncOps.length) return
@@ -50,13 +53,9 @@ export class HumanizerController extends EventEmitter {
           ? (globalFragmentData = { ...globalFragmentData, [f.key]: f.value })
           : (nonGlobalFragmentData = { ...nonGlobalFragmentData, [f.key]: f.value })
       })
-      const storedHumanizerMeta = await this.#storage.get(HUMANIZER_META_KEY, {})
 
-      // @TODO not store all in accountOp
       accountOp.humanizerMeta = {
         ...accountOp.humanizerMeta,
-        ...storedHumanizerMeta,
-        ...globalFragmentData,
         ...nonGlobalFragmentData
       }
       await this.#storage.set(HUMANIZER_META_KEY, { ...storedHumanizerMeta, ...globalFragmentData })
