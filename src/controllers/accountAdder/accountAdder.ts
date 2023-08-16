@@ -391,7 +391,8 @@ export class AccountAdderController extends EventEmitter {
           network,
           accounts.map((acc) => ({
             ...acc.account,
-            creation: {
+            // TODO: Remove the fallback (hack) when the route starts returning the creation
+            creation: acc.account.creation || {
               factoryAddr: '0x0000000000000000000000000000000000000000',
               bytecode: '0x00',
               salt: '0x0'
