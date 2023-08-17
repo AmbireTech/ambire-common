@@ -10,10 +10,12 @@ const WETH_ADDRESS = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2'
 const wrpaUnwrapParser = (calls: IrCall[], humanizerInfo: any) => {
   const newCalls: IrCall[] = []
   for (let i = 0; i < calls.length; i++) {
-    if (humanizerInfo?.[`names:${calls[i].to}`] === 'Uniswap') {
+    if (
+      humanizerInfo?.[`names:${calls[i].to}`] === 'Uniswap' &&
+      calls[i].fullVisualization &&
+      calls[i].to === calls[i + 1]?.to
+    ) {
       if (
-        // same contract
-        calls[i].to === calls[i + 1]?.to &&
         // swapping x of token for y of WETH and unwrapping y WETH for y ETH
         calls[i].fullVisualization[0].content === 'Swap' &&
         calls[i].fullVisualization[3].address === WETH_ADDRESS &&
