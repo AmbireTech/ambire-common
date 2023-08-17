@@ -34,8 +34,8 @@ const getFnName = (f)=>{
 const getContractInterfaces = async (addresses) => {
 	const provider = new ethers.EtherscanProvider( 'mainnet', ETHERSCAN_API_KEY )
 	const res = (await Promise.all(addresses.map((a)=>provider.getContract(a)))).filter(i=>i).map(rc=>rc.interface)
-
 	console.log(`Fetched abis from ${res.length}/${addresses.length} contracts`)
+	if (!ETHERSCAN_API_KEY) console.log('!!! No etherscan key provided, add for more contract abis !!!')
 	return res
 }
 
@@ -57,8 +57,8 @@ const main  = async () => {
 	Object.keys(initialJson).forEach(n=>Object.keys(initialJson[n]).forEach((a)=>entries2.push([`names:${a}`, initialJson[n][a].appName])))
 	const fetchedSelectors = Object.fromEntries(entries)
 	const namesData = Object.fromEntries(entries2)
-	const storeNamesdData = JSON.parse(await fsPromises.readFile(dappNamesPath, 'utf8'))
-	const storedSelectorsData = JSON.parse(await fsPromises.readFile(dappSelectorsPath, 'utf8'))
+	const storeNamesdData = JSON.parse(await fsPromises.readFile(dappNamesPath, 'utf8') || '{}') 
+	const storedSelectorsData = JSON.parse(await fsPromises.readFile(dappSelectorsPath, 'utf8') || '{}')
 	await fsPromises.writeFile(dappNamesPath, JSON.stringify({ ...storeNamesdData, ...namesData }, null, 4), 'utf8')
 	await fsPromises.writeFile(dappSelectorsPath, JSON.stringify({ ...storedSelectorsData, ...fetchedSelectors }, null, 4), 'utf8')
 }

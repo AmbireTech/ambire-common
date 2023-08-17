@@ -3,6 +3,7 @@
   "name": "ambire-common",
   "description": "Common ground for the Ambire apps",
   "scripts": {
+	"generate:humanizerSelectorsAndNames": "node scripts/compileContractSelectorsAndNames.js",
     "generate:contractInfo": "node scripts/generateContractInfo.js > src/constants/humanizerInfo.json",
     "compile:contracts": "ts-node scripts/compileContracts.js",
     "test": "npx hardhat compile; npx hardhat test; jest",
