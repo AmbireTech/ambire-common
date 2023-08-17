@@ -11,7 +11,6 @@ import parseEmail from '../../src/libs/dkim/parseEmail'
 import { getDKIMValidatorData, getPriviledgeTxn, getSignerKey } from '../helpers'
 import { deployAmbireAccountHardhatNetwork } from '../implementations'
 import { wrapEthSign, wrapExternallyValidated } from '../ambireSign'
-import dns from 'dns'
 const readFile = promisify(fs.readFile)
 const emailsPath = path.join(__dirname, 'emails')
 
@@ -20,11 +19,13 @@ function hexEncodeSignedSet(rrs: any, sig: any) {
   return [ss.toWire(), ss.signature.data.signature]
 }
 
+const gmailDomainName = '0832303232313230380a5f646f6d61696e6b657905676d61696c03636f6d0c'
+
 let dkimRecovery: any
 let ambireAccountAddress: any
 let account: any
 
-describe('DKIM Bridge', function () {
+describe('DKIM Bridge + unknown selector DKIM verification', function () {
   it('successfully deploy the DNSSEC contracts and DKIM Recovery', async function () {
     const [signer] = await ethers.getSigners()
 
@@ -63,9 +64,10 @@ describe('DKIM Bridge', function () {
       encoding: 'ascii'
     })
     const parsedContents: any = await parseEmail(gmail)
+    const domainName = Buffer.from(gmailDomainName, 'hex').toString('ascii').replace('20221208', '20221207')
     const validatorData = getDKIMValidatorData(parsedContents, relayer, {
       acceptUnknownSelectors: true,
-      selector: `non-existent._domainKey.gmail.com`,
+      selector: domainName,
     })
     const {signerKey, hash} = getSignerKey(await dkimRecovery.getAddress(), validatorData)
     const { ambireAccount, ambireAccountAddress: addr } = await deployAmbireAccountHardhatNetwork([
@@ -89,72 +91,73 @@ describe('DKIM Bridge', function () {
     const ambireModulus = ethers.hexlify(key.modulus)
 
     // get the domainName
-    const result = await dkimRecovery.getDomainNameFromSignedSet(set)
-    const domainName = result[0]
+    const domainName = Buffer.from(gmailDomainName, 'hex').toString('ascii')
     const dkimHash = ethers.keccak256(abiCoder.encode(['tuple(string, bytes, bytes)'], [[domainName, ambireModulus, ambireExponent]]))
     const isResThere = await dkimRecovery.dkimKeys(dkimHash)
     expect(isResThere[0]).to.be.true
   })
 
-  // it('successfully validate an unknown selector for the account but one that exists in dkimKeys', async function () {
-  //   const [relayer, newSigner] = await ethers.getSigners()
-  //   const gmail = await readFile(path.join(emailsPath, 'sigMode0.eml'), {
-  //     encoding: 'ascii'
-  //   })
-  //   const parsedContents: any = await parseEmail(gmail)
-  //   const validatorData = getDKIMValidatorData(parsedContents, relayer, {
-  //     acceptUnknownSelectors: true,
-  //     selector: `non-existent._domainKey.gmail.com`,
-  //   })
-  //   const validatorAddr = await dkimRecovery.getAddress()
-  //   const {signerKey} = getSignerKey(validatorAddr, validatorData)
-  //   const dkimSig = parsedContents[0].solidity.signature
+  it('successfully uses the added DKIM key to trigger a recovery', async function () {
+    const [relayer, newSigner] = await ethers.getSigners()
+    const gmail = await readFile(path.join(emailsPath, 'sigMode0.eml'), {
+      encoding: 'ascii'
+    })
+    const parsedContents: any = await parseEmail(gmail)
+    const domainName = Buffer.from(gmailDomainName, 'hex').toString('ascii').replace('20221208', '20221207')
+    const validatorData = getDKIMValidatorData(parsedContents, relayer, {
+      acceptUnknownSelectors: true,
+      selector: domainName,
+    })
+    const validatorAddr = await dkimRecovery.getAddress()
+    const {signerKey} = getSignerKey(validatorAddr, validatorData)
+    const dkimSig = parsedContents[0].solidity.signature
 
-  //   const txns = [getPriviledgeTxn(ambireAccountAddress, newSigner.address, true)]
-  //   const msgHash = ethers.keccak256(
-  //     abiCoder.encode(
-  //       ['address', 'tuple(address, uint, bytes)[]'],
-  //       [ambireAccountAddress, txns]
-  //     )
-  //   )
-  //   const msg = ethers.getBytes(msgHash)
-  //   const secondSig = wrapEthSign(await relayer.signMessage(msg))
-  //   const sigMetaTuple = 'tuple(uint8, tuple(string, bytes, bytes), string, address, bytes32)'
-  //   const sigMetaValues = [
-  //     ethers.toBeHex(0, 1),
-  //     [
-  //       `${parsedContents[0].selector}._domainKey.gmail.com`,
-  //       ethers.hexlify(parsedContents[0].modulus),
-  //       ethers.hexlify(ethers.toBeHex(parsedContents[0].exponent)),
-  //     ],
-  //     parsedContents[0].processedHeader,
-  //     newSigner.address,
-  //     ethers.toBeHex(1, 32)
-  //   ]
-  //   const innerSig = abiCoder.encode([sigMetaTuple, 'bytes', 'bytes'], [
-  //     sigMetaValues,
-  //     dkimSig,
-  //     secondSig
-  //   ])
-  //   const sig = abiCoder.encode(['address', 'address', 'bytes', 'bytes'], [signerKey, validatorAddr, validatorData, innerSig])
-  //   const finalSig = wrapExternallyValidated(sig)
-  //   await account.execute(txns, finalSig)
+    const txns = [getPriviledgeTxn(ambireAccountAddress, newSigner.address, true)]
+    const msgHash = ethers.keccak256(
+      abiCoder.encode(
+        ['address', 'tuple(address, uint, bytes)[]'],
+        [ambireAccountAddress, txns]
+      )
+    )
+    const msg = ethers.getBytes(msgHash)
+    const secondSig = wrapEthSign(await relayer.signMessage(msg))
+    const sigMetaTuple = 'tuple(uint8, tuple(string, bytes, bytes), string, address, bytes32)'
+    const domainNameMeta = Buffer.from(gmailDomainName, 'hex').toString('ascii')
+    const sigMetaValues = [
+      ethers.toBeHex(0, 1),
+      [
+        domainNameMeta,
+        ethers.hexlify(parsedContents[0].modulus),
+        ethers.hexlify(ethers.toBeHex(parsedContents[0].exponent)),
+      ],
+      parsedContents[0].processedHeader,
+      newSigner.address,
+      ethers.toBeHex(1, 32)
+    ]
+    const innerSig = abiCoder.encode([sigMetaTuple, 'bytes', 'bytes'], [
+      sigMetaValues,
+      dkimSig,
+      secondSig
+    ])
+    const sig = abiCoder.encode(['address', 'address', 'bytes', 'bytes'], [signerKey, validatorAddr, validatorData, innerSig])
+    const finalSig = wrapExternallyValidated(sig)
+    await account.execute(txns, finalSig)
 
-  //   // txn should have completed successfully
-  //   const hasPriv = await account.privileges(newSigner.address)
-  //   expect(hasPriv).to.equal(ethers.toBeHex(1, 32))
+    // txn should have completed successfully
+    const hasPriv = await account.privileges(newSigner.address)
+    expect(hasPriv).to.equal(ethers.toBeHex(1, 32))
 
-  //   // expect recovery to not have been marked as complete
-  //   const identifier = ethers.keccak256(abiCoder.encode(['address', 'bytes', sigMetaTuple], [
-  //     ambireAccountAddress,
-  //     validatorData,
-  //     sigMetaValues
-  //   ]))
-  //   const recoveryAssigned = await dkimRecovery.recoveries(identifier)
-  //   expect(recoveryAssigned).to.be.true
+    // expect recovery to not have been marked as complete
+    const identifier = ethers.keccak256(abiCoder.encode(['address', 'bytes', sigMetaTuple], [
+      ambireAccountAddress,
+      validatorData,
+      sigMetaValues
+    ]))
+    const recoveryAssigned = await dkimRecovery.recoveries(identifier)
+    expect(recoveryAssigned).to.be.true
 
-  //   // test protection against malleability
-  //   await expect(account.execute(txns, finalSig))
-  //     .to.be.revertedWith('recovery already done')
-  // })
+    // test protection against malleability
+    await expect(account.execute(txns, finalSig))
+      .to.be.revertedWith('recovery already done')
+  })
 })

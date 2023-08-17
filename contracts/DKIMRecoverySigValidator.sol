@@ -29,7 +29,7 @@ contract DKIMRecoverySigValidator {
     string emailTo;
     // DKIM key
     // We have to additionally verify if it matches the domain in emailFrom
-    string dkimSelector;
+    string domainName;
     bytes dkimPubKeyModulus;
     bytes dkimPubKeyExponent;
     // normally set to the email vault key held by the relayer
@@ -120,21 +120,18 @@ contract DKIMRecoverySigValidator {
         sigMeta.mode
       );
 
-      Strings.slice memory emailDomain = accInfo.emailFrom.toSlice();
-      emailDomain.split('@'.toSlice());
-      string memory domainName = accInfo.dkimSelector.toSlice()
-        .concat('._domainKey.'.toSlice()).toSlice()
-        .concat(emailDomain);
-
       DKIMKey memory key = sigMeta.key;
       bytes memory pubKeyExponent = key.pubKeyExponent;
       bytes memory pubKeyModulus = key.pubKeyModulus;
       if (! (
-          keccak256(abi.encodePacked(domainName)) == keccak256(abi.encodePacked(key.domainName)) &&
+          keccak256(abi.encodePacked(accInfo.domainName)) == keccak256(abi.encodePacked(key.domainName)) &&
           keccak256(accInfo.dkimPubKeyExponent) == keccak256(pubKeyExponent) &&
           keccak256(accInfo.dkimPubKeyModulus) == keccak256(pubKeyModulus)
         )) {
-        require(key.domainName.toSlice().endsWith(emailDomain), 'domain in sigMeta is not authorized for this account');
+
+        Strings.slice memory emailDomain = accInfo.domainName.toSlice();
+        emailDomain.split('_domainkey'.toSlice());
+        require(bytes(emailDomain.toString()).length > 0 && key.domainName.toSlice().endsWith(emailDomain), 'domain in sigMeta is not authorized for this account');
 
         bytes32 keyId = keccak256(abi.encode(key));
         require(accInfo.acceptUnknownSelectors, 'account does not allow unknown selectors');

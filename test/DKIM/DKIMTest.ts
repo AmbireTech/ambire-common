@@ -87,7 +87,7 @@ describe('DKIM sigMode Both', function () {
     const sigMetaValues = [
       ethers.toBeHex(0, 1),
       [
-        `${parsedContents[0].selector}._domainKey.gmail.com`,
+        `${parsedContents[0].selector}._domainkey.gmail.com`,
         ethers.hexlify(parsedContents[0].modulus),
         ethers.hexlify(ethers.toBeHex(parsedContents[0].exponent)),
       ],
@@ -154,7 +154,7 @@ describe('DKIM sigMode Both', function () {
     const sigMetaValues = [
       ethers.toBeHex(0, 1),
       [
-        `unknown._domainKey.gmail.com`,
+        `unknown._domainkey.gmail.com`,
         ethers.hexlify(parsedContents[0].modulus),
         ethers.hexlify(ethers.toBeHex(parsedContents[0].exponent)),
       ],
@@ -192,7 +192,7 @@ describe('DKIM sigMode Both', function () {
     const sigMetaValues = [
       ethers.toBeHex(0, 1),
       [
-        `unknown._domainKey.gmail.com`,
+        `unknown._domainkey.gmail.com`,
         ethers.hexlify(parsedContents[0].modulus),
         ethers.hexlify(ethers.toBeHex(parsedContents[0].exponent)),
       ],
@@ -241,7 +241,7 @@ describe('DKIM sigMode Both', function () {
     const sigMetaValues = [
       ethers.toBeHex(0, 1),
       [
-        `${parsedContents[0].selector}._domainKey.gmail.com`,
+        `${parsedContents[0].selector}._domainkey.gmail.com`,
         ethers.hexlify(parsedContents[0].modulus),
         ethers.hexlify(ethers.toBeHex(parsedContents[0].exponent)),
       ],
@@ -298,7 +298,7 @@ describe('DKIM sigMode OnlyDKIM', function () {
     const sigMetaValues = [
       ethers.toBeHex(1, 1),
       [
-        `${parsedContents[0].selector}._domainKey.gmail.com`,
+        `${parsedContents[0].selector}._domainkey.gmail.com`,
         ethers.hexlify(parsedContents[0].modulus),
         ethers.hexlify(ethers.toBeHex(parsedContents[0].exponent)),
       ],
@@ -378,7 +378,7 @@ describe('DKIM sigMode OnlyDKIM', function () {
     const sigMetaValues = [
       ethers.toBeHex(0, 1),
       [
-        `${parsedContents[0].selector}._domainKey.gmail.com`,
+        `${parsedContents[0].selector}._domainkey.gmail.com`,
         ethers.hexlify(parsedContents[0].modulus),
         ethers.hexlify(ethers.toBeHex(parsedContents[0].exponent)),
       ],
@@ -631,17 +631,17 @@ describe('DKIM sigMode Both with acceptUnknownSelectors true', function () {
     const parsedContents: any = await parseEmail(gmail)
     const keys = [
       [
-        `unknown._domainKey.gmail.com`,
+        `unknown._domainkey.gmail.com`,
         ethers.hexlify(parsedContents[0].modulus),
         ethers.hexlify(ethers.toBeHex(parsedContents[0].exponent)),
       ],
       [
-        `toberemoved._domainKey.gmail.com`,
+        `toberemoved._domainkey.gmail.com`,
         ethers.hexlify(parsedContents[0].modulus),
         ethers.hexlify(ethers.toBeHex(parsedContents[0].exponent)),
       ],
       [
-        `notaddedyet._domainKey.gmail.com`,
+        `notaddedyet._domainkey.gmail.com`,
         ethers.hexlify(parsedContents[0].modulus),
         ethers.hexlify(ethers.toBeHex(parsedContents[0].exponent)),
       ]
@@ -694,7 +694,7 @@ describe('DKIM sigMode Both with acceptUnknownSelectors true', function () {
     const sigMetaValues = [
       ethers.toBeHex(0, 1),
       [
-        `unknown._domainKey.gmail.com`,
+        `unknown._domainkey.gmail.com`,
         ethers.hexlify(parsedContents[0].modulus),
         ethers.hexlify(ethers.toBeHex(parsedContents[0].exponent)),
       ],
@@ -746,7 +746,7 @@ describe('DKIM sigMode Both with acceptUnknownSelectors true', function () {
     const sigMetaValues = [
       ethers.toBeHex(0, 1),
       [
-        `nonexistent._domainKey.abv.bg`,
+        `nonexistent._domainkey.abv.bg`,
         ethers.hexlify(parsedContents[0].modulus),
         ethers.hexlify(ethers.toBeHex(parsedContents[0].exponent)),
       ],
@@ -782,7 +782,7 @@ describe('DKIM sigMode Both with acceptUnknownSelectors true', function () {
     const sigMetaValues = [
       ethers.toBeHex(0, 1),
       [
-        `nonexistent._domainKey.gmail.com`,
+        `nonexistent._domainkey.gmail.com`,
         ethers.hexlify(parsedContents[0].modulus),
         ethers.hexlify(ethers.toBeHex(parsedContents[0].exponent)),
       ],
@@ -809,7 +809,7 @@ describe('DKIM sigMode Both with acceptUnknownSelectors true', function () {
     const parsedContents: any = await parseEmail(gmail)
     const dkimKey = ethers.keccak256(abiCoder.encode(['tuple(string, bytes, bytes)'], [
       [
-        `toberemoved._domainKey.gmail.com`,
+        `toberemoved._domainkey.gmail.com`,
         ethers.hexlify(parsedContents[0].modulus),
         ethers.hexlify(ethers.toBeHex(parsedContents[0].exponent)),
       ]
@@ -853,7 +853,7 @@ describe('DKIM sigMode Both with acceptUnknownSelectors true', function () {
     const sigMetaValues = [
       ethers.toBeHex(0, 1),
       [
-        `toberemoved._domainKey.gmail.com`,
+        `toberemoved._domainkey.gmail.com`,
         ethers.hexlify(parsedContents[0].modulus),
         ethers.hexlify(ethers.toBeHex(parsedContents[0].exponent)),
       ],
@@ -889,7 +889,7 @@ describe('DKIM sigMode Both with acceptUnknownSelectors true', function () {
     const sigMetaValues = [
       ethers.toBeHex(0, 1),
       [
-        `notaddedyet._domainKey.gmail.com`,
+        `notaddedyet._domainkey.gmail.com`,
         ethers.hexlify(parsedContents[0].modulus),
         ethers.hexlify(ethers.toBeHex(parsedContents[0].exponent)),
       ],
@@ -926,7 +926,7 @@ describe('DKIM sigMode Both with acceptUnknownSelectors true', function () {
     const sigMetaValues = [
       ethers.toBeHex(0, 1),
       [
-        `unknown._domainKey.gmail.com`,
+        `unknown._domainkey.gmail.com`,
         ethers.hexlify(parsedContents[0].modulus),
         ethers.toBeHex(65666)
       ],
@@ -963,7 +963,7 @@ describe('DKIM sigMode Both with acceptUnknownSelectors true', function () {
     const sigMetaValues = [
       ethers.toBeHex(0, 1),
       [
-        `${parsedContents[0].selector}._domainKey.gmail.com`,
+        `${parsedContents[0].selector}._domainkey.gmail.com`,
         ethers.hexlify(parsedContents[0].modulus),
         ethers.hexlify(ethers.toBeHex(parsedContents[0].exponent)),
       ],
@@ -1005,7 +1005,7 @@ describe('DKIM sigMode Both with acceptUnknownSelectors true', function () {
     const sigMetaValues = [
       ethers.toBeHex(0, 1),
       [
-        `${parsedContents[0].selector}._domainKey.gmail.com`,
+        `${parsedContents[0].selector}._domainkey.gmail.com`,
         ethers.hexlify(parsedContents[0].modulus),
         ethers.hexlify(ethers.toBeHex(parsedContents[0].exponent)),
       ],
@@ -1061,7 +1061,7 @@ describe('DKIM sigMode Both with changed emailFrom', function () {
     const sigMetaValues = [
       ethers.toBeHex(0, 1),
       [
-        `${parsedContents[0].selector}._domainKey.gmail.com`,
+        `${parsedContents[0].selector}._domainkey.gmail.com`,
         ethers.hexlify(parsedContents[0].modulus),
         ethers.hexlify(ethers.toBeHex(parsedContents[0].exponent)),
       ],
@@ -1117,7 +1117,7 @@ describe('DKIM sigMode Both with changed emailTo', function () {
     const sigMetaValues = [
       ethers.toBeHex(0, 1),
       [
-        `${parsedContents[0].selector}._domainKey.gmail.com`,
+        `${parsedContents[0].selector}._domainkey.gmail.com`,
         ethers.hexlify(parsedContents[0].modulus),
         ethers.hexlify(ethers.toBeHex(parsedContents[0].exponent)),
       ],
