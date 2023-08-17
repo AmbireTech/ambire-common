@@ -1,4 +1,4 @@
-import { describe, test } from '@jest/globals'
+import { describe, expect, test } from '@jest/globals'
 
 import { AccountOp } from '../accountOp/accountOp'
 import { callsToIr, initHumanizerMeta } from './humanizer'
@@ -55,16 +55,105 @@ const transactions = {
   ]
 }
 
-// @NOTE just for development purposes, won't fail on bugs
 describe('module tests', () => {
   beforeEach(async () => {
     accountOp.humanizerMeta = { ...humanizerInfo }
     accountOp.calls = []
   })
   test('uniV3', () => {
+    const expectedhumanization = [
+      [
+        { type: 'action', content: 'Swap' },
+        {
+          type: 'token',
+          address: '0xf65B5C5104c4faFD4b709d9D60a185eAE063276c',
+          amount: 122638127037889837685n
+        },
+        { type: 'lable', content: 'for at least' },
+        {
+          type: 'token',
+          address: '0x0000000000000000000000000000000000000000',
+          amount: 16233251521999243n
+        },
+        { type: 'lable', content: 'and send it to' },
+        {
+          type: 'address',
+          address: '0x0000000000000000000000000000000000000000'
+        },
+        { type: 'lable', content: 'already expired' }
+      ],
+      [
+        { type: 'action', content: 'Swap' },
+        {
+          type: 'token',
+          address: '0x26ab1c0e34422Caa85f73ccEbb8E5EafE2E6B03b',
+          amount: 107436149545833241646861n
+        },
+        { type: 'lable', content: 'for at least' },
+        {
+          type: 'token',
+          address: '0x0000000000000000000000000000000000000000',
+          amount: 369699618014733462n
+        },
+        // @TODO debug recipient = 0x000...000
+        { type: 'lable', content: 'and send it to' },
+        {
+          type: 'address',
+          address: '0x0000000000000000000000000000000000000000'
+        },
+        { type: 'lable', content: 'already expired' }
+      ],
+      [
+        { type: 'action', content: 'Swap' },
+        {
+          type: 'token',
+          address: '0x225735D708EAb6813616e1EeFfDd79C7A10460A4',
+          amount: 167342543489052079235905n
+        },
+        { type: 'lable', content: 'for at least' },
+        {
+          type: 'token',
+          address: '0x0000000000000000000000000000000000000000',
+          amount: 609677189869822705n
+        },
+        { type: 'lable', content: 'and send it to' },
+        {
+          type: 'address',
+          address: '0x0000000000000000000000000000000000000000'
+        },
+        { type: 'lable', content: 'already expired' }
+      ],
+      [
+        { type: 'action', content: 'Swap' },
+        {
+          type: 'token',
+          address: '0x0000000000000000000000000000000000000000',
+          amount: 700000000000000000n
+        },
+        { type: 'lable', content: 'for at least' },
+        {
+          type: 'token',
+          address: '0xe8A3Bf796cA5a13283ec6B1c5b645B91D7CfEf5D',
+          amount: 3430716768612863647010n
+        },
+        { type: 'lable', content: 'and send it to' },
+        {
+          type: 'address',
+          address: '0x37a4d0fF423e9d0c597836Bb0a7Fe4c3Cdb6E5ff'
+        },
+        { type: 'lable', content: 'already expired' }
+      ]
+    ]
     accountOp.calls = [...transactions.uniV3Multicalls]
     let ir: Ir = callsToIr(accountOp)
     ;[ir] = uniswapHumanizer(accountOp, ir)
     ir.calls.forEach((c) => console.log(c))
+    console.log(ir.calls.map((c) => c.fullVisualization))
+    ir.calls.forEach((c, i) => {
+      expect(c.fullVisualization.length).toEqual(expectedhumanization[i].length)
+      c.fullVisualization.forEach((v: any, j: number) => {
+        expect(v).toEqual(expectedhumanization[i][j])
+      })
+    })
   })
 })
