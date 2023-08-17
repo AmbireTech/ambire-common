@@ -64,6 +64,8 @@ export class KeystoreController extends EventEmitter {
     this.isReadyToStoreKeys = true
     this.addSecretStatus = 'DONE'
     this.emitUpdate()
+    this.addSecretStatus = 'INITIAL'
+    this.emitUpdate()
   }
 
   async removeSecret(secretId: string) {
@@ -82,6 +84,8 @@ export class KeystoreController extends EventEmitter {
     }
     this.removeSecretStatus = 'DONE'
     this.emitUpdate()
+    this.removeSecretStatus = 'INITIAL'
+    this.emitUpdate()
   }
 
   async addKeyExternallyStored(id: string, type: string, label: string, meta: object) {
@@ -95,6 +99,8 @@ export class KeystoreController extends EventEmitter {
       // TODO: handle here by emitting the error
     }
     this.addKeyStatus = 'DONE'
+    this.emitUpdate()
+    this.addKeyStatus = 'INITIAL'
     this.emitUpdate()
   }
 
@@ -110,6 +116,8 @@ export class KeystoreController extends EventEmitter {
     }
     this.addKeyStatus = 'DONE'
     this.emitUpdate()
+    this.addKeyStatus = 'INITIAL'
+    this.emitUpdate()
   }
 
   async removeKey(id: string) {
@@ -123,6 +131,8 @@ export class KeystoreController extends EventEmitter {
       // TODO: handle here by emitting the error
     }
     this.removeKeyStatus = 'DONE'
+    this.emitUpdate()
+    this.removeKeyStatus = 'INITIAL'
     this.emitUpdate()
   }
 }
