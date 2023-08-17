@@ -1,5 +1,5 @@
-import EventEmitter from 'controllers/eventEmitter'
-import { Keystore } from 'libs/keystore/keystore'
+import { Keystore } from '../../libs/keystore/keystore'
+import EventEmitter from '../eventEmitter'
 
 export class KeystoreController extends EventEmitter {
   #keystoreLib: Keystore

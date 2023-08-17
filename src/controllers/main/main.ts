@@ -1,7 +1,7 @@
-import { KeystoreController } from 'controllers/keystore/keystore'
 import { JsonRpcProvider } from 'ethers'
 
 import { networks } from '../../consts/networks'
+import { KeystoreController } from '../keystore/keystore'
 import { Account, AccountId, AccountOnchainState } from '../../interfaces/account'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
 import { Storage } from '../../interfaces/storage'
