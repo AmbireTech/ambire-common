@@ -1,9 +1,53 @@
+import { ethers } from 'hardhat'
 import { AccountOp } from '../../../accountOp/accountOp'
 import { HumanizerFragment, Ir, IrCall } from '../../interfaces'
 import { uniUniversalRouter } from './uniUnivarsalRouter'
 import { uniV2Mapping } from './uniV2'
 import { uniV32Mapping, uniV3Mapping } from './uniV3'
 
+const WETH_ADDRESS = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2'
+
+const wrpaUnwrapParser = (calls: IrCall[]) => {
+  const newCalls: IrCall[] = []
+  for (let i = 0; i < calls.length; i++) {
+    if (
+      // same contract
+      calls[i].to === calls[i + 1]?.to &&
+      // swapping x of token for y of WETH and unwrapping y WETH for Y ETH
+      calls[i].fullVisualization[0].content === 'Swap' &&
+      calls[i].fullVisualization[3].address === WETH_ADDRESS &&
+      calls[i].fullVisualization[3].amount === calls[i + 1]?.fullVisualization[2].amount &&
+      calls[i + 1]?.fullVisualization[0].content === 'Unwrap'
+    ) {
+      const newVisualization = calls[i].fullVisualization.map((v: any) => {
+        return v.type === 'token' && v.address === WETH_ADDRESS
+          ? { ...v, address: ethers.ZeroAddress }
+          : v
+      })
+      newCalls.push({
+        to: calls[i].to,
+        value: calls[i].value + calls[i + 1].value,
+        // might cause bugs
+        data: '0x',
+        fullVisualization: newVisualization
+      })
+      i += 1
+    } else if (
+      calls[i].value === calls[i].fullVisualization[1].amount &&
+      calls[i].fullVisualization[1].address === WETH_ADDRESS
+    ) {
+      const newVisualization = calls[i].fullVisualization.map((v: any) => {
+        return v.type === 'token' && v.address === WETH_ADDRESS
+          ? { ...v, address: ethers.ZeroAddress }
+          : v
+      })
+      newCalls.push({ ...calls[i], fullVisualization: newVisualization })
+    } else {
+      newCalls.push(calls[i])
+    }
+  }
+  return newCalls
+}
 export function uniswapHumanizer(
   accountOp: AccountOp,
   currentIr: Ir,
@@ -29,6 +73,7 @@ export function uniswapHumanizer(
       newCalls.push(call)
     }
   })
-  const newIr = { calls: newCalls }
+  const parsedCalls = wrpaUnwrapParser(newCalls)
+  const newIr = { calls: parsedCalls }
   return [newIr, []]
 }
