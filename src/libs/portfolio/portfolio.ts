@@ -14,7 +14,8 @@ import {
   GetOptionsSimulation,
   PriceCache,
   PortfolioGetResult,
-  Hints
+  Hints,
+  CollectionResult
 } from './interfaces'
 import { getNFTs, getTokens } from './getOnchainBalances'
 
@@ -173,7 +174,7 @@ export class Portfolio {
         ...x,
         address: address,
         priceIn: getPriceFromCache(address) || []
-      } as TokenResult
+      } as CollectionResult
     })
 
     const oracleCallDone = Date.now()

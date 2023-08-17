@@ -1,8 +1,8 @@
-import { Deployless, parseErr } from '../deployless/deployless'
-import { Collectable, TokenResult, LimitsOptions } from './interfaces'
+import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { getAccountDeployParams } from '../account/account'
 import { callToTuple } from '../accountOp/accountOp'
-import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
+import { Deployless, parseErr } from '../deployless/deployless'
+import { Collectable, CollectionResult, LimitsOptions, TokenResult } from './interfaces'
 import { GetOptions } from './portfolio'
 
 // 0x00..01 is the address from which simulation signatures are valid
@@ -24,7 +24,7 @@ export async function getNFTs(
   accountAddr: string,
   tokenAddrs: [string, any][],
   limits: LimitsOptions
-): Promise<[number, TokenResult][]> {
+): Promise<[number, CollectionResult][]> {
   const deploylessOpts = { blockTag: opts.blockTag, from: DEPLOYLESS_SIMULATION_FROM }
   const mapToken = (token: any) => {
     return {
@@ -35,7 +35,7 @@ export async function getNFTs(
       collectables: [...(token.nfts as any[])].map(
         (token: any) => ({ id: token.id, url: token.uri } as Collectable)
       )
-    } as TokenResult
+    } as CollectionResult
   }
 
   if (!opts.simulation) {
