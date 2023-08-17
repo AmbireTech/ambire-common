@@ -63,7 +63,7 @@ export type StoredKey = {
   meta: object | null
 }
 
-export type KeystoreSignerType = {
+type KeystoreSignerType = {
   new (key: Key, privateKey?: string): KeystoreSigner
 }
 
@@ -109,7 +109,6 @@ export class Keystore {
     if (!secrets.length) throw new Error('keystore: no secrets yet')
     const secretEntry = secrets.find((x) => x.id === secretId)
     if (!secretEntry) throw new Error(`keystore: secret ${secretId} not found`)
-
     const { scryptParams, aesEncrypted } = secretEntry
     if (aesEncrypted.cipherType !== CIPHER)
       throw Error(`keystore: unsupported cipherType ${aesEncrypted.cipherType}`)

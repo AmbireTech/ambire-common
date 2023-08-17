@@ -6,7 +6,7 @@ export class KeystoreController extends EventEmitter {
 
   isReadyToStoreKeys: boolean = false
 
-  status: 'INITIAL' | 'LOADING' | 'DONE' = 'DONE'
+  status: 'INITIAL' | 'LOADING' | 'DONE' = 'INITIAL'
 
   latestMethodCall: string | null = null
 
@@ -67,7 +67,7 @@ export class KeystoreController extends EventEmitter {
   }
 
   async wrapKeystoreAction(callName: string, fn: Function) {
-    if (this.status !== 'LOADING') return
+    if (this.status !== 'INITIAL') return
     this.latestMethodCall = callName
 
     this.status = 'LOADING'
@@ -75,11 +75,19 @@ export class KeystoreController extends EventEmitter {
     try {
       await fn()
     } catch (error) {
+      console.log(error)
       // TODO: handle here by emitting the error
     }
     this.status = 'DONE'
     this.emitUpdate()
     this.status = 'INITIAL'
     this.emitUpdate()
+  }
+
+  toJSON() {
+    return {
+      ...this,
+      isUnlocked: this.isUnlocked // includes the getter in the stringified instance
+    }
   }
 }
