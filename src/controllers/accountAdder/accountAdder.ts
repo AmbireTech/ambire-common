@@ -52,11 +52,9 @@ export class AccountAdderController extends EventEmitter {
 
   // Identity for the smart accounts must be created on the Relayer, this
   // represents the status of the operation, needed managing UI state
-  addAccountsStatus:
-    | { type: 'PENDING' }
-    | { type: 'SUCCESS' }
-    | { type: 'ERROR'; message: string }
-    | { type: 'INITIAL' } = { type: 'INITIAL' }
+  addAccountsStatus: { type: 'PENDING' | 'SUCCESS' | 'INITIAL' } = {
+    type: 'INITIAL'
+  }
 
   accountsLoading: boolean = false
 
@@ -323,7 +321,6 @@ export class AccountAdderController extends EventEmitter {
           throw new Error(res?.message || 'No response received from the Ambire Relayer.')
         }
       } catch (e: any) {
-        // this.addAccountsStatus = { type: 'ERROR', message: e?.message }
         this.emitError({
           level: 'major',
           message:
