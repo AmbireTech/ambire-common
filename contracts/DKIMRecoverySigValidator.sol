@@ -193,6 +193,7 @@ contract DKIMRecoverySigValidator {
     RRUtils.SignedSet memory txtSet = txtRset.rrset.readSignedSet();
     Strings.slice memory publicKey = string(txtSet.data).toSlice();
     publicKey.split('p='.toSlice());
+    require(bytes(publicKey.toString()).length > 0, 'public key not found in txt set');
     bytes memory pValue = bytes(publicKey.toString());
 
     string memory pValueOrg = string(pValue);
@@ -212,8 +213,6 @@ contract DKIMRecoverySigValidator {
     // the last 3 bytes of the decoded string is the exponent
     bytes memory exponent = decoded.substring(decoded.length - 3, 3);
 
-    Strings.slice memory selector = string(txtSet.data).toSlice();
-    selector.rsplit(','.toSlice());
     (domainName, isBridge) = getDomainNameFromSignedSet(txtRset);
     key = DKIMKey(
       domainName,
@@ -230,6 +229,7 @@ contract DKIMRecoverySigValidator {
   function getDomainNameFromSignedSet(DNSSEC.RRSetWithSignature memory rrSet) public pure returns(string memory, bool) {
     Strings.slice memory selector = string(rrSet.rrset.readSignedSet().data).toSlice();
     selector.rsplit(','.toSlice());
+    require(bytes(selector.toString()).length > 0, 'domain name not found in txt set');
 
     bytes memory bridgeString = hex"646e7373656362726964676506616d6269726503636f6d0000100001000001";
     bool isBridge = selector.endsWith(string(bridgeString).toSlice());
