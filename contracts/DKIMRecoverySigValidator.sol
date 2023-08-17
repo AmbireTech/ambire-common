@@ -2,7 +2,7 @@
 // NOTE: we only support RSA-SHA256 DKIM signatures, this is why we do not have an algorithm field atm
 pragma solidity 0.8.19;
 
-import './libs/IAmbireAccount.sol';
+import './deployless/IAmbireAccount.sol';
 import './libs/SignatureValidator.sol';
 import './libs/Strings.sol';
 import './libs/Base64.sol';

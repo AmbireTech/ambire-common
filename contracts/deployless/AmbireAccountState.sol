@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: agpl-3.0
 pragma solidity 0.8.19;
 
-import "../DKIMRecoverySigValidator.sol";
+import "./IAmbireAccount.sol";
 
 struct AccountInput {
     address addr;
@@ -12,11 +12,12 @@ struct AccountInput {
 
 struct AccountInfo {
     bool isDeployed;
+    bytes deployErr;
     uint nonce;
     bytes32[] associatedKeyPriviliges;
     bool isV2;
     uint256 balance;
-    bool isEOA; 
+    bool isEOA;
 }
 
 contract AmbireAccountState {
@@ -39,22 +40,37 @@ contract AmbireAccountState {
                 (bool success,) = account.factory.call(account.factoryCalldata);
                 // we leave associateKeys empty and nonce == 0, so that the library can know that the deployment failed
                 // we do not care about the exact error because this is a very rare case
-                if (!success) continue;
+                if (!success || address(account.addr).code.length == 0) {
+                    accountResult[i].deployErr = bytes(success ? "call worked" : "call failed");
+                    continue;
+                }
             }
-            accountResult[i].associatedKeyPriviliges = new bytes32[](account.associatedKeys.length);
-            // get nonce - if contract is not deployed than nonce is zero
-            accountResult[i].nonce = IAmbireAccount(account.addr).nonce();
-            // get key privilege information
-            for (uint j=0; j!=account.associatedKeys.length; j++) {
-                accountResult[i].associatedKeyPriviliges[j] = IAmbireAccount(account.addr).privileges(account.associatedKeys[j]);
+            try this.gatherAmbireData(account) returns (uint nonce, bytes32[] memory privileges) {
+                accountResult[i].nonce = nonce;
+                accountResult[i].associatedKeyPriviliges = privileges;
+            } catch (bytes memory err) {
+                accountResult[i].deployErr = err;
+                continue;
             }
 
-            accountResult[i].isV2 = this.ambireV2Check(IAmbireAccount(account.addr));
+            // v2 has a method called executeMultiple. If it does not exist,
+            // it is v1. That's what we're doing here
+            try this.ambireV2Check(IAmbireAccount(account.addr)) {
+                accountResult[i].isV2 = true;
+            } catch {}
         }
         return accountResult;
     }
 
-    function ambireV2Check(IAmbireAccount account) external pure returns (bool) {
-        return account.supportsInterface(0x150b7a02);
+    function gatherAmbireData(AccountInput memory account) external returns (uint nonce, bytes32[] memory privileges) {
+        nonce = IAmbireAccount(account.addr).nonce();
+        privileges = new bytes32[](account.associatedKeys.length);
+        for (uint j=0; j!=account.associatedKeys.length; j++) {
+            privileges[j] = IAmbireAccount(account.addr).privileges(account.associatedKeys[j]);
+        }
+    }
+
+    function ambireV2Check(IAmbireAccount account) external {
+        account.executeMultiple(new IAmbireAccount.ExecuteArgs[](0));
     }
 }

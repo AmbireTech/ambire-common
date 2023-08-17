@@ -15,6 +15,10 @@ interface IAmbireAccount {
 		address[] keys;
 		uint timelock;
 	}
+	struct ExecuteArgs {
+		Transaction[] calls;
+		bytes signature;
+	}
 
 	function setAddrPrivilege(address addr, bytes32 priv) external;
 	function tryCatch(address to, uint value, bytes calldata data) external;
@@ -23,6 +27,7 @@ interface IAmbireAccount {
 	function execute(Transaction[] calldata txns, bytes calldata signature) external;
 	function executeBySender(Transaction[] calldata txns) external;
 	function executeBySelf(Transaction[] calldata txns) external;
+	function executeMultiple(ExecuteArgs[] calldata toExec) external payable;
 
 	// EIP 1271 implementation
 	// see https://eips.ethereum.org/EIPS/eip-1271

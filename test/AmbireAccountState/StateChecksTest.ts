@@ -24,7 +24,7 @@ describe('Account state checks tests', function () {
     salt = deploySalt
   })
   
-  it('should call ambireV2Check with a v2 address and confirm it returns a hex 1', async function () {
+  it('should call ambireV2Check with a v2 address and confirm it does not revert', async function () {
     const [signer] = await ethers.getSigners()
 
     const abi = ['function ambireV2Check(address account) external returns (uint)']
@@ -42,7 +42,7 @@ describe('Account state checks tests', function () {
     const deploylessResult = await signer.call({
       data: bytecode
     })
-    expect(deploylessResult).to.equal(ethers.toBeHex(1, 32))
+    expect(deploylessResult).to.equal('0x')
   })
   it('should call ambireV2Check with a random address and confirm it reverts', async function () {
     const [signer] = await ethers.getSigners()
@@ -94,14 +94,17 @@ describe('Account state checks tests', function () {
       to: await AmbireAccountState.getAddress(),
       data: callData,
     })
-    const decoded = abiCoder.decode(['tuple(bool, uint, bytes32[], bool)[]'], result)[0]
+    const decoded = abiCoder.decode(['tuple(bool, bytes, uint, bytes32[], bool, uint256, bool)[]'], result)[0]
     expect(decoded.length).to.equal(1)
     decoded.map((oneAcc: any) => {
       expect(oneAcc[0]).to.equal(true)
-      expect(oneAcc[1]).to.equal(0n)
-      expect(oneAcc[2].length).to.equal(1)
-      oneAcc[2].map((priv: any) => expect(priv).to.equal(ethers.toBeHex(1, 32)))
-      expect(oneAcc[3]).to.equal(true)
+      expect(oneAcc[1]).to.equal('0x')
+      expect(oneAcc[2]).to.equal(0n)
+      expect(oneAcc[3].length).to.equal(1)
+      oneAcc[3].map((priv: any) => expect(priv).to.equal(ethers.toBeHex(1, 32)))
+      expect(oneAcc[4]).to.equal(true)
+      expect(oneAcc[5]).to.equal(0n)
+      expect(oneAcc[6]).to.equal(false)
     })
   })
 })
