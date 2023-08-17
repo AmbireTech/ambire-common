@@ -9,7 +9,7 @@ import { uniswapHumanizer } from './modules/Uniswap'
 import { Ir } from './interfaces'
 import { genericErc20Humanizer, genericErc721Humanizer } from './modules/tokens'
 
-const humanizerInfo = initHumanizerMeta(require('./humanizerInfo.json'))
+const humanizerInfo = initHumanizerMeta(require('../../consts/humanizerInfo.json'))
 
 const mockedFetchForTokens = async (url: string) => {
   const usdtAddress = '0xdAC17F958D2ee523a2206206994597C13D831ec7'

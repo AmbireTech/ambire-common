@@ -6,7 +6,7 @@ import { callsToIr, initHumanizerMeta } from './humanizer'
 import { uniswapHumanizer } from './modules/Uniswap'
 import { Ir } from './interfaces'
 
-const humanizerInfo = initHumanizerMeta(require('./humanizerInfo.json'))
+const humanizerInfo = initHumanizerMeta(require('../../consts/humanizerInfo.json'))
 
 const accountOp: AccountOp = {
   accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
@@ -147,8 +147,6 @@ describe('module tests', () => {
     accountOp.calls = [...transactions.uniV3Multicalls]
     let ir: Ir = callsToIr(accountOp)
     ;[ir] = uniswapHumanizer(accountOp, ir)
-    ir.calls.forEach((c) => console.log(c))
-    console.log(ir.calls.map((c) => c.fullVisualization))
     ir.calls.forEach((c, i) => {
       expect(c.fullVisualization.length).toEqual(expectedhumanization[i].length)
       c.fullVisualization.forEach((v: any, j: number) => {

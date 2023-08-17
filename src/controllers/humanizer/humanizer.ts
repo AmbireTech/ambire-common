@@ -3,6 +3,7 @@
 // @TODO use for of or for in instead of object.keys().map/.forEach
 // @TODO use type generics instead of any
 // @TODO include new selectors and names in controller
+// @TODO add all humanizer related scripts to package.json
 import { Ir } from '../../libs/humanizer/interfaces'
 import { Storage } from '../../interfaces/storage'
 import { AccountOp } from '../../libs/accountOp/accountOp'
