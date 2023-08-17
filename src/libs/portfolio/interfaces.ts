@@ -6,7 +6,7 @@ export interface Price {
   price: number
 }
 
-export interface Collectable {
+export interface Collectible {
   url: string
   id: bigint
 }
@@ -27,7 +27,7 @@ export interface TokenResult {
 
 export interface CollectionResult extends TokenResult {
   name: string
-  collectables: Collectable[]
+  collectibles: Collectible[]
 }
 
 export type PriceCache = Map<string, [number, Price[]]>
