@@ -1,14 +1,18 @@
+import { ethers } from 'ethers'
+
 function getLable(content: string) {
   return { type: 'lable', content }
 }
 function getAction(content: string) {
   return { type: 'action', content }
 }
-function getAddress(address: string, name?: string) {
+function getAddress(_address: string, name?: string) {
+  const address = ethers.getAddress(_address)
   return name ? { type: 'address', address, name } : { type: 'address', address }
 }
 
-function getToken(address: string, amount: bigint) {
+function getToken(_address: string, amount: bigint) {
+  const address = ethers.getAddress(_address)
   return { type: 'token', address, amount }
 }
 
