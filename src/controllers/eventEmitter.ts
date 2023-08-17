@@ -1,6 +1,6 @@
 const LIMIT_ON_THE_NUMBER_OF_ERRORS = 100
 
-type ErrorRef = {
+export type ErrorRef = {
   // user-friendly message, ideally containing call to action
   message: string
   // error level, used for filtering
