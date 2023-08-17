@@ -21,7 +21,6 @@ export default class EventEmitter {
     for (const cb of this.callbacks) cb()
   }
 
-  // Emit error, store it, trim the errors array, and notify error callbacks
   protected emitError(error: ErrorRef) {
     this.#errors.push(error)
     this.trimErrorsIfNeeded()
@@ -30,6 +29,7 @@ export default class EventEmitter {
     for (const cb of this.errorCallbacks) cb(error)
   }
 
+  // Prevents memory leaks and storing huge amount of errors
   private trimErrorsIfNeeded() {
     if (this.#errors.length > LIMIT_ON_THE_NUMBER_OF_ERRORS) {
       const excessErrors = this.#errors.length - LIMIT_ON_THE_NUMBER_OF_ERRORS
