@@ -28,11 +28,12 @@ const wrpaUnwrapParser = (calls: IrCall[]) => {
         to: calls[i].to,
         value: calls[i].value + calls[i + 1].value,
         // might cause bugs
-        data: '0x',
+        data: `${calls[i].data} AND ${calls[i + 1].data}`,
         fullVisualization: newVisualization
       })
       i += 1
     } else if (
+      calls[i].fullVisualization[0].content === 'Swap' &&
       calls[i].value === calls[i].fullVisualization[1].amount &&
       calls[i].fullVisualization[1].address === WETH_ADDRESS
     ) {
