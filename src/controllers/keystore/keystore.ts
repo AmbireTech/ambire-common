@@ -2,7 +2,7 @@ import EventEmitter from 'controllers/eventEmitter'
 import { Keystore } from 'libs/keystore/keystore'
 
 export class KeystoreController extends EventEmitter {
-  #keystore: Keystore
+  #keystoreLib: Keystore
 
   isReadyToStoreKeys: boolean = false
 
@@ -18,10 +18,10 @@ export class KeystoreController extends EventEmitter {
 
   removeKeyStatus: 'INITIAL' | 'LOADING' | 'DONE' = 'DONE'
 
-  constructor(_keystore: Keystore) {
+  constructor(_keystoreLib: Keystore) {
     super()
 
-    this.#keystore = _keystore
+    this.#keystoreLib = _keystoreLib
   }
 
   setIsReadyToStoreKeys(_isReadyToStoreKeys: boolean) {
@@ -29,7 +29,7 @@ export class KeystoreController extends EventEmitter {
   }
 
   lock() {
-    this.#keystore.lock()
+    this.#keystoreLib.lock()
     this.isUnlocked = false
     this.emitUpdate()
   }
@@ -40,7 +40,7 @@ export class KeystoreController extends EventEmitter {
     this.unlockWithSecretStatus = 'LOADING'
     this.emitUpdate()
     try {
-      await this.#keystore.unlockWithSecret(secretId, secret)
+      await this.#keystoreLib.unlockWithSecret(secretId, secret)
       this.isUnlocked = true
     } catch (error) {
       // TODO: handle here by emitting the error
@@ -57,7 +57,7 @@ export class KeystoreController extends EventEmitter {
     this.addSecretStatus = 'LOADING'
     this.emitUpdate()
     try {
-      await this.#keystore.addSecret(secretId, secret, extraEntropy)
+      await this.#keystoreLib.addSecret(secretId, secret, extraEntropy)
     } catch (error) {
       // TODO: handle here by emitting the error
     }
@@ -74,8 +74,8 @@ export class KeystoreController extends EventEmitter {
     this.removeSecretStatus = 'LOADING'
     this.emitUpdate()
     try {
-      await this.#keystore.removeSecret(secretId)
-      const isReady = await this.#keystore.isReadyToStoreKeys()
+      await this.#keystoreLib.removeSecret(secretId)
+      const isReady = await this.#keystoreLib.isReadyToStoreKeys()
       if (!isReady) {
         this.isReadyToStoreKeys = false
       }
@@ -94,7 +94,7 @@ export class KeystoreController extends EventEmitter {
     this.addKeyStatus = 'LOADING'
     this.emitUpdate()
     try {
-      await this.#keystore.addKeyExternallyStored(id, type, label, meta)
+      await this.#keystoreLib.addKeyExternallyStored(id, type, label, meta)
     } catch (error) {
       // TODO: handle here by emitting the error
     }
@@ -110,7 +110,7 @@ export class KeystoreController extends EventEmitter {
     this.addKeyStatus = 'LOADING'
     this.emitUpdate()
     try {
-      await this.#keystore.addKey(privateKey, label)
+      await this.#keystoreLib.addKey(privateKey, label)
     } catch (error) {
       // TODO: handle here by emitting the error
     }
@@ -126,7 +126,7 @@ export class KeystoreController extends EventEmitter {
     this.removeKeyStatus = 'LOADING'
     this.emitUpdate()
     try {
-      await this.#keystore.removeKey(id)
+      await this.#keystoreLib.removeKey(id)
     } catch (error) {
       // TODO: handle here by emitting the error
     }
