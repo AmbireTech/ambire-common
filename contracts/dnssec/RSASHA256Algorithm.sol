@@ -2,7 +2,7 @@
 pragma solidity ^0.8.4;
 
 import "./Algorithm.sol";
-import "./BytesUtils.sol";
+import "../libs/BytesUtils.sol";
 import "./RSAVerify.sol";
 
 /**

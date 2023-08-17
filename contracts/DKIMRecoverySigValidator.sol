@@ -6,7 +6,7 @@ import './libs/IAmbireAccount.sol';
 import './libs/SignatureValidator.sol';
 import './libs/Strings.sol';
 import './libs/Base64.sol';
-import './dnssec/BytesUtils.sol';
+import "./libs/BytesUtils.sol";
 import './dkim/RSASHA256.sol';
 import './dnssec/DNSSEC.sol';
 import './dnssec/RRUtils.sol';

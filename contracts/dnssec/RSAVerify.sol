@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.4;
 
-import "./BytesUtils.sol";
+import "../libs/BytesUtils.sol";
 import "./ModexpPrecompile.sol";
 
 library RSAVerify {
