@@ -38,6 +38,7 @@ module.exports = {
     'no-plusplus': 'off',
     '@typescript-eslint/indent': 'off',
     'react/no-unstable-nested-components': 'off',
-    'react-hooks/exhaustive-deps': 'warn'
+    'react-hooks/exhaustive-deps': 'warn',
+    'react/react-in-jsx-scope': 'off'
   }
 }

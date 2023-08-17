@@ -1,16 +1,19 @@
 import { JsonRpcProvider } from 'ethers'
-import { EmailVaultController } from '../emailVault'
-import { Storage } from '../../interfaces/storage'
-import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
-import { Account, AccountId, AccountOnchainState } from '../../interfaces/account'
-import { AccountOp, Call as AccountOpCall } from '../../libs/accountOp/accountOp'
-import { PortfolioController } from '../portfolio/portfolio'
-import { Keystore, Key } from '../../libs/keystore/keystore'
+
 import { networks } from '../../consts/networks'
-import EventEmitter from '../eventEmitter'
-import { getAccountState } from '../../libs/accountState/accountState'
+import { Account, AccountId, AccountOnchainState } from '../../interfaces/account'
+import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
+import { Storage } from '../../interfaces/storage'
 import { SignedMessage, UserRequest } from '../../interfaces/userRequest'
+import { AccountOp, Call as AccountOpCall } from '../../libs/accountOp/accountOp'
+import { getAccountState } from '../../libs/accountState/accountState'
 import { estimate } from '../../libs/estimate/estimate'
+import { Key, Keystore } from '../../libs/keystore/keystore'
+import { relayerCall } from '../../libs/relayerCall/relayerCall'
+import { AccountAdderController } from '../accountAdder/accountAdder'
+import { EmailVaultController } from '../emailVault'
+import EventEmitter from '../eventEmitter'
+import { PortfolioController } from '../portfolio/portfolio'
 
 export type AccountStates = {
   [accountId: string]: {
@@ -27,12 +30,16 @@ export class MainController extends EventEmitter {
   // Private sub-structures
   private providers: { [key: string]: JsonRpcProvider } = {}
 
-  // Load-related stuff
+  // Holds the initial load promise, so that one can wait until it completes
   private initialLoadPromise: Promise<void>
+
+  #callRelayer: Function
 
   accountStates: AccountStates = {}
 
   isReady: boolean = false
+
+  accountAdder: AccountAdderController
 
   // Subcontrollers
   // this is not private cause you're supposed to directly access it
@@ -77,14 +84,17 @@ export class MainController extends EventEmitter {
     this.initialLoadPromise = this.load()
     this.settings = { networks }
     this.emailVault = new EmailVaultController(storage, fetch, relayerUrl, this.keystore)
+    this.accountAdder = new AccountAdderController({ storage, relayerUrl, fetch })
+    this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
     // Load userRequests from storage and emit that we have updated
     // @TODO
   }
 
   private async load(): Promise<void> {
-    ;[this.keys, this.accounts] = await Promise.all([
+    ;[this.keys, this.accounts, this.selectedAccount] = await Promise.all([
       this.keystore.getKeys(),
-      this.storage.get('accounts', [])
+      this.storage.get('accounts', []),
+      this.storage.get('selectedAccount', null)
     ])
     this.providers = Object.fromEntries(
       this.settings.networks.map((network) => [network.id, new JsonRpcProvider(network.rpcUrl)])
@@ -93,6 +103,19 @@ export class MainController extends EventEmitter {
     // @TODO error handling here
     this.accountStates = await this.getAccountsInfo(this.accounts)
     this.isReady = true
+
+    const addReadyToAddAccountsIfNeeded = () => {
+      if (
+        !this.accountAdder.readyToAddAccounts.length &&
+        this.accountAdder.addAccountsStatus.type !== 'SUCCESS'
+      )
+        return
+
+      this.addAccounts(this.accountAdder.readyToAddAccounts)
+      this.accountAdder.reset()
+    }
+    this.accountAdder.onUpdate(addReadyToAddAccountsIfNeeded)
+
     this.emitUpdate()
   }
 
@@ -123,14 +146,35 @@ export class MainController extends EventEmitter {
     this.emitUpdate()
   }
 
-  selectAccount(toAccountAddr: string) {
-    if (!this.accounts.find((acc) => acc.addr === toAccountAddr))
-      throw new Error(`try to switch to not exist account: ${toAccountAddr}`)
+  async selectAccount(toAccountAddr: string) {
+    await this.initialLoadPromise
+
+    if (!this.accounts.find((acc) => acc.addr === toAccountAddr)) {
+      // TODO: error handling, trying to switch to account that does not exist
+      return
+    }
+
     this.selectedAccount = toAccountAddr
+    await this.storage.set('selectedAccount', toAccountAddr)
+    this.emitUpdate()
+  }
+
+  async addAccounts(accounts: Account[] = []) {
+    if (!accounts.length) return
+
+    const alreadyAddedAddressSet = new Set(this.accounts.map((account) => account.addr))
+    const newAccounts = accounts.filter((account) => !alreadyAddedAddressSet.has(account.addr))
+
+    if (!newAccounts.length) return
+
+    const nextAccounts = [...this.accounts, ...newAccounts]
+    await this.storage.set('accounts', nextAccounts)
+    this.accounts = nextAccounts
+
+    this.emitUpdate()
   }
 
   private async ensureAccountInfo(accountAddr: AccountId, networkId: NetworkId) {
-    // Wait for the current load to complete
     await this.initialLoadPromise
     // Initial sanity check: does this account even exist?
     if (!this.accounts.find((x) => x.addr === accountAddr))
@@ -291,8 +335,12 @@ export class MainController extends EventEmitter {
 
   // when an accountOp is signed; should this be private and be called by
   // the method that signs it?
-  resolveAccountOp() {}
+  resolveAccountOp() {
+    // @TODO: ActivityController.addAccountOp()
+  }
 
   // when a message is signed; same comment applies: should this be private?
-  resolveMessage() {}
+  resolveMessage() {
+    // @TODO: - ActivityController.addSignedMessage()
+  }
 }

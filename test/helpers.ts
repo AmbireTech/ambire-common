@@ -1,11 +1,13 @@
 import { ethers } from 'hardhat'
-import { addressOne, addressTwo, abiCoder, AmbireAccount } from './config'
 import { JsonRpcProvider } from 'ethers'
+import { addressOne, addressTwo, abiCoder, AmbireAccount } from './config'
+import { Storage } from '../src/interfaces/storage'
+import { parse, stringify } from '../src/libs/bigintJson/bigintJson'
 
 async function sendFunds(to: string, ether: number) {
   const [signer] = await ethers.getSigners()
   await signer.sendTransaction({
-    to: to,
+    to,
     value: ethers.parseEther(ether.toString())
   })
 }
@@ -72,4 +74,18 @@ function getSignerKey(validatorAddr: any, validatorData: any) {
   return {signerKey, hash}
 }
 
-export { sendFunds, getPriviledgeTxn, getTimelockData, getNonce, getDKIMValidatorData, getSignerKey }
+function produceMemoryStore(): Storage {
+  const storage = new Map()
+  return {
+    get: (key, defaultValue): any => {
+      const serialized = storage.get(key)
+      return Promise.resolve(serialized ? parse(serialized) : defaultValue)
+    },
+    set: (key, value) => {
+      storage.set(key, stringify(value))
+      return Promise.resolve(null)
+    }
+  }
+}
+
+export { sendFunds, getPriviledgeTxn, getTimelockData, getNonce, getDKIMValidatorData, getSignerKey, produceMemoryStore }
