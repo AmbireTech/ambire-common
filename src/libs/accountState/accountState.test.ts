@@ -59,15 +59,12 @@ describe('AccountState', () => {
     const v1Acc = state[0]
     expect(v1Acc.isEOA).toBe(false)
     expect(v1Acc.isV2).toBeFalsy()
-    expect(v1Acc.isDeployed).toBeTruthy()
-    expect(v1Acc.scheduledRecoveries.length).toBe(0)
+    expect(v1Acc.isDeployed).toBeTruthy()    
 
     const v2Acc = state[1]
     expect(v2Acc.isV2).toBeTruthy()
     expect(v2Acc.isEOA).toBe(false)
     expect(v2Acc.isDeployed).toBeFalsy()
-    expect(v2Acc.scheduledRecoveries.length).toBe(1)
-    expect(v2Acc.scheduledRecoveries[0]).toBe(0n)
 
     const eoaAcc = state[2]
     expect(eoaAcc.isEOA).toBe(true)

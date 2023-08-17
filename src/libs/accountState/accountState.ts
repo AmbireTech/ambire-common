@@ -42,7 +42,6 @@ export async function getAccountState(
       isDeployed: accResult.isDeployed,
       associatedKeys: Object.fromEntries(associatedKeys),
       isV2: accResult.isV2,
-      scheduledRecoveries: accResult.scheduledRecoveries,
       balance: accResult.balance,
       isEOA: accResult.isEOA,
       deployError:

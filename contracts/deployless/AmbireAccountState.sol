@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: agpl-3.0
 pragma solidity 0.8.19;
 
-import "./IAmbireAccount.sol";
+import "../DKIMRecoverySigValidator.sol";
 
 struct AccountInput {
     address addr;
@@ -15,7 +15,6 @@ struct AccountInfo {
     uint nonce;
     bytes32[] associatedKeyPriviliges;
     bool isV2;
-    uint[] scheduledRecoveries;
     uint256 balance;
     bool isEOA; 
 }
@@ -50,42 +49,12 @@ contract AmbireAccountState {
                 accountResult[i].associatedKeyPriviliges[j] = IAmbireAccount(account.addr).privileges(account.associatedKeys[j]);
             }
 
-            // v2 has a method called scheduledRecoveries. If it does not exist,
-            // it is v1. That's what we're doing here
-            bool isV2 = false;
-            try this.ambireV2Check(IAmbireAccount(account.addr)) returns (uint) {
-                isV2 = true;
-            } catch {}
-
-            accountResult[i].isV2 = isV2;
-            if (isV2) {
-                accountResult[i].scheduledRecoveries = getScheduledRecoveries(IAmbireAccount(account.addr), account.associatedKeys, bytes32(uint256(1)));
-            } else {
-                accountResult[i].scheduledRecoveries = new uint[](0);
-            }
+            accountResult[i].isV2 = this.ambireV2Check(IAmbireAccount(account.addr));
         }
         return accountResult;
     }
 
-    function getScheduledRecoveries(IAmbireAccount account, address[] memory associatedKeys, bytes32 privValue)
-        public
-        returns (uint[] memory scheduledRecoveries)
-    {
-        // Check if there's a pending recovery that sets any of the associatedKeys
-        scheduledRecoveries = new uint[](associatedKeys.length);
-        uint currentNonce = account.nonce();
-        for (uint i=0; i!=associatedKeys.length; i++) {
-            address key = associatedKeys[i];
-            IAmbireAccount.Transaction[] memory calls = new IAmbireAccount.Transaction[](1);
-            calls[0].to = address(account);
-            // @TODO the value of setAddrPrivilege is not necessarily 1 cause of the recovery
-            calls[0].data = abi.encodeWithSelector(IAmbireAccount.setAddrPrivilege.selector, key, privValue);
-            bytes32 hash = keccak256(abi.encode(address(account), block.chainid, currentNonce, calls));
-            scheduledRecoveries[i] = account.scheduledRecoveries(hash);
-        }
-    }
-
-    function ambireV2Check(IAmbireAccount account) external returns (uint) {
-        return account.scheduledRecoveries(bytes32(0));
+    function ambireV2Check(IAmbireAccount account) external pure returns (bool) {
+        return account.supportsInterface(0x150b7a02);
     }
 }
