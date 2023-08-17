@@ -246,8 +246,14 @@ export class AccountAdderController extends EventEmitter {
     providers: { [key: string]: JsonRpcProvider }
   }): Promise<void> {
     if (page <= 0) {
-      throw new Error('accountAdder: page must be a positive number')
+      return this.emitError({
+        level: 'major',
+        message:
+          'Something went wrong with calculating the accounts. Please reload and try again. If the problem persists, contact support.',
+        error: new Error('accountAdder: page must be a positive number')
+      })
     }
+
     this.page = page
     this.#calculatedAccounts = []
     this.#linkedAccounts = []
@@ -268,11 +274,26 @@ export class AccountAdderController extends EventEmitter {
 
   async addAccounts(accounts: Account[] = []) {
     if (!this.isInitialized) {
-      // TODO: Handle the error in a way that the foreground process can catch it
-      throw new Error('Requested method `addAccounts`, but the AccountAdder is not initialized')
+      return this.emitError({
+        level: 'major',
+        message:
+          'Something went wrong with calculating the accounts. Please start the process again. If the problem persists, contact support.',
+        error: new Error(
+          'accountAdder: requested method `addAccounts`, but the AccountAdder is not initialized'
+        )
+      })
     }
 
-    if (!accounts.length) return
+    if (!accounts.length) {
+      return this.emitError({
+        level: 'minor',
+        message:
+          'Trying to add accounts, but no accounts are selected. Please select at least one account.',
+        error: new Error(
+          'accountAdder: requested method `addAccounts`, but the accounts param is empty'
+        )
+      })
+    }
 
     this.addAccountsStatus = { type: 'PENDING' }
     this.emitUpdate()
@@ -298,13 +319,19 @@ export class AccountAdderController extends EventEmitter {
           accounts: body
         })
 
-        if (!res.success)
-          throw new Error(
-            res?.message ||
-              'Error when adding accounts on the Ambire Relayer. Please try again later or contact support if the problem persists.'
-          )
+        if (!res.success) {
+          throw new Error(res?.message || 'No response received from the Ambire Relayer.')
+        }
       } catch (e: any) {
-        this.addAccountsStatus = { type: 'ERROR', message: e?.message }
+        // this.addAccountsStatus = { type: 'ERROR', message: e?.message }
+        this.emitError({
+          level: 'major',
+          message:
+            'Error when adding accounts on the Ambire Relayer. Please try again later or contact support if the problem persists.',
+          error: new Error(e?.message)
+        })
+
+        this.addAccountsStatus = { type: 'INITIAL' }
         this.emitUpdate()
         return
       }
@@ -312,6 +339,8 @@ export class AccountAdderController extends EventEmitter {
 
     this.readyToAddAccounts = [...accounts]
     this.addAccountsStatus = { type: 'SUCCESS' }
+    this.emitUpdate()
+    this.addAccountsStatus = { type: 'INITIAL' }
     this.emitUpdate()
   }
 
