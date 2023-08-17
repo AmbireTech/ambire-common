@@ -18,14 +18,30 @@ export async function getAccountState(
     !network.rpcNoStateOverride
   )
 
-  const args = accounts.map((account) => [
-    account.addr,
-    account.associatedKeys,
-    ...(account.creation == null
-      ? ['0x0000000000000000000000000000000000000000', '0x']
-      : getAccountDeployParams(account))
-  ])
+  const args = accounts.map((account) => {
 
+    const res = [
+      account.addr,
+      account.associatedKeys,
+      ...(account.creation == null
+        ? ['0x0000000000000000000000000000000000000000', '0x']
+        : getAccountDeployParams(account))
+    ]
+
+    if (
+      [
+        '0x55E37DE60F709fAb364076b0a21f88a8FFE2C9d0',
+        '0xb904Ca98889bF9a0d205cf311e0F48b758eB5580'
+      ].includes(account.addr)
+    ) {
+      console.log(`[${network.name}]`, { res })
+    }
+  
+
+    return res
+  })
+
+ 
   const [accountStateResult] = await deploylessAccountState.call('getAccountsState', [args], {
     blockTag
   })
@@ -36,7 +52,7 @@ export async function getAccountState(
         return [accounts[index].associatedKeys[keyIndex], privilege]
       }
     )
-    return {
+    const res = {
       accountAddr: accounts[index].addr,
       nonce: parseInt(accResult.nonce, 10),
       isDeployed: accResult.isDeployed,
@@ -48,6 +64,17 @@ export async function getAccountState(
       deployError:
         accounts[index].associatedKeys.length > 0 && accResult.associatedKeyPriviliges.length === 0
     }
+
+    if (
+      [
+        '0x55E37DE60F709fAb364076b0a21f88a8FFE2C9d0',
+        '0xb904Ca98889bF9a0d205cf311e0F48b758eB5580'
+      ].includes(res.accountAddr)
+    ) {
+      console.log(`[${network.name}]`, { res })
+    }
+
+    return res
   })
 
   return result

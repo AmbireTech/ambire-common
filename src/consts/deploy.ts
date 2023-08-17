@@ -4,7 +4,7 @@
 // Once that is done, please change the PROXY_AMBIRE_ACCOUNT to the correct
 // one and delete this NOTE.
 // Currently, we use this proxy for tests.
-export const PROXY_AMBIRE_ACCOUNT = '0x59CE8fD321090dBf5fd91256B0a11d65D5b689AE'
+export const PROXY_AMBIRE_ACCOUNT = '0xfF69afDE895B381eE71e17C60350aE4c70b16a92'
 
 // These's a decent chance the factory address is the permanent one.
-export const AMBIRE_ACCOUNT_FACTORY = '0xF9c2504741f0116f7aff6015b6E210058A8Ac1e4'
+export const AMBIRE_ACCOUNT_FACTORY = '0xA3A22Bf212C03ce55eE7C3845D4c177a6fEC418B'

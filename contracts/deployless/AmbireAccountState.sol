@@ -12,12 +12,12 @@ struct AccountInput {
 
 struct AccountInfo {
     bool isDeployed;
+    bytes deployErr;
     uint nonce;
     bytes32[] associatedKeyPriviliges;
     bool isV2;
-    uint[] scheduledRecoveries;
     uint256 balance;
-    bool isEOA; 
+    bool isEOA;
 }
 
 contract AmbireAccountState {
@@ -40,52 +40,37 @@ contract AmbireAccountState {
                 (bool success,) = account.factory.call(account.factoryCalldata);
                 // we leave associateKeys empty and nonce == 0, so that the library can know that the deployment failed
                 // we do not care about the exact error because this is a very rare case
-                if (!success) continue;
+                if (!success || address(account.addr).code.length == 0) {
+                    accountResult[i].deployErr = bytes(success ? "call worked" : "call failed");
+                    continue;
+                }
             }
-            accountResult[i].associatedKeyPriviliges = new bytes32[](account.associatedKeys.length);
-            // get nonce - if contract is not deployed than nonce is zero
-            accountResult[i].nonce = IAmbireAccount(account.addr).nonce();
-            // get key privilege information
-            for (uint j=0; j!=account.associatedKeys.length; j++) {
-                accountResult[i].associatedKeyPriviliges[j] = IAmbireAccount(account.addr).privileges(account.associatedKeys[j]);
+            try this.gatherAmbireData(account) returns (uint nonce, bytes32[] memory privileges) {
+                accountResult[i].nonce = nonce;
+                accountResult[i].associatedKeyPriviliges = privileges;
+            } catch (bytes memory err) {
+                accountResult[i].deployErr = err;
+                continue;
             }
 
-            // v2 has a method called scheduledRecoveries. If it does not exist,
+            // v2 has a method called executeMultiple. If it does not exist,
             // it is v1. That's what we're doing here
-            bool isV2 = false;
-            try this.ambireV2Check(IAmbireAccount(account.addr)) returns (uint) {
-                isV2 = true;
+            try this.ambireV2Check(IAmbireAccount(account.addr)) {
+                accountResult[i].isV2 = true;
             } catch {}
-
-            accountResult[i].isV2 = isV2;
-            if (isV2) {
-                accountResult[i].scheduledRecoveries = getScheduledRecoveries(IAmbireAccount(account.addr), account.associatedKeys, bytes32(uint256(1)));
-            } else {
-                accountResult[i].scheduledRecoveries = new uint[](0);
-            }
         }
         return accountResult;
     }
 
-    function getScheduledRecoveries(IAmbireAccount account, address[] memory associatedKeys, bytes32 privValue)
-        public
-        returns (uint[] memory scheduledRecoveries)
-    {
-        // Check if there's a pending recovery that sets any of the associatedKeys
-        scheduledRecoveries = new uint[](associatedKeys.length);
-        uint currentNonce = account.nonce();
-        for (uint i=0; i!=associatedKeys.length; i++) {
-            address key = associatedKeys[i];
-            IAmbireAccount.Transaction[] memory calls = new IAmbireAccount.Transaction[](1);
-            calls[0].to = address(account);
-            // @TODO the value of setAddrPrivilege is not necessarily 1 cause of the recovery
-            calls[0].data = abi.encodeWithSelector(IAmbireAccount.setAddrPrivilege.selector, key, privValue);
-            bytes32 hash = keccak256(abi.encode(address(account), block.chainid, currentNonce, calls));
-            scheduledRecoveries[i] = account.scheduledRecoveries(hash);
+    function gatherAmbireData(AccountInput memory account) external returns (uint nonce, bytes32[] memory privileges) {
+        nonce = IAmbireAccount(account.addr).nonce();
+        privileges = new bytes32[](account.associatedKeys.length);
+        for (uint j=0; j!=account.associatedKeys.length; j++) {
+            privileges[j] = IAmbireAccount(account.addr).privileges(account.associatedKeys[j]);
         }
     }
 
-    function ambireV2Check(IAmbireAccount account) external returns (uint) {
-        return account.scheduledRecoveries(bytes32(0));
+    function ambireV2Check(IAmbireAccount account) external {
+        account.executeMultiple(new IAmbireAccount.ExecuteArgs[](0));
     }
 }
