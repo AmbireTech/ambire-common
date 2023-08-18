@@ -6,7 +6,7 @@ import scrypt from 'scrypt-js'
 import { KeystoreSigner } from '../../interfaces/keystore'
 import { Storage } from '../../interfaces/storage'
 
-const scryptDefaults = { N: 262144, r: 8, p: 1, dkLen: 64 }
+const scryptDefaults = { N: 131072, r: 8, p: 1, dkLen: 64 }
 const CIPHER = 'aes-128-ctr'
 
 // DOCS
@@ -134,7 +134,12 @@ export class Keystore {
     this.#mainKey = { key: decrypted.slice(0, 16), iv: decrypted.slice(16, 32) }
   }
 
-  async addSecret(secretId: string, secret: string, extraEntropy: string = '', leaveUnlocked: boolean = false) {
+  async addSecret(
+    secretId: string,
+    secret: string,
+    extraEntropy: string = '',
+    leaveUnlocked: boolean = false
+  ) {
     const secrets = await this.getMainKeyEncryptedWithSecrets()
     // @TODO test
     if (secrets.find((x) => x.id === secretId))
