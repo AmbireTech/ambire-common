@@ -1,32 +1,38 @@
 import { ethers } from 'ethers'
 
-function getLable(content: string) {
+export function getLable(content: string) {
   return { type: 'lable', content }
 }
-function getAction(content: string) {
+export function getAction(content: string) {
   return { type: 'action', content }
 }
-function getAddress(_address: string, name?: string) {
+export function getAddress(_address: string, name?: string) {
   const address = ethers.getAddress(_address)
   return name ? { type: 'address', address, name } : { type: 'address', address }
 }
 
-function getToken(_address: string, amount: bigint) {
+export function getToken(_address: string, amount: bigint) {
   const address = ethers.getAddress(_address)
   return { type: 'token', address, amount }
 }
 
-function getNft(address: string, id: bigint) {
+export function getNft(address: string, id: bigint) {
   return { type: 'nft', address, id }
 }
 
+export function getOnBehalfOf(onBehalfOf: string, sender: string) {
+  return onBehalfOf.toLowerCase() !== sender.toLowerCase()
+    ? [getLable('on befalf of'), getAddress(onBehalfOf)]
+    : []
+}
+
 // @TODO on some humanization of uniswap there is recipient 0x000...000
-const getRecipientText = (from: string, recipient: string) =>
-  from.toLowerCase() === recipient.toLowerCase()
+export function getRecipientText(from: string, recipient: string) {
+  return from.toLowerCase() === recipient.toLowerCase()
     ? []
     : [getLable('and send it to'), getAddress(recipient)]
-
-const parsePath = (pathBytes: any) => {
+}
+export function parsePath(pathBytes: any) {
   // some decodePacked fun
   // can we do this with Ethers AbiCoder? probably not
   const path = []
@@ -37,7 +43,7 @@ const parsePath = (pathBytes: any) => {
   return path
 }
 
-const getDeadlineText = (deadlineSecs: bigint, mined = false) => {
+export function getDeadlineText(deadlineSecs: bigint, mined = false) {
   if (mined) return null
   const minute = 60000
   const deadline = Number(deadlineSecs * 1000n)
@@ -52,18 +58,6 @@ const getDeadlineText = (deadlineSecs: bigint, mined = false) => {
   return null
 }
 
-const shortenAddress = (addr: string) => {
+export function shortenAddress(addr: string) {
   return addr ? `${addr.slice(0, 5)}...${addr.slice(-3)}` : null
-}
-
-export {
-  getLable,
-  getAction,
-  getAddress,
-  getToken,
-  getNft,
-  getRecipientText,
-  parsePath,
-  getDeadlineText,
-  shortenAddress
 }
