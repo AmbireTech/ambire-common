@@ -3,46 +3,39 @@ import { getAction, getLable, getToken, getOnBehalfOf } from '../../utils'
 import { AccountOp } from '../../../accountOp/accountOp'
 import { IrCall } from '../../interfaces'
 
-export const aaveLendingPoolV2 = (humanizerInfo: any) => {
+export const aaveLendingPoolV2 = (humanizerInfo: any): { [key: string]: Function } => {
   const iface = new ethers.Interface(humanizerInfo?.['abis:AaveLendingPoolV2'])
-
   const matcher = {
-    [`${iface.getFunction('depositETH')?.selector}`]: (accountOp: AccountOp, call: IrCall) => {
-      const [, , /* depositETH */ /* lendingPool */ onBehalfOf] =
-        iface.parseTransaction(call)?.args || []
+    [`${iface.getFunction('deposit')?.selector}`]: (accountOp: AccountOp, call: IrCall) => {
+      const [asset, amount, onBehalf] = iface.parseTransaction(call)?.args || []
       return [
         getAction('Deposit'),
-        getToken(ethers.ZeroAddress, call.value),
+        getToken(asset, amount),
         getLable('to Aave lending pool'),
-        ...getOnBehalfOf(onBehalfOf, accountOp.accountAddr)
+        ...getOnBehalfOf(onBehalf, accountOp.accountAddr)
       ]
     },
-    [`${iface.getFunction('withdrawETH')?.selector}`]: (accountOp: AccountOp, call: IrCall) => {
-      const [, /* lendingPool */ amount, to] = iface.parseTransaction(call)?.args || []
+    [`${iface.getFunction('withdraw')?.selector}`]: (accountOp: AccountOp, call: IrCall) => {
+      const [asset, amount, onBehalf] = iface.parseTransaction(call)?.args || []
       return [
         getAction('Withdraw'),
-        getToken(ethers.ZeroAddress, amount),
+        getToken(asset, amount),
         getLable('from Aave lending pool'),
-        ...getOnBehalfOf(to, accountOp.accountAddr)
+        ...getOnBehalfOf(onBehalf, accountOp.accountAddr)
       ]
     },
-    [`${iface.getFunction('repayETH')?.selector}`]: (accountOp: AccountOp, call: IrCall) => {
-      const [, , , , /* repayETH */ /* lendingPool */ /* amount */ /* rateMode */ onBehalfOf] =
-        iface.parseTransaction(call)?.args || []
+    [`${iface.getFunction('repay')?.selector}`]: (accountOp: AccountOp, call: IrCall) => {
+      const [asset, amount /* rateMode */, , onBehalf] = iface.parseTransaction(call)?.args || []
       return [
         getAction('Repay'),
-        getToken(ethers.ZeroAddress, call.value),
+        getToken(asset, amount),
         getLable('to Aave lending pool'),
-        ...getOnBehalfOf(onBehalfOf, accountOp.accountAddr)
+        ...getOnBehalfOf(onBehalf, accountOp.accountAddr)
       ]
     },
-    [`${iface.getFunction('borrowETH')?.selector}`]: (accountOp: AccountOp, call: IrCall) => {
-      const [, /* lendingPool */ amount] = iface.parseTransaction(call)?.args || []
-      return [
-        getAction('Borrow'),
-        getToken(ethers.ZeroAddress, amount),
-        getLable('from Aave lending pool')
-      ]
+    [`${iface.getFunction('borrow')?.selector}`]: (accountOp: AccountOp, call: IrCall) => {
+      const [asset, amount] = iface.parseTransaction(call)?.args || []
+      return [getAction('Borrow'), getToken(asset, amount), getLable('from Aave lending pool')]
     }
   }
   return matcher

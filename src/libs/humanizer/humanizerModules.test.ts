@@ -6,6 +6,7 @@ import { callsToIr, initHumanizerMeta } from './humanizer'
 import { uniswapHumanizer } from './modules/Uniswap'
 import { Ir } from './interfaces'
 import { wethHumanizer } from './modules/weth'
+import { aaveHumanizer } from './modules/Aave'
 
 const humanizerInfo = initHumanizerMeta(require('../../consts/humanizerInfo.json'))
 
@@ -71,6 +72,20 @@ const transactions = {
       to: '0xE592427A0AEce92De3Edee1F18E0157C05861564',
       value: 1000000000000000000n,
       data: '0xd0e30db0'
+    }
+  ],
+  aaveLendingPoolV2: [
+    // deposit
+    {
+      to: '0x7d2768dE32b0b80b7a3454c06BdAc94A69DDc7A9',
+      value: 0n,
+      data: '0xe8eda9df000000000000000000000000ae7ab96520de3a18e5e111b5eaab095312d7fe84000000000000000000000000000000000000000000000000a2a6775fd59004660000000000000000000000007f4cf2e68f968cc050b3783268c474a15b8bdc2e0000000000000000000000000000000000000000000000000000000000000000'
+    },
+    // withdraw
+    {
+      to: '0x7d2768dE32b0b80b7a3454c06BdAc94A69DDc7A9',
+      value: 0n,
+      data: '0x69328dec000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000008bc110db7029197c3621bea8092ab1996d5dd7be'
     }
   ]
 }
@@ -195,5 +210,11 @@ describe('module tests', () => {
       }
     ])
     expect(ir.calls[2].fullVisualization).toBeNull()
+  })
+  test('AAVE', () => {
+    accountOp.calls = [...transactions.aaveLendingPoolV2]
+    let ir: Ir = callsToIr(accountOp)
+    ;[ir] = aaveHumanizer(accountOp, ir)
+    ir.calls.forEach((c) => console.log(c.fullVisualization))
   })
 })
