@@ -7,8 +7,7 @@ export const aaveWethGatewayV2 = (humanizerInfo: any): { [key: string]: Function
   const iface = new ethers.Interface(humanizerInfo?.['abis:AaveWethGatewayV2'])
   return {
     [`${iface.getFunction('depositETH')?.selector}`]: (accountOp: AccountOp, call: IrCall) => {
-      const [, , /* depositETH */ /* lendingPool */ onBehalfOf] =
-        iface.parseTransaction(call)?.args || []
+      const [, onBehalfOf] = iface.parseTransaction(call)?.args || []
       return [
         getAction('Deposit'),
         getToken(ethers.ZeroAddress, call.value),
@@ -26,7 +25,7 @@ export const aaveWethGatewayV2 = (humanizerInfo: any): { [key: string]: Function
       ]
     },
     [`${iface.getFunction('repayETH')?.selector}`]: (accountOp: AccountOp, call: IrCall) => {
-      const [, , , , /* repayETH */ /* lendingPool */ /* amount */ /* rateMode */ onBehalfOf] =
+      const [, , , /* lendingPool */ /* amount */ /* rateMode */ onBehalfOf] =
         iface.parseTransaction(call)?.args || []
       return [
         getAction('Repay'),

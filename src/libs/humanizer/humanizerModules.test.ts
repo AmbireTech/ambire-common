@@ -87,6 +87,20 @@ const transactions = {
       value: 0n,
       data: '0x69328dec000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000008bc110db7029197c3621bea8092ab1996d5dd7be'
     }
+  ],
+  aaveWethGatewayV2: [
+    // deposit
+    {
+      to: '0xcc9a0B7c43DC2a5F023Bb9b738E45B0Ef6B06E04',
+      value: 135592697552000000n,
+      data: '0x474cf53d0000000000000000000000007d2768de32b0b80b7a3454c06bdac94a69ddc7a900000000000000000000000047c353467326e6bd0c01e728e8f7d1a06a84939500000000000000000000000000000000000000000000000000000000000000bb'
+    },
+    // withdraw
+    {
+      to: '0xcc9a0B7c43DC2a5F023Bb9b738E45B0Ef6B06E04',
+      value: 0n,
+      data: '0x80500d200000000000000000000000007d2768de32b0b80b7a3454c06bdac94a69ddc7a9000000000000000000000000000000000000000000000000000000001c378a430000000000000000000000000df1a69fcdf15fec04e37aa5eca4268927b111e7'
+    }
   ]
 }
 
@@ -212,9 +226,43 @@ describe('module tests', () => {
     expect(ir.calls[2].fullVisualization).toBeNull()
   })
   test('AAVE', () => {
-    accountOp.calls = [...transactions.aaveLendingPoolV2]
+    const expectedhumanization = [
+      [
+        { content: 'Deposit' },
+        { type: 'token' },
+        { content: 'to Aave lending pool' },
+        { content: 'on befalf of' },
+        { type: 'address' }
+      ],
+      [
+        { content: 'Withdraw' },
+        { type: 'token' },
+        { content: 'from Aave lending pool' },
+        { content: 'on befalf of' },
+        { type: 'address' }
+      ],
+      [
+        { content: 'Deposit' },
+        { type: 'token' },
+        { content: 'to Aave lending pool' },
+        { content: 'on befalf of' },
+        { type: 'address' }
+      ],
+      [
+        { content: 'Withdraw' },
+        { type: 'token' },
+        { content: 'from Aave lending pool' },
+        { content: 'on befalf of' },
+        { type: 'address' }
+      ]
+    ]
+    accountOp.calls = [...transactions.aaveLendingPoolV2, ...transactions.aaveWethGatewayV2]
     let ir: Ir = callsToIr(accountOp)
     ;[ir] = aaveHumanizer(accountOp, ir)
-    ir.calls.forEach((c) => console.log(c.fullVisualization))
+    ir.calls.forEach((c, i) =>
+      c.fullVisualization.forEach((v: any, j: number) =>
+        expect(v).toMatchObject(expectedhumanization[i][j])
+      )
+    )
   })
 })

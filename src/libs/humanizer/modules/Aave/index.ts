@@ -13,8 +13,6 @@ export const aaveHumanizer = (
   }
   const newCalls = ir.calls.map((call) => {
     if (accountOp.humanizerMeta?.[`names:${call.to}`] === 'Aave') {
-      console.log(call.data.slice(0, 10))
-      console.log(typeof matcher[call.data.slice(0, 10)])
       return { ...call, fullVisualization: matcher[call.data.slice(0, 10)](accountOp, call) }
     }
     return call
