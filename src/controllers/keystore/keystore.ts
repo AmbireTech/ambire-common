@@ -35,9 +35,9 @@ export class KeystoreController extends EventEmitter {
     )
   }
 
-  async addSecret(secretId: string, secret: string, extraEntropy?: string) {
+  async addSecret(secretId: string, secret: string, extraEntropy: string, leaveUnlocked: boolean) {
     await this.wrapKeystoreAction('addSecret', async () => {
-      await this.#keystoreLib.addSecret(secretId, secret, extraEntropy)
+      await this.#keystoreLib.addSecret(secretId, secret, extraEntropy, leaveUnlocked)
       this.isReadyToStoreKeys = true
     })
   }

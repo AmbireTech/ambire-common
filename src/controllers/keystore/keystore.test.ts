@@ -63,7 +63,7 @@ describe('KeystoreController', () => {
     expect((keystore as any)['#keystoreLib']).toBe(undefined)
   })
   test('should add a secret', async () => {
-    await keystore.addSecret('passphrase', pass)
+    await keystore.addSecret('passphrase', pass, '', false)
     expect(keystore.isUnlocked).toBe(false)
     expect(keystore.isReadyToStoreKeys).toBe(true)
   })
