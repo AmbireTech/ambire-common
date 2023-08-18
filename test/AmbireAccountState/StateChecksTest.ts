@@ -24,7 +24,7 @@ describe('Account state checks tests', function () {
     salt = deploySalt
   })
   
-  it('should call ambireV2Check with a v2 address and confirm it does not revert', async function () {
+  it('should call ambireV2Check with a v2 address and confirm it return 01 as hex', async function () {
     const [signer] = await ethers.getSigners()
 
     const abi = ['function ambireV2Check(address account) external returns (uint)']
@@ -42,7 +42,7 @@ describe('Account state checks tests', function () {
     const deploylessResult = await signer.call({
       data: bytecode
     })
-    expect(deploylessResult).to.equal('0x')
+    expect(deploylessResult).to.equal(ethers.toBeHex(1, 32))
   })
   it('should call ambireV2Check with a random address and confirm it reverts', async function () {
     const [signer] = await ethers.getSigners()
