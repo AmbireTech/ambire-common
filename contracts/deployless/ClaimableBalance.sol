@@ -35,17 +35,5 @@ contract ClaimableBalance {
     } else {
       outcome.vestingAmount = supplyController.mintableVesting(vestingData.recipient, vestingData.end, vestingData.amountPerSecond);
     }
-
-    // try this.getVestingBalance(supplyController, vestingData) returns (uint amount) {
-    //   outcome.vestingAmount = amount;
-    // } catch (bytes memory err) {
-    //   outcome.vestingError = err;
-    // }
   }
-
-
-
-  // function getVestingBalance (ISupplyController supplyController, VestingData calldata vestingData) public returns (uint) {
-  //   return supplyController.mintableVesting(vestingData.recipient, vestingData.end, vestingData.amountPerSecond);
-  // }
 }
