@@ -3,11 +3,17 @@ import { ethers } from 'ethers'
 import { AccountOp } from '../accountOp/accountOp'
 import { genericErc20Humanizer, genericErc721Humanizer } from './modules/tokens'
 import { uniswapHumanizer } from './modules/Uniswap'
+import { wethHumanizer } from './modules/weth'
 import { IrCall, Ir, HumanizerFragment } from './interfaces'
 import { shortenAddress, getAction, getLable, getToken, getAddress } from './utils'
 
 // @TODO humanize signed messages
 // @TODO change all console.logs to throw errs
+// @TODO finish modules:
+// Aave
+// 1inch
+// WALLET/ADX staking
+// yearn
 export function initHumanizerMeta(humanizerMeta: any) {
   const newHumanizerMeta: any = {}
 
@@ -152,6 +158,7 @@ export function humanize(
     genericErc20Humanizer,
     genericErc721Humanizer,
     uniswapHumanizer,
+    wethHumanizer,
     fallbackHumanizer,
     namingHumanizer
   ]

@@ -5,6 +5,7 @@ import { callsToIr, initHumanizerMeta } from './humanizer'
 
 import { uniswapHumanizer } from './modules/Uniswap'
 import { Ir } from './interfaces'
+import { wethHumanizer } from './modules/weth'
 
 const humanizerInfo = initHumanizerMeta(require('../../consts/humanizerInfo.json'))
 
@@ -51,6 +52,18 @@ const transactions = {
       to: '0xE592427A0AEce92De3Edee1F18E0157C05861564',
       value: 700000000000000000n,
       data: '0xac9650d80000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000104414bf389000000000000000000000000c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2000000000000000000000000e8a3bf796ca5a13283ec6b1c5b645b91d7cfef5d0000000000000000000000000000000000000000000000000000000000000bb800000000000000000000000037a4d0ff423e9d0c597836bb0a7fe4c3cdb6e5ff0000000000000000000000000000000000000000000000000000000064ddcfd400000000000000000000000000000000000000000000000009b6e64a8ec600000000000000000000000000000000000000000000000000b9fac2645641bb1d22000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000'
+    }
+  ],
+  weth: [
+    {
+      to: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
+      value: 1000000000000000000n,
+      data: '0xd0e30db0'
+    },
+    {
+      to: '0xE592427A0AEce92De3Edee1F18E0157C05861564',
+      value: 1000000000000000000n,
+      data: '0xd0e30db0'
     }
   ]
 }
@@ -127,7 +140,7 @@ describe('module tests', () => {
         { type: 'action', content: 'Swap' },
         {
           type: 'token',
-          address: '0x0000000000000000000000000000000000000000',
+          address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
           amount: 700000000000000000n
         },
         { type: 'lable', content: 'for at least' },
@@ -153,5 +166,19 @@ describe('module tests', () => {
         expect(v).toEqual(expectedhumanization[i][j])
       })
     })
+  })
+  test('WETH', () => {
+    accountOp.calls = [...transactions.weth]
+    let ir: Ir = callsToIr(accountOp)
+    ;[ir] = wethHumanizer(accountOp, ir)
+    expect(ir.calls[0].fullVisualization).toEqual([
+      { type: 'action', content: 'Wrap' },
+      {
+        type: 'token',
+        address: '0x0000000000000000000000000000000000000000',
+        amount: transactions.weth[0].value
+      }
+    ])
+    expect(ir.calls[1].fullVisualization).toBeNull()
   })
 })
