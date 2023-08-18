@@ -134,7 +134,7 @@ export class Keystore {
     this.#mainKey = { key: decrypted.slice(0, 16), iv: decrypted.slice(16, 32) }
   }
 
-  async addSecret(secretId: string, secret: string, extraEntropy: string = '') {
+  async addSecret(secretId: string, secret: string, extraEntropy: string = '', leaveUnlocked: boolean = false) {
     const secrets = await this.getMainKeyEncryptedWithSecrets()
     // @TODO test
     if (secrets.find((x) => x.id === secretId))
@@ -153,6 +153,10 @@ export class Keystore {
           iv: randomBytes(16)
         }
       } else throw new Error('keystore: must unlock keystore before adding secret')
+
+      if (leaveUnlocked) {
+        this.#mainKey = mainKey
+      }
     }
 
     const salt = randomBytes(32)

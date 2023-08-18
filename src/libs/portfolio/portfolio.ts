@@ -14,7 +14,8 @@ import {
   GetOptionsSimulation,
   PriceCache,
   PortfolioGetResult,
-  Hints
+  Hints,
+  CollectionResult
 } from './interfaces'
 import { getNFTs, getTokens } from './getOnchainBalances'
 
@@ -173,7 +174,7 @@ export class Portfolio {
         ...x,
         address: address,
         priceIn: getPriceFromCache(address) || []
-      } as TokenResult
+      } as CollectionResult
     })
 
     const oracleCallDone = Date.now()
@@ -215,7 +216,7 @@ export class Portfolio {
       tokenErrors: tokensWithErr
         .filter(([error, result]) => error !== '0x' || result.symbol === '')
         .map(([error, result]) => ({ error, address: result.address })),
-      collections: collections.filter((x) => x.collectables?.length),
+      collections: collections.filter((x) => x.collectibles?.length),
       total: tokens.reduce((cur, token) => {
         for (const x of token.priceIn) {
           cur[x.baseCurrency] =
