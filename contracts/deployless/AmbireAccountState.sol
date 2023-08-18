@@ -55,8 +55,9 @@ contract AmbireAccountState {
 
             // v2 has a method called executeMultiple. If it does not exist,
             // it is v1. That's what we're doing here
-            try this.ambireV2Check(IAmbireAccount(account.addr)) {
-                accountResult[i].isV2 = true;
+            accountResult[i].isV2 = false;
+            try this.ambireV2Check(IAmbireAccount(account.addr)) returns (bool isV2) {
+                accountResult[i].isV2 = isV2;
             } catch {}
         }
         return accountResult;
@@ -70,7 +71,7 @@ contract AmbireAccountState {
         }
     }
 
-    function ambireV2Check(IAmbireAccount account) external {
-        account.executeMultiple(new IAmbireAccount.ExecuteArgs[](0));
+    function ambireV2Check(IAmbireAccount account) external pure returns(bool) {
+        return account.supportsInterface(0x150b7a02);
     }
 }
