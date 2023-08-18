@@ -55,10 +55,17 @@ const transactions = {
     }
   ],
   weth: [
+    // deposit
     {
       to: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
       value: 1000000000000000000n,
       data: '0xd0e30db0'
+    },
+    // withdraw
+    {
+      to: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
+      value: 1000000000000000000n,
+      data: '0x2e1a7d4d000000000000000000000000000000000000000000000000001f9e80ba804000'
     },
     {
       to: '0xE592427A0AEce92De3Edee1F18E0157C05861564',
@@ -179,6 +186,14 @@ describe('module tests', () => {
         amount: transactions.weth[0].value
       }
     ])
-    expect(ir.calls[1].fullVisualization).toBeNull()
+    expect(ir.calls[1].fullVisualization).toEqual([
+      { type: 'action', content: 'Unwrap' },
+      {
+        type: 'token',
+        address: '0x0000000000000000000000000000000000000000',
+        amount: 8900000000000000n
+      }
+    ])
+    expect(ir.calls[2].fullVisualization).toBeNull()
   })
 })
