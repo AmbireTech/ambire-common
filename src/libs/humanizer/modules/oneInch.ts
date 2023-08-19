@@ -14,7 +14,7 @@ const OneInchMapping = (humanizerInfo: any) => {
   const iface = new ethers.Interface(humanizerInfo.abis.Swappin)
 
   return {
-    [`${iface.getFunction('swap')}`]: (call: IrCall) => {
+    [`${iface.getFunction('swap')}`]: (accounutOp: AccountOp, call: IrCall) => {
       const { desc } = iface.parseTransaction(call)!.args
       return [
         getAction('Swap'),
@@ -23,7 +23,7 @@ const OneInchMapping = (humanizerInfo: any) => {
         getToken(parseZeroAddressIfNeeded(desc.dstToken), desc.minReturnAmount)
       ]
     },
-    [`${iface.getFunction('unoswap')}`]: (call: IrCall) => {
+    [`${iface.getFunction('unoswap')}`]: (accounutOp: AccountOp, call: IrCall) => {
       const { amount, minReturn, srcToken } = iface.parseTransaction(call)!.args
 
       return [
@@ -44,7 +44,7 @@ const OneInchMapping = (humanizerInfo: any) => {
 //   const iface = new ethers.Interface(humanizerInfo.abis.SwappinOwn)
 
 //   return {
-//     [`${iface.getFunction('payWithEth')}`]: (call: IrCall) => {
+//     [`${iface.getFunction('payWithEth')}`]: (accounutOp: AccountOp, call: IrCall) => {
 //       const { amountFrom } = iface.parseTransaction(call)!.args
 //       return !opts.extended
 //         ? [`Pay with ${nativeToken(network, amountFrom, opts.extended)} for a gift card`]
@@ -54,7 +54,7 @@ const OneInchMapping = (humanizerInfo: any) => {
 //             nativeToken(network, amountFrom, opts.extended)
 //           )
 //     },
-//     [`${iface.getFunction('payWithUsdToken')}`]: (call: IrCall) => {
+//     [`${iface.getFunction('payWithUsdToken')}`]: (accounutOp: AccountOp, call: IrCall) => {
 //       const { amount, token: destToken } = iface.parseTransaction(call)!.args
 //       return !opts.extended
 //         ? [`Pay with ${token(humanizerInfo, destToken, amount)} for a gift card`]
@@ -64,7 +64,7 @@ const OneInchMapping = (humanizerInfo: any) => {
 //             token(humanizerInfo, destToken, amount, opts.extended)
 //           )
 //     },
-//     [`${iface.getFunction('payWithAnyToken')}`]: (call: IrCall) => {
+//     [`${iface.getFunction('payWithAnyToken')}`]: (accounutOp: AccountOp, call: IrCall) => {
 //       const { amountFrom, tokenFrom } = iface.parseTransaction(call)!.args
 //       return !opts.extended
 //         ? [`Pay with ${token(humanizerInfo, tokenFrom, amountFrom, opts.extended)} for a gift card`]
