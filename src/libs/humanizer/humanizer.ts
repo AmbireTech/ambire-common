@@ -4,16 +4,18 @@ import { AccountOp } from '../accountOp/accountOp'
 import { genericErc20Humanizer, genericErc721Humanizer } from './modules/tokens'
 import { uniswapHumanizer } from './modules/Uniswap'
 import { wethHumanizer } from './modules/weth'
+import { oneInchHumanizer } from './modules/oneInch'
 import { IrCall, Ir, HumanizerFragment } from './interfaces'
 import { shortenAddress, getAction, getLable, getToken, getAddress } from './utils'
+import { aaveHumanizer } from './modules/Aave'
 
 // @TODO humanize signed messages
 // @TODO change all console.logs to throw errs
 // @TODO finish modules:
-// Aave
 // 1inch
 // WALLET/ADX staking
 // yearn
+// @TODO fix comments from feedback https://github.com/AmbireTech/ambire-common/pull/281
 export function initHumanizerMeta(humanizerMeta: any) {
   const newHumanizerMeta: any = {}
 
@@ -159,6 +161,8 @@ export function humanize(
     genericErc721Humanizer,
     uniswapHumanizer,
     wethHumanizer,
+    aaveHumanizer,
+    oneInchHumanizer,
     fallbackHumanizer,
     namingHumanizer
   ]
