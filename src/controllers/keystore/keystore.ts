@@ -62,6 +62,16 @@ export class KeystoreController extends EventEmitter {
     await this.wrapKeystoreAction('addKey', async () => this.#keystoreLib.addKey(privateKey, label))
   }
 
+  async addKeys(keys: { privateKey: string; label: string }[]) {
+    await this.wrapKeystoreAction('addKeys', async () => {
+      // eslint-disable-next-line no-restricted-syntax
+      for (const key of keys) {
+        // eslint-disable-next-line no-await-in-loop
+        await this.#keystoreLib.addKey(key.privateKey, key.label)
+      }
+    })
+  }
+
   async removeKey(id: string) {
     await this.wrapKeystoreAction('removeKey', async () => this.#keystoreLib.removeKey(id))
   }
