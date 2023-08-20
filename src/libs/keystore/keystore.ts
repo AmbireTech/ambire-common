@@ -243,6 +243,8 @@ export class Keystore {
   async addKey(privateKey: string, label: string) {
     if (this.#mainKey === null) throw new Error('keystore: needs to be unlocked')
 
+    privateKey.substring(0, 2) === '0x' ? privateKey.substring(2) : privateKey
+
     // Set up the cipher
     const counter = new aes.Counter(this.#mainKey.iv)
     const aesCtr = new aes.ModeOfOperation.ctr(this.#mainKey.key, counter)
