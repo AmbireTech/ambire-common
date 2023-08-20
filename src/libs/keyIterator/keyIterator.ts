@@ -60,3 +60,4 @@ export class KeyIterator implements KeyIteratorInterface {
 
     return keys
   }
+}
