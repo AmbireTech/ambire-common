@@ -86,7 +86,7 @@ export class MainController extends EventEmitter {
     this.emailVault = new EmailVaultController(storage, fetch, relayerUrl, this.keystore)
     this.accountAdder = new AccountAdderController({ storage, relayerUrl, fetch })
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
-    // Load userRequests from storage and emit that we have updated
+    // @TODO Load userRequests from storage and emit that we have updated
     // @TODO
   }
 
