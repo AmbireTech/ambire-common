@@ -1,11 +1,11 @@
 import { AbiCoder, ethers, JsonRpcProvider } from 'ethers'
+import { CollectionResult } from 'libs/portfolio/interfaces'
 
 import { describe, expect } from '@jest/globals'
 
 import { getNonce, produceMemoryStore } from '../../../test/helpers'
 import { networks } from '../../consts/networks'
 import { AccountOp } from '../../libs/accountOp/accountOp'
-import { TokenResult } from '../../libs/portfolio'
 import { PortfolioController } from './portfolio'
 
 describe('Portfolio Controller ', () => {
@@ -178,7 +178,7 @@ describe('Portfolio Controller ', () => {
         const pendingState =
           controller.pending['0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'].ethereum!
         const collection = pendingState.result?.collections.find(
-          (c: TokenResult) => c.symbol === 'NFT Fiesta'
+          (c: CollectionResult) => c.symbol === 'NFT Fiesta'
         )
         expect(pendingState.isLoading).toEqual(false)
 

@@ -24,7 +24,7 @@ async function getNFTs(deployless, opts, accountAddr, tokenAddrs, limits) {
             symbol: token.symbol,
             amount: BigInt(token.nfts.length),
             decimals: 1,
-            collectables: [...token.nfts].map((token) => ({ id: token.id, url: token.uri }))
+            collectibles: [...token.nfts].map((token) => ({ id: token.id, url: token.uri }))
         };
     };
     if (!opts.simulation) {

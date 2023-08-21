@@ -1,10 +1,10 @@
 import { Provider } from 'ethers'
 
-import { fromDescriptor } from '../deployless/deployless'
-import { getAccountDeployParams } from '../account/account'
-import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
-import { Account, AccountOnchainState } from '../../interfaces/account'
 import AmbireAccountState from '../../../contracts/compiled/AmbireAccountState.json'
+import { Account, AccountOnchainState } from '../../interfaces/account'
+import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
+import { getAccountDeployParams } from '../account/account'
+import { fromDescriptor } from '../deployless/deployless'
 
 export async function getAccountState(
   provider: Provider,
@@ -21,7 +21,9 @@ export async function getAccountState(
   const args = accounts.map((account) => [
     account.addr,
     account.associatedKeys,
-    ...getAccountDeployParams(account)
+    ...(account.creation == null
+      ? ['0x0000000000000000000000000000000000000000', '0x']
+      : getAccountDeployParams(account))
   ])
 
   const [accountStateResult] = await deploylessAccountState.call('getAccountsState', [args], {
