@@ -502,7 +502,11 @@ export class AccountAdderController extends EventEmitter {
         ethers.getCreate2Address(factoryAddr, salt, ethers.keccak256(bytecode)).toLowerCase() !==
         addr.toLowerCase()
       ) {
+        // TODO: Display this address as a problematic one?
         throw new Error('accountAddr: address not generated from that factory')
+
+        // TODO: Maybe?
+        // delete data.accounts[addr]
       }
       return {
         account: {
