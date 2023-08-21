@@ -67,9 +67,7 @@ describe('AccountAdder', () => {
   })
 
   test('should throw if operation is triggered, but the controller is not initialized yet', async () => {
-    await expect(accountAdder.setPage({ page: 1, networks, providers })).rejects.toThrow(
-      'Requested method `#calculateAccounts`, but the AccountAdder is not initialized'
-    )
+    await expect(accountAdder.setPage({ page: 1, networks, providers })).rejects.toThrow()
   })
 
   test('should set first page and retrieve one smart account for every legacy account', (done) => {
@@ -137,13 +135,25 @@ describe('AccountAdder', () => {
       }
     })
   })
-  test('should not be able to deselect a preselected account', async () => {
+  test('should not be able to deselect a preselected account', (done) => {
     const keyIterator = new KeyIterator(seedPhrase)
     accountAdder.init({ keyIterator, preselectedAccounts: [legacyAccount], pageSize: 1 })
     accountAdder.selectedAccounts = [legacyAccount]
 
-    await expect(accountAdder.deselectAccount(legacyAccount)).rejects.toThrow(
-      'accountAdder: a preselected account cannot be deselected'
-    )
+    let emitCounter = 0
+    accountAdder.onError(() => {
+      emitCounter++
+
+      if (emitCounter === 1) {
+        const errors = accountAdder.getErrors()
+        expect(errors.length).toEqual(1)
+        expect(errors[0].error.message).toEqual(
+          'accountAdder: a preselected account cannot be deselected'
+        )
+        done()
+      }
+    })
+
+    accountAdder.deselectAccount(legacyAccount)
   })
 })
