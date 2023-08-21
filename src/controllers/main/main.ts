@@ -160,6 +160,7 @@ export class MainController extends EventEmitter {
 
     this.selectedAccount = toAccountAddr
     await this.storage.set('selectedAccount', toAccountAddr)
+    this.updateSelectedAccount(toAccountAddr)
     this.emitUpdate()
   }
 
@@ -230,6 +231,14 @@ export class MainController extends EventEmitter {
       accountOpToExecuteBefore: null,
       calls
     }
+  }
+
+  updateSelectedAccount(selectedAccount: string | null = null) {
+    if (!selectedAccount) {
+      // TODO: Return error we dont have selected account chosen yet
+      return
+    }
+    this.portfolio.updateSelectedAccount(this.accounts, this.settings.networks, selectedAccount)
   }
 
   async addUserRequest(req: UserRequest) {
