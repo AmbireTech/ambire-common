@@ -16,6 +16,7 @@ import { aaveHumanizer } from './modules/Aave'
 // WALLET/ADX staking
 // yearn
 // @TODO fix comments from feedback https://github.com/AmbireTech/ambire-common/pull/281
+// @TODO add name/label argumsnt to getAddress and getToken utils funcs
 export function initHumanizerMeta(humanizerMeta: any) {
   const newHumanizerMeta: any = {}
 
