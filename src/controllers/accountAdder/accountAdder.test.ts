@@ -140,9 +140,6 @@ describe('AccountAdder', () => {
     accountAdder.init({ keyIterator, preselectedAccounts: [legacyAccount], pageSize: 1 })
     accountAdder.selectedAccounts = [legacyAccount]
 
-    accountAdder.deselectAccount(legacyAccount)
-
-    // TODO: Figure out why this is not working
     let emitCounter = 0
     accountAdder.onError(() => {
       emitCounter++
@@ -156,5 +153,7 @@ describe('AccountAdder', () => {
         done()
       }
     })
+
+    accountAdder.deselectAccount(legacyAccount)
   })
 })
