@@ -52,9 +52,7 @@ export class AccountAdderController extends EventEmitter {
 
   // Identity for the smart accounts must be created on the Relayer, this
   // represents the status of the operation, needed managing UI state
-  addAccountsStatus: { type: 'PENDING' | 'SUCCESS' | 'INITIAL' } = {
-    type: 'INITIAL'
-  }
+  addAccountsStatus: 'LOADING' | 'SUCCESS' | 'INITIAL' = 'INITIAL'
 
   accountsLoading: boolean = false
 
@@ -192,7 +190,7 @@ export class AccountAdderController extends EventEmitter {
     this.pageSize = PAGE_SIZE
     this.derivationPath = undefined
 
-    this.addAccountsStatus = { type: 'INITIAL' }
+    this.addAccountsStatus = 'INITIAL'
     this.readyToAddAccounts = []
     this.isInitialized = false
 
@@ -301,7 +299,7 @@ export class AccountAdderController extends EventEmitter {
       })
     }
 
-    this.addAccountsStatus = { type: 'PENDING' }
+    this.addAccountsStatus = 'LOADING'
     this.emitUpdate()
 
     const accountsToAddOnRelayer = accounts
@@ -336,16 +334,16 @@ export class AccountAdderController extends EventEmitter {
           error: new Error(e?.message)
         })
 
-        this.addAccountsStatus = { type: 'INITIAL' }
+        this.addAccountsStatus = 'INITIAL'
         this.emitUpdate()
         return
       }
     }
 
     this.readyToAddAccounts = [...accounts]
-    this.addAccountsStatus = { type: 'SUCCESS' }
+    this.addAccountsStatus = 'SUCCESS'
     this.emitUpdate()
-    this.addAccountsStatus = { type: 'INITIAL' }
+    this.addAccountsStatus = 'INITIAL'
     this.emitUpdate()
   }
 
