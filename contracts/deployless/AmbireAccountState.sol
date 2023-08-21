@@ -72,6 +72,6 @@ contract AmbireAccountState {
     }
 
     function ambireV2Check(IAmbireAccount account) external pure returns(bool) {
-        return account.supportsInterface(0x150b7a02);
+        return account.supportsInterface(0x0a417632) || account.supportsInterface(0x150b7a02);
     }
 }

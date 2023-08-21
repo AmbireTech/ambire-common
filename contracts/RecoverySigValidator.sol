@@ -4,7 +4,7 @@ pragma solidity 0.8.19;
 import './AmbireAccount.sol';
 import './libs/SignatureValidator.sol';
 
-contract TimelockedRecoverySig is ExternalSigValidator {
+contract RecoverySigValidator is ExternalSigValidator {
   mapping(bytes32 => uint) public scheduledRecoveries;
   event LogRecoveryScheduled(
     bytes32 indexed txnHash,
