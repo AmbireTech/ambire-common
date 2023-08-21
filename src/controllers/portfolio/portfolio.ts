@@ -1,12 +1,14 @@
-import fetch from 'node-fetch'
 import { JsonRpcProvider } from 'ethers'
-import { Portfolio, GetOptions } from '../../libs/portfolio/portfolio'
-import { Hints, PortfolioGetResult } from '../../libs/portfolio/interfaces'
-import { Storage } from '../../interfaces/storage'
-import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
+import fetch from 'node-fetch'
+
 import { Account, AccountId } from '../../interfaces/account'
+import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
+import { Storage } from '../../interfaces/storage'
 import { AccountOp } from '../../libs/accountOp/accountOp'
 import { stringify } from '../../libs/bigintJson/bigintJson'
+import { Hints, PortfolioGetResult } from '../../libs/portfolio/interfaces'
+import { GetOptions, Portfolio } from '../../libs/portfolio/portfolio'
+import EventEmitter from '../eventEmitter'
 
 type AccountState = {
   // network id
@@ -30,22 +32,23 @@ type PortfolioControllerState = {
   [key: string]: AccountState
 }
 
-export class PortfolioController {
+export class PortfolioController extends EventEmitter {
   latest: PortfolioControllerState
 
   pending: PortfolioControllerState
 
-  private portfolioLibs: Map<string, Portfolio>
+  #portfolioLibs: Map<string, Portfolio>
 
-  private storage: Storage
+  #storage: Storage
 
-  private minUpdateInterval: number = 20000 // 20 seconds
+  #minUpdateInterval: number = 20000 // 20 seconds
 
   constructor(storage: Storage) {
+    super()
     this.latest = {}
     this.pending = {}
-    this.portfolioLibs = new Map()
-    this.storage = storage
+    this.#portfolioLibs = new Map()
+    this.#storage = storage
   }
   // NOTE: we always pass in all `accounts` and `networks` to ensure that the user of this
   // controller doesn't have to update this controller every time that those are updated
@@ -69,7 +72,7 @@ export class PortfolioController {
     }
   ) {
     // Load storage cached hints
-    const storagePreviousHints = await this.storage.get('previousHints', {})
+    const storagePreviousHints = await this.#storage.get('previousHints', {})
 
     const selectedAccount = accounts.find((x) => x.addr === accountId)
     if (!selectedAccount) throw new Error('selected account does not exist')
@@ -81,6 +84,7 @@ export class PortfolioController {
       for (const networkId of Object.keys(accountState)) {
         if (!networks.find((x) => x.id === networkId)) delete accountState[networkId]
       }
+      this.emitUpdate()
     }
 
     prepareState(this.latest)
@@ -95,7 +99,10 @@ export class PortfolioController {
       portfolioProps: Partial<GetOptions>,
       forceUpdate: boolean
     ): Promise<boolean> => {
-      if (!accountState[network.id]) accountState[network.id] = { isReady: false, isLoading: false }
+      if (!accountState[network.id]) {
+        accountState[network.id] = { isReady: false, isLoading: false }
+        this.emitUpdate()
+      }
 
       const state = accountState[network.id]!
 
@@ -103,7 +110,7 @@ export class PortfolioController {
       const lastUpdateStartedAt = state.result?.updateStarted
       if (
         lastUpdateStartedAt &&
-        Date.now() - lastUpdateStartedAt <= this.minUpdateInterval &&
+        Date.now() - lastUpdateStartedAt <= this.#minUpdateInterval &&
         !forceUpdate
       )
         return false
@@ -112,6 +119,7 @@ export class PortfolioController {
       if (state.isLoading && !forceUpdate) return false
 
       state.isLoading = true
+      this.emitUpdate()
 
       try {
         const result = await portfolioLib.get(accountId, {
@@ -119,15 +127,14 @@ export class PortfolioController {
           priceCache: state.result?.priceCache,
           ...portfolioProps
         })
-
         accountState[network.id] = { isReady: true, isLoading: false, result }
-
+        this.emitUpdate()
         return true
       } catch (e: any) {
         state.isLoading = false
         if (!state.isReady) state.criticalError = e
         else state.errors = [e]
-
+        this.emitUpdate()
         return false
       }
     }
@@ -135,11 +142,11 @@ export class PortfolioController {
     await Promise.all(
       networks.map(async (network) => {
         const key = `${network.id}:${accountId}`
-        if (!this.portfolioLibs.has(key)) {
+        if (!this.#portfolioLibs.has(key)) {
           const provider = new JsonRpcProvider(network.rpcUrl)
-          this.portfolioLibs.set(key, new Portfolio(fetch, provider, network))
+          this.#portfolioLibs.set(key, new Portfolio(fetch, provider, network))
         }
-        const portfolioLib = this.portfolioLibs.get(key)!
+        const portfolioLib = this.#portfolioLibs.get(key)!
 
         const currentAccountOps = accountOps?.[network.id]
         const simulatedAccountOps = pendingState[network.id]?.accountOps
@@ -185,7 +192,7 @@ export class PortfolioController {
         // latest state was updated successful and hints were fetched successful too (no hintsError from portfolio result)
         if (isSuccessfulLatestUpdate && !accountState[network.id]!.result!.hintsError) {
           storagePreviousHints[key] = getHintsWithBalance(accountState[network.id]!.result!)
-          await this.storage.set('previousHints', storagePreviousHints)
+          await this.#storage.set('previousHints', storagePreviousHints)
         }
 
         // We cache the previously simulated AccountOps
