@@ -49,7 +49,6 @@ contract DKIMRecoverySigValidator {
 
   // we need SigMode (OnlyDKIM, OnlySecond, Both) in the identifier itself, otherwise sigs are malleable (you can front-run a modified sig to trigger the timelock)
   // Known: no cancellation because 2/2 can immediately invalidate old timelock
-  // @TODO sigMode has to go into the subject, otherwise there's a malleability 
   enum SigMode {
     Both,
     OnlyDKIM,
@@ -257,11 +256,11 @@ contract DKIMRecoverySigValidator {
       Strings.slice memory toHeader = 'to:'.toSlice().concat(accountEmailTo.toSlice()).toSlice();
       require(canonizedHeaders.toSlice().contains(toHeader), 'emailTo not valid');
 
-      // subject looks like this: subject:SigMode {uint8} Give permissions to {address}
-      Strings.slice memory newKeyString = 'subject:SigMode '.toSlice()
-        .concat(OpenZepellingStrings.toString(uint8(mode)).toSlice()).toSlice()
-        .concat(' Give permissions to '.toSlice()).toSlice()
-        .concat(OpenZepellingStrings.toHexString(newKeyToSet).toSlice()).toSlice();
+      // subject looks like this: subject:Give permissions to {address} SigMode {uint8}
+      Strings.slice memory newKeyString = 'subject:Give permissions to '.toSlice()
+        .concat(OpenZepellingStrings.toHexString(newKeyToSet).toSlice()).toSlice()
+        .concat(' SigMode '.toSlice()).toSlice()
+        .concat(OpenZepellingStrings.toString(uint8(mode)).toSlice()).toSlice();
 
       require(canonizedHeaders.toSlice().contains(newKeyString), 'emailSubject not valid');
   }

@@ -1,131 +1,86 @@
-Delivered-To: borislav.ickov@gmail.com
-Received: by 2002:ac8:44d5:0:b0:40e:3803:3d2e with SMTP id b21csp728594qto;
-        Tue, 15 Aug 2023 16:45:13 -0700 (PDT)
-X-Received: by 2002:a25:6cc2:0:b0:d62:d067:4f68 with SMTP id h185-20020a256cc2000000b00d62d0674f68mr372339ybc.23.1692143113619;
-        Tue, 15 Aug 2023 16:45:13 -0700 (PDT)
-ARC-Seal: i=1; a=rsa-sha256; t=1692143113; cv=none;
+Delivered-To: adamcrein@gmail.com
+Received: by 2002:ab3:eb41:0:b0:50b:fd35:6236 with SMTP id x1csp694150qnq;
+        Sun, 20 Aug 2023 19:03:12 -0700 (PDT)
+X-Received: by 2002:a17:90a:744b:b0:26d:227c:9068 with SMTP id o11-20020a17090a744b00b0026d227c9068mr4757477pjk.16.1692583392072;
+        Sun, 20 Aug 2023 19:03:12 -0700 (PDT)
+ARC-Seal: i=1; a=rsa-sha256; t=1692583392; cv=none;
         d=google.com; s=arc-20160816;
-        b=skp0r3fpB27HeAH3tqGyHGpbyZukjYCe7NFopxKwqatGC6pMe1Zc5CmW8CmBGpXys/
-         p3ZOi5DpkCaHyqo2g+ESEW5vDOBeqNoZIWN+oz4JqFIXdLgLHTjW/WUF60m+a7440d/E
-         RKghuIiur4myArK1Avk+bWxK1Xb92nWeLx4HPFSkie0F2iu7wfM1nNSF8QIhkibqaF/h
-         al+p3gLr8x5GyfIT4meAMjsgDH2USnXBAZYutgTdLRgeSsGO0EuyekUaMEruOHU5geFf
-         ETj/f9ed8URmNn+ocO3Uaq87dVcA0IWEAzldPAEp7YNPQDuiX7zoAWZ1qQfpO/QZkx71
-         PbCQ==
+        b=qrrL5or07YCEuciKY6fIcvCHmrMrUrTOyliECNXHeWkK32yjGN+GKTJkkz2sDLzPkz
+         aQK6Nwb5RQwgwLBzUvWLFsyW45ltgYYnjzbBKO+lrE3DfbMBDHNT6V+pOAbkXCxReNSx
+         kQeK6sNcP0Og5RoYuwLGjXc5uS+2hIPawTykHIBR9o8f0N00Ef8Shjvx5U8Scb2247YM
+         YnhtTLjTqLwAwmrDFwrsO6PoQltvenUG+KtytU8Qu4bFiL/DMrrtkVpm3dmCcX9QckKd
+         hi9oOgrR8ezOWUxWv2sTbgIzH53Que5mUP38iI7edg+4He7YcxaC5YngmEoDNbCe+vvM
+         QIxA==
 ARC-Message-Signature: i=1; a=rsa-sha256; c=relaxed/relaxed; d=google.com; s=arc-20160816;
         h=to:subject:message-id:date:from:mime-version:dkim-signature;
-        bh=AcG+qyvWHUCtOE2xgpf1BbLcHU8PsJxLaDZj/MgFgOc=;
-        fh=ev9Gihczxq+0m69vw4wDC6qb9XXRullHVgOxX2py+Yc=;
-        b=KYTEO9axdKVgbF1K0KYQX5FdZ3x2dQVS5sRZLEtdc3l3xPGJUDEdYCG617zdQb2NGj
-         6eTMDDDifp80Hczh96SxoEGhPEIIAYHeQaI2LtrprEjI+0KA03Ui21K0A66TOweR68jm
-         OWLO+R4sOMRwlLgiYmtQY6y0riBoz21ppfMUXcCntYUb0IyhH6CLRg/4VjBAQmaXwKoS
-         LRsCuOTrgwgbj/FUu01iumvny6S0bEiHGUQ5Ie2TKlZQZz5R6vrMnLkiHtot5NK0SYTL
-         YceoF7kHnyRZ/Bk8ZoHMFljjgxbcjMBKbywySKpBU0i8YY/1D7jppzhKN9HiDUabjxba
-         RTxQ==
+        bh=VWlxi7zlhiLMUcWdLKCUKmUlMbPNGIWe8bzDwFMB914=;
+        fh=pNse1CaZlwAjScf2318g0ShWztIHFnjSZwnOy5X+lQ0=;
+        b=henS3P66T5ueD1oBj+eRvonslge0swFcef6A12mV2bfjnY8ztValnKwILHlrQM5sCk
+         wipeO+xlhA+0o8QF4yQXVhSeKPup85y0XRQs0m7yXdmCXLgqLd8jGJ+eZ5J3wiHPXvRC
+         +J8UPzHamEU0y6Hk5tMfjC+EBdXVjo00QictctisBXzi6FSNu5Gfo1ZynmtmVtoWY8Kf
+         BOe2hs4t90qoSvrvgKrK50F3+LMH5l/HSasx9jGRdCRrZRsVpgau/Jw+Fk6e6NYN7P1Z
+         omwF++dzpa5u0vMUUNN0KovGz6H0x3u1tAvtWizsObGie5MbkCVWCKNN3GHwSk90+f48
+         333Q==
 ARC-Authentication-Results: i=1; mx.google.com;
-       dkim=pass header.i=@gmail.com header.s=20221208 header.b=rQDXyF6U;
-       spf=pass (google.com: domain of borislavdevlabs@gmail.com designates 209.85.220.41 as permitted sender) smtp.mailfrom=borislavdevlabs@gmail.com;
+       dkim=pass header.i=@gmail.com header.s=20221208 header.b=kp6vEDoD;
+       spf=pass (google.com: domain of tt469695@gmail.com designates 209.85.220.41 as permitted sender) smtp.mailfrom=tt469695@gmail.com;
        dmarc=pass (p=NONE sp=QUARANTINE dis=NONE) header.from=gmail.com
-Return-Path: <borislavdevlabs@gmail.com>
+Return-Path: <tt469695@gmail.com>
 Received: from mail-sor-f41.google.com (mail-sor-f41.google.com. [209.85.220.41])
-        by mx.google.com with SMTPS id o189-20020a2541c6000000b00d10b24a23e6sor5646619yba.10.2023.08.15.16.45.13
-        for <borislav.ickov@gmail.com>
+        by mx.google.com with SMTPS id i12-20020a17090a65cc00b0026d07caeaefsor3197659pjs.7.2023.08.20.19.03.11
+        for <adamcrein@gmail.com>
         (Google Transport Security);
-        Tue, 15 Aug 2023 16:45:13 -0700 (PDT)
-Received-SPF: pass (google.com: domain of borislavdevlabs@gmail.com designates 209.85.220.41 as permitted sender) client-ip=209.85.220.41;
+        Sun, 20 Aug 2023 19:03:12 -0700 (PDT)
+Received-SPF: pass (google.com: domain of tt469695@gmail.com designates 209.85.220.41 as permitted sender) client-ip=209.85.220.41;
 Authentication-Results: mx.google.com;
-       dkim=pass header.i=@gmail.com header.s=20221208 header.b=rQDXyF6U;
-       spf=pass (google.com: domain of borislavdevlabs@gmail.com designates 209.85.220.41 as permitted sender) smtp.mailfrom=borislavdevlabs@gmail.com;
+       dkim=pass header.i=@gmail.com header.s=20221208 header.b=kp6vEDoD;
+       spf=pass (google.com: domain of tt469695@gmail.com designates 209.85.220.41 as permitted sender) smtp.mailfrom=tt469695@gmail.com;
        dmarc=pass (p=NONE sp=QUARANTINE dis=NONE) header.from=gmail.com
 DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
-        d=gmail.com; s=20221208; t=1692143113; x=1692747913;
+        d=gmail.com; s=20221208; t=1692583391; x=1693188191;
         h=to:subject:message-id:date:from:mime-version:from:to:cc:subject
          :date:message-id:reply-to;
-        bh=AcG+qyvWHUCtOE2xgpf1BbLcHU8PsJxLaDZj/MgFgOc=;
-        b=rQDXyF6U2EQ/NJsWLTcXNxWtxM3Xa2zl0LntZ+9cbKeGYbqopktGo2yyq3+gh7KI2p
-         kKMta4ylDTl/YVgGx9WncTdLJTWyP0luenZ14AUI74XdcHrncDVJywBsJ1gtMhxje07C
-         MUbAPMAp6iid58aeI+8Ou95InNHYtaYzwFy1sVDIgUsFXqdzBQglKGq921ngXf5SUkKZ
-         I2f/2vEk8fiKAHAQsAtDJUJIgVErHtPbT8EXmhEywWAMnhhLtv6SbBvZclAWqFbhktk7
-         P+1B7oM7i44YIFin3FLu7SGeuE11tEtzVDdfK21A8CatNhjf5MVXBscUIG/QrehOY3/a
-         G9ng==
+        bh=VWlxi7zlhiLMUcWdLKCUKmUlMbPNGIWe8bzDwFMB914=;
+        b=kp6vEDoD47r4WnDlixt8+58b1A8ogOnbAMQn7KvBwRzOzo9tS84eIoDaG5fKX+gt0p
+         H9Xm9DHYnJJw2sp4hbhqA/0rkBdVq5ZhEWLtNiY3+qWKywfhOs/QdeD+TkBga+0o4C1A
+         ys4R5cMVa7ZaVwjGQURNhYDGyDq1XdlX2LCAAH2HKU3UVanM55BnO9xem2MeIzfrzN1f
+         Yo98PCIigufAu/mbMmFVvFIUMBnc8HUV872BpZZhcSAS/ntJRvispj2rqTB57CR+olqO
+         Re+ufvi8Q+unYSzgTHLnBjQ8LlwnIrI8T//XiKbHIJ/n7PWz7fbfMiIRNaXsP2GcpnHX
+         uJ8g==
 X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
-        d=1e100.net; s=20221208; t=1692143113; x=1692747913;
+        d=1e100.net; s=20221208; t=1692583391; x=1693188191;
         h=to:subject:message-id:date:from:mime-version:x-gm-message-state
          :from:to:cc:subject:date:message-id:reply-to;
-        bh=AcG+qyvWHUCtOE2xgpf1BbLcHU8PsJxLaDZj/MgFgOc=;
-        b=IR4XVv6s3YKi8I+bD/6c4dSL6KcLM19V4ekv04/cHvFeBM1ewr+R8Sg4mIrhRRkmKR
-         G0PLZrqJCzJVaJ70wpZbOCIYSAYj5FxoF4mjeiztwQGZkkIyXf/n5UJTo9BX+sWaP0sr
-         /gtxWEOlA91BNTX3kdRYN0kgvbic77soOTGy/hV8xwC//sKxmB5WcXgIt+43sgbpgadL
-         AkSeL/jMZ306IqKR13Itxr6U2pNUYMaObRbv1/O3BFJPU7jSpdwkEzg3Sl4+t0uV4v/D
-         kEy4MUtRBzJYepJjhgpu+7wg6Htgy3HumZ04ZzHse/IBU6MAOP5bs8uh8bOWSPXD5epW
-         Ahbw==
-X-Gm-Message-State: AOJu0Yxo3If+m1S28vbq1YMeHbWlgaP6pgCP4g48WxvST0zFoMSODlCw
-	pdzB/pI3NMEjuMmufzXSGoSL2AXVNG3PGz0Ap6/eBkKVAEhJZw==
-X-Google-Smtp-Source: AGHT+IFs0EObAPX0q+Xk8KxkHK5ooT5qKwnny2AFcN+Ok82Q6DdtNTcb/G6oazZQ8kK/JbxS9nI9noDUl6wGcGE/aJA=
-X-Received: by 2002:a25:d0c3:0:b0:d43:a84f:a6aa with SMTP id
- h186-20020a25d0c3000000b00d43a84fa6aamr347372ybg.39.1692143113030; Tue, 15
- Aug 2023 16:45:13 -0700 (PDT)
+        bh=VWlxi7zlhiLMUcWdLKCUKmUlMbPNGIWe8bzDwFMB914=;
+        b=NkXM7t6Q4ZRTSv5u+rx6YlngfAP+nrlycThsqBhVHoi5odnVB9Y2Q0YPyYDwbzpFaX
+         mQVVqOrGbvuq1YlZtZi9EhhCIsDsmFq4ia8jc45vjFkwJ3tBPBCb4okEDFSqhULums6+
+         AE3h791MdvsiYiU7xbM10sCVB/8JANKTZtiZxe3yRvx1clvKN2xuaRe92waGmAUeJyhb
+         +dY8DhiPXpnAqdBCFkcFoAkBcJHKdDCV1RAZje5A4VA66INX2vrchuU/TvhXO6bKH0nt
+         FeeSBkX8x4FQe1GwTDHedJfkP4zLc+Zisq/LsZ4cmeApDAz0Xyfox2FO137gK02eK7Wd
+         N8SA==
+X-Gm-Message-State: AOJu0YyL4KjVSVMMbO+4sLGxuwwb9KoOM2jq1DYhYG6liTMscupczgeA
+	/g9cRwa7jRfbrjhOBZp0cOSJjpdVYAm40RX5K2ZdP7D4mt1nUQ==
+X-Google-Smtp-Source: AGHT+IGbAllpQfoYSkJB8TDcu/WgqNKtxmVlKxbL+y+Pr66a11pugsh42iH6IvqGxww2p1Ee4sSU6k0nsKWuU7I6GEo=
+X-Received: by 2002:a17:90a:eb09:b0:262:f06d:c0fc with SMTP id
+ j9-20020a17090aeb0900b00262f06dc0fcmr4597708pjz.7.1692583391581; Sun, 20 Aug
+ 2023 19:03:11 -0700 (PDT)
 MIME-Version: 1.0
-From: Borislav Itskov <borislavdevlabs@gmail.com>
-Date: Wed, 16 Aug 2023 02:45:02 +0300
-Message-ID: <CAB1sa=2t+4kkPDc-FE6k4qFTncxk4fezzdTJKRAEGEJci1HUjQ@mail.gmail.com>
-Subject: SigMode 1 Give permissions to 0x70997970c51812dc3a010c7d01b50e0d17dc79c8
-To: borislav.ickov@gmail.com
-Content-Type: multipart/alternative; boundary="000000000000294f530602fec5a9"
+From: test testov <tt469695@gmail.com>
+Date: Mon, 21 Aug 2023 05:03:00 +0300
+Message-ID: <CAKXuq_USZ-OZr1gCkn30u3btZ-5wTcZsC-AwJFFn=GJ+qTy7dg@mail.gmail.com>
+Subject: Give permissions to 0x70997970c51812dc3a010c7d01b50e0d17dc79c8
+ SigMode 1
+To: adamcrein@gmail.com
+Content-Type: multipart/alternative; boundary="000000000000cedb8d06036547af"
 
---000000000000294f530602fec5a9
+--000000000000cedb8d06036547af
 Content-Type: text/plain; charset="UTF-8"
 
-SigMode 1 Give permissions to 0x70997970c51812dc3a010c7d01b50e0d17dc79c8
+Give permissions to 0x70997970c51812dc3a010c7d01b50e0d17dc79c8 SigMode 1
 
--- 
-https://devlabs.bg/logo-for-email-template.png
-https://devlabs.bg/logo-for-email-template.png
-https://devlabs.bg/logo-for-email-template.png
-Borislav Itskov
-Back-end developer
-borislav@devlabs.bg
-
---000000000000294f530602fec5a9
+--000000000000cedb8d06036547af
 Content-Type: text/html; charset="UTF-8"
-Content-Transfer-Encoding: quoted-printable
 
-<div dir=3D"ltr"><div class=3D"gmail_default" style=3D"font-family:trebuche=
-t ms,sans-serif"><span style=3D"color:rgb(31,31,31);font-family:&quot;Googl=
-e Sans&quot;,Roboto,RobotoDraft,Helvetica,Arial,sans-serif;font-size:22px;f=
-ont-variant-ligatures:no-contextual">SigMode 1 Give permissions to 0x709979=
-70c51812dc3a010c7d01b50e0d17dc79c8</span><br clear=3D"all"></div><div><br><=
-/div><span class=3D"gmail_signature_prefix">-- </span><br><div dir=3D"ltr" =
-class=3D"gmail_signature" data-smartmail=3D"gmail_signature"><div dir=3D"lt=
-r"><div><div dir=3D"ltr"><div><div dir=3D"ltr"><div><div dir=3D"ltr"><div><=
-div dir=3D"ltr"><div><div dir=3D"ltr"><div style=3D"font-size:12.8px"><tabl=
-e border=3D"0" cellpadding=3D"0" cellspacing=3D"0" style=3D"text-align:left=
-;border-collapse:collapse;color:rgb(0,0,0);font-family:&quot;Times New Roma=
-n&quot;;font-size:medium;width:600px"><tbody><tr><td style=3D"border-collap=
-se:collapse;direction:ltr;font-size:0px;padding:20px 0px;text-align:center"=
-><div style=3D"max-width:100%;width:600px;text-align:left;direction:ltr;dis=
-play:inline-block;vertical-align:top"><table border=3D"0" cellpadding=3D"0"=
- cellspacing=3D"0" width=3D"100%" style=3D"border-collapse:collapse;vertica=
-l-align:top"><tbody><tr><td style=3D"border-collapse:collapse;padding:0px 0=
-px 13px;word-break:break-word;text-align:left"><table border=3D"0" cellpadd=
-ing=3D"0" cellspacing=3D"0" style=3D"border-collapse:collapse;border-spacin=
-g:0px"><tbody><tr><td style=3D"border-collapse:collapse;width:93px"></td></=
-tr></tbody></table><a href=3D"https://devlabs.bg/logo-for-email-template.pn=
-g" target=3D"_blank">https://devlabs.bg/logo-for-email-template.png</a><a h=
-ref=3D"https://devlabs.bg/logo-for-email-template.png" target=3D"_blank">ht=
-tps://devlabs.bg/logo-for-email-template.png</a><a href=3D"https://devlabs.=
-bg/logo-for-email-template.png" target=3D"_blank">https://devlabs.bg/logo-f=
-or-email-template.png</a><br></td></tr><tr><td style=3D"border-collapse:col=
-lapse;padding:0px 0px 10px;word-break:break-word;text-align:left"><div styl=
-e=3D"font-family:Ubuntu,Helvetica,Arial,sans-serif;font-size:18px;font-weig=
-ht:700;letter-spacing:0px;line-height:1;color:rgb(15,53,68)">Borislav Itsko=
-v<div style=3D"font-size:12px;color:rgba(15,53,68,0.4);margin-top:5px">Back=
--end developer</div></div></td></tr><tr><td style=3D"border-collapse:collap=
-se;padding:0px;word-break:break-word;text-align:left"><div style=3D"font-fa=
-mily:Ubuntu,Helvetica,Arial,sans-serif;font-size:14px;font-weight:600;lette=
-r-spacing:0px;line-height:1;color:rgb(15,53,68)"><a href=3D"mailto:borislav=
-@devlabs.bg" style=3D"color:rgb(15,53,68)" target=3D"_blank">borislav@devla=
-bs.bg</a></div></td></tr></tbody></table></div></td></tr></tbody></table></=
-div></div></div></div></div></div></div></div></div></div></div></div></div=
-></div>
+<div dir="ltr">Give permissions to 0x70997970c51812dc3a010c7d01b50e0d17dc79c8 SigMode 1<br></div>
 
---000000000000294f530602fec5a9--
+--000000000000cedb8d06036547af--

@@ -988,11 +988,11 @@ describe('DKIM sigMode Both with acceptUnknownSelectors true', function () {
       encoding: 'ascii'
     })
     const parsedContents: any = await parseEmail(gmail)
-    const youtube = await readFile(path.join(emailsPath, 'youtube.eml'), {
+    const riotEmail = await readFile(path.join(emailsPath, 'riot-games.eml'), {
       encoding: 'ascii'
     })
-    const youtubeParsedContents: any = await parseEmail(youtube)
-    const youtubeSig = youtubeParsedContents[0].solidity.signature
+    const riotEmailParsedContents: any = await parseEmail(riotEmail)
+    const riotEmailSig = riotEmailParsedContents[0].solidity.signature
 
     const validatorData = getDKIMValidatorData(parsedContents, relayer, {
       acceptUnknownSelectors: true
@@ -1015,7 +1015,7 @@ describe('DKIM sigMode Both with acceptUnknownSelectors true', function () {
     ]
     const innerSig = abiCoder.encode([sigMetaTuple, 'bytes', 'bytes'], [
       sigMetaValues,
-      youtubeSig,
+      riotEmailSig,
       ethers.toBeHex(0, 1)
     ])
     const sig = abiCoder.encode(['address', 'address', 'bytes', 'bytes'], [signerKey, validatorAddr, validatorData, innerSig])

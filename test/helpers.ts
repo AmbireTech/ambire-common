@@ -45,8 +45,8 @@ function getDKIMValidatorData(
   const acceptEmptyDKIMSig = options.acceptEmptyDKIMSig ?? false
   const onlyOneSigTimelock = options.onlyOneSigTimelock ?? 0
   const acceptUnknownSelectors = options.acceptUnknownSelectors ?? false
-  const emailFrom = options.emailFrom ?? 'borislavdevlabs@gmail.com'
-  const emailTo = options.emailTo ?? 'borislav.ickov@gmail.com'
+  const emailFrom = options.emailFrom ?? 'tt469695@gmail.com'
+  const emailTo = options.emailTo ?? 'adamcrein@gmail.com'
   const selector = options.selector ?? `${parsedContents[0].selector}._domainkey.gmail.com`
 
   return abiCoder.encode([
