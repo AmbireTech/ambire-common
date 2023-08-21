@@ -361,15 +361,9 @@ export class AccountAdderController extends EventEmitter {
     }[]
   > {
     if (!this.isInitialized) {
-      this.emitError({
-        level: 'major',
-        message:
-          'Something went wrong with calculating the accounts. Please start the process again. If the problem persists, contact support.',
-        error: new Error(
-          'accountAdder: requested method `#calculateAccounts`, but the AccountAdder is not initialized'
-        )
-      })
-      return []
+      throw new Error(
+        'accountAdder: requested method `#calculateAccounts`, but the AccountAdder is not initialized'
+      )
     }
 
     if (!this.#keyIterator) {
@@ -484,6 +478,8 @@ export class AccountAdderController extends EventEmitter {
     networks: NetworkDescriptor[]
     providers: { [key: string]: JsonRpcProvider }
   }) {
+    if (accounts.length === 0) return
+
     this.linkedAccountsLoading = true
     this.emitUpdate()
 
