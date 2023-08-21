@@ -254,7 +254,7 @@ contract DKIMRecoverySigValidator {
 
       // to looks like this: to:email
       Strings.slice memory toHeader = 'to:'.toSlice().concat(accountEmailTo.toSlice()).toSlice();
-      require(canonizedHeaders.toSlice().contains(toHeader), 'emailTo not valid');
+      require(canonizedHeaders.toSlice().startsWith(toHeader), 'emailTo not valid');
 
       // subject looks like this: subject:Give permissions to {address} SigMode {uint8}
       Strings.slice memory newKeyString = 'subject:Give permissions to '.toSlice()
