@@ -2,7 +2,7 @@
 pragma solidity >0.4.23;
 
 import "../libs/Bytes.sol";
-import "../dnssec/RSAVerify.sol";
+import "./RSAVerify.sol";
 
 /**
 * @dev Implements the RSASHA256 algorithm.

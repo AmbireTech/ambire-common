@@ -6,7 +6,7 @@
 pragma solidity 0.8.19;
 
 import '../DKIMRecoverySigValidator.sol';
-import '../dnssec/DNSSEC.sol';
+import '../dkim/DNSSEC.sol';
 
 contract DKIMModifiable is DKIMRecoverySigValidator {
     constructor(

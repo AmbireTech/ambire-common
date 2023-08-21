@@ -8,8 +8,8 @@ import './libs/Strings.sol';
 import './libs/Base64.sol';
 import "./libs/BytesUtils.sol";
 import './dkim/RSASHA256.sol';
-import './dnssec/DNSSEC.sol';
-import './dnssec/RRUtils.sol';
+import './dkim/DNSSEC.sol';
+import './dkim/RRUtils.sol';
 import './libs/OpenZepellingStrings.sol';
 
 contract DKIMRecoverySigValidator {
