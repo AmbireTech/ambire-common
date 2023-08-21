@@ -8,6 +8,7 @@ import { oneInchHumanizer } from './modules/oneInch'
 import { IrCall, Ir, HumanizerFragment } from './interfaces'
 import { shortenAddress, getAction, getLable, getToken, getAddress } from './utils'
 import { aaveHumanizer } from './modules/Aave'
+import { WALLETModule } from './modules/WALLET'
 
 // @TODO humanize signed messages
 // @TODO change all console.logs to throw errs
@@ -164,6 +165,7 @@ export function humanize(
     wethHumanizer,
     aaveHumanizer,
     oneInchHumanizer,
+    WALLETModule,
     fallbackHumanizer,
     namingHumanizer
   ]

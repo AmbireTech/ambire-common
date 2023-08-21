@@ -101,7 +101,9 @@ const transactions = {
       value: 0n,
       data: '0x80500d200000000000000000000000007d2768de32b0b80b7a3454c06bdac94a69ddc7a9000000000000000000000000000000000000000000000000000000001c378a430000000000000000000000000df1a69fcdf15fec04e37aa5eca4268927b111e7'
     }
-  ]
+  ],
+  // @TODO add proper example calls
+  WALLET: []
 }
 
 describe('module tests', () => {
@@ -264,5 +266,17 @@ describe('module tests', () => {
         expect(v).toMatchObject(expectedhumanization[i][j])
       )
     )
+  })
+  test('WALLET', () => {
+    // const expectedhumanization = []
+    accountOp.calls = [...transactions.WALLET]
+    let ir: Ir = callsToIr(accountOp)
+    ;[ir] = aaveHumanizer(accountOp, ir)
+    // ir.calls.forEach((c, i) =>
+    //   c.fullVisualization.forEach((v: any, j: number) =>
+    //     expect(v).toMatchObject(expectedhumanization[i][j])
+    //   )
+    // )
+    ir.calls.forEach((call) => console.log(call.fullVisualization))
   })
 })
