@@ -1,5 +1,7 @@
-import { AccountOp } from '../accountOp/accountOp'
+import { NetworkId } from 'interfaces/networkDescriptor'
+
 import { Account } from '../../interfaces/account'
+import { AccountOp } from '../accountOp/accountOp'
 
 export interface Price {
   baseCurrency: string
@@ -20,6 +22,7 @@ export interface TokenResult {
   address: string
   symbol: string
   amount: bigint
+  network: NetworkId
   amountPostSimulation?: bigint
   decimals: number
   priceIn: Price[]
