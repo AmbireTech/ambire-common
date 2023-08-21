@@ -6,7 +6,9 @@ export class KeystoreController extends EventEmitter {
 
   isReadyToStoreKeys: boolean = false
 
-  status: 'INITIAL' | 'LOADING' | 'DONE' = 'INITIAL'
+  status: 'INITIAL' | 'LOADING' | 'ERROR' | 'DONE' = 'INITIAL'
+
+  errorMessage: string = ''
 
   latestMethodCall: string | null = null
 
@@ -79,14 +81,22 @@ export class KeystoreController extends EventEmitter {
   async wrapKeystoreAction(callName: string, fn: Function) {
     if (this.status !== 'INITIAL') return
     this.latestMethodCall = callName
+    this.errorMessage = ''
 
     this.status = 'LOADING'
     this.emitUpdate()
     try {
       await fn()
-    } catch (error) {
-      console.log(error)
-      // TODO: handle here by emitting the error
+    } catch (error: any) {
+      if (this.latestMethodCall === 'unlockWithSecret') {
+        this.errorMessage = 'Invalid Key Store passphrase.'
+      } else {
+        this.emitError({
+          message: 'Keystore unexpected error. If the problem persists, please contact support.',
+          level: 'major',
+          error
+        })
+      }
     }
     this.status = 'DONE'
     this.emitUpdate()
