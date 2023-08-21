@@ -88,7 +88,7 @@ export class KeystoreController extends EventEmitter {
     try {
       await fn()
     } catch (error: any) {
-      if (this.latestMethodCall === 'unlockWithSecret') {
+      if (error?.message === 'keystore: wrong secret') {
         this.errorMessage = 'Invalid Key Store passphrase.'
       } else {
         this.emitError({
