@@ -262,7 +262,13 @@ contract DKIMRecoverySigValidator {
         .concat(' SigMode '.toSlice()).toSlice()
         .concat(OpenZepellingStrings.toString(uint8(mode)).toSlice()).toSlice();
 
-      require(canonizedHeaders.toSlice().contains(newKeyString), 'emailSubject not valid');
+      // a bit of magic here
+      // when using split this way, if it finds newKeyString, it returns
+      // everything before it as subject. If it does not find it,
+      // subject is set to canonizedHeaders. So we check whether subject
+      // is equal to canonizedHeaders. If it is, the subject has not been found
+      Strings.slice memory subject = canonizedHeaders.toSlice().split(newKeyString);
+      require(!subject.equals(canonizedHeaders.toSlice()), 'emailSubject not valid');
   }
 
   //
