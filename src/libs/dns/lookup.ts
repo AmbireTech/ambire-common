@@ -1,24 +1,29 @@
 const { DNSProver } = require('@ensdomains/dnsprovejs')
 
-export default async function lookup(selector: string, domain: string): Promise<any> {
-  const textDomain = `${selector}._domainKey.${domain}`
-  const prover = DNSProver.create('https://cloudflare-dns.com/dns-query')
-  try {
-    const res = await prover.queryWithProof('TXT', textDomain)
-    return new Promise(resolve => resolve(res))
-  } catch (error: any) {
-    return new Promise(resolve => resolve(null))
-  }
+interface Options {
+  apiProvider?: string // cloudflare or another DNS api provider
 }
 
-export async function getTxtRecord(selector: string, domain: string): Promise<any> {
+/**
+ * The method returns a SignedSet answer if found or throws an exception
+ * if it could not verify it. So in the case of NoValidDnskeyError, we
+ * silently return null to indicate that no SignedSet exists for this record.
+ * If the error is of a different kind, we throw it.
+ *
+ * @param selector string "20221208" from example 20221208._domainkey.gmail.com
+ * @param domain string "gmail.com" from example 20221208._domainkey.gmail.com
+ * @param opt: Options
+ * @returns {answer: SignedSet, proofs: [SignedSet,SignedSet,...]}
+ */
+export default async function lookup(selector: string, domain: string, opt: Options = {}): Promise<any> {
+  const provider = opt.apiProvider ?? 'https://cloudflare-dns.com/dns-query'
   const textDomain = `${selector}._domainKey.${domain}`
-  const prover = DNSProver.create('https://cloudflare-dns.com/dns-query')
-  const res = await prover.queryWithProof('TXT', textDomain)
+  const prover = DNSProver.create(provider)
   try {
-    const res = await prover.query('TXT', textDomain)
-    return new Promise(resolve => resolve(res))
+    const res = await prover.queryWithProof('TXT', textDomain)
+    return res
   } catch (error: any) {
-    return new Promise(resolve => resolve(null))
+    if (error.name == 'NoValidDnskeyError') return null
+    throw new Error(error.message)
   }
 }
