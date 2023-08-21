@@ -23,6 +23,7 @@ export interface AccountCreation {
 export interface AccountOnchainState {
   accountAddr: string
   isDeployed: boolean
+  // this is a number and not a bigint because of ethers (it uses number for nonces)
   nonce: number
   associatedKeysPriviliges: { [key: string]: string }
   deployError: boolean
