@@ -22,7 +22,7 @@ export interface TokenResult {
   address: string
   symbol: string
   amount: bigint
-  network: NetworkId
+  networkId: NetworkId
   amountPostSimulation?: bigint
   decimals: number
   priceIn: Price[]

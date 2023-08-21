@@ -34,7 +34,7 @@ export async function getNFTs(
   const mapToken = (token: any) => {
     return {
       name: token.name,
-      network: network.id,
+      networkId: network.id,
       symbol: token.symbol,
       amount: BigInt(token.nfts.length),
       decimals: 1,
@@ -104,7 +104,7 @@ export async function getTokens(
   const mapToken = (token: any, address: string) =>
     ({
       amount: token.amount,
-      network: network.id,
+      networkId: network.id,
       decimals: new Number(token.decimals),
       symbol:
         address === '0x0000000000000000000000000000000000000000'
