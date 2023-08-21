@@ -42,6 +42,7 @@ export interface AccountOp {
   // this may not be defined, in case the user has not picked a key yet
   signingKeyAddr: string | null
   // this may not be set in case we haven't set it yet
+  // this is a number and not a bigint because of ethers (it uses number for nonces)
   nonce: number | null
   // @TODO: nonce namespace? it is dependent on gasFeePayment
   calls: Call[]

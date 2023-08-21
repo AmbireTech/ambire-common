@@ -52,11 +52,7 @@ export class AccountAdderController extends EventEmitter {
 
   // Identity for the smart accounts must be created on the Relayer, this
   // represents the status of the operation, needed managing UI state
-  addAccountsStatus:
-    | { type: 'PENDING' }
-    | { type: 'SUCCESS' }
-    | { type: 'ERROR'; message: string }
-    | { type: 'INITIAL' } = { type: 'INITIAL' }
+  addAccountsStatus: 'LOADING' | 'SUCCESS' | 'INITIAL' = 'INITIAL'
 
   accountsLoading: boolean = false
 
@@ -194,7 +190,7 @@ export class AccountAdderController extends EventEmitter {
     this.pageSize = PAGE_SIZE
     this.derivationPath = undefined
 
-    this.addAccountsStatus = { type: 'INITIAL' }
+    this.addAccountsStatus = 'INITIAL'
     this.readyToAddAccounts = []
     this.isInitialized = false
 
@@ -230,9 +226,17 @@ export class AccountAdderController extends EventEmitter {
       this.selectedAccounts = this.selectedAccounts.filter((_, i) => i !== accIdx)
       this.emitUpdate()
     } else if (accPreselectedIdx !== -1) {
-      throw new Error('accountAdder: a preselected account cannot be deselected')
+      return this.emitError({
+        level: 'major',
+        message: 'This account cannot be deselected. Please reload and try again.',
+        error: new Error('accountAdder: a preselected account cannot be deselected')
+      })
     } else {
-      throw new Error('accountAdder: account not found. Cannot deselect.')
+      return this.emitError({
+        level: 'major',
+        message: 'This account cannot be deselected. Please reload and try again.',
+        error: new Error('accountAdder: account not found. Cannot deselect.')
+      })
     }
   }
 
@@ -246,8 +250,14 @@ export class AccountAdderController extends EventEmitter {
     providers: { [key: string]: JsonRpcProvider }
   }): Promise<void> {
     if (page <= 0) {
-      throw new Error('accountAdder: page must be a positive number')
+      return this.emitError({
+        level: 'major',
+        message:
+          'Something went wrong with calculating the accounts. Please reload and try again. If the problem persists, contact support.',
+        error: new Error('accountAdder: page must be a positive number')
+      })
     }
+
     this.page = page
     this.#calculatedAccounts = []
     this.#linkedAccounts = []
@@ -268,13 +278,28 @@ export class AccountAdderController extends EventEmitter {
 
   async addAccounts(accounts: Account[] = []) {
     if (!this.isInitialized) {
-      // TODO: Handle the error in a way that the foreground process can catch it
-      throw new Error('Requested method `addAccounts`, but the AccountAdder is not initialized')
+      return this.emitError({
+        level: 'major',
+        message:
+          'Something went wrong with calculating the accounts. Please start the process again. If the problem persists, contact support.',
+        error: new Error(
+          'accountAdder: requested method `addAccounts`, but the AccountAdder is not initialized'
+        )
+      })
     }
 
-    if (!accounts.length) return
+    if (!accounts.length) {
+      return this.emitError({
+        level: 'minor',
+        message:
+          'Trying to add accounts, but no accounts are selected. Please select at least one account.',
+        error: new Error(
+          'accountAdder: requested method `addAccounts`, but the accounts param is empty'
+        )
+      })
+    }
 
-    this.addAccountsStatus = { type: 'PENDING' }
+    this.addAccountsStatus = 'LOADING'
     this.emitUpdate()
 
     const accountsToAddOnRelayer = accounts
@@ -298,20 +323,27 @@ export class AccountAdderController extends EventEmitter {
           accounts: body
         })
 
-        if (!res.success)
-          throw new Error(
-            res?.message ||
-              'Error when adding accounts on the Ambire Relayer. Please try again later or contact support if the problem persists.'
-          )
+        if (!res.success) {
+          throw new Error(res?.message || 'No response received from the Ambire Relayer.')
+        }
       } catch (e: any) {
-        this.addAccountsStatus = { type: 'ERROR', message: e?.message }
+        this.emitError({
+          level: 'major',
+          message:
+            'Error when adding accounts on the Ambire Relayer. Please try again later or contact support if the problem persists.',
+          error: new Error(e?.message)
+        })
+
+        this.addAccountsStatus = 'INITIAL'
         this.emitUpdate()
         return
       }
     }
 
     this.readyToAddAccounts = [...accounts]
-    this.addAccountsStatus = { type: 'SUCCESS' }
+    this.addAccountsStatus = 'SUCCESS'
+    this.emitUpdate()
+    this.addAccountsStatus = 'INITIAL'
     this.emitUpdate()
   }
 
@@ -329,15 +361,21 @@ export class AccountAdderController extends EventEmitter {
     }[]
   > {
     if (!this.isInitialized) {
-      // TODO: Handle the error in a way that the foreground process can catch it
       throw new Error(
-        'Requested method `#calculateAccounts`, but the AccountAdder is not initialized'
+        'accountAdder: requested method `#calculateAccounts`, but the AccountAdder is not initialized'
       )
     }
 
     if (!this.#keyIterator) {
-      // TODO: Handle the error in a way that the foreground process can catch it
-      throw new Error('Requested method `#calculateAccounts`, but keyIterator is not initialized')
+      this.emitError({
+        level: 'major',
+        message:
+          'Something went wrong with calculating the accounts. Please start the process again. If the problem persists, contact support.',
+        error: new Error(
+          'accountAdder: requested method `#calculateAccounts`, but keyIterator is not initialized'
+        )
+      })
+      return []
     }
 
     const accounts: { account: Account; isLinked: boolean; slot: number }[] = []
@@ -440,6 +478,8 @@ export class AccountAdderController extends EventEmitter {
     networks: NetworkDescriptor[]
     providers: { [key: string]: JsonRpcProvider }
   }) {
+    if (accounts.length === 0) return
+
     this.linkedAccountsLoading = true
     this.emitUpdate()
 

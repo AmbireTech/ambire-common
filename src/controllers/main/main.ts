@@ -7,7 +7,7 @@ import { Storage } from '../../interfaces/storage'
 import { SignedMessage, UserRequest } from '../../interfaces/userRequest'
 import { AccountOp, Call as AccountOpCall } from '../../libs/accountOp/accountOp'
 import { getAccountState } from '../../libs/accountState/accountState'
-import { estimate } from '../../libs/estimate/estimate'
+import { estimate, EstimateResult } from '../../libs/estimate/estimate'
 import { Key, Keystore } from '../../libs/keystore/keystore'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { AccountAdderController } from '../accountAdder/accountAdder'
@@ -64,9 +64,13 @@ export class MainController extends EventEmitter {
   // The reason we use a map structure and not a flat array is:
   // 1) it's easier in the UI to deal with structured data rather than having to .find/.filter/etc. all the time
   // 2) it's easier to mutate this - to add/remove accountOps, to find the right accountOp to extend, etc.
-  // accountAddr => networkId => accountOp
+  // accountAddr => networkId => { accountOp, estimation }
   // @TODO consider getting rid of the `| null` ugliness, but then we need to auto-delete
-  accountOpsToBeSigned: { [key: string]: { [key: string]: AccountOp | null } } = {}
+  accountOpsToBeSigned: {
+    [key: string]: {
+      [key: string]: { accountOp: AccountOp; estimation: EstimateResult | null } | null
+    }
+  } = {}
 
   accountOpsToBeConfirmed: { [key: string]: { [key: string]: AccountOp } } = {}
 
@@ -107,7 +111,7 @@ export class MainController extends EventEmitter {
     const addReadyToAddAccountsIfNeeded = () => {
       if (
         !this.accountAdder.readyToAddAccounts.length &&
-        this.accountAdder.addAccountsStatus.type !== 'SUCCESS'
+        this.accountAdder.addAccountsStatus !== 'SUCCESS'
       )
         return
 
@@ -193,7 +197,6 @@ export class MainController extends EventEmitter {
     const account = this.accounts.find((x) => x.addr === accountAddr)
     if (!account)
       throw new Error(`getAccountOp: tried to run for non-existant account ${accountAddr}`)
-    // @TODO consider bringing back functional style if we can figure out how not to trip up the TS compiler
     // Note: we use reduce instead of filter/map so that the compiler can deduce that we're checking .kind
     const calls = this.userRequests.reduce((uCalls: AccountOpCall[], req) => {
       // only the first one for EOAs
@@ -212,7 +215,7 @@ export class MainController extends EventEmitter {
 
     if (!calls.length) return null
 
-    const currentAccountOp = this.accountOpsToBeSigned[accountAddr][networkId]
+    const currentAccountOp = this.accountOpsToBeSigned[accountAddr][networkId]?.accountOp
     return {
       accountAddr,
       networkId,
@@ -246,12 +249,14 @@ export class MainController extends EventEmitter {
       // @TODO consider re-using this whole block in removeUserRequest
       await this.ensureAccountInfo(accountAddr, networkId)
       const accountOp = this.getAccountOp(accountAddr, networkId)
-      this.accountOpsToBeSigned[accountAddr][networkId] = accountOp
-      try {
-        if (accountOp) await this.estimateAccountOp(accountOp)
-      } catch (e) {
-        // @TODO: unified wrapper for controller errors
-        console.error(e)
+      if (accountOp) {
+        this.accountOpsToBeSigned[accountAddr][networkId] = { accountOp, estimation: null }
+        try {
+          await this.estimateAccountOp(accountOp)
+        } catch (e) {
+          // @TODO: unified wrapper for controller errors
+          console.error(e)
+        }
       }
     } else {
       if (!this.messagesToBeSigned[accountAddr]) this.messagesToBeSigned[accountAddr] = []
@@ -262,7 +267,7 @@ export class MainController extends EventEmitter {
         signature: null
       })
     }
-    // @TODO emit update
+    this.emitUpdate()
   }
 
   lock() {
@@ -287,7 +292,9 @@ export class MainController extends EventEmitter {
     const { action, accountAddr, networkId } = req
     if (action.kind === 'call') {
       // @TODO ensure acc info, re-estimate
-      this.accountOpsToBeSigned[accountAddr][networkId] = this.getAccountOp(accountAddr, networkId)
+      const accountOp = this.getAccountOp(accountAddr, networkId)
+      if (accountOp)
+        this.accountOpsToBeSigned[accountAddr][networkId] = { accountOp, estimation: null }
     } else
       this.messagesToBeSigned[accountAddr] = this.messagesToBeSigned[accountAddr].filter(
         (x) => x.fromUserRequestId !== id
@@ -322,7 +329,7 @@ export class MainController extends EventEmitter {
         Object.fromEntries(
           Object.entries(this.accountOpsToBeSigned[accountOp.accountAddr])
             .filter(([, accOp]) => accOp)
-            .map(([networkId, accOp]) => [networkId, [accOp!]])
+            .map(([networkId, x]) => [networkId, [x!.accountOp]])
         )
       ),
       // @TODO nativeToCheck: pass all EOAs,
@@ -330,6 +337,7 @@ export class MainController extends EventEmitter {
       estimate(this.providers[accountOp.networkId], network, account, accountOp, [], [])
       // @TODO refresh the estimation
     ])
+    this.accountOpsToBeSigned[accountOp.accountAddr][accountOp.networkId]!.estimation = estimation
     console.log(estimation)
   }
 
