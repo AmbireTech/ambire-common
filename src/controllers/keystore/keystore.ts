@@ -82,7 +82,6 @@ export class KeystoreController extends EventEmitter {
     if (this.status !== 'INITIAL') return
     this.latestMethodCall = callName
     this.errorMessage = ''
-
     this.status = 'LOADING'
     this.emitUpdate()
     try {
@@ -101,6 +100,11 @@ export class KeystoreController extends EventEmitter {
     this.status = 'DONE'
     this.emitUpdate()
     this.status = 'INITIAL'
+    this.emitUpdate()
+  }
+
+  resetErrorState() {
+    this.errorMessage = ''
     this.emitUpdate()
   }
 
