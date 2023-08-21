@@ -228,9 +228,17 @@ export class AccountAdderController extends EventEmitter {
       this.selectedAccounts = this.selectedAccounts.filter((_, i) => i !== accIdx)
       this.emitUpdate()
     } else if (accPreselectedIdx !== -1) {
-      throw new Error('accountAdder: a preselected account cannot be deselected')
+      return this.emitError({
+        level: 'major',
+        message: 'This account cannot be deselected. Please reload and try again.',
+        error: new Error('accountAdder: a preselected account cannot be deselected')
+      })
     } else {
-      throw new Error('accountAdder: account not found. Cannot deselect.')
+      return this.emitError({
+        level: 'major',
+        message: 'This account cannot be deselected. Please reload and try again.',
+        error: new Error('accountAdder: account not found. Cannot deselect.')
+      })
     }
   }
 
@@ -355,15 +363,27 @@ export class AccountAdderController extends EventEmitter {
     }[]
   > {
     if (!this.isInitialized) {
-      // TODO: Handle the error in a way that the foreground process can catch it
-      throw new Error(
-        'Requested method `#calculateAccounts`, but the AccountAdder is not initialized'
-      )
+      this.emitError({
+        level: 'major',
+        message:
+          'Something went wrong with calculating the accounts. Please start the process again. If the problem persists, contact support.',
+        error: new Error(
+          'accountAdder: requested method `#calculateAccounts`, but the AccountAdder is not initialized'
+        )
+      })
+      return []
     }
 
     if (!this.#keyIterator) {
-      // TODO: Handle the error in a way that the foreground process can catch it
-      throw new Error('Requested method `#calculateAccounts`, but keyIterator is not initialized')
+      this.emitError({
+        level: 'major',
+        message:
+          'Something went wrong with calculating the accounts. Please start the process again. If the problem persists, contact support.',
+        error: new Error(
+          'accountAdder: requested method `#calculateAccounts`, but keyIterator is not initialized'
+        )
+      })
+      return []
     }
 
     const accounts: { account: Account; isLinked: boolean; slot: number }[] = []
