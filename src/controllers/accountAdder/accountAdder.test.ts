@@ -66,8 +66,22 @@ describe('AccountAdder', () => {
     expect(accountAdder.selectedAccounts).toEqual([])
   })
 
-  test('should throw if operation is triggered, but the controller is not initialized yet', async () => {
-    await expect(accountAdder.setPage({ page: 1, networks, providers })).rejects.toThrow()
+  test('should throw if operation is triggered, but the controller is not initialized yet', (done) => {
+    let emitCounter = 0
+    accountAdder.onError(() => {
+      emitCounter++
+
+      if (emitCounter === 1) {
+        const errors = accountAdder.getErrors()
+        expect(errors.length).toEqual(1)
+        expect(errors[0].error.message).toEqual(
+          'accountAdder: requested method `#calculateAccounts`, but the AccountAdder is not initialized'
+        )
+        done()
+      }
+    })
+
+    accountAdder.setPage({ page: 1, networks, providers })
   })
 
   test('should set first page and retrieve one smart account for every legacy account', (done) => {

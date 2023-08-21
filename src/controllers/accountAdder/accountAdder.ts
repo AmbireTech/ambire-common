@@ -361,9 +361,15 @@ export class AccountAdderController extends EventEmitter {
     }[]
   > {
     if (!this.isInitialized) {
-      throw new Error(
-        'accountAdder: requested method `#calculateAccounts`, but the AccountAdder is not initialized'
-      )
+      this.emitError({
+        level: 'major',
+        message:
+          'Something went wrong with calculating the accounts. Please start the process again. If the problem persists, contact support.',
+        error: new Error(
+          'accountAdder: requested method `#calculateAccounts`, but the AccountAdder is not initialized'
+        )
+      })
+      return []
     }
 
     if (!this.#keyIterator) {
