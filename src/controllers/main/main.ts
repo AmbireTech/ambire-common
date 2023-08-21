@@ -66,7 +66,11 @@ export class MainController extends EventEmitter {
   // 2) it's easier to mutate this - to add/remove accountOps, to find the right accountOp to extend, etc.
   // accountAddr => networkId => { accountOp, estimation }
   // @TODO consider getting rid of the `| null` ugliness, but then we need to auto-delete
-  accountOpsToBeSigned: { [key: string]: { [key: string]: { accountOp: AccountOp, estimation: EstimateResult | null } | null } } = {}
+  accountOpsToBeSigned: {
+    [key: string]: {
+      [key: string]: { accountOp: AccountOp; estimation: EstimateResult | null } | null
+    }
+  } = {}
 
   accountOpsToBeConfirmed: { [key: string]: { [key: string]: AccountOp } } = {}
 
@@ -107,7 +111,7 @@ export class MainController extends EventEmitter {
     const addReadyToAddAccountsIfNeeded = () => {
       if (
         !this.accountAdder.readyToAddAccounts.length &&
-        this.accountAdder.addAccountsStatus.type !== 'SUCCESS'
+        this.accountAdder.addAccountsStatus !== 'SUCCESS'
       )
         return
 
@@ -289,7 +293,8 @@ export class MainController extends EventEmitter {
     if (action.kind === 'call') {
       // @TODO ensure acc info, re-estimate
       const accountOp = this.getAccountOp(accountAddr, networkId)
-      if (accountOp) this.accountOpsToBeSigned[accountAddr][networkId] = { accountOp, estimation: null }
+      if (accountOp)
+        this.accountOpsToBeSigned[accountAddr][networkId] = { accountOp, estimation: null }
     } else
       this.messagesToBeSigned[accountAddr] = this.messagesToBeSigned[accountAddr].filter(
         (x) => x.fromUserRequestId !== id
