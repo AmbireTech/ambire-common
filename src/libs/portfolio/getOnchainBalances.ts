@@ -15,10 +15,15 @@ const handleSimulationError = (error: string, beforeNonce: bigint, afterNonce: b
   if (afterNonce === 0n)
     throw new SimulationError('unknown error: simulation reverted', beforeNonce, afterNonce)
   if (afterNonce < beforeNonce)
-    throw new SimulationError('lower "after" nonce, should not be possible', beforeNonce, afterNonce)
+    throw new SimulationError(
+      'lower "after" nonce, should not be possible',
+      beforeNonce,
+      afterNonce
+    )
 }
 
 export async function getNFTs(
+  network: NetworkDescriptor,
   deployless: Deployless,
   opts: Partial<GetOptions>,
   accountAddr: string,
@@ -29,6 +34,7 @@ export async function getNFTs(
   const mapToken = (token: any) => {
     return {
       name: token.name,
+      networkId: network.id,
       symbol: token.symbol,
       amount: BigInt(token.nfts.length),
       decimals: 1,
@@ -98,6 +104,7 @@ export async function getTokens(
   const mapToken = (token: any, address: string) =>
     ({
       amount: token.amount,
+      networkId: network.id,
       decimals: new Number(token.decimals),
       symbol:
         address === '0x0000000000000000000000000000000000000000'
@@ -144,8 +151,11 @@ export async function getTokens(
 
 class SimulationError extends Error {
   public simulationErrorMsg: string
+
   public beforeNonce: bigint
+
   public afterNonce: bigint
+
   constructor(message: string, beforeNonce: bigint, afterNonce: bigint) {
     super(`simulation error: ${message}`)
     this.simulationErrorMsg = message

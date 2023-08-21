@@ -1,9 +1,11 @@
-import fetch from 'node-fetch'
 import { AbiCoder, ethers, JsonRpcProvider } from 'ethers'
-import { describe, expect, test, jest } from '@jest/globals'
-import { Portfolio } from './portfolio'
-import { networks } from '../../consts/networks'
+import fetch from 'node-fetch'
+
+import { describe, expect, jest, test } from '@jest/globals'
+
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
+import { networks } from '../../consts/networks'
+import { Portfolio } from './portfolio'
 
 describe('Portfolio', () => {
   const ethereum = networks.find((x) => x.id === 'ethereum')
