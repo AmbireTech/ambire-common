@@ -6,7 +6,7 @@ export class KeystoreController extends EventEmitter {
 
   isReadyToStoreKeys: boolean = false
 
-  status: 'INITIAL' | 'LOADING' | 'ERROR' | 'DONE' = 'INITIAL'
+  status: 'INITIAL' | 'LOADING' | 'DONE' = 'INITIAL'
 
   errorMessage: string = ''
 
