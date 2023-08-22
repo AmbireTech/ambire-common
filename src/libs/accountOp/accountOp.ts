@@ -1,4 +1,5 @@
 import { NetworkId } from '../../interfaces/networkDescriptor'
+import { stringify } from '../bigintJson/bigintJson'
 
 export interface Call {
   to: string
@@ -26,6 +27,13 @@ export interface GasFeePayment {
   amount: number
 }
 
+export enum AccountOpStatus {
+  Pending = 'pending',
+  Success = 'success',
+  Failure = 'failure',
+  UnknownButPastNonce = 'unknown-but-past-nonce'
+}
+
 // Equivalent to ERC-4337 UserOp, but more universal than it since a AccountOp can be transformed to
 // a UserOp, or to a direct EOA transaction, or relayed through the Ambire relayer
 // it is more precisely defined than a UserOp though - UserOp just has calldata and this has individual `calls`
@@ -35,6 +43,7 @@ export interface AccountOp {
   // this may not be defined, in case the user has not picked a key yet
   signingKeyAddr: string | null
   // this may not be set in case we haven't set it yet
+  // this is a number and not a bigint because of ethers (it uses number for nonces)
   nonce: number | null
   // @TODO: nonce namespace? it is dependent on gasFeePayment
   calls: Call[]
@@ -51,6 +60,8 @@ export interface AccountOp {
   // or any other data that needs to otherwise be retrieved in an async manner and/or needs to be
   // "remembered" at the time of signing in order to visualize history properly
   humanizerMeta?: { [key: string]: any }
+  txnId?: string
+  status?: AccountOpStatus
 }
 
 export function callToTuple(call: Call): [string, bigint, string] {
@@ -59,8 +70,10 @@ export function callToTuple(call: Call): [string, bigint, string] {
 
 export function isEOA(op: AccountOp): boolean {
   if (op.gasFeePayment === null) throw new Error('missing gasFeePayment')
-  return op.gasFeePayment.paymentType === GasFeePaymentType.EOA
-    && op.gasFeePayment.paidBy === op.accountAddr
+  return (
+    op.gasFeePayment.paymentType === GasFeePaymentType.EOA &&
+    op.gasFeePayment.paidBy === op.accountAddr
+  )
 }
 
 export function canBroadcast(op: AccountOp, accountIsEOA: boolean): boolean {
@@ -70,8 +83,32 @@ export function canBroadcast(op: AccountOp, accountIsEOA: boolean): boolean {
   if (op.gasLimit === null) throw new Error('missing gasLimit')
   if (op.nonce === null) throw new Error('missing nonce')
   if (accountIsEOA) {
-    if (op.gasFeePayment.paymentType !== GasFeePaymentType.EOA) throw new Error('gas fee payment type is not EOA')
-    if (op.gasFeePayment.paidBy !== op.accountAddr) throw new Error('gas fee payment cannot be paid by anyone other than the EOA that signed it')
+    if (op.gasFeePayment.paymentType !== GasFeePaymentType.EOA)
+      throw new Error('gas fee payment type is not EOA')
+    if (op.gasFeePayment.paidBy !== op.accountAddr)
+      throw new Error('gas fee payment cannot be paid by anyone other than the EOA that signed it')
   }
   return true
+}
+
+/**
+ * Compare two AccountOps intents.
+ *
+ * By 'intent,' we are referring to the sender of the transaction, the network it is sent on, and the included calls.
+ *
+ * Since we are comparing the intents, we exclude any other properties of the AccountOps.
+ */
+export function isAccountOpsIntentEqual(
+  accountOps1: AccountOp[],
+  accountOps2: AccountOp[]
+): boolean {
+  const createIntent = (accountOps: AccountOp[]) => {
+    return accountOps.map(({ accountAddr, networkId, calls }) => ({
+      accountAddr,
+      networkId,
+      calls
+    }))
+  }
+
+  return stringify(createIntent(accountOps1)) === stringify(createIntent(accountOps2))
 }

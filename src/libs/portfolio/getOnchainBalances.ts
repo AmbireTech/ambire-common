@@ -1,8 +1,8 @@
-import { Deployless, parseErr } from '../deployless/deployless'
-import { Collectable, TokenResult, LimitsOptions } from './interfaces'
+import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { getAccountDeployParams } from '../account/account'
 import { callToTuple } from '../accountOp/accountOp'
-import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
+import { Deployless, parseErr } from '../deployless/deployless'
+import { Collectible, CollectionResult, LimitsOptions, TokenResult } from './interfaces'
 import { GetOptions } from './portfolio'
 
 // 0x00..01 is the address from which simulation signatures are valid
@@ -15,27 +15,33 @@ const handleSimulationError = (error: string, beforeNonce: bigint, afterNonce: b
   if (afterNonce === 0n)
     throw new SimulationError('unknown error: simulation reverted', beforeNonce, afterNonce)
   if (afterNonce < beforeNonce)
-    throw new SimulationError('lower "after" nonce, should not be possible', beforeNonce, afterNonce)
+    throw new SimulationError(
+      'lower "after" nonce, should not be possible',
+      beforeNonce,
+      afterNonce
+    )
 }
 
 export async function getNFTs(
+  network: NetworkDescriptor,
   deployless: Deployless,
   opts: Partial<GetOptions>,
   accountAddr: string,
   tokenAddrs: [string, any][],
   limits: LimitsOptions
-): Promise<[number, TokenResult][]> {
+): Promise<[number, CollectionResult][]> {
   const deploylessOpts = { blockTag: opts.blockTag, from: DEPLOYLESS_SIMULATION_FROM }
   const mapToken = (token: any) => {
     return {
       name: token.name,
+      networkId: network.id,
       symbol: token.symbol,
       amount: BigInt(token.nfts.length),
       decimals: 1,
-      collectables: [...(token.nfts as any[])].map(
-        (token: any) => ({ id: token.id, url: token.uri } as Collectable)
+      collectibles: [...(token.nfts as any[])].map(
+        (token: any) => ({ id: token.id, url: token.uri } as Collectible)
       )
-    } as TokenResult
+    } as CollectionResult
   }
 
   if (!opts.simulation) {
@@ -98,6 +104,7 @@ export async function getTokens(
   const mapToken = (token: any, address: string) =>
     ({
       amount: token.amount,
+      networkId: network.id,
       decimals: new Number(token.decimals),
       symbol:
         address === '0x0000000000000000000000000000000000000000'
@@ -144,8 +151,11 @@ export async function getTokens(
 
 class SimulationError extends Error {
   public simulationErrorMsg: string
+
   public beforeNonce: bigint
+
   public afterNonce: bigint
+
   constructor(message: string, beforeNonce: bigint, afterNonce: bigint) {
     super(`simulation error: ${message}`)
     this.simulationErrorMsg = message

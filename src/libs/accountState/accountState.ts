@@ -1,10 +1,10 @@
 import { Provider } from 'ethers'
 
-import { fromDescriptor } from '../deployless/deployless'
-import { getAccountDeployParams } from '../account/account'
-import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
-import { Account, AccountOnchainState } from '../../interfaces/account'
 import AmbireAccountState from '../../../contracts/compiled/AmbireAccountState.json'
+import { Account, AccountOnchainState } from '../../interfaces/account'
+import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
+import { getAccountDeployParams } from '../account/account'
+import { fromDescriptor } from '../deployless/deployless'
 
 export async function getAccountState(
   provider: Provider,
@@ -18,11 +18,15 @@ export async function getAccountState(
     !network.rpcNoStateOverride
   )
 
-  const args = accounts.map((account) => [
-    account.addr,
-    account.associatedKeys,
-    ...getAccountDeployParams(account)
-  ])
+  const args = accounts.map((account) => {
+    return [
+      account.addr,
+      account.associatedKeys,
+      ...(account.creation == null
+        ? ['0x0000000000000000000000000000000000000000', '0x']
+        : getAccountDeployParams(account))
+    ]
+  })
 
   const [accountStateResult] = await deploylessAccountState.call('getAccountsState', [args], {
     blockTag
@@ -34,7 +38,7 @@ export async function getAccountState(
         return [accounts[index].associatedKeys[keyIndex], privilege]
       }
     )
-    return {
+    const res = {
       accountAddr: accounts[index].addr,
       nonce: parseInt(accResult.nonce, 10),
       isDeployed: accResult.isDeployed,
@@ -46,6 +50,8 @@ export async function getAccountState(
       deployError:
         accounts[index].associatedKeys.length > 0 && accResult.associatedKeyPriviliges.length === 0
     }
+
+    return res
   })
 
   return result

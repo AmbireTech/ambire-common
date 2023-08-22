@@ -1,22 +1,24 @@
-import { Provider, JsonRpcProvider } from 'ethers'
-import { Deployless, fromDescriptor } from '../deployless/deployless'
-import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
-import NFTGetter from '../../../contracts/compiled/NFTGetter.json'
+import { JsonRpcProvider, Provider } from 'ethers'
+
 import BalanceGetter from '../../../contracts/compiled/BalanceGetter.json'
+import NFTGetter from '../../../contracts/compiled/NFTGetter.json'
+import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
+import { Deployless, fromDescriptor } from '../deployless/deployless'
 import batcher from './batcher'
 import { geckoRequestBatcher, geckoResponseIdentifier } from './gecko'
-import { flattenResults, paginate } from './pagination'
+import { getNFTs, getTokens } from './getOnchainBalances'
 import {
-  TokenResult,
-  Price,
+  CollectionResult,
+  GetOptionsSimulation,
+  Hints,
   Limits,
   LimitsOptions,
-  GetOptionsSimulation,
-  PriceCache,
   PortfolioGetResult,
-  Hints
+  Price,
+  PriceCache,
+  TokenResult
 } from './interfaces'
-import { getNFTs, getTokens } from './getOnchainBalances'
+import { flattenResults, paginate } from './pagination'
 
 const LIMITS: Limits = {
   // we have to be conservative with erc721Tokens because if we pass 30x20 (worst case) tokenIds, that's 30x20 extra words which is 19kb
@@ -32,8 +34,8 @@ const LIMITS: Limits = {
 }
 
 export const getEmptyHints = (networkId: string, accountAddr: string): Hints => ({
-  networkId: networkId,
-  accountAddr: accountAddr,
+  networkId,
+  accountAddr,
   erc20s: [],
   erc721s: {},
   prices: {},
@@ -60,9 +62,13 @@ const defaultOptions: GetOptions = {
 
 export class Portfolio {
   private batchedVelcroDiscovery: Function
+
   private batchedGecko: Function
+
   private network: NetworkDescriptor
+
   private deploylessTokens: Deployless
+
   private deploylessNfts: Deployless
 
   constructor(fetch: Function, provider: Provider | JsonRpcProvider, network: NetworkDescriptor) {
@@ -145,7 +151,7 @@ export class Portfolio {
       ),
       flattenResults(
         paginate(collectionsHints, limits.erc721).map((page) =>
-          getNFTs(this.deploylessNfts, opts, accountAddr, page, limits)
+          getNFTs(this.network, this.deploylessNfts, opts, accountAddr, page, limits)
         )
       )
     ])
@@ -171,9 +177,9 @@ export class Portfolio {
       const address = collectionsHints[i][0] as unknown as string
       return {
         ...x,
-        address: address,
+        address,
         priceIn: getPriceFromCache(address) || []
-      } as TokenResult
+      } as CollectionResult
     })
 
     const oracleCallDone = Date.now()
@@ -215,7 +221,7 @@ export class Portfolio {
       tokenErrors: tokensWithErr
         .filter(([error, result]) => error !== '0x' || result.symbol === '')
         .map(([error, result]) => ({ error, address: result.address })),
-      collections: collections.filter((x) => x.collectables?.length),
+      collections: collections.filter((x) => x.collectibles?.length),
       total: tokens.reduce((cur, token) => {
         for (const x of token.priceIn) {
           cur[x.baseCurrency] =

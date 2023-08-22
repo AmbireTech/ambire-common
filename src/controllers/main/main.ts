@@ -1,16 +1,20 @@
 import { JsonRpcProvider } from 'ethers'
-import { EmailVaultController } from '../emailVault'
-import { Storage } from '../../interfaces/storage'
-import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
-import { Account, AccountId, AccountOnchainState } from '../../interfaces/account'
-import { AccountOp, Call as AccountOpCall } from '../../libs/accountOp/accountOp'
-import { PortfolioController } from '../portfolio/portfolio'
-import { Keystore, Key } from '../../libs/keystore/keystore'
+
 import { networks } from '../../consts/networks'
-import EventEmitter from '../eventEmitter'
-import { getAccountState } from '../../libs/accountState/accountState'
+import { KeystoreController } from '../keystore/keystore'
+import { Account, AccountId, AccountOnchainState } from '../../interfaces/account'
+import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
+import { Storage } from '../../interfaces/storage'
 import { SignedMessage, UserRequest } from '../../interfaces/userRequest'
-import { estimate } from '../../libs/estimate/estimate'
+import { AccountOp, Call as AccountOpCall } from '../../libs/accountOp/accountOp'
+import { getAccountState } from '../../libs/accountState/accountState'
+import { estimate, EstimateResult } from '../../libs/estimate/estimate'
+import { Key, Keystore } from '../../libs/keystore/keystore'
+import { relayerCall } from '../../libs/relayerCall/relayerCall'
+import { AccountAdderController } from '../accountAdder/accountAdder'
+import { EmailVaultController } from '../emailVault'
+import EventEmitter from '../eventEmitter'
+import { PortfolioController } from '../portfolio/portfolio'
 
 export type AccountStates = {
   [accountId: string]: {
@@ -22,17 +26,23 @@ export class MainController extends EventEmitter {
   // Private library instances
   private storage: Storage
 
-  private keystore: Keystore
+  #keystoreLib: Keystore
 
   // Private sub-structures
   private providers: { [key: string]: JsonRpcProvider } = {}
 
-  // Load-related stuff
+  // Holds the initial load promise, so that one can wait until it completes
   private initialLoadPromise: Promise<void>
+
+  #callRelayer: Function
 
   accountStates: AccountStates = {}
 
   isReady: boolean = false
+
+  keystore: KeystoreController
+
+  accountAdder: AccountAdderController
 
   // Subcontrollers
   // this is not private cause you're supposed to directly access it
@@ -57,9 +67,13 @@ export class MainController extends EventEmitter {
   // The reason we use a map structure and not a flat array is:
   // 1) it's easier in the UI to deal with structured data rather than having to .find/.filter/etc. all the time
   // 2) it's easier to mutate this - to add/remove accountOps, to find the right accountOp to extend, etc.
-  // accountAddr => networkId => accountOp
+  // accountAddr => networkId => { accountOp, estimation }
   // @TODO consider getting rid of the `| null` ugliness, but then we need to auto-delete
-  accountOpsToBeSigned: { [key: string]: { [key: string]: AccountOp | null } } = {}
+  accountOpsToBeSigned: {
+    [key: string]: {
+      [key: string]: { accountOp: AccountOp; estimation: EstimateResult | null } | null
+    }
+  } = {}
 
   accountOpsToBeConfirmed: { [key: string]: { [key: string]: AccountOp } } = {}
 
@@ -73,18 +87,22 @@ export class MainController extends EventEmitter {
     this.storage = storage
     this.portfolio = new PortfolioController(storage)
     // @TODO: KeystoreSigners
-    this.keystore = new Keystore(storage, {})
+    this.#keystoreLib = new Keystore(storage, {})
+    this.keystore = new KeystoreController(this.#keystoreLib)
     this.initialLoadPromise = this.load()
     this.settings = { networks }
-    this.emailVault = new EmailVaultController(storage, fetch, relayerUrl, this.keystore)
-    // Load userRequests from storage and emit that we have updated
+    this.emailVault = new EmailVaultController(storage, fetch, relayerUrl, this.#keystoreLib)
+    this.accountAdder = new AccountAdderController({ storage, relayerUrl, fetch })
+    this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
+    // @TODO Load userRequests from storage and emit that we have updated
     // @TODO
   }
 
   private async load(): Promise<void> {
-    ;[this.keys, this.accounts] = await Promise.all([
-      this.keystore.getKeys(),
-      this.storage.get('accounts', [])
+    ;[this.keys, this.accounts, this.selectedAccount] = await Promise.all([
+      this.#keystoreLib.getKeys(),
+      this.storage.get('accounts', []),
+      this.storage.get('selectedAccount', null)
     ])
     this.providers = Object.fromEntries(
       this.settings.networks.map((network) => [network.id, new JsonRpcProvider(network.rpcUrl)])
@@ -93,6 +111,22 @@ export class MainController extends EventEmitter {
     // @TODO error handling here
     this.accountStates = await this.getAccountsInfo(this.accounts)
     this.isReady = true
+
+    const isKeystoreReady = await this.#keystoreLib.isReadyToStoreKeys()
+    this.keystore.setIsReadyToStoreKeys(isKeystoreReady)
+
+    const addReadyToAddAccountsIfNeeded = () => {
+      if (
+        !this.accountAdder.readyToAddAccounts.length &&
+        this.accountAdder.addAccountsStatus !== 'SUCCESS'
+      )
+        return
+
+      this.addAccounts(this.accountAdder.readyToAddAccounts)
+      this.accountAdder.reset()
+    }
+    this.accountAdder.onUpdate(addReadyToAddAccountsIfNeeded)
+
     this.emitUpdate()
   }
 
@@ -123,14 +157,36 @@ export class MainController extends EventEmitter {
     this.emitUpdate()
   }
 
-  selectAccount(toAccountAddr: string) {
-    if (!this.accounts.find((acc) => acc.addr === toAccountAddr))
-      throw new Error(`try to switch to not exist account: ${toAccountAddr}`)
+  async selectAccount(toAccountAddr: string) {
+    await this.initialLoadPromise
+
+    if (!this.accounts.find((acc) => acc.addr === toAccountAddr)) {
+      // TODO: error handling, trying to switch to account that does not exist
+      return
+    }
+
     this.selectedAccount = toAccountAddr
+    await this.storage.set('selectedAccount', toAccountAddr)
+    this.updateSelectedAccount(toAccountAddr)
+    this.emitUpdate()
+  }
+
+  async addAccounts(accounts: Account[] = []) {
+    if (!accounts.length) return
+
+    const alreadyAddedAddressSet = new Set(this.accounts.map((account) => account.addr))
+    const newAccounts = accounts.filter((account) => !alreadyAddedAddressSet.has(account.addr))
+
+    if (!newAccounts.length) return
+
+    const nextAccounts = [...this.accounts, ...newAccounts]
+    await this.storage.set('accounts', nextAccounts)
+    this.accounts = nextAccounts
+
+    this.emitUpdate()
   }
 
   private async ensureAccountInfo(accountAddr: AccountId, networkId: NetworkId) {
-    // Wait for the current load to complete
     await this.initialLoadPromise
     // Initial sanity check: does this account even exist?
     if (!this.accounts.find((x) => x.addr === accountAddr))
@@ -149,7 +205,6 @@ export class MainController extends EventEmitter {
     const account = this.accounts.find((x) => x.addr === accountAddr)
     if (!account)
       throw new Error(`getAccountOp: tried to run for non-existant account ${accountAddr}`)
-    // @TODO consider bringing back functional style if we can figure out how not to trip up the TS compiler
     // Note: we use reduce instead of filter/map so that the compiler can deduce that we're checking .kind
     const calls = this.userRequests.reduce((uCalls: AccountOpCall[], req) => {
       // only the first one for EOAs
@@ -168,7 +223,7 @@ export class MainController extends EventEmitter {
 
     if (!calls.length) return null
 
-    const currentAccountOp = this.accountOpsToBeSigned[accountAddr][networkId]
+    const currentAccountOp = this.accountOpsToBeSigned[accountAddr][networkId]?.accountOp
     return {
       accountAddr,
       networkId,
@@ -183,6 +238,11 @@ export class MainController extends EventEmitter {
       accountOpToExecuteBefore: null,
       calls
     }
+  }
+
+  updateSelectedAccount(selectedAccount: string | null = null) {
+    if (!selectedAccount) return
+    this.portfolio.updateSelectedAccount(this.accounts, this.settings.networks, selectedAccount)
   }
 
   async addUserRequest(req: UserRequest) {
@@ -202,12 +262,14 @@ export class MainController extends EventEmitter {
       // @TODO consider re-using this whole block in removeUserRequest
       await this.ensureAccountInfo(accountAddr, networkId)
       const accountOp = this.getAccountOp(accountAddr, networkId)
-      this.accountOpsToBeSigned[accountAddr][networkId] = accountOp
-      try {
-        if (accountOp) await this.estimateAccountOp(accountOp)
-      } catch (e) {
-        // @TODO: unified wrapper for controller errors
-        console.error(e)
+      if (accountOp) {
+        this.accountOpsToBeSigned[accountAddr][networkId] = { accountOp, estimation: null }
+        try {
+          await this.estimateAccountOp(accountOp)
+        } catch (e) {
+          // @TODO: unified wrapper for controller errors
+          console.error(e)
+        }
       }
     } else {
       if (!this.messagesToBeSigned[accountAddr]) this.messagesToBeSigned[accountAddr] = []
@@ -218,15 +280,7 @@ export class MainController extends EventEmitter {
         signature: null
       })
     }
-    // @TODO emit update
-  }
-
-  lock() {
-    this.keystore.lock()
-  }
-
-  isUnlock() {
-    return this.keystore.isUnlocked()
+    this.emitUpdate()
   }
 
   // @TODO allow this to remove multiple OR figure out a way to debounce re-estimations
@@ -243,7 +297,9 @@ export class MainController extends EventEmitter {
     const { action, accountAddr, networkId } = req
     if (action.kind === 'call') {
       // @TODO ensure acc info, re-estimate
-      this.accountOpsToBeSigned[accountAddr][networkId] = this.getAccountOp(accountAddr, networkId)
+      const accountOp = this.getAccountOp(accountAddr, networkId)
+      if (accountOp)
+        this.accountOpsToBeSigned[accountAddr][networkId] = { accountOp, estimation: null }
     } else
       this.messagesToBeSigned[accountAddr] = this.messagesToBeSigned[accountAddr].filter(
         (x) => x.fromUserRequestId !== id
@@ -278,7 +334,7 @@ export class MainController extends EventEmitter {
         Object.fromEntries(
           Object.entries(this.accountOpsToBeSigned[accountOp.accountAddr])
             .filter(([, accOp]) => accOp)
-            .map(([networkId, accOp]) => [networkId, [accOp!]])
+            .map(([networkId, x]) => [networkId, [x!.accountOp]])
         )
       ),
       // @TODO nativeToCheck: pass all EOAs,
@@ -286,13 +342,18 @@ export class MainController extends EventEmitter {
       estimate(this.providers[accountOp.networkId], network, account, accountOp, [], [])
       // @TODO refresh the estimation
     ])
+    this.accountOpsToBeSigned[accountOp.accountAddr][accountOp.networkId]!.estimation = estimation
     console.log(estimation)
   }
 
   // when an accountOp is signed; should this be private and be called by
   // the method that signs it?
-  resolveAccountOp() {}
+  resolveAccountOp() {
+    // @TODO: ActivityController.addAccountOp()
+  }
 
   // when a message is signed; same comment applies: should this be private?
-  resolveMessage() {}
+  resolveMessage() {
+    // @TODO: - ActivityController.addSignedMessage()
+  }
 }

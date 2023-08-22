@@ -125,8 +125,8 @@ describe('Deployless', () => {
       })
     } catch (e: any) {
       // ethers wraps the error if we use the Provider; perhaps we should un-wrap it
-      // fails with out-of-gas when wrapped in the ProxyContract mode
-      expect(e.info.error.message.includes('out of gas')).toBe(true)
+      // fails with out-of-gas when wrapped in the ProxyContract mode (or invalid opcode: SHL)
+      expect(e.info.error.message.includes('out of gas') || e.info.error.message.includes('invalid opcode: SHL')).toBe(true)
     }
   })
 

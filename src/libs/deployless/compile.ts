@@ -68,6 +68,10 @@ export function compile(contractName: string, options: Options = {}) {
     throw new Error(error)
   }
 
+  if (!output.contracts[contractName][contractName]) {
+    throw new Error(`unable to find contract named ${contractName} in output from file ${contractName}: perhaps the name of the file is different compared to the name of the contract?`)
+  }
+
   return {
     abi: output.contracts[contractName][contractName].abi,
     bin: `0x${output.contracts[contractName][contractName].evm.bytecode.object}`, // bin
