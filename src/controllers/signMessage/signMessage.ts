@@ -10,13 +10,9 @@ export class SignMessageController extends EventEmitter {
   signingKeyAddr: string | null = null
 
   // TODO: define type
-  messageParams = null
-
-  // TODO: define type
-  typedDataParams = null
-
-  // TODO: define type
   signature: string | null = null
+
+  #request: UserRequest | null = null
 
   constructor({ keystore }) {
     super()
@@ -25,6 +21,8 @@ export class SignMessageController extends EventEmitter {
   }
 
   init({ request }: { request: UserRequest }) {
+    this.#request = request
+
     // user request? UserRequest
     // Determine if the message is typed data or personal message and set messageParams or typedDataParams
   }
@@ -37,7 +35,24 @@ export class SignMessageController extends EventEmitter {
 
   // TODO:
   sign() {
+    if (!this.#request) {
+      // TODO: emit error
+      return
+    }
+
     this.status = 'LOADING'
+
+    switch (this.#request.action.kind) {
+      case 'call':
+        return this.signCall()
+      case 'message':
+        return this.signMessage()
+      case 'typedMessage':
+        return this.signTypedMessage()
+      default: {
+        // TODO: Emit error.
+      }
+    }
 
     // Determine if the message is typed data or personal message and call the appropriate function
     // signMessage or signTypedData
@@ -45,14 +60,16 @@ export class SignMessageController extends EventEmitter {
     // save SignedMessage to Activity controller (add signed message)
   }
 
+  signCall() {}
+
   // TODO:
   signMessage() {
-    // this.keystore
+    // this.#keystore
 
     // this.signature = signature
     this.emitUpdate()
   }
 
   // TODO:
-  signTypedData() {}
+  signTypedMessage() {}
 }
