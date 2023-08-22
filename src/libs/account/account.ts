@@ -35,6 +35,7 @@ export async function getSmartAccount(address: string): Promise<Account> {
 
   const priv = { addr: address, hash: true }
   const bytecode = await getBytecode(polygon, [priv])
+
   return {
     addr: getAmbireAccountAddress(AMBIRE_ACCOUNT_FACTORY, bytecode),
     label: '',
