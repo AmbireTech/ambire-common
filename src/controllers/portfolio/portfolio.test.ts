@@ -215,7 +215,7 @@ describe('Portfolio Controller ', () => {
       )
     })
 
-    test('Pending tokens are re-fetched if AccountOp is changed', async () => {
+    test('Pending tokens are re-fetched if AccountOp is changed (omitted, i.e. undefined)', async () => {
       const accountOp = await getAccountOp()
 
       const storage = produceMemoryStore()
@@ -226,6 +226,29 @@ describe('Portfolio Controller ', () => {
         controller.pending['0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'].ethereum!
 
       await controller.updateSelectedAccount([account], networks, account.addr)
+      const pendingState2 =
+        controller.pending['0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'].ethereum!
+
+      expect(pendingState2.result?.updateStarted).toBeGreaterThan(
+        pendingState1.result?.updateStarted!
+      )
+    })
+
+    test('Pending tokens are re-fetched if AccountOp is changed', async () => {
+      const accountOp = await getAccountOp()
+
+      const storage = produceMemoryStore()
+      const controller = new PortfolioController(storage)
+
+      await controller.updateSelectedAccount([account], networks, account.addr, accountOp)
+      const pendingState1 =
+        controller.pending['0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'].ethereum!
+
+      const accountOp2 = await getAccountOp()
+      // Change the address
+      accountOp2.ethereum[0].accountAddr = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA4'
+
+      await controller.updateSelectedAccount([account], networks, account.addr, accountOp2)
       const pendingState2 =
         controller.pending['0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'].ethereum!
 
