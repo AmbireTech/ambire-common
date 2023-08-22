@@ -1,6 +1,7 @@
 import { JsonRpcProvider } from 'ethers'
 
 import { networks } from '../../consts/networks'
+import { KeystoreController } from '../keystore/keystore'
 import { Account, AccountId, AccountOnchainState } from '../../interfaces/account'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
 import { Storage } from '../../interfaces/storage'
@@ -25,7 +26,7 @@ export class MainController extends EventEmitter {
   // Private library instances
   private storage: Storage
 
-  private keystore: Keystore
+  #keystoreLib: Keystore
 
   // Private sub-structures
   private providers: { [key: string]: JsonRpcProvider } = {}
@@ -38,6 +39,8 @@ export class MainController extends EventEmitter {
   accountStates: AccountStates = {}
 
   isReady: boolean = false
+
+  keystore: KeystoreController
 
   accountAdder: AccountAdderController
 
@@ -84,10 +87,11 @@ export class MainController extends EventEmitter {
     this.storage = storage
     this.portfolio = new PortfolioController(storage)
     // @TODO: KeystoreSigners
-    this.keystore = new Keystore(storage, {})
+    this.#keystoreLib = new Keystore(storage, {})
+    this.keystore = new KeystoreController(this.#keystoreLib)
     this.initialLoadPromise = this.load()
     this.settings = { networks }
-    this.emailVault = new EmailVaultController(storage, fetch, relayerUrl, this.keystore)
+    this.emailVault = new EmailVaultController(storage, fetch, relayerUrl, this.#keystoreLib)
     this.accountAdder = new AccountAdderController({ storage, relayerUrl, fetch })
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
     // @TODO Load userRequests from storage and emit that we have updated
@@ -96,7 +100,7 @@ export class MainController extends EventEmitter {
 
   private async load(): Promise<void> {
     ;[this.keys, this.accounts, this.selectedAccount] = await Promise.all([
-      this.keystore.getKeys(),
+      this.#keystoreLib.getKeys(),
       this.storage.get('accounts', []),
       this.storage.get('selectedAccount', null)
     ])
@@ -107,6 +111,9 @@ export class MainController extends EventEmitter {
     // @TODO error handling here
     this.accountStates = await this.getAccountsInfo(this.accounts)
     this.isReady = true
+
+    const isKeystoreReady = await this.#keystoreLib.isReadyToStoreKeys()
+    this.keystore.setIsReadyToStoreKeys(isKeystoreReady)
 
     const addReadyToAddAccountsIfNeeded = () => {
       if (
@@ -268,14 +275,6 @@ export class MainController extends EventEmitter {
       })
     }
     this.emitUpdate()
-  }
-
-  lock() {
-    this.keystore.lock()
-  }
-
-  isUnlock() {
-    return this.keystore.isUnlocked()
   }
 
   // @TODO allow this to remove multiple OR figure out a way to debounce re-estimations
