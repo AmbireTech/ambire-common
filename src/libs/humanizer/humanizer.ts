@@ -1,4 +1,3 @@
-/* eslint-disable no-await-in-loop */
 import { ethers } from 'ethers'
 import { AccountOp } from '../accountOp/accountOp'
 import { genericErc20Humanizer, genericErc721Humanizer } from './modules/tokens'
@@ -6,16 +5,16 @@ import { uniswapHumanizer } from './modules/Uniswap'
 import { wethHumanizer } from './modules/weth'
 import { oneInchHumanizer } from './modules/oneInch'
 import { IrCall, Ir, HumanizerFragment } from './interfaces'
-import { shortenAddress, getAction, getLable, getToken, getAddress } from './utils'
 import { aaveHumanizer } from './modules/Aave'
 import { WALLETModule } from './modules/WALLET'
+import { namingHumanizer } from './modules/namingHumanizer'
+import { fallbackHumanizer } from './modules/fallBackHumanizer'
 
 // @TODO humanize signed messages
 // @TODO change all console.logs to throw errs
 // @TODO finish modules:
 // WALLET/ADX staking
 // @TODO fix comments from feedback https://github.com/AmbireTech/ambire-common/pull/281
-// @TODO add name/label argumsnt to getAddress and getToken utils funcs
 // @TODO add visualization interface
 // @TODO add new mechanism for error emitting
 export function initHumanizerMeta(humanizerMeta: any) {
@@ -49,104 +48,6 @@ export function callsToIr(accountOp: AccountOp): Ir {
     }
   })
   return { calls: irCalls }
-}
-
-const getName = (address: string, humanizerMeta: any) => {
-  if (humanizerMeta[`addressBook:${address}`]) return humanizerMeta[`addressBook:${address}`]
-  if (humanizerMeta[`names:${address}`]) return humanizerMeta[`names:${address}`]
-  if (humanizerMeta[`tokens:${address}`]) return `${humanizerMeta[`tokens:${address}`][0]} contract`
-  return null
-}
-// adds 'name' proeprty to visualization of addresses (needs initialHumanizer to work on unparsed transactions)
-export function namingHumanizer(
-  accountOp: AccountOp,
-  currentIr: Ir,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  options?: any
-): [Ir, Promise<any>[]] {
-  const newCalls = currentIr.calls.map((call) => {
-    const newVisualization = call.fullVisualization?.map((v: any) => {
-      return (v.type === 'address' || v.type === 'token') && !v.name
-        ? {
-            ...v,
-            name: getName(v.address, accountOp.humanizerMeta) || shortenAddress(v.address)
-          }
-        : v
-    })
-    return { ...call, fullVisualization: newVisualization || call.fullVisualization }
-  })
-  const newIr = { ...currentIr, calls: newCalls }
-  return [newIr, []]
-}
-
-async function fetchFuncEtherface(
-  selector: string,
-  fetch: Function
-): Promise<HumanizerFragment | null> {
-  let res
-  // often fails due to timeout => loop for retrying
-  for (let i = 0; i < 3; i++) {
-    try {
-      res = await (
-        await fetch(`https://api.etherface.io/v1/signatures/hash/all/${selector.slice(2, 10)}/1`, {
-          timeout: 10000
-        })
-      ).json()
-      break
-    } catch (e: any) {
-      // @TODO to throw err, caught by try catch in controller
-      console.log(`fetchFuncEtherface: ${e.message}`)
-    }
-  }
-  const func = res.items[0]
-  return func
-    ? {
-        key: `funcSelectors:${selector}`,
-        isGlobal: true,
-        value: func.text
-      }
-    : null
-}
-const checkIfUnknowAction = (v: Array<any>) => {
-  try {
-    return v.length === 1 && v[0].type === 'action' && v[0].content.startsWith('Unknown action')
-  } catch (e) {
-    return false
-  }
-}
-
-export function fallbackHumanizer(
-  accountOp: AccountOp,
-  currentIr: Ir,
-  options?: any
-): [Ir, Promise<any>[]] {
-  const asyncOps: any = []
-  const newCalls = currentIr.calls.map((call) => {
-    if (call.fullVisualization && !checkIfUnknowAction(call.fullVisualization)) return call
-    const visualization = []
-    if (call.data !== '0x') {
-      if (accountOp.humanizerMeta?.[`funcSelectors:${call.data.slice(0, 10)}`]) {
-        visualization.push(
-          getAction(accountOp.humanizerMeta?.[`funcSelectors:${call.data.slice(0, 10)}`])
-        )
-      } else {
-        const promise = fetchFuncEtherface(call.data.slice(0, 10), options.fetch)
-        promise ? asyncOps.push(promise) : null
-        return { ...call, fullVisualization: [getAction('Unknown action')] }
-      }
-    }
-    if (call.value) {
-      if (call.data !== '0x') visualization.push(getLable('and'))
-      visualization.push(getAction('Sending'))
-      visualization.push(getToken(ethers.ZeroAddress, call.value))
-    }
-    visualization.push(getLable('to'))
-    visualization.push(getAddress(call.to))
-    return { ...call, fullVisualization: visualization }
-  })
-
-  const newIr = { calls: newCalls }
-  return [newIr, asyncOps]
 }
 
 export function humanize(
