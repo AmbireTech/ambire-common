@@ -55,7 +55,7 @@ async function test() {
     preVerificationGas: hexlify(50_000), // hardcode it for now at a high value
     maxFeePerGas: hexlify(gasPrice),
     maxPriorityFeePerGas: hexlify(gasPrice),
-    // paymasterAndData: '0x',
+    paymasterAndData: '0x',
     signature: s
   }
 
