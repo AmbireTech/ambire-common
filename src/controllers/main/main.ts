@@ -234,10 +234,7 @@ export class MainController extends EventEmitter {
   }
 
   updateSelectedAccount(selectedAccount: string | null = null) {
-    if (!selectedAccount) {
-      // TODO: Return error we dont have selected account chosen yet
-      return
-    }
+    if (!selectedAccount) return
     this.portfolio.updateSelectedAccount(this.accounts, this.settings.networks, selectedAccount)
   }
 
