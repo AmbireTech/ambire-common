@@ -5,7 +5,9 @@ import { aaveWethGatewayV2 } from './aaveWethGatewayV2'
 
 export const aaveHumanizer = (
   accountOp: AccountOp,
-  ir: Ir
+  ir: Ir,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  options?: any
 ): [Ir, Array<Promise<HumanizerFragment>>] => {
   const matcher = {
     ...aaveLendingPoolV2(accountOp.humanizerMeta),

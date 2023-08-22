@@ -4,7 +4,8 @@ import { WALLETStakingPool } from './WALLETStakingPool'
 import { Ir, IrCall } from '../../interfaces'
 import { AccountOp } from '../../../accountOp/accountOp'
 
-export const WALLETModule = (accountOp: AccountOp, ir: Ir) => {
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export const WALLETModule = (accountOp: AccountOp, ir: Ir, options?: any) => {
   const newCalls: IrCall[] = []
   const matcher = {
     ...WALLETSupplyControllerMapping(accountOp.humanizerMeta),

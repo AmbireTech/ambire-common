@@ -1,8 +1,8 @@
 import { ethers } from 'ethers'
 // @TODO fix imports
-import { AccountOp } from 'libs/accountOp/accountOp'
-import { IrCall } from 'libs/humanizer/interfaces'
-import { getAction, getLable } from 'libs/humanizer/utils'
+import { IrCall } from '../../interfaces'
+import { getAction, getLable } from '../../utils'
+import { AccountOp } from '../../../accountOp/accountOp'
 import WALLETSupplyControllerABI from '../../../../../contracts/compiled/WALLETSupplyController.json'
 
 // @TODO add abi to humanizer info

@@ -7,6 +7,7 @@ import { uniswapHumanizer } from './modules/Uniswap'
 import { Ir } from './interfaces'
 import { wethHumanizer } from './modules/weth'
 import { aaveHumanizer } from './modules/Aave'
+import { yearnVaultModule } from './modules/yearnTesseractVault'
 
 const humanizerInfo = initHumanizerMeta(require('../../consts/humanizerInfo.json'))
 
@@ -103,7 +104,27 @@ const transactions = {
     }
   ],
   // @TODO add proper example calls
-  WALLET: []
+  WALLET: [],
+  yearn: [
+    // deposit dai
+    {
+      to: '0xda816459f1ab5631232fe5e97a05bbbb94970c95',
+      value: 0n,
+      data: '0x6e553f6500000000000000000000000000000000000000000000002567ac70392b880000000000000000000000000000c4a6bb5139123bd6ba0cf387828a9a3a73ef8d1e00000000000000000000000000000000000000000000000000000000'
+    },
+    // withdraw
+    {
+      to: '0xdA816459F1AB5631232FE5e97a05BBBb94970c95',
+      value: 0n,
+      data: '0x2e1a7d4d000000000000000000000000000000000000000000000506c08e407186fe9165'
+    },
+    // approve
+    {
+      to: '0xdA816459F1AB5631232FE5e97a05BBBb94970c95',
+      value: 0n,
+      data: '0x095ea7b3000000000000000000000000c92e8bdf79f0507f65a392b0ab4667716bfe011000000000000000000000000000000000000000000000071414d02429e66c0000'
+    }
+  ]
 }
 
 describe('module tests', () => {
@@ -277,6 +298,12 @@ describe('module tests', () => {
     //     expect(v).toMatchObject(expectedhumanization[i][j])
     //   )
     // )
+    ir.calls.forEach((call) => console.log(call.fullVisualization))
+  })
+  test('yearn', () => {
+    accountOp.calls = [...transactions.yearn]
+    let ir: Ir = callsToIr(accountOp)
+    ;[ir] = yearnVaultModule(accountOp, ir)
     ir.calls.forEach((call) => console.log(call.fullVisualization))
   })
 })
