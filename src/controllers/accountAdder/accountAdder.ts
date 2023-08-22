@@ -361,9 +361,15 @@ export class AccountAdderController extends EventEmitter {
     }[]
   > {
     if (!this.isInitialized) {
-      throw new Error(
-        'accountAdder: requested method `#calculateAccounts`, but the AccountAdder is not initialized'
-      )
+      this.emitError({
+        level: 'major',
+        message:
+          'Something went wrong with calculating the accounts. Please start the process again. If the problem persists, contact support.',
+        error: new Error(
+          'accountAdder: requested method `#calculateAccounts`, but the AccountAdder is not initialized'
+        )
+      })
+      return []
     }
 
     if (!this.#keyIterator) {
@@ -479,32 +485,42 @@ export class AccountAdderController extends EventEmitter {
     const url = `/v2/account-by-key/linked/accounts?${keys}`
 
     const { data } = await this.#callRelayer(url)
-    const linkedAccounts: { account: ExtendedAccount; isLinked: boolean }[] = Object.keys(
+    const linkedAccounts: ({ account: ExtendedAccount; isLinked: boolean } | null)[] = Object.keys(
       data.accounts
-    ).map((addr: any) => {
-      const { factoryAddr, bytecode, salt, associatedKeys } = data.accounts[addr]
-      // checks whether the account.addr matches the addr generated from the factory
-      if (
-        ethers.getCreate2Address(factoryAddr, salt, ethers.keccak256(bytecode)).toLowerCase() !==
-        addr.toLowerCase()
-      ) {
-        throw new Error('accountAddr: address not generated from that factory')
-      }
-      return {
-        account: {
-          addr,
-          label: '',
-          pfp: '',
-          associatedKeys: Object.keys(associatedKeys),
-          creation: {
-            factoryAddr,
-            bytecode,
-            salt
-          }
-        } as ExtendedAccount,
-        isLinked: true
-      }
-    })
+    )
+      .map((addr: any) => {
+        const { factoryAddr, bytecode, salt, associatedKeys } = data.accounts[addr]
+        // Checks whether the account.addr matches the addr generated from the
+        // factory. Should never happen, but could be a possible attack vector.
+        const isInvalidAddress =
+          ethers.getCreate2Address(factoryAddr, salt, ethers.keccak256(bytecode)).toLowerCase() !==
+          addr.toLowerCase()
+        if (isInvalidAddress) {
+          this.emitError({
+            level: 'minor',
+            message: `The address ${addr} is not generated from the Ambire factory.`,
+            error: new Error(`The address ${addr} is not generated from the Ambire factory.`)
+          })
+
+          return null
+        }
+
+        return {
+          account: {
+            addr,
+            label: '',
+            pfp: '',
+            associatedKeys: Object.keys(associatedKeys),
+            creation: {
+              factoryAddr,
+              bytecode,
+              salt
+            }
+          } as ExtendedAccount,
+          isLinked: true
+        }
+      })
+      .filter((acc) => acc !== null)
 
     const linkedAccountsWithNetworks = await this.#getAccountsUsedOnNetworks({
       accounts: linkedAccounts as any,
