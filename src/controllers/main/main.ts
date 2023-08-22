@@ -1,6 +1,7 @@
 import { JsonRpcProvider } from 'ethers'
 
 import { networks } from '../../consts/networks'
+import { KeystoreController } from '../keystore/keystore'
 import { Account, AccountId, AccountOnchainState } from '../../interfaces/account'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
 import { Storage } from '../../interfaces/storage'
@@ -25,7 +26,7 @@ export class MainController extends EventEmitter {
   // Private library instances
   private storage: Storage
 
-  private keystore: Keystore
+  #keystoreLib: Keystore
 
   // Private sub-structures
   private providers: { [key: string]: JsonRpcProvider } = {}
@@ -38,6 +39,8 @@ export class MainController extends EventEmitter {
   accountStates: AccountStates = {}
 
   isReady: boolean = false
+
+  keystore: KeystoreController
 
   accountAdder: AccountAdderController
 
@@ -66,7 +69,11 @@ export class MainController extends EventEmitter {
   // 2) it's easier to mutate this - to add/remove accountOps, to find the right accountOp to extend, etc.
   // accountAddr => networkId => { accountOp, estimation }
   // @TODO consider getting rid of the `| null` ugliness, but then we need to auto-delete
-  accountOpsToBeSigned: { [key: string]: { [key: string]: { accountOp: AccountOp, estimation: EstimateResult | null } | null } } = {}
+  accountOpsToBeSigned: {
+    [key: string]: {
+      [key: string]: { accountOp: AccountOp; estimation: EstimateResult | null } | null
+    }
+  } = {}
 
   accountOpsToBeConfirmed: { [key: string]: { [key: string]: AccountOp } } = {}
 
@@ -80,10 +87,11 @@ export class MainController extends EventEmitter {
     this.storage = storage
     this.portfolio = new PortfolioController(storage)
     // @TODO: KeystoreSigners
-    this.keystore = new Keystore(storage, {})
+    this.#keystoreLib = new Keystore(storage, {})
+    this.keystore = new KeystoreController(this.#keystoreLib)
     this.initialLoadPromise = this.load()
     this.settings = { networks }
-    this.emailVault = new EmailVaultController(storage, fetch, relayerUrl, this.keystore)
+    this.emailVault = new EmailVaultController(storage, fetch, relayerUrl, this.#keystoreLib)
     this.accountAdder = new AccountAdderController({ storage, relayerUrl, fetch })
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
     // @TODO Load userRequests from storage and emit that we have updated
@@ -92,7 +100,7 @@ export class MainController extends EventEmitter {
 
   private async load(): Promise<void> {
     ;[this.keys, this.accounts, this.selectedAccount] = await Promise.all([
-      this.keystore.getKeys(),
+      this.#keystoreLib.getKeys(),
       this.storage.get('accounts', []),
       this.storage.get('selectedAccount', null)
     ])
@@ -104,10 +112,13 @@ export class MainController extends EventEmitter {
     this.accountStates = await this.getAccountsInfo(this.accounts)
     this.isReady = true
 
+    const isKeystoreReady = await this.#keystoreLib.isReadyToStoreKeys()
+    this.keystore.setIsReadyToStoreKeys(isKeystoreReady)
+
     const addReadyToAddAccountsIfNeeded = () => {
       if (
         !this.accountAdder.readyToAddAccounts.length &&
-        this.accountAdder.addAccountsStatus.type !== 'SUCCESS'
+        this.accountAdder.addAccountsStatus !== 'SUCCESS'
       )
         return
 
@@ -266,14 +277,6 @@ export class MainController extends EventEmitter {
     this.emitUpdate()
   }
 
-  lock() {
-    this.keystore.lock()
-  }
-
-  isUnlock() {
-    return this.keystore.isUnlocked()
-  }
-
   // @TODO allow this to remove multiple OR figure out a way to debounce re-estimations
   // first one sounds more reasonble
   // although the second one can't hurt and can help (or no debounce, just a one-at-a-time queue)
@@ -289,7 +292,8 @@ export class MainController extends EventEmitter {
     if (action.kind === 'call') {
       // @TODO ensure acc info, re-estimate
       const accountOp = this.getAccountOp(accountAddr, networkId)
-      if (accountOp) this.accountOpsToBeSigned[accountAddr][networkId] = { accountOp, estimation: null }
+      if (accountOp)
+        this.accountOpsToBeSigned[accountAddr][networkId] = { accountOp, estimation: null }
     } else
       this.messagesToBeSigned[accountAddr] = this.messagesToBeSigned[accountAddr].filter(
         (x) => x.fromUserRequestId !== id
