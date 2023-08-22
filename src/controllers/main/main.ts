@@ -167,6 +167,7 @@ export class MainController extends EventEmitter {
 
     this.selectedAccount = toAccountAddr
     await this.storage.set('selectedAccount', toAccountAddr)
+    this.updateSelectedAccount(toAccountAddr)
     this.emitUpdate()
   }
 
@@ -237,6 +238,11 @@ export class MainController extends EventEmitter {
       accountOpToExecuteBefore: null,
       calls
     }
+  }
+
+  updateSelectedAccount(selectedAccount: string | null = null) {
+    if (!selectedAccount) return
+    this.portfolio.updateSelectedAccount(this.accounts, this.settings.networks, selectedAccount)
   }
 
   async addUserRequest(req: UserRequest) {
