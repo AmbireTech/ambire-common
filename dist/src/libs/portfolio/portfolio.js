@@ -167,7 +167,7 @@ class Portfolio {
             tokenErrors: tokensWithErr
                 .filter(([error, result]) => error !== '0x' || result.symbol === '')
                 .map(([error, result]) => ({ error, address: result.address })),
-            collections: collections.filter((x) => x.collectables?.length),
+            collections: collections.filter((x) => x.collectibles?.length),
             total: tokens.reduce((cur, token) => {
                 for (const x of token.priceIn) {
                     cur[x.baseCurrency] =

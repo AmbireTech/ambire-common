@@ -1,8 +1,19 @@
-import { describe, test } from '@jest/globals'
+import { ethers } from 'ethers'
 import fetch from 'node-fetch'
-import { UserRequest } from '../../interfaces/userRequest'
-import { MainController } from './main'
+
+import { describe, expect, test } from '@jest/globals'
+
 import { produceMemoryStore } from '../../../test/helpers'
+import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
+import { networks } from '../../consts/networks'
+import { UserRequest } from '../../interfaces/userRequest'
+import { KeyIterator } from '../../libs/keyIterator/keyIterator'
+import { getBytecode } from '../../libs/proxyDeploy/bytecode'
+import { getAmbireAccountAddress } from '../../libs/proxyDeploy/getAmbireAddressTwo'
+import { MainController } from './main'
+
+const polygon = networks.find((x) => x.id === 'polygon')
+if (!polygon) throw new Error('unable to find polygon network in consts')
 
 describe('Main Controller ', () => {
   const accounts = [
@@ -104,5 +115,47 @@ describe('Main Controller ', () => {
     await new Promise((resolve) => controller.emailVault.onUpdate(() => resolve(null)))
     await wait(10000)
     // console.log('isUnlock ==>', controller.isUnlock())
+  })
+
+  test('should add smart accounts', async () => {
+    controller = new MainController(storage, fetch, relayerUrl)
+
+    const signerAddr = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
+    const priv = { addr: signerAddr, hash: true }
+    const bytecode = await getBytecode(polygon, [priv])
+
+    // Same mechanism to generating this one as used for the
+    // `accountNotDeployed` in accountState.test.ts
+    const accountPendingCreation = {
+      addr: getAmbireAccountAddress(AMBIRE_ACCOUNT_FACTORY, bytecode),
+      label: 'test account',
+      pfp: 'pfp',
+      associatedKeys: [signerAddr],
+      creation: {
+        factoryAddr: AMBIRE_ACCOUNT_FACTORY,
+        bytecode,
+        salt: ethers.toBeHex(0, 32)
+      }
+    }
+
+    let emitCounter = 0
+    await new Promise((resolve) => {
+      controller.onUpdate(() => {
+        emitCounter++
+
+        if (emitCounter === 1 && controller.isReady) {
+          const keyIterator = new KeyIterator(
+            '0x574f261b776b26b1ad75a991173d0e8ca2ca1d481bd7822b2b58b2ef8a969f12'
+          )
+          controller.accountAdder.init({ keyIterator, preselectedAccounts: [] })
+          controller.accountAdder.addAccounts([accountPendingCreation]).catch(console.error)
+        }
+
+        if (emitCounter === 2) {
+          expect(controller.accounts).toContainEqual(accountPendingCreation)
+          resolve(true)
+        }
+      })
+    })
   })
 })

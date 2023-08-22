@@ -1,12 +1,14 @@
-import { AccountOp } from '../accountOp/accountOp'
+import { NetworkId } from 'interfaces/networkDescriptor'
+
 import { Account } from '../../interfaces/account'
+import { AccountOp } from '../accountOp/accountOp'
 
 export interface Price {
   baseCurrency: string
   price: number
 }
 
-export interface Collectable {
+export interface Collectible {
   url: string
   id: bigint
 }
@@ -20,12 +22,15 @@ export interface TokenResult {
   address: string
   symbol: string
   amount: bigint
+  networkId: NetworkId
   amountPostSimulation?: bigint
   decimals: number
   priceIn: Price[]
-  // only applicable for NFTs
-  name?: string
-  collectables?: Collectable[]
+}
+
+export interface CollectionResult extends TokenResult {
+  name: string
+  collectibles: Collectible[]
 }
 
 export type PriceCache = Map<string, [number, Price[]]>
@@ -65,7 +70,7 @@ export interface PortfolioGetResult {
   priceCache: PriceCache
   tokens: TokenResult[]
   tokenErrors: { error: string; address: string }[]
-  collections: TokenResult[]
+  collections: CollectionResult[]
   total: { [name: string]: bigint }
   hints: Hints
   hintsError?: string
