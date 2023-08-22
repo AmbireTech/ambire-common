@@ -4,6 +4,8 @@
 // @TODO use type generics instead of any
 // @TODO include new selectors and names in controller
 // @TODO add all humanizer related scripts to package.json
+// @TODO add 'unknown ___ action' in every module on no matcher key
+// @TODO final review of files and jsons
 import { Ir } from '../../libs/humanizer/interfaces'
 import { Storage } from '../../interfaces/storage'
 import { AccountOp } from '../../libs/accountOp/accountOp'

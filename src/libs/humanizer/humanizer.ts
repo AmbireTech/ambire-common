@@ -13,11 +13,11 @@ import { WALLETModule } from './modules/WALLET'
 // @TODO humanize signed messages
 // @TODO change all console.logs to throw errs
 // @TODO finish modules:
-// 1inch
 // WALLET/ADX staking
 // @TODO fix comments from feedback https://github.com/AmbireTech/ambire-common/pull/281
 // @TODO add name/label argumsnt to getAddress and getToken utils funcs
 // @TODO add visualization interface
+// @TODO add new mechanism for error emitting
 export function initHumanizerMeta(humanizerMeta: any) {
   const newHumanizerMeta: any = {}
 
@@ -54,7 +54,7 @@ export function callsToIr(accountOp: AccountOp): Ir {
 const getName = (address: string, humanizerMeta: any) => {
   if (humanizerMeta[`addressBook:${address}`]) return humanizerMeta[`addressBook:${address}`]
   if (humanizerMeta[`names:${address}`]) return humanizerMeta[`names:${address}`]
-  if (humanizerMeta[`tokens:${address}`]) return `${humanizerMeta[`names:${address}`]} contract`
+  if (humanizerMeta[`tokens:${address}`]) return `${humanizerMeta[`tokens:${address}`][0]} contract`
   return null
 }
 // adds 'name' proeprty to visualization of addresses (needs initialHumanizer to work on unparsed transactions)
@@ -66,11 +66,9 @@ export function namingHumanizer(
 ): [Ir, Promise<any>[]] {
   const newCalls = currentIr.calls.map((call) => {
     const newVisualization = call.fullVisualization?.map((v: any) => {
-      return v.type === 'address' && !v.name
+      return (v.type === 'address' || v.type === 'token') && !v.name
         ? {
             ...v,
-            // in case of more sophisticated name resolutions
-            // new name function so it can be getName() || shortenAddress() ????????
             name: getName(v.address, accountOp.humanizerMeta) || shortenAddress(v.address)
           }
         : v
@@ -96,6 +94,7 @@ async function fetchFuncEtherface(
       ).json()
       break
     } catch (e: any) {
+      // @TODO to throw err, caught by try catch in controller
       console.log(`fetchFuncEtherface: ${e.message}`)
     }
   }
@@ -110,7 +109,7 @@ async function fetchFuncEtherface(
 }
 const checkIfUnknowAction = (v: Array<any>) => {
   try {
-    return v.length === 1 && v[0].type === 'action' && v[0].content === 'Unknown action'
+    return v.length === 1 && v[0].type === 'action' && v[0].content.startsWith('Unknown action')
   } catch (e) {
     return false
   }

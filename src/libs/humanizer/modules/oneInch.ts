@@ -11,7 +11,7 @@ const parseZeroAddressIfNeeded = (address: string) => {
 }
 
 const OneInchMapping = (humanizerInfo: any) => {
-  const iface = new ethers.Interface(humanizerInfo.abis.Swappin)
+  const iface = new ethers.Interface(humanizerInfo?.['abis:Swappin'])
 
   return {
     [`${iface.getFunction('swap')}`]: (accounutOp: AccountOp, call: IrCall) => {
@@ -89,11 +89,13 @@ export const oneInchHumanizer = (
   }
   const newCalls: IrCall[] = []
   ir.calls.forEach((call) => {
-    if (matcher[call.data.slice(0, 10)]) {
-      newCalls.push({
-        ...call,
-        fullVisualization: matcher[call.data.slice(0, 10)](accountOp, call)
-      })
+    if (call.to === '0x1111111254fb6c44bAC0beD2854e76F90643097d') {
+      matcher[call.data.slice(0, 10)]
+        ? newCalls.push({
+            ...call,
+            fullVisualization: matcher[call.data.slice(0, 10)](accountOp, call)
+          })
+        : newCalls.push({ ...call, fullVisualization: [getAction('Unknown action (1inch)')] })
     } else {
       newCalls.push(call)
     }

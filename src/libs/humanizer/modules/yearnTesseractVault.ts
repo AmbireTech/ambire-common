@@ -91,7 +91,7 @@ export const yearnVaultModule = (
       } else {
         newCalls.push({
           ...call,
-          fullVisualization: [getAction('Unknown yearn action')]
+          fullVisualization: [getAction('Unknown action (yearn)')]
         })
       }
     } else {
