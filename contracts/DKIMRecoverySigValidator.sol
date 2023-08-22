@@ -192,8 +192,8 @@ contract DKIMRecoverySigValidator {
     RRUtils.SignedSet memory txtSet = txtRset.rrset.readSignedSet();
     Strings.slice memory publicKey = string(txtSet.data).toSlice();
     publicKey.split('p='.toSlice());
-    require(bytes(publicKey.toString()).length > 0, 'public key not found in txt set');
     bytes memory pValue = bytes(publicKey.toString());
+    require(pValue.length > 0, 'public key not found in txt set');
 
     string memory pValueOrg = string(pValue);
     uint256 offsetOfInvalidUnicode = pValue.find(0, pValue.length, 0x9b);
