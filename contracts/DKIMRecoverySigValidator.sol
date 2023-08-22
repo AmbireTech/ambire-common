@@ -246,11 +246,9 @@ contract DKIMRecoverySigValidator {
   ) internal pure {
       // from looks like this: from: name <email>
       // so we take what's between <> and validate it
-      Strings.slice memory fromHeader = canonizedHeaders.toSlice();
-      fromHeader.split('from:'.toSlice());
+      Strings.slice memory fromHeader = canonizedHeaders.toSlice().find('from:'.toSlice());
       fromHeader.split('<'.toSlice());
-      fromHeader.rsplit('>'.toSlice());
-      require(fromHeader.compare(accountEmailFrom.toSlice()) == 0, 'emailFrom not valid');
+      require(fromHeader.startsWith(accountEmailFrom.toSlice()), 'emailFrom not valid');
 
       // to looks like this: to:email
       Strings.slice memory toHeader = 'to:'.toSlice().concat(accountEmailTo.toSlice()).toSlice();
