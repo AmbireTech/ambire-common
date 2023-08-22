@@ -127,6 +127,10 @@ const transactions: { [key: string]: Array<IrCall> } = {
     }
   ]
 }
+// @TODO !!!!!!!!!!!!!!!!!!! bugs:
+// @TODO UNISWAP FUNNY HUMANIZATION (ZERO ADDRESSES)
+// @TODO NAMING HUMANIZER DOESNT TELL MATIK AND ETH APART
+// @TODO HUMANIZATION TO TEXT ADD TOKEN AMOUNTS
 
 describe('module tests', () => {
   beforeEach(async () => {
