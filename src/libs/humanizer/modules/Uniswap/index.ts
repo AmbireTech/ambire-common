@@ -4,6 +4,7 @@ import { HumanizerFragment, Ir, IrCall } from '../../interfaces'
 import { uniUniversalRouter } from './uniUnivarsalRouter'
 import { uniV2Mapping } from './uniV2'
 import { uniV32Mapping, uniV3Mapping } from './uniV3'
+import { getAction } from '../../utils'
 
 const WETH_ADDRESS = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2'
 
@@ -71,11 +72,16 @@ export function uniswapHumanizer(
   currentIr.calls.forEach((call: IrCall) => {
     // check against sus contracts with same func selectors
     if (accountOp.humanizerMeta?.[`names:${call.to}`] === 'Uniswap') {
-      const humanizedCalls = matcher?.[call.to]?.[call.data.substring(0, 10)](accountOp, call)
-      humanizedCalls.forEach((hc: IrCall, index: number) =>
-        // if multicall has value it shouldnt result in multiple calls with value
-        index === 0 ? newCalls.push(hc) : newCalls.push({ ...hc, value: 0n })
-      )
+      if (matcher?.[call.to]?.[call.data.substring(0, 10)]) {
+        matcher[call.to]
+          [call.data.substring(0, 10)](accountOp, call)
+          .forEach((hc: IrCall, index: number) =>
+            // if multicall has value it shouldnt result in multiple calls with value
+            index === 0 ? newCalls.push(hc) : newCalls.push({ ...hc, value: 0n })
+          )
+      } else {
+        newCalls.push({ ...call, fullVisualization: [getAction('Unknown action (Uniswap)')] })
+      }
     } else {
       newCalls.push(call)
     }

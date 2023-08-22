@@ -1,10 +1,11 @@
 import { describe, expect, test } from '@jest/globals'
 
+import fetch from 'node-fetch'
 import { AccountOp } from '../accountOp/accountOp'
-import { callsToIr, initHumanizerMeta } from './humanizer'
+import { callsToIr, humanize, initHumanizerMeta, visualizationToText } from './humanizer'
 
 import { uniswapHumanizer } from './modules/Uniswap'
-import { Ir } from './interfaces'
+import { Ir, IrCall } from './interfaces'
 import { wethHumanizer } from './modules/weth'
 import { aaveHumanizer } from './modules/Aave'
 import { yearnVaultModule } from './modules/yearnTesseractVault'
@@ -32,7 +33,7 @@ const accountOp: AccountOp = {
   // "remembered" at the time of signing in order to visualize history properly
   humanizerMeta: {}
 }
-const transactions = {
+const transactions: { [key: string]: Array<IrCall> } = {
   uniV3Multicalls: [
     // first part of this has recipient 0x000...000. idk why
     {
@@ -131,6 +132,19 @@ describe('module tests', () => {
   beforeEach(async () => {
     accountOp.humanizerMeta = { ...humanizerInfo }
     accountOp.calls = []
+  })
+
+  test('visualization to text', async () => {
+    const allCalls = Object.keys(transactions)
+      .map((key: string) => transactions[key])
+      .flat()
+    accountOp.calls = allCalls
+    let [ir, asyncOps] = humanize(accountOp, { fetch })
+    ;(await Promise.all(asyncOps)).forEach((a) => {
+      accountOp.humanizerMeta = { ...accountOp.humanizerMeta, [a.key]: a.value }
+    })
+    ;[ir, asyncOps] = humanize(accountOp, { fetch })
+    console.log(ir.calls.map((call: IrCall) => visualizationToText(call.fullVisualization)))
   })
   test('uniV3', () => {
     const expectedhumanization = [

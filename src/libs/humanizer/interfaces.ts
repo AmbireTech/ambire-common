@@ -2,7 +2,7 @@ export interface IrCall {
   data: string
   to: string
   value: bigint
-  fullVisualization: any
+  fullVisualization?: any
 }
 
 export interface Ir {

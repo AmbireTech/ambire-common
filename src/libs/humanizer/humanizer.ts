@@ -78,3 +78,19 @@ export function humanize(
   })
   return [currentIr, asyncOps]
 }
+
+export const visualizationToText = (visualization: Array<{ [key: string]: any }>): string => {
+  let text = ''
+  visualization.forEach((v: { [key: string]: any }) => {
+    if (v.type === 'action') text += `${v.content}`
+    if (v.type === 'lable') text += ` ${v.content}`
+    // @TODO add amount to token
+    if (v.type === 'address' || v.type === 'token')
+      text += ` ${v.name ? `${v.address} (${v.name})` : v.address}`
+  })
+  if (text) {
+    return text
+  }
+  // throw err
+  return 'Unparsable visualization'
+}

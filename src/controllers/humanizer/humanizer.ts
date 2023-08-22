@@ -1,5 +1,4 @@
 /* eslint-disable no-await-in-loop */
-// @TODO func that takes IrCall and returns the humanization as text
 // @TODO use for of or for in instead of object.keys().map/.forEach
 // @TODO use type generics instead of any
 // @TODO include new selectors and names in controller

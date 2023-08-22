@@ -8,6 +8,8 @@ async function fetchFuncEtherface(
   selector: string,
   fetch: Function
 ): Promise<HumanizerFragment | null> {
+  // @TODO to be emited as err
+  if (!fetch) console.log('fetchFuncEtherface: not passed fetch')
   let res
   // often fails due to timeout => loop for retrying
   for (let i = 0; i < 3; i++) {
@@ -23,7 +25,7 @@ async function fetchFuncEtherface(
       console.log(`fetchFuncEtherface: ${e.message}`)
     }
   }
-  const func = res.items[0]
+  const func = res?.items?.[0]
   return func
     ? {
         key: `funcSelectors:${selector}`,
@@ -52,7 +54,7 @@ export function fallbackHumanizer(
     if (call.data !== '0x') {
       if (accountOp.humanizerMeta?.[`funcSelectors:${call.data.slice(0, 10)}`]) {
         visualization.push(
-          getAction(accountOp.humanizerMeta?.[`funcSelectors:${call.data.slice(0, 10)}`])
+          getAction(`${accountOp.humanizerMeta?.[`funcSelectors:${call.data.slice(0, 10)}`]} to`)
         )
       } else {
         const promise = fetchFuncEtherface(call.data.slice(0, 10), options.fetch)
