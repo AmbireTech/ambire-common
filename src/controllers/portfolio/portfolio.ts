@@ -4,8 +4,7 @@ import fetch from 'node-fetch'
 import { Account, AccountId } from '../../interfaces/account'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { Storage } from '../../interfaces/storage'
-import { AccountOp } from '../../libs/accountOp/accountOp'
-import { stringify } from '../../libs/bigintJson/bigintJson'
+import { AccountOp, isAccountOpsIntentEqual } from '../../libs/accountOp/accountOp'
 import { Hints, PortfolioGetResult } from '../../libs/portfolio/interfaces'
 import { GetOptions, Portfolio } from '../../libs/portfolio/portfolio'
 import EventEmitter from '../eventEmitter'
@@ -151,8 +150,17 @@ export class PortfolioController extends EventEmitter {
         const currentAccountOps = accountOps?.[network.id]
         const simulatedAccountOps = pendingState[network.id]?.accountOps
 
-        const forceUpdate =
-          opts?.forceUpdate || stringify(currentAccountOps) !== stringify(simulatedAccountOps)
+        // We are performing the following extended check because both (or one of both) variables may have an undefined value.
+        // If both variables contain AccountOps, we can simply compare for changes in the AccountOps intent.
+        // However, when one of the variables is not set, two cases arise:
+        // 1. A change occurs if one variable is undefined and the other one holds an AccountOps object.
+        // 2. No change occurs if both variables are undefined.
+        const areAccountOpsChanged =
+          currentAccountOps && simulatedAccountOps
+            ? !isAccountOpsIntentEqual(currentAccountOps, simulatedAccountOps)
+            : currentAccountOps !== simulatedAccountOps
+
+        const forceUpdate = opts?.forceUpdate || areAccountOpsChanged
 
         const [isSuccessfulLatestUpdate, isSuccessfulPendingUpdate] = await Promise.all([
           // Latest state update
