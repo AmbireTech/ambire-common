@@ -302,8 +302,32 @@ describe('module tests', () => {
   })
   test('yearn', () => {
     accountOp.calls = [...transactions.yearn]
+    const expectedhumanization = [
+      [
+        { content: 'Deposit' },
+        { type: 'token', name: 'yDAI' },
+        { content: 'to' },
+        { address: '0xdA816459F1AB5631232FE5e97a05BBBb94970c95' }
+      ],
+      [
+        { content: 'Withdraw' },
+        { type: 'token', name: 'yDAI' },
+        { content: 'from' },
+        { address: '0xdA816459F1AB5631232FE5e97a05BBBb94970c95' }
+      ],
+      [
+        { content: 'Approve' },
+        { address: '0xC92E8bdf79f0507f65a392b0ab4667716BFE0110' },
+        { content: 'for' },
+        { type: 'token', name: 'yDAI' }
+      ]
+    ]
     let ir: Ir = callsToIr(accountOp)
     ;[ir] = yearnVaultModule(accountOp, ir)
-    ir.calls.forEach((call) => console.log(call.fullVisualization))
+    ir.calls.forEach((call, i) =>
+      call.fullVisualization.forEach((v: any, j: number) =>
+        expect(v).toMatchObject(expectedhumanization[i][j])
+      )
+    )
   })
 })

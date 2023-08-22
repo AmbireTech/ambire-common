@@ -15,9 +15,9 @@ import { WALLETModule } from './modules/WALLET'
 // @TODO finish modules:
 // 1inch
 // WALLET/ADX staking
-// yearn
 // @TODO fix comments from feedback https://github.com/AmbireTech/ambire-common/pull/281
 // @TODO add name/label argumsnt to getAddress and getToken utils funcs
+// @TODO add visualization interface
 export function initHumanizerMeta(humanizerMeta: any) {
   const newHumanizerMeta: any = {}
 
@@ -66,7 +66,7 @@ export function namingHumanizer(
 ): [Ir, Promise<any>[]] {
   const newCalls = currentIr.calls.map((call) => {
     const newVisualization = call.fullVisualization?.map((v: any) => {
-      return v.type === 'address'
+      return v.type === 'address' && !v.name
         ? {
             ...v,
             // in case of more sophisticated name resolutions

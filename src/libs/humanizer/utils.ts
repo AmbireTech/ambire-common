@@ -11,18 +11,18 @@ export function getAddress(_address: string, name?: string) {
   return name ? { type: 'address', address, name } : { type: 'address', address }
 }
 
-export function getToken(_address: string, amount: bigint) {
+export function getToken(_address: string, amount: bigint, name?: string) {
   const address = ethers.getAddress(_address)
-  return { type: 'token', address, amount }
+  return name ? { type: 'token', address, amount } : { type: 'token', address, amount, name }
 }
 
 export function getNft(address: string, id: bigint) {
   return { type: 'nft', address, id }
 }
 
-export function getOnBehalfOf(onBehalfOf: string, sender: string) {
+export function getOnBehalfOf(onBehalfOf: string, sender: string, name?: string) {
   return onBehalfOf.toLowerCase() !== sender.toLowerCase()
-    ? [getLable('on befalf of'), getAddress(onBehalfOf)]
+    ? [getLable('on befalf of'), getAddress(onBehalfOf, name)]
     : []
 }
 
