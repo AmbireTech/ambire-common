@@ -491,7 +491,7 @@ export class AccountAdderController extends EventEmitter {
       .map((addr: any) => {
         const { factoryAddr, bytecode, salt, associatedKeys } = data.accounts[addr]
         // Checks whether the account.addr matches the addr generated from the
-        // factory, could be a possible attack vector.
+        // factory. Should never happen, but could be a possible attack vector.
         const isInvalidAddress =
           ethers.getCreate2Address(factoryAddr, salt, ethers.keccak256(bytecode)).toLowerCase() !==
           addr.toLowerCase()
