@@ -122,9 +122,10 @@ describe('Main Controller ', () => {
 
     const signerAddr = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
     const priv = { addr: signerAddr, hash: true }
-
-    // Same as `accountNotDeployed` in accountState.test.ts
     const bytecode = await getBytecode(polygon, [priv])
+
+    // Same mechanism to generating this one as used for the
+    // `accountNotDeployed` in accountState.test.ts
     const accountPendingCreation = {
       addr: getAmbireAccountAddress(AMBIRE_ACCOUNT_FACTORY, bytecode),
       label: 'test account',
@@ -152,7 +153,7 @@ describe('Main Controller ', () => {
 
         if (emitCounter === 2) {
           expect(controller.accounts).toContainEqual(accountPendingCreation)
-          resolve(null)
+          resolve(true)
         }
       })
     })
