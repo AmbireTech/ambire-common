@@ -75,6 +75,12 @@ const supportedProtocols: SupportedProtocolType[] = [
     nftsProvider: 'velcro'
   },
   {
+    network: 'base',
+    protocols: [],
+    balancesProvider: 'velcro',
+    nftsProvider: 'velcro'
+  },
+  {
     network: 'andromeda',
     protocols: [],
     balancesProvider: 'velcro',
