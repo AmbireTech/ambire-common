@@ -253,6 +253,22 @@ const networks: NetworkType[] = [
     }
   },
   {
+    id: NETWORKS.okc,
+    chainId: 66,
+    nativeAssetSymbol: 'OTK',
+    name: 'OKX Chain',
+    explorerUrl: 'https://www.oklink.com/en/okc',
+    unstoppableDomainsChain: 'ERC20',
+    isGasTankAvailable: true,
+    relayerlessOnly: false,
+    nativeAsset: {
+      address: '0x0000000000000000000000000000000000000000',
+      symbol: 'OTK',
+      coingeckoId: 'oec-token',
+      decimals: 18
+    }
+  },
+  {
     id: 'ethereum-pow',
     chainId: 10001,
     nativeAssetSymbol: 'ETHW',
