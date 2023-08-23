@@ -1,6 +1,6 @@
 import { AccountOp } from '../../accountOp/accountOp'
-import { Ir } from '../interfaces'
-import { shortenAddress } from '../utils'
+import { HumanizerFragment, Ir } from '../interfaces'
+import { getTokenInfo, shortenAddress } from '../utils'
 
 const getName = (address: string, humanizerMeta: any) => {
   if (humanizerMeta[`addressBook:${address}`]) return humanizerMeta[`addressBook:${address}`]
@@ -14,7 +14,8 @@ export function namingHumanizer(
   currentIr: Ir,
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   options?: any
-): [Ir, Promise<any>[]] {
+): [Ir, Array<Promise<any>>] {
+  const asyncOps: Array<Promise<any>> = []
   const newCalls = currentIr.calls.map((call) => {
     const newVisualization = call.fullVisualization?.map((v: any) => {
       if (v.type === 'address' && !v.name)
@@ -22,12 +23,17 @@ export function namingHumanizer(
           ...v,
           name: getName(v.address, accountOp.humanizerMeta) || shortenAddress(v.address)
         }
-      if (v.type === 'token' && !v.symbol)
-        return { ...v, symbol: accountOp.humanizerMeta?.[`tokens:${v.address}`] }
+      if (v.type === 'token' && !v.symbol) {
+        if (!accountOp.humanizerMeta?.[`tokens:${v.address}`]) {
+          asyncOps.push(getTokenInfo(accountOp, v.address, options.fetch))
+          return { ...v, symbol: `${v.address} token` }
+        }
+        return { ...v, symbol: accountOp.humanizerMeta?.[`tokens:${v.address}`][0] }
+      }
       return v
     })
     return { ...call, fullVisualization: newVisualization || call.fullVisualization }
   })
   const newIr = { ...currentIr, calls: newCalls }
-  return [newIr, []]
+  return [newIr, asyncOps]
 }

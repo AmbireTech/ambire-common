@@ -1,4 +1,8 @@
 import { ethers } from 'ethers'
+import { AccountOp } from 'libs/accountOp/accountOp'
+import { HumanizerFragment } from './interfaces'
+import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
+import { networks } from '../../consts/networks'
 
 export function getLable(content: string) {
   return { type: 'lable', content }
@@ -60,4 +64,31 @@ export function getDeadlineText(deadlineSecs: bigint, mined = false) {
 
 export function shortenAddress(addr: string) {
   return addr ? `${addr.slice(0, 5)}...${addr.slice(-3)}` : null
+}
+
+export async function getTokenInfo(
+  accountOp: AccountOp,
+  address: string,
+  fetch: Function
+): Promise<HumanizerFragment | null> {
+  // @TODO update networks list
+  const network = networks.find(
+    (n: NetworkDescriptor) => n.chainId === BigInt(accountOp.networkId)
+  )?.id
+  try {
+    // @TODO update to use wrapper for coingecko api (if (no key) {free api} else {paid api})
+    const response = await (
+      await fetch(`https://api.coingecko.com/api/v3/coins/${network}/contract/${address}`)
+    ).json()
+
+    if (response.symbol && response.detail_platforms?.ethereum.decimal_place)
+      return {
+        key: `tokens:${address}`,
+        isGlobal: true,
+        value: [response.symbol.toUpperCase(), response.detail_platforms?.ethereum.decimal_place]
+      }
+    return null
+  } catch (e) {
+    return null
+  }
 }

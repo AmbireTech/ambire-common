@@ -1,37 +1,8 @@
 import { ethers } from 'ethers'
 import { AccountOp } from 'libs/accountOp/accountOp'
 // eslint-disable-next-line import/no-extraneous-dependencies
-import { NetworkDescriptor } from 'interfaces/networkDescriptor'
-import { HumanizerFragment, Ir, IrCall } from '../interfaces'
-import { getLable, getAction, getAddress, getNft, getToken } from '../utils'
-import { networks } from '../../../consts/networks'
-
-async function getTokenInfo(
-  accountOp: AccountOp,
-  address: string,
-  fetch: Function
-): Promise<HumanizerFragment | null> {
-  // @TODO update networks list
-  const network = networks.find(
-    (n: NetworkDescriptor) => n.chainId === BigInt(accountOp.networkId)
-  )?.id
-  try {
-    // @TODO update to use wrapper for coingecko api (if (no key) {free api} else {paid api})
-    const response = await (
-      await fetch(`https://api.coingecko.com/api/v3/coins/${network}/contract/${address}`)
-    ).json()
-
-    if (response.symbol && response.detail_platforms?.ethereum.decimal_place)
-      return {
-        key: `tokens:${address}`,
-        isGlobal: true,
-        value: [response.symbol.toUpperCase(), response.detail_platforms?.ethereum.decimal_place]
-      }
-    return null
-  } catch (e) {
-    return null
-  }
-}
+import { getLable, getAction, getAddress, getNft, getToken, getTokenInfo } from '../utils'
+import { Ir, IrCall } from '../interfaces'
 
 function genericErc721Humanizer(
   accountOp: AccountOp,

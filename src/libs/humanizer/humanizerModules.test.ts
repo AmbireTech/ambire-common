@@ -133,8 +133,6 @@ const transactions: { [key: string]: Array<IrCall> } = {
   ]
 }
 // @TODO !!!!!!!!!!!!!!!!!!! bugs:
-
-// @TODO UNISWAP FUNNY HUMANIZATION (ZERO ADDRESSES)
 // @TODO NAMING HUMANIZER DOESNT TELL MATIK AND ETH APART
 // @TODO HUMANIZATION TO TEXT ADD TOKEN AMOUNTS
 
@@ -151,7 +149,7 @@ describe('module tests', () => {
     accountOp.calls = allCalls
     let [ir, asyncOps] = humanize(accountOp, { fetch })
     ;(await Promise.all(asyncOps)).forEach((a) => {
-      accountOp.humanizerMeta = { ...accountOp.humanizerMeta, [a.key]: a.value }
+      if (a) accountOp.humanizerMeta = { ...accountOp.humanizerMeta, [a.key]: a.value }
     })
     ;[ir, asyncOps] = humanize(accountOp, { fetch })
     // @TODO finish
