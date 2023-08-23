@@ -1,4 +1,5 @@
 import { Wallet, Contract, Interface, keccak256, AbiCoder, getBytes, JsonRpcProvider } from 'ethers'
+import fetch from 'node-fetch'
 import { wrapEthSign } from '../ambireSign'
 import AMBIRE_ACCOUNT from '../../contracts/compiled/AmbireAccount.json'
 import ENTRY_POINT_ABI from './ENTRY_POINT.json'
@@ -51,8 +52,8 @@ async function test() {
     initCode: '0x',
     callData,
     callGasLimit: hexlify(100000), // hardcode it for now at a high value
-    verificationGasLimit: hexlify(500_000), // hardcode it for now at a high value
-    preVerificationGas: hexlify(50_000), // hardcode it for now at a high value
+    verificationGasLimit: hexlify(500000), // hardcode it for now at a high value
+    preVerificationGas: hexlify(50000), // hardcode it for now at a high value
     maxFeePerGas: hexlify(gasPrice),
     maxPriorityFeePerGas: hexlify(gasPrice),
     paymasterAndData: '0x',
@@ -62,20 +63,24 @@ async function test() {
   const args = [userOperation, ENTRY_POINT_ADDR]
   console.log({ args })
 
-  const userOperationHash = await pimlicoProvider.send('eth_sendUserOperation', args)
-
-  console.log('Pimlico userOperation Hash:', userOperationHash)
-
-  let receipt = null
-  while (receipt === null) {
-    await new Promise((resolve) => setTimeout(resolve, 1000))
-    receipt = await pimlicoProvider.send('eth_getUserOperationReceipt', [userOperationHash])
-    console.log(receipt === null ? 'Still waiting...' : receipt)
+  const options = {
+    method: 'POST',
+    headers: { accept: 'application/json', 'content-type': 'application/json' },
+    body: JSON.stringify({ id: 1, jsonrpc: '2.0', method: 'pm_sponsorUserOperation', params: args })
   }
 
-  const txHash = receipt.receipt.transactionHash
+  await fetch(pimlicoEndpoint, options)
+    .then((response) => response.json())
+    .then((response) => {
+      console.log(response)
+    })
+    .catch((err) => console.error(err))
 
-  console.log(`UserOperation included: ${txHash}`)
+  // const sponsorUserOperationResult = await pimlicoProvider
+  //   .send('pm_sponsorUserOperation', args)
+  //   .catch((e) => console.log({ e }))
+
+  // console.log({ sponsorUserOperationResult })
 }
 
 test()
