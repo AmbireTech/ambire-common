@@ -13,7 +13,7 @@ describe('AccountOp', () => {
     ]
     const op: AccountOp = {
       accountAddr: ambireAccountAddress,
-      networkId: 'hardhat',
+      networkId: 'ethereum',
       signingKeyAddr: null,
       nonce,
       calls: txns,
@@ -27,7 +27,7 @@ describe('AccountOp', () => {
       ethers.keccak256(
         abiCoder.encode(
         ['address', 'uint', 'uint', 'tuple(address, uint, bytes)[]'],
-        [ambireAccountAddress, 31337n, nonce, txns.map((call: Call) => ([call.to, call.value, call.data]))]
+        [ambireAccountAddress, 1n, nonce, txns.map((call: Call) => ([call.to, call.value, call.data]))]
         )
       )
     )
@@ -42,7 +42,7 @@ describe('AccountOp', () => {
     ]
     const op: AccountOp = {
       accountAddr: ambireAccountAddress,
-      networkId: 'hardhat',
+      networkId: 'ethereum',
       signingKeyAddr: null,
       nonce: null,
       calls: txns,

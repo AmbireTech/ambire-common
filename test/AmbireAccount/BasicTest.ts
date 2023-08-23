@@ -212,22 +212,16 @@ describe('Basic Ambire Account tests', function () {
     const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signer)
     await sendFunds(ambireAccountAddress, 1)
     const nonce = await contract.nonce()
-    const txns: Call[] = [
-      {to: addressTwo, value: ethers.parseEther('0.01'), data: '0x00'},
-      {to: addressThree, value: ethers.parseEther('0.01'), data: '0x00'},
+    const txns = [
+      [addressTwo, ethers.parseEther('0.01'), '0x00'],
+      [addressThree, ethers.parseEther('0.01'), '0x00']
     ]
-    const op: AccountOp = {
-      accountAddr: ambireAccountAddress,
-      networkId: 'hardhat',
-      signingKeyAddr: null,
-      nonce,
-      calls: txns,
-      gasLimit: null,
-      signature: null,
-      gasFeePayment: null,
-      accountOpToExecuteBefore: null
-    }
-    const msg = accountOpSignableHash(op)
+    const msg = ethers.getBytes(ethers.keccak256(
+      abiCoder.encode(
+        ['address', 'uint', 'uint', 'tuple(address, uint, bytes)[]'],
+        [ambireAccountAddress, chainId, nonce, txns]
+      )
+    ))
     const s = wrapEthSign(await signer.signMessage(msg))
     const balance = await provider.getBalance(ambireAccountAddress)
     const txn = await contract.execute(txns, s)
