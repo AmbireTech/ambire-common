@@ -1,6 +1,7 @@
 import { JsonRpcProvider } from 'ethers'
 
 import { networks } from '../../consts/networks'
+import { KeystoreController } from '../keystore/keystore'
 import { Account, AccountId, AccountOnchainState } from '../../interfaces/account'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
 import { Storage } from '../../interfaces/storage'
@@ -13,7 +14,6 @@ import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { AccountAdderController } from '../accountAdder/accountAdder'
 import { EmailVaultController } from '../emailVault'
 import EventEmitter from '../eventEmitter'
-import { KeystoreController } from '../keystore/keystore'
 import { PortfolioController } from '../portfolio/portfolio'
 
 export type AccountStates = {
@@ -118,7 +118,7 @@ export class MainController extends EventEmitter {
     const addReadyToAddAccountsIfNeeded = () => {
       if (
         !this.accountAdder.readyToAddAccounts.length &&
-        this.accountAdder.addAccountsStatus.type !== 'SUCCESS'
+        this.accountAdder.addAccountsStatus !== 'SUCCESS'
       )
         return
 
@@ -167,6 +167,7 @@ export class MainController extends EventEmitter {
 
     this.selectedAccount = toAccountAddr
     await this.storage.set('selectedAccount', toAccountAddr)
+    this.updateSelectedAccount(toAccountAddr)
     this.emitUpdate()
   }
 
@@ -239,6 +240,11 @@ export class MainController extends EventEmitter {
     }
   }
 
+  updateSelectedAccount(selectedAccount: string | null = null) {
+    if (!selectedAccount) return
+    this.portfolio.updateSelectedAccount(this.accounts, this.settings.networks, selectedAccount)
+  }
+
   async addUserRequest(req: UserRequest) {
     this.userRequests.push(req)
     const { action, accountAddr, networkId } = req
@@ -298,7 +304,6 @@ export class MainController extends EventEmitter {
       this.messagesToBeSigned[accountAddr] = this.messagesToBeSigned[accountAddr].filter(
         (x) => x.fromUserRequestId !== id
       )
-    this.emitUpdate()
   }
 
   // @TODO: protect this from race conditions/simultanous executions

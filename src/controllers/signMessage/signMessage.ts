@@ -10,7 +10,7 @@ export class SignMessageController extends EventEmitter {
   signingKeyAddr: string | null = null
 
   // A hex-encoded 129-byte array starting with 0x.
-  signature: string | null = null
+  signature: string | null = null SignatureL
 
   #request: UserRequest | null = null
 
@@ -50,9 +50,7 @@ export class SignMessageController extends EventEmitter {
     if (!['message', 'typedMessage'].includes(this.#request.action.kind)) {
       return this.emitError({
         level: 'major',
-        message: `Ambire does not support the requested ${
-          this.#request.action.kind
-        } signing method. Please contact support if you believe could be a glitch.`,
+        message: `Ambire does not support the requested ${this.#request.action.kind} signing method. Please contact support if you believe could be a glitch.`,
         error: new Error(`The ${this.#request.action.kind} signing method is not supported.`)
       })
     }
