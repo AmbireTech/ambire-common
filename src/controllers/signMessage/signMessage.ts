@@ -1,11 +1,12 @@
+import { Keystore } from 'libs/keystore/keystore'
+
 import { UserRequest } from '../../interfaces/userRequest'
 import EventEmitter from '../eventEmitter'
-import { KeystoreController } from '../keystore/keystore'
 
 export class SignMessageController extends EventEmitter {
   status: 'INITIAL' | 'LOADING' | 'DONE' = 'INITIAL'
 
-  #keystore: KeystoreController
+  #keystore: Keystore
 
   signingKeyAddr: string | null = null
 
@@ -38,7 +39,7 @@ export class SignMessageController extends EventEmitter {
   setSigningKeyAddr(signingKeyAddr: string) {}
 
   // TODO:
-  sign() {
+  async sign() {
     if (!this.#request) {
       return this.emitError({
         level: 'major',
@@ -59,20 +60,16 @@ export class SignMessageController extends EventEmitter {
 
     this.status = 'LOADING'
 
-    switch (this.#request.action.kind) {
-      case 'message':
-        return this.signMessage()
-      case 'typedMessage':
-        return this.signTypedMessage()
-      default: {
-        // TODO: Emit error.
-      }
+    const signer = await this.#keystore.getSigner(this.#request.accountAddr)
+
+    if (this.#request.action.kind === 'message') {
+      this.signature = await signer.signMessage(this.#request.action.message)
+    } else if (this.#request.action.kind === 'typedMessage') {
+      // TODO: Figure out params
+      // this.signature = await signer.signTypedData(this.#request.action.message)
     }
 
-    // Determine if the message is typed data or personal message and call the appropriate function
-    // signMessage or signTypedData
-
-    // save SignedMessage to Activity controller (add signed message)
+    // TODO: save SignedMessage to Activity controller (add signed message)
   }
 
   // TODO:
