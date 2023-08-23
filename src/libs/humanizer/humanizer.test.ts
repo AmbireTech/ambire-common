@@ -309,13 +309,12 @@ describe('module tests', () => {
     asyncOps.forEach((a) => {
       accountOp.humanizerMeta = { ...accountOp.humanizerMeta, [a.key]: a.value }
     })
-
     // etherface api might be asparagus
     expect(accountOp.humanizerMeta).toHaveProperty('funcSelectors:0x095ea7b3')
     ;[ir, asyncOps] = fallbackHumanizer(accountOp, ir, { fetch })
     expect(ir.calls[1].fullVisualization[0]).toMatchObject({
       type: 'action',
-      content: 'approve(address,uint256)'
+      content: 'Call approve(address,uint256)'
     })
     expect(asyncOps.length).toBe(0)
   })

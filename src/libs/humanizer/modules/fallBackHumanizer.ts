@@ -36,7 +36,7 @@ async function fetchFuncEtherface(
 }
 const checkIfUnknowAction = (v: Array<any>) => {
   try {
-    return v.length === 1 && v[0].type === 'action' && v[0].content.startsWith('Unknown action')
+    return v[0].type === 'action' && v[0].content.startsWith('Unknown action')
   } catch (e) {
     return false
   }
@@ -50,26 +50,31 @@ export function fallbackHumanizer(
   const asyncOps: any = []
   const newCalls = currentIr.calls.map((call) => {
     if (call.fullVisualization && !checkIfUnknowAction(call.fullVisualization)) return call
-    const visualization = []
+    const visualization: Array<any> = []
     if (call.data !== '0x') {
       if (accountOp.humanizerMeta?.[`funcSelectors:${call.data.slice(0, 10)}`]) {
         visualization.push(
-          getAction(`${accountOp.humanizerMeta?.[`funcSelectors:${call.data.slice(0, 10)}`]} to`)
+          getAction(`Call ${accountOp.humanizerMeta?.[`funcSelectors:${call.data.slice(0, 10)}`]}`),
+          getLable('from'),
+          getAddress(call.to)
         )
       } else {
         const promise = fetchFuncEtherface(call.data.slice(0, 10), options.fetch)
         promise ? asyncOps.push(promise) : null
-        return { ...call, fullVisualization: [getAction('Unknown action')] }
+        visualization.push(getAction('Unknown action'), getLable('to'), getAddress(call.to))
       }
     }
     if (call.value) {
       if (call.data !== '0x') visualization.push(getLable('and'))
-      visualization.push(getAction('Sending'))
-      visualization.push(getToken(ethers.ZeroAddress, call.value))
+      visualization.push(getAction('Send'), getToken(ethers.ZeroAddress, call.value))
+      if (call.data === '0x') visualization.push(getLable('to'), getAddress(call.to))
     }
-    visualization.push(getLable('to'))
-    visualization.push(getAddress(call.to))
-    return { ...call, fullVisualization: visualization }
+    return {
+      ...call,
+      fullVisualization: visualization.length
+        ? visualization
+        : [getAction('No data, no value call to'), getAddress(call.to)]
+    }
   })
 
   const newIr = { calls: newCalls }

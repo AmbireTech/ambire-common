@@ -203,7 +203,7 @@ describe('HumanizerController', () => {
     // const ir: Ir = []
     const expectedVisualizations = [
       [
-        { type: 'action', content: 'Sending' },
+        { type: 'action', content: 'Send' },
         {
           type: 'token',
           address: '0x0000000000000000000000000000000000000000',
@@ -246,8 +246,8 @@ describe('HumanizerController', () => {
 
   test('unknown func selector humanize with asyncop', async () => {
     const expectedVisualizations = [
-      { type: 'action', content: 'buy(uint256)' },
-      { type: 'lable', content: 'to' },
+      { type: 'action', content: 'Call buy(uint256)' },
+      { type: 'lable', content: 'from' },
       {
         type: 'address',
         address: '0x519856887AF544De7e67f51A4F2271521b01432b'
@@ -256,7 +256,8 @@ describe('HumanizerController', () => {
     let iterations = 0
     const onUpdate = jest.fn(() => {
       if (iterations === 0) {
-        expect(hc.ir.calls[0].fullVisualization.length).toBe(1)
+        console.log(hc.ir.calls[0].fullVisualization)
+        expect(hc.ir.calls[0].fullVisualization.length).toBe(3)
         expect(hc.ir.calls[0].fullVisualization[0]).toMatchObject({
           type: 'action',
           content: 'Unknown action'
