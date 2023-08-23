@@ -1,7 +1,6 @@
 import { JsonRpcProvider } from 'ethers'
 
 import { networks } from '../../consts/networks'
-import { KeystoreController } from '../keystore/keystore'
 import { Account, AccountId, AccountOnchainState } from '../../interfaces/account'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
 import { Storage } from '../../interfaces/storage'
@@ -14,6 +13,7 @@ import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { AccountAdderController } from '../accountAdder/accountAdder'
 import { EmailVaultController } from '../emailVault'
 import EventEmitter from '../eventEmitter'
+import { KeystoreController } from '../keystore/keystore'
 import { PortfolioController } from '../portfolio/portfolio'
 
 export type AccountStates = {
@@ -300,10 +300,12 @@ export class MainController extends EventEmitter {
       const accountOp = this.getAccountOp(accountAddr, networkId)
       if (accountOp)
         this.accountOpsToBeSigned[accountAddr][networkId] = { accountOp, estimation: null }
-    } else
+    } else {
       this.messagesToBeSigned[accountAddr] = this.messagesToBeSigned[accountAddr].filter(
         (x) => x.fromUserRequestId !== id
       )
+    }
+    this.emitUpdate()
   }
 
   // @TODO: protect this from race conditions/simultanous executions
