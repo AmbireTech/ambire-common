@@ -24,15 +24,16 @@ const networks: NetworkDescriptor[] = [
     rpcUrl: 'https://rpc.ankr.com/optimism',
     rpcNoStateOverride: false,
     chainId: 10n
-  },
-  {
-    id: 'hardhat',
-    name: 'hardhat',
-    nativeAssetSymbol: 'ETH',
-    rpcUrl: '',
-    rpcNoStateOverride: true,
-    chainId: 31337n
   }
+  // This breaks the background service of the extension
+  // {
+  //   id: 'hardhat',
+  //   name: 'hardhat',
+  //   nativeAssetSymbol: 'ETH',
+  //   rpcUrl: '',
+  //   rpcNoStateOverride: true,
+  //   chainId: 31337n
+  // }
 ]
 
 export { networks }
