@@ -17,12 +17,14 @@ export function namingHumanizer(
 ): [Ir, Promise<any>[]] {
   const newCalls = currentIr.calls.map((call) => {
     const newVisualization = call.fullVisualization?.map((v: any) => {
-      return (v.type === 'address' || v.type === 'token') && !v.name
-        ? {
-            ...v,
-            name: getName(v.address, accountOp.humanizerMeta) || shortenAddress(v.address)
-          }
-        : v
+      if (v.type === 'address' && !v.name)
+        return {
+          ...v,
+          name: getName(v.address, accountOp.humanizerMeta) || shortenAddress(v.address)
+        }
+      if (v.type === 'token' && !v.symbol)
+        return { ...v, symbol: accountOp.humanizerMeta?.[`tokens:${v.address}`] }
+      return v
     })
     return { ...call, fullVisualization: newVisualization || call.fullVisualization }
   })

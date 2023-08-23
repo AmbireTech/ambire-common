@@ -9,6 +9,7 @@ import { aaveHumanizer } from './modules/Aave'
 import { WALLETModule } from './modules/WALLET'
 import { namingHumanizer } from './modules/namingHumanizer'
 import { fallbackHumanizer } from './modules/fallBackHumanizer'
+import { yearnVaultModule } from './modules/yearnTesseractVault'
 
 // @TODO humanize signed messages
 // @TODO change all console.logs to throw errs
@@ -66,6 +67,7 @@ export function humanize(
     aaveHumanizer,
     oneInchHumanizer,
     WALLETModule,
+    yearnVaultModule,
     fallbackHumanizer,
     namingHumanizer
   ]
@@ -79,18 +81,20 @@ export function humanize(
   return [currentIr, asyncOps]
 }
 
-export const visualizationToText = (visualization: Array<{ [key: string]: any }>): string => {
+export const visualizationToText = (call: IrCall): string => {
   let text = ''
-  visualization.forEach((v: { [key: string]: any }) => {
-    if (v.type === 'action') text += `${v.content}`
-    if (v.type === 'lable') text += ` ${v.content}`
+  const visualization = call.fullVisualization
+  visualization.forEach((v: { [key: string]: any }, i: number) => {
+    if (i) text += ' '
+    if (v.type === 'action' || v.type === 'lable') text += `${v.content}`
+    if (v.type === 'address') text += v.name ? `${v.address} (${v.name})` : v.address
     // @TODO add amount to token
-    if (v.type === 'address' || v.type === 'token')
-      text += ` ${v.name ? `${v.address} (${v.name})` : v.address}`
+    // @TODo add the amount to the fullVisualization also
+    if (v.type === 'token') text += v.symbol ? `${v.symbol}` : `${v.address} token`
   })
   if (text) {
     return text
   }
-  // throw err
-  return 'Unparsable visualization'
+  // @TODO throw err
+  return `Call to ${call.to} with ${call.value} value and ${call.data} data`
 }

@@ -78,40 +78,36 @@ export const yearnVaultModule = (
       ]
     }
   }
-  let newCalls: IrCall[] = []
+  const newCalls: IrCall[] = []
   ir.calls.forEach((_call) => {
     const call = { ..._call, to: ethers.getAddress(_call.to) }
     // @TODO check if call.to is a vault
     if (getVaultInfo(call)) {
+      let visualization = []
+
       if (matcher[call.data.slice(0, 10)]) {
-        newCalls.push({
-          ...call,
-          fullVisualization: matcher[call.data.slice(0, 10)](accountOp, call)
-        })
+        visualization = matcher[call.data.slice(0, 10)](accountOp, call)
+        let prefix = ''
+        if (accountOp.networkId === '1') prefix = tokenPrefixes.ethereum
+        if (accountOp.networkId === '137') prefix = tokenPrefixes.polygon
+        visualization = visualization.map((v) =>
+          v.type === 'token'
+            ? {
+                ...v,
+                symbol: `${prefix}${
+                  accountOp.humanizerMeta?.[`tokens:${getVaultInfo(call).baseToken}`]
+                }`
+              }
+            : v
+        )
       } else {
-        newCalls.push({
-          ...call,
-          fullVisualization: [getAction('Unknown action (yearn)')]
-        })
+        visualization = [getAction('Unknown action (yearn)')]
       }
+
+      newCalls.push({ ...call, fullVisualization: visualization })
     } else {
       newCalls.push(call)
     }
-
-    // naming
-    newCalls = newCalls.map((call) => ({
-      ...call,
-      fullVisualization: call.fullVisualization?.map((v: any) => {
-        if (v.type === 'token') {
-          let prefix = ''
-          if (accountOp.networkId === '1') prefix = tokenPrefixes.ethereum
-          if (accountOp.networkId === '137') prefix = tokenPrefixes.polygon
-          const name = `${prefix}${accountOp.humanizerMeta?.[`tokens:${v.address}`][0]}`
-          return { ...v, name }
-        }
-        return v
-      })
-    }))
   })
 
   return [{ ...ir, calls: newCalls }, []]

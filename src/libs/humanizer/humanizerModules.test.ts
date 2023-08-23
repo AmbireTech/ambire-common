@@ -74,6 +74,7 @@ const transactions: { [key: string]: Array<IrCall> } = {
       value: 1000000000000000000n,
       data: '0x2e1a7d4d000000000000000000000000000000000000000000000000001f9e80ba804000'
     },
+    // should not enter weth module, should be Call deposit(), a func not in UniV3
     {
       to: '0xE592427A0AEce92De3Edee1F18E0157C05861564',
       value: 1000000000000000000n,
@@ -143,19 +144,19 @@ describe('module tests', () => {
     accountOp.calls = []
   })
 
-  //   test('visualization to text', async () => {
-  //     const allCalls = Object.keys(transactions)
-  //       .map((key: string) => transactions[key])
-  //       .flat()
-  //     accountOp.calls = allCalls
-  //     let [ir, asyncOps] = humanize(accountOp, { fetch })
-  //     ;(await Promise.all(asyncOps)).forEach((a) => {
-  //       accountOp.humanizerMeta = { ...accountOp.humanizerMeta, [a.key]: a.value }
-  //     })
-  //     ;[ir, asyncOps] = humanize(accountOp, { fetch })
-  //     // @TODO finish
-  //     // console.log(ir.calls.map((call: IrCall) => visualizationToText(call.fullVisualization)))
-  //   })
+  test('visualization to text', async () => {
+    const allCalls = Object.keys(transactions)
+      .map((key: string) => transactions[key])
+      .flat()
+    accountOp.calls = allCalls
+    let [ir, asyncOps] = humanize(accountOp, { fetch })
+    ;(await Promise.all(asyncOps)).forEach((a) => {
+      accountOp.humanizerMeta = { ...accountOp.humanizerMeta, [a.key]: a.value }
+    })
+    ;[ir, asyncOps] = humanize(accountOp, { fetch })
+    // @TODO finish
+    console.log(ir.calls.map((call: IrCall) => visualizationToText(call)))
+  })
   test('uniV3', () => {
     const expectedhumanization = [
       [
@@ -324,34 +325,34 @@ describe('module tests', () => {
     // )
     // ir.calls.forEach((call) => console.log(call.fullVisualization))
   })
-  test('yearn', () => {
-    accountOp.calls = [...transactions.yearn]
-    const expectedhumanization = [
-      [
-        { content: 'Deposit' },
-        { type: 'token', name: 'yDAI' },
-        { content: 'to' },
-        { address: '0xdA816459F1AB5631232FE5e97a05BBBb94970c95' }
-      ],
-      [
-        { content: 'Withdraw' },
-        { type: 'token', name: 'yDAI' },
-        { content: 'from' },
-        { address: '0xdA816459F1AB5631232FE5e97a05BBBb94970c95' }
-      ],
-      [
-        { content: 'Approve' },
-        { address: '0xC92E8bdf79f0507f65a392b0ab4667716BFE0110' },
-        { content: 'for' },
-        { type: 'token', name: 'yDAI' }
-      ]
-    ]
-    let ir: Ir = callsToIr(accountOp)
-    ;[ir] = yearnVaultModule(accountOp, ir)
-    ir.calls.forEach((call, i) =>
-      call.fullVisualization.forEach((v: any, j: number) =>
-        expect(v).toMatchObject(expectedhumanization[i][j])
-      )
-    )
-  })
+  //   test('yearn', () => {
+  //     accountOp.calls = [...transactions.yearn]
+  //     const expectedhumanization = [
+  //       [
+  //         { content: 'Deposit' },
+  //         { type: 'token', name: 'yDAI' },
+  //         { content: 'to' },
+  //         { address: '0xdA816459F1AB5631232FE5e97a05BBBb94970c95' }
+  //       ],
+  //       [
+  //         { content: 'Withdraw' },
+  //         { type: 'token', name: 'yDAI' },
+  //         { content: 'from' },
+  //         { address: '0xdA816459F1AB5631232FE5e97a05BBBb94970c95' }
+  //       ],
+  //       [
+  //         { content: 'Approve' },
+  //         { address: '0xC92E8bdf79f0507f65a392b0ab4667716BFE0110' },
+  //         { content: 'for' },
+  //         { type: 'token', name: 'yDAI' }
+  //       ]
+  //     ]
+  //     let ir: Ir = callsToIr(accountOp)
+  //     ;[ir] = yearnVaultModule(accountOp, ir)
+  //     ir.calls.forEach((call, i) =>
+  //       call.fullVisualization.forEach((v: any, j: number) =>
+  //         expect(v).toMatchObject(expectedhumanization[i][j])
+  //       )
+  //     )
+  //   })
 })

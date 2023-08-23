@@ -60,7 +60,7 @@ export function fallbackHumanizer(
         )
       } else {
         const promise = fetchFuncEtherface(call.data.slice(0, 10), options.fetch)
-        promise ? asyncOps.push(promise) : null
+        if (promise) asyncOps.push(promise)
         visualization.push(getAction('Unknown action'), getLable('to'), getAddress(call.to))
       }
     }

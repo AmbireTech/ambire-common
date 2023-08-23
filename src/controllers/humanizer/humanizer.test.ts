@@ -256,7 +256,6 @@ describe('HumanizerController', () => {
     let iterations = 0
     const onUpdate = jest.fn(() => {
       if (iterations === 0) {
-        console.log(hc.ir.calls[0].fullVisualization)
         expect(hc.ir.calls[0].fullVisualization.length).toBe(3)
         expect(hc.ir.calls[0].fullVisualization[0]).toMatchObject({
           type: 'action',
