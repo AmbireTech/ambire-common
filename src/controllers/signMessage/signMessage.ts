@@ -50,13 +50,9 @@ export class SignMessageController extends EventEmitter {
     if (!['message', 'typedMessage'].includes(this.#request.action.kind)) {
       return this.emitError({
         level: 'major',
-<<<<<<< HEAD
-        message: `Ambire does not support the requested ${this.#request.action.kind} signing method. Please contact support if you believe could be a glitch.`,
-=======
         message: `Ambire does not support the requested ${
           this.#request.action.kind
         } signing method. Please contact support if you believe could be a glitch.`,
->>>>>>> v2
         error: new Error(`The ${this.#request.action.kind} signing method is not supported.`)
       })
     }
