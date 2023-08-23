@@ -13,7 +13,7 @@ export function getAddress(_address: string, name?: string) {
 
 export function getToken(_address: string, amount: bigint, name?: string) {
   const address = ethers.getAddress(_address)
-  return name ? { type: 'token', address, amount } : { type: 'token', address, amount, name }
+  return name ? { type: 'token', address, amount, name } : { type: 'token', address, amount }
 }
 
 export function getNft(address: string, id: bigint) {
