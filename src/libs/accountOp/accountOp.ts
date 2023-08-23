@@ -1,5 +1,7 @@
-import { NetworkId } from '../../interfaces/networkDescriptor'
+import { Network, ethers } from 'ethers'
+import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
 import { stringify } from '../bigintJson/bigintJson'
+import { networks } from '../../../dist/consts/networks'
 
 export interface Call {
   to: string
@@ -111,4 +113,44 @@ export function isAccountOpsIntentEqual(
   }
 
   return stringify(createIntent(accountOps1)) === stringify(createIntent(accountOps2))
+}
+
+/**
+ * This function returns the hash as a Uint8Array instead of string
+ * and the reason for this is the implementation that follows:
+ *
+ * const hash = accountOpSignableHash(op); // get the hash
+ * const signature = await wallet.signMessage(hash)
+ *
+ * The signMessage method is an ethers method. It checks whether
+ * the hash is a string or not. If it's a string, it calls
+ * ethers.toUtf8Bytes to it, completing ignoring that the string
+ * might actually be abi-encoded (like in our case).
+ *
+ * Applying ethers.toUtf8Bytes to a string is only correct if the
+ * string is... a utf8 string. In our case, IT IS NOT.
+ * That's why we need to wrap in with ethers.getBytes to prevent
+ * the sign message from breaking it.
+ *
+ * If despite everything you wish to return a string instead of a Uint8Array,
+ * you have to wrap the hash with ethers.getBytes each time before passing it
+ * to signMessage. Also, the reverse method of ethers.getBytes is ethers.hexlify
+ * if you need to transform it back.
+ *
+ * @param op AccountOp
+ * @returns Uint8Array
+ */
+export function accountOpSignableHash(op: AccountOp): Uint8Array {
+  const opNetworks = networks.filter((network: NetworkDescriptor) => op.networkId == network.id)
+  if (!opNetworks.length) throw new Error('unsupported network')
+
+  const abiCoder = new ethers.AbiCoder()
+  return ethers.getBytes(
+    ethers.keccak256(
+      abiCoder.encode(
+        ['address', 'uint', 'uint', 'tuple(address, uint, bytes)[]'],
+        [op.accountAddr, opNetworks[0].chainId, op.nonce ?? 0, op.calls.map((call: Call) => ([call.to, call.value, call.data]))]
+      )
+    )
+  )
 }
