@@ -95,7 +95,7 @@ export const yearnVaultModule = (
             ? {
                 ...v,
                 symbol: `${prefix}${
-                  accountOp.humanizerMeta?.[`tokens:${getVaultInfo(call).baseToken}`]
+                  accountOp.humanizerMeta?.[`tokens:${getVaultInfo(call).baseToken}`][0]
                 }`
               }
             : v

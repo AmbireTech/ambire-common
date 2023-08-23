@@ -1,11 +1,11 @@
 import { AccountOp } from '../../accountOp/accountOp'
-import { HumanizerFragment, Ir } from '../interfaces'
+import { Ir } from '../interfaces'
 import { getTokenInfo, shortenAddress } from '../utils'
 
 const getName = (address: string, humanizerMeta: any) => {
   if (humanizerMeta[`addressBook:${address}`]) return humanizerMeta[`addressBook:${address}`]
   if (humanizerMeta[`names:${address}`]) return humanizerMeta[`names:${address}`]
-  if (humanizerMeta[`tokens:${address}`]) return `${humanizerMeta[`tokens:${address}`][0]} contract`
+  //   if (humanizerMeta[`tokens:${address}`]) return `${humanizerMeta[`tokens:${address}`][0]} contract`
   return null
 }
 // adds 'name' proeprty to visualization of addresses (needs initialHumanizer to work on unparsed transactions)
