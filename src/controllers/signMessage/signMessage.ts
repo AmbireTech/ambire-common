@@ -9,8 +9,8 @@ export class SignMessageController extends EventEmitter {
 
   signingKeyAddr: string | null = null
 
-  // TODO: define type
-  signature: string | null = null
+  // A hex-encoded 129-byte array starting with 0x.
+  signature: string | null = null SignatureL
 
   #request: UserRequest | null = null
 
@@ -28,7 +28,11 @@ export class SignMessageController extends EventEmitter {
   }
 
   // TODO:
-  reset() {}
+  reset() {
+    this.signature = null
+    this.status = 'INITIAL'
+    this.emitUpdate()
+  }
 
   // TODO:
   setSigningKeyAddr(signingKeyAddr: string) {}
@@ -36,15 +40,24 @@ export class SignMessageController extends EventEmitter {
   // TODO:
   sign() {
     if (!this.#request) {
-      // TODO: emit error
-      return
+      return this.emitError({
+        level: 'major',
+        message: 'Something went wrong with the request to sign a message. Please try again.',
+        error: new Error('No request to sign.')
+      })
+    }
+
+    if (!['message', 'typedMessage'].includes(this.#request.action.kind)) {
+      return this.emitError({
+        level: 'major',
+        message: `Ambire does not support the requested ${this.#request.action.kind} signing method. Please contact support if you believe could be a glitch.`,
+        error: new Error(`The ${this.#request.action.kind} signing method is not supported.`)
+      })
     }
 
     this.status = 'LOADING'
 
     switch (this.#request.action.kind) {
-      case 'call':
-        return this.signCall()
       case 'message':
         return this.signMessage()
       case 'typedMessage':
@@ -60,16 +73,18 @@ export class SignMessageController extends EventEmitter {
     // save SignedMessage to Activity controller (add signed message)
   }
 
-  signCall() {}
-
   // TODO:
+  // Signs an EIP-191 prefixed personal message.
   signMessage() {
-    // this.#keystore
+    // TODO: Sign personal message with keystore
+    // const signature = this.#keystore.signMessage()
 
     // this.signature = signature
+    this.status = 'DONE'
     this.emitUpdate()
   }
 
   // TODO:
+  // Signs the EIP-712 typed data.
   signTypedMessage() {}
 }
