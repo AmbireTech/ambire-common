@@ -46,86 +46,81 @@ async function test() {
     {addr: ENTRY_POINT_ADDR, hash: true},
     {addr: pkAddress, hash: true},
     // {addr: ethers.computeAddress(ethers.hexlify(ethers.randomBytes(32))), hash: true},
-    {addr: '0xCe031715f5e0ee0670f3C14112165d7b189F6E2D', hash: true},
+    {addr: '0x7E13d9cC8D7d50415012c889adC2a1C5fc470b79', hash: true},
   ]
-  const bytecode = await getBytecode(polygon, priLevels)
+  const bytecode = await getBytecode(polygon, priLevels, PROXY_VALIDATE_OP)
+  const AMBIRE_ACCOUNT_ADDR = getAmbireAccountAddress(FACTORY_VALIDATE_OP, bytecode)
 
-  const signerAddr = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
-  const priv = { addr: signerAddr, hash: true }
-  const bytecode2 = await getBytecode(polygon, [priv])
-  console.log(bytecode2)
-  // const AMBIRE_ACCOUNT_ADDR = getAmbireAccountAddress(FACTORY_VALIDATE_OP, bytecode)
+  const ambireAccount = new Contract(AMBIRE_ACCOUNT_ADDR, AMBIRE_ACCOUNT.abi, provider)
+  const entryPoint = new Contract(ENTRY_POINT_ADDR, ENTRY_POINT_ABI, provider)
+  const callData = ambireAccount.interface.encodeFunctionData('executeBySender', [[txn]])
+  const newNonce = await entryPoint.getNonce(...[AMBIRE_ACCOUNT_ADDR, 0])
+  const gasPrice = await provider.send('eth_gasPrice', [])
 
-  // const ambireAccount = new Contract(AMBIRE_ACCOUNT_ADDR, AMBIRE_ACCOUNT.abi, provider)
-  // const entryPoint = new Contract(ENTRY_POINT_ADDR, ENTRY_POINT_ABI, provider)
-  // const callData = ambireAccount.interface.encodeFunctionData('executeBySender', [[txn]])
-  // const newNonce = await entryPoint.getNonce(...[AMBIRE_ACCOUNT_ADDR, 0])
-  // const gasPrice = await provider.send('eth_gasPrice', [])
+  const code = await provider.getCode(AMBIRE_ACCOUNT_ADDR)
+  const hasCode = code !== '0x'
+  const initCode = hasCode
+    ? '0x'
+    : ethers.hexlify(ethers.concat([
+        FACTORY_VALIDATE_OP,
+        getDeployCalldata(bytecode)
+    ]))
 
-  // const code = await provider.getCode(AMBIRE_ACCOUNT_ADDR)
-  // const hasCode = code !== '0x'
-  // const initCode = hasCode
-  //   ? '0x'
-  //   : ethers.hexlify(ethers.concat([
-  //       FACTORY_VALIDATE_OP,
-  //       getDeployCalldata(bytecode)
-  //   ]))
+  const userOperation = {
+    sender: AMBIRE_ACCOUNT_ADDR,
+    nonce: ethers.toBeHex(newNonce, 1),
+    initCode,
+    callData,
+    callGasLimit: ethers.toBeHex(100000), // hardcode it for now at a high value
+    verificationGasLimit: ethers.toBeHex(500000), // hardcode it for now at a high value
+    preVerificationGas: ethers.toBeHex(50000), // hardcode it for now at a high value
+    maxFeePerGas: gasPrice,
+    maxPriorityFeePerGas: gasPrice,
+    paymasterAndData: '0x',
+    signature: '0x'
+  }
 
-  // const userOperation = {
-  //   sender: AMBIRE_ACCOUNT_ADDR,
-  //   nonce: ethers.toBeHex(newNonce, 1),
-  //   initCode,
-  //   callData,
-  //   callGasLimit: ethers.toBeHex(100000), // hardcode it for now at a high value
-  //   verificationGasLimit: ethers.toBeHex(500000), // hardcode it for now at a high value
-  //   preVerificationGas: ethers.toBeHex(50000), // hardcode it for now at a high value
-  //   maxFeePerGas: gasPrice,
-  //   maxPriorityFeePerGas: gasPrice,
-  //   paymasterAndData: '0x',
-  //   signature: '0x'
-  // }
+  const args = [userOperation, ENTRY_POINT_ADDR]
 
-  // const args = [userOperation, ENTRY_POINT_ADDR]
+  const options = {
+    method: 'POST',
+    headers: { accept: 'application/json', 'content-type': 'application/json' },
+    body: JSON.stringify({ id: 1, jsonrpc: '2.0', method: 'pm_sponsorUserOperation', params: args })
+  }
 
-  // const options = {
-  //   method: 'POST',
-  //   headers: { accept: 'application/json', 'content-type': 'application/json' },
-  //   body: JSON.stringify({ id: 1, jsonrpc: '2.0', method: 'pm_sponsorUserOperation', params: args })
-  // }
+  const paymasterAndData = await fetch(pimlicoEndpoint, options)
+    .then((response) => response.json())
+    .then((response) => {
+      return response.result.paymasterAndData
+    })
+    .catch((err) => console.error(err))
 
-  // const paymasterAndData = await fetch(pimlicoEndpoint, options)
-  //   .then((response) => response.json())
-  //   .then((response) => {
-  //     return response.result.paymasterAndData
-  //   })
-  //   .catch((err) => console.error(err))
+  userOperation.paymasterAndData = paymasterAndData
 
-  // userOperation.paymasterAndData = paymasterAndData
+  const signature = wrapEthSign(await signer.signMessage(
+    getBytes(await entryPoint.getUserOpHash(userOperation))
+  ))
 
-  // const signature = wrapEthSign(await signer.signMessage(
-  //   getBytes(await entryPoint.getUserOpHash(userOperation))
-  // ))
+  userOperation.signature = signature
+  console.log(userOperation)
 
-  // userOperation.signature = signature
-  // console.log(userOperation)
+  const userOperationHash = await pimlicoProvider.send("eth_sendUserOperation", [userOperation, ENTRY_POINT_ADDR])
+  console.log("UserOperation hash:", userOperationHash)
 
-  // const userOperationHash = await pimlicoProvider.send("eth_sendUserOperation", [userOperation, ENTRY_POINT_ADDR])
-  // console.log("UserOperation hash:", userOperationHash)
-
-  // // let's also wait for the userOperation to be included, by continually querying for the receipts
-  // console.log("Querying for receipts...")
-  // let receipt = null
-  // let counter = 0
-  // while (receipt === null) {
-  //   try {
-  //     await new Promise((r) => setTimeout(r, 1000)) //sleep
-  //     counter++
-  //     receipt = await pimlicoProvider.send("eth_getUserOperationReceipt", [userOperationHash])
-  //     console.log(receipt)
-  //   } catch (e) {
-  //     console.log('error throwed, retry counter ' + counter)
-  //   }
-  // }
+  // let's also wait for the userOperation to be included, by continually querying for the receipts
+  console.log("Querying for receipts...")
+  let receipt = null
+  let counter = 0
+  while (receipt === null) {
+    try {
+      await new Promise((r) => setTimeout(r, 1000)) //sleep
+      counter++
+      receipt = await pimlicoProvider.send("eth_getUserOperationReceipt", [userOperationHash])
+      console.log(receipt)
+    } catch (e) {
+      console.log('error throwed, retry counter ' + counter)
+    }
+  }
 }
 
 test()
