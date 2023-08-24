@@ -1,10 +1,11 @@
+import { SignMessageController } from 'controllers/signMessage/signMessage'
 import { JsonRpcProvider } from 'ethers'
 
 import { networks } from '../../consts/networks'
 import { Account, AccountId, AccountOnchainState } from '../../interfaces/account'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
 import { Storage } from '../../interfaces/storage'
-import { SignedMessage, UserRequest } from '../../interfaces/userRequest'
+import { Message, UserRequest } from '../../interfaces/userRequest'
 import { AccountOp, Call as AccountOpCall } from '../../libs/accountOp/accountOp'
 import { getAccountState } from '../../libs/accountState/accountState'
 import { estimate, EstimateResult } from '../../libs/estimate/estimate'
@@ -52,6 +53,8 @@ export class MainController extends EventEmitter {
   // @TODO emailVaults
   emailVault: EmailVaultController
 
+  signMessage: SignMessageController
+
   // @TODO read networks from settings
   accounts: Account[] = []
 
@@ -78,7 +81,7 @@ export class MainController extends EventEmitter {
   accountOpsToBeConfirmed: { [key: string]: { [key: string]: AccountOp } } = {}
 
   // accountAddr => UniversalMessage[]
-  messagesToBeSigned: { [key: string]: SignedMessage[] } = {}
+  messagesToBeSigned: { [key: string]: Message[] } = {}
 
   lastUpdate: Date = new Date()
 
@@ -93,6 +96,7 @@ export class MainController extends EventEmitter {
     this.settings = { networks }
     this.emailVault = new EmailVaultController(storage, fetch, relayerUrl, this.#keystoreLib)
     this.accountAdder = new AccountAdderController({ storage, relayerUrl, fetch })
+    this.signMessage = new SignMessageController(this.#keystoreLib)
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
     // @TODO Load userRequests from storage and emit that we have updated
     // @TODO
@@ -348,14 +352,7 @@ export class MainController extends EventEmitter {
     console.log(estimation)
   }
 
-  // when an accountOp is signed; should this be private and be called by
-  // the method that signs it?
-  resolveAccountOp() {
-    // @TODO: ActivityController.addAccountOp()
-  }
+  broadcastSignedAccountOp(accountOp) {}
 
-  // when a message is signed; same comment applies: should this be private?
-  resolveMessage() {
-    // @TODO: - ActivityController.addSignedMessage()
-  }
+  broadcastSignedMessage(signedMessage: Message) {}
 }

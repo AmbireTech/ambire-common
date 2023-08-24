@@ -1,9 +1,4 @@
-import {
-  PlainTextMessage,
-  SignedMessage,
-  TypedMessage,
-  UserRequest
-} from '../../interfaces/userRequest'
+import { Message, PlainTextMessage, TypedMessage, UserRequest } from '../../interfaces/userRequest'
 import { Keystore } from '../../libs/keystore/keystore'
 import EventEmitter from '../eventEmitter'
 
@@ -19,7 +14,7 @@ export class SignMessageController extends EventEmitter {
 
   #request: UserRequest | null = null
 
-  signedMessage: SignedMessage | null = null
+  signedMessage: Message | null = null
 
   constructor(keystore: Keystore) {
     super()

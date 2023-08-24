@@ -1,9 +1,10 @@
 import { JsonRpcProvider } from 'ethers'
-import EventEmitter from '../eventEmitter'
-import { Storage } from '../../interfaces/storage'
-import { AccountOp, AccountOpStatus } from '../../libs/accountOp/accountOp'
-import { SignedMessage } from '../../interfaces/userRequest'
+
 import { networks } from '../../consts/networks'
+import { Storage } from '../../interfaces/storage'
+import { Message } from '../../interfaces/userRequest'
+import { AccountOp, AccountOpStatus } from '../../libs/accountOp/accountOp'
+import EventEmitter from '../eventEmitter'
 import { AccountStates } from '../main/main'
 
 interface Pagination {
@@ -24,7 +25,7 @@ export interface SubmittedAccountOp extends AccountOp {
 }
 
 interface AccountsOps extends PaginationResult<SubmittedAccountOp> {}
-interface SignedMessages extends PaginationResult<SignedMessage> {}
+interface MessagesToBeSigned extends PaginationResult<Message> {}
 
 interface Filters {
   account: string
@@ -37,8 +38,8 @@ interface InternalAccountsOps {
 }
 
 interface InternalSignedMessages {
-  // account => network => SignedMessage[]
-  [key: string]: { [key: string]: SignedMessage[] }
+  // account => network => Message[]
+  [key: string]: { [key: string]: Message[] }
 }
 
 // We are limiting items array to include no more than 1000 records,
@@ -90,7 +91,7 @@ export class ActivityController extends EventEmitter {
 
   #signedMessages: InternalSignedMessages = {}
 
-  signedMessages: SignedMessages | undefined
+  signedMessages: MessagesToBeSigned | undefined
 
   accountsOpsPagination: Pagination = {
     fromPage: 0,
@@ -202,7 +203,7 @@ export class ActivityController extends EventEmitter {
     this.emitUpdate()
   }
 
-  async addSignedMessage(signedMessage: SignedMessage, account: string, network: string) {
+  async addSignedMessage(signedMessage: Message, account: string, network: string) {
     await this.#initialLoadPromise
 
     if (!this.#signedMessages[account]) this.#signedMessages[account] = {}

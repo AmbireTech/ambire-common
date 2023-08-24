@@ -21,7 +21,7 @@ export interface TypedMessage {
 }
 // @TODO: move this type and it's deps (PlainTextMessage, TypedMessage) to another place,
 // probably interfaces
-export interface SignedMessage {
+export interface Message {
   content: PlainTextMessage | TypedMessage
   signature: string | null
   fromUserRequestId?: bigint

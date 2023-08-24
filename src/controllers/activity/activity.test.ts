@@ -1,8 +1,9 @@
 import { describe, expect } from '@jest/globals'
-import { ActivityController, SubmittedAccountOp } from './activity'
-import { SignedMessage } from '../../interfaces/userRequest'
+
 import { produceMemoryStore } from '../../../test/helpers'
+import { Message } from '../../interfaces/userRequest'
 import { AccountStates } from '../main/main'
+import { ActivityController, SubmittedAccountOp } from './activity'
 
 describe('Activity Controller ', () => {
   const accounts = {
@@ -349,7 +350,7 @@ describe('Activity Controller ', () => {
         network: 'ethereum'
       })
 
-      const signedMessage: SignedMessage = {
+      const signedMessage: Message = {
         content: {
           kind: 'message',
           message: '0x74657374'
@@ -384,7 +385,7 @@ describe('Activity Controller ', () => {
         network: 'ethereum'
       })
 
-      const signedMessage: SignedMessage = {
+      const signedMessage: Message = {
         content: {
           kind: 'message',
           message: '0x74657374'
@@ -393,7 +394,7 @@ describe('Activity Controller ', () => {
         signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503'
       }
 
-      const expectedSignedMessage: SignedMessage = {
+      const expectedSignedMessage: Message = {
         content: {
           kind: 'message',
           message: '0x123456'
@@ -423,7 +424,7 @@ describe('Activity Controller ', () => {
         'optimism'
       )
 
-      // For the following criteria, we have 2 matching SignedMessages, these will be paginated on 2 pages (1 SignedMessage per page)
+      // For the following criteria, we have 2 matching SignedMessages, these will be paginated on 2 pages (1 Message per page)
       await controller.setSignedMessagesPagination({ fromPage: 1, itemsPerPage: 1 })
       await controller.setFilters({
         account: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
@@ -447,7 +448,7 @@ describe('Activity Controller ', () => {
         network: 'ethereum'
       })
 
-      const signedMessage: SignedMessage = {
+      const signedMessage: Message = {
         content: {
           kind: 'message',
           message: '0x123456'
