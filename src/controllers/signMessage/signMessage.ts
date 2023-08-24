@@ -1,6 +1,10 @@
-import { Keystore } from 'libs/keystore/keystore'
-
-import { UserRequest } from '../../interfaces/userRequest'
+import {
+  PlainTextMessage,
+  SignedMessage,
+  TypedMessage,
+  UserRequest
+} from '../../interfaces/userRequest'
+import { Keystore } from '../../libs/keystore/keystore'
 import EventEmitter from '../eventEmitter'
 
 export class SignMessageController extends EventEmitter {
@@ -15,30 +19,44 @@ export class SignMessageController extends EventEmitter {
 
   #request: UserRequest | null = null
 
-  constructor({ keystore }) {
+  signedMessage: SignedMessage | null = null
+
+  constructor(keystore: Keystore) {
     super()
 
     this.#keystore = keystore
   }
 
   init({ request }: { request: UserRequest }) {
-    this.#request = request
-
-    // user request? UserRequest
-    // Determine if the message is typed data or personal message and set messageParams or typedDataParams
+    if (['message', 'typedMessage'].includes(request.action.kind)) {
+      this.#request = request
+      this.emitUpdate()
+    } else {
+      this.emitError({
+        level: 'major',
+        message:
+          'Ambire does not support this request format for signing messages. Please contact support if you believe could be a glitch.',
+        error: new Error(
+          `The ${request.action.kind} signing method is not supported by signMessageController.`
+        )
+      })
+    }
   }
 
-  // TODO:
   reset() {
+    this.#request = null
     this.signature = null
+    this.signedMessage = null
+    this.signingKeyAddr = null
     this.status = 'INITIAL'
     this.emitUpdate()
   }
 
-  // TODO:
-  setSigningKeyAddr(signingKeyAddr: string) {}
+  setSigningKeyAddr(signingKeyAddr: string) {
+    this.signingKeyAddr = signingKeyAddr
+    this.emitUpdate()
+  }
 
-  // TODO:
   async sign() {
     if (!this.#request) {
       return this.emitError({
@@ -48,45 +66,41 @@ export class SignMessageController extends EventEmitter {
       })
     }
 
-    if (!['message', 'typedMessage'].includes(this.#request.action.kind)) {
+    if (!this.signingKeyAddr) {
       return this.emitError({
         level: 'major',
-        message: `Ambire does not support the requested ${
-          this.#request.action.kind
-        } signing method. Please contact support if you believe could be a glitch.`,
-        error: new Error(`The ${this.#request.action.kind} signing method is not supported.`)
+        message: 'Please select a signing key and try again.',
+        error: new Error('No request to sign.')
       })
     }
 
     this.status = 'LOADING'
+    this.emitUpdate()
 
-    const signer = await this.#keystore.getSigner(this.#request.accountAddr)
+    try {
+      const signer = await this.#keystore.getSigner(this.signingKeyAddr)
 
-    if (this.#request.action.kind === 'message') {
-      this.signature = await signer.signMessage(this.#request.action.message)
-    } else if (this.#request.action.kind === 'typedMessage') {
-      const { domain, types, value } = this.#request.action
+      if (this.#request.action.kind === 'message') {
+        this.signature = await signer.signMessage(this.#request.action.message)
+      }
 
-      // TODO: Figure out if the mismatch between the `TypedDataDomain` from
-      // '@ethersproject/abstract-signer' and `TypedDataDomain` from 'ethers' is a problem
-      this.signature = await signer.signTypedData(domain, types, value)
+      if (this.#request.action.kind === 'typedMessage') {
+        const { domain, types, message } = this.#request.action
+        this.signature = await signer.signTypedData(domain as any, types, message)
+      }
+
+      this.signedMessage = {
+        signature: this.signature,
+        content: this.#request.action as PlainTextMessage | TypedMessage
+      }
+    } catch (error: any) {
+      this.emitError({
+        level: 'major',
+        message: 'Something went wrong while signing the message. Please try again.',
+        error
+      })
     }
-
-    // TODO: save SignedMessage to Activity controller (add signed message)
-  }
-
-  // TODO:
-  // Signs an EIP-191 prefixed personal message.
-  signMessage() {
-    // TODO: Sign personal message with keystore
-    // const signature = this.#keystore.signMessage()
-
-    // this.signature = signature
     this.status = 'DONE'
     this.emitUpdate()
   }
-
-  // TODO:
-  // Signs the EIP-712 typed data.
-  signTypedMessage() {}
 }

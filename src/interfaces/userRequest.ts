@@ -17,7 +17,7 @@ export interface TypedMessage {
   kind: 'typedMessage'
   domain: TypedDataDomain
   types: Record<string, Array<TypedDataField>>
-  value: Record<string, any>
+  message: Record<string, any>
 }
 // @TODO: move this type and it's deps (PlainTextMessage, TypedMessage) to another place,
 // probably interfaces
