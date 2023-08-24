@@ -1,18 +1,18 @@
-import { Message, PlainTextMessage, TypedMessage, UserRequest } from '../../interfaces/userRequest'
+import { Message } from '../../interfaces/userRequest'
 import { Keystore } from '../../libs/keystore/keystore'
 import EventEmitter from '../eventEmitter'
 
 export class SignMessageController extends EventEmitter {
+  #keystore: Keystore
+
   status: 'INITIAL' | 'LOADING' | 'DONE' = 'INITIAL'
 
-  #keystore: Keystore
+  messageToSign: Message | null = null
 
   signingKeyAddr: string | null = null
 
   // A hex-encoded 129-byte array starting with 0x.
   signature: string | null = null
-
-  #request: UserRequest | null = null
 
   signedMessage: Message | null = null
 
@@ -22,9 +22,9 @@ export class SignMessageController extends EventEmitter {
     this.#keystore = keystore
   }
 
-  init({ request }: { request: UserRequest }) {
-    if (['message', 'typedMessage'].includes(request.action.kind)) {
-      this.#request = request
+  init(messageToSign: Message) {
+    if (['message', 'typedMessage'].includes(messageToSign.content.kind)) {
+      this.messageToSign = messageToSign
       this.emitUpdate()
     } else {
       this.emitError({
@@ -32,14 +32,14 @@ export class SignMessageController extends EventEmitter {
         message:
           'Ambire does not support this request format for signing messages. Please contact support if you believe could be a glitch.',
         error: new Error(
-          `The ${request.action.kind} signing method is not supported by signMessageController.`
+          `The ${messageToSign.content.kind} signing method is not supported by signMessageController.`
         )
       })
     }
   }
 
   reset() {
-    this.#request = null
+    this.messageToSign = null
     this.signature = null
     this.signedMessage = null
     this.signingKeyAddr = null
@@ -53,7 +53,7 @@ export class SignMessageController extends EventEmitter {
   }
 
   async sign() {
-    if (!this.#request) {
+    if (!this.messageToSign) {
       return this.emitError({
         level: 'major',
         message: 'Something went wrong with the request to sign a message. Please try again.',
@@ -75,12 +75,12 @@ export class SignMessageController extends EventEmitter {
     try {
       const signer = await this.#keystore.getSigner(this.signingKeyAddr)
 
-      if (this.#request.action.kind === 'message') {
-        this.signature = await signer.signMessage(this.#request.action.message)
+      if (this.messageToSign.content.kind === 'message') {
+        this.signature = await signer.signMessage(this.messageToSign.content.message)
       }
 
-      if (this.#request.action.kind === 'typedMessage') {
-        const { domain, types, message } = this.#request.action
+      if (this.messageToSign.content.kind === 'typedMessage') {
+        const { domain, types, message } = this.messageToSign.content
         // TODO: Figure out if the mismatch between the `TypedDataDomain` from
         // '@ethersproject/abstract-signer' and `TypedDataDomain` from 'ethers' is a problem
         this.signature = await signer.signTypedData(domain, types, message)
@@ -88,7 +88,7 @@ export class SignMessageController extends EventEmitter {
 
       this.signedMessage = {
         signature: this.signature,
-        content: this.#request.action as PlainTextMessage | TypedMessage
+        content: this.messageToSign.content
       }
     } catch (e) {
       const error = e instanceof Error ? e : new Error(`Signing failed. Error details: ${e}`)
