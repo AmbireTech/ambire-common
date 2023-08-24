@@ -86,7 +86,9 @@ export class SignMessageController extends EventEmitter {
 
       if (this.#request.action.kind === 'typedMessage') {
         const { domain, types, message } = this.#request.action
-        this.signature = await signer.signTypedData(domain as any, types, message)
+        // TODO: Figure out if the mismatch between the `TypedDataDomain` from
+        // '@ethersproject/abstract-signer' and `TypedDataDomain` from 'ethers' is a problem
+        this.signature = await signer.signTypedData(domain, types, message)
       }
 
       this.signedMessage = {
