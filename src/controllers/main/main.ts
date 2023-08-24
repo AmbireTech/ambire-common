@@ -1,4 +1,3 @@
-import { SignMessageController } from 'controllers/signMessage/signMessage'
 import { JsonRpcProvider } from 'ethers'
 
 import { networks } from '../../consts/networks'
@@ -16,6 +15,7 @@ import { EmailVaultController } from '../emailVault'
 import EventEmitter from '../eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
 import { PortfolioController } from '../portfolio/portfolio'
+import { SignMessageController } from '../signMessage/signMessage'
 
 export type AccountStates = {
   [accountId: string]: {
