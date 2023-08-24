@@ -14,9 +14,8 @@ export enum NETWORKS {
   'cronos' = 'cronos',
   'aurora' = 'aurora',
   'okc' = 'okc',
-  'ethereum-pow' = 'ethereum-pow',
-  'sepolia' = 'sepolia',
-  'base' = 'base'
+  'base' = 'base',
+  'ethereum-pow' = 'ethereum-pow'
 }
 
 export type NetworkId = keyof typeof NETWORKS
