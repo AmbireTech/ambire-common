@@ -13,6 +13,20 @@ interface ExternalSigValidator {
 	) external returns (bool shouldExecute);
 }
 
+struct UserOperation {
+	address sender;
+	uint256 nonce;
+	bytes initCode;
+	bytes callData;
+	uint256 callGasLimit;
+	uint256 verificationGasLimit;
+	uint256 preVerificationGas;
+	uint256 maxFeePerGas;
+	uint256 maxPriorityFeePerGas;
+	bytes paymasterAndData;
+	bytes signature;
+}
+
 // @dev All external/public functions (that are not view/pure) use `payable` because AmbireAccount
 // is a wallet contract, and any ETH sent to it is not lost, but on the other hand not having `payable`
 // makes the Solidity compiler add an extra check for `msg.value`, which in this case is wasted gas
@@ -222,5 +236,25 @@ contract AmbireAccount {
 		address payable fallbackHandler = payable(address(uint160(uint(privileges[FALLBACK_HANDLER_SLOT]))));
 		if (fallbackHandler == address(0)) return false;
 		return AmbireAccount(fallbackHandler).supportsInterface(interfaceID);
+	}
+
+	uint256 constant internal SIG_VALIDATION_FAILED = 1;
+
+	// aggregator is unused, we don't use sig aggregation
+	function validateUserOp(UserOperation calldata userOp, bytes32 userOpHash, uint256 missingAccountFunds)
+	    external returns (uint256 validationData)
+	{
+		require(privileges[msg.sender] != bytes32(0), 'INSUFFICIENT_PRIVILEGE');
+
+        address signer = SignatureValidator.recoverAddr(userOpHash, userOp.signature);
+		if (privileges[signer] == bytes32(0)) {
+			validationData = SIG_VALIDATION_FAILED;
+		}
+
+		if (missingAccountFunds > 0) {
+			(bool success,) = payable(msg.sender).call{value : missingAccountFunds}("");
+			(success);
+			// ignore failure (its EntryPoint's job to verify, not account.)
+		}
 	}
 }

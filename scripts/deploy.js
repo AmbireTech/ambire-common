@@ -1,5 +1,6 @@
 const { ethers, JsonRpcProvider } = require("ethers")
 const AmbireAccount = require("../contracts/compiled/AmbireAccount.json");
+const AmbireAccountFactory = require("../artifacts/contracts/AmbireAccountFactory.sol/AmbireAccountFactory.json");
 require('dotenv').config();
 
 const polygonUrl = 'https://rpc.ankr.com/polygon'
@@ -27,10 +28,28 @@ async function generateAmbireProxyDeploy (gasPrice) {
 	return await fundWallet.signTransaction(txn)
 }
 
+async function generateFactory (gasPrice) {
+	const txn = {}
+	const pk = process.env.DEPLOY_PRIVATE_KEY
+	const fundWallet = new ethers.Wallet(pk, provider)
+	const factory = new ethers.ContractFactory(AmbireAccountFactory.abi, AmbireAccountFactory.bytecode, fundWallet)
+
+	txn.data = await factory.getDeployTransaction(ethers.computeAddress(pk))
+	txn.from = fundWallet.address
+	txn.value = '0x00'
+	txn.type = null
+	txn.gasLimit = 10000000n
+	txn.data = txn.data.data
+	txn.gasPrice = gasPrice
+	txn.nonce = await provider.getTransactionCount(fundWallet.address)
+	txn.chainId = polygonChainId
+	return await fundWallet.signTransaction(txn)
+}
+
 async function deploy() {
 
   const feeData = await provider.getFeeData()
-  const sig = await generateAmbireProxyDeploy(feeData.gasPrice)
+  const sig = await generateFactory(feeData.gasPrice)
   console.log(sig)
 }
 
