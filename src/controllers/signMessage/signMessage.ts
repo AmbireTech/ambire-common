@@ -93,7 +93,9 @@ export class SignMessageController extends EventEmitter {
         signature: this.signature,
         content: this.#request.action as PlainTextMessage | TypedMessage
       }
-    } catch (error: any) {
+    } catch (e) {
+      const error = e instanceof Error ? e : new Error(`Signing failed. Error details: ${e}`)
+
       this.emitError({
         level: 'major',
         message: 'Something went wrong while signing the message. Please try again.',
