@@ -22,6 +22,7 @@ contract AmbireERC4337Manager is AmbireAccount, IAccount {
 		address signer = SignatureValidator.recoverAddr(userOpHash, userOp.signature);
 		if (privileges[signer] == bytes32(0)) {
 			validationData = SIG_VALIDATION_FAILED;
+			return validationData;
 		}
 
 		if (missingAccountFunds > 0) {
