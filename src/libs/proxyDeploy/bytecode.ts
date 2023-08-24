@@ -5,15 +5,14 @@ import { PROXY_AMBIRE_ACCOUNT } from "../../consts/deploy"
 
 export async function getBytecode(
   network: NetworkDescriptor,
-  priLevels: PrivLevels[],
-  proxy: string = PROXY_AMBIRE_ACCOUNT
+  priLevels: PrivLevels[]
 ): Promise<string> {
   const provider = new JsonRpcProvider(network.rpcUrl)
-  const code = await provider.getCode(proxy)
+  const code = await provider.getCode(PROXY_AMBIRE_ACCOUNT)
   if (code === '0x') throw new Error('No proxy ambire account mined for the specified network')
   
   // get the bytecode and deploy it
-  return getProxyDeployBytecode(proxy, priLevels, {
+  return getProxyDeployBytecode(PROXY_AMBIRE_ACCOUNT, priLevels, {
     ...getStorageSlotsFromArtifact(null)
   })
 }
