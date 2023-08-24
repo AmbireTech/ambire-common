@@ -65,8 +65,11 @@ export class SignMessageController extends EventEmitter {
     if (this.#request.action.kind === 'message') {
       this.signature = await signer.signMessage(this.#request.action.message)
     } else if (this.#request.action.kind === 'typedMessage') {
-      // TODO: Figure out params
-      // this.signature = await signer.signTypedData(this.#request.action.message)
+      const { domain, types, value } = this.#request.action
+
+      // TODO: Figure out if the mismatch between the `TypedDataDomain` from
+      // '@ethersproject/abstract-signer' and `TypedDataDomain` from 'ethers' is a problem
+      this.signature = await signer.signTypedData(domain, types, value)
     }
 
     // TODO: save SignedMessage to Activity controller (add signed message)
