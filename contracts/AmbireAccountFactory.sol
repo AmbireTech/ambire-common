@@ -14,8 +14,8 @@ contract AmbireAccountFactory {
 
 	// @notice allows anyone to deploy any contracft with a specific code/salt
 	// this is safe because it's CREATE2 deployment
-	function deploy(bytes calldata code, uint256 salt) external {
-		deploySafe(code, salt);
+	function deploy(bytes calldata code, uint256 salt) external returns(address) {
+		return deploySafe(code, salt);
 	}
 
 	// @notice when the relayer needs to act upon an /identity/:addr/submit call, it'll either call execute on the AmbireAccount directly
