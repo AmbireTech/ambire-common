@@ -87,21 +87,15 @@ export const visualizationToText = (call: IrCall): string => {
   let text = ''
   const visualization = call.fullVisualization
   visualization.forEach((v: { [key: string]: any }, i: number) => {
-    if (v.address === '0x8a3C710E41cD95799C535f22DBaE371D7C858651') console.log(v.symbol)
     if (i) text += ' '
     if (v.type === 'action' || v.type === 'lable') text += `${v.content}`
     if (v.type === 'address') text += v.name ? `${v.address} (${v.name})` : v.address
     // @TODO add amount to token
     // @TODo add the amount to the fullVisualization also
-    if (v.type === 'token') text += v.symbol ? `${v.symbol}` : `${v.address} token`
+    if (v.type === 'token') {
+      text += `${v.readbleAmount || v.amount} ${v.symbol ? v.symbol : `${v.address} token`} `
+    }
   })
-  if (visualization.find((v: any) => v.address === '0x8a3C710E41cD95799C535f22DBaE371D7C858651'))
-    console.log(
-      visualization.find((v: any) => v.address === '0x8a3C710E41cD95799C535f22DBaE371D7C858651')
-        .symbol,
-      text
-    )
-
   if (text) {
     return text
   }

@@ -19,9 +19,7 @@ export const aaveLendingPoolV2 = (humanizerInfo: any): { [key: string]: Function
       const [asset, amount, onBehalf] = iface.parseTransaction(call)?.args || []
       return [
         getAction('Withdraw'),
-        amount === 115792089237316195423570985008687907853269984665640564039457584007913129639935n
-          ? getLable('everything')
-          : getToken(asset, amount),
+        getToken(asset, amount),
         getLable('from Aave lending pool'),
         ...getOnBehalfOf(onBehalf, accountOp.accountAddr)
       ]
