@@ -1,3 +1,4 @@
+/* eslint-disable no-underscore-dangle */
 import { JsonRpcProvider } from 'ethers'
 
 import { networks } from '../../consts/networks'
@@ -67,7 +68,7 @@ export class MainController extends EventEmitter {
 
   userRequests: UserRequest[] = []
 
-  dappsNotificationRequests: DappNotificationRequest[] = []
+  _dappsNotificationRequests: DappNotificationRequest[] = []
 
   // The reason we use a map structure and not a flat array is:
   // 1) it's easier in the UI to deal with structured data rather than having to .find/.filter/etc. all the time
@@ -93,8 +94,12 @@ export class MainController extends EventEmitter {
 
   onSetDappsNotificationRequests?: (newValue: DappNotificationRequest[]) => void
 
-  set setDappsNotificationRequests(newValue: DappNotificationRequest[]) {
-    this.dappsNotificationRequests = newValue
+  get dappsNotificationRequests() {
+    return this._dappsNotificationRequests
+  }
+
+  set dappsNotificationRequests(newValue: DappNotificationRequest[]) {
+    this._dappsNotificationRequests = newValue
     !!this.onSetDappsNotificationRequests && this.onSetDappsNotificationRequests(newValue)
   }
 
