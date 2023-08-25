@@ -152,13 +152,23 @@ export function genericErc20Humanizer(
 
 export function tokenParsing(accounOp: AccountOp, ir: Ir, options?: any) {
   const asyncOps: Array<Promise<any>> = []
-
   const newCalls = ir.calls.map((c) => ({
     ...c,
     fullVisualization: c.fullVisualization.map((v: any) => {
       if (v.type === 'token') {
         const tokenMeta = accounOp.humanizerMeta?.[`tokens:${v.address}`]
-        if (tokenMeta) return { ...v, symbol: v.symbol || tokenMeta[0], decimals: tokenMeta[1] }
+        if (tokenMeta) {
+          v.amount ===
+          115792089237316195423570985008687907853269984665640564039457584007913129639935n
+            ? console.log(v)
+            : null
+          return {
+            ...v,
+            symbol: v.symbol || tokenMeta[0],
+            decimals: tokenMeta[1],
+            readbleAmount: ethers.formatUnits(v.amount, tokenMeta[1])
+          }
+        }
         asyncOps.push(getTokenInfo(accounOp, v.address, options.fetch))
       }
       return v
