@@ -46,4 +46,6 @@ export interface UserRequest {
 export interface DappNotificationRequest {
   id: bigint
   ident: number
+  screen: string
+  session?: { origin: string; name: string; icon: string }
 }
