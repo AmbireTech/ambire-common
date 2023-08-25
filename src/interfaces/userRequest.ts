@@ -48,4 +48,5 @@ export interface DappNotificationRequest {
   ident: number
   screen: string
   session?: { origin: string; name: string; icon: string }
+  winProps?: any
 }
