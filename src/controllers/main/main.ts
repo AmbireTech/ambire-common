@@ -91,18 +91,27 @@ export class MainController extends EventEmitter {
 
   onRejectDappNotificationRequest: (err: any, ident: number) => void
 
+  onSetDappsNotificationRequests?: (newValue: DappNotificationRequest[]) => void
+
+  set setDappsNotificationRequests(newValue: DappNotificationRequest[]) {
+    this.dappsNotificationRequests = newValue
+    !!this.onSetDappsNotificationRequests && this.onSetDappsNotificationRequests(newValue)
+  }
+
   constructor({
     storage,
     fetch,
     relayerUrl,
     onResolveDappNotificationRequest,
-    onRejectDappNotificationRequest
+    onRejectDappNotificationRequest,
+    onSetDappsNotificationRequests
   }: {
     storage: Storage
     fetch: Function
     relayerUrl: string
     onResolveDappNotificationRequest: (data: any, ident: number) => void
     onRejectDappNotificationRequest: (err: any, ident: number) => void
+    onSetDappsNotificationRequests?: (newValue: DappNotificationRequest[]) => void
   }) {
     super()
     this.storage = storage
@@ -118,6 +127,7 @@ export class MainController extends EventEmitter {
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
     this.onResolveDappNotificationRequest = onResolveDappNotificationRequest
     this.onRejectDappNotificationRequest = onRejectDappNotificationRequest
+    this.onSetDappsNotificationRequests = onSetDappsNotificationRequests
     // @TODO Load userRequests from storage and emit that we have updated
     // @TODO
   }
