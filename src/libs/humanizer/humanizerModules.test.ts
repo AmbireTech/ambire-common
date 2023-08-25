@@ -143,6 +143,22 @@ describe('module tests', () => {
   })
 
   test('visualization to text', async () => {
+    const expectedTexification = [
+      'Swap 0x8a3C710E41cD95799C535f22DBaE371D7C858651 token for at least MATIC and send it to 0x0000000000000000000000000000000000000000 (0x000...000) already expired',
+      'Swap WETH for at least 0x6E975115250B05C828ecb8edeDb091975Fc20a5d token and send it to 0xbb6C8c037b9Cc3bF1a4C4188d92e5D86bfCE76A8 (0xbb6...6A8) already expired',
+      'Swap 0xebB82c932759B515B2efc1CfBB6BF2F6dbaCe404 token for at least USDC and send it to 0xca124B356bf11dc153B886ECB4596B5cb9395C41 (0xca1...C41) already expired',
+      'Swap up to 0x6E975115250B05C828ecb8edeDb091975Fc20a5d token for WETH and send it to 0xbb6C8c037b9Cc3bF1a4C4188d92e5D86bfCE76A8 (0xbb6...6A8) already expired',
+      'Wrap MATIC',
+      'Unwrap MATIC',
+      'Call deposit() from 0xE592427A0AEce92De3Edee1F18E0157C05861564 (Uniswap) and Send MATIC',
+      'Deposit 0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84 token to Aave lending pool on befalf of 0x7F4cF2E68f968cc050B3783268C474a15b8BDC2e (0x7F4...C2e)',
+      'Withdraw USDC from Aave lending pool on befalf of 0x8BC110Db7029197C3621bEA8092aB1996D5DD7BE (0x8BC...7BE)',
+      'Deposit MATIC to Aave lending pool on befalf of 0x47c353467326E6Bd0c01E728E8F7D1A06A849395 (0x47c...395)',
+      'Withdraw MATIC from Aave lending pool on befalf of 0x0DF1A69fCDf15FEC04e37Aa5ECA4268927B111e7 (0x0DF...1e7)',
+      'Deposit yDAI to 0xdA816459F1AB5631232FE5e97a05BBBb94970c95 (Yearn DAI Vault)',
+      'Withdraw yDAI from 0xdA816459F1AB5631232FE5e97a05BBBb94970c95 (Yearn DAI Vault)',
+      'Approve 0xC92E8bdf79f0507f65a392b0ab4667716BFE0110 (0xC92...110) for yDAI'
+    ]
     const allCalls = Object.keys(transactions)
       .map((key: string) => transactions[key])
       .flat()
@@ -152,8 +168,8 @@ describe('module tests', () => {
       if (a) accountOp.humanizerMeta = { ...accountOp.humanizerMeta, [a.key]: a.value }
     })
     ;[ir, asyncOps] = humanize(accountOp, { fetch })
-    // @TODO finish
-    console.log(ir.calls.map((call: IrCall) => visualizationToText(call)))
+    const res = ir.calls.map((call: IrCall) => visualizationToText(call))
+    expectedTexification.forEach((et: string, i: number) => expect(et).toEqual(res[i]))
   })
   test('uniV3', () => {
     const expectedhumanization = [
