@@ -286,7 +286,7 @@ export class MainController extends EventEmitter {
 
   async addUserRequest(req: UserRequest) {
     this.userRequests.push(req)
-    const { action, accountAddr, networkId } = req
+    const { id, action, accountAddr, networkId } = req
     if (!this.settings.networks.find((x) => x.id === networkId))
       throw new Error(`addUserRequest: ${networkId}: network does not exist`)
     if (action.kind === 'call') {
@@ -314,6 +314,7 @@ export class MainController extends EventEmitter {
       if (!this.messagesToBeSigned[accountAddr]) this.messagesToBeSigned[accountAddr] = []
       if (this.messagesToBeSigned[accountAddr].find((x) => x.fromUserRequestId === req.id)) return
       this.messagesToBeSigned[accountAddr].push({
+        id,
         content: action,
         fromUserRequestId: req.id,
         signature: null
@@ -392,8 +393,9 @@ export class MainController extends EventEmitter {
     if (dappRequest) {
       this.dappsNotificationRequests = this.dappsNotificationRequests.filter((req) => req.id !== id)
       this.onResolveDappNotificationRequest(data, dappRequest.ident)
-      this.emitUpdate()
     }
+    this.removeUserRequest(id)
+    this.emitUpdate()
   }
 
   rejectDappNotificationRequest(err: any, id: bigint) {
@@ -401,11 +403,15 @@ export class MainController extends EventEmitter {
     if (dappRequest) {
       this.dappsNotificationRequests = this.dappsNotificationRequests.filter((req) => req.id !== id)
       this.onRejectDappNotificationRequest(err, dappRequest.ident)
-      this.emitUpdate()
     }
+    this.removeUserRequest(id)
+    this.emitUpdate()
   }
 
-  broadcastSignedAccountOp(accountOp) {}
+  resolveSignedAccountOp(accountOp) {}
 
-  broadcastSignedMessage(signedMessage: Message) {}
+  resolveSignedMessage(signedMessage: Message) {
+    // TODO: add signedMessage to the activity
+    this.resolveDappNotificationRequest({ hash: signedMessage.signature }, signedMessage.id)
+  }
 }

@@ -87,6 +87,7 @@ export class SignMessageController extends EventEmitter {
       }
 
       this.signedMessage = {
+        id: this.messageToSign.id,
         signature: this.signature,
         content: this.messageToSign.content
       }
