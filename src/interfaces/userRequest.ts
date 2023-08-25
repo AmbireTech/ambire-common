@@ -42,3 +42,8 @@ export interface UserRequest {
   // either-or here between call and a message, plus different types of messages
   action: Call | PlainTextMessage | TypedMessage
 }
+
+export interface DappNotificationRequest {
+  id: bigint
+  ident: number
+}

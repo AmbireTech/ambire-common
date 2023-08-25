@@ -4,7 +4,7 @@ import { networks } from '../../consts/networks'
 import { Account, AccountId, AccountOnchainState } from '../../interfaces/account'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
 import { Storage } from '../../interfaces/storage'
-import { Message, UserRequest } from '../../interfaces/userRequest'
+import { DappNotificationRequest, Message, UserRequest } from '../../interfaces/userRequest'
 import { AccountOp, Call as AccountOpCall } from '../../libs/accountOp/accountOp'
 import { getAccountState } from '../../libs/accountState/accountState'
 import { estimate, EstimateResult } from '../../libs/estimate/estimate'
@@ -67,6 +67,8 @@ export class MainController extends EventEmitter {
 
   userRequests: UserRequest[] = []
 
+  dappsNotificationRequests: DappNotificationRequest[] = []
+
   // The reason we use a map structure and not a flat array is:
   // 1) it's easier in the UI to deal with structured data rather than having to .find/.filter/etc. all the time
   // 2) it's easier to mutate this - to add/remove accountOps, to find the right accountOp to extend, etc.
@@ -85,7 +87,23 @@ export class MainController extends EventEmitter {
 
   lastUpdate: Date = new Date()
 
-  constructor(storage: Storage, fetch: Function, relayerUrl: string) {
+  onResolveDappNotificationRequest: (data: any, ident: number) => void
+
+  onRejectDappNotificationRequest: (err: any, ident: number) => void
+
+  constructor({
+    storage,
+    fetch,
+    relayerUrl,
+    onResolveDappNotificationRequest,
+    onRejectDappNotificationRequest
+  }: {
+    storage: Storage
+    fetch: Function
+    relayerUrl: string
+    onResolveDappNotificationRequest: (data: any, ident: number) => void
+    onRejectDappNotificationRequest: (err: any, ident: number) => void
+  }) {
     super()
     this.storage = storage
     this.portfolio = new PortfolioController(storage)
@@ -98,6 +116,8 @@ export class MainController extends EventEmitter {
     this.accountAdder = new AccountAdderController({ storage, relayerUrl, fetch })
     this.signMessage = new SignMessageController(this.#keystoreLib)
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
+    this.onResolveDappNotificationRequest = onResolveDappNotificationRequest
+    this.onRejectDappNotificationRequest = onRejectDappNotificationRequest
     // @TODO Load userRequests from storage and emit that we have updated
     // @TODO
   }
@@ -350,6 +370,24 @@ export class MainController extends EventEmitter {
     ])
     this.accountOpsToBeSigned[accountOp.accountAddr][accountOp.networkId]!.estimation = estimation
     console.log(estimation)
+  }
+
+  resolveDappNotificationRequest(data: any, id: bigint) {
+    const dappRequest = this.dappsNotificationRequests.find((req) => req.id === id)
+    if (dappRequest) {
+      this.dappsNotificationRequests = this.dappsNotificationRequests.filter((req) => req.id !== id)
+      this.onResolveDappNotificationRequest(data, dappRequest.ident)
+      this.emitUpdate()
+    }
+  }
+
+  rejectDappNotificationRequest(err: any, id: bigint) {
+    const dappRequest = this.dappsNotificationRequests.find((req) => req.id === id)
+    if (dappRequest) {
+      this.dappsNotificationRequests = this.dappsNotificationRequests.filter((req) => req.id !== id)
+      this.onRejectDappNotificationRequest(err, dappRequest.ident)
+      this.emitUpdate()
+    }
   }
 
   broadcastSignedAccountOp(accountOp) {}
