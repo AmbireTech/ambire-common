@@ -61,7 +61,13 @@ describe('Main Controller ', () => {
   storage.set('accounts', accounts)
   let controller: MainController
   test('Init controller', async () => {
-    controller = new MainController(storage, fetch, relayerUrl)
+    controller = new MainController({
+      storage,
+      fetch,
+      relayerUrl,
+      onResolveDappNotificationRequest: () => {},
+      onRejectDappNotificationRequest: () => {}
+    })
     await new Promise((resolve) => controller.onUpdate(() => resolve(null)))
     // console.dir(controller.accountStates, { depth: null })
     // @TODO
@@ -118,7 +124,13 @@ describe('Main Controller ', () => {
   })
 
   test('should add smart accounts', async () => {
-    controller = new MainController(storage, fetch, relayerUrl)
+    controller = new MainController({
+      storage,
+      fetch,
+      relayerUrl,
+      onResolveDappNotificationRequest: () => {},
+      onRejectDappNotificationRequest: () => {}
+    })
 
     const signerAddr = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
     const priv = { addr: signerAddr, hash: true }
