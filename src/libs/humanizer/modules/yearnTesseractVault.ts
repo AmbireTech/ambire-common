@@ -39,7 +39,7 @@ export const yearnVaultModule = (
       accountOp: AccountOp,
       call: IrCall
     ) => {
-      // @TODO check network (eth/poly) to add proper prefic (from tokenPrefixes y/tv) in namingHUmanizer
+      // @TODO check network (eth/poly) to add proper prefic (from tokenPrefixes y/tv) in nameParsing
       const [amount] = iface.parseTransaction(call)!.args
       const vaultInfo = getVaultInfo(call)
       return [

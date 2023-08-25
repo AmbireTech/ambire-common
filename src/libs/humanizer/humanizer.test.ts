@@ -4,7 +4,7 @@ import { ethers } from 'ethers'
 import fetch from 'node-fetch'
 import { AccountOp } from '../accountOp/accountOp'
 import { callsToIr, initHumanizerMeta } from './humanizer'
-import { namingHumanizer } from './modules/namingHumanizer'
+import { nameParsing } from './modules/nameParsing'
 import { fallbackHumanizer } from './modules/fallBackHumanizer'
 import { uniswapHumanizer } from './modules/Uniswap'
 import { Ir } from './interfaces'
@@ -319,12 +319,12 @@ describe('module tests', () => {
     expect(asyncOps.length).toBe(0)
   })
 
-  test('namingHumanizer', () => {
+  test('nameParsing', () => {
     accountOp.calls = [...transactions.namingTransactions]
     let ir = callsToIr(accountOp)
     ;[ir] = genericErc20Humanizer(accountOp, ir)
     ;[ir] = fallbackHumanizer(accountOp, ir)
-    const [{ calls: newCalls }] = namingHumanizer(accountOp, ir)
+    const [{ calls: newCalls }] = nameParsing(accountOp, ir, { fetch })
 
     expect(newCalls.length).toBe(transactions.namingTransactions.length)
     expect(newCalls[0].fullVisualization.find((v: any) => v.type === 'address')).toMatchObject({

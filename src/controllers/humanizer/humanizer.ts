@@ -44,8 +44,8 @@ export class HumanizerController extends EventEmitter {
       )
       this.ir = ir
       this.emitUpdate()
-      if (!asyncOps.length) return
-      const fragments = await Promise.all(asyncOps)
+      const fragments = (await Promise.all(asyncOps)).filter((f) => f)
+      if (!fragments.length) return
 
       let globalFragmentData = {}
       let nonGlobalFragmentData = {}

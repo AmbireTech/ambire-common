@@ -7,10 +7,11 @@ import { oneInchHumanizer } from './modules/oneInch'
 import { IrCall, Ir, HumanizerFragment } from './interfaces'
 import { aaveHumanizer } from './modules/Aave'
 import { WALLETModule } from './modules/WALLET'
-import { namingHumanizer } from './modules/namingHumanizer'
+import { nameParsing } from './modules/nameParsing'
 import { fallbackHumanizer } from './modules/fallBackHumanizer'
 import { yearnVaultModule } from './modules/yearnTesseractVault'
 
+// @TODO !!!!!!! fix nameName parsing rename and tests (SHOULD Promise<HumanizerFragment> have possibility to be null)
 // @TODO humanize signed messages
 // @TODO change all console.logs to throw errs
 // @TODO finish modules:
@@ -69,7 +70,7 @@ export function humanize(
     WALLETModule,
     yearnVaultModule,
     fallbackHumanizer,
-    namingHumanizer
+    nameParsing
   ]
   let currentIr: Ir = callsToIr(accountOp)
   let asyncOps: any[] = []

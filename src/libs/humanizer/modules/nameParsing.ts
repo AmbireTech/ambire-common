@@ -9,7 +9,7 @@ const getName = (address: string, humanizerMeta: any) => {
   return null
 }
 // adds 'name' proeprty to visualization of addresses (needs initialHumanizer to work on unparsed transactions)
-export function namingHumanizer(
+export function nameParsing(
   accountOp: AccountOp,
   currentIr: Ir,
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -24,11 +24,11 @@ export function namingHumanizer(
           name: getName(v.address, accountOp.humanizerMeta) || shortenAddress(v.address)
         }
       if (v.type === 'token' && !v.symbol) {
-        if (!accountOp.humanizerMeta?.[`tokens:${v.address}`]) {
+        if (accountOp.humanizerMeta?.[`tokens:${v.address}`]) {
           asyncOps.push(getTokenInfo(accountOp, v.address, options.fetch))
-          return { ...v, symbol: `${v.address} token` }
+          return { ...v, symbol: accountOp.humanizerMeta?.[`tokens:${v.address}`][0] }
         }
-        return { ...v, symbol: accountOp.humanizerMeta?.[`tokens:${v.address}`][0] }
+        return { ...v, symbol: `${v.address} token` }
       }
       return v
     })
