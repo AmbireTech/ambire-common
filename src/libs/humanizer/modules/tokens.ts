@@ -3,6 +3,13 @@ import { AccountOp } from 'libs/accountOp/accountOp'
 // eslint-disable-next-line import/no-extraneous-dependencies
 import { getLable, getAction, getAddress, getNft, getToken, getTokenInfo } from '../utils'
 import { Ir, IrCall } from '../interfaces'
+import { NetworkId } from '../../../interfaces/networkDescriptor'
+// @TODO move it to consts files
+const nativeTokens: { [key: NetworkId]: [string, number] } = {
+  '1': ['ETH', 18],
+  '137': ['MATIC', 18],
+  '250': ['FTM', 18]
+}
 
 export function genericErc721Humanizer(
   accountOp: AccountOp,
@@ -156,7 +163,10 @@ export function tokenParsing(accounOp: AccountOp, ir: Ir, options?: any) {
     ...c,
     fullVisualization: c.fullVisualization.map((v: any) => {
       if (v.type === 'token') {
-        const tokenMeta = accounOp.humanizerMeta?.[`tokens:${v.address}`]
+        const tokenMeta =
+          v.address === ethers.ZeroAddress
+            ? nativeTokens[accounOp.networkId]
+            : accounOp.humanizerMeta?.[`tokens:${v.address}`]
         if (tokenMeta) {
           return {
             ...v,
