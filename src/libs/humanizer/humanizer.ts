@@ -1,6 +1,6 @@
 import { ethers } from 'ethers'
 import { AccountOp } from '../accountOp/accountOp'
-import { genericErc20Humanizer, genericErc721Humanizer } from './modules/tokens'
+import { genericErc20Humanizer, genericErc721Humanizer, tokenParsing } from './modules/tokens'
 import { uniswapHumanizer } from './modules/Uniswap'
 import { wethHumanizer } from './modules/weth'
 import { oneInchHumanizer } from './modules/oneInch'
@@ -70,7 +70,8 @@ export function humanize(
     WALLETModule,
     yearnVaultModule,
     fallbackHumanizer,
-    nameParsing
+    nameParsing,
+    tokenParsing
   ]
   let currentIr: Ir = callsToIr(accountOp)
   let asyncOps: any[] = []
@@ -86,6 +87,7 @@ export const visualizationToText = (call: IrCall): string => {
   let text = ''
   const visualization = call.fullVisualization
   visualization.forEach((v: { [key: string]: any }, i: number) => {
+    if (v.address === '0x8a3C710E41cD95799C535f22DBaE371D7C858651') console.log(v.symbol)
     if (i) text += ' '
     if (v.type === 'action' || v.type === 'lable') text += `${v.content}`
     if (v.type === 'address') text += v.name ? `${v.address} (${v.name})` : v.address
@@ -93,6 +95,13 @@ export const visualizationToText = (call: IrCall): string => {
     // @TODo add the amount to the fullVisualization also
     if (v.type === 'token') text += v.symbol ? `${v.symbol}` : `${v.address} token`
   })
+  if (visualization.find((v: any) => v.address === '0x8a3C710E41cD95799C535f22DBaE371D7C858651'))
+    console.log(
+      visualization.find((v: any) => v.address === '0x8a3C710E41cD95799C535f22DBaE371D7C858651')
+        .symbol,
+      text
+    )
+
   if (text) {
     return text
   }

@@ -4,7 +4,7 @@ import { AccountOp } from 'libs/accountOp/accountOp'
 import { getLable, getAction, getAddress, getNft, getToken, getTokenInfo } from '../utils'
 import { Ir, IrCall } from '../interfaces'
 
-function genericErc721Humanizer(
+export function genericErc721Humanizer(
   accountOp: AccountOp,
   currentIr: Ir,
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -72,7 +72,7 @@ function genericErc721Humanizer(
   return [newIr, []]
 }
 
-function genericErc20Humanizer(
+export function genericErc20Humanizer(
   accountOp: AccountOp,
   currentIr: Ir,
   options?: any
@@ -150,4 +150,20 @@ function genericErc20Humanizer(
   return [newIr, asyncOps]
 }
 
-export { genericErc20Humanizer, genericErc721Humanizer }
+export function tokenParsing(accounOp: AccountOp, ir: Ir, options?: any) {
+  const asyncOps: Array<Promise<any>> = []
+
+  const newCalls = ir.calls.map((c) => ({
+    ...c,
+    fullVisualization: c.fullVisualization.map((v: any) => {
+      if (v.type === 'token') {
+        const tokenMeta = accounOp.humanizerMeta?.[`tokens:${v.address}`]
+        if (tokenMeta) return { ...v, symbol: v.symbol || tokenMeta[0], decimals: tokenMeta[1] }
+        asyncOps.push(getTokenInfo(accounOp, v.address, options.fetch))
+      }
+      return v
+    })
+  }))
+
+  return [{ ...ir, calls: newCalls }, asyncOps]
+}

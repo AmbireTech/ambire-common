@@ -1,6 +1,6 @@
 import { AccountOp } from '../../accountOp/accountOp'
 import { Ir } from '../interfaces'
-import { getTokenInfo, shortenAddress } from '../utils'
+import { shortenAddress } from '../utils'
 
 const getName = (address: string, humanizerMeta: any) => {
   if (humanizerMeta[`addressBook:${address}`]) return humanizerMeta[`addressBook:${address}`]
@@ -23,13 +23,6 @@ export function nameParsing(
           ...v,
           name: getName(v.address, accountOp.humanizerMeta) || shortenAddress(v.address)
         }
-      if (v.type === 'token' && !v.symbol) {
-        if (accountOp.humanizerMeta?.[`tokens:${v.address}`]) {
-          asyncOps.push(getTokenInfo(accountOp, v.address, options.fetch))
-          return { ...v, symbol: accountOp.humanizerMeta?.[`tokens:${v.address}`][0] }
-        }
-        return { ...v, symbol: `${v.address} token` }
-      }
       return v
     })
     return { ...call, fullVisualization: newVisualization || call.fullVisualization }
