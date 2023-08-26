@@ -1,6 +1,5 @@
 import { ethers } from 'ethers'
 import { AccountOp } from 'libs/accountOp/accountOp'
-// eslint-disable-next-line import/no-extraneous-dependencies
 import { getLable, getAction, getAddress, getNft, getToken, getTokenInfo } from '../utils'
 import { Ir, IrCall } from '../interfaces'
 import { NetworkId } from '../../../interfaces/networkDescriptor'

@@ -1,9 +1,6 @@
 /* eslint-disable no-await-in-loop */
 // @TODO use for of or for in instead of object.keys().map/.forEach
 // @TODO use type generics instead of any
-// @TODO include new selectors and names in controller
-// @TODO add all humanizer related scripts to package.json
-// @TODO add 'unknown ___ action' in every module on no matcher key
 // @TODO final review of files and jsons
 import { Ir } from '../../libs/humanizer/interfaces'
 import { Storage } from '../../interfaces/storage'
@@ -12,7 +9,11 @@ import { humanize } from '../../libs/humanizer/humanizer'
 import EventEmitter from '../eventEmitter'
 
 const HUMANIZER_META_KEY = 'HumanizerMeta'
-
+// @TODO !!!!!!!!!!!!!!!!!!
+// @TODO include new selectors and names in controller
+// @TODO add contract abis to humanizer json
+// @TODO add all humanizer related scripts to package.json
+// @TODO add 'unknown ___ action' in every module on no matcher key
 // @TODO add proper error messages everywhere
 export class HumanizerController extends EventEmitter {
   ir: Ir = { calls: [] }

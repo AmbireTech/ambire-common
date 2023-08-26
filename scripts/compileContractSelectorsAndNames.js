@@ -40,6 +40,7 @@ const getContractInterfaces = async (addresses) => {
 }
 
 const main  = async () => {
+	if (!ETHERSCAN_API_KEY) throw Error('NO ETHERSCAN_API_KEY')
 	// taking addresses from json only for mainnet
 	const initialJson = JSON.parse(await fsPromises.readFile(infoSourcePath, 'utf8'))
 	const addressListJson = initialJson?.['1']
