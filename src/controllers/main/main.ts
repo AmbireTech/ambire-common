@@ -201,10 +201,10 @@ export class MainController extends EventEmitter {
       )
   }
 
-  private getAccountOp(accountAddr: AccountId, networkId: NetworkId): AccountOp | null {
+  private makeAccountOpFromUserRequests(accountAddr: AccountId, networkId: NetworkId): AccountOp | null {
     const account = this.accounts.find((x) => x.addr === accountAddr)
     if (!account)
-      throw new Error(`getAccountOp: tried to run for non-existant account ${accountAddr}`)
+      throw new Error(`makeAccountOpFromUserRequests: tried to run for non-existant account ${accountAddr}`)
     // Note: we use reduce instead of filter/map so that the compiler can deduce that we're checking .kind
     const calls = this.userRequests.reduce((uCalls: AccountOpCall[], req) => {
       // only the first one for EOAs
@@ -261,7 +261,7 @@ export class MainController extends EventEmitter {
       // 4) manage recalc on removeUserRequest too in order to handle EOAs
       // @TODO consider re-using this whole block in removeUserRequest
       await this.ensureAccountInfo(accountAddr, networkId)
-      const accountOp = this.getAccountOp(accountAddr, networkId)
+      const accountOp = this.makeAccountOpFromUserRequests(accountAddr, networkId)
       if (accountOp) {
         this.accountOpsToBeSigned[accountAddr][networkId] = { accountOp, estimation: null }
         try {
@@ -297,13 +297,20 @@ export class MainController extends EventEmitter {
     const { action, accountAddr, networkId } = req
     if (action.kind === 'call') {
       // @TODO ensure acc info, re-estimate
-      const accountOp = this.getAccountOp(accountAddr, networkId)
+      const accountOp = this.makeAccountOpFromUserRequests(accountAddr, networkId)
       if (accountOp)
         this.accountOpsToBeSigned[accountAddr][networkId] = { accountOp, estimation: null }
     } else
       this.messagesToBeSigned[accountAddr] = this.messagesToBeSigned[accountAddr].filter(
         (x) => x.fromUserRequestId !== id
       )
+  }
+
+  async reestimateCurrentAccountOp(accountAddr: AccountId, networkId: NetworkId) {
+    const accountOp = this.accountOpsToBeSigned[accountAddr][networkId]?.accountOp
+    // non fatal, no need to do anything
+    if (!accountOp) return
+    await this.estimateAccountOp(accountOp)
   }
 
   // @TODO: protect this from race conditions/simultanous executions
