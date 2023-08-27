@@ -2,6 +2,7 @@
 pragma solidity 0.8.19;
 
 import './libs/SignatureValidator.sol';
+import "../node_modules/@account-abstraction/contracts/interfaces/IAccount.sol";
 
 interface ExternalSigValidator {
 	function validateSig(
@@ -16,7 +17,7 @@ interface ExternalSigValidator {
 // @dev All external/public functions (that are not view/pure) use `payable` because AmbireAccount
 // is a wallet contract, and any ETH sent to it is not lost, but on the other hand not having `payable`
 // makes the Solidity compiler add an extra check for `msg.value`, which in this case is wasted gas
-contract AmbireAccount {
+contract AmbireAccount is IAccount {
 	// @dev We do not have a constructor. This contract cannot be initialized with any valid `privileges` by itself!
 	// The indended use case is to deploy one base implementation contract, and create a minimal proxy for each user wallet, by
 	// using our own code generation to insert SSTOREs to initialize `privileges` (IdentityProxyDeploy.js)
@@ -120,37 +121,13 @@ contract AmbireAccount {
 	// that is authorized to execute on this account (in `privileges`)
 	// @dev: WARNING: if the signature of this is changed, we have to change AmbireAccountFactory
 	function execute(Transaction[] calldata calls, bytes calldata signature) public payable {
-		uint256 currentNonce = nonce;
-		address signerKey;
-		// Externally validated signature
-		uint8 sigMode = uint8(signature[signature.length - 1]);
-		if (sigMode == SIGMODE_EXTERNALLY_VALIDATED) {
-			(bytes memory sig, ) = SignatureValidator.splitSignature(signature);
-			address validatorAddr;
-			bytes memory validatorData;
-			bytes memory innerSig;
-			(signerKey, validatorAddr, validatorData, innerSig) = abi.decode(sig, (address, address, bytes, bytes));
-			require(
-				privileges[signerKey] == keccak256(abi.encode(validatorAddr, validatorData)),
-				'EXTERNAL_VALIDATION_NOT_SET'
-			);
-			// The sig validator itself should throw when a signature isn't valdiated successfully
-			// the return value just indicates whether we want to execute the current calls
-			// @TODO what about reentrancy for externally validated signatures
-			if (
-				!ExternalSigValidator(validatorAddr).validateSig(address(this), validatorData, innerSig, currentNonce, calls)
-			) return;
-		} else {
-			// NOTE: abi.encode is safer than abi.encodePacked in terms of collision safety
-			bytes32 hash = keccak256(abi.encode(address(this), block.chainid, currentNonce, calls));
-			signerKey = SignatureValidator.recoverAddrImpl(hash, signature, true);
-			require(privileges[signerKey] != bytes32(0), 'INSUFFICIENT_PRIVILEGE');
-		}
+		(address signerKey, bool shouldExecute) = validateSignature(calls, signature);
+		if (! shouldExecute) return;
 
 		// we increment the nonce to prevent reentrancy
 		// also, we do it here as we want to reuse the previous nonce
 		// doing this after sig verification is fine because sig verification can only do STATICCALLS
-		nonce = currentNonce + 1;
+		nonce++;
 		executeBatch(calls);
 
 		// The actual anti-bricking mechanism - do not allow a signerKey to drop their own privileges
@@ -222,5 +199,60 @@ contract AmbireAccount {
 		address payable fallbackHandler = payable(address(uint160(uint(privileges[FALLBACK_HANDLER_SLOT]))));
 		if (fallbackHandler == address(0)) return false;
 		return AmbireAccount(fallbackHandler).supportsInterface(interfaceID);
+	}
+
+	// return value in case of signature failure, with no time-range.
+	// equivalent to packSigTimeRange(true,0,0);
+	uint256 constant internal SIG_VALIDATION_FAILED = 1;
+
+	function validateUserOp(UserOperation calldata userOp, bytes32 userOpHash, uint256 missingAccountFunds)
+    external returns (uint256 validationData)
+	{
+		// we don't know which is the entry point but it's pretty safe
+		// to allow privileges[msg.sender] to proceed
+		require(privileges[msg.sender] != bytes32(0), 'INSUFFICIENT_PRIVILEGE');
+
+		address signer = SignatureValidator.recoverAddr(userOpHash, userOp.signature);
+		if (privileges[signer] == bytes32(0)) {
+			validationData = SIG_VALIDATION_FAILED;
+			return validationData;
+		}
+
+		if (missingAccountFunds > 0) {
+			// TODO: MAY pay more than the minimum, to deposit for future transactions
+			(bool success,) = payable(msg.sender).call{value : missingAccountFunds}("");
+			(success);
+			// ignore failure (its EntryPoint's job to verify, not account.)
+		}
+
+		return 0; // always return 0 as this function doesn't support time based validation
+	}
+
+	function validateSignature(Transaction[] calldata calls, bytes calldata signature) internal returns(address signerKey, bool shouldExecute) {
+		shouldExecute = true;
+		uint8 sigMode = uint8(signature[signature.length - 1]);
+
+		if (sigMode == SIGMODE_EXTERNALLY_VALIDATED) {
+			(bytes memory sig, ) = SignatureValidator.splitSignature(signature);
+			address validatorAddr;
+			bytes memory validatorData;
+			bytes memory innerSig;
+			(signerKey, validatorAddr, validatorData, innerSig) = abi.decode(sig, (address, address, bytes, bytes));
+			require(
+				privileges[signerKey] == keccak256(abi.encode(validatorAddr, validatorData)),
+				'EXTERNAL_VALIDATION_NOT_SET'
+			);
+			// The sig validator itself should throw when a signature isn't valdiated successfully
+			// the return value just indicates whether we want to execute the current calls
+			// @TODO what about reentrancy for externally validated signatures
+			if (
+				!ExternalSigValidator(validatorAddr).validateSig(address(this), validatorData, innerSig, nonce, calls)
+			) shouldExecute = false;
+		} else {
+			// NOTE: abi.encode is safer than abi.encodePacked in terms of collision safety
+			bytes32 hash = keccak256(abi.encode(address(this), block.chainid, nonce, calls));
+			signerKey = SignatureValidator.recoverAddrImpl(hash, signature, true);
+			require(privileges[signerKey] != bytes32(0), 'INSUFFICIENT_PRIVILEGE');
+		}
 	}
 }

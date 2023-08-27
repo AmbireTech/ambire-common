@@ -206,4 +206,26 @@ describe('Basic Ambire Account tests', function () {
     const postBalance = await provider.getBalance(ambireAccountAddress, receipt.blockNumber)
     expect(balance - postBalance).to.equal(ethers.parseEther('0.04'))
   })
+  it('should successfully perform execute and validate that the nonce has moved', async function () {
+    const [signer] = await ethers.getSigners()
+    const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signer)
+    await sendFunds(ambireAccountAddress, 1)
+    const nonce = await contract.nonce()
+    const txns = [
+      [addressTwo, ethers.parseEther('0.01'), '0x00'],
+      [addressThree, ethers.parseEther('0.01'), '0x00']
+    ]
+    const msg = ethers.getBytes(
+      ethers.keccak256(
+        abiCoder.encode(
+          ['address', 'uint', 'uint', 'tuple(address, uint, bytes)[]'],
+          [ambireAccountAddress, chainId, nonce, txns]
+        )
+      )
+    )
+    const s = wrapEthSign(await signer.signMessage(msg))
+    await contract.execute(txns, s)
+    const nonceAfterExecute = await contract.nonce()
+    expect(nonceAfterExecute).to.equal(nonce + 1n)
+  })
 })
