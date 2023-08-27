@@ -2,7 +2,6 @@
 pragma solidity 0.8.19;
 
 import './libs/SignatureValidator.sol';
-import "../node_modules/@account-abstraction/contracts/interfaces/IAccount.sol";
 
 interface ExternalSigValidator {
 	function validateSig(
@@ -14,10 +13,24 @@ interface ExternalSigValidator {
 	) external returns (bool shouldExecute);
 }
 
+struct UserOperation {
+	address sender;
+	uint256 nonce;
+	bytes initCode;
+	bytes callData;
+	uint256 callGasLimit;
+	uint256 verificationGasLimit;
+	uint256 preVerificationGas;
+	uint256 maxFeePerGas;
+	uint256 maxPriorityFeePerGas;
+	bytes paymasterAndData;
+	bytes signature;
+}
+
 // @dev All external/public functions (that are not view/pure) use `payable` because AmbireAccount
 // is a wallet contract, and any ETH sent to it is not lost, but on the other hand not having `payable`
 // makes the Solidity compiler add an extra check for `msg.value`, which in this case is wasted gas
-contract AmbireAccount is IAccount {
+contract AmbireAccount {
 	// @dev We do not have a constructor. This contract cannot be initialized with any valid `privileges` by itself!
 	// The indended use case is to deploy one base implementation contract, and create a minimal proxy for each user wallet, by
 	// using our own code generation to insert SSTOREs to initialize `privileges` (IdentityProxyDeploy.js)
