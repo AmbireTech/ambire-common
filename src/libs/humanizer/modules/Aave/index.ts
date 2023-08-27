@@ -1,3 +1,4 @@
+import { getAction, getAddress, getLable } from '../../utils'
 import { AccountOp } from '../../../accountOp/accountOp'
 import { HumanizerFragment, Ir } from '../../interfaces'
 import { aaveLendingPoolV2 } from './aaveLendingPoolV2'
@@ -15,7 +16,16 @@ export const aaveHumanizer = (
   }
   const newCalls = ir.calls.map((call) => {
     if (accountOp.humanizerMeta?.[`names:${call.to}`] === 'Aave') {
-      return { ...call, fullVisualization: matcher[call.data.slice(0, 10)](accountOp, call) }
+      return matcher[call.data.slice(0, 10)]
+        ? { ...call, fullVisualization: matcher[call.data.slice(0, 10)](accountOp, call) }
+        : {
+            ...call,
+            fullVisualization: [
+              getAction('Unknwon action (Aave)'),
+              getLable('to'),
+              getAddress(call.to)
+            ]
+          }
     }
     return call
   })

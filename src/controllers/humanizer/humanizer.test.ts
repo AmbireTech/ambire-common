@@ -232,11 +232,11 @@ describe('HumanizerController', () => {
       ]
     ]
     const onUpdate = jest.fn(() => {
-      hc.ir.calls.forEach((c, i) => {
-        c.fullVisualization.forEach((v: any, j: number) => {
+      hc.ir.calls.forEach((c, i) =>
+        c.fullVisualization.forEach((v: any, j: number) =>
           expect(v).toMatchObject(expectedVisualizations[i][j])
-        })
-      })
+        )
+      )
     })
     accountOp.calls = [...transactions.generic]
     hc.onUpdate(onUpdate)

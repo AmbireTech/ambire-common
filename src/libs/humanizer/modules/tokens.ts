@@ -145,12 +145,21 @@ export function genericErc20Humanizer(
       const asyncTokenInfo = getTokenInfo(accountOp, call.to, options.fetch)
       asyncOps.push(asyncTokenInfo)
     }
-    return matcher[call.data.substring(0, 10)] && accountOp.humanizerMeta?.[`tokens:${call.to}`]
-      ? {
-          ...call,
-          fullVisualization: matcher[call.data.substring(0, 10)](call)
-        }
-      : call
+    if (matcher[call.data.substring(0, 10)] && accountOp.humanizerMeta?.[`tokens:${call.to}`])
+      return {
+        ...call,
+        fullVisualization: matcher[call.data.substring(0, 10)](call)
+      }
+    if (accountOp.humanizerMeta?.[`tokens:${call.to}`] && !matcher[call.data.substring(0, 10)])
+      return {
+        ...call,
+        fullVisualization: [
+          getAction('Unknown action (erc20)'),
+          getLable('to'),
+          getAddress(call.to)
+        ]
+      }
+    return call
   })
   const newIr = { calls: newCalls }
   return [newIr, asyncOps]

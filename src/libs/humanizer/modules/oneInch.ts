@@ -1,5 +1,5 @@
 // @TODO not ready, do todos
-import { ethers } from 'ethers'
+import { ethers, getAddress } from 'ethers'
 import { AccountOp } from 'libs/accountOp/accountOp'
 import { HumanizerFragment, Ir, IrCall } from '../interfaces'
 import { getAction, getLable, getToken } from '../utils'
@@ -95,7 +95,14 @@ export const oneInchHumanizer = (
             ...call,
             fullVisualization: matcher[call.data.slice(0, 10)](accountOp, call)
           })
-        : newCalls.push({ ...call, fullVisualization: [getAction('Unknown action (1inch)')] })
+        : newCalls.push({
+            ...call,
+            fullVisualization: [
+              getAction('Unknown action (1inch)'),
+              getLable('to'),
+              getAddress(call.to)
+            ]
+          })
     } else {
       newCalls.push(call)
     }

@@ -5,15 +5,10 @@
 import { Ir } from '../../libs/humanizer/interfaces'
 import { Storage } from '../../interfaces/storage'
 import { AccountOp } from '../../libs/accountOp/accountOp'
-import { humanize } from '../../libs/humanizer/huamnizer'
+import { humanize } from '../../libs/humanizer'
 import EventEmitter from '../eventEmitter'
 
 const HUMANIZER_META_KEY = 'HumanizerMeta'
-// @TODO !!!!!!!!!!!!!!!!!!
-// @TODO rename humanizer.js in libs to index.ts
-// @TODO include new selectors and names in controller
-// @TODO add contract abis to humanizer json
-// @TODO add all humanizer related scripts to package.json
 // @TODO add 'unknown ___ action' in every module on no matcher key
 // @TODO add proper error messages everywhere
 export class HumanizerController extends EventEmitter {

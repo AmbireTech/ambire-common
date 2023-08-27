@@ -1,10 +1,10 @@
-import { ethers } from 'ethers'
+import { ethers, getAddress } from 'ethers'
 import { AccountOp } from '../../../accountOp/accountOp'
 import { HumanizerFragment, Ir, IrCall } from '../../interfaces'
 import { uniUniversalRouter } from './uniUnivarsalRouter'
 import { uniV2Mapping } from './uniV2'
 import { uniV32Mapping, uniV3Mapping } from './uniV3'
-import { getAction } from '../../utils'
+import { getAction, getLable } from '../../utils'
 
 const WETH_ADDRESS = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2'
 
@@ -80,7 +80,14 @@ export function uniswapHumanizer(
             index === 0 ? newCalls.push(hc) : newCalls.push({ ...hc, value: 0n })
           )
       } else {
-        newCalls.push({ ...call, fullVisualization: [getAction('Unknown action (Uniswap)')] })
+        newCalls.push({
+          ...call,
+          fullVisualization: [
+            getAction('Unknown action (Uniswap)'),
+            getLable('to'),
+            getAddress(call.to)
+          ]
+        })
       }
     } else {
       newCalls.push(call)

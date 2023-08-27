@@ -101,7 +101,7 @@ export const yearnVaultModule = (
             : v
         )
       } else {
-        visualization = [getAction('Unknown action (yearn)')]
+        visualization = [getAction('Unknown action (yearn)'), getLable('to'), getAddress(call.to)]
       }
 
       newCalls.push({ ...call, fullVisualization: visualization })

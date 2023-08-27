@@ -2,7 +2,7 @@ import { describe, expect, test } from '@jest/globals'
 
 import fetch from 'node-fetch'
 import { AccountOp } from '../accountOp/accountOp'
-import { callsToIr, humanize, visualizationToText } from './huamnizer'
+import { callsToIr, humanize, visualizationToText } from '.'
 
 import { uniswapHumanizer } from './modules/Uniswap'
 import { Ir, IrCall } from './interfaces'
