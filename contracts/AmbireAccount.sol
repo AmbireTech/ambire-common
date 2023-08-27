@@ -22,6 +22,7 @@ contract AmbireAccount is IAccount {
 	// The indended use case is to deploy one base implementation contract, and create a minimal proxy for each user wallet, by
 	// using our own code generation to insert SSTOREs to initialize `privileges` (IdentityProxyDeploy.js)
 	address private constant FALLBACK_HANDLER_SLOT = address(0x6969);
+	address private constant ENTRY_POINT_SLOT = address(0x7171);
 
 	// Variables
 	mapping(address => bytes32) public privileges;
@@ -123,6 +124,7 @@ contract AmbireAccount is IAccount {
 	function execute(Transaction[] calldata calls, bytes calldata signature) public payable {
 		address signerKey;
 		uint8 sigMode = uint8(signature[signature.length - 1]);
+		uint currentNonce = nonce;
 
 		if (sigMode == SIGMODE_EXTERNALLY_VALIDATED) {
 			bool shouldExecute;
@@ -130,7 +132,7 @@ contract AmbireAccount is IAccount {
 			if (! shouldExecute) return;
 		} else {
 			// NOTE: abi.encode is safer than abi.encodePacked in terms of collision safety
-			bytes32 hash = keccak256(abi.encode(address(this), block.chainid, nonce, calls));
+			bytes32 hash = keccak256(abi.encode(address(this), block.chainid, currentNonce, calls));
 			signerKey = SignatureValidator.recoverAddrImpl(hash, signature, true);
 			require(privileges[signerKey] != bytes32(0), 'INSUFFICIENT_PRIVILEGE');
 		}
@@ -138,7 +140,7 @@ contract AmbireAccount is IAccount {
 		// we increment the nonce to prevent reentrancy
 		// also, we do it here as we want to reuse the previous nonce
 		// doing this after sig verification is fine because sig verification can only do STATICCALLS
-		nonce++;
+		nonce = currentNonce + 1;
 		executeBatch(calls);
 
 		// The actual anti-bricking mechanism - do not allow a signerKey to drop their own privileges
@@ -219,8 +221,8 @@ contract AmbireAccount is IAccount {
 	function validateUserOp(UserOperation calldata userOp, bytes32 userOpHash, uint256 missingAccountFunds)
     external returns (uint256)
 	{
-		// TODO: allow only the entrypoint
-		require(privileges[msg.sender] != bytes32(0), 'INSUFFICIENT_PRIVILEGE');
+		address entryPoint = address(uint160(uint(privileges[ENTRY_POINT_SLOT])));
+		require(msg.sender == entryPoint, 'Request not from entryPoint');
 
 		uint8 sigMode = uint8(userOp.signature[userOp.signature.length - 1]);
 		if (sigMode == SIGMODE_EXTERNALLY_VALIDATED) {
