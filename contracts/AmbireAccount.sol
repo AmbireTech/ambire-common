@@ -13,6 +13,8 @@ interface ExternalSigValidator {
 	) external returns (bool shouldExecute);
 }
 
+// EIP-4337 UserOperation
+// https://eips.ethereum.org/EIPS/eip-4337#required-entry-point-contract-functionality
 struct UserOperation {
 	address sender;
 	uint256 nonce;
@@ -138,11 +140,17 @@ contract AmbireAccount {
 		address signerKey;
 		uint8 sigMode = uint8(signature[signature.length - 1]);
 		uint currentNonce = nonce;
+		// we increment the nonce here (not using `nonce++` to save some gas)
+		// in case shouldExecute is false, we revert it back
+		nonce = currentNonce + 1;
 
 		if (sigMode == SIGMODE_EXTERNALLY_VALIDATED) {
 			bool shouldExecute;
 			(signerKey, shouldExecute) = validateExternalSig(calls, signature);
-			if (!shouldExecute) return;
+			if (!shouldExecute) {
+				nonce = currentNonce;
+				return;
+			}
 		} else {
 			// NOTE: abi.encode is safer than abi.encodePacked in terms of collision safety
 			bytes32 hash = keccak256(abi.encode(address(this), block.chainid, currentNonce, calls));
@@ -150,10 +158,6 @@ contract AmbireAccount {
 			require(privileges[signerKey] != bytes32(0), 'INSUFFICIENT_PRIVILEGE');
 		}
 
-		// we increment the nonce to prevent reentrancy
-		// also, we do it here as we want to preserve the nonce in case shouldExecute is false
-		// doing this after sig verification is fine because sig verification can only do STATICCALLS
-		nonce = currentNonce + 1;
 		executeBatch(calls);
 
 		// The actual anti-bricking mechanism - do not allow a signerKey to drop their own privileges
