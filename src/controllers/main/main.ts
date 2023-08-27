@@ -1,6 +1,7 @@
 import { JsonRpcProvider } from 'ethers'
 
 import { networks } from '../../consts/networks'
+import { KeystoreController } from '../keystore/keystore'
 import { Account, AccountId, AccountOnchainState } from '../../interfaces/account'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
 import { Storage } from '../../interfaces/storage'
@@ -25,7 +26,7 @@ export class MainController extends EventEmitter {
   // Private library instances
   private storage: Storage
 
-  private keystore: Keystore
+  #keystoreLib: Keystore
 
   // Private sub-structures
   private providers: { [key: string]: JsonRpcProvider } = {}
@@ -38,6 +39,8 @@ export class MainController extends EventEmitter {
   accountStates: AccountStates = {}
 
   isReady: boolean = false
+
+  keystore: KeystoreController
 
   accountAdder: AccountAdderController
 
@@ -84,10 +87,11 @@ export class MainController extends EventEmitter {
     this.storage = storage
     this.portfolio = new PortfolioController(storage)
     // @TODO: KeystoreSigners
-    this.keystore = new Keystore(storage, {})
+    this.#keystoreLib = new Keystore(storage, {})
+    this.keystore = new KeystoreController(this.#keystoreLib)
     this.initialLoadPromise = this.load()
     this.settings = { networks }
-    this.emailVault = new EmailVaultController(storage, fetch, relayerUrl, this.keystore)
+    this.emailVault = new EmailVaultController(storage, fetch, relayerUrl, this.#keystoreLib)
     this.accountAdder = new AccountAdderController({ storage, relayerUrl, fetch })
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
     // @TODO Load userRequests from storage and emit that we have updated
@@ -96,7 +100,7 @@ export class MainController extends EventEmitter {
 
   private async load(): Promise<void> {
     ;[this.keys, this.accounts, this.selectedAccount] = await Promise.all([
-      this.keystore.getKeys(),
+      this.#keystoreLib.getKeys(),
       this.storage.get('accounts', []),
       this.storage.get('selectedAccount', null)
     ])
@@ -107,6 +111,9 @@ export class MainController extends EventEmitter {
     // @TODO error handling here
     this.accountStates = await this.getAccountsInfo(this.accounts)
     this.isReady = true
+
+    const isKeystoreReady = await this.#keystoreLib.isReadyToStoreKeys()
+    this.keystore.setIsReadyToStoreKeys(isKeystoreReady)
 
     const addReadyToAddAccountsIfNeeded = () => {
       if (
@@ -160,6 +167,7 @@ export class MainController extends EventEmitter {
 
     this.selectedAccount = toAccountAddr
     await this.storage.set('selectedAccount', toAccountAddr)
+    this.updateSelectedAccount(toAccountAddr)
     this.emitUpdate()
   }
 
@@ -193,10 +201,10 @@ export class MainController extends EventEmitter {
       )
   }
 
-  private getAccountOp(accountAddr: AccountId, networkId: NetworkId): AccountOp | null {
+  private makeAccountOpFromUserRequests(accountAddr: AccountId, networkId: NetworkId): AccountOp | null {
     const account = this.accounts.find((x) => x.addr === accountAddr)
     if (!account)
-      throw new Error(`getAccountOp: tried to run for non-existant account ${accountAddr}`)
+      throw new Error(`makeAccountOpFromUserRequests: tried to run for non-existant account ${accountAddr}`)
     // Note: we use reduce instead of filter/map so that the compiler can deduce that we're checking .kind
     const calls = this.userRequests.reduce((uCalls: AccountOpCall[], req) => {
       // only the first one for EOAs
@@ -232,6 +240,11 @@ export class MainController extends EventEmitter {
     }
   }
 
+  updateSelectedAccount(selectedAccount: string | null = null) {
+    if (!selectedAccount) return
+    this.portfolio.updateSelectedAccount(this.accounts, this.settings.networks, selectedAccount)
+  }
+
   async addUserRequest(req: UserRequest) {
     this.userRequests.push(req)
     const { action, accountAddr, networkId } = req
@@ -248,7 +261,7 @@ export class MainController extends EventEmitter {
       // 4) manage recalc on removeUserRequest too in order to handle EOAs
       // @TODO consider re-using this whole block in removeUserRequest
       await this.ensureAccountInfo(accountAddr, networkId)
-      const accountOp = this.getAccountOp(accountAddr, networkId)
+      const accountOp = this.makeAccountOpFromUserRequests(accountAddr, networkId)
       if (accountOp) {
         this.accountOpsToBeSigned[accountAddr][networkId] = { accountOp, estimation: null }
         try {
@@ -270,14 +283,6 @@ export class MainController extends EventEmitter {
     this.emitUpdate()
   }
 
-  lock() {
-    this.keystore.lock()
-  }
-
-  isUnlock() {
-    return this.keystore.isUnlocked()
-  }
-
   // @TODO allow this to remove multiple OR figure out a way to debounce re-estimations
   // first one sounds more reasonble
   // although the second one can't hurt and can help (or no debounce, just a one-at-a-time queue)
@@ -292,13 +297,20 @@ export class MainController extends EventEmitter {
     const { action, accountAddr, networkId } = req
     if (action.kind === 'call') {
       // @TODO ensure acc info, re-estimate
-      const accountOp = this.getAccountOp(accountAddr, networkId)
+      const accountOp = this.makeAccountOpFromUserRequests(accountAddr, networkId)
       if (accountOp)
         this.accountOpsToBeSigned[accountAddr][networkId] = { accountOp, estimation: null }
     } else
       this.messagesToBeSigned[accountAddr] = this.messagesToBeSigned[accountAddr].filter(
         (x) => x.fromUserRequestId !== id
       )
+  }
+
+  async reestimateCurrentAccountOp(accountAddr: AccountId, networkId: NetworkId) {
+    const accountOp = this.accountOpsToBeSigned[accountAddr][networkId]?.accountOp
+    // non fatal, no need to do anything
+    if (!accountOp) return
+    await this.estimateAccountOp(accountOp)
   }
 
   // @TODO: protect this from race conditions/simultanous executions

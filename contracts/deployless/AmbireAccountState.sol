@@ -45,33 +45,28 @@ contract AmbireAccountState {
                     continue;
                 }
             }
-            try this.gatherAmbireData(account) returns (uint nonce, bytes32[] memory privileges) {
+            try this.gatherAmbireData(account) returns (uint nonce, bytes32[] memory privileges, bool isV2) {
                 accountResult[i].nonce = nonce;
                 accountResult[i].associatedKeyPriviliges = privileges;
+                accountResult[i].isV2 = isV2;
             } catch (bytes memory err) {
                 accountResult[i].deployErr = err;
                 continue;
             }
-
-            // v2 has a method called executeMultiple. If it does not exist,
-            // it is v1. That's what we're doing here
-            accountResult[i].isV2 = false;
-            try this.ambireV2Check(IAmbireAccount(account.addr)) returns (bool isV2) {
-                accountResult[i].isV2 = isV2;
-            } catch {}
         }
         return accountResult;
     }
 
-    function gatherAmbireData(AccountInput memory account) external returns (uint nonce, bytes32[] memory privileges) {
+    function gatherAmbireData(AccountInput memory account) external returns (uint nonce, bytes32[] memory privileges, bool isV2) {
         nonce = IAmbireAccount(account.addr).nonce();
         privileges = new bytes32[](account.associatedKeys.length);
+        isV2 = this.ambireV2Check(IAmbireAccount(account.addr));
         for (uint j=0; j!=account.associatedKeys.length; j++) {
             privileges[j] = IAmbireAccount(account.addr).privileges(account.associatedKeys[j]);
         }
     }
 
     function ambireV2Check(IAmbireAccount account) external pure returns(bool) {
-        return account.supportsInterface(0x150b7a02);
+        return account.supportsInterface(0x0a417632) || account.supportsInterface(0x150b7a02);
     }
 }

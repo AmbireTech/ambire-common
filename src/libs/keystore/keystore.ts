@@ -6,7 +6,7 @@ import scrypt from 'scrypt-js'
 import { KeystoreSigner } from '../../interfaces/keystore'
 import { Storage } from '../../interfaces/storage'
 
-const scryptDefaults = { N: 262144, r: 8, p: 1, dkLen: 64 }
+const scryptDefaults = { N: 131072, r: 8, p: 1, dkLen: 64 }
 const CIPHER = 'aes-128-ctr'
 
 // DOCS
@@ -109,7 +109,6 @@ export class Keystore {
     if (!secrets.length) throw new Error('keystore: no secrets yet')
     const secretEntry = secrets.find((x) => x.id === secretId)
     if (!secretEntry) throw new Error(`keystore: secret ${secretId} not found`)
-
     const { scryptParams, aesEncrypted } = secretEntry
     if (aesEncrypted.cipherType !== CIPHER)
       throw Error(`keystore: unsupported cipherType ${aesEncrypted.cipherType}`)
@@ -135,7 +134,12 @@ export class Keystore {
     this.#mainKey = { key: decrypted.slice(0, 16), iv: decrypted.slice(16, 32) }
   }
 
-  async addSecret(secretId: string, secret: string, extraEntropy: string = '', leaveUnlocked: boolean = false) {
+  async addSecret(
+    secretId: string,
+    secret: string,
+    extraEntropy: string = '',
+    leaveUnlocked: boolean = false
+  ) {
     const secrets = await this.getMainKeyEncryptedWithSecrets()
     // @TODO test
     if (secrets.find((x) => x.id === secretId))
@@ -238,6 +242,9 @@ export class Keystore {
 
   async addKey(privateKey: string, label: string) {
     if (this.#mainKey === null) throw new Error('keystore: needs to be unlocked')
+
+    // eslint-disable-next-line no-param-reassign
+    privateKey = privateKey.substring(0, 2) === '0x' ? privateKey.substring(2) : privateKey
 
     // Set up the cipher
     const counter = new aes.Counter(this.#mainKey.iv)
