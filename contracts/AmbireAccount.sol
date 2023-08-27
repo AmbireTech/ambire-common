@@ -142,7 +142,7 @@ contract AmbireAccount {
 		if (sigMode == SIGMODE_EXTERNALLY_VALIDATED) {
 			bool shouldExecute;
 			(signerKey, shouldExecute) = validateExternalSig(calls, signature);
-			if (! shouldExecute) return;
+			if (!shouldExecute) return;
 		} else {
 			// NOTE: abi.encode is safer than abi.encodePacked in terms of collision safety
 			bytes32 hash = keccak256(abi.encode(address(this), block.chainid, currentNonce, calls));
@@ -151,7 +151,7 @@ contract AmbireAccount {
 		}
 
 		// we increment the nonce to prevent reentrancy
-		// also, we do it here as we want to reuse the previous nonce
+		// also, we do it here as we want to preserve the nonce in case shouldExecute is false
 		// doing this after sig verification is fine because sig verification can only do STATICCALLS
 		nonce = currentNonce + 1;
 		executeBatch(calls);
