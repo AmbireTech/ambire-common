@@ -3,14 +3,14 @@ import { describe, expect, test } from '@jest/globals'
 import { ethers } from 'ethers'
 import fetch from 'node-fetch'
 import { AccountOp } from '../accountOp/accountOp'
-import { callsToIr, initHumanizerMeta } from './humanizer'
+import { callsToIr } from './huamnizer'
 import { nameParsing } from './modules/nameParsing'
 import { fallbackHumanizer } from './modules/fallBackHumanizer'
 import { uniswapHumanizer } from './modules/Uniswap'
 import { Ir } from './interfaces'
 import { genericErc20Humanizer, genericErc721Humanizer } from './modules/tokens'
 
-const humanizerInfo = initHumanizerMeta(require('../../consts/humanizerInfo.json'))
+const humanizerInfo = require('../../consts/humanizerInfo.json')
 
 const mockedFetchForTokens = async (url: string) => {
   const usdtAddress = '0xdAC17F958D2ee523a2206206994597C13D831ec7'
@@ -300,6 +300,7 @@ describe('module tests', () => {
 
   test('fallback', async () => {
     accountOp.calls = [...transactions.generic]
+    delete accountOp.humanizerMeta?.['funcSelectors:0x095ea7b3']
     let ir: Ir = callsToIr(accountOp)
     let asyncOps = []
     ;[ir, asyncOps] = fallbackHumanizer(accountOp, ir, { fetch })

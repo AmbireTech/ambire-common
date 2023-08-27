@@ -2,7 +2,7 @@ import { describe, expect, test } from '@jest/globals'
 
 import fetch from 'node-fetch'
 import { AccountOp } from '../accountOp/accountOp'
-import { callsToIr, humanize, initHumanizerMeta, visualizationToText } from './humanizer'
+import { callsToIr, humanize, visualizationToText } from './huamnizer'
 
 import { uniswapHumanizer } from './modules/Uniswap'
 import { Ir, IrCall } from './interfaces'
@@ -10,7 +10,7 @@ import { wethHumanizer } from './modules/weth'
 import { aaveHumanizer } from './modules/Aave'
 import { yearnVaultModule } from './modules/yearnTesseractVault'
 
-const humanizerInfo = initHumanizerMeta(require('../../consts/humanizerInfo.json'))
+const humanizerInfo = require('../../consts/humanizerInfo.json')
 
 const accountOp: AccountOp = {
   accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
@@ -154,7 +154,7 @@ describe('module tests', () => {
       'Withdraw 0.000000000473401923 ETH  from Aave lending pool on befalf of 0x0DF1A69fCDf15FEC04e37Aa5ECA4268927B111e7 (0x0DF...1e7)',
       'Deposit 690.0 yDAI  to 0xdA816459F1AB5631232FE5e97a05BBBb94970c95 (Yearn DAI Vault)',
       'Withdraw 23736.387977148798767461 yDAI  from 0xdA816459F1AB5631232FE5e97a05BBBb94970c95 (Yearn DAI Vault)',
-      'Approve 0xC92E8bdf79f0507f65a392b0ab4667716BFE0110 (0xC92...110) for 33427.0 yDAI '
+      'Approve 0xC92E8bdf79f0507f65a392b0ab4667716BFE0110 (Gnosis Protocol) for 33427.0 yDAI '
     ]
     const allCalls = Object.keys(transactions)
       .map((key: string) => transactions[key])

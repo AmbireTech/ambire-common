@@ -4,7 +4,6 @@ import { describe, expect, jest, test } from '@jest/globals'
 
 import { HumanizerController } from './humanizer'
 import humanizerJSON from '../../consts/humanizerInfo.json'
-import { initHumanizerMeta } from '../../libs/humanizer/humanizer'
 import { Storage } from '../../interfaces/storage'
 import { AccountOp } from '../../libs/accountOp/accountOp'
 
@@ -24,7 +23,7 @@ export function produceMemoryStore(): Storage {
   }
 }
 
-const humanizerMeta = initHumanizerMeta(humanizerJSON)
+const humanizerMeta = humanizerJSON
 
 const accountOp: AccountOp = {
   accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
@@ -193,7 +192,7 @@ describe('HumanizerController', () => {
     await storage.set(HUMANIZER_META_KEY, humanizerMeta)
     accountOp.calls = []
     hc = new HumanizerController(storage, fetch)
-    accountOp.humanizerMeta = initHumanizerMeta(humanizerJSON)
+    accountOp.humanizerMeta = humanizerJSON
   })
   test('init HumanizerController', async () => {
     expect(hc.ir).toEqual({ calls: [] })
@@ -227,7 +226,8 @@ describe('HumanizerController', () => {
         {
           type: 'address',
           address: '0xE5c783EE536cf5E63E792988335c4255169be4E1',
-          name: '0xE5c...4E1'
+          name: 'OpenSea (old)'
+          //   name: '0xE5c...4E1'
         }
       ]
     ]

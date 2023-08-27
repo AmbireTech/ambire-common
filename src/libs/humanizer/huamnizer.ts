@@ -19,26 +19,6 @@ import { yearnVaultModule } from './modules/yearnTesseractVault'
 // @TODO fix comments from feedback https://github.com/AmbireTech/ambire-common/pull/281
 // @TODO add visualization interface
 // @TODO add new mechanism for error emitting
-export function initHumanizerMeta(humanizerMeta: any) {
-  const newHumanizerMeta: any = {}
-
-  Object.keys(humanizerMeta?.tokens).forEach((k2) => {
-    newHumanizerMeta[`tokens:${ethers.getAddress(k2)}`] = humanizerMeta.tokens?.[k2]
-  })
-  Object.keys(humanizerMeta?.abis).forEach((k2) => {
-    newHumanizerMeta[`abis:${k2}`] = humanizerMeta.abis?.[k2]
-  })
-
-  Object.keys(humanizerMeta?.names).forEach((k2) => {
-    newHumanizerMeta[`names:${ethers.getAddress(k2)}`] = humanizerMeta.names?.[k2]
-  })
-
-  return {
-    ...newHumanizerMeta,
-    yearnVaults: humanizerMeta.yearnVaults,
-    tesseractVaults: humanizerMeta.yearnVaults
-  }
-}
 
 export function callsToIr(accountOp: AccountOp): Ir {
   const irCalls: IrCall[] = accountOp.calls.map((call) => {
