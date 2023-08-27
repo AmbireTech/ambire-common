@@ -51,7 +51,6 @@ export interface AccountOp {
   calls: Call[]
   gasLimit: number | null
   signature: string | null
-  // @TODO separate interface
   gasFeePayment: GasFeePayment | null
   // This is used when we have an account recovery to finalize before executing the AccountOp,
   // And we set this to the recovery finalization AccountOp; could be used in other scenarios too in the future,
