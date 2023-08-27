@@ -121,8 +121,19 @@ contract AmbireAccount is IAccount {
 	// that is authorized to execute on this account (in `privileges`)
 	// @dev: WARNING: if the signature of this is changed, we have to change AmbireAccountFactory
 	function execute(Transaction[] calldata calls, bytes calldata signature) public payable {
-		(address signerKey, bool shouldExecute) = validateSignature(calls, signature);
-		if (! shouldExecute) return;
+		address signerKey;
+		uint8 sigMode = uint8(signature[signature.length - 1]);
+
+		if (sigMode == SIGMODE_EXTERNALLY_VALIDATED) {
+			bool shouldExecute;
+			(signerKey, shouldExecute) = validateExternalSig(calls, signature);
+			if (! shouldExecute) return;
+		} else {
+			// NOTE: abi.encode is safer than abi.encodePacked in terms of collision safety
+			bytes32 hash = keccak256(abi.encode(address(this), block.chainid, nonce, calls));
+			signerKey = SignatureValidator.recoverAddrImpl(hash, signature, true);
+			require(privileges[signerKey] != bytes32(0), 'INSUFFICIENT_PRIVILEGE');
+		}
 
 		// we increment the nonce to prevent reentrancy
 		// also, we do it here as we want to reuse the previous nonce
@@ -206,16 +217,23 @@ contract AmbireAccount is IAccount {
 	uint256 constant internal SIG_VALIDATION_FAILED = 1;
 
 	function validateUserOp(UserOperation calldata userOp, bytes32 userOpHash, uint256 missingAccountFunds)
-    external returns (uint256 validationData)
+    external returns (uint256)
 	{
-		// we don't know which is the entry point but it's pretty safe
-		// to allow privileges[msg.sender] to proceed
+		// TODO: allow only the entrypoint
 		require(privileges[msg.sender] != bytes32(0), 'INSUFFICIENT_PRIVILEGE');
 
-		address signer = SignatureValidator.recoverAddr(userOpHash, userOp.signature);
-		if (privileges[signer] == bytes32(0)) {
-			validationData = SIG_VALIDATION_FAILED;
-			return validationData;
+		uint8 sigMode = uint8(userOp.signature[userOp.signature.length - 1]);
+		if (sigMode == SIGMODE_EXTERNALLY_VALIDATED) {
+			Transaction[] memory calls = abi.decode(userOp.callData, (Transaction[]));
+			(, bool shouldExecute) = validateExternalSig(calls, userOp.signature);
+			if (!shouldExecute) {
+				return SIG_VALIDATION_FAILED;
+			}
+		} else {
+			address signer = SignatureValidator.recoverAddr(userOpHash, userOp.signature);
+			if (privileges[signer] == bytes32(0)) {
+				return SIG_VALIDATION_FAILED;
+			}
 		}
 
 		if (missingAccountFunds > 0) {
@@ -228,31 +246,23 @@ contract AmbireAccount is IAccount {
 		return 0; // always return 0 as this function doesn't support time based validation
 	}
 
-	function validateSignature(Transaction[] calldata calls, bytes calldata signature) internal returns(address signerKey, bool shouldExecute) {
+	function validateExternalSig(Transaction[] memory calls, bytes calldata signature) internal returns(address signerKey, bool shouldExecute) {
 		shouldExecute = true;
-		uint8 sigMode = uint8(signature[signature.length - 1]);
+		(bytes memory sig, ) = SignatureValidator.splitSignature(signature);
+		address validatorAddr;
+		bytes memory validatorData;
+		bytes memory innerSig;
+		(signerKey, validatorAddr, validatorData, innerSig) = abi.decode(sig, (address, address, bytes, bytes));
+		require(
+			privileges[signerKey] == keccak256(abi.encode(validatorAddr, validatorData)),
+			'EXTERNAL_VALIDATION_NOT_SET'
+		);
 
-		if (sigMode == SIGMODE_EXTERNALLY_VALIDATED) {
-			(bytes memory sig, ) = SignatureValidator.splitSignature(signature);
-			address validatorAddr;
-			bytes memory validatorData;
-			bytes memory innerSig;
-			(signerKey, validatorAddr, validatorData, innerSig) = abi.decode(sig, (address, address, bytes, bytes));
-			require(
-				privileges[signerKey] == keccak256(abi.encode(validatorAddr, validatorData)),
-				'EXTERNAL_VALIDATION_NOT_SET'
-			);
-			// The sig validator itself should throw when a signature isn't valdiated successfully
-			// the return value just indicates whether we want to execute the current calls
-			// @TODO what about reentrancy for externally validated signatures
-			if (
-				!ExternalSigValidator(validatorAddr).validateSig(address(this), validatorData, innerSig, nonce, calls)
-			) shouldExecute = false;
-		} else {
-			// NOTE: abi.encode is safer than abi.encodePacked in terms of collision safety
-			bytes32 hash = keccak256(abi.encode(address(this), block.chainid, nonce, calls));
-			signerKey = SignatureValidator.recoverAddrImpl(hash, signature, true);
-			require(privileges[signerKey] != bytes32(0), 'INSUFFICIENT_PRIVILEGE');
-		}
+		// The sig validator itself should throw when a signature isn't valdiated successfully
+		// the return value just indicates whether we want to execute the current calls
+		// @TODO what about reentrancy for externally validated signatures
+		if (
+			!ExternalSigValidator(validatorAddr).validateSig(address(this), validatorData, innerSig, nonce, calls)
+		) shouldExecute = false;
 	}
 }
