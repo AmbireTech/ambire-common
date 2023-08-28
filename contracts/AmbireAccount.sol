@@ -120,7 +120,10 @@ contract AmbireAccount {
 	// that is authorized to execute on this account (in `privileges`)
 	// @dev: WARNING: if the signature of this is changed, we have to change AmbireAccountFactory
 	function execute(Transaction[] calldata calls, bytes calldata signature) public payable {
-		uint256 currentNonce = nonce;
+		uint currentNonce = nonce;
+		// we increment the nonce here (not using `nonce++` to save some gas)
+		// in case validateSig is false, we revert it back
+		nonce = currentNonce + 1;
 		address signerKey;
 		// Externally validated signature
 		uint8 sigMode = uint8(signature[signature.length - 1]);
@@ -139,7 +142,10 @@ contract AmbireAccount {
 			// @TODO what about reentrancy for externally validated signatures
 			if (
 				!ExternalSigValidator(validatorAddr).validateSig(address(this), validatorData, innerSig, currentNonce, calls)
-			) return;
+			) {
+				nonce = currentNonce;
+				return;
+			}
 		} else {
 			// NOTE: abi.encode is safer than abi.encodePacked in terms of collision safety
 			bytes32 hash = keccak256(abi.encode(address(this), block.chainid, currentNonce, calls));
@@ -147,10 +153,6 @@ contract AmbireAccount {
 			require(privileges[signerKey] != bytes32(0), 'INSUFFICIENT_PRIVILEGE');
 		}
 
-		// we increment the nonce to prevent reentrancy
-		// also, we do it here as we want to reuse the previous nonce
-		// doing this after sig verification is fine because sig verification can only do STATICCALLS
-		nonce = currentNonce + 1;
 		executeBatch(calls);
 
 		// The actual anti-bricking mechanism - do not allow a signerKey to drop their own privileges
