@@ -9,8 +9,12 @@ import { fallbackHumanizer } from './modules/fallBackHumanizer'
 import { uniswapHumanizer } from './modules/Uniswap'
 import { Ir } from './interfaces'
 import { genericErc20Humanizer, genericErc721Humanizer } from './modules/tokens'
+import { ErrorRef } from '../../controllers/eventEmitter'
 
 const humanizerInfo = require('../../consts/humanizerInfo.json')
+
+const emitedErrors = []
+const mockEmitError = (e: ErrorRef) => emitedErrors.push(e)
 
 const mockedFetchForTokens = async (url: string) => {
   const usdtAddress = '0xdAC17F958D2ee523a2206206994597C13D831ec7'
@@ -303,7 +307,7 @@ describe('module tests', () => {
     delete accountOp.humanizerMeta?.['funcSelectors:0x095ea7b3']
     let ir: Ir = callsToIr(accountOp)
     let asyncOps = []
-    ;[ir, asyncOps] = fallbackHumanizer(accountOp, ir, { fetch })
+    ;[ir, asyncOps] = fallbackHumanizer(accountOp, ir, { fetch, emitError: mockEmitError })
     asyncOps = await Promise.all(asyncOps)
     expect(asyncOps.length).toBe(1)
     expect(asyncOps[0]).toMatchObject({ key: 'funcSelectors:0x095ea7b3' })

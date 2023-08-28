@@ -142,7 +142,7 @@ export function genericErc20Humanizer(
   const newCalls = currentIr.calls.map((call) => {
     // if proper func selector and no such token found in meta
     if (matcher[call.data.substring(0, 10)] && !accountOp.humanizerMeta?.[`tokens:${call.to}`]) {
-      const asyncTokenInfo = getTokenInfo(accountOp, call.to, options.fetch)
+      const asyncTokenInfo = getTokenInfo(accountOp, call.to, options)
       asyncOps.push(asyncTokenInfo)
     }
     if (matcher[call.data.substring(0, 10)] && accountOp.humanizerMeta?.[`tokens:${call.to}`])
@@ -181,13 +181,14 @@ export function tokenParsing(accounOp: AccountOp, ir: Ir, options?: any) {
             symbol: v.symbol || tokenMeta[0],
             decimals: tokenMeta[1],
             readbleAmount:
+              // only F's
               v.amount ===
               115792089237316195423570985008687907853269984665640564039457584007913129639935n
                 ? 'all'
                 : ethers.formatUnits(v.amount, tokenMeta[1])
           }
         }
-        asyncOps.push(getTokenInfo(accounOp, v.address, options.fetch))
+        asyncOps.push(getTokenInfo(accounOp, v.address, options))
       }
       return v
     })

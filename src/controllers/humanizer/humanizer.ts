@@ -6,11 +6,9 @@ import { Ir } from '../../libs/humanizer/interfaces'
 import { Storage } from '../../interfaces/storage'
 import { AccountOp } from '../../libs/accountOp/accountOp'
 import { humanize } from '../../libs/humanizer'
-import EventEmitter from '../eventEmitter'
+import EventEmitter, { ErrorRef } from '../eventEmitter'
 
 const HUMANIZER_META_KEY = 'HumanizerMeta'
-// @TODO add 'unknown ___ action' in every module on no matcher key
-// @TODO add proper error messages everywhere
 export class HumanizerController extends EventEmitter {
   ir: Ir = { calls: [] }
 
@@ -22,6 +20,10 @@ export class HumanizerController extends EventEmitter {
     super()
     this.#storage = storage
     this.#fetch = fetch
+  }
+
+  public wrappedEemitError(e: ErrorRef) {
+    this.emitError(e)
   }
 
   public async humanize(_accountOp: AccountOp) {
@@ -37,7 +39,7 @@ export class HumanizerController extends EventEmitter {
       const storedHumanizerMeta = await this.#storage.get(HUMANIZER_META_KEY, {})
       const [ir, asyncOps] = humanize(
         { ...accountOp, humanizerMeta: { ...accountOp.humanizerMeta, ...storedHumanizerMeta } },
-        { fetch: this.#fetch }
+        { fetch: this.#fetch, emitError: this.wrappedEemitError }
       )
       this.ir = ir
       this.emitUpdate()

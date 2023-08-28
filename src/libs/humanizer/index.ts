@@ -10,8 +10,9 @@ import { WALLETModule } from './modules/WALLET'
 import { nameParsing } from './modules/nameParsing'
 import { fallbackHumanizer } from './modules/fallBackHumanizer'
 import { yearnVaultModule } from './modules/yearnTesseractVault'
-
 // @TODO !!!!!!! fix nameName parsing rename and tests (SHOULD Promise<HumanizerFragment> have possibility to be null)
+// @TODO update to use wrapper for coingecko api (if (no key) {free api} else {paid api})
+// @TODO update humanizer fragment to be the return value from emitEvent
 // @TODO humanize signed messages
 // @TODO change all console.logs to throw errs
 // @TODO finish modules:
@@ -55,11 +56,15 @@ export function humanize(
   ]
   let currentIr: Ir = callsToIr(accountOp)
   let asyncOps: any[] = []
-  humanizerModules.forEach((hm) => {
-    let newPromises = []
-    ;[currentIr, newPromises] = hm(accountOp, currentIr, options)
-    asyncOps = [...asyncOps, ...newPromises]
-  })
+  try {
+    humanizerModules.forEach((hm) => {
+      let newPromises = []
+      ;[currentIr, newPromises] = hm(accountOp, currentIr, options)
+      asyncOps = [...asyncOps, ...newPromises]
+    })
+  } catch (e) {
+    options.emitError({ message: 'Humanizer: unexpected err', error: e, level: 'major' })
+  }
   return [currentIr, asyncOps]
 }
 

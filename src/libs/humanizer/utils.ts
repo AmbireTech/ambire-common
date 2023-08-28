@@ -69,26 +69,32 @@ export function shortenAddress(addr: string) {
 export async function getTokenInfo(
   accountOp: AccountOp,
   address: string,
-  fetch: Function
+  options: any
 ): Promise<HumanizerFragment | null> {
   // @TODO update networks list
   const network = networks.find(
     (n: NetworkDescriptor) => n.chainId === BigInt(accountOp.networkId)
   )?.id
   try {
-    // @TODO update to use wrapper for coingecko api (if (no key) {free api} else {paid api})
     const response = await (
-      await fetch(`https://api.coingecko.com/api/v3/coins/${network}/contract/${address}`)
+      await options.fetch(`https://api.coingecko.com/api/v3/coins/${network}/contract/${address}`)
     ).json()
-
     if (response.symbol && response.detail_platforms?.ethereum.decimal_place)
       return {
         key: `tokens:${address}`,
         isGlobal: true,
         value: [response.symbol.toUpperCase(), response.detail_platforms?.ethereum.decimal_place]
       }
-    return null
+    return options.emitError({
+      message: 'getTokenInfo: something is wrong with coingecko api',
+      error: new Error('The response from coingecko had unexpected json structure'),
+      level: 'minor'
+    })
   } catch (e) {
-    return null
+    return options.emitError({
+      message: 'getTokenInfo: something is wrong with coingecko api',
+      error: e,
+      level: 'minor'
+    })
   }
 }

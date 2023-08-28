@@ -1,6 +1,7 @@
 import { describe, expect, test } from '@jest/globals'
 
 import fetch from 'node-fetch'
+import { ErrorRef } from 'controllers/eventEmitter'
 import { AccountOp } from '../accountOp/accountOp'
 import { callsToIr, humanize, visualizationToText } from '.'
 
@@ -133,10 +134,14 @@ const transactions: { [key: string]: Array<IrCall> } = {
   ]
 }
 
+let emitedErrors = []
+const moockEmitError = (e: ErrorRef) => emitedErrors.push(e)
+const standartOptions = { fetch, emitError: moockEmitError }
 describe('module tests', () => {
   beforeEach(async () => {
     accountOp.humanizerMeta = { ...humanizerInfo }
     accountOp.calls = []
+    emitedErrors = []
   })
 
   test('visualization to text', async () => {
@@ -160,16 +165,16 @@ describe('module tests', () => {
       .map((key: string) => transactions[key])
       .flat()
     accountOp.calls = allCalls
-    let [ir, asyncOps] = humanize(accountOp, { fetch })
+    let [ir, asyncOps] = humanize(accountOp, standartOptions)
     ;(await Promise.all(asyncOps)).forEach((a) => {
       if (a) accountOp.humanizerMeta = { ...accountOp.humanizerMeta, [a.key]: a.value }
     })
-    ;[ir, asyncOps] = humanize(accountOp, { fetch })
+    ;[ir, asyncOps] = humanize(accountOp, standartOptions)
     const fragments = (await Promise.all(asyncOps)).filter((f) => f)
     fragments.forEach((f) => {
       accountOp.humanizerMeta = { ...accountOp.humanizerMeta, [f.key]: f.value }
     })
-    ;[ir, asyncOps] = humanize(accountOp, { fetch })
+    ;[ir, asyncOps] = humanize(accountOp, standartOptions)
 
     const res = ir.calls.map((call: IrCall) => visualizationToText(call))
     expectedTexification.forEach((et: string, i: number) => expect(et).toEqual(res[i]))

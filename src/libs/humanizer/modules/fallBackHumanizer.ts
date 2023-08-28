@@ -6,23 +6,33 @@ import { getAction, getAddress, getLable, getToken } from '../utils'
 
 async function fetchFuncEtherface(
   selector: string,
-  fetch: Function
+  options: any
 ): Promise<HumanizerFragment | null> {
-  // @TODO to be emited as err
-  if (!fetch) console.log('fetchFuncEtherface: not passed fetch')
+  if (!options.fetch)
+    return options.emitError({
+      message: 'fetchFuncEtherface: no fetch function passed',
+      error: new Error('No fetch function passed to fetchFuncEtherface'),
+      level: 'major'
+    })
   let res
   // often fails due to timeout => loop for retrying
   for (let i = 0; i < 3; i++) {
     try {
       res = await (
-        await fetch(`https://api.etherface.io/v1/signatures/hash/all/${selector.slice(2, 10)}/1`, {
-          timeout: 10000
-        })
+        await options.fetch(
+          `https://api.etherface.io/v1/signatures/hash/all/${selector.slice(2, 10)}/1`,
+          {
+            timeout: 10000
+          }
+        )
       ).json()
       break
     } catch (e: any) {
-      // @TODO to throw err, caught by try catch in controller
-      console.log(`fetchFuncEtherface: ${e.message}`)
+      options.emitError({
+        message: 'fetchFuncEtherface: problem with etherface api',
+        error: e,
+        level: 'silent'
+      })
     }
   }
   const func = res?.items?.[0]
@@ -32,7 +42,13 @@ async function fetchFuncEtherface(
         isGlobal: true,
         value: func.text
       }
-    : null
+    : options.emitError({
+        message: `fetchFuncEtherface: Err with etherface api, selector ${selector.slice(0, 10)}`,
+        error: new Error(
+          `Failed to fetch info from etherface's api about ${selector.slice(0, 10)}`
+        ),
+        level: 'minor'
+      })
 }
 const checkIfUnknowAction = (v: Array<any>) => {
   try {
@@ -59,7 +75,7 @@ export function fallbackHumanizer(
           getAddress(call.to)
         )
       } else {
-        const promise = fetchFuncEtherface(call.data.slice(0, 10), options.fetch)
+        const promise = fetchFuncEtherface(call.data.slice(0, 10), options)
         if (promise) asyncOps.push(promise)
         visualization.push(getAction('Unknown action'), getLable('to'), getAddress(call.to))
       }
