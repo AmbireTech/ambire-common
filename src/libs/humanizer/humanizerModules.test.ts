@@ -172,7 +172,7 @@ describe('module tests', () => {
     ;[ir, asyncOps] = humanize(accountOp, standartOptions)
     const fragments = (await Promise.all(asyncOps)).filter((f) => f)
     fragments.forEach((f) => {
-      accountOp.humanizerMeta = { ...accountOp.humanizerMeta, [f.key]: f.value }
+      if (f) accountOp.humanizerMeta = { ...accountOp.humanizerMeta, [f.key]: f.value }
     })
     ;[ir, asyncOps] = humanize(accountOp, standartOptions)
 

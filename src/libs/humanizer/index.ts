@@ -34,7 +34,7 @@ export function callsToIr(accountOp: AccountOp): Ir {
 export function humanize(
   _accountOp: AccountOp,
   options?: any
-): [Ir, Array<Promise<HumanizerFragment>>] {
+): [Ir, Array<Promise<HumanizerFragment | null>>] {
   const accountOp = {
     ..._accountOp,
     calls: _accountOp.calls.map((c) => ({ ...c, to: ethers.getAddress(c.to) }))
