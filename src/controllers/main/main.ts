@@ -171,7 +171,17 @@ export class MainController extends EventEmitter {
     }
 
     this.selectedAccount = toAccountAddr
-    await this.storage.set('selectedAccount', toAccountAddr)
+    try {
+      await this.storage.set('selectedAccount', toAccountAddr)
+    } catch (e) {
+      return this.emitError({
+        message:
+          'Failed to save the selected account change. Please try again later or contact support.',
+        level: 'major',
+        error: e instanceof Error ? e : new Error('Failed to save selected account to storage.')
+      })
+    }
+
     this.updateSelectedAccount(toAccountAddr)
     this.emitUpdate()
   }
