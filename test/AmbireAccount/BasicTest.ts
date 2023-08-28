@@ -13,6 +13,7 @@ import {
 import { sendFunds, getPriviledgeTxn, getTimelockData } from '../helpers'
 import { wrapEthSign } from '../ambireSign'
 import { deployAmbireAccountHardhatNetwork } from '../implementations'
+import { AccountOp, Call, accountOpSignableHash } from '../../src/libs/accountOp/accountOp'
 
 let ambireAccountAddress: string
 
@@ -227,5 +228,48 @@ describe('Basic Ambire Account tests', function () {
     await contract.execute(txns, s)
     const nonceAfterExecute = await contract.nonce()
     expect(nonceAfterExecute).to.equal(nonce + 1n)
+  })
+  it('should successfully execute a txn using accountOpSignableHash', async function () {
+    const [signer] = await ethers.getSigners()
+    const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signer)
+    await sendFunds(ambireAccountAddress, 1)
+    const nonce = await contract.nonce()
+    const txns = [
+      [addressTwo, ethers.parseEther('0.01'), '0x00'],
+      [addressThree, ethers.parseEther('0.01'), '0x00']
+    ]
+    const msg = ethers.getBytes(ethers.keccak256(
+      abiCoder.encode(
+        ['address', 'uint', 'uint', 'tuple(address, uint, bytes)[]'],
+        [ambireAccountAddress, chainId, nonce, txns]
+      )
+    ))
+    const s = wrapEthSign(await signer.signMessage(msg))
+    const balance = await provider.getBalance(ambireAccountAddress)
+    const txn = await contract.execute(txns, s)
+    const receipt = await txn.wait()
+    const postBalance = await provider.getBalance(ambireAccountAddress, receipt.blockNumber)
+    expect(balance - postBalance).to.equal(ethers.parseEther('0.02'))
+  })
+  it('should revert with INSUFFICIENT_PRIVILEGE when executing a txn if the hash is not signed as Uint8Array', async function () {
+    const [signer] = await ethers.getSigners()
+    const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signer)
+    await sendFunds(ambireAccountAddress, 1)
+    const nonce = await contract.nonce()
+    const txns = [
+      [addressTwo, ethers.parseEther('0.01'), '0x00'],
+      [addressThree, ethers.parseEther('0.01'), '0x00']
+    ]
+    // we skip calling ethers.getBytes to confirm it is not
+    // working without it
+    const msg = ethers.keccak256(
+      abiCoder.encode(
+        ['address', 'uint', 'uint', 'tuple(address, uint, bytes)[]'],
+        [ambireAccountAddress, chainId, nonce, txns]
+      )
+    )
+    const s = wrapEthSign(await signer.signMessage(msg))
+    await expect(contract.execute(txns, s))
+      .to.be.revertedWith('INSUFFICIENT_PRIVILEGE')
   })
 })

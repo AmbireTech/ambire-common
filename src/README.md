@@ -243,3 +243,10 @@ ts-node src/libs/deployless/compileUtil.ts  > src/libs/estimate/estimator.json
 - no multiple components of private keys, one key is one private key; if it's part of a multisig, this should be reflected via meta
 - no need for separata methods to load from storage, we will always load on demand, since every method is async anyway
 - the keystore will only store single keys and will not concern itself with multisigs or recovery info, even if we use it in an identity as part of a multisig (like QuickAccs, even tho we won't use them in the extension); this will be handled by a separate mapping in the Account object
+
+
+### Audits
+
+- [Code4rena](https://code4rena.com/reports/2023-05-ambire)
+- [Krum Pashov](https://github.com/pashov/audits/blob/master/solo/Ambire-security-review.md)
+
