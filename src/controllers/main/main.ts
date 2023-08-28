@@ -318,7 +318,7 @@ export class MainController extends EventEmitter {
   // although the second one can't hurt and can help (or no debounce, just a one-at-a-time queue)
   removeUserRequest(id: bigint) {
     const req = this.userRequests.find((uReq) => uReq.id === id)
-    if (!req) throw new Error(`removeUserRequest: request with id ${id} not found`)
+    if (!req) return
 
     // remove from the request queue
     this.userRequests.splice(this.userRequests.indexOf(req), 1)
