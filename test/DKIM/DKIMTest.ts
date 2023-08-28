@@ -516,7 +516,15 @@ describe('DKIM sigMode OnlySecond', function () {
     expect(timelock[1]).to.not.equal(0)
 
     // execute again, expect the txn to be executed as onlyOneSigTimelock is 0
-    await account.execute(txns, finalSig)
+    const secondSig2 = wrapEthSign(await relayer.signMessage(ethers.getBytes(msgHash)))
+    const innerSig2 = abiCoder.encode([sigMetaTuple, 'bytes', 'bytes'], [
+      sigMetaValues,
+      ethers.toBeHex(0, 1),
+      secondSig2
+    ])
+    const sig2 = abiCoder.encode(['address', 'address', 'bytes', 'bytes'], [signerKey, validatorAddr, validatorData, innerSig2])
+    const finalSig2 = wrapExternallyValidated(sig2)
+    await account.execute(txns, finalSig2)
 
     // expect the txn to have been executed
     const hasPrivAfterTimelock = await account.privileges(newSigner.address)
