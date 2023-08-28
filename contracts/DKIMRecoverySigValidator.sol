@@ -75,6 +75,13 @@ contract DKIMRecoverySigValidator {
   // recoveryrIdentifier => bool
   mapping (bytes32 => bool) public recoveries;
 
+  struct Timelock {
+    bool isExecuted;
+    uint32 whenReady;
+  }
+
+  mapping (bytes32 => Timelock) public timelocks;
+
   address authorizedToSubmit;
   address authorizedToRevoke;
   DNSSEC oracle;
@@ -99,24 +106,25 @@ contract DKIMRecoverySigValidator {
     bytes32 identifier = keccak256(abi.encode(accountAddr, data, sigMeta));
     require(!recoveries[identifier], 'recovery already done');
 
-    // Validate the calls: we only allow setAddrPrivilege for the pre-set newKeyToSet and newPrivilegeValue
-    require(calls.length == 1, 'calls length must be 1');
-    IAmbireAccount.Transaction memory txn = calls[0];
-    require(txn.value == 0, 'call value must be 0');
-    require(txn.to == accountAddr, 'call "to" must be the ambire account addr');
-    require(keccak256(txn.data) == keccak256(abi.encodeWithSelector(IAmbireAccount.setAddrPrivilege.selector, sigMeta.newKeyToSet, sigMeta.newPrivilegeValue)), 'Transaction data is not set correctly, either selector, key or priv is incorrect');
-
+    // declare the variables to not go deep in the stack
     SigMode mode = sigMeta.mode;
+    address newKeyToSet = sigMeta.newKeyToSet;
+    bytes32 newPrivilegeValue = sigMeta.newPrivilegeValue;
+
+    if (mode == SigMode.Both) {
+      _validateCalls(calls, accountAddr, newKeyToSet, newPrivilegeValue);
+    }
+
     if (mode == SigMode.Both || mode == SigMode.OnlyDKIM) {
-      if (sigMeta.mode == SigMode.OnlyDKIM) require(accInfo.acceptEmptySecondSig, 'account disallows OnlyDKIM');
+      if (mode == SigMode.OnlyDKIM) require(accInfo.acceptEmptySecondSig, 'account disallows OnlyDKIM');
 
       string memory headers = sigMeta.canonizedHeaders;
       _verifyHeaders(
         headers,
         accInfo.emailFrom,
         accInfo.emailTo,
-        sigMeta.newKeyToSet,
-        sigMeta.mode
+        newKeyToSet,
+        mode
       );
 
       DKIMKey memory key = sigMeta.key;
@@ -147,7 +155,7 @@ contract DKIMRecoverySigValidator {
       );
     }
 
-    bytes32 hashToSign = keccak256(abi.encode(address(accountAddr), calls));
+    bytes32 hashToSign = keccak256(abi.encode(address(accountAddr), newKeyToSet, newPrivilegeValue));
     if (mode == SigMode.Both || mode == SigMode.OnlySecond) {
       if (mode == SigMode.OnlySecond) require(accInfo.acceptEmptyDKIMSig, 'account disallows OnlySecond');
 
@@ -160,8 +168,17 @@ contract DKIMRecoverySigValidator {
 
     // In those modes, we require a timelock
     if (mode == SigMode.OnlySecond || mode == SigMode.OnlyDKIM) {
-      if (! checkTimelock(identifier, accInfo.onlyOneSigTimelock)) {
+      Timelock storage timelock = timelocks[identifier];
+      require(!timelock.isExecuted, 'timelock: already executed');
+
+      if (timelock.whenReady == 0) {
+        require(calls.length == 0, 'no txn execution is allowed when setting a timelock');
+        timelock.whenReady = uint32(block.timestamp) + accInfo.onlyOneSigTimelock;
         return false;
+      } else {
+        require(uint32(block.timestamp) >= timelock.whenReady, 'timelock: not ready yet');
+        _validateCalls(calls, accountAddr, newKeyToSet, newPrivilegeValue);
+        timelock.isExecuted = true;
       }
     }
 
@@ -269,26 +286,17 @@ contract DKIMRecoverySigValidator {
       require(!subject.equals(canonizedHeaders.toSlice()), 'emailSubject not valid');
   }
 
-  //
-  // Timelock
-  //
-  struct Timelock {
-    bool isExecuted;
-    uint32 whenReady;
-  }
-
-  mapping (bytes32 => Timelock) public timelocks;
-
-  function checkTimelock(bytes32 identifier, uint32 time) public returns (bool shouldExecute) {
-    Timelock storage timelock = timelocks[identifier];
-    require(!timelock.isExecuted, 'timelock: already executed');
-    if (timelock.whenReady == 0) {
-      timelock.whenReady = uint32(block.timestamp) + time;
-      return false;
-    } else {
-      require(uint32(block.timestamp) >= timelock.whenReady, 'timelock: not ready yet');
-      timelock.isExecuted = true;
-      return true;
-    }
+  function _validateCalls(
+    IAmbireAccount.Transaction[] memory calls,
+    address accountAddr,
+    address newKeyToSet,
+    bytes32 newPrivilegeValue
+  ) internal pure {
+    // Validate the calls: we only allow setAddrPrivilege for the pre-set newKeyToSet and newPrivilegeValue
+    require(calls.length == 1, 'calls length must be 1');
+    IAmbireAccount.Transaction memory txn = calls[0];
+    require(txn.value == 0, 'call value must be 0');
+    require(txn.to == accountAddr, 'call "to" must be the ambire account addr');
+    require(keccak256(txn.data) == keccak256(abi.encodeWithSelector(IAmbireAccount.setAddrPrivilege.selector, newKeyToSet, newPrivilegeValue)), 'Transaction data is not set correctly, either selector, key or priv is incorrect');
   }
 }

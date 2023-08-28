@@ -77,8 +77,8 @@ describe('DKIM sigMode Both', function () {
     const txns = [getPriviledgeTxn(ambireAccountAddress, newSigner.address, true)]
     const msgHash = ethers.keccak256(
       abiCoder.encode(
-        ['address', 'tuple(address, uint, bytes)[]'],
-        [ambireAccountAddress, txns]
+        ['address', 'address', 'bytes32'],
+        [ambireAccountAddress, newSigner.address, ethers.toBeHex(1, 32)]
       )
     )
     const msg = ethers.getBytes(msgHash)
@@ -313,7 +313,10 @@ describe('DKIM sigMode OnlyDKIM', function () {
     ])
     const sig = abiCoder.encode(['address', 'address', 'bytes', 'bytes'], [signerKey, validatorAddr, validatorData, innerSig])
     const finalSig = wrapExternallyValidated(sig)
-    await account.execute(txns, finalSig)
+
+    await expect(account.execute(txns, finalSig))
+      .to.be.revertedWith('no txn execution is allowed when setting a timelock')
+    await account.execute([], finalSig)
 
     // expect the txn to NOT have been executed
     const hasPriv = await account.privileges(newSigner.address)
@@ -368,8 +371,8 @@ describe('DKIM sigMode OnlyDKIM', function () {
     const txns = [getPriviledgeTxn(ambireAccountAddress, newSigner.address, true)]
     const msgHash = ethers.keccak256(
       abiCoder.encode(
-        ['address', 'tuple(address, uint, bytes)[]'],
-        [ambireAccountAddress, txns]
+        ['address', 'address', 'bytes32'],
+        [ambireAccountAddress, newSigner.address, ethers.toBeHex(1, 32)]
       )
     )
     const msg = ethers.getBytes(msgHash)
@@ -470,8 +473,8 @@ describe('DKIM sigMode OnlySecond', function () {
     const txns = [getPriviledgeTxn(ambireAccountAddress, newSigner.address, true)]
     const msgHash = ethers.keccak256(
       abiCoder.encode(
-        ['address', 'tuple(address, uint, bytes)[]'],
-        [ambireAccountAddress, txns]
+        ['address', 'address', 'bytes32'],
+        [ambireAccountAddress, newSigner.address, ethers.toBeHex(1, 32)]
       )
     )
     const msg = ethers.getBytes(msgHash)
@@ -495,7 +498,10 @@ describe('DKIM sigMode OnlySecond', function () {
     ])
     const sig = abiCoder.encode(['address', 'address', 'bytes', 'bytes'], [signerKey, validatorAddr, validatorData, innerSig])
     const finalSig = wrapExternallyValidated(sig)
-    await account.execute(txns, finalSig)
+
+    await expect(account.execute(txns, finalSig))
+      .to.be.revertedWith('no txn execution is allowed when setting a timelock')
+    await account.execute([], finalSig)
 
     // expect the txn to NOT have been executed
     const hasPriv = await account.privileges(newSigner.address)
@@ -557,8 +563,8 @@ describe('DKIM sigMode OnlySecond', function () {
     const txns = [getPriviledgeTxn(ambireAccountAddress, newSigner.address, true)]
     const msgHash = ethers.keccak256(
       abiCoder.encode(
-        ['address', 'tuple(address, uint, bytes)[]'],
-        [relayer.address, txns] // here we change the address to make the hash different
+        ['address', 'address', 'bytes32'],
+        [relayer.address, newSigner.address, ethers.toBeHex(1, 32)]
       )
     )
     const msg = ethers.getBytes(msgHash)
@@ -692,15 +698,15 @@ describe('DKIM sigMode Both with acceptUnknownSelectors true', function () {
     const txns = [getPriviledgeTxn(ambireAccountAddress, newSigner.address, true)]
     const msgHash = ethers.keccak256(
       abiCoder.encode(
-        ['address', 'tuple(address, uint, bytes)[]'],
-        [ambireAccountAddress, txns]
+        ['address', 'address', 'bytes32'],
+        [ambireAccountAddress, newSigner.address, ethers.toBeHex(1, 32)]
       )
     )
     const msg = ethers.getBytes(msgHash)
     const secondSig = wrapEthSign(await relayer.signMessage(msg))
     const sigMetaTuple = 'tuple(uint8, tuple(string, bytes, bytes), string, address, bytes32)'
     const sigMetaValues = [
-      ethers.toBeHex(0, 1),
+      ethers.toBeHex(0, 1), // both
       [
         `unknown._domainkey.gmail.com`,
         ethers.hexlify(parsedContents[0].modulus),
@@ -1183,8 +1189,8 @@ describe('DKIM sigMode OnlySecond with a timelock of 2 minutes', function () {
     const txns = [getPriviledgeTxn(ambireAccountAddress, newSigner.address, true)]
     const msgHash = ethers.keccak256(
       abiCoder.encode(
-        ['address', 'tuple(address, uint, bytes)[]'],
-        [ambireAccountAddress, txns]
+        ['address', 'address', 'bytes32'],
+        [ambireAccountAddress, newSigner.address, ethers.toBeHex(1, 32)]
       )
     )
     const msg = ethers.getBytes(msgHash)
@@ -1210,7 +1216,10 @@ describe('DKIM sigMode OnlySecond with a timelock of 2 minutes', function () {
     ])
     const sig = abiCoder.encode(['address', 'address', 'bytes', 'bytes'], [signerKey, validatorAddr, validatorData, innerSig])
     const finalSig = wrapExternallyValidated(sig)
-    await account.execute(txns, finalSig)
+
+    await expect(account.execute(txns, finalSig))
+      .to.be.revertedWith('no txn execution is allowed when setting a timelock')
+    await account.execute([], finalSig)
 
     // expect the txn to NOT have been executed
     const hasPriv = await account.privileges(newSigner.address)
@@ -1235,7 +1244,7 @@ describe('DKIM sigMode OnlySecond with a timelock of 2 minutes', function () {
       .to.be.revertedWith('timelock: not ready yet')
   })
 
-  it('??? is this okay??? it changes the SignatureMeta key and reuses the signature to set the same timelock', async function () {
+  it('??? is this okay??? it changes the SignatureMeta RSA public key and reuses the signature to set the same timelock', async function () {
     const [relayer, newSigner] = await ethers.getSigners()
     const gmail = await readFile(path.join(emailsPath, 'sigMode2.eml'), {
       encoding: 'ascii'
@@ -1269,7 +1278,9 @@ describe('DKIM sigMode OnlySecond with a timelock of 2 minutes', function () {
     ])
     const sig = abiCoder.encode(['address', 'address', 'bytes', 'bytes'], [signerKey, validatorAddr, validatorData, innerSig])
     const finalSig = wrapExternallyValidated(sig)
-    await account.execute(txns, finalSig)
+    await expect(account.execute(txns, finalSig))
+      .to.be.revertedWith('no txn execution is allowed when setting a timelock')
+    await account.execute([], finalSig)
 
     // expect the txn to NOT have been executed
     const hasPriv = await account.privileges(newSigner.address)

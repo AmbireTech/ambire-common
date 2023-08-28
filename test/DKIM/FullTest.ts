@@ -115,8 +115,8 @@ describe('DKIM Bridge + unknown selector DKIM verification', function () {
     const txns = [getPriviledgeTxn(ambireAccountAddress, newSigner.address, true)]
     const msgHash = ethers.keccak256(
       abiCoder.encode(
-        ['address', 'tuple(address, uint, bytes)[]'],
-        [ambireAccountAddress, txns]
+        ['address', 'address', 'bytes32'],
+        [ambireAccountAddress, newSigner.address, ethers.toBeHex(1, 32)]
       )
     )
     const msg = ethers.getBytes(msgHash)
