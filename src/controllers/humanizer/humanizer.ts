@@ -50,9 +50,10 @@ export class HumanizerController extends EventEmitter {
       let nonGlobalFragmentData = {}
 
       fragments.forEach((f) => {
-        f.isGlobal
-          ? (globalFragmentData = { ...globalFragmentData, [f.key]: f.value })
-          : (nonGlobalFragmentData = { ...nonGlobalFragmentData, [f.key]: f.value })
+        if (f)
+          f.isGlobal
+            ? (globalFragmentData = { ...globalFragmentData, [f.key]: f.value })
+            : (nonGlobalFragmentData = { ...nonGlobalFragmentData, [f.key]: f.value })
       })
 
       accountOp.humanizerMeta = {

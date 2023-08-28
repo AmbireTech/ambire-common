@@ -6,7 +6,7 @@ import { AccountOp } from '../accountOp/accountOp'
 import { callsToIr, humanize, visualizationToText } from '.'
 
 import { uniswapHumanizer } from './modules/Uniswap'
-import { Ir, IrCall } from './interfaces'
+import { HumanizerFragment, Ir, IrCall } from './interfaces'
 import { wethHumanizer } from './modules/weth'
 import { aaveHumanizer } from './modules/Aave'
 import { yearnVaultModule } from './modules/yearnTesseractVault'
@@ -172,7 +172,7 @@ describe('module tests', () => {
     ;[ir, asyncOps] = humanize(accountOp, standartOptions)
     const fragments = (await Promise.all(asyncOps)).filter((f) => f)
     fragments.forEach((f) => {
-      accountOp.humanizerMeta = { ...accountOp.humanizerMeta, [f.key]: f.value }
+      if (f) accountOp.humanizerMeta = { ...accountOp.humanizerMeta, [f.key]: f.value }
     })
     ;[ir, asyncOps] = humanize(accountOp, standartOptions)
 

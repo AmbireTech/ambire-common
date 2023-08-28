@@ -1,5 +1,3 @@
-import { ErrorRef } from 'controllers/eventEmitter'
-
 export interface IrCall {
   data: string
   to: string
