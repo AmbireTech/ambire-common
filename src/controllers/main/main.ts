@@ -88,10 +88,6 @@ export class MainController extends EventEmitter {
 
   lastUpdate: Date = new Date()
 
-  onResolveDappNotificationRequest: (data: any, ident: number) => void
-
-  onRejectDappNotificationRequest: (err: any, ident: number) => void
-
   onSetDappsNotificationRequests?: (newValue: DappNotificationRequest[]) => void
 
   get dappsNotificationRequests() {
@@ -107,15 +103,11 @@ export class MainController extends EventEmitter {
     storage,
     fetch,
     relayerUrl,
-    onResolveDappNotificationRequest,
-    onRejectDappNotificationRequest,
     onSetDappsNotificationRequests
   }: {
     storage: Storage
     fetch: Function
     relayerUrl: string
-    onResolveDappNotificationRequest: (data: any, ident: number) => void
-    onRejectDappNotificationRequest: (err: any, ident: number) => void
     onSetDappsNotificationRequests?: (newValue: DappNotificationRequest[]) => void
   }) {
     super()
@@ -130,8 +122,6 @@ export class MainController extends EventEmitter {
     this.accountAdder = new AccountAdderController({ storage, relayerUrl, fetch })
     this.signMessage = new SignMessageController(this.#keystoreLib)
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
-    this.onResolveDappNotificationRequest = onResolveDappNotificationRequest
-    this.onRejectDappNotificationRequest = onRejectDappNotificationRequest
     this.onSetDappsNotificationRequests = onSetDappsNotificationRequests
     // @TODO Load userRequests from storage and emit that we have updated
     // @TODO
@@ -391,8 +381,8 @@ export class MainController extends EventEmitter {
   resolveDappNotificationRequest(data: any, id: bigint) {
     const dappRequest = this.dappsNotificationRequests.find((req) => req.id === id)
     if (dappRequest) {
+      dappRequest.resolve(data)
       this.dappsNotificationRequests = this.dappsNotificationRequests.filter((req) => req.id !== id)
-      this.onResolveDappNotificationRequest(data, dappRequest.ident)
     }
     this.removeUserRequest(id)
     this.emitUpdate()
@@ -401,8 +391,8 @@ export class MainController extends EventEmitter {
   rejectDappNotificationRequest(err: any, id: bigint) {
     const dappRequest = this.dappsNotificationRequests.find((req) => req.id === id)
     if (dappRequest) {
+      dappRequest.reject(err)
       this.dappsNotificationRequests = this.dappsNotificationRequests.filter((req) => req.id !== id)
-      this.onRejectDappNotificationRequest(err, dappRequest.ident)
     }
     this.removeUserRequest(id)
     this.emitUpdate()

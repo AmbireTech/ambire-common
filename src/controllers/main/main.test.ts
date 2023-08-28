@@ -65,8 +65,7 @@ describe('Main Controller ', () => {
       storage,
       fetch,
       relayerUrl,
-      onResolveDappNotificationRequest: () => {},
-      onRejectDappNotificationRequest: () => {}
+      onSetDappsNotificationRequests: () => {}
     })
     await new Promise((resolve) => controller.onUpdate(() => resolve(null)))
     // console.dir(controller.accountStates, { depth: null })
@@ -128,8 +127,7 @@ describe('Main Controller ', () => {
       storage,
       fetch,
       relayerUrl,
-      onResolveDappNotificationRequest: () => {},
-      onRejectDappNotificationRequest: () => {}
+      onSetDappsNotificationRequests: () => {}
     })
 
     const signerAddr = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
