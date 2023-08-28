@@ -1,7 +1,6 @@
 import { JsonRpcProvider } from 'ethers'
 
 import { networks } from '../../consts/networks'
-import { KeystoreController } from '../keystore/keystore'
 import { Account, AccountId, AccountOnchainState } from '../../interfaces/account'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
 import { Storage } from '../../interfaces/storage'
@@ -14,6 +13,7 @@ import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { AccountAdderController } from '../accountAdder/accountAdder'
 import { EmailVaultController } from '../emailVault'
 import EventEmitter from '../eventEmitter'
+import { KeystoreController } from '../keystore/keystore'
 import { PortfolioController } from '../portfolio/portfolio'
 
 export type AccountStates = {
@@ -161,8 +161,13 @@ export class MainController extends EventEmitter {
     await this.initialLoadPromise
 
     if (!this.accounts.find((acc) => acc.addr === toAccountAddr)) {
-      // TODO: error handling, trying to switch to account that does not exist
-      return
+      return this.emitError({
+        message: `Trying to switch to account ${toAccountAddr}, but this account is missing in your imported accounts. Please try again later, try to import this account again or if the problem persists - contact support.`,
+        level: 'major',
+        error: new Error(
+          `Trying to switch to account ${toAccountAddr} that does not exist in the imported accounts.`
+        )
+      })
     }
 
     this.selectedAccount = toAccountAddr
@@ -201,10 +206,15 @@ export class MainController extends EventEmitter {
       )
   }
 
-  private makeAccountOpFromUserRequests(accountAddr: AccountId, networkId: NetworkId): AccountOp | null {
+  private makeAccountOpFromUserRequests(
+    accountAddr: AccountId,
+    networkId: NetworkId
+  ): AccountOp | null {
     const account = this.accounts.find((x) => x.addr === accountAddr)
     if (!account)
-      throw new Error(`makeAccountOpFromUserRequests: tried to run for non-existant account ${accountAddr}`)
+      throw new Error(
+        `makeAccountOpFromUserRequests: tried to run for non-existant account ${accountAddr}`
+      )
     // Note: we use reduce instead of filter/map so that the compiler can deduce that we're checking .kind
     const calls = this.userRequests.reduce((uCalls: AccountOpCall[], req) => {
       // only the first one for EOAs
