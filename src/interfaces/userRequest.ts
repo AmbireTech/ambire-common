@@ -47,8 +47,8 @@ export interface UserRequest {
 export interface DappNotificationRequest {
   id: bigint
   screen: string
-  session?: { origin: string; name: string; icon: string }
   winProps?: any
+  params?: any
   resolve: (data: any) => void
   reject: (data: any) => void
 }
