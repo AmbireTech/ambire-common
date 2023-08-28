@@ -37,7 +37,9 @@ contract AmbireAccount {
 	// The indended use case is to deploy one base implementation contract, and create a minimal proxy for each user wallet, by
 	// using our own code generation to insert SSTOREs to initialize `privileges` (IdentityProxyDeploy.js)
 	address private constant FALLBACK_HANDLER_SLOT = address(0x6969);
-	address private constant ENTRY_POINT_SLOT = address(0x7171);
+
+	// keccak256(hex"7171")
+	bytes32 constant ENTRY_POINT_PRIV = 0x42144640c7cb5ff8aa9595ae175ffcb6dd152db6e737c13cc2d5d07576967020;
 
 	// Variables
 	mapping(address => bytes32) public privileges;
@@ -236,10 +238,9 @@ contract AmbireAccount {
 	uint256 constant internal SIG_VALIDATION_FAILED = 1;
 
 	function validateUserOp(UserOperation calldata userOp, bytes32 userOpHash, uint256 missingAccountFunds)
-    external returns (uint256)
+	external returns (uint256)
 	{
-		address entryPoint = address(uint160(uint(privileges[ENTRY_POINT_SLOT])));
-		require(msg.sender == entryPoint, 'Request not from entryPoint');
+		require(privileges[msg.sender] == ENTRY_POINT_PRIV, 'Request not from entryPoint');
 
 		uint8 sigMode = uint8(userOp.signature[userOp.signature.length - 1]);
 		if (sigMode == SIGMODE_EXTERNALLY_VALIDATED) {
