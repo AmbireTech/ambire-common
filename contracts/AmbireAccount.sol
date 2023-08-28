@@ -244,9 +244,11 @@ contract AmbireAccount {
 
 		uint8 sigMode = uint8(userOp.signature[userOp.signature.length - 1]);
 		if (sigMode == SIGMODE_EXTERNALLY_VALIDATED) {
-			Transaction[] memory calls = abi.decode(userOp.callData[4:], (Transaction[]));
-			(, bool shouldExecute) = validateExternalSig(calls, userOp.signature);
-			if (!shouldExecute) return SIG_VALIDATION_FAILED;
+			Transaction[] memory calls = userOp.callData.length > 0
+			  ? abi.decode(userOp.callData[4:], (Transaction[]))
+			  : new Transaction[](0);
+
+			validateExternalSig(calls, userOp.signature);
 		} else {
 			address signer = SignatureValidator.recoverAddr(userOpHash, userOp.signature);
 			if (privileges[signer] == bytes32(0)) return SIG_VALIDATION_FAILED;

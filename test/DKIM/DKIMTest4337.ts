@@ -148,3 +148,240 @@ describe('DKIM sigMode Both', function () {
       .withArgs(0, 'AA23 reverted: recovery already done');
   })
 })
+
+describe('DKIM sigMode OnlyDKIM', function () {
+
+  it('successfully deploys the ambire account', async function () {
+    const [relayer] = await ethers.getSigners()
+    const gmail = await readFile(path.join(emailsPath, 'sigMode1.eml'), {
+      encoding: 'ascii'
+    })
+    const parsedContents: any = await parseEmail(gmail)
+    const validatorData = getDKIMValidatorData(parsedContents, relayer, {
+      emptySecondSig: true
+    })
+    const {signerKey, hash} = getSignerKey(await dkimRecovery.getAddress(), validatorData)
+    const { ambireAccount, ambireAccountAddress: addr } = await deployAmbireAccountHardhatNetwork([
+      { addr: signerKey, hash: hash },
+      { addr: await entryPoint.getAddress(), hash: entryPointHash }
+    ])
+    ambireAccountAddress = addr
+    account = ambireAccount
+  })
+
+  it('should successfully schedule a timelock for the specified onlyOneSigTimelock and execute it after onlyOneSigTimelock has passed', async function () {
+    const [relayer, newSigner] = await ethers.getSigners()
+    const gmail = await readFile(path.join(emailsPath, 'sigMode1.eml'), {
+      encoding: 'ascii'
+    })
+    const parsedContents: any = await parseEmail(gmail)
+    const validatorData = getDKIMValidatorData(parsedContents, relayer, {
+      emptySecondSig: true
+    })
+    const validatorAddr = await dkimRecovery.getAddress()
+    const {signerKey} = getSignerKey(validatorAddr, validatorData)
+    const dkimSig = parsedContents[0].solidity.signature
+
+    const txns = [getPriviledgeTxn(ambireAccountAddress, newSigner.address, true)]
+    const sigMetaTuple = 'tuple(uint8, tuple(string, bytes, bytes), string, address, bytes32)'
+    const sigMetaValues = [
+      ethers.toBeHex(1, 1),
+      [
+        `${parsedContents[0].selector}._domainkey.gmail.com`,
+        ethers.hexlify(parsedContents[0].modulus),
+        ethers.hexlify(ethers.toBeHex(parsedContents[0].exponent)),
+      ],
+      parsedContents[0].processedHeader,
+      newSigner.address,
+      ethers.toBeHex(1, 32)
+    ]
+    const innerSig = abiCoder.encode([sigMetaTuple, 'bytes', 'bytes'], [
+      sigMetaValues,
+      dkimSig,
+      ethers.toBeHex(0, 1)
+    ])
+    const sig = abiCoder.encode(['address', 'address', 'bytes', 'bytes'], [signerKey, validatorAddr, validatorData, innerSig])
+    const finalSig = wrapExternallyValidated(sig)
+    const newNonce = await entryPoint.getNonce(ambireAccountAddress, 0)
+    const userOperation = {
+        sender: ambireAccountAddress,
+        nonce: ethers.toBeHex(newNonce, 1),
+        initCode: '0x',
+        callData: account.interface.encodeFunctionData('executeBySender', [txns]),
+        callGasLimit: ethers.toBeHex(100000),
+        verificationGasLimit: ethers.toBeHex(500000),
+        preVerificationGas: ethers.toBeHex(50000),
+        maxFeePerGas: ethers.toBeHex(100000),
+        maxPriorityFeePerGas: ethers.toBeHex(100000),
+        paymasterAndData: '0x',
+        signature: finalSig
+    }
+    await expect(entryPoint.handleOps([userOperation], relayer))
+      .to.be.revertedWithCustomError(entryPoint, 'FailedOp')
+      .withArgs(0, 'AA23 reverted: no txn execution is allowed when setting a timelock');
+
+    userOperation.callData = '0x'
+    await entryPoint.handleOps([userOperation], relayer)
+
+    // expect the txn to NOT have been executed
+    const hasPriv = await account.privileges(newSigner.address)
+    expect(hasPriv).to.equal(ethers.toBeHex(0, 32))
+
+    // expect recovery to not have been marked as complete
+    const identifier = ethers.keccak256(abiCoder.encode(['address', 'bytes', sigMetaTuple], [
+        ambireAccountAddress,
+        validatorData,
+        sigMetaValues
+    ]))
+    const recoveryAssigned = await dkimRecovery.recoveries(identifier)
+    expect(recoveryAssigned).to.be.false
+
+    // expect a timelock to have been scheduled
+    const timelock = await dkimRecovery.timelocks(identifier)
+    expect(timelock[0]).to.be.false
+    expect(timelock[1]).to.not.equal(0)
+
+    // set the correct callData
+    userOperation.callData = account.interface.encodeFunctionData('executeBySender', [txns])
+    userOperation.nonce = ethers.toBeHex(await entryPoint.getNonce(ambireAccountAddress, 0), 1)
+    await entryPoint.handleOps([userOperation], relayer)
+
+    // expect the txn to have been executed
+    const hasPrivAfterTimelock = await account.privileges(newSigner.address)
+    expect(hasPrivAfterTimelock).to.equal(ethers.toBeHex(1, 32))
+
+    // expect recovery to have been marked as complete
+    const recoveryComplete = await dkimRecovery.recoveries(identifier)
+    expect(recoveryComplete).to.be.true
+
+    // expect the timelock to have been marked as executed
+    const timelockDone = await dkimRecovery.timelocks(identifier)
+    expect(timelockDone[0]).to.be.true
+    
+    userOperation.nonce = ethers.toBeHex(await entryPoint.getNonce(ambireAccountAddress, 0), 1)
+    await expect(entryPoint.handleOps([userOperation], relayer))
+      .to.be.revertedWithCustomError(entryPoint, 'FailedOp')
+      .withArgs(0, 'AA23 reverted: recovery already done');
+  })
+})
+
+describe('DKIM sigMode OnlySecond', function () {
+  it('successfully deploys the ambire account', async function () {
+    const [relayer] = await ethers.getSigners()
+    const gmail = await readFile(path.join(emailsPath, 'sigMode2.eml'), {
+      encoding: 'ascii'
+    })
+    const parsedContents: any = await parseEmail(gmail)
+    const validatorData = getDKIMValidatorData(parsedContents, relayer, {
+      acceptEmptyDKIMSig: true
+    })
+    const {signerKey, hash} = getSignerKey(await dkimRecovery.getAddress(), validatorData)
+    const { ambireAccount, ambireAccountAddress: addr } = await deployAmbireAccountHardhatNetwork([
+      { addr: signerKey, hash: hash },
+      { addr: await entryPoint.getAddress(), hash: entryPointHash }
+    ])
+    ambireAccountAddress = addr
+    account = ambireAccount
+  })
+
+  it('should successfully schedule a timelock for the specified onlyOneSigTimelock and execute it after onlyOneSigTimelock has passed', async function () {
+    const [relayer, newSigner] = await ethers.getSigners()
+    const gmail = await readFile(path.join(emailsPath, 'sigMode2.eml'), {
+      encoding: 'ascii'
+    })
+    const parsedContents: any = await parseEmail(gmail)
+    const validatorData = getDKIMValidatorData(parsedContents, relayer, {
+      acceptEmptyDKIMSig: true
+    })
+    const validatorAddr = await dkimRecovery.getAddress()
+    const {signerKey} = getSignerKey(validatorAddr, validatorData)
+
+    const txns = [getPriviledgeTxn(ambireAccountAddress, newSigner.address, true)]
+    const msgHash = ethers.keccak256(
+      abiCoder.encode(
+        ['address', 'address', 'bytes32'],
+        [ambireAccountAddress, newSigner.address, ethers.toBeHex(1, 32)]
+      )
+    )
+    const msg = ethers.getBytes(msgHash)
+    const secondSig = wrapEthSign(await relayer.signMessage(msg))
+    const sigMetaTuple = 'tuple(uint8, tuple(string, bytes, bytes), string, address, bytes32)'
+    const sigMetaValues = [
+      ethers.toBeHex(2, 1),
+      [
+        '',
+        ethers.toBeHex(0, 1),
+        ethers.toBeHex(0, 1),
+      ],
+      '',
+      newSigner.address,
+      ethers.toBeHex(1, 32)
+    ]
+    const innerSig = abiCoder.encode([sigMetaTuple, 'bytes', 'bytes'], [
+      sigMetaValues,
+      ethers.toBeHex(0, 1),
+      secondSig
+    ])
+    const sig = abiCoder.encode(['address', 'address', 'bytes', 'bytes'], [signerKey, validatorAddr, validatorData, innerSig])
+    const finalSig = wrapExternallyValidated(sig)
+    const newNonce = await entryPoint.getNonce(ambireAccountAddress, 0)
+    const userOperation = {
+        sender: ambireAccountAddress,
+        nonce: ethers.toBeHex(newNonce, 1),
+        initCode: '0x',
+        callData: account.interface.encodeFunctionData('executeBySender', [txns]),
+        callGasLimit: ethers.toBeHex(100000),
+        verificationGasLimit: ethers.toBeHex(500000),
+        preVerificationGas: ethers.toBeHex(50000),
+        maxFeePerGas: ethers.toBeHex(100000),
+        maxPriorityFeePerGas: ethers.toBeHex(100000),
+        paymasterAndData: '0x',
+        signature: finalSig
+    }
+    await expect(entryPoint.handleOps([userOperation], relayer))
+      .to.be.revertedWithCustomError(entryPoint, 'FailedOp')
+      .withArgs(0, 'AA23 reverted: no txn execution is allowed when setting a timelock');
+
+    userOperation.callData = '0x'
+    await entryPoint.handleOps([userOperation], relayer)
+
+    // expect the txn to NOT have been executed
+    const hasPriv = await account.privileges(newSigner.address)
+    expect(hasPriv).to.equal(ethers.toBeHex(0, 32))
+
+    // expect recovery to not have been marked as complete
+    const identifier = ethers.keccak256(abiCoder.encode(['address', 'bytes', sigMetaTuple], [
+        ambireAccountAddress,
+        validatorData,
+        sigMetaValues
+    ]))
+    const recoveryAssigned = await dkimRecovery.recoveries(identifier)
+    expect(recoveryAssigned).to.be.false
+
+    // expect a timelock to have been scheduled
+    const timelock = await dkimRecovery.timelocks(identifier)
+    expect(timelock[0]).to.be.false
+    expect(timelock[1]).to.not.equal(0)
+
+    userOperation.callData = account.interface.encodeFunctionData('executeBySender', [txns])
+    userOperation.nonce = ethers.toBeHex(await entryPoint.getNonce(ambireAccountAddress, 0), 1)
+    await entryPoint.handleOps([userOperation], relayer)
+
+    // expect the txn to have been executed
+    const hasPrivAfterTimelock = await account.privileges(newSigner.address)
+    expect(hasPrivAfterTimelock).to.equal(ethers.toBeHex(1, 32))
+
+    // expect recovery to have been marked as complete
+    const recoveryComplete = await dkimRecovery.recoveries(identifier)
+    expect(recoveryComplete).to.be.true
+
+    // expect the timelock to have been marked as executed
+    const timelockDone = await dkimRecovery.timelocks(identifier)
+    expect(timelockDone[0]).to.be.true
+
+    userOperation.nonce = ethers.toBeHex(await entryPoint.getNonce(ambireAccountAddress, 0), 1)
+    await expect(entryPoint.handleOps([userOperation], relayer))
+      .to.be.revertedWithCustomError(entryPoint, 'FailedOp')
+      .withArgs(0, 'AA23 reverted: recovery already done');
+  })
+})
