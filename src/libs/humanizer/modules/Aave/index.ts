@@ -9,7 +9,7 @@ export const aaveHumanizer = (
   ir: Ir,
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   options?: any
-): [Ir, Array<Promise<HumanizerFragment>>] => {
+): [Ir, Array<Promise<HumanizerFragment | null>>] => {
   const matcher = {
     ...aaveLendingPoolV2(accountOp.humanizerMeta),
     ...aaveWethGatewayV2(accountOp.humanizerMeta)

@@ -14,7 +14,7 @@ export const yearnVaultModule = (
   ir: Ir,
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   options?: any
-): [Ir, Array<Promise<HumanizerFragment>>] => {
+): [Ir, Array<Promise<HumanizerFragment | null>>] => {
   const { yearnVaults, tesseractVaults } = accountOp.humanizerMeta || {}
   //   const yearnWETHVaultAddress = '0xa258C4606Ca8206D8aA700cE2143D7db854D168c'
   const iface = new ethers.Interface(accountOp.humanizerMeta?.['abis:YearnVault'])

@@ -82,7 +82,7 @@ const OneInchMapping = (humanizerInfo: any) => {
 export const oneInchHumanizer = (
   accountOp: AccountOp,
   ir: Ir
-): [Ir, Array<Promise<HumanizerFragment>>] => {
+): [Ir, Array<Promise<HumanizerFragment | null>>] => {
   const matcher = {
     ...OneInchMapping(accountOp.humanizerMeta)
     // ...SwappinMapping(accountOp.humanizerMeta)

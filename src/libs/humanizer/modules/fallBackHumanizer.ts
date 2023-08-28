@@ -36,19 +36,18 @@ async function fetchFuncEtherface(
     }
   }
   const func = res?.items?.[0]
-  return func
-    ? {
-        key: `funcSelectors:${selector}`,
-        isGlobal: true,
-        value: func.text
-      }
-    : options.emitError({
-        message: `fetchFuncEtherface: Err with etherface api, selector ${selector.slice(0, 10)}`,
-        error: new Error(
-          `Failed to fetch info from etherface's api about ${selector.slice(0, 10)}`
-        ),
-        level: 'minor'
-      })
+  if (func)
+    return {
+      key: `funcSelectors:${selector}`,
+      isGlobal: true,
+      value: func.text
+    }
+  options.emitError({
+    message: `fetchFuncEtherface: Err with etherface api, selector ${selector.slice(0, 10)}`,
+    error: new Error(`Failed to fetch info from etherface's api about ${selector.slice(0, 10)}`),
+    level: 'minor'
+  })
+  return null
 }
 const checkIfUnknowAction = (v: Array<any>) => {
   try {

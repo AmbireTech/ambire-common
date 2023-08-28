@@ -10,7 +10,7 @@ export const wethHumanizer = (
   ir: Ir,
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   options?: any
-): [Ir, Array<Promise<HumanizerFragment>>] => {
+): [Ir, Array<Promise<HumanizerFragment | null>>] => {
   const newCalls = ir.calls.map((call: IrCall) => {
     if (call.to === WETH_ADDRESS) {
       if (call.data.slice(0, 10) === '0xd0e30db0') {

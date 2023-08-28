@@ -14,12 +14,10 @@ import { yearnVaultModule } from './modules/yearnTesseractVault'
 // @TODO update to use wrapper for coingecko api (if (no key) {free api} else {paid api})
 // @TODO update humanizer fragment to be the return value from emitEvent
 // @TODO humanize signed messages
-// @TODO change all console.logs to throw errs
 // @TODO finish modules:
 // WALLET/ADX staking
 // @TODO fix comments from feedback https://github.com/AmbireTech/ambire-common/pull/281
 // @TODO add visualization interface
-// @TODO add new mechanism for error emitting
 
 export function callsToIr(accountOp: AccountOp): Ir {
   const irCalls: IrCall[] = accountOp.calls.map((call) => {
