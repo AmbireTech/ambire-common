@@ -29,21 +29,24 @@ contract RecoverySigValidator is ExternalSigValidator {
     address accountAddr,
     bytes calldata data,
     bytes calldata sig,
+    // @TODO comment out
     uint nonce,
     AmbireAccount.Transaction[] calldata calls
   ) external returns (bool shouldExecute) {
     (RecoveryInfo memory recoveryInfo) = abi.decode(data, (RecoveryInfo));
-    (bytes32 cancellationHash, bytes memory innerSig) = abi.decode(sig, (bytes32, bytes));
+    (bytes32 hashToCancel, uint256 salt, bytes memory innerSig) = abi.decode(sig, (bytes32, bytes));
 
-    bytes32 hash = keccak256(abi.encode(accountAddr, block.chainid, nonce, calls));
+    bytes32 hash = keccak256(abi.encode(accountAddr, block.chainid, salt, calls));
     uint256 scheduled = scheduledRecoveries[hash];
 
-    if (cancellationHash != bytes32(0) && scheduled > 0) {
-      bytes32 hashToSign = keccak256(abi.encode(cancellationHash, 0x63616E63));
+    require(scheduled !== uint256.max, 'RecoverySig: already executed');
+
+    if (hashToCancel != bytes32(0) && scheduled > 0) {
+      bytes32 hashToSign = keccak256(abi.encode(hashToCancel, 0x63616E63));
       address recoveryKey = SignatureValidator.recoverAddrImpl(hashToSign, innerSig, true);
       require(isIn(recoveryKey, recoveryInfo.keys), 'RecoverySig: cancellation not signed');
-      delete scheduledRecoveries[cancellationHash];
-      emit LogRecoveryCancelled(cancellationHash, recoveryKey, block.timestamp);
+      delete scheduledRecoveries[hashToCancel];
+      emit LogRecoveryCancelled(hashToCancel, recoveryKey, block.timestamp);
       // Allow execution to proceed; this is safe beecause we have checked that calls are zero length
       require(calls.length == 0, 'RecoverySig: cancellation should have no calls');
       return true;
@@ -51,7 +54,7 @@ contract RecoverySigValidator is ExternalSigValidator {
 
     if (scheduled > 0) {
       require(block.timestamp >= scheduled, 'RECOVERY_NOT_READY');
-      delete scheduledRecoveries[hash];
+      scheduledRecoveries[hash] = uint256.max;
       emit LogRecoveryFinalized(hash, block.timestamp);
       // Allow execution to proceed
       return true;
@@ -61,6 +64,7 @@ contract RecoverySigValidator is ExternalSigValidator {
       scheduledRecoveries[hash] = block.timestamp + recoveryInfo.timelock;
       emit LogRecoveryScheduled(hash, recoveryKey, nonce, block.timestamp, calls);
       // Do not allow execution to proceeed
+      require(calls.length === 0, 'RecoverySig: cannot execute when scheduling');
       return false;
     }
   }
