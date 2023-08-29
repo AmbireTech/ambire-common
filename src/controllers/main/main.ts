@@ -378,14 +378,18 @@ export class MainController extends EventEmitter {
     console.log(estimation)
   }
 
-  resolveSignedAccountOp(accountOp) {}
+  broadcastSignedAccountOp(accountOp) {}
 
-  resolveSignedMessage(signedMessage: Message) {
+  broadcastSignedMessage(signedMessage: Message) {
     // TODO: add signedMessage to the activity
     const dappNotificationRequest = this.dappsNotificationRequests.find(
       (req) => req.id === signedMessage.id
     )
     if (dappNotificationRequest) dappNotificationRequest.resolve({ hash: signedMessage.signature })
+    this.dappsNotificationRequests = this.dappsNotificationRequests.filter(
+      (req) => req.id !== dappNotificationRequest?.id
+    )
+    this.removeUserRequest(signedMessage.id)
     this.emitUpdate()
   }
 }
