@@ -6,7 +6,7 @@ import { AccountOp } from '../accountOp/accountOp'
 import { callsToIr, humanize, visualizationToText } from '.'
 
 import { uniswapHumanizer } from './modules/Uniswap'
-import { Ir, IrCall } from './interfaces'
+import { HumanizerFragment, Ir, IrCall } from './interfaces'
 import { wethHumanizer } from './modules/weth'
 import { aaveHumanizer } from './modules/Aave'
 import { yearnVaultModule } from './modules/yearnTesseractVault'
