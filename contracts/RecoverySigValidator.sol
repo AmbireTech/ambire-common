@@ -29,49 +29,45 @@ contract RecoverySigValidator is ExternalSigValidator {
     address accountAddr,
     bytes calldata data,
     bytes calldata sig,
-    // @TODO comment out
-    uint nonce,
     AmbireAccount.Transaction[] calldata calls
-  ) external returns (bool shouldExecute) {
+  ) external {
     (RecoveryInfo memory recoveryInfo) = abi.decode(data, (RecoveryInfo));
-    (bytes32 hashToFinalize, bool isCancel, AmbireAccount.Transaction[] memory callsToCommitTo, uint256 salt, bytes memory innerSig) = abi.decode(sig, (
-      bytes32, bool, AmbireAccount.Transaction[], uint256, bytes
+    (bool isCancel, AmbireAccount.Transaction[] memory callsToCommitTo, uint256 salt, bytes memory innerSig) = abi.decode(sig, (
+      bool, AmbireAccount.Transaction[], uint256, bytes
     ));
-
-    uint256 scheduled = scheduledRecoveries[hash];
-
-    require(scheduled !== uint256.max, 'RecoverySig: already executed');
-
     if (callsToCommitTo.length > 0) {
-      require(hashToFinalize == bytes32(0), 'RecoverySig: either hashToFinalize or callsToCommitTo');
       require(scheduled == 0, 'RecoverySig: already scheduled');
-
       bytes32 hash = keccak256(abi.encode(accountAddr, block.chainid, salt, callsToCommitTo));
-      
-      address recoveryKey = SignatureValidator.recoverAddrImpl(hash, innerSig, true);
-      require(isIn(recoveryKey, recoveryInfo.keys), 'RecoverySig: not signed by the correct key');
-      scheduledRecoveries[hash] = block.timestamp + recoveryInfo.timelock;
-      emit LogRecoveryScheduled(hash, recoveryKey, nonce, block.timestamp, calls);
-      // Do not allow execution to proceeed
-      require(calls.length === 0, 'RecoverySig: cannot execute when scheduling');
-    } else {
-      require(hashToFinalize != bytes32(0), 'RecoverySig: either hashToFinalize or callsToCommitTo');
-      require(scheduled != 0, 'RecoverySig: not scheduled');
 
-      if (isCancel) {
-        bytes32 hashToSign = keccak256(abi.encode(accountAddr, hashToFinalize, isCancel));
-        address recoveryKey = SignatureValidator.recoverAddrImpl(hashToSign, innerSig, true);
-        require(isIn(recoveryKey, recoveryInfo.keys), 'RecoverySig: cancellation not signed');
-        scheduledRecoveries[hashToCancel] = uint256.max;
-        emit LogRecoveryCancelled(hashToFinalize, recoveryKey, block.timestamp);
-        // Allow execution to proceed; this is safe beecause we have checked that calls are zero length
-        require(calls.length == 0, 'RecoverySig: cancellation should have no calls');
+      uint256 scheduled = scheduledRecoveries[hash];
+      require(scheduled != uint256.max, 'RecoverySig: already executed');
+
+      bytes32 hashToSign = hash;
+      if (isCancel) hashToSign = keccak256(abi.encode(hash, 0x63616E63));
+      address recoveryKey = SignatureValidator.recoverAddrImpl(hashToSign, innerSig, true);
+      require(isIn(recoveryKey, recoveryInfo.keys), 'RecoverySig: not signed by the correct key');
+
+      if (!isCancel) {
+        scheduledRecoveries[hash] = block.timestamp + recoveryInfo.timelock;
+        emit LogRecoveryScheduled(hash, recoveryKey, nonce, block.timestamp, callsToCommitTo);
       } else {
-          require(block.timestamp >= scheduled, 'RecoverySig: not ready');
-          scheduledRecoveries[hash] = uint256.max;
-          emit LogRecoveryFinalized(hash, block.timestamp);
-          // Allow execution to proceed
+        scheduledRecoveries[hashToFinalize] = uint256.max;
+        emit LogRecoveryCancelled(hash, recoveryKey, block.timestamp);
       }
+
+      // Do not allow execution to proceeed
+      require(calls.length === 0, 'RecoverySig: cannot execute when scheduling/cancelling');
+    } else {
+      bytes32 hash = keccak256(abi.encode(accountAddr, block.chainid, salt, calls));
+
+      uint256 scheduled = scheduledRecoveries[hash];
+      require(scheduled != uint256.max, 'RecoverySig: already executed');
+      require(scheduled != 0, 'RecoverySig: not scheduled');
+      require(block.timestamp >= scheduled, 'RecoverySig: not ready');
+
+      scheduledRecoveries[hash] = uint256.max;
+      emit LogRecoveryFinalized(hash, block.timestamp);
+      // Allow execution to proceed
     }
   }
 
