@@ -130,8 +130,17 @@ export class MainController extends EventEmitter {
 
     this.isReady = true
 
-    const isKeystoreReady = await this.#keystoreLib.isReadyToStoreKeys()
-    this.keystore.setIsReadyToStoreKeys(isKeystoreReady)
+    try {
+      const isKeystoreReady = await this.#keystoreLib.isReadyToStoreKeys()
+      this.keystore.setIsReadyToStoreKeys(isKeystoreReady)
+    } catch (e) {
+      return this.emitError({
+        message:
+          'Failed to get the initial data needed by the Ambire Key Store to initiate. Please try again later or contact support.',
+        level: 'major',
+        error: e instanceof Error ? e : new Error('Failed to check if keystore is ready.')
+      })
+    }
 
     const addReadyToAddAccountsIfNeeded = () => {
       if (
