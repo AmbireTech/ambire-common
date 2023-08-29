@@ -68,8 +68,6 @@ export class MainController extends EventEmitter {
 
   userRequests: UserRequest[] = []
 
-  _dappsNotificationRequests: DappNotificationRequest[] = []
-
   // The reason we use a map structure and not a flat array is:
   // 1) it's easier in the UI to deal with structured data rather than having to .find/.filter/etc. all the time
   // 2) it's easier to mutate this - to add/remove accountOps, to find the right accountOp to extend, etc.
@@ -88,27 +86,22 @@ export class MainController extends EventEmitter {
 
   lastUpdate: Date = new Date()
 
-  onSetDappsNotificationRequests?: (newValue: DappNotificationRequest[]) => void
+  onResolveDappRequest: (data: any, id?: bigint) => void
 
-  get dappsNotificationRequests() {
-    return this._dappsNotificationRequests
-  }
-
-  set dappsNotificationRequests(newValue: DappNotificationRequest[]) {
-    this._dappsNotificationRequests = newValue
-    !!this.onSetDappsNotificationRequests && this.onSetDappsNotificationRequests(newValue)
-  }
+  onRejectDappRequest: (err: any, id?: bigint) => void
 
   constructor({
     storage,
     fetch,
     relayerUrl,
-    onSetDappsNotificationRequests
+    onResolveDappRequest,
+    onRejectDappRequest
   }: {
     storage: Storage
     fetch: Function
     relayerUrl: string
-    onSetDappsNotificationRequests?: (newValue: DappNotificationRequest[]) => void
+    onResolveDappRequest: (data: any, id?: bigint) => void
+    onRejectDappRequest: (err: any, id?: bigint) => void
   }) {
     super()
     this.storage = storage
@@ -122,7 +115,8 @@ export class MainController extends EventEmitter {
     this.accountAdder = new AccountAdderController({ storage, relayerUrl, fetch })
     this.signMessage = new SignMessageController(this.#keystoreLib)
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
-    this.onSetDappsNotificationRequests = onSetDappsNotificationRequests
+    this.onResolveDappRequest = onResolveDappRequest
+    this.onRejectDappRequest = onRejectDappRequest
     // @TODO Load userRequests from storage and emit that we have updated
     // @TODO
   }
@@ -382,14 +376,8 @@ export class MainController extends EventEmitter {
 
   broadcastSignedMessage(signedMessage: Message) {
     // TODO: add signedMessage to the activity
-    const dappNotificationRequest = this.dappsNotificationRequests.find(
-      (req) => req.id === signedMessage.id
-    )
-    if (dappNotificationRequest) dappNotificationRequest.resolve({ hash: signedMessage.signature })
-    this.dappsNotificationRequests = this.dappsNotificationRequests.filter(
-      (req) => req.id !== dappNotificationRequest?.id
-    )
     this.removeUserRequest(signedMessage.id)
+    this.onResolveDappRequest({ hash: signedMessage.signature }, signedMessage.id)
     this.emitUpdate()
   }
 }
