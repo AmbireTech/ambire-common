@@ -111,13 +111,12 @@ describe('DKIM sigMode Both', function () {
     const sig = abiCoder.encode(['address', 'address', 'bytes', 'bytes'], [signerKey, validatorAddr, validatorData, innerSig])
     const finalSig = wrapExternallyValidated(sig)
 
-    const callData = account.interface.encodeFunctionData('executeBySender', [txns])
     const newNonce = await entryPoint.getNonce(ambireAccountAddress, 0)
     const userOperation = {
         sender: ambireAccountAddress,
         nonce: ethers.toBeHex(newNonce, 1),
         initCode: '0x',
-        callData,
+        callData: '0x',
         callGasLimit: ethers.toBeHex(100000),
         verificationGasLimit: ethers.toBeHex(500000),
         preVerificationGas: ethers.toBeHex(50000),
@@ -126,6 +125,11 @@ describe('DKIM sigMode Both', function () {
         paymasterAndData: '0x',
         signature: finalSig
     }
+    await expect(entryPoint.handleOps([userOperation], relayer))
+      .to.be.revertedWithCustomError(entryPoint, 'FailedOp')
+      .withArgs(0, 'AA23 reverted: calls length must be 1');
+
+    userOperation.callData = account.interface.encodeFunctionData('executeBySender', [txns])
     await entryPoint.handleOps([userOperation], relayer)
 
     // txn should have completed successfully
@@ -241,9 +245,13 @@ describe('DKIM sigMode OnlyDKIM', function () {
     expect(timelock[0]).to.be.false
     expect(timelock[1]).to.not.equal(0)
 
+    userOperation.nonce = ethers.toBeHex(await entryPoint.getNonce(ambireAccountAddress, 0), 1)
+    await expect(entryPoint.handleOps([userOperation], relayer))
+      .to.be.revertedWithCustomError(entryPoint, 'FailedOp')
+      .withArgs(0, 'AA23 reverted: calls length must be 1');
+
     // set the correct callData
     userOperation.callData = account.interface.encodeFunctionData('executeBySender', [txns])
-    userOperation.nonce = ethers.toBeHex(await entryPoint.getNonce(ambireAccountAddress, 0), 1)
     await entryPoint.handleOps([userOperation], relayer)
 
     // expect the txn to have been executed
