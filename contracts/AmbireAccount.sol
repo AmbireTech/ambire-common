@@ -8,9 +8,8 @@ interface ExternalSigValidator {
 		address accountAddr,
 		bytes calldata data,
 		bytes calldata sig,
-		uint nonce,
 		AmbireAccount.Transaction[] calldata calls
-	) external returns (bool shouldExecute);
+	) external;
 }
 
 // EIP-4337 UserOperation
@@ -280,8 +279,6 @@ contract AmbireAccount {
 		// The sig validator itself should throw when a signature isn't valdiated successfully
 		// the return value just indicates whether we want to execute the current calls
 		// @TODO what about reentrancy for externally validated signatures
-		if (
-			!ExternalSigValidator(validatorAddr).validateSig(address(this), validatorData, innerSig, nonce, calls)
-		) shouldExecute = false;
+		ExternalSigValidator(validatorAddr).validateSig(address(this), validatorData, innerSig, calls);
 	}
 }

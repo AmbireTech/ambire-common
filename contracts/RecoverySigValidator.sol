@@ -9,7 +9,6 @@ contract RecoverySigValidator is ExternalSigValidator {
   event LogRecoveryScheduled(
     bytes32 indexed txnHash,
     address indexed recoveryKey,
-    uint256 nonce,
     uint256 time,
     AmbireAccount.Transaction[] calls
   );
@@ -36,11 +35,11 @@ contract RecoverySigValidator is ExternalSigValidator {
       bool, AmbireAccount.Transaction[], uint256, bytes
     ));
     if (callsToCommitTo.length > 0) {
-      require(scheduled == 0, 'RecoverySig: already scheduled');
       bytes32 hash = keccak256(abi.encode(accountAddr, block.chainid, salt, callsToCommitTo));
 
       uint256 scheduled = scheduledRecoveries[hash];
-      require(scheduled != uint256.max, 'RecoverySig: already executed');
+      require(scheduled == 0, 'RecoverySig: already scheduled');
+      require(scheduled != type(uint256).max, 'RecoverySig: already executed');
 
       bytes32 hashToSign = hash;
       if (isCancel) hashToSign = keccak256(abi.encode(hash, 0x63616E63));
@@ -49,23 +48,23 @@ contract RecoverySigValidator is ExternalSigValidator {
 
       if (!isCancel) {
         scheduledRecoveries[hash] = block.timestamp + recoveryInfo.timelock;
-        emit LogRecoveryScheduled(hash, recoveryKey, nonce, block.timestamp, callsToCommitTo);
+        emit LogRecoveryScheduled(hash, recoveryKey, block.timestamp, callsToCommitTo);
       } else {
-        scheduledRecoveries[hashToFinalize] = uint256.max;
+        scheduledRecoveries[hash] = type(uint256).max;
         emit LogRecoveryCancelled(hash, recoveryKey, block.timestamp);
       }
 
       // Do not allow execution to proceeed
-      require(calls.length === 0, 'RecoverySig: cannot execute when scheduling/cancelling');
+      require(calls.length == 0, 'RecoverySig: cannot execute when scheduling/cancelling');
     } else {
       bytes32 hash = keccak256(abi.encode(accountAddr, block.chainid, salt, calls));
 
       uint256 scheduled = scheduledRecoveries[hash];
-      require(scheduled != uint256.max, 'RecoverySig: already executed');
+      require(scheduled != type(uint256).max, 'RecoverySig: already executed');
       require(scheduled != 0, 'RecoverySig: not scheduled');
       require(block.timestamp >= scheduled, 'RecoverySig: not ready');
 
-      scheduledRecoveries[hash] = uint256.max;
+      scheduledRecoveries[hash] = type(uint256).max;
       emit LogRecoveryFinalized(hash, block.timestamp);
       // Allow execution to proceed
     }
