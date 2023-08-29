@@ -110,7 +110,6 @@ const transactions: { [key: string]: Array<IrCall> } = {
       data: '0x80500d200000000000000000000000007d2768de32b0b80b7a3454c06bdac94a69ddc7a9000000000000000000000000000000000000000000000000000000001c378a430000000000000000000000000df1a69fcdf15fec04e37aa5eca4268927b111e7'
     }
   ],
-  // @TODO add proper example calls
   WALLET: [],
   yearn: [
     // deposit dai
@@ -176,7 +175,7 @@ describe('module tests', () => {
     })
     ;[ir, asyncOps] = humanize(accountOp, standartOptions)
 
-    const res = ir.calls.map((call: IrCall) => visualizationToText(call))
+    const res = ir.calls.map((call: IrCall) => visualizationToText(call, standartOptions))
     expectedTexification.forEach((et: string, i: number) => expect(et).toEqual(res[i]))
   })
   test('uniV3', () => {
@@ -335,7 +334,6 @@ describe('module tests', () => {
     )
   })
   test('WALLET', () => {
-    // @TODO finish
     // const expectedhumanization = []
     accountOp.calls = [...transactions.WALLET]
     let ir: Ir = callsToIr(accountOp)

@@ -10,12 +10,9 @@ import { WALLETModule } from './modules/WALLET'
 import { nameParsing } from './modules/nameParsing'
 import { fallbackHumanizer } from './modules/fallBackHumanizer'
 import { yearnVaultModule } from './modules/yearnTesseractVault'
-// @TODO !!!!!!! fix nameName parsing rename and tests (SHOULD Promise<HumanizerFragment> have possibility to be null)
-// @TODO update to use wrapper for coingecko api (if (no key) {free api} else {paid api})
-// @TODO update humanizer fragment to be the return value from emitEvent
+// @NOTE should we use wrppaer for coingecko(if(apikey){paid coingecko}else{no}?
+// @TOOD add ethercan txns for walletmodule test
 // @TODO humanize signed messages
-// @TODO finish modules:
-// WALLET/ADX staking
 // @TODO fix comments from feedback https://github.com/AmbireTech/ambire-common/pull/281
 // @TODO add visualization interface
 
@@ -66,15 +63,13 @@ export function humanize(
   return [currentIr, asyncOps]
 }
 
-export const visualizationToText = (call: IrCall): string => {
+export const visualizationToText = (call: IrCall, options: any): string => {
   let text = ''
   const visualization = call.fullVisualization
   visualization.forEach((v: { [key: string]: any }, i: number) => {
     if (i) text += ' '
     if (v.type === 'action' || v.type === 'lable') text += `${v.content}`
     if (v.type === 'address') text += v.name ? `${v.address} (${v.name})` : v.address
-    // @TODO add amount to token
-    // @TODo add the amount to the fullVisualization also
     if (v.type === 'token') {
       text += `${v.readbleAmount || v.amount} ${v.symbol ? v.symbol : `${v.address} token`} `
     }
@@ -82,6 +77,10 @@ export const visualizationToText = (call: IrCall): string => {
   if (text) {
     return text
   }
-  // @TODO throw err
+  options.emitError({
+    message: 'visualizationToText: Something went wrong with humanization',
+    errror: new Error(`visualizationToText couldn't convert the txn to text, ${call}`),
+    level: 'silent'
+  })
   return `Call to ${call.to} with ${call.value} value and ${call.data} data`
 }
