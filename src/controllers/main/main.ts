@@ -110,15 +110,24 @@ export class MainController extends EventEmitter {
         message:
           'Failed to get the initial data needed by Ambire to initiate. Please try again later or contact support.',
         level: 'major',
-        error: e instanceof Error ? e : new Error('Failed to load accounts.')
+        error: e instanceof Error ? e : new Error('Failed to initially load from storage.')
       })
     }
     this.providers = Object.fromEntries(
       this.settings.networks.map((network) => [network.id, new JsonRpcProvider(network.rpcUrl)])
     )
-    // @TODO reload those
-    // @TODO error handling here
-    this.accountStates = await this.getAccountsInfo(this.accounts)
+    try {
+      // @TODO reload those
+      this.accountStates = await this.getAccountsInfo(this.accounts)
+    } catch (e) {
+      return this.emitError({
+        message:
+          'Failed to get the initial accounts data needed by Ambire to initiate. Please try again later or contact support.',
+        level: 'major',
+        error: e instanceof Error ? e : new Error('Failed to get account states.')
+      })
+    }
+
     this.isReady = true
 
     const isKeystoreReady = await this.#keystoreLib.isReadyToStoreKeys()
