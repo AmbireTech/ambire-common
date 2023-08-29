@@ -8,7 +8,6 @@ interface ExternalSigValidator {
 		address accountAddr,
 		bytes calldata data,
 		bytes calldata sig,
-		uint nonce,
 		AmbireAccount.Transaction[] calldata calls
 	) external returns (bool shouldExecute);
 }
@@ -280,7 +279,7 @@ contract AmbireAccount {
 		// the return value just indicates whether we want to execute the current calls
 		// @TODO what about reentrancy for externally validated signatures
 		if (
-			!ExternalSigValidator(validatorAddr).validateSig(address(this), validatorData, innerSig, nonce, calls)
+			!ExternalSigValidator(validatorAddr).validateSig(address(this), validatorData, innerSig, calls)
 		) shouldExecute = false;
 	}
 }

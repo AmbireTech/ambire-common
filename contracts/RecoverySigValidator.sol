@@ -25,17 +25,20 @@ contract RecoverySigValidator is ExternalSigValidator {
     uint256 timelock;
   }
 
+  // sequencial nonce counter
+  mapping (address => uint) nonces;
+
   function validateSig(
     address accountAddr,
     bytes calldata data,
     bytes calldata sig,
-    uint nonce,
     AmbireAccount.Transaction[] calldata calls
   ) external returns (bool shouldExecute) {
     (RecoveryInfo memory recoveryInfo) = abi.decode(data, (RecoveryInfo));
     (bytes32 cancellationHash, bytes memory innerSig) = abi.decode(sig, (bytes32, bytes));
 
-    bytes32 hash = keccak256(abi.encode(accountAddr, block.chainid, nonce, calls));
+    uint currentNonce = nonces[accountAddr];
+    bytes32 hash = keccak256(abi.encode(accountAddr, block.chainid, currentNonce, calls));
     uint256 scheduled = scheduledRecoveries[hash];
 
     if (cancellationHash != bytes32(0) && scheduled > 0) {
@@ -46,6 +49,9 @@ contract RecoverySigValidator is ExternalSigValidator {
       emit LogRecoveryCancelled(cancellationHash, recoveryKey, block.timestamp);
       // Allow execution to proceed; this is safe beecause we have checked that calls are zero length
       require(calls.length == 0, 'RecoverySig: cancellation should have no calls');
+      // increment the nonce on cancellation to prevent replays on the original
+      // schedule signature
+      nonces[accountAddr] = currentNonce + 1;
       return true;
     }
 
@@ -53,13 +59,14 @@ contract RecoverySigValidator is ExternalSigValidator {
       require(block.timestamp >= scheduled, 'RECOVERY_NOT_READY');
       delete scheduledRecoveries[hash];
       emit LogRecoveryFinalized(hash, block.timestamp);
+      nonces[accountAddr] = currentNonce + 1;
       // Allow execution to proceed
       return true;
     } else {
       address recoveryKey = SignatureValidator.recoverAddrImpl(hash, innerSig, true);
       require(isIn(recoveryKey, recoveryInfo.keys), 'RecoverySig: not signed by the correct key');
       scheduledRecoveries[hash] = block.timestamp + recoveryInfo.timelock;
-      emit LogRecoveryScheduled(hash, recoveryKey, nonce, block.timestamp, calls);
+      emit LogRecoveryScheduled(hash, recoveryKey, currentNonce, block.timestamp, calls);
       // Do not allow execution to proceeed
       return false;
     }

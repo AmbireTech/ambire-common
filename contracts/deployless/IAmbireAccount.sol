@@ -34,3 +34,12 @@ interface IAmbireAccount {
 	function isValidSignature(bytes32 hash, bytes calldata signature) external view returns (bytes4);
 	function supportsInterface(bytes4 interfaceID) external pure returns (bool);
 }
+
+interface ExternalSigValidator {
+	function validateSig(
+		address accountAddr,
+		bytes calldata data,
+		bytes calldata sig,
+		IAmbireAccount.Transaction[] calldata calls
+	) external returns (bool shouldExecute);
+}

@@ -12,7 +12,7 @@ import './dkim/DNSSEC.sol';
 import './dkim/RRUtils.sol';
 import './libs/OpenZepellingStrings.sol';
 
-contract DKIMRecoverySigValidator {
+contract DKIMRecoverySigValidator is ExternalSigValidator {
   using Strings for *;
   using RRUtils for *;
   using Base64 for *;
@@ -96,7 +96,6 @@ contract DKIMRecoverySigValidator {
     address accountAddr,
     bytes calldata data,
     bytes calldata sig,
-    uint,
     IAmbireAccount.Transaction[] calldata calls
   ) external returns (bool) {
 
