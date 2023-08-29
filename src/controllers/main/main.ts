@@ -99,11 +99,20 @@ export class MainController extends EventEmitter {
   }
 
   private async load(): Promise<void> {
-    ;[this.keys, this.accounts, this.selectedAccount] = await Promise.all([
-      this.#keystoreLib.getKeys(),
-      this.storage.get('accounts', []),
-      this.storage.get('selectedAccount', null)
-    ])
+    try {
+      ;[this.keys, this.accounts, this.selectedAccount] = await Promise.all([
+        this.#keystoreLib.getKeys(),
+        this.storage.get('accounts', []),
+        this.storage.get('selectedAccount', null)
+      ])
+    } catch (e) {
+      return this.emitError({
+        message:
+          'Failed to get the initial data needed by Ambire to initiate. Please try again later or contact support.',
+        level: 'major',
+        error: e instanceof Error ? e : new Error('Failed to load accounts.')
+      })
+    }
     this.providers = Object.fromEntries(
       this.settings.networks.map((network) => [network.id, new JsonRpcProvider(network.rpcUrl)])
     )
