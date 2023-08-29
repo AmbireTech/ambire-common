@@ -43,12 +43,3 @@ export interface UserRequest {
   // either-or here between call and a message, plus different types of messages
   action: Call | PlainTextMessage | TypedMessage
 }
-
-export interface DappNotificationRequest {
-  id: bigint
-  screen: string
-  winProps?: any
-  params?: any
-  resolve: (data: any) => void
-  reject: (data: any) => void
-}
