@@ -14,11 +14,11 @@ contract RecoverySigValidator is ExternalSigValidator {
     AmbireAccount.Transaction[] calls
   );
   event LogRecoveryCancelled(
-    bytes32 indexed txnHash,
+    bytes32 indexed hash,
     address indexed recoveryKey,
     uint256 time
   );
-  event LogRecoveryFinalized(bytes32 indexed txnHash, uint256 time);
+  event LogRecoveryFinalized(bytes32 indexed hash, uint256 time);
 
   struct RecoveryInfo {
     address[] keys;
@@ -34,38 +34,44 @@ contract RecoverySigValidator is ExternalSigValidator {
     AmbireAccount.Transaction[] calldata calls
   ) external returns (bool shouldExecute) {
     (RecoveryInfo memory recoveryInfo) = abi.decode(data, (RecoveryInfo));
-    (bytes32 hashToCancel, uint256 salt, bytes memory innerSig) = abi.decode(sig, (bytes32, bytes));
+    (bytes32 hashToFinalize, bool isCancel, AmbireAccount.Transaction[] memory callsToCommitTo, uint256 salt, bytes memory innerSig) = abi.decode(sig, (
+      bytes32, bool, AmbireAccount.Transaction[], uint256, bytes
+    ));
 
-    bytes32 hash = keccak256(abi.encode(accountAddr, block.chainid, salt, calls));
     uint256 scheduled = scheduledRecoveries[hash];
 
     require(scheduled !== uint256.max, 'RecoverySig: already executed');
 
-    if (hashToCancel != bytes32(0) && scheduled > 0) {
-      bytes32 hashToSign = keccak256(abi.encode(hashToCancel, 0x63616E63));
-      address recoveryKey = SignatureValidator.recoverAddrImpl(hashToSign, innerSig, true);
-      require(isIn(recoveryKey, recoveryInfo.keys), 'RecoverySig: cancellation not signed');
-      delete scheduledRecoveries[hashToCancel];
-      emit LogRecoveryCancelled(hashToCancel, recoveryKey, block.timestamp);
-      // Allow execution to proceed; this is safe beecause we have checked that calls are zero length
-      require(calls.length == 0, 'RecoverySig: cancellation should have no calls');
-      return true;
-    }
+    if (callsToCommitTo.length > 0) {
+      require(hashToFinalize == bytes32(0), 'RecoverySig: either hashToFinalize or callsToCommitTo');
+      require(scheduled == 0, 'RecoverySig: already scheduled');
 
-    if (scheduled > 0) {
-      require(block.timestamp >= scheduled, 'RECOVERY_NOT_READY');
-      scheduledRecoveries[hash] = uint256.max;
-      emit LogRecoveryFinalized(hash, block.timestamp);
-      // Allow execution to proceed
-      return true;
-    } else {
+      bytes32 hash = keccak256(abi.encode(accountAddr, block.chainid, salt, callsToCommitTo));
+      
       address recoveryKey = SignatureValidator.recoverAddrImpl(hash, innerSig, true);
       require(isIn(recoveryKey, recoveryInfo.keys), 'RecoverySig: not signed by the correct key');
       scheduledRecoveries[hash] = block.timestamp + recoveryInfo.timelock;
       emit LogRecoveryScheduled(hash, recoveryKey, nonce, block.timestamp, calls);
       // Do not allow execution to proceeed
       require(calls.length === 0, 'RecoverySig: cannot execute when scheduling');
-      return false;
+    } else {
+      require(hashToFinalize != bytes32(0), 'RecoverySig: either hashToFinalize or callsToCommitTo');
+      require(scheduled != 0, 'RecoverySig: not scheduled');
+
+      if (isCancel) {
+        bytes32 hashToSign = keccak256(abi.encode(accountAddr, hashToFinalize, isCancel));
+        address recoveryKey = SignatureValidator.recoverAddrImpl(hashToSign, innerSig, true);
+        require(isIn(recoveryKey, recoveryInfo.keys), 'RecoverySig: cancellation not signed');
+        scheduledRecoveries[hashToCancel] = uint256.max;
+        emit LogRecoveryCancelled(hashToFinalize, recoveryKey, block.timestamp);
+        // Allow execution to proceed; this is safe beecause we have checked that calls are zero length
+        require(calls.length == 0, 'RecoverySig: cancellation should have no calls');
+      } else {
+          require(block.timestamp >= scheduled, 'RecoverySig: not ready');
+          scheduledRecoveries[hash] = uint256.max;
+          emit LogRecoveryFinalized(hash, block.timestamp);
+          // Allow execution to proceed
+      }
     }
   }
 
