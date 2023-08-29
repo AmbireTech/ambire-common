@@ -31,6 +31,8 @@ contract RecoverySigValidator is ExternalSigValidator {
     AmbireAccount.Transaction[] calldata calls
   ) external {
     (RecoveryInfo memory recoveryInfo) = abi.decode(data, (RecoveryInfo));
+    // required for cancel/scheduling: isCancel, callsToCommitTo, salt, innerSig
+    // required for finalization: salt
     (bool isCancel, AmbireAccount.Transaction[] memory callsToCommitTo, uint256 salt, bytes memory innerSig) = abi.decode(sig, (
       bool, AmbireAccount.Transaction[], uint256, bytes
     ));
@@ -41,9 +43,11 @@ contract RecoverySigValidator is ExternalSigValidator {
       require(scheduled == 0, 'RecoverySig: already scheduled');
       require(scheduled != type(uint256).max, 'RecoverySig: already executed');
 
-      bytes32 hashToSign = hash;
-      if (isCancel) hashToSign = keccak256(abi.encode(hash, 0x63616E63));
-      address recoveryKey = SignatureValidator.recoverAddrImpl(hashToSign, innerSig, true);
+      address recoveryKey = SignatureValidator.recoverAddrImpl(
+        isCancel ? keccak256(abi.encode(hash, 0x63616E63)) : hash,
+        innerSig,
+        true
+      );
       require(isIn(recoveryKey, recoveryInfo.keys), 'RecoverySig: not signed by the correct key');
 
       if (!isCancel) {
@@ -54,13 +58,13 @@ contract RecoverySigValidator is ExternalSigValidator {
         emit LogRecoveryCancelled(hash, recoveryKey, block.timestamp);
       }
 
-      // Do not allow execution to proceeed
+      // Allowing execution to proceed, but there must be no `calls`
       require(calls.length == 0, 'RecoverySig: cannot execute when scheduling/cancelling');
     } else {
       bytes32 hash = keccak256(abi.encode(accountAddr, block.chainid, salt, calls));
 
       uint256 scheduled = scheduledRecoveries[hash];
-      require(scheduled != type(uint256).max, 'RecoverySig: already executed');
+      require(scheduled != type(uint256).max, 'RecoverySig: already finalized');
       require(scheduled != 0, 'RecoverySig: not scheduled');
       require(block.timestamp >= scheduled, 'RecoverySig: not ready');
 
