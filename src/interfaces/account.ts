@@ -29,4 +29,6 @@ export interface AccountOnchainState {
   deployError: boolean
   balance: bigint
   isEOA: boolean
+  isErc4337Enabled: boolean
+  isErc4337Nonce: boolean
 }

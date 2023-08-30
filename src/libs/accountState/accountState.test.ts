@@ -4,7 +4,7 @@ import { getAccountState } from './accountState'
 import { networks } from '../../consts/networks'
 import { getBytecode } from '../proxyDeploy/bytecode'
 import { getAmbireAccountAddress } from '../proxyDeploy/getAmbireAddressTwo'
-import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
+import { AMBIRE_ACCOUNT_FACTORY, ERC_4337_ENTRYPOINT } from '../../consts/deploy'
 
 const polygon = networks.find((x) => x.id === 'polygon')
 if (!polygon) throw new Error('unable to find polygon network in consts')
@@ -52,9 +52,22 @@ describe('AccountState', () => {
       }
     }
 
-    const accounts = [account, accountNotDeployed, accountEOA]
+    const account4337 = {
+      addr: '0xD1cE5E6AE56693D2D3D52b2EBDf969C1D7901971',
+      label: '',
+      pfp: '',
+      associatedKeys: ['0x9188fdd757Df66B4F693D624Ed6A13a15Cf717D7', ERC_4337_ENTRYPOINT],
+      creation: {
+        factoryAddr: '0xA3A22Bf212C03ce55eE7C3845D4c177a6fEC418B',
+        bytecode:
+          '0x60017fbacd3e9e8aed42b26f997f28d90ae31f73d67222ec769cf7d8552e5f95f8f48d5560017f1937f135cfb1fb953b515a8d5a0f5ab4b8f1cdca7d9080fc3462633d71b5eb05553d602d8060523d3981f3363d3d373d3d3d363d73ff69afde895b381ee71e17c60350ae4c70b16a925af43d82803e903d91602b57fd5bf3',
+        salt: '0x0000000000000000000000000000000000000000000000000000000000000000'
+      }
+    }
+
+    const accounts = [account, accountNotDeployed, accountEOA, account4337]
     const state: any = await getAccountState(provider, polygon, accounts)
-    expect(state.length).toBe(3)
+    expect(state.length).toBe(4)
 
     const v1Acc = state[0]
     expect(v1Acc.isEOA).toBe(false)
@@ -69,5 +82,10 @@ describe('AccountState', () => {
     const eoaAcc = state[2]
     expect(eoaAcc.isEOA).toBe(true)
     expect(eoaAcc.balance).toBeGreaterThan(0n)
+
+    const acc4337 = state[3]
+    expect(acc4337.isErc4337Enabled).toBe(true)
+    expect(acc4337.isErc4337Nonce).toBe(true)
+    expect(acc4337.nonce).toBeGreaterThanOrEqual(0)
   })
 })

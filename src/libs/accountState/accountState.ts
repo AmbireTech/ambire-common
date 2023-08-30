@@ -19,12 +19,21 @@ export async function getAccountState(
   )
 
   const args = accounts.map((account) => {
+    const associatedKeys =
+      network?.erc4337?.enabled &&
+      !account.associatedKeys.includes(network?.erc4337?.entryPointAddr)
+        ? [...account.associatedKeys, network?.erc4337?.entryPointAddr]
+        : account.associatedKeys
+
     return [
       account.addr,
-      account.associatedKeys,
+      associatedKeys,
       ...(account.creation == null
         ? ['0x0000000000000000000000000000000000000000', '0x']
-        : getAccountDeployParams(account))
+        : getAccountDeployParams(account)),
+      network?.erc4337?.enabled
+        ? network?.erc4337?.entryPointAddr
+        : '0x0000000000000000000000000000000000000000'
     ]
   })
 
@@ -46,6 +55,8 @@ export async function getAccountState(
       isV2: accResult.isV2,
       balance: accResult.balance,
       isEOA: accResult.isEOA,
+      isErc4337Enabled: accResult.isErc4337Enabled,
+      isErc4337Nonce: accResult.isErc4337Nonce,
       deployError:
         accounts[index].associatedKeys.length > 0 && accResult.associatedKeyPriviliges.length === 0
     }

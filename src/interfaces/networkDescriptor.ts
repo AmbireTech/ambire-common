@@ -1,5 +1,11 @@
 export type NetworkId = string
 
+export interface Erc4337settings {
+  enabled: boolean
+  entryPointAddr: string
+  managerAddr: string
+}
+
 // NetworkId is a string: this is our internal identifier for the network
 // chainId is a number and is the chainID used for replay protection (EIP-155)
 // we need this distinction because:
@@ -11,6 +17,7 @@ export interface NetworkDescriptor {
   nativeAssetSymbol: string
   chainId: bigint
   rpcUrl: string
+  erc4337: Erc4337settings | null
   rpcNoStateOverride: boolean
   // NOTE: should this be here? keep in mind networks can be user-inputted, so it's prob better to have
   // a separate mapping somewhere
