@@ -2,16 +2,7 @@
 pragma solidity 0.8.19;
 
 import './libs/SignatureValidator.sol';
-
-interface ExternalSigValidator {
-	function validateSig(
-		address accountAddr,
-		bytes calldata data,
-		bytes calldata sig,
-		uint nonce,
-		AmbireAccount.Transaction[] calldata calls
-	) external returns (bool shouldExecute);
-}
+import './ExternalSigValidator.sol';
 
 // @dev All external/public functions (that are not view/pure) use `payable` because AmbireAccount
 // is a wallet contract, and any ETH sent to it is not lost, but on the other hand not having `payable`
@@ -120,7 +111,7 @@ contract AmbireAccount {
 	// that is authorized to execute on this account (in `privileges`)
 	// @dev: WARNING: if the signature of this is changed, we have to change AmbireAccountFactory
 	function execute(Transaction[] calldata calls, bytes calldata signature) public payable {
-		uint currentNonce = nonce;
+		uint256 currentNonce = nonce;
 		// we increment the nonce here (not using `nonce++` to save some gas)
 		// in case validateSig is false, we revert it back
 		nonce = currentNonce + 1;
@@ -147,9 +138,11 @@ contract AmbireAccount {
 				return;
 			}
 		} else {
-			// NOTE: abi.encode is safer than abi.encodePacked in terms of collision safety
-			bytes32 hash = keccak256(abi.encode(address(this), block.chainid, currentNonce, calls));
-			signerKey = SignatureValidator.recoverAddrImpl(hash, signature, true);
+			signerKey = SignatureValidator.recoverAddrImpl(
+				keccak256(abi.encode(address(this), block.chainid, currentNonce, calls)),
+				signature,
+				true
+			);
 			require(privileges[signerKey] != bytes32(0), 'INSUFFICIENT_PRIVILEGE');
 		}
 
@@ -221,7 +214,7 @@ contract AmbireAccount {
 			interfaceID == 0x4e2312e0 || // ERC-1155 `ERC1155TokenReceiver` support (i.e. `bytes4(keccak256("onERC1155Received(address,address,uint256,uint256,bytes)")) ^ bytes4(keccak256("onERC1155BatchReceived(address,address,uint256[],uint256[],bytes)"))`).
 			interfaceID == 0x0a417632; // used for checking whether the account is v2 or not
 		if (supported) return true;
-		address payable fallbackHandler = payable(address(uint160(uint(privileges[FALLBACK_HANDLER_SLOT]))));
+		address payable fallbackHandler = payable(address(uint160(uint256(privileges[FALLBACK_HANDLER_SLOT]))));
 		if (fallbackHandler == address(0)) return false;
 		return AmbireAccount(fallbackHandler).supportsInterface(interfaceID);
 	}

@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: agpl-3.0
-// NOTE: we only support RSA-SHA256 DKIM signatures, this is why we do not have an algorithm field atm
 pragma solidity 0.8.19;
 
 import './deployless/IAmbireAccount.sol';
@@ -12,6 +11,27 @@ import './dkim/DNSSEC.sol';
 import './dkim/RRUtils.sol';
 import './libs/OpenZepellingStrings.sol';
 
+/**
+ * @notice  A validator that performs DKIM signature recovery
+ * @dev     The DKIM signature is taken from an email along
+ * with its contents. The email contains information about the
+ * new key and the sigMode requested. To execute the request immediately,
+ * two signatures are needed - the DKIM sig and a secondaryKey signature.
+ * That is represented by sigMode.Both.
+ * If one of the things are missing (user has lost access to his email or
+ * he has lost his secondaryKey), a timelock is required. That is handled
+ * by mode.onlyDKIM or mode.OnlySecond. The account needs to allow single
+ * signature recoveries for that. The duration of the timelock is set in
+ * AccInfo.onlyOneSigTimelock.
+ * DKIM validation checks the email headers - whether "from" is the
+ * account email, whether "to" is the specified receiver, and whether
+ * the subject contains the signerKey and sigMode. Afterwards, it performs
+ * an RSASHA256 verification. Only RSASHA256 is supported so DKIM signatures
+ * from different algorithms will not work.
+ * All the DKIM public keys are kept in dkimKeys and are added by providing
+ * valid rrSets for the given DNS, or DNSSEC verification.
+ * The secondSig is a signature on keccak256(abi.encode(address(accountAddr), calls)).
+ */
 contract DKIMRecoverySigValidator {
   using Strings for *;
   using RRUtils for *;
@@ -75,21 +95,33 @@ contract DKIMRecoverySigValidator {
   // recoveryrIdentifier => bool
   mapping (bytes32 => bool) public recoveries;
 
-  address authorizedToSubmit;
-  address authorizedToRevoke;
-  DNSSEC oracle;
-
+  address public authorizedToSubmit;
+  address public authorizedToRevoke;
+  DNSSEC public oracle;
   constructor(DNSSEC _oracle, address _authorizedToSubmit, address _authorizedToRevoke) {
     authorizedToSubmit = _authorizedToSubmit;
     authorizedToRevoke = _authorizedToRevoke;
     oracle = _oracle;
   }
 
+  /**
+   * @notice  Validates a DKIM sig and a secondaryKey sig to perform a recovery.
+   * @dev     Please read the contracts' spec for more @dev information.
+   * @param   accountAddr  The AmbireAccount.sol address
+   * @param   data  The AccInfo data that has priviledges for the accountAddr:
+   * AmbireAccount.privileges[hash] == keccak256(abi.encode(accountAddr, data))
+   * @param   sig  abi.decode(SignatureMeta, dkimSig, secondSig)
+   * - SignatureMeta describes the type of request that's been made. E.g.
+   * SignatureMeta.mode can be Both and that means we expect a DKIM and a secondKey signature
+   * @param   calls  The transactions we're executing. We make sure they are a single call
+   * to AmbireAccount.setAddrPrivilege for the key in sigMeta
+   * @return  bool  should execution of the passed calls proceed or not
+   */
   function validateSig(
     address accountAddr,
     bytes calldata data,
     bytes calldata sig,
-    uint,
+    uint256,
     IAmbireAccount.Transaction[] calldata calls
   ) external returns (bool) {
 
@@ -169,7 +201,21 @@ contract DKIMRecoverySigValidator {
     return true;
   }
 
-  function addDKIMKeyWithDNSSec(DNSSEC.RRSetWithSignature[] memory rrSets) public {
+  /**
+   * @notice  Add a DKIM public key for a given DNS and selector
+   * @dev     DNSSEC verification is performed by DNSSECImpl.sol. The
+   * contract originates from the ENS implementation. Unfortunatelly,
+   * major email providers like gmail do not support DNSSEC. To be able
+   * to add their keys, we use a bridge. The bridge string is this:
+   * 646e7373656362726964676506616d6269726503636f6d0000100001000001
+   * an it means bridge.ambire.com. To add gmail, we create a selector
+   * gmail.com.bridge.ambire.com, check whether the TXT field's signer
+   * ends with bridge.ambire.com and if so, add the key for gmail.
+   * This is a compromise; otherwise, gmail keys cannot be added by DNSSEC.
+   * @param   rrSets  The rrSets to validate. The final one needs to be
+   * the TXT field containing the DKIM key.
+   */
+  function addDKIMKeyWithDNSSec(DNSSEC.RRSetWithSignature[] memory rrSets) external {
     require(authorizedToSubmit == address(69) || msg.sender == authorizedToSubmit, 'not authorized to submit');
 
     RRUtils.SignedSet memory rrset = rrSets[rrSets.length-1].rrset.readSignedSet();
@@ -220,11 +266,26 @@ contract DKIMRecoverySigValidator {
     );
   }
 
-  function removeDKIMKey(bytes32 id) public {
+  /**
+   * @notice  Remove a DKIM key in case it has been compromised
+   * @param   id  bytes32 keccak256(abi.encode(DKIMKey))
+   */
+  function removeDKIMKey(bytes32 id) external {
     require(msg.sender == authorizedToRevoke, 'Address unauthorized to revoke');
     dkimKeys[id].dateRemoved = uint32(block.timestamp);
   }
 
+  /**
+   * @notice  A helper to get the domain name from an rrSet
+   * @dev     RRUtils are used to fetch the domain name from the set.
+   * Most of the times, if the original domain name is ambire.com,
+   * RRUtils parses it a bit differently and returns []ambire[]com, where
+   * [] are invalid ascii symbols. So comparing a string ambire.com and the
+   * string represenation of RRUtils's domainName will not work as the
+   * hexes are different. It is recommended to use this function to
+   * get the domain name on and off chain.
+   * @param   rrSet  The TXT rrSet
+   */
   function getDomainNameFromSignedSet(DNSSEC.RRSetWithSignature memory rrSet) public pure returns(string memory, bool) {
     Strings.slice memory selector = string(rrSet.rrset.readSignedSet().data).toSlice();
     selector.rsplit(','.toSlice());
@@ -279,6 +340,13 @@ contract DKIMRecoverySigValidator {
 
   mapping (bytes32 => Timelock) public timelocks;
 
+  /**
+   * @notice  Check whether a timelock has been set and can it be executed.
+   * @param   identifier  keccak256(abi.encode(accountAddr, data, sigMeta))
+   * @param   time  AccInfo.onlyOneSigTimelock - how much is the required
+   * time to wait before the timelock can be executed
+   * @return  shouldExecute  whether the timelock should be executed
+   */
   function checkTimelock(bytes32 identifier, uint32 time) public returns (bool shouldExecute) {
     Timelock storage timelock = timelocks[identifier];
     require(!timelock.isExecuted, 'timelock: already executed');

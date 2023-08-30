@@ -29,7 +29,7 @@ contract RecoverySigValidator is ExternalSigValidator {
     address accountAddr,
     bytes calldata data,
     bytes calldata sig,
-    uint nonce,
+    uint256 nonce,
     AmbireAccount.Transaction[] calldata calls
   ) external returns (bool shouldExecute) {
     (RecoveryInfo memory recoveryInfo) = abi.decode(data, (RecoveryInfo));
