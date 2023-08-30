@@ -16,11 +16,6 @@ describe('SignMessageController', () => {
     signMessageController = new SignMessageController(keystoreLib)
   })
 
-  // TODO:
-  // afterEach(() => {
-  // jest.clearAllMocks()
-  // })
-
   test('should initialize with a valid message', (done) => {
     const messageToSign: Message = {
       id: BigInt(1),
@@ -64,6 +59,25 @@ describe('SignMessageController', () => {
 
     expect(signMessageController.isInitialized).toBeFalsy()
     expect(mockEmitError).toHaveBeenCalled()
+  })
+
+  test('should reset the controller', (done) => {
+    let emitCounter = 0
+    signMessageController.onUpdate(() => {
+      emitCounter++
+
+      if (emitCounter === 1) {
+        expect(signMessageController.isInitialized).toBeFalsy()
+        expect(signMessageController.messageToSign).toBeNull()
+        expect(signMessageController.signature).toBeNull()
+        expect(signMessageController.signedMessage).toBeNull()
+        expect(signMessageController.signingKeyAddr).toBeNull()
+        expect(signMessageController.status).toBe('INITIAL')
+        done()
+      }
+    })
+
+    signMessageController.reset()
   })
 
   test('should set signing key address', () => {
