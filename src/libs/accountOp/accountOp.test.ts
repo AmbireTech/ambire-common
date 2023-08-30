@@ -13,7 +13,7 @@ describe('AccountOp', () => {
     ]
     const op: AccountOp = {
       accountAddr: ambireAccountAddress,
-      networkId: 'hardhat',
+      networkId: 'ethereum',
       signingKeyAddr: null,
       nonce,
       calls: txns,
@@ -23,16 +23,7 @@ describe('AccountOp', () => {
       accountOpToExecuteBefore: null
     }
     const accountOpHash = accountOpSignableHash(op)
-    const standardHash = ethers.getBytes(
-      ethers.keccak256(
-        abiCoder.encode(
-        ['address', 'uint', 'uint', 'tuple(address, uint, bytes)[]'],
-        [ambireAccountAddress, 31337n, nonce, txns.map((call: Call) => ([call.to, call.value, call.data]))]
-        )
-      )
-    )
-
-    expect(ethers.hexlify(accountOpHash)).toBe(ethers.hexlify(standardHash))
+    expect(ethers.hexlify(accountOpHash)).toBe('0xf4c15be577fe5a65920c66a16ba3ada4650c6daf53851d630d7b40a9e24b7a72')
   })
   test('should pass null as nonce in AccountOp and it should generate a valid hash with nonce 0', async () => {
     const ambireAccountAddress = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
@@ -42,7 +33,7 @@ describe('AccountOp', () => {
     ]
     const op: AccountOp = {
       accountAddr: ambireAccountAddress,
-      networkId: 'hardhat',
+      networkId: 'ethereum',
       signingKeyAddr: null,
       nonce: null,
       calls: txns,
