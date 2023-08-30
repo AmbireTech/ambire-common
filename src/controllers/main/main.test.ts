@@ -1,4 +1,5 @@
 import { ethers } from 'ethers'
+import { KeystoreSigner } from 'libs/keystoreSigner/keystoreSigner'
 import fetch from 'node-fetch'
 
 import { describe, expect, test } from '@jest/globals'
@@ -65,6 +66,7 @@ describe('Main Controller ', () => {
       storage,
       fetch,
       relayerUrl,
+      keystoreSigners: { internal: KeystoreSigner },
       onResolveDappRequest: () => {},
       onRejectDappRequest: () => {}
     })
@@ -128,6 +130,7 @@ describe('Main Controller ', () => {
       storage,
       fetch,
       relayerUrl,
+      keystoreSigners: { internal: KeystoreSigner },
       onResolveDappRequest: () => {},
       onRejectDappRequest: () => {}
     })
