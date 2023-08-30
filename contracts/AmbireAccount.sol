@@ -2,15 +2,7 @@
 pragma solidity 0.8.19;
 
 import './libs/SignatureValidator.sol';
-
-interface ExternalSigValidator {
-	function validateSig(
-		address accountAddr,
-		bytes calldata data,
-		bytes calldata sig,
-		AmbireAccount.Transaction[] calldata calls
-	) external;
-}
+import './ExternalSigValidator.sol';
 
 // EIP-4337 UserOperation
 // https://eips.ethereum.org/EIPS/eip-4337#required-entry-point-contract-functionality
@@ -140,22 +132,19 @@ contract AmbireAccount {
 	function execute(Transaction[] calldata calls, bytes calldata signature) public payable {
 		address signerKey;
 		uint8 sigMode = uint8(signature[signature.length - 1]);
-		uint currentNonce = nonce;
+		uint256 currentNonce = nonce;
 		// we increment the nonce here (not using `nonce++` to save some gas)
 		// in case shouldExecute is false, we revert it back
 		nonce = currentNonce + 1;
 
 		if (sigMode == SIGMODE_EXTERNALLY_VALIDATED) {
-			bool shouldExecute;
-			(signerKey, shouldExecute) = validateExternalSig(calls, signature);
-			if (!shouldExecute) {
-				nonce = currentNonce;
-				return;
-			}
+			(signerKey) = validateExternalSig(calls, signature);
 		} else {
-			// NOTE: abi.encode is safer than abi.encodePacked in terms of collision safety
-			bytes32 hash = keccak256(abi.encode(address(this), block.chainid, currentNonce, calls));
-			signerKey = SignatureValidator.recoverAddrImpl(hash, signature, true);
+			signerKey = SignatureValidator.recoverAddrImpl(
+				keccak256(abi.encode(address(this), block.chainid, currentNonce, calls)),
+				signature,
+				true
+			);
 			require(privileges[signerKey] != bytes32(0), 'INSUFFICIENT_PRIVILEGE');
 		}
 
@@ -227,7 +216,7 @@ contract AmbireAccount {
 			interfaceID == 0x4e2312e0 || // ERC-1155 `ERC1155TokenReceiver` support (i.e. `bytes4(keccak256("onERC1155Received(address,address,uint256,uint256,bytes)")) ^ bytes4(keccak256("onERC1155BatchReceived(address,address,uint256[],uint256[],bytes)"))`).
 			interfaceID == 0x0a417632; // used for checking whether the account is v2 or not
 		if (supported) return true;
-		address payable fallbackHandler = payable(address(uint160(uint(privileges[FALLBACK_HANDLER_SLOT]))));
+		address payable fallbackHandler = payable(address(uint160(uint256(privileges[FALLBACK_HANDLER_SLOT]))));
 		if (fallbackHandler == address(0)) return false;
 		return AmbireAccount(fallbackHandler).supportsInterface(interfaceID);
 	}
@@ -247,6 +236,7 @@ contract AmbireAccount {
 			  ? abi.decode(userOp.callData[4:], (Transaction[]))
 			  : new Transaction[](0);
 
+			// TODO: maybe return SIG_VALIDATION_FAILED on sig fail?
 			validateExternalSig(calls, userOp.signature);
 		} else {
 			address signer = SignatureValidator.recoverAddr(userOpHash, userOp.signature);
@@ -263,8 +253,7 @@ contract AmbireAccount {
 		return 0; // always return 0 as this function doesn't support time based validation
 	}
 
-	function validateExternalSig(Transaction[] memory calls, bytes calldata signature) internal returns(address signerKey, bool shouldExecute) {
-		shouldExecute = true;
+	function validateExternalSig(Transaction[] memory calls, bytes calldata signature) internal returns(address signerKey) {
 		(bytes memory sig, ) = SignatureValidator.splitSignature(signature);
 		address validatorAddr;
 		bytes memory validatorData;
