@@ -1,16 +1,9 @@
 import { ethers } from 'ethers'
 import { AccountOp } from '../accountOp/accountOp'
-import { genericErc20Humanizer, genericErc721Humanizer, tokenParsing } from './modules/tokens'
-import { uniswapHumanizer } from './modules/Uniswap'
-import { wethHumanizer } from './modules/weth'
-import { oneInchHumanizer } from './modules/oneInch'
 import { IrCall, Ir, HumanizerFragment } from './interfaces'
-import { aaveHumanizer } from './modules/Aave'
-import { WALLETModule } from './modules/WALLET'
-import { nameParsing } from './modules/nameParsing'
-import { fallbackHumanizer } from './modules/fallBackHumanizer'
-import { yearnVaultModule } from './modules/yearnTesseractVault'
+
 // @NOTE should we use wrppaer for coingecko(if(apikey){paid coingecko}else{no}?
+// @TODO update deciamls on 0x0 tokens to be 18 always
 // @TOOD add ethercan txns for walletmodule test
 // @TODO humanize signed messages
 // @TODO fix comments from feedback https://github.com/AmbireTech/ambire-common/pull/281
@@ -30,25 +23,13 @@ export function callsToIr(accountOp: AccountOp): Ir {
 
 export function humanize(
   _accountOp: AccountOp,
+  humanizerModules: Function[],
   options?: any
 ): [Ir, Array<Promise<HumanizerFragment | null>>] {
   const accountOp = {
     ..._accountOp,
     calls: _accountOp.calls.map((c) => ({ ...c, to: ethers.getAddress(c.to) }))
   }
-  const humanizerModules: Function[] = [
-    genericErc20Humanizer,
-    genericErc721Humanizer,
-    uniswapHumanizer,
-    wethHumanizer,
-    aaveHumanizer,
-    oneInchHumanizer,
-    WALLETModule,
-    yearnVaultModule,
-    fallbackHumanizer,
-    nameParsing,
-    tokenParsing
-  ]
   let currentIr: Ir = callsToIr(accountOp)
   let asyncOps: any[] = []
   try {
@@ -68,7 +49,7 @@ export const visualizationToText = (call: IrCall, options: any): string => {
   const visualization = call.fullVisualization
   visualization.forEach((v: { [key: string]: any }, i: number) => {
     if (i) text += ' '
-    if (v.type === 'action' || v.type === 'lable') text += `${v.content}`
+    if (v.type === 'action' || v.type === 'label') text += `${v.content}`
     if (v.type === 'address') text += v.name ? `${v.address} (${v.name})` : v.address
     if (v.type === 'token') {
       text += `${v.readbleAmount || v.amount} ${v.symbol ? v.symbol : `${v.address} token`} `

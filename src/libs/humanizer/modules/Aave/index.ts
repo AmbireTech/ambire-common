@@ -1,4 +1,4 @@
-import { getAction, getAddress, getLable } from '../../utils'
+import { getAction, getAddress, getLabel } from '../../utils'
 import { AccountOp } from '../../../accountOp/accountOp'
 import { HumanizerFragment, Ir } from '../../interfaces'
 import { aaveLendingPoolV2 } from './aaveLendingPoolV2'
@@ -22,7 +22,7 @@ export const aaveHumanizer = (
             ...call,
             fullVisualization: [
               getAction('Unknwon action (Aave)'),
-              getLable('to'),
+              getLabel('to'),
               getAddress(call.to)
             ]
           }

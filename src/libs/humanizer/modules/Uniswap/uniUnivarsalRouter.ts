@@ -1,21 +1,12 @@
 import { ethers } from 'ethers'
-import { getAction, getDeadlineText, getLable, getRecipientText, getToken } from '../../utils'
+import { getAction, getDeadlineText, getLabel, getRecipientText, getToken } from '../../utils'
 import { AccountOp } from '../../../accountOp/accountOp'
 import { IrCall } from '../../interfaces'
 import { COMMANDS, COMMANDS_DESCRIPTIONS } from './Commands'
+import { parsePath } from './utils'
 
 const coder = new ethers.AbiCoder()
 
-const parsePath = (pathBytes: any) => {
-  // some decodePacked fun
-  // can we do this with Ethers AbiCoder? probably not
-  const path = []
-  // address, uint24
-  for (let i = 2; i < pathBytes.length; i += 46) {
-    path.push(`0x${pathBytes.substr(i, 40)}`)
-  }
-  return path
-}
 const extractParams = (inputsDetails: any, input: any) => {
   const types = inputsDetails.map((i: any) => i.type)
   const decodedInput = coder.decode(types, input)
@@ -56,7 +47,7 @@ export const uniUniversalRouter = (
             fullVisualization: [
               getAction('Swap'),
               getToken(path[0], params.amountIn),
-              getLable('for at least'),
+              getLabel('for at least'),
               getToken(path[path.length - 1], params.amountOutMin),
               getDeadlineText(deadline)
             ]
@@ -71,7 +62,7 @@ export const uniUniversalRouter = (
             fullVisualization: [
               getAction('Swap up  to'),
               getToken(path[path.length - 1], params.amountInMax),
-              getLable('for'),
+              getLabel('for'),
               getToken(path[0], params.amountOut),
               getDeadlineText(deadline)
             ]
@@ -86,7 +77,7 @@ export const uniUniversalRouter = (
             fullVisualization: [
               getAction('Swap'),
               getToken(path[0], params.amountIn),
-              getLable('for at least'),
+              getLabel('for at least'),
               getToken(path[path.length - 1], params.amountOutMin),
               getDeadlineText(deadline)
             ]
@@ -101,7 +92,7 @@ export const uniUniversalRouter = (
             fullVisualization: [
               getAction('Swap up  to'),
               getToken(path[0], params.amountInMax),
-              getLable('for'),
+              getLabel('for'),
               getToken(path[path.length - 1], params.amountOut),
               getDeadlineText(deadline)
             ]
@@ -110,7 +101,7 @@ export const uniUniversalRouter = (
           parsed.push({
             ...call,
             fullVisualization: [
-              getLable('Approved Uniswap to use the following token via signed message.')
+              getLabel('Approved Uniswap to use the following token via signed message.')
             ]
           })
         } else if (command === COMMANDS.UNWRAP_WETH) {
@@ -124,7 +115,7 @@ export const uniUniversalRouter = (
               ...getRecipientText(accountOp.accountAddr, params.recipient)
             ]
           })
-        } else parsed.push({ ...call, fullVisualization: [getLable('Unknown Uni V3 interaction')] })
+        } else parsed.push({ ...call, fullVisualization: [getLabel('Unknown Uni V3 interaction')] })
       })
 
       return parsed.flat()

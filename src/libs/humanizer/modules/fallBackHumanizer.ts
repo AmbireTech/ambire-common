@@ -2,7 +2,7 @@
 import { ethers } from 'ethers'
 import { AccountOp } from '../../accountOp/accountOp'
 import { HumanizerFragment, Ir } from '../interfaces'
-import { getAction, getAddress, getLable, getToken } from '../utils'
+import { getAction, getAddress, getLabel, getToken } from '../utils'
 
 async function fetchFuncEtherface(
   selector: string,
@@ -70,19 +70,19 @@ export function fallbackHumanizer(
       if (accountOp.humanizerMeta?.[`funcSelectors:${call.data.slice(0, 10)}`]) {
         visualization.push(
           getAction(`Call ${accountOp.humanizerMeta?.[`funcSelectors:${call.data.slice(0, 10)}`]}`),
-          getLable('from'),
+          getLabel('from'),
           getAddress(call.to)
         )
       } else {
         const promise = fetchFuncEtherface(call.data.slice(0, 10), options)
         if (promise) asyncOps.push(promise)
-        visualization.push(getAction('Unknown action'), getLable('to'), getAddress(call.to))
+        visualization.push(getAction('Unknown action'), getLabel('to'), getAddress(call.to))
       }
     }
     if (call.value) {
-      if (call.data !== '0x') visualization.push(getLable('and'))
+      if (call.data !== '0x') visualization.push(getLabel('and'))
       visualization.push(getAction('Send'), getToken(ethers.ZeroAddress, call.value))
-      if (call.data === '0x') visualization.push(getLable('to'), getAddress(call.to))
+      if (call.data === '0x') visualization.push(getLabel('to'), getAddress(call.to))
     }
     return {
       ...call,

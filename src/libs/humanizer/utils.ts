@@ -4,8 +4,8 @@ import { HumanizerFragment } from './interfaces'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { networks } from '../../consts/networks'
 
-export function getLable(content: string) {
-  return { type: 'lable', content }
+export function getLabel(content: string) {
+  return { type: 'label', content }
 }
 export function getAction(content: string) {
   return { type: 'action', content }
@@ -26,7 +26,7 @@ export function getNft(address: string, id: bigint) {
 
 export function getOnBehalfOf(onBehalfOf: string, sender: string, name?: string) {
   return onBehalfOf.toLowerCase() !== sender.toLowerCase()
-    ? [getLable('on befalf of'), getAddress(onBehalfOf, name)]
+    ? [getLabel('on befalf of'), getAddress(onBehalfOf, name)]
     : []
 }
 
@@ -34,17 +34,7 @@ export function getOnBehalfOf(onBehalfOf: string, sender: string, name?: string)
 export function getRecipientText(from: string, recipient: string) {
   return from.toLowerCase() === recipient.toLowerCase()
     ? []
-    : [getLable('and send it to'), getAddress(recipient)]
-}
-export function parsePath(pathBytes: any) {
-  // some decodePacked fun
-  // can we do this with Ethers AbiCoder? probably not
-  const path = []
-  // address, uint24
-  for (let i = 2; i < pathBytes.length; i += 46) {
-    path.push(`0x${pathBytes.substr(i, 40)}`)
-  }
-  return path
+    : [getLabel('and send it to'), getAddress(recipient)]
 }
 
 export function getDeadlineText(deadlineSecs: bigint, mined = false) {
@@ -52,13 +42,13 @@ export function getDeadlineText(deadlineSecs: bigint, mined = false) {
   const minute = 60000
   const deadline = Number(deadlineSecs * 1000n)
   const diff = deadline - Date.now()
-  if (diff < 0 && diff > -minute * 2) return getLable('expired just now')
+  if (diff < 0 && diff > -minute * 2) return getLabel('expired just now')
   // Disabled this: this is a bit of a hack cause we don't want it to show for mined txns
   // we don't really need it for pending ones, simply because we'll show the big error message instead
-  // if (diff < 0) return getLable(`, expired ${Math.floor(-diff / minute)} minutes ago`
-  if (diff < 0) return getLable('already expired')
-  if (diff < minute) return getLable('expires in less than a minute')
-  if (diff < 10 * minute) return getLable(`expires in ${Math.floor(diff / minute)} minutes`)
+  // if (diff < 0) return getLabel(`, expired ${Math.floor(-diff / minute)} minutes ago`
+  if (diff < 0) return getLabel('already expired')
+  if (diff < minute) return getLabel('expires in less than a minute')
+  if (diff < 10 * minute) return getLabel(`expires in ${Math.floor(diff / minute)} minutes`)
   return null
 }
 

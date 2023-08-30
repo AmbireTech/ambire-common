@@ -2,6 +2,21 @@
 // @TODO use for of or for in instead of object.keys().map/.forEach
 // @TODO use type generics instead of any
 // @TODO final review of files and jsons
+// @TODO import produceMemoryStorage from helpers
+
+import {
+  genericErc20Humanizer,
+  genericErc721Humanizer,
+  tokenParsing
+} from '../../libs/humanizer/modules/tokens'
+import { uniswapHumanizer } from '../../libs/humanizer/modules/Uniswap'
+import { wethHumanizer } from '../../libs/humanizer/modules/weth'
+import { aaveHumanizer } from '../../libs/humanizer/modules/Aave'
+import { oneInchHumanizer } from '../../libs/humanizer/modules/oneInch'
+import { WALLETModule } from '../../libs/humanizer/modules/WALLET'
+import { yearnVaultModule } from '../../libs/humanizer/modules/yearnTesseractVault'
+import { fallbackHumanizer } from '../../libs/humanizer/modules/fallBackHumanizer'
+import { nameParsing } from '../../libs/humanizer/modules/nameParsing'
 import { Ir } from '../../libs/humanizer/interfaces'
 import { Storage } from '../../interfaces/storage'
 import { AccountOp } from '../../libs/accountOp/accountOp'
@@ -9,6 +24,19 @@ import { humanize } from '../../libs/humanizer'
 import EventEmitter, { ErrorRef } from '../eventEmitter'
 
 const HUMANIZER_META_KEY = 'HumanizerMeta'
+const humanizerModules: Function[] = [
+  genericErc20Humanizer,
+  genericErc721Humanizer,
+  uniswapHumanizer,
+  wethHumanizer,
+  aaveHumanizer,
+  oneInchHumanizer,
+  WALLETModule,
+  yearnVaultModule,
+  fallbackHumanizer,
+  nameParsing,
+  tokenParsing
+]
 export class HumanizerController extends EventEmitter {
   ir: Ir = { calls: [] }
 
@@ -39,6 +67,7 @@ export class HumanizerController extends EventEmitter {
       const storedHumanizerMeta = await this.#storage.get(HUMANIZER_META_KEY, {})
       const [ir, asyncOps] = humanize(
         { ...accountOp, humanizerMeta: { ...accountOp.humanizerMeta, ...storedHumanizerMeta } },
+        humanizerModules,
         { fetch: this.#fetch, emitError: this.wrappedEemitError }
       )
       this.ir = ir

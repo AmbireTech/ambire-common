@@ -9,6 +9,7 @@ import { AccountOp } from '../../libs/accountOp/accountOp'
 
 const HUMANIZER_META_KEY = 'HumanizerMeta'
 
+// @TODO import from helpers
 export function produceMemoryStore(): Storage {
   const storage = new Map()
   return {
@@ -24,7 +25,6 @@ export function produceMemoryStore(): Storage {
 }
 
 const humanizerMeta = humanizerJSON
-
 const accountOp: AccountOp = {
   accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
   networkId: '1',
@@ -208,7 +208,7 @@ describe('HumanizerController', () => {
           address: '0x0000000000000000000000000000000000000000',
           amount: 1000000000000000000n
         },
-        { type: 'lable', content: 'to' },
+        { type: 'label', content: 'to' },
         {
           type: 'address',
           address: '0xc4Ce03B36F057591B2a360d773eDB9896255051e'
@@ -216,13 +216,13 @@ describe('HumanizerController', () => {
       ],
       [
         { type: 'action', content: 'Grant approval' },
-        { type: 'lable', content: 'for' },
+        { type: 'label', content: 'for' },
         {
           type: 'nft',
           address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2'
           // id: 115792089237316195423570985008687907853269984665640564039457584007913129639935n
         },
-        { type: 'lable', content: 'to' },
+        { type: 'label', content: 'to' },
         {
           type: 'address',
           address: '0xE5c783EE536cf5E63E792988335c4255169be4E1',
@@ -247,7 +247,7 @@ describe('HumanizerController', () => {
   test('unknown func selector humanize with asyncop', async () => {
     const expectedVisualizations = [
       { type: 'action', content: 'Call buy(uint256)' },
-      { type: 'lable', content: 'from' },
+      { type: 'label', content: 'from' },
       {
         type: 'address',
         address: '0x519856887AF544De7e67f51A4F2271521b01432b'

@@ -2,7 +2,7 @@
 import { ethers, getAddress } from 'ethers'
 import { AccountOp } from 'libs/accountOp/accountOp'
 import { HumanizerFragment, Ir, IrCall } from '../interfaces'
-import { getAction, getLable, getToken } from '../utils'
+import { getAction, getLabel, getToken } from '../utils'
 
 const parseZeroAddressIfNeeded = (address: string) => {
   return address.toLowerCase() === '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee'
@@ -19,7 +19,7 @@ const OneInchMapping = (humanizerInfo: any) => {
       return [
         getAction('Swap'),
         getToken(parseZeroAddressIfNeeded(desc.srcToken), desc.amount),
-        getLable('for at least'),
+        getLabel('for at least'),
         getToken(parseZeroAddressIfNeeded(desc.dstToken), desc.minReturnAmount)
       ]
     },
@@ -29,7 +29,7 @@ const OneInchMapping = (humanizerInfo: any) => {
       return [
         getAction('Swap'),
         getToken(parseZeroAddressIfNeeded(srcToken), amount),
-        getLable('for at least'),
+        getLabel('for at least'),
         // @TODO not correct look at next comment
         getToken(parseZeroAddressIfNeeded(ethers.ZeroAddress), minReturn)
         // @TODO no idea what this is, ask Lubo (taken from ambire wallet)
@@ -99,7 +99,7 @@ export const oneInchHumanizer = (
             ...call,
             fullVisualization: [
               getAction('Unknown action (1inch)'),
-              getLable('to'),
+              getLabel('to'),
               getAddress(call.to)
             ]
           })

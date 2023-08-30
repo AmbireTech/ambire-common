@@ -6,12 +6,31 @@ import { AccountOp } from '../accountOp/accountOp'
 import { callsToIr, humanize, visualizationToText } from '.'
 
 import { uniswapHumanizer } from './modules/Uniswap'
-import { HumanizerFragment, Ir, IrCall } from './interfaces'
+import { Ir, IrCall } from './interfaces'
 import { wethHumanizer } from './modules/weth'
 import { aaveHumanizer } from './modules/Aave'
 import { yearnVaultModule } from './modules/yearnTesseractVault'
+import { genericErc20Humanizer, genericErc721Humanizer, tokenParsing } from './modules/tokens'
+import { oneInchHumanizer } from './modules/oneInch'
+import { WALLETModule } from './modules/WALLET'
+import { fallbackHumanizer } from './modules/fallBackHumanizer'
+import { nameParsing } from './modules/nameParsing'
 
 const humanizerInfo = require('../../consts/humanizerInfo.json')
+
+const humanizerModules: Function[] = [
+  genericErc20Humanizer,
+  genericErc721Humanizer,
+  uniswapHumanizer,
+  wethHumanizer,
+  aaveHumanizer,
+  oneInchHumanizer,
+  WALLETModule,
+  yearnVaultModule,
+  fallbackHumanizer,
+  nameParsing,
+  tokenParsing
+]
 
 const accountOp: AccountOp = {
   accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
@@ -164,16 +183,16 @@ describe('module tests', () => {
       .map((key: string) => transactions[key])
       .flat()
     accountOp.calls = allCalls
-    let [ir, asyncOps] = humanize(accountOp, standartOptions)
+    let [ir, asyncOps] = humanize(accountOp, humanizerModules, standartOptions)
     ;(await Promise.all(asyncOps)).forEach((a) => {
       if (a) accountOp.humanizerMeta = { ...accountOp.humanizerMeta, [a.key]: a.value }
     })
-    ;[ir, asyncOps] = humanize(accountOp, standartOptions)
+    ;[ir, asyncOps] = humanize(accountOp, humanizerModules, standartOptions)
     const fragments = (await Promise.all(asyncOps)).filter((f) => f)
     fragments.forEach((f) => {
       if (f) accountOp.humanizerMeta = { ...accountOp.humanizerMeta, [f.key]: f.value }
     })
-    ;[ir, asyncOps] = humanize(accountOp, standartOptions)
+    ;[ir, asyncOps] = humanize(accountOp, humanizerModules, standartOptions)
 
     const res = ir.calls.map((call: IrCall) => visualizationToText(call, standartOptions))
     expectedTexification.forEach((et: string, i: number) => expect(et).toEqual(res[i]))
@@ -187,18 +206,18 @@ describe('module tests', () => {
           address: '0x8a3C710E41cD95799C535f22DBaE371D7C858651',
           amount: 50844919041919270406243n
         },
-        { type: 'lable', content: 'for at least' },
+        { type: 'label', content: 'for at least' },
         {
           type: 'token',
           address: '0x0000000000000000000000000000000000000000',
           amount: 137930462904193673n
         },
-        { type: 'lable', content: 'and send it to' },
+        { type: 'label', content: 'and send it to' },
         {
           type: 'address',
           address: '0x0000000000000000000000000000000000000000'
         },
-        { type: 'lable', content: 'already expired' }
+        { type: 'label', content: 'already expired' }
       ],
       [
         { type: 'action', content: 'Swap' },
@@ -207,18 +226,18 @@ describe('module tests', () => {
           address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
           amount: 941000000000000000n
         },
-        { type: 'lable', content: 'for at least' },
+        { type: 'label', content: 'for at least' },
         {
           type: 'token',
           address: '0x6E975115250B05C828ecb8edeDb091975Fc20a5d',
           amount: 5158707941840645403045n
         },
-        { type: 'lable', content: 'and send it to' },
+        { type: 'label', content: 'and send it to' },
         {
           type: 'address',
           address: '0xbb6C8c037b9Cc3bF1a4C4188d92e5D86bfCE76A8'
         },
-        { type: 'lable', content: 'already expired' }
+        { type: 'label', content: 'already expired' }
       ],
       [
         { type: 'action', content: 'Swap' },
@@ -227,18 +246,18 @@ describe('module tests', () => {
           address: '0xebB82c932759B515B2efc1CfBB6BF2F6dbaCe404',
           amount: 422775565331912310692n
         },
-        { type: 'lable', content: 'for at least' },
+        { type: 'label', content: 'for at least' },
         {
           type: 'token',
           address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
           amount: 2454922038n
         },
-        { type: 'lable', content: 'and send it to' },
+        { type: 'label', content: 'and send it to' },
         {
           type: 'address',
           address: '0xca124B356bf11dc153B886ECB4596B5cb9395C41'
         },
-        { type: 'lable', content: 'already expired' }
+        { type: 'label', content: 'already expired' }
       ],
       [
         { type: 'action', content: 'Swap up to' },
@@ -247,18 +266,18 @@ describe('module tests', () => {
           address: '0x6E975115250B05C828ecb8edeDb091975Fc20a5d',
           amount: 4825320403256397423633n
         },
-        { type: 'lable', content: 'for' },
+        { type: 'label', content: 'for' },
         {
           type: 'token',
           address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
           amount: 941000000000000000n
         },
-        { type: 'lable', content: 'and send it to' },
+        { type: 'label', content: 'and send it to' },
         {
           type: 'address',
           address: '0xbb6C8c037b9Cc3bF1a4C4188d92e5D86bfCE76A8'
         },
-        { type: 'lable', content: 'already expired' }
+        { type: 'label', content: 'already expired' }
       ]
     ]
     accountOp.calls = [...transactions.uniV3]

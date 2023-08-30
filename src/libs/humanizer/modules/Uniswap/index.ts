@@ -4,7 +4,7 @@ import { HumanizerFragment, Ir, IrCall } from '../../interfaces'
 import { uniUniversalRouter } from './uniUnivarsalRouter'
 import { uniV2Mapping } from './uniV2'
 import { uniV32Mapping, uniV3Mapping } from './uniV3'
-import { getAction, getLable } from '../../utils'
+import { getAction, getLabel } from '../../utils'
 
 const WETH_ADDRESS = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2'
 
@@ -84,7 +84,7 @@ export function uniswapHumanizer(
           ...call,
           fullVisualization: [
             getAction('Unknown action (Uniswap)'),
-            getLable('to'),
+            getLabel('to'),
             getAddress(call.to)
           ]
         })

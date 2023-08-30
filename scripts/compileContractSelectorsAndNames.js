@@ -8,7 +8,7 @@ const fsPromises = require('fs').promises
 
 const path = require('path')
 
-const infoSourcePath = path.join(__dirname, '..', 'contracts', 'dappAddressList.json')
+const infoSourcePath = path.join(__dirname, '..', 'src', 'consts', 'dappAddressList.json')
 const dappSelectorsPath = path.join(__dirname, '..', 'src', 'consts', 'dappSelectors.json')
 const dappNamesPath = path.join(__dirname, '..', 'src', 'consts', 'dappNames.json')
 

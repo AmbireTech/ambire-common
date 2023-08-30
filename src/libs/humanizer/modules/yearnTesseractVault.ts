@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-shadow */
 import { ethers } from 'ethers'
 import { HumanizerFragment, Ir, IrCall } from '../interfaces'
-import { getAddress, getAction, getLable, getToken } from '../utils'
+import { getAddress, getAction, getLabel, getToken } from '../utils'
 import { AccountOp } from '../../accountOp/accountOp'
 
 // @TODO check in network and humanizetv
@@ -31,7 +31,7 @@ export const yearnVaultModule = (
       return [
         getAction('Deposit'),
         getToken(vaultInfo.baseToken, amount),
-        getLable('to'),
+        getLabel('to'),
         getAddress(vaultInfo.addr)
       ]
     },
@@ -45,7 +45,7 @@ export const yearnVaultModule = (
       return [
         getAction('Withdraw'),
         getToken(vaultInfo.baseToken, amount),
-        getLable('from'),
+        getLabel('from'),
         getAddress(vaultInfo.addr)
       ]
     },
@@ -59,7 +59,7 @@ export const yearnVaultModule = (
       return [
         getAction('Withdraw'),
         getToken(vaultInfo.baseToken, maxShares),
-        getLable('from'),
+        getLabel('from'),
         getAddress(vaultInfo.addr)
       ]
     },
@@ -73,7 +73,7 @@ export const yearnVaultModule = (
       return [
         getAction('Approve'),
         getAddress(to),
-        getLable('for'),
+        getLabel('for'),
         getToken(vaultInfo.baseToken, amount)
       ]
     }
@@ -101,7 +101,7 @@ export const yearnVaultModule = (
             : v
         )
       } else {
-        visualization = [getAction('Unknown action (yearn)'), getLable('to'), getAddress(call.to)]
+        visualization = [getAction('Unknown action (yearn)'), getLabel('to'), getAddress(call.to)]
       }
 
       newCalls.push({ ...call, fullVisualization: visualization })

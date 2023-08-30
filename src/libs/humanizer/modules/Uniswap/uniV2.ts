@@ -1,5 +1,5 @@
 import { ethers } from 'ethers'
-import { getAction, getLable, getToken, getRecipientText, getDeadlineText } from '../../utils'
+import { getAction, getLabel, getToken, getRecipientText, getDeadlineText } from '../../utils'
 
 import { AccountOp } from '../../../accountOp/accountOp'
 import { IrCall } from '../../interfaces'
@@ -23,7 +23,7 @@ const uniV2Mapping = (
           fullVisualization: [
             getAction('Swap'),
             getToken(path[0], amountIn),
-            getLable('for at least'),
+            getLabel('for at least'),
             getToken(outputAsset, amountOutMin),
             ...getRecipientText(accountOp.accountAddr, to),
             getDeadlineText(deadline)
@@ -42,9 +42,9 @@ const uniV2Mapping = (
           ...call,
           fullVisualization: [
             getAction('Swap'),
-            getLable('up to'),
+            getLabel('up to'),
             getToken(path[0], amountInMax),
-            getLable('for at least'),
+            getLabel('for at least'),
             getToken(outputAsset, amountOut),
             ...getRecipientText(accountOp.accountAddr, to),
             getDeadlineText(deadline)
@@ -65,7 +65,7 @@ const uniV2Mapping = (
           fullVisualization: [
             getAction('Swap'),
             getToken(ethers.ZeroAddress, value),
-            getLable('for at least'),
+            getLabel('for at least'),
             getToken(outputAsset, amountOutMin),
             ...getRecipientText(accountOp.accountAddr, to),
             getDeadlineText(deadline)
@@ -83,9 +83,9 @@ const uniV2Mapping = (
           ...call,
           fullVisualization: [
             getAction('Swap'),
-            getLable('up to'),
+            getLabel('up to'),
             getToken(path[0], amountInMax),
-            getLable('for at least'),
+            getLabel('for at least'),
             getToken(ethers.ZeroAddress, amountOut),
             ...getRecipientText(accountOp.accountAddr, to),
             getDeadlineText(deadline)
@@ -104,7 +104,7 @@ const uniV2Mapping = (
           fullVisualization: [
             getAction('Swap'),
             getToken(path[0], amountIn),
-            getLable('for at least'),
+            getLabel('for at least'),
             getToken(ethers.ZeroAddress, amountOutMin),
             ...getRecipientText(accountOp.accountAddr, to),
             getDeadlineText(deadline)
@@ -124,9 +124,9 @@ const uniV2Mapping = (
           ...call,
           fullVisualization: [
             getAction('Swap'),
-            getLable('up to'),
+            getLabel('up to'),
             getToken(ethers.ZeroAddress, value),
-            getLable('for at least'),
+            getLabel('for at least'),
             getToken(outputAsset, amountOut),
             ...getRecipientText(accountOp.accountAddr, to),
             getDeadlineText(deadline)
@@ -155,7 +155,7 @@ const uniV2Mapping = (
           fullVisualization: [
             getAction('Add liquidity'),
             getToken(tokenA, amountADesired),
-            getLable('and'),
+            getLabel('and'),
             getToken(tokenB, amountBDesired),
             ...getRecipientText(accountOp.accountAddr, to),
             getDeadlineText(deadline)
@@ -176,7 +176,7 @@ const uniV2Mapping = (
           fullVisualization: [
             getAction('Add liquidity'),
             getToken(token, amountTokenDesired),
-            getLable('and'),
+            getLabel('and'),
             getToken(ethers.ZeroAddress, value),
             ...getRecipientText(accountOp.accountAddr, to),
             getDeadlineText(deadline)
@@ -195,9 +195,9 @@ const uniV2Mapping = (
           ...call,
           fullVisualization: [
             getAction('Remove liquidity'),
-            getLable('at least'),
+            getLabel('at least'),
             getToken(tokenA, amountAMin),
-            getLable('and'),
+            getLabel('and'),
             getToken(tokenB, amountBMin),
             ...getRecipientText(accountOp.accountAddr, to),
             getDeadlineText(deadline)
@@ -216,9 +216,9 @@ const uniV2Mapping = (
           ...call,
           fullVisualization: [
             getAction('Remove liquidity'),
-            getLable('at least'),
+            getLabel('at least'),
             getToken(token, amountTokenMin),
-            getLable('and'),
+            getLabel('and'),
             getToken(ethers.ZeroAddress, amountETHMin),
             ...getRecipientText(accountOp.accountAddr, to),
             getDeadlineText(deadline)

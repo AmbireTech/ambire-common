@@ -1,5 +1,5 @@
 import { ethers, getAddress } from 'ethers'
-import { getAction, getLable, getToken } from '../../utils'
+import { getAction, getLabel, getToken } from '../../utils'
 import { AccountOp } from '../../../accountOp/accountOp'
 import { IrCall } from '../../interfaces'
 
@@ -29,7 +29,7 @@ export const WALLETStakingPool = (humanizerInfo: any) => {
         getAction('Deposit'),
         // @TODO add names to getToken function
         getToken(STAKING_POOLS[call.to].baseToken, amount),
-        getLable('to'),
+        getLabel('to'),
         // @TODO add name of staking pool to get address
         getAddress(call.to)
       ]
@@ -42,7 +42,7 @@ export const WALLETStakingPool = (humanizerInfo: any) => {
       return [
         getAction('Withdraw'),
         getToken(call.to, shares),
-        getLable('from'),
+        getLabel('from'),
         getAddress(STAKING_POOLS[call.to].baseToken)
       ]
     },
@@ -53,7 +53,7 @@ export const WALLETStakingPool = (humanizerInfo: any) => {
       return [
         getAction('Rage leave'),
         getToken(call.to, shares),
-        getLable('to'),
+        getLabel('to'),
         getAddress(STAKING_POOLS[call.to].baseToken)
       ]
     }

@@ -1,6 +1,6 @@
 import { ethers } from 'ethers'
 import { AccountOp } from 'libs/accountOp/accountOp'
-import { getLable, getAction, getAddress, getNft, getToken, getTokenInfo } from '../utils'
+import { getLabel, getAction, getAddress, getNft, getToken, getTokenInfo } from '../utils'
 import { Ir, IrCall } from '../interfaces'
 import { NetworkId } from '../../../interfaces/networkDescriptor'
 // @TODO move it to consts files
@@ -20,13 +20,13 @@ export function genericErc721Humanizer(
   const nftTransferVisualization = (call: IrCall) => {
     const args = iface.parseTransaction(call)?.args.toArray() || []
     return args[0] === accountOp.accountAddr
-      ? [getAction('Transfer'), getNft(call.to, args[2]), getLable('to'), getAddress(args[1])]
+      ? [getAction('Transfer'), getNft(call.to, args[2]), getLabel('to'), getAddress(args[1])]
       : [
           getAction('Transfer'),
           getNft(call.to, args[2]),
-          getLable('from'),
+          getLabel('from'),
           getAddress(args[0]),
-          getLable('to'),
+          getLabel('to'),
           getAddress(args[1])
         ]
   }
@@ -34,12 +34,12 @@ export function genericErc721Humanizer(
     [`${iface.getFunction('approve')?.selector}`]: (call: IrCall) => {
       const args = iface.parseTransaction(call)?.args.toArray() || []
       return args[0] === ethers.ZeroAddress
-        ? [getAction('Revoke approval'), getLable('for'), getNft(call.to, args[1])]
+        ? [getAction('Revoke approval'), getLabel('for'), getNft(call.to, args[1])]
         : [
             getAction('Grant approval'),
-            getLable('for'),
+            getLabel('for'),
             getNft(call.to, args[1]),
-            getLable('to'),
+            getLabel('to'),
             getAddress(args[0])
           ]
     },
@@ -48,12 +48,12 @@ export function genericErc721Humanizer(
       return args[1]
         ? [
             getAction('Grant approval'),
-            getLable('for all nfts'),
+            getLabel('for all nfts'),
             getNft(call.to, args[1]),
-            getLable('to'),
+            getLabel('to'),
             getAddress(args[0])
           ]
-        : [getAction('Revoke approval'), getLable('for all nfts'), getAddress(args[0])]
+        : [getAction('Revoke approval'), getLabel('for all nfts'), getAddress(args[0])]
     },
     // not in tests
     [`${iface.getFunction('safeTransferFrom', ['address', 'address', 'uint256'])?.selector}`]:
@@ -92,13 +92,13 @@ export function genericErc20Humanizer(
         ? [
             getAction('Grant approval'),
             getToken(call.to, args[1]),
-            getLable('to'),
+            getLabel('to'),
             getAddress(args[0])
           ]
         : [
             getAction('Revoke approval'),
             getToken(call.to, args[1]),
-            getLable('for'),
+            getLabel('for'),
             getAddress(args[0])
           ]
     },
@@ -107,7 +107,7 @@ export function genericErc20Humanizer(
       return [
         getAction('Transfer'),
         getToken(call.to, args[1]),
-        getLable('to'),
+        getLabel('to'),
         getAddress(args[0])
       ]
     },
@@ -117,7 +117,7 @@ export function genericErc20Humanizer(
         return [
           getAction('Transfer'),
           getToken(call.to, args[2]),
-          getLable('to'),
+          getLabel('to'),
           getAddress(args[1])
         ]
       }
@@ -125,16 +125,16 @@ export function genericErc20Humanizer(
         return [
           getAction('Take'),
           getToken(call.to, args[2]),
-          getLable('from'),
+          getLabel('from'),
           getAddress(args[0])
         ]
       }
       return [
         getAction('Move'),
         getToken(call.to, args[2]),
-        getLable('from'),
+        getLabel('from'),
         getAddress(args[0]),
-        getLable('to'),
+        getLabel('to'),
         getAddress(args[1])
       ]
     }
@@ -155,7 +155,7 @@ export function genericErc20Humanizer(
         ...call,
         fullVisualization: [
           getAction('Unknown action (erc20)'),
-          getLable('to'),
+          getLabel('to'),
           getAddress(call.to)
         ]
       }

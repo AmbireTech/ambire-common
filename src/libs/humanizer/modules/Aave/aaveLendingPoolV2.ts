@@ -1,5 +1,5 @@
 import { ethers } from 'ethers'
-import { getAction, getLable, getToken, getOnBehalfOf } from '../../utils'
+import { getAction, getLabel, getToken, getOnBehalfOf } from '../../utils'
 import { AccountOp } from '../../../accountOp/accountOp'
 import { IrCall } from '../../interfaces'
 
@@ -11,7 +11,7 @@ export const aaveLendingPoolV2 = (humanizerInfo: any): { [key: string]: Function
       return [
         getAction('Deposit'),
         getToken(asset, amount),
-        getLable('to Aave lending pool'),
+        getLabel('to Aave lending pool'),
         ...getOnBehalfOf(onBehalf, accountOp.accountAddr)
       ]
     },
@@ -20,7 +20,7 @@ export const aaveLendingPoolV2 = (humanizerInfo: any): { [key: string]: Function
       return [
         getAction('Withdraw'),
         getToken(asset, amount),
-        getLable('from Aave lending pool'),
+        getLabel('from Aave lending pool'),
         ...getOnBehalfOf(onBehalf, accountOp.accountAddr)
       ]
     },
@@ -29,13 +29,13 @@ export const aaveLendingPoolV2 = (humanizerInfo: any): { [key: string]: Function
       return [
         getAction('Repay'),
         getToken(asset, amount),
-        getLable('to Aave lending pool'),
+        getLabel('to Aave lending pool'),
         ...getOnBehalfOf(onBehalf, accountOp.accountAddr)
       ]
     },
     [`${iface.getFunction('borrow')?.selector}`]: (accountOp: AccountOp, call: IrCall) => {
       const [asset, amount] = iface.parseTransaction(call)?.args || []
-      return [getAction('Borrow'), getToken(asset, amount), getLable('from Aave lending pool')]
+      return [getAction('Borrow'), getToken(asset, amount), getLabel('from Aave lending pool')]
     }
   }
   return matcher

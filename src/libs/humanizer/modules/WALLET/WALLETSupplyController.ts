@@ -1,7 +1,7 @@
 import { ethers } from 'ethers'
 // @TODO fix imports
 import { IrCall } from '../../interfaces'
-import { getAction, getLable } from '../../utils'
+import { getAction, getLabel } from '../../utils'
 import { AccountOp } from '../../../accountOp/accountOp'
 import WALLETSupplyControllerABI from '../../../../../contracts/compiled/WALLETSupplyController.json'
 
@@ -15,7 +15,7 @@ export const WALLETSupplyControllerMapping = (humanizerMeta: any) => {
       const { toBurnBps } = iface.parseTransaction(call)!.args
       const burnPercentage = toBurnBps.toString() / 100
       return burnPercentage > 0
-        ? [getAction('Claim rewards'), getLable(`with ${burnPercentage}% burn`)]
+        ? [getAction('Claim rewards'), getLabel(`with ${burnPercentage}% burn`)]
         : [getAction('Claim rewards')]
     },
     [`${iface.getFunction('claimWithRootUpdate')?.selector}`]: (
@@ -26,7 +26,7 @@ export const WALLETSupplyControllerMapping = (humanizerMeta: any) => {
       const burnPercentage = toBurnBps.toString() / 100
 
       return burnPercentage > 0
-        ? [getAction('Claim rewards'), getLable(`with ${burnPercentage}% burn`)]
+        ? [getAction('Claim rewards'), getLabel(`with ${burnPercentage}% burn`)]
         : [getAction('Claim rewards')]
     },
     // eslint-disable-next-line @typescript-eslint/no-unused-vars

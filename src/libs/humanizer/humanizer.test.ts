@@ -253,12 +253,12 @@ describe('module tests', () => {
           address: '0x88800092fF476844f74dC2FC427974BBee2794Ae',
           amount: 1000000000000000000000n
         },
-        { type: 'lable', content: 'for at least' },
+        { type: 'label', content: 'for at least' },
         {
           type: 'token',
           address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'
         },
-        { type: 'lable', content: 'already expired' }
+        { type: 'label', content: 'already expired' }
       ],
       [
         { type: 'action', content: 'Swap up to' },
@@ -266,12 +266,12 @@ describe('module tests', () => {
           type: 'token',
           address: '0xADE00C28244d5CE17D72E40330B1c318cD12B7c3'
         },
-        { type: 'lable', content: 'for' },
+        { type: 'label', content: 'for' },
         {
           type: 'token',
           address: '0x6B175474E89094C44Da98b954EedeAC495271d0F'
         },
-        { type: 'lable', content: 'already expired' }
+        { type: 'label', content: 'already expired' }
       ],
       [
         { type: 'action', content: 'Swap up to' },
@@ -279,17 +279,17 @@ describe('module tests', () => {
           type: 'token',
           address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2'
         },
-        { type: 'lable', content: 'for' },
+        { type: 'label', content: 'for' },
         {
           type: 'token',
           address: '0x046EeE2cc3188071C02BfC1745A6b17c656e3f3d'
         },
-        { type: 'lable', content: 'and send it to' },
+        { type: 'label', content: 'and send it to' },
         {
           type: 'address',
           address: '0x5a5Be6b067d6B5B018adBCD27EE6972105B3b400'
         },
-        { type: 'lable', content: 'already expired' }
+        { type: 'label', content: 'already expired' }
       ],
       [{ type: 'action', content: 'Refund' }]
     ]

@@ -1,16 +1,16 @@
 import { ethers } from 'ethers'
 import {
   getAction,
-  getLable,
+  getLabel,
   getToken,
   getRecipientText,
-  parsePath,
   getAddress,
   getDeadlineText
 } from '../../utils'
 
 import { AccountOp } from '../../../accountOp/accountOp'
 import { IrCall } from '../../interfaces'
+import { parsePath } from './utils'
 
 // Stolen from ambire-wallet
 const uniV32Mapping = (
@@ -44,7 +44,7 @@ const uniV32Mapping = (
         .filter((x: any) => x)
       return parsed.length
         ? parsed
-        : [{ ...call, fullVisualization: [getLable('Unknown Uni V3 interaction')] }]
+        : [{ ...call, fullVisualization: [getLabel('Unknown Uni V3 interaction')] }]
     },
     // 0xac9650d8
     [`${ifaceV32.getFunction('multicall(bytes[])')?.selector}`]: (
@@ -65,7 +65,7 @@ const uniV32Mapping = (
         .filter((x: any) => x)
       return parsed.length
         ? parsed
-        : [{ ...call, fullVisualization: [getLable('Unknown Uni V3 interaction')] }]
+        : [{ ...call, fullVisualization: [getLabel('Unknown Uni V3 interaction')] }]
     },
     // bytes32 is prevBlockHash
     // 0x1f0464d1
@@ -88,7 +88,7 @@ const uniV32Mapping = (
             ...newCall,
             fullVisualization: [
               ...newCall.fullVisualization,
-              getLable(`after block ${prevBlockHash}`)
+              getLabel(`after block ${prevBlockHash}`)
             ]
           }
         })
@@ -100,8 +100,8 @@ const uniV32Mapping = (
             {
               ...call,
               fullVisualization: [
-                getLable('Unknown Uni V3 interaction'),
-                getLable(`after block ${prevBlockHash}`)
+                getLabel('Unknown Uni V3 interaction'),
+                getLabel(`after block ${prevBlockHash}`)
               ]
             }
           ]
@@ -120,7 +120,7 @@ const uniV32Mapping = (
           fullVisualization: [
             getAction('Swap'),
             getToken(params.tokenIn, params.amountIn),
-            getLable('for at least'),
+            getLabel('for at least'),
             getToken(params.tokenOut, params.amountOutMin),
             ...getRecipientText(accountOp.accountAddr, params.recipient)
           ]
@@ -140,7 +140,7 @@ const uniV32Mapping = (
           fullVisualization: [
             getAction('Swap'),
             getToken(path[0], params.amountIn),
-            getLable('for at least'),
+            getLabel('for at least'),
             getToken(path[path.length - 1], params.amountOutMinimum),
             ...getRecipientText(accountOp.accountAddr, params.recipient)
           ]
@@ -159,7 +159,7 @@ const uniV32Mapping = (
           fullVisualization: [
             getAction('Swap up to'),
             getToken(params.tokenIn, params.amountInMaximum),
-            getLable('for'),
+            getLabel('for'),
             getToken(params.tokenOut, params.amountOut),
             ...getRecipientText(accountOp.accountAddr, params.recipient)
           ]
@@ -179,7 +179,7 @@ const uniV32Mapping = (
           fullVisualization: [
             getAction('Swap up to'),
             getToken(path[path.length - 1], params.amountInMaximum),
-            getLable('for'),
+            getLabel('for'),
             getToken(path[0], params.amountOut),
             ...getRecipientText(accountOp.accountAddr, params.recipient)
           ]
@@ -198,7 +198,7 @@ const uniV32Mapping = (
           fullVisualization: [
             getAction('Swap up to'),
             getToken(path[0], amountInMax),
-            getLable('for'),
+            getLabel('for'),
             getToken(path[path.length - 1], amountOut),
             ...getRecipientText(accountOp.accountAddr, to)
           ]
@@ -217,7 +217,7 @@ const uniV32Mapping = (
           fullVisualization: [
             getAction('Swap'),
             getToken(path[0], amountIn),
-            getLable('for at least'),
+            getLabel('for at least'),
             getToken(path[path.length - 1], amountOutMin),
             ...getRecipientText(accountOp.accountAddr, to)
           ]
@@ -235,7 +235,7 @@ const uniV32Mapping = (
           ...call,
           fullVisualization: [
             getAction('Unwrap'),
-            getLable('at least'),
+            getLabel('at least'),
             getToken(ethers.ZeroAddress, amountMin)
           ]
         }
@@ -253,7 +253,7 @@ const uniV32Mapping = (
           ...call,
           fullVisualization: [
             getAction('Unwrap'),
-            getLable('at least'),
+            getLabel('at least'),
             getToken(ethers.ZeroAddress, amountMin),
             ...getRecipientText(accountOp.accountAddr, recipient)
           ]
@@ -271,7 +271,7 @@ const uniV32Mapping = (
           ...call,
           fullVisualization: [
             getAction('Sweep'),
-            getLable('at least'),
+            getLabel('at least'),
             getToken(token, amountMinimum)
           ]
         }
@@ -288,7 +288,7 @@ const uniV32Mapping = (
           ...call,
           fullVisualization: [
             getAction('Sweep'),
-            getLable('at least'),
+            getLabel('at least'),
             getToken(token, amountMinimum),
             ...getRecipientText(accountOp.accountAddr, recipient)
           ]
@@ -307,11 +307,11 @@ const uniV32Mapping = (
           ...call,
           fullVisualization: [
             getAction('Sweep'),
-            getLable('at least'),
+            getLabel('at least'),
             getToken(token, amountMinimum),
-            getLable('with fee'),
+            getLabel('with fee'),
             getToken(token, feeBips),
-            getLable('to'),
+            getLabel('to'),
             getAddress(feeRecipient)
           ]
         }
@@ -328,11 +328,11 @@ const uniV32Mapping = (
           ...call,
           fullVisualization: [
             getAction('Sweep'),
-            getLable('at least'),
+            getLabel('at least'),
             getToken(token, amountMinimum),
-            getLable('with fee'),
+            getLabel('with fee'),
             getToken(token, feeBips),
-            getLable('to'),
+            getLabel('to'),
             getAddress(feeRecipient),
             ...getRecipientText(accountOp.accountAddr, recipient)
           ]
@@ -367,7 +367,7 @@ const uniV3Mapping = (
         .filter((x: any) => x)
       return parsed.length
         ? parsed
-        : [{ ...call, fullVisualization: [getLable('Unknown Uni V3 interaction')] }]
+        : [{ ...call, fullVisualization: [getLabel('Unknown Uni V3 interaction')] }]
     },
     // NOTE: selfPermit is not supported cause it requires an ecrecover signature
     // 0x414bf389
@@ -383,7 +383,7 @@ const uniV3Mapping = (
           fullVisualization: [
             getAction('Swap'),
             getToken(params.tokenIn, params.amountIn),
-            getLable('for at least'),
+            getLabel('for at least'),
             getToken(params.tokenOut, params.amountOutMinimum),
             ...getRecipientText(accountOp.accountAddr, params.recipient),
             getDeadlineText(params.deadline)
@@ -404,7 +404,7 @@ const uniV3Mapping = (
           fullVisualization: [
             getAction('Swap'),
             getToken(path[0], params.amountIn),
-            getLable('for at least'),
+            getLabel('for at least'),
             getToken(path[path.length - 1], params.amountOutMinimum),
             ...getRecipientText(accountOp.accountAddr, params.recipient),
             getDeadlineText(params.deadline)
@@ -424,7 +424,7 @@ const uniV3Mapping = (
           fullVisualization: [
             getAction('Swap up to'),
             getToken(params.tokenIn, params.amountInMaximum),
-            getLable('for'),
+            getLabel('for'),
             getToken(params.tokenOut, params.amountOut),
             ...getRecipientText(accountOp.accountAddr, params.recipient),
             getDeadlineText(params.deadline)
@@ -445,7 +445,7 @@ const uniV3Mapping = (
           fullVisualization: [
             getAction('Swap up to'),
             getToken(path[path.length - 1], params.amountInMaximum),
-            getLable('for'),
+            getLabel('for'),
             getToken(path[0], params.amountOut),
             ...getRecipientText(accountOp.accountAddr, params.recipient),
             getDeadlineText(params.deadline)
@@ -464,7 +464,7 @@ const uniV3Mapping = (
           ...call,
           fullVisualization: [
             getAction('Unwrap'),
-            getLable('at least'),
+            getLabel('at least'),
             getToken(ethers.ZeroAddress, amountMin),
             ...getRecipientText(accountOp.accountAddr, recipient)
           ]
@@ -483,11 +483,11 @@ const uniV3Mapping = (
           ...call,
           fullVisualization: [
             getAction('Unwrap'),
-            getLable('at least'),
+            getLabel('at least'),
             getToken(ethers.ZeroAddress, amountMin),
-            getLable('with fee'),
+            getLabel('with fee'),
             getToken(ethers.ZeroAddress, feeBips),
-            getLable('to'),
+            getLabel('to'),
             getAddress(feeRecipient),
             ...getRecipientText(accountOp.accountAddr, recipient)
           ]

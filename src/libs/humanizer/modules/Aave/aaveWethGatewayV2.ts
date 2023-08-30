@@ -1,6 +1,6 @@
 import { ethers } from 'ethers'
 import { IrCall } from '../../interfaces'
-import { getAction, getOnBehalfOf, getToken, getLable } from '../../utils'
+import { getAction, getOnBehalfOf, getToken, getLabel } from '../../utils'
 import { AccountOp } from '../../../accountOp/accountOp'
 
 export const aaveWethGatewayV2 = (humanizerInfo: any): { [key: string]: Function } => {
@@ -11,7 +11,7 @@ export const aaveWethGatewayV2 = (humanizerInfo: any): { [key: string]: Function
       return [
         getAction('Deposit'),
         getToken(ethers.ZeroAddress, call.value),
-        getLable('to Aave lending pool'),
+        getLabel('to Aave lending pool'),
         ...getOnBehalfOf(onBehalfOf, accountOp.accountAddr)
       ]
     },
@@ -20,7 +20,7 @@ export const aaveWethGatewayV2 = (humanizerInfo: any): { [key: string]: Function
       return [
         getAction('Withdraw'),
         getToken(ethers.ZeroAddress, amount),
-        getLable('from Aave lending pool'),
+        getLabel('from Aave lending pool'),
         ...getOnBehalfOf(to, accountOp.accountAddr)
       ]
     },
@@ -30,7 +30,7 @@ export const aaveWethGatewayV2 = (humanizerInfo: any): { [key: string]: Function
       return [
         getAction('Repay'),
         getToken(ethers.ZeroAddress, call.value),
-        getLable('to Aave lending pool'),
+        getLabel('to Aave lending pool'),
         getOnBehalfOf(onBehalfOf, accountOp.accountAddr)
       ]
     },
@@ -39,7 +39,7 @@ export const aaveWethGatewayV2 = (humanizerInfo: any): { [key: string]: Function
       return [
         getAction('Borrow '),
         getToken(ethers.ZeroAddress, amount),
-        getLable('from Aave lending pool')
+        getLabel('from Aave lending pool')
       ]
     }
   }
