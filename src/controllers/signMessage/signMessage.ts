@@ -1,3 +1,5 @@
+import { TypedDataDomain } from '@ethersproject/abstract-signer'
+
 import { Message } from '../../interfaces/userRequest'
 import { Keystore } from '../../libs/keystore/keystore'
 import EventEmitter from '../eventEmitter'
@@ -87,7 +89,7 @@ export class SignMessageController extends EventEmitter {
         const { domain, types, message } = this.messageToSign.content
         // TODO: Figure out if the mismatch between the `TypedDataDomain` from
         // '@ethersproject/abstract-signer' and `TypedDataDomain` from 'ethers' is a problem
-        this.signature = await signer.signTypedData(domain, types, message)
+        this.signature = await signer.signTypedData(domain as TypedDataDomain, types, message)
       }
 
       this.signedMessage = {
