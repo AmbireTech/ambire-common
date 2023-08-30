@@ -63,8 +63,8 @@ export type StoredKey = {
   meta: object | null
 }
 
-type KeystoreSignerType = {
-  new (key: Key, privateKey?: string): KeystoreSigner
+export type KeystoreSignerType = {
+  new (key: Key, privateKey: string): KeystoreSigner
 }
 
 export class Keystore {

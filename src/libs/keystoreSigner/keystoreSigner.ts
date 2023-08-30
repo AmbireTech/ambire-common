@@ -36,7 +36,7 @@ export class KeystoreSigner implements KeystoreSignerInterface {
     return sig
   }
 
-  async signMessage(hash: string) {
+  async signMessage(hash: string | Uint8Array) {
     const sig = await this.#signer.signMessage(hash)
 
     return sig

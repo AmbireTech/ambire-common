@@ -9,7 +9,7 @@ import { Message, UserRequest } from '../../interfaces/userRequest'
 import { AccountOp, Call as AccountOpCall } from '../../libs/accountOp/accountOp'
 import { getAccountState } from '../../libs/accountState/accountState'
 import { estimate, EstimateResult } from '../../libs/estimate/estimate'
-import { Key, Keystore } from '../../libs/keystore/keystore'
+import { Key, Keystore, KeystoreSignerType } from '../../libs/keystore/keystore'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { AccountAdderController } from '../accountAdder/accountAdder'
 import { EmailVaultController } from '../emailVault'
@@ -94,20 +94,21 @@ export class MainController extends EventEmitter {
     storage,
     fetch,
     relayerUrl,
+    keystoreSigners,
     onResolveDappRequest,
     onRejectDappRequest
   }: {
     storage: Storage
     fetch: Function
     relayerUrl: string
+    keystoreSigners: { [key: string]: KeystoreSignerType }
     onResolveDappRequest: (data: any, id?: bigint) => void
     onRejectDappRequest: (err: any, id?: bigint) => void
   }) {
     super()
     this.storage = storage
     this.portfolio = new PortfolioController(storage)
-    // @TODO: KeystoreSigners
-    this.#keystoreLib = new Keystore(storage, {})
+    this.#keystoreLib = new Keystore(storage, keystoreSigners)
     this.keystore = new KeystoreController(this.#keystoreLib)
     this.initialLoadPromise = this.load()
     this.settings = { networks }
@@ -224,10 +225,15 @@ export class MainController extends EventEmitter {
       )
   }
 
-  private makeAccountOpFromUserRequests(accountAddr: AccountId, networkId: NetworkId): AccountOp | null {
+  private makeAccountOpFromUserRequests(
+    accountAddr: AccountId,
+    networkId: NetworkId
+  ): AccountOp | null {
     const account = this.accounts.find((x) => x.addr === accountAddr)
     if (!account)
-      throw new Error(`makeAccountOpFromUserRequests: tried to run for non-existant account ${accountAddr}`)
+      throw new Error(
+        `makeAccountOpFromUserRequests: tried to run for non-existant account ${accountAddr}`
+      )
     // Note: we use reduce instead of filter/map so that the compiler can deduce that we're checking .kind
     const calls = this.userRequests.reduce((uCalls: AccountOpCall[], req) => {
       // only the first one for EOAs
