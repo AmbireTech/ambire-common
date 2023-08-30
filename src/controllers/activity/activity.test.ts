@@ -351,19 +351,16 @@ describe('Activity Controller ', () => {
       })
 
       const signedMessage: Message = {
+        id: 'test-id-should-be-bigint' as unknown as bigint,
         content: {
           kind: 'message',
           message: '0x74657374'
         },
-        fromUserRequestId: 1n,
+        fromUserRequestId: 'test-id-should-be-bigint' as unknown as bigint,
         signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503'
       }
 
-      await controller.addSignedMessage(
-        signedMessage,
-        '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
-        'ethereum'
-      )
+      await controller.addSignedMessage(signedMessage, '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5')
       const controllerSignedMessages = controller.signedMessages
       const storageSignedMessages = await storage.get('signedMessages', {})
 
@@ -373,7 +370,7 @@ describe('Activity Controller ', () => {
         currentPage: 0,
         maxPages: 1
       })
-      expect(storageSignedMessages['0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'].ethereum).toEqual([
+      expect(storageSignedMessages['0xB674F3fd5F43464dB0448a57529eAF37F04cceA5']).toEqual([
         signedMessage
       ])
     })
@@ -386,43 +383,18 @@ describe('Activity Controller ', () => {
       })
 
       const signedMessage: Message = {
+        id: 'test-id-should-be-bigint' as unknown as bigint,
         content: {
           kind: 'message',
           message: '0x74657374'
         },
-        fromUserRequestId: 1n,
+        fromUserRequestId: 'test-id-should-be-bigint' as unknown as bigint,
         signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503'
       }
 
-      const expectedSignedMessage: Message = {
-        content: {
-          kind: 'message',
-          message: '0x123456'
-        },
-        fromUserRequestId: 1n,
-        signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503'
-      }
-
-      await controller.addSignedMessage(
-        signedMessage,
-        '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
-        'ethereum'
-      )
-      await controller.addSignedMessage(
-        signedMessage,
-        '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
-        'ethereum'
-      )
-      await controller.addSignedMessage(
-        signedMessage,
-        '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
-        'optimism'
-      )
-      await controller.addSignedMessage(
-        expectedSignedMessage,
-        '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
-        'optimism'
-      )
+      await controller.addSignedMessage(signedMessage, '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5')
+      await controller.addSignedMessage(signedMessage, '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5')
+      await controller.addSignedMessage(signedMessage, '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5')
 
       // For the following criteria, we have 2 matching SignedMessages, these will be paginated on 2 pages (1 Message per page)
       await controller.setSignedMessagesPagination({ fromPage: 1, itemsPerPage: 1 })
@@ -434,10 +406,10 @@ describe('Activity Controller ', () => {
       const controllerSignedMessages = controller.signedMessages
 
       expect(controllerSignedMessages).toEqual({
-        items: [expectedSignedMessage],
-        itemsTotal: 2,
+        items: [signedMessage],
+        itemsTotal: 3,
         currentPage: 1, // index based
-        maxPages: 2
+        maxPages: 3
       })
     })
 
@@ -449,11 +421,12 @@ describe('Activity Controller ', () => {
       })
 
       const signedMessage: Message = {
+        id: 'test-id-should-be-bigint' as unknown as bigint,
         content: {
           kind: 'message',
           message: '0x123456'
         },
-        fromUserRequestId: 1n,
+        fromUserRequestId: 'test-id-should-be-bigint' as unknown as bigint,
         signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503'
       }
 
@@ -465,11 +438,7 @@ describe('Activity Controller ', () => {
       // eslint-disable-next-line no-restricted-syntax
       for (const sm of signedMessages) {
         // eslint-disable-next-line no-await-in-loop
-        await controller.addSignedMessage(
-          sm,
-          '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
-          'ethereum'
-        )
+        await controller.addSignedMessage(sm, '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5')
       }
 
       await controller.setSignedMessagesPagination({ fromPage: 0, itemsPerPage: 1000 })

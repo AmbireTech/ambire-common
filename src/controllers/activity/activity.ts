@@ -38,8 +38,8 @@ interface InternalAccountsOps {
 }
 
 interface InternalSignedMessages {
-  // account => network => Message[]
-  [key: string]: { [key: string]: Message[] }
+  // account => Message[]
+  [key: string]: Message[]
 }
 
 // We are limiting items array to include no more than 1000 records,
@@ -122,8 +122,11 @@ export class ActivityController extends EventEmitter {
     this.#accountsOps = accountsOps
     this.#signedMessages = signedMessages
 
-    this.accountsOps = this.filterAndPaginate(this.#accountsOps, this.accountsOpsPagination)
-    this.signedMessages = this.filterAndPaginate(
+    this.accountsOps = this.filterAndPaginateAccountOps(
+      this.#accountsOps,
+      this.accountsOpsPagination
+    )
+    this.signedMessages = this.filterAndPaginateSignedMessages(
       this.#signedMessages,
       this.signedMessagesPagination
     )
@@ -131,13 +134,30 @@ export class ActivityController extends EventEmitter {
     this.emitUpdate()
   }
 
-  private filterAndPaginate<T>(
+  private filterAndPaginateAccountOps<T>(
     items: {
       [key: string]: { [key: string]: T[] } | undefined
     },
     pagination: Pagination
   ): PaginationResult<T> {
     const filteredItems = items?.[this.filters.account]?.[this.filters.network] || []
+    const { fromPage, itemsPerPage } = pagination
+
+    return {
+      items: filteredItems.slice(fromPage * itemsPerPage, fromPage * itemsPerPage + itemsPerPage),
+      itemsTotal: filteredItems.length,
+      currentPage: fromPage, // zero/index based
+      maxPages: Math.ceil(filteredItems.length / itemsPerPage)
+    }
+  }
+
+  private filterAndPaginateSignedMessages<T>(
+    items: {
+      [key: string]: T[] | undefined
+    },
+    pagination: Pagination
+  ): PaginationResult<T> {
+    const filteredItems = items?.[this.filters.account] || []
     const { fromPage, itemsPerPage } = pagination
 
     return {
@@ -160,7 +180,10 @@ export class ActivityController extends EventEmitter {
     this.#accountsOps[account][network].push({ ...accountOp, status: AccountOpStatus.Pending })
     trim(this.#accountsOps[account][network])
 
-    this.accountsOps = this.filterAndPaginate(this.#accountsOps, this.accountsOpsPagination)
+    this.accountsOps = this.filterAndPaginateAccountOps(
+      this.#accountsOps,
+      this.accountsOpsPagination
+    )
 
     await this.#storage.set('accountsOps', this.#accountsOps)
     this.emitUpdate()
@@ -199,19 +222,21 @@ export class ActivityController extends EventEmitter {
         })
     )
     await this.#storage.set('accountsOps', this.#accountsOps)
-    this.accountsOps = this.filterAndPaginate(this.#accountsOps, this.accountsOpsPagination)
+    this.accountsOps = this.filterAndPaginateAccountOps(
+      this.#accountsOps,
+      this.accountsOpsPagination
+    )
     this.emitUpdate()
   }
 
-  async addSignedMessage(signedMessage: Message, account: string, network: string) {
+  async addSignedMessage(signedMessage: Message, account: string) {
     await this.#initialLoadPromise
 
-    if (!this.#signedMessages[account]) this.#signedMessages[account] = {}
-    if (!this.#signedMessages[account][network]) this.#signedMessages[account][network] = []
+    if (!this.#signedMessages[account]) this.#signedMessages[account] = []
 
-    this.#signedMessages[account][network].push(signedMessage)
-    trim(this.#signedMessages[account][network])
-    this.signedMessages = this.filterAndPaginate(
+    this.#signedMessages[account].push(signedMessage)
+    trim(this.#signedMessages[account])
+    this.signedMessages = this.filterAndPaginateSignedMessages(
       this.#signedMessages,
       this.signedMessagesPagination
     )
@@ -222,8 +247,11 @@ export class ActivityController extends EventEmitter {
 
   setFilters(filters: Filters): void {
     this.filters = filters
-    this.accountsOps = this.filterAndPaginate(this.#accountsOps, this.accountsOpsPagination)
-    this.signedMessages = this.filterAndPaginate(
+    this.accountsOps = this.filterAndPaginateAccountOps(
+      this.#accountsOps,
+      this.accountsOpsPagination
+    )
+    this.signedMessages = this.filterAndPaginateSignedMessages(
       this.#signedMessages,
       this.signedMessagesPagination
     )
@@ -234,14 +262,17 @@ export class ActivityController extends EventEmitter {
   setAccountsOpsPagination(pagination: Pagination): void {
     this.accountsOpsPagination = pagination
 
-    this.accountsOps = this.filterAndPaginate(this.#accountsOps, this.accountsOpsPagination)
+    this.accountsOps = this.filterAndPaginateAccountOps(
+      this.#accountsOps,
+      this.accountsOpsPagination
+    )
     this.emitUpdate()
   }
 
   setSignedMessagesPagination(pagination: Pagination): void {
     this.signedMessagesPagination = pagination
 
-    this.signedMessages = this.filterAndPaginate(
+    this.signedMessages = this.filterAndPaginateSignedMessages(
       this.#signedMessages,
       this.signedMessagesPagination
     )
