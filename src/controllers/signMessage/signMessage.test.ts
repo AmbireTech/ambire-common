@@ -67,7 +67,7 @@ describe('SignMessageController', () => {
   })
 
   test('should set signing key address', () => {
-    const signingKeyAddr = '0x123'
+    const signingKeyAddr = '0xa07D75aacEFd11b425AF7181958F0F85c312f143'
     signMessageController.setSigningKeyAddr(signingKeyAddr)
 
     expect(signMessageController.signingKeyAddr).toBe(signingKeyAddr)
