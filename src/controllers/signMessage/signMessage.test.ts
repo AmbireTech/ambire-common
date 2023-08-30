@@ -44,4 +44,25 @@ describe('SignMessageController', () => {
       }
     })
   })
+
+  test('should not initialize with an invalid message kind', () => {
+    const messageToSign: Message = {
+      id: BigInt(1),
+      content: {
+        // @ts-ignore that's on purpose, for the test
+        kind: 'unsupportedKind',
+        message: 'Hello'
+      }
+    }
+
+    // Mock the emitError method to capture the emitted error
+    const mockEmitError = jest.fn()
+    // 'any' is on purpose, to override 'emitError' prop (which is protected)
+    ;(signMessageController as any).emitError = mockEmitError
+
+    signMessageController.init(messageToSign)
+
+    expect(signMessageController.isInitialized).toBeFalsy()
+    expect(mockEmitError).toHaveBeenCalled()
+  })
 })
