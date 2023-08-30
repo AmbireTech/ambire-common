@@ -41,6 +41,7 @@ Classes for controllers are supposed to be stateful and be used directly in the 
 - they should avoid public methods that return values, and instead everything should be updated in the state; the user of the controller (the application or background process) **must never** expect/consume a result from a controller function
   - there may be internal functions that return results
   - there must not be public functions that return results (but they may be async in case they need to perform async work)
+  - essentially all public functions should be actions
 - they may keep internal state that is "hidden" (using `#` for private properties and functions) that is more convenient to work with, but expose a different state shape via getters to the application
 - there should be *unidirectionality*: the main controller may listen to `onUpdate` from it's children, but the opposite must not happen; when a child controller needs to learn some new information that the main controller handles, the main controller should call the child's update function and pass that information along
 - controllers should not do any work by themselves (implicit intervals, timeouts, etc.); it's acceptable to do long-term async work (like polling) if triggered by the user or the application; if the controller needs to be periodically updated, expose an `update` or `refresh` function that the application or parent controller must call
