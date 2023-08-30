@@ -13,10 +13,10 @@
   },
   "dependencies": {
     "@jest/globals": "^29.6.1",
+    "aes-js": "^3.1.2",
     "dotenv": "^16.3.1",
     "ethers": "^6.3.0",
-    "scrypt-js": "^3.0.1",
-    "aes-js": "^3.1.2"
+    "scrypt-js": "^3.0.1"
   },
   "peerDependencies": {
     "@ambire/signature-validator": "^1.0.3",
