@@ -64,7 +64,7 @@ export type StoredKey = {
 }
 
 export type KeystoreSignerType = {
-  new (key: Key, privateKey: string): KeystoreSigner
+  new (key: Key, privateKey?: string): KeystoreSigner
 }
 
 export class Keystore {
