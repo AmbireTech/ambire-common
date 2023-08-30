@@ -30,6 +30,11 @@ export class KeystoreSigner implements KeystoreSignerInterface {
     types: Record<string, Array<TypedDataField>>,
     message: Record<string, any>
   ) {
+    // remove EIP712Domain because otherwise signTypedData throws: ambiguous primary types or unused types
+    if (types.EIP712Domain) {
+      // eslint-disable-next-line no-param-reassign
+      delete types.EIP712Domain
+    }
     // @ts-ignore
     const sig = await this.#signer.signTypedData(domain, types, message)
 
