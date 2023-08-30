@@ -53,10 +53,13 @@ async function test() {
   const signer = new Wallet(SIGNER_PRIV_KEY)
   const polygon = networks.find((x) => x.id === 'polygon')
   if (!polygon) throw new Error('unable to find polygon network in consts')
+  const secondKeyAddr = ethers.computeAddress(ethers.hexlify(ethers.randomBytes(32)))
   const privs = [
     { addr: signer.address, hash: true },
-    { addr: ethers.computeAddress(ethers.hexlify(ethers.randomBytes(32))), hash: true }
+    { addr: secondKeyAddr, hash: true }
   ]
+  console.log(signer.address)
+  console.log(secondKeyAddr)
   const bytecodeWithArgs = await get4437Bytecode(polygon, privs)
   const senderAddress = getAmbireAccountAddress(AMBIRE_ACCOUNT_FACTORY_ERC_4337, bytecodeWithArgs)
 

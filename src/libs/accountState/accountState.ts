@@ -44,7 +44,7 @@ export async function getAccountState(
   const result: AccountOnchainState[] = accountStateResult.map((accResult: any, index: number) => {
     const associatedKeys = accResult.associatedKeyPriviliges.map(
       (privilege: string, keyIndex: number) => {
-        return [accounts[index].associatedKeys[keyIndex], privilege]
+        return [args[index][1][keyIndex], privilege]
       }
     )
     const res = {
