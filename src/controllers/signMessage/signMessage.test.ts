@@ -65,4 +65,11 @@ describe('SignMessageController', () => {
     expect(signMessageController.isInitialized).toBeFalsy()
     expect(mockEmitError).toHaveBeenCalled()
   })
+
+  test('should set signing key address', () => {
+    const signingKeyAddr = '0x123'
+    signMessageController.setSigningKeyAddr(signingKeyAddr)
+
+    expect(signMessageController.signingKeyAddr).toBe(signingKeyAddr)
+  })
 })
