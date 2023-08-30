@@ -9,7 +9,7 @@ import { produceMemoryStore } from '../../../test/helpers'
 import { Key, Keystore } from '../../libs/keystore/keystore'
 import { KeystoreController } from './keystore'
 
-class InternalSigner {
+export class InternalSigner {
   key
 
   privKey
