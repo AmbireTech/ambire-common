@@ -5,6 +5,8 @@ import EventEmitter from '../eventEmitter'
 export class SignMessageController extends EventEmitter {
   #keystore: Keystore
 
+  isInitialized: boolean = false
+
   status: 'INITIAL' | 'LOADING' | 'DONE' = 'INITIAL'
 
   messageToSign: Message | null = null
@@ -25,6 +27,7 @@ export class SignMessageController extends EventEmitter {
   init(messageToSign: Message) {
     if (['message', 'typedMessage'].includes(messageToSign.content.kind)) {
       this.messageToSign = messageToSign
+      this.isInitialized = true
       this.emitUpdate()
     } else {
       this.emitError({
@@ -39,6 +42,7 @@ export class SignMessageController extends EventEmitter {
   }
 
   reset() {
+    this.isInitialized = false
     this.messageToSign = null
     this.signature = null
     this.signedMessage = null
@@ -87,6 +91,7 @@ export class SignMessageController extends EventEmitter {
       }
 
       this.signedMessage = {
+        id: this.messageToSign.id,
         signature: this.signature,
         content: this.messageToSign.content
       }

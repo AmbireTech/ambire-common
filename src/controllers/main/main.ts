@@ -1,3 +1,4 @@
+/* eslint-disable no-underscore-dangle */
 import { JsonRpcProvider } from 'ethers'
 
 import { networks } from '../../consts/networks'
@@ -85,7 +86,23 @@ export class MainController extends EventEmitter {
 
   lastUpdate: Date = new Date()
 
-  constructor(storage: Storage, fetch: Function, relayerUrl: string) {
+  onResolveDappRequest: (data: any, id?: bigint) => void
+
+  onRejectDappRequest: (err: any, id?: bigint) => void
+
+  constructor({
+    storage,
+    fetch,
+    relayerUrl,
+    onResolveDappRequest,
+    onRejectDappRequest
+  }: {
+    storage: Storage
+    fetch: Function
+    relayerUrl: string
+    onResolveDappRequest: (data: any, id?: bigint) => void
+    onRejectDappRequest: (err: any, id?: bigint) => void
+  }) {
     super()
     this.storage = storage
     this.portfolio = new PortfolioController(storage)
@@ -98,6 +115,8 @@ export class MainController extends EventEmitter {
     this.accountAdder = new AccountAdderController({ storage, relayerUrl, fetch })
     this.signMessage = new SignMessageController(this.#keystoreLib)
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
+    this.onResolveDappRequest = onResolveDappRequest
+    this.onRejectDappRequest = onRejectDappRequest
     // @TODO Load userRequests from storage and emit that we have updated
     // @TODO
   }
@@ -251,7 +270,7 @@ export class MainController extends EventEmitter {
 
   async addUserRequest(req: UserRequest) {
     this.userRequests.push(req)
-    const { action, accountAddr, networkId } = req
+    const { id, action, accountAddr, networkId } = req
     if (!this.settings.networks.find((x) => x.id === networkId))
       throw new Error(`addUserRequest: ${networkId}: network does not exist`)
     if (action.kind === 'call') {
@@ -279,6 +298,7 @@ export class MainController extends EventEmitter {
       if (!this.messagesToBeSigned[accountAddr]) this.messagesToBeSigned[accountAddr] = []
       if (this.messagesToBeSigned[accountAddr].find((x) => x.fromUserRequestId === req.id)) return
       this.messagesToBeSigned[accountAddr].push({
+        id,
         content: action,
         fromUserRequestId: req.id,
         signature: null
@@ -292,7 +312,7 @@ export class MainController extends EventEmitter {
   // although the second one can't hurt and can help (or no debounce, just a one-at-a-time queue)
   removeUserRequest(id: bigint) {
     const req = this.userRequests.find((uReq) => uReq.id === id)
-    if (!req) throw new Error(`removeUserRequest: request with id ${id} not found`)
+    if (!req) return
 
     // remove from the request queue
     this.userRequests.splice(this.userRequests.indexOf(req), 1)
@@ -354,5 +374,10 @@ export class MainController extends EventEmitter {
 
   broadcastSignedAccountOp(accountOp) {}
 
-  broadcastSignedMessage(signedMessage: Message) {}
+  broadcastSignedMessage(signedMessage: Message) {
+    // TODO: add signedMessage to the activity
+    this.removeUserRequest(signedMessage.id)
+    this.onResolveDappRequest({ hash: signedMessage.signature }, signedMessage.id)
+    this.emitUpdate()
+  }
 }
