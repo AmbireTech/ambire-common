@@ -4,7 +4,11 @@ import { getAccountState } from './accountState'
 import { networks } from '../../consts/networks'
 import { get4437Bytecode, getBytecode } from '../proxyDeploy/bytecode'
 import { getAmbireAccountAddress } from '../proxyDeploy/getAmbireAddressTwo'
-import { AMBIRE_ACCOUNT_FACTORY, AMBIRE_ACCOUNT_FACTORY_ERC_4337, ERC_4337_ENTRYPOINT } from '../../consts/deploy'
+import {
+  AMBIRE_ACCOUNT_FACTORY,
+  AMBIRE_ACCOUNT_FACTORY_ERC_4337,
+  ERC_4337_ENTRYPOINT
+} from '../../consts/deploy'
 
 const polygon = networks.find((x) => x.id === 'polygon')
 if (!polygon) throw new Error('unable to find polygon network in consts')
@@ -74,7 +78,10 @@ describe('AccountState', () => {
       addr: '0x76b277955846313Ec50F26eD155C26f5aED295B1',
       label: '',
       pfp: '',
-      associatedKeys: ['0x9188fdd757Df66B4F693D624Ed6A13a15Cf717D7', '0x43Ec7De60E89dabB7cAedc89Cd1F3c8D52707312'],
+      associatedKeys: [
+        '0x9188fdd757Df66B4F693D624Ed6A13a15Cf717D7',
+        '0x43Ec7De60E89dabB7cAedc89Cd1F3c8D52707312'
+      ],
       creation: {
         factoryAddr: AMBIRE_ACCOUNT_FACTORY_ERC_4337,
         bytecode: bytecodeErc4337,
@@ -84,7 +91,6 @@ describe('AccountState', () => {
 
     const accounts = [account, accountNotDeployed, accountEOA, account4337, accountErc4337]
     const state: any = await getAccountState(provider, polygon, accounts)
-    console.log(state)
     expect(state.length).toBe(5)
 
     const v1Acc = state[0]
@@ -102,15 +108,13 @@ describe('AccountState', () => {
     expect(eoaAcc.balance).toBeGreaterThan(0n)
 
     const acc4337 = state[3]
-    expect(acc4337.isErc4337Enabled).toBe(true)
-    expect(acc4337.isErc4337Nonce).toBe(true)
     expect(acc4337.nonce).toBeGreaterThanOrEqual(0)
 
     const acc4337deployed = state[4]
-    expect(acc4337deployed.isErc4337Enabled).toBe(true)
-    expect(acc4337deployed.isErc4337Nonce).toBe(true)
     expect(acc4337deployed.nonce).toBeGreaterThanOrEqual(0)
     expect(acc4337deployed.associatedKeys).toHaveProperty(ERC_4337_ENTRYPOINT)
-    expect(acc4337deployed.associatedKeys[ERC_4337_ENTRYPOINT]).toBe('0x42144640c7cb5ff8aa9595ae175ffcb6dd152db6e737c13cc2d5d07576967020')
+    expect(acc4337deployed.associatedKeys[ERC_4337_ENTRYPOINT]).toBe(
+      '0x42144640c7cb5ff8aa9595ae175ffcb6dd152db6e737c13cc2d5d07576967020'
+    )
   })
 })

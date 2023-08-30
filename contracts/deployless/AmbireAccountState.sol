@@ -23,13 +23,10 @@ struct AccountInfo {
     bool isV2;
     uint256 balance;
     bool isEOA;
-    bool isErc4337Enabled;
-    bool isErc4337Nonce;
+    uint erc4337Nonce;
 }
 
 contract AmbireAccountState {
-    
-    bytes32 constant ENTRY_POINT_PRIV = 0x42144640c7cb5ff8aa9595ae175ffcb6dd152db6e737c13cc2d5d07576967020;
 
     function getAccountsState(AccountInput[] memory accounts) external returns (AccountInfo[] memory accountResult) {
         accountResult = new AccountInfo[](accounts.length);
@@ -55,12 +52,11 @@ contract AmbireAccountState {
                     continue;
                 }
             }
-            try this.gatherAmbireData(account) returns (uint nonce, bytes32[] memory privileges, bool isV2, bool isErc4337Enabled, bool isErc4337Nonce) {
+            try this.gatherAmbireData(account) returns (uint nonce, bytes32[] memory privileges, bool isV2, uint erc4337Nonce) {
                 accountResult[i].nonce = nonce;
                 accountResult[i].associatedKeyPriviliges = privileges;
                 accountResult[i].isV2 = isV2;
-                accountResult[i].isErc4337Enabled = isErc4337Enabled;
-                accountResult[i].isErc4337Nonce = isErc4337Nonce;
+                accountResult[i].erc4337Nonce = erc4337Nonce;
             } catch (bytes memory err) {
                 accountResult[i].deployErr = err;
                 continue;
@@ -69,22 +65,14 @@ contract AmbireAccountState {
         return accountResult;
     }
 
-    function gatherAmbireData(AccountInput memory account) external returns (uint nonce, bytes32[] memory privileges, bool isV2, bool isErc4337Enabled, bool isErc4337Nonce) {
-        address entryPointAddr = account.erc4337EntryPoint;
-        isErc4337Nonce = false;
-        isErc4337Enabled = false;
+    function gatherAmbireData(AccountInput memory account) external returns (uint nonce, bytes32[] memory privileges, bool isV2, uint erc4337Nonce ) {
         privileges = new bytes32[](account.associatedKeys.length);
         isV2 = this.ambireV2Check(IAmbireAccount(account.addr));
         for (uint j=0; j!=account.associatedKeys.length; j++) {
             privileges[j] = IAmbireAccount(account.addr).privileges(account.associatedKeys[j]);
-            if (account.associatedKeys[j] == entryPointAddr && privileges[j] != bytes32(0)) isErc4337Enabled = true;
         }
-        if (entryPointAddr == address(0)) {
-            nonce =  IAmbireAccount(account.addr).nonce();
-        } else {
-            nonce = IEntryPoint(entryPointAddr).getNonce(account.addr, 0);
-            isErc4337Nonce = true;
-        }
+        nonce =  IAmbireAccount(account.addr).nonce();
+        erc4337Nonce = IEntryPoint(account.erc4337EntryPoint).getNonce(account.addr, 0);
     }
 
     function ambireV2Check(IAmbireAccount account) external pure returns(bool) {

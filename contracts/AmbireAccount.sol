@@ -30,7 +30,7 @@ contract AmbireAccount {
 	address private constant FALLBACK_HANDLER_SLOT = address(0x6969);
 
 	// keccak256(hex"7171")
-	bytes32 constant ENTRY_POINT_PRIV = 0x42144640c7cb5ff8aa9595ae175ffcb6dd152db6e737c13cc2d5d07576967020;
+	bytes32 constant ENTRY_POINT_MARKER = 0x42144640c7cb5ff8aa9595ae175ffcb6dd152db6e737c13cc2d5d07576967020;
 
 	// Variables
 	mapping(address => bytes32) public privileges;
@@ -221,7 +221,7 @@ contract AmbireAccount {
 	function validateUserOp(UserOperation calldata userOp, bytes32 userOpHash, uint256 missingAccountFunds)
 	external returns (uint256)
 	{
-		require(privileges[msg.sender] == ENTRY_POINT_PRIV, 'Request not from entryPoint');
+		require(privileges[msg.sender] == ENTRY_POINT_MARKER, 'Request not from entryPoint');
 
 		uint8 sigMode = uint8(userOp.signature[userOp.signature.length - 1]);
 		if (sigMode == SIGMODE_EXTERNALLY_VALIDATED) {

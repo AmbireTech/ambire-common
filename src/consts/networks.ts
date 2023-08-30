@@ -1,5 +1,5 @@
 import { NetworkDescriptor } from '../interfaces/networkDescriptor'
-import { ERC_4337_ENTRYPOINT, ERC_4337_MANAGER } from './deploy'
+import { ERC_4337_ENTRYPOINT, ENTRY_POINT_MARKER } from './deploy'
 
 const networks: NetworkDescriptor[] = [
   {
@@ -21,7 +21,7 @@ const networks: NetworkDescriptor[] = [
     erc4337: {
       enabled: true,
       entryPointAddr: ERC_4337_ENTRYPOINT,
-      managerAddr: ERC_4337_MANAGER
+      entryPointMarker: ENTRY_POINT_MARKER
     }
   },
   {
@@ -34,7 +34,7 @@ const networks: NetworkDescriptor[] = [
     erc4337: {
       enabled: true,
       entryPointAddr: ERC_4337_ENTRYPOINT,
-      managerAddr: ERC_4337_MANAGER
+      entryPointMarker: ENTRY_POINT_MARKER
     }
   }
 ]

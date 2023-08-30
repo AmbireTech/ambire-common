@@ -20,3 +20,7 @@ export const PROXY_AMBIRE_4337_ACCOUNT = '0xd590a2aBA89a590b15De795DE559e7166aC2
 
 // official entryPoint
 export const ERC_4337_ENTRYPOINT = '0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789'
+
+// entry point privilege
+export const ENTRY_POINT_MARKER =
+  '0x42144640c7cb5ff8aa9595ae175ffcb6dd152db6e737c13cc2d5d07576967020'

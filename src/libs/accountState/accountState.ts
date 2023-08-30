@@ -49,14 +49,20 @@ export async function getAccountState(
     )
     const res = {
       accountAddr: accounts[index].addr,
-      nonce: parseInt(accResult.nonce, 10),
+      nonce: network?.erc4337?.enabled
+        ? parseInt(accResult.erc4337Nonce, 10)
+        : parseInt(accResult.nonce, 10),
       isDeployed: accResult.isDeployed,
       associatedKeys: Object.fromEntries(associatedKeys),
       isV2: accResult.isV2,
       balance: accResult.balance,
       isEOA: accResult.isEOA,
-      isErc4337Enabled: accResult.isErc4337Enabled,
-      isErc4337Nonce: accResult.isErc4337Nonce,
+      isErc4337Enabled: !!associatedKeys.find(
+        (associatedKey: string[]) =>
+          associatedKey[0] === network?.erc4337?.entryPointAddr &&
+          (associatedKey[1] === network.erc4337?.entryPointMarker ||
+            associatedKey[1] === `0x${'0'.repeat(63)}1`)
+      ),
       deployError:
         accounts[index].associatedKeys.length > 0 && accResult.associatedKeyPriviliges.length === 0
     }
