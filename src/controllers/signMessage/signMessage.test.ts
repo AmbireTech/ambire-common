@@ -31,8 +31,6 @@ describe('SignMessageController', () => {
       signature: null
     }
 
-    signMessageController.init(messageToSign)
-
     let emitCounter = 0
     signMessageController.onUpdate(() => {
       emitCounter++
@@ -43,6 +41,8 @@ describe('SignMessageController', () => {
         done()
       }
     })
+
+    signMessageController.init(messageToSign)
   })
 
   test('should not initialize with an invalid message kind', () => {
