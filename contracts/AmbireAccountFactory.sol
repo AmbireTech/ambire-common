@@ -2,6 +2,7 @@
 pragma solidity 0.8.19;
 
 import './AmbireAccount.sol';
+import './libs/Transaction.sol';
 
 contract AmbireAccountFactory {
 	event LogDeployed(address addr, uint256 salt);
@@ -24,11 +25,12 @@ contract AmbireAccountFactory {
 	function deployAndExecute(
 		bytes calldata code,
 		uint256 salt,
-		AmbireAccount.Transaction[] calldata txns,
+		Transaction[] calldata txns,
 		bytes calldata signature
-	) external {
+	) external returns (address){
 		address payable addr = payable(deploySafe(code, salt));
 		AmbireAccount(addr).execute(txns, signature);
+		return addr;
 	}
 
 	// @notice This method can be used to withdraw stuck tokens or airdrops

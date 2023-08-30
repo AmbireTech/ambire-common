@@ -3,6 +3,7 @@ pragma solidity 0.8.19;
 
 import './AmbireAccount.sol';
 import './libs/SignatureValidator.sol';
+import './libs/Transaction.sol';
 
 contract RecoverySigValidator is ExternalSigValidator {
   mapping(bytes32 => uint) public scheduledRecoveries;
@@ -10,7 +11,7 @@ contract RecoverySigValidator is ExternalSigValidator {
     bytes32 indexed txnHash,
     address indexed recoveryKey,
     uint256 time,
-    AmbireAccount.Transaction[] calls
+    Transaction[] calls
   );
   event LogRecoveryCancelled(
     bytes32 indexed hash,
@@ -28,13 +29,13 @@ contract RecoverySigValidator is ExternalSigValidator {
     address accountAddr,
     bytes calldata data,
     bytes calldata sig,
-    AmbireAccount.Transaction[] calldata calls
+    Transaction[] calldata calls
   ) external {
     (RecoveryInfo memory recoveryInfo) = abi.decode(data, (RecoveryInfo));
     // required for cancel/scheduling: isCancel, callsToCommitTo, salt, innerSig
     // required for finalization: salt
-    (bool isCancel, AmbireAccount.Transaction[] memory callsToCommitTo, uint256 salt, bytes memory innerSig) = abi.decode(sig, (
-      bool, AmbireAccount.Transaction[], uint256, bytes
+    (bool isCancel, Transaction[] memory callsToCommitTo, uint256 salt, bytes memory innerSig) = abi.decode(sig, (
+      bool, Transaction[], uint256, bytes
     ));
     if (callsToCommitTo.length > 0) {
       bytes32 hash = keccak256(abi.encode(accountAddr, block.chainid, salt, callsToCommitTo));

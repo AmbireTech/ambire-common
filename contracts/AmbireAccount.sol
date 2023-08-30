@@ -40,14 +40,7 @@ contract AmbireAccount {
 	event LogPrivilegeChanged(address indexed addr, bytes32 priv);
 	event LogErr(address indexed to, uint256 value, bytes data, bytes returnData); // only used in tryCatch
 
-	// Transaction structure
-	// we handle replay protection separately by requiring (address(this), chainID, nonce) as part of the sig
-	// @dev a better name for this would be `Call`, but we are keeping `Transaction` for backwards compatibility
-	struct Transaction {
-		address to;
-		uint256 value;
-		bytes data;
-	}
+
 	// built-in batching of multiple execute()'s; useful when performing timelocked recoveries
 	struct ExecuteArgs {
 		Transaction[] calls;
