@@ -27,7 +27,7 @@ export interface SubmittedAccountOp extends AccountOp {
 interface AccountsOps extends PaginationResult<SubmittedAccountOp> {}
 interface MessagesToBeSigned extends PaginationResult<Message> {}
 
-interface Filters {
+export interface Filters {
   account: string
   network: string
 }
