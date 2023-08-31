@@ -103,13 +103,14 @@ export class ActivityController extends EventEmitter {
     itemsPerPage: 10
   }
 
-  filters: Filters
+  filters: Filters | null = null
 
-  constructor(storage: Storage, accounts: AccountStates, filters: Filters) {
+  isInitialized: boolean = false
+
+  constructor(storage: Storage, accounts: AccountStates) {
     super()
     this.#storage = storage
     this.#accounts = accounts
-    this.filters = filters
     this.#initialLoadPromise = this.#load()
   }
 
@@ -134,13 +135,30 @@ export class ActivityController extends EventEmitter {
     this.emitUpdate()
   }
 
+  init({ filters }: { filters: Filters }) {
+    this.filters = filters
+    this.isInitialized = true
+    this.emitUpdate()
+  }
+
+  reset() {
+    this.filters = null
+    this.isInitialized = false
+    this.emitUpdate()
+  }
+
   private filterAndPaginateAccountOps<T>(
     items: {
       [key: string]: { [key: string]: T[] } | undefined
     },
     pagination: Pagination
-  ): PaginationResult<T> {
-    const filteredItems = items?.[this.filters.account]?.[this.filters.network] || []
+  ) {
+    if (!this.isInitialized) {
+      this.#throwNotInitialized()
+      return
+    }
+
+    const filteredItems = items?.[this.filters!.account]?.[this.filters!.network] || []
     const { fromPage, itemsPerPage } = pagination
 
     return {
@@ -156,8 +174,12 @@ export class ActivityController extends EventEmitter {
       [key: string]: T[] | undefined
     },
     pagination: Pagination
-  ): PaginationResult<T> {
-    const filteredItems = items?.[this.filters.account] || []
+  ) {
+    if (!this.isInitialized) {
+      this.#throwNotInitialized()
+      return
+    }
+    const filteredItems = items?.[this.filters!.account] || []
     const { fromPage, itemsPerPage } = pagination
 
     return {
@@ -169,6 +191,11 @@ export class ActivityController extends EventEmitter {
   }
 
   async addAccountOp(accountOp: SubmittedAccountOp) {
+    if (!this.isInitialized) {
+      this.#throwNotInitialized()
+      return
+    }
+
     await this.#initialLoadPromise
 
     const account = accountOp.accountAddr
@@ -199,8 +226,13 @@ export class ActivityController extends EventEmitter {
    * If Account nonce is greater than AccountOp, then we know that AccountOp has past nonce (AccountOpStatus.UnknownButPastNonce).
    */
   async updateAccountsOpsStatuses() {
-    const accountsOps = this.#accountsOps?.[this.filters.account]?.[this.filters.network] || []
-    const network = networks.find((x) => x.id === this.filters.network)
+    if (!this.isInitialized) {
+      this.#throwNotInitialized()
+      return
+    }
+
+    const accountsOps = this.#accountsOps?.[this.filters!.account]?.[this.filters!.network] || []
+    const network = networks.find((x) => x.id === this.filters!.network)
     const provider = new JsonRpcProvider(network!.rpcUrl)
 
     // We are updating Pending AccountsOps only, because we already updated the rest AccountsOps
@@ -230,6 +262,11 @@ export class ActivityController extends EventEmitter {
   }
 
   async addSignedMessage(signedMessage: Message, account: string) {
+    if (!this.isInitialized) {
+      this.#throwNotInitialized()
+      return
+    }
+
     await this.#initialLoadPromise
 
     if (!this.#signedMessages[account]) this.#signedMessages[account] = []
@@ -246,6 +283,11 @@ export class ActivityController extends EventEmitter {
   }
 
   setFilters(filters: Filters): void {
+    if (!this.isInitialized) {
+      this.#throwNotInitialized()
+      return
+    }
+
     this.filters = filters
     this.accountsOps = this.filterAndPaginateAccountOps(
       this.#accountsOps,
@@ -260,6 +302,11 @@ export class ActivityController extends EventEmitter {
   }
 
   setAccountsOpsPagination(pagination: Pagination): void {
+    if (!this.isInitialized) {
+      this.#throwNotInitialized()
+      return
+    }
+
     this.accountsOpsPagination = pagination
 
     this.accountsOps = this.filterAndPaginateAccountOps(
@@ -270,6 +317,11 @@ export class ActivityController extends EventEmitter {
   }
 
   setSignedMessagesPagination(pagination: Pagination): void {
+    if (!this.isInitialized) {
+      this.#throwNotInitialized()
+      return
+    }
+
     this.signedMessagesPagination = pagination
 
     this.signedMessages = this.filterAndPaginateSignedMessages(
@@ -280,6 +332,20 @@ export class ActivityController extends EventEmitter {
   }
 
   setAccounts(accounts: AccountStates) {
+    if (!this.isInitialized) {
+      this.#throwNotInitialized()
+      return
+    }
+
     this.#accounts = accounts
+  }
+
+  #throwNotInitialized() {
+    this.emitError({
+      level: 'major',
+      message:
+        "Looks like your activity couldn't be processed. Retry, or contact support if issue persists.",
+      error: new Error('activity: controller not initialized')
+    })
   }
 }

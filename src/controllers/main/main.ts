@@ -1,4 +1,5 @@
 /* eslint-disable no-underscore-dangle */
+import { ActivityController } from 'controllers/activity/activity'
 import { JsonRpcProvider } from 'ethers'
 
 import { networks } from '../../consts/networks'
@@ -55,6 +56,8 @@ export class MainController extends EventEmitter {
   emailVault: EmailVaultController
 
   signMessage: SignMessageController
+
+  activity!: ActivityController
 
   // @TODO read networks from settings
   accounts: Account[] = []
@@ -128,12 +131,14 @@ export class MainController extends EventEmitter {
       this.storage.get('accounts', []),
       this.storage.get('selectedAccount', null)
     ])
+
     this.providers = Object.fromEntries(
       this.settings.networks.map((network) => [network.id, new JsonRpcProvider(network.rpcUrl)])
     )
     // @TODO reload those
     // @TODO error handling here
     this.accountStates = await this.getAccountsInfo(this.accounts)
+    this.activity = new ActivityController(this.storage, this.accountStates)
     this.isReady = true
 
     const isKeystoreReady = await this.#keystoreLib.isReadyToStoreKeys()
@@ -388,7 +393,7 @@ export class MainController extends EventEmitter {
   broadcastSignedAccountOp(accountOp) {}
 
   broadcastSignedMessage(signedMessage: Message) {
-    // TODO: add signedMessage to the activity
+    this.activity.addSignedMessage(signedMessage, signedMessage.accountAddr)
     this.removeUserRequest(signedMessage.id)
     this.onResolveDappRequest({ hash: signedMessage.signature }, signedMessage.id)
     this.emitUpdate()

@@ -25,9 +25,13 @@ describe('Activity Controller ', () => {
   describe('AccountsOps', () => {
     test('Retrieved from Controller and persisted in Storage', async () => {
       const storage = produceMemoryStore()
-      const controller = new ActivityController(storage, accounts, {
-        account: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
-        network: 'ethereum'
+      const controller = new ActivityController(storage, accounts)
+
+      controller.init({
+        filters: {
+          account: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
+          network: 'ethereum'
+        }
       })
 
       const accountOp = {
@@ -65,9 +69,13 @@ describe('Activity Controller ', () => {
 
     test('Pagination and filtration handled correctly', async () => {
       const storage = produceMemoryStore()
-      const controller = new ActivityController(storage, accounts, {
-        account: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
-        network: 'ethereum'
+      const controller = new ActivityController(storage, accounts)
+
+      controller.init({
+        filters: {
+          account: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
+          network: 'ethereum'
+        }
       })
 
       const accountsOps = [
@@ -185,9 +193,13 @@ describe('Activity Controller ', () => {
 
     test('`success` status is set correctly', async () => {
       const storage = produceMemoryStore()
-      const controller = new ActivityController(storage, accounts, {
-        account: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
-        network: 'ethereum'
+      const controller = new ActivityController(storage, accounts)
+
+      controller.init({
+        filters: {
+          account: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
+          network: 'ethereum'
+        }
       })
 
       const accountOp = {
@@ -223,9 +235,13 @@ describe('Activity Controller ', () => {
 
     test('`failed` status is set correctly', async () => {
       const storage = produceMemoryStore()
-      const controller = new ActivityController(storage, accounts, {
-        account: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
-        network: 'ethereum'
+      const controller = new ActivityController(storage, accounts)
+
+      controller.init({
+        filters: {
+          account: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
+          network: 'ethereum'
+        }
       })
 
       const accountOp = {
@@ -261,9 +277,13 @@ describe('Activity Controller ', () => {
 
     test('`Unknown but past nonce` status is set correctly', async () => {
       const storage = produceMemoryStore()
-      const controller = new ActivityController(storage, accounts, {
-        account: '0xa07D75aacEFd11b425AF7181958F0F85c312f143',
-        network: 'ethereum'
+      const controller = new ActivityController(storage, accounts)
+
+      controller.init({
+        filters: {
+          account: '0xa07D75aacEFd11b425AF7181958F0F85c312f143',
+          network: 'ethereum'
+        }
       })
 
       const accountOp = {
@@ -299,9 +319,13 @@ describe('Activity Controller ', () => {
 
     test('Keeps no more than 1000 items', async () => {
       const storage = produceMemoryStore()
-      const controller = new ActivityController(storage, accounts, {
-        account: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
-        network: 'ethereum'
+      const controller = new ActivityController(storage, accounts)
+
+      controller.init({
+        filters: {
+          account: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
+          network: 'ethereum'
+        }
       })
 
       const accountOp = {
@@ -345,9 +369,13 @@ describe('Activity Controller ', () => {
   describe('SignedMessages', () => {
     test('Retrieved from Controller and persisted in Storage', async () => {
       const storage = produceMemoryStore()
-      const controller = new ActivityController(storage, accounts, {
-        account: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
-        network: 'ethereum'
+      const controller = new ActivityController(storage, accounts)
+
+      controller.init({
+        filters: {
+          account: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
+          network: 'ethereum'
+        }
       })
 
       const signedMessage: Message = {
@@ -377,9 +405,13 @@ describe('Activity Controller ', () => {
 
     test('Pagination and filtration handled correctly', async () => {
       const storage = produceMemoryStore()
-      const controller = new ActivityController(storage, accounts, {
-        account: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
-        network: 'ethereum'
+      const controller = new ActivityController(storage, accounts)
+
+      controller.init({
+        filters: {
+          account: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
+          network: 'ethereum'
+        }
       })
 
       const signedMessage: Message = {
@@ -415,9 +447,13 @@ describe('Activity Controller ', () => {
 
     test('Keeps no more than 1000 items', async () => {
       const storage = produceMemoryStore()
-      const controller = new ActivityController(storage, accounts, {
-        account: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
-        network: 'ethereum'
+      const controller = new ActivityController(storage, accounts)
+
+      controller.init({
+        filters: {
+          account: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
+          network: 'ethereum'
+        }
       })
 
       const signedMessage: Message = {

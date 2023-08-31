@@ -23,6 +23,7 @@ export interface TypedMessage {
 // probably interfaces
 export interface Message {
   id: bigint
+  accountAddr: AccountId
   content: PlainTextMessage | TypedMessage
   signature: string | null
   fromUserRequestId?: bigint
