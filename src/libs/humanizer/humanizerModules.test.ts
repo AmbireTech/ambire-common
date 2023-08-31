@@ -132,17 +132,17 @@ const transactions: { [key: string]: Array<IrCall> } = {
   WALLET: [
     // enter
     {
-      to: '0x47cd7e91c3cbaaf266369fe8518345fc4fc12935',
+      to: '0x47Cd7E91C3CBaAF266369fe8518345fc4FC12935',
       value: 0n,
       data: '0xa59f3e0c00000000000000000000000000000000000000000000021e19e0c9bab2400000'
     }, // leave
     {
-      to: '0x47cd7e91c3cbaaf266369fe8518345fc4fc12935',
+      to: '0x47Cd7E91C3CBaAF266369fe8518345fc4FC12935',
       value: 0n,
       data: '0x9b4ee06400000000000000000000000000000000000000000002172be687fbab0bd4bfd10000000000000000000000000000000000000000000000000000000000000000'
     }, // rage leave
     {
-      to: '0x47cd7e91c3cbaaf266369fe8518345fc4fc12935',
+      to: '0x47Cd7E91C3CBaAF266369fe8518345fc4FC12935',
       value: 0n,
       data: '0x8a07b41900000000000000000000000000000000000000000000006d7daaded78ae996310000000000000000000000000000000000000000000000000000000000000000'
     }
@@ -216,7 +216,7 @@ describe('module tests', () => {
 
     const res = ir.calls.map((call: IrCall) => visualizationToText(call, standartOptions))
     // @TODO switch et and res[i]
-    expectedTexification.forEach((et: string, i: number) => expect(et).toEqual(res[i]))
+    expectedTexification.forEach((et: string, i: number) => expect(res[i]).toEqual(et))
   })
   test('uniV3', () => {
     const expectedhumanization = [
@@ -373,21 +373,59 @@ describe('module tests', () => {
       )
     )
   })
-  // // @TODO uncomment
-  // @TODO add expected humanization
-  // test('WALLET', () => {
-  //   // const expectedhumanization = []
-  //   accountOp.calls = [...transactions.WALLET]
-  //   let ir: Ir = callsToIr(accountOp)
-  //   ;[ir] = WALLETModule(accountOp, ir)
-  //   console.log(ir.calls.map((c) => c.fullVisualization))
-  //   // ir.calls.forEach((c, i) =>
-  //   //   c?.fullVisualization?.forEach((v: HumanizerVisualization, j: number) =>
-  //   //     expect(v).toMatchObject(expectedhumanization[i][j])
-  //   //   )
-  //   // )
-  //   // ir.calls.forEach((call) => console.log(call?.fullVisualization))
-  // })
+  test('WALLET', () => {
+    const expectedhumanization = [
+      [
+        { type: 'action', content: 'Deposit' },
+        {
+          type: 'token',
+          address: '0x88800092fF476844f74dC2FC427974BBee2794Ae',
+          amount: 10000000000000000000000n
+        },
+        { type: 'label', content: 'to' },
+        {
+          type: 'address',
+          address: '0x47Cd7E91C3CBaAF266369fe8518345fc4FC12935'
+        }
+      ],
+      [
+        { type: 'action', content: 'Leave' },
+        { type: 'label', content: 'with' },
+        {
+          type: 'token',
+          address: '0x88800092fF476844f74dC2FC427974BBee2794Ae',
+          amount: 2527275889852892335882193n
+        },
+        {
+          type: 'address',
+          address: '0x47Cd7E91C3CBaAF266369fe8518345fc4FC12935'
+        }
+      ],
+      [
+        { type: 'action', content: 'Rage leave' },
+        { type: 'label', content: 'with' },
+        {
+          type: 'token',
+          address: '0x88800092fF476844f74dC2FC427974BBee2794Ae',
+          amount: 2019750399052452828721n
+        },
+        {
+          type: 'address',
+          address: '0x47Cd7E91C3CBaAF266369fe8518345fc4FC12935'
+        }
+      ]
+    ]
+    accountOp.calls = [...transactions.WALLET]
+    let ir: Ir = callsToIr(accountOp)
+    ;[ir] = WALLETModule(accountOp, ir)
+
+    console.log(ir.calls.map((c) => c.fullVisualization))
+    ir.calls.forEach((c, i) =>
+      c?.fullVisualization?.forEach((v: HumanizerVisualization, j: number) =>
+        expect(v).toMatchObject(expectedhumanization[i][j])
+      )
+    )
+  })
   test('yearn', () => {
     accountOp.calls = [...transactions.yearn]
     const expectedhumanization = [

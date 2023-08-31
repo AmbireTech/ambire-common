@@ -4,7 +4,6 @@ import { IrCall, Ir, HumanizerFragment } from './interfaces'
 
 // @NOTE should we use wrppaer for coingecko(if(apikey){paid coingecko}else{no}?
 // @TODO update all f's to 'all' in uniswap
-// @TOOD add ethercan txns for walletmodule test
 // @TODO humanize signed messages
 // @TODO fix comments from feedback https://github.com/AmbireTech/ambire-common/pull/281
 // @TODO sometimes tests are failing bad
