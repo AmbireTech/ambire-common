@@ -1,9 +1,8 @@
 /* eslint-disable no-underscore-dangle */
-import { ActivityController } from 'controllers/activity/activity'
 import { JsonRpcProvider } from 'ethers'
 
 import { networks } from '../../consts/networks'
-import { Account, AccountId, AccountOnchainState } from '../../interfaces/account'
+import { Account, AccountId, AccountStates } from '../../interfaces/account'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
 import { Storage } from '../../interfaces/storage'
 import { Message, UserRequest } from '../../interfaces/userRequest'
@@ -13,17 +12,12 @@ import { estimate, EstimateResult } from '../../libs/estimate/estimate'
 import { Key, Keystore, KeystoreSignerType } from '../../libs/keystore/keystore'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { AccountAdderController } from '../accountAdder/accountAdder'
+import { ActivityController } from '../activity/activity'
 import { EmailVaultController } from '../emailVault'
 import EventEmitter from '../eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
 import { PortfolioController } from '../portfolio/portfolio'
 import { SignMessageController } from '../signMessage/signMessage'
-
-export type AccountStates = {
-  [accountId: string]: {
-    [networkId: string]: AccountOnchainState
-  }
-}
 
 export class MainController extends EventEmitter {
   // Private library instances

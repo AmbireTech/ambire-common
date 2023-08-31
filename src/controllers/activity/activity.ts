@@ -1,11 +1,11 @@
 import { JsonRpcProvider } from 'ethers'
 
 import { networks } from '../../consts/networks'
+import { AccountStates } from '../../interfaces/account'
 import { Storage } from '../../interfaces/storage'
 import { Message } from '../../interfaces/userRequest'
 import { AccountOp, AccountOpStatus } from '../../libs/accountOp/accountOp'
 import EventEmitter from '../eventEmitter'
-import { AccountStates } from '../main/main'
 
 interface Pagination {
   fromPage: number
