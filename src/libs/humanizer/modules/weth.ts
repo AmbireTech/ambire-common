@@ -3,7 +3,7 @@ import { HumanizerFragment, HumanizerVisualization, Ir, IrCall } from '../interf
 import { AccountOp } from '../../accountOp/accountOp'
 import { getAction, getLabel, getToken } from '../utils'
 
-const WETH_ADDRESS = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2'
+// const WETH_ADDRESS = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2'
 
 export const wethHumanizer = (
   accountOp: AccountOp,
@@ -13,7 +13,11 @@ export const wethHumanizer = (
 ): [Ir, Array<Promise<HumanizerFragment | null>>] => {
   const iface = new ethers.Interface(accountOp.humanizerMeta?.['abis:WETH'])
   const newCalls = ir.calls.map((call: IrCall) => {
-    if (call.to === WETH_ADDRESS) {
+    if (
+      accountOp.humanizerMeta?.[`names:${call.to}`] === 'Wrapped ETH' ||
+      accountOp.humanizerMeta?.[`names:${call.to}`] === 'WETH' ||
+      accountOp.humanizerMeta?.[`tokens:${call.to}`]?.[0] === 'WETH'
+    ) {
       // 0xd0e30db0
       if (call.data.slice(0, 10) === iface.getFunction('deposit')?.selector) {
         return {
