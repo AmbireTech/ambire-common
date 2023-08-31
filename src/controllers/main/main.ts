@@ -393,6 +393,7 @@ export class MainController extends EventEmitter {
   broadcastSignedAccountOp(accountOp) {}
 
   broadcastSignedMessage(signedMessage: Message) {
+    this.activity.addSignedMessage(signedMessage, signedMessage.accountAddr)
     this.removeUserRequest(signedMessage.id)
     this.onResolveDappRequest({ hash: signedMessage.signature }, signedMessage.id)
     this.emitUpdate()
