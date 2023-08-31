@@ -3,6 +3,11 @@ pragma solidity 0.8.19;
 
 import './libs/Transaction.sol';
 
+/**
+ * @title   ExternalSigValidator
+ * @notice  A way to add custom recovery to AmbireAccount.
+ * @dev     Not all passed properties necessarily need to be used.
+ */
 interface ExternalSigValidator {
 	function validateSig(
 		address accountAddr,

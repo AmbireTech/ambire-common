@@ -19,7 +19,7 @@ struct AccountInfo {
     bool isDeployed;
     bytes deployErr;
     uint nonce;
-    bytes32[] associatedKeyPriviliges;
+    bytes32[] associatedKeyPrivileges;
     bool isV2;
     uint256 balance;
     bool isEOA;
@@ -54,7 +54,7 @@ contract AmbireAccountState {
             }
             try this.gatherAmbireData(account) returns (uint nonce, bytes32[] memory privileges, bool isV2, uint erc4337Nonce) {
                 accountResult[i].nonce = nonce;
-                accountResult[i].associatedKeyPriviliges = privileges;
+                accountResult[i].associatedKeyPrivileges = privileges;
                 accountResult[i].isV2 = isV2;
                 accountResult[i].erc4337Nonce = erc4337Nonce;
             } catch (bytes memory err) {
@@ -71,8 +71,17 @@ contract AmbireAccountState {
         for (uint j=0; j!=account.associatedKeys.length; j++) {
             privileges[j] = IAmbireAccount(account.addr).privileges(account.associatedKeys[j]);
         }
-        nonce =  IAmbireAccount(account.addr).nonce();
-        erc4337Nonce = IEntryPoint(account.erc4337EntryPoint).getNonce(account.addr, 0);
+        nonce = IAmbireAccount(account.addr).nonce();
+
+        try this.getErc4337Nonce(account.addr, account.erc4337EntryPoint) returns (uint aaNonce) {
+            erc4337Nonce = aaNonce;
+        } catch (bytes memory) {
+            erc4337Nonce = type(uint256).max;
+        }
+    }
+
+    function getErc4337Nonce(address acc, address entryPoint) external returns (uint) {
+        return IEntryPoint(entryPoint).getNonce(acc, 0);
     }
 
     function ambireV2Check(IAmbireAccount account) external pure returns(bool) {

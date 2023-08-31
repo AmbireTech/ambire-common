@@ -42,7 +42,7 @@ export async function getAccountState(
   })
 
   const result: AccountOnchainState[] = accountStateResult.map((accResult: any, index: number) => {
-    const associatedKeys = accResult.associatedKeyPriviliges.map(
+    const associatedKeys = accResult.associatedKeyPrivileges.map(
       (privilege: string, keyIndex: number) => {
         return [args[index][1][keyIndex], privilege]
       }
@@ -66,7 +66,7 @@ export async function getAccountState(
               associatedKey[1] === `0x${'0'.repeat(63)}1`)
         ),
       deployError:
-        accounts[index].associatedKeys.length > 0 && accResult.associatedKeyPriviliges.length === 0
+        accounts[index].associatedKeys.length > 0 && accResult.associatedKeyPrivileges.length === 0
     }
 
     return res
