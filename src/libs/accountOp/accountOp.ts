@@ -13,17 +13,9 @@ export interface Call {
   fromUserRequestId?: bigint
 }
 
-export enum GasFeePaymentType {
-  // when a paymaster is used, we put it in the `paidBy` instead of the accountAddr
-  ERC4337 = 'erc4337',
-  AmbireRelayer = 'ambireRelayer',
-  AmbireGasTank = 'ambireGasTank',
-  // we use this in two cases: 1) Ambire account, fee paid by an EOA 2) account itself is an EAO
-  // when the account itself is an EOA, paymentType equals accountAddr
-  EOA = 'eoa'
-}
 export interface GasFeePayment {
-  paymentType: GasFeePaymentType
+  isERC4337: boolean
+  isGasTank: boolean
   paidBy: string
   inToken: string
   amount: number
@@ -69,14 +61,6 @@ export function callToTuple(call: Call): [string, bigint, string] {
   return [call.to, call.value, call.data]
 }
 
-export function isEOA(op: AccountOp): boolean {
-  if (op.gasFeePayment === null) throw new Error('missing gasFeePayment')
-  return (
-    op.gasFeePayment.paymentType === GasFeePaymentType.EOA &&
-    op.gasFeePayment.paidBy === op.accountAddr
-  )
-}
-
 export function canBroadcast(op: AccountOp, accountIsEOA: boolean): boolean {
   if (op.signingKeyAddr === null) throw new Error('missing signingKeyAddr')
   if (op.signature === null) throw new Error('missing signature')
@@ -84,8 +68,8 @@ export function canBroadcast(op: AccountOp, accountIsEOA: boolean): boolean {
   if (op.gasLimit === null) throw new Error('missing gasLimit')
   if (op.nonce === null) throw new Error('missing nonce')
   if (accountIsEOA) {
-    if (op.gasFeePayment.paymentType !== GasFeePaymentType.EOA)
-      throw new Error('gas fee payment type is not EOA')
+    if (op.gasFeePayment.inToken !== '0x0000000000000000000000000000000000000000')
+      throw new Error('gas fee payment needs to be in the native asset')
     if (op.gasFeePayment.paidBy !== op.accountAddr)
       throw new Error('gas fee payment cannot be paid by anyone other than the EOA that signed it')
   }
