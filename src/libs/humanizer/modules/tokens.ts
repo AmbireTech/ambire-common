@@ -169,7 +169,7 @@ export function tokenParsing(accounOp: AccountOp, ir: Ir, options?: any) {
   const asyncOps: Array<Promise<any>> = []
   const newCalls = ir.calls.map((c) => ({
     ...c,
-    fullVisualization: c.fullVisualization.map((v: any) => {
+    fullVisualization: c?.fullVisualization?.map((v: any) => {
       if (v.type === 'token') {
         const tokenMeta =
           v.address === ethers.ZeroAddress
@@ -180,7 +180,7 @@ export function tokenParsing(accounOp: AccountOp, ir: Ir, options?: any) {
             ...v,
             symbol: v.symbol || tokenMeta[0],
             decimals: tokenMeta[1],
-            readbleAmount:
+            readableAmount:
               // only F's
               v.amount ===
               115792089237316195423570985008687907853269984665640564039457584007913129639935n

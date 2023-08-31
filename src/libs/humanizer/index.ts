@@ -4,6 +4,7 @@ import { IrCall, Ir, HumanizerFragment } from './interfaces'
 
 // @NOTE should we use wrppaer for coingecko(if(apikey){paid coingecko}else{no}?
 // @TODO update deciamls on 0x0 tokens to be 18 always
+// @TODO update all f's to 'all' in uniswap
 // @TOOD add ethercan txns for walletmodule test
 // @TODO humanize signed messages
 // @TODO fix comments from feedback https://github.com/AmbireTech/ambire-common/pull/281
@@ -14,8 +15,7 @@ export function callsToIr(accountOp: AccountOp): Ir {
     return {
       data: call.data,
       to: call.to,
-      value: call.value,
-      fullVisualization: null
+      value: call.value
     }
   })
   return { calls: irCalls }
@@ -46,13 +46,13 @@ export function humanize(
 
 export const visualizationToText = (call: IrCall, options: any): string => {
   let text = ''
-  const visualization = call.fullVisualization
-  visualization.forEach((v: { [key: string]: any }, i: number) => {
+  const visualization = call?.fullVisualization
+  visualization?.forEach((v: { [key: string]: any }, i: number) => {
     if (i) text += ' '
     if (v.type === 'action' || v.type === 'label') text += `${v.content}`
     if (v.type === 'address') text += v.name ? `${v.address} (${v.name})` : v.address
     if (v.type === 'token') {
-      text += `${v.readbleAmount || v.amount} ${v.symbol ? v.symbol : `${v.address} token`} `
+      text += `${v.readableAmount || v.amount} ${v.symbol ? v.symbol : `${v.address} token`} `
     }
   })
   if (text) {

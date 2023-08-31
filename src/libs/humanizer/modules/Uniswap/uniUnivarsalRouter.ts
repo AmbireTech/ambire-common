@@ -1,7 +1,7 @@
 import { ethers } from 'ethers'
 import { getAction, getDeadlineText, getLabel, getRecipientText, getToken } from '../../utils'
 import { AccountOp } from '../../../accountOp/accountOp'
-import { IrCall } from '../../interfaces'
+import { HumanizerVisualization, IrCall } from '../../interfaces'
 import { COMMANDS, COMMANDS_DESCRIPTIONS } from './Commands'
 import { parsePath } from './utils'
 
@@ -50,7 +50,7 @@ export const uniUniversalRouter = (
               getLabel('for at least'),
               getToken(path[path.length - 1], params.amountOutMin),
               getDeadlineText(deadline)
-            ]
+            ].filter((v) => v) as HumanizerVisualization[]
           })
         } else if (command === COMMANDS.V3_SWAP_EXACT_OUT) {
           const { inputsDetails } = COMMANDS_DESCRIPTIONS.V3_SWAP_EXACT_OUT
@@ -65,7 +65,7 @@ export const uniUniversalRouter = (
               getLabel('for'),
               getToken(path[0], params.amountOut),
               getDeadlineText(deadline)
-            ]
+            ].filter((v) => v) as HumanizerVisualization[]
           })
         } else if (command === COMMANDS.V2_SWAP_EXACT_IN) {
           const { inputsDetails } = COMMANDS_DESCRIPTIONS.V2_SWAP_EXACT_IN
@@ -80,7 +80,7 @@ export const uniUniversalRouter = (
               getLabel('for at least'),
               getToken(path[path.length - 1], params.amountOutMin),
               getDeadlineText(deadline)
-            ]
+            ].filter((v) => v) as HumanizerVisualization[]
           })
         } else if (command === COMMANDS.V2_SWAP_EXACT_OUT) {
           const { inputsDetails } = COMMANDS_DESCRIPTIONS.V2_SWAP_EXACT_OUT
@@ -95,7 +95,7 @@ export const uniUniversalRouter = (
               getLabel('for'),
               getToken(path[path.length - 1], params.amountOut),
               getDeadlineText(deadline)
-            ]
+            ].filter((v) => v) as HumanizerVisualization[]
           })
         } else if (command === COMMANDS.PERMIT2_PERMIT) {
           parsed.push({

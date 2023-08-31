@@ -2,7 +2,7 @@ import { ethers } from 'ethers'
 import { getAction, getLabel, getToken, getRecipientText, getDeadlineText } from '../../utils'
 
 import { AccountOp } from '../../../accountOp/accountOp'
-import { IrCall } from '../../interfaces'
+import { HumanizerVisualization, IrCall } from '../../interfaces'
 
 const uniV2Mapping = (
   humanizerInfo: any
@@ -27,7 +27,7 @@ const uniV2Mapping = (
             getToken(outputAsset, amountOutMin),
             ...getRecipientText(accountOp.accountAddr, to),
             getDeadlineText(deadline)
-          ]
+          ].filter((v) => v) as HumanizerVisualization[]
         }
       ]
     },
@@ -48,7 +48,7 @@ const uniV2Mapping = (
             getToken(outputAsset, amountOut),
             ...getRecipientText(accountOp.accountAddr, to),
             getDeadlineText(deadline)
-          ]
+          ].filter((v) => v) as HumanizerVisualization[]
         }
       ]
     },
@@ -69,7 +69,7 @@ const uniV2Mapping = (
             getToken(outputAsset, amountOutMin),
             ...getRecipientText(accountOp.accountAddr, to),
             getDeadlineText(deadline)
-          ]
+          ].filter((v) => v) as HumanizerVisualization[]
         }
       ]
     },
@@ -89,7 +89,7 @@ const uniV2Mapping = (
             getToken(ethers.ZeroAddress, amountOut),
             ...getRecipientText(accountOp.accountAddr, to),
             getDeadlineText(deadline)
-          ]
+          ].filter((v) => v) as HumanizerVisualization[]
         }
       ]
     },
@@ -108,7 +108,7 @@ const uniV2Mapping = (
             getToken(ethers.ZeroAddress, amountOutMin),
             ...getRecipientText(accountOp.accountAddr, to),
             getDeadlineText(deadline)
-          ]
+          ].filter((v) => v) as HumanizerVisualization[]
         }
       ]
     },
@@ -130,7 +130,7 @@ const uniV2Mapping = (
             getToken(outputAsset, amountOut),
             ...getRecipientText(accountOp.accountAddr, to),
             getDeadlineText(deadline)
-          ]
+          ].filter((v) => v) as HumanizerVisualization[]
         }
       ]
     },
@@ -159,7 +159,7 @@ const uniV2Mapping = (
             getToken(tokenB, amountBDesired),
             ...getRecipientText(accountOp.accountAddr, to),
             getDeadlineText(deadline)
-          ]
+          ].filter((v) => v) as HumanizerVisualization[]
         }
       ]
     },
@@ -180,7 +180,7 @@ const uniV2Mapping = (
             getToken(ethers.ZeroAddress, value),
             ...getRecipientText(accountOp.accountAddr, to),
             getDeadlineText(deadline)
-          ]
+          ].filter((v) => v) as HumanizerVisualization[]
         }
       ]
     },
@@ -201,7 +201,7 @@ const uniV2Mapping = (
             getToken(tokenB, amountBMin),
             ...getRecipientText(accountOp.accountAddr, to),
             getDeadlineText(deadline)
-          ]
+          ].filter((v) => v) as HumanizerVisualization[]
         }
       ]
     },
@@ -222,7 +222,7 @@ const uniV2Mapping = (
             getToken(ethers.ZeroAddress, amountETHMin),
             ...getRecipientText(accountOp.accountAddr, to),
             getDeadlineText(deadline)
-          ]
+          ].filter((v) => v) as HumanizerVisualization[]
         }
       ]
     }

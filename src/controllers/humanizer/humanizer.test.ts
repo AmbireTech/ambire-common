@@ -233,7 +233,7 @@ describe('HumanizerController', () => {
     ]
     const onUpdate = jest.fn(() => {
       hc.ir.calls.forEach((c, i) =>
-        c.fullVisualization.forEach((v: any, j: number) =>
+        c?.fullVisualization?.forEach((v: any, j: number) =>
           expect(v).toMatchObject(expectedVisualizations[i][j])
         )
       )
@@ -256,14 +256,14 @@ describe('HumanizerController', () => {
     let iterations = 0
     const onUpdate = jest.fn(() => {
       if (iterations === 0) {
-        expect(hc.ir.calls[0].fullVisualization.length).toBe(3)
-        expect(hc.ir.calls[0].fullVisualization[0]).toMatchObject({
+        expect(hc.ir.calls[0]?.fullVisualization?.length).toBe(3)
+        expect(hc.ir.calls[0]?.fullVisualization?.[0]).toMatchObject({
           type: 'action',
           content: 'Unknown action'
         })
       } else if (iterations === 1) {
-        expect(hc.ir.calls[0].fullVisualization.length).toBe(3)
-        hc.ir.calls[0].fullVisualization.forEach((v: any, i: number) =>
+        expect(hc.ir.calls[0]?.fullVisualization?.length).toBe(3)
+        hc.ir.calls[0]?.fullVisualization?.forEach((v: any, i: number) =>
           expect(v).toMatchObject(expectedVisualizations[i])
         )
       }

@@ -215,7 +215,7 @@ describe('module tests', () => {
     accountOp.calls = [...transactions.generic, ...transactions.erc20]
     const ir: Ir = callsToIr(accountOp)
     expect(ir.calls.length).toBe(transactions.erc20.length + transactions.generic.length)
-    expect(ir.calls[0]).toEqual({ ...transactions.generic[0], fullVisualization: null })
+    expect(ir.calls[0]).toEqual({ ...transactions.generic[0], fullVisualization: undefined })
   })
   test('genericErc20Humanizer', () => {
     accountOp.calls = [...transactions.erc20]
@@ -223,7 +223,7 @@ describe('module tests', () => {
     const [{ calls: newCalls }] = genericErc20Humanizer(accountOp, ir, { fetch })
     expect(newCalls.length).toBe(transactions.erc20.length)
     newCalls.forEach((c) => {
-      expect(c.fullVisualization.find((v: any) => v.type === 'token')).toMatchObject({
+      expect(c?.fullVisualization?.find((v: any) => v.type === 'token')).toMatchObject({
         type: 'token',
         address: expect.anything(),
         amount: expect.anything()
@@ -238,7 +238,7 @@ describe('module tests', () => {
 
     expect(newCalls.length).toBe(transactions.erc721.length)
     newCalls.forEach((c) => {
-      expect(c.fullVisualization).not.toBeNull()
+      expect(c?.fullVisualization).not.toBeNull()
     })
   })
   test('uniSwap', () => {
@@ -295,8 +295,8 @@ describe('module tests', () => {
     ]
     expect(calls.length).toEqual(expectedVisualization.length)
     calls.forEach((c, i) => {
-      expect(c.fullVisualization.length).toBe(expectedVisualization[i].length)
-      c.fullVisualization.forEach((v: any, j: number) => {
+      expect(c?.fullVisualization?.length).toBe(expectedVisualization[i].length)
+      c?.fullVisualization?.forEach((v: any, j: number) => {
         expect(v).toMatchObject(expectedVisualization[i][j])
       })
     })
@@ -317,7 +317,7 @@ describe('module tests', () => {
     // etherface api might be asparagus
     expect(accountOp.humanizerMeta).toHaveProperty('funcSelectors:0x095ea7b3')
     ;[ir, asyncOps] = fallbackHumanizer(accountOp, ir, { fetch })
-    expect(ir.calls[1].fullVisualization[0]).toMatchObject({
+    expect(ir.calls[1]?.fullVisualization?.[0]).toMatchObject({
       type: 'action',
       content: 'Call approve(address,uint256)'
     })
@@ -332,17 +332,17 @@ describe('module tests', () => {
     const [{ calls: newCalls }] = nameParsing(accountOp, ir, { fetch })
 
     expect(newCalls.length).toBe(transactions.namingTransactions.length)
-    expect(newCalls[0].fullVisualization.find((v: any) => v.type === 'address')).toMatchObject({
+    expect(newCalls[0]?.fullVisualization?.find((v: any) => v.type === 'address')).toMatchObject({
       type: 'address',
       address: expect.anything(),
       name: expect.not.stringMatching(/^0x[a-fA-F0-9]{3}\.{3}[a-fA-F0-9]{3}$/)
     })
-    expect(newCalls[1].fullVisualization.find((v: any) => v.type === 'address')).toMatchObject({
+    expect(newCalls[1]?.fullVisualization?.find((v: any) => v.type === 'address')).toMatchObject({
       type: 'address',
       address: expect.anything(),
       name: expect.not.stringMatching(/^0x[a-fA-F0-9]{3}\.{3}[a-fA-F0-9]{3}$/)
     })
-    expect(newCalls[2].fullVisualization.find((v: any) => v.type === 'address')).toMatchObject({
+    expect(newCalls[2]?.fullVisualization?.find((v: any) => v.type === 'address')).toMatchObject({
       type: 'address',
       address: expect.anything(),
       name: expect.stringMatching(/^0x[a-fA-F0-9]{3}\.{3}[a-fA-F0-9]{3}$/)

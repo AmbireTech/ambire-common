@@ -284,8 +284,8 @@ describe('module tests', () => {
     let ir: Ir = callsToIr(accountOp)
     ;[ir] = uniswapHumanizer(accountOp, ir)
     ir.calls.forEach((c, i) => {
-      expect(c.fullVisualization.length).toEqual(expectedhumanization[i].length)
-      c.fullVisualization.forEach((v: any, j: number) => {
+      expect(c?.fullVisualization?.length).toEqual(expectedhumanization[i].length)
+      c?.fullVisualization?.forEach((v: any, j: number) => {
         expect(v).toEqual(expectedhumanization[i][j])
       })
     })
@@ -294,7 +294,7 @@ describe('module tests', () => {
     accountOp.calls = [...transactions.weth]
     let ir: Ir = callsToIr(accountOp)
     ;[ir] = wethHumanizer(accountOp, ir)
-    expect(ir.calls[0].fullVisualization).toEqual([
+    expect(ir.calls[0]?.fullVisualization).toEqual([
       { type: 'action', content: 'Wrap' },
       {
         type: 'token',
@@ -302,7 +302,7 @@ describe('module tests', () => {
         amount: transactions.weth[0].value
       }
     ])
-    expect(ir.calls[1].fullVisualization).toEqual([
+    expect(ir.calls[1]?.fullVisualization).toEqual([
       { type: 'action', content: 'Unwrap' },
       {
         type: 'token',
@@ -310,7 +310,7 @@ describe('module tests', () => {
         amount: 8900000000000000n
       }
     ])
-    expect(ir.calls[2].fullVisualization).toBeNull()
+    expect(ir.calls[2]?.fullVisualization).toBeUndefined()
   })
   test('AAVE', () => {
     const expectedhumanization = [
@@ -347,7 +347,7 @@ describe('module tests', () => {
     let ir: Ir = callsToIr(accountOp)
     ;[ir] = aaveHumanizer(accountOp, ir)
     ir.calls.forEach((c, i) =>
-      c.fullVisualization.forEach((v: any, j: number) =>
+      c?.fullVisualization?.forEach((v: any, j: number) =>
         expect(v).toMatchObject(expectedhumanization[i][j])
       )
     )
@@ -358,11 +358,11 @@ describe('module tests', () => {
     let ir: Ir = callsToIr(accountOp)
     ;[ir] = aaveHumanizer(accountOp, ir)
     // ir.calls.forEach((c, i) =>
-    //   c.fullVisualization.forEach((v: any, j: number) =>
+    //   c?.fullVisualization?.forEach((v: any, j: number) =>
     //     expect(v).toMatchObject(expectedhumanization[i][j])
     //   )
     // )
-    // ir.calls.forEach((call) => console.log(call.fullVisualization))
+    // ir.calls.forEach((call) => console.log(call?.fullVisualization))
   })
   test('yearn', () => {
     accountOp.calls = [...transactions.yearn]
@@ -389,7 +389,7 @@ describe('module tests', () => {
     let ir: Ir = callsToIr(accountOp)
     ;[ir] = yearnVaultModule(accountOp, ir)
     ir.calls.forEach((call, i) =>
-      call.fullVisualization.forEach((v: any, j: number) =>
+      call?.fullVisualization?.forEach((v: any, j: number) =>
         expect(v).toMatchObject(expectedhumanization[i][j])
       )
     )

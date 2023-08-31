@@ -64,7 +64,7 @@ export function fallbackHumanizer(
 ): [Ir, Promise<any>[]] {
   const asyncOps: any = []
   const newCalls = currentIr.calls.map((call) => {
-    if (call.fullVisualization && !checkIfUnknowAction(call.fullVisualization)) return call
+    if (call?.fullVisualization && !checkIfUnknowAction(call?.fullVisualization)) return call
     const visualization: Array<any> = []
     if (call.data !== '0x') {
       if (accountOp.humanizerMeta?.[`funcSelectors:${call.data.slice(0, 10)}`]) {

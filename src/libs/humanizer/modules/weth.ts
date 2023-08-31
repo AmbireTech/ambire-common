@@ -1,5 +1,5 @@
 import { ethers, getAddress } from 'ethers'
-import { HumanizerFragment, Ir, IrCall } from '../interfaces'
+import { HumanizerFragment, HumanizerVisualization, Ir, IrCall } from '../interfaces'
 import { AccountOp } from '../../accountOp/accountOp'
 import { getAction, getLabel, getToken } from '../utils'
 
@@ -29,14 +29,14 @@ export const wethHumanizer = (
           fullVisualization: [getAction('Unwrap'), getToken(ethers.ZeroAddress, amount)]
         }
       }
-      if (!call.fullVisualization)
+      if (!call?.fullVisualization)
         return {
           ...call,
           fullVisualization: [
             getAction('Unknown action (WETH)'),
             getLabel('to'),
             getAddress(call.to)
-          ]
+          ] as HumanizerVisualization[]
         }
     }
     return call

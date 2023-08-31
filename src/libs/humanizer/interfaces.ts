@@ -1,8 +1,19 @@
+export type HumanizerVisualization = {
+  type: 'token' | 'address' | 'label' | 'action' | 'nft'
+  address?: string
+  content?: string
+  amount?: bigint
+  decimals?: number
+  readableAmount?: number
+  symbol?: string
+  name?: string
+  id?: bigint
+}
 export interface IrCall {
   data: string
   to: string
   value: bigint
-  fullVisualization?: any
+  fullVisualization?: HumanizerVisualization[]
 }
 
 export interface Ir {

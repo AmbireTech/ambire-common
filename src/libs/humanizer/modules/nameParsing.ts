@@ -17,7 +17,7 @@ export function nameParsing(
 ): [Ir, Array<Promise<any>>] {
   const asyncOps: Array<Promise<any>> = []
   const newCalls = currentIr.calls.map((call) => {
-    const newVisualization = call.fullVisualization?.map((v: any) => {
+    const newVisualization = call?.fullVisualization?.map((v: any) => {
       if (v.type === 'address' && !v.name)
         return {
           ...v,
@@ -25,7 +25,7 @@ export function nameParsing(
         }
       return v
     })
-    return { ...call, fullVisualization: newVisualization || call.fullVisualization }
+    return { ...call, fullVisualization: newVisualization || call?.fullVisualization }
   })
   const newIr = { ...currentIr, calls: newCalls }
   return [newIr, asyncOps]

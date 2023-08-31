@@ -9,7 +9,7 @@ import {
 } from '../../utils'
 
 import { AccountOp } from '../../../accountOp/accountOp'
-import { IrCall } from '../../interfaces'
+import { HumanizerVisualization, IrCall } from '../../interfaces'
 import { parsePath } from './utils'
 
 // Stolen from ambire-wallet
@@ -38,7 +38,10 @@ const uniV32Mapping = (
         .map(
           (newCall: IrCall): IrCall => ({
             ...newCall,
-            fullVisualization: [...newCall.fullVisualization, getDeadlineText(deadline)]
+            fullVisualization: [
+              ...(newCall.fullVisualization || []),
+              getDeadlineText(deadline)
+            ] as HumanizerVisualization[]
           })
         )
         .filter((x: any) => x)
@@ -87,7 +90,7 @@ const uniV32Mapping = (
           return {
             ...newCall,
             fullVisualization: [
-              ...newCall.fullVisualization,
+              ...(newCall.fullVisualization || []),
               getLabel(`after block ${prevBlockHash}`)
             ]
           }
@@ -387,7 +390,7 @@ const uniV3Mapping = (
             getToken(params.tokenOut, params.amountOutMinimum),
             ...getRecipientText(accountOp.accountAddr, params.recipient),
             getDeadlineText(params.deadline)
-          ]
+          ].filter((v) => v) as HumanizerVisualization[]
         }
       ]
     },
@@ -408,7 +411,7 @@ const uniV3Mapping = (
             getToken(path[path.length - 1], params.amountOutMinimum),
             ...getRecipientText(accountOp.accountAddr, params.recipient),
             getDeadlineText(params.deadline)
-          ]
+          ].filter((v) => v) as HumanizerVisualization[]
         }
       ]
     },
@@ -428,7 +431,7 @@ const uniV3Mapping = (
             getToken(params.tokenOut, params.amountOut),
             ...getRecipientText(accountOp.accountAddr, params.recipient),
             getDeadlineText(params.deadline)
-          ]
+          ].filter((v) => v) as HumanizerVisualization[]
         }
       ]
     },
@@ -449,7 +452,7 @@ const uniV3Mapping = (
             getToken(path[0], params.amountOut),
             ...getRecipientText(accountOp.accountAddr, params.recipient),
             getDeadlineText(params.deadline)
-          ]
+          ].filter((v) => v) as HumanizerVisualization[]
         }
       ]
     },

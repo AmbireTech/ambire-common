@@ -1,43 +1,50 @@
 import { ethers } from 'ethers'
 import { AccountOp } from 'libs/accountOp/accountOp'
-import { HumanizerFragment } from './interfaces'
+import { HumanizerFragment, HumanizerVisualization } from './interfaces'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { networks } from '../../consts/networks'
 
-export function getLabel(content: string) {
+export function getLabel(content: string): HumanizerVisualization {
   return { type: 'label', content }
 }
-export function getAction(content: string) {
+export function getAction(content: string): HumanizerVisualization {
   return { type: 'action', content }
 }
-export function getAddress(_address: string, name?: string) {
+export function getAddress(_address: string, name?: string): HumanizerVisualization {
   const address = ethers.getAddress(_address)
   return name ? { type: 'address', address, name } : { type: 'address', address }
 }
 
-export function getToken(_address: string, amount: bigint, name?: string) {
+export function getToken(_address: string, amount: bigint, name?: string): HumanizerVisualization {
   const address = ethers.getAddress(_address)
   return name ? { type: 'token', address, amount, name } : { type: 'token', address, amount }
 }
 
-export function getNft(address: string, id: bigint) {
+export function getNft(address: string, id: bigint): HumanizerVisualization {
   return { type: 'nft', address, id }
 }
 
-export function getOnBehalfOf(onBehalfOf: string, sender: string, name?: string) {
+export function getOnBehalfOf(
+  onBehalfOf: string,
+  sender: string,
+  name?: string
+): HumanizerVisualization[] {
   return onBehalfOf.toLowerCase() !== sender.toLowerCase()
-    ? [getLabel('on befalf of'), getAddress(onBehalfOf, name)]
+    ? ([getLabel('on befalf of'), getAddress(onBehalfOf, name)] as HumanizerVisualization[])
     : []
 }
 
 // @TODO on some humanization of uniswap there is recipient 0x000...000
-export function getRecipientText(from: string, recipient: string) {
+export function getRecipientText(from: string, recipient: string): HumanizerVisualization[] {
   return from.toLowerCase() === recipient.toLowerCase()
     ? []
-    : [getLabel('and send it to'), getAddress(recipient)]
+    : ([getLabel('and send it to'), getAddress(recipient)] as HumanizerVisualization[])
 }
 
-export function getDeadlineText(deadlineSecs: bigint, mined = false) {
+export function getDeadlineText(
+  deadlineSecs: bigint,
+  mined = false
+): HumanizerVisualization | null {
   if (mined) return null
   const minute = 60000
   const deadline = Number(deadlineSecs * 1000n)
