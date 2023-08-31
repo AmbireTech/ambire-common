@@ -176,17 +176,20 @@ export function tokenParsing(accounOp: AccountOp, ir: Ir, options?: any) {
             ? nativeTokens[accounOp.networkId]
             : accounOp.humanizerMeta?.[`tokens:${v.address}`]
         if (tokenMeta) {
-          return {
-            ...v,
-            symbol: v.symbol || tokenMeta[0],
-            decimals: tokenMeta[1],
-            readableAmount:
-              // only F's
-              v.amount ===
-              115792089237316195423570985008687907853269984665640564039457584007913129639935n
-                ? 'all'
-                : ethers.formatUnits(v.amount as bigint, tokenMeta[1])
-          }
+          return v.amount ===
+            115792089237316195423570985008687907853269984665640564039457584007913129639935n
+            ? getLabel(`all ${tokenMeta[0]}`)
+            : {
+                ...v,
+                symbol: v.symbol || tokenMeta[0],
+                decimals: tokenMeta[1],
+                readableAmount:
+                  // only F's
+                  v.amount ===
+                  115792089237316195423570985008687907853269984665640564039457584007913129639935n
+                    ? 'all'
+                    : ethers.formatUnits(v.amount as bigint, tokenMeta[1])
+              }
         }
         asyncOps.push(getTokenInfo(accounOp, v.address as string, options))
       }

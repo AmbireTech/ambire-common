@@ -164,20 +164,20 @@ describe('module tests', () => {
 
   test('visualization to text', async () => {
     const expectedTexification = [
-      'Swap 50844.919041919270406243 XLRT  for at least 0.137930462904193673 ETH  and send it to 0x0000000000000000000000000000000000000000 (0x000...000) already expired',
-      'Swap 0.941 WETH  for at least 5158707941840645403045 0x6E975115250B05C828ecb8edeDb091975Fc20a5d token  and send it to 0xbb6C8c037b9Cc3bF1a4C4188d92e5D86bfCE76A8 (0xbb6...6A8) already expired',
-      'Swap 422.775565331912310692 SHARES  for at least 2454.922038 USDC  and send it to 0xca124B356bf11dc153B886ECB4596B5cb9395C41 (0xca1...C41) already expired',
-      'Swap up to 4825320403256397423633 0x6E975115250B05C828ecb8edeDb091975Fc20a5d token  for 0.941 WETH  and send it to 0xbb6C8c037b9Cc3bF1a4C4188d92e5D86bfCE76A8 (0xbb6...6A8) already expired',
-      'Wrap 1.0 ETH ',
-      'Unwrap 0.0089 ETH ',
-      'Call deposit() from 0xE592427A0AEce92De3Edee1F18E0157C05861564 (Uniswap) and Send 1.0 ETH ',
-      'Deposit 11.72018633376687831 STETH  to Aave lending pool on befalf of 0x7F4cF2E68f968cc050B3783268C474a15b8BDC2e (0x7F4...C2e)',
-      'Withdraw all USDC  from Aave lending pool on befalf of 0x8BC110Db7029197C3621bEA8092aB1996D5DD7BE (0x8BC...7BE)',
-      'Deposit 0.135592697552 ETH  to Aave lending pool on befalf of 0x47c353467326E6Bd0c01E728E8F7D1A06A849395 (0x47c...395)',
-      'Withdraw 0.000000000473401923 ETH  from Aave lending pool on befalf of 0x0DF1A69fCDf15FEC04e37Aa5ECA4268927B111e7 (0x0DF...1e7)',
-      'Deposit 690.0 yDAI  to 0xdA816459F1AB5631232FE5e97a05BBBb94970c95 (Yearn DAI Vault)',
-      'Withdraw 23736.387977148798767461 yDAI  from 0xdA816459F1AB5631232FE5e97a05BBBb94970c95 (Yearn DAI Vault)',
-      'Approve 0xC92E8bdf79f0507f65a392b0ab4667716BFE0110 (Gnosis Protocol) for 33427.0 yDAI '
+      'Swap 50844.919041919270406243 XLRT for at least 0.137930462904193673 ETH and send it to 0x0000000000000000000000000000000000000000 (0x000...000) already expired',
+      'Swap 0.941 WETH for at least 5158707941840645403045 0x6E975115250B05C828ecb8edeDb091975Fc20a5d token and send it to 0xbb6C8c037b9Cc3bF1a4C4188d92e5D86bfCE76A8 (0xbb6...6A8) already expired',
+      'Swap 422.775565331912310692 SHARES for at least 2454.922038 USDC and send it to 0xca124B356bf11dc153B886ECB4596B5cb9395C41 (0xca1...C41) already expired',
+      'Swap up to 4825320403256397423633 0x6E975115250B05C828ecb8edeDb091975Fc20a5d token for 0.941 WETH and send it to 0xbb6C8c037b9Cc3bF1a4C4188d92e5D86bfCE76A8 (0xbb6...6A8) already expired',
+      'Wrap 1.0 ETH',
+      'Unwrap 0.0089 ETH',
+      'Call deposit() from 0xE592427A0AEce92De3Edee1F18E0157C05861564 (Uniswap) and Send 1.0 ETH',
+      'Deposit 11.72018633376687831 STETH to Aave lending pool on befalf of 0x7F4cF2E68f968cc050B3783268C474a15b8BDC2e (0x7F4...C2e)',
+      'Withdraw all USDC from Aave lending pool on befalf of 0x8BC110Db7029197C3621bEA8092aB1996D5DD7BE (0x8BC...7BE)',
+      'Deposit 0.135592697552 ETH to Aave lending pool on befalf of 0x47c353467326E6Bd0c01E728E8F7D1A06A849395 (0x47c...395)',
+      'Withdraw 0.000000000473401923 ETH from Aave lending pool on befalf of 0x0DF1A69fCDf15FEC04e37Aa5ECA4268927B111e7 (0x0DF...1e7)',
+      'Deposit 690.0 yDAI to 0xdA816459F1AB5631232FE5e97a05BBBb94970c95 (Yearn DAI Vault)',
+      'Withdraw 23736.387977148798767461 yDAI from 0xdA816459F1AB5631232FE5e97a05BBBb94970c95 (Yearn DAI Vault)',
+      'Approve 0xC92E8bdf79f0507f65a392b0ab4667716BFE0110 (Gnosis Protocol) for 33427.0 yDAI'
     ]
     const allCalls = Object.keys(transactions)
       .map((key: string) => transactions[key])

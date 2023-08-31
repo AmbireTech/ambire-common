@@ -3,14 +3,11 @@ import { AccountOp } from '../accountOp/accountOp'
 import { IrCall, Ir, HumanizerFragment } from './interfaces'
 
 // @NOTE should we use wrppaer for coingecko(if(apikey){paid coingecko}else{no}?
-// @TODO update deciamls on 0x0 tokens to be 18 always
 // @TODO update all f's to 'all' in uniswap
 // @TOOD add ethercan txns for walletmodule test
 // @TODO humanize signed messages
 // @TODO fix comments from feedback https://github.com/AmbireTech/ambire-common/pull/281
-// @TODO add visualization interface
 // @TODO sometimes tests are failing bad
-// @TODO upa=date weth addresse sfrom https://docs.uniswap.org/contracts/v3/reference/deployments
 export function callsToIr(accountOp: AccountOp): Ir {
   const irCalls: IrCall[] = accountOp.calls.map((call) => {
     return {
@@ -53,7 +50,7 @@ export const visualizationToText = (call: IrCall, options: any): string => {
     if (v.type === 'action' || v.type === 'label') text += `${v.content}`
     if (v.type === 'address') text += v.name ? `${v.address} (${v.name})` : v.address
     if (v.type === 'token') {
-      text += `${v.readableAmount || v.amount} ${v.symbol ? v.symbol : `${v.address} token`} `
+      text += `${v.readableAmount || v.amount} ${v.symbol ? v.symbol : `${v.address} token`}`
     }
   })
   if (text) {
