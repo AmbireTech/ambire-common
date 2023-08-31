@@ -96,3 +96,11 @@ export async function getTokenInfo(
     })
   }
 }
+
+export function checkIfUnknowAction(v: Array<HumanizerVisualization>) {
+  try {
+    return v[0].type === 'action' && v?.[0]?.content?.startsWith('Unknown action')
+  } catch (e) {
+    return false
+  }
+}

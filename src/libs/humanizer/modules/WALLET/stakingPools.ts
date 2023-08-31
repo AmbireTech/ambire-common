@@ -4,23 +4,23 @@ import { AccountOp } from '../../../accountOp/accountOp'
 import { IrCall } from '../../interfaces'
 
 const STAKING_POOLS: { [key: string]: { [key: string]: string } } = {
-  '0x47cd7e91c3cbaaf266369fe8518345fc4fc12935': {
+  '0x47Cd7E91C3CBaAF266369fe8518345fc4FC12935': {
     baseToken: '0x88800092ff476844f74dc2fc427974bbee2794ae',
     name: 'WALLET Staking Pool'
   },
-  '0xb6456b57f03352be48bf101b46c1752a0813491a': {
+  '0xB6456b57f03352bE48Bf101B46c1752a0813491a': {
     baseToken: '0xade00c28244d5ce17d72e40330b1c318cd12b7c3',
     name: 'ADX Staking Pool'
   },
   // this is on polygon for tests
-  '0xec3b10ce9cabab5dbf49f946a623e294963fbb4e': {
+  '0xEc3b10ce9cabAb5dbF49f946A623E294963fBB4E': {
     baseToken: '0xe9415e904143e42007865e6864f7f632bd054a08',
     name: 'WALLET Staking Pool (Test)'
   }
 }
 // const WALLET_TOKEN_ADDR = '0x88800092ff476844f74dc2fc427974bbee2794ae'
 
-export const WALLETStakingPool = (humanizerInfo: any) => {
+export const StakingPools = (humanizerInfo: any) => {
   const iface = new ethers.Interface(humanizerInfo?.['abis:StakingPool'])
   return {
     [`${iface.getFunction('enter')?.selector}`]: (accountOp: AccountOp, call: IrCall) => {
@@ -35,26 +35,32 @@ export const WALLETStakingPool = (humanizerInfo: any) => {
       ]
     },
     [`${iface.getFunction('leave')?.selector}`]: (accountOp: AccountOp, call: IrCall) => {
-      return [getAction('Leave'), getAddress(call.to)]
+      const { shares } = iface.parseTransaction(call)!.args
+
+      return [
+        getAction('Leave'),
+        getLabel('with'),
+        getToken(STAKING_POOLS[call.to].baseToken, shares),
+        getAddress(call.to)
+      ]
     },
     [`${iface.getFunction('withdraw')?.selector}`]: (accountOp: AccountOp, call: IrCall) => {
       const { shares } = iface.parseTransaction(call)!.args
       return [
         getAction('Withdraw'),
-        getToken(call.to, shares),
+        getToken(STAKING_POOLS[call.to].baseToken, shares),
         getLabel('from'),
-        getAddress(STAKING_POOLS[call.to].baseToken)
+        getAddress(call.to)
       ]
     },
 
     [`${iface.getFunction('rageLeave')?.selector}`]: (accountOp: AccountOp, call: IrCall) => {
       const { shares } = iface.parseTransaction(call)!.args
-      // @NOTE not sure
       return [
         getAction('Rage leave'),
-        getToken(call.to, shares),
-        getLabel('to'),
-        getAddress(STAKING_POOLS[call.to].baseToken)
+        getLabel('with'),
+        getToken(STAKING_POOLS[call.to].baseToken, shares),
+        getAddress(call.to)
       ]
     }
   }

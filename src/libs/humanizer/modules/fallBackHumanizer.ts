@@ -2,7 +2,7 @@
 import { ethers } from 'ethers'
 import { AccountOp } from '../../accountOp/accountOp'
 import { HumanizerFragment, HumanizerVisualization, Ir } from '../interfaces'
-import { getAction, getAddress, getLabel, getToken } from '../utils'
+import { checkIfUnknowAction, getAction, getAddress, getLabel, getToken } from '../utils'
 
 async function fetchFuncEtherface(
   selector: string,
@@ -49,13 +49,6 @@ async function fetchFuncEtherface(
   })
   return null
 }
-const checkIfUnknowAction = (v: Array<HumanizerVisualization>) => {
-  try {
-    return v[0].type === 'action' && v?.[0]?.content?.startsWith('Unknown action')
-  } catch (e) {
-    return false
-  }
-}
 
 export function fallbackHumanizer(
   accountOp: AccountOp,
@@ -64,7 +57,8 @@ export function fallbackHumanizer(
 ): [Ir, Promise<HumanizerFragment | null>[]] {
   const asyncOps: Promise<HumanizerFragment | null>[] = []
   const newCalls = currentIr.calls.map((call) => {
-    if (call?.fullVisualization && !checkIfUnknowAction(call?.fullVisualization)) return call
+    if (call.fullVisualization && !checkIfUnknowAction(call?.fullVisualization)) return call
+
     const visualization: Array<HumanizerVisualization> = []
     if (call.data !== '0x') {
       if (accountOp.humanizerMeta?.[`funcSelectors:${call.data.slice(0, 10)}`]) {

@@ -129,7 +129,24 @@ const transactions: { [key: string]: Array<IrCall> } = {
       data: '0x80500d200000000000000000000000007d2768de32b0b80b7a3454c06bdac94a69ddc7a9000000000000000000000000000000000000000000000000000000001c378a430000000000000000000000000df1a69fcdf15fec04e37aa5eca4268927b111e7'
     }
   ],
-  WALLET: [],
+  WALLET: [
+    // enter
+    {
+      to: '0x47cd7e91c3cbaaf266369fe8518345fc4fc12935',
+      value: 0n,
+      data: '0xa59f3e0c00000000000000000000000000000000000000000000021e19e0c9bab2400000'
+    }, // leave
+    {
+      to: '0x47cd7e91c3cbaaf266369fe8518345fc4fc12935',
+      value: 0n,
+      data: '0x9b4ee06400000000000000000000000000000000000000000002172be687fbab0bd4bfd10000000000000000000000000000000000000000000000000000000000000000'
+    }, // rage leave
+    {
+      to: '0x47cd7e91c3cbaaf266369fe8518345fc4fc12935',
+      value: 0n,
+      data: '0x8a07b41900000000000000000000000000000000000000000000006d7daaded78ae996310000000000000000000000000000000000000000000000000000000000000000'
+    }
+  ],
   yearn: [
     // deposit dai
     {
@@ -175,6 +192,9 @@ describe('module tests', () => {
       'Withdraw all USDC from Aave lending pool on befalf of 0x8BC110Db7029197C3621bEA8092aB1996D5DD7BE (0x8BC...7BE)',
       'Deposit 0.135592697552 ETH to Aave lending pool on befalf of 0x47c353467326E6Bd0c01E728E8F7D1A06A849395 (0x47c...395)',
       'Withdraw 0.000000000473401923 ETH from Aave lending pool on befalf of 0x0DF1A69fCDf15FEC04e37Aa5ECA4268927B111e7 (0x0DF...1e7)',
+      'Deposit 10000.0 WALLET to 0x47Cd7E91C3CBaAF266369fe8518345fc4FC12935 (WALLET Staking Pool)',
+      'Leave with 2527275.889852892335882193 WALLET 0x47Cd7E91C3CBaAF266369fe8518345fc4FC12935 (WALLET Staking Pool)',
+      'Rage leave with 2019.750399052452828721 WALLET 0x47Cd7E91C3CBaAF266369fe8518345fc4FC12935 (WALLET Staking Pool)',
       'Deposit 690.0 yDAI to 0xdA816459F1AB5631232FE5e97a05BBBb94970c95 (Yearn DAI Vault)',
       'Withdraw 23736.387977148798767461 yDAI from 0xdA816459F1AB5631232FE5e97a05BBBb94970c95 (Yearn DAI Vault)',
       'Approve 0xC92E8bdf79f0507f65a392b0ab4667716BFE0110 (Gnosis Protocol) for 33427.0 yDAI'
@@ -195,6 +215,7 @@ describe('module tests', () => {
     ;[ir, asyncOps] = humanize(accountOp, humanizerModules, standartOptions)
 
     const res = ir.calls.map((call: IrCall) => visualizationToText(call, standartOptions))
+    // @TODO switch et and res[i]
     expectedTexification.forEach((et: string, i: number) => expect(et).toEqual(res[i]))
   })
   test('uniV3', () => {
@@ -352,18 +373,21 @@ describe('module tests', () => {
       )
     )
   })
-  test('WALLET', () => {
-    // const expectedhumanization = []
-    accountOp.calls = [...transactions.WALLET]
-    let ir: Ir = callsToIr(accountOp)
-    ;[ir] = aaveHumanizer(accountOp, ir)
-    // ir.calls.forEach((c, i) =>
-    //   c?.fullVisualization?.forEach((v: HumanizerVisualization, j: number) =>
-    //     expect(v).toMatchObject(expectedhumanization[i][j])
-    //   )
-    // )
-    // ir.calls.forEach((call) => console.log(call?.fullVisualization))
-  })
+  // // @TODO uncomment
+  // @TODO add expected humanization
+  // test('WALLET', () => {
+  //   // const expectedhumanization = []
+  //   accountOp.calls = [...transactions.WALLET]
+  //   let ir: Ir = callsToIr(accountOp)
+  //   ;[ir] = WALLETModule(accountOp, ir)
+  //   console.log(ir.calls.map((c) => c.fullVisualization))
+  //   // ir.calls.forEach((c, i) =>
+  //   //   c?.fullVisualization?.forEach((v: HumanizerVisualization, j: number) =>
+  //   //     expect(v).toMatchObject(expectedhumanization[i][j])
+  //   //   )
+  //   // )
+  //   // ir.calls.forEach((call) => console.log(call?.fullVisualization))
+  // })
   test('yearn', () => {
     accountOp.calls = [...transactions.yearn]
     const expectedhumanization = [
