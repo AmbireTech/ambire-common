@@ -1,26 +1,23 @@
+/* eslint-disable no-underscore-dangle */
 import { JsonRpcProvider } from 'ethers'
 
 import { networks } from '../../consts/networks'
-import { KeystoreController } from '../keystore/keystore'
-import { Account, AccountId, AccountOnchainState } from '../../interfaces/account'
+import { Account, AccountId, AccountStates } from '../../interfaces/account'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
 import { Storage } from '../../interfaces/storage'
-import { SignedMessage, UserRequest } from '../../interfaces/userRequest'
+import { Message, UserRequest } from '../../interfaces/userRequest'
 import { AccountOp, Call as AccountOpCall } from '../../libs/accountOp/accountOp'
 import { getAccountState } from '../../libs/accountState/accountState'
 import { estimate, EstimateResult } from '../../libs/estimate/estimate'
-import { Key, Keystore } from '../../libs/keystore/keystore'
+import { Key, Keystore, KeystoreSignerType } from '../../libs/keystore/keystore'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { AccountAdderController } from '../accountAdder/accountAdder'
+import { ActivityController } from '../activity/activity'
 import { EmailVaultController } from '../emailVault'
 import EventEmitter from '../eventEmitter'
+import { KeystoreController } from '../keystore/keystore'
 import { PortfolioController } from '../portfolio/portfolio'
-
-export type AccountStates = {
-  [accountId: string]: {
-    [networkId: string]: AccountOnchainState
-  }
-}
+import { SignMessageController } from '../signMessage/signMessage'
 
 export class MainController extends EventEmitter {
   // Private library instances
@@ -52,6 +49,10 @@ export class MainController extends EventEmitter {
   // @TODO emailVaults
   emailVault: EmailVaultController
 
+  signMessage: SignMessageController
+
+  activity!: ActivityController
+
   // @TODO read networks from settings
   accounts: Account[] = []
 
@@ -78,22 +79,42 @@ export class MainController extends EventEmitter {
   accountOpsToBeConfirmed: { [key: string]: { [key: string]: AccountOp } } = {}
 
   // accountAddr => UniversalMessage[]
-  messagesToBeSigned: { [key: string]: SignedMessage[] } = {}
+  messagesToBeSigned: { [key: string]: Message[] } = {}
 
   lastUpdate: Date = new Date()
 
-  constructor(storage: Storage, fetch: Function, relayerUrl: string) {
+  onResolveDappRequest: (data: any, id?: bigint) => void
+
+  onRejectDappRequest: (err: any, id?: bigint) => void
+
+  constructor({
+    storage,
+    fetch,
+    relayerUrl,
+    keystoreSigners,
+    onResolveDappRequest,
+    onRejectDappRequest
+  }: {
+    storage: Storage
+    fetch: Function
+    relayerUrl: string
+    keystoreSigners: { [key: string]: KeystoreSignerType }
+    onResolveDappRequest: (data: any, id?: bigint) => void
+    onRejectDappRequest: (err: any, id?: bigint) => void
+  }) {
     super()
     this.storage = storage
     this.portfolio = new PortfolioController(storage)
-    // @TODO: KeystoreSigners
-    this.#keystoreLib = new Keystore(storage, {})
+    this.#keystoreLib = new Keystore(storage, keystoreSigners)
     this.keystore = new KeystoreController(this.#keystoreLib)
     this.initialLoadPromise = this.load()
     this.settings = { networks }
     this.emailVault = new EmailVaultController(storage, fetch, relayerUrl, this.#keystoreLib)
     this.accountAdder = new AccountAdderController({ storage, relayerUrl, fetch })
+    this.signMessage = new SignMessageController(this.#keystoreLib)
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
+    this.onResolveDappRequest = onResolveDappRequest
+    this.onRejectDappRequest = onRejectDappRequest
     // @TODO Load userRequests from storage and emit that we have updated
     // @TODO
   }
@@ -104,12 +125,14 @@ export class MainController extends EventEmitter {
       this.storage.get('accounts', []),
       this.storage.get('selectedAccount', null)
     ])
+
     this.providers = Object.fromEntries(
       this.settings.networks.map((network) => [network.id, new JsonRpcProvider(network.rpcUrl)])
     )
     // @TODO reload those
     // @TODO error handling here
     this.accountStates = await this.getAccountsInfo(this.accounts)
+    this.activity = new ActivityController(this.storage, this.accountStates)
     this.isReady = true
 
     const isKeystoreReady = await this.#keystoreLib.isReadyToStoreKeys()
@@ -201,10 +224,15 @@ export class MainController extends EventEmitter {
       )
   }
 
-  private makeAccountOpFromUserRequests(accountAddr: AccountId, networkId: NetworkId): AccountOp | null {
+  private makeAccountOpFromUserRequests(
+    accountAddr: AccountId,
+    networkId: NetworkId
+  ): AccountOp | null {
     const account = this.accounts.find((x) => x.addr === accountAddr)
     if (!account)
-      throw new Error(`makeAccountOpFromUserRequests: tried to run for non-existant account ${accountAddr}`)
+      throw new Error(
+        `makeAccountOpFromUserRequests: tried to run for non-existant account ${accountAddr}`
+      )
     // Note: we use reduce instead of filter/map so that the compiler can deduce that we're checking .kind
     const calls = this.userRequests.reduce((uCalls: AccountOpCall[], req) => {
       // only the first one for EOAs
@@ -247,7 +275,7 @@ export class MainController extends EventEmitter {
 
   async addUserRequest(req: UserRequest) {
     this.userRequests.push(req)
-    const { action, accountAddr, networkId } = req
+    const { id, action, accountAddr, networkId } = req
     if (!this.settings.networks.find((x) => x.id === networkId))
       throw new Error(`addUserRequest: ${networkId}: network does not exist`)
     if (action.kind === 'call') {
@@ -275,9 +303,11 @@ export class MainController extends EventEmitter {
       if (!this.messagesToBeSigned[accountAddr]) this.messagesToBeSigned[accountAddr] = []
       if (this.messagesToBeSigned[accountAddr].find((x) => x.fromUserRequestId === req.id)) return
       this.messagesToBeSigned[accountAddr].push({
+        id,
         content: action,
         fromUserRequestId: req.id,
-        signature: null
+        signature: null,
+        accountAddr
       })
     }
     this.emitUpdate()
@@ -288,7 +318,7 @@ export class MainController extends EventEmitter {
   // although the second one can't hurt and can help (or no debounce, just a one-at-a-time queue)
   removeUserRequest(id: bigint) {
     const req = this.userRequests.find((uReq) => uReq.id === id)
-    if (!req) throw new Error(`removeUserRequest: request with id ${id} not found`)
+    if (!req) return
 
     // remove from the request queue
     this.userRequests.splice(this.userRequests.indexOf(req), 1)
@@ -300,10 +330,12 @@ export class MainController extends EventEmitter {
       const accountOp = this.makeAccountOpFromUserRequests(accountAddr, networkId)
       if (accountOp)
         this.accountOpsToBeSigned[accountAddr][networkId] = { accountOp, estimation: null }
-    } else
+    } else {
       this.messagesToBeSigned[accountAddr] = this.messagesToBeSigned[accountAddr].filter(
         (x) => x.fromUserRequestId !== id
       )
+    }
+    this.emitUpdate()
   }
 
   async reestimateCurrentAccountOp(accountAddr: AccountId, networkId: NetworkId) {
@@ -353,14 +385,12 @@ export class MainController extends EventEmitter {
     console.log(estimation)
   }
 
-  // when an accountOp is signed; should this be private and be called by
-  // the method that signs it?
-  resolveAccountOp() {
-    // @TODO: ActivityController.addAccountOp()
-  }
+  broadcastSignedAccountOp(accountOp) {}
 
-  // when a message is signed; same comment applies: should this be private?
-  resolveMessage() {
-    // @TODO: - ActivityController.addSignedMessage()
+  broadcastSignedMessage(signedMessage: Message) {
+    this.activity.addSignedMessage(signedMessage, signedMessage.accountAddr)
+    this.removeUserRequest(signedMessage.id)
+    this.onResolveDappRequest({ hash: signedMessage.signature }, signedMessage.id)
+    this.emitUpdate()
   }
 }

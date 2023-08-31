@@ -1,8 +1,9 @@
 import { describe, expect } from '@jest/globals'
-import { ActivityController, SubmittedAccountOp } from './activity'
-import { SignedMessage } from '../../interfaces/userRequest'
+
 import { produceMemoryStore } from '../../../test/helpers'
+import { Message } from '../../interfaces/userRequest'
 import { AccountStates } from '../main/main'
+import { ActivityController, SubmittedAccountOp } from './activity'
 
 describe('Activity Controller ', () => {
   const accounts = {
@@ -24,9 +25,13 @@ describe('Activity Controller ', () => {
   describe('AccountsOps', () => {
     test('Retrieved from Controller and persisted in Storage', async () => {
       const storage = produceMemoryStore()
-      const controller = new ActivityController(storage, accounts, {
-        account: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
-        network: 'ethereum'
+      const controller = new ActivityController(storage, accounts)
+
+      controller.init({
+        filters: {
+          account: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
+          network: 'ethereum'
+        }
       })
 
       const accountOp = {
@@ -64,9 +69,13 @@ describe('Activity Controller ', () => {
 
     test('Pagination and filtration handled correctly', async () => {
       const storage = produceMemoryStore()
-      const controller = new ActivityController(storage, accounts, {
-        account: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
-        network: 'ethereum'
+      const controller = new ActivityController(storage, accounts)
+
+      controller.init({
+        filters: {
+          account: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
+          network: 'ethereum'
+        }
       })
 
       const accountsOps = [
@@ -184,9 +193,13 @@ describe('Activity Controller ', () => {
 
     test('`success` status is set correctly', async () => {
       const storage = produceMemoryStore()
-      const controller = new ActivityController(storage, accounts, {
-        account: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
-        network: 'ethereum'
+      const controller = new ActivityController(storage, accounts)
+
+      controller.init({
+        filters: {
+          account: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
+          network: 'ethereum'
+        }
       })
 
       const accountOp = {
@@ -222,9 +235,13 @@ describe('Activity Controller ', () => {
 
     test('`failed` status is set correctly', async () => {
       const storage = produceMemoryStore()
-      const controller = new ActivityController(storage, accounts, {
-        account: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
-        network: 'ethereum'
+      const controller = new ActivityController(storage, accounts)
+
+      controller.init({
+        filters: {
+          account: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
+          network: 'ethereum'
+        }
       })
 
       const accountOp = {
@@ -260,9 +277,13 @@ describe('Activity Controller ', () => {
 
     test('`Unknown but past nonce` status is set correctly', async () => {
       const storage = produceMemoryStore()
-      const controller = new ActivityController(storage, accounts, {
-        account: '0xa07D75aacEFd11b425AF7181958F0F85c312f143',
-        network: 'ethereum'
+      const controller = new ActivityController(storage, accounts)
+
+      controller.init({
+        filters: {
+          account: '0xa07D75aacEFd11b425AF7181958F0F85c312f143',
+          network: 'ethereum'
+        }
       })
 
       const accountOp = {
@@ -298,9 +319,13 @@ describe('Activity Controller ', () => {
 
     test('Keeps no more than 1000 items', async () => {
       const storage = produceMemoryStore()
-      const controller = new ActivityController(storage, accounts, {
-        account: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
-        network: 'ethereum'
+      const controller = new ActivityController(storage, accounts)
+
+      controller.init({
+        filters: {
+          account: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
+          network: 'ethereum'
+        }
       })
 
       const accountOp = {
@@ -344,25 +369,26 @@ describe('Activity Controller ', () => {
   describe('SignedMessages', () => {
     test('Retrieved from Controller and persisted in Storage', async () => {
       const storage = produceMemoryStore()
-      const controller = new ActivityController(storage, accounts, {
-        account: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
-        network: 'ethereum'
+      const controller = new ActivityController(storage, accounts)
+
+      controller.init({
+        filters: {
+          account: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
+          network: 'ethereum'
+        }
       })
 
-      const signedMessage: SignedMessage = {
+      const signedMessage: Message = {
+        id: 'test-id-should-be-bigint' as unknown as bigint,
         content: {
           kind: 'message',
           message: '0x74657374'
         },
-        fromUserRequestId: 1n,
+        fromUserRequestId: 'test-id-should-be-bigint' as unknown as bigint,
         signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503'
       }
 
-      await controller.addSignedMessage(
-        signedMessage,
-        '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
-        'ethereum'
-      )
+      await controller.addSignedMessage(signedMessage, '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5')
       const controllerSignedMessages = controller.signedMessages
       const storageSignedMessages = await storage.get('signedMessages', {})
 
@@ -372,58 +398,37 @@ describe('Activity Controller ', () => {
         currentPage: 0,
         maxPages: 1
       })
-      expect(storageSignedMessages['0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'].ethereum).toEqual([
+      expect(storageSignedMessages['0xB674F3fd5F43464dB0448a57529eAF37F04cceA5']).toEqual([
         signedMessage
       ])
     })
 
     test('Pagination and filtration handled correctly', async () => {
       const storage = produceMemoryStore()
-      const controller = new ActivityController(storage, accounts, {
-        account: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
-        network: 'ethereum'
+      const controller = new ActivityController(storage, accounts)
+
+      controller.init({
+        filters: {
+          account: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
+          network: 'ethereum'
+        }
       })
 
-      const signedMessage: SignedMessage = {
+      const signedMessage: Message = {
+        id: 'test-id-should-be-bigint' as unknown as bigint,
         content: {
           kind: 'message',
           message: '0x74657374'
         },
-        fromUserRequestId: 1n,
+        fromUserRequestId: 'test-id-should-be-bigint' as unknown as bigint,
         signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503'
       }
 
-      const expectedSignedMessage: SignedMessage = {
-        content: {
-          kind: 'message',
-          message: '0x123456'
-        },
-        fromUserRequestId: 1n,
-        signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503'
-      }
+      await controller.addSignedMessage(signedMessage, '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5')
+      await controller.addSignedMessage(signedMessage, '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5')
+      await controller.addSignedMessage(signedMessage, '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5')
 
-      await controller.addSignedMessage(
-        signedMessage,
-        '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
-        'ethereum'
-      )
-      await controller.addSignedMessage(
-        signedMessage,
-        '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
-        'ethereum'
-      )
-      await controller.addSignedMessage(
-        signedMessage,
-        '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
-        'optimism'
-      )
-      await controller.addSignedMessage(
-        expectedSignedMessage,
-        '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
-        'optimism'
-      )
-
-      // For the following criteria, we have 2 matching SignedMessages, these will be paginated on 2 pages (1 SignedMessage per page)
+      // For the following criteria, we have 2 matching SignedMessages, these will be paginated on 2 pages (1 Message per page)
       await controller.setSignedMessagesPagination({ fromPage: 1, itemsPerPage: 1 })
       await controller.setFilters({
         account: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
@@ -433,26 +438,31 @@ describe('Activity Controller ', () => {
       const controllerSignedMessages = controller.signedMessages
 
       expect(controllerSignedMessages).toEqual({
-        items: [expectedSignedMessage],
-        itemsTotal: 2,
+        items: [signedMessage],
+        itemsTotal: 3,
         currentPage: 1, // index based
-        maxPages: 2
+        maxPages: 3
       })
     })
 
     test('Keeps no more than 1000 items', async () => {
       const storage = produceMemoryStore()
-      const controller = new ActivityController(storage, accounts, {
-        account: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
-        network: 'ethereum'
+      const controller = new ActivityController(storage, accounts)
+
+      controller.init({
+        filters: {
+          account: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
+          network: 'ethereum'
+        }
       })
 
-      const signedMessage: SignedMessage = {
+      const signedMessage: Message = {
+        id: 'test-id-should-be-bigint' as unknown as bigint,
         content: {
           kind: 'message',
           message: '0x123456'
         },
-        fromUserRequestId: 1n,
+        fromUserRequestId: 'test-id-should-be-bigint' as unknown as bigint,
         signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503'
       }
 
@@ -464,11 +474,7 @@ describe('Activity Controller ', () => {
       // eslint-disable-next-line no-restricted-syntax
       for (const sm of signedMessages) {
         // eslint-disable-next-line no-await-in-loop
-        await controller.addSignedMessage(
-          sm,
-          '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
-          'ethereum'
-        )
+        await controller.addSignedMessage(sm, '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5')
       }
 
       await controller.setSignedMessagesPagination({ fromPage: 0, itemsPerPage: 1000 })

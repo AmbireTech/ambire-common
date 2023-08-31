@@ -8,5 +8,5 @@ export interface KeystoreSigner {
     message: Record<string, any>,
     primaryType?: string
   ) => Promise<string>
-  signMessage: (hash: string) => Promise<string>
+  signMessage: (hash: string | Uint8Array) => Promise<string>
 }
