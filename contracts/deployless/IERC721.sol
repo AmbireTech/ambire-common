@@ -15,4 +15,7 @@ interface IERC721 {
     function setApprovalForAll(address operator, bool approved) external;
     function getApproved(uint256 tokenId) external view returns (address operator);
     function isApprovedForAll(address owner, address operator) external view returns (bool);
+    function name() external view returns (string memory);
+    function tokenURI(uint256 _tokenId) external view returns (string memory);
+    function uri(uint256 _tokenId) external view returns (string memory);
 }

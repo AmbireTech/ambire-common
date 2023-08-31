@@ -30,3 +30,9 @@ export interface AccountOnchainState {
   balance: bigint
   isEOA: boolean
 }
+
+export type AccountStates = {
+  [accountId: string]: {
+    [networkId: string]: AccountOnchainState
+  }
+}

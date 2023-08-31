@@ -111,6 +111,7 @@ contract Estimation {
     public
     returns (SimulationOutcome memory outcome, bytes32[] memory associatedKeyPrivileges, bytes memory spoofSig)
   {
+    // setting the nonce is just for the purposes of passing the safety check in simulateSigned; it's a spoof sig so it doesn't matter
     op.nonce = op.account.nonce();
     associatedKeyPrivileges = new bytes32[](associatedKeys.length);
     for (uint i=0; i!=associatedKeys.length; i++) {
@@ -126,6 +127,7 @@ contract Estimation {
   }
 
   function simulateSigned(AccountOp memory op) public returns (SimulationOutcome memory outcome) {
+    // safety check in case what's passed in is wrong
     if (op.nonce != op.account.nonce()) {
       outcome.err = bytes("NONCE_ERROR");
       return outcome;
@@ -152,6 +154,7 @@ contract Estimation {
       address feeToken = feeTokens[i];
       AccountOp memory simulationOp;
       simulationOp.account = account;
+      // for the purposes of passing the safety check; otherwise it's a spoof sig and it doesn't matter
       simulationOp.nonce = account.nonce();
       simulationOp.calls = new IAmbireAccount.Transaction[](1);
       simulationOp.signature = spoofSig;

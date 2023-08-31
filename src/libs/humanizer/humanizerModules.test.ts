@@ -419,7 +419,6 @@ describe('module tests', () => {
     let ir: Ir = callsToIr(accountOp)
     ;[ir] = WALLETModule(accountOp, ir)
 
-    console.log(ir.calls.map((c) => c.fullVisualization))
     ir.calls.forEach((c, i) =>
       c?.fullVisualization?.forEach((v: HumanizerVisualization, j: number) =>
         expect(v).toMatchObject(expectedhumanization[i][j])
