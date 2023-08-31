@@ -306,7 +306,8 @@ export class MainController extends EventEmitter {
         id,
         content: action,
         fromUserRequestId: req.id,
-        signature: null
+        signature: null,
+        accountAddr
       })
     }
     this.emitUpdate()
