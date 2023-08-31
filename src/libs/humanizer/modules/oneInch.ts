@@ -1,4 +1,3 @@
-// @TODO not ready, do todos
 import { ethers } from 'ethers'
 import { AccountOp } from 'libs/accountOp/accountOp'
 import { HumanizerFragment, Ir, IrCall } from '../interfaces'
@@ -38,54 +37,12 @@ const OneInchMapping = (humanizerInfo: any) => {
     }
   }
 }
-
-// @TODO why was swappin gifts in 1inch, ask Lubo
-// const SwappinMapping = (humanizerInfo: any) => {
-//   const iface = new ethers.Interface(humanizerInfo.abis.SwappinOwn)
-
-//   return {
-//     [`${iface.getFunction('payWithEth')}`]: (accounutOp: AccountOp, call: IrCall) => {
-//       const { amountFrom } = iface.parseTransaction(call)!.args
-//       return !opts.extended
-//         ? [`Pay with ${nativeToken(network, amountFrom, opts.extended)} for a gift card`]
-//         : toExtended(
-//             'Swapping',
-//             'for a gift card on Swappin.gifts',
-//             nativeToken(network, amountFrom, opts.extended)
-//           )
-//     },
-//     [`${iface.getFunction('payWithUsdToken')}`]: (accounutOp: AccountOp, call: IrCall) => {
-//       const { amount, token: destToken } = iface.parseTransaction(call)!.args
-//       return !opts.extended
-//         ? [`Pay with ${token(humanizerInfo, destToken, amount)} for a gift card`]
-//         : toExtended(
-//             'Swapping',
-//             'for a gift card on Swappin.gifts',
-//             token(humanizerInfo, destToken, amount, opts.extended)
-//           )
-//     },
-//     [`${iface.getFunction('payWithAnyToken')}`]: (accounutOp: AccountOp, call: IrCall) => {
-//       const { amountFrom, tokenFrom } = iface.parseTransaction(call)!.args
-//       return !opts.extended
-//         ? [`Pay with ${token(humanizerInfo, tokenFrom, amountFrom, opts.extended)} for a gift card`]
-//         : toExtended(
-//             'Swapping',
-//             'for a gift card on Swappin.gifts',
-//             token(humanizerInfo, tokenFrom, amountFrom, opts.extended)
-//           )
-//     }
-//   }
-// }
-
-// @TODO check if it is correct humanization
-// @TODO find contract addresses and add them to matcher
 export const oneInchHumanizer = (
   accountOp: AccountOp,
   ir: Ir
 ): [Ir, Array<Promise<HumanizerFragment | null>>] => {
   const matcher = {
     ...OneInchMapping(accountOp.humanizerMeta)
-    // ...SwappinMapping(accountOp.humanizerMeta)
   }
   const newCalls: IrCall[] = []
   ir.calls.forEach((call) => {

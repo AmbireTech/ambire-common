@@ -68,7 +68,6 @@ export async function getTokenInfo(
   address: string,
   options: any
 ): Promise<HumanizerFragment | null> {
-  // @TODO update networks list
   const network = networks.find(
     (n: NetworkDescriptor) => n.chainId === BigInt(accountOp.networkId)
   )?.id

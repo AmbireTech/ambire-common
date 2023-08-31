@@ -16,6 +16,7 @@ import { WALLETModule } from './modules/WALLET'
 import { fallbackHumanizer } from './modules/fallBackHumanizer'
 import { nameParsing } from './modules/nameParsing'
 
+// @TODO add oneinchtests
 const humanizerInfo = require('../../consts/humanizerInfo.json')
 
 const humanizerModules: Function[] = [
@@ -215,7 +216,6 @@ describe('module tests', () => {
     ;[ir, asyncOps] = humanize(accountOp, humanizerModules, standartOptions)
 
     const res = ir.calls.map((call: IrCall) => visualizationToText(call, standartOptions))
-    // @TODO switch et and res[i]
     expectedTexification.forEach((et: string, i: number) => expect(res[i]).toEqual(et))
   })
   test('uniV3', () => {

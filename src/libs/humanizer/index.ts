@@ -3,10 +3,8 @@ import { AccountOp } from '../accountOp/accountOp'
 import { IrCall, Ir, HumanizerFragment } from './interfaces'
 
 // @NOTE should we use wrppaer for coingecko(if(apikey){paid coingecko}else{no}?
-// @TODO update all f's to 'all' in uniswap
 // @TODO humanize signed messages
-// @TODO fix comments from feedback https://github.com/AmbireTech/ambire-common/pull/281
-// @TODO sometimes tests are failing bad
+// @TODO sometimes tests are failing bad (stack problem on emit error, coingecko not responding)
 export function callsToIr(accountOp: AccountOp): Ir {
   const irCalls: IrCall[] = accountOp.calls.map((call) => {
     return {

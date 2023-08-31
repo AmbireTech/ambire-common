@@ -1,5 +1,4 @@
 /* eslint-disable no-await-in-loop */
-// @TODO use for of or for in instead of object.keys().map/.forEach
 // @TODO use type generics instead of any
 // @TODO final review of files and jsons
 // @TODO import produceMemoryStorage from helpers

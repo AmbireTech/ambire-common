@@ -1,12 +1,12 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { ethers } from 'ethers'
-// @TODO fix imports
+
 import { HumanizerVisualization, IrCall } from '../../interfaces'
 import { getAction, getLabel } from '../../utils'
 import { AccountOp } from '../../../accountOp/accountOp'
 import WALLETSupplyControllerABI from '../../../../../contracts/compiled/WALLETSupplyController.json'
 
-// @TODO add abi to humanizer info
+// @TODO add abi to humanizer info (address needed??)
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 export const WALLETSupplyControllerMapping = (
   humanizerMeta: any

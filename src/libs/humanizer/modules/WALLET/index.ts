@@ -4,7 +4,7 @@ import { StakingPools } from './stakingPools'
 import { Ir, IrCall } from '../../interfaces'
 import { AccountOp } from '../../../accountOp/accountOp'
 import { checkIfUnknowAction, getAction } from '../../utils'
-// @TODO checksumm addresses here and in module
+
 const stakingAddresses = [
   '0x47Cd7E91C3CBaAF266369fe8518345fc4FC12935',
   '0xB6456b57f03352bE48Bf101B46c1752a0813491a',
