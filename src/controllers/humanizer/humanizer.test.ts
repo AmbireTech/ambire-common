@@ -2,6 +2,7 @@ import { ethers } from 'ethers'
 import fetch from 'node-fetch'
 import { describe, expect, jest, test } from '@jest/globals'
 
+import { HumanizerVisualization } from 'libs/humanizer/interfaces'
 import { HumanizerController } from './humanizer'
 import humanizerJSON from '../../consts/humanizerInfo.json'
 import { Storage } from '../../interfaces/storage'
@@ -233,7 +234,7 @@ describe('HumanizerController', () => {
     ]
     const onUpdate = jest.fn(() => {
       hc.ir.calls.forEach((c, i) =>
-        c?.fullVisualization?.forEach((v: any, j: number) =>
+        c?.fullVisualization?.forEach((v: HumanizerVisualization, j: number) =>
           expect(v).toMatchObject(expectedVisualizations[i][j])
         )
       )
@@ -263,7 +264,7 @@ describe('HumanizerController', () => {
         })
       } else if (iterations === 1) {
         expect(hc.ir.calls[0]?.fullVisualization?.length).toBe(3)
-        hc.ir.calls[0]?.fullVisualization?.forEach((v: any, i: number) =>
+        hc.ir.calls[0]?.fullVisualization?.forEach((v: HumanizerVisualization, i: number) =>
           expect(v).toMatchObject(expectedVisualizations[i])
         )
       }

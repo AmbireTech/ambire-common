@@ -1,5 +1,5 @@
 import { AccountOp } from '../../accountOp/accountOp'
-import { Ir } from '../interfaces'
+import { HumanizerFragment, HumanizerVisualization, Ir } from '../interfaces'
 import { shortenAddress } from '../utils'
 
 const getName = (address: string, humanizerMeta: any) => {
@@ -14,19 +14,21 @@ export function nameParsing(
   currentIr: Ir,
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   options?: any
-): [Ir, Array<Promise<any>>] {
-  const asyncOps: Array<Promise<any>> = []
+): [Ir, Array<Promise<HumanizerFragment>>] {
+  //   const asyncOps: Array<Promise<HumanizerFragment>> = []
   const newCalls = currentIr.calls.map((call) => {
-    const newVisualization = call?.fullVisualization?.map((v: any) => {
+    const newVisualization = call?.fullVisualization?.map((v: HumanizerVisualization) => {
       if (v.type === 'address' && !v.name)
         return {
           ...v,
-          name: getName(v.address, accountOp.humanizerMeta) || shortenAddress(v.address)
+          name:
+            getName(v.address as string, accountOp.humanizerMeta) ||
+            shortenAddress(v.address as string)
         }
       return v
     })
     return { ...call, fullVisualization: newVisualization || call?.fullVisualization }
   })
   const newIr = { ...currentIr, calls: newCalls }
-  return [newIr, asyncOps]
+  return [newIr, [] /* asyncOps */]
 }

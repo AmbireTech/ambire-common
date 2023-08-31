@@ -29,7 +29,7 @@ const uniV32Mapping = (
       // @TODO: Multicall that outputs ETH should be detected as such and displayed as one action
       // the current verbosity of "Swap ..., unwrap WETH to ETH" will be a nice pedantic quirk
       const parsed: IrCall[] = calls
-        .map((data: any): IrCall[] => {
+        .map((data: string): IrCall[] => {
           const sigHash = data.slice(0, 10)
           const humanizer = mappingResult[sigHash]
           return humanizer ? humanizer(accountOp, { ...call, data }) : []
@@ -59,7 +59,7 @@ const uniV32Mapping = (
       // @TODO: Multicall that outputs ETH should be detected as such and displayed as one action
       // the current verbosity of "Swap ..., unwrap WETH to ETH" will be a nice pedantic quirk
       const parsed = calls
-        .map((data: any) => {
+        .map((data: string) => {
           const sigHash = data.slice(0, 10)
           const humanizer = mappingResult[sigHash]
           return humanizer ? humanizer(accountOp, { ...call, data }) : null
@@ -81,7 +81,7 @@ const uniV32Mapping = (
       // @TODO: Multicall that outputs ETH should be detected as such and displayed as one action
       // the current verbosity of "Swap ..., unwrap WETH to ETH" will be a nice pedantic quirk
       const parsed = calls
-        .map((data: any) => {
+        .map((data: string) => {
           const sigHash = data.slice(0, 10)
           const humanizer = mappingResult[sigHash]
           return humanizer ? humanizer(accountOp, { ...call, data }) : null
@@ -361,7 +361,7 @@ const uniV3Mapping = (
       // @TODO: Multicall that outputs ETH should be detected as such and displayed as one action
       // the current verbosity of "Swap ..., unwrap WETH to ETH" will be a nice pedantic quirk
       const parsed = calls
-        .map((data: any) => {
+        .map((data: string) => {
           const sigHash = data.slice(0, 10)
           const humanizer = mappingResult[sigHash]
           return humanizer ? humanizer(accountOp, { ...call, data }) : null

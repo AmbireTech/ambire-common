@@ -1,7 +1,7 @@
 import { ethers } from 'ethers'
 import { AccountOp } from 'libs/accountOp/accountOp'
 import { getLabel, getAction, getAddress, getNft, getToken, getTokenInfo } from '../utils'
-import { Ir, IrCall } from '../interfaces'
+import { HumanizerFragment, HumanizerVisualization, Ir, IrCall } from '../interfaces'
 import { NetworkId } from '../../../interfaces/networkDescriptor'
 // @TODO move it to consts files
 const nativeTokens: { [key: NetworkId]: [string, number] } = {
@@ -15,7 +15,7 @@ export function genericErc721Humanizer(
   currentIr: Ir,
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   options?: any
-): [Ir, Promise<any>[]] {
+): [Ir, Promise<HumanizerFragment | null>[]] {
   const iface = new ethers.Interface(accountOp.humanizerMeta?.['abis:ERC721'])
   const nftTransferVisualization = (call: IrCall) => {
     const args = iface.parseTransaction(call)?.args.toArray() || []
@@ -82,8 +82,8 @@ export function genericErc20Humanizer(
   accountOp: AccountOp,
   currentIr: Ir,
   options?: any
-): [Ir, Promise<any>[]] {
-  const asyncOps: Promise<any>[] = []
+): [Ir, Promise<HumanizerFragment | null>[]] {
+  const asyncOps: Promise<HumanizerFragment | null>[] = []
   const iface = new ethers.Interface(accountOp.humanizerMeta?.['abis:ERC20'])
   const matcher = {
     [`${iface.getFunction('approve')?.selector}`]: (call: IrCall) => {
@@ -166,10 +166,10 @@ export function genericErc20Humanizer(
 }
 
 export function tokenParsing(accounOp: AccountOp, ir: Ir, options?: any) {
-  const asyncOps: Array<Promise<any>> = []
+  const asyncOps: Array<Promise<HumanizerFragment | null>> = []
   const newCalls = ir.calls.map((c) => ({
     ...c,
-    fullVisualization: c?.fullVisualization?.map((v: any) => {
+    fullVisualization: c?.fullVisualization?.map((v: HumanizerVisualization) => {
       if (v.type === 'token') {
         const tokenMeta =
           v.address === ethers.ZeroAddress
@@ -185,10 +185,10 @@ export function tokenParsing(accounOp: AccountOp, ir: Ir, options?: any) {
               v.amount ===
               115792089237316195423570985008687907853269984665640564039457584007913129639935n
                 ? 'all'
-                : ethers.formatUnits(v.amount, tokenMeta[1])
+                : ethers.formatUnits(v.amount as bigint, tokenMeta[1])
           }
         }
-        asyncOps.push(getTokenInfo(accounOp, v.address, options))
+        asyncOps.push(getTokenInfo(accounOp, v.address as string, options))
       }
       return v
     })

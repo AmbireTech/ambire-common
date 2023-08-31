@@ -7,7 +7,7 @@ import { callsToIr } from '.'
 import { nameParsing } from './modules/nameParsing'
 import { fallbackHumanizer } from './modules/fallBackHumanizer'
 import { uniswapHumanizer } from './modules/Uniswap'
-import { Ir } from './interfaces'
+import { HumanizerFragment, HumanizerVisualization, Ir } from './interfaces'
 import { genericErc20Humanizer, genericErc721Humanizer } from './modules/tokens'
 import { ErrorRef } from '../../controllers/eventEmitter'
 
@@ -223,7 +223,9 @@ describe('module tests', () => {
     const [{ calls: newCalls }] = genericErc20Humanizer(accountOp, ir, { fetch })
     expect(newCalls.length).toBe(transactions.erc20.length)
     newCalls.forEach((c) => {
-      expect(c?.fullVisualization?.find((v: any) => v.type === 'token')).toMatchObject({
+      expect(
+        c?.fullVisualization?.find((v: HumanizerVisualization) => v.type === 'token')
+      ).toMatchObject({
         type: 'token',
         address: expect.anything(),
         amount: expect.anything()
@@ -296,7 +298,7 @@ describe('module tests', () => {
     expect(calls.length).toEqual(expectedVisualization.length)
     calls.forEach((c, i) => {
       expect(c?.fullVisualization?.length).toBe(expectedVisualization[i].length)
-      c?.fullVisualization?.forEach((v: any, j: number) => {
+      c?.fullVisualization?.forEach((v: HumanizerVisualization, j: number) => {
         expect(v).toMatchObject(expectedVisualization[i][j])
       })
     })
@@ -308,7 +310,7 @@ describe('module tests', () => {
     let ir: Ir = callsToIr(accountOp)
     let asyncOps = []
     ;[ir, asyncOps] = fallbackHumanizer(accountOp, ir, { fetch, emitError: mockEmitError })
-    asyncOps = await Promise.all(asyncOps)
+    asyncOps = (await Promise.all(asyncOps)).filter((a) => a) as HumanizerFragment[]
     expect(asyncOps.length).toBe(1)
     expect(asyncOps[0]).toMatchObject({ key: 'funcSelectors:0x095ea7b3' })
     asyncOps.forEach((a) => {
@@ -332,17 +334,23 @@ describe('module tests', () => {
     const [{ calls: newCalls }] = nameParsing(accountOp, ir, { fetch })
 
     expect(newCalls.length).toBe(transactions.namingTransactions.length)
-    expect(newCalls[0]?.fullVisualization?.find((v: any) => v.type === 'address')).toMatchObject({
+    expect(
+      newCalls[0]?.fullVisualization?.find((v: HumanizerVisualization) => v.type === 'address')
+    ).toMatchObject({
       type: 'address',
       address: expect.anything(),
       name: expect.not.stringMatching(/^0x[a-fA-F0-9]{3}\.{3}[a-fA-F0-9]{3}$/)
     })
-    expect(newCalls[1]?.fullVisualization?.find((v: any) => v.type === 'address')).toMatchObject({
+    expect(
+      newCalls[1]?.fullVisualization?.find((v: HumanizerVisualization) => v.type === 'address')
+    ).toMatchObject({
       type: 'address',
       address: expect.anything(),
       name: expect.not.stringMatching(/^0x[a-fA-F0-9]{3}\.{3}[a-fA-F0-9]{3}$/)
     })
-    expect(newCalls[2]?.fullVisualization?.find((v: any) => v.type === 'address')).toMatchObject({
+    expect(
+      newCalls[2]?.fullVisualization?.find((v: HumanizerVisualization) => v.type === 'address')
+    ).toMatchObject({
       type: 'address',
       address: expect.anything(),
       name: expect.stringMatching(/^0x[a-fA-F0-9]{3}\.{3}[a-fA-F0-9]{3}$/)

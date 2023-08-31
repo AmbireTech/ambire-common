@@ -31,7 +31,7 @@ export function humanize(
     calls: _accountOp.calls.map((c) => ({ ...c, to: ethers.getAddress(c.to) }))
   }
   let currentIr: Ir = callsToIr(accountOp)
-  let asyncOps: any[] = []
+  let asyncOps: Promise<HumanizerFragment>[] = []
   try {
     humanizerModules.forEach((hm) => {
       let newPromises = []

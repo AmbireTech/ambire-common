@@ -1,6 +1,6 @@
 import { ethers } from 'ethers'
 import { AccountOp } from '../../../accountOp/accountOp'
-import { HumanizerFragment, Ir, IrCall } from '../../interfaces'
+import { HumanizerFragment, HumanizerVisualization, Ir, IrCall } from '../../interfaces'
 import { uniUniversalRouter } from './uniUnivarsalRouter'
 import { uniV2Mapping } from './uniV2'
 import { uniV32Mapping, uniV3Mapping } from './uniV3'
@@ -23,7 +23,7 @@ const wrpaUnwrapParser = (calls: IrCall[], humanizerInfo: any) => {
         calls[i]?.fullVisualization?.[3].amount === calls[i + 1]?.fullVisualization?.[2].amount &&
         calls[i + 1]?.fullVisualization?.[0].content === 'Unwrap'
       ) {
-        const newVisualization = calls[i]?.fullVisualization?.map((v: any) => {
+        const newVisualization = calls[i]?.fullVisualization?.map((v: HumanizerVisualization) => {
           return v.type === 'token' && v.address === WETH_ADDRESS
             ? { ...v, address: ethers.ZeroAddress }
             : v
@@ -41,7 +41,7 @@ const wrpaUnwrapParser = (calls: IrCall[], humanizerInfo: any) => {
         calls[i].value === calls[i]?.fullVisualization?.[1].amount &&
         calls[i]?.fullVisualization?.[1].address === WETH_ADDRESS
       ) {
-        const newVisualization = calls[i]?.fullVisualization?.map((v: any) => {
+        const newVisualization = calls[i]?.fullVisualization?.map((v: HumanizerVisualization) => {
           return v.type === 'token' && v.address === WETH_ADDRESS
             ? { ...v, address: ethers.ZeroAddress }
             : v

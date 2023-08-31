@@ -6,7 +6,7 @@ import { AccountOp } from '../accountOp/accountOp'
 import { callsToIr, humanize, visualizationToText } from '.'
 
 import { uniswapHumanizer } from './modules/Uniswap'
-import { Ir, IrCall } from './interfaces'
+import { HumanizerVisualization, Ir, IrCall } from './interfaces'
 import { wethHumanizer } from './modules/weth'
 import { aaveHumanizer } from './modules/Aave'
 import { yearnVaultModule } from './modules/yearnTesseractVault'
@@ -285,7 +285,7 @@ describe('module tests', () => {
     ;[ir] = uniswapHumanizer(accountOp, ir)
     ir.calls.forEach((c, i) => {
       expect(c?.fullVisualization?.length).toEqual(expectedhumanization[i].length)
-      c?.fullVisualization?.forEach((v: any, j: number) => {
+      c?.fullVisualization?.forEach((v: HumanizerVisualization, j: number) => {
         expect(v).toEqual(expectedhumanization[i][j])
       })
     })
@@ -347,7 +347,7 @@ describe('module tests', () => {
     let ir: Ir = callsToIr(accountOp)
     ;[ir] = aaveHumanizer(accountOp, ir)
     ir.calls.forEach((c, i) =>
-      c?.fullVisualization?.forEach((v: any, j: number) =>
+      c?.fullVisualization?.forEach((v: HumanizerVisualization, j: number) =>
         expect(v).toMatchObject(expectedhumanization[i][j])
       )
     )
@@ -358,7 +358,7 @@ describe('module tests', () => {
     let ir: Ir = callsToIr(accountOp)
     ;[ir] = aaveHumanizer(accountOp, ir)
     // ir.calls.forEach((c, i) =>
-    //   c?.fullVisualization?.forEach((v: any, j: number) =>
+    //   c?.fullVisualization?.forEach((v: HumanizerVisualization, j: number) =>
     //     expect(v).toMatchObject(expectedhumanization[i][j])
     //   )
     // )
@@ -389,7 +389,7 @@ describe('module tests', () => {
     let ir: Ir = callsToIr(accountOp)
     ;[ir] = yearnVaultModule(accountOp, ir)
     ir.calls.forEach((call, i) =>
-      call?.fullVisualization?.forEach((v: any, j: number) =>
+      call?.fullVisualization?.forEach((v: HumanizerVisualization, j: number) =>
         expect(v).toMatchObject(expectedhumanization[i][j])
       )
     )
