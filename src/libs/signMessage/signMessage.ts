@@ -1,7 +1,7 @@
 import { AbiCoder, hexlify, Interface } from 'ethers'
-import hexStringToUint8Array from 'utils/hexStringToUint8Array'
 
 import { AccountCreation } from '../../interfaces/account'
+import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
 
 /**
  * Produce EIP6492 signature for Predeploy Contracts
