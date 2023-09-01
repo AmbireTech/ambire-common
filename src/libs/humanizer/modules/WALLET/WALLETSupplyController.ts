@@ -6,7 +6,6 @@ import { getAction, getLabel } from '../../utils'
 import { AccountOp } from '../../../accountOp/accountOp'
 import WALLETSupplyControllerABI from '../../../../../contracts/compiled/WALLETSupplyController.json'
 
-// @TODO add abi to humanizer info (address needed??)
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 export const WALLETSupplyControllerMapping = (
   humanizerMeta: any

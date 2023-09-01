@@ -1,7 +1,5 @@
 /* eslint-disable no-await-in-loop */
-// @TODO use type generics instead of any
 // @TODO final review of files and jsons
-// @TODO import produceMemoryStorage from helpers
 
 import {
   genericErc20Humanizer,

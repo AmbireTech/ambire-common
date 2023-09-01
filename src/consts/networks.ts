@@ -36,4 +36,9 @@ const networks: NetworkDescriptor[] = [
   // }
 ]
 
-export { networks }
+const nativeTokens: { [key: string]: [string, number] } = {
+  '1': ['ETH', 18],
+  '137': ['MATIC', 18],
+  '250': ['FTM', 18]
+}
+export { networks, nativeTokens }

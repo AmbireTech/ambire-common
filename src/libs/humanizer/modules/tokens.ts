@@ -1,14 +1,8 @@
 import { ethers } from 'ethers'
-import { AccountOp } from 'libs/accountOp/accountOp'
+import { AccountOp } from '../../accountOp/accountOp'
+import { nativeTokens } from '../../../consts/networks'
 import { getLabel, getAction, getAddress, getNft, getToken, getTokenInfo } from '../utils'
 import { HumanizerFragment, HumanizerVisualization, Ir, IrCall } from '../interfaces'
-import { NetworkId } from '../../../interfaces/networkDescriptor'
-// @TODO move it to consts files
-const nativeTokens: { [key: NetworkId]: [string, number] } = {
-  '1': ['ETH', 18],
-  '137': ['MATIC', 18],
-  '250': ['FTM', 18]
-}
 
 export function genericErc721Humanizer(
   accountOp: AccountOp,
