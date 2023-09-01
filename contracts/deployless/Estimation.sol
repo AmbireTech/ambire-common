@@ -9,6 +9,10 @@ interface IERC20Subset {
 }
 
 contract Estimation {
+  // NOTE: this contract doesn't need to be aware of ERC-4337 or entryPoint/entryPoint.getNonce()
+  // It uses account.execute() directly with spoof signatures, this is ok before:
+  // 1) signed accountOps (preExecute) are always signed in an agnostic way (using external sig validator, which uses it's own nonce-agnostic hash)
+  // 2) the main accountOp to estimate is not signed and we generate a spoof sig for it which works regardless of nonce
   struct AccountOp {
     IAmbireAccount account;
     uint nonce;
