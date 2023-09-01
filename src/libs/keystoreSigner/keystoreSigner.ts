@@ -47,9 +47,9 @@ export class KeystoreSigner implements KeystoreSignerInterface {
 
     if (typeof hash === 'string') {
       sig = await this.#signer.signMessage(hexStringToUint8Array(hash))
+    } else {
+      sig = this.#signer.signMessage(hash)
     }
-
-    sig = this.#signer.signMessage(hash)
 
     return sig
   }
