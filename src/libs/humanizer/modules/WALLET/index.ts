@@ -15,24 +15,27 @@ const stakingAddresses = [
 export const WALLETModule = (accountOp: AccountOp, ir: Ir, options?: any): [Ir, Promise<any>[]] => {
   const newCalls: IrCall[] = []
   const matcher = {
-    ...WALLETSupplyControllerMapping(accountOp.humanizerMeta),
-    // @TODO add addresses
-    ...StakingPools(accountOp.humanizerMeta)
+    supplyController: WALLETSupplyControllerMapping(accountOp.humanizerMeta),
+    stakingPool: StakingPools(accountOp.humanizerMeta)
   }
   ir.calls.forEach((call: IrCall) => {
-    // @TODO add check for address for supply controller?
     if (
       stakingAddresses.includes(call.to) &&
       (!call.fullVisualization || checkIfUnknowAction(call.fullVisualization))
     ) {
-      if (matcher[call.data.slice(0, 10)]) {
+      if (matcher.stakingPool[call.data.slice(0, 10)]) {
         newCalls.push({
           ...call,
-          fullVisualization: matcher[call.data.slice(0, 10)](accountOp, call)
+          fullVisualization: matcher.stakingPool[call.data.slice(0, 10)](accountOp, call)
         })
       } else {
         newCalls.push({ ...call, fullVisualization: [getAction('Unknown action (staking)')] })
       }
+    } else if (matcher.supplyController[call.data.slice(0, 10)]) {
+      newCalls.push({
+        ...call,
+        fullVisualization: matcher.supplyController[call.data.slice(0, 10)](accountOp, call)
+      })
     } else {
       newCalls.push(call)
     }

@@ -16,7 +16,6 @@ import { WALLETModule } from './modules/WALLET'
 import { fallbackHumanizer } from './modules/fallBackHumanizer'
 import { nameParsing } from './modules/nameParsing'
 
-// @TODO add oneinchtests
 const humanizerInfo = require('../../consts/humanizerInfo.json')
 
 const humanizerModules: Function[] = [
