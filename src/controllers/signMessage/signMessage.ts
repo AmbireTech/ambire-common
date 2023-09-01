@@ -1,11 +1,16 @@
 import { TypedDataDomain } from '@ethersproject/abstract-signer'
 
+import { Account, AccountStates } from '../../interfaces/account'
 import { Message } from '../../interfaces/userRequest'
 import { Keystore } from '../../libs/keystore/keystore'
 import EventEmitter from '../eventEmitter'
 
 export class SignMessageController extends EventEmitter {
   #keystore: Keystore
+
+  #accounts: Account[] | null = null
+
+  #accountStates: AccountStates | null = null
 
   isInitialized: boolean = false
 
@@ -26,9 +31,20 @@ export class SignMessageController extends EventEmitter {
     this.#keystore = keystore
   }
 
-  init(messageToSign: Message) {
+  init({
+    messageToSign,
+    accounts,
+    accountStates
+  }: {
+    messageToSign: Message
+    accounts: Account[]
+    accountStates: AccountStates
+  }) {
     if (['message', 'typedMessage'].includes(messageToSign.content.kind)) {
       this.messageToSign = messageToSign
+      this.#accounts = accounts
+      this.#accountStates = accountStates
+
       this.isInitialized = true
       this.emitUpdate()
     } else {
@@ -46,6 +62,8 @@ export class SignMessageController extends EventEmitter {
   reset() {
     this.isInitialized = false
     this.messageToSign = null
+    this.#accountStates = null
+    this.#accounts = null
     this.signature = null
     this.signedMessage = null
     this.signingKeyAddr = null
@@ -54,17 +72,19 @@ export class SignMessageController extends EventEmitter {
   }
 
   setSigningKeyAddr(signingKeyAddr: string) {
+    if (!this.isInitialized) {
+      this.#throwNotInitialized()
+      return
+    }
+
     this.signingKeyAddr = signingKeyAddr
     this.emitUpdate()
   }
 
   async sign() {
-    if (!this.messageToSign) {
-      return this.emitError({
-        level: 'major',
-        message: 'Something went wrong with the request to sign a message. Please try again.',
-        error: new Error('No request to sign.')
-      })
+    if (!this.isInitialized) {
+      this.#throwNotInitialized()
+      return
     }
 
     if (!this.signingKeyAddr) {
@@ -81,22 +101,28 @@ export class SignMessageController extends EventEmitter {
     try {
       const signer = await this.#keystore.getSigner(this.signingKeyAddr)
 
-      if (this.messageToSign.content.kind === 'message') {
-        this.signature = await signer.signMessage(this.messageToSign.content.message)
+      if (this.messageToSign!.content.kind === 'message') {
+        this.signature = await signer.signMessage(this.messageToSign!.content.message)
       }
 
-      if (this.messageToSign.content.kind === 'typedMessage') {
-        const { domain, types, message } = this.messageToSign.content
+      if (this.messageToSign!.content.kind === 'typedMessage') {
+        const { domain, types, message } = this.messageToSign!.content
         // TODO: Figure out if the mismatch between the `TypedDataDomain` from
         // '@ethersproject/abstract-signer' and `TypedDataDomain` from 'ethers' is a problem
         this.signature = await signer.signTypedData(domain as TypedDataDomain, types, message)
       }
 
+      const account = this.#accounts!.find((acc) => acc.addr === this.messageToSign?.accountAddr)
+      const accountState = this.#accountStates![this.messageToSign!.accountAddr].polygon
+
+      console.log('account', account)
+      console.log('accountState', accountState)
+
       this.signedMessage = {
-        id: this.messageToSign.id,
-        accountAddr: this.messageToSign.accountAddr,
+        id: this.messageToSign!.id,
+        accountAddr: this.messageToSign!.accountAddr,
         signature: this.signature,
-        content: this.messageToSign.content
+        content: this.messageToSign!.content
       }
     } catch (e) {
       const error = e instanceof Error ? e : new Error(`Signing failed. Error details: ${e}`)
@@ -109,5 +135,14 @@ export class SignMessageController extends EventEmitter {
     }
     this.status = 'DONE'
     this.emitUpdate()
+  }
+
+  #throwNotInitialized() {
+    this.emitError({
+      level: 'major',
+      message:
+        'Looks like there is an error while processing your sign message. Please retry, or contact support if issue persists.',
+      error: new Error('signMessage: controller not initialized')
+    })
   }
 }
