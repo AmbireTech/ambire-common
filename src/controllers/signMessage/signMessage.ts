@@ -1,13 +1,20 @@
+import { JsonRpcProvider } from 'ethers'
+
 import { TypedDataDomain } from '@ethersproject/abstract-signer'
 
+import { networks } from '../../consts/networks'
 import { Account, AccountCreation, AccountStates } from '../../interfaces/account'
+import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { Message } from '../../interfaces/userRequest'
 import { Keystore } from '../../libs/keystore/keystore'
-import { mapSignatureV, wrapSignature } from '../../libs/signMessage/signMessage'
+import { mapSignatureV, verifyMessage, wrapSignature } from '../../libs/signMessage/signMessage'
+import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
 import EventEmitter from '../eventEmitter'
 
 export class SignMessageController extends EventEmitter {
   #keystore: Keystore
+
+  #providers: { [key: string]: JsonRpcProvider }
 
   #accounts: Account[] | null = null
 
@@ -26,10 +33,11 @@ export class SignMessageController extends EventEmitter {
 
   signedMessage: Message | null = null
 
-  constructor(keystore: Keystore) {
+  constructor(keystore: Keystore, providers: { [key: string]: JsonRpcProvider } = {}) {
     super()
 
     this.#keystore = keystore
+    this.#providers = providers
   }
 
   init({
@@ -83,7 +91,7 @@ export class SignMessageController extends EventEmitter {
   }
 
   async sign() {
-    if (!this.isInitialized) {
+    if (!this.isInitialized || !this.messageToSign) {
       this.#throwNotInitialized()
       return
     }
@@ -103,27 +111,31 @@ export class SignMessageController extends EventEmitter {
       const signer = await this.#keystore.getSigner(this.signingKeyAddr)
       let sig
 
-      if (this.messageToSign!.content.kind === 'message') {
+      const account = this.#accounts!.find((acc) => acc.addr === this.messageToSign?.accountAddr)
+      let network = networks.find((n: NetworkDescriptor) => n.id === 'ethereum')
+
+      if (this.messageToSign.content.kind === 'message') {
         sig = await signer.signMessage(this.messageToSign!.content.message)
       }
 
-      if (this.messageToSign!.content.kind === 'typedMessage') {
+      if (this.messageToSign.content.kind === 'typedMessage') {
         const { domain, types, message } = this.messageToSign!.content
         // TODO: Figure out if the mismatch between the `TypedDataDomain` from
         // '@ethersproject/abstract-signer' and `TypedDataDomain` from 'ethers' is a problem
         sig = await signer.signTypedData(domain as TypedDataDomain, types, message)
+        const requestedNetwork = networks.find((n) => n.chainId === domain?.chainId)
+        if (requestedNetwork) {
+          network = requestedNetwork
+        } else {
+          throw !account ? new Error('account is undefined') : new Error('signature is undefined')
+        }
       }
 
-      const account = this.#accounts!.find((acc) => acc.addr === this.messageToSign?.accountAddr)
-      const accountState = this.#accountStates![this.messageToSign!.accountAddr].polygon || {}
+      const accountState =
+        this.#accountStates![this.messageToSign!.accountAddr][network?.id || 'ethereum'] || {}
 
       if (!sig || !account) {
-        this.emitError({
-          level: 'major',
-          message: 'Message signing failed. Please try again.',
-          error: !account ? new Error('account is undefined') : new Error('signature is undefined')
-        })
-        return
+        throw new Error('account is undefined')
       }
 
       if (!accountState.isEOA) {
@@ -132,6 +144,29 @@ export class SignMessageController extends EventEmitter {
         if (!accountState.isDeployed) {
           sig = wrapSignature(sig, account.creation as AccountCreation)
         }
+      }
+
+      try {
+        const valid = await verifyMessage({
+          provider: this.#providers[network?.id || 'ethereum'],
+          signer: this.signingKeyAddr,
+          signature: sig,
+          message: (this.messageToSign.content.kind === 'typedMessage'
+            ? null
+            : hexStringToUint8Array(sig)) as any,
+          typedData: (this.messageToSign.content.kind === 'typedMessage'
+            ? {
+                domain: this.messageToSign.content.domain,
+                types: this.messageToSign.content.types as any,
+                message: this.messageToSign.content.message
+              }
+            : null) as any
+        })
+        if (!valid) {
+          throw new Error('Invalid signature')
+        }
+      } catch (error: any) {
+        throw new Error(error.message || error)
       }
 
       this.signedMessage = {
