@@ -1,6 +1,4 @@
 /* eslint-disable no-await-in-loop */
-// @TODO final review of files and jsons
-
 import {
   genericErc20Humanizer,
   genericErc721Humanizer,

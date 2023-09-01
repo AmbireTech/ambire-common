@@ -200,7 +200,10 @@ describe('asyncOps tests', () => {
         k.includes('tokens') ? delete accountOp.humanizerMeta?.[k] : null
       })
     const ir = callsToIr(accountOp)
-    const [, asyncOps] = genericErc20Humanizer(accountOp, ir, { fetch: mockedFetchForTokens })
+    const [, asyncOps] = genericErc20Humanizer(accountOp, ir, {
+      fetch: mockedFetchForTokens,
+      emitError: mockEmitError
+    })
     const asyncData = await Promise.all(asyncOps)
     expect(asyncData[0]).toMatchObject({ key: `tokens:${ir.calls[0].to}`, value: ['USDT', 6] })
   })
