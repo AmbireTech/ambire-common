@@ -14,7 +14,6 @@ const entryPointHash = '0x42144640c7cb5ff8aa9595ae175ffcb6dd152db6e737c13cc2d5d0
 let dkimRecovery: any
 let ambireAccountAddress: string
 let account: any
-let dkimRecoveryForTesting: any
 let dnsSecAddr: any
 let rsaSha256DKIMValidatorAddr: any
 let entryPoint: any

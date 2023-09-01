@@ -1365,3 +1365,71 @@ describe('DKIM sigMode OnlySecond with a timelock of 2 minutes', function () {
       .to.be.revertedWith('SIGNATURE_VALIDATION_FAIL')
   })
 })
+
+describe('Setup a wrong validator address', function () {
+  const emptyAddr = ethers.computeAddress(ethers.hexlify(ethers.randomBytes(32)))
+  it('successfully deploys the ambire account with 0x validatorAddr', async function () {
+    const [relayer,,eoa] = await ethers.getSigners()
+    const gmail = await readFile(path.join(emailsPath, 'sigMode0.eml'), {
+      encoding: 'ascii'
+    })
+    const parsedContents: any = await parseEmail(gmail)
+    const validatorData = getDKIMValidatorData(parsedContents, relayer)
+    const {signerKey, hash} = getSignerKey(emptyAddr, validatorData)
+    const {signerKey: eoaKey, hash: eoaHash} = getSignerKey(eoa.address, validatorData)
+    const { ambireAccount, ambireAccountAddress: addr } = await deployAmbireAccountHardhatNetwork([
+      { addr: signerKey, hash: hash },
+      { addr: eoaKey, hash: eoaHash }
+    ])
+    ambireAccountAddress = addr
+    account = ambireAccount
+  })
+
+  it('should return SIGNATURE_VALIDATION_FAIL on any recovery request, even if it is legit', async function () {
+    const [relayer, newSigner, eoa] = await ethers.getSigners()
+    const gmail = await readFile(path.join(emailsPath, 'sigMode0.eml'), {
+      encoding: 'ascii'
+    })
+    const parsedContents: any = await parseEmail(gmail)
+    const validatorData = getDKIMValidatorData(parsedContents, relayer)
+    const {signerKey} = getSignerKey(emptyAddr, validatorData)
+    const {signerKey: eoaKey} = getSignerKey(eoa.address, validatorData)
+    const dkimSig = parsedContents[0].solidity.signature
+
+    const txns = [getPriviledgeTxn(ambireAccountAddress, newSigner.address, true)]
+    const msgHash = ethers.keccak256(
+      abiCoder.encode(
+        ['address', 'address', 'bytes32'],
+        [ambireAccountAddress, newSigner.address, ethers.toBeHex(1, 32)]
+      )
+    )
+    const msg = ethers.getBytes(msgHash)
+    const secondSig = wrapEthSign(await relayer.signMessage(msg))
+    const sigMetaTuple = 'tuple(uint8, tuple(string, bytes, bytes), string, address, bytes32)'
+    const sigMetaValues = [
+      ethers.toBeHex(0, 1),
+      [
+        `${parsedContents[0].selector}._domainkey.gmail.com`,
+        ethers.hexlify(parsedContents[0].modulus),
+        ethers.hexlify(ethers.toBeHex(parsedContents[0].exponent)),
+      ],
+      parsedContents[0].processedHeader,
+      newSigner.address,
+      ethers.toBeHex(1, 32)
+    ]
+    const innerSig = abiCoder.encode([sigMetaTuple, 'bytes', 'bytes'], [
+      sigMetaValues,
+      dkimSig,
+      secondSig
+    ])
+    const sig = abiCoder.encode(['address', 'address', 'bytes', 'bytes'], [signerKey, emptyAddr, validatorData, innerSig])
+    const finalSig = wrapExternallyValidated(sig)
+    await expect(account.execute(txns, finalSig))
+      .to.be.reverted
+
+    const sig2 = abiCoder.encode(['address', 'address', 'bytes', 'bytes'], [eoaKey, eoa.address, validatorData, innerSig])
+    const finalSig2 = wrapExternallyValidated(sig2)
+    await expect(account.execute(txns, finalSig2))
+      .to.be.revertedWithoutReason
+  })
+})
