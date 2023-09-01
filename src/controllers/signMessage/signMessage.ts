@@ -1,8 +1,9 @@
 import { TypedDataDomain } from '@ethersproject/abstract-signer'
 
-import { Account, AccountStates } from '../../interfaces/account'
+import { Account, AccountCreation, AccountStates } from '../../interfaces/account'
 import { Message } from '../../interfaces/userRequest'
 import { Keystore } from '../../libs/keystore/keystore'
+import { mapSignatureV, wrapSignature } from '../../libs/signMessage/signMessage'
 import EventEmitter from '../eventEmitter'
 
 export class SignMessageController extends EventEmitter {
@@ -100,28 +101,43 @@ export class SignMessageController extends EventEmitter {
 
     try {
       const signer = await this.#keystore.getSigner(this.signingKeyAddr)
+      let sig
 
       if (this.messageToSign!.content.kind === 'message') {
-        this.signature = await signer.signMessage(this.messageToSign!.content.message)
+        sig = await signer.signMessage(this.messageToSign!.content.message)
       }
 
       if (this.messageToSign!.content.kind === 'typedMessage') {
         const { domain, types, message } = this.messageToSign!.content
         // TODO: Figure out if the mismatch between the `TypedDataDomain` from
         // '@ethersproject/abstract-signer' and `TypedDataDomain` from 'ethers' is a problem
-        this.signature = await signer.signTypedData(domain as TypedDataDomain, types, message)
+        sig = await signer.signTypedData(domain as TypedDataDomain, types, message)
       }
 
       const account = this.#accounts!.find((acc) => acc.addr === this.messageToSign?.accountAddr)
-      const accountState = this.#accountStates![this.messageToSign!.accountAddr].polygon
+      const accountState = this.#accountStates![this.messageToSign!.accountAddr].polygon || {}
 
-      console.log('account', account)
-      console.log('accountState', accountState)
+      if (!sig || !account) {
+        this.emitError({
+          level: 'major',
+          message: 'Message signing failed. Please try again.',
+          error: !account ? new Error('account is undefined') : new Error('signature is undefined')
+        })
+        return
+      }
+
+      if (!accountState.isEOA) {
+        sig = `${mapSignatureV(sig as string)}00`
+
+        if (!accountState.isDeployed) {
+          sig = wrapSignature(sig, account.creation as AccountCreation)
+        }
+      }
 
       this.signedMessage = {
         id: this.messageToSign!.id,
         accountAddr: this.messageToSign!.accountAddr,
-        signature: this.signature,
+        signature: sig,
         content: this.messageToSign!.content
       }
     } catch (e) {

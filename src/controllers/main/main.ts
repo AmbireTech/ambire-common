@@ -49,7 +49,7 @@ export class MainController extends EventEmitter {
   // @TODO emailVaults
   emailVault: EmailVaultController
 
-  signMessage!: SignMessageController
+  signMessage: SignMessageController
 
   activity!: ActivityController
 
@@ -111,6 +111,7 @@ export class MainController extends EventEmitter {
     this.settings = { networks }
     this.emailVault = new EmailVaultController(storage, fetch, relayerUrl, this.#keystoreLib)
     this.accountAdder = new AccountAdderController({ storage, relayerUrl, fetch })
+    this.signMessage = new SignMessageController(this.#keystoreLib)
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
     this.onResolveDappRequest = onResolveDappRequest
     this.onRejectDappRequest = onRejectDappRequest
@@ -132,7 +133,6 @@ export class MainController extends EventEmitter {
     // @TODO error handling here
     this.accountStates = await this.getAccountsInfo(this.accounts)
     this.activity = new ActivityController(this.storage, this.accountStates)
-    this.signMessage = new SignMessageController(this.#keystoreLib, this.accountStates)
     this.isReady = true
 
     const isKeystoreReady = await this.#keystoreLib.isReadyToStoreKeys()
