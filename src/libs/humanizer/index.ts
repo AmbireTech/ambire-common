@@ -2,9 +2,7 @@ import { ethers } from 'ethers'
 import { AccountOp } from '../accountOp/accountOp'
 import { IrCall, Ir, HumanizerFragment } from './interfaces'
 
-// @NOTE should we use wrppaer for coingecko(if(apikey){paid coingecko}else{no}?
 // @TODO humanize signed messages
-// @TODO sometimes tests are failing bad (stack problem on emit error, coingecko not responding)
 export function callsToIr(accountOp: AccountOp): Ir {
   const irCalls: IrCall[] = accountOp.calls.map((call) => {
     return {

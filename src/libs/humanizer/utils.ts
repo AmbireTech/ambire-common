@@ -71,7 +71,7 @@ export async function getTokenInfo(
   const network = networks.find(
     (n: NetworkDescriptor) => n.chainId === BigInt(accountOp.networkId)
   )?.id
-  // @TODO update coingecko call
+  // @TODO update coingecko call with https://github.com/AmbireTech/ambire-common/pull/328
   try {
     const response = await (
       await options.fetch(`https://api.coingecko.com/api/v3/coins/${network}/contract/${address}`)
