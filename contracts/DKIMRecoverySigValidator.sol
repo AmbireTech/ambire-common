@@ -10,6 +10,7 @@ import './dkim/RSASHA256.sol';
 import './dkim/DNSSEC.sol';
 import './dkim/RRUtils.sol';
 import './libs/OpenZepellinStrings.sol';
+import './ExternalSigValidator.sol';
 
 /**
  * @notice  A validator that performs DKIM signature recovery
@@ -32,7 +33,7 @@ import './libs/OpenZepellinStrings.sol';
  * valid rrSets for the given DNS, or DNSSEC verification.
  * The secondSig is a signature on keccak256(abi.encode(address(accountAddr), calls)).
  */
-contract DKIMRecoverySigValidator {
+contract DKIMRecoverySigValidator is ExternalSigValidator {
   using Strings for *;
   using RRUtils for *;
   using Base64 for *;
@@ -141,7 +142,7 @@ contract DKIMRecoverySigValidator {
     address accountAddr,
     bytes calldata data,
     bytes calldata sig,
-    IAmbireAccount.Transaction[] calldata calls
+    Transaction[] calldata calls
   ) external {
     AccInfo memory accInfo = abi.decode(data, (AccInfo));
 
@@ -394,14 +395,14 @@ contract DKIMRecoverySigValidator {
   }
 
   function _validateCalls(
-    IAmbireAccount.Transaction[] memory calls,
+    Transaction[] memory calls,
     address accountAddr,
     address newKeyToSet,
     bytes32 newPrivilegeValue
   ) internal pure {
     // Validate the calls: we only allow setAddrPrivilege for the pre-set newKeyToSet and newPrivilegeValue
     require(calls.length == 1, 'calls length must be 1');
-    IAmbireAccount.Transaction memory txn = calls[0];
+    Transaction memory txn = calls[0];
     require(txn.value == 0, 'call value must be 0');
     require(txn.to == accountAddr, 'call "to" must be the ambire account addr');
     require(
