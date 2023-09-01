@@ -3,6 +3,7 @@ import { TransactionRequest, Wallet } from 'ethers'
 
 import type { TypedDataDomain, TypedDataField } from '@ethersproject/abstract-signer'
 import { KeystoreSigner as KeystoreSignerInterface } from '../../interfaces/keystore'
+import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
 import { Key } from '../keystore/keystore'
 
 export class KeystoreSigner implements KeystoreSignerInterface {
@@ -42,7 +43,13 @@ export class KeystoreSigner implements KeystoreSignerInterface {
   }
 
   async signMessage(hash: string | Uint8Array) {
-    const sig = await this.#signer.signMessage(hash)
+    let sig
+
+    if (typeof hash === 'string') {
+      sig = await this.#signer.signMessage(hexStringToUint8Array(hash))
+    }
+
+    sig = this.#signer.signMessage(hash)
 
     return sig
   }
