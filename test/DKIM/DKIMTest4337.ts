@@ -14,6 +14,7 @@ const entryPointHash = '0x42144640c7cb5ff8aa9595ae175ffcb6dd152db6e737c13cc2d5d0
 let dkimRecovery: any
 let ambireAccountAddress: string
 let account: any
+let dkimRecoveryForTesting: any
 let dnsSecAddr: any
 let rsaSha256DKIMValidatorAddr: any
 let entryPoint: any
@@ -109,7 +110,6 @@ describe('ERC4337 DKIM sigMode Both', function () {
     ])
     const sig = abiCoder.encode(['address', 'address', 'bytes', 'bytes'], [signerKey, validatorAddr, validatorData, innerSig])
     const finalSig = wrapExternallyValidated(sig)
-
     const newNonce = await entryPoint.getNonce(ambireAccountAddress, 0)
     const userOperation = {
         sender: ambireAccountAddress,
@@ -149,6 +149,63 @@ describe('ERC4337 DKIM sigMode Both', function () {
     await expect(entryPoint.handleOps([userOperation], relayer))
       .to.be.revertedWithCustomError(entryPoint, 'FailedOp')
       .withArgs(0, 'AA23 reverted: recovery already done');
+  })
+  it('should revert with DKIM signature verification failed if headers have been tampered with', async function () {
+    const [relayer, newSigner] = await ethers.getSigners()
+    const gmail = await readFile(path.join(emailsPath, 'sigMode0.eml'), {
+      encoding: 'ascii'
+    })
+    const parsedContents: any = await parseEmail(gmail)
+    const validatorData = getDKIMValidatorData(parsedContents, relayer)
+    const validatorAddr = await dkimRecovery.getAddress()
+    const {signerKey} = getSignerKey(validatorAddr, validatorData)
+    const dkimSig = parsedContents[0].solidity.signature
+
+    const txns = [getPriviledgeTxn(ambireAccountAddress, newSigner.address, true)]
+    const msgHash = ethers.keccak256(
+      abiCoder.encode(
+        ['address', 'address', 'bytes32'],
+        [ambireAccountAddress, newSigner.address, ethers.toBeHex(1, 32)]
+      )
+    )
+    const msg = ethers.getBytes(msgHash)
+    const secondSig = wrapEthSign(await relayer.signMessage(msg))
+    const sigMetaTuple = 'tuple(uint8, tuple(string, bytes, bytes), string, address, bytes32)'
+    const sigMetaValues = [
+      ethers.toBeHex(0, 1),
+      [
+        `${parsedContents[0].selector}._domainkey.gmail.com`,
+        ethers.hexlify(parsedContents[0].modulus),
+        ethers.hexlify(ethers.toBeHex(parsedContents[0].exponent)),
+      ],
+      parsedContents[0].processedHeader.replace('mime-version:1.0', 'mime-version:1.1'),
+      newSigner.address,
+      ethers.toBeHex(1, 32)
+    ]
+    const innerSig = abiCoder.encode([sigMetaTuple, 'bytes', 'bytes'], [
+      sigMetaValues,
+      dkimSig,
+      secondSig
+    ])
+    const sig = abiCoder.encode(['address', 'address', 'bytes', 'bytes'], [signerKey, validatorAddr, validatorData, innerSig])
+    const finalSig = wrapExternallyValidated(sig)
+    const newNonce = await entryPoint.getNonce(ambireAccountAddress, 0)
+    const userOperation = {
+        sender: ambireAccountAddress,
+        nonce: ethers.toBeHex(newNonce, 1),
+        initCode: '0x',
+        callData: account.interface.encodeFunctionData('executeBySender', [txns]),
+        callGasLimit: ethers.toBeHex(100000),
+        verificationGasLimit: ethers.toBeHex(500000),
+        preVerificationGas: ethers.toBeHex(50000),
+        maxFeePerGas: ethers.toBeHex(100000),
+        maxPriorityFeePerGas: ethers.toBeHex(100000),
+        paymasterAndData: '0x',
+        signature: finalSig
+    }
+    await expect(entryPoint.handleOps([userOperation], relayer))
+      .to.be.revertedWithCustomError(entryPoint, 'FailedOp')
+      .withArgs(0, 'AA24 signature error');
   })
 })
 
@@ -390,5 +447,172 @@ describe('ERC4337 DKIM sigMode OnlySecond', function () {
     await expect(entryPoint.handleOps([userOperation], relayer))
       .to.be.revertedWithCustomError(entryPoint, 'FailedOp')
       .withArgs(0, 'AA23 reverted: recovery already done');
+  })
+
+  it('should revert with second key validation failed if the signature is incorrect', async function () {
+    const [relayer,,newSigner] = await ethers.getSigners()
+    const gmail = await readFile(path.join(emailsPath, 'sigMode2.eml'), {
+      encoding: 'ascii'
+    })
+    const parsedContents: any = await parseEmail(gmail)
+    const validatorData = getDKIMValidatorData(parsedContents, relayer, {
+      acceptEmptyDKIMSig: true
+    })
+    const validatorAddr = await dkimRecovery.getAddress()
+    const {signerKey} = getSignerKey(validatorAddr, validatorData)
+
+    const txns = [getPriviledgeTxn(ambireAccountAddress, newSigner.address, true)]
+    const msgHash = ethers.keccak256(
+      abiCoder.encode(
+        ['address', 'address', 'bytes32'],
+        [relayer.address, newSigner.address, ethers.toBeHex(1, 32)]
+      )
+    )
+    const msg = ethers.getBytes(msgHash)
+    const secondSig = wrapEthSign(await relayer.signMessage(msg))
+    const sigMetaTuple = 'tuple(uint8, tuple(string, bytes, bytes), string, address, bytes32)'
+    const sigMetaValues = [
+      ethers.toBeHex(2, 1),
+      [
+        '',
+        ethers.toBeHex(0, 1),
+        ethers.toBeHex(0, 1),
+      ],
+      '',
+      newSigner.address,
+      ethers.toBeHex(1, 32)
+    ]
+    const innerSig = abiCoder.encode([sigMetaTuple, 'bytes', 'bytes'], [
+      sigMetaValues,
+      ethers.toBeHex(0, 1),
+      secondSig
+    ])
+    const sig = abiCoder.encode(['address', 'address', 'bytes', 'bytes'], [signerKey, validatorAddr, validatorData, innerSig])
+    const finalSig = wrapExternallyValidated(sig)
+    const newNonce = await entryPoint.getNonce(ambireAccountAddress, 0)
+    const userOperation = {
+        sender: ambireAccountAddress,
+        nonce: ethers.toBeHex(newNonce, 1),
+        initCode: '0x',
+        callData: account.interface.encodeFunctionData('executeBySender', [txns]),
+        callGasLimit: ethers.toBeHex(100000),
+        verificationGasLimit: ethers.toBeHex(500000),
+        preVerificationGas: ethers.toBeHex(50000),
+        maxFeePerGas: ethers.toBeHex(100000),
+        maxPriorityFeePerGas: ethers.toBeHex(100000),
+        paymasterAndData: '0x',
+        signature: finalSig
+    }
+    await expect(entryPoint.handleOps([userOperation], relayer))
+      .to.be.revertedWithCustomError(entryPoint, 'FailedOp')
+      .withArgs(0, 'AA24 signature error');
+  })
+})
+
+describe('DKIM sigMode Both with acceptUnknownSelectors true', function () {
+  it('successfully deploys the DKIMModifiable validator that helps out with settings some predefined vars', async function () {
+    const [signer] = await ethers.getSigners()
+    const testContractFactory = await ethers.getContractFactory("DKIMModifiable", {
+      libraries: {
+        RSASHA256: rsaSha256DKIMValidatorAddr,
+      },
+    })
+    const gmail = await readFile(path.join(emailsPath, 'sigMode0.eml'), {
+      encoding: 'ascii'
+    })
+    const parsedContents: any = await parseEmail(gmail)
+    const keys = [
+      [
+        `unknown._domainkey.gmail.com`,
+        ethers.hexlify(parsedContents[0].modulus),
+        ethers.hexlify(ethers.toBeHex(parsedContents[0].exponent)),
+      ],
+      [
+        `toberemoved._domainkey.gmail.com`,
+        ethers.hexlify(parsedContents[0].modulus),
+        ethers.hexlify(ethers.toBeHex(parsedContents[0].exponent)),
+      ],
+      [
+        `notaddedyet._domainkey.gmail.com`,
+        ethers.hexlify(parsedContents[0].modulus),
+        ethers.hexlify(ethers.toBeHex(parsedContents[0].exponent)),
+      ]
+    ]
+    const waitTimestamps = [0, 0, 120];
+    dkimRecoveryForTesting = await testContractFactory.deploy(keys, waitTimestamps, dnsSecAddr, signer.address, signer.address)
+    expect(await dkimRecoveryForTesting.getAddress()).to.not.be.null
+  })
+  it('successfully deploys the ambire account', async function () {
+    const [relayer] = await ethers.getSigners()
+    const gmail = await readFile(path.join(emailsPath, 'sigMode0.eml'), {
+      encoding: 'ascii'
+    })
+    const parsedContents: any = await parseEmail(gmail)
+    const validatorData = getDKIMValidatorData(parsedContents, relayer, {
+      acceptUnknownSelectors: true
+    })
+    const {signerKey, hash} = getSignerKey(await dkimRecoveryForTesting.getAddress(), validatorData)
+    const { ambireAccount, ambireAccountAddress: addr } = await deployAmbireAccountHardhatNetwork([
+      { addr: signerKey, hash: hash },
+      { addr: await entryPoint.getAddress(), hash: entryPointHash }
+    ])
+    ambireAccountAddress = addr
+    account = ambireAccount
+  })
+  it('should revert with DKIM signature verification failed if a different dkimSig is passed', async function () {
+    const [relayer, newSigner] = await ethers.getSigners()
+    const gmail = await readFile(path.join(emailsPath, 'sigMode0.eml'), {
+      encoding: 'ascii'
+    })
+    const parsedContents: any = await parseEmail(gmail)
+    const riotEmail = await readFile(path.join(emailsPath, 'riot-games.eml'), {
+      encoding: 'ascii'
+    })
+    const riotEmailParsedContents: any = await parseEmail(riotEmail)
+    const riotEmailSig = riotEmailParsedContents[0].solidity.signature
+
+    const validatorData = getDKIMValidatorData(parsedContents, relayer, {
+      acceptUnknownSelectors: true
+    })
+    const validatorAddr = await dkimRecoveryForTesting.getAddress()
+    const {signerKey} = getSignerKey(validatorAddr, validatorData)
+
+    const txns = [getPriviledgeTxn(ambireAccountAddress, newSigner.address, true)]
+    const sigMetaTuple = 'tuple(uint8, tuple(string, bytes, bytes), string, address, bytes32)'
+    const sigMetaValues = [
+      ethers.toBeHex(0, 1),
+      [
+        `${parsedContents[0].selector}._domainkey.gmail.com`,
+        ethers.hexlify(parsedContents[0].modulus),
+        ethers.hexlify(ethers.toBeHex(parsedContents[0].exponent)),
+      ],
+      parsedContents[0].processedHeader,
+      newSigner.address,
+      ethers.toBeHex(1, 32)
+    ]
+    const innerSig = abiCoder.encode([sigMetaTuple, 'bytes', 'bytes'], [
+      sigMetaValues,
+      riotEmailSig,
+      ethers.toBeHex(0, 1)
+    ])
+    const sig = abiCoder.encode(['address', 'address', 'bytes', 'bytes'], [signerKey, validatorAddr, validatorData, innerSig])
+    const finalSig = wrapExternallyValidated(sig)
+    const newNonce = await entryPoint.getNonce(ambireAccountAddress, 0)
+    const userOperation = {
+        sender: ambireAccountAddress,
+        nonce: ethers.toBeHex(newNonce, 1),
+        initCode: '0x',
+        callData: account.interface.encodeFunctionData('executeBySender', [txns]),
+        callGasLimit: ethers.toBeHex(100000),
+        verificationGasLimit: ethers.toBeHex(500000),
+        preVerificationGas: ethers.toBeHex(50000),
+        maxFeePerGas: ethers.toBeHex(100000),
+        maxPriorityFeePerGas: ethers.toBeHex(100000),
+        paymasterAndData: '0x',
+        signature: finalSig
+    }
+    await expect(entryPoint.handleOps([userOperation], relayer))
+      .to.be.revertedWithCustomError(entryPoint, 'FailedOp')
+      .withArgs(0, 'AA24 signature error');
   })
 })
