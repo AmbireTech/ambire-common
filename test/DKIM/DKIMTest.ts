@@ -590,7 +590,7 @@ describe('DKIM sigMode OnlySecond', function () {
     const finalSig = wrapExternallyValidated(sig)
 
     await expect(account.execute(txns, finalSig))
-      .to.be.revertedWith('second key validation failed')
+      .to.be.revertedWith('SIGNATURE_VALIDATION_FAIL')
   })
 
   it('should revert if an OnlyDKIM sig mode is passed', async function () {
@@ -993,7 +993,7 @@ describe('DKIM sigMode Both with acceptUnknownSelectors true', function () {
     const sig = abiCoder.encode(['address', 'address', 'bytes', 'bytes'], [signerKey, validatorAddr, validatorData, innerSig])
     const finalSig = wrapExternallyValidated(sig)
     await expect(account.execute(txns, finalSig))
-      .to.be.revertedWith('DKIM signature verification failed')
+      .to.be.revertedWith('SIGNATURE_VALIDATION_FAIL')
   })
 
   it('should revert with DKIM signature verification failed if a different dkimSig is passed', async function () {
@@ -1035,7 +1035,7 @@ describe('DKIM sigMode Both with acceptUnknownSelectors true', function () {
     const sig = abiCoder.encode(['address', 'address', 'bytes', 'bytes'], [signerKey, validatorAddr, validatorData, innerSig])
     const finalSig = wrapExternallyValidated(sig)
     await expect(account.execute(txns, finalSig))
-      .to.be.revertedWith('DKIM signature verification failed')
+      .to.be.revertedWith('SIGNATURE_VALIDATION_FAIL')
   })
 })
 
@@ -1339,7 +1339,7 @@ describe('DKIM sigMode OnlySecond with a timelock of 2 minutes', function () {
     const sig = abiCoder.encode(['address', 'address', 'bytes', 'bytes'], [signerKey, validatorAddr, validatorData, innerSig])
     const finalSig = wrapExternallyValidated(sig)
     await expect(account.execute(txns, finalSig))
-      .to.be.revertedWith('second key validation failed')
+      .to.be.revertedWith('SIGNATURE_VALIDATION_FAIL')
 
     // try to give newSigner.address false privs
     const brickTxn = [getPriviledgeTxn(ambireAccountAddress, newSigner.address, false)]
@@ -1362,6 +1362,6 @@ describe('DKIM sigMode OnlySecond with a timelock of 2 minutes', function () {
     const brickSig = abiCoder.encode(['address', 'address', 'bytes', 'bytes'], [signerKey, validatorAddr, validatorData, brickInnerSig])
     const finalBrickSig = wrapExternallyValidated(brickSig)
     await expect(account.execute(brickTxn, finalBrickSig))
-      .to.be.revertedWith('second key validation failed')
+      .to.be.revertedWith('SIGNATURE_VALIDATION_FAIL')
   })
 })

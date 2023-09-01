@@ -133,7 +133,7 @@ contract AmbireAccount {
 		if (sigMode == SIGMODE_EXTERNALLY_VALIDATED) {
 			bool isValidSig;
 			(signerKey, isValidSig, ) = validateExternalSig(calls, signature);
-			if (!isValidSig) revert('Signature validation fail');
+			if (!isValidSig) revert('SIGNATURE_VALIDATION_FAIL');
 		} else {
 			signerKey = SignatureValidator.recoverAddrImpl(
 				keccak256(abi.encode(address(this), block.chainid, currentNonce, calls)),
@@ -234,9 +234,11 @@ contract AmbireAccount {
 
 			(, bool isValidSig, uint256 timestampValidAfter) = validateExternalSig(calls, userOp.signature);
 			if (!isValidSig) return SIG_VALIDATION_FAILED;
-			// timestampValidAfter is either 0 if there is no timestamp set
-			// or a valid timestamp. So no worries about setting it directly
-			result = timestampValidAfter;
+			// pack the return value for validateUserOp
+			// address aggregator, uint48 validUntil, uint48 validAfter
+			if (result != 0) {
+				result = uint160(0) | (uint256(0) << 160) | (uint256(timestampValidAfter) << (208));
+			}
 		} else {
 			address signer = SignatureValidator.recoverAddr(userOpHash, userOp.signature);
 			if (privileges[signer] == bytes32(0)) return SIG_VALIDATION_FAILED;

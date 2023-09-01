@@ -19,7 +19,7 @@ let dnsSecAddr: any
 let rsaSha256DKIMValidatorAddr: any
 let entryPoint: any
 
-describe('DKIM Prep-up', function () {
+describe('ERC4337 DKIM Prep-up', function () {
   it('successfully deploy the DKIM Recovery and Entry Point', async function () {
     const [signer] = await ethers.getSigners()
 
@@ -52,7 +52,7 @@ describe('DKIM Prep-up', function () {
   })
 })
 
-describe('DKIM sigMode Both', function () {
+describe('ERC4337 DKIM sigMode Both', function () {
   it('successfully deploys the ambire account and gives priviledges to the entry point', async function () {
     const [relayer] = await ethers.getSigners()
     const gmail = await readFile(path.join(emailsPath, 'sigMode0.eml'), {
@@ -153,7 +153,7 @@ describe('DKIM sigMode Both', function () {
   })
 })
 
-describe('DKIM sigMode OnlyDKIM', function () {
+describe('ERC4337 DKIM sigMode OnlyDKIM', function () {
 
   it('successfully deploys the ambire account', async function () {
     const [relayer] = await ethers.getSigners()
@@ -273,7 +273,7 @@ describe('DKIM sigMode OnlyDKIM', function () {
   })
 })
 
-describe('DKIM sigMode OnlySecond', function () {
+describe('ERC4337 DKIM sigMode OnlySecond', function () {
   it('successfully deploys the ambire account', async function () {
     const [relayer] = await ethers.getSigners()
     const gmail = await readFile(path.join(emailsPath, 'sigMode2.eml'), {
