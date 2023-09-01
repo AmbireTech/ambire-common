@@ -11,7 +11,7 @@ import { wethHumanizer } from './modules/weth'
 import { aaveHumanizer } from './modules/Aave'
 import { yearnVaultModule } from './modules/yearnTesseractVault'
 import { genericErc20Humanizer, genericErc721Humanizer, tokenParsing } from './modules/tokens'
-import { oneInchHumanizer } from './modules/oneInch'
+// import { oneInchHumanizer } from './modules/oneInch'
 import { WALLETModule } from './modules/WALLET'
 import { fallbackHumanizer } from './modules/fallBackHumanizer'
 import { nameParsing } from './modules/nameParsing'
@@ -25,7 +25,7 @@ const humanizerModules: Function[] = [
   uniswapHumanizer,
   wethHumanizer,
   aaveHumanizer,
-  oneInchHumanizer,
+  // oneInchHumanizer,
   WALLETModule,
   yearnVaultModule,
   fallbackHumanizer,

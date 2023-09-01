@@ -11,7 +11,7 @@ import {
 import { uniswapHumanizer } from '../../libs/humanizer/modules/Uniswap'
 import { wethHumanizer } from '../../libs/humanizer/modules/weth'
 import { aaveHumanizer } from '../../libs/humanizer/modules/Aave'
-import { oneInchHumanizer } from '../../libs/humanizer/modules/oneInch'
+// import { oneInchHumanizer } from '../../libs/humanizer/modules/oneInch'
 import { WALLETModule } from '../../libs/humanizer/modules/WALLET'
 import { yearnVaultModule } from '../../libs/humanizer/modules/yearnTesseractVault'
 import { fallbackHumanizer } from '../../libs/humanizer/modules/fallBackHumanizer'
@@ -29,7 +29,7 @@ const humanizerModules: Function[] = [
   uniswapHumanizer,
   wethHumanizer,
   aaveHumanizer,
-  oneInchHumanizer,
+  // oneInchHumanizer,
   WALLETModule,
   yearnVaultModule,
   fallbackHumanizer,
