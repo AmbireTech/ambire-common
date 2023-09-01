@@ -39,6 +39,7 @@ export async function estimate(
     if (op.calls.length !== 1) {
       throw new Error("EOA can't have more than one call!")
     }
+console.log('===>EOA');
 
     const call = op.calls[0]
     const nonce = await provider.getTransactionCount(account.addr)
@@ -105,7 +106,9 @@ export async function estimate(
       nonce,
       feeTokenOutcomes,
       ,
-      nativeAssetBalances
+      nativeAssetBalances,
+      ,
+      l1GasEstimation // [gasUsed, baseFee, totalFee, gasOracle]
     ]
   ] = await deploylessEstimator.call('estimate', args, {
     from: blockFrom,
@@ -154,7 +157,7 @@ export async function estimate(
     const nativeFromBalance = await provider.getBalance(fromAddrHavingNative!)
 
     // @TODO - Both balances are equal, but they shouldn't be as the contract balance should include the fee
-    console.log({ nativeFromBalance, contractNativeFromBalance: nativeAssetBalances[0] })
+console.log({ nativeFromBalance, contractNativeFromBalance: nativeAssetBalances[0] })
 
     addedNative =
       nativeFromBalance - (nativeAssetBalances[0] - simulationGasPrice * simulationGasLimit)

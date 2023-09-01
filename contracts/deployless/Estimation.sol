@@ -8,6 +8,12 @@ interface IERC20Subset {
   function transfer(address recipient, uint256 amount) external returns (bool);
 }
 
+interface IGasPriceOracle {
+  function getL1GasUsed(bytes memory _data) external view returns (uint256);
+  function getL1Fee(bytes memory _data) external view returns (uint256);
+  function l1BaseFee() external view returns (uint256);
+}
+
 contract Estimation {
   struct AccountOp {
     IAmbireAccount account;
@@ -30,6 +36,13 @@ contract Estimation {
     uint amount;
   }
 
+  struct L1GasEstimation {
+    uint256 gasUsed;
+    uint256 baseFee;
+    uint256 fee;
+    address gasOracle;
+  }
+
   struct EstimationOutcome {
     SimulationOutcome deployment;
     SimulationOutcome accountOpToExecuteBefore;
@@ -39,7 +52,10 @@ contract Estimation {
     bytes32[] associatedKeyPrivileges;
     uint[] nativeAssetBalances;
     uint gasUsed;
+    L1GasEstimation l1GasEstimation;
   }
+
+  mapping (uint256 => address) l1Oracles;
 
   function makeSpoofSignature(address key) internal pure returns (bytes memory spoofSig) {
     spoofSig = abi.encodePacked(uint256(uint160(key)), uint8(0x03));
@@ -60,7 +76,6 @@ contract Estimation {
     address relayer,
     address[] memory checkNativeAssetOn
   ) external returns (EstimationOutcome memory outcome) {
-
     // This has two purposes: 1) when we're about to send a txn via an EOA, we need to know the native asset balances
     // 2) sometimes we need to check the balance of the simulation `from` addr in order to calculate
     // txn fee anomalies (like in Optimism, paying the L1 calldata fee)
@@ -81,7 +96,7 @@ contract Estimation {
       (outcome.op, outcome.associatedKeyPrivileges, spoofSig) = simulateUnsigned(op, associatedKeys);
       outcome.nonce = op.account.nonce();
       // Get fee tokens amounts after the simulation, and simulate their gas cost for transfer
-      if (feeTokens.length != 0) outcome.feeTokenOutcomes = simulateFeePayments(account, feeTokens, spoofSig, relayer);
+      if (feeTokens.length != 0) (outcome.feeTokenOutcomes, outcome.l1GasEstimation) = simulateFeePayments(account, feeTokens, spoofSig, relayer);
     }
 
     if (associatedKeys.length != 0) {
@@ -145,9 +160,12 @@ contract Estimation {
 
   function simulateFeePayments(IAmbireAccount account, address[] memory feeTokens, bytes memory spoofSig, address relayer)
     public
-    returns (FeeTokenOutcome[] memory feeTokenOutcomes)
+    returns (FeeTokenOutcome[] memory feeTokenOutcomes, L1GasEstimation memory l1GasEstimation)
   {
     uint baseGasConsumption = calculateBaseGas(account, spoofSig);
+
+    l1Oracles[10] = address(0x420000000000000000000000000000000000000F);
+    l1Oracles[8453] = address(0x420000000000000000000000000000000000000F);
 
     feeTokenOutcomes = new FeeTokenOutcome[](feeTokens.length);
     for (uint i=0; i!=feeTokens.length; i++) {
@@ -166,6 +184,14 @@ contract Estimation {
       } else {
         simulationOp.calls[0].to = feeToken;
         simulationOp.calls[0].data = abi.encodeWithSelector(IERC20Subset.transfer.selector, relayer, 1);
+        
+        if(l1Oracles[block.chainid] != address(0)) {
+          l1GasEstimation.gasUsed = IGasPriceOracle(l1Oracles[block.chainid]).getL1GasUsed(simulationOp.calls[0].data);
+          l1GasEstimation.fee = IGasPriceOracle(l1Oracles[block.chainid]).getL1Fee(simulationOp.calls[0].data);
+          l1GasEstimation.baseFee = IGasPriceOracle(l1Oracles[block.chainid]).l1BaseFee();
+          l1GasEstimation.gasOracle = l1Oracles[block.chainid];
+        }
+        
         try this.getERC20Balance(IERC20Subset(feeToken), address(account)) returns (uint amount) {
           feeTokenOutcomes[i].amount = amount;
         // Ignore errors on purpose here, we just leave the amount 0

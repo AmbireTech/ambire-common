@@ -1,6 +1,7 @@
 import { ethers } from 'hardhat'
 import chai, { expect } from 'chai'
 import chaiAssertionsCount from 'chai-assertions-count'
+import fs from 'fs'
 
 chai.use(chaiAssertionsCount)
 
@@ -26,10 +27,9 @@ const abiCoder = new ethers.AbiCoder()
 const assertion = chai.Assertion
 const deploySalt = 0
 const deployGasLimit = 1000000
-const fs = require('fs')
 
-const filenames = fs.readdirSync(`${__dirname}/../artifacts/build-info`)
-const buildInfo = filenames.length ? require(`../artifacts/build-info/${filenames[0]}`) : null
+// const filenames = fs.readdirSync(`${__dirname}/../artifacts/build-info`)
+const buildInfo = null // filenames.length ? require (`../artifacts/build-info/${filenames[0]}`) : null
 
 export {
   pk1,

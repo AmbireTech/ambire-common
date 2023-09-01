@@ -20,6 +20,8 @@ async function walk(dir) {
   return files.filter((file) => file.slice(-4) === '.sol')
 }
 
+let done = false
+
 async function compileFolder(contractsDir) {
   const files = await walk(contractsDir)
 
@@ -30,18 +32,21 @@ async function compileFolder(contractsDir) {
     // it removes .sol from contract name
     contractName = contractName.slice(0, contractName.length - 4)
 
-    const output = compile(contractName, {
-      contractsFolder: contractsDir
-    })
+    if (process.argv[2] === contractName || !process.argv[2]) {
+      const output = compile(contractName, {
+        contractsFolder: contractsDir
+      })
+      fs.writeFileSync(`${outputDir}/${contractName}.json`, JSON.stringify(output))
 
-    fs.writeFileSync(`${outputDir}/${contractName}.json`, JSON.stringify(output))
-
-    console.log(`✅ ${contractName} compiled successfully!`)
+      console.log(`✅ ${contractName} compiled successfully!`)
+      done = true
+    }
   })
 }
 
 async function run() {
   await Promise.all(contractsDirs.map((contractsDir) => compileFolder(contractsDir)).flat())
+  if (!done) console.log(`Contract ${process.argv[2]} not found.`)
 }
 
 run()

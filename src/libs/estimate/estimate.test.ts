@@ -213,7 +213,7 @@ describe('estimate', () => {
 
     const opOptimism = {
       accountAddr: accountOptimism.addr,
-      signingKeyAddr: null,
+      signingKeyAddr: accountOptimism.associatedKeys[0],
       gasLimit: null,
       gasFeePayment: null,
       networkId: 'optimism',
@@ -225,7 +225,7 @@ describe('estimate', () => {
 
     const response = await estimate(
       providerOptimism,
-      ethereum,
+      optimism,
       accountOptimism,
       opOptimism,
       nativeToCheck,
@@ -233,6 +233,9 @@ describe('estimate', () => {
       { calculateAnomalies: true },
       fromAddrHavingNative
     )
+
+    console.log({response});
+    
 
     expect(response.addedNative).toBeGreaterThan(0n)
   })
