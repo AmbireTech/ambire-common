@@ -30,7 +30,7 @@ contract RecoverySigValidator is ExternalSigValidator {
     bytes calldata data,
     bytes calldata sig,
     Transaction[] calldata calls
-  ) override external returns (uint256) {
+  ) override external returns (bool, uint256) {
     (RecoveryInfo memory recoveryInfo) = abi.decode(data, (RecoveryInfo));
     // required for cancel/scheduling: isCancel, callsToCommitTo, salt, innerSig
     // required for finalization: salt
@@ -54,7 +54,7 @@ contract RecoverySigValidator is ExternalSigValidator {
       // FAIL_MAGIC_VALUE. If it doesn't revert back in the contract,
       // we're in big trouble
       if (! isIn(recoveryKey, recoveryInfo.keys)) {
-        return FAIL_MAGIC_VALUE;
+        return (false, 0);
       }
 
       // Allowing execution to proceed, but there must be no `calls`
@@ -64,11 +64,11 @@ contract RecoverySigValidator is ExternalSigValidator {
         uint32 timelock = uint32(block.timestamp) + uint32(recoveryInfo.timelock);
         scheduledRecoveries[hash] = timelock;
         emit LogRecoveryScheduled(hash, recoveryKey, block.timestamp, callsToCommitTo);
-        return timelock;
+        return (true, timelock);
       } else {
         scheduledRecoveries[hash] = type(uint256).max;
         emit LogRecoveryCancelled(hash, recoveryKey, block.timestamp);
-        return SUCCESS_MAGIC_VALUE;
+        return (true, 0);
       }
     } else {
       bytes32 hash = keccak256(abi.encode(accountAddr, block.chainid, salt, calls));
@@ -80,8 +80,7 @@ contract RecoverySigValidator is ExternalSigValidator {
 
       scheduledRecoveries[hash] = type(uint256).max;
       emit LogRecoveryFinalized(hash, block.timestamp);
-      // Allow execution to proceed
-      return SUCCESS_MAGIC_VALUE;
+      return (true, 0);
     }
   }
 

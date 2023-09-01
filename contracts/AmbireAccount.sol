@@ -23,7 +23,7 @@ struct UserOperation {
 // @dev All external/public functions (that are not view/pure) use `payable` because AmbireAccount
 // is a wallet contract, and any ETH sent to it is not lost, but on the other hand not having `payable`
 // makes the Solidity compiler add an extra check for `msg.value`, which in this case is wasted gas
-contract AmbireAccount is HasMagicValues {
+contract AmbireAccount {
 	// @dev We do not have a constructor. This contract cannot be initialized with any valid `privileges` by itself!
 	// The indended use case is to deploy one base implementation contract, and create a minimal proxy for each user wallet, by
 	// using our own code generation to insert SSTOREs to initialize `privileges` (IdentityProxyDeploy.js)
@@ -131,9 +131,9 @@ contract AmbireAccount is HasMagicValues {
 		nonce = currentNonce + 1;
 
 		if (sigMode == SIGMODE_EXTERNALLY_VALIDATED) {
-			uint256 validation;
-			(signerKey, validation) = validateExternalSig(calls, signature);
-			if (validation == FAIL_MAGIC_VALUE) revert('Signature validation fail');
+			bool isValidSig;
+			(signerKey, isValidSig, ) = validateExternalSig(calls, signature);
+			if (!isValidSig) revert('Signature validation fail');
 		} else {
 			signerKey = SignatureValidator.recoverAddrImpl(
 				keccak256(abi.encode(address(this), block.chainid, currentNonce, calls)),
@@ -232,17 +232,11 @@ contract AmbireAccount is HasMagicValues {
 			  ? abi.decode(userOp.callData[4:], (Transaction[]))
 			  : new Transaction[](0);
 
-			uint256 validation;
-			(, validation) = validateExternalSig(calls, userOp.signature);
-
-			// if the validation is not SUCCESS_MAGIC_VALUE,
-			// we expect it to return a valid timestamp. We consider a valid
-			// timestamp one between the current block and 2 weeks after.
-			if (
-				validation == SUCCESS_MAGIC_VALUE ||
-				uint32(validation) <= uint32(block.timestamp) + uint32(1209600)
-			) result = validation;
-			else return SIG_VALIDATION_FAILED;
+			(, bool isValidSig, uint256 timestampValidAfter) = validateExternalSig(calls, userOp.signature);
+			if (!isValidSig) return SIG_VALIDATION_FAILED;
+			// timestampValidAfter is either 0 if there is no timestamp set
+			// or a valid timestamp. So no worries about setting it directly
+			result = timestampValidAfter;
 		} else {
 			address signer = SignatureValidator.recoverAddr(userOpHash, userOp.signature);
 			if (privileges[signer] == bytes32(0)) return SIG_VALIDATION_FAILED;
@@ -258,7 +252,8 @@ contract AmbireAccount is HasMagicValues {
 		return result;
 	}
 
-	function validateExternalSig(Transaction[] memory calls, bytes calldata signature) internal returns(address signerKey, uint256 validation) {
+	function validateExternalSig(Transaction[] memory calls, bytes calldata signature)
+	internal returns(address signerKey, bool isValidSig, uint256 timestampValidAfter) {
 		(bytes memory sig, ) = SignatureValidator.splitSignature(signature);
 		address validatorAddr;
 		bytes memory validatorData;
@@ -272,6 +267,6 @@ contract AmbireAccount is HasMagicValues {
 		// The sig validator itself should throw when a signature isn't valdiated successfully
 		// the return value just indicates whether we want to execute the current calls
 		// @TODO what about reentrancy for externally validated signatures
-		validation = ExternalSigValidator(validatorAddr).validateSig(address(this), validatorData, innerSig, calls);
+		(isValidSig, timestampValidAfter) = ExternalSigValidator(validatorAddr).validateSig(address(this), validatorData, innerSig, calls);
 	}
 }

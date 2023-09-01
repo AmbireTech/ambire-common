@@ -143,7 +143,7 @@ contract DKIMRecoverySigValidator is ExternalSigValidator {
     bytes calldata data,
     bytes calldata sig,
     Transaction[] calldata calls
-  ) override external returns (uint256) {
+  ) override external returns (bool, uint256) {
     AccInfo memory accInfo = abi.decode(data, (AccInfo));
 
     (SignatureMeta memory sigMeta, bytes memory dkimSig, bytes memory secondSig) = abi.decode(
@@ -202,7 +202,7 @@ contract DKIMRecoverySigValidator is ExternalSigValidator {
       }
 
       if (! (RSASHA256.verify(sha256(bytes(headers)), dkimSig, pubKeyExponent, pubKeyModulus))) {
-        return FAIL_MAGIC_VALUE;
+        return (false, 0);
       }
     }
 
@@ -215,7 +215,7 @@ contract DKIMRecoverySigValidator is ExternalSigValidator {
 
       // @TODO should spoofing be allowed
       if (! (SignatureValidator.recoverAddrImpl(hashToSign, secondSig, true) == accInfo.secondaryKey)) {
-        return FAIL_MAGIC_VALUE;
+        return (false, 0);
       }
     }
 
@@ -228,7 +228,7 @@ contract DKIMRecoverySigValidator is ExternalSigValidator {
         require(calls.length == 0, 'no txn execution is allowed when setting a timelock');
         timelock.whenReady = uint32(block.timestamp) + accInfo.onlyOneSigTimelock;
         emit TimelockSet(identifier, timelock.whenReady);
-        return timelock.whenReady;
+        return (true, timelock.whenReady);
       } else {
         require(uint32(block.timestamp) >= timelock.whenReady, 'timelock: not ready yet');
         _validateCalls(calls, accountAddr, newKeyToSet, newPrivilegeValue);
@@ -238,7 +238,7 @@ contract DKIMRecoverySigValidator is ExternalSigValidator {
     }
 
     recoveries[identifier] = true;
-    return SUCCESS_MAGIC_VALUE;
+    return (true, 0);
   }
 
   /**
