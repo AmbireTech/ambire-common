@@ -4,7 +4,6 @@ import { HumanizerFragment, Ir, IrCall } from '../interfaces'
 import { getAddress, getAction, getLabel, getToken } from '../utils'
 import { AccountOp } from '../../accountOp/accountOp'
 
-// @TODO check in network and humanizetv
 // const vaultNames = { ethereum: 'Yearn', polygon: 'Tesseract' }
 const tokenPrefixes = { ethereum: 'y', polygon: 'tv' }
 // add 'y' or 'tv' prefix, eg '10 USDC' will become '10 yUSDC' to signify vault tokens
@@ -18,7 +17,7 @@ export const yearnVaultModule = (
   const { yearnVaults, tesseractVaults } = accountOp.humanizerMeta || {}
   //   const yearnWETHVaultAddress = '0xa258C4606Ca8206D8aA700cE2143D7db854D168c'
   const iface = new ethers.Interface(accountOp.humanizerMeta?.['abis:YearnVault'])
-  const getVaultInfo = ({ to }: IrCall) =>
+  const getVaultInfo = (to: string) =>
     yearnVaults.find((x: any) => x.addr === to) || tesseractVaults.find((x: any) => x.addr === to)
 
   const matcher = {
@@ -27,7 +26,7 @@ export const yearnVaultModule = (
       call: IrCall
     ) => {
       const [amount] = iface.parseTransaction(call)!.args
-      const vaultInfo = getVaultInfo(call)
+      const vaultInfo = getVaultInfo(call.to)
       return [
         getAction('Deposit'),
         getToken(vaultInfo.baseToken, amount),
@@ -39,9 +38,8 @@ export const yearnVaultModule = (
       accountOp: AccountOp,
       call: IrCall
     ) => {
-      // @TODO check network (eth/poly) to add proper prefic (from tokenPrefixes y/tv) in nameParsing
       const [amount] = iface.parseTransaction(call)!.args
-      const vaultInfo = getVaultInfo(call)
+      const vaultInfo = getVaultInfo(call.to)
       return [
         getAction('Withdraw'),
         getToken(vaultInfo.baseToken, amount),
@@ -55,7 +53,7 @@ export const yearnVaultModule = (
     ) => {
       const [maxShares] = iface.parseTransaction(call)!.args
 
-      const vaultInfo = getVaultInfo(call)
+      const vaultInfo = getVaultInfo(call.to)
       return [
         getAction('Withdraw'),
         getToken(vaultInfo.baseToken, maxShares),
@@ -69,7 +67,7 @@ export const yearnVaultModule = (
     ) => {
       const [to, amount] = iface.parseTransaction(call)!.args
 
-      const vaultInfo = getVaultInfo(call)
+      const vaultInfo = getVaultInfo(call.to)
       return [
         getAction('Approve'),
         getAddress(to),
@@ -81,8 +79,8 @@ export const yearnVaultModule = (
   const newCalls: IrCall[] = []
   ir.calls.forEach((_call) => {
     const call = { ..._call, to: ethers.getAddress(_call.to) }
-    // @TODO check if call.to is a vault
-    if (getVaultInfo(call)) {
+    // checks if call.to is a vault
+    if (getVaultInfo(call.to)) {
       let visualization = []
 
       if (matcher[call.data.slice(0, 10)]) {
@@ -95,7 +93,7 @@ export const yearnVaultModule = (
             ? {
                 ...v,
                 symbol: `${prefix}${
-                  accountOp.humanizerMeta?.[`tokens:${getVaultInfo(call).baseToken}`][0]
+                  accountOp.humanizerMeta?.[`tokens:${getVaultInfo(call.to).baseToken}`][0]
                 }`
               }
             : v
