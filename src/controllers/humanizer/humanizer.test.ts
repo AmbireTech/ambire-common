@@ -7,23 +7,9 @@ import { HumanizerController } from './humanizer'
 import humanizerJSON from '../../consts/humanizerInfo.json'
 import { Storage } from '../../interfaces/storage'
 import { AccountOp } from '../../libs/accountOp/accountOp'
+import { produceMemoryStore } from '../../../test/helpers'
 
 const HUMANIZER_META_KEY = 'HumanizerMeta'
-
-// @TODO import from helpers
-export function produceMemoryStore(): Storage {
-  const storage = new Map()
-  return {
-    get: (key, defaultValue): any => {
-      const serialized = storage.get(key)
-      return Promise.resolve(serialized ? JSON.parse(serialized) : defaultValue)
-    },
-    set: (key, value) => {
-      storage.set(key, JSON.stringify(value))
-      return Promise.resolve(null)
-    }
-  }
-}
 
 const humanizerMeta = humanizerJSON
 const accountOp: AccountOp = {
