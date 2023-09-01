@@ -33,7 +33,7 @@ export class SignMessageController extends EventEmitter {
 
   signedMessage: Message | null = null
 
-  constructor(keystore: Keystore, providers: { [key: string]: JsonRpcProvider } = {}) {
+  constructor(keystore: Keystore, providers: { [key: string]: JsonRpcProvider }) {
     super()
 
     this.#keystore = keystore
@@ -146,27 +146,23 @@ export class SignMessageController extends EventEmitter {
         }
       }
 
-      try {
-        const valid = await verifyMessage({
-          provider: this.#providers[network?.id || 'ethereum'],
-          signer: this.signingKeyAddr,
-          signature: sig,
-          message: (this.messageToSign.content.kind === 'typedMessage'
-            ? null
-            : hexStringToUint8Array(sig)) as any,
-          typedData: (this.messageToSign.content.kind === 'typedMessage'
-            ? {
-                domain: this.messageToSign.content.domain,
-                types: this.messageToSign.content.types as any,
-                message: this.messageToSign.content.message
-              }
-            : null) as any
-        })
-        if (!valid) {
-          throw new Error('Invalid signature')
-        }
-      } catch (error: any) {
-        throw new Error(error.message || error)
+      const isValidSig = await verifyMessage({
+        provider: this.#providers[network?.id || 'ethereum'],
+        signer: this.signingKeyAddr,
+        signature: sig,
+        message: (this.messageToSign.content.kind === 'typedMessage'
+          ? null
+          : hexStringToUint8Array(sig)) as any,
+        typedData: (this.messageToSign.content.kind === 'typedMessage'
+          ? {
+              domain: this.messageToSign.content.domain,
+              types: this.messageToSign.content.types as any,
+              message: this.messageToSign.content.message
+            }
+          : null) as any
+      })
+      if (!isValidSig) {
+        throw new Error('Invalid signature')
       }
 
       this.signedMessage = {
