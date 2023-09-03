@@ -26,7 +26,7 @@ export interface GasFeePayment {
   paymentType: GasFeePaymentType
   paidBy: string
   inToken: string
-  amount: number
+  amount: bigint
 }
 
 export enum AccountOpStatus {
