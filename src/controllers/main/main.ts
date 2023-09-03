@@ -349,6 +349,7 @@ export class MainController extends EventEmitter {
       estimate(this.providers[accountOp.networkId], network, account, accountOp, [], [])
       // @TODO refresh the estimation
     ])
+    // @TODO compare intent between accountOp and this.accountOpsToBeSigned[accountOp.accountAddr][accountOp.networkId].accountOp
     this.accountOpsToBeSigned[accountOp.accountAddr][accountOp.networkId]!.estimation = estimation
     console.log(estimation)
   }
