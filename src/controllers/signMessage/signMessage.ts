@@ -146,13 +146,18 @@ export class SignMessageController extends EventEmitter {
         }
       }
 
+      const personalMsgToValidate =
+        typeof this.messageToSign.content.message === 'string'
+          ? hexStringToUint8Array(this.messageToSign.content.message)
+          : this.messageToSign.content.message
+
       const isValidSig = await verifyMessage({
         provider: this.#providers[network?.id || 'ethereum'],
         signer: this.signingKeyAddr,
         signature: sig,
         message: (this.messageToSign.content.kind === 'typedMessage'
           ? null
-          : hexStringToUint8Array(sig)) as any,
+          : personalMsgToValidate) as any,
         typedData: (this.messageToSign.content.kind === 'typedMessage'
           ? {
               domain: this.messageToSign.content.domain,
