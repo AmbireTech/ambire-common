@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: agpl-3.0
 pragma solidity 0.8.19;
 
-import './AmbireAccount.sol';
 import './libs/SignatureValidator.sol';
-import './libs/Transaction.sol';
+import './ExternalSigValidator.sol';
 
 contract RecoverySigValidator is ExternalSigValidator {
   mapping(bytes32 => uint) public scheduledRecoveries;
