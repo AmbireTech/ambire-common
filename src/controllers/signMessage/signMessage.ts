@@ -126,8 +126,6 @@ export class SignMessageController extends EventEmitter {
         const requestedNetwork = networks.find((n) => n.chainId === domain?.chainId)
         if (requestedNetwork) {
           network = requestedNetwork
-        } else {
-          throw !account ? new Error('account is undefined') : new Error('signature is undefined')
         }
       }
 
@@ -135,7 +133,7 @@ export class SignMessageController extends EventEmitter {
         this.#accountStates![this.messageToSign!.accountAddr][network?.id || 'ethereum'] || {}
 
       if (!sig || !account) {
-        throw new Error('account is undefined')
+        throw !account ? new Error('account is undefined') : new Error('signature is undefined')
       }
 
       if (!accountState.isEOA) {
