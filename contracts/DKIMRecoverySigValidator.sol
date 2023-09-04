@@ -250,22 +250,20 @@ contract DKIMRecoverySigValidator is ExternalSigValidator {
    * gmail.com.bridge.ambire.com, check whether the TXT field's signer
    * ends with bridge.ambire.com and if so, add the key for gmail.
    * This is a compromise; otherwise, gmail keys cannot be added by DNSSEC.
-   * @param   rrSets  The rrSets to validate. The final one needs to be
-   * the TXT field containing the DKIM key.
+   * @param   sets  {bytes rrset; bytes sig} The sets to validate.
+   * The final one needs to be the TXT field containing the DKIM key.
    */
-  function addDKIMKeyWithDNSSec(DNSSEC.RRSetWithSignature[] memory rrSets) external {
+  function addDKIMKeyWithDNSSec(DNSSEC.RRSetWithSignature[] memory sets) external {
     require(
       authorizedToSubmit == address(69) || msg.sender == authorizedToSubmit,
       'not authorized to submit'
     );
 
-    RRUtils.SignedSet memory rrset = rrSets[rrSets.length - 1].rrset.readSignedSet();
-    (bytes memory rrs, ) = oracle.verifyRRSet(rrSets);
-    require(keccak256(rrs) == keccak256(rrset.data), 'DNSSec verification failed');
+    RRUtils.SignedSet memory signedSet = sets[sets.length - 1].rrset.readSignedSet();
+    (bytes memory rrs, ) = oracle.verifyRRSet(sets);
+    require(keccak256(rrs) == keccak256(signedSet.data), 'DNSSec verification failed');
 
-    (DKIMKey memory key, string memory domainName, bool isBridge) = parse(
-      rrSets[rrSets.length - 1]
-    );
+    (DKIMKey memory key, string memory domainName, bool isBridge) = _parse(signedSet);
     if (isBridge) key.domainName = domainName;
 
     bytes32 id = keccak256(abi.encode(key));
@@ -284,16 +282,15 @@ contract DKIMRecoverySigValidator is ExternalSigValidator {
     );
   }
 
-  function parse(
-    DNSSEC.RRSetWithSignature memory txtRset
+  function _parse(
+    RRUtils.SignedSet memory signedSet
   ) internal pure returns (DKIMKey memory key, string memory domainName, bool isBridge) {
-    RRUtils.SignedSet memory txtSet = txtRset.rrset.readSignedSet();
-    Strings.slice memory publicKey = string(txtSet.data).toSlice();
-    publicKey.split('p='.toSlice());
-    bytes memory pValue = bytes(publicKey.toString());
+    Strings.slice memory data = string(signedSet.data).toSlice();
+    data.split('p='.toSlice());
+    bytes memory pValue = bytes(data.toString());
     require(pValue.length > 0, 'public key not found in txt set');
 
-    string memory pValueOrg = string(pValue);
+    string memory base64Key = string(pValue);
     uint256 offsetOfInvalidUnicode = pValue.find(0, pValue.length, 0x9b);
     while (offsetOfInvalidUnicode != type(uint256).max) {
       bytes memory firstPartOfKey = pValue.substring(0, offsetOfInvalidUnicode);
@@ -301,11 +298,11 @@ contract DKIMRecoverySigValidator is ExternalSigValidator {
         offsetOfInvalidUnicode + 1,
         pValue.length - 1 - offsetOfInvalidUnicode
       );
-      pValueOrg = string(firstPartOfKey).toSlice().concat(string(secondPartOfKey).toSlice());
-      offsetOfInvalidUnicode = bytes(pValueOrg).find(0, bytes(pValueOrg).length, 0x9b);
+      base64Key = string(firstPartOfKey).toSlice().concat(string(secondPartOfKey).toSlice());
+      offsetOfInvalidUnicode = bytes(base64Key).find(0, bytes(base64Key).length, 0x9b);
     }
 
-    bytes memory decoded = string(pValueOrg).decode();
+    bytes memory decoded = string(base64Key).decode();
     // omit the first 32 bytes, take everything expect the last 5 bytes:
     // - first two bytes from the last 5 is modulus header info
     // - last three bytes is modulus
@@ -313,35 +310,14 @@ contract DKIMRecoverySigValidator is ExternalSigValidator {
     // the last 3 bytes of the decoded string is the exponent
     bytes memory exponent = decoded.substring(decoded.length - 3, 3);
 
-    (domainName, isBridge) = getDomainNameFromSignedSet(txtRset);
+    (domainName, isBridge) = _getDomainNameFromSignedSet(signedSet);
     key = DKIMKey(domainName, modulus, exponent);
   }
 
-  /**
-   * @notice  Remove a DKIM key in case it has been compromised
-   * @param   id  bytes32 keccak256(abi.encode(DKIMKey))
-   */
-  function removeDKIMKey(bytes32 id) external {
-    require(msg.sender == authorizedToRevoke, 'Address unauthorized to revoke');
-    dkimKeys[id].dateRemoved = uint32(block.timestamp);
-    emit DKIMKeyRemoved(id, dkimKeys[id].dateRemoved, dkimKeys[id].isBridge);
-  }
-
-  /**
-   * @notice  A helper to get the domain name from an rrSet
-   * @dev     RRUtils are used to fetch the domain name from the set.
-   * Most of the times, if the original domain name is ambire.com,
-   * RRUtils parses it a bit differently and returns []ambire[]com, where
-   * [] are invalid ascii symbols. So comparing a string ambire.com and the
-   * string representation of RRUtils's domainName will not work as the
-   * hexes are different. It is recommended to use this function to
-   * get the domain name on and off chain.
-   * @param   rrSet  The TXT rrSet
-   */
-  function getDomainNameFromSignedSet(
-    DNSSEC.RRSetWithSignature memory rrSet
-  ) public pure returns (string memory, bool) {
-    Strings.slice memory selector = string(rrSet.rrset.readSignedSet().data).toSlice();
+  function _getDomainNameFromSignedSet(
+    RRUtils.SignedSet memory signedSet
+  ) internal pure returns (string memory, bool) {
+    Strings.slice memory selector = string(signedSet.data).toSlice();
     selector.rsplit(','.toSlice());
     require(bytes(selector.toString()).length > 0, 'domain name not found in txt set');
 
@@ -350,6 +326,23 @@ contract DKIMRecoverySigValidator is ExternalSigValidator {
     if (isBridge) selector.rsplit(string(bridgeString).toSlice());
 
     return (selector.toString(), isBridge);
+  }
+
+  /**
+   * @notice  A helper to get the domain name from a set
+   * @dev     RRUtils are used to fetch the domain name from the set.
+   * Most of the times, if the original domain name is ambire.com,
+   * RRUtils parses it a bit differently and returns []ambire[]com, where
+   * [] are invalid ascii symbols. So comparing a string ambire.com and the
+   * string representation of RRUtils's domainName will not work as the
+   * hexes are different. It is recommended to use this function to
+   * get the domain name on and off chain.
+   * @param   set  The TXT set
+   */
+  function getDomainNameFromSet(
+    DNSSEC.RRSetWithSignature memory set
+  ) public pure returns (string memory, bool) {
+    return _getDomainNameFromSignedSet(set.rrset.readSignedSet());
   }
 
   function _verifyHeaders(
@@ -389,6 +382,16 @@ contract DKIMRecoverySigValidator is ExternalSigValidator {
     // is equal to canonizedHeaders. If it is, the subject has not been found
     Strings.slice memory subject = canonizedHeaders.toSlice().split(newKeyString);
     require(!subject.equals(canonizedHeaders.toSlice()), 'emailSubject not valid');
+  }
+
+  /**
+   * @notice  Remove a DKIM key in case it has been compromised
+   * @param   id  bytes32 keccak256(abi.encode(DKIMKey))
+   */
+  function removeDKIMKey(bytes32 id) external {
+    require(msg.sender == authorizedToRevoke, 'Address unauthorized to revoke');
+    dkimKeys[id].dateRemoved = uint32(block.timestamp);
+    emit DKIMKeyRemoved(id, dkimKeys[id].dateRemoved, dkimKeys[id].isBridge);
   }
 
   //
