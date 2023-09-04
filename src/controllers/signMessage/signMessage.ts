@@ -3,11 +3,11 @@ import { JsonRpcProvider } from 'ethers'
 import { TypedDataDomain } from '@ethersproject/abstract-signer'
 
 import { networks } from '../../consts/networks'
-import { Account, AccountCreation, AccountStates } from '../../interfaces/account'
+import { Account, AccountStates } from '../../interfaces/account'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { Message } from '../../interfaces/userRequest'
 import { Keystore } from '../../libs/keystore/keystore'
-import { mapSignatureV, verifyMessage, wrapSignature } from '../../libs/signMessage/signMessage'
+import { verifyMessage } from '../../libs/signMessage/signMessage'
 import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
 import EventEmitter from '../eventEmitter'
 
@@ -18,6 +18,8 @@ export class SignMessageController extends EventEmitter {
 
   #accounts: Account[] | null = null
 
+  // TODO: use it to determine whether the account is deployed and if not
+  // apply EIP6492 but first the msg to sign should include the address of the account
   #accountStates: AccountStates | null = null
 
   isInitialized: boolean = false
@@ -129,19 +131,8 @@ export class SignMessageController extends EventEmitter {
         }
       }
 
-      const accountState =
-        this.#accountStates![this.messageToSign!.accountAddr][network?.id || 'ethereum'] || {}
-
       if (!sig || !account) {
         throw !account ? new Error('account is undefined') : new Error('signature is undefined')
-      }
-
-      if (!accountState.isEOA) {
-        sig = `${mapSignatureV(sig as string)}00`
-
-        if (!accountState.isDeployed) {
-          sig = wrapSignature(sig, account.creation as AccountCreation)
-        }
       }
 
       const personalMsgToValidate =

@@ -87,11 +87,10 @@ export async function verifyMessage({
     finalDigest = hashMessage(message)
   } else if (typedData) {
     finalDigest = TypedDataEncoder.hash(typedData.domain, typedData.types, typedData.message)
-  } else if (!finalDigest) {
+  } else if (!finalDigest)
     throw Error(
       'Missing one of the properties: message, unPrefixedMessage, typedData or finalDigest'
     )
-  }
 
   // this 'magic' universal validator contract will deploy itself within the eth_call, try to verify the signature using
   // ERC-6492, ERC-1271 and ecrecover, and return the value to us
