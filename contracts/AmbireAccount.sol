@@ -20,6 +20,10 @@ struct UserOperation {
 	bytes signature;
 }
 
+interface NonceManager {
+	function getNonce(address sender, uint192 key) external view returns (uint256 nonce);
+}
+
 // @dev All external/public functions (that are not view/pure) use `payable` because AmbireAccount
 // is a wallet contract, and any ETH sent to it is not lost, but on the other hand not having `payable`
 // makes the Solidity compiler add an extra check for `msg.value`, which in this case is wasted gas
@@ -254,6 +258,9 @@ contract AmbireAccount {
 			if (result != 0) {
 				return uint160(0) | (uint256(0) << 160) | (uint256(timestampValidAfter) << (208));
 			}
+		} else if (userOp.initCode.length > 0 && userOp.nonce == 0 && userOp.callData.length == 0) {
+			require(NonceManager(msg.sender).getNonce(address(this), 0) == 0, 'Entry point nonce not 0');
+			require(uint64(uint256(privileges[msg.sender] >> 160)) == uint64(block.number));
 		} else {
 			address signer = SignatureValidator.recoverAddr(userOpHash, userOp.signature);
 			if (privileges[signer] == bytes32(0)) return SIG_VALIDATION_FAILED;
