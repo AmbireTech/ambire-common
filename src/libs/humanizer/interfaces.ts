@@ -1,5 +1,5 @@
 export type HumanizerVisualization = {
-  type: 'token' | 'address' | 'label' | 'action' | 'nft'
+  type: 'token' | 'address' | 'label' | 'action' | 'nft' | 'danger'
   address?: string
   content?: string
   amount?: bigint
