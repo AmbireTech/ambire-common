@@ -141,8 +141,14 @@ contract AmbireAccount {
 
 		if (sigMode == SIGMODE_EXTERNALLY_VALIDATED) {
 			bool isValidSig;
-			(signerKey, isValidSig, ) = validateExternalSig(calls, signature);
-			if (!isValidSig) revert('SIGNATURE_VALIDATION_FAIL');
+			uint256 timestampValidAfter;
+			(signerKey, isValidSig, timestampValidAfter) = validateExternalSig(calls, signature);
+			if (!isValidSig) {
+				if (timestampValidAfter != 0) {
+					revert('timelock: not ready yet');
+				}
+				revert('SIGNATURE_VALIDATION_FAIL');
+			}
 		} else {
 			signerKey = SignatureValidator.recoverAddrImpl(
 				keccak256(abi.encode(address(this), block.chainid, currentNonce, calls)),
@@ -246,7 +252,7 @@ contract AmbireAccount {
 			// pack the return value for validateUserOp
 			// address aggregator, uint48 validUntil, uint48 validAfter
 			if (result != 0) {
-				result = uint160(0) | (uint256(0) << 160) | (uint256(timestampValidAfter) << (208));
+				return uint160(0) | (uint256(0) << 160) | (uint256(timestampValidAfter) << (208));
 			}
 		} else {
 			address signer = SignatureValidator.recoverAddr(userOpHash, userOp.signature);

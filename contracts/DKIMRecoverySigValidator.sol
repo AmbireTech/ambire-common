@@ -201,7 +201,7 @@ contract DKIMRecoverySigValidator is ExternalSigValidator {
         );
       }
 
-      if (! (RSASHA256.verify(sha256(bytes(headers)), dkimSig, pubKeyExponent, pubKeyModulus))) {
+      if (!(RSASHA256.verify(sha256(bytes(headers)), dkimSig, pubKeyExponent, pubKeyModulus))) {
         return (false, 0);
       }
     }
@@ -214,7 +214,7 @@ contract DKIMRecoverySigValidator is ExternalSigValidator {
         require(accInfo.acceptEmptyDKIMSig, 'account disallows OnlySecond');
 
       // @TODO should spoofing be allowed
-      if (! (SignatureValidator.recoverAddrImpl(hashToSign, secondSig, true) == accInfo.secondaryKey)) {
+      if (!(SignatureValidator.recoverAddrImpl(hashToSign, secondSig, true) == accInfo.secondaryKey)) {
         return (false, 0);
       }
     }
@@ -228,9 +228,11 @@ contract DKIMRecoverySigValidator is ExternalSigValidator {
         require(calls.length == 0, 'no txn execution is allowed when setting a timelock');
         timelock.whenReady = uint32(block.timestamp) + accInfo.onlyOneSigTimelock;
         emit TimelockSet(identifier, timelock.whenReady);
-        return (true, timelock.whenReady);
+        return (true, 0);
       } else {
-        require(uint32(block.timestamp) >= timelock.whenReady, 'timelock: not ready yet');
+        if (uint32(block.timestamp) < timelock.whenReady) {
+          return (false, timelock.whenReady);
+        }
         _validateCalls(calls, accountAddr, newKeyToSet, newPrivilegeValue);
         timelock.isExecuted = true;
         emit TimelockExecuted(identifier);
