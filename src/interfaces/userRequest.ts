@@ -1,4 +1,4 @@
-import type { TypedDataDomain, TypedDataField } from 'ethers'
+import { TypedDataDomain, TypedDataField } from 'ethers'
 
 import { AccountId } from './account'
 import { NetworkId } from './networkDescriptor'

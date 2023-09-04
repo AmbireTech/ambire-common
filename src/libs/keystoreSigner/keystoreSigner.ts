@@ -1,9 +1,9 @@
 /* eslint-disable new-cap */
 import { TransactionRequest, Wallet } from 'ethers'
 
+import { TypedMessage } from '../../interfaces/userRequest'
 import { KeystoreSigner as KeystoreSignerInterface } from '../../interfaces/keystore'
 import { Key } from '../keystore/keystore'
-import { TypedMessage } from '../../interfaces/userRequest'
 
 export class KeystoreSigner implements KeystoreSignerInterface {
   key: Key
