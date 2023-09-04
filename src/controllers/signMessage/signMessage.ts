@@ -28,9 +28,6 @@ export class SignMessageController extends EventEmitter {
 
   signingKeyAddr: string | null = null
 
-  // A hex-encoded 129-byte array starting with 0x.
-  signature: string | null = null
-
   signedMessage: Message | null = null
 
   constructor(keystore: Keystore, providers: { [key: string]: JsonRpcProvider }) {
@@ -73,7 +70,6 @@ export class SignMessageController extends EventEmitter {
     this.messageToSign = null
     this.#accountStates = null
     this.#accounts = null
-    this.signature = null
     this.signedMessage = null
     this.signingKeyAddr = null
     this.status = 'INITIAL'
