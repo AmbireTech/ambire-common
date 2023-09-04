@@ -15,6 +15,7 @@ export interface PlainTextMessage {
 }
 export interface TypedMessage {
   kind: 'typedMessage'
+  primaryType: string
   domain: TypedDataDomain
   types: Record<string, Array<TypedDataField>>
   message: Record<string, any>
