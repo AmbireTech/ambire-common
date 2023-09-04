@@ -49,7 +49,7 @@ export class MainController extends EventEmitter {
   // @TODO emailVaults
   emailVault: EmailVaultController
 
-  signMessage!: SignMessageController
+  signMessage: SignMessageController
 
   activity!: ActivityController
 
@@ -104,6 +104,9 @@ export class MainController extends EventEmitter {
   }) {
     super()
     this.storage = storage
+    this.providers = Object.fromEntries(
+      networks.map((network) => [network.id, new JsonRpcProvider(network.rpcUrl)])
+    )
     this.portfolio = new PortfolioController(storage)
     this.#keystoreLib = new Keystore(storage, keystoreSigners)
     this.keystore = new KeystoreController(this.#keystoreLib)
@@ -111,6 +114,7 @@ export class MainController extends EventEmitter {
     this.settings = { networks }
     this.emailVault = new EmailVaultController(storage, fetch, relayerUrl, this.#keystoreLib)
     this.accountAdder = new AccountAdderController({ storage, relayerUrl, fetch })
+    this.signMessage = new SignMessageController(this.#keystoreLib, this.providers)
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
     this.onResolveDappRequest = onResolveDappRequest
     this.onRejectDappRequest = onRejectDappRequest
@@ -124,15 +128,10 @@ export class MainController extends EventEmitter {
       this.storage.get('accounts', []),
       this.storage.get('selectedAccount', null)
     ])
-
-    this.providers = Object.fromEntries(
-      this.settings.networks.map((network) => [network.id, new JsonRpcProvider(network.rpcUrl)])
-    )
     // @TODO reload those
     // @TODO error handling here
     this.accountStates = await this.getAccountsInfo(this.accounts)
     this.activity = new ActivityController(this.storage, this.accountStates)
-    this.signMessage = new SignMessageController(this.#keystoreLib, this.providers)
     this.isReady = true
 
     const isKeystoreReady = await this.#keystoreLib.isReadyToStoreKeys()
