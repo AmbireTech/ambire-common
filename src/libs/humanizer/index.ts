@@ -1,6 +1,8 @@
 import { ethers } from 'ethers'
 import { AccountOp } from '../accountOp/accountOp'
-import { IrCall, Ir, HumanizerFragment } from './interfaces'
+import { IrCall, Ir, HumanizerFragment, HumanizerVisualization } from './interfaces'
+import { TypedMessage } from '../../interfaces/userRequest'
+import { getLabel, getDanger } from './utils'
 
 // @TODO humanize signed messages
 export function callsToIr(accountOp: AccountOp): Ir {
@@ -57,4 +59,17 @@ export const visualizationToText = (call: IrCall, options: any): string => {
     level: 'silent'
   })
   return `Call to ${call.to} with ${call.value} value and ${call.data} data`
+}
+
+export const humanizeTypedMessage = (
+  accountOp: AccountOp,
+  modules: Function[],
+  tm: TypedMessage
+): HumanizerVisualization[] => {
+  const visualization = modules.map((m) => m(tm)).filter((p) => p)[0] || [
+    getLabel(JSON.stringify(tm.message))
+  ]
+  if (accountOp.networkId !== tm.domain.chainId)
+    visualization.push(getDanger('Permit on wrong network'))
+  return visualization
 }
