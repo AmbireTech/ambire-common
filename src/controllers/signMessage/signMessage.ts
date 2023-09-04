@@ -123,7 +123,7 @@ export class SignMessageController extends EventEmitter {
         // TODO: Figure out if the mismatch between the `TypedDataDomain` from
         // '@ethersproject/abstract-signer' and `TypedDataDomain` from 'ethers' is a problem
         sig = await signer.signTypedData(domain as TypedDataDomain, types, message)
-        const requestedNetwork = networks.find((n) => n.chainId === domain?.chainId)
+        const requestedNetwork = networks.find((n) => Number(n.chainId) === Number(domain?.chainId))
         if (requestedNetwork) {
           network = requestedNetwork
         }
