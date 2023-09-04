@@ -286,20 +286,20 @@ contract DKIMRecoverySigValidator is ExternalSigValidator {
     RRUtils.SignedSet memory signedSet
   ) internal pure returns (DKIMKey memory key, string memory domainName, bool isBridge) {
     Strings.slice memory data = string(signedSet.data).toSlice();
-    data.split('p='.toSlice());
+    data.split('p='.toSlice()); // this becomes the value after p=
     bytes memory pValue = bytes(data.toString());
     require(pValue.length > 0, 'public key not found in txt set');
 
     string memory base64Key = string(pValue);
-    uint256 offsetOfInvalidUnicode = pValue.find(0, pValue.length, 0x9b);
-    while (offsetOfInvalidUnicode != type(uint256).max) {
-      bytes memory firstPartOfKey = pValue.substring(0, offsetOfInvalidUnicode);
+    uint256 offsetOfInvalidAscii = pValue.find(0, pValue.length, 0x9b);
+    while (offsetOfInvalidAscii != type(uint256).max) {
+      bytes memory firstPartOfKey = pValue.substring(0, offsetOfInvalidAscii);
       bytes memory secondPartOfKey = pValue.substring(
-        offsetOfInvalidUnicode + 1,
-        pValue.length - 1 - offsetOfInvalidUnicode
+        offsetOfInvalidAscii + 1,
+        pValue.length - 1 - offsetOfInvalidAscii
       );
       base64Key = string(firstPartOfKey).toSlice().concat(string(secondPartOfKey).toSlice());
-      offsetOfInvalidUnicode = bytes(base64Key).find(0, bytes(base64Key).length, 0x9b);
+      offsetOfInvalidAscii = bytes(base64Key).find(0, bytes(base64Key).length, 0x9b);
     }
 
     bytes memory decoded = string(base64Key).decode();
@@ -317,15 +317,15 @@ contract DKIMRecoverySigValidator is ExternalSigValidator {
   function _getDomainNameFromSignedSet(
     RRUtils.SignedSet memory signedSet
   ) internal pure returns (string memory, bool) {
-    Strings.slice memory selector = string(signedSet.data).toSlice();
-    selector.rsplit(','.toSlice());
-    require(bytes(selector.toString()).length > 0, 'domain name not found in txt set');
+    Strings.slice memory domainName = string(signedSet.data).toSlice();
+    domainName.rsplit(','.toSlice()); // this becomes the value before ,
+    require(bytes(domainName.toString()).length > 0, 'domain name not found in txt set');
 
     bytes memory bridgeString = hex'646e7373656362726964676506616d6269726503636f6d0000100001000001';
-    bool isBridge = selector.endsWith(string(bridgeString).toSlice());
-    if (isBridge) selector.rsplit(string(bridgeString).toSlice());
+    bool isBridge = domainName.endsWith(string(bridgeString).toSlice());
+    if (isBridge) domainName.rsplit(string(bridgeString).toSlice()); // remove the bridge
 
-    return (selector.toString(), isBridge);
+    return (domainName.toString(), isBridge);
   }
 
   /**
