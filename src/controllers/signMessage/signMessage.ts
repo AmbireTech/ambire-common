@@ -1,7 +1,5 @@
 import { JsonRpcProvider } from 'ethers'
 
-import { TypedDataDomain } from '@ethersproject/abstract-signer'
-
 import { networks } from '../../consts/networks'
 import { Account, AccountStates } from '../../interfaces/account'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
@@ -121,10 +119,8 @@ export class SignMessageController extends EventEmitter {
       }
 
       if (this.messageToSign.content.kind === 'typedMessage') {
-        const { domain, types, message } = this.messageToSign!.content
-        // TODO: Figure out if the mismatch between the `TypedDataDomain` from
-        // '@ethersproject/abstract-signer' and `TypedDataDomain` from 'ethers' is a problem
-        sig = await signer.signTypedData(domain as TypedDataDomain, types, message)
+        const { domain } = this.messageToSign!.content
+        sig = await signer.signTypedData(this.messageToSign!.content)
         const requestedNetwork = networks.find((n) => Number(n.chainId) === Number(domain?.chainId))
         if (requestedNetwork) {
           network = requestedNetwork

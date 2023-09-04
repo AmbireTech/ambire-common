@@ -13,11 +13,13 @@ export interface PlainTextMessage {
   kind: 'message'
   message: string | Uint8Array
 }
+
 export interface TypedMessage {
   kind: 'typedMessage'
   domain: TypedDataDomain
   types: Record<string, Array<TypedDataField>>
   message: Record<string, any>
+  primaryType?: string
 }
 // @TODO: move this type and it's deps (PlainTextMessage, TypedMessage) to another place,
 // probably interfaces

@@ -194,6 +194,8 @@ Let's look into both of them:
 
 The library can auto-select which one to chose based on the availability of the state override set.
 
+**WARNING: `deployless.ts` DOES NOT support running the constructor of the contracts. Refrain from using a constructor for deployless contracts.**
+
 ### portfolio.ts
 
 TODO

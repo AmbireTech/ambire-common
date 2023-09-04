@@ -1,7 +1,7 @@
 /* eslint-disable new-cap */
 import { TransactionRequest, Wallet } from 'ethers'
 
-import type { TypedDataDomain, TypedDataField } from '@ethersproject/abstract-signer'
+import { TypedMessage } from '../../interfaces/userRequest'
 import { KeystoreSigner as KeystoreSignerInterface } from '../../interfaces/keystore'
 import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
 import { Key } from '../keystore/keystore'
@@ -26,18 +26,18 @@ export class KeystoreSigner implements KeystoreSignerInterface {
     return sig
   }
 
-  async signTypedData(
-    domain: TypedDataDomain,
-    types: Record<string, Array<TypedDataField>>,
-    message: Record<string, any>
-  ) {
+  async signTypedData(typedMessage: TypedMessage) {
     // remove EIP712Domain because otherwise signTypedData throws: ambiguous primary types or unused types
-    if (types.EIP712Domain) {
+    if (typedMessage.types.EIP712Domain) {
       // eslint-disable-next-line no-param-reassign
-      delete types.EIP712Domain
+      delete typedMessage.types.EIP712Domain
     }
     // @ts-ignore
-    const sig = await this.#signer.signTypedData(domain, types, message)
+    const sig = await this.#signer.signTypedData(
+      typedMessage.domain,
+      typedMessage.types,
+      typedMessage.message
+    )
 
     return sig
   }
