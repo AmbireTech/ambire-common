@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-shadow */
 import { ethers } from 'ethers'
-import { HumanizerFragment, Ir, IrCall } from '../interfaces'
+import { HumanizerModule, Ir, IrCall } from '../interfaces'
 import { getAddress, getAction, getLabel, getToken } from '../utils'
 import { AccountOp } from '../../accountOp/accountOp'
 
@@ -8,12 +8,12 @@ import { AccountOp } from '../../accountOp/accountOp'
 const tokenPrefixes = { ethereum: 'y', polygon: 'tv' }
 // add 'y' or 'tv' prefix, eg '10 USDC' will become '10 yUSDC' to signify vault tokens
 
-export const yearnVaultModule = (
+export const yearnVaultModule: HumanizerModule = (
   accountOp: AccountOp,
   ir: Ir,
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   options?: any
-): [Ir, Array<Promise<HumanizerFragment | null>>] => {
+) => {
   const { yearnVaults, tesseractVaults } = accountOp.humanizerMeta || {}
   //   const yearnWETHVaultAddress = '0xa258C4606Ca8206D8aA700cE2143D7db854D168c'
   const iface = new ethers.Interface(accountOp.humanizerMeta?.['abis:YearnVault'])

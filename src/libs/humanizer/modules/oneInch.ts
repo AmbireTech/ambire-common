@@ -1,6 +1,6 @@
 import { ethers } from 'ethers'
 import { AccountOp } from 'libs/accountOp/accountOp'
-import { HumanizerFragment, Ir, IrCall } from '../interfaces'
+import { HumanizerModule, Ir, IrCall } from '../interfaces'
 import { getAction, getLabel, getToken, getAddress } from '../utils'
 
 const parseZeroAddressIfNeeded = (address: string) => {
@@ -37,10 +37,7 @@ const OneInchMapping = (humanizerInfo: any) => {
     }
   }
 }
-export const oneInchHumanizer = (
-  accountOp: AccountOp,
-  ir: Ir
-): [Ir, Array<Promise<HumanizerFragment | null>>] => {
+export const oneInchHumanizer: HumanizerModule = (accountOp: AccountOp, ir: Ir) => {
   const matcher = {
     ...OneInchMapping(accountOp.humanizerMeta)
   }

@@ -1,5 +1,5 @@
 import { AccountOp } from '../../accountOp/accountOp'
-import { HumanizerFragment, HumanizerVisualization, Ir } from '../interfaces'
+import { HumanizerModule, HumanizerVisualization, Ir } from '../interfaces'
 import { shortenAddress } from '../utils'
 
 const getName = (address: string, humanizerMeta: any) => {
@@ -9,12 +9,12 @@ const getName = (address: string, humanizerMeta: any) => {
   return null
 }
 // adds 'name' proeprty to visualization of addresses (needs initialHumanizer to work on unparsed transactions)
-export function nameParsing(
+export const nameParsing: HumanizerModule = (
   accountOp: AccountOp,
   currentIr: Ir,
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   options?: any
-): [Ir, Array<Promise<HumanizerFragment>>] {
+) => {
   //   const asyncOps: Array<Promise<HumanizerFragment>> = []
   const newCalls = currentIr.calls.map((call) => {
     const newVisualization = call?.fullVisualization?.map((v: HumanizerVisualization) => {

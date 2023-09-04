@@ -1,6 +1,6 @@
 import { ethers } from 'ethers'
 import { AccountOp } from '../../../accountOp/accountOp'
-import { HumanizerFragment, HumanizerVisualization, Ir, IrCall } from '../../interfaces'
+import { HumanizerModule, HumanizerVisualization, Ir, IrCall } from '../../interfaces'
 import { uniUniversalRouter } from './uniUnivarsalRouter'
 import { uniV2Mapping } from './uniV2'
 import { uniV32Mapping, uniV3Mapping } from './uniV3'
@@ -56,12 +56,12 @@ const wrpaUnwrapParser = (calls: IrCall[], humanizerInfo: any) => {
   }
   return newCalls
 }
-export function uniswapHumanizer(
+export const uniswapHumanizer: HumanizerModule = (
   accountOp: AccountOp,
   currentIr: Ir,
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   options?: any
-): [Ir, Promise<HumanizerFragment | null>[]] {
+) => {
   const matcher: { [x: string]: { [x: string]: (a: AccountOp, c: IrCall) => IrCall[] } } = {
     '0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D': uniV2Mapping(accountOp.humanizerMeta),
     '0xE592427A0AEce92De3Edee1F18E0157C05861564': uniV3Mapping(accountOp.humanizerMeta),

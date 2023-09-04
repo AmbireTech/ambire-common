@@ -1,15 +1,15 @@
 import { getAction, getAddress, getLabel } from '../../utils'
 import { AccountOp } from '../../../accountOp/accountOp'
-import { HumanizerFragment, Ir } from '../../interfaces'
+import { HumanizerModule, Ir } from '../../interfaces'
 import { aaveLendingPoolV2 } from './aaveLendingPoolV2'
 import { aaveWethGatewayV2 } from './aaveWethGatewayV2'
 
-export const aaveHumanizer = (
+export const aaveHumanizer: HumanizerModule = (
   accountOp: AccountOp,
   ir: Ir,
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   options?: any
-): [Ir, Array<Promise<HumanizerFragment | null>>] => {
+) => {
   const matcher = {
     ...aaveLendingPoolV2(accountOp.humanizerMeta),
     ...aaveWethGatewayV2(accountOp.humanizerMeta)

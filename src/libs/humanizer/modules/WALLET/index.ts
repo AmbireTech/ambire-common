@@ -1,7 +1,7 @@
 // update return ir to be {...ir,calls:newCalls} instead of {calls:newCalls} everywhere
 import { WALLETSupplyControllerMapping } from './WALLETSupplyController'
 import { StakingPools } from './stakingPools'
-import { Ir, IrCall } from '../../interfaces'
+import { HumanizerModule, Ir, IrCall } from '../../interfaces'
 import { AccountOp } from '../../../accountOp/accountOp'
 import { checkIfUnknowAction, getAction } from '../../utils'
 
@@ -12,7 +12,7 @@ const stakingAddresses = [
 ]
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-export const WALLETModule = (accountOp: AccountOp, ir: Ir, options?: any): [Ir, Promise<any>[]] => {
+export const WALLETModule: HumanizerModule = (accountOp: AccountOp, ir: Ir, options?: any) => {
   const newCalls: IrCall[] = []
   const matcher = {
     supplyController: WALLETSupplyControllerMapping(accountOp.humanizerMeta),

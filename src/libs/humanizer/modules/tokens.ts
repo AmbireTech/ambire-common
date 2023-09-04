@@ -2,14 +2,20 @@ import { ethers } from 'ethers'
 import { AccountOp } from '../../accountOp/accountOp'
 import { nativeTokens } from '../../../consts/networks'
 import { getLabel, getAction, getAddress, getNft, getToken, getTokenInfo } from '../utils'
-import { HumanizerFragment, HumanizerVisualization, Ir, IrCall } from '../interfaces'
+import {
+  HumanizerFragment,
+  HumanizerModule,
+  HumanizerVisualization,
+  Ir,
+  IrCall
+} from '../interfaces'
 
-export function genericErc721Humanizer(
+export const genericErc721Humanizer: HumanizerModule = (
   accountOp: AccountOp,
   currentIr: Ir,
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   options?: any
-): [Ir, Promise<HumanizerFragment | null>[]] {
+) => {
   const iface = new ethers.Interface(accountOp.humanizerMeta?.['abis:ERC721'])
   const nftTransferVisualization = (call: IrCall) => {
     const args = iface.parseTransaction(call)?.args.toArray() || []
@@ -72,11 +78,11 @@ export function genericErc721Humanizer(
   return [newIr, []]
 }
 
-export function genericErc20Humanizer(
+export const genericErc20Humanizer: HumanizerModule = (
   accountOp: AccountOp,
   currentIr: Ir,
   options?: any
-): [Ir, Promise<HumanizerFragment | null>[]] {
+) => {
   const asyncOps: Promise<HumanizerFragment | null>[] = []
   const iface = new ethers.Interface(accountOp.humanizerMeta?.['abis:ERC20'])
   const matcher = {
@@ -159,7 +165,7 @@ export function genericErc20Humanizer(
   return [newIr, asyncOps]
 }
 
-export function tokenParsing(accounOp: AccountOp, ir: Ir, options?: any) {
+export const tokenParsing: HumanizerModule = (accounOp: AccountOp, ir: Ir, options?: any) => {
   const asyncOps: Array<Promise<HumanizerFragment | null>> = []
   const newCalls = ir.calls.map((c) => ({
     ...c,
