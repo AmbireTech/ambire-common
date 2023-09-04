@@ -29,8 +29,7 @@ contract AmbireAccount {
 	// using our own code generation to insert SSTOREs to initialize `privileges` (IdentityProxyDeploy.js)
 	address private constant FALLBACK_HANDLER_SLOT = address(0x6969);
 
-	// keccak256(hex"7171")
-	bytes32 constant ENTRY_POINT_MARKER = 0x42144640c7cb5ff8aa9595ae175ffcb6dd152db6e737c13cc2d5d07576967020;
+	address private constant ENTRY_POINT_MARKER = address(0x7171);
 
 	// Variables
 	mapping(address => bytes32) public privileges;
@@ -98,6 +97,17 @@ contract AmbireAccount {
 		require(msg.sender == address(this), 'ONLY_IDENTITY_CAN_CALL');
 		privileges[addr] = priv;
 		emit LogPrivilegeChanged(addr, priv);
+	}
+
+	/**
+	 * @notice  Set the entry point priv
+	 * @dev     We do not hash the priv so we could extract the ENTRY_POINT_MARKER
+	 * @param   addr  The entry point address
+	 */
+	function setEntryPointPrivilege(address addr) external payable {
+		require(msg.sender == address(this), 'ONLY_IDENTITY_CAN_CALL');
+		bytes32 priv = bytes32(abi.encodePacked(uint256(uint160(ENTRY_POINT_MARKER)) | (uint256(block.number) << 160)));
+		this.setAddrPrivilege(addr, priv);
 	}
 
 	// @notice Useful when we need to do multiple operations but ignore failures in some of them
@@ -222,7 +232,7 @@ contract AmbireAccount {
 	function validateUserOp(UserOperation calldata userOp, bytes32 userOpHash, uint256 missingAccountFunds)
 	external returns (uint256)
 	{
-		require(privileges[msg.sender] == ENTRY_POINT_MARKER, 'Request not from entryPoint');
+		require(address(uint160(uint256(privileges[msg.sender]))) == ENTRY_POINT_MARKER, 'Request not from entryPoint');
 
 		uint256 result = 0;
 		uint8 sigMode = uint8(userOp.signature[userOp.signature.length - 1]);

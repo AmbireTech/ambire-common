@@ -9,7 +9,7 @@ import { wrapEthSign, wrapExternallyValidated } from '../ambireSign'
 import { getDKIMValidatorData, getPriviledgeTxn, getSignerKey } from '../helpers'
 const readFile = promisify(fs.readFile)
 const emailsPath = path.join(__dirname, 'emails')
-const entryPointHash = '0x42144640c7cb5ff8aa9595ae175ffcb6dd152db6e737c13cc2d5d07576967020'
+const AmbireAccount = require('../../artifacts/contracts/AmbireAccount.sol/AmbireAccount.json')
 
 let dkimRecovery: any
 let ambireAccountAddress: string
@@ -54,21 +54,29 @@ describe('ERC4337 DKIM Prep-up', function () {
 
 describe('ERC4337 DKIM sigMode Both', function () {
   it('successfully deploys the ambire account and gives priviledges to the entry point', async function () {
-    const [relayer] = await ethers.getSigners()
+    const [relayer, ,signerWithPrivs] = await ethers.getSigners()
     const gmail = await readFile(path.join(emailsPath, 'sigMode0.eml'), {
       encoding: 'ascii'
     })
     const parsedContents: any = await parseEmail(gmail)
     const validatorData = getDKIMValidatorData(parsedContents, relayer)
     const {signerKey, hash} = getSignerKey(await dkimRecovery.getAddress(), validatorData)
-    const { ambireAccount, ambireAccountAddress: addr } = await deployAmbireAccountHardhatNetwork([
+    const { ambireAccountAddress: addr } = await deployAmbireAccountHardhatNetwork([
       { addr: signerKey, hash: hash },
-      { addr: await entryPoint.getAddress(), hash: entryPointHash }
+      { addr: signerWithPrivs.address, hash: true }
     ])
     ambireAccountAddress = addr
-    account = ambireAccount
-    const hasPriv = await account.privileges(await entryPoint.getAddress())
-    expect(hasPriv).to.equal(entryPointHash)
+    account = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signerWithPrivs)
+
+    // set entry point priv
+    const txn = [ambireAccountAddress, 0, account.interface.encodeFunctionData('setEntryPointPrivilege', [await entryPoint.getAddress()])]
+    await signerWithPrivs.sendTransaction({
+      to: ambireAccountAddress,
+      value: 0,
+      data: account.interface.encodeFunctionData('executeBySender', [[txn]])
+    })
+    const entryPointPriv = await account.privileges(await entryPoint.getAddress())
+    expect(entryPointPriv.substring(entryPointPriv.length - 40, entryPointPriv)).to.equal('0000000000000000000000000000000000007171')
   })
 
   it('successfully validate a DKIM signature and execute the recovery transaction', async function () {
@@ -210,9 +218,8 @@ describe('ERC4337 DKIM sigMode Both', function () {
 })
 
 describe('ERC4337 DKIM sigMode OnlyDKIM', function () {
-
-  it('successfully deploys the ambire account', async function () {
-    const [relayer] = await ethers.getSigners()
+  it('successfully deploys the ambire account and gives priviledges to the entry point', async function () {
+    const [relayer, ,signerWithPrivs] = await ethers.getSigners()
     const gmail = await readFile(path.join(emailsPath, 'sigMode1.eml'), {
       encoding: 'ascii'
     })
@@ -221,12 +228,22 @@ describe('ERC4337 DKIM sigMode OnlyDKIM', function () {
       emptySecondSig: true
     })
     const {signerKey, hash} = getSignerKey(await dkimRecovery.getAddress(), validatorData)
-    const { ambireAccount, ambireAccountAddress: addr } = await deployAmbireAccountHardhatNetwork([
+    const { ambireAccountAddress: addr } = await deployAmbireAccountHardhatNetwork([
       { addr: signerKey, hash: hash },
-      { addr: await entryPoint.getAddress(), hash: entryPointHash }
+      { addr: signerWithPrivs.address, hash: true }
     ])
     ambireAccountAddress = addr
-    account = ambireAccount
+    account = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signerWithPrivs)
+
+    // set entry point priv
+    const txn = [ambireAccountAddress, 0, account.interface.encodeFunctionData('setEntryPointPrivilege', [await entryPoint.getAddress()])]
+    await signerWithPrivs.sendTransaction({
+      to: ambireAccountAddress,
+      value: 0,
+      data: account.interface.encodeFunctionData('executeBySender', [[txn]])
+    })
+    const entryPointPriv = await account.privileges(await entryPoint.getAddress())
+    expect(entryPointPriv.substring(entryPointPriv.length - 40, entryPointPriv)).to.equal('0000000000000000000000000000000000007171')
   })
 
   it('should successfully schedule a timelock for the specified onlyOneSigTimelock and execute it after onlyOneSigTimelock has passed', async function () {
@@ -330,8 +347,8 @@ describe('ERC4337 DKIM sigMode OnlyDKIM', function () {
 })
 
 describe('ERC4337 DKIM sigMode OnlySecond', function () {
-  it('successfully deploys the ambire account', async function () {
-    const [relayer] = await ethers.getSigners()
+  it('successfully deploys the ambire account and gives priviledges to the entry point', async function () {
+    const [relayer, ,signerWithPrivs] = await ethers.getSigners()
     const gmail = await readFile(path.join(emailsPath, 'sigMode2.eml'), {
       encoding: 'ascii'
     })
@@ -340,12 +357,22 @@ describe('ERC4337 DKIM sigMode OnlySecond', function () {
       acceptEmptyDKIMSig: true
     })
     const {signerKey, hash} = getSignerKey(await dkimRecovery.getAddress(), validatorData)
-    const { ambireAccount, ambireAccountAddress: addr } = await deployAmbireAccountHardhatNetwork([
+    const { ambireAccountAddress: addr } = await deployAmbireAccountHardhatNetwork([
       { addr: signerKey, hash: hash },
-      { addr: await entryPoint.getAddress(), hash: entryPointHash }
+      { addr: signerWithPrivs.address, hash: true }
     ])
     ambireAccountAddress = addr
-    account = ambireAccount
+    account = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signerWithPrivs)
+
+    // set entry point priv
+    const txn = [ambireAccountAddress, 0, account.interface.encodeFunctionData('setEntryPointPrivilege', [await entryPoint.getAddress()])]
+    await signerWithPrivs.sendTransaction({
+      to: ambireAccountAddress,
+      value: 0,
+      data: account.interface.encodeFunctionData('executeBySender', [[txn]])
+    })
+    const entryPointPriv = await account.privileges(await entryPoint.getAddress())
+    expect(entryPointPriv.substring(entryPointPriv.length - 40, entryPointPriv)).to.equal('0000000000000000000000000000000000007171')
   })
 
   it('should successfully schedule a timelock for the specified onlyOneSigTimelock and execute it after onlyOneSigTimelock has passed', async function () {
@@ -542,8 +569,8 @@ describe('DKIM sigMode Both with acceptUnknownSelectors true', function () {
     dkimRecoveryForTesting = await testContractFactory.deploy(keys, waitTimestamps, dnsSecAddr, signer.address, signer.address)
     expect(await dkimRecoveryForTesting.getAddress()).to.not.be.null
   })
-  it('successfully deploys the ambire account', async function () {
-    const [relayer] = await ethers.getSigners()
+  it('successfully deploys the ambire account and gives priviledges to the entry point', async function () {
+    const [relayer, ,signerWithPrivs] = await ethers.getSigners()
     const gmail = await readFile(path.join(emailsPath, 'sigMode0.eml'), {
       encoding: 'ascii'
     })
@@ -552,12 +579,22 @@ describe('DKIM sigMode Both with acceptUnknownSelectors true', function () {
       acceptUnknownSelectors: true
     })
     const {signerKey, hash} = getSignerKey(await dkimRecoveryForTesting.getAddress(), validatorData)
-    const { ambireAccount, ambireAccountAddress: addr } = await deployAmbireAccountHardhatNetwork([
+    const { ambireAccountAddress: addr } = await deployAmbireAccountHardhatNetwork([
       { addr: signerKey, hash: hash },
-      { addr: await entryPoint.getAddress(), hash: entryPointHash }
+      { addr: signerWithPrivs.address, hash: true }
     ])
     ambireAccountAddress = addr
-    account = ambireAccount
+    account = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signerWithPrivs)
+
+    // set entry point priv
+    const txn = [ambireAccountAddress, 0, account.interface.encodeFunctionData('setEntryPointPrivilege', [await entryPoint.getAddress()])]
+    await signerWithPrivs.sendTransaction({
+      to: ambireAccountAddress,
+      value: 0,
+      data: account.interface.encodeFunctionData('executeBySender', [[txn]])
+    })
+    const entryPointPriv = await account.privileges(await entryPoint.getAddress())
+    expect(entryPointPriv.substring(entryPointPriv.length - 40, entryPointPriv)).to.equal('0000000000000000000000000000000000007171')
   })
   it('should revert with DKIM signature verification failed if a different dkimSig is passed', async function () {
     const [relayer, newSigner] = await ethers.getSigners()
