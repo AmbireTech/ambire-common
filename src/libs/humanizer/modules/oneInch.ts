@@ -1,6 +1,6 @@
 import { ethers } from 'ethers'
 import { AccountOp } from 'libs/accountOp/accountOp'
-import { HumanizerModule, Ir, IrCall } from '../interfaces'
+import { HumanizerCallModule, IrCall } from '../interfaces'
 import { getAction, getLabel, getToken, getAddress } from '../utils'
 
 const parseZeroAddressIfNeeded = (address: string) => {
@@ -37,12 +37,17 @@ const OneInchMapping = (humanizerInfo: any) => {
     }
   }
 }
-export const oneInchHumanizer: HumanizerModule = (accountOp: AccountOp, ir: Ir) => {
+export const oneInchHumanizer: HumanizerCallModule = (
+  accountOp: AccountOp,
+  irCalls: IrCall[],
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  options?: any
+) => {
   const matcher = {
     ...OneInchMapping(accountOp.humanizerMeta)
   }
   const newCalls: IrCall[] = []
-  ir.calls.forEach((call) => {
+  irCalls.forEach((call) => {
     if (call.to === '0x1111111254fb6c44bAC0beD2854e76F90643097d') {
       matcher[call.data.slice(0, 10)]
         ? newCalls.push({
@@ -61,5 +66,5 @@ export const oneInchHumanizer: HumanizerModule = (accountOp: AccountOp, ir: Ir) 
       newCalls.push(call)
     }
   })
-  return [{ calls: newCalls }, []]
+  return [newCalls, []]
 }

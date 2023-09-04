@@ -1,18 +1,18 @@
 import { ethers, getAddress } from 'ethers'
-import { HumanizerModule, HumanizerVisualization, Ir, IrCall } from '../interfaces'
+import { HumanizerCallModule, HumanizerVisualization, IrCall } from '../interfaces'
 import { AccountOp } from '../../accountOp/accountOp'
 import { getAction, getLabel, getToken } from '../utils'
 
 // const WETH_ADDRESS = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2'
 
-export const wethHumanizer: HumanizerModule = (
+export const wethHumanizer: HumanizerCallModule = (
   accountOp: AccountOp,
-  ir: Ir,
+  irCalls: IrCall[],
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   options?: any
 ) => {
   const iface = new ethers.Interface(accountOp.humanizerMeta?.['abis:WETH'])
-  const newCalls = ir.calls.map((call: IrCall) => {
+  const newCalls = irCalls.map((call: IrCall) => {
     if (
       accountOp.humanizerMeta?.[`names:${call.to}`] === 'Wrapped ETH' ||
       accountOp.humanizerMeta?.[`names:${call.to}`] === 'WETH' ||
@@ -45,6 +45,5 @@ export const wethHumanizer: HumanizerModule = (
     }
     return call
   })
-  const newIr: Ir = { calls: newCalls }
-  return [newIr, []]
+  return [newCalls, []]
 }

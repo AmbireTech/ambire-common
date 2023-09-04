@@ -1,42 +1,35 @@
 import { ethers } from 'ethers'
 import { AccountOp } from '../accountOp/accountOp'
-import { IrCall, Ir, HumanizerFragment, HumanizerVisualization } from './interfaces'
+import {
+  IrCall,
+  HumanizerFragment,
+  HumanizerVisualization,
+  HumanizerCallModule
+} from './interfaces'
 import { TypedMessage } from '../../interfaces/userRequest'
 import { getLabel, getDanger } from './utils'
 
-// @TODO humanize signed messages
-export function callsToIr(accountOp: AccountOp): Ir {
-  const irCalls: IrCall[] = accountOp.calls.map((call) => {
-    return {
-      data: call.data,
-      to: call.to,
-      value: call.value
-    }
-  })
-  return { calls: irCalls }
-}
-
-export function humanize(
+export function humanizeCalls(
   _accountOp: AccountOp,
-  humanizerModules: Function[],
+  humanizerModules: HumanizerCallModule[],
   options?: any
-): [Ir, Array<Promise<HumanizerFragment | null>>] {
+): [IrCall[], Array<Promise<HumanizerFragment | null>>] {
   const accountOp = {
     ..._accountOp,
     calls: _accountOp.calls.map((c) => ({ ...c, to: ethers.getAddress(c.to) }))
   }
-  let currentIr: Ir = callsToIr(accountOp)
-  let asyncOps: Promise<HumanizerFragment>[] = []
+  let currentCalls: IrCall[] = accountOp.calls
+  let asyncOps: Promise<HumanizerFragment | null>[] = []
   try {
     humanizerModules.forEach((hm) => {
       let newPromises = []
-      ;[currentIr, newPromises] = hm(accountOp, currentIr, options)
+      ;[currentCalls, newPromises] = hm(accountOp, currentCalls, options)
       asyncOps = [...asyncOps, ...newPromises]
     })
   } catch (e) {
     options.emitError({ message: 'Humanizer: unexpected err', error: e, level: 'major' })
   }
-  return [currentIr, asyncOps]
+  return [currentCalls, asyncOps]
 }
 
 export const visualizationToText = (call: IrCall, options: any): string => {

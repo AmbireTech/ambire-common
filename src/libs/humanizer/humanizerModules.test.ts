@@ -3,10 +3,10 @@ import { describe, expect, test } from '@jest/globals'
 import fetch from 'node-fetch'
 import { ErrorRef } from 'controllers/eventEmitter'
 import { AccountOp } from '../accountOp/accountOp'
-import { callsToIr, humanize, visualizationToText } from '.'
+import { humanizeCalls, visualizationToText } from '.'
 
 import { uniswapHumanizer } from './modules/Uniswap'
-import { HumanizerVisualization, Ir, IrCall } from './interfaces'
+import { HumanizerCallModule, HumanizerVisualization, IrCall } from './interfaces'
 import { wethHumanizer } from './modules/weth'
 import { aaveHumanizer } from './modules/Aave'
 import { yearnVaultModule } from './modules/yearnTesseractVault'
@@ -18,7 +18,7 @@ import { nameParsing } from './modules/nameParsing'
 
 const humanizerInfo = require('../../consts/humanizerInfo.json')
 
-const humanizerModules: Function[] = [
+const humanizerModules: HumanizerCallModule[] = [
   genericErc20Humanizer,
   genericErc721Humanizer,
   uniswapHumanizer,
@@ -231,12 +231,12 @@ describe('module tests', () => {
       .map((key: string) => transactions[key])
       .flat()
     accountOp.calls = allCalls
-    let [ir, asyncOps] = humanize(accountOp, humanizerModules, standartOptions)
+    let [irCalls, asyncOps] = humanizeCalls(accountOp, humanizerModules, standartOptions)
     ;(await Promise.all(asyncOps)).forEach((a) => {
       if (a) accountOp.humanizerMeta = { ...accountOp.humanizerMeta, [a.key]: a.value }
     })
-    ;[ir, asyncOps] = humanize(accountOp, humanizerModules, standartOptions)
-    const res = ir.calls.map((call: IrCall) => visualizationToText(call, standartOptions))
+    ;[irCalls, asyncOps] = humanizeCalls(accountOp, humanizerModules, standartOptions)
+    const res = irCalls.map((call: IrCall) => visualizationToText(call, standartOptions))
 
     expectedTexification.forEach((et: string[], i: number) => expect(et).toContain(res[i]))
   })
@@ -324,9 +324,9 @@ describe('module tests', () => {
       ]
     ]
     accountOp.calls = [...transactions.uniV3]
-    let ir: Ir = callsToIr(accountOp)
-    ;[ir] = uniswapHumanizer(accountOp, ir)
-    ir.calls.forEach((c, i) => {
+    let irCalls: IrCall[] = accountOp.calls
+    ;[irCalls] = uniswapHumanizer(accountOp, irCalls)
+    irCalls.forEach((c, i) => {
       expect(c?.fullVisualization?.length).toEqual(expectedhumanization[i].length)
       c?.fullVisualization?.forEach((v: HumanizerVisualization, j: number) => {
         expect(v).toEqual(expectedhumanization[i][j])
@@ -335,9 +335,9 @@ describe('module tests', () => {
   })
   test('WETH', () => {
     accountOp.calls = [...transactions.weth]
-    let ir: Ir = callsToIr(accountOp)
-    ;[ir] = wethHumanizer(accountOp, ir)
-    expect(ir.calls[0]?.fullVisualization).toEqual([
+    let irCalls: IrCall[] = accountOp.calls
+    ;[irCalls] = wethHumanizer(accountOp, irCalls)
+    expect(irCalls[0]?.fullVisualization).toEqual([
       { type: 'action', content: 'Wrap' },
       {
         type: 'token',
@@ -345,7 +345,7 @@ describe('module tests', () => {
         amount: transactions.weth[0].value
       }
     ])
-    expect(ir.calls[1]?.fullVisualization).toEqual([
+    expect(irCalls[1]?.fullVisualization).toEqual([
       { type: 'action', content: 'Unwrap' },
       {
         type: 'token',
@@ -353,7 +353,7 @@ describe('module tests', () => {
         amount: 8900000000000000n
       }
     ])
-    expect(ir.calls[2]?.fullVisualization).toBeUndefined()
+    expect(irCalls[2]?.fullVisualization).toBeUndefined()
   })
   test('AAVE', () => {
     const expectedhumanization = [
@@ -387,9 +387,9 @@ describe('module tests', () => {
       ]
     ]
     accountOp.calls = [...transactions.aaveLendingPoolV2, ...transactions.aaveWethGatewayV2]
-    let ir: Ir = callsToIr(accountOp)
-    ;[ir] = aaveHumanizer(accountOp, ir)
-    ir.calls.forEach((c, i) =>
+    let irCalls: IrCall[] = accountOp.calls
+    ;[irCalls] = aaveHumanizer(accountOp, irCalls)
+    irCalls.forEach((c, i) =>
       c?.fullVisualization?.forEach((v: HumanizerVisualization, j: number) =>
         expect(v).toMatchObject(expectedhumanization[i][j])
       )
@@ -438,10 +438,10 @@ describe('module tests', () => {
       ]
     ]
     accountOp.calls = [...transactions.WALLET]
-    let ir: Ir = callsToIr(accountOp)
-    ;[ir] = WALLETModule(accountOp, ir)
+    let irCalls: IrCall[] = accountOp.calls
+    ;[irCalls] = WALLETModule(accountOp, irCalls)
 
-    ir.calls.forEach((c, i) =>
+    irCalls.forEach((c, i) =>
       c?.fullVisualization?.forEach((v: HumanizerVisualization, j: number) =>
         expect(v).toMatchObject(expectedhumanization[i][j])
       )
@@ -469,9 +469,9 @@ describe('module tests', () => {
         { type: 'token', symbol: 'yDAI' }
       ]
     ]
-    let ir: Ir = callsToIr(accountOp)
-    ;[ir] = yearnVaultModule(accountOp, ir)
-    ir.calls.forEach((call, i) =>
+    let irCalls: IrCall[] = accountOp.calls
+    ;[irCalls] = yearnVaultModule(accountOp, irCalls)
+    irCalls.forEach((call, i) =>
       call?.fullVisualization?.forEach((v: HumanizerVisualization, j: number) =>
         expect(v).toMatchObject(expectedhumanization[i][j])
       )

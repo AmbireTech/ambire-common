@@ -12,14 +12,14 @@ import { WALLETModule } from '../../libs/humanizer/modules/WALLET'
 import { yearnVaultModule } from '../../libs/humanizer/modules/yearnTesseractVault'
 import { fallbackHumanizer } from '../../libs/humanizer/modules/fallBackHumanizer'
 import { nameParsing } from '../../libs/humanizer/modules/nameParsing'
-import { Ir } from '../../libs/humanizer/interfaces'
+import { HumanizerCallModule, Ir } from '../../libs/humanizer/interfaces'
 import { Storage } from '../../interfaces/storage'
 import { AccountOp } from '../../libs/accountOp/accountOp'
-import { humanize } from '../../libs/humanizer'
+import { humanizeCalls } from '../../libs/humanizer'
 import EventEmitter, { ErrorRef } from '../eventEmitter'
 
 const HUMANIZER_META_KEY = 'HumanizerMeta'
-const humanizerModules: Function[] = [
+const humanizerModules: HumanizerCallModule[] = [
   genericErc20Humanizer,
   genericErc721Humanizer,
   uniswapHumanizer,
@@ -60,12 +60,12 @@ export class HumanizerController extends EventEmitter {
 
     for (let i = 0; i <= 3; i++) {
       const storedHumanizerMeta = await this.#storage.get(HUMANIZER_META_KEY, {})
-      const [ir, asyncOps] = humanize(
+      const [irCalls, asyncOps] = humanizeCalls(
         { ...accountOp, humanizerMeta: { ...accountOp.humanizerMeta, ...storedHumanizerMeta } },
         humanizerModules,
         { fetch: this.#fetch, emitError: this.wrappedEemitError }
       )
-      this.ir = ir
+      this.ir.calls = irCalls
       this.emitUpdate()
       const fragments = (await Promise.all(asyncOps)).filter((f) => f)
       if (!fragments.length) return

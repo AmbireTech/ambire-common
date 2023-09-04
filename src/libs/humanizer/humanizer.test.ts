@@ -3,11 +3,10 @@ import { describe, expect, test } from '@jest/globals'
 import { ethers } from 'ethers'
 import fetch from 'node-fetch'
 import { AccountOp } from '../accountOp/accountOp'
-import { callsToIr } from '.'
 import { nameParsing } from './modules/nameParsing'
 import { fallbackHumanizer } from './modules/fallBackHumanizer'
 import { uniswapHumanizer } from './modules/Uniswap'
-import { HumanizerFragment, HumanizerVisualization, Ir } from './interfaces'
+import { HumanizerFragment, HumanizerVisualization, IrCall } from './interfaces'
 import { genericErc20Humanizer, genericErc721Humanizer } from './modules/tokens'
 import { ErrorRef } from '../../controllers/eventEmitter'
 
@@ -199,13 +198,13 @@ describe('asyncOps tests', () => {
       Object.keys(accountOp.humanizerMeta).forEach((k) => {
         k.includes('tokens') ? delete accountOp.humanizerMeta?.[k] : null
       })
-    const ir = callsToIr(accountOp)
-    const [, asyncOps] = genericErc20Humanizer(accountOp, ir, {
+    const irCalls: IrCall[] = accountOp.calls
+    const [, asyncOps] = genericErc20Humanizer(accountOp, irCalls, {
       fetch: mockedFetchForTokens,
       emitError: mockEmitError
     })
     const asyncData = await Promise.all(asyncOps)
-    expect(asyncData[0]).toMatchObject({ key: `tokens:${ir.calls[0].to}`, value: ['USDT', 6] })
+    expect(asyncData[0]).toMatchObject({ key: `tokens:${irCalls[0].to}`, value: ['USDT', 6] })
   })
 })
 
@@ -216,14 +215,14 @@ describe('module tests', () => {
   })
   test('callsToIr', () => {
     accountOp.calls = [...transactions.generic, ...transactions.erc20]
-    const ir: Ir = callsToIr(accountOp)
-    expect(ir.calls.length).toBe(transactions.erc20.length + transactions.generic.length)
-    expect(ir.calls[0]).toEqual({ ...transactions.generic[0], fullVisualization: undefined })
+    const irCalls: IrCall[] = accountOp.calls
+    expect(irCalls.length).toBe(transactions.erc20.length + transactions.generic.length)
+    expect(irCalls[0]).toEqual({ ...transactions.generic[0], fullVisualization: undefined })
   })
   test('genericErc20Humanizer', () => {
     accountOp.calls = [...transactions.erc20]
-    const ir = callsToIr(accountOp)
-    const [{ calls: newCalls }] = genericErc20Humanizer(accountOp, ir, { fetch })
+    const irCalls: IrCall[] = accountOp.calls
+    const [newCalls] = genericErc20Humanizer(accountOp, irCalls, { fetch })
     expect(newCalls.length).toBe(transactions.erc20.length)
     newCalls.forEach((c) => {
       expect(
@@ -238,8 +237,8 @@ describe('module tests', () => {
 
   test('genericErc721Humanizer', () => {
     accountOp.calls = [...transactions.erc721]
-    const ir = callsToIr(accountOp)
-    const [{ calls: newCalls }] = genericErc721Humanizer(accountOp, ir)
+    const irCalls: IrCall[] = accountOp.calls
+    const [newCalls] = genericErc721Humanizer(accountOp, irCalls)
 
     expect(newCalls.length).toBe(transactions.erc721.length)
     newCalls.forEach((c) => {
@@ -248,8 +247,8 @@ describe('module tests', () => {
   })
   test('uniSwap', () => {
     accountOp.calls = [...transactions.uniV3]
-    const ir = callsToIr(accountOp)
-    const [{ calls }] = uniswapHumanizer(accountOp, ir)
+    const irCalls: IrCall[] = accountOp.calls
+    const [calls] = uniswapHumanizer(accountOp, irCalls)
     const expectedVisualization = [
       [
         { type: 'action', content: 'Swap' },
@@ -310,9 +309,12 @@ describe('module tests', () => {
   test('fallback', async () => {
     accountOp.calls = [...transactions.generic]
     delete accountOp.humanizerMeta?.['funcSelectors:0x095ea7b3']
-    let ir: Ir = callsToIr(accountOp)
+    let irCalls: IrCall[] = accountOp.calls
     let asyncOps = []
-    ;[ir, asyncOps] = fallbackHumanizer(accountOp, ir, { fetch, emitError: mockEmitError })
+    ;[irCalls, asyncOps] = fallbackHumanizer(accountOp, irCalls, {
+      fetch,
+      emitError: mockEmitError
+    })
     asyncOps = (await Promise.all(asyncOps)).filter((a) => a) as HumanizerFragment[]
     expect(asyncOps.length).toBe(1)
     expect(asyncOps[0]).toMatchObject({ key: 'funcSelectors:0x095ea7b3' })
@@ -321,8 +323,8 @@ describe('module tests', () => {
     })
     // etherface api might be asparagus
     expect(accountOp.humanizerMeta).toHaveProperty('funcSelectors:0x095ea7b3')
-    ;[ir, asyncOps] = fallbackHumanizer(accountOp, ir, { fetch })
-    expect(ir.calls[1]?.fullVisualization?.[0]).toMatchObject({
+    ;[irCalls, asyncOps] = fallbackHumanizer(accountOp, irCalls, { fetch })
+    expect(irCalls[1]?.fullVisualization?.[0]).toMatchObject({
       type: 'action',
       content: 'Call approve(address,uint256)'
     })
@@ -331,10 +333,10 @@ describe('module tests', () => {
 
   test('nameParsing', () => {
     accountOp.calls = [...transactions.namingTransactions]
-    let ir = callsToIr(accountOp)
-    ;[ir] = genericErc20Humanizer(accountOp, ir)
-    ;[ir] = fallbackHumanizer(accountOp, ir)
-    const [{ calls: newCalls }] = nameParsing(accountOp, ir, { fetch })
+    let irCalls = accountOp.calls
+    ;[irCalls] = genericErc20Humanizer(accountOp, irCalls)
+    ;[irCalls] = fallbackHumanizer(accountOp, irCalls)
+    const [newCalls] = nameParsing(accountOp, irCalls, { fetch })
 
     expect(newCalls.length).toBe(transactions.namingTransactions.length)
     expect(

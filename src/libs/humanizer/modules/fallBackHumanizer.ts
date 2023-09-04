@@ -1,7 +1,12 @@
 /* eslint-disable no-await-in-loop */
 import { ethers } from 'ethers'
 import { AccountOp } from '../../accountOp/accountOp'
-import { HumanizerFragment, HumanizerModule, HumanizerVisualization, Ir } from '../interfaces'
+import {
+  HumanizerFragment,
+  HumanizerCallModule,
+  HumanizerVisualization,
+  IrCall
+} from '../interfaces'
 import { checkIfUnknowAction, getAction, getAddress, getLabel, getToken } from '../utils'
 
 async function fetchFuncEtherface(
@@ -50,13 +55,13 @@ async function fetchFuncEtherface(
   return null
 }
 
-export const fallbackHumanizer: HumanizerModule = (
+export const fallbackHumanizer: HumanizerCallModule = (
   accountOp: AccountOp,
-  currentIr: Ir,
+  currentIrCalls: IrCall[],
   options?: any
 ) => {
   const asyncOps: Promise<HumanizerFragment | null>[] = []
-  const newCalls = currentIr.calls.map((call) => {
+  const newCalls = currentIrCalls.map((call) => {
     if (call.fullVisualization && !checkIfUnknowAction(call?.fullVisualization)) return call
 
     const visualization: Array<HumanizerVisualization> = []
@@ -87,6 +92,5 @@ export const fallbackHumanizer: HumanizerModule = (
     }
   })
 
-  const newIr = { calls: newCalls }
-  return [newIr, asyncOps]
+  return [newCalls, asyncOps]
 }

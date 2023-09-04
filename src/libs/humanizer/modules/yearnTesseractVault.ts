@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-shadow */
 import { ethers } from 'ethers'
-import { HumanizerModule, Ir, IrCall } from '../interfaces'
+import { HumanizerCallModule, IrCall } from '../interfaces'
 import { getAddress, getAction, getLabel, getToken } from '../utils'
 import { AccountOp } from '../../accountOp/accountOp'
 
@@ -8,9 +8,9 @@ import { AccountOp } from '../../accountOp/accountOp'
 const tokenPrefixes = { ethereum: 'y', polygon: 'tv' }
 // add 'y' or 'tv' prefix, eg '10 USDC' will become '10 yUSDC' to signify vault tokens
 
-export const yearnVaultModule: HumanizerModule = (
+export const yearnVaultModule: HumanizerCallModule = (
   accountOp: AccountOp,
-  ir: Ir,
+  irCalls: IrCall[],
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   options?: any
 ) => {
@@ -77,7 +77,7 @@ export const yearnVaultModule: HumanizerModule = (
     }
   }
   const newCalls: IrCall[] = []
-  ir.calls.forEach((_call) => {
+  irCalls.forEach((_call) => {
     const call = { ..._call, to: ethers.getAddress(_call.to) }
     // checks if call.to is a vault
     if (getVaultInfo(call.to)) {
@@ -108,5 +108,5 @@ export const yearnVaultModule: HumanizerModule = (
     }
   })
 
-  return [{ ...ir, calls: newCalls }, []]
+  return [newCalls, []]
 }

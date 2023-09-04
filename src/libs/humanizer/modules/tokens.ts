@@ -4,15 +4,14 @@ import { nativeTokens } from '../../../consts/networks'
 import { getLabel, getAction, getAddress, getNft, getToken, getTokenInfo } from '../utils'
 import {
   HumanizerFragment,
-  HumanizerModule,
+  HumanizerCallModule,
   HumanizerVisualization,
-  Ir,
   IrCall
 } from '../interfaces'
 
-export const genericErc721Humanizer: HumanizerModule = (
+export const genericErc721Humanizer: HumanizerCallModule = (
   accountOp: AccountOp,
-  currentIr: Ir,
+  currentIrCalls: IrCall[],
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   options?: any
 ) => {
@@ -66,7 +65,7 @@ export const genericErc721Humanizer: HumanizerModule = (
       nftTransferVisualization
   }
 
-  const newCalls = currentIr.calls.map((call) => {
+  const newCalls = currentIrCalls.map((call) => {
     return matcher[call.data.substring(0, 10)] // could do additional check if it is actually NFT contract
       ? {
           ...call,
@@ -74,13 +73,12 @@ export const genericErc721Humanizer: HumanizerModule = (
         }
       : call
   })
-  const newIr = { calls: newCalls }
-  return [newIr, []]
+  return [newCalls, []]
 }
 
-export const genericErc20Humanizer: HumanizerModule = (
+export const genericErc20Humanizer: HumanizerCallModule = (
   accountOp: AccountOp,
-  currentIr: Ir,
+  currentIrCalls: IrCall[],
   options?: any
 ) => {
   const asyncOps: Promise<HumanizerFragment | null>[] = []
@@ -139,7 +137,7 @@ export const genericErc20Humanizer: HumanizerModule = (
       ]
     }
   }
-  const newCalls = currentIr.calls.map((call) => {
+  const newCalls = currentIrCalls.map((call) => {
     // if proper func selector and no such token found in meta
     if (matcher[call.data.substring(0, 10)] && !accountOp.humanizerMeta?.[`tokens:${call.to}`]) {
       const asyncTokenInfo = getTokenInfo(accountOp, call.to, options)
@@ -161,13 +159,16 @@ export const genericErc20Humanizer: HumanizerModule = (
       }
     return call
   })
-  const newIr = { calls: newCalls }
-  return [newIr, asyncOps]
+  return [newCalls, asyncOps]
 }
 
-export const tokenParsing: HumanizerModule = (accounOp: AccountOp, ir: Ir, options?: any) => {
+export const tokenParsing: HumanizerCallModule = (
+  accounOp: AccountOp,
+  irCalls: IrCall[],
+  options?: any
+) => {
   const asyncOps: Array<Promise<HumanizerFragment | null>> = []
-  const newCalls = ir.calls.map((c) => ({
+  const newCalls = irCalls.map((c) => ({
     ...c,
     fullVisualization: c?.fullVisualization?.map((v: HumanizerVisualization) => {
       if (v.type === 'token') {
@@ -197,5 +198,5 @@ export const tokenParsing: HumanizerModule = (accounOp: AccountOp, ir: Ir, optio
     })
   }))
 
-  return [{ ...ir, calls: newCalls }, asyncOps]
+  return [newCalls, asyncOps]
 }

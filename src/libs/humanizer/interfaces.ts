@@ -28,6 +28,9 @@ export interface HumanizerFragment {
   value: string | Array<any> | object
 }
 
-export interface HumanizerModule {
-  (accountOp: AccountOp, ir: Ir, options?: any): [Ir, Promise<HumanizerFragment | null>[]]
+export interface HumanizerCallModule {
+  (accountOp: AccountOp, calls: IrCall[], options?: any): [
+    IrCall[],
+    Promise<HumanizerFragment | null>[]
+  ]
 }

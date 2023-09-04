@@ -1,7 +1,7 @@
 // update return ir to be {...ir,calls:newCalls} instead of {calls:newCalls} everywhere
 import { WALLETSupplyControllerMapping } from './WALLETSupplyController'
 import { StakingPools } from './stakingPools'
-import { HumanizerModule, Ir, IrCall } from '../../interfaces'
+import { HumanizerCallModule, IrCall } from '../../interfaces'
 import { AccountOp } from '../../../accountOp/accountOp'
 import { checkIfUnknowAction, getAction } from '../../utils'
 
@@ -12,13 +12,18 @@ const stakingAddresses = [
 ]
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-export const WALLETModule: HumanizerModule = (accountOp: AccountOp, ir: Ir, options?: any) => {
+export const WALLETModule: HumanizerCallModule = (
+  accountOp: AccountOp,
+  irCalls: IrCall[],
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  options?: any
+) => {
   const newCalls: IrCall[] = []
   const matcher = {
     supplyController: WALLETSupplyControllerMapping(accountOp.humanizerMeta),
     stakingPool: StakingPools(accountOp.humanizerMeta)
   }
-  ir.calls.forEach((call: IrCall) => {
+  irCalls.forEach((call: IrCall) => {
     if (
       stakingAddresses.includes(call.to) &&
       (!call.fullVisualization || checkIfUnknowAction(call.fullVisualization))
@@ -40,5 +45,5 @@ export const WALLETModule: HumanizerModule = (accountOp: AccountOp, ir: Ir, opti
       newCalls.push(call)
     }
   })
-  return [{ ...ir, calls: newCalls }, []]
+  return [newCalls, []]
 }

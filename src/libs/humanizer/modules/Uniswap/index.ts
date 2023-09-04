@@ -1,6 +1,6 @@
 import { ethers } from 'ethers'
 import { AccountOp } from '../../../accountOp/accountOp'
-import { HumanizerModule, HumanizerVisualization, Ir, IrCall } from '../../interfaces'
+import { HumanizerCallModule, HumanizerVisualization, IrCall } from '../../interfaces'
 import { uniUniversalRouter } from './uniUnivarsalRouter'
 import { uniV2Mapping } from './uniV2'
 import { uniV32Mapping, uniV3Mapping } from './uniV3'
@@ -56,9 +56,9 @@ const wrpaUnwrapParser = (calls: IrCall[], humanizerInfo: any) => {
   }
   return newCalls
 }
-export const uniswapHumanizer: HumanizerModule = (
+export const uniswapHumanizer: HumanizerCallModule = (
   accountOp: AccountOp,
-  currentIr: Ir,
+  currentIrCalls: IrCall[],
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   options?: any
 ) => {
@@ -75,7 +75,7 @@ export const uniswapHumanizer: HumanizerModule = (
     '0x3fC91A3afd70395Cd496C647d5a6CC9D4B2b7FAD': uniUniversalRouter(accountOp.humanizerMeta)
   }
   const newCalls: IrCall[] = []
-  currentIr.calls.forEach((call: IrCall) => {
+  currentIrCalls.forEach((call: IrCall) => {
     // check against sus contracts with same func selectors
     if (accountOp.humanizerMeta?.[`names:${call.to}`] === 'Uniswap') {
       if (matcher?.[call.to]?.[call.data.substring(0, 10)]) {
@@ -100,6 +100,5 @@ export const uniswapHumanizer: HumanizerModule = (
     }
   })
   const parsedCalls = wrpaUnwrapParser(newCalls, accountOp.humanizerMeta)
-  const newIr = { calls: parsedCalls }
-  return [newIr, []]
+  return [parsedCalls, []]
 }
