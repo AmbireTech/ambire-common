@@ -1,4 +1,4 @@
-import { TypedDataDomain, TypedDataField } from 'ethers'
+import type { TypedDataDomain, TypedDataField } from 'ethers'
 
 import { AccountId } from './account'
 import { NetworkId } from './networkDescriptor'
@@ -13,12 +13,13 @@ export interface PlainTextMessage {
   kind: 'message'
   message: string | Uint8Array
 }
+
 export interface TypedMessage {
   kind: 'typedMessage'
-  primaryType: string
   domain: TypedDataDomain
   types: Record<string, Array<TypedDataField>>
   message: Record<string, any>
+  primaryType?: string
 }
 // @TODO: move this type and it's deps (PlainTextMessage, TypedMessage) to another place,
 // probably interfaces
