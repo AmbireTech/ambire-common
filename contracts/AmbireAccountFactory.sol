@@ -24,7 +24,7 @@ contract AmbireAccountFactory {
 	function deployAndExecute(
 		bytes calldata code,
 		uint256 salt,
-		AmbireAccount.Transaction[] calldata txns,
+		Transaction[] calldata txns,
 		bytes calldata signature
 	) external {
 		address payable addr = payable(deploySafe(code, salt));

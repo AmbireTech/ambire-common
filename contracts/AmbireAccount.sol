@@ -9,7 +9,7 @@ import './ExternalSigValidator.sol';
 // makes the Solidity compiler add an extra check for `msg.value`, which in this case is wasted gas
 contract AmbireAccount {
 	// @dev We do not have a constructor. This contract cannot be initialized with any valid `privileges` by itself!
-	// The indended use case is to deploy one base implementation contract, and create a minimal proxy for each user wallet, by
+	// The intended use case is to deploy one base implementation contract, and create a minimal proxy for each user wallet, by
 	// using our own code generation to insert SSTOREs to initialize `privileges` (IdentityProxyDeploy.js)
 	address private constant FALLBACK_HANDLER_SLOT = address(0x6969);
 
@@ -21,14 +21,6 @@ contract AmbireAccount {
 	event LogPrivilegeChanged(address indexed addr, bytes32 priv);
 	event LogErr(address indexed to, uint256 value, bytes data, bytes returnData); // only used in tryCatch
 
-	// Transaction structure
-	// we handle replay protection separately by requiring (address(this), chainID, nonce) as part of the sig
-	// @dev a better name for this would be `Call`, but we are keeping `Transaction` for backwards compatibility
-	struct Transaction {
-		address to;
-		uint256 value;
-		bytes data;
-	}
 	// built-in batching of multiple execute()'s; useful when performing timelocked recoveries
 	struct ExecuteArgs {
 		Transaction[] calls;
@@ -128,7 +120,7 @@ contract AmbireAccount {
 				privileges[signerKey] == keccak256(abi.encode(validatorAddr, validatorData)),
 				'EXTERNAL_VALIDATION_NOT_SET'
 			);
-			// The sig validator itself should throw when a signature isn't valdiated successfully
+			// The sig validator itself should throw when a signature isn't validated successfully
 			// the return value just indicates whether we want to execute the current calls
 			// @TODO what about reentrancy for externally validated signatures
 			if (

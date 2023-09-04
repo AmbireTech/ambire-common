@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: agpl-3.0
 pragma solidity 0.8.19;
 
-import './AmbireAccount.sol';
 import './libs/SignatureValidator.sol';
+import './ExternalSigValidator.sol';
 
 contract RecoverySigValidator is ExternalSigValidator {
   mapping(bytes32 => uint) public scheduledRecoveries;
@@ -11,7 +11,7 @@ contract RecoverySigValidator is ExternalSigValidator {
     address indexed recoveryKey,
     uint256 nonce,
     uint256 time,
-    AmbireAccount.Transaction[] calls
+    Transaction[] calls
   );
   event LogRecoveryCancelled(
     bytes32 indexed txnHash,
@@ -30,7 +30,7 @@ contract RecoverySigValidator is ExternalSigValidator {
     bytes calldata data,
     bytes calldata sig,
     uint256 nonce,
-    AmbireAccount.Transaction[] calldata calls
+    Transaction[] calldata calls
   ) external returns (bool shouldExecute) {
     (RecoveryInfo memory recoveryInfo) = abi.decode(data, (RecoveryInfo));
     (bytes32 cancellationHash, bytes memory innerSig) = abi.decode(sig, (bytes32, bytes));
