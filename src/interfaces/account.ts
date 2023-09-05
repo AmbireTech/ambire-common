@@ -32,3 +32,9 @@ export interface AccountOnchainState {
   isErc4337Enabled: boolean
   isErc4337Nonce: boolean
 }
+
+export type AccountStates = {
+  [accountId: string]: {
+    [networkId: string]: AccountOnchainState
+  }
+}

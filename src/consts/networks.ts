@@ -37,6 +37,15 @@ const networks: NetworkDescriptor[] = [
       entryPointMarker: ENTRY_POINT_MARKER
     }
   }
+  // This breaks the background service of the extension
+  // {
+  //   id: 'hardhat',
+  //   name: 'hardhat',
+  //   nativeAssetSymbol: 'ETH',
+  //   rpcUrl: '',
+  //   rpcNoStateOverride: true,
+  //   chainId: 31337n
+  // }
 ]
 
 export { networks }
