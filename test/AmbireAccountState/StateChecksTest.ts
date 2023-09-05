@@ -5,7 +5,8 @@ import {
   expect,
 } from '../config'
 import { deployAmbireAccountHardhatNetwork } from '../implementations'
-import { getAccountDeployParams } from '../../dist/src/libs/account/account'
+import { ERC_4337_ENTRYPOINT } from '../../src/consts/deploy'
+import { getAccountDeployParams } from '../../src/libs/account/account'
 
 let ambireAccountAddress: string
 let factoryAddr: any
@@ -13,7 +14,7 @@ let addrBytecode: any
 let salt: any
 
 describe('Account state checks tests', function () {
-  it('should successfully deploys the ambire account', async function () {
+  it('should successfully deploy the ambire account', async function () {
     const [signer] = await ethers.getSigners()
     const { ambireAccountAddress: addr, factoryAddress, bytecode, deploySalt } = await deployAmbireAccountHardhatNetwork([
       { addr: signer.address, hash: true }
@@ -82,10 +83,11 @@ describe('Account state checks tests', function () {
     const args = accounts.map((account) => [
       account.addr,
       account.associatedKeys,
-      ...getAccountDeployParams(account)
+      ...getAccountDeployParams(account),
+      ERC_4337_ENTRYPOINT
     ])
 
-    const abi = ['function getAccountsState(tuple(address, address[], address, bytes)[]) external']
+    const abi = ['function getAccountsState(tuple(address, address[], address, bytes, address)[]) external']
     const iface = new ethers.Interface(abi)
     const callData = iface.encodeFunctionData('getAccountsState', [args])
 
@@ -94,7 +96,7 @@ describe('Account state checks tests', function () {
       to: await AmbireAccountState.getAddress(),
       data: callData,
     })
-    const decoded = abiCoder.decode(['tuple(bool, bytes, uint, bytes32[], bool, uint256, bool)[]'], result)[0]
+    const decoded = abiCoder.decode(['tuple(bool, bytes, uint, bytes32[], bool, uint256, bool, uint)[]'], result)[0]
     expect(decoded.length).to.equal(1)
     decoded.map((oneAcc: any) => {
       expect(oneAcc[0]).to.equal(true)
@@ -105,6 +107,7 @@ describe('Account state checks tests', function () {
       expect(oneAcc[4]).to.equal(true)
       expect(oneAcc[5]).to.equal(0n)
       expect(oneAcc[6]).to.equal(false)
+      expect(oneAcc[7]).to.be.greaterThan(100000n)
     })
   })
 })

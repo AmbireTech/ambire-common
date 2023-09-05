@@ -51,6 +51,16 @@ function wrapRecover(sig: string) {
 }
 
 /**
+ * SIGMODE_EXTERNALLY_VALIDATED
+ *
+ * @param BytesLike sig
+ * @returns BytesLike
+ */
+function wrapExternallyValidated(sig: string) {
+  return `${sig}${'ff'}`
+}
+
+/**
  * SIGMODE_CANCEL
  *
  * @param BytesLike sig
@@ -60,4 +70,4 @@ function wrapCancel(sig: string) {
   return `${sig}${'fe'}`
 }
 
-export { wrapEIP712, wrapEthSign, wrapSchnorr, wrapMultiSig, wrapRecover, wrapCancel }
+export { wrapEIP712, wrapEthSign, wrapSchnorr, wrapMultiSig, wrapRecover, wrapCancel, wrapExternallyValidated }
