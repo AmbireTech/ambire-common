@@ -1,4 +1,5 @@
 import { JsonRpcProvider } from 'ethers'
+import { relayerCall } from 'libs/relayerCall/relayerCall'
 import fetch from 'node-fetch'
 
 import { Account, AccountId } from '../../interfaces/account'
@@ -40,14 +41,23 @@ export class PortfolioController extends EventEmitter {
 
   #storage: Storage
 
+  #callRelayer: Function
+
   #minUpdateInterval: number = 20000 // 20 seconds
 
-  constructor(storage: Storage) {
+  constructor(storage: Storage, relayerUrl: string) {
     super()
     this.latest = {}
     this.pending = {}
     this.#portfolioLibs = new Map()
     this.#storage = storage
+    this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
+  }
+
+  async getAdditionalPortfolio(accountId: AccountId) {
+    const url = `/v2/identity/${accountId}/info`
+    const { data } = await this.#callRelayer(url)
+    return data
   }
   // NOTE: we always pass in all `accounts` and `networks` to ensure that the user of this
   // controller doesn't have to update this controller every time that those are updated

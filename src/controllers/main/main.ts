@@ -104,7 +104,7 @@ export class MainController extends EventEmitter {
   }) {
     super()
     this.storage = storage
-    this.portfolio = new PortfolioController(storage)
+    this.portfolio = new PortfolioController(storage, relayerUrl)
     this.#keystoreLib = new Keystore(storage, keystoreSigners)
     this.keystore = new KeystoreController(this.#keystoreLib)
     this.initialLoadPromise = this.load()
