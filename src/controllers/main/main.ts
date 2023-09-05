@@ -127,7 +127,7 @@ export class MainController extends EventEmitter {
     this.emitUpdate()
 
     this.#providers = Object.fromEntries(
-      networks.map((network) => [network.id, new JsonRpcProvider(network.rpcUrl)])
+      this.settings.networks.map((network) => [network.id, new JsonRpcProvider(network.rpcUrl)])
     )
     ;[this.keys, this.accounts, this.selectedAccount] = await Promise.all([
       this.#keystoreLib.getKeys(),
