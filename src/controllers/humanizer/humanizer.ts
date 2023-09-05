@@ -1,4 +1,5 @@
 /* eslint-disable no-await-in-loop */
+import { fallbackEIP712Humanizer } from '../../libs/humanizer/typedMessageModules/fallbackModule'
 import {
   genericErc20Humanizer,
   genericErc721Humanizer,
@@ -12,11 +13,12 @@ import { WALLETModule } from '../../libs/humanizer/modules/WALLET'
 import { yearnVaultModule } from '../../libs/humanizer/modules/yearnTesseractVault'
 import { fallbackHumanizer } from '../../libs/humanizer/modules/fallBackHumanizer'
 import { nameParsing } from '../../libs/humanizer/modules/nameParsing'
-import { HumanizerCallModule, Ir } from '../../libs/humanizer/interfaces'
+import { HumanizerCallModule, Ir, IrMessage } from '../../libs/humanizer/interfaces'
 import { Storage } from '../../interfaces/storage'
 import { AccountOp } from '../../libs/accountOp/accountOp'
-import { humanizeCalls } from '../../libs/humanizer'
+import { humanizeCalls, humanizeTypedMessage } from '../../libs/humanizer'
 import EventEmitter, { ErrorRef } from '../eventEmitter'
+import { Message } from '../../interfaces/userRequest'
 
 const HUMANIZER_META_KEY = 'HumanizerMeta'
 const humanizerModules: HumanizerCallModule[] = [
@@ -32,8 +34,10 @@ const humanizerModules: HumanizerCallModule[] = [
   nameParsing,
   tokenParsing
 ]
+
+const humanizerTMModules = [fallbackEIP712Humanizer]
 export class HumanizerController extends EventEmitter {
-  ir: Ir = { calls: [] }
+  ir: Ir = { calls: [], messages: [] }
 
   #storage: Storage
 
@@ -49,7 +53,7 @@ export class HumanizerController extends EventEmitter {
     this.emitError(e)
   }
 
-  public async humanize(_accountOp: AccountOp) {
+  public async humanizeCalls(_accountOp: AccountOp) {
     const accountOp: AccountOp = {
       ..._accountOp,
       humanizerMeta: {
@@ -86,5 +90,19 @@ export class HumanizerController extends EventEmitter {
       }
       await this.#storage.set(HUMANIZER_META_KEY, { ...storedHumanizerMeta, ...globalFragmentData })
     }
+  }
+
+  public humanizeMessages(accountOp: AccountOp, messages: Message[]) {
+    const irMessages: IrMessage[] = messages.map((m) => {
+      let fullVisualization
+      if (m.content.kind === 'typedMessage') {
+        fullVisualization = humanizeTypedMessage(accountOp, humanizerTMModules, m.content)
+      } else {
+        // @TODO
+      }
+      return { ...m, fullVisualization }
+    })
+    this.ir.messages = irMessages
+    this.emitUpdate()
   }
 }

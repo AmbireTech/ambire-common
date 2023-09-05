@@ -21,6 +21,6 @@ const fallbackParser = (
   return v
 }
 
-export const fallbackEIP712 = (tm: TypedMessage): HumanizerVisualization[] => {
+export const fallbackEIP712Humanizer = (tm: TypedMessage): HumanizerVisualization[] => {
   return fallbackParser(tm.message, 0)
 }

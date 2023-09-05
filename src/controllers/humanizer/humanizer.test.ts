@@ -182,7 +182,7 @@ describe('HumanizerController', () => {
     accountOp.humanizerMeta = humanizerJSON
   })
   test('init HumanizerController', async () => {
-    expect(hc.ir).toEqual({ calls: [] })
+    expect(hc.ir).toEqual({ calls: [], messages: [] })
   })
 
   test('generic humanize', async () => {
@@ -227,7 +227,7 @@ describe('HumanizerController', () => {
     })
     accountOp.calls = [...transactions.generic]
     hc.onUpdate(onUpdate)
-    await hc.humanize(accountOp)
+    await hc.humanizeCalls(accountOp)
     expect(onUpdate).toHaveBeenCalledTimes(1)
   })
 
@@ -258,7 +258,7 @@ describe('HumanizerController', () => {
     })
     accountOp.calls = [...transactions.unknownFuncSelector]
     hc.onUpdate(onUpdate)
-    await hc.humanize(accountOp)
+    await hc.humanizeCalls(accountOp)
     expect(onUpdate).toHaveBeenCalledTimes(2)
   })
 })
