@@ -244,7 +244,13 @@ contract AmbireAccount {
 	{
 		require(address(uint160(uint256(privileges[msg.sender]))) == ENTRY_POINT_MARKER, 'Request not from entryPoint');
 
-		uint256 result = 0;
+		if (userOp.initCode.length > 0 && userOp.nonce == 0 && userOp.callData.length == 0) {
+			require(NonceManager(msg.sender).getNonce(address(this), 0) == 0, 'Entry point nonce not 0');
+			require(uint64(uint256(privileges[msg.sender] >> 160)) == uint64(block.number), 'Entry point not set in the same block');
+			require(missingAccountFunds == 0, 'Payment is prepayed');
+			return 0;
+		}
+
 		uint8 sigMode = uint8(userOp.signature[userOp.signature.length - 1]);
 		if (sigMode == SIGMODE_EXTERNALLY_VALIDATED) {
 			Transaction[] memory calls = userOp.callData.length > 0
@@ -255,12 +261,9 @@ contract AmbireAccount {
 			if (!isValidSig) return SIG_VALIDATION_FAILED;
 			// pack the return value for validateUserOp
 			// address aggregator, uint48 validUntil, uint48 validAfter
-			if (result != 0) {
+			if (timestampValidAfter != 0) {
 				return uint160(0) | (uint256(0) << 160) | (uint256(timestampValidAfter) << (208));
 			}
-		} else if (userOp.initCode.length > 0 && userOp.nonce == 0 && userOp.callData.length == 0) {
-			require(NonceManager(msg.sender).getNonce(address(this), 0) == 0, 'Entry point nonce not 0');
-			require(uint64(uint256(privileges[msg.sender] >> 160)) == uint64(block.number));
 		} else {
 			address signer = SignatureValidator.recoverAddr(userOpHash, userOp.signature);
 			if (privileges[signer] == bytes32(0)) return SIG_VALIDATION_FAILED;
@@ -273,7 +276,7 @@ contract AmbireAccount {
 			// ignore failure (its EntryPoint's job to verify, not account.)
 		}
 
-		return result;
+		return 0;
 	}
 
 	function validateExternalSig(Transaction[] memory calls, bytes calldata signature)
