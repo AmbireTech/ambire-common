@@ -110,8 +110,8 @@ export class MainController extends EventEmitter {
     this.portfolio = new PortfolioController(storage)
     this.#keystoreLib = new Keystore(storage, keystoreSigners)
     this.keystore = new KeystoreController(this.#keystoreLib)
-    this.initialLoadPromise = this.load()
     this.settings = { networks }
+    this.initialLoadPromise = this.load()
     this.emailVault = new EmailVaultController(storage, fetch, relayerUrl, this.#keystoreLib)
     this.accountAdder = new AccountAdderController({ storage, relayerUrl, fetch })
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
@@ -125,15 +125,14 @@ export class MainController extends EventEmitter {
   private async load(): Promise<void> {
     this.isReady = false
     this.emitUpdate()
-
-    this.#providers = Object.fromEntries(
-      this.settings.networks.map((network) => [network.id, new JsonRpcProvider(network.rpcUrl)])
-    )
     ;[this.keys, this.accounts, this.selectedAccount] = await Promise.all([
       this.#keystoreLib.getKeys(),
       this.storage.get('accounts', []),
       this.storage.get('selectedAccount', null)
     ])
+    this.#providers = Object.fromEntries(
+      this.settings.networks.map((network) => [network.id, new JsonRpcProvider(network.rpcUrl)])
+    )
     // @TODO reload those
     // @TODO error handling here
     this.accountStates = await this.getAccountsInfo(this.accounts)
