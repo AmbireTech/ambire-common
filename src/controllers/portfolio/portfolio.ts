@@ -1,5 +1,4 @@
 import { JsonRpcProvider } from 'ethers'
-import { relayerCall } from 'libs/relayerCall/relayerCall'
 import fetch from 'node-fetch'
 
 import { Account, AccountId } from '../../interfaces/account'
@@ -8,6 +7,7 @@ import { Storage } from '../../interfaces/storage'
 import { AccountOp, isAccountOpsIntentEqual } from '../../libs/accountOp/accountOp'
 import { Hints, PortfolioGetResult } from '../../libs/portfolio/interfaces'
 import { GetOptions, Portfolio } from '../../libs/portfolio/portfolio'
+import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import EventEmitter from '../eventEmitter'
 
 type AccountState = {
