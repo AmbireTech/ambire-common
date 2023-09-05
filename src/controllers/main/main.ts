@@ -150,7 +150,6 @@ export class MainController extends EventEmitter {
         return
 
       this.addAccounts(this.accountAdder.readyToAddAccounts)
-      this.accountAdder.reset()
     }
     this.accountAdder.onUpdate(addReadyToAddAccountsIfNeeded)
 
