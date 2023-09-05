@@ -1,5 +1,5 @@
 import { Message } from '../../interfaces/userRequest'
-import { AccountOp } from '../accountOp/accountOp'
+import { AccountOp, Call } from '../accountOp/accountOp'
 
 export type HumanizerVisualization = {
   type: 'token' | 'address' | 'label' | 'action' | 'nft' | 'danger'
@@ -12,10 +12,7 @@ export type HumanizerVisualization = {
   name?: string
   id?: bigint
 }
-export interface IrCall {
-  data: string
-  to: string
-  value: bigint
+export interface IrCall extends Call {
   fullVisualization?: HumanizerVisualization[]
 }
 export interface IrMessage extends Message {
