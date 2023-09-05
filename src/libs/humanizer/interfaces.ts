@@ -1,4 +1,4 @@
-import { Message } from '../../interfaces/userRequest'
+import { Message, TypedMessage } from '../../interfaces/userRequest'
 import { AccountOp, Call } from '../accountOp/accountOp'
 
 export type HumanizerVisualization = {
@@ -35,4 +35,8 @@ export interface HumanizerCallModule {
     IrCall[],
     Promise<HumanizerFragment | null>[]
   ]
+}
+
+export interface HumanizerTypedMessaageModule {
+  (typedMessage: TypedMessage): HumanizerVisualization[]
 }

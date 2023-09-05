@@ -53,12 +53,10 @@ export function getDeadlineText(
   const deadline = Number(deadlineSecs * 1000n)
   const diff = deadline - Date.now()
   if (diff < 0 && diff > -minute * 2) return getLabel('expired just now')
-  // Disabled this: this is a bit of a hack cause we don't want it to show for mined txns
-  // we don't really need it for pending ones, simply because we'll show the big error message instead
-  // if (diff < 0) return getLabel(`, expired ${Math.floor(-diff / minute)} minutes ago`
   if (diff < 0) return getLabel('already expired')
   if (diff < minute) return getLabel('expires in less than a minute')
   if (diff < 10 * minute) return getLabel(`expires in ${Math.floor(diff / minute)} minutes`)
+  // @TODO add return geTLable with raw  deadline
   return null
 }
 

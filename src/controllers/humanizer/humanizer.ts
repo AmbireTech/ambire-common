@@ -16,7 +16,7 @@ import { nameParsing } from '../../libs/humanizer/modules/nameParsing'
 import { HumanizerCallModule, Ir, IrMessage } from '../../libs/humanizer/interfaces'
 import { Storage } from '../../interfaces/storage'
 import { AccountOp } from '../../libs/accountOp/accountOp'
-import { humanizeCalls, humanizeTypedMessage } from '../../libs/humanizer'
+import { humanizeCalls, humanizePLainTextMessage, humanizeTypedMessage } from '../../libs/humanizer'
 import EventEmitter, { ErrorRef } from '../eventEmitter'
 import { Message } from '../../interfaces/userRequest'
 
@@ -98,7 +98,7 @@ export class HumanizerController extends EventEmitter {
       if (m.content.kind === 'typedMessage') {
         fullVisualization = humanizeTypedMessage(accountOp, humanizerTMModules, m.content)
       } else {
-        // @TODO
+        fullVisualization = humanizePLainTextMessage(accountOp, m.content)
       }
       return { ...m, fullVisualization }
     })

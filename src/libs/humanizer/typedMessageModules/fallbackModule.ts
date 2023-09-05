@@ -1,5 +1,5 @@
 import { TypedMessage } from 'interfaces/userRequest'
-import { HumanizerVisualization } from '../interfaces'
+import { HumanizerTypedMessaageModule, HumanizerVisualization } from '../interfaces'
 import { getLabel } from '../utils'
 
 const fallbackParser = (
@@ -21,6 +21,8 @@ const fallbackParser = (
   return v
 }
 
-export const fallbackEIP712Humanizer = (tm: TypedMessage): HumanizerVisualization[] => {
+export const fallbackEIP712Humanizer: HumanizerTypedMessaageModule = (
+  tm: TypedMessage
+): HumanizerVisualization[] => {
   return fallbackParser(tm.message, 0)
 }

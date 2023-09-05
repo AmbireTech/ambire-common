@@ -28,6 +28,7 @@ const dappNamesPath = path.join(__dirname, '..', 'src', 'consts', 'dappNames.jso
 // }
 
 const getFnName = (f)=>{
+	// @TODO add inputs names, not only types
 	const args = f.inputs.map(i=>i.type).join(',')
 	return `${f.name}(${args})`
 }

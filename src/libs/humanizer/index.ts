@@ -4,10 +4,11 @@ import {
   IrCall,
   HumanizerFragment,
   HumanizerVisualization,
-  HumanizerCallModule
+  HumanizerCallModule,
+  HumanizerTypedMessaageModule
 } from './interfaces'
 import { PlainTextMessage, TypedMessage } from '../../interfaces/userRequest'
-import { getLabel, getDanger, getAction } from './utils'
+import { getDanger } from './utils'
 
 export function humanizeCalls(
   _accountOp: AccountOp,
@@ -56,18 +57,20 @@ export const visualizationToText = (call: IrCall, options: any): string => {
 
 export const humanizeTypedMessage = (
   accountOp: AccountOp,
-  modules: Function[],
+  modules: HumanizerTypedMessaageModule[],
   tm: TypedMessage
 ): HumanizerVisualization[] => {
   // runs all modules and takes the first truthy value
-  const visualization = modules.map((m) => m(tm)).filter((p) => p)[0]
+  const visualization = modules.map((m) => m(tm)).filter((p) => p.length)[0]
   if (accountOp.networkId !== tm.domain.chainId)
     visualization.push(getDanger('Permit on wrong network'))
   return visualization
 }
 
 export const humanizePLainTextMessage = (
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   accounOp: AccountOp,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   m: PlainTextMessage
 ): HumanizerVisualization[] => {
   // @TODO
