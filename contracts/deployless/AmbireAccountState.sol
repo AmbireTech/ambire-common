@@ -81,7 +81,8 @@ contract AmbireAccountState {
     }
 
     function getErc4337Nonce(address acc, address entryPoint) external returns (uint) {
-        return IEntryPoint(entryPoint).getNonce(acc, 0);
+        // 624 is a sum of ascii codes of "ambire" 
+        return IEntryPoint(entryPoint).getNonce(acc, 624);
     }
 
     function ambireV2Check(IAmbireAccount account) external pure returns(bool) {
