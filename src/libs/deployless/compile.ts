@@ -51,9 +51,13 @@ export function compile(contractName: string, options: Options = {}) {
   }
 
   function findImports(libPath: string) {
+    let compileFolder = libPath.indexOf('node_modules') === -1
+      ? contractsFolder
+      : ''
+
     return {
       contents: fs.readFileSync(
-        path.resolve(`${__dirname}../../../../`, contractsFolder, libPath),
+        path.resolve(`${__dirname}../../../../`, compileFolder, libPath),
         {
           encoding: 'utf8'
         }

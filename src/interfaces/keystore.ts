@@ -1,12 +1,7 @@
-import type { TypedDataDomain, TypedDataField } from '@ethersproject/abstract-signer'
+import { TypedMessage } from './userRequest'
 
 export interface KeystoreSigner {
   signRawTransaction: (params: any) => Promise<string>
-  signTypedData: (
-    domain: TypedDataDomain,
-    types: Record<string, Array<TypedDataField>>,
-    message: Record<string, any>,
-    primaryType?: string
-  ) => Promise<string>
+  signTypedData: (typedMessage: TypedMessage) => Promise<string>
   signMessage: (hash: string | Uint8Array) => Promise<string>
 }
