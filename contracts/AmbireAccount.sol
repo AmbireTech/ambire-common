@@ -20,17 +20,20 @@ struct UserOperation {
 	bytes signature;
 }
 
+interface NonceManager {
+	function getNonce(address sender, uint192 key) external view returns (uint256 nonce);
+}
+
 // @dev All external/public functions (that are not view/pure) use `payable` because AmbireAccount
 // is a wallet contract, and any ETH sent to it is not lost, but on the other hand not having `payable`
 // makes the Solidity compiler add an extra check for `msg.value`, which in this case is wasted gas
 contract AmbireAccount {
 	// @dev We do not have a constructor. This contract cannot be initialized with any valid `privileges` by itself!
-	// The indended use case is to deploy one base implementation contract, and create a minimal proxy for each user wallet, by
+	// The intended use case is to deploy one base implementation contract, and create a minimal proxy for each user wallet, by
 	// using our own code generation to insert SSTOREs to initialize `privileges` (IdentityProxyDeploy.js)
 	address private constant FALLBACK_HANDLER_SLOT = address(0x6969);
 
-	// keccak256(hex"7171")
-	bytes32 constant ENTRY_POINT_MARKER = 0x42144640c7cb5ff8aa9595ae175ffcb6dd152db6e737c13cc2d5d07576967020;
+	address private constant ENTRY_POINT_MARKER = address(0x7171);
 
 	// Variables
 	mapping(address => bytes32) public privileges;
@@ -39,7 +42,6 @@ contract AmbireAccount {
 	// Events
 	event LogPrivilegeChanged(address indexed addr, bytes32 priv);
 	event LogErr(address indexed to, uint256 value, bytes data, bytes returnData); // only used in tryCatch
-
 
 	// built-in batching of multiple execute()'s; useful when performing timelocked recoveries
 	struct ExecuteArgs {
@@ -101,6 +103,17 @@ contract AmbireAccount {
 		emit LogPrivilegeChanged(addr, priv);
 	}
 
+	/**
+	 * @notice  Set the entry point priv
+	 * @dev     We do not hash the priv so we could extract the ENTRY_POINT_MARKER
+	 * @param   addr  The entry point address
+	 */
+	function setEntryPointPrivilege(address addr) external payable {
+		require(msg.sender == address(this), 'ONLY_IDENTITY_CAN_CALL');
+		bytes32 priv = bytes32(abi.encodePacked(uint256(uint160(ENTRY_POINT_MARKER)) | (uint256(block.number) << 160)));
+		this.setAddrPrivilege(addr, priv);
+	}
+
 	// @notice Useful when we need to do multiple operations but ignore failures in some of them
 	function tryCatch(address to, uint256 value, bytes calldata data) external payable {
 		require(msg.sender == address(this), 'ONLY_IDENTITY_CAN_CALL');
@@ -131,7 +144,15 @@ contract AmbireAccount {
 		nonce = currentNonce + 1;
 
 		if (sigMode == SIGMODE_EXTERNALLY_VALIDATED) {
-			(signerKey) = validateExternalSig(calls, signature);
+			bool isValidSig;
+			uint256 timestampValidAfter;
+			(signerKey, isValidSig, timestampValidAfter) = validateExternalSig(calls, signature);
+			if (!isValidSig) {
+				if (timestampValidAfter != 0) {
+					revert('timelock: not ready yet');
+				}
+				revert('SIGNATURE_VALIDATION_FAIL');
+			}
 		} else {
 			signerKey = SignatureValidator.recoverAddrImpl(
 				keccak256(abi.encode(address(this), block.chainid, currentNonce, calls)),
@@ -221,7 +242,14 @@ contract AmbireAccount {
 	function validateUserOp(UserOperation calldata userOp, bytes32 userOpHash, uint256 missingAccountFunds)
 	external returns (uint256)
 	{
-		require(privileges[msg.sender] == ENTRY_POINT_MARKER, 'Request not from entryPoint');
+		require(address(uint160(uint256(privileges[msg.sender]))) == ENTRY_POINT_MARKER, 'Request not from entryPoint');
+
+		if (userOp.initCode.length > 0 && userOp.nonce == 0 && userOp.callData.length == 0) {
+			require(NonceManager(msg.sender).getNonce(address(this), 0) == 0, 'Entry point nonce not 0');
+			require(uint64(uint256(privileges[msg.sender] >> 160)) == uint64(block.number), 'Entry point not set in the same block');
+			require(missingAccountFunds == 0, 'Payment is prepayed');
+			return 0;
+		}
 
 		uint8 sigMode = uint8(userOp.signature[userOp.signature.length - 1]);
 		if (sigMode == SIGMODE_EXTERNALLY_VALIDATED) {
@@ -229,8 +257,13 @@ contract AmbireAccount {
 			  ? abi.decode(userOp.callData[4:], (Transaction[]))
 			  : new Transaction[](0);
 
-			// TODO: maybe return SIG_VALIDATION_FAILED on sig fail?
-			validateExternalSig(calls, userOp.signature);
+			(, bool isValidSig, uint256 timestampValidAfter) = validateExternalSig(calls, userOp.signature);
+			if (!isValidSig) return SIG_VALIDATION_FAILED;
+			// pack the return value for validateUserOp
+			// address aggregator, uint48 validUntil, uint48 validAfter
+			if (timestampValidAfter != 0) {
+				return uint160(0) | (uint256(0) << 160) | (uint256(timestampValidAfter) << (208));
+			}
 		} else {
 			address signer = SignatureValidator.recoverAddr(userOpHash, userOp.signature);
 			if (privileges[signer] == bytes32(0)) return SIG_VALIDATION_FAILED;
@@ -243,10 +276,11 @@ contract AmbireAccount {
 			// ignore failure (its EntryPoint's job to verify, not account.)
 		}
 
-		return 0; // always return 0 as this function doesn't support time based validation
+		return 0;
 	}
 
-	function validateExternalSig(Transaction[] memory calls, bytes calldata signature) internal returns(address signerKey) {
+	function validateExternalSig(Transaction[] memory calls, bytes calldata signature)
+	internal returns(address signerKey, bool isValidSig, uint256 timestampValidAfter) {
 		(bytes memory sig, ) = SignatureValidator.splitSignature(signature);
 		address validatorAddr;
 		bytes memory validatorData;
@@ -260,6 +294,6 @@ contract AmbireAccount {
 		// The sig validator itself should throw when a signature isn't valdiated successfully
 		// the return value just indicates whether we want to execute the current calls
 		// @TODO what about reentrancy for externally validated signatures
-		ExternalSigValidator(validatorAddr).validateSig(address(this), validatorData, innerSig, calls);
+		(isValidSig, timestampValidAfter) = ExternalSigValidator(validatorAddr).validateSig(address(this), validatorData, innerSig, calls);
 	}
 }

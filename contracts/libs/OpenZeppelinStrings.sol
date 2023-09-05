@@ -9,7 +9,7 @@ import {SignedMath} from "./SignedMath.sol";
 /**
  * @dev String operations.
  */
-library OpenZepellinStrings {
+library OpenZeppelinStrings {
     bytes16 private constant _HEX_DIGITS = "0123456789abcdef";
     uint8 private constant _ADDRESS_LENGTH = 20;
 

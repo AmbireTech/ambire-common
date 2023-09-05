@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: agpl-3.0
 pragma solidity 0.8.19;
 
-import './AmbireAccount.sol';
 import './libs/SignatureValidator.sol';
-import './libs/Transaction.sol';
+import './ExternalSigValidator.sol';
 
 contract RecoverySigValidator is ExternalSigValidator {
   mapping(bytes32 => uint) public scheduledRecoveries;
@@ -30,7 +29,7 @@ contract RecoverySigValidator is ExternalSigValidator {
     bytes calldata data,
     bytes calldata sig,
     Transaction[] calldata calls
-  ) external {
+  ) override external returns (bool, uint256) {
     (RecoveryInfo memory recoveryInfo) = abi.decode(data, (RecoveryInfo));
     // required for cancel/scheduling: isCancel, callsToCommitTo, salt, innerSig
     // required for finalization: salt
@@ -49,18 +48,27 @@ contract RecoverySigValidator is ExternalSigValidator {
         innerSig,
         true
       );
-      require(isIn(recoveryKey, recoveryInfo.keys), 'RecoverySig: not signed by the correct key');
 
-      if (!isCancel) {
-        scheduledRecoveries[hash] = block.timestamp + recoveryInfo.timelock;
-        emit LogRecoveryScheduled(hash, recoveryKey, block.timestamp, callsToCommitTo);
-      } else {
-        scheduledRecoveries[hash] = type(uint256).max;
-        emit LogRecoveryCancelled(hash, recoveryKey, block.timestamp);
+      // note: signature failure no longer reverts, it returns
+      // FAIL_MAGIC_VALUE. If it doesn't revert back in the contract,
+      // we're in big trouble
+      if (! isIn(recoveryKey, recoveryInfo.keys)) {
+        return (false, 0);
       }
 
       // Allowing execution to proceed, but there must be no `calls`
       require(calls.length == 0, 'RecoverySig: cannot execute when scheduling/cancelling');
+
+      if (!isCancel) {
+        uint32 timelock = uint32(block.timestamp) + uint32(recoveryInfo.timelock);
+        scheduledRecoveries[hash] = timelock;
+        emit LogRecoveryScheduled(hash, recoveryKey, block.timestamp, callsToCommitTo);
+        return (true, timelock);
+      } else {
+        scheduledRecoveries[hash] = type(uint256).max;
+        emit LogRecoveryCancelled(hash, recoveryKey, block.timestamp);
+        return (true, 0);
+      }
     } else {
       bytes32 hash = keccak256(abi.encode(accountAddr, block.chainid, salt, calls));
 
@@ -71,7 +79,7 @@ contract RecoverySigValidator is ExternalSigValidator {
 
       scheduledRecoveries[hash] = type(uint256).max;
       emit LogRecoveryFinalized(hash, block.timestamp);
-      // Allow execution to proceed
+      return (true, 0);
     }
   }
 

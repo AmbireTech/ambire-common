@@ -8,11 +8,11 @@ import './libs/Transaction.sol';
  * @notice  A way to add custom recovery to AmbireAccount.
  * @dev     Not all passed properties necessarily need to be used.
  */
-interface ExternalSigValidator {
+abstract contract ExternalSigValidator {
 	function validateSig(
 		address accountAddr,
 		bytes calldata data,
 		bytes calldata sig,
 		Transaction[] calldata calls
-	) external;
+	) external virtual returns (bool isValidSignature, uint256 timestampValidAfter);
 }
