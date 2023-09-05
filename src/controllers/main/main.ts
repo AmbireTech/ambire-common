@@ -86,13 +86,16 @@ export class MainController extends EventEmitter {
 
   onRejectDappRequest: (err: any, id?: bigint) => void
 
+  onUpdateDappSelectedAccount: (accountAddr: string) => void
+
   constructor({
     storage,
     fetch,
     relayerUrl,
     keystoreSigners,
     onResolveDappRequest,
-    onRejectDappRequest
+    onRejectDappRequest,
+    onUpdateDappSelectedAccount
   }: {
     storage: Storage
     fetch: Function
@@ -100,6 +103,7 @@ export class MainController extends EventEmitter {
     keystoreSigners: { [key: string]: KeystoreSignerType }
     onResolveDappRequest: (data: any, id?: bigint) => void
     onRejectDappRequest: (err: any, id?: bigint) => void
+    onUpdateDappSelectedAccount: (accountAddr: string) => void
   }) {
     super()
     this.storage = storage
@@ -113,6 +117,7 @@ export class MainController extends EventEmitter {
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
     this.onResolveDappRequest = onResolveDappRequest
     this.onRejectDappRequest = onRejectDappRequest
+    this.onUpdateDappSelectedAccount = onUpdateDappSelectedAccount
     // @TODO Load userRequests from storage and emit that we have updated
     // @TODO
   }
@@ -192,6 +197,7 @@ export class MainController extends EventEmitter {
     this.selectedAccount = toAccountAddr
     await this.storage.set('selectedAccount', toAccountAddr)
     this.updateSelectedAccount(toAccountAddr)
+    this.onUpdateDappSelectedAccount(toAccountAddr)
     this.emitUpdate()
   }
 
