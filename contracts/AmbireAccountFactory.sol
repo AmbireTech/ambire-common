@@ -33,6 +33,18 @@ contract AmbireAccountFactory {
 		return addr;
 	}
 
+	// @notice when the relayer needs to act upon an /identity/:addr/submit call, it'll either call execute on the AmbireAccount directly
+	// if it's already deployed, or call `deployAndExecuteMultiple` if the account is still counterfactual but there are multiple accountOps to send
+	function deployAndexecuteMultiple(
+		bytes calldata code,
+		uint256 salt,
+		AmbireAccount.ExecuteArgs[] calldata toExec
+	) external returns (address){
+		address payable addr = payable(deploySafe(code, salt));
+		AmbireAccount(addr).executeMultiple(toExec);
+		return addr;
+	}
+
 	// @notice This method can be used to withdraw stuck tokens or airdrops
 	function call(address to, uint256 value, bytes calldata data, uint256 gas) external {
 		require(msg.sender == allowedToDrain, 'ONLY_AUTHORIZED');
