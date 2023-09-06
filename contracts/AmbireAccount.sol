@@ -201,6 +201,9 @@ contract AmbireAccount {
 	// @notice EIP-1271 implementation
 	// see https://eips.ethereum.org/EIPS/eip-1271
 	function isValidSignature(bytes32 hash, bytes calldata signature) external view returns (bytes4) {
+		// We enforce this one additional step in preparing `hash`, to avoid the sig being valid across multiple accounts
+		// in case the hash preimage doesn't include the account address
+		hash = keccak256(abi.encode(hash, address(this)));
 		if (privileges[SignatureValidator.recoverAddr(hash, signature)] != bytes32(0)) {
 			// bytes4(keccak256("isValidSignature(bytes32,bytes)")
 			return 0x1626ba7e;
