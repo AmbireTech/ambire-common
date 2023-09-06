@@ -35,7 +35,7 @@ contract AmbireAccountFactory {
 
 	// @notice when the relayer needs to act upon an /identity/:addr/submit call, it'll either call execute on the AmbireAccount directly
 	// if it's already deployed, or call `deployAndExecuteMultiple` if the account is still counterfactual but there are multiple accountOps to send
-	function deployAndexecuteMultiple(
+	function deployAndExecuteMultiple(
 		bytes calldata code,
 		uint256 salt,
 		AmbireAccount.ExecuteArgs[] calldata toExec
