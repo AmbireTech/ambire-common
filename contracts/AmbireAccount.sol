@@ -137,9 +137,7 @@ contract AmbireAccount {
 			uint256 timestampValidAfter;
 			(signerKey, isValidSig, timestampValidAfter) = validateExternalSig(calls, signature);
 			if (!isValidSig) {
-				if (timestampValidAfter != 0) {
-					revert('timelock: not ready yet');
-				}
+				require(block.timestamp >= timestampValidAfter, 'SIGNATURE_VALIDATION_TIMELOCK');
 				revert('SIGNATURE_VALIDATION_FAIL');
 			}
 		} else {
