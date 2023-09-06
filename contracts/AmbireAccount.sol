@@ -224,6 +224,10 @@ contract AmbireAccount {
 		return AmbireAccount(fallbackHandler).supportsInterface(interfaceID);
 	}
 
+
+	//
+	// EIP-4337 implementation
+	//
 	// return value in case of signature failure, with no time-range.
 	// equivalent to packSigTimeRange(true,0,0);
 	uint256 constant internal SIG_VALIDATION_FAILED = 1;
@@ -231,6 +235,13 @@ contract AmbireAccount {
 	function validateUserOp(UserOperation calldata op, bytes32 userOpHash, uint256 missingAccountFunds)
 	external returns (uint256)
 	{
+		if (op.signature.length == 0 && bytes4(op.callData[0:4]) == this.execute.selector) {
+			uint256 targetNonce = uint256(keccak256(
+				abi.encode(op.initCode, op.callData, op.callGasLimit, op.verificationGasLimit, op.preVerificationGas, op.maxFeePerGas, op.maxPriorityFeePerGas, op.paymasterAndData)
+			));
+			require(op.nonce == targetNonce);
+			return 0;
+		}
 		require(address(uint160(uint256(privileges[msg.sender]))) == ENTRY_POINT_MARKER, 'Request not from entryPoint');
 
 		uint8 sigMode = uint8(op.signature[op.signature.length - 1]);
