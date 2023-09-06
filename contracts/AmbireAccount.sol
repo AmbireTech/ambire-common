@@ -103,17 +103,6 @@ contract AmbireAccount {
 		emit LogPrivilegeChanged(addr, priv);
 	}
 
-	/**
-	 * @notice  Set the entry point priv
-	 * @dev     We do not hash the priv so we could extract the ENTRY_POINT_MARKER
-	 * @param   addr  The entry point address
-	 */
-	function setEntryPointPrivilege(address addr) external payable {
-		require(msg.sender == address(this), 'ONLY_IDENTITY_CAN_CALL');
-		bytes32 priv = bytes32(abi.encodePacked(uint256(uint160(ENTRY_POINT_MARKER)) | (uint256(block.number) << 160)));
-		this.setAddrPrivilege(addr, priv);
-	}
-
 	// @notice Useful when we need to do multiple operations but ignore failures in some of them
 	function tryCatch(address to, uint256 value, bytes calldata data) external payable {
 		require(msg.sender == address(this), 'ONLY_IDENTITY_CAN_CALL');
@@ -239,25 +228,18 @@ contract AmbireAccount {
 	// equivalent to packSigTimeRange(true,0,0);
 	uint256 constant internal SIG_VALIDATION_FAILED = 1;
 
-	function validateUserOp(UserOperation calldata userOp, bytes32 userOpHash, uint256 missingAccountFunds)
+	function validateUserOp(UserOperation calldata op, bytes32 userOpHash, uint256 missingAccountFunds)
 	external returns (uint256)
 	{
 		require(address(uint160(uint256(privileges[msg.sender]))) == ENTRY_POINT_MARKER, 'Request not from entryPoint');
 
-		if (userOp.initCode.length > 0 && userOp.nonce == 0 && userOp.callData.length == 0) {
-			require(NonceManager(msg.sender).getNonce(address(this), 0) == 0, 'Entry point nonce not 0');
-			require(uint64(uint256(privileges[msg.sender] >> 160)) == uint64(block.number), 'Entry point not set in the same block');
-			require(missingAccountFunds == 0, 'Payment is prepayed');
-			return 0;
-		}
-
-		uint8 sigMode = uint8(userOp.signature[userOp.signature.length - 1]);
+		uint8 sigMode = uint8(op.signature[op.signature.length - 1]);
 		if (sigMode == SIGMODE_EXTERNALLY_VALIDATED) {
-			Transaction[] memory calls = userOp.callData.length > 0
-			  ? abi.decode(userOp.callData[4:], (Transaction[]))
+			Transaction[] memory calls = op.callData.length > 0
+			  ? abi.decode(op.callData[4:], (Transaction[]))
 			  : new Transaction[](0);
 
-			(, bool isValidSig, uint256 timestampValidAfter) = validateExternalSig(calls, userOp.signature);
+			(, bool isValidSig, uint256 timestampValidAfter) = validateExternalSig(calls, op.signature);
 			if (!isValidSig) return SIG_VALIDATION_FAILED;
 			// pack the return value for validateUserOp
 			// address aggregator, uint48 validUntil, uint48 validAfter
@@ -265,13 +247,13 @@ contract AmbireAccount {
 				return uint160(0) | (uint256(0) << 160) | (uint256(timestampValidAfter) << (208));
 			}
 		} else {
-			address signer = SignatureValidator.recoverAddr(userOpHash, userOp.signature);
+			address signer = SignatureValidator.recoverAddr(userOpHash, op.signature);
 			if (privileges[signer] == bytes32(0)) return SIG_VALIDATION_FAILED;
 		}
 
 		if (missingAccountFunds > 0) {
 			// TODO: MAY pay more than the minimum, to deposit for future transactions
-			(bool success,) = payable(msg.sender).call{value : missingAccountFunds}("");
+			(bool success,) = payable(msg.sender).call{value : missingAccountFunds}('');
 			(success);
 			// ignore failure (its EntryPoint's job to verify, not account.)
 		}
