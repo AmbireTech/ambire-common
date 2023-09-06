@@ -112,9 +112,25 @@ contract AmbireAccount {
 		uint8 sigMode = uint8(signature[signature.length - 1]);
 		if (sigMode == SIGMODE_EXTERNALLY_VALIDATED) {
 			(bytes memory sig, ) = SignatureValidator.splitSignature(signature);
+			// the address of the validator we're using for this validation
 			address validatorAddr;
+			// all the data needed by the validator to execute the validation.
+			// In the case of DKIMRecoverySigValidator, this is AccInfo:
+			// abi.encode {string emailFrom; string emailTo; string domainName;
+			// bytes dkimPubKeyModulus; bytes dkimPubKeyExponent; address secondaryKey;
+			// bool acceptUnknownSelectors; uint32 waitUntilAcceptAdded;
+			// uint32 waitUntilAcceptRemoved; bool acceptEmptyDKIMSig;
+			// bool acceptEmptySecondSig;uint32 onlyOneSigTimelock;}
+			// The struct is declared in DKIMRecoverySigValidator
 			bytes memory validatorData;
+			// the signature data needed by the external validator.
+			// In the case of DKIMRecoverySigValidator, this is abi.encode(
+			// SignatureMeta memory sigMeta, bytes memory dkimSig, bytes memory secondSig
+			// ).
 			bytes memory innerSig;
+			// the signerKey in this case is an arbitrary value that does
+			// not have any specific purpose other than representing
+			// the privileges key
 			(signerKey, validatorAddr, validatorData, innerSig) = abi.decode(sig, (address, address, bytes, bytes));
 			require(
 				privileges[signerKey] == keccak256(abi.encode(validatorAddr, validatorData)),

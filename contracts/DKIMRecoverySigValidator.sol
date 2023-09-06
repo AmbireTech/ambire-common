@@ -253,21 +253,18 @@ contract DKIMRecoverySigValidator is ExternalSigValidator {
    * @param   sets  {bytes rrset; bytes sig} The sets to validate.
    * The final one needs to be the TXT field containing the DKIM key.
    */
-  function addDKIMKeyWithDNSSec(DNSSEC.RRSetWithSignature[] memory sets) external {
+  function addDKIMKeyWithDNSSec(DNSSEC.RRSetWithSignature[] calldata sets) external {
     require(
       authorizedToSubmit == address(69) || msg.sender == authorizedToSubmit,
       'not authorized to submit'
     );
 
     RRUtils.SignedSet memory signedSet = sets[sets.length - 1].rrset.readSignedSet();
-    (bytes memory rrs, ) = oracle.verifyRRSet(sets);
-    require(keccak256(rrs) == keccak256(signedSet.data), 'DNSSec verification failed');
+    (bytes memory lastSignedSetData, ) = oracle.verifyRRSet(sets);
+    require(keccak256(lastSignedSetData) == keccak256(signedSet.data), 'DNSSec verification failed');
 
-    (DKIMKey memory key, string memory domainName, bool isBridge) = _parse(signedSet);
-    if (isBridge) key.domainName = domainName;
-
-    bytes32 id = keccak256(abi.encode(key));
-    KeyInfo storage keyInfo = dkimKeys[id];
+    (DKIMKey memory key, bool isBridge) = _parse(signedSet);
+    KeyInfo storage keyInfo = dkimKeys[keccak256(abi.encode(key))];
     require(!keyInfo.isExisting, 'key already exists');
 
     keyInfo.isExisting = true;
@@ -277,14 +274,14 @@ contract DKIMRecoverySigValidator is ExternalSigValidator {
       key.domainName,
       key.pubKeyModulus,
       key.pubKeyExponent,
-      keyInfo.dateAdded,
+      uint32(block.timestamp),
       isBridge
     );
   }
 
   function _parse(
     RRUtils.SignedSet memory signedSet
-  ) internal pure returns (DKIMKey memory key, string memory domainName, bool isBridge) {
+  ) internal pure returns (DKIMKey memory key, bool isBridge) {
     Strings.slice memory data = string(signedSet.data).toSlice();
     data.split('p='.toSlice()); // this becomes the value after p=
     bytes memory pValue = bytes(data.toString());
@@ -310,6 +307,7 @@ contract DKIMRecoverySigValidator is ExternalSigValidator {
     // the last 3 bytes of the decoded string is the exponent
     bytes memory exponent = decoded.substring(decoded.length - 3, 3);
 
+    string memory domainName;
     (domainName, isBridge) = _getDomainNameFromSignedSet(signedSet);
     key = DKIMKey(domainName, modulus, exponent);
   }
@@ -391,7 +389,7 @@ contract DKIMRecoverySigValidator is ExternalSigValidator {
   function removeDKIMKey(bytes32 id) external {
     require(msg.sender == authorizedToRevoke, 'Address unauthorized to revoke');
     dkimKeys[id].dateRemoved = uint32(block.timestamp);
-    emit DKIMKeyRemoved(id, dkimKeys[id].dateRemoved, dkimKeys[id].isBridge);
+    emit DKIMKeyRemoved(id, uint32(block.timestamp), dkimKeys[id].isBridge);
   }
 
   //
