@@ -4,15 +4,18 @@ import { TokenResult as TokenResultInterface } from './interfaces'
 
 // Calculate Gas Tank Balance Sum
 export function totalGasTankBalance(additionalPortfolio: any) {
-  return additionalPortfolio.gasTank.balance.reduce((total: any, token: any) => {
-    const priceInUSD = token.priceIn.find(({ baseCurrency }: any) => baseCurrency === 'usd')
-    if (priceInUSD) {
-      const balanceUSD =
-        parseFloat(formatUnits(BigInt(token.amount), token.decimals)) * priceInUSD.price
-      return total + balanceUSD
-    }
-    return total
-  }, 0)
+  return (
+    additionalPortfolio?.gasTank?.balance?.reduce((total: any, token: any) => {
+      const priceInUSD = token?.priceIn?.find(({ baseCurrency }: any) => baseCurrency === 'usd')
+      if (priceInUSD) {
+        const balanceUSD =
+          parseFloat(formatUnits(BigInt(token?.amount ?? 0), token?.decimals ?? 0)) *
+          priceInUSD.price
+        return total + balanceUSD
+      }
+      return total
+    }, 0) ?? 0
+  )
 }
 
 export function totalRewardsBalance(additionalPortfolio: any) {
