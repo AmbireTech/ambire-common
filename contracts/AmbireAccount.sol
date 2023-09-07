@@ -237,9 +237,11 @@ contract AmbireAccount {
 	external returns (uint256)
 	{
 		if (op.signature.length == 0 && bytes4(op.callData[0:4]) == this.execute.selector) {
-			uint256 targetNonce = uint256(keccak256(
+			// hashing in everything except sender (nonces are scoped by sender anyway), nonce, signature
+			// @TODO pad to key
+			uint256 targetNonce = uint256(uint192(uint256(keccak256(
 				abi.encode(op.initCode, op.callData, op.callGasLimit, op.verificationGasLimit, op.preVerificationGas, op.maxFeePerGas, op.maxPriorityFeePerGas, op.paymasterAndData)
-			));
+			))) << 64);
 			require(op.nonce == targetNonce, 'validateUserOp: execute(): one-time nonce is wrong');
 			return 0;
 		}
@@ -263,11 +265,12 @@ contract AmbireAccount {
 			if (privileges[signer] == bytes32(0)) return SIG_VALIDATION_FAILED;
 		}
 
+		// NOTE: we do not have to pay th entryPoint if SIG_VALIDATION_FAILED, so we just return on those
 		if (missingAccountFunds > 0) {
-			// TODO: MAY pay more than the minimum, to deposit for future transactions
+			// NOTE: MAY pay more than the minimum, to deposit for future transactions
 			(bool success,) = payable(msg.sender).call{value : missingAccountFunds}('');
-			(success);
 			// ignore failure (its EntryPoint's job to verify, not account.)
+			(success);
 		}
 
 		return 0;
