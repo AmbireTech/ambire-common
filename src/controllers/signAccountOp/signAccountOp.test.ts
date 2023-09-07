@@ -135,7 +135,7 @@ describe('SignAccountOp Controller ', () => {
     const accounts = [account]
     const accountStates = await getAccountsInfo(accounts)
     const controller = new SignAccountOpController(keystore)
-    controller.status = SigningStatus.ReadyToSign
+    controller.status = { type: SigningStatus.ReadyToSign }
 
     controller.update({
       accounts,
@@ -151,6 +151,6 @@ describe('SignAccountOp Controller ', () => {
 
     expect(controller.accountOp?.gasFeePayment?.amount).toBeGreaterThan(21000n)
     expect(controller.accountOp?.signature).toEqual('0x010101')
-    expect(controller.status).toEqual('done')
+    expect(controller.status).toEqual({ type: 'done' })
   })
 })

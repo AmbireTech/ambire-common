@@ -16,6 +16,17 @@ export enum SigningStatus {
   Done = 'done'
 }
 
+type UnableToSignStatus = {
+  type: SigningStatus.UnableToSign
+  error: string
+}
+
+export type Status =
+  | UnableToSignStatus
+  | {
+      type: Exclude<SigningStatus, SigningStatus.UnableToSign>
+    }
+
 export enum FeeSpeed {
   Slow = 'slow',
   Medium = 'medium',
@@ -40,7 +51,7 @@ export class SignAccountOpController extends EventEmitter {
 
   feeSpeed: FeeSpeed = FeeSpeed.Fast
 
-  status: SigningStatus | null = null
+  status: Status | null = null
 
   constructor(keystore: Keystore) {
     super()
@@ -49,6 +60,22 @@ export class SignAccountOpController extends EventEmitter {
 
   get isInitialized(): boolean {
     return !!(this.#accounts && this.#networks && this.#accountStates && this.accountOp)
+  }
+
+  get hasSelectedAccountOp() {
+    return !!this.accountOp
+  }
+
+  get #account(): Account | null {
+    if (this.accountOp && this.#accounts) {
+      const account = this.#accounts.find((acc) => acc.addr === this.accountOp!.accountAddr)
+      if (account) return account
+    }
+    return null
+  }
+
+  get readyToSign() {
+    return !!this.status && this.status?.type === SigningStatus.ReadyToSign
   }
 
   update({
@@ -81,6 +108,10 @@ export class SignAccountOpController extends EventEmitter {
         this.accountOp = accountOp
       }
     }
+
+    if (this.isInitialized && this.#estimation) {
+      this.status = { type: SigningStatus.ReadyToSign }
+    }
     this.emitUpdate()
   }
 
@@ -91,14 +122,6 @@ export class SignAccountOpController extends EventEmitter {
     this.feeSpeed = FeeSpeed.Fast
     this.status = null
     this.emitUpdate()
-  }
-
-  get #account(): Account | null {
-    if (this.accountOp && this.#accounts) {
-      const account = this.#accounts.find((acc) => acc.addr === this.accountOp!.accountAddr)
-      if (account) return account
-    }
-    return null
   }
 
   #getGasFeePayment(feeTokenAddr: string, feeSpeed: FeeSpeed) {
@@ -125,10 +148,6 @@ export class SignAccountOpController extends EventEmitter {
 
   setFeeToken(feeTokenAddr: string) {
     if (!this.accountOp || !feeTokenAddr) return
-
-    if (this.status !== SigningStatus.ReadyToSign && this.status !== SigningStatus.UnableToSign)
-      return
-
     // TODO: validate feeTokenAddr
 
     this.accountOp.gasFeePayment = this.#getGasFeePayment(feeTokenAddr, this.feeSpeed)
@@ -144,7 +163,9 @@ export class SignAccountOpController extends EventEmitter {
       return
     }
 
-    this.status = SigningStatus.InProgress
+    if (!this.readyToSign) return
+
+    this.status = { type: SigningStatus.InProgress }
     this.emitUpdate()
 
     try {
@@ -153,10 +174,10 @@ export class SignAccountOpController extends EventEmitter {
       this.accountOp.signature = await signer.signMessage(
         ethers.hexlify(accountOpSignableHash(this.accountOp))
       )
-      this.status = SigningStatus.Done
+      this.status = { type: SigningStatus.Done }
       this.emitUpdate()
-    } catch (error) {
-      this.status = SigningStatus.UnableToSign
+    } catch (error: any) {
+      this.status = { type: SigningStatus.UnableToSign, error: `Signing failed: ${error?.message}` }
     }
     // TODO: Now, the UI needs to call mainCtrl.broadcastSignedAccountOp(mainCtrl.signAccountOp.accountOp)
   }
