@@ -19,29 +19,22 @@ export function totalGasTankBalance(additionalPortfolio: any) {
 }
 
 export function totalRewardsBalance(additionalPortfolio: any) {
-  let walletClaimableBalance = 0
-  if (
-    additionalPortfolio.rewards.walletClaimableBalance &&
-    Object.keys(additionalPortfolio.rewards.walletClaimableBalance).length
-  ) {
-    const { amount, decimals, priceIn }: TokenResultInterface =
-      additionalPortfolio.rewards.walletClaimableBalance
-    const usdPrice = priceIn.find(({ baseCurrency }: any) => baseCurrency === 'usd')?.price || 0
-    const formattedAmount = formatUnits(BigInt(amount), decimals)
-    walletClaimableBalance = parseFloat(formattedAmount) * usdPrice || 0
+  function calculateClaimableBalance(property: string) {
+    if (
+      additionalPortfolio.rewards[property] &&
+      Object.keys(additionalPortfolio.rewards[property]).length
+    ) {
+      const { amount, decimals, priceIn }: TokenResultInterface =
+        additionalPortfolio.rewards[property]
+      const usdPrice = priceIn.find(({ baseCurrency }: any) => baseCurrency === 'usd')?.price || 0
+      const formattedAmount = formatUnits(BigInt(amount), decimals)
+      return parseFloat(formattedAmount) * usdPrice || 0
+    }
+    return 0
   }
 
-  let xWalletClaimableBalance = 0
-  if (
-    additionalPortfolio.rewards.xWalletClaimableBalance &&
-    Object.keys(additionalPortfolio.rewards.xWalletClaimableBalance).length
-  ) {
-    const { amount, decimals, priceIn }: TokenResultInterface =
-      additionalPortfolio.rewards.xWalletClaimableBalance
-    const usdPrice = priceIn.find(({ baseCurrency }: any) => baseCurrency === 'usd')?.price || 0
-    const formattedAmount = formatUnits(BigInt(amount), decimals)
-    xWalletClaimableBalance = parseFloat(formattedAmount) * usdPrice || 0
-  }
+  const walletClaimableBalance = calculateClaimableBalance('walletClaimableBalance')
+  const xWalletClaimableBalance = calculateClaimableBalance('xWalletClaimableBalance')
 
   return walletClaimableBalance + xWalletClaimableBalance
 }
