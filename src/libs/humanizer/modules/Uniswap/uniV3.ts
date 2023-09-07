@@ -9,7 +9,7 @@ import {
 } from '../../utils'
 
 import { AccountOp } from '../../../accountOp/accountOp'
-import { HumanizerVisualization, IrCall } from '../../interfaces'
+import { IrCall } from '../../interfaces'
 import { parsePath } from './utils'
 
 // Stolen from ambire-wallet
@@ -38,10 +38,7 @@ const uniV32Mapping = (
         .map(
           (newCall: IrCall): IrCall => ({
             ...newCall,
-            fullVisualization: [
-              ...(newCall.fullVisualization || []),
-              getDeadlineText(deadline)
-            ] as HumanizerVisualization[]
+            fullVisualization: [...(newCall.fullVisualization || []), getDeadlineText(deadline)]
           })
         )
         .filter((x: any) => x)
@@ -390,7 +387,7 @@ const uniV3Mapping = (
             getToken(params.tokenOut, params.amountOutMinimum),
             ...getRecipientText(accountOp.accountAddr, params.recipient),
             getDeadlineText(params.deadline)
-          ].filter((v) => v) as HumanizerVisualization[]
+          ]
         }
       ]
     },
@@ -411,7 +408,7 @@ const uniV3Mapping = (
             getToken(path[path.length - 1], params.amountOutMinimum),
             ...getRecipientText(accountOp.accountAddr, params.recipient),
             getDeadlineText(params.deadline)
-          ].filter((v) => v) as HumanizerVisualization[]
+          ]
         }
       ]
     },
@@ -431,7 +428,7 @@ const uniV3Mapping = (
             getToken(params.tokenOut, params.amountOut),
             ...getRecipientText(accountOp.accountAddr, params.recipient),
             getDeadlineText(params.deadline)
-          ].filter((v) => v) as HumanizerVisualization[]
+          ]
         }
       ]
     },
@@ -452,7 +449,7 @@ const uniV3Mapping = (
             getToken(path[0], params.amountOut),
             ...getRecipientText(accountOp.accountAddr, params.recipient),
             getDeadlineText(params.deadline)
-          ].filter((v) => v) as HumanizerVisualization[]
+          ]
         }
       ]
     },

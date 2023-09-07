@@ -1,5 +1,5 @@
 import { ethers } from 'ethers'
-import { HumanizerCallModule, HumanizerVisualization, IrCall } from '../interfaces'
+import { HumanizerCallModule, IrCall } from '../interfaces'
 import { AccountOp } from '../../accountOp/accountOp'
 import { getAction, getLabel, getToken, getAddress } from '../utils'
 
@@ -40,7 +40,7 @@ export const wethHumanizer: HumanizerCallModule = (
             getAction('Unknown action (WETH)'),
             getLabel('to'),
             getAddress(call.to)
-          ] as HumanizerVisualization[]
+          ]
         }
     }
     return call

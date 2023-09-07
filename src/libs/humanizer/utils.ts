@@ -30,7 +30,7 @@ export function getOnBehalfOf(
   name?: string
 ): HumanizerVisualization[] {
   return onBehalfOf.toLowerCase() !== sender.toLowerCase()
-    ? ([getLabel('on befalf of'), getAddress(onBehalfOf, name)] as HumanizerVisualization[])
+    ? [getLabel('on befalf of'), getAddress(onBehalfOf, name)]
     : []
 }
 
@@ -38,17 +38,13 @@ export function getOnBehalfOf(
 export function getRecipientText(from: string, recipient: string): HumanizerVisualization[] {
   return from.toLowerCase() === recipient.toLowerCase()
     ? []
-    : ([getLabel('and send it to'), getAddress(recipient)] as HumanizerVisualization[])
+    : [getLabel('and send it to'), getAddress(recipient)]
 }
 
 export function getDanger(content: string): HumanizerVisualization {
   return { type: 'danger', content }
 }
-export function getDeadlineText(
-  deadlineSecs: bigint,
-  mined = false
-): HumanizerVisualization | null {
-  if (mined) return null
+export function getDeadlineText(deadlineSecs: bigint): HumanizerVisualization {
   const minute = 60000
   const deadline = Number(deadlineSecs * 1000n)
   const diff = deadline - Date.now()
