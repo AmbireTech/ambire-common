@@ -240,7 +240,6 @@ contract AmbireAccount {
 			// Require a paymaster, otherwise this mode can be used by anyone to get the user to spend their deposit
 			require(op.paymasterAndData.length >= 20, 'validateUserOp: paymaster required in execute() mode');
 			// hashing in everything except sender (nonces are scoped by sender anyway), nonce, signature
-			// @TODO pad to key
 			uint256 targetNonce = uint256(uint192(uint256(keccak256(
 				abi.encode(op.initCode, op.callData, op.callGasLimit, op.verificationGasLimit, op.preVerificationGas, op.maxFeePerGas, op.maxPriorityFeePerGas, op.paymasterAndData)
 			))) << 64);
