@@ -56,8 +56,7 @@ export function getDeadlineText(
   if (diff < 0) return getLabel('already expired')
   if (diff < minute) return getLabel('expires in less than a minute')
   if (diff < 10 * minute) return getLabel(`expires in ${Math.floor(diff / minute)} minutes`)
-  // @TODO add return geTLable with raw  deadline
-  return null
+  return getLabel(`valid until ${new Date(deadline * 1000).toLocaleString()}`)
 }
 
 export function shortenAddress(addr: string) {
