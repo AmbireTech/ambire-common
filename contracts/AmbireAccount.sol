@@ -261,7 +261,7 @@ contract AmbireAccount {
 				return uint160(0) | (uint256(0) << 160) | (uint256(timestampValidAfter) << (208));
 			}
 		} else {
-			// this is safe because userOpHash is retrieved like this: keccak256(abi.encode(userOp.hash(), address(this), block.chainid))
+			// this is replay-safe because userOpHash is retrieved like this: keccak256(abi.encode(userOp.hash(), address(this), block.chainid))
 			address signer = SignatureValidator.recoverAddr(userOpHash, op.signature);
 			if (privileges[signer] == bytes32(0)) return SIG_VALIDATION_FAILED;
 		}
