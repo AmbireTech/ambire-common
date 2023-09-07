@@ -35,6 +35,9 @@ contract AmbireAccount {
 
 	address private constant ENTRY_POINT_MARKER = address(0x7171);
 
+	// Externally validated signatures
+	uint8 private constant SIGMODE_EXTERNALLY_VALIDATED = 255;
+
 	// Variables
 	mapping(address => bytes32) public privileges;
 	uint256 public nonce;
@@ -48,9 +51,6 @@ contract AmbireAccount {
 		Transaction[] calls;
 		bytes signature;
 	}
-
-	// Externally validated signatures
-	uint8 private constant SIGMODE_EXTERNALLY_VALIDATED = 255;
 
 	// This contract can accept ETH without calldata
 	receive() external payable {}
