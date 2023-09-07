@@ -9,6 +9,10 @@ interface IERC20Subset {
 }
 
 contract Estimation {
+  // NOTE: this contract doesn't need to be aware of ERC-4337 or entryPoint/entryPoint.getNonce()
+  // It uses account.execute() directly with spoof signatures, this is ok before:
+  // 1) signed accountOps (preExecute) are always signed in an agnostic way (using external sig validator, which uses it's own nonce-agnostic hash)
+  // 2) the main accountOp to estimate is not signed and we generate a spoof sig for it which works regardless of nonce
   struct AccountOp {
     IAmbireAccount account;
     uint nonce;
@@ -111,6 +115,7 @@ contract Estimation {
     public
     returns (SimulationOutcome memory outcome, bytes32[] memory associatedKeyPrivileges, bytes memory spoofSig)
   {
+    // setting the nonce is just for the purposes of passing the safety check in simulateSigned; it's a spoof sig so it doesn't matter
     op.nonce = op.account.nonce();
     associatedKeyPrivileges = new bytes32[](associatedKeys.length);
     for (uint i=0; i!=associatedKeys.length; i++) {
@@ -126,6 +131,7 @@ contract Estimation {
   }
 
   function simulateSigned(AccountOp memory op) public returns (SimulationOutcome memory outcome) {
+    // safety check in case what's passed in is wrong
     if (op.nonce != op.account.nonce()) {
       outcome.err = bytes("NONCE_ERROR");
       return outcome;
@@ -152,6 +158,7 @@ contract Estimation {
       address feeToken = feeTokens[i];
       AccountOp memory simulationOp;
       simulationOp.account = account;
+      // for the purposes of passing the safety check; otherwise it's a spoof sig and it doesn't matter
       simulationOp.nonce = account.nonce();
       simulationOp.calls = new IAmbireAccount.Transaction[](1);
       simulationOp.signature = spoofSig;

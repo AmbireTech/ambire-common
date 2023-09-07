@@ -13,17 +13,15 @@ export interface Call {
   fromUserRequestId?: bigint
 }
 
-export enum GasFeePaymentType {
-  // when a paymaster is used, we put it in the `paidBy` instead of the accountAddr
-  ERC4337 = 'erc4337',
-  AmbireRelayer = 'ambireRelayer',
-  AmbireGasTank = 'ambireGasTank',
-  // we use this in two cases: 1) Ambire account, fee paid by an EOA 2) account itself is an EAO
-  // when the account itself is an EOA, paymentType equals accountAddr
-  EOA = 'eoa'
-}
+// This is an abstract representation of the gas fee payment
+// 1) it cannot contain details about maxFeePerGas/baseFee because some networks might not be aware of EIP-1559; it only cares about total amount
+// 2) it cannot contain info about the mechanism of payment (from EOA but on smart account, pure EOA paying it's fee directly, 4337 paymaster, 4337 direct, relayer, etc.)
+// This info can be inferred when needed from the account type and whether we're running in 4337 mode or not
+// 3) isGasTank and isERC4337 can both be true
+// 4) whether those values are sane will be checked in an additional function (currently `canBroadcast`); for example, this function is meant to ensure that in case of an EOA, the fee is always paid in native
 export interface GasFeePayment {
-  paymentType: GasFeePaymentType
+  isERC4337: boolean
+  isGasTank: boolean
   paidBy: string
   inToken: string
   amount: bigint
@@ -55,6 +53,9 @@ export interface AccountOp {
   // This is used when we have an account recovery to finalize before executing the AccountOp,
   // And we set this to the recovery finalization AccountOp; could be used in other scenarios too in the future,
   // for example account migration (from v1 QuickAcc to v2)
+  // theoretically you can recurse these (an AccountOp set as *ToExecuteBefore can have another accountOpToExecuteBefore)
+  // however, in practice we only use this for recovery atm and we never have a case with more than one
+  // Supporting this can done relatively easily via executeMany() for v2 accounts, and with multiple UserOps via 4337 (again v2 accs)
   accountOpToExecuteBefore: AccountOp | null
   // This is fed into the humanizer to help visualize the accountOp
   // This can contain info like the value of specific share tokens at the time of signing,
@@ -69,14 +70,6 @@ export function callToTuple(call: Call): [string, bigint, string] {
   return [call.to, call.value, call.data]
 }
 
-export function isEOA(op: AccountOp): boolean {
-  if (op.gasFeePayment === null) throw new Error('missing gasFeePayment')
-  return (
-    op.gasFeePayment.paymentType === GasFeePaymentType.EOA &&
-    op.gasFeePayment.paidBy === op.accountAddr
-  )
-}
-
 export function canBroadcast(op: AccountOp, accountIsEOA: boolean): boolean {
   if (op.signingKeyAddr === null) throw new Error('missing signingKeyAddr')
   if (op.signature === null) throw new Error('missing signature')
@@ -84,8 +77,9 @@ export function canBroadcast(op: AccountOp, accountIsEOA: boolean): boolean {
   if (op.gasLimit === null) throw new Error('missing gasLimit')
   if (op.nonce === null) throw new Error('missing nonce')
   if (accountIsEOA) {
-    if (op.gasFeePayment.paymentType !== GasFeePaymentType.EOA)
-      throw new Error('gas fee payment type is not EOA')
+    if (op.gasFeePayment.isGasTank) throw new Error('gas fee payment with gas tank cannot be used with an EOA')
+    if (op.gasFeePayment.inToken !== '0x0000000000000000000000000000000000000000')
+      throw new Error('gas fee payment needs to be in the native asset')
     if (op.gasFeePayment.paidBy !== op.accountAddr)
       throw new Error('gas fee payment cannot be paid by anyone other than the EOA that signed it')
   }
