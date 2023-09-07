@@ -31,7 +31,5 @@ export const erc721: HumanizerTypedMessaageModule = (tm: TypedMessage) => {
       )
     }
   }
-
-  // @TODO visualize properly the fail
   return []
 }

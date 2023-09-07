@@ -1,7 +1,7 @@
-import { ethers, getAddress } from 'ethers'
+import { ethers } from 'ethers'
 import { HumanizerCallModule, HumanizerVisualization, IrCall } from '../interfaces'
 import { AccountOp } from '../../accountOp/accountOp'
-import { getAction, getLabel, getToken } from '../utils'
+import { getAction, getLabel, getToken, getAddress } from '../utils'
 
 // const WETH_ADDRESS = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2'
 
@@ -39,7 +39,6 @@ export const wethHumanizer: HumanizerCallModule = (
           fullVisualization: [
             getAction('Unknown action (WETH)'),
             getLabel('to'),
-            // @TODO fix not from thers
             getAddress(call.to)
           ] as HumanizerVisualization[]
         }
