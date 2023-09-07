@@ -55,7 +55,7 @@ export function calculateAccountPortfolio(
     totalGasTankBalance(additionalPortfolio) + totalRewardsBalance(additionalPortfolio)
   let allReady = true
 
-  if (selectedAccount || !state.latest || !state.latest[selectedAccount]) {
+  if (!selectedAccount || !state.latest || !state.latest[selectedAccount]) {
     return {
       tokens: updatedTokens,
       totalAmount: updatedTotalAmount,
