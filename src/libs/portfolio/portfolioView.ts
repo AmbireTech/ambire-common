@@ -51,7 +51,7 @@ export function calculateAccountPortfolio(
 ): any {
   const updatedTokens: any = []
   const updatedCollections: any = []
-  const updatedTotalAmount = accountPortfolio?.totalAmount || 0
+  let updatedTotalAmount = accountPortfolio?.totalAmount || 0
   let newTotalAmount: number =
     totalGasTankBalance(additionalPortfolio) + totalRewardsBalance(additionalPortfolio)
   let allReady = true
@@ -82,12 +82,7 @@ export function calculateAccountPortfolio(
       updatedCollections.push(...networkCollections)
 
       if (networkTokens.length || networkCollections.length) {
-        return {
-          totalAmount: updatedTotalAmount,
-          isAllReady: allReady,
-          tokens: updatedTokens,
-          collections: updatedCollections
-        }
+        updatedTotalAmount += newTotalAmount
       }
     } else if (networkData && networkData.isReady && networkData.isLoading) {
       // Handle the case where network is ready but still loading
