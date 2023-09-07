@@ -237,6 +237,8 @@ contract AmbireAccount {
 	external returns (uint256)
 	{
 		if (op.signature.length == 0 && bytes4(op.callData[0:4]) == this.execute.selector) {
+			// Require a paymaster, otherwise this mode can be used by anyone to get the user to spend their deposit
+			require(op.paymasterAndData.length >= 20, 'validateUserOp: paymaster required in execute() mode');
 			// hashing in everything except sender (nonces are scoped by sender anyway), nonce, signature
 			// @TODO pad to key
 			uint256 targetNonce = uint256(uint192(uint256(keccak256(
