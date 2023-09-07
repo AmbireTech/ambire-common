@@ -19,6 +19,10 @@ export function totalGasTankBalance(additionalPortfolio: any) {
 }
 
 export function totalRewardsBalance(additionalPortfolio: any) {
+  if (!additionalPortfolio || Object.keys(additionalPortfolio).length === 0) {
+    return 0 // Return 0 if additionalPortfolio is empty or undefined
+  }
+
   function calculateClaimableBalance(property: string) {
     if (
       additionalPortfolio.rewards[property] &&
