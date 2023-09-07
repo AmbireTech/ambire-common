@@ -50,7 +50,7 @@ export function calculateAccountPortfolio(
   additionalPortfolio
 ): any {
   const updatedTokens: any = []
-  const updatedTotalAmount = accountPortfolio.totalAmount
+  const updatedTotalAmount = accountPortfolio?.totalAmount || 0
   let newTotalAmount: number =
     totalGasTankBalance(additionalPortfolio) + totalRewardsBalance(additionalPortfolio)
   let allReady = true
