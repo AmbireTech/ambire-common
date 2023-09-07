@@ -1,7 +1,12 @@
 import { expect, describe, beforeEach } from '@jest/globals'
 import { parseEther } from 'ethers'
 import { TypedMessage } from '../../interfaces/userRequest'
-import { erc20Module, erc721Module, permit2Module } from './typedMessageModules'
+import {
+  erc20Module,
+  erc721Module,
+  fallbackEIP712Humanizer,
+  permit2Module
+} from './typedMessageModules'
 
 const address1 = '0x6942069420694206942069420694206942069420'
 const address2 = '0xaAaAaAaaAaAaAaaAaAAAAAAAAaaaAaAaAaaAaaAa'
@@ -56,6 +61,20 @@ const typedMessages = {
       ],
       spender: address2,
       sigDeadline: 968187600n
+    }
+  ],
+  fallback: [
+    {
+      from: {
+        name: 'A',
+        address: address1
+      },
+      to: {
+        name: 'B',
+        address: address2
+      },
+      subject: 'angry mail',
+      withRegards: false
     }
   ]
 }
@@ -212,5 +231,22 @@ describe('typed message tests', () => {
         expect(v).toEqual(visualization[i][j])
       })
     })
+  })
+  test('fallback module', () => {
+    tmTemplate.message = typedMessages.fallback[0]
+    const expectedVisualizationContent = [
+      'from: \n',
+      ' name: A\n',
+      ' address: 0x6942069420694206942069420694206942069420\n',
+      'to: \n',
+      ' name: B\n',
+      ' address: 0xaAaAaAaaAaAaAaaAaAAAAAAAAaaaAaAaAaaAaaAa\n',
+      'subject: angry mail\n',
+      'withRegards: false\n'
+    ]
+
+    const visualization = fallbackEIP712Humanizer(tmTemplate)
+    expect(expectedVisualizationContent.length).toEqual(visualization[0].length)
+    visualization[0].map((v, i) => expect(v.content).toEqual(expectedVisualizationContent[i]))
   })
 })
