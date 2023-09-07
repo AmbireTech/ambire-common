@@ -44,29 +44,31 @@ const visualizePermit = (permit: PermitDetails): HumanizerVisualization[] => {
     getAddress(PERMIT_2_ADDRESS, 'Permi 2 contract'),
     getLabel('to use'),
     getToken(permit.token, permit.amount),
-    getLabel('while expiration'),
-    getDeadlineText(permit.expiration) as HumanizerVisualization
+    getLabel('for time period'),
+    getDeadlineText(permit.expiration)
   ]
 }
 
 export const permit2Module: HumanizerTypedMessaageModule = (tm: TypedMessage) => {
   const visualizations: HumanizerVisualization[][] = []
-  if (ethers.getAddress(tm.domain.verifyingContract as string) === PERMIT_2_ADDRESS)
-    if (tm.types.PermitSingle[0].type === 'PermitDetails') {
+  if (ethers.getAddress(tm.domain.verifyingContract as string) === PERMIT_2_ADDRESS) {
+    if (tm.types?.PermitSingle?.[0]?.type === 'PermitDetails') {
       visualizations.push([
         ...visualizePermit(tm.message.details),
-        getLabel('this signatuere'),
-        getDeadlineText(tm.message.sigDeadline) as HumanizerVisualization
+        getLabel('this whole signatuere'),
+        getDeadlineText(tm.message.sigDeadline)
       ])
-    } else if (tm.types.PermitSingle[0].type === 'PermitDetails[]') {
+    } else if (tm.types?.PermitBatch?.[0]?.type === 'PermitDetails[]') {
       tm.message.details.forEach((permitDetails: PermitDetails) => {
         visualizations.push([
           ...visualizePermit(permitDetails),
-          getLabel('this signatuere'),
-          getDeadlineText(tm.message.sidDeadline) as HumanizerVisualization
+          getLabel('this whole signatuere'),
+          getDeadlineText(tm.message.sigDeadline) as HumanizerVisualization
         ])
       })
     }
+    return visualizations
+  }
 
   return []
 }

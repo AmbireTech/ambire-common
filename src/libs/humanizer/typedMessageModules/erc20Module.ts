@@ -30,12 +30,14 @@ export const erc20Module: HumanizerTypedMessaageModule = (tm: TypedMessage) => {
       tm.message.nonce &&
       tm.message.deadline
     ) {
-      return visualizePermit(
-        ethers.getAddress(tm.message.spender),
-        tm.message.value,
-        tm.message.deadline,
-        ethers.getAddress(tm.domain.verifyingContract as string)
-      )
+      return [
+        visualizePermit(
+          ethers.getAddress(tm.message.spender),
+          tm.message.value,
+          tm.message.deadline,
+          ethers.getAddress(tm.domain.verifyingContract as string)
+        )
+      ]
     }
   }
   return []

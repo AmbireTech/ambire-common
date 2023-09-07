@@ -23,12 +23,14 @@ const visualizePermit = (
 export const erc721Module: HumanizerTypedMessaageModule = (tm: TypedMessage) => {
   if (tm.types.Permit && tm.primaryType === 'Permit') {
     if (tm.message.spender && tm.message.tokenId && tm.message.nonce && tm.message.deadline) {
-      return visualizePermit(
-        ethers.getAddress(tm.message.spender),
-        tm.message.tokenId,
-        tm.message.deadline,
-        ethers.getAddress(tm.domain.verifyingContract as string)
-      )
+      return [
+        visualizePermit(
+          ethers.getAddress(tm.message.spender),
+          tm.message.tokenId,
+          tm.message.deadline,
+          ethers.getAddress(tm.domain.verifyingContract as string)
+        )
+      ]
     }
   }
   return []
