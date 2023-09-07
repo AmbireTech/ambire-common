@@ -45,7 +45,7 @@ const humanizerCallModules: HumanizerCallModule[] = [
   tokenParsing
 ]
 
-const humanizerTMModules = [fallbackEIP712Humanizer, erc20Module, erc721Module, permit2Module]
+const humanizerTMModules = [erc20Module, erc721Module, permit2Module, fallbackEIP712Humanizer]
 export class HumanizerController extends EventEmitter {
   ir: Ir = { calls: [], messages: [] }
 

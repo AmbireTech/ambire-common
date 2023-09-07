@@ -3,6 +3,7 @@ import fetch from 'node-fetch'
 import { describe, expect, jest, test } from '@jest/globals'
 
 import { HumanizerVisualization } from 'libs/humanizer/interfaces'
+import { Message, TypedMessage } from 'interfaces/userRequest'
 import { HumanizerController } from './humanizer'
 import humanizerJSON from '../../consts/humanizerInfo.json'
 import { Storage } from '../../interfaces/storage'
@@ -10,6 +11,10 @@ import { AccountOp } from '../../libs/accountOp/accountOp'
 import { produceMemoryStore } from '../../../test/helpers'
 
 const HUMANIZER_META_KEY = 'HumanizerMeta'
+
+// const address1 = '0x6942069420694206942069420694206942069420'
+const address2 = '0xaAaAaAaaAaAaAaaAaAAAAAAAAaaaAaAaAaaAaaAa'
+const WETH_ADDRESS = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2'
 
 const humanizerMeta = humanizerJSON
 const accountOp: AccountOp = {
@@ -173,7 +178,7 @@ const transactions = {
 describe('HumanizerController', () => {
   let storage: Storage
 
-  let hc: HumanizerController
+  let hc: HumanizerController //
   beforeEach(async () => {
     storage = produceMemoryStore()
     await storage.set(HUMANIZER_META_KEY, humanizerMeta)
@@ -260,5 +265,101 @@ describe('HumanizerController', () => {
     hc.onUpdate(onUpdate)
     await hc.humanizeCalls(accountOp)
     expect(onUpdate).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('TypedMessages', () => {
+  let hc: HumanizerController
+  let storage: Storage //
+  beforeEach(() => {
+    storage = produceMemoryStore()
+    hc = new HumanizerController(storage, fetch)
+  })
+  test('simple humanization', () => {
+    const message = {
+      details: [
+        {
+          token: WETH_ADDRESS,
+          amount: ethers.parseEther('1'),
+          expiration: 968187600n,
+          nonce: 1n
+        },
+        {
+          token: WETH_ADDRESS,
+          amount: ethers.parseEther('0.5'),
+          expiration: 969187600n,
+          nonce: 2n
+        }
+      ],
+      spender: address2,
+      sigDeadline: 968187600n
+    }
+    const tmTemplate: TypedMessage = {
+      kind: 'typedMessage',
+      domain: {
+        name: 'random contract',
+        version: '1',
+        chainId: 1n,
+        verifyingContract: '0x000000000022D473030F116dDEE9F6B43aC78BA3',
+        salt: '1'
+      },
+      types: { PermitBatch: [{ name: 'details', type: 'PermitDetails[]' }] },
+      message,
+      primaryType: 'Permit'
+    }
+    // public humanizeMessages(accountOp: AccountOp, messages: Message[]) {
+    const messages: Message[] = [
+      {
+        id: 1n,
+        accountAddr: accountOp.accountAddr,
+        content: tmTemplate,
+        signature: null
+      }
+    ]
+    const expectedVisualizations = [
+      { type: 'label', content: 'Permit #1' },
+      { type: 'action', content: 'Permit' },
+      {
+        type: 'address',
+        address: '0x000000000022D473030F116dDEE9F6B43aC78BA3',
+        name: 'Permi 2 contract'
+      },
+      { type: 'label', content: 'to use' },
+      {
+        type: 'token',
+        address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
+        amount: 1000000000000000000n
+      },
+      { type: 'label', content: 'for time period' },
+      { type: 'label', content: 'already expired' },
+      { type: 'label', content: 'this whole signatuere' },
+      { type: 'label', content: 'already expired' },
+      { type: 'label', content: 'Permit #2' },
+      { type: 'action', content: 'Permit' },
+      {
+        type: 'address',
+        address: '0x000000000022D473030F116dDEE9F6B43aC78BA3',
+        name: 'Permi 2 contract'
+      },
+      { type: 'label', content: 'to use' },
+      {
+        type: 'token',
+        address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
+        amount: 500000000000000000n
+      },
+      { type: 'label', content: 'for time period' },
+      { type: 'label', content: 'already expired' },
+      { type: 'label', content: 'this whole signatuere' },
+      { type: 'label', content: 'already expired' }
+    ]
+    const onUpdate = jest.fn(() => {
+      hc.ir.messages[0].fullVisualization?.forEach((v, i) =>
+        expect(v).toEqual(expectedVisualizations[i])
+      )
+    })
+    hc.onUpdate(onUpdate)
+    hc.humanizeMessages(accountOp, messages)
+    expect(onUpdate).toHaveBeenCalledTimes(1)
+    // console.log(tmTemplate)
   })
 })
