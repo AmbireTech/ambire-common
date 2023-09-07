@@ -206,10 +206,10 @@ contract DKIMRecoverySigValidator is ExternalSigValidator {
       }
     }
 
-    bytes32 hashToSign = keccak256(
-      abi.encode(address(accountAddr), newKeyToSet, newPrivilegeValue)
-    );
     if (mode == SigMode.Both || mode == SigMode.OnlySecond) {
+      bytes32 hashToSign = keccak256(
+        abi.encode(address(accountAddr), newKeyToSet, newPrivilegeValue)
+      );
       if (mode == SigMode.OnlySecond)
         require(accInfo.acceptEmptyDKIMSig, 'account disallows OnlySecond');
 
