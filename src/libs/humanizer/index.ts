@@ -8,7 +8,7 @@ import {
   HumanizerTypedMessaageModule
 } from './interfaces'
 import { PlainTextMessage, TypedMessage } from '../../interfaces/userRequest'
-import { getDanger } from './utils'
+import { getAction, getDanger, getLabel } from './utils'
 
 export function humanizeCalls(
   _accountOp: AccountOp,
@@ -73,6 +73,5 @@ export const humanizePLainTextMessage = (
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   m: PlainTextMessage
 ): HumanizerVisualization[] => {
-  // @TODO
-  return []
+  return [getAction('Sign message:'), getLabel(m.message as string)]
 }
