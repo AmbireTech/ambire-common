@@ -18,7 +18,12 @@ import { WALLETModule } from '../../libs/humanizer/modules/WALLET'
 import { yearnVaultModule } from '../../libs/humanizer/modules/yearnTesseractVault'
 import { fallbackHumanizer } from '../../libs/humanizer/modules/fallBackHumanizer'
 import { nameParsing } from '../../libs/humanizer/modules/nameParsing'
-import { HumanizerCallModule, Ir, IrMessage } from '../../libs/humanizer/interfaces'
+import {
+  HumanizerCallModule,
+  HumanizerVisualization,
+  Ir,
+  IrMessage
+} from '../../libs/humanizer/interfaces'
 import { Storage } from '../../interfaces/storage'
 import { AccountOp } from '../../libs/accountOp/accountOp'
 import { humanizeCalls, humanizePLainTextMessage, humanizeTypedMessage } from '../../libs/humanizer'
@@ -99,7 +104,7 @@ export class HumanizerController extends EventEmitter {
 
   public humanizeMessages(accountOp: AccountOp, messages: Message[]) {
     const irMessages: IrMessage[] = messages.map((m) => {
-      let fullVisualization
+      let fullVisualization: HumanizerVisualization[]
       if (m.content.kind === 'typedMessage') {
         fullVisualization = humanizeTypedMessage(accountOp, humanizerTMModules, m.content)
       } else {

@@ -38,5 +38,5 @@ export interface HumanizerCallModule {
 }
 
 export interface HumanizerTypedMessaageModule {
-  (typedMessage: TypedMessage): HumanizerVisualization[][]
+  (typedMessage: TypedMessage): HumanizerVisualization[]
 }

@@ -50,21 +50,24 @@ const visualizePermit = (permit: PermitDetails): HumanizerVisualization[] => {
 }
 
 export const permit2Module: HumanizerTypedMessaageModule = (tm: TypedMessage) => {
-  const visualizations: HumanizerVisualization[][] = []
+  const visualizations: HumanizerVisualization[] = []
   if (ethers.getAddress(tm.domain.verifyingContract as string) === PERMIT_2_ADDRESS) {
     if (tm.types?.PermitSingle?.[0]?.type === 'PermitDetails') {
-      visualizations.push([
+      visualizations.push(
         ...visualizePermit(tm.message.details),
         getLabel('this whole signatuere'),
         getDeadlineText(tm.message.sigDeadline)
-      ])
+      )
     } else if (tm.types?.PermitBatch?.[0]?.type === 'PermitDetails[]') {
-      tm.message.details.forEach((permitDetails: PermitDetails) => {
-        visualizations.push([
-          ...visualizePermit(permitDetails),
-          getLabel('this whole signatuere'),
-          getDeadlineText(tm.message.sigDeadline) as HumanizerVisualization
-        ])
+      tm.message.details.forEach((permitDetails: PermitDetails, i: number) => {
+        visualizations.push(
+          ...[
+            getLabel(`Permit #${i + 1}`),
+            ...visualizePermit(permitDetails),
+            getLabel('this whole signatuere'),
+            getDeadlineText(tm.message.sigDeadline) as HumanizerVisualization
+          ]
+        )
       })
     }
     return visualizations

@@ -41,9 +41,6 @@ export function getRecipientText(from: string, recipient: string): HumanizerVisu
     : [getLabel('and send it to'), getAddress(recipient)]
 }
 
-export function getDanger(content: string): HumanizerVisualization {
-  return { type: 'danger', content }
-}
 export function getDeadlineText(deadlineSecs: bigint): HumanizerVisualization {
   const minute = 60000
   const deadline = Number(deadlineSecs * 1000n)

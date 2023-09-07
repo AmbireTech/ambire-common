@@ -126,7 +126,7 @@ describe('typed message tests', () => {
     ]
 
     tmTemplate.message = typedMessages.erc20[0]
-    const visualization = erc20Module(tmTemplate)[0]
+    const visualization = erc20Module(tmTemplate)
     expect(expectedVisualization.length).toEqual(visualization.length)
     visualization.forEach((v, i) => expect(v).toMatchObject(expectedVisualization[i]))
   })
@@ -148,7 +148,7 @@ describe('typed message tests', () => {
     ]
 
     tmTemplate.message = typedMessages.erc721[0]
-    const visualization = erc721Module(tmTemplate)[0]
+    const visualization = erc721Module(tmTemplate)
     expect(expectedVisualization.length).toEqual(visualization.length)
     visualization.forEach((v, i) => expect(v).toMatchObject(expectedVisualization[i]))
   })
@@ -175,61 +175,55 @@ describe('typed message tests', () => {
     tmTemplate.types = { PermitSingle: [{ name: 'details', type: 'PermitDetails' }] }
     tmTemplate.domain.verifyingContract = '0x000000000022D473030F116dDEE9F6B43aC78BA3'
     tmTemplate.message = typedMessages.permit2[0]
-    const visualization = permit2Module(tmTemplate)[0]
+    const visualization = permit2Module(tmTemplate)
     expect(expectedSingleVisualization.length).toEqual(visualization.length)
     visualization.forEach((v, i) => expect(v).toMatchObject(expectedSingleVisualization[i]))
   })
 
   test('permit2 module batch permit', () => {
     const expectedBatchVisualization = [
-      [
-        { type: 'action', content: 'Permit' },
-        {
-          type: 'address',
-          address: '0x000000000022D473030F116dDEE9F6B43aC78BA3',
-          name: 'Permi 2 contract'
-        },
-        { type: 'label', content: 'to use' },
-        {
-          type: 'token',
-          address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
-          amount: 1000000000000000000n
-        },
-        { type: 'label', content: 'for time period' },
-        { type: 'label', content: 'already expired' },
-        { type: 'label', content: 'this whole signatuere' },
-        { type: 'label', content: 'already expired' }
-      ],
-      [
-        { type: 'action', content: 'Permit' },
-        {
-          type: 'address',
-          address: '0x000000000022D473030F116dDEE9F6B43aC78BA3',
-          name: 'Permi 2 contract'
-        },
-        { type: 'label', content: 'to use' },
-        {
-          type: 'token',
-          address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
-          amount: 500000000000000000n
-        },
-        { type: 'label', content: 'for time period' },
-        { type: 'label', content: 'already expired' },
-        { type: 'label', content: 'this whole signatuere' },
-        { type: 'label', content: 'already expired' }
-      ]
+      { type: 'label', content: 'Permit #1' },
+      { type: 'action', content: 'Permit' },
+      {
+        type: 'address',
+        address: '0x000000000022D473030F116dDEE9F6B43aC78BA3',
+        name: 'Permi 2 contract'
+      },
+      { type: 'label', content: 'to use' },
+      {
+        type: 'token',
+        address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
+        amount: 1000000000000000000n
+      },
+      { type: 'label', content: 'for time period' },
+      { type: 'label', content: 'already expired' },
+      { type: 'label', content: 'this whole signatuere' },
+      { type: 'label', content: 'already expired' },
+      { type: 'label', content: 'Permit #2' },
+      { type: 'action', content: 'Permit' },
+      {
+        type: 'address',
+        address: '0x000000000022D473030F116dDEE9F6B43aC78BA3',
+        name: 'Permi 2 contract'
+      },
+      { type: 'label', content: 'to use' },
+      {
+        type: 'token',
+        address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
+        amount: 500000000000000000n
+      },
+      { type: 'label', content: 'for time period' },
+      { type: 'label', content: 'already expired' },
+      { type: 'label', content: 'this whole signatuere' },
+      { type: 'label', content: 'already expired' }
     ]
     tmTemplate.types = { PermitBatch: [{ name: 'details', type: 'PermitDetails[]' }] }
     tmTemplate.domain.verifyingContract = '0x000000000022D473030F116dDEE9F6B43aC78BA3'
     tmTemplate.message = typedMessages.permit2[1]
     const visualization = permit2Module(tmTemplate)
-    console.log(visualization)
-    expectedBatchVisualization.forEach((ev, i) => {
-      expect(ev.length).toEqual(visualization[i].length)
-      ev.forEach((v, j) => {
-        console.log(v, ev[j])
-        expect(v).toEqual(visualization[i][j])
-      })
+    expect(visualization.length).toEqual(expectedBatchVisualization.length)
+    expectedBatchVisualization.forEach((v, i) => {
+      expect(v).toEqual(visualization[i])
     })
   })
   test('fallback module', () => {
@@ -246,7 +240,7 @@ describe('typed message tests', () => {
     ]
 
     const visualization = fallbackEIP712Humanizer(tmTemplate)
-    expect(expectedVisualizationContent.length).toEqual(visualization[0].length)
-    visualization[0].map((v, i) => expect(v.content).toEqual(expectedVisualizationContent[i]))
+    expect(expectedVisualizationContent.length).toEqual(visualization.length)
+    visualization.map((v, i) => expect(v.content).toEqual(expectedVisualizationContent[i]))
   })
 })

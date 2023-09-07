@@ -22,5 +22,5 @@ const fallbackParser = (
 }
 
 export const fallbackEIP712Humanizer: HumanizerTypedMessaageModule = (tm: TypedMessage) => {
-  return [fallbackParser(tm.message, 0)]
+  return fallbackParser(tm.message, 0)
 }

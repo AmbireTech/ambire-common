@@ -8,7 +8,7 @@ import {
   HumanizerTypedMessaageModule
 } from './interfaces'
 import { PlainTextMessage, TypedMessage } from '../../interfaces/userRequest'
-import { getAction, getDanger, getLabel } from './utils'
+import { getAction, getLabel } from './utils'
 
 export function humanizeCalls(
   _accountOp: AccountOp,
@@ -61,9 +61,9 @@ export const humanizeTypedMessage = (
   tm: TypedMessage
 ): HumanizerVisualization[] => {
   // runs all modules and takes the first truthy value
-  const visualization = modules.map((m) => m(tm)).filter((p) => p.length)[0]
-  if (accountOp.networkId !== tm.domain.chainId)
-    visualization.push(getDanger('Permit on wrong network'))
+  const visualization: HumanizerVisualization[] = modules
+    .map((m) => m(tm))
+    .filter((p) => p.length)[0]
   return visualization
 }
 
