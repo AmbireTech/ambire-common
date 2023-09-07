@@ -1,4 +1,5 @@
 import { NetworkDescriptor } from '../interfaces/networkDescriptor'
+import { ERC_4337_ENTRYPOINT, ENTRY_POINT_MARKER } from './deploy'
 
 const networks: NetworkDescriptor[] = [
   {
@@ -7,7 +8,8 @@ const networks: NetworkDescriptor[] = [
     nativeAssetSymbol: 'ETH',
     rpcUrl: 'https://rpc.ankr.com/eth',
     rpcNoStateOverride: false,
-    chainId: 1n
+    chainId: 1n,
+    erc4337: null
   },
   {
     id: 'polygon',
@@ -15,7 +17,12 @@ const networks: NetworkDescriptor[] = [
     nativeAssetSymbol: 'MATIC',
     rpcUrl: 'https://rpc.ankr.com/polygon',
     rpcNoStateOverride: false,
-    chainId: 137n
+    chainId: 137n,
+    erc4337: {
+      enabled: true,
+      entryPointAddr: ERC_4337_ENTRYPOINT,
+      entryPointMarker: ENTRY_POINT_MARKER
+    }
   },
   {
     id: 'optimism',
@@ -23,7 +30,12 @@ const networks: NetworkDescriptor[] = [
     nativeAssetSymbol: 'ETH',
     rpcUrl: 'https://rpc.ankr.com/optimism',
     rpcNoStateOverride: false,
-    chainId: 10n
+    chainId: 10n,
+    erc4337: {
+      enabled: true,
+      entryPointAddr: ERC_4337_ENTRYPOINT,
+      entryPointMarker: ENTRY_POINT_MARKER
+    }
   }
   // This breaks the background service of the extension
   // {

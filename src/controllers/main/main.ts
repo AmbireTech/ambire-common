@@ -25,8 +25,7 @@ export class MainController extends EventEmitter {
 
   #keystoreLib: Keystore
 
-  // Private sub-structures
-  private providers: { [key: string]: JsonRpcProvider } = {}
+  #providers: { [key: string]: JsonRpcProvider } = {}
 
   // Holds the initial load promise, so that one can wait until it completes
   private initialLoadPromise: Promise<void>
@@ -49,7 +48,7 @@ export class MainController extends EventEmitter {
   // @TODO emailVaults
   emailVault: EmailVaultController
 
-  signMessage: SignMessageController
+  signMessage!: SignMessageController
 
   activity!: ActivityController
 
@@ -87,13 +86,16 @@ export class MainController extends EventEmitter {
 
   onRejectDappRequest: (err: any, id?: bigint) => void
 
+  onUpdateDappSelectedAccount: (accountAddr: string) => void
+
   constructor({
     storage,
     fetch,
     relayerUrl,
     keystoreSigners,
     onResolveDappRequest,
-    onRejectDappRequest
+    onRejectDappRequest,
+    onUpdateDappSelectedAccount
   }: {
     storage: Storage
     fetch: Function
@@ -101,39 +103,41 @@ export class MainController extends EventEmitter {
     keystoreSigners: { [key: string]: KeystoreSignerType }
     onResolveDappRequest: (data: any, id?: bigint) => void
     onRejectDappRequest: (err: any, id?: bigint) => void
+    onUpdateDappSelectedAccount: (accountAddr: string) => void
   }) {
     super()
     this.storage = storage
     this.portfolio = new PortfolioController(storage)
     this.#keystoreLib = new Keystore(storage, keystoreSigners)
     this.keystore = new KeystoreController(this.#keystoreLib)
-    this.initialLoadPromise = this.load()
     this.settings = { networks }
+    this.initialLoadPromise = this.load()
     this.emailVault = new EmailVaultController(storage, fetch, relayerUrl, this.#keystoreLib)
     this.accountAdder = new AccountAdderController({ storage, relayerUrl, fetch })
-    this.signMessage = new SignMessageController(this.#keystoreLib)
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
     this.onResolveDappRequest = onResolveDappRequest
     this.onRejectDappRequest = onRejectDappRequest
+    this.onUpdateDappSelectedAccount = onUpdateDappSelectedAccount
     // @TODO Load userRequests from storage and emit that we have updated
     // @TODO
   }
 
   private async load(): Promise<void> {
+    this.isReady = false
+    this.emitUpdate()
     ;[this.keys, this.accounts, this.selectedAccount] = await Promise.all([
       this.#keystoreLib.getKeys(),
       this.storage.get('accounts', []),
       this.storage.get('selectedAccount', null)
     ])
-
-    this.providers = Object.fromEntries(
+    this.#providers = Object.fromEntries(
       this.settings.networks.map((network) => [network.id, new JsonRpcProvider(network.rpcUrl)])
     )
     // @TODO reload those
     // @TODO error handling here
     this.accountStates = await this.getAccountsInfo(this.accounts)
+    this.signMessage = new SignMessageController(this.#keystoreLib, this.#providers)
     this.activity = new ActivityController(this.storage, this.accountStates)
-    this.isReady = true
 
     const isKeystoreReady = await this.#keystoreLib.isReadyToStoreKeys()
     this.keystore.setIsReadyToStoreKeys(isKeystoreReady)
@@ -146,17 +150,17 @@ export class MainController extends EventEmitter {
         return
 
       this.addAccounts(this.accountAdder.readyToAddAccounts)
-      this.accountAdder.reset()
     }
     this.accountAdder.onUpdate(addReadyToAddAccountsIfNeeded)
 
+    this.isReady = true
     this.emitUpdate()
   }
 
   private async getAccountsInfo(accounts: Account[]): Promise<AccountStates> {
     const result = await Promise.all(
       this.settings.networks.map((network) =>
-        getAccountState(this.providers[network.id], network, accounts)
+        getAccountState(this.#providers[network.id], network, accounts)
       )
     )
 
@@ -191,6 +195,7 @@ export class MainController extends EventEmitter {
     this.selectedAccount = toAccountAddr
     await this.storage.set('selectedAccount', toAccountAddr)
     this.updateSelectedAccount(toAccountAddr)
+    this.onUpdateDappSelectedAccount(toAccountAddr)
     this.emitUpdate()
   }
 
@@ -378,7 +383,7 @@ export class MainController extends EventEmitter {
       ),
       // @TODO nativeToCheck: pass all EOAs,
       // @TODO feeTokens: pass a hardcoded list from settings
-      estimate(this.providers[accountOp.networkId], network, account, accountOp, [], [])
+      estimate(this.#providers[accountOp.networkId], network, account, accountOp, [], [])
       // @TODO refresh the estimation
     ])
     this.accountOpsToBeSigned[accountOp.accountAddr][accountOp.networkId]!.estimation = estimation

@@ -4,7 +4,8 @@ export function geckoNetworkIdMapper(x: string): string {
   return (
     {
       polygon: 'polygon-pos',
-      arbitrum: 'arbitrum-one'
+      arbitrum: 'arbitrum-one',
+      optimism: 'optimistic-ethereum'
     }[x] || x
   )
 }
