@@ -1,5 +1,10 @@
 /* eslint-disable no-await-in-loop */
-import { fallbackEIP712Humanizer } from '../../libs/humanizer/typedMessageModules/fallbackModule'
+import {
+  fallbackEIP712Humanizer,
+  erc20Module,
+  erc721Module,
+  permit2Module
+} from '../../libs/humanizer/typedMessageModules'
 import {
   genericErc20Humanizer,
   genericErc721Humanizer,
@@ -21,7 +26,7 @@ import EventEmitter, { ErrorRef } from '../eventEmitter'
 import { Message } from '../../interfaces/userRequest'
 
 const HUMANIZER_META_KEY = 'HumanizerMeta'
-const humanizerModules: HumanizerCallModule[] = [
+const humanizerCallModules: HumanizerCallModule[] = [
   genericErc20Humanizer,
   genericErc721Humanizer,
   uniswapHumanizer,
@@ -35,7 +40,7 @@ const humanizerModules: HumanizerCallModule[] = [
   tokenParsing
 ]
 
-const humanizerTMModules = [fallbackEIP712Humanizer]
+const humanizerTMModules = [fallbackEIP712Humanizer, erc20Module, erc721Module, permit2Module]
 export class HumanizerController extends EventEmitter {
   ir: Ir = { calls: [], messages: [] }
 
@@ -66,7 +71,7 @@ export class HumanizerController extends EventEmitter {
       const storedHumanizerMeta = await this.#storage.get(HUMANIZER_META_KEY, {})
       const [irCalls, asyncOps] = humanizeCalls(
         { ...accountOp, humanizerMeta: { ...accountOp.humanizerMeta, ...storedHumanizerMeta } },
-        humanizerModules,
+        humanizerCallModules,
         { fetch: this.#fetch, emitError: this.wrappedEemitError }
       )
       this.ir.calls = irCalls

@@ -20,7 +20,7 @@ const visualizePermit = (
   if (getDeadlineText(deadline)) res.push(getDeadlineText(deadline) as HumanizerVisualization)
   return res
 }
-export const erc721: HumanizerTypedMessaageModule = (tm: TypedMessage) => {
+export const erc721Module: HumanizerTypedMessaageModule = (tm: TypedMessage) => {
   if (tm.types.Permit && tm.primaryType === 'Permit') {
     if (tm.message.spender && tm.message.tokenId && tm.message.nonce && tm.message.deadline) {
       return visualizePermit(
