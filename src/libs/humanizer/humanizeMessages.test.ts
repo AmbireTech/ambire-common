@@ -1,6 +1,7 @@
+import { expect, describe, beforeEach } from '@jest/globals'
 import { parseEther } from 'ethers'
 import { TypedMessage } from '../../interfaces/userRequest'
-import { erc20Module } from './typedMessageModules'
+import { erc20Module, erc721Module } from './typedMessageModules'
 // export interface TypedMessage {
 //     kind: 'typedMessage'
 //     domain: TypedDataDomain
@@ -18,6 +19,15 @@ const typedMessages = {
       owner: address1,
       spender: address2,
       value: parseEther('1'),
+      nonce: 1,
+      deadline: 968187600n
+    }
+  ],
+
+  erc721: [
+    {
+      spender: address2,
+      tokenId: 1n,
       nonce: 1,
       deadline: 968187600n
     }
@@ -42,8 +52,47 @@ describe('typed message tests', () => {
     tmTemplate.message = {}
   })
   test('erc20 module', () => {
+    const expectedVisualization = [
+      { type: 'action', content: 'Sign permit' },
+      { type: 'label', content: 'to' },
+      { type: 'action', content: 'Send' },
+      {
+        type: 'token',
+        address: WETH_ADDRESS
+      },
+      { type: 'label', content: 'to' },
+      {
+        type: 'address',
+        address: address2
+      },
+      { type: 'label', content: 'already expired' }
+    ]
+
     tmTemplate.message = typedMessages.erc20[0]
     const visualization = erc20Module(tmTemplate)
-    console.log(visualization)
+    expect(expectedVisualization.length).toEqual(visualization.length)
+    visualization.forEach((v, i) => expect(v).toMatchObject(expectedVisualization[i]))
+  })
+  test('erc721 module', () => {
+    const expectedVisualization = [
+      { type: 'action', content: 'Sign permit' },
+      { type: 'label', content: 'to' },
+      { type: 'action', content: 'Permit use of' },
+      {
+        type: 'nft',
+        address: WETH_ADDRESS
+      },
+      { type: 'label', content: 'to' },
+      {
+        type: 'address',
+        address: address2
+      },
+      { type: 'label', content: 'already expired' }
+    ]
+
+    tmTemplate.message = typedMessages.erc721[0]
+    const visualization = erc721Module(tmTemplate)
+    expect(expectedVisualization.length).toEqual(visualization.length)
+    visualization.forEach((v, i) => expect(v).toMatchObject(expectedVisualization[i]))
   })
 })
