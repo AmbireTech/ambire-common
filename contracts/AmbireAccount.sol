@@ -243,13 +243,12 @@ contract AmbireAccount {
 			require(op.nonce == targetNonce, 'validateUserOp: execute(): one-time nonce is wrong');
 			return 0;
 		}
-		require(address(uint160(uint256(privileges[msg.sender]))) == ENTRY_POINT_MARKER, 'Request not from entryPoint');
-
+		require(address(uint160(uint256(privileges[msg.sender]))) == ENTRY_POINT_MARKER, 'validateUserOp: not from entryPoint');
 		uint8 sigMode = uint8(op.signature[op.signature.length - 1]);
 		if (sigMode == SIGMODE_EXTERNALLY_VALIDATED) {
-			Transaction[] memory calls = op.callData.length > 0
-			  ? abi.decode(op.callData[4:], (Transaction[]))
-			  : new Transaction[](0);
+			// 68: two words + 4 for the sighash
+			require(op.callData.length >= 68 && bytes4(op.callData[0:4]) == this.executeBySender.selector, 'validateUserOp: needs to call executeBySender');
+			Transaction[] memory calls = abi.decode(op.callData[4:], (Transaction[]));
 
 			(, bool isValidSig, uint256 timestampValidAfter) = validateExternalSig(calls, op.signature);
 			if (!isValidSig) return SIG_VALIDATION_FAILED;
