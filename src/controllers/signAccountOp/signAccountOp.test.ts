@@ -1,12 +1,37 @@
+import { JsonRpcProvider } from 'ethers'
+import { Account, AccountStates } from 'interfaces/account'
+import { NetworkDescriptor } from 'interfaces/networkDescriptor'
+
 import { describe, expect, test } from '@jest/globals'
 
-import { JsonRpcProvider } from 'ethers'
 import { produceMemoryStore } from '../../../test/helpers'
-import { SignAccountOpController } from './signAccountOp'
-import { Key, Keystore } from '../../libs/keystore/keystore'
-import { getGasPriceRecommendations } from '../../libs/gasPrice/gasPrice'
 import { networks } from '../../consts/networks'
+import { getAccountState } from '../../libs/accountState/accountState'
 import { estimate } from '../../libs/estimate/estimate'
+import { getGasPriceRecommendations } from '../../libs/gasPrice/gasPrice'
+import { Key, Keystore } from '../../libs/keystore/keystore'
+import { SignAccountOpController, SigningStatus } from './signAccountOp'
+
+const providers = Object.fromEntries(
+  networks.map((network) => [network.id, new JsonRpcProvider(network.rpcUrl)])
+)
+
+const getAccountsInfo = async (accounts: Account[]): Promise<AccountStates> => {
+  const result = await Promise.all(
+    networks.map((network) => getAccountState(providers[network.id], network, accounts))
+  )
+  const states = accounts.map((acc: Account, accIndex: number) => {
+    return [
+      acc.addr,
+      Object.fromEntries(
+        networks.map((network: NetworkDescriptor, netIndex: number) => {
+          return [network.id, result[netIndex][accIndex]]
+        })
+      )
+    ]
+  })
+  return Object.fromEntries(states)
+}
 
 // @TODO - copied from keystore signer tests. Should reuse.
 class InternalSigner {
@@ -107,10 +132,20 @@ describe('SignAccountOp Controller ', () => {
     const { op, account, nativeToCheck, feeTokens } = createAccountOp(keyPublicAddress)
     // @TODO - estimation should be pass down from main controller to SignAccountOp controller.
     const estimation = await estimate(provider, ethereum, account, op, nativeToCheck, feeTokens)
-
+    const accounts = [account]
+    const accountStates = await getAccountsInfo(accounts)
     const controller = new SignAccountOpController(keystore)
+    controller.status = SigningStatus.ReadyToSign
 
-    controller.init(op, prices, estimation, [account], '0xdAC17F958D2ee523a2206206994597C13D831ec7')
+    controller.update({
+      accounts,
+      networks,
+      accountStates,
+      accountOp: op,
+      gasPrices: prices,
+      estimation
+    })
+
     controller.setFeeToken('0x0000000000000000000000000000000000000000')
     await controller.sign()
 

@@ -1,7 +1,8 @@
-import { Network, ethers } from 'ethers'
+import { ethers } from 'ethers'
+
+import { networks } from '../../../dist/consts/networks'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
 import { stringify } from '../bigintJson/bigintJson'
-import { networks } from '../../../dist/consts/networks'
 
 export interface Call {
   to: string
@@ -77,7 +78,8 @@ export function canBroadcast(op: AccountOp, accountIsEOA: boolean): boolean {
   if (op.gasLimit === null) throw new Error('missing gasLimit')
   if (op.nonce === null) throw new Error('missing nonce')
   if (accountIsEOA) {
-    if (op.gasFeePayment.isGasTank) throw new Error('gas fee payment with gas tank cannot be used with an EOA')
+    if (op.gasFeePayment.isGasTank)
+      throw new Error('gas fee payment with gas tank cannot be used with an EOA')
     if (op.gasFeePayment.inToken !== '0x0000000000000000000000000000000000000000')
       throw new Error('gas fee payment needs to be in the native asset')
     if (op.gasFeePayment.paidBy !== op.accountAddr)
@@ -134,7 +136,7 @@ export function isAccountOpsIntentEqual(
  * @returns Uint8Array
  */
 export function accountOpSignableHash(op: AccountOp): Uint8Array {
-  const opNetworks = networks.filter((network: NetworkDescriptor) => op.networkId == network.id)
+  const opNetworks = networks.filter((network: NetworkDescriptor) => op.networkId === network.id)
   if (!opNetworks.length) throw new Error('unsupported network')
 
   const abiCoder = new ethers.AbiCoder()
@@ -142,7 +144,12 @@ export function accountOpSignableHash(op: AccountOp): Uint8Array {
     ethers.keccak256(
       abiCoder.encode(
         ['address', 'uint', 'uint', 'tuple(address, uint, bytes)[]'],
-        [op.accountAddr, opNetworks[0].chainId, op.nonce ?? 0, op.calls.map((call: Call) => ([call.to, call.value, call.data]))]
+        [
+          op.accountAddr,
+          opNetworks[0].chainId,
+          op.nonce ?? 0,
+          op.calls.map((call: Call) => [call.to, call.value, call.data])
+        ]
       )
     )
   )

@@ -1,12 +1,14 @@
 import { ethers } from 'ethers'
-import EventEmitter from '../eventEmitter'
-import { Keystore } from '../../libs/keystore/keystore'
-import { AccountOp, accountOpSignableHash, GasFeePaymentType } from '../../libs/accountOp/accountOp'
-import { Account } from '../../interfaces/account'
-import { GasRecommendation } from '../../libs/gasPrice/gasPrice'
-import { EstimateResult } from '../../libs/estimate/estimate'
 
-enum SigningStatus {
+import { Account, AccountStates } from '../../interfaces/account'
+import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
+import { AccountOp, accountOpSignableHash } from '../../libs/accountOp/accountOp'
+import { EstimateResult } from '../../libs/estimate/estimate'
+import { GasRecommendation } from '../../libs/gasPrice/gasPrice'
+import { Keystore } from '../../libs/keystore/keystore'
+import EventEmitter from '../eventEmitter'
+
+export enum SigningStatus {
   UnableToSign = 'unable-to-sign',
   ReadyToSign = 'ready-to-sign',
   InProgress = 'in-progress',
@@ -14,26 +16,29 @@ enum SigningStatus {
   Done = 'done'
 }
 
-enum FeeSpeed {
+export enum FeeSpeed {
   Slow = 'slow',
   Medium = 'medium',
   Fast = 'fast',
   Ape = 'ape'
 }
 
-// @TODO - consider which props should be public/private
 export class SignAccountOpController extends EventEmitter {
+  #keystore: Keystore
+
+  #accounts: Account[] | null = null
+
+  #networks: NetworkDescriptor[] | null = null
+
+  #accountStates: AccountStates | null = null
+
   accountOp: AccountOp | null = null
 
   #gasPrices: GasRecommendation[] | null = null
 
   #estimation: EstimateResult | null = null
 
-  feeSpeed: FeeSpeed = FeeSpeed.Slow
-
-  #keystore: Keystore
-
-  #accounts: Account[] | null = null
+  feeSpeed: FeeSpeed = FeeSpeed.Fast
 
   status: SigningStatus | null = null
 
@@ -42,49 +47,66 @@ export class SignAccountOpController extends EventEmitter {
     this.#keystore = keystore
   }
 
-  init(
-    accountOp: AccountOp,
-    gasPrices: GasRecommendation[],
-    estimation: EstimateResult,
-    accounts: Account[],
-    feeToken: string
-  ) {
-    this.accountOp = accountOp
-    this.#gasPrices = gasPrices
-    this.#estimation = estimation
-    this.#accounts = accounts
+  get isInitialized(): boolean {
+    return !!(this.#accounts && this.#networks && this.#accountStates && this.accountOp)
+  }
 
-    // Set default values
-    this.setFeeToken(feeToken)
+  update({
+    accounts,
+    networks,
+    accountStates,
+    accountOp,
+    gasPrices,
+    estimation
+  }: {
+    accounts?: Account[]
+    networks?: NetworkDescriptor[]
+    accountStates?: AccountStates
+    accountOp?: AccountOp
+    gasPrices?: GasRecommendation[]
+    estimation?: EstimateResult
+  }) {
+    if (accounts) this.#accounts = accounts
+    if (networks) this.#networks = networks
+    if (accountStates) this.#accountStates = accountStates
+    if (gasPrices) this.#gasPrices = gasPrices
+    if (estimation) this.#estimation = estimation
+    if (accountOp) {
+      if (!this.accountOp) {
+        this.accountOp = accountOp
+      } else if (
+        this.accountOp.accountAddr === accountOp.accountAddr &&
+        this.accountOp.networkId === accountOp.networkId
+      ) {
+        this.accountOp = accountOp
+      }
+    }
+    this.emitUpdate()
   }
 
   reset() {
-    // no need to reset this.accounts since we just use it on-demand based on the current accountOp
     this.accountOp = null
+    this.#gasPrices = null
+    this.#estimation = null
+    this.feeSpeed = FeeSpeed.Fast
+    this.status = null
+    this.emitUpdate()
   }
 
-  // internal helper to get the account
-  #getAccount(): Account | null {
-    if (!this.accountOp || !this.#accounts) return null
-
-    const account = this.#accounts.find((x) => x.addr === this.accountOp!.accountAddr)
-
-    if (!account)
-      throw new Error(`accountOp selected with non-existant account: ${this.accountOp.accountAddr}`)
-
-    return account
+  get #account(): Account | null {
+    if (this.accountOp && this.#accounts) {
+      const account = this.#accounts.find((acc) => acc.addr === this.accountOp!.accountAddr)
+      if (account) return account
+    }
+    return null
   }
 
   #getGasFeePayment(feeTokenAddr: string, feeSpeed: FeeSpeed) {
-    if (!this.accountOp) throw new Error('cannot be called before .accountOp is set')
-    const account = this.#getAccount()
+    if (!this.isInitialized) throw new Error('signAccountOp: not initialized')
 
-    if (!account || !account.creation) {
+    if (!this.#account || !this.#account?.creation) {
       throw new Error('EOA is not supported yet')
-
-      // return {
-      //   // @TODO data for EOA
-      // }
+      // TODO: implement for EOA and remove the !this.#account?.creation condition
     }
 
     const result = this.#gasPrices!.find((price) => price.name === feeSpeed)
@@ -93,18 +115,21 @@ export class SignAccountOpController extends EventEmitter {
     const price = result.gasPrice || result!.baseFeePerGas + result!.maxPriorityFeePerGas
 
     return {
-      paidBy: this.accountOp.gasFeePayment?.paidBy || this.accountOp.accountAddr,
-      paymentType: GasFeePaymentType.AmbireRelayer, // @TODO remove it. It's still not merged in v2
-      // isERC4337: false, // @TODO based on network settings. We should add it to gasFeePayment interface.
-      // isGasTank: false, // @TODO based on token network (could be gas tank network). We should add it to gasFeePayment interface.
+      paidBy: this.accountOp!.gasFeePayment?.paidBy || this.accountOp!.accountAddr,
+      isERC4337: false, // TODO: based on network settings. We should add it to gasFeePayment interface.
+      isGasTank: false, // TODO: based on token network (could be gas tank network). We should add it to gasFeePayment interface.
       inToken: feeTokenAddr,
       amount: this.#estimation!.gasUsed * price
     }
   }
 
   setFeeToken(feeTokenAddr: string) {
-    // @TODO validate feeTokenAddr
-    if (!this.accountOp) return
+    if (!this.accountOp || !feeTokenAddr) return
+
+    if (this.status !== SigningStatus.ReadyToSign && this.status !== SigningStatus.UnableToSign)
+      return
+
+    // TODO: validate feeTokenAddr
 
     this.accountOp.gasFeePayment = this.#getGasFeePayment(feeTokenAddr, this.feeSpeed)
   }
@@ -113,22 +138,26 @@ export class SignAccountOpController extends EventEmitter {
     if (!this.accountOp?.signingKeyAddr) {
       // @ts-ignore
       this.emitError({
-        /* TODO */
+        /* TODO: */
       })
 
       return
     }
 
-    const signer = await this.#keystore.getSigner(this.accountOp.signingKeyAddr)
+    this.status = SigningStatus.InProgress
+    this.emitUpdate()
 
-    this.status = SigningStatus.InProgress // @TODO awaiting user input if we have indications of this
-    this.emitUpdate()
-    this.accountOp.signature = await signer.signMessage(
-      ethers.hexlify(accountOpSignableHash(this.accountOp))
-    )
-    this.status = SigningStatus.Done
-    this.emitUpdate()
-    // Now, the UI needs to call mainCtrl.broadcastSignedAccountOp(mainCtrl.signAccountOp.accountOp)
-    // @TODO
+    try {
+      const signer = await this.#keystore.getSigner(this.accountOp.signingKeyAddr)
+
+      this.accountOp.signature = await signer.signMessage(
+        ethers.hexlify(accountOpSignableHash(this.accountOp))
+      )
+      this.status = SigningStatus.Done
+      this.emitUpdate()
+    } catch (error) {
+      this.status = SigningStatus.UnableToSign
+    }
+    // TODO: Now, the UI needs to call mainCtrl.broadcastSignedAccountOp(mainCtrl.signAccountOp.accountOp)
   }
 }
