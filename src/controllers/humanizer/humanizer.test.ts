@@ -314,6 +314,15 @@ describe('TypedMessages', () => {
         accountAddr: accountOp.accountAddr,
         content: tmTemplate,
         signature: null
+      },
+      {
+        id: 2n,
+        accountAddr: accountOp.accountAddr,
+        content: {
+          kind: 'message',
+          message: 'random message'
+        },
+        signature: null
       }
     ]
     const expectedVisualizations = [
@@ -356,6 +365,10 @@ describe('TypedMessages', () => {
       hc.ir.messages[0].fullVisualization?.forEach((v, i) =>
         expect(v).toEqual(expectedVisualizations[i])
       )
+      expect(hc.ir.messages[1].fullVisualization).toEqual([
+        { type: 'action', content: 'Sign message:' },
+        { type: 'label', content: 'random message' }
+      ])
     })
     hc.onUpdate(onUpdate)
     hc.humanizeMessages(accountOp, messages)
