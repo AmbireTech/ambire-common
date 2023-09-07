@@ -86,13 +86,16 @@ export class MainController extends EventEmitter {
 
   onRejectDappRequest: (err: any, id?: bigint) => void
 
+  onUpdateDappSelectedAccount: (accountAddr: string) => void
+
   constructor({
     storage,
     fetch,
     relayerUrl,
     keystoreSigners,
     onResolveDappRequest,
-    onRejectDappRequest
+    onRejectDappRequest,
+    onUpdateDappSelectedAccount
   }: {
     storage: Storage
     fetch: Function
@@ -100,19 +103,21 @@ export class MainController extends EventEmitter {
     keystoreSigners: { [key: string]: KeystoreSignerType }
     onResolveDappRequest: (data: any, id?: bigint) => void
     onRejectDappRequest: (err: any, id?: bigint) => void
+    onUpdateDappSelectedAccount: (accountAddr: string) => void
   }) {
     super()
     this.storage = storage
     this.portfolio = new PortfolioController(storage, relayerUrl)
     this.#keystoreLib = new Keystore(storage, keystoreSigners)
     this.keystore = new KeystoreController(this.#keystoreLib)
-    this.initialLoadPromise = this.load()
     this.settings = { networks }
+    this.initialLoadPromise = this.load()
     this.emailVault = new EmailVaultController(storage, fetch, relayerUrl, this.#keystoreLib)
     this.accountAdder = new AccountAdderController({ storage, relayerUrl, fetch })
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
     this.onResolveDappRequest = onResolveDappRequest
     this.onRejectDappRequest = onRejectDappRequest
+    this.onUpdateDappSelectedAccount = onUpdateDappSelectedAccount
     // @TODO Load userRequests from storage and emit that we have updated
     // @TODO
   }
@@ -120,15 +125,14 @@ export class MainController extends EventEmitter {
   private async load(): Promise<void> {
     this.isReady = false
     this.emitUpdate()
-
-    this.#providers = Object.fromEntries(
-      networks.map((network) => [network.id, new JsonRpcProvider(network.rpcUrl)])
-    )
     ;[this.keys, this.accounts, this.selectedAccount] = await Promise.all([
       this.#keystoreLib.getKeys(),
       this.storage.get('accounts', []),
       this.storage.get('selectedAccount', null)
     ])
+    this.#providers = Object.fromEntries(
+      this.settings.networks.map((network) => [network.id, new JsonRpcProvider(network.rpcUrl)])
+    )
     // @TODO reload those
     // @TODO error handling here
     this.accountStates = await this.getAccountsInfo(this.accounts)
@@ -146,7 +150,6 @@ export class MainController extends EventEmitter {
         return
 
       this.addAccounts(this.accountAdder.readyToAddAccounts)
-      this.accountAdder.reset()
     }
     this.accountAdder.onUpdate(addReadyToAddAccountsIfNeeded)
 
@@ -192,6 +195,7 @@ export class MainController extends EventEmitter {
     this.selectedAccount = toAccountAddr
     await this.storage.set('selectedAccount', toAccountAddr)
     this.updateSelectedAccount(toAccountAddr)
+    this.onUpdateDappSelectedAccount(toAccountAddr)
     this.emitUpdate()
   }
 
