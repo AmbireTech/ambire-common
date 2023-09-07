@@ -373,6 +373,5 @@ describe('TypedMessages', () => {
     hc.onUpdate(onUpdate)
     hc.humanizeMessages(accountOp, messages)
     expect(onUpdate).toHaveBeenCalledTimes(1)
-    // console.log(tmTemplate)
   })
 })
