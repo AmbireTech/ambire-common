@@ -213,7 +213,6 @@ contract DKIMRecoverySigValidator is ExternalSigValidator {
       if (mode == SigMode.OnlySecond)
         require(accInfo.acceptEmptyDKIMSig, 'account disallows OnlySecond');
 
-      // @TODO should spoofing be allowed
       if (!(SignatureValidator.recoverAddrImpl(hashToSign, secondSig, true) == accInfo.secondaryKey)) {
         return (false, 0);
       }
