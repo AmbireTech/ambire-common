@@ -153,21 +153,13 @@ contract DKIMRecoverySigValidator is ExternalSigValidator {
     bytes32 identifier = keccak256(abi.encode(accountAddr, data, sigMeta));
     require(!recoveries[identifier], 'recovery already done');
 
-    // declare the variables to not go deep in the stack
     SigMode mode = sigMeta.mode;
-    address newKeyToSet = sigMeta.newKeyToSet;
-    bytes32 newPrivilegeValue = sigMeta.newPrivilegeValue;
-
-    if (mode == SigMode.Both) {
-      _validateCalls(calls, accountAddr, newKeyToSet, newPrivilegeValue);
-    }
-
     if (mode == SigMode.Both || mode == SigMode.OnlyDKIM) {
       if (mode == SigMode.OnlyDKIM)
         require(accInfo.acceptEmptySecondSig, 'account disallows OnlyDKIM');
 
       string memory headers = sigMeta.canonizedHeaders;
-      _verifyHeaders(headers, accInfo.emailFrom, accInfo.emailTo, newKeyToSet, mode);
+      _verifyHeaders(headers, accInfo.emailFrom, accInfo.emailTo, sigMeta.newKeyToSet, mode);
 
       DKIMKey memory key = sigMeta.key;
       bytes memory pubKeyExponent = key.pubKeyExponent;
@@ -208,7 +200,7 @@ contract DKIMRecoverySigValidator is ExternalSigValidator {
 
     if (mode == SigMode.Both || mode == SigMode.OnlySecond) {
       bytes32 hashToSign = keccak256(
-        abi.encode(address(accountAddr), newKeyToSet, newPrivilegeValue)
+        abi.encode(address(accountAddr), sigMeta.newKeyToSet, sigMeta.newPrivilegeValue)
       );
       if (mode == SigMode.OnlySecond)
         require(accInfo.acceptEmptyDKIMSig, 'account disallows OnlySecond');
@@ -232,12 +224,12 @@ contract DKIMRecoverySigValidator is ExternalSigValidator {
         if (uint32(block.timestamp) < timelock.whenReady) {
           return (false, timelock.whenReady);
         }
-        _validateCalls(calls, accountAddr, newKeyToSet, newPrivilegeValue);
         timelock.isExecuted = true;
         emit TimelockExecuted(identifier);
       }
     }
 
+    _validateCalls(calls, accountAddr, sigMeta.newKeyToSet, sigMeta.newPrivilegeValue);
     recoveries[identifier] = true;
     return (true, 0);
   }
