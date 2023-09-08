@@ -15,7 +15,6 @@ interface IAmbireAccount {
 		address[] keys;
 		uint timelock;
 	}
-
 	struct ExecuteArgs {
 		Transaction[] calls;
 		bytes signature;
