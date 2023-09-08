@@ -1,5 +1,5 @@
 import { NetworkDescriptor } from '../interfaces/networkDescriptor'
-import { ERC_4337_ENTRYPOINT, ENTRY_POINT_MARKER } from './deploy'
+import { ENTRY_POINT_MARKER, ERC_4337_ENTRYPOINT } from './deploy'
 
 const networks: NetworkDescriptor[] = [
   {
@@ -19,7 +19,8 @@ const networks: NetworkDescriptor[] = [
     rpcNoStateOverride: false,
     chainId: 137n,
     erc4337: {
-      enabled: true,
+      // TODO: temp disabled (only while testing)
+      enabled: false,
       entryPointAddr: ERC_4337_ENTRYPOINT,
       entryPointMarker: ENTRY_POINT_MARKER
     }
