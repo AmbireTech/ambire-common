@@ -7,6 +7,7 @@ import { EstimateResult } from '../../libs/estimate/estimate'
 import { GasRecommendation } from '../../libs/gasPrice/gasPrice'
 import { Keystore } from '../../libs/keystore/keystore'
 import EventEmitter from '../eventEmitter'
+import { PortfolioController } from '../portfolio/portfolio'
 
 export enum SigningStatus {
   UnableToSign = 'unable-to-sign',
@@ -37,6 +38,8 @@ export enum FeeSpeed {
 export class SignAccountOpController extends EventEmitter {
   #keystore: Keystore
 
+  portfolio: PortfolioController
+
   #accounts: Account[] | null = null
 
   #networks: NetworkDescriptor[] | null = null
@@ -49,13 +52,15 @@ export class SignAccountOpController extends EventEmitter {
 
   #estimation: EstimateResult | null = null
 
-  feeSpeed: FeeSpeed = FeeSpeed.Fast
+  selectedFeeSpeed: FeeSpeed = FeeSpeed.Fast
 
   status: Status | null = null
 
-  constructor(keystore: Keystore) {
+  constructor(keystore: Keystore, portfolio: PortfolioController) {
     super()
+
     this.#keystore = keystore
+    this.portfolio = portfolio
   }
 
   get isInitialized(): boolean {
@@ -64,14 +69,6 @@ export class SignAccountOpController extends EventEmitter {
 
   get hasSelectedAccountOp() {
     return !!this.accountOp
-  }
-
-  get #account(): Account | null {
-    if (this.accountOp && this.#accounts) {
-      const account = this.#accounts.find((acc) => acc.addr === this.accountOp!.accountAddr)
-      if (account) return account
-    }
-    return null
   }
 
   get readyToSign() {
@@ -84,7 +81,8 @@ export class SignAccountOpController extends EventEmitter {
     accountStates,
     accountOp,
     gasPrices,
-    estimation
+    estimation,
+    feeTokenAddr
   }: {
     accounts?: Account[]
     networks?: NetworkDescriptor[]
@@ -92,6 +90,7 @@ export class SignAccountOpController extends EventEmitter {
     accountOp?: AccountOp
     gasPrices?: GasRecommendation[]
     estimation?: EstimateResult
+    feeTokenAddr?: string
   }) {
     if (accounts) this.#accounts = accounts
     if (networks) this.#networks = networks
@@ -112,6 +111,11 @@ export class SignAccountOpController extends EventEmitter {
     if (this.isInitialized && this.#estimation) {
       this.status = { type: SigningStatus.ReadyToSign }
     }
+
+    if (this.accountOp && feeTokenAddr) {
+      // TODO: validate feeTokenAddr
+      this.accountOp.gasFeePayment = this.#getGasFeePayment(feeTokenAddr, this.selectedFeeSpeed)
+    }
     this.emitUpdate()
   }
 
@@ -119,15 +123,26 @@ export class SignAccountOpController extends EventEmitter {
     this.accountOp = null
     this.#gasPrices = null
     this.#estimation = null
-    this.feeSpeed = FeeSpeed.Fast
+    this.selectedFeeSpeed = FeeSpeed.Fast
     this.status = null
     this.emitUpdate()
+  }
+
+  // internal helper to get the account
+  #getAccount(): Account | null {
+    if (!this.accountOp || !this.#accounts) return null
+    const account = this.#accounts.find((x) => x.addr === this.accountOp!.accountAddr)
+    if (!account) {
+      throw new Error(`accountOp selected with non-existant account: ${this.accountOp.accountAddr}`)
+    }
+    return account
   }
 
   #getGasFeePayment(feeTokenAddr: string, feeSpeed: FeeSpeed) {
     if (!this.isInitialized) throw new Error('signAccountOp: not initialized')
 
-    if (!this.#account || !this.#account?.creation) {
+    const account = this.#getAccount()
+    if (!account || !account?.creation) {
       throw new Error('EOA is not supported yet')
       // TODO: implement for EOA and remove the !this.#account?.creation condition
     }
@@ -146,11 +161,20 @@ export class SignAccountOpController extends EventEmitter {
     }
   }
 
-  setFeeToken(feeTokenAddr: string) {
-    if (!this.accountOp || !feeTokenAddr) return
-    // TODO: validate feeTokenAddr
+  // get availableFeeTokens() {
+  //   if (!this.isInitialized) return
 
-    this.accountOp.gasFeePayment = this.#getGasFeePayment(feeTokenAddr, this.feeSpeed)
+  //   const account = this.#getAccount()
+
+  //   if (!account) return []
+  //   const EOAs = this.#accounts!.filter((acc) => !acc.creation)
+  //   // current account is an EOA or an EOA is paying the fee
+  //   if (!account.creation || EOAs.includes(this.accountOp!.gasFeePayment.paidBy)) return [native]
+  //   // @TODO return everything incl gas tank, with amounts; based on estimation + gas tank data from portfolio
+  // }
+
+  get feeToken(): string | null {
+    return this.accountOp?.gasFeePayment?.inToken || null
   }
 
   async sign() {

@@ -1,7 +1,8 @@
-/* eslint-disable no-underscore-dangle */
 import { JsonRpcProvider } from 'ethers'
 
 import { networks } from '../../consts/networks'
+/* eslint-disable no-underscore-dangle */
+import { SignAccountOpController } from '../signAccountOp/signAccountOp'
 import { Account, AccountId, AccountStates } from '../../interfaces/account'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
 import { Storage } from '../../interfaces/storage'
@@ -49,6 +50,8 @@ export class MainController extends EventEmitter {
   emailVault: EmailVaultController
 
   signMessage!: SignMessageController
+
+  signAccountOp: SignAccountOpController
 
   activity!: ActivityController
 
@@ -110,6 +113,7 @@ export class MainController extends EventEmitter {
     this.settings = { networks }
     this.emailVault = new EmailVaultController(storage, fetch, relayerUrl, this.#keystoreLib)
     this.accountAdder = new AccountAdderController({ storage, relayerUrl, fetch })
+    this.signAccountOp = new SignAccountOpController(this.#keystoreLib, this.portfolio)
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
     this.onResolveDappRequest = onResolveDappRequest
     this.onRejectDappRequest = onRejectDappRequest

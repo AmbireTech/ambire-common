@@ -1,11 +1,12 @@
 import { JsonRpcProvider } from 'ethers'
-import { Account, AccountStates } from 'interfaces/account'
-import { NetworkDescriptor } from 'interfaces/networkDescriptor'
 
 import { describe, expect, test } from '@jest/globals'
 
 import { produceMemoryStore } from '../../../test/helpers'
 import { networks } from '../../consts/networks'
+import { PortfolioController } from '../portfolio/portfolio'
+import { Account, AccountStates } from '../../interfaces/account'
+import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { getAccountState } from '../../libs/accountState/accountState'
 import { estimate } from '../../libs/estimate/estimate'
 import { getGasPriceRecommendations } from '../../libs/gasPrice/gasPrice'
@@ -134,7 +135,8 @@ describe('SignAccountOp Controller ', () => {
     const estimation = await estimate(provider, ethereum, account, op, nativeToCheck, feeTokens)
     const accounts = [account]
     const accountStates = await getAccountsInfo(accounts)
-    const controller = new SignAccountOpController(keystore)
+    const portfolio = new PortfolioController(produceMemoryStore())
+    const controller = new SignAccountOpController(keystore, portfolio)
     controller.status = { type: SigningStatus.ReadyToSign }
 
     controller.update({
@@ -143,10 +145,10 @@ describe('SignAccountOp Controller ', () => {
       accountStates,
       accountOp: op,
       gasPrices: prices,
-      estimation
+      estimation,
+      feeTokenAddr: '0x0000000000000000000000000000000000000000'
     })
 
-    controller.setFeeToken('0x0000000000000000000000000000000000000000')
     await controller.sign()
 
     expect(controller.accountOp?.gasFeePayment?.amount).toBeGreaterThan(21000n)
