@@ -3,7 +3,7 @@ pragma solidity 0.8.19;
 
 import './libs/SignatureValidator.sol';
 import './ExternalSigValidator.sol';
-import './libs/UserOperation.sol';
+import './libs/erc4337/UserOperation.sol';
 
 // @dev All external/public functions (that are not view/pure) use `payable` because AmbireAccount
 // is a wallet contract, and any ETH sent to it is not lost, but on the other hand not having `payable`
