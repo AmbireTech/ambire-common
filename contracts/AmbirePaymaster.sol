@@ -5,11 +5,21 @@ import './AmbireAccount.sol';
 import './ExternalSigValidator.sol';
 import './libs/erc4337/IPaymaster.sol';
 
+interface IStakeManager {
+	function withdrawTo(address payable withdrawAddress, uint256 withdrawAmount) external;
+}
+
 contract AmbirePaymaster is IPaymaster {
 	address immutable public relayer;
 
 	constructor(address _relayer) {
 		relayer = _relayer;
+	}
+
+	// We do not need to handle ETH as well since depositTo can be invoked from anywhere. We need a withdraw method though.
+	function withdrawToRelayer(IStakeManager entryPoint, uint amount) external {
+		require(msg.sender == relayer, 'withdrawToRelayer: not relayer');
+		entryPoint.withdrawTo(payable(relayer), amount);
 	}
 
 	function validatePaymasterUserOp(UserOperation calldata userOp, bytes32 userOpHash, uint256 maxCost)
