@@ -3,26 +3,7 @@ pragma solidity 0.8.19;
 
 import './libs/SignatureValidator.sol';
 import './ExternalSigValidator.sol';
-
-// EIP-4337 UserOperation
-// https://eips.ethereum.org/EIPS/eip-4337#required-entry-point-contract-functionality
-struct UserOperation {
-	address sender;
-	uint256 nonce;
-	bytes initCode;
-	bytes callData;
-	uint256 callGasLimit;
-	uint256 verificationGasLimit;
-	uint256 preVerificationGas;
-	uint256 maxFeePerGas;
-	uint256 maxPriorityFeePerGas;
-	bytes paymasterAndData;
-	bytes signature;
-}
-
-interface NonceManager {
-	function getNonce(address sender, uint192 key) external view returns (uint256 nonce);
-}
+import './libs/UserOperation.sol';
 
 // @dev All external/public functions (that are not view/pure) use `payable` because AmbireAccount
 // is a wallet contract, and any ETH sent to it is not lost, but on the other hand not having `payable`
