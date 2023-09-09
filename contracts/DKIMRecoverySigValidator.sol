@@ -229,7 +229,7 @@ contract DKIMRecoverySigValidator is ExternalSigValidator {
       }
     }
 
-    _validateCalls(calls, accountAddr, sigMeta.newKeyToSet, sigMeta.newPrivilegeValue);
+    _validateCalls(accountAddr, calls, sigMeta.newKeyToSet, sigMeta.newPrivilegeValue);
     recoveries[identifier] = true;
     return (true, 0);
   }
@@ -274,8 +274,8 @@ contract DKIMRecoverySigValidator is ExternalSigValidator {
   }
 
   function _validateCalls(
-    Transaction[] memory calls,
     address accountAddr,
+    Transaction[] memory calls,
     address newKeyToSet,
     bytes32 newPrivilegeValue
   ) internal pure {
