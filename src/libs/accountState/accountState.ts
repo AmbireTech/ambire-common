@@ -52,8 +52,8 @@ export async function getAccountState(
       accountAddr: accounts[index].addr,
       nonce:
         network?.erc4337?.enabled && accResult.erc4337Nonce < MAX_UINT256
-          ? parseInt(accResult.erc4337Nonce, 10)
-          : parseInt(accResult.nonce, 10),
+          ? accResult.erc4337Nonce
+          : accResult.nonce,
       isDeployed: accResult.isDeployed,
       associatedKeys: Object.fromEntries(associatedKeys),
       isV2: accResult.isV2,
