@@ -29,9 +29,7 @@ export async function estimate(
   feeTokens: string[],
   opts?: {
     calculateRefund?: boolean
-    calculateAnomalies?: boolean
   },
-  fromAddrHavingNative?: string,
   blockFrom: string = '0x0000000000000000000000000000000000000001',
   blockTag: string | number = 'latest'
 ): Promise<EstimateResult> {
@@ -39,7 +37,6 @@ export async function estimate(
     if (op.calls.length !== 1) {
       throw new Error("EOA can't have more than one call!")
     }
-console.log('===>EOA');
 
     const call = op.calls[0]
     const nonce = await provider.getTransactionCount(account.addr)
@@ -72,8 +69,6 @@ console.log('===>EOA');
   // @TODO - .env or passed as parameter?
   const relayerAddress = '0x942f9CE5D9a33a82F88D233AEb3292E680230348'
 
-  const calculateAnomalies = opts?.calculateAnomalies && fromAddrHavingNative
-
   const args = [
     account.addr,
     ...getAccountDeployParams(account),
@@ -88,14 +83,8 @@ console.log('===>EOA');
     account.associatedKeys,
     feeTokens,
     relayerAddress,
-    calculateAnomalies ? [fromAddrHavingNative].concat(nativeToCheck) : nativeToCheck
+    nativeToCheck
   ]
-
-  // @TODO explain this
-  const simulationGasPrice = 500000000n
-  const simulationGasLimit = 500000n
-  const gasPrice = `0x${Number(simulationGasPrice).toString(16)}`
-  const gasLimit = `0x${Number(simulationGasLimit).toString(16)}`
 
   /* eslint-disable prefer-const */
   let [
@@ -112,9 +101,7 @@ console.log('===>EOA');
     ]
   ] = await deploylessEstimator.call('estimate', args, {
     from: blockFrom,
-    blockTag,
-    gasPrice: calculateAnomalies ? gasPrice : undefined,
-    gasLimit: calculateAnomalies ? gasLimit : undefined
+    blockTag
   })
   /* eslint-enable prefer-const */
 
@@ -152,19 +139,6 @@ console.log('===>EOA');
     if (estimatedRefund <= gasUsed / 5n && estimatedRefund > 0n) gasUsed = estimatedGas
   }
 
-  let addedNative
-  if (calculateAnomalies) {
-    const nativeFromBalance = await provider.getBalance(fromAddrHavingNative!)
-
-    // @TODO - Both balances are equal, but they shouldn't be as the contract balance should include the fee
-console.log({ nativeFromBalance, contractNativeFromBalance: nativeAssetBalances[0] })
-
-    addedNative =
-      nativeFromBalance - (nativeAssetBalances[0] - simulationGasPrice * simulationGasLimit)
-
-    nativeAssetBalances = nativeAssetBalances.slice(1)
-  }
-
   const feeTokenOptions = feeTokenOutcomes.map((token: any, key: number) => ({
     address: feeTokens[key],
     paidBy: account.addr,
@@ -180,7 +154,7 @@ console.log({ nativeFromBalance, contractNativeFromBalance: nativeAssetBalances[
   return {
     gasUsed,
     nonce,
-    addedNative,
+    addedNative: l1GasEstimation.fee,
     feePaymentOptions: [...feeTokenOptions, ...nativeTokenOptions]
   }
 }
