@@ -84,7 +84,8 @@ export class SignAccountOpController extends EventEmitter {
     estimation,
     feeTokenAddr,
     paidBy,
-    speed
+    speed,
+    signingKeyAddr
   }: {
     accounts?: Account[]
     networks?: NetworkDescriptor[]
@@ -95,6 +96,7 @@ export class SignAccountOpController extends EventEmitter {
     feeTokenAddr?: string
     paidBy?: string
     speed?: FeeSpeed
+    signingKeyAddr?: string
   }) {
     if (accounts) this.#accounts = accounts
 
@@ -123,23 +125,25 @@ export class SignAccountOpController extends EventEmitter {
     }
 
     if (paidBy && this.isInitialized) {
-      const account = this.#getAccount()
-      // Cannot set paidBy for EOAs or ERC-4337
-      const network = this.#networks!.find((n) => n.id === this.accountOp?.networkId)
-      if (!account || !account.creation || (network && network.erc4337?.enabled)) return
+      ;(() => {
+        const account = this.#getAccount()
+        // Cannot set paidBy for EOAs or ERC-4337
+        const network = this.#networks!.find((n) => n.id === this.accountOp?.networkId)
+        if (!account || !account.creation || (network && network.erc4337?.enabled)) return
 
-      if (!this.accountOp!.gasFeePayment) this.accountOp!.gasFeePayment = {} as any
-      // No need to update anything else, availableFeeTokens will change it's output
-      this.accountOp!.gasFeePayment!.paidBy = paidBy
-      const availableFeeTokens = this.availableFeeTokens
-      if (!availableFeeTokens!.includes(this.accountOp!.gasFeePayment?.inToken as string)) {
-        this.accountOp!.gasFeePayment = this.#getGasFeePayment(
-          availableFeeTokens[0],
-          this.selectedFeeSpeed
-        )
-        // we need to set it again cause getGasFeePayment will reset it
-        this.accountOp!.gasFeePayment.paidBy = paidBy
-      }
+        if (!this.accountOp!.gasFeePayment) this.accountOp!.gasFeePayment = {} as any
+        // No need to update anything else, availableFeeTokens will change it's output
+        this.accountOp!.gasFeePayment!.paidBy = paidBy
+        const availableFeeTokens = this.availableFeeTokens
+        if (!availableFeeTokens!.includes(this.accountOp!.gasFeePayment?.inToken as string)) {
+          this.accountOp!.gasFeePayment = this.#getGasFeePayment(
+            availableFeeTokens[0],
+            this.selectedFeeSpeed
+          )
+          // we need to set it again cause getGasFeePayment will reset it
+          this.accountOp!.gasFeePayment.paidBy = paidBy
+        }
+      })()
     }
 
     if (speed && this.isInitialized) {
@@ -148,6 +152,14 @@ export class SignAccountOpController extends EventEmitter {
         this.accountOp!.gasFeePayment?.inToken as string,
         this.selectedFeeSpeed
       )
+    }
+
+    if (signingKeyAddr && this.isInitialized) {
+      ;() => {
+        const account = this.#getAccount()
+        if (!account || !account.creation) return
+        this.accountOp!.signingKeyAddr = signingKeyAddr
+      }
     }
 
     if (
@@ -222,11 +234,6 @@ export class SignAccountOpController extends EventEmitter {
     return this.accountOp?.gasFeePayment?.inToken || null
   }
 
-  // All the tokes are available only when paying from the account; so, putting the token first will be poor UX because either alternative options will be available only if you select ETH first (harder to find / realize) or the token will be reset when you choose an alternative option (changing an upper thing based on a lower thing)
-  // As such, we need the "paid by" dropdown first, then fee token
-  //
-  // Fee paid by
-  //
   get availableFeePaidBy() {
     const account = this.#getAccount()
     if (!account || !this.isInitialized) return []
@@ -289,6 +296,7 @@ export class SignAccountOpController extends EventEmitter {
       isInitialized: this.isInitialized,
       hasSelectedAccountOp: this.hasSelectedAccountOp,
       readyToSign: this.readyToSign,
+      availableFeePaidBy: this.availableFeePaidBy,
       feeToken: this.feeToken,
       feePaidBy: this.feePaidBy,
       speedOptions: this.speedOptions
