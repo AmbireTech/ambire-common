@@ -3,9 +3,9 @@ const AmbireAccount = require("../contracts/compiled/AmbireAccount.json");
 const AmbireAccountFactory = require("../contracts/compiled/AmbireAccountFactory.json");
 require('dotenv').config();
 
-const polygonUrl = 'https://rpc.ankr.com/polygon'
-const polygonChainId = 137
-const provider = new JsonRpcProvider(polygonUrl)
+const optimismUrl = 'https://rpc.ankr.com/optimism'
+const optimismChainId = 10
+const provider = new JsonRpcProvider(optimismUrl)
 
 // This is a deploy script that deploys a proxy AmbireAccount, not the original one.
 // this one doesn't have any priviledges, nor can be configured.
@@ -24,7 +24,25 @@ async function generateAmbireProxyDeploy (gasPrice) {
 	txn.data = txn.data.data
 	txn.gasPrice = gasPrice
 	txn.nonce = await provider.getTransactionCount(fundWallet.address)
-	txn.chainId = polygonChainId
+	txn.chainId = optimismChainId
+	return await fundWallet.signTransaction(txn)
+}
+
+async function generateDeployAndExecute (gasPrice) {
+	const txn = {}
+	const pk = process.env.DEPLOY_PRIVATE_KEY
+	const fundWallet = new ethers.Wallet(pk, provider)
+	const factory = new ethers.ContractFactory(AmbireAccount.abi, AmbireAccount.bin, fundWallet)
+
+	txn.data = await factory.getDeployTransaction()
+	txn.from = fundWallet.address
+	txn.value = '0x00'
+	txn.type = null
+	txn.gasLimit = 10000000n
+	txn.data = txn.data.data
+	txn.gasPrice = gasPrice
+	txn.nonce = await provider.getTransactionCount(fundWallet.address)
+	txn.chainId = optimismChainId
 	return await fundWallet.signTransaction(txn)
 }
 
@@ -42,7 +60,7 @@ async function generateFactory (gasPrice) {
 	txn.data = txn.data.data
 	txn.gasPrice = gasPrice
 	txn.nonce = await provider.getTransactionCount(fundWallet.address)
-	txn.chainId = polygonChainId
+	txn.chainId = optimismChainId
 	return await fundWallet.signTransaction(txn)
 }
 
@@ -60,7 +78,7 @@ async function generateManager (gasPrice) {
 	txn.data = txn.data.data
 	txn.gasPrice = gasPrice
 	txn.nonce = await provider.getTransactionCount(fundWallet.address)
-	txn.chainId = polygonChainId
+	txn.chainId = optimismChainId
 	return await fundWallet.signTransaction(txn)
 }
 
@@ -92,7 +110,7 @@ async function setFallbackHandler(gasPrice) {
 async function deploy() {
 
   const feeData = await provider.getFeeData()
-  const sig = await generateAmbireProxyDeploy(feeData.gasPrice)
+  const sig = await generateFactory(feeData.gasPrice)
   console.log(sig)
 }
 
