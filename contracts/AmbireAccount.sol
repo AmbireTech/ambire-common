@@ -3,26 +3,7 @@ pragma solidity 0.8.19;
 
 import './libs/SignatureValidator.sol';
 import './ExternalSigValidator.sol';
-
-// EIP-4337 UserOperation
-// https://eips.ethereum.org/EIPS/eip-4337#required-entry-point-contract-functionality
-struct UserOperation {
-	address sender;
-	uint256 nonce;
-	bytes initCode;
-	bytes callData;
-	uint256 callGasLimit;
-	uint256 verificationGasLimit;
-	uint256 preVerificationGas;
-	uint256 maxFeePerGas;
-	uint256 maxPriorityFeePerGas;
-	bytes paymasterAndData;
-	bytes signature;
-}
-
-interface NonceManager {
-	function getNonce(address sender, uint192 key) external view returns (uint256 nonce);
-}
+import './libs/erc4337/UserOperation.sol';
 
 // @dev All external/public functions (that are not view/pure) use `payable` because AmbireAccount
 // is a wallet contract, and any ETH sent to it is not lost, but on the other hand not having `payable`
@@ -34,6 +15,9 @@ contract AmbireAccount {
 	address private constant FALLBACK_HANDLER_SLOT = address(0x6969);
 
 	address private constant ENTRY_POINT_MARKER = address(0x7171);
+
+	// Externally validated signatures
+	uint8 private constant SIGMODE_EXTERNALLY_VALIDATED = 255;
 
 	// Variables
 	mapping(address => bytes32) public privileges;
@@ -48,9 +32,6 @@ contract AmbireAccount {
 		Transaction[] calls;
 		bytes signature;
 	}
-
-	// Externally validated signatures
-	uint8 private constant SIGMODE_EXTERNALLY_VALIDATED = 255;
 
 	// This contract can accept ETH without calldata
 	receive() external payable {}
@@ -103,17 +84,6 @@ contract AmbireAccount {
 		emit LogPrivilegeChanged(addr, priv);
 	}
 
-	/**
-	 * @notice  Set the entry point priv
-	 * @dev     We do not hash the priv so we could extract the ENTRY_POINT_MARKER
-	 * @param   addr  The entry point address
-	 */
-	function setEntryPointPrivilege(address addr) external payable {
-		require(msg.sender == address(this), 'ONLY_IDENTITY_CAN_CALL');
-		bytes32 priv = bytes32(abi.encodePacked(uint256(uint160(ENTRY_POINT_MARKER)) | (uint256(block.number) << 160)));
-		this.setAddrPrivilege(addr, priv);
-	}
-
 	// @notice Useful when we need to do multiple operations but ignore failures in some of them
 	function tryCatch(address to, uint256 value, bytes calldata data) external payable {
 		require(msg.sender == address(this), 'ONLY_IDENTITY_CAN_CALL');
@@ -148,9 +118,7 @@ contract AmbireAccount {
 			uint256 timestampValidAfter;
 			(signerKey, isValidSig, timestampValidAfter) = validateExternalSig(calls, signature);
 			if (!isValidSig) {
-				if (timestampValidAfter != 0) {
-					revert('timelock: not ready yet');
-				}
+				require(block.timestamp >= timestampValidAfter, 'SIGNATURE_VALIDATION_TIMELOCK');
 				revert('SIGNATURE_VALIDATION_FAIL');
 			}
 		} else {
@@ -214,6 +182,9 @@ contract AmbireAccount {
 	// @notice EIP-1271 implementation
 	// see https://eips.ethereum.org/EIPS/eip-1271
 	function isValidSignature(bytes32 hash, bytes calldata signature) external view returns (bytes4) {
+		// We enforce this one additional step in preparing `hash`, to avoid the sig being valid across multiple accounts
+		// in case the hash preimage doesn't include the account address
+		hash = keccak256(abi.encode(hash, address(this)));
 		if (privileges[SignatureValidator.recoverAddr(hash, signature)] != bytes32(0)) {
 			// bytes4(keccak256("isValidSignature(bytes32,bytes)")
 			return 0x1626ba7e;
@@ -235,29 +206,36 @@ contract AmbireAccount {
 		return AmbireAccount(fallbackHandler).supportsInterface(interfaceID);
 	}
 
+
+	//
+	// EIP-4337 implementation
+	//
 	// return value in case of signature failure, with no time-range.
 	// equivalent to packSigTimeRange(true,0,0);
 	uint256 constant internal SIG_VALIDATION_FAILED = 1;
 
-	function validateUserOp(UserOperation calldata userOp, bytes32 userOpHash, uint256 missingAccountFunds)
+	function validateUserOp(UserOperation calldata op, bytes32 userOpHash, uint256 missingAccountFunds)
 	external returns (uint256)
 	{
-		require(address(uint160(uint256(privileges[msg.sender]))) == ENTRY_POINT_MARKER, 'Request not from entryPoint');
-
-		if (userOp.initCode.length > 0 && userOp.nonce == 0 && userOp.callData.length == 0) {
-			require(NonceManager(msg.sender).getNonce(address(this), 0) == 0, 'Entry point nonce not 0');
-			require(uint64(uint256(privileges[msg.sender] >> 160)) == uint64(block.number), 'Entry point not set in the same block');
-			require(missingAccountFunds == 0, 'Payment is prepayed');
+		if (bytes4(op.callData[0:4]) == this.execute.selector) {
+			// Require a paymaster, otherwise this mode can be used by anyone to get the user to spend their deposit
+			require(op.signature.length == 0, 'validateUserOp: empty signature required in execute() mode');
+			require(op.paymasterAndData.length >= 20, 'validateUserOp: paymaster required in execute() mode');
+			// hashing in everything except sender (nonces are scoped by sender anyway), nonce, signature
+			uint256 targetNonce = uint256(uint192(uint256(keccak256(
+				abi.encode(op.initCode, op.callData, op.callGasLimit, op.verificationGasLimit, op.preVerificationGas, op.maxFeePerGas, op.maxPriorityFeePerGas, op.paymasterAndData)
+			))) << 64);
+			require(op.nonce == targetNonce, 'validateUserOp: execute(): one-time nonce is wrong');
 			return 0;
 		}
-
-		uint8 sigMode = uint8(userOp.signature[userOp.signature.length - 1]);
+		require(address(uint160(uint256(privileges[msg.sender]))) == ENTRY_POINT_MARKER, 'validateUserOp: not from entryPoint');
+		uint8 sigMode = uint8(op.signature[op.signature.length - 1]);
 		if (sigMode == SIGMODE_EXTERNALLY_VALIDATED) {
-			Transaction[] memory calls = userOp.callData.length > 0
-			  ? abi.decode(userOp.callData[4:], (Transaction[]))
-			  : new Transaction[](0);
+			// 68: two words + 4 for the sighash
+			require(op.callData.length >= 68 && bytes4(op.callData[0:4]) == this.executeBySender.selector, 'validateUserOp: needs to call executeBySender');
+			Transaction[] memory calls = abi.decode(op.callData[4:], (Transaction[]));
 
-			(, bool isValidSig, uint256 timestampValidAfter) = validateExternalSig(calls, userOp.signature);
+			(, bool isValidSig, uint256 timestampValidAfter) = validateExternalSig(calls, op.signature);
 			if (!isValidSig) return SIG_VALIDATION_FAILED;
 			// pack the return value for validateUserOp
 			// address aggregator, uint48 validUntil, uint48 validAfter
@@ -265,15 +243,17 @@ contract AmbireAccount {
 				return uint160(0) | (uint256(0) << 160) | (uint256(timestampValidAfter) << (208));
 			}
 		} else {
-			address signer = SignatureValidator.recoverAddr(userOpHash, userOp.signature);
+			// this is replay-safe because userOpHash is retrieved like this: keccak256(abi.encode(userOp.hash(), address(this), block.chainid))
+			address signer = SignatureValidator.recoverAddr(userOpHash, op.signature);
 			if (privileges[signer] == bytes32(0)) return SIG_VALIDATION_FAILED;
 		}
 
+		// NOTE: we do not have to pay th entryPoint if SIG_VALIDATION_FAILED, so we just return on those
 		if (missingAccountFunds > 0) {
-			// TODO: MAY pay more than the minimum, to deposit for future transactions
-			(bool success,) = payable(msg.sender).call{value : missingAccountFunds}("");
-			(success);
+			// NOTE: MAY pay more than the minimum, to deposit for future transactions
+			(bool success,) = payable(msg.sender).call{value : missingAccountFunds}('');
 			// ignore failure (its EntryPoint's job to verify, not account.)
+			(success);
 		}
 
 		return 0;
