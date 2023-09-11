@@ -82,7 +82,8 @@ export class SignAccountOpController extends EventEmitter {
     accountOp,
     gasPrices,
     estimation,
-    feeTokenAddr
+    feeTokenAddr,
+    paidBy
   }: {
     accounts?: Account[]
     networks?: NetworkDescriptor[]
@@ -91,12 +92,18 @@ export class SignAccountOpController extends EventEmitter {
     gasPrices?: GasRecommendation[]
     estimation?: EstimateResult
     feeTokenAddr?: string
+    paidBy?: string
   }) {
     if (accounts) this.#accounts = accounts
+
     if (networks) this.#networks = networks
+
     if (accountStates) this.#accountStates = accountStates
+
     if (gasPrices) this.#gasPrices = gasPrices
+
     if (estimation) this.#estimation = estimation
+
     if (accountOp) {
       if (!this.accountOp) {
         this.accountOp = accountOp
@@ -108,14 +115,38 @@ export class SignAccountOpController extends EventEmitter {
       }
     }
 
-    if (this.isInitialized && this.#estimation) {
-      this.status = { type: SigningStatus.ReadyToSign }
-    }
-
     if (this.accountOp && feeTokenAddr) {
       // TODO: validate feeTokenAddr
       this.accountOp.gasFeePayment = this.#getGasFeePayment(feeTokenAddr, this.selectedFeeSpeed)
     }
+
+    if (paidBy && this.accountOp) {
+      const account = this.#getAccount()
+      // Cannot set paidBy for EOAs or ERC-4337
+      const network = this.#networks!.find((n) => n.id === this.accountOp?.networkId)
+      if (!account || !account.creation || (network && network.erc4337?.enabled)) return
+
+      if (!this.accountOp.gasFeePayment) this.accountOp.gasFeePayment = {} as any
+      // No need to update anything else, availableFeeTokens will change it's output
+      this.accountOp.gasFeePayment!.paidBy = paidBy
+      const availableFeeTokens = this.availableFeeTokens
+      if (
+        !!availableFeeTokens &&
+        !availableFeeTokens!.includes(this.accountOp!.gasFeePayment?.inToken as string)
+      ) {
+        this.accountOp.gasFeePayment = this.#getGasFeePayment(
+          availableFeeTokens[0],
+          this.selectedFeeSpeed
+        )
+        // we need to set it again cause getGasFeePayment will reset it
+        this.accountOp.gasFeePayment.paidBy = paidBy
+      }
+    }
+
+    if (this.isInitialized && this.#estimation) {
+      this.status = { type: SigningStatus.ReadyToSign }
+    }
+
     this.emitUpdate()
   }
 
@@ -161,20 +192,51 @@ export class SignAccountOpController extends EventEmitter {
     }
   }
 
-  // get availableFeeTokens() {
-  //   if (!this.isInitialized) return
+  get availableFeeTokens(): string[] {
+    if (!this.isInitialized) return []
 
-  //   const account = this.#getAccount()
+    const account = this.#getAccount()
 
-  //   if (!account) return []
-  //   const EOAs = this.#accounts!.filter((acc) => !acc.creation)
-  //   // current account is an EOA or an EOA is paying the fee
-  //   if (!account.creation || EOAs.includes(this.accountOp!.gasFeePayment.paidBy)) return [native]
-  //   // @TODO return everything incl gas tank, with amounts; based on estimation + gas tank data from portfolio
-  // }
+    if (!account) return []
+    // TODO:
+    return []
+    //   const EOAs = this.#accounts!.filter((acc) => !acc.creation)
+    //   // current account is an EOA or an EOA is paying the fee
+    //   if (!account.creation || EOAs.includes(this.accountOp!.gasFeePayment.paidBy)) return [native]
+    //   // @TODO return everything incl gas tank, with amounts; based on estimation + gas tank data from portfolio
+  }
 
   get feeToken(): string | null {
     return this.accountOp?.gasFeePayment?.inToken || null
+  }
+
+  // All the tokes are available only when paying from the account; so, putting the token first will be poor UX because either alternative options will be available only if you select ETH first (harder to find / realize) or the token will be reset when you choose an alternative option (changing an upper thing based on a lower thing)
+  // As such, we need the "paid by" dropdown first, then fee token
+  //
+  // Fee paid by
+  //
+  get availableFeePaidBy() {
+    const account = this.#getAccount()
+    if (!account || !this.isInitialized) return []
+
+    // only the account can pay for the fee in EOA mode
+    if (!account.creation) return [this.accountOp!.accountAddr]
+
+    // only the account itself can pay in this case
+    const network = this.#networks!.find((n) => n.id === this.accountOp?.networkId)
+    if (network && network.erc4337?.enabled) {
+      return [this.accountOp!.accountAddr]
+    }
+
+    // in other modes: relayer, gas tank
+    // current account + all EOAs
+    return [this.accountOp!.accountAddr].concat(
+      this.#accounts!.filter((acc) => !acc.creation).map((acc) => acc.addr)
+    )
+  }
+
+  get feePaidBy(): string | null {
+    return this.accountOp?.gasFeePayment?.paidBy || null
   }
 
   async sign() {
@@ -204,5 +266,15 @@ export class SignAccountOpController extends EventEmitter {
       this.status = { type: SigningStatus.UnableToSign, error: `Signing failed: ${error?.message}` }
     }
     // TODO: Now, the UI needs to call mainCtrl.broadcastSignedAccountOp(mainCtrl.signAccountOp.accountOp)
+  }
+
+  toJSON() {
+    return {
+      ...this,
+      isInitialized: this.isInitialized,
+      hasSelectedAccountOp: this.hasSelectedAccountOp,
+      readyToSign: this.readyToSign,
+      feeToken: this.feeToken
+    }
   }
 }

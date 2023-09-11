@@ -1,6 +1,6 @@
 import { ethers } from 'ethers'
 
-import { networks } from '../../../dist/consts/networks'
+import { networks } from '../../consts/networks'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
 import { stringify } from '../bigintJson/bigintJson'
 
