@@ -51,13 +51,15 @@ export interface GetOptions {
   previousHints?: {
     erc20s: Hints['erc20s']
     erc721s: Hints['erc721s']
-  }
+  },
+  pinned?: string[]
 }
 
 const defaultOptions: GetOptions = {
   baseCurrency: 'usd',
   blockTag: 'latest',
-  priceRecency: 0
+  priceRecency: 0,
+  pinned: []
 }
 
 export class Portfolio {
@@ -92,7 +94,7 @@ export class Portfolio {
 
   async get(accountAddr: string, opts: Partial<GetOptions> = {}): Promise<PortfolioGetResult> {
     opts = { ...defaultOptions, ...opts }
-    const { baseCurrency } = opts
+    const { baseCurrency, pinned } = opts
     if (opts.simulation && opts.simulation.account.addr !== accountAddr)
       throw new Error('wrong account passed')
 
@@ -127,6 +129,10 @@ export class Portfolio {
         erc721s: { ...opts.previousHints.erc721s, ...hints.erc721s }
       }
     }
+
+    // add pinned tokens to the hints and dedup
+    // Those will appear in the result even if they're zero amount
+    hints.erc20s = [...new Set([...hints.erc20s, ...pinned!])]
 
     // This also allows getting prices, this is used for more exotic tokens that cannot be retrieved via Coingecko
     const priceCache: PriceCache = opts.priceCache || new Map()
@@ -169,7 +175,7 @@ export class Portfolio {
     }
 
     const tokenFilter = ([error, result]: [string, TokenResult]): boolean =>
-      result.amount > 0 && error == '0x' && result.symbol !== ''
+      (result.amount > 0 || pinned!.includes(result.address)) && error == '0x' && result.symbol !== ''
 
     const tokens = tokensWithErr.filter(tokenFilter).map(([_, result]) => result)
 
