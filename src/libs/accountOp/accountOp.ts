@@ -1,7 +1,7 @@
-import { Network, ethers } from 'ethers'
+import { ethers } from 'ethers'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
 import { stringify } from '../bigintJson/bigintJson'
-import { networks } from '../../../dist/consts/networks'
+import { networks } from '../../consts/networks'
 
 export interface Call {
   to: string
