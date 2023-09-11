@@ -83,7 +83,8 @@ export class SignAccountOpController extends EventEmitter {
     gasPrices,
     estimation,
     feeTokenAddr,
-    paidBy
+    paidBy,
+    speed
   }: {
     accounts?: Account[]
     networks?: NetworkDescriptor[]
@@ -93,6 +94,7 @@ export class SignAccountOpController extends EventEmitter {
     estimation?: EstimateResult
     feeTokenAddr?: string
     paidBy?: string
+    speed?: FeeSpeed
   }) {
     if (accounts) this.#accounts = accounts
 
@@ -115,35 +117,45 @@ export class SignAccountOpController extends EventEmitter {
       }
     }
 
-    if (this.accountOp && feeTokenAddr) {
+    if (feeTokenAddr && this.isInitialized) {
       // TODO: validate feeTokenAddr
-      this.accountOp.gasFeePayment = this.#getGasFeePayment(feeTokenAddr, this.selectedFeeSpeed)
+      this.accountOp!.gasFeePayment = this.#getGasFeePayment(feeTokenAddr, this.selectedFeeSpeed)
     }
 
-    if (paidBy && this.accountOp) {
+    if (paidBy && this.isInitialized) {
       const account = this.#getAccount()
       // Cannot set paidBy for EOAs or ERC-4337
       const network = this.#networks!.find((n) => n.id === this.accountOp?.networkId)
       if (!account || !account.creation || (network && network.erc4337?.enabled)) return
 
-      if (!this.accountOp.gasFeePayment) this.accountOp.gasFeePayment = {} as any
+      if (!this.accountOp!.gasFeePayment) this.accountOp!.gasFeePayment = {} as any
       // No need to update anything else, availableFeeTokens will change it's output
-      this.accountOp.gasFeePayment!.paidBy = paidBy
+      this.accountOp!.gasFeePayment!.paidBy = paidBy
       const availableFeeTokens = this.availableFeeTokens
-      if (
-        !!availableFeeTokens &&
-        !availableFeeTokens!.includes(this.accountOp!.gasFeePayment?.inToken as string)
-      ) {
-        this.accountOp.gasFeePayment = this.#getGasFeePayment(
+      if (!availableFeeTokens!.includes(this.accountOp!.gasFeePayment?.inToken as string)) {
+        this.accountOp!.gasFeePayment = this.#getGasFeePayment(
           availableFeeTokens[0],
           this.selectedFeeSpeed
         )
         // we need to set it again cause getGasFeePayment will reset it
-        this.accountOp.gasFeePayment.paidBy = paidBy
+        this.accountOp!.gasFeePayment.paidBy = paidBy
       }
     }
 
-    if (this.isInitialized && this.#estimation) {
+    if (speed && this.isInitialized) {
+      this.selectedFeeSpeed = speed
+      this.accountOp!.gasFeePayment = this.#getGasFeePayment(
+        this.accountOp!.gasFeePayment?.inToken as string,
+        this.selectedFeeSpeed
+      )
+    }
+
+    if (
+      this.isInitialized &&
+      this.#estimation &&
+      this.accountOp?.signingKeyAddr &&
+      this.accountOp?.gasFeePayment
+    ) {
       this.status = { type: SigningStatus.ReadyToSign }
     }
 
@@ -239,31 +251,34 @@ export class SignAccountOpController extends EventEmitter {
     return this.accountOp?.gasFeePayment?.paidBy || null
   }
 
+  // eslint-disable-next-line class-methods-use-this
+  get speedOptions() {
+    return Object.values(FeeSpeed) as string[]
+  }
+
+  #setSigningError(error: string) {
+    this.status = { type: SigningStatus.UnableToSign, error }
+    this.emitUpdate()
+  }
+
   async sign() {
-    if (!this.accountOp?.signingKeyAddr) {
-      // @ts-ignore
-      this.emitError({
-        /* TODO: */
-      })
-
-      return
-    }
-
-    if (!this.readyToSign) return
+    if (!this.accountOp?.signingKeyAddr) return this.#setSigningError('no signing key set')
+    if (!this.accountOp?.gasFeePayment) return this.#setSigningError('no gasFeePayment set')
+    if (!this.readyToSign) return this.#setSigningError('not ready to sign')
 
     this.status = { type: SigningStatus.InProgress }
     this.emitUpdate()
 
     try {
-      const signer = await this.#keystore.getSigner(this.accountOp.signingKeyAddr)
+      const signer = await this.#keystore.getSigner(this.accountOp!.signingKeyAddr)
 
-      this.accountOp.signature = await signer.signMessage(
-        ethers.hexlify(accountOpSignableHash(this.accountOp))
+      this.accountOp!.signature = await signer.signMessage(
+        ethers.hexlify(accountOpSignableHash(this.accountOp!))
       )
       this.status = { type: SigningStatus.Done }
       this.emitUpdate()
     } catch (error: any) {
-      this.status = { type: SigningStatus.UnableToSign, error: `Signing failed: ${error?.message}` }
+      this.#setSigningError(`Signing failed: ${error?.message}`)
     }
     // TODO: Now, the UI needs to call mainCtrl.broadcastSignedAccountOp(mainCtrl.signAccountOp.accountOp)
   }
@@ -274,7 +289,9 @@ export class SignAccountOpController extends EventEmitter {
       isInitialized: this.isInitialized,
       hasSelectedAccountOp: this.hasSelectedAccountOp,
       readyToSign: this.readyToSign,
-      feeToken: this.feeToken
+      feeToken: this.feeToken,
+      feePaidBy: this.feePaidBy,
+      speedOptions: this.speedOptions
     }
   }
 }
