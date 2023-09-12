@@ -4,9 +4,12 @@ pragma solidity 0.8.19;
 import './libs/SignatureValidator.sol';
 import './ExternalSigValidator.sol';
 
-// @dev All external/public functions (that are not view/pure) use `payable` because AmbireAccount
-// is a wallet contract, and any ETH sent to it is not lost, but on the other hand not having `payable`
-// makes the Solidity compiler add an extra check for `msg.value`, which in this case is wasted gas
+/**
+ * @notice  A validator that performs DKIM signature recovery
+ * @dev     All external/public functions (that are not view/pure) use `payable` because AmbireAccount
+ * is a wallet contract, and any ETH sent to it is not lost, but on the other hand not having `payable`
+ * makes the Solidity compiler add an extra check for `msg.value`, which in this case is wasted gas
+ */
 contract AmbireAccount {
 	// @dev We do not have a constructor. This contract cannot be initialized with any valid `privileges` by itself!
 	// The intended use case is to deploy one base implementation contract, and create a minimal proxy for each user wallet, by
@@ -33,15 +36,26 @@ contract AmbireAccount {
 	// This contract can accept ETH without calldata
 	receive() external payable {}
 
-	// To support EIP 721 and EIP 1155, we need to respond to those methods with their own method signature
+	/**
+	 * @dev     To support EIP 721 and EIP 1155, we need to respond to those methods with their own method signature
+	 * @return  bytes4  onERC721Received function selector
+	 */
 	function onERC721Received(address, address, uint256, bytes calldata) external pure returns (bytes4) {
 		return this.onERC721Received.selector;
 	}
 
+	/**
+	 * @dev     To support EIP 721 and EIP 1155, we need to respond to those methods with their own method signature
+	 * @return  bytes4  onERC1155Received function selector
+	 */
 	function onERC1155Received(address, address, uint256, uint256, bytes calldata) external pure returns (bytes4) {
 		return this.onERC1155Received.selector;
 	}
 
+	/**
+	 * @dev     To support EIP 721 and EIP 1155, we need to respond to those methods with their own method signature
+	 * @return  bytes4  onERC1155Received function selector
+	 */
 	function onERC1155BatchReceived(
 		address,
 		address,
@@ -52,9 +66,11 @@ contract AmbireAccount {
 		return this.onERC1155BatchReceived.selector;
 	}
 
-	// @notice fallback method: currently used to call the fallback handler
-	// which is set by the user and can be changed
-	// @dev this contract can accept ETH with calldata, hence payable
+	/**
+	 * @notice  fallback method: currently used to call the fallback handler
+	 * which is set by the user and can be changed
+	 * @dev     this contract can accept ETH with calldata, hence payable
+	 */
 	fallback() external payable {
 		// We store the fallback handler at this magic slot
 		address fallbackHandler = address(uint160(uint(privileges[FALLBACK_HANDLER_SLOT])));
@@ -72,16 +88,26 @@ contract AmbireAccount {
 		}
 	}
 
-	// @notice used to set the privilege of a key (by `addr`); normal signatures will be considered valid if the
-	// `addr` they are signed with has non-zero (not 0x000..000) privilege set; we can set the privilege to
-	// a hash of the recovery keys and timelock (see `RecoveryInfo`) to enable recovery signatures
+	/**
+	 * @notice  used to set the privilege of a key (by `addr`)
+	 * @dev     normal signatures will be considered valid if the
+	 * `addr` they are signed with has non-zero (not 0x000..000) privilege set; we can set the privilege to
+	 * a hash of the recovery keys and timelock (see `RecoveryInfo`) to enable recovery signatures
+	 * @param   addr  the address to give privs to
+	 * @param   priv  the privs to give
+	 */
 	function setAddrPrivilege(address addr, bytes32 priv) external payable {
 		require(msg.sender == address(this), 'ONLY_IDENTITY_CAN_CALL');
 		privileges[addr] = priv;
 		emit LogPrivilegeChanged(addr, priv);
 	}
 
-	// @notice Useful when we need to do multiple operations but ignore failures in some of them
+	/**
+	 * @notice  Useful when we need to do multiple operations but ignore failures in some of them
+	 * @param   to  address we're sending value to
+	 * @param   value  the amount
+	 * @param   data  callData
+	 */
 	function tryCatch(address to, uint256 value, bytes calldata data) external payable {
 		require(msg.sender == address(this), 'ONLY_IDENTITY_CAN_CALL');
 		uint256 gasBefore = gasleft();
@@ -90,7 +116,13 @@ contract AmbireAccount {
 		if (!success) emit LogErr(to, value, data, returnData);
 	}
 
-	// @notice same as `tryCatch` but with a gas limit
+	/**
+	 * @notice  same as `tryCatch` but with a gas limit
+	 * @param   to  address we're sending value to
+	 * @param   value  the amount
+	 * @param   data  callData
+	 * @param   gasLimit  how much gas is allowed
+	 */
 	function tryCatchLimit(address to, uint256 value, bytes calldata data, uint256 gasLimit) external payable {
 		require(msg.sender == address(this), 'ONLY_IDENTITY_CAN_CALL');
 		uint256 gasBefore = gasleft();
@@ -99,9 +131,14 @@ contract AmbireAccount {
 		if (!success) emit LogErr(to, value, data, returnData);
 	}
 
-	// @notice execute: this method is used to execute a single bundle of calls that are signed with a key
-	// that is authorized to execute on this account (in `privileges`)
-	// @dev: WARNING: if the signature of this is changed, we have to change AmbireAccountFactory
+	/**
+	 * @notice  execute: this method is used to execute a single bundle of calls that are signed with a key
+	 * that is authorized to execute on this account (in `privileges`)
+	 * @dev     WARNING: if the signature of this is changed, we have to change AmbireAccountFactory
+	 * @param   calls  the transaction we're executing. They may not execute
+	 * if specific cases. One such is when setting a timelock
+	 * @param   signature  the signature for the transactions
+	 */
 	function execute(Transaction[] calldata calls, bytes calldata signature) public payable {
 		uint256 currentNonce = nonce;
 		// we increment the nonce here (not using `nonce++` to save some gas)
@@ -160,13 +197,19 @@ contract AmbireAccount {
 		require(privileges[signerKey] != bytes32(0), 'PRIVILEGE_NOT_DOWNGRADED');
 	}
 
-	// @notice allows executing multiple bundles of calls (batch together multiple executes)
+	/**
+	 * @notice  allows executing multiple bundles of calls (batch together multiple executes)
+	 * @param   toExec  an array of execute function parameters
+	 */
 	function executeMultiple(ExecuteArgs[] calldata toExec) external payable {
 		for (uint256 i = 0; i != toExec.length; i++) execute(toExec[i].calls, toExec[i].signature);
 	}
 
-	// @notice Allows executing calls if the caller itself is authorized
-	// @dev no need for nonce management here cause we're not dealing with sigs
+	/**
+	 * @notice  Allows executing calls if the caller itself is authorized
+	 * @dev     no need for nonce management here cause we're not dealing with sigs
+	 * @param   calls  the transaction we're executing
+	 */
 	function executeBySender(Transaction[] calldata calls) external payable {
 		require(privileges[msg.sender] != bytes32(0), 'INSUFFICIENT_PRIVILEGE');
 		executeBatch(calls);
@@ -174,13 +217,20 @@ contract AmbireAccount {
 		require(privileges[msg.sender] != bytes32(0), 'PRIVILEGE_NOT_DOWNGRADED');
 	}
 
-	// @notice allows the contract itself to execute a batch of calls
-	// self-calling is useful in cases like wanting to do multiple things in a tryCatchLimit
+	/**
+	 * @notice  allows the contract itself to execute a batch of calls
+	 * self-calling is useful in cases like wanting to do multiple things in a tryCatchLimit
+	 * @param   calls  the transaction we're executing
+	 */
 	function executeBySelf(Transaction[] calldata calls) external payable {
 		require(msg.sender == address(this), 'ONLY_IDENTITY_CAN_CALL');
 		executeBatch(calls);
 	}
 
+	/**
+	 * @notice  Execute a batch of transactions
+	 * @param   calls  the transaction we're executing
+	 */
 	function executeBatch(Transaction[] memory calls) internal {
 		uint256 len = calls.length;
 		for (uint256 i = 0; i < len; i++) {
@@ -189,7 +239,13 @@ contract AmbireAccount {
 		}
 	}
 
-	// we shouldn't use address.call(), cause: https://github.com/ethereum/solidity/issues/2884
+	/**
+	 * @notice  Execute a signle transaction
+	 * @dev     we shouldn't use address.call(), cause: https://github.com/ethereum/solidity/issues/2884
+	 * @param   to  the address we're sending to
+	 * @param   value  the amount we're sending
+	 * @param   data  callData
+	 */
 	function executeCall(address to, uint256 value, bytes memory data) internal {
 		assembly {
 			let result := call(gas(), to, value, add(data, 0x20), mload(data), 0, 0)
@@ -203,8 +259,13 @@ contract AmbireAccount {
 		}
 	}
 
-	// @notice EIP-1271 implementation
-	// see https://eips.ethereum.org/EIPS/eip-1271
+	/**
+	 * @notice  EIP-1271 implementation
+	 * @dev     see https://eips.ethereum.org/EIPS/eip-1271
+	 * @param   hash  the signed hash
+	 * @param   signature  the signature for the signed hash
+	 * @return  bytes4  is it a success or a failure
+	 */
 	function isValidSignature(bytes32 hash, bytes calldata signature) external view returns (bytes4) {
 		if (privileges[SignatureValidator.recoverAddr(hash, signature)] != bytes32(0)) {
 			// bytes4(keccak256("isValidSignature(bytes32,bytes)")
@@ -214,8 +275,12 @@ contract AmbireAccount {
 		}
 	}
 
-	// @notice EIP-1155 implementation
-	// we pretty much only need to signal that we support the interface for 165, but for 1155 we also need the fallback function
+	/**
+	 * @notice  EIP-1155 implementation
+	 * we pretty much only need to signal that we support the interface for 165, but for 1155 we also need the fallback function
+	 * @param   interfaceID  the interface we're signaling support for
+	 * @return  bool  do we support the interface or not
+	 */
 	function supportsInterface(bytes4 interfaceID) external view returns (bool) {
 		bool supported = interfaceID == 0x01ffc9a7 || // ERC-165 support (i.e. `bytes4(keccak256('supportsInterface(bytes4)'))`).
 			interfaceID == 0x150b7a02 || // ERC721TokenReceiver

@@ -286,6 +286,8 @@ contract DKIMRecoverySigValidator is ExternalSigValidator {
     bytes memory pValue = bytes(data.toString());
     require(pValue.length > 0, 'public key not found in txt set');
 
+    // TODO:
+    // add comments about 0x9b = spaces;
     string memory base64Key = string(pValue);
     uint256 offsetOfInvalidAscii = pValue.find(0, pValue.length, 0x9b);
     while (offsetOfInvalidAscii != type(uint256).max) {
@@ -296,11 +298,13 @@ contract DKIMRecoverySigValidator is ExternalSigValidator {
       );
       base64Key = string(firstPartOfKey).toSlice().concat(string(secondPartOfKey).toSlice());
       offsetOfInvalidAscii = bytes(base64Key).find(0, bytes(base64Key).length, 0x9b);
+      // TODO:
+      // pValue = bytes(base64Key);
     }
 
     bytes memory decoded = string(base64Key).decode();
-    // omit the first 32 bytes, take everything expect the last 5 bytes:
-    // - first two bytes from the last 5 is modulus header info
+    // omit the first 32 bytes, take everything except the last 5 bytes:
+    // - first two bytes from the last 5 is exponent header info
     // - last three bytes is modulus
     bytes memory modulus = decoded.substring(32, decoded.length - 32 - 5);
     // the last 3 bytes of the decoded string is the exponent
