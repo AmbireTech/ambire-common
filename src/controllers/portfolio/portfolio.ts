@@ -43,6 +43,8 @@ export class PortfolioController extends EventEmitter {
 
   #callRelayer: Function
 
+  #pinned: string[]
+
   #minUpdateInterval: number = 20000 // 20 seconds
 
   constructor(storage: Storage, relayerUrl: string) {
@@ -52,6 +54,7 @@ export class PortfolioController extends EventEmitter {
     this.#portfolioLibs = new Map()
     this.#storage = storage
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
+    this.#pinned = []
   }
 
   async getAdditionalPortfolio(accountId: AccountId) {
@@ -180,7 +183,8 @@ export class PortfolioController extends EventEmitter {
             portfolioLib,
             {
               blockTag: 'latest',
-              previousHints: storagePreviousHints[key]
+              previousHints: storagePreviousHints[key],
+              pinned: this.#pinned
             },
             forceUpdate
           ),
@@ -199,7 +203,8 @@ export class PortfolioController extends EventEmitter {
                       account: selectedAccount,
                       accountOps: currentAccountOps
                     }
-                  })
+                  }),
+                  pinned: this.#pinned
                 },
                 forceUpdate
               )
