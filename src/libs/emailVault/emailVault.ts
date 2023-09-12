@@ -51,12 +51,12 @@ export class EmailVault {
     }
   }
 
-  async operations(email: String, authKey: String, operations: Operation[]): Promise<Boolean> {
+  async operations(email: String, authKey: String, operations: Operation[]): Promise<Operation[]> {
     return (
-      await this.callRelayer(`/email-vault/addKeyStoreSecret/${email}/${authKey}`, 'POST', {
+      await this.callRelayer(`/email-vault/operation/${email}/${authKey}`, 'POST', {
         operations
       })
-    ).success
+    ).data
   }
 
   async addKeyStoreSecret(

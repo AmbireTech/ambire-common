@@ -5,6 +5,7 @@ import { Wallet } from 'ethers'
 import { relayerCall } from '../relayerCall/relayerCall'
 import { EmailVault } from './emailVault'
 import { requestMagicLink } from '../magicLink/magicLink'
+import { Operation } from '../../interfaces/emailVault'
 
 let email: String
 let email2: String
@@ -307,5 +308,55 @@ describe('retrieveKeyBackup', () => {
     await expect(emailVault.retrieveKeyBackup(email2, authKey2, recoveryKey2)).rejects.toThrow(
       `${errorPrefix} Backup for requested key not found.`
     )
+  })
+})
+
+describe('operations', () => {
+  beforeEach(async () => {
+    email = `yosif+${Wallet.createRandom().address.slice(12, 20)}@ambire.com`.toLowerCase()
+    const result = await requestMagicLink(email, relayerUrl, fetch)
+    authKey = result.key
+    authSecret = result.secret!
+    await callRelayer(`/email-vault/confirmationKey/${email}/${authKey}/${authSecret}`)
+    await emailVault.create(email, authKey)
+  })
+  test('add operations', async () => {
+    const operations = [
+      {
+        // id?: string
+        requestType: 'sync data',
+        requester: 'me',
+        key: 'public key'
+        // value?: string
+      },
+      {
+        // id?: string
+        requestType: 'sync data2',
+        requester: 'you?',
+        key: 'public key',
+        value: 'value'
+      },
+      {
+        id: 'sike, shoudnt have id',
+        requestType: 'sync data2',
+        requester: 'you?',
+        key: 'public key',
+        value: 'value'
+      }
+    ]
+    const storedOperations = await emailVault.operations(email, authKey, operations)
+    expect(storedOperations.length).toBe(2)
+    storedOperations.forEach((op, i) => {
+      expect(op).toHaveProperty('id')
+      expect(op).toMatchObject(operations[i])
+    })
+    const newOperations = storedOperations.map((op) => ({ ...op, value: 'new value' }))
+    const res = await emailVault.operations(email, authKey, newOperations)
+    expect(res.length).toBe(2)
+    res.forEach((op: Operation, i) => {
+      expect(op).toHaveProperty('id')
+      expect(op).toHaveProperty('value', 'new value')
+      expect(op).toMatchObject(newOperations[i])
+    })
   })
 })
