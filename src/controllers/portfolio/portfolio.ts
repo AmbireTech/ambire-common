@@ -40,6 +40,8 @@ export class PortfolioController extends EventEmitter {
 
   #storage: Storage
 
+  #pinned: string[]
+
   #minUpdateInterval: number = 20000 // 20 seconds
 
   constructor(storage: Storage) {
@@ -48,6 +50,7 @@ export class PortfolioController extends EventEmitter {
     this.pending = {}
     this.#portfolioLibs = new Map()
     this.#storage = storage
+    this.#pinned = []
   }
   // NOTE: we always pass in all `accounts` and `networks` to ensure that the user of this
   // controller doesn't have to update this controller every time that those are updated
@@ -170,7 +173,8 @@ export class PortfolioController extends EventEmitter {
             portfolioLib,
             {
               blockTag: 'latest',
-              previousHints: storagePreviousHints[key]
+              previousHints: storagePreviousHints[key],
+              pinned: this.#pinned
             },
             forceUpdate
           ),
@@ -189,7 +193,8 @@ export class PortfolioController extends EventEmitter {
                       account: selectedAccount,
                       accountOps: currentAccountOps
                     }
-                  })
+                  }),
+                  pinned: this.#pinned
                 },
                 forceUpdate
               )
