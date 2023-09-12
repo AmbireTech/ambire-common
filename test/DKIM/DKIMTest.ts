@@ -806,7 +806,7 @@ describe('DKIM sigMode Both with acceptUnknownSelectors true', function () {
     const sig = abiCoder.encode(['address', 'address', 'bytes', 'bytes'], [signerKey, validatorAddr, validatorData, innerSig])
     const finalSig = wrapExternallyValidated(sig)
     await expect(account.execute(txns, finalSig))
-      .to.be.revertedWith('non-existant DKIM key')
+      .to.be.revertedWith('non-existent DKIM key')
   })
 
   it('should revoke the key in the dkimKeys with a name of "toberemoved"', async function () {
@@ -916,7 +916,7 @@ describe('DKIM sigMode Both with acceptUnknownSelectors true', function () {
       .to.be.revertedWith('DKIM key not added yet')
   })
 
-  it('should revert with non-existant DKIM key if the wrong modulus / exponent is passed', async function () {
+  it('should revert with non-existent DKIM key if the wrong modulus / exponent is passed', async function () {
     const [relayer, newSigner] = await ethers.getSigners()
     const gmail = await readFile(path.join(emailsPath, 'sigMode0.eml'), {
       encoding: 'ascii'
@@ -950,7 +950,7 @@ describe('DKIM sigMode Both with acceptUnknownSelectors true', function () {
     const sig = abiCoder.encode(['address', 'address', 'bytes', 'bytes'], [signerKey, validatorAddr, validatorData, innerSig])
     const finalSig = wrapExternallyValidated(sig)
     await expect(account.execute(txns, finalSig))
-      .to.be.revertedWith('non-existant DKIM key')
+      .to.be.revertedWith('non-existent DKIM key')
   })
 
   it('should revert with DKIM signature verification failed if headers have been tampered with', async function () {

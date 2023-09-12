@@ -110,6 +110,7 @@ contract DKIMRecoverySigValidator is ExternalSigValidator {
   address public immutable authorizedToSubmit;
   address public immutable authorizedToRevoke;
   DNSSEC public immutable oracle;
+  bytes public constant BRIDGE_STRING = hex'646e7373656362726964676506616d6269726503636f6d0000100001000001';
 
   constructor(DNSSEC _oracle, address _authorizedToSubmit, address _authorizedToRevoke) {
     authorizedToSubmit = _authorizedToSubmit;
@@ -194,10 +195,9 @@ contract DKIMRecoverySigValidator is ExternalSigValidator {
           'domain in sigMeta is not authorized for this account'
         );
 
-        bytes32 keyId = keccak256(abi.encode(key));
         require(accInfo.acceptUnknownSelectors, 'account does not allow unknown selectors');
-        KeyInfo storage keyInfo = dkimKeys[keyId];
-        require(keyInfo.isExisting, 'non-existant DKIM key');
+        KeyInfo storage keyInfo = dkimKeys[keccak256(abi.encode(key))];
+        require(keyInfo.isExisting, 'non-existent DKIM key');
         uint32 dateRemoved = keyInfo.dateRemoved;
         require(
           dateRemoved == 0 || block.timestamp < dateRemoved + accInfo.waitUntilAcceptRemoved,
@@ -220,7 +220,6 @@ contract DKIMRecoverySigValidator is ExternalSigValidator {
       if (mode == SigMode.OnlySecond)
         require(accInfo.acceptEmptyDKIMSig, 'account disallows OnlySecond');
 
-      // @TODO should spoofing be allowed
       require(
         SignatureValidator.recoverAddrImpl(hashToSign, secondSig, true) == accInfo.secondaryKey,
         'second key validation failed'
@@ -259,11 +258,11 @@ contract DKIMRecoverySigValidator is ExternalSigValidator {
       'not authorized to submit'
     );
 
-    RRUtils.SignedSet memory signedSet = sets[sets.length - 1].rrset.readSignedSet();
-    (bytes memory lastSignedSetData, ) = oracle.verifyRRSet(sets);
-    require(keccak256(lastSignedSetData) == keccak256(signedSet.data), 'DNSSec verification failed');
+    oracle.verifyRRSet(sets);
 
-    (DKIMKey memory key, bool isBridge) = _parse(signedSet);
+    (DKIMKey memory key, bool isBridge) = _parse(
+      sets[sets.length - 1].rrset.readSignedSet()
+    );
     KeyInfo storage keyInfo = dkimKeys[keccak256(abi.encode(key))];
     require(!keyInfo.isExisting, 'key already exists');
 
@@ -319,9 +318,8 @@ contract DKIMRecoverySigValidator is ExternalSigValidator {
     domainName.rsplit(','.toSlice()); // this becomes the value before ,
     require(bytes(domainName.toString()).length > 0, 'domain name not found in txt set');
 
-    bytes memory bridgeString = hex'646e7373656362726964676506616d6269726503636f6d0000100001000001';
-    bool isBridge = domainName.endsWith(string(bridgeString).toSlice());
-    if (isBridge) domainName.rsplit(string(bridgeString).toSlice()); // remove the bridge
+    bool isBridge = domainName.endsWith(string(BRIDGE_STRING).toSlice());
+    if (isBridge) domainName.rsplit(string(BRIDGE_STRING).toSlice()); // remove the bridge
 
     return (domainName.toString(), isBridge);
   }
@@ -338,8 +336,8 @@ contract DKIMRecoverySigValidator is ExternalSigValidator {
    * @param   set  The TXT set
    */
   function getDomainNameFromSet(
-    DNSSEC.RRSetWithSignature memory set
-  ) public pure returns (string memory, bool) {
+    DNSSEC.RRSetWithSignature calldata set
+  ) external pure returns (string memory, bool) {
     return _getDomainNameFromSignedSet(set.rrset.readSignedSet());
   }
 
