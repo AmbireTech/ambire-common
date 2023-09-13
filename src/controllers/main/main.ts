@@ -275,6 +275,7 @@ export class MainController extends EventEmitter {
 
   updateSelectedAccount(selectedAccount: string | null = null) {
     if (!selectedAccount) return
+    this.portfolio.getAdditionalPortfolio(selectedAccount)
     this.portfolio.updateSelectedAccount(this.accounts, this.settings.networks, selectedAccount)
   }
 

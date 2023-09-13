@@ -59,8 +59,47 @@ export class PortfolioController extends EventEmitter {
 
   async getAdditionalPortfolio(accountId: AccountId) {
     const url = `/v2/identity/${accountId}/info`
-    const { data } = await this.#callRelayer(url)
-    return data
+    try {
+      const res = await this.#callRelayer(url)
+
+      const accountState = this.latest[accountId]!
+      if (!accountState.gasTank) accountState.gasTank = {}
+      if (!accountState.rewards) accountState.rewards = {}
+
+      accountState.rewards = {
+        isReady: true,
+        isLoading: false,
+        result: {
+          ...res.data.rewards,
+          tokens: [
+            res.data.rewards.xWalletClaimableBalance,
+            res.data.rewards.walletClaimableBalance
+          ],
+          total: (res.data.rewards?.xWalletClaimableBalance?.priceIn || [])
+            .concat(res.data.rewards?.walletClaimableBalance?.priceIn || [])
+            .reduce((cur, x) => {
+              cur[x.baseCurrency] = (cur[x.baseCurrency] || 0) + (x.price || 0)
+              return cur
+            }, {})
+        }
+      }
+      accountState.gasTank = {
+        isReady: true,
+        isLoading: false,
+        result: {
+          tokens: res.data.gasTank.balance,
+          total: res.data.gasTank.balance.reduce((cur, token) => {
+            for (const x of token.priceIn) {
+              cur[x.baseCurrency] =
+                (cur[x.baseCurrency] || 0) + (Number(token.amount) / 10 ** token.decimals) * x.price
+            }
+            return cur
+          }, {})
+        }
+      }
+    } catch (e) {
+      console.log(e)
+    }
   }
   // NOTE: we always pass in all `accounts` and `networks` to ensure that the user of this
   // controller doesn't have to update this controller every time that those are updated
