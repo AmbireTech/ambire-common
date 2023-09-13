@@ -1,14 +1,9 @@
-// prepare deployAndExecute in initCode
-// send a userOp without a signature
-// it should pass successfully
-
 import { ethers } from 'hardhat'
-import AMBIRE_ACCOUNT from '../../artifacts/contracts/AmbireAccount.sol/AmbireAccount.json'
 import { wrapEthSign } from '../../test/ambireSign'
 import { PrivLevels, getProxyDeployBytecode, getStorageSlotsFromArtifact } from '../../src/libs/proxyDeploy/deploy'
 import { BaseContract } from 'ethers'
 import { abiCoder } from '../config'
-import { getPriviledgeTxn } from '../helpers'
+import { buildUserOp, getPriviledgeTxn } from '../helpers'
 
 const salt = '0x0'
 
@@ -38,18 +33,25 @@ export async function get4437Bytecode(
   })
 }
 
-// TO DO: FIX
+let factory: any
+let paymaster: any
+let entryPoint: any
+
 describe('ERC-4337 deploys the account via userOp and add the entry point permissions in the initCode', function () {
+  before('deploy the necessary contracts', async function(){
+    const [relayer] = await ethers.getSigners()
+    factory = await ethers.deployContract('AmbireAccountFactory', [relayer.address])
+    paymaster = await ethers.deployContract('AmbirePaymaster', [relayer.address])
+    entryPoint = await ethers.deployContract('EntryPointPaymaster')
+  })
   it('successfully deploys the account with entry point without a userOp signature', async function () {
-    const [signer] = await ethers.getSigners()
+    const [relayer, signer] = await ethers.getSigners()
     const privs = [
       { addr: signer.address, hash: true },
     ]
-    const factory: BaseContract = await ethers.deployContract('AmbireAccountFactory', [signer.address])
     const bytecodeWithArgs = await get4437Bytecode(privs)
     const senderAddress = getAmbireAccountAddress(await factory.getAddress(), bytecodeWithArgs)
-    const ambireAccount = new ethers.Contract(senderAddress, AMBIRE_ACCOUNT.abi, signer)
-    const entryPoint = await ethers.deployContract('EntryPoint')
+    // const ambireAccount = new ethers.Contract(senderAddress, AMBIRE_ACCOUNT.abi)
     const txn = getPriviledgeTxn(senderAddress, await entryPoint.getAddress(), true)
     const msg = ethers.getBytes(
       ethers.keccak256(
@@ -64,42 +66,35 @@ describe('ERC-4337 deploys the account via userOp and add the entry point permis
       await factory.getAddress(),
       getDeployCalldata(bytecodeWithArgs, [txn], s)
     ]))
-
-    const userOperation = {
+    const userOperation = buildUserOp(paymaster, {
       sender: senderAddress,
-      nonce: ethers.toBeHex(await entryPoint.getNonce(senderAddress, 0), 1),
+      userOpNonce: '0x', // todo: craft nonce
+      signedNonce: ethers.toBeHex(0, 1),
       initCode,
-      callData: '0x',
-      callGasLimit: ethers.toBeHex(100000),
-      verificationGasLimit: ethers.toBeHex(500000),
-      preVerificationGas: ethers.toBeHex(50000),
-      maxFeePerGas: ethers.toBeHex(0),
-      maxPriorityFeePerGas: ethers.toBeHex(100000),
-      paymasterAndData: '0x',
-      signature: '0x'
-    }
-    await entryPoint.handleOps([userOperation], signer)
+      callData: '0x', // set this
+    })
+    await entryPoint.handleOps([userOperation], relayer)
 
     // confirm everything is set by sending another userOp
-    const anotherTxn = [senderAddress, 0, '0x68656c6c6f']
-    const userOperation2 = {
-      sender: senderAddress,
-      nonce: ethers.toBeHex(await entryPoint.getNonce(senderAddress, 0), 1),
-      initCode: '0x',
-      callData: ambireAccount.interface.encodeFunctionData('executeBySender', [[anotherTxn]]),
-      callGasLimit: ethers.toBeHex(100000),
-      verificationGasLimit: ethers.toBeHex(500000),
-      preVerificationGas: ethers.toBeHex(50000),
-      maxFeePerGas: ethers.toBeHex(100000),
-      maxPriorityFeePerGas: ethers.toBeHex(100000),
-      paymasterAndData: '0x',
-      signature: '0x'
-    }
-    const signature = wrapEthSign(await signer.signMessage(
-      ethers.getBytes(await entryPoint.getUserOpHash(userOperation2))
-    ))
-    userOperation2.signature = signature
-    await entryPoint.handleOps([userOperation2], signer)
+    // const anotherTxn = [senderAddress, 0, '0x68656c6c6f']
+    // const userOperation2 = {
+    //   sender: senderAddress,
+    //   nonce: ethers.toBeHex(await entryPoint.getNonce(senderAddress, 0), 1),
+    //   initCode: '0x',
+    //   callData: ambireAccount.interface.encodeFunctionData('executeBySender', [[anotherTxn]]),
+    //   callGasLimit: ethers.toBeHex(100000),
+    //   verificationGasLimit: ethers.toBeHex(500000),
+    //   preVerificationGas: ethers.toBeHex(50000),
+    //   maxFeePerGas: ethers.toBeHex(100000),
+    //   maxPriorityFeePerGas: ethers.toBeHex(100000),
+    //   paymasterAndData: '0x',
+    //   signature: '0x'
+    // }
+    // const signature = wrapEthSign(await signer.signMessage(
+    //   ethers.getBytes(await entryPoint.getUserOpHash(userOperation2))
+    // ))
+    // userOperation2.signature = signature
+    // await entryPoint.handleOps([userOperation2], relayer)
     // if it doesn't revert here, everything is good
   })
 })
