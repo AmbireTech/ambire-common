@@ -125,7 +125,7 @@ export class SignAccountOpController extends EventEmitter {
     }
 
     if (paidBy && this.isInitialized) {
-      // the self-invoking func allows us to return from it without interrupting the execution if the update func
+      // the self-invoking func allows us to return from it without interrupting the execution of the update func
       ;(() => {
         const account = this.#getAccount()
         // Cannot set paidBy for EOAs or ERC-4337
@@ -156,7 +156,7 @@ export class SignAccountOpController extends EventEmitter {
     }
 
     if (signingKeyAddr && this.isInitialized) {
-      // the self-invoking func allows us to return from it without interrupting the execution if the update func
+      // the self-invoking func allows us to return from it without interrupting the execution of the update func
       ;() => {
         const account = this.#getAccount()
         if (!account || !account.creation) return
