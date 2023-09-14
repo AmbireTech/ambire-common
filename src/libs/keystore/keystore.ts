@@ -240,34 +240,44 @@ export class Keystore {
     await this.storage.set('keystoreKeys', keys)
   }
 
-  // TODO: Consider converting this to add multiple?
-  async addKey(privateKey: string, label: string) {
+  // TODO: Handle all cases that expect `addKey`
+  async addKeys(keysToAdd: { privateKey: string; label: string }[]) {
     if (this.#mainKey === null) throw new Error('keystore: needs to be unlocked')
 
-    // eslint-disable-next-line no-param-reassign
-    privateKey = privateKey.substring(0, 2) === '0x' ? privateKey.substring(2) : privateKey
+    if (!keysToAdd.length) return
 
-    // Set up the cipher
-    const counter = new aes.Counter(this.#mainKey.iv)
-    const aesCtr = new aes.ModeOfOperation.ctr(this.#mainKey.key, counter)
-
-    // Store the key
-    // Terminology: this private key represents an EOA wallet, which is why ethers calls it Wallet, but we treat it as a key here
-    const wallet = new Wallet(privateKey)
     const keys: [StoredKey] = await this.storage.get('keystoreKeys', [])
+    const alreadyAddedKeyIdsSet = new Set(keys.map(({ id }) => id))
 
-    const keyAlreadyAdded = !!keys.find((key) => key.id === wallet.address)
-    if (keyAlreadyAdded) return null
+    const newKeys = keysToAdd
+      .map(({ privateKey, label }) => {
+        // eslint-disable-next-line no-param-reassign
+        privateKey = privateKey.substring(0, 2) === '0x' ? privateKey.substring(2) : privateKey
 
-    keys.push({
-      id: wallet.address,
-      type: 'internal',
-      label,
-      // @TODO: consider an MAC?
-      privKey: hexlify(aesCtr.encrypt(aes.utils.hex.toBytes(privateKey))),
-      meta: null
-    })
-    await this.storage.set('keystoreKeys', keys)
+        // Set up the cipher
+        const counter = new aes.Counter(this.#mainKey.iv)
+        const aesCtr = new aes.ModeOfOperation.ctr(this.#mainKey.key, counter)
+
+        // Store the key
+        // Terminology: this private key represents an EOA wallet, which is why ethers calls it Wallet, but we treat it as a key here
+        const wallet = new Wallet(privateKey)
+        return {
+          id: wallet.address,
+          type: 'internal',
+          label,
+          // @TODO: consider an MAC?
+          privKey: hexlify(aesCtr.encrypt(aes.utils.hex.toBytes(privateKey))),
+          meta: null
+        }
+      })
+      // No need to re-add keys that are already added, private key never changes
+      .filter(({ id }) => !alreadyAddedKeyIdsSet.has(id))
+
+    if (!newKeys.length) return
+
+    const nextKeys = [...keys, ...newKeys]
+
+    await this.storage.set('keystoreKeys', nextKeys)
   }
 
   async removeKey(id: string) {
