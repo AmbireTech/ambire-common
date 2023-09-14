@@ -98,6 +98,25 @@ export class EmailVaultController extends EventEmitter {
     return EmailVaultState.Ready
   }
 
+  // user workflow =====>
+  // create account
+  // login
+  // forgoten password (for keystore)
+  // request action
+  // fullfil action
+
+  // <=====
+  // fetching funcs are private, async, supposed to be awaited and modify the this. (sometimes return T | null)
+  // examples
+  // auth: requestNewMagicLinkKey, requestSessionKey
+  // vault: getEmailVaultInfo
+
+  // get* functions lookup the storage, return a value and are supposed to be awaited
+  //
+
+  // public functions modify the state
+  // in cases of
+  // login - login() - should triger [some authentication, getEmailVaultInfo]
   async #requestSessionKey(email: string) {
     // if magicLinkKey => get sessionKey
     // <<==>>
