@@ -101,8 +101,8 @@ export class MainController extends EventEmitter {
     fetch: Function
     relayerUrl: string
     keystoreSigners: { [key: string]: KeystoreSignerType }
-    onResolveDappRequest: (data: any, id?: bigint) => void
-    onRejectDappRequest: (err: any, id?: bigint) => void
+    onResolveDappRequest: (data: any, id?: number) => void
+    onRejectDappRequest: (err: any, id?: number) => void
     onUpdateDappSelectedAccount: (accountAddr: string) => void
   }) {
     super()
