@@ -139,10 +139,13 @@ describe('SignAccountOp Controller ', () => {
     const controller = new SignAccountOpController(keystore, portfolio)
     controller.status = { type: SigningStatus.ReadyToSign }
 
-    controller.update({
+    controller.updateMainDeps({
       accounts,
       networks,
-      accountStates,
+      accountStates
+    })
+
+    controller.update({
       accountOp: op,
       gasPrices: prices,
       estimation,

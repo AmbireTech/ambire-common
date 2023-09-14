@@ -76,9 +76,6 @@ export class SignAccountOpController extends EventEmitter {
   }
 
   update({
-    accounts,
-    networks,
-    accountStates,
     accountOp,
     gasPrices,
     estimation,
@@ -87,9 +84,6 @@ export class SignAccountOpController extends EventEmitter {
     speed,
     signingKeyAddr
   }: {
-    accounts?: Account[]
-    networks?: NetworkDescriptor[]
-    accountStates?: AccountStates
     accountOp?: AccountOp
     gasPrices?: GasRecommendation[]
     estimation?: EstimateResult
@@ -98,12 +92,6 @@ export class SignAccountOpController extends EventEmitter {
     speed?: FeeSpeed
     signingKeyAddr?: string
   }) {
-    if (accounts) this.#accounts = accounts
-
-    if (networks) this.#networks = networks
-
-    if (accountStates) this.#accountStates = accountStates
-
     if (gasPrices) this.#gasPrices = gasPrices
 
     if (estimation) this.#estimation = estimation
@@ -162,6 +150,34 @@ export class SignAccountOpController extends EventEmitter {
       }
     }
 
+    this.updateReadyToSignStatusOnUpdate()
+    this.emitUpdate()
+  }
+
+  /**
+   * We decided to split the update method into two separate methods: update and updateMainDeps,
+   * only to separate user-related information (such as paidBy, feeTokenAddr, etc.)
+   * from the main components (such as accounts, networks, etc.).
+   * There is nothing more than that.
+   */
+  updateMainDeps({
+    accounts,
+    networks,
+    accountStates
+  }: {
+    accounts?: Account[]
+    networks?: NetworkDescriptor[]
+    accountStates?: AccountStates
+  }) {
+    if (accounts) this.#accounts = accounts
+    if (networks) this.#networks = networks
+    if (accountStates) this.#accountStates = accountStates
+
+    this.updateReadyToSignStatusOnUpdate()
+    this.emitUpdate()
+  }
+
+  updateReadyToSignStatusOnUpdate() {
     if (
       this.isInitialized &&
       this.#estimation &&
@@ -169,9 +185,11 @@ export class SignAccountOpController extends EventEmitter {
       this.accountOp?.gasFeePayment
     ) {
       this.status = { type: SigningStatus.ReadyToSign }
+    } else {
+      // @TODO - let's consider is this status the right one we need to set, if the above condition is not met.
+      //   imo - when we call this.update or this.updateMain, we tend to update at least 1 property, therefore inProgress sounds reasonable
+      this.status = { type: SigningStatus.InProgress }
     }
-
-    this.emitUpdate()
   }
 
   reset() {
