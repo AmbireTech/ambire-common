@@ -35,7 +35,7 @@ describe('SignMessageController', () => {
 
   test('should initialize with a valid message', (done) => {
     const messageToSign: Message = {
-      id: BigInt(1),
+      id: 1,
       content: {
         kind: 'message',
         message: '0x74657374'
@@ -60,7 +60,7 @@ describe('SignMessageController', () => {
 
   test('should not initialize with an invalid message kind', () => {
     const messageToSign: Message = {
-      id: BigInt(1),
+      id: 1,
       content: {
         // @ts-ignore that's on purpose, for the test
         kind: 'unsupportedKind',
@@ -100,7 +100,7 @@ describe('SignMessageController', () => {
 
   test('should set signing key address', () => {
     const messageToSign: Message = {
-      id: BigInt(1),
+      id: 1,
       content: {
         kind: 'message',
         message: '0x74657374'
@@ -118,7 +118,7 @@ describe('SignMessageController', () => {
 
   test('should sign a message', (done) => {
     const messageToSign: Message = {
-      id: BigInt('1'),
+      id: 1,
       content: {
         kind: 'message',
         message: '0x74657374'
