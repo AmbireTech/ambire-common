@@ -14,11 +14,15 @@ export type HumanizerVisualization = {
 }
 export interface IrCall extends Call {
   fullVisualization?: HumanizerVisualization[]
+  warnings?: HumanizerWarning[]
 }
 export interface IrMessage extends Message {
   fullVisualization?: HumanizerVisualization[]
 }
-
+export interface HumanizerWarning {
+  content: string
+  level?: string
+}
 export interface Ir {
   calls: IrCall[]
   messages: IrMessage[]

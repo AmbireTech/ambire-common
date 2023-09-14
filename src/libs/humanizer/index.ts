@@ -37,6 +37,7 @@ export const visualizationToText = (call: IrCall, options: any): string => {
   let text = ''
   const visualization = call?.fullVisualization
   visualization?.forEach((v: { [key: string]: any }, i: number) => {
+    // if not first iteration
     if (i) text += ' '
     if (v.type === 'action' || v.type === 'label') text += `${v.content}`
     if (v.type === 'address') text += v.name ? `${v.address} (${v.name})` : v.address

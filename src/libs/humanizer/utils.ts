@@ -4,6 +4,10 @@ import { HumanizerFragment, HumanizerVisualization } from './interfaces'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { networks } from '../../consts/networks'
 
+export function getWarning(content: string, level: string = 'caution') {
+  return { content, level }
+}
+
 export function getLabel(content: string): HumanizerVisualization {
   return { type: 'label', content }
 }

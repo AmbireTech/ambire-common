@@ -339,6 +339,9 @@ describe('module tests', () => {
     const [newCalls] = nameParsing(accountOp, irCalls, { fetch })
 
     expect(newCalls.length).toBe(transactions.namingTransactions.length)
+    expect(newCalls[0].warnings?.length).toBeUndefined()
+    expect(newCalls[1].warnings?.length).toBeUndefined()
+    expect(newCalls[2].warnings?.length).toBe(1)
     expect(
       newCalls[0]?.fullVisualization?.find((v: HumanizerVisualization) => v.type === 'address')
     ).toMatchObject({
