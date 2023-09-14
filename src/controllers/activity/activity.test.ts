@@ -1,8 +1,8 @@
 import { describe, expect } from '@jest/globals'
 
 import { produceMemoryStore } from '../../../test/helpers'
+import { AccountStates } from '../../interfaces/account'
 import { Message } from '../../interfaces/userRequest'
-import { AccountStates } from '../main/main'
 import { ActivityController, SubmittedAccountOp } from './activity'
 
 describe('Activity Controller ', () => {
