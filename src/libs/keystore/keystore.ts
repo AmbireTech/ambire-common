@@ -240,6 +240,7 @@ export class Keystore {
     await this.storage.set('keystoreKeys', keys)
   }
 
+  // TODO: Consider converting this to add multiple?
   async addKey(privateKey: string, label: string) {
     if (this.#mainKey === null) throw new Error('keystore: needs to be unlocked')
 
@@ -254,6 +255,10 @@ export class Keystore {
     // Terminology: this private key represents an EOA wallet, which is why ethers calls it Wallet, but we treat it as a key here
     const wallet = new Wallet(privateKey)
     const keys: [StoredKey] = await this.storage.get('keystoreKeys', [])
+
+    const keyAlreadyAdded = !!keys.find((key) => key.id === wallet.address)
+    if (keyAlreadyAdded) return null
+
     keys.push({
       id: wallet.address,
       type: 'internal',
