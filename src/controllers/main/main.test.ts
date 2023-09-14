@@ -78,9 +78,7 @@ describe('Main Controller ', () => {
 
   test('Add a user request', async () => {
     const req: UserRequest = {
-      id: 0n,
-      // @TODO: more elegant way of setting this?
-      added: BigInt(Date.now()),
+      id: 1,
       accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
       networkId: 'ethereum',
       forceNonce: null,

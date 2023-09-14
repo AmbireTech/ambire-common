@@ -82,9 +82,9 @@ export class MainController extends EventEmitter {
 
   lastUpdate: Date = new Date()
 
-  onResolveDappRequest: (data: any, id?: bigint) => void
+  onResolveDappRequest: (data: any, id?: number) => void
 
-  onRejectDappRequest: (err: any, id?: bigint) => void
+  onRejectDappRequest: (err: any, id?: number) => void
 
   onUpdateDappSelectedAccount: (accountAddr: string) => void
 
@@ -321,7 +321,7 @@ export class MainController extends EventEmitter {
   // @TODO allow this to remove multiple OR figure out a way to debounce re-estimations
   // first one sounds more reasonble
   // although the second one can't hurt and can help (or no debounce, just a one-at-a-time queue)
-  removeUserRequest(id: bigint) {
+  removeUserRequest(id: number) {
     const req = this.userRequests.find((uReq) => uReq.id === id)
     if (!req) return
 
