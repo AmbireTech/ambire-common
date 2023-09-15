@@ -115,12 +115,28 @@ describe('Keystore', () => {
   })
 
   test('should not add twice internal key that is already added', async () => {
-    expect.assertions(1)
-    await keystore.addKeys([
+    const keysWithPrivateKeyAlreadyAdded = [
       { privateKey: privKey, label: 'test key 1' },
       { privateKey: privKey, label: 'test key 2 with the same private key as test key 1' }
+    ]
+
+    const anotherPrivateKeyNotAddedYet =
+      '0x574f261b776b26b1ad75a991173d0e8ca2ca1d481bd7822b2b58b2ef8a969f12'
+    const keysWithPrivateKeyDuplicatedInParams = [
+      { privateKey: anotherPrivateKeyNotAddedYet, label: 'test key 3' },
+      {
+        privateKey: anotherPrivateKeyNotAddedYet,
+        label: 'test key 4 with the same private key as key 3'
+      }
+    ]
+
+    expect.assertions(1)
+    await keystore.addKeys([
+      ...keysWithPrivateKeyAlreadyAdded,
+      ...keysWithPrivateKeyDuplicatedInParams
     ])
-    expect(await keystore.getKeys()).toHaveLength(1)
+
+    expect(await keystore.getKeys()).toHaveLength(2)
   })
 
   test('should get an internal signer', async () => {
