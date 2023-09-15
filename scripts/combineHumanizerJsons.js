@@ -6,6 +6,10 @@ const fsPromises = require('fs').promises
 const path = require('path')
 // eslint-disable-next-line import/no-extraneous-dependencies
 const fetch = require('node-fetch')
+require('dotenv').config()
+
+console.log(process.env.AMBIRE_CONSTANTS_URL)
+const AMBIRE_CONSTANTS_URL = process.env.AMBIRE_CONSTANTS_URL || 'http://localhost:5000/result.json'
 
 function initHumanizerMeta(humanizerMeta) {
 	const newHumanizerMeta = {}
@@ -40,7 +44,7 @@ const resultPath = path.join(__dirname, '..', 'src', 'consts', 'humanizerInfo.js
 const main = async () => {
 	const oldFileConstants = await fsPromises.readFile(resultPath, 'utf-8').then(JSON.parse)
 	console.log(Object.keys(oldFileConstants).length)
-	let newAmbirConstants = await (fetch('http://localhost:5000/result.json').then(r=>r.json()).then(r=>r.humanizerInfo).then(initHumanizerMeta)).catch(e=>{console.log(`Error: ${e.message}`)})
+	let newAmbirConstants = await (fetch(`${AMBIRE_CONSTANTS_URL}/result.json`).then(r=>r.json()).then(r=>r.humanizerInfo).then(initHumanizerMeta)).catch(e=>{console.log(`Error: ${e.message}`)})
 	if (!newAmbirConstants) {
 		console.log('Error with reaching ambire-constants, old file wil be used')
 		newAmbirConstants = oldFileConstants
