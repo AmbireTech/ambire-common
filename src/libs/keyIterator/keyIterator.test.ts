@@ -20,6 +20,7 @@ describe('KeyIterator', () => {
     try {
       new KeyIterator(`${seedPhrase}invalid-seed-phrase`)
     } catch (e) {
+      // @ts-ignore
       expect(e.message).toBe('keyIterator: invalid argument provided to constructor')
     }
   })
@@ -44,7 +45,17 @@ describe('KeyIterator', () => {
       // @ts-ignore
       await keyIteratorWithPrivKey.retrieve(0)
     } catch (e) {
+      // @ts-ignore
       expect(e.message).toBe('keyIterator: invalid or missing arguments')
     }
+  })
+  test('should retrieve the correct addresses with BIP-44 derivation path', async () => {
+    expect.assertions(3)
+    const keyIteratorWithPrivKey = new KeyIterator(seedPhrase)
+    const keys = await keyIteratorWithPrivKey.retrieve(0, 2, "m/44'/60'/0'/0")
+
+    expect(keys?.[0]).toEqual('0x10D4102562373113d1dCd82C2EEE5626D9daEcD8')
+    expect(keys?.[1]).toEqual('0xc7E32B118989296eaEa88D86Bd9041Feca77Ed36')
+    expect(keys?.[2]).toEqual('0xDe3D61Ae274aA517E01b96ff5155F70883Bc877c')
   })
 })
