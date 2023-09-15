@@ -6,10 +6,6 @@ import './ExternalSigValidator.sol';
 import './libs/erc4337/IPaymaster.sol';
 import 'hardhat/console.sol';
 
-interface IStakeManager {
-	function withdrawTo(address payable withdrawAddress, uint256 withdrawAmount) external;
-}
-
 contract AmbirePaymaster is IPaymaster {
 	address immutable public relayer;
 
@@ -18,13 +14,18 @@ contract AmbirePaymaster is IPaymaster {
 	}
 
 	/**
-	 * @notice  We do not need to handle ETH as well since depositTo can be invoked from anywhere. We need a withdraw method though.
-	 * @param   entryPoint  The address we're withdrawing from
-	 * @param   amount  the amount we're withdrawing
+	 * @notice  This method can be used to withdraw stuck tokens or airdrops 
+	 * We do not need to handle ETH as well since depositTo can be invoked from anywhere.
+	 * As well as to call the EntryPoint to withdraw tokens (withdrawTo). We need a withdraw method though.
+	 * @param   to  The address we're calling
+	 * @param   value  The value in the call
+	 * @param	data	the call data
+	 * @param	gas	the call gas
 	 */
-	function withdrawToRelayer(IStakeManager entryPoint, uint amount) external {
-		require(msg.sender == relayer, 'withdrawToRelayer: not relayer');
-		entryPoint.withdrawTo(payable(relayer), amount);
+	function call(address to, uint256 value, bytes calldata data, uint256 gas) external {
+		require(msg.sender == relayer, 'call: not relayer');
+		(bool success, bytes memory err) = to.call{ gas: gas, value: value }(data);
+		require(success, string(err));
 	}
 
 	/**
