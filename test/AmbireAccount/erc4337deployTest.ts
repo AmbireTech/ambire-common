@@ -132,14 +132,30 @@ describe('ERC-4337 deploys the account via userOp and adds the entry point permi
     userOperation.nonce = targetNonce
     await entryPoint.handleOps([userOperation], relayer)
 
+    // confirm everything is set by sending an userOp through the entry point
+    // with a normal paymaster signature
+    const nextTxn = [senderAddress, 0, '0x68656c6c6f']
+    const userOperation2 = await buildUserOp(paymaster, {
+      sender: senderAddress,
+      userOpNonce: ethers.toBeHex(await entryPoint.getNonce(senderAddress, 0), 1),
+      callData: proxy.interface.encodeFunctionData('executeBySender', [[nextTxn]]),
+    })
+    const signature = wrapEthSign(await signer.signMessage(
+      ethers.getBytes(await entryPoint.getUserOpHash(userOperation2))
+    ))
+    userOperation2.signature = signature
+    await entryPoint.handleOps([userOperation2], relayer)
+    // if it doesn't revert, all's good. The paymaster has payed
+
     // prefund the payment
     await entryPoint.depositTo(senderAddress, {
       value: ethers.parseEther('1')
     })
 
-    // confirm everything is set by sending an userOp through the entry point
+    // send a txn with no paymasterAndData. Because the addr has a prefund,
+    // it should be able to pass
     const anotherTxn = [senderAddress, 0, '0x68656c6c6f']
-    const userOperation2 = {
+    const userOperation3 = {
       sender: senderAddress,
       nonce: ethers.toBeHex(await entryPoint.getNonce(senderAddress, 0), 1),
       initCode: '0x',
@@ -152,11 +168,11 @@ describe('ERC-4337 deploys the account via userOp and adds the entry point permi
       paymasterAndData: '0x',
       signature: '0x'
     }
-    const signature = wrapEthSign(await signer.signMessage(
-      ethers.getBytes(await entryPoint.getUserOpHash(userOperation2))
+    const sig = wrapEthSign(await signer.signMessage(
+      ethers.getBytes(await entryPoint.getUserOpHash(userOperation3))
     ))
-    userOperation2.signature = signature
-    await entryPoint.handleOps([userOperation2], relayer)
+    userOperation3.signature = sig
+    await entryPoint.handleOps([userOperation3], relayer)
     // if it doesn't revert, all's good
   })
 })
