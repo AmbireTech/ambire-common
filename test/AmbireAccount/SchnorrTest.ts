@@ -1,9 +1,8 @@
 import { ethers } from 'hardhat'
-import { pk1, pk2, AmbireAccount, validSig, expect } from '../config'
+import { pk1, pk2, AmbireAccount, validSig, expect, abiCoder } from '../config'
 import { wrapSchnorr } from '../ambireSign'
 import { deployAmbireAccountHardhatNetwork } from '../implementations'
-const Schnorrkel = require('@borislav.itskov/schnorrkel.js')
-const schnorrkel = new Schnorrkel()
+import Schnorrkel, { Key } from '@borislav.itskov/schnorrkel.js'
 
 /**
  * Generate the multisig address that will have permissions to sign
@@ -20,7 +19,7 @@ function getSchnorrAddress() {
 let ambireAccountAddress: string
 
 describe('Schnorr tests', function () {
-  it('successfully deploys the ambire account', async function () {
+  before('successfully deploys the ambire account', async function () {
     const { ambireAccountAddress: addr } = await deployAmbireAccountHardhatNetwork([
       { addr: getSchnorrAddress(), hash: true }
     ])
@@ -30,7 +29,11 @@ describe('Schnorr tests', function () {
     const [signer] = await ethers.getSigners()
     const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signer)
     const msg = 'test'
-    const { s, e } = schnorrkel.sign(msg, ethers.getBytes(pk1))
+    const msgHash = ethers.keccak256(ethers.toUtf8Bytes(msg))
+    const msgHashToSign = ethers.keccak256(abiCoder.encode(['bytes32', 'address'], [msgHash, ambireAccountAddress]))
+    const output = Schnorrkel.signHash(new Key(Buffer.from(pk1.slice(2), 'hex')), msgHashToSign)
+    const s = output.signature.buffer
+    const e = output.challenge.buffer
 
     const publicKey = ethers.getBytes(
       ethers.SigningKey.computePublicKey(ethers.getBytes(pk1), true)
@@ -39,17 +42,19 @@ describe('Schnorr tests', function () {
     const parity = publicKey[0] - 2 + 27
 
     // wrap the result
-    const abiCoder = new ethers.AbiCoder()
     const sigData = abiCoder.encode(['bytes32', 'bytes32', 'bytes32', 'uint8'], [px, e, s, parity])
     const ambireSignature = wrapSchnorr(sigData)
-    const hash = ethers.solidityPackedKeccak256(['string'], [msg])
-    expect(await contract.isValidSignature(hash, ambireSignature)).to.equal(validSig)
+    expect(await contract.isValidSignature(msgHash, ambireSignature)).to.equal(validSig)
   })
   it('fails validation when an unauthorized private key signs', async function () {
     const [signer] = await ethers.getSigners()
     const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signer)
     const msg = 'test'
-    const { s, e } = schnorrkel.sign(msg, ethers.getBytes(pk2))
+    const msgHash = ethers.keccak256(ethers.toUtf8Bytes(msg))
+    const msgHashToSign = ethers.keccak256(abiCoder.encode(['bytes32', 'address'], [msgHash, ambireAccountAddress]))
+    const output = Schnorrkel.signHash(new Key(Buffer.from(pk2.slice(2), 'hex')), msgHashToSign)
+    const s = output.signature.buffer
+    const e = output.challenge.buffer
 
     const publicKey = ethers.getBytes(
       ethers.SigningKey.computePublicKey(ethers.getBytes(pk1), true)
@@ -58,19 +63,22 @@ describe('Schnorr tests', function () {
     const parity = publicKey[0] - 2 + 27
 
     // wrap the result
-    const abiCoder = new ethers.AbiCoder()
     const sigData = abiCoder.encode(['bytes32', 'bytes32', 'bytes32', 'uint8'], [px, e, s, parity])
     const ambireSignature = wrapSchnorr(sigData)
     const hash = ethers.solidityPackedKeccak256(['string'], [msg])
 
-    await expect(contract.isValidSignature(hash, ambireSignature))
+    await expect(contract.isValidSignature(msgHash, ambireSignature))
       .to.be.revertedWith('SV_SCHNORR_FAILED')
   })
   it('fails validation when the message is different', async function () {
     const [signer] = await ethers.getSigners()
     const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signer)
     const msg = 'test'
-    const { s, e } = schnorrkel.sign(msg, ethers.getBytes(pk1))
+    const msgHash = ethers.keccak256(ethers.toUtf8Bytes(msg))
+    const msgHashToSign = ethers.keccak256(abiCoder.encode(['bytes32', 'address'], [msgHash, ambireAccountAddress]))
+    const output = Schnorrkel.signHash(new Key(Buffer.from(pk2.slice(2), 'hex')), msgHashToSign)
+    const s = output.signature.buffer
+    const e = output.challenge.buffer
 
     const publicKey = ethers.getBytes(
       ethers.SigningKey.computePublicKey(ethers.getBytes(pk1), true)
@@ -79,13 +87,12 @@ describe('Schnorr tests', function () {
     const parity = publicKey[0] - 2 + 27
 
     // wrap the result
-    const abiCoder = new ethers.AbiCoder()
     const sigData = abiCoder.encode(['bytes32', 'bytes32', 'bytes32', 'uint8'], [px, e, s, parity])
     const ambireSignature = wrapSchnorr(sigData)
     const msg2 = 'test2'
-    const hash = ethers.solidityPackedKeccak256(['string'], [msg2])
+    const msgHash2 = ethers.keccak256(ethers.toUtf8Bytes(msg2))
 
-    await expect(contract.isValidSignature(hash, ambireSignature))
+    await expect(contract.isValidSignature(msgHash2, ambireSignature))
       .to.be.revertedWith('SV_SCHNORR_FAILED')
   })
 })

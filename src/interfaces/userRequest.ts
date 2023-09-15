@@ -24,11 +24,11 @@ export interface TypedMessage {
 // @TODO: move this type and it's deps (PlainTextMessage, TypedMessage) to another place,
 // probably interfaces
 export interface Message {
-  id: bigint
+  id: number
   accountAddr: AccountId
   content: PlainTextMessage | TypedMessage
   signature: string | null
-  fromUserRequestId?: bigint
+  fromUserRequestId?: number
 }
 
 export interface UserRequest {
@@ -36,8 +36,7 @@ export interface UserRequest {
   // we need a distinct identifier here that's set by whoever is posting the request
   // the requests cannot be compared by content because it's valid for a user to post two or more identical ones
   // while for AccountOps we do only care about their content in the context of simulations
-  id: bigint
-  added: bigint // timestamp
+  id: number
   networkId: NetworkId
   accountAddr: AccountId
   // TODO: The dApp could define a nonce for the request, but this could not be

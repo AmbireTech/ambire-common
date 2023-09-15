@@ -68,6 +68,7 @@ contract Estimation {
     // This has two purposes: 1) when we're about to send a txn via an EOA, we need to know the native asset balances
     // 2) sometimes we need to check the balance of the simulation `from` addr in order to calculate
     // txn fee anomalies (like in Optimism, paying the L1 calldata fee)
+    // this is first, because when it comes to paying with native (EOA), the starting balance is taken
     outcome.nativeAssetBalances = new uint[](checkNativeAssetOn.length);
     for (uint i=0; i!=checkNativeAssetOn.length; i++) {
       outcome.nativeAssetBalances[i] = checkNativeAssetOn[i].balance;
