@@ -1,12 +1,15 @@
+/* eslint-disable max-classes-per-file */
+/* eslint-disable @typescript-eslint/no-empty-function */
 /* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable class-methods-use-this */
 /* eslint-disable @typescript-eslint/no-useless-constructor */
+import { Wallet } from 'ethers'
+
 /* eslint-disable max-classes-per-file */
 import { describe, expect, test } from '@jest/globals'
 
-import { Wallet } from 'ethers'
-import { Key, Keystore } from './keystore'
 import { produceMemoryStore } from '../../../test/helpers'
+import { Key, Keystore } from './keystore'
 
 class InternalSigner {
   key
@@ -107,7 +110,7 @@ describe('Keystore', () => {
 
   test('should add an internal key', async () => {
     expect.assertions(1)
-    await keystore.addKey(privKey, 'test key')
+    await keystore.addKeys([{ privateKey: privKey, label: 'test key' }])
     expect(await keystore.getKeys()).toHaveLength(1)
   })
 
