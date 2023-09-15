@@ -4,6 +4,7 @@
 const ethers = require('ethers')
 const fsPromises = require('fs').promises
 const path = require('path')
+// eslint-disable-next-line import/no-extraneous-dependencies
 const fetch = require('node-fetch')
 
 function initHumanizerMeta(humanizerMeta) {

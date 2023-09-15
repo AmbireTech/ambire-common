@@ -27,7 +27,8 @@ async function fetchFuncEtherface(
         await options.fetch(
           `https://api.etherface.io/v1/signatures/hash/all/${selector.slice(2, 10)}/1`,
           {
-            timeout: 10000
+            // test allow aup to 25000 ms (this value * iterations of the loop)
+            timeout: 7500
           }
         )
       ).json()
