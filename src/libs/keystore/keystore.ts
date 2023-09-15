@@ -255,8 +255,8 @@ export class Keystore {
         privateKey = privateKey.substring(0, 2) === '0x' ? privateKey.substring(2) : privateKey
 
         // Set up the cipher
-        const counter = new aes.Counter(this.#mainKey.iv)
-        const aesCtr = new aes.ModeOfOperation.ctr(this.#mainKey.key, counter)
+        const counter = new aes.Counter(this.#mainKey!.iv) // TS compiler fails to detect we check for null above
+        const aesCtr = new aes.ModeOfOperation.ctr(this.#mainKey!.key, counter) // TS compiler fails to detect we check for null above
 
         // Store the key
         // Terminology: this private key represents an EOA wallet, which is why ethers calls it Wallet, but we treat it as a key here
