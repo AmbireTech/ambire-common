@@ -3,7 +3,7 @@ import { wrapEthSign } from '../../test/ambireSign'
 import { PrivLevels, getProxyDeployBytecode, getStorageSlotsFromArtifact } from '../../src/libs/proxyDeploy/deploy'
 import { BaseContract } from 'ethers'
 import { abiCoder } from '../config'
-import { buildUserOp, getPriviledgeTxn, getPriviledgeTxnWithCustomHash } from '../helpers'
+import { buildUserOp, getPriviledgeTxnWithCustomHash } from '../helpers'
 
 const salt = '0x0'
 
@@ -15,31 +15,6 @@ function getDeployCalldata(bytecodeWithArgs: string) {
   const abi = ['function deploy(bytes calldata code, uint256 salt) external returns(address)']
   const iface = new ethers.Interface(abi)
   return iface.encodeFunctionData('deploy', [bytecodeWithArgs, salt])
-}
-
-function leftShift (a: any, n: any, fillWith = 0) {
-  const padding = fillWith ? 0xff : 0x00
-  const mod = n & 7 // n % 8
-  const div = n >> 3 // Math.floor(n / 8)
-
-  const dest = Buffer.allocUnsafe(a.length)
-
-  let i = 0
-
-  while (i + div + 1 < a.length) {
-    dest[i] = (a[i + div] << mod) | (a[i + div + 1] >> (8 - mod))
-    i += 1
-  }
-
-  dest[i] = (a[i + div] << mod) | (padding >> (8 - mod))
-  i += 1
-
-  while (i < a.length) {
-    dest[i] = padding
-    i += 1
-  }
-
-  return dest
 }
 
 export async function get4437Bytecode(
@@ -105,7 +80,7 @@ describe('ERC-4337 deploys the account via userOp and adds the entry point permi
       callData
     })
 
-    const uint192Number = Buffer.from(ethers.keccak256(
+    const theNumber = '0x' + ethers.keccak256(
       abiCoder.encode([
         'bytes',
         'bytes',
@@ -125,10 +100,8 @@ describe('ERC-4337 deploys the account via userOp and adds the entry point permi
         userOperation.maxPriorityFeePerGas,
         userOperation.paymasterAndData,
       ])
-    ).substring(18), 'hex')
-    const leftShifting = Buffer.from('64')
-    const targetNonce = ethers.hexlify(leftShift(uint192Number, leftShifting))
-
+    ).substring(18) + ethers.toBeHex(0, 8).substring(2)
+    const targetNonce = theNumber
     userOperation.nonce = targetNonce
     await entryPoint.handleOps([userOperation], relayer)
 
