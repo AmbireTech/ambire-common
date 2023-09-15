@@ -240,16 +240,26 @@ export class Keystore {
     await this.storage.set('keystoreKeys', keys)
   }
 
-  // TODO: Handle all cases that expect `addKey`
   async addKeys(keysToAdd: { privateKey: string; label: string }[]) {
     if (this.#mainKey === null) throw new Error('keystore: needs to be unlocked')
-
     if (!keysToAdd.length) return
+
+    // Trip out keys with duplicated private keys. One unique key is enough.
+    const uniquePrivateKeysToAddSet = new Set()
+    const uniqueKeysToAdd = keysToAdd.filter(({ privateKey }) => {
+      if (!uniquePrivateKeysToAddSet.has(privateKey)) {
+        uniquePrivateKeysToAddSet.add(privateKey)
+        return true
+      }
+      return false
+    })
+
+    if (!uniqueKeysToAdd.length) return
 
     const keys: [StoredKey] = await this.storage.get('keystoreKeys', [])
     const alreadyAddedKeyIdsSet = new Set(keys.map(({ id }) => id))
 
-    const newKeys = keysToAdd
+    const newKeys = uniqueKeysToAdd
       .map(({ privateKey, label }) => {
         // eslint-disable-next-line no-param-reassign
         privateKey = privateKey.substring(0, 2) === '0x' ? privateKey.substring(2) : privateKey
