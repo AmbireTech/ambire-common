@@ -4,10 +4,10 @@
 const ethers = require('ethers')
 const fsPromises = require('fs').promises
 const path = require('path')
+const fetch = require('node-fetch')
 
 function initHumanizerMeta(humanizerMeta) {
 	const newHumanizerMeta = {}
-  
 	Object.keys(humanizerMeta?.tokens).forEach((k2) => {
 	  newHumanizerMeta[`tokens:${ethers.getAddress(k2)}`] = humanizerMeta.tokens?.[k2]
 	})
@@ -18,6 +18,15 @@ function initHumanizerMeta(humanizerMeta) {
 	Object.keys(humanizerMeta?.names).forEach((k2) => {
 	  newHumanizerMeta[`names:${ethers.getAddress(k2)}`] = humanizerMeta.names?.[k2]
 	})
+
+	Object.keys(humanizerMeta?.errorSelectors).forEach((k) => {
+		newHumanizerMeta[`errorSelectors:${k}`] = humanizerMeta.errorSelectors?.[k]
+	})
+
+	Object.keys(humanizerMeta?.funcSelectors).forEach((k) => {
+		newHumanizerMeta[`funcSelectors:${k}`] = humanizerMeta.funcSelectors?.[k]
+	})
+
   
 	return {
 	  ...newHumanizerMeta,
@@ -25,21 +34,20 @@ function initHumanizerMeta(humanizerMeta) {
 	  tesseractVaults: humanizerMeta.yearnVaults
 	}
   }
-const dappSelectorsPath = path.join(__dirname, '..', 'src', 'consts', 'dappSelectors.json')
-const dappNamesPath = path.join(__dirname, '..', 'src', 'consts', 'dappNames.json')
-const ambireConstants = path.join(__dirname, '..', 'src', 'consts', 'ambireConstantsHumanizerInfo.json')
 const resultPath = path.join(__dirname, '..', 'src', 'consts', 'humanizerInfo.json')
 
-
 const main = async () => {
-	const prepedJsons = await Promise.all([
-		fsPromises.readFile(dappSelectorsPath, 'utf8').then(JSON.parse),
-		fsPromises.readFile(dappNamesPath, 'utf8').then(JSON.parse),
-		fsPromises.readFile(ambireConstants, 'utf8').then(JSON.parse).then(initHumanizerMeta)
-	])
-	const res = prepedJsons.reduce((a, b)=>({ ...a, ...b }), {})
-	await fsPromises.writeFile(resultPath, JSON.stringify(res, null, 4), 'utf8')
-	console.log(`Initial objects had ${prepedJsons.map(p=>Object.keys(p).length)} keys, the final object has${Object.keys(res).length} keys. Res written to ${resultPath}`)
+	const oldFileConstants = await fsPromises.readFile(resultPath, 'utf-8').then(JSON.parse)
+	console.log(Object.keys(oldFileConstants).length)
+	let newAmbirConstants = await (fetch('http://localhost:5000/result.json').then(r=>r.json()).then(r=>r.humanizerInfo).then(initHumanizerMeta)).catch(e=>{console.log(`Error: ${e.message}`)})
+	if (!newAmbirConstants) {
+		console.log('Error with reaching ambire-constants, old file wil be used')
+		newAmbirConstants = oldFileConstants
+	}
+
+	newAmbirConstants
+	await fsPromises.writeFile(resultPath, JSON.stringify(newAmbirConstants, null, 4), 'utf8')
+	console.log(`Old file had ${Object.keys(oldFileConstants).length} keys, the new object has ${Object.keys(newAmbirConstants).length} keys. Res written to ${resultPath}`)
 }
 
 
