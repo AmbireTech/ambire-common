@@ -1,8 +1,8 @@
 import { describe, expect } from '@jest/globals'
 
 import { produceMemoryStore } from '../../../test/helpers'
+import { AccountStates } from '../../interfaces/account'
 import { Message } from '../../interfaces/userRequest'
-import { AccountStates } from '../main/main'
 import { ActivityController, SubmittedAccountOp } from './activity'
 
 describe('Activity Controller ', () => {
@@ -379,12 +379,13 @@ describe('Activity Controller ', () => {
       })
 
       const signedMessage: Message = {
-        id: 'test-id-should-be-bigint' as unknown as bigint,
+        id: 1,
+        accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
         content: {
           kind: 'message',
           message: '0x74657374'
         },
-        fromUserRequestId: 'test-id-should-be-bigint' as unknown as bigint,
+        fromUserRequestId: 1,
         signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503'
       }
 
@@ -415,12 +416,13 @@ describe('Activity Controller ', () => {
       })
 
       const signedMessage: Message = {
-        id: 'test-id-should-be-bigint' as unknown as bigint,
+        id: 1,
+        accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
         content: {
           kind: 'message',
           message: '0x74657374'
         },
-        fromUserRequestId: 'test-id-should-be-bigint' as unknown as bigint,
+        fromUserRequestId: 1,
         signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503'
       }
 
@@ -457,12 +459,13 @@ describe('Activity Controller ', () => {
       })
 
       const signedMessage: Message = {
-        id: 'test-id-should-be-bigint' as unknown as bigint,
+        id: 1,
+        accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
         content: {
           kind: 'message',
           message: '0x123456'
         },
-        fromUserRequestId: 'test-id-should-be-bigint' as unknown as bigint,
+        fromUserRequestId: 1,
         signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503'
       }
 
