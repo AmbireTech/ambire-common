@@ -114,6 +114,15 @@ describe('Keystore', () => {
     expect(await keystore.getKeys()).toHaveLength(1)
   })
 
+  test('should not add twice internal key that is already added', async () => {
+    expect.assertions(1)
+    await keystore.addKeys([
+      { privateKey: privKey, label: 'test key 1' },
+      { privateKey: privKey, label: 'test key 2 with the same private key as test key 1' }
+    ])
+    expect(await keystore.getKeys()).toHaveLength(1)
+  })
+
   test('should get an internal signer', async () => {
     expect.assertions(2)
     const internalSigner: any = await keystore.getSigner(keyPublicAddress)
