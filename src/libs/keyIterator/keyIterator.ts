@@ -51,10 +51,10 @@ export class KeyIterator implements KeyIteratorInterface {
 
     if (this.#seedPhrase) {
       const mnemonic = Mnemonic.fromPhrase(this.#seedPhrase)
-      const wallet = HDNodeWallet.fromMnemonic(mnemonic)
+      const wallet = HDNodeWallet.fromMnemonic(mnemonic, derivation)
 
       for (let i = from; i <= to; i++) {
-        keys.push(wallet.derivePath(`${derivation}/${i}`).address)
+        keys.push(wallet.deriveChild(i).address)
       }
     }
 
