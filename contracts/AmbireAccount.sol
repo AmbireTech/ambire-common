@@ -303,6 +303,7 @@ contract AmbireAccount {
 			uint256 targetNonce = uint256(uint192(uint256(keccak256(
 				abi.encode(op.initCode, op.callData, op.callGasLimit, op.verificationGasLimit, op.preVerificationGas, op.maxFeePerGas, op.maxPriorityFeePerGas, op.paymasterAndData)
 			))) << 64);
+
 			require(op.nonce == targetNonce, 'validateUserOp: execute(): one-time nonce is wrong');
 			return 0;
 		}
