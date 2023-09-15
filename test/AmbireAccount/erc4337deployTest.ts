@@ -75,11 +75,34 @@ describe('ERC-4337 deploys the account via userOp and adds the entry point permi
     const callData = proxy.interface.encodeFunctionData('execute', [[txn], s])
     const userOperation = await buildUserOp(paymaster, {
       sender: senderAddress,
-      userOpNonce: ethers.toBeHex(await entryPoint.getNonce(senderAddress, 0), 1),
+      signedNonce: ethers.toBeHex(0, 1),
       initCode,
       callData
     })
 
+    const theNumber = '0x' + ethers.keccak256(
+      abiCoder.encode([
+        'bytes',
+        'bytes',
+        'uint256',
+        'uint256',
+        'uint256',
+        'uint256',
+        'uint256',
+        'bytes',
+      ], [
+        userOperation.initCode,
+        userOperation.callData,
+        userOperation.callGasLimit,
+        userOperation.verificationGasLimit,
+        userOperation.preVerificationGas,
+        userOperation.maxFeePerGas,
+        userOperation.maxPriorityFeePerGas,
+        userOperation.paymasterAndData,
+      ])
+    ).substring(18) + ethers.toBeHex(0, 8).substring(2)
+    const targetNonce = theNumber
+    userOperation.nonce = targetNonce
     await entryPoint.handleOps([userOperation], relayer)
 
     // confirm everything is set by sending an userOp through the entry point

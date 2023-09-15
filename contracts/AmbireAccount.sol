@@ -299,6 +299,11 @@ contract AmbireAccount {
 			// Require a paymaster, otherwise this mode can be used by anyone to get the user to spend their deposit
 			require(op.signature.length == 0, 'validateUserOp: empty signature required in execute() mode');
 			require(op.paymasterAndData.length >= 20, 'validateUserOp: paymaster required in execute() mode');
+			// hashing in everything except sender (nonces are scoped by sender anyway), nonce, signature
+			uint256 targetNonce = uint256(keccak256(
+				abi.encode(op.initCode, op.callData, op.callGasLimit, op.verificationGasLimit, op.preVerificationGas, op.maxFeePerGas, op.maxPriorityFeePerGas, op.paymasterAndData)
+			)) << 64;
+			require(op.nonce == targetNonce, 'validateUserOp: execute(): one-time nonce is wrong');
 			return 0;
 		}
 		require(address(uint160(uint256(privileges[msg.sender]))) == ENTRY_POINT_MARKER, 'validateUserOp: not from entryPoint');

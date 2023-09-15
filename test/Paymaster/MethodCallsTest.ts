@@ -26,6 +26,20 @@ describe('Basic Ambire Paymaster tests', function () {
     )
     expect(result[1]).to.equal(1n)
   })
+  it('should pass if callData is set to execute by making the signed nonce 0 on chain even though user op nonce is different ', async function () {
+    const ambireAccount = await ethers.deployContract('AmbireAccount')
+    const userOp = await buildUserOp(paymaster, {
+      userOpNonce: 1000,
+      signedNonce: 0, // we sign a 0 nonce
+      callData: ambireAccount.interface.encodeFunctionData('execute', [[], ethers.toBeHex(0, 1)])
+    })
+    const result = await paymaster.validatePaymasterUserOp(
+      userOp,
+      ethers.toBeHex(0, 32),
+      0
+    )
+    expect(result[1]).to.equal(0n)
+  })
   it('should fail if callData is set to execute but the signed nonce is not 0', async function () {
     const ambireAccount = await ethers.deployContract('AmbireAccount')
     const userOp = await buildUserOp(paymaster, {
