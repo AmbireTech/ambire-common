@@ -8,6 +8,7 @@ import { wrapEthSign } from '../../test/ambireSign'
 import { PrivLevels, getProxyDeployBytecode, getStorageSlotsFromArtifact } from '../../src/libs/proxyDeploy/deploy'
 import { BaseContract } from 'ethers'
 import { abiCoder } from '../config'
+import { getPriviledgeTxn } from '../helpers'
 
 const salt = '0x0'
 
@@ -37,6 +38,7 @@ export async function get4437Bytecode(
   })
 }
 
+// TO DO: FIX
 describe('ERC-4337 deploys the account via userOp and add the entry point permissions in the initCode', function () {
   it('successfully deploys the account with entry point without a userOp signature', async function () {
     const [signer] = await ethers.getSigners()
@@ -48,7 +50,7 @@ describe('ERC-4337 deploys the account via userOp and add the entry point permis
     const senderAddress = getAmbireAccountAddress(await factory.getAddress(), bytecodeWithArgs)
     const ambireAccount = new ethers.Contract(senderAddress, AMBIRE_ACCOUNT.abi, signer)
     const entryPoint = await ethers.deployContract('EntryPoint')
-    const txn = [senderAddress, 0, ambireAccount.interface.encodeFunctionData('setEntryPointPrivilege', [await entryPoint.getAddress()])]
+    const txn = getPriviledgeTxn(senderAddress, await entryPoint.getAddress(), true)
     const msg = ethers.getBytes(
       ethers.keccak256(
         abiCoder.encode(
