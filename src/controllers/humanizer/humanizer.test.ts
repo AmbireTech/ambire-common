@@ -4,11 +4,13 @@ import { describe, expect, jest, test } from '@jest/globals'
 
 import { HumanizerVisualization } from 'libs/humanizer/interfaces'
 import { Message, TypedMessage } from 'interfaces/userRequest'
+import { Key } from 'libs/keystore/keystore'
 import { HumanizerController } from './humanizer'
 import humanizerJSON from '../../consts/humanizerInfo.json'
 import { Storage } from '../../interfaces/storage'
 import { AccountOp } from '../../libs/accountOp/accountOp'
 import { produceMemoryStore } from '../../../test/helpers'
+import { Account } from '../../interfaces/account'
 
 const HUMANIZER_META_KEY = 'HumanizerMeta'
 
@@ -38,6 +40,25 @@ const accountOp: AccountOp = {
   // "remembered" at the time of signing in order to visualize history properly
   humanizerMeta: {}
 }
+
+const accounts: Account[] = [
+  {
+    addr: '0xAAbBbC841F29Dc6b09EF9f6c8fd59DA807bc6248',
+    label: 'First account',
+    pfp: 'string',
+    associatedKeys: ['string[]'],
+    creation: null
+  }
+]
+const keys: Key[] = [
+  {
+    id: '0xABcdeF398CBb1285Eeb2DC42be2c429eB1d55f02',
+    type: 'random',
+    label: 'Second account',
+    isExternallyStored: true,
+    meta: { amogus: 'fortniet', chungus: 'ligma' }
+  }
+]
 const transactions = {
   generic: [
     // simple transafer
@@ -172,12 +193,25 @@ const transactions = {
       value: BigInt(0),
       data: '0xd96a094a0000000000000000000000000000000000000000000000000000000064c233bf'
     }
+  ],
+
+  accountOrKeyArg: [
+    // approve erc-20 token USDT
+    {
+      to: '0xdac17f958d2ee523a2206206994597c13d831ec7',
+      value: BigInt(0),
+      data: '0x095ea7b3000000000000000000000000aabbbC841f29Dc6B09eF9F6c8fD59da807Bc6248000000000000000000000000000000000000000000000000000000003b9aca00'
+    },
+    {
+      to: '0xdac17f958d2ee523a2206206994597c13d831ec7',
+      value: BigInt(0),
+      data: '0x095ea7b3000000000000000000000000ABcdeF398CBb1285Eeb2DC42be2c429eB1d55f02000000000000000000000000000000000000000000000000000000003b9aca00'
+    }
   ]
 }
 
 describe('HumanizerController', () => {
   let storage: Storage
-
   let hc: HumanizerController //
   beforeEach(async () => {
     storage = produceMemoryStore()
@@ -379,6 +413,49 @@ describe('TypedMessages', () => {
     hc.onUpdate(onUpdate)
 
     await hc.humanizeMessages(accountOp, messages) // .catch(console.log)
+    expect(onUpdate).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('with (Account | Key)[] arg', () => {
+  let storage: Storage
+  let hc: HumanizerController
+
+  beforeEach(async () => {
+    storage = produceMemoryStore()
+    await storage.set(HUMANIZER_META_KEY, humanizerMeta)
+    accountOp.calls = []
+    hc = new HumanizerController(storage, fetch)
+    accountOp.humanizerMeta = humanizerJSON
+  })
+  test('with calls', async () => {
+    const expectedVisualizations = [
+      [
+        { type: 'action', content: 'Grant approval' },
+        { type: 'label', content: 'for' },
+        { type: 'nft' },
+        { type: 'label', content: 'to' },
+        { name: 'First account' }
+      ],
+      [
+        { type: 'action', content: 'Grant approval' },
+        { type: 'label', content: 'for' },
+        { type: 'nft' },
+        { type: 'label', content: 'to' },
+        { name: 'Second account' }
+      ]
+    ]
+    accountOp.calls = [...transactions.accountOrKeyArg]
+
+    const onUpdate = jest.fn(() => {
+      hc.ir.calls.forEach((c, i) =>
+        c.fullVisualization?.forEach((v, j) =>
+          expect(v).toMatchObject(expectedVisualizations[i][j])
+        )
+      )
+    })
+    hc.onUpdate(onUpdate)
+    await hc.humanizeCalls(accountOp, [...accounts, ...keys])
     expect(onUpdate).toHaveBeenCalledTimes(1)
   })
 })
