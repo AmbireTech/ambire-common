@@ -115,12 +115,23 @@ export class HumanizerController extends EventEmitter {
     }
   }
 
-  public async humanizeMessages(_accountOp: AccountOp, messages: Message[]) {
+  public async humanizeMessages(
+    _accountOp: AccountOp,
+    messages: Message[],
+    _knownAddresses: (Account | Key)[] = []
+  ) {
+    const knownAddresses = Object.fromEntries(
+      _knownAddresses.map((k) => {
+        const key = `names:${'id' in k ? k.id : k.addr}`
+        return [key, k.label]
+      })
+    )
     const accountOp: AccountOp = {
       ..._accountOp,
       humanizerMeta: {
         ..._accountOp.humanizerMeta,
-        ...(await this.#storage.get(HUMANIZER_META_KEY, {}))
+        ...(await this.#storage.get(HUMANIZER_META_KEY, {})),
+        ...knownAddresses
       }
     }
     for (let i = 0; i < 3; i++) {
