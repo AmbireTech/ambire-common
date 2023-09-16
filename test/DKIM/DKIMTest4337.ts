@@ -6,7 +6,7 @@ import fs from 'fs'
 import path from 'path'
 import parseEmail from '../../src/libs/dkim/parseEmail'
 import { wrapEthSign, wrapExternallyValidated } from '../ambireSign'
-import { getDKIMValidatorData, getPriviledgeTxn, getSignerKey } from '../helpers'
+import { getDKIMValidatorData, getPriviledgeTxn, getPriviledgeTxnWithCustomHash, getSignerKey } from '../helpers'
 const readFile = promisify(fs.readFile)
 const emailsPath = path.join(__dirname, 'emails')
 const AmbireAccount = require('../../artifacts/contracts/AmbireAccount.sol/AmbireAccount.json')
@@ -19,41 +19,49 @@ let dnsSecAddr: any
 let rsaSha256DKIMValidatorAddr: any
 let entryPoint: any
 
+const ENTRY_POINT_PRIV = '0x0000000000000000000000000000000000000000000000000000000000007171'
+
+async function deployDkim() {
+  const [signer] = await ethers.getSigners()
+
+  const dnsSec = await ethers.deployContract('DNSSECImpl', ['0x00002b000100000e1000244a5c080249aac11d7b6f6446702e54a1607371607a1a41855200fd2ce1cdde32f24e8fb500002b000100000e1000244f660802e06d44b80b8f1d39a95c0b0d7c65d08458e880409bbc683457104237c7f8ec8d00002b000100000e10000404fefdfd'])
+
+  const rsaSha256 = await ethers.deployContract('RSASHA256Algorithm')
+  await dnsSec.setAlgorithm(8, await rsaSha256.getAddress())
+
+  // other algo
+  const rsaShaDKIMValidator = await ethers.deployContract('RSASHA256')
+  rsaSha256DKIMValidatorAddr = await rsaShaDKIMValidator.getAddress()
+
+  const p256SHA256Algorithm = await ethers.deployContract('P256SHA256Algorithm')
+  await dnsSec.setAlgorithm(13, await p256SHA256Algorithm.getAddress())
+
+  const digest = await ethers.deployContract('SHA256Digest')
+  await dnsSec.setDigest(2, await digest.getAddress())
+
+  const contractFactory = await ethers.getContractFactory('DKIMRecoverySigValidator', {
+    libraries: {
+      RSASHA256: rsaSha256DKIMValidatorAddr,
+    },
+  })
+  dnsSecAddr = await dnsSec.getAddress()
+  dkimRecovery = await contractFactory.deploy(dnsSecAddr, signer.address, signer.address)
+  expect(await dkimRecovery.getAddress()).to.not.be.null
+
+  entryPoint = await ethers.deployContract('EntryPoint')
+  expect(await entryPoint.getAddress()).to.not.be.null
+}
+
 describe('ERC4337 DKIM Prep-up', function () {
   it('successfully deploy the DKIM Recovery and Entry Point', async function () {
-    const [signer] = await ethers.getSigners()
-
-    const dnsSec = await ethers.deployContract('DNSSECImpl', ['0x00002b000100000e1000244a5c080249aac11d7b6f6446702e54a1607371607a1a41855200fd2ce1cdde32f24e8fb500002b000100000e1000244f660802e06d44b80b8f1d39a95c0b0d7c65d08458e880409bbc683457104237c7f8ec8d00002b000100000e10000404fefdfd'])
-
-    const rsaSha256 = await ethers.deployContract('RSASHA256Algorithm')
-    await dnsSec.setAlgorithm(8, await rsaSha256.getAddress())
-
-    // other algo
-    const rsaShaDKIMValidator = await ethers.deployContract('RSASHA256')
-    rsaSha256DKIMValidatorAddr = await rsaShaDKIMValidator.getAddress()
-
-    const p256SHA256Algorithm = await ethers.deployContract('P256SHA256Algorithm')
-    await dnsSec.setAlgorithm(13, await p256SHA256Algorithm.getAddress())
-
-    const digest = await ethers.deployContract('SHA256Digest')
-    await dnsSec.setDigest(2, await digest.getAddress())
-
-    const contractFactory = await ethers.getContractFactory('DKIMRecoverySigValidator', {
-      libraries: {
-        RSASHA256: rsaSha256DKIMValidatorAddr,
-      },
-    })
-    dnsSecAddr = await dnsSec.getAddress()
-    dkimRecovery = await contractFactory.deploy(dnsSecAddr, signer.address, signer.address)
-    expect(await dkimRecovery.getAddress()).to.not.be.null
-
-    entryPoint = await ethers.deployContract('EntryPoint')
-    expect(await entryPoint.getAddress()).to.not.be.null
+    await deployDkim()
   })
 })
 
 describe('ERC4337 DKIM sigMode Both', function () {
-  it('successfully deploys the ambire account and gives priviledges to the entry point', async function () {
+  before('successfully deploys the ambire account and gives priviledges to the entry point', async function () {
+    await deployDkim()
+
     const [relayer, ,signerWithPrivs] = await ethers.getSigners()
     const gmail = await readFile(path.join(emailsPath, 'sigMode0.eml'), {
       encoding: 'ascii'
@@ -69,7 +77,7 @@ describe('ERC4337 DKIM sigMode Both', function () {
     account = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signerWithPrivs)
 
     // set entry point priv
-    const txn = [ambireAccountAddress, 0, account.interface.encodeFunctionData('setEntryPointPrivilege', [await entryPoint.getAddress()])]
+    const txn = getPriviledgeTxnWithCustomHash(ambireAccountAddress, await entryPoint.getAddress(), ENTRY_POINT_PRIV)
     await signerWithPrivs.sendTransaction({
       to: ambireAccountAddress,
       value: 0,
@@ -134,7 +142,7 @@ describe('ERC4337 DKIM sigMode Both', function () {
     }
     await expect(entryPoint.handleOps([userOperation], relayer))
       .to.be.revertedWithCustomError(entryPoint, 'FailedOp')
-      .withArgs(0, 'AA23 reverted: calls length must be 1');
+      .withArgs(0, 'AA23 reverted: validateUserOp: needs to call executeBySender');
 
     userOperation.callData = account.interface.encodeFunctionData('executeBySender', [txns])
     await entryPoint.handleOps([userOperation], relayer)
@@ -218,7 +226,7 @@ describe('ERC4337 DKIM sigMode Both', function () {
 })
 
 describe('ERC4337 DKIM sigMode OnlyDKIM', function () {
-  it('successfully deploys the ambire account and gives priviledges to the entry point', async function () {
+  before('successfully deploys the ambire account and gives priviledges to the entry point', async function () {
     const [relayer, ,signerWithPrivs] = await ethers.getSigners()
     const gmail = await readFile(path.join(emailsPath, 'sigMode1.eml'), {
       encoding: 'ascii'
@@ -236,7 +244,7 @@ describe('ERC4337 DKIM sigMode OnlyDKIM', function () {
     account = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signerWithPrivs)
 
     // set entry point priv
-    const txn = [ambireAccountAddress, 0, account.interface.encodeFunctionData('setEntryPointPrivilege', [await entryPoint.getAddress()])]
+    const txn = getPriviledgeTxnWithCustomHash(ambireAccountAddress, await entryPoint.getAddress(), ENTRY_POINT_PRIV)
     await signerWithPrivs.sendTransaction({
       to: ambireAccountAddress,
       value: 0,
@@ -297,7 +305,7 @@ describe('ERC4337 DKIM sigMode OnlyDKIM', function () {
       .to.be.revertedWithCustomError(entryPoint, 'FailedOp')
       .withArgs(0, 'AA23 reverted: no txn execution is allowed when setting a timelock');
 
-    userOperation.callData = '0x'
+    userOperation.callData = account.interface.encodeFunctionData('executeBySender', [[]])
     await entryPoint.handleOps([userOperation], relayer)
 
     // expect the txn to NOT have been executed
@@ -365,7 +373,7 @@ describe('ERC4337 DKIM sigMode OnlySecond', function () {
     account = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signerWithPrivs)
 
     // set entry point priv
-    const txn = [ambireAccountAddress, 0, account.interface.encodeFunctionData('setEntryPointPrivilege', [await entryPoint.getAddress()])]
+    const txn = getPriviledgeTxnWithCustomHash(ambireAccountAddress, await entryPoint.getAddress(), ENTRY_POINT_PRIV)
     await signerWithPrivs.sendTransaction({
       to: ambireAccountAddress,
       value: 0,
@@ -433,7 +441,7 @@ describe('ERC4337 DKIM sigMode OnlySecond', function () {
       .to.be.revertedWithCustomError(entryPoint, 'FailedOp')
       .withArgs(0, 'AA23 reverted: no txn execution is allowed when setting a timelock');
 
-    userOperation.callData = '0x'
+    userOperation.callData = account.interface.encodeFunctionData('executeBySender', [[]])
     await entryPoint.handleOps([userOperation], relayer)
 
     // expect the txn to NOT have been executed
@@ -587,7 +595,7 @@ describe('DKIM sigMode Both with acceptUnknownSelectors true', function () {
     account = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signerWithPrivs)
 
     // set entry point priv
-    const txn = [ambireAccountAddress, 0, account.interface.encodeFunctionData('setEntryPointPrivilege', [await entryPoint.getAddress()])]
+    const txn = getPriviledgeTxnWithCustomHash(ambireAccountAddress, await entryPoint.getAddress(), ENTRY_POINT_PRIV)
     await signerWithPrivs.sendTransaction({
       to: ambireAccountAddress,
       value: 0,
@@ -677,7 +685,7 @@ describe('DKIM sigMode OnlySecond with a timelock of 2 minutes', function () {
     account = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signerWithPrivs)
 
     // set entry point priv
-    const txn = [ambireAccountAddress, 0, account.interface.encodeFunctionData('setEntryPointPrivilege', [await entryPoint.getAddress()])]
+    const txn = getPriviledgeTxnWithCustomHash(ambireAccountAddress, await entryPoint.getAddress(), ENTRY_POINT_PRIV)
     await signerWithPrivs.sendTransaction({
       to: ambireAccountAddress,
       value: 0,
@@ -747,7 +755,7 @@ describe('DKIM sigMode OnlySecond with a timelock of 2 minutes', function () {
       .to.be.revertedWithCustomError(entryPoint, 'FailedOp')
       .withArgs(0, 'AA23 reverted: no txn execution is allowed when setting a timelock');
 
-    userOperation.callData = '0x'
+    userOperation.callData = account.interface.encodeFunctionData('executeBySender', [[]])
     await entryPoint.handleOps([userOperation], relayer)
 
     // expect the txn to NOT have been executed
