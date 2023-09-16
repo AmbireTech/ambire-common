@@ -1,5 +1,5 @@
 import { AccountOp } from '../../accountOp/accountOp'
-import { HumanizerCallModule, HumanizerVisualization, IrCall } from '../interfaces'
+import { HumanizerParsingModule, HumanizerVisualization, HumanizerWarning } from '../interfaces'
 import { getWarning, shortenAddress } from '../utils'
 
 const getName = (address: string, humanizerMeta: any) => {
@@ -9,30 +9,27 @@ const getName = (address: string, humanizerMeta: any) => {
   return null
 }
 // adds 'name' proeprty to visualization of addresses (needs initialHumanizer to work on unparsed transactions)
-export const nameParsing: HumanizerCallModule = (
+export const nameParsing: HumanizerParsingModule = (
   accountOp: AccountOp,
-  currentIrCalls: IrCall[],
+  visualization: HumanizerVisualization[],
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   options?: any
 ) => {
-  //   const asyncOps: Array<Promise<HumanizerFragment>> = []
-  const newCalls = currentIrCalls.map((call) => {
-    const newVisualization = call?.fullVisualization?.map((v: HumanizerVisualization) => {
+  const warnings: HumanizerWarning[] = []
+  const fullVisualization: HumanizerVisualization[] = visualization.map(
+    (v: HumanizerVisualization) => {
       if (v.type === 'address' && !v.name) {
         const newName = getName(v.address as string, accountOp.humanizerMeta)
         if (!newName)
           // eslint-disable-next-line no-param-reassign
-          call.warnings = call.warnings
-            ? [...call.warnings, getWarning('Unknown address')]
-            : [getWarning('Unknown address')]
+          warnings.push(getWarning('Unknown address'))
         return {
           ...v,
           name: newName || shortenAddress(v.address as string)
         }
       }
       return v
-    })
-    return { ...call, fullVisualization: newVisualization || call?.fullVisualization }
-  })
-  return [newCalls, []]
+    }
+  )
+  return [fullVisualization, warnings, []]
 }

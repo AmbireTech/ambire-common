@@ -3,12 +3,13 @@ import { describe, expect, test } from '@jest/globals'
 import { ethers } from 'ethers'
 import fetch from 'node-fetch'
 import { AccountOp } from '../accountOp/accountOp'
-import { nameParsing } from './modules/nameParsing'
 import { fallbackHumanizer } from './modules/fallBackHumanizer'
 import { uniswapHumanizer } from './modules/Uniswap'
 import { HumanizerFragment, HumanizerVisualization, IrCall } from './interfaces'
 import { genericErc20Humanizer, genericErc721Humanizer } from './modules/tokens'
 import { ErrorRef } from '../../controllers/eventEmitter'
+import { nameParsing } from './parsers/nameParsing'
+import { parseCalls } from './parsers'
 
 const humanizerInfo = require('../../consts/humanizerInfo.json')
 
@@ -336,11 +337,10 @@ describe('module tests', () => {
     let irCalls = accountOp.calls
     ;[irCalls] = genericErc20Humanizer(accountOp, irCalls)
     ;[irCalls] = fallbackHumanizer(accountOp, irCalls)
-    const [newCalls] = nameParsing(accountOp, irCalls, { fetch })
-
+    const [newCalls] = parseCalls(accountOp, irCalls, [nameParsing], { fetch })
     expect(newCalls.length).toBe(transactions.namingTransactions.length)
-    expect(newCalls[0].warnings?.length).toBeUndefined()
-    expect(newCalls[1].warnings?.length).toBeUndefined()
+    expect(newCalls[0].warnings?.length).toBeFalsy()
+    expect(newCalls[1].warnings?.length).toBeFalsy()
     expect(newCalls[2].warnings?.length).toBe(1)
     expect(
       newCalls[0]?.fullVisualization?.find((v: HumanizerVisualization) => v.type === 'address')

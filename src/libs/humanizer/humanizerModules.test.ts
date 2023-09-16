@@ -10,11 +10,13 @@ import { HumanizerCallModule, HumanizerVisualization, IrCall } from './interface
 import { wethHumanizer } from './modules/weth'
 import { aaveHumanizer } from './modules/Aave'
 import { yearnVaultModule } from './modules/yearnTesseractVault'
-import { genericErc20Humanizer, genericErc721Humanizer, tokenParsing } from './modules/tokens'
+import { genericErc20Humanizer, genericErc721Humanizer } from './modules/tokens'
 // import { oneInchHumanizer } from './modules/oneInch'
 import { WALLETModule } from './modules/WALLET'
 import { fallbackHumanizer } from './modules/fallBackHumanizer'
-import { nameParsing } from './modules/nameParsing'
+import { nameParsing } from './parsers/nameParsing'
+import { tokenParsing } from './parsers/tokenParsing'
+import { parseCalls } from './parsers'
 
 const humanizerInfo = require('../../consts/humanizerInfo.json')
 
@@ -27,9 +29,7 @@ const humanizerModules: HumanizerCallModule[] = [
   // oneInchHumanizer,
   WALLETModule,
   yearnVaultModule,
-  fallbackHumanizer,
-  nameParsing,
-  tokenParsing
+  fallbackHumanizer
 ]
 
 const accountOp: AccountOp = {
@@ -232,10 +232,26 @@ describe('module tests', () => {
       .flat()
     accountOp.calls = allCalls
     let [irCalls, asyncOps] = humanizeCalls(accountOp, humanizerModules, standartOptions)
+    let [parsedCalls, newAsyncOps] = parseCalls(
+      accountOp,
+      irCalls,
+      [nameParsing, tokenParsing],
+      standartOptions
+    )
+    irCalls = parsedCalls
+    asyncOps.push(...newAsyncOps)
     ;(await Promise.all(asyncOps)).forEach((a) => {
       if (a) accountOp.humanizerMeta = { ...accountOp.humanizerMeta, [a.key]: a.value }
     })
     ;[irCalls, asyncOps] = humanizeCalls(accountOp, humanizerModules, standartOptions)
+    ;[parsedCalls, newAsyncOps] = parseCalls(
+      accountOp,
+      irCalls,
+      [nameParsing, tokenParsing],
+      standartOptions
+    )
+    irCalls = parsedCalls
+    asyncOps.push(...newAsyncOps)
     const res = irCalls.map((call: IrCall) => visualizationToText(call, standartOptions))
 
     expectedTexification.forEach((et: string[], i: number) => expect(et).toContain(res[i]))

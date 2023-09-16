@@ -275,7 +275,7 @@ describe('TypedMessages', () => {
     storage = produceMemoryStore()
     hc = new HumanizerController(storage, fetch)
   })
-  test('simple humanization', () => {
+  test('simple humanization', async () => {
     const message = {
       details: [
         {
@@ -337,7 +337,10 @@ describe('TypedMessages', () => {
       {
         type: 'token',
         address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
-        amount: 1000000000000000000n
+        amount: 1000000000000000000n,
+        decimals: 18,
+        readableAmount: '1.0',
+        symbol: 'WETH'
       },
       { type: 'label', content: 'for time period' },
       { type: 'label', content: 'already expired' },
@@ -354,7 +357,10 @@ describe('TypedMessages', () => {
       {
         type: 'token',
         address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
-        amount: 500000000000000000n
+        amount: 500000000000000000n,
+        decimals: 18,
+        readableAmount: '0.5',
+        symbol: 'WETH'
       },
       { type: 'label', content: 'for time period' },
       { type: 'label', content: 'already expired' },
@@ -363,7 +369,7 @@ describe('TypedMessages', () => {
     ]
     const onUpdate = jest.fn(() => {
       hc.ir.messages[0].fullVisualization?.forEach((v, i) =>
-        expect(v).toEqual(expectedVisualizations[i])
+        expect(expectedVisualizations[i]).toEqual(v)
       )
       expect(hc.ir.messages[1].fullVisualization).toEqual([
         { type: 'action', content: 'Sign message:' },
@@ -371,7 +377,8 @@ describe('TypedMessages', () => {
       ])
     })
     hc.onUpdate(onUpdate)
-    hc.humanizeMessages(accountOp, messages)
+
+    await hc.humanizeMessages(accountOp, messages) // .catch(console.log)
     expect(onUpdate).toHaveBeenCalledTimes(1)
   })
 })

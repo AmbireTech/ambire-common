@@ -5,11 +5,7 @@ import {
   erc721Module,
   permit2Module
 } from '../../libs/humanizer/typedMessageModules'
-import {
-  genericErc20Humanizer,
-  genericErc721Humanizer,
-  tokenParsing
-} from '../../libs/humanizer/modules/tokens'
+import { genericErc20Humanizer, genericErc721Humanizer } from '../../libs/humanizer/modules/tokens'
 import { uniswapHumanizer } from '../../libs/humanizer/modules/Uniswap'
 import { wethHumanizer } from '../../libs/humanizer/modules/weth'
 import { aaveHumanizer } from '../../libs/humanizer/modules/Aave'
@@ -17,18 +13,21 @@ import { aaveHumanizer } from '../../libs/humanizer/modules/Aave'
 import { WALLETModule } from '../../libs/humanizer/modules/WALLET'
 import { yearnVaultModule } from '../../libs/humanizer/modules/yearnTesseractVault'
 import { fallbackHumanizer } from '../../libs/humanizer/modules/fallBackHumanizer'
-import { nameParsing } from '../../libs/humanizer/modules/nameParsing'
 import {
   HumanizerCallModule,
   HumanizerVisualization,
   Ir,
-  IrMessage
+  IrMessage,
+  HumanizerParsingModule
 } from '../../libs/humanizer/interfaces'
 import { Storage } from '../../interfaces/storage'
 import { AccountOp } from '../../libs/accountOp/accountOp'
 import { humanizeCalls, humanizePLainTextMessage, humanizeTypedMessage } from '../../libs/humanizer'
 import EventEmitter, { ErrorRef } from '../eventEmitter'
 import { Message } from '../../interfaces/userRequest'
+import { tokenParsing } from '../../libs/humanizer/parsers/tokenParsing'
+import { nameParsing } from '../../libs/humanizer/parsers/nameParsing'
+import { parseCalls, parseMessages } from '../../libs/humanizer/parsers'
 
 const HUMANIZER_META_KEY = 'HumanizerMeta'
 const humanizerCallModules: HumanizerCallModule[] = [
@@ -40,10 +39,10 @@ const humanizerCallModules: HumanizerCallModule[] = [
   // oneInchHumanizer,
   WALLETModule,
   yearnVaultModule,
-  fallbackHumanizer,
-  nameParsing,
-  tokenParsing
+  fallbackHumanizer
 ]
+
+const parsingModules: HumanizerParsingModule[] = [nameParsing, tokenParsing]
 
 const humanizerTMModules = [erc20Module, erc721Module, permit2Module, fallbackEIP712Humanizer]
 export class HumanizerController extends EventEmitter {
@@ -79,7 +78,11 @@ export class HumanizerController extends EventEmitter {
         humanizerCallModules,
         { fetch: this.#fetch, emitError: this.wrappedEemitError }
       )
-      this.ir.calls = irCalls
+
+      const [parsedCalls, newAsyncOps] = parseCalls(accountOp, irCalls, parsingModules)
+      asyncOps.push(...newAsyncOps)
+      this.ir.calls = parsedCalls
+
       this.emitUpdate()
       const fragments = (await Promise.all(asyncOps)).filter((f) => f)
       if (!fragments.length) return
@@ -102,17 +105,49 @@ export class HumanizerController extends EventEmitter {
     }
   }
 
-  public humanizeMessages(accountOp: AccountOp, messages: Message[]) {
-    const irMessages: IrMessage[] = messages.map((m) => {
-      let fullVisualization: HumanizerVisualization[]
-      if (m.content.kind === 'typedMessage') {
-        fullVisualization = humanizeTypedMessage(accountOp, humanizerTMModules, m.content)
-      } else {
-        fullVisualization = humanizePLainTextMessage(accountOp, m.content)
+  public async humanizeMessages(_accountOp: AccountOp, messages: Message[]) {
+    const accountOp: AccountOp = {
+      ..._accountOp,
+      humanizerMeta: {
+        ..._accountOp.humanizerMeta,
+        ...(await this.#storage.get(HUMANIZER_META_KEY, {}))
       }
-      return { ...m, fullVisualization }
-    })
-    this.ir.messages = irMessages
-    this.emitUpdate()
+    }
+    for (let i = 0; i < 3; i++) {
+      const storedHumanizerMeta = await this.#storage.get(HUMANIZER_META_KEY, {})
+      const irMessages: IrMessage[] = messages.map((m) => {
+        let fullVisualization: HumanizerVisualization[]
+        if (m.content.kind === 'typedMessage') {
+          fullVisualization = humanizeTypedMessage(accountOp, humanizerTMModules, m.content)
+        } else {
+          fullVisualization = humanizePLainTextMessage(accountOp, m.content)
+        }
+        return { ...m, fullVisualization }
+      })
+      let asyncOps
+      ;[this.ir.messages, asyncOps] = parseMessages(accountOp, irMessages, parsingModules, {
+        fetch: this.#fetch,
+        emitError: this.wrappedEemitError
+      })
+      this.emitUpdate()
+      const fragments = (await Promise.all(asyncOps)).filter((f) => f)
+      if (!fragments.length) return
+
+      let globalFragmentData = {}
+      let nonGlobalFragmentData = {}
+
+      fragments.forEach((f) => {
+        if (f)
+          f.isGlobal
+            ? (globalFragmentData = { ...globalFragmentData, [f.key]: f.value })
+            : (nonGlobalFragmentData = { ...nonGlobalFragmentData, [f.key]: f.value })
+      })
+
+      accountOp.humanizerMeta = {
+        ...accountOp.humanizerMeta,
+        ...nonGlobalFragmentData
+      }
+      await this.#storage.set(HUMANIZER_META_KEY, { ...storedHumanizerMeta, ...globalFragmentData })
+    }
   }
 }

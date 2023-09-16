@@ -1,13 +1,7 @@
 import { ethers } from 'ethers'
 import { AccountOp } from '../../accountOp/accountOp'
-import { nativeTokens } from '../../../consts/networks'
 import { getLabel, getAction, getAddress, getNft, getToken, getTokenInfo } from '../utils'
-import {
-  HumanizerFragment,
-  HumanizerCallModule,
-  HumanizerVisualization,
-  IrCall
-} from '../interfaces'
+import { HumanizerFragment, HumanizerCallModule, IrCall } from '../interfaces'
 
 export const genericErc721Humanizer: HumanizerCallModule = (
   accountOp: AccountOp,
@@ -159,44 +153,5 @@ export const genericErc20Humanizer: HumanizerCallModule = (
       }
     return call
   })
-  return [newCalls, asyncOps]
-}
-
-export const tokenParsing: HumanizerCallModule = (
-  accounOp: AccountOp,
-  irCalls: IrCall[],
-  options?: any
-) => {
-  const asyncOps: Array<Promise<HumanizerFragment | null>> = []
-  const newCalls = irCalls.map((c) => ({
-    ...c,
-    fullVisualization: c?.fullVisualization?.map((v: HumanizerVisualization) => {
-      if (v.type === 'token') {
-        const tokenMeta =
-          v.address === ethers.ZeroAddress
-            ? nativeTokens[accounOp.networkId]
-            : accounOp.humanizerMeta?.[`tokens:${v.address}`]
-        if (tokenMeta) {
-          return v.amount ===
-            115792089237316195423570985008687907853269984665640564039457584007913129639935n
-            ? getLabel(`all ${tokenMeta[0]}`)
-            : {
-                ...v,
-                symbol: v.symbol || tokenMeta[0],
-                decimals: tokenMeta[1],
-                readableAmount:
-                  // only F's
-                  v.amount ===
-                  115792089237316195423570985008687907853269984665640564039457584007913129639935n
-                    ? 'all'
-                    : ethers.formatUnits(v.amount as bigint, tokenMeta[1])
-              }
-        }
-        asyncOps.push(getTokenInfo(accounOp, v.address as string, options))
-      }
-      return v
-    })
-  }))
-
   return [newCalls, asyncOps]
 }

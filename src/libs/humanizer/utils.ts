@@ -80,17 +80,18 @@ export async function getTokenInfo(
         value: [response.symbol.toUpperCase(), response.detail_platforms?.ethereum.decimal_place]
       }
     options.emitError({
-      message: 'getTokenInfo: something is wrong with coingecko api',
-      error: new Error('The response from coingecko had unexpected json structure'),
+      message: 'getTokenInfo: something is wrong goingecko reponse format',
+      error: new Error('unexpected response format'),
       level: 'minor'
     })
     return null
   } catch (e) {
-    return options.emitError({
+    options.emitError({
       message: 'getTokenInfo: something is wrong with coingecko api',
       error: e,
       level: 'minor'
     })
+    return null
   }
 }
 

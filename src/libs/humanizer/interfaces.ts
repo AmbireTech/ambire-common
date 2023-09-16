@@ -18,6 +18,7 @@ export interface IrCall extends Call {
 }
 export interface IrMessage extends Message {
   fullVisualization?: HumanizerVisualization[]
+  warnings?: HumanizerWarning[]
 }
 export interface HumanizerWarning {
   content: string
@@ -43,4 +44,12 @@ export interface HumanizerCallModule {
 
 export interface HumanizerTypedMessaageModule {
   (typedMessage: TypedMessage): HumanizerVisualization[]
+}
+
+export interface HumanizerParsingModule {
+  (accounOp: AccountOp, visualization: HumanizerVisualization[], options?: any): [
+    HumanizerVisualization[],
+    HumanizerWarning[],
+    Promise<HumanizerFragment | null>[]
+  ]
 }
