@@ -1,82 +1,100 @@
-import { formatUnits } from 'ethers'
+import { NetworkId } from 'ambire-common/src/interfaces/networkDescriptor'
 
-import { TokenResult as TokenResultInterface } from './interfaces'
+import {
+  CollectionResult as CollectionResultInterface,
+  PortfolioControllerState,
+  TokenResult as TokenResultInterface
+} from './interfaces'
 
-// Calculate Gas Tank Balance Sum
-export function totalGasTankBalance(additionalPortfolio: any) {
-  return (
-    additionalPortfolio?.gasTank?.balance?.reduce((total: any, token: any) => {
-      const priceInUSD = token?.priceIn?.find(({ baseCurrency }: any) => baseCurrency === 'usd')
-      if (priceInUSD) {
-        const balanceUSD =
-          parseFloat(formatUnits(BigInt(token?.amount ?? 0), token?.decimals ?? 0)) *
-          priceInUSD.price
-        return total + balanceUSD
-      }
-      return total
-    }, 0) ?? 0
-  )
+interface AccountPortfolio {
+  tokens: TokenResultInterface[]
+  collections: CollectionResultInterface[]
+  totalAmount: number
+  isAllReady: boolean
 }
 
-export function totalRewardsBalance(additionalPortfolio: any) {
-  if (!additionalPortfolio || Object.keys(additionalPortfolio).length === 0) {
-    return 0 // Return 0 if additionalPortfolio is empty or undefined
+const setFlags = (
+  networkData: any,
+  networkId: NetworkId,
+  tokenNetwork: NetworkId,
+  token: TokenResultInterface,
+  feeTokens: TokenResultInterface[],
+  gasTankFeeTokens: TokenResultInterface[]
+) => {
+  const onGasTank = networkId === 'gasTank'
+  const isRewardsToken = networkId === 'rewards'
+  const vesting = networkData.result?.xWalletClaimableBalance?.address === token.address
+  const rewards = networkData.result?.walletClaimableBalance?.address === token.address
+  const canTopUpGasTank = gasTankFeeTokens.some(
+    (t) =>
+      t.address === token.address &&
+      (onGasTank || isRewardsToken ? t.networkId === tokenNetwork : t.networkId === networkId)
+  )
+  const isFeeToken = feeTokens.some(
+    (t) =>
+      t.address === token.address &&
+      (onGasTank || isRewardsToken ? t.networkId === tokenNetwork : t.networkId === networkId)
+  )
+
+  return {
+    onGasTank,
+    isRewardsToken,
+    vesting,
+    rewards,
+    canTopUpGasTank,
+    isFeeToken
   }
-
-  function calculateClaimableBalance(property: string) {
-    if (
-      additionalPortfolio.rewards[property] &&
-      Object.keys(additionalPortfolio.rewards[property]).length
-    ) {
-      const { amount, decimals, priceIn }: TokenResultInterface =
-        additionalPortfolio.rewards[property]
-      const usdPrice = priceIn.find(({ baseCurrency }: any) => baseCurrency === 'usd')?.price || 0
-      const formattedAmount = formatUnits(BigInt(amount), decimals)
-      return parseFloat(formattedAmount) * usdPrice || 0
-    }
-    return 0
-  }
-
-  const walletClaimableBalance = calculateClaimableBalance('walletClaimableBalance')
-  const xWalletClaimableBalance = calculateClaimableBalance('xWalletClaimableBalance')
-
-  return walletClaimableBalance + xWalletClaimableBalance
 }
 
 export function calculateAccountPortfolio(
-  selectedAccount,
-  state,
-  accountPortfolio,
-  additionalPortfolio
-): any {
+  selectedAccount: string | null,
+  state: PortfolioControllerState,
+  accountPortfolio: AccountPortfolio,
+  feeTokens: { string: string }[],
+  gasTankFeeTokens: { string: string }[]
+) {
   const updatedTokens: any = []
   const updatedCollections: any = []
   let updatedTotalAmount = accountPortfolio?.totalAmount || 0
-  let newTotalAmount: number =
-    totalGasTankBalance(additionalPortfolio) + totalRewardsBalance(additionalPortfolio)
+  let newTotalAmount: number = 0
   let allReady = true
 
-  if (!selectedAccount || !state.latest || !state.latest[selectedAccount]) {
+  // 1. On update latest is empty {} in the beginning
+  if (
+    !selectedAccount ||
+    !state.latest ||
+    !state.latest[selectedAccount] ||
+    Object.keys(state.latest[selectedAccount]).length === 0
+  ) {
     return {
-      tokens: updatedTokens,
-      collections: updatedCollections,
-      totalAmount: updatedTotalAmount,
-      isAllReady: allReady
+      tokens: accountPortfolio?.tokens || [],
+      collections: accountPortfolio?.collections || [],
+      totalAmount: accountPortfolio?.totalAmount || 0,
+      isAllReady: true
     }
   }
 
   const selectedAccountData = state.latest[selectedAccount]
+
+  // Function to check network status
+  const isNetworkReady = (networkData) => {
+    return networkData && networkData.isReady && !networkData.isLoading && networkData.result
+  }
+
   // Convert the object keys to an array and iterate using forEach
   Object.keys(selectedAccountData).forEach((network) => {
     const networkData = selectedAccountData[network]
 
-    if (networkData && networkData.isReady && !networkData.isLoading && networkData.result) {
+    if (isNetworkReady(networkData)) {
       // In the case we receive BigInt here, convert to number
       const networkTotal = Number(networkData.result.total?.usd) || 0
       newTotalAmount += networkTotal
 
       // Assuming you want to push tokens to updatedTokens array as well
-      const networkTokens = networkData.result.tokens
+      const networkTokens = networkData.result.tokens.map((t) => ({
+        ...t,
+        ...setFlags(networkData, network, t.networkId, t, feeTokens, gasTankFeeTokens)
+      }))
       const networkCollections = networkData.result.collections || []
       updatedTokens.push(...networkTokens)
       updatedCollections.push(...networkCollections)
@@ -84,8 +102,9 @@ export function calculateAccountPortfolio(
       if (networkTokens.length || networkCollections.length) {
         updatedTotalAmount += newTotalAmount
       }
-    } else if (networkData && networkData.isReady && networkData.isLoading) {
-      // Handle the case where network is ready but still loading
+    }
+
+    if (!isNetworkReady(networkData)) {
       allReady = false
     }
   })
