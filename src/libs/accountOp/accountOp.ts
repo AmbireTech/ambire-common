@@ -45,7 +45,7 @@ export interface AccountOp {
   signingKeyAddr: string | null
   // this may not be set in case we haven't set it yet
   // this is a number and not a bigint because of ethers (it uses number for nonces)
-  nonce: number | null
+  nonce: bigint | null
   // @TODO: nonce namespace? it is dependent on gasFeePayment
   calls: Call[]
   gasLimit: number | null

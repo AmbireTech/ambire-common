@@ -1,4 +1,4 @@
-import { JsonRpcProvider } from 'ethers'
+1import { JsonRpcProvider } from 'ethers'
 
 import { networks } from '../../consts/networks'
 /* eslint-disable no-underscore-dangle */
@@ -450,6 +450,7 @@ export class MainController extends EventEmitter {
     console.log(estimation)
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars, class-methods-use-this
   broadcastSignedAccountOp(accountOp: AccountOp) {}
 
   broadcastSignedMessage(signedMessage: Message) {

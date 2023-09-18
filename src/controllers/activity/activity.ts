@@ -21,7 +21,7 @@ interface PaginationResult<T> {
 
 export interface SubmittedAccountOp extends AccountOp {
   txnId: string
-  nonce: number
+  nonce: bigint
 }
 
 interface AccountsOps extends PaginationResult<SubmittedAccountOp> {}
