@@ -17,9 +17,8 @@ let dkimRecoveryForTesting: any
 let dnsSecAddr: any
 let rsaSha256DKIMValidatorAddr: any
 
-describe('DKIM Prep-up', function () {
-  it('successfully deploy the DKIM Recovery', async function () {
-    const [signer] = await ethers.getSigners()
+async function deployDkim() {
+  const [signer] = await ethers.getSigners()
 
     const dnsSec = await ethers.deployContract('DNSSECImpl', ['0x00002b000100000e1000244a5c080249aac11d7b6f6446702e54a1607371607a1a41855200fd2ce1cdde32f24e8fb500002b000100000e1000244f660802e06d44b80b8f1d39a95c0b0d7c65d08458e880409bbc683457104237c7f8ec8d00002b000100000e10000404fefdfd'])
 
@@ -44,11 +43,18 @@ describe('DKIM Prep-up', function () {
     dnsSecAddr = await dnsSec.getAddress()
     dkimRecovery = await contractFactory.deploy(dnsSecAddr, signer.address, signer.address)
     expect(await dkimRecovery.getAddress()).to.not.be.null
+}
+
+describe('DKIM Prep-up', function () {
+  it('successfully deploy the DKIM Recovery', async function () {
+    await deployDkim()
   })
 })
 
 describe('DKIM sigMode Both', function () {
-  it('successfully deploys the ambire account', async function () {
+  before('successfully deploys the ambire account', async function () {
+    await deployDkim()
+
     const [relayer] = await ethers.getSigners()
     const gmail = await readFile(path.join(emailsPath, 'sigMode0.eml'), {
       encoding: 'ascii'
@@ -62,7 +68,66 @@ describe('DKIM sigMode Both', function () {
     ambireAccountAddress = addr
     account = ambireAccount
   })
+  it('should revert if there is transaction mendling - more txns; wrong new signer', async function () {
+    const [relayer, newSigner] = await ethers.getSigners()
+    const gmail = await readFile(path.join(emailsPath, 'sigMode0.eml'), {
+      encoding: 'ascii'
+    })
+    const parsedContents: any = await parseEmail(gmail)
+    const validatorData = getDKIMValidatorData(parsedContents, relayer)
+    const dkimSig = parsedContents[0].solidity.signature
+    const validatorAddr = await dkimRecovery.getAddress()
+    const {signerKey} = getSignerKey(validatorAddr, validatorData)
 
+    const txns = [
+      getPriviledgeTxn(ambireAccountAddress, relayer.address, true),
+      getPriviledgeTxn(ambireAccountAddress, newSigner.address, true)
+    ]
+    const msgHash = ethers.keccak256(
+      abiCoder.encode(
+        ['address', 'address', 'bytes32'],
+        [ambireAccountAddress, newSigner.address, ethers.toBeHex(1, 32)]
+      )
+    )
+    const msg = ethers.getBytes(msgHash)
+    const secondSig = wrapEthSign(await relayer.signMessage(msg))
+    const sigMetaTuple = 'tuple(uint8, tuple(string, bytes, bytes), string, address, bytes32)'
+    const sigMetaValues = [
+      ethers.toBeHex(0, 1),
+      [
+        `${parsedContents[0].selector}._domainkey.gmail.com`,
+        ethers.hexlify(parsedContents[0].modulus),
+        ethers.hexlify(ethers.toBeHex(parsedContents[0].exponent)),
+      ],
+      parsedContents[0].processedHeader,
+      newSigner.address,
+      ethers.toBeHex(1, 32)
+    ]
+    const innerSig = abiCoder.encode([sigMetaTuple, 'bytes', 'bytes'], [
+      sigMetaValues,
+      dkimSig,
+      secondSig
+    ])
+    const sig = abiCoder.encode(['address', 'address', 'bytes', 'bytes'], [signerKey, validatorAddr, validatorData, innerSig])
+    const finalSig = wrapExternallyValidated(sig)
+
+    await expect(account.execute(txns, finalSig))
+      .to.be.revertedWith('calls length must be 1')
+
+    txns.pop()
+    txns[0][1] = 1
+    await expect(account.execute(txns, finalSig))
+      .to.be.revertedWith('call value must be 0')
+
+    txns[0][1] = 0
+    txns[0][0] = newSigner.address
+    await expect(account.execute(txns, finalSig))
+      .to.be.revertedWith('call "to" must be the ambire account addr')
+
+    txns[0][0] = ambireAccountAddress
+    await expect(account.execute(txns, finalSig))
+      .to.be.revertedWith('Transaction data is not set correctly, either selector, key or priv is incorrect')
+  })
   it('successfully validate a DKIM signature and execute the recovery transaction', async function () {
     const [relayer, newSigner] = await ethers.getSigners()
     const gmail = await readFile(path.join(emailsPath, 'sigMode0.eml'), {
@@ -173,57 +238,6 @@ describe('DKIM sigMode Both', function () {
     // test protection against malleability
     await expect(account.execute(txns, finalSig))
       .to.be.revertedWith('account does not allow unknown selectors')
-  })
-  it('should revert if there is transaction mendling - more txns; wrong new signer', async function () {
-    const [relayer, newSigner] = await ethers.getSigners()
-    const gmail = await readFile(path.join(emailsPath, 'sigMode0.eml'), {
-      encoding: 'ascii'
-    })
-    const parsedContents: any = await parseEmail(gmail)
-    const validatorData = getDKIMValidatorData(parsedContents, relayer)
-    const validatorAddr = await dkimRecovery.getAddress()
-    const {signerKey} = getSignerKey(validatorAddr, validatorData)
-
-    const txns = [
-      getPriviledgeTxn(ambireAccountAddress, relayer.address, true),
-      getPriviledgeTxn(ambireAccountAddress, newSigner.address, true)
-    ]
-    const sigMetaTuple = 'tuple(uint8, tuple(string, bytes, bytes), string, address, bytes32)'
-    const sigMetaValues = [
-      ethers.toBeHex(0, 1),
-      [
-        `unknown._domainkey.gmail.com`,
-        ethers.hexlify(parsedContents[0].modulus),
-        ethers.hexlify(ethers.toBeHex(parsedContents[0].exponent)),
-      ],
-      parsedContents[0].processedHeader,
-      newSigner.address,
-      ethers.toBeHex(1, 32)
-    ]
-    const innerSig = abiCoder.encode([sigMetaTuple, 'bytes', 'bytes'], [
-      sigMetaValues,
-      ethers.toBeHex(0, 1),
-      ethers.toBeHex(0, 1)
-    ])
-    const sig = abiCoder.encode(['address', 'address', 'bytes', 'bytes'], [signerKey, validatorAddr, validatorData, innerSig])
-    const finalSig = wrapExternallyValidated(sig)
-
-    await expect(account.execute(txns, finalSig))
-      .to.be.revertedWith('calls length must be 1')
-
-    txns.pop()
-    txns[0][1] = 1
-    await expect(account.execute(txns, finalSig))
-      .to.be.revertedWith('call value must be 0')
-
-    txns[0][1] = 0
-    txns[0][0] = newSigner.address
-    await expect(account.execute(txns, finalSig))
-      .to.be.revertedWith('call "to" must be the ambire account addr')
-
-    txns[0][0] = ambireAccountAddress
-    await expect(account.execute(txns, finalSig))
-      .to.be.revertedWith('Transaction data is not set correctly, either selector, key or priv is incorrect')
   })
   it('should revert if the cannonized headers emailSubject and the sent emailSubject are different', async function () {
     const [relayer, newSigner] = await ethers.getSigners()
@@ -812,7 +826,7 @@ describe('DKIM sigMode Both with acceptUnknownSelectors true', function () {
     const sig = abiCoder.encode(['address', 'address', 'bytes', 'bytes'], [signerKey, validatorAddr, validatorData, innerSig])
     const finalSig = wrapExternallyValidated(sig)
     await expect(account.execute(txns, finalSig))
-      .to.be.revertedWith('non-existant DKIM key')
+      .to.be.revertedWith('non-existent DKIM key')
   })
 
   it('should revoke the key in the dkimKeys with a name of "toberemoved"', async function () {
@@ -922,7 +936,7 @@ describe('DKIM sigMode Both with acceptUnknownSelectors true', function () {
       .to.be.revertedWith('DKIM key not added yet')
   })
 
-  it('should revert with non-existant DKIM key if the wrong modulus / exponent is passed', async function () {
+  it('should revert with non-existent DKIM key if the wrong modulus / exponent is passed', async function () {
     const [relayer, newSigner] = await ethers.getSigners()
     const gmail = await readFile(path.join(emailsPath, 'sigMode0.eml'), {
       encoding: 'ascii'
@@ -956,7 +970,7 @@ describe('DKIM sigMode Both with acceptUnknownSelectors true', function () {
     const sig = abiCoder.encode(['address', 'address', 'bytes', 'bytes'], [signerKey, validatorAddr, validatorData, innerSig])
     const finalSig = wrapExternallyValidated(sig)
     await expect(account.execute(txns, finalSig))
-      .to.be.revertedWith('non-existant DKIM key')
+      .to.be.revertedWith('non-existent DKIM key')
   })
 
   it('should revert with DKIM signature verification failed if headers have been tampered with', async function () {
@@ -1241,7 +1255,7 @@ describe('DKIM sigMode OnlySecond with a timelock of 2 minutes', function () {
 
     // 2 minutes timelock
     await expect(account.execute(txns, finalSig))
-      .to.be.revertedWith('timelock: not ready yet')
+      .to.be.revertedWith('SIGNATURE_VALIDATION_TIMELOCK')
   })
 
   it('??? is this okay??? it changes the SignatureMeta RSA public key and reuses the signature to set the same timelock', async function () {
@@ -1302,7 +1316,7 @@ describe('DKIM sigMode OnlySecond with a timelock of 2 minutes', function () {
 
     // 2 minutes timelock
     await expect(account.execute(txns, finalSig))
-      .to.be.revertedWith('timelock: not ready yet')
+      .to.be.revertedWith('SIGNATURE_VALIDATION_TIMELOCK')
   })
 
   it('it should revert with second key validation failed if you try to reuse the sig but set a new address or new privs', async function () {
@@ -1368,7 +1382,7 @@ describe('DKIM sigMode OnlySecond with a timelock of 2 minutes', function () {
 
 describe('Setup a wrong validator address', function () {
   const emptyAddr = ethers.computeAddress(ethers.hexlify(ethers.randomBytes(32)))
-  it('successfully deploys the ambire account with 0x validatorAddr', async function () {
+  before('successfully deploys the ambire account with 0x validatorAddr', async function () {
     const [relayer,,eoa] = await ethers.getSigners()
     const gmail = await readFile(path.join(emailsPath, 'sigMode0.eml'), {
       encoding: 'ascii'
