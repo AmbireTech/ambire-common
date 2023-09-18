@@ -237,32 +237,16 @@ export class EmailVaultController extends EventEmitter {
     const newSecret = crypto.randomBytes(32).toString('base64url')
 
     await this.#keyStore.addSecret(RECOVERY_SECRET_ID, newSecret)
-    const [keyStoreUid, existingMagicKey] = await Promise.all([
+    const [keyStoreUid, magicKey] = await Promise.all([
       this.#keyStore.getKeyStoreUid(),
       this.#getMagicLinkKey(email)
     ])
 
-    const magicKey = existingMagicKey || (await this.#requestNewMagicLinkKey(email))
-
-    if (magicKey.confirmed) {
+    if (magicKey?.confirmed) {
       result = await this.#emailVault.addKeyStoreSecret(email, magicKey.key, keyStoreUid, newSecret)
     } else {
-      this.#isWaitingEmailConfirmation = true
-      const polling = new Polling()
-      polling.onUpdate(() => {
-        if (polling.state.isError && polling.state.error.output.res.status === 401) {
-          this.#isWaitingEmailConfirmation = true
-        } else if (polling.state.isError) {
-          this.emailVaultStates.errors = [polling.state.error]
-        }
-      })
-
-      result = await polling.exec(this.#emailVault.addKeyStoreSecret.bind(this.#emailVault), [
-        email,
-        magicKey.key,
-        keyStoreUid,
-        newSecret
-      ])
+      this.#handleMagicLinkKey(email, () => this.uploadKeyStoreSecret(email))
+      return
     }
 
     if (result) {
