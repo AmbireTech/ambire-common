@@ -16,6 +16,7 @@ interface AccountPortfolio {
 const setFlags = (
   networkData: any,
   networkId: NetworkId,
+  tokenNetwork: NetworkId,
   token: TokenResultInterface,
   feeTokens: TokenResultInterface[],
   gasTankFeeTokens: TokenResultInterface[]
@@ -25,9 +26,15 @@ const setFlags = (
   const vesting = networkData.result?.xWalletClaimableBalance?.address === token.address
   const rewards = networkData.result?.walletClaimableBalance?.address === token.address
   const canTopUpGasTank = gasTankFeeTokens.some(
-    (t) => t.address === token.address && t.networkId === networkId
+    (t) =>
+      t.address === token.address &&
+      (onGasTank || isRewardsToken ? t.networkId === tokenNetwork : t.networkId === networkId)
   )
-  const isFeeToken = feeTokens.some((t) => t.address === token.address && t.networkId === networkId)
+  const isFeeToken = feeTokens.some(
+    (t) =>
+      t.address === token.address &&
+      (onGasTank || isRewardsToken ? t.networkId === tokenNetwork : t.networkId === networkId)
+  )
 
   return {
     onGasTank,
@@ -82,11 +89,11 @@ export function calculateAccountPortfolio(
       // In the case we receive BigInt here, convert to number
       const networkTotal = Number(networkData.result.total?.usd) || 0
       newTotalAmount += networkTotal
-
+      console.log(networkData.result.tokens)
       // Assuming you want to push tokens to updatedTokens array as well
       const networkTokens = networkData.result.tokens.map((t) => ({
         ...t,
-        ...setFlags(networkData, network, t, feeTokens, gasTankFeeTokens)
+        ...setFlags(networkData, network, t.networkId, t, feeTokens, gasTankFeeTokens)
       }))
       const networkCollections = networkData.result.collections || []
       updatedTokens.push(...networkTokens)
