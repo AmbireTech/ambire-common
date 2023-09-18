@@ -397,7 +397,8 @@ export class MainController extends EventEmitter {
     console.log(estimation)
   }
 
-  broadcastSignedAccountOp(accountOp) {}
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars, class-methods-use-this
+  broadcastSignedAccountOp(accountOp: AccountOp) {}
 
   broadcastSignedMessage(signedMessage: Message) {
     this.activity.addSignedMessage(signedMessage, signedMessage.accountAddr)
