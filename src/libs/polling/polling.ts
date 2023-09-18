@@ -53,7 +53,7 @@ export class Polling extends EventEmitter {
 
         if (!result.isError) return resolve(result)
 
-        return resolve(this.exec(fn, params, timeout || DEFAULT_TIMEOUT, this.defaultTimeout))
+        return resolve(await this.exec(fn, params, timeout || DEFAULT_TIMEOUT, this.defaultTimeout))
       }, execTimeout)
     )
   }
