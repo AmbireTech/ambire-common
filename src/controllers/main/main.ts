@@ -82,9 +82,9 @@ export class MainController extends EventEmitter {
 
   lastUpdate: Date = new Date()
 
-  onResolveDappRequest: (data: any, id?: bigint) => void
+  onResolveDappRequest: (data: any, id?: number) => void
 
-  onRejectDappRequest: (err: any, id?: bigint) => void
+  onRejectDappRequest: (err: any, id?: number) => void
 
   onUpdateDappSelectedAccount: (accountAddr: string) => void
 
@@ -101,8 +101,8 @@ export class MainController extends EventEmitter {
     fetch: Function
     relayerUrl: string
     keystoreSigners: { [key: string]: KeystoreSignerType }
-    onResolveDappRequest: (data: any, id?: bigint) => void
-    onRejectDappRequest: (err: any, id?: bigint) => void
+    onResolveDappRequest: (data: any, id?: number) => void
+    onRejectDappRequest: (err: any, id?: number) => void
     onUpdateDappSelectedAccount: (accountAddr: string) => void
   }) {
     super()
@@ -322,7 +322,7 @@ export class MainController extends EventEmitter {
   // @TODO allow this to remove multiple OR figure out a way to debounce re-estimations
   // first one sounds more reasonble
   // although the second one can't hurt and can help (or no debounce, just a one-at-a-time queue)
-  removeUserRequest(id: bigint) {
+  removeUserRequest(id: number) {
     const req = this.userRequests.find((uReq) => uReq.id === id)
     if (!req) return
 
@@ -334,12 +334,19 @@ export class MainController extends EventEmitter {
     if (action.kind === 'call') {
       // @TODO ensure acc info, re-estimate
       const accountOp = this.makeAccountOpFromUserRequests(accountAddr, networkId)
-      if (accountOp)
+      if (accountOp) {
         this.accountOpsToBeSigned[accountAddr][networkId] = { accountOp, estimation: null }
+      } else {
+        delete this.accountOpsToBeSigned[accountAddr][networkId]
+        if (!Object.keys(this.accountOpsToBeSigned[accountAddr] || {}).length)
+          delete this.accountOpsToBeSigned[accountAddr]
+      }
     } else {
       this.messagesToBeSigned[accountAddr] = this.messagesToBeSigned[accountAddr].filter(
         (x) => x.fromUserRequestId !== id
       )
+      if (!Object.keys(this.messagesToBeSigned[accountAddr] || {}).length)
+        delete this.messagesToBeSigned[accountAddr]
     }
     this.emitUpdate()
   }
@@ -391,7 +398,8 @@ export class MainController extends EventEmitter {
     console.log(estimation)
   }
 
-  broadcastSignedAccountOp(accountOp) {}
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars, class-methods-use-this
+  broadcastSignedAccountOp(accountOp: AccountOp) {}
 
   broadcastSignedMessage(signedMessage: Message) {
     this.activity.addSignedMessage(signedMessage, signedMessage.accountAddr)

@@ -35,7 +35,7 @@
   },
   "devDependencies": {
     "@account-abstraction/contracts": "^0.6.0",
-    "@borislav.itskov/schnorrkel.js": "1.0.0",
+    "@borislav.itskov/schnorrkel.js": "2.0.85",
     "@ensdomains/dnsprovejs": "^0.4.1",
     "@nomicfoundation/hardhat-chai-matchers": "^2.0.1",
     "@nomicfoundation/hardhat-ethers": "^3.0.0",
