@@ -89,7 +89,7 @@ export function calculateAccountPortfolio(
       // In the case we receive BigInt here, convert to number
       const networkTotal = Number(networkData.result.total?.usd) || 0
       newTotalAmount += networkTotal
-      console.log(networkData.result.tokens)
+
       // Assuming you want to push tokens to updatedTokens array as well
       const networkTokens = networkData.result.tokens.map((t) => ({
         ...t,
