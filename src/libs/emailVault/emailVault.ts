@@ -51,7 +51,11 @@ export class EmailVault {
     }
   }
 
-  async operations(email: String, authKey: String, operations: Operation[]): Promise<Operation[]> {
+  async operations(
+    email: String,
+    authKey: String,
+    operations: Operation[]
+  ): Promise<Operation[] | null> {
     return (
       await this.callRelayer(`/email-vault/operation/${email}/${authKey}`, 'POST', {
         operations

@@ -368,12 +368,30 @@ export class EmailVaultController extends EventEmitter {
     }))
 
     if (magicLinkKey) {
-      const newOperations = await this.#emailVault.operations(email, magicLinkKey.key, operations)
-      if (newOperations.length) this.emailVaultStates.email[email].operations = newOperations
+      const newOperations =
+        (await this.#emailVault.operations(email, magicLinkKey.key, operations)) || []
+      this.emailVaultStates.email[email].operations = newOperations
       // @TODO polling for fulfilled sync request
       this.emitUpdate()
+      this.#handleKeysSync(email, newOperations)
     } else {
       this.#handleMagicLinkKey(email, () => this.requestKeysSync(email, keys))
     }
   }
+
+  async #handleKeysSync(email: string, operations: Operation[]) {
+    const key = (await this.#getMagicLinkKey(email))?.key || (await this.#getSessionKey(email))
+    if (key) {
+      // eslint-disable-next-line no-await-in-loop
+      const cloudOperations = (await this.#emailVault.getEmailVaultInfo(email, key)).operations
+      const fulfilled = cloudOperations
+        .map((op) => !!op.value)
+        .reduce((a, b) => a && b, !!cloudOperations.length)
+      if (!fulfilled) setTimeout(() => this.#handleKeysSync(email, operations), 2000)
+    } else {
+      this.#handleMagicLinkKey(email, () => this.#handleKeysSync(email, operations))
+    }
+  }
+
+  // @TODO fulfull syncKeysRequest()
 }
