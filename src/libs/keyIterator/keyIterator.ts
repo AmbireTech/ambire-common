@@ -1,6 +1,7 @@
 /* eslint-disable new-cap */
 import { HDNodeWallet, Mnemonic, Wallet } from 'ethers'
 
+import { BIP44_HD_PATH } from '../../consts/derivation'
 import { KeyIterator as KeyIteratorInterface } from '../../interfaces/keyIterator'
 
 // DOCS
@@ -39,7 +40,7 @@ export class KeyIterator implements KeyIteratorInterface {
     throw new Error('keyIterator: invalid argument provided to constructor')
   }
 
-  async retrieve(from: number, to: number, derivation: string = "m/44'/60'/0'/0") {
+  async retrieve(from: number, to: number, derivation: string = BIP44_HD_PATH) {
     if ((!from && from !== 0) || (!to && to !== 0) || !derivation)
       throw new Error('keyIterator: invalid or missing arguments')
 
