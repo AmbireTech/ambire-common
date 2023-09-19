@@ -1,5 +1,4 @@
 import { ethers } from 'ethers'
-import { KeystoreSigner } from 'libs/keystoreSigner/keystoreSigner'
 import fetch from 'node-fetch'
 
 import { describe, expect, test } from '@jest/globals'
@@ -9,6 +8,7 @@ import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { networks } from '../../consts/networks'
 import { UserRequest } from '../../interfaces/userRequest'
 import { KeyIterator } from '../../libs/keyIterator/keyIterator'
+import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
 import { getBytecode } from '../../libs/proxyDeploy/bytecode'
 import { getAmbireAccountAddress } from '../../libs/proxyDeploy/getAmbireAddressTwo'
 import { MainController } from './main'
@@ -68,8 +68,10 @@ describe('Main Controller ', () => {
       relayerUrl,
       keystoreSigners: { internal: KeystoreSigner },
       onResolveDappRequest: () => {},
-      onRejectDappRequest: () => {}
+      onRejectDappRequest: () => {},
+      onUpdateDappSelectedAccount: () => {}
     })
+    // eslint-disable-next-line no-promise-executor-return
     await new Promise((resolve) => controller.onUpdate(() => resolve(null)))
     // console.dir(controller.accountStates, { depth: null })
     // @TODO
@@ -90,12 +92,32 @@ describe('Main Controller ', () => {
       }
     }
     await controller.addUserRequest(req)
+    expect(Object.keys(controller.accountOpsToBeSigned).length).toBe(1)
+    // console.dir(controller.accountOpsToBeSigned, { depth: null })
+    // @TODO test if nonce is correctly set
+  })
+  test('Remove a user request', async () => {
+    const req: UserRequest = {
+      id: 1,
+      accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      networkId: 'ethereum',
+      forceNonce: null,
+      action: {
+        kind: 'call',
+        to: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+        value: BigInt(0),
+        data: '0xa9059cbb000000000000000000000000e5a4dad2ea987215460379ab285df87136e83bea00000000000000000000000000000000000000000000000000000000005040aa'
+      }
+    }
+    await controller.removeUserRequest(req.id)
+    expect(Object.keys(controller.accountOpsToBeSigned).length).toBe(0)
     // console.dir(controller.accountOpsToBeSigned, { depth: null })
     // @TODO test if nonce is correctly set
   })
 
   test('login with emailVault', async () => {
     controller.emailVault.login(email)
+    // eslint-disable-next-line no-promise-executor-return
     await new Promise((resolve) => controller.emailVault.onUpdate(() => resolve(null)))
     // console.log(controller.emailVault.emailVaultStates)
   })
@@ -105,6 +127,7 @@ describe('Main Controller ', () => {
     //   JSON.stringify(controller.emailVault.emailVaultStates[email].availableSecrets, null, 2)
     // )
     controller.emailVault.backupRecoveryKeyStoreSecret(email)
+    // eslint-disable-next-line no-promise-executor-return
     await new Promise((resolve) => controller.emailVault.onUpdate(() => resolve(null)))
     // console.log(
     //   JSON.stringify(controller.emailVault.emailVaultStates[email].availableSecrets, null, 2)
@@ -113,11 +136,13 @@ describe('Main Controller ', () => {
 
   test('unlock keyStore with recovery secret emailVault', async () => {
     async function wait(ms: number) {
+      // eslint-disable-next-line no-promise-executor-return
       return new Promise((resolve) => setTimeout(() => resolve(null), ms))
     }
     // controller.lock()
     controller.emailVault.recoverKeyStore(email)
     // console.log('isUnlock ==>', controller.isUnlock())
+    // eslint-disable-next-line no-promise-executor-return
     await new Promise((resolve) => controller.emailVault.onUpdate(() => resolve(null)))
     await wait(10000)
     // console.log('isUnlock ==>', controller.isUnlock())
@@ -130,7 +155,8 @@ describe('Main Controller ', () => {
       relayerUrl,
       keystoreSigners: { internal: KeystoreSigner },
       onResolveDappRequest: () => {},
-      onRejectDappRequest: () => {}
+      onRejectDappRequest: () => {},
+      onUpdateDappSelectedAccount: () => {}
     })
 
     const signerAddr = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'

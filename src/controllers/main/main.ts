@@ -333,12 +333,19 @@ export class MainController extends EventEmitter {
     if (action.kind === 'call') {
       // @TODO ensure acc info, re-estimate
       const accountOp = this.makeAccountOpFromUserRequests(accountAddr, networkId)
-      if (accountOp)
+      if (accountOp) {
         this.accountOpsToBeSigned[accountAddr][networkId] = { accountOp, estimation: null }
+      } else {
+        delete this.accountOpsToBeSigned[accountAddr][networkId]
+        if (!Object.keys(this.accountOpsToBeSigned[accountAddr] || {}).length)
+          delete this.accountOpsToBeSigned[accountAddr]
+      }
     } else {
       this.messagesToBeSigned[accountAddr] = this.messagesToBeSigned[accountAddr].filter(
         (x) => x.fromUserRequestId !== id
       )
+      if (!Object.keys(this.messagesToBeSigned[accountAddr] || {}).length)
+        delete this.messagesToBeSigned[accountAddr]
     }
     this.emitUpdate()
   }
@@ -390,7 +397,8 @@ export class MainController extends EventEmitter {
     console.log(estimation)
   }
 
-  broadcastSignedAccountOp(accountOp) {}
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars, class-methods-use-this
+  broadcastSignedAccountOp(accountOp: AccountOp) {}
 
   broadcastSignedMessage(signedMessage: Message) {
     this.activity.addSignedMessage(signedMessage, signedMessage.accountAddr)
