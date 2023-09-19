@@ -1,6 +1,7 @@
 /* eslint-disable no-new */
 import { describe, expect, test } from '@jest/globals'
 
+import { BIP44_HD_PATH } from '../../consts/derivation'
 import { KeyIterator } from './keyIterator'
 
 const seedPhrase =
@@ -53,7 +54,7 @@ describe('KeyIterator', () => {
   test('should retrieve the correct addresses with BIP-44 derivation path', async () => {
     expect.assertions(3)
     const keyIteratorWithPrivKey = new KeyIterator(seedPhrase)
-    const keys = await keyIteratorWithPrivKey.retrieve(0, 2, "m/44'/60'/0'/0")
+    const keys = await keyIteratorWithPrivKey.retrieve(0, 2, BIP44_HD_PATH)
 
     expect(keys?.[0]).toEqual('0x10D4102562373113d1dCd82C2EEE5626D9daEcD8')
     expect(keys?.[1]).toEqual('0xc7E32B118989296eaEa88D86Bd9041Feca77Ed36')
