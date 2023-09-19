@@ -1,5 +1,5 @@
 import { JsonRpcProvider } from 'ethers'
-import { EmailVaultController } from '../emailVault'
+import { EmailVaultController } from '../emailVault/emailVault'
 import { Storage } from '../../interfaces/storage'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
 import { Account, AccountId, AccountOnchainState } from '../../interfaces/account'

@@ -1,11 +1,16 @@
 import crypto from 'crypto'
-import { EmailVault } from '../libs/emailVault/emailVault'
-import { requestMagicLink } from '../libs/magicLink/magicLink'
-import { EmailVaultData, SecretType, EmailVaultSecret, Operation } from '../interfaces/emailVault'
-import { Storage } from '../interfaces/storage'
-import { Keystore } from '../libs/keystore/keystore'
-import EventEmitter from '../libs/eventEmitter/eventEmitter'
-import { Polling } from '../libs/polling/polling'
+import { EmailVault } from '../../libs/emailVault/emailVault'
+import { requestMagicLink } from '../../libs/magicLink/magicLink'
+import {
+  EmailVaultData,
+  SecretType,
+  EmailVaultSecret,
+  Operation
+} from '../../interfaces/emailVault'
+import { Storage } from '../../interfaces/storage'
+import { Keystore } from '../../libs/keystore/keystore'
+import EventEmitter from '../../libs/eventEmitter/eventEmitter'
+import { Polling } from '../../libs/polling/polling'
 
 export enum EmailVaultState {
   Loading,
