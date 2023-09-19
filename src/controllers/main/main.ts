@@ -1,5 +1,12 @@
 /* eslint-disable no-underscore-dangle */
 import { JsonRpcProvider } from 'ethers'
+import { Banner } from 'interfaces/banner'
+import {
+  getAccountOpBannersForEOA,
+  getAccountOpBannersForSmartAccount,
+  getMessageBanners,
+  getPendingAccountOpBannersForEOA
+} from 'libs/banners/banners'
 
 import { networks } from '../../consts/networks'
 import { Account, AccountId, AccountStates } from '../../interfaces/account'
@@ -82,6 +89,8 @@ export class MainController extends EventEmitter {
 
   lastUpdate: Date = new Date()
 
+  onOpenUserRequest: (id: number) => void
+
   onResolveDappRequest: (data: any, id?: number) => void
 
   onRejectDappRequest: (err: any, id?: number) => void
@@ -93,6 +102,7 @@ export class MainController extends EventEmitter {
     fetch,
     relayerUrl,
     keystoreSigners,
+    onOpenUserRequest,
     onResolveDappRequest,
     onRejectDappRequest,
     onUpdateDappSelectedAccount
@@ -101,6 +111,7 @@ export class MainController extends EventEmitter {
     fetch: Function
     relayerUrl: string
     keystoreSigners: { [key: string]: KeystoreSignerType }
+    onOpenUserRequest: (id: number) => void
     onResolveDappRequest: (data: any, id?: number) => void
     onRejectDappRequest: (err: any, id?: number) => void
     onUpdateDappSelectedAccount: (accountAddr: string) => void
@@ -115,6 +126,7 @@ export class MainController extends EventEmitter {
     this.emailVault = new EmailVaultController(storage, fetch, relayerUrl, this.#keystoreLib)
     this.accountAdder = new AccountAdderController({ storage, relayerUrl, fetch })
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
+    this.onOpenUserRequest = onOpenUserRequest
     this.onResolveDappRequest = onResolveDappRequest
     this.onRejectDappRequest = onRejectDappRequest
     this.onUpdateDappSelectedAccount = onUpdateDappSelectedAccount
@@ -405,5 +417,48 @@ export class MainController extends EventEmitter {
     this.removeUserRequest(signedMessage.id)
     this.onResolveDappRequest({ hash: signedMessage.signature }, signedMessage.id)
     this.emitUpdate()
+  }
+
+  get banners(): Banner[] {
+    const accountOpEOABanners = getAccountOpBannersForEOA({
+      userRequests: this.userRequests,
+      accounts: this.accounts,
+      selectedAccount: this.selectedAccount,
+      onOpen: this.onOpenUserRequest,
+      onReject: this.onRejectDappRequest
+    })
+    const pendingAccountOpEOABanners = getPendingAccountOpBannersForEOA({
+      userRequests: this.userRequests,
+      accounts: this.accounts,
+      selectedAccount: this.selectedAccount
+    })
+    const accountOpSmartAccountBanners = getAccountOpBannersForSmartAccount({
+      userRequests: this.userRequests,
+      accounts: this.accounts,
+      selectedAccount: this.selectedAccount,
+      onOpen: this.onOpenUserRequest,
+      onReject: this.onRejectDappRequest
+    })
+    const messageBanners = getMessageBanners({
+      userRequests: this.userRequests,
+      selectedAccount: this.selectedAccount,
+      onOpen: this.onOpenUserRequest,
+      onReject: this.onRejectDappRequest
+    })
+
+    return [
+      ...accountOpSmartAccountBanners,
+      ...accountOpEOABanners,
+      ...pendingAccountOpEOABanners,
+      ...messageBanners
+    ]
+  }
+
+  // includes the getters in the stringified instance
+  toJSON() {
+    return {
+      ...this,
+      banners: this.banners
+    }
   }
 }
