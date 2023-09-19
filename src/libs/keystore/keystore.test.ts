@@ -150,6 +150,43 @@ describe('Keystore', () => {
     expect(keys).toContainEqual(expect.objectContaining({ id: publicAddress }))
   })
 
+  test('should not add twice external key that is already added', async () => {
+    const publicAddress = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'
+    const keysWithPrivateKeyAlreadyAdded = [
+      { id: publicAddress, label: 'test key 1', type: 'external', meta: {} },
+      {
+        id: publicAddress,
+        label: 'test key 2 with the same id (public address) as test key 1',
+        type: 'external',
+        meta: {}
+      }
+    ]
+
+    const anotherAddressNotAddedYet = '0x42c06A1722DEb11022A339d3448BafFf8dFF99Ac'
+    const keysWithPrivateKeyDuplicatedInParams = [
+      { id: anotherAddressNotAddedYet, label: 'test key 3', type: 'external', meta: {} },
+      {
+        id: anotherAddressNotAddedYet,
+        label: 'test key 4 with the same private key as key 3',
+        type: 'external',
+        meta: {}
+      }
+    ]
+
+    expect.assertions(1)
+    await keystore.addKeysExternallyStored([
+      ...keysWithPrivateKeyAlreadyAdded,
+      ...keysWithPrivateKeyDuplicatedInParams
+    ])
+
+    const keys = await keystore.getKeys()
+    const newKeys = keys
+      .map(({ id }) => id)
+      .filter((id) => [publicAddress, anotherAddressNotAddedYet].includes(id))
+
+    expect(newKeys).toHaveLength(2)
+  })
+
   test('should get an internal signer', async () => {
     expect.assertions(2)
     const internalSigner: any = await keystore.getSigner(keyPublicAddress)
