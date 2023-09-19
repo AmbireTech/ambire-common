@@ -394,4 +394,27 @@ export class EmailVaultController extends EventEmitter {
   }
 
   // @TODO fulfull syncKeysRequest()
+
+  async fulfullSyncRequests(email: string) {
+    await this.getEmailVaultInfo(email)
+    const operations = this.emailVaultStates.email[email].operations
+    const key = (await this.#getMagicLinkKey(email))?.key || (await this.#getSessionKey(email))
+    if (key) {
+      const newOperations = await Promise.all(
+        operations.map(async (op) => {
+          if (op.requestType === 'requestKeySync') {
+            return {
+              ...op,
+              value: await this.#keyStore.exportKeyWithPasscode(op.key, op.requester)
+            }
+          }
+          return op
+        })
+      )
+      await this.#emailVault.operations(email, key, newOperations)
+      this.emitUpdate()
+    } else {
+      this.#handleMagicLinkKey(email, () => this.fulfullSyncRequests(email))
+    }
+  }
 }
