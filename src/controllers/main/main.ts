@@ -420,28 +420,27 @@ export class MainController extends EventEmitter {
   }
 
   get banners(): Banner[] {
+    const requests =
+      this.userRequests.filter((req) => req.accountAddr === this.selectedAccount) || []
+
     const accountOpEOABanners = getAccountOpBannersForEOA({
-      userRequests: this.userRequests,
+      userRequests: requests,
       accounts: this.accounts,
-      selectedAccount: this.selectedAccount,
       onOpen: this.onOpenUserRequest,
       onReject: this.onRejectDappRequest
     })
     const pendingAccountOpEOABanners = getPendingAccountOpBannersForEOA({
-      userRequests: this.userRequests,
-      accounts: this.accounts,
-      selectedAccount: this.selectedAccount
+      userRequests: requests,
+      accounts: this.accounts
     })
     const accountOpSmartAccountBanners = getAccountOpBannersForSmartAccount({
-      userRequests: this.userRequests,
+      userRequests: requests,
       accounts: this.accounts,
-      selectedAccount: this.selectedAccount,
       onOpen: this.onOpenUserRequest,
       onReject: this.onRejectDappRequest
     })
     const messageBanners = getMessageBanners({
-      userRequests: this.userRequests,
-      selectedAccount: this.selectedAccount,
+      userRequests: requests,
       onOpen: this.onOpenUserRequest,
       onReject: this.onRejectDappRequest
     })

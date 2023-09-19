@@ -4,12 +4,10 @@ import { UserRequest } from '../../interfaces/userRequest'
 
 export const getMessageBanners = ({
   userRequests,
-  selectedAccount,
   onOpen,
   onReject
 }: {
   userRequests: UserRequest[]
-  selectedAccount: string | null
   onOpen: (id: number) => void
   onReject: (err: string, id: number) => void
 }) => {
@@ -18,8 +16,6 @@ export const getMessageBanners = ({
   if (!userRequests) return txnBanners
 
   userRequests.forEach((req: UserRequest) => {
-    if (req.accountAddr !== selectedAccount) return
-
     if (req.action.kind === 'message' || req.action.kind === 'typedMessage') {
       txnBanners.push({
         id: req.id,
@@ -46,25 +42,19 @@ export const getMessageBanners = ({
 export const getAccountOpBannersForEOA = ({
   userRequests,
   accounts,
-  selectedAccount,
   onOpen,
   onReject
 }: {
   userRequests: UserRequest[]
   accounts: Account[]
-  selectedAccount: string | null
   onOpen: (id: number) => void
   onReject: (err: string, id: number) => void
 }): Banner[] => {
   if (!userRequests) return []
 
-  const activeUserRequest: UserRequest | undefined = userRequests.find((req: UserRequest) => {
-    if (req.accountAddr !== selectedAccount) return
-
+  const activeUserRequest = userRequests.find((req: UserRequest) => {
     const account = accounts.find((acc) => acc.addr === req.accountAddr) || ({} as Account)
-    if (req.action.kind === 'call' && !account?.creation) {
-      return req
-    }
+    return req.action.kind === 'call' && !account?.creation
   })
 
   if (!activeUserRequest) return []
@@ -91,24 +81,16 @@ export const getAccountOpBannersForEOA = ({
 
 export const getPendingAccountOpBannersForEOA = ({
   userRequests,
-  accounts,
-  selectedAccount
+  accounts
 }: {
   userRequests: UserRequest[]
   accounts: Account[]
-  selectedAccount: string | null
 }): Banner[] => {
   if (!userRequests) return []
 
   const pendingUserRequests: UserRequest[] = userRequests.filter((req: UserRequest) => {
-    if (req.accountAddr !== selectedAccount) return false
-
     const account = accounts.find((acc) => acc.addr === req.accountAddr) || ({} as Account)
-    if (req.action.kind === 'call' && !account?.creation) {
-      return true
-    }
-
-    return false
+    return req.action.kind === 'call' && !account?.creation
   })
 
   if (!pendingUserRequests.length) return []
@@ -126,13 +108,11 @@ export const getPendingAccountOpBannersForEOA = ({
 export const getAccountOpBannersForSmartAccount = ({
   userRequests,
   accounts,
-  selectedAccount,
   onOpen,
   onReject
 }: {
   userRequests: UserRequest[]
   accounts: Account[]
-  selectedAccount: string | null
   onOpen: (id: number) => void
   onReject: (err: string, id: number) => void
 }) => {
@@ -147,11 +127,7 @@ export const getAccountOpBannersForSmartAccount = ({
       acc[key] = []
     }
     const account = accounts.find((a) => a.addr === userRequest.accountAddr) || ({} as Account)
-    if (
-      userRequest.action.kind === 'call' &&
-      account.creation &&
-      account.addr === selectedAccount
-    ) {
+    if (userRequest.action.kind === 'call' && account.creation) {
       acc[key].push(userRequest)
     }
 
