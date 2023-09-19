@@ -54,20 +54,10 @@ export class KeystoreController extends EventEmitter {
     })
   }
 
-  async addKeyExternallyStored(id: string, type: string, label: string, meta: object) {
-    await this.wrapKeystoreAction('addKeyExternallyStored', async () =>
-      this.#keystoreLib.addKeyExternallyStored(id, type, label, meta)
-    )
-  }
-
   async addKeysExternallyStored(keys: { id: string; type: string; label: string; meta: object }[]) {
-    await this.wrapKeystoreAction('addKeysExternallyStored', async () => {
-      // eslint-disable-next-line no-restricted-syntax
-      for (const key of keys) {
-        // eslint-disable-next-line no-await-in-loop
-        await this.#keystoreLib.addKeyExternallyStored(key.id, key.type, key.label, key.meta)
-      }
-    })
+    await this.wrapKeystoreAction('addKeysExternallyStored', () =>
+      this.#keystoreLib.addKeysExternallyStored(keys)
+    )
   }
 
   async addKeys(keys: { privateKey: string; label: string }[]) {
