@@ -1,3 +1,4 @@
+/* eslint-disable no-restricted-syntax */
 export default class EventEmitter {
   private callbacks: (() => void)[] = []
 

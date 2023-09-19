@@ -39,7 +39,6 @@ export class Polling extends EventEmitter {
         const result = await fn(...params)
           .catch((error: any) => ({ isError: true, error }))
           .then((res: any) => ({ isError: false, ...res }))
-
         if (result.isError && this.allowableErrors.includes(result?.error?.output?.res?.status)) {
           this.state = result
           this.emitUpdate()
