@@ -152,7 +152,9 @@ describe('AccountAdder', () => {
   test('should not be able to deselect a preselected account', (done) => {
     const keyIterator = new KeyIterator(seedPhrase)
     accountAdder.init({ keyIterator, preselectedAccounts: [legacyAccount], pageSize: 1 })
-    accountAdder.selectedAccounts = [legacyAccount]
+    accountAdder.selectedAccounts = [
+      { ...legacyAccount, eoaAddress: key1PublicAddress, slot: 1, isLinked: false }
+    ]
 
     let emitCounter = 0
     accountAdder.onError(() => {
