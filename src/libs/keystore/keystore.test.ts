@@ -139,6 +139,17 @@ describe('Keystore', () => {
     expect(await keystore.getKeys()).toHaveLength(2)
   })
 
+  test('should add an external key', async () => {
+    const publicAddress = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'
+    expect.assertions(1)
+    await keystore.addKeysExternallyStored([
+      { id: publicAddress, label: 'test external key', type: 'external', meta: {} }
+    ])
+
+    const keys = await keystore.getKeys()
+    expect(keys).toContainEqual(expect.objectContaining({ id: publicAddress }))
+  })
+
   test('should get an internal signer', async () => {
     expect.assertions(2)
     const internalSigner: any = await keystore.getSigner(keyPublicAddress)
