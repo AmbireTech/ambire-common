@@ -60,10 +60,6 @@ export class HumanizerController extends EventEmitter {
     this.#fetch = fetch
   }
 
-  public wrappedEemitError(e: ErrorRef) {
-    this.emitError(e)
-  }
-
   public async humanizeCalls(_accountOp: AccountOp, _knownAddresses: (Account | Key)[] = []) {
     const knownAddresses = Object.fromEntries(
       _knownAddresses.map((k) => {
@@ -86,7 +82,7 @@ export class HumanizerController extends EventEmitter {
       const [irCalls, asyncOps] = humanizeCalls(
         { ...accountOp, humanizerMeta: { ...accountOp.humanizerMeta, ...storedHumanizerMeta } },
         humanizerCallModules,
-        { fetch: this.#fetch, emitError: this.wrappedEemitError }
+        { fetch: this.#fetch, emitError: this.emitError.bind(this) }
       )
 
       const [parsedCalls, newAsyncOps] = parseCalls(accountOp, irCalls, parsingModules)
@@ -148,7 +144,7 @@ export class HumanizerController extends EventEmitter {
       let asyncOps
       ;[this.ir.messages, asyncOps] = parseMessages(accountOp, irMessages, parsingModules, {
         fetch: this.#fetch,
-        emitError: this.wrappedEemitError
+        emitError: this.emitError.bind(this)
       })
       this.emitUpdate()
       const fragments = (await Promise.all(asyncOps)).filter((f) => f)
