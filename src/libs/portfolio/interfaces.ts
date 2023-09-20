@@ -78,11 +78,40 @@ export type AccountState = {
       }
     | undefined
 }
+
+export type AdditionalAccountState = {
+  // network id
+  [key: string]:
+    | {
+        isReady: boolean
+        isLoading: boolean
+        criticalError?: Error
+        errors?: Error[]
+        result?: AdditionalPortfolioGetResult
+      }
+    | undefined
+}
+
 // account => network => PortfolioGetResult, extra fields
 export type PortfolioControllerState = {
   // account id
   [key: string]: AccountState
 }
+
+interface AdditionalPortfolioGetResult {
+  updateStarted: number
+  discoveryTime?: number
+  oracleCallTime?: number
+  priceUpdateTime?: number
+  priceCache?: PriceCache
+  tokens: TokenResult[]
+  tokenErrors?: { error: string; address: string }[]
+  collections?: CollectionResult[]
+  total: { [name: string]: bigint }
+  hints?: Hints
+  hintsError?: string
+}
+
 export interface PortfolioGetResult {
   updateStarted: number
   discoveryTime: number
