@@ -1,12 +1,15 @@
+/* eslint-disable max-classes-per-file */
+/* eslint-disable @typescript-eslint/no-empty-function */
 /* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable class-methods-use-this */
 /* eslint-disable @typescript-eslint/no-useless-constructor */
+import { Wallet } from 'ethers'
+
 /* eslint-disable max-classes-per-file */
 import { describe, expect, test } from '@jest/globals'
 
-import { Wallet } from 'ethers'
-import { Key, Keystore } from './keystore'
 import { produceMemoryStore } from '../../../test/helpers'
+import { Key, Keystore } from './keystore'
 
 class InternalSigner {
   key
@@ -107,8 +110,89 @@ describe('Keystore', () => {
 
   test('should add an internal key', async () => {
     expect.assertions(1)
-    await keystore.addKey(privKey, 'test key')
-    expect(await keystore.getKeys()).toHaveLength(1)
+    await keystore.addKeys([{ privateKey: privKey, label: 'test key' }])
+
+    const keys = await keystore.getKeys()
+    expect(keys).toContainEqual(expect.objectContaining({ id: keyPublicAddress }))
+  })
+
+  test('should not add twice internal key that is already added', async () => {
+    const keysWithPrivateKeyAlreadyAdded = [
+      { privateKey: privKey, label: 'test key 1' },
+      { privateKey: privKey, label: 'test key 2 with the same private key as test key 1' }
+    ]
+
+    const anotherPrivateKeyNotAddedYet =
+      '0x574f261b776b26b1ad75a991173d0e8ca2ca1d481bd7822b2b58b2ef8a969f12'
+    const anotherPrivateKeyPublicAddress = '0x9188fdd757Df66B4F693D624Ed6A13a15Cf717D7'
+    const keysWithPrivateKeyDuplicatedInParams = [
+      { privateKey: anotherPrivateKeyNotAddedYet, label: 'test key 3' },
+      {
+        privateKey: anotherPrivateKeyNotAddedYet,
+        label: 'test key 4 with the same private key as key 3'
+      }
+    ]
+
+    expect.assertions(1)
+    await keystore.addKeys([
+      ...keysWithPrivateKeyAlreadyAdded,
+      ...keysWithPrivateKeyDuplicatedInParams
+    ])
+
+    const keys = await keystore.getKeys()
+    const newKeys = keys
+      .map(({ id }) => id)
+      .filter((id) => [keyPublicAddress, anotherPrivateKeyPublicAddress].includes(id))
+
+    expect(newKeys).toHaveLength(2)
+  })
+
+  test('should add an external key', async () => {
+    const publicAddress = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'
+    expect.assertions(1)
+    await keystore.addKeysExternallyStored([
+      { id: publicAddress, label: 'test external key', type: 'external', meta: {} }
+    ])
+
+    const keys = await keystore.getKeys()
+    expect(keys).toContainEqual(expect.objectContaining({ id: publicAddress }))
+  })
+
+  test('should not add twice external key that is already added', async () => {
+    const publicAddress = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'
+    const keysWithPrivateKeyAlreadyAdded = [
+      { id: publicAddress, label: 'test key 1', type: 'external', meta: {} },
+      {
+        id: publicAddress,
+        label: 'test key 2 with the same id (public address) as test key 1',
+        type: 'external',
+        meta: {}
+      }
+    ]
+
+    const anotherAddressNotAddedYet = '0x42c06A1722DEb11022A339d3448BafFf8dFF99Ac'
+    const keysWithPrivateKeyDuplicatedInParams = [
+      { id: anotherAddressNotAddedYet, label: 'test key 3', type: 'external', meta: {} },
+      {
+        id: anotherAddressNotAddedYet,
+        label: 'test key 4 with the same private key as key 3',
+        type: 'external',
+        meta: {}
+      }
+    ]
+
+    expect.assertions(1)
+    await keystore.addKeysExternallyStored([
+      ...keysWithPrivateKeyAlreadyAdded,
+      ...keysWithPrivateKeyDuplicatedInParams
+    ])
+
+    const keys = await keystore.getKeys()
+    const newKeys = keys
+      .map(({ id }) => id)
+      .filter((id) => [publicAddress, anotherAddressNotAddedYet].includes(id))
+
+    expect(newKeys).toHaveLength(2)
   })
 
   test('should get an internal signer', async () => {

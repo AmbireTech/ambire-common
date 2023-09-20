@@ -228,41 +228,92 @@ export class Keystore {
     )
   }
 
-  async addKeyExternallyStored(id: string, type: string, label: string, meta: object) {
-    const keys: [StoredKey] = await this.storage.get('keystoreKeys', [])
-    keys.push({
-      id,
-      type,
-      label,
-      meta,
-      privKey: null
+  async addKeysExternallyStored(
+    keysToAdd: { id: string; type: string; label: string; meta: object }[]
+  ) {
+    if (!keysToAdd.length) return
+
+    // Strip out keys with duplicated private keys. One unique key is enough.
+    const uniquePrivateKeysToAddSet = new Set()
+    const uniqueKeysToAdd = keysToAdd.filter(({ id }) => {
+      if (!uniquePrivateKeysToAddSet.has(id)) {
+        uniquePrivateKeysToAddSet.add(id)
+        return true
+      }
+      return false
     })
-    await this.storage.set('keystoreKeys', keys)
+
+    if (!uniqueKeysToAdd.length) return
+
+    const keys: [StoredKey] = await this.storage.get('keystoreKeys', [])
+    const alreadyAddedKeyIdsSet = new Set(keys.map(({ id }) => id))
+
+    const newKeys = uniqueKeysToAdd
+      .map(({ id, type, label, meta }) => ({
+        id,
+        type,
+        label,
+        meta,
+        privKey: null
+      }))
+      // No need to re-add keys that are already added, private key never changes
+      .filter(({ id }) => !alreadyAddedKeyIdsSet.has(id))
+
+    if (!newKeys.length) return
+
+    const nextKeys = [...keys, ...newKeys]
+
+    await this.storage.set('keystoreKeys', nextKeys)
   }
 
-  async addKey(privateKey: string, label: string) {
+  async addKeys(keysToAdd: { privateKey: string; label: string }[]) {
     if (this.#mainKey === null) throw new Error('keystore: needs to be unlocked')
+    if (!keysToAdd.length) return
 
-    // eslint-disable-next-line no-param-reassign
-    privateKey = privateKey.substring(0, 2) === '0x' ? privateKey.substring(2) : privateKey
-
-    // Set up the cipher
-    const counter = new aes.Counter(this.#mainKey.iv)
-    const aesCtr = new aes.ModeOfOperation.ctr(this.#mainKey.key, counter)
-
-    // Store the key
-    // Terminology: this private key represents an EOA wallet, which is why ethers calls it Wallet, but we treat it as a key here
-    const wallet = new Wallet(privateKey)
-    const keys: [StoredKey] = await this.storage.get('keystoreKeys', [])
-    keys.push({
-      id: wallet.address,
-      type: 'internal',
-      label,
-      // @TODO: consider an MAC?
-      privKey: hexlify(aesCtr.encrypt(aes.utils.hex.toBytes(privateKey))),
-      meta: null
+    // Strip out keys with duplicated private keys. One unique key is enough.
+    const uniquePrivateKeysToAddSet = new Set()
+    const uniqueKeysToAdd = keysToAdd.filter(({ privateKey }) => {
+      if (!uniquePrivateKeysToAddSet.has(privateKey)) {
+        uniquePrivateKeysToAddSet.add(privateKey)
+        return true
+      }
+      return false
     })
-    await this.storage.set('keystoreKeys', keys)
+
+    if (!uniqueKeysToAdd.length) return
+
+    const keys: [StoredKey] = await this.storage.get('keystoreKeys', [])
+    const alreadyAddedKeyIdsSet = new Set(keys.map(({ id }) => id))
+
+    const newKeys = uniqueKeysToAdd
+      .map(({ privateKey, label }) => {
+        // eslint-disable-next-line no-param-reassign
+        privateKey = privateKey.substring(0, 2) === '0x' ? privateKey.substring(2) : privateKey
+
+        // Set up the cipher
+        const counter = new aes.Counter(this.#mainKey!.iv) // TS compiler fails to detect we check for null above
+        const aesCtr = new aes.ModeOfOperation.ctr(this.#mainKey!.key, counter) // TS compiler fails to detect we check for null above
+
+        // Store the key
+        // Terminology: this private key represents an EOA wallet, which is why ethers calls it Wallet, but we treat it as a key here
+        const wallet = new Wallet(privateKey)
+        return {
+          id: wallet.address,
+          type: 'internal',
+          label,
+          // @TODO: consider an MAC?
+          privKey: hexlify(aesCtr.encrypt(aes.utils.hex.toBytes(privateKey))),
+          meta: null
+        }
+      })
+      // No need to re-add keys that are already added, private key never changes
+      .filter(({ id }) => !alreadyAddedKeyIdsSet.has(id))
+
+    if (!newKeys.length) return
+
+    const nextKeys = [...keys, ...newKeys]
+
+    await this.storage.set('keystoreKeys', nextKeys)
   }
 
   async removeKey(id: string) {
