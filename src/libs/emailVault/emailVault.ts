@@ -38,7 +38,7 @@ export class EmailVault {
     return (await this.callRelayer(`/email-vault/emailVaultInfo/${email}/${authKey}`)).data
   }
 
-  async getEmailVaultInfo(email: String, authKey: String): Promise<EmailVaultData> {
+  async getEmailVaultInfo(email: String, authKey: String): Promise<EmailVaultData | null> {
     const result = (await this.callRelayer(`/email-vault/emailVaultInfo/${email}/${authKey}`)).data
     return {
       ...result,
