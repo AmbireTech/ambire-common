@@ -56,7 +56,7 @@ describe('KeyIterator', () => {
     const keyIteratorWithPrivKey = new KeyIterator(seedPhrase)
     const keys = await keyIteratorWithPrivKey.retrieve(0, 2, BIP44_HD_PATH)
 
-    expect(keys?.[0]).toEqual('0x10D4102562373113d1dCd82C2EEE5626D9daEcD8')
+    expect(keys?.[0]).toEqual(seedPhrasePublicAddress1)
     expect(keys?.[1]).toEqual('0xc7E32B118989296eaEa88D86Bd9041Feca77Ed36')
     expect(keys?.[2]).toEqual('0xDe3D61Ae274aA517E01b96ff5155F70883Bc877c')
   })
