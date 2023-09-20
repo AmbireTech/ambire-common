@@ -78,14 +78,16 @@ export function calculateAccountPortfolio(
 
   // Function to check network status
   const isNetworkReady = (networkData) => {
-    return networkData && networkData.isReady && !networkData.isLoading && networkData.result
+    return (
+      (networkData && networkData.isReady && !networkData.isLoading) || networkData.criticalError
+    )
   }
 
   // Convert the object keys to an array and iterate using forEach
   Object.keys(selectedAccountData).forEach((network) => {
     const networkData = selectedAccountData[network]
 
-    if (isNetworkReady(networkData)) {
+    if (isNetworkReady(networkData) && !networkData.criticalError) {
       // In the case we receive BigInt here, convert to number
       const networkTotal = Number(networkData.result.total?.usd) || 0
       newTotalAmount += networkTotal

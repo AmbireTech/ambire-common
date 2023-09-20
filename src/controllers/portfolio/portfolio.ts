@@ -67,12 +67,17 @@ export class PortfolioController extends EventEmitter {
             res.data.rewards.walletClaimableBalance || []
           ].flat(),
           total: [
-            res.data.rewards.xWalletClaimableBalance?.priceIn || [],
-            res.data.rewards.walletClaimableBalance?.priceIn || []
+            res.data.rewards.xWalletClaimableBalance || [],
+            res.data.rewards.walletClaimableBalance || []
           ]
             .flat()
-            .reduce((cur, x) => {
-              cur[x.baseCurrency] = (cur[x.baseCurrency] || 0) + (x.price || 0)
+            .reduce((cur, token) => {
+              for (const x of token.priceIn) {
+                cur[x.baseCurrency] =
+                  (cur[x.baseCurrency] || 0) +
+                  (Number(token.amount) / 10 ** token.decimals) * x.price
+              }
+
               return cur
             }, {})
         }
