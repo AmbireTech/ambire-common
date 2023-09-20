@@ -85,13 +85,14 @@ export const getPendingAccountOpBannersForEOA = ({
     return req.action.kind === 'call' && !account?.creation
   })
 
-  if (!pendingUserRequests.length) return []
+  const numberOfPendingRequest = pendingUserRequests.length - 1
+  if (!numberOfPendingRequest) return []
 
   return [
     {
       id: new Date().getTime(),
       topic: 'TRANSACTION',
-      title: `${pendingUserRequests.length - 1} More pending transactions are waiting to be signed`,
+      title: `${numberOfPendingRequest} More pending transactions are waiting to be signed`,
       text: '' // TODO:
     } as Banner
   ]
