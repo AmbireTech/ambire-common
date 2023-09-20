@@ -2,15 +2,7 @@ import { Account } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
 import { UserRequest } from '../../interfaces/userRequest'
 
-export const getMessageBanners = ({
-  userRequests,
-  onOpen,
-  onReject
-}: {
-  userRequests: UserRequest[]
-  onOpen: (id: number) => void
-  onReject: (err: string, id: number) => void
-}) => {
+export const getMessageBanners = ({ userRequests }: { userRequests: UserRequest[] }) => {
   const txnBanners: Banner[] = []
 
   if (!userRequests) return txnBanners
@@ -25,11 +17,13 @@ export const getMessageBanners = ({
         actions: [
           {
             label: 'Open',
-            onPress: () => onOpen(req.id)
+            actionName: 'open',
+            meta: { ids: [req.id] }
           },
           {
             label: 'Reject',
-            onPress: () => onReject('User rejected the transaction request', req.id)
+            actionName: 'reject',
+            meta: { ids: [req.id], err: 'User rejected the transaction request' }
           }
         ]
       })
@@ -41,14 +35,10 @@ export const getMessageBanners = ({
 
 export const getAccountOpBannersForEOA = ({
   userRequests,
-  accounts,
-  onOpen,
-  onReject
+  accounts
 }: {
   userRequests: UserRequest[]
   accounts: Account[]
-  onOpen: (id: number) => void
-  onReject: (err: string, id: number) => void
 }): Banner[] => {
   if (!userRequests) return []
 
@@ -68,11 +58,13 @@ export const getAccountOpBannersForEOA = ({
       actions: [
         {
           label: 'Open',
-          onPress: () => onOpen(activeUserRequest.id)
+          actionName: 'open',
+          meta: { ids: [activeUserRequest.id] }
         },
         {
           label: 'Reject',
-          onPress: () => onReject('User rejected the transaction request', activeUserRequest.id)
+          actionName: 'reject',
+          meta: { ids: [activeUserRequest.id], err: 'User rejected the transaction request' }
         }
       ]
     } as Banner
@@ -107,14 +99,10 @@ export const getPendingAccountOpBannersForEOA = ({
 
 export const getAccountOpBannersForSmartAccount = ({
   userRequests,
-  accounts,
-  onOpen,
-  onReject
+  accounts
 }: {
   userRequests: UserRequest[]
   accounts: Account[]
-  onOpen: (id: number) => void
-  onReject: (err: string, id: number) => void
 }) => {
   const txnBanners: Banner[] = []
 
@@ -147,15 +135,13 @@ export const getAccountOpBannersForSmartAccount = ({
       actions: [
         {
           label: 'Open',
-          onPress: () => onOpen(group[0].id)
+          actionName: 'open',
+          meta: { ids: [group[0].id] }
         },
         {
           label: 'Reject',
-          onPress: () => {
-            group.forEach((req) => {
-              onReject('User rejected the transaction request', req.id)
-            })
-          }
+          actionName: 'reject',
+          meta: { ids: group.map((g) => g.id), err: 'User rejected the transaction request' }
         }
       ]
     })

@@ -11,8 +11,22 @@ export interface Banner {
   topic: BannerTopic
   title: string
   text: string
-  actions: {
-    label: string
-    onPress: () => void
-  }[]
+  actions: Action[]
 }
+
+export type Action =
+  | {
+      label: 'Open'
+      actionName: 'open'
+      meta: {
+        ids: number[]
+      }
+    }
+  | {
+      label: 'Reject'
+      actionName: 'reject'
+      meta: {
+        ids: number[]
+        err: string
+      }
+    }

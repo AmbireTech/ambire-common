@@ -89,8 +89,6 @@ export class MainController extends EventEmitter {
 
   lastUpdate: Date = new Date()
 
-  onOpenUserRequest: (id: number) => void
-
   onResolveDappRequest: (data: any, id?: number) => void
 
   onRejectDappRequest: (err: any, id?: number) => void
@@ -102,7 +100,6 @@ export class MainController extends EventEmitter {
     fetch,
     relayerUrl,
     keystoreSigners,
-    onOpenUserRequest,
     onResolveDappRequest,
     onRejectDappRequest,
     onUpdateDappSelectedAccount
@@ -111,7 +108,6 @@ export class MainController extends EventEmitter {
     fetch: Function
     relayerUrl: string
     keystoreSigners: { [key: string]: KeystoreSignerType }
-    onOpenUserRequest: (id: number) => void
     onResolveDappRequest: (data: any, id?: number) => void
     onRejectDappRequest: (err: any, id?: number) => void
     onUpdateDappSelectedAccount: (accountAddr: string) => void
@@ -126,7 +122,6 @@ export class MainController extends EventEmitter {
     this.emailVault = new EmailVaultController(storage, fetch, relayerUrl, this.#keystoreLib)
     this.accountAdder = new AccountAdderController({ storage, relayerUrl, fetch })
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
-    this.onOpenUserRequest = onOpenUserRequest
     this.onResolveDappRequest = onResolveDappRequest
     this.onRejectDappRequest = onRejectDappRequest
     this.onUpdateDappSelectedAccount = onUpdateDappSelectedAccount
@@ -425,9 +420,7 @@ export class MainController extends EventEmitter {
 
     const accountOpEOABanners = getAccountOpBannersForEOA({
       userRequests: requests,
-      accounts: this.accounts,
-      onOpen: this.onOpenUserRequest,
-      onReject: this.onRejectDappRequest
+      accounts: this.accounts
     })
     const pendingAccountOpEOABanners = getPendingAccountOpBannersForEOA({
       userRequests: requests,
@@ -435,14 +428,10 @@ export class MainController extends EventEmitter {
     })
     const accountOpSmartAccountBanners = getAccountOpBannersForSmartAccount({
       userRequests: requests,
-      accounts: this.accounts,
-      onOpen: this.onOpenUserRequest,
-      onReject: this.onRejectDappRequest
+      accounts: this.accounts
     })
     const messageBanners = getMessageBanners({
-      userRequests: requests,
-      onOpen: this.onOpenUserRequest,
-      onReject: this.onRejectDappRequest
+      userRequests: requests
     })
 
     return [
