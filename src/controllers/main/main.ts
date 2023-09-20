@@ -1,8 +1,6 @@
 import { JsonRpcProvider } from 'ethers'
 
 import { networks } from '../../consts/networks'
-/* eslint-disable no-underscore-dangle */
-import { SignAccountOpController } from '../signAccountOp/signAccountOp'
 import { Account, AccountId, AccountStates } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
@@ -17,6 +15,7 @@ import {
   getPendingAccountOpBannersForEOA
 } from '../../libs/banners/banners'
 import { estimate, EstimateResult } from '../../libs/estimate/estimate'
+import { GasRecommendation, getGasPriceRecommendations } from '../../libs/gasPrice/gasPrice'
 import { Key, Keystore, KeystoreSignerType } from '../../libs/keystore/keystore'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { AccountAdderController } from '../accountAdder/accountAdder'
@@ -25,8 +24,9 @@ import { EmailVaultController } from '../emailVault'
 import EventEmitter from '../eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
 import { PortfolioController } from '../portfolio/portfolio'
+/* eslint-disable no-underscore-dangle */
+import { SignAccountOpController } from '../signAccountOp/signAccountOp'
 import { SignMessageController } from '../signMessage/signMessage'
-import { GasRecommendation, getGasPriceRecommendations } from '../../libs/gasPrice/gasPrice'
 
 export class MainController extends EventEmitter {
   // Private library instances
