@@ -4,6 +4,7 @@ import { callToTuple } from '../accountOp/accountOp'
 import { Deployless, parseErr } from '../deployless/deployless'
 import { Collectible, CollectionResult, LimitsOptions, TokenResult } from './interfaces'
 import { GetOptions } from './portfolio'
+import { setFlags } from './portfolioView'
 
 // 0x00..01 is the address from which simulation signatures are valid
 const DEPLOYLESS_SIMULATION_FROM = '0x0000000000000000000000000000000000000001'
@@ -110,7 +111,8 @@ export async function getTokens(
         address === '0x0000000000000000000000000000000000000000'
           ? network.nativeAssetSymbol
           : token.symbol,
-      address
+      address,
+      ...setFlags({}, network.id, network.id, address)
     } as TokenResult)
   const deploylessOpts = { blockTag: opts.blockTag, from: DEPLOYLESS_SIMULATION_FROM }
   if (!opts.simulation) {

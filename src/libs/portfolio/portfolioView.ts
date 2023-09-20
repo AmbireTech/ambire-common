@@ -1,8 +1,13 @@
-import { NetworkId } from 'ambire-common/src/interfaces/networkDescriptor'
-
+import feeTokens from '../../consts/feeTokens'
+import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
+import { NetworkId } from '../../interfaces/networkDescriptor'
 import {
+  AccountState,
+  AdditionalAccountState,
+  AdditionalPortfolioGetResult,
   CollectionResult as CollectionResultInterface,
   PortfolioControllerState,
+  PortfolioGetResult,
   TokenResult as TokenResultInterface
 } from './interfaces'
 
@@ -13,26 +18,24 @@ interface AccountPortfolio {
   isAllReady: boolean
 }
 
-const setFlags = (
+export const setFlags = (
   networkData: any,
   networkId: NetworkId,
   tokenNetwork: NetworkId,
-  token: TokenResultInterface,
-  feeTokens: TokenResultInterface[],
-  gasTankFeeTokens: TokenResultInterface[]
+  address: string
 ) => {
   const onGasTank = networkId === 'gasTank'
   const isRewardsToken = networkId === 'rewards'
-  const vesting = networkData.result?.xWalletClaimableBalance?.address === token.address
-  const rewards = networkData.result?.walletClaimableBalance?.address === token.address
+  const vesting = networkData?.xWalletClaimableBalance?.address === address
+  const rewards = networkData?.walletClaimableBalance?.address === address
   const canTopUpGasTank = gasTankFeeTokens.some(
     (t) =>
-      t.address === token.address &&
+      t.address === address &&
       (onGasTank || isRewardsToken ? t.networkId === tokenNetwork : t.networkId === networkId)
   )
   const isFeeToken = feeTokens.some(
     (t) =>
-      t.address === token.address &&
+      t.address === address &&
       (onGasTank || isRewardsToken ? t.networkId === tokenNetwork : t.networkId === networkId)
   )
 
@@ -48,24 +51,17 @@ const setFlags = (
 
 export function calculateAccountPortfolio(
   selectedAccount: string | null,
-  state: PortfolioControllerState,
-  accountPortfolio: AccountPortfolio,
-  feeTokens: { string: string }[],
-  gasTankFeeTokens: { string: string }[]
+  state: { latest: PortfolioControllerState },
+  accountPortfolio: AccountPortfolio
 ) {
-  const updatedTokens: any = []
-  const updatedCollections: any = []
-  let updatedTotalAmount = accountPortfolio?.totalAmount || 0
+  const updatedTokens: TokenResultInterface[] = []
+  const updatedCollections: CollectionResultInterface[] = []
+
   let newTotalAmount: number = 0
   let allReady = true
 
   // 1. On update latest is empty {} in the beginning
-  if (
-    !selectedAccount ||
-    !state.latest ||
-    !state.latest[selectedAccount] ||
-    Object.keys(state.latest[selectedAccount]).length === 0
-  ) {
+  if (!selectedAccount || !state.latest || !state.latest[selectedAccount]) {
     return {
       tokens: accountPortfolio?.tokens || [],
       collections: accountPortfolio?.collections || [],
@@ -74,36 +70,43 @@ export function calculateAccountPortfolio(
     }
   }
 
-  const selectedAccountData = state.latest[selectedAccount]
+  const selectedAccountData = state.latest[selectedAccount] || undefined
+  if (!selectedAccountData) {
+    return {
+      tokens: accountPortfolio?.tokens || [],
+      collections: accountPortfolio?.collections || [],
+      totalAmount: accountPortfolio?.totalAmount || 0,
+      isAllReady: true
+    }
+  }
 
-  // Function to check network status
-  const isNetworkReady = (networkData) => {
+  const isNetworkReady = (networkData: AccountState | AdditionalAccountState | undefined) => {
     return (
-      (networkData && networkData.isReady && !networkData.isLoading) || networkData.criticalError
+      (networkData && networkData.isReady && !networkData.isLoading) || networkData?.criticalError
     )
   }
 
-  // Convert the object keys to an array and iterate using forEach
-  Object.keys(selectedAccountData).forEach((network) => {
-    const networkData = selectedAccountData[network]
+  Object.keys(selectedAccountData).forEach((network: string) => {
+    const networkData = selectedAccountData[network] as
+      | AccountState
+      | AdditionalAccountState
+      | undefined
 
-    if (isNetworkReady(networkData) && !networkData.criticalError) {
+    const result = networkData?.result as
+      | PortfolioGetResult
+      | AdditionalPortfolioGetResult
+      | undefined
+
+    if (isNetworkReady(networkData) && !networkData?.criticalError && result) {
       // In the case we receive BigInt here, convert to number
-      const networkTotal = Number(networkData.result.total?.usd) || 0
+      const networkTotal = Number(result?.total?.usd) || 0
       newTotalAmount += networkTotal
 
-      // Assuming you want to push tokens to updatedTokens array as well
-      const networkTokens = networkData.result.tokens.map((t) => ({
-        ...t,
-        ...setFlags(networkData, network, t.networkId, t, feeTokens, gasTankFeeTokens)
-      }))
-      const networkCollections = networkData.result.collections || []
+      const networkTokens = result?.tokens || []
+      const networkCollections = result?.collections || []
+
       updatedTokens.push(...networkTokens)
       updatedCollections.push(...networkCollections)
-
-      if (networkTokens.length || networkCollections.length) {
-        updatedTotalAmount += newTotalAmount
-      }
     }
 
     if (!isNetworkReady(networkData)) {

@@ -13,6 +13,7 @@ import {
   PortfolioGetResult
 } from '../../libs/portfolio/interfaces'
 import { GetOptions, Portfolio } from '../../libs/portfolio/portfolio'
+import { setFlags } from '../../libs/portfolio/portfolioView'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import EventEmitter from '../eventEmitter'
 
@@ -69,7 +70,12 @@ export class PortfolioController extends EventEmitter {
           tokens: [
             res.data.rewards.xWalletClaimableBalance || [],
             res.data.rewards.walletClaimableBalance || []
-          ].flat(),
+          ]
+            .flat()
+            .map((t: any) => ({
+              ...t,
+              ...setFlags(res.data.rewards, 'rewards', t.networkId, t.address)
+            })),
           total: [
             res.data.rewards.xWalletClaimableBalance || [],
             res.data.rewards.walletClaimableBalance || []
@@ -92,7 +98,12 @@ export class PortfolioController extends EventEmitter {
         isLoading: false,
         result: {
           updateStarted: start,
-          tokens: res.data.gasTank.balance,
+          tokens: res.data.gasTank.balance.length
+            ? res.data.gasTank.balance.map((t: any) => ({
+                ...t,
+                ...setFlags(res.data, 'gasTank', t.networkId, t.address)
+              }))
+            : [],
           total: res.data.gasTank.balance
             ? res.data.gasTank.balance.reduce((cur: any, token: any) => {
                 for (const x of token.priceIn) {
@@ -109,6 +120,7 @@ export class PortfolioController extends EventEmitter {
       this.emitUpdate()
       return
     } catch (e: any) {
+      console.log(e)
       if (!accountState?.rewards) accountState.rewards = { isReady: false, isLoading: false }
       if (!accountState?.gasTank) accountState.gasTank = { isReady: false, isLoading: false }
 
