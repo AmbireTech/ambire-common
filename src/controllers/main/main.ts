@@ -1,4 +1,4 @@
-1import { JsonRpcProvider } from 'ethers'
+import { JsonRpcProvider } from 'ethers'
 
 import { networks } from '../../consts/networks'
 /* eslint-disable no-underscore-dangle */
@@ -421,6 +421,9 @@ export class MainController extends EventEmitter {
     // TODO check if needed data in accountStates are available
     // this.accountStates[accountOp.accountAddr][accountOp.networkId].
     const account = this.accounts.find((x) => x.addr === accountOp.accountAddr)
+    const otherEOAaccounts = this.accounts.filter(
+      (acc) => !acc.creation && acc.addr !== accountOp.accountAddr
+    )
     if (!account)
       throw new Error(`estimateAccountOp: ${accountOp.accountAddr}: account does not exist`)
     const network = this.settings.networks.find((x) => x.id === accountOp.networkId)
@@ -440,9 +443,16 @@ export class MainController extends EventEmitter {
             .map(([networkId, x]) => [networkId, [x!.accountOp]])
         )
       ),
-      // @TODO nativeToCheck: pass all EOAs,
-      // @TODO feeTokens: pass a hardcoded list from settings
-      estimate(this.#providers[accountOp.networkId], network, account, accountOp, [], [])
+      estimate(
+        this.#providers[accountOp.networkId],
+        network,
+        account,
+        accountOp,
+        otherEOAaccounts.map((acc) => acc.addr),
+        this.portfolio.latest[accountOp.accountAddr][accountOp.networkId]?.result?.tokens.map(
+          (token) => token.address
+        ) || [] // TODO - get from updated portfolio only the feeTokens and exclude gasTank
+      )
     ])
     // @TODO compare intent between accountOp and this.accountOpsToBeSigned[accountOp.accountAddr][accountOp.networkId].accountOp
     this.accountOpsToBeSigned[accountOp.accountAddr][accountOp.networkId]!.estimation = estimation
