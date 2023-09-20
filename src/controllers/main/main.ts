@@ -3,11 +3,18 @@ import { JsonRpcProvider } from 'ethers'
 
 import { networks } from '../../consts/networks'
 import { Account, AccountId, AccountStates } from '../../interfaces/account'
+import { Banner } from '../../interfaces/banner'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
 import { Storage } from '../../interfaces/storage'
 import { Message, UserRequest } from '../../interfaces/userRequest'
 import { AccountOp, Call as AccountOpCall } from '../../libs/accountOp/accountOp'
 import { getAccountState } from '../../libs/accountState/accountState'
+import {
+  getAccountOpBannersForEOA,
+  getAccountOpBannersForSmartAccount,
+  getMessageBanners,
+  getPendingAccountOpBannersForEOA
+} from '../../libs/banners/banners'
 import { estimate, EstimateResult } from '../../libs/estimate/estimate'
 import { Key, Keystore, KeystoreSignerType } from '../../libs/keystore/keystore'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
@@ -405,5 +412,41 @@ export class MainController extends EventEmitter {
     this.removeUserRequest(signedMessage.id)
     this.onResolveDappRequest({ hash: signedMessage.signature }, signedMessage.id)
     this.emitUpdate()
+  }
+
+  get banners(): Banner[] {
+    const requests =
+      this.userRequests.filter((req) => req.accountAddr === this.selectedAccount) || []
+
+    const accountOpEOABanners = getAccountOpBannersForEOA({
+      userRequests: requests,
+      accounts: this.accounts
+    })
+    const pendingAccountOpEOABanners = getPendingAccountOpBannersForEOA({
+      userRequests: requests,
+      accounts: this.accounts
+    })
+    const accountOpSmartAccountBanners = getAccountOpBannersForSmartAccount({
+      userRequests: requests,
+      accounts: this.accounts
+    })
+    const messageBanners = getMessageBanners({
+      userRequests: requests
+    })
+
+    return [
+      ...accountOpSmartAccountBanners,
+      ...accountOpEOABanners,
+      ...pendingAccountOpEOABanners,
+      ...messageBanners
+    ]
+  }
+
+  // includes the getters in the stringified instance
+  toJSON() {
+    return {
+      ...this,
+      banners: this.banners
+    }
   }
 }
