@@ -69,7 +69,8 @@ describe('Main Controller ', () => {
       keystoreSigners: { internal: KeystoreSigner },
       onResolveDappRequest: () => {},
       onRejectDappRequest: () => {},
-      onUpdateDappSelectedAccount: () => {}
+      onUpdateDappSelectedAccount: () => {},
+      pinned: []
     })
     // eslint-disable-next-line no-promise-executor-return
     await new Promise((resolve) => controller.onUpdate(() => resolve(null)))
@@ -156,7 +157,8 @@ describe('Main Controller ', () => {
       keystoreSigners: { internal: KeystoreSigner },
       onResolveDappRequest: () => {},
       onRejectDappRequest: () => {},
-      onUpdateDappSelectedAccount: () => {}
+      onUpdateDappSelectedAccount: () => {},
+      pinned: []
     })
 
     const signerAddr = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'

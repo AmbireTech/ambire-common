@@ -7,6 +7,7 @@ import { Storage } from '../../interfaces/storage'
 import { AccountOp, isAccountOpsIntentEqual } from '../../libs/accountOp/accountOp'
 import {
   AccountState,
+  AdditionalAccountState,
   Hints,
   PortfolioControllerState,
   PortfolioGetResult
@@ -44,7 +45,7 @@ export class PortfolioController extends EventEmitter {
     if (!this.latest[accountId]) this.latest[accountId] = {}
     const start = Date.now()
 
-    const accountState = this.latest[accountId]
+    const accountState = this.latest[accountId] as AdditionalAccountState
     if (!accountState?.gasTank) accountState.gasTank = { isReady: false, isLoading: true }
     if (!accountState?.rewards) accountState.rewards = { isReady: false, isLoading: true }
 
@@ -74,7 +75,7 @@ export class PortfolioController extends EventEmitter {
             res.data.rewards.walletClaimableBalance || []
           ]
             .flat()
-            .reduce((cur, token) => {
+            .reduce((cur: any, token: any) => {
               for (const x of token.priceIn) {
                 cur[x.baseCurrency] =
                   (cur[x.baseCurrency] || 0) +
@@ -92,9 +93,8 @@ export class PortfolioController extends EventEmitter {
         result: {
           updateStarted: start,
           tokens: res.data.gasTank.balance,
-          availableGasTankAssets: res.data.gasTank.availableGasTankAssets,
           total: res.data.gasTank.balance
-            ? res.data.gasTank.balance.reduce((cur, token) => {
+            ? res.data.gasTank.balance.reduce((cur: any, token: any) => {
                 for (const x of token.priceIn) {
                   cur[x.baseCurrency] =
                     (cur[x.baseCurrency] || 0) +
@@ -107,6 +107,7 @@ export class PortfolioController extends EventEmitter {
       }
 
       this.emitUpdate()
+      return
     } catch (e: any) {
       if (!accountState?.rewards) accountState.rewards = { isReady: false, isLoading: false }
       if (!accountState?.gasTank) accountState.gasTank = { isReady: false, isLoading: false }
