@@ -1,8 +1,9 @@
 import { ethers } from 'hardhat'
-import { JsonRpcProvider } from 'ethers'
+import { BaseContract, JsonRpcProvider } from 'ethers'
 import { addressOne, addressTwo, abiCoder, AmbireAccount } from './config'
 import { Storage } from '../src/interfaces/storage'
 import { parse, stringify } from '../src/libs/bigintJson/bigintJson'
+import { wrapEthSign } from './ambireSign'
 
 async function sendFunds(to: string, ether: number) {
   const [signer] = await ethers.getSigners()
@@ -98,4 +99,78 @@ function produceMemoryStore(): Storage {
   }
 }
 
-export { sendFunds, getPriviledgeTxn, getTimelockData, getNonce, getDKIMValidatorData, getSignerKey, produceMemoryStore, getPriviledgeTxnWithCustomHash }
+async function buildUserOp(paymaster: BaseContract, options: any = {}) {
+  const [relayer, sender] = await ethers.getSigners()
+
+  const userOp = {
+    sender: options.sender ?? sender.address,
+    nonce: options.userOpNonce ?? ethers.toBeHex(0, 1),
+    initCode: options.initCode ?? '0x',
+    callData: options.callData ?? '0x',
+    callGasLimit: ethers.toBeHex(100000),
+    verificationGasLimit: ethers.toBeHex(500000),
+    preVerificationGas: ethers.toBeHex(50000),
+    maxFeePerGas: ethers.toBeHex(100000),
+    maxPriorityFeePerGas: ethers.toBeHex(100000),
+    paymasterAndData: '0x',
+    signature: '0x'
+  }
+  const validUntil = options.validUntil ?? 0
+  const validAfter = options.validAfter ?? 0
+  const hash = ethers.keccak256(abiCoder.encode([
+    'uint256',
+    'address',
+    'uint48',
+    'uint48',
+    'address',
+    'uint256',
+    'bytes',
+    'bytes',
+    'uint256',
+    'uint256',
+    'uint256',
+    'uint256',
+    'uint256',
+  ], [
+    options.chainId ?? 31337,
+    await paymaster.getAddress(),
+    validUntil,
+    validAfter,
+    userOp.sender,
+    options.signedNonce ?? userOp.nonce,
+    userOp.initCode,
+    userOp.callData,
+    userOp.callGasLimit,
+    userOp.verificationGasLimit,
+    userOp.preVerificationGas,
+    userOp.maxFeePerGas,
+    userOp.maxPriorityFeePerGas
+  ]));
+  const signature = wrapEthSign(await relayer.signMessage(ethers.getBytes(hash)))
+
+  // abi.decode(userOp.paymasterAndData[20:], (uint48, uint48, bytes))
+  const paymasterData = abiCoder.encode(
+    ['uint48', 'uint48', 'bytes'],
+    [validUntil, validAfter, signature]
+  )
+  const paymasterAndData = ethers.hexlify(ethers.concat([
+    await paymaster.getAddress(),
+    paymasterData
+  ]))
+  // (uint48 validUntil, uint48 validAfter, bytes memory signature) = abi.decode(userOp.paymasterAndData[20:], (uint48, uint48, bytes));
+
+  userOp.paymasterAndData = paymasterAndData
+  return userOp
+}
+
+export {
+  sendFunds,
+  getPriviledgeTxn,
+  getTimelockData,
+  getNonce,
+  getDKIMValidatorData,
+  getSignerKey,
+  produceMemoryStore,
+  getPriviledgeTxnWithCustomHash,
+  buildUserOp
+}
