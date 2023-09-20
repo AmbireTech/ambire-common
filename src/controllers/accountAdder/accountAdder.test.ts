@@ -139,8 +139,9 @@ describe('AccountAdder', () => {
         expect(accountAdder.linkedAccountsLoading).toBe(false)
         const linkedAccountsOnPage = accountAdder.accountsOnPage.filter(({ isLinked }) => isLinked)
 
-        // TODO:
-        expect(linkedAccountsOnPage.filter(({ slot }) => slot === 1).length).toEqual(1)
+        expect(
+          linkedAccountsOnPage.filter(({ slot }) => slot === 1).map(({ account }) => account)
+        ).toEqual(expect.objectContaining({ addr: '0x740523d7876Fbb8AF246c5B307f26d4b2D2BFDA9' }))
 
         expect(linkedAccountsOnPage.filter(({ slot }) => slot === 2).length).toEqual(0)
 
