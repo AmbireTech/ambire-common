@@ -107,12 +107,7 @@ export class SignAccountOpController extends EventEmitter {
       }
     }
 
-    if (feeTokenAddr && this.isInitialized) {
-      // TODO: validate feeTokenAddr
-      this.accountOp!.gasFeePayment = this.#getGasFeePayment(feeTokenAddr, this.selectedFeeSpeed)
-    }
-
-    if (paidBy && this.isInitialized) {
+    if (feeTokenAddr && paidBy && this.isInitialized) {
       // the self-invoking func allows us to return from it without interrupting the execution of the update func
       ;(() => {
         const account = this.#getAccount()
@@ -120,18 +115,9 @@ export class SignAccountOpController extends EventEmitter {
         const network = this.#networks!.find((n) => n.id === this.accountOp?.networkId)
         if (!account || !account.creation || (network && network.erc4337?.enabled)) return
 
-        if (!this.accountOp!.gasFeePayment) this.accountOp!.gasFeePayment = {} as any
-        // No need to update anything else, availableFeeTokens will change it's output
-        this.accountOp!.gasFeePayment!.paidBy = paidBy
-        const availableFeeTokens = this.availableFeeTokens
-        if (!availableFeeTokens!.includes(this.accountOp!.gasFeePayment?.inToken as string)) {
-          this.accountOp!.gasFeePayment = this.#getGasFeePayment(
-            availableFeeTokens[0],
-            this.selectedFeeSpeed
-          )
-          // we need to set it again cause getGasFeePayment will reset it
-          this.accountOp!.gasFeePayment.paidBy = paidBy
-        }
+        // TODO: validate feeTokenAddr
+        this.accountOp!.gasFeePayment = this.#getGasFeePayment(feeTokenAddr, this.selectedFeeSpeed)
+        this.accountOp!.gasFeePayment.paidBy = paidBy
       })()
     }
 
@@ -145,11 +131,11 @@ export class SignAccountOpController extends EventEmitter {
 
     if (signingKeyAddr && this.isInitialized) {
       // the self-invoking func allows us to return from it without interrupting the execution of the update func
-      ;() => {
+      ;(() => {
         const account = this.#getAccount()
         if (!account || !account.creation) return
         this.accountOp!.signingKeyAddr = signingKeyAddr
-      }
+      })()
     }
 
     this.updateReadyToSignStatusOnUpdate()
@@ -236,20 +222,6 @@ export class SignAccountOpController extends EventEmitter {
     }
   }
 
-  get availableFeeTokens(): string[] {
-    if (!this.isInitialized) return []
-
-    const account = this.#getAccount()
-
-    if (!account) return []
-    // TODO:
-    return []
-    //   const EOAs = this.#accounts!.filter((acc) => !acc.creation)
-    //   // current account is an EOA or an EOA is paying the fee
-    //   if (!account.creation || EOAs.includes(this.accountOp!.gasFeePayment.paidBy)) return [native]
-    //   // @TODO return everything incl gas tank, with amounts; based on estimation + gas tank data from portfolio
-  }
-
   get feeToken(): string | null {
     return this.accountOp?.gasFeePayment?.inToken || null
   }
@@ -276,6 +248,31 @@ export class SignAccountOpController extends EventEmitter {
 
   get feePaidBy(): string | null {
     return this.accountOp?.gasFeePayment?.paidBy || null
+  }
+
+  get availableFeeOptions(): EstimateResult['feePaymentOptions'] {
+    const account = this.#getAccount()
+    if (!account || !this.isInitialized || !this.#estimation) return []
+
+    // only the account can pay for the fee when current account is EOA
+    if (!account.creation) {
+      const feePaymentOption = this.#estimation.feePaymentOptions.find(
+        (option) => option.address === '0x0000000000000000000000000000000000000000'
+      )
+      return feePaymentOption ? [feePaymentOption] : []
+    }
+
+    // @TODO - 4337 - will handle it in next Epics
+    // // only the account itself can pay in this case
+    // const network = this.#networks!.find((n) => n.id === this.accountOp?.networkId)
+    // if (network && network.erc4337?.enabled) {
+    //   return [
+    //
+    //   ]
+    // }
+
+    // in other modes: relayer and gas tank - current account + all EOAs can pay
+    return this.#estimation.feePaymentOptions
   }
 
   // eslint-disable-next-line class-methods-use-this
@@ -317,6 +314,7 @@ export class SignAccountOpController extends EventEmitter {
       hasSelectedAccountOp: this.hasSelectedAccountOp,
       readyToSign: this.readyToSign,
       availableFeePaidBy: this.availableFeePaidBy,
+      availableFeeOptions: this.availableFeeOptions,
       feeToken: this.feeToken,
       feePaidBy: this.feePaidBy,
       speedOptions: this.speedOptions

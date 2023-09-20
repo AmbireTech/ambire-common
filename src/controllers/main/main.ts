@@ -439,7 +439,7 @@ export class MainController extends EventEmitter {
     const network = this.settings.networks.find((x) => x.id === accountOp.networkId)
     if (!network)
       throw new Error(`estimateAccountOp: ${accountOp.networkId}: network does not exist`)
-    const [, , estimation] = await Promise.all([
+    const [, estimation] = await Promise.all([
       // NOTE: we are not emitting an update here because the portfolio controller will do that
       // NOTE: the portfolio controller has it's own logic of constructing/caching providers, this is intentional, as
       // it may have different needs
@@ -453,14 +453,15 @@ export class MainController extends EventEmitter {
             .map(([networkId, x]) => [networkId, [x!.accountOp]])
         )
       ),
-      this.portfolio.getAdditionalPortfolio(accountOp.accountAddr),
+      // this.portfolio.getAdditionalPortfolio(accountOp.accountAddr),
       estimate(
         this.#providers[accountOp.networkId],
         network,
         account,
         accountOp,
         otherEOAaccounts.map((acc) => acc.addr),
-        this.portfolio.latest[accountOp.accountAddr][accountOp.networkId]?.result?.tokens.map(
+        // @TODO - first time calling this, portfolio is still not loaded.
+        this.portfolio.latest?.[accountOp.accountAddr]?.[accountOp.networkId]?.result?.tokens.map(
           (token) => token.address
         ) || [] // TODO - get from updated portfolio only the feeTokens and exclude gasTank
       )
