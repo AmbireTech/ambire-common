@@ -6,6 +6,7 @@ import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { Storage } from '../../interfaces/storage'
 import { AccountOp, isAccountOpsIntentEqual } from '../../libs/accountOp/accountOp'
 import {
+  AccountState,
   Hints,
   PortfolioControllerState,
   PortfolioGetResult

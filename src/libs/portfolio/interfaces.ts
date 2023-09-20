@@ -62,7 +62,7 @@ export interface Hints {
   error?: string
 }
 
-type AccountState = {
+export type AccountState = {
   // network id
   [key: string]:
     | {
