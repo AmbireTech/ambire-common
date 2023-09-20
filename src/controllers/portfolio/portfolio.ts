@@ -5,31 +5,14 @@ import { Account, AccountId } from '../../interfaces/account'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { Storage } from '../../interfaces/storage'
 import { AccountOp, isAccountOpsIntentEqual } from '../../libs/accountOp/accountOp'
-import { Hints, PortfolioGetResult } from '../../libs/portfolio/interfaces'
+import {
+  Hints,
+  PortfolioControllerState,
+  PortfolioGetResult
+} from '../../libs/portfolio/interfaces'
 import { GetOptions, Portfolio } from '../../libs/portfolio/portfolio'
+import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import EventEmitter from '../eventEmitter'
-
-type AccountState = {
-  // network id
-  [key: string]:
-    | {
-        isReady: boolean
-        isLoading: boolean
-        criticalError?: Error
-        errors?: Error[]
-        result?: PortfolioGetResult
-        // We store the previously simulated AccountOps only for the pending state.
-        // Prior to triggering a pending state update, we compare the newly passed AccountOp[] (updateSelectedAccount) with the cached version.
-        // If there are no differences, the update is canceled unless the `forceUpdate` flag is set.
-        accountOps?: AccountOp[]
-      }
-    | undefined
-}
-// account => network => PortfolioGetResult, extra fields
-type PortfolioControllerState = {
-  // account id
-  [key: string]: AccountState
-}
 
 export class PortfolioController extends EventEmitter {
   latest: PortfolioControllerState
@@ -40,17 +23,105 @@ export class PortfolioController extends EventEmitter {
 
   #storage: Storage
 
+  #callRelayer: Function
+
   #pinned: string[]
 
   #minUpdateInterval: number = 20000 // 20 seconds
 
-  constructor(storage: Storage) {
+  constructor(storage: Storage, relayerUrl: string, pinned: string[]) {
     super()
     this.latest = {}
     this.pending = {}
     this.#portfolioLibs = new Map()
     this.#storage = storage
-    this.#pinned = []
+    this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
+    this.#pinned = pinned
+  }
+
+  async getAdditionalPortfolio(accountId: AccountId) {
+    if (!this.latest[accountId]) this.latest[accountId] = {}
+    const start = Date.now()
+
+    const accountState = this.latest[accountId]
+    if (!accountState?.gasTank) accountState.gasTank = { isReady: false, isLoading: true }
+    if (!accountState?.rewards) accountState.rewards = { isReady: false, isLoading: true }
+
+    accountState.rewards.isReady = false
+    accountState.rewards.isLoading = true
+
+    accountState.gasTank.isReady = false
+    accountState.gasTank.isLoading = true
+    this.emitUpdate()
+
+    const url = `/v2/identity/${accountId}/info`
+    try {
+      const res = await this.#callRelayer(url)
+
+      accountState.rewards = {
+        isReady: true,
+        isLoading: false,
+        result: {
+          ...res.data.rewards,
+          updateStarted: start,
+          tokens: [
+            res.data.rewards.xWalletClaimableBalance || [],
+            res.data.rewards.walletClaimableBalance || []
+          ].flat(),
+          total: [
+            res.data.rewards.xWalletClaimableBalance || [],
+            res.data.rewards.walletClaimableBalance || []
+          ]
+            .flat()
+            .reduce((cur, token) => {
+              for (const x of token.priceIn) {
+                cur[x.baseCurrency] =
+                  (cur[x.baseCurrency] || 0) +
+                  (Number(token.amount) / 10 ** token.decimals) * x.price
+              }
+
+              return cur
+            }, {})
+        }
+      }
+
+      accountState.gasTank = {
+        isReady: true,
+        isLoading: false,
+        result: {
+          updateStarted: start,
+          tokens: res.data.gasTank.balance,
+          availableGasTankAssets: res.data.gasTank.availableGasTankAssets,
+          total: res.data.gasTank.balance
+            ? res.data.gasTank.balance.reduce((cur, token) => {
+                for (const x of token.priceIn) {
+                  cur[x.baseCurrency] =
+                    (cur[x.baseCurrency] || 0) +
+                    (Number(token.amount) / 10 ** token.decimals) * x.price
+                }
+                return cur
+              }, {})
+            : 0
+        }
+      }
+
+      this.emitUpdate()
+    } catch (e: any) {
+      if (!accountState?.rewards) accountState.rewards = { isReady: false, isLoading: false }
+      if (!accountState?.gasTank) accountState.gasTank = { isReady: false, isLoading: false }
+
+      accountState.gasTank.isLoading = false
+      accountState.rewards.isLoading = false
+
+      if (!accountState.gasTank.isReady) accountState.gasTank.criticalError = e
+      if (!accountState.rewards.isReady) accountState.rewards.criticalError = e
+      else {
+        accountState.gasTank.errors = [e]
+        accountState.rewards.errors = [e]
+      }
+      this.emitUpdate()
+      return false
+    }
   }
   // NOTE: we always pass in all `accounts` and `networks` to ensure that the user of this
   // controller doesn't have to update this controller every time that those are updated
@@ -84,7 +155,8 @@ export class PortfolioController extends EventEmitter {
 
       const accountState = state[accountId]
       for (const networkId of Object.keys(accountState)) {
-        if (!networks.find((x) => x.id === networkId)) delete accountState[networkId]
+        if (![...networks, { id: 'gasTank' }, { id: 'rewards' }].find((x) => x.id === networkId))
+          delete accountState[networkId]
       }
       this.emitUpdate()
     }

@@ -102,7 +102,8 @@ export class MainController extends EventEmitter {
     keystoreSigners,
     onResolveDappRequest,
     onRejectDappRequest,
-    onUpdateDappSelectedAccount
+    onUpdateDappSelectedAccount,
+    pinned
   }: {
     storage: Storage
     fetch: Function
@@ -111,10 +112,11 @@ export class MainController extends EventEmitter {
     onResolveDappRequest: (data: any, id?: number) => void
     onRejectDappRequest: (err: any, id?: number) => void
     onUpdateDappSelectedAccount: (accountAddr: string) => void
+    pinned: string[]
   }) {
     super()
     this.storage = storage
-    this.portfolio = new PortfolioController(storage)
+    this.portfolio = new PortfolioController(storage, relayerUrl, pinned)
     this.#keystoreLib = new Keystore(storage, keystoreSigners)
     this.keystore = new KeystoreController(this.#keystoreLib)
     this.settings = { networks }
@@ -280,9 +282,10 @@ export class MainController extends EventEmitter {
     }
   }
 
-  updateSelectedAccount(selectedAccount: string | null = null) {
+  async updateSelectedAccount(selectedAccount: string | null = null) {
     if (!selectedAccount) return
     this.portfolio.updateSelectedAccount(this.accounts, this.settings.networks, selectedAccount)
+    this.portfolio.getAdditionalPortfolio(selectedAccount)
   }
 
   async addUserRequest(req: UserRequest) {
@@ -381,7 +384,7 @@ export class MainController extends EventEmitter {
     const network = this.settings.networks.find((x) => x.id === accountOp.networkId)
     if (!network)
       throw new Error(`estimateAccountOp: ${accountOp.networkId}: network does not exist`)
-    const [, estimation] = await Promise.all([
+    const [, , estimation] = await Promise.all([
       // NOTE: we are not emitting an update here because the portfolio controller will do that
       // NOTE: the portfolio controller has it's own logic of constructing/caching providers, this is intentional, as
       // it may have different needs
@@ -395,6 +398,7 @@ export class MainController extends EventEmitter {
             .map(([networkId, x]) => [networkId, [x!.accountOp]])
         )
       ),
+      this.portfolio.getAdditionalPortfolio(accountOp.accountAddr),
       // @TODO nativeToCheck: pass all EOAs,
       // @TODO feeTokens: pass a hardcoded list from settings
       estimate(this.#providers[accountOp.networkId], network, account, accountOp, [], [])
