@@ -210,6 +210,7 @@ export class EmailVaultController extends EventEmitter {
         // @NOTE: we now have this.emitError()
         this.emailVaultStates.errors = [polling.state.error]
       } else {
+        console.log('success?')
         this.#magicLinkKeys[email] = {
           key: newKey.key,
           requestedAt: new Date(),
@@ -221,12 +222,14 @@ export class EmailVaultController extends EventEmitter {
       }
     })
 
-    await polling.exec(
+    const ev: any = await polling.exec(
       this.#emailVault.getEmailVaultInfo.bind(this.#emailVault),
       [email, newKey.key],
       15000,
       1000
     )
+    if (ev && !ev.error) this.#magicLinkKeys[email].confirmed = true
+    this.emitUpdate()
   }
 
   async #getSessionKey(email: string): Promise<string | null> {
@@ -359,9 +362,9 @@ export class EmailVaultController extends EventEmitter {
     )
       return null
 
-    const magicLinkKey = await this.#getMagicLinkKey(email)
-    let result: EmailVaultSecret | null = null
-    if (magicLinkKey?.confirmed) {
+    const key = (await this.#getMagicLinkKey(email))?.key
+    let result: any = null
+    if (key) {
       const polling = new Polling()
       polling.onUpdate(() => {
         if (polling.state.isError && polling.state.error.output.res.status === 401) {
@@ -371,21 +374,25 @@ export class EmailVaultController extends EventEmitter {
         }
       })
 
-      result = await polling.exec(this.#emailVault.retrieveKeyStoreSecret, [
+      result = await polling.exec(this.#emailVault.retrieveKeyStoreSecret.bind(this.#emailVault), [
         email,
-        magicLinkKey.key,
+        key,
         uid
       ])
     } else {
-      this.#handleMagicLinkKey(email, () => this.getKeyStoreSecret(email, uid))
-      this.getEmailVaultInfo(email)
+      await this.#handleMagicLinkKey(email, () => this.getEmailVaultInfo(email))
+      await this.getKeyStoreSecret(email, uid)
     }
-    if (result) {
+    if (result && !result.error) {
       this.emailVaultStates.email[email].availableSecrets[result.key] = result
+      console.log('before')
+      await this.#keyStore.addSecret(result.key, result.value)
+      console.log('after')
       await this.storage.set(EMAIL_VAULT_STORAGE_KEY, this.emailVaultStates)
       this.emitUpdate()
       return result
     }
+
     this.emitUpdate()
     return null
   }

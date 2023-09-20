@@ -46,13 +46,6 @@ describe('happy cases', () => {
     })
   })
   test('login into existing', async () => {
-    const email: string = getRandomEmail()
-
-    const [storage, relayerUrl, keystore] = [
-      produceMemoryStore(),
-      'http://localhost:1934',
-      new Keystore(produceMemoryStore(), {})
-    ]
     const evLib = new EmailVault(fetch, relayerUrl)
     const ev = new EmailVaultController(storage, fetch, relayerUrl, keystore)
     const keys = await requestMagicLink(email, relayerUrl, fetch)
@@ -89,5 +82,23 @@ describe('happy cases', () => {
     const key = Object.keys(newSecrets).find((k) => newSecrets[k]?.type === 'keyStore')
     expect(key).toBeTruthy()
     expect(newSecrets[key!]).toMatchObject({ key, type: 'keyStore' })
+  })
+  test('getKeyStoreSecret', async () => {
+    const evLib = new EmailVault(fetch, relayerUrl)
+    const ev = new EmailVaultController(storage, fetch, relayerUrl, keystore)
+    const keys = await requestMagicLink(email, relayerUrl, fetch)
+    const [keystoreUid, keystoreSecret] = ['uid', 'secret']
+    await fetch(`${relayerUrl}/email-vault/confirmationKey/${email}/${keys.key}/${keys.secret}`)
+    await evLib.create(email, keys.key)
+    await evLib.addKeyStoreSecret(email, keys.key, keystoreUid, keystoreSecret)
+    await ev.login(email)
+    const secretOne = ev.emailVaultStates.email[email].availableSecrets?.[keystoreUid]
+    expect(secretOne).toHaveProperty('key', keystoreUid)
+    expect(secretOne).toHaveProperty('type', 'keyStore')
+    expect(secretOne).not.toHaveProperty('secret')
+    await ev.getKeyStoreSecret(email, keystoreUid)
+    const keystoreSecrets = await keystore.getMainKeyEncryptedWithSecrets()
+    expect(keystoreSecrets.length).toBe(1)
+    expect(keystoreSecrets[0].id).toBe(keystoreUid)
   })
 })
