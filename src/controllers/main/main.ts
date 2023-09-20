@@ -1,20 +1,20 @@
 /* eslint-disable no-underscore-dangle */
 import { JsonRpcProvider } from 'ethers'
-import { Banner } from 'interfaces/banner'
-import {
-  getAccountOpBannersForEOA,
-  getAccountOpBannersForSmartAccount,
-  getMessageBanners,
-  getPendingAccountOpBannersForEOA
-} from 'libs/banners/banners'
 
 import { networks } from '../../consts/networks'
 import { Account, AccountId, AccountStates } from '../../interfaces/account'
+import { Banner } from '../../interfaces/banner'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
 import { Storage } from '../../interfaces/storage'
 import { Message, UserRequest } from '../../interfaces/userRequest'
 import { AccountOp, Call as AccountOpCall } from '../../libs/accountOp/accountOp'
 import { getAccountState } from '../../libs/accountState/accountState'
+import {
+  getAccountOpBannersForEOA,
+  getAccountOpBannersForSmartAccount,
+  getMessageBanners,
+  getPendingAccountOpBannersForEOA
+} from '../../libs/banners/banners'
 import { estimate, EstimateResult } from '../../libs/estimate/estimate'
 import { Key, Keystore, KeystoreSignerType } from '../../libs/keystore/keystore'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
