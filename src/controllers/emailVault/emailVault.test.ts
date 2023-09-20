@@ -1,5 +1,5 @@
 import fetch from 'node-fetch'
-import { expect, jest } from '@jest/globals'
+import { expect } from '@jest/globals'
 import { requestMagicLink } from '../../libs/magicLink/magicLink'
 import { EmailVaultController } from './emailVault'
 import { Keystore } from '../../libs/keystore/keystore'
@@ -23,14 +23,17 @@ function produceMemoryStore(): Storage {
 const getRandomEmail = () => {
   return `yosif${Math.random().toString().slice(2)}@ambire.com`
 }
+let storage: Storage
+const relayerUrl: string = 'http://localhost:1934'
+let keystore: Keystore
+let email: string
+
 describe('happy cases', () => {
+  beforeEach(() => {
+    email = getRandomEmail()
+    ;[storage, keystore] = [produceMemoryStore(), new Keystore(produceMemoryStore(), {})]
+  })
   test('login first time', async () => {
-    const email: string = getRandomEmail()
-    const [storage, relayerUrl, keystore] = [
-      produceMemoryStore(),
-      'http://localhost:1934',
-      new Keystore(produceMemoryStore(), {})
-    ]
     const ev = new EmailVaultController(storage, fetch, relayerUrl, keystore)
     await ev.login(email)
 
@@ -75,5 +78,16 @@ describe('happy cases', () => {
       availableAccounts: {},
       operations: []
     })
+  })
+  test('upload keystore secret', async () => {
+    const ev = new EmailVaultController(storage, fetch, relayerUrl, keystore)
+    await ev.login(email)
+    expect(Object.keys(ev.emailVaultStates.email[email].availableSecrets).length).toBe(1)
+    await ev.uploadKeyStoreSecret(email)
+    const newSecrets = ev.emailVaultStates.email[email].availableSecrets
+    expect(Object.keys(newSecrets).length).toBe(2)
+    const key = Object.keys(newSecrets).find((k) => newSecrets[k]?.type === 'keyStore')
+    expect(key).toBeTruthy()
+    expect(newSecrets[key!]).toMatchObject({ key, type: 'keyStore' })
   })
 })

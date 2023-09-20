@@ -252,12 +252,11 @@ export class EmailVaultController extends EventEmitter {
       this.#getSessionKey(email),
       this.#getMagicLinkKey(email)
     ])
-
     const key = existsSessionKey || magicLinkKey?.key
 
     let emailVault: EmailVaultData | null = null
     if (key) {
-      emailVault = await this.#emailVault.getEmailVaultInfo(email, key).catch(() => null)
+      emailVault = await this.#emailVault.getEmailVaultInfo(email, key) // .catch(() => null)
     } else {
       await this.#handleMagicLinkKey(email, () => this.getEmailVaultInfo(email))
     }
@@ -265,6 +264,7 @@ export class EmailVaultController extends EventEmitter {
     if (emailVault) {
       this.emailVaultStates.errors = []
       this.emailVaultStates.email[email] = emailVault
+
       await this.storage.set(EMAIL_VAULT_STORAGE_KEY, this.emailVaultStates)
       if (!existsSessionKey) {
         await this.#requestSessionKey(email)
@@ -282,7 +282,7 @@ export class EmailVaultController extends EventEmitter {
       await this.getEmailVaultInfo(email)
     }
 
-    let result: Boolean | null
+    let result: Boolean | null = false
 
     const newSecret = crypto.randomBytes(32).toString('base64url')
 
@@ -292,11 +292,10 @@ export class EmailVaultController extends EventEmitter {
       this.#getMagicLinkKey(email)
     ])
 
-    if (magicKey?.confirmed) {
+    if (magicKey?.key) {
       result = await this.#emailVault.addKeyStoreSecret(email, magicKey.key, keyStoreUid, newSecret)
     } else {
-      this.#handleMagicLinkKey(email, () => this.uploadKeyStoreSecret(email))
-      return
+      await this.#handleMagicLinkKey(email, () => this.uploadKeyStoreSecret(email))
     }
 
     if (result) {

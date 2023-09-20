@@ -35,7 +35,8 @@ export class EmailVault {
   }
 
   async getSessionKey(email: String, authKey: String): Promise<string> {
-    return (await this.callRelayer(`/email-vault/emailVaultInfo/${email}/${authKey}`)).data
+    return (await this.callRelayer(`/email-vault/getSessionKey/${email}/${authKey}`))?.data
+      ?.sessionKey
   }
 
   async getEmailVaultInfo(email: String, authKey: String): Promise<EmailVaultData | null> {
