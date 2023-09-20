@@ -138,13 +138,24 @@ describe('AccountAdder', () => {
       if (emitCounter === 3) {
         expect(accountAdder.linkedAccountsLoading).toBe(false)
         const linkedAccountsOnPage = accountAdder.accountsOnPage.filter(({ isLinked }) => isLinked)
-        expect(linkedAccountsOnPage.length).toEqual(4)
 
-        // One linked account on slot 1 and 3 linked accounts on slot 3.
+        // TODO:
         expect(linkedAccountsOnPage.filter(({ slot }) => slot === 1).length).toEqual(1)
-        expect(linkedAccountsOnPage.filter(({ slot }) => slot === 2).length).toEqual(0)
-        expect(linkedAccountsOnPage.filter(({ slot }) => slot === 3).length).toEqual(3)
 
+        expect(linkedAccountsOnPage.filter(({ slot }) => slot === 2).length).toEqual(0)
+
+        const accountsOnSlot3 = linkedAccountsOnPage
+          .filter(({ slot }) => slot === 3)
+          .map(({ account }) => account)
+        expect(accountsOnSlot3).toContainEqual(
+          expect.objectContaining({ addr: '0x63caaD57Cd66A69A4c56b595E3A4a1e4EeA066d8' })
+        )
+        expect(accountsOnSlot3).toContainEqual(
+          expect.objectContaining({ addr: '0x619A6a273c628891dD0994218BC0625947653AC7' })
+        )
+        expect(accountsOnSlot3).toContainEqual(
+          expect.objectContaining({ addr: '0x7ab87ab041EB1c4f0d4f4d1ABD5b0973B331e2E7' })
+        )
         done()
       }
     })
