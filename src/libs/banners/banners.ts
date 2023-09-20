@@ -86,7 +86,7 @@ export const getPendingAccountOpBannersForEOA = ({
   })
 
   const numberOfPendingRequest = pendingUserRequests.length - 1
-  if (!numberOfPendingRequest) return []
+  if (numberOfPendingRequest <= 0) return []
 
   return [
     {
