@@ -4,7 +4,6 @@ pragma solidity 0.8.19;
 import './AmbireAccount.sol';
 import './ExternalSigValidator.sol';
 import './libs/erc4337/IPaymaster.sol';
-import 'hardhat/console.sol';
 
 contract AmbirePaymaster is IPaymaster {
 	address immutable public relayer;
