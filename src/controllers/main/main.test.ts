@@ -67,7 +67,6 @@ describe('Main Controller ', () => {
       fetch,
       relayerUrl,
       keystoreSigners: { internal: KeystoreSigner },
-      onOpenUserRequest: () => {},
       onResolveDappRequest: () => {},
       onRejectDappRequest: () => {},
       onUpdateDappSelectedAccount: () => {}
@@ -155,7 +154,6 @@ describe('Main Controller ', () => {
       fetch,
       relayerUrl,
       keystoreSigners: { internal: KeystoreSigner },
-      onOpenUserRequest: () => {},
       onResolveDappRequest: () => {},
       onRejectDappRequest: () => {},
       onUpdateDappSelectedAccount: () => {}
