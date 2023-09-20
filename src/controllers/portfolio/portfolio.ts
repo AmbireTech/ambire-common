@@ -41,6 +41,7 @@ export class PortfolioController extends EventEmitter {
 
   async getAdditionalPortfolio(accountId: AccountId) {
     if (!this.latest[accountId]) this.latest[accountId] = {}
+    const start = Date.now()
 
     const accountState = this.latest[accountId]
     if (!accountState?.gasTank) accountState.gasTank = { isReady: false, isLoading: true }
@@ -62,6 +63,7 @@ export class PortfolioController extends EventEmitter {
         isLoading: false,
         result: {
           ...res.data.rewards,
+          updateStarted: start,
           tokens: [
             res.data.rewards.xWalletClaimableBalance || [],
             res.data.rewards.walletClaimableBalance || []
@@ -87,6 +89,7 @@ export class PortfolioController extends EventEmitter {
         isReady: true,
         isLoading: false,
         result: {
+          updateStarted: start,
           tokens: res.data.gasTank.balance,
           availableGasTankAssets: res.data.gasTank.availableGasTankAssets,
           total: res.data.gasTank.balance
