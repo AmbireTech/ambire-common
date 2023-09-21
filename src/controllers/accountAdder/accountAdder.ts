@@ -32,7 +32,7 @@ export class AccountAdderController extends EventEmitter {
 
   storage: Storage
 
-  #keyIterator?: KeyIterator
+  #keyIterator?: KeyIterator | null
 
   // optional because there is default derivationPath for each keyIterator
   derivationPath?: string
@@ -168,7 +168,7 @@ export class AccountAdderController extends EventEmitter {
     pageSize,
     derivationPath
   }: {
-    keyIterator: KeyIterator
+    keyIterator: KeyIterator | null
     preselectedAccounts: Account[]
     page?: number
     pageSize?: number
@@ -185,7 +185,7 @@ export class AccountAdderController extends EventEmitter {
   }
 
   reset() {
-    this.#keyIterator = undefined
+    this.#keyIterator = null
     this.preselectedAccounts = []
     this.selectedAccounts = []
     this.page = INITIAL_PAGE_INDEX
