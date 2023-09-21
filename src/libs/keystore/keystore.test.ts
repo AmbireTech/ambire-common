@@ -113,7 +113,7 @@ describe('Keystore', () => {
     await keystore.addKeys([{ privateKey: privKey, label: 'test key' }])
 
     const keys = await keystore.getKeys()
-    expect(keys).toContainEqual(expect.objectContaining({ id: keyPublicAddress }))
+    expect(keys).toContainEqual(expect.objectContaining({ addr: keyPublicAddress }))
   })
 
   test('should not add twice internal key that is already added', async () => {
@@ -141,8 +141,8 @@ describe('Keystore', () => {
 
     const keys = await keystore.getKeys()
     const newKeys = keys
-      .map(({ id }) => id)
-      .filter((id) => [keyPublicAddress, anotherPrivateKeyPublicAddress].includes(id))
+      .map(({ addr }) => addr)
+      .filter((addr) => [keyPublicAddress, anotherPrivateKeyPublicAddress].includes(addr))
 
     expect(newKeys).toHaveLength(2)
   })
@@ -155,7 +155,7 @@ describe('Keystore', () => {
     ])
 
     const keys = await keystore.getKeys()
-    expect(keys).toContainEqual(expect.objectContaining({ id: publicAddress }))
+    expect(keys).toContainEqual(expect.objectContaining({ addr: publicAddress }))
   })
 
   test('should not add twice external key that is already added', async () => {
@@ -189,8 +189,8 @@ describe('Keystore', () => {
 
     const keys = await keystore.getKeys()
     const newKeys = keys
-      .map(({ id }) => id)
-      .filter((id) => [publicAddress, anotherAddressNotAddedYet].includes(id))
+      .map(({ addr }) => addr)
+      .filter((addr) => [publicAddress, anotherAddressNotAddedYet].includes(addr))
 
     expect(newKeys).toHaveLength(2)
   })
