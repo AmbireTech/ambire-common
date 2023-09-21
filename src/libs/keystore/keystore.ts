@@ -305,7 +305,6 @@ export class Keystore {
     // Set up the cipher
     const counter = new aes.Counter(this.#mainKey.iv)
     const aesCtr = new aes.ModeOfOperation.ctr(this.#mainKey.key, counter)
-
     keys.push({
       id: wallet.address,
       type: 'internal',

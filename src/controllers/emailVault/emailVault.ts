@@ -442,6 +442,7 @@ export class EmailVaultController extends EventEmitter {
         // eslint-disable-next-line no-await-in-loop
         const cloudOperations = (await this.#emailVault.getEmailVaultInfo(email, authKey))
           ?.operations
+        if (!cloudOperations) this.emailVaultStates.errors?.push(new Error('No keys to sync'))
 
         fulfilled = !!cloudOperations
           ?.filter((op) => requestedKeys.includes(op.key))
@@ -450,6 +451,13 @@ export class EmailVaultController extends EventEmitter {
 
         if (fulfilled) {
           // @TODO actually add them to the keystore
+          for (let i = 0; i < cloudOperations!.length; i++) {
+            const op = cloudOperations![i]
+            const { privateKey, label } = JSON.parse(op?.value || '{}')
+            if (op.requestType === 'requestKeySync') {
+              await this.#keyStore.importKeyWithPublicKeyEncryption(privateKey, label)
+            }
+          }
           this.emailVaultStates.email[email].operations = cloudOperations!
           this.emitUpdate()
           return
@@ -464,16 +472,22 @@ export class EmailVaultController extends EventEmitter {
   async fulfillSyncRequests(email: string) {
     await this.getEmailVaultInfo(email)
     const operations = this.emailVaultStates.email[email].operations
+    const storedKeys = await this.#keyStore.getKeys()
     const key = (await this.#getMagicLinkKey(email))?.key || (await this.#getSessionKey(email))
     if (key) {
       const newOperations: Operation[] = await Promise.all(
         operations.map(async (op): Promise<Operation> => {
           if (op.requestType === 'requestKeySync') {
+            const label = storedKeys.find((k) => k.id === op.key)?.label
             return {
               ...op,
-              value: JSON.stringify(
-                await this.#keyStore.exportKeyWithPublicKeyEncryption(op.key, op.requester)
-              )
+              value: JSON.stringify({
+                label,
+                privateKey: await this.#keyStore.exportKeyWithPublicKeyEncryption(
+                  op.key,
+                  op.requester
+                )
+              })
             }
           }
           return op
