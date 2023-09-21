@@ -27,7 +27,6 @@ let storage: Storage
 const relayerUrl: string = 'http://localhost:1934'
 let keystore: Keystore
 let email: string
-
 describe('happy cases', () => {
   beforeEach(() => {
     email = getRandomEmail()
@@ -100,5 +99,57 @@ describe('happy cases', () => {
     const keystoreSecrets = await keystore.getMainKeyEncryptedWithSecrets()
     expect(keystoreSecrets.length).toBe(1)
     expect(keystoreSecrets[0].id).toBe(keystoreUid)
+  })
+  test('request key sync', async () => {
+    const [storage2, keystore2] = [produceMemoryStore(), new Keystore(produceMemoryStore(), {})]
+    const keys = [
+      {
+        address: '0xDba1BA86e823FB82ee6181af6c32811000Ea7139',
+        privateKey: '37f5be94ab09ab022f088f02049e3accfe5e451b9a16f0f51da9586244cd5e76'
+      },
+      {
+        address: '0x4076170D9fc785a31452cC5b544B43b3bf5f97E2',
+        privateKey: '75331017632eba0405f640655109a5233ac11714577ce95badab22fb63ce6d83'
+      }
+    ]
+    // ev 1
+    const ev = new EmailVaultController(storage, fetch, relayerUrl, keystore)
+    await ev.login(email)
+    // used to add keystore uid
+    await keystore.addSecret('smth', 'secret')
+    await keystore.unlockWithSecret('smth', 'secret')
+    await keystore.addKey(keys[0].privateKey, keys[0].address)
+    await keystore.addKey(keys[1].privateKey, keys[1].address)
+
+    // ev 2
+    const ev2 = new EmailVaultController(storage2, fetch, relayerUrl, keystore2)
+    await ev2.login(email)
+    await keystore2.addSecret('smth2', 'secret2')
+    await keystore2.unlockWithSecret('smth2', 'secret2')
+    ev2.onUpdate(async () => {
+      if (ev2.emailVaultStates.email[email].operations[0].id) {
+        await ev.fulfillSyncRequests(email)
+      }
+    })
+    await ev2.requestKeysSync(
+      email,
+      keys.map((k) => k.address)
+    )
+    expect(JSON.parse(ev2.emailVaultStates.email[email].operations[0].value || '{}')).toMatchObject(
+      {
+        iv: expect.anything(),
+        ephemPublicKey: expect.anything(),
+        ciphertext: expect.anything(),
+        mac: expect.anything()
+      }
+    )
+    expect(JSON.parse(ev2.emailVaultStates.email[email].operations[1].value || '{}')).toMatchObject(
+      {
+        iv: expect.anything(),
+        ephemPublicKey: expect.anything(),
+        ciphertext: expect.anything(),
+        mac: expect.anything()
+      }
+    )
   })
 })
