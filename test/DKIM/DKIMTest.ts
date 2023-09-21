@@ -48,7 +48,7 @@ describe('DKIM Prep-up', function () {
 })
 
 describe('DKIM sigMode Both', function () {
-  it('successfully deploys the ambire account', async function () {
+  before('successfully deploys the ambire account', async function () {
     const [relayer] = await ethers.getSigners()
     const gmail = await readFile(path.join(emailsPath, 'sigMode0.eml'), {
       encoding: 'ascii'
@@ -174,7 +174,7 @@ describe('DKIM sigMode Both', function () {
     await expect(account.execute(txns, finalSig))
       .to.be.revertedWith('account does not allow unknown selectors')
   })
-  it('should revert if there is transaction mendling - more txns; wrong new signer', async function () {
+  it('should revert if there is transaction mendling - more txns wrong new signer', async function () {
     const [relayer, newSigner] = await ethers.getSigners()
     const gmail = await readFile(path.join(emailsPath, 'sigMode0.eml'), {
       encoding: 'ascii'
@@ -481,8 +481,8 @@ describe('DKIM sigMode OnlySecond', function () {
       ethers.toBeHex(2, 1),
       [
         '',
-        ethers.toBeHex(0, 1),
-        ethers.toBeHex(0, 1),
+        ethers.toUtf8Bytes(''),
+        ethers.toUtf8Bytes(''),
       ],
       '',
       newSigner.address,
@@ -568,8 +568,8 @@ describe('DKIM sigMode OnlySecond', function () {
       ethers.toBeHex(2, 1),
       [
         '',
-        ethers.toBeHex(0, 1),
-        ethers.toBeHex(0, 1),
+        ethers.toUtf8Bytes(''),
+        ethers.toUtf8Bytes(''),
       ],
       '',
       newSigner.address,
@@ -605,8 +605,8 @@ describe('DKIM sigMode OnlySecond', function () {
       ethers.toBeHex(1, 1),
       [
         '',
-        ethers.toBeHex(0, 1),
-        ethers.toBeHex(0, 1),
+        ethers.toUtf8Bytes(''),
+        ethers.toUtf8Bytes(''),
       ],
       '',
       newSigner.address,
@@ -654,7 +654,7 @@ describe('DKIM sigMode Both with acceptUnknownSelectors true', function () {
         ethers.hexlify(ethers.toBeHex(parsedContents[0].exponent)),
       ]
     ]
-    const waitTimestamps = [0, 0, 120];
+    const waitTimestamps = [0, 0, 120]
     dkimRecoveryForTesting = await testContractFactory.deploy(keys, waitTimestamps, dnsSecAddr, signer.address, signer.address)
     expect(await dkimRecoveryForTesting.getAddress()).to.not.be.null
   })
@@ -822,11 +822,11 @@ describe('DKIM sigMode Both with acceptUnknownSelectors true', function () {
         ethers.hexlify(ethers.toBeHex(parsedContents[0].exponent)),
       ]
     ]))
-    const onchainKey = await dkimRecoveryForTesting.dkimKeys(dkimKey);
+    const onchainKey = await dkimRecoveryForTesting.dkimKeys(dkimKey)
     expect(onchainKey[0]).to.be.true
 
     await dkimRecoveryForTesting.removeDKIMKey(dkimKey)
-    const removedKey = await dkimRecoveryForTesting.dkimKeys(dkimKey);
+    const removedKey = await dkimRecoveryForTesting.dkimKeys(dkimKey)
     expect(removedKey[0]).to.be.true
     expect(removedKey[3]).to.not.equal(0)
   })
@@ -1147,7 +1147,7 @@ describe('DKIM sigMode Both with changed emailTo', function () {
 
 describe('DKIM sigMode OnlySecond with a timelock of 2 minutes', function () {
 
-  let secondSigReuse: any;
+  let secondSigReuse: any
 
   it('successfully deploys the ambire account', async function () {
     const [relayer] = await ethers.getSigners()
@@ -1196,8 +1196,8 @@ describe('DKIM sigMode OnlySecond with a timelock of 2 minutes', function () {
       ethers.toBeHex(2, 1),
       [
         '',
-        ethers.toBeHex(0, 1),
-        ethers.toBeHex(0, 1),
+        ethers.toUtf8Bytes(''),
+        ethers.toUtf8Bytes(''),
       ],
       '',
       newSigner.address,
@@ -1234,8 +1234,7 @@ describe('DKIM sigMode OnlySecond with a timelock of 2 minutes', function () {
     await expect(account.execute(txns, finalSig))
       .to.be.revertedWith('timelock: not ready yet')
   })
-
-  it('??? is this okay??? it changes the SignatureMeta key and reuses the signature to set the same timelock', async function () {
+  it('should revert if the canonized headers change', async function () {
     const [relayer, newSigner] = await ethers.getSigners()
     const gmail = await readFile(path.join(emailsPath, 'sigMode2.eml'), {
       encoding: 'ascii'
@@ -1255,8 +1254,45 @@ describe('DKIM sigMode OnlySecond with a timelock of 2 minutes', function () {
       ethers.toBeHex(2, 1),
       [
         '',
-        ethers.toBeHex(1, 1),
-        ethers.toBeHex(0, 1),
+        ethers.toUtf8Bytes(''),
+        ethers.toUtf8Bytes(''),
+      ],
+      'a', // we mark the change here
+      newSigner.address,
+      ethers.toBeHex(1, 32)
+    ]
+    const innerSig = abiCoder.encode([sigMetaTuple, 'bytes', 'bytes'], [
+      sigMetaValues,
+      ethers.toBeHex(0, 1),
+      secondSigReuse
+    ])
+    const sig = abiCoder.encode(['address', 'address', 'bytes', 'bytes'], [signerKey, validatorAddr, validatorData, innerSig])
+    const finalSig = wrapExternallyValidated(sig)    
+    await expect(account.execute(txns, finalSig))
+      .to.be.revertedWith('sigMeta.canonizedHeaders should be empty when SigMode is OnlySecond')
+  })
+  it('should revert if the dkim key changes', async function () {
+    const [relayer, newSigner] = await ethers.getSigners()
+    const gmail = await readFile(path.join(emailsPath, 'sigMode2.eml'), {
+      encoding: 'ascii'
+    })
+    const parsedContents: any = await parseEmail(gmail)
+    const validatorData = getDKIMValidatorData(parsedContents, relayer, {
+      acceptEmptyDKIMSig: true,
+      onlyOneSigTimelock: 120
+    })
+    const validatorAddr = await dkimRecovery.getAddress()
+    const {signerKey} = getSignerKey(validatorAddr, validatorData)
+
+    const txns = [getPriviledgeTxn(ambireAccountAddress, newSigner.address, true)]
+
+    const sigMetaTuple = 'tuple(uint8, tuple(string, bytes, bytes), string, address, bytes32)'
+    const sigMetaValues = [
+      ethers.toBeHex(2, 1),
+      [
+        '',
+        ethers.toUtf8Bytes('a'), // we mark the change here
+        ethers.toUtf8Bytes(''),
       ],
       '',
       newSigner.address,
@@ -1268,30 +1304,9 @@ describe('DKIM sigMode OnlySecond with a timelock of 2 minutes', function () {
       secondSigReuse
     ])
     const sig = abiCoder.encode(['address', 'address', 'bytes', 'bytes'], [signerKey, validatorAddr, validatorData, innerSig])
-    const finalSig = wrapExternallyValidated(sig)
-    await account.execute(txns, finalSig)
-
-    // expect the txn to NOT have been executed
-    const hasPriv = await account.privileges(newSigner.address)
-    expect(hasPriv).to.equal(ethers.toBeHex(0, 32))
-
-    // expect recovery to not have been marked as complete
-    const identifier = ethers.keccak256(abiCoder.encode(['address', 'bytes', sigMetaTuple], [
-        ambireAccountAddress,
-        validatorData,
-        sigMetaValues
-    ]))
-    const recoveryAssigned = await dkimRecovery.recoveries(identifier)
-    expect(recoveryAssigned).to.be.false
-
-    // expect a timelock to have been scheduled
-    const timelock = await dkimRecovery.timelocks(identifier)
-    expect(timelock[0]).to.be.false
-    expect(timelock[1]).to.not.equal(0)
-
-    // 2 minutes timelock
+    const finalSig = wrapExternallyValidated(sig)    
     await expect(account.execute(txns, finalSig))
-      .to.be.revertedWith('timelock: not ready yet')
+      .to.be.revertedWith('sigMeta.key should be empty when SigMode is OnlySecond')
   })
 
   it('it should revert with second key validation failed if you try to reuse the sig but set a new address or new privs', async function () {
@@ -1313,8 +1328,8 @@ describe('DKIM sigMode OnlySecond with a timelock of 2 minutes', function () {
       ethers.toBeHex(2, 1),
       [
         '',
-        ethers.toBeHex(1, 1),
-        ethers.toBeHex(0, 1),
+        ethers.toUtf8Bytes(''),
+        ethers.toUtf8Bytes(''),
       ],
       '',
       hacker.address,
@@ -1336,8 +1351,8 @@ describe('DKIM sigMode OnlySecond with a timelock of 2 minutes', function () {
       ethers.toBeHex(2, 1),
       [
         '',
-        ethers.toBeHex(1, 1),
-        ethers.toBeHex(0, 1),
+        ethers.toUtf8Bytes(''),
+        ethers.toUtf8Bytes(''),
       ],
       '',
       newSigner.address,
@@ -1352,5 +1367,66 @@ describe('DKIM sigMode OnlySecond with a timelock of 2 minutes', function () {
     const finalBrickSig = wrapExternallyValidated(brickSig)
     await expect(account.execute(brickTxn, finalBrickSig))
       .to.be.revertedWith('second key validation failed')
+  })
+})
+
+describe('Front running', function() {
+  before('successfully deploys the ambire account', async function () {
+    const [relayer] = await ethers.getSigners()
+    const gmail = await readFile(path.join(emailsPath, 'sigMode0.eml'), {
+      encoding: 'ascii'
+    })
+    const parsedContents: any = await parseEmail(gmail)
+    const validatorData = getDKIMValidatorData(parsedContents, relayer)
+    const {signerKey, hash} = getSignerKey(await dkimRecovery.getAddress(), validatorData)
+    const { ambireAccount, ambireAccountAddress: addr } = await deployAmbireAccountHardhatNetwork([
+      { addr: signerKey, hash: hash }
+    ])
+    ambireAccountAddress = addr
+    account = ambireAccount
+  })
+  it("should revert if someone tries to front run the transaction via the dkimRecovery contract", async function () {
+    const [relayer, newSigner] = await ethers.getSigners()
+    const gmail = await readFile(path.join(emailsPath, "sigMode0.eml"), {
+      encoding: "ascii",
+    })
+    const parsedContents: any = await parseEmail(gmail)
+    const validatorData = getDKIMValidatorData(parsedContents, relayer)
+    const dkimSig = parsedContents[0].solidity.signature
+
+    const txns = [
+      getPriviledgeTxn(ambireAccountAddress, newSigner.address, true),
+    ]
+    const msgHash = ethers.keccak256(
+      abiCoder.encode(
+        ["address", "tuple(address, uint, bytes)[]"],
+        [ambireAccountAddress, txns]
+      )
+    )
+    const msg = ethers.getBytes(msgHash)
+    const secondSig = wrapEthSign(await relayer.signMessage(msg))
+    const sigMetaTuple =
+      "tuple(uint8, tuple(string, bytes, bytes), string, address, bytes32)"
+    const sigMetaValues = [
+      ethers.toBeHex(0, 1),
+      [
+        `${parsedContents[0].selector}._domainkey.gmail.com`,
+        ethers.hexlify(parsedContents[0].modulus),
+        ethers.hexlify(ethers.toBeHex(parsedContents[0].exponent)),
+      ],
+      parsedContents[0].processedHeader,
+      newSigner.address,
+      ethers.toBeHex(1, 32),
+    ]
+    const innerSig = abiCoder.encode(
+      [sigMetaTuple, "bytes", "bytes"],
+      [sigMetaValues, dkimSig, secondSig]
+    )
+
+    await expect(
+      dkimRecovery
+      .connect((await ethers.getSigners())[2])
+      .validateSig(validatorData, innerSig, 0, txns)
+    ).to.be.revertedWith('call "to" must be the ambire account addr')
   })
 })

@@ -26,7 +26,6 @@ contract RecoverySigValidator is ExternalSigValidator {
   }
 
   function validateSig(
-    address accountAddr,
     bytes calldata data,
     bytes calldata sig,
     uint256 nonce,
@@ -35,7 +34,7 @@ contract RecoverySigValidator is ExternalSigValidator {
     (RecoveryInfo memory recoveryInfo) = abi.decode(data, (RecoveryInfo));
     (bytes32 cancellationHash, bytes memory innerSig) = abi.decode(sig, (bytes32, bytes));
 
-    bytes32 hash = keccak256(abi.encode(accountAddr, block.chainid, nonce, calls));
+    bytes32 hash = keccak256(abi.encode(msg.sender, block.chainid, nonce, calls));
     uint256 scheduled = scheduledRecoveries[hash];
 
     if (cancellationHash != bytes32(0) && scheduled > 0) {

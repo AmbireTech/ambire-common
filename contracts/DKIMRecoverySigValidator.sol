@@ -125,9 +125,8 @@ contract DKIMRecoverySigValidator is ExternalSigValidator {
   /**
    * @notice  Validates a DKIM sig and a secondaryKey sig to perform a recovery.
    * @dev     Please read the contracts' spec for more @dev information.
-   * @param   accountAddr  The AmbireAccount.sol address
-   * @param   data  The AccInfo data that has privileges for the accountAddr:
-   * AmbireAccount.privileges[hash] == keccak256(abi.encode(accountAddr, data))
+   * @param   data  The AccInfo data that has privileges for the msg.sender:
+   * AmbireAccount.privileges[hash] == keccak256(abi.encode(msg.sender, data))
    * @param   sig  abi.decode(SignatureMeta, dkimSig, secondSig)
    * - SignatureMeta describes the type of request that's been made. E.g.
    * SignatureMeta.mode can be Both and that means we expect a DKIM and a secondKey signature
@@ -136,7 +135,6 @@ contract DKIMRecoverySigValidator is ExternalSigValidator {
    * @return  bool  should execution of the passed calls proceed or not
    */
   function validateSig(
-    address accountAddr,
     bytes calldata data,
     bytes calldata sig,
     uint256,
@@ -148,14 +146,14 @@ contract DKIMRecoverySigValidator is ExternalSigValidator {
       sig,
       (SignatureMeta, bytes, bytes)
     );
-    bytes32 identifier = keccak256(abi.encode(accountAddr, data, sigMeta));
+    bytes32 identifier = keccak256(abi.encode(msg.sender, data, sigMeta));
     require(!recoveries[identifier], 'recovery already done');
 
     // Validate the calls: we only allow setAddrPrivilege for the pre-set newAddressToSet and newPrivilegeValue
     require(calls.length == 1, 'calls length must be 1');
     Transaction memory txn = calls[0];
     require(txn.value == 0, 'call value must be 0');
-    require(txn.to == accountAddr, 'call "to" must be the ambire account addr');
+    require(txn.to == msg.sender, 'call "to" must be the ambire account addr');
     require(
       keccak256(txn.data) ==
         keccak256(
@@ -219,10 +217,13 @@ contract DKIMRecoverySigValidator is ExternalSigValidator {
       );
     }
 
-    bytes32 hashToSign = keccak256(abi.encode(address(accountAddr), calls));
+    bytes32 hashToSign = keccak256(abi.encode(address(msg.sender), calls));
     if (mode == SigMode.Both || mode == SigMode.OnlySecond) {
-      if (mode == SigMode.OnlySecond)
+      if (mode == SigMode.OnlySecond) {
         require(accInfo.acceptEmptyDKIMSig, 'account disallows OnlySecond');
+        require(keccak256(bytes(sigMeta.canonizedHeaders)) == keccak256(bytes('')), 'sigMeta.canonizedHeaders should be empty when SigMode is OnlySecond');
+        require(keccak256(abi.encode(sigMeta.key)) == keccak256(abi.encode(DKIMKey('', bytes(''), bytes('')))), 'sigMeta.key should be empty when SigMode is OnlySecond');
+      }
 
       require(
         SignatureValidator.recoverAddrImpl(hashToSign, secondSig, true) == accInfo.secondaryKey,
@@ -238,7 +239,7 @@ contract DKIMRecoverySigValidator is ExternalSigValidator {
     }
 
     recoveries[identifier] = true;
-    emit RecoveryExecuted(accountAddr, identifier);
+    emit RecoveryExecuted(msg.sender, identifier);
     return true;
   }
 

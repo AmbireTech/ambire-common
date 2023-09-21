@@ -177,7 +177,7 @@ contract AmbireAccount {
 			// the return value just indicates whether we want to execute the current calls
 			// @TODO what about reentrancy for externally validated signatures
 			if (
-				!ExternalSigValidator(validatorAddr).validateSig(address(this), validatorData, innerSig, currentNonce, calls)
+				!ExternalSigValidator(validatorAddr).validateSig(validatorData, innerSig, currentNonce, calls)
 			) {
 				nonce = currentNonce;
 				return;

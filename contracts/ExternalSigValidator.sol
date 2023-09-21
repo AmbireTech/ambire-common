@@ -19,7 +19,6 @@ import './libs/Transaction.sol';
  */
 interface ExternalSigValidator {
 	function validateSig(
-		address accountAddr,
 		bytes calldata data,
 		bytes calldata sig,
 		uint256 nonce,
