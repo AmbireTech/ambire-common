@@ -2,9 +2,9 @@ import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { getAccountDeployParams } from '../account/account'
 import { callToTuple } from '../accountOp/accountOp'
 import { Deployless, parseErr } from '../deployless/deployless'
+import { getFlags } from './helpers'
 import { Collectible, CollectionResult, LimitsOptions, TokenResult } from './interfaces'
 import { GetOptions } from './portfolio'
-import { setFlags } from './portfolioView'
 
 // 0x00..01 is the address from which simulation signatures are valid
 const DEPLOYLESS_SIMULATION_FROM = '0x0000000000000000000000000000000000000001'
@@ -112,7 +112,7 @@ export async function getTokens(
           ? network.nativeAssetSymbol
           : token.symbol,
       address,
-      ...setFlags({}, network.id, network.id, address)
+      flags: getFlags({}, network.id, network.id, address)
     } as TokenResult)
   const deploylessOpts = { blockTag: opts.blockTag, from: DEPLOYLESS_SIMULATION_FROM }
   if (!opts.simulation) {

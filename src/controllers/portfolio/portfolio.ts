@@ -5,6 +5,7 @@ import { Account, AccountId } from '../../interfaces/account'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { Storage } from '../../interfaces/storage'
 import { AccountOp, isAccountOpsIntentEqual } from '../../libs/accountOp/accountOp'
+import { getFlags } from '../../libs/portfolio/helpers'
 import {
   AccountState,
   AdditionalAccountState,
@@ -13,7 +14,6 @@ import {
   PortfolioGetResult
 } from '../../libs/portfolio/interfaces'
 import { GetOptions, Portfolio } from '../../libs/portfolio/portfolio'
-import { setFlags } from '../../libs/portfolio/portfolioView'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import EventEmitter from '../eventEmitter'
 
@@ -50,10 +50,7 @@ export class PortfolioController extends EventEmitter {
     if (!accountState?.gasTank) accountState.gasTank = { isReady: false, isLoading: true }
     if (!accountState?.rewards) accountState.rewards = { isReady: false, isLoading: true }
 
-    accountState.rewards.isReady = false
     accountState.rewards.isLoading = true
-
-    accountState.gasTank.isReady = false
     accountState.gasTank.isLoading = true
     this.emitUpdate()
 
@@ -74,7 +71,7 @@ export class PortfolioController extends EventEmitter {
             .flat()
             .map((t: any) => ({
               ...t,
-              ...setFlags(res.data.rewards, 'rewards', t.networkId, t.address)
+              flags: getFlags(res.data.rewards, 'rewards', t.networkId, t.address)
             })),
           total: [
             res.data.rewards.xWalletClaimableBalance || [],
@@ -101,7 +98,7 @@ export class PortfolioController extends EventEmitter {
           tokens: res.data.gasTank.balance.length
             ? res.data.gasTank.balance.map((t: any) => ({
                 ...t,
-                ...setFlags(res.data, 'gasTank', t.networkId, t.address)
+                flags: getFlags(res.data, 'gasTank', t.networkId, t.address)
               }))
             : [],
           total: res.data.gasTank.balance
@@ -120,7 +117,7 @@ export class PortfolioController extends EventEmitter {
       this.emitUpdate()
       return
     } catch (e: any) {
-      console.log(e)
+      console.error(e)
       if (!accountState?.rewards) accountState.rewards = { isReady: false, isLoading: false }
       if (!accountState?.gasTank) accountState.gasTank = { isReady: false, isLoading: false }
 

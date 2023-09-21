@@ -26,12 +26,12 @@ export interface TokenResult {
   amountPostSimulation?: bigint
   decimals: number
   priceIn: Price[]
-  onGasTank: boolean
-  isRewardsToken: boolean
-  vesting: boolean
-  rewards: boolean
-  canTopUpGasTank: boolean
-  isFeeToken: boolean
+  flags: {
+    onGasTank: boolean
+    rewardsType: string | null
+    canTopUpGasTank: boolean
+    isFeeToken: boolean
+  }
 }
 
 export interface CollectionResult extends TokenResult {

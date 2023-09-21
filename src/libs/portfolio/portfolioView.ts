@@ -1,6 +1,3 @@
-import feeTokens from '../../consts/feeTokens'
-import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
-import { NetworkId } from '../../interfaces/networkDescriptor'
 import {
   AccountState,
   AdditionalAccountState,
@@ -16,37 +13,6 @@ interface AccountPortfolio {
   collections: CollectionResultInterface[]
   totalAmount: number
   isAllReady: boolean
-}
-
-export const setFlags = (
-  networkData: any,
-  networkId: NetworkId,
-  tokenNetwork: NetworkId,
-  address: string
-) => {
-  const onGasTank = networkId === 'gasTank'
-  const isRewardsToken = networkId === 'rewards'
-  const vesting = networkData?.xWalletClaimableBalance?.address === address
-  const rewards = networkData?.walletClaimableBalance?.address === address
-  const canTopUpGasTank = gasTankFeeTokens.some(
-    (t) =>
-      t.address === address &&
-      (onGasTank || isRewardsToken ? t.networkId === tokenNetwork : t.networkId === networkId)
-  )
-  const isFeeToken = feeTokens.some(
-    (t) =>
-      t.address === address &&
-      (onGasTank || isRewardsToken ? t.networkId === tokenNetwork : t.networkId === networkId)
-  )
-
-  return {
-    onGasTank,
-    isRewardsToken,
-    vesting,
-    rewards,
-    canTopUpGasTank,
-    isFeeToken
-  }
 }
 
 export function calculateAccountPortfolio(
