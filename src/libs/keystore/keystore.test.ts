@@ -142,9 +142,10 @@ describe('Keystore', () => {
     ])
 
     const keys = await keystore.getKeys()
-    const newKeys = keys
-      .map(({ addr }) => addr)
-      .filter((addr) => [keyPublicAddress, anotherPrivateKeyPublicAddress].includes(addr))
+    const newKeys = keys.filter(
+      (x) =>
+        [anotherPrivateKeyPublicAddress, keyPublicAddress].includes(x.addr) && x.type === 'internal'
+    )
 
     expect(newKeys).toHaveLength(2)
   })
