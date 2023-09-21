@@ -18,6 +18,7 @@ let dnsSecAddr: any
 let rsaSha256DKIMValidatorAddr: any
 
 const accInfoTuple = 'tuple(string, string, string, bytes, bytes, address, bool, uint32, uint32, bool, bool, uint32)';
+const sigMetaTuple = 'tuple(uint8, tuple(string, bytes, bytes), string, address, bytes32)'
 
 describe('DKIM Prep-up', function () {
   it('successfully deploy the DKIM Recovery', async function () {
@@ -77,15 +78,9 @@ describe('DKIM sigMode Both', function () {
     const dkimSig = parsedContents[0].solidity.signature
 
     const txns = [getPriviledgeTxn(ambireAccountAddress, newSigner.address, true)]
-    const msgHash = ethers.keccak256(
-      abiCoder.encode(
-        ['address', 'tuple(address, uint, bytes)[]'],
-        [ambireAccountAddress, txns]
-      )
-    )
-    const msg = ethers.getBytes(msgHash)
-    const secondSig = wrapEthSign(await relayer.signMessage(msg))
-    const sigMetaTuple = 'tuple(uint8, tuple(string, bytes, bytes), string, address, bytes32)'
+    const identifierData = getDKIMValidatorData(parsedContents, relayer, {
+      plain: true
+    })
     const sigMetaValues = [
       ethers.toBeHex(0, 1),
       [
@@ -97,6 +92,13 @@ describe('DKIM sigMode Both', function () {
       newSigner.address,
       ethers.toBeHex(1, 32)
     ]
+    const identifier = ethers.keccak256(abiCoder.encode(['address', accInfoTuple, sigMetaTuple], [
+        ambireAccountAddress,
+        identifierData,
+        sigMetaValues
+    ]))
+    const secondSig = wrapEthSign(await relayer.signMessage(ethers.getBytes(identifier)))
+    
     const innerSig = abiCoder.encode([sigMetaTuple, 'bytes', 'bytes'], [
       sigMetaValues,
       dkimSig,
@@ -110,14 +112,6 @@ describe('DKIM sigMode Both', function () {
     const hasPriv = await account.privileges(newSigner.address)
     expect(hasPriv).to.equal(ethers.toBeHex(1, 32))
 
-    const identifierData = getDKIMValidatorData(parsedContents, relayer, {
-      plain: true
-    })
-    const identifier = ethers.keccak256(abiCoder.encode(['address', accInfoTuple, sigMetaTuple], [
-        ambireAccountAddress,
-        identifierData,
-        sigMetaValues
-    ]))
     const recoveryAssigned = await dkimRecovery.recoveries(identifier)
     expect(recoveryAssigned).to.be.true
 
@@ -154,7 +148,6 @@ describe('DKIM sigMode Both', function () {
     const {signerKey} = getSignerKey(validatorAddr, validatorData)
 
     const txns = [getPriviledgeTxn(ambireAccountAddress, newSigner.address, true)]
-    const sigMetaTuple = 'tuple(uint8, tuple(string, bytes, bytes), string, address, bytes32)'
     const sigMetaValues = [
       ethers.toBeHex(0, 1),
       [
@@ -192,7 +185,6 @@ describe('DKIM sigMode Both', function () {
       getPriviledgeTxn(ambireAccountAddress, relayer.address, true),
       getPriviledgeTxn(ambireAccountAddress, newSigner.address, true)
     ]
-    const sigMetaTuple = 'tuple(uint8, tuple(string, bytes, bytes), string, address, bytes32)'
     const sigMetaValues = [
       ethers.toBeHex(0, 1),
       [
@@ -241,7 +233,6 @@ describe('DKIM sigMode Both', function () {
     const dkimSig = parsedContents[0].solidity.signature
 
     const txns = [getPriviledgeTxn(ambireAccountAddress, relayer.address, true)]
-    const sigMetaTuple = 'tuple(uint8, tuple(string, bytes, bytes), string, address, bytes32)'
     const sigMetaValues = [
       ethers.toBeHex(0, 1),
       [
@@ -266,8 +257,7 @@ describe('DKIM sigMode Both', function () {
 })
 
 describe('DKIM sigMode OnlyDKIM', function () {
-
-  it('successfully deploys the ambire account', async function () {
+  before('successfully deploys the ambire account', async function () {
     const [relayer] = await ethers.getSigners()
     const gmail = await readFile(path.join(emailsPath, 'sigMode1.eml'), {
       encoding: 'ascii'
@@ -283,7 +273,6 @@ describe('DKIM sigMode OnlyDKIM', function () {
     ambireAccountAddress = addr
     account = ambireAccount
   })
-
   it('should successfully schedule a timelock for the specified onlyOneSigTimelock and execute it after onlyOneSigTimelock has passed', async function () {
     const [relayer, newSigner] = await ethers.getSigners()
     const gmail = await readFile(path.join(emailsPath, 'sigMode1.eml'), {
@@ -298,7 +287,6 @@ describe('DKIM sigMode OnlyDKIM', function () {
     const dkimSig = parsedContents[0].solidity.signature
 
     const txns = [getPriviledgeTxn(ambireAccountAddress, newSigner.address, true)]
-    const sigMetaTuple = 'tuple(uint8, tuple(string, bytes, bytes), string, address, bytes32)'
     const sigMetaValues = [
       ethers.toBeHex(1, 1),
       [
@@ -374,15 +362,6 @@ describe('DKIM sigMode OnlyDKIM', function () {
     const dkimSig = parsedContents[0].solidity.signature
 
     const txns = [getPriviledgeTxn(ambireAccountAddress, newSigner.address, true)]
-    const msgHash = ethers.keccak256(
-      abiCoder.encode(
-        ['address', 'tuple(address, uint, bytes)[]'],
-        [ambireAccountAddress, txns]
-      )
-    )
-    const msg = ethers.getBytes(msgHash)
-    const secondSig = wrapEthSign(await relayer.signMessage(msg))
-    const sigMetaTuple = 'tuple(uint8, tuple(string, bytes, bytes), string, address, bytes32)'
     const sigMetaValues = [
       ethers.toBeHex(0, 1),
       [
@@ -397,7 +376,7 @@ describe('DKIM sigMode OnlyDKIM', function () {
     const innerSig = abiCoder.encode([sigMetaTuple, 'bytes', 'bytes'], [
       sigMetaValues,
       dkimSig,
-      secondSig
+      ethers.toBeHex(0, 1)
     ])
     const sig = abiCoder.encode(['address', 'address', 'bytes', 'bytes'], [signerKey, validatorAddr, validatorData, innerSig])
     const finalSig = wrapExternallyValidated(sig)
@@ -420,7 +399,6 @@ describe('DKIM sigMode OnlyDKIM', function () {
     const {signerKey} = getSignerKey(validatorAddr, validatorData)
 
     const txns = [getPriviledgeTxn(ambireAccountAddress, newSigner.address, true)]
-    const sigMetaTuple = 'tuple(uint8, tuple(string, bytes, bytes), string, address, bytes32)'
     const sigMetaValues = [
       ethers.toBeHex(2, 1),
       [
@@ -476,15 +454,7 @@ describe('DKIM sigMode OnlySecond', function () {
     const {signerKey} = getSignerKey(validatorAddr, validatorData)
 
     const txns = [getPriviledgeTxn(ambireAccountAddress, newSigner.address, true)]
-    const msgHash = ethers.keccak256(
-      abiCoder.encode(
-        ['address', 'tuple(address, uint, bytes)[]'],
-        [ambireAccountAddress, txns]
-      )
-    )
-    const msg = ethers.getBytes(msgHash)
-    const secondSig = wrapEthSign(await relayer.signMessage(msg))
-    const sigMetaTuple = 'tuple(uint8, tuple(string, bytes, bytes), string, address, bytes32)'
+    // expect recovery to not have been marked as complete
     const sigMetaValues = [
       ethers.toBeHex(2, 1),
       [
@@ -496,6 +466,16 @@ describe('DKIM sigMode OnlySecond', function () {
       newSigner.address,
       ethers.toBeHex(1, 32)
     ]
+    const identifierData = getDKIMValidatorData(parsedContents, relayer, {
+      acceptEmptyDKIMSig: true,
+      plain: true
+    })
+    const identifier = ethers.keccak256(abiCoder.encode(['address', accInfoTuple, sigMetaTuple], [
+        ambireAccountAddress,
+        identifierData,
+        sigMetaValues
+    ]))
+    const secondSig = wrapEthSign(await relayer.signMessage(ethers.getBytes(identifier)))
     const innerSig = abiCoder.encode([sigMetaTuple, 'bytes', 'bytes'], [
       sigMetaValues,
       ethers.toBeHex(0, 1),
@@ -509,16 +489,6 @@ describe('DKIM sigMode OnlySecond', function () {
     const hasPriv = await account.privileges(newSigner.address)
     expect(hasPriv).to.equal(ethers.toBeHex(0, 32))
 
-    // expect recovery to not have been marked as complete
-    const identifierData = getDKIMValidatorData(parsedContents, relayer, {
-      acceptEmptyDKIMSig: true,
-      plain: true
-    })
-    const identifier = ethers.keccak256(abiCoder.encode(['address', accInfoTuple, sigMetaTuple], [
-        ambireAccountAddress,
-        identifierData,
-        sigMetaValues
-    ]))
     const recoveryAssigned = await dkimRecovery.recoveries(identifier)
     expect(recoveryAssigned).to.be.false
 
@@ -528,7 +498,7 @@ describe('DKIM sigMode OnlySecond', function () {
     expect(timelock[1]).to.not.equal(0)
 
     // execute again, expect the txn to be executed as onlyOneSigTimelock is 0
-    const secondSig2 = wrapEthSign(await relayer.signMessage(ethers.getBytes(msgHash)))
+    const secondSig2 = wrapEthSign(await relayer.signMessage(ethers.getBytes(identifier)))
     const innerSig2 = abiCoder.encode([sigMetaTuple, 'bytes', 'bytes'], [
       sigMetaValues,
       ethers.toBeHex(0, 1),
@@ -573,9 +543,7 @@ describe('DKIM sigMode OnlySecond', function () {
         [relayer.address, txns] // here we change the address to make the hash different
       )
     )
-    const msg = ethers.getBytes(msgHash)
-    const secondSig = wrapEthSign(await relayer.signMessage(msg))
-    const sigMetaTuple = 'tuple(uint8, tuple(string, bytes, bytes), string, address, bytes32)'
+    const secondSig = wrapEthSign(await relayer.signMessage(ethers.getBytes(msgHash)))
     const sigMetaValues = [
       ethers.toBeHex(2, 1),
       [
@@ -612,7 +580,6 @@ describe('DKIM sigMode OnlySecond', function () {
     const {signerKey} = getSignerKey(validatorAddr, validatorData)
 
     const txns = [getPriviledgeTxn(ambireAccountAddress, newSigner.address, true)]
-    const sigMetaTuple = 'tuple(uint8, tuple(string, bytes, bytes), string, address, bytes32)'
     const sigMetaValues = [
       ethers.toBeHex(1, 1),
       [
@@ -702,15 +669,10 @@ describe('DKIM sigMode Both with acceptUnknownSelectors true', function () {
     const dkimSig = parsedContents[0].solidity.signature
 
     const txns = [getPriviledgeTxn(ambireAccountAddress, newSigner.address, true)]
-    const msgHash = ethers.keccak256(
-      abiCoder.encode(
-        ['address', 'tuple(address, uint, bytes)[]'],
-        [ambireAccountAddress, txns]
-      )
-    )
-    const msg = ethers.getBytes(msgHash)
-    const secondSig = wrapEthSign(await relayer.signMessage(msg))
-    const sigMetaTuple = 'tuple(uint8, tuple(string, bytes, bytes), string, address, bytes32)'
+    const identifierData = getDKIMValidatorData(parsedContents, relayer, {
+      acceptUnknownSelectors: 120,
+      plain: true
+    })
     const sigMetaValues = [
       ethers.toBeHex(0, 1),
       [
@@ -722,6 +684,12 @@ describe('DKIM sigMode Both with acceptUnknownSelectors true', function () {
       newSigner.address,
       ethers.toBeHex(1, 32)
     ]
+    const identifier = ethers.keccak256(abiCoder.encode(['address', accInfoTuple, sigMetaTuple], [
+        ambireAccountAddress,
+        identifierData,
+        sigMetaValues
+    ]))
+    const secondSig = wrapEthSign(await relayer.signMessage(ethers.getBytes(identifier)))
     const innerSig = abiCoder.encode([sigMetaTuple, 'bytes', 'bytes'], [
       sigMetaValues,
       dkimSig,
@@ -736,15 +704,6 @@ describe('DKIM sigMode Both with acceptUnknownSelectors true', function () {
     expect(hasPriv).to.equal(ethers.toBeHex(1, 32))
 
     // expect recovery to not have been marked as complete
-    const identifierData = getDKIMValidatorData(parsedContents, relayer, {
-      acceptUnknownSelectors: 120,
-      plain: true
-    })
-    const identifier = ethers.keccak256(abiCoder.encode(['address', accInfoTuple, sigMetaTuple], [
-        ambireAccountAddress,
-        identifierData,
-        sigMetaValues
-    ]))
     const recoveryAssigned = await dkimRecoveryForTesting.recoveries(identifier)
     expect(recoveryAssigned).to.be.true
 
@@ -766,7 +725,6 @@ describe('DKIM sigMode Both with acceptUnknownSelectors true', function () {
     const {signerKey} = getSignerKey(validatorAddr, validatorData)
 
     const txns = [getPriviledgeTxn(ambireAccountAddress, newSigner.address, true)]
-    const sigMetaTuple = 'tuple(uint8, tuple(string, bytes, bytes), string, address, bytes32)'
     const sigMetaValues = [
       ethers.toBeHex(0, 1),
       [
@@ -802,7 +760,6 @@ describe('DKIM sigMode Both with acceptUnknownSelectors true', function () {
     const {signerKey} = getSignerKey(validatorAddr, validatorData)
 
     const txns = [getPriviledgeTxn(ambireAccountAddress, newSigner.address, true)]
-    const sigMetaTuple = 'tuple(uint8, tuple(string, bytes, bytes), string, address, bytes32)'
     const sigMetaValues = [
       ethers.toBeHex(0, 1),
       [
@@ -888,7 +845,6 @@ describe('DKIM sigMode Both with acceptUnknownSelectors true', function () {
     const {signerKey} = getSignerKey(validatorAddr, validatorData)
 
     const txns = [getPriviledgeTxn(ambireAccountAddress, newSigner.address, true)]
-    const sigMetaTuple = 'tuple(uint8, tuple(string, bytes, bytes), string, address, bytes32)'
     const sigMetaValues = [
       ethers.toBeHex(0, 1),
       [
@@ -923,7 +879,6 @@ describe('DKIM sigMode Both with acceptUnknownSelectors true', function () {
     const {signerKey} = getSignerKey(validatorAddr, validatorData)
 
     const txns = [getPriviledgeTxn(ambireAccountAddress, newSigner.address, true)]
-    const sigMetaTuple = 'tuple(uint8, tuple(string, bytes, bytes), string, address, bytes32)'
     const sigMetaValues = [
       ethers.toBeHex(0, 1),
       [
@@ -960,7 +915,6 @@ describe('DKIM sigMode Both with acceptUnknownSelectors true', function () {
     const dkimSig = parsedContents[0].solidity.signature
 
     const txns = [getPriviledgeTxn(ambireAccountAddress, newSigner.address, true)]
-    const sigMetaTuple = 'tuple(uint8, tuple(string, bytes, bytes), string, address, bytes32)'
     const sigMetaValues = [
       ethers.toBeHex(0, 1),
       [
@@ -997,7 +951,6 @@ describe('DKIM sigMode Both with acceptUnknownSelectors true', function () {
     const dkimSig = parsedContents[0].solidity.signature
 
     const txns = [getPriviledgeTxn(ambireAccountAddress, newSigner.address, true)]
-    const sigMetaTuple = 'tuple(uint8, tuple(string, bytes, bytes), string, address, bytes32)'
     const sigMetaValues = [
       ethers.toBeHex(0, 1),
       [
@@ -1039,7 +992,6 @@ describe('DKIM sigMode Both with acceptUnknownSelectors true', function () {
     const {signerKey} = getSignerKey(validatorAddr, validatorData)
 
     const txns = [getPriviledgeTxn(ambireAccountAddress, newSigner.address, true)]
-    const sigMetaTuple = 'tuple(uint8, tuple(string, bytes, bytes), string, address, bytes32)'
     const sigMetaValues = [
       ethers.toBeHex(0, 1),
       [
@@ -1095,7 +1047,6 @@ describe('DKIM sigMode Both with changed emailFrom', function () {
     const dkimSig = parsedContents[0].solidity.signature
 
     const txns = [getPriviledgeTxn(ambireAccountAddress, newSigner.address, true)]
-    const sigMetaTuple = 'tuple(uint8, tuple(string, bytes, bytes), string, address, bytes32)'
     const sigMetaValues = [
       ethers.toBeHex(0, 1),
       [
@@ -1150,7 +1101,6 @@ describe('DKIM sigMode Both with changed emailTo', function () {
     const dkimSig = parsedContents[0].solidity.signature
 
     const txns = [getPriviledgeTxn(ambireAccountAddress, newSigner.address, true)]
-    const sigMetaTuple = 'tuple(uint8, tuple(string, bytes, bytes), string, address, bytes32)'
     const sigMetaValues = [
       ethers.toBeHex(0, 1),
       [
@@ -1216,11 +1166,11 @@ describe('DKIM sigMode OnlySecond with a timelock of 2 minutes', function () {
         [ambireAccountAddress, txns]
       )
     )
-    const msg = ethers.getBytes(msgHash)
-    const secondSig = wrapEthSign(await relayer.signMessage(msg))
-    secondSigReuse = secondSig
-
-    const sigMetaTuple = 'tuple(uint8, tuple(string, bytes, bytes), string, address, bytes32)'
+    const identifierData = getDKIMValidatorData(parsedContents, relayer, {
+      acceptEmptyDKIMSig: true,
+      onlyOneSigTimelock: 120,
+      plain: true
+    })
     const sigMetaValues = [
       ethers.toBeHex(2, 1),
       [
@@ -1232,6 +1182,13 @@ describe('DKIM sigMode OnlySecond with a timelock of 2 minutes', function () {
       newSigner.address,
       ethers.toBeHex(1, 32)
     ]
+    const identifier = ethers.keccak256(abiCoder.encode(['address', accInfoTuple, sigMetaTuple], [
+        ambireAccountAddress,
+        identifierData,
+        sigMetaValues
+    ]))
+    const secondSig = wrapEthSign(await relayer.signMessage(ethers.getBytes(identifier)))
+    secondSigReuse = secondSig
     const innerSig = abiCoder.encode([sigMetaTuple, 'bytes', 'bytes'], [
       sigMetaValues,
       ethers.toBeHex(0, 1),
@@ -1246,16 +1203,6 @@ describe('DKIM sigMode OnlySecond with a timelock of 2 minutes', function () {
     expect(hasPriv).to.equal(ethers.toBeHex(0, 32))
 
     // expect recovery to not have been marked as complete
-    const identifierData = getDKIMValidatorData(parsedContents, relayer, {
-      acceptEmptyDKIMSig: true,
-      onlyOneSigTimelock: 120,
-      plain: true
-    })
-    const identifier = ethers.keccak256(abiCoder.encode(['address', accInfoTuple, sigMetaTuple], [
-        ambireAccountAddress,
-        identifierData,
-        sigMetaValues
-    ]))
     const recoveryAssigned = await dkimRecovery.recoveries(identifier)
     expect(recoveryAssigned).to.be.false
 
@@ -1283,7 +1230,6 @@ describe('DKIM sigMode OnlySecond with a timelock of 2 minutes', function () {
 
     const txns = [getPriviledgeTxn(ambireAccountAddress, newSigner.address, true)]
 
-    const sigMetaTuple = 'tuple(uint8, tuple(string, bytes, bytes), string, address, bytes32)'
     const sigMetaValues = [
       ethers.toBeHex(2, 1),
       [
@@ -1320,7 +1266,6 @@ describe('DKIM sigMode OnlySecond with a timelock of 2 minutes', function () {
 
     const txns = [getPriviledgeTxn(ambireAccountAddress, newSigner.address, true)]
 
-    const sigMetaTuple = 'tuple(uint8, tuple(string, bytes, bytes), string, address, bytes32)'
     const sigMetaValues = [
       ethers.toBeHex(2, 1),
       [
@@ -1357,7 +1302,6 @@ describe('DKIM sigMode OnlySecond with a timelock of 2 minutes', function () {
     const {signerKey} = getSignerKey(validatorAddr, validatorData)
 
     const txns = [getPriviledgeTxn(ambireAccountAddress, hacker.address, true)]
-    const sigMetaTuple = 'tuple(uint8, tuple(string, bytes, bytes), string, address, bytes32)'
     const sigMetaValues = [
       ethers.toBeHex(2, 1),
       [
@@ -1431,16 +1375,6 @@ describe('Front running', function() {
     const txns = [
       getPriviledgeTxn(ambireAccountAddress, newSigner.address, true),
     ]
-    const msgHash = ethers.keccak256(
-      abiCoder.encode(
-        ["address", "tuple(address, uint, bytes)[]"],
-        [ambireAccountAddress, txns]
-      )
-    )
-    const msg = ethers.getBytes(msgHash)
-    const secondSig = wrapEthSign(await relayer.signMessage(msg))
-    const sigMetaTuple =
-      "tuple(uint8, tuple(string, bytes, bytes), string, address, bytes32)"
     const sigMetaValues = [
       ethers.toBeHex(0, 1),
       [
@@ -1454,7 +1388,7 @@ describe('Front running', function() {
     ]
     const innerSig = abiCoder.encode(
       [sigMetaTuple, "bytes", "bytes"],
-      [sigMetaValues, dkimSig, secondSig]
+      [sigMetaValues, dkimSig, ethers.toBeHex(0, 1)]
     )
 
     await expect(

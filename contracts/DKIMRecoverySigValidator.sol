@@ -217,7 +217,6 @@ contract DKIMRecoverySigValidator is ExternalSigValidator {
       );
     }
 
-    bytes32 hashToSign = keccak256(abi.encode(address(msg.sender), calls));
     if (mode == SigMode.Both || mode == SigMode.OnlySecond) {
       if (mode == SigMode.OnlySecond) {
         require(accInfo.acceptEmptyDKIMSig, 'account disallows OnlySecond');
@@ -226,7 +225,7 @@ contract DKIMRecoverySigValidator is ExternalSigValidator {
       }
 
       require(
-        SignatureValidator.recoverAddrImpl(hashToSign, secondSig, true) == accInfo.secondaryKey,
+        SignatureValidator.recoverAddrImpl(identifier, secondSig, true) == accInfo.secondaryKey,
         'second key validation failed'
       );
     }
@@ -418,7 +417,7 @@ contract DKIMRecoverySigValidator is ExternalSigValidator {
    * time to wait before the timelock can be executed
    * @return  shouldExecute  whether the timelock should be executed
    */
-  function checkTimelock(bytes32 identifier, uint32 time) public returns (bool shouldExecute) {
+  function checkTimelock(bytes32 identifier, uint32 time) private returns (bool shouldExecute) {
     Timelock storage timelock = timelocks[identifier];
     require(!timelock.isExecuted, 'timelock: already executed');
     if (timelock.whenReady == 0) {
