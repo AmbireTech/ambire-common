@@ -2,12 +2,13 @@ import { ethers } from 'ethers'
 
 import { Account, AccountStates } from '../../interfaces/account'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
-import { AccountOp, accountOpSignableHash } from '../../libs/accountOp/accountOp'
+import { AccountOp, accountOpSignableHash, GasFeePayment } from '../../libs/accountOp/accountOp'
 import { EstimateResult } from '../../libs/estimate/estimate'
 import { GasRecommendation } from '../../libs/gasPrice/gasPrice'
 import { Keystore } from '../../libs/keystore/keystore'
 import EventEmitter from '../eventEmitter'
 import { PortfolioController } from '../portfolio/portfolio'
+import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 
 export enum SigningStatus {
   UnableToSign = 'unable-to-sign',
@@ -64,7 +65,13 @@ export class SignAccountOpController extends EventEmitter {
   }
 
   get isInitialized(): boolean {
-    return !!(this.#accounts && this.#networks && this.#accountStates && this.accountOp)
+    return !!(
+      this.#accounts &&
+      this.#networks &&
+      this.#accountStates &&
+      this.accountOp &&
+      this.#estimation
+    )
   }
 
   get hasSelectedAccountOp() {
@@ -116,7 +123,7 @@ export class SignAccountOpController extends EventEmitter {
       // TODO: validate feeTokenAddr
       if (canSetPaidBy) {
         this.accountOp!.gasFeePayment = this.#getGasFeePayment(feeTokenAddr, this.selectedFeeSpeed)
-        this.accountOp!.gasFeePayment.paidBy = paidBy
+        this.accountOp!.gasFeePayment!.paidBy = paidBy
       }
     }
 
@@ -167,10 +174,6 @@ export class SignAccountOpController extends EventEmitter {
       this.accountOp?.gasFeePayment
     ) {
       this.status = { type: SigningStatus.ReadyToSign }
-    } else {
-      // @TODO - let's consider is this status the right one we need to set, if the above condition is not met.
-      //   imo - when we call this.update or this.updateMain, we tend to update at least 1 property, therefore inProgress sounds reasonable
-      this.status = { type: SigningStatus.InProgress }
     }
   }
 
@@ -193,26 +196,37 @@ export class SignAccountOpController extends EventEmitter {
     return account
   }
 
-  #getGasFeePayment(feeTokenAddr: string, feeSpeed: FeeSpeed) {
+  #getGasFeePayment(feeTokenAddr: string, feeSpeed: FeeSpeed): GasFeePayment {
     if (!this.isInitialized) throw new Error('signAccountOp: not initialized')
 
     const account = this.#getAccount()
-    if (!account || !account?.creation) {
-      throw new Error('EOA is not supported yet')
-      // TODO: implement for EOA and remove the !this.#account?.creation condition
-    }
-
     const result = this.#gasPrices!.find((price) => price.name === feeSpeed)
-
     // @ts-ignore
-    const price = result.gasPrice || result!.baseFeePerGas + result!.maxPriorityFeePerGas
+    const gasPrice = result.gasPrice || result!.baseFeePerGas + result!.maxPriorityFeePerGas
+    const gasLimit = this.#estimation!.gasUsed
+    const amount = gasLimit * gasPrice
+
+    // EOA
+    if (!account || !account?.creation) {
+      return {
+        paidBy: this.accountOp!.accountAddr,
+        isERC4337: false,
+        isGasTank: false,
+        inToken: '0x0000000000000000000000000000000000000000',
+        amount,
+        gasPrice,
+        gasLimit
+      }
+    }
 
     return {
       paidBy: this.accountOp!.gasFeePayment?.paidBy || this.accountOp!.accountAddr,
       isERC4337: false, // TODO: based on network settings. We should add it to gasFeePayment interface.
       isGasTank: false, // TODO: based on token network (could be gas tank network). We should add it to gasFeePayment interface.
       inToken: feeTokenAddr,
-      amount: this.#estimation!.gasUsed * price
+      amount,
+      gasPrice,
+      gasLimit
     }
   }
 
@@ -284,15 +298,53 @@ export class SignAccountOpController extends EventEmitter {
     if (!this.accountOp?.gasFeePayment) return this.#setSigningError('no gasFeePayment set')
     if (!this.readyToSign) return this.#setSigningError('not ready to sign')
 
+    const account = this.#getAccount()
+    const signer = await this.#keystore.getSigner(this.accountOp.signingKeyAddr)
+    if (!account) return this.#setSigningError('non-existent account')
+    if (!signer) return this.#setSigningError('no available signer')
+
     this.status = { type: SigningStatus.InProgress }
     this.emitUpdate()
 
-    try {
-      const signer = await this.#keystore.getSigner(this.accountOp!.signingKeyAddr)
+    const gasFeePayment = this.accountOp.gasFeePayment
 
-      this.accountOp!.signature = await signer.signMessage(
-        ethers.hexlify(accountOpSignableHash(this.accountOp!))
-      )
+    try {
+      // In case of EOA account
+      if (!account.creation) {
+        if (this.accountOp.calls.length !== 1)
+          return this.#setSigningError(
+            'tried to sign an EOA transaction with multiple or zero calls'
+          )
+        const { to, value, data } = this.accountOp.calls[0]
+        this.accountOp.signature = await signer.signRawTransaction({
+          to,
+          value,
+          data,
+          gasLimit: gasFeePayment.gasLimit,
+          gasPrice: gasFeePayment.gasPrice
+        })
+      } else if (this.accountOp.gasFeePayment.paidBy !== account.addr) {
+        // Smart account, but EOA pays the fee
+        // EOA pays for execute() - relayerless
+
+        const iface = new ethers.Interface(AmbireAccount.abi)
+
+        this.accountOp.signature = await signer.signRawTransaction({
+          to: this.accountOp.accountAddr,
+          data: iface.encodeFunctionData('execute', [
+            this.accountOp.calls,
+            await signer.signMessage(ethers.hexlify(accountOpSignableHash(this.accountOp)))
+          ]),
+          gasLimit: gasFeePayment.gasLimit,
+          gasPrice: gasFeePayment.gasPrice
+        })
+      } else {
+        // Relayer
+        this.accountOp!.signature = await signer.signMessage(
+          ethers.hexlify(accountOpSignableHash(this.accountOp))
+        )
+      }
+
       this.status = { type: SigningStatus.Done }
       this.emitUpdate()
     } catch (error: any) {
