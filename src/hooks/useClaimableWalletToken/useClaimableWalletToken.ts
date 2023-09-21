@@ -12,7 +12,7 @@ import { RewardsSource } from '../useRewards/types'
 import { UseClaimableWalletTokenProps, UseClaimableWalletTokenReturnType } from './types'
 
 // const supplyControllerAddress = '0xF8cF66BbF7fe152b8177B61855E8be9a6279C8A1' //test polygon
-const supplyControllerAddress = '0xDDDFf33B83C704AB91953DD4A7De441650B9f0b0'
+const supplyControllerAddress = '0xA69B8074CE03A33B13057B1e9D37DCDE0024Aaff'
 const WALLET_STAKING_ADDR = '0x47Cd7E91C3CBaAF266369fe8518345fc4FC12935'
 const supplyControllerInterface = new Interface(WALLETSupplyControllerABI)
 const NETWORK_NAME = NETWORKS.ethereum
