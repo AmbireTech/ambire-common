@@ -49,6 +49,23 @@ function getDKIMValidatorData(
   const emailTo = options.emailTo ?? 'adamcrein@gmail.com'
   const selector = options.selector ?? `${parsedContents[0].selector}._domainkey.gmail.com`
 
+  if (options.plain) {
+    return [
+      emailFrom,
+      emailTo,
+      selector,
+      ethers.hexlify(parsedContents[0].modulus),
+      ethers.hexlify(ethers.toBeHex(parsedContents[0].exponent)),
+      signer.address,
+      acceptUnknownSelectors,
+      0,
+      0,
+      acceptEmptyDKIMSig,
+      emptySecondSig,
+      onlyOneSigTimelock,
+    ]
+  }
+
   return abiCoder.encode([
     'tuple(string,string,string,bytes,bytes,address,bool,uint32,uint32,bool,bool,uint32)'
     ,

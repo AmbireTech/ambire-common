@@ -17,6 +17,8 @@ let dkimRecoveryForTesting: any
 let dnsSecAddr: any
 let rsaSha256DKIMValidatorAddr: any
 
+const accInfoTuple = 'tuple(string, string, string, bytes, bytes, address, bool, uint32, uint32, bool, bool, uint32)';
+
 describe('DKIM Prep-up', function () {
   it('successfully deploy the DKIM Recovery', async function () {
     const [signer] = await ethers.getSigners()
@@ -108,11 +110,13 @@ describe('DKIM sigMode Both', function () {
     const hasPriv = await account.privileges(newSigner.address)
     expect(hasPriv).to.equal(ethers.toBeHex(1, 32))
 
-    // expect recovery to not have been marked as complete
-    const identifier = ethers.keccak256(abiCoder.encode(['address', 'bytes', sigMetaTuple], [
-      ambireAccountAddress,
-      validatorData,
-      sigMetaValues
+    const identifierData = getDKIMValidatorData(parsedContents, relayer, {
+      plain: true
+    })
+    const identifier = ethers.keccak256(abiCoder.encode(['address', accInfoTuple, sigMetaTuple], [
+        ambireAccountAddress,
+        identifierData,
+        sigMetaValues
     ]))
     const recoveryAssigned = await dkimRecovery.recoveries(identifier)
     expect(recoveryAssigned).to.be.true
@@ -320,9 +324,13 @@ describe('DKIM sigMode OnlyDKIM', function () {
     expect(hasPriv).to.equal(ethers.toBeHex(0, 32))
 
     // expect recovery to not have been marked as complete
-    const identifier = ethers.keccak256(abiCoder.encode(['address', 'bytes', sigMetaTuple], [
+    const identifierData = getDKIMValidatorData(parsedContents, relayer, {
+      emptySecondSig: true,
+      plain: true
+    })
+    const identifier = ethers.keccak256(abiCoder.encode(['address', accInfoTuple, sigMetaTuple], [
         ambireAccountAddress,
-        validatorData,
+        identifierData,
         sigMetaValues
     ]))
     const recoveryAssigned = await dkimRecovery.recoveries(identifier)
@@ -502,9 +510,13 @@ describe('DKIM sigMode OnlySecond', function () {
     expect(hasPriv).to.equal(ethers.toBeHex(0, 32))
 
     // expect recovery to not have been marked as complete
-    const identifier = ethers.keccak256(abiCoder.encode(['address', 'bytes', sigMetaTuple], [
+    const identifierData = getDKIMValidatorData(parsedContents, relayer, {
+      acceptEmptyDKIMSig: true,
+      plain: true
+    })
+    const identifier = ethers.keccak256(abiCoder.encode(['address', accInfoTuple, sigMetaTuple], [
         ambireAccountAddress,
-        validatorData,
+        identifierData,
         sigMetaValues
     ]))
     const recoveryAssigned = await dkimRecovery.recoveries(identifier)
@@ -724,10 +736,14 @@ describe('DKIM sigMode Both with acceptUnknownSelectors true', function () {
     expect(hasPriv).to.equal(ethers.toBeHex(1, 32))
 
     // expect recovery to not have been marked as complete
-    const identifier = ethers.keccak256(abiCoder.encode(['address', 'bytes', sigMetaTuple], [
-      ambireAccountAddress,
-      validatorData,
-      sigMetaValues
+    const identifierData = getDKIMValidatorData(parsedContents, relayer, {
+      acceptUnknownSelectors: 120,
+      plain: true
+    })
+    const identifier = ethers.keccak256(abiCoder.encode(['address', accInfoTuple, sigMetaTuple], [
+        ambireAccountAddress,
+        identifierData,
+        sigMetaValues
     ]))
     const recoveryAssigned = await dkimRecoveryForTesting.recoveries(identifier)
     expect(recoveryAssigned).to.be.true
@@ -810,7 +826,6 @@ describe('DKIM sigMode Both with acceptUnknownSelectors true', function () {
   })
 
   it('should revoke the key in the dkimKeys with a name of "toberemoved"', async function () {
-    // const [signer] = await ethers.getSigners()
     const gmail = await readFile(path.join(emailsPath, 'sigMode0.eml'), {
       encoding: 'ascii'
     })
@@ -830,7 +845,24 @@ describe('DKIM sigMode Both with acceptUnknownSelectors true', function () {
     expect(removedKey[0]).to.be.true
     expect(removedKey[3]).to.not.equal(0)
   })
+  it('should not be able to revoke the same key again', async function () {
+    const gmail = await readFile(path.join(emailsPath, 'sigMode0.eml'), {
+      encoding: 'ascii'
+    })
+    const parsedContents: any = await parseEmail(gmail)
+    const dkimKey = ethers.keccak256(abiCoder.encode(['tuple(string, bytes, bytes)'], [
+      [
+        `toberemoved._domainkey.gmail.com`,
+        ethers.hexlify(parsedContents[0].modulus),
+        ethers.hexlify(ethers.toBeHex(parsedContents[0].exponent)),
+      ]
+    ]))
+    const onchainKey = await dkimRecoveryForTesting.dkimKeys(dkimKey)
+    expect(onchainKey[0]).to.be.true
 
+    await expect(dkimRecoveryForTesting.removeDKIMKey(dkimKey))
+      .to.be.revertedWith('Key already revoked')
+  })
   it('should revert on trying to revoke the DKIM key if msg sender does not have revoke rights', async function () {
     const [,signer] = await ethers.getSigners()
     const dkimKey = ethers.keccak256(abiCoder.encode(['tuple(string, bytes, bytes)'], [
@@ -843,7 +875,6 @@ describe('DKIM sigMode Both with acceptUnknownSelectors true', function () {
     await expect(dkimRecoveryForTesting.connect(signer).removeDKIMKey(dkimKey))
       .to.be.revertedWith('Address unauthorized to revoke')
   })
-
   it('should revert if an unknown selector for the account is passed and the dkim key for it is already removed', async function () {
     const [relayer, newSigner] = await ethers.getSigners()
     const gmail = await readFile(path.join(emailsPath, 'sigMode0.eml'), {
@@ -879,7 +910,6 @@ describe('DKIM sigMode Both with acceptUnknownSelectors true', function () {
     await expect(account.execute(txns, finalSig))
       .to.be.revertedWith('DKIM key revoked')
   })
-
   it('should revert if the timestamp for the added key has not passed, yet', async function () {
     const [relayer, newSigner] = await ethers.getSigners()
     const gmail = await readFile(path.join(emailsPath, 'sigMode0.eml'), {
@@ -1106,8 +1136,7 @@ describe('DKIM sigMode Both with changed emailTo', function () {
     ambireAccountAddress = addr
     account = ambireAccount
   })
-
-  it('should revert with emailFrom not valid because the email is not sent from the correct email account', async function () {
+  it('should revert with emailTo not valid because the email is not sent to the correct email account', async function () {
     const [relayer, newSigner] = await ethers.getSigners()
     const gmail = await readFile(path.join(emailsPath, 'sigMode0.eml'), {
       encoding: 'ascii'
@@ -1217,9 +1246,14 @@ describe('DKIM sigMode OnlySecond with a timelock of 2 minutes', function () {
     expect(hasPriv).to.equal(ethers.toBeHex(0, 32))
 
     // expect recovery to not have been marked as complete
-    const identifier = ethers.keccak256(abiCoder.encode(['address', 'bytes', sigMetaTuple], [
+    const identifierData = getDKIMValidatorData(parsedContents, relayer, {
+      acceptEmptyDKIMSig: true,
+      onlyOneSigTimelock: 120,
+      plain: true
+    })
+    const identifier = ethers.keccak256(abiCoder.encode(['address', accInfoTuple, sigMetaTuple], [
         ambireAccountAddress,
-        validatorData,
+        identifierData,
         sigMetaValues
     ]))
     const recoveryAssigned = await dkimRecovery.recoveries(identifier)

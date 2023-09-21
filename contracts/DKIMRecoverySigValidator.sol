@@ -146,7 +146,7 @@ contract DKIMRecoverySigValidator is ExternalSigValidator {
       sig,
       (SignatureMeta, bytes, bytes)
     );
-    bytes32 identifier = keccak256(abi.encode(msg.sender, data, sigMeta));
+    bytes32 identifier = keccak256(abi.encode(msg.sender, accInfo, sigMeta));
     require(!recoveries[identifier], 'recovery already done');
 
     // Validate the calls: we only allow setAddrPrivilege for the pre-set newAddressToSet and newPrivilegeValue
@@ -363,7 +363,7 @@ contract DKIMRecoverySigValidator is ExternalSigValidator {
     );
 
     // to looks like this: to:email
-    Strings.slice memory toHeader = 'to:'.toSlice().concat(accountEmailTo.toSlice()).toSlice();
+    Strings.slice memory toHeader = 'to:'.toSlice().concat(accountEmailTo.toSlice()).toSlice().concat('\r\n'.toSlice()).toSlice();
     require(canonizedHeaders.toSlice().startsWith(toHeader), 'emailTo not valid');
 
     // subject looks like this: subject:Give permissions to {address} SigMode {uint8}
@@ -374,6 +374,8 @@ contract DKIMRecoverySigValidator is ExternalSigValidator {
       .concat(' SigMode '.toSlice())
       .toSlice()
       .concat(OpenZeppelinStrings.toString(uint8(mode)).toSlice())
+      .toSlice()
+      .concat('\r\n'.toSlice())
       .toSlice();
 
     // a bit of magic here
@@ -391,6 +393,7 @@ contract DKIMRecoverySigValidator is ExternalSigValidator {
    */
   function removeDKIMKey(bytes32 id) external {
     require(msg.sender == authorizedToRevoke, 'Address unauthorized to revoke');
+    require(dkimKeys[id].dateRemoved == 0, 'Key already revoked');
     dkimKeys[id].dateRemoved = uint32(block.timestamp);
     emit DKIMKeyRemoved(id, uint32(block.timestamp), dkimKeys[id].isBridge);
   }
