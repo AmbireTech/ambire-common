@@ -3,6 +3,7 @@ import aes from 'aes-js'
 import { concat, getBytes, hexlify, keccak256, randomBytes, toUtf8Bytes, Wallet } from 'ethers'
 import scrypt from 'scrypt-js'
 
+import { Account } from '../../interfaces/account'
 import { KeystoreSigner } from '../../interfaces/keystore'
 import { Storage } from '../../interfaces/storage'
 
@@ -45,23 +46,23 @@ type MainKey = {
   iv: Uint8Array
 }
 
-export type Key = {
-  // normally in the form of an Ethereum address
-  id: string
-  type: string
-  label: string
-  isExternallyStored: boolean
-  meta: object | null
-}
+export type Key = Omit<StoredKey, 'privKey'> & { isExternallyStored: boolean }
 
-export type StoredKey = {
-  id: string
-  type: string
-  label: string
-  privKey: string | null
-  // denotes additional info like HW wallet derivation path
-  meta: object | null
-}
+export type StoredKey =
+  | {
+      addr: Account['addr']
+      type: 'internal'
+      label: string
+      privKey: string
+      meta: null
+    }
+  | {
+      addr: Account['addr']
+      type: 'trezor' | 'ledger' | 'lattice'
+      label: string
+      privKey: null
+      meta: { model: string; derivation: string }
+    }
 
 export type KeystoreSignerType = {
   new (key: Key, privateKey?: string): KeystoreSigner
@@ -216,16 +217,13 @@ export class Keystore {
 
   async getKeys(): Promise<Key[]> {
     const keys: [StoredKey] = await this.storage.get('keystoreKeys', [])
-    return keys.map(
-      ({ id, label, type, meta }) =>
-        ({
-          id,
-          label,
-          type,
-          meta,
-          isExternallyStored: type !== 'internal'
-        } as Key)
-    )
+    return keys.map(({ addr, label, type, meta }) => ({
+      addr,
+      label,
+      type,
+      meta,
+      isExternallyStored: type !== 'internal'
+    }))
   }
 
   async addKeysExternallyStored(
