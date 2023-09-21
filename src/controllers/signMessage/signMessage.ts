@@ -104,7 +104,7 @@ export class SignMessageController extends EventEmitter {
     this.emitUpdate()
 
     try {
-      const signer = await this.#keystore.getSigner(this.signingKeyAddr)
+      const signer = await this.#keystore.getSigner(this.signingKeyAddr, 'internal')
       let sig
 
       const account = this.#accounts!.find((acc) => acc.addr === this.messageToSign?.accountAddr)

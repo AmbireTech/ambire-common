@@ -227,35 +227,35 @@ export class Keystore {
   }
 
   async addKeysExternallyStored(
-    keysToAdd: { id: string; type: string; label: string; meta: object }[]
+    keysToAdd: { addr: Key['addr']; type: Key['type']; label: Key['label']; meta: Key['meta'] }[]
   ) {
     if (!keysToAdd.length) return
 
     // Strip out keys with duplicated private keys. One unique key is enough.
-    const uniquePrivateKeysToAddSet = new Set()
-    const uniqueKeysToAdd = keysToAdd.filter(({ id }) => {
-      if (!uniquePrivateKeysToAddSet.has(id)) {
-        uniquePrivateKeysToAddSet.add(id)
-        return true
+    const uniqueKeys: { addr: Key['addr']; type: Key['type'] }[] = []
+    const uniqueKeysToAdd = keysToAdd.filter(({ addr, type }) => {
+      if (uniqueKeys.some((x) => x.addr === addr && x.type === type)) {
+        return false
       }
-      return false
+
+      uniqueKeys.push({ addr, type })
+      return true
     })
 
     if (!uniqueKeysToAdd.length) return
 
     const keys: [StoredKey] = await this.storage.get('keystoreKeys', [])
-    const alreadyAddedKeyIdsSet = new Set(keys.map(({ id }) => id))
 
     const newKeys = uniqueKeysToAdd
-      .map(({ id, type, label, meta }) => ({
-        id,
+      .map(({ addr, type, label, meta }) => ({
+        addr,
         type,
         label,
         meta,
         privKey: null
       }))
-      // No need to re-add keys that are already added, private key never changes
-      .filter(({ id }) => !alreadyAddedKeyIdsSet.has(id))
+      // No need to re-add keys that are already added (with the same type / device)
+      .filter(({ addr, type }) => !keys.some((x) => x.addr === addr && x.type === type))
 
     if (!newKeys.length) return
 
@@ -264,7 +264,7 @@ export class Keystore {
     await this.storage.set('keystoreKeys', nextKeys)
   }
 
-  async addKeys(keysToAdd: { privateKey: string; label: string }[]) {
+  async addKeys(keysToAdd: { privateKey: string; label: Key['label'] }[]) {
     if (this.#mainKey === null) throw new Error('keystore: needs to be unlocked')
     if (!keysToAdd.length) return
 
@@ -281,9 +281,8 @@ export class Keystore {
     if (!uniqueKeysToAdd.length) return
 
     const keys: [StoredKey] = await this.storage.get('keystoreKeys', [])
-    const alreadyAddedKeyIdsSet = new Set(keys.map(({ id }) => id))
 
-    const newKeys = uniqueKeysToAdd
+    const newKeys: StoredKey[] = uniqueKeysToAdd
       .map(({ privateKey, label }) => {
         // eslint-disable-next-line no-param-reassign
         privateKey = privateKey.substring(0, 2) === '0x' ? privateKey.substring(2) : privateKey
@@ -296,8 +295,8 @@ export class Keystore {
         // Terminology: this private key represents an EOA wallet, which is why ethers calls it Wallet, but we treat it as a key here
         const wallet = new Wallet(privateKey)
         return {
-          id: wallet.address,
-          type: 'internal',
+          addr: wallet.address,
+          type: 'internal' as 'internal',
           label,
           // @TODO: consider an MAC?
           privKey: hexlify(aesCtr.encrypt(aes.utils.hex.toBytes(privateKey))),
@@ -305,7 +304,7 @@ export class Keystore {
         }
       })
       // No need to re-add keys that are already added, private key never changes
-      .filter(({ id }) => !alreadyAddedKeyIdsSet.has(id))
+      .filter(({ addr, type }) => !keys.some((x) => x.addr === addr && x.type === type))
 
     if (!newKeys.length) return
 
@@ -314,21 +313,25 @@ export class Keystore {
     await this.storage.set('keystoreKeys', nextKeys)
   }
 
-  async removeKey(id: string) {
+  async removeKey(addr: Key['addr'], type: Key['type']) {
     if (!this.isUnlocked()) throw new Error('keystore: not unlocked')
     const keys: [StoredKey] = await this.storage.get('keystoreKeys', [])
-    if (!keys.find((x) => x.id === id))
-      throw new Error(`keystore: trying to remove key that does not exist ${id}}`)
+    if (!keys.find((x) => x.addr === addr && x.type === type))
+      throw new Error(
+        `keystore: trying to remove key that does not exist: address: ${addr}, type: ${type}`
+      )
     this.storage.set(
       'keystoreKeys',
-      keys.filter((x) => x.id !== id)
+      keys.filter((x) => x.addr === addr && x.type === type)
     )
   }
 
-  async exportKeyWithPasscode(keyId: string, passphrase: string) {
+  async exportKeyWithPasscode(keyAddress: Key['addr'], keyType: Key['type'], passphrase: string) {
     if (this.#mainKey === null) throw new Error('keystore: needs to be unlocked')
     const keys = await this.storage.get('keystoreKeys', [])
-    const storedKey: StoredKey = keys.find((x: StoredKey) => x.id === keyId)
+    const storedKey: StoredKey = keys.find(
+      (x: StoredKey) => x.addr === keyAddress && x.type === keyType
+    )
 
     if (!storedKey) throw new Error('keystore: key not found')
     if (storedKey.type !== 'internal') throw new Error('keystore: key does not have privateKey')
@@ -343,15 +346,17 @@ export class Keystore {
     return JSON.stringify(keyBackup)
   }
 
-  async getSigner(keyId: string) {
+  async getSigner(keyAddress: Key['addr'], keyType: Key['type']) {
     const keys = await this.storage.get('keystoreKeys', [])
-    const storedKey: StoredKey = keys.find((x: StoredKey) => x.id === keyId)
+    const storedKey: StoredKey = keys.find(
+      (x: StoredKey) => x.addr === keyAddress && x.type === keyType
+    )
 
     if (!storedKey) throw new Error('keystore: key not found')
-    const { id, label, type, meta } = storedKey
+    const { addr, label, type, meta } = storedKey
 
     const key = {
-      id,
+      addr,
       label,
       type,
       meta,
