@@ -106,19 +106,18 @@ export class SignAccountOpController extends EventEmitter {
         this.accountOp = accountOp
       }
     }
+    const account = this.#getAccount()
 
     if (feeTokenAddr && paidBy && this.isInitialized) {
-      // the self-invoking func allows us to return from it without interrupting the execution of the update func
-      ;(() => {
-        const account = this.#getAccount()
-        // Cannot set paidBy for EOAs or ERC-4337
-        const network = this.#networks!.find((n) => n.id === this.accountOp?.networkId)
-        if (!account || !account.creation || (network && network.erc4337?.enabled)) return
+      const network = this.#networks!.find((n) => n.id === this.accountOp?.networkId)
+      // Cannot set paidBy for EOAs or ERC-4337
+      const canSetPaidBy = account?.creation && !network?.erc4337?.enabled
 
-        // TODO: validate feeTokenAddr
+      // TODO: validate feeTokenAddr
+      if (canSetPaidBy) {
         this.accountOp!.gasFeePayment = this.#getGasFeePayment(feeTokenAddr, this.selectedFeeSpeed)
         this.accountOp!.gasFeePayment.paidBy = paidBy
-      })()
+      }
     }
 
     if (speed && this.isInitialized) {
@@ -129,13 +128,8 @@ export class SignAccountOpController extends EventEmitter {
       )
     }
 
-    if (signingKeyAddr && this.isInitialized) {
-      // the self-invoking func allows us to return from it without interrupting the execution of the update func
-      ;(() => {
-        const account = this.#getAccount()
-        if (!account || !account.creation) return
-        this.accountOp!.signingKeyAddr = signingKeyAddr
-      })()
+    if (signingKeyAddr && account?.creation && this.isInitialized) {
+      this.accountOp!.signingKeyAddr = signingKeyAddr
     }
 
     this.updateReadyToSignStatusOnUpdate()
