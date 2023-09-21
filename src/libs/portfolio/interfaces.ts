@@ -26,6 +26,12 @@ export interface TokenResult {
   amountPostSimulation?: bigint
   decimals: number
   priceIn: Price[]
+  flags: {
+    onGasTank: boolean
+    rewardsType: string | null
+    canTopUpGasTank: boolean
+    isFeeToken: boolean
+  }
 }
 
 export interface CollectionResult extends TokenResult {
@@ -98,7 +104,7 @@ export type PortfolioControllerState = {
   [key: string]: AccountState
 }
 
-interface AdditionalPortfolioGetResult {
+export interface AdditionalPortfolioGetResult {
   updateStarted: number
   discoveryTime?: number
   oracleCallTime?: number
