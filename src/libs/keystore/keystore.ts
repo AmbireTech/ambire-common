@@ -4,7 +4,12 @@ import { concat, getBytes, hexlify, keccak256, randomBytes, toUtf8Bytes, Wallet 
 import scrypt from 'scrypt-js'
 
 // import { ethers } from 'hardhat'
-import { publicKeyByPrivateKey, encryptWithPublicKey } from 'eth-crypto' // decryptWithPrivateKey
+import {
+  publicKeyByPrivateKey,
+  encryptWithPublicKey,
+  decryptWithPrivateKey,
+  Encrypted
+} from 'eth-crypto' // decryptWithPrivateKey
 import { KeystoreSigner } from '../../interfaces/keystore'
 import { Storage } from '../../interfaces/storage'
 
@@ -272,7 +277,7 @@ export class Keystore {
     )
   }
 
-  async exportKeyWithPublicKeyEncryption(keyId: string, publicKey: string) {
+  async exportKeyWithPublicKeyEncryption(keyId: string, publicKey: string): Promise<Encrypted> {
     if (this.#mainKey === null) throw new Error('keystore: needs to be unlocked')
     const keys = await this.storage.get('keystoreKeys', [])
     const storedKey: StoredKey = keys.find((x: StoredKey) => x.id === keyId)
@@ -286,6 +291,30 @@ export class Keystore {
 
     const result = await encryptWithPublicKey(publicKey, decryptedPrivateKey)
     return result
+  }
+
+  async importKeyWithPublicKeyEncryption(encryptedSk: Encrypted, label: string) {
+    if (this.#mainKey === null) throw new Error('keystore: needs to be unlocked')
+    const keys = await this.storage.get('keystoreKeys', [])
+    const privateKey: string = await decryptWithPrivateKey(
+      hexlify(getBytes(concat([this.#mainKey.key, this.#mainKey.iv]))),
+      encryptedSk
+    )
+    if (!privateKey) throw new Error('keystore: wrong encryptedSk or private key')
+    const wallet = new Wallet(privateKey)
+    // Set up the cipher
+    const counter = new aes.Counter(this.#mainKey.iv)
+    const aesCtr = new aes.ModeOfOperation.ctr(this.#mainKey.key, counter)
+
+    keys.push({
+      id: wallet.address,
+      type: 'internal',
+      label,
+      // @TODO: consider an MAC?
+      privKey: hexlify(aesCtr.encrypt(aes.utils.hex.toBytes(privateKey))),
+      meta: null
+    })
+    await this.storage.set('keystoreKeys', keys)
   }
 
   async exportKeyWithPasscode(keyId: string, passphrase: string) {

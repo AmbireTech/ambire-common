@@ -5,7 +5,8 @@
 import { describe, expect, test } from '@jest/globals'
 import { decryptWithPrivateKey, createIdentity } from 'eth-crypto'
 
-import { Wallet } from 'ethers'
+import { Wallet, ethers } from 'ethers'
+import { KeystoreSigner } from 'libs/keystoreSigner/keystoreSigner'
 import { Storage } from '../../interfaces/storage'
 import { Key, Keystore } from './keystore'
 
@@ -64,12 +65,13 @@ class LedgerSigner {
 }
 
 let keystore: Keystore
-const pass = 'hoiHoi'
 const keystoreSigners = { internal: InternalSigner, ledger: LedgerSigner }
-const privKey = '207d56b2f2b06fd9c74562ec81f42d47393a55cfcf5c182605220ad7fdfbe600'
-const keyPublicAddress = '0xB6C923c6586eDb44fc4CC0AE4F60869271e75407'
 
 describe('Keystore', () => {
+  const pass = 'hoiHoi'
+  const privKey = '207d56b2f2b06fd9c74562ec81f42d47393a55cfcf5c182605220ad7fdfbe600'
+  const keyPublicAddress = '0xB6C923c6586eDb44fc4CC0AE4F60869271e75407'
+
   test('should initialize keystore', () => {
     keystore = new Keystore(produceMemoryStore(), keystoreSigners)
     expect((keystore as any)['#mainKey']).toBe(undefined)
@@ -174,5 +176,36 @@ describe('Keystore', () => {
     const decryptedKey = await decryptWithPrivateKey(newDeviceKeyStore.privateKey, encryptedKey)
     expect(decryptedKey).toBe(privKey)
   })
-  // @TODO: secret not found
+})
+
+describe('independant test', () => {
+  beforeEach(() => {
+    keystore = new Keystore(produceMemoryStore(), keystoreSigners)
+  })
+  test('import Key With Public Key Encryption', async () => {
+    const label = 'new key'
+    const keystore2 = new Keystore(produceMemoryStore(), keystoreSigners)
+    await keystore2.addSecret('123', '123')
+    await keystore2.unlockWithSecret('123', '123')
+    const uid2 = await keystore2.getKeyStoreUid()
+
+    await keystore.addSecret('a', 'b')
+    await keystore.unlockWithSecret('a', 'b')
+    const wallet = ethers.Wallet.createRandom()
+    await keystore.addKey(wallet.privateKey.slice(2), label)
+    const exported = await keystore.exportKeyWithPublicKeyEncryption(wallet.address, uid2)
+
+    await keystore2.importKeyWithPublicKeyEncryption(exported, label)
+    const signer = await keystore2.getSigner(wallet.address)
+    expect(signer).toMatchObject({
+      key: {
+        id: wallet.address,
+        isExternallyStored: false,
+        label,
+        type: 'internal',
+        meta: null
+      },
+      privKey: wallet.privateKey.slice(2)
+    })
+  })
 })
