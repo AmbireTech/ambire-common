@@ -110,7 +110,8 @@ contract DKIMRecoverySigValidator is ExternalSigValidator {
   address public immutable authorizedToSubmit;
   address public immutable authorizedToRevoke;
   DNSSEC public immutable oracle;
-  bytes private constant BRIDGE_STRING = hex'646e7373656362726964676506616d6269726503636f6d0000100001000001';
+  bytes private constant BRIDGE_STRING =
+    hex'646e7373656362726964676506616d6269726503636f6d0000100001000001';
 
   // this is the bytes representation of the character that replaces "space"
   // when parsing the DNSSEC signedSet data
@@ -165,6 +166,11 @@ contract DKIMRecoverySigValidator is ExternalSigValidator {
         ),
       'Transaction data is not set correctly, either selector, key or priv is incorrect'
     );
+    // we allow only full priv or no priv via recovery
+    require(
+      sigMeta.newPrivilegeValue == bytes32(0) || sigMeta.newPrivilegeValue == bytes32(uint256(1)),
+      'Priviledge not valid'
+    );
 
     SigMode mode = sigMeta.mode;
     if (mode == SigMode.Both || mode == SigMode.OnlyDKIM) {
@@ -177,6 +183,7 @@ contract DKIMRecoverySigValidator is ExternalSigValidator {
         accInfo.emailFrom,
         accInfo.emailTo,
         sigMeta.newAddressToSet,
+        sigMeta.newPrivilegeValue,
         sigMeta.mode
       );
 
@@ -220,8 +227,15 @@ contract DKIMRecoverySigValidator is ExternalSigValidator {
     if (mode == SigMode.Both || mode == SigMode.OnlySecond) {
       if (mode == SigMode.OnlySecond) {
         require(accInfo.acceptEmptyDKIMSig, 'account disallows OnlySecond');
-        require(keccak256(bytes(sigMeta.canonizedHeaders)) == keccak256(bytes('')), 'sigMeta.canonizedHeaders should be empty when SigMode is OnlySecond');
-        require(keccak256(abi.encode(sigMeta.key)) == keccak256(abi.encode(DKIMKey('', bytes(''), bytes('')))), 'sigMeta.key should be empty when SigMode is OnlySecond');
+        require(
+          keccak256(bytes(sigMeta.canonizedHeaders)) == keccak256(bytes('')),
+          'sigMeta.canonizedHeaders should be empty when SigMode is OnlySecond'
+        );
+        require(
+          keccak256(abi.encode(sigMeta.key)) ==
+            keccak256(abi.encode(DKIMKey('', bytes(''), bytes('')))),
+          'sigMeta.key should be empty when SigMode is OnlySecond'
+        );
       }
 
       require(
@@ -263,9 +277,7 @@ contract DKIMRecoverySigValidator is ExternalSigValidator {
 
     oracle.verifyRRSet(sets);
 
-    (DKIMKey memory key, bool isBridge) = _parse(
-      sets[sets.length - 1].rrset.readSignedSet()
-    );
+    (DKIMKey memory key, bool isBridge) = _parse(sets[sets.length - 1].rrset.readSignedSet());
     KeyInfo storage keyInfo = dkimKeys[keccak256(abi.encode(key))];
     require(!keyInfo.isExisting, 'key already exists');
 
@@ -290,7 +302,11 @@ contract DKIMRecoverySigValidator is ExternalSigValidator {
     require(pValue.length > 0, 'public key not found in txt set');
 
     string memory base64Key = string(pValue);
-    uint256 offsetOfInvalidAscii = pValue.find(0, pValue.length, bytes1(BYTE_REPRESENTATION_SPACE_CHARACTER));
+    uint256 offsetOfInvalidAscii = pValue.find(
+      0,
+      pValue.length,
+      bytes1(BYTE_REPRESENTATION_SPACE_CHARACTER)
+    );
     while (offsetOfInvalidAscii != type(uint256).max) {
       bytes memory firstPartOfKey = pValue.substring(0, offsetOfInvalidAscii);
       bytes memory secondPartOfKey = pValue.substring(
@@ -298,7 +314,11 @@ contract DKIMRecoverySigValidator is ExternalSigValidator {
         pValue.length - 1 - offsetOfInvalidAscii
       );
       base64Key = string(firstPartOfKey).toSlice().concat(string(secondPartOfKey).toSlice());
-      offsetOfInvalidAscii = bytes(base64Key).find(0, bytes(base64Key).length, bytes1(BYTE_REPRESENTATION_SPACE_CHARACTER));
+      offsetOfInvalidAscii = bytes(base64Key).find(
+        0,
+        bytes(base64Key).length,
+        bytes1(BYTE_REPRESENTATION_SPACE_CHARACTER)
+      );
       pValue = bytes(base64Key);
     }
 
@@ -350,6 +370,7 @@ contract DKIMRecoverySigValidator is ExternalSigValidator {
     string memory accountEmailFrom,
     string memory accountEmailTo,
     address newAddressToSet,
+    bytes32 newPrivilegeValue,
     SigMode mode
   ) internal pure {
     // from looks like this: from: name <email>
@@ -362,11 +383,23 @@ contract DKIMRecoverySigValidator is ExternalSigValidator {
     );
 
     // to looks like this: to:email
-    Strings.slice memory toHeader = 'to:'.toSlice().concat(accountEmailTo.toSlice()).toSlice().concat('\r\n'.toSlice()).toSlice();
+    Strings.slice memory toHeader = 'to:'
+      .toSlice()
+      .concat(accountEmailTo.toSlice())
+      .toSlice()
+      .concat('\r\n'.toSlice())
+      .toSlice();
     require(canonizedHeaders.toSlice().startsWith(toHeader), 'emailTo not valid');
 
     // subject looks like this: subject:Give permissions to {address} SigMode {uint8}
-    Strings.slice memory subject = 'subject:Give permissions to '
+    // or subject:Remove permissions from {address} SigMode {uint8}
+    Strings.slice memory permissionsAsSlice = newPrivilegeValue == bytes32(uint256(1))
+      ? 'Give permissions to '.toSlice()
+      : 'Remove permissions from '.toSlice();
+
+    Strings.slice memory subject = 'subject:'
+      .toSlice()
+      .concat(permissionsAsSlice)
       .toSlice()
       .concat(OpenZeppelinStrings.toHexString(newAddressToSet).toSlice())
       .toSlice()

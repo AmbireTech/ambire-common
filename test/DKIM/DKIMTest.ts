@@ -421,6 +421,89 @@ describe('DKIM sigMode OnlyDKIM', function () {
     await expect(account.execute(txns, finalSig))
       .to.be.revertedWith('account disallows OnlySecond')
   })
+  it('onlyDKIM recovery can be reverted', async function () {
+    const [relayer, newSigner] = await ethers.getSigners()
+    const gmail = await readFile(path.join(emailsPath, 'sigMode1.eml'), {
+      encoding: 'ascii'
+    })
+    const parsedContents: any = await parseEmail(gmail)
+    const validatorData = getDKIMValidatorData(parsedContents, relayer, {
+      emptySecondSig: true
+    })
+    const validatorAddr = await dkimRecovery.getAddress()
+    const {signerKey} = getSignerKey(validatorAddr, validatorData)
+    const dkimSig = parsedContents[0].solidity.signature
+
+    const txns = [getPriviledgeTxn(ambireAccountAddress, newSigner.address, true)]
+    const sigMetaValues = [
+      ethers.toBeHex(1, 1),
+      [
+        `${parsedContents[0].selector}._domainkey.gmail.com`,
+        ethers.hexlify(parsedContents[0].modulus),
+        ethers.hexlify(ethers.toBeHex(parsedContents[0].exponent)),
+      ],
+      parsedContents[0].processedHeader,
+      newSigner.address,
+      ethers.toBeHex(1, 32)
+    ]
+    const innerSig = abiCoder.encode([sigMetaTuple, 'bytes', 'bytes'], [
+      sigMetaValues,
+      dkimSig,
+      ethers.toBeHex(0, 1)
+    ])
+    const sig = abiCoder.encode(['address', 'address', 'bytes', 'bytes'], [signerKey, validatorAddr, validatorData, innerSig])
+    const finalSig = wrapExternallyValidated(sig)
+    const identifierData = getDKIMValidatorData(parsedContents, relayer, {
+      emptySecondSig: true,
+      plain: true
+    })
+    const identifier = ethers.keccak256(abiCoder.encode(['address', accInfoTuple, sigMetaTuple], [
+        ambireAccountAddress,
+        identifierData,
+        sigMetaValues
+    ]))
+
+    // expect the txn to have been executed
+    const hasPrivAfterTimelock = await account.privileges(newSigner.address)
+    expect(hasPrivAfterTimelock).to.equal(ethers.toBeHex(1, 32))
+
+    // expect recovery to have been marked as complete
+    const recoveryComplete = await dkimRecovery.recoveries(identifier)
+    expect(recoveryComplete).to.be.true
+
+    // expect the timelock to have been marked as executed
+    const timelockDone = await dkimRecovery.timelocks(identifier)
+    expect(timelockDone[0]).to.be.true
+
+    await expect(account.execute(txns, finalSig))
+      .to.be.revertedWith('recovery already done')
+
+    // Craft attack payloads
+    const newSigMetaValues = [
+      ethers.toBeHex(1, 1),
+      [
+        `${parsedContents[0].selector}._domainkey.gmail.com`,
+        ethers.hexlify(parsedContents[0].modulus),
+        ethers.hexlify(ethers.toBeHex(parsedContents[0].exponent)),
+      ],
+      parsedContents[0].processedHeader,
+      newSigner.address,
+      ethers.toBeHex(0, 32) // zero, so no privileges (privileges removed)
+    ]
+    const newInnerSig = abiCoder.encode([sigMetaTuple, 'bytes', 'bytes'], [
+      newSigMetaValues,
+      dkimSig,
+      ethers.toBeHex(0, 1)
+    ])
+
+    const newSig = abiCoder.encode(['address', 'address', 'bytes', 'bytes'], [signerKey, validatorAddr, validatorData, newInnerSig])
+    const newFinalSig = wrapExternallyValidated(newSig)
+
+    const newtxns = [getPriviledgeTxn(ambireAccountAddress, newSigner.address, false)] // false, so no privileges (privileges removed)
+
+    await expect(account.execute(newtxns, newFinalSig))
+      .to.be.revertedWith('emailSubject not valid')
+  })
 })
 
 describe('DKIM sigMode OnlySecond', function () {
