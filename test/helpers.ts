@@ -23,6 +23,16 @@ function getPriviledgeTxn(ambireAccountAddr: string, privAddress: string, hasPri
   return [ambireAccountAddr, 0, calldata]
 }
 
+function getPriviledgeTxnWithCustomHash(ambireAccountAddr: string, privAddress: string, privHash: string) {
+  const setAddrPrivilegeABI = ['function setAddrPrivilege(address addr, bytes32 priv)']
+  const iface = new ethers.Interface(setAddrPrivilegeABI)
+  const calldata = iface.encodeFunctionData('setAddrPrivilege', [
+    privAddress,
+    privHash
+  ])
+  return [ambireAccountAddr, 0, calldata]
+}
+
 const timelock = 1 // a 1 second timelock default
 const defaultRecoveryInfo = [[addressOne, addressTwo], timelock]
 function getTimelockData(recoveryInfo = defaultRecoveryInfo) {
@@ -105,4 +115,4 @@ function produceMemoryStore(): Storage {
   }
 }
 
-export { sendFunds, getPriviledgeTxn, getTimelockData, getNonce, getDKIMValidatorData, getSignerKey, produceMemoryStore }
+export { sendFunds, getPriviledgeTxn, getTimelockData, getNonce, getDKIMValidatorData, getSignerKey, produceMemoryStore, getPriviledgeTxnWithCustomHash }

@@ -166,11 +166,6 @@ contract DKIMRecoverySigValidator is ExternalSigValidator {
         ),
       'Transaction data is not set correctly, either selector, key or priv is incorrect'
     );
-    // we allow only full priv or no priv via recovery
-    require(
-      sigMeta.newPrivilegeValue == bytes32(0) || sigMeta.newPrivilegeValue == bytes32(uint256(1)),
-      'Priviledge not valid'
-    );
 
     SigMode mode = sigMeta.mode;
     if (mode == SigMode.Both || mode == SigMode.OnlyDKIM) {
@@ -391,15 +386,12 @@ contract DKIMRecoverySigValidator is ExternalSigValidator {
       .toSlice();
     require(canonizedHeaders.toSlice().startsWith(toHeader), 'emailTo not valid');
 
-    // subject looks like this: subject:Give permissions to {address} SigMode {uint8}
-    // or subject:Remove permissions from {address} SigMode {uint8}
-    Strings.slice memory permissionsAsSlice = newPrivilegeValue == bytes32(uint256(1))
-      ? 'Give permissions to '.toSlice()
-      : 'Remove permissions from '.toSlice();
-
-    Strings.slice memory subject = 'subject:'
+    // subject looks like this: subject:Give {bytes32} permissions to {address} SigMode {uint8}
+    Strings.slice memory subject = 'subject:Give '
       .toSlice()
-      .concat(permissionsAsSlice)
+      .concat(OpenZeppelinStrings.toHexString(uint256(newPrivilegeValue)).toSlice())
+      .toSlice()
+      .concat(' permissions to '.toSlice())
       .toSlice()
       .concat(OpenZeppelinStrings.toHexString(newAddressToSet).toSlice())
       .toSlice()
