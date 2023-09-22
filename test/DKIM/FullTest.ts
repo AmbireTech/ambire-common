@@ -20,6 +20,7 @@ function hexEncodeSignedSet(rrs: any, sig: any) {
 }
 
 const gmailDomainName = '0832303232313230380a5f646f6d61696e6b657905676d61696c03636f6d0c'
+const accInfoTuple = 'tuple(string, string, string, bytes, bytes, address, bool, uint32, uint32, bool, bool, uint32)';
 
 let dkimRecovery: any
 let ambireAccountAddress: any
@@ -113,14 +114,11 @@ describe('DKIM Bridge + unknown selector DKIM verification', function () {
     const dkimSig = parsedContents[0].solidity.signature
 
     const txns = [getPriviledgeTxn(ambireAccountAddress, newSigner.address, true)]
-    const msgHash = ethers.keccak256(
-      abiCoder.encode(
-        ['address', 'address', 'bytes32'],
-        [ambireAccountAddress, newSigner.address, ethers.toBeHex(1, 32)]
-      )
-    )
-    const msg = ethers.getBytes(msgHash)
-    const secondSig = wrapEthSign(await relayer.signMessage(msg))
+    const identifierData = getDKIMValidatorData(parsedContents, relayer, {
+      acceptUnknownSelectors: true,
+      selector: domainName,
+      plain: true
+    })
     const sigMetaTuple = 'tuple(uint8, tuple(string, bytes, bytes), string, address, bytes32)'
     const domainNameMeta = Buffer.from(gmailDomainName, 'hex').toString('ascii')
     const sigMetaValues = [
@@ -134,6 +132,12 @@ describe('DKIM Bridge + unknown selector DKIM verification', function () {
       newSigner.address,
       ethers.toBeHex(1, 32)
     ]
+    const identifier = ethers.keccak256(abiCoder.encode(['address', accInfoTuple, sigMetaTuple], [
+        ambireAccountAddress,
+        identifierData,
+        sigMetaValues
+    ]))
+    const secondSig = wrapEthSign(await relayer.signMessage(ethers.getBytes(identifier)))
     const innerSig = abiCoder.encode([sigMetaTuple, 'bytes', 'bytes'], [
       sigMetaValues,
       dkimSig,
@@ -148,11 +152,6 @@ describe('DKIM Bridge + unknown selector DKIM verification', function () {
     expect(hasPriv).to.equal(ethers.toBeHex(1, 32))
 
     // expect recovery to not have been marked as complete
-    const identifier = ethers.keccak256(abiCoder.encode(['address', 'bytes', sigMetaTuple], [
-      ambireAccountAddress,
-      validatorData,
-      sigMetaValues
-    ]))
     const recoveryAssigned = await dkimRecovery.recoveries(identifier)
     expect(recoveryAssigned).to.be.true
 

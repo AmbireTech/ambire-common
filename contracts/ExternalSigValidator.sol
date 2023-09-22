@@ -19,7 +19,6 @@ import './libs/Transaction.sol';
  */
 abstract contract ExternalSigValidator {
 	function validateSig(
-		address accountAddr,
 		bytes calldata data,
 		bytes calldata sig,
 		Transaction[] calldata calls
