@@ -1,4 +1,4 @@
-import { Keystore } from '../../libs/keystore/keystore'
+import { Key, Keystore } from '../../libs/keystore/keystore'
 import EventEmitter from '../eventEmitter'
 
 export class KeystoreController extends EventEmitter {
@@ -54,18 +54,20 @@ export class KeystoreController extends EventEmitter {
     })
   }
 
-  async addKeysExternallyStored(keys: { id: string; type: string; label: string; meta: object }[]) {
+  async addKeysExternallyStored(
+    keys: { addr: Key['addr']; type: Key['type']; label: Key['label']; meta: Key['meta'] }[]
+  ) {
     await this.wrapKeystoreAction('addKeysExternallyStored', () =>
       this.#keystoreLib.addKeysExternallyStored(keys)
     )
   }
 
-  async addKeys(keys: { privateKey: string; label: string }[]) {
+  async addKeys(keys: { privateKey: string; label: Key['label'] }[]) {
     await this.wrapKeystoreAction('addKeys', () => this.#keystoreLib.addKeys(keys))
   }
 
-  async removeKey(id: string) {
-    await this.wrapKeystoreAction('removeKey', async () => this.#keystoreLib.removeKey(id))
+  async removeKey(addr: Key['addr'], type: Key['type']) {
+    await this.wrapKeystoreAction('removeKey', async () => this.#keystoreLib.removeKey(addr, type))
   }
 
   async wrapKeystoreAction(callName: string, fn: Function) {
