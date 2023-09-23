@@ -75,7 +75,7 @@ export type AccountState = {
         isReady: boolean
         isLoading: boolean
         criticalError?: Error
-        errors?: Error[]
+        errors: Error[]
         result?: PortfolioGetResult
         // We store the previously simulated AccountOps only for the pending state.
         // Prior to triggering a pending state update, we compare the newly passed AccountOp[] (updateSelectedAccount) with the cached version.
@@ -92,7 +92,7 @@ export type AdditionalAccountState = {
         isReady: boolean
         isLoading: boolean
         criticalError?: Error
-        errors?: Error[]
+        errors: Error[]
         result?: AdditionalPortfolioGetResult
       }
     | undefined

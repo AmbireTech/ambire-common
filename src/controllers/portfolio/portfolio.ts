@@ -50,7 +50,7 @@ export class PortfolioController extends EventEmitter {
     accountState[network]!.isLoading = isLoading
     if (error !== null) {
       if (!accountState[network]!.isReady) accountState[network]!.criticalError = error
-      else accountState[network]!.errors!.push(error)
+      else accountState[network]!.errors.push(error)
     }
   }
   async getAdditionalPortfolio(accountId: AccountId) {
@@ -175,7 +175,7 @@ export class PortfolioController extends EventEmitter {
       forceUpdate: boolean
     ): Promise<boolean> => {
       if (!accountState[network.id]) {
-        accountState[network.id] = { isReady: false, isLoading: false }
+        accountState[network.id] = { isReady: false, isLoading: false, errors: [] }
         this.emitUpdate()
       }
 
@@ -202,13 +202,13 @@ export class PortfolioController extends EventEmitter {
           priceCache: state.result?.priceCache,
           ...portfolioProps
         })
-        accountState[network.id] = { isReady: true, isLoading: false, result }
+        accountState[network.id] = { isReady: true, isLoading: false, errors: [], result }
         this.emitUpdate()
         return true
       } catch (e: any) {
         state.isLoading = false
         if (!state.isReady) state.criticalError = e
-        else state.errors = [e]
+        else state.errors.push(e)
         this.emitUpdate()
         return false
       }
