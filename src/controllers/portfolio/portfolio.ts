@@ -64,8 +64,7 @@ export class PortfolioController extends EventEmitter {
 
     let res: any
     try {
-      // @TODO rename this route to portfoolio-additional
-      res = await this.#callRelayer(`/v2/identity/${accountId}/info`)
+      res = await this.#callRelayer(`/v2/identity/${accountId}/portfolio-additional`)
     } catch(e: any) {
       console.error('relayer error for portfolio additional')
       this.#setNetworkLoading(accountId, 'gasTank', false, e)
