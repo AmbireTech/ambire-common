@@ -155,7 +155,7 @@ contract DKIMRecoverySigValidator is ExternalSigValidator {
       sig,
       (SignatureMeta, bytes, bytes)
     );
-    bytes32 identifier = keccak256(abi.encode(accountAddr, data, sigMeta));
+    bytes32 identifier = keccak256(abi.encode(accountAddr, accInfo, sigMeta));
     require(!recoveries[identifier], 'recovery already done');
 
     SigMode mode = sigMeta.mode;
@@ -207,10 +207,7 @@ contract DKIMRecoverySigValidator is ExternalSigValidator {
       if (mode == SigMode.OnlySecond) {
         require(accInfo.acceptEmptyDKIMSig, 'account disallows OnlySecond');
       }
-      bytes32 hashToSign = keccak256(
-        abi.encode(accountAddr, sigMeta.newAddressToSet, sigMeta.newPrivilegeValue)
-      );
-      if (!(SignatureValidator.recoverAddrImpl(hashToSign, secondSig, true) == accInfo.secondaryKey)) {
+      if (!(SignatureValidator.recoverAddrImpl(identifier, secondSig, true) == accInfo.secondaryKey)) {
         return (false, 0);
       }
     }
