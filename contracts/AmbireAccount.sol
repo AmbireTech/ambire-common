@@ -307,6 +307,7 @@ contract AmbireAccount {
 			return 0;
 		}
 		require(address(uint160(uint256(privileges[msg.sender]))) == ENTRY_POINT_MARKER, 'validateUserOp: not from entryPoint');
+		uint256 validation = 0;
 		uint8 sigMode = uint8(op.signature[op.signature.length - 1]);
 		if (sigMode == SIGMODE_EXTERNALLY_VALIDATED) {
 			// 68: two words + 4 for the sighash
@@ -318,7 +319,7 @@ contract AmbireAccount {
 			// pack the return value for validateUserOp
 			// address aggregator, uint48 validUntil, uint48 validAfter
 			if (timestampValidAfter != 0) {
-				return uint160(0) | (uint256(0) << 160) | (uint256(timestampValidAfter) << (208));
+				validation = uint160(0) | (uint256(0) << 160) | (uint256(timestampValidAfter) << (208));
 			}
 		} else {
 			// this is replay-safe because userOpHash is retrieved like this: keccak256(abi.encode(userOp.hash(), address(this), block.chainid))
@@ -334,7 +335,7 @@ contract AmbireAccount {
 			(success);
 		}
 
-		return 0;
+		return validation;
 	}
 
 	function validateExternalSig(Transaction[] memory calls, bytes calldata signature)
