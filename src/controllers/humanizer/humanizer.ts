@@ -1,4 +1,7 @@
 /* eslint-disable no-await-in-loop */
+import { humanizerInfo } from 'ambire-constants/build/result.json'
+
+import { ethers } from 'ethers'
 import { Account } from '../../interfaces/account'
 import { Key } from '../../libs/keystore/keystore'
 import {
@@ -25,7 +28,7 @@ import {
 import { Storage } from '../../interfaces/storage'
 import { AccountOp } from '../../libs/accountOp/accountOp'
 import { humanizeCalls, humanizePLainTextMessage, humanizeTypedMessage } from '../../libs/humanizer'
-import EventEmitter, { ErrorRef } from '../eventEmitter'
+import EventEmitter from '../eventEmitter'
 import { Message } from '../../interfaces/userRequest'
 import { tokenParsing } from '../../libs/humanizer/parsers/tokenParsing'
 import { nameParsing } from '../../libs/humanizer/parsers/nameParsing'
@@ -47,6 +50,35 @@ const humanizerCallModules: HumanizerCallModule[] = [
 const parsingModules: HumanizerParsingModule[] = [nameParsing, tokenParsing]
 
 const humanizerTMModules = [erc20Module, erc721Module, permit2Module, fallbackEIP712Humanizer]
+
+function initHumanizerMeta(humanizerMeta: { [key: string]: any }) {
+  console.log(Object.keys(humanizerMeta))
+  const newHumanizerMeta: { [key: string]: any } = {}
+  Object.keys(humanizerMeta?.tokens).forEach((k2) => {
+    newHumanizerMeta[`tokens:${ethers.getAddress(k2)}`] = humanizerMeta.tokens?.[k2]
+  })
+  Object.keys(humanizerMeta?.abis).forEach((k2) => {
+    newHumanizerMeta[`abis:${k2}`] = humanizerMeta.abis?.[k2]
+  })
+
+  Object.keys(humanizerMeta?.names).forEach((k2) => {
+    newHumanizerMeta[`names:${ethers.getAddress(k2)}`] = humanizerMeta.names?.[k2]
+  })
+
+  Object.keys(humanizerMeta?.errorSelectors).forEach((k) => {
+    newHumanizerMeta[`errorSelectors:${k}`] = humanizerMeta.errorSelectors?.[k]
+  })
+
+  Object.keys(humanizerMeta?.funcSelectors).forEach((k) => {
+    newHumanizerMeta[`funcSelectors:${k}`] = humanizerMeta.funcSelectors?.[k]
+  })
+
+  return {
+    ...newHumanizerMeta,
+    yearnVaults: humanizerMeta.yearnVaults,
+    tesseractVaults: humanizerMeta.yearnVaults
+  }
+}
 export class HumanizerController extends EventEmitter {
   ir: Ir = { calls: [], messages: [] }
 
@@ -54,10 +86,14 @@ export class HumanizerController extends EventEmitter {
 
   #fetch: Function
 
+  #humanizerMeta: { [key: string]: any }
+
   constructor(storage: Storage, fetch: Function) {
     super()
     this.#storage = storage
     this.#fetch = fetch
+    this.#humanizerMeta = initHumanizerMeta(humanizerInfo)
+    this.#storage.set(HUMANIZER_META_KEY, this.#humanizerMeta)
   }
 
   public async humanizeCalls(_accountOp: AccountOp, _knownAddresses: (Account | Key)[] = []) {
@@ -73,14 +109,22 @@ export class HumanizerController extends EventEmitter {
       humanizerMeta: {
         ..._accountOp.humanizerMeta,
         ...(await this.#storage.get(HUMANIZER_META_KEY, {})),
-        ...knownAddresses
+        ...knownAddresses,
+        ...this.#humanizerMeta
       }
     }
 
     for (let i = 0; i <= 3; i++) {
       const storedHumanizerMeta = await this.#storage.get(HUMANIZER_META_KEY, {})
       const [irCalls, asyncOps] = humanizeCalls(
-        { ...accountOp, humanizerMeta: { ...accountOp.humanizerMeta, ...storedHumanizerMeta } },
+        {
+          ...accountOp,
+          humanizerMeta: {
+            ...accountOp.humanizerMeta,
+            ...storedHumanizerMeta,
+            ...this.#humanizerMeta
+          }
+        },
         humanizerCallModules,
         { fetch: this.#fetch, emitError: this.emitError.bind(this) }
       )
@@ -127,7 +171,8 @@ export class HumanizerController extends EventEmitter {
       humanizerMeta: {
         ..._accountOp.humanizerMeta,
         ...(await this.#storage.get(HUMANIZER_META_KEY, {})),
-        ...knownAddresses
+        ...knownAddresses,
+        ...this.#humanizerMeta
       }
     }
     for (let i = 0; i < 3; i++) {
@@ -162,7 +207,8 @@ export class HumanizerController extends EventEmitter {
 
       accountOp.humanizerMeta = {
         ...accountOp.humanizerMeta,
-        ...nonGlobalFragmentData
+        ...nonGlobalFragmentData,
+        ...this.#humanizerMeta
       }
       await this.#storage.set(HUMANIZER_META_KEY, { ...storedHumanizerMeta, ...globalFragmentData })
     }
