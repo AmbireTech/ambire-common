@@ -160,25 +160,7 @@ export class EmailVaultController extends EventEmitter {
       this.emitUpdate()
     }
   }
-  // user workflow =====>
-  // create account
-  // login
-  // forgoten password (for keystore)
-  // request action
-  // fullfil action
 
-  // <=====
-  // fetching funcs are private, async, supposed to be awaited and modify the this. (sometimes return T | null)
-  // examples
-  // auth: requestNewMagicLinkKey, requestSessionKey
-  // vault: getEmailVaultInfo
-
-  // get* functions lookup the storage, return a value and are supposed to be awaited
-  //
-
-  // public functions modify the state
-  // in cases of
-  // login - login() - should triger [some authentication, getEmailVaultInfo]
   async #requestSessionKey(email: string) {
     // if magicLinkKey => get sessionKey
     // <<==>>
@@ -315,51 +297,6 @@ export class EmailVaultController extends EventEmitter {
       this.emailVaultStates.errors = [new Error('error upload keyStore to email vault')]
     }
   }
-
-  // unlockViaEmailVault
-
-  // async #addKeyStoreSecretProceed(
-  //   email: string,
-  //   magicKey: string,
-  //   keyStoreUid: string,
-  //   newSecret: string
-  // ) {
-  //   this.#isWaitingEmailConfirmation = true
-  //   if (!this.#magicLinkKeys[email]) {
-  //     this.emitUpdate()
-  //     return false
-  //   }
-
-  //   const result: Boolean | null = await this.#emailVault
-  //     .addKeyStoreSecret(email, magicKey, keyStoreUid, newSecret)
-  //     .catch(() => null)
-
-  //   if (!result) {
-  //     this.emitUpdate()
-  //     return false
-  //   }
-
-  //   this.#isWaitingEmailConfirmation = false
-  //   await this.#requestSessionKey(email)
-  //   return true
-  // }
-
-  // async recoverKeyStore(email: string) {
-  //   if (!this.emailVaultStates.email[email]) {
-  //     await this.getEmailVaultInfo(email)
-  //   }
-  //   const keyStoreUid = await this.#keyStore.getKeyStoreUid()
-  //   const availableSecrets = this.emailVaultStates.email[email].availableSecrets
-  //   const keyStoreSecret = Object.keys(availableSecrets).find(async (secretKey: string) => {
-  //     return availableSecrets[secretKey].key === keyStoreUid
-  //   })
-  //   if (this.emailVaultStates.email[email] && keyStoreSecret) {
-  //     const secretKey = await this.getRecoverKeyStoreSecret(email, keyStoreUid)
-  //     console.log({ secretKey })
-
-  //     // await this.#keyStore.unlockWithSecret(RECOVERY_SECRET_ID, secretKey.value)
-  //   }
-  // }
 
   async getKeyStoreSecret(email: string): Promise<EmailVaultSecret | null> {
     const uid = await this.#keyStore.getKeyStoreUid()

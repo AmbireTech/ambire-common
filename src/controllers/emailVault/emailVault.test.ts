@@ -112,28 +112,18 @@ describe('happy cases', () => {
     expect(newSecrets[key!]).toMatchObject({ key, type: 'keyStore' })
   })
   test('getKeyStoreSecret', async () => {
-    const evLib = new EmailVault(fetch, relayerUrl)
     const ev = new EmailVaultController(storage, fetch, relayerUrl, keystore)
-    const keys = await requestMagicLink(email, relayerUrl, fetch)
-    const [keystoreUid, keystoreSecret] = ['uid', 'secret']
-
-    await keystore.addSecret(keystoreUid, keystoreSecret)
-
-    await fetch(`${relayerUrl}/email-vault/confirmationKey/${email}/${keys.key}/${keys.secret}`)
-    await evLib.create(email, keys.key)
-
-    await evLib.addKeyStoreSecret(email, keys.key, keystoreUid, keystoreSecret)
 
     await ev.login(email)
-    const secretOne = ev.emailVaultStates.email[email].availableSecrets?.[keystoreUid]
-    expect(secretOne).toHaveProperty('key', keystoreUid)
-    expect(secretOne).toHaveProperty('type', 'keyStore')
-    expect(secretOne).not.toHaveProperty('secret')
+    expect(Object.keys(ev.emailVaultStates.email[email].availableSecrets).length).toBe(1)
+    await ev.uploadKeyStoreSecret(email)
+    expect(Object.keys(ev.emailVaultStates.email[email].availableSecrets).length).toBe(2)
+
+    expect(keystore.isUnlocked()).toBeFalsy()
     await ev.getKeyStoreSecret(email)
-    const keystoreSecrets = await keystore.getMainKeyEncryptedWithSecrets()
-    expect(keystoreSecrets.length).toBe(1)
-    expect(keystoreSecrets[0].id).toBe(keystoreUid)
+    expect(keystore.isUnlocked()).toBeTruthy()
   })
+
   test('request key sync', async () => {
     const [storage2, keystore2] = [
       produceMemoryStore(),

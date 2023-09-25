@@ -285,7 +285,6 @@ describe('independant test', () => {
   })
 
   test('import Key With Public Key Encryption', async () => {
-    console.log('in test')
     const label = 'new key'
     const keystore2 = new Keystore(produceMemoryStore(), keystoreSigners)
     await keystore2.addSecret('123', '123')
