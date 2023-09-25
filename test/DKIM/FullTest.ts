@@ -8,7 +8,7 @@ import { promisify } from 'util'
 import fs from 'fs'
 import path from 'path'
 import parseEmail from '../../src/libs/dkim/parseEmail'
-import { getDKIMValidatorData, getPriviledgeTxn, getSignerKey } from '../helpers'
+import { getDKIMValidatorData, getPriviledgeTxn, getPriviledgeTxnWithCustomHash, getSignerKey } from '../helpers'
 import { deployAmbireAccountHardhatNetwork } from '../implementations'
 import { wrapEthSign, wrapExternallyValidated } from '../ambireSign'
 const readFile = promisify(fs.readFile)
@@ -21,6 +21,7 @@ function hexEncodeSignedSet(rrs: any, sig: any) {
 
 const gmailDomainName = '0832303232313230380a5f646f6d61696e6b657905676d61696c03636f6d0c'
 const accInfoTuple = 'tuple(string, string, string, bytes, bytes, address, bool, uint32, uint32, bool, bool, uint32)';
+const emailPrivValue = '0xfe564763e6c69427036277e09f47a1063bcc76422a8d215852ec20cbbf5753fb'
 
 let dkimRecovery: any
 let ambireAccountAddress: any
@@ -79,20 +80,21 @@ describe('DKIM Bridge + unknown selector DKIM verification', function () {
   })
 
   it('successfully add a DNS key through addDKIMKeyWithDNSSec', async function () {
-    const res = await lookup('20221208', 'gmail.com.dnssecbridge.ambire.com')
-    const rrsets = res.proofs.map(({records, signature}: any) => hexEncodeSignedSet(records, signature))
+    const res = await lookup('20230601', 'gmail.com.dnssecbridge.ambire.com')
     const set = hexEncodeSignedSet(res.answer.records, res.answer.signature)
+    const rrsets = res.proofs.map(({records, signature}: any) => hexEncodeSignedSet(records, signature))
     rrsets.push(set)
     await dkimRecovery.addDKIMKeyWithDNSSec(rrsets)
 
     // get the public key
-    const ambireKey = await getPublicKey({domain: 'gmail.com.dnssecbridge.ambire.com', selector: '20221208'})
+    const ambireKey = await getPublicKey({domain: 'gmail.com.dnssecbridge.ambire.com', selector: '20230601'})
     const key = publicKeyToComponents(ambireKey.publicKey)
     const ambireExponent = ethers.hexlify(ethers.toBeHex(key.exponent))
     const ambireModulus = ethers.hexlify(key.modulus)
 
     // get the domainName
-    const domainName = Buffer.from(gmailDomainName, 'hex').toString('ascii')
+    const domainNameContract = await dkimRecovery.getDomainNameFromSet(set)
+    const domainName = domainNameContract[0]
     const dkimHash = ethers.keccak256(abiCoder.encode(['tuple(string, bytes, bytes)'], [[domainName, ambireModulus, ambireExponent]]))
     const isResThere = await dkimRecovery.dkimKeys(dkimHash)
     expect(isResThere[0]).to.be.true
@@ -113,14 +115,17 @@ describe('DKIM Bridge + unknown selector DKIM verification', function () {
     const {signerKey} = getSignerKey(validatorAddr, validatorData)
     const dkimSig = parsedContents[0].solidity.signature
 
-    const txns = [getPriviledgeTxn(ambireAccountAddress, newSigner.address, true)]
+    const txns = [getPriviledgeTxnWithCustomHash(ambireAccountAddress, newSigner.address, emailPrivValue)]
     const identifierData = getDKIMValidatorData(parsedContents, relayer, {
       acceptUnknownSelectors: true,
       selector: domainName,
       plain: true
     })
     const sigMetaTuple = 'tuple(uint8, tuple(string, bytes, bytes), string, address, bytes32)'
-    const domainNameMeta = Buffer.from(gmailDomainName, 'hex').toString('ascii')
+    const res = await lookup('20230601', 'gmail.com.dnssecbridge.ambire.com')
+    const set = hexEncodeSignedSet(res.answer.records, res.answer.signature)
+    const domainNameContract = await dkimRecovery.getDomainNameFromSet(set)
+    const domainNameMeta = domainNameContract[0]
     const sigMetaValues = [
       ethers.toBeHex(0, 1),
       [
@@ -130,7 +135,7 @@ describe('DKIM Bridge + unknown selector DKIM verification', function () {
       ],
       parsedContents[0].processedHeader,
       newSigner.address,
-      ethers.toBeHex(1, 32)
+      emailPrivValue
     ]
     const identifier = ethers.keccak256(abiCoder.encode(['address', accInfoTuple, sigMetaTuple], [
         ambireAccountAddress,
@@ -149,7 +154,7 @@ describe('DKIM Bridge + unknown selector DKIM verification', function () {
 
     // txn should have completed successfully
     const hasPriv = await account.privileges(newSigner.address)
-    expect(hasPriv).to.equal(ethers.toBeHex(1, 32))
+    expect(hasPriv).to.equal(emailPrivValue)
 
     // expect recovery to not have been marked as complete
     const recoveryAssigned = await dkimRecovery.recoveries(identifier)

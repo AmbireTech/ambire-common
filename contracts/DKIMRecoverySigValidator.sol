@@ -119,8 +119,7 @@ contract DKIMRecoverySigValidator is ExternalSigValidator {
   address public immutable authorizedToSubmit;
   address public immutable authorizedToRevoke;
   DNSSEC public immutable oracle;
-  bytes private constant BRIDGE_STRING =
-    hex'646e7373656362726964676506616d6269726503636f6d0000100001000001';
+  bytes private constant BRIDGE_STRING = hex'646e7373656362726964676506616d6269726503636f6d';
 
   // this is the bytes representation of the character that replaces "space"
   // when parsing the DNSSEC signedSet data
@@ -156,12 +155,6 @@ contract DKIMRecoverySigValidator is ExternalSigValidator {
     );
     bytes32 identifier = keccak256(abi.encode(msg.sender, accInfo, sigMeta));
     require(!recoveries[identifier], 'recovery already done');
-
-    // we allow only full priv or no priv via recovery
-    require(
-      sigMeta.newPrivilegeValue == bytes32(0) || sigMeta.newPrivilegeValue == bytes32(uint256(1)),
-      'Priviledge not valid'
-    );
 
     SigMode mode = sigMeta.mode;
     if (mode == SigMode.Both || mode == SigMode.OnlyDKIM) {
@@ -359,7 +352,15 @@ contract DKIMRecoverySigValidator is ExternalSigValidator {
     RRUtils.SignedSet memory signedSet
   ) internal pure returns (string memory, bool) {
     Strings.slice memory domainName = string(signedSet.data).toSlice();
-    domainName.rsplit(','.toSlice()); // this becomes the value before ,
+    // the TXT set contains a v= field. Everything before it is the domain
+    // name along with some invalid ASCII characters the RRUtils cannot
+    // decode properly
+    domainName.rsplit("v=".toSlice()); // this becomes the value before v=
+    // if the invalid ASCII characters remain in the domainName,
+    // we strip them
+    if (domainName.contains(hex"000010".toSlice())) {
+      domainName.rsplit(hex"000010".toSlice()); // this becomes the value before hex"000010"
+    }
     require(bytes(domainName.toString()).length > 0, 'domain name not found in txt set');
 
     bool isBridge = domainName.endsWith(string(BRIDGE_STRING).toSlice());
@@ -411,15 +412,12 @@ contract DKIMRecoverySigValidator is ExternalSigValidator {
       .toSlice();
     require(canonizedHeaders.toSlice().startsWith(toHeader), 'emailTo not valid');
 
-    // subject looks like this: subject:Give permissions to {address} SigMode {uint8}
-    // or subject:Remove permissions from {address} SigMode {uint8}
-    Strings.slice memory permissionsAsSlice = newPrivilegeValue == bytes32(uint256(1))
-      ? 'Give permissions to '.toSlice()
-      : 'Remove permissions from '.toSlice();
-
-    Strings.slice memory subject = 'subject:'
+    // subject looks like this: subject:Give {bytes32} permissions to {address} SigMode {uint8}
+    Strings.slice memory subject = 'subject:Give '
       .toSlice()
-      .concat(permissionsAsSlice)
+      .concat(OpenZeppelinStrings.toHexString(uint256(newPrivilegeValue)).toSlice())
+      .toSlice()
+      .concat(' permissions to '.toSlice())
       .toSlice()
       .concat(OpenZeppelinStrings.toHexString(newAddressToSet).toSlice())
       .toSlice()

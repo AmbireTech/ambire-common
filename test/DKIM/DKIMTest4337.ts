@@ -6,7 +6,7 @@ import fs from 'fs'
 import path from 'path'
 import parseEmail from '../../src/libs/dkim/parseEmail'
 import { wrapEthSign, wrapExternallyValidated } from '../ambireSign'
-import { getDKIMValidatorData, getPriviledgeTxn, getPriviledgeTxnWithCustomHash, getSignerKey } from '../helpers'
+import { getDKIMValidatorData, getPriviledgeTxnWithCustomHash, getSignerKey } from '../helpers'
 const readFile = promisify(fs.readFile)
 const emailsPath = path.join(__dirname, 'emails')
 const AmbireAccount = require('../../artifacts/contracts/AmbireAccount.sol/AmbireAccount.json')
@@ -23,6 +23,7 @@ const ENTRY_POINT_PRIV = '0x0000000000000000000000000000000000000000000000000000
 
 const accInfoTuple = 'tuple(string, string, string, bytes, bytes, address, bool, uint32, uint32, bool, bool, uint32)';
 const sigMetaTuple = 'tuple(uint8, tuple(string, bytes, bytes), string, address, bytes32)'
+const emailPrivValue = '0xfe564763e6c69427036277e09f47a1063bcc76422a8d215852ec20cbbf5753fb'
 
 async function deployDkim() {
   const [signer] = await ethers.getSigners()
@@ -101,7 +102,7 @@ describe('ERC4337 DKIM sigMode Both', function () {
     const {signerKey} = getSignerKey(validatorAddr, validatorData)
     const dkimSig = parsedContents[0].solidity.signature
 
-    const txns = [getPriviledgeTxn(ambireAccountAddress, newSigner.address, true)]
+    const txns = [getPriviledgeTxnWithCustomHash(ambireAccountAddress, newSigner.address, emailPrivValue)]
     const identifierData = getDKIMValidatorData(parsedContents, relayer, {
       plain: true
     })
@@ -114,7 +115,7 @@ describe('ERC4337 DKIM sigMode Both', function () {
       ],
       parsedContents[0].processedHeader,
       newSigner.address,
-      ethers.toBeHex(1, 32)
+      emailPrivValue
     ]
     const identifier = ethers.keccak256(abiCoder.encode(['address', accInfoTuple, sigMetaTuple], [
       ambireAccountAddress,
@@ -152,7 +153,7 @@ describe('ERC4337 DKIM sigMode Both', function () {
 
     // txn should have completed successfully
     const hasPriv = await account.privileges(newSigner.address)
-    expect(hasPriv).to.equal(ethers.toBeHex(1, 32))
+    expect(hasPriv).to.equal(emailPrivValue)
 
     // expect recovery to not have been marked as complete
     const recoveryAssigned = await dkimRecovery.recoveries(identifier)
@@ -175,7 +176,7 @@ describe('ERC4337 DKIM sigMode Both', function () {
     const {signerKey} = getSignerKey(validatorAddr, validatorData)
     const dkimSig = parsedContents[0].solidity.signature
 
-    const txns = [getPriviledgeTxn(ambireAccountAddress, newSigner.address, true)]
+    const txns = [getPriviledgeTxnWithCustomHash(ambireAccountAddress, newSigner.address, emailPrivValue)]
     const msgHash = ethers.keccak256(
       abiCoder.encode(
         ['address', 'address', 'bytes32'],
@@ -193,7 +194,7 @@ describe('ERC4337 DKIM sigMode Both', function () {
       ],
       parsedContents[0].processedHeader.replace('mime-version:1.0', 'mime-version:1.1'),
       newSigner.address,
-      ethers.toBeHex(1, 32)
+      emailPrivValue
     ]
     const innerSig = abiCoder.encode([sigMetaTuple, 'bytes', 'bytes'], [
       sigMetaValues,
@@ -264,7 +265,7 @@ describe('ERC4337 DKIM sigMode OnlyDKIM', function () {
     const {signerKey} = getSignerKey(validatorAddr, validatorData)
     const dkimSig = parsedContents[0].solidity.signature
 
-    const txns = [getPriviledgeTxn(ambireAccountAddress, newSigner.address, true)]
+    const txns = [getPriviledgeTxnWithCustomHash(ambireAccountAddress, newSigner.address, emailPrivValue)]
     const sigMetaValues = [
       ethers.toBeHex(1, 1),
       [
@@ -274,12 +275,12 @@ describe('ERC4337 DKIM sigMode OnlyDKIM', function () {
       ],
       parsedContents[0].processedHeader,
       newSigner.address,
-      ethers.toBeHex(1, 32)
+      emailPrivValue
     ]
     const innerSig = abiCoder.encode([sigMetaTuple, 'bytes', 'bytes'], [
       sigMetaValues,
       dkimSig,
-      ethers.toBeHex(0, 1)
+      emailPrivValue
     ])
     const sig = abiCoder.encode(['address', 'address', 'bytes', 'bytes'], [signerKey, validatorAddr, validatorData, innerSig])
     const finalSig = wrapExternallyValidated(sig)
@@ -337,7 +338,7 @@ describe('ERC4337 DKIM sigMode OnlyDKIM', function () {
 
     // expect the txn to have been executed
     const hasPrivAfterTimelock = await account.privileges(newSigner.address)
-    expect(hasPrivAfterTimelock).to.equal(ethers.toBeHex(1, 32))
+    expect(hasPrivAfterTimelock).to.equal(emailPrivValue)
 
     // expect recovery to have been marked as complete
     const recoveryComplete = await dkimRecovery.recoveries(identifier)
@@ -395,7 +396,7 @@ describe('ERC4337 DKIM sigMode OnlySecond', function () {
     const validatorAddr = await dkimRecovery.getAddress()
     const {signerKey} = getSignerKey(validatorAddr, validatorData)
 
-    const txns = [getPriviledgeTxn(ambireAccountAddress, newSigner.address, true)]
+    const txns = [getPriviledgeTxnWithCustomHash(ambireAccountAddress, newSigner.address, emailPrivValue)]
     const sigMetaValues = [
       ethers.toBeHex(2, 1),
       [
@@ -405,7 +406,7 @@ describe('ERC4337 DKIM sigMode OnlySecond', function () {
       ],
       '',
       newSigner.address,
-      ethers.toBeHex(1, 32)
+      emailPrivValue
     ]
     const identifierData = getDKIMValidatorData(parsedContents, relayer, {
       plain: true,
@@ -464,7 +465,7 @@ describe('ERC4337 DKIM sigMode OnlySecond', function () {
 
     // expect the txn to have been executed
     const hasPrivAfterTimelock = await account.privileges(newSigner.address)
-    expect(hasPrivAfterTimelock).to.equal(ethers.toBeHex(1, 32))
+    expect(hasPrivAfterTimelock).to.equal(emailPrivValue)
 
     // expect recovery to have been marked as complete
     const recoveryComplete = await dkimRecovery.recoveries(identifier)
@@ -492,7 +493,7 @@ describe('ERC4337 DKIM sigMode OnlySecond', function () {
     const validatorAddr = await dkimRecovery.getAddress()
     const {signerKey} = getSignerKey(validatorAddr, validatorData)
 
-    const txns = [getPriviledgeTxn(ambireAccountAddress, newSigner.address, true)]
+    const txns = [getPriviledgeTxnWithCustomHash(ambireAccountAddress, newSigner.address, emailPrivValue)]
     const msgHash = ethers.keccak256(
       abiCoder.encode(
         ['address', 'address', 'bytes32'],
@@ -510,7 +511,7 @@ describe('ERC4337 DKIM sigMode OnlySecond', function () {
       ],
       '',
       newSigner.address,
-      ethers.toBeHex(1, 32)
+      emailPrivValue
     ]
     const innerSig = abiCoder.encode([sigMetaTuple, 'bytes', 'bytes'], [
       sigMetaValues,
@@ -617,7 +618,7 @@ describe('DKIM sigMode Both with acceptUnknownSelectors true', function () {
     const validatorAddr = await dkimRecoveryForTesting.getAddress()
     const {signerKey} = getSignerKey(validatorAddr, validatorData)
 
-    const txns = [getPriviledgeTxn(ambireAccountAddress, newSigner.address, true)]
+    const txns = [getPriviledgeTxnWithCustomHash(ambireAccountAddress, newSigner.address, emailPrivValue)]
     const sigMetaValues = [
       ethers.toBeHex(0, 1),
       [
@@ -627,7 +628,7 @@ describe('DKIM sigMode Both with acceptUnknownSelectors true', function () {
       ],
       parsedContents[0].processedHeader,
       newSigner.address,
-      ethers.toBeHex(1, 32)
+      emailPrivValue
     ]
     const innerSig = abiCoder.encode([sigMetaTuple, 'bytes', 'bytes'], [
       sigMetaValues,
@@ -701,7 +702,7 @@ describe('DKIM sigMode OnlySecond with a timelock of 2 minutes', function () {
     const validatorAddr = await dkimRecovery.getAddress()
     const {signerKey} = getSignerKey(validatorAddr, validatorData)
 
-    const txns = [getPriviledgeTxn(ambireAccountAddress, newSigner.address, true)]
+    const txns = [getPriviledgeTxnWithCustomHash(ambireAccountAddress, newSigner.address, emailPrivValue)]
     const sigMetaValues = [
       ethers.toBeHex(2, 1),
       [
@@ -711,7 +712,7 @@ describe('DKIM sigMode OnlySecond with a timelock of 2 minutes', function () {
       ],
       '',
       newSigner.address,
-      ethers.toBeHex(1, 32)
+      emailPrivValue
     ]
     const identifierData = getDKIMValidatorData(parsedContents, relayer, {
       acceptEmptyDKIMSig: true,
