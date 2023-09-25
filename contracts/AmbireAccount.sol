@@ -368,6 +368,6 @@ contract AmbireAccount {
 		// The sig validator itself should throw when a signature isn't valdiated successfully
 		// the return value just indicates whether we want to execute the current calls
 		// @TODO what about reentrancy for externally validated signatures
-		(isValidSig, timestampValidAfter) = ExternalSigValidator(validatorAddr).validateSig(address(this), validatorData, innerSig, calls);
+		(isValidSig, timestampValidAfter) = ExternalSigValidator(validatorAddr).validateSig(validatorData, innerSig, calls);
 	}
 }
