@@ -111,7 +111,7 @@ describe('SignMessageController', () => {
     const signingKeyAddr = '0x9188fdd757Df66B4F693D624Ed6A13a15Cf717D7'
 
     signMessageController.init({ messageToSign, accounts: [account], accountStates: {} })
-    signMessageController.setSigningKeyAddr(signingKeyAddr)
+    signMessageController.setSigningKey(signingKeyAddr, 'internal')
 
     expect(signMessageController.signingKeyAddr).toBe(signingKeyAddr)
   })
@@ -156,7 +156,7 @@ describe('SignMessageController', () => {
     })
 
     signMessageController.init({ messageToSign, accounts: [account], accountStates: {} })
-    signMessageController.setSigningKeyAddr(signingKeyAddr)
+    signMessageController.setSigningKey(signingKeyAddr, 'internal')
     signMessageController.sign()
   })
 })

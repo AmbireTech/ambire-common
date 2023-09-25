@@ -113,7 +113,9 @@ describe('Keystore', () => {
     await keystore.addKeys([{ privateKey: privKey, label: 'test key' }])
 
     const keys = await keystore.getKeys()
-    expect(keys).toContainEqual(expect.objectContaining({ id: keyPublicAddress }))
+    expect(keys).toContainEqual(
+      expect.objectContaining({ addr: keyPublicAddress, type: 'internal' })
+    )
   })
 
   test('should not add twice internal key that is already added', async () => {
@@ -140,9 +142,10 @@ describe('Keystore', () => {
     ])
 
     const keys = await keystore.getKeys()
-    const newKeys = keys
-      .map(({ id }) => id)
-      .filter((id) => [keyPublicAddress, anotherPrivateKeyPublicAddress].includes(id))
+    const newKeys = keys.filter(
+      (x) =>
+        [anotherPrivateKeyPublicAddress, keyPublicAddress].includes(x.addr) && x.type === 'internal'
+    )
 
     expect(newKeys).toHaveLength(2)
   })
@@ -151,33 +154,38 @@ describe('Keystore', () => {
     const publicAddress = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'
     expect.assertions(1)
     await keystore.addKeysExternallyStored([
-      { id: publicAddress, label: 'test external key', type: 'external', meta: {} }
+      { addr: publicAddress, label: 'test external key', type: 'trezor', meta: null }
     ])
 
     const keys = await keystore.getKeys()
-    expect(keys).toContainEqual(expect.objectContaining({ id: publicAddress }))
+    expect(keys).toContainEqual(expect.objectContaining({ addr: publicAddress, type: 'trezor' }))
   })
 
   test('should not add twice external key that is already added', async () => {
     const publicAddress = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'
     const keysWithPrivateKeyAlreadyAdded = [
-      { id: publicAddress, label: 'test key 1', type: 'external', meta: {} },
+      { addr: publicAddress, label: 'test key 1', type: 'trezor' as 'trezor', meta: null },
       {
-        id: publicAddress,
+        addr: publicAddress,
         label: 'test key 2 with the same id (public address) as test key 1',
-        type: 'external',
-        meta: {}
+        type: 'trezor' as 'trezor',
+        meta: null
       }
     ]
 
     const anotherAddressNotAddedYet = '0x42c06A1722DEb11022A339d3448BafFf8dFF99Ac'
     const keysWithPrivateKeyDuplicatedInParams = [
-      { id: anotherAddressNotAddedYet, label: 'test key 3', type: 'external', meta: {} },
       {
-        id: anotherAddressNotAddedYet,
+        addr: anotherAddressNotAddedYet,
+        label: 'test key 3',
+        type: 'trezor' as 'trezor',
+        meta: null
+      },
+      {
+        addr: anotherAddressNotAddedYet,
         label: 'test key 4 with the same private key as key 3',
-        type: 'external',
-        meta: {}
+        type: 'trezor' as 'trezor',
+        meta: null
       }
     ]
 
@@ -189,23 +197,43 @@ describe('Keystore', () => {
 
     const keys = await keystore.getKeys()
     const newKeys = keys
-      .map(({ id }) => id)
-      .filter((id) => [publicAddress, anotherAddressNotAddedYet].includes(id))
+      .map(({ addr }) => addr)
+      .filter((addr) => [publicAddress, anotherAddressNotAddedYet].includes(addr))
 
     expect(newKeys).toHaveLength(2)
   })
 
+  test('should add both keys when they have the same address but different type', async () => {
+    const externalKeysToAddWithDuplicateOnes = [
+      { addr: keyPublicAddress, label: 'test key 2', type: 'trezor' as 'trezor', meta: null },
+      { addr: keyPublicAddress, label: 'test key 2', type: 'trezor' as 'trezor', meta: null },
+      { addr: keyPublicAddress, label: 'test key 3', type: 'ledger' as 'ledger', meta: null }
+    ]
+
+    expect.assertions(3)
+    await keystore.addKeysExternallyStored(externalKeysToAddWithDuplicateOnes)
+
+    const keys = await keystore.getKeys()
+
+    expect(keys.filter((x) => x.addr === keyPublicAddress && x.type === 'trezor').length).toEqual(1)
+    expect(keys.filter((x) => x.addr === keyPublicAddress && x.type === 'ledger').length).toEqual(1)
+    // Note: previous test adds internal key with the same address
+    expect(keys.filter((x) => x.addr === keyPublicAddress && x.type === 'internal').length).toEqual(
+      1
+    )
+  })
+
   test('should get an internal signer', async () => {
     expect.assertions(2)
-    const internalSigner: any = await keystore.getSigner(keyPublicAddress)
+    const internalSigner: any = await keystore.getSigner(keyPublicAddress, 'internal')
     expect(internalSigner.privKey).toEqual(privKey)
-    expect(internalSigner.key.id).toEqual(keyPublicAddress)
+    expect(internalSigner.key.addr).toEqual(keyPublicAddress)
   })
 
   test('should not get a signer', async () => {
     expect.assertions(1)
     try {
-      await keystore.getSigner('0xc7E32B118989296eaEa88D86Bd9041Feca77Ed36')
+      await keystore.getSigner('0xc7E32B118989296eaEa88D86Bd9041Feca77Ed36', 'internal')
     } catch (e: any) {
       expect(e.message).toBe('keystore: key not found')
     }
@@ -215,7 +243,7 @@ describe('Keystore', () => {
     expect.assertions(1)
     try {
       await keystore.lock()
-      await keystore.getSigner(keyPublicAddress)
+      await keystore.getSigner(keyPublicAddress, 'internal')
     } catch (e: any) {
       expect(e.message).toBe('keystore: not unlocked')
     }
@@ -223,7 +251,11 @@ describe('Keystore', () => {
 
   test('should export key backup, create wallet and compare public address', async () => {
     await keystore.unlockWithSecret('passphrase', pass)
-    const keyBackup = await keystore.exportKeyWithPasscode(keyPublicAddress, 'goshoPazara')
+    const keyBackup = await keystore.exportKeyWithPasscode(
+      keyPublicAddress,
+      'internal',
+      'goshoPazara'
+    )
     const wallet = await Wallet.fromEncryptedJson(JSON.parse(keyBackup), 'goshoPazara')
     expect(wallet.address).toBe(keyPublicAddress)
   })

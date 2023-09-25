@@ -355,11 +355,11 @@ contract DKIMRecoverySigValidator is ExternalSigValidator {
     // the TXT set contains a v= field. Everything before it is the domain
     // name along with some invalid ASCII characters the RRUtils cannot
     // decode properly
-    domainName.rsplit("v=".toSlice()); // this becomes the value before v=
+    domainName.rsplit('v='.toSlice()); // this becomes the value before v=
     // if the invalid ASCII characters remain in the domainName,
     // we strip them
-    if (domainName.contains(hex"000010".toSlice())) {
-      domainName.rsplit(hex"000010".toSlice()); // this becomes the value before hex"000010"
+    if (domainName.contains(hex'000010'.toSlice())) {
+      domainName.rsplit(hex'000010'.toSlice()); // this becomes the value before hex"000010"
     }
     require(bytes(domainName.toString()).length > 0, 'domain name not found in txt set');
 
