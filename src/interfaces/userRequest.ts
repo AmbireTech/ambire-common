@@ -29,6 +29,11 @@ export interface Message {
   content: PlainTextMessage | TypedMessage
   signature: string | null
   fromUserRequestId?: bigint
+  // This is fed into the humanizer to help visualize the accountOp
+  // This can contain info like the value of specific share tokens at the time of signing,
+  // or any other data that needs to otherwise be retrieved in an async manner and/or needs to be
+  // "remembered" at the time of signing in order to visualize history properly
+  humanizerMeta?: { [key: string]: any }
 }
 
 export interface UserRequest {

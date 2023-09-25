@@ -1,78 +1,161 @@
-import { ethers } from 'ethers'
+/* eslint-disable no-await-in-loop */
+import { Account } from '../../interfaces/account'
+import { Storage } from '../../interfaces/storage'
+import { Message } from '../../interfaces/userRequest'
 import { AccountOp } from '../accountOp/accountOp'
+import { Key } from '../keystore/keystore'
 import {
-  IrCall,
-  HumanizerFragment,
-  HumanizerVisualization,
-  HumanizerCallModule,
-  HumanizerTypedMessaageModule
-} from './interfaces'
-import { PlainTextMessage, TypedMessage } from '../../interfaces/userRequest'
-import { getAction, getLabel } from './utils'
+  humanizeCalls as humanizeCallsFunction,
+  humanizePLainTextMessage,
+  humanizeTypedMessage
+} from './functions'
+import { HumanizerCallModule, HumanizerParsingModule, IrCall, IrMessage } from './interfaces'
+import { aaveHumanizer } from './modules/Aave'
+import { fallbackHumanizer } from './modules/fallBackHumanizer'
+import { genericErc20Humanizer, genericErc721Humanizer } from './modules/tokens'
+import { uniswapHumanizer } from './modules/Uniswap'
+// import { oneInchHumanizer } from '.modules/oneInch'
+import { WALLETModule } from './modules/WALLET'
+import { wethHumanizer } from './modules/weth'
+import { yearnVaultModule } from './modules/yearnTesseractVault'
+import { parseCalls, parseMessage } from './parsers'
+import { nameParsing } from './parsers/nameParsing'
+import { tokenParsing } from './parsers/tokenParsing'
+import {
+  erc20Module,
+  erc721Module,
+  fallbackEIP712Humanizer,
+  permit2Module
+} from './typedMessageModules'
 
-export function humanizeCalls(
-  _accountOp: AccountOp,
-  humanizerModules: HumanizerCallModule[],
-  options?: any
-): [IrCall[], Array<Promise<HumanizerFragment | null>>] {
-  const accountOp = {
-    ..._accountOp,
-    calls: _accountOp.calls.map((c) => ({ ...c, to: ethers.getAddress(c.to) }))
-  }
-  let currentCalls: IrCall[] = accountOp.calls
-  let asyncOps: Promise<HumanizerFragment | null>[] = []
-  try {
-    humanizerModules.forEach((hm) => {
-      let newPromises = []
-      ;[currentCalls, newPromises] = hm(accountOp, currentCalls, options)
-      asyncOps = [...asyncOps, ...newPromises]
-    })
-  } catch (e) {
-    options.emitError({ message: 'Humanizer: unexpected err', error: e, level: 'major' })
-  }
-  return [currentCalls, asyncOps]
-}
+const HUMANIZER_META_KEY = 'HumanizerMeta'
+const humanizerCallModules: HumanizerCallModule[] = [
+  genericErc20Humanizer,
+  genericErc721Humanizer,
+  uniswapHumanizer,
+  wethHumanizer,
+  aaveHumanizer,
+  // oneInchHumanizer,
+  WALLETModule,
+  yearnVaultModule,
+  fallbackHumanizer
+]
 
-export const visualizationToText = (call: IrCall, options: any): string => {
-  let text = ''
-  const visualization = call?.fullVisualization
-  visualization?.forEach((v: { [key: string]: any }, i: number) => {
-    // if not first iteration
-    if (i) text += ' '
-    if (v.type === 'action' || v.type === 'label') text += `${v.content}`
-    if (v.type === 'address') text += v.name ? `${v.address} (${v.name})` : v.address
-    if (v.type === 'token') {
-      text += `${v.readableAmount || v.amount} ${v.symbol ? v.symbol : `${v.address} token`}`
-    }
-  })
-  if (text) {
-    return text
-  }
-  options.emitError({
-    message: 'visualizationToText: Something went wrong with humanization',
-    errror: new Error(`visualizationToText couldn't convert the txn to text, ${call}`),
-    level: 'silent'
-  })
-  return `Call to ${call.to} with ${call.value} value and ${call.data} data`
-}
+const parsingModules: HumanizerParsingModule[] = [nameParsing, tokenParsing]
 
-export const humanizeTypedMessage = (
+const humanizerTMModules = [erc20Module, erc721Module, permit2Module, fallbackEIP712Humanizer]
+
+export const humanizeCalls = async (
   accountOp: AccountOp,
-  modules: HumanizerTypedMessaageModule[],
-  tm: TypedMessage
-): HumanizerVisualization[] => {
-  // runs all modules and takes the first truthy value
-  const visualization: HumanizerVisualization[] = modules
-    .map((m) => m(tm))
-    .filter((p) => p.length)[0]
-  return visualization
+  knownAddresses: (Account | Key)[],
+  storage: Storage,
+  fetch: Function,
+  callback: (irCalls: IrCall[]) => void
+) => {
+  const op: AccountOp = {
+    ...accountOp,
+    humanizerMeta: {
+      ...accountOp.humanizerMeta,
+      ...(await storage.get(HUMANIZER_META_KEY, {})),
+      ...Object.fromEntries(
+        knownAddresses.map((k) => {
+          const key = `names:${'id' in k ? k.id : k.addr}`
+          return [key, k.label]
+        })
+      )
+    }
+  }
+
+  for (let i = 0; i <= 3; i++) {
+    const storedHumanizerMeta = await storage.get(HUMANIZER_META_KEY, {})
+    // @ts-ignore
+    const [irCalls, asyncOps] = humanizeCallsFunction(
+      { ...op, humanizerMeta: { ...op.humanizerMeta, ...storedHumanizerMeta } },
+      humanizerCallModules,
+      { fetch }
+    )
+
+    const [parsedCalls, newAsyncOps] = parseCalls(op, irCalls, parsingModules)
+    asyncOps.push(...newAsyncOps)
+    callback(parsedCalls)
+
+    const fragments = (await Promise.all(asyncOps)).filter((f) => f)
+    if (!fragments.length) return
+
+    let globalFragmentData = {}
+    let nonGlobalFragmentData = {}
+
+    fragments.forEach((f) => {
+      if (f)
+        f.isGlobal
+          ? (globalFragmentData = { ...globalFragmentData, [f.key]: f.value })
+          : (nonGlobalFragmentData = { ...nonGlobalFragmentData, [f.key]: f.value })
+    })
+
+    op.humanizerMeta = {
+      ...op.humanizerMeta,
+      ...nonGlobalFragmentData
+    }
+    await storage.set(HUMANIZER_META_KEY, { ...storedHumanizerMeta, ...globalFragmentData })
+  }
 }
 
-export const humanizePLainTextMessage = (
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  accounOp: AccountOp,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  m: PlainTextMessage
-): HumanizerVisualization[] => {
-  return [getAction('Sign message:'), getLabel(m.message as string)]
+export const humanizeMessage = async ({
+  message,
+  knownAddresses = [],
+  storage,
+  fetch,
+  callback
+}: {
+  message: Message
+  knownAddresses: (Account | Key)[]
+  storage: Storage
+  fetch: Function
+  callback: (msgs: IrMessage) => void
+}) => {
+  const msg: Message = {
+    ...message,
+    humanizerMeta: {
+      ...message.humanizerMeta,
+      ...(await storage.get(HUMANIZER_META_KEY, {})),
+      ...Object.fromEntries(
+        knownAddresses.map((k) => {
+          const key = `names:${'id' in k ? k.id : k.addr}`
+          return [key, k.label]
+        })
+      )
+    }
+  }
+
+  for (let i = 0; i < 3; i++) {
+    const storedHumanizerMeta = await storage.get(HUMANIZER_META_KEY, {})
+    const irMessage: IrMessage = {
+      ...msg,
+      fullVisualization:
+        msg.content.kind === 'typedMessage'
+          ? humanizeTypedMessage(humanizerTMModules, msg.content)
+          : humanizePLainTextMessage(msg.content)
+    }
+
+    const [parsedMessage, asyncOps] = parseMessage(irMessage, parsingModules, {
+      fetch
+    })
+
+    callback(parsedMessage)
+
+    const fragments = (await Promise.all(asyncOps)).filter((f) => f)
+    if (!fragments.length) return
+
+    let globalFragmentData = {}
+    let nonGlobalFragmentData = {}
+
+    fragments.forEach((f) => {
+      if (f)
+        f.isGlobal
+          ? (globalFragmentData = { ...globalFragmentData, [f.key]: f.value })
+          : (nonGlobalFragmentData = { ...nonGlobalFragmentData, [f.key]: f.value })
+    })
+
+    await storage.set(HUMANIZER_META_KEY, { ...storedHumanizerMeta, ...globalFragmentData })
+  }
 }
