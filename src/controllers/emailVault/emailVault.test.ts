@@ -116,15 +116,20 @@ describe('happy cases', () => {
     const ev = new EmailVaultController(storage, fetch, relayerUrl, keystore)
     const keys = await requestMagicLink(email, relayerUrl, fetch)
     const [keystoreUid, keystoreSecret] = ['uid', 'secret']
+
+    await keystore.addSecret(keystoreUid, keystoreSecret)
+
     await fetch(`${relayerUrl}/email-vault/confirmationKey/${email}/${keys.key}/${keys.secret}`)
     await evLib.create(email, keys.key)
+
     await evLib.addKeyStoreSecret(email, keys.key, keystoreUid, keystoreSecret)
+
     await ev.login(email)
     const secretOne = ev.emailVaultStates.email[email].availableSecrets?.[keystoreUid]
     expect(secretOne).toHaveProperty('key', keystoreUid)
     expect(secretOne).toHaveProperty('type', 'keyStore')
     expect(secretOne).not.toHaveProperty('secret')
-    await ev.getKeyStoreSecret(email, keystoreUid)
+    await ev.getKeyStoreSecret(email)
     const keystoreSecrets = await keystore.getMainKeyEncryptedWithSecrets()
     expect(keystoreSecrets.length).toBe(1)
     expect(keystoreSecrets[0].id).toBe(keystoreUid)
@@ -150,8 +155,8 @@ describe('happy cases', () => {
     // used to add keystore uid
     await keystore.addSecret('smth', 'secret')
     await keystore.unlockWithSecret('smth', 'secret')
-    await keystore.addKey(keys[0].privateKey, keys[0].address)
-    await keystore.addKey(keys[1].privateKey, keys[1].address)
+    await keystore.addKeys([{ privateKey: keys[0].privateKey, label: keys[0].address }])
+    await keystore.addKeys([{ privateKey: keys[1].privateKey, label: keys[1].address }])
 
     // ev 2
     const ev2 = new EmailVaultController(storage2, fetch, relayerUrl, keystore2)
@@ -189,9 +194,9 @@ describe('happy cases', () => {
         }
       }
     )
-    expect(await keystore2.getSigner(keys[0].address)).toMatchObject({
+    expect(await keystore2.getSigner(keys[0].address, 'internal')).toMatchObject({
       key: {
-        id: keys[0].address,
+        addr: keys[0].address,
         label: keys[0].address,
         type: 'internal',
         meta: null,
@@ -199,9 +204,9 @@ describe('happy cases', () => {
       },
       privKey: keys[0].privateKey
     })
-    expect(await keystore2.getSigner(keys[1].address)).toMatchObject({
+    expect(await keystore2.getSigner(keys[1].address, 'internal')).toMatchObject({
       key: {
-        id: keys[1].address,
+        addr: keys[1].address,
         label: keys[1].address,
         type: 'internal',
         meta: null,

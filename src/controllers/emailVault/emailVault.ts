@@ -298,16 +298,12 @@ export class EmailVaultController extends EventEmitter {
     }
 
     let result: Boolean | null = false
-
-    const newSecret = crypto.randomBytes(32).toString('base64url')
-
-    await this.#keyStore.addSecret(RECOVERY_SECRET_ID, newSecret)
-    const [keyStoreUid, magicKey] = await Promise.all([
-      this.#keyStore.getKeyStoreUid(),
-      this.#getMagicLinkKey(email)
-    ])
-
+    const magicKey = await this.#getMagicLinkKey(email)
     if (magicKey?.key) {
+      const newSecret = crypto.randomBytes(32).toString('base64url')
+
+      await this.#keyStore.addSecret(RECOVERY_SECRET_ID, newSecret)
+      const keyStoreUid = await this.#keyStore.getKeyStoreUid()
       result = await this.#emailVault.addKeyStoreSecret(email, magicKey.key, keyStoreUid, newSecret)
     } else {
       await this.#handleMagicLinkKey(email, () => this.uploadKeyStoreSecret(email))
@@ -365,7 +361,8 @@ export class EmailVaultController extends EventEmitter {
   //   }
   // }
 
-  async getKeyStoreSecret(email: string, uid: string): Promise<EmailVaultSecret | null> {
+  async getKeyStoreSecret(email: string): Promise<EmailVaultSecret | null> {
+    const uid = await this.#keyStore.getKeyStoreUid()
     const state = this.emailVaultStates
     if (
       !state.email[email] ||
@@ -386,19 +383,14 @@ export class EmailVaultController extends EventEmitter {
         }
       })
 
-      result = await polling.exec(this.#emailVault.retrieveKeyStoreSecret.bind(this.#emailVault), [
-        email,
-        key,
-        uid
-      ])
+      result = await this.#emailVault.retrieveKeyStoreSecret(email, key, uid)
     } else {
       await this.#handleMagicLinkKey(email, () => this.getEmailVaultInfo(email))
-      await this.getKeyStoreSecret(email, uid)
     }
     if (result && !result.error) {
       this.emailVaultStates.email[email].availableSecrets[result.key] = result
-      // @NOTE should it be uid
-      await this.#keyStore.addSecret(result.key, result.value)
+
+      await this.#keyStore.unlockWithSecret(RECOVERY_SECRET_ID, result.value)
       await this.storage.set(EMAIL_VAULT_STORAGE_KEY, this.emailVaultStates)
       this.emitUpdate()
       return result
@@ -478,7 +470,7 @@ export class EmailVaultController extends EventEmitter {
       const newOperations: Operation[] = await Promise.all(
         operations.map(async (op): Promise<Operation> => {
           if (op.requestType === 'requestKeySync') {
-            const label = storedKeys.find((k) => k.id === op.key)?.label
+            const label = storedKeys.find((k) => k.addr === op.key)?.label
             return {
               ...op,
               value: JSON.stringify({

@@ -1,12 +1,14 @@
-import { AccountOp } from '../accountOp/accountOp'
+import { NetworkId } from 'interfaces/networkDescriptor'
+
 import { Account } from '../../interfaces/account'
+import { AccountOp } from '../accountOp/accountOp'
 
 export interface Price {
   baseCurrency: string
   price: number
 }
 
-export interface Collectable {
+export interface Collectible {
   url: string
   id: bigint
 }
@@ -20,12 +22,21 @@ export interface TokenResult {
   address: string
   symbol: string
   amount: bigint
+  networkId: NetworkId
   amountPostSimulation?: bigint
   decimals: number
   priceIn: Price[]
-  // only applicable for NFTs
-  name?: string
-  collectables?: Collectable[]
+  flags: {
+    onGasTank: boolean
+    rewardsType: string | null
+    canTopUpGasTank: boolean
+    isFeeToken: boolean
+  }
+}
+
+export interface CollectionResult extends TokenResult {
+  name: string
+  collectibles: Collectible[]
 }
 
 export type PriceCache = Map<string, [number, Price[]]>
@@ -57,6 +68,56 @@ export interface Hints {
   error?: string
 }
 
+export type AccountState = {
+  // network id
+  [key: string]:
+    | {
+        isReady: boolean
+        isLoading: boolean
+        criticalError?: Error
+        errors?: Error[]
+        result?: PortfolioGetResult
+        // We store the previously simulated AccountOps only for the pending state.
+        // Prior to triggering a pending state update, we compare the newly passed AccountOp[] (updateSelectedAccount) with the cached version.
+        // If there are no differences, the update is canceled unless the `forceUpdate` flag is set.
+        accountOps?: AccountOp[]
+      }
+    | undefined
+}
+
+export type AdditionalAccountState = {
+  // network id
+  [key: string]:
+    | {
+        isReady: boolean
+        isLoading: boolean
+        criticalError?: Error
+        errors?: Error[]
+        result?: AdditionalPortfolioGetResult
+      }
+    | undefined
+}
+
+// account => network => PortfolioGetResult, extra fields
+export type PortfolioControllerState = {
+  // account id
+  [key: string]: AccountState
+}
+
+export interface AdditionalPortfolioGetResult {
+  updateStarted: number
+  discoveryTime?: number
+  oracleCallTime?: number
+  priceUpdateTime?: number
+  priceCache?: PriceCache
+  tokens: TokenResult[]
+  tokenErrors?: { error: string; address: string }[]
+  collections?: CollectionResult[]
+  total: { [name: string]: bigint }
+  hints?: Hints
+  hintsError?: string
+}
+
 export interface PortfolioGetResult {
   updateStarted: number
   discoveryTime: number
@@ -65,7 +126,7 @@ export interface PortfolioGetResult {
   priceCache: PriceCache
   tokens: TokenResult[]
   tokenErrors: { error: string; address: string }[]
-  collections: TokenResult[]
+  collections: CollectionResult[]
   total: { [name: string]: bigint }
   hints: Hints
   hintsError?: string

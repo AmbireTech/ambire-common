@@ -3,10 +3,7 @@ const path = require('path')
 const { compile } = require('../src/libs/deployless/compile')
 
 const rootDir = path.resolve(__dirname, '..')
-const contractsDirs = [
-  `${rootDir}/contracts`,
-  `${rootDir}/contracts/deployless`,
-]
+const contractsDirs = [`${rootDir}/contracts`, `${rootDir}/contracts/deployless`]
 const outputDir = `${rootDir}/contracts/compiled`
 
 // Extract all file paths from a `dir` in a flat way.
@@ -16,7 +13,6 @@ async function walk(dir) {
   files = await Promise.all(
     files.map(async (file) => {
       const filePath = path.join(dir, file)
-
       return filePath
     })
   )
@@ -29,23 +25,29 @@ async function compileFolder(contractsDir) {
 
   console.log('📜 Contracts found: ', files)
 
+  let done = false
+
   files.forEach((file) => {
     let contractName = file.split('/').slice(-1)[0]
     // it removes .sol from contract name
     contractName = contractName.slice(0, contractName.length - 4)
 
-    const output = compile(contractName, {
-      contractsFolder: contractsDir
-    })
+    if (process.argv[2] === contractName || !process.argv[2]) {
+      const output = compile(contractName, {
+        contractsFolder: contractsDir
+      })
+      fs.writeFileSync(`${outputDir}/${contractName}.json`, JSON.stringify(output))
 
-    fs.writeFileSync(`${outputDir}/${contractName}.json`, JSON.stringify(output))
-
-    console.log(`✅ ${contractName} compiled successfully!`)
+      console.log(`✅ ${contractName} compiled successfully!`)
+      done = true
+    }
   })
+
+  if (!done) console.log(`Contract ${process.argv[2]} not found.`)
 }
 
 async function run() {
-  await Promise.all(contractsDirs.map(contractsDir => compileFolder(contractsDir)))
+  await Promise.all(contractsDirs.map((contractsDir) => compileFolder(contractsDir)).flat())
 }
 
 run()

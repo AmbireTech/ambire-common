@@ -51,9 +51,13 @@ export function compile(contractName: string, options: Options = {}) {
   }
 
   function findImports(libPath: string) {
+    let compileFolder = libPath.indexOf('node_modules') === -1
+      ? contractsFolder
+      : ''
+
     return {
       contents: fs.readFileSync(
-        path.resolve(`${__dirname}../../../../`, contractsFolder, libPath),
+        path.resolve(`${__dirname}../../../../`, compileFolder, libPath),
         {
           encoding: 'utf8'
         }
@@ -66,6 +70,10 @@ export function compile(contractName: string, options: Options = {}) {
   if (output.errors) {
     const error = output.errors.map((err: any) => `${err.formattedMessage} `)
     throw new Error(error)
+  }
+
+  if (!output.contracts[contractName][contractName]) {
+    throw new Error(`unable to find contract named ${contractName} in output from file ${contractName}: perhaps the name of the file is different compared to the name of the contract?`)
   }
 
   return {

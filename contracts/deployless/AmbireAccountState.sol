@@ -3,24 +3,31 @@ pragma solidity 0.8.19;
 
 import "./IAmbireAccount.sol";
 
+interface IEntryPoint {
+    function getNonce(address, uint192) external returns (uint);
+}
+
 struct AccountInput {
     address addr;
     address[] associatedKeys;
     address factory;
     bytes factoryCalldata;
+    address erc4337EntryPoint;
 }
 
 struct AccountInfo {
     bool isDeployed;
+    bytes deployErr;
     uint nonce;
-    bytes32[] associatedKeyPriviliges;
+    bytes32[] associatedKeyPrivileges;
     bool isV2;
-    uint[] scheduledRecoveries;
     uint256 balance;
-    bool isEOA; 
+    bool isEOA;
+    uint erc4337Nonce;
 }
 
 contract AmbireAccountState {
+
     function getAccountsState(AccountInput[] memory accounts) external returns (AccountInfo[] memory accountResult) {
         accountResult = new AccountInfo[](accounts.length);
         for (uint i=0; i!=accounts.length; i++) {
@@ -40,52 +47,45 @@ contract AmbireAccountState {
                 (bool success,) = account.factory.call(account.factoryCalldata);
                 // we leave associateKeys empty and nonce == 0, so that the library can know that the deployment failed
                 // we do not care about the exact error because this is a very rare case
-                if (!success) continue;
+                if (!success || address(account.addr).code.length == 0) {
+                    accountResult[i].deployErr = bytes(success ? "call worked" : "call failed");
+                    continue;
+                }
             }
-            accountResult[i].associatedKeyPriviliges = new bytes32[](account.associatedKeys.length);
-            // get nonce - if contract is not deployed than nonce is zero
-            accountResult[i].nonce = IAmbireAccount(account.addr).nonce();
-            // get key privilege information
-            for (uint j=0; j!=account.associatedKeys.length; j++) {
-                accountResult[i].associatedKeyPriviliges[j] = IAmbireAccount(account.addr).privileges(account.associatedKeys[j]);
-            }
-
-            // v2 has a method called scheduledRecoveries. If it does not exist,
-            // it is v1. That's what we're doing here
-            bool isV2 = false;
-            try this.ambireV2Check(IAmbireAccount(account.addr)) returns (uint) {
-                isV2 = true;
-            } catch {}
-
-            accountResult[i].isV2 = isV2;
-            if (isV2) {
-                accountResult[i].scheduledRecoveries = getScheduledRecoveries(IAmbireAccount(account.addr), account.associatedKeys, bytes32(uint256(1)));
-            } else {
-                accountResult[i].scheduledRecoveries = new uint[](0);
+            try this.gatherAmbireData(account) returns (uint nonce, bytes32[] memory privileges, bool isV2, uint erc4337Nonce) {
+                accountResult[i].nonce = nonce;
+                accountResult[i].associatedKeyPrivileges = privileges;
+                accountResult[i].isV2 = isV2;
+                accountResult[i].erc4337Nonce = erc4337Nonce;
+            } catch (bytes memory err) {
+                accountResult[i].deployErr = err;
+                continue;
             }
         }
         return accountResult;
     }
 
-    function getScheduledRecoveries(IAmbireAccount account, address[] memory associatedKeys, bytes32 privValue)
-        public
-        returns (uint[] memory scheduledRecoveries)
-    {
-        // Check if there's a pending recovery that sets any of the associatedKeys
-        scheduledRecoveries = new uint[](associatedKeys.length);
-        uint currentNonce = account.nonce();
-        for (uint i=0; i!=associatedKeys.length; i++) {
-            address key = associatedKeys[i];
-            IAmbireAccount.Transaction[] memory calls = new IAmbireAccount.Transaction[](1);
-            calls[0].to = address(account);
-            // @TODO the value of setAddrPrivilege is not necessarily 1 cause of the recovery
-            calls[0].data = abi.encodeWithSelector(IAmbireAccount.setAddrPrivilege.selector, key, privValue);
-            bytes32 hash = keccak256(abi.encode(address(account), block.chainid, currentNonce, calls));
-            scheduledRecoveries[i] = account.scheduledRecoveries(hash);
+    function gatherAmbireData(AccountInput memory account) external returns (uint nonce, bytes32[] memory privileges, bool isV2, uint erc4337Nonce ) {
+        privileges = new bytes32[](account.associatedKeys.length);
+        isV2 = this.ambireV2Check(IAmbireAccount(account.addr));
+        for (uint j=0; j!=account.associatedKeys.length; j++) {
+            privileges[j] = IAmbireAccount(account.addr).privileges(account.associatedKeys[j]);
+        }
+        nonce = IAmbireAccount(account.addr).nonce();
+
+        try this.getErc4337Nonce(account.addr, account.erc4337EntryPoint) returns (uint aaNonce) {
+            erc4337Nonce = aaNonce;
+        } catch (bytes memory) {
+            erc4337Nonce = type(uint256).max;
         }
     }
 
-    function ambireV2Check(IAmbireAccount account) external returns (uint) {
-        return account.scheduledRecoveries(bytes32(0));
+    function getErc4337Nonce(address acc, address entryPoint) external returns (uint) {
+        // 624 is a sum of ascii codes of "ambire" 
+        return IEntryPoint(entryPoint).getNonce(acc, 624);
+    }
+
+    function ambireV2Check(IAmbireAccount account) external pure returns(bool) {
+        return account.supportsInterface(0x0a417632) || account.supportsInterface(0x150b7a02);
     }
 }

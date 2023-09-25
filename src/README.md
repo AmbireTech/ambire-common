@@ -20,7 +20,7 @@ To re-compile the deployless contracts, do this:
 npm run compile:contracts
 ```
 
-## Why class-based state containers instead of state container libraries
+## Why class-based state containers instead of state container libraries (controllers)
 
 We chose simple ES6 classes to implement controllers (shared business logic) rather than state containers.
 
@@ -38,9 +38,18 @@ See also: https://medium.com/swlh/what-is-the-best-state-container-library-for-r
 Classes for controllers are supposed to be stateful and be used directly in the application, which means:
 - they should expose all state needed for rendering
 - they should be responsible for the business logic but not responsible for app logic (for example, business logic is when to hide tokens from the portfolio but view logic is when to update the portfolio)
-- they should avoid public methods that return values, and instead everything should be updated in the state
+- they should avoid public methods that return values, and instead everything should be updated in the state; the user of the controller (the application or background process) **must never** expect/consume a result from a controller function
+  - there may be internal functions that return results
+  - there must not be public functions that return results (but they may be async in case they need to perform async work)
+  - essentially all public functions should be actions
+- they may keep internal state that is "hidden" (using `#` for private properties and functions) that is more convenient to work with, but expose a different state shape via getters to the application
+- there should be *unidirectionality*: the main controller may listen to `onUpdate` from it's children, but the opposite must not happen; when a child controller needs to learn some new information that the main controller handles, the main controller should call the child's update function and pass that information along
+- controllers should not do any work by themselves (implicit intervals, timeouts, etc.); it's acceptable to do long-term async work (like polling) if triggered by the user or the application; if the controller needs to be periodically updated, expose an `update` or `refresh` function that the application or parent controller must call
 - errors that are fatal and related to unexpected/non-recoverable state should just `throw`, while errors that may happen in realistic conditions (eg async errors when calling `provider`) should all be caught
 - methods may be asynchronous for two purposes: 1) using `await` in them and 2) knowing when their work is done in tests; those methods should absolutely not be awaited in the UI, and instead we should rely on update events and state changes
+- `emitUpdate` should be called by each controller every time it updates it's own properties; it may be called onlhy once for multiple property updates as long as they happen in the same tick
+- the controllers must not take any rich objects (instances of non-standard JS types) as arguments, every input should be fully serializable
+- do not be afraid of nesting data for the controller state - sometimes it makes a lot of sense (eg pagination-speciffic properties)
 
 Here are some related design decisions:
 * The main controller is a singleton master controller, and all other controllers are supposed to be initialized by it: this is due to the fact that the app will have initialization/startup logic, and we **do not want to handle this** in the app itself. Whether the app is loaded will be reflected in the state exposed by the main controller.
@@ -50,6 +59,8 @@ Here are some related design decisions:
   * the main controller can call or watch sub-controllers, but not vice versa, to maintain a directional relationship
   * for simplicity, we'll avoid passing data between sub-controllers internally and leave this to the app itself whenever possible; as a practical example, the `AccountAdder` will expose a list of accounts that can be added, but instead of internally having a method that will add those accounts on the main controller (which breaks the unidirectionality of the previous point), we'll just expose them - then, the app can call `mainController.addAccounts(mainController.accountAdder.selectedAccounts)`
 * Properties that are not meant to be exposed or serialized should start with `#` in order to [make them private](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Classes/Private_class_fields). The public/private modifiers in TypeScript do not achieve the same effect since they only serve as guidelines for the TS compiler itself, but they should be used alongside `#` anyway
+
+Those controllers are essentially classic state containers: you can call them with some actions, those methods should never return anything, but they can result in one or more state changes, which will emit an `update` event, forcing the UI to re-render with the latest state.
 
 ## How account recovery/restore works in Ambire
 
@@ -71,18 +82,76 @@ This recovery must be performed for each network (chain) individually because it
 
 The way it works is the following:
 
-1. When a key is authorized, you set `privileges[keyAddr]` to a hash of a struct that contains recovery data (`recoveryInfo`) - the keys that can recover this account and the timelock (let's call those "recovery keys")
+1. When a key is authorized, you set `privileges[keyAddr]` to a hash of a struct that contains recovery data (`recoveryInfo`) - the keys that can recover this account and the timelock (let's call those "recovery keys"; this is normally set to the email vault key)
 2. If access to that authorized key is lost (or access to the account in general), any of the recovery keys can sign a bundle with a special kind of signature (called recovery signature)
 3. You can `execute()` this bundle with this signature, but it will not execute immediately - instead, it will start the timelock
 4. Once the timelock is mature, you can `execute()` the same bundle with the same signature - this time, it will execute
 
 The intended use case is as follows:
 
-1. An email account is created for the user; we generate a fresh key and we store it in the keystore; and we set the `recoveryInfo` to a 72 hour timelock and one key, which is the key of the email vault (held by the relayer)
+1. An email account is created for the user; we generate a fresh key and we store it in the keystore; and we set the `recoveryInfo` to a 72 hour timelock and one key, which is the key of the email vault (held by the relayer, we call this "email vault key")
 2. If the user loses their keystore (eg their SSD fails, or they lose their passphrase), they may trigger the recovery using the email vault on every network individually; triggering the recovery involves creating a new local key, and signing a bundle to authorize it via the email vault key; let's call this bundle "the recovery bundle"
 3. Once the recovery timelock is mature, the relayer will simply execute the recovery bundle BEFORE any normal bundle that the user wants to execute that they're signing with their new local key
 
-### Keystore recovery via email
+#### DKIM Recovery: basic mode of operation
+The DKIM recovery replaces the timelocked recovery described above and works as follows:
+
+1. The user receives an email that includes the new key address in the subject
+2. The user replies to the email with anything
+3. The relayer extracts the signature from this email and prepares the canonized DKIM headers and body hash for submission to the on-chain code (DKIM signature validator), which verifies `subject` and `to` to prevent phishing and verify the recovery key (the new key we give privileges too) 
+4. The relayer also needs to produce another signature via the email vault recovery key (normal EOA signature) and provide it alongside, for extra security - in order to provide this signature the relayer will enforce an off-chain timelock (to protect against DKIM keys getting compromised, email accounts getting compromised, etc.).
+5. The two signatures are merged and can now be used for finalizing the recovery on any chain (this signature is not replay-protected by nonces, but by uniqueness of the operation)
+
+This requires the [externally verified signatures](https://github.com/AmbireTech/ambire-common/pull/297) improvement of the Ambire contracts. Each user has their recovery settings set in a struct that is passed as part of the signature, and then verified against `privileges` like this: `require(privileges[key] == keccak256(abi.encode(recoveryAccInfo)))` every time a DKIM recovery signature is verified.
+
+This `accInfo` struct will include:
+```
+  dkimSelector
+  dkimPublicKey
+  // other values of the DKIM record?
+  secondaryKeyAddr // relayerAddr
+  emailFrom // or multiple
+  trustedTo // or multiple
+  waitUntilAcceptAdded // if a record has been added by `authorizedToSubmit`, we can choose to require some time to pass before accepting it
+  waitUntilAcceptRemoved // if a record has been removed by the `authorizedToRemove`, we can choose to require some time to pass before accepting that ramoval
+  acceptUnknownSelectors
+```
+
+You can think of the DKIM recovery signature as a multi-signature between the email vault backup key (held by the relayer, but we can also allow the user to have this key) and the DKIM key held by the email provider.
+
+##### Nuclear option: 1/2 recovery
+The happy path requires a compound 2/2 signature. However, in case the relayer is not available, the user needs to be able to recover their account using DKIM alone. For this case, we'll enforce an additional on-chain timelock. It's a mode of last resort, but it also needs to be secure against attack vectors like DKIM keys getting compromised, email providers getting compromised, email accounts getting compromised, etc.
+
+##### Summarized list of all timelocks in the DKIM system
+- Nuclear option: only 1/2 signatures, on-chain timelock
+- Relayer off-chain timelock: the relayer will simply wait some time before providing the email vault key signature; this preserves the timelock UX and security benefits without having to ask the user to trigger an on-chain timelock on every chain they use the account on
+- Pseudo-timelocks for accepting the addition and revokation of DKIM public keys: each user can set in their account settings (stored as a hash in `privileges[key]`) whether they want to accept unknown (different from their originally set) selectors, and if so, how much time needs to pass before accepting the submission of a record, or the revokation of a record (read why below)
+- There may be additional timelocks implemented on-chain in the future for the `authorizedToSubmit` and `authorizedToRevoke` addresses (they may be set to a timelock contract).
+
+#### DKIM Recovery: public key management
+In order for DKIM recovery to work, there must be a reliable DNS oracle on-chain. For that purpose, we will use the ENS DNSSec oracle.
+
+Becase DNSSec proofs contain no time in them, it's not possible to introduce the concept of "latest DNS record" on-chain without significant compromises. This is why we'll accept any DNS TXT record of a DKIM key (`${selector}._domainKey.{$domain}`) and record it on-chain, but we'll also allow revoking of any of those keys.
+
+##### Adding
+The DKIM recovery contract will have an `authorizedToSubmit` variable, which indicates the address of whoever is authorized to submit. Initially, for safety reasons, this will be the Ambire team. Keep in mind any user can set their own DKIM accepted public keys, this is only for emails signed with unknown selectors.
+
+Later on, this could be set to a santinel value that allows *anyone* to submit records. This should be safe, because they go through a DNSSec proof, except in the case in which someone might submit a proof for an old DNS record, in which case revoking is needed. Bear in mind that because of the nature of DKIM, we expect that no email provider will ever *change* a DNS TXT DKIM record in production (due to DNS caches, this will lead to many dropped emails), so this should be a near-impossible case.
+
+Upon submitting, we will verify the DNSSec proof, parse the DNS TXT record, but only store `dkimKeys[keccak256((publicKey, domainName))] = { dateAdded, dateRevoked }` on-chain.
+
+Each user can set whether they want to accept unknown selectors, and can set the time before starting to accept newly submitted records.
+
+##### Revoking
+The DKIM recovery contract will have an `authorizedToRevoke` variable, which is an address of whoever is authorized to revoke DKIM public keys. This should be set to a multisig or a timelocked wallet, but it can be set to a regular wallet as well, because the user settings include `waitUntilAcceptRemoved` (see below).
+
+Each user can set the time they want to wait before accepting revokations (`waitUntilAcceptRemoved`), making sure that `authorizedToRevoke` cannot grief them by constantly revoking records.
+
+Once revoked, the same key cannot be added back.
+
+The `waitUntilAcceptRemoved` is *highly recommended* to be shorter than the contract timelock for accepting 1/2 signatures, because in the case that a DKIM key is compromised, we want to be able to revoke it before the attacker can take a hold of an account via the 1/2 signatures timelock.
+
+### Keystore password reset via email
 
 This is an off-chain recovery method that allows regaining access to your local keystore if you have forgotten the keystore passphrase.
 
@@ -97,13 +166,16 @@ The UX will be simple:
 3. You click the confirmation button on the email, and it forwards you to the extension again, where you can set a new passphrase
 4. Done
 
-### Ambire Cloud
+### Key sync
 
-This is not an account/keystore recovery method but rather a way to log into the same email account on multiple devices (sync it across devices).
+This is not an account/keystore recovery method but rather a way to use the same account on multiple devices.
 
-When enabled, the one and only default private key (you can add more signer keys manually, but every email acc will start with one "default" key) associated with a specific email account is encrypted with the keystore passphrase and uploaded to the email vault.
+When adding an email vault on a new device, you'll be given the option to add all accounts associated with that email vault (initially only one will be allowed).
 
-This allows you to import this account on different devices (or "log in").
+By default, this will add the account in read-only mode. To enable signing transactions and messages, there will be a procedure in which you will be prompted on the original device to authorize the new device. If the user agrees, the original device will encrypt the underlying key with the public key of the new device and send it through the Ambire backend.
+
+This is fully secure as the device private key (keystore `mainKey`) has really high entropy, and the backend only stores the encrypted data for 3 minutes.
+
 
 ## Libraries
 
@@ -121,6 +193,8 @@ Let's look into both of them:
 - [state override set](https://github.com/ethereum/go-ethereum/issues/19836): this is a little known feature of `eth_call` that lets us pass any state overrides that will be applied before executing the call, like overriding an address' balance, contract code, or even parts of it's state; it is not supported by all RPC nodes
 
 The library can auto-select which one to chose based on the availability of the state override set.
+
+**WARNING: `deployless.ts` DOES NOT support running the constructor of the contracts. Refrain from using a constructor for deployless contracts.**
 
 ### portfolio.ts
 
@@ -172,3 +246,10 @@ ts-node src/libs/deployless/compileUtil.ts  > src/libs/estimate/estimator.json
 - no multiple components of private keys, one key is one private key; if it's part of a multisig, this should be reflected via meta
 - no need for separata methods to load from storage, we will always load on demand, since every method is async anyway
 - the keystore will only store single keys and will not concern itself with multisigs or recovery info, even if we use it in an identity as part of a multisig (like QuickAccs, even tho we won't use them in the extension); this will be handled by a separate mapping in the Account object
+
+
+### Audits
+
+- [Code4rena](https://code4rena.com/reports/2023-05-ambire)
+- [Krum Pashov](https://github.com/pashov/audits/blob/master/solo/Ambire-security-review.md)
+

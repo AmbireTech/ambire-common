@@ -1,12 +1,14 @@
 /* eslint-disable no-new */
 import { describe, expect, test } from '@jest/globals'
 
+import { BIP44_HD_PATH } from '../../consts/derivation'
 import { KeyIterator } from './keyIterator'
 
 const seedPhrase =
   'brisk rich glide impose category stuff company you appear remain decorate monkey'
+const seedPhrasePublicAddress1 = '0x10D4102562373113d1dCd82C2EEE5626D9daEcD8'
 const privKey = '0x574f261b776b26b1ad75a991173d0e8ca2ca1d481bd7822b2b58b2ef8a969f12'
-const keyPublicAddress = '0x9188fdd757Df66B4F693D624Ed6A13a15Cf717D7'
+const privKeyPublicAddress = '0x9188fdd757Df66B4F693D624Ed6A13a15Cf717D7'
 
 describe('KeyIterator', () => {
   test('should initialize keyIterator', () => {
@@ -20,6 +22,7 @@ describe('KeyIterator', () => {
     try {
       new KeyIterator(`${seedPhrase}invalid-seed-phrase`)
     } catch (e) {
+      // @ts-ignore
       expect(e.message).toBe('keyIterator: invalid argument provided to constructor')
     }
   })
@@ -28,14 +31,14 @@ describe('KeyIterator', () => {
     const keyIteratorWithPrivKey = new KeyIterator(privKey)
     const keys = await keyIteratorWithPrivKey.retrieve(0, 9)
     expect(keys).toHaveLength(1)
-    expect(keys?.[0]).toEqual(keyPublicAddress)
+    expect(keys?.[0]).toEqual(privKeyPublicAddress)
   })
   test('should retrieve first 10 keys', async () => {
     expect.assertions(2)
     const keyIteratorWithPrivKey = new KeyIterator(seedPhrase)
     const keys = await keyIteratorWithPrivKey.retrieve(0, 9)
     expect(keys).toHaveLength(10)
-    expect(keys?.[0]).toEqual(keyPublicAddress)
+    expect(keys?.[0]).toEqual(seedPhrasePublicAddress1)
   })
   test('should fail retrieving', async () => {
     expect.assertions(1)
@@ -44,7 +47,17 @@ describe('KeyIterator', () => {
       // @ts-ignore
       await keyIteratorWithPrivKey.retrieve(0)
     } catch (e) {
+      // @ts-ignore
       expect(e.message).toBe('keyIterator: invalid or missing arguments')
     }
+  })
+  test('should retrieve the correct addresses with BIP-44 derivation path', async () => {
+    expect.assertions(3)
+    const keyIteratorWithPrivKey = new KeyIterator(seedPhrase)
+    const keys = await keyIteratorWithPrivKey.retrieve(0, 2, BIP44_HD_PATH)
+
+    expect(keys?.[0]).toEqual(seedPhrasePublicAddress1)
+    expect(keys?.[1]).toEqual('0xc7E32B118989296eaEa88D86Bd9041Feca77Ed36')
+    expect(keys?.[2]).toEqual('0xDe3D61Ae274aA517E01b96ff5155F70883Bc877c')
   })
 })

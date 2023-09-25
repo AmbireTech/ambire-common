@@ -8,7 +8,12 @@ const ethers_1 = require("ethers");
 const deployless_1 = require("../deployless/deployless");
 const account_1 = require("../account/account");
 const Estimation_json_1 = __importDefault(require("../../../contracts/compiled/Estimation.json"));
+<<<<<<< HEAD
 const config_1 = require("../../../test/config");
+=======
+const AmbireAccount_json_1 = __importDefault(require("../../../contracts/compiled/AmbireAccount.json"));
+const AmbireAccountFactory_json_1 = __importDefault(require("../../../contracts/compiled/AmbireAccountFactory.json"));
+>>>>>>> v2
 async function estimate(provider, network, account, op, nativeToCheck, feeTokens, opts, fromAddrHavingNative, blockFrom = '0x0000000000000000000000000000000000000001', blockTag = 'latest') {
     if (!account.creation) {
         if (op.calls.length !== 1) {
@@ -72,8 +77,13 @@ async function estimate(provider, network, account, op, nativeToCheck, feeTokens
     /* eslint-enable prefer-const */
     let gasUsed = deployment.gasUsed + accountOpToExecuteBefore.gasUsed + accountOp.gasUsed;
     if (opts?.calculateRefund) {
+<<<<<<< HEAD
         const IAmbireAccount = new ethers_1.Interface(config_1.AmbireAccount.abi);
         const IAmbireAccountFactory = new ethers_1.Interface(config_1.AmbireAccountFactory.abi);
+=======
+        const IAmbireAccount = new ethers_1.Interface(AmbireAccount_json_1.default.abi);
+        const IAmbireAccountFactory = new ethers_1.Interface(AmbireAccountFactory_json_1.default.abi);
+>>>>>>> v2
         const accountCalldata = op.accountOpToExecuteBefore
             ? IAmbireAccount.encodeFunctionData('executeMultiple', [
                 [

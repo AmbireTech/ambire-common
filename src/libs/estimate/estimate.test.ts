@@ -6,7 +6,6 @@ import { estimate, EstimateResult } from './estimate'
 import { networks } from '../../consts/networks'
 import { Portfolio } from '../portfolio/portfolio'
 import { getNonce } from '../../../test/helpers'
-import { GasFeePaymentType } from '../accountOp/accountOp'
 
 const ethereum = networks.find((x) => x.id === 'ethereum')
 const optimism = networks.find((x) => x.id === 'optimism')
@@ -85,7 +84,8 @@ describe('estimate', () => {
       signingKeyAddr: null,
       gasLimit: null,
       gasFeePayment: {
-        paymentType: GasFeePaymentType.EOA,
+        isERC4337: false,
+        isGasTank: false,
         paidBy: EOAAccount.addr,
         inToken: '0x0000000000000000000000000000000000000000',
         amount: 1

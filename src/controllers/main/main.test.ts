@@ -1,23 +1,20 @@
-import { beforeAll, describe, expect, test } from '@jest/globals'
+import { ethers } from 'ethers'
 import fetch from 'node-fetch'
-import { UserRequest } from '../../interfaces/userRequest'
-import { MainController } from './main'
-import { Storage } from '../../interfaces/storage'
-import { AccountOp } from '../../libs/accountOp/accountOp'
 
-export function produceMemoryStore(): Storage {
-  const storage = new Map()
-  return {
-    get: (key, defaultValue): any => {
-      const serialized = storage.get(key)
-      return Promise.resolve(serialized ? JSON.parse(serialized) : defaultValue)
-    },
-    set: (key, value) => {
-      storage.set(key, JSON.stringify(value))
-      return Promise.resolve(null)
-    }
-  }
-}
+import { describe, expect, test } from '@jest/globals'
+
+import { produceMemoryStore } from '../../../test/helpers'
+import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
+import { networks } from '../../consts/networks'
+import { UserRequest } from '../../interfaces/userRequest'
+import { KeyIterator } from '../../libs/keyIterator/keyIterator'
+import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
+import { getBytecode } from '../../libs/proxyDeploy/bytecode'
+import { getAmbireAccountAddress } from '../../libs/proxyDeploy/getAmbireAddressTwo'
+import { MainController } from './main'
+
+const polygon = networks.find((x) => x.id === 'polygon')
+if (!polygon) throw new Error('unable to find polygon network in consts')
 
 describe('Main Controller ', () => {
   const accounts = [
@@ -66,7 +63,17 @@ describe('Main Controller ', () => {
   storage.set('accounts', accounts)
   let controller: MainController
   test('Init controller', async () => {
-    controller = new MainController(storage, fetch, relayerUrl)
+    controller = new MainController({
+      storage,
+      fetch,
+      relayerUrl,
+      keystoreSigners: { internal: KeystoreSigner },
+      onResolveDappRequest: () => {},
+      onRejectDappRequest: () => {},
+      onUpdateDappSelectedAccount: () => {},
+      pinned: []
+    })
+    // eslint-disable-next-line no-promise-executor-return
     await new Promise((resolve) => controller.onUpdate(() => resolve(null)))
     // console.dir(controller.accountStates, { depth: null })
     // @TODO
@@ -75,9 +82,7 @@ describe('Main Controller ', () => {
 
   test('Add a user request', async () => {
     const req: UserRequest = {
-      id: 0n,
-      // @TODO: more elegant way of setting this?
-      added: BigInt(Date.now()),
+      id: 1,
       accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
       networkId: 'ethereum',
       forceNonce: null,
@@ -89,34 +94,109 @@ describe('Main Controller ', () => {
       }
     }
     await controller.addUserRequest(req)
+    expect(Object.keys(controller.accountOpsToBeSigned).length).toBe(1)
+    // console.dir(controller.accountOpsToBeSigned, { depth: null })
+    // @TODO test if nonce is correctly set
+  })
+  test('Remove a user request', async () => {
+    const req: UserRequest = {
+      id: 1,
+      accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      networkId: 'ethereum',
+      forceNonce: null,
+      action: {
+        kind: 'call',
+        to: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+        value: BigInt(0),
+        data: '0xa9059cbb000000000000000000000000e5a4dad2ea987215460379ab285df87136e83bea00000000000000000000000000000000000000000000000000000000005040aa'
+      }
+    }
+    await controller.removeUserRequest(req.id)
+    expect(Object.keys(controller.accountOpsToBeSigned).length).toBe(0)
     // console.dir(controller.accountOpsToBeSigned, { depth: null })
     // @TODO test if nonce is correctly set
   })
 
   test('login with emailVault', async () => {
-    controller.emailVault.getEmailVaultInfo(email)
+    controller.emailVault.login(email)
+    // eslint-disable-next-line no-promise-executor-return
     await new Promise((resolve) => controller.emailVault.onUpdate(() => resolve(null)))
     console.log(controller.emailVault.emailVaultStates)
   })
 
-  test('beckup keyStore secret emailVault', async () => {
+  test('backup keyStore secret emailVault', async () => {
     // console.log(
     //   JSON.stringify(controller.emailVault.emailVaultStates[email].availableSecrets, null, 2)
     // )
+    console.log('uploading')
     controller.emailVault.uploadKeyStoreSecret(email)
+    // eslint-disable-next-line no-promise-executor-return
     await new Promise((resolve) => controller.emailVault.onUpdate(() => resolve(null)))
     console.log(JSON.stringify(controller.emailVault, null, 2))
   })
 
-  // test('unlock keyStore with recovery secret emailVault', async () => {
-  //   async function wait(ms: number) {
-  //     return new Promise((resolve) => setTimeout(() => resolve(null), ms))
-  //   }
-  //   // controller.lock()
-  //   controller.emailVault.recoverKeyStore(email)
-  //   // console.log('isUnlock ==>', controller.isUnlock())
-  //   await new Promise((resolve) => controller.emailVault.onUpdate(() => resolve(null)))
-  //   await wait(10000)
-  //   // console.log('isUnlock ==>', controller.isUnlock())
-  // })
+  test('unlock keyStore with recovery secret emailVault', async () => {
+    async function wait(ms: number) {
+      // eslint-disable-next-line no-promise-executor-return
+      return new Promise((resolve) => setTimeout(() => resolve(null), ms))
+    }
+    // controller.lock()
+    await controller.emailVault.getKeyStoreSecret(email)
+    // console.log('isUnlock ==>', controller.isUnlock())
+    // eslint-disable-next-line no-promise-executor-return
+    // await new Promise((resolve) => controller.emailVault.onUpdate(() => resolve(null)))
+    // await wait(10000)
+    // console.log('isUnlock ==>', controller.isUnlock())
+  })
+
+  test('should add smart accounts', async () => {
+    controller = new MainController({
+      storage,
+      fetch,
+      relayerUrl,
+      keystoreSigners: { internal: KeystoreSigner },
+      onResolveDappRequest: () => {},
+      onRejectDappRequest: () => {},
+      onUpdateDappSelectedAccount: () => {},
+      pinned: []
+    })
+
+    const signerAddr = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
+    const priv = { addr: signerAddr, hash: true }
+    const bytecode = await getBytecode(polygon, [priv])
+
+    // Same mechanism to generating this one as used for the
+    // `accountNotDeployed` in accountState.test.ts
+    const accountPendingCreation = {
+      addr: getAmbireAccountAddress(AMBIRE_ACCOUNT_FACTORY, bytecode),
+      label: 'test account',
+      pfp: 'pfp',
+      associatedKeys: [signerAddr],
+      creation: {
+        factoryAddr: AMBIRE_ACCOUNT_FACTORY,
+        bytecode,
+        salt: ethers.toBeHex(0, 32)
+      }
+    }
+
+    let emitCounter = 0
+    await new Promise((resolve) => {
+      controller.onUpdate(() => {
+        emitCounter++
+
+        if (emitCounter === 1 && controller.isReady) {
+          const keyIterator = new KeyIterator(
+            '0x574f261b776b26b1ad75a991173d0e8ca2ca1d481bd7822b2b58b2ef8a969f12'
+          )
+          controller.accountAdder.init({ keyIterator, preselectedAccounts: [] })
+          controller.accountAdder.addAccounts([accountPendingCreation]).catch(console.error)
+        }
+
+        if (emitCounter === 2) {
+          expect(controller.accounts).toContainEqual(accountPendingCreation)
+          resolve(true)
+        }
+      })
+    })
+  })
 })
