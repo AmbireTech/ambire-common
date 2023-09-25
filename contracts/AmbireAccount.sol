@@ -293,7 +293,7 @@ contract AmbireAccount {
 	 * address aggregator, uint48 validUntil, uint48 validAfter
 	 */
 	function validateUserOp(UserOperation calldata op, bytes32 userOpHash, uint256 missingAccountFunds)
-	external returns (uint256)
+	external payable returns (uint256)
 	{
 		if (op.callData.length >= 4 && bytes4(op.callData[0:4]) == this.execute.selector) {
 			// Require a paymaster, otherwise this mode can be used by anyone to get the user to spend their deposit
