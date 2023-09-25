@@ -2,7 +2,7 @@ import { ethers } from 'hardhat'
 import { wrapEthSign } from '../../test/ambireSign'
 import { PrivLevels, getProxyDeployBytecode, getStorageSlotsFromArtifact } from '../../src/libs/proxyDeploy/deploy'
 import { BaseContract } from 'ethers'
-import { abiCoder } from '../config'
+import { abiCoder, expect, provider } from '../config'
 import { buildUserOp, getPriviledgeTxnWithCustomHash } from '../helpers'
 
 const salt = '0x0'
@@ -120,10 +120,12 @@ describe('ERC-4337 deploys the account via userOp and adds the entry point permi
     await entryPoint.handleOps([userOperation2], relayer)
     // if it doesn't revert, all's good. The paymaster has payed
 
-    // prefund the payment
-    await entryPoint.depositTo(senderAddress, {
+    // send money to senderAddress so it has funds to pay for the transaction
+    await relayer.sendTransaction({
+      to: senderAddress,
       value: ethers.parseEther('1')
     })
+    const balance = await provider.getBalance(senderAddress)
 
     // send a txn with no paymasterAndData. Because the addr has a prefund,
     // it should be able to pass
@@ -146,6 +148,35 @@ describe('ERC-4337 deploys the account via userOp and adds the entry point permi
     ))
     userOperation3.signature = sig
     await entryPoint.handleOps([userOperation3], relayer)
-    // if it doesn't revert, all's good
+
+    const balanceAfterPayment = await provider.getBalance(senderAddress)
+    expect(balance).to.be.greaterThan(balanceAfterPayment)
+
+    // prefund the payment
+    await entryPoint.depositTo(senderAddress, {
+      value: ethers.parseEther('1')
+    })
+
+    const userOperation4 = {
+      sender: senderAddress,
+      nonce: ethers.toBeHex(await entryPoint.getNonce(senderAddress, 0), 1),
+      initCode: '0x',
+      callData: proxy.interface.encodeFunctionData('executeBySender', [[anotherTxn]]),
+      callGasLimit: ethers.toBeHex(100000),
+      verificationGasLimit: ethers.toBeHex(500000),
+      preVerificationGas: ethers.toBeHex(50000),
+      maxFeePerGas: ethers.toBeHex(100000),
+      maxPriorityFeePerGas: ethers.toBeHex(100000),
+      paymasterAndData: '0x',
+      signature: '0x'
+    }
+    const sigLatest = wrapEthSign(await signer.signMessage(
+      ethers.getBytes(await entryPoint.getUserOpHash(userOperation4))
+    ))
+    userOperation4.signature = sigLatest
+    await entryPoint.handleOps([userOperation4], relayer)
+
+    const balanceShouldNotHaveChanged = await provider.getBalance(senderAddress)
+    expect(balanceAfterPayment).to.equal(balanceShouldNotHaveChanged)
   })
 })
