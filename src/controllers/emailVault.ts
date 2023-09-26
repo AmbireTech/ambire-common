@@ -1,10 +1,11 @@
 import crypto from 'crypto'
+
+import { EmailVaultData, EmailVaultSecrets, SecretType } from '../interfaces/emailVault'
+import { Storage } from '../interfaces/storage'
 import { EmailVault } from '../libs/emailVault/emailVault'
 import { requestMagicLink } from '../libs/magicLink/magicLink'
-import { EmailVaultData, SecretType, EmailVaultSecrets } from '../interfaces/emailVault'
-import { Storage } from '../interfaces/storage'
-import { Keystore } from '../libs/keystore/keystore'
 import EventEmitter from './eventEmitter'
+import { KeystoreController } from './keystore/keystore'
 
 export enum EmailVaultState {
   Loading,
@@ -43,7 +44,7 @@ export class EmailVaultController extends EventEmitter {
 
   #relayerUrl: string
 
-  #keyStore: Keystore
+  #keystore: KeystoreController
 
   isReady: boolean = false
 
@@ -53,13 +54,13 @@ export class EmailVaultController extends EventEmitter {
     [email: string]: EmailVaultData
   } = {}
 
-  constructor(storage: Storage, fetch: Function, relayerUrl: string, keyStore: Keystore) {
+  constructor(storage: Storage, fetch: Function, relayerUrl: string, keystore: KeystoreController) {
     super()
     this.#fetch = fetch
     this.#relayerUrl = relayerUrl
     this.storage = storage
     this.#emailVault = new EmailVault(fetch, relayerUrl)
-    this.#keyStore = keyStore
+    this.#keystore = keystore
     this.initialLoadPromise = this.load()
   }
 
@@ -117,8 +118,8 @@ export class EmailVaultController extends EventEmitter {
 
     const newSecret = crypto.randomBytes(32).toString('base64url')
 
-    await this.#keyStore.addSecret(RECOVERY_SECRET_ID, newSecret)
-    const keyStoreUid = await this.#keyStore.getKeyStoreUid()
+    await this.#keystore.addSecret(RECOVERY_SECRET_ID, newSecret)
+    const keyStoreUid = await this.#keystore.getKeyStoreUid()
     const existsMagicKey = await this.#getMagicLinkKey(email)
 
     const magicKey = existsMagicKey || (await this.#requestNewMagicLinkKey(email))
@@ -165,14 +166,14 @@ export class EmailVaultController extends EventEmitter {
     if (!this.emailVaultStates[email]) {
       await this.login(email)
     }
-    const keyStoreUid = await this.#keyStore.getKeyStoreUid()
+    const keyStoreUid = await this.#keystore.getKeyStoreUid()
     const availableSecrets = this.emailVaultStates[email].availableSecrets
     const keyStoreSecret = Object.keys(availableSecrets).find(async (secretKey: string) => {
       return availableSecrets[secretKey].key === keyStoreUid
     })
     if (this.emailVaultStates[email] && keyStoreSecret) {
       const secretKey = await this.getRecoverKeyStoreSecret(email, keyStoreUid)
-      await this.#keyStore.unlockWithSecret(RECOVERY_SECRET_ID, secretKey.value)
+      await this.#keystore.unlockWithSecret(RECOVERY_SECRET_ID, secretKey.value)
     }
   }
 
