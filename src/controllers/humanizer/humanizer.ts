@@ -52,7 +52,6 @@ const parsingModules: HumanizerParsingModule[] = [nameParsing, tokenParsing]
 const humanizerTMModules = [erc20Module, erc721Module, permit2Module, fallbackEIP712Humanizer]
 
 function initHumanizerMeta(humanizerMeta: { [key: string]: any }) {
-  console.log(Object.keys(humanizerMeta))
   const newHumanizerMeta: { [key: string]: any } = {}
   Object.keys(humanizerMeta?.tokens).forEach((k2) => {
     newHumanizerMeta[`tokens:${ethers.getAddress(k2)}`] = humanizerMeta.tokens?.[k2]

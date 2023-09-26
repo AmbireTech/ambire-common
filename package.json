@@ -16,7 +16,7 @@
   "dependencies": {
     "@jest/globals": "^29.6.1",
     "aes-js": "^3.1.2",
-    "ambire-constants": "github:AmbireTech/ambire-constants#humanizer-v2",
+    "ambire-constants": "github:AmbireTech/ambire-constants",
     "dotenv": "^16.3.1",
     "ethers": "^6.3.0",
     "scrypt-js": "^3.0.1"
