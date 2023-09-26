@@ -25,7 +25,7 @@ export interface GasFeePayment {
   isGasTank: boolean
   paidBy: string
   inToken: string
-  amount: number
+  amount: bigint
 }
 
 export enum AccountOpStatus {
@@ -136,7 +136,7 @@ export function isAccountOpsIntentEqual(
  * @returns Uint8Array
  */
 export function accountOpSignableHash(op: AccountOp): Uint8Array {
-  const opNetworks = networks.filter((network: NetworkDescriptor) => op.networkId == network.id)
+  const opNetworks = networks.filter((network: NetworkDescriptor) => op.networkId === network.id)
   if (!opNetworks.length) throw new Error('unsupported network')
 
   const abiCoder = new ethers.AbiCoder()

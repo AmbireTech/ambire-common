@@ -1,4 +1,3 @@
-/* eslint-disable no-underscore-dangle */
 import { JsonRpcProvider } from 'ethers'
 
 import { networks } from '../../consts/networks'
@@ -16,6 +15,7 @@ import {
   getPendingAccountOpBannersForEOA
 } from '../../libs/banners/banners'
 import { estimate, EstimateResult } from '../../libs/estimate/estimate'
+import { GasRecommendation, getGasPriceRecommendations } from '../../libs/gasPrice/gasPrice'
 import { Key, Keystore, KeystoreSignerType } from '../../libs/keystore/keystore'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { AccountAdderController } from '../accountAdder/accountAdder'
@@ -24,6 +24,8 @@ import { EmailVaultController } from '../emailVault'
 import EventEmitter from '../eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
 import { PortfolioController } from '../portfolio/portfolio'
+/* eslint-disable no-underscore-dangle */
+import { SignAccountOpController } from '../signAccountOp/signAccountOp'
 import { SignMessageController } from '../signMessage/signMessage'
 
 export class MainController extends EventEmitter {
@@ -57,6 +59,8 @@ export class MainController extends EventEmitter {
 
   signMessage!: SignMessageController
 
+  signAccountOp: SignAccountOpController
+
   activity!: ActivityController
 
   // @TODO read networks from settings
@@ -70,6 +74,9 @@ export class MainController extends EventEmitter {
   settings: { networks: NetworkDescriptor[] }
 
   userRequests: UserRequest[] = []
+
+  // network => GasRecommendation[]
+  gasPrices: { [key: string]: GasRecommendation[] } = {}
 
   // The reason we use a map structure and not a flat array is:
   // 1) it's easier in the UI to deal with structured data rather than having to .find/.filter/etc. all the time
@@ -123,10 +130,14 @@ export class MainController extends EventEmitter {
     this.initialLoadPromise = this.load()
     this.emailVault = new EmailVaultController(storage, fetch, relayerUrl, this.#keystoreLib)
     this.accountAdder = new AccountAdderController({ storage, relayerUrl, fetch })
+    this.signAccountOp = new SignAccountOpController(this.#keystoreLib, this.portfolio)
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
     this.onResolveDappRequest = onResolveDappRequest
     this.onRejectDappRequest = onRejectDappRequest
     this.onUpdateDappSelectedAccount = onUpdateDappSelectedAccount
+
+    this.handleGasPriceUpdates()
+
     // @TODO Load userRequests from storage and emit that we have updated
     // @TODO
   }
@@ -164,6 +175,34 @@ export class MainController extends EventEmitter {
 
     this.isReady = true
     this.emitUpdate()
+  }
+
+  private async handleGasPriceUpdates(): Promise<void> {
+    setInterval(async () => {
+      await this.updateGasPrice()
+      this.emitUpdate()
+    }, 1000 * 60)
+  }
+
+  private async updateGasPrice(): Promise<void> {
+    await this.initialLoadPromise
+
+    // We want to update the gas price only for the networks having account ops.
+    // Together with that, we make sure `ethereum` is included, as we always want to know its gas price (once we have a gas indicator, we will need it).
+    const gasPriceNetworks = [
+      ...new Set([
+        ...Object.keys(this.accountOpsToBeSigned)
+          .map((accountAddr) => Object.keys(this.accountOpsToBeSigned[accountAddr]))
+          .flat(),
+        'ethereum'
+      ])
+    ]
+
+    await Promise.all(
+      gasPriceNetworks.map(async (network) => {
+        this.gasPrices[network] = await getGasPriceRecommendations(this.#providers[network])
+      })
+    )
   }
 
   private async getAccountsInfo(accounts: Account[]): Promise<AccountStates> {
@@ -360,11 +399,24 @@ export class MainController extends EventEmitter {
     this.emitUpdate()
   }
 
-  async reestimateCurrentAccountOp(accountAddr: AccountId, networkId: NetworkId) {
-    const accountOp = this.accountOpsToBeSigned[accountAddr][networkId]?.accountOp
-    // non fatal, no need to do anything
-    if (!accountOp) return
-    await this.estimateAccountOp(accountOp)
+  /**
+   * Reestimate the current account op and update the gas prices in the same tick.
+   * To achieve a more accurate gas amount calculation (gasUsageEstimate * gasPrice),
+   * it would be preferable to update them simultaneously.
+   * Otherwise, if either of the variables has not been recently updated, it may lead to an incorrect gas amount result.
+   */
+  async reestimateAndUpdatePrices(accountAddr: AccountId, networkId: NetworkId) {
+    await Promise.all([
+      this.updateGasPrice(),
+      async () => {
+        const accountOp = this.accountOpsToBeSigned[accountAddr][networkId]?.accountOp
+        // non-fatal, no need to do anything
+        if (!accountOp) return
+        await this.estimateAccountOp(accountOp)
+      }
+    ])
+
+    this.emitUpdate()
   }
 
   // @TODO: protect this from race conditions/simultanous executions
@@ -402,9 +454,10 @@ export class MainController extends EventEmitter {
       // @TODO nativeToCheck: pass all EOAs,
       // @TODO feeTokens: pass a hardcoded list from settings
       estimate(this.#providers[accountOp.networkId], network, account, accountOp, [], [])
-      // @TODO refresh the estimation
     ])
+    // @TODO compare intent between accountOp and this.accountOpsToBeSigned[accountOp.accountAddr][accountOp.networkId].accountOp
     this.accountOpsToBeSigned[accountOp.accountAddr][accountOp.networkId]!.estimation = estimation
+    this.signAccountOp.update({ estimation })
     console.log(estimation)
   }
 

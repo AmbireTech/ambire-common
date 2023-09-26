@@ -53,13 +53,12 @@ export async function getGasPriceRecommendations(
       baseFeePerGas: expectedBaseFee + (expectedBaseFee * baseFeeAddBps) / 10000n,
       maxPriorityFeePerGas: average(nthGroup(tips, i, speeds.length))
     }))
-  } else {
-    const prices = filterOutliers(txns.map((x) => x.gasPrice!).filter((x) => x > 0))
-    return speeds.map(({ name }, i) => ({
-      name,
-      gasPrice: average(nthGroup(prices, i, speeds.length))
-    }))
   }
+  const prices = filterOutliers(txns.map((x) => x.gasPrice!).filter((x) => x > 0))
+  return speeds.map(({ name }, i) => ({
+    name,
+    gasPrice: average(nthGroup(prices, i, speeds.length))
+  }))
 }
 
 // https://stackoverflow.com/questions/20811131/javascript-remove-outlier-from-an-array
