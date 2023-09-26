@@ -1,4 +1,7 @@
 import { ethers } from 'ethers'
+import { Storage } from 'interfaces/storage'
+import { callsHumanizer } from 'libs/humanizer'
+import { IrCall } from 'libs/humanizer/interfaces'
 
 import { Account, AccountStates } from '../../interfaces/account'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
@@ -38,7 +41,11 @@ export enum FeeSpeed {
 export class SignAccountOpController extends EventEmitter {
   #keystore: Keystore
 
-  portfolio: PortfolioController
+  #portfolio: PortfolioController
+
+  #storage: Storage
+
+  #fetch: Function
 
   #accounts: Account[] | null = null
 
@@ -54,13 +61,22 @@ export class SignAccountOpController extends EventEmitter {
 
   selectedFeeSpeed: FeeSpeed = FeeSpeed.Fast
 
+  humanReadable: IrCall[] = []
+
   status: Status | null = null
 
-  constructor(keystore: Keystore, portfolio: PortfolioController) {
+  constructor(
+    keystore: Keystore,
+    portfolio: PortfolioController,
+    storage: Storage,
+    fetch: Function
+  ) {
     super()
 
     this.#keystore = keystore
-    this.portfolio = portfolio
+    this.#portfolio = portfolio
+    this.#storage = storage
+    this.#fetch = fetch
   }
 
   get isInitialized(): boolean {
@@ -105,6 +121,10 @@ export class SignAccountOpController extends EventEmitter {
       ) {
         this.accountOp = accountOp
       }
+      // TODO: add knownAddresses
+      callsHumanizer(this.accountOp, [], this.#storage, this.#fetch, (humanizedCalls) => {
+        this.humanReadable = humanizedCalls
+      })
     }
 
     if (feeTokenAddr && this.isInitialized) {
