@@ -3,13 +3,13 @@ import { concat, getBytes, hexlify, keccak256, randomBytes, toUtf8Bytes, Wallet 
 import scrypt from 'scrypt-js'
 
 import {
+  Key,
   KeystoreSignerType,
   MainKey,
   MainKeyEncryptedWithSecret,
   StoredKey
 } from '../../interfaces/keystore'
 import { Storage } from '../../interfaces/storage'
-import { Key, Keystore } from '../../libs/keystore/keystore'
 import EventEmitter from '../eventEmitter'
 
 // DOCS
@@ -417,8 +417,8 @@ export class KeystoreController extends EventEmitter {
       isExternallyStored: type !== 'internal'
     }
 
-    const signerInitializer = this.keystoreSigners[key.type]
-    if (!signerInitializer) throw new Error('keystore: unsupported signer type')
+    const SignerInitializer = this.keystoreSigners[key.type]
+    if (!SignerInitializer) throw new Error('keystore: unsupported signer type')
 
     if (key.type === 'internal') {
       if (!this.isUnlocked()) throw new Error('keystore: not unlocked')
@@ -431,10 +431,10 @@ export class KeystoreController extends EventEmitter {
       const decryptedBytes = aesCtr.decrypt(encryptedBytes)
       const decryptedPrivateKey = aes.utils.hex.fromBytes(decryptedBytes)
 
-      return new signerInitializer(key, decryptedPrivateKey)
+      return new SignerInitializer(key, decryptedPrivateKey)
     }
 
-    return new signerInitializer(key)
+    return new SignerInitializer(key)
   }
 
   resetErrorState() {
