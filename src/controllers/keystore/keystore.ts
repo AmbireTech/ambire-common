@@ -51,8 +51,6 @@ export class KeystoreController extends EventEmitter {
     this.storage = _storage
     this.keystoreSigners = _keystoreSigners
     this.#mainKey = null
-
-    this.emitUpdate()
   }
 
   lock() {
@@ -75,6 +73,7 @@ export class KeystoreController extends EventEmitter {
   async getKeyStoreUid() {
     const uid = await this.storage.get('keyStoreUid', null)
     if (!uid) throw new Error('keystore: adding secret before get uid')
+
     return uid
   }
 
@@ -87,12 +86,34 @@ export class KeystoreController extends EventEmitter {
   async #unlockWithSecret(secretId: string, secret: string) {
     // @TODO should we check if already locked? probably not cause this function can  be used in order to verify if a secret is correct
     const secrets = await this.getMainKeyEncryptedWithSecrets()
-    if (!secrets.length) throw new Error('keystore: no secrets yet')
+    if (!secrets.length) {
+      return this.emitError({
+        message:
+          'Trying to unlock Ambire, but the lock mechanism was not fully configured yet. Please try again or contact support if the problem persists.',
+        level: 'major',
+        error: new Error('keystore: no secrets yet')
+      })
+    }
+
     const secretEntry = secrets.find((x) => x.id === secretId)
-    if (!secretEntry) throw new Error(`keystore: secret ${secretId} not found`)
+    if (!secretEntry) {
+      return this.emitError({
+        message:
+          'Something went wrong when trying to unlock Ambire. Please try again or contact support if the problem persists.',
+        level: 'major',
+        error: new Error(`keystore: secret ${secretId} not found`)
+      })
+    }
+
     const { scryptParams, aesEncrypted } = secretEntry
-    if (aesEncrypted.cipherType !== CIPHER)
-      throw Error(`keystore: unsupported cipherType ${aesEncrypted.cipherType}`)
+    if (aesEncrypted.cipherType !== CIPHER) {
+      return this.emitError({
+        message:
+          'Something went wrong when unlocking Ambire. Please try again or contact support if the problem persists.',
+        level: 'major',
+        error: new Error(`keystore: unsupported cipherType ${aesEncrypted.cipherType}`)
+      })
+    }
     // @TODO: progressCallback?
 
     const key = await scrypt.scrypt(
@@ -110,13 +131,21 @@ export class KeystoreController extends EventEmitter {
     const counter = new aes.Counter(iv)
     const aesCtr = new aes.ModeOfOperation.ctr(derivedKey, counter)
     const mac = keccak256(concat([macPrefix, aesEncrypted.ciphertext]))
-    if (mac !== aesEncrypted.mac) throw new Error('keystore: wrong secret')
+    if (mac !== aesEncrypted.mac) {
+      return this.emitError({
+        message:
+          'The attempt to unlock Ambire failed. Please try again or contact support if the problem persists.',
+        level: 'major',
+        error: new Error('keystore: wrong secret')
+      })
+    }
+
     const decrypted = aesCtr.decrypt(getBytes(aesEncrypted.ciphertext))
     this.#mainKey = { key: decrypted.slice(0, 16), iv: decrypted.slice(16, 32) }
   }
 
-  async unlockWithSecret(secretId: string, secret: string) {
-    await this.wrapKeystoreAction('unlockWithSecret', () =>
+  unlockWithSecret(secretId: string, secret: string) {
+    return this.wrapKeystoreAction('unlockWithSecret', () =>
       this.#unlockWithSecret(secretId, secret)
     )
   }
