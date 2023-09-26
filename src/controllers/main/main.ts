@@ -3,11 +3,18 @@ import { JsonRpcProvider } from 'ethers'
 
 import { networks } from '../../consts/networks'
 import { Account, AccountId, AccountStates } from '../../interfaces/account'
+import { Banner } from '../../interfaces/banner'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
 import { Storage } from '../../interfaces/storage'
 import { Message, UserRequest } from '../../interfaces/userRequest'
 import { AccountOp, Call as AccountOpCall } from '../../libs/accountOp/accountOp'
 import { getAccountState } from '../../libs/accountState/accountState'
+import {
+  getAccountOpBannersForEOA,
+  getAccountOpBannersForSmartAccount,
+  getMessageBanners,
+  getPendingAccountOpBannersForEOA
+} from '../../libs/banners/banners'
 import { estimate, EstimateResult } from '../../libs/estimate/estimate'
 import { Key, Keystore, KeystoreSignerType } from '../../libs/keystore/keystore'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
@@ -82,9 +89,9 @@ export class MainController extends EventEmitter {
 
   lastUpdate: Date = new Date()
 
-  onResolveDappRequest: (data: any, id?: bigint) => void
+  onResolveDappRequest: (data: any, id?: number) => void
 
-  onRejectDappRequest: (err: any, id?: bigint) => void
+  onRejectDappRequest: (err: any, id?: number) => void
 
   onUpdateDappSelectedAccount: (accountAddr: string) => void
 
@@ -95,19 +102,21 @@ export class MainController extends EventEmitter {
     keystoreSigners,
     onResolveDappRequest,
     onRejectDappRequest,
-    onUpdateDappSelectedAccount
+    onUpdateDappSelectedAccount,
+    pinned
   }: {
     storage: Storage
     fetch: Function
     relayerUrl: string
     keystoreSigners: { [key: string]: KeystoreSignerType }
-    onResolveDappRequest: (data: any, id?: bigint) => void
-    onRejectDappRequest: (err: any, id?: bigint) => void
+    onResolveDappRequest: (data: any, id?: number) => void
+    onRejectDappRequest: (err: any, id?: number) => void
     onUpdateDappSelectedAccount: (accountAddr: string) => void
+    pinned: string[]
   }) {
     super()
     this.storage = storage
-    this.portfolio = new PortfolioController(storage)
+    this.portfolio = new PortfolioController(storage, relayerUrl, pinned)
     this.#keystoreLib = new Keystore(storage, keystoreSigners)
     this.keystore = new KeystoreController(this.#keystoreLib)
     this.settings = { networks }
@@ -273,9 +282,10 @@ export class MainController extends EventEmitter {
     }
   }
 
-  updateSelectedAccount(selectedAccount: string | null = null) {
+  async updateSelectedAccount(selectedAccount: string | null = null) {
     if (!selectedAccount) return
     this.portfolio.updateSelectedAccount(this.accounts, this.settings.networks, selectedAccount)
+    this.portfolio.getAdditionalPortfolio(selectedAccount)
   }
 
   async addUserRequest(req: UserRequest) {
@@ -321,7 +331,7 @@ export class MainController extends EventEmitter {
   // @TODO allow this to remove multiple OR figure out a way to debounce re-estimations
   // first one sounds more reasonble
   // although the second one can't hurt and can help (or no debounce, just a one-at-a-time queue)
-  removeUserRequest(id: bigint) {
+  removeUserRequest(id: number) {
     const req = this.userRequests.find((uReq) => uReq.id === id)
     if (!req) return
 
@@ -333,12 +343,19 @@ export class MainController extends EventEmitter {
     if (action.kind === 'call') {
       // @TODO ensure acc info, re-estimate
       const accountOp = this.makeAccountOpFromUserRequests(accountAddr, networkId)
-      if (accountOp)
+      if (accountOp) {
         this.accountOpsToBeSigned[accountAddr][networkId] = { accountOp, estimation: null }
+      } else {
+        delete this.accountOpsToBeSigned[accountAddr][networkId]
+        if (!Object.keys(this.accountOpsToBeSigned[accountAddr] || {}).length)
+          delete this.accountOpsToBeSigned[accountAddr]
+      }
     } else {
       this.messagesToBeSigned[accountAddr] = this.messagesToBeSigned[accountAddr].filter(
         (x) => x.fromUserRequestId !== id
       )
+      if (!Object.keys(this.messagesToBeSigned[accountAddr] || {}).length)
+        delete this.messagesToBeSigned[accountAddr]
     }
     this.emitUpdate()
   }
@@ -367,7 +384,7 @@ export class MainController extends EventEmitter {
     const network = this.settings.networks.find((x) => x.id === accountOp.networkId)
     if (!network)
       throw new Error(`estimateAccountOp: ${accountOp.networkId}: network does not exist`)
-    const [, estimation] = await Promise.all([
+    const [, , estimation] = await Promise.all([
       // NOTE: we are not emitting an update here because the portfolio controller will do that
       // NOTE: the portfolio controller has it's own logic of constructing/caching providers, this is intentional, as
       // it may have different needs
@@ -381,6 +398,7 @@ export class MainController extends EventEmitter {
             .map(([networkId, x]) => [networkId, [x!.accountOp]])
         )
       ),
+      this.portfolio.getAdditionalPortfolio(accountOp.accountAddr),
       // @TODO nativeToCheck: pass all EOAs,
       // @TODO feeTokens: pass a hardcoded list from settings
       estimate(this.#providers[accountOp.networkId], network, account, accountOp, [], [])
@@ -390,12 +408,49 @@ export class MainController extends EventEmitter {
     console.log(estimation)
   }
 
-  broadcastSignedAccountOp(accountOp) {}
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars, class-methods-use-this
+  broadcastSignedAccountOp(accountOp: AccountOp) {}
 
   broadcastSignedMessage(signedMessage: Message) {
     this.activity.addSignedMessage(signedMessage, signedMessage.accountAddr)
     this.removeUserRequest(signedMessage.id)
     this.onResolveDappRequest({ hash: signedMessage.signature }, signedMessage.id)
     this.emitUpdate()
+  }
+
+  get banners(): Banner[] {
+    const requests =
+      this.userRequests.filter((req) => req.accountAddr === this.selectedAccount) || []
+
+    const accountOpEOABanners = getAccountOpBannersForEOA({
+      userRequests: requests,
+      accounts: this.accounts
+    })
+    const pendingAccountOpEOABanners = getPendingAccountOpBannersForEOA({
+      userRequests: requests,
+      accounts: this.accounts
+    })
+    const accountOpSmartAccountBanners = getAccountOpBannersForSmartAccount({
+      userRequests: requests,
+      accounts: this.accounts
+    })
+    const messageBanners = getMessageBanners({
+      userRequests: requests
+    })
+
+    return [
+      ...accountOpSmartAccountBanners,
+      ...accountOpEOABanners,
+      ...pendingAccountOpEOABanners,
+      ...messageBanners
+    ]
+  }
+
+  // includes the getters in the stringified instance
+  toJSON() {
+    return {
+      ...this,
+      banners: this.banners
+    }
   }
 }

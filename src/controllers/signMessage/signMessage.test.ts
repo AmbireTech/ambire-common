@@ -35,7 +35,7 @@ describe('SignMessageController', () => {
 
   test('should initialize with a valid message', (done) => {
     const messageToSign: Message = {
-      id: BigInt(1),
+      id: 1,
       content: {
         kind: 'message',
         message: '0x74657374'
@@ -60,7 +60,7 @@ describe('SignMessageController', () => {
 
   test('should not initialize with an invalid message kind', () => {
     const messageToSign: Message = {
-      id: BigInt(1),
+      id: 1,
       content: {
         // @ts-ignore that's on purpose, for the test
         kind: 'unsupportedKind',
@@ -100,7 +100,7 @@ describe('SignMessageController', () => {
 
   test('should set signing key address', () => {
     const messageToSign: Message = {
-      id: BigInt(1),
+      id: 1,
       content: {
         kind: 'message',
         message: '0x74657374'
@@ -111,14 +111,14 @@ describe('SignMessageController', () => {
     const signingKeyAddr = '0x9188fdd757Df66B4F693D624Ed6A13a15Cf717D7'
 
     signMessageController.init({ messageToSign, accounts: [account], accountStates: {} })
-    signMessageController.setSigningKeyAddr(signingKeyAddr)
+    signMessageController.setSigningKey(signingKeyAddr, 'internal')
 
     expect(signMessageController.signingKeyAddr).toBe(signingKeyAddr)
   })
 
   test('should sign a message', (done) => {
     const messageToSign: Message = {
-      id: BigInt('1'),
+      id: 1,
       content: {
         kind: 'message',
         message: '0x74657374'
@@ -156,7 +156,7 @@ describe('SignMessageController', () => {
     })
 
     signMessageController.init({ messageToSign, accounts: [account], accountStates: {} })
-    signMessageController.setSigningKeyAddr(signingKeyAddr)
+    signMessageController.setSigningKey(signingKeyAddr, 'internal')
     signMessageController.sign()
   })
 })

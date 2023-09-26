@@ -25,7 +25,6 @@ contract RecoverySigValidator is ExternalSigValidator {
   }
 
   function validateSig(
-    address accountAddr,
     bytes calldata data,
     bytes calldata sig,
     Transaction[] calldata calls
@@ -37,7 +36,7 @@ contract RecoverySigValidator is ExternalSigValidator {
       bool, Transaction[], uint256, bytes
     ));
     if (callsToCommitTo.length > 0) {
-      bytes32 hash = keccak256(abi.encode(accountAddr, block.chainid, salt, callsToCommitTo));
+      bytes32 hash = keccak256(abi.encode(msg.sender, block.chainid, salt, callsToCommitTo));
 
       uint256 scheduled = scheduledRecoveries[hash];
       require(scheduled == 0, 'RecoverySig: already scheduled');
@@ -70,7 +69,7 @@ contract RecoverySigValidator is ExternalSigValidator {
         return (true, 0);
       }
     } else {
-      bytes32 hash = keccak256(abi.encode(accountAddr, block.chainid, salt, calls));
+      bytes32 hash = keccak256(abi.encode(msg.sender, block.chainid, salt, calls));
 
       uint256 scheduled = scheduledRecoveries[hash];
       require(scheduled != type(uint256).max, 'RecoverySig: already finalized');

@@ -1,7 +1,8 @@
-import { Network, ethers } from 'ethers'
+import { ethers } from 'ethers'
+
+import { networks } from '../../consts/networks'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
 import { stringify } from '../bigintJson/bigintJson'
-import { networks } from '../../../dist/consts/networks'
 
 export interface Call {
   to: string
@@ -10,7 +11,7 @@ export interface Call {
   // if this call is associated with a particular user request
   // multiple calls can be associated with the same user request, for example
   // when a batching request is made
-  fromUserRequestId?: bigint
+  fromUserRequestId?: number
 }
 
 // This is an abstract representation of the gas fee payment
@@ -44,7 +45,7 @@ export interface AccountOp {
   signingKeyAddr: string | null
   // this may not be set in case we haven't set it yet
   // this is a number and not a bigint because of ethers (it uses number for nonces)
-  nonce: number | null
+  nonce: bigint | null
   // @TODO: nonce namespace? it is dependent on gasFeePayment
   calls: Call[]
   gasLimit: number | null
@@ -77,7 +78,8 @@ export function canBroadcast(op: AccountOp, accountIsEOA: boolean): boolean {
   if (op.gasLimit === null) throw new Error('missing gasLimit')
   if (op.nonce === null) throw new Error('missing nonce')
   if (accountIsEOA) {
-    if (op.gasFeePayment.isGasTank) throw new Error('gas fee payment with gas tank cannot be used with an EOA')
+    if (op.gasFeePayment.isGasTank)
+      throw new Error('gas fee payment with gas tank cannot be used with an EOA')
     if (op.gasFeePayment.inToken !== '0x0000000000000000000000000000000000000000')
       throw new Error('gas fee payment needs to be in the native asset')
     if (op.gasFeePayment.paidBy !== op.accountAddr)
@@ -142,7 +144,12 @@ export function accountOpSignableHash(op: AccountOp): Uint8Array {
     ethers.keccak256(
       abiCoder.encode(
         ['address', 'uint', 'uint', 'tuple(address, uint, bytes)[]'],
-        [op.accountAddr, opNetworks[0].chainId, op.nonce ?? 0, op.calls.map((call: Call) => ([call.to, call.value, call.data]))]
+        [
+          op.accountAddr,
+          opNetworks[0].chainId,
+          op.nonce ?? 0,
+          op.calls.map((call: Call) => [call.to, call.value, call.data])
+        ]
       )
     )
   )

@@ -59,11 +59,12 @@ export class Deployless {
 
   constructor(
     provider: JsonRpcProvider | Provider,
-    abi: any,
+    abi: any[],
     code: string,
     codeAtRuntime?: string
   ) {
     assert.ok(code.startsWith('0x'), 'contract code must start with 0x')
+    assert.ok(!abi.includes((x: any) => x.type === 'constructor'), 'contract cannot have a constructor, as it is not supported in state override mode')
     this.contractBytecode = code
     this.provider = provider
     this.iface = new Interface(abi)

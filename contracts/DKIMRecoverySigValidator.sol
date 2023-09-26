@@ -81,7 +81,7 @@ contract DKIMRecoverySigValidator is ExternalSigValidator {
     SigMode mode;
     DKIMKey key;
     string canonizedHeaders;
-    address newKeyToSet;
+    address newAddressToSet;
     bytes32 newPrivilegeValue;
   }
 
@@ -119,6 +119,11 @@ contract DKIMRecoverySigValidator is ExternalSigValidator {
   address public immutable authorizedToSubmit;
   address public immutable authorizedToRevoke;
   DNSSEC public immutable oracle;
+  bytes private constant BRIDGE_STRING = hex'646e7373656362726964676506616d6269726503636f6d';
+
+  // this is the bytes representation of the character that replaces "space"
+  // when parsing the DNSSEC signedSet data
+  bytes private constant BYTE_REPRESENTATION_SPACE_CHARACTER = hex'9b';
 
   constructor(DNSSEC _oracle, address _authorizedToSubmit, address _authorizedToRevoke) {
     authorizedToSubmit = _authorizedToSubmit;
@@ -129,9 +134,8 @@ contract DKIMRecoverySigValidator is ExternalSigValidator {
   /**
    * @notice  Validates a DKIM sig and a secondaryKey sig to perform a recovery.
    * @dev     Please read the contracts' spec for more @dev information.
-   * @param   accountAddr  The AmbireAccount.sol address
-   * @param   data  The AccInfo data that has privileges for the accountAddr:
-   * AmbireAccount.privileges[hash] == keccak256(abi.encode(accountAddr, data))
+   * @param   data  The AccInfo data that has privileges for the msg.sender:
+   * AmbireAccount.privileges[hash] == keccak256(abi.encode(msg.sender, data))
    * @param   sig  abi.decode(SignatureMeta, dkimSig, secondSig)
    * - SignatureMeta describes the type of request that's been made. E.g.
    * SignatureMeta.mode can be Both and that means we expect a DKIM and a secondKey signature
@@ -139,35 +143,34 @@ contract DKIMRecoverySigValidator is ExternalSigValidator {
    * to AmbireAccount.setAddrPrivilege for the key in sigMeta
    */
   function validateSig(
-    address accountAddr,
     bytes calldata data,
     bytes calldata sig,
     Transaction[] calldata calls
-  ) override external returns (bool, uint256) {
+  ) external override returns (bool, uint256) {
     AccInfo memory accInfo = abi.decode(data, (AccInfo));
 
     (SignatureMeta memory sigMeta, bytes memory dkimSig, bytes memory secondSig) = abi.decode(
       sig,
       (SignatureMeta, bytes, bytes)
     );
-    bytes32 identifier = keccak256(abi.encode(accountAddr, data, sigMeta));
+    bytes32 identifier = keccak256(abi.encode(msg.sender, accInfo, sigMeta));
     require(!recoveries[identifier], 'recovery already done');
 
-    // declare the variables to not go deep in the stack
     SigMode mode = sigMeta.mode;
-    address newKeyToSet = sigMeta.newKeyToSet;
-    bytes32 newPrivilegeValue = sigMeta.newPrivilegeValue;
-
-    if (mode == SigMode.Both) {
-      _validateCalls(calls, accountAddr, newKeyToSet, newPrivilegeValue);
-    }
-
     if (mode == SigMode.Both || mode == SigMode.OnlyDKIM) {
-      if (mode == SigMode.OnlyDKIM)
+      if (mode == SigMode.OnlyDKIM) {
         require(accInfo.acceptEmptySecondSig, 'account disallows OnlyDKIM');
+      }
 
       string memory headers = sigMeta.canonizedHeaders;
-      _verifyHeaders(headers, accInfo.emailFrom, accInfo.emailTo, newKeyToSet, mode);
+      _verifyHeaders(
+        headers,
+        accInfo.emailFrom,
+        accInfo.emailTo,
+        sigMeta.newAddressToSet,
+        sigMeta.newPrivilegeValue,
+        sigMeta.mode
+      );
 
       DKIMKey memory key = sigMeta.key;
       bytes memory pubKeyExponent = key.pubKeyExponent;
@@ -186,10 +189,9 @@ contract DKIMRecoverySigValidator is ExternalSigValidator {
           'domain in sigMeta is not authorized for this account'
         );
 
-        bytes32 keyId = keccak256(abi.encode(key));
         require(accInfo.acceptUnknownSelectors, 'account does not allow unknown selectors');
-        KeyInfo storage keyInfo = dkimKeys[keyId];
-        require(keyInfo.isExisting, 'non-existant DKIM key');
+        KeyInfo storage keyInfo = dkimKeys[keccak256(abi.encode(key))];
+        require(keyInfo.isExisting, 'non-existent DKIM key');
         uint32 dateRemoved = keyInfo.dateRemoved;
         require(
           dateRemoved == 0 || block.timestamp < dateRemoved + accInfo.waitUntilAcceptRemoved,
@@ -206,20 +208,27 @@ contract DKIMRecoverySigValidator is ExternalSigValidator {
       }
     }
 
-    bytes32 hashToSign = keccak256(
-      abi.encode(address(accountAddr), newKeyToSet, newPrivilegeValue)
-    );
     if (mode == SigMode.Both || mode == SigMode.OnlySecond) {
-      if (mode == SigMode.OnlySecond)
+      if (mode == SigMode.OnlySecond) {
         require(accInfo.acceptEmptyDKIMSig, 'account disallows OnlySecond');
-
-      // @TODO should spoofing be allowed
-      if (!(SignatureValidator.recoverAddrImpl(hashToSign, secondSig, true) == accInfo.secondaryKey)) {
+        require(
+          keccak256(bytes(sigMeta.canonizedHeaders)) == keccak256(bytes('')),
+          'sigMeta.canonizedHeaders should be empty when SigMode is OnlySecond'
+        );
+        require(
+          keccak256(abi.encode(sigMeta.key)) ==
+            keccak256(abi.encode(DKIMKey('', bytes(''), bytes('')))),
+          'sigMeta.key should be empty when SigMode is OnlySecond'
+        );
+      }
+      if (
+        !(SignatureValidator.recoverAddrImpl(identifier, secondSig, true) == accInfo.secondaryKey)
+      ) {
         return (false, 0);
       }
     }
 
-    // In those modes, we require a timelock
+    // In these modes, we require a timelock
     if (mode == SigMode.OnlySecond || mode == SigMode.OnlyDKIM) {
       Timelock storage timelock = timelocks[identifier];
       require(!timelock.isExecuted, 'timelock: already executed');
@@ -233,108 +242,56 @@ contract DKIMRecoverySigValidator is ExternalSigValidator {
         if (uint32(block.timestamp) < timelock.whenReady) {
           return (false, timelock.whenReady);
         }
-        _validateCalls(calls, accountAddr, newKeyToSet, newPrivilegeValue);
         timelock.isExecuted = true;
         emit TimelockExecuted(identifier);
       }
     }
 
-    recoveries[identifier] = true;
-    return (true, 0);
-  }
-
-  function _verifyHeaders(
-    string memory canonizedHeaders,
-    string memory accountEmailFrom,
-    string memory accountEmailTo,
-    address newKeyToSet,
-    SigMode mode
-  ) internal pure {
-    // from looks like this: from: name <email>
-    // so we take what's between <> and validate it
-    Strings.slice memory fromHeader = canonizedHeaders.toSlice().find('from:'.toSlice());
-    fromHeader.split('<'.toSlice());
-    require(
-      fromHeader.startsWith(accountEmailFrom.toSlice().concat('>'.toSlice()).toSlice()),
-      'emailFrom not valid'
-    );
-
-    // to looks like this: to:email
-    Strings.slice memory toHeader = 'to:'.toSlice().concat(accountEmailTo.toSlice()).toSlice();
-    require(canonizedHeaders.toSlice().startsWith(toHeader), 'emailTo not valid');
-
-    // subject looks like this: subject:Give permissions to {address} SigMode {uint8}
-    Strings.slice memory newKeyString = 'subject:Give permissions to '
-      .toSlice()
-      .concat(OpenZeppelinStrings.toHexString(newKeyToSet).toSlice())
-      .toSlice()
-      .concat(' SigMode '.toSlice())
-      .toSlice()
-      .concat(OpenZeppelinStrings.toString(uint8(mode)).toSlice())
-      .toSlice();
-
-    // a bit of magic here
-    // when using split this way, if it finds newKeyString, it returns
-    // everything before it as subject. If it does not find it,
-    // subject is set to canonizedHeaders. So we check whether subject
-    // is equal to canonizedHeaders. If it is, the subject has not been found
-    Strings.slice memory subject = canonizedHeaders.toSlice().split(newKeyString);
-    require(!subject.equals(canonizedHeaders.toSlice()), 'emailSubject not valid');
-  }
-
-  function _validateCalls(
-    Transaction[] memory calls,
-    address accountAddr,
-    address newKeyToSet,
-    bytes32 newPrivilegeValue
-  ) internal pure {
     // Validate the calls: we only allow setAddrPrivilege for the pre-set newKeyToSet and newPrivilegeValue
     require(calls.length == 1, 'calls length must be 1');
     Transaction memory txn = calls[0];
     require(txn.value == 0, 'call value must be 0');
-    require(txn.to == accountAddr, 'call "to" must be the ambire account addr');
+    require(txn.to == msg.sender, 'call "to" must be the ambire account addr');
     require(
       keccak256(txn.data) ==
         keccak256(
           abi.encodeWithSelector(
             IAmbireAccount.setAddrPrivilege.selector,
-            newKeyToSet,
-            newPrivilegeValue
+            sigMeta.newAddressToSet,
+            sigMeta.newPrivilegeValue
           )
         ),
       'Transaction data is not set correctly, either selector, key or priv is incorrect'
     );
+
+    recoveries[identifier] = true;
+    emit RecoveryExecuted(msg.sender, identifier);
+    return (true, 0);
   }
 
   /**
-   * @notice  Add a DKIM public key for a given DNS and selector
+   * @notice  Add a DKIM public key for a given DNS and domainName
    * @dev     DNSSEC verification is performed by DNSSECImpl.sol. The
    * contract originates from the ENS implementation. Unfortunately,
    * major email providers like gmail do not support DNSSEC. To be able
-   * to add their keys, we use a bridge. The bridge string is this:
-   * 646e7373656362726964676506616d6269726503636f6d0000100001000001
-   * an it means bridge.ambire.com. To add gmail, we create a selector
+   * to add their keys, we use a bridge: the constant BRIDGE_STRING.
+   * and it means bridge.ambire.com. To add gmail, we create a domainName
    * gmail.com.bridge.ambire.com, check whether the TXT field's signer
    * ends with bridge.ambire.com and if so, add the key for gmail.
    * This is a compromise; otherwise, gmail keys cannot be added by DNSSEC.
    * @param   sets  {bytes rrset; bytes sig} The sets to validate.
    * The final one needs to be the TXT field containing the DKIM key.
    */
-  function addDKIMKeyWithDNSSec(DNSSEC.RRSetWithSignature[] memory sets) external {
+  function addDKIMKeyWithDNSSec(DNSSEC.RRSetWithSignature[] calldata sets) external {
     require(
       authorizedToSubmit == address(69) || msg.sender == authorizedToSubmit,
       'not authorized to submit'
     );
 
-    RRUtils.SignedSet memory signedSet = sets[sets.length - 1].rrset.readSignedSet();
-    (bytes memory rrs, ) = oracle.verifyRRSet(sets);
-    require(keccak256(rrs) == keccak256(signedSet.data), 'DNSSec verification failed');
+    oracle.verifyRRSet(sets);
 
-    (DKIMKey memory key, string memory domainName, bool isBridge) = _parse(signedSet);
-    if (isBridge) key.domainName = domainName;
-
-    bytes32 id = keccak256(abi.encode(key));
-    KeyInfo storage keyInfo = dkimKeys[id];
+    (DKIMKey memory key, bool isBridge) = _parse(sets[sets.length - 1].rrset.readSignedSet());
+    KeyInfo storage keyInfo = dkimKeys[keccak256(abi.encode(key))];
     require(!keyInfo.isExisting, 'key already exists');
 
     keyInfo.isExisting = true;
@@ -344,21 +301,25 @@ contract DKIMRecoverySigValidator is ExternalSigValidator {
       key.domainName,
       key.pubKeyModulus,
       key.pubKeyExponent,
-      keyInfo.dateAdded,
+      uint32(block.timestamp),
       isBridge
     );
   }
 
   function _parse(
-    RRUtils.SignedSet memory signedSet
-  ) internal pure returns (DKIMKey memory key, string memory domainName, bool isBridge) {
-    Strings.slice memory data = string(signedSet.data).toSlice();
+    RRUtils.SignedSet memory txtSignedSet
+  ) internal pure returns (DKIMKey memory key, bool isBridge) {
+    Strings.slice memory data = string(txtSignedSet.data).toSlice();
     data.split('p='.toSlice()); // this becomes the value after p=
     bytes memory pValue = bytes(data.toString());
     require(pValue.length > 0, 'public key not found in txt set');
 
     string memory base64Key = string(pValue);
-    uint256 offsetOfInvalidAscii = pValue.find(0, pValue.length, 0x9b);
+    uint256 offsetOfInvalidAscii = pValue.find(
+      0,
+      pValue.length,
+      bytes1(BYTE_REPRESENTATION_SPACE_CHARACTER)
+    );
     while (offsetOfInvalidAscii != type(uint256).max) {
       bytes memory firstPartOfKey = pValue.substring(0, offsetOfInvalidAscii);
       bytes memory secondPartOfKey = pValue.substring(
@@ -366,18 +327,24 @@ contract DKIMRecoverySigValidator is ExternalSigValidator {
         pValue.length - 1 - offsetOfInvalidAscii
       );
       base64Key = string(firstPartOfKey).toSlice().concat(string(secondPartOfKey).toSlice());
-      offsetOfInvalidAscii = bytes(base64Key).find(0, bytes(base64Key).length, 0x9b);
+      offsetOfInvalidAscii = bytes(base64Key).find(
+        0,
+        bytes(base64Key).length,
+        bytes1(BYTE_REPRESENTATION_SPACE_CHARACTER)
+      );
+      pValue = bytes(base64Key);
     }
 
     bytes memory decoded = string(base64Key).decode();
-    // omit the first 32 bytes, take everything expect the last 5 bytes:
-    // - first two bytes from the last 5 is modulus header info
-    // - last three bytes is modulus
+    // omit the first 32 bytes, take everything except the last 5 bytes:
+    // - first two bytes from the last 5 is the exponent header info
+    // - last three bytes is the exponent
     bytes memory modulus = decoded.substring(32, decoded.length - 32 - 5);
     // the last 3 bytes of the decoded string is the exponent
     bytes memory exponent = decoded.substring(decoded.length - 3, 3);
 
-    (domainName, isBridge) = _getDomainNameFromSignedSet(signedSet);
+    string memory domainName;
+    (domainName, isBridge) = _getDomainNameFromSignedSet(txtSignedSet);
     key = DKIMKey(domainName, modulus, exponent);
   }
 
@@ -385,12 +352,19 @@ contract DKIMRecoverySigValidator is ExternalSigValidator {
     RRUtils.SignedSet memory signedSet
   ) internal pure returns (string memory, bool) {
     Strings.slice memory domainName = string(signedSet.data).toSlice();
-    domainName.rsplit(','.toSlice()); // this becomes the value before ,
+    // the TXT set contains a v= field. Everything before it is the domain
+    // name along with some invalid ASCII characters the RRUtils cannot
+    // decode properly
+    domainName.rsplit('v='.toSlice()); // this becomes the value before v=
+    // if the invalid ASCII characters remain in the domainName,
+    // we strip them
+    if (domainName.contains(hex'000010'.toSlice())) {
+      domainName.rsplit(hex'000010'.toSlice()); // this becomes the value before hex"000010"
+    }
     require(bytes(domainName.toString()).length > 0, 'domain name not found in txt set');
 
-    bytes memory bridgeString = hex'646e7373656362726964676506616d6269726503636f6d0000100001000001';
-    bool isBridge = domainName.endsWith(string(bridgeString).toSlice());
-    if (isBridge) domainName.rsplit(string(bridgeString).toSlice()); // remove the bridge
+    bool isBridge = domainName.endsWith(string(BRIDGE_STRING).toSlice());
+    if (isBridge) domainName.rsplit(string(BRIDGE_STRING).toSlice()); // remove the bridge
 
     return (domainName.toString(), isBridge);
   }
@@ -407,9 +381,60 @@ contract DKIMRecoverySigValidator is ExternalSigValidator {
    * @param   set  The TXT set
    */
   function getDomainNameFromSet(
-    DNSSEC.RRSetWithSignature memory set
-  ) public pure returns (string memory, bool) {
+    DNSSEC.RRSetWithSignature calldata set
+  ) external pure returns (string memory, bool) {
     return _getDomainNameFromSignedSet(set.rrset.readSignedSet());
+  }
+
+  function _verifyHeaders(
+    string memory canonizedHeaders,
+    string memory accountEmailFrom,
+    string memory accountEmailTo,
+    address newAddressToSet,
+    bytes32 newPrivilegeValue,
+    SigMode mode
+  ) internal pure {
+    // from looks like this: from: name <email>
+    // so we take what's between <> and validate it
+    Strings.slice memory fromHeader = canonizedHeaders.toSlice().find('from:'.toSlice());
+    fromHeader.split('<'.toSlice());
+    require(
+      fromHeader.startsWith(accountEmailFrom.toSlice().concat('>'.toSlice()).toSlice()),
+      'emailFrom not valid'
+    );
+
+    // to looks like this: to:email
+    Strings.slice memory toHeader = 'to:'
+      .toSlice()
+      .concat(accountEmailTo.toSlice())
+      .toSlice()
+      .concat('\r\n'.toSlice())
+      .toSlice();
+    require(canonizedHeaders.toSlice().startsWith(toHeader), 'emailTo not valid');
+
+    // subject looks like this: subject:Give {bytes32} permissions to {address} SigMode {uint8}
+    Strings.slice memory subject = 'subject:Give '
+      .toSlice()
+      .concat(OpenZeppelinStrings.toHexString(uint256(newPrivilegeValue)).toSlice())
+      .toSlice()
+      .concat(' permissions to '.toSlice())
+      .toSlice()
+      .concat(OpenZeppelinStrings.toHexString(newAddressToSet).toSlice())
+      .toSlice()
+      .concat(' SigMode '.toSlice())
+      .toSlice()
+      .concat(OpenZeppelinStrings.toString(uint8(mode)).toSlice())
+      .toSlice()
+      .concat('\r\n'.toSlice())
+      .toSlice();
+
+    // a bit of magic here
+    // when using split this way, if it finds subject, it returns
+    // everything after it as headersAfterSubject. If it does not find it,
+    // headersAfterSubject is set to canonizedHeaders. So we check whether headersAfterSubject
+    // is equal to canonizedHeaders. If it is, the subject has not been found
+    Strings.slice memory headersAfterSubject = canonizedHeaders.toSlice().split(subject);
+    require(!headersAfterSubject.equals(canonizedHeaders.toSlice()), 'emailSubject not valid');
   }
 
   /**
@@ -418,7 +443,8 @@ contract DKIMRecoverySigValidator is ExternalSigValidator {
    */
   function removeDKIMKey(bytes32 id) external {
     require(msg.sender == authorizedToRevoke, 'Address unauthorized to revoke');
+    require(dkimKeys[id].dateRemoved == 0, 'Key already revoked');
     dkimKeys[id].dateRemoved = uint32(block.timestamp);
-    emit DKIMKeyRemoved(id, dkimKeys[id].dateRemoved, dkimKeys[id].isBridge);
+    emit DKIMKeyRemoved(id, uint32(block.timestamp), dkimKeys[id].isBridge);
   }
 }

@@ -3,6 +3,7 @@ import aes from 'aes-js'
 import { concat, getBytes, hexlify, keccak256, randomBytes, toUtf8Bytes, Wallet } from 'ethers'
 import scrypt from 'scrypt-js'
 
+import { Account } from '../../interfaces/account'
 import { KeystoreSigner } from '../../interfaces/keystore'
 import { Storage } from '../../interfaces/storage'
 
@@ -45,23 +46,23 @@ type MainKey = {
   iv: Uint8Array
 }
 
-export type Key = {
-  // normally in the form of an Ethereum address
-  id: string
-  type: string
-  label: string
-  isExternallyStored: boolean
-  meta: object | null
-}
+export type Key = Omit<StoredKey, 'privKey'> & { isExternallyStored: boolean }
 
-export type StoredKey = {
-  id: string
-  type: string
-  label: string
-  privKey: string | null
-  // denotes additional info like HW wallet derivation path
-  meta: object | null
-}
+export type StoredKey =
+  | {
+      addr: Account['addr']
+      type: 'internal'
+      label: string
+      privKey: string
+      meta: null
+    }
+  | {
+      addr: Account['addr']
+      type: 'trezor' | 'ledger' | 'lattice'
+      label: string
+      privKey: null
+      meta: { model: string; hdPath: string }
+    }
 
 export type KeystoreSignerType = {
   new (key: Key, privateKey?: string): KeystoreSigner
@@ -216,70 +217,121 @@ export class Keystore {
 
   async getKeys(): Promise<Key[]> {
     const keys: [StoredKey] = await this.storage.get('keystoreKeys', [])
-    return keys.map(
-      ({ id, label, type, meta }) =>
-        ({
-          id,
-          label,
-          type,
-          meta,
-          isExternallyStored: type !== 'internal'
-        } as Key)
-    )
-  }
-
-  async addKeyExternallyStored(id: string, type: string, label: string, meta: object) {
-    const keys: [StoredKey] = await this.storage.get('keystoreKeys', [])
-    keys.push({
-      id,
+    return keys.map(({ addr, label, type, meta }) => ({
+      addr,
+      label,
       type,
-      label,
       meta,
-      privKey: null
-    })
-    await this.storage.set('keystoreKeys', keys)
+      isExternallyStored: type !== 'internal'
+    }))
   }
 
-  async addKey(privateKey: string, label: string) {
-    if (this.#mainKey === null) throw new Error('keystore: needs to be unlocked')
+  async addKeysExternallyStored(
+    keysToAdd: { addr: Key['addr']; type: Key['type']; label: Key['label']; meta: Key['meta'] }[]
+  ) {
+    if (!keysToAdd.length) return
 
-    // eslint-disable-next-line no-param-reassign
-    privateKey = privateKey.substring(0, 2) === '0x' ? privateKey.substring(2) : privateKey
+    // Strip out keys with duplicated private keys. One unique key is enough.
+    const uniqueKeys: { addr: Key['addr']; type: Key['type'] }[] = []
+    const uniqueKeysToAdd = keysToAdd.filter(({ addr, type }) => {
+      if (uniqueKeys.some((x) => x.addr === addr && x.type === type)) {
+        return false
+      }
 
-    // Set up the cipher
-    const counter = new aes.Counter(this.#mainKey.iv)
-    const aesCtr = new aes.ModeOfOperation.ctr(this.#mainKey.key, counter)
+      uniqueKeys.push({ addr, type })
+      return true
+    })
 
-    // Store the key
-    // Terminology: this private key represents an EOA wallet, which is why ethers calls it Wallet, but we treat it as a key here
-    const wallet = new Wallet(privateKey)
+    if (!uniqueKeysToAdd.length) return
+
     const keys: [StoredKey] = await this.storage.get('keystoreKeys', [])
-    keys.push({
-      id: wallet.address,
-      type: 'internal',
-      label,
-      // @TODO: consider an MAC?
-      privKey: hexlify(aesCtr.encrypt(aes.utils.hex.toBytes(privateKey))),
-      meta: null
-    })
-    await this.storage.set('keystoreKeys', keys)
+
+    const newKeys = uniqueKeysToAdd
+      .map(({ addr, type, label, meta }) => ({
+        addr,
+        type,
+        label,
+        meta,
+        privKey: null
+      }))
+      // No need to re-add keys that are already added (with the same type / device)
+      .filter(({ addr, type }) => !keys.some((x) => x.addr === addr && x.type === type))
+
+    if (!newKeys.length) return
+
+    const nextKeys = [...keys, ...newKeys]
+
+    await this.storage.set('keystoreKeys', nextKeys)
   }
 
-  async removeKey(id: string) {
+  async addKeys(keysToAdd: { privateKey: string; label: Key['label'] }[]) {
+    if (this.#mainKey === null) throw new Error('keystore: needs to be unlocked')
+    if (!keysToAdd.length) return
+
+    // Strip out keys with duplicated private keys. One unique key is enough.
+    const uniquePrivateKeysToAddSet = new Set()
+    const uniqueKeysToAdd = keysToAdd.filter(({ privateKey }) => {
+      if (!uniquePrivateKeysToAddSet.has(privateKey)) {
+        uniquePrivateKeysToAddSet.add(privateKey)
+        return true
+      }
+      return false
+    })
+
+    if (!uniqueKeysToAdd.length) return
+
+    const keys: [StoredKey] = await this.storage.get('keystoreKeys', [])
+
+    const newKeys: StoredKey[] = uniqueKeysToAdd
+      .map(({ privateKey, label }) => {
+        // eslint-disable-next-line no-param-reassign
+        privateKey = privateKey.substring(0, 2) === '0x' ? privateKey.substring(2) : privateKey
+
+        // Set up the cipher
+        const counter = new aes.Counter(this.#mainKey!.iv) // TS compiler fails to detect we check for null above
+        const aesCtr = new aes.ModeOfOperation.ctr(this.#mainKey!.key, counter) // TS compiler fails to detect we check for null above
+
+        // Store the key
+        // Terminology: this private key represents an EOA wallet, which is why ethers calls it Wallet, but we treat it as a key here
+        const wallet = new Wallet(privateKey)
+        return {
+          addr: wallet.address,
+          type: 'internal' as 'internal',
+          label,
+          // @TODO: consider an MAC?
+          privKey: hexlify(aesCtr.encrypt(aes.utils.hex.toBytes(privateKey))),
+          meta: null
+        }
+      })
+      // No need to re-add keys that are already added, private key never changes
+      .filter(({ addr, type }) => !keys.some((x) => x.addr === addr && x.type === type))
+
+    if (!newKeys.length) return
+
+    const nextKeys = [...keys, ...newKeys]
+
+    await this.storage.set('keystoreKeys', nextKeys)
+  }
+
+  async removeKey(addr: Key['addr'], type: Key['type']) {
     if (!this.isUnlocked()) throw new Error('keystore: not unlocked')
     const keys: [StoredKey] = await this.storage.get('keystoreKeys', [])
-    if (!keys.find((x) => x.id === id))
-      throw new Error(`keystore: trying to remove key that does not exist ${id}}`)
+    if (!keys.find((x) => x.addr === addr && x.type === type))
+      throw new Error(
+        `keystore: trying to remove key that does not exist: address: ${addr}, type: ${type}`
+      )
     this.storage.set(
       'keystoreKeys',
-      keys.filter((x) => x.id !== id)
+      keys.filter((x) => x.addr === addr && x.type === type)
     )
   }
 
-  async exportKeyWithPasscode(keyId: string, passphrase: string) {
+  async exportKeyWithPasscode(keyAddress: Key['addr'], keyType: Key['type'], passphrase: string) {
     if (this.#mainKey === null) throw new Error('keystore: needs to be unlocked')
     const keys = await this.storage.get('keystoreKeys', [])
-    const storedKey: StoredKey = keys.find((x: StoredKey) => x.id === keyId)
+    const storedKey: StoredKey = keys.find(
+      (x: StoredKey) => x.addr === keyAddress && x.type === keyType
+    )
 
     if (!storedKey) throw new Error('keystore: key not found')
     if (storedKey.type !== 'internal') throw new Error('keystore: key does not have privateKey')
@@ -294,15 +346,17 @@ export class Keystore {
     return JSON.stringify(keyBackup)
   }
 
-  async getSigner(keyId: string) {
+  async getSigner(keyAddress: Key['addr'], keyType: Key['type']) {
     const keys = await this.storage.get('keystoreKeys', [])
-    const storedKey: StoredKey = keys.find((x: StoredKey) => x.id === keyId)
+    const storedKey: StoredKey = keys.find(
+      (x: StoredKey) => x.addr === keyAddress && x.type === keyType
+    )
 
     if (!storedKey) throw new Error('keystore: key not found')
-    const { id, label, type, meta } = storedKey
+    const { addr, label, type, meta } = storedKey
 
     const key = {
-      id,
+      addr,
       label,
       type,
       meta,

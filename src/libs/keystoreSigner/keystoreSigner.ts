@@ -1,8 +1,8 @@
 /* eslint-disable new-cap */
 import { TransactionRequest, Wallet } from 'ethers'
 
-import { TypedMessage } from '../../interfaces/userRequest'
 import { KeystoreSigner as KeystoreSignerInterface } from '../../interfaces/keystore'
+import { TypedMessage } from '../../interfaces/userRequest'
 import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
 import { Key } from '../keystore/keystore'
 
@@ -11,7 +11,7 @@ export class KeystoreSigner implements KeystoreSignerInterface {
 
   #signer: Wallet
 
-  constructor(_key: Key, _privKey: string) {
+  constructor(_key: Key, _privKey?: string) {
     if (!_key) throw new Error('keystoreSigner: no key provided in constructor')
     if (!_privKey)
       throw new Error('keystoreSigner: no decrypted private key provided in constructor')
