@@ -74,6 +74,6 @@ export const humanizeTypedMessage = (
   return visualization
 }
 
-export const humanizePLainTextMessage = (m: PlainTextMessage): HumanizerVisualization[] => {
+export const humanizePlainTextMessage = (m: PlainTextMessage): HumanizerVisualization[] => {
   return [getAction('Sign message:'), getLabel(m.message as string)]
 }

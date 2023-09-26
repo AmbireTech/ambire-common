@@ -4,7 +4,7 @@ import fetch from 'node-fetch'
 import { describe, expect, test } from '@jest/globals'
 
 import { AccountOp } from '../accountOp/accountOp'
-import { humanizeCalls, visualizationToText } from './humanize'
+import { humanizeCalls, visualizationToText } from './humanizerFuncs'
 import { HumanizerCallModule, HumanizerVisualization, IrCall } from './interfaces'
 import { aaveHumanizer } from './modules/Aave'
 import { fallbackHumanizer } from './modules/fallBackHumanizer'
