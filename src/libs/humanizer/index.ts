@@ -4,11 +4,7 @@ import { Storage } from '../../interfaces/storage'
 import { Message } from '../../interfaces/userRequest'
 import { AccountOp } from '../accountOp/accountOp'
 import { Key } from '../keystore/keystore'
-import {
-  humanizeCalls as humanizeCallsFunction,
-  humanizePLainTextMessage,
-  humanizeTypedMessage
-} from './humanize'
+import { humanizeCalls, humanizePlainTextMessage, humanizeTypedMessage } from './humanize'
 import {
   HumanizerCallModule,
   HumanizerParsingModule,
@@ -51,7 +47,7 @@ const parsingModules: HumanizerParsingModule[] = [nameParsing, tokenParsing]
 
 const humanizerTMModules = [erc20Module, erc721Module, permit2Module, fallbackEIP712Humanizer]
 
-export const humanizeCalls = async (
+export const callsHumanizer = async (
   accountOp: AccountOp,
   knownAddresses: (Account | Key)[],
   storage: Storage,
@@ -75,7 +71,7 @@ export const humanizeCalls = async (
   for (let i = 0; i <= 3; i++) {
     const storedHumanizerMeta = await storage.get(HUMANIZER_META_KEY, {})
     // @ts-ignore
-    const [irCalls, asyncOps] = humanizeCallsFunction(
+    const [irCalls, asyncOps] = humanizeCalls(
       { ...op, humanizerMeta: { ...op.humanizerMeta, ...storedHumanizerMeta } },
       humanizerCallModules,
       { fetch }
@@ -106,7 +102,7 @@ export const humanizeCalls = async (
   }
 }
 
-export const humanizeMessage = async ({
+export const messageHumanizer = async ({
   message,
   knownAddresses = [],
   storage,
@@ -140,7 +136,7 @@ export const humanizeMessage = async ({
       fullVisualization:
         message.content.kind === 'typedMessage'
           ? humanizeTypedMessage(humanizerTMModules, message.content)
-          : humanizePLainTextMessage(message.content)
+          : humanizePlainTextMessage(message.content)
     }
 
     const [parsedMessage, asyncOps] = parseMessage(humanizerSettings, irMessage, parsingModules, {
