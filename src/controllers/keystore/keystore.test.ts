@@ -6,7 +6,7 @@
 import { describe, expect, test } from '@jest/globals'
 
 import { produceMemoryStore } from '../../../test/helpers'
-import { Key, Keystore } from '../../libs/keystore/keystore'
+import { Key } from '../../interfaces/keystore'
 import { KeystoreController } from './keystore'
 
 export class InternalSigner {
@@ -49,7 +49,6 @@ class LedgerSigner {
   }
 }
 
-let keystoreLib: Keystore
 let keystore: KeystoreController
 const pass = 'hoiHoi'
 const keystoreSigners = { internal: InternalSigner, ledger: LedgerSigner }
@@ -57,23 +56,27 @@ const privKey = '207d56b2f2b06fd9c74562ec81f42d47393a55cfcf5c182605220ad7fdfbe60
 const keyPublicAddress = '0xB6C923c6586eDb44fc4CC0AE4F60869271e75407'
 
 describe('KeystoreController', () => {
-  test('should initialize keystoreController', () => {
-    keystoreLib = new Keystore(produceMemoryStore(), keystoreSigners)
-    keystore = new KeystoreController(keystoreLib)
-    expect((keystore as any)['#keystoreLib']).toBe(undefined)
+  test('should initialize', () => {
+    keystore = new KeystoreController(produceMemoryStore(), keystoreSigners)
+
+    expect(keystore).toBeDefined()
   })
   test('should add a secret', async () => {
+    expect.assertions(2)
     await keystore.addSecret('passphrase', pass, '', false)
-    expect(keystore.isUnlocked).toBe(false)
-    expect(keystore.isReadyToStoreKeys).toBe(true)
+
+    expect(keystore.isUnlocked()).toBe(false)
+    expect(await keystore.isReadyToStoreKeys()).toBe(true)
   })
   test('should not unlock with non-existant secret', async () => {
     expect.assertions(1)
     await keystore.unlockWithSecret('playstation', '')
-    expect(keystore.isUnlocked).toBe(false)
+
+    expect(keystore.isUnlocked()).toBe(false)
   })
   test('should unlock with secret', async () => {
     await keystore.unlockWithSecret('passphrase', pass)
-    expect(keystore.isUnlocked).toBe(true)
+
+    expect(keystore.isUnlocked()).toBe(true)
   })
 })
