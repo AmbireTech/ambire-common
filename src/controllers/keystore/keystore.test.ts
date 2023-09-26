@@ -130,18 +130,22 @@ describe('KeystoreController', () => {
     })
   })
 
-  // TODO: Take keys from state
-  test('should add an internal key', async () => {
-    expect.assertions(1)
-    await keystore.addKeys([{ privateKey: privKey, label: 'test key' }])
+  test('should add an internal key', (done) => {
+    keystore.addKeys([{ privateKey: privKey, label: 'test key' }])
 
-    const keys = await keystore.getKeys()
-    expect(keys).toContainEqual(
-      expect.objectContaining({ addr: keyPublicAddress, type: 'internal' })
-    )
+    const unsubscribe = keystore.onUpdate(async () => {
+      if (keystore.latestMethodCall === 'addKeys' && keystore.status === 'DONE') {
+        expect(keystore.keys).toContainEqual(
+          expect.objectContaining({ addr: keyPublicAddress, type: 'internal' })
+        )
+
+        unsubscribe()
+        done()
+      }
+    })
   })
 
-  test('should not add twice internal key that is already added', async () => {
+  test('should not add twice internal key that is already added', (done) => {
     const keysWithPrivateKeyAlreadyAdded = [
       { privateKey: privKey, label: 'test key 1' },
       { privateKey: privKey, label: 'test key 2 with the same private key as test key 1' }
@@ -158,33 +162,43 @@ describe('KeystoreController', () => {
       }
     ]
 
-    expect.assertions(1)
-    await keystore.addKeys([
-      ...keysWithPrivateKeyAlreadyAdded,
-      ...keysWithPrivateKeyDuplicatedInParams
-    ])
+    keystore.addKeys([...keysWithPrivateKeyAlreadyAdded, ...keysWithPrivateKeyDuplicatedInParams])
 
-    const keys = await keystore.getKeys()
-    const newKeys = keys.filter(
-      (x) =>
-        [anotherPrivateKeyPublicAddress, keyPublicAddress].includes(x.addr) && x.type === 'internal'
-    )
+    const unsubscribe = keystore.onUpdate(async () => {
+      if (keystore.latestMethodCall === 'addKeys' && keystore.status === 'DONE') {
+        const newKeys = keystore.keys.filter(
+          (x) =>
+            [anotherPrivateKeyPublicAddress, keyPublicAddress].includes(x.addr) &&
+            x.type === 'internal'
+        )
+        expect(newKeys).toHaveLength(2)
 
-    expect(newKeys).toHaveLength(2)
+        unsubscribe()
+        done()
+      }
+    })
   })
 
-  test('should add an external key', async () => {
+  test('should add an external key', (done) => {
     const publicAddress = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'
-    expect.assertions(1)
-    await keystore.addKeysExternallyStored([
+
+    keystore.addKeysExternallyStored([
       { addr: publicAddress, label: 'test external key', type: 'trezor', meta: null }
     ])
 
-    const keys = await keystore.getKeys()
-    expect(keys).toContainEqual(expect.objectContaining({ addr: publicAddress, type: 'trezor' }))
+    const unsubscribe = keystore.onUpdate(async () => {
+      if (keystore.latestMethodCall === 'addKeysExternallyStored' && keystore.status === 'DONE') {
+        expect(keystore.keys).toContainEqual(
+          expect.objectContaining({ addr: publicAddress, type: 'trezor' })
+        )
+
+        unsubscribe()
+        done()
+      }
+    })
   })
 
-  test('should not add twice external key that is already added', async () => {
+  test('should not add twice external key that is already added', (done) => {
     const publicAddress = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'
     const keysWithPrivateKeyAlreadyAdded = [
       { addr: publicAddress, label: 'test key 1', type: 'trezor' as 'trezor', meta: null },
@@ -212,38 +226,51 @@ describe('KeystoreController', () => {
       }
     ]
 
-    expect.assertions(1)
-    await keystore.addKeysExternallyStored([
+    keystore.addKeysExternallyStored([
       ...keysWithPrivateKeyAlreadyAdded,
       ...keysWithPrivateKeyDuplicatedInParams
     ])
 
-    const keys = await keystore.getKeys()
-    const newKeys = keys
-      .map(({ addr }) => addr)
-      .filter((addr) => [publicAddress, anotherAddressNotAddedYet].includes(addr))
+    const unsubscribe = keystore.onUpdate(async () => {
+      if (keystore.latestMethodCall === 'addKeysExternallyStored' && keystore.status === 'DONE') {
+        const newKeys = keystore.keys
+          .map(({ addr }) => addr)
+          .filter((addr) => [publicAddress, anotherAddressNotAddedYet].includes(addr))
 
-    expect(newKeys).toHaveLength(2)
+        expect(newKeys).toHaveLength(2)
+
+        unsubscribe()
+        done()
+      }
+    })
   })
 
-  test('should add both keys when they have the same address but different type', async () => {
+  test('should add both keys when they have the same address but different type', (done) => {
     const externalKeysToAddWithDuplicateOnes = [
       { addr: keyPublicAddress, label: 'test key 2', type: 'trezor' as 'trezor', meta: null },
       { addr: keyPublicAddress, label: 'test key 2', type: 'trezor' as 'trezor', meta: null },
       { addr: keyPublicAddress, label: 'test key 3', type: 'ledger' as 'ledger', meta: null }
     ]
 
-    expect.assertions(3)
-    await keystore.addKeysExternallyStored(externalKeysToAddWithDuplicateOnes)
+    keystore.addKeysExternallyStored(externalKeysToAddWithDuplicateOnes)
 
-    const keys = await keystore.getKeys()
+    const unsubscribe = keystore.onUpdate(async () => {
+      if (keystore.latestMethodCall === 'addKeysExternallyStored' && keystore.status === 'DONE') {
+        expect(
+          keystore.keys.filter((x) => x.addr === keyPublicAddress && x.type === 'trezor').length
+        ).toEqual(1)
+        expect(
+          keystore.keys.filter((x) => x.addr === keyPublicAddress && x.type === 'ledger').length
+        ).toEqual(1)
+        // Note: previous test adds internal key with the same address
+        expect(
+          keystore.keys.filter((x) => x.addr === keyPublicAddress && x.type === 'internal').length
+        ).toEqual(1)
 
-    expect(keys.filter((x) => x.addr === keyPublicAddress && x.type === 'trezor').length).toEqual(1)
-    expect(keys.filter((x) => x.addr === keyPublicAddress && x.type === 'ledger').length).toEqual(1)
-    // Note: previous test adds internal key with the same address
-    expect(keys.filter((x) => x.addr === keyPublicAddress && x.type === 'internal').length).toEqual(
-      1
-    )
+        unsubscribe()
+        done()
+      }
+    })
   })
 
   test('should get an internal signer', async () => {
