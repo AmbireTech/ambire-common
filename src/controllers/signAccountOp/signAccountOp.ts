@@ -122,8 +122,11 @@ export class SignAccountOpController extends EventEmitter {
 
       // TODO: validate feeTokenAddr
       if (canSetPaidBy) {
-        this.accountOp!.gasFeePayment = this.#getGasFeePayment(feeTokenAddr, this.selectedFeeSpeed)
-        this.accountOp!.gasFeePayment!.paidBy = paidBy
+        this.accountOp!.gasFeePayment = this.#getGasFeePayment(
+          feeTokenAddr,
+          this.selectedFeeSpeed,
+          paidBy
+        )
       }
     }
 
@@ -196,37 +199,69 @@ export class SignAccountOpController extends EventEmitter {
     return account
   }
 
-  #getGasFeePayment(feeTokenAddr: string, feeSpeed: FeeSpeed): GasFeePayment {
+  #getGasFeePayment(
+    feeTokenAddr: string,
+    feeSpeed: FeeSpeed,
+    paidBy: string = this.accountOp!.gasFeePayment?.paidBy || this.accountOp!.accountAddr
+  ): GasFeePayment {
     if (!this.isInitialized) throw new Error('signAccountOp: not initialized')
 
     const account = this.#getAccount()
     const result = this.#gasPrices!.find((price) => price.name === feeSpeed)
     // @ts-ignore
+    // It's always in wei
     const gasPrice = result.gasPrice || result!.baseFeePerGas + result!.maxPriorityFeePerGas
-    const gasLimit = this.#estimation!.gasUsed
-    const amount = gasLimit * gasPrice
 
     // EOA
     if (!account || !account?.creation) {
+      const simulatedGasLimit = this.#estimation!.gasUsed
+      // @TODO - portfolio for gasPrice, conversion/rates through ether
+      const amount = simulatedGasLimit * gasPrice
+
       return {
         paidBy: this.accountOp!.accountAddr,
         isERC4337: false,
         isGasTank: false,
         inToken: '0x0000000000000000000000000000000000000000',
         amount,
-        gasPrice,
-        gasLimit
+        simulatedGasLimit
       }
     }
 
+    // Smart account, but EOA pays the fee
+    if (paidBy !== this.accountOp!.accountAddr) {
+      // @TODO - add comment why we add 21k gas here
+      const simulatedGasLimit = this.#estimation!.gasUsed + 21000n
+      // @TODO - portfolio for gasPrice, conversion/rates through ether
+      const amount = simulatedGasLimit * gasPrice
+
+      return {
+        paidBy,
+        isERC4337: false,
+        isGasTank: false,
+        inToken: feeTokenAddr,
+        amount,
+        simulatedGasLimit
+      }
+    }
+
+    // Relayer.
+    // relayer or 4337, we need to add feeTokenOutome.gasUsed
+    // @TODO - add comment why here we use `feePaymentOptions`, but we don't use it in EOA
+    const feeTokenGasUsed = this.#estimation!.feePaymentOptions.find(
+      (option) => option.address === feeTokenAddr
+    )!.gasUsed!
+    const simulatedGasLimit = this.#estimation!.gasUsed + feeTokenGasUsed
+
+    // @TODO - portfolio for gasPrice, conversion/rates through ether
+    const amount = simulatedGasLimit * gasPrice
     return {
-      paidBy: this.accountOp!.gasFeePayment?.paidBy || this.accountOp!.accountAddr,
+      paidBy,
       isERC4337: false, // TODO: based on network settings. We should add it to gasFeePayment interface.
       isGasTank: false, // TODO: based on token network (could be gas tank network). We should add it to gasFeePayment interface.
       inToken: feeTokenAddr,
       amount,
-      gasPrice,
-      gasLimit
+      simulatedGasLimit
     }
   }
 
@@ -320,8 +355,8 @@ export class SignAccountOpController extends EventEmitter {
           to,
           value,
           data,
-          gasLimit: gasFeePayment.gasLimit,
-          gasPrice: gasFeePayment.gasPrice
+          gasLimit: gasFeePayment.simulatedGasLimit,
+          gasPrice: gasFeePayment.amount / gasFeePayment.simulatedGasLimit
         })
       } else if (this.accountOp.gasFeePayment.paidBy !== account.addr) {
         // Smart account, but EOA pays the fee
@@ -335,11 +370,12 @@ export class SignAccountOpController extends EventEmitter {
             this.accountOp.calls,
             await signer.signMessage(ethers.hexlify(accountOpSignableHash(this.accountOp)))
           ]),
-          gasLimit: gasFeePayment.gasLimit,
-          gasPrice: gasFeePayment.gasPrice
+          gasLimit: gasFeePayment.simulatedGasLimit,
+          gasPrice: gasFeePayment.amount / gasFeePayment.simulatedGasLimit
         })
       } else {
         // Relayer
+        // @TODO - additional call, pseudo code, sync with Bobby/Emo about the call in case of gas tank
         this.accountOp!.signature = await signer.signMessage(
           ethers.hexlify(accountOpSignableHash(this.accountOp))
         )
