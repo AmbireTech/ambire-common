@@ -61,14 +61,14 @@ export const humanizeCalls = async (
   const op: AccountOp = {
     ...accountOp,
     humanizerMeta: {
-      ...accountOp.humanizerMeta,
       ...(await storage.get(HUMANIZER_META_KEY, {})),
       ...Object.fromEntries(
         knownAddresses.map((k) => {
           const key = `names:${'id' in k ? k.id : k.addr}`
           return [key, k.label]
         })
-      )
+      ),
+      ...accountOp.humanizerMeta
     }
   }
 
@@ -125,14 +125,14 @@ export const humanizeMessage = async ({
       accountAddr: message.accountAddr,
       networkId: message?.networkId || 'ethereum',
       humanizerMeta: {
-        ...message.humanizerMeta,
         ...(await storage.get(HUMANIZER_META_KEY, {})),
         ...Object.fromEntries(
           knownAddresses.map((k) => {
             const key = `names:${'id' in k ? k.id : k.addr}`
             return [key, k.label]
           })
-        )
+        ),
+        ...message.humanizerMeta
       }
     }
     const irMessage: IrMessage = {
