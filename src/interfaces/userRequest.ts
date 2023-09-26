@@ -29,6 +29,7 @@ export interface Message {
   content: PlainTextMessage | TypedMessage
   signature: string | null
   fromUserRequestId?: bigint
+  networkId?: NetworkId
 }
 
 export interface UserRequest {
