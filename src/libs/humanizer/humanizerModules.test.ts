@@ -1,22 +1,22 @@
+import { ErrorRef } from 'controllers/eventEmitter'
+import fetch from 'node-fetch'
+
 import { describe, expect, test } from '@jest/globals'
 
-import fetch from 'node-fetch'
-import { ErrorRef } from 'controllers/eventEmitter'
 import { AccountOp } from '../accountOp/accountOp'
-import { humanizeCalls, visualizationToText } from '.'
-
-import { uniswapHumanizer } from './modules/Uniswap'
+import { humanizeCalls, visualizationToText } from './humanize'
 import { HumanizerCallModule, HumanizerVisualization, IrCall } from './interfaces'
-import { wethHumanizer } from './modules/weth'
 import { aaveHumanizer } from './modules/Aave'
-import { yearnVaultModule } from './modules/yearnTesseractVault'
+import { fallbackHumanizer } from './modules/fallBackHumanizer'
 import { genericErc20Humanizer, genericErc721Humanizer } from './modules/tokens'
+import { uniswapHumanizer } from './modules/Uniswap'
 // import { oneInchHumanizer } from './modules/oneInch'
 import { WALLETModule } from './modules/WALLET'
-import { fallbackHumanizer } from './modules/fallBackHumanizer'
+import { wethHumanizer } from './modules/weth'
+import { yearnVaultModule } from './modules/yearnTesseractVault'
+import { parseCalls } from './parsers'
 import { nameParsing } from './parsers/nameParsing'
 import { tokenParsing } from './parsers/tokenParsing'
-import { parseCalls } from './parsers'
 
 const humanizerInfo = require('../../consts/humanizerInfo.json')
 

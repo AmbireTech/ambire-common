@@ -1,12 +1,9 @@
-import { expect, describe, beforeEach } from '@jest/globals'
 import { parseEther } from 'ethers'
-import { TypedMessage } from '../../interfaces/userRequest'
-import {
-  erc20Module,
-  erc721Module,
-  fallbackEIP712Humanizer,
-  permit2Module
-} from './typedMessageModules'
+
+import { beforeEach, describe, expect } from '@jest/globals'
+
+import { TypedMessage } from '../../../interfaces/userRequest'
+import { erc20Module, erc721Module, fallbackEIP712Humanizer, permit2Module } from '.'
 
 const address1 = '0x6942069420694206942069420694206942069420'
 const address2 = '0xaAaAaAaaAaAaAaaAaAAAAAAAAaaaAaAaAaaAaaAa'

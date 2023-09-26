@@ -1,16 +1,16 @@
 import { ethers } from 'ethers'
 
-import { ErrorRef } from '../../../controllers/eventEmitter'
-import { PlainTextMessage, TypedMessage } from '../../../interfaces/userRequest'
-import { AccountOp } from '../../accountOp/accountOp'
+import { ErrorRef } from '../../controllers/eventEmitter'
+import { PlainTextMessage, TypedMessage } from '../../interfaces/userRequest'
+import { AccountOp } from '../accountOp/accountOp'
 import {
   HumanizerCallModule,
   HumanizerFragment,
   HumanizerTypedMessaageModule,
   HumanizerVisualization,
   IrCall
-} from '../interfaces'
-import { getAction, getLabel } from '../utils'
+} from './interfaces'
+import { getAction, getLabel } from './utils'
 
 export function humanizeCalls(
   _accountOp: AccountOp,

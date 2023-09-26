@@ -8,7 +8,7 @@ import {
   humanizeCalls as humanizeCallsFunction,
   humanizePLainTextMessage,
   humanizeTypedMessage
-} from './functions'
+} from './humanize'
 import { HumanizerCallModule, HumanizerParsingModule, IrCall, IrMessage } from './interfaces'
 import { aaveHumanizer } from './modules/Aave'
 import { fallbackHumanizer } from './modules/fallBackHumanizer'
