@@ -1,8 +1,9 @@
-import { AccountOp } from 'libs/accountOp/accountOp'
+import { AccountOp } from '../../accountOp/accountOp'
 
 import {
   HumanizerFragment,
   HumanizerParsingModule,
+  HumanizerSettings,
   HumanizerWarning,
   IrCall,
   IrMessage
@@ -19,9 +20,13 @@ export function parseCalls(
   const newCalls = calls.map((call) => {
     let fullVisualization = call.fullVisualization!
     const warnings: HumanizerWarning[] = []
-
+    const humanizerSettings: HumanizerSettings = {
+      accountAddr: accountOp.accountAddr,
+      networkId: accountOp.networkId,
+      humanizerMeta: accountOp.humanizerMeta
+    }
     modules.forEach((m) => {
-      const res = m(accountOp, fullVisualization, options)
+      const res = m(humanizerSettings, fullVisualization, options)
       fullVisualization = res[0]
       warnings.push(...res[1])
       asyncOps.push(...res[2])
@@ -32,6 +37,7 @@ export function parseCalls(
 }
 
 export function parseMessage(
+  humanizerSettings: HumanizerSettings,
   message: IrMessage,
   modules: HumanizerParsingModule[],
   options?: any
@@ -42,7 +48,7 @@ export function parseMessage(
   const warnings: HumanizerWarning[] = []
 
   modules.forEach((m) => {
-    const res = m(message, message.fullVisualization!, options)
+    const res = m(humanizerSettings, message.fullVisualization!, options)
     fullVisualization = res[0]
     warnings.push(...res[1])
     asyncOps.push(...res[2])

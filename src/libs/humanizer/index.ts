@@ -9,7 +9,13 @@ import {
   humanizePLainTextMessage,
   humanizeTypedMessage
 } from './humanize'
-import { HumanizerCallModule, HumanizerParsingModule, IrCall, IrMessage } from './interfaces'
+import {
+  HumanizerCallModule,
+  HumanizerParsingModule,
+  HumanizerSettings,
+  IrCall,
+  IrMessage
+} from './interfaces'
 import { aaveHumanizer } from './modules/Aave'
 import { fallbackHumanizer } from './modules/fallBackHumanizer'
 import { genericErc20Humanizer, genericErc721Humanizer } from './modules/tokens'
@@ -113,31 +119,31 @@ export const humanizeMessage = async ({
   fetch: Function
   callback: (msgs: IrMessage) => void
 }) => {
-  const msg: Message = {
-    ...message,
-    humanizerMeta: {
-      ...message.humanizerMeta,
-      ...(await storage.get(HUMANIZER_META_KEY, {})),
-      ...Object.fromEntries(
-        knownAddresses.map((k) => {
-          const key = `names:${'id' in k ? k.id : k.addr}`
-          return [key, k.label]
-        })
-      )
-    }
-  }
-
   for (let i = 0; i < 3; i++) {
     const storedHumanizerMeta = await storage.get(HUMANIZER_META_KEY, {})
+    const humanizerSettings: HumanizerSettings = {
+      accountAddr: message.accountAddr,
+      // @TODO fic
+      networkId: '1',
+      humanizerMeta: {
+        ...(await storage.get(HUMANIZER_META_KEY, {})),
+        ...Object.fromEntries(
+          knownAddresses.map((k) => {
+            const key = `names:${'id' in k ? k.id : k.addr}`
+            return [key, k.label]
+          })
+        )
+      }
+    }
     const irMessage: IrMessage = {
-      ...msg,
+      ...message,
       fullVisualization:
-        msg.content.kind === 'typedMessage'
-          ? humanizeTypedMessage(humanizerTMModules, msg.content)
-          : humanizePLainTextMessage(msg.content)
+        message.content.kind === 'typedMessage'
+          ? humanizeTypedMessage(humanizerTMModules, message.content)
+          : humanizePLainTextMessage(message.content)
     }
 
-    const [parsedMessage, asyncOps] = parseMessage(irMessage, parsingModules, {
+    const [parsedMessage, asyncOps] = parseMessage(humanizerSettings, irMessage, parsingModules, {
       fetch
     })
 

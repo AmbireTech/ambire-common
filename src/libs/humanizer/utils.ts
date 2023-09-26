@@ -1,6 +1,5 @@
 import { ethers } from 'ethers'
-import { AccountOp } from 'libs/accountOp/accountOp'
-import { HumanizerFragment, HumanizerVisualization } from './interfaces'
+import { HumanizerFragment, HumanizerSettings, HumanizerVisualization } from './interfaces'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { networks } from '../../consts/networks'
 
@@ -61,12 +60,12 @@ export function shortenAddress(addr: string) {
 }
 
 export async function getTokenInfo(
-  accountOp: AccountOp,
+  humanizerSettings: HumanizerSettings,
   address: string,
   options: any
 ): Promise<HumanizerFragment | null> {
   const network = networks.find(
-    (n: NetworkDescriptor) => n.chainId === BigInt(accountOp.networkId)
+    (n: NetworkDescriptor) => n.chainId === BigInt(humanizerSettings.networkId)
   )?.id
   // @TODO update coingecko call with https://github.com/AmbireTech/ambire-common/pull/328
   try {
