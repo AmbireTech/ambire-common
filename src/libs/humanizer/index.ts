@@ -123,7 +123,7 @@ export const humanizeMessage = async ({
     const storedHumanizerMeta = await storage.get(HUMANIZER_META_KEY, {})
     const humanizerSettings: HumanizerSettings = {
       accountAddr: message.accountAddr,
-      networkId: message?.networkId || '1',
+      networkId: message?.networkId || 'ethereum',
       humanizerMeta: {
         ...(await storage.get(HUMANIZER_META_KEY, {})),
         ...Object.fromEntries(
