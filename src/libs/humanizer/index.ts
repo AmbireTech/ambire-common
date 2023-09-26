@@ -125,6 +125,7 @@ export const humanizeMessage = async ({
       accountAddr: message.accountAddr,
       networkId: message?.networkId || 'ethereum',
       humanizerMeta: {
+        ...message.humanizerMeta,
         ...(await storage.get(HUMANIZER_META_KEY, {})),
         ...Object.fromEntries(
           knownAddresses.map((k) => {
