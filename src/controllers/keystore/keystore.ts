@@ -37,6 +37,8 @@ export class KeystoreController extends EventEmitter {
 
   keystoreSigners: { [key: string]: KeystoreSignerType }
 
+  keys: Key[] = []
+
   // TODO: remove this
   // isReadyToStoreKeys: boolean = false
 
@@ -51,6 +53,14 @@ export class KeystoreController extends EventEmitter {
     this.storage = _storage
     this.keystoreSigners = _keystoreSigners
     this.#mainKey = null
+
+    this.#load()
+  }
+
+  async #load() {
+    // TODO: handle errors
+    this.keys = await this.getKeys()
+    this.emitUpdate()
   }
 
   lock() {
@@ -260,7 +270,6 @@ export class KeystoreController extends EventEmitter {
   //   })
   // }
 
-  // TODO: Store in state
   async getKeys(): Promise<Key[]> {
     const keys: [StoredKey] = await this.storage.get('keystoreKeys', [])
     return keys.map(({ addr, label, type, meta }) => ({
@@ -308,6 +317,7 @@ export class KeystoreController extends EventEmitter {
     const nextKeys = [...keys, ...newKeys]
 
     await this.storage.set('keystoreKeys', nextKeys)
+    this.keys = await this.getKeys()
   }
 
   async addKeysExternallyStored(
@@ -365,6 +375,7 @@ export class KeystoreController extends EventEmitter {
     const nextKeys = [...keys, ...newKeys]
 
     await this.storage.set('keystoreKeys', nextKeys)
+    this.keys = await this.getKeys()
   }
 
   async addKeys(keysToAdd: { privateKey: string; label: Key['label'] }[]) {
@@ -403,10 +414,12 @@ export class KeystoreController extends EventEmitter {
       throw new Error(
         `keystore: trying to remove key that does not exist: address: ${addr}, type: ${type}`
       )
-    this.storage.set(
+
+    await this.storage.set(
       'keystoreKeys',
       keys.filter((x) => x.addr === addr && x.type === type)
     )
+    this.keys = await this.getKeys()
   }
 
   async exportKeyWithPasscode(keyAddress: Key['addr'], keyType: Key['type'], passphrase: string) {
