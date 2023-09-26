@@ -1,11 +1,15 @@
 import { ethers } from 'ethers'
 import { nativeTokens } from '../../../consts/networks'
-import { AccountOp } from '../../accountOp/accountOp'
-import { HumanizerFragment, HumanizerParsingModule, HumanizerVisualization } from '../interfaces'
+import {
+  HumanizerFragment,
+  HumanizerParsingModule,
+  HumanizerSettings,
+  HumanizerVisualization
+} from '../interfaces'
 import { getLabel, getTokenInfo } from '../utils'
 
 export const tokenParsing: HumanizerParsingModule = (
-  accounOp: AccountOp,
+  humanizerSettings: HumanizerSettings,
   visualization: HumanizerVisualization[],
   options?: any
 ) => {
@@ -15,8 +19,8 @@ export const tokenParsing: HumanizerParsingModule = (
       if (v.type === 'token') {
         const tokenMeta =
           v.address === ethers.ZeroAddress
-            ? nativeTokens[accounOp.networkId]
-            : accounOp.humanizerMeta?.[`tokens:${v.address}`]
+            ? nativeTokens[humanizerSettings.networkId]
+            : humanizerSettings.humanizerMeta?.[`tokens:${v.address}`]
         if (tokenMeta) {
           return v.amount ===
             115792089237316195423570985008687907853269984665640564039457584007913129639935n
@@ -33,7 +37,7 @@ export const tokenParsing: HumanizerParsingModule = (
                     : ethers.formatUnits(v.amount as bigint, tokenMeta[1])
               }
         }
-        asyncOps.push(getTokenInfo(accounOp, v.address as string, options))
+        asyncOps.push(getTokenInfo(humanizerSettings, v.address as string, options))
       }
       return v
     }

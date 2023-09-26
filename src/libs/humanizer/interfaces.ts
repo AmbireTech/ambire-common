@@ -1,3 +1,4 @@
+import { NetworkId } from 'interfaces/networkDescriptor'
 import { Message, TypedMessage } from '../../interfaces/userRequest'
 import { AccountOp, Call } from '../accountOp/accountOp'
 
@@ -36,7 +37,7 @@ export interface HumanizerFragment {
 }
 
 export interface HumanizerCallModule {
-  (accountOp: AccountOp, calls: IrCall[], options?: any): [
+  (AccountOp: AccountOp, calls: IrCall[], options?: any): [
     IrCall[],
     Promise<HumanizerFragment | null>[]
   ]
@@ -46,10 +47,21 @@ export interface HumanizerTypedMessaageModule {
   (typedMessage: TypedMessage): HumanizerVisualization[]
 }
 
+export interface HumanizerMeta {
+  [key: string]: any
+}
+export interface HumanizerSettings {
+  humanizerMeta?: HumanizerMeta
+  networkId: NetworkId
+  accountAddr: string
+}
+
 export interface HumanizerParsingModule {
-  (accounOp: AccountOp, visualization: HumanizerVisualization[], options?: any): [
+  (humanizerSettings: HumanizerSettings, visualization: HumanizerVisualization[], options?: any): [
     HumanizerVisualization[],
     HumanizerWarning[],
     Promise<HumanizerFragment | null>[]
   ]
 }
+
+export type DataToHumanize = AccountOp | Message
