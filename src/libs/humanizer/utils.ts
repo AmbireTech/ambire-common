@@ -3,6 +3,8 @@ import { HumanizerFragment, HumanizerSettings, HumanizerVisualization } from './
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { networks } from '../../consts/networks'
 
+const COINGECKO_API_KEY = process.env.COINGECKO_API_KEY
+
 export function getWarning(content: string, level: string = 'caution') {
   return { content, level }
 }
@@ -69,9 +71,13 @@ export async function getTokenInfo(
   )?.id
   // @TODO update coingecko call with https://github.com/AmbireTech/ambire-common/pull/328
   try {
-    const response = await (
-      await options.fetch(`https://api.coingecko.com/api/v3/coins/${network}/contract/${address}`)
-    ).json()
+    const baseUrl = COINGECKO_API_KEY
+      ? 'https://pro-api.coingecko.com/api/v3'
+      : 'https://api.coingecko.com/api/v3'
+    const postfix = COINGECKO_API_KEY ? `&x_cg_pro_api_key=${COINGECKO_API_KEY}` : ''
+    const coingeckoQueryUrl = `${baseUrl}/coins/${network}/contract/${address}${postfix}`
+
+    const response = await (await options.fetch(coingeckoQueryUrl)).json()
     if (response.symbol && response.detail_platforms?.ethereum.decimal_place)
       return {
         key: `tokens:${address}`,
