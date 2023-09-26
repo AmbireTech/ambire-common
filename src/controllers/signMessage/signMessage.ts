@@ -4,7 +4,7 @@ import { networks } from '../../consts/networks'
 import { Account, AccountStates } from '../../interfaces/account'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { Message } from '../../interfaces/userRequest'
-import { Keystore } from '../../libs/keystore/keystore'
+import { Key, Keystore } from '../../libs/keystore/keystore'
 import { verifyMessage } from '../../libs/signMessage/signMessage'
 import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
 import EventEmitter from '../eventEmitter'
@@ -26,7 +26,9 @@ export class SignMessageController extends EventEmitter {
 
   messageToSign: Message | null = null
 
-  signingKeyAddr: string | null = null
+  signingKeyAddr: Key['addr'] | null = null
+
+  signingKeyType: Key['type'] | null = null
 
   signedMessage: Message | null = null
 
@@ -76,13 +78,14 @@ export class SignMessageController extends EventEmitter {
     this.emitUpdate()
   }
 
-  setSigningKeyAddr(signingKeyAddr: string) {
+  setSigningKey(signingKeyAddr: Key['addr'], signingKeyType: Key['type']) {
     if (!this.isInitialized) {
       this.#throwNotInitialized()
       return
     }
 
     this.signingKeyAddr = signingKeyAddr
+    this.signingKeyType = signingKeyType
     this.emitUpdate()
   }
 
@@ -92,7 +95,7 @@ export class SignMessageController extends EventEmitter {
       return
     }
 
-    if (!this.signingKeyAddr) {
+    if (!this.signingKeyAddr || !this.signingKeyType) {
       return this.emitError({
         level: 'major',
         message: 'Please select a signing key and try again.',
@@ -104,7 +107,7 @@ export class SignMessageController extends EventEmitter {
     this.emitUpdate()
 
     try {
-      const signer = await this.#keystore.getSigner(this.signingKeyAddr)
+      const signer = await this.#keystore.getSigner(this.signingKeyAddr, this.signingKeyType)
       let sig
 
       const account = this.#accounts!.find((acc) => acc.addr === this.messageToSign?.accountAddr)
