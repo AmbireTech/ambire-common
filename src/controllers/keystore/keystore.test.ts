@@ -63,59 +63,74 @@ describe('KeystoreController', () => {
     expect(keystore).toBeDefined()
   })
 
-  test('should not unlock with non-existing secret', (done) => {
+  test('should not unlock with non-existent secret (when no secrets exist)', (done) => {
     keystore.unlockWithSecret('passphrase', pass)
 
-    keystore.onError((e) => {
+    const unsubscribe = keystore.onError((e) => {
       expect(e.error.message).toBe('keystore: no secrets yet')
       expect(keystore.isUnlocked()).toBe(false)
+
+      unsubscribe()
       done()
     })
   })
-  test('should not return uid until there are no secrets yet', async () => {
-    expect.assertions(1)
-    try {
-      await keystore.getKeyStoreUid()
-    } catch (e) {
-      expect((e as Error).message).toBe('keystore: adding secret before get uid')
-    }
+
+  test('should throw an error if trying to get uid before adding secrets', () => {
+    expect(keystore.getKeyStoreUid()).rejects.toThrow('keystore: adding secret before get uid')
   })
 
   test('should add a secret', (done) => {
-    expect.assertions(2)
     keystore.addSecret('passphrase', pass, '', false)
 
-    keystore.onUpdate(async () => {
+    const unsubscribe = keystore.onUpdate(async () => {
       if (keystore.latestMethodCall === 'addSecret' && keystore.status === 'DONE') {
         expect(keystore.isUnlocked()).toBe(false)
         expect(await keystore.isReadyToStoreKeys()).toBe(true)
+
+        unsubscribe()
         done()
       }
     })
   })
-  test('should not unlock with non-existant secret', (done) => {
+
+  test('should not unlock with non-existent secret (when secrets exist)', (done) => {
     keystore.unlockWithSecret('playstation', '')
 
-    keystore.onError((e) => {
+    const unsubscribe = keystore.onError((e) => {
       expect(e.error.message).toBe('keystore: secret playstation not found')
+      expect(keystore.isUnlocked()).toBe(false)
+
+      unsubscribe()
       done()
     })
   })
-  test('should not unlock with wrong secret', async () => {
-    expect.assertions(2)
-    try {
-      await keystore.unlockWithSecret('passphrase', `${pass}1`)
-    } catch (e: any) {
-      expect(e.message).toBe('keystore: wrong secret')
-    }
-    expect(keystore.isUnlocked()).toBe(false)
+
+  test('should not unlock with wrong secret', (done) => {
+    keystore.unlockWithSecret('passphrase', `${pass}1`)
+
+    const unsubscribe = keystore.onError((e) => {
+      expect(e.error.message).toBe('keystore: wrong secret')
+      expect(keystore.isUnlocked()).toBe(false)
+
+      unsubscribe()
+      done()
+    })
   })
 
-  test('should unlock with secret', async () => {
-    await keystore.unlockWithSecret('passphrase', pass)
-    expect(keystore.isUnlocked()).toBe(true)
+  test('should unlock with secret', (done) => {
+    keystore.unlockWithSecret('passphrase', pass)
+
+    const unsubscribe = keystore.onUpdate(async () => {
+      if (keystore.latestMethodCall === 'unlockWithSecret' && keystore.status === 'DONE') {
+        expect(keystore.isUnlocked()).toBe(true)
+
+        unsubscribe()
+        done()
+      }
+    })
   })
 
+  // TODO: Take keys from state
   test('should add an internal key', async () => {
     expect.assertions(1)
     await keystore.addKeys([{ privateKey: privKey, label: 'test key' }])
