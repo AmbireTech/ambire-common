@@ -139,7 +139,7 @@ export class MainController extends EventEmitter {
     // @TODO reload those
     // @TODO error handling here
     this.accountStates = await this.getAccountsInfo(this.accounts)
-    this.signMessage = new SignMessageController(this.#keystoreLib, this.#providers)
+    this.signMessage = new SignMessageController(this.keystore, this.#providers)
     this.activity = new ActivityController(this.storage, this.accountStates)
 
     const addReadyToAddAccountsIfNeeded = () => {
