@@ -12,16 +12,6 @@ import {
 import { Storage } from '../../interfaces/storage'
 import EventEmitter from '../eventEmitter'
 
-// DOCS
-// - Secrets are strings that are used to encrypt the mainKey; the mainKey could be encrypted with many secrets
-// - All individual keys are encrypted with the mainKey
-// - The mainKey is kept in memory, but only for the unlockedTime
-
-// Design decisions
-// - decided to store all keys in the Keystore, even if the private key itself is not stored there; simply because it's called a Keystore and the name implies the functionality
-// - handle HW wallets in it, so that we handle everything uniformly with a single API; also, it allows future flexibility to have the concept of optional unlocking built-in; if we have interactivity, we can add `keystore.signExtraInputRequired(key)` which returns what we need from the user
-// - `signWithkey` is presumed to be non-interactive at least from `Keystore` point of view (requiring no extra user inputs). This could be wrong, if hardware wallets require extra input - they normally always do, but with the web SDKs we "outsource" this to the HW wallet software itself; this may not be true on mobile
-
 const scryptDefaults = { N: 131072, r: 8, p: 1, dkLen: 64 }
 const CIPHER = 'aes-128-ctr'
 
@@ -30,6 +20,30 @@ function getBytesForSecret(secret: string): ArrayLike<number> {
   return toUtf8Bytes(secret, 'NFKC')
 }
 
+/**
+ * The KeystoreController is a class that manages a collection of encrypted keys.
+ * It provides methods for adding, removing, and retrieving keys. The keys are
+ * encrypted using a main key, which is itself encrypted using one or more secrets.
+ *
+ * Docs:
+ *   - Secrets are strings that are used to encrypt the mainKey; the mainKey
+ *     could be encrypted with many secrets
+ *   - All individual keys are encrypted with the mainKey
+ *   - The mainKey is kept in memory, but only for the unlockedTime
+ * Design decisions:
+ *   - decided to store all keys in the Keystore, even if the private key itself
+ *     is not stored there; simply because it's called a Keystore and the name
+ *     implies the functionality
+ *   - handle HW wallets in it, so that we handle everything uniformly with a
+ *     single API; also, it allows future flexibility to have the concept of
+ *     optional unlocking built-in; if we have interactivity, we can add
+ *     `keystore.signExtraInputRequired(key)` which returns what we need from the user
+ *   - `signWithkey` is presumed to be non-interactive at least from `Keystore`
+ *     point of view (requiring no extra user inputs). This could be wrong, if
+ *     hardware wallets require extra input - they normally always do, but with
+ *     the web SDKs we "outsource" this to the HW wallet software itself;
+ *     this may not be true on mobile
+ */
 export class KeystoreController extends EventEmitter {
   #mainKey: MainKey | null
 
