@@ -118,7 +118,7 @@ export class EmailVaultController extends EventEmitter {
 
     const newSecret = crypto.randomBytes(32).toString('base64url')
 
-    await this.#keystore.addSecret(RECOVERY_SECRET_ID, newSecret)
+    await this.#keystore.addSecret(RECOVERY_SECRET_ID, newSecret, '', true)
     const keyStoreUid = await this.#keystore.getKeyStoreUid()
     const existsMagicKey = await this.#getMagicLinkKey(email)
 
