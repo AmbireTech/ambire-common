@@ -1,4 +1,5 @@
 /* eslint-disable no-await-in-loop */
+import { ErrorRef } from 'controllers/eventEmitter'
 import { Account } from '../../interfaces/account'
 import { Storage } from '../../interfaces/storage'
 import { Message } from '../../interfaces/userRequest'
@@ -52,7 +53,8 @@ export const callsHumanizer = async (
   knownAddresses: (Account | Key)[],
   storage: Storage,
   fetch: Function,
-  callback: (irCalls: IrCall[]) => void
+  callback: (irCalls: IrCall[]) => void,
+  emitError: (err: ErrorRef) => void
 ) => {
   const op: AccountOp = {
     ...accountOp,
@@ -74,7 +76,7 @@ export const callsHumanizer = async (
     const [irCalls, asyncOps] = humanizeCalls(
       { ...op, humanizerMeta: { ...op.humanizerMeta, ...storedHumanizerMeta } },
       humanizerCallModules,
-      { fetch }
+      { fetch, emitError }
     )
 
     const [parsedCalls, newAsyncOps] = parseCalls(op, irCalls, parsingModules)
@@ -102,19 +104,14 @@ export const callsHumanizer = async (
   }
 }
 
-export const messageHumanizer = async ({
-  message,
-  knownAddresses = [],
-  storage,
-  fetch,
-  callback
-}: {
-  message: Message
-  knownAddresses: (Account | Key)[]
-  storage: Storage
-  fetch: Function
-  callback: (msgs: IrMessage) => void
-}) => {
+export const messageHumanizer = async (
+  message: Message,
+  knownAddresses: (Account | Key)[],
+  storage: Storage,
+  fetch: Function,
+  callback: (msgs: IrMessage) => void,
+  emitError: (err: ErrorRef) => void
+) => {
   for (let i = 0; i < 3; i++) {
     const storedHumanizerMeta = await storage.get(HUMANIZER_META_KEY, {})
     const humanizerSettings: HumanizerSettings = {
@@ -140,11 +137,10 @@ export const messageHumanizer = async ({
     }
 
     const [parsedMessage, asyncOps] = parseMessage(humanizerSettings, irMessage, parsingModules, {
-      fetch
+      fetch,
+      emitError
     })
-
     callback(parsedMessage)
-
     const fragments = (await Promise.all(asyncOps)).filter((f) => f)
     if (!fragments.length) return
 

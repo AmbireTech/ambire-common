@@ -66,9 +66,7 @@ export async function getTokenInfo(
   address: string,
   options: any
 ): Promise<HumanizerFragment | null> {
-  const network = networks.find(
-    (n: NetworkDescriptor) => n.chainId === BigInt(humanizerSettings.networkId)
-  )?.id
+  const network = networks.find((n: NetworkDescriptor) => n.id === humanizerSettings.networkId)?.id
   // @TODO update coingecko call with https://github.com/AmbireTech/ambire-common/pull/328
   try {
     const baseUrl = COINGECKO_API_KEY
