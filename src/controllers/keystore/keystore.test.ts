@@ -85,7 +85,7 @@ describe('KeystoreController', () => {
     const unsubscribe = keystore.onUpdate(async () => {
       if (keystore.latestMethodCall === 'addSecret' && keystore.status === 'DONE') {
         expect(keystore.isUnlocked()).toBe(false)
-        expect(await keystore.isReadyToStoreKeys()).toBe(true)
+        expect(await keystore.isReadyToStoreKeys).toBe(true)
 
         unsubscribe()
         done()

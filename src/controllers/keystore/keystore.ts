@@ -39,8 +39,7 @@ export class KeystoreController extends EventEmitter {
 
   keys: Key[] = []
 
-  // TODO: remove this
-  // isReadyToStoreKeys: boolean = false
+  isReadyToStoreKeys: boolean = false
 
   status: 'INITIAL' | 'LOADING' | 'DONE' = 'INITIAL'
 
@@ -60,6 +59,7 @@ export class KeystoreController extends EventEmitter {
   async #load() {
     // TODO: handle errors
     this.keys = await this.getKeys()
+    this.isReadyToStoreKeys = (await this.getMainKeyEncryptedWithSecrets()).length > 0
     this.emitUpdate()
   }
 
@@ -76,21 +76,12 @@ export class KeystoreController extends EventEmitter {
     return this.storage.get('keystoreSecrets', [])
   }
 
-  async isReadyToStoreKeys() {
-    return (await this.getMainKeyEncryptedWithSecrets()).length > 0
-  }
-
   async getKeyStoreUid() {
     const uid = await this.storage.get('keyStoreUid', null)
     if (!uid) throw new Error('keystore: adding secret before get uid')
 
     return uid
   }
-
-  // TODO: remove this
-  // setIsReadyToStoreKeys(_isReadyToStoreKeys: boolean) {
-  //   this.isReadyToStoreKeys = _isReadyToStoreKeys
-  // }
 
   // @TODO time before unlocking
   async #unlockWithSecret(secretId: string, secret: string) {
@@ -226,6 +217,8 @@ export class KeystoreController extends EventEmitter {
       const uid = keccak256(mainKey.key).slice(2, 34)
       await this.storage.set('keyStoreUid', uid)
     }
+
+    this.isReadyToStoreKeys = true
   }
 
   async addSecret(secretId: string, secret: string, extraEntropy: string, leaveUnlocked: boolean) {
@@ -234,15 +227,6 @@ export class KeystoreController extends EventEmitter {
     )
   }
 
-  // TODO: Probably remove isReadyToStoreKeys
-  // async addSecret(secretId: string, secret: string, extraEntropy: string, leaveUnlocked: boolean) {
-  //   await this.wrapKeystoreAction('addSecret', async () => {
-  //     await this.#keystoreLib.addSecret(secretId, secret, extraEntropy, leaveUnlocked)
-  //     this.isReadyToStoreKeys = true
-  //   })
-  // }
-
-  // TODO: Check if is ready?
   async #removeSecret(secretId: string) {
     const secrets = await this.getMainKeyEncryptedWithSecrets()
     if (secrets.length <= 1)
@@ -258,17 +242,6 @@ export class KeystoreController extends EventEmitter {
   async removeSecret(secretId: string) {
     await this.wrapKeystoreAction('removeSecret', () => this.#removeSecret(secretId))
   }
-
-  //  TODO: Probably remove isReadyToStoreKeys
-  // async removeSecret(secretId: string) {
-  //   await this.wrapKeystoreAction('removeSecret', async () => {
-  //     await this.#keystoreLib.removeSecret(secretId)
-  //     const isReady = await this.#keystoreLib.isReadyToStoreKeys()
-  //     if (!isReady) {
-  //       this.isReadyToStoreKeys = false
-  //     }
-  //   })
-  // }
 
   async getKeys(): Promise<Key[]> {
     const keys: [StoredKey] = await this.storage.get('keystoreKeys', [])
