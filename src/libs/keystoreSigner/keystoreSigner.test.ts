@@ -18,10 +18,11 @@ const key: Key = {
 
 describe('KeystoreSigner', () => {
   test('should initialize KeystoreSigner', () => {
-    expect.assertions(2)
+    expect.assertions(3)
     const signer = new KeystoreSigner(key, privKey)
     expect((signer as any)['#signer']).toBe(undefined)
-    expect((signer as any).key?.id).toEqual(keyPublicAddress)
+    expect((signer as any).key?.addr).toEqual(keyPublicAddress)
+    expect((signer as any).key?.type).toEqual('internal')
   })
   test('should sign transaction', async () => {
     expect.assertions(1)
