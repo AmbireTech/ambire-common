@@ -3,7 +3,7 @@ import { wrapEthSign } from '../../test/ambireSign'
 import { PrivLevels, getProxyDeployBytecode, getStorageSlotsFromArtifact } from '../../src/libs/proxyDeploy/deploy'
 import { BaseContract } from 'ethers'
 import { abiCoder, expect, provider } from '../config'
-import { buildUserOp, getPriviledgeTxnWithCustomHash } from '../helpers'
+import { buildUserOp, getPriviledgeTxnWithCustomHash, getTargetNonce } from '../helpers'
 
 const salt = '0x0'
 
@@ -79,30 +79,7 @@ describe('ERC-4337 deploys the account via userOp and adds the entry point permi
       initCode,
       callData
     })
-
-    const theNumber = '0x' + ethers.keccak256(
-      abiCoder.encode([
-        'bytes',
-        'bytes',
-        'uint256',
-        'uint256',
-        'uint256',
-        'uint256',
-        'uint256',
-        'bytes',
-      ], [
-        userOperation.initCode,
-        userOperation.callData,
-        userOperation.callGasLimit,
-        userOperation.verificationGasLimit,
-        userOperation.preVerificationGas,
-        userOperation.maxFeePerGas,
-        userOperation.maxPriorityFeePerGas,
-        userOperation.paymasterAndData,
-      ])
-    ).substring(18) + ethers.toBeHex(0, 8).substring(2)
-    const targetNonce = theNumber
-    userOperation.nonce = targetNonce
+    userOperation.nonce = getTargetNonce(userOperation)
     await entryPoint.handleOps([userOperation], relayer)
 
     // confirm everything is set by sending an userOp through the entry point

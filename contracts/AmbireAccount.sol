@@ -286,7 +286,7 @@ contract AmbireAccount {
 	 * req. We use this to give permissions to the entry point on the fly
 	 * and enable ERC-4337
 	 * @param   op  the UserOperation we're executing
-	 * @param   userOpHash  the hash we've commited to
+	 * @param   userOpHash  the hash we've committed to
 	 * @param   missingAccountFunds  the funds the account needs to pay
 	 * @return  uint256  0 for success, 1 for signature failure, and a uint256
 	 * packed timestamp for a future valid signature:
