@@ -280,39 +280,44 @@ describe('KeystoreController', () => {
     expect(internalSigner.key.addr).toEqual(keyPublicAddress)
   })
 
-  test('should not get a signer', async () => {
-    expect.assertions(1)
-    try {
-      await keystore.getSigner('0xc7E32B118989296eaEa88D86Bd9041Feca77Ed36', 'internal')
-    } catch (e: any) {
-      expect(e.message).toBe('keystore: key not found')
-    }
+  test('should not get a signer', () => {
+    expect(
+      keystore.getSigner('0xc7E32B118989296eaEa88D86Bd9041Feca77Ed36', 'internal')
+    ).rejects.toThrow('keystore: key not found')
   })
 
-  test('should throw not unlocked', async () => {
-    expect.assertions(1)
-    try {
-      await keystore.lock()
-      await keystore.getSigner(keyPublicAddress, 'internal')
-    } catch (e: any) {
-      expect(e.message).toBe('keystore: not unlocked')
-    }
+  test('should throw not unlocked', (done) => {
+    const unsubscribe = keystore.onUpdate(async () => {
+      expect(keystore.getSigner(keyPublicAddress, 'internal')).rejects.toThrow(
+        'keystore: not unlocked'
+      )
+
+      unsubscribe()
+      done()
+    })
+
+    keystore.lock()
   })
 
-  test('should export key backup, create wallet and compare public address', async () => {
-    await keystore.unlockWithSecret('passphrase', pass)
-    const keyBackup = await keystore.exportKeyWithPasscode(
-      keyPublicAddress,
-      'internal',
-      'goshoPazara'
-    )
-    const wallet = await Wallet.fromEncryptedJson(JSON.parse(keyBackup), 'goshoPazara')
-    expect(wallet.address).toBe(keyPublicAddress)
+  test('should export key backup, create wallet and compare public address', (done) => {
+    keystore.unlockWithSecret('passphrase', pass)
+
+    const unsubscribe = keystore.onUpdate(async () => {
+      const keyBackup = await keystore.exportKeyWithPasscode(
+        keyPublicAddress,
+        'internal',
+        'goshoPazara'
+      )
+      const wallet = await Wallet.fromEncryptedJson(JSON.parse(keyBackup), 'goshoPazara')
+      expect(wallet.address).toBe(keyPublicAddress)
+
+      unsubscribe()
+      done()
+    })
   })
 
   test('should return uid', async () => {
     const keystoreUid = await keystore.getKeyStoreUid()
     expect(keystoreUid.length).toBe(32)
   })
-  // @TODO: secret not found
 })
