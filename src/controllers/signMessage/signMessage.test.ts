@@ -134,7 +134,7 @@ describe('SignMessageController', () => {
     const mockSigner = { signMessage: jest.fn().mockResolvedValue(dummySignature) }
 
     // @ts-ignore spy on the getSigner method and mock its implementation
-    const getSignerSpy = jest.spyOn(#keystore, 'getSigner').mockResolvedValue(mockSigner)
+    const getSignerSpy = jest.spyOn(keystore, 'getSigner').mockResolvedValue(mockSigner)
 
     let emitCounter = 0
     signMessageController.onUpdate(() => {
