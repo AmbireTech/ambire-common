@@ -415,45 +415,41 @@ describe('TypedMessages', () => {
   })
 })
 
-// describe('with (Account | Key)[] arg', () => {
-//   let storage: Storage
-//   let hc: HumanizerController
+describe('with (Account | Key)[] arg', () => {
+  let storage: Storage
+  beforeEach(async () => {
+    storage = produceMemoryStore()
+    await storage.set(HUMANIZER_META_KEY, humanizerMeta)
+    accountOp.calls = []
+    accountOp.humanizerMeta = humanizerJSON
+  })
+  test('with calls', async () => {
+    const expectedVisualizations = [
+      [
+        { type: 'action', content: 'Grant approval' },
+        { type: 'label', content: 'for' },
+        { type: 'nft' },
+        { type: 'label', content: 'to' },
+        { name: 'First account' }
+      ],
+      [
+        { type: 'action', content: 'Grant approval' },
+        { type: 'label', content: 'for' },
+        { type: 'nft' },
+        { type: 'label', content: 'to' },
+        { name: 'Second account' }
+      ]
+    ]
+    accountOp.calls = [...transactions.accountOrKeyArg]
 
-//   beforeEach(async () => {
-//     storage = produceMemoryStore()
-//     await storage.set(HUMANIZER_META_KEY, humanizerMeta)
-//     accountOp.calls = []
-//     hc = new HumanizerController(storage, fetch)
-//     accountOp.humanizerMeta = humanizerJSON
-//   })
-//   test('with calls', async () => {
-//     const expectedVisualizations = [
-//       [
-//         { type: 'action', content: 'Grant approval' },
-//         { type: 'label', content: 'for' },
-//         { type: 'nft' },
-//         { type: 'label', content: 'to' },
-//         { name: 'First account' }
-//       ],
-//       [
-//         { type: 'action', content: 'Grant approval' },
-//         { type: 'label', content: 'for' },
-//         { type: 'nft' },
-//         { type: 'label', content: 'to' },
-//         { name: 'Second account' }
-//       ]
-//     ]
-//     accountOp.calls = [...transactions.accountOrKeyArg]
-
-//     const onUpdate = jest.fn(() => {
-//       hc.ir.calls.forEach((c, i) =>
-//         c.fullVisualization?.forEach((v, j) =>
-//           expect(v).toMatchObject(expectedVisualizations[i][j])
-//         )
-//       )
-//     })
-//     hc.onUpdate(onUpdate)
-//     await hc.humanizeCalls(accountOp, [...accounts, ...keys])
-//     expect(onUpdate).toHaveBeenCalledTimes(1)
-//   })
-// })
+    const onUpdate = jest.fn((newCalls: IrCall[]) => {
+      newCalls.forEach((c, i) =>
+        c.fullVisualization?.forEach((v, j) =>
+          expect(v).toMatchObject(expectedVisualizations[i][j])
+        )
+      )
+    })
+    await callsHumanizer(accountOp, [...accounts, ...keys], storage, fetch, onUpdate, emitError)
+    expect(onUpdate).toHaveBeenCalledTimes(1)
+  })
+})
