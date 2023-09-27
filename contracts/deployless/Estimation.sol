@@ -15,6 +15,10 @@ interface IGasPriceOracle {
 }
 
 contract Estimation {
+  // NOTE: this contract doesn't need to be aware of ERC-4337 or entryPoint/entryPoint.getNonce()
+  // It uses account.execute() directly with spoof signatures, this is ok before:
+  // 1) signed accountOps (preExecute) are always signed in an agnostic way (using external sig validator, which uses it's own nonce-agnostic hash)
+  // 2) the main accountOp to estimate is not signed and we generate a spoof sig for it which works regardless of nonce
   struct AccountOp {
     IAmbireAccount account;
     uint nonce;
@@ -79,6 +83,7 @@ contract Estimation {
     // This has two purposes: 1) when we're about to send a txn via an EOA, we need to know the native asset balances
     // 2) sometimes we need to check the balance of the simulation `from` addr in order to calculate
     // txn fee anomalies (like in Optimism, paying the L1 calldata fee)
+    // this is first, because when it comes to paying with native (EOA), the starting balance is taken
     outcome.nativeAssetBalances = new uint[](checkNativeAssetOn.length);
     for (uint i=0; i!=checkNativeAssetOn.length; i++) {
       outcome.nativeAssetBalances[i] = checkNativeAssetOn[i].balance;

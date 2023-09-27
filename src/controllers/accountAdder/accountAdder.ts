@@ -18,6 +18,8 @@ const PAGE_SIZE = 5
 
 type ExtendedAccount = Account & { usedOnNetworks: NetworkDescriptor[] }
 
+type SelectedAccount = Account & { slot: number; eoaAddress: string; isLinked: boolean }
+
 /**
  * Account Adder Controller
  * is responsible for listing accounts that can be selected for adding, and for
@@ -30,7 +32,7 @@ export class AccountAdderController extends EventEmitter {
 
   storage: Storage
 
-  #keyIterator?: KeyIterator
+  #keyIterator?: KeyIterator | null
 
   // optional because there is default derivationPath for each keyIterator
   derivationPath?: string
@@ -42,7 +44,7 @@ export class AccountAdderController extends EventEmitter {
 
   pageSize: number = PAGE_SIZE
 
-  selectedAccounts: Account[] = []
+  selectedAccounts: SelectedAccount[] = []
 
   preselectedAccounts: Account[] = []
 
@@ -166,7 +168,7 @@ export class AccountAdderController extends EventEmitter {
     pageSize,
     derivationPath
   }: {
-    keyIterator: KeyIterator
+    keyIterator: KeyIterator | null
     preselectedAccounts: Account[]
     page?: number
     pageSize?: number
@@ -183,7 +185,7 @@ export class AccountAdderController extends EventEmitter {
   }
 
   reset() {
-    this.#keyIterator = undefined
+    this.#keyIterator = null
     this.preselectedAccounts = []
     this.selectedAccounts = []
     this.page = INITIAL_PAGE_INDEX
@@ -213,8 +215,41 @@ export class AccountAdderController extends EventEmitter {
     this.setPage({ page: INITIAL_PAGE_INDEX, networks, providers })
   }
 
-  selectAccount(account: Account) {
-    this.selectedAccounts.push(account)
+  selectAccount(_account: Account) {
+    const accountOnPage = this.accountsOnPage.find(
+      (accOnPage) => accOnPage.account.addr === _account.addr
+    )
+
+    if (!accountOnPage)
+      return this.emitError({
+        level: 'major',
+        message: `Selecting ${_account.addr} account failed because the details for this account are missing. Please try again or contact support if the problem persists.`,
+        error: new Error(
+          `Trying to select ${_account.addr} account, but this account was not found in the accountsOnPage.`
+        )
+      })
+
+    const allAccountsOnThisSlot = this.accountsOnPage.filter(
+      ({ slot }) => slot === accountOnPage.slot
+    )
+
+    const legacyAccountOnThisSlot = allAccountsOnThisSlot.find(({ account }) => !account.creation)
+
+    if (!legacyAccountOnThisSlot)
+      return this.emitError({
+        level: 'major',
+        message: `Selecting ${_account.addr} account failed because some of the details for this account are missing. Please try again or contact support if the problem persists.`,
+        error: new Error(
+          `The legacy account for the ${_account.addr} account was not found on this slot.`
+        )
+      })
+
+    this.selectedAccounts.push({
+      ..._account,
+      eoaAddress: legacyAccountOnThisSlot?.account.addr,
+      slot: accountOnPage.slot,
+      isLinked: accountOnPage.isLinked
+    })
     this.emitUpdate()
   }
 

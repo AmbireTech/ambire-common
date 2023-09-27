@@ -5,28 +5,14 @@ import fetch from 'node-fetch'
 /* eslint-disable no-new */
 import { describe, expect, test } from '@jest/globals'
 
+import { produceMemoryStore } from '../../../test/helpers'
 import { networks } from '../../consts/networks'
-import { Storage } from '../../interfaces/storage'
 import { KeyIterator } from '../../libs/keyIterator/keyIterator'
 import { AccountAdderController } from './accountAdder'
 
 const providers = Object.fromEntries(
   networks.map((network) => [network.id, new JsonRpcProvider(network.rpcUrl)])
 )
-// Helpers/testing
-function produceMemoryStore(): Storage {
-  const storage = new Map()
-  return {
-    get: (key, defaultValue): any => {
-      const serialized = storage.get(key)
-      return Promise.resolve(serialized ? JSON.parse(serialized) : defaultValue)
-    },
-    set: (key, value) => {
-      storage.set(key, JSON.stringify(value))
-      return Promise.resolve(null)
-    }
-  }
-}
 
 const relayerUrl = 'https://staging-relayer.ambire.com'
 
@@ -138,13 +124,20 @@ describe('AccountAdder', () => {
       if (emitCounter === 3) {
         expect(accountAdder.linkedAccountsLoading).toBe(false)
         const linkedAccountsOnPage = accountAdder.accountsOnPage.filter(({ isLinked }) => isLinked)
-        expect(linkedAccountsOnPage.length).toEqual(4)
 
-        // One linked account on slot 1 and 3 linked accounts on slot 3.
-        expect(linkedAccountsOnPage.filter(({ slot }) => slot === 1).length).toEqual(1)
+        const accountsOnSlot1 = linkedAccountsOnPage
+          .filter(({ slot }) => slot === 1)
+          .map(({ account }) => account.addr)
+        expect(accountsOnSlot1).toContain('0x740523d7876Fbb8AF246c5B307f26d4b2D2BFDA9')
+
         expect(linkedAccountsOnPage.filter(({ slot }) => slot === 2).length).toEqual(0)
-        expect(linkedAccountsOnPage.filter(({ slot }) => slot === 3).length).toEqual(3)
 
+        const accountsOnSlot3 = linkedAccountsOnPage
+          .filter(({ slot }) => slot === 3)
+          .map(({ account }) => account.addr)
+        expect(accountsOnSlot3).toContain('0x63caaD57Cd66A69A4c56b595E3A4a1e4EeA066d8')
+        expect(accountsOnSlot3).toContain('0x619A6a273c628891dD0994218BC0625947653AC7')
+        expect(accountsOnSlot3).toContain('0x7ab87ab041EB1c4f0d4f4d1ABD5b0973B331e2E7')
         done()
       }
     })
@@ -152,7 +145,9 @@ describe('AccountAdder', () => {
   test('should not be able to deselect a preselected account', (done) => {
     const keyIterator = new KeyIterator(seedPhrase)
     accountAdder.init({ keyIterator, preselectedAccounts: [legacyAccount], pageSize: 1 })
-    accountAdder.selectedAccounts = [legacyAccount]
+    accountAdder.selectedAccounts = [
+      { ...legacyAccount, eoaAddress: key1PublicAddress, slot: 1, isLinked: false }
+    ]
 
     let emitCounter = 0
     accountAdder.onError(() => {

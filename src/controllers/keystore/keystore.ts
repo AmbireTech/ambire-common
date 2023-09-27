@@ -1,4 +1,4 @@
-import { Keystore } from '../../libs/keystore/keystore'
+import { Key, Keystore } from '../../libs/keystore/keystore'
 import EventEmitter from '../eventEmitter'
 
 export class KeystoreController extends EventEmitter {
@@ -54,28 +54,20 @@ export class KeystoreController extends EventEmitter {
     })
   }
 
-  async addKeyExternallyStored(id: string, type: string, label: string, meta: object) {
-    await this.wrapKeystoreAction('addKeyExternallyStored', async () =>
-      this.#keystoreLib.addKeyExternallyStored(id, type, label, meta)
+  async addKeysExternallyStored(
+    keys: { addr: Key['addr']; type: Key['type']; label: Key['label']; meta: Key['meta'] }[]
+  ) {
+    await this.wrapKeystoreAction('addKeysExternallyStored', () =>
+      this.#keystoreLib.addKeysExternallyStored(keys)
     )
   }
 
-  async addKey(privateKey: string, label: string) {
-    await this.wrapKeystoreAction('addKey', async () => this.#keystoreLib.addKey(privateKey, label))
+  async addKeys(keys: { privateKey: string; label: Key['label'] }[]) {
+    await this.wrapKeystoreAction('addKeys', () => this.#keystoreLib.addKeys(keys))
   }
 
-  async addKeys(keys: { privateKey: string; label: string }[]) {
-    await this.wrapKeystoreAction('addKeys', async () => {
-      // eslint-disable-next-line no-restricted-syntax
-      for (const key of keys) {
-        // eslint-disable-next-line no-await-in-loop
-        await this.#keystoreLib.addKey(key.privateKey, key.label)
-      }
-    })
-  }
-
-  async removeKey(id: string) {
-    await this.wrapKeystoreAction('removeKey', async () => this.#keystoreLib.removeKey(id))
+  async removeKey(addr: Key['addr'], type: Key['type']) {
+    await this.wrapKeystoreAction('removeKey', async () => this.#keystoreLib.removeKey(addr, type))
   }
 
   async wrapKeystoreAction(callName: string, fn: Function) {

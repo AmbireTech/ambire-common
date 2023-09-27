@@ -50,24 +50,25 @@ describe('KeystoreSigner', () => {
   test('should sign typed data', async () => {
     expect.assertions(1)
     const signer = new KeystoreSigner(key, privKey)
-    const res = await signer.signTypedData(
-      {
+    const res = await signer.signTypedData({
+      kind: 'typedMessage',
+      domain: {
         name: 'TestContract',
         version: '1',
         chainId: 1,
         verifyingContract: '0x1234567890abcdef1234567890abcdef12345678'
       },
-      {
+      types: {
         Person: [
           { name: 'name', type: 'string' },
           { name: 'age', type: 'uint256' }
         ]
       },
-      {
+      message: {
         name: 'Alice',
         age: 30
       }
-    )
+    })
     expect(res).toMatch(/^0x/)
   })
   test('should sign message', async () => {

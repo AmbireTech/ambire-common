@@ -28,8 +28,9 @@ const assertion = chai.Assertion
 const deploySalt = 0
 const deployGasLimit = 1000000
 
+// if storageSlot 0 is privileges then this will work. If we change it in AmbireAccount.sol then we have to include the file below.
 // const filenames = fs.readdirSync(`${__dirname}/../artifacts/build-info`)
-const buildInfo = null // filenames.length ? require (`../artifacts/build-info/${filenames[0]}`) : null
+const buildInfo = null //filenames.length ? require(`../artifacts/build-info/${filenames[0]}`) : null
 
 export {
   pk1,

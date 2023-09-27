@@ -26,6 +26,12 @@ export interface TokenResult {
   amountPostSimulation?: bigint
   decimals: number
   priceIn: Price[]
+  flags: {
+    onGasTank: boolean
+    rewardsType: string | null
+    canTopUpGasTank: boolean
+    isFeeToken: boolean
+  }
 }
 
 export interface CollectionResult extends TokenResult {
@@ -60,6 +66,56 @@ export interface Hints {
   // Attached by the application error handling logic.
   // All other props, are provided by Velcro Discovery request.
   error?: string
+}
+
+export type AccountState = {
+  // network id
+  [key: string]:
+    | {
+        isReady: boolean
+        isLoading: boolean
+        criticalError?: Error
+        errors?: Error[]
+        result?: PortfolioGetResult
+        // We store the previously simulated AccountOps only for the pending state.
+        // Prior to triggering a pending state update, we compare the newly passed AccountOp[] (updateSelectedAccount) with the cached version.
+        // If there are no differences, the update is canceled unless the `forceUpdate` flag is set.
+        accountOps?: AccountOp[]
+      }
+    | undefined
+}
+
+export type AdditionalAccountState = {
+  // network id
+  [key: string]:
+    | {
+        isReady: boolean
+        isLoading: boolean
+        criticalError?: Error
+        errors?: Error[]
+        result?: AdditionalPortfolioGetResult
+      }
+    | undefined
+}
+
+// account => network => PortfolioGetResult, extra fields
+export type PortfolioControllerState = {
+  // account id
+  [key: string]: AccountState
+}
+
+export interface AdditionalPortfolioGetResult {
+  updateStarted: number
+  discoveryTime?: number
+  oracleCallTime?: number
+  priceUpdateTime?: number
+  priceCache?: PriceCache
+  tokens: TokenResult[]
+  tokenErrors?: { error: string; address: string }[]
+  collections?: CollectionResult[]
+  total: { [name: string]: bigint }
+  hints?: Hints
+  hintsError?: string
 }
 
 export interface PortfolioGetResult {

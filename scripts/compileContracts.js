@@ -27,6 +27,8 @@ async function compileFolder(contractsDir) {
 
   console.log('📜 Contracts found: ', files)
 
+  let done = false
+
   files.forEach((file) => {
     let contractName = file.split('/').slice(-1)[0]
     // it removes .sol from contract name
@@ -42,6 +44,8 @@ async function compileFolder(contractsDir) {
       done = true
     }
   })
+
+  if (!done) console.log(`Contract ${process.argv[2]} not found.`)
 }
 
 async function run() {

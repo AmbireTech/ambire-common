@@ -8,6 +8,8 @@ import { networks } from '../../consts/networks'
 import { AccountOp } from '../../libs/accountOp/accountOp'
 import { PortfolioController } from './portfolio'
 
+const relayerUrl = 'https://staging-relayer.ambire.com'
+
 describe('Portfolio Controller ', () => {
   const ethereum = networks.find((x) => x.id === 'ethereum')
   if (!ethereum) throw new Error('unable to find ethereum network in consts')
@@ -74,7 +76,7 @@ describe('Portfolio Controller ', () => {
     }
 
     const storage = produceMemoryStore()
-    const controller = new PortfolioController(storage)
+    const controller = new PortfolioController(storage, relayerUrl, [])
 
     controller.updateSelectedAccount([account2], networks, account2.addr)
     const storagePreviousHints = await storage.get('previousHints', {})
@@ -93,7 +95,7 @@ describe('Portfolio Controller ', () => {
   describe('Latest tokens', () => {
     test('Latest tokens are fetched and kept in the controller, while the pending should not be fetched (no AccountOp passed)', async () => {
       const storage = produceMemoryStore()
-      const controller = new PortfolioController(storage)
+      const controller = new PortfolioController(storage, relayerUrl, [])
       controller.updateSelectedAccount([account], networks, account.addr)
 
       controller.onUpdate(() => {
@@ -113,7 +115,7 @@ describe('Portfolio Controller ', () => {
 
     test('Latest tokens are fetched only once in a short period of time (controller.minUpdateInterval)', async () => {
       const storage = produceMemoryStore()
-      const controller = new PortfolioController(storage)
+      const controller = new PortfolioController(storage, relayerUrl, [])
       controller.updateSelectedAccount([account], networks, account.addr)
 
       controller.onUpdate(async () => {
@@ -139,7 +141,7 @@ describe('Portfolio Controller ', () => {
 
     test('Latest and Pending are fetched, because `forceUpdate` flag is set', async () => {
       const storage = produceMemoryStore()
-      const controller = new PortfolioController(storage)
+      const controller = new PortfolioController(storage, relayerUrl, [])
       await controller.updateSelectedAccount([account], networks, account.addr, undefined, {
         forceUpdate: true
       })
@@ -170,7 +172,7 @@ describe('Portfolio Controller ', () => {
       const accountOp = await getAccountOp()
 
       const storage = produceMemoryStore()
-      const controller = new PortfolioController(storage)
+      const controller = new PortfolioController(storage, relayerUrl, [])
 
       await controller.updateSelectedAccount([account], networks, account.addr, accountOp)
 
@@ -195,7 +197,7 @@ describe('Portfolio Controller ', () => {
       const accountOp = await getAccountOp()
 
       const storage = produceMemoryStore()
-      const controller = new PortfolioController(storage)
+      const controller = new PortfolioController(storage, relayerUrl, [])
 
       await controller.updateSelectedAccount([account], networks, account.addr, accountOp)
 
@@ -215,7 +217,7 @@ describe('Portfolio Controller ', () => {
       const accountOp = await getAccountOp()
 
       const storage = produceMemoryStore()
-      const controller = new PortfolioController(storage)
+      const controller = new PortfolioController(storage, relayerUrl, [])
 
       await controller.updateSelectedAccount([account], networks, account.addr, accountOp)
 
@@ -239,7 +241,7 @@ describe('Portfolio Controller ', () => {
       const accountOp = await getAccountOp()
 
       const storage = produceMemoryStore()
-      const controller = new PortfolioController(storage)
+      const controller = new PortfolioController(storage, relayerUrl, [])
 
       await controller.updateSelectedAccount([account], networks, account.addr, accountOp)
 
@@ -261,7 +263,7 @@ describe('Portfolio Controller ', () => {
       const accountOp = await getAccountOp()
 
       const storage = produceMemoryStore()
-      const controller = new PortfolioController(storage)
+      const controller = new PortfolioController(storage, relayerUrl, [])
 
       await controller.updateSelectedAccount([account], networks, account.addr, accountOp)
       const pendingState1 =
