@@ -3,6 +3,7 @@ import { Storage } from 'interfaces/storage'
 import { callsHumanizer } from 'libs/humanizer'
 import { IrCall } from 'libs/humanizer/interfaces'
 
+import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import { Account, AccountStates } from '../../interfaces/account'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { AccountOp, accountOpSignableHash, GasFeePayment } from '../../libs/accountOp/accountOp'
@@ -11,7 +12,6 @@ import { GasRecommendation } from '../../libs/gasPrice/gasPrice'
 import { Keystore } from '../../libs/keystore/keystore'
 import EventEmitter from '../eventEmitter'
 import { PortfolioController } from '../portfolio/portfolio'
-import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 
 export enum SigningStatus {
   UnableToSign = 'unable-to-sign',
@@ -129,9 +129,16 @@ export class SignAccountOpController extends EventEmitter {
         this.accountOp = accountOp
       }
       // TODO: add knownAddresses
-      callsHumanizer(this.accountOp, [], this.#storage, this.#fetch, (humanizedCalls) => {
-        this.humanReadable = humanizedCalls
-      })
+      callsHumanizer(
+        this.accountOp,
+        [],
+        this.#storage,
+        this.#fetch,
+        (humanizedCalls) => {
+          this.humanReadable = humanizedCalls
+        },
+        (err) => this.emitError(err)
+      )
     }
     const account = this.#getAccount()
 
