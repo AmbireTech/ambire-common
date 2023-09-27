@@ -5,12 +5,13 @@ import { IrCall } from 'libs/humanizer/interfaces'
 
 import { Account, AccountStates } from '../../interfaces/account'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
-import { AccountOp, accountOpSignableHash } from '../../libs/accountOp/accountOp'
+import { AccountOp, accountOpSignableHash, GasFeePayment } from '../../libs/accountOp/accountOp'
 import { EstimateResult } from '../../libs/estimate/estimate'
 import { GasRecommendation } from '../../libs/gasPrice/gasPrice'
 import { Keystore } from '../../libs/keystore/keystore'
 import EventEmitter from '../eventEmitter'
 import { PortfolioController } from '../portfolio/portfolio'
+import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 
 export enum SigningStatus {
   UnableToSign = 'unable-to-sign',
@@ -80,7 +81,13 @@ export class SignAccountOpController extends EventEmitter {
   }
 
   get isInitialized(): boolean {
-    return !!(this.#accounts && this.#networks && this.#accountStates && this.accountOp)
+    return !!(
+      this.#accounts &&
+      this.#networks &&
+      this.#accountStates &&
+      this.accountOp &&
+      this.#estimation
+    )
   }
 
   get hasSelectedAccountOp() {
@@ -126,33 +133,21 @@ export class SignAccountOpController extends EventEmitter {
         this.humanReadable = humanizedCalls
       })
     }
+    const account = this.#getAccount()
 
-    if (feeTokenAddr && this.isInitialized) {
+    if (feeTokenAddr && paidBy && this.isInitialized) {
+      const network = this.#networks!.find((n) => n.id === this.accountOp?.networkId)
+      // Cannot set paidBy for EOAs or ERC-4337
+      const canSetPaidBy = account?.creation && !network?.erc4337?.enabled
+
       // TODO: validate feeTokenAddr
-      this.accountOp!.gasFeePayment = this.#getGasFeePayment(feeTokenAddr, this.selectedFeeSpeed)
-    }
-
-    if (paidBy && this.isInitialized) {
-      // the self-invoking func allows us to return from it without interrupting the execution of the update func
-      ;(() => {
-        const account = this.#getAccount()
-        // Cannot set paidBy for EOAs or ERC-4337
-        const network = this.#networks!.find((n) => n.id === this.accountOp?.networkId)
-        if (!account || !account.creation || (network && network.erc4337?.enabled)) return
-
-        if (!this.accountOp!.gasFeePayment) this.accountOp!.gasFeePayment = {} as any
-        // No need to update anything else, availableFeeTokens will change it's output
-        this.accountOp!.gasFeePayment!.paidBy = paidBy
-        const availableFeeTokens = this.availableFeeTokens
-        if (!availableFeeTokens!.includes(this.accountOp!.gasFeePayment?.inToken as string)) {
-          this.accountOp!.gasFeePayment = this.#getGasFeePayment(
-            availableFeeTokens[0],
-            this.selectedFeeSpeed
-          )
-          // we need to set it again cause getGasFeePayment will reset it
-          this.accountOp!.gasFeePayment.paidBy = paidBy
-        }
-      })()
+      if (canSetPaidBy) {
+        this.accountOp!.gasFeePayment = this.#getGasFeePayment(
+          feeTokenAddr,
+          this.selectedFeeSpeed,
+          paidBy
+        )
+      }
     }
 
     if (speed && this.isInitialized) {
@@ -163,13 +158,8 @@ export class SignAccountOpController extends EventEmitter {
       )
     }
 
-    if (signingKeyAddr && this.isInitialized) {
-      // the self-invoking func allows us to return from it without interrupting the execution of the update func
-      ;() => {
-        const account = this.#getAccount()
-        if (!account || !account.creation) return
-        this.accountOp!.signingKeyAddr = signingKeyAddr
-      }
+    if (signingKeyAddr && account?.creation && this.isInitialized) {
+      this.accountOp!.signingKeyAddr = signingKeyAddr
     }
 
     this.updateReadyToSignStatusOnUpdate()
@@ -207,10 +197,6 @@ export class SignAccountOpController extends EventEmitter {
       this.accountOp?.gasFeePayment
     ) {
       this.status = { type: SigningStatus.ReadyToSign }
-    } else {
-      // @TODO - let's consider is this status the right one we need to set, if the above condition is not met.
-      //   imo - when we call this.update or this.updateMain, we tend to update at least 1 property, therefore inProgress sounds reasonable
-      this.status = { type: SigningStatus.InProgress }
     }
   }
 
@@ -233,41 +219,70 @@ export class SignAccountOpController extends EventEmitter {
     return account
   }
 
-  #getGasFeePayment(feeTokenAddr: string, feeSpeed: FeeSpeed) {
+  #getGasFeePayment(
+    feeTokenAddr: string,
+    feeSpeed: FeeSpeed,
+    paidBy: string = this.accountOp!.gasFeePayment?.paidBy || this.accountOp!.accountAddr
+  ): GasFeePayment {
     if (!this.isInitialized) throw new Error('signAccountOp: not initialized')
 
     const account = this.#getAccount()
+    const result = this.#gasPrices!.find((price) => price.name === feeSpeed)
+    // @ts-ignore
+    // It's always in wei
+    const gasPrice = result.gasPrice || result!.baseFeePerGas + result!.maxPriorityFeePerGas
+
+    // EOA
     if (!account || !account?.creation) {
-      throw new Error('EOA is not supported yet')
-      // TODO: implement for EOA and remove the !this.#account?.creation condition
+      const simulatedGasLimit = this.#estimation!.gasUsed
+      // @TODO - portfolio for gasPrice, conversion/rates through ether
+      const amount = simulatedGasLimit * gasPrice
+
+      return {
+        paidBy: this.accountOp!.accountAddr,
+        isERC4337: false,
+        isGasTank: false,
+        inToken: '0x0000000000000000000000000000000000000000',
+        amount,
+        simulatedGasLimit
+      }
     }
 
-    const result = this.#gasPrices!.find((price) => price.name === feeSpeed)
+    // Smart account, but EOA pays the fee
+    if (paidBy !== this.accountOp!.accountAddr) {
+      // @TODO - add comment why we add 21k gas here
+      const simulatedGasLimit = this.#estimation!.gasUsed + 21000n
+      // @TODO - portfolio for gasPrice, conversion/rates through ether
+      const amount = simulatedGasLimit * gasPrice
 
-    // @ts-ignore
-    const price = result.gasPrice || result!.baseFeePerGas + result!.maxPriorityFeePerGas
+      return {
+        paidBy,
+        isERC4337: false,
+        isGasTank: false,
+        inToken: feeTokenAddr,
+        amount,
+        simulatedGasLimit
+      }
+    }
 
+    // Relayer.
+    // relayer or 4337, we need to add feeTokenOutome.gasUsed
+    // @TODO - add comment why here we use `feePaymentOptions`, but we don't use it in EOA
+    const feeTokenGasUsed = this.#estimation!.feePaymentOptions.find(
+      (option) => option.address === feeTokenAddr
+    )!.gasUsed!
+    const simulatedGasLimit = this.#estimation!.gasUsed + feeTokenGasUsed
+
+    // @TODO - portfolio for gasPrice, conversion/rates through ether
+    const amount = simulatedGasLimit * gasPrice
     return {
-      paidBy: this.accountOp!.gasFeePayment?.paidBy || this.accountOp!.accountAddr,
+      paidBy,
       isERC4337: false, // TODO: based on network settings. We should add it to gasFeePayment interface.
       isGasTank: false, // TODO: based on token network (could be gas tank network). We should add it to gasFeePayment interface.
       inToken: feeTokenAddr,
-      amount: this.#estimation!.gasUsed * price
+      amount,
+      simulatedGasLimit
     }
-  }
-
-  get availableFeeTokens(): string[] {
-    if (!this.isInitialized) return []
-
-    const account = this.#getAccount()
-
-    if (!account) return []
-    // TODO:
-    return []
-    //   const EOAs = this.#accounts!.filter((acc) => !acc.creation)
-    //   // current account is an EOA or an EOA is paying the fee
-    //   if (!account.creation || EOAs.includes(this.accountOp!.gasFeePayment.paidBy)) return [native]
-    //   // @TODO return everything incl gas tank, with amounts; based on estimation + gas tank data from portfolio
   }
 
   get feeToken(): string | null {
@@ -298,6 +313,31 @@ export class SignAccountOpController extends EventEmitter {
     return this.accountOp?.gasFeePayment?.paidBy || null
   }
 
+  get availableFeeOptions(): EstimateResult['feePaymentOptions'] {
+    const account = this.#getAccount()
+    if (!account || !this.isInitialized || !this.#estimation) return []
+
+    // only the account can pay for the fee when current account is EOA
+    if (!account.creation) {
+      const feePaymentOption = this.#estimation.feePaymentOptions.find(
+        (option) => option.address === '0x0000000000000000000000000000000000000000'
+      )
+      return feePaymentOption ? [feePaymentOption] : []
+    }
+
+    // @TODO - 4337 - will handle it in next Epics
+    // // only the account itself can pay in this case
+    // const network = this.#networks!.find((n) => n.id === this.accountOp?.networkId)
+    // if (network && network.erc4337?.enabled) {
+    //   return [
+    //
+    //   ]
+    // }
+
+    // in other modes: relayer and gas tank - current account + all EOAs can pay
+    return this.#estimation.feePaymentOptions
+  }
+
   // eslint-disable-next-line class-methods-use-this
   get speedOptions() {
     return Object.values(FeeSpeed) as string[]
@@ -313,15 +353,54 @@ export class SignAccountOpController extends EventEmitter {
     if (!this.accountOp?.gasFeePayment) return this.#setSigningError('no gasFeePayment set')
     if (!this.readyToSign) return this.#setSigningError('not ready to sign')
 
+    const account = this.#getAccount()
+    const signer = await this.#keystore.getSigner(this.accountOp.signingKeyAddr)
+    if (!account) return this.#setSigningError('non-existent account')
+    if (!signer) return this.#setSigningError('no available signer')
+
     this.status = { type: SigningStatus.InProgress }
     this.emitUpdate()
 
-    try {
-      const signer = await this.#keystore.getSigner(this.accountOp!.signingKeyAddr)
+    const gasFeePayment = this.accountOp.gasFeePayment
 
-      this.accountOp!.signature = await signer.signMessage(
-        ethers.hexlify(accountOpSignableHash(this.accountOp!))
-      )
+    try {
+      // In case of EOA account
+      if (!account.creation) {
+        if (this.accountOp.calls.length !== 1)
+          return this.#setSigningError(
+            'tried to sign an EOA transaction with multiple or zero calls'
+          )
+        const { to, value, data } = this.accountOp.calls[0]
+        this.accountOp.signature = await signer.signRawTransaction({
+          to,
+          value,
+          data,
+          gasLimit: gasFeePayment.simulatedGasLimit,
+          gasPrice: gasFeePayment.amount / gasFeePayment.simulatedGasLimit
+        })
+      } else if (this.accountOp.gasFeePayment.paidBy !== account.addr) {
+        // Smart account, but EOA pays the fee
+        // EOA pays for execute() - relayerless
+
+        const iface = new ethers.Interface(AmbireAccount.abi)
+
+        this.accountOp.signature = await signer.signRawTransaction({
+          to: this.accountOp.accountAddr,
+          data: iface.encodeFunctionData('execute', [
+            this.accountOp.calls,
+            await signer.signMessage(ethers.hexlify(accountOpSignableHash(this.accountOp)))
+          ]),
+          gasLimit: gasFeePayment.simulatedGasLimit,
+          gasPrice: gasFeePayment.amount / gasFeePayment.simulatedGasLimit
+        })
+      } else {
+        // Relayer
+        // @TODO - additional call, pseudo code, sync with Bobby/Emo about the call in case of gas tank
+        this.accountOp!.signature = await signer.signMessage(
+          ethers.hexlify(accountOpSignableHash(this.accountOp))
+        )
+      }
+
       this.status = { type: SigningStatus.Done }
       this.emitUpdate()
     } catch (error: any) {
@@ -337,6 +416,7 @@ export class SignAccountOpController extends EventEmitter {
       hasSelectedAccountOp: this.hasSelectedAccountOp,
       readyToSign: this.readyToSign,
       availableFeePaidBy: this.availableFeePaidBy,
+      availableFeeOptions: this.availableFeeOptions,
       feeToken: this.feeToken,
       feePaidBy: this.feePaidBy,
       speedOptions: this.speedOptions

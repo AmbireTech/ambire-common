@@ -26,6 +26,7 @@ export interface GasFeePayment {
   paidBy: string
   inToken: string
   amount: bigint
+  simulatedGasLimit: bigint
 }
 
 export enum AccountOpStatus {

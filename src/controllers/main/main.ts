@@ -436,12 +436,15 @@ export class MainController extends EventEmitter {
     // TODO check if needed data in accountStates are available
     // this.accountStates[accountOp.accountAddr][accountOp.networkId].
     const account = this.accounts.find((x) => x.addr === accountOp.accountAddr)
+    const otherEOAaccounts = this.accounts.filter(
+      (acc) => !acc.creation && acc.addr !== accountOp.accountAddr
+    )
     if (!account)
       throw new Error(`estimateAccountOp: ${accountOp.accountAddr}: account does not exist`)
     const network = this.settings.networks.find((x) => x.id === accountOp.networkId)
     if (!network)
       throw new Error(`estimateAccountOp: ${accountOp.networkId}: network does not exist`)
-    const [, , estimation] = await Promise.all([
+    const [, estimation] = await Promise.all([
       // NOTE: we are not emitting an update here because the portfolio controller will do that
       // NOTE: the portfolio controller has it's own logic of constructing/caching providers, this is intentional, as
       // it may have different needs
@@ -455,10 +458,18 @@ export class MainController extends EventEmitter {
             .map(([networkId, x]) => [networkId, [x!.accountOp]])
         )
       ),
-      this.portfolio.getAdditionalPortfolio(accountOp.accountAddr),
-      // @TODO nativeToCheck: pass all EOAs,
-      // @TODO feeTokens: pass a hardcoded list from settings
-      estimate(this.#providers[accountOp.networkId], network, account, accountOp, [], [])
+      // this.portfolio.getAdditionalPortfolio(accountOp.accountAddr),
+      estimate(
+        this.#providers[accountOp.networkId],
+        network,
+        account,
+        accountOp,
+        otherEOAaccounts.map((acc) => acc.addr),
+        // @TODO - first time calling this, portfolio is still not loaded.
+        this.portfolio.latest?.[accountOp.accountAddr]?.[accountOp.networkId]?.result?.tokens.map(
+          (token) => token.address
+        ) || [] // TODO - get from updated portfolio only the feeTokens and exclude gasTank
+      )
     ])
     // @TODO compare intent between accountOp and this.accountOpsToBeSigned[accountOp.accountAddr][accountOp.networkId].accountOp
     this.accountOpsToBeSigned[accountOp.accountAddr][accountOp.networkId]!.estimation = estimation
