@@ -2,6 +2,7 @@ import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { getAccountDeployParams } from '../account/account'
 import { callToTuple } from '../accountOp/accountOp'
 import { Deployless, parseErr } from '../deployless/deployless'
+import { getFlags } from './helpers'
 import { Collectible, CollectionResult, LimitsOptions, TokenResult } from './interfaces'
 import { GetOptions } from './portfolio'
 
@@ -110,7 +111,8 @@ export async function getTokens(
         address === '0x0000000000000000000000000000000000000000'
           ? network.nativeAssetSymbol
           : token.symbol,
-      address
+      address,
+      flags: getFlags({}, network.id, network.id, address)
     } as TokenResult)
   const deploylessOpts = { blockTag: opts.blockTag, from: DEPLOYLESS_SIMULATION_FROM }
   if (!opts.simulation) {
