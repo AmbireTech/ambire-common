@@ -20,7 +20,7 @@ export const nameParsing: HumanizerParsingModule = (
   options?: any
 ) => {
   const warnings: HumanizerWarning[] = []
-  const fullVisualization: HumanizerVisualization[] = visualization.map(
+  const fullVisualization: HumanizerVisualization[] = visualization?.map(
     (v: HumanizerVisualization) => {
       if (v.type === 'address' && !v.name) {
         const newName = getName(v.address as string, humanizerSettings.humanizerMeta)
@@ -35,5 +35,5 @@ export const nameParsing: HumanizerParsingModule = (
       return v
     }
   )
-  return [fullVisualization, warnings, []]
+  return [fullVisualization || [], warnings, []]
 }
