@@ -136,6 +136,7 @@ export class SignAccountOpController extends EventEmitter {
         this.#fetch,
         (humanizedCalls) => {
           this.humanReadable = humanizedCalls
+          this.emitUpdate()
         },
         (err) => this.emitError(err)
       )
