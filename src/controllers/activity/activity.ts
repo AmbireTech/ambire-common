@@ -123,6 +123,13 @@ export class ActivityController extends EventEmitter {
     this.#accountsOps = accountsOps
     this.#signedMessages = signedMessages
 
+    this.emitUpdate()
+  }
+
+  init({ filters }: { filters: Filters }) {
+    this.filters = filters
+    this.isInitialized = true
+
     this.accountsOps = this.filterAndPaginateAccountOps(
       this.#accountsOps,
       this.accountsOpsPagination
@@ -132,12 +139,6 @@ export class ActivityController extends EventEmitter {
       this.signedMessagesPagination
     )
 
-    this.emitUpdate()
-  }
-
-  init({ filters }: { filters: Filters }) {
-    this.filters = filters
-    this.isInitialized = true
     this.emitUpdate()
   }
 
