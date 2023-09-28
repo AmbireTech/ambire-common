@@ -125,7 +125,7 @@ export class MainController extends EventEmitter {
     this.initialLoadPromise = this.load()
     this.emailVault = new EmailVaultController(storage, fetch, relayerUrl, this.keystore)
     this.accountAdder = new AccountAdderController({ storage, relayerUrl, fetch })
-    this.signAccountOp = new SignAccountOpController(this.#keystoreLib, this.portfolio)
+    this.signAccountOp = new SignAccountOpController(this.keystore, this.portfolio)
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
     this.onResolveDappRequest = onResolveDappRequest
     this.onRejectDappRequest = onRejectDappRequest
