@@ -42,98 +42,88 @@ export class PortfolioController extends EventEmitter {
     this.#pinned = pinned
   }
 
+  // gets additional portfolio state from the relayer that isn't retrieved from the portfolio library
+  // that's usually the two additional virtual networks: getTank and rewards
+  #setNetworkLoading(accountId: AccountId, network: string, isLoading: boolean, error?: any) {
+    const accountState = this.latest[accountId] as AdditionalAccountState
+    if (!accountState[network]) accountState[network] = { errors: [], isReady: false, isLoading }
+    accountState[network]!.isLoading = isLoading
+    if (error !== null) {
+      if (!accountState[network]!.isReady) accountState[network]!.criticalError = error
+      else accountState[network]!.errors.push(error)
+    }
+  }
   async getAdditionalPortfolio(accountId: AccountId) {
     if (!this.latest[accountId]) this.latest[accountId] = {}
     const start = Date.now()
-
     const accountState = this.latest[accountId] as AdditionalAccountState
-    if (!accountState?.gasTank) accountState.gasTank = { isReady: false, isLoading: true }
-    if (!accountState?.rewards) accountState.rewards = { isReady: false, isLoading: true }
 
-    accountState.rewards.isLoading = true
-    accountState.gasTank.isLoading = true
+    this.#setNetworkLoading(accountId, 'gasTank', true)
+    this.#setNetworkLoading(accountId, 'rewards', true)
     this.emitUpdate()
 
-    const url = `/v2/identity/${accountId}/info`
+    let res: any
     try {
-      const res = await this.#callRelayer(url)
-
-      accountState.rewards = {
-        isReady: true,
-        isLoading: false,
-        result: {
-          ...res.data.rewards,
-          updateStarted: start,
-          tokens: [
-            res.data.rewards.xWalletClaimableBalance || [],
-            res.data.rewards.walletClaimableBalance || []
-          ]
-            .flat()
-            .map((t: any) => ({
-              ...t,
-              flags: getFlags(res.data.rewards, 'rewards', t.networkId, t.address)
-            })),
-          total: [
-            res.data.rewards.xWalletClaimableBalance || [],
-            res.data.rewards.walletClaimableBalance || []
-          ]
-            .flat()
-            .reduce((cur: any, token: any) => {
-              for (const x of token.priceIn) {
-                cur[x.baseCurrency] =
-                  (cur[x.baseCurrency] || 0) +
-                  (Number(token.amount) / 10 ** token.decimals) * x.price
-              }
-
-              return cur
-            }, {})
-        }
-      }
-
-      accountState.gasTank = {
-        isReady: true,
-        isLoading: false,
-        result: {
-          updateStarted: start,
-          tokens: res.data.gasTank.balance.length
-            ? res.data.gasTank.balance.map((t: any) => ({
-                ...t,
-                flags: getFlags(res.data, 'gasTank', t.networkId, t.address)
-              }))
-            : [],
-          total: res.data.gasTank.balance
-            ? res.data.gasTank.balance.reduce((cur: any, token: any) => {
-                for (const x of token.priceIn) {
-                  cur[x.baseCurrency] =
-                    (cur[x.baseCurrency] || 0) +
-                    (Number(token.amount) / 10 ** token.decimals) * x.price
-                }
-                return cur
-              }, {})
-            : 0
-        }
-      }
-
+      res = await this.#callRelayer(`/v2/identity/${accountId}/portfolio-additional`)
+    } catch(e: any) {
+      console.error('relayer error for portfolio additional')
+      this.#setNetworkLoading(accountId, 'gasTank', false, e)
+      this.#setNetworkLoading(accountId, 'rewards', false, e)
       this.emitUpdate()
       return
-    } catch (e: any) {
-      console.error(e)
-      if (!accountState?.rewards) accountState.rewards = { isReady: false, isLoading: false }
-      if (!accountState?.gasTank) accountState.gasTank = { isReady: false, isLoading: false }
-
-      accountState.gasTank.isLoading = false
-      accountState.rewards.isLoading = false
-
-      if (!accountState.gasTank.isReady) accountState.gasTank.criticalError = e
-      if (!accountState.rewards.isReady) accountState.rewards.criticalError = e
-      else {
-        accountState.gasTank.errors = [e]
-        accountState.rewards.errors = [e]
-      }
-      this.emitUpdate()
-      return false
     }
+
+    if (!res) throw new Error('portfolio controller: no res, should never happen')
+
+    const getTotal = (t: any[]) => t.reduce((cur: any, token: any) => {
+      for (const x of token.priceIn) {
+        cur[x.baseCurrency] =
+          (cur[x.baseCurrency] || 0) +
+          (Number(token.amount) / 10 ** token.decimals) * x.price
+      }
+
+      return cur
+    }, {})
+
+    const rewardsTokens = [
+      res.data.rewards.xWalletClaimableBalance || [],
+      res.data.rewards.walletClaimableBalance || []
+    ]
+      .flat()
+      .map((t: any) => ({
+        ...t,
+        flags: getFlags(res.data.rewards, 'rewards', t.networkId, t.address)
+      }))
+    accountState.rewards = {
+      isReady: true,
+      isLoading: false,
+      errors: [],
+      result: {
+        ...res.data.rewards,
+        updateStarted: start,
+        tokens: rewardsTokens,
+        total: getTotal(rewardsTokens)
+      }
+    }
+
+    const gasTankTokens = res.data.gasTank.balance.map((t: any) => ({
+      ...t,
+      flags: getFlags(res.data, 'gasTank', t.networkId, t.address)
+    }))
+    accountState.gasTank = {
+      isReady: true,
+      isLoading: false,
+      errors: [],
+      result: {
+        updateStarted: start,
+        tokens: gasTankTokens,
+        total: getTotal(gasTankTokens)
+      }
+    }
+
+    this.emitUpdate()
   }
+
   // NOTE: we always pass in all `accounts` and `networks` to ensure that the user of this
   // controller doesn't have to update this controller every time that those are updated
 
@@ -185,7 +175,7 @@ export class PortfolioController extends EventEmitter {
       forceUpdate: boolean
     ): Promise<boolean> => {
       if (!accountState[network.id]) {
-        accountState[network.id] = { isReady: false, isLoading: false }
+        accountState[network.id] = { isReady: false, isLoading: false, errors: [] }
         this.emitUpdate()
       }
 
@@ -212,13 +202,13 @@ export class PortfolioController extends EventEmitter {
           priceCache: state.result?.priceCache,
           ...portfolioProps
         })
-        accountState[network.id] = { isReady: true, isLoading: false, result }
+        accountState[network.id] = { isReady: true, isLoading: false, errors: [], result }
         this.emitUpdate()
         return true
       } catch (e: any) {
         state.isLoading = false
         if (!state.isReady) state.criticalError = e
-        else state.errors = [e]
+        else state.errors.push(e)
         this.emitUpdate()
         return false
       }
