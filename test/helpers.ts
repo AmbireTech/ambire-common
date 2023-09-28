@@ -124,11 +124,11 @@ async function buildUserOp(paymaster: BaseContract, options: any = {}) {
     nonce: options.userOpNonce ?? ethers.toBeHex(0, 1),
     initCode: options.initCode ?? '0x',
     callData: options.callData ?? '0x',
-    callGasLimit: ethers.toBeHex(100000),
+    callGasLimit: options.callGasLimit ?? ethers.toBeHex(500000),
     verificationGasLimit: ethers.toBeHex(500000),
-    preVerificationGas: ethers.toBeHex(50000),
-    maxFeePerGas: ethers.toBeHex(100000),
-    maxPriorityFeePerGas: ethers.toBeHex(100000),
+    preVerificationGas: ethers.toBeHex(500000),
+    maxFeePerGas: ethers.toBeHex(500000),
+    maxPriorityFeePerGas: ethers.toBeHex(500000),
     paymasterAndData: '0x',
     signature: '0x'
   }
@@ -180,6 +180,30 @@ async function buildUserOp(paymaster: BaseContract, options: any = {}) {
   return userOp
 }
 
+function getTargetNonce(userOperation: any) {
+  return '0x' + ethers.keccak256(
+    abiCoder.encode([
+      'bytes',
+      'bytes',
+      'uint256',
+      'uint256',
+      'uint256',
+      'uint256',
+      'uint256',
+      'bytes',
+    ], [
+      userOperation.initCode,
+      userOperation.callData,
+      userOperation.callGasLimit,
+      userOperation.verificationGasLimit,
+      userOperation.preVerificationGas,
+      userOperation.maxFeePerGas,
+      userOperation.maxPriorityFeePerGas,
+      userOperation.paymasterAndData,
+    ])
+  ).substring(18) + ethers.toBeHex(0, 8).substring(2)
+}
+
 export {
   sendFunds,
   getPriviledgeTxn,
@@ -189,5 +213,6 @@ export {
   getSignerKey,
   produceMemoryStore,
   getPriviledgeTxnWithCustomHash,
-  buildUserOp
+  buildUserOp,
+  getTargetNonce
 }
