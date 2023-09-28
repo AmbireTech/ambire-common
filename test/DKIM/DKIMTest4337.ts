@@ -150,7 +150,6 @@ describe('ERC4337 DKIM sigMode Both', function () {
       sender: ambireAccountAddress,
       signedNonce: ethers.toBeHex(0, 1),
       callData: account.interface.encodeFunctionData('execute', [txns, finalSig]),
-      callGasLimit: ethers.toBeHex(500000) // if this goes to 100000, it does not execute
     })
     userOperation.nonce = getTargetNonce(userOperation)
     await entryPoint.handleOps([userOperation], relayer)
@@ -167,6 +166,19 @@ describe('ERC4337 DKIM sigMode Both', function () {
     await expect(entryPoint.handleOps([userOperation], relayer))
       .to.be.revertedWithCustomError(entryPoint, 'FailedOp')
       .withArgs(0, 'AA25 invalid account nonce');
+
+    // try to replay the data by placing a valid entry point nonce of 01
+    // it should fail in validateUserOp
+    const replayTargetNonceOp = await buildUserOp(paymaster, {
+      sender: ambireAccountAddress,
+      signedNonce: ethers.toBeHex(0, 1),
+      callData: account.interface.encodeFunctionData('execute', [txns, finalSig]),
+    })
+    const targetNonce = getTargetNonce(replayTargetNonceOp)
+    replayTargetNonceOp.nonce = targetNonce.substring(0, targetNonce.length - 2) + '01'
+    await expect(entryPoint.handleOps([replayTargetNonceOp], relayer))
+      .to.be.revertedWithCustomError(entryPoint, 'FailedOp')
+      .withArgs(0, 'AA23 reverted: validateUserOp: execute(): one-time nonce is wrong');
 
     // try to replay with a valid paymaster signature, should fail
     // and should not allow to reuse the nonce

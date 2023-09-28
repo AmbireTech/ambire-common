@@ -17,6 +17,7 @@ contract AmbireAccount {
 	// using our own code generation to insert SSTOREs to initialize `privileges` (IdentityProxyDeploy.js)
 	address private constant FALLBACK_HANDLER_SLOT = address(0x6969);
 
+	// @dev This is how we understand if msg.sender is the entry point
 	address private constant ENTRY_POINT_MARKER = address(0x7171);
 
 	// Externally validated signatures
@@ -314,7 +315,7 @@ contract AmbireAccount {
 		}
 
 		require(address(uint160(uint256(privileges[msg.sender]))) == ENTRY_POINT_MARKER, 'validateUserOp: not from entryPoint');
-		
+
 		// this is replay-safe because userOpHash is retrieved like this: keccak256(abi.encode(userOp.hash(), address(this), block.chainid))
 		address signer = SignatureValidator.recoverAddr(userOpHash, op.signature);
 		if (privileges[signer] == bytes32(0)) return SIG_VALIDATION_FAILED;
