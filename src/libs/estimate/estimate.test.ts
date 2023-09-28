@@ -194,8 +194,6 @@ describe('estimate', () => {
   })
 
   it('estimates with `addedNative`', async () => {
-    const fromAddrHavingNative = '0xebe80f029b1c02862b9e8a70a7e5317c06f62cae'
-
     const accountOptimism = {
       addr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
       label: '',
@@ -213,7 +211,7 @@ describe('estimate', () => {
 
     const opOptimism = {
       accountAddr: accountOptimism.addr,
-      signingKeyAddr: null,
+      signingKeyAddr: accountOptimism.associatedKeys[0],
       gasLimit: null,
       gasFeePayment: null,
       networkId: 'optimism',
@@ -225,13 +223,11 @@ describe('estimate', () => {
 
     const response = await estimate(
       providerOptimism,
-      ethereum,
+      optimism,
       accountOptimism,
       opOptimism,
       nativeToCheck,
-      feeTokens,
-      { calculateAnomalies: true },
-      fromAddrHavingNative
+      feeTokens
     )
 
     expect(response.addedNative).toBeGreaterThan(0n)

@@ -2,7 +2,6 @@
 pragma solidity 0.8.19;
 
 import './AmbireAccount.sol';
-import './ExternalSigValidator.sol';
 import './libs/erc4337/IPaymaster.sol';
 
 contract AmbirePaymaster is IPaymaster {
@@ -33,19 +32,14 @@ contract AmbirePaymaster is IPaymaster {
 	 * Requests are chain specific to prevent signature reuse.
 	 * @dev     .
 	 * @param   userOp  .
-	 * @param   userOpHash  .
-	 * @param   maxCost  .
 	 * @return  context  .
 	 * @return  validationData  .
 	 */
-	function validatePaymasterUserOp(UserOperation calldata userOp, bytes32 userOpHash, uint256 maxCost)
+	function validatePaymasterUserOp(UserOperation calldata userOp, bytes32, uint256)
 		external
 		view
 		returns (bytes memory context, uint256 validationData)
 	{
-		// unused stuff
-		(userOpHash, maxCost);
-
 		// parse the paymasterAndData
 		(uint48 validUntil, uint48 validAfter, bytes memory signature) = abi.decode(userOp.paymasterAndData[20:], (uint48, uint48, bytes));
 
