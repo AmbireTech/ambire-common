@@ -102,6 +102,7 @@ const createAccountOp = (signingKeyAddr: string) => {
   const op = {
     accountAddr: account.addr,
     signingKeyAddr,
+    signingKeyType: 'internal' as any,
     gasLimit: null,
     gasFeePayment: null,
     networkId: 'ethereum',
@@ -138,7 +139,8 @@ describe('SignAccountOp Controller ', () => {
     const accountStates = await getAccountsInfo(accounts)
     const portfolio = new PortfolioController(
       produceMemoryStore(),
-      'https://staging-relayer.ambire.com'
+      'https://staging-relayer.ambire.com',
+      []
     )
     const controller = new SignAccountOpController(keystore, portfolio)
     controller.status = { type: SigningStatus.ReadyToSign }
