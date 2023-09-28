@@ -409,8 +409,12 @@ export class KeystoreController extends EventEmitter {
     }
     this.status = 'DONE'
     this.emitUpdate()
-    this.status = 'INITIAL'
-    this.emitUpdate()
+
+    // reset the status in the next tick to ensure the FE receives the 'DONE' state
+    setTimeout(() => {
+      this.status = 'INITIAL'
+      this.emitUpdate()
+    }, 1)
   }
 
   async removeKey(addr: Key['addr'], type: Key['type']) {
