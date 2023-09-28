@@ -111,7 +111,7 @@ export const uniUniversalRouter = (
           parsed.push({
             ...call,
             fullVisualization: [
-              getAction('Unwrap at least'),
+              getAction('Unwrap'),
               getToken(ethers.ZeroAddress, params.amountMin),
               ...getRecipientText(accountOp.accountAddr, params.recipient)
             ]

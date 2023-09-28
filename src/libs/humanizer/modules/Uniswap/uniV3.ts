@@ -233,11 +233,7 @@ const uniV32Mapping = (
       return [
         {
           ...call,
-          fullVisualization: [
-            getAction('Unwrap'),
-            getLabel('at least'),
-            getToken(ethers.ZeroAddress, amountMin)
-          ]
+          fullVisualization: [getAction('Unwrap'), getToken(ethers.ZeroAddress, amountMin)]
         }
       ]
     },
@@ -253,7 +249,6 @@ const uniV32Mapping = (
           ...call,
           fullVisualization: [
             getAction('Unwrap'),
-            getLabel('at least'),
             getToken(ethers.ZeroAddress, amountMin),
             ...getRecipientText(accountOp.accountAddr, recipient)
           ]
@@ -464,7 +459,6 @@ const uniV3Mapping = (
           ...call,
           fullVisualization: [
             getAction('Unwrap'),
-            getLabel('at least'),
             getToken(ethers.ZeroAddress, amountMin),
             ...getRecipientText(accountOp.accountAddr, recipient)
           ]
@@ -483,7 +477,6 @@ const uniV3Mapping = (
           ...call,
           fullVisualization: [
             getAction('Unwrap'),
-            getLabel('at least'),
             getToken(ethers.ZeroAddress, amountMin),
             getLabel('with fee'),
             getToken(ethers.ZeroAddress, feeBips),

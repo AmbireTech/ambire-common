@@ -3,7 +3,51 @@ import { HumanizerCallModule, IrCall } from '../interfaces'
 import { AccountOp } from '../../accountOp/accountOp'
 import { getAction, getLabel, getToken, getAddress } from '../utils'
 
-// const WETH_ADDRESS = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2'
+const WETH_ADDRESS = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2'
+
+const wrpaUnwrapParser = (calls: IrCall[]) => {
+  const newCalls: IrCall[] = []
+  for (let i = 0; i < calls.length; i++) {
+    if (
+      // swapping x amount of token for y of WETH and unwrapping y WETH for y ETH
+      calls[i]?.fullVisualization?.[0].content === 'Swap' &&
+      calls[i + 1]?.fullVisualization?.[0].content === 'Unwrap' &&
+      calls[i]?.fullVisualization?.[3].address === WETH_ADDRESS &&
+      calls[i]?.fullVisualization?.[3].amount === calls[i + 1]?.fullVisualization?.[1]?.amount
+    ) {
+      const newVisualization = calls[i]?.fullVisualization!
+      newVisualization[3].address = ethers.ZeroAddress
+
+      newCalls.push({
+        to: calls[i].to,
+        value: calls[i].value + calls[i + 1].value,
+        // might cause bugs
+        data: `${calls[i].data} AND ${calls[i + 1].data}`,
+        fullVisualization: newVisualization
+      })
+      i += 1
+    } else if (
+      calls[i]?.fullVisualization?.[0].content === 'Wrap' &&
+      calls[i + 1]?.fullVisualization?.[0].content === 'Swap' &&
+      calls[i].value === calls[i + 1]?.fullVisualization?.[1].amount &&
+      calls[i + 1]?.fullVisualization?.[1].address === WETH_ADDRESS
+    ) {
+      const newVisualization = calls[i + 1]?.fullVisualization!
+      newVisualization[1].address = ethers.ZeroAddress
+      newCalls.push({
+        to: calls[i + 1].to,
+        value: calls[i].value + calls[i + 1].value,
+        // might cause bugs
+        data: `${calls[i].data} AND ${calls[i + 1].data}`,
+        fullVisualization: newVisualization
+      })
+      i += 1
+    } else {
+      newCalls.push(calls[i])
+    }
+  }
+  return newCalls
+}
 
 export const wethHumanizer: HumanizerCallModule = (
   accountOp: AccountOp,
@@ -45,5 +89,6 @@ export const wethHumanizer: HumanizerCallModule = (
     }
     return call
   })
-  return [newCalls, []]
+  const parsedCalls = wrpaUnwrapParser(newCalls)
+  return [parsedCalls, []]
 }

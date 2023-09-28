@@ -3,6 +3,7 @@ import fetch from 'node-fetch'
 
 import { describe, expect, test } from '@jest/globals'
 
+import { ethers } from 'hardhat'
 import { AccountOp } from '../accountOp/accountOp'
 import { humanizeCalls, visualizationToText } from './humanizerFuncs'
 import { HumanizerCallModule, HumanizerVisualization, IrCall } from './interfaces'
@@ -17,6 +18,7 @@ import { yearnVaultModule } from './modules/yearnTesseractVault'
 import { parseCalls } from './parsers'
 import { nameParsing } from './parsers/nameParsing'
 import { tokenParsing } from './parsers/tokenParsing'
+import { getAction, getLabel, getToken } from './utils'
 
 const humanizerInfo = require('../../consts/humanizerInfo.json')
 
@@ -31,7 +33,8 @@ const humanizerModules: HumanizerCallModule[] = [
   yearnVaultModule,
   fallbackHumanizer
 ]
-
+const TETHER_ADDRESS = '0xdAC17F958D2ee523a2206206994597C13D831ec7'
+const WETH_ADDRESS = '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2'
 const accountOp: AccountOp = {
   accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
   networkId: 'ethereum',
@@ -241,7 +244,7 @@ describe('module tests', () => {
         { type: 'label', content: 'for at least' },
         {
           type: 'token',
-          address: '0x0000000000000000000000000000000000000000',
+          address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
           amount: 137930462904193673n
         },
         { type: 'label', content: 'and send it to' },
@@ -250,6 +253,19 @@ describe('module tests', () => {
           address: '0x0000000000000000000000000000000000000000'
         },
         { type: 'label', content: 'already expired' }
+      ],
+      [
+        { type: 'action', content: 'Unwrap' },
+        {
+          type: 'token',
+          address: '0x0000000000000000000000000000000000000000',
+          amount: 137930462904193673n
+        },
+        { type: 'label', content: 'and send it to' },
+        {
+          type: 'address',
+          address: '0xBc5A0707cc6c731debEA1f0388a4240Df93259E4'
+        }
       ],
       [
         { type: 'action', content: 'Swap' },
@@ -344,6 +360,49 @@ describe('module tests', () => {
     ])
     expect(irCalls[2]?.fullVisualization).toBeUndefined()
   })
+
+  test('SWAP WRAP/UNWRAPS', () => {
+    const placeholder = '0x123456789'
+    const calls: IrCall[] = [
+      {
+        to: placeholder,
+        data: placeholder,
+        value: 0n,
+        fullVisualization: [
+          getAction('Swap'),
+          getToken(TETHER_ADDRESS, 1000000000n),
+          getLabel(placeholder),
+          getToken(WETH_ADDRESS, 1000000000n)
+        ]
+      },
+      {
+        to: WETH_ADDRESS,
+        data: placeholder,
+        value: 0n,
+        fullVisualization: [getAction('Unwrap'), getToken(ethers.ZeroAddress, 1000000000n)]
+      }
+    ]
+
+    const expectedHumanization = [
+      { type: 'action', content: 'Swap' },
+      {
+        type: 'token',
+        address: '0xdAC17F958D2ee523a2206206994597C13D831ec7',
+        amount: 1000000000n
+      },
+      { type: 'label', content: '0x123456789' },
+      {
+        type: 'token',
+        address: '0x0000000000000000000000000000000000000000',
+        amount: 1000000000n
+      }
+    ]
+
+    const [newCalls] = wethHumanizer(accountOp, calls)
+    expect(newCalls.length).toBe(1)
+    newCalls[0].fullVisualization?.map((v, i) => expect(v).toMatchObject(expectedHumanization[i]))
+  })
+
   test('AAVE', () => {
     const expectedhumanization = [
       [
