@@ -101,7 +101,7 @@ export class KeystoreController extends EventEmitter {
     this.emitUpdate()
   }
 
-  isUnlocked() {
+  get isUnlocked() {
     return !!this.#mainKey
   }
 
@@ -414,7 +414,7 @@ export class KeystoreController extends EventEmitter {
   }
 
   async removeKey(addr: Key['addr'], type: Key['type']) {
-    if (!this.isUnlocked()) throw new Error('keystore: not unlocked')
+    if (!this.isUnlocked) throw new Error('keystore: not unlocked')
     const keys: [StoredKey] = await this.storage.get('keystoreKeys', [])
     if (!keys.find((x) => x.addr === addr && x.type === type))
       throw new Error(
@@ -469,7 +469,7 @@ export class KeystoreController extends EventEmitter {
     if (!SignerInitializer) throw new Error('keystore: unsupported signer type')
 
     if (key.type === 'internal') {
-      if (!this.isUnlocked()) throw new Error('keystore: not unlocked')
+      if (!this.isUnlocked) throw new Error('keystore: not unlocked')
 
       const encryptedBytes = getBytes(storedKey.privKey as string)
       // @ts-ignore
@@ -488,5 +488,12 @@ export class KeystoreController extends EventEmitter {
   resetErrorState() {
     this.errorMessage = ''
     this.emitUpdate()
+  }
+
+  toJSON() {
+    return {
+      ...this,
+      isUnlocked: this.isUnlocked // includes the getter in the stringified instance
+    }
   }
 }

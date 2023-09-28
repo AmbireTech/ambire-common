@@ -68,7 +68,7 @@ describe('KeystoreController', () => {
 
     const unsubscribe = keystore.onError((e) => {
       expect(e.error.message).toBe('keystore: no secrets yet')
-      expect(keystore.isUnlocked()).toBe(false)
+      expect(keystore.isUnlocked).toBe(false)
 
       unsubscribe()
       done()
@@ -84,7 +84,7 @@ describe('KeystoreController', () => {
 
     const unsubscribe = keystore.onUpdate(async () => {
       if (keystore.latestMethodCall === 'addSecret' && keystore.status === 'DONE') {
-        expect(keystore.isUnlocked()).toBe(false)
+        expect(keystore.isUnlocked).toBe(false)
         expect(await keystore.isReadyToStoreKeys).toBe(true)
 
         unsubscribe()
@@ -98,7 +98,7 @@ describe('KeystoreController', () => {
 
     const unsubscribe = keystore.onError((e) => {
       expect(e.error.message).toBe('keystore: secret playstation not found')
-      expect(keystore.isUnlocked()).toBe(false)
+      expect(keystore.isUnlocked).toBe(false)
 
       unsubscribe()
       done()
@@ -110,7 +110,7 @@ describe('KeystoreController', () => {
 
     const unsubscribe = keystore.onError((e) => {
       expect(e.error.message).toBe('keystore: wrong secret')
-      expect(keystore.isUnlocked()).toBe(false)
+      expect(keystore.isUnlocked).toBe(false)
 
       unsubscribe()
       done()
@@ -122,7 +122,7 @@ describe('KeystoreController', () => {
 
     const unsubscribe = keystore.onUpdate(async () => {
       if (keystore.latestMethodCall === 'unlockWithSecret' && keystore.status === 'DONE') {
-        expect(keystore.isUnlocked()).toBe(true)
+        expect(keystore.isUnlocked).toBe(true)
 
         unsubscribe()
         done()
