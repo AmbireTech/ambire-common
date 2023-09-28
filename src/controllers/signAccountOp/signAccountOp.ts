@@ -211,10 +211,11 @@ export class SignAccountOpController extends EventEmitter {
     // @ts-ignore
     // It's always in wei
     const gasPrice = result.gasPrice || result!.baseFeePerGas + result!.maxPriorityFeePerGas
+    const gasUsed = this.#estimation!.gasUsed + this.#estimation!.addedNative
 
     // EOA
     if (!account || !account?.creation) {
-      const simulatedGasLimit = this.#estimation!.gasUsed
+      const simulatedGasLimit = gasUsed
       // @TODO - portfolio for gasPrice, conversion/rates through ether
       const amount = simulatedGasLimit * gasPrice
 
@@ -231,7 +232,7 @@ export class SignAccountOpController extends EventEmitter {
     // Smart account, but EOA pays the fee
     if (paidBy !== this.accountOp!.accountAddr) {
       // @TODO - add comment why we add 21k gas here
-      const simulatedGasLimit = this.#estimation!.gasUsed + 21000n
+      const simulatedGasLimit = gasUsed + 21000n
       // @TODO - portfolio for gasPrice, conversion/rates through ether
       const amount = simulatedGasLimit * gasPrice
 
@@ -251,7 +252,7 @@ export class SignAccountOpController extends EventEmitter {
     const feeTokenGasUsed = this.#estimation!.feePaymentOptions.find(
       (option) => option.address === feeTokenAddr
     )!.gasUsed!
-    const simulatedGasLimit = this.#estimation!.gasUsed + feeTokenGasUsed
+    const simulatedGasLimit = gasUsed + feeTokenGasUsed
 
     // @TODO - portfolio for gasPrice, conversion/rates through ether
     const amount = simulatedGasLimit * gasPrice
