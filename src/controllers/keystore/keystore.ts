@@ -47,9 +47,9 @@ function getBytesForSecret(secret: string): ArrayLike<number> {
 export class KeystoreController extends EventEmitter {
   #mainKey: MainKey | null
 
-  storage: Storage
+  #storage: Storage
 
-  keystoreSigners: { [key: string]: KeystoreSignerType }
+  #keystoreSigners: { [key: string]: KeystoreSignerType }
 
   keys: Key[] = []
 
@@ -63,8 +63,8 @@ export class KeystoreController extends EventEmitter {
 
   constructor(_storage: Storage, _keystoreSigners: { [key: string]: KeystoreSignerType }) {
     super()
-    this.storage = _storage
-    this.keystoreSigners = _keystoreSigners
+    this.#storage = _storage
+    this.#keystoreSigners = _keystoreSigners
     this.#mainKey = null
 
     this.#load()
@@ -106,11 +106,11 @@ export class KeystoreController extends EventEmitter {
   }
 
   async getMainKeyEncryptedWithSecrets(): Promise<MainKeyEncryptedWithSecret[]> {
-    return this.storage.get('keystoreSecrets', [])
+    return this.#storage.get('keystoreSecrets', [])
   }
 
   async getKeyStoreUid() {
-    const uid = await this.storage.get('keyStoreUid', null)
+    const uid = await this.#storage.get('keyStoreUid', null)
     if (!uid) throw new Error('keystore: adding secret before get uid')
 
     return uid
@@ -243,12 +243,12 @@ export class KeystoreController extends EventEmitter {
       }
     })
     // Persist the new secrets
-    await this.storage.set('keystoreSecrets', secrets)
+    await this.#storage.set('keystoreSecrets', secrets)
 
     // produce uid if one doesn't exist (should be created when the first secret is added)
-    if (!(await this.storage.get('keyStoreUid', null))) {
+    if (!(await this.#storage.get('keyStoreUid', null))) {
       const uid = keccak256(mainKey.key).slice(2, 34)
-      await this.storage.set('keyStoreUid', uid)
+      await this.#storage.set('keyStoreUid', uid)
     }
 
     this.isReadyToStoreKeys = true
@@ -266,7 +266,7 @@ export class KeystoreController extends EventEmitter {
       throw new Error('keystore: there would be no remaining secrets after removal')
     if (!secrets.find((x) => x.id === secretId))
       throw new Error(`keystore: secret$ ${secretId} not found`)
-    await this.storage.set(
+    await this.#storage.set(
       'keystoreSecrets',
       secrets.filter((x) => x.id !== secretId)
     )
@@ -277,7 +277,7 @@ export class KeystoreController extends EventEmitter {
   }
 
   async getKeys(): Promise<Key[]> {
-    const keys: [StoredKey] = await this.storage.get('keystoreKeys', [])
+    const keys: [StoredKey] = await this.#storage.get('keystoreKeys', [])
     return keys.map(({ addr, label, type, meta }) => ({
       addr,
       label,
@@ -305,7 +305,7 @@ export class KeystoreController extends EventEmitter {
 
     if (!uniqueKeysToAdd.length) return
 
-    const keys: [StoredKey] = await this.storage.get('keystoreKeys', [])
+    const keys: [StoredKey] = await this.#storage.get('keystoreKeys', [])
 
     const newKeys = uniqueKeysToAdd
       .map(({ addr, type, label, meta }) => ({
@@ -322,7 +322,7 @@ export class KeystoreController extends EventEmitter {
 
     const nextKeys = [...keys, ...newKeys]
 
-    await this.storage.set('keystoreKeys', nextKeys)
+    await this.#storage.set('keystoreKeys', nextKeys)
     this.keys = await this.getKeys()
   }
 
@@ -350,7 +350,7 @@ export class KeystoreController extends EventEmitter {
 
     if (!uniqueKeysToAdd.length) return
 
-    const keys: [StoredKey] = await this.storage.get('keystoreKeys', [])
+    const keys: [StoredKey] = await this.#storage.get('keystoreKeys', [])
 
     const newKeys: StoredKey[] = uniqueKeysToAdd
       .map(({ privateKey, label }) => {
@@ -380,7 +380,7 @@ export class KeystoreController extends EventEmitter {
 
     const nextKeys = [...keys, ...newKeys]
 
-    await this.storage.set('keystoreKeys', nextKeys)
+    await this.#storage.set('keystoreKeys', nextKeys)
     this.keys = await this.getKeys()
   }
 
@@ -415,13 +415,13 @@ export class KeystoreController extends EventEmitter {
 
   async removeKey(addr: Key['addr'], type: Key['type']) {
     if (!this.isUnlocked) throw new Error('keystore: not unlocked')
-    const keys: [StoredKey] = await this.storage.get('keystoreKeys', [])
+    const keys: [StoredKey] = await this.#storage.get('keystoreKeys', [])
     if (!keys.find((x) => x.addr === addr && x.type === type))
       throw new Error(
         `keystore: trying to remove key that does not exist: address: ${addr}, type: ${type}`
       )
 
-    await this.storage.set(
+    await this.#storage.set(
       'keystoreKeys',
       keys.filter((x) => x.addr === addr && x.type === type)
     )
@@ -430,7 +430,7 @@ export class KeystoreController extends EventEmitter {
 
   async exportKeyWithPasscode(keyAddress: Key['addr'], keyType: Key['type'], passphrase: string) {
     if (this.#mainKey === null) throw new Error('keystore: needs to be unlocked')
-    const keys = await this.storage.get('keystoreKeys', [])
+    const keys = await this.#storage.get('keystoreKeys', [])
     const storedKey: StoredKey = keys.find(
       (x: StoredKey) => x.addr === keyAddress && x.type === keyType
     )
@@ -449,7 +449,7 @@ export class KeystoreController extends EventEmitter {
   }
 
   async getSigner(keyAddress: Key['addr'], keyType: Key['type']) {
-    const keys = await this.storage.get('keystoreKeys', [])
+    const keys = await this.#storage.get('keystoreKeys', [])
     const storedKey: StoredKey = keys.find(
       (x: StoredKey) => x.addr === keyAddress && x.type === keyType
     )
@@ -465,7 +465,7 @@ export class KeystoreController extends EventEmitter {
       isExternallyStored: type !== 'internal'
     }
 
-    const SignerInitializer = this.keystoreSigners[key.type]
+    const SignerInitializer = this.#keystoreSigners[key.type]
     if (!SignerInitializer) throw new Error('keystore: unsupported signer type')
 
     if (key.type === 'internal') {
