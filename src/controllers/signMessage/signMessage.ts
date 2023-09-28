@@ -2,15 +2,16 @@ import { JsonRpcProvider } from 'ethers'
 
 import { networks } from '../../consts/networks'
 import { Account, AccountStates } from '../../interfaces/account'
+import { Key } from '../../interfaces/keystore'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { Message } from '../../interfaces/userRequest'
-import { Key, Keystore } from '../../libs/keystore/keystore'
 import { verifyMessage } from '../../libs/signMessage/signMessage'
 import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
 import EventEmitter from '../eventEmitter'
+import { KeystoreController } from '../keystore/keystore'
 
 export class SignMessageController extends EventEmitter {
-  #keystore: Keystore
+  #keystore: KeystoreController
 
   #providers: { [key: string]: JsonRpcProvider }
 
@@ -32,7 +33,7 @@ export class SignMessageController extends EventEmitter {
 
   signedMessage: Message | null = null
 
-  constructor(keystore: Keystore, providers: { [key: string]: JsonRpcProvider }) {
+  constructor(keystore: KeystoreController, providers: { [key: string]: JsonRpcProvider }) {
     super()
 
     this.#keystore = keystore

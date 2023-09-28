@@ -6,7 +6,7 @@ import { describe, expect, jest, test } from '@jest/globals'
 import { produceMemoryStore } from '../../../test/helpers'
 import { networks } from '../../consts/networks'
 import { Message } from '../../interfaces/userRequest'
-import { Keystore } from '../../libs/keystore/keystore'
+import { KeystoreController } from '../keystore/keystore'
 import { InternalSigner } from '../keystore/keystore.test'
 import { SignMessageController } from './signMessage'
 
@@ -24,13 +24,13 @@ const account: Account = {
 
 describe('SignMessageController', () => {
   let signMessageController: SignMessageController
-  let keystoreLib: Keystore
+  let keystore: KeystoreController
 
   beforeEach(() => {
     const keystoreSigners = { internal: InternalSigner }
-    keystoreLib = new Keystore(produceMemoryStore(), keystoreSigners)
+    keystore = new KeystoreController(produceMemoryStore(), keystoreSigners)
 
-    signMessageController = new SignMessageController(keystoreLib, providers)
+    signMessageController = new SignMessageController(keystore, providers)
   })
 
   test('should initialize with a valid message', (done) => {
@@ -134,7 +134,7 @@ describe('SignMessageController', () => {
     const mockSigner = { signMessage: jest.fn().mockResolvedValue(dummySignature) }
 
     // @ts-ignore spy on the getSigner method and mock its implementation
-    const getSignerSpy = jest.spyOn(keystoreLib, 'getSigner').mockResolvedValue(mockSigner)
+    const getSignerSpy = jest.spyOn(keystore, 'getSigner').mockResolvedValue(mockSigner)
 
     let emitCounter = 0
     signMessageController.onUpdate(() => {
