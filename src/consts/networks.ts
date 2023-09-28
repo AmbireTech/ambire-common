@@ -1,4 +1,4 @@
-import { NetworkDescriptor } from '../interfaces/networkDescriptor'
+import { NetworkDescriptor, NetworkId } from '../interfaces/networkDescriptor'
 import { ERC_4337_ENTRYPOINT, ENTRY_POINT_MARKER } from './deploy'
 
 const networks: NetworkDescriptor[] = [
@@ -48,9 +48,9 @@ const networks: NetworkDescriptor[] = [
   // }
 ]
 
-const nativeTokens: { [key: string]: [string, number] } = {
-  '1': ['ETH', 18],
-  '137': ['MATIC', 18],
-  '250': ['FTM', 18]
+const nativeTokens: { [key: NetworkId]: [string, number] } = {
+  ethereum: ['ETH', 18],
+  polygon: ['MATIC', 18],
+  fanthom: ['FTM', 18]
 }
 export { networks, nativeTokens }

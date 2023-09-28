@@ -86,8 +86,8 @@ export const yearnVaultModule: HumanizerCallModule = (
       if (matcher[call.data.slice(0, 10)]) {
         visualization = matcher[call.data.slice(0, 10)](accountOp, call)
         let prefix = ''
-        if (accountOp.networkId === '1') prefix = tokenPrefixes.ethereum
-        if (accountOp.networkId === '137') prefix = tokenPrefixes.polygon
+        if (accountOp.networkId === 'ethereum') prefix = tokenPrefixes.ethereum
+        if (accountOp.networkId === 'polygon') prefix = tokenPrefixes.polygon
         visualization = visualization.map((v) =>
           v.type === 'token'
             ? {

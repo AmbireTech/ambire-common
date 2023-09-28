@@ -22,7 +22,7 @@ const WETH_ADDRESS = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2'
 const humanizerMeta = humanizerJSON
 const accountOp: AccountOp = {
   accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
-  networkId: '1',
+  networkId: 'ethereum',
   // this may not be defined, in case the user has not picked a key yet
   signingKeyAddr: null,
   // this may not be set in case we haven't set it yet

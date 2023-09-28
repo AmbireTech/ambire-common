@@ -79,7 +79,7 @@ export const callsHumanizer = async (
       { fetch, emitError }
     )
 
-    const [parsedCalls, newAsyncOps] = parseCalls(op, irCalls, parsingModules)
+    const [parsedCalls, newAsyncOps] = parseCalls(op, irCalls, parsingModules, { fetch, emitError })
     asyncOps.push(...newAsyncOps)
     callback(parsedCalls)
 

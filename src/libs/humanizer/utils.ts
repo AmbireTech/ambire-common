@@ -1,8 +1,10 @@
+import dotenv from 'dotenv'
 import { ethers } from 'ethers'
 import { HumanizerFragment, HumanizerSettings, HumanizerVisualization } from './interfaces'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { networks } from '../../consts/networks'
 
+dotenv.config()
 const COINGECKO_API_KEY = process.env.COINGECKO_API_KEY
 
 export function getWarning(content: string, level: string = 'caution') {
@@ -72,10 +74,10 @@ export async function getTokenInfo(
     const baseUrl = COINGECKO_API_KEY
       ? 'https://pro-api.coingecko.com/api/v3'
       : 'https://api.coingecko.com/api/v3'
-    const postfix = COINGECKO_API_KEY ? `&x_cg_pro_api_key=${COINGECKO_API_KEY}` : ''
+    const postfix = COINGECKO_API_KEY ? `?&x_cg_pro_api_key=${COINGECKO_API_KEY}` : ''
     const coingeckoQueryUrl = `${baseUrl}/coins/${network}/contract/${address}${postfix}`
-
-    const response = await (await options.fetch(coingeckoQueryUrl)).json()
+    let response = await options.fetch(coingeckoQueryUrl)
+    response = await response.json()
     if (response.symbol && response.detail_platforms?.ethereum.decimal_place)
       return {
         key: `tokens:${address}`,

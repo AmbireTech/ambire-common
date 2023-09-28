@@ -13,20 +13,19 @@ import { parseCalls } from './parsers'
 
 const humanizerInfo = require('../../consts/humanizerInfo.json')
 
-const emitedErrors = []
-const mockEmitError = (e: ErrorRef) => emitedErrors.push(e)
+const mockEmitError = (e: ErrorRef) => console.log(e)
 
-const mockedFetchForTokens = async (url: string) => {
-  const usdtAddress = '0xdAC17F958D2ee523a2206206994597C13D831ec7'
-  return url === `https://api.coingecko.com/api/v3/coins/ethereum/contract/${usdtAddress}`
-    ? {
-        json: async () => ({ symbol: 'usdt', detail_platforms: { ethereum: { decimal_place: 6 } } })
-      }
-    : {}
-}
+// const mockedFetchForTokens = async (url: string) => {
+//   const usdtAddress = '0xdAC17F958D2ee523a2206206994597C13D831ec7'
+//   return url === `https://api.coingecko.com/api/v3/coins/ethereum/contract/${usdtAddress}`
+//     ? {
+//         json: async () => ({ symbol: 'usdt', detail_platforms: { ethereum: { decimal_place: 6 } } })
+//       }
+//     : {}
+// }
 const accountOp: AccountOp = {
   accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
-  networkId: '1',
+  networkId: 'ethereum',
   // this may not be defined, in case the user has not picked a key yet
   signingKeyAddr: null,
   // this may not be set in case we haven't set it yet
@@ -195,13 +194,14 @@ describe('asyncOps tests', () => {
 
   test('getTokenInfo', async () => {
     accountOp.calls = transactions.erc20
+    delete accountOp.humanizerMeta!['tokens:0xdAC17F958D2ee523a2206206994597C13D831ec7']
     if (accountOp.humanizerMeta)
       Object.keys(accountOp.humanizerMeta).forEach((k) => {
         k.includes('tokens') ? delete accountOp.humanizerMeta?.[k] : null
       })
     const irCalls: IrCall[] = accountOp.calls
     const [, asyncOps] = genericErc20Humanizer(accountOp, irCalls, {
-      fetch: mockedFetchForTokens,
+      fetch,
       emitError: mockEmitError
     })
     const asyncData = await Promise.all(asyncOps)
