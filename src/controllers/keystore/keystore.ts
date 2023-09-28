@@ -489,11 +489,4 @@ export class KeystoreController extends EventEmitter {
     this.errorMessage = ''
     this.emitUpdate()
   }
-
-  toJSON() {
-    return {
-      ...this,
-      isUnlocked: this.isUnlocked // includes the getter in the stringified instance
-    }
-  }
 }
