@@ -295,6 +295,12 @@ contract AmbireAccount {
 	function validateUserOp(UserOperation calldata op, bytes32 userOpHash, uint256 missingAccountFunds)
 	external payable returns (uint256)
 	{
+		// enable running a normal execute operation through the entryPoint if
+		// a paymaster sponsors it with a commitment one-time nonce.
+		// two use cases:
+		// 1) enable 4337 on a network by giving priviledges to the entryPoint
+		// 2) key recovery. If the key is lost, we cannot sign the userOp,
+		// so we have to go to `execute` to trigger the recovery logic
 		if (op.callData.length >= 4 && bytes4(op.callData[0:4]) == this.execute.selector) {
 			// Require a paymaster, otherwise this mode can be used by anyone to get the user to spend their deposit
 			require(op.signature.length == 0, 'validateUserOp: empty signature required in execute() mode');
@@ -306,28 +312,14 @@ contract AmbireAccount {
 			require(op.nonce == targetNonce, 'validateUserOp: execute(): one-time nonce is wrong');
 			return 0;
 		}
+
 		require(address(uint160(uint256(privileges[msg.sender]))) == ENTRY_POINT_MARKER, 'validateUserOp: not from entryPoint');
-		uint256 validation = 0;
-		uint8 sigMode = uint8(op.signature[op.signature.length - 1]);
-		if (sigMode == SIGMODE_EXTERNALLY_VALIDATED) {
-			// 68: two words + 4 for the sighash
-			require(op.callData.length >= 68 && bytes4(op.callData[0:4]) == this.executeBySender.selector, 'validateUserOp: needs to call executeBySender');
-			Transaction[] memory calls = abi.decode(op.callData[4:], (Transaction[]));
+		
+		// this is replay-safe because userOpHash is retrieved like this: keccak256(abi.encode(userOp.hash(), address(this), block.chainid))
+		address signer = SignatureValidator.recoverAddr(userOpHash, op.signature);
+		if (privileges[signer] == bytes32(0)) return SIG_VALIDATION_FAILED;
 
-			(, bool isValidSig, uint256 timestampValidAfter) = validateExternalSig(calls, op.signature);
-			if (!isValidSig) return SIG_VALIDATION_FAILED;
-			// pack the return value for validateUserOp
-			// address aggregator, uint48 validUntil, uint48 validAfter
-			if (timestampValidAfter != 0) {
-				validation = uint160(0) | (uint256(0) << 160) | (uint256(timestampValidAfter) << (208));
-			}
-		} else {
-			// this is replay-safe because userOpHash is retrieved like this: keccak256(abi.encode(userOp.hash(), address(this), block.chainid))
-			address signer = SignatureValidator.recoverAddr(userOpHash, op.signature);
-			if (privileges[signer] == bytes32(0)) return SIG_VALIDATION_FAILED;
-		}
-
-		// NOTE: we do not have to pay th entryPoint if SIG_VALIDATION_FAILED, so we just return on those
+		// NOTE: we do not have to pay the entryPoint if SIG_VALIDATION_FAILED, so we just return on those
 		if (missingAccountFunds > 0) {
 			// NOTE: MAY pay more than the minimum, to deposit for future transactions
 			(bool success,) = payable(msg.sender).call{value : missingAccountFunds}('');
@@ -335,7 +327,7 @@ contract AmbireAccount {
 			(success);
 		}
 
-		return validation;
+		return 0;
 	}
 
 	function validateExternalSig(Transaction[] memory calls, bytes calldata signature)

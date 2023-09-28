@@ -86,8 +86,9 @@ contract EntryPoint is IEntryPoint, StakeManager, NonceManager {
      * if any account requires an aggregator (that is, it returned an aggregator when
      * performing simulateValidation), then handleAggregatedOps() must be used instead.
      * @param ops the operations to execute
+     * @param beneficiary the address to receive the fees
      */
-    function handleOps(UserOperation[] calldata ops, address payable) public {
+    function handleOps(UserOperation[] calldata ops, address payable beneficiary) public {
 
         uint256 opslen = ops.length;
         UserOpInfo[] memory opInfos = new UserOpInfo[](opslen);
@@ -105,6 +106,8 @@ contract EntryPoint is IEntryPoint, StakeManager, NonceManager {
         for (uint256 i = 0; i < opslen; i++) {
             collected += _executeUserOp(i, ops[i], opInfos[i]);
         }
+
+        _compensate(beneficiary, collected);
     } //unchecked
     }
 
@@ -227,15 +230,15 @@ contract EntryPoint is IEntryPoint, StakeManager, NonceManager {
         MemoryUserOp memory mUserOp = opInfo.mUserOp;
 
         uint callGasLimit = mUserOp.callGasLimit;
-        unchecked {
-            // handleOps was called with gas limit too low. abort entire bundle.
-            if (gasleft() < callGasLimit + mUserOp.verificationGasLimit + 5000) {
-                assembly {
-                    mstore(0, INNER_OUT_OF_GAS)
-                    revert(0, 32)
-                }
+    unchecked {
+        // handleOps was called with gas limit too low. abort entire bundle.
+        if (gasleft() < callGasLimit + mUserOp.verificationGasLimit + 5000) {
+            assembly {
+                mstore(0, INNER_OUT_OF_GAS)
+                revert(0, 32)
             }
         }
+    }
 
         IPaymaster.PostOpMode mode = IPaymaster.PostOpMode.opSucceeded;
         if (callData.length > 0) {
@@ -249,11 +252,11 @@ contract EntryPoint is IEntryPoint, StakeManager, NonceManager {
             }
         }
 
-        unchecked {
-            uint256 actualGas = preGas - gasleft() + opInfo.preOpGas;
-            //note: opIndex is ignored (relevant only if mode==postOpReverted, which is only possible outside of innerHandleOp)
-            return _handlePostOp(0, mode, opInfo, context, actualGas);
-        }
+    unchecked {
+        uint256 actualGas = preGas - gasleft() + opInfo.preOpGas;
+        //note: opIndex is ignored (relevant only if mode==postOpReverted, which is only possible outside of innerHandleOp)
+        return _handlePostOp(0, mode, opInfo, context, actualGas);
+    }
     }
 
     /**
@@ -415,7 +418,7 @@ contract EntryPoint is IEntryPoint, StakeManager, NonceManager {
             DepositInfo storage senderInfo = deposits[sender];
             uint256 deposit = senderInfo.deposit;
             if (requiredPrefund > deposit) {
-                // revert FailedOp(opIndex, "AA21 didn't pay prefund");
+                revert FailedOp(opIndex, "AA21 didn't pay prefund");
             }
             senderInfo.deposit = uint112(deposit - requiredPrefund);
         }
