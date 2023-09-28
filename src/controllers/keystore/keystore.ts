@@ -71,9 +71,28 @@ export class KeystoreController extends EventEmitter {
   }
 
   async #load() {
-    // TODO: handle errors
-    this.keys = await this.getKeys()
-    this.isReadyToStoreKeys = (await this.getMainKeyEncryptedWithSecrets()).length > 0
+    try {
+      this.keys = await this.getKeys()
+    } catch (e) {
+      this.emitError({
+        message:
+          'Something went wrong when loading the Keystore. Please try again or contact support if the problem persists.',
+        level: 'major',
+        error: new Error('keystore: failed to pull keys from storage')
+      })
+    }
+
+    try {
+      this.isReadyToStoreKeys = (await this.getMainKeyEncryptedWithSecrets()).length > 0
+    } catch (e) {
+      this.emitError({
+        message:
+          'Something went wrong when initiating the Keystore. Please try again or contact support if the problem persists.',
+        level: 'major',
+        error: new Error('keystore: failed to getMainKeyEncryptedWithSecrets() from storage')
+      })
+    }
+
     this.emitUpdate()
   }
 
