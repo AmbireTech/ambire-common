@@ -21,7 +21,6 @@ let recoveryKey: String
 let authKey2: String
 let authSecret2: String // this will not be return in prod mode
 let recoveryKey2: String
-const keyBackup: String = JSON.stringify({ a: 1 })
 const keyStoreSecret = 'keyStoreSecretHere'
 
 const initEmailVaultTest = async () => {
@@ -46,10 +45,13 @@ describe('happy cases email vault', () => {
   })
 
   test('create an email vault', async () => {
-    const res = await emailVault.create(email, authKey)
-    expect(res.key).not.toBe('')
-    expect(res.type).toBe('recoveryKey')
-    expect(res).not.toHaveProperty('value')
+    const res = await emailVault.getEmailVaultInfo(email, authKey)
+    expect(res).toBeTruthy()
+    const resRecKey = res!.availableSecrets[Object.keys(res!.availableSecrets)[0]]
+    expect(resRecKey).toBeTruthy()
+    expect(resRecKey.key).toBeTruthy()
+    expect(resRecKey.type).toBe('recoveryKey')
+    expect(resRecKey).not.toHaveProperty('value')
   })
 
   test('get recoveryKey address', async () => {
@@ -72,18 +74,12 @@ describe('happy cases email vault', () => {
     expect(res.type).toBe('keyStore')
   })
 
-  test('add keyBackup', async () => {
-    const success = await emailVault.addKeyBackup(email, authKey, recoveryKey, keyBackup)
-    expect(success).toBeTruthy()
-  })
-
   test('getEmailVltInfo', async () => {
     const res = await emailVault.getInfo(email, authKey)
     expect(res).toHaveProperty('email', email)
-    expect(res.availableSecrets.length).toBe(3)
+    expect(res.availableSecrets.length).toBe(2)
     expect(res.availableSecrets[0].type).toBe('recoveryKey')
     expect(res.availableSecrets[1].type).toBe('keyStore')
-    expect(res.availableSecrets[2].type).toBe('keyBackup')
     res.availableSecrets.forEach((s) => {
       expect(s).toHaveProperty('key')
     })
@@ -113,15 +109,17 @@ describe('happy cases email vault', () => {
       }
     ]
     const storedOperations = await emailVault.operations(email, authKey, operations)
-    expect(storedOperations.length).toBe(2)
-    storedOperations.forEach((op, i) => {
+    expect(storedOperations).toBeTruthy()
+    expect(storedOperations?.length).toBe(2)
+    storedOperations?.forEach((op, i) => {
       expect(op).toHaveProperty('id')
       expect(op).toMatchObject(operations[i])
     })
-    const newOperations = storedOperations.map((op) => ({ ...op, value: 'new value' }))
+    const newOperations = storedOperations?.map((op) => ({ ...op, value: 'new value' }))!
     const res = await emailVault.operations(email, authKey, newOperations)
-    expect(res.length).toBe(2)
-    res.forEach((op: Operation, i) => {
+    expect(res).toBeTruthy()
+    expect(res!.length).toBe(2)
+    res!.forEach((op: Operation, i) => {
       expect(op).toHaveProperty('id')
       expect(op).toHaveProperty('value', 'new value')
       expect(op).toMatchObject(newOperations[i])
@@ -134,23 +132,18 @@ describe('err cases', () => {
   })
   describe('create', () => {
     test('invalid email', async () => {
-      await expect(emailVault.create('invalidEmail', authKey)).rejects.toThrow(
+      await expect(emailVault.getEmailVaultInfo('invalidEmail', authKey)).rejects.toThrow(
         `${errorPrefix} invalid email`
       )
     })
     test('no  key', async () => {
-      await expect(emailVault.create(email, authKey2)).rejects.toThrow(`${errorPrefix} invalid key`)
-    })
-    test('not confirmed', async () => {
-      await expect(emailVault.create(email2, authKey2)).rejects.toThrow(
+      await expect(emailVault.getEmailVaultInfo(email, authKey2)).rejects.toThrow(
         `${errorPrefix} invalid key`
       )
     })
-
-    test('already created', async () => {
-      await emailVault.create(email, authKey)
-      await expect(emailVault.create(email, authKey)).rejects.toThrow(
-        `${errorPrefix} email vault exists`
+    test('not confirmed', async () => {
+      await expect(emailVault.getEmailVaultInfo(email2, authKey2)).rejects.toThrow(
+        `${errorPrefix} invalid key`
       )
     })
   })
@@ -179,7 +172,7 @@ describe('err cases', () => {
   })
   describe('addKeyStoreSecret', () => {
     beforeEach(async () => {
-      await emailVault.create(email, authKey)
+      await emailVault.getEmailVaultInfo(email, authKey)
       const res = await emailVault.getRecoveryKeyAddress(email, authKey)
       recoveryKey = res.key
     })
@@ -208,7 +201,7 @@ describe('err cases', () => {
     test('no secret in body', async () => {
       await callRelayer(`/email-vault/confirmationKey/${email2}/${authKey2}/${authSecret2}`)
 
-      await emailVault.create(email2, authKey2)
+      await emailVault.getEmailVaultInfo(email2, authKey2)
       await expect(emailVault.addKeyStoreSecret(email2, authKey2, '', '')).rejects.toThrow(
         `${errorPrefix} secret is missing`
       )
@@ -216,7 +209,7 @@ describe('err cases', () => {
   })
   describe('retrieveKeyStoreSecret', () => {
     beforeEach(async () => {
-      await emailVault.create(email, authKey)
+      await emailVault.getEmailVaultInfo(email, authKey)
       const res = await emailVault.getRecoveryKeyAddress(email, authKey)
       recoveryKey = res.key
       await emailVault.addKeyStoreSecret(email, authKey, recoveryKey, keyStoreSecret)
@@ -246,95 +239,12 @@ describe('err cases', () => {
     test('no secret uploaded', async () => {
       await callRelayer(`/email-vault/confirmationKey/${email2}/${authKey2}/${authSecret2}`)
 
-      await emailVault.create(email2, authKey2)
+      await emailVault.getEmailVaultInfo(email2, authKey2)
       recoveryKey2 = (await emailVault.getRecoveryKeyAddress(email2, authKey2)).key
       // await emailVault.create(email2, authKey2)
       await expect(
         emailVault.retrieveKeyStoreSecret(email2, authKey2, recoveryKey2)
       ).rejects.toThrow(`${errorPrefix} Keystore for requested key not found.`)
-    })
-  })
-
-  describe('addKeyBackup', () => {
-    beforeEach(async () => {
-      await emailVault.create(email, authKey)
-      const res = await emailVault.getRecoveryKeyAddress(email, authKey)
-      recoveryKey = res.key
-    })
-    test('invalid email', async () => {
-      await expect(
-        emailVault.addKeyBackup('invalidEmail', authKey, recoveryKey, keyBackup)
-      ).rejects.toThrow(`${errorPrefix} invalid email`)
-    })
-    test('invalid  authKey', async () => {
-      await expect(
-        emailVault.addKeyBackup(email, authKey2, recoveryKey, keyBackup)
-      ).rejects.toThrow(`${errorPrefix} invalid key`)
-    })
-    test('invalid  recoveryKey', async () => {
-      await expect(emailVault.addKeyBackup(email, authKey, 'a', keyBackup)).rejects.toThrow(
-        `${errorPrefix} missing uid or not a valid address`
-      )
-    })
-    test('no backup in body', async () => {
-      await callRelayer(`/email-vault/confirmationKey/${email2}/${authKey2}/${authSecret2}`)
-      await emailVault.create(email2, authKey2)
-      recoveryKey2 = (await emailVault.getRecoveryKeyAddress(email2, authKey2)).key
-      await expect(emailVault.addKeyBackup(email2, authKey2, recoveryKey2, '')).rejects.toThrow(
-        `${errorPrefix} missing encryptedBackup`
-      )
-    })
-    test('no backup in body', async () => {
-      await callRelayer(`/email-vault/confirmationKey/${email2}/${authKey2}/${authSecret2}`)
-      await emailVault.create(email2, authKey2)
-      recoveryKey2 = (await emailVault.getRecoveryKeyAddress(email2, authKey2)).key
-      await expect(
-        emailVault.addKeyBackup(email2, authKey2, recoveryKey2, 'invalidBackup')
-      ).rejects.toThrow(`${errorPrefix} encryptedBackup is not valid`)
-    })
-  })
-
-  describe('retrieveKeyBackup', () => {
-    beforeEach(async () => {
-      await emailVault.create(email, authKey)
-      const res = await emailVault.getRecoveryKeyAddress(email, authKey)
-      recoveryKey = res.key
-      await emailVault.addKeyBackup(email, authKey, recoveryKey, keyBackup)
-    })
-    test('invalid email', async () => {
-      await expect(
-        emailVault.retrieveKeyBackup('invalidEmail', authKey, recoveryKey)
-      ).rejects.toThrow(`${errorPrefix} invalid email`)
-    })
-    test('invalid  authKey', async () => {
-      await expect(emailVault.retrieveKeyBackup(email, authKey2, recoveryKey)).rejects.toThrow(
-        `${errorPrefix} invalid key`
-      )
-    })
-    test('invalid  recoveryKey', async () => {
-      await expect(emailVault.retrieveKeyBackup(email, authKey, 'a')).rejects.toThrow(
-        `${errorPrefix} missing uid or not a valid address`
-      )
-    })
-    test('not confirmed', async () => {
-      await expect(emailVault.retrieveKeyBackup(email2, authKey2, recoveryKey)).rejects.toThrow(
-        `${errorPrefix} invalid key`
-      )
-    })
-    test('vault not created', async () => {
-      await callRelayer(`/email-vault/confirmationKey/${email2}/${authKey2}/${authSecret2}`)
-      await expect(emailVault.retrieveKeyBackup(email2, authKey2, recoveryKey)).rejects.toThrow(
-        `${errorPrefix} email vault does not exist`
-      )
-    })
-    test('no keyBakcup uploaded', async () => {
-      await callRelayer(`/email-vault/confirmationKey/${email2}/${authKey2}/${authSecret2}`)
-      await emailVault.create(email2, authKey2)
-      recoveryKey2 = (await emailVault.getRecoveryKeyAddress(email2, authKey2)).key
-      // await emailVault.create(email2, authKey2)
-      await expect(emailVault.retrieveKeyBackup(email2, authKey2, recoveryKey2)).rejects.toThrow(
-        `${errorPrefix} Backup for requested key not found.`
-      )
     })
   })
 })

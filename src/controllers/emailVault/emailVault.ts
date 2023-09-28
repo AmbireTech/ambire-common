@@ -110,57 +110,6 @@ export class EmailVaultController extends EventEmitter {
     return EmailVaultState.Ready
   }
 
-  async login(email: string) {
-    await this.initialLoadPromise
-    const key = (await this.#getMagicLinkKey(email))?.key
-    if (key) {
-      let existingEV = await this.#emailVault.getEmailVaultInfo(email, key)
-      if (!existingEV) {
-        await this.#emailVault.create(email, key)
-        existingEV = await this.#emailVault.getEmailVaultInfo(email, key)
-        this.emailVaultStates.email[email] = existingEV!
-      } else {
-        this.emailVaultStates.email[email] = existingEV!
-      }
-    } else {
-      this.#isWaitingEmailConfirmation = true
-      const newKey = await requestMagicLink(email, this.#relayerUrl, this.#fetch)
-      this.#magicLinkKeys[email] = { key: newKey.key, requestedAt: new Date(), confirmed: false }
-
-      const polling = new Polling([401, 404])
-
-      polling.onUpdate(async () => {
-        if (polling.state.isError && polling.state.error.output.res.status === 401) {
-          this.#isWaitingEmailConfirmation = true
-        } else if (polling.state.isError && polling.state.error.output.res.status === 404) {
-          // happy case, but has to create a vault
-          this.#magicLinkKeys[email].confirmed = true
-          await this.#emailVault.create(email, newKey.key)
-          await this.getEmailVaultInfo(email)
-        } else if (polling.state.isError) {
-          // @TODO add emit eroror
-          this.emailVaultStates.errors?.push(polling.state.error)
-        } else {
-          this.#isWaitingEmailConfirmation = false
-          // happy case
-          this.#magicLinkKeys[email].confirmed = true
-        }
-        this.storage.set(MAGIC_LINK_STORAGE_KEY, this.#magicLinkKeys)
-        this.#requestSessionKey(email)
-      })
-      const newEV: any = await polling.exec(
-        this.#emailVault.getEmailVaultInfo.bind(this.#emailVault),
-        [email, newKey.key],
-        15000,
-        1500
-      )
-      if (newEV && !newEV.isError) {
-        this.emailVaultStates.email[email] = newEV
-      }
-      this.emitUpdate()
-    }
-  }
-
   async #requestSessionKey(email: string) {
     // if magicLinkKey => get sessionKey
     // <<==>>

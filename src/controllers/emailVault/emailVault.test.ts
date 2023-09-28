@@ -63,7 +63,7 @@ describe('happy cases', () => {
   })
   test('login first time', async () => {
     const ev = new EmailVaultController(storage, fetch, relayerUrl, keystore)
-    await ev.login(email)
+    await ev.getEmailVaultInfo(email)
 
     expect(ev.emailVaultStates.email[email]).toMatchObject({
       email,
@@ -78,20 +78,12 @@ describe('happy cases', () => {
     const ev = new EmailVaultController(storage, fetch, relayerUrl, keystore)
     const keys = await requestMagicLink(email, relayerUrl, fetch)
     await fetch(`${relayerUrl}/email-vault/confirmationKey/${email}/${keys.key}/${keys.secret}`)
-    await evLib.create(email, keys.key)
+    // createing
+    await evLib.getEmailVaultInfo(email, keys.key)
     // not logged in
     expect(ev.emailVaultStates.email[email]).toBeUndefined()
-    await ev.login(email)
+    await ev.getEmailVaultInfo(email)
     // after successfuly logged in
-    expect(ev.emailVaultStates.email[email]).toMatchObject({
-      email,
-      recoveryKey: expect.stringContaining('0x'),
-      availableSecrets: expect.anything(),
-      availableAccounts: {},
-      operations: []
-    })
-    await ev.login(email)
-    // after second login attempt
     expect(ev.emailVaultStates.email[email]).toMatchObject({
       email,
       recoveryKey: expect.stringContaining('0x'),
@@ -102,7 +94,7 @@ describe('happy cases', () => {
   })
   test('upload keystore secret', async () => {
     const ev = new EmailVaultController(storage, fetch, relayerUrl, keystore)
-    await ev.login(email)
+    await ev.getEmailVaultInfo(email)
     expect(Object.keys(ev.emailVaultStates.email[email].availableSecrets).length).toBe(1)
     await ev.uploadKeyStoreSecret(email)
     const newSecrets = ev.emailVaultStates.email[email].availableSecrets
@@ -114,7 +106,7 @@ describe('happy cases', () => {
   test('getKeyStoreSecret', async () => {
     const ev = new EmailVaultController(storage, fetch, relayerUrl, keystore)
 
-    await ev.login(email)
+    await ev.getEmailVaultInfo(email)
     expect(Object.keys(ev.emailVaultStates.email[email].availableSecrets).length).toBe(1)
     await ev.uploadKeyStoreSecret(email)
     expect(Object.keys(ev.emailVaultStates.email[email].availableSecrets).length).toBe(2)
@@ -141,7 +133,7 @@ describe('happy cases', () => {
     ]
     // ev 1
     const ev = new EmailVaultController(storage, fetch, relayerUrl, keystore)
-    await ev.login(email)
+    await ev.getEmailVaultInfo(email)
     // used to add keystore uid
     await keystore.addSecret('smth', 'secret')
     await keystore.unlockWithSecret('smth', 'secret')
@@ -150,7 +142,7 @@ describe('happy cases', () => {
 
     // ev 2
     const ev2 = new EmailVaultController(storage2, fetch, relayerUrl, keystore2)
-    await ev2.login(email)
+    await ev2.getEmailVaultInfo(email)
     await keystore2.addSecret('smth2', 'secret2')
     await keystore2.unlockWithSecret('smth2', 'secret2')
     ev2.onUpdate(async () => {

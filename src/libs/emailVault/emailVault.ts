@@ -26,10 +26,6 @@ export class EmailVault {
     this.callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
   }
 
-  async create(email: String, authKey: String): Promise<EmailVaultSecret> {
-    return (await this.callRelayer(`/email-vault/create/${email}/${authKey}`)).data
-  }
-
   async getRecoveryKeyAddress(email: String, authKey: String): Promise<RecoveryKey> {
     return (await this.callRelayer(`/email-vault/getRecoveryKey/${email}/${authKey}`)).data
   }
