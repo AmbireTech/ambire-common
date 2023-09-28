@@ -270,26 +270,6 @@ export class SignAccountOpController extends EventEmitter {
     return this.accountOp?.gasFeePayment?.inToken || null
   }
 
-  get availableFeePaidBy() {
-    const account = this.#getAccount()
-    if (!account || !this.isInitialized) return []
-
-    // only the account can pay for the fee in EOA mode
-    if (!account.creation) return [this.accountOp!.accountAddr]
-
-    // only the account itself can pay in this case
-    const network = this.#networks!.find((n) => n.id === this.accountOp?.networkId)
-    if (network && network.erc4337?.enabled) {
-      return [this.accountOp!.accountAddr]
-    }
-
-    // in other modes: relayer, gas tank
-    // current account + all EOAs
-    return [this.accountOp!.accountAddr].concat(
-      this.#accounts!.filter((acc) => !acc.creation).map((acc) => acc.addr)
-    )
-  }
-
   get feePaidBy(): string | null {
     return this.accountOp?.gasFeePayment?.paidBy || null
   }
@@ -396,7 +376,6 @@ export class SignAccountOpController extends EventEmitter {
       isInitialized: this.isInitialized,
       hasSelectedAccountOp: this.hasSelectedAccountOp,
       readyToSign: this.readyToSign,
-      availableFeePaidBy: this.availableFeePaidBy,
       availableFeeOptions: this.availableFeeOptions,
       feeToken: this.feeToken,
       feePaidBy: this.feePaidBy,
