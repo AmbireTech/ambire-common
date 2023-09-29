@@ -296,13 +296,16 @@ contract AmbireAccount {
 	function validateUserOp(UserOperation calldata op, bytes32 userOpHash, uint256 missingAccountFunds)
 	external payable returns (uint256)
 	{
-		// enable running a normal execute operation through the entryPoint if
+		// enable running executeMultiple operation through the entryPoint if
 		// a paymaster sponsors it with a commitment one-time nonce.
 		// two use cases:
 		// 1) enable 4337 on a network by giving priviledges to the entryPoint
 		// 2) key recovery. If the key is lost, we cannot sign the userOp,
 		// so we have to go to `execute` to trigger the recovery logic
-		if (op.callData.length >= 4 && bytes4(op.callData[0:4]) == this.execute.selector) {
+		// Why executeMultiple but not execute?
+		// executeMultiple allows us to combine recovery + fee payment calls.
+		// The fee payment call will be with a signature from the new key
+		if (op.callData.length >= 4 && bytes4(op.callData[0:4]) == this.executeMultiple.selector) {
 			// Require a paymaster, otherwise this mode can be used by anyone to get the user to spend their deposit
 			require(op.signature.length == 0, 'validateUserOp: empty signature required in execute() mode');
 			require(op.paymasterAndData.length >= 20, 'validateUserOp: paymaster required in execute() mode');
