@@ -218,6 +218,7 @@ export class SignAccountOpController extends EventEmitter {
     this.#estimation = null
     this.selectedFeeSpeed = FeeSpeed.Fast
     this.status = null
+    this.humanReadable = []
     this.emitUpdate()
   }
 
