@@ -31,7 +31,7 @@ describe('Basic Ambire Paymaster tests', function () {
     const userOp = await buildUserOp(paymaster, {
       userOpNonce: 1000,
       signedNonce: 0, // we sign a 0 nonce
-      callData: ambireAccount.interface.encodeFunctionData('execute', [[], ethers.toBeHex(0, 1)])
+      callData: ambireAccount.interface.encodeFunctionData('executeMultiple', [[[[], ethers.toBeHex(0, 1)]]])
     })
     const result = await paymaster.validatePaymasterUserOp(
       userOp,
@@ -45,7 +45,7 @@ describe('Basic Ambire Paymaster tests', function () {
     const userOp = await buildUserOp(paymaster, {
       userOpNonce: 1000,
       signedNonce: 1, // we change it to 1 => it should fail; it should work only with 0
-      callData: ambireAccount.interface.encodeFunctionData('execute', [[], ethers.toBeHex(0, 1)])
+      callData: ambireAccount.interface.encodeFunctionData('executeMultiple', [[[[], ethers.toBeHex(0, 1)]]])
     })
     const result = await paymaster.validatePaymasterUserOp(
       userOp,

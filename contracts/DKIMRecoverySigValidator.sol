@@ -99,17 +99,17 @@ contract DKIMRecoverySigValidator is ExternalSigValidator {
 
   mapping(bytes32 => Timelock) public timelocks;
 
-  event RecoveryExecuted(address acc, bytes32 identifier);
+  event RecoveryExecuted(address indexed acc, bytes32 indexed identifier);
   event DKIMKeyAdded(
-    string domainName,
+    string indexed domainName,
     bytes modulus,
     bytes exponent,
     uint32 dateAdded,
     bool isBridge
   );
-  event DKIMKeyRemoved(bytes32 keyHash, uint32 dateRemoved, bool isBridge);
-  event TimelockSet(bytes32 identifier, uint32 time);
-  event TimelockExecuted(bytes32 identifier);
+  event DKIMKeyRemoved(bytes32 indexed keyHash, uint32 dateRemoved, bool isBridge);
+  event TimelockSet(bytes32 indexed identifier, uint32 time);
+  event TimelockExecuted(bytes32 indexed identifier);
 
   // keccak256(Key) => KeyInfo
   mapping(bytes32 => KeyInfo) public dkimKeys;
