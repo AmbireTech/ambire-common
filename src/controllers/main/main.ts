@@ -27,13 +27,14 @@ import { PortfolioController } from '../portfolio/portfolio'
 import { SignMessageController } from '../signMessage/signMessage'
 
 export class MainController extends EventEmitter {
-  // Private library instances
-  private storage: Storage
+  #storage: Storage
+
+  #fetch: Function
 
   #providers: { [key: string]: JsonRpcProvider } = {}
 
   // Holds the initial load promise, so that one can wait until it completes
-  private initialLoadPromise: Promise<void>
+  #initialLoadPromise: Promise<void>
 
   #callRelayer: Function
 
@@ -46,7 +47,6 @@ export class MainController extends EventEmitter {
   accountAdder: AccountAdderController
 
   // Subcontrollers
-  // this is not private cause you're supposed to directly access it
   portfolio: PortfolioController
 
   // Public sub-structures
@@ -111,14 +111,25 @@ export class MainController extends EventEmitter {
     pinned: string[]
   }) {
     super()
-    this.storage = storage
-    this.portfolio = new PortfolioController(storage, relayerUrl, pinned)
-    this.keystore = new KeystoreController(storage, keystoreSigners)
+    this.#storage = storage
+    this.#fetch = fetch
+
+    this.portfolio = new PortfolioController(this.#storage, relayerUrl, pinned)
+    this.keystore = new KeystoreController(this.#storage, keystoreSigners)
     this.settings = { networks }
-    this.initialLoadPromise = this.load()
-    this.emailVault = new EmailVaultController(storage, fetch, relayerUrl, this.keystore)
-    this.accountAdder = new AccountAdderController({ storage, relayerUrl, fetch })
-    this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
+    this.#initialLoadPromise = this.#load()
+    this.emailVault = new EmailVaultController(
+      this.#storage,
+      this.#fetch,
+      relayerUrl,
+      this.keystore
+    )
+    this.accountAdder = new AccountAdderController({
+      storage: this.#storage,
+      relayerUrl,
+      fetch: this.#fetch
+    })
+    this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch: this.#fetch })
     this.onResolveDappRequest = onResolveDappRequest
     this.onRejectDappRequest = onRejectDappRequest
     this.onUpdateDappSelectedAccount = onUpdateDappSelectedAccount
@@ -126,21 +137,26 @@ export class MainController extends EventEmitter {
     // @TODO
   }
 
-  private async load(): Promise<void> {
+  async #load(): Promise<void> {
     this.isReady = false
     this.emitUpdate()
     ;[this.accounts, this.selectedAccount] = await Promise.all([
-      this.storage.get('accounts', []),
-      this.storage.get('selectedAccount', null)
+      this.#storage.get('accounts', []),
+      this.#storage.get('selectedAccount', null)
     ])
     this.#providers = Object.fromEntries(
       this.settings.networks.map((network) => [network.id, new JsonRpcProvider(network.rpcUrl)])
     )
     // @TODO reload those
     // @TODO error handling here
-    this.accountStates = await this.getAccountsInfo(this.accounts)
-    this.signMessage = new SignMessageController(this.keystore, this.#providers)
-    this.activity = new ActivityController(this.storage, this.accountStates)
+    this.accountStates = await this.#getAccountsInfo(this.accounts)
+    this.signMessage = new SignMessageController(
+      this.keystore,
+      this.#providers,
+      this.#storage,
+      this.#fetch
+    )
+    this.activity = new ActivityController(this.#storage, this.accountStates)
 
     const addReadyToAddAccountsIfNeeded = () => {
       if (
@@ -157,7 +173,7 @@ export class MainController extends EventEmitter {
     this.emitUpdate()
   }
 
-  private async getAccountsInfo(accounts: Account[]): Promise<AccountStates> {
+  async #getAccountsInfo(accounts: Account[]): Promise<AccountStates> {
     const result = await Promise.all(
       this.settings.networks.map((network) =>
         getAccountState(this.#providers[network.id], network, accounts)
@@ -179,13 +195,13 @@ export class MainController extends EventEmitter {
   }
 
   async updateAccountStates() {
-    this.accountStates = await this.getAccountsInfo(this.accounts)
+    this.accountStates = await this.#getAccountsInfo(this.accounts)
     this.lastUpdate = new Date()
     this.emitUpdate()
   }
 
   async selectAccount(toAccountAddr: string) {
-    await this.initialLoadPromise
+    await this.#initialLoadPromise
 
     if (!this.accounts.find((acc) => acc.addr === toAccountAddr)) {
       // TODO: error handling, trying to switch to account that does not exist
@@ -193,7 +209,7 @@ export class MainController extends EventEmitter {
     }
 
     this.selectedAccount = toAccountAddr
-    await this.storage.set('selectedAccount', toAccountAddr)
+    await this.#storage.set('selectedAccount', toAccountAddr)
     this.updateSelectedAccount(toAccountAddr)
     this.onUpdateDappSelectedAccount(toAccountAddr)
     this.emitUpdate()
@@ -208,20 +224,21 @@ export class MainController extends EventEmitter {
     if (!newAccounts.length) return
 
     const nextAccounts = [...this.accounts, ...newAccounts]
-    await this.storage.set('accounts', nextAccounts)
+    await this.#storage.set('accounts', nextAccounts)
     this.accounts = nextAccounts
 
     this.emitUpdate()
   }
 
-  private async ensureAccountInfo(accountAddr: AccountId, networkId: NetworkId) {
-    await this.initialLoadPromise
+  async #ensureAccountInfo(accountAddr: AccountId, networkId: NetworkId) {
+    await this.#initialLoadPromise
     // Initial sanity check: does this account even exist?
     if (!this.accounts.find((x) => x.addr === accountAddr))
       throw new Error(`ensureAccountInfo: called for non-existant acc ${accountAddr}`)
     // If this still didn't work, re-load
     // @TODO: should we re-start the whole load or only specific things?
-    if (!this.accountStates[accountAddr]?.[networkId]) await (this.initialLoadPromise = this.load())
+    if (!this.accountStates[accountAddr]?.[networkId])
+      await (this.#initialLoadPromise = this.#load())
     // If this still didn't work, throw error: this prob means that we're calling for a non-existant acc/network
     if (!this.accountStates[accountAddr]?.[networkId])
       throw new Error(
@@ -229,10 +246,7 @@ export class MainController extends EventEmitter {
       )
   }
 
-  private makeAccountOpFromUserRequests(
-    accountAddr: AccountId,
-    networkId: NetworkId
-  ): AccountOp | null {
+  #makeAccountOpFromUserRequests(accountAddr: AccountId, networkId: NetworkId): AccountOp | null {
     const account = this.accounts.find((x) => x.addr === accountAddr)
     if (!account)
       throw new Error(
@@ -294,12 +308,12 @@ export class MainController extends EventEmitter {
       // although it could work like this: 1) await the promise, 2) check if exists 3) if not, re-trigger the promise;
       // 4) manage recalc on removeUserRequest too in order to handle EOAs
       // @TODO consider re-using this whole block in removeUserRequest
-      await this.ensureAccountInfo(accountAddr, networkId)
-      const accountOp = this.makeAccountOpFromUserRequests(accountAddr, networkId)
+      await this.#ensureAccountInfo(accountAddr, networkId)
+      const accountOp = this.#makeAccountOpFromUserRequests(accountAddr, networkId)
       if (accountOp) {
         this.accountOpsToBeSigned[accountAddr][networkId] = { accountOp, estimation: null }
         try {
-          await this.estimateAccountOp(accountOp)
+          await this.#estimateAccountOp(accountOp)
         } catch (e) {
           // @TODO: unified wrapper for controller errors
           console.error(e)
@@ -333,7 +347,7 @@ export class MainController extends EventEmitter {
     const { action, accountAddr, networkId } = req
     if (action.kind === 'call') {
       // @TODO ensure acc info, re-estimate
-      const accountOp = this.makeAccountOpFromUserRequests(accountAddr, networkId)
+      const accountOp = this.#makeAccountOpFromUserRequests(accountAddr, networkId)
       if (accountOp) {
         this.accountOpsToBeSigned[accountAddr][networkId] = { accountOp, estimation: null }
       } else {
@@ -355,12 +369,12 @@ export class MainController extends EventEmitter {
     const accountOp = this.accountOpsToBeSigned[accountAddr][networkId]?.accountOp
     // non fatal, no need to do anything
     if (!accountOp) return
-    await this.estimateAccountOp(accountOp)
+    await this.#estimateAccountOp(accountOp)
   }
 
   // @TODO: protect this from race conditions/simultanous executions
-  private async estimateAccountOp(accountOp: AccountOp) {
-    await this.initialLoadPromise
+  async #estimateAccountOp(accountOp: AccountOp) {
+    await this.#initialLoadPromise
     // new accountOps should have spoof signatures so that they can be easily simulated
     // this is not used by the Estimator, because it iterates through all associatedKeys and
     // it knows which ones are authenticated, and it can generate it's own spoofSig
