@@ -1,12 +1,15 @@
 import { ethers } from 'ethers'
-import { Key } from 'interfaces/keystore'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import { Account, AccountStates } from '../../interfaces/account'
+import { Key } from '../../interfaces/keystore'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
+import { Storage } from '../../interfaces/storage'
 import { AccountOp, accountOpSignableHash, GasFeePayment } from '../../libs/accountOp/accountOp'
 import { EstimateResult } from '../../libs/estimate/estimate'
 import { GasRecommendation } from '../../libs/gasPrice/gasPrice'
+import { callsHumanizer } from '../../libs/humanizer'
+import { IrCall } from '../../libs/humanizer/interfaces'
 import EventEmitter from '../eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
 import { PortfolioController } from '../portfolio/portfolio'
@@ -40,7 +43,11 @@ export enum FeeSpeed {
 export class SignAccountOpController extends EventEmitter {
   #keystore: KeystoreController
 
-  portfolio: PortfolioController
+  #portfolio: PortfolioController
+
+  #storage: Storage
+
+  #fetch: Function
 
   #accounts: Account[] | null = null
 
@@ -56,13 +63,22 @@ export class SignAccountOpController extends EventEmitter {
 
   selectedFeeSpeed: FeeSpeed = FeeSpeed.Fast
 
+  humanReadable: IrCall[] = []
+
   status: Status | null = null
 
-  constructor(keystore: KeystoreController, portfolio: PortfolioController) {
+  constructor(
+    keystore: KeystoreController,
+    portfolio: PortfolioController,
+    storage: Storage,
+    fetch: Function
+  ) {
     super()
 
     this.#keystore = keystore
-    this.portfolio = portfolio
+    this.#portfolio = portfolio
+    this.#storage = storage
+    this.#fetch = fetch
   }
 
   get isInitialized(): boolean {
@@ -115,6 +131,18 @@ export class SignAccountOpController extends EventEmitter {
       ) {
         this.accountOp = accountOp
       }
+      // TODO: add knownAddresses
+      callsHumanizer(
+        this.accountOp,
+        [],
+        this.#storage,
+        this.#fetch,
+        (humanizedCalls) => {
+          this.humanReadable = humanizedCalls
+          this.emitUpdate()
+        },
+        (err) => this.emitError(err)
+      )
     }
     const account = this.#getAccount()
 
