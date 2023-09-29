@@ -72,7 +72,7 @@ describe('ERC-4337 deploys the account via userOp and adds the entry point permi
       getDeployCalldata(bytecodeWithArgs)
     ]))
 
-    const callData = proxy.interface.encodeFunctionData('execute', [[txn], s])
+    const callData = proxy.interface.encodeFunctionData('executeMultiple', [[[[txn], s]]])
     const userOperation = await buildUserOp(paymaster, {
       sender: senderAddress,
       signedNonce: ethers.toBeHex(0, 1),
