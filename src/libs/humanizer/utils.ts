@@ -1,8 +1,9 @@
 import dotenv from 'dotenv'
 import { ethers } from 'ethers'
-import { HumanizerFragment, HumanizerSettings, HumanizerVisualization } from './interfaces'
-import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
+
 import { networks } from '../../consts/networks'
+import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
+import { HumanizerFragment, HumanizerSettings, HumanizerVisualization } from './interfaces'
 
 dotenv.config()
 const COINGECKO_API_KEY = process.env.COINGECKO_API_KEY
@@ -50,7 +51,12 @@ export function getRecipientText(from: string, recipient: string): HumanizerVisu
 
 export function getDeadlineText(deadlineSecs: bigint): HumanizerVisualization {
   const minute = 60000
-  const deadline = Number(deadlineSecs * 1000n)
+  let deadline
+  if (typeof deadlineSecs === 'bigint') {
+    deadline = Number(deadlineSecs * 1000n)
+  } else {
+    deadline = Number(BigInt(deadlineSecs) * 1000n)
+  }
   const diff = deadline - Date.now()
   if (diff < 0 && diff > -minute * 2) return getLabel('expired just now')
   if (diff < 0) return getLabel('already expired')

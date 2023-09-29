@@ -1,16 +1,17 @@
 import { ethers } from 'ethers'
+import { Message, TypedMessage } from 'interfaces/userRequest'
+import { HumanizerVisualization, IrCall, IrMessage } from 'libs/humanizer/interfaces'
 import fetch from 'node-fetch'
+
 import { describe, expect, jest, test } from '@jest/globals'
 
-import { HumanizerVisualization, IrCall, IrMessage } from 'libs/humanizer/interfaces'
-import { Message, TypedMessage } from 'interfaces/userRequest'
-import { Key } from 'libs/keystore/keystore'
-import { ErrorRef } from 'controllers/eventEmitter'
+import { produceMemoryStore } from '../../../test/helpers'
 import humanizerJSON from '../../consts/humanizerInfo.json'
+import { ErrorRef } from '../../controllers/eventEmitter'
+import { Account } from '../../interfaces/account'
+import { Key } from '../../interfaces/keystore'
 import { Storage } from '../../interfaces/storage'
 import { AccountOp } from '../accountOp/accountOp'
-import { produceMemoryStore } from '../../../test/helpers'
-import { Account } from '../../interfaces/account'
 import { callsHumanizer, messageHumanizer } from '.'
 
 const HUMANIZER_META_KEY = 'HumanizerMeta'
@@ -25,6 +26,7 @@ const accountOp: AccountOp = {
   networkId: 'ethereum',
   // this may not be defined, in case the user has not picked a key yet
   signingKeyAddr: null,
+  signingKeyType: 'internal',
   // this may not be set in case we haven't set it yet
   nonce: null,
   calls: [],
