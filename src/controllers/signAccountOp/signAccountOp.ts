@@ -211,13 +211,13 @@ export class SignAccountOpController extends EventEmitter {
     // @ts-ignore
     // It's always in wei
     const gasPrice = result.gasPrice || result!.baseFeePerGas + result!.maxPriorityFeePerGas
-    const gasUsed = this.#estimation!.gasUsed + this.#estimation!.addedNative
+    const gasUsed = this.#estimation!.gasUsed
 
     // EOA
     if (!account || !account?.creation) {
       const simulatedGasLimit = gasUsed
       // @TODO - portfolio for gasPrice, conversion/rates through ether
-      const amount = simulatedGasLimit * gasPrice
+      const amount = simulatedGasLimit * gasPrice + this.#estimation!.addedNative
 
       return {
         paidBy: this.accountOp!.accountAddr,
@@ -234,7 +234,7 @@ export class SignAccountOpController extends EventEmitter {
       // @TODO - add comment why we add 21k gas here
       const simulatedGasLimit = gasUsed + 21000n
       // @TODO - portfolio for gasPrice, conversion/rates through ether
-      const amount = simulatedGasLimit * gasPrice
+      const amount = simulatedGasLimit * gasPrice + this.#estimation!.addedNative
 
       return {
         paidBy,
@@ -255,7 +255,7 @@ export class SignAccountOpController extends EventEmitter {
     const simulatedGasLimit = gasUsed + feeTokenGasUsed
 
     // @TODO - portfolio for gasPrice, conversion/rates through ether
-    const amount = simulatedGasLimit * gasPrice
+    const amount = simulatedGasLimit * gasPrice + this.#estimation!.addedNative
     return {
       paidBy,
       isERC4337: false, // TODO: based on network settings. We should add it to gasFeePayment interface.
@@ -315,7 +315,8 @@ export class SignAccountOpController extends EventEmitter {
     if (!this.readyToSign) return this.#setSigningError('not ready to sign')
 
     const account = this.#getAccount()
-    const signer = await this.#keystore.getSigner(this.accountOp.signingKeyAddr)
+    // @TODO - we should get the signer `keyType`
+    const signer = await this.#keystore.getSigner(this.accountOp.signingKeyAddr, 'internal')
     if (!account) return this.#setSigningError('non-existent account')
     if (!signer) return this.#setSigningError('no available signer')
 
@@ -337,7 +338,8 @@ export class SignAccountOpController extends EventEmitter {
           value,
           data,
           gasLimit: gasFeePayment.simulatedGasLimit,
-          gasPrice: gasFeePayment.amount / gasFeePayment.simulatedGasLimit
+          gasPrice:
+            (gasFeePayment.amount - this.#estimation!.addedNative) / gasFeePayment.simulatedGasLimit
         })
       } else if (this.accountOp.gasFeePayment.paidBy !== account.addr) {
         // Smart account, but EOA pays the fee
@@ -352,7 +354,8 @@ export class SignAccountOpController extends EventEmitter {
             await signer.signMessage(ethers.hexlify(accountOpSignableHash(this.accountOp)))
           ]),
           gasLimit: gasFeePayment.simulatedGasLimit,
-          gasPrice: gasFeePayment.amount / gasFeePayment.simulatedGasLimit
+          gasPrice:
+            (gasFeePayment.amount - this.#estimation!.addedNative) / gasFeePayment.simulatedGasLimit
         })
       } else {
         // Relayer
