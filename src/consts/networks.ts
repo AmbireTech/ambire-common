@@ -9,6 +9,7 @@ const networks: NetworkDescriptor[] = [
     rpcUrl: 'https://rpc.ankr.com/eth',
     rpcNoStateOverride: false,
     chainId: 1n,
+    explorerUrl: 'https://etherscan.io',
     erc4337: null
   },
   {
@@ -18,6 +19,7 @@ const networks: NetworkDescriptor[] = [
     rpcUrl: 'https://rpc.ankr.com/polygon',
     rpcNoStateOverride: false,
     chainId: 137n,
+    explorerUrl: 'https://polygonscan.com',
     erc4337: {
       // TODO: temp disabled (only while testing)
       enabled: false,
@@ -32,6 +34,7 @@ const networks: NetworkDescriptor[] = [
     rpcUrl: 'https://rpc.ankr.com/optimism',
     rpcNoStateOverride: false,
     chainId: 10n,
+    explorerUrl: 'https://optimistic.etherscan.io',
     erc4337: {
       enabled: true,
       entryPointAddr: ERC_4337_ENTRYPOINT,
