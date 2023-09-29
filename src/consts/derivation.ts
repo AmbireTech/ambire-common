@@ -8,7 +8,7 @@ export const TREZOR_HD_PATH = BIP44_HD_PATH
 export const TREZOR_PATH_BASE = 'm'
 export const LATTICE_STANDARD_HD_PATH = "m/44'/60'/0'/0/x"
 
-interface HDPath {
+export interface HDPath {
   label: string
   path:
     | typeof BIP44_HD_PATH
