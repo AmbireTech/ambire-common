@@ -10,7 +10,7 @@ import {
   Operation
 } from '../../interfaces/emailVault'
 import { Storage } from '../../interfaces/storage'
-import { Keystore } from '../../libs/keystore/keystore'
+import { KeystoreController } from '../keystore/keystore'
 import EventEmitter from '../../libs/eventEmitter/eventEmitter'
 import { Polling } from '../../libs/polling/polling'
 
@@ -63,7 +63,7 @@ export class EmailVaultController extends EventEmitter {
 
   #relayerUrl: string
 
-  #keyStore: Keystore
+  #keyStore: KeystoreController
 
   isReady: boolean = false
 
@@ -77,7 +77,7 @@ export class EmailVaultController extends EventEmitter {
     email: {}
   }
 
-  constructor(storage: Storage, fetch: Function, relayerUrl: string, keyStore: Keystore) {
+  constructor(storage: Storage, fetch: Function, relayerUrl: string, keyStore: KeystoreController) {
     super()
     this.#fetch = fetch
     this.#relayerUrl = relayerUrl
@@ -233,7 +233,7 @@ export class EmailVaultController extends EventEmitter {
     if (magicKey?.key) {
       const newSecret = crypto.randomBytes(32).toString('base64url')
 
-      await this.#keyStore.addSecret(RECOVERY_SECRET_ID, newSecret)
+      await this.#keyStore.addSecret(RECOVERY_SECRET_ID, newSecret, '', false)
       const keyStoreUid = await this.#keyStore.getKeyStoreUid()
       result = await this.#emailVault.addKeyStoreSecret(email, magicKey.key, keyStoreUid, newSecret)
     } else {

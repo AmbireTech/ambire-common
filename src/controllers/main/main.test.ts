@@ -74,7 +74,12 @@ describe('Main Controller ', () => {
       pinned: []
     })
     // eslint-disable-next-line no-promise-executor-return
-    await new Promise((resolve) => controller.onUpdate(() => resolve(null)))
+    await new Promise((resolve) => {
+      const unsubscribe = controller.onUpdate(() => {
+        unsubscribe()
+        resolve(null)
+      })
+    })
     // console.dir(controller.accountStates, { depth: null })
     // @TODO
     // expect(states).to
@@ -181,7 +186,7 @@ describe('Main Controller ', () => {
 
     let emitCounter = 0
     await new Promise((resolve) => {
-      controller.onUpdate(() => {
+      const unsubscribe = controller.onUpdate(() => {
         emitCounter++
 
         if (emitCounter === 1 && controller.isReady) {
@@ -194,6 +199,7 @@ describe('Main Controller ', () => {
 
         if (emitCounter === 2) {
           expect(controller.accounts).toContainEqual(accountPendingCreation)
+          unsubscribe()
           resolve(true)
         }
       })

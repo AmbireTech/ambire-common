@@ -1,19 +1,19 @@
 /* eslint-disable no-underscore-dangle */
 import { JsonRpcProvider } from 'ethers'
-import { EmailVaultController } from '../emailVault/emailVault'
-import { Storage } from '../../interfaces/storage'
-import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
+
+import { KeystoreSignerType } from 'interfaces/keystore'
+import { networks } from '../../consts/networks'
 import { Account, AccountId, AccountStates } from '../../interfaces/account'
+import { Banner } from '../../interfaces/banner'
+import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
+import { Storage } from '../../interfaces/storage'
 import { AccountOp, Call as AccountOpCall } from '../../libs/accountOp/accountOp'
 import { PortfolioController } from '../portfolio/portfolio'
-import { Keystore, Key, KeystoreSignerType } from '../../libs/keystore/keystore'
-import { networks } from '../../consts/networks'
 import EventEmitter from '../../libs/eventEmitter/eventEmitter'
 import { getAccountState } from '../../libs/accountState/accountState'
 import { Message, UserRequest } from '../../interfaces/userRequest'
 import { estimate, EstimateResult } from '../../libs/estimate/estimate'
 
-import { Banner } from '../../interfaces/banner'
 import {
   getAccountOpBannersForEOA,
   getAccountOpBannersForSmartAccount,
@@ -25,12 +25,11 @@ import { AccountAdderController } from '../accountAdder/accountAdder'
 import { ActivityController } from '../activity/activity'
 import { KeystoreController } from '../keystore/keystore'
 import { SignMessageController } from '../signMessage/signMessage'
+import { EmailVaultController } from '../emailVault/emailVault'
 
 export class MainController extends EventEmitter {
   // Private library instances
   private storage: Storage
-
-  #keystoreLib: Keystore
 
   #providers: { [key: string]: JsonRpcProvider } = {}
 
@@ -63,8 +62,6 @@ export class MainController extends EventEmitter {
   accounts: Account[] = []
 
   selectedAccount: string | null = null
-
-  keys: Key[] = []
 
   // @TODO: structure
   settings: { networks: NetworkDescriptor[] }
@@ -117,11 +114,10 @@ export class MainController extends EventEmitter {
     super()
     this.storage = storage
     this.portfolio = new PortfolioController(storage, relayerUrl, pinned)
-    this.#keystoreLib = new Keystore(storage, keystoreSigners)
-    this.keystore = new KeystoreController(this.#keystoreLib)
+    this.keystore = new KeystoreController(storage, keystoreSigners)
     this.settings = { networks }
     this.initialLoadPromise = this.load()
-    this.emailVault = new EmailVaultController(storage, fetch, relayerUrl, this.#keystoreLib)
+    this.emailVault = new EmailVaultController(storage, fetch, relayerUrl, this.keystore)
     this.accountAdder = new AccountAdderController({ storage, relayerUrl, fetch })
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
     this.onResolveDappRequest = onResolveDappRequest
@@ -134,8 +130,7 @@ export class MainController extends EventEmitter {
   private async load(): Promise<void> {
     this.isReady = false
     this.emitUpdate()
-    ;[this.keys, this.accounts, this.selectedAccount] = await Promise.all([
-      this.#keystoreLib.getKeys(),
+    ;[this.accounts, this.selectedAccount] = await Promise.all([
       this.storage.get('accounts', []),
       this.storage.get('selectedAccount', null)
     ])
@@ -145,11 +140,8 @@ export class MainController extends EventEmitter {
     // @TODO reload those
     // @TODO error handling here
     this.accountStates = await this.getAccountsInfo(this.accounts)
-    this.signMessage = new SignMessageController(this.#keystoreLib, this.#providers)
+    this.signMessage = new SignMessageController(this.keystore, this.#providers)
     this.activity = new ActivityController(this.storage, this.accountStates)
-
-    const isKeystoreReady = await this.#keystoreLib.isReadyToStoreKeys()
-    this.keystore.setIsReadyToStoreKeys(isKeystoreReady)
 
     const addReadyToAddAccountsIfNeeded = () => {
       if (

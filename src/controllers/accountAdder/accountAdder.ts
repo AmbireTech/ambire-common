@@ -378,8 +378,12 @@ export class AccountAdderController extends EventEmitter {
     this.readyToAddAccounts = [...accounts]
     this.addAccountsStatus = 'SUCCESS'
     this.emitUpdate()
-    this.addAccountsStatus = 'INITIAL'
-    this.emitUpdate()
+
+    // reset the addAccountsStatus in the next tick to ensure the FE receives the 'SUCCESS' state
+    setTimeout(() => {
+      this.addAccountsStatus = 'INITIAL'
+      this.emitUpdate()
+    }, 1)
   }
 
   async #calculateAccounts({

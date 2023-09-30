@@ -20,6 +20,8 @@ async function walk(dir) {
   return files.filter((file) => file.slice(-4) === '.sol')
 }
 
+let done = false
+
 async function compileFolder(contractsDir) {
   const files = await walk(contractsDir)
 
@@ -48,6 +50,7 @@ async function compileFolder(contractsDir) {
 
 async function run() {
   await Promise.all(contractsDirs.map((contractsDir) => compileFolder(contractsDir)).flat())
+  if (!done) console.log(`Contract ${process.argv[2]} not found.`)
 }
 
 run()

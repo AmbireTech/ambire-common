@@ -1,10 +1,9 @@
 /* eslint-disable new-cap */
 import { TransactionRequest, Wallet } from 'ethers'
 
-import { KeystoreSigner as KeystoreSignerInterface } from '../../interfaces/keystore'
+import { Key, KeystoreSigner as KeystoreSignerInterface } from '../../interfaces/keystore'
 import { TypedMessage } from '../../interfaces/userRequest'
 import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
-import { Key } from '../keystore/keystore'
 
 export class KeystoreSigner implements KeystoreSignerInterface {
   key: Key
