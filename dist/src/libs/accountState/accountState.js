@@ -4,6 +4,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.getAccountState = void 0;
+<<<<<<< HEAD
 const deployless_1 = require("../deployless/deployless");
 const account_1 = require("../account/account");
 const AmbireAccountState_json_1 = __importDefault(require("../../../contracts/compiled/AmbireAccountState.json"));
@@ -14,10 +15,35 @@ async function getAccountState(provider, network, accounts, blockTag = 'latest')
         account.associatedKeys,
         ...(0, account_1.getAccountDeployParams)(account)
     ]);
+=======
+const AmbireAccountState_json_1 = __importDefault(require("../../../contracts/compiled/AmbireAccountState.json"));
+const account_1 = require("../account/account");
+const deployless_1 = require("../deployless/deployless");
+const deploy_1 = require("../../consts/deploy");
+async function getAccountState(provider, network, accounts, blockTag = 'latest') {
+    const deploylessAccountState = (0, deployless_1.fromDescriptor)(provider, AmbireAccountState_json_1.default, !network.rpcNoStateOverride);
+    const args = accounts.map((account) => {
+        const associatedKeys = network?.erc4337?.enabled &&
+            !account.associatedKeys.includes(network?.erc4337?.entryPointAddr)
+            ? [...account.associatedKeys, network?.erc4337?.entryPointAddr]
+            : account.associatedKeys;
+        return [
+            account.addr,
+            associatedKeys,
+            ...(account.creation == null
+                ? ['0x0000000000000000000000000000000000000000', '0x']
+                : (0, account_1.getAccountDeployParams)(account)),
+            network?.erc4337?.enabled
+                ? network?.erc4337?.entryPointAddr
+                : '0x0000000000000000000000000000000000000000'
+        ];
+    });
+>>>>>>> v2
     const [accountStateResult] = await deploylessAccountState.call('getAccountsState', [args], {
         blockTag
     });
     const result = accountStateResult.map((accResult, index) => {
+<<<<<<< HEAD
         const associatedKeys = accResult.associatedKeyPriviliges.map((privilege, keyIndex) => {
             return [accounts[index].associatedKeys[keyIndex], privilege];
         });
@@ -32,6 +58,29 @@ async function getAccountState(provider, network, accounts, blockTag = 'latest')
             isEOA: accResult.isEOA,
             deployError: accounts[index].associatedKeys.length > 0 && accResult.associatedKeyPriviliges.length === 0
         };
+=======
+        const associatedKeys = accResult.associatedKeyPrivileges.map((privilege, keyIndex) => {
+            return [args[index][1][keyIndex], privilege];
+        });
+        const res = {
+            accountAddr: accounts[index].addr,
+            nonce: network?.erc4337?.enabled && accResult.erc4337Nonce < deploy_1.MAX_UINT256
+                ? accResult.erc4337Nonce
+                : accResult.nonce,
+            isDeployed: accResult.isDeployed,
+            associatedKeys: Object.fromEntries(associatedKeys),
+            isV2: accResult.isV2,
+            balance: accResult.balance,
+            isEOA: accResult.isEOA,
+            isErc4337Enabled: !!(network?.erc4337?.enabled &&
+                accResult.erc4337Nonce < deploy_1.MAX_UINT256 &&
+                associatedKeys.find((associatedKey) => associatedKey[0] === network?.erc4337?.entryPointAddr &&
+                    (associatedKey[1] === network.erc4337?.entryPointMarker ||
+                        associatedKey[1] === `0x${'0'.repeat(63)}1`))),
+            deployError: accounts[index].associatedKeys.length > 0 && accResult.associatedKeyPrivileges.length === 0
+        };
+        return res;
+>>>>>>> v2
     });
     return result;
 }

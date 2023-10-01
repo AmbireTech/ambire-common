@@ -1,10 +1,11 @@
 /* eslint-disable no-await-in-loop */
 import { ErrorRef } from 'controllers/eventEmitter'
+
 import { Account } from '../../interfaces/account'
+import { Key } from '../../interfaces/keystore'
 import { Storage } from '../../interfaces/storage'
 import { Message } from '../../interfaces/userRequest'
 import { AccountOp } from '../accountOp/accountOp'
-import { Key } from '../keystore/keystore'
 import { humanizeCalls, humanizePlainTextMessage, humanizeTypedMessage } from './humanizerFuncs'
 import {
   HumanizerCallModule,

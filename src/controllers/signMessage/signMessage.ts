@@ -4,7 +4,10 @@ import { networks } from '../../consts/networks'
 import { Account, AccountStates } from '../../interfaces/account'
 import { Key } from '../../interfaces/keystore'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
+import { Storage } from '../../interfaces/storage'
 import { Message } from '../../interfaces/userRequest'
+import { messageHumanizer } from '../../libs/humanizer'
+import { IrMessage } from '../../libs/humanizer/interfaces'
 import { verifyMessage } from '../../libs/signMessage/signMessage'
 import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
 <<<<<<< HEAD
@@ -18,6 +21,10 @@ export class SignMessageController extends EventEmitter {
   #keystore: KeystoreController
 
   #providers: { [key: string]: JsonRpcProvider }
+
+  #storage: Storage
+
+  #fetch: Function
 
   #accounts: Account[] | null = null
 
@@ -35,13 +42,22 @@ export class SignMessageController extends EventEmitter {
 
   signingKeyType: Key['type'] | null = null
 
+  humanReadable: IrMessage | null = null
+
   signedMessage: Message | null = null
 
-  constructor(keystore: KeystoreController, providers: { [key: string]: JsonRpcProvider }) {
+  constructor(
+    keystore: KeystoreController,
+    providers: { [key: string]: JsonRpcProvider },
+    storage: Storage,
+    fetch: Function
+  ) {
     super()
 
     this.#keystore = keystore
     this.#providers = providers
+    this.#storage = storage
+    this.#fetch = fetch
   }
 
   init({
@@ -57,6 +73,19 @@ export class SignMessageController extends EventEmitter {
       this.messageToSign = messageToSign
       this.#accounts = accounts
       this.#accountStates = accountStates
+
+      // TODO: add knownAddresses
+      messageHumanizer(
+        messageToSign,
+        [],
+        this.#storage,
+        this.#fetch,
+        (humanizedMessage: IrMessage) => {
+          this.humanReadable = humanizedMessage
+          this.emitUpdate()
+        },
+        (err) => this.emitError(err)
+      )
 
       this.isInitialized = true
       this.emitUpdate()
@@ -79,6 +108,7 @@ export class SignMessageController extends EventEmitter {
     this.#accounts = null
     this.signedMessage = null
     this.signingKeyAddr = null
+    this.humanReadable = null
     this.status = 'INITIAL'
     this.emitUpdate()
   }
