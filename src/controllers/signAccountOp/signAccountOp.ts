@@ -1,5 +1,4 @@
 import { ethers } from 'ethers'
-
 import { Account, AccountStates } from '../../interfaces/account'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { AccountOp, accountOpSignableHash, GasFeePayment } from '../../libs/accountOp/accountOp'
@@ -9,6 +8,7 @@ import { Keystore } from '../../libs/keystore/keystore'
 import EventEmitter from '../eventEmitter'
 import { PortfolioController } from '../portfolio/portfolio'
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
+import { Price, TokenResult } from '../../libs/portfolio'
 
 export enum SigningStatus {
   UnableToSign = 'unable-to-sign',
@@ -199,6 +199,43 @@ export class SignAccountOpController extends EventEmitter {
     return account
   }
 
+  #getPortfolioToken(addr: string): TokenResult | undefined {
+    return this.portfolio.latest?.[this.accountOp!.accountAddr]?.[
+      this.accountOp!.networkId
+    ]?.result?.tokens.find((token) => token.address === addr)
+  }
+
+  /**
+   * Obtain the native token ratio in relation to a fee token.
+   *
+   * By knowing the USD value of the tokens in the portfolio,
+   * we can calculate the ratio between a native token and a fee token.
+   *
+   * For example, 1 ETH = 8 BNB (ratio: 8).
+   * We used to return decimals as well because the ratio may result in a decimal number.
+   * However, once we convert it to a BigInt, we will lose precision.
+   *
+   * We require the ratio to be in a BigInt format since all the application values,
+   * such as amount, gasLimit, etc., are also represented as BigInt numbers.
+   */
+  #getNativeToFeeTokenRatio(feeToken: TokenResult): { ratio: bigint; decimals: number } {
+    const countDecimals = (value: number) => {
+      if (value % 1 !== 0) return value.toString().split('.')[1].length
+
+      return 0
+    }
+
+    const native = this.#getPortfolioToken('0x0000000000000000000000000000000000000000')
+    const isUsd = (price: Price) => price.baseCurrency === 'usd'
+    const ratio = native!.priceIn.find(isUsd)!.price / feeToken!.priceIn.find(isUsd)!.price
+    const decimals = countDecimals(ratio)
+
+    return {
+      ratio: BigInt(ratio * 10 ** decimals),
+      decimals
+    }
+  }
+
   #getGasFeePayment(
     feeTokenAddr: string,
     feeSpeed: FeeSpeed,
@@ -216,7 +253,6 @@ export class SignAccountOpController extends EventEmitter {
     // EOA
     if (!account || !account?.creation) {
       const simulatedGasLimit = gasUsed
-      // @TODO - portfolio for gasPrice, conversion/rates through ether
       const amount = simulatedGasLimit * gasPrice + this.#estimation!.addedNative
 
       return {
@@ -233,7 +269,6 @@ export class SignAccountOpController extends EventEmitter {
     if (paidBy !== this.accountOp!.accountAddr) {
       // @TODO - add comment why we add 21k gas here
       const simulatedGasLimit = gasUsed + 21000n
-      // @TODO - portfolio for gasPrice, conversion/rates through ether
       const amount = simulatedGasLimit * gasPrice + this.#estimation!.addedNative
 
       return {
@@ -248,18 +283,22 @@ export class SignAccountOpController extends EventEmitter {
 
     // Relayer.
     // relayer or 4337, we need to add feeTokenOutome.gasUsed
-    // @TODO - add comment why here we use `feePaymentOptions`, but we don't use it in EOA
+    const feeToken = this.#getPortfolioToken(feeTokenAddr)
+    const nativeRatio = this.#getNativeToFeeTokenRatio(feeToken!)
     const feeTokenGasUsed = this.#estimation!.feePaymentOptions.find(
       (option) => option.address === feeTokenAddr
     )!.gasUsed!
+    // @TODO - add comment why here we use `feePaymentOptions`, but we don't use it in EOA
     const simulatedGasLimit = gasUsed + feeTokenGasUsed
 
-    // @TODO - portfolio for gasPrice, conversion/rates through ether
-    const amount = simulatedGasLimit * gasPrice + this.#estimation!.addedNative
+    const amount =
+      ((simulatedGasLimit * gasPrice + this.#estimation!.addedNative) * nativeRatio.ratio) /
+      BigInt(10 ** (18 - feeToken!.decimals + nativeRatio.decimals))
+
     return {
       paidBy,
       isERC4337: false, // TODO: based on network settings. We should add it to gasFeePayment interface.
-      isGasTank: false, // TODO: based on token network (could be gas tank network). We should add it to gasFeePayment interface.
+      isGasTank: feeToken?.networkId === 'gasTank',
       inToken: feeTokenAddr,
       amount,
       simulatedGasLimit

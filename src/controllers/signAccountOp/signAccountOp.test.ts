@@ -46,7 +46,7 @@ class InternalSigner {
   }
 
   signRawTransaction() {
-    return Promise.resolve('')
+    return Promise.resolve('0x010101')
   }
 
   signTypedData() {
@@ -115,27 +115,28 @@ const createAccountOp = (signingKeyAddr: string) => {
 
 describe('SignAccountOp Controller ', () => {
   test('it sets GasFeePayment and signs the AccountOp', async () => {
-    const privKey = '0x574f261b776b26b1ad75a991173d0e8ca2ca1d481bd7822b2b58b2ef8a969f12'
+    const relayerUrl = 'https://staging-relayer.ambire.com'
+    const privateKey = '0x574f261b776b26b1ad75a991173d0e8ca2ca1d481bd7822b2b58b2ef8a969f12'
     const keyPublicAddress = '0x9188fdd757Df66B4F693D624Ed6A13a15Cf717D7'
     const pass = 'testpass'
 
     const keystore = new Keystore(produceMemoryStore(), { internal: InternalSigner })
     await keystore.addSecret('passphrase', pass)
     await keystore.unlockWithSecret('passphrase', pass)
-    await keystore.addKey(privKey, keyPublicAddress)
+    await keystore.addKeys([{ privateKey, label: 'internal' }])
 
     const ethereum = networks.find((x) => x.id === 'ethereum')!
     const provider = new JsonRpcProvider(ethereum!.rpcUrl)
-    // @TODO - for now, we are passing GasPrice outside of the controller.
-    //   Are we keeping it in that way, or we should initialize it in SignAccountOp controller internally?
     const prices = await getGasPriceRecommendations(provider)
 
     const { op, account, nativeToCheck, feeTokens } = createAccountOp(keyPublicAddress)
-    // @TODO - estimation should be pass down from main controller to SignAccountOp controller.
     const estimation = await estimate(provider, ethereum, account, op, nativeToCheck, feeTokens)
     const accounts = [account]
     const accountStates = await getAccountsInfo(accounts)
-    const portfolio = new PortfolioController(produceMemoryStore())
+    const portfolio = new PortfolioController(produceMemoryStore(), relayerUrl, [])
+
+    await portfolio.updateSelectedAccount(accounts, networks, account.addr)
+    // await portfolio.getAdditionalPortfolio(account.addr)
     const controller = new SignAccountOpController(keystore, portfolio)
     controller.status = { type: SigningStatus.ReadyToSign }
 
@@ -149,10 +150,13 @@ describe('SignAccountOp Controller ', () => {
       accountOp: op,
       gasPrices: prices,
       estimation,
-      feeTokenAddr: '0x0000000000000000000000000000000000000000'
+      feeTokenAddr: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48', // USDC
+      paidBy: account.addr
     })
 
     await controller.sign()
+
+    console.log(controller)
 
     expect(controller.accountOp?.gasFeePayment?.amount).toBeGreaterThan(21000n)
     expect(controller.accountOp?.signature).toEqual('0x010101')
