@@ -140,6 +140,9 @@ describe('SignAccountOp Controller ', () => {
       'https://staging-relayer.ambire.com',
       []
     )
+    await portfolio.updateSelectedAccount(accounts, networks, account.addr)
+    // await portfolio.getAdditionalPortfolio(account.addr)
+
     const controller = new SignAccountOpController(keystore, portfolio, produceMemoryStore(), fetch)
     controller.status = { type: SigningStatus.ReadyToSign }
 

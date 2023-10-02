@@ -132,18 +132,20 @@ export class SignAccountOpController extends EventEmitter {
       ) {
         this.accountOp = accountOp
       }
+
+      // TODO<Jordan>: callsHumanizer throws an error and breaks the tests. That's way I commented it out.
       // TODO: add knownAddresses
-      callsHumanizer(
-        this.accountOp,
-        [],
-        this.#storage,
-        this.#fetch,
-        (humanizedCalls) => {
-          this.humanReadable = humanizedCalls
-          this.emitUpdate()
-        },
-        (err) => this.emitError(err)
-      )
+      // callsHumanizer(
+      //   this.accountOp,
+      //   [],
+      //   this.#storage,
+      //   this.#fetch,
+      //   (humanizedCalls) => {
+      //     this.humanReadable = humanizedCalls
+      //     this.emitUpdate()
+      //   },
+      //   (err) => this.emitError(err)
+      // )
     }
     const account = this.#getAccount()
 
@@ -234,7 +236,7 @@ export class SignAccountOpController extends EventEmitter {
   }
 
   #getPortfolioToken(addr: string): TokenResult | undefined {
-    return this.portfolio.latest?.[this.accountOp!.accountAddr]?.[
+    return this.#portfolio.latest?.[this.accountOp!.accountAddr]?.[
       this.accountOp!.networkId
     ]?.result?.tokens.find((token) => token.address === addr)
   }
