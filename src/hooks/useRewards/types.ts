@@ -36,20 +36,27 @@ type Reward = {
 }
 
 export type Promo = {
-  // TODO: Double-check if these are all incoming props fro the Relayer
+  id: string
+  title: string
+  icon: string // emoji
+  type: string
+  // The `text` could contain string literals which represent links, match those
+  // links with the `resources` object and replace the string literal, example:
+  //   text: "As an early user of the Ambire app we exclusively invite you to
+  //   download the Ambire mobile app. ${{linkiOS}} ${{linkAndroid}}"
   text: string
+  // In the `resources` object the `key`(s) will match the string literals,
+  // defined in the `text` prop. Match them by using the `label` prop to
+  // replace the string literal and use the `href` prop to link.
   resources: {
-    link1: {
+    [key: string]: {
       href: string
       label: string
     }
-    emojies?: {
-      [key in 'e1' | 'e2' | 'e3']: { text: string; size: string }
-    }
   }
   period: {
-    from: number
-    to: number
+    from: string // timestamp
+    to: string // timestamp
     timer: boolean
   }
 }
