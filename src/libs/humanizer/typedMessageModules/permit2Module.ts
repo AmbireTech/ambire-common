@@ -1,4 +1,5 @@
 import { ethers } from 'ethers'
+
 import { TypedMessage } from '../../../interfaces/userRequest'
 import { HumanizerTypedMessaageModule, HumanizerVisualization } from '../interfaces'
 import { getAction, getAddress, getDeadlineText, getLabel, getToken } from '../utils'
@@ -51,7 +52,10 @@ const visualizePermit = (permit: PermitDetails): HumanizerVisualization[] => {
 
 export const permit2Module: HumanizerTypedMessaageModule = (tm: TypedMessage) => {
   const visualizations: HumanizerVisualization[] = []
-  if (ethers.getAddress(tm.domain.verifyingContract as string) === PERMIT_2_ADDRESS) {
+  if (
+    tm?.domain?.verifyingContract &&
+    ethers.getAddress(tm.domain.verifyingContract as string) === PERMIT_2_ADDRESS
+  ) {
     if (tm.types?.PermitSingle?.[0]?.type === 'PermitDetails') {
       visualizations.push(
         ...visualizePermit(tm.message.details),
