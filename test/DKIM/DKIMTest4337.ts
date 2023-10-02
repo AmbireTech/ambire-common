@@ -149,7 +149,7 @@ describe('ERC4337 DKIM sigMode Both', function () {
     const userOperation = await buildUserOp(paymaster, {
       sender: ambireAccountAddress,
       signedNonce: ethers.toBeHex(0, 1),
-      callData: account.interface.encodeFunctionData('execute', [txns, finalSig]),
+      callData: account.interface.encodeFunctionData('executeMultiple', [[[txns, finalSig]]]),
     })
     userOperation.nonce = getTargetNonce(userOperation)
     await entryPoint.handleOps([userOperation], relayer)
@@ -172,7 +172,7 @@ describe('ERC4337 DKIM sigMode Both', function () {
     const replayTargetNonceOp = await buildUserOp(paymaster, {
       sender: ambireAccountAddress,
       signedNonce: ethers.toBeHex(0, 1),
-      callData: account.interface.encodeFunctionData('execute', [txns, finalSig]),
+      callData: account.interface.encodeFunctionData('executeMultiple', [[[txns, finalSig]]]),
     })
     const targetNonce = getTargetNonce(replayTargetNonceOp)
     replayTargetNonceOp.nonce = targetNonce.substring(0, targetNonce.length - 2) + '01'
@@ -185,7 +185,7 @@ describe('ERC4337 DKIM sigMode Both', function () {
     const secondUserOperation = await buildUserOp(paymaster, {
       sender: ambireAccountAddress,
       signedNonce: ethers.toBeHex(0, 1),
-      callData: account.interface.encodeFunctionData('execute', [txns, finalSig]),
+      callData: account.interface.encodeFunctionData('executeMultiple', [[[txns, finalSig]]]),
       callGasLimit: ethers.toBeHex(510000)
     })
     secondUserOperation.nonce = getTargetNonce(secondUserOperation)
@@ -249,7 +249,7 @@ describe('ERC4337 DKIM sigMode Both', function () {
     const userOperation = await buildUserOp(paymaster, {
       sender: ambireAccountAddress,
       signedNonce: ethers.toBeHex(0, 1),
-      callData: account.interface.encodeFunctionData('execute', [txns, finalSig]),
+      callData: account.interface.encodeFunctionData('executeMultiple', [[[txns, finalSig]]]),
     })
     userOperation.nonce = getTargetNonce(userOperation)
     await expect(entryPoint.handleOps([userOperation], relayer))
@@ -307,7 +307,7 @@ describe('ERC4337 DKIM sigMode OnlyDKIM', function () {
     const userOperation = await buildUserOp(paymaster, {
       sender: ambireAccountAddress,
       signedNonce: ethers.toBeHex(0, 1),
-      callData: account.interface.encodeFunctionData('execute', [txns, finalSig]),
+      callData: account.interface.encodeFunctionData('executeMultiple', [[[txns, finalSig]]]),
     })
     userOperation.nonce = getTargetNonce(userOperation)
     await expect(entryPoint.handleOps([userOperation], relayer))
@@ -323,7 +323,7 @@ describe('ERC4337 DKIM sigMode OnlyDKIM', function () {
     const secondUserOperation = await buildUserOp(paymaster, {
       sender: ambireAccountAddress,
       signedNonce: ethers.toBeHex(0, 1),
-      callData: account.interface.encodeFunctionData('execute', [[], finalSig]),
+      callData: account.interface.encodeFunctionData('executeMultiple', [[[[], finalSig]]]),
     })
     secondUserOperation.nonce = getTargetNonce(secondUserOperation)
     await entryPoint.handleOps([secondUserOperation], relayer)
@@ -353,7 +353,7 @@ describe('ERC4337 DKIM sigMode OnlyDKIM', function () {
     const thirdUserOperation = await buildUserOp(paymaster, {
       sender: ambireAccountAddress,
       signedNonce: ethers.toBeHex(0, 1),
-      callData: account.interface.encodeFunctionData('execute', [[], finalSig]),
+      callData: account.interface.encodeFunctionData('executeMultiple', [[[[], finalSig]]]),
       callGasLimit: ethers.toBeHex(440000)
     })
     thirdUserOperation.nonce = getTargetNonce(thirdUserOperation)
@@ -371,7 +371,7 @@ describe('ERC4337 DKIM sigMode OnlyDKIM', function () {
     const forthUserOperation = await buildUserOp(paymaster, {
       sender: ambireAccountAddress,
       signedNonce: ethers.toBeHex(0, 1),
-      callData: account.interface.encodeFunctionData('execute', [txns, finalSig]),
+      callData: account.interface.encodeFunctionData('executeMultiple', [[[txns, finalSig]]]),
       callGasLimit: ethers.toBeHex(440000)
     })
     forthUserOperation.nonce = getTargetNonce(forthUserOperation)
@@ -392,7 +392,7 @@ describe('ERC4337 DKIM sigMode OnlyDKIM', function () {
     const fifthUserOperation = await buildUserOp(paymaster, {
       sender: ambireAccountAddress,
       signedNonce: ethers.toBeHex(0, 1),
-      callData: account.interface.encodeFunctionData('execute', [txns, finalSig]),
+      callData: account.interface.encodeFunctionData('executeMultiple', [[[txns, finalSig]]]),
       callGasLimit: ethers.toBeHex(445000)
     })
     fifthUserOperation.nonce = getTargetNonce(fifthUserOperation)
@@ -460,7 +460,7 @@ describe('ERC4337 DKIM sigMode OnlySecond', function () {
     const userOperation = await buildUserOp(paymaster, {
       sender: ambireAccountAddress,
       signedNonce: ethers.toBeHex(0, 1),
-      callData: account.interface.encodeFunctionData('execute', [txns, finalSig]),
+      callData: account.interface.encodeFunctionData('executeMultiple', [[[txns, finalSig]]]),
     })
     userOperation.nonce = getTargetNonce(userOperation)
     await expect(entryPoint.handleOps([userOperation], relayer))
@@ -477,7 +477,7 @@ describe('ERC4337 DKIM sigMode OnlySecond', function () {
     const secondUserOperation = await buildUserOp(paymaster, {
       sender: ambireAccountAddress,
       signedNonce: ethers.toBeHex(0, 1),
-      callData: account.interface.encodeFunctionData('execute', [[], finalSig]),
+      callData: account.interface.encodeFunctionData('executeMultiple', [[[[], finalSig]]]),
     })
     secondUserOperation.nonce = getTargetNonce(secondUserOperation)
     await entryPoint.handleOps([secondUserOperation], relayer)
@@ -498,7 +498,7 @@ describe('ERC4337 DKIM sigMode OnlySecond', function () {
     const thirdUserOperation = await buildUserOp(paymaster, {
       sender: ambireAccountAddress,
       signedNonce: ethers.toBeHex(0, 1),
-      callData: account.interface.encodeFunctionData('execute', [txns, finalSig]),
+      callData: account.interface.encodeFunctionData('executeMultiple', [[[txns, finalSig]]]),
       callGasLimit: ethers.toBeHex(600000)
     })
     thirdUserOperation.nonce = getTargetNonce(thirdUserOperation)
@@ -519,7 +519,7 @@ describe('ERC4337 DKIM sigMode OnlySecond', function () {
     const forthUserOp = await buildUserOp(paymaster, {
       sender: ambireAccountAddress,
       signedNonce: ethers.toBeHex(0, 1),
-      callData: account.interface.encodeFunctionData('execute', [txns, finalSig]),
+      callData: account.interface.encodeFunctionData('executeMultiple', [[[txns, finalSig]]]),
       callGasLimit: ethers.toBeHex(510000)
     })
     forthUserOp.nonce = getTargetNonce(forthUserOp)
@@ -577,7 +577,7 @@ describe('ERC4337 DKIM sigMode OnlySecond', function () {
     const userOperation = await buildUserOp(paymaster, {
       sender: ambireAccountAddress,
       signedNonce: ethers.toBeHex(0, 1),
-      callData: account.interface.encodeFunctionData('execute', [txns, finalSig]),
+      callData: account.interface.encodeFunctionData('executeMultiple', [[[txns, finalSig]]]),
     })
     userOperation.nonce = getTargetNonce(userOperation)
     await expect(entryPoint.handleOps([userOperation], relayer))
@@ -693,7 +693,7 @@ describe('DKIM sigMode Both with acceptUnknownSelectors true', function () {
     const userOperation = await buildUserOp(paymaster, {
       sender: ambireAccountAddress,
       signedNonce: ethers.toBeHex(0, 1),
-      callData: account.interface.encodeFunctionData('execute', [txns, finalSig]),
+      callData: account.interface.encodeFunctionData('executeMultiple', [[[txns, finalSig]]]),
     })
     userOperation.nonce = getTargetNonce(userOperation)
     await expect(entryPoint.handleOps([userOperation], relayer))
@@ -767,7 +767,7 @@ describe('DKIM sigMode OnlySecond with a timelock of 2 minutes', function () {
     const userOperation = await buildUserOp(paymaster, {
       sender: ambireAccountAddress,
       signedNonce: ethers.toBeHex(0, 1),
-      callData: account.interface.encodeFunctionData('execute', [txns, finalSig]),
+      callData: account.interface.encodeFunctionData('executeMultiple', [[[txns, finalSig]]]),
     })
     userOperation.nonce = getTargetNonce(userOperation)
     await expect(entryPoint.handleOps([userOperation], relayer))
@@ -783,7 +783,7 @@ describe('DKIM sigMode OnlySecond with a timelock of 2 minutes', function () {
     const secondUserOperation = await buildUserOp(paymaster, {
       sender: ambireAccountAddress,
       signedNonce: ethers.toBeHex(0, 1),
-      callData: account.interface.encodeFunctionData('execute', [[], finalSig]),
+      callData: account.interface.encodeFunctionData('executeMultiple', [[[[], finalSig]]]),
     })
     secondUserOperation.nonce = getTargetNonce(secondUserOperation)
     await entryPoint.handleOps([secondUserOperation], relayer)
@@ -805,7 +805,7 @@ describe('DKIM sigMode OnlySecond with a timelock of 2 minutes', function () {
     const thirdUserOp = await buildUserOp(paymaster, {
       sender: ambireAccountAddress,
       signedNonce: ethers.toBeHex(0, 1),
-      callData: account.interface.encodeFunctionData('execute', [[], finalSig]),
+      callData: account.interface.encodeFunctionData('executeMultiple', [[[[], finalSig]]]),
       callGasLimit: ethers.toBeHex(456000)
     })
     thirdUserOp.nonce = getTargetNonce(thirdUserOp)

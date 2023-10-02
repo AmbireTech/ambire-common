@@ -1,8 +1,7 @@
-import { Key } from 'libs/keystore/keystore'
-
 /* eslint-disable no-new */
 import { describe, expect, test } from '@jest/globals'
 
+import { Key } from '../../interfaces/keystore'
 import { KeystoreSigner } from './keystoreSigner'
 
 // const seedPhrase = 'brisk rich glide impose category stuff company you appear remain decorate monkey'
@@ -10,7 +9,7 @@ const privKey = '0x574f261b776b26b1ad75a991173d0e8ca2ca1d481bd7822b2b58b2ef8a969
 const keyPublicAddress = '0x9188fdd757Df66B4F693D624Ed6A13a15Cf717D7'
 
 const key: Key = {
-  id: keyPublicAddress,
+  addr: keyPublicAddress,
   type: 'internal',
   label: 'test-key',
   isExternallyStored: false,
@@ -19,10 +18,11 @@ const key: Key = {
 
 describe('KeystoreSigner', () => {
   test('should initialize KeystoreSigner', () => {
-    expect.assertions(2)
+    expect.assertions(3)
     const signer = new KeystoreSigner(key, privKey)
     expect((signer as any)['#signer']).toBe(undefined)
-    expect((signer as any).key?.id).toEqual(keyPublicAddress)
+    expect((signer as any).key?.addr).toEqual(keyPublicAddress)
+    expect((signer as any).key?.type).toEqual('internal')
   })
   test('should sign transaction', async () => {
     expect.assertions(1)

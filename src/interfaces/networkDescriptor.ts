@@ -17,6 +17,7 @@ export interface NetworkDescriptor {
   nativeAssetSymbol: string
   chainId: bigint
   rpcUrl: string
+  explorerUrl: string
   erc4337: Erc4337settings | null
   rpcNoStateOverride: boolean
   // NOTE: should this be here? keep in mind networks can be user-inputted, so it's prob better to have

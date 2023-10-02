@@ -1,13 +1,18 @@
 import { ethers } from 'ethers'
+
+import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import { Account, AccountStates } from '../../interfaces/account'
+import { Key } from '../../interfaces/keystore'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
+import { Storage } from '../../interfaces/storage'
 import { AccountOp, accountOpSignableHash, GasFeePayment } from '../../libs/accountOp/accountOp'
 import { EstimateResult } from '../../libs/estimate/estimate'
 import { GasRecommendation } from '../../libs/gasPrice/gasPrice'
-import { Keystore } from '../../libs/keystore/keystore'
+import { callsHumanizer } from '../../libs/humanizer'
+import { IrCall } from '../../libs/humanizer/interfaces'
 import EventEmitter from '../eventEmitter'
+import { KeystoreController } from '../keystore/keystore'
 import { PortfolioController } from '../portfolio/portfolio'
-import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import { Price, TokenResult } from '../../libs/portfolio'
 
 export enum SigningStatus {
@@ -37,9 +42,13 @@ export enum FeeSpeed {
 }
 
 export class SignAccountOpController extends EventEmitter {
-  #keystore: Keystore
+  #keystore: KeystoreController
 
-  portfolio: PortfolioController
+  #portfolio: PortfolioController
+
+  #storage: Storage
+
+  #fetch: Function
 
   #accounts: Account[] | null = null
 
@@ -55,13 +64,22 @@ export class SignAccountOpController extends EventEmitter {
 
   selectedFeeSpeed: FeeSpeed = FeeSpeed.Fast
 
+  humanReadable: IrCall[] = []
+
   status: Status | null = null
 
-  constructor(keystore: Keystore, portfolio: PortfolioController) {
+  constructor(
+    keystore: KeystoreController,
+    portfolio: PortfolioController,
+    storage: Storage,
+    fetch: Function
+  ) {
     super()
 
     this.#keystore = keystore
-    this.portfolio = portfolio
+    this.#portfolio = portfolio
+    this.#storage = storage
+    this.#fetch = fetch
   }
 
   get isInitialized(): boolean {
@@ -89,7 +107,8 @@ export class SignAccountOpController extends EventEmitter {
     feeTokenAddr,
     paidBy,
     speed,
-    signingKeyAddr
+    signingKeyAddr,
+    signingKeyType
   }: {
     accountOp?: AccountOp
     gasPrices?: GasRecommendation[]
@@ -97,7 +116,8 @@ export class SignAccountOpController extends EventEmitter {
     feeTokenAddr?: string
     paidBy?: string
     speed?: FeeSpeed
-    signingKeyAddr?: string
+    signingKeyAddr?: Key['addr']
+    signingKeyType?: Key['type']
   }) {
     if (gasPrices) this.#gasPrices = gasPrices
 
@@ -112,6 +132,18 @@ export class SignAccountOpController extends EventEmitter {
       ) {
         this.accountOp = accountOp
       }
+      // TODO: add knownAddresses
+      callsHumanizer(
+        this.accountOp,
+        [],
+        this.#storage,
+        this.#fetch,
+        (humanizedCalls) => {
+          this.humanReadable = humanizedCalls
+          this.emitUpdate()
+        },
+        (err) => this.emitError(err)
+      )
     }
     const account = this.#getAccount()
 
@@ -138,8 +170,9 @@ export class SignAccountOpController extends EventEmitter {
       )
     }
 
-    if (signingKeyAddr && account?.creation && this.isInitialized) {
+    if (signingKeyAddr && signingKeyType && account?.creation && this.isInitialized) {
       this.accountOp!.signingKeyAddr = signingKeyAddr
+      this.accountOp!.signingKeyType = signingKeyType
     }
 
     this.updateReadyToSignStatusOnUpdate()
@@ -186,6 +219,7 @@ export class SignAccountOpController extends EventEmitter {
     this.#estimation = null
     this.selectedFeeSpeed = FeeSpeed.Fast
     this.status = null
+    this.humanReadable = []
     this.emitUpdate()
   }
 
@@ -357,13 +391,16 @@ export class SignAccountOpController extends EventEmitter {
   }
 
   async sign() {
-    if (!this.accountOp?.signingKeyAddr) return this.#setSigningError('no signing key set')
+    if (!this.accountOp?.signingKeyAddr || !this.accountOp?.signingKeyType)
+      return this.#setSigningError('no signing key set')
     if (!this.accountOp?.gasFeePayment) return this.#setSigningError('no gasFeePayment set')
     if (!this.readyToSign) return this.#setSigningError('not ready to sign')
 
     const account = this.#getAccount()
-    // @TODO - we should get the signer `keyType`
-    const signer = await this.#keystore.getSigner(this.accountOp.signingKeyAddr, 'internal')
+    const signer = await this.#keystore.getSigner(
+      this.accountOp.signingKeyAddr,
+      this.accountOp.signingKeyType
+    )
     if (!account) return this.#setSigningError('non-existent account')
     if (!signer) return this.#setSigningError('no available signer')
 

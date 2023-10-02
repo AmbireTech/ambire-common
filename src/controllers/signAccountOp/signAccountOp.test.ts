@@ -4,13 +4,14 @@ import { describe, expect, test } from '@jest/globals'
 
 import { produceMemoryStore } from '../../../test/helpers'
 import { networks } from '../../consts/networks'
-import { PortfolioController } from '../portfolio/portfolio'
 import { Account, AccountStates } from '../../interfaces/account'
+import { Key } from '../../interfaces/keystore'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { getAccountState } from '../../libs/accountState/accountState'
 import { estimate } from '../../libs/estimate/estimate'
 import { getGasPriceRecommendations } from '../../libs/gasPrice/gasPrice'
-import { Key, Keystore } from '../../libs/keystore/keystore'
+import { KeystoreController } from '../keystore/keystore'
+import { PortfolioController } from '../portfolio/portfolio'
 import { SignAccountOpController, SigningStatus } from './signAccountOp'
 
 const providers = Object.fromEntries(
@@ -101,6 +102,7 @@ const createAccountOp = (signingKeyAddr: string) => {
   const op = {
     accountAddr: account.addr,
     signingKeyAddr,
+    signingKeyType: 'internal' as any,
     gasLimit: null,
     gasFeePayment: null,
     networkId: 'ethereum',
@@ -115,15 +117,14 @@ const createAccountOp = (signingKeyAddr: string) => {
 
 describe('SignAccountOp Controller ', () => {
   test('it sets GasFeePayment and signs the AccountOp', async () => {
-    const relayerUrl = 'https://staging-relayer.ambire.com'
-    const privateKey = '0x574f261b776b26b1ad75a991173d0e8ca2ca1d481bd7822b2b58b2ef8a969f12'
+    const privKey = '0x574f261b776b26b1ad75a991173d0e8ca2ca1d481bd7822b2b58b2ef8a969f12'
     const keyPublicAddress = '0x9188fdd757Df66B4F693D624Ed6A13a15Cf717D7'
     const pass = 'testpass'
 
-    const keystore = new Keystore(produceMemoryStore(), { internal: InternalSigner })
-    await keystore.addSecret('passphrase', pass)
+    const keystore = new KeystoreController(produceMemoryStore(), { internal: InternalSigner })
+    await keystore.addSecret('passphrase', pass, '', false)
     await keystore.unlockWithSecret('passphrase', pass)
-    await keystore.addKeys([{ privateKey, label: 'internal' }])
+    await keystore.addKeys([{ privateKey: privKey, label: keyPublicAddress }])
 
     const ethereum = networks.find((x) => x.id === 'ethereum')!
     const provider = new JsonRpcProvider(ethereum!.rpcUrl)
@@ -133,10 +134,11 @@ describe('SignAccountOp Controller ', () => {
     const estimation = await estimate(provider, ethereum, account, op, nativeToCheck, feeTokens)
     const accounts = [account]
     const accountStates = await getAccountsInfo(accounts)
-    const portfolio = new PortfolioController(produceMemoryStore(), relayerUrl, [])
-
-    await portfolio.updateSelectedAccount(accounts, networks, account.addr)
-    // await portfolio.getAdditionalPortfolio(account.addr)
+    const portfolio = new PortfolioController(
+      produceMemoryStore(),
+      'https://staging-relayer.ambire.com',
+      []
+    )
     const controller = new SignAccountOpController(keystore, portfolio)
     controller.status = { type: SigningStatus.ReadyToSign }
 
