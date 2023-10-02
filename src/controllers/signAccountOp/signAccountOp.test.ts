@@ -2,6 +2,7 @@ import { JsonRpcProvider } from 'ethers'
 
 import { describe, expect, test } from '@jest/globals'
 
+import fetch from 'node-fetch'
 import { produceMemoryStore } from '../../../test/helpers'
 import { networks } from '../../consts/networks'
 import { Account, AccountStates } from '../../interfaces/account'
@@ -139,7 +140,7 @@ describe('SignAccountOp Controller ', () => {
       'https://staging-relayer.ambire.com',
       []
     )
-    const controller = new SignAccountOpController(keystore, portfolio)
+    const controller = new SignAccountOpController(keystore, portfolio, produceMemoryStore(), fetch)
     controller.status = { type: SigningStatus.ReadyToSign }
 
     controller.updateMainDeps({
