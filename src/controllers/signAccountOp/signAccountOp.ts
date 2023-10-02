@@ -291,9 +291,17 @@ export class SignAccountOpController extends EventEmitter {
     // @TODO - add comment why here we use `feePaymentOptions`, but we don't use it in EOA
     const simulatedGasLimit = gasUsed + feeTokenGasUsed
 
+    const amountInWei = simulatedGasLimit * gasPrice + this.#estimation!.addedNative
+
+    // Let's break down the process of converting the amount into FeeToken:
+    // 1. Initially, we multiply the amount in wei by the native to fee token ratio.
+    // 2. Next, we address the decimal places:
+    // 2.1. First, we convert wei to native by dividing by 10^18 (representing the decimals).
+    // 2.2. Now, with the amount in the native token, we incorporate nativeRatio.decimals into the calculation (18 + nativeRatio.decimals) to standardize the amount.
+    // 2.3. At this point, we precisely determine the number of fee tokens. For instance, if the amount is 3 USDC, we must convert it to a BigInt value, while also considering feeToken.decimals.
     const amount =
-      ((simulatedGasLimit * gasPrice + this.#estimation!.addedNative) * nativeRatio.ratio) /
-      BigInt(10 ** (18 - feeToken!.decimals + nativeRatio.decimals))
+      (amountInWei * nativeRatio.ratio) /
+      BigInt(10 ** (18 + nativeRatio.decimals - feeToken!.decimals))
 
     return {
       paidBy,
