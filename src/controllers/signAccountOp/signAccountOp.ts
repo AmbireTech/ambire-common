@@ -445,7 +445,26 @@ export class SignAccountOpController extends EventEmitter {
         })
       } else {
         // Relayer
-        // @TODO - additional call, pseudo code, sync with Bobby/Emo about the call in case of gas tank
+
+        // In case of gas tank token fee payment, we need to include one more call to account op
+        if (this.accountOp.gasFeePayment.isGasTank) {
+          // @TODO - config/const
+          const feeCollector = '0x942f9CE5D9a33a82F88D233AEb3292E680230348'
+          const feeToken = this.#getPortfolioToken(this.accountOp.gasFeePayment.inToken)
+
+          const abiCoder = new ethers.AbiCoder()
+          const call = {
+            to: feeCollector,
+            value: 0n,
+            data: abiCoder.encode(
+              ['string', 'uint256', 'string'],
+              ['gasTank', this.accountOp.gasFeePayment.amount, feeToken?.symbol]
+            )
+          }
+
+          this.accountOp.calls.push(call)
+        }
+
         this.accountOp!.signature = await signer.signMessage(
           ethers.hexlify(accountOpSignableHash(this.accountOp))
         )
