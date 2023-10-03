@@ -248,28 +248,19 @@ export class SignAccountOpController extends EventEmitter {
    * we can calculate the ratio between a native token and a fee token.
    *
    * For example, 1 ETH = 8 BNB (ratio: 8).
-   * We used to return decimals as well because the ratio may result in a decimal number.
-   * However, once we convert it to a BigInt, we will lose precision.
    *
    * We require the ratio to be in a BigInt format since all the application values,
    * such as amount, gasLimit, etc., are also represented as BigInt numbers.
    */
-  #getNativeToFeeTokenRatio(feeToken: TokenResult): { ratio: bigint; decimals: number } {
-    const countDecimals = (value: number) => {
-      if (value % 1 !== 0) return value.toString().split('.')[1].length
-
-      return 0
-    }
-
+  #getNativeToFeeTokenRatio(feeToken: TokenResult): bigint {
     const native = this.#getPortfolioToken('0x0000000000000000000000000000000000000000')
     const isUsd = (price: Price) => price.baseCurrency === 'usd'
     const ratio = native!.priceIn.find(isUsd)!.price / feeToken!.priceIn.find(isUsd)!.price
-    const decimals = countDecimals(ratio)
 
-    return {
-      ratio: BigInt(ratio * 10 ** decimals),
-      decimals
-    }
+    // Here we multiply it by 1e18, in order to keep the decimal precision.
+    // Otherwise, passing the ratio to the BigInt constructor, we will lose the numbers after the decimal point.
+    // Later, once we need to normalize this ratio, we should not forget to divide it by 1e18.
+    return BigInt(ratio * 10 ** 18)
   }
 
   #getGasFeePayment(
@@ -333,11 +324,9 @@ export class SignAccountOpController extends EventEmitter {
     // 1. Initially, we multiply the amount in wei by the native to fee token ratio.
     // 2. Next, we address the decimal places:
     // 2.1. First, we convert wei to native by dividing by 10^18 (representing the decimals).
-    // 2.2. Now, with the amount in the native token, we incorporate nativeRatio.decimals into the calculation (18 + nativeRatio.decimals) to standardize the amount.
+    // 2.2. Now, with the amount in the native token, we incorporate nativeRatio decimals into the calculation (18 + 18) to standardize the amount.
     // 2.3. At this point, we precisely determine the number of fee tokens. For instance, if the amount is 3 USDC, we must convert it to a BigInt value, while also considering feeToken.decimals.
-    const amount =
-      (amountInWei * nativeRatio.ratio) /
-      BigInt(10 ** (18 + nativeRatio.decimals - feeToken!.decimals))
+    const amount = (amountInWei * nativeRatio) / BigInt(10 ** (18 + 18 - feeToken!.decimals))
 
     return {
       paidBy,
