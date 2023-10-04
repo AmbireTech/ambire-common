@@ -10,10 +10,10 @@ import { EstimateResult } from '../../libs/estimate/estimate'
 import { GasRecommendation } from '../../libs/gasPrice/gasPrice'
 import { callsHumanizer } from '../../libs/humanizer'
 import { IrCall } from '../../libs/humanizer/interfaces'
+import { Price, TokenResult } from '../../libs/portfolio'
 import EventEmitter from '../eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
 import { PortfolioController } from '../portfolio/portfolio'
-import { Price, TokenResult } from '../../libs/portfolio'
 
 export enum SigningStatus {
   UnableToSign = 'unable-to-sign',
@@ -133,19 +133,18 @@ export class SignAccountOpController extends EventEmitter {
         this.accountOp = accountOp
       }
 
-      // TODO<Jordan>: callsHumanizer throws an error and breaks the tests. That's way I commented it out.
       // TODO: add knownAddresses
-      // callsHumanizer(
-      //   this.accountOp,
-      //   [],
-      //   this.#storage,
-      //   this.#fetch,
-      //   (humanizedCalls) => {
-      //     this.humanReadable = humanizedCalls
-      //     this.emitUpdate()
-      //   },
-      //   (err) => this.emitError(err)
-      // )
+      callsHumanizer(
+        this.accountOp,
+        [],
+        this.#storage,
+        this.#fetch,
+        (humanizedCalls) => {
+          this.humanReadable = humanizedCalls
+          this.emitUpdate()
+        },
+        (err) => this.emitError(err)
+      )
     }
     const account = this.#getAccount()
 
