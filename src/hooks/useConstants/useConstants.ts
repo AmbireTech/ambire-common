@@ -25,12 +25,13 @@ const useConstants = ({ fetch, endpoint }: UseConstantsProps): UseConstantsRetur
 
       if (!response) throw new Error('Failed to get the constants.')
 
-      const { tokenList, humanizerInfo } = response
+      const { tokenList, humanizerInfo, customTokens } = response
 
       setIsLoading(() => {
         setData({
           tokenList,
           humanizerInfo,
+          customTokens,
           lastFetched: Date.now()
         })
         setHasError(false)

@@ -15,7 +15,9 @@ export enum NETWORKS {
   'aurora' = 'aurora',
   'okc' = 'okc',
   'base' = 'base',
-  'ethereum-pow' = 'ethereum-pow'
+  'ethereum-pow' = 'ethereum-pow',
+  'mumbai' = 'mumbai',
+  'sepolia' = 'sepolia'
 }
 
 export type NetworkId = keyof typeof NETWORKS
@@ -53,7 +55,7 @@ const networks: NetworkType[] = [
     nativeAsset: {
       address: '0x0000000000000000000000000000000000000000',
       symbol: 'ETH',
-      coingeckoId: null,
+      coingeckoId: 'ethereum',
       decimals: 18
     }
   },
@@ -69,7 +71,7 @@ const networks: NetworkType[] = [
     nativeAsset: {
       address: '0x0000000000000000000000000000000000000000',
       symbol: 'MATIC',
-      coingeckoId: null,
+      coingeckoId: 'matic-network',
       decimals: 18
     }
   },
@@ -85,7 +87,7 @@ const networks: NetworkType[] = [
     nativeAsset: {
       address: '0x0000000000000000000000000000000000000000',
       symbol: 'AVAX',
-      coingeckoId: null,
+      coingeckoId: 'avalanche-2',
       decimals: 18
     }
   },
@@ -102,7 +104,7 @@ const networks: NetworkType[] = [
     nativeAsset: {
       address: '0x0000000000000000000000000000000000000000',
       symbol: 'BNB',
-      coingeckoId: null,
+      coingeckoId: 'binancecoin',
       decimals: 18
     }
   },
@@ -118,7 +120,7 @@ const networks: NetworkType[] = [
     nativeAsset: {
       address: '0x0000000000000000000000000000000000000000',
       symbol: 'FTM',
-      coingeckoId: null,
+      coingeckoId: 'fantom',
       decimals: 18
     }
   },
@@ -134,7 +136,7 @@ const networks: NetworkType[] = [
     nativeAsset: {
       address: '0x0000000000000000000000000000000000000000',
       symbol: 'GLMR',
-      coingeckoId: null,
+      coingeckoId: 'moonbeam',
       decimals: 18
     }
   },
@@ -150,7 +152,7 @@ const networks: NetworkType[] = [
     nativeAsset: {
       address: '0x0000000000000000000000000000000000000000',
       symbol: 'MOVR',
-      coingeckoId: null,
+      coingeckoId: 'moonriver',
       decimals: 18
     }
   },
@@ -166,7 +168,7 @@ const networks: NetworkType[] = [
     nativeAsset: {
       address: '0x0000000000000000000000000000000000000000',
       symbol: 'AETH',
-      coingeckoId: null,
+      coingeckoId: 'ethereum',
       decimals: 18
     }
   },
@@ -175,14 +177,14 @@ const networks: NetworkType[] = [
     chainId: 100,
     nativeAssetSymbol: 'XDAI',
     name: 'Gnosis Chain',
-    explorerUrl: 'https://blockscout.com',
+    explorerUrl: 'https://gnosisscan.io',
     unstoppableDomainsChain: 'ERC20',
     isGasTankAvailable: true,
     relayerlessOnly: false,
     nativeAsset: {
       address: '0x0000000000000000000000000000000000000000',
       symbol: 'XDAI',
-      coingeckoId: null,
+      coingeckoId: 'xdai',
       decimals: 18
     }
   },
@@ -199,7 +201,7 @@ const networks: NetworkType[] = [
     nativeAsset: {
       address: '0x0000000000000000000000000000000000000000',
       symbol: 'KCS',
-      coingeckoId: null,
+      coingeckoId: 'kucoin-shares',
       decimals: 18
     }
   },
@@ -215,7 +217,23 @@ const networks: NetworkType[] = [
     nativeAsset: {
       address: '0x0000000000000000000000000000000000000000',
       symbol: 'ETH',
-      coingeckoId: null,
+      coingeckoId: 'ethereum',
+      decimals: 18
+    }
+  },
+  {
+    id: NETWORKS.base,
+    chainId: 8453,
+    nativeAssetSymbol: 'ETH',
+    name: 'Base',
+    explorerUrl: 'https://basescan.org/',
+    unstoppableDomainsChain: 'ERC20',
+    isGasTankAvailable: true,
+    relayerlessOnly: false,
+    nativeAsset: {
+      address: '0x0000000000000000000000000000000000000000',
+      symbol: 'ETH',
+      coingeckoId: 'ethereum',
       decimals: 18
     }
   },
@@ -247,7 +265,7 @@ const networks: NetworkType[] = [
     nativeAsset: {
       address: '0x0000000000000000000000000000000000000000',
       symbol: 'METIS',
-      coingeckoId: null,
+      coingeckoId: 'metis-token',
       decimals: 18
     }
   },
@@ -268,7 +286,57 @@ const networks: NetworkType[] = [
     }
   },
   {
-    id: 'ethereum-pow',
+    id: NETWORKS.rinkeby,
+    chainId: 4,
+    nativeAssetSymbol: 'ETH',
+    name: 'Rinkeby',
+    explorerUrl: 'https://rinkeby.etherscan.io',
+    unstoppableDomainsChain: 'ERC20',
+    isGasTankAvailable: true,
+    relayerlessOnly: false,
+    nativeAsset: {
+      address: '0x0000000000000000000000000000000000000000',
+      symbol: 'ETH',
+      coingeckoId: 'ethereum',
+      decimals: 18
+    }
+  },
+  {
+    id: NETWORKS.sepolia,
+    chainId: 11155111,
+    nativeAssetSymbol: 'ETH',
+    name: 'Sepolia',
+    explorerUrl: 'https://sepolia.etherscan.io/',
+    unstoppableDomainsChain: 'ERC20',
+    hide: true,
+    isGasTankAvailable: false,
+    relayerlessOnly: false,
+    nativeAsset: {
+      address: '0x0000000000000000000000000000000000000000',
+      symbol: 'ETH',
+      coingeckoId: 'ethereum',
+      decimals: 18
+    }
+  },
+  {
+    id: NETWORKS.mumbai,
+    chainId: 80001,
+    nativeAssetSymbol: 'MATIC',
+    name: 'Mumbai',
+    explorerUrl: 'https://mumbai.polygonscan.com/',
+    unstoppableDomainsChain: 'ERC20',
+    hide: true,
+    isGasTankAvailable: false,
+    relayerlessOnly: false,
+    nativeAsset: {
+      address: '0x0000000000000000000000000000000000000000',
+      symbol: 'MATIC',
+      coingeckoId: 'matic-network',
+      decimals: 18
+    }
+  },
+  {
+    id: NETWORKS['ethereum-pow'],
     chainId: 10001,
     nativeAssetSymbol: 'ETHW',
     name: 'ETHPoW',
@@ -279,7 +347,7 @@ const networks: NetworkType[] = [
     nativeAsset: {
       address: '0x0000000000000000000000000000000000000000',
       symbol: 'ETH',
-      coingeckoId: null,
+      coingeckoId: 'ethereum-pow-iou',
       decimals: 18
     }
   }
@@ -300,5 +368,29 @@ const networks: NetworkType[] = [
   // 	unstoppableDomainsChain: 'ERC20',
   // }
 ]
+
+export const coingeckoNets = {
+  ethereum: 'ethereum',
+  'polygon-pos': 'polygon',
+  polygon: 'polygon-pos',
+  'binance-smart-chain': 'binance-smart-chain',
+  avalanche: 'avalanche',
+  fantom: 'fantom',
+  moonbeam: 'moonbeam',
+  moonriver: 'moonriver',
+  'arbitrum-one': 'arbitrum',
+  arbitrum: 'arbitrum-one',
+  gnosis: 'xdai',
+  xdai: 'gnosis',
+  'kucoin-community-chain': 'kucoin',
+  kucoin: 'kucoin-community-chain',
+  'metis-andromeda': 'andromeda',
+  andromeda: 'metis-andromeda',
+  cronos: 'cronos',
+  aurora: 'aurora',
+  optimism: 'optimistic-ethereum',
+  'optimistic-ethereum': 'optimism',
+  base: 'base'
+}
 
 export default networks

@@ -32,7 +32,11 @@ const withCategory = (dapp: DappManifestData) => ({
   category: dapp.connectionType === 'gnosis' ? 'integrated' : dapp.connectionType
 })
 
-export default function useDapps({ useStorage, fetch }: UseDappsProps): UseDappsReturnType {
+export default function useDapps({
+  useStorage,
+  fetch,
+  applicationType
+}: UseDappsProps): UseDappsReturnType {
   const categories = useMemo(() => CATEGORIES, [])
   const [defaultCatalog, setDefaultCatalog] = useState<Array<AmbireDappManifest>>([])
   const [isDappMode, setIsDappMode] = useStorage<boolean>({ key: 'isDappMode' })
@@ -62,11 +66,16 @@ export default function useDapps({ useStorage, fetch }: UseDappsProps): UseDapps
   useEffect(() => {
     async function getCatalog() {
       const walletCatalog = await getWalletDappCatalog(fetch)
-      setDefaultCatalog(walletCatalog)
+      const catalogDapp =
+        walletCatalog.filter((el: AmbireDappManifest) =>
+          el.applicationType.includes(applicationType)
+        ) || []
+
+      setDefaultCatalog(catalogDapp)
     }
 
     getCatalog()
-  }, [fetch])
+  }, [fetch, applicationType])
 
   const toggleDappMode = useCallback(() => {
     setIsDappMode(!isDappMode)
@@ -172,7 +181,11 @@ export default function useDapps({ useStorage, fetch }: UseDappsProps): UseDapps
             match = categoryFilter.filter(item, favorites)
           }
           if (search && match) {
-            match = item.name.toLowerCase().includes(search?.toLowerCase())
+            const matchedName = item.name.toLowerCase().includes(search?.toLowerCase())
+            const matchedDescription = item.description
+              ?.toLowerCase()
+              .includes(search?.toLowerCase())
+            match = matchedName || matchedDescription
           }
           return match
         })

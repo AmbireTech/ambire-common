@@ -4,7 +4,9 @@
 import { constants } from 'ethers'
 import { formatUnits } from 'ethers/lib/utils'
 
+import networks from '../../constants/networks'
 import { HumanizerInfoType } from '../../hooks/useConstants'
+import humanizers from '../humanizers'
 
 // address (lowercase) => name
 const knownAliases = {}

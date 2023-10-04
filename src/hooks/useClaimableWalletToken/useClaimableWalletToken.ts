@@ -195,6 +195,7 @@ const useClaimableWalletToken = ({
     (withoutBurn = true) => {
       addRequest({
         id: `claim_${Date.now()}`,
+        dateAdded: new Date().valueOf(),
         chainId: network?.chainId,
         type: 'eth_sendTransaction',
         account: accountId,
@@ -217,6 +218,7 @@ const useClaimableWalletToken = ({
   const claimVesting = useCallback(() => {
     addRequest({
       id: `claimVesting_${Date.now()}`,
+      dateAdded: new Date().valueOf(),
       chainId: network?.chainId,
       account: accountId,
       type: 'eth_sendTransaction',
