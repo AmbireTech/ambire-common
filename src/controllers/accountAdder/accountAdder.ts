@@ -11,6 +11,7 @@ import {
 } from '../../libs/account/account'
 import { getAccountState } from '../../libs/accountState/accountState'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
+import wait from '../../utils/wait'
 import EventEmitter from '../eventEmitter'
 
 const INITIAL_PAGE_INDEX = 1
@@ -380,10 +381,9 @@ export class AccountAdderController extends EventEmitter {
     this.emitUpdate()
 
     // reset the addAccountsStatus in the next tick to ensure the FE receives the 'SUCCESS' state
-    setTimeout(() => {
-      this.addAccountsStatus = 'INITIAL'
-      this.emitUpdate()
-    }, 1)
+    await wait(1)
+    this.addAccountsStatus = 'INITIAL'
+    this.emitUpdate()
   }
 
   async #calculateAccounts({
