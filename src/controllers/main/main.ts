@@ -1,5 +1,4 @@
 import { JsonRpcProvider } from 'ethers'
-import generateSpoofSig from 'utils/generateSpoofSig'
 
 import { networks } from '../../consts/networks'
 import { Account, AccountId, AccountStates } from '../../interfaces/account'
@@ -19,6 +18,7 @@ import {
 import { estimate, EstimateResult } from '../../libs/estimate/estimate'
 import { GasRecommendation, getGasPriceRecommendations } from '../../libs/gasPrice/gasPrice'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
+import generateSpoofSig from '../../utils/generateSpoofSig'
 import { AccountAdderController } from '../accountAdder/accountAdder'
 import { ActivityController } from '../activity/activity'
 import { EmailVaultController } from '../emailVault'
