@@ -1,4 +1,5 @@
 import { JsonRpcProvider } from 'ethers'
+import generateSpoofSig from 'utils/generateSpoofSig'
 
 import { networks } from '../../consts/networks'
 import { Account, AccountId, AccountStates } from '../../interfaces/account'
@@ -312,7 +313,11 @@ export class MainController extends EventEmitter {
       return uCalls
     }, [])
 
-    if (!calls.length) return null
+    const accAvailableKeys = this.keystore.keys.filter((key) =>
+      account.associatedKeys.includes(key.addr)
+    )
+
+    if (!calls.length || !accAvailableKeys.length) return null
 
     const currentAccountOp = this.accountOpsToBeSigned[accountAddr][networkId]?.accountOp
     return {
@@ -324,8 +329,7 @@ export class MainController extends EventEmitter {
       gasFeePayment: currentAccountOp?.gasFeePayment || null,
       // We use the AccountInfo to determine
       nonce: this.accountStates[accountAddr][networkId].nonce,
-      // @TODO set this to a spoofSig based on accountState
-      signature: null,
+      signature: generateSpoofSig(accAvailableKeys[0].addr),
       // @TODO from pending recoveries
       accountOpToExecuteBefore: null,
       calls
