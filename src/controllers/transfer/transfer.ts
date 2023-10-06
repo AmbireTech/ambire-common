@@ -1,14 +1,15 @@
 import erc20Abi from 'adex-protocol-eth/abi/ERC20.json'
-import { networks } from 'consts/networks'
-import EventEmitter from 'controllers/eventEmitter'
-import { PortfolioController } from 'controllers/portfolio/portfolio'
 import { formatUnits, Interface, parseUnits } from 'ethers'
-import { Storage } from 'interfaces/storage'
-import { UserRequest } from 'interfaces/userRequest'
-import { TokenResult } from 'libs/portfolio'
-import { isKnownTokenOrContract, isValidAddress } from 'services/address'
-import { getBip44Items, resolveENSDomain } from 'services/ensDomains'
-import { resolveUDomain } from 'services/unstoppableDomains'
+
+import { HumanizerInfoType } from '../../../v1/hooks/useConstants'
+import { networks } from '../../consts/networks'
+import { Storage } from '../../interfaces/storage'
+import { UserRequest } from '../../interfaces/userRequest'
+import { Portfolio, TokenResult } from '../../libs/portfolio'
+import { isKnownTokenOrContract } from '../../services/address'
+import { getBip44Items, resolveENSDomain } from '../../services/ensDomains'
+import { resolveUDomain } from '../../services/unstoppableDomains'
+import EventEmitter from '../eventEmitter'
 
 const ERC20 = new Interface(erc20Abi)
 
@@ -22,20 +23,21 @@ export class TransferController extends EventEmitter {
   amount: string = '0'
   maxAmount: string = '0'
   recipientAddress: string = ''
-  ensAddress: string = ''
-  uDAddress: string = ''
-  selectedAsset?: TokenResult
-  selectedAssetNetworkData?: {
-    id: string
-    unstoppableDomainsChain: string
-  }
-  userRequest: UserRequest | null = null
-  // @TODO:
-  isRecipientUnknownAddress: boolean = false
+  recipientEnsAddress: string | null = null
+  recipientUDAddress: string | null = null
+  selectedAsset: TokenResult | null = null
+  isRecipientAddressUnknown: boolean = false
   isRecipientSmartContract: boolean = false
   isRecipientSWRestricted: boolean = false
+  userRequest: UserRequest | null = null
 
-  #humanizerInfo: any = null
+  #selectedAssetNetworkData: {
+    id: string
+    unstoppableDomainsChain: string
+  } | null = null
+  #selectedAccount: string | null = null
+  #humanizerInfo: HumanizerInfoType | null = null
+  #tokens: TokenResult[] = []
   // Controllers
   #storage: Storage
 
@@ -45,20 +47,32 @@ export class TransferController extends EventEmitter {
     this.#storage = storage
   }
 
-  init({
+  async init({
+    selectedAccount,
     preSelectedAsset,
-    tokens,
-    humanizerInfo
+    humanizerInfo,
+    tokens
   }: {
+    selectedAccount: string
     preSelectedAsset?: string
+    humanizerInfo: HumanizerInfoType
     tokens: TokenResult[]
-    humanizerInfo: any
   }) {
+    if (!humanizerInfo) throw new Error('Humanizer is missing')
+    if (!selectedAccount) throw new Error('Selected account is missing')
+
     this.#humanizerInfo = humanizerInfo
+    this.#selectedAccount = selectedAccount
+
+    this.#tokens = tokens.filter((token) => Number(token.amount) > 0)
+
     if (preSelectedAsset) {
-      this.handleChangeAsset(tokens, preSelectedAsset)
-    } else {
-      this.selectedAsset = tokens[0]
+      this.handleChangeAsset(preSelectedAsset)
+    } else if (!preSelectedAsset && this.#tokens.length > 0) {
+      const firstToken = this.#tokens[0]
+      const firstTokenAddressAndNetwork = `${firstToken.address}-${firstToken.networkId}`
+
+      this.handleChangeAsset(firstTokenAddressAndNetwork)
     }
     this.emitUpdate()
   }
@@ -67,26 +81,28 @@ export class TransferController extends EventEmitter {
     this.amount = '0'
     this.maxAmount = '0'
     this.recipientAddress = ''
-    this.ensAddress = ''
-    this.uDAddress = ''
-    this.selectedAsset = undefined
-    this.selectedAssetNetworkData = undefined
+    this.recipientEnsAddress = ''
+    this.recipientUDAddress = ''
+    this.selectedAsset = null
+    this.#selectedAssetNetworkData = null
     this.userRequest = null
-    this.isRecipientUnknownAddress = false
+    this.isRecipientAddressUnknown = false
     this.isRecipientSmartContract = false
     this.isRecipientSWRestricted = false
 
     this.emitUpdate()
   }
 
-  async buildUserRequest({ selectedAccount }: { selectedAccount: string }) {
-    const recipientAddress = this.uDAddress || this.ensAddress || this.recipientAddress
+  async buildUserRequest() {
+    const recipientAddress =
+      this.recipientUDAddress || this.recipientEnsAddress || this.recipientAddress
 
-    if (!this.selectedAsset || !this.selectedAssetNetworkData || !selectedAccount) return
+    if (!this.selectedAsset || !this.#selectedAssetNetworkData || !this.#selectedAccount) return
 
-    const bigNumberHexAmount = `0x${parseUnits(this.amount, this.selectedAsset.decimals).toString(
-      16
-    )}`
+    const bigNumberHexAmount = `0x${parseUnits(
+      this.amount,
+      Number(this.selectedAsset.decimals)
+    ).toString(16)}`
 
     const txn = {
       kind: 'call' as const,
@@ -103,8 +119,8 @@ export class TransferController extends EventEmitter {
 
     const req: UserRequest = {
       id: new Date().getTime(),
-      networkId: this.selectedAssetNetworkData.id,
-      accountAddr: selectedAccount,
+      networkId: this.#selectedAssetNetworkData.id,
+      accountAddr: this.#selectedAccount,
       forceNonce: null,
       action: txn
     }
@@ -114,25 +130,27 @@ export class TransferController extends EventEmitter {
     this.emitUpdate()
   }
 
-  async setAddress(address: string) {
+  async setRecipientAddress(address: string) {
     this.recipientAddress = address
 
     if (address.startsWith('0x') && address.indexOf('.') === -1) {
-      if (this.uDAddress !== '') this.uDAddress = ''
-      if (this.ensAddress !== '') this.ensAddress = ''
+      if (this.recipientUDAddress !== '') this.recipientUDAddress = null
+      if (this.recipientEnsAddress !== '') this.recipientEnsAddress = null
     }
 
-    if (this.selectedAsset?.networkId && this.selectedAssetNetworkData) {
-      this.uDAddress = await resolveUDomain(
+    if (this.selectedAsset?.networkId && this.#selectedAssetNetworkData) {
+      this.recipientUDAddress = await resolveUDomain(
         address,
         this.selectedAsset.symbol,
-        this.selectedAssetNetworkData.unstoppableDomainsChain
+        this.#selectedAssetNetworkData.unstoppableDomainsChain
       )
 
       const bip44Item = getBip44Items(this.selectedAsset.symbol)
-      this.ensAddress = await resolveENSDomain(address, bip44Item)
+      this.recipientEnsAddress = await resolveENSDomain(address, bip44Item)
     }
-    this.isRecipientSmartContract = isKnownTokenOrContract(this.#humanizerInfo, address)
+    if (this.#humanizerInfo) {
+      this.isRecipientSmartContract = isKnownTokenOrContract(this.#humanizerInfo, address)
+    }
 
     const isRecipientAddressValid = !!this.selectedAsset?.address
     this.isRecipientSWRestricted =
@@ -141,13 +159,13 @@ export class TransferController extends EventEmitter {
       networks
         .map(({ id }) => id)
         .filter((id) => id !== 'ethereum')
-        .includes(this.selectedAssetNetworkData?.id || 'ethereum')
+        .includes(this.#selectedAssetNetworkData?.id || 'ethereum')
 
-    if (this.uDAddress || this.ensAddress) {
-      this.isRecipientUnknownAddress = true // check from the address book
+    if (this.recipientUDAddress || this.recipientEnsAddress) {
+      this.isRecipientAddressUnknown = true // @TODO: check from the address book
     }
 
-    this.isRecipientUnknownAddress = true // isValidAddress & check from the address book
+    this.isRecipientAddressUnknown = true // @TODO: isValidAddress & check from the address book
 
     this.emitUpdate()
   }
@@ -162,22 +180,23 @@ export class TransferController extends EventEmitter {
     this.emitUpdate()
   }
 
-  handleChangeAsset = (tokens: TokenResult[], assetAddressAndNetwork: string) => {
+  handleChangeAsset(assetAddressAndNetwork: string) {
     const [selectedAssetAddress, selectedAssetNetwork] =
       getTokenAddressAndNetworkFromId(assetAddressAndNetwork)
 
     const matchingToken =
-      tokens.find(
+      this.#tokens.find(
         ({ address: tokenAddress, networkId: tokenNetworkId }) =>
           tokenAddress === selectedAssetAddress && tokenNetworkId === selectedAssetNetwork
-      ) || tokens[0]
+      ) || this.#tokens[0]
 
     const { amount: matchingAssetAmount, decimals } = matchingToken
 
     this.selectedAsset = matchingToken
-    this.selectedAssetNetworkData = networks.find(({ id }) => id === matchingToken.networkId)
+    this.#selectedAssetNetworkData =
+      networks.find(({ id }) => id === matchingToken.networkId) || null
     this.amount = '0'
-    this.maxAmount = formatUnits(matchingAssetAmount, decimals)
+    this.maxAmount = formatUnits(matchingAssetAmount, Number(decimals))
 
     this.emitUpdate()
   }
