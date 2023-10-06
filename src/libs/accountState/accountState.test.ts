@@ -1,14 +1,16 @@
+import { ethers, JsonRpcProvider } from 'ethers'
+
 import { describe, expect, test } from '@jest/globals'
-import { JsonRpcProvider, ethers } from 'ethers'
-import { getAccountState } from './accountState'
-import { networks } from '../../consts/networks'
-import { get4437Bytecode, getBytecode } from '../proxyDeploy/bytecode'
-import { getAmbireAccountAddress } from '../proxyDeploy/getAmbireAddressTwo'
+
 import {
   AMBIRE_ACCOUNT_FACTORY,
   AMBIRE_ACCOUNT_FACTORY_ERC_4337,
   ERC_4337_ENTRYPOINT
 } from '../../consts/deploy'
+import { networks } from '../../consts/networks'
+import { get4437Bytecode, getBytecode } from '../proxyDeploy/bytecode'
+import { getAmbireAccountAddress } from '../proxyDeploy/getAmbireAddressTwo'
+import { getAccountState } from './accountState'
 
 const polygon = networks.find((x) => x.id === 'polygon')
 if (!polygon) throw new Error('unable to find polygon network in consts')
@@ -108,10 +110,10 @@ describe('AccountState', () => {
     expect(eoaAcc.balance).toBeGreaterThan(0n)
 
     const acc4337 = state[3]
-    expect(acc4337.nonce).toBeGreaterThanOrEqual(0)
+    expect(acc4337.nonce).toBeGreaterThanOrEqual(0n)
 
     const acc4337deployed = state[4]
-    expect(acc4337deployed.nonce).toBeGreaterThanOrEqual(0)
+    expect(acc4337deployed.nonce).toBeGreaterThanOrEqual(0n)
     expect(acc4337deployed.associatedKeys).toHaveProperty(ERC_4337_ENTRYPOINT)
     expect(acc4337deployed.associatedKeys[ERC_4337_ENTRYPOINT]).toBe(
       '0x42144640c7cb5ff8aa9595ae175ffcb6dd152db6e737c13cc2d5d07576967020'

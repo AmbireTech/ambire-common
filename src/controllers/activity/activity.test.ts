@@ -10,7 +10,7 @@ describe('Activity Controller ', () => {
     '0xa07D75aacEFd11b425AF7181958F0F85c312f143': {
       ethereum: {
         accountAddr: '0xa07D75aacEFd11b425AF7181958F0F85c312f143',
-        nonce: 379,
+        nonce: 379n,
         isDeployed: true,
         associatedKeys: ['0xd6e371526cdaeE04cd8AF225D42e37Bc14688D9E'],
         isV2: false,
@@ -40,7 +40,7 @@ describe('Activity Controller ', () => {
         gasLimit: null,
         gasFeePayment: null,
         networkId: 'ethereum',
-        nonce: 225,
+        nonce: 225n,
         signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503',
         calls: [
           {
@@ -85,7 +85,7 @@ describe('Activity Controller ', () => {
           gasLimit: null,
           gasFeePayment: null,
           networkId: 'ethereum',
-          nonce: 225,
+          nonce: 225n,
           signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503',
           calls: [
             {
@@ -102,7 +102,7 @@ describe('Activity Controller ', () => {
           gasLimit: null,
           gasFeePayment: null,
           networkId: 'ethereum',
-          nonce: 225,
+          nonce: 225n,
           signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503',
           calls: [
             {
@@ -119,7 +119,7 @@ describe('Activity Controller ', () => {
           gasLimit: null,
           gasFeePayment: null,
           networkId: 'optimism',
-          nonce: 225,
+          nonce: 225n,
           signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503',
           calls: [
             {
@@ -136,7 +136,7 @@ describe('Activity Controller ', () => {
           gasLimit: null,
           gasFeePayment: null,
           networkId: 'optimism',
-          nonce: 225,
+          nonce: 225n,
           signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503',
           calls: [
             {
@@ -172,7 +172,7 @@ describe('Activity Controller ', () => {
             gasLimit: null,
             gasFeePayment: null,
             networkId: 'optimism',
-            nonce: 225,
+            nonce: 225n,
             signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503',
             calls: [
               {
@@ -208,7 +208,7 @@ describe('Activity Controller ', () => {
         gasLimit: null,
         gasFeePayment: null,
         networkId: 'ethereum',
-        nonce: 225,
+        nonce: 225n,
         signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503',
         calls: [
           {
@@ -250,7 +250,7 @@ describe('Activity Controller ', () => {
         gasLimit: null,
         gasFeePayment: null,
         networkId: 'ethereum',
-        nonce: 225,
+        nonce: 225n,
         signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503',
         calls: [
           {
@@ -292,7 +292,7 @@ describe('Activity Controller ', () => {
         gasLimit: null,
         gasFeePayment: null,
         networkId: 'ethereum',
-        nonce: 225,
+        nonce: 225n,
         signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503',
         calls: [
           {
@@ -334,7 +334,7 @@ describe('Activity Controller ', () => {
         gasLimit: null,
         gasFeePayment: null,
         networkId: 'ethereum',
-        nonce: 225,
+        nonce: 225n,
         signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503',
         calls: [
           {
@@ -348,7 +348,7 @@ describe('Activity Controller ', () => {
 
       const accountsOps = Array.from(Array(1500).keys()).map((key) => ({
         ...accountOp,
-        nonce: key
+        nonce: BigInt(key)
       }))
 
       // eslint-disable-next-line no-restricted-syntax
@@ -361,8 +361,8 @@ describe('Activity Controller ', () => {
       const controllerAccountsOps = controller.accountsOps
 
       expect(controllerAccountsOps!.itemsTotal).toEqual(1000)
-      expect(controllerAccountsOps!.items[0].nonce).toEqual(500)
-      expect(controllerAccountsOps!.items[999].nonce).toEqual(1499)
+      expect(controllerAccountsOps!.items[0].nonce).toEqual(500n)
+      expect(controllerAccountsOps!.items[999].nonce).toEqual(1499n)
     })
   })
 
@@ -385,7 +385,7 @@ describe('Activity Controller ', () => {
           kind: 'message',
           message: '0x74657374'
         },
-        fromUserRequestId: 1,
+        fromUserRequestId: 1n,
         signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503'
       }
 
@@ -422,7 +422,7 @@ describe('Activity Controller ', () => {
           kind: 'message',
           message: '0x74657374'
         },
-        fromUserRequestId: 1,
+        fromUserRequestId: 1n,
         signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503'
       }
 
@@ -465,7 +465,7 @@ describe('Activity Controller ', () => {
           kind: 'message',
           message: '0x123456'
         },
-        fromUserRequestId: 1,
+        fromUserRequestId: 1n,
         signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503'
       }
 
