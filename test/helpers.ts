@@ -1,9 +1,10 @@
-import { ethers } from 'hardhat'
 import { BaseContract, JsonRpcProvider } from 'ethers'
-import { addressOne, addressTwo, abiCoder, AmbireAccount } from './config'
+import { ethers } from 'hardhat'
+
 import { Storage } from '../src/interfaces/storage'
 import { parse, stringify } from '../src/libs/bigintJson/bigintJson'
 import { wrapEthSign } from './ambireSign'
+import { abiCoder, addressOne, addressTwo, AmbireAccount } from './config'
 
 async function sendFunds(to: string, ether: number) {
   const [signer] = await ethers.getSigners()
@@ -24,13 +25,14 @@ function getPriviledgeTxn(ambireAccountAddr: string, privAddress: string, hasPri
   return [ambireAccountAddr, 0, calldata]
 }
 
-function getPriviledgeTxnWithCustomHash(ambireAccountAddr: string, privAddress: string, privHash: string) {
+function getPriviledgeTxnWithCustomHash(
+  ambireAccountAddr: string,
+  privAddress: string,
+  privHash: string
+) {
   const setAddrPrivilegeABI = ['function setAddrPrivilege(address addr, bytes32 priv)']
   const iface = new ethers.Interface(setAddrPrivilegeABI)
-  const calldata = iface.encodeFunctionData('setAddrPrivilege', [
-    privAddress,
-    privHash
-  ])
+  const calldata = iface.encodeFunctionData('setAddrPrivilege', [privAddress, privHash])
   return [ambireAccountAddr, 0, calldata]
 }
 
@@ -44,14 +46,11 @@ function getTimelockData(recoveryInfo = defaultRecoveryInfo) {
 
 async function getNonce(ambireAccountAddr: string, provider: JsonRpcProvider) {
   const accountContract = new ethers.Contract(ambireAccountAddr, AmbireAccount.abi, provider)
+  console.log('in get nonce', accountContract.nonce())
   return accountContract.nonce()
 }
 
-function getDKIMValidatorData(
-  parsedContents: any,
-  signer: any,
-  options: any = {}
-) {
+function getDKIMValidatorData(parsedContents: any, signer: any, options: any = {}) {
   const emptySecondSig = options.emptySecondSig ?? false
   const acceptEmptyDKIMSig = options.acceptEmptyDKIMSig ?? false
   const onlyOneSigTimelock = options.onlyOneSigTimelock ?? 0
@@ -73,33 +72,37 @@ function getDKIMValidatorData(
       0,
       acceptEmptyDKIMSig,
       emptySecondSig,
-      onlyOneSigTimelock,
+      onlyOneSigTimelock
     ]
   }
 
-  return abiCoder.encode([
-    'tuple(string,string,string,bytes,bytes,address,bool,uint32,uint32,bool,bool,uint32)'
-    ,
-  ], [[
-    emailFrom,
-    emailTo,
-    selector,
-    ethers.hexlify(parsedContents[0].modulus),
-    ethers.hexlify(ethers.toBeHex(parsedContents[0].exponent)),
-    signer.address,
-    acceptUnknownSelectors,
-    0,
-    0,
-    acceptEmptyDKIMSig,
-    emptySecondSig,
-    onlyOneSigTimelock,
-  ]])
+  return abiCoder.encode(
+    ['tuple(string,string,string,bytes,bytes,address,bool,uint32,uint32,bool,bool,uint32)'],
+    [
+      [
+        emailFrom,
+        emailTo,
+        selector,
+        ethers.hexlify(parsedContents[0].modulus),
+        ethers.hexlify(ethers.toBeHex(parsedContents[0].exponent)),
+        signer.address,
+        acceptUnknownSelectors,
+        0,
+        0,
+        acceptEmptyDKIMSig,
+        emptySecondSig,
+        onlyOneSigTimelock
+      ]
+    ]
+  )
 }
 
 function getSignerKey(validatorAddr: any, validatorData: any) {
-  const hash = ethers.keccak256(abiCoder.encode(['address', 'bytes'], [validatorAddr, validatorData]))
+  const hash = ethers.keccak256(
+    abiCoder.encode(['address', 'bytes'], [validatorAddr, validatorData])
+  )
   const signerKey = `0x${hash.slice(hash.length - 40, hash.length)}`
-  return {signerKey, hash}
+  return { signerKey, hash }
 }
 
 function produceMemoryStore(): Storage {
@@ -134,35 +137,40 @@ async function buildUserOp(paymaster: BaseContract, options: any = {}) {
   }
   const validUntil = options.validUntil ?? 0
   const validAfter = options.validAfter ?? 0
-  const hash = ethers.keccak256(abiCoder.encode([
-    'uint256',
-    'address',
-    'uint48',
-    'uint48',
-    'address',
-    'uint256',
-    'bytes',
-    'bytes',
-    'uint256',
-    'uint256',
-    'uint256',
-    'uint256',
-    'uint256',
-  ], [
-    options.chainId ?? 31337,
-    await paymaster.getAddress(),
-    validUntil,
-    validAfter,
-    userOp.sender,
-    options.signedNonce ?? userOp.nonce,
-    userOp.initCode,
-    userOp.callData,
-    userOp.callGasLimit,
-    userOp.verificationGasLimit,
-    userOp.preVerificationGas,
-    userOp.maxFeePerGas,
-    userOp.maxPriorityFeePerGas
-  ]));
+  const hash = ethers.keccak256(
+    abiCoder.encode(
+      [
+        'uint256',
+        'address',
+        'uint48',
+        'uint48',
+        'address',
+        'uint256',
+        'bytes',
+        'bytes',
+        'uint256',
+        'uint256',
+        'uint256',
+        'uint256',
+        'uint256'
+      ],
+      [
+        options.chainId ?? 31337,
+        await paymaster.getAddress(),
+        validUntil,
+        validAfter,
+        userOp.sender,
+        options.signedNonce ?? userOp.nonce,
+        userOp.initCode,
+        userOp.callData,
+        userOp.callGasLimit,
+        userOp.verificationGasLimit,
+        userOp.preVerificationGas,
+        userOp.maxFeePerGas,
+        userOp.maxPriorityFeePerGas
+      ]
+    )
+  )
   const signature = wrapEthSign(await relayer.signMessage(ethers.getBytes(hash)))
 
   // abi.decode(userOp.paymasterAndData[20:], (uint48, uint48, bytes))
@@ -170,10 +178,9 @@ async function buildUserOp(paymaster: BaseContract, options: any = {}) {
     ['uint48', 'uint48', 'bytes'],
     [validUntil, validAfter, signature]
   )
-  const paymasterAndData = ethers.hexlify(ethers.concat([
-    await paymaster.getAddress(),
-    paymasterData
-  ]))
+  const paymasterAndData = ethers.hexlify(
+    ethers.concat([await paymaster.getAddress(), paymasterData])
+  )
   // (uint48 validUntil, uint48 validAfter, bytes memory signature) = abi.decode(userOp.paymasterAndData[20:], (uint48, uint48, bytes));
 
   userOp.paymasterAndData = paymasterAndData
@@ -181,27 +188,23 @@ async function buildUserOp(paymaster: BaseContract, options: any = {}) {
 }
 
 function getTargetNonce(userOperation: any) {
-  return '0x' + ethers.keccak256(
-    abiCoder.encode([
-      'bytes',
-      'bytes',
-      'uint256',
-      'uint256',
-      'uint256',
-      'uint256',
-      'uint256',
-      'bytes',
-    ], [
-      userOperation.initCode,
-      userOperation.callData,
-      userOperation.callGasLimit,
-      userOperation.verificationGasLimit,
-      userOperation.preVerificationGas,
-      userOperation.maxFeePerGas,
-      userOperation.maxPriorityFeePerGas,
-      userOperation.paymasterAndData,
-    ])
-  ).substring(18) + ethers.toBeHex(0, 8).substring(2)
+  return `0x${ethers
+    .keccak256(
+      abiCoder.encode(
+        ['bytes', 'bytes', 'uint256', 'uint256', 'uint256', 'uint256', 'uint256', 'bytes'],
+        [
+          userOperation.initCode,
+          userOperation.callData,
+          userOperation.callGasLimit,
+          userOperation.verificationGasLimit,
+          userOperation.preVerificationGas,
+          userOperation.maxFeePerGas,
+          userOperation.maxPriorityFeePerGas,
+          userOperation.paymasterAndData
+        ]
+      )
+    )
+    .substring(18)}${ethers.toBeHex(0, 8).substring(2)}`
 }
 
 export {
