@@ -150,7 +150,7 @@ export function accountOpSignableHash(op: AccountOp): Uint8Array {
         [
           op.accountAddr,
           opNetworks[0].chainId,
-          op.nonce ?? 0,
+          op.nonce ?? 0n,
           op.calls.map((call: Call) => [call.to, call.value, call.data])
         ]
       )
