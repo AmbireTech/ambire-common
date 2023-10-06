@@ -46,7 +46,6 @@ function getTimelockData(recoveryInfo = defaultRecoveryInfo) {
 
 async function getNonce(ambireAccountAddr: string, provider: JsonRpcProvider) {
   const accountContract = new ethers.Contract(ambireAccountAddr, AmbireAccount.abi, provider)
-  console.log('in get nonce', accountContract.nonce())
   return accountContract.nonce()
 }
 
