@@ -1,11 +1,12 @@
-import { JsonRpcProvider, AbiCoder } from 'ethers'
-import { describe, expect } from '@jest/globals'
+import { AbiCoder, JsonRpcProvider } from 'ethers'
 import fetch from 'node-fetch'
-import { estimate, EstimateResult } from './estimate'
 
+import { describe, expect } from '@jest/globals'
+
+import { getNonce } from '../../../test/helpers'
 import { networks } from '../../consts/networks'
 import { Portfolio } from '../portfolio/portfolio'
-import { getNonce } from '../../../test/helpers'
+import { estimate, EstimateResult } from './estimate'
 
 const ethereum = networks.find((x) => x.id === 'ethereum')
 const optimism = networks.find((x) => x.id === 'optimism')

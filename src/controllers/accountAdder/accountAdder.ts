@@ -483,7 +483,7 @@ export class AccountAdderController extends EventEmitter {
         )
 
         accountState.forEach((acc: AccountOnchainState) => {
-          if (acc.balance > BigInt(0) || acc.nonce > 0) {
+          if (acc.balance > BigInt(0) || acc.nonce > BigInt(0)) {
             accountsObj[acc.accountAddr].account.usedOnNetworks.push(network)
           }
         })
