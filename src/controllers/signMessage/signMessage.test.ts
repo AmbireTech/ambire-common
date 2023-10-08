@@ -1,5 +1,6 @@
 import { JsonRpcProvider } from 'ethers'
 import { Account } from 'interfaces/account'
+import fetch from 'node-fetch'
 
 import { describe, expect, jest, test } from '@jest/globals'
 
@@ -30,7 +31,12 @@ describe('SignMessageController', () => {
     const keystoreSigners = { internal: InternalSigner }
     keystore = new KeystoreController(produceMemoryStore(), keystoreSigners)
 
-    signMessageController = new SignMessageController(keystore, providers)
+    signMessageController = new SignMessageController(
+      keystore,
+      providers,
+      produceMemoryStore(),
+      fetch
+    )
   })
 
   test('should initialize with a valid message', (done) => {

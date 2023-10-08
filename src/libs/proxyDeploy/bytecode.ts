@@ -1,4 +1,4 @@
-import { NetworkDescriptor } from "interfaces/networkDescriptor"
+import { NetworkDescriptor } from "../../interfaces/networkDescriptor"
 import { PrivLevels, getProxyDeployBytecode, getStorageSlotsFromArtifact } from "./deploy"
 import { JsonRpcProvider } from "ethers"
 import { PROXY_AMBIRE_4337_ACCOUNT, PROXY_AMBIRE_ACCOUNT } from "../../consts/deploy"
