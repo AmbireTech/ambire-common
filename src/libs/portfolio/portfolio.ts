@@ -51,7 +51,7 @@ export interface GetOptions {
   previousHints?: {
     erc20s: Hints['erc20s']
     erc721s: Hints['erc721s']
-  },
+  }
   pinned?: string[]
 }
 
@@ -175,18 +175,29 @@ export class Portfolio {
     }
 
     const tokenFilter = ([error, result]: [string, TokenResult]): boolean =>
-      (result.amount > 0 || pinned!.includes(result.address)) && error == '0x' && result.symbol !== ''
+      (result.amount > 0 || pinned!.includes(result.address)) &&
+      error === '0x' &&
+      result.symbol !== ''
 
-    const tokens = tokensWithErr.filter(tokenFilter).map(([_, result]) => result)
+    const tokens = tokensWithErr
+      .filter((tokenWithErr) => tokenFilter(tokenWithErr))
+      .map(([, result]) => result)
 
-    const collections = collectionsWithErr.filter(tokenFilter).map(([_, x], i) => {
+    const unfilteredCollections = collectionsWithErr.map(([error, x], i) => {
       const address = collectionsHints[i][0] as unknown as string
-      return {
-        ...x,
-        address,
-        priceIn: getPriceFromCache(address) || []
-      } as CollectionResult
+      return [
+        error,
+        {
+          ...x,
+          address,
+          priceIn: getPriceFromCache(address) || []
+        }
+      ] as [string, CollectionResult]
     })
+
+    const collections = unfilteredCollections
+      .filter((preFilterCollection) => tokenFilter(preFilterCollection))
+      .map(([, collection]) => collection)
 
     const oracleCallDone = Date.now()
 
