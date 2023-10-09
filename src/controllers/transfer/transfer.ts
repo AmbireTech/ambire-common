@@ -26,9 +26,9 @@ export class TransferController extends EventEmitter {
 
   recipientAddress: string = ''
 
-  recipientEnsAddress: string | null = null
+  recipientEnsAddress: string = ''
 
-  recipientUDAddress: string | null = null
+  recipientUDAddress: string = ''
 
   selectedAsset: TokenResult | null = null
 
@@ -96,8 +96,8 @@ export class TransferController extends EventEmitter {
   reset() {
     this.amount = '0'
     this.recipientAddress = ''
-    this.recipientEnsAddress = null
-    this.recipientUDAddress = null
+    this.recipientEnsAddress = ''
+    this.recipientUDAddress = ''
     this.selectedAsset = this.#tokens[0]
     this.#selectedAssetNetworkData = null
     this.userRequest = null
@@ -156,8 +156,8 @@ export class TransferController extends EventEmitter {
     const canBeEnsOrUd = !address.startsWith('0x') || address.indexOf('.') !== -1
 
     if (!canBeEnsOrUd) {
-      if (this.recipientUDAddress) this.recipientUDAddress = null
-      if (this.recipientEnsAddress) this.recipientEnsAddress = null
+      if (this.recipientUDAddress) this.recipientUDAddress = ''
+      if (this.recipientEnsAddress) this.recipientEnsAddress = ''
     }
 
     if (this.selectedAsset?.networkId && this.#selectedAssetNetworkData && canBeEnsOrUd) {

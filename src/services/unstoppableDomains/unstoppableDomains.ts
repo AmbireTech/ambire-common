@@ -43,7 +43,7 @@ async function resolveAddressMultiChain(domain, currency, chain) {
     .catch((e) => ({ success: false, code: e.code, message: getMessage(e.code) }))
 }
 
-async function resolveUDomain(domain, currency, chain): string | null {
+async function resolveUDomain(domain, currency, chain): string {
   const [nativeUDAddress, customUDAddress] = await Promise.all([
     resolveAddress(domain),
     resolveAddressMultiChain(domain, currency, chain)
@@ -53,7 +53,7 @@ async function resolveUDomain(domain, currency, chain): string | null {
     ? customUDAddress.address
     : nativeUDAddress.success
     ? nativeUDAddress.address
-    : null
+    : ''
 }
 
 export { resolveUDomain }
