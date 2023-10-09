@@ -25,17 +25,20 @@ const PLACEHOLDER_RECIPIENT_LOWERCASE = PLACEHOLDER_RECIPIENT.toLowerCase()
 const PLACEHOLDER_SELECTED_ACCOUNT = '0xc4A6bB5139123bD6ba0CF387828a9A3a73EF8D1e'
 const XWALLET_ADDRESS = '0x47Cd7E91C3CBaAF266369fe8518345fc4FC12935'
 
-const portfolio = new Portfolio(fetch, provider, ethereum)
+const ethPortfolio = new Portfolio(fetch, provider, ethereum)
+const polygonPortfolio = new Portfolio(fetch, polygonProvider, polygon)
 
 let transferController: TransferController
 
 describe('Transfer Controller', () => {
   test('should initialize', async () => {
-    const accountPortfolio = await portfolio.get(PLACEHOLDER_SELECTED_ACCOUNT)
+    const ethAccPortfolio = await ethPortfolio.get(PLACEHOLDER_SELECTED_ACCOUNT)
+    const polygonAccPortfolio = await polygonPortfolio.get(PLACEHOLDER_SELECTED_ACCOUNT)
+    const tokens = [...ethAccPortfolio.tokens, ...polygonAccPortfolio.tokens]
     transferController = new TransferController()
     await transferController.init({
       selectedAccount: PLACEHOLDER_SELECTED_ACCOUNT,
-      tokens: accountPortfolio.tokens,
+      tokens,
       humanizerInfo: humanizerInfo as any
     })
     expect(transferController).toBeDefined()
@@ -59,7 +62,12 @@ describe('Transfer Controller', () => {
       PLACEHOLDER_RECIPIENT_LOWERCASE
     )
   })
-  // @TODO: recipient address validation tests: is it a contract, a SW restricted address, etc.
+  // @TODO: recipient address validation tests: is it a contract or unknown
+  test('should show SW warning', async () => {
+    await transferController.handleTokenChange(`0x${'0'.repeat(40)}-polygon`)
+
+    expect(transferController.isSWWarningVisible).toBe(true)
+  })
   test('should change selected token', () => {
     transferController.handleTokenChange(`${XWALLET_ADDRESS}-ethereum`)
     expect(transferController.selectedToken?.address).toBe(XWALLET_ADDRESS)
