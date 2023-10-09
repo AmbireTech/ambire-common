@@ -47,19 +47,23 @@ describe('Transfer Controller', () => {
     expect(transferController.recipientAddress).toBe(PLACEHOLDER_RECIPIENT)
   })
   test('should resolve ENS', async () => {
-    await transferController.setRecipientAddress('elmoto.eth')
+    transferController.setRecipientAddress('elmoto.eth')
+    await transferController.onRecipientAddressChange()
 
     expect(transferController.recipientEnsAddress).toBe(PLACEHOLDER_RECIPIENT)
   })
   // @TODO: fix unstoppable domains
   test('should resolve UnstoppableDomains', async () => {
-    await transferController.setRecipientAddress('0xyakmotoru.wallet')
+    transferController.setRecipientAddress('0xyakmotoru.wallet')
+    await transferController.onRecipientAddressChange()
 
-    expect(transferController.recipientUDAddress).toBe(PLACEHOLDER_RECIPIENT_LOWERCASE)
+    expect(transferController.recipientUDAddress?.toLowerCase()).toBe(
+      PLACEHOLDER_RECIPIENT_LOWERCASE
+    )
   })
   // @TODO: recipient address validation tests: is it a contract, a SW restricted address, etc.
   test('should change selected asset', () => {
-    transferController.handleChangeAsset(`${XWALLET_ADDRESS}-ethereum`)
+    transferController.handleAssetChange(`${XWALLET_ADDRESS}-ethereum`)
     expect(transferController.selectedAsset?.address).toBe(XWALLET_ADDRESS)
     expect(transferController.selectedAsset?.networkId).toBe('ethereum')
   })
@@ -92,7 +96,7 @@ describe('Transfer Controller', () => {
     expect(transferController.userRequest?.action.value).toBe(0n)
   })
   test('should build user request with native asset transfer', async () => {
-    transferController.handleChangeAsset(`0x${'0'.repeat(40)}-ethereum`)
+    transferController.handleAssetChange(`0x${'0'.repeat(40)}-ethereum`)
     transferController.setAmount('1')
     await transferController.buildUserRequest()
 
@@ -102,7 +106,9 @@ describe('Transfer Controller', () => {
     // Fixes TS errors
     if (transferController.userRequest?.action.kind !== 'call') return
 
-    expect(transferController.userRequest?.action.to).toBe(PLACEHOLDER_RECIPIENT_LOWERCASE)
+    expect(transferController.userRequest?.action.to.toLowerCase()).toBe(
+      PLACEHOLDER_RECIPIENT_LOWERCASE
+    )
     expect(transferController.userRequest?.action.value).toBe(1000000000000000000n)
   })
 })

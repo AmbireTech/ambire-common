@@ -145,14 +145,19 @@ export class TransferController extends EventEmitter {
     this.emitUpdate()
   }
 
-  async setRecipientAddress(address: string) {
-    this.recipientAddress = address
+  setRecipientAddress(address: string) {
+    this.recipientAddress = address.trim()
+    this.emitUpdate()
+  }
 
-    const canBeEnsOrUd = !address.startsWith('0x') && address.indexOf('.') !== -1
+  // Allows for debounce implementation in the UI
+  async onRecipientAddressChange() {
+    const address = this.recipientAddress.trim()
+    const canBeEnsOrUd = !address.startsWith('0x') || address.indexOf('.') !== -1
 
-    if (canBeEnsOrUd) {
-      if (this.recipientUDAddress !== '') this.recipientUDAddress = null
-      if (this.recipientEnsAddress !== '') this.recipientEnsAddress = null
+    if (!canBeEnsOrUd) {
+      if (this.recipientUDAddress) this.recipientUDAddress = null
+      if (this.recipientEnsAddress) this.recipientEnsAddress = null
     }
 
     if (this.selectedAsset?.networkId && this.#selectedAssetNetworkData && canBeEnsOrUd) {
@@ -183,7 +188,6 @@ export class TransferController extends EventEmitter {
     }
 
     this.isRecipientAddressUnknown = true // @TODO: isValidAddress & check from the address book
-
     this.emitUpdate()
   }
 
