@@ -11,8 +11,8 @@ const getRandomEmail = () => {
   return `yosif${Math.random().toString().slice(2)}@ambire.com`
 }
 const email = getRandomEmail()
-// const relayerUrl = 'https://staging-relayer.ambire.com'
-const relayerUrl = 'http://localhost:1934'
+const relayerUrl = 'https://staging-relayer.ambire.com'
+// const relayerUrl = 'http://localhost:1934'
 
 describe('Polling', () => {
   const ev: EmailVault = new EmailVault(fetch, relayerUrl)
