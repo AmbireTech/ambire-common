@@ -38,10 +38,10 @@ const validateAddAuthSignerAddress = (address: string, selectedAcc: any) => {
 }
 
 const validateSendTransferAddress = (
-  address: any,
-  selectedAcc: any,
+  address: string,
+  selectedAcc: string,
   addressConfirmed: any,
-  isKnownAddress: any,
+  isRecipientAddressUnknown: boolean,
   humanizerInfo: ConstantsType['humanizerInfo'],
   isUDAddress?: boolean,
   isEnsAddress?: boolean
@@ -63,7 +63,7 @@ const validateSendTransferAddress = (
     }
   }
 
-  if (address && !isKnownAddress(address) && !addressConfirmed && !isUDAddress && !isEnsAddress) {
+  if (address && isRecipientAddressUnknown && !addressConfirmed && !isUDAddress && !isEnsAddress) {
     return {
       success: false,
       message:
@@ -71,7 +71,7 @@ const validateSendTransferAddress = (
     }
   }
 
-  if (address && !isKnownAddress(address) && !addressConfirmed && (isUDAddress || isEnsAddress)) {
+  if (address && isRecipientAddressUnknown && !addressConfirmed && (isUDAddress || isEnsAddress)) {
     const name = isUDAddress ? 'Unstoppable domain' : 'Ethereum Name Service'
     return {
       success: false,
