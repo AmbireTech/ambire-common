@@ -1,8 +1,11 @@
 // TODO: fill in the collectibles types
 
+import { Account } from 'ambire-common/src/hooks/useAccounts'
+
 import { NETWORKS } from '../../constants/networks'
 import { SupportedProtocolType } from '../../constants/supportedProtocols'
 import { UseConstantsReturnType } from '../useConstants'
+import { UseRelayerDataReturnType } from '../useRelayerData'
 import { UseStorageType } from '../useStorage'
 import { UseToastsReturnType } from '../useToasts'
 
@@ -63,11 +66,26 @@ export type UsePortfolioProps = {
   isVisible: boolean
   useToasts: () => UseToastsReturnType
   getBalances: (
-    network: SupportedProtocolType['network'],
+    network: Network,
     protocol: string,
     address: string,
-    provider?: SupportedProtocolType['balancesProvider']
+    provider?: SupportedProtocolType['balancesProvider'],
+    quickResponse?: boolean
   ) => Promise<any>
+  getCoingeckoPrices: (ids: string[], vs_currencies: string[]) => Promise<any>
+  getCoingeckoPriceByContract: (
+    contractAddress: string,
+    vs_currencies: string[]
+  ) => Promise<{ [key: string]: number }>
+  getCoingeckoCoin: (id: string, vs_currencies: string[]) => Promise<{ [key: string]: number }>
+  relayerURL: string
+  useRelayerData: () => UseRelayerDataReturnType
+  eligibleRequests: any[]
+  requests: any[]
+  selectedAccount: string | null
+  sentTxn: any
+  useCacheStorage: UseStorageType
+  accounts: Account[]
 }
 
 export type UseExtraTokensProps = {
