@@ -17,11 +17,6 @@ const getTokenAddressAndNetworkFromId = (id: string) => {
   return [address, networkId]
 }
 
-/**
- * Represents a book.
- * @constructor
- * @param {string} storage - Reference to storage.
- */
 export class TransferController extends EventEmitter {
   // State
   amount: string = '0'
