@@ -9,8 +9,8 @@ import { requestMagicLink } from './magicLink'
 
 const playstationEmail = 'playstation'
 const exMagicLinkKey = 'b12239309b38294f4075463ff131ac8cfe32ef2f99fc'
-const email = 'yosif+playstation@ambire.com'
-const relayerUrl = 'http://localhost:1934'
+const email = 'unufri+playstation@ambire.com'
+const relayerUrl = 'https://staging-relayer.ambire.com'
 
 describe('MagicLink', () => {
   test('should return key for session', async () => {

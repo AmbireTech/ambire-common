@@ -48,10 +48,10 @@ class InternalSigner {
 const keystoreSigners = { internal: InternalSigner }
 
 const getRandomEmail = () => {
-  return `yosif${Math.random().toString().slice(2)}@ambire.com`
+  return `unufri+${Math.random().toString().slice(2)}@ambire.com`
 }
 let storage: Storage
-const relayerUrl: string = 'http://localhost:1934'
+const relayerUrl: string = 'https://staging-relayer.ambire.com'
 let keystore: KeystoreController
 let email: string
 describe('happy cases', () => {
@@ -104,7 +104,7 @@ describe('happy cases', () => {
     expect(key).toBeTruthy()
     expect(newSecrets[key!]).toMatchObject({ key, type: 'keyStore' })
   })
-  test('getKeyStoreSecret', async () => {
+  test('recoverKeyStore', async () => {
     const ev = new EmailVaultController(storage, fetch, relayerUrl, keystore)
 
     await ev.getEmailVaultInfo(email)
@@ -113,7 +113,7 @@ describe('happy cases', () => {
     expect(Object.keys(ev.emailVaultStates.email[email].availableSecrets).length).toBe(2)
 
     expect(keystore.isUnlocked).toBeFalsy()
-    await ev.getKeyStoreSecret(email)
+    await ev.recoverKeyStore(email)
     expect(keystore.isUnlocked).toBeTruthy()
   })
 

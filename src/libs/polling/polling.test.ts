@@ -8,7 +8,7 @@ import { EmailVaultData } from '../../interfaces/emailVault'
 import { relayerCall } from '../relayerCall/relayerCall'
 
 const getRandomEmail = () => {
-  return `yosif${Math.random().toString().slice(2)}@ambire.com`
+  return `yosif+${Math.random().toString().slice(2)}@ambire.com`
 }
 const email = getRandomEmail()
 const relayerUrl = 'https://staging-relayer.ambire.com'

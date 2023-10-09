@@ -247,7 +247,7 @@ export class EmailVaultController extends EventEmitter {
     }
   }
 
-  async getKeyStoreSecret(email: string): Promise<EmailVaultSecret | null> {
+  async recoverKeyStore(email: string): Promise<EmailVaultSecret | null> {
     const uid = await this.#keyStore.getKeyStoreUid()
     const state = this.emailVaultStates
     if (

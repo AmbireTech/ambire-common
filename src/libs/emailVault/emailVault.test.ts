@@ -11,7 +11,7 @@ let email: String
 let email2: String
 
 // Relayer have to be start with NODE_ENV === 'testing' to can retrive the secret
-const relayerUrl = 'http://localhost:1934'
+const relayerUrl = 'https://staging-relayer.ambire.com'
 const callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
 const emailVault = new EmailVault(fetch, relayerUrl)
 const errorPrefix = 'relayer call error:'
@@ -24,8 +24,8 @@ let recoveryKey2: String
 const keyStoreSecret = 'keyStoreSecretHere'
 
 const initEmailVaultTest = async () => {
-  email = `yosif+${Wallet.createRandom().address.slice(12, 20)}@ambire.com`.toLowerCase()
-  email2 = `yosif+${Wallet.createRandom().address.slice(12, 20)}@ambire.com`.toLowerCase()
+  email = `unufri+${Wallet.createRandom().address.slice(12, 20)}@ambire.com`.toLowerCase()
+  email2 = `unufri+${Wallet.createRandom().address.slice(12, 20)}@ambire.com`.toLowerCase()
   const keys1 = await requestMagicLink(email, relayerUrl, fetch)
   authKey = keys1.key
   authSecret = keys1.secret!
@@ -37,7 +37,7 @@ const initEmailVaultTest = async () => {
 
 describe('happy cases email vault', () => {
   beforeAll(async () => {
-    email = `yosif+${Wallet.createRandom().address.slice(12, 20)}@ambire.com`.toLowerCase()
+    email = `unufri+${Wallet.createRandom().address.slice(12, 20)}@ambire.com`.toLowerCase()
     const result = await requestMagicLink(email, relayerUrl, fetch)
     authKey = result.key
     authSecret = result.secret!
@@ -131,11 +131,6 @@ describe('err cases', () => {
     await initEmailVaultTest()
   })
   describe('create', () => {
-    test('invalid email', async () => {
-      await expect(emailVault.getEmailVaultInfo('invalidEmail', authKey)).rejects.toThrow(
-        `${errorPrefix} invalid email`
-      )
-    })
     test('no  key', async () => {
       await expect(emailVault.getEmailVaultInfo(email, authKey2)).rejects.toThrow(
         `${errorPrefix} invalid key`

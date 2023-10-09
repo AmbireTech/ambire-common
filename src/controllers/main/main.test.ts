@@ -57,9 +57,8 @@ describe('Main Controller ', () => {
   ]
 
   const storage = produceMemoryStore()
-  // const relayerUrl = 'https://staging-relayer.ambire.com'
-  const relayerUrl = 'http://localhost:1934'
-  const email = 'emil@ambire.com'
+  const relayerUrl = 'https://staging-relayer.ambire.com'
+  const email = 'unufri@ambire.com'
   storage.set('accounts', accounts)
   let controller: MainController
   test('Init controller', async () => {
@@ -123,7 +122,7 @@ describe('Main Controller ', () => {
   })
 
   test('login with emailVault', async () => {
-    controller.emailVault.login(email)
+    await controller.emailVault.getEmailVaultInfo(email)
     // eslint-disable-next-line no-promise-executor-return
     await new Promise((resolve) => controller.emailVault.onUpdate(() => resolve(null)))
     console.log(controller.emailVault.emailVaultStates)
@@ -146,7 +145,7 @@ describe('Main Controller ', () => {
       return new Promise((resolve) => setTimeout(() => resolve(null), ms))
     }
     // controller.lock()
-    await controller.emailVault.getKeyStoreSecret(email)
+    await controller.emailVault.recoverKeyStore(email)
     // console.log('isUnlock ==>', controller.isUnlock())
     // eslint-disable-next-line no-promise-executor-return
     // await new Promise((resolve) => controller.emailVault.onUpdate(() => resolve(null)))
