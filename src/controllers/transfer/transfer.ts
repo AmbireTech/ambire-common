@@ -109,7 +109,7 @@ export class TransferController extends EventEmitter {
     this.selectedToken = this.tokens[0]
     this.#selectedTokenNetworkData = null
     this.userRequest = null
-    this.isRecipientAddressUnknown = true
+    this.isRecipientAddressUnknown = false
     this.isRecipientSmartContract = false
     this.isRecipientSWRestricted = false
 
