@@ -39,7 +39,7 @@ export class TransferController extends EventEmitter {
 
   isRecipientSmartContract: boolean = false
 
-  isRecipientSWRestricted: boolean = false
+  isSWWarningVisible: boolean = false
 
   userRequest: UserRequest | null = null
 
@@ -111,7 +111,7 @@ export class TransferController extends EventEmitter {
     this.userRequest = null
     this.isRecipientAddressUnknown = false
     this.isRecipientSmartContract = false
-    this.isRecipientSWRestricted = false
+    this.isSWWarningVisible = false
 
     this.emitUpdate()
   }
@@ -194,15 +194,6 @@ export class TransferController extends EventEmitter {
       this.isRecipientSmartContract = isKnownTokenOrContract(this.#humanizerInfo, address)
     }
 
-    const isRecipientAddressValid = !!this.selectedToken?.address
-    this.isRecipientSWRestricted =
-      isRecipientAddressValid &&
-      Number(this.selectedToken?.address) === 0 &&
-      networks
-        .map(({ id }) => id)
-        .filter((id) => id !== 'ethereum')
-        .includes(this.#selectedTokenNetworkData?.id || 'ethereum')
-
     if (this.recipientUDAddress || this.recipientEnsAddress) {
       this.isRecipientAddressUnknown = true // @TODO: check from the address book
     }
@@ -246,6 +237,13 @@ export class TransferController extends EventEmitter {
       networks.find(({ id }) => id === matchingToken.networkId) || null
     this.amount = '0'
     this.maxAmount = formatUnits(matchingTokenAmount, Number(decimals))
+    this.isSWWarningVisible =
+      !!this.selectedToken?.address &&
+      Number(this.selectedToken?.address) === 0 &&
+      networks
+        .map(({ id }) => id)
+        .filter((id) => id !== 'ethereum')
+        .includes(this.#selectedTokenNetworkData?.id || 'ethereum')
 
     this.emitUpdate()
   }
