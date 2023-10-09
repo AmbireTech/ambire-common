@@ -60,26 +60,26 @@ describe('Transfer Controller', () => {
     )
   })
   // @TODO: recipient address validation tests: is it a contract, a SW restricted address, etc.
-  test('should change selected asset', () => {
-    transferController.handleAssetChange(`${XWALLET_ADDRESS}-ethereum`)
-    expect(transferController.selectedAsset?.address).toBe(XWALLET_ADDRESS)
-    expect(transferController.selectedAsset?.networkId).toBe('ethereum')
+  test('should change selected token', () => {
+    transferController.handleTokenChange(`${XWALLET_ADDRESS}-ethereum`)
+    expect(transferController.selectedToken?.address).toBe(XWALLET_ADDRESS)
+    expect(transferController.selectedToken?.networkId).toBe('ethereum')
   })
   test('should set amount', () => {
     transferController.setAmount('1')
     expect(transferController.amount).toBe('1')
   })
   test('should set max amount', async () => {
-    const selectedAssetMaxAmount = formatUnits(
-      transferController.selectedAsset?.amount || 0n,
-      Number(transferController.selectedAsset?.decimals)
+    const selectedTokenMaxAmount = formatUnits(
+      transferController.selectedToken?.amount || 0n,
+      Number(transferController.selectedToken?.decimals)
     )
 
     transferController.setMaxAmount()
 
-    expect(transferController.maxAmount).toBe(selectedAssetMaxAmount)
+    expect(transferController.maxAmount).toBe(selectedTokenMaxAmount)
   })
-  test('should build user request with non-native asset transfer', async () => {
+  test('should build user request with non-native token transfer', async () => {
     await transferController.buildUserRequest()
 
     expect(transferController.userRequest?.accountAddr).toBe(PLACEHOLDER_SELECTED_ACCOUNT)
@@ -88,13 +88,13 @@ describe('Transfer Controller', () => {
     // Fixes TS errors
     if (transferController.userRequest?.action.kind !== 'call') return
 
-    // To be the selected asset's address. @TODO: Is this correct?
+    // To be the selected token's address. @TODO: Is this correct?
     expect(transferController.userRequest?.action.to).toBe(XWALLET_ADDRESS)
-    // Because we are not transferring the native asset
+    // Because we are not transferring the native token
     expect(transferController.userRequest?.action.value).toBe(0n)
   })
-  test('should build user request with native asset transfer', async () => {
-    transferController.handleAssetChange(`0x${'0'.repeat(40)}-ethereum`)
+  test('should build user request with native token transfer', async () => {
+    transferController.handleTokenChange(`0x${'0'.repeat(40)}-ethereum`)
     transferController.setAmount('1')
     await transferController.buildUserRequest()
 
