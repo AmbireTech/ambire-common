@@ -18,6 +18,7 @@ import {
 } from '../../interfaces/keystore'
 import { Storage } from '../../interfaces/storage'
 import EventEmitter from '../../libs/eventEmitter/eventEmitter'
+import wait from '../../utils/wait'
 
 const scryptDefaults = { N: 131072, r: 8, p: 1, dkLen: 64 }
 const CIPHER = 'aes-128-ctr'
@@ -185,7 +186,7 @@ export class KeystoreController extends EventEmitter {
     this.#mainKey = { key: decrypted.slice(0, 16), iv: decrypted.slice(16, 32) }
   }
 
-  unlockWithSecret(secretId: string, secret: string) {
+  async unlockWithSecret(secretId: string, secret: string) {
     return this.wrapKeystoreAction('unlockWithSecret', () =>
       this.#unlockWithSecret(secretId, secret)
     )
@@ -396,7 +397,7 @@ export class KeystoreController extends EventEmitter {
   }
 
   async wrapKeystoreAction(callName: string, fn: Function) {
-    if (this.status !== 'INITIAL') return
+    if (this.status === 'LOADING') return
     this.latestMethodCall = callName
     this.errorMessage = ''
     this.status = 'LOADING'
@@ -417,11 +418,11 @@ export class KeystoreController extends EventEmitter {
     this.status = 'DONE'
     this.emitUpdate()
 
-    // reset the status in the next tick to ensure the FE receives the 'DONE' state
-    // setTimeout(() => {
-    this.status = 'INITIAL'
-    this.emitUpdate()
-    // }, 1)
+    await wait(1)
+    if (this.latestMethodCall === callName) {
+      this.status = 'INITIAL'
+      this.emitUpdate()
+    }
   }
 
   async removeKey(addr: Key['addr'], type: Key['type']) {

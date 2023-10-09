@@ -11,7 +11,9 @@ import {
 } from '../../libs/account/account'
 import { getAccountState } from '../../libs/accountState/accountState'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
+
 import EventEmitter from '../../libs/eventEmitter/eventEmitter'
+import wait from '../../utils/wait'
 
 const INITIAL_PAGE_INDEX = 1
 const PAGE_SIZE = 5
@@ -380,10 +382,9 @@ export class AccountAdderController extends EventEmitter {
     this.emitUpdate()
 
     // reset the addAccountsStatus in the next tick to ensure the FE receives the 'SUCCESS' state
-    setTimeout(() => {
-      this.addAccountsStatus = 'INITIAL'
-      this.emitUpdate()
-    }, 1)
+    await wait(1)
+    this.addAccountsStatus = 'INITIAL'
+    this.emitUpdate()
   }
 
   async #calculateAccounts({
@@ -483,7 +484,7 @@ export class AccountAdderController extends EventEmitter {
         )
 
         accountState.forEach((acc: AccountOnchainState) => {
-          if (acc.balance > BigInt(0) || acc.nonce > 0) {
+          if (acc.balance > BigInt(0) || acc.nonce > BigInt(0)) {
             accountsObj[acc.accountAddr].account.usedOnNetworks.push(network)
           }
         })

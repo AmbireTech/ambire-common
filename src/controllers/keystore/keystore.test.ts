@@ -304,16 +304,18 @@ describe('KeystoreController', () => {
     keystore.unlockWithSecret('passphrase', pass)
 
     const unsubscribe = keystore.onUpdate(async () => {
-      const keyBackup = await keystore.exportKeyWithPasscode(
-        keyPublicAddress,
-        'internal',
-        'goshoPazara'
-      )
-      const wallet = await Wallet.fromEncryptedJson(JSON.parse(keyBackup), 'goshoPazara')
-      expect(wallet.address).toBe(keyPublicAddress)
+      if (keystore.latestMethodCall === 'unlockWithSecret' && keystore.status === 'DONE') {
+        const keyBackup = await keystore.exportKeyWithPasscode(
+          keyPublicAddress,
+          'internal',
+          'goshoPazara'
+        )
+        const wallet = await Wallet.fromEncryptedJson(JSON.parse(keyBackup), 'goshoPazara')
+        expect(wallet.address).toBe(keyPublicAddress)
 
-      unsubscribe()
-      done()
+        unsubscribe()
+        done()
+      }
     })
   })
 

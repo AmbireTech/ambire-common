@@ -6,7 +6,7 @@ import { AccountOp, accountOpSignableHash, Call } from './accountOp'
 
 describe('AccountOp', () => {
   test('should generate a valid hash for signing', async () => {
-    const nonce = 0
+    const nonce = 0n
     const ambireAccountAddress = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
     const signerAddr = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
     const abiCoder = new ethers.AbiCoder()
