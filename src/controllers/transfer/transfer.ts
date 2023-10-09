@@ -26,7 +26,7 @@ export class TransferController extends EventEmitter {
   recipientEnsAddress: string | null = null
   recipientUDAddress: string | null = null
   selectedAsset: TokenResult | null = null
-  isRecipientAddressUnknown: boolean = false
+  isRecipientAddressUnknown: boolean = true
   isRecipientSmartContract: boolean = false
   isRecipientSWRestricted: boolean = false
   userRequest: UserRequest | null = null
@@ -50,6 +50,7 @@ export class TransferController extends EventEmitter {
   async init({
     selectedAccount,
     preSelectedAsset,
+    // The old humanizer from ambire-constants. @TODO: replace it with the new one?
     humanizerInfo,
     tokens
   }: {
@@ -58,8 +59,10 @@ export class TransferController extends EventEmitter {
     humanizerInfo: HumanizerInfoType
     tokens: TokenResult[]
   }) {
-    if (!humanizerInfo) throw new Error('Humanizer is missing')
-    if (!selectedAccount) throw new Error('Selected account is missing')
+    if (!humanizerInfo)
+      throw new Error('Invalid humanizerInfo value during TransferController init.')
+    if (!selectedAccount)
+      throw new Error('Invalid selectedAccount value during TransferController init.')
 
     this.#humanizerInfo = humanizerInfo
     this.#selectedAccount = selectedAccount
@@ -67,26 +70,25 @@ export class TransferController extends EventEmitter {
     this.#tokens = tokens.filter((token) => Number(token.amount) > 0)
 
     if (preSelectedAsset) {
-      this.handleChangeAsset(preSelectedAsset)
+      this.handleAssetChange(preSelectedAsset)
     } else if (!preSelectedAsset && this.#tokens.length > 0) {
       const firstToken = this.#tokens[0]
       const firstTokenAddressAndNetwork = `${firstToken.address}-${firstToken.networkId}`
 
-      this.handleChangeAsset(firstTokenAddressAndNetwork)
+      this.handleAssetChange(firstTokenAddressAndNetwork)
     }
     this.emitUpdate()
   }
 
   reset() {
     this.amount = '0'
-    this.maxAmount = '0'
     this.recipientAddress = ''
-    this.recipientEnsAddress = ''
-    this.recipientUDAddress = ''
-    this.selectedAsset = null
+    this.recipientEnsAddress = null
+    this.recipientUDAddress = null
+    this.selectedAsset = this.#tokens[0]
     this.#selectedAssetNetworkData = null
     this.userRequest = null
-    this.isRecipientAddressUnknown = false
+    this.isRecipientAddressUnknown = true
     this.isRecipientSmartContract = false
     this.isRecipientSWRestricted = false
 
@@ -133,12 +135,14 @@ export class TransferController extends EventEmitter {
   async setRecipientAddress(address: string) {
     this.recipientAddress = address
 
-    if (address.startsWith('0x') && address.indexOf('.') === -1) {
+    const canBeEnsOrUd = !address.startsWith('0x') && address.indexOf('.') !== -1
+
+    if (canBeEnsOrUd) {
       if (this.recipientUDAddress !== '') this.recipientUDAddress = null
       if (this.recipientEnsAddress !== '') this.recipientEnsAddress = null
     }
 
-    if (this.selectedAsset?.networkId && this.#selectedAssetNetworkData) {
+    if (this.selectedAsset?.networkId && this.#selectedAssetNetworkData && canBeEnsOrUd) {
       this.recipientUDAddress = await resolveUDomain(
         address,
         this.selectedAsset.symbol,
@@ -180,7 +184,7 @@ export class TransferController extends EventEmitter {
     this.emitUpdate()
   }
 
-  handleChangeAsset(assetAddressAndNetwork: string) {
+  handleAssetChange(assetAddressAndNetwork: string) {
     const [selectedAssetAddress, selectedAssetNetwork] =
       getTokenAddressAndNetworkFromId(assetAddressAndNetwork)
 
