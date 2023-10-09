@@ -5,7 +5,7 @@ import { HumanizerInfoType } from '../../../v1/hooks/useConstants'
 import { networks } from '../../consts/networks'
 import { Storage } from '../../interfaces/storage'
 import { UserRequest } from '../../interfaces/userRequest'
-import { Portfolio, TokenResult } from '../../libs/portfolio'
+import { TokenResult } from '../../libs/portfolio'
 import { isKnownTokenOrContract } from '../../services/address'
 import { getBip44Items, resolveENSDomain } from '../../services/ensDomains'
 import { resolveUDomain } from '../../services/unstoppableDomains'
@@ -21,23 +21,36 @@ const getTokenAddressAndNetworkFromId = (id: string) => {
 export class TransferController extends EventEmitter {
   // State
   amount: string = '0'
+
   maxAmount: string = '0'
+
   recipientAddress: string = ''
+
   recipientEnsAddress: string | null = null
+
   recipientUDAddress: string | null = null
+
   selectedAsset: TokenResult | null = null
+
   isRecipientAddressUnknown: boolean = true
+
   isRecipientSmartContract: boolean = false
+
   isRecipientSWRestricted: boolean = false
+
   userRequest: UserRequest | null = null
 
   #selectedAssetNetworkData: {
     id: string
     unstoppableDomainsChain: string
   } | null = null
+
   #selectedAccount: string | null = null
+
   #humanizerInfo: HumanizerInfoType | null = null
+
   #tokens: TokenResult[] = []
+
   // Controllers
   #storage: Storage
 
