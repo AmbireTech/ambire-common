@@ -19,6 +19,8 @@ const getTokenAddressAndNetworkFromId = (id: string) => {
 
 export class TransferController extends EventEmitter {
   // State
+  isInitialized: boolean = false
+
   amount: string = '0'
 
   maxAmount: string = '0'
@@ -62,10 +64,23 @@ export class TransferController extends EventEmitter {
     humanizerInfo: HumanizerInfoType
     tokens: TokenResult[]
   }) {
-    if (!humanizerInfo)
-      throw new Error('Invalid humanizerInfo value during TransferController init.')
-    if (!selectedAccount)
-      throw new Error('Invalid selectedAccount value during TransferController init.')
+    if (!humanizerInfo) {
+      this.emitError({
+        level: 'major',
+        message: 'Internal transfer error. Please retry, or contact support if issue persists.',
+        error: new Error('transfer: missing humanizerInfo')
+      })
+
+      return
+    }
+    if (!selectedAccount) {
+      this.emitError({
+        level: 'major',
+        message: 'Internal transfer error. Please retry, or contact support if issue persists.',
+        error: new Error('transfer: missing selectedAccount')
+      })
+      return
+    }
 
     this.#humanizerInfo = humanizerInfo
     this.#selectedAccount = selectedAccount
@@ -80,10 +95,13 @@ export class TransferController extends EventEmitter {
 
       this.handleTokenChange(firstTokenAddressAndNetwork)
     }
+    this.isInitialized = true
+
     this.emitUpdate()
   }
 
   reset() {
+    this.isInitialized = false
     this.amount = '0'
     this.recipientAddress = ''
     this.recipientEnsAddress = ''
@@ -99,6 +117,10 @@ export class TransferController extends EventEmitter {
   }
 
   async buildUserRequest() {
+    if (!this.isInitialized) {
+      this.#throwNotInitialized()
+      return
+    }
     const recipientAddress =
       this.recipientUDAddress || this.recipientEnsAddress || this.recipientAddress
 
@@ -136,12 +158,20 @@ export class TransferController extends EventEmitter {
   }
 
   setRecipientAddress(address: string) {
+    if (!this.isInitialized) {
+      this.#throwNotInitialized()
+      return
+    }
     this.recipientAddress = address.trim()
     this.emitUpdate()
   }
 
   // Allows for debounce implementation in the UI
   async onRecipientAddressChange() {
+    if (!this.isInitialized) {
+      this.#throwNotInitialized()
+      return
+    }
     const address = this.recipientAddress.trim()
     const canBeEnsOrUd = !address.startsWith('0x') || address.indexOf('.') !== -1
 
@@ -182,11 +212,19 @@ export class TransferController extends EventEmitter {
   }
 
   setAmount(amount: string) {
+    if (!this.isInitialized) {
+      this.#throwNotInitialized()
+      return
+    }
     this.amount = amount
     this.emitUpdate()
   }
 
   setMaxAmount() {
+    if (!this.isInitialized) {
+      this.#throwNotInitialized()
+      return
+    }
     this.amount = this.maxAmount
     this.emitUpdate()
   }
@@ -210,5 +248,14 @@ export class TransferController extends EventEmitter {
     this.maxAmount = formatUnits(matchingTokenAmount, Number(decimals))
 
     this.emitUpdate()
+  }
+
+  #throwNotInitialized() {
+    this.emitError({
+      level: 'major',
+      message:
+        'We encountered an internal error during transfer initialization. Retry, or contact support if issue persists.',
+      error: new Error('transfer: controller not initialized')
+    })
   }
 }
