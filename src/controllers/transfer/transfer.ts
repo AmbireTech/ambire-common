@@ -32,11 +32,13 @@ export class TransferController extends EventEmitter {
 
   recipientEnsAddress: string = ''
 
+  tokens: TokenResult[] = []
+
   recipientUDAddress: string = ''
 
   selectedAsset: TokenResult | null = null
 
-  isRecipientAddressUnknown: boolean = true
+  isRecipientAddressUnknown: boolean = false
 
   isRecipientSmartContract: boolean = false
 
@@ -52,8 +54,6 @@ export class TransferController extends EventEmitter {
   #selectedAccount: string | null = null
 
   #humanizerInfo: HumanizerInfoType | null = null
-
-  #tokens: TokenResult[] = []
 
   async init({
     selectedAccount,
@@ -75,12 +75,12 @@ export class TransferController extends EventEmitter {
     this.#humanizerInfo = humanizerInfo
     this.#selectedAccount = selectedAccount
 
-    this.#tokens = tokens.filter((token) => Number(token.amount) > 0)
+    this.tokens = tokens.filter((token) => token.amount !== 0n)
 
     if (preSelectedAsset) {
       this.handleAssetChange(preSelectedAsset)
-    } else if (!preSelectedAsset && this.#tokens.length > 0) {
-      const firstToken = this.#tokens[0]
+    } else if (!preSelectedAsset && this.tokens.length > 0) {
+      const firstToken = this.tokens[0]
       const firstTokenAddressAndNetwork = `${firstToken.address}-${firstToken.networkId}`
 
       this.handleAssetChange(firstTokenAddressAndNetwork)
@@ -93,7 +93,7 @@ export class TransferController extends EventEmitter {
     this.recipientAddress = ''
     this.recipientEnsAddress = ''
     this.recipientUDAddress = ''
-    this.selectedAsset = this.#tokens[0]
+    this.selectedAsset = this.tokens[0]
     this.#selectedAssetNetworkData = null
     this.userRequest = null
     this.isRecipientAddressUnknown = true
@@ -201,10 +201,10 @@ export class TransferController extends EventEmitter {
       getTokenAddressAndNetworkFromId(assetAddressAndNetwork)
 
     const matchingToken =
-      this.#tokens.find(
+      this.tokens.find(
         ({ address: tokenAddress, networkId: tokenNetworkId }) =>
           tokenAddress === selectedAssetAddress && tokenNetworkId === selectedAssetNetwork
-      ) || this.#tokens[0]
+      ) || this.tokens[0]
 
     const { amount: matchingAssetAmount, decimals } = matchingToken
 
