@@ -18,6 +18,7 @@ import {
 import { estimate, EstimateResult } from '../../libs/estimate/estimate'
 import { GasRecommendation, getGasPriceRecommendations } from '../../libs/gasPrice/gasPrice'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
+import generateSpoofSig from '../../utils/generateSpoofSig'
 import { AccountAdderController } from '../accountAdder/accountAdder'
 import { ActivityController } from '../activity/activity'
 import { EmailVaultController } from '../emailVault'
@@ -312,7 +313,11 @@ export class MainController extends EventEmitter {
       return uCalls
     }, [])
 
-    if (!calls.length) return null
+    const accAvailableKeys = this.keystore.keys.filter((key) =>
+      account.associatedKeys.includes(key.addr)
+    )
+
+    if (!calls.length || !accAvailableKeys.length) return null
 
     const currentAccountOp = this.accountOpsToBeSigned[accountAddr][networkId]?.accountOp
     return {
@@ -324,8 +329,7 @@ export class MainController extends EventEmitter {
       gasFeePayment: currentAccountOp?.gasFeePayment || null,
       // We use the AccountInfo to determine
       nonce: this.accountStates[accountAddr][networkId].nonce,
-      // @TODO set this to a spoofSig based on accountState
-      signature: null,
+      signature: generateSpoofSig(accAvailableKeys[0].addr),
       // @TODO from pending recoveries
       accountOpToExecuteBefore: null,
       calls
@@ -382,7 +386,7 @@ export class MainController extends EventEmitter {
   // @TODO allow this to remove multiple OR figure out a way to debounce re-estimations
   // first one sounds more reasonble
   // although the second one can't hurt and can help (or no debounce, just a one-at-a-time queue)
-  removeUserRequest(id: number) {
+  async removeUserRequest(id: number) {
     const req = this.userRequests.find((uReq) => uReq.id === id)
     if (!req) return
 
@@ -396,6 +400,12 @@ export class MainController extends EventEmitter {
       const accountOp = this.#makeAccountOpFromUserRequests(accountAddr, networkId)
       if (accountOp) {
         this.accountOpsToBeSigned[accountAddr][networkId] = { accountOp, estimation: null }
+        try {
+          await this.#estimateAccountOp(accountOp)
+        } catch (e) {
+          // @TODO: unified wrapper for controller errors
+          console.error(e)
+        }
       } else {
         delete this.accountOpsToBeSigned[accountAddr][networkId]
         if (!Object.keys(this.accountOpsToBeSigned[accountAddr] || {}).length)
