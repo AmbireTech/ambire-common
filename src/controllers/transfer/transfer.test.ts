@@ -1,7 +1,6 @@
 import { formatUnits, JsonRpcProvider } from 'ethers'
 import fetch from 'node-fetch'
 
-import { produceMemoryStore } from '../../../test/helpers'
 import humanizerInfo from '../../consts/ambireConstantsHumanizerInfo.json'
 import { networks } from '../../consts/networks'
 import { Portfolio } from '../../libs/portfolio'
@@ -27,14 +26,13 @@ const PLACEHOLDER_SELECTED_ACCOUNT = '0xc4A6bB5139123bD6ba0CF387828a9A3a73EF8D1e
 const XWALLET_ADDRESS = '0x47Cd7E91C3CBaAF266369fe8518345fc4FC12935'
 
 const portfolio = new Portfolio(fetch, provider, ethereum)
-const storage = produceMemoryStore()
 
 let transferController: TransferController
 
 describe('Transfer Controller', () => {
   test('should initialize', async () => {
     const accountPortfolio = await portfolio.get(PLACEHOLDER_SELECTED_ACCOUNT)
-    transferController = new TransferController({ storage })
+    transferController = new TransferController()
     await transferController.init({
       selectedAccount: PLACEHOLDER_SELECTED_ACCOUNT,
       tokens: accountPortfolio.tokens,

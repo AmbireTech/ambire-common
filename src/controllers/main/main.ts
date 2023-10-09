@@ -49,6 +49,7 @@ export class MainController extends EventEmitter {
 
   // Subcontrollers
   portfolio: PortfolioController
+
   transfer: TransferController
 
   // Public sub-structures
@@ -131,7 +132,7 @@ export class MainController extends EventEmitter {
       relayerUrl,
       fetch: this.#fetch
     })
-    this.transfer = new TransferController({ storage: this.#storage })
+    this.transfer = new TransferController()
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch: this.#fetch })
     this.onResolveDappRequest = onResolveDappRequest
     this.onRejectDappRequest = onRejectDappRequest

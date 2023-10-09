@@ -3,7 +3,6 @@ import { formatUnits, Interface, parseUnits } from 'ethers'
 
 import { HumanizerInfoType } from '../../../v1/hooks/useConstants'
 import { networks } from '../../consts/networks'
-import { Storage } from '../../interfaces/storage'
 import { UserRequest } from '../../interfaces/userRequest'
 import { TokenResult } from '../../libs/portfolio'
 import { isKnownTokenOrContract } from '../../services/address'
@@ -18,6 +17,11 @@ const getTokenAddressAndNetworkFromId = (id: string) => {
   return [address, networkId]
 }
 
+/**
+ * Represents a book.
+ * @constructor
+ * @param {string} storage - Reference to storage.
+ */
 export class TransferController extends EventEmitter {
   // State
   amount: string = '0'
@@ -50,15 +54,6 @@ export class TransferController extends EventEmitter {
   #humanizerInfo: HumanizerInfoType | null = null
 
   #tokens: TokenResult[] = []
-
-  // Controllers
-  #storage: Storage
-
-  constructor({ storage }: { storage: Storage }) {
-    super()
-    // Will be used for storing the user's address book
-    this.#storage = storage
-  }
 
   async init({
     selectedAccount,
