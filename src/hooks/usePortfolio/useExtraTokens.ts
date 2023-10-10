@@ -35,7 +35,7 @@ export default function useExtraTokens({
     (extraToken) => {
       const { address, name, symbol } = extraToken
 
-      if (extraTokens.map((t) => t.address).includes(address))
+      if (extraTokens.map((t) => t.address).includes(address.toLowerCase()))
         return {
           isEligible: false,
           reason: `${name} (${symbol}) is already added to your wallet.`
@@ -46,14 +46,14 @@ export default function useExtraTokens({
         Object.values(constants.tokenList)
           .flat(1)
           .map((t) => t.address)
-          .includes(address)
+          .includes(address.toLowerCase())
       )
         return {
           isEligible: false,
           reason: `${name} (${symbol}) is already handled by your wallet.`
         }
 
-      if (tokens.map((t) => t.address).includes(address))
+      if (tokens.map((t) => t.address).includes(address.toLowerCase()))
         return {
           isEligible: false,
           reason: `You already have ${name} (${symbol}) in your wallet.`
