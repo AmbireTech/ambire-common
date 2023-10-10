@@ -1,5 +1,6 @@
 import { ethers, JsonRpcProvider } from 'ethers'
 
+import { PROXY_AMBIRE_ACCOUNT } from '../../../dist/src/consts/deploy'
 import { Account, AccountOnchainState } from '../../interfaces/account'
 import { KeyIterator } from '../../interfaces/keyIterator'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
@@ -354,7 +355,8 @@ export class AccountAdderController extends EventEmitter {
         ]),
         creation: {
           factoryAddr: acc.creation!.factoryAddr,
-          salt: acc.creation!.salt
+          salt: acc.creation!.salt,
+          baseIdentityAddr: PROXY_AMBIRE_ACCOUNT
         }
       }))
 
