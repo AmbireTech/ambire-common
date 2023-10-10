@@ -20,7 +20,7 @@ export default function usePortfolio({
   getBalances,
   getCoingeckoPrices,
   getCoingeckoPriceByContract,
-  getCoingeckoAssetPlatforms,
+  getCoingeckoCoin,
   relayerURL,
   useRelayerData,
   eligibleRequests,
@@ -28,13 +28,15 @@ export default function usePortfolio({
   selectedAccount,
   sentTxn,
   useCacheStorage,
-  accounts
+  accounts,
+  requestPendingState
 }: UsePortfolioProps): UsePortfolioReturnType {
   const { constants } = useConstants()
   const { addToast } = useToasts()
   const currentAccount = useRef<string>()
   const isInitialMount = useRef(true)
-
+  // Pending tokens which arent in constants tokenList
+  const [pendingTokens, setPendingTokens] = useState([])
   // Implementation of structure that contains all assets by account and network
   const [assets, setAssetsByAccount, isInitializing] = useCacheStorage({
     key: 'ambire-assets',
@@ -114,7 +116,7 @@ export default function usePortfolio({
     setAssetsByAccount,
     getCoingeckoPrices,
     getCoingeckoPriceByContract,
-    getCoingeckoAssetPlatforms,
+    getCoingeckoCoin,
     filterByHiddenTokens,
     extraTokens,
     pendingTransactions,
@@ -124,7 +126,10 @@ export default function usePortfolio({
     fetchingAssets,
     setFetchingAssets,
     оtherNetworksFetching,
-    setOtherNetworksFetching
+    setOtherNetworksFetching,
+    requestPendingState,
+    pendingTokens,
+    setPendingTokens
   })
 
   // Implementation of balances calculation
@@ -135,7 +140,7 @@ export default function usePortfolio({
     currentNetwork,
     filterByHiddenTokens
   )
-
+  // TODO: Should optimize extraTokens in dependencies
   const refreshTokensIfVisible = useCallback(() => {
     if (!account || isInitializing) return
     if (
@@ -146,7 +151,18 @@ export default function usePortfolio({
       fetchTokens(account, currentNetwork, false, currentAssets)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [account, currentNetwork, eligibleRequests, isVisible, isInitializing])
+  }, [
+    account,
+    currentNetwork,
+    isVisible,
+    isInitializing,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    `${eligibleRequests}`,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    `${pendingTransactions}`,
+    extraTokens,
+    pendingTokens
+  ])
 
   const loadBalance = async () => {
     if (!account || isInitializing) return
@@ -176,13 +192,15 @@ export default function usePortfolio({
     } else {
       refreshTokensIfVisible()
     }
-  }, [currentNetwork, isVisible, refreshTokensIfVisible, isInitializing])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentNetwork, isVisible, isInitializing])
 
   // Refresh balance every 90s if visible
   // NOTE: this must be synced (a multiple of) supplementing, otherwise we can end up with weird inconsistencies
   useEffect(() => {
     const refreshInterval = setInterval(refreshTokensIfVisible, 90000)
     return () => clearInterval(refreshInterval)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refreshTokensIfVisible])
 
   // Fetch other networks assets every 60 seconds
@@ -201,17 +219,38 @@ export default function usePortfolio({
     const refreshInterval = setInterval(refreshIfHidden, 150000)
     return () => clearInterval(refreshInterval)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [account, currentNetwork, isVisible, isInitializing])
+  }, [
+    account,
+    currentNetwork,
+    isVisible,
+    isInitializing,
+    extraTokens, // eslint-disable-next-line react-hooks/exhaustive-deps
+    `${eligibleRequests}`,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    `${pendingTransactions}`
+  ])
+
+  const refreshPricesAndBalance = useCallback(() => {
+    updateCoingeckoAndSupplementData(currentAssets, false, requestPendingState)
+  }, [
+    currentAssets,
+    requestPendingState,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    `${eligibleRequests}`,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    `${pendingTransactions}`,
+    updateCoingeckoAndSupplementData
+  ])
 
   // Get supplement tokens data every 20s and check if prices are 2 min old and fetch new ones
   useEffect(() => {
     const refreshInterval =
       !isInitializing &&
       setInterval(() => {
-        updateCoingeckoAndSupplementData(currentAssets)
+        refreshPricesAndBalance(currentAssets)
       }, 20000)
     return () => clearInterval(refreshInterval)
-  }, [currentAssets, currentNetwork, isInitializing, updateCoingeckoAndSupplementData])
+  }, [currentAssets, currentNetwork, isInitializing, refreshPricesAndBalance, extraTokens])
 
   useEffect(() => {
     if (isInitialMount.current) {
@@ -220,13 +259,21 @@ export default function usePortfolio({
       }
     } else {
       // Your useEffect code here to be run on update
-      fetchAndSetSupplementTokenData(currentAssets)
+      fetchAndSetSupplementTokenData(currentAssets, requestPendingState)
     }
     // In order to have an array in dependency we need to stringify it,
     // so we can be subscribed to changes of objects inside our arrays.
     // https://stackoverflow.com/a/65728647/8335898
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [`${eligibleRequests}`, `${pendingTransactions}`, isInitializing])
+  }, [
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    `${eligibleRequests}`,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    `${pendingTransactions}`,
+    requestPendingState,
+    extraTokens,
+    isInitializing
+  ])
 
   return {
     balance,

@@ -14,11 +14,19 @@ export default function useTransactions({
   const url = relayerURL ? `${relayerURL}/identity/${account}/${currentNetwork}/transactions` : null
   const { data, isLoading, forceRefresh } = useRelayerData({ url })
 
-  // Pending transactions which aren't executed yet
-  const allPending = useMemo(
-    () => txns && txns.filter((x: any) => !x.executed && !x.replaced),
-    [txns]
+  const sentTxnsNotConfirmed = useMemo(
+    () => sentTxn && sentTxn.filter((tx: any) => !tx.confirmed),
+    [sentTxn]
   )
+
+  // Pending transactions which aren't executed yet
+  const allPending = useMemo(() => {
+    const allTxns =
+      sentTxnsNotConfirmed &&
+      sentTxnsNotConfirmed.filter((txn: any) => !(txns && txns.find((tx) => tx.txId === txn.hash)))
+    const pendingTransactionsOnMempool = txns && txns.filter((x: any) => !x.executed && !x.replaced)
+    return [...allTxns, ...pendingTransactionsOnMempool]
+  }, [txns, sentTxnsNotConfirmed])
 
   // Set in state transactions so we don't lose them on refetch
   useEffect(() => {
@@ -46,6 +54,6 @@ export default function useTransactions({
   }, [allPending])
 
   return {
-    pendingTransactions: allPending?.length ? [allPending] : []
+    pendingTransactions: allPending?.length ? allPending : []
   }
 }

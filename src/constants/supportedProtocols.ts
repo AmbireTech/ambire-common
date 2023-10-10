@@ -75,6 +75,12 @@ const supportedProtocols: SupportedProtocolType[] = [
     nftsProvider: 'velcro'
   },
   {
+    network: 'base',
+    protocols: [],
+    balancesProvider: 'velcro',
+    nftsProvider: 'velcro'
+  },
+  {
     network: 'andromeda',
     protocols: [],
     balancesProvider: 'velcro',
@@ -86,6 +92,24 @@ const supportedProtocols: SupportedProtocolType[] = [
   //   balancesProvider: 'velcro',
   //   nftsProvider: 'velcro'
   // },
+  {
+    network: 'okc',
+    protocols: [],
+    balancesProvider: 'velcro',
+    nftsProvider: 'velcro'
+  },
+  {
+    network: 'mumbai',
+    protocols: [],
+    balancesProvider: 'velcro',
+    nftsProvider: 'velcro'
+  },
+  {
+    network: 'sepolia',
+    protocols: [],
+    balancesProvider: 'velcro',
+    nftsProvider: 'velcro'
+  },
   {
     network: 'ethereum-pow',
     protocols: [],
