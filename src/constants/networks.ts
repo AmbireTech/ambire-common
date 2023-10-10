@@ -17,7 +17,8 @@ export enum NETWORKS {
   'aurora' = 'aurora',
   'okc' = 'okc',
   'ethereum-pow' = 'ethereum-pow',
-  'sepolia' = 'sepolia'
+  'sepolia' = 'sepolia',
+  'base' = 'base'
 }
 
 export type NetworkId = keyof typeof NETWORKS
@@ -177,7 +178,7 @@ const networks: NetworkType[] = [
     chainId: 100,
     nativeAssetSymbol: 'XDAI',
     name: 'Gnosis Chain',
-    explorerUrl: 'https://blockscout.com',
+    explorerUrl: 'https://gnosisscan.io',
     unstoppableDomainsChain: 'ERC20',
     isGasTankAvailable: true,
     relayerlessOnly: false,
@@ -211,6 +212,22 @@ const networks: NetworkType[] = [
     nativeAssetSymbol: 'ETH',
     name: 'Optimism',
     explorerUrl: 'https://optimistic.etherscan.io',
+    unstoppableDomainsChain: 'ERC20',
+    isGasTankAvailable: true,
+    relayerlessOnly: false,
+    nativeAsset: {
+      address: '0x0000000000000000000000000000000000000000',
+      symbol: 'ETH',
+      coingeckoId: 'ethereum',
+      decimals: 18
+    }
+  },
+  {
+    id: NETWORKS.base,
+    chainId: 8453,
+    nativeAssetSymbol: 'ETH',
+    name: 'Base',
+    explorerUrl: 'https://basescan.org/',
     unstoppableDomainsChain: 'ERC20',
     isGasTankAvailable: true,
     relayerlessOnly: false,
@@ -358,7 +375,8 @@ export const coingeckoNets = {
   cronos: 'cronos',
   aurora: 'aurora',
   optimism: 'optimistic-ethereum',
-  'optimistic-ethereum': 'optimism'
+  'optimistic-ethereum': 'optimism',
+  base: 'base'
 }
 
 export default networks
