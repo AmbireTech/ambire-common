@@ -16,7 +16,7 @@ After cloning the web or the mobile app and doing `npm install` (or `yarn instal
 
 ### Option 2: use `npm link` (for the web app only)
 
-1. Run `yarn install:peers` in ambire-common.
+1. Run `yarn install` in ambire-common.
 
 2. In the ambire-common directory run `npm link`
 

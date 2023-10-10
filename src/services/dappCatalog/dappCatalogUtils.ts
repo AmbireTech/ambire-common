@@ -38,6 +38,14 @@ export const getManifestFromDappUrl = async (
   const hasManifest = !!body && body.name && (Array.isArray(body.icons) || body.iconPath)
 
   const isGnosisManifest = hasManifest && body.description && body.iconPath
+
+  if (!isGnosisManifest) {
+    throw new Error(
+      'Custom dApps must be compatible with the Safe Apps ecosystem. Please enter the URL of a dApp that supports Safe.',
+      { cause: 'not-safe' }
+    )
+  }
+
   const isWalletPlugin =
     hasManifest &&
     body.name &&
@@ -46,7 +54,6 @@ export const getManifestFromDappUrl = async (
     (isGnosisManifest ||
       (Array.isArray(body.web3Connectivity) &&
         body.web3Connectivity.includes(SupportedWeb3Connectivity.gnosis)))
-
   const manifest = hasManifest
     ? ({
         url,
@@ -55,7 +62,7 @@ export const getManifestFromDappUrl = async (
         iconUrl:
           body.iconUrl ||
           `${url}/${(body.iconPath || body.icons[0]?.src || '').replace(/^\//, '')}`,
-        connectionType: isGnosisManifest ? 'gnosis' : 'walletconnect',
+        connectionType: 'gnosis',
         networks: (body.networks || []).map(chainIdToWalletNetworkId),
         isWalletPlugin,
         web3Connectivity: body.web3Connectivity,
