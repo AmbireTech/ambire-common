@@ -10,12 +10,8 @@ import { messageHumanizer } from '../../libs/humanizer'
 import { IrMessage } from '../../libs/humanizer/interfaces'
 import { verifyMessage } from '../../libs/signMessage/signMessage'
 import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
-<<<<<<< HEAD
 import EventEmitter from '../../libs/eventEmitter/eventEmitter'
-=======
-import EventEmitter from '../eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
->>>>>>> v2
 
 export class SignMessageController extends EventEmitter {
   #keystore: KeystoreController

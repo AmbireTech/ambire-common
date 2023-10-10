@@ -5,7 +5,7 @@ import { KeystoreController } from '../keystore/keystore'
 import { requestMagicLink } from '../../libs/magicLink/magicLink'
 import { EmailVaultController } from './emailVault'
 import { Storage } from '../../interfaces/storage'
-import { EmailVault } from '../../../dist/libs/emailVault/emailVault'
+import { EmailVault } from '../../libs/emailVault/emailVault'
 import { Key } from '../../interfaces/keystore'
 
 function produceMemoryStore(): Storage {
