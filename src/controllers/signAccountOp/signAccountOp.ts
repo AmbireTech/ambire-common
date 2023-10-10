@@ -1,4 +1,4 @@
-import { Account } from '../../interfaces/account'
+import { Account, AccountStates } from '../../interfaces/account'
 import EventEmitter from '../eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
 import { AccountOp } from 'libs/accountOp/accountOp'
@@ -6,15 +6,18 @@ import { AccountOp } from 'libs/accountOp/accountOp'
 export class SignAccountOpController extends EventEmitter {
   #keystore: KeystoreController
   #accounts: Account[]
+  #accountStates: AccountStates
 
   constructor(
     keystore: KeystoreController,
-    accounts: Account[]
+    accounts: Account[],
+    accountStates: AccountStates
   ) {
     super()
 
     this.#keystore = keystore
     this.#accounts = accounts
+    this.#accountStates = accountStates
   }
 
   async sign(accountOp: AccountOp) {
@@ -42,6 +45,10 @@ export class SignAccountOpController extends EventEmitter {
         error: new Error('Signing key not found.')
       })
     }
+    // TODO: this is not correct
+    // we should check if the length of the keys is more than 1
+    // if it is, the user should be prompt to choose which key
+    // he wants. In other words, we need a middle state before proceeding
     const signingKey = keys[0]
     const signer = this.#keystore.getSigner(signingKey.addr, signingKey.type)
     if (!signer) {
@@ -49,6 +56,18 @@ export class SignAccountOpController extends EventEmitter {
         level: 'major',
         message: 'Please select a signing key and try again.',
         error: new Error('Signing key not found.')
+      })
+    }
+
+    const accountStateAccrossNetworks = this.#accountStates[accountOp.accountAddr]
+    const accountState = accountStateAccrossNetworks.length
+        ? accountStateAccrossNetworks[accountOp.networkId]
+        : null
+    if (!accountState) {
+      return this.emitError({
+        level: 'major',
+        message: 'Please refresh and try again.',
+        error: new Error(`sign: account state not found for ${accountOp.accountAddr}`)
       })
     }
 
@@ -63,6 +82,12 @@ export class SignAccountOpController extends EventEmitter {
     if (accountOp.gasFeePayment.isERC4337) {
         // TODO
         // transform accountOp to userOperation
+
+        // if isErc4337Enabled is false and the account is deployed,
+        // we need to prepare executeMultiple and a sign from the paymaster
+        // executeMultiple should give permissions to the entry point
+        // and execute the normal txn the user wanted
+
         // sign
     }
   }

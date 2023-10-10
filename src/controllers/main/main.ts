@@ -161,7 +161,8 @@ export class MainController extends EventEmitter {
     )
     this.signAccountOp = new SignAccountOpController(
       this.keystore,
-      this.accounts
+      this.accounts,
+      this.accountStates
     )
     this.activity = new ActivityController(this.#storage, this.accountStates)
 
