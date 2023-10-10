@@ -1,5 +1,6 @@
 import { ethers, JsonRpcProvider } from 'ethers'
 
+import { PROXY_AMBIRE_ACCOUNT } from '../../../dist/src/consts/deploy'
 import { Account, AccountOnchainState } from '../../interfaces/account'
 import { KeyIterator } from '../../interfaces/keyIterator'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
@@ -347,10 +348,15 @@ export class AccountAdderController extends EventEmitter {
     if (accountsToAddOnRelayer.length) {
       const body = accountsToAddOnRelayer.map((acc) => ({
         addr: acc.addr,
-        associatedKeys: acc.associatedKeys,
+        associatedKeys: acc.associatedKeys.map((key) => [
+          ethers.getAddress(key), // the Relayer expects checksumed address
+          // Handle special priv hashes at a later stage, when (if) needed
+          '0x0000000000000000000000000000000000000000000000000000000000000001'
+        ]),
         creation: {
           factoryAddr: acc.creation!.factoryAddr,
-          salt: acc.creation!.salt
+          salt: acc.creation!.salt,
+          baseIdentityAddr: PROXY_AMBIRE_ACCOUNT
         }
       }))
 
