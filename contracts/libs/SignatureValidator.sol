@@ -17,6 +17,7 @@ library SignatureValidator {
 		Spoof,
 		Schnorr,
 		Multisig,
+		EthSignAmbirePrefix,
 		// WARNING: must always be last
 		LastUnused
 	}
@@ -50,12 +51,13 @@ library SignatureValidator {
 		SignatureMode mode = SignatureMode(modeRaw);
 
 		// {r}{s}{v}{mode}
-		if (mode == SignatureMode.EIP712 || mode == SignatureMode.EthSign) {
+		if (mode == SignatureMode.EIP712 || mode == SignatureMode.EthSign || mode == SignatureMode.EthSignAmbirePrefix) {
 			require(sig.length == 66, 'SV_LEN');
 			bytes32 r = sig.readBytes32(0);
 			bytes32 s = sig.readBytes32(32);
 			uint8 v = uint8(sig[64]);
 			if (mode == SignatureMode.EthSign) hash = keccak256(abi.encodePacked('\x19Ethereum Signed Message:\n32', hash));
+			if (mode == SignatureMode.EthSignAmbirePrefix) hash = keccak256(abi.encodePacked('\x19Ethereum Signed Message:\n60Signing Ambire interaction: ', hash));
 			address signer = ecrecover(hash, v, r, s);
 			require(signer != address(0), 'SV_ZERO_SIG');
 			return signer;
