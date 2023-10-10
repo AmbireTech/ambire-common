@@ -147,16 +147,19 @@ export default function useDapps({
 
   const toggleFavorite = useCallback(
     (dapp: DappManifestData) => {
-      const updated = { ...favorites }
-      if (updated[dapp.url]) {
-        delete updated[dapp.url]
-      } else {
-        updated[dapp.url] = true
-      }
+      // @ts-ignore mismatch between the useStorage type and the actual type
+      setFavorites((prevFavorites: { [key: string]: boolean }) => {
+        const updated = { ...prevFavorites }
+        if (updated[dapp.url]) {
+          delete updated[dapp.url]
+        } else {
+          updated[dapp.url] = true
+        }
 
-      setFavorites(updated)
+        return updated
+      })
     },
-    [favorites, setFavorites]
+    [setFavorites]
   )
 
   const onCategorySelect = useCallback((category: Category) => {
