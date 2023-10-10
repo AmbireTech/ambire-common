@@ -349,7 +349,7 @@ export class AccountAdderController extends EventEmitter {
       const body = accountsToAddOnRelayer.map((acc) => ({
         addr: acc.addr,
         associatedKeys: acc.associatedKeys.map((key) => [
-          ethers.getAddress(key), // TODO: describe why
+          ethers.getAddress(key), // the Relayer expects checksumed address
           // Handle special priv hashes at a later stage, when (if) needed
           '0x0000000000000000000000000000000000000000000000000000000000000001'
         ]),
