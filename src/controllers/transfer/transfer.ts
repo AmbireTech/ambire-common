@@ -21,6 +21,12 @@ export class TransferController extends EventEmitter {
   // State
   isInitialized: boolean = false
 
+  tokens: TokenResult[] = []
+
+  selectedToken: TokenResult | null = null
+
+  isSWWarningVisible: boolean = false
+
   amount: string = '0'
 
   maxAmount: string = '0'
@@ -29,17 +35,11 @@ export class TransferController extends EventEmitter {
 
   recipientEnsAddress: string = ''
 
-  tokens: TokenResult[] = []
-
   recipientUDAddress: string = ''
-
-  selectedToken: TokenResult | null = null
 
   isRecipientAddressUnknown: boolean = false
 
   isRecipientSmartContract: boolean = false
-
-  isSWWarningVisible: boolean = false
 
   userRequest: UserRequest | null = null
 
