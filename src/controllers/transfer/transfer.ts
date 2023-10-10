@@ -37,6 +37,8 @@ export class TransferController extends EventEmitter {
 
   recipientUDAddress: string = ''
 
+  isRecipientDomainResolving: boolean = false
+
   isRecipientAddressUnknown: boolean = false
 
   isRecipientSmartContract: boolean = false
@@ -106,6 +108,7 @@ export class TransferController extends EventEmitter {
     this.recipientAddress = ''
     this.recipientEnsAddress = ''
     this.recipientUDAddress = ''
+    this.isRecipientAddressUnknown = false
     this.selectedToken = this.tokens[0]
     this.#selectedTokenNetworkData = null
     this.userRequest = null
@@ -162,6 +165,14 @@ export class TransferController extends EventEmitter {
       this.#throwNotInitialized()
       return
     }
+    const canBeEnsOrUd = address.indexOf('.') !== -1
+
+    if (canBeEnsOrUd) {
+      this.isRecipientDomainResolving = true
+    } else {
+      this.isRecipientDomainResolving = false
+    }
+
     this.recipientAddress = address.trim()
     this.emitUpdate()
   }
@@ -173,7 +184,7 @@ export class TransferController extends EventEmitter {
       return
     }
     const address = this.recipientAddress.trim()
-    const canBeEnsOrUd = !address.startsWith('0x') || address.indexOf('.') !== -1
+    const canBeEnsOrUd = address.indexOf('.') !== -1
 
     if (!canBeEnsOrUd) {
       if (this.recipientUDAddress) this.recipientUDAddress = ''
@@ -199,6 +210,8 @@ export class TransferController extends EventEmitter {
     }
 
     this.isRecipientAddressUnknown = true // @TODO: isValidAddress & check from the address book
+    this.isRecipientDomainResolving = false
+
     this.emitUpdate()
   }
 
