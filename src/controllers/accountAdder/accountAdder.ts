@@ -347,7 +347,11 @@ export class AccountAdderController extends EventEmitter {
     if (accountsToAddOnRelayer.length) {
       const body = accountsToAddOnRelayer.map((acc) => ({
         addr: acc.addr,
-        associatedKeys: acc.associatedKeys,
+        associatedKeys: acc.associatedKeys.map((key) => [
+          key,
+          // Handle special priv hashes at a later stage, when (if) needed
+          '0x0000000000000000000000000000000000000000000000000000000000000001'
+        ]),
         creation: {
           factoryAddr: acc.creation!.factoryAddr,
           salt: acc.creation!.salt
