@@ -33,7 +33,10 @@ export async function getSmartAccount(address: string): Promise<Account> {
   const polygon = networks.find((x) => x.id === 'polygon')
   if (!polygon) throw new Error('unable to find polygon network in consts')
 
-  const priv = { addr: address, hash: true }
+  const priv = {
+    addr: address,
+    hash: '0x0000000000000000000000000000000000000000000000000000000000000001'
+  }
   const bytecode = await getBytecode(polygon, [priv])
 
   return {
