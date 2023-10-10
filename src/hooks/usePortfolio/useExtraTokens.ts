@@ -1,6 +1,7 @@
 // @ts-nocheck TODO: Fill in all missing types before enabling the TS check again
 
 import { useCallback } from 'react'
+
 import { NetworkId } from '../../constants/networks'
 import { Token, UseExtraTokensProps } from './types'
 
@@ -28,21 +29,50 @@ export default function useExtraTokens({
     [extraTokens]
   )
 
-  const onAddExtraToken = useCallback(
-    (extraToken: Token) => {
-      const { address: extraTokenAddress, name, symbol } = extraToken
-      if (extraTokens.map(({ address }: any) => address).includes(extraTokenAddress))
-        return addToast(`${name} (${symbol}) is already added to your wallet.`)
+  const checkIsTokenEligibleForAddingAsExtraToken = useCallback<
+    UsePortfolioReturnType['checkIsTokenEligibleForAddingAsExtraToken']
+  >(
+    (extraToken) => {
+      const { address, name, symbol } = extraToken
+
+      if (extraTokens.map((t) => t.address).includes(address.toLowerCase()))
+        return {
+          isEligible: false,
+          reason: `${name} (${symbol}) is already added to your wallet.`
+        }
+
       if (
         constants?.tokenList &&
         Object.values(constants.tokenList)
           .flat(1)
-          .map(({ address }: any) => address)
-          .includes(extraTokenAddress)
+          .map((t) => t.address)
+          .includes(address.toLowerCase())
       )
-        return addToast(`${name} (${symbol}) is already handled by your wallet.`)
-      if (tokens.map(({ address }) => address).includes(extraTokenAddress))
-        return addToast(`You already have ${name} (${symbol}) in your wallet.`)
+        return {
+          isEligible: false,
+          reason: `${name} (${symbol}) is already handled by your wallet.`
+        }
+
+      if (tokens.map((t) => t.address).includes(address.toLowerCase()))
+        return {
+          isEligible: false,
+          reason: `You already have ${name} (${symbol}) in your wallet.`
+        }
+
+      return {
+        isEligible: true
+      }
+    },
+    [extraTokens, constants.tokenList, tokens]
+  )
+
+  const onAddExtraToken = useCallback(
+    (extraToken: Token) => {
+      const eligibleStatus = checkIsTokenEligibleForAddingAsExtraToken(extraToken)
+
+      if (!eligibleStatus.isEligible) {
+        return addToast(eligibleStatus.reason)
+      }
 
       const updatedExtraTokens = [
         ...extraTokens,
@@ -53,9 +83,9 @@ export default function useExtraTokens({
       ]
 
       setExtraTokens(updatedExtraTokens)
-      addToast(`${name} (${symbol}) token added to your wallet!`)
+      addToast(`${extraToken.name} (${extraToken.symbol}) token added to your wallet!`)
     },
-    [setExtraTokens, tokens, extraTokens, addToast, constants?.tokenList]
+    [checkIsTokenEligibleForAddingAsExtraToken, extraTokens, setExtraTokens, addToast]
   )
 
   const onRemoveExtraToken = useCallback(
@@ -72,6 +102,7 @@ export default function useExtraTokens({
   )
 
   return {
+    checkIsTokenEligibleForAddingAsExtraToken,
     onAddExtraToken,
     onRemoveExtraToken,
     extraTokens,
