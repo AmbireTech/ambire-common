@@ -120,7 +120,8 @@ export class SignMessageController extends EventEmitter {
     this.emitUpdate()
   }
 
-  async sign() {
+  // TODO: missing type
+  async sign(controller?: any) {
     if (!this.isInitialized || !this.messageToSign) {
       this.#throwNotInitialized()
       return
@@ -139,13 +140,28 @@ export class SignMessageController extends EventEmitter {
 
     try {
       const signer = await this.#keystore.getSigner(this.signingKeyAddr, this.signingKeyType)
+      if (this.signingKeyType === 'ledger') {
+        // TODO: missing type
+        signer.init(controller)
+      }
+
       let sig
 
       const account = this.#accounts!.find((acc) => acc.addr === this.messageToSign?.accountAddr)
       let network = networks.find((n: NetworkDescriptor) => n.id === 'ethereum')
 
       if (this.messageToSign.content.kind === 'message') {
-        sig = await signer.signMessage(this.messageToSign!.content.message)
+        try {
+          sig = await signer.signMessage(this.messageToSign!.content.message)
+        } catch (error: any) {
+          return this.emitError({
+            level: 'major',
+            message:
+              error?.message ||
+              'Something went wrong while signing the message. Please try again later or contact support if the problem persists.',
+            error
+          })
+        }
       }
 
       if (this.messageToSign.content.kind === 'typedMessage') {
