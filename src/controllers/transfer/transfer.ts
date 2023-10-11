@@ -8,6 +8,7 @@ import { TokenResult } from '../../libs/portfolio'
 import { isKnownTokenOrContract } from '../../services/address'
 import { getBip44Items, resolveENSDomain } from '../../services/ensDomains'
 import { resolveUDomain } from '../../services/unstoppableDomains'
+import { validateSendTransferAddress, validateSendTransferAmount } from '../../services/validations'
 import EventEmitter from '../eventEmitter'
 
 const ERC20 = new Interface(erc20Abi)
@@ -15,6 +16,17 @@ const ERC20 = new Interface(erc20Abi)
 const getTokenAddressAndNetworkFromId = (id: string) => {
   const [address, networkId] = id.split('-')
   return [address, networkId]
+}
+
+const DEFAULT_VALIDATION_FORM_MSGS = {
+  amount: {
+    success: false,
+    message: ''
+  },
+  address: {
+    success: false,
+    message: ''
+  }
 }
 
 export class TransferController extends EventEmitter {
@@ -44,6 +56,10 @@ export class TransferController extends EventEmitter {
   isRecipientSmartContract: boolean = false
 
   userRequest: UserRequest | null = null
+
+  validationFormMsgs = DEFAULT_VALIDATION_FORM_MSGS
+
+  isFormValid = false
 
   #selectedTokenNetworkData: {
     id: string
@@ -115,6 +131,8 @@ export class TransferController extends EventEmitter {
     this.isRecipientAddressUnknown = false
     this.isRecipientSmartContract = false
     this.isSWWarningVisible = false
+    this.validationFormMsgs = DEFAULT_VALIDATION_FORM_MSGS
+    this.isFormValid = false
 
     this.emitUpdate()
   }
@@ -132,10 +150,15 @@ export class TransferController extends EventEmitter {
       this.#throwNotInitialized()
       return
     }
-    if (amount) {
+    // If we do a regular check the value won't update if it's '' or '0'
+    if (typeof amount === 'string') {
       this.amount = amount
     }
-    if (recipientAddress) {
+    if (setMaxAmount) {
+      this.amount = this.maxAmount
+    }
+    // If we do a regular check the value won't update if it's '' or '0'
+    if (typeof recipientAddress === 'string') {
       const canBeEnsOrUd = recipientAddress.indexOf('.') !== -1
 
       if (canBeEnsOrUd) {
@@ -146,8 +169,19 @@ export class TransferController extends EventEmitter {
 
       this.recipientAddress = recipientAddress.trim()
     }
-    if (setMaxAmount) {
-      this.amount = this.maxAmount
+    // Validate amount
+    if (typeof amount === 'string' || setMaxAmount) {
+      if (!this.selectedToken) {
+        this.validationFormMsgs.amount = DEFAULT_VALIDATION_FORM_MSGS.amount
+
+        this.emitUpdate()
+        return
+      }
+
+      this.validationFormMsgs.amount = validateSendTransferAmount(this.amount, this.selectedToken)
+
+      this.isFormValid =
+        this.validationFormMsgs.amount.success && this.validationFormMsgs.address.success
     }
     this.emitUpdate()
   }
@@ -194,7 +228,11 @@ export class TransferController extends EventEmitter {
   }
 
   // Allows for debounce implementation in the UI
-  async onRecipientAddressChange() {
+  async onRecipientAddressChange({
+    isRecipientAddressUnknownAgreed
+  }: {
+    isRecipientAddressUnknownAgreed: boolean
+  }) {
     if (!this.isInitialized) {
       this.#throwNotInitialized()
       return
@@ -228,6 +266,24 @@ export class TransferController extends EventEmitter {
     this.isRecipientAddressUnknown = true // @TODO: isValidAddress & check from the address book
     this.isRecipientDomainResolving = false
 
+    if (this.#humanizerInfo && this.#selectedAccount) {
+      const isUDAddress = !!this.recipientUDAddress
+      const isEnsAddress = !!this.recipientEnsAddress
+
+      this.validationFormMsgs.address = validateSendTransferAddress(
+        this.recipientUDAddress || this.recipientEnsAddress || this.recipientAddress,
+        this.#selectedAccount,
+        isRecipientAddressUnknownAgreed,
+        this.isRecipientAddressUnknown,
+        this.#humanizerInfo,
+        isUDAddress,
+        isEnsAddress,
+        this.isRecipientDomainResolving
+      )
+    }
+    this.isFormValid =
+      this.validationFormMsgs.amount.success && this.validationFormMsgs.address.success
+
     this.emitUpdate()
   }
 
@@ -247,6 +303,8 @@ export class TransferController extends EventEmitter {
     this.#selectedTokenNetworkData =
       networks.find(({ id }) => id === matchingToken.networkId) || null
     this.amount = '0'
+    this.validationFormMsgs.amount = DEFAULT_VALIDATION_FORM_MSGS.amount
+    this.isFormValid = false
     this.maxAmount = formatUnits(matchingTokenAmount, Number(decimals))
     this.isSWWarningVisible =
       !!this.selectedToken?.address &&

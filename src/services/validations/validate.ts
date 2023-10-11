@@ -20,7 +20,7 @@ const validateAddress = (address: string) => {
     }
   }
 
-  return { success: true }
+  return { success: true, message: '' }
 }
 
 const validateAddAuthSignerAddress = (address: string, selectedAcc: any) => {
@@ -93,10 +93,10 @@ const validateSendTransferAddress = (
     }
   }
 
-  return { success: true }
+  return { success: true, message: '' }
 }
 
-const validateSendTransferAmount = (amount: any, selectedAsset: TokenResult) => {
+const validateSendTransferAmount = (amount: string, selectedAsset: TokenResult) => {
   if (!(amount && amount.length)) {
     return {
       success: false,
@@ -104,7 +104,7 @@ const validateSendTransferAmount = (amount: any, selectedAsset: TokenResult) => 
     }
   }
 
-  if (!(amount && amount > 0)) {
+  if (!(amount && Number(amount) > 0)) {
     return {
       success: false,
       message: 'The amount must be greater than 0.'
@@ -118,7 +118,7 @@ const validateSendTransferAmount = (amount: any, selectedAsset: TokenResult) => 
       )
       const currentAmount = Number(amount)
 
-      if (currentAmount && selectedAssetMaxAmount && amount > selectedAssetMaxAmount) {
+      if (currentAmount && selectedAssetMaxAmount && Number(amount) > selectedAssetMaxAmount) {
         return {
           success: false,
           message: `The amount is greater than the asset's balance: ${selectedAssetMaxAmount} ${selectedAsset?.symbol}.`
@@ -129,7 +129,7 @@ const validateSendTransferAmount = (amount: any, selectedAsset: TokenResult) => 
     console.error(e)
   }
 
-  return { success: true }
+  return { success: true, message: '' }
 }
 
 const validateSendNftAddress = (
