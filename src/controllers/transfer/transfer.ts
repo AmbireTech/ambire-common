@@ -353,7 +353,7 @@ export class TransferController extends EventEmitter {
     this.emitError({
       level: 'major',
       message:
-        'We encountered an internal error during transfer initialization. Retry, or contact support if issue persists.',
+        'We encountered an internal error during transfer initialization. Retry, or contact support if the issue persists.',
       error: new Error('transfer: controller not initialized')
     })
   }
