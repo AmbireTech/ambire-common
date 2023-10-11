@@ -53,6 +53,7 @@ export class PortfolioController extends EventEmitter {
       else accountState[network]!.errors.push(error)
     }
   }
+
   async getAdditionalPortfolio(accountId: AccountId) {
     if (!this.latest[accountId]) this.latest[accountId] = {}
     const start = Date.now()
@@ -65,7 +66,7 @@ export class PortfolioController extends EventEmitter {
     let res: any
     try {
       res = await this.#callRelayer(`/v2/identity/${accountId}/portfolio-additional`)
-    } catch(e: any) {
+    } catch (e: any) {
       console.error('relayer error for portfolio additional')
       this.#setNetworkLoading(accountId, 'gasTank', false, e)
       this.#setNetworkLoading(accountId, 'rewards', false, e)
@@ -75,15 +76,15 @@ export class PortfolioController extends EventEmitter {
 
     if (!res) throw new Error('portfolio controller: no res, should never happen')
 
-    const getTotal = (t: any[]) => t.reduce((cur: any, token: any) => {
-      for (const x of token.priceIn) {
-        cur[x.baseCurrency] =
-          (cur[x.baseCurrency] || 0) +
-          (Number(token.amount) / 10 ** token.decimals) * x.price
-      }
+    const getTotal = (t: any[]) =>
+      t.reduce((cur: any, token: any) => {
+        for (const x of token.priceIn) {
+          cur[x.baseCurrency] =
+            (cur[x.baseCurrency] || 0) + (Number(token.amount) / 10 ** token.decimals) * x.price
+        }
 
-      return cur
-    }, {})
+        return cur
+      }, {})
 
     const rewardsTokens = [
       res.data.rewards.xWalletClaimableBalance || [],

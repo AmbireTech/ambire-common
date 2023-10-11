@@ -31,7 +31,10 @@ describe('Account', () => {
   test('should return smartAccount', async () => {
     expect.assertions(3)
     const newSmartAccount = await getSmartAccount(keyPublicAddress)
-    const priv = { addr: keyPublicAddress, hash: true }
+    const priv = {
+      addr: keyPublicAddress,
+      hash: '0x0000000000000000000000000000000000000000000000000000000000000001'
+    }
     const bytecode = await getBytecode(polygon, [priv])
     const accountNotDeployed = {
       addr: getAmbireAccountAddress(AMBIRE_ACCOUNT_FACTORY, bytecode),
