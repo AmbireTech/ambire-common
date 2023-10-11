@@ -44,18 +44,24 @@ describe('Transfer Controller', () => {
     expect(transferController).toBeDefined()
   })
   test('should set recipient address', () => {
-    transferController.setRecipientAddress(PLACEHOLDER_RECIPIENT)
+    transferController.update({
+      recipientAddress: PLACEHOLDER_RECIPIENT
+    })
     expect(transferController.recipientAddress).toBe(PLACEHOLDER_RECIPIENT)
   })
   test('should resolve ENS', async () => {
-    transferController.setRecipientAddress('elmoto.eth')
+    transferController.update({
+      recipientAddress: 'elmoto.eth'
+    })
     await transferController.onRecipientAddressChange()
 
     expect(transferController.recipientEnsAddress).toBe(PLACEHOLDER_RECIPIENT)
   })
   // @TODO: fix unstoppable domains
   test('should resolve UnstoppableDomains', async () => {
-    transferController.setRecipientAddress('0xyakmotoru.wallet')
+    transferController.update({
+      recipientAddress: '0xyakmotoru.wallet'
+    })
     await transferController.onRecipientAddressChange()
 
     expect(transferController.recipientUDAddress?.toLowerCase()).toBe(
@@ -74,7 +80,9 @@ describe('Transfer Controller', () => {
     expect(transferController.selectedToken?.networkId).toBe('ethereum')
   })
   test('should set amount', () => {
-    transferController.setAmount('1')
+    transferController.update({
+      amount: '1'
+    })
     expect(transferController.amount).toBe('1')
   })
   test('should set max amount', async () => {
@@ -83,7 +91,9 @@ describe('Transfer Controller', () => {
       Number(transferController.selectedToken?.decimals)
     )
 
-    transferController.setMaxAmount()
+    transferController.update({
+      setMaxAmount: true
+    })
 
     expect(transferController.maxAmount).toBe(selectedTokenMaxAmount)
   })
@@ -103,7 +113,9 @@ describe('Transfer Controller', () => {
   })
   test('should build user request with native token transfer', async () => {
     transferController.handleTokenChange(`0x${'0'.repeat(40)}-ethereum`)
-    transferController.setAmount('1')
+    transferController.update({
+      amount: '1'
+    })
     await transferController.buildUserRequest()
 
     expect(transferController.userRequest?.accountAddr).toBe(PLACEHOLDER_SELECTED_ACCOUNT)

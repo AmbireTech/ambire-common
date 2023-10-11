@@ -119,6 +119,39 @@ export class TransferController extends EventEmitter {
     this.emitUpdate()
   }
 
+  update({
+    amount,
+    recipientAddress,
+    setMaxAmount
+  }: {
+    amount?: string
+    recipientAddress?: string
+    setMaxAmount?: boolean
+  }) {
+    if (!this.isInitialized) {
+      this.#throwNotInitialized()
+      return
+    }
+    if (amount) {
+      this.amount = amount
+    }
+    if (recipientAddress) {
+      const canBeEnsOrUd = recipientAddress.indexOf('.') !== -1
+
+      if (canBeEnsOrUd) {
+        this.isRecipientDomainResolving = true
+      } else {
+        this.isRecipientDomainResolving = false
+      }
+
+      this.recipientAddress = recipientAddress.trim()
+    }
+    if (setMaxAmount) {
+      this.amount = this.maxAmount
+    }
+    this.emitUpdate()
+  }
+
   async buildUserRequest() {
     if (!this.isInitialized) {
       this.#throwNotInitialized()
@@ -160,23 +193,6 @@ export class TransferController extends EventEmitter {
     this.emitUpdate()
   }
 
-  setRecipientAddress(address: string) {
-    if (!this.isInitialized) {
-      this.#throwNotInitialized()
-      return
-    }
-    const canBeEnsOrUd = address.indexOf('.') !== -1
-
-    if (canBeEnsOrUd) {
-      this.isRecipientDomainResolving = true
-    } else {
-      this.isRecipientDomainResolving = false
-    }
-
-    this.recipientAddress = address.trim()
-    this.emitUpdate()
-  }
-
   // Allows for debounce implementation in the UI
   async onRecipientAddressChange() {
     if (!this.isInitialized) {
@@ -212,24 +228,6 @@ export class TransferController extends EventEmitter {
     this.isRecipientAddressUnknown = true // @TODO: isValidAddress & check from the address book
     this.isRecipientDomainResolving = false
 
-    this.emitUpdate()
-  }
-
-  setAmount(amount: string) {
-    if (!this.isInitialized) {
-      this.#throwNotInitialized()
-      return
-    }
-    this.amount = amount
-    this.emitUpdate()
-  }
-
-  setMaxAmount() {
-    if (!this.isInitialized) {
-      this.#throwNotInitialized()
-      return
-    }
-    this.amount = this.maxAmount
     this.emitUpdate()
   }
 
