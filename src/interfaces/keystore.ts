@@ -48,7 +48,7 @@ export type StoredKey =
       type: 'trezor' | 'ledger' | 'lattice'
       label: string
       privKey: null
-      meta: { model: string; hdPath: string }
+      meta: { model: string; hdPath: string; index: number }
     }
 
 export type KeystoreSignerType = {
