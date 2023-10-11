@@ -101,7 +101,7 @@ export class EmailVaultController extends EventEmitter {
     this.emitUpdate()
   }
 
-  get getCurrentState(): EmailVaultState {
+  get currentState(): EmailVaultState {
     if (!this.isReady) return EmailVaultState.Loading
     if (this.#isWaitingEmailConfirmation) return EmailVaultState.WaitingEmailConfirmation
     return EmailVaultState.Ready
@@ -389,7 +389,7 @@ export class EmailVaultController extends EventEmitter {
   toJSON() {
     return {
       ...this,
-      currentState: this.getCurrentState // includes the getter in the stringified instance
+      currentState: this.currentState // includes the getter in the stringified instance
     }
   }
 }
