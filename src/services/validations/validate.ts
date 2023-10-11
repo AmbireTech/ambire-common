@@ -1,6 +1,6 @@
 import { formatUnits } from 'ethers'
-import isEmail from 'validator/es/lib/isEmail'
 
+// import isEmail from 'validator/es/lib/isEmail' causes issues with jest
 import { ConstantsType } from '../../../v1/hooks/useConstants'
 import { TokenResult } from '../../libs/portfolio'
 import { isKnownTokenOrContract, isValidAddress } from '../address'
@@ -141,8 +141,9 @@ const validateSendNftAddress = (
   selectedNetwork: any,
   network: any,
   humanizerInfo: ConstantsType['humanizerInfo'],
-  isUDAddress?: boolean,
-  isEnsAddress?: boolean
+  isUDAddress: boolean,
+  isEnsAddress: boolean,
+  isRecipientDomainResolving: boolean
 ) => {
   const isValidAddr = validateSendTransferAddress(
     address,
@@ -151,7 +152,8 @@ const validateSendNftAddress = (
     isKnownAddress,
     humanizerInfo,
     isUDAddress,
-    isEnsAddress
+    isEnsAddress,
+    isRecipientDomainResolving
   )
   if (!isValidAddr.success) return isValidAddr
 
@@ -181,7 +183,7 @@ const isValidCode = (code: string) => code.length === 6
 const isValidPassword = (password: string) => password.length >= 8
 
 export {
-  isEmail,
+  // isEmail, causes issues with jest
   validateAddAuthSignerAddress,
   validateSendTransferAddress,
   validateSendTransferAmount,

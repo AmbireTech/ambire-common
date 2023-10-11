@@ -23,7 +23,7 @@ const DEFAULT_VALIDATION_FORM_MSGS = {
     success: false,
     message: ''
   },
-  address: {
+  recipientAddress: {
     success: false,
     message: ''
   }
@@ -31,33 +31,33 @@ const DEFAULT_VALIDATION_FORM_MSGS = {
 
 export class TransferController extends EventEmitter {
   // State
-  isInitialized: boolean = false
+  isInitialized = false
 
   tokens: TokenResult[] = []
 
   selectedToken: TokenResult | null = null
 
-  isSWWarningVisible: boolean = false
+  isSWWarningVisible = false
 
-  isSWWarningAgreed: boolean = false
+  isSWWarningAgreed = false
 
-  amount: string = '0'
+  amount = '0'
 
-  maxAmount: string = '0'
+  maxAmount = '0'
 
-  recipientAddress: string = ''
+  recipientAddress = ''
 
-  recipientEnsAddress: string = ''
+  recipientEnsAddress = ''
 
-  recipientUDAddress: string = ''
+  recipientUDAddress = ''
 
-  isRecipientDomainResolving: boolean = false
+  isRecipientDomainResolving = false
 
-  isRecipientAddressUnknown: boolean = false
+  isRecipientAddressUnknown = false
 
-  isRecipientAddressUnknownAgreed: boolean = false
+  isRecipientAddressUnknownAgreed = false
 
-  isRecipientSmartContract: boolean = false
+  isRecipientSmartContract = false
 
   userRequest: UserRequest | null = null
 
@@ -314,7 +314,7 @@ export class TransferController extends EventEmitter {
       const isUDAddress = !!this.recipientUDAddress
       const isEnsAddress = !!this.recipientEnsAddress
 
-      this.validationFormMsgs.address = validateSendTransferAddress(
+      this.validationFormMsgs.recipientAddress = validateSendTransferAddress(
         this.recipientUDAddress || this.recipientEnsAddress || this.recipientAddress,
         this.#selectedAccount,
         this.isRecipientAddressUnknownAgreed,
@@ -333,7 +333,7 @@ export class TransferController extends EventEmitter {
 
     // Determine if the form is valid
     const areFormFieldsValid =
-      this.validationFormMsgs.amount.success && this.validationFormMsgs.address.success
+      this.validationFormMsgs.amount.success && this.validationFormMsgs.recipientAddress.success
 
     const isSWWarningMissingOrAccepted = !this.isSWWarningVisible || this.isSWWarningAgreed
 
