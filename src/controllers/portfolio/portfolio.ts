@@ -277,6 +277,12 @@ export class PortfolioController extends EventEmitter {
 
         // Persist previousHints in the disk storage for further requests, when:
         // latest state was updated successful and hints were fetched successful too (no hintsError from portfolio result)
+
+        // console.log({isSuccessfulLatestUpdate});
+        // console.log('accountState ::', accountState[network.id]);
+        // console.log({key})
+        
+        
         if (isSuccessfulLatestUpdate && !accountState[network.id]!.result!.hintsError) {
           storagePreviousHints[key] = getHintsWithBalance(accountState[network.id]!.result!)
           await this.#storage.set('previousHints', storagePreviousHints)
