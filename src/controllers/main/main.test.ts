@@ -122,10 +122,23 @@ describe('Main Controller ', () => {
   })
 
   test('login with emailVault', async () => {
-    await controller.emailVault.getEmailVaultInfo(email)
     // eslint-disable-next-line no-promise-executor-return
-    await new Promise((resolve) => controller.emailVault.onUpdate(() => resolve(null)))
+    const promise = new Promise((resolve) => controller.emailVault.onUpdate(() => resolve(null)))
+    await controller.emailVault.getEmailVaultInfo(email)
+    await promise
+    // eslint-disable-next-line no-promise-executor-return
     console.log(controller.emailVault.emailVaultStates)
+    expect(controller.emailVault.emailVaultStates).toMatchObject({
+      email: {
+        [email]: {
+          email,
+          recoveryKey: expect.anything(),
+          availableSecrets: expect.anything(),
+          availableAccounts: {},
+          operations: []
+        }
+      }
+    })
   })
 
   test('backup keyStore secret emailVault', async () => {
@@ -187,7 +200,6 @@ describe('Main Controller ', () => {
     await new Promise((resolve) => {
       const unsubscribe = controller.onUpdate(() => {
         emitCounter++
-
         if (emitCounter === 1 && controller.isReady) {
           const keyIterator = new KeyIterator(
             '0x574f261b776b26b1ad75a991173d0e8ca2ca1d481bd7822b2b58b2ef8a969f12'

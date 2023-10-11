@@ -28,7 +28,7 @@ export interface Message {
   accountAddr: AccountId
   content: PlainTextMessage | TypedMessage
   signature: string | null
-  fromUserRequestId?: bigint
+  fromUserRequestId?: number
   // This is fed into the humanizer to help visualize the accountOp
   // This can contain info like the value of specific share tokens at the time of signing,
   // or any other data that needs to otherwise be retrieved in an async manner and/or needs to be

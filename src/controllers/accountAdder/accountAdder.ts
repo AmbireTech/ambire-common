@@ -1,6 +1,6 @@
 import { ethers, JsonRpcProvider } from 'ethers'
 
-import { PROXY_AMBIRE_ACCOUNT } from '../../../dist/src/consts/deploy'
+import { PROXY_AMBIRE_ACCOUNT } from '../../consts/deploy'
 import { Account, AccountOnchainState } from '../../interfaces/account'
 import { KeyIterator } from '../../interfaces/keyIterator'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
