@@ -1,4 +1,3 @@
-/* eslint-disable no-underscore-dangle */
 import { JsonRpcProvider } from 'ethers'
 
 import { networks } from '../../consts/networks'
@@ -17,15 +16,18 @@ import {
   getPendingAccountOpBannersForEOA
 } from '../../libs/banners/banners'
 import { estimate, EstimateResult } from '../../libs/estimate/estimate'
+import { GasRecommendation, getGasPriceRecommendations } from '../../libs/gasPrice/gasPrice'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
+import generateSpoofSig from '../../utils/generateSpoofSig'
 import { AccountAdderController } from '../accountAdder/accountAdder'
 import { ActivityController } from '../activity/activity'
 import { EmailVaultController } from '../emailVault'
 import EventEmitter from '../eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
 import { PortfolioController } from '../portfolio/portfolio'
+/* eslint-disable no-underscore-dangle */
+import { SignAccountOpController } from '../signAccountOp/signAccountOp'
 import { SignMessageController } from '../signMessage/signMessage'
-import { SignAccountOpController } from 'controllers/signAccountOp/signAccountOp'
 
 export class MainController extends EventEmitter {
   #storage: Storage
@@ -56,7 +58,7 @@ export class MainController extends EventEmitter {
 
   signMessage!: SignMessageController
 
-  signAccountOp!: SignAccountOpController
+  signAccountOp: SignAccountOpController
 
   activity!: ActivityController
 
@@ -69,6 +71,9 @@ export class MainController extends EventEmitter {
   settings: { networks: NetworkDescriptor[] }
 
   userRequests: UserRequest[] = []
+
+  // network => GasRecommendation[]
+  gasPrices: { [key: string]: GasRecommendation[] } = {}
 
   // The reason we use a map structure and not a flat array is:
   // 1) it's easier in the UI to deal with structured data rather than having to .find/.filter/etc. all the time
@@ -132,10 +137,19 @@ export class MainController extends EventEmitter {
       relayerUrl,
       fetch: this.#fetch
     })
+    this.signAccountOp = new SignAccountOpController(
+      this.keystore,
+      this.portfolio,
+      this.#storage,
+      this.#fetch
+    )
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch: this.#fetch })
     this.onResolveDappRequest = onResolveDappRequest
     this.onRejectDappRequest = onRejectDappRequest
     this.onUpdateDappSelectedAccount = onUpdateDappSelectedAccount
+
+    this.handleGasPriceUpdates()
+
     // @TODO Load userRequests from storage and emit that we have updated
     // @TODO
   }
@@ -159,11 +173,6 @@ export class MainController extends EventEmitter {
       this.#storage,
       this.#fetch
     )
-    this.signAccountOp = new SignAccountOpController(
-      this.keystore,
-      this.accounts,
-      this.accountStates
-    )
     this.activity = new ActivityController(this.#storage, this.accountStates)
 
     const addReadyToAddAccountsIfNeeded = () => {
@@ -179,6 +188,34 @@ export class MainController extends EventEmitter {
 
     this.isReady = true
     this.emitUpdate()
+  }
+
+  private async handleGasPriceUpdates(): Promise<void> {
+    setInterval(async () => {
+      await this.updateGasPrice()
+      this.emitUpdate()
+    }, 1000 * 60)
+  }
+
+  private async updateGasPrice(): Promise<void> {
+    await this.#initialLoadPromise
+
+    // We want to update the gas price only for the networks having account ops.
+    // Together with that, we make sure `ethereum` is included, as we always want to know its gas price (once we have a gas indicator, we will need it).
+    const gasPriceNetworks = [
+      ...new Set([
+        ...Object.keys(this.accountOpsToBeSigned)
+          .map((accountAddr) => Object.keys(this.accountOpsToBeSigned[accountAddr]))
+          .flat(),
+        'ethereum'
+      ])
+    ]
+
+    await Promise.all(
+      gasPriceNetworks.map(async (network) => {
+        this.gasPrices[network] = await getGasPriceRecommendations(this.#providers[network])
+      })
+    )
   }
 
   async #getAccountsInfo(accounts: Account[]): Promise<AccountStates> {
@@ -276,19 +313,23 @@ export class MainController extends EventEmitter {
       return uCalls
     }, [])
 
-    if (!calls.length) return null
+    const accAvailableKeys = this.keystore.keys.filter((key) =>
+      account.associatedKeys.includes(key.addr)
+    )
+
+    if (!calls.length || !accAvailableKeys.length) return null
 
     const currentAccountOp = this.accountOpsToBeSigned[accountAddr][networkId]?.accountOp
     return {
       accountAddr,
       networkId,
       signingKeyAddr: currentAccountOp?.signingKeyAddr || null,
+      signingKeyType: currentAccountOp?.signingKeyType || null,
       gasLimit: currentAccountOp?.gasLimit || null,
       gasFeePayment: currentAccountOp?.gasFeePayment || null,
       // We use the AccountInfo to determine
       nonce: this.accountStates[accountAddr][networkId].nonce,
-      // @TODO set this to a spoofSig based on accountState
-      signature: null,
+      signature: generateSpoofSig(accAvailableKeys[0].addr),
       // @TODO from pending recoveries
       accountOpToExecuteBefore: null,
       calls
@@ -345,7 +386,7 @@ export class MainController extends EventEmitter {
   // @TODO allow this to remove multiple OR figure out a way to debounce re-estimations
   // first one sounds more reasonble
   // although the second one can't hurt and can help (or no debounce, just a one-at-a-time queue)
-  removeUserRequest(id: number) {
+  async removeUserRequest(id: number) {
     const req = this.userRequests.find((uReq) => uReq.id === id)
     if (!req) return
 
@@ -359,6 +400,12 @@ export class MainController extends EventEmitter {
       const accountOp = this.#makeAccountOpFromUserRequests(accountAddr, networkId)
       if (accountOp) {
         this.accountOpsToBeSigned[accountAddr][networkId] = { accountOp, estimation: null }
+        try {
+          await this.#estimateAccountOp(accountOp)
+        } catch (e) {
+          // @TODO: unified wrapper for controller errors
+          console.error(e)
+        }
       } else {
         delete this.accountOpsToBeSigned[accountAddr][networkId]
         if (!Object.keys(this.accountOpsToBeSigned[accountAddr] || {}).length)
@@ -374,11 +421,24 @@ export class MainController extends EventEmitter {
     this.emitUpdate()
   }
 
-  async reestimateCurrentAccountOp(accountAddr: AccountId, networkId: NetworkId) {
-    const accountOp = this.accountOpsToBeSigned[accountAddr][networkId]?.accountOp
-    // non fatal, no need to do anything
-    if (!accountOp) return
-    await this.#estimateAccountOp(accountOp)
+  /**
+   * Reestimate the current account op and update the gas prices in the same tick.
+   * To achieve a more accurate gas amount calculation (gasUsageEstimate * gasPrice),
+   * it would be preferable to update them simultaneously.
+   * Otherwise, if either of the variables has not been recently updated, it may lead to an incorrect gas amount result.
+   */
+  async reestimateAndUpdatePrices(accountAddr: AccountId, networkId: NetworkId) {
+    await Promise.all([
+      this.updateGasPrice(),
+      async () => {
+        const accountOp = this.accountOpsToBeSigned[accountAddr][networkId]?.accountOp
+        // non-fatal, no need to do anything
+        if (!accountOp) return
+        await this.#estimateAccountOp(accountOp)
+      }
+    ])
+
+    this.emitUpdate()
   }
 
   // @TODO: protect this from race conditions/simultanous executions
@@ -393,6 +453,14 @@ export class MainController extends EventEmitter {
     // TODO check if needed data in accountStates are available
     // this.accountStates[accountOp.accountAddr][accountOp.networkId].
     const account = this.accounts.find((x) => x.addr === accountOp.accountAddr)
+    const otherEOAaccounts = this.accounts.filter(
+      (acc) => !acc.creation && acc.addr !== accountOp.accountAddr
+    )
+    const feeTokens =
+      this.portfolio.latest?.[accountOp.accountAddr]?.[accountOp.networkId]?.result?.tokens
+        .filter((t) => t.flags.isFeeToken)
+        .map((token) => token.address) || []
+
     if (!account)
       throw new Error(`estimateAccountOp: ${accountOp.accountAddr}: account does not exist`)
     const network = this.settings.networks.find((x) => x.id === accountOp.networkId)
@@ -413,17 +481,20 @@ export class MainController extends EventEmitter {
         )
       ),
       this.portfolio.getAdditionalPortfolio(accountOp.accountAddr),
-      // @TODO nativeToCheck: pass all EOAs,
-      // @TODO feeTokens: pass a hardcoded list from settings
-      estimate(this.#providers[accountOp.networkId], network, account, accountOp, [], [])
-      // @TODO refresh the estimation
+      estimate(
+        this.#providers[accountOp.networkId],
+        network,
+        account,
+        accountOp,
+        otherEOAaccounts.map((acc) => acc.addr),
+        // @TODO - first time calling this, portfolio is still not loaded.
+        feeTokens
+      )
     ])
+    // @TODO compare intent between accountOp and this.accountOpsToBeSigned[accountOp.accountAddr][accountOp.networkId].accountOp
     this.accountOpsToBeSigned[accountOp.accountAddr][accountOp.networkId]!.estimation = estimation
+    this.signAccountOp.update({ estimation })
     console.log(estimation)
-  }
-
-  async sign(accountOp: AccountOp) {
-    this.signAccountOp.sign(accountOp)
   }
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars, class-methods-use-this

@@ -21,7 +21,8 @@ const networks: NetworkDescriptor[] = [
     chainId: 137n,
     explorerUrl: 'https://polygonscan.com',
     erc4337: {
-      enabled: true,
+      // TODO: temp disabled (only while testing)
+      enabled: false,
       entryPointAddr: ERC_4337_ENTRYPOINT,
       entryPointMarker: ENTRY_POINT_MARKER
     }

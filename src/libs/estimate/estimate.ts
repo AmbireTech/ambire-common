@@ -11,7 +11,7 @@ import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFacto
 export interface EstimateResult {
   gasUsed: bigint
   nonce: number
-  addedNative?: bigint
+  addedNative: bigint
   feePaymentOptions: {
     availableAmount: bigint
     paidBy: string
@@ -55,6 +55,7 @@ export async function estimate(
     return {
       gasUsed,
       nonce,
+      addedNative: 0n,
       feePaymentOptions: [
         {
           paidBy: account.addr,
@@ -154,7 +155,7 @@ export async function estimate(
   return {
     gasUsed,
     nonce,
-    addedNative: l1GasEstimation.fee,
+    addedNative: l1GasEstimation.fee || 0n,
     feePaymentOptions: [...feeTokenOptions, ...nativeTokenOptions]
   }
 }
