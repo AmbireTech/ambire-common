@@ -13,6 +13,7 @@ import { Storage } from '../../interfaces/storage'
 import { KeystoreController } from '../keystore/keystore'
 import EventEmitter from '../../libs/eventEmitter/eventEmitter'
 import { Polling } from '../../libs/polling/polling'
+import wait from '../../utils/wait'
 
 export enum EmailVaultState {
   Loading,
@@ -37,11 +38,6 @@ export type MagicLinkKeys = {
 
 export type SessionKeys = {
   [email: string]: string
-}
-async function sleep(ms: number) {
-  return new Promise((resolve) => {
-    setTimeout(resolve, ms)
-  })
 }
 
 export class EmailVaultController extends EventEmitter {
@@ -89,6 +85,7 @@ export class EmailVaultController extends EventEmitter {
 
   private async load(): Promise<void> {
     this.isReady = false
+    this.emitUpdate()
     const result = await Promise.all([
       this.storage.get(EMAIL_VAULT_STORAGE_KEY, {
         email: {}
@@ -104,7 +101,7 @@ export class EmailVaultController extends EventEmitter {
     this.emitUpdate()
   }
 
-  getCurrentState(): EmailVaultState {
+  get getCurrentState(): EmailVaultState {
     if (!this.isReady) return EmailVaultState.Loading
     if (this.#isWaitingEmailConfirmation) return EmailVaultState.WaitingEmailConfirmation
     return EmailVaultState.Ready
@@ -132,18 +129,23 @@ export class EmailVaultController extends EventEmitter {
     const currentKey = (await this.#getMagicLinkKey(email))?.key
     if (currentKey) {
       this.#isWaitingEmailConfirmation = false
+      this.emitUpdate()
       return
     }
 
     this.#isWaitingEmailConfirmation = true
+    this.emitUpdate()
+
     const newKey = await requestMagicLink(email, this.#relayerUrl, this.#fetch)
     const polling = new Polling()
     polling.onUpdate(async () => {
       if (polling.state.isError && polling.state.error.output.res.status === 401) {
         this.#isWaitingEmailConfirmation = true
+        this.emitUpdate()
       } else if (polling.state.isError) {
         // @NOTE: we now have this.emitError()
         this.emailVaultStates.errors = [polling.state.error]
+        this.emitUpdate()
       }
     })
 
@@ -264,6 +266,7 @@ export class EmailVaultController extends EventEmitter {
       polling.onUpdate(() => {
         if (polling.state.isError && polling.state.error.output.res.status === 401) {
           this.#isWaitingEmailConfirmation = true
+          this.emitUpdate()
         } else if (polling.state.isError) {
           this.emailVaultStates.errors = [polling.state.error]
         }
@@ -340,13 +343,17 @@ export class EmailVaultController extends EventEmitter {
           this.emitUpdate()
           return
         }
-        sleep(500)
+        await wait(500)
       } else {
         await this.#handleMagicLinkKey(email, () => this.#handleKeysSync(email, operations))
       }
     }
   }
 
+  // DOCS
+  // this function:
+  // - checks if there are sync requests via the operations route of the relayer
+  // - exports the encrypted private key and sends it back to the relayer (fulfills)
   async fulfillSyncRequests(email: string) {
     await this.getEmailVaultInfo(email)
     const operations = this.emailVaultStates.email[email].operations
@@ -377,5 +384,12 @@ export class EmailVaultController extends EventEmitter {
       await this.#handleMagicLinkKey(email, () => this.fulfillSyncRequests(email))
     }
     this.emitUpdate()
+  }
+
+  toJSON() {
+    return {
+      ...this,
+      currentState: this.getCurrentState // includes the getter in the stringified instance
+    }
   }
 }

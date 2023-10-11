@@ -1,7 +1,9 @@
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 const DEFAULT_TIMEOUT = 60000
-
+// DOCS
+// the purpouse ofthis class is to make requests until a specific case is satisfied, unallowed error occures or the time runs out
+// used for checking if the magicLink, sent to the email, has been clicked, making the emailAddress confirmed and eligible for email vult
 export class Polling extends EventEmitter {
   state: {
     isError: boolean
