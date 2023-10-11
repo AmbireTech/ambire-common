@@ -1,6 +1,6 @@
 import { formatUnits } from 'ethers'
+import isEmail from 'validator/es/lib/isEmail'
 
-// import isEmail from 'validator/es/lib/isEmail' causes issues with jest
 import { ConstantsType } from '../../../v1/hooks/useConstants'
 import { TokenResult } from '../../libs/portfolio'
 import { isKnownTokenOrContract, isValidAddress } from '../address'
@@ -114,7 +114,7 @@ const validateSendTransferAmount = (amount: string, selectedAsset: TokenResult) 
   try {
     if (amount && selectedAsset && selectedAsset.decimals) {
       const selectedAssetMaxAmount = Number(
-        formatUnits(selectedAsset.amount, selectedAsset.decimals)
+        formatUnits(selectedAsset.amount, Number(selectedAsset.decimals))
       )
       const currentAmount = Number(amount)
 
@@ -183,7 +183,7 @@ const isValidCode = (code: string) => code.length === 6
 const isValidPassword = (password: string) => password.length >= 8
 
 export {
-  // isEmail, causes issues with jest
+  isEmail,
   validateAddAuthSignerAddress,
   validateSendTransferAddress,
   validateSendTransferAmount,
