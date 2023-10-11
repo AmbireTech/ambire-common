@@ -39,6 +39,8 @@ export class TransferController extends EventEmitter {
 
   isSWWarningVisible: boolean = false
 
+  isSWWarningAgreed: boolean = false
+
   amount: string = '0'
 
   maxAmount: string = '0'
@@ -52,6 +54,8 @@ export class TransferController extends EventEmitter {
   isRecipientDomainResolving: boolean = false
 
   isRecipientAddressUnknown: boolean = false
+
+  isRecipientAddressUnknownAgreed: boolean = false
 
   isRecipientSmartContract: boolean = false
 
@@ -130,8 +134,10 @@ export class TransferController extends EventEmitter {
     this.#selectedTokenNetworkData = null
     this.userRequest = null
     this.isRecipientAddressUnknown = false
+    this.isRecipientAddressUnknownAgreed = false
     this.isRecipientSmartContract = false
     this.isSWWarningVisible = false
+    this.isSWWarningAgreed = false
     this.validationFormMsgs = DEFAULT_VALIDATION_FORM_MSGS
     this.isFormValid = false
 
@@ -141,11 +147,15 @@ export class TransferController extends EventEmitter {
   update({
     amount,
     recipientAddress,
-    setMaxAmount
+    setMaxAmount,
+    isSWWarningAgreed,
+    isRecipientAddressUnknownAgreed
   }: {
     amount?: string
     recipientAddress?: string
     setMaxAmount?: boolean
+    isSWWarningAgreed?: boolean
+    isRecipientAddressUnknownAgreed?: boolean
   }) {
     if (!this.isInitialized) {
       this.#throwNotInitialized()
@@ -155,6 +165,8 @@ export class TransferController extends EventEmitter {
     if (typeof amount === 'string') {
       this.amount = amount
     }
+    // We can do a regular check here, because the property defines if it should be updated
+    // and not the actual value
     if (setMaxAmount) {
       this.amount = this.maxAmount
     }
@@ -170,20 +182,18 @@ export class TransferController extends EventEmitter {
 
       this.recipientAddress = recipientAddress.trim()
     }
-    // Validate amount
-    if (typeof amount === 'string' || setMaxAmount) {
-      if (!this.selectedToken) {
-        this.validationFormMsgs.amount = DEFAULT_VALIDATION_FORM_MSGS.amount
-
-        this.emitUpdate()
-        return
-      }
-
-      this.validationFormMsgs.amount = validateSendTransferAmount(this.amount, this.selectedToken)
-
-      this.isFormValid =
-        this.validationFormMsgs.amount.success && this.validationFormMsgs.address.success
+    // We can do a regular check here, because the property defines if it should be updated
+    // and not the actual value
+    if (isSWWarningAgreed) {
+      this.isSWWarningAgreed = !this.isSWWarningAgreed
     }
+    // We can do a regular check here, because the property defines if it should be updated
+    // and not the actual value
+    if (isRecipientAddressUnknownAgreed) {
+      this.isRecipientAddressUnknownAgreed = !this.isRecipientAddressUnknownAgreed
+    }
+
+    this.#validateForm()
     this.emitUpdate()
   }
 
@@ -229,11 +239,7 @@ export class TransferController extends EventEmitter {
   }
 
   // Allows for debounce implementation in the UI
-  async onRecipientAddressChange({
-    isRecipientAddressUnknownAgreed
-  }: {
-    isRecipientAddressUnknownAgreed: boolean
-  }) {
+  async onRecipientAddressChange() {
     if (!this.isInitialized) {
       this.#throwNotInitialized()
       return
@@ -267,23 +273,7 @@ export class TransferController extends EventEmitter {
     this.isRecipientAddressUnknown = true // @TODO: isValidAddress & check from the address book
     this.isRecipientDomainResolving = false
 
-    if (this.#humanizerInfo && this.#selectedAccount) {
-      const isUDAddress = !!this.recipientUDAddress
-      const isEnsAddress = !!this.recipientEnsAddress
-
-      this.validationFormMsgs.address = validateSendTransferAddress(
-        this.recipientUDAddress || this.recipientEnsAddress || this.recipientAddress,
-        this.#selectedAccount,
-        isRecipientAddressUnknownAgreed,
-        this.isRecipientAddressUnknown,
-        this.#humanizerInfo,
-        isUDAddress,
-        isEnsAddress,
-        this.isRecipientDomainResolving
-      )
-    }
-    this.isFormValid =
-      this.validationFormMsgs.amount.success && this.validationFormMsgs.address.success
+    this.#validateForm()
 
     this.emitUpdate()
   }
@@ -314,6 +304,47 @@ export class TransferController extends EventEmitter {
         .map(({ id }) => id)
         .filter((id) => id !== 'ethereum')
         .includes(this.#selectedTokenNetworkData?.id || 'ethereum')
+
+    this.emitUpdate()
+  }
+
+  #validateForm() {
+    // Validate the recipient address
+    if (this.#humanizerInfo && this.#selectedAccount) {
+      const isUDAddress = !!this.recipientUDAddress
+      const isEnsAddress = !!this.recipientEnsAddress
+
+      this.validationFormMsgs.address = validateSendTransferAddress(
+        this.recipientUDAddress || this.recipientEnsAddress || this.recipientAddress,
+        this.#selectedAccount,
+        this.isRecipientAddressUnknownAgreed,
+        this.isRecipientAddressUnknown,
+        this.#humanizerInfo,
+        isUDAddress,
+        isEnsAddress,
+        this.isRecipientDomainResolving
+      )
+    }
+
+    // Validate the amount
+    if (this.selectedToken) {
+      this.validationFormMsgs.amount = validateSendTransferAmount(this.amount, this.selectedToken)
+    }
+
+    // Determine if the form is valid
+    const areFormFieldsValid =
+      this.validationFormMsgs.amount.success && this.validationFormMsgs.address.success
+
+    const isSWWarningMissingOrAccepted = !this.isSWWarningVisible || this.isSWWarningAgreed
+
+    const isRecipientAddressUnknownMissingOrAccepted =
+      !this.isRecipientAddressUnknown || this.isRecipientAddressUnknownAgreed
+
+    this.isFormValid =
+      areFormFieldsValid &&
+      isSWWarningMissingOrAccepted &&
+      isRecipientAddressUnknownMissingOrAccepted &&
+      !this.isRecipientDomainResolving
 
     this.emitUpdate()
   }
