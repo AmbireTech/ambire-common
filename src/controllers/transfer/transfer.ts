@@ -82,6 +82,7 @@ export class TransferController extends EventEmitter {
     humanizerInfo: HumanizerInfoType
     tokens: TokenResult[]
   }) {
+    // @TODO: implement new humanizer after the sign-account-op PR gets merged
     if (!humanizerInfo) {
       this.emitError({
         level: 'major',
