@@ -659,7 +659,7 @@ describe('DKIM sigMode Both with acceptUnknownSelectors true', function () {
       encoding: 'ascii'
     })
     const parsedContents: any = await parseEmail(gmail)
-    const riotEmail = await readFile(path.join(emailsPath, 'riot-games.eml'), {
+    const riotEmail = await readFile(path.join(emailsPath, 'sigMode1.eml'), {
       encoding: 'ascii'
     })
     const riotEmailParsedContents: any = await parseEmail(riotEmail)
