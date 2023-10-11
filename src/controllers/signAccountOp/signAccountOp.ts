@@ -431,6 +431,10 @@ export class SignAccountOpController extends EventEmitter {
           gasPrice:
             (gasFeePayment.amount - this.#estimation!.addedNative) / gasFeePayment.simulatedGasLimit
         })
+      } else if (this.accountOp.gasFeePayment.isERC4337) {
+        // TODO:
+        // transform accountOp to userOperation
+        // sign it
       } else {
         // Relayer
 
