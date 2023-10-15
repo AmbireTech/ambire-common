@@ -1,3 +1,6 @@
+/* eslint-disable no-param-reassign */
+/* eslint-disable no-restricted-syntax */
+/* eslint-disable import/no-extraneous-dependencies */
 import { JsonRpcProvider } from 'ethers'
 import fetch from 'node-fetch'
 
@@ -16,6 +19,27 @@ import {
 import { GetOptions, Portfolio } from '../../libs/portfolio/portfolio'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import EventEmitter from '../eventEmitter'
+
+// We already know that `results.tokens` and `result.collections` tokens have a balance (this is handled by the portfolio lib).
+// Based on that, we can easily find out which hint tokens also have a balance.
+function getHintsWithBalance(result: PortfolioGetResult): {
+  erc20s: Hints['erc20s']
+  erc721s: Hints['erc721s']
+} {
+  const erc20s = result.tokens.map((token) => token.address)
+
+  const erc721s = Object.fromEntries(
+    result.collections.map((collection) => [
+      collection.address,
+      result.hints.erc721s[collection.address]
+    ])
+  )
+
+  return {
+    erc20s,
+    erc721s
+  }
+}
 
 export class PortfolioController extends EventEmitter {
   latest: PortfolioControllerState
@@ -169,18 +193,18 @@ export class PortfolioController extends EventEmitter {
     const pendingState = this.pending[accountId]
 
     const updatePortfolioState = async (
-      accountState: AccountState,
+      passedAccountState: AccountState,
       network: NetworkDescriptor,
       portfolioLib: Portfolio,
       portfolioProps: Partial<GetOptions>,
       forceUpdate: boolean
     ): Promise<boolean> => {
-      if (!accountState[network.id]) {
-        accountState[network.id] = { isReady: false, isLoading: false, errors: [] }
+      if (!passedAccountState[network.id]) {
+        passedAccountState[network.id] = { isReady: false, isLoading: false, errors: [] }
         this.emitUpdate()
       }
 
-      const state = accountState[network.id]!
+      const state = passedAccountState[network.id]!
 
       // When the portfolio was called lastly
       const lastUpdateStartedAt = state.result?.updateStarted
@@ -203,7 +227,7 @@ export class PortfolioController extends EventEmitter {
           priceCache: state.result?.priceCache,
           ...portfolioProps
         })
-        accountState[network.id] = { isReady: true, isLoading: false, errors: [], result }
+        passedAccountState[network.id] = { isReady: true, isLoading: false, errors: [], result }
         this.emitUpdate()
         return true
       } catch (e: any) {
@@ -281,8 +305,7 @@ export class PortfolioController extends EventEmitter {
         // console.log({isSuccessfulLatestUpdate});
         // console.log('accountState ::', accountState[network.id]);
         // console.log({key})
-        
-        
+
         if (isSuccessfulLatestUpdate && !accountState[network.id]!.result!.hintsError) {
           storagePreviousHints[key] = getHintsWithBalance(accountState[network.id]!.result!)
           await this.#storage.set('previousHints', storagePreviousHints)
@@ -298,26 +321,5 @@ export class PortfolioController extends EventEmitter {
     )
 
     // console.log({ latest: this.latest, pending: this.pending })
-  }
-}
-
-// We already know that `results.tokens` and `result.collections` tokens have a balance (this is handled by the portfolio lib).
-// Based on that, we can easily find out which hint tokens also have a balance.
-function getHintsWithBalance(result: PortfolioGetResult): {
-  erc20s: Hints['erc20s']
-  erc721s: Hints['erc721s']
-} {
-  const erc20s = result.tokens.map((token) => token.address)
-
-  const erc721s = Object.fromEntries(
-    result.collections.map((collection) => [
-      collection.address,
-      result.hints.erc721s[collection.address]
-    ])
-  )
-
-  return {
-    erc20s,
-    erc721s
   }
 }
