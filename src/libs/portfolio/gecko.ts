@@ -34,6 +34,11 @@ export function geckoRequestBatcher(queue: QueueElement[]): Request[] {
     const geckoPlatform = geckoNetworkIdMapper(queueSegment[0]!.data.networkId)
 
     const cgKey = process.env.COINGECKO_PRO_API_KEY
+    if (cgKey) {
+      console.log('COINGECKO_PRO_API_KEY ==> available')
+    } else {
+      console.warn('COINGECKO_PRO_API_KEY ==> not available')
+    }
     const mainApiUrl = cgKey ? 'https://pro-api.coingecko.com' : 'https://api.coingecko.com'
     const apiKeyString = cgKey ? `&x_cg_pro_api_key=${cgKey}` : ''
 
