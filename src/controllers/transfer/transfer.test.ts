@@ -42,7 +42,6 @@ describe('Transfer Controller', () => {
       humanizerInfo: humanizerInfo as any
     })
     expect(transferController.isInitialized).toBe(true)
-    expect(transferController).toBeDefined()
   })
   test('should set recipient address', () => {
     transferController.update({
