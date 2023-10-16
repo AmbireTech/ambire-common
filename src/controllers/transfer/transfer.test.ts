@@ -36,11 +36,12 @@ describe('Transfer Controller', () => {
     const polygonAccPortfolio = await polygonPortfolio.get(PLACEHOLDER_SELECTED_ACCOUNT)
     const tokens = [...ethAccPortfolio.tokens, ...polygonAccPortfolio.tokens]
     transferController = new TransferController()
-    await transferController.init({
+    await transferController.update({
       selectedAccount: PLACEHOLDER_SELECTED_ACCOUNT,
       tokens,
       humanizerInfo: humanizerInfo as any
     })
+    expect(transferController.isInitialized).toBe(true)
     expect(transferController).toBeDefined()
   })
   test('should set recipient address', () => {
@@ -57,7 +58,16 @@ describe('Transfer Controller', () => {
 
     expect(transferController.recipientEnsAddress).toBe(PLACEHOLDER_RECIPIENT)
   })
-  // @TODO: fix unstoppable domains
+  test('should set recipient address unknown', () => {
+    expect(transferController.isRecipientAddressUnknown).toBe(true)
+  })
+  test('should flag recipient address as a smart contract', async () => {
+    transferController.update({
+      recipientAddress: '0x7a250d5630b4cf539739df2c5dacb4c659f2488d'
+    })
+    transferController.onRecipientAddressChange()
+    expect(transferController.isRecipientSmartContract).toBe(true)
+  })
   test('should resolve UnstoppableDomains', async () => {
     transferController.update({
       recipientAddress: '0xyakmotoru.wallet'
@@ -68,7 +78,6 @@ describe('Transfer Controller', () => {
       PLACEHOLDER_RECIPIENT_LOWERCASE
     )
   })
-  // @TODO: recipient address validation tests: is it a contract or unknown
   test('should show SW warning', async () => {
     await transferController.handleTokenChange(`0x${'0'.repeat(40)}-polygon`)
 
@@ -96,6 +105,37 @@ describe('Transfer Controller', () => {
     })
 
     expect(transferController.maxAmount).toBe(selectedTokenMaxAmount)
+  })
+  // @TODO: Validation tests
+  test('should set validation form messages', async () => {
+    expect(transferController.validationFormMsgs.amount.success).toBe(true)
+    expect(transferController.validationFormMsgs.recipientAddress.success).toBe(false)
+
+    // Recipient address
+    transferController.update({
+      isRecipientAddressUnknownAgreed: true
+    })
+    expect(transferController.validationFormMsgs.recipientAddress.success).toBe(true)
+    // Amount
+    transferController.update({
+      amount: '0'
+    })
+
+    expect(transferController.validationFormMsgs.amount.success).toBe(false)
+
+    transferController.update({
+      setMaxAmount: true
+    })
+    transferController.update({
+      amount: String(Number(transferController.amount) + 1)
+    })
+
+    expect(transferController.validationFormMsgs.amount.success).toBe(false)
+
+    // Reset
+    transferController.update({
+      setMaxAmount: true
+    })
   })
   test('should build user request with non-native token transfer', async () => {
     await transferController.buildUserRequest()
