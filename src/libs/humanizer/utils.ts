@@ -8,12 +8,6 @@ import { HumanizerFragment, HumanizerSettings, HumanizerVisualization } from './
 dotenv.config()
 const COINGECKO_PRO_API_KEY = process.env.COINGECKO_PRO_API_KEY
 
-if (COINGECKO_PRO_API_KEY) {
-  console.log('COINGECKO_PRO_API_KEY ==> available')
-} else {
-  console.warn('COINGECKO_PRO_API_KEY ==> not available')
-}
-
 export function getWarning(content: string, level: string = 'caution') {
   return { content, level }
 }
