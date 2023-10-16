@@ -71,18 +71,18 @@ export class TransferController extends EventEmitter {
 
   reset() {
     this.amount = '0'
+    this.maxAmount = '0'
     this.recipientAddress = ''
     this.recipientEnsAddress = ''
     this.recipientUDAddress = ''
     this.isRecipientAddressUnknown = false
-    this.selectedToken = this.tokens[0]
-    this.#selectedTokenNetworkData = null
     this.userRequest = null
     this.isRecipientAddressUnknown = false
     this.isRecipientAddressUnknownAgreed = false
     this.isRecipientSmartContract = false
     this.isSWWarningVisible = false
     this.isSWWarningAgreed = false
+    this.#handleTokenChangeToFirstToken()
 
     this.emitUpdate()
   }
@@ -319,11 +319,15 @@ export class TransferController extends EventEmitter {
     const [selectedTokenAddress, selectedTokenNetwork] =
       getTokenAddressAndNetworkFromId(tokenAddressAndNetwork)
 
-    const matchingToken =
-      this.tokens.find(
-        ({ address: tokenAddress, networkId: tokenNetworkId }) =>
-          tokenAddress === selectedTokenAddress && tokenNetworkId === selectedTokenNetwork
-      ) || this.tokens[0]
+    let matchingToken = this.tokens[0]
+
+    if (selectedTokenAddress && selectedTokenNetwork) {
+      matchingToken =
+        this.tokens.find(
+          ({ address: tokenAddress, networkId: tokenNetworkId }) =>
+            tokenAddress === selectedTokenAddress && tokenNetworkId === selectedTokenNetwork
+        ) || this.tokens[0]
+    }
 
     const { amount: matchingTokenAmount, decimals } = matchingToken
 
@@ -341,6 +345,10 @@ export class TransferController extends EventEmitter {
         .includes(this.#selectedTokenNetworkData?.id || 'ethereum')
 
     this.emitUpdate()
+  }
+
+  #handleTokenChangeToFirstToken() {
+    this.handleTokenChange('')
   }
 
   #throwNotInitialized() {
