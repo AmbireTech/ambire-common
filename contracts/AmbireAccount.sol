@@ -80,7 +80,9 @@ contract AmbireAccount {
 		address fallbackHandler = address(uint160(uint(privileges[FALLBACK_HANDLER_SLOT])));
 		if (fallbackHandler == address(0)) return;
 		assembly {
-			// We can use memory addr 0, since it's not occupied
+			// we can use addr 0 because logic is taking full control of the
+			// execution making sure it returns itself and does not
+			// rely on any further Solidity code.
 			calldatacopy(0, 0, calldatasize())
 			let result := delegatecall(gas(), fallbackHandler, 0, calldatasize(), 0, 0)
 			let size := returndatasize()
@@ -278,6 +280,8 @@ contract AmbireAccount {
 	// return value in case of signature failure, with no time-range.
 	// equivalent to packSigTimeRange(true,0,0);
 	uint256 constant internal SIG_VALIDATION_FAILED = 1;
+	// equivalent to packSigTimeRange(false,0,0);
+	uint256 constant internal SIG_VALIDATION_SUCCESS = 0;
 
 	/**
 	 * @notice  EIP-4337 implementation
@@ -314,7 +318,7 @@ contract AmbireAccount {
 				abi.encode(op.initCode, op.callData, op.callGasLimit, op.verificationGasLimit, op.preVerificationGas, op.maxFeePerGas, op.maxPriorityFeePerGas, op.paymasterAndData)
 			)) << 64;
 			require(op.nonce == targetNonce, 'validateUserOp: execute(): one-time nonce is wrong');
-			return 0;
+			return SIG_VALIDATION_SUCCESS;
 		}
 
 		require(address(uint160(uint256(privileges[msg.sender]))) == ENTRY_POINT_MARKER, 'validateUserOp: not from entryPoint');
@@ -331,7 +335,7 @@ contract AmbireAccount {
 			(success);
 		}
 
-		return 0;
+		return SIG_VALIDATION_SUCCESS;
 	}
 
 	function validateExternalSig(Transaction[] memory calls, bytes calldata signature)
@@ -362,9 +366,8 @@ contract AmbireAccount {
 			'EXTERNAL_VALIDATION_NOT_SET'
 		);
 
-		// The sig validator itself should throw when a signature isn't valdiated successfully
+		// The sig validator itself should throw when a signature isn't validated successfully
 		// the return value just indicates whether we want to execute the current calls
-		// @TODO what about reentrancy for externally validated signatures
 		(isValidSig, timestampValidAfter) = ExternalSigValidator(validatorAddr).validateSig(validatorData, innerSig, calls);
 	}
 }
