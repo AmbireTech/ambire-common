@@ -171,10 +171,7 @@ export class TransferController extends EventEmitter {
       if (preSelectedToken) {
         this.handleTokenChange(preSelectedToken)
       } else if (!preSelectedToken && this.tokens.length > 0) {
-        const firstToken = this.tokens[0]
-        const firstTokenAddressAndNetwork = `${firstToken.address}-${firstToken.networkId}`
-
-        this.handleTokenChange(firstTokenAddressAndNetwork)
+        this.#handleTokenChangeToFirstToken()
       }
     }
 
@@ -328,6 +325,8 @@ export class TransferController extends EventEmitter {
             tokenAddress === selectedTokenAddress && tokenNetworkId === selectedTokenNetwork
         ) || this.tokens[0]
     }
+
+    if (!matchingToken) return
 
     const { amount: matchingTokenAmount, decimals } = matchingToken
 
