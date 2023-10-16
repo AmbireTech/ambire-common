@@ -83,6 +83,7 @@ export class TransferController extends EventEmitter {
     this.isSWWarningVisible = false
     this.isSWWarningAgreed = false
     this.#handleTokenChangeToFirstToken()
+    this.#selectedAccount = null
 
     this.emitUpdate()
   }
