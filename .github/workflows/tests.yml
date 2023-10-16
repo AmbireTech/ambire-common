@@ -9,7 +9,8 @@ on:
       - fix/all-tests
 jobs:
   build:
-    name: Build 
+    environment: tests
+    name: Tests 
     runs-on: ubuntu-latest
     concurrency:
       group: ${{ github.workflow }}-${{ github.ref }} 
