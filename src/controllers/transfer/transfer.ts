@@ -31,7 +31,6 @@ const DEFAULT_VALIDATION_FORM_MSGS = {
 
 export class TransferController extends EventEmitter {
   // State
-  isInitialized = false
 
   tokens: TokenResult[] = []
 
@@ -61,10 +60,6 @@ export class TransferController extends EventEmitter {
 
   userRequest: UserRequest | null = null
 
-  validationFormMsgs = DEFAULT_VALIDATION_FORM_MSGS
-
-  isFormValid = false
-
   #selectedTokenNetworkData: {
     id: string
     unstoppableDomainsChain: string
@@ -74,57 +69,7 @@ export class TransferController extends EventEmitter {
 
   #humanizerInfo: HumanizerInfoType | null = null
 
-  async init({
-    selectedAccount,
-    preSelectedToken,
-    // The old humanizer from ambire-constants. @TODO: replace it with the new one?
-    humanizerInfo,
-    tokens
-  }: {
-    selectedAccount: string
-    preSelectedToken?: string
-    humanizerInfo: HumanizerInfoType
-    tokens: TokenResult[]
-  }) {
-    // @TODO: implement new humanizer after the sign-account-op PR gets merged
-    if (!humanizerInfo) {
-      this.emitError({
-        level: 'major',
-        message: 'Internal transfer error. Please retry, or contact support if issue persists.',
-        error: new Error('transfer: missing humanizerInfo')
-      })
-
-      return
-    }
-    if (!selectedAccount) {
-      this.emitError({
-        level: 'major',
-        message: 'Internal transfer error. Please retry, or contact support if issue persists.',
-        error: new Error('transfer: missing selectedAccount')
-      })
-      return
-    }
-
-    this.#humanizerInfo = humanizerInfo
-    this.#selectedAccount = selectedAccount
-
-    this.tokens = tokens.filter((token) => token.amount !== 0n)
-
-    if (preSelectedToken) {
-      this.handleTokenChange(preSelectedToken)
-    } else if (!preSelectedToken && this.tokens.length > 0) {
-      const firstToken = this.tokens[0]
-      const firstTokenAddressAndNetwork = `${firstToken.address}-${firstToken.networkId}`
-
-      this.handleTokenChange(firstTokenAddressAndNetwork)
-    }
-    this.isInitialized = true
-
-    this.emitUpdate()
-  }
-
   reset() {
-    this.isInitialized = false
     this.amount = '0'
     this.recipientAddress = ''
     this.recipientEnsAddress = ''
@@ -138,25 +83,120 @@ export class TransferController extends EventEmitter {
     this.isRecipientSmartContract = false
     this.isSWWarningVisible = false
     this.isSWWarningAgreed = false
-    this.validationFormMsgs = DEFAULT_VALIDATION_FORM_MSGS
-    this.isFormValid = false
 
     this.emitUpdate()
   }
 
+  get validationFormMsgs() {
+    const validationFormMsgsNew = DEFAULT_VALIDATION_FORM_MSGS
+
+    if (this.#humanizerInfo && this.#selectedAccount) {
+      const isUDAddress = !!this.recipientUDAddress
+      const isEnsAddress = !!this.recipientEnsAddress
+
+      validationFormMsgsNew.recipientAddress = validateSendTransferAddress(
+        this.recipientUDAddress || this.recipientEnsAddress || this.recipientAddress,
+        this.#selectedAccount,
+        this.isRecipientAddressUnknownAgreed,
+        this.isRecipientAddressUnknown,
+        this.#humanizerInfo,
+        isUDAddress,
+        isEnsAddress,
+        this.isRecipientDomainResolving
+      )
+    }
+
+    // Validate the amount
+    if (this.selectedToken && (this.amount !== '0' || this.recipientAddress !== '')) {
+      validationFormMsgsNew.amount = validateSendTransferAmount(this.amount, this.selectedToken)
+    }
+
+    return validationFormMsgsNew
+  }
+
+  get isFormValid() {
+    const areFormFieldsValid =
+      this.validationFormMsgs.amount.success && this.validationFormMsgs.recipientAddress.success
+
+    const isSWWarningMissingOrAccepted = !this.isSWWarningVisible || this.isSWWarningAgreed
+
+    const isRecipientAddressUnknownMissingOrAccepted =
+      !this.isRecipientAddressUnknown || this.isRecipientAddressUnknownAgreed
+
+    return (
+      areFormFieldsValid &&
+      isSWWarningMissingOrAccepted &&
+      isRecipientAddressUnknownMissingOrAccepted &&
+      !this.isRecipientDomainResolving
+    )
+  }
+
+  get isInitialized() {
+    const areAllRequiredFieldsSet =
+      !!this.#humanizerInfo && !!this.#selectedAccount && !!this.tokens
+
+    return areAllRequiredFieldsSet
+  }
+
   update({
+    selectedAccount,
+    preSelectedToken,
+    humanizerInfo,
+    tokens,
     amount,
     recipientAddress,
     setMaxAmount,
     isSWWarningAgreed,
     isRecipientAddressUnknownAgreed
   }: {
+    selectedAccount?: string
+    preSelectedToken?: string
+    humanizerInfo?: HumanizerInfoType
+    tokens?: TokenResult[]
     amount?: string
     recipientAddress?: string
     setMaxAmount?: boolean
     isSWWarningAgreed?: boolean
     isRecipientAddressUnknownAgreed?: boolean
   }) {
+    if (humanizerInfo) {
+      this.#humanizerInfo = humanizerInfo
+    }
+    if (selectedAccount) {
+      this.#selectedAccount = selectedAccount
+    }
+    if (tokens) {
+      this.tokens = tokens.filter((token) => token.amount !== 0n)
+
+      if (preSelectedToken) {
+        this.handleTokenChange(preSelectedToken)
+      } else if (!preSelectedToken && this.tokens.length > 0) {
+        const firstToken = this.tokens[0]
+        const firstTokenAddressAndNetwork = `${firstToken.address}-${firstToken.networkId}`
+
+        this.handleTokenChange(firstTokenAddressAndNetwork)
+      }
+    }
+
+    // @TODO: implement new humanizer after the sign-account-op PR gets merged
+    if (!this.#humanizerInfo) {
+      this.emitError({
+        level: 'major',
+        message: 'Internal transfer error. Please retry, or contact support if issue persists.',
+        error: new Error('transfer: missing humanizerInfo')
+      })
+
+      return
+    }
+    if (!this.#selectedAccount) {
+      this.emitError({
+        level: 'major',
+        message: 'Internal transfer error. Please retry, or contact support if issue persists.',
+        error: new Error('transfer: missing selectedAccount')
+      })
+      return
+    }
+
     if (!this.isInitialized) {
       this.#throwNotInitialized()
       return
@@ -193,7 +233,6 @@ export class TransferController extends EventEmitter {
       this.isRecipientAddressUnknownAgreed = !this.isRecipientAddressUnknownAgreed
     }
 
-    this.#validateForm()
     this.emitUpdate()
   }
 
@@ -273,8 +312,6 @@ export class TransferController extends EventEmitter {
     this.isRecipientAddressUnknown = true // @TODO: isValidAddress & check from the address book
     this.isRecipientDomainResolving = false
 
-    this.#validateForm()
-
     this.emitUpdate()
   }
 
@@ -294,8 +331,6 @@ export class TransferController extends EventEmitter {
     this.#selectedTokenNetworkData =
       networks.find(({ id }) => id === matchingToken.networkId) || null
     this.amount = '0'
-    this.validationFormMsgs.amount = DEFAULT_VALIDATION_FORM_MSGS.amount
-    this.isFormValid = false
     this.maxAmount = formatUnits(matchingTokenAmount, Number(decimals))
     this.isSWWarningVisible =
       !!this.selectedToken?.address &&
@@ -308,47 +343,6 @@ export class TransferController extends EventEmitter {
     this.emitUpdate()
   }
 
-  #validateForm() {
-    // Validate the recipient address
-    if (this.#humanizerInfo && this.#selectedAccount) {
-      const isUDAddress = !!this.recipientUDAddress
-      const isEnsAddress = !!this.recipientEnsAddress
-
-      this.validationFormMsgs.recipientAddress = validateSendTransferAddress(
-        this.recipientUDAddress || this.recipientEnsAddress || this.recipientAddress,
-        this.#selectedAccount,
-        this.isRecipientAddressUnknownAgreed,
-        this.isRecipientAddressUnknown,
-        this.#humanizerInfo,
-        isUDAddress,
-        isEnsAddress,
-        this.isRecipientDomainResolving
-      )
-    }
-
-    // Validate the amount
-    if (this.selectedToken) {
-      this.validationFormMsgs.amount = validateSendTransferAmount(this.amount, this.selectedToken)
-    }
-
-    // Determine if the form is valid
-    const areFormFieldsValid =
-      this.validationFormMsgs.amount.success && this.validationFormMsgs.recipientAddress.success
-
-    const isSWWarningMissingOrAccepted = !this.isSWWarningVisible || this.isSWWarningAgreed
-
-    const isRecipientAddressUnknownMissingOrAccepted =
-      !this.isRecipientAddressUnknown || this.isRecipientAddressUnknownAgreed
-
-    this.isFormValid =
-      areFormFieldsValid &&
-      isSWWarningMissingOrAccepted &&
-      isRecipientAddressUnknownMissingOrAccepted &&
-      !this.isRecipientDomainResolving
-
-    this.emitUpdate()
-  }
-
   #throwNotInitialized() {
     this.emitError({
       level: 'major',
@@ -356,5 +350,15 @@ export class TransferController extends EventEmitter {
         'We encountered an internal error during transfer initialization. Retry, or contact support if the issue persists.',
       error: new Error('transfer: controller not initialized')
     })
+  }
+
+  // includes the getters in the stringified instance
+  toJSON() {
+    return {
+      ...this,
+      validationFormMsgs: this.validationFormMsgs,
+      isFormValid: this.isFormValid,
+      isInitialized: this.isInitialized
+    }
   }
 }
