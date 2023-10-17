@@ -46,7 +46,7 @@ export type ExternalKey = {
   addr: Account['addr']
   type: 'trezor' | 'ledger' | 'lattice'
   label: string
-  meta: { model: string; hdPath: string; index: number }
+  meta: { model: string; hdPath: string }
 }
 
 export type StoredKey = (InternalKey & { privKey: string }) | (ExternalKey & { privKey: null })
