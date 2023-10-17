@@ -13,9 +13,6 @@ import { getBytecode } from '../../libs/proxyDeploy/bytecode'
 import { getAmbireAccountAddress } from '../../libs/proxyDeploy/getAmbireAddressTwo'
 import { MainController } from './main'
 
-const polygon = networks.find((x) => x.id === 'polygon')
-if (!polygon) throw new Error('unable to find polygon network in consts')
-
 describe('Main Controller ', () => {
   const accounts = [
     {
@@ -180,7 +177,7 @@ describe('Main Controller ', () => {
 
     const signerAddr = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
     const priv = { addr: signerAddr, hash: true }
-    const bytecode = await getBytecode(polygon, [priv])
+    const bytecode = await getBytecode([priv])
 
     // Same mechanism to generating this one as used for the
     // `accountNotDeployed` in accountState.test.ts

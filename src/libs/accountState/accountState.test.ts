@@ -45,7 +45,7 @@ describe('AccountState', () => {
 
     const signerAddr = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
     const priv = { addr: signerAddr, hash: true }
-    const bytecode = await getBytecode(polygon, [priv])
+    const bytecode = await getBytecode([priv])
     const accountNotDeployed = {
       addr: getAmbireAccountAddress(AMBIRE_ACCOUNT_FACTORY, bytecode),
       label: 'test account',

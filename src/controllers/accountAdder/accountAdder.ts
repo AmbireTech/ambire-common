@@ -444,7 +444,11 @@ export class AccountAdderController extends EventEmitter {
     // eslint-disable-next-line no-restricted-syntax
     for (const [index, key] of keys.entries()) {
       // eslint-disable-next-line no-await-in-loop
-      const smartAccount = await getSmartAccount(key)
+      const priv = {
+        addr: key,
+        hash: '0x0000000000000000000000000000000000000000000000000000000000000001'
+      }
+      const smartAccount = await getSmartAccount([priv])
       accounts.push({ account: getLegacyAccount(key), isLinked: false, slot: index + 1 })
       accounts.push({ account: smartAccount, isLinked: false, slot: index + 1 })
     }
