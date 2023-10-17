@@ -5,6 +5,25 @@ import { Account } from '../../interfaces/account'
 import { getBytecode } from '../proxyDeploy/bytecode'
 import { getAmbireAccountAddress } from '../proxyDeploy/getAmbireAddressTwo'
 import { PrivLevels } from '../../libs/proxyDeploy/deploy'
+import { DKIM_VALIDATOR_ADDR, frequentlyUsedSelectors, getSignerKey, knownSelectors, RECOVERY_DEFAULTS } from '../../libs/dkim/recovery'
+import getPublicKey from '../../libs/dkim/getPublicKey'
+import lookup from '../../libs/dns/lookup'
+import publicKeyToComponents from '../../libs/dkim/publicKeyToComponents'
+
+interface DKIMRecoveryAccInfo {
+  emailFrom: string
+  // emailTo?: string,
+  // selector: string;
+  // bytes dkimPubKeyModulus;
+  // bytes dkimPubKeyExponent;
+  secondaryKey: string,
+  acceptUnknownSelectors?: boolean,
+  waitUntilAcceptAdded?: BigInt,
+  waitUntilAcceptRemoved?: BigInt,
+  acceptEmptyDKIMSig?: boolean,
+  acceptEmptySecondSig?: boolean,
+  onlyOneSigTimelock?: BigInt,
+}
 
 // returns to, data
 export function getAccountDeployParams(account: Account): [string, string] {
@@ -24,6 +43,62 @@ export function getLegacyAccount(key: string): Account {
     associatedKeys: [key],
     creation: null
   }
+}
+
+export async function getEmailAccount(
+  recoveryInfo: DKIMRecoveryAccInfo,
+  privileges: PrivLevels[]
+): Promise<Account> {
+  const domain: string = recoveryInfo.emailFrom.split('@')[1]
+  // TODO: check if the below code runs when domain is not in knownSelectors
+  const selector = knownSelectors[domain as keyof typeof knownSelectors]
+  if (selector) {
+    const result = await lookup(selector, domain)
+    if (!result) throw new Error('DKIM not detected')
+  } else {
+    const promises = frequentlyUsedSelectors.map(sel => lookup(sel, domain))
+    const result = await Promise.all(promises)
+    console.log(result)
+  }
+
+  // get the keys
+  const dkimKey = await getPublicKey({domain, selector: selector})
+  const key = publicKeyToComponents(dkimKey.publicKey)
+  const modulus = ethers.hexlify(key.modulus)
+  const exponent = ethers.hexlify(ethers.toBeHex(key.exponent))
+
+  // set the defaults if not provided by recoveryInfo
+  const acceptUnknownSelectors = recoveryInfo.acceptUnknownSelectors ?? RECOVERY_DEFAULTS.acceptUnknownSelectors
+  const waitUntilAcceptAdded = recoveryInfo.waitUntilAcceptAdded ?? RECOVERY_DEFAULTS.waitUntilAcceptAdded
+  const waitUntilAcceptRemoved = recoveryInfo.waitUntilAcceptRemoved ?? RECOVERY_DEFAULTS.waitUntilAcceptRemoved
+  const acceptEmptyDKIMSig = recoveryInfo.acceptEmptyDKIMSig ?? RECOVERY_DEFAULTS.acceptEmptyDKIMSig
+  const acceptEmptySecondSig = recoveryInfo.acceptEmptySecondSig ?? RECOVERY_DEFAULTS.acceptEmptySecondSig
+  const onlyOneSigTimelock = recoveryInfo.onlyOneSigTimelock ?? RECOVERY_DEFAULTS.onlyOneSigTimelock
+
+  const abiCoder = new ethers.AbiCoder()
+  const validatorAddr = DKIM_VALIDATOR_ADDR
+  const validatorData = abiCoder.encode(
+    ['tuple(string,string,string,bytes,bytes,address,bool,uint32,uint32,bool,bool,uint32)'],
+    [
+      [
+        recoveryInfo.emailFrom,
+        RECOVERY_DEFAULTS.emailTo,
+        selector,
+        modulus,
+        exponent,
+        recoveryInfo.secondaryKey,
+        acceptUnknownSelectors,
+        waitUntilAcceptAdded,
+        waitUntilAcceptRemoved,
+        acceptEmptyDKIMSig,
+        acceptEmptySecondSig,
+        onlyOneSigTimelock
+      ]
+    ]
+  )
+  const {signerKey, hash} = getSignerKey(validatorAddr, validatorData)
+  privileges.push({ addr: signerKey, hash: hash })
+  return getSmartAccount(privileges)
 }
 
 export async function getSmartAccount(privileges: PrivLevels[]): Promise<Account> {
