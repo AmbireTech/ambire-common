@@ -1,19 +1,20 @@
 /* eslint-disable class-methods-use-this */
 /* eslint-disable no-await-in-loop */
 import crypto from 'crypto'
-import { EmailVault } from '../../libs/emailVault/emailVault'
-import { requestMagicLink } from '../../libs/magicLink/magicLink'
+
 import {
   EmailVaultData,
-  SecretType,
   EmailVaultSecret,
-  Operation
+  Operation,
+  SecretType
 } from '../../interfaces/emailVault'
 import { Storage } from '../../interfaces/storage'
-import { KeystoreController } from '../keystore/keystore'
+import { EmailVault } from '../../libs/emailVault/emailVault'
 import EventEmitter from '../../libs/eventEmitter/eventEmitter'
+import { requestMagicLink } from '../../libs/magicLink/magicLink'
 import { Polling } from '../../libs/polling/polling'
 import wait from '../../utils/wait'
+import { KeystoreController } from '../keystore/keystore'
 
 export enum EmailVaultState {
   Loading,
@@ -40,6 +41,9 @@ export type SessionKeys = {
   [email: string]: string
 }
 
+function base64UrlEncode(str) {
+  return str.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+}
 export class EmailVaultController extends EventEmitter {
   private storage: Storage
 
@@ -233,8 +237,9 @@ export class EmailVaultController extends EventEmitter {
     let result: Boolean | null = false
     const magicKey = await this.#getMagicLinkKey(email)
     if (magicKey?.key) {
-      const newSecret = crypto.randomBytes(32).toString('base64url')
-
+      const randomBytes = crypto.randomBytes(32)
+      // toString('base64url') doesn't work for some reason in the browser extension
+      const newSecret = base64UrlEncode(randomBytes.toString('base64'))
       await this.#keyStore.addSecret(RECOVERY_SECRET_ID, newSecret, '', false)
       const keyStoreUid = await this.#keyStore.getKeyStoreUid()
       result = await this.#emailVault.addKeyStoreSecret(email, magicKey.key, keyStoreUid, newSecret)
