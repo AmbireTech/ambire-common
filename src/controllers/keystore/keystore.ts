@@ -62,7 +62,7 @@ export class KeystoreController extends EventEmitter {
 
   latestMethodCall: string | null = null
 
-  constructor(_storage: Storage, _keystoreSigners: { [key: string]: KeystoreSignerType }) {
+  constructor(_storage: Storage, _keystoreSigners: { [key in Key['type']]: KeystoreSignerType }) {
     super()
     this.#storage = _storage
     this.#keystoreSigners = _keystoreSigners
