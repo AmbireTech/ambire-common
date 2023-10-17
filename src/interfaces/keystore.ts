@@ -33,23 +33,23 @@ export type MainKey = {
   iv: Uint8Array
 }
 
-export type Key = Omit<StoredKey, 'privKey'> & { isExternallyStored: boolean }
+export type Key = (InternalKey | ExternalKey) & { isExternallyStored: boolean }
 
-export type StoredKey =
-  | {
-      addr: Account['addr']
-      type: 'internal'
-      label: string
-      privKey: string
-      meta: null
-    }
-  | {
-      addr: Account['addr']
-      type: 'trezor' | 'ledger' | 'lattice'
-      label: string
-      privKey: null
-      meta: { model: string; hdPath: string; index: number }
-    }
+export type InternalKey = {
+  addr: Account['addr']
+  type: 'internal'
+  label: string
+  meta: null
+}
+
+export type ExternalKey = {
+  addr: Account['addr']
+  type: 'trezor' | 'ledger' | 'lattice'
+  label: string
+  meta: { model: string; hdPath: string; index: number }
+}
+
+export type StoredKey = (InternalKey & { privKey: string }) | (ExternalKey & { privKey: null })
 
 export type KeystoreSignerType = {
   new (key: Key, privateKey?: string): KeystoreSigner
