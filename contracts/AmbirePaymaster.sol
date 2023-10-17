@@ -48,6 +48,8 @@ contract AmbirePaymaster is IPaymaster {
 		bytes32 hash = keccak256(abi.encode(
 			block.chainid,
 			address(this),
+			// entry point
+			msg.sender,
 			validUntil,
 			validAfter,
 			// everything except paymasterAndData and signature
