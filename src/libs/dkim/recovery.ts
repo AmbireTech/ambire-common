@@ -4,12 +4,12 @@ import { ethers } from "ethers"
 export const DKIM_VALIDATOR_ADDR = '0x0000000000000000000000000000000000000000'
 
 export const RECOVERY_DEFAULTS = {
-    emailTo: 'tt469695@gmail.com', // TODO: change with the relayer value
+    emailTo: 'recovery@ambire.com',
     acceptUnknownSelectors: true,
-    waitUntilAcceptAdded: 0n,
-    waitUntilAcceptRemoved: 0n,
-    acceptEmptyDKIMSig: false,
-    acceptEmptySecondSig: false,
+    waitUntilAcceptAdded: 138240n, // 4 days
+    waitUntilAcceptRemoved: 138240n, // 4 days
+    acceptEmptyDKIMSig: true,
+    acceptEmptySecondSig: true,
     onlyOneSigTimelock: 259200n, // 3 days
 }
 
@@ -29,7 +29,15 @@ export const frequentlyUsedSelectors = [
     'dkim',
 ]
 
-export function getSignerKey(validatorAddr: any, validatorData: any) {
+/**
+ * Get the signerKey that goes as the address in privileges
+ * and its accompanying priv hash for the email recovery
+ *
+ * @param validatorAddr string
+ * @param validatorData BytesLike
+ * @returns {Address, bytes32}
+ */
+export function getSignerKey(validatorAddr: string, validatorData: any) {
     const abiCoder = new ethers.AbiCoder()
     const hash = ethers.keccak256(
       abiCoder.encode(['address', 'bytes'], [validatorAddr, validatorData])

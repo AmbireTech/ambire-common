@@ -6,18 +6,26 @@ import { getBytecode } from '../proxyDeploy/bytecode'
 import { getAmbireAccountAddress } from '../proxyDeploy/getAmbireAddressTwo'
 import { PrivLevels } from '../../libs/proxyDeploy/deploy'
 import { DKIM_VALIDATOR_ADDR, frequentlyUsedSelectors, getSignerKey, knownSelectors, RECOVERY_DEFAULTS } from '../../libs/dkim/recovery'
-import getPublicKey from '../../libs/dkim/getPublicKey'
-import lookup from '../../libs/dns/lookup'
 import publicKeyToComponents from '../../libs/dkim/publicKeyToComponents'
+import { getPublicKeyIfAny } from '../../libs/dkim/getPublicKey'
 
+/**
+ * The minimum requirements are emailFrom and secondaryKey.
+ * - emailFrom is the email from the email vault
+ * - secondaryKey is the recoveryKey set in the email vault
+ * - acceptUnknownSelectors: sets whether recovery can be done by DNSSEC keys
+ * - waitUntilAcceptAdded: how much time to wait before the user accepts
+ * a DNSSEC key
+ * - waitUntilAcceptRemoved: how much time to wait before the user accepts
+ * a removal of a DNSSEC key
+ * - acceptEmptyDKIMSig: can recovery be performed without DKIM
+ * - acceptEmptySecondSig: can recovery be performed without secondaryKey
+ * - onlyOneSigTimelock: in case of 1/2 multisig, how much time to wait
+ * before the recovery transaction can be executed
+ */
 interface DKIMRecoveryAccInfo {
   emailFrom: string
-  // emailTo?: string,
-  // selector: string;
-  // bytes dkimPubKeyModulus;
-  // bytes dkimPubKeyExponent;
   secondaryKey: string,
-  acceptUnknownSelectors?: boolean,
   waitUntilAcceptAdded?: BigInt,
   waitUntilAcceptRemoved?: BigInt,
   acceptEmptyDKIMSig?: boolean,
@@ -45,30 +53,51 @@ export function getLegacyAccount(key: string): Account {
   }
 }
 
+/**
+ * Create a DKIM recoverable email smart account
+ *
+ * @param recoveryInfo DKIMRecoveryAccInfo
+ * @param privileges additional privileges the account may have. Could
+ * be empty
+ * @returns Promise<Account>
+ */
 export async function getEmailAccount(
   recoveryInfo: DKIMRecoveryAccInfo,
   privileges: PrivLevels[]
 ): Promise<Account> {
   const domain: string = recoveryInfo.emailFrom.split('@')[1]
-  // TODO: check if the below code runs when domain is not in knownSelectors
-  const selector = knownSelectors[domain as keyof typeof knownSelectors]
-  if (selector) {
-    const result = await lookup(selector, domain)
-    if (!result) throw new Error('DKIM not detected')
-  } else {
-    const promises = frequentlyUsedSelectors.map(sel => lookup(sel, domain))
-    const result = await Promise.all(promises)
-    console.log(result)
+
+  // try to take the dkimKey from the list of knownSelectors
+  // if we cannot, we query a list of frequentlyUsedSelectors to try
+  // to find the dkim key
+  let selector = knownSelectors[domain as keyof typeof knownSelectors] ?? ''
+  let dkimKey = selector ? await getPublicKeyIfAny({domain, selector: selector}) : ''
+  if (!dkimKey) {
+    const promises = frequentlyUsedSelectors.map(sel => getPublicKeyIfAny({domain, selector: sel}))
+    const results = await Promise.all(promises)
+    for (let i = 0; i < results.length; i++) {
+      if (results[i]) {
+        dkimKey = results[i]
+        selector = frequentlyUsedSelectors[i]
+        break
+      }
+    }
   }
 
-  // get the keys
-  const dkimKey = await getPublicKey({domain, selector: selector})
-  const key = publicKeyToComponents(dkimKey.publicKey)
-  const modulus = ethers.hexlify(key.modulus)
-  const exponent = ethers.hexlify(ethers.toBeHex(key.exponent))
+  // if there's no dkimKey, standard DKIM recovery is not possible
+  // we leave the defaults empty and the user will have to rely on
+  // keys added through DNSSEC
+  let modulus = ethers.hexlify(ethers.toUtf8Bytes(''))
+  let exponent = ethers.hexlify(ethers.toUtf8Bytes(''))
+  if (dkimKey) {
+    const key = publicKeyToComponents(dkimKey.publicKey)
+    modulus = ethers.hexlify(key.modulus)
+    exponent = ethers.hexlify(ethers.toBeHex(key.exponent))
+  }
 
-  // set the defaults if not provided by recoveryInfo
-  const acceptUnknownSelectors = recoveryInfo.acceptUnknownSelectors ?? RECOVERY_DEFAULTS.acceptUnknownSelectors
+  // acceptUnknownSelectors should be always true
+  // and should not be overriden by the FE at this point
+  const acceptUnknownSelectors = RECOVERY_DEFAULTS.acceptUnknownSelectors
   const waitUntilAcceptAdded = recoveryInfo.waitUntilAcceptAdded ?? RECOVERY_DEFAULTS.waitUntilAcceptAdded
   const waitUntilAcceptRemoved = recoveryInfo.waitUntilAcceptRemoved ?? RECOVERY_DEFAULTS.waitUntilAcceptRemoved
   const acceptEmptyDKIMSig = recoveryInfo.acceptEmptyDKIMSig ?? RECOVERY_DEFAULTS.acceptEmptyDKIMSig
