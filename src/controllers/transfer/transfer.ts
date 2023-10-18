@@ -219,12 +219,7 @@ export class TransferController extends EventEmitter {
     // If we do a regular check the value won't update if it's '' or '0'
     if (typeof recipientAddress === 'string') {
       const canBeEnsOrUd = recipientAddress.indexOf('.') !== -1
-
-      if (canBeEnsOrUd) {
-        this.isRecipientDomainResolving = true
-      } else {
-        this.isRecipientDomainResolving = false
-      }
+      this.isRecipientDomainResolving = canBeEnsOrUd
 
       this.recipientAddress = recipientAddress.trim()
     }
