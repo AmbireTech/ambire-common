@@ -69,22 +69,29 @@ export class TransferController extends EventEmitter {
 
   #humanizerInfo: HumanizerInfoType | null = null
 
-  reset() {
+  resetForm() {
     this.amount = '0'
     this.maxAmount = '0'
     this.recipientAddress = ''
     this.recipientEnsAddress = ''
     this.recipientUDAddress = ''
     this.isRecipientAddressUnknown = false
+    this.isRecipientDomainResolving = false
     this.userRequest = null
-    this.isRecipientAddressUnknown = false
     this.isRecipientAddressUnknownAgreed = false
     this.isRecipientSmartContract = false
     this.isSWWarningVisible = false
     this.isSWWarningAgreed = false
     this.#handleTokenChangeToFirstToken()
-    this.#selectedAccount = null
+
+    this.emitUpdate()
+  }
+
+  reset() {
+    this.resetForm()
     this.tokens = []
+    this.#humanizerInfo = null
+    this.#selectedAccount = null
 
     this.emitUpdate()
   }
