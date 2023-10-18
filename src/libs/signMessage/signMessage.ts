@@ -86,7 +86,22 @@ export async function verifyMessage({
   if (message) {
     finalDigest = hashMessage(message)
   } else if (typedData) {
-    finalDigest = TypedDataEncoder.hash(typedData.domain, typedData.types, typedData.message)
+    // To resolve the "ambiguous primary types or unused types" error, remove
+    // the `EIP712Domain` from `types` object. The domain type is inbuilt in
+    // the EIP712 standard and hence TypedDataEncoder so you do not need to
+    // specify it in the types, see:
+    // {@link https://ethereum.stackexchange.com/a/151930}
+    const typesWithoutEIP712Domain = { ...typedData.types }
+    if (typesWithoutEIP712Domain.EIP712Domain) {
+      // eslint-disable-next-line no-param-reassign
+      delete typesWithoutEIP712Domain.EIP712Domain
+    }
+
+    finalDigest = TypedDataEncoder.hash(
+      typedData.domain,
+      typesWithoutEIP712Domain,
+      typedData.message
+    )
   } else if (!finalDigest)
     throw Error(
       'Missing one of the properties: message, unPrefixedMessage, typedData or finalDigest'
