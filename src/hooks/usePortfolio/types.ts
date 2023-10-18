@@ -139,9 +139,15 @@ export type UsePortfolioReturnType = {
   onAddExtraToken: (extraToken: Token) => void
   onRemoveExtraToken: (address: Token['address']) => void
   onAddHiddenToken: (hiddenToken: Token) => void
-  onAddHiddenCollectible: (hiddenCollectible: Collectible) => void
+  onAddHiddenCollectible: (
+    hiddenCollectible: Collectible,
+    tokenId: Collectible['assets'][0]['tokenId']
+  ) => void
   onRemoveHiddenToken: (address: Token['address']) => void
-  onRemoveHiddenCollectible: (address: Collectible['address']) => void
+  onRemoveHiddenCollectible: (
+    address: Collectible['address'],
+    tokenId: Collectible['assets'][0]['tokenId']
+  ) => void
   balancesByNetworksLoading: Partial<{
     [key in Network]: boolean
   }>
