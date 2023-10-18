@@ -67,33 +67,36 @@ export async function getEmailAccount(
 ): Promise<Account> {
   const domain: string = recoveryInfo.emailFrom.split('@')[1]
 
+  // TODO: make getEmailAccount work with cloudflare
+
   // try to take the dkimKey from the list of knownSelectors
   // if we cannot, we query a list of frequentlyUsedSelectors to try
   // to find the dkim key
-  let selector = knownSelectors[domain as keyof typeof knownSelectors] ?? ''
-  let dkimKey = selector ? await getPublicKeyIfAny({domain, selector: selector}) : ''
-  if (!dkimKey) {
-    const promises = frequentlyUsedSelectors.map(sel => getPublicKeyIfAny({domain, selector: sel}))
-    const results = await Promise.all(promises)
-    for (let i = 0; i < results.length; i++) {
-      if (results[i]) {
-        dkimKey = results[i]
-        selector = frequentlyUsedSelectors[i]
-        break
-      }
-    }
-  }
+  // let selector = knownSelectors[domain as keyof typeof knownSelectors] ?? ''
+  // let dkimKey = selector ? await getPublicKeyIfAny({domain, selector: selector}) : ''
+  // if (!dkimKey) {
+  //   const promises = frequentlyUsedSelectors.map(sel => getPublicKeyIfAny({domain, selector: sel}))
+  //   const results = await Promise.all(promises)
+  //   for (let i = 0; i < results.length; i++) {
+  //     if (results[i]) {
+  //       dkimKey = results[i]
+  //       selector = frequentlyUsedSelectors[i]
+  //       break
+  //     }
+  //   }
+  // }
 
   // if there's no dkimKey, standard DKIM recovery is not possible
   // we leave the defaults empty and the user will have to rely on
   // keys added through DNSSEC
+  const selector = ethers.hexlify(ethers.toUtf8Bytes(''))
   let modulus = ethers.hexlify(ethers.toUtf8Bytes(''))
   let exponent = ethers.hexlify(ethers.toUtf8Bytes(''))
-  if (dkimKey) {
-    const key = publicKeyToComponents(dkimKey.publicKey)
-    modulus = ethers.hexlify(key.modulus)
-    exponent = ethers.hexlify(ethers.toBeHex(key.exponent))
-  }
+  // if (dkimKey) {
+  //   const key = publicKeyToComponents(dkimKey.publicKey)
+  //   modulus = ethers.hexlify(key.modulus)
+  //   exponent = ethers.hexlify(ethers.toBeHex(key.exponent))
+  // }
 
   // acceptUnknownSelectors should be always true
   // and should not be overriden by the FE at this point
