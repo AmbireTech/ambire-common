@@ -146,7 +146,6 @@ export type UsePortfolioReturnType = {
     [key in Network]: boolean
   }>
   isCurrNetworkBalanceLoading: boolean
-  areAllNetworksBalancesLoading: () => boolean
   loadBalance: () => void
   resultTime: number
 }
