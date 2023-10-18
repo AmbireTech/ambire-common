@@ -2,7 +2,24 @@
 // TODO: add types
 import { Resolution } from '@unstoppabledomains/resolution'
 
-const resolution = new Resolution()
+import { networks } from '../../consts/networks'
+
+const resolution = new Resolution({
+  sourceConfig: {
+    uns: {
+      locations: {
+        Layer1: {
+          url: networks.find((x) => x.id === 'ethereum')?.rpcUrl || '',
+          network: 'mainnet'
+        },
+        Layer2: {
+          url: networks.find((x) => x.id === 'polygon')?.rpcUrl || '',
+          network: 'polygon-mainnet'
+        }
+      }
+    }
+  }
+})
 
 function getMessage(e?: string) {
   if (e === 'UnregisteredDomain') return 'Domain is not registered'
@@ -26,7 +43,7 @@ async function resolveAddressMultiChain(domain, currency, chain) {
     .catch((e) => ({ success: false, code: e.code, message: getMessage(e.code) }))
 }
 
-async function resolveUDomain(domain, currency, chain) {
+async function resolveUDomain(domain, currency, chain): string {
   const [nativeUDAddress, customUDAddress] = await Promise.all([
     resolveAddress(domain),
     resolveAddressMultiChain(domain, currency, chain)
@@ -36,7 +53,7 @@ async function resolveUDomain(domain, currency, chain) {
     ? customUDAddress.address
     : nativeUDAddress.success
     ? nativeUDAddress.address
-    : null
+    : ''
 }
 
 export { resolveUDomain }
