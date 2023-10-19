@@ -27,14 +27,24 @@ describe('Portfolio', () => {
       portfolio.get('0x62d00bf1f291be434AC01b3Dc75fA84Af963370A')
     ])
 
-    const MS_DIFF = 10
+    const MS_DIFF = 1
     expect(Math.abs(resultOne.discoveryTime - resultTwo.discoveryTime)).toBeLessThanOrEqual(MS_DIFF)
-    expect(Math.abs(resultOne.oracleCallTime - resultTwo.oracleCallTime)).toBeLessThanOrEqual(MS_DIFF)
-    expect(Math.abs(resultOne.priceUpdateTime - resultTwo.priceUpdateTime)).toBeLessThanOrEqual(MS_DIFF)
+    expect(Math.abs(resultOne.oracleCallTime - resultTwo.oracleCallTime)).toBeLessThanOrEqual(
+      MS_DIFF
+    )
+    expect(Math.abs(resultOne.priceUpdateTime - resultTwo.priceUpdateTime)).toBeLessThanOrEqual(
+      MS_DIFF
+    )
 
-    expect(Math.abs(resultOne.discoveryTime - resultThree.discoveryTime)).toBeLessThanOrEqual(MS_DIFF)
-    expect(Math.abs(resultOne.oracleCallTime - resultThree.oracleCallTime)).toBeLessThanOrEqual(MS_DIFF)
-    expect(Math.abs(resultOne.priceUpdateTime - resultThree.priceUpdateTime)).toBeLessThanOrEqual(MS_DIFF)
+    expect(Math.abs(resultOne.discoveryTime - resultThree.discoveryTime)).toBeLessThanOrEqual(
+      MS_DIFF
+    )
+    expect(Math.abs(resultOne.oracleCallTime - resultThree.oracleCallTime)).toBeLessThanOrEqual(
+      MS_DIFF
+    )
+    expect(Math.abs(resultOne.priceUpdateTime - resultThree.priceUpdateTime)).toBeLessThanOrEqual(
+      MS_DIFF
+    )
   })
 
   test('token simulation', async () => {
@@ -176,9 +186,11 @@ describe('Portfolio', () => {
       return jest.fn().mockImplementation(jest.requireActual('node-fetch'))
     })
 
-    expect(result.tokens
+    expect(
+      result.tokens
         .map((token) => token.address)
-        .filter((token) => previousHints.erc20s.includes(token))).toEqual(previousHints.erc20s)
+        .filter((token) => previousHints.erc20s.includes(token))
+    ).toEqual(previousHints.erc20s)
     // Portfolio should determine the tokens' balances and prices
     // @ts-ignore
     expect(result.total.usd).toBeGreaterThan(100)
