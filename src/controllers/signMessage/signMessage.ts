@@ -120,7 +120,7 @@ export class SignMessageController extends EventEmitter {
     this.emitUpdate()
   }
 
-  // TODO: missing type
+  // TODO: missing type, should be one of LedgerController, TrezorController, LatticeController
   async sign(controller?: any) {
     if (!this.isInitialized || !this.messageToSign) {
       this.#throwNotInitialized()
@@ -140,10 +140,7 @@ export class SignMessageController extends EventEmitter {
 
     try {
       const signer = await this.#keystore.getSigner(this.signingKeyAddr, this.signingKeyType)
-      if (this.signingKeyType === 'ledger') {
-        // TODO: missing type
-        signer.init(controller)
-      }
+      if (signer.init) signer.init(controller)
 
       let sig
 

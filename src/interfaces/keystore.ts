@@ -2,6 +2,8 @@ import { Account } from './account'
 import { TypedMessage } from './userRequest'
 
 export interface KeystoreSigner {
+  // TODO: missing type, should be one of LedgerController, TrezorController, LatticeController
+  init?: (controller: any) => void
   signRawTransaction: (params: any) => Promise<string>
   signTypedData: (typedMessage: TypedMessage) => Promise<string>
   signMessage: (hash: string | Uint8Array) => Promise<string>
