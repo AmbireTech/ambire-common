@@ -7,7 +7,7 @@
     "generate:combineHumanizerJsons": "node scripts/combineHumanizerJsons.js",
     "generate:contractInfo": "node scripts/generateContractInfo.js > src/constants/humanizerInfo.json",
     "compile:contracts": "ts-node scripts/compileContracts.js",
-    "test": "npx hardhat compile; npx hardhat test; jest",
+    "test": "npx hardhat compile; npx hardhat test; jest --forceExit",
     "jest": "jest --forceExit",
     "build": "tsc src/libs/deployless/deployless.ts -t es5",
     "prettier": "prettier --write 'contracts/**/*.sol'",
