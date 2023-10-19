@@ -8,10 +8,10 @@ on:
     branches:
       - fix/all-tests
 jobs:
-  build:
-    environment: tests
+  tests:
     name: Tests 
     runs-on: ubuntu-latest
+    environment: tests
     concurrency:
       group: ${{ github.workflow }}-${{ github.ref }} 
     steps:
@@ -32,6 +32,8 @@ jobs:
       run: npm ci
 
     - name: Run tests 🧑‍🔬
+      env:
+        COINGECKO_PRO_API_KEY: ${{ secrets.COINGECKO_PRO_API_KEY }}
       run: npm run jest
 
 
