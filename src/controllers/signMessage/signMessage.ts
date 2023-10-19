@@ -156,13 +156,9 @@ export class SignMessageController extends EventEmitter {
         try {
           signature = await signer.signMessage(this.messageToSign.content.message)
         } catch (error: any) {
-          return this.emitError({
-            level: 'major',
-            message:
-              error?.message ||
-              'Something went wrong while signing the message. Please try again later or contact support if the problem persists.',
-            error
-          })
+          throw new Error(
+            'Something went wrong while signing the message. Please try again later or contact support if the problem persists.'
+          )
         }
       }
 
@@ -177,13 +173,10 @@ export class SignMessageController extends EventEmitter {
             network = requestedNetwork
           }
         } catch (error: any) {
-          return this.emitError({
-            level: 'major',
-            message:
-              error?.message ||
-              'Something went wrong while signing the typed data message. Please try again later or contact support if the problem persists.',
-            error
-          })
+          throw new Error(
+            error?.message ||
+              'Something went wrong while signing the typed data message. Please try again later or contact support if the problem persists.'
+          )
         }
       }
 
@@ -226,17 +219,18 @@ export class SignMessageController extends EventEmitter {
         signature,
         content: this.messageToSign.content
       }
-    } catch (e) {
+    } catch (e: any) {
       const error = e instanceof Error ? e : new Error(`Signing failed. Error details: ${e}`)
 
       this.emitError({
         level: 'major',
-        message: 'Something went wrong while signing the message. Please try again.',
+        message: e?.message || 'Something went wrong while signing the message. Please try again.',
         error
       })
+    } finally {
+      this.status = 'DONE'
+      this.emitUpdate()
     }
-    this.status = 'DONE'
-    this.emitUpdate()
   }
 
   #throwNotInitialized() {
