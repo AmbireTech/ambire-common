@@ -16,6 +16,7 @@ export enum NETWORKS {
   'okc' = 'okc',
   'base' = 'base',
   'ethereum-pow' = 'ethereum-pow',
+  'rinkeby' = 'rinkeby',
   'mumbai' = 'mumbai',
   'sepolia' = 'sepolia'
 }
@@ -292,7 +293,8 @@ const networks: NetworkType[] = [
     name: 'Rinkeby',
     explorerUrl: 'https://rinkeby.etherscan.io',
     unstoppableDomainsChain: 'ERC20',
-    isGasTankAvailable: true,
+    hide: true,
+    isGasTankAvailable: false,
     relayerlessOnly: false,
     nativeAsset: {
       address: '0x0000000000000000000000000000000000000000',
