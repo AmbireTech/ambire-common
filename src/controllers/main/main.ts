@@ -26,6 +26,7 @@ import { ActivityController } from '../activity/activity'
 import { KeystoreController } from '../keystore/keystore'
 import { SignMessageController } from '../signMessage/signMessage'
 import { EmailVaultController } from '../emailVault/emailVault'
+import { TransferController } from '../transfer/transfer'
 
 export class MainController extends EventEmitter {
   #storage: Storage
@@ -49,6 +50,8 @@ export class MainController extends EventEmitter {
 
   // Subcontrollers
   portfolio: PortfolioController
+
+  transfer: TransferController
 
   // Public sub-structures
   // @TODO emailVaults
@@ -130,6 +133,7 @@ export class MainController extends EventEmitter {
       relayerUrl,
       fetch: this.#fetch
     })
+    this.transfer = new TransferController()
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch: this.#fetch })
     this.onResolveDappRequest = onResolveDappRequest
     this.onRejectDappRequest = onRejectDappRequest

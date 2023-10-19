@@ -20,6 +20,7 @@ const account: Account = {
   label: '',
   pfp: '',
   associatedKeys: ['0x9188fdd757Df66B4F693D624Ed6A13a15Cf717D7'],
+  privileges: [['0x9188fdd757Df66B4F693D624Ed6A13a15Cf717D7', '0x0000000000000000000000000000000000000000000000000000000000000001']],
   creation: null
 }
 
@@ -150,8 +151,12 @@ describe('SignMessageController', () => {
         expect(signMessageController.status).toBe('LOADING')
       }
 
-      // 1 - init, 2 - setSigningKeyAddr, 3 - sign loading starts, 4 - sign completes
-      if (emitCounter === 4) {
+      // 1 - init
+      // 2 - setSigningKeyAddr
+      // 3 - call sign - loading starts
+      // 4 - async humanization or sign completion
+      // 5 - sign completes
+      if ((emitCounter === 4 && signMessageController.status === 'DONE') || emitCounter === 5) {
         expect(signMessageController.status).toBe('DONE')
         expect(mockSigner.signMessage).toHaveBeenCalledWith(messageToSign.content.message)
         expect(signMessageController.signedMessage?.signature).toBe(dummySignature)

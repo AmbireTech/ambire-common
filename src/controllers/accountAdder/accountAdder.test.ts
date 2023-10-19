@@ -28,6 +28,7 @@ const legacyAccount: Account = {
   label: '',
   pfp: '',
   associatedKeys: [key1PublicAddress],
+  privileges: [[key1PublicAddress, '0x0000000000000000000000000000000000000000000000000000000000000001']],
   creation: null
 }
 

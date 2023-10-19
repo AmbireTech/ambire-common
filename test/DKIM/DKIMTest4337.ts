@@ -146,7 +146,7 @@ describe('ERC4337 DKIM sigMode Both', function () {
       to: ambireAccountAddress,
       value: ethers.parseEther('1')
     })
-    const userOperation = await buildUserOp(paymaster, {
+    const userOperation = await buildUserOp(paymaster, await entryPoint.getAddress(), {
       sender: ambireAccountAddress,
       signedNonce: ethers.toBeHex(0, 1),
       callData: account.interface.encodeFunctionData('executeMultiple', [[[txns, finalSig]]]),
@@ -169,7 +169,7 @@ describe('ERC4337 DKIM sigMode Both', function () {
 
     // try to replay the data by placing a valid entry point nonce of 01
     // it should fail in validateUserOp
-    const replayTargetNonceOp = await buildUserOp(paymaster, {
+    const replayTargetNonceOp = await buildUserOp(paymaster, await entryPoint.getAddress(), {
       sender: ambireAccountAddress,
       signedNonce: ethers.toBeHex(0, 1),
       callData: account.interface.encodeFunctionData('executeMultiple', [[[txns, finalSig]]]),
@@ -182,7 +182,7 @@ describe('ERC4337 DKIM sigMode Both', function () {
 
     // try to replay with a valid paymaster signature, should fail
     // and should not allow to reuse the nonce
-    const secondUserOperation = await buildUserOp(paymaster, {
+    const secondUserOperation = await buildUserOp(paymaster, await entryPoint.getAddress(), {
       sender: ambireAccountAddress,
       signedNonce: ethers.toBeHex(0, 1),
       callData: account.interface.encodeFunctionData('executeMultiple', [[[txns, finalSig]]]),
@@ -246,7 +246,7 @@ describe('ERC4337 DKIM sigMode Both', function () {
       to: ambireAccountAddress,
       value: ethers.parseEther('1')
     })
-    const userOperation = await buildUserOp(paymaster, {
+    const userOperation = await buildUserOp(paymaster, await entryPoint.getAddress(), {
       sender: ambireAccountAddress,
       signedNonce: ethers.toBeHex(0, 1),
       callData: account.interface.encodeFunctionData('executeMultiple', [[[txns, finalSig]]]),
@@ -304,7 +304,7 @@ describe('ERC4337 DKIM sigMode OnlyDKIM', function () {
     ])
     const sig = abiCoder.encode(['address', 'address', 'bytes', 'bytes'], [signerKey, validatorAddr, validatorData, innerSig])
     const finalSig = wrapExternallyValidated(sig)    
-    const userOperation = await buildUserOp(paymaster, {
+    const userOperation = await buildUserOp(paymaster, await entryPoint.getAddress(), {
       sender: ambireAccountAddress,
       signedNonce: ethers.toBeHex(0, 1),
       callData: account.interface.encodeFunctionData('executeMultiple', [[[txns, finalSig]]]),
@@ -320,7 +320,7 @@ describe('ERC4337 DKIM sigMode OnlyDKIM', function () {
       args[3].indexOf(abiCoder.encode(['string'], ['no txn execution is allowed when setting a timelock']).substring(2))
     ).to.not.equal(-1)
 
-    const secondUserOperation = await buildUserOp(paymaster, {
+    const secondUserOperation = await buildUserOp(paymaster, await entryPoint.getAddress(), {
       sender: ambireAccountAddress,
       signedNonce: ethers.toBeHex(0, 1),
       callData: account.interface.encodeFunctionData('executeMultiple', [[[[], finalSig]]]),
@@ -350,7 +350,7 @@ describe('ERC4337 DKIM sigMode OnlyDKIM', function () {
     expect(timelock[0]).to.be.false
     expect(timelock[1]).to.not.equal(0)
 
-    const thirdUserOperation = await buildUserOp(paymaster, {
+    const thirdUserOperation = await buildUserOp(paymaster, await entryPoint.getAddress(), {
       sender: ambireAccountAddress,
       signedNonce: ethers.toBeHex(0, 1),
       callData: account.interface.encodeFunctionData('executeMultiple', [[[[], finalSig]]]),
@@ -368,7 +368,7 @@ describe('ERC4337 DKIM sigMode OnlyDKIM', function () {
     ).to.not.equal(-1)
 
     // set the correct callData
-    const forthUserOperation = await buildUserOp(paymaster, {
+    const forthUserOperation = await buildUserOp(paymaster, await entryPoint.getAddress(), {
       sender: ambireAccountAddress,
       signedNonce: ethers.toBeHex(0, 1),
       callData: account.interface.encodeFunctionData('executeMultiple', [[[txns, finalSig]]]),
@@ -389,7 +389,7 @@ describe('ERC4337 DKIM sigMode OnlyDKIM', function () {
     const timelockDone = await dkimRecovery.timelocks(identifier)
     expect(timelockDone[0]).to.be.true
     
-    const fifthUserOperation = await buildUserOp(paymaster, {
+    const fifthUserOperation = await buildUserOp(paymaster, await entryPoint.getAddress(), {
       sender: ambireAccountAddress,
       signedNonce: ethers.toBeHex(0, 1),
       callData: account.interface.encodeFunctionData('executeMultiple', [[[txns, finalSig]]]),
@@ -457,7 +457,7 @@ describe('ERC4337 DKIM sigMode OnlySecond', function () {
     ])
     const sig = abiCoder.encode(['address', 'address', 'bytes', 'bytes'], [signerKey, validatorAddr, validatorData, innerSig])
     const finalSig = wrapExternallyValidated(sig)
-    const userOperation = await buildUserOp(paymaster, {
+    const userOperation = await buildUserOp(paymaster, await entryPoint.getAddress(), {
       sender: ambireAccountAddress,
       signedNonce: ethers.toBeHex(0, 1),
       callData: account.interface.encodeFunctionData('executeMultiple', [[[txns, finalSig]]]),
@@ -474,7 +474,7 @@ describe('ERC4337 DKIM sigMode OnlySecond', function () {
       args[3].indexOf(abiCoder.encode(['string'], ['no txn execution is allowed when setting a timelock']).substring(2))
     ).to.not.equal(-1)
 
-    const secondUserOperation = await buildUserOp(paymaster, {
+    const secondUserOperation = await buildUserOp(paymaster, await entryPoint.getAddress(), {
       sender: ambireAccountAddress,
       signedNonce: ethers.toBeHex(0, 1),
       callData: account.interface.encodeFunctionData('executeMultiple', [[[[], finalSig]]]),
@@ -495,7 +495,7 @@ describe('ERC4337 DKIM sigMode OnlySecond', function () {
     expect(timelock[0]).to.be.false
     expect(timelock[1]).to.not.equal(0)
 
-    const thirdUserOperation = await buildUserOp(paymaster, {
+    const thirdUserOperation = await buildUserOp(paymaster, await entryPoint.getAddress(), {
       sender: ambireAccountAddress,
       signedNonce: ethers.toBeHex(0, 1),
       callData: account.interface.encodeFunctionData('executeMultiple', [[[txns, finalSig]]]),
@@ -516,7 +516,7 @@ describe('ERC4337 DKIM sigMode OnlySecond', function () {
     const timelockDone = await dkimRecovery.timelocks(identifier)
     expect(timelockDone[0]).to.be.true
 
-    const forthUserOp = await buildUserOp(paymaster, {
+    const forthUserOp = await buildUserOp(paymaster, await entryPoint.getAddress(), {
       sender: ambireAccountAddress,
       signedNonce: ethers.toBeHex(0, 1),
       callData: account.interface.encodeFunctionData('executeMultiple', [[[txns, finalSig]]]),
@@ -574,7 +574,7 @@ describe('ERC4337 DKIM sigMode OnlySecond', function () {
     ])
     const sig = abiCoder.encode(['address', 'address', 'bytes', 'bytes'], [signerKey, validatorAddr, validatorData, innerSig])
     const finalSig = wrapExternallyValidated(sig)
-    const userOperation = await buildUserOp(paymaster, {
+    const userOperation = await buildUserOp(paymaster, await entryPoint.getAddress(), {
       sender: ambireAccountAddress,
       signedNonce: ethers.toBeHex(0, 1),
       callData: account.interface.encodeFunctionData('executeMultiple', [[[txns, finalSig]]]),
@@ -690,7 +690,7 @@ describe('DKIM sigMode Both with acceptUnknownSelectors true', function () {
     ])
     const sig = abiCoder.encode(['address', 'address', 'bytes', 'bytes'], [signerKey, validatorAddr, validatorData, innerSig])
     const finalSig = wrapExternallyValidated(sig)
-    const userOperation = await buildUserOp(paymaster, {
+    const userOperation = await buildUserOp(paymaster, await entryPoint.getAddress(), {
       sender: ambireAccountAddress,
       signedNonce: ethers.toBeHex(0, 1),
       callData: account.interface.encodeFunctionData('executeMultiple', [[[txns, finalSig]]]),
@@ -764,7 +764,7 @@ describe('DKIM sigMode OnlySecond with a timelock of 2 minutes', function () {
     ])
     const sig = abiCoder.encode(['address', 'address', 'bytes', 'bytes'], [signerKey, validatorAddr, validatorData, innerSig])
     const finalSig = wrapExternallyValidated(sig)
-    const userOperation = await buildUserOp(paymaster, {
+    const userOperation = await buildUserOp(paymaster, await entryPoint.getAddress(), {
       sender: ambireAccountAddress,
       signedNonce: ethers.toBeHex(0, 1),
       callData: account.interface.encodeFunctionData('executeMultiple', [[[txns, finalSig]]]),
@@ -780,7 +780,7 @@ describe('DKIM sigMode OnlySecond with a timelock of 2 minutes', function () {
       args[3].indexOf(abiCoder.encode(['string'], ['no txn execution is allowed when setting a timelock']).substring(2))
     ).to.not.equal(-1)
 
-    const secondUserOperation = await buildUserOp(paymaster, {
+    const secondUserOperation = await buildUserOp(paymaster, await entryPoint.getAddress(), {
       sender: ambireAccountAddress,
       signedNonce: ethers.toBeHex(0, 1),
       callData: account.interface.encodeFunctionData('executeMultiple', [[[[], finalSig]]]),
@@ -802,7 +802,7 @@ describe('DKIM sigMode OnlySecond with a timelock of 2 minutes', function () {
     expect(timelock[1]).to.not.equal(0)
 
     // 2 minutes timelock
-    const thirdUserOp = await buildUserOp(paymaster, {
+    const thirdUserOp = await buildUserOp(paymaster, await entryPoint.getAddress(), {
       sender: ambireAccountAddress,
       signedNonce: ethers.toBeHex(0, 1),
       callData: account.interface.encodeFunctionData('executeMultiple', [[[[], finalSig]]]),

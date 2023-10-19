@@ -5,13 +5,13 @@ import { describe, expect, test } from '@jest/globals'
 
 import { produceMemoryStore } from '../../../test/helpers'
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
-import { networks } from '../../consts/networks'
 import { UserRequest } from '../../interfaces/userRequest'
 import { KeyIterator } from '../../libs/keyIterator/keyIterator'
 import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
 import { getBytecode } from '../../libs/proxyDeploy/bytecode'
 import { getAmbireAccountAddress } from '../../libs/proxyDeploy/getAmbireAddressTwo'
 import { MainController } from './main'
+import { Account } from 'interfaces/account'
 
 describe('Main Controller ', () => {
   const accounts = [
@@ -176,16 +176,17 @@ describe('Main Controller ', () => {
     })
 
     const signerAddr = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
-    const priv = { addr: signerAddr, hash: true }
+    const priv = { addr: signerAddr, hash: ' 0x0000000000000000000000000000000000000000000000000000000000000001' }
     const bytecode = await getBytecode([priv])
 
     // Same mechanism to generating this one as used for the
     // `accountNotDeployed` in accountState.test.ts
-    const accountPendingCreation = {
+    const accountPendingCreation: Account = {
       addr: getAmbireAccountAddress(AMBIRE_ACCOUNT_FACTORY, bytecode),
       label: 'test account',
       pfp: 'pfp',
       associatedKeys: [signerAddr],
+      privileges: [[ signerAddr, ' 0x0000000000000000000000000000000000000000000000000000000000000001' ]],
       creation: {
         factoryAddr: AMBIRE_ACCOUNT_FACTORY,
         bytecode,

@@ -7,7 +7,7 @@ import { describe, expect, jest, test } from '@jest/globals'
 
 import { produceMemoryStore } from '../../../test/helpers'
 import humanizerJSON from '../../consts/humanizerInfo.json'
-import { ErrorRef } from '../../controllers/eventEmitter'
+import { ErrorRef } from 'controllers/eventEmitter'
 import { Account } from '../../interfaces/account'
 import { Key } from '../../interfaces/keystore'
 import { Storage } from '../../interfaces/storage'
@@ -26,7 +26,7 @@ const accountOp: AccountOp = {
   networkId: 'ethereum',
   // this may not be defined, in case the user has not picked a key yet
   signingKeyAddr: null,
-  signingKeyType: 'internal',
+  // signingKeyType: 'internal',
   // this may not be set in case we haven't set it yet
   nonce: null,
   calls: [],
@@ -50,6 +50,7 @@ const accounts: Account[] = [
     label: 'First account',
     pfp: 'string',
     associatedKeys: ['string[]'],
+    privileges: [],
     creation: null
   }
 ]

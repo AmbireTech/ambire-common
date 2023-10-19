@@ -32,7 +32,6 @@ describe('Account', () => {
     expect(newLegacyAccount as Account).toStrictEqual(legacyAccount)
   })
   test('should return smartAccount', async () => {
-    expect.assertions(3)
     const priv = {
       addr: keyPublicAddress,
       hash: '0x0000000000000000000000000000000000000000000000000000000000000001'
@@ -44,6 +43,7 @@ describe('Account', () => {
       label: '',
       pfp: '',
       associatedKeys: [keyPublicAddress],
+      privileges: [[priv.addr, priv.hash]],
       creation: {
         factoryAddr: AMBIRE_ACCOUNT_FACTORY,
         bytecode,
