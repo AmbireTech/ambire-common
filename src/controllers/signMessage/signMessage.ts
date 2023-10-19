@@ -142,14 +142,19 @@ export class SignMessageController extends EventEmitter {
       const signer = await this.#keystore.getSigner(this.signingKeyAddr, this.signingKeyType)
       if (signer.init) signer.init(controller)
 
-      let sig
-
       const account = this.#accounts!.find((acc) => acc.addr === this.messageToSign?.accountAddr)
+      if (!account) {
+        throw new Error(
+          'Account details needed for the signing mechanism are not found. Please try again, re-import your account or contact support if nothing else helps.'
+        )
+      }
+
       let network = networks.find((n: NetworkDescriptor) => n.id === 'ethereum')
+      let signature
 
       if (this.messageToSign.content.kind === 'message') {
         try {
-          sig = await signer.signMessage(this.messageToSign!.content.message)
+          signature = await signer.signMessage(this.messageToSign.content.message)
         } catch (error: any) {
           return this.emitError({
             level: 'major',
@@ -162,16 +167,30 @@ export class SignMessageController extends EventEmitter {
       }
 
       if (this.messageToSign.content.kind === 'typedMessage') {
-        const { domain } = this.messageToSign!.content
-        sig = await signer.signTypedData(this.messageToSign!.content)
-        const requestedNetwork = networks.find((n) => Number(n.chainId) === Number(domain?.chainId))
-        if (requestedNetwork) {
-          network = requestedNetwork
+        try {
+          const { domain } = this.messageToSign.content
+          signature = await signer.signTypedData(this.messageToSign!.content)
+          const requestedNetwork = networks.find(
+            (n) => Number(n.chainId) === Number(domain.chainId)
+          )
+          if (requestedNetwork) {
+            network = requestedNetwork
+          }
+        } catch (error: any) {
+          return this.emitError({
+            level: 'major',
+            message:
+              error?.message ||
+              'Something went wrong while signing the typed data message. Please try again later or contact support if the problem persists.',
+            error
+          })
         }
       }
 
-      if (!sig || !account) {
-        throw !account ? new Error('account is undefined') : new Error('signature is undefined')
+      if (!signature) {
+        throw new Error(
+          'Ambire was not able to retrieve the signature. Please try again or contact support if the problem persists.'
+        )
       }
 
       const personalMsgToValidate =
@@ -179,30 +198,33 @@ export class SignMessageController extends EventEmitter {
           ? hexStringToUint8Array(this.messageToSign.content.message)
           : this.messageToSign.content.message
 
-      const isValidSig = await verifyMessage({
+      const isValidSignature = await verifyMessage({
         provider: this.#providers[network?.id || 'ethereum'],
         signer: this.signingKeyAddr,
-        signature: sig,
-        message: (this.messageToSign.content.kind === 'typedMessage'
-          ? null
-          : personalMsgToValidate) as any,
-        typedData: (this.messageToSign.content.kind === 'typedMessage'
-          ? {
-              domain: this.messageToSign.content.domain,
-              types: this.messageToSign.content.types as any,
-              message: this.messageToSign.content.message
-            }
-          : null) as any
+        signature,
+        // TODO: Be aware of the type mismatch, could cause troubles
+        message: this.messageToSign.content.kind === 'message' ? personalMsgToValidate : undefined,
+        typedData:
+          this.messageToSign.content.kind === 'typedMessage'
+            ? {
+                domain: this.messageToSign.content.domain,
+                types: this.messageToSign.content.types,
+                message: this.messageToSign.content.message
+              }
+            : undefined
       })
-      if (!isValidSig) {
-        throw new Error('Invalid signature')
+
+      if (!isValidSignature) {
+        throw new Error(
+          'Ambire failed to validate the signature. Please make sure you are signing with the correct key or device. If the problem persists, please contact Ambire support.'
+        )
       }
 
       this.signedMessage = {
-        id: this.messageToSign!.id,
-        accountAddr: this.messageToSign!.accountAddr,
-        signature: sig,
-        content: this.messageToSign!.content
+        id: this.messageToSign.id,
+        accountAddr: this.messageToSign.accountAddr,
+        signature,
+        content: this.messageToSign.content
       }
     } catch (e) {
       const error = e instanceof Error ? e : new Error(`Signing failed. Error details: ${e}`)
