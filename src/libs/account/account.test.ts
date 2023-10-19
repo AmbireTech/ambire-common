@@ -7,7 +7,12 @@ import { describe, expect, test } from '@jest/globals'
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { getBytecode } from '../proxyDeploy/bytecode'
 import { getAmbireAccountAddress } from '../proxyDeploy/getAmbireAddressTwo'
-import { getAccountDeployParams, getEmailAccount, getLegacyAccount, getSmartAccount } from './account'
+import {
+  getAccountDeployParams,
+  getEmailAccount,
+  getLegacyAccount,
+  getSmartAccount
+} from './account'
 
 const keyPublicAddress = '0x9188fdd757Df66B4F693D624Ed6A13a15Cf717D7'
 
@@ -16,6 +21,7 @@ const legacyAccount: Account = {
   label: '',
   pfp: '',
   associatedKeys: [keyPublicAddress],
+  privileges: [],
   creation: null
 }
 
@@ -63,11 +69,12 @@ describe('Account', () => {
       hash: '0x0000000000000000000000000000000000000000000000000000000000000001'
     }
     const bytecode = await getBytecode([priv])
-    const accountNotDeployed = {
+    const accountNotDeployed: Account = {
       addr: getAmbireAccountAddress(AMBIRE_ACCOUNT_FACTORY, bytecode),
       label: '',
       pfp: '',
       associatedKeys: [keyPublicAddress],
+      privileges: [[priv.addr, priv.hash]],
       creation: {
         factoryAddr: AMBIRE_ACCOUNT_FACTORY,
         bytecode,
@@ -85,10 +92,13 @@ describe('Account', () => {
       addr: keyPublicAddress,
       hash: '0x0000000000000000000000000000000000000000000000000000000000000001'
     }
-    const newSmartAccount = await getEmailAccount({
-      emailFrom: 'tt469695@gmail.com',
-      secondaryKey: ethers.computeAddress(ethers.hexlify(ethers.randomBytes(32)))
-    }, [priv])
+    const newSmartAccount = await getEmailAccount(
+      {
+        emailFrom: 'tt469695@gmail.com',
+        secondaryKey: ethers.computeAddress(ethers.hexlify(ethers.randomBytes(32)))
+      },
+      [priv]
+    )
 
     expect(newSmartAccount.associatedKeys.length).toBe(2)
   })
@@ -97,10 +107,13 @@ describe('Account', () => {
       addr: keyPublicAddress,
       hash: '0x0000000000000000000000000000000000000000000000000000000000000001'
     }
-    const newSmartAccount = await getEmailAccount({
-      emailFrom: 'test@ambire.com',
-      secondaryKey: ethers.computeAddress(ethers.hexlify(ethers.randomBytes(32)))
-    }, [priv])
+    const newSmartAccount = await getEmailAccount(
+      {
+        emailFrom: 'test@ambire.com',
+        secondaryKey: ethers.computeAddress(ethers.hexlify(ethers.randomBytes(32)))
+      },
+      [priv]
+    )
 
     expect(newSmartAccount.associatedKeys.length).toBe(2)
   })
@@ -109,10 +122,13 @@ describe('Account', () => {
       addr: keyPublicAddress,
       hash: '0x0000000000000000000000000000000000000000000000000000000000000001'
     }
-    const newSmartAccount = await getEmailAccount({
-      emailFrom: 'test@izmislen.com',
-      secondaryKey: ethers.computeAddress(ethers.hexlify(ethers.randomBytes(32)))
-    }, [priv])
+    const newSmartAccount = await getEmailAccount(
+      {
+        emailFrom: 'test@izmislen.com',
+        secondaryKey: ethers.computeAddress(ethers.hexlify(ethers.randomBytes(32)))
+      },
+      [priv]
+    )
 
     expect(newSmartAccount.associatedKeys.length).toBe(2)
   })

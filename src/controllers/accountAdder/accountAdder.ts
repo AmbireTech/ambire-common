@@ -6,14 +6,14 @@ import { KeyIterator } from '../../interfaces/keyIterator'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
 import { Storage } from '../../interfaces/storage'
 import {
+  getEmailAccount,
   getLegacyAccount,
   getSmartAccount,
   isAmbireV1LinkedAccount
 } from '../../libs/account/account'
 import { getAccountState } from '../../libs/accountState/accountState'
-import { relayerCall } from '../../libs/relayerCall/relayerCall'
-
 import EventEmitter from '../../libs/eventEmitter/eventEmitter'
+import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import wait from '../../utils/wait'
 
 const INITIAL_PAGE_INDEX = 1
@@ -349,11 +349,7 @@ export class AccountAdderController extends EventEmitter {
     if (accountsToAddOnRelayer.length) {
       const body = accountsToAddOnRelayer.map((acc) => ({
         addr: acc.addr,
-        associatedKeys: acc.associatedKeys.map((key) => [
-          ethers.getAddress(key), // the Relayer expects checksumed address
-          // Handle special priv hashes at a later stage, when (if) needed
-          '0x0000000000000000000000000000000000000000000000000000000000000001'
-        ]),
+        associatedKeys: acc.privileges,
         creation: {
           factoryAddr: acc.creation!.factoryAddr,
           salt: acc.creation!.salt,
@@ -391,6 +387,49 @@ export class AccountAdderController extends EventEmitter {
     await wait(1)
     this.addAccountsStatus = 'INITIAL'
     this.emitUpdate()
+  }
+
+  async addEmailAccount(email: string, recoveryKey: string) {
+    if (!this.isInitialized) {
+      this.emitError({
+        level: 'major',
+        message:
+          'Something went wrong with calculating the accounts. Please start the process again. If the problem persists, contact support.',
+        error: new Error(
+          'accountAdder: requested method `#calculateAccounts`, but the AccountAdder is not initialized'
+        )
+      })
+      return
+    }
+
+    if (!this.#keyIterator) {
+      this.emitError({
+        level: 'major',
+        message:
+          'Something went wrong with calculating the accounts. Please start the process again. If the problem persists, contact support.',
+        error: new Error(
+          'accountAdder: requested method `#calculateAccounts`, but keyIterator is not initialized'
+        )
+      })
+      return
+    }
+
+    const key: string = (await this.#keyIterator.retrieve(0, 1))[0]
+
+    const priv = {
+      addr: key,
+      hash: '0x0000000000000000000000000000000000000000000000000000000000000001'
+    }
+
+    const emailSmartAccount = await getEmailAccount(
+      {
+        emailFrom: email,
+        secondaryKey: recoveryKey
+      },
+      [priv]
+    )
+
+    await this.addAccounts([emailSmartAccount])
   }
 
   async #calculateAccounts({
@@ -448,6 +487,7 @@ export class AccountAdderController extends EventEmitter {
         addr: key,
         hash: '0x0000000000000000000000000000000000000000000000000000000000000001'
       }
+      // eslint-disable-next-line no-await-in-loop
       const smartAccount = await getSmartAccount([priv])
       accounts.push({ account: getLegacyAccount(key), isLinked: false, slot: index + 1 })
       accounts.push({ account: smartAccount, isLinked: false, slot: index + 1 })

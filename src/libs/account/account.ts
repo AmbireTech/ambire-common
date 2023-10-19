@@ -2,12 +2,18 @@ import { ethers, Interface } from 'ethers'
 
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { Account } from '../../interfaces/account'
+import { getPublicKeyIfAny } from '../dkim/getPublicKey'
+import publicKeyToComponents from '../dkim/publicKeyToComponents'
+import {
+  DKIM_VALIDATOR_ADDR,
+  frequentlyUsedSelectors,
+  getSignerKey,
+  knownSelectors,
+  RECOVERY_DEFAULTS
+} from '../dkim/recovery'
 import { getBytecode } from '../proxyDeploy/bytecode'
+import { PrivLevels } from '../proxyDeploy/deploy'
 import { getAmbireAccountAddress } from '../proxyDeploy/getAmbireAddressTwo'
-import { PrivLevels } from '../../libs/proxyDeploy/deploy'
-import { DKIM_VALIDATOR_ADDR, frequentlyUsedSelectors, getSignerKey, knownSelectors, RECOVERY_DEFAULTS } from '../../libs/dkim/recovery'
-import publicKeyToComponents from '../../libs/dkim/publicKeyToComponents'
-import { getPublicKeyIfAny } from '../../libs/dkim/getPublicKey'
 
 /**
  * The minimum requirements are emailFrom and secondaryKey.
@@ -25,12 +31,12 @@ import { getPublicKeyIfAny } from '../../libs/dkim/getPublicKey'
  */
 interface DKIMRecoveryAccInfo {
   emailFrom: string
-  secondaryKey: string,
-  waitUntilAcceptAdded?: BigInt,
-  waitUntilAcceptRemoved?: BigInt,
-  acceptEmptyDKIMSig?: boolean,
-  acceptEmptySecondSig?: boolean,
-  onlyOneSigTimelock?: BigInt,
+  secondaryKey: string
+  waitUntilAcceptAdded?: BigInt
+  waitUntilAcceptRemoved?: BigInt
+  acceptEmptyDKIMSig?: boolean
+  acceptEmptySecondSig?: boolean
+  onlyOneSigTimelock?: BigInt
 }
 
 // returns to, data
@@ -49,7 +55,24 @@ export function getLegacyAccount(key: string): Account {
     label: '',
     pfp: '',
     associatedKeys: [key],
+    privileges: [],
     creation: null
+  }
+}
+
+export async function getSmartAccount(privileges: PrivLevels[]): Promise<Account> {
+  const bytecode = await getBytecode(privileges)
+  return {
+    addr: getAmbireAccountAddress(AMBIRE_ACCOUNT_FACTORY, bytecode),
+    label: '',
+    pfp: '',
+    associatedKeys: privileges.map((priv) => priv.addr),
+    privileges: privileges.map((priv) => [priv.addr, priv.hash]),
+    creation: {
+      factoryAddr: AMBIRE_ACCOUNT_FACTORY,
+      bytecode,
+      salt: ethers.toBeHex(0, 32)
+    }
   }
 }
 
@@ -90,8 +113,8 @@ export async function getEmailAccount(
   // we leave the defaults empty and the user will have to rely on
   // keys added through DNSSEC
   const selector = ethers.hexlify(ethers.toUtf8Bytes(''))
-  let modulus = ethers.hexlify(ethers.toUtf8Bytes(''))
-  let exponent = ethers.hexlify(ethers.toUtf8Bytes(''))
+  const modulus = ethers.hexlify(ethers.toUtf8Bytes(''))
+  const exponent = ethers.hexlify(ethers.toUtf8Bytes(''))
   // if (dkimKey) {
   //   const key = publicKeyToComponents(dkimKey.publicKey)
   //   modulus = ethers.hexlify(key.modulus)
@@ -101,10 +124,13 @@ export async function getEmailAccount(
   // acceptUnknownSelectors should be always true
   // and should not be overriden by the FE at this point
   const acceptUnknownSelectors = RECOVERY_DEFAULTS.acceptUnknownSelectors
-  const waitUntilAcceptAdded = recoveryInfo.waitUntilAcceptAdded ?? RECOVERY_DEFAULTS.waitUntilAcceptAdded
-  const waitUntilAcceptRemoved = recoveryInfo.waitUntilAcceptRemoved ?? RECOVERY_DEFAULTS.waitUntilAcceptRemoved
+  const waitUntilAcceptAdded =
+    recoveryInfo.waitUntilAcceptAdded ?? RECOVERY_DEFAULTS.waitUntilAcceptAdded
+  const waitUntilAcceptRemoved =
+    recoveryInfo.waitUntilAcceptRemoved ?? RECOVERY_DEFAULTS.waitUntilAcceptRemoved
   const acceptEmptyDKIMSig = recoveryInfo.acceptEmptyDKIMSig ?? RECOVERY_DEFAULTS.acceptEmptyDKIMSig
-  const acceptEmptySecondSig = recoveryInfo.acceptEmptySecondSig ?? RECOVERY_DEFAULTS.acceptEmptySecondSig
+  const acceptEmptySecondSig =
+    recoveryInfo.acceptEmptySecondSig ?? RECOVERY_DEFAULTS.acceptEmptySecondSig
   const onlyOneSigTimelock = recoveryInfo.onlyOneSigTimelock ?? RECOVERY_DEFAULTS.onlyOneSigTimelock
 
   const abiCoder = new ethers.AbiCoder()
@@ -128,24 +154,10 @@ export async function getEmailAccount(
       ]
     ]
   )
-  const {signerKey, hash} = getSignerKey(validatorAddr, validatorData)
-  privileges.push({ addr: signerKey, hash: hash })
-  return getSmartAccount(privileges)
-}
+  const { signerKey, hash } = getSignerKey(validatorAddr, validatorData)
+  privileges.push({ addr: signerKey, hash })
 
-export async function getSmartAccount(privileges: PrivLevels[]): Promise<Account> {
-  const bytecode = await getBytecode(privileges)
-  return {
-    addr: getAmbireAccountAddress(AMBIRE_ACCOUNT_FACTORY, bytecode),
-    label: '',
-    pfp: '',
-    associatedKeys: privileges.map(priv => priv.addr),
-    creation: {
-      factoryAddr: AMBIRE_ACCOUNT_FACTORY,
-      bytecode,
-      salt: ethers.toBeHex(0, 32)
-    }
-  }
+  return getSmartAccount(privileges)
 }
 
 export const isAmbireV1LinkedAccount = (factoryAddr?: string) =>
