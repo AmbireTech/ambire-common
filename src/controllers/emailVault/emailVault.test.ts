@@ -147,7 +147,7 @@ describe('happy cases', () => {
     await keystore2.addSecret('smth2', 'secret2', '', false)
     await keystore2.unlockWithSecret('smth2', 'secret2')
     ev2.onUpdate(async () => {
-      if (ev2.emailVaultStates.email[email].operations[0].id) {
+      if (ev2.emailVaultStates.email[email].operations[0]?.id) {
         await ev.fulfillSyncRequests(email)
       }
     })
