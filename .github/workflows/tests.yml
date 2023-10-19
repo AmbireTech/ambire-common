@@ -34,6 +34,6 @@ jobs:
     - name: Run tests 🧑‍🔬
       env:
         COINGECKO_PRO_API_KEY: ${{ secrets.COINGECKO_PRO_API_KEY }}
-      run: npm run jest
+      run: npm run test
 
 
