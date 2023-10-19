@@ -156,6 +156,7 @@ export class SignMessageController extends EventEmitter {
         try {
           signature = await signer.signMessage(this.messageToSign.content.message)
         } catch (error: any) {
+          console.log(error)
           throw new Error(
             'Something went wrong while signing the message. Please try again later or contact support if the problem persists.'
           )
