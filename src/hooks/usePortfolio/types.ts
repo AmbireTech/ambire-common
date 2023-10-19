@@ -123,7 +123,10 @@ export type UsePortfolioProps = {
 }
 
 export type UseExtraTokensProps = {
-  checkIsTokenEligibleForAddingAsExtraToken: (extraToken: Token) => {
+  checkIsTokenEligibleForAddingAsExtraToken: (
+    extraToken: Token,
+    extraTokens: Token[]
+  ) => {
     isEligible: boolean
     reason?: string
   }
@@ -141,17 +144,17 @@ export type UsePortfolioReturnType = {
   collectibles: Collectible[]
   hiddenCollectibles: Collectible[]
   onAddExtraToken: (extraToken: Token) => void
-  onRemoveExtraToken: (address: Token['address']) => void
+  onRemoveExtraToken: (address: Token['address'] | Token['address'][]) => void
   checkIsTokenEligibleForAddingAsExtraToken: UseExtraTokensProps['checkIsTokenEligibleForAddingAsExtraToken']
-  onAddHiddenToken: (hiddenToken: Token) => void
+  onAddHiddenToken: (hiddenToken: Token | Token[]) => void
   onAddHiddenCollectible: (
-    hiddenCollectible: Collectible,
-    tokenId: Collectible['assets'][0]['tokenId']
+    hiddenCollectible: Collectible | Collectible[],
+    tokenId: Collectible['assets'][0]['tokenId'] | Collectible['assets'][0]['tokenId'][]
   ) => void
-  onRemoveHiddenToken: (address: Token['address']) => void
+  onRemoveHiddenToken: (address: Token['address'] | Token['address'][]) => void
   onRemoveHiddenCollectible: (
-    address: Collectible['address'],
-    tokenId: Collectible['assets'][0]['tokenId']
+    address: Collectible['address'] | Collectible['address'][],
+    tokenId: Collectible['assets'][0]['tokenId'] | Collectible['assets'][0]['tokenId'][]
   ) => void
   balancesByNetworksLoading: Partial<{
     [key in Network]: boolean
