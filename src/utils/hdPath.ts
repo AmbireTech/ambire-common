@@ -5,6 +5,5 @@ export const getHdPath = (derivationPath: string, index: number) => {
     return `m/44'/60'/${index}'/0/0`
   }
 
-  // TODO: add support for other derivation paths
   return `${derivationPath}/${index}`
 }
