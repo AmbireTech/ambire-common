@@ -3,7 +3,6 @@ import { CollectionResult } from 'libs/portfolio/interfaces'
 
 import { describe, expect, jest } from '@jest/globals'
 
-import wait from '../../utils/wait'
 import { getNonce, produceMemoryStore } from '../../../test/helpers'
 import { networks } from '../../consts/networks'
 import { AccountOp } from '../../libs/accountOp/accountOp'
