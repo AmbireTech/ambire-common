@@ -10,7 +10,7 @@ let ambireAccount: any
 let entryPoint: any
 let ambireAccountAddress: any
 
-describe('Basic Ambire Paymaster tests', function () {
+describe('Send User Operation Tests', function () {
   before('successfully deploys the contracts', async function () {
     const [relayer] = await ethers.getSigners()
     paymaster = await ethers.deployContract('AmbirePaymaster', [relayer.address])
@@ -36,7 +36,7 @@ describe('Basic Ambire Paymaster tests', function () {
     const [relayer] = await ethers.getSigners()
     const latestBlock = await provider.getBlock('latest')
     const timestamp = latestBlock?.timestamp || 0
-    const userOp = await buildUserOp(paymaster, {
+    const userOp = await buildUserOp(paymaster, await entryPoint.getAddress(), {
       sender: ambireAccountAddress,
       userOpNonce: await entryPoint.getNonce(...[ambireAccountAddress, 0]),
       validUntil: timestamp + 60
@@ -51,7 +51,7 @@ describe('Basic Ambire Paymaster tests', function () {
     const [relayer] = await ethers.getSigners()
     const latestBlock = await provider.getBlock('latest')
     const timestamp = latestBlock?.timestamp || 0
-    const userOp = await buildUserOp(paymaster, {
+    const userOp = await buildUserOp(paymaster, await entryPoint.getAddress(), {
       sender: ambireAccountAddress,
       userOpNonce: await entryPoint.getNonce(...[ambireAccountAddress, 0]),
       validUntil: timestamp - 60
