@@ -1,6 +1,6 @@
+/* eslint-disable import/no-extraneous-dependencies */
 /* eslint-disable no-param-reassign */
 /* eslint-disable no-restricted-syntax */
-/* eslint-disable import/no-extraneous-dependencies */
 import { JsonRpcProvider } from 'ethers'
 import fetch from 'node-fetch'
 
@@ -72,7 +72,7 @@ export class PortfolioController extends EventEmitter {
     const accountState = this.latest[accountId] as AdditionalAccountState
     if (!accountState[network]) accountState[network] = { errors: [], isReady: false, isLoading }
     accountState[network]!.isLoading = isLoading
-    if (error !== null) {
+    if (!error) {
       if (!accountState[network]!.isReady) accountState[network]!.criticalError = error
       else accountState[network]!.errors.push(error)
     }
@@ -193,18 +193,18 @@ export class PortfolioController extends EventEmitter {
     const pendingState = this.pending[accountId]
 
     const updatePortfolioState = async (
-      passedAccountState: AccountState,
+      _accountState: AccountState,
       network: NetworkDescriptor,
       portfolioLib: Portfolio,
       portfolioProps: Partial<GetOptions>,
       forceUpdate: boolean
     ): Promise<boolean> => {
-      if (!passedAccountState[network.id]) {
-        passedAccountState[network.id] = { isReady: false, isLoading: false, errors: [] }
+      if (!_accountState[network.id]) {
+        _accountState[network.id] = { isReady: false, isLoading: false, errors: [] }
         this.emitUpdate()
       }
 
-      const state = passedAccountState[network.id]!
+      const state = _accountState[network.id]!
 
       // When the portfolio was called lastly
       const lastUpdateStartedAt = state.result?.updateStarted
@@ -227,7 +227,7 @@ export class PortfolioController extends EventEmitter {
           priceCache: state.result?.priceCache,
           ...portfolioProps
         })
-        passedAccountState[network.id] = { isReady: true, isLoading: false, errors: [], result }
+        _accountState[network.id] = { isReady: true, isLoading: false, errors: [], result }
         this.emitUpdate()
         return true
       } catch (e: any) {
