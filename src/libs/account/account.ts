@@ -80,13 +80,12 @@ export async function getSmartAccount(privileges: PrivLevels[]): Promise<Account
  * Create a DKIM recoverable email smart account
  *
  * @param recoveryInfo DKIMRecoveryAccInfo
- * @param privileges additional privileges the account may have. Could
- * be empty
+ * @param associatedKey the key that has privileges
  * @returns Promise<Account>
  */
 export async function getEmailAccount(
   recoveryInfo: DKIMRecoveryAccInfo,
-  privileges: PrivLevels[]
+  associatedKey: string
 ): Promise<Account> {
   const domain: string = recoveryInfo.emailFrom.split('@')[1]
 
@@ -154,9 +153,8 @@ export async function getEmailAccount(
       ]
     ]
   )
-  const { signerKey, hash } = getSignerKey(validatorAddr, validatorData)
-  privileges.push({ addr: signerKey, hash })
-
+  const { hash } = getSignerKey(validatorAddr, validatorData)
+  const privileges = [{ addr: associatedKey, hash }]
   return getSmartAccount(privileges)
 }
 

@@ -88,48 +88,39 @@ describe('Account', () => {
     ])
   })
   test('should return a gmail emailAccount successfully', async () => {
-    const priv = {
-      addr: keyPublicAddress,
-      hash: '0x0000000000000000000000000000000000000000000000000000000000000001'
-    }
     const newSmartAccount = await getEmailAccount(
       {
         emailFrom: 'tt469695@gmail.com',
         secondaryKey: ethers.computeAddress(ethers.hexlify(ethers.randomBytes(32)))
       },
-      [priv]
+      keyPublicAddress
     )
 
-    expect(newSmartAccount.associatedKeys.length).toBe(2)
+    expect(newSmartAccount.associatedKeys.length).toBe(1)
+    expect(newSmartAccount.associatedKeys[0]).toBe(keyPublicAddress)
   })
   test('should return an ambire emailAccount successfully', async () => {
-    const priv = {
-      addr: keyPublicAddress,
-      hash: '0x0000000000000000000000000000000000000000000000000000000000000001'
-    }
     const newSmartAccount = await getEmailAccount(
       {
         emailFrom: 'test@ambire.com',
         secondaryKey: ethers.computeAddress(ethers.hexlify(ethers.randomBytes(32)))
       },
-      [priv]
+      keyPublicAddress
     )
 
-    expect(newSmartAccount.associatedKeys.length).toBe(2)
+    expect(newSmartAccount.associatedKeys.length).toBe(1)
+    expect(newSmartAccount.associatedKeys[0]).toBe(keyPublicAddress)
   })
   test('should return an email account that does not have a dkim key', async () => {
-    const priv = {
-      addr: keyPublicAddress,
-      hash: '0x0000000000000000000000000000000000000000000000000000000000000001'
-    }
     const newSmartAccount = await getEmailAccount(
       {
         emailFrom: 'test@izmislen.com',
         secondaryKey: ethers.computeAddress(ethers.hexlify(ethers.randomBytes(32)))
       },
-      [priv]
+      keyPublicAddress
     )
 
-    expect(newSmartAccount.associatedKeys.length).toBe(2)
+    expect(newSmartAccount.associatedKeys.length).toBe(1)
+    expect(newSmartAccount.associatedKeys[0]).toBe(keyPublicAddress)
   })
 })
