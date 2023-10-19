@@ -68,7 +68,13 @@ type Props = {
 }
 
 /**
- * NOTE: you only need to pass one of: typedData, finalDigest, message
+ * Verifies the signature of a message using the provided signer and signature
+ * via a "magic" universal validator contract using the provided provider to
+ * verify the signature on-chain. The contract deploys itself within the
+ * `eth_call`, tries to verify the signature using ERC-6492, ERC-1271, and
+ * `ecrecover`, and returns the value to the function.
+ *
+ * Note: you only need to pass one of: typedData, finalDigest, message
  */
 export async function verifyMessage({
   provider,
@@ -102,9 +108,11 @@ export async function verifyMessage({
       typesWithoutEIP712Domain,
       typedData.message
     )
-  } else if (!finalDigest)
+  }
+
+  if (!finalDigest)
     throw Error(
-      'Missing one of the properties: message, unPrefixedMessage, typedData or finalDigest'
+      'Something went wrong while validating the message you signed. Please try again or contact Ambire support if the issue persists. Error details: missing one of the required props: message, unPrefixedMessage, typedData or finalDigest'
     )
 
   // this 'magic' universal validator contract will deploy itself within the eth_call, try to verify the signature using
@@ -120,6 +128,13 @@ export async function verifyMessage({
   if (callResult === '0x01') return true
   if (callResult === '0x00') return false
   if (callResult.startsWith('0x08c379a0'))
-    throw new Error(coder.decode(['string'], `0x${callResult.slice(10)}`)[0])
-  throw new Error(`Unexpected result from UniversalValidator: ${callResult}`)
+    throw new Error(
+      `Ambire failed to validate the signature. Please make sure you are signing with the correct key or device. If the problem persists, please contact Ambire support. Error details:: ${
+        coder.decode(['string'], `0x${callResult.slice(10)}`)[0]
+      }`
+    )
+
+  throw new Error(
+    `Ambire failed to validate the signature. Please make sure you are signing with the correct key or device. If the problem persists, please contact Ambire support. Error details: unexpected result from the UniversalValidator: ${callResult}`
+  )
 }
