@@ -73,7 +73,7 @@ describe('ERC-4337 deploys the account via userOp and adds the entry point permi
     ]))
 
     const callData = proxy.interface.encodeFunctionData('executeMultiple', [[[[txn], s]]])
-    const userOperation = await buildUserOp(paymaster, {
+    const userOperation = await buildUserOp(paymaster, await entryPoint.getAddress(), {
       sender: senderAddress,
       signedNonce: ethers.toBeHex(0, 1),
       initCode,
@@ -85,7 +85,7 @@ describe('ERC-4337 deploys the account via userOp and adds the entry point permi
     // confirm everything is set by sending an userOp through the entry point
     // with a normal paymaster signature
     const nextTxn = [senderAddress, 0, '0x68656c6c6f']
-    const userOperation2 = await buildUserOp(paymaster, {
+    const userOperation2 = await buildUserOp(paymaster, await entryPoint.getAddress(), {
       sender: senderAddress,
       userOpNonce: ethers.toBeHex(await entryPoint.getNonce(senderAddress, 0), 1),
       callData: proxy.interface.encodeFunctionData('executeBySender', [[nextTxn]]),

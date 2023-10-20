@@ -58,7 +58,7 @@ describe('Main Controller ', () => {
 
   const storage = produceMemoryStore()
   const relayerUrl = 'https://staging-relayer.ambire.com'
-  const email = 'emil@ambire.com'
+  const email = 'unufri@ambire.com'
   storage.set('accounts', accounts)
   let controller: MainController
   test('Init controller', async () => {

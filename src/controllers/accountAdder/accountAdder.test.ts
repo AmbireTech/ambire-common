@@ -130,7 +130,7 @@ describe('AccountAdder', () => {
           .map(({ account }) => account.addr)
         expect(accountsOnSlot1).toContain('0x740523d7876Fbb8AF246c5B307f26d4b2D2BFDA9')
 
-        expect(linkedAccountsOnPage.filter(({ slot }) => slot === 2).length).toEqual(0)
+        expect(linkedAccountsOnPage.filter(({ slot }) => slot === 2).length).toEqual(1)
 
         const accountsOnSlot3 = linkedAccountsOnPage
           .filter(({ slot }) => slot === 3)
