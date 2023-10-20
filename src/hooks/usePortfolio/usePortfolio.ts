@@ -51,14 +51,18 @@ export default function usePortfolio({
   )
 
   // Handle logic for extra tokens
-  const { extraTokens, getExtraTokensAssets, onAddExtraToken, onRemoveExtraToken } = useExtraTokens(
-    {
-      useStorage,
-      useToasts,
-      tokens: currentAssets?.tokens || [],
-      constants
-    }
-  )
+  const {
+    extraTokens,
+    getExtraTokensAssets,
+    onAddExtraToken,
+    onRemoveExtraToken,
+    checkIsTokenEligibleForAddingAsExtraToken
+  } = useExtraTokens({
+    useStorage,
+    useToasts,
+    tokens: currentAssets?.tokens || [],
+    constants
+  })
 
   const { pendingTransactions } = useTransactions({
     account,
@@ -280,6 +284,7 @@ export default function usePortfolio({
     isCurrNetworkBalanceLoading: isInitializing || currentAssets?.loading,
     balancesByNetworksLoading: оtherNetworksFetching,
     extraTokens,
+    checkIsTokenEligibleForAddingAsExtraToken,
     onAddExtraToken,
     onRemoveExtraToken,
     onAddHiddenToken,
@@ -289,6 +294,7 @@ export default function usePortfolio({
     onAddHiddenCollectible,
     onRemoveHiddenCollectible,
     setHiddenCollectibles,
-    hiddenCollectibles
+    hiddenCollectibles,
+    loadBalance
   }
 }
