@@ -4,7 +4,7 @@ import { JsonRpcProvider } from 'ethers'
 import { networks } from '../../consts/networks'
 import { Account, AccountId, AccountStates } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
-import { KeystoreSignerType } from '../../interfaces/keystore'
+import { Key, KeystoreSignerType } from '../../interfaces/keystore'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
 import { Storage } from '../../interfaces/storage'
 import { Message, UserRequest } from '../../interfaces/userRequest'
@@ -107,7 +107,7 @@ export class MainController extends EventEmitter {
     storage: Storage
     fetch: Function
     relayerUrl: string
-    keystoreSigners: { [key: string]: KeystoreSignerType }
+    keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>
     onResolveDappRequest: (data: any, id?: number) => void
     onRejectDappRequest: (err: any, id?: number) => void
     onUpdateDappSelectedAccount: (accountAddr: string) => void
