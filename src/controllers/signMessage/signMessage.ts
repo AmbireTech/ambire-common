@@ -1,4 +1,4 @@
-import { JsonRpcProvider } from 'ethers'
+import { ethers, JsonRpcProvider } from 'ethers'
 
 import { networks } from '../../consts/networks'
 import { Account, AccountStates } from '../../interfaces/account'
@@ -154,7 +154,10 @@ export class SignMessageController extends EventEmitter {
 
       if (this.messageToSign.content.kind === 'message') {
         try {
-          signature = await signer.signMessage(this.messageToSign.content.message)
+          const { message } = this.messageToSign.content
+          const messageHex = message instanceof Uint8Array ? ethers.hexlify(message) : message
+
+          signature = await signer.signMessage(messageHex)
         } catch (error: any) {
           console.log(error)
           throw new Error(
