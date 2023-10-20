@@ -414,19 +414,14 @@ export class AccountAdderController extends EventEmitter {
       return
     }
 
-    const key: string = (await this.#keyIterator.retrieve(0, 1))[0]
-
-    const priv = {
-      addr: key,
-      hash: '0x0000000000000000000000000000000000000000000000000000000000000001'
-    }
+    const keyPublicAddress: string = (await this.#keyIterator.retrieve(0, 1))[0]
 
     const emailSmartAccount = await getEmailAccount(
       {
         emailFrom: email,
         secondaryKey: recoveryKey
       },
-      [priv]
+      keyPublicAddress
     )
 
     await this.addAccounts([emailSmartAccount])

@@ -1,4 +1,5 @@
 import { ethers, JsonRpcProvider } from 'ethers'
+import { Account } from 'interfaces/account'
 
 import { describe, expect, test } from '@jest/globals'
 
@@ -12,7 +13,6 @@ import { networks } from '../../consts/networks'
 import { get4437Bytecode, getBytecode } from '../proxyDeploy/bytecode'
 import { getAmbireAccountAddress } from '../proxyDeploy/getAmbireAddressTwo'
 import { getAccountState } from './accountState'
-import { Account } from 'interfaces/account'
 
 const polygon = networks.find((x) => x.id === 'polygon')
 if (!polygon) throw new Error('unable to find polygon network in consts')
@@ -25,7 +25,7 @@ describe('AccountState', () => {
       label: '',
       pfp: '',
       associatedKeys: [],
-      privileges: [],
+      initialPrivileges: [],
       creation: {
         factoryAddr: '0xBf07a0Df119Ca234634588fbDb5625594E2a5BCA',
         bytecode:
@@ -39,7 +39,7 @@ describe('AccountState', () => {
       label: '',
       pfp: '',
       associatedKeys: [],
-      privileges: [],
+      initialPrivileges: [],
       creation: {
         factoryAddr: '0x0000000000000000000000000000000000000000',
         bytecode: '0x00',
@@ -48,17 +48,19 @@ describe('AccountState', () => {
     }
 
     const signerAddr = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
-    const privileges = [{
-      addr: signerAddr,
-      hash: '0x0000000000000000000000000000000000000000000000000000000000000001'
-    }]
+    const privileges = [
+      {
+        addr: signerAddr,
+        hash: '0x0000000000000000000000000000000000000000000000000000000000000001'
+      }
+    ]
     const bytecode = await getBytecode(privileges)
     const accountNotDeployed: Account = {
       addr: getAmbireAccountAddress(AMBIRE_ACCOUNT_FACTORY, bytecode),
       label: 'test account',
       pfp: 'pfp',
       associatedKeys: [signerAddr],
-      privileges: privileges.map((priv) => [priv.addr, priv.hash]),
+      initialPrivileges: privileges.map((priv) => [priv.addr, priv.hash]),
       creation: {
         factoryAddr: AMBIRE_ACCOUNT_FACTORY,
         bytecode,
@@ -67,15 +69,18 @@ describe('AccountState', () => {
     }
 
     const privs4337 = [
-      {addr: '0x9188fdd757Df66B4F693D624Ed6A13a15Cf717D7', hash: '0x0000000000000000000000000000000000000000000000000000000000000001'},
-      {addr: ERC_4337_ENTRYPOINT, hash: ENTRY_POINT_MARKER},
+      {
+        addr: '0x9188fdd757Df66B4F693D624Ed6A13a15Cf717D7',
+        hash: '0x0000000000000000000000000000000000000000000000000000000000000001'
+      },
+      { addr: ERC_4337_ENTRYPOINT, hash: ENTRY_POINT_MARKER }
     ]
     const account4337: Account = {
       addr: '0xD1cE5E6AE56693D2D3D52b2EBDf969C1D7901971',
       label: '',
       pfp: '',
       associatedKeys: ['0x9188fdd757Df66B4F693D624Ed6A13a15Cf717D7', ERC_4337_ENTRYPOINT],
-      privileges: privs4337.map((priv) => [priv.addr, priv.hash]),
+      initialPrivileges: privs4337.map((priv) => [priv.addr, priv.hash]),
       creation: {
         factoryAddr: '0xA3A22Bf212C03ce55eE7C3845D4c177a6fEC418B',
         bytecode:
@@ -85,8 +90,14 @@ describe('AccountState', () => {
     }
 
     const privs = [
-      { addr: '0x9188fdd757Df66B4F693D624Ed6A13a15Cf717D7', hash: '0x0000000000000000000000000000000000000000000000000000000000000001' },
-      { addr: '0x43Ec7De60E89dabB7cAedc89Cd1F3c8D52707312', hash: '0x0000000000000000000000000000000000000000000000000000000000000001' }
+      {
+        addr: '0x9188fdd757Df66B4F693D624Ed6A13a15Cf717D7',
+        hash: '0x0000000000000000000000000000000000000000000000000000000000000001'
+      },
+      {
+        addr: '0x43Ec7De60E89dabB7cAedc89Cd1F3c8D52707312',
+        hash: '0x0000000000000000000000000000000000000000000000000000000000000001'
+      }
     ]
     const bytecodeErc4337 = await get4437Bytecode(polygon, privs)
     const accountErc4337: Account = {
@@ -97,7 +108,7 @@ describe('AccountState', () => {
         '0x9188fdd757Df66B4F693D624Ed6A13a15Cf717D7',
         '0x43Ec7De60E89dabB7cAedc89Cd1F3c8D52707312'
       ],
-      privileges: privs.map((priv) => [priv.addr, priv.hash]),
+      initialPrivileges: privs.map((priv) => [priv.addr, priv.hash]),
       creation: {
         factoryAddr: AMBIRE_ACCOUNT_FACTORY_ERC_4337,
         bytecode: bytecodeErc4337,

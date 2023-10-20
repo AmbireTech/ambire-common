@@ -21,7 +21,7 @@ const legacyAccount: Account = {
   label: '',
   pfp: '',
   associatedKeys: [keyPublicAddress],
-  privileges: [],
+  initialPrivileges: [],
   creation: null
 }
 
@@ -43,7 +43,7 @@ describe('Account', () => {
       label: '',
       pfp: '',
       associatedKeys: [keyPublicAddress],
-      privileges: [[priv.addr, priv.hash]],
+      initialPrivileges: [[priv.addr, priv.hash]],
       creation: {
         factoryAddr: AMBIRE_ACCOUNT_FACTORY,
         bytecode,
@@ -74,7 +74,7 @@ describe('Account', () => {
       label: '',
       pfp: '',
       associatedKeys: [keyPublicAddress],
-      privileges: [[priv.addr, priv.hash]],
+      initialPrivileges: [[priv.addr, priv.hash]],
       creation: {
         factoryAddr: AMBIRE_ACCOUNT_FACTORY,
         bytecode,

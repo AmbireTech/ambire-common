@@ -1,3 +1,4 @@
+import { ErrorRef } from 'controllers/eventEmitter'
 import { ethers } from 'ethers'
 import { Message, TypedMessage } from 'interfaces/userRequest'
 import { HumanizerVisualization, IrCall, IrMessage } from 'libs/humanizer/interfaces'
@@ -7,7 +8,6 @@ import { describe, expect, jest, test } from '@jest/globals'
 
 import { produceMemoryStore } from '../../../test/helpers'
 import humanizerJSON from '../../consts/humanizerInfo.json'
-import { ErrorRef } from 'controllers/eventEmitter'
 import { Account } from '../../interfaces/account'
 import { Key } from '../../interfaces/keystore'
 import { Storage } from '../../interfaces/storage'
@@ -50,7 +50,7 @@ const accounts: Account[] = [
     label: 'First account',
     pfp: 'string',
     associatedKeys: ['string[]'],
-    privileges: [],
+    initialPrivileges: [],
     creation: null
   }
 ]

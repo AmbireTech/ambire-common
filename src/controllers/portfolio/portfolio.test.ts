@@ -20,7 +20,7 @@ describe('Portfolio Controller ', () => {
     label: '',
     pfp: '',
     associatedKeys: [],
-    privileges: [],
+    initialPrivileges: [],
     creation: {
       factoryAddr: '0xBf07a0Df119Ca234634588fbDb5625594E2a5BCA',
       bytecode:
@@ -68,7 +68,7 @@ describe('Portfolio Controller ', () => {
         label: '',
         pfp: '',
         associatedKeys: [],
-        privileges: [],
+        initialPrivileges: [],
         creation: {
           factoryAddr: '0xBf07a0Df119Ca234634588fbDb5625594E2a5BCA',
           bytecode:

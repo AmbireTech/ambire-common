@@ -1,4 +1,5 @@
 import { AbiCoder, JsonRpcProvider } from 'ethers'
+import { Account } from 'interfaces/account'
 import fetch from 'node-fetch'
 
 import { describe, expect } from '@jest/globals'
@@ -7,7 +8,6 @@ import { getNonce } from '../../../test/helpers'
 import { networks } from '../../consts/networks'
 import { Portfolio } from '../portfolio/portfolio'
 import { estimate, EstimateResult } from './estimate'
-import { Account } from 'interfaces/account'
 
 const ethereum = networks.find((x) => x.id === 'ethereum')
 const optimism = networks.find((x) => x.id === 'optimism')
@@ -20,7 +20,12 @@ const account: Account = {
   label: '',
   pfp: '',
   associatedKeys: ['0xd6e371526cdaeE04cd8AF225D42e37Bc14688D9E'],
-  privileges: [['0xd6e371526cdaeE04cd8AF225D42e37Bc14688D9E', '0x0000000000000000000000000000000000000000000000000000000000000001']],
+  initialPrivileges: [
+    [
+      '0xd6e371526cdaeE04cd8AF225D42e37Bc14688D9E',
+      '0x0000000000000000000000000000000000000000000000000000000000000001'
+    ]
+  ],
   creation: {
     factoryAddr: '0xBf07a0Df119Ca234634588fbDb5625594E2a5BCA',
     bytecode:
@@ -73,7 +78,12 @@ describe('estimate', () => {
       label: '',
       pfp: '',
       associatedKeys: ['0x40b38765696e3d5d8d9d834d8aad4bb6e418e489'],
-      privileges: [['0x40b38765696e3d5d8d9d834d8aad4bb6e418e489', '0x0000000000000000000000000000000000000000000000000000000000000001']],
+      initialPrivileges: [
+        [
+          '0x40b38765696e3d5d8d9d834d8aad4bb6e418e489',
+          '0x0000000000000000000000000000000000000000000000000000000000000001'
+        ]
+      ],
       creation: null
     }
 
@@ -203,7 +213,12 @@ describe('estimate', () => {
       label: '',
       pfp: '',
       associatedKeys: ['0x5Be214147EA1AE3653f289E17fE7Dc17A73AD175'],
-      privileges: [['0x5Be214147EA1AE3653f289E17fE7Dc17A73AD175', '0x0000000000000000000000000000000000000000000000000000000000000001']],
+      initialPrivileges: [
+        [
+          '0x5Be214147EA1AE3653f289E17fE7Dc17A73AD175',
+          '0x0000000000000000000000000000000000000000000000000000000000000001'
+        ]
+      ],
       creation: {
         factoryAddr: '0xBf07a0Df119Ca234634588fbDb5625594E2a5BCA',
         bytecode:

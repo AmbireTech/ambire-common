@@ -55,7 +55,7 @@ export function getLegacyAccount(key: string): Account {
     label: '',
     pfp: '',
     associatedKeys: [key],
-    privileges: [],
+    initialPrivileges: [],
     creation: null
   }
 }
@@ -67,7 +67,7 @@ export async function getSmartAccount(privileges: PrivLevels[]): Promise<Account
     label: '',
     pfp: '',
     associatedKeys: privileges.map((priv) => priv.addr),
-    privileges: privileges.map((priv) => [priv.addr, priv.hash]),
+    initialPrivileges: privileges.map((priv) => [priv.addr, priv.hash]),
     creation: {
       factoryAddr: AMBIRE_ACCOUNT_FACTORY,
       bytecode,
