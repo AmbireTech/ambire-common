@@ -165,8 +165,14 @@ export class SignMessageController extends EventEmitter {
 
       if (this.messageToSign.content.kind === 'typedMessage') {
         try {
+          if (!this.messageToSign.content.types.EIP712Domain) {
+            throw new Error(
+              'Ambire only supports signing EIP712 typed data messages. Please try again with a valid EIP712 message.'
+            )
+          }
+
           const { domain } = this.messageToSign.content
-          signature = await signer.signTypedData(this.messageToSign!.content)
+          signature = await signer.signTypedData(this.messageToSign.content)
           const requestedNetwork = networks.find(
             (n) => Number(n.chainId) === Number(domain.chainId)
           )
