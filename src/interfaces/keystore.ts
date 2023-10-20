@@ -46,7 +46,7 @@ export type InternalKey = {
 
 export type ExternalKey = {
   addr: Account['addr']
-  type: 'trezor' | 'ledger' | 'lattice'
+  type: 'trezor' | 'ledger' | 'lattice' | 'string'
   label: string
   meta: { model: string; hdPath: string }
 }
