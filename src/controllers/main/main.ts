@@ -146,9 +146,6 @@ export class MainController extends EventEmitter {
     this.onResolveDappRequest = onResolveDappRequest
     this.onRejectDappRequest = onRejectDappRequest
     this.onUpdateDappSelectedAccount = onUpdateDappSelectedAccount
-
-    this.handleGasPriceUpdates()
-
     // @TODO Load userRequests from storage and emit that we have updated
     // @TODO
   }
@@ -189,14 +186,7 @@ export class MainController extends EventEmitter {
     this.emitUpdate()
   }
 
-  private async handleGasPriceUpdates(): Promise<void> {
-    setInterval(async () => {
-      await this.updateGasPrice()
-      this.emitUpdate()
-    }, 1000 * 60)
-  }
-
-  private async updateGasPrice(): Promise<void> {
+  async #updateGasPrice() {
     await this.#initialLoadPromise
 
     // We want to update the gas price only for the networks having account ops.
@@ -419,15 +409,20 @@ export class MainController extends EventEmitter {
    */
   async reestimateAndUpdatePrices(accountAddr: AccountId, networkId: NetworkId) {
     await Promise.all([
-      this.updateGasPrice(),
+      this.#updateGasPrice(),
       async () => {
         const accountOp = this.accountOpsToBeSigned[accountAddr][networkId]?.accountOp
         // non-fatal, no need to do anything
         if (!accountOp) return
+
         await this.#estimateAccountOp(accountOp)
       }
     ])
 
+    const gasPrices = this.gasPrices[networkId]
+    const estimation = this.accountOpsToBeSigned[accountAddr][networkId]?.estimation
+
+    this.signAccountOp.update({ gasPrices, ...(estimation && { estimation }) })
     this.emitUpdate()
   }
 
@@ -470,6 +465,8 @@ export class MainController extends EventEmitter {
             .map(([networkId, x]) => [networkId, [x!.accountOp]])
         )
       ),
+      // @TODO - how to handle `Identity not found` error (in case of EOA and not deployed contract I guess).
+      //    Maybe we need fire the request, only if the account is deployed?
       this.portfolio.getAdditionalPortfolio(accountOp.accountAddr),
       estimate(
         this.#providers[accountOp.networkId],
@@ -483,8 +480,6 @@ export class MainController extends EventEmitter {
     ])
     // @TODO compare intent between accountOp and this.accountOpsToBeSigned[accountOp.accountAddr][accountOp.networkId].accountOp
     this.accountOpsToBeSigned[accountOp.accountAddr][accountOp.networkId]!.estimation = estimation
-    this.signAccountOp.update({ estimation })
-    console.log(estimation)
   }
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars, class-methods-use-this

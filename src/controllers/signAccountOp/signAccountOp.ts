@@ -62,6 +62,10 @@ export class SignAccountOpController extends EventEmitter {
 
   #estimation: EstimateResult | null = null
 
+  paidBy: string | null = null
+
+  selectedTokenAddr: string | null = null
+
   selectedFeeSpeed: FeeSpeed = FeeSpeed.Fast
 
   humanReadable: IrCall[] = []
@@ -148,32 +152,30 @@ export class SignAccountOpController extends EventEmitter {
     }
     const account = this.#getAccount()
 
-    if (feeTokenAddr && paidBy && this.isInitialized) {
-      const network = this.#networks!.find((n) => n.id === this.accountOp?.networkId)
-      // Cannot set paidBy for EOAs or ERC-4337
-      const canSetPaidBy = account?.creation && !network?.erc4337?.enabled
-
-      // TODO: validate feeTokenAddr
-      if (canSetPaidBy) {
-        this.accountOp!.gasFeePayment = this.#getGasFeePayment(
-          feeTokenAddr,
-          this.selectedFeeSpeed,
-          paidBy
-        )
-      }
+    if (feeTokenAddr && paidBy) {
+      this.paidBy = paidBy
+      this.selectedTokenAddr = feeTokenAddr
     }
 
     if (speed && this.isInitialized) {
       this.selectedFeeSpeed = speed
-      this.accountOp!.gasFeePayment = this.#getGasFeePayment(
-        this.accountOp!.gasFeePayment?.inToken as string,
-        this.selectedFeeSpeed
-      )
     }
 
-    if (signingKeyAddr && signingKeyType && account?.creation && this.isInitialized) {
+    if (signingKeyAddr && signingKeyType && this.isInitialized) {
       this.accountOp!.signingKeyAddr = signingKeyAddr
       this.accountOp!.signingKeyType = signingKeyType
+    }
+
+    // Setting defaults
+    if (this.availableFeeOptions && !this.paidBy && !this.feeToken) {
+      const defaultFeeOption = this.availableFeeOptions[0]
+
+      this.paidBy = defaultFeeOption.paidBy
+      this.selectedTokenAddr = defaultFeeOption.address
+    }
+
+    if (this.isInitialized && this.paidBy && this.selectedTokenAddr && this.selectedFeeSpeed) {
+      this.accountOp!.gasFeePayment = this.#getGasFeePayment()
     }
 
     this.updateReadyToSignStatusOnUpdate()
@@ -262,76 +264,90 @@ export class SignAccountOpController extends EventEmitter {
     return BigInt(ratio * 1e18)
   }
 
-  #getGasFeePayment(
-    feeTokenAddr: string,
-    feeSpeed: FeeSpeed,
-    paidBy: string = this.accountOp!.gasFeePayment?.paidBy || this.accountOp!.accountAddr
-  ): GasFeePayment {
-    if (!this.isInitialized) throw new Error('signAccountOp: not initialized')
+  #getTokenUsdAmount(token: TokenResult, gasAmount: bigint): string {
+    const isUsd = (price: Price) => price.baseCurrency === 'usd'
+    const usdPrice = BigInt(token.priceIn.find(isUsd)!.price * 1e18)
+
+    // 18 it's because we multiply usdPrice * 1e18 and here we need to deduct it
+    return ethers.formatUnits(gasAmount * usdPrice, 18 + token.decimals)
+  }
+
+  get feeSpeeds(): {
+    type: string
+    amount: bigint
+    simulatedGasLimit: bigint
+    amountFormatted: string
+    amountUsd: string
+  }[] {
+    if (!this.isInitialized || !this.#gasPrices || !this.paidBy || !this.selectedTokenAddr)
+      return []
 
     const account = this.#getAccount()
-    const result = this.#gasPrices!.find((price) => price.name === feeSpeed)
-    // @ts-ignore
-    // It's always in wei
-    const gasPrice = result.gasPrice || result!.baseFeePerGas + result!.maxPriorityFeePerGas
     const gasUsed = this.#estimation!.gasUsed
+    const feeToken = this.#getPortfolioToken(this.selectedTokenAddr)
 
-    // EOA
-    if (!account || !account?.creation) {
-      const simulatedGasLimit = gasUsed
-      const amount = simulatedGasLimit * gasPrice + this.#estimation!.addedNative
+    return this.#gasPrices.map((gasRecommendation) => {
+      let amount
+      let simulatedGasLimit
+      // @ts-ignore
+      const gasPrice =
+        gasRecommendation.gasPrice ||
+        gasRecommendation!.baseFeePerGas + gasRecommendation!.maxPriorityFeePerGas
+
+      if (!account || !account?.creation) {
+        simulatedGasLimit = gasUsed
+        amount = simulatedGasLimit * gasPrice + this.#estimation!.addedNative
+
+        console.log(simulatedGasLimit * gasPrice + this.#estimation!.addedNative, { amount })
+      } else if (this.paidBy !== this.accountOp!.accountAddr) {
+        // @TODO - add comment why we add 21k gas here
+        simulatedGasLimit = gasUsed + 21000n
+        amount = simulatedGasLimit * gasPrice + this.#estimation!.addedNative
+      } else {
+        // Relayer.
+        // relayer or 4337, we need to add feeTokenOutome.gasUsed
+        const nativeRatio = this.#getNativeToFeeTokenRatio(feeToken!)
+        const feeTokenGasUsed = this.#estimation!.feePaymentOptions.find(
+          (option) => option.address === feeToken?.address
+        )!.gasUsed!
+        // @TODO - add comment why here we use `feePaymentOptions`, but we don't use it in EOA
+        simulatedGasLimit = gasUsed + feeTokenGasUsed
+
+        const amountInWei = simulatedGasLimit * gasPrice + this.#estimation!.addedNative
+
+        // Let's break down the process of converting the amount into FeeToken:
+        // 1. Initially, we multiply the amount in wei by the native to fee token ratio.
+        // 2. Next, we address the decimal places:
+        // 2.1. First, we convert wei to native by dividing by 10^18 (representing the decimals).
+        // 2.2. Now, with the amount in the native token, we incorporate nativeRatio decimals into the calculation (18 + 18) to standardize the amount.
+        // 2.3. At this point, we precisely determine the number of fee tokens. For instance, if the amount is 3 USDC, we must convert it to a BigInt value, while also considering feeToken.decimals.
+        amount = (amountInWei * nativeRatio) / BigInt(10 ** (18 + 18 - feeToken!.decimals))
+      }
 
       return {
-        paidBy: this.accountOp!.accountAddr,
-        isERC4337: false,
-        isGasTank: false,
-        inToken: '0x0000000000000000000000000000000000000000',
+        type: gasRecommendation.name,
+        simulatedGasLimit,
         amount,
-        simulatedGasLimit
+        // TODO - fix type Number(feeToken?.decimals)
+        amountFormatted: ethers.formatUnits(amount, Number(feeToken?.decimals)),
+        amountUsd: this.#getTokenUsdAmount(feeToken!, amount)
       }
-    }
+    })
+  }
 
-    // Smart account, but EOA pays the fee
-    if (paidBy !== this.accountOp!.accountAddr) {
-      // @TODO - add comment why we add 21k gas here
-      const simulatedGasLimit = gasUsed + 21000n
-      const amount = simulatedGasLimit * gasPrice + this.#estimation!.addedNative
+  #getGasFeePayment(): GasFeePayment {
+    if (!this.isInitialized) throw new Error('signAccountOp: not initialized')
 
-      return {
-        paidBy,
-        isERC4337: false,
-        isGasTank: false,
-        inToken: feeTokenAddr,
-        amount,
-        simulatedGasLimit
-      }
-    }
-
-    // Relayer.
-    // relayer or 4337, we need to add feeTokenOutome.gasUsed
-    const feeToken = this.#getPortfolioToken(feeTokenAddr)
-    const nativeRatio = this.#getNativeToFeeTokenRatio(feeToken!)
-    const feeTokenGasUsed = this.#estimation!.feePaymentOptions.find(
-      (option) => option.address === feeTokenAddr
-    )!.gasUsed!
-    // @TODO - add comment why here we use `feePaymentOptions`, but we don't use it in EOA
-    const simulatedGasLimit = gasUsed + feeTokenGasUsed
-
-    const amountInWei = simulatedGasLimit * gasPrice + this.#estimation!.addedNative
-
-    // Let's break down the process of converting the amount into FeeToken:
-    // 1. Initially, we multiply the amount in wei by the native to fee token ratio.
-    // 2. Next, we address the decimal places:
-    // 2.1. First, we convert wei to native by dividing by 10^18 (representing the decimals).
-    // 2.2. Now, with the amount in the native token, we incorporate nativeRatio decimals into the calculation (18 + 18) to standardize the amount.
-    // 2.3. At this point, we precisely determine the number of fee tokens. For instance, if the amount is 3 USDC, we must convert it to a BigInt value, while also considering feeToken.decimals.
-    const amount = (amountInWei * nativeRatio) / BigInt(10 ** (18 + 18 - feeToken!.decimals))
+    const feeToken = this.#getPortfolioToken(this.selectedTokenAddr)
+    const { amount, simulatedGasLimit } = this.feeSpeeds.find(
+      (speed) => speed.type === this.selectedFeeSpeed
+    )!
 
     return {
-      paidBy,
-      isERC4337: false, // TODO: based on network settings. We should add it to gasFeePayment interface.
+      paidBy: this.paidBy,
+      isERC4337: false,
       isGasTank: feeToken?.networkId === 'gasTank',
-      inToken: feeTokenAddr,
+      inToken: feeToken!.address,
       amount,
       simulatedGasLimit
     }
@@ -347,27 +363,10 @@ export class SignAccountOpController extends EventEmitter {
 
   get availableFeeOptions(): EstimateResult['feePaymentOptions'] {
     const account = this.#getAccount()
-    if (!account || !this.isInitialized || !this.#estimation) return []
-
-    // only the account can pay for the fee when current account is EOA
-    if (!account.creation) {
-      const feePaymentOption = this.#estimation.feePaymentOptions.find(
-        (option) => option.address === '0x0000000000000000000000000000000000000000'
-      )
-      return feePaymentOption ? [feePaymentOption] : []
-    }
-
-    // @TODO - 4337 - will handle it in next Epics
-    // // only the account itself can pay in this case
-    // const network = this.#networks!.find((n) => n.id === this.accountOp?.networkId)
-    // if (network && network.erc4337?.enabled) {
-    //   return [
-    //
-    //   ]
-    // }
+    if (!account || !this.isInitialized) return []
 
     // in other modes: relayer and gas tank - current account + all EOAs can pay
-    return this.#estimation.feePaymentOptions
+    return this.#estimation!.feePaymentOptions
   }
 
   // eslint-disable-next-line class-methods-use-this
@@ -473,6 +472,7 @@ export class SignAccountOpController extends EventEmitter {
       hasSelectedAccountOp: this.hasSelectedAccountOp,
       readyToSign: this.readyToSign,
       availableFeeOptions: this.availableFeeOptions,
+      feeSpeeds: this.feeSpeeds,
       feeToken: this.feeToken,
       feePaidBy: this.feePaidBy,
       speedOptions: this.speedOptions
