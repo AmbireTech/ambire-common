@@ -1,7 +1,8 @@
-import { Request, QueueElement } from './batcher'
-import { paginate } from './pagination'
+import dotenv from 'dotenv'
+
 import { geckoIdMapper, geckoNetworkIdMapper } from '../../consts/coingecko'
-import 'dotenv/config'
+import { QueueElement, Request } from './batcher'
+import { paginate } from './pagination'
 
 // max tokens per request; we seem to have faster results when it's lower
 const BATCH_LIMIT = 40

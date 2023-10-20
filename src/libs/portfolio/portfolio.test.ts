@@ -5,6 +5,8 @@ import { describe, expect, jest, test } from '@jest/globals'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import { networks } from '../../consts/networks'
+import { AccountOp } from '../accountOp/accountOp'
+import { stringify } from '../bigintJson/bigintJson'
 import { Portfolio } from './portfolio'
 
 describe('Portfolio', () => {
@@ -41,7 +43,7 @@ describe('Portfolio', () => {
       gasLimit: null,
       gasFeePayment: null,
       networkId: 'ethereum',
-      nonce: 6,
+      nonce: await getNonce('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'),
       signature: '0x000000000000000000000000e5a4Dad2Ea987215460379Ab285DF87136E83BEA03',
       calls: [
         {
@@ -89,7 +91,7 @@ describe('Portfolio', () => {
       new AbiCoder().encode(['address'], ['0x5Be214147EA1AE3653f289E17fE7Dc17A73AD175']) +
       SPOOF_SIGTYPE
 
-    const accountOp: any = {
+    const accountOp: AccountOp = {
       accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
       signingKeyAddr: '0x5Be214147EA1AE3653f289E17fE7Dc17A73AD175',
       gasLimit: null,
@@ -97,6 +99,7 @@ describe('Portfolio', () => {
       networkId: 'ethereum',
       nonce: await getNonce('0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'),
       signature: spoofSig,
+      accountOpToExecuteBefore: null,
       calls: [{ to: '0x18Ce9CF7156584CDffad05003410C3633EFD1ad0', value: BigInt(0), data }]
     }
     const account = {
@@ -142,7 +145,7 @@ describe('Portfolio', () => {
         // @ts-ignore
         const { Response } = jest.requireActual('node-fetch')
         if (url.includes('https://relayer.ambire.com/velcro-v3/multi-hints')) {
-          const body = JSON.stringify({ message: 'API error' })
+          const body = stringify({ message: 'API error' })
           const headers = { status: 200 }
 
           return Promise.resolve(new Response(body, headers))

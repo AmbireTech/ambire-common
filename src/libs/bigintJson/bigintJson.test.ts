@@ -1,5 +1,6 @@
 import { describe, expect } from '@jest/globals'
-import { stringify, parse } from './bigintJson'
+
+import { parse, stringify } from './bigintJson'
 
 describe('bigintJson', () => {
   it('stringify/parse bigint object values', async () => {
@@ -52,7 +53,7 @@ describe('bigintJson', () => {
         gasLimit: null,
         gasFeePayment: null,
         networkId: 'ethereum',
-        nonce: 6,
+        nonce: 6n,
         signature: '0x000000000000000000000000e5a4Dad2Ea987215460379Ab285DF87136E83BEA03',
         calls: [
           {

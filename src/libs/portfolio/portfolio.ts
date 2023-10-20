@@ -51,7 +51,7 @@ export interface GetOptions {
   previousHints?: {
     erc20s: Hints['erc20s']
     erc721s: Hints['erc721s']
-  },
+  }
   pinned?: string[]
 }
 
@@ -175,7 +175,9 @@ export class Portfolio {
     }
 
     const tokenFilter = ([error, result]: [string, TokenResult]): boolean =>
-      (result.amount > 0 || pinned!.includes(result.address)) && error == '0x' && result.symbol !== ''
+      (result.amount > 0 || pinned!.includes(result.address)) &&
+      error == '0x' &&
+      result.symbol !== ''
 
     const tokens = tokensWithErr.filter(tokenFilter).map(([_, result]) => result)
 
