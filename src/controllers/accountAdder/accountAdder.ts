@@ -429,11 +429,11 @@ export class AccountAdderController extends EventEmitter {
 
   // updates the account adder state so the main ctrl receives the readyToAddAccounts
   // that should be added to the storage of the app
-  async addExistingEmailAccount(account: Account) {
+  async addExistingEmailAccounts(accounts: Account[]) {
     // There is no need to call the addAccounts method in order to add that
     // account to the relayer because this func will be called only for accounts returned
     // from relayer that only need to be stored in the storage of the app
-    this.readyToAddAccounts = [...this.readyToAddAccounts, account]
+    this.readyToAddAccounts = accounts
     this.addAccountsStatus = 'SUCCESS'
     this.emitUpdate()
   }
