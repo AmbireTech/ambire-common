@@ -294,6 +294,7 @@ export default function usePortfolio({
     onAddHiddenCollectible,
     onRemoveHiddenCollectible,
     setHiddenCollectibles,
-    hiddenCollectibles
+    hiddenCollectibles,
+    loadBalance
   }
 }
