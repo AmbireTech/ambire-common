@@ -196,7 +196,7 @@ export class SignMessageController extends EventEmitter {
         provider: this.#providers[network?.id || 'ethereum'],
         signer: this.signingKeyAddr,
         signature,
-        // TODO: Be aware of the type mismatch, could cause troubles
+        // @ts-ignore TODO: Be aware of the type mismatch, could cause troubles
         message: this.messageToSign.content.kind === 'message' ? personalMsgToValidate : undefined,
         typedData:
           this.messageToSign.content.kind === 'typedMessage'
