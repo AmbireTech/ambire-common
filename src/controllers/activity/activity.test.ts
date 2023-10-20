@@ -385,7 +385,7 @@ describe('Activity Controller ', () => {
           kind: 'message',
           message: '0x74657374'
         },
-        fromUserRequestId: 1n,
+        fromUserRequestId: 1,
         signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503'
       }
 
@@ -422,7 +422,7 @@ describe('Activity Controller ', () => {
           kind: 'message',
           message: '0x74657374'
         },
-        fromUserRequestId: 1n,
+        fromUserRequestId: 1,
         signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503'
       }
 
@@ -465,7 +465,7 @@ describe('Activity Controller ', () => {
           kind: 'message',
           message: '0x123456'
         },
-        fromUserRequestId: 1n,
+        fromUserRequestId: 1,
         signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503'
       }
 

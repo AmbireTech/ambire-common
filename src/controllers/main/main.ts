@@ -3,7 +3,7 @@ import { JsonRpcProvider } from 'ethers'
 import { networks } from '../../consts/networks'
 import { Account, AccountId, AccountStates } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
-import { KeystoreSignerType } from '../../interfaces/keystore'
+import { Key, KeystoreSignerType } from '../../interfaces/keystore'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
 import { Storage } from '../../interfaces/storage'
 import { Message, UserRequest } from '../../interfaces/userRequest'
@@ -28,6 +28,7 @@ import { PortfolioController } from '../portfolio/portfolio'
 /* eslint-disable no-underscore-dangle */
 import { SignAccountOpController } from '../signAccountOp/signAccountOp'
 import { SignMessageController } from '../signMessage/signMessage'
+import { TransferController } from '../transfer/transfer'
 
 export class MainController extends EventEmitter {
   #storage: Storage
@@ -51,6 +52,8 @@ export class MainController extends EventEmitter {
 
   // Subcontrollers
   portfolio: PortfolioController
+
+  transfer: TransferController
 
   // Public sub-structures
   // @TODO emailVaults
@@ -112,7 +115,7 @@ export class MainController extends EventEmitter {
     storage: Storage
     fetch: Function
     relayerUrl: string
-    keystoreSigners: { [key: string]: KeystoreSignerType }
+    keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>
     onResolveDappRequest: (data: any, id?: number) => void
     onRejectDappRequest: (err: any, id?: number) => void
     onUpdateDappSelectedAccount: (accountAddr: string) => void
@@ -137,6 +140,7 @@ export class MainController extends EventEmitter {
       relayerUrl,
       fetch: this.#fetch
     })
+    this.transfer = new TransferController()
     this.signAccountOp = new SignAccountOpController(
       this.keystore,
       this.portfolio,

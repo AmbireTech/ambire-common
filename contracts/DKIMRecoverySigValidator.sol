@@ -119,6 +119,7 @@ contract DKIMRecoverySigValidator is ExternalSigValidator {
   address public immutable authorizedToSubmit;
   address public immutable authorizedToRevoke;
   DNSSEC public immutable oracle;
+  address private immutable anyoneCanSubmit = address(69);
   bytes private constant BRIDGE_STRING = hex'646e7373656362726964676506616d6269726503636f6d';
 
   // this is the bytes representation of the character that replaces "space"
@@ -284,7 +285,7 @@ contract DKIMRecoverySigValidator is ExternalSigValidator {
    */
   function addDKIMKeyWithDNSSec(DNSSEC.RRSetWithSignature[] calldata sets) external {
     require(
-      authorizedToSubmit == address(69) || msg.sender == authorizedToSubmit,
+      authorizedToSubmit == anyoneCanSubmit || msg.sender == authorizedToSubmit,
       'not authorized to submit'
     );
 

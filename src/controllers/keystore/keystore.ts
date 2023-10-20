@@ -50,7 +50,7 @@ export class KeystoreController extends EventEmitter {
 
   #storage: Storage
 
-  #keystoreSigners: { [key: string]: KeystoreSignerType }
+  #keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>
 
   keys: Key[] = []
 
@@ -62,7 +62,10 @@ export class KeystoreController extends EventEmitter {
 
   latestMethodCall: string | null = null
 
-  constructor(_storage: Storage, _keystoreSigners: { [key: string]: KeystoreSignerType }) {
+  constructor(
+    _storage: Storage,
+    _keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>
+  ) {
     super()
     this.#storage = _storage
     this.#keystoreSigners = _keystoreSigners
@@ -278,14 +281,18 @@ export class KeystoreController extends EventEmitter {
   }
 
   async getKeys(): Promise<Key[]> {
-    const keys: [StoredKey] = await this.#storage.get('keystoreKeys', [])
-    return keys.map(({ addr, label, type, meta }) => ({
-      addr,
-      label,
-      type,
-      meta,
-      isExternallyStored: type !== 'internal'
-    }))
+    const keys: StoredKey[] = await this.#storage.get('keystoreKeys', [])
+
+    return keys.map(({ addr, label, type, meta }) => {
+      // Written with this 'internal' type guard (if) on purpose, because this
+      // way TypeScript will be able to narrow down the types properly and infer
+      // the return type of the map function correctly.
+      if (type === 'internal') {
+        return { addr, label, type, meta, isExternallyStored: false }
+      }
+
+      return { addr, label, type, meta, isExternallyStored: true }
+    })
   }
 
   async #addKeysExternallyStored(
@@ -485,9 +492,11 @@ export class KeystoreController extends EventEmitter {
       const decryptedBytes = aesCtr.decrypt(encryptedBytes)
       const decryptedPrivateKey = aes.utils.hex.fromBytes(decryptedBytes)
 
+      // @ts-ignore TODO: Figure out the correct type definition
       return new SignerInitializer(key, decryptedPrivateKey)
     }
 
+    // @ts-ignore TODO: Figure out the correct type definition
     return new SignerInitializer(key)
   }
 

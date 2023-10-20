@@ -1,5 +1,6 @@
 import { ethers, JsonRpcProvider } from 'ethers'
 
+import { PROXY_AMBIRE_ACCOUNT } from '../../../dist/src/consts/deploy'
 import { Account, AccountOnchainState } from '../../interfaces/account'
 import { KeyIterator } from '../../interfaces/keyIterator'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
@@ -347,10 +348,15 @@ export class AccountAdderController extends EventEmitter {
     if (accountsToAddOnRelayer.length) {
       const body = accountsToAddOnRelayer.map((acc) => ({
         addr: acc.addr,
-        associatedKeys: acc.associatedKeys,
+        associatedKeys: acc.associatedKeys.map((key) => [
+          ethers.getAddress(key), // the Relayer expects checksumed address
+          // Handle special priv hashes at a later stage, when (if) needed
+          '0x0000000000000000000000000000000000000000000000000000000000000001'
+        ]),
         creation: {
           factoryAddr: acc.creation!.factoryAddr,
-          salt: acc.creation!.salt
+          salt: acc.creation!.salt,
+          baseIdentityAddr: PROXY_AMBIRE_ACCOUNT
         }
       }))
 
@@ -528,6 +534,23 @@ export class AccountAdderController extends EventEmitter {
       data.accounts
     )
       .map((addr: any) => {
+        // In extremely rare cases, on the Relayer, the identity data could be
+        // missing in the identities table but could exist in the logs table.
+        // When this happens, the account data will be `null`.
+        const isIdentityDataMissing = !data.accounts[addr]
+        if (isIdentityDataMissing) {
+          // Same error for both cases, because most prob
+          this.emitError({
+            level: 'minor',
+            message: `The address ${addr} is not linked to an Ambire account. Please try again later or contact support if the problem persists.`,
+            error: new Error(
+              `The address ${addr} is not linked to an Ambire account. This could be because the identity data is missing in the identities table but could exist in the logs table.`
+            )
+          })
+
+          return null
+        }
+
         const { factoryAddr, bytecode, salt, associatedKeys } = data.accounts[addr]
         // Checks whether the account.addr matches the addr generated from the
         // factory. Should never happen, but could be a possible attack vector.
