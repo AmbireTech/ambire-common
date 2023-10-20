@@ -239,6 +239,22 @@ const networks: NetworkType[] = [
     }
   },
   {
+    id: NETWORKS.base,
+    chainId: 8453,
+    nativeAssetSymbol: 'ETH',
+    name: 'Base',
+    explorerUrl: 'https://basescan.org/',
+    unstoppableDomainsChain: 'ERC20',
+    isGasTankAvailable: true,
+    relayerlessOnly: false,
+    nativeAsset: {
+      address: '0x0000000000000000000000000000000000000000',
+      symbol: 'ETH',
+      coingeckoId: 'ethereum',
+      decimals: 18
+    }
+  },
+  {
     id: NETWORKS.andromeda,
     chainId: 1088,
     nativeAssetSymbol: 'METIS',

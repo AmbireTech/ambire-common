@@ -1,8 +1,16 @@
 [
   {
     "inputs": [
-      { "internalType": "contract WALLETToken", "name": "token", "type": "address" },
-      { "internalType": "address", "name": "initialGovernance", "type": "address" }
+      {
+        "internalType": "contract WALLETToken",
+        "name": "token",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "initialGovernance",
+        "type": "address"
+      }
     ],
     "stateMutability": "nonpayable",
     "type": "constructor"
@@ -10,8 +18,18 @@
   {
     "anonymous": false,
     "inputs": [
-      { "indexed": true, "internalType": "address", "name": "recipient", "type": "address" },
-      { "indexed": false, "internalType": "uint256", "name": "claimed", "type": "uint256" }
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "recipient",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "claimed",
+        "type": "uint256"
+      }
     ],
     "name": "LogClaimStaked",
     "type": "event"
@@ -19,9 +37,24 @@
   {
     "anonymous": false,
     "inputs": [
-      { "indexed": true, "internalType": "address", "name": "recipient", "type": "address" },
-      { "indexed": false, "internalType": "uint256", "name": "received", "type": "uint256" },
-      { "indexed": false, "internalType": "uint256", "name": "burned", "type": "uint256" }
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "recipient",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "received",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "burned",
+        "type": "uint256"
+      }
     ],
     "name": "LogClaimWithPenalty",
     "type": "event"
@@ -29,8 +62,18 @@
   {
     "anonymous": false,
     "inputs": [
-      { "indexed": true, "internalType": "address", "name": "recipient", "type": "address" },
-      { "indexed": false, "internalType": "uint256", "name": "amount", "type": "uint256" }
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "recipient",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "amount",
+        "type": "uint256"
+      }
     ],
     "name": "LogMintVesting",
     "type": "event"
@@ -38,10 +81,30 @@
   {
     "anonymous": false,
     "inputs": [
-      { "indexed": true, "internalType": "address", "name": "recipient", "type": "address" },
-      { "indexed": false, "internalType": "uint256", "name": "start", "type": "uint256" },
-      { "indexed": false, "internalType": "uint256", "name": "end", "type": "uint256" },
-      { "indexed": false, "internalType": "uint256", "name": "amountPerSec", "type": "uint256" }
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "recipient",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "start",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "end",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "amountPerSec",
+        "type": "uint256"
+      }
     ],
     "name": "LogNewVesting",
     "type": "event"
@@ -49,7 +112,12 @@
   {
     "anonymous": false,
     "inputs": [
-      { "indexed": false, "internalType": "uint256", "name": "newPenaltyBps", "type": "uint256" }
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "newPenaltyBps",
+        "type": "uint256"
+      }
     ],
     "name": "LogUpdatePenaltyBps",
     "type": "event"
@@ -57,9 +125,24 @@
   {
     "anonymous": false,
     "inputs": [
-      { "indexed": true, "internalType": "address", "name": "recipient", "type": "address" },
-      { "indexed": false, "internalType": "uint256", "name": "end", "type": "uint256" },
-      { "indexed": false, "internalType": "uint256", "name": "amountPerSec", "type": "uint256" }
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "recipient",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "end",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "amountPerSec",
+        "type": "uint256"
+      }
     ],
     "name": "LogVestingUnset",
     "type": "event"
@@ -67,19 +150,37 @@
   {
     "inputs": [],
     "name": "MAX_CLAIM_NODE",
-    "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
     "stateMutability": "view",
     "type": "function"
   },
   {
     "inputs": [],
     "name": "WALLET",
-    "outputs": [{ "internalType": "contract WALLETToken", "name": "", "type": "address" }],
+    "outputs": [
+      {
+        "internalType": "contract WALLETToken",
+        "name": "",
+        "type": "address"
+      }
+    ],
     "stateMutability": "view",
     "type": "function"
   },
   {
-    "inputs": [{ "internalType": "address", "name": "newSupplyController", "type": "address" }],
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "newSupplyController",
+        "type": "address"
+      }
+    ],
     "name": "changeSupplyController",
     "outputs": [],
     "stateMutability": "nonpayable",
@@ -87,10 +188,26 @@
   },
   {
     "inputs": [
-      { "internalType": "uint256", "name": "totalRewardInTree", "type": "uint256" },
-      { "internalType": "bytes32[]", "name": "proof", "type": "bytes32[]" },
-      { "internalType": "uint256", "name": "toBurnBps", "type": "uint256" },
-      { "internalType": "contract IStakingPool", "name": "stakingPool", "type": "address" }
+      {
+        "internalType": "uint256",
+        "name": "totalRewardInTree",
+        "type": "uint256"
+      },
+      {
+        "internalType": "bytes32[]",
+        "name": "proof",
+        "type": "bytes32[]"
+      },
+      {
+        "internalType": "uint256",
+        "name": "toBurnBps",
+        "type": "uint256"
+      },
+      {
+        "internalType": "contract IStakingPool",
+        "name": "stakingPool",
+        "type": "address"
+      }
     ],
     "name": "claim",
     "outputs": [],
@@ -99,12 +216,36 @@
   },
   {
     "inputs": [
-      { "internalType": "uint256", "name": "totalRewardInTree", "type": "uint256" },
-      { "internalType": "bytes32[]", "name": "proof", "type": "bytes32[]" },
-      { "internalType": "uint256", "name": "toBurnBps", "type": "uint256" },
-      { "internalType": "contract IStakingPool", "name": "stakingPool", "type": "address" },
-      { "internalType": "bytes32", "name": "newRoot", "type": "bytes32" },
-      { "internalType": "bytes", "name": "signature", "type": "bytes" }
+      {
+        "internalType": "uint256",
+        "name": "totalRewardInTree",
+        "type": "uint256"
+      },
+      {
+        "internalType": "bytes32[]",
+        "name": "proof",
+        "type": "bytes32[]"
+      },
+      {
+        "internalType": "uint256",
+        "name": "toBurnBps",
+        "type": "uint256"
+      },
+      {
+        "internalType": "contract IStakingPool",
+        "name": "stakingPool",
+        "type": "address"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "newRoot",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "bytes",
+        "name": "signature",
+        "type": "bytes"
+      }
     ],
     "name": "claimWithRootUpdate",
     "outputs": [],
@@ -112,31 +253,73 @@
     "type": "function"
   },
   {
-    "inputs": [{ "internalType": "address", "name": "", "type": "address" }],
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
     "name": "claimed",
-    "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
     "stateMutability": "view",
     "type": "function"
   },
   {
-    "inputs": [{ "internalType": "address", "name": "", "type": "address" }],
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
     "name": "hasGovernance",
-    "outputs": [{ "internalType": "bool", "name": "", "type": "bool" }],
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
     "stateMutability": "view",
     "type": "function"
   },
   {
     "inputs": [],
     "name": "lastRoot",
-    "outputs": [{ "internalType": "bytes32", "name": "", "type": "bytes32" }],
+    "outputs": [
+      {
+        "internalType": "bytes32",
+        "name": "",
+        "type": "bytes32"
+      }
+    ],
     "stateMutability": "view",
     "type": "function"
   },
   {
     "inputs": [
-      { "internalType": "address", "name": "recipient", "type": "address" },
-      { "internalType": "uint256", "name": "end", "type": "uint256" },
-      { "internalType": "uint256", "name": "amountPerSecond", "type": "uint256" }
+      {
+        "internalType": "address",
+        "name": "recipient",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "end",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "amountPerSecond",
+        "type": "uint256"
+      }
     ],
     "name": "mintVesting",
     "outputs": [],
@@ -145,26 +328,58 @@
   },
   {
     "inputs": [
-      { "internalType": "address", "name": "addr", "type": "address" },
-      { "internalType": "uint256", "name": "end", "type": "uint256" },
-      { "internalType": "uint256", "name": "amountPerSecond", "type": "uint256" }
+      {
+        "internalType": "address",
+        "name": "addr",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "end",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "amountPerSecond",
+        "type": "uint256"
+      }
     ],
     "name": "mintableVesting",
-    "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
     "stateMutability": "view",
     "type": "function"
   },
   {
     "inputs": [],
     "name": "penaltyBps",
-    "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
     "stateMutability": "view",
     "type": "function"
   },
   {
     "inputs": [
-      { "internalType": "address", "name": "addr", "type": "address" },
-      { "internalType": "bool", "name": "level", "type": "bool" }
+      {
+        "internalType": "address",
+        "name": "addr",
+        "type": "address"
+      },
+      {
+        "internalType": "bool",
+        "name": "level",
+        "type": "bool"
+      }
     ],
     "name": "setGovernance",
     "outputs": [],
@@ -172,14 +387,26 @@
     "type": "function"
   },
   {
-    "inputs": [{ "internalType": "uint256", "name": "_penaltyBps", "type": "uint256" }],
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "_penaltyBps",
+        "type": "uint256"
+      }
+    ],
     "name": "setPenaltyBps",
     "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"
   },
   {
-    "inputs": [{ "internalType": "bytes32", "name": "newRoot", "type": "bytes32" }],
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "newRoot",
+        "type": "bytes32"
+      }
+    ],
     "name": "setRoot",
     "outputs": [],
     "stateMutability": "nonpayable",
@@ -187,10 +414,26 @@
   },
   {
     "inputs": [
-      { "internalType": "address", "name": "recipient", "type": "address" },
-      { "internalType": "uint256", "name": "start", "type": "uint256" },
-      { "internalType": "uint256", "name": "end", "type": "uint256" },
-      { "internalType": "uint256", "name": "amountPerSecond", "type": "uint256" }
+      {
+        "internalType": "address",
+        "name": "recipient",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "start",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "end",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "amountPerSecond",
+        "type": "uint256"
+      }
     ],
     "name": "setVesting",
     "outputs": [],
@@ -199,9 +442,21 @@
   },
   {
     "inputs": [
-      { "internalType": "address", "name": "recipient", "type": "address" },
-      { "internalType": "uint256", "name": "end", "type": "uint256" },
-      { "internalType": "uint256", "name": "amountPerSecond", "type": "uint256" }
+      {
+        "internalType": "address",
+        "name": "recipient",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "end",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "amountPerSecond",
+        "type": "uint256"
+      }
     ],
     "name": "unsetVesting",
     "outputs": [],
@@ -210,20 +465,50 @@
   },
   {
     "inputs": [
-      { "internalType": "address", "name": "", "type": "address" },
-      { "internalType": "uint256", "name": "", "type": "uint256" },
-      { "internalType": "uint256", "name": "", "type": "uint256" }
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
     ],
     "name": "vestingLastMint",
-    "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
     "stateMutability": "view",
     "type": "function"
   },
   {
     "inputs": [
-      { "internalType": "contract IERC20", "name": "token", "type": "address" },
-      { "internalType": "address", "name": "to", "type": "address" },
-      { "internalType": "uint256", "name": "tokenAmount", "type": "uint256" }
+      {
+        "internalType": "contract IERC20",
+        "name": "token",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "to",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "tokenAmount",
+        "type": "uint256"
+      }
     ],
     "name": "withdraw",
     "outputs": [],

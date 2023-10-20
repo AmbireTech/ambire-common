@@ -137,7 +137,7 @@ export type UseExtraTokensProps = {
 
 export type UsePortfolioReturnType = {
   balance: Balance
-  otherBalances: Balance[]
+  allBalances: Balance[]
   tokens: Token[]
   extraTokens: Token[]
   hiddenTokens: Token[]
