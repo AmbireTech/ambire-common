@@ -171,6 +171,12 @@ export class SignMessageController extends EventEmitter {
             )
           }
 
+          if (!this.messageToSign.content.primaryType) {
+            throw new Error(
+              'The primaryType is missing in the typed data message incoming. Please try again with a valid EIP712 message.'
+            )
+          }
+
           const { domain } = this.messageToSign.content
           signature = await signer.signTypedData(this.messageToSign.content)
           const requestedNetwork = networks.find(
