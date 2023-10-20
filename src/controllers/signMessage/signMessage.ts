@@ -1,4 +1,4 @@
-import { JsonRpcProvider } from 'ethers'
+import { ethers, JsonRpcProvider } from 'ethers'
 
 import { networks } from '../../consts/networks'
 import { Account, AccountStates } from '../../interfaces/account'
@@ -154,7 +154,10 @@ export class SignMessageController extends EventEmitter {
 
       if (this.messageToSign.content.kind === 'message') {
         try {
-          signature = await signer.signMessage(this.messageToSign.content.message)
+          const { message } = this.messageToSign.content
+          const messageHex = message instanceof Uint8Array ? ethers.hexlify(message) : message
+
+          signature = await signer.signMessage(messageHex)
         } catch (error: any) {
           console.log(error)
           throw new Error(
@@ -165,8 +168,20 @@ export class SignMessageController extends EventEmitter {
 
       if (this.messageToSign.content.kind === 'typedMessage') {
         try {
+          if (!this.messageToSign.content.types.EIP712Domain) {
+            throw new Error(
+              'Ambire only supports signing EIP712 typed data messages. Please try again with a valid EIP712 message.'
+            )
+          }
+
+          if (!this.messageToSign.content.primaryType) {
+            throw new Error(
+              'The primaryType is missing in the typed data message incoming. Please try again with a valid EIP712 message.'
+            )
+          }
+
           const { domain } = this.messageToSign.content
-          signature = await signer.signTypedData(this.messageToSign!.content)
+          signature = await signer.signTypedData(this.messageToSign.content)
           const requestedNetwork = networks.find(
             (n) => Number(n.chainId) === Number(domain.chainId)
           )

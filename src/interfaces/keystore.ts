@@ -6,7 +6,7 @@ export interface KeystoreSigner {
   init?: (controller: any) => void
   signRawTransaction: (params: any) => Promise<string>
   signTypedData: (typedMessage: TypedMessage) => Promise<string>
-  signMessage: (hash: string | Uint8Array) => Promise<string>
+  signMessage: (hex: string) => Promise<string>
 }
 
 export type ScryptParams = {
