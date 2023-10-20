@@ -11,14 +11,14 @@ export enum NETWORKS {
   'kucoin' = 'kucoin',
   'optimism' = 'optimism',
   'andromeda' = 'andromeda',
-  'rinkeby' = 'rinkeby',
-  'mumbai' = 'mumbai',
   'cronos' = 'cronos',
   'aurora' = 'aurora',
   'okc' = 'okc',
+  'base' = 'base',
   'ethereum-pow' = 'ethereum-pow',
-  'sepolia' = 'sepolia',
-  'base' = 'base'
+  'rinkeby' = 'rinkeby',
+  'mumbai' = 'mumbai',
+  'sepolia' = 'sepolia'
 }
 
 export type NetworkId = keyof typeof NETWORKS
@@ -212,22 +212,6 @@ const networks: NetworkType[] = [
     nativeAssetSymbol: 'ETH',
     name: 'Optimism',
     explorerUrl: 'https://optimistic.etherscan.io',
-    unstoppableDomainsChain: 'ERC20',
-    isGasTankAvailable: true,
-    relayerlessOnly: false,
-    nativeAsset: {
-      address: '0x0000000000000000000000000000000000000000',
-      symbol: 'ETH',
-      coingeckoId: 'ethereum',
-      decimals: 18
-    }
-  },
-  {
-    id: NETWORKS.base,
-    chainId: 8453,
-    nativeAssetSymbol: 'ETH',
-    name: 'Base',
-    explorerUrl: 'https://basescan.org/',
     unstoppableDomainsChain: 'ERC20',
     isGasTankAvailable: true,
     relayerlessOnly: false,
