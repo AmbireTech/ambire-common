@@ -164,6 +164,7 @@ contract DKIMRecoverySigValidator is ExternalSigValidator {
       }
 
       string memory headers = sigMeta.canonizedHeaders;
+      bytes32 headersHash = sha256(bytes(headers));
       _verifyHeaders(
         headers,
         accInfo.emailFrom,
@@ -204,7 +205,7 @@ contract DKIMRecoverySigValidator is ExternalSigValidator {
         );
       }
 
-      if (!(RSASHA256.verify(sha256(bytes(headers)), dkimSig, pubKeyExponent, pubKeyModulus))) {
+      if (!(RSASHA256.verify(headersHash, dkimSig, pubKeyExponent, pubKeyModulus))) {
         return (false, 0);
       }
     }
