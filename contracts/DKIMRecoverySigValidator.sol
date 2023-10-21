@@ -426,8 +426,8 @@ contract DKIMRecoverySigValidator is ExternalSigValidator {
           .concat(OpenZeppelinStrings.toString(uint8(mode)).toSlice())
           .toSlice();
         // @TODO investigate Strings lib bug
-        // require(header.equals(targetSubject), 'emailSubject not valid');
-        require(keccak256(abi.encode(header.toString())) == keccak256(abi.encode(targetSubject.toString())), 'emailSubject not valid');
+        require(header.equals(targetSubject), 'emailSubject not valid');
+        // require(keccak256(abi.encode(header.toString())) == keccak256(abi.encode(targetSubject.toString())), 'emailSubject not valid');
       } else if (header.startsWith(toSlice)) {
         require(!toValidated, 'to: already validated');
         toValidated = true;
