@@ -11,6 +11,7 @@ import './dkim/DNSSEC.sol';
 import './dkim/RRUtils.sol';
 import './libs/OpenZeppelinStrings.sol';
 import './ExternalSigValidator.sol';
+import 'hardhat/console.sol';
 
 /**
  * @notice  A validator that performs DKIM signature recovery
@@ -395,48 +396,56 @@ contract DKIMRecoverySigValidator is ExternalSigValidator {
     address newAddressToSet,
     bytes32 newPrivilegeValue,
     SigMode mode
-  ) internal pure {
-    // from looks like this: from: name <email>
-    // so we take what's between <> and validate it
-    Strings.slice memory fromHeader = canonizedHeaders.toSlice().find('from:'.toSlice());
-    fromHeader.split('<'.toSlice());
-    require(
-      fromHeader.startsWith(accountEmailFrom.toSlice().concat('>'.toSlice()).toSlice()),
-      'emailFrom not valid'
-    );
-
-    // to looks like this: to:email
-    Strings.slice memory toHeader = 'to:'
-      .toSlice()
-      .concat(accountEmailTo.toSlice())
-      .toSlice()
-      .concat('\r\n'.toSlice())
-      .toSlice();
-    require(canonizedHeaders.toSlice().startsWith(toHeader), 'emailTo not valid');
-
-    // subject looks like this: subject:Give {bytes32} permissions to {address} SigMode {uint8}
-    Strings.slice memory subject = 'subject:Give '
-      .toSlice()
-      .concat(OpenZeppelinStrings.toHexString(uint256(newPrivilegeValue)).toSlice())
-      .toSlice()
-      .concat(' permissions to '.toSlice())
-      .toSlice()
-      .concat(OpenZeppelinStrings.toHexString(newAddressToSet).toSlice())
-      .toSlice()
-      .concat(' SigMode '.toSlice())
-      .toSlice()
-      .concat(OpenZeppelinStrings.toString(uint8(mode)).toSlice())
-      .toSlice()
-      .concat('\r\n'.toSlice())
-      .toSlice();
-
-    // a bit of magic here
-    // when using split this way, if it finds subject, it returns
-    // everything after it as headersAfterSubject. If it does not find it,
-    // headersAfterSubject is set to canonizedHeaders. So we check whether headersAfterSubject
-    // is equal to canonizedHeaders. If it is, the subject has not been found
-    Strings.slice memory headersAfterSubject = canonizedHeaders.toSlice().split(subject);
-    require(!headersAfterSubject.equals(canonizedHeaders.toSlice()), 'emailSubject not valid');
+  ) internal view {
+    Strings.slice memory remainingHeaders = canonizedHeaders.toSlice();
+    // canonizedHeaders are split by \r\n (CRNL)
+    Strings.slice memory separatorSlice = '\r\n'.toSlice();
+    Strings.slice memory subjectSlice = 'subject:'.toSlice();
+    Strings.slice memory toSlice = 'to:'.toSlice();
+    Strings.slice memory fromSlice = 'from:'.toSlice();
+    bool subjectValidated;
+    bool toValidated;
+    bool fromValidated;
+    while (!remainingHeaders.empty()) {
+      // ' if `needle` does not occur in `self`, `self` is set to the empty slice,'
+      // meaning remainingHeaders will become empty, breaking the while
+      Strings.slice memory header = remainingHeaders.split(separatorSlice);
+      if (header.startsWith(subjectSlice)) {
+        require(!subjectValidated, 'subject: already validated');
+        subjectValidated = true;
+        // subject looks like this: subject:Give {bytes32} permissions to {address} SigMode {uint8}
+        Strings.slice memory targetSubject = 'subject:Give '
+          .toSlice()
+          .concat(OpenZeppelinStrings.toHexString(uint256(newPrivilegeValue)).toSlice())
+          .toSlice()
+          .concat(' permissions to '.toSlice())
+          .toSlice()
+          .concat(OpenZeppelinStrings.toHexString(newAddressToSet).toSlice())
+          .toSlice()
+          .concat(' SigMode '.toSlice())
+          .toSlice()
+          .concat(OpenZeppelinStrings.toString(uint8(mode)).toSlice())
+          .toSlice();
+        console.log("header |%s|%s|%s", uint(keccak256(abi.encode(header.toString()))), uint(keccak256(abi.encode(targetSubject.toString()))), header.equals(targetSubject));
+        require(header.equals(targetSubject), 'emailSubject not valid');
+      } else if (header.startsWith(toSlice)) {
+        require(!toValidated, 'to: already validated');
+        toValidated = true;
+        // it's ok to reuse the toSlice here, we already matched it
+        require(header.equals(toSlice.concat(accountEmailTo.toSlice()).toSlice()), 'emailTo not valid');
+      } else if (header.startsWith(fromSlice)) {
+        require(!fromValidated, 'from: already validated');
+        fromValidated = true;
+        // from looks like this: from: name <email>
+        // so we take what's between <> and validate it
+        header.split('<'.toSlice());
+        require(
+          header.startsWith(accountEmailFrom.toSlice().concat('>'.toSlice()).toSlice()),
+          'emailFrom not valid'
+        );
+      }
+    }
+    require(fromValidated && toValidated && subjectValidated, 'verifyHeaders: missing header');
   }
 
   /**
