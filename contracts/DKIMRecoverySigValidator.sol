@@ -11,7 +11,6 @@ import './dkim/DNSSEC.sol';
 import './dkim/RRUtils.sol';
 import './libs/OpenZeppelinStrings.sol';
 import './ExternalSigValidator.sol';
-import 'hardhat/console.sol';
 
 /**
  * @notice  A validator that performs DKIM signature recovery
@@ -396,7 +395,7 @@ contract DKIMRecoverySigValidator is ExternalSigValidator {
     address newAddressToSet,
     bytes32 newPrivilegeValue,
     SigMode mode
-  ) internal view {
+  ) internal pure {
     Strings.slice memory remainingHeaders = canonizedHeaders.toSlice();
     // canonizedHeaders are split by \r\n (CRNL)
     Strings.slice memory separatorSlice = '\r\n'.toSlice();
@@ -426,8 +425,9 @@ contract DKIMRecoverySigValidator is ExternalSigValidator {
           .toSlice()
           .concat(OpenZeppelinStrings.toString(uint8(mode)).toSlice())
           .toSlice();
-        console.log("header |%s|%s|%s", uint(keccak256(abi.encode(header.toString()))), uint(keccak256(abi.encode(targetSubject.toString()))), header.equals(targetSubject));
-        require(header.equals(targetSubject), 'emailSubject not valid');
+        // @TODO investigate Strings lib bug
+        // require(header.equals(targetSubject), 'emailSubject not valid');
+        require(keccak256(abi.encode(header.toString())) == keccak256(abi.encode(targetSubject.toString())), 'emailSubject not valid');
       } else if (header.startsWith(toSlice)) {
         require(!toValidated, 'to: already validated');
         toValidated = true;
