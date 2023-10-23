@@ -17,6 +17,7 @@ import {
   getPendingAccountOpBannersForEOA
 } from '../../libs/banners/banners'
 import { estimate, EstimateResult } from '../../libs/estimate/estimate'
+import { shouldGetAdditionalPortfolio } from '../../libs/portfolio/helpers'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { AccountAdderController } from '../accountAdder/accountAdder'
 import { ActivityController } from '../activity/activity'
@@ -294,7 +295,10 @@ export class MainController extends EventEmitter {
   async updateSelectedAccount(selectedAccount: string | null = null) {
     if (!selectedAccount) return
     this.portfolio.updateSelectedAccount(this.accounts, this.settings.networks, selectedAccount)
-    this.portfolio.getAdditionalPortfolio(selectedAccount)
+
+    const account = this.accounts.find(({ addr }) => addr === selectedAccount)
+    if (shouldGetAdditionalPortfolio(account))
+      this.portfolio.getAdditionalPortfolio(selectedAccount)
   }
 
   async addUserRequest(req: UserRequest) {
@@ -408,7 +412,8 @@ export class MainController extends EventEmitter {
             .map(([networkId, x]) => [networkId, [x!.accountOp]])
         )
       ),
-      this.portfolio.getAdditionalPortfolio(accountOp.accountAddr),
+      shouldGetAdditionalPortfolio(account) &&
+        this.portfolio.getAdditionalPortfolio(accountOp.accountAddr),
       // @TODO nativeToCheck: pass all EOAs,
       // @TODO feeTokens: pass a hardcoded list from settings
       estimate(this.#providers[accountOp.networkId], network, account, accountOp, [], [])
