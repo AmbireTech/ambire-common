@@ -155,6 +155,7 @@ export class TransferController extends EventEmitter {
     preSelectedToken,
     humanizerInfo,
     tokens,
+    updateTokensWithoutChangingSelectedToken,
     amount,
     recipientAddress,
     setMaxAmount,
@@ -165,6 +166,7 @@ export class TransferController extends EventEmitter {
     preSelectedToken?: string
     humanizerInfo?: HumanizerInfoType
     tokens?: TokenResult[]
+    updateTokensWithoutChangingSelectedToken?: boolean
     amount?: string
     recipientAddress?: string
     setMaxAmount?: boolean
@@ -179,6 +181,8 @@ export class TransferController extends EventEmitter {
     }
     if (tokens) {
       this.tokens = tokens.filter((token) => token.amount !== 0n)
+
+      if (updateTokensWithoutChangingSelectedToken) return
 
       if (preSelectedToken) {
         this.handleTokenChange(preSelectedToken)
