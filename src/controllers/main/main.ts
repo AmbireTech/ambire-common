@@ -16,6 +16,7 @@ import {
   getPendingAccountOpBannersForEOA
 } from '../../libs/banners/banners'
 import { estimate, EstimateResult } from '../../libs/estimate/estimate'
+import { shouldGetAdditionalPortfolio } from '../../libs/portfolio/helpers'
 import { GasRecommendation, getGasPriceRecommendations } from '../../libs/gasPrice/gasPrice'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import generateSpoofSig from '../../utils/generateSpoofSig'
@@ -333,7 +334,10 @@ export class MainController extends EventEmitter {
   async updateSelectedAccount(selectedAccount: string | null = null) {
     if (!selectedAccount) return
     this.portfolio.updateSelectedAccount(this.accounts, this.settings.networks, selectedAccount)
-    this.portfolio.getAdditionalPortfolio(selectedAccount)
+
+    const account = this.accounts.find(({ addr }) => addr === selectedAccount)
+    if (shouldGetAdditionalPortfolio(account))
+      this.portfolio.getAdditionalPortfolio(selectedAccount)
   }
 
   async addUserRequest(req: UserRequest) {
@@ -479,9 +483,7 @@ export class MainController extends EventEmitter {
             .map(([networkId, x]) => [networkId, [x!.accountOp]])
         )
       ),
-      // @TODO - how to handle `Identity not found` error (in case of EOA and not deployed contract I guess).
-      //    Maybe we need fire the request, only if the account is deployed?
-      this.portfolio.getAdditionalPortfolio(accountOp.accountAddr),
+      shouldGetAdditionalPortfolio(account) && this.portfolio.getAdditionalPortfolio(accountOp.accountAddr),
       estimate(
         this.#providers[accountOp.networkId],
         network,
@@ -507,24 +509,13 @@ export class MainController extends EventEmitter {
   }
 
   get banners(): Banner[] {
-    const requests =
+    const userRequests =
       this.userRequests.filter((req) => req.accountAddr === this.selectedAccount) || []
-
-    const accountOpEOABanners = getAccountOpBannersForEOA({
-      userRequests: requests,
-      accounts: this.accounts
-    })
-    const pendingAccountOpEOABanners = getPendingAccountOpBannersForEOA({
-      userRequests: requests,
-      accounts: this.accounts
-    })
-    const accountOpSmartAccountBanners = getAccountOpBannersForSmartAccount({
-      userRequests: requests,
-      accounts: this.accounts
-    })
-    const messageBanners = getMessageBanners({
-      userRequests: requests
-    })
+    const accounts = this.accounts
+    const accountOpEOABanners = getAccountOpBannersForEOA({ userRequests, accounts })
+    const pendingAccountOpEOABanners = getPendingAccountOpBannersForEOA({ userRequests, accounts })
+    const accountOpSmartAccountBanners = getAccountOpBannersForSmartAccount({ userRequests, accounts })
+    const messageBanners = getMessageBanners({ userRequests })
 
     return [
       ...accountOpSmartAccountBanners,

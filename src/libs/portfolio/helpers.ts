@@ -1,5 +1,6 @@
 import feeTokens from '../../consts/feeTokens'
 import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
+import { Account } from '../../interfaces/account'
 import { NetworkId } from '../../interfaces/networkDescriptor'
 
 export function getFlags(
@@ -34,4 +35,9 @@ export function getFlags(
     canTopUpGasTank,
     isFeeToken
   }
+}
+
+export const shouldGetAdditionalPortfolio = (account?: Account) => {
+  // portfolio additional data is available only for smart accounts
+  return !!account?.creation
 }
