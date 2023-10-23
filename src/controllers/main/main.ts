@@ -17,6 +17,7 @@ import {
   getPendingAccountOpBannersForEOA
 } from '../../libs/banners/banners'
 import { estimate, EstimateResult } from '../../libs/estimate/estimate'
+import { shouldGetAdditionalPortfolio } from '../../libs/portfolio/helpers'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { AccountAdderController } from '../accountAdder/accountAdder'
 import { ActivityController } from '../activity/activity'
@@ -295,10 +296,9 @@ export class MainController extends EventEmitter {
     if (!selectedAccount) return
     this.portfolio.updateSelectedAccount(this.accounts, this.settings.networks, selectedAccount)
 
-    const shouldGetAdditionalPortfolio = this.accounts.find(
-      ({ addr }) => addr === selectedAccount
-    )?.creation // data available only for smart accounts
-    if (shouldGetAdditionalPortfolio) this.portfolio.getAdditionalPortfolio(selectedAccount)
+    const account = this.accounts.find(({ addr }) => addr === selectedAccount)
+    if (shouldGetAdditionalPortfolio(account))
+      this.portfolio.getAdditionalPortfolio(selectedAccount)
   }
 
   async addUserRequest(req: UserRequest) {
@@ -398,7 +398,6 @@ export class MainController extends EventEmitter {
     const network = this.settings.networks.find((x) => x.id === accountOp.networkId)
     if (!network)
       throw new Error(`estimateAccountOp: ${accountOp.networkId}: network does not exist`)
-    const shouldGetAdditionalPortfolio = !!account?.creation // data available only for smart accounts
     const [, , estimation] = await Promise.all([
       // NOTE: we are not emitting an update here because the portfolio controller will do that
       // NOTE: the portfolio controller has it's own logic of constructing/caching providers, this is intentional, as
@@ -413,7 +412,8 @@ export class MainController extends EventEmitter {
             .map(([networkId, x]) => [networkId, [x!.accountOp]])
         )
       ),
-      shouldGetAdditionalPortfolio && this.portfolio.getAdditionalPortfolio(accountOp.accountAddr),
+      shouldGetAdditionalPortfolio(account) &&
+        this.portfolio.getAdditionalPortfolio(accountOp.accountAddr),
       // @TODO nativeToCheck: pass all EOAs,
       // @TODO feeTokens: pass a hardcoded list from settings
       estimate(this.#providers[accountOp.networkId], network, account, accountOp, [], [])
