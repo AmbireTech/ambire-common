@@ -69,7 +69,7 @@ export class TransferController extends EventEmitter {
 
   #humanizerInfo: HumanizerInfoType | null = null
 
-  resetForm() {
+  resetForm(params?: { preSelectedToken?: string | null }) {
     this.amount = '0'
     this.maxAmount = '0'
     this.recipientAddress = ''
@@ -82,7 +82,10 @@ export class TransferController extends EventEmitter {
     this.isRecipientSmartContract = false
     this.isSWWarningVisible = false
     this.isSWWarningAgreed = false
-    this.#handleTokenChangeToFirstToken()
+    if (params?.preSelectedToken) this.handleTokenChange(params.preSelectedToken)
+    else {
+      this.#handleTokenChangeToFirstToken()
+    }
 
     this.emitUpdate()
   }
