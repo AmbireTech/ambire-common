@@ -8,6 +8,15 @@ export const TREZOR_HD_PATH = BIP44_HD_PATH
 export const TREZOR_PATH_BASE = 'm'
 export const LATTICE_STANDARD_HD_PATH = "m/44'/60'/0'/0/x"
 
+export enum DERIVATION {
+  BIP44 = 'BIP44',
+  BIP39 = 'BIP39'
+}
+
+export const BIP44_LEDGER_LIVE_TEMPLATE = "m/44'/60'/<account>'/0/0"
+export const BIP44_TREZOR_TEMPLATE = "m/44'/60'/0'/0/<account>"
+export const BIP44_LATTICE_TEMPLATE = "m/44'/60'/0'/0/<account>"
+
 export interface HDPath {
   label: string
   path:
