@@ -8,10 +8,11 @@ import WALLETVestings from '../../constants/WALLETVestings.json'
 import { getProvider } from '../../services/provider'
 import useCacheBreak from '../useCacheBreak'
 import usePrevious from '../usePrevious'
+import { RewardsSource } from '../useRewards/types'
 import { UseClaimableWalletTokenProps, UseClaimableWalletTokenReturnType } from './types'
 
 // const supplyControllerAddress = '0xF8cF66BbF7fe152b8177B61855E8be9a6279C8A1' //test polygon
-const supplyControllerAddress = '0x6FDb43bca2D8fe6284242d92620156205d4fA028'
+const supplyControllerAddress = '0xA69B8074CE03A33B13057B1e9D37DCDE0024Aaff'
 const WALLET_STAKING_ADDR = '0x47Cd7E91C3CBaAF266369fe8518345fc4FC12935'
 const supplyControllerInterface = new Interface(WALLETSupplyControllerABI)
 const NETWORK_NAME = NETWORKS.ethereum
@@ -24,12 +25,13 @@ const useClaimableWalletToken = ({
   addRequest,
   totalLifetimeRewards,
   walletUsdPrice,
-  rewardsLastUpdated
+  rewardsLastUpdated,
+  source = RewardsSource.UNSET
 }: UseClaimableWalletTokenProps): UseClaimableWalletTokenReturnType => {
   const prevAccountId = usePrevious(accountId)
   const { cacheBreak: relayerCacheBreak } = useCacheBreak()
   const urlIdentityRewards = relayerURL
-    ? `${relayerURL}/wallet-token/rewards/${accountId}?cacheBreak=${relayerCacheBreak}`
+    ? `${relayerURL}/wallet-token/rewards/${accountId}?cacheBreak=${relayerCacheBreak}&source=${source}`
     : null
 
   const rewardsData = useRelayerData({ url: urlIdentityRewards })
@@ -108,12 +110,18 @@ const useClaimableWalletToken = ({
       // are equal to the current account address.
       // That's how we prevent making RPC calls for the previous selected account
       // and receiving wrong data.
-      const mintableVesting =
-        vestingEntry && vestingEntry.addr.toLowerCase() === accountId.toLowerCase()
-          ? await supplyController
-              .mintableVesting(vestingEntry.addr, vestingEntry.end, vestingEntry.rate)
-              .then(toNum)
-          : null
+
+      let mintableVesting = null
+
+      if (vestingEntry && vestingEntry.addr.toLowerCase() === accountId.toLowerCase()) {
+        try {
+          mintableVesting = await supplyController
+            .mintableVesting(vestingEntry.addr, vestingEntry.end, vestingEntry.rate)
+            .then(toNum)
+        } catch (e) {
+          console.log('mintableVestingErr: ', e)
+        }
+      }
 
       const claimed = claimableRewardsData
         ? await supplyController.claimed(claimableRewardsData.addr).then(toNum)

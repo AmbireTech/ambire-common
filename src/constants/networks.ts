@@ -11,11 +11,14 @@ export enum NETWORKS {
   'kucoin' = 'kucoin',
   'optimism' = 'optimism',
   'andromeda' = 'andromeda',
-  'rinkeby' = 'rinkeby',
-  'mumbai' = 'mumbai',
   'cronos' = 'cronos',
   'aurora' = 'aurora',
-  'ethereum-pow' = 'ethereum-pow'
+  'okc' = 'okc',
+  'base' = 'base',
+  'ethereum-pow' = 'ethereum-pow',
+  'rinkeby' = 'rinkeby',
+  'mumbai' = 'mumbai',
+  'sepolia' = 'sepolia'
 }
 
 export type NetworkId = keyof typeof NETWORKS
@@ -175,7 +178,7 @@ const networks: NetworkType[] = [
     chainId: 100,
     nativeAssetSymbol: 'XDAI',
     name: 'Gnosis Chain',
-    explorerUrl: 'https://blockscout.com',
+    explorerUrl: 'https://gnosisscan.io',
     unstoppableDomainsChain: 'ERC20',
     isGasTankAvailable: true,
     relayerlessOnly: false,
@@ -220,6 +223,22 @@ const networks: NetworkType[] = [
     }
   },
   {
+    id: NETWORKS.base,
+    chainId: 8453,
+    nativeAssetSymbol: 'ETH',
+    name: 'Base',
+    explorerUrl: 'https://basescan.org/',
+    unstoppableDomainsChain: 'ERC20',
+    isGasTankAvailable: true,
+    relayerlessOnly: false,
+    nativeAsset: {
+      address: '0x0000000000000000000000000000000000000000',
+      symbol: 'ETH',
+      coingeckoId: 'ethereum',
+      decimals: 18
+    }
+  },
+  {
     id: NETWORKS.andromeda,
     chainId: 1088,
     nativeAssetSymbol: 'METIS',
@@ -236,7 +255,23 @@ const networks: NetworkType[] = [
     }
   },
   {
-    id: 'rinkeby',
+    id: NETWORKS.okc,
+    chainId: 66,
+    nativeAssetSymbol: 'OTK',
+    name: 'OKX Chain',
+    explorerUrl: 'https://www.oklink.com/en/okc',
+    unstoppableDomainsChain: 'ERC20',
+    isGasTankAvailable: true,
+    relayerlessOnly: false,
+    nativeAsset: {
+      address: '0x0000000000000000000000000000000000000000',
+      symbol: 'OTK',
+      coingeckoId: 'oec-token',
+      decimals: 18
+    }
+  },
+  {
+    id: NETWORKS.rinkeby,
     chainId: 4,
     nativeAssetSymbol: 'ETH',
     name: 'Rinkeby',
@@ -248,7 +283,24 @@ const networks: NetworkType[] = [
     nativeAsset: {
       address: '0x0000000000000000000000000000000000000000',
       symbol: 'ETH',
-      coingeckoId: null,
+      coingeckoId: 'ethereum',
+      decimals: 18
+    }
+  },
+  {
+    id: NETWORKS.sepolia,
+    chainId: 11155111,
+    nativeAssetSymbol: 'ETH',
+    name: 'Sepolia',
+    explorerUrl: 'https://sepolia.etherscan.io/',
+    unstoppableDomainsChain: 'ERC20',
+    hide: true,
+    isGasTankAvailable: false,
+    relayerlessOnly: false,
+    nativeAsset: {
+      address: '0x0000000000000000000000000000000000000000',
+      symbol: 'ETH',
+      coingeckoId: 'ethereum',
       decimals: 18
     }
   },
@@ -265,12 +317,12 @@ const networks: NetworkType[] = [
     nativeAsset: {
       address: '0x0000000000000000000000000000000000000000',
       symbol: 'MATIC',
-      coingeckoId: null,
+      coingeckoId: 'matic-network',
       decimals: 18
     }
   },
   {
-    id: 'ethereum-pow',
+    id: NETWORKS['ethereum-pow'],
     chainId: 10001,
     nativeAssetSymbol: 'ETHW',
     name: 'ETHPoW',
@@ -281,7 +333,7 @@ const networks: NetworkType[] = [
     nativeAsset: {
       address: '0x0000000000000000000000000000000000000000',
       symbol: 'ETH',
-      coingeckoId: null,
+      coingeckoId: 'ethereum-pow-iou',
       decimals: 18
     }
   }
@@ -323,7 +375,8 @@ export const coingeckoNets = {
   cronos: 'cronos',
   aurora: 'aurora',
   optimism: 'optimistic-ethereum',
-  'optimistic-ethereum': 'optimism'
+  'optimistic-ethereum': 'optimism',
+  base: 'base'
 }
 
 export default networks

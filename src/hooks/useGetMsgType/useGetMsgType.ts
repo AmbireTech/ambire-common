@@ -37,6 +37,34 @@ const useGetMsgType = ({ msgToSign }: UseGetMsgTypeProps): UseGetMsgTypeReturnTy
           } catch {
             typeDataErr = '.txn has Invalid TypedData object. Should be {domain, types, message}'
           }
+          try {
+            const primaryType = dataV4.primaryType
+
+            if (primaryType.toLowerCase() === 'permit') {
+              const { message } = dataV4
+              // Based on https://eips.ethereum.org/EIPS/eip-2612
+              const permitTypeKeys = [
+                'owner',
+                'spender',
+                'value',
+                'nonce',
+                'deadline',
+                'expiry', // used before EIP-2612(same as deadline)
+                'allowed'
+              ]
+
+              const isMessageValid = Object.keys(message).every((key) =>
+                permitTypeKeys.includes(key)
+              )
+
+              if (!isMessageValid) {
+                typeDataErr =
+                  "Invalid 'permit' TypedData object. Should be {owner, spender, value, nonce, deadline, expiry, allowed}. See https://eips.ethereum.org/EIPS/eip-2612"
+              }
+            }
+          } catch {
+            typeDataErr = 'Error parsing message.'
+          }
         } else {
           typeDataErr = '.txn should be a TypedData object'
         }

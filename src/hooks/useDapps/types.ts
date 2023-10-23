@@ -1,9 +1,10 @@
-import { AmbireDappManifest } from '../../services/dappCatalog/types'
+import { AmbireDappManifest, ApplicationType } from '../../services/dappCatalog/types'
 import { UseStorageType } from '../useStorage'
 
 export type UseDappsProps = {
   useStorage: UseStorageType
   fetch: any
+  applicationType: ApplicationType
 }
 
 export type DappManifestData = AmbireDappManifest & { custom?: boolean }
