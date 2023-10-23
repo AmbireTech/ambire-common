@@ -69,7 +69,7 @@ export class TransferController extends EventEmitter {
 
   #humanizerInfo: HumanizerInfoType | null = null
 
-  resetForm(params?: { preSelectedToken?: string | null }) {
+  resetForm() {
     this.amount = '0'
     this.maxAmount = '0'
     this.recipientAddress = ''
@@ -82,10 +82,6 @@ export class TransferController extends EventEmitter {
     this.isRecipientSmartContract = false
     this.isSWWarningVisible = false
     this.isSWWarningAgreed = false
-    if (params?.preSelectedToken) this.handleTokenChange(params.preSelectedToken)
-    else {
-      this.#handleTokenChangeToFirstToken()
-    }
 
     this.emitUpdate()
   }
@@ -95,6 +91,8 @@ export class TransferController extends EventEmitter {
     this.tokens = []
     this.#humanizerInfo = null
     this.#selectedAccount = null
+    this.selectedToken = null
+    this.#selectedTokenNetworkData = null
 
     this.emitUpdate()
   }
@@ -155,7 +153,6 @@ export class TransferController extends EventEmitter {
     preSelectedToken,
     humanizerInfo,
     tokens,
-    updateTokensWithoutChangingSelectedToken,
     amount,
     recipientAddress,
     setMaxAmount,
@@ -166,7 +163,6 @@ export class TransferController extends EventEmitter {
     preSelectedToken?: string
     humanizerInfo?: HumanizerInfoType
     tokens?: TokenResult[]
-    updateTokensWithoutChangingSelectedToken?: boolean
     amount?: string
     recipientAddress?: string
     setMaxAmount?: boolean
@@ -182,7 +178,7 @@ export class TransferController extends EventEmitter {
     if (tokens) {
       this.tokens = tokens.filter((token) => token.amount !== 0n)
 
-      if (updateTokensWithoutChangingSelectedToken) return
+      if (this.selectedToken) return
 
       if (preSelectedToken) {
         this.handleTokenChange(preSelectedToken)
