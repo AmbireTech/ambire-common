@@ -314,7 +314,8 @@ export class AccountAdderController extends EventEmitter {
     })
   }
 
-  async addAccounts(accounts: Account[] = []) {
+  // eslint-disable-next-line default-param-last
+  async addAccounts(accounts: (Account & { email?: string })[] = []) {
     if (!this.isInitialized) {
       return this.emitError({
         level: 'major',
@@ -347,19 +348,18 @@ export class AccountAdderController extends EventEmitter {
       .filter((acc) => !isAmbireV1LinkedAccount(acc.creation?.factoryAddr))
 
     if (accountsToAddOnRelayer.length) {
-      const body = accountsToAddOnRelayer.map((acc) => ({
-        addr: acc.addr,
-        associatedKeys: acc.initialPrivileges,
-        creation: {
-          factoryAddr: acc.creation!.factoryAddr,
-          salt: acc.creation!.salt,
-          baseIdentityAddr: PROXY_AMBIRE_ACCOUNT
-        }
-      }))
-
       try {
         const res = await this.#callRelayer('/v2/identity/create-multiple', 'POST', {
-          accounts: body
+          accounts: accountsToAddOnRelayer.map((acc) => ({
+            addr: acc.addr,
+            ...(acc.email ? { email: acc.email } : {}),
+            associatedKeys: acc.initialPrivileges,
+            creation: {
+              factoryAddr: acc.creation!.factoryAddr,
+              salt: acc.creation!.salt,
+              baseIdentityAddr: PROXY_AMBIRE_ACCOUNT
+            }
+          }))
         })
 
         if (!res.success) {
