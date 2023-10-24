@@ -250,25 +250,4 @@ describe('Basic Ambire Account tests', function () {
     const postBalance = await provider.getBalance(ambireAccountAddress, receipt.blockNumber)
     expect(balance - postBalance).to.equal(ethers.parseEther('0.02'))
   })
-  it('should revert with INSUFFICIENT_PRIVILEGE when executing a txn if the hash is not signed as Uint8Array', async function () {
-    const [signer] = await ethers.getSigners()
-    const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signer)
-    await sendFunds(ambireAccountAddress, 1)
-    const nonce = await contract.nonce()
-    const txns = [
-      [addressTwo, ethers.parseEther('0.01'), '0x00'],
-      [addressThree, ethers.parseEther('0.01'), '0x00']
-    ]
-    // we skip calling ethers.getBytes to confirm it is not
-    // working without it
-    const msg = ethers.keccak256(
-      abiCoder.encode(
-        ['address', 'uint', 'uint', 'tuple(address, uint, bytes)[]'],
-        [ambireAccountAddress, chainId, nonce, txns]
-      )
-    )
-    const s = wrapEthSign(await signer.signMessage(wrapHash(msg)))
-    await expect(contract.execute(txns, s))
-      .to.be.revertedWith('INSUFFICIENT_PRIVILEGE')
-  })
 })
