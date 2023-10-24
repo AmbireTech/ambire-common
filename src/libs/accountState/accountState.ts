@@ -1,7 +1,7 @@
 import { Provider } from 'ethers'
 
 import AmbireAccountState from '../../../contracts/compiled/AmbireAccountState.json'
-import { Account, AccountOnchainState, EOANonces } from '../../interfaces/account'
+import { Account, AccountOnchainState } from '../../interfaces/account'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { getAccountDeployParams } from '../account/account'
 import { fromDescriptor } from '../deployless/deployless'
@@ -38,7 +38,7 @@ export async function getAccountState(
     ]
   })
 
-  async function getEOAsNonce(eoaAccounts: any[]): Promise<EOANonces> {
+  async function getEOAsNonce(eoaAccounts: any[]): Promise<{ [addr: string]: number }> {
     const nonces: any = await Promise.all(
       eoaAccounts.map((addr: string) => provider.getTransactionCount(addr))
     )
