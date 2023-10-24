@@ -38,9 +38,28 @@ export async function getAccountState(
     ]
   })
 
-  const [accountStateResult] = await deploylessAccountState.call('getAccountsState', [args], {
-    blockTag
-  })
+  async function getEOAsNonce(eoaAccounts: any[]): Promise<{ [addr: string]: number }> {
+    const nonces: any = await Promise.all(
+      eoaAccounts.map((addr: string) => provider.getTransactionCount(addr))
+    )
+    return Object.assign(
+      {},
+      ...eoaAccounts.map((addr: string, index: string | number) => ({
+        [addr]: BigInt(nonces[index])
+      }))
+    )
+  }
+
+  const [[accountStateResult], eoaNonces] = await Promise.all([
+    deploylessAccountState.call('getAccountsState', [args], {
+      blockTag
+    }),
+    getEOAsNonce(
+      accounts
+        .filter((account) => account.creation?.bytecode === '0x00')
+        .map((account) => account.addr)
+    )
+  ])
 
   const result: AccountOnchainState[] = accountStateResult.map((accResult: any, index: number) => {
     const associatedKeys = accResult.associatedKeyPrivileges.map(
@@ -48,12 +67,14 @@ export async function getAccountState(
         return [args[index][1][keyIndex], privilege]
       }
     )
+
     const res = {
       accountAddr: accounts[index].addr,
       nonce:
-        network?.erc4337?.enabled && accResult.erc4337Nonce < MAX_UINT256
+        eoaNonces[accounts[index].addr] ||
+        (network?.erc4337?.enabled && accResult.erc4337Nonce < MAX_UINT256
           ? accResult.erc4337Nonce
-          : accResult.nonce,
+          : accResult.nonce),
       isDeployed: accResult.isDeployed,
       associatedKeys: Object.fromEntries(associatedKeys),
       isV2: accResult.isV2,
