@@ -1,8 +1,7 @@
 import {
   BIP44_LATTICE_TEMPLATE,
   BIP44_LEDGER_LIVE_TEMPLATE,
-  BIP44_TREZOR_TEMPLATE,
-  DERIVATION
+  BIP44_TREZOR_TEMPLATE
 } from '../consts/derivation'
 import { Account } from './account'
 import { TypedMessage } from './userRequest'
@@ -56,7 +55,6 @@ export type ExternalKey = {
   label: string
   meta: {
     model: string
-    derivation: DERIVATION
     hdPathTemplate:
       | typeof BIP44_LEDGER_LIVE_TEMPLATE
       | typeof BIP44_TREZOR_TEMPLATE
