@@ -547,8 +547,8 @@ export class KeystoreController extends EventEmitter {
     const hash = sha256(toUtf8Bytes(mainPrivateKey + email))
     const seed = entropyToMnemonic(isHexString(hash) ? hash.slice(2) : hash)
 
-    const counter = new aes.Counter(this.#mainKey!.iv)
-    const aesCtr = new aes.ModeOfOperation.ctr(this.#mainKey!.key, counter)
+    const counter = new aes.Counter(this.#mainKey.iv)
+    const aesCtr = new aes.ModeOfOperation.ctr(this.#mainKey.key, counter)
 
     const encryptedSeed = hexlify(aesCtr.encrypt(aes.utils.utf8.toBytes(seed)))
     const nextSeeds = {
@@ -564,8 +564,8 @@ export class KeystoreController extends EventEmitter {
     const seeds = await this.#storage.get('emailVaultSeeds', {})
     if (seeds[email]) throw new Error(`keystore: seed for ${email} is already added`)
 
-    const counter = new aes.Counter(this.#mainKey!.iv)
-    const aesCtr = new aes.ModeOfOperation.ctr(this.#mainKey!.key, counter)
+    const counter = new aes.Counter(this.#mainKey.iv)
+    const aesCtr = new aes.ModeOfOperation.ctr(this.#mainKey.key, counter)
 
     const encryptedSeed = hexlify(aesCtr.encrypt(aes.utils.utf8.toBytes(seed)))
     const nextSeeds = {
