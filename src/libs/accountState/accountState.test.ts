@@ -43,6 +43,18 @@ describe('AccountState', () => {
       }
     }
 
+    const accountEOANonceNonZero = {
+      addr: '0xf5ffA17725754dC00adB255fF296E4177B0982c7',
+      label: '',
+      pfp: '',
+      associatedKeys: [],
+      creation: {
+        factoryAddr: '0x0000000000000000000000000000000000000000',
+        bytecode: '0x00',
+        salt: '0x0'
+      }
+    }
+
     const signerAddr = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
     const priv = { addr: signerAddr, hash: true }
     const bytecode = await getBytecode(polygon, [priv])
@@ -91,9 +103,17 @@ describe('AccountState', () => {
       }
     }
 
-    const accounts = [account, accountNotDeployed, accountEOA, account4337, accountErc4337]
+    const accounts = [
+      account,
+      accountNotDeployed,
+      accountEOA,
+      account4337,
+      accountErc4337,
+      accountEOANonceNonZero
+    ]
     const state: any = await getAccountState(provider, polygon, accounts)
-    expect(state.length).toBe(5)
+
+    expect(state.length).toBe(6)
 
     const v1Acc = state[0]
     expect(v1Acc.isEOA).toBe(false)
@@ -118,5 +138,9 @@ describe('AccountState', () => {
     expect(acc4337deployed.associatedKeys[ERC_4337_ENTRYPOINT]).toBe(
       '0x42144640c7cb5ff8aa9595ae175ffcb6dd152db6e737c13cc2d5d07576967020'
     )
+
+    const accEOANonZero = state[5]
+    expect(accEOANonZero.isEOA).toBe(true)
+    expect(accEOANonZero.nonce).toBeGreaterThan(0n)
   })
 })

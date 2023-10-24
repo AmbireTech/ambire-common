@@ -20,6 +20,10 @@ export interface AccountCreation {
   // and because it can be retrieved from the bytecode
 }
 
+export interface EOANonces {
+  [addr: string]: number
+}
+
 export interface AccountOnchainState {
   accountAddr: string
   isDeployed: boolean
