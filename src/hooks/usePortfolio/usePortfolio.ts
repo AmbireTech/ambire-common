@@ -167,6 +167,11 @@ export default function usePortfolio({
     filterByHiddenTokens
   )
 
+  const loadBalance = async () => {
+    if (!account || isInitializing) return
+    await fetchTokens(account, currentNetwork, false, currentAssets)
+  }
+
   // Fetch tokens:
   // 1. After initialization
   // 2. On Network and account change
@@ -177,12 +182,7 @@ export default function usePortfolio({
     if (currentAssetsRef.current?.loading || fetchingAssetsRef.current?.velcro) return
 
     fetchTokens(account, currentNetwork, false, currentAssetsRef.current)
-  }, [
-    isInitializing,
-    account,
-    currentNetwork,
-    fetchTokens
-  ])
+  }, [isInitializing, account, currentNetwork, fetchTokens])
 
   // Fetch other network balances:
   // 1. After initialization
@@ -191,10 +191,7 @@ export default function usePortfolio({
     if (!account || isInitializing) return
 
     fetchOtherNetworksBalances(account, assetsRef.current)
-  }, [
-    account,
-    isInitializing
-  ])
+  }, [account, isInitializing])
 
   // Refresh balance every 90s if visible
   // NOTE: this must be synced (a multiple of) supplementing, otherwise we can end up with weird inconsistencies
@@ -228,13 +225,7 @@ export default function usePortfolio({
     const refreshInterval = setInterval(refreshIfHidden, 150000)
     return () => clearInterval(refreshInterval)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    account,
-    currentNetwork,
-    isVisible,
-    isInitializing,
-    fetchTokens
-  ])
+  }, [account, currentNetwork, isVisible, isInitializing, fetchTokens])
 
   const refreshPricesAndBalance = useCallback(() => {
     updateCoingeckoAndSupplementData(currentAssets, false, requestPendingState)
