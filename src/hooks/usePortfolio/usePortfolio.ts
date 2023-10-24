@@ -153,6 +153,7 @@ export default function usePortfolio({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     account,
+    currentAssets,
     currentNetwork,
     isVisible,
     isInitializing,
