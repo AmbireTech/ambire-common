@@ -184,18 +184,26 @@ describe('Main Controller ', () => {
       }
     }
 
+    const addAccounts = () => {
+      const keyIterator = new KeyIterator(
+        '0x574f261b776b26b1ad75a991173d0e8ca2ca1d481bd7822b2b58b2ef8a969f12'
+      )
+      controller.accountAdder.init({ keyIterator, preselectedAccounts: [] })
+      controller.accountAdder.addAccounts([accountPendingCreation]).catch(console.error)
+    }
+
     let emitCounter = 0
+
+    if (controller.isReady) {
+      addAccounts()
+      emitCounter++
+    }
+
     await new Promise((resolve) => {
       const unsubscribe = controller.onUpdate(() => {
         emitCounter++
 
-        if (emitCounter === 1 && controller.isReady) {
-          const keyIterator = new KeyIterator(
-            '0x574f261b776b26b1ad75a991173d0e8ca2ca1d481bd7822b2b58b2ef8a969f12'
-          )
-          controller.accountAdder.init({ keyIterator, preselectedAccounts: [] })
-          controller.accountAdder.addAccounts([accountPendingCreation]).catch(console.error)
-        }
+        if (emitCounter === 1 && controller.isReady) addAccounts()
 
         if (emitCounter === 2) {
           expect(controller.accounts).toContainEqual(accountPendingCreation)
