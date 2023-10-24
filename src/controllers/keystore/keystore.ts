@@ -541,7 +541,7 @@ export class KeystoreController extends EventEmitter {
     return new SignerInitializer(key)
   }
 
-  deriveEmailVaultSeed(mainPrivateKey: string, email: string) {
+  generateEmailVaultSeed(mainPrivateKey: string, email: string) {
     const combinedData = mainPrivateKey + email
 
     const hash = sha256(toUtf8Bytes(combinedData))
@@ -551,7 +551,7 @@ export class KeystoreController extends EventEmitter {
     return seedPhrase
   }
 
-  getEmailAccountKey(seed: string, index: number): HDNodeWallet {
+  deriveEmailAccountKey(seed: string, index: number): HDNodeWallet {
     const emailVaultAccountDerivation = BIP44_HD_PATH
     const mnemonic = Mnemonic.fromPhrase(seed)
     const wallet = HDNodeWallet.fromMnemonic(mnemonic, emailVaultAccountDerivation)
