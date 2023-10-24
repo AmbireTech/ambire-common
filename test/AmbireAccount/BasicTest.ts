@@ -11,7 +11,7 @@ import {
   expect
 } from '../config'
 import { sendFunds, getPriviledgeTxn, getTimelockData } from '../helpers'
-import { wrapEthSign, wrapEthSignAmbirePrefix } from '../ambireSign'
+import { wrapEthSign, wrapHash } from '../ambireSign'
 import { deployAmbireAccountHardhatNetwork } from '../implementations'
 
 let ambireAccountAddress: string
@@ -62,7 +62,7 @@ describe('Basic Ambire Account tests', function () {
         )
       )
     )
-    const s = wrapEthSign(await signer2.signMessage(msg))
+    const s = wrapEthSign(await signer2.signMessage(wrapHash(msg)))
     await expect(contract.execute(normalTxns, s))
       .to.be.revertedWith('INSUFFICIENT_PRIVILEGE')
   })
@@ -79,7 +79,7 @@ describe('Basic Ambire Account tests', function () {
         )
       )
     )
-    const s = wrapEthSign(await signer.signMessage(msg))
+    const s = wrapEthSign(await signer.signMessage(wrapHash(msg)))
     await expect(contract.execute(txns, s))
       .to.be.revertedWith('PRIVILEGE_NOT_DOWNGRADED')
   })
@@ -183,7 +183,7 @@ describe('Basic Ambire Account tests', function () {
         )
       )
     )
-    const s = wrapEthSign(await signer.signMessage(msg))
+    const s = wrapEthSign(await signer.signMessage(wrapHash(msg)))
     const secondBatch = [
       [addressOne, ethers.parseEther('0.01'), '0x00'],
       [addressFour, ethers.parseEther('0.01'), '0x00']
@@ -196,7 +196,7 @@ describe('Basic Ambire Account tests', function () {
         )
       )
     )
-    const s2 = wrapEthSign(await signer.signMessage(msg2))
+    const s2 = wrapEthSign(await signer.signMessage(wrapHash(msg2)))
     const balance = await provider.getBalance(ambireAccountAddress)
     const multipleTxn = await contract.executeMultiple([
       [firstBatch, s],
@@ -223,7 +223,7 @@ describe('Basic Ambire Account tests', function () {
         )
       )
     )
-    const s = wrapEthSign(await signer.signMessage(msg))
+    const s = wrapEthSign(await signer.signMessage(wrapHash(msg)))
     await contract.execute(txns, s)
     const nonceAfterExecute = await contract.nonce()
     expect(nonceAfterExecute).to.equal(nonce + 1n)
@@ -243,7 +243,7 @@ describe('Basic Ambire Account tests', function () {
         [ambireAccountAddress, chainId, nonce, txns]
       )
     ))
-    const s = wrapEthSign(await signer.signMessage(msg))
+    const s = wrapEthSign(await signer.signMessage(wrapHash(msg)))
     const balance = await provider.getBalance(ambireAccountAddress)
     const txn = await contract.execute(txns, s)
     const receipt = await txn.wait()
@@ -267,32 +267,8 @@ describe('Basic Ambire Account tests', function () {
         [ambireAccountAddress, chainId, nonce, txns]
       )
     )
-    const s = wrapEthSign(await signer.signMessage(msg))
+    const s = wrapEthSign(await signer.signMessage(wrapHash(msg)))
     await expect(contract.execute(txns, s))
       .to.be.revertedWith('INSUFFICIENT_PRIVILEGE')
-  })
-  it('should sign with EthSignAmbirePrefix successfully', async function () {
-    const [signer] = await ethers.getSigners()
-    const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signer)
-    await sendFunds(ambireAccountAddress, 1)
-    const nonce = await contract.nonce()
-    const txns = [
-      [addressTwo, ethers.parseEther('0.01'), '0x00'],
-      [addressThree, ethers.parseEther('0.01'), '0x00']
-    ]
-    const hashedMsg = ethers.getBytes(ethers.keccak256(
-      abiCoder.encode(
-        ['address', 'uint', 'uint', 'tuple(address, uint, bytes)[]'],
-        [ambireAccountAddress, chainId, nonce, txns]
-      )
-    ))
-    const addon = ethers.toUtf8Bytes('Signing Ambire interaction: ')
-    const merged = new Uint8Array(hashedMsg.length + addon.length);
-    merged.set(addon);
-    merged.set(hashedMsg, addon.length);
-    const s = wrapEthSignAmbirePrefix(await signer.signMessage(merged))
-    await contract.execute(txns, s)
-    const nonceAfterExecute = await contract.nonce()
-    expect(nonceAfterExecute).to.equal(nonce + 1n)
   })
 })
