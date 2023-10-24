@@ -1,14 +1,29 @@
+/* eslint-disable class-methods-use-this */
 /* eslint-disable new-cap */
 import aes from 'aes-js'
-import { concat, getBytes, hexlify, keccak256, randomBytes, toUtf8Bytes, Wallet } from 'ethers'
-import scrypt from 'scrypt-js'
-
+import bip39 from 'bip39'
+import { BIP44_HD_PATH } from 'consts/derivation'
 import {
+  decryptWithPrivateKey,
   Encrypted,
   encryptWithPublicKey,
-  decryptWithPrivateKey,
   publicKeyByPrivateKey
 } from 'eth-crypto'
+import {
+  concat,
+  getBytes,
+  HDNodeWallet,
+  hexlify,
+  isHexString,
+  keccak256,
+  Mnemonic,
+  randomBytes,
+  sha256,
+  toUtf8Bytes,
+  Wallet
+} from 'ethers'
+import scrypt from 'scrypt-js'
+
 import {
   Key,
   KeystoreSignerType,
@@ -524,6 +539,23 @@ export class KeystoreController extends EventEmitter {
     }
 
     return new SignerInitializer(key)
+  }
+
+  deriveEmailVaultSeed(mainPrivateKey: string, email: string) {
+    const combinedData = mainPrivateKey + email
+
+    const hash = sha256(toUtf8Bytes(combinedData))
+    // Generate a seed phrase from the hash
+    const seedPhrase = bip39.entropyToMnemonic(isHexString(hash) ? hash.slice(2) : hash)
+
+    return seedPhrase
+  }
+
+  getEmailAccountKey(seed: string, index: number): HDNodeWallet {
+    const emailVaultAccountDerivation = BIP44_HD_PATH
+    const mnemonic = Mnemonic.fromPhrase(seed)
+    const wallet = HDNodeWallet.fromMnemonic(mnemonic, emailVaultAccountDerivation)
+    return wallet.deriveChild(index)
   }
 
   resetErrorState() {
