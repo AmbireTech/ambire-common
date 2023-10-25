@@ -10,7 +10,7 @@ import {
   buildInfo,
   addressFour
 } from '../config'
-import { wrapEthSign } from '../ambireSign'
+import { wrapEthSign, wrapHash } from '../ambireSign'
 import {
   getProxyDeployBytecode,
   getStorageSlotsFromArtifact
@@ -69,7 +69,7 @@ describe('AmbireAccountFactory tests', function () {
         )
       )
     )
-    const s = wrapEthSign(await signer2.signMessage(msg))
+    const s = wrapEthSign(await signer2.signMessage(wrapHash(msg)))
 
     await factoryContract.deployAndExecute(
       bytecode,
@@ -111,7 +111,7 @@ describe('AmbireAccountFactory tests', function () {
         )
       )
     )
-    const s = wrapEthSign(await signer2.signMessage(msg))
+    const s = wrapEthSign(await signer2.signMessage(wrapHash(msg)))
     await factoryContract.deployAndExecute(
       dummyBytecode,
       deploySalt,

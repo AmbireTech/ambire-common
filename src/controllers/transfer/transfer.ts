@@ -82,7 +82,6 @@ export class TransferController extends EventEmitter {
     this.isRecipientSmartContract = false
     this.isSWWarningVisible = false
     this.isSWWarningAgreed = false
-    this.#handleTokenChangeToFirstToken()
 
     this.emitUpdate()
   }
@@ -92,6 +91,8 @@ export class TransferController extends EventEmitter {
     this.tokens = []
     this.#humanizerInfo = null
     this.#selectedAccount = null
+    this.selectedToken = null
+    this.#selectedTokenNetworkData = null
 
     this.emitUpdate()
   }
@@ -176,6 +177,8 @@ export class TransferController extends EventEmitter {
     }
     if (tokens) {
       this.tokens = tokens.filter((token) => token.amount !== 0n)
+
+      if (this.selectedToken) return
 
       if (preSelectedToken) {
         this.handleTokenChange(preSelectedToken)
