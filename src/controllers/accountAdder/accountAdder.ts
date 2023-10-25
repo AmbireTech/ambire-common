@@ -1,8 +1,7 @@
 import { ethers, JsonRpcProvider } from 'ethers'
 
-import { ExternalKey } from '@ambire-common/interfaces/keystore'
-
 import { PROXY_AMBIRE_ACCOUNT } from '../../../dist/src/consts/deploy'
+import { HD_PATH_TEMPLATE_TYPE } from '../../consts/derivation'
 import { Account, AccountOnchainState } from '../../interfaces/account'
 import { KeyIterator } from '../../interfaces/keyIterator'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
@@ -38,8 +37,7 @@ export class AccountAdderController extends EventEmitter {
 
   #keyIterator?: KeyIterator | null
 
-  // optional because there is default HD path (derivation) for each keyIterator
-  hdPathTemplate?: ExternalKey['meta']['hdPathTemplate']
+  hdPathTemplate?: HD_PATH_TEMPLATE_TYPE
 
   isInitialized: boolean = false
 
@@ -176,7 +174,7 @@ export class AccountAdderController extends EventEmitter {
     preselectedAccounts: Account[]
     page?: number
     pageSize?: number
-    hdPathTemplate?: ExternalKey['meta']['hdPathTemplate']
+    hdPathTemplate: HD_PATH_TEMPLATE_TYPE
   }): void {
     this.#keyIterator = keyIterator
     this.preselectedAccounts = preselectedAccounts
@@ -208,7 +206,7 @@ export class AccountAdderController extends EventEmitter {
     networks,
     providers
   }: {
-    path: ExternalKey['meta']['hdPathTemplate']
+    path: HD_PATH_TEMPLATE_TYPE
     networks: NetworkDescriptor[]
     providers: { [key: string]: JsonRpcProvider }
   }): void {

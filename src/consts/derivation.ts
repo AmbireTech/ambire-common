@@ -1,6 +1,3 @@
-// The "standard" default one for many, including MetaMask
-export const BIP44_HD_PATH = "m/44'/60'/0'/0"
-
 /**
  * BIP44 as everyone implements it (MetaMask, Trezor, Lattice, EthersJS),
  * iterating over the `address_index` path out of the 5 levels in BIP44:
@@ -22,12 +19,15 @@ export const BIP44_LEDGER_DERIVATION_TEMPLATE = "m/44'/60'/<account>'/0/0"
  */
 export const LEGACY_POPULAR_DERIVATION_TEMPLATE = "m/44'/60'/0'/<account>"
 
+// eslint-disable-next-line @typescript-eslint/naming-convention
+export type HD_PATH_TEMPLATE_TYPE =
+  | typeof BIP44_STANDARD_DERIVATION_TEMPLATE
+  | typeof BIP44_LEDGER_DERIVATION_TEMPLATE
+  | typeof LEGACY_POPULAR_DERIVATION_TEMPLATE
+
 export interface HDPath {
   label: string
-  path:
-    | typeof BIP44_STANDARD_DERIVATION_TEMPLATE
-    | typeof BIP44_LEDGER_DERIVATION_TEMPLATE
-    | typeof LEGACY_POPULAR_DERIVATION_TEMPLATE
+  path: HD_PATH_TEMPLATE_TYPE
 }
 
 export const HD_PATHS: HDPath[] = [

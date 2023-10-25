@@ -1,9 +1,5 @@
-import { ExternalKey } from './keystore'
+import { HD_PATH_TEMPLATE_TYPE } from '../consts/derivation'
 
 export interface KeyIterator {
-  retrieve: (
-    from: number,
-    to: number,
-    derivation?: ExternalKey['meta']['hdPathTemplate']
-  ) => Promise<string[]>
+  retrieve: (from: number, to: number, derivation?: HD_PATH_TEMPLATE_TYPE) => Promise<string[]>
 }

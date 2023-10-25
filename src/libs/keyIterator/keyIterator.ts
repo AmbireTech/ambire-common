@@ -1,8 +1,9 @@
 /* eslint-disable new-cap */
 import { HDNodeWallet, Mnemonic, Wallet } from 'ethers'
 
-import { BIP44_HD_PATH } from '../../consts/derivation'
+import { HD_PATH_TEMPLATE_TYPE } from '../../consts/derivation'
 import { KeyIterator as KeyIteratorInterface } from '../../interfaces/keyIterator'
+import { getHdPathFromTemplate } from '../../utils/hdPath'
 
 // DOCS
 // - Serves for retrieving a range of addresses/keys from a given private key or seed phrase
@@ -40,8 +41,8 @@ export class KeyIterator implements KeyIteratorInterface {
     throw new Error('keyIterator: invalid argument provided to constructor')
   }
 
-  async retrieve(from: number, to: number, derivation: string = BIP44_HD_PATH) {
-    if ((!from && from !== 0) || (!to && to !== 0) || !derivation)
+  async retrieve(from: number, to: number, hdPathTemplate?: HD_PATH_TEMPLATE_TYPE) {
+    if ((!from && from !== 0) || (!to && to !== 0) || !hdPathTemplate)
       throw new Error('keyIterator: invalid or missing arguments')
 
     const keys: string[] = []
@@ -52,7 +53,7 @@ export class KeyIterator implements KeyIteratorInterface {
 
     if (this.#seedPhrase) {
       const mnemonic = Mnemonic.fromPhrase(this.#seedPhrase)
-      const wallet = HDNodeWallet.fromMnemonic(mnemonic, derivation)
+      const wallet = HDNodeWallet.fromMnemonic(mnemonic, getHdPathFromTemplate(hdPathTemplate, 0))
 
       for (let i = from; i <= to; i++) {
         keys.push(wallet.deriveChild(i).address)

@@ -1,17 +1,11 @@
-import { ExternalKey } from '../interfaces/keystore'
+import { HD_PATH_TEMPLATE_TYPE } from '../consts/derivation'
 
-export const getHdPathFromTemplate = (
-  hdPathTemplate: ExternalKey['meta']['hdPathTemplate'],
-  index: number
-) => {
+export const getHdPathFromTemplate = (hdPathTemplate: HD_PATH_TEMPLATE_TYPE, index: number) => {
   return hdPathTemplate.replace('<account>', index.toString())
 }
 
 const HARDENED_OFFSET = 0x80000000
-export const getHDPathIndices = (
-  hdPathTemplate: ExternalKey['meta']['hdPathTemplate'],
-  insertIdx = 0
-) => {
+export const getHDPathIndices = (hdPathTemplate: HD_PATH_TEMPLATE_TYPE, insertIdx = 0) => {
   const path = hdPathTemplate.split('/').slice(1)
   const indices = []
   let usedX = false
