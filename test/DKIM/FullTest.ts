@@ -10,7 +10,7 @@ import path from 'path'
 import parseEmail from '../../src/libs/dkim/parseEmail'
 import { getDKIMValidatorData, getPriviledgeTxn, getPriviledgeTxnWithCustomHash, getSignerKey } from '../helpers'
 import { deployAmbireAccountHardhatNetwork } from '../implementations'
-import { wrapEthSign, wrapExternallyValidated } from '../ambireSign'
+import { wrapEthSign, wrapExternallyValidated, wrapHash } from '../ambireSign'
 const readFile = promisify(fs.readFile)
 const emailsPath = path.join(__dirname, 'emails')
 
@@ -142,7 +142,7 @@ describe('DKIM Bridge + unknown selector DKIM verification', function () {
         identifierData,
         sigMetaValues
     ]))
-    const secondSig = wrapEthSign(await relayer.signMessage(ethers.getBytes(identifier)))
+    const secondSig = wrapEthSign(await relayer.signMessage(wrapHash(ethers.getBytes(identifier))))
     const innerSig = abiCoder.encode([sigMetaTuple, 'bytes', 'bytes'], [
       sigMetaValues,
       dkimSig,
