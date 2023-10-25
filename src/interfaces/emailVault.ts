@@ -14,11 +14,7 @@ export interface EmailVaultSecret {
 
 export interface EmailVaultAccountInfo {
   addr: AccountId
-  associatedKeys: {
-    [network: string]: {
-      [key: string]: string
-    }
-  }
+  associatedKeys: string[]
   creation: AccountCreation | null
 }
 

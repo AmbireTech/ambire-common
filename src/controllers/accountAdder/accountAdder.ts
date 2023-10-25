@@ -424,7 +424,7 @@ export class AccountAdderController extends EventEmitter {
       keyPublicAddress
     )
 
-    await this.addAccounts([emailSmartAccount])
+    await this.addAccounts([{ ...emailSmartAccount, email }])
   }
 
   // updates the account adder state so the main ctrl receives the readyToAddAccounts
