@@ -1,3 +1,6 @@
-import { UpdateOptions, UpdateOptionsSimulation, Portfolio } from './portfolio'
-import { Price, Collectible, TokenResult, CollectionResult } from './interfaces'
-export { UpdateOptions, UpdateOptionsSimulation, Portfolio, Price, Collectible, TokenResult, CollectionResult }
+import { Collectible, CollectionResult, Price, TokenResult } from './interfaces'
+import { Portfolio } from './portfolio'
+
+export { Portfolio }
+
+export type { Price, Collectible, TokenResult, CollectionResult }

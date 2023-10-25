@@ -217,8 +217,9 @@ library Strings {
             if (a != b) {
                 // Mask out irrelevant bytes and check again
                 uint mask = type(uint).max; // 0xffff...
-                if(shortest < 32) {
-                  mask = ~(2 ** (8 * (32 - shortest + idx)) - 1);
+                uint remainder = shortest % 32;
+                if (idx + 32 >= shortest && remainder > 0) {
+                  mask = ~(2 ** (8 * (32 - remainder)) - 1);
                 }
                 unchecked {
                     uint diff = (a & mask) - (b & mask);

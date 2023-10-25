@@ -2,7 +2,7 @@ import { ethers } from 'hardhat'
 import { expect, provider } from '../config'
 import { buildUserOp, getPriviledgeTxnWithCustomHash } from '../helpers'
 import { deployAmbireAccountHardhatNetwork } from '../implementations'
-import { wrapEthSign } from '../ambireSign'
+import { wrapEthSign, wrapHash } from '../ambireSign'
 
 const ENTRY_POINT_PRIV = '0x0000000000000000000000000000000000000000000000000000000000007171'
 let paymaster: any
@@ -10,7 +10,7 @@ let ambireAccount: any
 let entryPoint: any
 let ambireAccountAddress: any
 
-describe('Basic Ambire Paymaster tests', function () {
+describe('Send User Operation Tests', function () {
   before('successfully deploys the contracts', async function () {
     const [relayer] = await ethers.getSigners()
     paymaster = await ethers.deployContract('AmbirePaymaster', [relayer.address])
@@ -36,13 +36,13 @@ describe('Basic Ambire Paymaster tests', function () {
     const [relayer] = await ethers.getSigners()
     const latestBlock = await provider.getBlock('latest')
     const timestamp = latestBlock?.timestamp || 0
-    const userOp = await buildUserOp(paymaster, {
+    const userOp = await buildUserOp(paymaster, await entryPoint.getAddress(), {
       sender: ambireAccountAddress,
       userOpNonce: await entryPoint.getNonce(...[ambireAccountAddress, 0]),
       validUntil: timestamp + 60
     })
     const signature = wrapEthSign(await relayer.signMessage(
-      ethers.getBytes(await entryPoint.getUserOpHash(userOp))
+      wrapHash(ethers.getBytes(await entryPoint.getUserOpHash(userOp)))
     ))
     userOp.signature = signature
     await entryPoint.handleOps([userOp], relayer)
@@ -51,13 +51,13 @@ describe('Basic Ambire Paymaster tests', function () {
     const [relayer] = await ethers.getSigners()
     const latestBlock = await provider.getBlock('latest')
     const timestamp = latestBlock?.timestamp || 0
-    const userOp = await buildUserOp(paymaster, {
+    const userOp = await buildUserOp(paymaster, await entryPoint.getAddress(), {
       sender: ambireAccountAddress,
       userOpNonce: await entryPoint.getNonce(...[ambireAccountAddress, 0]),
       validUntil: timestamp - 60
     })
     const signature = wrapEthSign(await relayer.signMessage(
-      ethers.getBytes(await entryPoint.getUserOpHash(userOp))
+      wrapHash(ethers.getBytes(await entryPoint.getUserOpHash(userOp)))
     ))
     userOp.signature = signature
     await expect(entryPoint.handleOps([userOp], relayer))

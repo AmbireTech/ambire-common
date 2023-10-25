@@ -1,5 +1,5 @@
 import { ethers } from 'hardhat'
-import { wrapEthSign } from '../../test/ambireSign'
+import { wrapEthSign, wrapHash } from '../../test/ambireSign'
 import { PrivLevels, getProxyDeployBytecode, getStorageSlotsFromArtifact } from '../../src/libs/proxyDeploy/deploy'
 import { BaseContract } from 'ethers'
 import { abiCoder, expect, provider } from '../config'
@@ -66,14 +66,14 @@ describe('ERC-4337 deploys the account via userOp and adds the entry point permi
         )
       )
     )
-    const s = wrapEthSign(await signer.signMessage(msg))
+    const s = wrapEthSign(await signer.signMessage(wrapHash(msg)))
     const initCode = ethers.hexlify(ethers.concat([
       await factory.getAddress(),
       getDeployCalldata(bytecodeWithArgs)
     ]))
 
     const callData = proxy.interface.encodeFunctionData('executeMultiple', [[[[txn], s]]])
-    const userOperation = await buildUserOp(paymaster, {
+    const userOperation = await buildUserOp(paymaster, await entryPoint.getAddress(), {
       sender: senderAddress,
       signedNonce: ethers.toBeHex(0, 1),
       initCode,
@@ -85,13 +85,13 @@ describe('ERC-4337 deploys the account via userOp and adds the entry point permi
     // confirm everything is set by sending an userOp through the entry point
     // with a normal paymaster signature
     const nextTxn = [senderAddress, 0, '0x68656c6c6f']
-    const userOperation2 = await buildUserOp(paymaster, {
+    const userOperation2 = await buildUserOp(paymaster, await entryPoint.getAddress(), {
       sender: senderAddress,
       userOpNonce: ethers.toBeHex(await entryPoint.getNonce(senderAddress, 0), 1),
       callData: proxy.interface.encodeFunctionData('executeBySender', [[nextTxn]]),
     })
     const signature = wrapEthSign(await signer.signMessage(
-      ethers.getBytes(await entryPoint.getUserOpHash(userOperation2))
+      wrapHash(ethers.getBytes(await entryPoint.getUserOpHash(userOperation2)))
     ))
     userOperation2.signature = signature
     await entryPoint.handleOps([userOperation2], relayer)
@@ -121,7 +121,7 @@ describe('ERC-4337 deploys the account via userOp and adds the entry point permi
       signature: '0x'
     }
     const sig = wrapEthSign(await signer.signMessage(
-      ethers.getBytes(await entryPoint.getUserOpHash(userOperation3))
+      wrapHash(ethers.getBytes(await entryPoint.getUserOpHash(userOperation3)))
     ))
     userOperation3.signature = sig
     await entryPoint.handleOps([userOperation3], relayer)
@@ -148,7 +148,7 @@ describe('ERC-4337 deploys the account via userOp and adds the entry point permi
       signature: '0x'
     }
     const sigLatest = wrapEthSign(await signer.signMessage(
-      ethers.getBytes(await entryPoint.getUserOpHash(userOperation4))
+      wrapHash(ethers.getBytes(await entryPoint.getUserOpHash(userOperation4)))  
     ))
     userOperation4.signature = sigLatest
     await entryPoint.handleOps([userOperation4], relayer)

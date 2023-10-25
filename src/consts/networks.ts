@@ -10,7 +10,8 @@ const networks: NetworkDescriptor[] = [
     rpcNoStateOverride: false,
     chainId: 1n,
     explorerUrl: 'https://etherscan.io',
-    erc4337: null
+    erc4337: null,
+    unstoppableDomainsChain: 'ERC20'
   },
   {
     id: 'polygon',
@@ -25,7 +26,8 @@ const networks: NetworkDescriptor[] = [
       enabled: false,
       entryPointAddr: ERC_4337_ENTRYPOINT,
       entryPointMarker: ENTRY_POINT_MARKER
-    }
+    },
+    unstoppableDomainsChain: 'MATIC'
   },
   {
     id: 'optimism',
@@ -39,7 +41,8 @@ const networks: NetworkDescriptor[] = [
       enabled: true,
       entryPointAddr: ERC_4337_ENTRYPOINT,
       entryPointMarker: ENTRY_POINT_MARKER
-    }
+    },
+    unstoppableDomainsChain: 'ERC20'
   }
   // This breaks the background service of the extension
   // {

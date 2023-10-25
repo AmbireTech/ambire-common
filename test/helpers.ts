@@ -3,7 +3,7 @@ import { ethers } from 'hardhat'
 
 import { Storage } from '../src/interfaces/storage'
 import { parse, stringify } from '../src/libs/bigintJson/bigintJson'
-import { wrapEthSign } from './ambireSign'
+import { wrapEthSign, wrapHash } from './ambireSign'
 import { abiCoder, addressOne, addressTwo, AmbireAccount } from './config'
 
 async function sendFunds(to: string, ether: number) {
@@ -119,7 +119,7 @@ function produceMemoryStore(): Storage {
   }
 }
 
-async function buildUserOp(paymaster: BaseContract, options: any = {}) {
+async function buildUserOp(paymaster: BaseContract, entryPointAddr: string, options: any = {}) {
   const [relayer, sender] = await ethers.getSigners()
 
   const userOp = {
@@ -142,6 +142,7 @@ async function buildUserOp(paymaster: BaseContract, options: any = {}) {
       [
         'uint256',
         'address',
+        'address',
         'uint48',
         'uint48',
         'address',
@@ -157,6 +158,7 @@ async function buildUserOp(paymaster: BaseContract, options: any = {}) {
       [
         options.chainId ?? 31337,
         await paymaster.getAddress(),
+        entryPointAddr,
         validUntil,
         validAfter,
         userOp.sender,
@@ -171,7 +173,7 @@ async function buildUserOp(paymaster: BaseContract, options: any = {}) {
       ]
     )
   )
-  const signature = wrapEthSign(await relayer.signMessage(ethers.getBytes(hash)))
+  const signature = wrapEthSign(await relayer.signMessage(wrapHash(ethers.getBytes(hash))))
 
   // abi.decode(userOp.paymasterAndData[20:], (uint48, uint48, bytes))
   const paymasterData = abiCoder.encode(

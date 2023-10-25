@@ -1,3 +1,6 @@
+/* eslint-disable import/no-extraneous-dependencies */
+/* eslint-disable no-param-reassign */
+/* eslint-disable no-restricted-syntax */
 import { JsonRpcProvider } from 'ethers'
 import fetch from 'node-fetch'
 
@@ -16,6 +19,27 @@ import {
 import { GetOptions, Portfolio } from '../../libs/portfolio/portfolio'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import EventEmitter from '../eventEmitter'
+
+// We already know that `results.tokens` and `result.collections` tokens have a balance (this is handled by the portfolio lib).
+// Based on that, we can easily find out which hint tokens also have a balance.
+function getHintsWithBalance(result: PortfolioGetResult): {
+  erc20s: Hints['erc20s']
+  erc721s: Hints['erc721s']
+} {
+  const erc20s = result.tokens.map((token) => token.address)
+
+  const erc721s = Object.fromEntries(
+    result.collections.map((collection) => [
+      collection.address,
+      result.hints.erc721s[collection.address]
+    ])
+  )
+
+  return {
+    erc20s,
+    erc721s
+  }
+}
 
 export class PortfolioController extends EventEmitter {
   latest: PortfolioControllerState
@@ -48,11 +72,12 @@ export class PortfolioController extends EventEmitter {
     const accountState = this.latest[accountId] as AdditionalAccountState
     if (!accountState[network]) accountState[network] = { errors: [], isReady: false, isLoading }
     accountState[network]!.isLoading = isLoading
-    if (error !== null) {
+    if (!error) {
       if (!accountState[network]!.isReady) accountState[network]!.criticalError = error
       else accountState[network]!.errors.push(error)
     }
   }
+
   async getAdditionalPortfolio(accountId: AccountId) {
     if (!this.latest[accountId]) this.latest[accountId] = {}
     const start = Date.now()
@@ -168,18 +193,18 @@ export class PortfolioController extends EventEmitter {
     const pendingState = this.pending[accountId]
 
     const updatePortfolioState = async (
-      accountState: AccountState,
+      _accountState: AccountState,
       network: NetworkDescriptor,
       portfolioLib: Portfolio,
       portfolioProps: Partial<GetOptions>,
       forceUpdate: boolean
     ): Promise<boolean> => {
-      if (!accountState[network.id]) {
-        accountState[network.id] = { isReady: false, isLoading: false, errors: [] }
+      if (!_accountState[network.id]) {
+        _accountState[network.id] = { isReady: false, isLoading: false, errors: [] }
         this.emitUpdate()
       }
 
-      const state = accountState[network.id]!
+      const state = _accountState[network.id]!
 
       // When the portfolio was called lastly
       const lastUpdateStartedAt = state.result?.updateStarted
@@ -202,7 +227,7 @@ export class PortfolioController extends EventEmitter {
           priceCache: state.result?.priceCache,
           ...portfolioProps
         })
-        accountState[network.id] = { isReady: true, isLoading: false, errors: [], result }
+        _accountState[network.id] = { isReady: true, isLoading: false, errors: [], result }
         this.emitUpdate()
         return true
       } catch (e: any) {
@@ -232,7 +257,8 @@ export class PortfolioController extends EventEmitter {
         // 1. A change occurs if one variable is undefined and the other one holds an AccountOps object.
         // 2. No change occurs if both variables are undefined.
         const areAccountOpsChanged =
-          currentAccountOps && simulatedAccountOps
+          // eslint-disable-next-line prettier/prettier
+        (currentAccountOps && simulatedAccountOps)
             ? !isAccountOpsIntentEqual(currentAccountOps, simulatedAccountOps)
             : currentAccountOps !== simulatedAccountOps
 
@@ -276,6 +302,11 @@ export class PortfolioController extends EventEmitter {
 
         // Persist previousHints in the disk storage for further requests, when:
         // latest state was updated successful and hints were fetched successful too (no hintsError from portfolio result)
+
+        // console.log({isSuccessfulLatestUpdate});
+        // console.log('accountState ::', accountState[network.id]);
+        // console.log({key})
+
         if (isSuccessfulLatestUpdate && !accountState[network.id]!.result!.hintsError) {
           storagePreviousHints[key] = getHintsWithBalance(accountState[network.id]!.result!)
           await this.#storage.set('previousHints', storagePreviousHints)
@@ -290,28 +321,8 @@ export class PortfolioController extends EventEmitter {
         // }
       })
     )
+    this.emitUpdate()
 
     // console.log({ latest: this.latest, pending: this.pending })
-  }
-}
-
-// We already know that `results.tokens` and `result.collections` tokens have a balance (this is handled by the portfolio lib).
-// Based on that, we can easily find out which hint tokens also have a balance.
-function getHintsWithBalance(result: PortfolioGetResult): {
-  erc20s: Hints['erc20s']
-  erc721s: Hints['erc721s']
-} {
-  const erc20s = result.tokens.map((token) => token.address)
-
-  const erc721s = Object.fromEntries(
-    result.collections.map((collection) => [
-      collection.address,
-      result.hints.erc721s[collection.address]
-    ])
-  )
-
-  return {
-    erc20s,
-    erc721s
   }
 }

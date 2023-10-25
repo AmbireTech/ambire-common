@@ -2,9 +2,11 @@ import { Account } from './account'
 import { TypedMessage } from './userRequest'
 
 export interface KeystoreSigner {
+  // TODO: missing type, should be one of LedgerController, TrezorController, LatticeController
+  init?: (controller: any) => void
   signRawTransaction: (params: any) => Promise<string>
   signTypedData: (typedMessage: TypedMessage) => Promise<string>
-  signMessage: (hash: string | Uint8Array) => Promise<string>
+  signMessage: (hex: string) => Promise<string>
 }
 
 export type ScryptParams = {
@@ -33,23 +35,23 @@ export type MainKey = {
   iv: Uint8Array
 }
 
-export type Key = Omit<StoredKey, 'privKey'> & { isExternallyStored: boolean }
+export type Key = (InternalKey | ExternalKey) & { isExternallyStored: boolean }
 
-export type StoredKey =
-  | {
-      addr: Account['addr']
-      type: 'internal'
-      label: string
-      privKey: string
-      meta: null
-    }
-  | {
-      addr: Account['addr']
-      type: 'trezor' | 'ledger' | 'lattice'
-      label: string
-      privKey: null
-      meta: { model: string; hdPath: string }
-    }
+export type InternalKey = {
+  addr: Account['addr']
+  type: 'internal'
+  label: string
+  meta: null
+}
+
+export type ExternalKey = {
+  addr: Account['addr']
+  type: 'trezor' | 'ledger' | 'lattice' | 'string'
+  label: string
+  meta: { model: string; hdPath: string }
+}
+
+export type StoredKey = (InternalKey & { privKey: string }) | (ExternalKey & { privKey: null })
 
 export type KeystoreSignerType = {
   new (key: Key, privateKey?: string): KeystoreSigner

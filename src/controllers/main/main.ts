@@ -3,7 +3,7 @@ import { JsonRpcProvider } from 'ethers'
 import { networks } from '../../consts/networks'
 import { Account, AccountId, AccountStates } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
-import { KeystoreSignerType } from '../../interfaces/keystore'
+import { Key, KeystoreSignerType } from '../../interfaces/keystore'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
 import { Storage } from '../../interfaces/storage'
 import { Message, UserRequest } from '../../interfaces/userRequest'
@@ -16,6 +16,7 @@ import {
   getPendingAccountOpBannersForEOA
 } from '../../libs/banners/banners'
 import { estimate, EstimateResult } from '../../libs/estimate/estimate'
+import { shouldGetAdditionalPortfolio } from '../../libs/portfolio/helpers'
 import { GasRecommendation, getGasPriceRecommendations } from '../../libs/gasPrice/gasPrice'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import generateSpoofSig from '../../utils/generateSpoofSig'
@@ -28,6 +29,7 @@ import { PortfolioController } from '../portfolio/portfolio'
 /* eslint-disable no-underscore-dangle */
 import { SignAccountOpController } from '../signAccountOp/signAccountOp'
 import { SignMessageController } from '../signMessage/signMessage'
+import { TransferController } from '../transfer/transfer'
 
 export class MainController extends EventEmitter {
   #storage: Storage
@@ -51,6 +53,8 @@ export class MainController extends EventEmitter {
 
   // Subcontrollers
   portfolio: PortfolioController
+
+  transfer: TransferController
 
   // Public sub-structures
   // @TODO emailVaults
@@ -112,7 +116,7 @@ export class MainController extends EventEmitter {
     storage: Storage
     fetch: Function
     relayerUrl: string
-    keystoreSigners: { [key: string]: KeystoreSignerType }
+    keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>
     onResolveDappRequest: (data: any, id?: number) => void
     onRejectDappRequest: (err: any, id?: number) => void
     onUpdateDappSelectedAccount: (accountAddr: string) => void
@@ -137,6 +141,7 @@ export class MainController extends EventEmitter {
       relayerUrl,
       fetch: this.#fetch
     })
+    this.transfer = new TransferController()
     this.signAccountOp = new SignAccountOpController(
       this.keystore,
       this.portfolio,
@@ -147,9 +152,6 @@ export class MainController extends EventEmitter {
     this.onResolveDappRequest = onResolveDappRequest
     this.onRejectDappRequest = onRejectDappRequest
     this.onUpdateDappSelectedAccount = onUpdateDappSelectedAccount
-
-    this.handleGasPriceUpdates()
-
     // @TODO Load userRequests from storage and emit that we have updated
     // @TODO
   }
@@ -190,14 +192,7 @@ export class MainController extends EventEmitter {
     this.emitUpdate()
   }
 
-  private async handleGasPriceUpdates(): Promise<void> {
-    setInterval(async () => {
-      await this.updateGasPrice()
-      this.emitUpdate()
-    }, 1000 * 60)
-  }
-
-  private async updateGasPrice(): Promise<void> {
+  async #updateGasPrice() {
     await this.#initialLoadPromise
 
     // We want to update the gas price only for the networks having account ops.
@@ -339,7 +334,10 @@ export class MainController extends EventEmitter {
   async updateSelectedAccount(selectedAccount: string | null = null) {
     if (!selectedAccount) return
     this.portfolio.updateSelectedAccount(this.accounts, this.settings.networks, selectedAccount)
-    this.portfolio.getAdditionalPortfolio(selectedAccount)
+
+    const account = this.accounts.find(({ addr }) => addr === selectedAccount)
+    if (shouldGetAdditionalPortfolio(account))
+      this.portfolio.getAdditionalPortfolio(selectedAccount)
   }
 
   async addUserRequest(req: UserRequest) {
@@ -429,15 +427,20 @@ export class MainController extends EventEmitter {
    */
   async reestimateAndUpdatePrices(accountAddr: AccountId, networkId: NetworkId) {
     await Promise.all([
-      this.updateGasPrice(),
+      this.#updateGasPrice(),
       async () => {
         const accountOp = this.accountOpsToBeSigned[accountAddr][networkId]?.accountOp
         // non-fatal, no need to do anything
         if (!accountOp) return
+
         await this.#estimateAccountOp(accountOp)
       }
     ])
 
+    const gasPrices = this.gasPrices[networkId]
+    const estimation = this.accountOpsToBeSigned[accountAddr][networkId]?.estimation
+
+    this.signAccountOp.update({ gasPrices, ...(estimation && { estimation }) })
     this.emitUpdate()
   }
 
@@ -480,7 +483,7 @@ export class MainController extends EventEmitter {
             .map(([networkId, x]) => [networkId, [x!.accountOp]])
         )
       ),
-      this.portfolio.getAdditionalPortfolio(accountOp.accountAddr),
+      shouldGetAdditionalPortfolio(account) && this.portfolio.getAdditionalPortfolio(accountOp.accountAddr),
       estimate(
         this.#providers[accountOp.networkId],
         network,
@@ -493,8 +496,6 @@ export class MainController extends EventEmitter {
     ])
     // @TODO compare intent between accountOp and this.accountOpsToBeSigned[accountOp.accountAddr][accountOp.networkId].accountOp
     this.accountOpsToBeSigned[accountOp.accountAddr][accountOp.networkId]!.estimation = estimation
-    this.signAccountOp.update({ estimation })
-    console.log(estimation)
   }
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars, class-methods-use-this
@@ -508,24 +509,13 @@ export class MainController extends EventEmitter {
   }
 
   get banners(): Banner[] {
-    const requests =
+    const userRequests =
       this.userRequests.filter((req) => req.accountAddr === this.selectedAccount) || []
-
-    const accountOpEOABanners = getAccountOpBannersForEOA({
-      userRequests: requests,
-      accounts: this.accounts
-    })
-    const pendingAccountOpEOABanners = getPendingAccountOpBannersForEOA({
-      userRequests: requests,
-      accounts: this.accounts
-    })
-    const accountOpSmartAccountBanners = getAccountOpBannersForSmartAccount({
-      userRequests: requests,
-      accounts: this.accounts
-    })
-    const messageBanners = getMessageBanners({
-      userRequests: requests
-    })
+    const accounts = this.accounts
+    const accountOpEOABanners = getAccountOpBannersForEOA({ userRequests, accounts })
+    const pendingAccountOpEOABanners = getPendingAccountOpBannersForEOA({ userRequests, accounts })
+    const accountOpSmartAccountBanners = getAccountOpBannersForSmartAccount({ userRequests, accounts })
+    const messageBanners = getMessageBanners({ userRequests })
 
     return [
       ...accountOpSmartAccountBanners,
