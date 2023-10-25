@@ -29,14 +29,14 @@ describe('KeyIterator', () => {
   test('should retrieve a single key', async () => {
     expect.assertions(2)
     const keyIteratorWithPrivKey = new KeyIterator(privKey)
-    const keys = await keyIteratorWithPrivKey.retrieve(0, 9)
+    const keys = await keyIteratorWithPrivKey.retrieve(0, 9, BIP44_STANDARD_DERIVATION_TEMPLATE)
     expect(keys).toHaveLength(1)
     expect(keys?.[0]).toEqual(privKeyPublicAddress)
   })
   test('should retrieve first 10 keys', async () => {
     expect.assertions(2)
     const keyIteratorWithPrivKey = new KeyIterator(seedPhrase)
-    const keys = await keyIteratorWithPrivKey.retrieve(0, 9)
+    const keys = await keyIteratorWithPrivKey.retrieve(0, 9, BIP44_STANDARD_DERIVATION_TEMPLATE)
     expect(keys).toHaveLength(10)
     expect(keys?.[0]).toEqual(seedPhrasePublicAddress1)
   })
