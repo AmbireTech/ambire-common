@@ -176,6 +176,9 @@ By default, this will add the account in read-only mode. To enable signing trans
 
 This is fully secure as the device private key (keystore `mainKey`) has really high entropy, and the backend only stores the encrypted data for 3 minutes.
 
+## Documentation
+
+- [Ambire Flows](https://github.com/AmbireTech/ambire-app/wiki/Ambire-Flows-(wrap,-sign,-payment,-broadcast)#ERC-4337-Recovery)
 
 ## Libraries
 
