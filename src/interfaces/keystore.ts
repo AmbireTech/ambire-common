@@ -1,7 +1,7 @@
 import {
-  BIP44_LATTICE_TEMPLATE,
-  BIP44_LEDGER_LIVE_TEMPLATE,
-  BIP44_TREZOR_TEMPLATE
+  BIP44_LEDGER_DERIVATION_TEMPLATE,
+  BIP44_STANDARD_DERIVATION_TEMPLATE,
+  LEGACY_POPULAR_DERIVATION_TEMPLATE
 } from '../consts/derivation'
 import { Account } from './account'
 import { TypedMessage } from './userRequest'
@@ -57,9 +57,9 @@ export type ExternalKey = {
     deviceId: string
     deviceModel: string
     hdPathTemplate:
-      | typeof BIP44_LEDGER_LIVE_TEMPLATE
-      | typeof BIP44_TREZOR_TEMPLATE
-      | typeof BIP44_LATTICE_TEMPLATE
+      | typeof BIP44_STANDARD_DERIVATION_TEMPLATE
+      | typeof BIP44_LEDGER_DERIVATION_TEMPLATE
+      | typeof LEGACY_POPULAR_DERIVATION_TEMPLATE
     index: number
   }
 }
