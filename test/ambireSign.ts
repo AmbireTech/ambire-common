@@ -41,16 +41,6 @@ function wrapMultiSig(sig: string) {
 }
 
 /**
- * SignatureMode.EthSignAmbirePrefix sign
- *
- * @param BytesLike sig
- * @returns BytesLike
- */
-function wrapEthSignAmbirePrefix(sig: string) {
-  return `${sig}${'06'}`
-}
-
-/**
  * SIGMODE_RECOVER
  *
  * @param BytesLike sig
@@ -80,4 +70,21 @@ function wrapCancel(sig: string) {
   return `${sig}${'fe'}`
 }
 
-export { wrapEIP712, wrapEthSign, wrapSchnorr, wrapMultiSig, wrapRecover, wrapCancel, wrapExternallyValidated, wrapEthSignAmbirePrefix }
+
+/**
+ * wrapping hash with "Signing Ambire interaction: "
+ *
+ * @param BytesLike hash
+ * @returns BytesLike
+ */
+function wrapHash(hash: any) {
+  const prefix = ethers.toUtf8Bytes('Signing Ambire interaction: ')
+  const hashBytes = ethers.getBytes(hash)
+  const merged = new Uint8Array(prefix.length + hashBytes.length)
+  merged.set(prefix)
+  merged.set(hashBytes, prefix.length);
+  return merged
+}
+
+
+export { wrapEIP712, wrapEthSign, wrapSchnorr, wrapMultiSig, wrapRecover, wrapCancel, wrapExternallyValidated, wrapHash }
