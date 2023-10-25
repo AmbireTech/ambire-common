@@ -193,12 +193,15 @@ describe('Main Controller ', () => {
     }
 
     let emitCounter = 0
-
-    if (controller.isReady) {
-      addAccounts()
+    // The `isReady` flag on the MainController gets set in async manner.
+    // If the property of the main controller `isReady` becomes true before
+    // reaching await new Promise..., the code inside the onUpdate won't run,
+    // because there is nothing that will trigger an update. To prevent this,
+    // check if the controller is ready outside of the onUpdate first and add the accounts.
+    if (controller.isReady && emitCounter === 0) {
       emitCounter++
+      addAccounts()
     }
-
     await new Promise((resolve) => {
       const unsubscribe = controller.onUpdate(() => {
         emitCounter++
