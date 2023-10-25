@@ -54,7 +54,8 @@ export type ExternalKey = {
   type: 'trezor' | 'ledger' | 'lattice' | string
   label: string
   meta: {
-    model: string
+    deviceId: string
+    deviceModel: string
     hdPathTemplate:
       | typeof BIP44_LEDGER_LIVE_TEMPLATE
       | typeof BIP44_TREZOR_TEMPLATE
