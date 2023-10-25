@@ -167,7 +167,7 @@ export class SignAccountOpController extends EventEmitter {
     }
 
     // Setting defaults
-    if (this.availableFeeOptions && !this.paidBy && !this.feeToken) {
+    if (this.availableFeeOptions.length && !this.paidBy && !this.feeToken) {
       const defaultFeeOption = this.availableFeeOptions[0]
 
       this.paidBy = defaultFeeOption.paidBy
@@ -221,6 +221,8 @@ export class SignAccountOpController extends EventEmitter {
     this.#gasPrices = null
     this.#estimation = null
     this.selectedFeeSpeed = FeeSpeed.Fast
+    this.paidBy = null
+    this.selectedTokenAddr = null
     this.status = null
     this.humanReadable = []
     this.emitUpdate()
@@ -294,12 +296,11 @@ export class SignAccountOpController extends EventEmitter {
         gasRecommendation.gasPrice ||
         gasRecommendation!.baseFeePerGas + gasRecommendation!.maxPriorityFeePerGas
 
+      // EOA
       if (!account || !account?.creation) {
         simulatedGasLimit = gasUsed
         amount = simulatedGasLimit * gasPrice + this.#estimation!.addedNative
-
-        console.log(simulatedGasLimit * gasPrice + this.#estimation!.addedNative, { amount })
-      } else if (this.paidBy !== this.accountOp!.accountAddr) {
+      } else if (this.paidBy !== this.accountOp!.accountAddr) { // Smart account, but EOA pays the fee
         // @TODO - add comment why we add 21k gas here
         simulatedGasLimit = gasUsed + 21000n
         amount = simulatedGasLimit * gasPrice + this.#estimation!.addedNative
