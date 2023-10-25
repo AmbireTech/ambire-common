@@ -2,6 +2,7 @@
 /* eslint-disable no-await-in-loop */
 import crypto from 'crypto'
 
+import { Banner } from '../../interfaces/banner'
 import {
   EmailVaultData,
   EmailVaultSecret,
@@ -9,6 +10,7 @@ import {
   SecretType
 } from '../../interfaces/emailVault'
 import { Storage } from '../../interfaces/storage'
+import { getKeySyncBanner } from '../../libs/banners/banners'
 import { EmailVault } from '../../libs/emailVault/emailVault'
 import EventEmitter from '../../libs/eventEmitter/eventEmitter'
 import { requestMagicLink } from '../../libs/magicLink/magicLink'
@@ -441,10 +443,31 @@ export class EmailVaultController extends EventEmitter {
     }
   }
 
+  get banners(): Banner[] {
+    if (!Object.keys(this.emailVaultStates?.email).length) return []
+
+    const banners: Banner[] = []
+
+    Object.keys(this.emailVaultStates?.email || {}).forEach((email) => {
+      const emailVaultData = this.emailVaultStates?.email?.[email]
+      Object.values(emailVaultData.availableAccounts || {}).forEach((accInfo) => {
+        const keystoreKeys = this.#keyStore.keys.filter((key) =>
+          accInfo.associatedKeys.includes(key.addr)
+        )
+
+        if (keystoreKeys.length) return
+        banners.push(getKeySyncBanner(accInfo.addr, email, accInfo.associatedKeys))
+      })
+    })
+
+    return banners
+  }
+
   toJSON() {
     return {
       ...this,
-      currentState: this.currentState // includes the getter in the stringified instance
+      currentState: this.currentState, // includes the getter in the stringified instance
+      banners: this.banners // includes the getter in the stringified instance
     }
   }
 }

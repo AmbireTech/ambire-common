@@ -1,14 +1,26 @@
+/* eslint-disable class-methods-use-this */
 /* eslint-disable new-cap */
 import aes from 'aes-js'
-import { concat, getBytes, hexlify, keccak256, randomBytes, toUtf8Bytes, Wallet } from 'ethers'
-import scrypt from 'scrypt-js'
-
+import { entropyToMnemonic } from 'bip39'
 import {
+  decryptWithPrivateKey,
   Encrypted,
   encryptWithPublicKey,
-  decryptWithPrivateKey,
   publicKeyByPrivateKey
 } from 'eth-crypto'
+import {
+  concat,
+  getBytes,
+  hexlify,
+  isHexString,
+  keccak256,
+  randomBytes,
+  sha256,
+  toUtf8Bytes,
+  Wallet
+} from 'ethers'
+import scrypt from 'scrypt-js'
+
 import {
   Key,
   KeystoreSignerType,
@@ -524,6 +536,60 @@ export class KeystoreController extends EventEmitter {
     }
 
     return new SignerInitializer(key)
+  }
+
+  async generateEmailVaultSeed(email: string) {
+    if (this.#mainKey === null) throw new Error('keystore: needs to be unlocked')
+    const seeds = await this.#storage.get('emailVaultSeeds', {})
+    if (seeds[email]) throw new Error(`keystore: seed for ${email} is already added`)
+
+    const mainPrivateKey = hexlify(getBytes(concat([this.#mainKey.key, this.#mainKey.iv])))
+    const hash = sha256(toUtf8Bytes(mainPrivateKey + email))
+    const seed = entropyToMnemonic(isHexString(hash) ? hash.slice(2) : hash)
+
+    const counter = new aes.Counter(this.#mainKey.iv)
+    const aesCtr = new aes.ModeOfOperation.ctr(this.#mainKey.key, counter)
+
+    const encryptedSeed = hexlify(aesCtr.encrypt(aes.utils.utf8.toBytes(seed)))
+    const nextSeeds = {
+      ...seeds,
+      [email]: encryptedSeed
+    }
+
+    await this.#storage.set('emailVaultSeeds', nextSeeds)
+  }
+
+  async addEmailVaultSeed(email: string, seed: string) {
+    if (this.#mainKey === null) throw new Error('keystore: needs to be unlocked')
+    const seeds = await this.#storage.get('emailVaultSeeds', {})
+    if (seeds[email]) throw new Error(`keystore: seed for ${email} is already added`)
+
+    const counter = new aes.Counter(this.#mainKey.iv)
+    const aesCtr = new aes.ModeOfOperation.ctr(this.#mainKey.key, counter)
+
+    const encryptedSeed = hexlify(aesCtr.encrypt(aes.utils.utf8.toBytes(seed)))
+    const nextSeeds = {
+      ...seeds,
+      [email]: encryptedSeed
+    }
+
+    await this.#storage.set('emailVaultSeeds', nextSeeds)
+  }
+
+  async getEmailVaultSeed(email: string): Promise<string> {
+    if (this.#mainKey === null) throw new Error('keystore: needs to be unlocked')
+    const seeds = await this.#storage.get('emailVaultSeeds', {})
+    const encryptedSeed = seeds[email]
+    if (!encryptedSeed) throw new Error(`keystore: seed for ${email} not found`)
+
+    const encryptedBytes = getBytes(encryptedSeed)
+
+    const counter = new aes.Counter(this.#mainKey.iv)
+    const aesCtr = new aes.ModeOfOperation.ctr(this.#mainKey.key, counter)
+    const decryptedBytes = aesCtr.decrypt(encryptedBytes)
+    const decryptedSeed = aes.utils.utf8.fromBytes(decryptedBytes)
+
+    return decryptedSeed
   }
 
   resetErrorState() {

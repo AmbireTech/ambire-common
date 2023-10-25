@@ -1,31 +1,30 @@
 /* eslint-disable no-underscore-dangle */
 import { JsonRpcProvider } from 'ethers'
 
-import { KeystoreSignerType } from 'interfaces/keystore'
 import { networks } from '../../consts/networks'
 import { Account, AccountId, AccountStates } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
+import { KeystoreSignerType } from '../../interfaces/keystore'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
 import { Storage } from '../../interfaces/storage'
-import { AccountOp, Call as AccountOpCall } from '../../libs/accountOp/accountOp'
-import { PortfolioController } from '../portfolio/portfolio'
-import EventEmitter from '../../libs/eventEmitter/eventEmitter'
-import { getAccountState } from '../../libs/accountState/accountState'
 import { Message, UserRequest } from '../../interfaces/userRequest'
-import { estimate, EstimateResult } from '../../libs/estimate/estimate'
-
+import { AccountOp, Call as AccountOpCall } from '../../libs/accountOp/accountOp'
+import { getAccountState } from '../../libs/accountState/accountState'
 import {
   getAccountOpBannersForEOA,
   getAccountOpBannersForSmartAccount,
   getMessageBanners,
   getPendingAccountOpBannersForEOA
 } from '../../libs/banners/banners'
+import { estimate, EstimateResult } from '../../libs/estimate/estimate'
+import EventEmitter from '../../libs/eventEmitter/eventEmitter'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { AccountAdderController } from '../accountAdder/accountAdder'
 import { ActivityController } from '../activity/activity'
-import { KeystoreController } from '../keystore/keystore'
-import { SignMessageController } from '../signMessage/signMessage'
 import { EmailVaultController } from '../emailVault/emailVault'
+import { KeystoreController } from '../keystore/keystore'
+import { PortfolioController } from '../portfolio/portfolio'
+import { SignMessageController } from '../signMessage/signMessage'
 import { TransferController } from '../transfer/transfer'
 
 export class MainController extends EventEmitter {
@@ -433,6 +432,10 @@ export class MainController extends EventEmitter {
     const requests =
       this.userRequests.filter((req) => req.accountAddr === this.selectedAccount) || []
 
+    const emailVaultBanners = this.emailVault.banners.filter(
+      (banner) => banner.accountAddr === this.selectedAccount
+    )
+
     const accountOpEOABanners = getAccountOpBannersForEOA({
       userRequests: requests,
       accounts: this.accounts
@@ -450,6 +453,7 @@ export class MainController extends EventEmitter {
     })
 
     return [
+      ...emailVaultBanners,
       ...accountOpSmartAccountBanners,
       ...accountOpEOABanners,
       ...pendingAccountOpEOABanners,

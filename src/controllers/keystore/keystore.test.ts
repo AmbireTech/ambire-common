@@ -3,11 +3,11 @@
 /* eslint-disable @typescript-eslint/no-useless-constructor */
 /* eslint-disable max-classes-per-file */
 
-import { Wallet, ethers, hexlify } from 'ethers'
+import { Encrypted, encryptWithPublicKey } from 'eth-crypto'
+import { ethers, hexlify, Wallet } from 'ethers'
 
 import { describe, expect, jest, test } from '@jest/globals'
 
-import { Encrypted, encryptWithPublicKey } from 'eth-crypto'
 import { produceMemoryStore } from '../../../test/helpers'
 import { Key, MainKeyEncryptedWithSecret } from '../../interfaces/keystore'
 import { KeystoreController } from './keystore'
@@ -55,12 +55,15 @@ class LedgerSigner {
 let keystore: KeystoreController
 const pass = 'hoiHoi'
 const keystoreSigners = { internal: InternalSigner, ledger: LedgerSigner }
+const seedPhrase =
+  'brisk rich glide impose category stuff company you appear remain decorate monkey'
 const privKey = '207d56b2f2b06fd9c74562ec81f42d47393a55cfcf5c182605220ad7fdfbe600'
 const keyPublicAddress = '0xB6C923c6586eDb44fc4CC0AE4F60869271e75407'
 
 describe('KeystoreController', () => {
+  const storage = produceMemoryStore()
   test('should initialize', () => {
-    keystore = new KeystoreController(produceMemoryStore(), keystoreSigners)
+    keystore = new KeystoreController(storage, keystoreSigners)
     expect(keystore).toBeDefined()
   })
 
@@ -322,6 +325,20 @@ describe('KeystoreController', () => {
   test('should return uid', async () => {
     const keystoreUid = await keystore.getKeyStoreUid()
     expect(keystoreUid.length).toBe(128)
+  })
+  test('should generate and store seed phrase for email vault', async () => {
+    await keystore.generateEmailVaultSeed('test@test.com')
+    const seeds = await storage.get('emailVaultSeeds', {})
+    expect(seeds['test@test.com']).toBeTruthy()
+  })
+  test('should add external seed for email vault', async () => {
+    await keystore.addEmailVaultSeed('test1@test.com', seedPhrase)
+    const seeds = await storage.get('emailVaultSeeds', {})
+    expect(seeds['test1@test.com']).toBeTruthy()
+  })
+  test('should get email vault key', async () => {
+    const seed = await keystore.getEmailVaultSeed('test1@test.com')
+    expect(seed).toBe(seedPhrase)
   })
 })
 
