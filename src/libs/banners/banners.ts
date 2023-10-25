@@ -150,3 +150,21 @@ export const getAccountOpBannersForSmartAccount = ({
 
   return txnBanners
 }
+
+export const getKeySyncBanner = (addr: string, email: string, keys: string[]) => {
+  const banner: Banner = {
+    id: new Date().getTime(),
+    accountAddr: addr,
+    topic: 'ANNOUNCEMENT',
+    title: 'Sync Key Store keys',
+    text: 'This account has no signing keys added therefore it is in a view-only mode. Make a request for keys sync from another device.',
+    actions: [
+      {
+        label: 'Sync',
+        actionName: 'sync-keys',
+        meta: { email, keys }
+      }
+    ]
+  }
+  return banner
+}
