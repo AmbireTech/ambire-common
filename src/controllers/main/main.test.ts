@@ -185,22 +185,33 @@ describe('Main Controller ', () => {
       }
     }
 
+    const addAccounts = () => {
+      const keyIterator = new KeyIterator(
+        '0x574f261b776b26b1ad75a991173d0e8ca2ca1d481bd7822b2b58b2ef8a969f12'
+      )
+      controller.accountAdder.init({
+        keyIterator,
+        preselectedAccounts: [],
+        hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
+      })
+      controller.accountAdder.addAccounts([accountPendingCreation]).catch(console.error)
+    }
+
     let emitCounter = 0
+    // The `isReady` flag on the MainController gets set in async manner.
+    // If the property of the main controller `isReady` becomes true before
+    // reaching await new Promise..., the code inside the onUpdate won't run,
+    // because there is nothing that will trigger an update. To prevent this,
+    // check if the controller is ready outside of the onUpdate first and add the accounts.
+    if (controller.isReady && emitCounter === 0) {
+      emitCounter++
+      addAccounts()
+    }
     await new Promise((resolve) => {
       const unsubscribe = controller.onUpdate(() => {
         emitCounter++
 
-        if (emitCounter === 1 && controller.isReady) {
-          const keyIterator = new KeyIterator(
-            '0x574f261b776b26b1ad75a991173d0e8ca2ca1d481bd7822b2b58b2ef8a969f12'
-          )
-          controller.accountAdder.init({
-            keyIterator,
-            preselectedAccounts: [],
-            hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
-          })
-          controller.accountAdder.addAccounts([accountPendingCreation]).catch(console.error)
-        }
+        if (emitCounter === 1 && controller.isReady) addAccounts()
 
         if (emitCounter === 2) {
           expect(controller.accounts).toContainEqual(accountPendingCreation)
