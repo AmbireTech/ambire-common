@@ -1,4 +1,4 @@
-import { ethers } from 'ethers'
+import { ethers, JsonRpcProvider } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import { Account, AccountStates } from '../../interfaces/account'
@@ -50,6 +50,8 @@ export class SignAccountOpController extends EventEmitter {
 
   #fetch: Function
 
+  #providers: { [key: string]: JsonRpcProvider }
+
   #accounts: Account[] | null = null
 
   #networks: NetworkDescriptor[] | null = null
@@ -76,7 +78,8 @@ export class SignAccountOpController extends EventEmitter {
     keystore: KeystoreController,
     portfolio: PortfolioController,
     storage: Storage,
-    fetch: Function
+    fetch: Function,
+    providers: { [key: string]: JsonRpcProvider }
   ) {
     super()
 
@@ -84,6 +87,7 @@ export class SignAccountOpController extends EventEmitter {
     this.#portfolio = portfolio
     this.#storage = storage
     this.#fetch = fetch
+    this.#providers = providers
   }
 
   get isInitialized(): boolean {
@@ -300,7 +304,8 @@ export class SignAccountOpController extends EventEmitter {
       if (!account || !account?.creation) {
         simulatedGasLimit = gasUsed
         amount = simulatedGasLimit * gasPrice + this.#estimation!.addedNative
-      } else if (this.paidBy !== this.accountOp!.accountAddr) { // Smart account, but EOA pays the fee
+      } else if (this.paidBy !== this.accountOp!.accountAddr) {
+        // Smart account, but EOA pays the fee
         // @TODO - add comment why we add 21k gas here
         simulatedGasLimit = gasUsed + 21000n
         amount = simulatedGasLimit * gasPrice + this.#estimation!.addedNative
@@ -385,6 +390,8 @@ export class SignAccountOpController extends EventEmitter {
       return this.#setSigningError('no signing key set')
     if (!this.accountOp?.gasFeePayment) return this.#setSigningError('no gasFeePayment set')
     if (!this.readyToSign) return this.#setSigningError('not ready to sign')
+    const network = this.#networks?.find((n) => n.id === this.accountOp?.networkId)
+    if (!network) return this.#setSigningError('sign: unsupported network')
 
     const account = this.#getAccount()
     const signer = await this.#keystore.getSigner(
@@ -399,6 +406,8 @@ export class SignAccountOpController extends EventEmitter {
 
     const gasFeePayment = this.accountOp.gasFeePayment
 
+    const provider = this.#providers[this.accountOp.networkId]
+    const nonce = await provider.getTransactionCount(this.accountOp.accountAddr)
     try {
       // In case of EOA account
       if (!account.creation) {
@@ -411,7 +420,9 @@ export class SignAccountOpController extends EventEmitter {
           to,
           value,
           data,
+          chainId: network.chainId,
           gasLimit: gasFeePayment.simulatedGasLimit,
+          nonce,
           gasPrice:
             (gasFeePayment.amount - this.#estimation!.addedNative) / gasFeePayment.simulatedGasLimit
         })

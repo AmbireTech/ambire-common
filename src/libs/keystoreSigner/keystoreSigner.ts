@@ -52,4 +52,10 @@ export class KeystoreSigner implements KeystoreSignerInterface {
 
     return sig
   }
+
+  async sendTransaction(transaction: TransactionRequest) {
+    const transactionRes = await this.#signer.sendTransaction(transaction)
+
+    return transactionRes
+  }
 }

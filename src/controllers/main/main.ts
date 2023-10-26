@@ -16,8 +16,8 @@ import {
   getPendingAccountOpBannersForEOA
 } from '../../libs/banners/banners'
 import { estimate, EstimateResult } from '../../libs/estimate/estimate'
-import { shouldGetAdditionalPortfolio } from '../../libs/portfolio/helpers'
 import { GasRecommendation, getGasPriceRecommendations } from '../../libs/gasPrice/gasPrice'
+import { shouldGetAdditionalPortfolio } from '../../libs/portfolio/helpers'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import generateSpoofSig from '../../utils/generateSpoofSig'
 import { AccountAdderController } from '../accountAdder/accountAdder'
@@ -62,7 +62,7 @@ export class MainController extends EventEmitter {
 
   signMessage!: SignMessageController
 
-  signAccountOp: SignAccountOpController
+  signAccountOp!: SignAccountOpController
 
   activity!: ActivityController
 
@@ -142,12 +142,6 @@ export class MainController extends EventEmitter {
       fetch: this.#fetch
     })
     this.transfer = new TransferController()
-    this.signAccountOp = new SignAccountOpController(
-      this.keystore,
-      this.portfolio,
-      this.#storage,
-      this.#fetch
-    )
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch: this.#fetch })
     this.onResolveDappRequest = onResolveDappRequest
     this.onRejectDappRequest = onRejectDappRequest
@@ -174,6 +168,13 @@ export class MainController extends EventEmitter {
       this.#providers,
       this.#storage,
       this.#fetch
+    )
+    this.signAccountOp = new SignAccountOpController(
+      this.keystore,
+      this.portfolio,
+      this.#storage,
+      this.#fetch,
+      this.#providers
     )
     this.activity = new ActivityController(this.#storage, this.accountStates)
 
@@ -483,7 +484,8 @@ export class MainController extends EventEmitter {
             .map(([networkId, x]) => [networkId, [x!.accountOp]])
         )
       ),
-      shouldGetAdditionalPortfolio(account) && this.portfolio.getAdditionalPortfolio(accountOp.accountAddr),
+      shouldGetAdditionalPortfolio(account) &&
+        this.portfolio.getAdditionalPortfolio(accountOp.accountAddr),
       estimate(
         this.#providers[accountOp.networkId],
         network,
@@ -499,7 +501,47 @@ export class MainController extends EventEmitter {
   }
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars, class-methods-use-this
-  broadcastSignedAccountOp(accountOp: AccountOp) {}
+  async broadcastSignedAccountOp(accountOp: AccountOp) {
+    let broadcastSuccess: boolean = false
+    if (!accountOp.signingKeyAddr || !accountOp.signingKeyType || !accountOp.signature) {
+      this.#throwAccountOpBroadcastError(new Error('AccountOp missing props'))
+      return
+    }
+
+    const provider: JsonRpcProvider = this.#providers[accountOp.networkId]
+    const account = this.accounts.find((acc) => acc.addr === accountOp.accountAddr)
+
+    if (!provider) {
+      this.#throwAccountOpBroadcastError(
+        new Error(`Provider for networkId: ${accountOp.networkId} not found`)
+      )
+      return
+    }
+
+    if (!account) {
+      this.#throwAccountOpBroadcastError(
+        new Error(`Account with address: ${accountOp.accountAddr} not found`)
+      )
+      return
+    }
+
+    if (!account.creation) {
+      try {
+        const transactionRes = await provider.broadcastTransaction(accountOp.signature)
+        if (transactionRes.hash) broadcastSuccess = true
+      } catch (error: any) {
+        this.#throwAccountOpBroadcastError(new Error(error))
+      }
+    }
+
+    if (broadcastSuccess) {
+      // TODO:
+      // await this.activity.addAccountOp(accountOp)
+      // this.removeUserRequest(accountOp.id)
+      // this.onResolveDappRequest({ hash: accountOp.signature }, accountOp.id)
+      this.emitUpdate()
+    }
+  }
 
   broadcastSignedMessage(signedMessage: Message) {
     this.activity.addSignedMessage(signedMessage, signedMessage.accountAddr)
@@ -514,7 +556,10 @@ export class MainController extends EventEmitter {
     const accounts = this.accounts
     const accountOpEOABanners = getAccountOpBannersForEOA({ userRequests, accounts })
     const pendingAccountOpEOABanners = getPendingAccountOpBannersForEOA({ userRequests, accounts })
-    const accountOpSmartAccountBanners = getAccountOpBannersForSmartAccount({ userRequests, accounts })
+    const accountOpSmartAccountBanners = getAccountOpBannersForSmartAccount({
+      userRequests,
+      accounts
+    })
     const messageBanners = getMessageBanners({ userRequests })
 
     return [
@@ -523,6 +568,15 @@ export class MainController extends EventEmitter {
       ...pendingAccountOpEOABanners,
       ...messageBanners
     ]
+  }
+
+  #throwAccountOpBroadcastError(error: Error) {
+    this.emitError({
+      level: 'major',
+      message:
+        'Unable to send transaction. Please try again or contact Ambire support if the issue persists.',
+      error
+    })
   }
 
   // includes the getters in the stringified instance
