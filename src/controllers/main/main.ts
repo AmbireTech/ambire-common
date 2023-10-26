@@ -1,4 +1,4 @@
-import { JsonRpcProvider } from 'ethers'
+import { JsonRpcProvider, ethers } from 'ethers'
 
 import { networks } from '../../consts/networks'
 import { Account, AccountId, AccountStates } from '../../interfaces/account'
@@ -30,6 +30,8 @@ import { PortfolioController } from '../portfolio/portfolio'
 import { SignAccountOpController } from '../signAccountOp/signAccountOp'
 import { SignMessageController } from '../signMessage/signMessage'
 import { TransferController } from '../transfer/transfer'
+import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
+import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFactory.json'
 
 export class MainController extends EventEmitter {
   #storage: Storage
@@ -528,6 +530,59 @@ export class MainController extends EventEmitter {
     if (!account.creation) {
       try {
         const transactionRes = await provider.broadcastTransaction(accountOp.signature)
+        if (transactionRes.hash) broadcastSuccess = true
+      } catch (error: any) {
+        this.#throwAccountOpBroadcastError(new Error(error))
+      }
+    }
+
+    // EOA pays for smart account
+    if (
+      account.creation &&
+      accountOp.gasFeePayment &&
+      accountOp.gasFeePayment.paidBy !== account.addr
+    ) {
+      const estimation = this.accountOpsToBeSigned[accountOp.accountAddr][accountOp.networkId]!.estimation
+      if (!estimation) {
+        new Error(`Estimation not done for account with address: ${accountOp.accountAddr}`)
+      }
+
+      const accountState = this.accountStates[accountOp.accountAddr][accountOp.networkId]
+      let data
+      let to
+      if (accountState.isDeployed) {
+        const ambireAccount = new ethers.Interface(AmbireAccount.abi)
+        to = accountOp.accountAddr
+        data = ambireAccount.encodeFunctionData('execute', [
+          accountOp.calls,
+          accountOp.signature
+        ])
+      } else {
+        const ambireFactory = new ethers.Interface(AmbireAccountFactory.abi)
+        to = account.creation.factoryAddr
+        data = ambireFactory.encodeFunctionData('deployAndExecute', [
+          account.creation.bytecode,
+          account.creation.salt,
+          accountOp.calls,
+          accountOp.signature
+        ])
+      }
+
+      const signer = await this.keystore.getSigner(
+        accountOp.signingKeyAddr,
+        accountOp.signingKeyType
+      )
+      const signedTxn = await signer.signRawTransaction({
+        to,
+        data,
+        nonce: estimation!.nonce,
+        gasLimit: accountOp.gasFeePayment.simulatedGasLimit,
+        gasPrice:
+          (accountOp.gasFeePayment.amount - estimation!.addedNative) / accountOp.gasFeePayment.simulatedGasLimit
+      })
+
+      try {
+        const transactionRes = await provider.broadcastTransaction(signedTxn)
         if (transactionRes.hash) broadcastSuccess = true
       } catch (error: any) {
         this.#throwAccountOpBroadcastError(new Error(error))

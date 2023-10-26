@@ -1,6 +1,5 @@
 import { ethers, JsonRpcProvider } from 'ethers'
 
-import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import { Account, AccountStates } from '../../interfaces/account'
 import { Key } from '../../interfaces/keystore'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
@@ -430,18 +429,9 @@ export class SignAccountOpController extends EventEmitter {
         // Smart account, but EOA pays the fee
         // EOA pays for execute() - relayerless
 
-        const iface = new ethers.Interface(AmbireAccount.abi)
-
-        this.accountOp.signature = await signer.signRawTransaction({
-          to: this.accountOp.accountAddr,
-          data: iface.encodeFunctionData('execute', [
-            this.accountOp.calls,
-            await signer.signMessage(ethers.hexlify(accountOpSignableHash(this.accountOp)))
-          ]),
-          gasLimit: gasFeePayment.simulatedGasLimit,
-          gasPrice:
-            (gasFeePayment.amount - this.#estimation!.addedNative) / gasFeePayment.simulatedGasLimit
-        })
+        this.accountOp.signature = await signer.signMessage(
+          ethers.hexlify(accountOpSignableHash(this.accountOp))
+        )
       } else if (this.accountOp.gasFeePayment.isERC4337) {
         // TODO:
         // transform accountOp to userOperation
