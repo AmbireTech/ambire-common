@@ -1,5 +1,7 @@
-import { JsonRpcProvider, ethers } from 'ethers'
+import { ethers, JsonRpcProvider, TransactionResponse } from 'ethers'
 
+import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
+import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFactory.json'
 import { networks } from '../../consts/networks'
 import { Account, AccountId, AccountStates } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
@@ -30,8 +32,6 @@ import { PortfolioController } from '../portfolio/portfolio'
 import { SignAccountOpController } from '../signAccountOp/signAccountOp'
 import { SignMessageController } from '../signMessage/signMessage'
 import { TransferController } from '../transfer/transfer'
-import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
-import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFactory.json'
 
 export class MainController extends EventEmitter {
   #storage: Storage
@@ -504,7 +504,6 @@ export class MainController extends EventEmitter {
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars, class-methods-use-this
   async broadcastSignedAccountOp(accountOp: AccountOp) {
-    let broadcastSuccess: boolean = false
     if (!accountOp.signingKeyAddr || !accountOp.signingKeyType || !accountOp.signature) {
       this.#throwAccountOpBroadcastError(new Error('AccountOp missing props'))
       return
@@ -527,24 +526,29 @@ export class MainController extends EventEmitter {
       return
     }
 
+    let transactionRes: TransactionResponse | null = null
+
+    // EOA account
     if (!account.creation) {
       try {
-        const transactionRes = await provider.broadcastTransaction(accountOp.signature)
-        if (transactionRes.hash) broadcastSuccess = true
+        transactionRes = await provider.broadcastTransaction(accountOp.signature)
       } catch (error: any) {
         this.#throwAccountOpBroadcastError(new Error(error))
       }
     }
 
-    // EOA pays for smart account
+    // Smart account but EOA pays the fee
     if (
       account.creation &&
       accountOp.gasFeePayment &&
       accountOp.gasFeePayment.paidBy !== account.addr
     ) {
-      const estimation = this.accountOpsToBeSigned[accountOp.accountAddr][accountOp.networkId]!.estimation
+      const estimation =
+        this.accountOpsToBeSigned[accountOp.accountAddr][accountOp.networkId]!.estimation
       if (!estimation) {
-        new Error(`Estimation not done for account with address: ${accountOp.accountAddr}`)
+        this.#throwAccountOpBroadcastError(
+          new Error(`Estimation not done for account with address: ${accountOp.accountAddr}`)
+        )
       }
 
       const accountState = this.accountStates[accountOp.accountAddr][accountOp.networkId]
@@ -553,10 +557,7 @@ export class MainController extends EventEmitter {
       if (accountState.isDeployed) {
         const ambireAccount = new ethers.Interface(AmbireAccount.abi)
         to = accountOp.accountAddr
-        data = ambireAccount.encodeFunctionData('execute', [
-          accountOp.calls,
-          accountOp.signature
-        ])
+        data = ambireAccount.encodeFunctionData('execute', [accountOp.calls, accountOp.signature])
       } else {
         const ambireFactory = new ethers.Interface(AmbireAccountFactory.abi)
         to = account.creation.factoryAddr
@@ -578,22 +579,31 @@ export class MainController extends EventEmitter {
         nonce: estimation!.nonce,
         gasLimit: accountOp.gasFeePayment.simulatedGasLimit,
         gasPrice:
-          (accountOp.gasFeePayment.amount - estimation!.addedNative) / accountOp.gasFeePayment.simulatedGasLimit
+          (accountOp.gasFeePayment.amount - estimation!.addedNative) /
+          accountOp.gasFeePayment.simulatedGasLimit
       })
 
       try {
-        const transactionRes = await provider.broadcastTransaction(signedTxn)
-        if (transactionRes.hash) broadcastSuccess = true
+        transactionRes = await provider.broadcastTransaction(signedTxn)
       } catch (error: any) {
         this.#throwAccountOpBroadcastError(new Error(error))
       }
     }
 
-    if (broadcastSuccess) {
-      // TODO:
-      // await this.activity.addAccountOp(accountOp)
-      // this.removeUserRequest(accountOp.id)
-      // this.onResolveDappRequest({ hash: accountOp.signature }, accountOp.id)
+    if (transactionRes) {
+      this.activity.addAccountOp({
+        ...accountOp,
+        txnId: transactionRes.hash,
+        nonce: BigInt(transactionRes.nonce)
+      })
+      accountOp.calls.forEach((call) => {
+        if (call.fromUserRequestId) {
+          this.removeUserRequest(call.fromUserRequestId)
+          this.onResolveDappRequest({ hash: accountOp.signature }, call.fromUserRequestId)
+        }
+      })
+      console.log('broadcasted:', transactionRes)
+      // TODO: impl "benzina"
       this.emitUpdate()
     }
   }
