@@ -243,7 +243,7 @@ export default function useVelcroFetch({
           networkToFetch.balancesProvider,
           quickResponse
         )
-        if (!response) return null
+        if (!response || !response?.data?.success) return null
 
         // eslint-disable-next-line prefer-const
         let { cache, cacheTime, tokens, nfts, partial, provider } = response.data
