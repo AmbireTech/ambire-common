@@ -384,6 +384,19 @@ export class SignAccountOpController extends EventEmitter {
     this.emitUpdate()
   }
 
+  /**
+   * In Ambire, signatures have types. The last byte of each signature
+   * represents its type. Description in: SignatureValidator -> SignatureMode.
+   * To indicate that we want to perform an ETH sign, we have to add a 01
+   * hex (equal to the number 1) at the end of the signature.
+   *
+   * @param sig hex string
+   * @returns hex string
+   */
+  #wrapEthSign(sig: string): string {
+    return `${sig}${'01'}`
+  }
+
   async sign() {
     if (!this.accountOp?.signingKeyAddr || !this.accountOp?.signingKeyType)
       return this.#setSigningError('no signing key set')
@@ -429,9 +442,9 @@ export class SignAccountOpController extends EventEmitter {
         // Smart account, but EOA pays the fee
         // EOA pays for execute() - relayerless
 
-        this.accountOp.signature = await signer.signMessage(
+        this.accountOp.signature = this.#wrapEthSign(await signer.signMessage(
           ethers.hexlify(accountOpSignableHash(this.accountOp))
-        )
+        ))
       } else if (this.accountOp.gasFeePayment.isERC4337) {
         // TODO:
         // transform accountOp to userOperation
@@ -458,9 +471,9 @@ export class SignAccountOpController extends EventEmitter {
           this.accountOp.calls.push(call)
         }
 
-        this.accountOp!.signature = await signer.signMessage(
+        this.accountOp.signature = this.#wrapEthSign(await signer.signMessage(
           ethers.hexlify(accountOpSignableHash(this.accountOp))
-        )
+        ))
       }
 
       this.status = { type: SigningStatus.Done }

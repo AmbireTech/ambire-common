@@ -557,14 +557,17 @@ export class MainController extends EventEmitter {
       if (accountState.isDeployed) {
         const ambireAccount = new ethers.Interface(AmbireAccount.abi)
         to = accountOp.accountAddr
-        data = ambireAccount.encodeFunctionData('execute', [accountOp.calls, accountOp.signature])
+        data = ambireAccount.encodeFunctionData('execute', [
+          accountOp.calls.map((call) => [call.to, call.value, call.data]),
+          accountOp.signature
+        ])
       } else {
         const ambireFactory = new ethers.Interface(AmbireAccountFactory.abi)
         to = account.creation.factoryAddr
         data = ambireFactory.encodeFunctionData('deployAndExecute', [
           account.creation.bytecode,
           account.creation.salt,
-          accountOp.calls,
+          accountOp.calls.map((call) => [call.to, call.value, call.data]),
           accountOp.signature
         ])
       }
@@ -576,8 +579,11 @@ export class MainController extends EventEmitter {
       const signedTxn = await signer.signRawTransaction({
         to,
         data,
-        nonce: estimation!.nonce,
-        gasLimit: accountOp.gasFeePayment.simulatedGasLimit,
+        chainId: this.settings.networks.filter(net => net.id == accountOp.networkId)[0].chainId,
+        nonce: await provider.getTransactionCount(accountOp.signingKeyAddr),
+        // TODO: fix simulatedGasLimit as multiplying by 2 is just
+        // a quick fix
+        gasLimit: accountOp.gasFeePayment.simulatedGasLimit * 2n,
         gasPrice:
           (accountOp.gasFeePayment.amount - estimation!.addedNative) /
           accountOp.gasFeePayment.simulatedGasLimit
