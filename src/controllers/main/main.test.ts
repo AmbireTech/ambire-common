@@ -5,6 +5,7 @@ import { describe, expect, test } from '@jest/globals'
 
 import { produceMemoryStore } from '../../../test/helpers'
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
+import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'
 import { networks } from '../../consts/networks'
 import { UserRequest } from '../../interfaces/userRequest'
 import { KeyIterator } from '../../libs/keyIterator/keyIterator'
@@ -188,7 +189,11 @@ describe('Main Controller ', () => {
       const keyIterator = new KeyIterator(
         '0x574f261b776b26b1ad75a991173d0e8ca2ca1d481bd7822b2b58b2ef8a969f12'
       )
-      controller.accountAdder.init({ keyIterator, preselectedAccounts: [] })
+      controller.accountAdder.init({
+        keyIterator,
+        preselectedAccounts: [],
+        hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
+      })
       controller.accountAdder.addAccounts([accountPendingCreation]).catch(console.error)
     }
 

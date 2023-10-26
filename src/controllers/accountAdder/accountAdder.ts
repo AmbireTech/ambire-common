@@ -1,6 +1,7 @@
 import { ethers, JsonRpcProvider } from 'ethers'
 
 import { PROXY_AMBIRE_ACCOUNT } from '../../../dist/src/consts/deploy'
+import { HD_PATH_TEMPLATE_TYPE } from '../../consts/derivation'
 import { Account, AccountOnchainState } from '../../interfaces/account'
 import { KeyIterator } from '../../interfaces/keyIterator'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
@@ -36,8 +37,7 @@ export class AccountAdderController extends EventEmitter {
 
   #keyIterator?: KeyIterator | null
 
-  // optional because there is default derivationPath for each keyIterator
-  derivationPath?: string
+  hdPathTemplate?: HD_PATH_TEMPLATE_TYPE
 
   isInitialized: boolean = false
 
@@ -168,19 +168,19 @@ export class AccountAdderController extends EventEmitter {
     preselectedAccounts,
     page,
     pageSize,
-    derivationPath
+    hdPathTemplate
   }: {
     keyIterator: KeyIterator | null
     preselectedAccounts: Account[]
     page?: number
     pageSize?: number
-    derivationPath?: string
+    hdPathTemplate: HD_PATH_TEMPLATE_TYPE
   }): void {
     this.#keyIterator = keyIterator
     this.preselectedAccounts = preselectedAccounts
     this.page = page || INITIAL_PAGE_INDEX
     this.pageSize = pageSize || PAGE_SIZE
-    this.derivationPath = derivationPath
+    this.hdPathTemplate = hdPathTemplate
     this.isInitialized = true
 
     this.emitUpdate()
@@ -192,7 +192,7 @@ export class AccountAdderController extends EventEmitter {
     this.selectedAccounts = []
     this.page = INITIAL_PAGE_INDEX
     this.pageSize = PAGE_SIZE
-    this.derivationPath = undefined
+    this.hdPathTemplate = undefined
 
     this.addAccountsStatus = 'INITIAL'
     this.readyToAddAccounts = []
@@ -201,19 +201,19 @@ export class AccountAdderController extends EventEmitter {
     this.emitUpdate()
   }
 
-  setDerivationPath({
+  setHDPathTemplate({
     path,
     networks,
     providers
   }: {
-    path: string
+    path: HD_PATH_TEMPLATE_TYPE
     networks: NetworkDescriptor[]
     providers: { [key: string]: JsonRpcProvider }
   }): void {
-    this.derivationPath = path
+    this.hdPathTemplate = path
     this.page = INITIAL_PAGE_INDEX
     this.emitUpdate()
-    // get the first page with the new derivationPath
+    // get the first page with the new hdPathTemplate (derivation)
     this.setPage({ page: INITIAL_PAGE_INDEX, networks, providers })
   }
 
@@ -434,9 +434,7 @@ export class AccountAdderController extends EventEmitter {
     const startIdx = (this.page - 1) * this.pageSize
     const endIdx = (this.page - 1) * this.pageSize + (this.pageSize - 1)
 
-    const keys = this.derivationPath
-      ? await this.#keyIterator.retrieve(startIdx, endIdx)
-      : await this.#keyIterator.retrieve(startIdx, endIdx, this.derivationPath)
+    const keys = await this.#keyIterator.retrieve(startIdx, endIdx, this.hdPathTemplate)
 
     // Replace the parallel getKeys with foreach to prevent issues with Ledger,
     // which can only handle one request at a time.
