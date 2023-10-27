@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/brace-style */
 import { ethers, JsonRpcProvider, TransactionResponse } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
@@ -538,7 +539,7 @@ export class MainController extends EventEmitter {
       try {
         transactionRes = await provider.broadcastTransaction(accountOp.signature)
       } catch (error: any) {
-        this.#throwAccountOpBroadcastError(new Error(error))
+        this.#throwAccountOpBroadcastError(new Error(error), error.message || undefined)
       }
     }
     // Smart account but EOA pays the fee
@@ -605,7 +606,7 @@ export class MainController extends EventEmitter {
       try {
         transactionRes = await provider.broadcastTransaction(signedTxn)
       } catch (error: any) {
-        this.#throwAccountOpBroadcastError(new Error(error))
+        this.#throwAccountOpBroadcastError(new Error(error), error.message || undefined)
       }
     }
     // TO DO: ERC-4337 broadcast
