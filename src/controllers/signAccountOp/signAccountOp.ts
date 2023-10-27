@@ -13,6 +13,7 @@ import { Price, TokenResult } from '../../libs/portfolio'
 import EventEmitter from '../eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
 import { PortfolioController } from '../portfolio/portfolio'
+import ERC20 from '../../../contracts/compiled/IERC20.json'
 
 export enum SigningStatus {
   UnableToSign = 'unable-to-sign',
@@ -453,12 +454,12 @@ export class SignAccountOpController extends EventEmitter {
         // Relayer
 
         // In case of gas tank token fee payment, we need to include one more call to account op
+        const abiCoder = new ethers.AbiCoder()
+        const feeCollector = '0x942f9CE5D9a33a82F88D233AEb3292E680230348'
         if (this.accountOp.gasFeePayment.isGasTank) {
           // @TODO - config/const
-          const feeCollector = '0x942f9CE5D9a33a82F88D233AEb3292E680230348'
           const feeToken = this.#getPortfolioToken(this.accountOp.gasFeePayment.inToken)
 
-          const abiCoder = new ethers.AbiCoder()
           const call = {
             to: feeCollector,
             value: 0n,
@@ -469,6 +470,24 @@ export class SignAccountOpController extends EventEmitter {
           }
 
           this.accountOp.calls.push(call)
+        }
+        else if (this.accountOp.gasFeePayment.inToken) {
+          if (this.accountOp.gasFeePayment.inToken == '0x0000000000000000000000000000000000000000') {
+            // native payment
+            this.accountOp.calls.push({
+              to: feeCollector,
+              value: this.accountOp.gasFeePayment.amount,
+              data: '0x'
+            })
+          } else {
+            // token payment
+            const ERC20Interface = new ethers.Interface(ERC20.abi)
+            this.accountOp.calls.push({
+              to: this.accountOp.gasFeePayment.inToken,
+              value: 0n,
+              data: ERC20Interface.encodeFunctionData('transfer', [feeCollector, this.accountOp.gasFeePayment.amount])
+            })
+          }
         }
 
         this.accountOp.signature = this.#wrapEthSign(await signer.signMessage(

@@ -9,7 +9,7 @@ import { Key, KeystoreSignerType } from '../../interfaces/keystore'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
 import { Storage } from '../../interfaces/storage'
 import { Message, UserRequest } from '../../interfaces/userRequest'
-import { AccountOp, Call as AccountOpCall } from '../../libs/accountOp/accountOp'
+import { AccountOp, Call as AccountOpCall, callToTuple } from '../../libs/accountOp/accountOp'
 import { getAccountState } from '../../libs/accountState/accountState'
 import {
   getAccountOpBannersForEOA,
@@ -526,7 +526,7 @@ export class MainController extends EventEmitter {
       return
     }
 
-    let transactionRes: TransactionResponse | null = null
+    let transactionRes: TransactionResponse | {hash: string, nonce: number} | null = null
 
     // EOA account
     if (!account.creation) {
@@ -536,9 +536,8 @@ export class MainController extends EventEmitter {
         this.#throwAccountOpBroadcastError(new Error(error))
       }
     }
-
     // Smart account but EOA pays the fee
-    if (
+    else if (
       account.creation &&
       accountOp.gasFeePayment &&
       accountOp.gasFeePayment.paidBy !== account.addr
@@ -558,7 +557,7 @@ export class MainController extends EventEmitter {
         const ambireAccount = new ethers.Interface(AmbireAccount.abi)
         to = accountOp.accountAddr
         data = ambireAccount.encodeFunctionData('execute', [
-          accountOp.calls.map((call) => [call.to, call.value, call.data]),
+          accountOp.calls.map((call) => callToTuple(call)),
           accountOp.signature
         ])
       } else {
@@ -567,7 +566,7 @@ export class MainController extends EventEmitter {
         data = ambireFactory.encodeFunctionData('deployAndExecute', [
           account.creation.bytecode,
           account.creation.salt,
-          accountOp.calls.map((call) => [call.to, call.value, call.data]),
+          accountOp.calls.map((call) => callToTuple(call)),
           accountOp.signature
         ])
       }
@@ -593,6 +592,43 @@ export class MainController extends EventEmitter {
         transactionRes = await provider.broadcastTransaction(signedTxn)
       } catch (error: any) {
         this.#throwAccountOpBroadcastError(new Error(error))
+      }
+    }
+    // TO DO: ERC-4337 broadcast
+    else if (accountOp.gasFeePayment && accountOp.gasFeePayment.isERC4337) {
+
+    }
+    // Relayer broadcast
+    else {
+      try {
+        const response = await this.#callRelayer(
+          `/identity/${accountOp.accountAddr}/${accountOp.networkId}/submit`,
+          'POST',
+          {
+            gasLimit: accountOp.gasFeePayment!.simulatedGasLimit * 2n,
+            txns: accountOp.calls.map((call) => callToTuple(call)),
+            signature: accountOp.signature,
+            signer: {
+                address: accountOp.signingKeyAddr,
+            },
+            nonce: accountOp.nonce,
+          }
+        )
+        if (response.data.success) {
+          // not sure which should be the correct nonce here
+          // we don't have information on the one that's from the relayer
+          // unless we strictly call the RPC
+          // and calling the RPC here is not the best as our RPC might not
+          // be up-to-date
+          transactionRes = {
+            hash: response.data.txId,
+            nonce: parseInt(accountOp.nonce!.toString())
+          }
+        } else {
+          this.#throwAccountOpBroadcastError(new Error(response.data.message))
+        }
+      } catch (e: any) {
+        this.#throwAccountOpBroadcastError(e)
       }
     }
 
