@@ -615,31 +615,33 @@ export class MainController extends EventEmitter {
     // Relayer broadcast
     else {
       try {
+        const body = {
+          gasLimit: parseInt(accountOp.gasFeePayment!.simulatedGasLimit.toString()),
+          txns: accountOp.calls.map((call) => callToTuple(call)),
+          signature: accountOp.signature,
+          signer: {
+            address: accountOp.signingKeyAddr,
+          },
+          nonce: parseInt(accountOp.nonce!.toString())
+        }
         const response = await this.#callRelayer(
           `/identity/${accountOp.accountAddr}/${accountOp.networkId}/submit`,
           'POST',
-          {
-            gasLimit: accountOp.gasFeePayment!.simulatedGasLimit * 2n,
-            txns: accountOp.calls.map((call) => callToTuple(call)),
-            signature: accountOp.signature,
-            signer: {
-              address: accountOp.signingKeyAddr
-            },
-            nonce: accountOp.nonce
-          }
+          body
         )
-        if (response.data.success) {
+
+        if (response.success) {
           // not sure which should be the correct nonce here
           // we don't have information on the one that's from the relayer
           // unless we strictly call the RPC
           // and calling the RPC here is not the best as our RPC might not
           // be up-to-date
           transactionRes = {
-            hash: response.data.txId,
-            nonce: parseInt(accountOp.nonce!.toString(), 10)
+            hash: response.txId,
+            nonce: parseInt(accountOp.nonce!.toString())
           }
         } else {
-          this.#throwAccountOpBroadcastError(new Error(response.data.message))
+          this.#throwAccountOpBroadcastError(new Error(response.message))
         }
       } catch (e: any) {
         this.#throwAccountOpBroadcastError(e)
