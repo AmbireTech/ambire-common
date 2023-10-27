@@ -35,3 +35,5 @@ export const HD_PATHS: HDPath[] = [
   { label: 'BIP44 (Ledger Live)', path: BIP44_LEDGER_DERIVATION_TEMPLATE },
   { label: 'Legacy (Ledger, MyEtherWallet, MyCrypto)', path: LEGACY_POPULAR_DERIVATION_TEMPLATE }
 ]
+
+export const SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET = 100000
