@@ -105,6 +105,8 @@ export class MainController extends EventEmitter {
 
   onUpdateDappSelectedAccount: (accountAddr: string) => void
 
+  onBroadcastSuccess?: (type: 'message' | 'typed-data' | 'account-op') => void
+
   constructor({
     storage,
     fetch,
@@ -113,6 +115,7 @@ export class MainController extends EventEmitter {
     onResolveDappRequest,
     onRejectDappRequest,
     onUpdateDappSelectedAccount,
+    onBroadcastSuccess,
     pinned
   }: {
     storage: Storage
@@ -122,6 +125,7 @@ export class MainController extends EventEmitter {
     onResolveDappRequest: (data: any, id?: number) => void
     onRejectDappRequest: (err: any, id?: number) => void
     onUpdateDappSelectedAccount: (accountAddr: string) => void
+    onBroadcastSuccess?: (type: 'message' | 'typed-data' | 'account-op') => void
     pinned: string[]
   }) {
     super()
@@ -148,6 +152,7 @@ export class MainController extends EventEmitter {
     this.onResolveDappRequest = onResolveDappRequest
     this.onRejectDappRequest = onRejectDappRequest
     this.onUpdateDappSelectedAccount = onUpdateDappSelectedAccount
+    this.onBroadcastSuccess = onBroadcastSuccess
     // @TODO Load userRequests from storage and emit that we have updated
     // @TODO
   }
@@ -645,6 +650,7 @@ export class MainController extends EventEmitter {
         }
       })
       console.log('broadcasted:', transactionRes)
+      !!this.onBroadcastSuccess && this.onBroadcastSuccess('account-op')
       // TODO: impl "benzina"
       this.emitUpdate()
     }
@@ -654,6 +660,10 @@ export class MainController extends EventEmitter {
     this.activity.addSignedMessage(signedMessage, signedMessage.accountAddr)
     this.removeUserRequest(signedMessage.id)
     this.onResolveDappRequest({ hash: signedMessage.signature }, signedMessage.id)
+    !!this.onBroadcastSuccess &&
+      this.onBroadcastSuccess(
+        signedMessage.content.kind === 'typedMessage' ? 'typed-data' : 'message'
+      )
     this.emitUpdate()
   }
 
