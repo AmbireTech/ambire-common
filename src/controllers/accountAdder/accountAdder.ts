@@ -1,7 +1,10 @@
 import { ethers, JsonRpcProvider } from 'ethers'
 
 import { PROXY_AMBIRE_ACCOUNT } from '../../../dist/src/consts/deploy'
-import { HD_PATH_TEMPLATE_TYPE } from '../../consts/derivation'
+import {
+  HD_PATH_TEMPLATE_TYPE,
+  SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
+} from '../../consts/derivation'
 import { Account, AccountOnchainState } from '../../interfaces/account'
 import { KeyIterator } from '../../interfaces/keyIterator'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
@@ -435,16 +438,31 @@ export class AccountAdderController extends EventEmitter {
     const endIdx = (this.page - 1) * this.pageSize + (this.pageSize - 1)
 
     const keys = await this.#keyIterator.retrieve(startIdx, endIdx, this.hdPathTemplate)
+    const keysForSmartAccounts = await this.#keyIterator.retrieve(
+      startIdx + SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET,
+      endIdx + SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET,
+      this.hdPathTemplate
+    )
 
     // Replace the parallel getKeys with foreach to prevent issues with Ledger,
     // which can only handle one request at a time.
     // eslint-disable-next-line no-restricted-syntax
-    for (const [index, key] of keys.entries()) {
+    for (const [index, key] of keysForSmartAccounts.entries()) {
       // eslint-disable-next-line no-await-in-loop
       const smartAccount = await getSmartAccount(key)
       const slot = startIdx + (index + 1)
-      accounts.push({ account: getLegacyAccount(key), isLinked: false, slot })
+      accounts.push({
+        account: getLegacyAccount(key),
+        isLinked: false,
+        slot: slot + SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
+      })
       accounts.push({ account: smartAccount, isLinked: false, slot })
+    }
+
+    // eslint-disable-next-line no-restricted-syntax
+    for (const [index, key] of keys.entries()) {
+      const slot = startIdx + (index + 1)
+      accounts.push({ account: getLegacyAccount(key), isLinked: false, slot })
     }
 
     const accountsWithNetworks = await this.#getAccountsUsedOnNetworks({
