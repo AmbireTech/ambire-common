@@ -1,6 +1,5 @@
-import { ethers } from 'ethers'
+import { ethers, JsonRpcProvider } from 'ethers'
 
-import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import { Account, AccountStates } from '../../interfaces/account'
 import { Key } from '../../interfaces/keystore'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
@@ -14,6 +13,7 @@ import { Price, TokenResult } from '../../libs/portfolio'
 import EventEmitter from '../eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
 import { PortfolioController } from '../portfolio/portfolio'
+import ERC20 from '../../../contracts/compiled/IERC20.json'
 
 export enum SigningStatus {
   UnableToSign = 'unable-to-sign',
@@ -50,6 +50,8 @@ export class SignAccountOpController extends EventEmitter {
 
   #fetch: Function
 
+  #providers: { [key: string]: JsonRpcProvider }
+
   #accounts: Account[] | null = null
 
   #networks: NetworkDescriptor[] | null = null
@@ -76,7 +78,8 @@ export class SignAccountOpController extends EventEmitter {
     keystore: KeystoreController,
     portfolio: PortfolioController,
     storage: Storage,
-    fetch: Function
+    fetch: Function,
+    providers: { [key: string]: JsonRpcProvider }
   ) {
     super()
 
@@ -84,6 +87,7 @@ export class SignAccountOpController extends EventEmitter {
     this.#portfolio = portfolio
     this.#storage = storage
     this.#fetch = fetch
+    this.#providers = providers
   }
 
   get isInitialized(): boolean {
@@ -300,7 +304,8 @@ export class SignAccountOpController extends EventEmitter {
       if (!account || !account?.creation) {
         simulatedGasLimit = gasUsed
         amount = simulatedGasLimit * gasPrice + this.#estimation!.addedNative
-      } else if (this.paidBy !== this.accountOp!.accountAddr) { // Smart account, but EOA pays the fee
+      } else if (this.paidBy !== this.accountOp!.accountAddr) {
+        // Smart account, but EOA pays the fee
         // @TODO - add comment why we add 21k gas here
         simulatedGasLimit = gasUsed + 21000n
         amount = simulatedGasLimit * gasPrice + this.#estimation!.addedNative
@@ -380,11 +385,26 @@ export class SignAccountOpController extends EventEmitter {
     this.emitUpdate()
   }
 
+  /**
+   * In Ambire, signatures have types. The last byte of each signature
+   * represents its type. Description in: SignatureValidator -> SignatureMode.
+   * To indicate that we want to perform an ETH sign, we have to add a 01
+   * hex (equal to the number 1) at the end of the signature.
+   *
+   * @param sig hex string
+   * @returns hex string
+   */
+  #wrapEthSign(sig: string): string {
+    return `${sig}${'01'}`
+  }
+
   async sign() {
     if (!this.accountOp?.signingKeyAddr || !this.accountOp?.signingKeyType)
       return this.#setSigningError('no signing key set')
     if (!this.accountOp?.gasFeePayment) return this.#setSigningError('no gasFeePayment set')
     if (!this.readyToSign) return this.#setSigningError('not ready to sign')
+    const network = this.#networks?.find((n) => n.id === this.accountOp?.networkId)
+    if (!network) return this.#setSigningError('sign: unsupported network')
 
     const account = this.#getAccount()
     const signer = await this.#keystore.getSigner(
@@ -399,6 +419,8 @@ export class SignAccountOpController extends EventEmitter {
 
     const gasFeePayment = this.accountOp.gasFeePayment
 
+    const provider = this.#providers[this.accountOp.networkId]
+    const nonce = await provider.getTransactionCount(this.accountOp.accountAddr)
     try {
       // In case of EOA account
       if (!account.creation) {
@@ -411,7 +433,9 @@ export class SignAccountOpController extends EventEmitter {
           to,
           value,
           data,
+          chainId: network.chainId,
           gasLimit: gasFeePayment.simulatedGasLimit,
+          nonce,
           gasPrice:
             (gasFeePayment.amount - this.#estimation!.addedNative) / gasFeePayment.simulatedGasLimit
         })
@@ -419,28 +443,23 @@ export class SignAccountOpController extends EventEmitter {
         // Smart account, but EOA pays the fee
         // EOA pays for execute() - relayerless
 
-        const iface = new ethers.Interface(AmbireAccount.abi)
-
-        this.accountOp.signature = await signer.signRawTransaction({
-          to: this.accountOp.accountAddr,
-          data: iface.encodeFunctionData('execute', [
-            this.accountOp.calls,
-            await signer.signMessage(ethers.hexlify(accountOpSignableHash(this.accountOp)))
-          ]),
-          gasLimit: gasFeePayment.simulatedGasLimit,
-          gasPrice:
-            (gasFeePayment.amount - this.#estimation!.addedNative) / gasFeePayment.simulatedGasLimit
-        })
+        this.accountOp.signature = this.#wrapEthSign(await signer.signMessage(
+          ethers.hexlify(accountOpSignableHash(this.accountOp))
+        ))
+      } else if (this.accountOp.gasFeePayment.isERC4337) {
+        // TODO:
+        // transform accountOp to userOperation
+        // sign it
       } else {
         // Relayer
 
         // In case of gas tank token fee payment, we need to include one more call to account op
+        const abiCoder = new ethers.AbiCoder()
+        const feeCollector = '0x942f9CE5D9a33a82F88D233AEb3292E680230348'
         if (this.accountOp.gasFeePayment.isGasTank) {
           // @TODO - config/const
-          const feeCollector = '0x942f9CE5D9a33a82F88D233AEb3292E680230348'
           const feeToken = this.#getPortfolioToken(this.accountOp.gasFeePayment.inToken)
 
-          const abiCoder = new ethers.AbiCoder()
           const call = {
             to: feeCollector,
             value: 0n,
@@ -452,10 +471,28 @@ export class SignAccountOpController extends EventEmitter {
 
           this.accountOp.calls.push(call)
         }
+        else if (this.accountOp.gasFeePayment.inToken) {
+          if (this.accountOp.gasFeePayment.inToken == '0x0000000000000000000000000000000000000000') {
+            // native payment
+            this.accountOp.calls.push({
+              to: feeCollector,
+              value: this.accountOp.gasFeePayment.amount,
+              data: '0x'
+            })
+          } else {
+            // token payment
+            const ERC20Interface = new ethers.Interface(ERC20.abi)
+            this.accountOp.calls.push({
+              to: this.accountOp.gasFeePayment.inToken,
+              value: 0n,
+              data: ERC20Interface.encodeFunctionData('transfer', [feeCollector, this.accountOp.gasFeePayment.amount])
+            })
+          }
+        }
 
-        this.accountOp!.signature = await signer.signMessage(
+        this.accountOp.signature = this.#wrapEthSign(await signer.signMessage(
           ethers.hexlify(accountOpSignableHash(this.accountOp))
-        )
+        ))
       }
 
       this.status = { type: SigningStatus.Done }

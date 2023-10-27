@@ -1,9 +1,8 @@
 /* eslint-disable new-cap */
-import { TransactionRequest, Wallet } from 'ethers'
+import { TransactionRequest, Wallet, getBytes, isHexString } from 'ethers'
 
 import { Key, KeystoreSigner as KeystoreSignerInterface } from '../../interfaces/keystore'
 import { TypedMessage } from '../../interfaces/userRequest'
-import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
 
 export class KeystoreSigner implements KeystoreSignerInterface {
   key: Key
@@ -41,15 +40,27 @@ export class KeystoreSigner implements KeystoreSignerInterface {
     return sig
   }
 
-  async signMessage(hash: string | Uint8Array) {
-    let sig
-
-    if (typeof hash === 'string') {
-      sig = await this.#signer.signMessage(hexStringToUint8Array(hash))
-    } else {
-      sig = this.#signer.signMessage(hash)
+  async signMessage(hex: string): Promise<string> {
+    // interface implementation expects a hex number
+    // if something different is passed, we have two options:
+    // * throw an error
+    // * convert to hex
+    // converting to hex is not so straightforward, though
+    // you might do ethers.toUtf8Bytes() if it's a string
+    // or you might do ethers.toBeHex() for a number with a specific length
+    // or you might do ethers.hexlify() if you don't care
+    // therefore, it's the job of the client to think what he wants
+    // to pass. Throwing an error here might save debuging hours
+    if (! isHexString(hex)) {
+      throw new Error('Keystore signer, signMessage: passed value is not a hex')
     }
 
-    return sig
+    return this.#signer.signMessage(getBytes(hex))
+  }
+
+  async sendTransaction(transaction: TransactionRequest) {
+    const transactionRes = await this.#signer.sendTransaction(transaction)
+
+    return transactionRes
   }
 }
