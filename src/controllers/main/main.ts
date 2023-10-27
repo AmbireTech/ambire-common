@@ -531,7 +531,7 @@ export class MainController extends EventEmitter {
       return
     }
 
-    let transactionRes: TransactionResponse | {hash: string, nonce: number} | null = null
+    let transactionRes: TransactionResponse | { hash: string; nonce: number } | null = null
 
     // EOA account
     if (!account.creation) {
@@ -580,10 +580,19 @@ export class MainController extends EventEmitter {
         accountOp.signingKeyAddr,
         accountOp.signingKeyType
       )
+      const network = this.settings.networks.find((n) => n.id === accountOp.networkId)
+
+      if (!network) {
+        this.#throwAccountOpBroadcastError(
+          new Error(`Network with id: ${accountOp.networkId} not found`)
+        )
+        return
+      }
+
       const signedTxn = await signer.signRawTransaction({
         to,
         data,
-        chainId: this.settings.networks.filter(net => net.id == accountOp.networkId)[0].chainId,
+        chainId: network.chainId,
         nonce: await provider.getTransactionCount(accountOp.signingKeyAddr),
         // TODO: fix simulatedGasLimit as multiplying by 2 is just
         // a quick fix
@@ -601,7 +610,6 @@ export class MainController extends EventEmitter {
     }
     // TO DO: ERC-4337 broadcast
     else if (accountOp.gasFeePayment && accountOp.gasFeePayment.isERC4337) {
-
     }
     // Relayer broadcast
     else {
@@ -614,9 +622,9 @@ export class MainController extends EventEmitter {
             txns: accountOp.calls.map((call) => callToTuple(call)),
             signature: accountOp.signature,
             signer: {
-                address: accountOp.signingKeyAddr,
+              address: accountOp.signingKeyAddr
             },
-            nonce: accountOp.nonce,
+            nonce: accountOp.nonce
           }
         )
         if (response.data.success) {
@@ -627,7 +635,7 @@ export class MainController extends EventEmitter {
           // be up-to-date
           transactionRes = {
             hash: response.data.txId,
-            nonce: parseInt(accountOp.nonce!.toString())
+            nonce: parseInt(accountOp.nonce!.toString(), 10)
           }
         } else {
           this.#throwAccountOpBroadcastError(new Error(response.data.message))
@@ -687,10 +695,11 @@ export class MainController extends EventEmitter {
     ]
   }
 
-  #throwAccountOpBroadcastError(error: Error) {
+  #throwAccountOpBroadcastError(error: Error, message?: string) {
     this.emitError({
       level: 'major',
       message:
+        message ||
         'Unable to send transaction. Please try again or contact Ambire support if the issue persists.',
       error
     })
