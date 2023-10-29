@@ -5,7 +5,7 @@ import { getAddress, getAction, getLabel, getToken } from '../utils'
 import { AccountOp } from '../../accountOp/accountOp'
 
 // const vaultNames = { ethereum: 'Yearn', polygon: 'Tesseract' }
-const tokenPrefixes = { ethereum: 'y', polygon: 'tv' }
+const tokenPrefixes = { ethereum: 'y' }
 // add 'y' or 'tv' prefix, eg '10 USDC' will become '10 yUSDC' to signify vault tokens
 
 export const yearnVaultModule: HumanizerCallModule = (
@@ -14,11 +14,10 @@ export const yearnVaultModule: HumanizerCallModule = (
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   options?: any
 ) => {
-  const { yearnVaults, tesseractVaults } = accountOp.humanizerMeta || {}
+  const { yearnVaults } = accountOp.humanizerMeta || {}
   //   const yearnWETHVaultAddress = '0xa258C4606Ca8206D8aA700cE2143D7db854D168c'
   const iface = new ethers.Interface(accountOp.humanizerMeta?.['abis:YearnVault'])
-  const getVaultInfo = (to: string) =>
-    yearnVaults.find((x: any) => x.addr === to) || tesseractVaults.find((x: any) => x.addr === to)
+  const getVaultInfo = (to: string) => yearnVaults.find((x: any) => x.addr === to)
 
   const matcher = {
     [`${iface.getFunction('deposit(uint256,address)')?.selector}`]: (
@@ -87,7 +86,6 @@ export const yearnVaultModule: HumanizerCallModule = (
         visualization = matcher[call.data.slice(0, 10)](accountOp, call)
         let prefix = ''
         if (accountOp.networkId === 'ethereum') prefix = tokenPrefixes.ethereum
-        if (accountOp.networkId === 'polygon') prefix = tokenPrefixes.polygon
         visualization = visualization.map((v) =>
           v.type === 'token'
             ? {

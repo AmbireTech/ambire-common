@@ -35,8 +35,7 @@ function initHumanizerMeta(humanizerMeta) {
   
 	return {
 	  ...newHumanizerMeta,
-	  yearnVaults: humanizerMeta.yearnVaults,
-	  tesseractVaults: humanizerMeta.yearnVaults
+	  yearnVaults: humanizerMeta.yearnVaults
 	}
   }
 const resultPath = path.join(__dirname, '..', 'src', 'consts', 'humanizerInfo.json')

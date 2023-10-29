@@ -61,6 +61,7 @@ interface TokenList {
   decmals?: number
 }
 
+// @NOTE humanizer library uses different structure
 export interface HumanizerInfoType {
   abis: HumanizerInfoAbisType
   tokens: { [key: string]: Array<number | null | string> }
