@@ -1,5 +1,5 @@
 import { ethers } from 'ethers'
-import { nativeTokens } from '../../../consts/networks'
+import { networks } from '../../../consts/networks'
 import {
   HumanizerFragment,
   HumanizerParsingModule,
@@ -13,13 +13,14 @@ export const tokenParsing: HumanizerParsingModule = (
   visualization: HumanizerVisualization[],
   options?: any
 ) => {
+  const nativeSymbol = networks.find((n) => n.id === humanizerSettings.networkId)?.nativeAssetSymbol
   const asyncOps: Promise<HumanizerFragment | null>[] = []
   const fullVisualization: HumanizerVisualization[] = visualization.map(
     (v: HumanizerVisualization) => {
       if (v.type === 'token') {
         const tokenMeta =
           v.address === ethers.ZeroAddress
-            ? nativeTokens[humanizerSettings.networkId]
+            ? nativeSymbol && [nativeSymbol, 18]
             : humanizerSettings.humanizerMeta?.[`tokens:${v.address}`]
         if (tokenMeta) {
           return v.amount ===
