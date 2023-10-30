@@ -7,7 +7,7 @@ import {
   HumanizerVisualization,
   IrCall
 } from '../interfaces'
-import { checkIfUnknowAction, getAction, getAddress, getLabel, getToken } from '../utils'
+import { checkIfUnknownAction, getAction, getAddress, getLabel, getToken } from '../utils'
 
 async function fetchFuncEtherface(
   selector: string,
@@ -63,7 +63,7 @@ export const fallbackHumanizer: HumanizerCallModule = (
 ) => {
   const asyncOps: Promise<HumanizerFragment | null>[] = []
   const newCalls = currentIrCalls.map((call) => {
-    if (call.fullVisualization && !checkIfUnknowAction(call?.fullVisualization)) return call
+    if (call.fullVisualization && !checkIfUnknownAction(call?.fullVisualization)) return call
 
     const visualization: Array<HumanizerVisualization> = []
     if (call.data !== '0x') {

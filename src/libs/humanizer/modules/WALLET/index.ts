@@ -3,7 +3,7 @@ import { WALLETSupplyControllerMapping } from './WALLETSupplyController'
 import { StakingPools } from './stakingPools'
 import { HumanizerCallModule, IrCall } from '../../interfaces'
 import { AccountOp } from '../../../accountOp/accountOp'
-import { checkIfUnknowAction, getUnknownVisualization } from '../../utils'
+import { checkIfUnknownAction, getUnknownVisualization } from '../../utils'
 
 const stakingAddresses = [
   '0x47Cd7E91C3CBaAF266369fe8518345fc4FC12935',
@@ -25,7 +25,7 @@ export const WALLETModule: HumanizerCallModule = (
   const newCalls = irCalls.map((call: IrCall) => {
     if (
       stakingAddresses.includes(call.to) &&
-      (!call.fullVisualization || checkIfUnknowAction(call.fullVisualization))
+      (!call.fullVisualization || checkIfUnknownAction(call.fullVisualization))
     ) {
       if (matcher.stakingPool[call.data.slice(0, 10)]) {
         return {
