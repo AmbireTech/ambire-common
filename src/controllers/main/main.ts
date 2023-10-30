@@ -577,9 +577,10 @@ export class MainController extends EventEmitter {
         ])
       }
 
+      const broadcastKey = this.keystore.keys.find(key => key.addr == accountOp.gasFeePayment!.paidBy)
       const signer = await this.keystore.getSigner(
-        accountOp.signingKeyAddr,
-        accountOp.signingKeyType
+        accountOp.gasFeePayment!.paidBy,
+        broadcastKey!.type
       )
       const network = this.settings.networks.find((n) => n.id === accountOp.networkId)
 
@@ -594,7 +595,7 @@ export class MainController extends EventEmitter {
         to,
         data,
         chainId: network.chainId,
-        nonce: await provider.getTransactionCount(accountOp.signingKeyAddr),
+        nonce: await provider.getTransactionCount(accountOp.gasFeePayment!.paidBy),
         // TODO: fix simulatedGasLimit as multiplying by 2 is just
         // a quick fix
         gasLimit: accountOp.gasFeePayment.simulatedGasLimit * 2n,
