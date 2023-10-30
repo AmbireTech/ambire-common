@@ -32,6 +32,7 @@ type CalculatedAccount = {
   isEOAUsedForSmartAccountKeyOnly: boolean
   slot: number
   // TODO: include `index` in here?
+  index: number
 }
 
 /**
@@ -137,7 +138,8 @@ export class AccountAdderController extends EventEmitter {
         associatedLinkedAccounts.map((linkedAcc) => ({
           ...linkedAcc,
           slot: calculatedAccount.slot,
-          isEOAUsedForSmartAccountKeyOnly: false // always false at this point
+          isEOAUsedForSmartAccountKeyOnly: calculatedAccount.isEOAUsedForSmartAccountKeyOnly,
+          index: calculatedAccount.index
         }))
       )
 
@@ -481,12 +483,14 @@ export class AccountAdderController extends EventEmitter {
         account: getLegacyAccount(key),
         isLinked: false,
         slot,
+        index: startIdx + index,
         isEOAUsedForSmartAccountKeyOnly: true
       })
       accounts.push({
         account: smartAccount,
         isLinked: false,
         slot,
+        index: startIdx + index + SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET,
         isEOAUsedForSmartAccountKeyOnly: false
       })
     }
