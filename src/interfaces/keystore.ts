@@ -1,3 +1,4 @@
+import { HD_PATH_TEMPLATE_TYPE } from '../consts/derivation'
 import { Account } from './account'
 import { TypedMessage } from './userRequest'
 
@@ -46,9 +47,14 @@ export type InternalKey = {
 
 export type ExternalKey = {
   addr: Account['addr']
-  type: 'trezor' | 'ledger' | 'lattice' | 'string'
+  type: 'trezor' | 'ledger' | 'lattice' | string
   label: string
-  meta: { model: string; hdPath: string }
+  meta: {
+    deviceId: string
+    deviceModel: string
+    hdPathTemplate: HD_PATH_TEMPLATE_TYPE
+    index: number
+  }
 }
 
 export type StoredKey = (InternalKey & { privKey: string }) | (ExternalKey & { privKey: null })

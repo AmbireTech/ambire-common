@@ -3,6 +3,7 @@ import { concat, getBytes, hexlify, keccak256, randomBytes, toUtf8Bytes, Wallet 
 import scrypt from 'scrypt-js'
 
 import {
+  ExternalKey,
   Key,
   KeystoreSignerType,
   MainKey,
@@ -291,7 +292,7 @@ export class KeystoreController extends EventEmitter {
         return { addr, label, type, meta, isExternallyStored: false }
       }
 
-      return { addr, label, type, meta, isExternallyStored: true }
+      return { addr, label, type, meta: meta as ExternalKey['meta'], isExternallyStored: true }
     })
   }
 

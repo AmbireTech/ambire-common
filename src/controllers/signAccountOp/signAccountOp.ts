@@ -335,7 +335,7 @@ export class SignAccountOpController extends EventEmitter {
           (option) => option.address === feeToken?.address
         )!.gasUsed!
         // @TODO - add comment why here we use `feePaymentOptions`, but we don't use it in EOA
-        simulatedGasLimit = gasUsed + feeTokenGasUsed
+        simulatedGasLimit = gasUsed + feeTokenGasUsed + 21000n
 
         const amountInWei = simulatedGasLimit * gasPrice + this.#estimation!.addedNative
 
@@ -478,10 +478,10 @@ export class SignAccountOpController extends EventEmitter {
           }
 
           this.accountOp.calls.push(call)
-        } else if (this.accountOp.gasFeePayment.inToken) {
-          if (
-            this.accountOp.gasFeePayment.inToken === '0x0000000000000000000000000000000000000000'
-          ) {
+        }
+        else if (this.accountOp.gasFeePayment.inToken) {
+          // TODO: add the fee payment only if it hasn't been added already
+          if (this.accountOp.gasFeePayment.inToken == '0x0000000000000000000000000000000000000000') {
             // native payment
             this.accountOp.calls.push({
               to: feeCollector,

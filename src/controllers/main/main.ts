@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/brace-style */
 import { ethers, JsonRpcProvider, TransactionResponse } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
@@ -538,7 +539,7 @@ export class MainController extends EventEmitter {
       try {
         transactionRes = await provider.broadcastTransaction(accountOp.signature)
       } catch (error: any) {
-        this.#throwAccountOpBroadcastError(new Error(error))
+        this.#throwAccountOpBroadcastError(new Error(error), error.message || undefined)
       }
     }
     // Smart account but EOA pays the fee
@@ -576,9 +577,10 @@ export class MainController extends EventEmitter {
         ])
       }
 
+      const broadcastKey = this.keystore.keys.find(key => key.addr == accountOp.gasFeePayment!.paidBy)
       const signer = await this.keystore.getSigner(
-        accountOp.signingKeyAddr,
-        accountOp.signingKeyType
+        accountOp.gasFeePayment!.paidBy,
+        broadcastKey!.type
       )
       const network = this.settings.networks.find((n) => n.id === accountOp.networkId)
 
@@ -593,7 +595,7 @@ export class MainController extends EventEmitter {
         to,
         data,
         chainId: network.chainId,
-        nonce: await provider.getTransactionCount(accountOp.signingKeyAddr),
+        nonce: await provider.getTransactionCount(accountOp.gasFeePayment!.paidBy),
         // TODO: fix simulatedGasLimit as multiplying by 2 is just
         // a quick fix
         gasLimit: accountOp.gasFeePayment.simulatedGasLimit * 2n,
@@ -605,7 +607,7 @@ export class MainController extends EventEmitter {
       try {
         transactionRes = await provider.broadcastTransaction(signedTxn)
       } catch (error: any) {
-        this.#throwAccountOpBroadcastError(new Error(error))
+        this.#throwAccountOpBroadcastError(new Error(error), error.message || undefined)
       }
     }
     // TO DO: ERC-4337 broadcast
@@ -614,31 +616,28 @@ export class MainController extends EventEmitter {
     // Relayer broadcast
     else {
       try {
+        const body = {
+          gasLimit: Number(accountOp.gasFeePayment!.simulatedGasLimit),
+          txns: accountOp.calls.map((call) => callToTuple(call)),
+          signature: accountOp.signature,
+          signer: {
+            address: accountOp.signingKeyAddr,
+          },
+          nonce: Number(accountOp.nonce)
+        }
         const response = await this.#callRelayer(
           `/identity/${accountOp.accountAddr}/${accountOp.networkId}/submit`,
           'POST',
-          {
-            gasLimit: accountOp.gasFeePayment!.simulatedGasLimit * 2n,
-            txns: accountOp.calls.map((call) => callToTuple(call)),
-            signature: accountOp.signature,
-            signer: {
-              address: accountOp.signingKeyAddr
-            },
-            nonce: accountOp.nonce
-          }
+          body
         )
-        if (response.data.success) {
-          // not sure which should be the correct nonce here
-          // we don't have information on the one that's from the relayer
-          // unless we strictly call the RPC
-          // and calling the RPC here is not the best as our RPC might not
-          // be up-to-date
+
+        if (response.success) {
           transactionRes = {
-            hash: response.data.txId,
-            nonce: parseInt(accountOp.nonce!.toString(), 10)
+            hash: response.txId,
+            nonce: Number(accountOp.nonce)
           }
         } else {
-          this.#throwAccountOpBroadcastError(new Error(response.data.message))
+          this.#throwAccountOpBroadcastError(new Error(response.message))
         }
       } catch (e: any) {
         this.#throwAccountOpBroadcastError(e)

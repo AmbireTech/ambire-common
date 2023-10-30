@@ -24,29 +24,29 @@ describe('Basic Ambire Account tests', function () {
     ])
     ambireAccountAddress = addr
   })
-  it('ONLY_IDENTITY_CAN_CALL on setAddrPrivilege', async function () {
+  it('ONLY_ACCOUNT_CAN_CALL on setAddrPrivilege', async function () {
     const [signer] = await ethers.getSigners()
     const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signer)
     await expect(contract.setAddrPrivilege(addressTwo, ethers.toBeHex(1, 32)))
-      .to.be.revertedWith('ONLY_IDENTITY_CAN_CALL')
+      .to.be.revertedWith('ONLY_ACCOUNT_CAN_CALL')
   })
-  it('ONLY_IDENTITY_CAN_CALL on tryCatch', async function () {
+  it('ONLY_ACCOUNT_CAN_CALL on tryCatch', async function () {
     const [signer] = await ethers.getSigners()
     const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signer)
     await expect(contract.tryCatch(addressTwo, 1, '0x00'))
-      .to.be.revertedWith('ONLY_IDENTITY_CAN_CALL')
+      .to.be.revertedWith('ONLY_ACCOUNT_CAN_CALL')
   })
-  it('ONLY_IDENTITY_CAN_CALL on tryCatchLimit', async function () {
+  it('ONLY_ACCOUNT_CAN_CALL on tryCatchLimit', async function () {
     const [signer] = await ethers.getSigners()
     const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signer)
     await expect(contract.tryCatchLimit(addressTwo, 1, '0x00', 100000))
-      .to.be.revertedWith('ONLY_IDENTITY_CAN_CALL')
+      .to.be.revertedWith('ONLY_ACCOUNT_CAN_CALL')
   })
-  it('ONLY_IDENTITY_CAN_CALL on executeBySelf', async function () {
+  it('ONLY_ACCOUNT_CAN_CALL on executeBySelf', async function () {
     const [signer] = await ethers.getSigners()
     const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signer)
     await expect(contract.executeBySelf([[addressTwo, 1, '0x00']]))
-      .to.be.revertedWith('ONLY_IDENTITY_CAN_CALL')
+      .to.be.revertedWith('ONLY_ACCOUNT_CAN_CALL')
   })
   it('execute should fail if the account does not have privileges', async function () {
     const [signer, signer2] = await ethers.getSigners()

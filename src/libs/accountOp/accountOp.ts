@@ -70,8 +70,8 @@ export interface AccountOp {
   status?: AccountOpStatus
 }
 
-export function callToTuple(call: Call): [string, bigint, string] {
-  return [call.to, call.value, call.data]
+export function callToTuple(call: Call): [string, string, string] {
+  return [call.to, call.value.toString(), call.data]
 }
 
 export function canBroadcast(op: AccountOp, accountIsEOA: boolean): boolean {
@@ -151,7 +151,7 @@ export function accountOpSignableHash(op: AccountOp): Uint8Array {
           op.accountAddr,
           opNetworks[0].chainId,
           op.nonce ?? 0n,
-          op.calls.map((call: Call) => [call.to, call.value, call.data])
+          op.calls.map((call: Call) => callToTuple(call))
         ]
       )
     )
