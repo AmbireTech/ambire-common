@@ -132,24 +132,30 @@ export const genericErc20Humanizer: HumanizerCallModule = (
     }
   }
   const newCalls = currentIrCalls.map((call) => {
+    const sigHash = call.data.substring(0, 10)
+    const unknownVisualization = [
+      getAction('Unknown action (ERC-20)'),
+      getLabel('to'),
+      getAddress(call.to)
+    ]
+    if (call.value)
+      unknownVisualization.push(
+        ...[getLabel('and sending'), getToken(ethers.ZeroAddress, call.value)]
+      )
     // if proper func selector and no such token found in meta
-    if (matcher[call.data.substring(0, 10)] && !accountOp.humanizerMeta?.[`tokens:${call.to}`]) {
+    if (matcher[sigHash] && !accountOp.humanizerMeta?.[`tokens:${call.to}`]) {
       const asyncTokenInfo = getTokenInfo(accountOp, call.to, options)
       asyncOps.push(asyncTokenInfo)
     }
-    if (matcher[call.data.substring(0, 10)] && accountOp.humanizerMeta?.[`tokens:${call.to}`])
+    if (matcher[sigHash] && accountOp.humanizerMeta?.[`tokens:${call.to}`])
       return {
         ...call,
-        fullVisualization: matcher[call.data.substring(0, 10)](call)
+        fullVisualization: matcher[sigHash](call)
       }
-    if (accountOp.humanizerMeta?.[`tokens:${call.to}`] && !matcher[call.data.substring(0, 10)])
+    if (accountOp.humanizerMeta?.[`tokens:${call.to}`] && !matcher[sigHash])
       return {
         ...call,
-        fullVisualization: [
-          getAction('Unknown action (erc20)'),
-          getLabel('to'),
-          getAddress(call.to)
-        ]
+        fullVisualization: unknownVisualization
       }
     return call
   })

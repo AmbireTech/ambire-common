@@ -77,14 +77,19 @@ export const wethHumanizer: HumanizerCallModule = (
           fullVisualization: [getAction('Unwrap'), getToken(ethers.ZeroAddress, amount)]
         }
       }
+      const unknownVisualization = [
+        getAction('Unknown action (WETH)'),
+        getLabel('to'),
+        getAddress(call.to)
+      ]
+      if (call.value)
+        unknownVisualization.push(
+          ...[getLabel('and send'), getToken(ethers.ZeroAddress, call.value)]
+        )
       if (!call?.fullVisualization)
         return {
           ...call,
-          fullVisualization: [
-            getAction('Unknown action (WETH)'),
-            getLabel('to'),
-            getAddress(call.to)
-          ]
+          fullVisualization: unknownVisualization
         }
     }
     return call

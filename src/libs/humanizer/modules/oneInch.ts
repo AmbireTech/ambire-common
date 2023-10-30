@@ -49,18 +49,26 @@ export const oneInchHumanizer: HumanizerCallModule = (
   const newCalls: IrCall[] = []
   irCalls.forEach((call) => {
     if (call.to === '0x1111111254fb6c44bAC0beD2854e76F90643097d') {
-      matcher[call.data.slice(0, 10)]
+      const sigHash = call.data.slice(0, 10)
+
+      const unknownVisualization = [
+        getAction('Unknown action (1inch)'),
+        getLabel('to'),
+        getAddress(call.to)
+      ]
+      if (call.value)
+        unknownVisualization.push(
+          ...[getLabel('and sending'), getToken(ethers.ZeroAddress, call.value)]
+        )
+
+      matcher[sigHash]
         ? newCalls.push({
             ...call,
-            fullVisualization: matcher[call.data.slice(0, 10)](accountOp, call)
+            fullVisualization: matcher[sigHash](accountOp, call)
           })
         : newCalls.push({
             ...call,
-            fullVisualization: [
-              getAction('Unknown action (1inch)'),
-              getLabel('to'),
-              getAddress(call.to)
-            ]
+            fullVisualization: unknownVisualization
           })
     } else {
       newCalls.push(call)

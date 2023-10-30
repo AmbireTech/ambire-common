@@ -98,6 +98,8 @@ export const yearnVaultModule: HumanizerCallModule = (
         )
       } else {
         visualization = [getAction('Unknown action (yearn)'), getLabel('to'), getAddress(call.to)]
+        if (call.value)
+          visualization.push(...[getLabel('and send'), getToken(ethers.ZeroAddress, call.value)])
       }
 
       newCalls.push({ ...call, fullVisualization: visualization })
