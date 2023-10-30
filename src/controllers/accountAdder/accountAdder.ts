@@ -26,6 +26,14 @@ type ExtendedAccount = Account & { usedOnNetworks: NetworkDescriptor[] }
 
 type SelectedAccount = Account & { slot: number; eoaAddress: string; isLinked: boolean }
 
+type CalculatedAccount = {
+  account: ExtendedAccount
+  isLinked: boolean
+  isEOAUsedForSmartAccountKeyOnly: boolean
+  slot: number
+  // TODO: include `index` in here?
+}
+
 /**
  * Account Adder Controller
  * is responsible for listing accounts that can be selected for adding, and for
@@ -65,11 +73,7 @@ export class AccountAdderController extends EventEmitter {
 
   linkedAccountsLoading: boolean = false
 
-  #calculatedAccounts: {
-    account: ExtendedAccount
-    isLinked: boolean
-    slot: number
-  }[] = []
+  #calculatedAccounts: CalculatedAccount[] = []
 
   #linkedAccounts: { account: ExtendedAccount; isLinked: boolean }[] = []
 
@@ -106,7 +110,10 @@ export class AccountAdderController extends EventEmitter {
       let accountsToReturn = []
 
       if (!calculatedAccount.account.creation) {
-        accountsToReturn.push(calculatedAccount)
+        // Do not show the user the legacy (EOA) account, used as a smart account key only
+        if (!calculatedAccount.isEOAUsedForSmartAccountKeyOnly) {
+          accountsToReturn.push(calculatedAccount)
+        }
 
         const duplicate = associatedLinkedAccounts.find(
           (linkedAcc) => linkedAcc.account.addr === correspondingSmartAccount?.account?.addr
@@ -116,7 +123,12 @@ export class AccountAdderController extends EventEmitter {
         // should not be displayed as linked account. Use this cycle to mark it.
         if (duplicate) duplicate.isLinked = false
 
-        if (!duplicate && correspondingSmartAccount) {
+        if (
+          !duplicate &&
+          correspondingSmartAccount &&
+          // TODO: Make sure this condition is needed
+          calculatedAccount.isEOAUsedForSmartAccountKeyOnly
+        ) {
           accountsToReturn.push(correspondingSmartAccount)
         }
       }
@@ -124,7 +136,8 @@ export class AccountAdderController extends EventEmitter {
       accountsToReturn = accountsToReturn.concat(
         associatedLinkedAccounts.map((linkedAcc) => ({
           ...linkedAcc,
-          slot: calculatedAccount.slot
+          slot: calculatedAccount.slot,
+          isEOAUsedForSmartAccountKeyOnly: false // always false at this point
         }))
       )
 
@@ -135,7 +148,7 @@ export class AccountAdderController extends EventEmitter {
       .filter(
         (linkedAcc) =>
           !processedAccounts.find(
-            (processedAcc) => processedAcc.account.addr === linkedAcc.account.addr
+            (processedAcc) => processedAcc?.account.addr === linkedAcc.account.addr
           )
       )
       .map((linkedAcc) => {
@@ -234,11 +247,18 @@ export class AccountAdderController extends EventEmitter {
         )
       })
 
-    const allAccountsOnThisSlot = this.accountsOnPage.filter(
+    // const allAccountsOnThisSlot = this.accountsOnPage.filter(
+    //   ({ slot }) => slot === accountOnPage.slot
+    // )
+    const allAccountsOnThisSlot = this.#calculatedAccounts.filter(
       ({ slot }) => slot === accountOnPage.slot
     )
 
-    const legacyAccountOnThisSlot = allAccountsOnThisSlot.find(({ account }) => !account.creation)
+    // TODO: Check if this is smart acc or not
+    const legacyAccountOnThisSlot = allAccountsOnThisSlot.find(
+      ({ isEOAUsedForSmartAccountKeyOnly, account }) =>
+        !account.creation && isEOAUsedForSmartAccountKeyOnly
+    )
 
     if (!legacyAccountOnThisSlot)
       return this.emitError({
@@ -251,6 +271,7 @@ export class AccountAdderController extends EventEmitter {
 
     this.selectedAccounts.push({
       ..._account,
+      // TODO: If it's the EOA acc, then it's the same as the _account.addr
       eoaAddress: legacyAccountOnThisSlot?.account.addr,
       slot: accountOnPage.slot,
       isLinked: accountOnPage.isLinked
@@ -316,7 +337,7 @@ export class AccountAdderController extends EventEmitter {
     })
   }
 
-  async addAccounts(accounts: Account[] = []) {
+  async addAccounts(accounts: SelectedAccount[] = []) {
     if (!this.isInitialized) {
       return this.emitError({
         level: 'major',
@@ -385,7 +406,18 @@ export class AccountAdderController extends EventEmitter {
       }
     }
 
-    this.readyToAddAccounts = [...accounts]
+    const smartAccountKeys: Account[] = []
+    accountsToAddOnRelayer.forEach((acc) => {
+      const smartAccountKey = this.#calculatedAccounts.find(
+        (calculatedAcc) => calculatedAcc.account.addr === acc.eoaAddress
+      )
+
+      if (smartAccountKey) {
+        smartAccountKeys.push(smartAccountKey.account)
+      }
+    })
+
+    this.readyToAddAccounts = [...accounts, ...smartAccountKeys]
     this.addAccountsStatus = 'SUCCESS'
     this.emitUpdate()
 
@@ -401,13 +433,7 @@ export class AccountAdderController extends EventEmitter {
   }: {
     networks: NetworkDescriptor[]
     providers: { [key: string]: JsonRpcProvider }
-  }): Promise<
-    {
-      account: ExtendedAccount
-      isLinked: boolean
-      slot: number
-    }[]
-  > {
+  }): Promise<CalculatedAccount[]> {
     if (!this.isInitialized) {
       this.emitError({
         level: 'major',
@@ -432,7 +458,7 @@ export class AccountAdderController extends EventEmitter {
       return []
     }
 
-    const accounts: { account: Account; isLinked: boolean; slot: number }[] = []
+    const accounts: CalculatedAccount[] = []
 
     const startIdx = (this.page - 1) * this.pageSize
     const endIdx = (this.page - 1) * this.pageSize + (this.pageSize - 1)
@@ -454,15 +480,26 @@ export class AccountAdderController extends EventEmitter {
       accounts.push({
         account: getLegacyAccount(key),
         isLinked: false,
-        slot: slot + SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
+        slot,
+        isEOAUsedForSmartAccountKeyOnly: true
       })
-      accounts.push({ account: smartAccount, isLinked: false, slot })
+      accounts.push({
+        account: smartAccount,
+        isLinked: false,
+        slot,
+        isEOAUsedForSmartAccountKeyOnly: false
+      })
     }
 
     // eslint-disable-next-line no-restricted-syntax
     for (const [index, key] of keys.entries()) {
       const slot = startIdx + (index + 1)
-      accounts.push({ account: getLegacyAccount(key), isLinked: false, slot })
+      accounts.push({
+        account: getLegacyAccount(key),
+        isLinked: false,
+        slot,
+        isEOAUsedForSmartAccountKeyOnly: false
+      })
     }
 
     const accountsWithNetworks = await this.#getAccountsUsedOnNetworks({
