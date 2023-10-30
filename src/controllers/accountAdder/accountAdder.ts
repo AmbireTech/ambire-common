@@ -256,13 +256,17 @@ export class AccountAdderController extends EventEmitter {
       ({ slot }) => slot === accountOnPage.slot
     )
 
-    // TODO: Check if this is smart acc or not
-    const legacyAccountOnThisSlot = allAccountsOnThisSlot.find(
-      ({ isEOAUsedForSmartAccountKeyOnly, account }) =>
-        !account.creation && isEOAUsedForSmartAccountKeyOnly
-    )
+    // The key of the smart account is the EOA derived with the
+    // `isEOAUsedForSmartAccountKeyOnly` flag.
+    // The key of the legacy account is the legacy account itself.
+    const accountKey = accountOnPage.account.creation
+      ? allAccountsOnThisSlot.find(
+          ({ isEOAUsedForSmartAccountKeyOnly, account }) =>
+            !account.creation && isEOAUsedForSmartAccountKeyOnly
+        )
+      : accountOnPage
 
-    if (!legacyAccountOnThisSlot)
+    if (!accountKey)
       return this.emitError({
         level: 'major',
         message: `Selecting ${_account.addr} account failed because some of the details for this account are missing. Please try again or contact support if the problem persists.`,
@@ -274,7 +278,7 @@ export class AccountAdderController extends EventEmitter {
     this.selectedAccounts.push({
       ..._account,
       // TODO: If it's the EOA acc, then it's the same as the _account.addr
-      eoaAddress: legacyAccountOnThisSlot?.account.addr,
+      eoaAddress: accountKey.account.addr,
       slot: accountOnPage.slot,
       isLinked: accountOnPage.isLinked
     })
