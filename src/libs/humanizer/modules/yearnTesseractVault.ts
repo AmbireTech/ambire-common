@@ -20,7 +20,7 @@ export const yearnVaultModule: HumanizerCallModule = (
   const getVaultInfo = (to: string) => yearnVaults.find((x: any) => x.addr === to)
 
   const matcher = {
-    [`${iface.getFunction('deposit(uint256,address)')?.selector}`]: (
+    [iface.getFunction('deposit(uint256,address)')?.selector!]: (
       accountOp: AccountOp,
       call: IrCall
     ) => {
@@ -33,7 +33,7 @@ export const yearnVaultModule: HumanizerCallModule = (
         getAddress(vaultInfo.addr)
       ]
     },
-    [`${iface.getFunction('withdraw(uint256,address)')?.selector}`]: (
+    [iface.getFunction('withdraw(uint256,address)')?.selector!]: (
       accountOp: AccountOp,
       call: IrCall
     ) => {
@@ -46,10 +46,7 @@ export const yearnVaultModule: HumanizerCallModule = (
         getAddress(vaultInfo.addr)
       ]
     },
-    [`${iface.getFunction('withdraw(uint256)')?.selector}`]: (
-      accountOp: AccountOp,
-      call: IrCall
-    ) => {
+    [iface.getFunction('withdraw(uint256)')?.selector!]: (accountOp: AccountOp, call: IrCall) => {
       const [maxShares] = iface.parseTransaction(call)!.args
 
       const vaultInfo = getVaultInfo(call.to)
@@ -60,7 +57,7 @@ export const yearnVaultModule: HumanizerCallModule = (
         getAddress(vaultInfo.addr)
       ]
     },
-    [`${iface.getFunction('approve(address,uint256)')?.selector}`]: (
+    [iface.getFunction('approve(address,uint256)')?.selector!]: (
       accountOp: AccountOp,
       call: IrCall
     ) => {

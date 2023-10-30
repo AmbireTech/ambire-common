@@ -13,7 +13,7 @@ const OneInchMapping = (humanizerInfo: any) => {
   const iface = new ethers.Interface(humanizerInfo?.['abis:Swappin'])
 
   return {
-    [`${iface.getFunction('swap')}`]: (accounutOp: AccountOp, call: IrCall) => {
+    [iface.getFunction('swap')?.selector!]: (accounutOp: AccountOp, call: IrCall) => {
       const { desc } = iface.parseTransaction(call)!.args
       return [
         getAction('Swap'),
@@ -22,7 +22,7 @@ const OneInchMapping = (humanizerInfo: any) => {
         getToken(parseZeroAddressIfNeeded(desc.dstToken), desc.minReturnAmount)
       ]
     },
-    [`${iface.getFunction('unoswap')}`]: (accounutOp: AccountOp, call: IrCall) => {
+    [iface.getFunction('unoswap')?.selector!]: (accounutOp: AccountOp, call: IrCall) => {
       const { amount, minReturn, srcToken } = iface.parseTransaction(call)!.args
 
       return [

@@ -6,7 +6,7 @@ import { IrCall } from '../../interfaces'
 export const aaveLendingPoolV2 = (humanizerInfo: any): { [key: string]: Function } => {
   const iface = new ethers.Interface(humanizerInfo?.['abis:AaveLendingPoolV2'])
   const matcher = {
-    [`${iface.getFunction('deposit')?.selector}`]: (accountOp: AccountOp, call: IrCall) => {
+    [iface.getFunction('deposit')?.selector!]: (accountOp: AccountOp, call: IrCall) => {
       const [asset, amount, onBehalf] = iface.parseTransaction(call)?.args || []
       return [
         getAction('Deposit'),
@@ -15,7 +15,7 @@ export const aaveLendingPoolV2 = (humanizerInfo: any): { [key: string]: Function
         ...getOnBehalfOf(onBehalf, accountOp.accountAddr)
       ]
     },
-    [`${iface.getFunction('withdraw')?.selector}`]: (accountOp: AccountOp, call: IrCall) => {
+    [iface.getFunction('withdraw')?.selector!]: (accountOp: AccountOp, call: IrCall) => {
       const [asset, amount, onBehalf] = iface.parseTransaction(call)?.args || []
       return [
         getAction('Withdraw'),
@@ -24,7 +24,7 @@ export const aaveLendingPoolV2 = (humanizerInfo: any): { [key: string]: Function
         ...getOnBehalfOf(onBehalf, accountOp.accountAddr)
       ]
     },
-    [`${iface.getFunction('repay')?.selector}`]: (accountOp: AccountOp, call: IrCall) => {
+    [iface.getFunction('repay')?.selector!]: (accountOp: AccountOp, call: IrCall) => {
       const [asset, amount /* rateMode */, , onBehalf] = iface.parseTransaction(call)?.args || []
       return [
         getAction('Repay'),
@@ -33,7 +33,7 @@ export const aaveLendingPoolV2 = (humanizerInfo: any): { [key: string]: Function
         ...getOnBehalfOf(onBehalf, accountOp.accountAddr)
       ]
     },
-    [`${iface.getFunction('borrow')?.selector}`]: (accountOp: AccountOp, call: IrCall) => {
+    [iface.getFunction('borrow')?.selector!]: (accountOp: AccountOp, call: IrCall) => {
       const [asset, amount] = iface.parseTransaction(call)?.args || []
       return [getAction('Borrow'), getToken(asset, amount), getLabel('from Aave lending pool')]
     }

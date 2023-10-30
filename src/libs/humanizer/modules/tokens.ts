@@ -32,7 +32,7 @@ export const genericErc721Humanizer: HumanizerCallModule = (
         ]
   }
   const matcher = {
-    [`${iface.getFunction('approve')?.selector}`]: (call: IrCall) => {
+    [iface.getFunction('approve')?.selector!]: (call: IrCall) => {
       const args = iface.parseTransaction(call)?.args.toArray() || []
       return args[0] === ethers.ZeroAddress
         ? [getAction('Revoke approval'), getLabel('for'), getNft(call.to, args[1])]
@@ -44,7 +44,7 @@ export const genericErc721Humanizer: HumanizerCallModule = (
             getAddress(args[0])
           ]
     },
-    [`${iface.getFunction('setApprovalForAll')?.selector}`]: (call: IrCall) => {
+    [iface.getFunction('setApprovalForAll')?.selector!]: (call: IrCall) => {
       const args = iface.parseTransaction(call)?.args.toArray() || []
       return args[1]
         ? [
@@ -57,13 +57,13 @@ export const genericErc721Humanizer: HumanizerCallModule = (
         : [getAction('Revoke approval'), getLabel('for all nfts'), getAddress(args[0])]
     },
     // not in tests
-    [`${iface.getFunction('safeTransferFrom', ['address', 'address', 'uint256'])?.selector}`]:
+    [iface.getFunction('safeTransferFrom', ['address', 'address', 'uint256'])?.selector!]:
       nftTransferVisualization,
     // [`${
     //   iface.getFunction('safeTransferFrom', ['address', 'address', 'uint256', 'bytes'])
     //     ?.selector
     // }`]: nftTransferVisualization,
-    [`${iface.getFunction('transferFrom', ['address', 'address', 'uint256'])?.selector}`]:
+    [iface.getFunction('transferFrom', ['address', 'address', 'uint256'])?.selector!]:
       nftTransferVisualization
   }
 
@@ -86,7 +86,7 @@ export const genericErc20Humanizer: HumanizerCallModule = (
   const asyncOps: Promise<HumanizerFragment | null>[] = []
   const iface = new ethers.Interface(accountOp.humanizerMeta?.['abis:ERC20'])
   const matcher = {
-    [`${iface.getFunction('approve')?.selector}`]: (call: IrCall) => {
+    [iface.getFunction('approve')?.selector!]: (call: IrCall) => {
       const args = iface.parseTransaction(call)?.args.toArray() || []
       return args[1] !== BigInt(0)
         ? [
@@ -102,7 +102,7 @@ export const genericErc20Humanizer: HumanizerCallModule = (
             getAddress(args[0])
           ]
     },
-    [`${iface.getFunction('transfer')?.selector}`]: (call: IrCall) => {
+    [iface.getFunction('transfer')?.selector!]: (call: IrCall) => {
       const args = iface.parseTransaction(call)?.args.toArray() || []
       return [
         getAction('Transfer'),
@@ -111,7 +111,7 @@ export const genericErc20Humanizer: HumanizerCallModule = (
         getAddress(args[0])
       ]
     },
-    [`${iface.getFunction('transferFrom')?.selector}`]: (call: IrCall) => {
+    [iface.getFunction('transferFrom')?.selector!]: (call: IrCall) => {
       const args = iface.parseTransaction(call)?.args.toArray() || []
       if (args[0] === accountOp.accountAddr) {
         return [
