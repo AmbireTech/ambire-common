@@ -168,10 +168,8 @@ describe('SignAccountOp Controller ', () => {
 
     await controller.sign()
 
-    console.log(controller)
-
     expect(controller.accountOp?.gasFeePayment?.amount).toBeGreaterThan(21000n)
-    expect(controller.accountOp?.signature).toEqual('0x010101')
+    expect(controller.accountOp?.signature).toEqual('0x01010101')
     expect(controller.status).toEqual({ type: 'done' })
   })
 })
