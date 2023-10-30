@@ -41,6 +41,27 @@ export enum FeeSpeed {
   Ape = 'ape'
 }
 
+function getTokenUsdAmount(token: TokenResult, gasAmount: bigint): string {
+  const isUsd = (price: Price) => price.baseCurrency === 'usd'
+  const usdPrice = BigInt(token.priceIn.find(isUsd)!.price * 1e18)
+
+  // 18 it's because we multiply usdPrice * 1e18 and here we need to deduct it
+  return ethers.formatUnits(gasAmount * usdPrice, 18 + token.decimals)
+}
+
+/**
+ * In Ambire, signatures have types. The last byte of each signature
+ * represents its type. Description in: SignatureValidator -> SignatureMode.
+ * To indicate that we want to perform an ETH sign, we have to add a 01
+ * hex (equal to the number 1) at the end of the signature.
+ *
+ * @param sig hex string
+ * @returns hex string
+ */
+function wrapEthSign(sig: string): string {
+  return `${sig}${'01'}`
+}
+
 export class SignAccountOpController extends EventEmitter {
   #keystore: KeystoreController
 
@@ -154,7 +175,6 @@ export class SignAccountOpController extends EventEmitter {
         (err) => this.emitError(err)
       )
     }
-    const account = this.#getAccount()
 
     if (feeTokenAddr && paidBy) {
       this.paidBy = paidBy
@@ -270,14 +290,6 @@ export class SignAccountOpController extends EventEmitter {
     return BigInt(ratio * 1e18)
   }
 
-  #getTokenUsdAmount(token: TokenResult, gasAmount: bigint): string {
-    const isUsd = (price: Price) => price.baseCurrency === 'usd'
-    const usdPrice = BigInt(token.priceIn.find(isUsd)!.price * 1e18)
-
-    // 18 it's because we multiply usdPrice * 1e18 and here we need to deduct it
-    return ethers.formatUnits(gasAmount * usdPrice, 18 + token.decimals)
-  }
-
   get feeSpeeds(): {
     type: string
     amount: bigint
@@ -295,10 +307,16 @@ export class SignAccountOpController extends EventEmitter {
     return this.#gasPrices.map((gasRecommendation) => {
       let amount
       let simulatedGasLimit
-      // @ts-ignore
-      const gasPrice =
-        gasRecommendation.gasPrice ||
-        gasRecommendation!.baseFeePerGas + gasRecommendation!.maxPriorityFeePerGas
+
+      let gasPrice = 0n
+      // As GasRecommendation type is a result of the union between GasPriceRecommendation and Gas1559Recommendation,
+      // then the both types don't have the same interface/props.
+      // Therefore, we need to check for a prop existence, before accessing it.
+      // GasPriceRecommendation
+      if ('gasPrice' in gasRecommendation) gasPrice = gasRecommendation.gasPrice
+      // Gas1559Recommendation
+      if ('baseFeePerGas' in gasRecommendation)
+        gasPrice = gasRecommendation.baseFeePerGas + gasRecommendation.maxPriorityFeePerGas
 
       // EOA
       if (!account || !account?.creation) {
@@ -336,13 +354,16 @@ export class SignAccountOpController extends EventEmitter {
         amount,
         // TODO - fix type Number(feeToken?.decimals)
         amountFormatted: ethers.formatUnits(amount, Number(feeToken?.decimals)),
-        amountUsd: this.#getTokenUsdAmount(feeToken!, amount)
+        amountUsd: getTokenUsdAmount(feeToken!, amount)
       }
     })
   }
 
   #getGasFeePayment(): GasFeePayment {
     if (!this.isInitialized) throw new Error('signAccountOp: not initialized')
+
+    if (!this.selectedTokenAddr) throw new Error('signAccountOp: token not selected')
+    if (!this.paidBy) throw new Error('signAccountOp: paying account not selected')
 
     const feeToken = this.#getPortfolioToken(this.selectedTokenAddr)
     const { amount, simulatedGasLimit } = this.feeSpeeds.find(
@@ -383,19 +404,6 @@ export class SignAccountOpController extends EventEmitter {
   #setSigningError(error: string) {
     this.status = { type: SigningStatus.UnableToSign, error }
     this.emitUpdate()
-  }
-
-  /**
-   * In Ambire, signatures have types. The last byte of each signature
-   * represents its type. Description in: SignatureValidator -> SignatureMode.
-   * To indicate that we want to perform an ETH sign, we have to add a 01
-   * hex (equal to the number 1) at the end of the signature.
-   *
-   * @param sig hex string
-   * @returns hex string
-   */
-  #wrapEthSign(sig: string): string {
-    return `${sig}${'01'}`
   }
 
   async sign() {
@@ -443,9 +451,9 @@ export class SignAccountOpController extends EventEmitter {
         // Smart account, but EOA pays the fee
         // EOA pays for execute() - relayerless
 
-        this.accountOp.signature = this.#wrapEthSign(await signer.signMessage(
-          ethers.hexlify(accountOpSignableHash(this.accountOp))
-        ))
+        this.accountOp.signature = wrapEthSign(
+          await signer.signMessage(ethers.hexlify(accountOpSignableHash(this.accountOp)))
+        )
       } else if (this.accountOp.gasFeePayment.isERC4337) {
         // TODO:
         // transform accountOp to userOperation
@@ -470,9 +478,10 @@ export class SignAccountOpController extends EventEmitter {
           }
 
           this.accountOp.calls.push(call)
-        }
-        else if (this.accountOp.gasFeePayment.inToken) {
-          if (this.accountOp.gasFeePayment.inToken == '0x0000000000000000000000000000000000000000') {
+        } else if (this.accountOp.gasFeePayment.inToken) {
+          if (
+            this.accountOp.gasFeePayment.inToken === '0x0000000000000000000000000000000000000000'
+          ) {
             // native payment
             this.accountOp.calls.push({
               to: feeCollector,
@@ -485,14 +494,17 @@ export class SignAccountOpController extends EventEmitter {
             this.accountOp.calls.push({
               to: this.accountOp.gasFeePayment.inToken,
               value: 0n,
-              data: ERC20Interface.encodeFunctionData('transfer', [feeCollector, this.accountOp.gasFeePayment.amount])
+              data: ERC20Interface.encodeFunctionData('transfer', [
+                feeCollector,
+                this.accountOp.gasFeePayment.amount
+              ])
             })
           }
         }
 
-        this.accountOp.signature = this.#wrapEthSign(await signer.signMessage(
-          ethers.hexlify(accountOpSignableHash(this.accountOp))
-        ))
+        this.accountOp.signature = wrapEthSign(
+          await signer.signMessage(ethers.hexlify(accountOpSignableHash(this.accountOp)))
+        )
       }
 
       this.status = { type: SigningStatus.Done }
