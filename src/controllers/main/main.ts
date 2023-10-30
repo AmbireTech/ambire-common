@@ -23,6 +23,7 @@ import { GasRecommendation, getGasPriceRecommendations } from '../../libs/gasPri
 import { shouldGetAdditionalPortfolio } from '../../libs/portfolio/helpers'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import generateSpoofSig from '../../utils/generateSpoofSig'
+import wait from '../../utils/wait'
 import { AccountAdderController } from '../accountAdder/accountAdder'
 import { ActivityController } from '../activity/activity'
 import { EmailVaultController } from '../emailVault'
@@ -99,6 +100,8 @@ export class MainController extends EventEmitter {
   messagesToBeSigned: { [key: string]: Message[] } = {}
 
   lastUpdate: Date = new Date()
+
+  broadcastStatus: 'INITIAL' | 'LOADING' | 'DONE' = 'INITIAL'
 
   onResolveDappRequest: (data: any, id?: number) => void
 
@@ -534,6 +537,9 @@ export class MainController extends EventEmitter {
 
     let transactionRes: TransactionResponse | { hash: string; nonce: number } | null = null
 
+    this.broadcastStatus = 'LOADING'
+    this.emitUpdate()
+
     // EOA account
     if (!account.creation) {
       try {
@@ -577,7 +583,9 @@ export class MainController extends EventEmitter {
         ])
       }
 
-      const broadcastKey = this.keystore.keys.find(key => key.addr == accountOp.gasFeePayment!.paidBy)
+      const broadcastKey = this.keystore.keys.find(
+        (key) => key.addr == accountOp.gasFeePayment!.paidBy
+      )
       const signer = await this.keystore.getSigner(
         accountOp.gasFeePayment!.paidBy,
         broadcastKey!.type
@@ -621,7 +629,7 @@ export class MainController extends EventEmitter {
           txns: accountOp.calls.map((call) => callToTuple(call)),
           signature: accountOp.signature,
           signer: {
-            address: accountOp.signingKeyAddr,
+            address: accountOp.signingKeyAddr
           },
           nonce: Number(accountOp.nonce)
         }
@@ -642,10 +650,17 @@ export class MainController extends EventEmitter {
       } catch (e: any) {
         this.#throwAccountOpBroadcastError(e)
       }
+
+      this.broadcastStatus = 'DONE'
+      this.emitUpdate()
+
+      await wait(1)
+      this.broadcastStatus = 'INITIAL'
+      this.emitUpdate()
     }
 
     if (transactionRes) {
-      this.activity.addAccountOp({
+      await this.activity.addAccountOp({
         ...accountOp,
         txnId: transactionRes.hash,
         nonce: BigInt(transactionRes.nonce)
@@ -663,14 +678,23 @@ export class MainController extends EventEmitter {
     }
   }
 
-  broadcastSignedMessage(signedMessage: Message) {
-    this.activity.addSignedMessage(signedMessage, signedMessage.accountAddr)
+  async broadcastSignedMessage(signedMessage: Message) {
+    this.broadcastStatus = 'LOADING'
+    this.emitUpdate()
+
+    await this.activity.addSignedMessage(signedMessage, signedMessage.accountAddr)
     this.removeUserRequest(signedMessage.id)
     this.onResolveDappRequest({ hash: signedMessage.signature }, signedMessage.id)
     !!this.onBroadcastSuccess &&
       this.onBroadcastSuccess(
         signedMessage.content.kind === 'typedMessage' ? 'typed-data' : 'message'
       )
+
+    this.broadcastStatus = 'DONE'
+    this.emitUpdate()
+
+    await wait(1)
+    this.broadcastStatus = 'INITIAL'
     this.emitUpdate()
   }
 
