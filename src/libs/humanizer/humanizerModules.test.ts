@@ -41,6 +41,7 @@ const accountOp: AccountOp = {
   // networkId: 'polygon',
   // this may not be defined, in case the user has not picked a key yet
   signingKeyAddr: null,
+  signingKeyType: null,
   // this may not be set in case we haven't set it yet
   nonce: null,
   calls: [],

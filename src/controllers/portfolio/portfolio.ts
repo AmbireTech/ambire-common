@@ -315,7 +315,9 @@ export class PortfolioController extends EventEmitter {
         // We cache the previously simulated AccountOps
         // in order to compare them with the newly passed AccountOps before executing a new updatePortfolioState.
         // This allows us to identify any differences between the two.
-        // TODO:
+        // TODO: If we enable the below line, pending states stopped working in the application (extension).
+        //  In the case we run this logic under a testing environment, then it works as expected.
+        //  As it is not a deal-breaker (for now), we will comment it out and will fix it later this week.
         // if (isSuccessfulPendingUpdate && currentAccountOps) {
         //   pendingState[network.id]!.accountOps = currentAccountOps
         // }

@@ -213,31 +213,33 @@ describe('Portfolio Controller ', () => {
       expect(done).toHaveBeenCalled()
     })
 
-    test('Pending tokens are fetched only once if AccountOp is the same during the calls', async () => {
-      const done = jest.fn(() => null)
-      const accountOp = await getAccountOp()
-
-      const storage = produceMemoryStore()
-      const controller = new PortfolioController(storage, relayerUrl, [])
-      let pendingState1: any
-      let pendingState2: any
-      controller.onUpdate(() => {
-        if (!pendingState1?.isReady) {
-          pendingState1 = controller.pending['0xB674F3fd5F43464dB0448a57529eAF37F04cceA5']?.ethereum
-          return
-        }
-        if (pendingState1?.isReady) {
-          pendingState2 = controller.pending['0xB674F3fd5F43464dB0448a57529eAF37F04cceA5']?.ethereum
-        }
-        if (pendingState1.result?.updateStarted < pendingState2.result?.updateStarted) {
-          done()
-        }
-      })
-      await controller.updateSelectedAccount([account], networks, account.addr, accountOp)
-      await controller.updateSelectedAccount([account], networks, account.addr, accountOp)
-
-      expect(done).not.toHaveBeenCalled()
-    })
+    // TODO: currently we disable this optimization in portfolio controller, as in the application it doesn't work at all
+    //   Under the tests, the caching works as expected, but once ran in the extension - it doesn't fetch the pending state.
+    // test('Pending tokens are fetched only once if AccountOp is the same during the calls', async () => {
+    //   const done = jest.fn(() => null)
+    //   const accountOp = await getAccountOp()
+    //
+    //   const storage = produceMemoryStore()
+    //   const controller = new PortfolioController(storage, relayerUrl, [])
+    //   let pendingState1: any
+    //   let pendingState2: any
+    //   controller.onUpdate(() => {
+    //     if (!pendingState1?.isReady) {
+    //       pendingState1 = controller.pending['0xB674F3fd5F43464dB0448a57529eAF37F04cceA5']?.ethereum
+    //       return
+    //     }
+    //     if (pendingState1?.isReady) {
+    //       pendingState2 = controller.pending['0xB674F3fd5F43464dB0448a57529eAF37F04cceA5']?.ethereum
+    //     }
+    //     if (pendingState1.result?.updateStarted < pendingState2.result?.updateStarted) {
+    //       done()
+    //     }
+    //   })
+    //   await controller.updateSelectedAccount([account], networks, account.addr, accountOp)
+    //   await controller.updateSelectedAccount([account], networks, account.addr, accountOp)
+    //
+    //   expect(done).not.toHaveBeenCalled()
+    // })
 
     test('Pending tokens are re-fetched, if `forceUpdate` flag is set, no matter if AccountOp is the same or changer', async () => {
       const done = jest.fn(() => null)

@@ -75,7 +75,8 @@ describe('KeystoreSigner', () => {
   test('should sign message', async () => {
     expect.assertions(1)
     const signer = new KeystoreSigner(key, privKey)
-    const res = await signer.signMessage('test')
+    // message = 'test'
+    const res = await signer.signMessage('0x74657374')
     expect(res).toMatch(/^0x/)
   })
 })

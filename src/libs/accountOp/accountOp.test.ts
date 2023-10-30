@@ -9,12 +9,12 @@ describe('AccountOp', () => {
     const nonce = 0n
     const ambireAccountAddress = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
     const signerAddr = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
-    const abiCoder = new ethers.AbiCoder()
     const txns: Call[] = [{ to: signerAddr, value: ethers.parseEther('0.01'), data: '0x00' }]
     const op: AccountOp = {
       accountAddr: ambireAccountAddress,
       networkId: 'ethereum',
       signingKeyAddr: null,
+      signingKeyType: null,
       nonce,
       calls: txns,
       gasLimit: null,
@@ -35,6 +35,7 @@ describe('AccountOp', () => {
       accountAddr: ambireAccountAddress,
       networkId: 'ethereum',
       signingKeyAddr: null,
+      signingKeyType: null,
       nonce: null,
       calls: txns,
       gasLimit: null,

@@ -5,9 +5,9 @@ import fetch from 'node-fetch'
 
 import { describe, expect, jest, test } from '@jest/globals'
 
+import { ErrorRef } from 'controllers/eventEmitter'
 import { produceMemoryStore } from '../../../test/helpers'
 import humanizerJSON from '../../consts/humanizerInfo.json'
-import { ErrorRef } from 'controllers/eventEmitter'
 import { Account } from '../../interfaces/account'
 import { Key } from '../../interfaces/keystore'
 import { Storage } from '../../interfaces/storage'
@@ -26,6 +26,7 @@ const accountOp: AccountOp = {
   networkId: 'ethereum',
   // this may not be defined, in case the user has not picked a key yet
   signingKeyAddr: null,
+  signingKeyType: null,
   // signingKeyType: 'internal',
   // this may not be set in case we haven't set it yet
   nonce: null,
