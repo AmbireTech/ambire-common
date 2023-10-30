@@ -24,7 +24,12 @@ const PAGE_SIZE = 5
 
 type ExtendedAccount = Account & { usedOnNetworks: NetworkDescriptor[] }
 
-type SelectedAccount = Account & { slot: number; eoaAddress: string; isLinked: boolean }
+type SelectedAccount = Account & {
+  slot: number
+  index: number
+  eoaAddress: string
+  isLinked: boolean
+}
 
 type CalculatedAccount = {
   account: ExtendedAccount
@@ -96,6 +101,7 @@ export class AccountAdderController extends EventEmitter {
     account: ExtendedAccount
     isLinked: boolean
     slot: number
+    index: number
   }[] {
     const processedAccounts = this.#calculatedAccounts.flatMap((calculatedAccount) => {
       const associatedLinkedAccounts = this.#linkedAccounts.filter(
@@ -277,10 +283,11 @@ export class AccountAdderController extends EventEmitter {
 
     this.selectedAccounts.push({
       ..._account,
-      // TODO: If it's the EOA acc, then it's the same as the _account.addr
       eoaAddress: accountKey.account.addr,
       slot: accountOnPage.slot,
-      isLinked: accountOnPage.isLinked
+      isLinked: accountOnPage.isLinked,
+      // TODO: Figure out why this index is bad
+      index: accountKey.index
     })
     this.emitUpdate()
   }
