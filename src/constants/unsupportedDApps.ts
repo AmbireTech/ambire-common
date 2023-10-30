@@ -1,5 +1,4 @@
 const unsupportedDApps: string[] = [
-  'https://opensea.io',
   'https://curve.fi',
   'https://loopring.io',
   'https://dydx.exchange',
