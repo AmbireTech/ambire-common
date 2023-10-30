@@ -21,8 +21,8 @@ const wrpaUnwrapParser = (calls: IrCall[]) => {
       newCalls.push({
         to: calls[i].to,
         value: calls[i].value + calls[i + 1].value,
-        // might cause bugs
-        data: `${calls[i].data} AND ${calls[i + 1].data}`,
+        // the unwrap call.data is omitted
+        data: calls[i].data,
         fullVisualization: newVisualization
       })
       i += 1
@@ -37,8 +37,8 @@ const wrpaUnwrapParser = (calls: IrCall[]) => {
       newCalls.push({
         to: calls[i + 1].to,
         value: calls[i].value + calls[i + 1].value,
-        // might cause bugs
-        data: `${calls[i].data} AND ${calls[i + 1].data}`,
+        // the wrap data is omitted
+        data: calls[i + 1].data,
         fullVisualization: newVisualization
       })
       i += 1
