@@ -25,15 +25,14 @@ export const uniswapHumanizer: HumanizerCallModule = (
   }
   const newCalls: IrCall[] = []
   currentIrCalls.forEach((call: IrCall) => {
+    const sigHash = call.data.substring(0, 10)
     // check against sus contracts with same func selectors
     if (accountOp.humanizerMeta?.[`names:${call.to}`] === 'Uniswap') {
-      if (matcher?.[call.to]?.[call.data.substring(0, 10)]) {
-        matcher[call.to]
-          [call.data.substring(0, 10)](accountOp, call)
-          .forEach((hc: IrCall, index: number) =>
-            // if multicall has value it shouldnt result in multiple calls with value
-            index === 0 ? newCalls.push(hc) : newCalls.push({ ...hc, value: 0n })
-          )
+      if (matcher?.[call.to]?.[sigHash]) {
+        matcher[call.to][sigHash](accountOp, call).forEach((hc: IrCall, index: number) =>
+          // if multicall has value it shouldnt result in multiple calls with value
+          index === 0 ? newCalls.push(hc) : newCalls.push({ ...hc, value: 0n })
+        )
       } else {
         newCalls.push({
           ...call,

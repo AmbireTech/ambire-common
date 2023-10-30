@@ -46,23 +46,21 @@ export const oneInchHumanizer: HumanizerCallModule = (
   const matcher = {
     ...OneInchMapping(accountOp.humanizerMeta)
   }
-  const newCalls: IrCall[] = []
-  irCalls.forEach((call) => {
+  const newCalls = irCalls.map((call) => {
     if (call.to === '0x1111111254fb6c44bAC0beD2854e76F90643097d') {
       const sigHash = call.data.slice(0, 10)
 
-      matcher[sigHash]
-        ? newCalls.push({
+      return matcher[sigHash]
+        ? {
             ...call,
             fullVisualization: matcher[sigHash](accountOp, call)
-          })
-        : newCalls.push({
+          }
+        : {
             ...call,
             fullVisualization: getUnknownVisualization('1inch', call)
-          })
-    } else {
-      newCalls.push(call)
+          }
     }
+    return call
   })
   return [newCalls, []]
 }
