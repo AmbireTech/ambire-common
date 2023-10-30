@@ -7,7 +7,7 @@ import { describe, expect, jest, test } from '@jest/globals'
 
 import { produceMemoryStore } from '../../../test/helpers'
 import humanizerJSON from '../../consts/humanizerInfo.json'
-import { ErrorRef } from 'controllers/eventEmitter'
+import { ErrorRef } from '../../controllers/eventEmitter'
 import { Account } from '../../interfaces/account'
 import { Key } from '../../interfaces/keystore'
 import { Storage } from '../../interfaces/storage'

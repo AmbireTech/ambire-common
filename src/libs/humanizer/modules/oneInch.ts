@@ -1,7 +1,7 @@
 import { ethers } from 'ethers'
 import { AccountOp } from '../../accountOp/accountOp'
 import { HumanizerCallModule, IrCall } from '../interfaces'
-import { getAction, getLabel, getToken, getAddress } from '../utils'
+import { getAction, getLabel, getToken, getUnknownVisualization } from '../utils'
 
 const parseZeroAddressIfNeeded = (address: string) => {
   return address.toLowerCase() === '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee'
@@ -51,16 +51,6 @@ export const oneInchHumanizer: HumanizerCallModule = (
     if (call.to === '0x1111111254fb6c44bAC0beD2854e76F90643097d') {
       const sigHash = call.data.slice(0, 10)
 
-      const unknownVisualization = [
-        getAction('Unknown action (1inch)'),
-        getLabel('to'),
-        getAddress(call.to)
-      ]
-      if (call.value)
-        unknownVisualization.push(
-          ...[getLabel('and sending'), getToken(ethers.ZeroAddress, call.value)]
-        )
-
       matcher[sigHash]
         ? newCalls.push({
             ...call,
@@ -68,7 +58,7 @@ export const oneInchHumanizer: HumanizerCallModule = (
           })
         : newCalls.push({
             ...call,
-            fullVisualization: unknownVisualization
+            fullVisualization: getUnknownVisualization('1inch', call)
           })
     } else {
       newCalls.push(call)

@@ -3,7 +3,7 @@ import { ethers } from 'ethers'
 
 import { networks } from '../../consts/networks'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
-import { HumanizerFragment, HumanizerSettings, HumanizerVisualization } from './interfaces'
+import { HumanizerFragment, HumanizerSettings, HumanizerVisualization, IrCall } from './interfaces'
 
 dotenv.config()
 const COINGECKO_PRO_API_KEY = process.env.COINGECKO_PRO_API_KEY
@@ -112,4 +112,17 @@ export function checkIfUnknowAction(v: Array<HumanizerVisualization>) {
   } catch (e) {
     return false
   }
+}
+
+export function getUnknownVisualization(name: string, call: IrCall) {
+  const unknownVisualization = [
+    getAction(`Unknown action (${name})`),
+    getLabel('to'),
+    getAddress(call.to)
+  ]
+  if (call.value)
+    unknownVisualization.push(
+      ...[getLabel('and'), getAction('Send'), getToken(ethers.ZeroAddress, call.value)]
+    )
+  return unknownVisualization
 }

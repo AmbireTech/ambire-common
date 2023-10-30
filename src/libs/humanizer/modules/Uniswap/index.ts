@@ -1,10 +1,9 @@
-import { ethers } from 'ethers'
 import { AccountOp } from '../../../accountOp/accountOp'
 import { HumanizerCallModule, IrCall } from '../../interfaces'
 import { uniUniversalRouter } from './uniUnivarsalRouter'
 import { uniV2Mapping } from './uniV2'
 import { uniV32Mapping, uniV3Mapping } from './uniV3'
-import { getAction, getLabel, getAddress, getToken } from '../../utils'
+import { getUnknownVisualization } from '../../utils'
 
 export const uniswapHumanizer: HumanizerCallModule = (
   accountOp: AccountOp,
@@ -36,16 +35,9 @@ export const uniswapHumanizer: HumanizerCallModule = (
             index === 0 ? newCalls.push(hc) : newCalls.push({ ...hc, value: 0n })
           )
       } else {
-        const visualization = [
-          getAction('Unknown action (Uniswap)'),
-          getLabel('to'),
-          getAddress(call.to)
-        ]
-        if (call.value)
-          visualization.push(...[getLabel('and sending'), getToken(ethers.ZeroAddress, call.value)])
         newCalls.push({
           ...call,
-          fullVisualization: visualization
+          fullVisualization: getUnknownVisualization('Uniswap', call)
         })
       }
     } else {

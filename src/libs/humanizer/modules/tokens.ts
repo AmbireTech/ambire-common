@@ -1,6 +1,14 @@
 import { ethers } from 'ethers'
 import { AccountOp } from '../../accountOp/accountOp'
-import { getLabel, getAction, getAddress, getNft, getToken, getTokenInfo } from '../utils'
+import {
+  getLabel,
+  getAction,
+  getAddress,
+  getNft,
+  getToken,
+  getTokenInfo,
+  getUnknownVisualization
+} from '../utils'
 import { HumanizerFragment, HumanizerCallModule, IrCall } from '../interfaces'
 
 export const genericErc721Humanizer: HumanizerCallModule = (
@@ -133,15 +141,6 @@ export const genericErc20Humanizer: HumanizerCallModule = (
   }
   const newCalls = currentIrCalls.map((call) => {
     const sigHash = call.data.substring(0, 10)
-    const unknownVisualization = [
-      getAction('Unknown action (ERC-20)'),
-      getLabel('to'),
-      getAddress(call.to)
-    ]
-    if (call.value)
-      unknownVisualization.push(
-        ...[getLabel('and sending'), getToken(ethers.ZeroAddress, call.value)]
-      )
     // if proper func selector and no such token found in meta
     if (matcher[sigHash] && !accountOp.humanizerMeta?.[`tokens:${call.to}`]) {
       const asyncTokenInfo = getTokenInfo(accountOp, call.to, options)
@@ -155,7 +154,7 @@ export const genericErc20Humanizer: HumanizerCallModule = (
     if (accountOp.humanizerMeta?.[`tokens:${call.to}`] && !matcher[sigHash])
       return {
         ...call,
-        fullVisualization: unknownVisualization
+        fullVisualization: getUnknownVisualization('ERC-20', call)
       }
     return call
   })

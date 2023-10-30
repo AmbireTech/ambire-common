@@ -1,10 +1,9 @@
 // update return ir to be {...ir,calls:newCalls} instead of {calls:newCalls} everywhere
-import { ethers } from 'ethers'
 import { WALLETSupplyControllerMapping } from './WALLETSupplyController'
 import { StakingPools } from './stakingPools'
 import { HumanizerCallModule, IrCall } from '../../interfaces'
 import { AccountOp } from '../../../accountOp/accountOp'
-import { checkIfUnknowAction, getAction, getLabel, getToken } from '../../utils'
+import { checkIfUnknowAction, getUnknownVisualization } from '../../utils'
 
 const stakingAddresses = [
   '0x47Cd7E91C3CBaAF266369fe8518345fc4FC12935',
@@ -35,12 +34,10 @@ export const WALLETModule: HumanizerCallModule = (
           fullVisualization: matcher.stakingPool[call.data.slice(0, 10)](accountOp, call)
         })
       } else {
-        const unknownVisualization = [getAction('Unknown action (staking)')]
-        if (call.value)
-          unknownVisualization.push(
-            ...[getLabel('and send'), getToken(ethers.ZeroAddress, call.value)]
-          )
-        newCalls.push({ ...call, fullVisualization: unknownVisualization })
+        newCalls.push({
+          ...call,
+          fullVisualization: getUnknownVisualization('staking', call)
+        })
       }
     } else if (matcher.supplyController[call.data.slice(0, 10)]) {
       newCalls.push({

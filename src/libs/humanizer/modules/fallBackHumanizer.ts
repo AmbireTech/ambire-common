@@ -89,7 +89,7 @@ export const fallbackHumanizer: HumanizerCallModule = (
       ...call,
       fullVisualization: visualization.length
         ? visualization
-        : [getAction('No data, no value call to'), getAddress(call.to)]
+        : [getAction('No data, no value, call to'), getAddress(call.to)]
     }
   })
 

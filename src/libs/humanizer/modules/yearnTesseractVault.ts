@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-shadow */
 import { ethers } from 'ethers'
 import { HumanizerCallModule, IrCall } from '../interfaces'
-import { getAddress, getAction, getLabel, getToken } from '../utils'
+import { getAddress, getAction, getLabel, getToken, getUnknownVisualization } from '../utils'
 import { AccountOp } from '../../accountOp/accountOp'
 
 // const vaultNames = { ethereum: 'Yearn', polygon: 'Tesseract' }
@@ -97,9 +97,7 @@ export const yearnVaultModule: HumanizerCallModule = (
             : v
         )
       } else {
-        visualization = [getAction('Unknown action (yearn)'), getLabel('to'), getAddress(call.to)]
-        if (call.value)
-          visualization.push(...[getLabel('and send'), getToken(ethers.ZeroAddress, call.value)])
+        visualization = getUnknownVisualization('yearn', call)
       }
 
       newCalls.push({ ...call, fullVisualization: visualization })

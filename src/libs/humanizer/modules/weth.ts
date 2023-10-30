@@ -1,7 +1,7 @@
 import { ethers } from 'ethers'
 import { HumanizerCallModule, IrCall } from '../interfaces'
 import { AccountOp } from '../../accountOp/accountOp'
-import { getAction, getLabel, getToken, getAddress } from '../utils'
+import { getAction, getToken, getUnknownVisualization } from '../utils'
 
 const WETH_ADDRESS = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2'
 
@@ -77,19 +77,10 @@ export const wethHumanizer: HumanizerCallModule = (
           fullVisualization: [getAction('Unwrap'), getToken(ethers.ZeroAddress, amount)]
         }
       }
-      const unknownVisualization = [
-        getAction('Unknown action (WETH)'),
-        getLabel('to'),
-        getAddress(call.to)
-      ]
-      if (call.value)
-        unknownVisualization.push(
-          ...[getLabel('and send'), getToken(ethers.ZeroAddress, call.value)]
-        )
       if (!call?.fullVisualization)
         return {
           ...call,
-          fullVisualization: unknownVisualization
+          fullVisualization: getUnknownVisualization('WETH', call)
         }
     }
     return call

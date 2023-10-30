@@ -5,7 +5,8 @@ import {
   getToken,
   getRecipientText,
   getAddress,
-  getDeadlineText
+  getDeadlineText,
+  getUnknownVisualization
 } from '../../utils'
 
 import { AccountOp } from '../../../accountOp/accountOp'
@@ -44,7 +45,7 @@ const uniV32Mapping = (
         .filter((x: any) => x)
       return parsed.length
         ? parsed
-        : [{ ...call, fullVisualization: [getLabel('Unknown Uni V3 interaction')] }]
+        : [{ ...call, fullVisualization: getUnknownVisualization('Uni V3', call) }]
     },
     // 0xac9650d8
     [`${ifaceV32.getFunction('multicall(bytes[])')?.selector}`]: (
@@ -65,7 +66,7 @@ const uniV32Mapping = (
         .filter((x: any) => x)
       return parsed.length
         ? parsed
-        : [{ ...call, fullVisualization: [getLabel('Unknown Uni V3 interaction')] }]
+        : [{ ...call, fullVisualization: getUnknownVisualization('Uni V3', call) }]
     },
     // bytes32 is prevBlockHash
     // 0x1f0464d1
@@ -100,7 +101,7 @@ const uniV32Mapping = (
             {
               ...call,
               fullVisualization: [
-                getLabel('Unknown Uni V3 interaction'),
+                ...getUnknownVisualization('Uni V3', call),
                 getLabel(`after block ${prevBlockHash}`)
               ]
             }
@@ -362,7 +363,7 @@ const uniV3Mapping = (
         .filter((x: any) => x)
       return parsed.length
         ? parsed
-        : [{ ...call, fullVisualization: [getLabel('Unknown Uni V3 interaction')] }]
+        : [{ ...call, fullVisualization: getUnknownVisualization('Uni V3', call) }]
     },
     // NOTE: selfPermit is not supported cause it requires an ecrecover signature
     // 0x414bf389
