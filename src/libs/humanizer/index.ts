@@ -9,6 +9,7 @@ import { AccountOp } from '../accountOp/accountOp'
 import { humanizeCalls, humanizePlainTextMessage, humanizeTypedMessage } from './humanizerFuncs'
 import {
   HumanizerCallModule,
+  HumanizerFragment,
   HumanizerParsingModule,
   HumanizerSettings,
   IrCall,
@@ -73,7 +74,6 @@ export const callsHumanizer = async (
 
   for (let i = 0; i <= 3; i++) {
     const storedHumanizerMeta = await storage.get(HUMANIZER_META_KEY, {})
-    // @ts-ignore
     const [irCalls, asyncOps] = humanizeCalls(
       { ...op, humanizerMeta: { ...op.humanizerMeta, ...storedHumanizerMeta } },
       humanizerCallModules,
@@ -84,17 +84,16 @@ export const callsHumanizer = async (
     asyncOps.push(...newAsyncOps)
     callback(parsedCalls)
 
-    const fragments = (await Promise.all(asyncOps)).filter((f) => f)
+    const fragments = (await Promise.all(asyncOps)).filter((f) => f) as HumanizerFragment[]
     if (!fragments.length) return
 
     let globalFragmentData = {}
     let nonGlobalFragmentData = {}
 
     fragments.forEach((f) => {
-      if (f)
-        f.isGlobal
-          ? (globalFragmentData = { ...globalFragmentData, [f.key]: f.value })
-          : (nonGlobalFragmentData = { ...nonGlobalFragmentData, [f.key]: f.value })
+      f.isGlobal
+        ? (globalFragmentData = { ...globalFragmentData, [f.key]: f.value })
+        : (nonGlobalFragmentData = { ...nonGlobalFragmentData, [f.key]: f.value })
     })
 
     op.humanizerMeta = {
@@ -113,6 +112,8 @@ export const messageHumanizer = async (
   callback: (msgs: IrMessage) => void,
   emitError: (err: ErrorRef) => void
 ) => {
+  let globalFragmentData = {}
+  let nonGlobalFragmentData = {}
   for (let i = 0; i < 3; i++) {
     const storedHumanizerMeta = await storage.get(HUMANIZER_META_KEY, {})
     const humanizerSettings: HumanizerSettings = {
@@ -126,7 +127,8 @@ export const messageHumanizer = async (
             return [key, k.label]
           })
         ),
-        ...message.humanizerMeta
+        ...message.humanizerMeta,
+        ...nonGlobalFragmentData
       }
     }
     const irMessage: IrMessage = {
@@ -142,17 +144,14 @@ export const messageHumanizer = async (
       emitError
     })
     callback(parsedMessage)
-    const fragments = (await Promise.all(asyncOps)).filter((f) => f)
+    const fragments = (await Promise.all(asyncOps)).filter((f) => f) as HumanizerFragment[]
     if (!fragments.length) return
 
-    let globalFragmentData = {}
-    let nonGlobalFragmentData = {}
-
+    // eslint-disable-next-line @typescript-eslint/no-loop-func
     fragments.forEach((f) => {
-      if (f)
-        f.isGlobal
-          ? (globalFragmentData = { ...globalFragmentData, [f.key]: f.value })
-          : (nonGlobalFragmentData = { ...nonGlobalFragmentData, [f.key]: f.value })
+      f.isGlobal
+        ? (globalFragmentData = { ...globalFragmentData, [f.key]: f.value })
+        : (nonGlobalFragmentData = { ...nonGlobalFragmentData, [f.key]: f.value })
     })
 
     await storage.set(HUMANIZER_META_KEY, { ...storedHumanizerMeta, ...globalFragmentData })
