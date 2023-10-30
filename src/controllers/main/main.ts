@@ -31,7 +31,7 @@ import EventEmitter from '../eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
 import { PortfolioController } from '../portfolio/portfolio'
 /* eslint-disable no-underscore-dangle */
-import { SignAccountOpController } from '../signAccountOp/signAccountOp'
+import { SignAccountOpController, SigningStatus } from '../signAccountOp/signAccountOp'
 import { SignMessageController } from '../signMessage/signMessage'
 import { TransferController } from '../transfer/transfer'
 
@@ -515,6 +515,7 @@ export class MainController extends EventEmitter {
   async broadcastSignedAccountOp(accountOp: AccountOp) {
     if (!accountOp.signingKeyAddr || !accountOp.signingKeyType || !accountOp.signature) {
       this.#throwAccountOpBroadcastError(new Error('AccountOp missing props'))
+      this.signAccountOp.updateStatusToReadyToSign()
       return
     }
 
@@ -525,6 +526,7 @@ export class MainController extends EventEmitter {
       this.#throwAccountOpBroadcastError(
         new Error(`Provider for networkId: ${accountOp.networkId} not found`)
       )
+      this.signAccountOp.updateStatusToReadyToSign()
       return
     }
 
@@ -532,6 +534,7 @@ export class MainController extends EventEmitter {
       this.#throwAccountOpBroadcastError(
         new Error(`Account with address: ${accountOp.accountAddr} not found`)
       )
+      this.signAccountOp.updateStatusToReadyToSign()
       return
     }
 
