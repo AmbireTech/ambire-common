@@ -71,6 +71,94 @@ const handleAsyncOps = async (
   return [globalFragmentData, nonGlobalFragmentData]
 }
 
+export const sharedHumanization = async <Data extends AccountOp | Message>(
+  data: Data,
+  knownAddresses: (Account | Key)[],
+  storage: Storage,
+  fetch: Function,
+  callback: (response: any) => void,
+  emitError: (err: ErrorRef) => void
+) => {
+  let globalFragmentData = {}
+  let nonGlobalFragmentData = {}
+  let op: AccountOp
+  let irCalls
+  let asyncOps: Promise<HumanizerFragment | null>[] = []
+  let parsedMessage: IrMessage
+  if ('calls' in data) {
+    op = {
+      ...data,
+      humanizerMeta: {
+        ...(await storage.get(HUMANIZER_META_KEY, {})),
+        ...Object.fromEntries(
+          knownAddresses.map((k) => {
+            const key = `names:${'id' in k ? k.id : k.addr}`
+            return [key, k.label]
+          })
+        ),
+        ...data.humanizerMeta
+      }
+    }
+  }
+  for (let i = 0; i <= 3; i++) {
+    const storedHumanizerMeta = await storage.get(HUMANIZER_META_KEY, {})
+    if ('calls' in data) {
+      op!.humanizerMeta = {
+        ...op!.humanizerMeta,
+        ...nonGlobalFragmentData
+      }
+      ;[irCalls, asyncOps] = humanizeCalls(
+        { ...op!, humanizerMeta: { ...op!.humanizerMeta, ...storedHumanizerMeta } },
+        humanizerCallModules,
+        { fetch, emitError }
+      )
+      const [parsedCalls, newAsyncOps] = parseCalls(op!, irCalls, parsingModules, {
+        fetch,
+        emitError
+      })
+      asyncOps.push(...newAsyncOps)
+      callback(parsedCalls)
+    } else if ('content' in data) {
+      const humanizerSettings: HumanizerSettings = {
+        accountAddr: data.accountAddr,
+        networkId: data?.networkId || 'ethereum',
+        humanizerMeta: {
+          ...(await storage.get(HUMANIZER_META_KEY, {})),
+          ...Object.fromEntries(
+            knownAddresses.map((k) => {
+              const key = `names:${'id' in k ? k.id : k.addr}`
+              return [key, k.label]
+            })
+          ),
+          ...data.humanizerMeta,
+          ...nonGlobalFragmentData
+        }
+      }
+      const irMessage: IrMessage = {
+        ...data,
+        fullVisualization:
+          data.content.kind === 'typedMessage'
+            ? humanizeTypedMessage(humanizerTMModules, data.content)
+            : humanizePlainTextMessage(data.content)
+      }
+
+      ;[parsedMessage, asyncOps] = parseMessage(humanizerSettings, irMessage, parsingModules, {
+        fetch,
+        emitError
+      })
+      callback(parsedMessage)
+    }
+
+    ;[globalFragmentData, nonGlobalFragmentData] = await handleAsyncOps(
+      asyncOps,
+      storage,
+      storedHumanizerMeta
+    )
+    if (!Object.keys(globalFragmentData).length && !Object.keys(nonGlobalFragmentData).length)
+      return
+  }
+}
+
 export const callsHumanizer = async (
   accountOp: AccountOp,
   knownAddresses: (Account | Key)[],
@@ -79,44 +167,7 @@ export const callsHumanizer = async (
   callback: (irCalls: IrCall[]) => void,
   emitError: (err: ErrorRef) => void
 ) => {
-  const op: AccountOp = {
-    ...accountOp,
-    humanizerMeta: {
-      ...(await storage.get(HUMANIZER_META_KEY, {})),
-      ...Object.fromEntries(
-        knownAddresses.map((k) => {
-          const key = `names:${'id' in k ? k.id : k.addr}`
-          return [key, k.label]
-        })
-      ),
-      ...accountOp.humanizerMeta
-    }
-  }
-
-  for (let i = 0; i <= 3; i++) {
-    const storedHumanizerMeta = await storage.get(HUMANIZER_META_KEY, {})
-    const [irCalls, asyncOps] = humanizeCalls(
-      { ...op, humanizerMeta: { ...op.humanizerMeta, ...storedHumanizerMeta } },
-      humanizerCallModules,
-      { fetch, emitError }
-    )
-
-    const [parsedCalls, newAsyncOps] = parseCalls(op, irCalls, parsingModules, { fetch, emitError })
-    asyncOps.push(...newAsyncOps)
-    callback(parsedCalls)
-
-    const [globalFragmentData, nonGlobalFragmentData] = await handleAsyncOps(
-      asyncOps,
-      storage,
-      storedHumanizerMeta
-    )
-    if (!Object.keys(globalFragmentData).length && !Object.keys(nonGlobalFragmentData).length)
-      return
-    op.humanizerMeta = {
-      ...op.humanizerMeta,
-      ...nonGlobalFragmentData
-    }
-  }
+  await sharedHumanization(accountOp, knownAddresses, storage, fetch, callback, emitError)
 }
 
 export const messageHumanizer = async (
@@ -127,45 +178,12 @@ export const messageHumanizer = async (
   callback: (msgs: IrMessage) => void,
   emitError: (err: ErrorRef) => void
 ) => {
-  let globalFragmentData = {}
-  let nonGlobalFragmentData = {}
-  for (let i = 0; i < 3; i++) {
-    const storedHumanizerMeta = await storage.get(HUMANIZER_META_KEY, {})
-    const humanizerSettings: HumanizerSettings = {
-      accountAddr: message.accountAddr,
-      networkId: message?.networkId || 'ethereum',
-      humanizerMeta: {
-        ...(await storage.get(HUMANIZER_META_KEY, {})),
-        ...Object.fromEntries(
-          knownAddresses.map((k) => {
-            const key = `names:${'id' in k ? k.id : k.addr}`
-            return [key, k.label]
-          })
-        ),
-        ...message.humanizerMeta,
-        ...nonGlobalFragmentData
-      }
-    }
-    const irMessage: IrMessage = {
-      ...message,
-      fullVisualization:
-        message.content.kind === 'typedMessage'
-          ? humanizeTypedMessage(humanizerTMModules, message.content)
-          : humanizePlainTextMessage(message.content)
-    }
-
-    const [parsedMessage, asyncOps] = parseMessage(humanizerSettings, irMessage, parsingModules, {
-      fetch,
-      emitError
-    })
-    callback(parsedMessage)
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    ;[globalFragmentData, nonGlobalFragmentData] = await handleAsyncOps(
-      asyncOps,
-      storage,
-      storedHumanizerMeta
-    )
-    if (!Object.keys(globalFragmentData).length && !Object.keys(nonGlobalFragmentData).length)
-      return
-  }
+  await sharedHumanization(
+    message,
+    knownAddresses,
+    storage,
+    fetch,
+    callback as (irCalls: IrMessage | IrCall[]) => void,
+    emitError
+  )
 }
