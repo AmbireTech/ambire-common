@@ -23,6 +23,7 @@ import { GasRecommendation, getGasPriceRecommendations } from '../../libs/gasPri
 import { shouldGetAdditionalPortfolio } from '../../libs/portfolio/helpers'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import generateSpoofSig from '../../utils/generateSpoofSig'
+import wait from '../../utils/wait'
 import { AccountAdderController } from '../accountAdder/accountAdder'
 import { ActivityController } from '../activity/activity'
 import { EmailVaultController } from '../emailVault'
@@ -30,7 +31,7 @@ import EventEmitter from '../eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
 import { PortfolioController } from '../portfolio/portfolio'
 /* eslint-disable no-underscore-dangle */
-import { SignAccountOpController } from '../signAccountOp/signAccountOp'
+import { SignAccountOpController, SigningStatus } from '../signAccountOp/signAccountOp'
 import { SignMessageController } from '../signMessage/signMessage'
 import { TransferController } from '../transfer/transfer'
 
@@ -99,6 +100,8 @@ export class MainController extends EventEmitter {
   messagesToBeSigned: { [key: string]: Message[] } = {}
 
   lastUpdate: Date = new Date()
+
+  broadcastStatus: 'INITIAL' | 'LOADING' | 'DONE' = 'INITIAL'
 
   onResolveDappRequest: (data: any, id?: number) => void
 
@@ -510,26 +513,26 @@ export class MainController extends EventEmitter {
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars, class-methods-use-this
   async broadcastSignedAccountOp(accountOp: AccountOp) {
+    this.broadcastStatus = 'LOADING'
+    this.emitUpdate()
+
     if (!accountOp.signingKeyAddr || !accountOp.signingKeyType || !accountOp.signature) {
-      this.#throwAccountOpBroadcastError(new Error('AccountOp missing props'))
-      return
+      return this.#throwAccountOpBroadcastError(new Error('AccountOp missing props'))
     }
 
     const provider: JsonRpcProvider = this.#providers[accountOp.networkId]
     const account = this.accounts.find((acc) => acc.addr === accountOp.accountAddr)
 
     if (!provider) {
-      this.#throwAccountOpBroadcastError(
+      return this.#throwAccountOpBroadcastError(
         new Error(`Provider for networkId: ${accountOp.networkId} not found`)
       )
-      return
     }
 
     if (!account) {
-      this.#throwAccountOpBroadcastError(
+      return this.#throwAccountOpBroadcastError(
         new Error(`Account with address: ${accountOp.accountAddr} not found`)
       )
-      return
     }
 
     let transactionRes: TransactionResponse | { hash: string; nonce: number } | null = null
@@ -539,7 +542,7 @@ export class MainController extends EventEmitter {
       try {
         transactionRes = await provider.broadcastTransaction(accountOp.signature)
       } catch (error: any) {
-        this.#throwAccountOpBroadcastError(new Error(error), error.message || undefined)
+        return this.#throwAccountOpBroadcastError(new Error(error), error.message || undefined)
       }
     }
     // Smart account but EOA pays the fee
@@ -551,7 +554,7 @@ export class MainController extends EventEmitter {
       const estimation =
         this.accountOpsToBeSigned[accountOp.accountAddr][accountOp.networkId]!.estimation
       if (!estimation) {
-        this.#throwAccountOpBroadcastError(
+        return this.#throwAccountOpBroadcastError(
           new Error(`Estimation not done for account with address: ${accountOp.accountAddr}`)
         )
       }
@@ -577,7 +580,9 @@ export class MainController extends EventEmitter {
         ])
       }
 
-      const broadcastKey = this.keystore.keys.find(key => key.addr == accountOp.gasFeePayment!.paidBy)
+      const broadcastKey = this.keystore.keys.find(
+        (key) => key.addr == accountOp.gasFeePayment!.paidBy
+      )
       const signer = await this.keystore.getSigner(
         accountOp.gasFeePayment!.paidBy,
         broadcastKey!.type
@@ -585,10 +590,9 @@ export class MainController extends EventEmitter {
       const network = this.settings.networks.find((n) => n.id === accountOp.networkId)
 
       if (!network) {
-        this.#throwAccountOpBroadcastError(
+        return this.#throwAccountOpBroadcastError(
           new Error(`Network with id: ${accountOp.networkId} not found`)
         )
-        return
       }
 
       const signedTxn = await signer.signRawTransaction({
@@ -621,7 +625,7 @@ export class MainController extends EventEmitter {
           txns: accountOp.calls.map((call) => callToTuple(call)),
           signature: accountOp.signature,
           signer: {
-            address: accountOp.signingKeyAddr,
+            address: accountOp.signingKeyAddr
           },
           nonce: Number(accountOp.nonce)
         }
@@ -637,15 +641,22 @@ export class MainController extends EventEmitter {
             nonce: Number(accountOp.nonce)
           }
         } else {
-          this.#throwAccountOpBroadcastError(new Error(response.message))
+          return this.#throwAccountOpBroadcastError(new Error(response.message))
         }
       } catch (e: any) {
-        this.#throwAccountOpBroadcastError(e)
+        return this.#throwAccountOpBroadcastError(e)
       }
+
+      this.broadcastStatus = 'DONE'
+      this.emitUpdate()
+
+      await wait(1)
+      this.broadcastStatus = 'INITIAL'
+      this.emitUpdate()
     }
 
     if (transactionRes) {
-      this.activity.addAccountOp({
+      await this.activity.addAccountOp({
         ...accountOp,
         txnId: transactionRes.hash,
         nonce: BigInt(transactionRes.nonce)
@@ -663,14 +674,23 @@ export class MainController extends EventEmitter {
     }
   }
 
-  broadcastSignedMessage(signedMessage: Message) {
-    this.activity.addSignedMessage(signedMessage, signedMessage.accountAddr)
+  async broadcastSignedMessage(signedMessage: Message) {
+    this.broadcastStatus = 'LOADING'
+    this.emitUpdate()
+
+    await this.activity.addSignedMessage(signedMessage, signedMessage.accountAddr)
     this.removeUserRequest(signedMessage.id)
     this.onResolveDappRequest({ hash: signedMessage.signature }, signedMessage.id)
     !!this.onBroadcastSuccess &&
       this.onBroadcastSuccess(
         signedMessage.content.kind === 'typedMessage' ? 'typed-data' : 'message'
       )
+
+    this.broadcastStatus = 'DONE'
+    this.emitUpdate()
+
+    await wait(1)
+    this.broadcastStatus = 'INITIAL'
     this.emitUpdate()
   }
 
@@ -702,6 +722,11 @@ export class MainController extends EventEmitter {
         'Unable to send transaction. Please try again or contact Ambire support if the issue persists.',
       error
     })
+    // To enable another try for signing in case of broadcast fail
+    // broadcast is called in the FE only after successful signing
+    this.signAccountOp.updateStatusToReadyToSign()
+    this.broadcastStatus = 'INITIAL'
+    this.emitUpdate()
   }
 
   // includes the getters in the stringified instance
