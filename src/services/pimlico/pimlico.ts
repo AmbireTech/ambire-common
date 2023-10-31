@@ -1,6 +1,6 @@
 import { StaticJsonRpcProvider } from "@ethersproject/providers";
 import { ERC_4337_ENTRYPOINT } from "../../../dist/src/consts/deploy";
-import { UserOperation } from "libs/userOperation/userOperation";
+import { UserOperation } from "../../libs/userOperation/userOperation";
 
 require('dotenv').config();
 

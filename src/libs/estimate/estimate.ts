@@ -143,14 +143,29 @@ export async function estimate(
     if (estimatedRefund <= gasUsed / 5n && estimatedRefund > 0n) gasUsed = estimatedGas
   }
 
-  const feeTokenOptions = feeTokenOutcomes.map((token: any, key: number) => ({
+  let finalFeeTokenOptions = feeTokenOutcomes
+  let finalNativeTokenOptions = nativeAssetBalances
+  if (network.erc4337?.enabled) {
+
+    // if there's no paymaster, we cannot pay in tokens
+    if (!network.erc4337?.hasPaymaster) {
+      finalFeeTokenOptions = []
+    }
+
+    // native should be payed from the smart account only
+    finalNativeTokenOptions = finalNativeTokenOptions.filter((balance: bigint, key: number) => {
+      return nativeToCheck[key] == account.addr
+    })
+  }
+
+  const feeTokenOptions = finalFeeTokenOptions.map((token: any, key: number) => ({
     address: feeTokens[key],
     paidBy: account.addr,
     availableAmount: token.amount,
     gasUsed: token.gasUsed
   }))
 
-  const nativeTokenOptions = nativeAssetBalances.map((balance: bigint, key: number) => ({
+  const nativeTokenOptions = finalNativeTokenOptions.map((balance: bigint, key: number) => ({
     address: nativeAddr,
     paidBy: nativeToCheck[key],
     availableAmount: balance

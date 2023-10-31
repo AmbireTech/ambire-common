@@ -1,9 +1,11 @@
-import { ethers } from "hardhat";
+import { ethers } from "ethers";
 import { Account, AccountOnchainState } from "../../interfaces/account";
 import { AccountOp, callToTuple } from "../accountOp/accountOp";
 import AmbireAccount from "../../../contracts/compiled/AmbireAccount.json";
-import { EstimateResult } from "libs/estimate/estimate";
+import { EstimateResult } from "../../libs/estimate/estimate";
 import { ENTRY_POINT_MARKER, ERC_4337_ENTRYPOINT } from "../../../src/consts/deploy";
+import { networks } from "../../consts/networks";
+import { NetworkDescriptor } from "interfaces/networkDescriptor";
 
 export interface UserOperation {
   sender: string,
@@ -46,9 +48,15 @@ function getPreverificationGas(callData: string) {
  * @param initCode is the contract going to be deployed from now
  * @returns verificationGasLimit
  */
-function getVerificationGasLimit(initCode: string) {
+function getVerificationGasLimit(initCode: string, network: NetworkDescriptor | undefined) {
   let initial = 10195 // validateUserOp
-  initial += 7671 // for using the paymaster
+
+  if (network && network.erc4337?.hasPaymaster) {
+    initial += 7671 // paymaster payment
+  } else {
+    initial += 29053 // native payment
+  }
+
   if (initCode != '0x') initial += 77651 // deploy
   initial += 3000 // hardcoded gas buffer just in case
   return initial
@@ -113,7 +121,8 @@ export function toUserOperation(
       ]
     ])
   const preVerificationGas = getPreverificationGas(preVerificationCallData)
-  const verificationGasLimit = getVerificationGasLimit(initCode)
+  const network = networks.find(net => net.id == accountOp.networkId)
+  const verificationGasLimit = getVerificationGasLimit(initCode, network)
   const callGasLimit = accountOp.gasFeePayment.simulatedGasLimit
   const maxFeePerGas = (
     accountOp.gasFeePayment.amount - estimation.addedNative

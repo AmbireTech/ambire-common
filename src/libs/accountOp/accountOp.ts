@@ -4,7 +4,7 @@ import { Key } from 'interfaces/keystore'
 import { networks } from '../../consts/networks'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
 import { stringify } from '../bigintJson/bigintJson'
-import { UserOperation } from 'libs/userOperation/userOperation'
+import { UserOperation } from '../../libs/userOperation/userOperation'
 
 export interface Call {
   to: string
