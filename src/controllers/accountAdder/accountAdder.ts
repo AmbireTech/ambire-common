@@ -103,54 +103,55 @@ export class AccountAdderController extends EventEmitter {
     slot: number
     index: number
   }[] {
-    const processedAccounts = this.#calculatedAccounts.flatMap((calculatedAccount) => {
-      const associatedLinkedAccounts = this.#linkedAccounts.filter(
-        (linkedAcc) =>
-          !calculatedAccount.account.creation &&
-          linkedAcc.account.associatedKeys.includes(calculatedAccount.account.addr)
-      )
-
-      const correspondingSmartAccount = this.#calculatedAccounts.find(
-        (acc) => acc.account.creation !== null && acc.slot === calculatedAccount.slot
-      )
-
-      let accountsToReturn = []
-
-      if (!calculatedAccount.account.creation) {
-        // Do not show the user the legacy (EOA) account, used as a smart account key only
-        if (!calculatedAccount.isEOAUsedForSmartAccountKeyOnly) {
-          accountsToReturn.push(calculatedAccount)
-        }
-
-        const duplicate = associatedLinkedAccounts.find(
-          (linkedAcc) => linkedAcc.account.addr === correspondingSmartAccount?.account?.addr
+    const processedAccounts = this.#calculatedAccounts
+      // Skip the EOA (legacy) accounts used for smart account key only,
+      // since the user should not see them on the page.
+      .filter((calculatedAccount) => !calculatedAccount.isEOAUsedForSmartAccountKeyOnly)
+      .flatMap((calculatedAccount) => {
+        const associatedLinkedAccounts = this.#linkedAccounts.filter(
+          (linkedAcc) =>
+            !calculatedAccount.account.creation &&
+            linkedAcc.account.associatedKeys.includes(calculatedAccount.account.addr)
         )
 
-        // The calculated smart account that matches the relayer's linked account
-        // should not be displayed as linked account. Use this cycle to mark it.
-        if (duplicate) duplicate.isLinked = false
+        const correspondingSmartAccount = this.#calculatedAccounts.find(
+          (acc) => acc.account.creation !== null && acc.slot === calculatedAccount.slot
+        )
 
-        if (
-          !duplicate &&
-          correspondingSmartAccount &&
-          // TODO: Make sure this condition is needed
-          calculatedAccount.isEOAUsedForSmartAccountKeyOnly
-        ) {
-          accountsToReturn.push(correspondingSmartAccount)
+        let accountsToReturn = []
+
+        if (!calculatedAccount.account.creation) {
+          accountsToReturn.push(calculatedAccount)
+
+          const duplicate = associatedLinkedAccounts.find(
+            (linkedAcc) => linkedAcc.account.addr === correspondingSmartAccount?.account?.addr
+          )
+
+          // The calculated smart account that matches the relayer's linked account
+          // should not be displayed as linked account. Use this cycle to mark it.
+          if (duplicate) duplicate.isLinked = false
+
+          if (
+            !duplicate &&
+            correspondingSmartAccount
+            // TODO: Make sure this condition is needed
+            // !calculatedAccount.isEOAUsedForSmartAccountKeyOnly
+          ) {
+            accountsToReturn.push(correspondingSmartAccount)
+          }
         }
-      }
 
-      accountsToReturn = accountsToReturn.concat(
-        associatedLinkedAccounts.map((linkedAcc) => ({
-          ...linkedAcc,
-          slot: calculatedAccount.slot,
-          isEOAUsedForSmartAccountKeyOnly: calculatedAccount.isEOAUsedForSmartAccountKeyOnly,
-          index: calculatedAccount.index
-        }))
-      )
+        accountsToReturn = accountsToReturn.concat(
+          associatedLinkedAccounts.map((linkedAcc) => ({
+            ...linkedAcc,
+            slot: calculatedAccount.slot,
+            isEOAUsedForSmartAccountKeyOnly: calculatedAccount.isEOAUsedForSmartAccountKeyOnly,
+            index: calculatedAccount.index
+          }))
+        )
 
-      return accountsToReturn
-    })
+        return accountsToReturn
+      })
 
     const unprocessedLinkedAccounts = this.#linkedAccounts
       .filter(
