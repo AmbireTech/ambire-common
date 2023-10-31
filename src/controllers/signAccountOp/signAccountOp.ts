@@ -511,14 +511,22 @@ export class SignAccountOpController extends EventEmitter {
           await signer.signMessage(ethers.hexlify(accountOpSignableHash(this.accountOp)))
         )
       } else if (this.accountOp.gasFeePayment.isERC4337) {
-        // TODO: this.#accountStates may be null here
-        const accountState = this.#accountStates![this.accountOp.accountAddr][this.accountOp.networkId]
+        if (!this.#accountStates ||
+          this.#accountStates[this.accountOp.accountAddr] ||
+          this.#accountStates[this.accountOp.accountAddr][this.accountOp.networkId]) {
+            return this.#setSigningError('account state missing, not ready to sign')
+        }
+        if (!this.#estimation) {
+          return this.#setSigningError('estimation missing, not ready to sign')
+        }
+
+        const accountState = this.#accountStates[this.accountOp.accountAddr][this.accountOp.networkId]
         this.#addFeePayment()
         const userOperation = toUserOperation(
           account,
           accountState,
           this.accountOp,
-          this.#estimation!
+          this.#estimation
         )
         const response = await this.#callRelayer(
           `/v2/paymaster/${this.accountOp.networkId}/sign`,

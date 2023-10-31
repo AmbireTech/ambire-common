@@ -8,7 +8,7 @@ const ENDPOINT = `https://api.pimlico.io/v1/polygon/rpc?apikey=${process.env.REA
 const provider = new StaticJsonRpcProvider(ENDPOINT)
 
 // how many times do we retry the getReceipt function before declaring error
-const RETRY_COUNTER = 10
+const RETRY_COUNTER = 7
 
 interface Bundler {
   getReceipt: Function;
