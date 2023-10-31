@@ -4,6 +4,7 @@ import { Key } from 'interfaces/keystore'
 import { networks } from '../../consts/networks'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
 import { stringify } from '../bigintJson/bigintJson'
+import { UserOperation } from 'libs/userOperation/userOperation'
 
 export interface Call {
   to: string
@@ -67,7 +68,9 @@ export interface AccountOp {
   // "remembered" at the time of signing in order to visualize history properly
   humanizerMeta?: { [key: string]: any }
   txnId?: string
-  status?: AccountOpStatus
+  status?: AccountOpStatus,
+  // in the case of ERC-4337, we need an UserOperation structure for the AccountOp
+  asUserOperation?: UserOperation
 }
 
 export function callToTuple(call: Call): [string, string, string] {

@@ -14,6 +14,9 @@ import EventEmitter from '../eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
 import { PortfolioController } from '../portfolio/portfolio'
 import ERC20 from '../../../contracts/compiled/IERC20.json'
+import { toUserOperation } from 'libs/userOperation/userOperation'
+import EntryPointAbi from '../../../contracts/compiled/EntryPoint.json'
+import { ERC_4337_ENTRYPOINT } from '../../consts/deploy'
 
 export enum SigningStatus {
   UnableToSign = 'unable-to-sign',
@@ -95,12 +98,15 @@ export class SignAccountOpController extends EventEmitter {
 
   status: Status | null = null
 
+  #callRelayer: Function
+
   constructor(
     keystore: KeystoreController,
     portfolio: PortfolioController,
     storage: Storage,
     fetch: Function,
-    providers: { [key: string]: JsonRpcProvider }
+    providers: { [key: string]: JsonRpcProvider },
+    callRelayer: Function
   ) {
     super()
 
@@ -109,6 +115,7 @@ export class SignAccountOpController extends EventEmitter {
     this.#storage = storage
     this.#fetch = fetch
     this.#providers = providers
+    this.#callRelayer = callRelayer
   }
 
   get isInitialized(): boolean {
@@ -406,6 +413,51 @@ export class SignAccountOpController extends EventEmitter {
     this.emitUpdate()
   }
 
+  #addFeePayment() {
+    // TODO: add the fee payment only if it hasn't been added already
+
+    // In case of gas tank token fee payment, we need to include one more call to account op
+    const abiCoder = new ethers.AbiCoder()
+    const feeCollector = '0x942f9CE5D9a33a82F88D233AEb3292E680230348'
+
+    if (this.accountOp!.gasFeePayment!.isGasTank) {
+      // @TODO - config/const
+      const feeToken = this.#getPortfolioToken(this.accountOp!.gasFeePayment!.inToken)
+
+      const call = {
+        to: feeCollector,
+        value: 0n,
+        data: abiCoder.encode(
+          ['string', 'uint256', 'string'],
+          ['gasTank', this.accountOp!.gasFeePayment!.amount, feeToken?.symbol]
+        )
+      }
+
+      this.accountOp!.calls.push(call)
+      return
+    }
+
+    if (this.accountOp!.gasFeePayment!.inToken == '0x0000000000000000000000000000000000000000') {
+      // native payment
+      this.accountOp!.calls.push({
+        to: feeCollector,
+        value: this.accountOp!.gasFeePayment!.amount,
+        data: '0x'
+      })
+    } else {
+      // token payment
+      const ERC20Interface = new ethers.Interface(ERC20.abi)
+      this.accountOp!.calls.push({
+        to: this.accountOp!.gasFeePayment!.inToken,
+        value: 0n,
+        data: ERC20Interface.encodeFunctionData('transfer', [
+          feeCollector,
+          this.accountOp!.gasFeePayment!.amount
+        ])
+      })
+    }
+  }
+
   async sign() {
     if (!this.accountOp?.signingKeyAddr || !this.accountOp?.signingKeyType)
       return this.#setSigningError('no signing key set')
@@ -455,53 +507,34 @@ export class SignAccountOpController extends EventEmitter {
           await signer.signMessage(ethers.hexlify(accountOpSignableHash(this.accountOp)))
         )
       } else if (this.accountOp.gasFeePayment.isERC4337) {
-        // TODO:
-        // transform accountOp to userOperation
-        // sign it
+        // TODO: this.#accountStates may be null here
+        const accountState = this.#accountStates![this.accountOp.accountAddr][this.accountOp.networkId]
+        this.#addFeePayment()
+        const userOperation = toUserOperation(
+          account,
+          accountState,
+          this.accountOp,
+          this.#estimation!
+        )
+        const response = await this.#callRelayer(
+          `/v2/paymaster/${this.accountOp.networkId}/sign`,
+          'POST',
+          {userOperation}
+        )
+        if (response.success) {
+          userOperation.paymasterAndData = response.data.paymasterAndData
+        } else {
+          this.#setSigningError(`User operation signing failed: ${response.data.errorState}`)
+        }
+        const entryPoint: any = new ethers.BaseContract(ERC_4337_ENTRYPOINT, EntryPointAbi, provider)
+        const userOpHash = await entryPoint.getUserOpHash(userOperation)
+        const signature = wrapEthSign(await signer.signMessage(userOpHash))
+        userOperation.signature = signature
+        this.accountOp.signature = signature
+        this.accountOp.asUserOperation = userOperation
       } else {
         // Relayer
-
-        // In case of gas tank token fee payment, we need to include one more call to account op
-        const abiCoder = new ethers.AbiCoder()
-        const feeCollector = '0x942f9CE5D9a33a82F88D233AEb3292E680230348'
-        if (this.accountOp.gasFeePayment.isGasTank) {
-          // @TODO - config/const
-          const feeToken = this.#getPortfolioToken(this.accountOp.gasFeePayment.inToken)
-
-          const call = {
-            to: feeCollector,
-            value: 0n,
-            data: abiCoder.encode(
-              ['string', 'uint256', 'string'],
-              ['gasTank', this.accountOp.gasFeePayment.amount, feeToken?.symbol]
-            )
-          }
-
-          this.accountOp.calls.push(call)
-        }
-        else if (this.accountOp.gasFeePayment.inToken) {
-          // TODO: add the fee payment only if it hasn't been added already
-          if (this.accountOp.gasFeePayment.inToken == '0x0000000000000000000000000000000000000000') {
-            // native payment
-            this.accountOp.calls.push({
-              to: feeCollector,
-              value: this.accountOp.gasFeePayment.amount,
-              data: '0x'
-            })
-          } else {
-            // token payment
-            const ERC20Interface = new ethers.Interface(ERC20.abi)
-            this.accountOp.calls.push({
-              to: this.accountOp.gasFeePayment.inToken,
-              value: 0n,
-              data: ERC20Interface.encodeFunctionData('transfer', [
-                feeCollector,
-                this.accountOp.gasFeePayment.amount
-              ])
-            })
-          }
-        }
-
+        this.#addFeePayment()
         this.accountOp.signature = wrapEthSign(
           await signer.signMessage(ethers.hexlify(accountOpSignableHash(this.accountOp)))
         )

@@ -10,27 +10,34 @@ const provider = new StaticJsonRpcProvider(ENDPOINT)
 // how many times do we retry the getReceipt function before declaring error
 const RETRY_COUNTER = 10
 
-export async function getReceipt(userOperationHash: string) {
-    let receipt = null
+interface Bundler {
+  getReceipt: Function;
+  broadcast: Function;
+};
+
+export class Pimlico implements Bundler {
+  async getReceipt(userOperationHash: string) {
     let counter = 0
-    while (!receipt && counter < RETRY_COUNTER) {
+    while (counter < RETRY_COUNTER) {
       try {
         await new Promise((r) => setTimeout(r, 1000)) //sleep
         counter++
         return await provider.send("eth_getUserOperationReceipt", [userOperationHash])
-      } catch (e) {}
+      } catch (e) {
+        if (counter == RETRY_COUNTER) {
+          return e
+        }
+      }
     }
+  }
 
-    // TODO: throw a proper error
-    throw new Error("Couldn't fetch");
-}
-
-/**
- * Broadcast a userOperation to pimlico and get a userOperationHash in return
- *
- * @param UserOperation userOperation
- * @returns userOperationHash
- */
-export async function broadcast(userOperation: UserOperation): Promise<string> {
-    return provider.send("eth_sendUserOperation", [userOperation, ERC_4337_ENTRYPOINT])
+  /**
+   * Broadcast a userOperation to pimlico and get a userOperationHash in return
+   *
+   * @param UserOperation userOperation
+   * @returns userOperationHash
+   */
+  async broadcast(userOperation: UserOperation): Promise<string> {
+      return provider.send("eth_sendUserOperation", [userOperation, ERC_4337_ENTRYPOINT])
+  }
 }

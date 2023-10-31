@@ -33,6 +33,7 @@ import { PortfolioController } from '../portfolio/portfolio'
 import { SignAccountOpController } from '../signAccountOp/signAccountOp'
 import { SignMessageController } from '../signMessage/signMessage'
 import { TransferController } from '../transfer/transfer'
+import pimlico from '../../services/pimlico'
 
 export class MainController extends EventEmitter {
   #storage: Storage
@@ -182,7 +183,8 @@ export class MainController extends EventEmitter {
       this.portfolio,
       this.#storage,
       this.#fetch,
-      this.#providers
+      this.#providers,
+      this.#callRelayer
     )
     this.activity = new ActivityController(this.#storage, this.accountStates)
 
@@ -610,8 +612,25 @@ export class MainController extends EventEmitter {
         this.#throwAccountOpBroadcastError(new Error(error), error.message || undefined)
       }
     }
-    // TO DO: ERC-4337 broadcast
     else if (accountOp.gasFeePayment && accountOp.gasFeePayment.isERC4337) {
+      const userOperation = accountOp.asUserOperation
+      if (!userOperation) {
+        this.#throwAccountOpBroadcastError(
+          new Error(`Trying to broadcast an ERC-4337 request but userOperation is not set for ${accountOp.accountAddr}`)
+        )
+      }
+
+      // broadcast through pimlico's service
+      const userOperationHash = await pimlico.broadcast(userOperation!)
+      const receipt = await pimlico.getReceipt(userOperationHash)
+      if (receipt) {
+        transactionRes = {
+          hash: receipt.txId,
+          nonce: Number(accountOp.nonce)
+        }
+      } else {
+        this.#throwAccountOpBroadcastError(receipt)
+      }
     }
     // Relayer broadcast
     else {

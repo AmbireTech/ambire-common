@@ -44,14 +44,11 @@ function getPreverificationGas(callData: string) {
  * @returns verificationGasLimit
  */
 function getVerificationGasLimit(initCode: string) {
-  // this is used in:
-  // * createSender, so if we have initCode, we should increase it
-  // ---- 77651 gas required for createSender
-  // * validateUserOp, we should measure it
-  // ---- 10195 validation without payment
-  // ---- 39248 validation with payment
-  // * postOp, but we don't use it
-  return initCode === '0x' ? 40000 : 80000
+  let initial = 10195 // validateUserOp
+  initial += 7671 // for using the paymaster
+  if (initCode != '0x') initial += 77651 // deploy
+  initial += 3000 // hardcoded gas buffer just in case
+  return initial
 }
 
 export function toUserOperation(
@@ -59,7 +56,7 @@ export function toUserOperation(
   accountState: AccountOnchainState,
   accountOp: AccountOp,
   estimation: EstimateResult
-) {
+): UserOperation {
   if (!accountOp.gasFeePayment || !accountOp.gasFeePayment.amount) {
     throw new Error('no gasFeePayment')
   }
@@ -91,14 +88,14 @@ export function toUserOperation(
 
   return {
     sender: accountOp.accountAddr,
-    nonce: accountOp.nonce,
+    nonce: accountOp.nonce ? ethers.hexlify(accountOp.nonce.toString()) : ethers.toBeHex(0,1),
     initCode,
     callData,
-    callGasLimit,
-    verificationGasLimit,
+    callGasLimit: ethers.toBeHex(callGasLimit),
+    verificationGasLimit: ethers.toBeHex(verificationGasLimit),
     preVerificationGas,
-    maxFeePerGas: maxFeePerGas,
-    maxPriorityFeePerGas: maxFeePerGas,
+    maxFeePerGas: ethers.toBeHex(maxFeePerGas),
+    maxPriorityFeePerGas: ethers.toBeHex(maxFeePerGas),
     paymasterAndData: '0x',
     signature: '0x',
   }
