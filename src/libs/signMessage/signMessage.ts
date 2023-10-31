@@ -68,7 +68,13 @@ type Props = {
 }
 
 /**
- * NOTE: you only need to pass one of: typedData, finalDigest, message
+ * Verifies the signature of a message using the provided signer and signature
+ * via a "magic" universal validator contract using the provided provider to
+ * verify the signature on-chain. The contract deploys itself within the
+ * `eth_call`, tries to verify the signature using ERC-6492, ERC-1271, and
+ * `ecrecover`, and returns the value to the function.
+ *
+ * Note: you only need to pass one of: typedData, finalDigest, message
  */
 export async function verifyMessage({
   provider,
@@ -86,10 +92,27 @@ export async function verifyMessage({
   if (message) {
     finalDigest = hashMessage(message)
   } else if (typedData) {
-    finalDigest = TypedDataEncoder.hash(typedData.domain, typedData.types, typedData.message)
-  } else if (!finalDigest)
+    // To resolve the "ambiguous primary types or unused types" error, remove
+    // the `EIP712Domain` from `types` object. The domain type is inbuilt in
+    // the EIP712 standard and hence TypedDataEncoder so you do not need to
+    // specify it in the types, see:
+    // {@link https://ethereum.stackexchange.com/a/151930}
+    const typesWithoutEIP712Domain = { ...typedData.types }
+    if (typesWithoutEIP712Domain.EIP712Domain) {
+      // eslint-disable-next-line no-param-reassign
+      delete typesWithoutEIP712Domain.EIP712Domain
+    }
+
+    finalDigest = TypedDataEncoder.hash(
+      typedData.domain,
+      typesWithoutEIP712Domain,
+      typedData.message
+    )
+  }
+
+  if (!finalDigest)
     throw Error(
-      'Missing one of the properties: message, unPrefixedMessage, typedData or finalDigest'
+      'Something went wrong while validating the message you signed. Please try again or contact Ambire support if the issue persists. Error details: missing one of the required props: message, unPrefixedMessage, typedData or finalDigest'
     )
 
   // this 'magic' universal validator contract will deploy itself within the eth_call, try to verify the signature using
@@ -105,6 +128,13 @@ export async function verifyMessage({
   if (callResult === '0x01') return true
   if (callResult === '0x00') return false
   if (callResult.startsWith('0x08c379a0'))
-    throw new Error(coder.decode(['string'], `0x${callResult.slice(10)}`)[0])
-  throw new Error(`Unexpected result from UniversalValidator: ${callResult}`)
+    throw new Error(
+      `Ambire failed to validate the signature. Please make sure you are signing with the correct key or device. If the problem persists, please contact Ambire support. Error details:: ${
+        coder.decode(['string'], `0x${callResult.slice(10)}`)[0]
+      }`
+    )
+
+  throw new Error(
+    `Ambire failed to validate the signature. Please make sure you are signing with the correct key or device. If the problem persists, please contact Ambire support. Error details: unexpected result from the UniversalValidator: ${callResult}`
+  )
 }

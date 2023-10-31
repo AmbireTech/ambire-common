@@ -6,6 +6,7 @@ import fetch from 'node-fetch'
 import { describe, expect, test } from '@jest/globals'
 
 import { produceMemoryStore } from '../../../test/helpers'
+import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'
 import { networks } from '../../consts/networks'
 import { KeyIterator } from '../../libs/keyIterator/keyIterator'
 import { AccountAdderController } from './accountAdder'
@@ -48,7 +49,11 @@ describe('AccountAdder', () => {
     expect(accountAdder.isInitialized).toBeFalsy()
 
     const keyIterator = new KeyIterator(seedPhrase)
-    accountAdder.init({ keyIterator, preselectedAccounts: [legacyAccount] })
+    accountAdder.init({
+      keyIterator,
+      preselectedAccounts: [legacyAccount],
+      hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
+    })
 
     expect(accountAdder.isInitialized).toBeTruthy()
     expect(accountAdder.preselectedAccounts).toContainEqual(legacyAccount)
@@ -76,7 +81,12 @@ describe('AccountAdder', () => {
   test('should set first page and retrieve one smart account for every legacy account', (done) => {
     const keyIterator = new KeyIterator(seedPhrase)
     const PAGE_SIZE = 3
-    accountAdder.init({ keyIterator, preselectedAccounts: [], pageSize: PAGE_SIZE })
+    accountAdder.init({
+      keyIterator,
+      preselectedAccounts: [],
+      pageSize: PAGE_SIZE,
+      hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
+    })
     accountAdder.setPage({ page: 1, networks, providers })
 
     let emitCounter = 0
@@ -97,7 +107,12 @@ describe('AccountAdder', () => {
   })
   test('should start the searching for linked accounts', (done) => {
     const keyIterator = new KeyIterator(seedPhrase)
-    accountAdder.init({ keyIterator, preselectedAccounts: [], pageSize: 4 })
+    accountAdder.init({
+      keyIterator,
+      preselectedAccounts: [],
+      pageSize: 4,
+      hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
+    })
     accountAdder.setPage({ page: 1, networks, providers })
 
     let emitCounter = 0
@@ -114,7 +129,12 @@ describe('AccountAdder', () => {
   })
   test('should find linked accounts', (done) => {
     const keyIterator = new KeyIterator(seedPhrase)
-    accountAdder.init({ keyIterator, preselectedAccounts: [], pageSize: 3 })
+    accountAdder.init({
+      keyIterator,
+      preselectedAccounts: [],
+      pageSize: 3,
+      hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
+    })
     accountAdder.setPage({ page: 1, networks, providers })
 
     let emitCounter = 0
@@ -147,7 +167,12 @@ describe('AccountAdder', () => {
   })
   test('should not be able to deselect a preselected account', (done) => {
     const keyIterator = new KeyIterator(seedPhrase)
-    accountAdder.init({ keyIterator, preselectedAccounts: [legacyAccount], pageSize: 1 })
+    accountAdder.init({
+      keyIterator,
+      preselectedAccounts: [legacyAccount],
+      pageSize: 1,
+      hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
+    })
     accountAdder.selectedAccounts = [
       { ...legacyAccount, eoaAddress: key1PublicAddress, slot: 1, isLinked: false }
     ]

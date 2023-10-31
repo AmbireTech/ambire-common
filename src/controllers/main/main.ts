@@ -4,7 +4,7 @@ import { JsonRpcProvider } from 'ethers'
 import { networks } from '../../consts/networks'
 import { Account, AccountId, AccountStates } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
-import { KeystoreSignerType } from '../../interfaces/keystore'
+import { Key, KeystoreSignerType } from '../../interfaces/keystore'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
 import { Storage } from '../../interfaces/storage'
 import { Message, UserRequest } from '../../interfaces/userRequest'
@@ -18,6 +18,7 @@ import {
 } from '../../libs/banners/banners'
 import { estimate, EstimateResult } from '../../libs/estimate/estimate'
 import EventEmitter from '../../libs/eventEmitter/eventEmitter'
+import { shouldGetAdditionalPortfolio } from '../../libs/portfolio/helpers'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { AccountAdderController } from '../accountAdder/accountAdder'
 import { ActivityController } from '../activity/activity'
@@ -107,7 +108,7 @@ export class MainController extends EventEmitter {
     storage: Storage
     fetch: Function
     relayerUrl: string
-    keystoreSigners: { [key: string]: KeystoreSignerType }
+    keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>
     onResolveDappRequest: (data: any, id?: number) => void
     onRejectDappRequest: (err: any, id?: number) => void
     onUpdateDappSelectedAccount: (accountAddr: string) => void
@@ -294,7 +295,10 @@ export class MainController extends EventEmitter {
   async updateSelectedAccount(selectedAccount: string | null = null) {
     if (!selectedAccount) return
     this.portfolio.updateSelectedAccount(this.accounts, this.settings.networks, selectedAccount)
-    this.portfolio.getAdditionalPortfolio(selectedAccount)
+
+    const account = this.accounts.find(({ addr }) => addr === selectedAccount)
+    if (shouldGetAdditionalPortfolio(account))
+      this.portfolio.getAdditionalPortfolio(selectedAccount)
   }
 
   async addUserRequest(req: UserRequest) {
@@ -408,7 +412,8 @@ export class MainController extends EventEmitter {
             .map(([networkId, x]) => [networkId, [x!.accountOp]])
         )
       ),
-      this.portfolio.getAdditionalPortfolio(accountOp.accountAddr),
+      shouldGetAdditionalPortfolio(account) &&
+        this.portfolio.getAdditionalPortfolio(accountOp.accountAddr),
       // @TODO nativeToCheck: pass all EOAs,
       // @TODO feeTokens: pass a hardcoded list from settings
       estimate(this.#providers[accountOp.networkId], network, account, accountOp, [], [])
@@ -429,7 +434,7 @@ export class MainController extends EventEmitter {
   }
 
   get banners(): Banner[] {
-    const requests =
+    const userRequests =
       this.userRequests.filter((req) => req.accountAddr === this.selectedAccount) || []
 
     const emailVaultBanners = this.emailVault.banners.filter(
@@ -437,20 +442,18 @@ export class MainController extends EventEmitter {
     )
 
     const accountOpEOABanners = getAccountOpBannersForEOA({
-      userRequests: requests,
+      userRequests,
       accounts: this.accounts
     })
     const pendingAccountOpEOABanners = getPendingAccountOpBannersForEOA({
-      userRequests: requests,
+      userRequests,
       accounts: this.accounts
     })
     const accountOpSmartAccountBanners = getAccountOpBannersForSmartAccount({
-      userRequests: requests,
+      userRequests,
       accounts: this.accounts
     })
-    const messageBanners = getMessageBanners({
-      userRequests: requests
-    })
+    const messageBanners = getMessageBanners({ userRequests })
 
     return [
       ...emailVaultBanners,

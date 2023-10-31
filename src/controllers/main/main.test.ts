@@ -1,17 +1,19 @@
 import { ethers } from 'ethers'
+import { Account } from 'interfaces/account'
 import fetch from 'node-fetch'
 
 import { describe, expect, test } from '@jest/globals'
 
 import { produceMemoryStore } from '../../../test/helpers'
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
+import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'
+import { networks } from '../../consts/networks'
 import { UserRequest } from '../../interfaces/userRequest'
 import { KeyIterator } from '../../libs/keyIterator/keyIterator'
 import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
 import { getBytecode } from '../../libs/proxyDeploy/bytecode'
 import { getAmbireAccountAddress } from '../../libs/proxyDeploy/getAmbireAddressTwo'
 import { MainController } from './main'
-import { Account } from 'interfaces/account'
 
 describe('Main Controller ', () => {
   const accounts = [
@@ -176,7 +178,10 @@ describe('Main Controller ', () => {
     })
 
     const signerAddr = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
-    const priv = { addr: signerAddr, hash: ' 0x0000000000000000000000000000000000000000000000000000000000000001' }
+    const priv = {
+      addr: signerAddr,
+      hash: ' 0x0000000000000000000000000000000000000000000000000000000000000001'
+    }
     const bytecode = await getBytecode([priv])
 
     // Same mechanism to generating this one as used for the
@@ -186,7 +191,9 @@ describe('Main Controller ', () => {
       label: 'test account',
       pfp: 'pfp',
       associatedKeys: [signerAddr],
-      privileges: [[ signerAddr, ' 0x0000000000000000000000000000000000000000000000000000000000000001' ]],
+      privileges: [
+        [signerAddr, ' 0x0000000000000000000000000000000000000000000000000000000000000001']
+      ],
       creation: {
         factoryAddr: AMBIRE_ACCOUNT_FACTORY,
         bytecode,
@@ -194,17 +201,33 @@ describe('Main Controller ', () => {
       }
     }
 
+    const addAccounts = () => {
+      const keyIterator = new KeyIterator(
+        '0x574f261b776b26b1ad75a991173d0e8ca2ca1d481bd7822b2b58b2ef8a969f12'
+      )
+      controller.accountAdder.init({
+        keyIterator,
+        preselectedAccounts: [],
+        hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
+      })
+      controller.accountAdder.addAccounts([accountPendingCreation]).catch(console.error)
+    }
+
     let emitCounter = 0
+    // The `isReady` flag on the MainController gets set in async manner.
+    // If the property of the main controller `isReady` becomes true before
+    // reaching await new Promise..., the code inside the onUpdate won't run,
+    // because there is nothing that will trigger an update. To prevent this,
+    // check if the controller is ready outside of the onUpdate first and add the accounts.
+    if (controller.isReady && emitCounter === 0) {
+      emitCounter++
+      addAccounts()
+    }
     await new Promise((resolve) => {
       const unsubscribe = controller.onUpdate(() => {
         emitCounter++
-        if (emitCounter === 1 && controller.isReady) {
-          const keyIterator = new KeyIterator(
-            '0x574f261b776b26b1ad75a991173d0e8ca2ca1d481bd7822b2b58b2ef8a969f12'
-          )
-          controller.accountAdder.init({ keyIterator, preselectedAccounts: [] })
-          controller.accountAdder.addAccounts([accountPendingCreation]).catch(console.error)
-        }
+
+        if (emitCounter === 1 && controller.isReady) addAccounts()
 
         if (emitCounter === 2) {
           expect(controller.accounts).toContainEqual(accountPendingCreation)

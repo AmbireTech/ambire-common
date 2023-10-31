@@ -67,7 +67,8 @@ describe('KeystoreSigner', () => {
       message: {
         name: 'Alice',
         age: 30
-      }
+      },
+      primaryType: 'Person'
     })
     expect(res).toMatch(/^0x/)
   })

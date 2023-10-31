@@ -14,7 +14,7 @@ import './libs/erc4337/UserOperation.sol';
 contract AmbireAccount {
 	// @dev We do not have a constructor. This contract cannot be initialized with any valid `privileges` by itself!
 	// The intended use case is to deploy one base implementation contract, and create a minimal proxy for each user wallet, by
-	// using our own code generation to insert SSTOREs to initialize `privileges` (IdentityProxyDeploy.js)
+	// using our own code generation to insert SSTOREs to initialize `privileges` (it was previously called IdentityProxyDeploy.js, now src/libs/proxyDeploy/deploy.ts)
 	address private constant FALLBACK_HANDLER_SLOT = address(0x6969);
 
 	// @dev This is how we understand if msg.sender is the entry point
@@ -103,7 +103,7 @@ contract AmbireAccount {
 	 * @param   priv  the privs to give
 	 */
 	function setAddrPrivilege(address addr, bytes32 priv) external payable {
-		require(msg.sender == address(this), 'ONLY_IDENTITY_CAN_CALL');
+		require(msg.sender == address(this), 'ONLY_ACCOUNT_CAN_CALL');
 		privileges[addr] = priv;
 		emit LogPrivilegeChanged(addr, priv);
 	}
@@ -115,7 +115,7 @@ contract AmbireAccount {
 	 * @param   data  callData
 	 */
 	function tryCatch(address to, uint256 value, bytes calldata data) external payable {
-		require(msg.sender == address(this), 'ONLY_IDENTITY_CAN_CALL');
+		require(msg.sender == address(this), 'ONLY_ACCOUNT_CAN_CALL');
 		uint256 gasBefore = gasleft();
 		(bool success, bytes memory returnData) = to.call{ value: value, gas: gasBefore }(data);
 		require(gasleft() > gasBefore / 64, 'TRYCATCH_OOG');
@@ -130,7 +130,7 @@ contract AmbireAccount {
 	 * @param   gasLimit  how much gas is allowed
 	 */
 	function tryCatchLimit(address to, uint256 value, bytes calldata data, uint256 gasLimit) external payable {
-		require(msg.sender == address(this), 'ONLY_IDENTITY_CAN_CALL');
+		require(msg.sender == address(this), 'ONLY_ACCOUNT_CAN_CALL');
 		uint256 gasBefore = gasleft();
 		(bool success, bytes memory returnData) = to.call{ value: value, gas: gasLimit }(data);
 		require(gasleft() > gasBefore / 64, 'TRYCATCH_OOG');
@@ -202,7 +202,7 @@ contract AmbireAccount {
 	 * @param   calls  the transaction we're executing
 	 */
 	function executeBySelf(Transaction[] calldata calls) external payable {
-		require(msg.sender == address(this), 'ONLY_IDENTITY_CAN_CALL');
+		require(msg.sender == address(this), 'ONLY_ACCOUNT_CAN_CALL');
 		executeBatch(calls);
 	}
 
