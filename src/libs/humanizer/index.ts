@@ -50,6 +50,27 @@ const parsingModules: HumanizerParsingModule[] = [nameParsing, tokenParsing]
 
 const humanizerTMModules = [erc20Module, erc721Module, permit2Module, fallbackEIP712Humanizer]
 
+const handleAsyncOps = async (
+  asyncOps: Promise<HumanizerFragment | null>[],
+  storage: Storage,
+  storedHumanizerMeta: any
+) => {
+  let globalFragmentData = {}
+  let nonGlobalFragmentData = {}
+  const fragments = (await Promise.all(asyncOps)).filter((f) => f) as HumanizerFragment[]
+  if (!fragments.length) [{}, {}]
+
+  // eslint-disable-next-line @typescript-eslint/no-loop-func
+  fragments.forEach((f) => {
+    f.isGlobal
+      ? (globalFragmentData = { ...globalFragmentData, [f.key]: f.value })
+      : (nonGlobalFragmentData = { ...nonGlobalFragmentData, [f.key]: f.value })
+  })
+
+  await storage.set(HUMANIZER_META_KEY, { ...storedHumanizerMeta, ...globalFragmentData })
+  return [globalFragmentData, nonGlobalFragmentData]
+}
+
 export const callsHumanizer = async (
   accountOp: AccountOp,
   knownAddresses: (Account | Key)[],
@@ -84,23 +105,17 @@ export const callsHumanizer = async (
     asyncOps.push(...newAsyncOps)
     callback(parsedCalls)
 
-    const fragments = (await Promise.all(asyncOps)).filter((f) => f) as HumanizerFragment[]
-    if (!fragments.length) return
-
-    let globalFragmentData = {}
-    let nonGlobalFragmentData = {}
-
-    fragments.forEach((f) => {
-      f.isGlobal
-        ? (globalFragmentData = { ...globalFragmentData, [f.key]: f.value })
-        : (nonGlobalFragmentData = { ...nonGlobalFragmentData, [f.key]: f.value })
-    })
-
+    const [globalFragmentData, nonGlobalFragmentData] = await handleAsyncOps(
+      asyncOps,
+      storage,
+      storedHumanizerMeta
+    )
+    if (!Object.keys(globalFragmentData).length && !Object.keys(nonGlobalFragmentData).length)
+      return
     op.humanizerMeta = {
       ...op.humanizerMeta,
       ...nonGlobalFragmentData
     }
-    await storage.set(HUMANIZER_META_KEY, { ...storedHumanizerMeta, ...globalFragmentData })
   }
 }
 
@@ -144,16 +159,13 @@ export const messageHumanizer = async (
       emitError
     })
     callback(parsedMessage)
-    const fragments = (await Promise.all(asyncOps)).filter((f) => f) as HumanizerFragment[]
-    if (!fragments.length) return
-
-    // eslint-disable-next-line @typescript-eslint/no-loop-func
-    fragments.forEach((f) => {
-      f.isGlobal
-        ? (globalFragmentData = { ...globalFragmentData, [f.key]: f.value })
-        : (nonGlobalFragmentData = { ...nonGlobalFragmentData, [f.key]: f.value })
-    })
-
-    await storage.set(HUMANIZER_META_KEY, { ...storedHumanizerMeta, ...globalFragmentData })
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    ;[globalFragmentData, nonGlobalFragmentData] = await handleAsyncOps(
+      asyncOps,
+      storage,
+      storedHumanizerMeta
+    )
+    if (!Object.keys(globalFragmentData).length && !Object.keys(nonGlobalFragmentData).length)
+      return
   }
 }
