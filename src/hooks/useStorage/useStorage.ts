@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
 import { UseStorageProps, UseStorageReturnType } from './types'
 
@@ -47,6 +47,13 @@ export default function useStorage<ValueType>({
 
     return setInit(parsedItem)
   })
+
+  // Init storage value with the defaultValue
+  useEffect(() => {
+    if (!storage.getItem(key) && defaultValue) {
+      storage.setItem(key, typeof defaultValue === 'string' ? defaultValue : JSON.stringify(defaultValue))
+    }
+  }, [])
 
   const setItem = useCallback(
     (value: ValueType | null): void => {
