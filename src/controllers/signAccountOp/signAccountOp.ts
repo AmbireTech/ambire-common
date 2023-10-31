@@ -1,5 +1,6 @@
 import { ethers, JsonRpcProvider } from 'ethers'
 
+import ERC20 from '../../../contracts/compiled/IERC20.json'
 import { Account, AccountStates } from '../../interfaces/account'
 import { Key } from '../../interfaces/keystore'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
@@ -13,7 +14,6 @@ import { Price, TokenResult } from '../../libs/portfolio'
 import EventEmitter from '../eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
 import { PortfolioController } from '../portfolio/portfolio'
-import ERC20 from '../../../contracts/compiled/IERC20.json'
 import { toUserOperation } from 'libs/userOperation/userOperation'
 import EntryPointAbi from '../../../contracts/compiled/EntryPoint.json'
 import { ERC_4337_ENTRYPOINT } from '../../consts/deploy'
@@ -209,8 +209,7 @@ export class SignAccountOpController extends EventEmitter {
       this.accountOp!.gasFeePayment = this.#getGasFeePayment()
     }
 
-    this.updateReadyToSignStatusOnUpdate()
-    this.emitUpdate()
+    this.updateStatusToReadyToSign()
   }
 
   /**
@@ -232,11 +231,10 @@ export class SignAccountOpController extends EventEmitter {
     if (networks) this.#networks = networks
     if (accountStates) this.#accountStates = accountStates
 
-    this.updateReadyToSignStatusOnUpdate()
-    this.emitUpdate()
+    this.updateStatusToReadyToSign()
   }
 
-  updateReadyToSignStatusOnUpdate() {
+  updateStatusToReadyToSign() {
     if (
       this.isInitialized &&
       this.#estimation &&
@@ -245,6 +243,7 @@ export class SignAccountOpController extends EventEmitter {
     ) {
       this.status = { type: SigningStatus.ReadyToSign }
     }
+    this.emitUpdate()
   }
 
   reset() {
@@ -256,6 +255,11 @@ export class SignAccountOpController extends EventEmitter {
     this.selectedTokenAddr = null
     this.status = null
     this.humanReadable = []
+    this.emitUpdate()
+  }
+
+  resetStatus() {
+    this.status = null
     this.emitUpdate()
   }
 
