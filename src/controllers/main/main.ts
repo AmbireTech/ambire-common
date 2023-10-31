@@ -513,42 +513,36 @@ export class MainController extends EventEmitter {
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars, class-methods-use-this
   async broadcastSignedAccountOp(accountOp: AccountOp) {
+    this.broadcastStatus = 'LOADING'
+    this.emitUpdate()
+
     if (!accountOp.signingKeyAddr || !accountOp.signingKeyType || !accountOp.signature) {
-      this.#throwAccountOpBroadcastError(new Error('AccountOp missing props'))
-      this.signAccountOp.updateStatusToReadyToSign()
-      return
+      return this.#throwAccountOpBroadcastError(new Error('AccountOp missing props'))
     }
 
     const provider: JsonRpcProvider = this.#providers[accountOp.networkId]
     const account = this.accounts.find((acc) => acc.addr === accountOp.accountAddr)
 
     if (!provider) {
-      this.#throwAccountOpBroadcastError(
+      return this.#throwAccountOpBroadcastError(
         new Error(`Provider for networkId: ${accountOp.networkId} not found`)
       )
-      this.signAccountOp.updateStatusToReadyToSign()
-      return
     }
 
     if (!account) {
-      this.#throwAccountOpBroadcastError(
+      return this.#throwAccountOpBroadcastError(
         new Error(`Account with address: ${accountOp.accountAddr} not found`)
       )
-      this.signAccountOp.updateStatusToReadyToSign()
-      return
     }
 
     let transactionRes: TransactionResponse | { hash: string; nonce: number } | null = null
-
-    this.broadcastStatus = 'LOADING'
-    this.emitUpdate()
 
     // EOA account
     if (!account.creation) {
       try {
         transactionRes = await provider.broadcastTransaction(accountOp.signature)
       } catch (error: any) {
-        this.#throwAccountOpBroadcastError(new Error(error), error.message || undefined)
+        return this.#throwAccountOpBroadcastError(new Error(error), error.message || undefined)
       }
     }
     // Smart account but EOA pays the fee
@@ -560,7 +554,7 @@ export class MainController extends EventEmitter {
       const estimation =
         this.accountOpsToBeSigned[accountOp.accountAddr][accountOp.networkId]!.estimation
       if (!estimation) {
-        this.#throwAccountOpBroadcastError(
+        return this.#throwAccountOpBroadcastError(
           new Error(`Estimation not done for account with address: ${accountOp.accountAddr}`)
         )
       }
@@ -596,10 +590,9 @@ export class MainController extends EventEmitter {
       const network = this.settings.networks.find((n) => n.id === accountOp.networkId)
 
       if (!network) {
-        this.#throwAccountOpBroadcastError(
+        return this.#throwAccountOpBroadcastError(
           new Error(`Network with id: ${accountOp.networkId} not found`)
         )
-        return
       }
 
       const signedTxn = await signer.signRawTransaction({
@@ -648,10 +641,10 @@ export class MainController extends EventEmitter {
             nonce: Number(accountOp.nonce)
           }
         } else {
-          this.#throwAccountOpBroadcastError(new Error(response.message))
+          return this.#throwAccountOpBroadcastError(new Error(response.message))
         }
       } catch (e: any) {
-        this.#throwAccountOpBroadcastError(e)
+        return this.#throwAccountOpBroadcastError(e)
       }
 
       this.broadcastStatus = 'DONE'
@@ -729,6 +722,11 @@ export class MainController extends EventEmitter {
         'Unable to send transaction. Please try again or contact Ambire support if the issue persists.',
       error
     })
+    // To enable another try for signing in case of broadcast fail
+    // broadcast is called in the FE only after successful signing
+    this.signAccountOp.updateStatusToReadyToSign()
+    this.broadcastStatus = 'INITIAL'
+    this.emitUpdate()
   }
 
   // includes the getters in the stringified instance
