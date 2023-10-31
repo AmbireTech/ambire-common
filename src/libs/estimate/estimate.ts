@@ -11,11 +11,11 @@ import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFacto
 export interface EstimateResult {
   gasUsed: bigint
   nonce: number
-  addedNative?: bigint
+  addedNative: bigint
   feePaymentOptions: {
     availableAmount: bigint
     paidBy: string
-    address?: string
+    address: string
     gasUsed?: bigint
   }[]
 }
@@ -33,6 +33,8 @@ export async function estimate(
   blockFrom: string = '0x0000000000000000000000000000000000000001',
   blockTag: string | number = 'latest'
 ): Promise<EstimateResult> {
+  const nativeAddr = '0x0000000000000000000000000000000000000000'
+
   if (!account.creation) {
     if (op.calls.length !== 1) {
       throw new Error("EOA can't have more than one call!")
@@ -55,8 +57,10 @@ export async function estimate(
     return {
       gasUsed,
       nonce,
+      addedNative: 0n,
       feePaymentOptions: [
         {
+          address: nativeAddr,
           paidBy: account.addr,
           availableAmount: balance
         }
@@ -147,6 +151,7 @@ export async function estimate(
   }))
 
   const nativeTokenOptions = nativeAssetBalances.map((balance: bigint, key: number) => ({
+    address: nativeAddr,
     paidBy: nativeToCheck[key],
     availableAmount: balance
   }))
@@ -154,7 +159,7 @@ export async function estimate(
   return {
     gasUsed,
     nonce,
-    addedNative: l1GasEstimation.fee,
+    addedNative: l1GasEstimation.fee || 0n,
     feePaymentOptions: [...feeTokenOptions, ...nativeTokenOptions]
   }
 }

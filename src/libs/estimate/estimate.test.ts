@@ -83,14 +83,9 @@ describe('estimate', () => {
     const op = {
       accountAddr: EOAAccount.addr,
       signingKeyAddr: null,
+      signingKeyType: null,
       gasLimit: null,
-      gasFeePayment: {
-        isERC4337: false,
-        isGasTank: false,
-        paidBy: EOAAccount.addr,
-        inToken: '0x0000000000000000000000000000000000000000',
-        amount: 1
-      },
+      gasFeePayment: null,
       networkId: 'ethereum',
       nonce: null,
       signature: null,
@@ -110,6 +105,7 @@ describe('estimate', () => {
     const op = {
       accountAddr: account.addr,
       signingKeyAddr: null,
+      signingKeyType: null,
       gasLimit: null,
       gasFeePayment: null,
       networkId: 'ethereum',
@@ -148,6 +144,7 @@ describe('estimate', () => {
     const op = {
       accountAddr: account.addr,
       signingKeyAddr: null,
+      signingKeyType: null,
       gasLimit: null,
       gasFeePayment: null,
       networkId: 'ethereum',
@@ -160,6 +157,7 @@ describe('estimate', () => {
     const opWithExecuteBefore = {
       accountAddr: account.addr,
       signingKeyAddr: null,
+      signingKeyType: null,
       gasLimit: null,
       gasFeePayment: null,
       networkId: 'ethereum',
@@ -169,6 +167,7 @@ describe('estimate', () => {
       accountOpToExecuteBefore: {
         accountAddr: account.addr,
         signingKeyAddr: null,
+        signingKeyType: null,
         gasLimit: null,
         gasFeePayment: null,
         networkId: 'ethereum',
@@ -213,6 +212,7 @@ describe('estimate', () => {
     const opOptimism = {
       accountAddr: accountOptimism.addr,
       signingKeyAddr: accountOptimism.associatedKeys[0],
+      signingKeyType: null,
       gasLimit: null,
       gasFeePayment: null,
       networkId: 'optimism',

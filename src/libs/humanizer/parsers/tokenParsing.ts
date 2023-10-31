@@ -1,4 +1,6 @@
+/* eslint-disable no-nested-ternary */
 import { ethers } from 'ethers'
+
 import { nativeTokens } from '../../../consts/networks'
 import {
   HumanizerFragment,
@@ -34,7 +36,9 @@ export const tokenParsing: HumanizerParsingModule = (
                   v.amount ===
                   115792089237316195423570985008687907853269984665640564039457584007913129639935n
                     ? 'all'
-                    : ethers.formatUnits(v.amount as bigint, tokenMeta[1])
+                    : v.amount
+                    ? ethers.formatUnits(v.amount as bigint, tokenMeta[1])
+                    : '0'
               }
         }
         asyncOps.push(getTokenInfo(humanizerSettings, v.address as string, options))

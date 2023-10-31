@@ -106,6 +106,7 @@ function getSignerKey(validatorAddr: any, validatorData: any) {
 
 function produceMemoryStore(): Storage {
   const storage = new Map()
+
   return {
     get: (key, defaultValue): any => {
       const serialized = storage.get(key)

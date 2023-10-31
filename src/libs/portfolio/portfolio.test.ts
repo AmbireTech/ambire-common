@@ -105,6 +105,7 @@ describe('Portfolio', () => {
     const accountOp: AccountOp = {
       accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
       signingKeyAddr: '0x5Be214147EA1AE3653f289E17fE7Dc17A73AD175',
+      signingKeyType: 'internal',
       gasLimit: null,
       gasFeePayment: null,
       networkId: 'ethereum',
@@ -167,7 +168,7 @@ describe('Portfolio', () => {
       })
     })
 
-    const portfolio = new Portfolio(fetch, provider, ethereum)
+    const portfolioInner = new Portfolio(fetch, provider, ethereum)
     const previousHints = {
       erc20s: [
         '0x0000000000000000000000000000000000000000',
@@ -177,7 +178,7 @@ describe('Portfolio', () => {
       ],
       erc721s: {}
     }
-    const result = await portfolio.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', {
+    const result = await portfolioInner.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', {
       previousHints
     })
 

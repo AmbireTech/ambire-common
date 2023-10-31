@@ -1,4 +1,5 @@
 import { ethers } from 'ethers'
+import { Key } from 'interfaces/keystore'
 
 import { networks } from '../../consts/networks'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
@@ -25,7 +26,8 @@ export interface GasFeePayment {
   isGasTank: boolean
   paidBy: string
   inToken: string
-  amount: number
+  amount: bigint
+  simulatedGasLimit: bigint
 }
 
 export enum AccountOpStatus {
@@ -42,7 +44,8 @@ export interface AccountOp {
   accountAddr: string
   networkId: NetworkId
   // this may not be defined, in case the user has not picked a key yet
-  signingKeyAddr: string | null
+  signingKeyAddr: Key['addr'] | null
+  signingKeyType: Key['type'] | null
   // this may not be set in case we haven't set it yet
   // this is a number and not a bigint because of ethers (it uses number for nonces)
   nonce: bigint | null
@@ -67,8 +70,8 @@ export interface AccountOp {
   status?: AccountOpStatus
 }
 
-export function callToTuple(call: Call): [string, bigint, string] {
-  return [call.to, call.value, call.data]
+export function callToTuple(call: Call): [string, string, string] {
+  return [call.to, call.value.toString(), call.data]
 }
 
 export function canBroadcast(op: AccountOp, accountIsEOA: boolean): boolean {
@@ -136,7 +139,7 @@ export function isAccountOpsIntentEqual(
  * @returns Uint8Array
  */
 export function accountOpSignableHash(op: AccountOp): Uint8Array {
-  const opNetworks = networks.filter((network: NetworkDescriptor) => op.networkId == network.id)
+  const opNetworks = networks.filter((network: NetworkDescriptor) => op.networkId === network.id)
   if (!opNetworks.length) throw new Error('unsupported network')
 
   const abiCoder = new ethers.AbiCoder()
@@ -148,7 +151,7 @@ export function accountOpSignableHash(op: AccountOp): Uint8Array {
           op.accountAddr,
           opNetworks[0].chainId,
           op.nonce ?? 0n,
-          op.calls.map((call: Call) => [call.to, call.value, call.data])
+          op.calls.map((call: Call) => callToTuple(call))
         ]
       )
     )
