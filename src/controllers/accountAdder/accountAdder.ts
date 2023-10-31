@@ -167,7 +167,8 @@ export class AccountAdderController extends EventEmitter {
         return {
           ...linkedAcc,
           // @ts-ignore the `correspondingCalculatedAccount` should always be found
-          slot: correspondingCalculatedAccount.slot
+          slot: correspondingCalculatedAccount.slot,
+          index: correspondingCalculatedAccount?.index
         }
       })
 
@@ -490,22 +491,27 @@ export class AccountAdderController extends EventEmitter {
       // eslint-disable-next-line no-await-in-loop
       const smartAccount = await getSmartAccount(key)
       const slot = startIdx + (index + 1)
+
+      // EOA (legacy) account that controls the smart account
       accounts.push({
         account: getLegacyAccount(key),
         isLinked: false,
         slot,
-        index: startIdx + index,
+        index: slot - 1 + SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET,
         isEOAUsedForSmartAccountKeyOnly: true
       })
+
+      // Smart account
       accounts.push({
         account: smartAccount,
         isLinked: false,
         slot,
-        index: startIdx + index + SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET,
+        index: slot - 1,
         isEOAUsedForSmartAccountKeyOnly: false
       })
     }
 
+    // EOA (legacy) account on the same slot as the smart account
     // eslint-disable-next-line no-restricted-syntax
     for (const [index, key] of keys.entries()) {
       const slot = startIdx + (index + 1)
@@ -513,6 +519,7 @@ export class AccountAdderController extends EventEmitter {
         account: getLegacyAccount(key),
         isLinked: false,
         slot,
+        index: slot - 1,
         isEOAUsedForSmartAccountKeyOnly: false
       })
     }
