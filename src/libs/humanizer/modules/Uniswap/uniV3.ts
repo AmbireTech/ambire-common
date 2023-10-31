@@ -115,6 +115,7 @@ const uniV32Mapping = (
     ): IrCall[] => {
       const [params] = ifaceV32.parseTransaction(call)?.args || []
       // @TODO: consider fees
+      console.log(params)
       return [
         {
           ...call,
@@ -122,7 +123,7 @@ const uniV32Mapping = (
             getAction('Swap'),
             getToken(params.tokenIn, params.amountIn),
             getLabel('for at least'),
-            getToken(params.tokenOut, params.amountOutMin),
+            getToken(params.tokenOut, params.amountOutMinimum),
             ...getRecipientText(accountOp.accountAddr, params.recipient)
           ]
         }
