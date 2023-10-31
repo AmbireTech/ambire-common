@@ -186,31 +186,28 @@ describe('Portfolio Controller ', () => {
 
   describe('Pending tokens', () => {
     test('Pending tokens + simulation are fetched and kept in the controller', async () => {
-      const done = jest.fn(() => null)
+      const accountOp = await getAccountOp()
+
       const storage = produceMemoryStore()
       const controller = new PortfolioController(storage, relayerUrl, [])
-      const accountOp = await getAccountOp()
-      controller.onUpdate(() => {
-        const pendingState =
-          controller.pending['0xB674F3fd5F43464dB0448a57529eAF37F04cceA5']?.ethereum
-        const collection = pendingState?.result?.collections.find(
-          (c: CollectionResult) => c.symbol === 'NFT Fiesta'
-        )
-        if (pendingState?.isReady) {
-          expect(pendingState.result?.tokens.length).toBeGreaterThan(0)
-          expect(pendingState.result?.collections.length).toBeGreaterThan(0)
-          expect(pendingState.result?.hints).toBeTruthy()
-          expect(pendingState.result?.total.usd).toBeGreaterThan(1000)
-          // Expect amount post simulation to be calculated correctly
-          expect(collection?.amountPostSimulation).toBe(0n)
-          // using mocked func to check if we reached this line
-          done()
-        }
-      })
 
       await controller.updateSelectedAccount([account], networks, account.addr, accountOp)
-      // checks if we actually got the pndingState in the onUpdate
-      expect(done).toHaveBeenCalled()
+
+      controller.onUpdate(() => {
+        const pendingState =
+          controller.pending['0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'].ethereum!
+        const collection = pendingState.result?.collections.find(
+          (c: CollectionResult) => c.symbol === 'NFT Fiesta'
+        )
+        expect(pendingState.isLoading).toEqual(false)
+
+        expect(pendingState.result?.tokens.length).toBeGreaterThan(0)
+        expect(pendingState.result?.collections.length).toBeGreaterThan(0)
+        expect(pendingState.result?.hints).toBeTruthy()
+        expect(pendingState.result?.total.usd).toBeGreaterThan(1000)
+        // Expect amount post simulation to be calculated correctly
+        expect(collection?.amountPostSimulation).toBe(0n)
+      })
     })
 
     // TODO: currently we disable this optimization in portfolio controller, as in the application it doesn't work at all
@@ -270,38 +267,24 @@ describe('Portfolio Controller ', () => {
     })
 
     test('Pending tokens are re-fetched if AccountOp is changed (omitted, i.e. undefined)', async () => {
-      const done = jest.fn(() => null)
       const accountOp = await getAccountOp()
 
       const storage = produceMemoryStore()
       const controller = new PortfolioController(storage, relayerUrl, [])
-      let firstUpdate: any
-      let secondUpdate: any
-      controller.onUpdate(async () => {
-        if (!firstUpdate) {
-          firstUpdate =
-            controller.pending['0xB674F3fd5F43464dB0448a57529eAF37F04cceA5']?.ethereum?.result
-              ?.updateStarted
-          return
-        }
-        if (!secondUpdate || firstUpdate === secondUpdate) {
-          secondUpdate =
-            controller.pending['0xB674F3fd5F43464dB0448a57529eAF37F04cceA5']?.ethereum?.result
-              ?.updateStarted
-          return
-        }
-        if (secondUpdate && firstUpdate && secondUpdate > firstUpdate) {
-          done()
-        }
-        // expect(done).toHaveBeenCalled()
-      })
+
       await controller.updateSelectedAccount([account], networks, account.addr, accountOp)
-      // when called with forceUpdate, the test passes
-      // await controller.updateSelectedAccount([account], networks, account.addr, undefined, {
-      //   forceUpdate: true
-      // })
-      await controller.updateSelectedAccount([account], networks, account.addr, undefined)
-      expect(done).toHaveBeenCalled()
+      const pendingState1 =
+        controller.pending['0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'].ethereum!
+
+      await controller.updateSelectedAccount([account], networks, account.addr, accountOp, {
+        forceUpdate: true
+      })
+      const pendingState2 =
+        controller.pending['0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'].ethereum!
+
+      expect(pendingState2.result?.updateStarted).toBeGreaterThan(
+        pendingState1.result?.updateStarted!
+      )
     })
 
     test('Pending tokens are re-fetched if AccountOp is changed', async () => {
