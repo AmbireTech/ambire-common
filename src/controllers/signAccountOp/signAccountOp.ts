@@ -5,7 +5,7 @@ import { Account, AccountStates } from '../../interfaces/account'
 import { Key } from '../../interfaces/keystore'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { Storage } from '../../interfaces/storage'
-import { AccountOp, accountOpSignableHash, GasFeePayment } from '../../libs/accountOp/accountOp'
+import { AccountOp, accountOpSignableHash, callToTuple, GasFeePayment } from '../../libs/accountOp/accountOp'
 import { EstimateResult } from '../../libs/estimate/estimate'
 import { GasRecommendation } from '../../libs/gasPrice/gasPrice'
 import { callsHumanizer } from '../../libs/humanizer'
@@ -14,9 +14,10 @@ import { Price, TokenResult } from '../../libs/portfolio'
 import EventEmitter from '../eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
 import { PortfolioController } from '../portfolio/portfolio'
-import { toUserOperation } from 'libs/userOperation/userOperation'
+import { getTargetEdgeCaseNonce, toUserOperation } from 'libs/userOperation/userOperation'
 import EntryPointAbi from '../../../contracts/compiled/EntryPoint.json'
 import { ERC_4337_ENTRYPOINT } from '../../consts/deploy'
+import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 
 export enum SigningStatus {
   UnableToSign = 'unable-to-sign',
@@ -528,6 +529,21 @@ export class SignAccountOpController extends EventEmitter {
           this.accountOp,
           this.#estimation
         )
+        // if we're in the edge case scenario, set the callData to
+        // executeMultiple and sign it
+        if (userOperation.isEdgeCase) {
+          const ambireAccount = new ethers.Interface(AmbireAccount.abi)
+          const signature = wrapEthSign(
+            await signer.signMessage(ethers.hexlify(accountOpSignableHash(this.accountOp)))
+          )
+          userOperation.callData = ambireAccount.encodeFunctionData('executeMultiple', [
+            [
+              this.accountOp.calls.map((call) => callToTuple(call)),
+              signature
+            ]
+          ])
+          this.accountOp.signature = signature
+        }
         const response = await this.#callRelayer(
           `/v2/paymaster/${this.accountOp.networkId}/sign`,
           'POST',
@@ -535,14 +551,25 @@ export class SignAccountOpController extends EventEmitter {
         )
         if (response.success) {
           userOperation.paymasterAndData = response.data.paymasterAndData
+
+          // after getting the paymaster data, if we're in the edge case,
+          // we have to set the correct edge case nonce
+          if (userOperation.isEdgeCase) {
+            userOperation.nonce = getTargetEdgeCaseNonce(userOperation)
+          }
         } else {
-          this.#setSigningError(`User operation signing failed: ${response.data.errorState}`)
+          this.#setSigningError(`User operation signing failed on paymaster approval: ${response.data.errorState}`)
         }
-        const entryPoint: any = new ethers.BaseContract(ERC_4337_ENTRYPOINT, EntryPointAbi, provider)
-        const userOpHash = await entryPoint.getUserOpHash(userOperation)
-        const signature = wrapEthSign(await signer.signMessage(userOpHash))
-        userOperation.signature = signature
-        this.accountOp.signature = signature
+
+        // in normal cases (not edgeCase), we need to sign the user operation
+        // that's what we do here
+        if (!userOperation.isEdgeCase) { 
+          const entryPoint: any = new ethers.BaseContract(ERC_4337_ENTRYPOINT, EntryPointAbi, provider)
+          const userOpHash = await entryPoint.getUserOpHash(userOperation)
+          const signature = wrapEthSign(await signer.signMessage(userOpHash))
+          userOperation.signature = signature
+          this.accountOp.signature = signature
+        }
         this.accountOp.asUserOperation = userOperation
       } else {
         // Relayer

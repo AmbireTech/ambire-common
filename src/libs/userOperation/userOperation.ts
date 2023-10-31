@@ -3,6 +3,7 @@ import { Account, AccountOnchainState } from "../../interfaces/account";
 import { AccountOp, callToTuple } from "../accountOp/accountOp";
 import AmbireAccount from "../../../contracts/compiled/AmbireAccount.json";
 import { EstimateResult } from "libs/estimate/estimate";
+import { ENTRY_POINT_MARKER, ERC_4337_ENTRYPOINT } from "../../../src/consts/deploy";
 
 export interface UserOperation {
   sender: string,
@@ -16,6 +17,8 @@ export interface UserOperation {
   maxPriorityFeePerGas: string, // hex string
   paymasterAndData: string, // hex string
   signature: string, // hex string
+  // https://github.com/AmbireTech/ambire-app/wiki/Ambire-Flows-(wrap,-sign,-payment,-broadcast)#erc-4337-edge-case
+  isEdgeCase: boolean,
 }
 
 /**
@@ -63,6 +66,7 @@ export function toUserOperation(
 
   const ambireAccount = new ethers.BaseContract(accountOp.accountAddr, AmbireAccount.abi)
   let initCode = '0x'
+  let isEdgeCase = false
 
   // if the account is not deployed, prepare the deploy in the initCode
   if (!accountState.isDeployed) {
@@ -75,13 +79,42 @@ export function toUserOperation(
         [account.creation.bytecode, account.creation.salt]
       )
     ]))
+
+    // give permissions to the entry point from here
+    const givePermsToEntryPointData = ambireAccount.interface.encodeFunctionData('setAddrPrivilege', [
+      ERC_4337_ENTRYPOINT,
+      ENTRY_POINT_MARKER
+    ])
+    accountOp.calls.push({
+      to: accountOp.accountAddr,
+      value: 0n,
+      data: givePermsToEntryPointData
+    })
+
+    isEdgeCase = true
   }
 
-  const callData = ambireAccount.interface.encodeFunctionData('executeBySender', [accountOp.calls.map(call => callToTuple(call))])
-  const preVerificationGas = getPreverificationGas(callData)
+  // if we're in the edge case scenario, we set callData to 0x
+  // as callData will be executeMultiple. That will be handled at sign.
+  // If not, point to executeBySender as it should be
+  const callData = !isEdgeCase
+    ? ambireAccount.interface.encodeFunctionData('executeBySender', [accountOp.calls.map(call => callToTuple(call))])
+    : '0x'
+  // if we're in the edge case scenario, we've set callData to 0x
+  // we need callData for preVerificationGas
+  // that's why we put a semi-correct call to executeMultiple as fake call data
+  // to simulate the real one
+  const preVerificationCallData = !isEdgeCase
+    ? callData
+    : ambireAccount.interface.encodeFunctionData('executeMultiple', [
+      [
+        accountOp.calls.map(call => callToTuple(call)),
+        '0x0dc2d37f7b285a2243b2e1e6ba7195c578c72b395c0f76556f8961b0bca97ddc44e2d7a249598f56081a375837d2b82414c3c94940db3c1e64110108021161ca1c01'
+      ]
+    ])
+  const preVerificationGas = getPreverificationGas(preVerificationCallData)
   const verificationGasLimit = getVerificationGasLimit(initCode)
-  const callGasLimit = estimation.gasUsed - (BigInt(verificationGasLimit) + BigInt(preVerificationGas))
-
+  const callGasLimit = accountOp.gasFeePayment.simulatedGasLimit
   const maxFeePerGas = (
     accountOp.gasFeePayment.amount - estimation.addedNative
   ) / accountOp.gasFeePayment.simulatedGasLimit
@@ -98,5 +131,38 @@ export function toUserOperation(
     maxPriorityFeePerGas: ethers.toBeHex(maxFeePerGas),
     paymasterAndData: '0x',
     signature: '0x',
+    isEdgeCase
   }
+}
+
+/**
+ * Get the target nonce we're expecting in validateUserOp
+ * when we're going through the edge case
+ *
+ * @param UserOperation userOperation
+ * @returns hex string
+ */
+export function getTargetEdgeCaseNonce(userOperation: UserOperation) {
+  const abiCoder = new ethers.AbiCoder()
+	return '0x' + ethers.keccak256(
+	  	abiCoder.encode([
+			'bytes',
+			'bytes',
+			'uint256',
+			'uint256',
+			'uint256',
+			'uint256',
+			'uint256',
+			'bytes',
+	  	], [
+			userOperation.initCode,
+			userOperation.callData,
+			userOperation.callGasLimit,
+			userOperation.verificationGasLimit,
+			userOperation.preVerificationGas,
+			userOperation.maxFeePerGas,
+			userOperation.maxPriorityFeePerGas,
+			userOperation.paymasterAndData,
+		])
+	).substring(18) + ethers.toBeHex(0, 8).substring(2)
 }
