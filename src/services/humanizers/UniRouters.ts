@@ -11,7 +11,7 @@ const recipientText = (humanizerInfo, recipient, txnFrom, extended = false) => {
   if (recipient.toLowerCase() === txnFrom.toLowerCase()) {
     return !extended ? '' : []
   }
-  return extended
+  return !extended
     ? ` and send it to ${recipient}`
     : [
         'and send it to',
@@ -349,7 +349,7 @@ const uniV3Mapping = (humanizerInfo: HumanizerInfoType) => {
             'for at least',
             token(humanizerInfo, params.tokenIn, params.amountIn, true),
             token(humanizerInfo, params.tokenOut, params.amountOutMinimum, true),
-            recipientText(humanizerInfo, params.recipient, txn.from),
+            recipientText(humanizerInfo, params.recipient, txn.from, true),
             deadlineText(params.deadline, opts.mined)
           )
     },
@@ -372,7 +372,7 @@ const uniV3Mapping = (humanizerInfo: HumanizerInfoType) => {
             'for at least',
             token(humanizerInfo, path[0], params.amountIn, true),
             token(humanizerInfo, path[path.length - 1], params.amountOutMinimum, true),
-            recipientText(humanizerInfo, params.recipient, txn.from),
+            recipientText(humanizerInfo, params.recipient, txn.from, true),
             deadlineText(params.deadline, opts.mined)
           )
     },
@@ -394,7 +394,7 @@ const uniV3Mapping = (humanizerInfo: HumanizerInfoType) => {
             'for',
             token(humanizerInfo, params.tokenIn, params.amountInMaximum, true),
             token(humanizerInfo, params.tokenOut, params.amountOut, true),
-            recipientText(humanizerInfo, params.recipient, txn.from),
+            recipientText(humanizerInfo, params.recipient, txn.from, true),
             deadlineText(params.deadline, opts.mined)
           )
     },
@@ -418,7 +418,7 @@ const uniV3Mapping = (humanizerInfo: HumanizerInfoType) => {
             'for',
             token(humanizerInfo, path[path.length - 1], params.amountInMaximum, true),
             token(humanizerInfo, path[0], params.amountOut, true),
-            recipientText(humanizerInfo, params.recipient, txn.from),
+            recipientText(humanizerInfo, params.recipient, txn.from, true),
             deadlineText(params.deadline, opts.mined)
           )
     },
@@ -485,7 +485,7 @@ const uniV32Mapping = (humanizerInfo: HumanizerInfoType) => {
             'for at least',
             token(humanizerInfo, params.tokenIn, params.amountIn, true),
             token(humanizerInfo, params.tokenOut, params.amountOutMinimum, true),
-            recipientText(humanizerInfo, params.recipient, txn.from)
+            recipientText(humanizerInfo, params.recipient, txn.from, true)
           )
     },
     [ifaceV32.getSighash('exactInput')]: (txn, network, opts = {}) => {
@@ -504,7 +504,7 @@ const uniV32Mapping = (humanizerInfo: HumanizerInfoType) => {
             'for at least',
             token(humanizerInfo, path[0], params.amountIn, true),
             token(humanizerInfo, path[path.length - 1], params.amountOutMinimum, true),
-            recipientText(humanizerInfo, params.recipient, txn.from)
+            recipientText(humanizerInfo, params.recipient, txn.from, true)
           )
     },
     [ifaceV32.getSighash('exactOutputSingle')]: (txn, network, opts = {}) => {
@@ -522,7 +522,7 @@ const uniV32Mapping = (humanizerInfo: HumanizerInfoType) => {
             'for',
             token(humanizerInfo, params.tokenIn, params.amountInMaximum, true),
             token(humanizerInfo, params.tokenOut, params.amountOut, true),
-            recipientText(humanizerInfo, params.recipient, txn.from)
+            recipientText(humanizerInfo, params.recipient, txn.from, true)
           )
     },
     [ifaceV32.getSighash('exactOutput')]: (txn, network, opts = {}) => {
@@ -545,7 +545,7 @@ const uniV32Mapping = (humanizerInfo: HumanizerInfoType) => {
             'for',
             token(humanizerInfo, path[path.length - 1], params.amountInMaximum, true),
             token(humanizerInfo, path[0], params.amountOut, true),
-            recipientText(humanizerInfo, params.recipient, txn.from)
+            recipientText(humanizerInfo, params.recipient, txn.from, true)
           )
     },
     [ifaceV32.getSighash('swapTokensForExactTokens')]: (txn, network, opts = {}) => {
@@ -564,7 +564,7 @@ const uniV32Mapping = (humanizerInfo: HumanizerInfoType) => {
             'for',
             token(humanizerInfo, path[0], amountInMax, true),
             token(humanizerInfo, path[path.length - 1], amountOut, true),
-            recipientText(humanizerInfo, to, txn.from)
+            recipientText(humanizerInfo, to, txn.from, true)
           )
     },
     [ifaceV32.getSighash('swapExactTokensForTokens')]: (txn, network, opts = {}) => {
@@ -583,7 +583,7 @@ const uniV32Mapping = (humanizerInfo: HumanizerInfoType) => {
             'for at least',
             token(humanizerInfo, path[0], amountIn, true),
             token(humanizerInfo, path[path.length - 1], amountOutMin, true),
-            recipientText(humanizerInfo, to, txn.from)
+            recipientText(humanizerInfo, to, txn.from, true)
           )
     },
     [ifaceV32.getSighash('unwrapWETH9(uint256)')]: (txn, network, opts = {}) => {
@@ -731,6 +731,9 @@ const uniUniversalRouter = (humanizerInfo: HumanizerInfoType) => {
                   deadlineText(deadline, opts.mined)
                 )
           )
+        } else if (command === COMMANDS.PERMIT2_PERMIT) {
+          const humanizerMsg = 'Approved Uniswap to use the following token via signed message.'
+          parsed.push(!opts.extended ? [humanizerMsg] : [[humanizerMsg]])
         } else if (command === COMMANDS.WRAP_ETH) {
           const { inputsDetails } = COMMANDS_DESCRIPTIONS.WRAP_ETH
           const params = extractParams(inputsDetails, inputs[index])
@@ -749,7 +752,7 @@ const uniUniversalRouter = (humanizerInfo: HumanizerInfoType) => {
               ? [`Unwrap at least ${nativeToken(network, params.amountMin)}`]
               : toExtendedUnwrap('Unwrap at least', network, params.amountMin)
           )
-        }
+        } else parsed.push(['Unknown Uni V3 interaction'])
       })
 
       return parsed.flat()
