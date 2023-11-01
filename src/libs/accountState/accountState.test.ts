@@ -4,11 +4,10 @@ import { describe, expect, test } from '@jest/globals'
 
 import {
   AMBIRE_ACCOUNT_FACTORY,
-  AMBIRE_ACCOUNT_FACTORY_ERC_4337,
   ERC_4337_ENTRYPOINT
 } from '../../consts/deploy'
 import { networks } from '../../consts/networks'
-import { get4437Bytecode, getBytecode } from '../proxyDeploy/bytecode'
+import { getBytecode } from '../proxyDeploy/bytecode'
 import { getAmbireAccountAddress } from '../proxyDeploy/getAmbireAddressTwo'
 import { getAccountState } from './accountState'
 
@@ -87,7 +86,7 @@ describe('AccountState', () => {
       { addr: '0x9188fdd757Df66B4F693D624Ed6A13a15Cf717D7', hash: true },
       { addr: '0x43Ec7De60E89dabB7cAedc89Cd1F3c8D52707312', hash: true }
     ]
-    const bytecodeErc4337 = await get4437Bytecode(polygon, privs)
+    const bytecodeErc4337 = await getBytecode(polygon, privs)
     const accountErc4337 = {
       addr: '0x76b277955846313Ec50F26eD155C26f5aED295B1',
       label: '',
@@ -97,7 +96,7 @@ describe('AccountState', () => {
         '0x43Ec7De60E89dabB7cAedc89Cd1F3c8D52707312'
       ],
       creation: {
-        factoryAddr: AMBIRE_ACCOUNT_FACTORY_ERC_4337,
+        factoryAddr: AMBIRE_ACCOUNT_FACTORY,
         bytecode: bytecodeErc4337,
         salt: '0x0'
       }
