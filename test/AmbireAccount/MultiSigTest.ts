@@ -8,10 +8,9 @@ import {
   addressTwo,
   addressThree,
   wallet3,
-  expect,
-  abiCoder,
+  expect
 } from '../config'
-import { wrapEthSign, wrapMultiSig } from '../ambireSign'
+import { wrapEIP712, wrapMultiSig } from '../ambireSign'
 import { deployAmbireAccountHardhatNetwork } from '../implementations'
 
 /**
@@ -26,7 +25,7 @@ function getMsAddress(accounts: string[] = []) {
     let kecak = ethers.keccak256(
       ethers.solidityPacked(['address', 'address'], [finalSigner, signers[i]])
     )
-    finalSigner = ethers.hexlify(ethers.getBytes(kecak).slice(12, 32))
+    finalSigner = ethers.toQuantity(ethers.getBytes(kecak).slice(12, 32))
   }
   return finalSigner
 }
@@ -34,7 +33,7 @@ function getMsAddress(accounts: string[] = []) {
 let ambireAccountAddress: string
 
 describe('Two of two multisignature tests', function () {
-  before('successfully deploys the ambire account', async function () {
+  it('successfully deploys the ambire account', async function () {
     const { ambireAccountAddress: addr } = await deployAmbireAccountHardhatNetwork([
       { addr: getMsAddress(), hash: true }
     ])
@@ -45,78 +44,64 @@ describe('Two of two multisignature tests', function () {
     const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signer)
 
     const msg = 'test'
-    const msgHash = ethers.keccak256(ethers.toUtf8Bytes(msg))
-    const msgHashToSign = ethers.getBytes(ethers.keccak256(abiCoder.encode(['bytes32', 'address'], [msgHash, ambireAccountAddress])))
-    const sigOne = wrapEthSign(await signer.signMessage(msgHashToSign))
-    const sigTwo = wrapEthSign(await wallet2.signMessage(msgHashToSign))
+    const sigOne = wrapEIP712(await signer.signMessage(msg))
+    const sigTwo = wrapEIP712(await wallet2.signMessage(msg))
     const abi = new ethers.AbiCoder()
     const signature = abi.encode(['bytes[]'], [[sigOne, sigTwo]])
     const ambireSig = wrapMultiSig(signature)
-    expect(await contract.isValidSignature(msgHash, ambireSig)).to.equal(validSig)
+    expect(await contract.isValidSignature(ethers.hashMessage(msg), ambireSig)).to.equal(validSig)
   })
   it('fails validation when the order of the passed signatures is not correct', async function () {
     const [signer] = await ethers.getSigners()
     const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signer)
 
     const msg = 'test'
-    const msgHash = ethers.keccak256(ethers.toUtf8Bytes(msg))
-    const msgHashToSign = ethers.getBytes(ethers.keccak256(abiCoder.encode(['bytes32', 'address'], [msgHash, ambireAccountAddress])))
-    const sigOne = wrapEthSign(await signer.signMessage(msgHashToSign))
-    const sigTwo = wrapEthSign(await wallet2.signMessage(msgHashToSign))
+    const sigOne = wrapEIP712(await signer.signMessage(msg))
+    const sigTwo = wrapEIP712(await wallet2.signMessage(msg))
     const abi = new ethers.AbiCoder()
     const signature = abi.encode(['bytes[]'], [[sigTwo, sigOne]])
     const ambireSig = wrapMultiSig(signature)
-    expect(await contract.isValidSignature(msgHash, ambireSig)).to.equal(invalidSig)
+    expect(await contract.isValidSignature(ethers.hashMessage(msg), ambireSig)).to.equal(invalidSig)
   })
   it('fails when only a single signature is passed to the multisig', async function () {
     const [signer] = await ethers.getSigners()
     const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signer)
 
     const msg = 'test'
-    const msgHash = ethers.keccak256(ethers.toUtf8Bytes(msg))
-    const msgHashToSign = ethers.getBytes(ethers.keccak256(abiCoder.encode(['bytes32', 'address'], [msgHash, ambireAccountAddress])))
-    const sigOne = wrapEthSign(await signer.signMessage(msgHashToSign))
+    const sigOne = wrapEIP712(await signer.signMessage(msg))
     const abi = new ethers.AbiCoder()
     const signature = abi.encode(['bytes[]'], [[sigOne]])
     const ambireSig = wrapMultiSig(signature)
-    expect(await contract.isValidSignature(msgHash, ambireSig)).to.equal(invalidSig)
+    expect(await contract.isValidSignature(ethers.hashMessage(msg), ambireSig)).to.equal(invalidSig)
   })
   it('fails when only a single signature is passed to EIP712 validation', async function () {
     const [signer] = await ethers.getSigners()
     const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signer)
 
     const msg = 'test'
-    const msgHash = ethers.keccak256(ethers.toUtf8Bytes(msg))
-    const msgHashToSign = ethers.getBytes(ethers.keccak256(abiCoder.encode(['bytes32', 'address'], [msgHash, ambireAccountAddress])))
-    const sigOne = wrapEthSign(await signer.signMessage(msgHashToSign))
-    expect(await contract.isValidSignature(msgHash, sigOne)).to.equal(invalidSig)
+    const sigOne = wrapEIP712(await signer.signMessage(msg))
+    expect(await contract.isValidSignature(ethers.hashMessage(msg), sigOne)).to.equal(invalidSig)
   })
   it('fails validation when a single signer passes two signatures', async function () {
     const [signer] = await ethers.getSigners()
     const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signer)
 
     const msg = 'test'
-    const msgHash = ethers.keccak256(ethers.toUtf8Bytes(msg))
-    const msgHashToSign = ethers.getBytes(ethers.keccak256(abiCoder.encode(['bytes32', 'address'], [msgHash, ambireAccountAddress])))
-    const sigOne = wrapEthSign(await signer.signMessage(msgHashToSign))
-    const sigTwo = wrapEthSign(await signer.signMessage(msgHashToSign))
+    const sigOne = wrapEIP712(await signer.signMessage(msg))
+    const sigTwo = wrapEIP712(await signer.signMessage(msg))
     const abi = new ethers.AbiCoder()
     const signature = abi.encode(['bytes[]'], [[sigOne, sigTwo]])
     const ambireSig = wrapMultiSig(signature)
-    expect(await contract.isValidSignature(msgHash, ambireSig)).to.equal(invalidSig)
+    expect(await contract.isValidSignature(ethers.hashMessage(msg), ambireSig)).to.equal(invalidSig)
   })
   it('fails validation when the message of the second signer is different', async function () {
     const [signer] = await ethers.getSigners()
     const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signer)
 
     const msg = 'test'
-    const msg2 = 'test'
-    const msgHash = ethers.keccak256(ethers.toUtf8Bytes(msg))
-    const msg2Hash = ethers.keccak256(ethers.toUtf8Bytes(msg2))
-    const msgHashToSign = ethers.getBytes(ethers.keccak256(abiCoder.encode(['bytes32', 'address'], [msgHash, ambireAccountAddress])))
-    const msg2HashToSign = ethers.getBytes(ethers.keccak256(abiCoder.encode(['bytes32', 'address'], [msg2Hash, ambireAccountAddress])))
-    const sigOne = wrapEthSign(await signer.signMessage(msgHashToSign))
-    const sigTwo = wrapEthSign(await signer.signMessage(msg2HashToSign))
+    const msg2 = 'test2'
+    const sigOne = wrapEIP712(await signer.signMessage(msg))
+    const sigTwo = wrapEIP712(await wallet2.signMessage(msg2))
     const abi = new ethers.AbiCoder()
     const signature = abi.encode(['bytes[]'], [[sigOne, sigTwo]])
     const ambireSig = wrapMultiSig(signature)
@@ -125,7 +110,7 @@ describe('Two of two multisignature tests', function () {
 })
 
 describe('Three of three multisignature tests', function () {
-  before('successfully deploys the ambire account', async function () {
+  it('successfully deploys the ambire account', async function () {
     const { ambireAccountAddress: addr } = await deployAmbireAccountHardhatNetwork([
       { addr: getMsAddress([addressOne, addressTwo, addressThree]), hash: true }
     ])
@@ -136,26 +121,22 @@ describe('Three of three multisignature tests', function () {
     const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signer)
 
     const msg = 'test'
-    const msgHash = ethers.keccak256(ethers.toUtf8Bytes(msg))
-    const msgHashToSign = ethers.getBytes(ethers.keccak256(abiCoder.encode(['bytes32', 'address'], [msgHash, ambireAccountAddress])))
-    const sigOne = wrapEthSign(await signer.signMessage(msgHashToSign))
-    const sigTwo = wrapEthSign(await wallet2.signMessage(msgHashToSign))
-    const sigThree = wrapEthSign(await wallet3.signMessage(msgHashToSign))
+    const sigOne = wrapEIP712(await signer.signMessage(msg))
+    const sigTwo = wrapEIP712(await wallet2.signMessage(msg))
+    const sigThree = wrapEIP712(await wallet3.signMessage(msg))
     const abi = new ethers.AbiCoder()
     const signature = abi.encode(['bytes[]'], [[sigOne, sigTwo, sigThree]])
     const ambireSig = wrapMultiSig(signature)
-    expect(await contract.isValidSignature(msgHash, ambireSig)).to.equal(validSig)
+    expect(await contract.isValidSignature(ethers.hashMessage(msg), ambireSig)).to.equal(validSig)
   })
   it('fails validation when the order of the passed signatures is not correct', async function () {
     const [signer] = await ethers.getSigners()
     const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signer)
 
     const msg = 'test'
-    const msgHash = ethers.keccak256(ethers.toUtf8Bytes(msg))
-    const msgHashToSign = ethers.getBytes(ethers.keccak256(abiCoder.encode(['bytes32', 'address'], [msgHash, ambireAccountAddress])))
-    const sigOne = wrapEthSign(await signer.signMessage(msgHashToSign))
-    const sigTwo = wrapEthSign(await wallet2.signMessage(msgHashToSign))
-    const sigThree = wrapEthSign(await wallet3.signMessage(msgHashToSign))
+    const sigOne = wrapEIP712(await signer.signMessage(msg))
+    const sigTwo = wrapEIP712(await wallet2.signMessage(msg))
+    const sigThree = wrapEIP712(await wallet3.signMessage(msg))
     const abi = new ethers.AbiCoder()
     const signature = abi.encode(['bytes[]'], [[sigOne, sigThree, sigTwo]])
     const ambireSig = wrapMultiSig(signature)
@@ -166,10 +147,8 @@ describe('Three of three multisignature tests', function () {
     const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signer)
 
     const msg = 'test'
-    const msgHash = ethers.keccak256(ethers.toUtf8Bytes(msg))
-    const msgHashToSign = ethers.getBytes(ethers.keccak256(abiCoder.encode(['bytes32', 'address'], [msgHash, ambireAccountAddress])))
-    const sigOne = wrapEthSign(await signer.signMessage(msgHashToSign))
-    const sigTwo = wrapEthSign(await wallet2.signMessage(msgHashToSign))
+    const sigOne = wrapEIP712(await signer.signMessage(msg))
+    const sigTwo = wrapEIP712(await wallet2.signMessage(msg))
     const abi = new ethers.AbiCoder()
     const signature = abi.encode(['bytes[]'], [[sigOne, sigTwo]])
     const ambireSig = wrapMultiSig(signature)
@@ -180,19 +159,13 @@ describe('Three of three multisignature tests', function () {
     const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signer)
 
     const msg = 'test'
-    const msgHash = ethers.keccak256(ethers.toUtf8Bytes(msg))
-    const msgHashToSign = ethers.getBytes(ethers.keccak256(abiCoder.encode(['bytes32', 'address'], [msgHash, ambireAccountAddress])))
-    const sigOne = wrapEthSign(await signer.signMessage(msgHashToSign))
-    const sigTwo = wrapEthSign(await wallet2.signMessage(msgHashToSign))
-
     const msg2 = 'test2'
-    const msgHash2 = ethers.keccak256(ethers.toUtf8Bytes(msg2))
-    const msgHashToSign2 = ethers.getBytes(ethers.keccak256(abiCoder.encode(['bytes32', 'address'], [msgHash2, ambireAccountAddress])))
-    const sigThree = wrapEthSign(await wallet3.signMessage(msgHashToSign2))
-
+    const sigOne = wrapEIP712(await signer.signMessage(msg))
+    const sigTwo = wrapEIP712(await wallet2.signMessage(msg))
+    const sigThree = wrapEIP712(await wallet3.signMessage(msg2))
     const abi = new ethers.AbiCoder()
     const signature = abi.encode(['bytes[]'], [[sigOne, sigTwo, sigThree]])
     const ambireSig = wrapMultiSig(signature)
-    expect(await contract.isValidSignature(msgHash, ambireSig)).to.equal(invalidSig)
+    expect(await contract.isValidSignature(ethers.hashMessage(msg), ambireSig)).to.equal(invalidSig)
   })
 })
