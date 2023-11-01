@@ -36,7 +36,6 @@ type CalculatedAccount = {
   slot: number // the iteration on which the account is calculated, starting from 1
   index: number // the derivation index of the <account> in the slot, starting from 0
   isLinked: boolean
-  isEOAUsedForSmartAccountKeyOnly: boolean
 }
 
 /**
@@ -103,9 +102,11 @@ export class AccountAdderController extends EventEmitter {
     index: number
   }[] {
     const processedAccounts = this.#calculatedAccounts
-      // Skip the EOA (legacy) accounts used for smart account key only,
-      // since the user should not see them on the page.
-      .filter((calculatedAccount) => !calculatedAccount.isEOAUsedForSmartAccountKeyOnly)
+      // Skip the derived EOA (legacy) accounts used for smart account keys.
+      // They should not be visible on the pages.
+      .filter(
+        (calculatedAccount) => calculatedAccount.index < SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
+      )
       .flatMap((calculatedAccount) => {
         const associatedLinkedAccounts = this.#linkedAccounts.filter(
           (linkedAcc) =>
@@ -130,12 +131,7 @@ export class AccountAdderController extends EventEmitter {
           // should not be displayed as linked account. Use this cycle to mark it.
           if (duplicate) duplicate.isLinked = false
 
-          if (
-            !duplicate &&
-            correspondingSmartAccount
-            // TODO: Make sure this condition is needed
-            // !calculatedAccount.isEOAUsedForSmartAccountKeyOnly
-          ) {
+          if (!duplicate && correspondingSmartAccount) {
             accountsToReturn.push(correspondingSmartAccount)
           }
         }
@@ -144,7 +140,6 @@ export class AccountAdderController extends EventEmitter {
           associatedLinkedAccounts.map((linkedAcc) => ({
             ...linkedAcc,
             slot: calculatedAccount.slot,
-            isEOAUsedForSmartAccountKeyOnly: calculatedAccount.isEOAUsedForSmartAccountKeyOnly,
             index: calculatedAccount.index
           }))
         )
@@ -256,22 +251,20 @@ export class AccountAdderController extends EventEmitter {
         )
       })
 
-    // const allAccountsOnThisSlot = this.accountsOnPage.filter(
-    //   ({ slot }) => slot === accountOnPage.slot
-    // )
     const allAccountsOnThisSlot = this.#calculatedAccounts.filter(
       ({ slot }) => slot === accountOnPage.slot
     )
 
-    // The key of the smart account is the EOA derived with the
-    // `isEOAUsedForSmartAccountKeyOnly` flag.
-    // The key of the legacy account is the legacy account itself.
-    const accountKey = accountOnPage.account.creation
-      ? allAccountsOnThisSlot.find(
-          ({ isEOAUsedForSmartAccountKeyOnly, account }) =>
-            !account.creation && isEOAUsedForSmartAccountKeyOnly
+    const isSmartAccount = !!accountOnPage.account.creation
+    const accountKey = isSmartAccount
+      ? // The key of the smart account is the EOA (legacy) account derived on the
+        // same slot, but with the `SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET` offset.
+        allAccountsOnThisSlot.find(
+          ({ index, account }) =>
+            !account.creation && index >= SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
         )
-      : accountOnPage
+      : // The key of the legacy account is the legacy account itself.
+        accountOnPage
 
     if (!accountKey)
       return this.emitError({
@@ -477,8 +470,8 @@ export class AccountAdderController extends EventEmitter {
     const startIdx = (this.page - 1) * this.pageSize
     const endIdx = (this.page - 1) * this.pageSize + (this.pageSize - 1)
 
-    const keys = await this.#keyIterator.retrieve(startIdx, endIdx, this.hdPathTemplate)
-    const keysForSmartAccounts = await this.#keyIterator.retrieve(
+    const legacyAccKeys = await this.#keyIterator.retrieve(startIdx, endIdx, this.hdPathTemplate)
+    const legacyAccKeysForSmartAcc = await this.#keyIterator.retrieve(
       startIdx + SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET,
       endIdx + SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET,
       this.hdPathTemplate
@@ -487,41 +480,27 @@ export class AccountAdderController extends EventEmitter {
     // Replace the parallel getKeys with foreach to prevent issues with Ledger,
     // which can only handle one request at a time.
     // eslint-disable-next-line no-restricted-syntax
-    for (const [index, key] of keysForSmartAccounts.entries()) {
-      // eslint-disable-next-line no-await-in-loop
-      const smartAccount = await getSmartAccount(key)
+    for (const [index, legacyAccKeyForSmartAcc] of legacyAccKeysForSmartAcc.entries()) {
       const slot = startIdx + (index + 1)
 
-      // EOA (legacy) account that controls the smart account
-      accounts.push({
-        account: getLegacyAccount(key),
-        isLinked: false,
-        slot,
-        index: slot - 1 + SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET,
-        isEOAUsedForSmartAccountKeyOnly: true
-      })
+      // The derived EOA (legacy) account which is the key for the smart account
+      const account = getLegacyAccount(legacyAccKeyForSmartAcc)
+      const indexWithOffset = slot - 1 + SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
+      accounts.push({ account, isLinked: false, slot, index: indexWithOffset })
 
-      // Smart account
-      accounts.push({
-        account: smartAccount,
-        isLinked: false,
-        slot,
-        index: slot - 1,
-        isEOAUsedForSmartAccountKeyOnly: false
-      })
+      // The Ambire (smart) account
+      // eslint-disable-next-line no-await-in-loop
+      const smartAccount = await getSmartAccount(legacyAccKeyForSmartAcc)
+      accounts.push({ account: smartAccount, isLinked: false, slot, index: slot - 1 })
     }
 
-    // EOA (legacy) account on the same slot as the smart account
     // eslint-disable-next-line no-restricted-syntax
-    for (const [index, key] of keys.entries()) {
+    for (const [index, legacyAccKey] of legacyAccKeys.entries()) {
       const slot = startIdx + (index + 1)
-      accounts.push({
-        account: getLegacyAccount(key),
-        isLinked: false,
-        slot,
-        index: slot - 1,
-        isEOAUsedForSmartAccountKeyOnly: false
-      })
+
+      // The EOA (legacy) account on this slot
+      const account = getLegacyAccount(legacyAccKey)
+      accounts.push({ account, isLinked: false, slot, index: slot - 1 })
     }
 
     const accountsWithNetworks = await this.#getAccountsUsedOnNetworks({
