@@ -67,7 +67,7 @@ export const humanizeTypedMessage = (
   modules: HumanizerTypedMessaageModule[],
   tm: TypedMessage
 ): HumanizerVisualization[] => {
-  // runs all modules and takes the first truthy value
+  // runs all modules and takes the first non empty array
   const visualization: HumanizerVisualization[] = modules
     .map((m) => m(tm))
     .filter((p) => p.length)[0]
