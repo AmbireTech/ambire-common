@@ -36,4 +36,9 @@ export const HD_PATHS: HDPath[] = [
   { label: 'Legacy (Ledger, MyEtherWallet, MyCrypto)', path: LEGACY_POPULAR_DERIVATION_TEMPLATE }
 ]
 
+/**
+ * For hardware wallets that are Ambire account keys we can use the derived
+ * address at index N + x, where N is this derivation offset (this constant),
+ * and x is the given <account> index.
+ */
 export const SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET = 100000
