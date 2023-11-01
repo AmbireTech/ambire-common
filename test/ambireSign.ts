@@ -70,21 +70,4 @@ function wrapCancel(sig: string) {
   return `${sig}${'fe'}`
 }
 
-
-/**
- * wrapping hash with "Signing Ambire interaction: "
- *
- * @param BytesLike hash
- * @returns BytesLike
- */
-function wrapHash(hash: any) {
-  const prefix = ethers.toUtf8Bytes('Signing Ambire interaction: ')
-  const hashBytes = ethers.getBytes(hash)
-  const merged = new Uint8Array(prefix.length + hashBytes.length)
-  merged.set(prefix)
-  merged.set(hashBytes, prefix.length);
-  return merged
-}
-
-
-export { wrapEIP712, wrapEthSign, wrapSchnorr, wrapMultiSig, wrapRecover, wrapCancel, wrapExternallyValidated, wrapHash }
+export { wrapEIP712, wrapEthSign, wrapSchnorr, wrapMultiSig, wrapRecover, wrapCancel, wrapExternallyValidated }
