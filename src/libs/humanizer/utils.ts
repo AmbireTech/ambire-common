@@ -74,22 +74,25 @@ export async function getTokenInfo(
   address: string,
   options: any
 ): Promise<HumanizerFragment | null> {
-  const network = networks.find((n: NetworkDescriptor) => n.id === humanizerSettings.networkId)?.id
+  const network = networks.find((n: NetworkDescriptor) => n.id === humanizerSettings.networkId)
   // @TODO update coingecko call with https://github.com/AmbireTech/ambire-common/pull/328
   try {
     const baseUrl = COINGECKO_PRO_API_KEY
       ? 'https://pro-api.coingecko.com/api/v3'
       : 'https://api.coingecko.com/api/v3'
     const postfix = COINGECKO_PRO_API_KEY ? `?&x_cg_pro_api_key=${COINGECKO_PRO_API_KEY}` : ''
-    const coingeckoQueryUrl = `${baseUrl}/coins/${network}/contract/${address}${postfix}`
+    const coingeckoQueryUrl = `${baseUrl}/coins/${network?.chainId}/contract/${address}${postfix}`
     let response = await options.fetch(coingeckoQueryUrl)
     response = await response.json()
-    if (response.symbol && response.detail_platforms?.ethereum.decimal_place)
+    if (response.symbol && response.detail_platforms?.ethereum?.decimal_place)
       return {
         key: `tokens:${address}`,
         isGlobal: true,
-        value: [response.symbol.toUpperCase(), response.detail_platforms?.ethereum.decimal_place]
+        value: [response.symbol.toUpperCase(), response.detail_platforms?.ethereum?.decimal_place]
       }
+    console.log(coingeckoQueryUrl)
+    console.log(address)
+    console.log(response)
     if (response.symbol && response.detail_platforms) {
       options.emitError({
         message: `getTokenInfo: token not supported on network ${network?.name} `,
