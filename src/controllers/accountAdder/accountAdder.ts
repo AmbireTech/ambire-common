@@ -25,19 +25,18 @@ const PAGE_SIZE = 5
 type ExtendedAccount = Account & { usedOnNetworks: NetworkDescriptor[] }
 
 type SelectedAccount = Account & {
-  slot: number
-  index: number
-  eoaAddress: string
+  slot: number // the iteration on which the account is calculated, starting from 1
+  index: number // the derivation index of the <account> in the slot, starting from 0
   isLinked: boolean
+  eoaAddress: string
 }
 
 type CalculatedAccount = {
   account: ExtendedAccount
+  slot: number // the iteration on which the account is calculated, starting from 1
+  index: number // the derivation index of the <account> in the slot, starting from 0
   isLinked: boolean
   isEOAUsedForSmartAccountKeyOnly: boolean
-  slot: number
-  // TODO: include `index` in here?
-  index: number
 }
 
 /**
