@@ -5,7 +5,8 @@ const supportedDApps: string[] = [
   'https://sigtool.ambire.com/',
   'https://app.swappin.gifts',
   'https://app.swappin.gifts/ref/ambire',
-  'https://app.uniswap.org'
+  'https://app.uniswap.org',
+  'https://opensea.io'
 ]
 
 export default supportedDApps

@@ -25,7 +25,6 @@ export default function useProtocolsFetch({
   setAssetsByAccount,
   getCoingeckoPrices,
   getCoingeckoPriceByContract,
-  getCoingeckoAssetPlatforms,
   filterByHiddenTokens,
   extraTokens,
   pendingTransactions,
@@ -35,7 +34,11 @@ export default function useProtocolsFetch({
   fetchingAssets,
   setFetchingAssets,
   оtherNetworksFetching,
-  setOtherNetworksFetching
+  setOtherNetworksFetching,
+  getCoingeckoCoin,
+  requestPendingState,
+  pendingTokens,
+  setPendingTokens
 }) {
   const extraTokensAssets = useMemo(
     () => getExtraTokensAssets(account, currentNetwork),
@@ -49,7 +52,7 @@ export default function useProtocolsFetch({
     addToast,
     getCoingeckoPrices,
     getCoingeckoPriceByContract,
-    getCoingeckoAssetPlatforms
+    getCoingeckoCoin
   })
 
   // All balance oracle functions which we need
@@ -76,7 +79,10 @@ export default function useProtocolsFetch({
     setKnownAddresses,
     setKnownTokens,
     getTokenListBalance,
-    checkTokenList
+    checkTokenList,
+    requestPendingState,
+    pendingTokens,
+    setPendingTokens
   })
 
   // Remaining logic - velcro balance fetching
@@ -91,11 +97,15 @@ export default function useProtocolsFetch({
     extraTokensAssets,
     getExtraTokensAssets,
     eligibleRequests,
+    pendingTransactions,
     fetchingAssets,
     setFetchingAssets,
     оtherNetworksFetching,
     setOtherNetworksFetching,
-    removeDuplicatedAssets
+    removeDuplicatedAssets,
+    requestPendingState,
+    pendingTokens,
+    setPendingTokens
   })
 
   return {

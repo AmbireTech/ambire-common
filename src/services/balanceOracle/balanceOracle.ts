@@ -54,19 +54,20 @@ async function call({
   const coder = new AbiCoder()
   const signer = selectedAccount.signer?.address || selectedAccount.signer?.quickAccManager
 
-  const bytecode =
-    Object.keys(selectedAccount).length !== 0
-      ? selectedAccount?.bytecode
-      : '0x6080604052348015600f57600080fd5b50604880601d6000396000f3fe6080604052348015600f57600080fd5b5000fea2646970667358221220face6a0e4f251ee8ded32eb829598230ad218691166fa0a46bc85583c202c60c64736f6c634300080a0033'
-  const spoofSig = signer
-    ? coder.encode(['address'], [signer]) + SPOOF_SIGTYPE
-    : '0x000000000000000000000000000000000000000000000000000000000000000000'
-
   // 1rst state - latest
   // 2nd state - pending
   // 3rd state - unconfirmed with not signed transactions
   // In both last states we need to pass block tag = pending
   const blockTag = state === 'latest' ? 'latest' : 'pending'
+
+  const bytecode =
+    blockTag === 'pending' && Object.keys(selectedAccount).length !== 0
+      ? selectedAccount?.bytecode
+      : '0x6080604052348015600f57600080fd5b50604880601d6000396000f3fe6080604052348015600f57600080fd5b5000fea2646970667358221220face6a0e4f251ee8ded32eb829598230ad218691166fa0a46bc85583c202c60c64736f6c634300080a0033'
+  const spoofSig =
+    blockTag === 'pending' && signer
+      ? coder.encode(['address'], [signer]) + SPOOF_SIGTYPE
+      : '0x000000000000000000000000000000000000000000000000000000000000000000'
 
   const args = [
     // identityFactoryAddr
@@ -205,19 +206,20 @@ const removeDuplicatedAssets = (_tokens: Token[]) => {
     }, {})
 
   // filters by non duplicated objects or takes the one of dup but with a price or price greater than 0
-  tokens =
-    tokens?.length &&
-    tokens
-      .filter(
-        (e) =>
-          !lookup[e.address] ||
-          (lookup[e.address] && e.price !== undefined) ||
-          (lookup[e.address] && e.price)
-      )
-      // Actually remove if duplicated tokens are passed.
-      .filter(function ({ address }) {
-        return !this.has(address) && this.add(address)
-      }, new Set())
+  tokens = tokens?.length
+    ? tokens
+        .filter(
+          (e) =>
+            !lookup[e.address] ||
+            (lookup[e.address] && e.price !== undefined) ||
+            (lookup[e.address] && e.price)
+        )
+        // Actually remove if duplicated tokens are passed.
+        .filter(function ({ address }) {
+          return !this.has(address) && this.add(address)
+        }, new Set())
+    : []
+
   return tokens
 }
 

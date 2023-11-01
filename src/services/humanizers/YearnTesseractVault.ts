@@ -31,7 +31,7 @@ const toExtendedRich = (humanizerInfo: HumanizerInfoType, action, word, vaultInf
     {
       type: 'address',
       name: vaultInfo.name,
-      address: vaultInfo.addr
+      address: ''
     }
   ]
 ]
@@ -84,6 +84,23 @@ const YearnTesseractMapping = (humanizerInfo: HumanizerInfoType) => {
       return !extended
         ? [`Withdraw ${amount} units from ${vaultNames[network.id]}`]
         : toExtended('Withdraw', 'from', network, amount)
+    },
+    [iface.getSighash('withdraw(uint256)')]: (txn, network, { extended = false }) => {
+      const [maxShares] = iface.parseTransaction(txn).args
+
+      const vaultInfo = getVaultInfo(yearnVaults, tesseractVaults, txn)
+      if (vaultInfo)
+        return !extended
+          ? [
+              `Withdraw ${addTokenPrefix(
+                token(humanizerInfo, vaultInfo.baseToken, maxShares),
+                network.id
+              )} from ${vaultInfo.name}`
+            ]
+          : toExtendedRich(humanizerInfo, 'Withdraw', 'from', vaultInfo, maxShares)
+      return !extended
+        ? [`Withdraw ${maxShares} units from ${vaultNames[network.id]}`]
+        : toExtended('Withdraw', 'from', network, maxShares, txn.to)
     }
   }
 }
