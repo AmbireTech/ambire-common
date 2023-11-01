@@ -5,7 +5,7 @@ import { promisify } from 'util'
 import fs from 'fs'
 import path from 'path'
 import parseEmail from '../../src/libs/dkim/parseEmail'
-import { wrapEthSign, wrapHash, wrapExternallyValidated } from '../ambireSign'
+import { wrapEthSign, wrapExternallyValidated } from '../ambireSign'
 import { getDKIMValidatorData, getPriviledgeTxn, getPriviledgeTxnWithCustomHash, getSignerKey } from '../helpers'
 const readFile = promisify(fs.readFile)
 const emailsPath = path.join(__dirname, 'emails')
@@ -106,7 +106,7 @@ describe('DKIM sigMode Both', function () {
         identifierData,
         sigMetaValues
     ]))
-    const secondSig = wrapEthSign(await relayer.signMessage(wrapHash(ethers.getBytes(identifier))))
+    const secondSig = wrapEthSign(await relayer.signMessage(ethers.getBytes(identifier)))
 
     const innerSig = abiCoder.encode([sigMetaTuple, 'bytes', 'bytes'], [
       sigMetaValues,
@@ -164,7 +164,7 @@ describe('DKIM sigMode Both', function () {
         identifierData,
         sigMetaValues
     ]))
-    const secondSig = wrapEthSign(await relayer.signMessage(wrapHash(ethers.getBytes(identifier))))
+    const secondSig = wrapEthSign(await relayer.signMessage(ethers.getBytes(identifier)))
     
     const innerSig = abiCoder.encode([sigMetaTuple, 'bytes', 'bytes'], [
       sigMetaValues,
@@ -578,7 +578,7 @@ describe('DKIM sigMode OnlySecond', function () {
         identifierData,
         sigMetaValues
     ]))
-    const secondSig = wrapEthSign(await relayer.signMessage(wrapHash(ethers.getBytes(identifier))))
+    const secondSig = wrapEthSign(await relayer.signMessage(ethers.getBytes(identifier)))
     const innerSig = abiCoder.encode([sigMetaTuple, 'bytes', 'bytes'], [
       sigMetaValues,
       ethers.toBeHex(0, 1),
@@ -604,7 +604,7 @@ describe('DKIM sigMode OnlySecond', function () {
     expect(timelock[1]).to.not.equal(0)
 
     // execute again, expect the txn to be executed as onlyOneSigTimelock is 0
-    const secondSig2 = wrapEthSign(await relayer.signMessage(wrapHash(ethers.getBytes(identifier))))
+    const secondSig2 = wrapEthSign(await relayer.signMessage(ethers.getBytes(identifier)))
     const innerSig2 = abiCoder.encode([sigMetaTuple, 'bytes', 'bytes'], [
       sigMetaValues,
       ethers.toBeHex(0, 1),
@@ -649,7 +649,7 @@ describe('DKIM sigMode OnlySecond', function () {
         [relayer.address, newSigner.address, ethers.toBeHex(1, 32)]
       )
     )
-    const secondSig = wrapEthSign(await relayer.signMessage(wrapHash(ethers.getBytes(msgHash))))
+    const secondSig = wrapEthSign(await relayer.signMessage(ethers.getBytes(msgHash)))
     const sigMetaValues = [
       ethers.toBeHex(2, 1),
       [
@@ -795,7 +795,7 @@ describe('DKIM sigMode Both with acceptUnknownSelectors true', function () {
         identifierData,
         sigMetaValues
     ]))
-    const secondSig = wrapEthSign(await relayer.signMessage(wrapHash(ethers.getBytes(identifier))))
+    const secondSig = wrapEthSign(await relayer.signMessage(ethers.getBytes(identifier)))
     const innerSig = abiCoder.encode([sigMetaTuple, 'bytes', 'bytes'], [
       sigMetaValues,
       dkimSig,
@@ -1292,7 +1292,7 @@ describe('DKIM sigMode OnlySecond with a timelock of 2 minutes', function () {
         identifierData,
         sigMetaValues
     ]))
-    const secondSig = wrapEthSign(await relayer.signMessage(wrapHash(ethers.getBytes(identifier))))
+    const secondSig = wrapEthSign(await relayer.signMessage(ethers.getBytes(identifier)))
     secondSigReuse = secondSig
     const innerSig = abiCoder.encode([sigMetaTuple, 'bytes', 'bytes'], [
       sigMetaValues,
@@ -1494,7 +1494,7 @@ describe('Setup a wrong validator address', function () {
       )
     )
     const msg = ethers.getBytes(msgHash)
-    const secondSig = wrapEthSign(await relayer.signMessage(wrapHash(msg)))
+    const secondSig = wrapEthSign(await relayer.signMessage(msg))
     const sigMetaTuple = 'tuple(uint8, tuple(string, bytes, bytes), string, address, bytes32)'
     const sigMetaValues = [
       ethers.toBeHex(0, 1),
@@ -1572,7 +1572,7 @@ describe('Front running', function() {
         identifierData,
         sigMetaValues
     ]))
-    const secondSig = wrapEthSign(await relayer.signMessage(wrapHash(ethers.getBytes(identifier))))
+    const secondSig = wrapEthSign(await relayer.signMessage(ethers.getBytes(identifier)))
     const innerSig = abiCoder.encode(
       [sigMetaTuple, "bytes", "bytes"],
       [sigMetaValues, dkimSig, secondSig]

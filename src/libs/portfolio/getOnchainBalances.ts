@@ -9,6 +9,21 @@ import { GetOptions } from './portfolio'
 // 0x00..01 is the address from which simulation signatures are valid
 const DEPLOYLESS_SIMULATION_FROM = '0x0000000000000000000000000000000000000001'
 
+class SimulationError extends Error {
+  public simulationErrorMsg: string
+
+  public beforeNonce: bigint
+
+  public afterNonce: bigint
+
+  constructor(message: string, beforeNonce: bigint, afterNonce: bigint) {
+    super(`simulation error: ${message}`)
+    this.simulationErrorMsg = message
+    this.beforeNonce = beforeNonce
+    this.afterNonce = afterNonce
+  }
+}
+
 const handleSimulationError = (error: string, beforeNonce: bigint, afterNonce: bigint) => {
   if (error !== '0x') throw new SimulationError(parseErr(error) || error, beforeNonce, afterNonce)
   // If the afterNonce is 0, it means that we reverted, even if the error is empty
@@ -149,19 +164,4 @@ export async function getTokens(
     token.error,
     { ...mapToken(token, tokenAddrs[i]), amountPostSimulation: postSimulationAmounts[i].amount }
   ])
-}
-
-class SimulationError extends Error {
-  public simulationErrorMsg: string
-
-  public beforeNonce: bigint
-
-  public afterNonce: bigint
-
-  constructor(message: string, beforeNonce: bigint, afterNonce: bigint) {
-    super(`simulation error: ${message}`)
-    this.simulationErrorMsg = message
-    this.beforeNonce = beforeNonce
-    this.afterNonce = afterNonce
-  }
 }

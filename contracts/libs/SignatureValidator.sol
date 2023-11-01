@@ -55,7 +55,7 @@ library SignatureValidator {
 			bytes32 r = sig.readBytes32(0);
 			bytes32 s = sig.readBytes32(32);
 			uint8 v = uint8(sig[64]);
-			if (mode == SignatureMode.EthSign) hash = keccak256(abi.encodePacked('\x19Ethereum Signed Message:\n60Signing Ambire interaction: ', hash));
+			if (mode == SignatureMode.EthSign) hash = keccak256(abi.encodePacked('\x19Ethereum Signed Message:\n32', hash));
 			address signer = ecrecover(hash, v, r, s);
 			require(signer != address(0), 'SV_ZERO_SIG');
 			return signer;

@@ -26,6 +26,7 @@ const accountOp: AccountOp = {
   networkId: 'ethereum',
   // this may not be defined, in case the user has not picked a key yet
   signingKeyAddr: null,
+  signingKeyType: null,
   // signingKeyType: 'internal',
   // this may not be set in case we haven't set it yet
   nonce: null,
