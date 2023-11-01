@@ -413,18 +413,7 @@ export class AccountAdderController extends EventEmitter {
       }
     }
 
-    const smartAccountKeys: Account[] = []
-    accountsToAddOnRelayer.forEach((acc) => {
-      const smartAccountKey = this.#calculatedAccounts.find(
-        (calculatedAcc) => calculatedAcc.account.addr === acc.eoaAddress
-      )
-
-      if (smartAccountKey) {
-        smartAccountKeys.push(smartAccountKey.account)
-      }
-    })
-
-    this.readyToAddAccounts = [...accounts, ...smartAccountKeys]
+    this.readyToAddAccounts = [...accounts]
     this.addAccountsStatus = 'SUCCESS'
     this.emitUpdate()
 
