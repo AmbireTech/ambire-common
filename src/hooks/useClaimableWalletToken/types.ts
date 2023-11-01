@@ -1,7 +1,7 @@
 import { Account } from '../useAccounts'
 import { UseNetworkReturnType } from '../useNetwork'
 import { UseRelayerDataProps, UseRelayerDataReturnType } from '../useRelayerData'
-import { UseRewardsReturnType } from '../useRewards/types'
+import { RewardsSource, UseRewardsReturnType } from '../useRewards/types'
 
 export type UseClaimableWalletTokenProps = {
   relayerURL: string
@@ -12,6 +12,7 @@ export type UseClaimableWalletTokenProps = {
   totalLifetimeRewards: number
   walletUsdPrice: number
   rewardsLastUpdated: UseRewardsReturnType['lastUpdated']
+  source?: RewardsSource
 }
 
 export type UseClaimableWalletTokenReturnType = {

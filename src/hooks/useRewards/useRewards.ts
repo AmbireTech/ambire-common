@@ -3,9 +3,11 @@ import { useEffect, useState } from 'react'
 import useCacheBreak from '../useCacheBreak'
 import {
   Multiplier,
-  Promo, RelayerRewardsBalance,
+  Promo,
+  RelayerRewardsBalance,
   RelayerRewardsData,
   RewardIds,
+  RewardsSource,
   RewardsState,
   UseRewardsProps,
   UseRewardsReturnType
@@ -55,7 +57,8 @@ const rewardsInitialState = {
 export default function useRewards({
   relayerURL,
   accountId,
-  useRelayerData
+  useRelayerData,
+  source = RewardsSource.UNSET
 }: UseRewardsProps): UseRewardsReturnType {
   const { cacheBreak } = useCacheBreak()
   const [rewards, setRewards] = useState<RewardsState>(rewardsInitialState)
@@ -64,7 +67,7 @@ export default function useRewards({
   const rewardsUrl =
     !!relayerURL &&
     !!accountId &&
-    `${relayerURL}/wallet-token/rewards/${accountId}?cacheBreak=${cacheBreak}`
+    `${relayerURL}/wallet-token/rewards/${accountId}?cacheBreak=${cacheBreak}&source=${source}`
   const { isLoading, data, errMsg } = useRelayerData({
     url: rewardsUrl,
     initialState
@@ -74,7 +77,12 @@ export default function useRewards({
     if (errMsg || !data?.success || isLoading) return
 
     const rewardsDetails = Object.fromEntries<
-      string | number | Multiplier[] | Promo | { [key in RewardIds]: number } | RelayerRewardsBalance
+      | string
+      | number
+      | Multiplier[]
+      | Promo
+      | { [key in RewardIds]: number }
+      | RelayerRewardsBalance
     >(data.rewards.map(({ _id, rewards: r }) => [_id, r[accountId] || 0]))
     rewardsDetails.accountAddr = data.claimableRewardsData.addr
     rewardsDetails.multipliers = data.multipliers
