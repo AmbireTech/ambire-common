@@ -12,7 +12,8 @@ const RESET_DATA_AFTER = 250
 export default function useRelayerData({
   fetch,
   url,
-  initialState = null
+  initialState = null,
+  isOffline = false
 }: UseRelayerDataProps): UseRelayerDataReturnType {
   const [isLoading, setLoading] = useState<boolean>(true)
   const [data, setData] = useState<any>(initialState)
@@ -28,7 +29,7 @@ export default function useRelayerData({
   }, [url])
 
   useEffect(() => {
-    if (!url || typeof url !== 'string') return
+    if (!url || typeof url !== 'string' || isOffline) return
 
     // Data reset: if some time passes before we load the next piece of data, and the URL is different,
     // we will reset the data so that the UI knows to display a loading indicator
@@ -53,7 +54,7 @@ export default function useRelayerData({
       unloaded = true
       clearTimeout(resetDataTimer)
     }
-  }, [url, updateData])
+  }, [url, updateData, isOffline])
 
   // In case we want to refetch the data without changing the url prop
   // e.g. pull to refresh

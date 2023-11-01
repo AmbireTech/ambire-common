@@ -1,10 +1,10 @@
 // @ts-nocheck TODO: Fill in all missing types before enabling the TS check again
 
+import { ethers } from 'ethers'
 import { useCallback } from 'react'
 
-import { ethers } from 'ethers'
-import supportedProtocols from '../../../constants/supportedProtocols'
 import networks from '../../../constants/networks'
+import supportedProtocols from '../../../constants/supportedProtocols'
 import { roundFloatingNumber } from '../../../services/formatter'
 
 export default function useVelcroFetch({
@@ -18,11 +18,15 @@ export default function useVelcroFetch({
   extraTokensAssets,
   getExtraTokensAssets,
   eligibleRequests,
+  pendingTransactions,
   fetchingAssets,
   setFetchingAssets,
   оtherNetworksFetching,
   setOtherNetworksFetching,
-  removeDuplicatedAssets
+  removeDuplicatedAssets,
+  requestPendingState,
+  pendingTokens,
+  setPendingTokens
 }) {
   const formatTokensResponse = (tokens, assets, network, account, otherNetworksFetch) => {
     const extraTokens = getExtraTokensAssets(account, network)
@@ -110,7 +114,7 @@ export default function useVelcroFetch({
         networksToFetch.map(async ({ network, balancesProvider }) => {
           try {
             const response = await getBalances(network, account, balancesProvider)
-            if (!response) return null
+            if (!response || !response?.data?.success) return null
             const currentAssetsKey =
               Object.keys(assets).length &&
               Object.keys(assets).filter((key) => key.includes(account) && key.includes(network))
@@ -232,18 +236,26 @@ export default function useVelcroFetch({
       const networkToFetch = supportedProtocols.find(({ network }) => network === currentNetwork)
 
       try {
-        const quickResponse = !assets?.tokens?.length
+        const quickResponse = !assets || !assets?.tokens
         const response = await getBalances(
           currentNetwork,
           account,
           networkToFetch.balancesProvider,
           quickResponse
         )
-        if (!response) return null
+        if (!response || !response?.data?.success) return null
 
         // eslint-disable-next-line prefer-const
         let { cache, cacheTime, tokens, nfts, partial, provider } = response.data
 
+        const tokensInPendingListReceived = pendingTokens?.filter((t) =>
+          tokens.find((token) => token.address === t.address)
+        )
+        if (tokensInPendingListReceived?.length) {
+          setPendingTokens((prev) => [
+            ...(prev && prev.filter((t) => !tokens.find((token) => token.address === t.address)))
+          ])
+        }
         tokens = filterByHiddenTokens(tokens)
         const prevCacheTime = assets?.cacheTime
         // We should skip the tokens update for the current network,
@@ -313,7 +325,8 @@ export default function useVelcroFetch({
               cacheTime: cacheTime || prevCacheTime,
               tokens: formattedTokens
             },
-            5
+            5,
+            requestPendingState
           )
           return
         }
@@ -364,7 +377,8 @@ export default function useVelcroFetch({
             cacheTime: cacheTime || prevCacheTime,
             tokens: formattedTokens
           },
-          5
+          5,
+          requestPendingState
         )
 
         // Show error in case we have some
@@ -392,7 +406,15 @@ export default function useVelcroFetch({
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [extraTokensAssets, addToast, eligibleRequests, currentAccount, formatTokensResponse]
+    [
+      extraTokensAssets,
+      addToast,
+      eligibleRequests,
+      pendingTransactions,
+      currentAccount,
+      formatTokensResponse,
+      pendingTokens
+    ]
   )
   return {
     fetchOtherNetworksBalances,
