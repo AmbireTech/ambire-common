@@ -468,9 +468,14 @@ export class MainController extends EventEmitter {
     // TODO check if needed data in accountStates are available
     // this.accountStates[accountOp.accountAddr][accountOp.networkId].
     const account = this.accounts.find((x) => x.addr === accountOp.accountAddr)
-    const otherEOAaccounts = this.accounts.filter(
-      (acc) => !acc.creation && acc.addr !== accountOp.accountAddr
-    )
+
+    // Here, we list EOA accounts for which you can also obtain an estimation of the AccountOp payment.
+    // In the case of operating with a smart account (an account with creation code), all other EOAs can pay the fee.
+    //
+    // If the current account is an EOA, only this account can pay the fee,
+    // and there's no need for checking other EOA accounts native balances.
+    // This is already handled and estimated as a fee option in the estimate library, which is why we pass an empty array here.
+    const EOAaccounts = account?.creation ? this.accounts.filter((acc) => !acc.creation) : []
     const feeTokens =
       this.portfolio.latest?.[accountOp.accountAddr]?.[accountOp.networkId]?.result?.tokens
         .filter((t) => t.flags.isFeeToken)
@@ -502,7 +507,7 @@ export class MainController extends EventEmitter {
         network,
         account,
         accountOp,
-        otherEOAaccounts.map((acc) => acc.addr),
+        EOAaccounts.map((acc) => acc.addr),
         // @TODO - first time calling this, portfolio is still not loaded.
         feeTokens
       )
