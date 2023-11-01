@@ -90,6 +90,13 @@ export async function getTokenInfo(
         isGlobal: true,
         value: [response.symbol.toUpperCase(), response.detail_platforms?.ethereum.decimal_place]
       }
+    if (response.symbol && response.detail_platforms) {
+      options.emitError({
+        message: `getTokenInfo: token not supported on network ${network?.name} `,
+        error: new Error(`token not supported on network ${network?.name}`),
+        level: 'silent'
+      })
+    }
     options.emitError({
       message: 'getTokenInfo: something is wrong goingecko reponse format or 404',
       error: new Error('unexpected response format or 404'),
