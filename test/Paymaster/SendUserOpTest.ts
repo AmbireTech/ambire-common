@@ -2,7 +2,7 @@ import { ethers } from 'hardhat'
 import { expect, provider } from '../config'
 import { buildUserOp, getPriviledgeTxnWithCustomHash } from '../helpers'
 import { deployAmbireAccountHardhatNetwork } from '../implementations'
-import { wrapEthSign, wrapHash } from '../ambireSign'
+import { wrapEthSign } from '../ambireSign'
 
 const ENTRY_POINT_PRIV = '0x0000000000000000000000000000000000000000000000000000000000007171'
 let paymaster: any
@@ -42,7 +42,7 @@ describe('Send User Operation Tests', function () {
       validUntil: timestamp + 60
     })
     const signature = wrapEthSign(await relayer.signMessage(
-      wrapHash(ethers.getBytes(await entryPoint.getUserOpHash(userOp)))
+      ethers.getBytes(await entryPoint.getUserOpHash(userOp))
     ))
     userOp.signature = signature
     await entryPoint.handleOps([userOp], relayer)
@@ -57,7 +57,7 @@ describe('Send User Operation Tests', function () {
       validUntil: timestamp - 60
     })
     const signature = wrapEthSign(await relayer.signMessage(
-      wrapHash(ethers.getBytes(await entryPoint.getUserOpHash(userOp)))
+      ethers.getBytes(await entryPoint.getUserOpHash(userOp))
     ))
     userOp.signature = signature
     await expect(entryPoint.handleOps([userOp], relayer))
