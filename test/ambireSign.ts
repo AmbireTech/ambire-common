@@ -41,16 +41,6 @@ function wrapMultiSig(sig: string) {
 }
 
 /**
- * SignatureMode.EthSignAmbirePrefix sign
- *
- * @param BytesLike sig
- * @returns BytesLike
- */
-function wrapEthSignAmbirePrefix(sig: string) {
-  return `${sig}${'06'}`
-}
-
-/**
  * SIGMODE_RECOVER
  *
  * @param BytesLike sig
@@ -80,4 +70,4 @@ function wrapCancel(sig: string) {
   return `${sig}${'fe'}`
 }
 
-export { wrapEIP712, wrapEthSign, wrapSchnorr, wrapMultiSig, wrapRecover, wrapCancel, wrapExternallyValidated, wrapEthSignAmbirePrefix }
+export { wrapEIP712, wrapEthSign, wrapSchnorr, wrapMultiSig, wrapRecover, wrapCancel, wrapExternallyValidated }

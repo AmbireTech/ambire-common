@@ -11,7 +11,7 @@ import {
   expect
 } from '../config'
 import { sendFunds, getPriviledgeTxn, getTimelockData } from '../helpers'
-import { wrapEthSign, wrapEthSignAmbirePrefix } from '../ambireSign'
+import { wrapEthSign } from '../ambireSign'
 import { deployAmbireAccountHardhatNetwork } from '../implementations'
 
 let ambireAccountAddress: string
