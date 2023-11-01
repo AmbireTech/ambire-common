@@ -646,13 +646,6 @@ export class MainController extends EventEmitter {
       } catch (e: any) {
         return this.#throwAccountOpBroadcastError(e)
       }
-
-      this.broadcastStatus = 'DONE'
-      this.emitUpdate()
-
-      await wait(1)
-      this.broadcastStatus = 'INITIAL'
-      this.emitUpdate()
     }
 
     if (transactionRes) {
@@ -669,9 +662,13 @@ export class MainController extends EventEmitter {
       })
       console.log('broadcasted:', transactionRes)
       !!this.onBroadcastSuccess && this.onBroadcastSuccess('account-op')
-      // TODO: impl "benzina"
+      this.broadcastStatus = 'DONE'
       this.emitUpdate()
+      await wait(1)
     }
+
+    this.broadcastStatus = 'INITIAL'
+    this.emitUpdate()
   }
 
   async broadcastSignedMessage(signedMessage: Message) {
