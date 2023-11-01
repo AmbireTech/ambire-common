@@ -524,12 +524,17 @@ export class SignAccountOpController extends EventEmitter {
 
         const accountState = this.#accountStates[this.accountOp.accountAddr][this.accountOp.networkId]
         this.#addFeePayment()
-        const userOperation = toUserOperation(
+        this.accountOp = toUserOperation(
           account,
           accountState,
           this.accountOp,
           this.#estimation
         )
+        const userOperation = this.accountOp.asUserOperation
+        if (!userOperation) {
+          return this.#setSigningError(`cannot set an user operation for account op ${this.accountOp.accountAddr}`)
+        }
+
         // if we're in the edge case scenario, set the callData to
         // executeMultiple and sign it
         if (userOperation.isEdgeCase) {
@@ -537,12 +542,10 @@ export class SignAccountOpController extends EventEmitter {
           const signature = wrapEthSign(
             await signer.signMessage(ethers.hexlify(accountOpSignableHash(this.accountOp)))
           )
-          userOperation.callData = ambireAccount.encodeFunctionData('executeMultiple', [
-            [
-              this.accountOp.calls.map((call) => callToTuple(call)),
-              signature
-            ]
-          ])
+          userOperation.callData = ambireAccount.encodeFunctionData('executeMultiple', [[[
+            this.accountOp.calls.map((call) => callToTuple(call)),
+            signature
+          ]]])
           this.accountOp.signature = signature
         }
         const response = await this.#callRelayer(

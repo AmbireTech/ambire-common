@@ -67,7 +67,7 @@ export function toUserOperation(
   accountState: AccountOnchainState,
   accountOp: AccountOp,
   estimation: EstimateResult
-): UserOperation {
+): AccountOp {
   if (!accountOp.gasFeePayment || !accountOp.gasFeePayment.amount) {
     throw new Error('no gasFeePayment')
   }
@@ -118,12 +118,10 @@ export function toUserOperation(
   // to simulate the real one
   const preVerificationCallData = !isEdgeCase
     ? callData
-    : ambireAccount.interface.encodeFunctionData('executeMultiple', [
-      [
+    : ambireAccount.interface.encodeFunctionData('executeMultiple', [[[
         accountOp.calls.map(call => callToTuple(call)),
         '0x0dc2d37f7b285a2243b2e1e6ba7195c578c72b395c0f76556f8961b0bca97ddc44e2d7a249598f56081a375837d2b82414c3c94940db3c1e64110108021161ca1c01'
-      ]
-    ])
+      ]]])
   const preVerificationGas = getPreverificationGas(preVerificationCallData)
   const network = networks.find(net => net.id == accountOp.networkId)
   const verificationGasLimit = getVerificationGasLimit(initCode, network)
@@ -132,7 +130,7 @@ export function toUserOperation(
     accountOp.gasFeePayment.amount - estimation.addedNative
   ) / accountOp.gasFeePayment.simulatedGasLimit
 
-  return {
+  accountOp.asUserOperation = {
     sender: accountOp.accountAddr,
     nonce: ethers.toBeHex(accountOp.nonce!),
     initCode,
@@ -146,6 +144,8 @@ export function toUserOperation(
     signature: '0x',
     isEdgeCase
   }
+
+  return accountOp
 }
 
 /**
