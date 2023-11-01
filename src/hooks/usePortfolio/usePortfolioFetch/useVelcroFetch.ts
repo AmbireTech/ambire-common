@@ -1,10 +1,10 @@
 // @ts-nocheck TODO: Fill in all missing types before enabling the TS check again
 
+import { ethers } from 'ethers'
 import { useCallback } from 'react'
 
-import { ethers } from 'ethers'
-import supportedProtocols from '../../../constants/supportedProtocols'
 import networks from '../../../constants/networks'
+import supportedProtocols from '../../../constants/supportedProtocols'
 import { roundFloatingNumber } from '../../../services/formatter'
 
 export default function useVelcroFetch({
@@ -115,7 +115,7 @@ export default function useVelcroFetch({
         networksToFetch.map(async ({ network, balancesProvider }) => {
           try {
             const response = await getBalances(network, account, balancesProvider)
-            if (!response) return null
+            if (!response || !response?.data?.success) return null
             const currentAssetsKey =
               Object.keys(assets).length &&
               Object.keys(assets).filter((key) => key.includes(account) && key.includes(network))
@@ -244,7 +244,7 @@ export default function useVelcroFetch({
           networkToFetch.balancesProvider,
           quickResponse
         )
-        if (!response) return null
+        if (!response || !response?.data?.success) return null
 
         // eslint-disable-next-line prefer-const
         let { cache, cacheTime, tokens, nfts, partial, provider } = response.data
