@@ -514,8 +514,8 @@ export class SignAccountOpController extends EventEmitter {
         )
       } else if (this.accountOp.gasFeePayment.isERC4337) {
         if (!this.#accountStates ||
-          this.#accountStates[this.accountOp.accountAddr] ||
-          this.#accountStates[this.accountOp.accountAddr][this.accountOp.networkId]) {
+          !this.#accountStates[this.accountOp.accountAddr] ||
+          !this.#accountStates[this.accountOp.accountAddr][this.accountOp.networkId]) {
             return this.#setSigningError('account state missing, not ready to sign')
         }
         if (!this.#estimation) {
@@ -548,7 +548,8 @@ export class SignAccountOpController extends EventEmitter {
         const response = await this.#callRelayer(
           `/v2/paymaster/${this.accountOp.networkId}/sign`,
           'POST',
-          {userOperation}
+          // send without the isEdgeCase prop
+          {userOperation: (({ isEdgeCase, ...o }) => o)(userOperation)}
         )
         if (response.success) {
           userOperation.paymasterAndData = response.data.paymasterAndData

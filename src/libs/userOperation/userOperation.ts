@@ -88,7 +88,11 @@ export function toUserOperation(
       )
     ]))
 
-    // give permissions to the entry point from here
+    isEdgeCase = true
+  }
+
+  // give permissions to the entry if there aren't nay
+  if (!accountState.isErc4337Enabled) {
     const givePermsToEntryPointData = ambireAccount.interface.encodeFunctionData('setAddrPrivilege', [
       ERC_4337_ENTRYPOINT,
       ENTRY_POINT_MARKER
@@ -130,7 +134,7 @@ export function toUserOperation(
 
   return {
     sender: accountOp.accountAddr,
-    nonce: accountOp.nonce ? ethers.hexlify(accountOp.nonce.toString()) : ethers.toBeHex(0,1),
+    nonce: ethers.toBeHex(accountOp.nonce!),
     initCode,
     callData,
     callGasLimit: ethers.toBeHex(callGasLimit),
