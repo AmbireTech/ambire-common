@@ -29,8 +29,7 @@ describe('Schnorr tests', function () {
     const [signer] = await ethers.getSigners()
     const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signer)
     const msg = 'test'
-    const msgHash = ethers.keccak256(ethers.toUtf8Bytes(msg))
-    const msgHashToSign = ethers.keccak256(abiCoder.encode(['bytes32', 'address'], [msgHash, ambireAccountAddress]))
+    const msgHashToSign = ethers.keccak256(ethers.toUtf8Bytes(msg))
     const output = Schnorrkel.signHash(new Key(Buffer.from(pk1.slice(2), 'hex')), msgHashToSign)
     const s = output.signature.buffer
     const e = output.challenge.buffer
@@ -44,14 +43,13 @@ describe('Schnorr tests', function () {
     // wrap the result
     const sigData = abiCoder.encode(['bytes32', 'bytes32', 'bytes32', 'uint8'], [px, e, s, parity])
     const ambireSignature = wrapSchnorr(sigData)
-    expect(await contract.isValidSignature(msgHash, ambireSignature)).to.equal(validSig)
+    expect(await contract.isValidSignature(msgHashToSign, ambireSignature)).to.equal(validSig)
   })
   it('fails validation when an unauthorized private key signs', async function () {
     const [signer] = await ethers.getSigners()
     const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signer)
     const msg = 'test'
-    const msgHash = ethers.keccak256(ethers.toUtf8Bytes(msg))
-    const msgHashToSign = ethers.keccak256(abiCoder.encode(['bytes32', 'address'], [msgHash, ambireAccountAddress]))
+    const msgHashToSign = ethers.keccak256(ethers.toUtf8Bytes(msg))
     const output = Schnorrkel.signHash(new Key(Buffer.from(pk2.slice(2), 'hex')), msgHashToSign)
     const s = output.signature.buffer
     const e = output.challenge.buffer
@@ -67,15 +65,14 @@ describe('Schnorr tests', function () {
     const ambireSignature = wrapSchnorr(sigData)
     const hash = ethers.solidityPackedKeccak256(['string'], [msg])
 
-    await expect(contract.isValidSignature(msgHash, ambireSignature))
+    await expect(contract.isValidSignature(msgHashToSign, ambireSignature))
       .to.be.revertedWith('SV_SCHNORR_FAILED')
   })
   it('fails validation when the message is different', async function () {
     const [signer] = await ethers.getSigners()
     const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signer)
     const msg = 'test'
-    const msgHash = ethers.keccak256(ethers.toUtf8Bytes(msg))
-    const msgHashToSign = ethers.keccak256(abiCoder.encode(['bytes32', 'address'], [msgHash, ambireAccountAddress]))
+    const msgHashToSign = ethers.keccak256(ethers.toUtf8Bytes(msg))
     const output = Schnorrkel.signHash(new Key(Buffer.from(pk2.slice(2), 'hex')), msgHashToSign)
     const s = output.signature.buffer
     const e = output.challenge.buffer
