@@ -9,14 +9,7 @@ const visualizePermit = (
   deadline: bigint,
   token: string
 ): HumanizerVisualization[] => {
-  const res = [
-    getAction('Sign permit'),
-    getLabel('to'),
-    getAction('Send'),
-    getToken(token, value),
-    getLabel('to'),
-    getAddress(spender)
-  ]
+  const res = [getAction('Send'), getToken(token, value), getLabel('to'), getAddress(spender)]
   if (getDeadlineText(deadline)) res.push(getDeadlineText(deadline) as HumanizerVisualization)
   return res
 }

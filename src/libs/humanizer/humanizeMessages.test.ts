@@ -112,8 +112,6 @@ describe('typed message tests', () => {
   })
   test('erc20 module', () => {
     const expectedVisualization = [
-      { type: 'action', content: 'Sign permit' },
-      { type: 'label', content: 'to' },
       { type: 'action', content: 'Send' },
       {
         type: 'token',
@@ -134,8 +132,6 @@ describe('typed message tests', () => {
   })
   test('erc721 module', () => {
     const expectedVisualization = [
-      { type: 'action', content: 'Sign permit' },
-      { type: 'label', content: 'to' },
       { type: 'action', content: 'Permit use of' },
       {
         type: 'nft',

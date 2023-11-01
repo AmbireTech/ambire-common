@@ -10,8 +10,6 @@ const visualizePermit = (
   contract: string
 ): HumanizerVisualization[] => {
   const res = [
-    getAction('Sign permit'),
-    getLabel('to'),
     getAction('Permit use of'),
     getNft(contract, tokenId),
     getLabel('to'),
