@@ -154,17 +154,35 @@ export class AccountAdderController extends EventEmitter {
             (processedAcc) => processedAcc?.account.addr === linkedAcc.account.addr
           )
       )
-      .map((linkedAcc) => {
+      // Use `flatMap` instead of `map` in order to auto remove missing values.
+      // The `flatMap` has a built-in mechanism to flatten the array and remove
+      // null or undefined values (by returning empty array)
+      .flatMap((linkedAcc) => {
         const correspondingCalculatedAccount = this.#calculatedAccounts.find((calculatedAcc) =>
           linkedAcc.account.associatedKeys.includes(calculatedAcc.account.addr)
         )
 
-        return {
-          ...linkedAcc,
-          // @ts-ignore the `correspondingCalculatedAccount` should always be found
-          slot: correspondingCalculatedAccount.slot,
-          index: correspondingCalculatedAccount?.index
+        // The `correspondingCalculatedAccount` should always be found,
+        // except something is wrong with the data we have stored on the Relayer
+        if (!correspondingCalculatedAccount) {
+          this.emitError({
+            level: 'major',
+            message: `Something went wrong with finding the corresponding account in the associated keys of the linked account with address ${linkedAcc.account.addr}. Please start the process again. If the problem persists, contact support.`,
+            error: new Error(
+              `Something went wrong with finding the corresponding account in the associated keys of the linked account with address ${linkedAcc.account.addr}.`
+            )
+          })
+
+          return []
         }
+
+        return [
+          {
+            ...linkedAcc,
+            slot: correspondingCalculatedAccount.slot,
+            index: correspondingCalculatedAccount.index
+          }
+        ]
       })
 
     const mergedAccounts = [...processedAccounts, ...unprocessedLinkedAccounts]
