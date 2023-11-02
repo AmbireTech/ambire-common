@@ -11,8 +11,11 @@ library SignatureValidator {
 	using Bytes for bytes;
 
 	enum SignatureMode {
-		EIP712,
-		EthSign,
+		// @TODO consider reordering if compat is not an issue
+		// direct, unbound hash - final digest
+		// @TODO think of the name
+		Unbound,
+		Standard,
 		SmartWallet,
 		Spoof,
 		Schnorr,
@@ -40,6 +43,12 @@ library SignatureValidator {
 	}
 
 	function recoverAddrImpl(bytes32 hash, bytes memory sig, bool allowSpoofing) internal view returns (address) {
+		(address recovered, bool usedUnbound) = recoverAddrAllowUnbound(hash, sig, allowSpoofing);
+		require(!usedUnbound, 'SV_USED_UNBOUND');
+		return recovered;
+	}
+
+	function recoverAddrAllowUnbound(bytes32 hash, bytes memory sig, bool allowSpoofing) internal view returns (address, bool) {
 		require(sig.length != 0, 'SV_SIGLEN');
 		uint8 modeRaw;
 		unchecked {
@@ -49,16 +58,39 @@ library SignatureValidator {
 		require(modeRaw < uint8(SignatureMode.LastUnused), 'SV_SIGMODE');
 		SignatureMode mode = SignatureMode(modeRaw);
 
+		// wrap in the EIP712 wrapping if it's not unbound
+		// multisig gets an exception because each inner sig will have to apply this logic
+		// @TODO should spoofing be removed from this?
+		bool isUnbound = mode == SignatureMode.Unbound || mode == SignatureMode.Multisig;
+		if (!isUnbound) {
+			bytes32 DOMAIN_SEPARATOR = keccak256(abi.encode(
+				keccak256('EIP712Domain(string name,string version,uint256 chainId,address verifyingContract,bytes32 salt)'),
+				keccak256(bytes('Ambire')),
+				keccak256(bytes('1')),
+				block.chainid,
+				address(this),
+				bytes32(0)
+			));
+			hash = keccak256(abi.encodePacked(
+				'\x19\x01',
+				DOMAIN_SEPARATOR,
+				keccak256(abi.encode(
+					keccak256(bytes('AmbireOperation(address account,bytes32 hash)')),
+					address(this),
+					hash
+				))
+			));
+		}
+
 		// {r}{s}{v}{mode}
-		if (mode == SignatureMode.EIP712 || mode == SignatureMode.EthSign) {
+		if (mode == SignatureMode.Unbound || mode == SignatureMode.Standard) {
 			require(sig.length == 66, 'SV_LEN');
 			bytes32 r = sig.readBytes32(0);
 			bytes32 s = sig.readBytes32(32);
 			uint8 v = uint8(sig[64]);
-			if (mode == SignatureMode.EthSign) hash = keccak256(abi.encodePacked('\x19Ethereum Signed Message:\n32', hash));
 			address signer = ecrecover(hash, v, r, s);
 			require(signer != address(0), 'SV_ZERO_SIG');
-			return signer;
+			return (signer, isUnbound);
 			// {sig}{verifier}{mode}
 		} else if (mode == SignatureMode.Schnorr) {
 			// Based on https://hackmd.io/@nZ-twauPRISEa6G9zg3XRw/SyjJzSLt9
@@ -81,18 +113,22 @@ library SignatureValidator {
 			address R = ecrecover(sp, parity, px, ep);
 			require(R != address(0), 'SV_ZERO_SIG');
 			require(e == keccak256(abi.encodePacked(R, uint8(parity), px, hash)), 'SV_SCHNORR_FAILED');
-			return address(uint160(uint256(keccak256(abi.encodePacked('SCHNORR', px)))));
+			return (address(uint160(uint256(keccak256(abi.encodePacked('SCHNORR', px))))), false);
 		} else if (mode == SignatureMode.Multisig) {
 			sig.trimToSize(sig.length - 1);
 			bytes[] memory signatures = abi.decode(sig, (bytes[]));
-			address signer;
+			address signer = address(this);
+			// since we're in a multisig, we care if any of the inner sigs are unbound
+			isUnbound = false;
 			for (uint256 i = 0; i != signatures.length; i++) {
+				(address inner, bool isInnerUnbound) = recoverAddrAllowUnbound(hash, signatures[i], false);
+				if (isInnerUnbound) isUnbound = true;
 				signer = address(
-					uint160(uint256(keccak256(abi.encodePacked(signer, recoverAddrImpl(hash, signatures[i], false)))))
+					uint160(uint256(keccak256(abi.encodePacked(signer, inner))))
 				);
 			}
 			require(signer != address(0), 'SV_ZERO_SIG');
-			return signer;
+			return (signer, isUnbound);
 		} else if (mode == SignatureMode.SmartWallet) {
 			// 32 bytes for the addr, 1 byte for the type = 33
 			require(sig.length > 33, 'SV_LEN_WALLET');
@@ -105,7 +141,7 @@ library SignatureValidator {
 			require(ERC1271_MAGICVALUE_BYTES32 == wallet.isValidSignature(hash, sig), 'SV_WALLET_INVALID');
 			address signer = address(wallet);
 			require(signer != address(0), 'SV_ZERO_SIG');
-			return signer;
+			return (signer, false);
 			// {address}{mode}; the spoof mode is used when simulating calls
 		} else if (mode == SignatureMode.Spoof && allowSpoofing) {
 			// This is safe cause it's specifically intended for spoofing sigs in simulation conditions, where tx.origin can be controlled
@@ -117,7 +153,7 @@ library SignatureValidator {
 			sig.trimToSize(32);
 			// To simulate the gas usage; check is just to silence unused warning
 			require(ecrecover(0, 0, 0, 0) != address(6969));
-			return abi.decode(sig, (address));
+			return (abi.decode(sig, (address)), false);
 		}
 		revert('SV_TYPE');
 	}
