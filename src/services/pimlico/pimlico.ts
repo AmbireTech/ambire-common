@@ -19,16 +19,14 @@ export class Pimlico implements Bundler {
   async getReceipt(userOperationHash: string) {
     let counter = 0
     while (counter < RETRY_COUNTER) {
-      try {
-        await new Promise((r) => setTimeout(r, 1000)) //sleep
-        counter++
-        return await provider.send("eth_getUserOperationReceipt", [userOperationHash])
-      } catch (e) {
-        if (counter == RETRY_COUNTER) {
-          return e
-        }
-      }
+      await new Promise((r) => setTimeout(r, 1000)) //sleep
+      counter++
+      const res = await provider.send("eth_getUserOperationReceipt", [userOperationHash])
+      if (!res) continue
+      return res
     }
+
+    return null
   }
 
   /**
@@ -38,6 +36,6 @@ export class Pimlico implements Bundler {
    * @returns userOperationHash
    */
   async broadcast(userOperation: UserOperation): Promise<string> {
-      return provider.send("eth_sendUserOperation", [userOperation, ERC_4337_ENTRYPOINT])
+    return provider.send("eth_sendUserOperation", [(({ isEdgeCase, ...o }) => o)(userOperation), ERC_4337_ENTRYPOINT])
   }
 }

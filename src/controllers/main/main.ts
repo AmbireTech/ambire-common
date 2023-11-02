@@ -626,11 +626,14 @@ export class MainController extends EventEmitter {
 
       // broadcast through pimlico's service
       const userOperationHash = await pimlico.broadcast(userOperation!)
-      const receiptOrError = await pimlico.getReceipt(userOperationHash)
-      if (receiptOrError) {
-        transactionRes = receiptOrError
+      if (!userOperationHash) {
+        this.#throwAccountOpBroadcastError(new Error('was not able to broadcast'))
+      }
+      const receipt = await pimlico.getReceipt(userOperationHash)
+      if (receipt) {
+        transactionRes = receipt
       } else {
-        this.#throwAccountOpBroadcastError(receiptOrError)
+        this.#throwAccountOpBroadcastError(new Error('was not able to fetch txn receipt'))
       }
     }
     // Relayer broadcast

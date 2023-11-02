@@ -26,24 +26,6 @@ export interface UserOperation {
 }
 
 /**
- * The logic goes like this:
- * - hardcoded FIXED_OVERHEAD of 2100
- * - 4 gas cost for each 0 byte in the callData
- * - 16 gas cost for each 1 byte in the callData
- *
- * @param callData userOperation.callData
- * @returns string hex preVerificationGas
- */
-function getPreverificationGas(callData: string) {
-  const FIXED_OVERHEAD = 2100
-	const bytes = Buffer.from(callData.substring(2))
-	const nonZeroBytes = bytes.filter(b => b).length
-	const zeroBytes = bytes.length - nonZeroBytes
-	const txDataGas = zeroBytes * 4 + nonZeroBytes * 16
-  return ethers.toBeHex(txDataGas + FIXED_OVERHEAD)
-}
-
-/**
  * We measured the minimum gas needed for each step
  * and hardcoded it
  *
@@ -54,7 +36,6 @@ function getVerificationGasLimit(initCode: string, network: NetworkDescriptor | 
   // TODO<Bobby>: review all the gas calculations once again
 
   let initial = 10195n // validateUserOp
-  initial += 21000n // smart contract call
 
   if (network && network.erc4337?.hasPaymaster) {
     initial += 23013n // paymaster payment
@@ -123,7 +104,7 @@ export function toUserOperation(
     : '0x'
   const network = networks.find(net => net.id == accountOp.networkId)
   const preVerificationGas = getCallDataAdditional(accountOp, network!, accountState.isDeployed)
-  const verificationGasLimit = getVerificationGasLimit(initCode, network)
+  const verificationGasLimit = getVerificationGasLimit(initCode, network) + preVerificationGas
   const maxFeePerGas = (
     accountOp.gasFeePayment.amount - estimation.addedNative
   ) / accountOp.gasFeePayment.simulatedGasLimit
