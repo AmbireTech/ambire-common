@@ -7,7 +7,7 @@ import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { Storage } from '../../interfaces/storage'
 import { AccountOp, accountOpSignableHash, callToTuple, GasFeePayment } from '../../libs/accountOp/accountOp'
 import { EstimateResult } from '../../libs/estimate/estimate'
-import { GasRecommendation } from '../../libs/gasPrice/gasPrice'
+import { GasRecommendation, getCallDataAdditional } from '../../libs/gasPrice/gasPrice'
 import { callsHumanizer } from '../../libs/humanizer'
 import { IrCall } from '../../libs/humanizer/interfaces'
 import { Price, TokenResult } from '../../libs/portfolio'
@@ -336,8 +336,12 @@ export class SignAccountOpController extends EventEmitter {
         amount = simulatedGasLimit * gasPrice + this.#estimation!.addedNative
       } else if (this.paidBy !== this.accountOp!.accountAddr) {
         // Smart account, but EOA pays the fee
-        // @TODO - add comment why we add 21k gas here
-        simulatedGasLimit = gasUsed + 21000n
+        simulatedGasLimit = gasUsed
+
+        const network = this.#networks?.find((n) => n.id === this.accountOp?.networkId)
+        const accountState = this.#accountStates![this.accountOp!.accountAddr][this.accountOp!.networkId]
+        simulatedGasLimit += getCallDataAdditional(this.accountOp!, network!, accountState.isDeployed)
+
         amount = simulatedGasLimit * gasPrice + this.#estimation!.addedNative
       } else {
         // Relayer.
@@ -347,7 +351,22 @@ export class SignAccountOpController extends EventEmitter {
           (option) => option.address === feeToken?.address
         )!.gasUsed!
         // @TODO - add comment why here we use `feePaymentOptions`, but we don't use it in EOA
-        simulatedGasLimit = gasUsed + feeTokenGasUsed + 21000n
+        simulatedGasLimit = gasUsed + feeTokenGasUsed
+
+        const network = this.#networks?.find((n) => n.id === this.accountOp?.networkId)
+        const accountState = this.#accountStates![this.accountOp!.accountAddr][this.accountOp!.networkId]
+        simulatedGasLimit += getCallDataAdditional(this.accountOp!, network!, accountState.isDeployed)
+
+        if (network?.erc4337?.enabled) {
+          // erc 4337 is quite more expensive, we manually increase
+          // the simulatedGasLimit here. 41% if it's not deployed and
+          // 2.5 times more if it is
+          if (accountState.isDeployed) {
+            simulatedGasLimit += simulatedGasLimit + simulatedGasLimit / 2n
+          } else {
+            simulatedGasLimit += simulatedGasLimit / 3n + simulatedGasLimit / 14n
+          }
+        }
 
         const amountInWei = simulatedGasLimit * gasPrice + this.#estimation!.addedNative
 

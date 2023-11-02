@@ -2,10 +2,12 @@ import { ethers } from "ethers";
 import { Account, AccountOnchainState } from "../../interfaces/account";
 import { AccountOp, callToTuple } from "../accountOp/accountOp";
 import AmbireAccount from "../../../contracts/compiled/AmbireAccount.json";
+import AmbireAccountFactory from "../../../contracts/compiled/AmbireAccountFactory.json";
 import { EstimateResult } from "../../libs/estimate/estimate";
 import { ENTRY_POINT_MARKER, ERC_4337_ENTRYPOINT } from "../../../src/consts/deploy";
 import { networks } from "../../consts/networks";
 import { NetworkDescriptor } from "interfaces/networkDescriptor";
+import { getCallDataAdditional } from "../../libs/gasPrice/gasPrice";
 
 export interface UserOperation {
   sender: string,
@@ -48,17 +50,20 @@ function getPreverificationGas(callData: string) {
  * @param initCode is the contract going to be deployed from now
  * @returns verificationGasLimit
  */
-function getVerificationGasLimit(initCode: string, network: NetworkDescriptor | undefined) {
-  let initial = 10195 // validateUserOp
+function getVerificationGasLimit(initCode: string, network: NetworkDescriptor | undefined): bigint {
+  // TODO<Bobby>: review all the gas calculations once again
+
+  let initial = 10195n // validateUserOp
+  initial += 21000n // smart contract call
 
   if (network && network.erc4337?.hasPaymaster) {
-    initial += 7671 // paymaster payment
+    initial += 23013n // paymaster payment
   } else {
-    initial += 29053 // native payment
+    initial += 29053n // native payment
   }
 
-  if (initCode != '0x') initial += 77651 // deploy
-  initial += 3000 // hardcoded gas buffer just in case
+  if (initCode != '0x') initial += 77651n // deploy
+  initial += 3000n // hardcoded gas buffer just in case
   return initial
 }
 
@@ -72,7 +77,6 @@ export function toUserOperation(
     throw new Error('no gasFeePayment')
   }
 
-  const ambireAccount = new ethers.BaseContract(accountOp.accountAddr, AmbireAccount.abi)
   let initCode = '0x'
   let isEdgeCase = false
 
@@ -80,9 +84,13 @@ export function toUserOperation(
   if (!accountState.isDeployed) {
     if (!account.creation) throw new Error('Account creation properties are missing')
 
+    const ambireAccountFactory = new ethers.BaseContract(
+      account.creation.factoryAddr,
+      AmbireAccountFactory.abi,
+    )
     initCode = ethers.hexlify(ethers.concat([
       account.creation.factoryAddr,
-      ambireAccount.interface.encodeFunctionData(
+      ambireAccountFactory.interface.encodeFunctionData(
         'deploy',
         [account.creation.bytecode, account.creation.salt]
       )
@@ -92,6 +100,7 @@ export function toUserOperation(
   }
 
   // give permissions to the entry if there aren't nay
+  const ambireAccount = new ethers.BaseContract(accountOp.accountAddr, AmbireAccount.abi)
   if (!accountState.isErc4337Enabled) {
     const givePermsToEntryPointData = ambireAccount.interface.encodeFunctionData('setAddrPrivilege', [
       ERC_4337_ENTRYPOINT,
@@ -112,32 +121,21 @@ export function toUserOperation(
   const callData = !isEdgeCase
     ? ambireAccount.interface.encodeFunctionData('executeBySender', [accountOp.calls.map(call => callToTuple(call))])
     : '0x'
-  // if we're in the edge case scenario, we've set callData to 0x
-  // we need callData for preVerificationGas
-  // that's why we put a semi-correct call to executeMultiple as fake call data
-  // to simulate the real one
-  const preVerificationCallData = !isEdgeCase
-    ? callData
-    : ambireAccount.interface.encodeFunctionData('executeMultiple', [[[
-        accountOp.calls.map(call => callToTuple(call)),
-        '0x0dc2d37f7b285a2243b2e1e6ba7195c578c72b395c0f76556f8961b0bca97ddc44e2d7a249598f56081a375837d2b82414c3c94940db3c1e64110108021161ca1c01'
-      ]]])
-  const preVerificationGas = getPreverificationGas(preVerificationCallData)
   const network = networks.find(net => net.id == accountOp.networkId)
+  const preVerificationGas = getCallDataAdditional(accountOp, network!, accountState.isDeployed)
   const verificationGasLimit = getVerificationGasLimit(initCode, network)
-  const callGasLimit = accountOp.gasFeePayment.simulatedGasLimit
   const maxFeePerGas = (
     accountOp.gasFeePayment.amount - estimation.addedNative
   ) / accountOp.gasFeePayment.simulatedGasLimit
 
   accountOp.asUserOperation = {
     sender: accountOp.accountAddr,
-    nonce: ethers.toBeHex(accountOp.nonce!),
+    nonce: ethers.toBeHex(accountState.erc4337Nonce),
     initCode,
     callData,
-    callGasLimit: ethers.toBeHex(callGasLimit),
+    callGasLimit: ethers.toBeHex(accountOp.gasFeePayment.simulatedGasLimit),
     verificationGasLimit: ethers.toBeHex(verificationGasLimit),
-    preVerificationGas,
+    preVerificationGas: ethers.toBeHex(preVerificationGas),
     maxFeePerGas: ethers.toBeHex(maxFeePerGas),
     maxPriorityFeePerGas: ethers.toBeHex(maxFeePerGas),
     paymasterAndData: '0x',

@@ -25,6 +25,7 @@ export interface AccountOnchainState {
   isDeployed: boolean
   // this is a number and not a bigint because of ethers (it uses number for nonces)
   nonce: bigint
+  erc4337Nonce: bigint
   associatedKeysPriviliges: { [key: string]: string }
   deployError: boolean
   balance: bigint

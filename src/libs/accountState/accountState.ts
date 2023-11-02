@@ -70,11 +70,8 @@ export async function getAccountState(
 
     const res = {
       accountAddr: accounts[index].addr,
-      nonce:
-        eoaNonces[accounts[index].addr] ||
-        (network?.erc4337?.enabled && accResult.erc4337Nonce < MAX_UINT256
-          ? accResult.erc4337Nonce
-          : accResult.nonce),
+      nonce: eoaNonces[accounts[index].addr] || accResult.nonce,
+      erc4337Nonce: accResult.erc4337Nonce,
       isDeployed: accResult.isDeployed,
       associatedKeys: Object.fromEntries(associatedKeys),
       isV2: accResult.isV2,
