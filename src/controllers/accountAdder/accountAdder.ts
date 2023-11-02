@@ -38,6 +38,8 @@ type CalculatedAccount = {
   isLinked: boolean
 }
 
+type CalculatedAccountButNotExtended = Omit<CalculatedAccount, 'account'> & { account: Account }
+
 /**
  * Account Adder Controller
  * is responsible for listing accounts that can be selected for adding, and for
@@ -77,7 +79,7 @@ export class AccountAdderController extends EventEmitter {
 
   linkedAccountsLoading: boolean = false
 
-  #calculatedAccounts: CalculatedAccount[] = []
+  #calculatedExtendedAccounts: CalculatedAccount[] = []
 
   #linkedAccounts: { account: ExtendedAccount; isLinked: boolean }[] = []
 
@@ -101,7 +103,7 @@ export class AccountAdderController extends EventEmitter {
     slot: number
     index: number
   }[] {
-    const processedAccounts = this.#calculatedAccounts
+    const processedAccounts = this.#calculatedExtendedAccounts
       // Skip the derived EOA (legacy) accounts used for smart account keys.
       // They should not be visible on the pages.
       .filter(
@@ -114,7 +116,7 @@ export class AccountAdderController extends EventEmitter {
             linkedAcc.account.associatedKeys.includes(calculatedAccount.account.addr)
         )
 
-        const correspondingSmartAccount = this.#calculatedAccounts.find(
+        const correspondingSmartAccount = this.#calculatedExtendedAccounts.find(
           (acc) => acc.account.creation !== null && acc.slot === calculatedAccount.slot
         )
 
@@ -156,10 +158,10 @@ export class AccountAdderController extends EventEmitter {
       )
       // Use `flatMap` instead of `map` in order to auto remove missing values.
       // The `flatMap` has a built-in mechanism to flatten the array and remove
-      // null or undefined values (by returning empty array)
+      // null or undefined values (by returning empty array).
       .flatMap((linkedAcc) => {
-        const correspondingCalculatedAccount = this.#calculatedAccounts.find((calculatedAcc) =>
-          linkedAcc.account.associatedKeys.includes(calculatedAcc.account.addr)
+        const correspondingCalculatedAccount = this.#calculatedExtendedAccounts.find(
+          (calculatedAcc) => linkedAcc.account.associatedKeys.includes(calculatedAcc.account.addr)
         )
 
         // The `correspondingCalculatedAccount` should always be found,
@@ -269,7 +271,7 @@ export class AccountAdderController extends EventEmitter {
         )
       })
 
-    const allAccountsOnThisSlot = this.#calculatedAccounts.filter(
+    const allAccountsOnThisSlot = this.#calculatedExtendedAccounts.filter(
       ({ slot }) => slot === accountOnPage.slot
     )
 
@@ -344,16 +346,15 @@ export class AccountAdderController extends EventEmitter {
     }
 
     this.page = page
-    this.#calculatedAccounts = []
+    this.#calculatedExtendedAccounts = []
     this.#linkedAccounts = []
     this.accountsLoading = true
     this.emitUpdate()
-    const calculatedAccounts = await this.#calculateAccounts({ networks, providers })
-    this.#calculatedAccounts = calculatedAccounts
+    this.#calculatedExtendedAccounts = await this.#calculateAccounts({ networks, providers })
     this.accountsLoading = false
     this.emitUpdate()
     this.#searchForLinkedAccounts({
-      accounts: this.#calculatedAccounts
+      accounts: this.#calculatedExtendedAccounts
         .filter((acc) => !acc.account.creation)
         .map((acc) => acc.account),
       networks,
@@ -471,7 +472,7 @@ export class AccountAdderController extends EventEmitter {
       return []
     }
 
-    const accounts: CalculatedAccount[] = []
+    const accounts: CalculatedAccountButNotExtended[] = []
 
     const startIdx = (this.page - 1) * this.pageSize
     const endIdx = (this.page - 1) * this.pageSize + (this.pageSize - 1)
@@ -525,17 +526,15 @@ export class AccountAdderController extends EventEmitter {
     networks,
     providers
   }: {
-    accounts: { account: Account; isLinked: boolean; slot: number }[]
+    accounts: CalculatedAccountButNotExtended[]
     networks: NetworkDescriptor[]
     providers: { [key: string]: JsonRpcProvider }
-  }): Promise<{ account: ExtendedAccount; isLinked: boolean; slot: number }[]> {
-    const accountsObj: {
-      [key: string]: { account: ExtendedAccount; isLinked: boolean; slot: number }
-    } = Object.fromEntries(
+  }): Promise<CalculatedAccount[]> {
+    const accountsObj: { [key: Account['addr']]: CalculatedAccount } = Object.fromEntries(
       accounts.map((a) => [a.account.addr, { ...a, account: { ...a.account, usedOnNetworks: [] } }])
     )
 
-    const networkLookup: { [key: string]: NetworkDescriptor } = {}
+    const networkLookup: { [key: NetworkDescriptor['id']]: NetworkDescriptor } = {}
     networks.forEach((network) => {
       networkLookup[network.id] = network
     })
