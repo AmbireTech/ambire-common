@@ -5,7 +5,7 @@ import {
   HD_PATH_TEMPLATE_TYPE,
   SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
 } from '../../consts/derivation'
-import { Account, AccountId, AccountOnchainState } from '../../interfaces/account'
+import { Account, AccountOnchainState } from '../../interfaces/account'
 import { KeyIterator } from '../../interfaces/keyIterator'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
 import { Storage } from '../../interfaces/storage'
@@ -24,20 +24,16 @@ const PAGE_SIZE = 5
 
 type ExtendedAccount = Account & { usedOnNetworks: NetworkDescriptor[] }
 
-type SelectedAccount = Account & {
+type AccountDerivationMeta = {
   slot: number // the iteration on which the account is calculated, starting from 1
   index: number // the derivation index of the <account> in the slot, starting from 0
-  isLinked: boolean
-  accountKeyAddr: AccountId
+  isLinked: boolean // linked accounts are also smart accounts, so use a flag to differentiate
 }
 
-type CalculatedAccount = {
-  account: ExtendedAccount
-  slot: number // the iteration on which the account is calculated, starting from 1
-  index: number // the derivation index of the <account> in the slot, starting from 0
-  isLinked: boolean
-}
+type SelectedAccount = AccountDerivationMeta & { account: Account; accountKeyAddr: Account['addr'] }
 
+type CalculatedAccount = AccountDerivationMeta & { account: ExtendedAccount }
+// Sub-type, used during intermediate step only when calculating accounts
 type CalculatedAccountButNotExtended = Omit<CalculatedAccount, 'account'> & { account: Account }
 
 /**
@@ -296,7 +292,7 @@ export class AccountAdderController extends EventEmitter {
       })
 
     this.selectedAccounts.push({
-      ..._account,
+      account: _account,
       accountKeyAddr: accountKey.account.addr,
       slot: accountOnPage.slot,
       isLinked: accountOnPage.isLinked,
@@ -306,7 +302,7 @@ export class AccountAdderController extends EventEmitter {
   }
 
   async deselectAccount(account: Account) {
-    const accIdx = this.selectedAccounts.findIndex((acc) => acc.addr === account.addr)
+    const accIdx = this.selectedAccounts.findIndex((x) => x.account.addr === account.addr)
     const accPreselectedIdx = this.preselectedAccounts.findIndex((acc) => acc.addr === account.addr)
 
     if (accIdx !== -1 && accPreselectedIdx === -1) {
@@ -388,23 +384,23 @@ export class AccountAdderController extends EventEmitter {
     this.addAccountsStatus = 'LOADING'
     this.emitUpdate()
 
-    const accountsToAddOnRelayer = accounts
+    const accountsToAddOnRelayer: SelectedAccount[] = accounts
       // Identity only for the smart accounts must be created on the Relayer
-      .filter((acc) => acc.creation)
+      .filter((x) => x.account.creation)
       // Skip creating identity for Ambire v1 smart accounts
-      .filter((acc) => !isAmbireV1LinkedAccount(acc.creation?.factoryAddr))
+      .filter((x) => !isAmbireV1LinkedAccount(x.account.creation?.factoryAddr))
 
     if (accountsToAddOnRelayer.length) {
-      const body = accountsToAddOnRelayer.map((acc) => ({
-        addr: acc.addr,
-        associatedKeys: acc.associatedKeys.map((key) => [
+      const body = accountsToAddOnRelayer.map(({ account }) => ({
+        addr: account.addr,
+        associatedKeys: account.associatedKeys.map((key) => [
           ethers.getAddress(key), // the Relayer expects checksumed address
           // Handle special priv hashes at a later stage, when (if) needed
           '0x0000000000000000000000000000000000000000000000000000000000000001'
         ]),
         creation: {
-          factoryAddr: acc.creation!.factoryAddr,
-          salt: acc.creation!.salt,
+          factoryAddr: account.creation!.factoryAddr,
+          salt: account.creation!.salt,
           baseIdentityAddr: PROXY_AMBIRE_ACCOUNT
         }
       }))
@@ -431,7 +427,7 @@ export class AccountAdderController extends EventEmitter {
       }
     }
 
-    this.readyToAddAccounts = [...accounts]
+    this.readyToAddAccounts = [...accounts.map((x) => x.account)]
     this.addAccountsStatus = 'SUCCESS'
     this.emitUpdate()
 
