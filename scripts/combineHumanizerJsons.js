@@ -8,10 +8,14 @@ const path = require('path')
 const fetch = require('node-fetch')
 require('dotenv').config()
 
-console.log(process.env.AMBIRE_CONSTANTS_URL)
-const AMBIRE_CONSTANTS_URL = process.env.AMBIRE_CONSTANTS_URL || 'http://localhost:5000/result.json'
+const AMBIRE_CONSTANTS_URL = process.env.AMBIRE_CONSTANTS_URL || 'http://localhost:5000'
 
-function initHumanizerMeta(humanizerMeta) {
+const resultPath = path.join(__dirname, '..', 'src', 'consts', 'humanizerInfo.json')
+const sigHashesFile = path.join(__dirname, '..', 'src', 'consts', 'dappSelectors.json')
+
+async function initHumanizerMeta(humanizerMeta) {
+	const funcAndErrSigHashes = await fsPromises.readFile(sigHashesFile, 'utf-8').then(JSON.parse)
+
 	const newHumanizerMeta = {}
 	Object.keys(humanizerMeta?.tokens).forEach((k2) => {
 	  newHumanizerMeta[`tokens:${ethers.getAddress(k2)}`] = humanizerMeta.tokens?.[k2]
@@ -24,21 +28,20 @@ function initHumanizerMeta(humanizerMeta) {
 	  newHumanizerMeta[`names:${ethers.getAddress(k2)}`] = humanizerMeta.names?.[k2]
 	})
 
-	Object.keys(humanizerMeta?.errorSelectors).forEach((k) => {
-		newHumanizerMeta[`errorSelectors:${k}`] = humanizerMeta.errorSelectors?.[k]
-	})
+	// Object.keys(humanizerMeta?.errorSelectors).forEach((k) => {
+	// 	newHumanizerMeta[`errorSelectors:${k}`] = humanizerMeta.errorSelectors?.[k]
+	// })
 
-	Object.keys(humanizerMeta?.funcSelectors).forEach((k) => {
-		newHumanizerMeta[`funcSelectors:${k}`] = humanizerMeta.funcSelectors?.[k]
-	})
+	// Object.keys(humanizerMeta?.funcSelectors).forEach((k) => {
+	// 	newHumanizerMeta[`funcSelectors:${k}`] = humanizerMeta.funcSelectors?.[k]
+	// })
 
-  
 	return {
 	  ...newHumanizerMeta,
-	  yearnVaults: humanizerMeta.yearnVaults
+	  yearnVaults: humanizerMeta.yearnVaults,
+	  ...funcAndErrSigHashes
 	}
   }
-const resultPath = path.join(__dirname, '..', 'src', 'consts', 'humanizerInfo.json')
 
 const main = async () => {
 	const oldFileConstants = await fsPromises.readFile(resultPath, 'utf-8').then(JSON.parse)
