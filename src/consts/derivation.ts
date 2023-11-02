@@ -37,8 +37,8 @@ export const HD_PATHS: HDPath[] = [
 ]
 
 /**
- * For hardware wallets that are Ambire account keys we can use the derived
+ * For legacy (EOA) accounts that are Ambire smart account keys use the derived
  * address at index N + x, where N is this derivation offset (this constant),
- * and x is the given <account> index.
+ * and x is the given <account> index in the derivation (template) path.
  */
 export const SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET = 100000
