@@ -171,7 +171,7 @@ describe('AccountAdder', () => {
       hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
     })
     accountAdder.selectedAccounts = [
-      { ...legacyAccount, eoaAddress: key1PublicAddress, slot: 1, isLinked: false }
+      { ...legacyAccount, accountKeyAddr: key1PublicAddress, slot: 1, isLinked: false }
     ]
 
     let emitCounter = 0

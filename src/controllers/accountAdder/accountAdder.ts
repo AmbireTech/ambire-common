@@ -5,7 +5,7 @@ import {
   HD_PATH_TEMPLATE_TYPE,
   SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
 } from '../../consts/derivation'
-import { Account, AccountOnchainState } from '../../interfaces/account'
+import { Account, AccountId, AccountOnchainState } from '../../interfaces/account'
 import { KeyIterator } from '../../interfaces/keyIterator'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
 import { Storage } from '../../interfaces/storage'
@@ -28,7 +28,7 @@ type SelectedAccount = Account & {
   slot: number // the iteration on which the account is calculated, starting from 1
   index: number // the derivation index of the <account> in the slot, starting from 0
   isLinked: boolean
-  eoaAddress: string
+  accountKeyAddr: AccountId
 }
 
 type CalculatedAccount = {
@@ -277,10 +277,9 @@ export class AccountAdderController extends EventEmitter {
 
     this.selectedAccounts.push({
       ..._account,
-      eoaAddress: accountKey.account.addr,
+      accountKeyAddr: accountKey.account.addr,
       slot: accountOnPage.slot,
       isLinked: accountOnPage.isLinked,
-      // TODO: Figure out why this index is bad
       index: accountKey.index
     })
     this.emitUpdate()
