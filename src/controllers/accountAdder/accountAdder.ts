@@ -12,7 +12,9 @@ import { Storage } from '../../interfaces/storage'
 import {
   getLegacyAccount,
   getSmartAccount,
-  isAmbireV1LinkedAccount
+  isAmbireV1LinkedAccount,
+  isDerivedAccount,
+  isSmartAccount
 } from '../../libs/account/account'
 import { getAccountState } from '../../libs/accountState/accountState'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
@@ -100,25 +102,24 @@ export class AccountAdderController extends EventEmitter {
     index: number
   }[] {
     const processedAccounts = this.#calculatedExtendedAccounts
-      // Skip the derived EOA (legacy) accounts used for smart account keys.
-      // They should not be visible on the pages.
-      .filter(
-        (calculatedAccount) => calculatedAccount.index < SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
-      )
+      // The displayed (visible) accounts on page should not include the derived
+      // EOA (legacy) accounts. The derived ones only used as smart account
+      // keys, they should not be visible nor importable (or selectable).
+      .filter((calculatedAccount) => !isDerivedAccount(calculatedAccount.index))
       .flatMap((calculatedAccount) => {
         const associatedLinkedAccounts = this.#linkedAccounts.filter(
           (linkedAcc) =>
-            !calculatedAccount.account.creation &&
+            !isSmartAccount(calculatedAccount.account) &&
             linkedAcc.account.associatedKeys.includes(calculatedAccount.account.addr)
         )
 
         const correspondingSmartAccount = this.#calculatedExtendedAccounts.find(
-          (acc) => acc.account.creation !== null && acc.slot === calculatedAccount.slot
+          (acc) => isSmartAccount(acc.account) && acc.slot === calculatedAccount.slot
         )
 
         let accountsToReturn = []
 
-        if (!calculatedAccount.account.creation) {
+        if (!isSmartAccount(calculatedAccount.account)) {
           accountsToReturn.push(calculatedAccount)
 
           const duplicate = associatedLinkedAccounts.find(
@@ -187,7 +188,7 @@ export class AccountAdderController extends EventEmitter {
 
     mergedAccounts.sort((a, b) => {
       const prioritizeAccountType = (item: any) => {
-        if (!item.account.creation) return -1
+        if (!isSmartAccount(item.account)) return -1
         if (item.isLinked) return 1
 
         return 0
@@ -271,14 +272,10 @@ export class AccountAdderController extends EventEmitter {
       ({ slot }) => slot === accountOnPage.slot
     )
 
-    const isSmartAccount = !!accountOnPage.account.creation
-    const accountKey = isSmartAccount
+    const accountKey = isSmartAccount(accountOnPage.account)
       ? // The key of the smart account is the EOA (legacy) account derived on the
         // same slot, but with the `SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET` offset.
-        allAccountsOnThisSlot.find(
-          ({ index, account }) =>
-            !account.creation && index >= SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
-        )
+        allAccountsOnThisSlot.find(({ index }) => isDerivedAccount(index))
       : // The key of the legacy account is the legacy account itself.
         accountOnPage
 
@@ -351,7 +348,18 @@ export class AccountAdderController extends EventEmitter {
     this.emitUpdate()
     this.#searchForLinkedAccounts({
       accounts: this.#calculatedExtendedAccounts
-        .filter((acc) => !acc.account.creation)
+        .filter(
+          (acc) =>
+            // Search for linked accounts to the legacy (EOA) accounts only.
+            // Searching for linked accounts to another Ambire smart accounts
+            // is a feature that Ambire is yet to support.
+            !isSmartAccount(acc.account) &&
+            // Skip searching for linked accounts to the derived EOA (legacy)
+            // accounts that are used for smart account keys only. They are
+            // solely purposed to manage 1 particular (smart) account,
+            // not at all for linking.
+            !isDerivedAccount(acc.index)
+        )
         .map((acc) => acc.account),
       networks,
       providers
@@ -386,7 +394,7 @@ export class AccountAdderController extends EventEmitter {
 
     const accountsToAddOnRelayer: SelectedAccount[] = accounts
       // Identity only for the smart accounts must be created on the Relayer
-      .filter((x) => x.account.creation)
+      .filter((x) => isSmartAccount(x.account))
       // Skip creating identity for Ambire v1 smart accounts
       .filter((x) => !isAmbireV1LinkedAccount(x.account.creation?.factoryAddr))
 
