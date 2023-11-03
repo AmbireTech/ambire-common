@@ -76,29 +76,34 @@ export const uniUniversalRouter = (
             ]
           })
         } else if (command === COMMANDS.SWEEP) {
-          const { inputsDetails } = COMMANDS_DESCRIPTIONS.SWEEP
-          const params = extractParams(inputsDetails, inputs[index])
-          parsed.push({
-            ...call,
-            fullVisualization: [
-              getAction('Take'),
-              getLabel('at least'),
-              getToken(params.token, params.amountMin)
-            ]
-          })
+          // @NOTE: no need to be displayed, generally uses sentinel values
+          // @TODO: research more
+          // const { inputsDetails } = COMMANDS_DESCRIPTIONS.SWEEP
+          // const params = extractParams(inputsDetails, inputs[index])
+          // console.log({ params })
+          // parsed.push({
+          //   ...call,
+          //   fullVisualization: [
+          //     getAction('Take'),
+          //     getLabel('at least'),
+          //     getToken(params.token, params.amountMin)
+          //   ]
+          // })
         } else if (command === COMMANDS.PAY_PORTION) {
-          const { inputsDetails } = COMMANDS_DESCRIPTIONS.PAY_PORTION
-          const params = extractParams(inputsDetails, inputs[index])
-          parsed.push({
-            ...call,
-            fullVisualization: [
-              getAction('Pay fee'),
-              getLabel('of'),
-              // bips are fee. can be 0 or within 10-9999 and converts to %
-              // https://docs.uniswap.org/contracts/v2/guides/interface-integration/custom-interface-linking#constraints
-              getLabel(`${Number(params.bips) / 100}%`)
-            ]
-          })
+          // @NOTE: this is used for paying fee altough its already calculated in the humanized response
+          // @NOTE: no need to be displayed but we can add warning id the fee is too high?
+          // const { inputsDetails } = COMMANDS_DESCRIPTIONS.PAY_PORTION
+          // const params = extractParams(inputsDetails, inputs[index])
+          // parsed.push({
+          //   ...call,
+          //   fullVisualization: [
+          //     getAction('Pay fee'),
+          //     getLabel('of'),
+          //     // bips are fee. can be 0 or within 10-9999 and converts to %
+          //     // https://docs.uniswap.org/contracts/v2/guides/interface-integration/custom-interface-linking#constraints
+          //     getLabel(`${Number(params.bips) / 100}%`)
+          //   ]
+          // })
         } else if (command === COMMANDS.V2_SWAP_EXACT_IN) {
           const { inputsDetails } = COMMANDS_DESCRIPTIONS.V2_SWAP_EXACT_IN
           const params = extractParams(inputsDetails, inputs[index])
