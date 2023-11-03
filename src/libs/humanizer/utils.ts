@@ -90,6 +90,7 @@ export async function getTokenInfo(
         isGlobal: true,
         value: [response.symbol.toUpperCase(), response.detail_platforms?.ethereum?.decimal_place]
       }
+
     // @TODO: rething error levels
     if (response.symbol && response.detail_platforms) {
       options.emitError({
