@@ -1,7 +1,7 @@
-import { SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET } from 'consts/derivation'
 import { ethers, Interface } from 'ethers'
 
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
+import { SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET } from '../../consts/derivation'
 import { networks } from '../../consts/networks'
 import { Account } from '../../interfaces/account'
 import { getBytecode } from '../proxyDeploy/bytecode'
