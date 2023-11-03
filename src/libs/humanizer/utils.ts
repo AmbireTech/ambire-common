@@ -1,6 +1,7 @@
 import dotenv from 'dotenv'
 import { ethers } from 'ethers'
 
+import { geckoNetworkIdMapper } from '../../consts/coingecko'
 import { networks } from '../../consts/networks'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { HumanizerFragment, HumanizerSettings, HumanizerVisualization, IrCall } from './interfaces'
@@ -75,13 +76,15 @@ export async function getTokenInfo(
   options: any
 ): Promise<HumanizerFragment | null> {
   const network = networks.find((n: NetworkDescriptor) => n.id === humanizerSettings.networkId)
-  // @TODO update coingecko call with https://github.com/AmbireTech/ambire-common/pull/328
+  const platformId = geckoNetworkIdMapper(network!.id)
   try {
     const baseUrl = COINGECKO_PRO_API_KEY
       ? 'https://pro-api.coingecko.com/api/v3'
       : 'https://api.coingecko.com/api/v3'
     const postfix = COINGECKO_PRO_API_KEY ? `?&x_cg_pro_api_key=${COINGECKO_PRO_API_KEY}` : ''
-    const coingeckoQueryUrl = `${baseUrl}/coins/${network?.chainId}/contract/${address}${postfix}`
+    const coingeckoQueryUrl = `${baseUrl}/coins/${
+      platformId || network?.chainId
+    }/contract/${address}${postfix}`
     let response = await options.fetch(coingeckoQueryUrl)
     response = await response.json()
     if (response.symbol && response.detail_platforms?.ethereum?.decimal_place)
