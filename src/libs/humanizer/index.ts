@@ -34,6 +34,8 @@ import {
 } from './typedMessageModules'
 
 const HUMANIZER_META_KEY = 'HumanizerMeta'
+// generic in the begining
+// the final humanization is the final triggered module
 const humanizerCallModules: HumanizerCallModule[] = [
   genericErc20Humanizer,
   genericErc721Humanizer,
@@ -48,6 +50,8 @@ const humanizerCallModules: HumanizerCallModule[] = [
 
 const parsingModules: HumanizerParsingModule[] = [nameParsing, tokenParsing]
 
+// generic at the end
+// the final visualization and warnings are from the first triggered module
 const humanizerTMModules = [erc20Module, erc721Module, permit2Module, fallbackEIP712Humanizer]
 
 const handleAsyncOps = async (
@@ -136,10 +140,9 @@ export const sharedHumanization = async <Data extends AccountOp | Message>(
       }
       const irMessage: IrMessage = {
         ...data,
-        fullVisualization:
-          data.content.kind === 'typedMessage'
-            ? humanizeTypedMessage(humanizerTMModules, data.content)
-            : humanizePlainTextMessage(data.content)
+        ...(data.content.kind === 'typedMessage'
+          ? humanizeTypedMessage(humanizerTMModules, data.content)
+          : humanizePlainTextMessage(data.content))
       }
 
       ;[parsedMessage, asyncOps] = parseMessage(humanizerSettings, irMessage, parsingModules, {

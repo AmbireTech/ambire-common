@@ -1,14 +1,14 @@
 import { ethers } from 'ethers'
 
 import { ErrorRef } from 'controllers/eventEmitter'
-import { PlainTextMessage, TypedMessage } from '../../interfaces/userRequest'
+import { Message, PlainTextMessage, TypedMessage } from '../../interfaces/userRequest'
 import { AccountOp } from '../accountOp/accountOp'
 import {
   HumanizerCallModule,
   HumanizerFragment,
   HumanizerTypedMessaageModule,
-  HumanizerVisualization,
-  IrCall
+  IrCall,
+  IrMessage
 } from './interfaces'
 import { getAction, getLabel } from './utils'
 
@@ -66,14 +66,19 @@ export const visualizationToText = (call: IrCall, options: any): string => {
 export const humanizeTypedMessage = (
   modules: HumanizerTypedMessaageModule[],
   tm: TypedMessage
-): HumanizerVisualization[] => {
+  // only fullVisualization and warnings
+): Omit<IrMessage, keyof Message> => {
   // runs all modules and takes the first non empty array
-  const visualization: HumanizerVisualization[] = modules
+  const { fullVisualization, warnings } = modules
     .map((m) => m(tm))
-    .filter((p) => p.length)[0]
-  return visualization
+    .filter((p) => p.fullVisualization?.length)[0]
+  return { fullVisualization, warnings }
 }
 
-export const humanizePlainTextMessage = (m: PlainTextMessage): HumanizerVisualization[] => {
-  return [getAction('Sign message:'), getLabel(m.message as string)]
-}
+export const humanizePlainTextMessage = (
+  m: PlainTextMessage
+  // only full visualization and warnings
+): Omit<IrMessage, keyof Message> => ({
+  fullVisualization: [getAction('Sign message:'), getLabel(m.message as string)],
+  warnings: []
+})
