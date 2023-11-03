@@ -105,14 +105,15 @@ export const uniUniversalRouter = (
               getLabel('Approved Uniswap to use the following token via signed message.')
             ]
           })
-          // } else if (command === COMMANDS.WRAP_ETH) {
-          //   const { inputsDetails } = COMMANDS_DESCRIPTIONS.WRAP_ETH
-          //   const params = extractParams(inputsDetails, inputs[index])
-          //   console.log({ params })
-          //   parsed.push({
-          //     ...call,
-          //     fullVisualization: [getAction('smth watafak')]
-          //   })
+        } else if (command === COMMANDS.WRAP_ETH) {
+          console.log('in')
+          const { inputsDetails } = COMMANDS_DESCRIPTIONS.WRAP_ETH
+          const params = extractParams(inputsDetails, inputs[index])
+          console.log({ params })
+          parsed.push({
+            ...call,
+            fullVisualization: [getAction('smth watafak')]
+          })
         } else if (command === COMMANDS.UNWRAP_WETH) {
           const { inputsDetails } = COMMANDS_DESCRIPTIONS.UNWRAP_WETH
           const params = extractParams(inputsDetails, inputs[index])
@@ -126,8 +127,6 @@ export const uniUniversalRouter = (
           })
         } else parsed.push({ ...call, fullVisualization: [getLabel('Unknown Uni V3 interaction')] })
       })
-      console.log(parsed.map((p) => p.fullVisualization))
-      console.log({ parsed: parsed.flat() })
       return parsed.flat()
     }
   }

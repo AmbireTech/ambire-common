@@ -1,7 +1,7 @@
 import { ethers } from 'ethers'
 import { HumanizerCallModule, IrCall } from '../interfaces'
 import { AccountOp } from '../../accountOp/accountOp'
-import { getAction, getToken, getUnknownVisualization } from '../utils'
+import { getUnknownVisualization, getUnwraping, getWraping } from '../utils'
 
 const WETH_ADDRESS = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2'
 
@@ -66,7 +66,7 @@ export const wethHumanizer: HumanizerCallModule = (
       if (call.data.slice(0, 10) === iface.getFunction('deposit')?.selector) {
         return {
           ...call,
-          fullVisualization: [getAction('Wrap'), getToken(ethers.ZeroAddress, call.value)]
+          fullVisualization: getWraping(call.value)
         }
       }
       // 0x2e1a7d4d
@@ -74,7 +74,7 @@ export const wethHumanizer: HumanizerCallModule = (
         const [amount] = iface.parseTransaction(call)?.args || []
         return {
           ...call,
-          fullVisualization: [getAction('Unwrap'), getToken(ethers.ZeroAddress, amount)]
+          fullVisualization: getUnwraping(amount)
         }
       }
       if (!call?.fullVisualization)
