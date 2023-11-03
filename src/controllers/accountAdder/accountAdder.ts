@@ -24,7 +24,7 @@ import EventEmitter from '../eventEmitter'
 const INITIAL_PAGE_INDEX = 1
 const PAGE_SIZE = 5
 
-type ExtendedAccount = Account & { usedOnNetworks: NetworkDescriptor[] }
+type AccountWithNetworkMeta = Account & { usedOnNetworks: NetworkDescriptor[] }
 
 type AccountDerivationMeta = {
   slot: number // the iteration on which the account is calculated, starting from 1
@@ -34,7 +34,7 @@ type AccountDerivationMeta = {
 
 type SelectedAccount = AccountDerivationMeta & { account: Account; accountKeyAddr: Account['addr'] }
 
-type CalculatedAccount = AccountDerivationMeta & { account: ExtendedAccount }
+type CalculatedAccount = AccountDerivationMeta & { account: AccountWithNetworkMeta }
 // Sub-type, used during intermediate step only when calculating accounts
 type CalculatedAccountButNotExtended = Omit<CalculatedAccount, 'account'> & { account: Account }
 
@@ -79,7 +79,7 @@ export class AccountAdderController extends EventEmitter {
 
   #calculatedExtendedAccounts: CalculatedAccount[] = []
 
-  #linkedAccounts: { account: ExtendedAccount; isLinked: boolean }[] = []
+  #linkedAccounts: { account: AccountWithNetworkMeta; isLinked: boolean }[] = []
 
   constructor({
     storage,
@@ -96,7 +96,7 @@ export class AccountAdderController extends EventEmitter {
   }
 
   get accountsOnPage(): {
-    account: ExtendedAccount
+    account: AccountWithNetworkMeta
     isLinked: boolean
     slot: number
     index: number
@@ -600,59 +600,59 @@ export class AccountAdderController extends EventEmitter {
     const url = `/v2/account-by-key/linked/accounts?${keys}`
 
     const { data } = await this.#callRelayer(url)
-    const linkedAccounts: ({ account: ExtendedAccount; isLinked: boolean } | null)[] = Object.keys(
-      data.accounts
-    )
-      .map((addr: any) => {
-        // In extremely rare cases, on the Relayer, the identity data could be
-        // missing in the identities table but could exist in the logs table.
-        // When this happens, the account data will be `null`.
-        const isIdentityDataMissing = !data.accounts[addr]
-        if (isIdentityDataMissing) {
-          // Same error for both cases, because most prob
-          this.emitError({
-            level: 'minor',
-            message: `The address ${addr} is not linked to an Ambire account. Please try again later or contact support if the problem persists.`,
-            error: new Error(
-              `The address ${addr} is not linked to an Ambire account. This could be because the identity data is missing in the identities table but could exist in the logs table.`
-            )
-          })
+    const linkedAccounts: ({ account: AccountWithNetworkMeta; isLinked: boolean } | null)[] =
+      Object.keys(data.accounts)
+        .map((addr: any) => {
+          // In extremely rare cases, on the Relayer, the identity data could be
+          // missing in the identities table but could exist in the logs table.
+          // When this happens, the account data will be `null`.
+          const isIdentityDataMissing = !data.accounts[addr]
+          if (isIdentityDataMissing) {
+            // Same error for both cases, because most prob
+            this.emitError({
+              level: 'minor',
+              message: `The address ${addr} is not linked to an Ambire account. Please try again later or contact support if the problem persists.`,
+              error: new Error(
+                `The address ${addr} is not linked to an Ambire account. This could be because the identity data is missing in the identities table but could exist in the logs table.`
+              )
+            })
 
-          return null
-        }
+            return null
+          }
 
-        const { factoryAddr, bytecode, salt, associatedKeys } = data.accounts[addr]
-        // Checks whether the account.addr matches the addr generated from the
-        // factory. Should never happen, but could be a possible attack vector.
-        const isInvalidAddress =
-          ethers.getCreate2Address(factoryAddr, salt, ethers.keccak256(bytecode)).toLowerCase() !==
-          addr.toLowerCase()
-        if (isInvalidAddress) {
-          this.emitError({
-            level: 'minor',
-            message: `The address ${addr} is not generated from the Ambire factory.`,
-            error: new Error(`The address ${addr} is not generated from the Ambire factory.`)
-          })
+          const { factoryAddr, bytecode, salt, associatedKeys } = data.accounts[addr]
+          // Checks whether the account.addr matches the addr generated from the
+          // factory. Should never happen, but could be a possible attack vector.
+          const isInvalidAddress =
+            ethers
+              .getCreate2Address(factoryAddr, salt, ethers.keccak256(bytecode))
+              .toLowerCase() !== addr.toLowerCase()
+          if (isInvalidAddress) {
+            this.emitError({
+              level: 'minor',
+              message: `The address ${addr} is not generated from the Ambire factory.`,
+              error: new Error(`The address ${addr} is not generated from the Ambire factory.`)
+            })
 
-          return null
-        }
+            return null
+          }
 
-        return {
-          account: {
-            addr,
-            label: '',
-            pfp: '',
-            associatedKeys: Object.keys(associatedKeys),
-            creation: {
-              factoryAddr,
-              bytecode,
-              salt
-            }
-          } as ExtendedAccount,
-          isLinked: true
-        }
-      })
-      .filter((acc) => acc !== null)
+          return {
+            account: {
+              addr,
+              label: '',
+              pfp: '',
+              associatedKeys: Object.keys(associatedKeys),
+              creation: {
+                factoryAddr,
+                bytecode,
+                salt
+              }
+            } as AccountWithNetworkMeta, // TODO: Debug why this is needed
+            isLinked: true
+          }
+        })
+        .filter((acc) => acc !== null)
 
     const linkedAccountsWithNetworks = await this.#getAccountsUsedOnNetworks({
       accounts: linkedAccounts as any,
