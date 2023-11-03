@@ -4,7 +4,9 @@ import { AccountOp } from '../../accountOp/accountOp'
 import { getUnknownVisualization, getUnwraping, getWraping } from '../utils'
 
 const WETH_ADDRESS = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2'
-
+const WETH_ADDRESS_OPTIMISM = '0x4200000000000000000000000000000000000006'
+const isWethAddress = (address: string | undefined) =>
+  address && [WETH_ADDRESS, WETH_ADDRESS_OPTIMISM].includes(address)
 const wrpaUnwrapParser = (calls: IrCall[]) => {
   const newCalls: IrCall[] = []
   for (let i = 0; i < calls.length; i++) {
@@ -12,7 +14,7 @@ const wrpaUnwrapParser = (calls: IrCall[]) => {
       // swapping x amount of token for y of WETH and unwrapping y WETH for y ETH
       calls[i]?.fullVisualization?.[0].content === 'Swap' &&
       calls[i + 1]?.fullVisualization?.[0].content === 'Unwrap' &&
-      calls[i]?.fullVisualization?.[3].address === WETH_ADDRESS &&
+      isWethAddress(calls[i]?.fullVisualization?.[3].address) &&
       calls[i]?.fullVisualization?.[3].amount === calls[i + 1]?.fullVisualization?.[1]?.amount
     ) {
       const newVisualization = calls[i]?.fullVisualization!
@@ -30,7 +32,7 @@ const wrpaUnwrapParser = (calls: IrCall[]) => {
       calls[i]?.fullVisualization?.[0].content === 'Wrap' &&
       calls[i + 1]?.fullVisualization?.[0].content === 'Swap' &&
       calls[i].value === calls[i + 1]?.fullVisualization?.[1].amount &&
-      calls[i + 1]?.fullVisualization?.[1].address === WETH_ADDRESS
+      isWethAddress(calls[i + 1]?.fullVisualization?.[1].address)
     ) {
       const newVisualization = calls[i + 1]?.fullVisualization!
       newVisualization[1].address = ethers.ZeroAddress
