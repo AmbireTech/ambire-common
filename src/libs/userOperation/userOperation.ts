@@ -136,25 +136,25 @@ export function toUserOperation(
  */
 export function getTargetEdgeCaseNonce(userOperation: UserOperation) {
   const abiCoder = new ethers.AbiCoder()
-	return '0x' + ethers.keccak256(
-	  	abiCoder.encode([
-			'bytes',
-			'bytes',
-			'uint256',
-			'uint256',
-			'uint256',
-			'uint256',
-			'uint256',
-			'bytes',
-	  	], [
-			userOperation.initCode,
-			userOperation.callData,
-			userOperation.callGasLimit,
-			userOperation.verificationGasLimit,
-			userOperation.preVerificationGas,
-			userOperation.maxFeePerGas,
-			userOperation.maxPriorityFeePerGas,
-			userOperation.paymasterAndData,
-		])
-	).substring(18) + ethers.toBeHex(0, 8).substring(2)
+  return '0x' + ethers.keccak256(
+    abiCoder.encode([
+      'bytes',
+      'bytes',
+      'uint256',
+      'uint256',
+      'uint256',
+      'uint256',
+      'uint256',
+      'bytes',
+    ], [
+      userOperation.initCode,
+      userOperation.callData,
+      userOperation.callGasLimit,
+      userOperation.verificationGasLimit,
+      userOperation.preVerificationGas,
+      userOperation.maxFeePerGas,
+      userOperation.maxPriorityFeePerGas,
+      userOperation.paymasterAndData,
+    ])
+  ).substring(18) + ethers.toBeHex(0, 8).substring(2)
 }

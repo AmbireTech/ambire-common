@@ -132,9 +132,9 @@ export function getCallDataAdditional(
   }
 
   const FIXED_OVERHEAD = 21000n
-	const bytes = Buffer.from(estimationCallData.substring(2))
-	const nonZeroBytes = BigInt(bytes.filter(b => b).length)
-	const zeroBytes = BigInt(BigInt(bytes.length) - nonZeroBytes)
-	const txDataGas = zeroBytes * 4n + nonZeroBytes * 16n
+  const bytes = Buffer.from(estimationCallData.substring(2))
+  const nonZeroBytes = BigInt(bytes.filter(b => b).length)
+  const zeroBytes = BigInt(BigInt(bytes.length) - nonZeroBytes)
+  const txDataGas = zeroBytes * 4n + nonZeroBytes * 16n
   return txDataGas + FIXED_OVERHEAD
 }
