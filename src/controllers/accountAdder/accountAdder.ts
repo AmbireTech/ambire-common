@@ -32,8 +32,18 @@ type AccountDerivationMeta = {
   isLinked: boolean // linked accounts are also smart accounts, so use a flag to differentiate
 }
 
+/**
+ * The account that the user has actively chosen (selected) via the app UI.
+ * It's always one of the visible accounts returned by the accountsOnPage().
+ * Could be either a legacy (EOA) account, a smart account or a linked account.
+ */
 type SelectedAccount = AccountDerivationMeta & { account: Account; accountKeyAddr: Account['addr'] }
 
+/**
+ * The account that is derived programmatically and internally by Ambire.
+ * Could be either a legacy (EOA) account, a derived with custom derivation
+ * legacy (EOA) account (used for smart account key only) or a smart account.
+ */
 type DerivedAccount = AccountDerivationMeta & { account: AccountWithNetworkMeta }
 // Sub-type, used during intermediate step during the deriving accounts process
 type DerivedAccountWithoutNetworkMeta = Omit<DerivedAccount, 'account'> & { account: Account }
