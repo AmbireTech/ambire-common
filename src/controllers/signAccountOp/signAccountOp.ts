@@ -359,12 +359,12 @@ export class SignAccountOpController extends EventEmitter {
 
         if (network?.erc4337?.enabled) {
           // erc 4337 is quite more expensive, we manually increase
-          // the simulatedGasLimit here. 41% if it's not deployed and
+          // the simulatedGasLimit here. 75% if it's not deployed and
           // 2.5 times more if it is
           if (accountState.isDeployed) {
             simulatedGasLimit += simulatedGasLimit + simulatedGasLimit / 2n
           } else {
-            simulatedGasLimit += simulatedGasLimit / 3n + simulatedGasLimit / 14n
+            simulatedGasLimit += simulatedGasLimit / 2n + simulatedGasLimit / 4n
           }
         }
 
