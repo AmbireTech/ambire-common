@@ -341,7 +341,7 @@ export class AccountAdderController extends EventEmitter {
     this.#derivedAccounts = await this.#deriveAccounts({ networks, providers })
     this.accountsLoading = false
     this.emitUpdate()
-    this.#searchForLinkedAccounts({
+    this.#findAndSetLinkedAccounts({
       accounts: this.#derivedAccounts
         .filter(
           (acc) =>
@@ -577,7 +577,7 @@ export class AccountAdderController extends EventEmitter {
     return sortedAccountsWithNetworksArray
   }
 
-  async #searchForLinkedAccounts({
+  async #findAndSetLinkedAccounts({
     accounts,
     networks,
     providers
@@ -595,59 +595,59 @@ export class AccountAdderController extends EventEmitter {
     const url = `/v2/account-by-key/linked/accounts?${keys}`
 
     const { data } = await this.#callRelayer(url)
-    const linkedAccounts: ({ account: AccountWithNetworkMeta; isLinked: boolean } | null)[] =
-      Object.keys(data.accounts)
-        .map((addr: any) => {
-          // In extremely rare cases, on the Relayer, the identity data could be
-          // missing in the identities table but could exist in the logs table.
-          // When this happens, the account data will be `null`.
-          const isIdentityDataMissing = !data.accounts[addr]
-          if (isIdentityDataMissing) {
-            // Same error for both cases, because most prob
-            this.emitError({
-              level: 'minor',
-              message: `The address ${addr} is not linked to an Ambire account. Please try again later or contact support if the problem persists.`,
-              error: new Error(
-                `The address ${addr} is not linked to an Ambire account. This could be because the identity data is missing in the identities table but could exist in the logs table.`
-              )
-            })
+    const linkedAccounts: ({ account: Account; isLinked: boolean } | null)[] = Object.keys(
+      data.accounts
+    )
+      .map((addr: string) => {
+        // In extremely rare cases, on the Relayer, the identity data could be
+        // missing in the identities table but could exist in the logs table.
+        // When this happens, the account data will be `null`.
+        const isIdentityDataMissing = !data.accounts[addr]
+        if (isIdentityDataMissing) {
+          // Same error for both cases, because most prob
+          this.emitError({
+            level: 'minor',
+            message: `The address ${addr} is not linked to an Ambire account. Please try again later or contact support if the problem persists.`,
+            error: new Error(
+              `The address ${addr} is not linked to an Ambire account. This could be because the identity data is missing in the identities table but could exist in the logs table.`
+            )
+          })
 
-            return null
-          }
+          return null
+        }
 
-          const { factoryAddr, bytecode, salt, associatedKeys } = data.accounts[addr]
-          // Checks whether the account.addr matches the addr generated from the
-          // factory. Should never happen, but could be a possible attack vector.
-          const isInvalidAddress =
-            ethers
-              .getCreate2Address(factoryAddr, salt, ethers.keccak256(bytecode))
-              .toLowerCase() !== addr.toLowerCase()
-          if (isInvalidAddress) {
-            this.emitError({
-              level: 'minor',
-              message: `The address ${addr} is not generated from the Ambire factory.`,
-              error: new Error(`The address ${addr} is not generated from the Ambire factory.`)
-            })
+        const { factoryAddr, bytecode, salt, associatedKeys } = data.accounts[addr]
+        // Checks whether the account.addr matches the addr generated from the
+        // factory. Should never happen, but could be a possible attack vector.
+        const isInvalidAddress =
+          ethers.getCreate2Address(factoryAddr, salt, ethers.keccak256(bytecode)).toLowerCase() !==
+          addr.toLowerCase()
+        if (isInvalidAddress) {
+          this.emitError({
+            level: 'minor',
+            message: `The address ${addr} is not generated from the Ambire factory.`,
+            error: new Error(`The address ${addr} is not generated from the Ambire factory.`)
+          })
 
-            return null
-          }
+          return null
+        }
 
-          return {
-            account: {
-              addr,
-              label: '',
-              pfp: '',
-              associatedKeys: Object.keys(associatedKeys),
-              creation: {
-                factoryAddr,
-                bytecode,
-                salt
-              }
-            } as AccountWithNetworkMeta, // TODO: Debug why this is needed
-            isLinked: true
-          }
-        })
-        .filter((acc) => acc !== null)
+        return {
+          account: {
+            addr,
+            label: '',
+            pfp: '',
+            associatedKeys: Object.keys(associatedKeys),
+            creation: {
+              factoryAddr,
+              bytecode,
+              salt
+            }
+          },
+          isLinked: true
+        }
+      })
+      .filter((acc) => acc !== null)
 
     const linkedAccountsWithNetworks = await this.#getAccountsUsedOnNetworks({
       accounts: linkedAccounts as any,
