@@ -107,13 +107,9 @@ export function calculateTokensPendingState(
 
   const { tokens } = pendingData.result
 
-  const tokensWithChangedAmounts = tokens.filter((token) => {
-    if (!token.amountPostSimulation) return false
-    if (token.amount !== token.amountPostSimulation) {
-      return true
-    }
-    return false
-  })
+  const tokensWithChangedAmounts = tokens.filter(
+    (token) => token.amount !== token.amountPostSimulation
+  )
 
   return tokensWithChangedAmounts.map((token) => {
     let type: PendingToken['type'] = null
