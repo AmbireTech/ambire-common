@@ -1,3 +1,4 @@
+import { SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET } from 'consts/derivation'
 import { ethers, Interface } from 'ethers'
 
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
@@ -54,3 +55,12 @@ export async function getSmartAccount(address: string): Promise<Account> {
 
 export const isAmbireV1LinkedAccount = (factoryAddr?: string) =>
   factoryAddr === '0xBf07a0Df119Ca234634588fbDb5625594E2a5BCA'
+
+export const isSmartAccount = (account: Account) => !!account.creation
+
+/**
+ * Checks if a (legacy) EOA account is a derived one,
+ * that is meant to be used as a smart account key only.
+ */
+export const isDerivedAccount = (index: number) =>
+  index >= SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
