@@ -3,6 +3,7 @@ import { ethers, HDNodeWallet, Mnemonic, Wallet } from 'ethers'
 
 import {
   HD_PATH_TEMPLATE_TYPE,
+  PRIVATE_KEY_DERIVATION_SALT,
   SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
 } from '../../consts/derivation'
 import { KeyIterator as KeyIteratorInterface } from '../../interfaces/keyIterator'
@@ -25,11 +26,14 @@ export function isValidPrivateKey(value: string): boolean {
 
 /**
  * Derives a (second) private key based on a derivation algorithm that uses
- * (the first) private key as an entropy.
+ * the combo of (the first) private key as an entropy and a salt (constant)
  */
 export function derivePrivateKeyFromAnotherPrivateKey(privateKey: string) {
   // Convert the plain text private key to a buffer
-  const buffer = Buffer.from(privateKey, 'utf8')
+  const privateKeyBuffer = Buffer.from(privateKey, 'utf8')
+  const saltBuffer = Buffer.from(PRIVATE_KEY_DERIVATION_SALT, 'utf8')
+  const buffer = Buffer.concat([privateKeyBuffer, saltBuffer])
+
   // Hash the buffer, and convert to a hex string
   // that ultimately represents a derived (second) private key
   return ethers.keccak256(buffer)
