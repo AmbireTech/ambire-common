@@ -13,7 +13,7 @@ import {
   getLegacyAccount,
   getSmartAccount,
   isAmbireV1LinkedAccount,
-  isDerivedAccount,
+  isDerivedForSmartAccountKeyOnly,
   isSmartAccount
 } from '../../libs/account/account'
 import { getAccountState } from '../../libs/accountState/accountState'
@@ -27,16 +27,16 @@ const PAGE_SIZE = 5
 type AccountWithNetworkMeta = Account & { usedOnNetworks: NetworkDescriptor[] }
 
 type AccountDerivationMeta = {
-  slot: number // the iteration on which the account is calculated, starting from 1
+  slot: number // the iteration on which the account is derived, starting from 1
   index: number // the derivation index of the <account> in the slot, starting from 0
   isLinked: boolean // linked accounts are also smart accounts, so use a flag to differentiate
 }
 
 type SelectedAccount = AccountDerivationMeta & { account: Account; accountKeyAddr: Account['addr'] }
 
-type CalculatedAccount = AccountDerivationMeta & { account: AccountWithNetworkMeta }
-// Sub-type, used during intermediate step only when calculating accounts
-type CalculatedAccountButNotExtended = Omit<CalculatedAccount, 'account'> & { account: Account }
+type DerivedAccount = AccountDerivationMeta & { account: AccountWithNetworkMeta }
+// Sub-type, used during intermediate step during the deriving accounts process
+type DerivedAccountWithoutNetworkMeta = Omit<DerivedAccount, 'account'> & { account: Account }
 
 /**
  * Account Adder Controller
@@ -77,7 +77,7 @@ export class AccountAdderController extends EventEmitter {
 
   linkedAccountsLoading: boolean = false
 
-  #calculatedExtendedAccounts: CalculatedAccount[] = []
+  #derivedAccounts: DerivedAccount[] = []
 
   #linkedAccounts: { account: AccountWithNetworkMeta; isLinked: boolean }[] = []
 
@@ -95,38 +95,33 @@ export class AccountAdderController extends EventEmitter {
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
   }
 
-  get accountsOnPage(): {
-    account: AccountWithNetworkMeta
-    isLinked: boolean
-    slot: number
-    index: number
-  }[] {
-    const processedAccounts = this.#calculatedExtendedAccounts
+  get accountsOnPage(): DerivedAccount[] {
+    const processedAccounts = this.#derivedAccounts
       // The displayed (visible) accounts on page should not include the derived
-      // EOA (legacy) accounts. The derived ones only used as smart account
-      // keys, they should not be visible nor importable (or selectable).
-      .filter((calculatedAccount) => !isDerivedAccount(calculatedAccount.index))
-      .flatMap((calculatedAccount) => {
+      // EOA (legacy) accounts only used as smart account keys, they should not
+      // be visible nor importable (or selectable).
+      .filter((x) => !isDerivedForSmartAccountKeyOnly(x.index))
+      .flatMap((derivedAccount) => {
         const associatedLinkedAccounts = this.#linkedAccounts.filter(
           (linkedAcc) =>
-            !isSmartAccount(calculatedAccount.account) &&
-            linkedAcc.account.associatedKeys.includes(calculatedAccount.account.addr)
+            !isSmartAccount(derivedAccount.account) &&
+            linkedAcc.account.associatedKeys.includes(derivedAccount.account.addr)
         )
 
-        const correspondingSmartAccount = this.#calculatedExtendedAccounts.find(
-          (acc) => isSmartAccount(acc.account) && acc.slot === calculatedAccount.slot
+        const correspondingSmartAccount = this.#derivedAccounts.find(
+          (acc) => isSmartAccount(acc.account) && acc.slot === derivedAccount.slot
         )
 
         let accountsToReturn = []
 
-        if (!isSmartAccount(calculatedAccount.account)) {
-          accountsToReturn.push(calculatedAccount)
+        if (!isSmartAccount(derivedAccount.account)) {
+          accountsToReturn.push(derivedAccount)
 
           const duplicate = associatedLinkedAccounts.find(
             (linkedAcc) => linkedAcc.account.addr === correspondingSmartAccount?.account?.addr
           )
 
-          // The calculated smart account that matches the relayer's linked account
+          // The derived smart account that matches the relayer's linked account
           // should not be displayed as linked account. Use this cycle to mark it.
           if (duplicate) duplicate.isLinked = false
 
@@ -138,8 +133,8 @@ export class AccountAdderController extends EventEmitter {
         accountsToReturn = accountsToReturn.concat(
           associatedLinkedAccounts.map((linkedAcc) => ({
             ...linkedAcc,
-            slot: calculatedAccount.slot,
-            index: calculatedAccount.index
+            slot: derivedAccount.slot,
+            index: derivedAccount.index
           }))
         )
 
@@ -157,13 +152,13 @@ export class AccountAdderController extends EventEmitter {
       // The `flatMap` has a built-in mechanism to flatten the array and remove
       // null or undefined values (by returning empty array).
       .flatMap((linkedAcc) => {
-        const correspondingCalculatedAccount = this.#calculatedExtendedAccounts.find(
-          (calculatedAcc) => linkedAcc.account.associatedKeys.includes(calculatedAcc.account.addr)
+        const correspondingDerivedAccount = this.#derivedAccounts.find((derivedAccount) =>
+          linkedAcc.account.associatedKeys.includes(derivedAccount.account.addr)
         )
 
-        // The `correspondingCalculatedAccount` should always be found,
+        // The `correspondingDerivedAccount` should always be found,
         // except something is wrong with the data we have stored on the Relayer
-        if (!correspondingCalculatedAccount) {
+        if (!correspondingDerivedAccount) {
           this.emitError({
             level: 'major',
             message: `Something went wrong with finding the corresponding account in the associated keys of the linked account with address ${linkedAcc.account.addr}. Please start the process again. If the problem persists, contact support.`,
@@ -178,8 +173,8 @@ export class AccountAdderController extends EventEmitter {
         return [
           {
             ...linkedAcc,
-            slot: correspondingCalculatedAccount.slot,
-            index: correspondingCalculatedAccount.index
+            slot: correspondingDerivedAccount.slot,
+            index: correspondingDerivedAccount.index
           }
         ]
       })
@@ -268,14 +263,14 @@ export class AccountAdderController extends EventEmitter {
         )
       })
 
-    const allAccountsOnThisSlot = this.#calculatedExtendedAccounts.filter(
+    const allAccountsOnThisSlot = this.#derivedAccounts.filter(
       ({ slot }) => slot === accountOnPage.slot
     )
 
     const accountKey = isSmartAccount(accountOnPage.account)
       ? // The key of the smart account is the EOA (legacy) account derived on the
         // same slot, but with the `SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET` offset.
-        allAccountsOnThisSlot.find(({ index }) => isDerivedAccount(index))
+        allAccountsOnThisSlot.find(({ index }) => isDerivedForSmartAccountKeyOnly(index))
       : // The key of the legacy account is the legacy account itself.
         accountOnPage
 
@@ -333,21 +328,21 @@ export class AccountAdderController extends EventEmitter {
       return this.emitError({
         level: 'major',
         message:
-          'Something went wrong with calculating the accounts. Please reload and try again. If the problem persists, contact support.',
+          'Something went wrong with deriving the accounts. Please reload and try again. If the problem persists, contact support.',
         error: new Error('accountAdder: page must be a positive number')
       })
     }
 
     this.page = page
-    this.#calculatedExtendedAccounts = []
+    this.#derivedAccounts = []
     this.#linkedAccounts = []
     this.accountsLoading = true
     this.emitUpdate()
-    this.#calculatedExtendedAccounts = await this.#calculateAccounts({ networks, providers })
+    this.#derivedAccounts = await this.#deriveAccounts({ networks, providers })
     this.accountsLoading = false
     this.emitUpdate()
     this.#searchForLinkedAccounts({
-      accounts: this.#calculatedExtendedAccounts
+      accounts: this.#derivedAccounts
         .filter(
           (acc) =>
             // Search for linked accounts to the legacy (EOA) accounts only.
@@ -358,7 +353,7 @@ export class AccountAdderController extends EventEmitter {
             // accounts that are used for smart account keys only. They are
             // solely purposed to manage 1 particular (smart) account,
             // not at all for linking.
-            !isDerivedAccount(acc.index)
+            !isDerivedForSmartAccountKeyOnly(acc.index)
         )
         .map((acc) => acc.account),
       networks,
@@ -371,7 +366,7 @@ export class AccountAdderController extends EventEmitter {
       return this.emitError({
         level: 'major',
         message:
-          'Something went wrong with calculating the accounts. Please start the process again. If the problem persists, contact support.',
+          'Something went wrong with deriving the accounts. Please start the process again. If the problem persists, contact support.',
         error: new Error(
           'accountAdder: requested method `addAccounts`, but the AccountAdder is not initialized'
         )
@@ -445,20 +440,20 @@ export class AccountAdderController extends EventEmitter {
     this.emitUpdate()
   }
 
-  async #calculateAccounts({
+  async #deriveAccounts({
     networks,
     providers
   }: {
     networks: NetworkDescriptor[]
     providers: { [key: string]: JsonRpcProvider }
-  }): Promise<CalculatedAccount[]> {
+  }): Promise<DerivedAccount[]> {
     if (!this.isInitialized) {
       this.emitError({
         level: 'major',
         message:
-          'Something went wrong with calculating the accounts. Please start the process again. If the problem persists, contact support.',
+          'Something went wrong with deriving the accounts. Please start the process again. If the problem persists, contact support.',
         error: new Error(
-          'accountAdder: requested method `#calculateAccounts`, but the AccountAdder is not initialized'
+          'accountAdder: requested method `#deriveAccounts`, but the AccountAdder is not initialized'
         )
       })
       return []
@@ -468,15 +463,15 @@ export class AccountAdderController extends EventEmitter {
       this.emitError({
         level: 'major',
         message:
-          'Something went wrong with calculating the accounts. Please start the process again. If the problem persists, contact support.',
+          'Something went wrong with deriving the accounts. Please start the process again. If the problem persists, contact support.',
         error: new Error(
-          'accountAdder: requested method `#calculateAccounts`, but keyIterator is not initialized'
+          'accountAdder: requested method `#deriveAccounts`, but keyIterator is not initialized'
         )
       })
       return []
     }
 
-    const accounts: CalculatedAccountButNotExtended[] = []
+    const accounts: DerivedAccountWithoutNetworkMeta[] = []
 
     const startIdx = (this.page - 1) * this.pageSize
     const endIdx = (this.page - 1) * this.pageSize + (this.pageSize - 1)
@@ -488,7 +483,7 @@ export class AccountAdderController extends EventEmitter {
       this.hdPathTemplate
     )
 
-    const smartAccountsPromises: Promise<CalculatedAccountButNotExtended>[] = []
+    const smartAccountsPromises: Promise<DerivedAccountWithoutNetworkMeta>[] = []
     // Replace the parallel getKeys with foreach to prevent issues with Ledger,
     // which can only handle one request at a time.
     // eslint-disable-next-line no-restricted-syntax
@@ -536,11 +531,11 @@ export class AccountAdderController extends EventEmitter {
     networks,
     providers
   }: {
-    accounts: CalculatedAccountButNotExtended[]
+    accounts: DerivedAccountWithoutNetworkMeta[]
     networks: NetworkDescriptor[]
     providers: { [key: string]: JsonRpcProvider }
-  }): Promise<CalculatedAccount[]> {
-    const accountsObj: { [key: Account['addr']]: CalculatedAccount } = Object.fromEntries(
+  }): Promise<DerivedAccount[]> {
+    const accountsObj: { [key: Account['addr']]: DerivedAccount } = Object.fromEntries(
       accounts.map((a) => [a.account.addr, { ...a, account: { ...a.account, usedOnNetworks: [] } }])
     )
 
