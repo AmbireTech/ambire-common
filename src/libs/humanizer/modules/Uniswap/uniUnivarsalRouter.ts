@@ -38,6 +38,7 @@ export const uniUniversalRouter = (
     }`]: (accountOp: AccountOp, call: IrCall) => {
       const [commands, inputs, deadline] = ifaceUniversalRouter.parseTransaction(call)?.args || []
       // basic arrayifying 1. removes 0x 2. splits into hex pairs 3. parse to nums
+      // '0x1234' => ['0x12', '0x34']
       const parsedCommands = commands
         .slice(2)
         .match(/.{2}/g)
