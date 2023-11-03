@@ -488,6 +488,7 @@ export class AccountAdderController extends EventEmitter {
       this.hdPathTemplate
     )
 
+    const smartAccountsPromises: Promise<CalculatedAccountButNotExtended>[] = []
     // Replace the parallel getKeys with foreach to prevent issues with Ledger,
     // which can only handle one request at a time.
     // eslint-disable-next-line no-restricted-syntax
@@ -499,11 +500,16 @@ export class AccountAdderController extends EventEmitter {
       const indexWithOffset = slot - 1 + SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
       accounts.push({ account, isLinked: false, slot, index: indexWithOffset })
 
-      // The Ambire (smart) account
-      // eslint-disable-next-line no-await-in-loop
-      const smartAccount = await getSmartAccount(legacyAccKeyForSmartAcc)
-      accounts.push({ account: smartAccount, isLinked: false, slot, index: slot - 1 })
+      // Derive the Ambire (smart) account
+      smartAccountsPromises.push(
+        getSmartAccount(legacyAccKeyForSmartAcc).then((smartAccount) => {
+          return { account: smartAccount, isLinked: false, slot, index: slot - 1 }
+        })
+      )
     }
+
+    const smartAccounts = await Promise.all(smartAccountsPromises)
+    accounts.push(...smartAccounts)
 
     // eslint-disable-next-line no-restricted-syntax
     for (const [index, legacyAccKey] of legacyAccKeys.entries()) {
