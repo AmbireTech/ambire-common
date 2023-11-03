@@ -23,7 +23,6 @@ export const uniUniversalRouter = (
   humanizerInfo: any
 ): { [x: string]: (a: AccountOp, c: IrCall) => IrCall[] } => {
   const ifaceUniversalRouter = new ethers.Interface(humanizerInfo?.['abis:UniswapUniversalRouter'])
-
   return {
     [`${
       ifaceUniversalRouter.getFunction(
@@ -35,9 +34,10 @@ export const uniUniversalRouter = (
       const parsedCommands = commands
         .slice(2)
         .match(/.{2}/g)
-        .map((c: string) => parseInt(c, 16))
+        .map((p: string) => `0x${p}`)
 
       const parsed: IrCall[] = []
+      // @TODO: add [ '0x0b', '0x00', '0x06', '0x04' ]  commands in this if
       parsedCommands.forEach((command: string, index: number) => {
         if (command === COMMANDS.V3_SWAP_EXACT_IN) {
           const { inputsDetails } = COMMANDS_DESCRIPTIONS.V3_SWAP_EXACT_IN
@@ -105,6 +105,14 @@ export const uniUniversalRouter = (
               getLabel('Approved Uniswap to use the following token via signed message.')
             ]
           })
+          // } else if (command === COMMANDS.WRAP_ETH) {
+          //   const { inputsDetails } = COMMANDS_DESCRIPTIONS.WRAP_ETH
+          //   const params = extractParams(inputsDetails, inputs[index])
+          //   console.log({ params })
+          //   parsed.push({
+          //     ...call,
+          //     fullVisualization: [getAction('smth watafak')]
+          //   })
         } else if (command === COMMANDS.UNWRAP_WETH) {
           const { inputsDetails } = COMMANDS_DESCRIPTIONS.UNWRAP_WETH
           const params = extractParams(inputsDetails, inputs[index])
@@ -118,7 +126,8 @@ export const uniUniversalRouter = (
           })
         } else parsed.push({ ...call, fullVisualization: [getLabel('Unknown Uni V3 interaction')] })
       })
-
+      console.log(parsed.map((p) => p.fullVisualization))
+      console.log({ parsed: parsed.flat() })
       return parsed.flat()
     }
   }
