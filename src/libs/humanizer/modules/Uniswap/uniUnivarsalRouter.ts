@@ -1,5 +1,12 @@
 import { ethers } from 'ethers'
-import { getAction, getDeadlineText, getLabel, getRecipientText, getToken } from '../../utils'
+import {
+  getAction,
+  getDeadlineText,
+  getLabel,
+  getRecipientText,
+  getToken,
+  getWraping
+} from '../../utils'
 import { AccountOp } from '../../../accountOp/accountOp'
 import { IrCall } from '../../interfaces'
 import { COMMANDS, COMMANDS_DESCRIPTIONS } from './Commands'
@@ -37,7 +44,6 @@ export const uniUniversalRouter = (
         .map((p: string) => `0x${p}`)
 
       const parsed: IrCall[] = []
-      // @TODO: add [ '0x0b', '0x00', '0x06', '0x04' ]  commands in this if
       parsedCommands.forEach((command: string, index: number) => {
         if (command === COMMANDS.V3_SWAP_EXACT_IN) {
           const { inputsDetails } = COMMANDS_DESCRIPTIONS.V3_SWAP_EXACT_IN
@@ -66,6 +72,30 @@ export const uniUniversalRouter = (
               getLabel('for'),
               getToken(path[0], params.amountOut),
               getDeadlineText(deadline)
+            ]
+          })
+        } else if (command === COMMANDS.SWEEP) {
+          const { inputsDetails } = COMMANDS_DESCRIPTIONS.SWEEP
+          const params = extractParams(inputsDetails, inputs[index])
+          parsed.push({
+            ...call,
+            fullVisualization: [
+              getAction('Take'),
+              getLabel('at least'),
+              getToken(params.token, params.amountMin)
+            ]
+          })
+        } else if (command === COMMANDS.PAY_PORTION) {
+          const { inputsDetails } = COMMANDS_DESCRIPTIONS.PAY_PORTION
+          const params = extractParams(inputsDetails, inputs[index])
+          parsed.push({
+            ...call,
+            fullVisualization: [
+              getAction('Pay fee'),
+              getLabel('of'),
+              // bips are fee. can be 0 or within 10-9999 and converts to %
+              // https://docs.uniswap.org/contracts/v2/guides/interface-integration/custom-interface-linking#constraints
+              getLabel(`${Number(params.bips) / 100}%`)
             ]
           })
         } else if (command === COMMANDS.V2_SWAP_EXACT_IN) {
@@ -106,13 +136,11 @@ export const uniUniversalRouter = (
             ]
           })
         } else if (command === COMMANDS.WRAP_ETH) {
-          console.log('in')
           const { inputsDetails } = COMMANDS_DESCRIPTIONS.WRAP_ETH
           const params = extractParams(inputsDetails, inputs[index])
-          console.log({ params })
           parsed.push({
             ...call,
-            fullVisualization: [getAction('smth watafak')]
+            fullVisualization: getWraping(params.amountMin)
           })
         } else if (command === COMMANDS.UNWRAP_WETH) {
           const { inputsDetails } = COMMANDS_DESCRIPTIONS.UNWRAP_WETH

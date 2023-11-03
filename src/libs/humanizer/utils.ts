@@ -142,5 +142,5 @@ export function getWraping(amount: bigint) {
 }
 
 export function getUnwraping(amount: bigint) {
-  return [getAction('Unrap'), getToken(ethers.ZeroAddress, amount)]
+  return [getAction('Unwrap'), getToken(ethers.ZeroAddress, amount)]
 }
