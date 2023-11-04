@@ -150,11 +150,13 @@ describe('AccountAdder', () => {
           .map(({ account }) => account.addr)
         expect(accountsOnSlot1).toContain('0x740523d7876Fbb8AF246c5B307f26d4b2D2BFDA9')
 
-        expect(linkedAccountsOnPage.filter(({ slot }) => slot === 2).length).toEqual(1)
+        expect(linkedAccountsOnPage.filter(({ slot }) => slot === 2).length).toEqual(2)
 
         const accountsOnSlot3 = linkedAccountsOnPage
           .filter(({ slot }) => slot === 3)
           .map(({ account }) => account.addr)
+        expect(accountsOnSlot3).toContain('0x0ace96748e66F42EBeA22D777C2a99eA2c83D8A6')
+        expect(accountsOnSlot3).toContain('0xc583f33d502dE560dd2C60D4103043d5998A98E5')
         expect(accountsOnSlot3).toContain('0x63caaD57Cd66A69A4c56b595E3A4a1e4EeA066d8')
         expect(accountsOnSlot3).toContain('0x619A6a273c628891dD0994218BC0625947653AC7')
         expect(accountsOnSlot3).toContain('0x7ab87ab041EB1c4f0d4f4d1ABD5b0973B331e2E7')

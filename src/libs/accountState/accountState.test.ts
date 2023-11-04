@@ -133,7 +133,7 @@ describe('AccountState', () => {
 
     const acc4337deployed = state[4]
     expect(acc4337deployed.nonce).toBeGreaterThanOrEqual(0n)
-    expect(acc4337deployed.associatedKeys).not.toHaveProperty(ERC_4337_ENTRYPOINT)
+    expect(acc4337deployed.associatedKeys).toHaveProperty(ERC_4337_ENTRYPOINT)
 
     const accEOANonZero = state[5]
     expect(accEOANonZero.isEOA).toBe(true)
