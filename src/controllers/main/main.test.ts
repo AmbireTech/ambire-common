@@ -168,7 +168,7 @@ describe('Main Controller ', () => {
     })
 
     const signerAddr = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
-    const priv = { addr: signerAddr, hash: true }
+    const priv = { addr: signerAddr, hash: ethers.toBeHex(1, 32) }
     const bytecode = await getBytecode(polygon, [priv])
 
     // Same mechanism to generating this one as used for the
