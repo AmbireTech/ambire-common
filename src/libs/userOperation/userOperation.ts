@@ -1,6 +1,6 @@
 import { ethers } from "ethers";
 import { Account, AccountOnchainState } from "../../interfaces/account";
-import { AccountOp, callToTuple } from "../accountOp/accountOp";
+import { AccountOp, GasFeePayment, callToTuple, isNative } from "../accountOp/accountOp";
 import AmbireAccount from "../../../contracts/compiled/AmbireAccount.json";
 import AmbireAccountFactory from "../../../contracts/compiled/AmbireAccountFactory.json";
 import { EstimateResult } from "../../libs/estimate/estimate";
@@ -32,12 +32,23 @@ export interface UserOperation {
  * @param initCode is the contract going to be deployed from now
  * @returns verificationGasLimit
  */
-function getVerificationGasLimit(initCode: string, network: NetworkDescriptor | undefined): bigint {
+function getVerificationGasLimit(
+  initCode: string,
+  network: NetworkDescriptor | undefined,
+  isEdgeCase: boolean,
+  gasFeePayment: GasFeePayment
+): bigint {
   // TODO<Bobby>: review all the gas calculations once again
 
   let initial = 10195n // validateUserOp
 
-  if (network && network.erc4337?.hasPaymaster) {
+  if (
+    network &&
+    network.erc4337?.hasPaymaster &&
+    (
+      isEdgeCase || !isNative(gasFeePayment)
+    )
+  ) {
     initial += 23013n // paymaster payment
   } else {
     initial += 29053n // native payment
@@ -104,7 +115,7 @@ export function toUserOperation(
     : '0x'
   const network = networks.find(net => net.id == accountOp.networkId)
   const preVerificationGas = getCallDataAdditional(accountOp, network!, accountState.isDeployed)
-  const verificationGasLimit = getVerificationGasLimit(initCode, network) + preVerificationGas
+  const verificationGasLimit = getVerificationGasLimit(initCode, network, isEdgeCase, accountOp.gasFeePayment!) + preVerificationGas
   const maxFeePerGas = (
     accountOp.gasFeePayment.amount - estimation.addedNative
   ) / accountOp.gasFeePayment.simulatedGasLimit

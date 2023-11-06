@@ -5,7 +5,7 @@ import { Account, AccountStates } from '../../interfaces/account'
 import { Key } from '../../interfaces/keystore'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { Storage } from '../../interfaces/storage'
-import { AccountOp, accountOpSignableHash, callToTuple, GasFeePayment } from '../../libs/accountOp/accountOp'
+import { AccountOp, accountOpSignableHash, callToTuple, GasFeePayment, isNative } from '../../libs/accountOp/accountOp'
 import { EstimateResult } from '../../libs/estimate/estimate'
 import { GasRecommendation, getCallDataAdditional } from '../../libs/gasPrice/gasPrice'
 import { callsHumanizer } from '../../libs/humanizer'
@@ -567,26 +567,32 @@ export class SignAccountOpController extends EventEmitter {
           ]]])
           this.accountOp.signature = signature
         }
-        const response = await this.#callRelayer(
-          `/v2/paymaster/${this.accountOp.networkId}/sign`,
-          'POST',
-          // send without the isEdgeCase prop
-          {userOperation: (({ isEdgeCase, ...o }) => o)(userOperation)}
-        )
-        if (response.success) {
-          userOperation.paymasterAndData = response.data.paymasterAndData
 
-          // after getting the paymaster data, if we're in the edge case,
-          // we have to set the correct edge case nonce
-          if (userOperation.isEdgeCase) {
-            userOperation.nonce = getTargetEdgeCaseNonce(userOperation)
+        // call the paymaster for the edgeCase or for non-native payments
+        if (
+          userOperation.isEdgeCase ||
+          !isNative(this.accountOp.gasFeePayment!)
+        ) {
+          const response = await this.#callRelayer(
+            `/v2/paymaster/${this.accountOp.networkId}/sign`,
+            'POST',
+            // send without the isEdgeCase prop
+            {userOperation: (({ isEdgeCase, ...o }) => o)(userOperation)}
+          )
+          if (response.success) {
+            userOperation.paymasterAndData = response.data.paymasterAndData
+
+            // after getting the paymaster data, if we're in the edge case,
+            // we have to set the correct edge case nonce
+            if (userOperation.isEdgeCase) {
+              userOperation.nonce = getTargetEdgeCaseNonce(userOperation)
+            }
+          } else {
+            this.#setSigningError(`User operation signing failed on paymaster approval: ${response.data.errorState}`)
           }
-        } else {
-          this.#setSigningError(`User operation signing failed on paymaster approval: ${response.data.errorState}`)
         }
 
-        // in normal cases (not edgeCase), we need to sign the user operation
-        // that's what we do here
+        // in normal cases (not edgeCase), we sign the user operation
         if (!userOperation.isEdgeCase) { 
           const entryPoint: any = new ethers.BaseContract(ERC_4337_ENTRYPOINT, EntryPointAbi, provider)
           const userOpHash = await entryPoint.getUserOpHash(userOperation)
