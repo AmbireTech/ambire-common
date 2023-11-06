@@ -13,9 +13,8 @@ contract AmbirePaymaster is IPaymaster {
 	}
 
 	/**
-	 * @notice  This method can be used to withdraw stuck tokens or airdrops 
-	 * We do not need to handle ETH as well since depositTo can be invoked from anywhere.
-	 * As well as to call the EntryPoint to withdraw tokens (withdrawTo). We need a withdraw method though.
+	 * @notice  This method can be used to withdraw stuck tokens or airdrops
+	 *
 	 * @param   to  The address we're calling
 	 * @param   value  The value in the call
 	 * @param	data	the call data
@@ -31,10 +30,29 @@ contract AmbirePaymaster is IPaymaster {
 	 * @notice  Validate user operations the paymaster has signed
 	 * We do not need to send funds to the EntryPoint because we rely on pre-existing deposit.
 	 * Requests are chain specific to prevent signature reuse.
-	 * @dev     .
-	 * @param   userOp  .
-	 * @return  context  .
-	 * @return  validationData  .
+	 * @dev     We have two use cases for the paymaster:
+	 * - normal erc-4337. Everything is per ERC-4337 standard, the nonce is sequential.
+	 * - an executeMultiple call. If the calldata is executeMultiple, we've hardcoded
+	 * a 0 nonce. That's what's called a one-time hash nonce and its key is actually
+	 * the commitment. Check EntryPoint -> NonceManager for more information.
+	 *
+	 * @param   userOp  the UserOperation we're executing
+	 * @return  context  context is returned in the postOp and called by the
+	 * EntryPoint. But we're not using postOp is context is always emtpy
+	 * @return  validationData  This consists of:
+	 * - an aggregator address: address(uint160(validationData)). This is used
+	 * when you want an outer contract to determine whether the signature is valid.
+	 * In our case, this is always 0 (address 0) for valid signatures and
+	 * 1 (address 1) for invalid. This is what the entry point expects and
+	 * in those two cases, an outer contract is obviously not called.
+	 * - a uint48 validUntil: uint48(validationData >> 160)
+	 * A Paymaster signature can be signed at time "x" but delayed intentionally
+	 * until time "y" when a fee payment's price has dropped significantly or
+	 * some other issue. validUntil sets a time validity for the signature
+     * - a uint48 validAfter: uint48(validationData >> (48 + 160))
+	 * If the signature should be valid only after a period of time,
+	 * we tweak the validAfter property.
+	 * For more information, check EntryPoint -> _getValidationData()
 	 */
 	function validatePaymasterUserOp(UserOperation calldata userOp, bytes32, uint256)
 		external
@@ -44,7 +62,6 @@ contract AmbirePaymaster is IPaymaster {
 		// parse the paymasterAndData
 		(uint48 validUntil, uint48 validAfter, bytes memory signature) = abi.decode(userOp.paymasterAndData[20:], (uint48, uint48, bytes));
 
-		// NOTE: we do not need to send funds to the EntryPoint because we rely on pre-existing deposit
 		bytes memory callData = userOp.callData;
 		bytes32 hash = keccak256(abi.encode(
 			block.chainid,
