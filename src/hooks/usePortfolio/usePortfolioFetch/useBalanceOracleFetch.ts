@@ -200,7 +200,7 @@ export default function useBalanceOracleFetch({
         [`${account}-${currentNetwork}`]: {
           ...prev[`${account}-${currentNetwork}`],
           loading: false,
-          error: e.message
+          error: e?.message
         }
       }))
       setFetchingAssets((prev) => ({
