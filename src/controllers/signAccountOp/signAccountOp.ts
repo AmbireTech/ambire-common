@@ -396,8 +396,8 @@ export class SignAccountOpController extends EventEmitter {
     const account = this.#getAccount()
     if (!account || !this.isInitialized) return []
 
-    // in other modes: relayer and gas tank - current account + all EOAs can pay
-    return this.#estimation!.feePaymentOptions
+    // FeeOptions having amount
+    return this.#estimation!.feePaymentOptions.filter((feeOption) => feeOption.availableAmount)
   }
 
   // eslint-disable-next-line class-methods-use-this
