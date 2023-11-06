@@ -51,7 +51,7 @@ async function fetchFuncEtherface(
   options.emitError({
     message: `fetchFuncEtherface: Err with etherface api, selector ${selector.slice(0, 10)}`,
     error: new Error(`Failed to fetch info from etherface's api about ${selector.slice(0, 10)}`),
-    level: 'minor'
+    level: 'silent'
   })
   return null
 }
