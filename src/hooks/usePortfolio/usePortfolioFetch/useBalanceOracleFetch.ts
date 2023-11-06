@@ -4,11 +4,11 @@
 import { Contract } from 'ethers'
 
 import networks, { coingeckoNets } from '../../../constants/networks'
-import { getProvider } from '../../../services/provider'
 import { getTransactionSummary } from '../../../services/humanReadableTransactions/transactionSummary'
+import { getProvider } from '../../../services/provider'
 import { toBundleTxn } from '../../../services/requestToBundleTxn'
-import { ConstantsType } from '../../hooks/useConstants'
-import { Token, Network } from '../hooks/usePortfolio/types'
+import { ConstantsType } from '../../useConstants'
+import { Network, Token } from '../types'
 
 // use Balance Oracle
 function paginateArray(input: any[], limit: number) {
@@ -200,7 +200,7 @@ export default function useBalanceOracleFetch({
         [`${account}-${currentNetwork}`]: {
           ...prev[`${account}-${currentNetwork}`],
           loading: false,
-          error: e.message
+          error: e?.message
         }
       }))
       setFetchingAssets((prev) => ({
