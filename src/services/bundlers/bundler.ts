@@ -1,15 +1,12 @@
 import { ERC_4337_ENTRYPOINT } from "../../../dist/src/consts/deploy";
 import { UserOperation } from "../../libs/userOperation/userOperation";
 import conf from '../../config/conf'
+import { NetworkDescriptor } from "../../interfaces/networkDescriptor";
 
 require('dotenv').config();
 
 // how many times do we retry the getReceipt function before declaring error
 const RETRY_COUNTER = 7
-
-export interface BundlerProvider {
-  getProvider: Function
-}
 
 export class Bundler {
   /**
@@ -18,8 +15,8 @@ export class Bundler {
    * @param userOperationHash
    * @returns Receipt | null
    */
-  async getReceipt(userOperationHash: string) {
-    const provider = conf.bundler.getProvider()
+  async getReceipt(userOperationHash: string, network: NetworkDescriptor) {
+    const provider = conf.bundler.getProvider(network)
 
     let counter = 0
     while (counter < RETRY_COUNTER) {
@@ -39,8 +36,8 @@ export class Bundler {
    * @param UserOperation userOperation
    * @returns userOperationHash
    */
-  async broadcast(userOperation: UserOperation): Promise<string> {
-    return conf.bundler.getProvider().send(
+  async broadcast(userOperation: UserOperation, network: NetworkDescriptor): Promise<string> {
+    return conf.bundler.getProvider(network).send(
       "eth_sendUserOperation",
       [(({ isEdgeCase, ...o }) => o)(userOperation), ERC_4337_ENTRYPOINT]
     )
