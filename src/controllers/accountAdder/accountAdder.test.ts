@@ -66,7 +66,7 @@ describe('AccountAdder', () => {
         const errors = accountAdder.getErrors()
         expect(errors.length).toEqual(1)
         expect(errors[0].error.message).toEqual(
-          'accountAdder: requested method `#calculateAccounts`, but the AccountAdder is not initialized'
+          'accountAdder: requested method `#deriveAccounts`, but the AccountAdder is not initialized'
         )
         done()
       }
@@ -91,7 +91,7 @@ describe('AccountAdder', () => {
       emitCounter++
 
       if (emitCounter === 1) {
-        // First emit is triggered when account calculation is done
+        // First emit is triggered when account derivation is done
         expect(accountAdder.accountsOnPage.length).toEqual(
           // One smart account for every legacy account
           PAGE_SIZE * 2
@@ -116,7 +116,7 @@ describe('AccountAdder', () => {
     accountAdder.onUpdate(() => {
       emitCounter++
 
-      // First emit is triggered when account calculation is done, int the
+      // First emit is triggered when account derivation is done, int the
       // second emit it should start the searching for linked accounts
       if (emitCounter === 2) {
         expect(accountAdder.linkedAccountsLoading).toBe(true)
@@ -138,7 +138,7 @@ describe('AccountAdder', () => {
     accountAdder.onUpdate(() => {
       emitCounter++
 
-      // First emit is triggered when account calculation is done, int the
+      // First emit is triggered when account derivation is done, int the
       // second emit it should start the searching for linked accounts,
       // on the third emit there should be linked accounts fetched
       if (emitCounter === 3) {
