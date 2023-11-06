@@ -1,3 +1,4 @@
+/* eslint-disable no-console */
 import { describe, expect, test } from '@jest/globals'
 
 import { ethers } from 'ethers'

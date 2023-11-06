@@ -1,3 +1,4 @@
+/* eslint-disable no-console */
 import { ethers } from 'ethers'
 import { Message, TypedMessage } from 'interfaces/userRequest'
 import { HumanizerVisualization, IrCall, IrMessage } from 'libs/humanizer/interfaces'
