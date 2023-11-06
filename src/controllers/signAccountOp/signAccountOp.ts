@@ -472,7 +472,7 @@ export class SignAccountOpController extends EventEmitter {
           // @TODO - config/const
           const feeToken = this.#getPortfolioToken(this.accountOp.gasFeePayment.inToken)
 
-          const call = {
+          this.accountOp.feeCall = {
             to: feeCollector,
             value: 0n,
             data: abiCoder.encode(
@@ -480,30 +480,28 @@ export class SignAccountOpController extends EventEmitter {
               ['gasTank', this.accountOp.gasFeePayment.amount, feeToken?.symbol]
             )
           }
-
-          this.accountOp.calls.push(call)
         } else if (this.accountOp.gasFeePayment.inToken) {
           // TODO: add the fee payment only if it hasn't been added already
           if (
             this.accountOp.gasFeePayment.inToken == '0x0000000000000000000000000000000000000000'
           ) {
             // native payment
-            this.accountOp.calls.push({
+            this.accountOp.feeCall = {
               to: feeCollector,
               value: this.accountOp.gasFeePayment.amount,
               data: '0x'
-            })
+            }
           } else {
             // token payment
             const ERC20Interface = new ethers.Interface(ERC20.abi)
-            this.accountOp.calls.push({
+            this.accountOp.feeCall = {
               to: this.accountOp.gasFeePayment.inToken,
               value: 0n,
               data: ERC20Interface.encodeFunctionData('transfer', [
                 feeCollector,
                 this.accountOp.gasFeePayment.amount
               ])
-            })
+            }
           }
         }
 
