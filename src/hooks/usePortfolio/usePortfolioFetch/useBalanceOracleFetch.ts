@@ -4,11 +4,11 @@
 import { Contract } from 'ethers'
 
 import networks, { coingeckoNets } from '../../../constants/networks'
-import { getProvider } from '../../../services/provider'
 import { getTransactionSummary } from '../../../services/humanReadableTransactions/transactionSummary'
+import { getProvider } from '../../../services/provider'
 import { toBundleTxn } from '../../../services/requestToBundleTxn'
 import { ConstantsType } from '../../hooks/useConstants'
-import { Token, Network } from '../hooks/usePortfolio/types'
+import { Network, Token } from '../hooks/usePortfolio/types'
 
 // use Balance Oracle
 function paginateArray(input: any[], limit: number) {
