@@ -16,14 +16,14 @@ export const getMessageBanners = ({ userRequests }: { userRequests: UserRequest[
         text: `Message type: ${req.action.kind === 'message' ? 'personal_sign' : 'typed_data'}`, // TODO:
         actions: [
           {
-            label: 'Open',
-            actionName: 'open',
-            meta: { ids: [req.id] }
-          },
-          {
             label: 'Reject',
             actionName: 'reject',
             meta: { ids: [req.id], err: 'User rejected the transaction request' }
+          },
+          {
+            label: 'Open',
+            actionName: 'open',
+            meta: { ids: [req.id] }
           }
         ]
       })
