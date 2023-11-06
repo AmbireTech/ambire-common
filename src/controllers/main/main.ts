@@ -630,11 +630,12 @@ export class MainController extends EventEmitter {
       }
 
       // broadcast through bundler's service
-      const userOperationHash = await bundler.broadcast(userOperation!)
+      const network = this.settings.networks.find((n) => n.id === accountOp.networkId)
+      const userOperationHash = await bundler.broadcast(userOperation!, network!)
       if (!userOperationHash) {
         this.#throwAccountOpBroadcastError(new Error('was not able to broadcast'))
       }
-      const receipt = await bundler.getReceipt(userOperationHash)
+      const receipt = await bundler.getReceipt(userOperationHash, network!)
       if (receipt) {
         transactionRes = receipt
       } else {
