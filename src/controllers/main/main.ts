@@ -34,7 +34,7 @@ import { PortfolioController } from '../portfolio/portfolio'
 import { SignAccountOpController, SigningStatus } from '../signAccountOp/signAccountOp'
 import { SignMessageController } from '../signMessage/signMessage'
 import { TransferController } from '../transfer/transfer'
-import pimlico from '../../services/pimlico'
+import bundler from '../../services/bundlers'
 
 export class MainController extends EventEmitter {
   #storage: Storage
@@ -629,12 +629,12 @@ export class MainController extends EventEmitter {
         )
       }
 
-      // broadcast through pimlico's service
-      const userOperationHash = await pimlico.broadcast(userOperation!)
+      // broadcast through bundler's service
+      const userOperationHash = await bundler.broadcast(userOperation!)
       if (!userOperationHash) {
         this.#throwAccountOpBroadcastError(new Error('was not able to broadcast'))
       }
-      const receipt = await pimlico.getReceipt(userOperationHash)
+      const receipt = await bundler.getReceipt(userOperationHash)
       if (receipt) {
         transactionRes = receipt
       } else {
