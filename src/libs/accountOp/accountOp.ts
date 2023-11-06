@@ -51,7 +51,11 @@ export interface AccountOp {
   // this is a number and not a bigint because of ethers (it uses number for nonces)
   nonce: bigint | null
   // @TODO: nonce namespace? it is dependent on gasFeePayment
-  calls: Call[]
+  calls: Call[],
+  // the feeCall is an extra call we add manually when there's a
+  // relayer/paymaster transaction so that the relayer/paymaster
+  // can authorize the payment
+  feeCall?: Call,
   gasLimit: number | null
   signature: string | null
   gasFeePayment: GasFeePayment | null
@@ -154,7 +158,7 @@ export function accountOpSignableHash(op: AccountOp): Uint8Array {
           op.accountAddr,
           opNetworks[0].chainId,
           op.nonce ?? 0n,
-          op.calls.map((call: Call) => callToTuple(call))
+          getSignableCalls(op)
         ]
       )
     )
@@ -172,4 +176,10 @@ export function accountOpSignableHash(op: AccountOp): Uint8Array {
 export function isNative(gasFeePayment: GasFeePayment): boolean {
   return !gasFeePayment.isGasTank &&
     gasFeePayment.inToken == '0x0000000000000000000000000000000000000000'
+}
+
+export function getSignableCalls(op: AccountOp) {
+  const callsToSign = op.calls.map((call: Call) => callToTuple(call))
+  if (op.feeCall) callsToSign.push(callToTuple(op.feeCall))
+  return callsToSign
 }

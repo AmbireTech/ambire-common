@@ -1,7 +1,7 @@
 import { Provider, Interface } from 'ethers'
 import AmbireAccount from "../../../contracts/compiled/AmbireAccount.json";
 import AmbireAccountFactory from "../../../contracts/compiled/AmbireAccountFactory.json";
-import { AccountOp, callToTuple } from '../../libs/accountOp/accountOp';
+import { AccountOp, getSignableCalls } from '../../libs/accountOp/accountOp';
 import { getBytecode } from '../../libs/proxyDeploy/bytecode';
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor';
 
@@ -112,7 +112,7 @@ export function getCallDataAdditional(
   if (network.erc4337?.enabled || isAccountDeployed) {
     const ambireAccount = new Interface(AmbireAccount.abi)
     estimationCallData = ambireAccount.encodeFunctionData('executeMultiple', [[[
-      accountOp.calls.map((call) => callToTuple(call)),
+      getSignableCalls(accountOp),
       '0x0dc2d37f7b285a2243b2e1e6ba7195c578c72b395c0f76556f8961b0bca97ddc44e2d7a249598f56081a375837d2b82414c3c94940db3c1e64110108021161ca1c01'
     ]]])
   } else {
@@ -125,7 +125,7 @@ export function getCallDataAdditional(
       }]),
       '0x0000000000000000000000000000000000000000000000000000000000000000',
       [[
-        accountOp.calls.map((call) => callToTuple(call)),
+        getSignableCalls(accountOp),
         '0x0dc2d37f7b285a2243b2e1e6ba7195c578c72b395c0f76556f8961b0bca97ddc44e2d7a249598f56081a375837d2b82414c3c94940db3c1e64110108021161ca1c01'
       ]]
     ])

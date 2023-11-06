@@ -1,6 +1,6 @@
 import { ethers } from "ethers";
 import { Account, AccountOnchainState } from "../../interfaces/account";
-import { AccountOp, GasFeePayment, callToTuple, isNative } from "../accountOp/accountOp";
+import { AccountOp, GasFeePayment, isNative, getSignableCalls } from "../accountOp/accountOp";
 import AmbireAccount from "../../../contracts/compiled/AmbireAccount.json";
 import AmbireAccountFactory from "../../../contracts/compiled/AmbireAccountFactory.json";
 import { EstimateResult } from "../../libs/estimate/estimate";
@@ -107,11 +107,16 @@ export function toUserOperation(
     isEdgeCase = true
   }
 
+  // no fee payment for non edge case native
+  if (!isEdgeCase && isNative(accountOp.gasFeePayment)) {
+    delete accountOp.feeCall
+  }
+
   // if we're in the edge case scenario, we set callData to 0x
   // as callData will be executeMultiple. That will be handled at sign.
   // If not, point to executeBySender as it should be
   const callData = !isEdgeCase
-    ? ambireAccount.interface.encodeFunctionData('executeBySender', [accountOp.calls.map(call => callToTuple(call))])
+    ? ambireAccount.interface.encodeFunctionData('executeBySender', [getSignableCalls(accountOp)])
     : '0x'
   const network = networks.find(net => net.id == accountOp.networkId)
   const preVerificationGas = getCallDataAdditional(accountOp, network!, accountState.isDeployed)

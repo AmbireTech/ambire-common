@@ -5,7 +5,7 @@ import { Account, AccountStates } from '../../interfaces/account'
 import { Key } from '../../interfaces/keystore'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { Storage } from '../../interfaces/storage'
-import { AccountOp, accountOpSignableHash, callToTuple, GasFeePayment, isNative } from '../../libs/accountOp/accountOp'
+import { AccountOp, accountOpSignableHash, GasFeePayment, getSignableCalls, isNative } from '../../libs/accountOp/accountOp'
 import { EstimateResult } from '../../libs/estimate/estimate'
 import { GasRecommendation, getCallDataAdditional } from '../../libs/gasPrice/gasPrice'
 import { callsHumanizer } from '../../libs/humanizer'
@@ -449,7 +449,7 @@ export class SignAccountOpController extends EventEmitter {
       // @TODO - config/const
       const feeToken = this.#getPortfolioToken(this.accountOp!.gasFeePayment!.inToken)
 
-      const call = {
+      this.accountOp!.feeCall = {
         to: feeCollector,
         value: 0n,
         data: abiCoder.encode(
@@ -458,28 +458,27 @@ export class SignAccountOpController extends EventEmitter {
         )
       }
 
-      this.accountOp!.calls.push(call)
       return
     }
 
     if (this.accountOp!.gasFeePayment!.inToken == '0x0000000000000000000000000000000000000000') {
       // native payment
-      this.accountOp!.calls.push({
+      this.accountOp!.feeCall = {
         to: feeCollector,
         value: this.accountOp!.gasFeePayment!.amount,
         data: '0x'
-      })
+      }
     } else {
       // token payment
       const ERC20Interface = new ethers.Interface(ERC20.abi)
-      this.accountOp!.calls.push({
+      this.accountOp!.feeCall = {
         to: this.accountOp!.gasFeePayment!.inToken,
         value: 0n,
         data: ERC20Interface.encodeFunctionData('transfer', [
           feeCollector,
           this.accountOp!.gasFeePayment!.amount
         ])
-      })
+      }
     }
   }
 
@@ -562,7 +561,7 @@ export class SignAccountOpController extends EventEmitter {
             await signer.signMessage(ethers.hexlify(accountOpSignableHash(this.accountOp)))
           )
           userOperation.callData = ambireAccount.encodeFunctionData('executeMultiple', [[[
-            this.accountOp.calls.map((call) => callToTuple(call)),
+            getSignableCalls(this.accountOp),
             signature
           ]]])
           this.accountOp.signature = signature
