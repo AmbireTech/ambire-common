@@ -7,8 +7,8 @@ import networks, { coingeckoNets } from '../../../constants/networks'
 import { getTransactionSummary } from '../../../services/humanReadableTransactions/transactionSummary'
 import { getProvider } from '../../../services/provider'
 import { toBundleTxn } from '../../../services/requestToBundleTxn'
-import { ConstantsType } from '../../hooks/useConstants'
-import { Network, Token } from '../hooks/usePortfolio/types'
+import { ConstantsType } from '../../useConstants'
+import { Network, Token } from '../types'
 
 // use Balance Oracle
 function paginateArray(input: any[], limit: number) {
