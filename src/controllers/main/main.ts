@@ -225,10 +225,10 @@ export class MainController extends EventEmitter {
     )
   }
 
-  async #getAccountsInfo(accounts: Account[]): Promise<AccountStates> {
+  async #getAccountsInfo(accounts: Account[], block = 'latest'): Promise<AccountStates> {
     const result = await Promise.all(
       this.settings.networks.map((network) =>
-        getAccountState(this.#providers[network.id], network, accounts)
+        getAccountState(this.#providers[network.id], network, accounts, block)
       )
     )
 
@@ -246,10 +246,9 @@ export class MainController extends EventEmitter {
     return Object.fromEntries(states)
   }
 
-  async updateAccountStates() {
-    this.accountStates = await this.#getAccountsInfo(this.accounts)
+  async updateAccountStates(block = 'latest') {
+    this.accountStates = await this.#getAccountsInfo(this.accounts, block)
     this.lastUpdate = new Date()
-    this.emitUpdate()
   }
 
   async selectAccount(toAccountAddr: string) {
@@ -654,11 +653,14 @@ export class MainController extends EventEmitter {
     }
 
     if (transactionRes) {
-      await this.activity.addAccountOp({
-        ...accountOp,
-        txnId: transactionRes.hash,
-        nonce: BigInt(transactionRes.nonce)
-      })
+      await Promise.all([
+        this.activity.addAccountOp({
+          ...accountOp,
+          txnId: transactionRes.hash,
+          nonce: BigInt(transactionRes.nonce)
+        }),
+        this.updateAccountStates('pending')
+      ])
       accountOp.calls.forEach((call) => {
         if (call.fromUserRequestId) {
           this.removeUserRequest(call.fromUserRequestId)
