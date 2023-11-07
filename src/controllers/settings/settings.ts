@@ -1,7 +1,6 @@
-import { isValidAddress } from 'services/address'
-
 import { AccountPreferences, Settings } from '../../interfaces/settings'
 import { Storage } from '../../interfaces/storage'
+import { isValidAddress } from '../../services/address'
 import EventEmitter from '../eventEmitter'
 
 const defaultSettings: Settings = {
