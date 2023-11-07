@@ -40,3 +40,6 @@ Associated Key: any key that the user wants associated with the account; it's no
 Authorized Key: a key that is authorized for use (privileges[key] is set) for a specific account; it should be noted that each key must be (un)authorized individually on each network
 
 Device Password: this is the keystore password; "device password" is better because it's self-explanatory that this is a local device password and not an account password
+
+V1 smart account: an Ambire smart account that was originally created in Ambire v1. This account type will not have some features that are available in v2 (such as ERC-4337 support), but will generally include all the significant features.
+
