@@ -1,8 +1,13 @@
+import { Settings } from '../../interfaces/settings'
 import { Storage } from '../../interfaces/storage'
 import EventEmitter from '../eventEmitter'
 
+const defaultSettings: Settings = {
+  accountPreferences: {}
+}
+
 export class SettingsController extends EventEmitter {
-  currentSettings: any // TODO
+  currentSettings: Settings = defaultSettings
 
   #storage: Storage
 
@@ -15,7 +20,7 @@ export class SettingsController extends EventEmitter {
 
   async #load() {
     try {
-      this.currentSettings = await this.#storage.get('settings', {})
+      this.currentSettings = await this.#storage.get('settings', defaultSettings)
     } catch (e) {
       this.emitError({
         message:
