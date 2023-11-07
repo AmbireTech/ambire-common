@@ -66,10 +66,14 @@ export class SettingsController extends EventEmitter {
   async removeAccountPreferences(accountPreferenceKeys: Array<keyof AccountPreferences> = []) {
     if (!accountPreferenceKeys.length) return
 
-    // TODO: Resolve TS warn
-    for (const key of accountPreferenceKeys) {
-      delete this.currentSettings.accountPreferences[key]
-    }
+    // There's nothing to delete
+    if (!Object.keys(this.currentSettings.accountPreferences).length) return
+
+    accountPreferenceKeys.forEach((key) => {
+      // Cast to AccountPreferences, since above the case when the
+      // accountPreferences is empty (and there is nothing to delete) is handled
+      delete (this.currentSettings.accountPreferences as AccountPreferences)[key]
+    })
 
     await this.#storeCurrentSettings()
 
