@@ -174,15 +174,21 @@ describe('Main Controller ', () => {
     // Same mechanism to generating this one as used for the
     // `accountNotDeployed` in accountState.test.ts
     const accountPendingCreation = {
-      addr: getAmbireAccountAddress(AMBIRE_ACCOUNT_FACTORY, bytecode),
-      label: 'test account',
-      pfp: 'pfp',
-      associatedKeys: [signerAddr],
-      creation: {
-        factoryAddr: AMBIRE_ACCOUNT_FACTORY,
-        bytecode,
-        salt: ethers.toBeHex(0, 32)
-      }
+      account: {
+        addr: getAmbireAccountAddress(AMBIRE_ACCOUNT_FACTORY, bytecode),
+        label: 'test account',
+        pfp: 'pfp',
+        associatedKeys: [signerAddr],
+        creation: {
+          factoryAddr: AMBIRE_ACCOUNT_FACTORY,
+          bytecode,
+          salt: ethers.toBeHex(0, 32)
+        }
+      },
+      accountKeyAddr: signerAddr,
+      slot: 1,
+      index: 0,
+      isLinked: false
     }
 
     const addAccounts = () => {
@@ -214,7 +220,7 @@ describe('Main Controller ', () => {
         if (emitCounter === 1 && controller.isReady) addAccounts()
 
         if (emitCounter === 2) {
-          expect(controller.accounts).toContainEqual(accountPendingCreation)
+          expect(controller.accounts).toContainEqual(accountPendingCreation.account)
           unsubscribe()
           resolve(true)
         }
