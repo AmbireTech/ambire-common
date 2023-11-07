@@ -2,7 +2,7 @@ import { formatUnits, JsonRpcProvider } from 'ethers'
 import fetch from 'node-fetch'
 
 import { expect } from '@jest/globals'
-import humanizerInfo from '../../consts/ambireConstantsHumanizerInfo.json'
+import { humanizerInfo } from '../../consts/ambireConstantsHumanizerInfo.json'
 import { networks } from '../../consts/networks'
 import { Portfolio } from '../../libs/portfolio'
 import { initRpcProviders } from '../../services/provider'
@@ -65,7 +65,7 @@ describe('Transfer Controller', () => {
     transferController.update({
       recipientAddress: '0x7a250d5630b4cf539739df2c5dacb4c659f2488d'
     })
-    transferController.onRecipientAddressChange()
+    await transferController.onRecipientAddressChange()
     expect(transferController.isRecipientSmartContract).toBe(true)
   })
   test('should resolve UnstoppableDomains', async () => {
