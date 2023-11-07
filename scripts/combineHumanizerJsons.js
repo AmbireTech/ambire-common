@@ -63,7 +63,7 @@ const getAmbireConstants = async () => {
     .catch(console.log)
   if (fethcedAmbireConstants) {
     await fsPromises
-      .writeFile(storedAmbireConstantsPath, JSON.stringify(fethcedAmbireConstants, null, 4), 'utf8')
+      .writeFile(storedAmbireConstantsPath, JSON.stringify(fethcedAmbireConstants), 'utf8')
       .then(() => console.log('stored fetched ambire-constants'))
       .catch((e) => console.log(`failed to store fetched ambire-constants, ${e}`))
   }
@@ -77,7 +77,7 @@ const main = async () => {
   const extraStoredData = await addExtraStoredData()
   const finalJson = { ...extraStoredData, ...parsedAmbireConstants }
   // await fsPromises.writeFile(resultPath, JSON.stringify(finalJson, null, 4), 'utf8')
-  await fsPromises.writeFile(resultPath, JSON.stringify(finalJson, null, 4), 'utf8')
+  await fsPromises.writeFile(resultPath, JSON.stringify(finalJson), 'utf8')
 
   // console.log(JSON.stringify(finalJson, null, 4))
   console.log(
