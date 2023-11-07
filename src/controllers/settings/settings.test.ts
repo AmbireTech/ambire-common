@@ -1,3 +1,5 @@
+import { AccountPreferences } from 'interfaces/settings'
+
 import { describe, expect, test } from '@jest/globals'
 
 import { produceMemoryStore } from '../../../test/helpers'
@@ -26,5 +28,24 @@ describe('Settings Controller', () => {
     settingsController.addAccountPreferences({
       '0x-invalid-address': { label: 'test', avatarId: 'whatever' }
     })
+  })
+
+  test('should add preferences if valid address is provided', (done) => {
+    const validAddress = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'
+    const preferences = { label: 'test', avatarId: 'avatar' }
+
+    let emitCounter = 0
+    settingsController.onUpdate(() => {
+      emitCounter++
+
+      if (emitCounter === 1) {
+        const { accountPreferences } = settingsController.currentSettings
+        // Cast to AccountPreferences, because TS doesn't know that we just added a preference
+        expect((accountPreferences as AccountPreferences)[validAddress]).toEqual(preferences)
+        done()
+      }
+    })
+
+    settingsController.addAccountPreferences({ [validAddress]: preferences })
   })
 })
