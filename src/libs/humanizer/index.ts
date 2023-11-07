@@ -80,7 +80,7 @@ export const sharedHumanization = async <Data extends AccountOp | Message>(
   knownAddresses: (Account | Key)[],
   storage: Storage,
   fetch: Function,
-  callback: (response: any) => void,
+  callback: ((response: IrCall[]) => void) | ((response: IrMessage) => void),
   emitError: (err: ErrorRef) => void
 ) => {
   let globalFragmentData = {}
@@ -121,7 +121,7 @@ export const sharedHumanization = async <Data extends AccountOp | Message>(
         emitError
       })
       asyncOps.push(...newAsyncOps)
-      callback(parsedCalls)
+      ;(callback as (response: IrCall[]) => void)(parsedCalls)
     } else if ('content' in data) {
       const humanizerSettings: HumanizerSettings = {
         accountAddr: data.accountAddr,
@@ -149,7 +149,7 @@ export const sharedHumanization = async <Data extends AccountOp | Message>(
         fetch,
         emitError
       })
-      callback(parsedMessage)
+      ;(callback as (response: IrMessage) => void)(parsedMessage)
     }
 
     ;[globalFragmentData, nonGlobalFragmentData] = await handleAsyncOps(
@@ -181,12 +181,5 @@ export const messageHumanizer = async (
   callback: (msgs: IrMessage) => void,
   emitError: (err: ErrorRef) => void
 ) => {
-  await sharedHumanization(
-    message,
-    knownAddresses,
-    storage,
-    fetch,
-    callback as (irCalls: IrMessage | IrCall[]) => void,
-    emitError
-  )
+  await sharedHumanization(message, knownAddresses, storage, fetch, callback, emitError)
 }
