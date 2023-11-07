@@ -194,13 +194,14 @@ export default function useBalanceOracleFetch({
       resolve && resolve(rcpTokenData)
     } catch (e) {
       console.error('supplementTokensDataFromNetwork failed', e)
+      const errorMessage = e?.message || 'Error with no message.'
       // In case of error set loading indicator to false
       setAssetsByAccount((prev) => ({
         ...prev,
         [`${account}-${currentNetwork}`]: {
           ...prev[`${account}-${currentNetwork}`],
           loading: false,
-          error: e?.message
+          error: errorMessage
         }
       }))
       setFetchingAssets((prev) => ({
