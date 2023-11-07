@@ -194,6 +194,11 @@ export default function useBalanceOracleFetch({
       resolve && resolve(rcpTokenData)
     } catch (e) {
       console.error('supplementTokensDataFromNetwork failed', e)
+      // For some reason the `e` (error) reference gets lost when trying to
+      // access it in the `setAssetsByAccount` function below. Alternatively,
+      // storing it in a string variable (errorMessage) works. Could be a Hermes
+      // engine specific issue because I had troubles reproducing this problem
+      // on the web app (V8 engine), but on mobile it was troublesome.
       const errorMessage = e?.message || 'Error with no message.'
       // In case of error set loading indicator to false
       setAssetsByAccount((prev) => ({
