@@ -1,4 +1,5 @@
 /* eslint-disable no-prototype-builtins */
+import { parse, stringify } from '../bigintJson/bigintJson'
 
 class RelayerError extends Error {
   public input: any
@@ -31,13 +32,13 @@ export async function relayerCallUncaught(
       'Content-Type': 'application/json',
       ...headers
     },
-    body: body ? JSON.stringify(body) : undefined
+    body: body ? stringify(body) : undefined
   })
 
   const text = await res.text()
   const isStatusOk = res.status < 300 && res.status >= 200
   try {
-    const json = JSON.parse(text)
+    const json = parse(text)
     if (!json.hasOwnProperty('success')) {
       return { success: isStatusOk, ...json, status: res.status }
     }
