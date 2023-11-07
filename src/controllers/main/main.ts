@@ -635,11 +635,12 @@ export class MainController extends EventEmitter {
       if (!userOperationHash) {
         this.#throwAccountOpBroadcastError(new Error('was not able to broadcast'))
       }
-      const receipt = await bundler.getReceipt(userOperationHash, network!)
-      if (receipt) {
-        transactionRes = receipt
-      } else {
-        this.#throwAccountOpBroadcastError(new Error('was not able to fetch txn receipt'))
+      // broadcast the userOperationHash
+      // TODO: maybe a type property should exist to diff when we're
+      // returning a tx id and when an user op hash
+      transactionRes = {
+        hash: userOperationHash,
+        nonce: Number(accountOp.nonce)
       }
     }
     // Relayer broadcast
