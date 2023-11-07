@@ -2,7 +2,7 @@ import { formatUnits, JsonRpcProvider } from 'ethers'
 import fetch from 'node-fetch'
 
 import { expect } from '@jest/globals'
-import { humanizerInfo } from '../../consts/ambireConstantsHumanizerInfo.json'
+import { humanizerInfo } from '../../consts/ambireConstants.json'
 import { networks } from '../../consts/networks'
 import { Portfolio } from '../../libs/portfolio'
 import { initRpcProviders } from '../../services/provider'

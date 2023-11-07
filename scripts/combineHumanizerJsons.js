@@ -13,7 +13,7 @@ const storedAmbireConstantsPath = path.join(
   '..',
   'src',
   'consts',
-  'ambireConstantsHumanizerInfo.json'
+  'ambireConstants.json'
 )
 
 // @TODO: rename dappSelectors.json file name
@@ -60,6 +60,7 @@ const getAmbireConstants = async () => {
   const storedAmbireConstants = await fsPromises
     .readFile(storedAmbireConstantsPath, 'utf-8')
     .then(JSON.parse)
+    .catch(console.log)
   if (fethcedAmbireConstants) {
     await fsPromises
       .writeFile(storedAmbireConstantsPath, JSON.stringify(fethcedAmbireConstants, null, 4), 'utf8')
