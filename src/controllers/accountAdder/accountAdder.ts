@@ -632,11 +632,8 @@ export class AccountAdderController extends EventEmitter {
         ethers.getCreate2Address(factoryAddr, salt, ethers.keccak256(bytecode)).toLowerCase() !==
         addr.toLowerCase()
       if (isInvalidAddress) {
-        this.emitError({
-          level: 'minor',
-          message: `The address ${addr} is not generated from the Ambire factory.`,
-          error: new Error(`The address ${addr} is not generated from the Ambire factory.`)
-        })
+        const message = `The address ${addr} can't be verified to be a smart account address.`
+        this.emitError({ level: 'minor', message, error: new Error(message) })
 
         return []
       }
