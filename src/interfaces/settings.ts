@@ -1,6 +1,6 @@
 import { Account } from './account'
 
-type AccountPreferences = {
+export type AccountPreferences = {
   [key in Account['addr']]: {
     label: string
     avatarId: string
