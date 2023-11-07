@@ -32,7 +32,7 @@ describe('Settings Controller', () => {
 
   test('should add preferences if valid address is provided', (done) => {
     const validAddress = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'
-    const preferences = { label: 'test', avatarId: 'avatar' }
+    const preferences = { label: 'Ivo', avatarId: 'racing_car' }
 
     let emitCounter = 0
     settingsController.onUpdate(() => {
@@ -47,5 +47,32 @@ describe('Settings Controller', () => {
     })
 
     settingsController.addAccountPreferences({ [validAddress]: preferences })
+  })
+
+  test('should selectively update only the preferences provided, if one already exists', (done) => {
+    const validAddress = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'
+    const preferences = { label: 'Dancho', avatarId: 'puzel' }
+    const preferencesWithLabelUpdateOnly = { label: 'Kalo' }
+
+    let emitCounter = 0
+    settingsController.onUpdate(() => {
+      emitCounter++
+
+      if (emitCounter === 2) {
+        const { accountPreferences } = settingsController.currentSettings
+        // Cast to AccountPreferences, because TS doesn't know that we just added a preference
+        expect((accountPreferences as AccountPreferences)[validAddress].label).toEqual(
+          preferencesWithLabelUpdateOnly.label
+        )
+        expect((accountPreferences as AccountPreferences)[validAddress].avatarId).toEqual(
+          preferences.avatarId
+        )
+        done()
+      }
+    })
+
+    settingsController.addAccountPreferences({ [validAddress]: preferences })
+    // @ts-ignore TypeScript complains, but that's okay, because we're testing
+    settingsController.addAccountPreferences({ [validAddress]: preferencesWithLabelUpdateOnly })
   })
 })
