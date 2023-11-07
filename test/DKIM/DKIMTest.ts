@@ -186,7 +186,7 @@ describe('DKIM sigMode Both', function () {
     await expect(account.execute(txns, finalSig))
       .to.be.revertedWith('recovery already done')
   })
-  it('should revert if priviledges slightly do not match', async function () {
+  it('should revert if privileges slightly do not match', async function () {
     const [relayer, newSigner] = await ethers.getSigners()
     const gmail = await readFile(path.join(emailsPath, 'sigMode0.eml'), {
       encoding: 'ascii'

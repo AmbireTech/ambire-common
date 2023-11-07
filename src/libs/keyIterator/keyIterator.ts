@@ -1,7 +1,11 @@
 /* eslint-disable new-cap */
-import { HDNodeWallet, Mnemonic, Wallet } from 'ethers'
+import { ethers, HDNodeWallet, Mnemonic, Wallet } from 'ethers'
 
-import { HD_PATH_TEMPLATE_TYPE } from '../../consts/derivation'
+import {
+  HD_PATH_TEMPLATE_TYPE,
+  PRIVATE_KEY_DERIVATION_SALT,
+  SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
+} from '../../consts/derivation'
 import { KeyIterator as KeyIteratorInterface } from '../../interfaces/keyIterator'
 import { getHdPathFromTemplate } from '../../utils/hdPath'
 
@@ -18,6 +22,38 @@ export function isValidPrivateKey(value: string): boolean {
   } catch {
     return false
   }
+}
+
+export const getPrivateKeyFromSeed = (
+  seed: string,
+  keyIndex: number,
+  hdPathTemplate: HD_PATH_TEMPLATE_TYPE
+) => {
+  const mnemonic = Mnemonic.fromPhrase(seed)
+  const wallet = HDNodeWallet.fromMnemonic(
+    mnemonic,
+    getHdPathFromTemplate(hdPathTemplate, keyIndex)
+  )
+  if (wallet) {
+    return wallet.privateKey
+  }
+
+  throw new Error('Getting the private key from the seed phrase failed.')
+}
+
+/**
+ * Derives a (second) private key based on a derivation algorithm that uses
+ * the combo of (the first) private key as an entropy and a salt (constant)
+ */
+export function derivePrivateKeyFromAnotherPrivateKey(privateKey: string) {
+  // Convert the plain text private key to a buffer
+  const privateKeyBuffer = Buffer.from(privateKey, 'utf8')
+  const saltBuffer = Buffer.from(PRIVATE_KEY_DERIVATION_SALT, 'utf8')
+  const buffer = Buffer.concat([privateKeyBuffer, saltBuffer])
+
+  // Hash the buffer, and convert to a hex string
+  // that ultimately represents a derived (second) private key
+  return ethers.keccak256(buffer)
 }
 
 export class KeyIterator implements KeyIteratorInterface {
@@ -48,7 +84,13 @@ export class KeyIterator implements KeyIteratorInterface {
     const keys: string[] = []
 
     if (this.#privateKey) {
-      keys.push(new Wallet(this.#privateKey).address)
+      // Private keys for accounts used as smart account keys should be derived
+      const shouldDerive = from >= SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
+      const finalPrivateKey = shouldDerive
+        ? derivePrivateKeyFromAnotherPrivateKey(this.#privateKey)
+        : this.#privateKey
+
+      keys.push(new Wallet(finalPrivateKey).address)
     }
 
     if (this.#seedPhrase) {

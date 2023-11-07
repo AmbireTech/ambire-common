@@ -119,7 +119,7 @@ contract DKIMRecoverySigValidator is ExternalSigValidator {
   address public immutable authorizedToSubmit;
   address public immutable authorizedToRevoke;
   DNSSEC public immutable oracle;
-  address private immutable anyoneCanSubmit = address(69);
+  address private constant anyoneCanSubmit = address(69);
   bytes private constant BRIDGE_STRING = hex'646e7373656362726964676506616d6269726503636f6d';
 
   // this is the bytes representation of the character that replaces "space"
@@ -142,6 +142,9 @@ contract DKIMRecoverySigValidator is ExternalSigValidator {
    * SignatureMeta.mode can be Both and that means we expect a DKIM and a secondKey signature
    * @param   calls  The transactions we're executing. We make sure they are a single call
    * to AmbireAccount.setAddrPrivilege for the key in sigMeta
+   * @return  (bool, uint256): The boolean indicates whether the signature is valid.
+   * The uint256 is just informational. If the signature is invalid because
+   * of a timelock, it will return when the timelock will pass
    */
   function validateSig(
     bytes calldata data,
@@ -164,7 +167,6 @@ contract DKIMRecoverySigValidator is ExternalSigValidator {
       }
 
       string memory headers = sigMeta.canonizedHeaders;
-      bytes32 headersHash = sha256(bytes(headers));
       _verifyHeaders(
         headers,
         accInfo.emailFrom,
@@ -205,7 +207,7 @@ contract DKIMRecoverySigValidator is ExternalSigValidator {
         );
       }
 
-      if (!(RSASHA256.verify(headersHash, dkimSig, pubKeyExponent, pubKeyModulus))) {
+      if (!(RSASHA256.verify(sha256(bytes(headers)), dkimSig, pubKeyExponent, pubKeyModulus))) {
         return (false, 0);
       }
     }
@@ -425,7 +427,6 @@ contract DKIMRecoverySigValidator is ExternalSigValidator {
           .toSlice()
           .concat(OpenZeppelinStrings.toString(uint8(mode)).toSlice())
           .toSlice();
-        // @TODO investigate Strings lib bug
         require(header.equals(targetSubject), 'emailSubject not valid');
         // require(keccak256(abi.encode(header.toString())) == keccak256(abi.encode(targetSubject.toString())), 'emailSubject not valid');
       } else if (header.startsWith(toSlice)) {
