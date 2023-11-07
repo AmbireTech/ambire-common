@@ -48,10 +48,10 @@ export class SettingsController extends EventEmitter {
     }
   }
 
-  async addAccountPreferences(newAccountPreferences: AccountPreferences = {}) {
+  async addAccountPreferences(newAccountPreferences: AccountPreferences) {
     if (!Object.keys(newAccountPreferences).length) return
 
-    if (!Object.keys(newAccountPreferences).some((key) => !isValidAddress(key))) {
+    if (Object.keys(newAccountPreferences).some((key) => !isValidAddress(key))) {
       return this.#throwInvalidAddress(Object.keys(newAccountPreferences))
     }
 
@@ -79,7 +79,7 @@ export class SettingsController extends EventEmitter {
     // There's nothing to delete
     if (!Object.keys(this.currentSettings.accountPreferences).length) return
 
-    if (!accountPreferenceKeys.some((key) => !isValidAddress(key))) {
+    if (accountPreferenceKeys.some((key) => !isValidAddress(key))) {
       return this.#throwInvalidAddress(accountPreferenceKeys)
     }
 
