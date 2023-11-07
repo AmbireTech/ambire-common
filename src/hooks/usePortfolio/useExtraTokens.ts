@@ -32,10 +32,10 @@ export default function useExtraTokens({
   const checkIsTokenEligibleForAddingAsExtraToken = useCallback<
     UsePortfolioReturnType['checkIsTokenEligibleForAddingAsExtraToken']
   >(
-    (extraToken) => {
+    (extraToken, _extraTokens) => {
       const { address, name, symbol } = extraToken
 
-      if (extraTokens.map((t) => t.address).includes(address.toLowerCase()))
+      if (_extraTokens.map((t) => t.address).includes(address.toLowerCase()))
         return {
           isEligible: false,
           reason: `${name} (${symbol}) is already added to your wallet.`
@@ -63,42 +63,49 @@ export default function useExtraTokens({
         isEligible: true
       }
     },
-    [extraTokens, constants.tokenList, tokens]
+    [constants.tokenList, tokens]
   )
 
   const onAddExtraToken = useCallback(
     (extraToken: Token) => {
-      const eligibleStatus = checkIsTokenEligibleForAddingAsExtraToken(extraToken)
+      setExtraTokens((prevTokens) => {
+        const eligibleStatus = checkIsTokenEligibleForAddingAsExtraToken(extraToken, prevTokens)
 
-      if (!eligibleStatus.isEligible) {
-        return addToast(eligibleStatus.reason)
-      }
-
-      const updatedExtraTokens = [
-        ...extraTokens,
-        {
-          ...extraToken,
-          coingeckoId: null
+        if (!eligibleStatus.isEligible) {
+          addToast(eligibleStatus.reason)
+          return prevTokens
         }
-      ]
 
-      setExtraTokens(updatedExtraTokens)
-      addToast(`${extraToken.name} (${extraToken.symbol}) token added to your wallet!`)
+        const updatedExtraTokens = [
+          ...prevTokens,
+          {
+            ...extraToken,
+            coingeckoId: null
+          }
+        ]
+
+        addToast(`${extraToken.name} (${extraToken.symbol}) token added to your wallet!`)
+        return updatedExtraTokens
+      })
     },
-    [checkIsTokenEligibleForAddingAsExtraToken, extraTokens, setExtraTokens, addToast]
+    [checkIsTokenEligibleForAddingAsExtraToken, setExtraTokens, addToast]
   )
 
   const onRemoveExtraToken = useCallback(
     (address) => {
-      const token = extraTokens.find((t) => t.address === address)
-      if (!token) return addToast(`${address} is not present in your wallet.`)
+      setExtraTokens((prevTokens) => {
+        const token = prevTokens.find((t) => t.address === address)
+        if (!token) {
+          addToast(`${address} is not present in your wallet.`)
+          return prevTokens
+        }
+        const updatedExtraTokens = prevTokens.filter((t) => t.address !== address)
 
-      const updatedExtraTokens = extraTokens.filter((t) => t.address !== address)
-
-      setExtraTokens(updatedExtraTokens)
-      addToast(`${token.name} (${token.symbol}) was removed from your wallet.`)
+        addToast(`${token.name} (${token.symbol}) was removed from your wallet.`)
+        return updatedExtraTokens
+      })
     },
-    [setExtraTokens, extraTokens, addToast]
+    [setExtraTokens, addToast]
   )
 
   return {

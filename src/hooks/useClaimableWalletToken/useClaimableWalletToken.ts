@@ -8,6 +8,7 @@ import WALLETVestings from '../../constants/WALLETVestings.json'
 import { getProvider } from '../../services/provider'
 import useCacheBreak from '../useCacheBreak'
 import usePrevious from '../usePrevious'
+import { RewardsSource } from '../useRewards/types'
 import { UseClaimableWalletTokenProps, UseClaimableWalletTokenReturnType } from './types'
 
 // const supplyControllerAddress = '0xF8cF66BbF7fe152b8177B61855E8be9a6279C8A1' //test polygon
@@ -24,12 +25,13 @@ const useClaimableWalletToken = ({
   addRequest,
   totalLifetimeRewards,
   walletUsdPrice,
-  rewardsLastUpdated
+  rewardsLastUpdated,
+  source = RewardsSource.UNSET
 }: UseClaimableWalletTokenProps): UseClaimableWalletTokenReturnType => {
   const prevAccountId = usePrevious(accountId)
   const { cacheBreak: relayerCacheBreak } = useCacheBreak()
   const urlIdentityRewards = relayerURL
-    ? `${relayerURL}/wallet-token/rewards/${accountId}?cacheBreak=${relayerCacheBreak}`
+    ? `${relayerURL}/wallet-token/rewards/${accountId}?cacheBreak=${relayerCacheBreak}&source=${source}`
     : null
 
   const rewardsData = useRelayerData({ url: urlIdentityRewards })
