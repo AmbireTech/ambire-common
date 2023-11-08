@@ -26,6 +26,29 @@ export interface UserOperation {
 }
 
 /**
+ * Calculation is as follows:
+ * - 21000 gas for mempool validation
+ * - callData size (4 bytes for 0, 16 bytes for 1)
+ * - a difficult to calculate per_userop_overhead that we harcode to
+ * 22874 for now and call it a day.
+ * More information on this can be found here:
+ * https://www.stackup.sh/blog/an-analysis-of-preverificationgas
+ *
+ * @param accountOp
+ * @param network
+ * @param isDeployed
+ * @returns bigint preVerificationGas
+ */
+function getPVG(
+  accountOp: AccountOp,
+  network: NetworkDescriptor,
+  isDeployed: boolean
+) {
+  const perUseropOverhead = 23000n
+  return perUseropOverhead + getCallDataAdditional(accountOp, network!, isDeployed)
+}
+
+/**
  * We measured the minimum gas needed for each step
  * and hardcoded it
  *
@@ -119,8 +142,8 @@ export function toUserOperation(
     ? ambireAccount.interface.encodeFunctionData('executeBySender', [getSignableCalls(accountOp)])
     : '0x'
   const network = networks.find(net => net.id == accountOp.networkId)
-  const preVerificationGas = getCallDataAdditional(accountOp, network!, accountState.isDeployed)
-  const verificationGasLimit = getVerificationGasLimit(initCode, network, isEdgeCase, accountOp.gasFeePayment!) + preVerificationGas
+  const preVerificationGas = getPVG(accountOp, network!, accountState.isDeployed)
+  const verificationGasLimit = preVerificationGas + getVerificationGasLimit(initCode, network, isEdgeCase, accountOp.gasFeePayment!)
   const maxFeePerGas = (
     accountOp.gasFeePayment.amount - estimation.addedNative
   ) / accountOp.gasFeePayment.simulatedGasLimit
