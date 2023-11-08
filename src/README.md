@@ -40,7 +40,8 @@ Classes for controllers are supposed to be stateful and be used directly in the 
 - they should be responsible for the business logic but not responsible for app logic (for example, business logic is when to hide tokens from the portfolio but view logic is when to update the portfolio)
 - they should avoid public methods that return values, and instead everything should be updated in the state; the user of the controller (the application or background process) **must never** expect/consume a result from a controller function
   - there may be internal functions that return results
-  - there must not be public functions that return results (but they may be async in case they need to perform async work)
+  - there must not be public functions that return results (but they may be async in case they need to perform async work, in other words if you want to use `await`)
+  - the UI should never `await` the async functions BUT the tests can do that and it might make their job easier
   - essentially all public functions should be actions
 - they may keep internal state that is "hidden" (using `#` for private properties and functions) that is more convenient to work with, but expose a different state shape via getters to the application
 - there should be *unidirectionality*: the main controller may listen to `onUpdate` from it's children, but the opposite must not happen; when a child controller needs to learn some new information that the main controller handles, the main controller should call the child's update function and pass that information along
