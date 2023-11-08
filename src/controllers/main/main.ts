@@ -14,7 +14,7 @@ import {
   AccountOp,
   AccountOpStatus,
   Call as AccountOpCall,
-  callToTuple
+  getSignableCalls
 } from '../../libs/accountOp/accountOp'
 import { getAccountState } from '../../libs/accountState/accountState'
 import {
@@ -590,7 +590,7 @@ export class MainController extends EventEmitter {
         const ambireAccount = new ethers.Interface(AmbireAccount.abi)
         to = accountOp.accountAddr
         data = ambireAccount.encodeFunctionData('execute', [
-          accountOp.calls.map((call) => callToTuple(call)),
+          getSignableCalls(accountOp),
           accountOp.signature
         ])
       } else {
@@ -599,7 +599,7 @@ export class MainController extends EventEmitter {
         data = ambireFactory.encodeFunctionData('deployAndExecute', [
           account.creation.bytecode,
           account.creation.salt,
-          accountOp.calls.map((call) => callToTuple(call)),
+          getSignableCalls(accountOp),
           accountOp.signature
         ])
       }
@@ -646,7 +646,7 @@ export class MainController extends EventEmitter {
       try {
         const body = {
           gasLimit: Number(accountOp.gasFeePayment!.simulatedGasLimit),
-          txns: accountOp.calls.map((call) => callToTuple(call)),
+          txns: getSignableCalls(accountOp),
           signature: accountOp.signature,
           signer: {
             address: accountOp.signingKeyAddr

@@ -99,7 +99,7 @@ async function deployAmbireAccountAndEntryPointAndPaymaster(validatorDataOptions
 }
 
 describe('ERC4337 DKIM sigMode Both', function () {
-  before('successfully deploys the ambire account and gives priviledges to the entry point', async function () {
+  before('successfully deploys the ambire account and gives privileges to the entry point', async function () {
     await deployDkim()
     await deployAmbireAccountAndEntryPointAndPaymaster()
   })
@@ -266,7 +266,7 @@ describe('ERC4337 DKIM sigMode Both', function () {
 })
 
 describe('ERC4337 DKIM sigMode OnlyDKIM', function () {
-  before('successfully deploys the ambire account and gives priviledges to the entry point', async function () {
+  before('successfully deploys the ambire account and gives privileges to the entry point', async function () {
     await deployDkim()
     await deployAmbireAccountAndEntryPointAndPaymaster({
       emptySecondSig: true
@@ -409,7 +409,7 @@ describe('ERC4337 DKIM sigMode OnlyDKIM', function () {
 })
 
 describe('ERC4337 DKIM sigMode OnlySecond', function () {
-  before('successfully deploys the ambire account and gives priviledges to the entry point', async function () {
+  before('successfully deploys the ambire account and gives privileges to the entry point', async function () {
     await deployDkim()
     await deployAmbireAccountAndEntryPointAndPaymaster({
       acceptEmptyDKIMSig: true
@@ -626,7 +626,7 @@ describe('DKIM sigMode Both with acceptUnknownSelectors true', function () {
     dkimRecoveryForTesting = await testContractFactory.deploy(keys, waitTimestamps, dnsSecAddr, signer.address, signer.address)
     expect(await dkimRecoveryForTesting.getAddress()).to.not.be.null
   })
-  it('successfully deploys the ambire account and gives priviledges to the entry point', async function () {
+  it('successfully deploys the ambire account and gives privileges to the entry point', async function () {
     const [relayer, ,signerWithPrivs] = await ethers.getSigners()
     const gmail = await readFile(path.join(emailsPath, 'sigMode0.eml'), {
       encoding: 'ascii'
@@ -713,7 +713,7 @@ describe('DKIM sigMode OnlySecond with a timelock of 2 minutes', function () {
 
   let secondSigReuse: any;
 
-  before('successfully deploys the ambire account and gives priviledges to the entry point', async function () {
+  before('successfully deploys the ambire account and gives privileges to the entry point', async function () {
     await deployDkim()
     await deployAmbireAccountAndEntryPointAndPaymaster({
       acceptEmptyDKIMSig: true,
@@ -822,7 +822,7 @@ describe('DKIM sigMode OnlySecond with a timelock of 2 minutes', function () {
 })
 
 describe('ERC4337 DKIM sigMode OnlyDKIM with valid entry point that validates everything', function () {
-  before('successfully deploys the ambire account and gives priviledges to the entry point', async function () {
+  before('successfully deploys the ambire account and gives privileges to the entry point', async function () {
     await deployDkim()
     await deployAmbireAccountAndEntryPointAndPaymaster({
       emptySecondSig: true
