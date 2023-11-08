@@ -1,3 +1,4 @@
+import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { AccountPreferences, Settings } from '../../interfaces/settings'
 import { Storage } from '../../interfaces/storage'
 import { isValidAddress } from '../../services/address'
@@ -8,13 +9,16 @@ const defaultSettings: Settings = {
 }
 
 export class SettingsController extends EventEmitter {
+  networks: NetworkDescriptor[]
+
   currentSettings: Settings = defaultSettings
 
   #storage: Storage
 
-  constructor({ storage }: { storage: Storage }) {
+  constructor(storage: Storage, networks: NetworkDescriptor[]) {
     super()
     this.#storage = storage
+    this.networks = networks
 
     this.#load()
   }

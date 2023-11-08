@@ -9,7 +9,7 @@ export type AccountPreferences = {
 }
 
 export interface Settings {
-  accountPreferences: AccountPreferences | {}
+  accountPreferences: AccountPreferences
 
   // TODO: To be discussed
   // appPreferences: {
