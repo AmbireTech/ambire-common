@@ -1,16 +1,13 @@
-import { AccountPreferences } from 'interfaces/settings'
-
 import { describe, expect, test } from '@jest/globals'
 
 import { produceMemoryStore } from '../../../test/helpers'
+import { networks } from '../../consts/networks'
 import { SettingsController } from './settings'
 
 describe('Settings Controller', () => {
   let settingsController: SettingsController
   beforeEach(() => {
-    settingsController = new SettingsController({
-      storage: produceMemoryStore()
-    })
+    settingsController = new SettingsController(produceMemoryStore(), networks)
   })
 
   test('should throw if adding a preference is requested with invalid address', (done) => {
@@ -39,9 +36,8 @@ describe('Settings Controller', () => {
       emitCounter++
 
       if (emitCounter === 1) {
-        const { accountPreferences } = settingsController.currentSettings
         // Cast to AccountPreferences, because TS doesn't know that we just added a preference
-        expect((accountPreferences as AccountPreferences)[validAddress]).toEqual(preferences)
+        expect(settingsController.accountPreferences[validAddress]).toEqual(preferences)
         done()
       }
     })
@@ -59,14 +55,11 @@ describe('Settings Controller', () => {
       emitCounter++
 
       if (emitCounter === 2) {
-        const { accountPreferences } = settingsController.currentSettings
         // Cast to AccountPreferences, because TS doesn't know that we just added a preference
-        expect((accountPreferences as AccountPreferences)[validAddress].label).toEqual(
+        expect(settingsController.accountPreferences[validAddress].label).toEqual(
           preferencesWithLabelUpdateOnly.label
         )
-        expect((accountPreferences as AccountPreferences)[validAddress].pfp).toEqual(
-          preferences.pfp
-        )
+        expect(settingsController.accountPreferences[validAddress].pfp).toEqual(preferences.pfp)
         done()
       }
     })
@@ -89,9 +82,8 @@ describe('Settings Controller', () => {
       }
 
       if (emitCounter === 2) {
-        const { accountPreferences } = settingsController.currentSettings
         // Cast to AccountPreferences, because TS doesn't know that we just added a preference
-        expect((accountPreferences as AccountPreferences)[validAddress]).toBeUndefined()
+        expect(settingsController.accountPreferences[validAddress]).toBeUndefined()
         done()
       }
     })

@@ -1,17 +1,13 @@
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
-import { AccountPreferences, Settings } from '../../interfaces/settings'
+import { AccountPreferences } from '../../interfaces/settings'
 import { Storage } from '../../interfaces/storage'
 import { isValidAddress } from '../../services/address'
 import EventEmitter from '../eventEmitter'
 
-const defaultSettings: Settings = {
-  accountPreferences: {}
-}
-
 export class SettingsController extends EventEmitter {
   networks: NetworkDescriptor[]
 
-  currentSettings: Settings = defaultSettings
+  accountPreferences: AccountPreferences = {}
 
   #storage: Storage
 
@@ -25,7 +21,10 @@ export class SettingsController extends EventEmitter {
 
   async #load() {
     try {
-      this.currentSettings = await this.#storage.get('settings', defaultSettings)
+      ;[this.accountPreferences] = await Promise.all([
+        // Should get the storage data from all keys here
+        this.#storage.get('accountPreferences', {})
+      ])
     } catch (e) {
       this.emitError({
         message:
@@ -38,10 +37,10 @@ export class SettingsController extends EventEmitter {
     this.emitUpdate()
   }
 
-  async #storeCurrentSettings() {
+  async #storePreferences() {
     // Store the updated settings
     try {
-      await this.#storage.set('settings', this.currentSettings)
+      await this.#storage.set('accountPreferences', this.accountPreferences)
     } catch (e) {
       this.emitError({
         message:
@@ -71,7 +70,7 @@ export class SettingsController extends EventEmitter {
       }
     })
 
-    await this.#storeCurrentSettings()
+    await this.#storePreferences()
 
     // Emit an update event
     this.emitUpdate()
@@ -81,7 +80,7 @@ export class SettingsController extends EventEmitter {
     if (!accountPreferenceKeys.length) return
 
     // There's nothing to delete
-    if (!Object.keys(this.currentSettings.accountPreferences).length) return
+    if (!Object.keys(this.accountPreferences).length) return
 
     if (accountPreferenceKeys.some((key) => !isValidAddress(key))) {
       return this.#throwInvalidAddress(accountPreferenceKeys)
@@ -90,10 +89,10 @@ export class SettingsController extends EventEmitter {
     accountPreferenceKeys.forEach((key) => {
       // Cast to AccountPreferences, since above the case when the
       // accountPreferences is empty (and there is nothing to delete) is handled
-      delete (this.currentSettings.accountPreferences as AccountPreferences)[key]
+      delete (this.accountPreferences as AccountPreferences)[key]
     })
 
-    await this.#storeCurrentSettings()
+    await this.#storePreferences()
 
     // Emit an update event
     this.emitUpdate()
