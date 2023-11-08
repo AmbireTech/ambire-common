@@ -75,4 +75,27 @@ describe('Settings Controller', () => {
     // @ts-ignore TypeScript complains, but that's okay, because we're testing
     settingsController.addAccountPreferences({ [validAddress]: preferencesWithLabelUpdateOnly })
   })
+
+  test('should remove preferences if valid address is provided', (done) => {
+    const validAddress = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'
+    const preferences = { label: 'Ivo', pfp: 'racing_car' }
+
+    let emitCounter = 0
+    settingsController.onUpdate(() => {
+      emitCounter++
+
+      if (emitCounter === 1) {
+        settingsController.removeAccountPreferences([validAddress])
+      }
+
+      if (emitCounter === 2) {
+        const { accountPreferences } = settingsController.currentSettings
+        // Cast to AccountPreferences, because TS doesn't know that we just added a preference
+        expect((accountPreferences as AccountPreferences)[validAddress]).toBeUndefined()
+        done()
+      }
+    })
+
+    settingsController.addAccountPreferences({ [validAddress]: preferences })
+  })
 })
