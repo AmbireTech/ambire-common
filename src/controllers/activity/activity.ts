@@ -392,11 +392,11 @@ export class ActivityController extends EventEmitter {
       return {
         id: new Date().getTime(),
         topic: 'TRANSACTION',
-        title: 'Transaction signed and sent successfully!',
+        title: 'Transaction successfully signed and sent!\nCheck it out on the block explorer!',
         text: '',
         actions: [
           {
-            label: 'View on block explorer',
+            label: 'Check',
             actionName: 'open-external-url',
             meta: { url: `${network.explorerUrl}/tx/${accountOp.txnId}` }
           }
