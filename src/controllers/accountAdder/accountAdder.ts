@@ -645,8 +645,6 @@ export class AccountAdderController extends EventEmitter {
         {
           account: {
             addr,
-            label: '',
-            pfp: '',
             associatedKeys: Object.keys(associatedKeys),
             creation: {
               factoryAddr,

@@ -16,8 +16,6 @@ const keyPublicAddress = '0x9188fdd757Df66B4F693D624Ed6A13a15Cf717D7'
 
 const legacyAccount: Account = {
   addr: keyPublicAddress,
-  label: '',
-  pfp: '',
   associatedKeys: [keyPublicAddress],
   creation: null
 }
@@ -38,8 +36,6 @@ describe('Account', () => {
     const bytecode = await getBytecode(polygon, [priv])
     const accountNotDeployed = {
       addr: getAmbireAccountAddress(AMBIRE_ACCOUNT_FACTORY, bytecode),
-      label: '',
-      pfp: '',
       associatedKeys: [keyPublicAddress],
       creation: {
         factoryAddr: AMBIRE_ACCOUNT_FACTORY,
@@ -65,8 +61,6 @@ describe('Account', () => {
     const bytecode = await getBytecode(polygon, [priv])
     const accountNotDeployed = {
       addr: getAmbireAccountAddress(AMBIRE_ACCOUNT_FACTORY, bytecode),
-      label: '',
-      pfp: '',
       associatedKeys: [keyPublicAddress],
       creation: {
         factoryAddr: AMBIRE_ACCOUNT_FACTORY,

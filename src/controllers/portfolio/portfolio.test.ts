@@ -17,8 +17,6 @@ describe('Portfolio Controller ', () => {
 
   const account = {
     addr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
-    label: '',
-    pfp: '',
     associatedKeys: [],
     creation: {
       factoryAddr: '0xBf07a0Df119Ca234634588fbDb5625594E2a5BCA',
@@ -64,8 +62,6 @@ describe('Portfolio Controller ', () => {
     test('Previous tokens are persisted in the storage', (done) => {
       const account2 = {
         addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
-        label: '',
-        pfp: '',
         associatedKeys: [],
         creation: {
           factoryAddr: '0xBf07a0Df119Ca234634588fbDb5625594E2a5BCA',

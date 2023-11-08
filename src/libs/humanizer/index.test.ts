@@ -1,18 +1,18 @@
 import { ethers } from 'ethers'
-import { Message, TypedMessage } from 'interfaces/userRequest'
-import { HumanizerVisualization, IrCall, IrMessage } from 'libs/humanizer/interfaces'
 import fetch from 'node-fetch'
 
 import { describe, expect, jest, test } from '@jest/globals'
 
-import { ErrorRef } from 'controllers/eventEmitter'
 import { produceMemoryStore } from '../../../test/helpers'
 import humanizerJSON from '../../consts/humanizerInfo.json'
+import { ErrorRef } from '../../controllers/eventEmitter'
 import { Account } from '../../interfaces/account'
 import { Key } from '../../interfaces/keystore'
 import { Storage } from '../../interfaces/storage'
+import { Message, TypedMessage } from '../../interfaces/userRequest'
 import { AccountOp } from '../accountOp/accountOp'
-import { callsHumanizer, messageHumanizer } from '.'
+import { callsHumanizer, messageHumanizer } from './index'
+import { HumanizerVisualization, IrCall, IrMessage } from './interfaces'
 
 const HUMANIZER_META_KEY = 'HumanizerMeta'
 
@@ -48,8 +48,6 @@ const accountOp: AccountOp = {
 const accounts: Account[] = [
   {
     addr: '0xAAbBbC841F29Dc6b09EF9f6c8fd59DA807bc6248',
-    label: 'First account',
-    pfp: 'string',
     associatedKeys: ['string[]'],
     creation: null
   }
