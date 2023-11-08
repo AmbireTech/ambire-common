@@ -538,6 +538,8 @@ export class SignAccountOpController extends EventEmitter {
         }
 
         const accountState = this.#accountStates[this.accountOp.accountAddr][this.accountOp.networkId]
+        // TODO<Bobby>: Add the fee payment only if edgecase / not native
+        // and remove it if otherwise
         this.#addFeePayment()
         this.accountOp = toUserOperation(
           account,

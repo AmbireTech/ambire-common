@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: agpl-3.0
 pragma solidity 0.8.19;
 
-import '../libs/erc4337/IEntryPoint.sol';
+import 'contracts/libs/erc4337/IEntryPoint.sol';
 
 contract Estimation4337 {
   function estimate(

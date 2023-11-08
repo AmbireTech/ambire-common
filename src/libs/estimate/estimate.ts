@@ -3,10 +3,13 @@ import { fromDescriptor } from '../deployless/deployless'
 import { getAccountDeployParams } from '../account/account'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { AccountOp } from '../accountOp/accountOp'
-import { Account } from '../../interfaces/account'
+import { Account, AccountOnchainState } from '../../interfaces/account'
 import Estimation from '../../../contracts/compiled/Estimation.json'
+import Estimation4337 from '../../../contracts/compiled/Estimation4337.json'
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFactory.json'
+import { ERC_4337_ENTRYPOINT } from '../../consts/deploy'
+import { getPaymasterSpoof, toUserOperation } from '../../libs/userOperation/userOperation'
 
 export interface EstimateResult {
   gasUsed: bigint
@@ -24,6 +27,7 @@ export async function estimate(
   provider: Provider | JsonRpcProvider,
   network: NetworkDescriptor,
   account: Account,
+  accountState: AccountOnchainState,
   op: AccountOp,
   nativeToCheck: string[],
   feeTokens: string[],
@@ -90,7 +94,33 @@ export async function estimate(
     nativeToCheck
   ]
 
+  // estimate 4337
+  let estimation4337
+  if (network.erc4337?.enabled) {
+    op = toUserOperation(account, accountState, op)
+    const userOp = op.asUserOperation
+    op.asUserOperation!.paymasterAndData = getPaymasterSpoof()
+    const deployless4337Estimator = fromDescriptor(provider, Estimation4337, !network.rpcNoStateOverride)
+    const functionArgs = [
+      userOp,
+      ERC_4337_ENTRYPOINT
+    ]
+    estimation4337 = deployless4337Estimator.call('estimate', functionArgs, {
+      from: blockFrom,
+      blockTag
+    })
+  }
+
   /* eslint-disable prefer-const */
+  const estimation = deploylessEstimator.call('estimate', args, {
+    from: blockFrom,
+    blockTag
+  })
+
+  let estimations = estimation4337
+    ? await Promise.all([estimation, estimation4337])
+    : await Promise.all([estimation])
+
   let [
     [
       deployment,
@@ -103,10 +133,7 @@ export async function estimate(
       ,
       l1GasEstimation // [gasUsed, baseFee, totalFee, gasOracle]
     ]
-  ] = await deploylessEstimator.call('estimate', args, {
-    from: blockFrom,
-    blockTag
-  })
+  ] = estimations[0]
   /* eslint-enable prefer-const */
 
   let gasUsed = deployment.gasUsed + accountOpToExecuteBefore.gasUsed + accountOp.gasUsed

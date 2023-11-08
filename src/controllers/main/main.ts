@@ -508,6 +508,7 @@ export class MainController extends EventEmitter {
         this.#providers[accountOp.networkId],
         network,
         account,
+        this.accountStates[accountOp.accountAddr][accountOp.networkId],
         accountOp,
         EOAaccounts.map((acc) => acc.addr),
         // @TODO - first time calling this, portfolio is still not loaded.
