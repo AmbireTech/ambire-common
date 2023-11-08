@@ -26,13 +26,13 @@ describe('Settings Controller', () => {
     })
 
     settingsController.addAccountPreferences({
-      '0x-invalid-address': { label: 'test', avatarId: 'whatever' }
+      '0x-invalid-address': { label: 'test', pfp: 'whatever' }
     })
   })
 
   test('should add preferences if valid address is provided', (done) => {
     const validAddress = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'
-    const preferences = { label: 'Ivo', avatarId: 'racing_car' }
+    const preferences = { label: 'Ivo', pfp: 'racing_car' }
 
     let emitCounter = 0
     settingsController.onUpdate(() => {
@@ -51,7 +51,7 @@ describe('Settings Controller', () => {
 
   test('should selectively update only the preferences provided, if one already exists', (done) => {
     const validAddress = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'
-    const preferences = { label: 'Dancho', avatarId: 'puzel' }
+    const preferences = { label: 'Dancho', pfp: 'puzel' }
     const preferencesWithLabelUpdateOnly = { label: 'Kalo' }
 
     let emitCounter = 0
@@ -64,8 +64,8 @@ describe('Settings Controller', () => {
         expect((accountPreferences as AccountPreferences)[validAddress].label).toEqual(
           preferencesWithLabelUpdateOnly.label
         )
-        expect((accountPreferences as AccountPreferences)[validAddress].avatarId).toEqual(
-          preferences.avatarId
+        expect((accountPreferences as AccountPreferences)[validAddress].pfp).toEqual(
+          preferences.pfp
         )
         done()
       }
