@@ -10,7 +10,12 @@ import { Key, KeystoreSignerType } from '../../interfaces/keystore'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
 import { Storage } from '../../interfaces/storage'
 import { Message, UserRequest } from '../../interfaces/userRequest'
-import { AccountOp, Call as AccountOpCall, callToTuple } from '../../libs/accountOp/accountOp'
+import {
+  AccountOp,
+  AccountOpStatus,
+  Call as AccountOpCall,
+  callToTuple
+} from '../../libs/accountOp/accountOp'
 import { getAccountState } from '../../libs/accountState/accountState'
 import {
   getAccountOpBannersForEOA,
@@ -31,7 +36,7 @@ import EventEmitter from '../eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
 import { PortfolioController } from '../portfolio/portfolio'
 /* eslint-disable no-underscore-dangle */
-import { SignAccountOpController, SigningStatus } from '../signAccountOp/signAccountOp'
+import { SignAccountOpController } from '../signAccountOp/signAccountOp'
 import { SignMessageController } from '../signMessage/signMessage'
 import { TransferController } from '../transfer/transfer'
 
@@ -188,6 +193,9 @@ export class MainController extends EventEmitter {
       this.#providers
     )
     this.activity = new ActivityController(this.#storage, this.accountStates)
+    if (this.selectedAccount) {
+      this.activity.init({ filters: { account: this.selectedAccount } })
+    }
 
     const addReadyToAddAccountsIfNeeded = () => {
       if (
@@ -202,6 +210,16 @@ export class MainController extends EventEmitter {
 
     this.isReady = true
     this.emitUpdate()
+  }
+
+  async updateAccountsOpsStatuses() {
+    await this.#initialLoadPromise
+
+    const hasUpdatedStatuses = await this.activity.updateAccountsOpsStatuses()
+
+    if (hasUpdatedStatuses) {
+      this.emitUpdate()
+    }
   }
 
   async #updateGasPrice() {
@@ -262,6 +280,7 @@ export class MainController extends EventEmitter {
 
     this.selectedAccount = toAccountAddr
     await this.#storage.set('selectedAccount', toAccountAddr)
+    this.activity.init({ filters: { account: toAccountAddr } })
     this.updateSelectedAccount(toAccountAddr)
     this.onUpdateDappSelectedAccount(toAccountAddr)
     this.emitUpdate()
@@ -586,7 +605,7 @@ export class MainController extends EventEmitter {
       }
 
       const broadcastKey = this.keystore.keys.find(
-        (key) => key.addr == accountOp.gasFeePayment!.paidBy
+        (key) => key.addr === accountOp.gasFeePayment!.paidBy
       )
       const signer = await this.keystore.getSigner(
         accountOp.gasFeePayment!.paidBy,
@@ -656,6 +675,7 @@ export class MainController extends EventEmitter {
     if (transactionRes) {
       await this.activity.addAccountOp({
         ...accountOp,
+        status: AccountOpStatus.BroadcastedButNotMined,
         txnId: transactionRes.hash,
         nonce: BigInt(transactionRes.nonce)
       })
@@ -712,7 +732,8 @@ export class MainController extends EventEmitter {
       ...accountOpSmartAccountBanners,
       ...accountOpEOABanners,
       ...pendingAccountOpEOABanners,
-      ...messageBanners
+      ...messageBanners,
+      ...this.activity.banners
     ]
   }
 
