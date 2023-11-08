@@ -1,5 +1,6 @@
 import { useCallback } from 'react'
-import { Token, TokenWithIsHiddenFlag } from './types'
+
+import { Collectible, Token, TokenWithIsHiddenFlag } from './types'
 
 export default function useHiddenTokens({ useToasts, useStorage }: any): any {
   const [hiddenTokens, setHiddenTokens] = useStorage({ key: 'hiddenTokens', defaultValue: [] })
@@ -11,22 +12,56 @@ export default function useHiddenTokens({ useToasts, useStorage }: any): any {
   const { addToast } = useToasts()
 
   const onAddHiddenCollectible = useCallback(
-    (hiddenCollectible: any, assetId: string) => {
-      const { data } = hiddenCollectible.assets.find(({ tokenId }: any) => tokenId === assetId)
-      const updatedHiddenCollectibles = [
-        ...hiddenCollectibles,
-        {
-          ...hiddenCollectible,
-          assets: hiddenCollectible.assets.map(
-            (asset: any) => asset.tokenId === assetId && { ...asset, isHidden: true }
-          )
-        }
-      ]
+    (
+      hiddenCollectible: Collectible | Collectible[],
+      assetId: Collectible['assets'][0]['tokenId'] | Collectible['assets'][0]['tokenId'][]
+    ) => {
+      if (Array.isArray(hiddenCollectible)) {
+        setHiddenCollectibles((prevHiddenCollectibles: Collectible[]) => {
+          // Handle the case where multiple collectibles and assetIds are passed
+          const updatedHiddenCollectibles = hiddenCollectible.map((collectible, i: number) => {
+            const currentAssetId = Array.isArray(assetId) ? assetId[i] : assetId
+            return {
+              ...collectible,
+              assets: collectible.assets.map((asset) => {
+                if (asset.tokenId === currentAssetId) {
+                  return { ...asset, isHidden: true }
+                }
+                return asset
+              })
+            }
+          })
 
-      setHiddenCollectibles(updatedHiddenCollectibles)
-      addToast(`${data.name} collectible is hidden from your assets list!`)
+          // Send a toast message for each added hidden collectible
+          updatedHiddenCollectibles.forEach((_collectible, i: number) => {
+            const currentAssetId = Array.isArray(assetId) ? assetId[i] : assetId
+            const collectible = _collectible.assets.find(
+              ({ tokenId }: any) => tokenId === currentAssetId
+            )
+            addToast(
+              `${collectible && collectible.data.name} collectible is hidden from your assets list!`
+            )
+          })
+
+          return [...prevHiddenCollectibles, ...updatedHiddenCollectibles]
+        })
+      } else {
+        setHiddenCollectibles((prevHiddenCollectibles: any) => {
+          const { data } = prevHiddenCollectibles.assets.find(
+            ({ tokenId }: any) => tokenId === assetId
+          )
+          const updatedHiddenCollectible = {
+            ...hiddenCollectible,
+            assets: hiddenCollectible.assets.map(
+              (asset: any) => asset.tokenId === assetId && { ...asset, isHidden: true }
+            )
+          }
+          addToast(`${data.name} collectible is hidden from your assets list!`)
+          return [...prevHiddenCollectibles, updatedHiddenCollectible]
+        })
+      }
     },
-    [addToast, hiddenCollectibles, setHiddenCollectibles]
+    [addToast, setHiddenCollectibles]
   )
 
   // In order to hide a specific asset from a collectible we need this kind of check,
@@ -52,37 +87,80 @@ export default function useHiddenTokens({ useToasts, useStorage }: any): any {
   )
 
   const onRemoveHiddenCollectible = useCallback(
-    (address: string, assetId: string) => {
-      const collectible = hiddenCollectibles?.find((t: any) => t.address === address)
-      const asset = collectible.assets.find(({ tokenId }: any) => tokenId === assetId)
-      if (!asset) return addToast(`${assetId} is not present in your assets list.`)
+    (address: string | string[], assetId: string | string[]) => {
+      if (Array.isArray(address)) {
+        setHiddenCollectibles((prevHiddenCollectibles: Collectible[]) => {
+          const updatedHiddenCollectibles = prevHiddenCollectibles.filter(
+            (t, i) =>
+              !address.includes(t.address) &&
+              t.assets.filter(({ tokenId }: any) => tokenId !== assetId[i])
+          )
 
-      const updatedHiddenCollectibles = hiddenCollectibles?.filter(
-        (t: any) =>
-          t.address !== address && t.assets.filter(({ tokenId }: any) => tokenId !== assetId)
-      )
+          // Identify removed tokens for toast messages
+          const removedCollectibles = prevHiddenCollectibles.filter(
+            (t, i) =>
+              address.includes(t.address) &&
+              t.assets.filter(({ tokenId }: any) => tokenId !== assetId[i])
+          )
 
-      setHiddenCollectibles(updatedHiddenCollectibles)
-      addToast(`${asset.data.name} is shown to your assets list.`)
+          // Send toast for each removed token
+          removedCollectibles.forEach((token) => {
+            addToast(`${token.symbol} is shown in your assets list.`)
+          })
+
+          // If some addresses weren't in the prevHiddenCollectibles, warn the user
+          const notFoundAddresses = address.filter(
+            (_address) => !prevHiddenCollectibles.some((t) => t.address === _address)
+          )
+
+          notFoundAddresses.forEach((_address) => {
+            addToast(`${_address} is not present in your assets list.`)
+          })
+
+          return updatedHiddenCollectibles
+        })
+      } else {
+        setHiddenCollectibles((prevHiddenCollectibles: any) => {
+          const collectible = prevHiddenCollectibles?.find((t: any) => t.address === address)
+          const asset = collectible.assets.find(({ tokenId }: any) => tokenId === assetId)
+          if (!asset) return addToast(`${assetId} is not present in your assets list.`)
+
+          addToast(`${asset.data.name} is shown to your assets list.`)
+          return prevHiddenCollectibles.filter(
+            (t: any) =>
+              t.address !== address && t.assets.filter(({ tokenId }: any) => tokenId !== assetId)
+          )
+        })
+      }
     },
-    [addToast, hiddenCollectibles, setHiddenCollectibles]
+    [addToast, setHiddenCollectibles]
   )
 
   const onAddHiddenToken = useCallback(
-    (hiddenToken: TokenWithIsHiddenFlag) => {
-      const { symbol } = hiddenToken
-      const updatedHiddenTokens = [
-        ...hiddenTokens,
-        {
-          ...hiddenToken,
-          isHidden: true
-        }
-      ]
-
-      setHiddenTokens(updatedHiddenTokens)
-      addToast(`${symbol} token is hidden from your assets list!`)
+    (hiddenToken: TokenWithIsHiddenFlag | TokenWithIsHiddenFlag[]) => {
+      if (Array.isArray(hiddenToken)) {
+        setHiddenTokens((prevHiddenTokens: TokenWithIsHiddenFlag[]) => [
+          // Make sure there are no duplicates
+          ...prevHiddenTokens.filter(
+            (t: TokenWithIsHiddenFlag) => !hiddenToken.some((ht) => ht.address === t.address)
+          ),
+          ...hiddenToken.map((t) => ({ ...t, isHidden: true }))
+        ])
+        hiddenToken.forEach((token: TokenWithIsHiddenFlag) => {
+          const { symbol } = token
+          addToast(`${symbol} token is hidden from your assets list!`)
+        })
+      } else {
+        // If hiddenToken is a single object
+        const { symbol } = hiddenToken
+        setHiddenTokens((prevHiddenTokens: TokenWithIsHiddenFlag[]) => [
+          ...prevHiddenTokens.filter((t) => t.address !== hiddenToken.address),
+          { ...hiddenToken, isHidden: true }
+        ])
+        addToast(`${symbol} token is hidden from your assets list!`)
+      }
     },
-    [addToast, hiddenTokens, setHiddenTokens]
+    [addToast, setHiddenTokens]
   )
 
   const filterByHiddenTokens = useCallback(
@@ -102,16 +180,44 @@ export default function useHiddenTokens({ useToasts, useStorage }: any): any {
   )
 
   const onRemoveHiddenToken = useCallback(
-    (address: string) => {
-      const token = hiddenTokens?.find((t: any) => t.address === address)
-      if (!token) return addToast(`${address} is not present in your assets list.`)
+    (address: string | string[]) => {
+      // Check if hiddenTokens is an array
+      if (Array.isArray(address)) {
+        setHiddenTokens((prevTokens: Token[]) => {
+          const updatedHiddenTokens = prevTokens.filter((t) => !address.includes(t.address))
 
-      const updatedHiddenTokens = hiddenTokens?.filter((t: any) => t.address !== address)
+          // Identify removed tokens for toast messages
+          const removedTokens = prevTokens.filter((t) => address.includes(t.address))
 
-      setHiddenTokens(updatedHiddenTokens)
-      addToast(`${token.symbol} is shown to your assets list.`)
+          // Send toast for each removed token
+          removedTokens.forEach((token) => {
+            addToast(`${token.symbol} is shown in your assets list.`)
+          })
+
+          // If some addresses weren't in the prevTokens, warn the user
+          const notFoundAddresses = address.filter(
+            (_address) => !prevTokens.some((t) => t.address === _address)
+          )
+          notFoundAddresses.forEach((_address) => {
+            addToast(`${_address} is not present in your assets list.`)
+          })
+
+          return updatedHiddenTokens
+        })
+      } else {
+        setHiddenTokens((prevHiddenTokens: TokenWithIsHiddenFlag[]) => {
+          const token = prevHiddenTokens.find((t) => t.address === address)
+          if (token) {
+            addToast(`${token.symbol} is shown to your assets list.`)
+            return prevHiddenTokens.filter((t: any) => t.address !== address)
+          }
+
+          addToast(`${address} is not present in your assets list.`)
+          return prevHiddenTokens
+        })
+      }
     },
-    [addToast, hiddenTokens, setHiddenTokens]
+    [addToast, setHiddenTokens]
   )
 
   return {

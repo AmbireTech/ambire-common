@@ -11,14 +11,14 @@ export enum NETWORKS {
   'kucoin' = 'kucoin',
   'optimism' = 'optimism',
   'andromeda' = 'andromeda',
-  'rinkeby' = 'rinkeby',
-  'mumbai' = 'mumbai',
   'cronos' = 'cronos',
   'aurora' = 'aurora',
   'okc' = 'okc',
+  'base' = 'base',
   'ethereum-pow' = 'ethereum-pow',
-  'sepolia' = 'sepolia',
-  'base' = 'base'
+  'rinkeby' = 'rinkeby',
+  'mumbai' = 'mumbai',
+  'sepolia' = 'sepolia'
 }
 
 export type NetworkId = keyof typeof NETWORKS

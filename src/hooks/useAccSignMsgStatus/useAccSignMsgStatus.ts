@@ -19,7 +19,7 @@ const useAccSignMsgStatus = ({
   const [hasPrivileges, setHasPrivileges] = useState<null | boolean>(null)
 
   useEffect(() => {
-    ;(() => {
+    ;(async () => {
       // When the sign request gets rejected, hook re-renders and fires errors.
       // Missing `networkId`, means rejected or missing sign request data.
       if (!networkId) return
@@ -46,47 +46,35 @@ const useAccSignMsgStatus = ({
         privilegeAddress = accountSigner?.address
       }
 
-      const web3Method = {
-        method: 'eth_call',
-        jsonrpc: '2.0',
-        id: 1,
-        params: [
+      try {
+        const res = await provider.send('eth_call', [
           {
             to: bundle.identity,
             data: `0xc066a5b1000000000000000000000000${privilegeAddress.toLowerCase().substring(2)}`
           },
           'latest'
-        ]
-      }
+        ])
 
-      fetchPost(fetch, provider?.connection?.url, web3Method)
-        .then((result: any) => {
-          if (result.result && result.result !== '0x') {
-            setIsDeployed(true)
-            if (accountSigner?.quickAccManager) {
-              setHasPrivileges(result.result === quickAccAccountHash)
-            } else {
-              // TODO: To ask : in what cases it's more than 1?
-              // eslint-disable-next-line no-lonely-if
-              if (
-                result.result ===
-                '0x0000000000000000000000000000000000000000000000000000000000000001'
-              ) {
-                setHasPrivileges(true)
-              } else {
-                setHasPrivileges(false)
-              }
-            }
+        if (res && res !== '0x') {
+          setIsDeployed(true)
+          if (accountSigner?.quickAccManager) {
+            setHasPrivileges(res === quickAccAccountHash)
           } else {
-            // result.error or anything else that does not have a .result prop, we assume it is not deployed
-            setIsDeployed(false)
+            // TODO: To ask : in what cases it's more than 1?
+            // eslint-disable-next-line no-lonely-if
+            if (res === '0x0000000000000000000000000000000000000000000000000000000000000001') {
+              setHasPrivileges(true)
+            } else {
+              setHasPrivileges(false)
+            }
           }
-        })
-        .catch((err) => {
-          // as raw XHR calls, reverts are not caught, but only have .error prop
-          // this should be a network error
-          addToast(err.message, { error: true })
-        })
+        } else {
+          // result.error or anything else that does not have a .result prop, we assume it is not deployed
+          setIsDeployed(false)
+        }
+      } catch (err) {
+        addToast(err.message, { error: true })
+      }
     })()
   }, [networkId, accountSigner, accountId, addToast, fetch])
 
