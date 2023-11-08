@@ -44,7 +44,7 @@ function getPVG(
   network: NetworkDescriptor,
   isDeployed: boolean
 ) {
-  const perUseropOverhead = 23000n
+  const perUseropOverhead = 4000n
   return perUseropOverhead + getCallDataAdditional(accountOp, network!, isDeployed)
 }
 
@@ -85,8 +85,7 @@ function getVerificationGasLimit(
 export function toUserOperation(
   account: Account,
   accountState: AccountOnchainState,
-  accountOp: AccountOp,
-  estimation: EstimateResult
+  accountOp: AccountOp
 ): AccountOp {
   if (!accountOp.gasFeePayment || !accountOp.gasFeePayment.amount) {
     throw new Error('no gasFeePayment')
@@ -144,9 +143,8 @@ export function toUserOperation(
   const network = networks.find(net => net.id == accountOp.networkId)
   const preVerificationGas = getPVG(accountOp, network!, accountState.isDeployed)
   const verificationGasLimit = preVerificationGas + getVerificationGasLimit(initCode, network, isEdgeCase, accountOp.gasFeePayment!)
-  const maxFeePerGas = (
-    accountOp.gasFeePayment.amount - estimation.addedNative
-  ) / accountOp.gasFeePayment.simulatedGasLimit
+  // TODO<Bobby>: fix estimation.addedNative
+  const maxFeePerGas = accountOp.gasFeePayment.amount / accountOp.gasFeePayment.simulatedGasLimit
 
   accountOp.asUserOperation = {
     sender: accountOp.accountAddr,

@@ -536,17 +536,13 @@ export class SignAccountOpController extends EventEmitter {
           !this.#accountStates[this.accountOp.accountAddr][this.accountOp.networkId]) {
             return this.#setSigningError('account state missing, not ready to sign')
         }
-        if (!this.#estimation) {
-          return this.#setSigningError('estimation missing, not ready to sign')
-        }
 
         const accountState = this.#accountStates[this.accountOp.accountAddr][this.accountOp.networkId]
         this.#addFeePayment()
         this.accountOp = toUserOperation(
           account,
           accountState,
-          this.accountOp,
-          this.#estimation
+          this.accountOp
         )
         const userOperation = this.accountOp.asUserOperation
         if (!userOperation) {
