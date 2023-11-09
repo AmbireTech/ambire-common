@@ -61,11 +61,8 @@ export class SettingsController extends EventEmitter {
     // TODO: Check if this addresses exist in the imported addressed?
     // Update the account preferences with the new values incoming
     Object.keys(newAccountPreferences).forEach((key) => {
-      // @ts-ignore even if the accountPreferences is empty object, that won't
-      // cause an issue in the logic
-      this.currentSettings.accountPreferences[key] = {
-        // @ts-ignore same as above
-        ...this.currentSettings.accountPreferences[key],
+      this.accountPreferences[key] = {
+        ...this.accountPreferences[key],
         ...newAccountPreferences[key]
       }
     })
