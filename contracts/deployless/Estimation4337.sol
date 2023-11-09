@@ -6,7 +6,6 @@ import 'contracts/libs/erc4337/IEntryPoint.sol';
 contract Estimation4337 {
   struct EstimationResult {
     uint256 verificationGasLimit;
-    uint256 callGasLimit;
     uint256 gasUsed;
     bytes failure;
   }
@@ -26,7 +25,6 @@ contract Estimation4337 {
         res.failure = err;
       } else {
         (res.verificationGasLimit, res.gasUsed) = this.getGasUsedByUserOp(userOp, err);
-        res.callGasLimit = res.gasUsed - res.verificationGasLimit;
       }
     }
   }

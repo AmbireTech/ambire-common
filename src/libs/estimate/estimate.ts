@@ -9,7 +9,7 @@ import Estimation4337 from '../../../contracts/compiled/Estimation4337.json'
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFactory.json'
 import { ERC_4337_ENTRYPOINT } from '../../consts/deploy'
-import { UserOperation, getPaymasterSpoof, getTargetEdgeCaseNonce } from '../../libs/userOperation/userOperation'
+import { getPaymasterSpoof, getTargetEdgeCaseNonce } from '../../libs/userOperation/userOperation'
 import { SPOOF_SIGTYPE } from '../../consts/signatures'
 
 interface Erc4337estimation {
@@ -156,7 +156,6 @@ export async function estimate(
     const [
       [
         verificationGasLimit,
-        callGasLimit,
         gasUsed,
         failure
       ]
@@ -169,8 +168,8 @@ export async function estimate(
 
     erc4337estimation = {
       verificationGasLimit: BigInt(verificationGasLimit) + 5000n, // added buffer,
-      callGasLimit: BigInt(callGasLimit) + 10000n, // added buffer
-      gasUsed: BigInt(gasUsed) // the minimum
+      callGasLimit: BigInt(gasUsed) + 10000n, // added buffer
+      gasUsed: BigInt(gasUsed) // the minimum for payments
     }
   }
 
