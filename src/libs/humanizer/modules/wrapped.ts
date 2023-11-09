@@ -3,24 +3,23 @@ import { HumanizerCallModule, IrCall } from '../interfaces'
 import { AccountOp } from '../../accountOp/accountOp'
 import { getUnknownVisualization, getUnwraping, getWraping } from '../utils'
 
-const WETH_ADDRESS = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2'
-const WETH_ADDRESS_OPTIMISM = '0x4200000000000000000000000000000000000006'
-const isWethAddress = (address: string | undefined) =>
-  address && [WETH_ADDRESS, WETH_ADDRESS_OPTIMISM].includes(address)
-const wrpaUnwrapParser = (calls: IrCall[]) => {
+const WRAPPEDISH_ADDRESSES: { [kjey: string]: string } = {
+  [ethers.ZeroAddress]: 'native',
+  '0x4200000000000000000000000000000000000042': 'OP',
+  '0x4200000000000000000000000000000000000006': 'WETHOptimism',
+  '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2': 'WETH',
+  '0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619': 'WETHPolygon',
+  '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270': 'WMATIC'
+}
+const wrapSwapReducer = (calls: IrCall[]) => {
   const newCalls: IrCall[] = []
   for (let i = 0; i < calls.length; i++) {
-    // console.log(
-    //   calls[i]?.fullVisualization?.[0].content?.includes('Wrap'),
-    //   calls[i + 1]?.fullVisualization?.[0].content?.includes('Swap'),
-    //   calls[i].value === calls[i + 1]?.fullVisualization?.[1].amount,
-    //   isWethAddress(calls[i + 1]?.fullVisualization?.[1].address)
-    // )
     if (
       // swapping x amount of token for y of WETH and unwrapping y WETH for y ETH
       calls[i]?.fullVisualization?.[0].content?.includes('Swap') &&
       calls[i + 1]?.fullVisualization?.[0].content?.includes('Unwrap') &&
-      isWethAddress(calls[i]?.fullVisualization?.[3].address) &&
+      calls[i + 1]?.fullVisualization?.[1].address &&
+      WRAPPEDISH_ADDRESSES[calls[i + 1]?.fullVisualization?.[1].address!] &&
       calls[i]?.fullVisualization?.[3].amount === calls[i + 1]?.fullVisualization?.[1]?.amount
     ) {
       const newVisualization = calls[i]?.fullVisualization!
@@ -38,7 +37,8 @@ const wrpaUnwrapParser = (calls: IrCall[]) => {
       calls[i]?.fullVisualization?.[0].content?.includes('Wrap') &&
       calls[i + 1]?.fullVisualization?.[0].content?.includes('Swap') &&
       calls[i].value === calls[i + 1]?.fullVisualization?.[1].amount &&
-      isWethAddress(calls[i + 1]?.fullVisualization?.[1].address)
+      calls[i + 1]?.fullVisualization?.[1].address &&
+      WRAPPEDISH_ADDRESSES[calls[i + 1]?.fullVisualization?.[1].address!]
     ) {
       const newVisualization = calls[i + 1]?.fullVisualization!
       newVisualization[1].address = ethers.ZeroAddress
@@ -93,6 +93,6 @@ export const wethHumanizer: HumanizerCallModule = (
     }
     return call
   })
-  const parsedCalls = wrpaUnwrapParser(newCalls)
+  const parsedCalls = wrapSwapReducer(newCalls)
   return [parsedCalls, []]
 }
