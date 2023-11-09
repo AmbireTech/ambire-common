@@ -31,11 +31,11 @@ import EventEmitter from '../eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
 import { PortfolioController } from '../portfolio/portfolio'
 /* eslint-disable no-underscore-dangle */
-import { SignAccountOpController, SigningStatus } from '../signAccountOp/signAccountOp'
+import { SignAccountOpController } from '../signAccountOp/signAccountOp'
 import { SignMessageController } from '../signMessage/signMessage'
 import { TransferController } from '../transfer/transfer'
 import bundler from '../../services/bundlers'
-import { toUserOperation } from 'libs/userOperation/userOperation'
+import { toUserOperation } from '../../libs/userOperation/userOperation'
 
 export class MainController extends EventEmitter {
   #storage: Storage
