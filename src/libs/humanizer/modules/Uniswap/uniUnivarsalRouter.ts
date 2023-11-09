@@ -161,21 +161,24 @@ export const uniUniversalRouter = (
         } else if (command === COMMANDS.WRAP_ETH) {
           const { inputsDetails } = COMMANDS_DESCRIPTIONS.WRAP_ETH
           const params = extractParams(inputsDetails, inputs[index])
-          parsed.push({
-            ...call,
-            fullVisualization: getWraping(ethers.ZeroAddress, params.amountMin)
-          })
+          params.amountMin &&
+            parsed.push({
+              ...call,
+              fullVisualization: getWraping(ethers.ZeroAddress, params.amountMin)
+            })
         } else if (command === COMMANDS.UNWRAP_WETH) {
           const { inputsDetails } = COMMANDS_DESCRIPTIONS.UNWRAP_WETH
           const params = extractParams(inputsDetails, inputs[index])
-          parsed.push({
-            ...call,
-            fullVisualization: [
-              getAction('Unwrap'),
-              getToken(ethers.ZeroAddress, params.amountMin),
-              ...getRecipientText(accountOp.accountAddr, params.recipient)
-            ]
-          })
+
+          params.amountMin &&
+            parsed.push({
+              ...call,
+              fullVisualization: [
+                getAction('Unwrap'),
+                getToken(ethers.ZeroAddress, params.amountMin),
+                ...getRecipientText(accountOp.accountAddr, params.recipient)
+              ]
+            })
         } else parsed.push({ ...call, fullVisualization: [getLabel('Unknown Uni V3 interaction')] })
       })
       console.log(parsed)
