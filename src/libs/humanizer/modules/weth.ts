@@ -12,8 +12,8 @@ const wrpaUnwrapParser = (calls: IrCall[]) => {
   for (let i = 0; i < calls.length; i++) {
     if (
       // swapping x amount of token for y of WETH and unwrapping y WETH for y ETH
-      calls[i]?.fullVisualization?.[0].content === 'Swap' &&
-      calls[i + 1]?.fullVisualization?.[0].content === 'Unwrap' &&
+      calls[i]?.fullVisualization?.[0].content?.includes('Swap') &&
+      calls[i + 1]?.fullVisualization?.[0].content?.includes('Unwrap') &&
       isWethAddress(calls[i]?.fullVisualization?.[3].address) &&
       calls[i]?.fullVisualization?.[3].amount === calls[i + 1]?.fullVisualization?.[1]?.amount
     ) {
@@ -29,8 +29,8 @@ const wrpaUnwrapParser = (calls: IrCall[]) => {
       })
       i += 1
     } else if (
-      calls[i]?.fullVisualization?.[0].content === 'Wrap' &&
-      calls[i + 1]?.fullVisualization?.[0].content === 'Swap' &&
+      calls[i]?.fullVisualization?.[0].content?.includes('Wrap') &&
+      calls[i + 1]?.fullVisualization?.[0].content?.includes('Swap') &&
       calls[i].value === calls[i + 1]?.fullVisualization?.[1].amount &&
       isWethAddress(calls[i + 1]?.fullVisualization?.[1].address)
     ) {

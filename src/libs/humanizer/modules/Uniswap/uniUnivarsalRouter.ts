@@ -5,7 +5,8 @@ import {
   getLabel,
   getRecipientText,
   getToken,
-  getWraping
+  getWraping,
+  getAddress
 } from '../../utils'
 import { AccountOp } from '../../../accountOp/accountOp'
 import { IrCall } from '../../interfaces'
@@ -43,7 +44,6 @@ export const uniUniversalRouter = (
         .slice(2)
         .match(/.{2}/g)
         .map((p: string) => `0x${p}`)
-
       const parsed: IrCall[] = []
       parsedCommands.forEach((command: string, index: number) => {
         if (command === COMMANDS.V3_SWAP_EXACT_IN) {
@@ -104,6 +104,20 @@ export const uniUniversalRouter = (
           //     getLabel(`${Number(params.bips) / 100}%`)
           //   ]
           // })
+        } else if (command === COMMANDS.TRANSFER) {
+          // @NOTE: this is used for paying fee altough its already calculated in the humanized response
+          // @NOTE: no need to be displayed but we can add warning id the fee is too high?
+          const { inputsDetails } = COMMANDS_DESCRIPTIONS.TRANSFER
+          const params = extractParams(inputsDetails, inputs[index])
+          parsed.push({
+            ...call,
+            fullVisualization: [
+              getAction('Transfer'),
+              getToken(params.token, params.value),
+              getLabel('to'),
+              getAddress(params.recipient)
+            ]
+          })
         } else if (command === COMMANDS.V2_SWAP_EXACT_IN) {
           const { inputsDetails } = COMMANDS_DESCRIPTIONS.V2_SWAP_EXACT_IN
           const params = extractParams(inputsDetails, inputs[index])
@@ -161,7 +175,9 @@ export const uniUniversalRouter = (
           })
         } else parsed.push({ ...call, fullVisualization: [getLabel('Unknown Uni V3 interaction')] })
       })
-      return parsed.flat()
+      console.log(parsed)
+      console.log(parsed.flat)
+      return parsed
     }
   }
 }
