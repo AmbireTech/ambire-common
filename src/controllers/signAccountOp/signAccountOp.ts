@@ -361,10 +361,6 @@ export class SignAccountOpController extends EventEmitter {
 
         simulatedGasLimit = this.#estimation!.erc4337estimation.gasUsed + feeTokenGasUsed
         amount = this.#getAmountAfterFeeTokenConvert(simulatedGasLimit, gasPrice, nativeRatio, feeToken!.decimals)
-
-        const maxFeePerGas = (amount - this.#estimation!.addedNative) / simulatedGasLimit
-        this.accountOp!.asUserOperation!.maxFeePerGas = ethers.toBeHex(maxFeePerGas)
-        this.accountOp!.asUserOperation!.maxPriorityFeePerGas = ethers.toBeHex(maxFeePerGas)
       } else if (this.paidBy !== this.accountOp!.accountAddr) {
         // Smart account, but EOA pays the fee
         simulatedGasLimit = gasUsed
@@ -547,6 +543,11 @@ export class SignAccountOpController extends EventEmitter {
             `Cannot sign as no user operation is present foxr account op ${this.accountOp.accountAddr}`
           )
         }
+
+        const gasPrice = (gasFeePayment.amount - this.#estimation!.addedNative) / gasFeePayment.simulatedGasLimit
+        userOperation.maxFeePerGas = ethers.toBeHex(gasPrice)
+        userOperation.maxPriorityFeePerGas = ethers.toBeHex(gasPrice)
+
         if (userOperation?.isEdgeCase || !isNative(this.accountOp.gasFeePayment)) {
           this.#addFeePayment()
         } else {
