@@ -181,8 +181,6 @@ export const uniUniversalRouter = (
             })
         } else parsed.push({ ...call, fullVisualization: [getLabel('Unknown Uni V3 interaction')] })
       })
-      console.log(parsed)
-      console.log(parsed.flat())
       return parsed
     }
   }
