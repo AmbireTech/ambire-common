@@ -531,6 +531,7 @@ export class MainController extends EventEmitter {
     if (network.erc4337?.enabled) {
       accountOp.asUserOperation!.verificationGasLimit = ethers.toBeHex(estimation.erc4337estimation!.verificationGasLimit)
       accountOp.asUserOperation!.callGasLimit = ethers.toBeHex(estimation.erc4337estimation!.callGasLimit)
+      this.accountOpsToBeSigned[accountOp.accountAddr][accountOp.networkId]!.accountOp = accountOp
     }
   }
 

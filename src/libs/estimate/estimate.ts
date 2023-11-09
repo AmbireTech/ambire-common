@@ -1,4 +1,4 @@
-import { Provider, JsonRpcProvider, Interface } from 'ethers'
+import { Provider, JsonRpcProvider, Interface, AbiCoder } from 'ethers'
 import { fromDescriptor } from '../deployless/deployless'
 import { getAccountDeployParams } from '../account/account'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
@@ -9,7 +9,8 @@ import Estimation4337 from '../../../contracts/compiled/Estimation4337.json'
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFactory.json'
 import { ERC_4337_ENTRYPOINT } from '../../consts/deploy'
-import { getPaymasterSpoof } from '../../libs/userOperation/userOperation'
+import { UserOperation, getPaymasterSpoof, getTargetEdgeCaseNonce } from '../../libs/userOperation/userOperation'
+import { SPOOF_SIGTYPE } from '../../consts/signatures'
 
 interface Erc4337estimation {
   verificationGasLimit: bigint,
@@ -104,13 +105,21 @@ export async function estimate(
   // estimate 4337
   let estimation4337
   if (network.erc4337?.enabled) {
-    const userOp = {...op.asUserOperation}
+    // using Object.assign as typescript doesn't work otherwise
+    const userOp = Object.assign({}, op.asUserOperation)
     userOp!.paymasterAndData = getPaymasterSpoof()
     const deployless4337Estimator = fromDescriptor(provider, Estimation4337, !network.rpcNoStateOverride)
     const functionArgs = [
       userOp,
       ERC_4337_ENTRYPOINT
     ]
+    if (userOp.isEdgeCase) {
+      userOp.nonce = getTargetEdgeCaseNonce(userOp)
+    } else {
+      const abiCoder = new AbiCoder()
+      const spoofSig = abiCoder.encode(['address'], [account.associatedKeys[0]]) + SPOOF_SIGTYPE
+      userOp!.signature = spoofSig
+    }
     estimation4337 = deployless4337Estimator.call('estimate', functionArgs, {
       from: blockFrom,
       blockTag
@@ -148,9 +157,15 @@ export async function estimate(
       [
         verificationGasLimit,
         callGasLimit,
-        gasUsed
+        gasUsed,
+        failure
       ]
     ] = estimations[1]
+
+    // TODO<Bobby>: handle estimation failure
+    if (failure != '0x') {
+      console.log(Buffer.from(failure.substring(2), 'hex').toString())
+    }
 
     erc4337estimation = {
       verificationGasLimit: BigInt(verificationGasLimit) + 5000n, // added buffer,

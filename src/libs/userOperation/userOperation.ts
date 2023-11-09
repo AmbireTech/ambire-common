@@ -7,6 +7,7 @@ import { AMBIRE_PAYMASTER, AMBIRE_PAYMASTER_SIGNER, ENTRY_POINT_MARKER, ERC_4337
 import { networks } from "../../consts/networks";
 import { NetworkDescriptor } from "interfaces/networkDescriptor";
 import { getCallDataAdditional } from "../../libs/gasPrice/gasPrice";
+import { SPOOF_SIGTYPE } from "../../consts/signatures";
 
 export interface UserOperation {
   sender: string,
@@ -90,12 +91,19 @@ export function toUserOperation(
     isEdgeCase = true
   }
 
-  // if we're in the edge case scenario, we set callData to 0x
-  // as callData will be executeMultiple. That will be handled at sign.
-  // If not, point to executeBySender as it should be
-  const callData = !isEdgeCase
-    ? ambireAccount.interface.encodeFunctionData('executeBySender', [getSignableCalls(accountOp)])
-    : '0x'
+  // get estimation calldata
+  let callData
+  if (isEdgeCase) {
+    const abiCoder = new ethers.AbiCoder()
+    const spoofSig = abiCoder.encode(['address'], [account.associatedKeys[0]]) + SPOOF_SIGTYPE
+    callData = ambireAccount.interface.encodeFunctionData('executeMultiple', [[[
+      getSignableCalls(accountOp),
+      spoofSig
+    ]]])
+  } else {
+    callData = ambireAccount.interface.encodeFunctionData('executeBySender', [getSignableCalls(accountOp)])
+  }
+
   const network = networks.find(net => net.id == accountOp.networkId)
   const preVerificationGas = getPVG(accountOp, network!, accountState.isDeployed)
 
@@ -150,7 +158,6 @@ export function getTargetEdgeCaseNonce(userOperation: UserOperation) {
 }
 
 export function getPaymasterSpoof() {
-  const SPOOF_SIGTYPE = '03'
   const abiCoder = new ethers.AbiCoder()
   const spoofSig = abiCoder.encode(['address'], [AMBIRE_PAYMASTER_SIGNER]) + SPOOF_SIGTYPE
   const simulationData = abiCoder.encode(
