@@ -675,7 +675,7 @@ export class MainController extends EventEmitter {
     if (transactionRes) {
       await this.activity.addAccountOp({
         ...accountOp,
-        status: AccountOpStatus.BroadcastedButNotMined,
+        status: AccountOpStatus.BroadcastedButNotConfirmed,
         txnId: transactionRes.hash,
         nonce: BigInt(transactionRes.nonce)
       })

@@ -74,7 +74,7 @@ const trim = <T>(items: T[], maxSize = 1000): void => {
  * 3. Pagination is not reused because the two tabs can have different states.
  * 4. MainController passes all accounts to ActivityController (instead of a single account, i.e. the current one) so that we can know the latest nonce for each account + network. Otherwise (if we don't want to pass all accounts), when selecting an account from the UI in the Transaction History screen, MainController should subscribe and pass only one account. The first option seems to be less cumbersome.
  * 5. Here is how we update AccountsOps statuses:
- *   5.1. Once we add a new AccountOp to ActivityController via addAccountOp, we are setting its status to AccountOpStatus.BroadcastedButNotMined.
+ *   5.1. Once we add a new AccountOp to ActivityController via addAccountOp, we are setting its status to AccountOpStatus.BroadcastedButNotConfirmed.
  *   5.2. Later, we need to call `updateAccountsOpsStatuses()` from the app.
  *       5.2.1. Then, we firstly rely on getTransactionReceipt for determining the status (success or failure).
  *       5.2.2. If we don't manage to determine its status, we are comparing AccountOp and Account nonce. If Account nonce is greater than AccountOp, then we know that AccountOp has past nonce (AccountOpStatus.UnknownButPastNonce).
@@ -229,7 +229,7 @@ export class ActivityController extends EventEmitter {
    *
    * Here is the algorithm:
    * 0. Once we broadcast an AccountOp, we are adding it to ActivityController via `addAccountOp`,
-   * and are setting its status to AccountOpStatus.BroadcastedButNotMined.
+   * and are setting its status to AccountOpStatus.BroadcastedButNotConfirmed.
    * 1. Here, we firstly rely on `getTransactionReceipt` for determining the status (success or failure).
    * 2. If we don't manage to determine its status, we are comparing AccountOp and Account nonce.
    * If Account nonce is greater than AccountOp, then we know that AccountOp has past nonce (AccountOpStatus.UnknownButPastNonce).
@@ -255,7 +255,7 @@ export class ActivityController extends EventEmitter {
             async (accountOp, accountOpIndex) => {
               // Don't update the current network account ops statuses,
               // as the statuses are already updated in the previous calls.
-              if (accountOp.status !== AccountOpStatus.BroadcastedButNotMined) return
+              if (accountOp.status !== AccountOpStatus.BroadcastedButNotConfirmed) return
 
               shouldEmitUpdate = true
               const receipt = await provider.getTransactionReceipt(accountOp.txnId)
@@ -380,13 +380,13 @@ export class ActivityController extends EventEmitter {
     // Banners are network agnostic, and that's the reason we check for `this.filters.account` only and having this.#accountsOps loaded.
     if (!this.filters?.account || !this.#accountsOps[this.filters.account]) return []
 
-    const broadcastedButNotMined = Object.values(this.#accountsOps[this.filters.account])
+    const broadcastedButNotConfirmed = Object.values(this.#accountsOps[this.filters.account])
       .flat()
-      .filter((accountOp) => accountOp.status === AccountOpStatus.BroadcastedButNotMined)
+      .filter((accountOp) => accountOp.status === AccountOpStatus.BroadcastedButNotConfirmed)
 
-    if (!broadcastedButNotMined.length) return []
+    if (!broadcastedButNotConfirmed.length) return []
 
-    return broadcastedButNotMined.map((accountOp) => {
+    return broadcastedButNotConfirmed.map((accountOp) => {
       const network = networks.find((x) => x.id === accountOp.networkId)!
 
       return {
