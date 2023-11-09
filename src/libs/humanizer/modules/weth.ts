@@ -10,6 +10,12 @@ const isWethAddress = (address: string | undefined) =>
 const wrpaUnwrapParser = (calls: IrCall[]) => {
   const newCalls: IrCall[] = []
   for (let i = 0; i < calls.length; i++) {
+    // console.log(
+    //   calls[i]?.fullVisualization?.[0].content?.includes('Wrap'),
+    //   calls[i + 1]?.fullVisualization?.[0].content?.includes('Swap'),
+    //   calls[i].value === calls[i + 1]?.fullVisualization?.[1].amount,
+    //   isWethAddress(calls[i + 1]?.fullVisualization?.[1].address)
+    // )
     if (
       // swapping x amount of token for y of WETH and unwrapping y WETH for y ETH
       calls[i]?.fullVisualization?.[0].content?.includes('Swap') &&
@@ -68,7 +74,7 @@ export const wethHumanizer: HumanizerCallModule = (
       if (call.data.slice(0, 10) === iface.getFunction('deposit')?.selector) {
         return {
           ...call,
-          fullVisualization: getWraping(call.value)
+          fullVisualization: getWraping(ethers.ZeroAddress, call.value)
         }
       }
       // 0x2e1a7d4d
@@ -76,7 +82,7 @@ export const wethHumanizer: HumanizerCallModule = (
         const [amount] = iface.parseTransaction(call)?.args || []
         return {
           ...call,
-          fullVisualization: getUnwraping(amount)
+          fullVisualization: getUnwraping(ethers.ZeroAddress, amount)
         }
       }
       if (!call?.fullVisualization)

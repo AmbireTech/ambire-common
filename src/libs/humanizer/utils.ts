@@ -140,10 +140,10 @@ export function getUnknownVisualization(name: string, call: IrCall) {
   return unknownVisualization
 }
 
-export function getWraping(amount: bigint) {
-  return [getAction('Wrap'), getToken(ethers.ZeroAddress, amount)]
+export function getWraping(address: string, amount: bigint) {
+  return [getAction('Wrap'), getToken(address, amount)]
 }
 
-export function getUnwraping(amount: bigint) {
-  return [getAction('Unwrap'), getToken(ethers.ZeroAddress, amount)]
+export function getUnwraping(address: string, amount: bigint) {
+  return [getAction('Unwrap'), getToken(address, amount)]
 }

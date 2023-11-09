@@ -163,7 +163,7 @@ export const uniUniversalRouter = (
           const params = extractParams(inputsDetails, inputs[index])
           parsed.push({
             ...call,
-            fullVisualization: getWraping(params.amountMin)
+            fullVisualization: getWraping(ethers.ZeroAddress, params.amountMin)
           })
         } else if (command === COMMANDS.UNWRAP_WETH) {
           const { inputsDetails } = COMMANDS_DESCRIPTIONS.UNWRAP_WETH
