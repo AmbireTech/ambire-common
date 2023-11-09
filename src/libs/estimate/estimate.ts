@@ -159,12 +159,7 @@ export async function estimate(
     }
   }
 
-  let gasUsed
-  if (!erc4337estimation) {
-    gasUsed = deployment.gasUsed + accountOpToExecuteBefore.gasUsed + accountOp.gasUsed
-  } else {
-    gasUsed = erc4337estimation.gasUsed
-  }
+  let gasUsed = deployment.gasUsed + accountOpToExecuteBefore.gasUsed + accountOp.gasUsed
 
   if (opts?.calculateRefund) {
     const IAmbireAccount = new Interface(AmbireAccount.abi)

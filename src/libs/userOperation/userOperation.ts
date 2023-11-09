@@ -1,9 +1,8 @@
 import { ethers } from "ethers";
 import { Account, AccountOnchainState } from "../../interfaces/account";
-import { AccountOp, GasFeePayment, isNative, getSignableCalls } from "../accountOp/accountOp";
+import { AccountOp, getSignableCalls } from "../accountOp/accountOp";
 import AmbireAccount from "../../../contracts/compiled/AmbireAccount.json";
 import AmbireAccountFactory from "../../../contracts/compiled/AmbireAccountFactory.json";
-import { EstimateResult } from "../../libs/estimate/estimate";
 import { AMBIRE_PAYMASTER, AMBIRE_PAYMASTER_SIGNER, ENTRY_POINT_MARKER, ERC_4337_ENTRYPOINT } from "../../../src/consts/deploy";
 import { networks } from "../../consts/networks";
 import { NetworkDescriptor } from "interfaces/networkDescriptor";
@@ -46,40 +45,6 @@ function getPVG(
 ) {
   const perUseropOverhead = 4000n
   return perUseropOverhead + getCallDataAdditional(accountOp, network!, isDeployed)
-}
-
-/**
- * We measured the minimum gas needed for each step
- * and hardcoded it
- *
- * @param initCode is the contract going to be deployed from now
- * @returns verificationGasLimit
- */
-function getVerificationGasLimit(
-  initCode: string,
-  network: NetworkDescriptor | undefined,
-  isEdgeCase: boolean,
-  gasFeePayment: GasFeePayment
-): bigint {
-  // TODO<Bobby>: review all the gas calculations once again
-
-  let initial = 10195n // validateUserOp
-
-  if (
-    network &&
-    network.erc4337?.hasPaymaster &&
-    (
-      isEdgeCase || !isNative(gasFeePayment)
-    )
-  ) {
-    initial += 23013n // paymaster payment
-  } else {
-    initial += 29053n // native payment
-  }
-
-  if (initCode != '0x') initial += 77651n // deploy
-  initial += 3000n // hardcoded gas buffer just in case
-  return initial
 }
 
 export function toUserOperation(
@@ -140,8 +105,8 @@ export function toUserOperation(
     initCode,
     callData,
     preVerificationGas: ethers.toBeHex(preVerificationGas),
-    callGasLimit: ethers.toBeHex(150000),
-    verificationGasLimit: ethers.toBeHex(150000),
+    callGasLimit: ethers.toBeHex(150000), // hardcoded fake for estimation
+    verificationGasLimit: ethers.toBeHex(150000), // hardcoded fake for estimation
     maxFeePerGas: ethers.toBeHex(100),
     maxPriorityFeePerGas: ethers.toBeHex(100),
     paymasterAndData: '0x',

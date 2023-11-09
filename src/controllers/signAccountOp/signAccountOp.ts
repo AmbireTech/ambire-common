@@ -302,6 +302,23 @@ export class SignAccountOpController extends EventEmitter {
     return BigInt(ratio * 1e18)
   }
 
+  #getAmountAfterFeeTokenConvert(
+    simulatedGasLimit: bigint,
+    gasPrice: bigint,
+    nativeRatio: bigint,
+    feeTokenDecimals: number
+  ) {
+    const amountInWei = simulatedGasLimit * gasPrice + this.#estimation!.addedNative
+
+    // Let's break down the process of converting the amount into FeeToken:
+    // 1. Initially, we multiply the amount in wei by the native to fee token ratio.
+    // 2. Next, we address the decimal places:
+    // 2.1. First, we convert wei to native by dividing by 10^18 (representing the decimals).
+    // 2.2. Now, with the amount in the native token, we incorporate nativeRatio decimals into the calculation (18 + 18) to standardize the amount.
+    // 2.3. At this point, we precisely determine the number of fee tokens. For instance, if the amount is 3 USDC, we must convert it to a BigInt value, while also considering feeToken.decimals.
+    return (amountInWei * nativeRatio) / BigInt(10 ** (18 + 18 - feeTokenDecimals))
+  }
+
   get feeSpeeds(): {
     type: string
     amount: bigint
@@ -315,6 +332,7 @@ export class SignAccountOpController extends EventEmitter {
     const account = this.#getAccount()
     const gasUsed = this.#estimation!.gasUsed
     const feeToken = this.#getPortfolioToken(this.selectedTokenAddr)
+    const network = this.#networks?.find((n) => n.id === this.accountOp?.networkId)
 
     return this.#gasPrices.map((gasRecommendation) => {
       let amount
@@ -334,11 +352,19 @@ export class SignAccountOpController extends EventEmitter {
       if (!account || !account?.creation) {
         simulatedGasLimit = gasUsed
         amount = simulatedGasLimit * gasPrice + this.#estimation!.addedNative
+      } else if (this.#estimation!.erc4337estimation) {
+        // ERC 4337
+        const nativeRatio = this.#getNativeToFeeTokenRatio(feeToken!)
+        const feeTokenGasUsed = this.#estimation!.feePaymentOptions.find(
+          (option) => option.address === feeToken?.address
+        )!.gasUsed!
+
+        simulatedGasLimit = this.#estimation!.erc4337estimation.gasUsed + feeTokenGasUsed
+        amount = this.#getAmountAfterFeeTokenConvert(simulatedGasLimit, gasPrice, nativeRatio, feeToken!.decimals)
       } else if (this.paidBy !== this.accountOp!.accountAddr) {
         // Smart account, but EOA pays the fee
         simulatedGasLimit = gasUsed
 
-        const network = this.#networks?.find((n) => n.id === this.accountOp?.networkId)
         const accountState = this.#accountStates![this.accountOp!.accountAddr][this.accountOp!.networkId]
         simulatedGasLimit += getCallDataAdditional(this.accountOp!, network!, accountState.isDeployed)
 
@@ -357,26 +383,7 @@ export class SignAccountOpController extends EventEmitter {
         const accountState = this.#accountStates![this.accountOp!.accountAddr][this.accountOp!.networkId]
         simulatedGasLimit += getCallDataAdditional(this.accountOp!, network!, accountState.isDeployed)
 
-        if (network?.erc4337?.enabled) {
-          // erc 4337 is quite more expensive, we manually increase
-          // the simulatedGasLimit here. 75% if it's not deployed and
-          // 2.5 times more if it is
-          if (accountState.isDeployed) {
-            simulatedGasLimit += simulatedGasLimit + simulatedGasLimit / 2n
-          } else {
-            simulatedGasLimit += simulatedGasLimit / 2n + simulatedGasLimit / 4n
-          }
-        }
-
-        const amountInWei = simulatedGasLimit * gasPrice + this.#estimation!.addedNative
-
-        // Let's break down the process of converting the amount into FeeToken:
-        // 1. Initially, we multiply the amount in wei by the native to fee token ratio.
-        // 2. Next, we address the decimal places:
-        // 2.1. First, we convert wei to native by dividing by 10^18 (representing the decimals).
-        // 2.2. Now, with the amount in the native token, we incorporate nativeRatio decimals into the calculation (18 + 18) to standardize the amount.
-        // 2.3. At this point, we precisely determine the number of fee tokens. For instance, if the amount is 3 USDC, we must convert it to a BigInt value, while also considering feeToken.decimals.
-        amount = (amountInWei * nativeRatio) / BigInt(10 ** (18 + 18 - feeToken!.decimals))
+        amount = this.#getAmountAfterFeeTokenConvert(simulatedGasLimit, gasPrice, nativeRatio, feeToken!.decimals)
       }
 
       return {
@@ -531,24 +538,16 @@ export class SignAccountOpController extends EventEmitter {
           await signer.signMessage(ethers.hexlify(accountOpSignableHash(this.accountOp)))
         )
       } else if (this.accountOp.gasFeePayment.isERC4337) {
-        if (!this.#accountStates ||
-          !this.#accountStates[this.accountOp.accountAddr] ||
-          !this.#accountStates[this.accountOp.accountAddr][this.accountOp.networkId]) {
-            return this.#setSigningError('account state missing, not ready to sign')
-        }
-
-        const accountState = this.#accountStates[this.accountOp.accountAddr][this.accountOp.networkId]
-        // TODO<Bobby>: Add the fee payment only if edgecase / not native
-        // and remove it if otherwise
-        this.#addFeePayment()
-        this.accountOp = toUserOperation(
-          account,
-          accountState,
-          this.accountOp
-        )
         const userOperation = this.accountOp.asUserOperation
         if (!userOperation) {
-          return this.#setSigningError(`cannot set an user operation for account op ${this.accountOp.accountAddr}`)
+          return this.#setSigningError(
+            `Cannot sign as no user operation is present foxr account op ${this.accountOp.accountAddr}`
+          )
+        }
+        if (userOperation?.isEdgeCase || !isNative(this.accountOp.gasFeePayment)) {
+          this.#addFeePayment()
+        } else {
+          delete this.accountOp.feeCall
         }
 
         // if we're in the edge case scenario, set the callData to
