@@ -4,10 +4,17 @@ pragma solidity 0.8.19;
 import 'contracts/libs/erc4337/IEntryPoint.sol';
 
 contract Estimation4337 {
+  struct EstimationResult {
+    uint256 verificationGasLimit;
+    uint256 callGasLimit;
+    uint256 gasUsed;
+    bytes failure;
+  }
+
   function estimate(
     UserOperation calldata userOp,
     address entryPointAddr
-  ) external returns (uint256 verificationGasLimit, uint256 gasUsed, bytes memory failure) {
+  ) external returns (EstimationResult memory res) {
     IEntryPoint entryPoint = IEntryPoint(entryPointAddr);
     try entryPoint.simulateHandleOp(userOp, address(0), '0x') {
       revert('Entry point simulation should always revert');
@@ -16,9 +23,10 @@ contract Estimation4337 {
       // If it's not, it will revert with another reason. So we check the revert
       // selector and if it's not ExecutionResult, we stop and return it
       if (abi.decode(err, (bytes4)) != IEntryPoint.ExecutionResult.selector) {
-        failure = err;
+        res.failure = err;
       } else {
-        (verificationGasLimit, gasUsed) = this.getGasUsedByUserOp(userOp, err);
+        (res.verificationGasLimit, res.gasUsed) = this.getGasUsedByUserOp(userOp, err);
+        res.callGasLimit = res.gasUsed - res.verificationGasLimit;
       }
     }
   }

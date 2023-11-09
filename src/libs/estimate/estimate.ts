@@ -3,13 +3,19 @@ import { fromDescriptor } from '../deployless/deployless'
 import { getAccountDeployParams } from '../account/account'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { AccountOp } from '../accountOp/accountOp'
-import { Account, AccountOnchainState } from '../../interfaces/account'
+import { Account } from '../../interfaces/account'
 import Estimation from '../../../contracts/compiled/Estimation.json'
 import Estimation4337 from '../../../contracts/compiled/Estimation4337.json'
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFactory.json'
 import { ERC_4337_ENTRYPOINT } from '../../consts/deploy'
-import { getPaymasterSpoof, toUserOperation } from '../../libs/userOperation/userOperation'
+import { getPaymasterSpoof } from '../../libs/userOperation/userOperation'
+
+interface Erc4337estimation {
+  verificationGasLimit: bigint,
+  callGasLimit: bigint,
+  gasUsed: bigint,
+}
 
 export interface EstimateResult {
   gasUsed: bigint
@@ -21,13 +27,13 @@ export interface EstimateResult {
     address: string
     gasUsed?: bigint
   }[]
+  erc4337estimation: Erc4337estimation | null
 }
 
 export async function estimate(
   provider: Provider | JsonRpcProvider,
   network: NetworkDescriptor,
   account: Account,
-  accountState: AccountOnchainState,
   op: AccountOp,
   nativeToCheck: string[],
   feeTokens: string[],
@@ -68,7 +74,8 @@ export async function estimate(
           paidBy: account.addr,
           availableAmount: balance
         }
-      ]
+      ],
+      erc4337estimation: null
     }
   }
 
@@ -97,9 +104,8 @@ export async function estimate(
   // estimate 4337
   let estimation4337
   if (network.erc4337?.enabled) {
-    op = toUserOperation(account, accountState, op)
-    const userOp = op.asUserOperation
-    op.asUserOperation!.paymasterAndData = getPaymasterSpoof()
+    const userOp = {...op.asUserOperation}
+    userOp!.paymasterAndData = getPaymasterSpoof()
     const deployless4337Estimator = fromDescriptor(provider, Estimation4337, !network.rpcNoStateOverride)
     const functionArgs = [
       userOp,
@@ -136,7 +142,29 @@ export async function estimate(
   ] = estimations[0]
   /* eslint-enable prefer-const */
 
-  let gasUsed = deployment.gasUsed + accountOpToExecuteBefore.gasUsed + accountOp.gasUsed
+  let erc4337estimation: Erc4337estimation | null = null
+  if (network.erc4337?.enabled) {
+    const [
+      [
+        verificationGasLimit,
+        callGasLimit,
+        gasUsed
+      ]
+    ] = estimations[1]
+
+    erc4337estimation = {
+      verificationGasLimit: BigInt(verificationGasLimit) + 5000n, // added buffer,
+      callGasLimit: BigInt(callGasLimit) + 10000n, // added buffer
+      gasUsed: BigInt(gasUsed) // the minimum
+    }
+  }
+
+  let gasUsed
+  if (!erc4337estimation) {
+    gasUsed = deployment.gasUsed + accountOpToExecuteBefore.gasUsed + accountOp.gasUsed
+  } else {
+    gasUsed = erc4337estimation.gasUsed
+  }
 
   if (opts?.calculateRefund) {
     const IAmbireAccount = new Interface(AmbireAccount.abi)
@@ -202,6 +230,7 @@ export async function estimate(
     gasUsed,
     nonce,
     addedNative: l1GasEstimation.fee || 0n,
-    feePaymentOptions: [...feeTokenOptions, ...nativeTokenOptions]
+    feePaymentOptions: [...feeTokenOptions, ...nativeTokenOptions],
+    erc4337estimation
   }
 }

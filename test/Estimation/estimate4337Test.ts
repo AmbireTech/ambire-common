@@ -108,8 +108,8 @@ describe('Estimate 4337 Tests', function () {
       from: SPOOFER
     })
     // verificationGasLimit, gasUsed, failure
-    const decoded = abiCoder.decode(['uint256', 'uint256', 'bytes'], result)
-    expect(decoded[2]).to.equal('0x')
+    const decoded = estimation.interface.decodeFunctionResult('estimate', result)[0]
+    expect(decoded[3]).to.equal('0x')
   })
   it('successfully performs an estimation on an account that is yet to be deployed', async function () {
     const [,relayer,signer3] = await ethers.getSigners()
@@ -175,7 +175,7 @@ describe('Estimate 4337 Tests', function () {
       from: SPOOFER
     })
     // verificationGasLimit, gasUsed, failure
-    const decoded = estimation.interface.decodeFunctionResult('estimate', result)
-    expect(decoded[2]).to.equal('0x')
+    const decoded = estimation.interface.decodeFunctionResult('estimate', result)[0]
+    expect(decoded[3]).to.equal('0x')
   })
 })
