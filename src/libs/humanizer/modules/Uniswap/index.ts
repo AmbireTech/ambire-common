@@ -23,13 +23,15 @@ export const uniswapHumanizer: HumanizerCallModule = (
     // same as above but with address from official documentation (https://docs.uniswap.org/contracts/v3/reference/deployments)
     '0x3fC91A3afd70395Cd496C647d5a6CC9D4B2b7FAD': uniUniversalRouter(accountOp.humanizerMeta),
     // optimism
-    '0xeC8B0F7Ffe3ae75d7FfAb09429e3675bb63503e4': uniUniversalRouter(accountOp.humanizerMeta)
+    '0xeC8B0F7Ffe3ae75d7FfAb09429e3675bb63503e4': uniUniversalRouter(accountOp.humanizerMeta),
+    // polygon
+    '0x643770E279d5D0733F21d6DC03A8efbABf3255B4': uniUniversalRouter(accountOp.humanizerMeta)
   }
   const newCalls: IrCall[] = []
   currentIrCalls.forEach((call: IrCall) => {
     const sigHash = call.data.substring(0, 10)
-    // check against sus contracts with same func selectors
 
+    // check against sus contracts with same func selectors
     if (accountOp.humanizerMeta?.[`names:${call.to}`]?.includes('Uniswap')) {
       if (matcher?.[call.to]?.[sigHash]) {
         matcher[call.to][sigHash](accountOp, call).forEach((hc: IrCall, index: number) =>

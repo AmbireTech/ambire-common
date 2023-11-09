@@ -27,6 +27,9 @@ const extractParams = (inputsDetails: any, input: any) => {
   return params
 }
 
+// @TODO add txns parsing (example for turning swap 1.15 and send 0.15 to swap 1.00)
+// @TODO remove 0 wrap/unwraps
+
 export const uniUniversalRouter = (
   humanizerInfo: any
 ): { [x: string]: (a: AccountOp, c: IrCall) => IrCall[] } => {
@@ -176,7 +179,7 @@ export const uniUniversalRouter = (
         } else parsed.push({ ...call, fullVisualization: [getLabel('Unknown Uni V3 interaction')] })
       })
       console.log(parsed)
-      console.log(parsed.flat)
+      console.log(parsed.flat())
       return parsed
     }
   }
