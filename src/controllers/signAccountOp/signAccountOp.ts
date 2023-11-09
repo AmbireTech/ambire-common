@@ -362,8 +362,9 @@ export class SignAccountOpController extends EventEmitter {
         simulatedGasLimit = this.#estimation!.erc4337estimation.gasUsed + feeTokenGasUsed
         amount = this.#getAmountAfterFeeTokenConvert(simulatedGasLimit, gasPrice, nativeRatio, feeToken!.decimals)
 
-        this.accountOp!.asUserOperation!.maxFeePerGas = ethers.toBeHex(simulatedGasLimit)
-        this.accountOp!.asUserOperation!.maxPriorityFeePerGas = ethers.toBeHex(simulatedGasLimit)
+        const maxFeePerGas = (amount - this.#estimation!.addedNative) / simulatedGasLimit
+        this.accountOp!.asUserOperation!.maxFeePerGas = ethers.toBeHex(maxFeePerGas)
+        this.accountOp!.asUserOperation!.maxPriorityFeePerGas = ethers.toBeHex(maxFeePerGas)
       } else if (this.paidBy !== this.accountOp!.accountAddr) {
         // Smart account, but EOA pays the fee
         simulatedGasLimit = gasUsed
