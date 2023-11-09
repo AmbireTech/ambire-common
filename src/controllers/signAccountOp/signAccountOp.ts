@@ -14,7 +14,7 @@ import { Price, TokenResult } from '../../libs/portfolio'
 import EventEmitter from '../eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
 import { PortfolioController } from '../portfolio/portfolio'
-import { getTargetEdgeCaseNonce, toUserOperation } from '../../libs/userOperation/userOperation'
+import { getTargetEdgeCaseNonce } from '../../libs/userOperation/userOperation'
 import EntryPointAbi from '../../../contracts/compiled/EntryPoint.json'
 import { ERC_4337_ENTRYPOINT } from '../../consts/deploy'
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
@@ -379,7 +379,6 @@ export class SignAccountOpController extends EventEmitter {
         // @TODO - add comment why here we use `feePaymentOptions`, but we don't use it in EOA
         simulatedGasLimit = gasUsed + feeTokenGasUsed
 
-        const network = this.#networks?.find((n) => n.id === this.accountOp?.networkId)
         const accountState = this.#accountStates![this.accountOp!.accountAddr][this.accountOp!.networkId]
         simulatedGasLimit += getCallDataAdditional(this.accountOp!, network!, accountState.isDeployed)
 
