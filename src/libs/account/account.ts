@@ -20,8 +20,6 @@ export function getAccountDeployParams(account: Account): [string, string] {
 export function getLegacyAccount(key: string): Account {
   return {
     addr: key,
-    label: '',
-    pfp: '',
     associatedKeys: [key],
     creation: null
   }
@@ -42,8 +40,6 @@ export async function getSmartAccount(address: string): Promise<Account> {
 
   return {
     addr: getAmbireAccountAddress(AMBIRE_ACCOUNT_FACTORY, bytecode),
-    label: '',
-    pfp: '',
     associatedKeys: [address],
     creation: {
       factoryAddr: AMBIRE_ACCOUNT_FACTORY,

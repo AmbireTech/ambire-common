@@ -1,11 +1,11 @@
 import { Provider } from 'ethers'
 
 import AmbireAccountState from '../../../contracts/compiled/AmbireAccountState.json'
+import { MAX_UINT256 } from '../../consts/deploy'
 import { Account, AccountOnchainState } from '../../interfaces/account'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { getAccountDeployParams } from '../account/account'
 import { fromDescriptor } from '../deployless/deployless'
-import { MAX_UINT256 } from '../../consts/deploy'
 
 export async function getAccountState(
   provider: Provider,
@@ -103,8 +103,6 @@ export async function getAccountState(
 
 // const account = {
 //   addr: '0xa07D75aacEFd11b425AF7181958F0F85c312f143',
-//   label: '',
-//   pfp: '',
 //   associatedKeys: ['0xd6e371526cdaeE04cd8AF225D42e37Bc14688D9E'],
 //   creation: {
 //     factoryAddr: '0xBf07a0Df119Ca234634588fbDb5625594E2a5BCA',
@@ -116,8 +114,6 @@ export async function getAccountState(
 
 // const notDeployedAccount = {
 //   addr: '0x6C0937c7a04487573673a47F22E4Af9e96b91ecd',
-//   label: '',
-//   pfp: '',
 //   associatedKeys: ['0xfF3f6D14DF43c112aB98834Ee1F82083E07c26BF'],
 //   creation: {
 //     factoryAddr: '0xBf07a0Df119Ca234634588fbDb5625594E2a5BCA',

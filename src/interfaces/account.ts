@@ -2,9 +2,6 @@ export type AccountId = string
 
 export interface Account {
   addr: AccountId
-  label: string
-  // URL (https, ipfs or nft721://contractAddr/tokenId)
-  pfp: string
   // Associated keys that can control thte account
   // For EOAs thits must be set to [account.addr]
   associatedKeys: string[]

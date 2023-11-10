@@ -173,7 +173,7 @@ export class SignAccountOpController extends EventEmitter {
       // TODO: add knownAddresses
       callsHumanizer(
         this.accountOp,
-        [],
+        {},
         this.#storage,
         this.#fetch,
         (humanizedCalls) => {
