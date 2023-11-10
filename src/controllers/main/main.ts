@@ -10,7 +10,12 @@ import { Key, KeystoreSignerType } from '../../interfaces/keystore'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
 import { Storage } from '../../interfaces/storage'
 import { Message, UserRequest } from '../../interfaces/userRequest'
-import { AccountOp, Call as AccountOpCall, getSignableCalls } from '../../libs/accountOp/accountOp'
+import {
+  AccountOp,
+  AccountOpStatus,
+  Call as AccountOpCall,
+  getSignableCalls
+} from '../../libs/accountOp/accountOp'
 import { getAccountState } from '../../libs/accountState/accountState'
 import {
   getAccountOpBannersForEOA,
@@ -188,6 +193,9 @@ export class MainController extends EventEmitter {
       this.#providers
     )
     this.activity = new ActivityController(this.#storage, this.accountStates)
+    if (this.selectedAccount) {
+      this.activity.init({ filters: { account: this.selectedAccount } })
+    }
 
     const addReadyToAddAccountsIfNeeded = () => {
       if (
@@ -202,6 +210,16 @@ export class MainController extends EventEmitter {
 
     this.isReady = true
     this.emitUpdate()
+  }
+
+  async updateAccountsOpsStatuses() {
+    await this.#initialLoadPromise
+
+    const hasUpdatedStatuses = await this.activity.updateAccountsOpsStatuses()
+
+    if (hasUpdatedStatuses) {
+      this.emitUpdate()
+    }
   }
 
   async #updateGasPrice() {
@@ -262,6 +280,7 @@ export class MainController extends EventEmitter {
 
     this.selectedAccount = toAccountAddr
     await this.#storage.set('selectedAccount', toAccountAddr)
+    this.activity.init({ filters: { account: toAccountAddr } })
     this.updateSelectedAccount(toAccountAddr)
     this.onUpdateDappSelectedAccount(toAccountAddr)
     this.emitUpdate()
@@ -320,11 +339,7 @@ export class MainController extends EventEmitter {
       return uCalls
     }, [])
 
-    const accAvailableKeys = this.keystore.keys.filter((key) =>
-      account.associatedKeys.includes(key.addr)
-    )
-
-    if (!calls.length || !accAvailableKeys.length) return null
+    if (!calls.length) return null
 
     const currentAccountOp = this.accountOpsToBeSigned[accountAddr][networkId]?.accountOp
     return {
@@ -336,7 +351,7 @@ export class MainController extends EventEmitter {
       gasFeePayment: currentAccountOp?.gasFeePayment || null,
       // We use the AccountInfo to determine
       nonce: this.accountStates[accountAddr][networkId].nonce,
-      signature: generateSpoofSig(accAvailableKeys[0].addr),
+      signature: account.associatedKeys[0] ? generateSpoofSig(account.associatedKeys[0]) : null,
       // @TODO from pending recoveries
       accountOpToExecuteBefore: null,
       calls
@@ -586,7 +601,7 @@ export class MainController extends EventEmitter {
       }
 
       const broadcastKey = this.keystore.keys.find(
-        (key) => key.addr == accountOp.gasFeePayment!.paidBy
+        (key) => key.addr === accountOp.gasFeePayment!.paidBy
       )
       const signer = await this.keystore.getSigner(
         accountOp.gasFeePayment!.paidBy,
@@ -656,6 +671,7 @@ export class MainController extends EventEmitter {
     if (transactionRes) {
       await this.activity.addAccountOp({
         ...accountOp,
+        status: AccountOpStatus.BroadcastedButNotConfirmed,
         txnId: transactionRes.hash,
         nonce: BigInt(transactionRes.nonce)
       })
@@ -712,7 +728,8 @@ export class MainController extends EventEmitter {
       ...accountOpSmartAccountBanners,
       ...accountOpEOABanners,
       ...pendingAccountOpEOABanners,
-      ...messageBanners
+      ...messageBanners,
+      ...this.activity.banners
     ]
   }
 
