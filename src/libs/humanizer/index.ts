@@ -107,7 +107,7 @@ export const callsHumanizer = async (
 
 export const messageHumanizer = async (
   message: Message,
-  knownAddresses: (Account | Key)[],
+  knownAddressLabels: { [addr in string]: string },
   storage: Storage,
   fetch: Function,
   callback: (msgs: IrMessage) => void,
@@ -121,9 +121,8 @@ export const messageHumanizer = async (
       humanizerMeta: {
         ...(await storage.get(HUMANIZER_META_KEY, {})),
         ...Object.fromEntries(
-          knownAddresses.map((k) => {
-            const key = `names:${'id' in k ? k.id : k.addr}`
-            return [key, k.label]
+          Object.entries(knownAddressLabels).map((addr, label) => {
+            return [`names:${addr}`, label]
           })
         ),
         ...message.humanizerMeta

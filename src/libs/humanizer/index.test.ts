@@ -409,8 +409,8 @@ describe('TypedMessages', () => {
         ])
     })
 
-    await messageHumanizer(messages[0], [], storage, fetch, onUpdate, emitError)
-    await messageHumanizer(messages[1], [], storage, fetch, onUpdate, emitError)
+    await messageHumanizer(messages[0], {}, storage, fetch, onUpdate, emitError)
+    await messageHumanizer(messages[1], {}, storage, fetch, onUpdate, emitError)
     // two times from first message, one from the second
     expect(onUpdate).toHaveBeenCalledTimes(3)
   })
