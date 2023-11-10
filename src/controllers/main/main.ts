@@ -339,11 +339,7 @@ export class MainController extends EventEmitter {
       return uCalls
     }, [])
 
-    const accAvailableKeys = this.keystore.keys.filter((key) =>
-      account.associatedKeys.includes(key.addr)
-    )
-
-    if (!calls.length || !accAvailableKeys.length) return null
+    if (!calls.length) return null
 
     const currentAccountOp = this.accountOpsToBeSigned[accountAddr][networkId]?.accountOp
     return {
@@ -355,7 +351,7 @@ export class MainController extends EventEmitter {
       gasFeePayment: currentAccountOp?.gasFeePayment || null,
       // We use the AccountInfo to determine
       nonce: this.accountStates[accountAddr][networkId].nonce,
-      signature: generateSpoofSig(accAvailableKeys[0].addr),
+      signature: account.associatedKeys[0] ? generateSpoofSig(account.associatedKeys[0]) : null,
       // @TODO from pending recoveries
       accountOpToExecuteBefore: null,
       calls
