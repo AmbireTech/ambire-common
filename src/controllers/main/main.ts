@@ -35,6 +35,7 @@ import { EmailVaultController } from '../emailVault'
 import EventEmitter from '../eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
 import { PortfolioController } from '../portfolio/portfolio'
+import { SettingsController } from '../settings/settings'
 /* eslint-disable no-underscore-dangle */
 import { SignAccountOpController } from '../signAccountOp/signAccountOp'
 import { SignMessageController } from '../signMessage/signMessage'
@@ -75,13 +76,12 @@ export class MainController extends EventEmitter {
 
   activity!: ActivityController
 
+  settings: SettingsController
+
   // @TODO read networks from settings
   accounts: Account[] = []
 
   selectedAccount: string | null = null
-
-  // @TODO: structure
-  settings: { networks: NetworkDescriptor[] }
 
   userRequests: UserRequest[] = []
 
@@ -143,7 +143,7 @@ export class MainController extends EventEmitter {
 
     this.portfolio = new PortfolioController(this.#storage, relayerUrl, pinned)
     this.keystore = new KeystoreController(this.#storage, keystoreSigners)
-    this.settings = { networks }
+    this.settings = new SettingsController(this.#storage, networks)
     this.#initialLoadPromise = this.#load()
     this.emailVault = new EmailVaultController(
       this.#storage,
@@ -243,10 +243,10 @@ export class MainController extends EventEmitter {
     )
   }
 
-  async #getAccountsInfo(accounts: Account[]): Promise<AccountStates> {
+  async #getAccountsInfo(accounts: Account[], blockTag: string | number = 'latest'): Promise<AccountStates> {
     const result = await Promise.all(
       this.settings.networks.map((network) =>
-        getAccountState(this.#providers[network.id], network, accounts)
+        getAccountState(this.#providers[network.id], network, accounts, blockTag)
       )
     )
 
@@ -264,8 +264,8 @@ export class MainController extends EventEmitter {
     return Object.fromEntries(states)
   }
 
-  async updateAccountStates() {
-    this.accountStates = await this.#getAccountsInfo(this.accounts)
+  async updateAccountStates(blockTag: string | number = 'latest') {
+    this.accountStates = await this.#getAccountsInfo(this.accounts, blockTag)
     this.lastUpdate = new Date()
     this.emitUpdate()
   }

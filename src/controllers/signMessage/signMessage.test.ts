@@ -17,8 +17,6 @@ const providers = Object.fromEntries(
 
 const account: Account = {
   addr: '0x9188fdd757Df66B4F693D624Ed6A13a15Cf717D7',
-  label: '',
-  pfp: '',
   associatedKeys: ['0x9188fdd757Df66B4F693D624Ed6A13a15Cf717D7'],
   creation: null
 }

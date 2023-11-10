@@ -31,7 +31,7 @@ async function resolveForCoin(resolver, bip44Item) {
   return resolver.getAddress()
 }
 
-function isCorrectAddress(address) {
+export function isCorrectAddress(address) {
   return !(ADDRESS_ZERO === address) && isAddress(address)
 }
 

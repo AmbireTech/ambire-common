@@ -73,7 +73,7 @@ export class SignMessageController extends EventEmitter {
       // TODO: add knownAddresses
       messageHumanizer(
         messageToSign,
-        [],
+        {},
         this.#storage,
         this.#fetch,
         (humanizedMessage: IrMessage) => {
