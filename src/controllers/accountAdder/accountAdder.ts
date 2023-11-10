@@ -487,7 +487,7 @@ export class AccountAdderController extends EventEmitter {
     const endIdx = (this.page - 1) * this.pageSize + (this.pageSize - 1)
 
     const legacyAccKeys = await this.#keyIterator.retrieve(startIdx, endIdx, this.hdPathTemplate)
-    const legacyAccKeysForSmartAcc = await this.#keyIterator.retrieve(
+    const smartAccKeys = await this.#keyIterator.retrieve(
       startIdx + SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET,
       endIdx + SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET,
       this.hdPathTemplate
@@ -497,17 +497,17 @@ export class AccountAdderController extends EventEmitter {
     // Replace the parallel getKeys with foreach to prevent issues with Ledger,
     // which can only handle one request at a time.
     // eslint-disable-next-line no-restricted-syntax
-    for (const [index, legacyAccKeyForSmartAcc] of legacyAccKeysForSmartAcc.entries()) {
+    for (const [index, smartAccKey] of smartAccKeys.entries()) {
       const slot = startIdx + (index + 1)
 
       // The derived EOA (legacy) account which is the key for the smart account
-      const account = getLegacyAccount(legacyAccKeyForSmartAcc)
+      const account = getLegacyAccount(smartAccKey)
       const indexWithOffset = slot - 1 + SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
       accounts.push({ account, isLinked: false, slot, index: indexWithOffset })
 
       // Derive the Ambire (smart) account
       smartAccountsPromises.push(
-        getSmartAccount(legacyAccKeyForSmartAcc).then((smartAccount) => {
+        getSmartAccount(smartAccKey).then((smartAccount) => {
           return { account: smartAccount, isLinked: false, slot, index: slot - 1 }
         })
       )
@@ -632,11 +632,8 @@ export class AccountAdderController extends EventEmitter {
         ethers.getCreate2Address(factoryAddr, salt, ethers.keccak256(bytecode)).toLowerCase() !==
         addr.toLowerCase()
       if (isInvalidAddress) {
-        this.emitError({
-          level: 'minor',
-          message: `The address ${addr} is not generated from the Ambire factory.`,
-          error: new Error(`The address ${addr} is not generated from the Ambire factory.`)
-        })
+        const message = `The address ${addr} can't be verified to be a smart account address.`
+        this.emitError({ level: 'minor', message, error: new Error(message) })
 
         return []
       }

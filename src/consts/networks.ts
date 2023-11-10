@@ -42,7 +42,7 @@ const networks: NetworkDescriptor[] = [
     chainId: 10n,
     explorerUrl: 'https://optimistic.etherscan.io',
     erc4337: {
-      enabled: true,
+      enabled: false,
       entryPointAddr: ERC_4337_ENTRYPOINT,
       entryPointMarker: ENTRY_POINT_MARKER,
       hasPaymaster: false
