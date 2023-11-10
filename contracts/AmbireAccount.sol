@@ -320,7 +320,7 @@ contract AmbireAccount {
 		require(privileges[msg.sender] == ENTRY_POINT_MARKER, 'validateUserOp: not from entryPoint');
 
 		// this is replay-safe because userOpHash is retrieved like this: keccak256(abi.encode(userOp.hash(), address(this), block.chainid))
-		address signer = SignatureValidator.recoverAddr(userOpHash, op.signature);
+		address signer = SignatureValidator.recoverAddrImpl(userOpHash, op.signature, true);
 		if (privileges[signer] == bytes32(0)) return SIG_VALIDATION_FAILED;
 
 		// NOTE: we do not have to pay the entryPoint if SIG_VALIDATION_FAILED, so we just return on those

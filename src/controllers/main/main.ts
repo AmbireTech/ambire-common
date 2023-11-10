@@ -31,10 +31,11 @@ import EventEmitter from '../eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
 import { PortfolioController } from '../portfolio/portfolio'
 /* eslint-disable no-underscore-dangle */
-import { SignAccountOpController, SigningStatus } from '../signAccountOp/signAccountOp'
+import { SignAccountOpController } from '../signAccountOp/signAccountOp'
 import { SignMessageController } from '../signMessage/signMessage'
 import { TransferController } from '../transfer/transfer'
 import bundler from '../../services/bundlers'
+import { toUserOperation } from '../../libs/userOperation/userOperation'
 
 export class MainController extends EventEmitter {
   #storage: Storage
@@ -488,6 +489,15 @@ export class MainController extends EventEmitter {
     const network = this.settings.networks.find((x) => x.id === accountOp.networkId)
     if (!network)
       throw new Error(`estimateAccountOp: ${accountOp.networkId}: network does not exist`)
+
+    // start transforming the accountOp to userOp if the network is 4337
+    if (network.erc4337?.enabled) {
+      accountOp = toUserOperation(
+        account,
+        this.accountStates[accountOp.accountAddr][accountOp.networkId],
+        accountOp
+      )
+    }
     const [, , estimation] = await Promise.all([
       // NOTE: we are not emitting an update here because the portfolio controller will do that
       // NOTE: the portfolio controller has it's own logic of constructing/caching providers, this is intentional, as
@@ -516,6 +526,13 @@ export class MainController extends EventEmitter {
     ])
     // @TODO compare intent between accountOp and this.accountOpsToBeSigned[accountOp.accountAddr][accountOp.networkId].accountOp
     this.accountOpsToBeSigned[accountOp.accountAddr][accountOp.networkId]!.estimation = estimation
+
+    // add the estimation to the user operation
+    if (network.erc4337?.enabled) {
+      accountOp.asUserOperation!.verificationGasLimit = ethers.toBeHex(estimation.erc4337estimation!.verificationGasLimit)
+      accountOp.asUserOperation!.callGasLimit = ethers.toBeHex(estimation.erc4337estimation!.callGasLimit)
+      this.accountOpsToBeSigned[accountOp.accountAddr][accountOp.networkId]!.accountOp = accountOp
+    }
   }
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars, class-methods-use-this

@@ -1,13 +1,13 @@
 import { ethers } from "ethers";
 import { Account, AccountOnchainState } from "../../interfaces/account";
-import { AccountOp, GasFeePayment, isNative, getSignableCalls } from "../accountOp/accountOp";
+import { AccountOp, getSignableCalls } from "../accountOp/accountOp";
 import AmbireAccount from "../../../contracts/compiled/AmbireAccount.json";
 import AmbireAccountFactory from "../../../contracts/compiled/AmbireAccountFactory.json";
-import { EstimateResult } from "../../libs/estimate/estimate";
-import { ENTRY_POINT_MARKER, ERC_4337_ENTRYPOINT } from "../../../src/consts/deploy";
+import { AMBIRE_PAYMASTER, AMBIRE_PAYMASTER_SIGNER, ENTRY_POINT_MARKER, ERC_4337_ENTRYPOINT } from "../../../src/consts/deploy";
 import { networks } from "../../consts/networks";
 import { NetworkDescriptor } from "interfaces/networkDescriptor";
 import { getCallDataAdditional } from "../../libs/gasPrice/gasPrice";
+import { SPOOF_SIGTYPE } from "../../consts/signatures";
 
 export interface UserOperation {
   sender: string,
@@ -44,54 +44,15 @@ function getPVG(
   network: NetworkDescriptor,
   isDeployed: boolean
 ) {
-  const perUseropOverhead = 23000n
+  const perUseropOverhead = 4000n
   return perUseropOverhead + getCallDataAdditional(accountOp, network!, isDeployed)
-}
-
-/**
- * We measured the minimum gas needed for each step
- * and hardcoded it
- *
- * @param initCode is the contract going to be deployed from now
- * @returns verificationGasLimit
- */
-function getVerificationGasLimit(
-  initCode: string,
-  network: NetworkDescriptor | undefined,
-  isEdgeCase: boolean,
-  gasFeePayment: GasFeePayment
-): bigint {
-  // TODO<Bobby>: review all the gas calculations once again
-
-  let initial = 10195n // validateUserOp
-
-  if (
-    network &&
-    network.erc4337?.hasPaymaster &&
-    (
-      isEdgeCase || !isNative(gasFeePayment)
-    )
-  ) {
-    initial += 23013n // paymaster payment
-  } else {
-    initial += 29053n // native payment
-  }
-
-  if (initCode != '0x') initial += 77651n // deploy
-  initial += 3000n // hardcoded gas buffer just in case
-  return initial
 }
 
 export function toUserOperation(
   account: Account,
   accountState: AccountOnchainState,
-  accountOp: AccountOp,
-  estimation: EstimateResult
+  accountOp: AccountOp
 ): AccountOp {
-  if (!accountOp.gasFeePayment || !accountOp.gasFeePayment.amount) {
-    throw new Error('no gasFeePayment')
-  }
-
   let initCode = '0x'
   let isEdgeCase = false
 
@@ -130,34 +91,32 @@ export function toUserOperation(
     isEdgeCase = true
   }
 
-  // no fee payment for non edge case native
-  if (!isEdgeCase && isNative(accountOp.gasFeePayment)) {
-    delete accountOp.feeCall
+  // get estimation calldata
+  let callData
+  if (isEdgeCase) {
+    const abiCoder = new ethers.AbiCoder()
+    const spoofSig = abiCoder.encode(['address'], [account.associatedKeys[0]]) + SPOOF_SIGTYPE
+    callData = ambireAccount.interface.encodeFunctionData('executeMultiple', [[[
+      getSignableCalls(accountOp),
+      spoofSig
+    ]]])
+  } else {
+    callData = ambireAccount.interface.encodeFunctionData('executeBySender', [getSignableCalls(accountOp)])
   }
 
-  // if we're in the edge case scenario, we set callData to 0x
-  // as callData will be executeMultiple. That will be handled at sign.
-  // If not, point to executeBySender as it should be
-  const callData = !isEdgeCase
-    ? ambireAccount.interface.encodeFunctionData('executeBySender', [getSignableCalls(accountOp)])
-    : '0x'
   const network = networks.find(net => net.id == accountOp.networkId)
   const preVerificationGas = getPVG(accountOp, network!, accountState.isDeployed)
-  const verificationGasLimit = preVerificationGas + getVerificationGasLimit(initCode, network, isEdgeCase, accountOp.gasFeePayment!)
-  const maxFeePerGas = (
-    accountOp.gasFeePayment.amount - estimation.addedNative
-  ) / accountOp.gasFeePayment.simulatedGasLimit
 
   accountOp.asUserOperation = {
     sender: accountOp.accountAddr,
     nonce: ethers.toBeHex(accountState.erc4337Nonce),
     initCode,
     callData,
-    callGasLimit: ethers.toBeHex(accountOp.gasFeePayment.simulatedGasLimit),
-    verificationGasLimit: ethers.toBeHex(verificationGasLimit),
     preVerificationGas: ethers.toBeHex(preVerificationGas),
-    maxFeePerGas: ethers.toBeHex(maxFeePerGas),
-    maxPriorityFeePerGas: ethers.toBeHex(maxFeePerGas),
+    callGasLimit: ethers.toBeHex(150000), // hardcoded fake for estimation
+    verificationGasLimit: ethers.toBeHex(150000), // hardcoded fake for estimation
+    maxFeePerGas: ethers.toBeHex(100),
+    maxPriorityFeePerGas: ethers.toBeHex(100),
     paymasterAndData: '0x',
     signature: '0x',
     isEdgeCase
@@ -196,4 +155,17 @@ export function getTargetEdgeCaseNonce(userOperation: UserOperation) {
       userOperation.paymasterAndData,
     ])
   ).substring(18) + ethers.toBeHex(0, 8).substring(2)
+}
+
+export function getPaymasterSpoof() {
+  const abiCoder = new ethers.AbiCoder()
+  const spoofSig = abiCoder.encode(['address'], [AMBIRE_PAYMASTER_SIGNER]) + SPOOF_SIGTYPE
+  const simulationData = abiCoder.encode(
+    ['uint48', 'uint48', 'bytes'],
+    [0, 0, spoofSig]
+  )
+  return ethers.hexlify(ethers.concat([
+    AMBIRE_PAYMASTER,
+    simulationData
+  ]))
 }
