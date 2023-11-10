@@ -38,7 +38,6 @@ export class SettingsController extends EventEmitter {
   }
 
   async #storePreferences() {
-    // Store the updated settings
     try {
       await this.#storage.set('accountPreferences', this.accountPreferences)
     } catch (e) {
@@ -58,7 +57,7 @@ export class SettingsController extends EventEmitter {
       return this.#throwInvalidAddress(Object.keys(newAccountPreferences))
     }
 
-    // TODO: Check if this addresses exist in the imported addressed?
+    // TODO: Check if this addresses exist in the imported addressed? Might be an overkill.
     // Update the account preferences with the new values incoming
     Object.keys(newAccountPreferences).forEach((key) => {
       this.accountPreferences[key] = {
@@ -69,7 +68,6 @@ export class SettingsController extends EventEmitter {
 
     await this.#storePreferences()
 
-    // Emit an update event
     this.emitUpdate()
   }
 
@@ -91,7 +89,6 @@ export class SettingsController extends EventEmitter {
 
     await this.#storePreferences()
 
-    // Emit an update event
     this.emitUpdate()
   }
 
