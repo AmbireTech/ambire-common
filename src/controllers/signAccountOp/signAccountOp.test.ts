@@ -66,8 +66,6 @@ class InternalSigner {
 const createAccountOp = (signingKeyAddr: string) => {
   const account = {
     addr: '0xa07D75aacEFd11b425AF7181958F0F85c312f143',
-    label: '',
-    pfp: '',
     associatedKeys: ['0xd6e371526cdaeE04cd8AF225D42e37Bc14688D9E'],
     creation: {
       factoryAddr: '0xBf07a0Df119Ca234634588fbDb5625594E2a5BCA',
