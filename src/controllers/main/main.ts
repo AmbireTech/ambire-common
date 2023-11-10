@@ -243,10 +243,10 @@ export class MainController extends EventEmitter {
     )
   }
 
-  async #getAccountsInfo(accounts: Account[]): Promise<AccountStates> {
+  async #getAccountsInfo(accounts: Account[], blockTag: string | number = 'latest'): Promise<AccountStates> {
     const result = await Promise.all(
       this.settings.networks.map((network) =>
-        getAccountState(this.#providers[network.id], network, accounts)
+        getAccountState(this.#providers[network.id], network, accounts, blockTag)
       )
     )
 
@@ -264,8 +264,8 @@ export class MainController extends EventEmitter {
     return Object.fromEntries(states)
   }
 
-  async updateAccountStates() {
-    this.accountStates = await this.#getAccountsInfo(this.accounts)
+  async updateAccountStates(blockTag: string | number = 'latest') {
+    this.accountStates = await this.#getAccountsInfo(this.accounts, blockTag)
     this.lastUpdate = new Date()
     this.emitUpdate()
   }
