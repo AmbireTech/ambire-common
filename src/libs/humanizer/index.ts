@@ -1,8 +1,6 @@
 /* eslint-disable no-await-in-loop */
 import { ErrorRef } from 'controllers/eventEmitter'
 
-import { Account } from '../../interfaces/account'
-import { Key } from '../../interfaces/keystore'
 import { Storage } from '../../interfaces/storage'
 import { Message } from '../../interfaces/userRequest'
 import { AccountOp } from '../accountOp/accountOp'
@@ -51,7 +49,7 @@ const humanizerTMModules = [erc20Module, erc721Module, permit2Module, fallbackEI
 
 export const callsHumanizer = async (
   accountOp: AccountOp,
-  knownAddresses: (Account | Key)[],
+  knownAddressLabels: { [addr in string]: string },
   storage: Storage,
   fetch: Function,
   callback: (irCalls: IrCall[]) => void,
@@ -62,9 +60,8 @@ export const callsHumanizer = async (
     humanizerMeta: {
       ...(await storage.get(HUMANIZER_META_KEY, {})),
       ...Object.fromEntries(
-        knownAddresses.map((k) => {
-          const key = `names:${'id' in k ? k.id : k.addr}`
-          return [key, k.label]
+        Object.entries(knownAddressLabels).map(([addr, label]) => {
+          return [`names:${addr}`, label]
         })
       ),
       ...accountOp.humanizerMeta
@@ -121,7 +118,7 @@ export const messageHumanizer = async (
       humanizerMeta: {
         ...(await storage.get(HUMANIZER_META_KEY, {})),
         ...Object.fromEntries(
-          Object.entries(knownAddressLabels).map((addr, label) => {
+          Object.entries(knownAddressLabels).map(([addr, label]) => {
             return [`names:${addr}`, label]
           })
         ),

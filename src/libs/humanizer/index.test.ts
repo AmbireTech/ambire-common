@@ -265,7 +265,7 @@ describe('HumanizerController', () => {
       )
     })
     accountOp.calls = [...transactions.generic]
-    await callsHumanizer(accountOp, [], storage, fetch, onUpdate, emitError)
+    await callsHumanizer(accountOp, {}, storage, fetch, onUpdate, emitError)
     expect(onUpdate).toHaveBeenCalledTimes(1)
   })
 
@@ -295,7 +295,7 @@ describe('HumanizerController', () => {
       iterations += 1
     })
     accountOp.calls = [...transactions.unknownFuncSelector]
-    await callsHumanizer(accountOp, [], storage, fetch, onUpdate, emitError)
+    await callsHumanizer(accountOp, {}, storage, fetch, onUpdate, emitError)
     expect(onUpdate).toHaveBeenCalledTimes(2)
   })
 })
@@ -450,7 +450,9 @@ describe('with (Account | Key)[] arg', () => {
         )
       )
     })
-    await callsHumanizer(accountOp, [...accounts, ...keys], storage, fetch, onUpdate, emitError)
+
+    const knownAddresses = { [accounts[0].addr]: 'First account', [keys[0].addr]: 'Second account' }
+    await callsHumanizer(accountOp, knownAddresses, storage, fetch, onUpdate, emitError)
     expect(onUpdate).toHaveBeenCalledTimes(1)
   })
 })
