@@ -5,12 +5,9 @@ import { StaticJsonRpcProvider } from "@ethersproject/providers";
 
 require('dotenv').config();
 
-// how many times do we retry the getReceipt function before declaring error
-const RETRY_COUNTER = 7
-
 export class Bundler {
   /**
-   * Get the transaction receipt from the userOperationHash
+   * Get the transaction receipt from the userOperationHash if ready
    *
    * @param userOperationHash
    * @returns Receipt | null
@@ -18,17 +15,7 @@ export class Bundler {
   async getReceipt(userOperationHash: string, network: NetworkDescriptor) {
     const url = `https://api.pimlico.io/v1/${network.id}/rpc?apikey=${process.env.REACT_APP_PIMLICO_API_KEY}`
     const provider = new StaticJsonRpcProvider(url)
-
-    let counter = 0
-    while (counter < RETRY_COUNTER) {
-      await new Promise((r) => setTimeout(r, 1000)) //sleep
-      counter++
-      const res = await provider.send("eth_getUserOperationReceipt", [userOperationHash])
-      if (!res) continue
-      return res
-    }
-
-    return null
+    return provider.send("eth_getUserOperationReceipt", [userOperationHash])
   }
 
   /**

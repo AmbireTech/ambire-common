@@ -34,6 +34,7 @@ export interface GasFeePayment {
 export enum AccountOpStatus {
   Pending = 'pending',
   BroadcastedButNotConfirmed = 'broadcasted-but-not-confirmed',
+  Show4337BroadcastedBanner = 'show-4337-broadcasted-banner',
   Success = 'success',
   Failure = 'failure',
   UnknownButPastNonce = 'unknown-but-past-nonce'

@@ -7,6 +7,7 @@ import { Message } from '../../interfaces/userRequest'
 import { AccountOp, AccountOpStatus } from '../../libs/accountOp/accountOp'
 import EventEmitter from '../eventEmitter'
 import { Banner } from '../../interfaces/banner'
+import bundler from '../../services/bundlers'
 
 interface Pagination {
   fromPage: number
@@ -23,6 +24,7 @@ interface PaginationResult<T> {
 export interface SubmittedAccountOp extends AccountOp {
   txnId: string
   nonce: bigint
+  success?: boolean
 }
 
 interface AccountsOps extends PaginationResult<SubmittedAccountOp> {}
@@ -255,15 +257,40 @@ export class ActivityController extends EventEmitter {
             async (accountOp, accountOpIndex) => {
               // Don't update the current network account ops statuses,
               // as the statuses are already updated in the previous calls.
-              if (accountOp.status !== AccountOpStatus.BroadcastedButNotConfirmed) return
+              if (
+                accountOp.status !== AccountOpStatus.BroadcastedButNotConfirmed &&
+                accountOp.status !== AccountOpStatus.Show4337BroadcastedBanner
+              ) return
 
               shouldEmitUpdate = true
-              const receipt = await provider.getTransactionReceipt(accountOp.txnId)
+
+              // 4337
+              // once we've shown the banner, just switch it's status to the
+              // final one (Success/Failure) and move on
+              if (accountOp.status === AccountOpStatus.Show4337BroadcastedBanner) {
+                this.#accountsOps[this.filters!.account][network][accountOpIndex].status =
+                  accountOp.success ? AccountOpStatus.Success : AccountOpStatus.Failure
+                return
+              }
+
+              // getting the receipt is different in 4337
+              // @TODO: should we make own our provider that encapsulates this?
+              const is4337 = accountOp.gasFeePayment?.isERC4337
+              const receipt = !is4337
+                ? await provider.getTransactionReceipt(accountOp.txnId)
+                : await bundler.getReceipt(accountOp.txnId, networkConfig!)
 
               if (receipt) {
-                this.#accountsOps[this.filters!.account][network][accountOpIndex].status =
-                  receipt.status ? AccountOpStatus.Success : AccountOpStatus.Failure
+                if (is4337) {
+                  this.#accountsOps[this.filters!.account][network][accountOpIndex].status = AccountOpStatus.Show4337BroadcastedBanner
+                  this.#accountsOps[this.filters!.account][network][accountOpIndex].txnId = receipt.transactionHash
+                  this.#accountsOps[this.filters!.account][network][accountOpIndex].success = receipt.status
+                } else {
+                  this.#accountsOps[this.filters!.account][network][accountOpIndex].status =
+                    receipt.status ? AccountOpStatus.Success : AccountOpStatus.Failure
+                }
               } else if (
+                !is4337 &&
                 this.#accounts[accountOp.accountAddr][accountOp.networkId].nonce > accountOp.nonce
               ) {
                 this.#accountsOps[this.filters!.account][network][accountOpIndex].status =
@@ -380,13 +407,16 @@ export class ActivityController extends EventEmitter {
     // Banners are network agnostic, and that's the reason we check for `this.filters.account` only and having this.#accountsOps loaded.
     if (!this.filters?.account || !this.#accountsOps[this.filters.account]) return []
 
-    const broadcastedButNotConfirmed = Object.values(this.#accountsOps[this.filters.account])
+    const broadcasted = Object.values(this.#accountsOps[this.filters.account])
       .flat()
-      .filter((accountOp) => accountOp.status === AccountOpStatus.BroadcastedButNotConfirmed)
+      .filter((accountOp) => (
+        (accountOp.status === AccountOpStatus.BroadcastedButNotConfirmed && !accountOp.gasFeePayment?.isERC4337) ||
+        (accountOp.status === AccountOpStatus.Show4337BroadcastedBanner)
+      ))
 
-    if (!broadcastedButNotConfirmed.length) return []
+    if (!broadcasted.length) return []
 
-    return broadcastedButNotConfirmed.map((accountOp) => {
+    return broadcasted.map((accountOp) => {
       const network = networks.find((x) => x.id === accountOp.networkId)!
 
       return {
