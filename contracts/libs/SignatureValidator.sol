@@ -11,9 +11,6 @@ library SignatureValidator {
 	using Bytes for bytes;
 
 	enum SignatureMode {
-		// @TODO consider reordering if compat is not an issue
-		// direct, unbound hash - final digest
-		// @TODO think of the name
 		Unbound,
 		Standard,
 		SmartWallet,
