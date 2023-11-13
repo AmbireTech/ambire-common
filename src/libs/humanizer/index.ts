@@ -15,6 +15,7 @@ import {
 } from './interfaces'
 import { aaveHumanizer } from './modules/Aave'
 import { fallbackHumanizer } from './modules/fallBackHumanizer'
+import { sushiSwapModule } from './modules/sushiSwapModule'
 import { genericErc20Humanizer, genericErc721Humanizer } from './modules/tokens'
 import { uniswapHumanizer } from './modules/Uniswap'
 // import { oneInchHumanizer } from '.modules/oneInch'
@@ -43,6 +44,7 @@ const humanizerCallModules: HumanizerCallModule[] = [
   // oneInchHumanizer,
   WALLETModule,
   yearnVaultModule,
+  sushiSwapModule,
   fallbackHumanizer
 ]
 
