@@ -1,6 +1,6 @@
 import { ethers } from 'ethers'
 
-import { ErrorRef } from 'controllers/eventEmitter'
+import { ErrorRef } from '../../controllers/eventEmitter'
 import { Message, PlainTextMessage, TypedMessage } from '../../interfaces/userRequest'
 import { AccountOp } from '../accountOp/accountOp'
 import {

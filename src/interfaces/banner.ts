@@ -30,3 +30,10 @@ export type Action =
         err: string
       }
     }
+  | {
+      label: string
+      actionName: 'open-external-url'
+      meta: {
+        url: string
+      }
+    }

@@ -20,8 +20,6 @@ describe('AccountState', () => {
   test('should get the account state and check if a v1 address and v2 address (not deployed) are returned correctly', async () => {
     const account = {
       addr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
-      label: '',
-      pfp: '',
       associatedKeys: [],
       creation: {
         factoryAddr: '0xBf07a0Df119Ca234634588fbDb5625594E2a5BCA',
@@ -33,8 +31,6 @@ describe('AccountState', () => {
 
     const accountEOA = {
       addr: '0x1f9090aaE28b8a3dCeaDf281B0F12828e676c326',
-      label: '',
-      pfp: '',
       associatedKeys: [],
       creation: {
         factoryAddr: '0x0000000000000000000000000000000000000000',
@@ -45,8 +41,6 @@ describe('AccountState', () => {
 
     const accountEOANonceNonZero = {
       addr: '0xf5ffA17725754dC00adB255fF296E4177B0982c7',
-      label: '',
-      pfp: '',
       associatedKeys: [],
       creation: {
         factoryAddr: '0x0000000000000000000000000000000000000000',
@@ -60,8 +54,6 @@ describe('AccountState', () => {
     const bytecode = await getBytecode(polygon, [priv])
     const accountNotDeployed = {
       addr: getAmbireAccountAddress(AMBIRE_ACCOUNT_FACTORY, bytecode),
-      label: 'test account',
-      pfp: 'pfp',
       associatedKeys: [signerAddr],
       creation: {
         factoryAddr: AMBIRE_ACCOUNT_FACTORY,
@@ -72,8 +64,6 @@ describe('AccountState', () => {
 
     const account4337 = {
       addr: '0xD1cE5E6AE56693D2D3D52b2EBDf969C1D7901971',
-      label: '',
-      pfp: '',
       associatedKeys: ['0x9188fdd757Df66B4F693D624Ed6A13a15Cf717D7', ERC_4337_ENTRYPOINT],
       creation: {
         factoryAddr: '0xA3A22Bf212C03ce55eE7C3845D4c177a6fEC418B',
@@ -90,8 +80,6 @@ describe('AccountState', () => {
     const bytecodeErc4337 = await get4437Bytecode(polygon, privs)
     const accountErc4337 = {
       addr: '0x76b277955846313Ec50F26eD155C26f5aED295B1',
-      label: '',
-      pfp: '',
       associatedKeys: [
         '0x9188fdd757Df66B4F693D624Ed6A13a15Cf717D7',
         '0x43Ec7De60E89dabB7cAedc89Cd1F3c8D52707312'

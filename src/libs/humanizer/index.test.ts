@@ -1,7 +1,5 @@
 /* eslint-disable no-console */
 import { ethers } from 'ethers'
-import { Message, TypedMessage } from 'interfaces/userRequest'
-import { HumanizerVisualization, IrCall, IrMessage } from 'libs/humanizer/interfaces'
 import fetch from 'node-fetch'
 
 import { describe, expect, jest, test } from '@jest/globals'
@@ -12,8 +10,10 @@ import { ErrorRef } from '../../controllers/eventEmitter'
 import { Account } from '../../interfaces/account'
 import { Key } from '../../interfaces/keystore'
 import { Storage } from '../../interfaces/storage'
+import { Message, TypedMessage } from '../../interfaces/userRequest'
 import { AccountOp } from '../accountOp/accountOp'
-import { callsHumanizer, messageHumanizer } from '.'
+import { callsHumanizer, messageHumanizer } from './index'
+import { HumanizerVisualization, IrCall, IrMessage } from './interfaces'
 
 const HUMANIZER_META_KEY = 'HumanizerMeta'
 
@@ -49,8 +49,6 @@ const accountOp: AccountOp = {
 const accounts: Account[] = [
   {
     addr: '0xAAbBbC841F29Dc6b09EF9f6c8fd59DA807bc6248',
-    label: 'First account',
-    pfp: 'string',
     associatedKeys: ['string[]'],
     creation: null
   }
@@ -268,7 +266,7 @@ describe('HumanizerController', () => {
       )
     })
     accountOp.calls = [...transactions.generic]
-    await callsHumanizer(accountOp, [], storage, fetch, onUpdate, emitError)
+    await callsHumanizer(accountOp, {}, storage, fetch, onUpdate, emitError)
     expect(onUpdate).toHaveBeenCalledTimes(1)
   })
 
@@ -298,7 +296,7 @@ describe('HumanizerController', () => {
       iterations += 1
     })
     accountOp.calls = [...transactions.unknownFuncSelector]
-    await callsHumanizer(accountOp, [], storage, fetch, onUpdate, emitError)
+    await callsHumanizer(accountOp, {}, storage, fetch, onUpdate, emitError)
     expect(onUpdate).toHaveBeenCalledTimes(2)
   })
 })
@@ -413,8 +411,8 @@ describe('TypedMessages', () => {
         ])
     })
 
-    await messageHumanizer(messages[0], [], storage, fetch, onUpdate, emitError)
-    await messageHumanizer(messages[1], [], storage, fetch, onUpdate, emitError)
+    await messageHumanizer(messages[0], {}, storage, fetch, onUpdate, emitError)
+    await messageHumanizer(messages[1], {}, storage, fetch, onUpdate, emitError)
     // two times from first message, one from the second
     expect(onUpdate).toHaveBeenCalledTimes(3)
   })
@@ -454,7 +452,9 @@ describe('with (Account | Key)[] arg', () => {
         )
       )
     })
-    await callsHumanizer(accountOp, [...accounts, ...keys], storage, fetch, onUpdate, emitError)
+
+    const knownAddresses = { [accounts[0].addr]: 'First account', [keys[0].addr]: 'Second account' }
+    await callsHumanizer(accountOp, knownAddresses, storage, fetch, onUpdate, emitError)
     expect(onUpdate).toHaveBeenCalledTimes(1)
   })
 })
