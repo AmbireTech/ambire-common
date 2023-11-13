@@ -283,8 +283,8 @@ export class ActivityController extends EventEmitter {
               if (receipt) {
                 if (is4337) {
                   this.#accountsOps[this.filters!.account][network][accountOpIndex].status = AccountOpStatus.Show4337BroadcastedBanner
-                  this.#accountsOps[this.filters!.account][network][accountOpIndex].txnId = receipt.transactionHash
-                  this.#accountsOps[this.filters!.account][network][accountOpIndex].success = receipt.status
+                  this.#accountsOps[this.filters!.account][network][accountOpIndex].txnId = receipt.receipt.transactionHash
+                  this.#accountsOps[this.filters!.account][network][accountOpIndex].success = receipt.receipt.status
                 } else {
                   this.#accountsOps[this.filters!.account][network][accountOpIndex].status =
                     receipt.status ? AccountOpStatus.Success : AccountOpStatus.Failure
