@@ -216,7 +216,7 @@ const transactions = {
 const emitError = jest.fn((err: ErrorRef) => {
   console.log(err)
 })
-describe('HumanizerController', () => {
+describe('Humanizer main function', () => {
   let storage: Storage
   beforeEach(async () => {
     storage = produceMemoryStore()

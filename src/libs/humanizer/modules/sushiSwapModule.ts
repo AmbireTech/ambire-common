@@ -9,7 +9,6 @@ export const sushiSwapModule: HumanizerCallModule = (
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   options?: any
 ) => {
-  console.log(irCalls)
   //   const sushiSwapIface = new ethers.Interface(accountOp.humanizerMeta?.['abis:SushiSwap'])
   const routeProcessorIface = new ethers.Interface(accountOp.humanizerMeta?.['abis:RouteProcessor'])
   const matcher = {
@@ -17,10 +16,9 @@ export const sushiSwapModule: HumanizerCallModule = (
       _accountOp: AccountOp,
       call: IrCall
     ): IrCall => {
-      const params = routeProcessorIface.parseTransaction(call)!.args
-      const { tokenIn, amountIn, tokenOut, amountOutMin, to, route } =
+      const { tokenIn, amountIn, tokenOut, amountOutMin, to /* route */ } =
         routeProcessorIface.parseTransaction(call)!.args
-      console.log({ tokenIn, amountIn, tokenOut, amountOutMin, to, route })
+
       return {
         ...call,
         fullVisualization: [
@@ -36,8 +34,8 @@ export const sushiSwapModule: HumanizerCallModule = (
   const newCalls: IrCall[] = irCalls.map((call: IrCall) => {
     if (call.fullVisualization) return call
     if (
-      accountOp.humanizerMeta?.[`names:${call.to}`].includes('SushiSwap') ||
-      accountOp.humanizerMeta?.[`names:${call.to}`].includes('RouterProcessor')
+      accountOp.humanizerMeta?.[`names:${call.to}`]?.includes('SushiSwap') ||
+      accountOp.humanizerMeta?.[`names:${call.to}`]?.includes('RouterProcessor')
     ) {
       if (matcher[call.data.slice(0, 10)]) {
         return matcher[call.data.slice(0, 10)](accountOp, call)
@@ -47,5 +45,4 @@ export const sushiSwapModule: HumanizerCallModule = (
     return call
   })
   return [newCalls, []]
-  //   return 1
 }

@@ -18,6 +18,7 @@ import { parseCalls } from './parsers'
 import { nameParsing } from './parsers/nameParsing'
 import { tokenParsing } from './parsers/tokenParsing'
 import { getAction, getLabel, getToken } from './utils'
+import { sushiSwapModule } from './modules/sushiSwapModule'
 
 const humanizerInfo = require('../../consts/humanizerInfo.json')
 
@@ -175,6 +176,13 @@ const transactions: { [key: string]: Array<IrCall> } = {
       to: '0xdA816459F1AB5631232FE5e97a05BBBb94970c95',
       value: 0n,
       data: '0x095ea7b3000000000000000000000000c92e8bdf79f0507f65a392b0ab4667716bfe011000000000000000000000000000000000000000000000071414d02429e66c0000'
+    }
+  ],
+  sushiSwapCalls: [
+    {
+      to: '0xE7eb31f23A5BefEEFf76dbD2ED6AdC822568a5d2',
+      value: 0n,
+      data: '0x2646478b0000000000000000000000000d500b1d8e8ef31e21c99d1db9a6444d3adf127000000000000000000000000000000000000000000000000000016bcc41e900000000000000000000000000008f3cf7ad23cd3cadbd9735aff958023239c6a06300000000000000000000000000000000000000000000000000013d425a52399d0000000000000000000000006969174fd72466430a46e18234d0b530c9fd5f4900000000000000000000000000000000000000000000000000000000000000c00000000000000000000000000000000000000000000000000000000000000042020d500B1d8E8eF31E21C99d1Db9A6444d3ADf127001ffff008929D3FEa77398F64448c85015633c2d6472fB29016969174FD72466430a46e18234D0b530c9FD5f49000000000000000000000000000000000000000000000000000000000000'
     }
   ]
 }
@@ -569,5 +577,28 @@ describe('module tests', () => {
         expect(v).toMatchObject(expectedhumanization[i][j])
       )
     )
+  })
+  test('SushiSwap RouteProcessor', () => {
+    const expectedhumanization: HumanizerVisualization[] = [
+      { type: 'action', content: 'Swap' },
+      {
+        type: 'token',
+        address: '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270',
+        amount: 400000000000000n
+      },
+      { type: 'label', content: 'for' },
+      {
+        type: 'token',
+        address: '0x8f3Cf7ad23Cd3CaDbD9735AFf958023239c6A063',
+        amount: 348830169184669n
+      }
+    ]
+    accountOp.calls = [...transactions.sushiSwapCalls]
+    let irCalls: IrCall[] = accountOp.calls
+    ;[irCalls] = sushiSwapModule(accountOp, irCalls)
+    expect(irCalls.length).toBe(1)
+    expectedhumanization.forEach((h: HumanizerVisualization, i: number) => {
+      expect(irCalls[0]?.fullVisualization?.[i]).toMatchObject(h)
+    })
   })
 })
