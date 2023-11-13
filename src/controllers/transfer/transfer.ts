@@ -58,8 +58,6 @@ export class TransferController extends EventEmitter {
 
   isRecipientSmartContract = false
 
-  userRequest: UserRequest | null = null
-
   #selectedTokenNetworkData: {
     id: string
     unstoppableDomainsChain: string
@@ -77,7 +75,6 @@ export class TransferController extends EventEmitter {
     this.recipientUDAddress = ''
     this.isRecipientAddressUnknown = false
     this.isRecipientDomainResolving = false
-    this.userRequest = null
     this.isRecipientAddressUnknownAgreed = false
     this.isRecipientSmartContract = false
     this.isSWWarningVisible = false
@@ -240,7 +237,7 @@ export class TransferController extends EventEmitter {
     this.emitUpdate()
   }
 
-  async buildUserRequest() {
+  async addUserRequest({ addUserRequest }: { addUserRequest: (req: UserRequest) => void }) {
     if (!this.isInitialized) {
       this.#throwNotInitialized()
       return
@@ -276,9 +273,9 @@ export class TransferController extends EventEmitter {
       action: txn
     }
 
-    this.userRequest = req
+    addUserRequest(req)
 
-    this.emitUpdate()
+    this.resetForm()
   }
 
   // Allows for debounce implementation in the UI

@@ -2,6 +2,7 @@ import { formatUnits, JsonRpcProvider } from 'ethers'
 import fetch from 'node-fetch'
 
 import { expect } from '@jest/globals'
+
 import humanizerInfo from '../../consts/ambireConstantsHumanizerInfo.json'
 import { networks } from '../../consts/networks'
 import { Portfolio } from '../../libs/portfolio'
@@ -30,6 +31,8 @@ const ethPortfolio = new Portfolio(fetch, provider, ethereum)
 const polygonPortfolio = new Portfolio(fetch, polygonProvider, polygon)
 
 let transferController: TransferController
+
+const addUserRequestMock = jest.fn()
 
 describe('Transfer Controller', () => {
   test('should initialize', async () => {
@@ -138,35 +141,38 @@ describe('Transfer Controller', () => {
     })
   })
   test('should build user request with non-native token transfer', async () => {
-    await transferController.buildUserRequest()
+    await transferController.addUserRequest({ addUserRequest: addUserRequestMock })
 
-    expect(transferController.userRequest?.accountAddr).toBe(PLACEHOLDER_SELECTED_ACCOUNT)
-    expect(transferController.userRequest?.action.kind).toBe('call')
+    const userRequest = addUserRequestMock.mock.calls[0][0]
+    expect(userRequest?.accountAddr).toBe(PLACEHOLDER_SELECTED_ACCOUNT)
+    expect(userRequest?.action.kind).toBe('call')
 
     // Fixes TS errors
-    if (transferController.userRequest?.action.kind !== 'call') return
+    if (userRequest?.action.kind !== 'call') return
 
     // To be the selected token's address. @TODO: Is this correct?
-    expect(transferController.userRequest?.action.to).toBe(XWALLET_ADDRESS)
+    expect(userRequest?.action.to).toBe(XWALLET_ADDRESS)
     // Because we are not transferring the native token
-    expect(transferController.userRequest?.action.value).toBe(0n)
+    expect(userRequest?.action.value).toBe(0n)
   })
   test('should build user request with native token transfer', async () => {
     transferController.handleTokenChange(`0x${'0'.repeat(40)}-ethereum`)
     transferController.update({
+      recipientAddress: PLACEHOLDER_RECIPIENT
+    })
+    transferController.update({
       amount: '1'
     })
-    await transferController.buildUserRequest()
+    await transferController.addUserRequest({ addUserRequest: addUserRequestMock })
+    const userRequest = addUserRequestMock.mock.calls[1][0]
 
-    expect(transferController.userRequest?.accountAddr).toBe(PLACEHOLDER_SELECTED_ACCOUNT)
-    expect(transferController.userRequest?.action.kind).toBe('call')
+    expect(userRequest?.accountAddr).toBe(PLACEHOLDER_SELECTED_ACCOUNT)
+    expect(userRequest?.action.kind).toBe('call')
 
     // Fixes TS errors
-    if (transferController.userRequest?.action.kind !== 'call') return
+    if (userRequest?.action.kind !== 'call') return
 
-    expect(transferController.userRequest?.action.to.toLowerCase()).toBe(
-      PLACEHOLDER_RECIPIENT_LOWERCASE
-    )
-    expect(transferController.userRequest?.action.value).toBe(1000000000000000000n)
+    expect(userRequest?.action.to.toLowerCase()).toBe(PLACEHOLDER_RECIPIENT_LOWERCASE)
+    expect(userRequest?.action.value).toBe(1000000000000000000n)
   })
 })
