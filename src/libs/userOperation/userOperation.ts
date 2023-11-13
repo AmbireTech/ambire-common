@@ -44,7 +44,7 @@ function getPVG(
   network: NetworkDescriptor,
   isDeployed: boolean
 ) {
-  const perUseropOverhead = 4000n
+  const perUseropOverhead = 12500n
   return perUseropOverhead + getCallDataAdditional(accountOp, network!, isDeployed)
 }
 
