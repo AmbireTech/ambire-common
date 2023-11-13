@@ -246,7 +246,10 @@ export class MainController extends EventEmitter {
     )
   }
 
-  async #getAccountsInfo(accounts: Account[], blockTag: string | number = 'latest'): Promise<AccountStates> {
+  async #getAccountsInfo(
+    accounts: Account[],
+    blockTag: string | number = 'latest'
+  ): Promise<AccountStates> {
     const result = await Promise.all(
       this.settings.networks.map((network) =>
         getAccountState(this.#providers[network.id], network, accounts, blockTag)
@@ -716,7 +719,7 @@ export class MainController extends EventEmitter {
       accountOp.calls.forEach((call) => {
         if (call.fromUserRequestId) {
           this.removeUserRequest(call.fromUserRequestId)
-          this.onResolveDappRequest({ hash: accountOp.signature }, call.fromUserRequestId)
+          this.onResolveDappRequest({ hash: transactionRes?.hash }, call.fromUserRequestId)
         }
       })
       console.log('broadcasted:', transactionRes)
