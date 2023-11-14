@@ -1,4 +1,3 @@
-import { SettingsController } from 'controllers/settings/settings'
 import { ethers, JsonRpcProvider } from 'ethers'
 
 import ERC20 from '../../../contracts/compiled/IERC20.json'
@@ -16,6 +15,7 @@ import { Price, TokenResult } from '../../libs/portfolio'
 import EventEmitter from '../eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
 import { PortfolioController } from '../portfolio/portfolio'
+import { SettingsController } from '../settings/settings'
 
 export enum SigningStatus {
   UnableToSign = 'unable-to-sign',

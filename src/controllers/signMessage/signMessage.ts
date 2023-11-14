@@ -1,4 +1,3 @@
-import { SettingsController } from 'controllers/settings/settings'
 import { ethers, JsonRpcProvider } from 'ethers'
 
 import { networks } from '../../consts/networks'
@@ -14,6 +13,7 @@ import { verifyMessage } from '../../libs/signMessage/signMessage'
 import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
 import EventEmitter from '../eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
+import { SettingsController } from '../settings/settings'
 
 export class SignMessageController extends EventEmitter {
   #keystore: KeystoreController
