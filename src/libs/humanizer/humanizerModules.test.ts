@@ -383,7 +383,7 @@ describe('module tests', () => {
     ]
     accountOp.calls = [...transactions.uniV3]
     let irCalls: IrCall[] = accountOp.calls
-    ;[irCalls] = uniswapHumanizer(accountOp, irCalls)
+    ;[irCalls] = uniswapHumanizer(accountOp, irCalls, { emitedError: moockEmitError })
     irCalls.forEach((c, i) => {
       expect(c?.fullVisualization?.length).toEqual(expectedhumanization[i].length)
       c?.fullVisualization?.forEach((v: HumanizerVisualization, j: number) => {
