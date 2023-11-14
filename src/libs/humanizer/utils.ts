@@ -4,12 +4,18 @@ import { ethers } from 'ethers'
 import { geckoNetworkIdMapper } from '../../consts/coingecko'
 import { networks } from '../../consts/networks'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
-import { HumanizerFragment, HumanizerSettings, HumanizerVisualization, IrCall } from './interfaces'
+import {
+  HumanizerFragment,
+  HumanizerSettings,
+  HumanizerVisualization,
+  HumanizerWarning,
+  IrCall
+} from './interfaces'
 
 dotenv.config()
 const COINGECKO_PRO_API_KEY = process.env.COINGECKO_PRO_API_KEY
 
-export function getWarning(content: string, level: string = 'caution') {
+export function getWarning(content: string, level: HumanizerWarning['level'] = 'caution') {
   return { content, level }
 }
 
