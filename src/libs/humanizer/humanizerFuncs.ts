@@ -81,6 +81,10 @@ export const humanizePlainTextMessage = (m: PlainTextMessage): HumanizerVisualiz
   return [getAction('Sign message:'), getLabel(m.message as string)]
 }
 
+/**
+ * Map account addresses to their respective labels in order to display
+ * user-friendly labels instead of raw addresses.
+ */
 export const getKnownAddressLabels = (
   accounts: Account[],
   accountPreferences: AccountPreferences
