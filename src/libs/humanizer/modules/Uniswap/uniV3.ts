@@ -28,8 +28,6 @@ const uniV32Mapping = (
     ): IrCall[] => {
       const [deadline, calls] = ifaceV32.parseTransaction(call)?.args || []
       const mappingResult = uniV32Mapping(humanizerInfo)
-      // @TODO: Multicall that outputs ETH should be detected as such and displayed as one action
-      // the current verbosity of "Swap ..., unwrap WETH to ETH" will be a nice pedantic quirk
       const parsed: IrCall[] = calls
         .map((data: string): IrCall[] => {
           const sigHash = data.slice(0, 10)
@@ -55,8 +53,6 @@ const uniV32Mapping = (
     ): IrCall[] => {
       const [calls] = ifaceV32.parseTransaction(call)?.args || []
       const mappingResult = uniV32Mapping(humanizerInfo)
-      // @TODO: Multicall that outputs ETH should be detected as such and displayed as one action
-      // the current verbosity of "Swap ..., unwrap WETH to ETH" will be a nice pedantic quirk
       const parsed = calls
         .map((data: string) => {
           const sigHash = data.slice(0, 10)
@@ -77,8 +73,6 @@ const uniV32Mapping = (
     ): IrCall[] => {
       const [prevBlockHash, calls] = ifaceV32.parseTransaction(call)?.args || []
       const mappingResult = uniV32Mapping(humanizerInfo)
-      // @TODO: Multicall that outputs ETH should be detected as such and displayed as one action
-      // the current verbosity of "Swap ..., unwrap WETH to ETH" will be a nice pedantic quirk
       const parsed = calls
         .map((data: string) => {
           const sigHash = data.slice(0, 10)
@@ -353,8 +347,6 @@ const uniV3Mapping = (
       const args = ifaceV3.parseTransaction(call)?.args || []
       const calls = args[args.length - 1]
       const mappingResult = uniV3Mapping(humanizerInfo)
-      // @TODO: Multicall that outputs ETH should be detected as such and displayed as one action
-      // the current verbosity of "Swap ..., unwrap WETH to ETH" will be a nice pedantic quirk
       const parsed = calls
         .map((data: string) => {
           const sigHash = data.slice(0, 10)

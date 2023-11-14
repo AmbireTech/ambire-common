@@ -28,8 +28,6 @@ const extractParams = (inputsDetails: any, input: any) => {
 }
 
 // @TODO add txns parsing (example for turning swap 1.15 and send 0.15 to swap 1.00)
-// @TODO remove 0 wrap/unwraps
-
 export const uniUniversalRouter = (
   humanizerInfo: any
 ): { [x: string]: (a: AccountOp, c: IrCall) => IrCall[] } => {
