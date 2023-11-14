@@ -1,4 +1,3 @@
-import { SettingsController } from 'controllers/settings/settings'
 import { ethers, JsonRpcProvider } from 'ethers'
 
 import ERC20 from '../../../contracts/compiled/IERC20.json'
@@ -16,6 +15,7 @@ import { Price, TokenResult } from '../../libs/portfolio'
 import EventEmitter from '../eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
 import { PortfolioController } from '../portfolio/portfolio'
+import { SettingsController } from '../settings/settings'
 
 export enum SigningStatus {
   UnableToSign = 'unable-to-sign',
@@ -154,8 +154,14 @@ export class SignAccountOpController extends EventEmitter {
     signingKeyAddr?: Key['addr']
     signingKeyType?: Key['type']
   }) {
-    // TODO: fine-tune the error handling
-    if (!this.#accounts) throw new Error('signAccountOp: accounts not set')
+    if (!this.#accounts) {
+      return this.emitError({
+        message:
+          'Something went wrong when updating the current account operation information. Missing accounts data. Please try to initiate the account operation again.',
+        level: 'major',
+        error: new Error('signAccountOp: missing accounts')
+      })
+    }
 
     if (gasPrices) this.#gasPrices = gasPrices
 

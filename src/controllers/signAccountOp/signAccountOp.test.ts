@@ -1,4 +1,3 @@
-import { SettingsController } from 'controllers/settings/settings'
 import { JsonRpcProvider } from 'ethers'
 import fetch from 'node-fetch'
 
@@ -16,6 +15,7 @@ import { estimate } from '../../libs/estimate/estimate'
 import { getGasPriceRecommendations } from '../../libs/gasPrice/gasPrice'
 import { KeystoreController } from '../keystore/keystore'
 import { PortfolioController } from '../portfolio/portfolio'
+import { SettingsController } from '../settings/settings'
 import { SignAccountOpController, SigningStatus } from './signAccountOp'
 
 const providers = Object.fromEntries(
