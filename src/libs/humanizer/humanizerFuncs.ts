@@ -1,6 +1,8 @@
+import { ErrorRef } from 'controllers/eventEmitter'
 import { ethers } from 'ethers'
 
-import { ErrorRef } from 'controllers/eventEmitter'
+import { Account } from '../../interfaces/account'
+import { AccountPreferences } from '../../interfaces/settings'
 import { PlainTextMessage, TypedMessage } from '../../interfaces/userRequest'
 import { AccountOp } from '../accountOp/accountOp'
 import {
@@ -8,7 +10,8 @@ import {
   HumanizerFragment,
   HumanizerTypedMessaageModule,
   HumanizerVisualization,
-  IrCall
+  IrCall,
+  KnownAddressLabels
 } from './interfaces'
 import { getAction, getLabel } from './utils'
 
@@ -76,4 +79,26 @@ export const humanizeTypedMessage = (
 
 export const humanizePlainTextMessage = (m: PlainTextMessage): HumanizerVisualization[] => {
   return [getAction('Sign message:'), getLabel(m.message as string)]
+}
+
+export const getKnownAddressLabels = (
+  accounts: Account[],
+  accountPreferences: AccountPreferences
+  // TODO: addressBookAddresses: any,
+  // TODO: keyPreferences: any,
+): KnownAddressLabels => {
+  const knownAddressLabels: KnownAddressLabels = {}
+
+  accounts.forEach((acc) => {
+    // TODO: Check if the address is in the key preferences
+
+    // TODO: Check if the address is in the address book
+
+    const accPref = accountPreferences[acc.addr]
+    if (accPref?.label) {
+      knownAddressLabels[acc.addr] = accPref.label
+    }
+  })
+
+  return knownAddressLabels
 }
