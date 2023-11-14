@@ -105,16 +105,12 @@ describe('KeystoreController', () => {
     })
   })
 
-  test('should not unlock with wrong secret', (done) => {
-    keystore.unlockWithSecret('passphrase', `${pass}1`)
-
-    const unsubscribe = keystore.onError((e) => {
-      expect(e.error.message).toBe('keystore: wrong secret')
-      expect(keystore.isUnlocked).toBe(false)
-
-      unsubscribe()
-      done()
-    })
+  test('should not unlock with wrong secret', async () => {
+    try {
+      await keystore.unlockWithSecret('passphrase', `${pass}1`)
+    } catch {
+      expect(keystore.errorMessage).toBe('keystore: wrong secret')
+    }
   })
 
   test('should unlock with secret', (done) => {

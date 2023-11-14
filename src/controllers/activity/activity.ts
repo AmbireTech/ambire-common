@@ -375,18 +375,18 @@ export class ActivityController extends EventEmitter {
     })
   }
 
-  get banners(): Banner[] {
+  get broadcastedButNotConfirmed(): SubmittedAccountOp[] {
     // Here we don't rely on `this.isInitialized` flag, as it checks for both `this.filters.account` and `this.filters.network` existence.
     // Banners are network agnostic, and that's the reason we check for `this.filters.account` only and having this.#accountsOps loaded.
     if (!this.filters?.account || !this.#accountsOps[this.filters.account]) return []
 
-    const broadcastedButNotConfirmed = Object.values(this.#accountsOps[this.filters.account])
+    return Object.values(this.#accountsOps[this.filters.account])
       .flat()
       .filter((accountOp) => accountOp.status === AccountOpStatus.BroadcastedButNotConfirmed)
+  }
 
-    if (!broadcastedButNotConfirmed.length) return []
-
-    return broadcastedButNotConfirmed.map((accountOp) => {
+  get banners(): Banner[] {
+    return this.broadcastedButNotConfirmed.map((accountOp) => {
       const network = networks.find((x) => x.id === accountOp.networkId)!
 
       return {

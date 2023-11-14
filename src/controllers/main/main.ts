@@ -683,7 +683,7 @@ export class MainController extends EventEmitter {
       accountOp.calls.forEach((call) => {
         if (call.fromUserRequestId) {
           this.removeUserRequest(call.fromUserRequestId)
-          this.onResolveDappRequest({ hash: accountOp.signature }, call.fromUserRequestId)
+          this.onResolveDappRequest({ hash: transactionRes?.hash }, call.fromUserRequestId)
         }
       })
       console.log('broadcasted:', transactionRes)
