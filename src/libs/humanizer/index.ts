@@ -15,7 +15,7 @@ import {
 } from './interfaces'
 import { aaveHumanizer } from './modules/Aave'
 import { fallbackHumanizer } from './modules/fallBackHumanizer'
-import { gasTankModue } from './modules/gasTankModule'
+import { gasTankModule } from './modules/gasTankModule'
 import { sushiSwapModule } from './modules/sushiSwapModule'
 import { genericErc20Humanizer, genericErc721Humanizer } from './modules/tokens'
 import { uniswapHumanizer } from './modules/Uniswap'
@@ -39,7 +39,7 @@ const HUMANIZER_META_KEY = 'HumanizerMeta'
 const humanizerCallModules: HumanizerCallModule[] = [
   genericErc20Humanizer,
   genericErc721Humanizer,
-  gasTankModue,
+  gasTankModule,
   uniswapHumanizer,
   wethHumanizer,
   aaveHumanizer,
