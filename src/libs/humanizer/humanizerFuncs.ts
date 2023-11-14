@@ -82,8 +82,9 @@ export const humanizePlainTextMessage = (m: PlainTextMessage): HumanizerVisualiz
 }
 
 /**
- * Map account addresses to their respective labels in order to display
- * user-friendly labels instead of raw addresses.
+ * Map account addresses to their respective labels (if they have ones) in order
+ * to display user-friendly labels instead of raw addresses. The addresses
+ * for which there is a label are considered "known addresses".
  */
 export const getKnownAddressLabels = (
   accounts: Account[],
