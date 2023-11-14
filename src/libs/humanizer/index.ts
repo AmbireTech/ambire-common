@@ -21,7 +21,7 @@ import { genericErc20Humanizer, genericErc721Humanizer } from './modules/tokens'
 import { uniswapHumanizer } from './modules/Uniswap'
 // import { oneInchHumanizer } from '.modules/oneInch'
 import { WALLETModule } from './modules/WALLET'
-import { wethHumanizer } from './modules/wrapped'
+import { wrappingModule } from './modules/wrapped'
 import { yearnVaultModule } from './modules/yearnTesseractVault'
 import { parseCalls, parseMessage } from './parsers'
 import { nameParsing } from './parsers/nameParsing'
@@ -41,7 +41,7 @@ const humanizerCallModules: HumanizerCallModule[] = [
   genericErc721Humanizer,
   gasTankModule,
   uniswapHumanizer,
-  wethHumanizer,
+  wrappingModule,
   aaveHumanizer,
   // oneInchHumanizer,
   WALLETModule,

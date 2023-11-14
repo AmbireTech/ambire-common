@@ -57,7 +57,7 @@ const wrapSwapReducer = (calls: IrCall[]) => {
   return newCalls
 }
 
-export const wethHumanizer: HumanizerCallModule = (
+export const wrappingModule: HumanizerCallModule = (
   accountOp: AccountOp,
   irCalls: IrCall[],
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -68,7 +68,9 @@ export const wethHumanizer: HumanizerCallModule = (
     if (
       accountOp.humanizerMeta?.[`names:${call.to}`] === 'Wrapped ETH' ||
       accountOp.humanizerMeta?.[`names:${call.to}`] === 'WETH' ||
-      accountOp.humanizerMeta?.[`tokens:${call.to}`]?.[0] === 'WETH'
+      accountOp.humanizerMeta?.[`tokens:${call.to}`]?.[0] === 'WETH' ||
+      accountOp.humanizerMeta?.[`names:${call.to}`] === 'WMATIC' ||
+      accountOp.humanizerMeta?.[`tokens:${call.to}`]?.[0] === 'WMATIC'
     ) {
       // 0xd0e30db0
       if (call.data.slice(0, 10) === iface.getFunction('deposit')?.selector) {

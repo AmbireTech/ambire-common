@@ -12,7 +12,7 @@ import { genericErc20Humanizer, genericErc721Humanizer } from './modules/tokens'
 import { uniswapHumanizer } from './modules/Uniswap'
 // import { oneInchHumanizer } from './modules/oneInch'
 import { WALLETModule } from './modules/WALLET'
-import { wethHumanizer } from './modules/wrapped'
+import { wrappingModule } from './modules/wrapped'
 import { yearnVaultModule } from './modules/yearnTesseractVault'
 import { parseCalls } from './parsers'
 import { nameParsing } from './parsers/nameParsing'
@@ -26,7 +26,7 @@ const humanizerModules: HumanizerCallModule[] = [
   genericErc20Humanizer,
   genericErc721Humanizer,
   uniswapHumanizer,
-  wethHumanizer,
+  wrappingModule,
   aaveHumanizer,
   // oneInchHumanizer,
   WALLETModule,
@@ -394,7 +394,7 @@ describe('module tests', () => {
   test('WETH', () => {
     accountOp.calls = [...transactions.weth]
     let irCalls: IrCall[] = accountOp.calls
-    ;[irCalls] = wethHumanizer(accountOp, irCalls)
+    ;[irCalls] = wrappingModule(accountOp, irCalls)
     expect(irCalls[0]?.fullVisualization).toEqual([
       { type: 'action', content: 'Wrap' },
       {
@@ -451,7 +451,7 @@ describe('module tests', () => {
       }
     ]
 
-    const [newCalls] = wethHumanizer(accountOp, calls)
+    const [newCalls] = wrappingModule(accountOp, calls)
     expect(newCalls.length).toBe(1)
     newCalls[0].fullVisualization?.map((v, i) => expect(v).toMatchObject(expectedHumanization[i]))
   })
