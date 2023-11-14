@@ -154,8 +154,14 @@ export class SignAccountOpController extends EventEmitter {
     signingKeyAddr?: Key['addr']
     signingKeyType?: Key['type']
   }) {
-    // TODO: fine-tune the error handling
-    if (!this.#accounts) throw new Error('signAccountOp: accounts not set')
+    if (!this.#accounts) {
+      return this.emitError({
+        message:
+          'Something went wrong when updating the current account operation information. Missing accounts data. Please try to initiate the account operation again.',
+        level: 'major',
+        error: new Error('signAccountOp: missing accounts')
+      })
+    }
 
     if (gasPrices) this.#gasPrices = gasPrices
 
