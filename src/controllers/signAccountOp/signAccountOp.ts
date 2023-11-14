@@ -1,3 +1,4 @@
+import { SettingsController } from 'controllers/settings/settings'
 import { ethers, JsonRpcProvider } from 'ethers'
 
 import ERC20 from '../../../contracts/compiled/IERC20.json'
@@ -9,6 +10,7 @@ import { AccountOp, accountOpSignableHash, GasFeePayment } from '../../libs/acco
 import { EstimateResult } from '../../libs/estimate/estimate'
 import { GasRecommendation } from '../../libs/gasPrice/gasPrice'
 import { callsHumanizer } from '../../libs/humanizer'
+import { getKnownAddressLabels } from '../../libs/humanizer/humanizerFuncs'
 import { IrCall } from '../../libs/humanizer/interfaces'
 import { Price, TokenResult } from '../../libs/portfolio'
 import EventEmitter from '../eventEmitter'
@@ -67,6 +69,8 @@ export class SignAccountOpController extends EventEmitter {
 
   #portfolio: PortfolioController
 
+  #settings: SettingsController
+
   #storage: Storage
 
   #fetch: Function
@@ -98,6 +102,7 @@ export class SignAccountOpController extends EventEmitter {
   constructor(
     keystore: KeystoreController,
     portfolio: PortfolioController,
+    settings: SettingsController,
     storage: Storage,
     fetch: Function,
     providers: { [key: string]: JsonRpcProvider }
@@ -106,6 +111,7 @@ export class SignAccountOpController extends EventEmitter {
 
     this.#keystore = keystore
     this.#portfolio = portfolio
+    this.#settings = settings
     this.#storage = storage
     this.#fetch = fetch
     this.#providers = providers
@@ -148,6 +154,9 @@ export class SignAccountOpController extends EventEmitter {
     signingKeyAddr?: Key['addr']
     signingKeyType?: Key['type']
   }) {
+    // TODO: fine-tune the error handling
+    if (!this.#accounts) throw new Error('signAccountOp: accounts not set')
+
     if (gasPrices) this.#gasPrices = gasPrices
 
     if (estimation) this.#estimation = estimation
@@ -162,10 +171,13 @@ export class SignAccountOpController extends EventEmitter {
         this.accountOp = accountOp
       }
 
-      // TODO: add knownAddresses
+      const knownAddressLabels = getKnownAddressLabels(
+        this.#accounts,
+        this.#settings.accountPreferences
+      )
       callsHumanizer(
         this.accountOp,
-        {},
+        knownAddressLabels,
         this.#storage,
         this.#fetch,
         (humanizedCalls) => {

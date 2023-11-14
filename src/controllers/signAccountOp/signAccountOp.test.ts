@@ -1,3 +1,4 @@
+import { SettingsController } from 'controllers/settings/settings'
 import { JsonRpcProvider } from 'ethers'
 import fetch from 'node-fetch'
 
@@ -145,7 +146,8 @@ describe('SignAccountOp Controller ', () => {
     const accountStates = await getAccountsInfo(accounts)
     const portfolio = new PortfolioController(storage, 'https://staging-relayer.ambire.com', [])
     await portfolio.updateSelectedAccount(accounts, networks, account.addr)
-    const controller = new SignAccountOpController(keystore, portfolio, storage, fetch, {
+    const settings = new SettingsController(storage, networks)
+    const controller = new SignAccountOpController(keystore, portfolio, settings, storage, fetch, {
       ethereum: provider
     })
     controller.status = { type: SigningStatus.ReadyToSign }

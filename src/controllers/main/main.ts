@@ -181,6 +181,7 @@ export class MainController extends EventEmitter {
     this.accountStates = await this.#getAccountsInfo(this.accounts)
     this.signMessage = new SignMessageController(
       this.keystore,
+      this.settings,
       this.#providers,
       this.#storage,
       this.#fetch
@@ -188,6 +189,7 @@ export class MainController extends EventEmitter {
     this.signAccountOp = new SignAccountOpController(
       this.keystore,
       this.portfolio,
+      this.settings,
       this.#storage,
       this.#fetch,
       this.#providers
@@ -243,7 +245,10 @@ export class MainController extends EventEmitter {
     )
   }
 
-  async #getAccountsInfo(accounts: Account[], blockTag: string | number = 'latest'): Promise<AccountStates> {
+  async #getAccountsInfo(
+    accounts: Account[],
+    blockTag: string | number = 'latest'
+  ): Promise<AccountStates> {
     const result = await Promise.all(
       this.settings.networks.map((network) =>
         getAccountState(this.#providers[network.id], network, accounts, blockTag)

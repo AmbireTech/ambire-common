@@ -1,4 +1,6 @@
+import { SettingsController } from 'controllers/settings/settings'
 import { ethers, JsonRpcProvider } from 'ethers'
+import { getKnownAddressLabels } from 'libs/humanizer/humanizerFuncs'
 
 import { networks } from '../../consts/networks'
 import { Account, AccountStates } from '../../interfaces/account'
@@ -15,6 +17,8 @@ import { KeystoreController } from '../keystore/keystore'
 
 export class SignMessageController extends EventEmitter {
   #keystore: KeystoreController
+
+  #settings: SettingsController
 
   #providers: { [key: string]: JsonRpcProvider }
 
@@ -44,6 +48,7 @@ export class SignMessageController extends EventEmitter {
 
   constructor(
     keystore: KeystoreController,
+    settings: SettingsController,
     providers: { [key: string]: JsonRpcProvider },
     storage: Storage,
     fetch: Function
@@ -51,6 +56,7 @@ export class SignMessageController extends EventEmitter {
     super()
 
     this.#keystore = keystore
+    this.#settings = settings
     this.#providers = providers
     this.#storage = storage
     this.#fetch = fetch
@@ -69,11 +75,14 @@ export class SignMessageController extends EventEmitter {
       this.messageToSign = messageToSign
       this.#accounts = accounts
       this.#accountStates = accountStates
+      const knownAddressLabels = getKnownAddressLabels(
+        this.#accounts,
+        this.#settings.accountPreferences
+      )
 
-      // TODO: add knownAddresses
       messageHumanizer(
         messageToSign,
-        {},
+        knownAddressLabels,
         this.#storage,
         this.#fetch,
         (humanizedMessage: IrMessage) => {
