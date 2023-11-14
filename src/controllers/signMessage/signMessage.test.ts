@@ -1,15 +1,15 @@
-import { SettingsController } from 'controllers/settings/settings'
 import { JsonRpcProvider } from 'ethers'
-import { Account } from 'interfaces/account'
 import fetch from 'node-fetch'
 
 import { describe, expect, jest, test } from '@jest/globals'
 
 import { produceMemoryStore } from '../../../test/helpers'
 import { networks } from '../../consts/networks'
+import { Account } from '../../interfaces/account'
 import { Message } from '../../interfaces/userRequest'
 import { KeystoreController } from '../keystore/keystore'
 import { InternalSigner } from '../keystore/keystore.test'
+import { SettingsController } from '../settings/settings'
 import { SignMessageController } from './signMessage'
 
 const providers = Object.fromEntries(
