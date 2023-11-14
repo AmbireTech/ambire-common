@@ -407,18 +407,12 @@ export class ActivityController extends EventEmitter {
     // Banners are network agnostic, and that's the reason we check for `this.filters.account` only and having this.#accountsOps loaded.
     if (!this.filters?.account || !this.#accountsOps[this.filters.account]) return []
 
-    const broadcasted = Object.values(this.#accountsOps[this.filters.account])
+    return Object.values(this.#accountsOps[this.filters.account])
       .flat()
       .filter((accountOp) => (
         (accountOp.status === AccountOpStatus.BroadcastedButNotConfirmed && !accountOp.gasFeePayment?.isERC4337) ||
         (accountOp.status === AccountOpStatus.Show4337BroadcastedBanner)
       ))
-
-    if (!broadcasted.length) return []
-
-    return Object.values(this.#accountsOps[this.filters.account])
-      .flat()
-      .filter((accountOp) => accountOp.status === AccountOpStatus.BroadcastedButNotConfirmed)
   }
 
   get banners(): Banner[] {

@@ -41,7 +41,7 @@ import { SignAccountOpController } from '../signAccountOp/signAccountOp'
 import { SignMessageController } from '../signMessage/signMessage'
 import { TransferController } from '../transfer/transfer'
 import bundler from '../../services/bundlers'
-import { toUserOperation } from '../../libs/userOperation/userOperation'
+import { isErc4337Broadcast, toUserOperation } from '../../libs/userOperation/userOperation'
 
 export class MainController extends EventEmitter {
   #storage: Storage
@@ -509,7 +509,9 @@ export class MainController extends EventEmitter {
       throw new Error(`estimateAccountOp: ${accountOp.networkId}: network does not exist`)
 
     // start transforming the accountOp to userOp if the network is 4337
-    if (network.erc4337?.enabled) {
+    // and it's not a legacy account
+    const is4337Broadcast = isErc4337Broadcast(network, account)
+    if (is4337Broadcast) {
       accountOp = toUserOperation(
         account,
         this.accountStates[accountOp.accountAddr][accountOp.networkId],
@@ -546,7 +548,7 @@ export class MainController extends EventEmitter {
     this.accountOpsToBeSigned[accountOp.accountAddr][accountOp.networkId]!.estimation = estimation
 
     // add the estimation to the user operation
-    if (network.erc4337?.enabled) {
+    if (is4337Broadcast) {
       accountOp.asUserOperation!.verificationGasLimit = ethers.toBeHex(estimation.erc4337estimation!.verificationGasLimit)
       accountOp.asUserOperation!.callGasLimit = ethers.toBeHex(estimation.erc4337estimation!.callGasLimit)
       this.accountOpsToBeSigned[accountOp.accountAddr][accountOp.networkId]!.accountOp = accountOp

@@ -14,7 +14,7 @@ import { Price, TokenResult } from '../../libs/portfolio'
 import EventEmitter from '../eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
 import { PortfolioController } from '../portfolio/portfolio'
-import { getTargetEdgeCaseNonce } from '../../libs/userOperation/userOperation'
+import { getTargetEdgeCaseNonce, isErc4337Broadcast } from '../../libs/userOperation/userOperation'
 import EntryPointAbi from '../../../contracts/compiled/EntryPoint.json'
 import { ERC_4337_ENTRYPOINT } from '../../consts/deploy'
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
@@ -407,10 +407,11 @@ export class SignAccountOpController extends EventEmitter {
       (speed) => speed.type === this.selectedFeeSpeed
     )!
 
+    const account = this.#getAccount()
     const network = this.#networks?.find((n) => n.id === this.accountOp?.networkId)
     return {
       paidBy: this.paidBy,
-      isERC4337: network?.erc4337?.enabled ?? false,
+      isERC4337: isErc4337Broadcast(network!, account!),
       isGasTank: feeToken?.networkId === 'gasTank',
       inToken: feeToken!.address,
       amount,
