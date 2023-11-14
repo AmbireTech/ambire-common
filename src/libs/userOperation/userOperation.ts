@@ -171,5 +171,10 @@ export function getPaymasterSpoof() {
 }
 
 export function isErc4337Broadcast(network: NetworkDescriptor, account: Account): boolean {
-  return (network!.erc4337!.enabled && account?.creation != null)
+  // write long to fix typescript issues
+  const isEnabled = network && network.erc4337
+    ? network.erc4337.enabled
+    : false
+
+  return (isEnabled && account.creation != null)
 }
