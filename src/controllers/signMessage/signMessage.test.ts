@@ -1,3 +1,4 @@
+import { SettingsController } from 'controllers/settings/settings'
 import { JsonRpcProvider } from 'ethers'
 import { Account } from 'interfaces/account'
 import fetch from 'node-fetch'
@@ -24,13 +25,16 @@ const account: Account = {
 describe('SignMessageController', () => {
   let signMessageController: SignMessageController
   let keystore: KeystoreController
+  let settings: SettingsController
 
   beforeEach(() => {
     const keystoreSigners = { internal: InternalSigner }
     keystore = new KeystoreController(produceMemoryStore(), keystoreSigners)
+    settings = new SettingsController(produceMemoryStore(), networks)
 
     signMessageController = new SignMessageController(
       keystore,
+      settings,
       providers,
       produceMemoryStore(),
       fetch
