@@ -1,5 +1,5 @@
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
-import { AccountPreferences } from '../../interfaces/settings'
+import { AccountPreferences, KeyPreferences } from '../../interfaces/settings'
 import { Storage } from '../../interfaces/storage'
 import { isValidAddress } from '../../services/address'
 import EventEmitter from '../eventEmitter'
@@ -8,6 +8,8 @@ export class SettingsController extends EventEmitter {
   networks: NetworkDescriptor[]
 
   accountPreferences: AccountPreferences = {}
+
+  keyPreferences: KeyPreferences = []
 
   #storage: Storage
 
@@ -23,7 +25,8 @@ export class SettingsController extends EventEmitter {
     try {
       ;[this.accountPreferences] = await Promise.all([
         // Should get the storage data from all keys here
-        this.#storage.get('accountPreferences', {})
+        this.#storage.get('accountPreferences', {}),
+        this.#storage.get('keyPreferences', [])
       ])
     } catch (e) {
       this.emitError({
@@ -39,7 +42,10 @@ export class SettingsController extends EventEmitter {
 
   async #storePreferences() {
     try {
-      await this.#storage.set('accountPreferences', this.accountPreferences)
+      await Promise.all([
+        this.#storage.set('accountPreferences', this.accountPreferences),
+        this.#storage.set('keyPreferences', this.accountPreferences)
+      ])
     } catch (e) {
       this.emitError({
         message:
@@ -68,6 +74,30 @@ export class SettingsController extends EventEmitter {
 
     await this.#storePreferences()
 
+    this.emitUpdate()
+  }
+
+  async addKeyPreferences(newKeyPreferences: KeyPreferences) {
+    if (!newKeyPreferences.length) return
+
+    if (newKeyPreferences.some(({ addr }) => !isValidAddress(addr))) {
+      return this.#throwInvalidAddress(newKeyPreferences.map(({ addr }) => addr))
+    }
+
+    const nextKeyPreferences = [...this.keyPreferences]
+    newKeyPreferences.forEach((newKey) => {
+      const existingKeyPref = nextKeyPreferences.find(
+        ({ addr, label }) => addr === newKey.addr && label === newKey.label
+      )
+
+      if (existingKeyPref) {
+        existingKeyPref.label = newKey.label
+      } else {
+        nextKeyPreferences.push(newKey)
+      }
+    })
+
+    await this.#storePreferences()
     this.emitUpdate()
   }
 
