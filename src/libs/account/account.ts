@@ -4,6 +4,8 @@ import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET } from '../../consts/derivation'
 import { networks } from '../../consts/networks'
 import { Account } from '../../interfaces/account'
+import { AccountPreferences } from '../../interfaces/settings'
+import { KnownAddressLabels } from '../humanizer/interfaces'
 import { getBytecode } from '../proxyDeploy/bytecode'
 import { getAmbireAccountAddress } from '../proxyDeploy/getAmbireAddressTwo'
 
@@ -60,3 +62,30 @@ export const isSmartAccount = (account: Account) => !!account.creation
  */
 export const isDerivedForSmartAccountKeyOnly = (index: number) =>
   index >= SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
+
+/**
+ * Map account addresses to their respective labels (if they have ones) in order
+ * to display user-friendly labels instead of raw addresses. The addresses
+ * for which there is a label are considered "known addresses".
+ */
+export const getKnownAddressLabels = (
+  accounts: Account[],
+  accountPreferences: AccountPreferences
+  // TODO: addressBookAddresses: any,
+  // TODO: keyPreferences: any,
+): KnownAddressLabels => {
+  const knownAddressLabels: KnownAddressLabels = {}
+
+  accounts.forEach((acc) => {
+    // TODO: Check if the address is in the key preferences
+
+    // TODO: Check if the address is in the address book
+
+    const accPref = accountPreferences[acc.addr]
+    if (accPref?.label) {
+      knownAddressLabels[acc.addr] = accPref.label
+    }
+  })
+
+  return knownAddressLabels
+}

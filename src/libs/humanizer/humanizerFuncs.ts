@@ -1,8 +1,6 @@
 import { ErrorRef } from 'controllers/eventEmitter'
 import { ethers } from 'ethers'
 
-import { Account } from '../../interfaces/account'
-import { AccountPreferences } from '../../interfaces/settings'
 import { PlainTextMessage, TypedMessage } from '../../interfaces/userRequest'
 import { AccountOp } from '../accountOp/accountOp'
 import {
@@ -10,8 +8,7 @@ import {
   HumanizerFragment,
   HumanizerTypedMessaageModule,
   HumanizerVisualization,
-  IrCall,
-  KnownAddressLabels
+  IrCall
 } from './interfaces'
 import { getAction, getLabel } from './utils'
 
@@ -79,31 +76,4 @@ export const humanizeTypedMessage = (
 
 export const humanizePlainTextMessage = (m: PlainTextMessage): HumanizerVisualization[] => {
   return [getAction('Sign message:'), getLabel(m.message as string)]
-}
-
-/**
- * Map account addresses to their respective labels (if they have ones) in order
- * to display user-friendly labels instead of raw addresses. The addresses
- * for which there is a label are considered "known addresses".
- */
-export const getKnownAddressLabels = (
-  accounts: Account[],
-  accountPreferences: AccountPreferences
-  // TODO: addressBookAddresses: any,
-  // TODO: keyPreferences: any,
-): KnownAddressLabels => {
-  const knownAddressLabels: KnownAddressLabels = {}
-
-  accounts.forEach((acc) => {
-    // TODO: Check if the address is in the key preferences
-
-    // TODO: Check if the address is in the address book
-
-    const accPref = accountPreferences[acc.addr]
-    if (accPref?.label) {
-      knownAddressLabels[acc.addr] = accPref.label
-    }
-  })
-
-  return knownAddressLabels
 }
