@@ -69,7 +69,7 @@ describe('Settings Controller', () => {
     settingsController.addAccountPreferences({ [validAddress]: preferencesWithLabelUpdateOnly })
   })
 
-  test('should remove preferences if valid address is provided', (done) => {
+  test('should remove address preference', (done) => {
     const validAddress = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'
     const preferences = { label: 'Ivo', pfp: 'racing_car' }
 
@@ -119,7 +119,6 @@ describe('Settings Controller', () => {
       emitCounter++
 
       if (emitCounter === 1) {
-        // Cast to AccountPreferences, because TS doesn't know that we just added a preference
         expect(settingsController.keyPreferences).toContainEqual(preference1)
         expect(settingsController.keyPreferences).toContainEqual(preference2)
         done()
@@ -127,5 +126,26 @@ describe('Settings Controller', () => {
     })
 
     settingsController.addKeyPreferences([preference1, preference2])
+  })
+
+  test('should remove key preference', (done) => {
+    const validAddress = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'
+    const preference = { addr: validAddress, type: 'internal', label: 'Narnia key' }
+
+    let emitCounter = 0
+    settingsController.onUpdate(() => {
+      emitCounter++
+
+      if (emitCounter === 1) {
+        settingsController.removeKeyPreferences([preference])
+      }
+
+      if (emitCounter === 2) {
+        expect(settingsController.keyPreferences).not.toContainEqual(preference)
+        done()
+      }
+    })
+
+    settingsController.addKeyPreferences([preference])
   })
 })
