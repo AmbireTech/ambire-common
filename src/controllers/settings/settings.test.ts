@@ -109,8 +109,10 @@ describe('Settings Controller', () => {
   })
 
   test('should add key preferences', (done) => {
-    const validAddress = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'
-    const preference = { addr: validAddress, type: 'internal', label: 'na Kalo malkiq... kluch' }
+    const validRandomAddress1 = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'
+    const validRandomAddress2 = '0xb14c95D1844D5d8B00166e46338F5Fc9546DF9D5'
+    const preference1 = { addr: validRandomAddress1, type: 'internal', label: "Kalo's mini key" }
+    const preference2 = { addr: validRandomAddress2, type: 'ledger', label: "Kalo's large key" }
 
     let emitCounter = 0
     settingsController.onUpdate(() => {
@@ -118,11 +120,12 @@ describe('Settings Controller', () => {
 
       if (emitCounter === 1) {
         // Cast to AccountPreferences, because TS doesn't know that we just added a preference
-        expect(settingsController.accountPreferences[validAddress]).toEqual(preference)
+        expect(settingsController.keyPreferences).toContainEqual(preference1)
+        expect(settingsController.keyPreferences).toContainEqual(preference2)
         done()
       }
     })
 
-    settingsController.addKeyPreferences([preference])
+    settingsController.addKeyPreferences([preference1, preference2])
   })
 })
