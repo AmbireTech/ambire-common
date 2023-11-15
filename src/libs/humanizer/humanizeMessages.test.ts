@@ -2,8 +2,13 @@ import { parseEther } from 'ethers'
 
 import { beforeEach, describe, expect } from '@jest/globals'
 
-import { TypedMessage } from '../../../interfaces/userRequest'
-import { erc20Module, erc721Module, fallbackEIP712Humanizer, permit2Module } from '.'
+import { TypedMessage } from '../../interfaces/userRequest'
+import {
+  erc20Module,
+  erc721Module,
+  fallbackEIP712Humanizer,
+  permit2Module
+} from './typedMessageModules'
 
 const address1 = '0x6942069420694206942069420694206942069420'
 const address2 = '0xaAaAaAaaAaAaAaaAaAAAAAAAAaaaAaAaAaaAaaAa'
@@ -107,8 +112,6 @@ describe('typed message tests', () => {
   })
   test('erc20 module', () => {
     const expectedVisualization = [
-      { type: 'action', content: 'Sign permit' },
-      { type: 'label', content: 'to' },
       { type: 'action', content: 'Send' },
       {
         type: 'token',
@@ -123,14 +126,12 @@ describe('typed message tests', () => {
     ]
 
     tmTemplate.message = typedMessages.erc20[0]
-    const visualization = erc20Module(tmTemplate)
-    expect(expectedVisualization.length).toEqual(visualization.length)
-    visualization.forEach((v, i) => expect(v).toMatchObject(expectedVisualization[i]))
+    const { fullVisualization } = erc20Module(tmTemplate)
+    expect(expectedVisualization.length).toEqual(fullVisualization?.length)
+    fullVisualization?.forEach((v, i) => expect(v).toMatchObject(expectedVisualization[i]))
   })
   test('erc721 module', () => {
     const expectedVisualization = [
-      { type: 'action', content: 'Sign permit' },
-      { type: 'label', content: 'to' },
       { type: 'action', content: 'Permit use of' },
       {
         type: 'nft',
@@ -145,9 +146,9 @@ describe('typed message tests', () => {
     ]
 
     tmTemplate.message = typedMessages.erc721[0]
-    const visualization = erc721Module(tmTemplate)
-    expect(expectedVisualization.length).toEqual(visualization.length)
-    visualization.forEach((v, i) => expect(v).toMatchObject(expectedVisualization[i]))
+    const { fullVisualization } = erc721Module(tmTemplate)
+    expect(expectedVisualization.length).toEqual(fullVisualization?.length)
+    fullVisualization?.forEach((v, i) => expect(v).toMatchObject(expectedVisualization[i]))
   })
 
   test('permit2 single module', () => {
@@ -172,9 +173,9 @@ describe('typed message tests', () => {
     tmTemplate.types = { PermitSingle: [{ name: 'details', type: 'PermitDetails' }] }
     tmTemplate.domain.verifyingContract = '0x000000000022D473030F116dDEE9F6B43aC78BA3'
     tmTemplate.message = typedMessages.permit2[0]
-    const visualization = permit2Module(tmTemplate)
-    expect(expectedSingleVisualization.length).toEqual(visualization.length)
-    visualization.forEach((v, i) => expect(v).toMatchObject(expectedSingleVisualization[i]))
+    const { fullVisualization } = permit2Module(tmTemplate)
+    expect(expectedSingleVisualization.length).toEqual(fullVisualization?.length)
+    fullVisualization?.forEach((v, i) => expect(v).toMatchObject(expectedSingleVisualization[i]))
   })
 
   test('permit2 module batch permit', () => {
@@ -217,10 +218,10 @@ describe('typed message tests', () => {
     tmTemplate.types = { PermitBatch: [{ name: 'details', type: 'PermitDetails[]' }] }
     tmTemplate.domain.verifyingContract = '0x000000000022D473030F116dDEE9F6B43aC78BA3'
     tmTemplate.message = typedMessages.permit2[1]
-    const visualization = permit2Module(tmTemplate)
-    expect(visualization.length).toEqual(expectedBatchVisualization.length)
+    const { fullVisualization } = permit2Module(tmTemplate)
+    expect(fullVisualization?.length).toEqual(expectedBatchVisualization.length)
     expectedBatchVisualization.forEach((v, i) => {
-      expect(v).toEqual(visualization[i])
+      expect(v).toEqual(fullVisualization?.[i])
     })
   })
   test('fallback module', () => {
@@ -236,8 +237,8 @@ describe('typed message tests', () => {
       'withRegards: false\n'
     ]
 
-    const visualization = fallbackEIP712Humanizer(tmTemplate)
-    expect(expectedVisualizationContent.length).toEqual(visualization.length)
-    visualization.map((v, i) => expect(v.content).toEqual(expectedVisualizationContent[i]))
+    const { fullVisualization } = fallbackEIP712Humanizer(tmTemplate)
+    expect(expectedVisualizationContent.length).toEqual(fullVisualization?.length)
+    fullVisualization?.map((v, i) => expect(v.content).toEqual(expectedVisualizationContent[i]))
   })
 })

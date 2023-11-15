@@ -1,7 +1,7 @@
 import { ethers } from 'ethers'
 import { AccountOp } from '../../accountOp/accountOp'
 import { HumanizerCallModule, IrCall } from '../interfaces'
-import { getAction, getLabel, getToken, getAddress } from '../utils'
+import { getAction, getLabel, getToken, getUnknownVisualization } from '../utils'
 
 const parseZeroAddressIfNeeded = (address: string) => {
   return address.toLowerCase() === '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee'
@@ -13,7 +13,7 @@ const OneInchMapping = (humanizerInfo: any) => {
   const iface = new ethers.Interface(humanizerInfo?.['abis:Swappin'])
 
   return {
-    [`${iface.getFunction('swap')}`]: (accounutOp: AccountOp, call: IrCall) => {
+    [iface.getFunction('swap')?.selector!]: (accounutOp: AccountOp, call: IrCall) => {
       const { desc } = iface.parseTransaction(call)!.args
       return [
         getAction('Swap'),
@@ -22,7 +22,7 @@ const OneInchMapping = (humanizerInfo: any) => {
         getToken(parseZeroAddressIfNeeded(desc.dstToken), desc.minReturnAmount)
       ]
     },
-    [`${iface.getFunction('unoswap')}`]: (accounutOp: AccountOp, call: IrCall) => {
+    [iface.getFunction('unoswap')?.selector!]: (accounutOp: AccountOp, call: IrCall) => {
       const { amount, minReturn, srcToken } = iface.parseTransaction(call)!.args
 
       return [
@@ -46,25 +46,21 @@ export const oneInchHumanizer: HumanizerCallModule = (
   const matcher = {
     ...OneInchMapping(accountOp.humanizerMeta)
   }
-  const newCalls: IrCall[] = []
-  irCalls.forEach((call) => {
+  const newCalls = irCalls.map((call) => {
     if (call.to === '0x1111111254fb6c44bAC0beD2854e76F90643097d') {
-      matcher[call.data.slice(0, 10)]
-        ? newCalls.push({
+      const sigHash = call.data.slice(0, 10)
+
+      return matcher[sigHash]
+        ? {
             ...call,
-            fullVisualization: matcher[call.data.slice(0, 10)](accountOp, call)
-          })
-        : newCalls.push({
+            fullVisualization: matcher[sigHash](accountOp, call)
+          }
+        : {
             ...call,
-            fullVisualization: [
-              getAction('Unknown action (1inch)'),
-              getLabel('to'),
-              getAddress(call.to)
-            ]
-          })
-    } else {
-      newCalls.push(call)
+            fullVisualization: getUnknownVisualization('1inch', call)
+          }
     }
+    return call
   })
   return [newCalls, []]
 }

@@ -1,3 +1,4 @@
+/* eslint-disable no-console */
 import { ethers } from 'ethers'
 import fetch from 'node-fetch'
 
@@ -215,7 +216,7 @@ const transactions = {
 const emitError = jest.fn((err: ErrorRef) => {
   console.log(err)
 })
-describe('HumanizerController', () => {
+describe('Humanizer main function', () => {
   let storage: Storage
   beforeEach(async () => {
     storage = produceMemoryStore()
@@ -398,6 +399,7 @@ describe('TypedMessages', () => {
       { type: 'label', content: 'already expired' }
     ]
     const onUpdate = jest.fn((newMessage: IrMessage) => {
+      expect(newMessage).toMatchObject({ warnings: [], fullVisualization: expect.anything() })
       if (newMessage.id === 1)
         newMessage.fullVisualization?.forEach((v, i) =>
           expect(expectedVisualizations[i]).toMatchObject(v)

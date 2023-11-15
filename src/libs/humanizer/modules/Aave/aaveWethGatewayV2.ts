@@ -6,7 +6,7 @@ import { AccountOp } from '../../../accountOp/accountOp'
 export const aaveWethGatewayV2 = (humanizerInfo: any): { [key: string]: Function } => {
   const iface = new ethers.Interface(humanizerInfo?.['abis:AaveWethGatewayV2'])
   return {
-    [`${iface.getFunction('depositETH')?.selector}`]: (accountOp: AccountOp, call: IrCall) => {
+    [iface.getFunction('depositETH')?.selector!]: (accountOp: AccountOp, call: IrCall) => {
       const [, onBehalfOf] = iface.parseTransaction(call)?.args || []
       return [
         getAction('Deposit'),
@@ -15,7 +15,7 @@ export const aaveWethGatewayV2 = (humanizerInfo: any): { [key: string]: Function
         ...getOnBehalfOf(onBehalfOf, accountOp.accountAddr)
       ]
     },
-    [`${iface.getFunction('withdrawETH')?.selector}`]: (accountOp: AccountOp, call: IrCall) => {
+    [iface.getFunction('withdrawETH')?.selector!]: (accountOp: AccountOp, call: IrCall) => {
       const [, /* lendingPool */ amount, to] = iface.parseTransaction(call)?.args || []
       return [
         getAction('Withdraw'),
@@ -24,7 +24,7 @@ export const aaveWethGatewayV2 = (humanizerInfo: any): { [key: string]: Function
         ...getOnBehalfOf(to, accountOp.accountAddr)
       ]
     },
-    [`${iface.getFunction('repayETH')?.selector}`]: (accountOp: AccountOp, call: IrCall) => {
+    [iface.getFunction('repayETH')?.selector!]: (accountOp: AccountOp, call: IrCall) => {
       const [, , , /* lendingPool */ /* amount */ /* rateMode */ onBehalfOf] =
         iface.parseTransaction(call)?.args || []
       return [
@@ -34,7 +34,7 @@ export const aaveWethGatewayV2 = (humanizerInfo: any): { [key: string]: Function
         getOnBehalfOf(onBehalfOf, accountOp.accountAddr)
       ]
     },
-    [`${iface.getFunction('borrowETH')?.selector}`]: (accountOp: AccountOp, call: IrCall) => {
+    [iface.getFunction('borrowETH')?.selector!]: (accountOp: AccountOp, call: IrCall) => {
       const [, /* lendingPool */ amount] = iface.parseTransaction(call)?.args || []
       return [
         getAction('Borrow '),

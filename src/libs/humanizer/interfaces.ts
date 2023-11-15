@@ -44,7 +44,7 @@ export interface HumanizerCallModule {
 }
 
 export interface HumanizerTypedMessaageModule {
-  (typedMessage: TypedMessage): HumanizerVisualization[]
+  (typedMessage: TypedMessage): Omit<IrMessage, keyof Message>
 }
 
 export interface HumanizerMeta {

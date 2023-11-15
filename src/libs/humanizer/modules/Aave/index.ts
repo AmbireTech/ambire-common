@@ -1,4 +1,4 @@
-import { getAction, getAddress, getLabel } from '../../utils'
+import { getUnknownVisualization } from '../../utils'
 import { AccountOp } from '../../../accountOp/accountOp'
 import { HumanizerCallModule, IrCall } from '../../interfaces'
 import { aaveLendingPoolV2 } from './aaveLendingPoolV2'
@@ -15,16 +15,13 @@ export const aaveHumanizer: HumanizerCallModule = (
     ...aaveWethGatewayV2(accountOp.humanizerMeta)
   }
   const newCalls = irCalls.map((call) => {
+    const sigHash = call.data.slice(0, 10)
     if (accountOp.humanizerMeta?.[`names:${call.to}`] === 'Aave') {
-      return matcher[call.data.slice(0, 10)]
-        ? { ...call, fullVisualization: matcher[call.data.slice(0, 10)](accountOp, call) }
+      return matcher[sigHash]
+        ? { ...call, fullVisualization: matcher[sigHash](accountOp, call) }
         : {
             ...call,
-            fullVisualization: [
-              getAction('Unknwon action (Aave)'),
-              getLabel('to'),
-              getAddress(call.to)
-            ]
+            fullVisualization: getUnknownVisualization('Aave', call)
           }
     }
     return call

@@ -11,7 +11,7 @@ const uniV2Mapping = (
 
   return {
     // ordered in the same order as the router
-    [`${iface.getFunction('swapExactTokensForTokens')?.selector}`]: (
+    [iface.getFunction('swapExactTokensForTokens')?.selector!]: (
       accountOp: AccountOp,
       call: IrCall
     ): IrCall[] => {
@@ -31,7 +31,7 @@ const uniV2Mapping = (
         }
       ]
     },
-    [`${iface.getFunction('swapTokensForExactTokens')?.selector}`]: (
+    [iface.getFunction('swapTokensForExactTokens')?.selector!]: (
       accountOp: AccountOp,
       call: IrCall
     ): IrCall[] => {
@@ -52,7 +52,7 @@ const uniV2Mapping = (
         }
       ]
     },
-    [`${iface.getFunction('swapExactETHForTokens')?.selector}`]: (
+    [iface.getFunction('swapExactETHForTokens')?.selector!]: (
       accountOp: AccountOp,
       call: IrCall
     ): IrCall[] => {
@@ -73,7 +73,7 @@ const uniV2Mapping = (
         }
       ]
     },
-    [`${iface.getFunction('swapTokensForExactETH')?.selector}`]: (
+    [iface.getFunction('swapTokensForExactETH')?.selector!]: (
       accountOp: AccountOp,
       call: IrCall
     ): IrCall[] => {
@@ -93,7 +93,7 @@ const uniV2Mapping = (
         }
       ]
     },
-    [`${iface.getFunction('swapExactTokensForETH')?.selector}`]: (
+    [iface.getFunction('swapExactTokensForETH')?.selector!]: (
       accountOp: AccountOp,
       call: IrCall
     ): IrCall[] => {
@@ -112,7 +112,7 @@ const uniV2Mapping = (
         }
       ]
     },
-    [`${iface.getFunction('swapETHForExactTokens')?.selector}`]: (
+    [iface.getFunction('swapETHForExactTokens')?.selector!]: (
       accountOp: AccountOp,
       call: IrCall
     ): IrCall[] => {
@@ -135,7 +135,7 @@ const uniV2Mapping = (
       ]
     },
     // Liquidity
-    [`${iface.getFunction('addLiquidity')?.selector}`]: (
+    [iface.getFunction('addLiquidity')?.selector!]: (
       accountOp: AccountOp,
       call: IrCall
     ): IrCall[] => {
@@ -163,7 +163,7 @@ const uniV2Mapping = (
         }
       ]
     },
-    [`${iface.getFunction('addLiquidityETH')?.selector}`]: (
+    [iface.getFunction('addLiquidityETH')?.selector!]: (
       accountOp: AccountOp,
       call: IrCall
     ): IrCall[] => {
@@ -184,7 +184,7 @@ const uniV2Mapping = (
         }
       ]
     },
-    [`${iface.getFunction('removeLiquidity')?.selector}`]: (
+    [iface.getFunction('removeLiquidity')?.selector!]: (
       accountOp: AccountOp,
       call: IrCall
     ): IrCall[] => {
@@ -205,7 +205,7 @@ const uniV2Mapping = (
         }
       ]
     },
-    [`${iface.getFunction('removeLiquidityETH')?.selector}`]: (
+    [iface.getFunction('removeLiquidityETH')?.selector!]: (
       accountOp: AccountOp,
       call: IrCall
     ): IrCall[] => {
