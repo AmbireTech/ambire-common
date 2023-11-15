@@ -181,6 +181,7 @@ export class MainController extends EventEmitter {
     this.accountStates = await this.#getAccountsInfo(this.accounts)
     this.signMessage = new SignMessageController(
       this.keystore,
+      this.settings,
       this.#providers,
       this.#storage,
       this.#fetch
@@ -188,6 +189,7 @@ export class MainController extends EventEmitter {
     this.signAccountOp = new SignAccountOpController(
       this.keystore,
       this.portfolio,
+      this.settings,
       this.#storage,
       this.#fetch,
       this.#providers
