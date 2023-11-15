@@ -10,7 +10,7 @@ describe('Settings Controller', () => {
     settingsController = new SettingsController(produceMemoryStore(), networks)
   })
 
-  test('should throw if adding a preference is requested with invalid address', (done) => {
+  test('should throw if adding an account preference is requested with invalid address', (done) => {
     let emitCounter = 0
     settingsController.onError(() => {
       emitCounter++
@@ -27,7 +27,7 @@ describe('Settings Controller', () => {
     })
   })
 
-  test('should add preferences if valid address is provided', (done) => {
+  test('should add account preferences', (done) => {
     const validAddress = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'
     const preferences = { label: 'Ivo', pfp: 'racing_car' }
 
@@ -106,5 +106,23 @@ describe('Settings Controller', () => {
     settingsController.addKeyPreferences([
       { addr: '0x-invalid-address', type: 'internal', label: 'test' }
     ])
+  })
+
+  test('should add key preferences', (done) => {
+    const validAddress = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'
+    const preference = { addr: validAddress, type: 'internal', label: 'na Kalo malkiq... kluch' }
+
+    let emitCounter = 0
+    settingsController.onUpdate(() => {
+      emitCounter++
+
+      if (emitCounter === 1) {
+        // Cast to AccountPreferences, because TS doesn't know that we just added a preference
+        expect(settingsController.accountPreferences[validAddress]).toEqual(preference)
+        done()
+      }
+    })
+
+    settingsController.addKeyPreferences([preference])
   })
 })
