@@ -306,8 +306,6 @@ export class TransferController extends EventEmitter {
         ) || this.tokens[0]
     }
 
-    if (!matchingToken) return
-
     const { amount: matchingTokenAmount, decimals } = matchingToken
 
     this.selectedToken = matchingToken
