@@ -2,11 +2,11 @@ import { JsonRpcProvider } from 'ethers'
 
 import { networks } from '../../consts/networks'
 import { AccountStates } from '../../interfaces/account'
+import { Banner } from '../../interfaces/banner'
 import { Storage } from '../../interfaces/storage'
 import { Message } from '../../interfaces/userRequest'
 import { AccountOp, AccountOpStatus } from '../../libs/accountOp/accountOp'
 import EventEmitter from '../eventEmitter'
-import { Banner } from '../../interfaces/banner'
 
 interface Pagination {
   fromPage: number
@@ -403,5 +403,13 @@ export class ActivityController extends EventEmitter {
         ]
       } as Banner
     })
+  }
+
+  toJSON() {
+    return {
+      ...this,
+      broadcastedButNotConfirmed: this.broadcastedButNotConfirmed, // includes the getter in the stringified instance
+      banners: this.banners // includes the getter in the stringified instance
+    }
   }
 }
