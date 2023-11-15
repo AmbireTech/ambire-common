@@ -1,3 +1,4 @@
+import { Key } from '../../interfaces/keystore'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { AccountPreferences, KeyPreferences } from '../../interfaces/settings'
 import { Storage } from '../../interfaces/storage'
@@ -119,6 +120,25 @@ export class SettingsController extends EventEmitter {
 
     await this.#storePreferences()
 
+    this.emitUpdate()
+  }
+
+  async removeKeyPreferences(keyPreferencesToRemove: { addr: Key['addr']; type: Key['type'] }[]) {
+    if (!keyPreferencesToRemove.length) return
+
+    // There's nothing to delete
+    if (!this.keyPreferences.length) return
+
+    if (keyPreferencesToRemove.some((key) => !isValidAddress(key.addr))) {
+      return this.#throwInvalidAddress(keyPreferencesToRemove.map(({ addr }) => addr))
+    }
+
+    this.keyPreferences = this.keyPreferences.filter(
+      (key) =>
+        !keyPreferencesToRemove.some(({ addr, type }) => key.addr === addr && key.type === type)
+    )
+
+    await this.#storePreferences()
     this.emitUpdate()
   }
 
