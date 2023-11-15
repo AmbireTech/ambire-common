@@ -97,6 +97,7 @@ export class SettingsController extends EventEmitter {
         nextKeyPreferences.push(newKey)
       }
     })
+    this.keyPreferences = nextKeyPreferences
 
     await this.#storePreferences()
     this.emitUpdate()
