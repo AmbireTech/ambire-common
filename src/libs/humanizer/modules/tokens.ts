@@ -1,6 +1,14 @@
 import { ethers } from 'ethers'
 import { AccountOp } from '../../accountOp/accountOp'
-import { getLabel, getAction, getAddress, getNft, getToken, getTokenInfo } from '../utils'
+import {
+  getLabel,
+  getAction,
+  getAddress,
+  getNft,
+  getToken,
+  getTokenInfo,
+  getUnknownVisualization
+} from '../utils'
 import { HumanizerFragment, HumanizerCallModule, IrCall } from '../interfaces'
 
 export const genericErc721Humanizer: HumanizerCallModule = (
@@ -24,7 +32,7 @@ export const genericErc721Humanizer: HumanizerCallModule = (
         ]
   }
   const matcher = {
-    [`${iface.getFunction('approve')?.selector}`]: (call: IrCall) => {
+    [iface.getFunction('approve')?.selector!]: (call: IrCall) => {
       const args = iface.parseTransaction(call)?.args.toArray() || []
       return args[0] === ethers.ZeroAddress
         ? [getAction('Revoke approval'), getLabel('for'), getNft(call.to, args[1])]
@@ -36,7 +44,7 @@ export const genericErc721Humanizer: HumanizerCallModule = (
             getAddress(args[0])
           ]
     },
-    [`${iface.getFunction('setApprovalForAll')?.selector}`]: (call: IrCall) => {
+    [iface.getFunction('setApprovalForAll')?.selector!]: (call: IrCall) => {
       const args = iface.parseTransaction(call)?.args.toArray() || []
       return args[1]
         ? [
@@ -49,13 +57,13 @@ export const genericErc721Humanizer: HumanizerCallModule = (
         : [getAction('Revoke approval'), getLabel('for all nfts'), getAddress(args[0])]
     },
     // not in tests
-    [`${iface.getFunction('safeTransferFrom', ['address', 'address', 'uint256'])?.selector}`]:
+    [iface.getFunction('safeTransferFrom', ['address', 'address', 'uint256'])?.selector!]:
       nftTransferVisualization,
     // [`${
     //   iface.getFunction('safeTransferFrom', ['address', 'address', 'uint256', 'bytes'])
     //     ?.selector
     // }`]: nftTransferVisualization,
-    [`${iface.getFunction('transferFrom', ['address', 'address', 'uint256'])?.selector}`]:
+    [iface.getFunction('transferFrom', ['address', 'address', 'uint256'])?.selector!]:
       nftTransferVisualization
   }
 
@@ -78,7 +86,7 @@ export const genericErc20Humanizer: HumanizerCallModule = (
   const asyncOps: Promise<HumanizerFragment | null>[] = []
   const iface = new ethers.Interface(accountOp.humanizerMeta?.['abis:ERC20'])
   const matcher = {
-    [`${iface.getFunction('approve')?.selector}`]: (call: IrCall) => {
+    [iface.getFunction('approve')?.selector!]: (call: IrCall) => {
       const args = iface.parseTransaction(call)?.args.toArray() || []
       return args[1] !== BigInt(0)
         ? [
@@ -94,7 +102,7 @@ export const genericErc20Humanizer: HumanizerCallModule = (
             getAddress(args[0])
           ]
     },
-    [`${iface.getFunction('transfer')?.selector}`]: (call: IrCall) => {
+    [iface.getFunction('transfer')?.selector!]: (call: IrCall) => {
       const args = iface.parseTransaction(call)?.args.toArray() || []
       return [
         getAction('Transfer'),
@@ -103,7 +111,7 @@ export const genericErc20Humanizer: HumanizerCallModule = (
         getAddress(args[0])
       ]
     },
-    [`${iface.getFunction('transferFrom')?.selector}`]: (call: IrCall) => {
+    [iface.getFunction('transferFrom')?.selector!]: (call: IrCall) => {
       const args = iface.parseTransaction(call)?.args.toArray() || []
       if (args[0] === accountOp.accountAddr) {
         return [
@@ -132,24 +140,21 @@ export const genericErc20Humanizer: HumanizerCallModule = (
     }
   }
   const newCalls = currentIrCalls.map((call) => {
+    const sigHash = call.data.substring(0, 10)
     // if proper func selector and no such token found in meta
-    if (matcher[call.data.substring(0, 10)] && !accountOp.humanizerMeta?.[`tokens:${call.to}`]) {
+    if (matcher[sigHash] && !accountOp.humanizerMeta?.[`tokens:${call.to}`]) {
       const asyncTokenInfo = getTokenInfo(accountOp, call.to, options)
       asyncOps.push(asyncTokenInfo)
     }
-    if (matcher[call.data.substring(0, 10)] && accountOp.humanizerMeta?.[`tokens:${call.to}`])
+    if (matcher[sigHash] && accountOp.humanizerMeta?.[`tokens:${call.to}`])
       return {
         ...call,
-        fullVisualization: matcher[call.data.substring(0, 10)](call)
+        fullVisualization: matcher[sigHash](call)
       }
-    if (accountOp.humanizerMeta?.[`tokens:${call.to}`] && !matcher[call.data.substring(0, 10)])
+    if (accountOp.humanizerMeta?.[`tokens:${call.to}`] && !matcher[sigHash])
       return {
         ...call,
-        fullVisualization: [
-          getAction('Unknown action (erc20)'),
-          getLabel('to'),
-          getAddress(call.to)
-        ]
+        fullVisualization: getUnknownVisualization('ERC-20', call)
       }
     return call
   })

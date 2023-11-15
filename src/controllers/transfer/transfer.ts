@@ -278,6 +278,7 @@ export class TransferController extends EventEmitter {
       this.recipientEnsAddress = await resolveENSDomain(address, bip44Item)
     }
     if (this.#humanizerInfo) {
+      // @TODO: could fetch address code
       this.isRecipientSmartContract = isKnownTokenOrContract(this.#humanizerInfo, address)
     }
 
