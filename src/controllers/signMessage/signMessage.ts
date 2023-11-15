@@ -6,15 +6,19 @@ import { Key } from '../../interfaces/keystore'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { Storage } from '../../interfaces/storage'
 import { Message } from '../../interfaces/userRequest'
+import { getKnownAddressLabels } from '../../libs/account/account'
 import { messageHumanizer } from '../../libs/humanizer'
 import { IrMessage } from '../../libs/humanizer/interfaces'
 import { verifyMessage } from '../../libs/signMessage/signMessage'
 import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
 import EventEmitter from '../eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
+import { SettingsController } from '../settings/settings'
 
 export class SignMessageController extends EventEmitter {
   #keystore: KeystoreController
+
+  #settings: SettingsController
 
   #providers: { [key: string]: JsonRpcProvider }
 
@@ -44,6 +48,7 @@ export class SignMessageController extends EventEmitter {
 
   constructor(
     keystore: KeystoreController,
+    settings: SettingsController,
     providers: { [key: string]: JsonRpcProvider },
     storage: Storage,
     fetch: Function
@@ -51,6 +56,7 @@ export class SignMessageController extends EventEmitter {
     super()
 
     this.#keystore = keystore
+    this.#settings = settings
     this.#providers = providers
     this.#storage = storage
     this.#fetch = fetch
@@ -69,11 +75,14 @@ export class SignMessageController extends EventEmitter {
       this.messageToSign = messageToSign
       this.#accounts = accounts
       this.#accountStates = accountStates
+      const knownAddressLabels = getKnownAddressLabels(
+        this.#accounts,
+        this.#settings.accountPreferences
+      )
 
-      // TODO: add knownAddresses
       messageHumanizer(
         messageToSign,
-        {},
+        knownAddressLabels,
         this.#storage,
         this.#fetch,
         (humanizedMessage: IrMessage) => {

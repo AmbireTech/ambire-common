@@ -12,7 +12,8 @@ import {
   HumanizerParsingModule,
   HumanizerSettings,
   IrCall,
-  IrMessage
+  IrMessage,
+  KnownAddressLabels
 } from './interfaces'
 import { aaveHumanizer } from './modules/Aave'
 import { fallbackHumanizer } from './modules/fallBackHumanizer'
@@ -238,7 +239,7 @@ export const sharedHumanization = async <Data extends AccountOp | Message>(
 
 export const callsHumanizer = async (
   accountOp: AccountOp,
-  knownAddressLabels: { [addr in string]: string },
+  knownAddressLabels: KnownAddressLabels,
   storage: Storage,
   fetch: Function,
   callback: (irCalls: IrCall[]) => void,
@@ -261,7 +262,7 @@ export const callsHumanizer = async (
 
 export const messageHumanizer = async (
   message: Message,
-  knownAddressLabels: { [addr in string]: string },
+  knownAddressLabels: KnownAddressLabels,
   storage: Storage,
   fetch: Function,
   callback: (msgs: IrMessage) => void,

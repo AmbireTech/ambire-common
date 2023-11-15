@@ -171,12 +171,8 @@ export class KeystoreController extends EventEmitter {
     const aesCtr = new aes.ModeOfOperation.ctr(derivedKey, counter)
     const mac = keccak256(concat([macPrefix, aesEncrypted.ciphertext]))
     if (mac !== aesEncrypted.mac) {
-      return this.emitError({
-        message:
-          'The attempt to unlock Ambire failed. Please try again or contact support if the problem persists.',
-        level: 'major',
-        error: new Error('keystore: wrong secret')
-      })
+      // Throw, because that's handled as a form field error
+      throw new Error('keystore: wrong secret')
     }
 
     const decrypted = aesCtr.decrypt(getBytes(aesEncrypted.ciphertext))

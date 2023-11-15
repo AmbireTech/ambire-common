@@ -142,10 +142,7 @@ export class TransferController extends EventEmitter {
   }
 
   get isInitialized() {
-    const areAllRequiredFieldsSet =
-      !!this.#humanizerInfo && !!this.#selectedAccount && !!this.tokens
-
-    return areAllRequiredFieldsSet
+    return !!this.#humanizerInfo && !!this.#selectedAccount && !!this.tokens
   }
 
   update({
@@ -178,8 +175,6 @@ export class TransferController extends EventEmitter {
     if (tokens) {
       this.tokens = tokens.filter((token) => token.amount !== 0n)
 
-      if (this.selectedToken) return
-
       if (preSelectedToken) {
         this.handleTokenChange(preSelectedToken)
       } else if (!preSelectedToken && this.tokens.length > 0) {
@@ -187,29 +182,6 @@ export class TransferController extends EventEmitter {
       }
     }
 
-    // @TODO: implement new humanizer after the sign-account-op PR gets merged
-    if (!this.#humanizerInfo) {
-      this.emitError({
-        level: 'major',
-        message: 'Internal transfer error. Please retry, or contact support if issue persists.',
-        error: new Error('transfer: missing humanizerInfo')
-      })
-
-      return
-    }
-    if (!this.#selectedAccount) {
-      this.emitError({
-        level: 'major',
-        message: 'Internal transfer error. Please retry, or contact support if issue persists.',
-        error: new Error('transfer: missing selectedAccount')
-      })
-      return
-    }
-
-    if (!this.isInitialized) {
-      this.#throwNotInitialized()
-      return
-    }
     // If we do a regular check the value won't update if it's '' or '0'
     if (typeof amount === 'string') {
       this.amount = amount
