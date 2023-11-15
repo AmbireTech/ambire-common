@@ -90,4 +90,21 @@ describe('Settings Controller', () => {
 
     settingsController.addAccountPreferences({ [validAddress]: preferences })
   })
+
+  test('should throw if adding a key preference is requested with invalid address', (done) => {
+    let emitCounter = 0
+    settingsController.onError(() => {
+      emitCounter++
+
+      if (emitCounter === 1) {
+        const errors = settingsController.getErrors()
+        expect(errors.length).toEqual(1)
+        done()
+      }
+    })
+
+    settingsController.addKeyPreferences([
+      { addr: '0x-invalid-address', type: 'internal', label: 'test' }
+    ])
+  })
 })
