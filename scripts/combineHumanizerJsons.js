@@ -5,8 +5,8 @@ const path = require('path')
 const fetch = require('node-fetch')
 require('dotenv').config()
 
-const AMBIRE_CONSTANTS_URL = process.env.AMBIRE_CONSTANTS_URL || 'http://localhost:5000'
-// const AMBIRE_CONSTANTS_URL = 'http://localhost:5000'
+// const AMBIRE_CONSTANTS_URL = process.env.AMBIRE_CONSTANTS_URL || 'http://localhost:5000'
+const AMBIRE_CONSTANTS_URL = 'http://localhost:5000'
 
 const resultPath = path.join(__dirname, '..', 'src', 'consts', 'humanizerInfo.json')
 const storedAmbireConstantsPath = path.join(
