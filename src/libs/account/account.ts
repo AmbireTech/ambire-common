@@ -79,10 +79,10 @@ export const getKnownAddressLabels = (
 
   // Check if the address is in the key preferences (lowest priority)
   keys.forEach((key) => {
-    const currentKeyPreferences = keyPreferences.find((x) => x.addr === key.addr && !!x.label)
+    // There could be more than one, since there could be more than one key
+    // with the same address. In that case, the last (probably newest) one wins.
+    const currentKeyPreferences = keyPreferences.findLast((x) => x.addr === key.addr && !!x.label)
     if (currentKeyPreferences) {
-      // There could be more than one, since there could be more than one key
-      // with the same address. In that case, the last (probably newest) one wins.
       knownAddressLabels[key.addr] = currentKeyPreferences.label
     }
   })
