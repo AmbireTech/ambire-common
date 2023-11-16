@@ -68,7 +68,7 @@ const checkRedefine = async (
   callback: Function,
   options?: any
 ) => {
-  await Promise.all(
+  const newCalls = await Promise.all(
     irCalls.map(async (call: IrCall) => {
       const res = await options
         .fetch('https://api.redefine.net/v2/risk-analysis/txns', {
@@ -94,13 +94,8 @@ const checkRedefine = async (
         })
         .then((response: any) => {
           // asuming all failing cases return err different from 200
-          if (response.status !== 200) {
-            options.emitError({
-              level: 'silent',
-              message: `Error with redefine's API, status=${response.status}`,
-              error: new Error(`Error with redefine's API, status=${response.status}`)
-            })
-          }
+          if (response.status !== 200)
+            throw new Error(`Error with redefine's API, status=${response.status}`)
           return response
         })
         .then((response: any) => response.json())
@@ -128,8 +123,10 @@ const checkRedefine = async (
           message: `Error with redefine's API, ${JSON.stringify(res)}but status 200`,
           error: new Error("Error with redefine's API")
         })
+      return call
     })
   )
+  callback(newCalls)
 }
 const handleAsyncOps = async (
   asyncOps: Promise<HumanizerFragment | null>[],
