@@ -197,13 +197,14 @@ describe('module tests', () => {
     emitedErrors = []
   })
 
+  // TODO: look into improper texification for  unrecognized tokens
   test('visualization to text', async () => {
     const expectedTexification = [
       'Swap 50844.919041919270406243 XLRT for at least 0.137930462904193673 ETH and send it to 0x0000000000000000000000000000000000000000 (0x000...000) already expired',
       'Swap 0.941 WETH for at least 5158707941840645403045 0x6E975115250B05C828ecb8edeDb091975Fc20a5d token and send it to 0xbb6C8c037b9Cc3bF1a4C4188d92e5D86bfCE76A8 (0xbb6...6A8) already expired',
       'Swap 422.775565331912310692 SHARES for at least 2454.922038 USDC and send it to 0xca124B356bf11dc153B886ECB4596B5cb9395C41 (0xca1...C41) already expired',
       'Swap up to 4825320403256397423633 0x6E975115250B05C828ecb8edeDb091975Fc20a5d token for 0.941 WETH and send it to 0xbb6C8c037b9Cc3bF1a4C4188d92e5D86bfCE76A8 (0xbb6...6A8) already expired',
-      'Swap 0.0001 ETH for at least 178131 0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85 token already expired',
+      'Swap 0.0001 ETH for at least 0.178131 USDC already expired',
       'Wrap 1.0 ETH',
       'Unwrap 0.0089 ETH',
       'Call deposit() from 0xE592427A0AEce92De3Edee1F18E0157C05861564 (Uniswap) and Send 1.0 ETH',
