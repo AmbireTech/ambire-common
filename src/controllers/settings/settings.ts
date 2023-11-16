@@ -45,7 +45,7 @@ export class SettingsController extends EventEmitter {
     try {
       await Promise.all([
         this.#storage.set('accountPreferences', this.accountPreferences),
-        this.#storage.set('keyPreferences', this.accountPreferences)
+        this.#storage.set('keyPreferences', this.keyPreferences)
       ])
     } catch (e) {
       this.emitError({
