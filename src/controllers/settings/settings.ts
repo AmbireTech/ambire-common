@@ -24,7 +24,7 @@ export class SettingsController extends EventEmitter {
 
   async #load() {
     try {
-      ;[this.accountPreferences] = await Promise.all([
+      ;[this.accountPreferences, this.keyPreferences] = await Promise.all([
         // Should get the storage data from all keys here
         this.#storage.get('accountPreferences', {}),
         this.#storage.get('keyPreferences', [])
