@@ -31,6 +31,7 @@ const ethPortfolio = new Portfolio(fetch, provider, ethereum)
 const polygonPortfolio = new Portfolio(fetch, polygonProvider, polygon)
 
 let transferController: TransferController
+let errorCount = 0
 
 const getTokens = async () => {
   const ethAccPortfolio = await ethPortfolio.get(PLACEHOLDER_SELECTED_ACCOUNT)
@@ -40,13 +41,15 @@ const getTokens = async () => {
 }
 
 describe('Transfer Controller', () => {
-  test('should throw not initialized error', () => {
+  test('should emit not initialized error', () => {
     transferController = new TransferController()
 
     transferController.onRecipientAddressChange()
+    errorCount++
     transferController.buildUserRequest()
+    errorCount++
 
-    expect(transferController.getErrors().length).toBe(2)
+    expect(transferController.getErrors().length).toBe(errorCount)
   })
   test("shouldn't build userRequest when tokens.length === 0", () => {
     transferController.update({
@@ -112,8 +115,8 @@ describe('Transfer Controller', () => {
     expect(transferController.recipientUDAddress).toBe('')
     expect(transferController.recipientEnsAddress).toBe('')
   })
-  test('should show SW warning', async () => {
-    await transferController.handleTokenChange(`0x${'0'.repeat(40)}-polygon`)
+  test('should show SW warning', () => {
+    transferController.handleTokenChange(`0x${'0'.repeat(40)}-polygon`)
 
     expect(transferController.isSWWarningVisible).toBe(true)
   })
