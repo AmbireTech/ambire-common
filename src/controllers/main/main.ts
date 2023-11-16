@@ -114,7 +114,7 @@ export class MainController extends EventEmitter {
 
   onUpdateDappSelectedAccount: (accountAddr: string) => void
 
-  onBroadcastSuccess?: (type: 'message' | 'typed-data' | 'account-op') => void
+  onBroadcastSuccess?: (type: 'message' | 'typed-data' | 'account-op', opts?: {}) => void
 
   constructor({
     storage,
@@ -134,7 +134,7 @@ export class MainController extends EventEmitter {
     onResolveDappRequest: (data: any, id?: number) => void
     onRejectDappRequest: (err: any, id?: number) => void
     onUpdateDappSelectedAccount: (accountAddr: string) => void
-    onBroadcastSuccess?: (type: 'message' | 'typed-data' | 'account-op') => void
+    onBroadcastSuccess?: (type: 'message' | 'typed-data' | 'account-op', opts?: {}) => void
     pinned: string[]
   }) {
     super()
@@ -687,7 +687,7 @@ export class MainController extends EventEmitter {
         }
       })
       console.log('broadcasted:', transactionRes)
-      !!this.onBroadcastSuccess && this.onBroadcastSuccess('account-op')
+      !!this.onBroadcastSuccess && this.onBroadcastSuccess('account-op', {accountAddr: accountOp.accountAddr})
       this.broadcastStatus = 'DONE'
       this.emitUpdate()
       await wait(1)
