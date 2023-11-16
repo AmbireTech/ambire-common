@@ -266,7 +266,8 @@ describe('Humanizer main function', () => {
     })
     accountOp.calls = [...transactions.generic]
     await callsHumanizer(accountOp, {}, storage, fetch, onUpdate, emitError)
-    expect(onUpdate).toHaveBeenCalledTimes(1)
+    // normal humanization and redefine api
+    expect(onUpdate).toHaveBeenCalledTimes(2)
   })
 
   test('unknown func selector humanize with asyncop', async () => {
@@ -296,7 +297,8 @@ describe('Humanizer main function', () => {
     })
     accountOp.calls = [...transactions.unknownFuncSelector]
     await callsHumanizer(accountOp, {}, storage, fetch, onUpdate, emitError)
-    expect(onUpdate).toHaveBeenCalledTimes(2)
+    // one aditional from redefine api
+    expect(onUpdate).toHaveBeenCalledTimes(3)
   })
 })
 
@@ -454,6 +456,7 @@ describe('with (Account | Key)[] arg', () => {
 
     const knownAddresses = { [accounts[0].addr]: 'First account', [keys[0].addr]: 'Second account' }
     await callsHumanizer(accountOp, knownAddresses, storage, fetch, onUpdate, emitError)
-    expect(onUpdate).toHaveBeenCalledTimes(1)
+    // one aditional from redefine api
+    expect(onUpdate).toHaveBeenCalledTimes(2)
   })
 })
