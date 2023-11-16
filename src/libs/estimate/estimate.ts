@@ -40,6 +40,7 @@ export async function estimate(
   feeTokens: string[],
   opts?: {
     calculateRefund?: boolean
+    is4337Broadcast?: boolean
   },
   blockFrom: string = '0x0000000000000000000000000000000000000001',
   blockTag: string | number = 'latest'
@@ -104,7 +105,7 @@ export async function estimate(
 
   // estimate 4337
   let estimation4337
-  if (network.erc4337?.enabled) {
+  if (opts && opts.is4337Broadcast) {
     // using Object.assign as typescript doesn't work otherwise
     const userOp = Object.assign({}, op.asUserOperation)
     userOp!.paymasterAndData = getPaymasterSpoof()
@@ -152,7 +153,7 @@ export async function estimate(
   /* eslint-enable prefer-const */
 
   let erc4337estimation: Erc4337estimation | null = null
-  if (network.erc4337?.enabled) {
+  if (opts && opts.is4337Broadcast) {
     const [
       [
         verificationGasLimit,

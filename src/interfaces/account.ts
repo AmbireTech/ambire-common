@@ -29,6 +29,7 @@ export interface AccountOnchainState {
   isEOA: boolean
   isErc4337Enabled: boolean
   isErc4337Nonce: boolean
+  isV2: boolean
 }
 
 export type AccountStates = {

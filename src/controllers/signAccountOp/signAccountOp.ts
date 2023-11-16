@@ -427,11 +427,11 @@ export class SignAccountOpController extends EventEmitter {
       (speed) => speed.type === this.selectedFeeSpeed
     )!
 
-    const account = this.#getAccount()
+    const accountState = this.#accountStates![this.accountOp!.accountAddr][this.accountOp!.networkId]
     const network = this.#networks?.find((n) => n.id === this.accountOp?.networkId)
     return {
       paidBy: this.paidBy,
-      isERC4337: isErc4337Broadcast(network!, account!),
+      isERC4337: isErc4337Broadcast(network!, accountState),
       isGasTank: feeToken?.networkId === 'gasTank',
       inToken: feeToken!.address,
       amount,

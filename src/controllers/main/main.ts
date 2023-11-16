@@ -512,7 +512,7 @@ export class MainController extends EventEmitter {
 
     // start transforming the accountOp to userOp if the network is 4337
     // and it's not a legacy account
-    const is4337Broadcast = isErc4337Broadcast(network, account)
+    const is4337Broadcast = isErc4337Broadcast(network, this.accountStates[accountOp.accountAddr][accountOp.networkId])
     if (is4337Broadcast) {
       accountOp = toUserOperation(
         account,
@@ -543,7 +543,8 @@ export class MainController extends EventEmitter {
         accountOp,
         EOAaccounts.map((acc) => acc.addr),
         // @TODO - first time calling this, portfolio is still not loaded.
-        feeTokens
+        feeTokens,
+        {is4337Broadcast}
       )
     ])
     // @TODO compare intent between accountOp and this.accountOpsToBeSigned[accountOp.accountAddr][accountOp.networkId].accountOp
