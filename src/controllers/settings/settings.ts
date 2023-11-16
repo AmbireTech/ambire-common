@@ -1,5 +1,6 @@
+import { Key } from '../../interfaces/keystore'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
-import { AccountPreferences } from '../../interfaces/settings'
+import { AccountPreferences, KeyPreferences } from '../../interfaces/settings'
 import { Storage } from '../../interfaces/storage'
 import { isValidAddress } from '../../services/address'
 import EventEmitter from '../eventEmitter'
@@ -8,6 +9,8 @@ export class SettingsController extends EventEmitter {
   networks: NetworkDescriptor[]
 
   accountPreferences: AccountPreferences = {}
+
+  keyPreferences: KeyPreferences = []
 
   #storage: Storage
 
@@ -21,9 +24,10 @@ export class SettingsController extends EventEmitter {
 
   async #load() {
     try {
-      ;[this.accountPreferences] = await Promise.all([
+      ;[this.accountPreferences, this.keyPreferences] = await Promise.all([
         // Should get the storage data from all keys here
-        this.#storage.get('accountPreferences', {})
+        this.#storage.get('accountPreferences', {}),
+        this.#storage.get('keyPreferences', [])
       ])
     } catch (e) {
       this.emitError({
@@ -39,7 +43,10 @@ export class SettingsController extends EventEmitter {
 
   async #storePreferences() {
     try {
-      await this.#storage.set('accountPreferences', this.accountPreferences)
+      await Promise.all([
+        this.#storage.set('accountPreferences', this.accountPreferences),
+        this.#storage.set('keyPreferences', this.keyPreferences)
+      ])
     } catch (e) {
       this.emitError({
         message:
@@ -71,6 +78,31 @@ export class SettingsController extends EventEmitter {
     this.emitUpdate()
   }
 
+  async addKeyPreferences(newKeyPreferences: KeyPreferences) {
+    if (!newKeyPreferences.length) return
+
+    if (newKeyPreferences.some(({ addr }) => !isValidAddress(addr))) {
+      return this.#throwInvalidAddress(newKeyPreferences.map(({ addr }) => addr))
+    }
+
+    const nextKeyPreferences = [...this.keyPreferences]
+    newKeyPreferences.forEach((newKey) => {
+      const existingKeyPref = nextKeyPreferences.find(
+        ({ addr, label }) => addr === newKey.addr && label === newKey.label
+      )
+
+      if (existingKeyPref) {
+        existingKeyPref.label = newKey.label
+      } else {
+        nextKeyPreferences.push(newKey)
+      }
+    })
+    this.keyPreferences = nextKeyPreferences
+
+    await this.#storePreferences()
+    this.emitUpdate()
+  }
+
   async removeAccountPreferences(accountPreferenceKeys: Array<keyof AccountPreferences> = []) {
     if (!accountPreferenceKeys.length) return
 
@@ -89,6 +121,25 @@ export class SettingsController extends EventEmitter {
 
     await this.#storePreferences()
 
+    this.emitUpdate()
+  }
+
+  async removeKeyPreferences(keyPreferencesToRemove: { addr: Key['addr']; type: Key['type'] }[]) {
+    if (!keyPreferencesToRemove.length) return
+
+    // There's nothing to delete
+    if (!this.keyPreferences.length) return
+
+    if (keyPreferencesToRemove.some((key) => !isValidAddress(key.addr))) {
+      return this.#throwInvalidAddress(keyPreferencesToRemove.map(({ addr }) => addr))
+    }
+
+    this.keyPreferences = this.keyPreferences.filter(
+      (key) =>
+        !keyPreferencesToRemove.some(({ addr, type }) => key.addr === addr && key.type === type)
+    )
+
+    await this.#storePreferences()
     this.emitUpdate()
   }
 

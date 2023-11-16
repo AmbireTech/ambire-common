@@ -1,4 +1,5 @@
 import { Account } from './account'
+import { Key } from './keystore'
 
 export type AccountPreferences = {
   [key in Account['addr']]: {
@@ -7,3 +8,9 @@ export type AccountPreferences = {
     pfp: string
   }
 }
+
+export type KeyPreferences = {
+  addr: Key['addr']
+  type: Key['type']
+  label: string
+}[]
