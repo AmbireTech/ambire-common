@@ -149,7 +149,9 @@ describe('KeystoreController', () => {
       '0x574f261b776b26b1ad75a991173d0e8ca2ca1d481bd7822b2b58b2ef8a969f12'
     const anotherPrivateKeyPublicAddress = '0x9188fdd757Df66B4F693D624Ed6A13a15Cf717D7'
     const keysWithPrivateKeyDuplicatedInParams = [
+      // test key 3
       { privateKey: anotherPrivateKeyNotAddedYet },
+      // test key 4 with the same private key as key 3
       { privateKey: anotherPrivateKeyNotAddedYet }
     ]
 
