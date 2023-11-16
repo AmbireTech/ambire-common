@@ -4,6 +4,7 @@ import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET } from '../../consts/derivation'
 import { networks } from '../../consts/networks'
 import { Account } from '../../interfaces/account'
+import { Key } from '../../interfaces/keystore'
 import { AccountPreferences, KeyPreferences } from '../../interfaces/settings'
 import { KnownAddressLabels } from '../humanizer/interfaces'
 import { getBytecode } from '../proxyDeploy/bytecode'
@@ -71,22 +72,25 @@ export const isDerivedForSmartAccountKeyOnly = (index: number) =>
 export const getKnownAddressLabels = (
   accounts: Account[],
   accountPreferences: AccountPreferences,
+  keys: Key[],
   keyPreferences: KeyPreferences
 ): KnownAddressLabels => {
   const knownAddressLabels: KnownAddressLabels = {}
 
-  accounts.forEach((acc) => {
-    // Check if the address is in the key preferences (lowest priority)
-    const currentKeyPreferences = keyPreferences.find((x) => x.addr === acc.addr && !!x.label)
+  // Check if the address is in the key preferences (lowest priority)
+  keys.forEach((key) => {
+    const currentKeyPreferences = keyPreferences.find((x) => x.addr === key.addr && !!x.label)
     if (currentKeyPreferences) {
       // There could be more than one, since there could be more than one key
       // with the same address. In that case, the last (probably newest) one wins.
-      knownAddressLabels[acc.addr] = currentKeyPreferences.label
+      knownAddressLabels[key.addr] = currentKeyPreferences.label
     }
+  })
 
-    // TODO: Check if the address is in the address book (second lowest)
+  // TODO: Check if the address is in the address book (second lowest)
 
-    // Check if address is in the account preferences (highest priority)
+  // Check if address is in the account preferences (highest priority)
+  accounts.forEach((acc) => {
     const accPref = accountPreferences[acc.addr]
     if (accPref?.label) {
       knownAddressLabels[acc.addr] = accPref.label
