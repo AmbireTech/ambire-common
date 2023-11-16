@@ -41,14 +41,12 @@ export type Key = (InternalKey | ExternalKey) & { isExternallyStored: boolean }
 export type InternalKey = {
   addr: Account['addr']
   type: 'internal'
-  label: string
   meta: null
 }
 
 export type ExternalKey = {
   addr: Account['addr']
   type: 'trezor' | 'ledger' | 'lattice' | string
-  label: string
   meta: {
     deviceId: string
     deviceModel: string
