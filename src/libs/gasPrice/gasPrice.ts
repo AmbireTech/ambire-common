@@ -4,6 +4,8 @@ import AmbireAccountFactory from "../../../contracts/compiled/AmbireAccountFacto
 import { AccountOp, getSignableCalls } from '../../libs/accountOp/accountOp';
 import { getBytecode } from '../../libs/proxyDeploy/bytecode';
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor';
+import { AccountOnchainState } from '../../interfaces/account';
+import { isErc4337Broadcast } from '../../libs/userOperation/userOperation';
 
 // https://eips.ethereum.org/EIPS/eip-1559
 const BASE_FEE_MAX_CHANGE_DENOMINATOR = 8n
@@ -103,13 +105,13 @@ function average(data: bigint[]): bigint {
 export function getCallDataAdditional(
   accountOp: AccountOp,
   network: NetworkDescriptor,
-  isAccountDeployed = true
+  accountState: AccountOnchainState
 ): bigint {
   let estimationCallData
 
   // always call executeMultiple as the worts case scenario
   // we disregard the initCode
-  if (network.erc4337?.enabled || isAccountDeployed) {
+  if (accountState.isDeployed || isErc4337Broadcast(network, accountState)) {
     const ambireAccount = new Interface(AmbireAccount.abi)
     estimationCallData = ambireAccount.encodeFunctionData('executeMultiple', [[[
       getSignableCalls(accountOp),

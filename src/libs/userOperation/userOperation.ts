@@ -36,16 +36,16 @@ export interface UserOperation {
  *
  * @param accountOp
  * @param network
- * @param isDeployed
+ * @param accountState
  * @returns bigint preVerificationGas
  */
 function getPVG(
   accountOp: AccountOp,
   network: NetworkDescriptor,
-  isDeployed: boolean
+  accountState: AccountOnchainState
 ) {
   const perUseropOverhead = 12500n
-  return perUseropOverhead + getCallDataAdditional(accountOp, network!, isDeployed)
+  return perUseropOverhead + getCallDataAdditional(accountOp, network!, accountState)
 }
 
 export function toUserOperation(
@@ -105,7 +105,7 @@ export function toUserOperation(
   }
 
   const network = networks.find(net => net.id == accountOp.networkId)
-  const preVerificationGas = getPVG(accountOp, network!, accountState.isDeployed)
+  const preVerificationGas = getPVG(accountOp, network!, accountState)
 
   accountOp.asUserOperation = {
     sender: accountOp.accountAddr,

@@ -212,7 +212,7 @@ export async function estimate(
 
   let finalFeeTokenOptions = feeTokenOutcomes
   let finalNativeTokenOptions = nativeAssetBalances
-  if (network.erc4337?.enabled) {
+  if (opts && opts.is4337Broadcast) {
 
     // if there's no paymaster, we cannot pay in tokens
     if (!network.erc4337?.hasPaymaster) {
