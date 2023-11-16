@@ -77,7 +77,8 @@ export class SignMessageController extends EventEmitter {
       this.#accountStates = accountStates
       const knownAddressLabels = getKnownAddressLabels(
         this.#accounts,
-        this.#settings.accountPreferences
+        this.#settings.accountPreferences,
+        this.#settings.keyPreferences
       )
 
       messageHumanizer(

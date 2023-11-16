@@ -179,7 +179,8 @@ export class SignAccountOpController extends EventEmitter {
 
       const knownAddressLabels = getKnownAddressLabels(
         this.#accounts,
-        this.#settings.accountPreferences
+        this.#settings.accountPreferences,
+        this.#settings.keyPreferences
       )
       callsHumanizer(
         this.accountOp,
