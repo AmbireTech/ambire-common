@@ -1,3 +1,4 @@
+/* eslint-disable no-console */
 import { ethers } from 'ethers'
 import fetch from 'node-fetch'
 
@@ -56,7 +57,6 @@ const keys: Key[] = [
   {
     addr: '0xABcdeF398CBb1285Eeb2DC42be2c429eB1d55f02',
     type: 'internal',
-    label: 'Second account',
     isExternallyStored: true,
     meta: null
   }
@@ -215,7 +215,7 @@ const transactions = {
 const emitError = jest.fn((err: ErrorRef) => {
   console.log(err)
 })
-describe('HumanizerController', () => {
+describe('Humanizer main function', () => {
   let storage: Storage
   beforeEach(async () => {
     storage = produceMemoryStore()
@@ -398,6 +398,7 @@ describe('TypedMessages', () => {
       { type: 'label', content: 'already expired' }
     ]
     const onUpdate = jest.fn((newMessage: IrMessage) => {
+      expect(newMessage).toMatchObject({ warnings: [], fullVisualization: expect.anything() })
       if (newMessage.id === 1)
         newMessage.fullVisualization?.forEach((v, i) =>
           expect(expectedVisualizations[i]).toMatchObject(v)

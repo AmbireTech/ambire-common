@@ -5,6 +5,7 @@ import { Account, AccountStates } from '../../interfaces/account'
 import { Key } from '../../interfaces/keystore'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { Storage } from '../../interfaces/storage'
+import { getKnownAddressLabels } from '../../libs/account/account'
 import { AccountOp, accountOpSignableHash, GasFeePayment, getSignableCalls, isNative } from '../../libs/accountOp/accountOp'
 import { EstimateResult } from '../../libs/estimate/estimate'
 import { GasRecommendation, getCallDataAdditional } from '../../libs/gasPrice/gasPrice'
@@ -18,6 +19,7 @@ import { getTargetEdgeCaseNonce, isErc4337Broadcast } from '../../libs/userOpera
 import EntryPointAbi from '../../../contracts/compiled/EntryPoint.json'
 import { ERC_4337_ENTRYPOINT } from '../../consts/deploy'
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
+import { SettingsController } from '../settings/settings'
 
 export enum SigningStatus {
   UnableToSign = 'unable-to-sign',
@@ -71,6 +73,8 @@ export class SignAccountOpController extends EventEmitter {
 
   #portfolio: PortfolioController
 
+  #settings: SettingsController
+
   #storage: Storage
 
   #fetch: Function
@@ -104,6 +108,7 @@ export class SignAccountOpController extends EventEmitter {
   constructor(
     keystore: KeystoreController,
     portfolio: PortfolioController,
+    settings: SettingsController,
     storage: Storage,
     fetch: Function,
     providers: { [key: string]: JsonRpcProvider },
@@ -113,6 +118,7 @@ export class SignAccountOpController extends EventEmitter {
 
     this.#keystore = keystore
     this.#portfolio = portfolio
+    this.#settings = settings
     this.#storage = storage
     this.#fetch = fetch
     this.#providers = providers
@@ -156,6 +162,15 @@ export class SignAccountOpController extends EventEmitter {
     signingKeyAddr?: Key['addr']
     signingKeyType?: Key['type']
   }) {
+    if (!this.#accounts) {
+      return this.emitError({
+        message:
+          'Something went wrong when updating the current account operation information. Missing accounts data. Please try to initiate the account operation again.',
+        level: 'major',
+        error: new Error('signAccountOp: missing accounts')
+      })
+    }
+
     if (gasPrices) this.#gasPrices = gasPrices
 
     if (estimation) this.#estimation = estimation
@@ -170,10 +185,15 @@ export class SignAccountOpController extends EventEmitter {
         this.accountOp = accountOp
       }
 
-      // TODO: add knownAddresses
+      const knownAddressLabels = getKnownAddressLabels(
+        this.#accounts,
+        this.#settings.accountPreferences,
+        this.#keystore.keys,
+        this.#settings.keyPreferences
+      )
       callsHumanizer(
         this.accountOp,
-        {},
+        knownAddressLabels,
         this.#storage,
         this.#fetch,
         (humanizedCalls) => {

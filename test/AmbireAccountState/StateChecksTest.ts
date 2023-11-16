@@ -70,8 +70,6 @@ describe('Account state checks tests', function () {
 
     const account = {
       addr: ambireAccountAddress,
-      label: 'test account',
-      pfp: 'pfp',
       associatedKeys: [signer.address],
       creation: {
         factoryAddr,

@@ -278,6 +278,7 @@ export class TransferController extends EventEmitter {
       this.recipientEnsAddress = await resolveENSDomain(address, bip44Item)
     }
     if (this.#humanizerInfo) {
+      // @TODO: could fetch address code
       this.isRecipientSmartContract = isKnownTokenOrContract(this.#humanizerInfo, address)
     }
 
@@ -297,15 +298,17 @@ export class TransferController extends EventEmitter {
 
     let matchingToken = this.tokens[0]
 
-    if (selectedTokenAddress && selectedTokenNetwork) {
+    if (
+      selectedTokenAddress &&
+      selectedTokenNetwork &&
+      networks.find(({ id }) => id === selectedTokenNetwork)
+    ) {
       matchingToken =
         this.tokens.find(
           ({ address: tokenAddress, networkId: tokenNetworkId }) =>
             tokenAddress === selectedTokenAddress && tokenNetworkId === selectedTokenNetwork
         ) || this.tokens[0]
     }
-
-    if (!matchingToken) return
 
     const { amount: matchingTokenAmount, decimals } = matchingToken
 
@@ -320,6 +323,7 @@ export class TransferController extends EventEmitter {
       networks
         .map(({ id }) => id)
         .filter((id) => id !== 'ethereum')
+        // || 'ethereum' is only there because of typescript, the reason being that NetworkId is typed as a string and not 'networkId' | 'networkId2'
         .includes(this.#selectedTokenNetworkData?.id || 'ethereum')
 
     this.emitUpdate()

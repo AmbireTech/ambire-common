@@ -1,14 +1,15 @@
 import { JsonRpcProvider } from 'ethers'
-import { Account } from 'interfaces/account'
 import fetch from 'node-fetch'
 
 import { describe, expect, jest, test } from '@jest/globals'
 
 import { produceMemoryStore } from '../../../test/helpers'
 import { networks } from '../../consts/networks'
+import { Account } from '../../interfaces/account'
 import { Message } from '../../interfaces/userRequest'
 import { KeystoreController } from '../keystore/keystore'
 import { InternalSigner } from '../keystore/keystore.test'
+import { SettingsController } from '../settings/settings'
 import { SignMessageController } from './signMessage'
 
 const providers = Object.fromEntries(
@@ -24,13 +25,16 @@ const account: Account = {
 describe('SignMessageController', () => {
   let signMessageController: SignMessageController
   let keystore: KeystoreController
+  let settings: SettingsController
 
   beforeEach(() => {
     const keystoreSigners = { internal: InternalSigner }
     keystore = new KeystoreController(produceMemoryStore(), keystoreSigners)
+    settings = new SettingsController(produceMemoryStore(), networks)
 
     signMessageController = new SignMessageController(
       keystore,
+      settings,
       providers,
       produceMemoryStore(),
       fetch

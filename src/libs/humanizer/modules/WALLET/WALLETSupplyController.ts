@@ -13,7 +13,7 @@ export const WALLETSupplyControllerMapping = (
   const iface = new ethers.Interface(WALLETSupplyControllerABI)
 
   return {
-    [`${iface.getFunction('claim')?.selector}`]: (
+    [iface.getFunction('claim')?.selector!]: (
       accountop: AccountOp,
       call: IrCall
     ): HumanizerVisualization[] => {
@@ -23,7 +23,7 @@ export const WALLETSupplyControllerMapping = (
         ? [getAction('Claim rewards'), getLabel(`with ${burnPercentage}% burn`)]
         : [getAction('Claim rewards')]
     },
-    [`${iface.getFunction('claimWithRootUpdate')?.selector}`]: (
+    [iface.getFunction('claimWithRootUpdate')?.selector!]: (
       accountop: AccountOp,
       call: IrCall
     ): HumanizerVisualization[] => {
@@ -35,7 +35,7 @@ export const WALLETSupplyControllerMapping = (
         : [getAction('Claim rewards')]
     },
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    [`${iface.getFunction('mintVesting')?.selector}`]: (
+    [iface.getFunction('mintVesting')?.selector!]: (
       accountop: AccountOp,
       call: IrCall
     ): HumanizerVisualization[] => {

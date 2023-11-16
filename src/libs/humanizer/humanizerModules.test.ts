@@ -1,9 +1,8 @@
-import { ErrorRef } from 'controllers/eventEmitter'
 import fetch from 'node-fetch'
-
 import { describe, expect, test } from '@jest/globals'
+import { ethers } from 'ethers'
 
-import { ethers } from 'hardhat'
+import { ErrorRef } from '../../controllers/eventEmitter'
 import { AccountOp } from '../accountOp/accountOp'
 import { humanizeCalls, visualizationToText } from './humanizerFuncs'
 import { HumanizerCallModule, HumanizerVisualization, IrCall } from './interfaces'
@@ -13,12 +12,13 @@ import { genericErc20Humanizer, genericErc721Humanizer } from './modules/tokens'
 import { uniswapHumanizer } from './modules/Uniswap'
 // import { oneInchHumanizer } from './modules/oneInch'
 import { WALLETModule } from './modules/WALLET'
-import { wethHumanizer } from './modules/weth'
+import { wrappingModule } from './modules/wrapped'
 import { yearnVaultModule } from './modules/yearnTesseractVault'
 import { parseCalls } from './parsers'
 import { nameParsing } from './parsers/nameParsing'
 import { tokenParsing } from './parsers/tokenParsing'
 import { getAction, getLabel, getToken } from './utils'
+import { sushiSwapModule } from './modules/sushiSwapModule'
 
 const humanizerInfo = require('../../consts/humanizerInfo.json')
 
@@ -26,7 +26,7 @@ const humanizerModules: HumanizerCallModule[] = [
   genericErc20Humanizer,
   genericErc721Humanizer,
   uniswapHumanizer,
-  wethHumanizer,
+  wrappingModule,
   aaveHumanizer,
   // oneInchHumanizer,
   WALLETModule,
@@ -84,6 +84,12 @@ const transactions: { [key: string]: Array<IrCall> } = {
       to: '0xE592427A0AEce92De3Edee1F18E0157C05861564',
       value: 0n,
       data: '0xdb3e21980000000000000000000000006e975115250b05c828ecb8ededb091975fc20a5d000000000000000000000000c02aaa39b223fe8d0a0e5c4f27ead9083c756cc200000000000000000000000000000000000000000000000000000000000001f4000000000000000000000000bb6c8c037b9cc3bf1a4c4188d92e5d86bfce76a80000000000000000000000000000000000000000000000000000000064e5d7910000000000000000000000000000000000000000000000000d0f1a83ada4800000000000000000000000000000000000000000000000010594c5cd1e563664110000000000000000000000000000000000000000000000000000000000000000'
+    },
+    // problematic Call execute(bytes,bytes[],uint256) from 0xeC8...3e4
+    {
+      to: '0xeC8B0F7Ffe3ae75d7FfAb09429e3675bb63503e4',
+      value: 100000000000000n,
+      data: '0x3593564c000000000000000000000000000000000000000000000000000000000000006000000000000000000000000000000000000000000000000000000000000000a0000000000000000000000000000000000000000000000000000000006544eb3300000000000000000000000000000000000000000000000000000000000000040b000604000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000008000000000000000000000000000000000000000000000000000000000000000e0000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000002800000000000000000000000000000000000000000000000000000000000000040000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000005af3107a40000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000005af3107a4000000000000000000000000000000000000000000000000000000000000002b7d300000000000000000000000000000000000000000000000000000000000000a00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002b42000000000000000000000000000000000000060001f40b2c639c533813f4aa9d7837caf62653d097ff8500000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000600000000000000000000000000b2c639c533813f4aa9d7837caf62653d097ff85000000000000000000000000d4ce1f1b8640c1988360a6729d9a73c85a0c80a3000000000000000000000000000000000000000000000000000000000000000f00000000000000000000000000000000000000000000000000000000000000600000000000000000000000000b2c639c533813f4aa9d7837caf62653d097ff850000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000002b7d3'
     }
   ],
   weth: [
@@ -171,6 +177,13 @@ const transactions: { [key: string]: Array<IrCall> } = {
       value: 0n,
       data: '0x095ea7b3000000000000000000000000c92e8bdf79f0507f65a392b0ab4667716bfe011000000000000000000000000000000000000000000000071414d02429e66c0000'
     }
+  ],
+  sushiSwapCalls: [
+    {
+      to: '0xE7eb31f23A5BefEEFf76dbD2ED6AdC822568a5d2',
+      value: 0n,
+      data: '0x2646478b0000000000000000000000000d500b1d8e8ef31e21c99d1db9a6444d3adf127000000000000000000000000000000000000000000000000000016bcc41e900000000000000000000000000008f3cf7ad23cd3cadbd9735aff958023239c6a06300000000000000000000000000000000000000000000000000013d425a52399d0000000000000000000000006969174fd72466430a46e18234d0b530c9fd5f4900000000000000000000000000000000000000000000000000000000000000c00000000000000000000000000000000000000000000000000000000000000042020d500B1d8E8eF31E21C99d1Db9A6444d3ADf127001ffff008929D3FEa77398F64448c85015633c2d6472fB29016969174FD72466430a46e18234D0b530c9FD5f49000000000000000000000000000000000000000000000000000000000000'
+    }
   ]
 }
 
@@ -190,6 +203,7 @@ describe('module tests', () => {
       'Swap 0.941 WETH for at least 5158707941840645403045 0x6E975115250B05C828ecb8edeDb091975Fc20a5d token and send it to 0xbb6C8c037b9Cc3bF1a4C4188d92e5D86bfCE76A8 (0xbb6...6A8) already expired',
       'Swap 422.775565331912310692 SHARES for at least 2454.922038 USDC and send it to 0xca124B356bf11dc153B886ECB4596B5cb9395C41 (0xca1...C41) already expired',
       'Swap up to 4825320403256397423633 0x6E975115250B05C828ecb8edeDb091975Fc20a5d token for 0.941 WETH and send it to 0xbb6C8c037b9Cc3bF1a4C4188d92e5D86bfCE76A8 (0xbb6...6A8) already expired',
+      'Swap 0.0001 ETH for at least 178131 0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85 token already expired',
       'Wrap 1.0 ETH',
       'Unwrap 0.0089 ETH',
       'Call deposit() from 0xE592427A0AEce92De3Edee1F18E0157C05861564 (Uniswap) and Send 1.0 ETH',
@@ -202,7 +216,7 @@ describe('module tests', () => {
       'Rage leave with 2019.750399052452828721 WALLET 0x47Cd7E91C3CBaAF266369fe8518345fc4FC12935 (WALLET Staking Pool)',
       'Deposit 690.0 yDAI to 0xdA816459F1AB5631232FE5e97a05BBBb94970c95 (Yearn DAI Vault)',
       'Withdraw 23736.387977148798767461 yDAI from 0xdA816459F1AB5631232FE5e97a05BBBb94970c95 (Yearn DAI Vault)',
-      'Approve 0xC92E8bdf79f0507f65a392b0ab4667716BFE0110 (Gnosis Protocol) for 33427.0 yDAI'
+      'Approve 0xC92E8bdf79f0507f65a392b0ab4667716BFE0110 (CowSwap) for 33427.0 yDAI'
     ]
     const allCalls = Object.keys(transactions)
       .map((key: string) => transactions[key])
@@ -327,11 +341,49 @@ describe('module tests', () => {
           address: '0xbb6C8c037b9Cc3bF1a4C4188d92e5D86bfCE76A8'
         },
         { type: 'label', content: 'already expired' }
+      ],
+      // problematic one
+      [
+        { type: 'action', content: 'Wrap' },
+        {
+          type: 'token',
+          address: '0x0000000000000000000000000000000000000000',
+          amount: 100000000000000n
+        }
+      ],
+      [
+        { type: 'action', content: 'Swap' },
+        {
+          type: 'token',
+          address: '0x4200000000000000000000000000000000000006',
+          amount: 100000000000000n
+        },
+        { type: 'label', content: 'for at least' },
+        {
+          type: 'token',
+          address: '0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85',
+          amount: 178131n
+        },
+        { type: 'label', content: 'already expired' }
+      ],
+      [
+        { type: 'action', content: 'Pay fee' },
+        { type: 'label', content: 'of' },
+        { type: 'label', content: '0.15%' }
+      ],
+      [
+        { type: 'action', content: 'Take' },
+        { type: 'label', content: 'at least' },
+        {
+          type: 'token',
+          address: '0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85',
+          amount: 178131n
+        }
       ]
     ]
     accountOp.calls = [...transactions.uniV3]
     let irCalls: IrCall[] = accountOp.calls
-    ;[irCalls] = uniswapHumanizer(accountOp, irCalls)
+    ;[irCalls] = uniswapHumanizer(accountOp, irCalls, { emitedError: moockEmitError })
     irCalls.forEach((c, i) => {
       expect(c?.fullVisualization?.length).toEqual(expectedhumanization[i].length)
       c?.fullVisualization?.forEach((v: HumanizerVisualization, j: number) => {
@@ -342,7 +394,7 @@ describe('module tests', () => {
   test('WETH', () => {
     accountOp.calls = [...transactions.weth]
     let irCalls: IrCall[] = accountOp.calls
-    ;[irCalls] = wethHumanizer(accountOp, irCalls)
+    ;[irCalls] = wrappingModule(accountOp, irCalls)
     expect(irCalls[0]?.fullVisualization).toEqual([
       { type: 'action', content: 'Wrap' },
       {
@@ -399,7 +451,7 @@ describe('module tests', () => {
       }
     ]
 
-    const [newCalls] = wethHumanizer(accountOp, calls)
+    const [newCalls] = wrappingModule(accountOp, calls)
     expect(newCalls.length).toBe(1)
     newCalls[0].fullVisualization?.map((v, i) => expect(v).toMatchObject(expectedHumanization[i]))
   })
@@ -525,5 +577,28 @@ describe('module tests', () => {
         expect(v).toMatchObject(expectedhumanization[i][j])
       )
     )
+  })
+  test('SushiSwap RouteProcessor', () => {
+    const expectedhumanization: HumanizerVisualization[] = [
+      { type: 'action', content: 'Swap' },
+      {
+        type: 'token',
+        address: '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270',
+        amount: 400000000000000n
+      },
+      { type: 'label', content: 'for' },
+      {
+        type: 'token',
+        address: '0x8f3Cf7ad23Cd3CaDbD9735AFf958023239c6A063',
+        amount: 348830169184669n
+      }
+    ]
+    accountOp.calls = [...transactions.sushiSwapCalls]
+    let irCalls: IrCall[] = accountOp.calls
+    ;[irCalls] = sushiSwapModule(accountOp, irCalls)
+    expect(irCalls.length).toBe(1)
+    expectedhumanization.forEach((h: HumanizerVisualization, i: number) => {
+      expect(irCalls[0]?.fullVisualization?.[i]).toMatchObject(h)
+    })
   })
 })
