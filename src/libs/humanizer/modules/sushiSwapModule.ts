@@ -16,8 +16,11 @@ export const sushiSwapModule: HumanizerCallModule = (
       _accountOp: AccountOp,
       call: IrCall
     ): IrCall => {
-      const { tokenIn, amountIn, tokenOut, amountOutMin, to /* route */ } =
-        routeProcessorIface.parseTransaction(call)!.args
+      const params = routeProcessorIface.parseTransaction(call)!.args
+      let { tokenIn, tokenOut /* route */ } = params
+      const { amountIn, amountOutMin, to } = params
+      if (tokenIn === '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE') tokenIn = ethers.ZeroAddress
+      if (tokenOut === '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE') tokenOut = ethers.ZeroAddress
 
       return {
         ...call,
@@ -32,7 +35,6 @@ export const sushiSwapModule: HumanizerCallModule = (
     }
   }
   const newCalls: IrCall[] = irCalls.map((call: IrCall) => {
-    if (call.fullVisualization) return call
     if (
       accountOp.humanizerMeta?.[`names:${call.to}`]?.includes('SushiSwap') ||
       accountOp.humanizerMeta?.[`names:${call.to}`]?.includes('RouterProcessor')
