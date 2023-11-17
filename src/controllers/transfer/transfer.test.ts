@@ -1,4 +1,4 @@
-import { formatUnits, JsonRpcProvider } from 'ethers'
+import { JsonRpcProvider } from 'ethers'
 import fetch from 'node-fetch'
 
 import { expect } from '@jest/globals'
@@ -115,18 +115,22 @@ describe('Transfer Controller', () => {
     expect(transferController.recipientUDAddress).toBe('')
     expect(transferController.recipientEnsAddress).toBe('')
   })
-  test('should show SW warning', () => {
-    transferController.handleTokenChange(`0x${'0'.repeat(40)}-polygon`)
+  test('should show SW warning', async () => {
+    const tokens = await getTokens()
+    const maticOnPolygon = tokens.find(
+      (t) => t.address === '0x0000000000000000000000000000000000000000' && t.networkId === 'polygon'
+    )
 
+    transferController.update({ selectedToken: maticOnPolygon })
     expect(transferController.isSWWarningVisible).toBe(true)
   })
-  test('set selected token to token[0] if handleTokenChange() is called with a token, missing in tokens', async () => {
+  test('should change selected token', async () => {
     const tokens = await getTokens()
-    transferController.handleTokenChange(`0x${'0'.repeat(40)}-fakenetwork`)
-    expect(transferController.selectedToken?.address).toBe(tokens[0].address)
-  })
-  test('should change selected token', () => {
-    transferController.handleTokenChange(`${XWALLET_ADDRESS}-ethereum`)
+    const xwalletOnEthereum = tokens.find(
+      (t) => t.address === XWALLET_ADDRESS && t.networkId === 'ethereum'
+    )
+    transferController.update({ selectedToken: xwalletOnEthereum })
+
     expect(transferController.selectedToken?.address).toBe(XWALLET_ADDRESS)
     expect(transferController.selectedToken?.networkId).toBe('ethereum')
   })
@@ -136,18 +140,6 @@ describe('Transfer Controller', () => {
       amount: '1'
     })
     expect(transferController.amount).toBe('1')
-  })
-  test('should set max amount', async () => {
-    const selectedTokenMaxAmount = formatUnits(
-      transferController.selectedToken?.amount || 0n,
-      Number(transferController.selectedToken?.decimals)
-    )
-
-    transferController.update({
-      setMaxAmount: true
-    })
-
-    expect(transferController.maxAmount).toBe(selectedTokenMaxAmount)
   })
   test('should set sw warning agreed', () => {
     transferController.update({
@@ -172,7 +164,7 @@ describe('Transfer Controller', () => {
     expect(transferController.validationFormMsgs.amount.success).toBe(false)
 
     transferController.update({
-      setMaxAmount: true
+      amount: transferController.maxAmount
     })
     transferController.update({
       amount: String(Number(transferController.amount) + 1)
@@ -182,7 +174,7 @@ describe('Transfer Controller', () => {
 
     // Reset
     transferController.update({
-      setMaxAmount: true
+      amount: transferController.maxAmount
     })
   })
   test('should build user request with non-native token transfer', async () => {
@@ -200,7 +192,13 @@ describe('Transfer Controller', () => {
     expect(transferController.userRequest?.action.value).toBe(0n)
   })
   test('should build user request with native token transfer', async () => {
-    transferController.handleTokenChange(`0x${'0'.repeat(40)}-ethereum`)
+    const tokens = await getTokens()
+    const nativeToken = tokens.find(
+      (t) =>
+        t.address === '0x0000000000000000000000000000000000000000' && t.networkId === 'ethereum'
+    )
+
+    transferController.update({ selectedToken: nativeToken })
     transferController.update({
       amount: '1'
     })
@@ -219,11 +217,12 @@ describe('Transfer Controller', () => {
   })
 
   const checkResetForm = () => {
-    expect(transferController.amount).toBe('0')
+    expect(transferController.amount).toBe('')
     expect(transferController.maxAmount).toBe('0')
     expect(transferController.recipientAddress).toBe('')
     expect(transferController.recipientEnsAddress).toBe('')
     expect(transferController.recipientUDAddress).toBe('')
+    expect(transferController.selectedToken).toBe(null)
     expect(transferController.isRecipientAddressUnknown).toBe(false)
     expect(transferController.isRecipientDomainResolving).toBe(false)
     expect(transferController.userRequest).toBe(null)
@@ -243,20 +242,7 @@ describe('Transfer Controller', () => {
     transferController.reset()
 
     checkResetForm()
-
     expect(transferController.tokens.length).toBe(0)
-    expect(transferController.selectedToken).toBe(null)
-  })
-
-  test('should preselect token', async () => {
-    const tokens = await getTokens()
-
-    transferController.update({
-      tokens,
-      preSelectedToken: `${XWALLET_ADDRESS}-ethereum`
-    })
-
-    expect(transferController.selectedToken?.address).toBe(XWALLET_ADDRESS)
   })
 
   test('should toJSON()', () => {
