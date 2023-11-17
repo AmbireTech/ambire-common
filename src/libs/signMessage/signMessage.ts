@@ -15,6 +15,28 @@ import { AccountCreation } from '../../interfaces/account'
 import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
 
 /**
+ * For EIP712 signatures, we need to append 00 at the end
+ * for ambire to recognize it
+ *
+ * @param signature 
+ * @returns string
+ */
+export const wrapEIP712 = (signature: string) => {
+  return signature + '00'
+}
+
+/**
+ * For EthSign signatures, we need to append 01 at the end
+ * for ambire to recognize it
+ *
+ * @param signature 
+ * @returns string
+ */
+export const wrapEthSign = (signature: string) => {
+  return signature + '01'
+}
+
+/**
  * Produce EIP6492 signature for Predeploy Contracts
  *
  * More info: https://eips.ethereum.org/EIPS/eip-6492
