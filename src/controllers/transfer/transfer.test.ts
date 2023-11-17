@@ -219,7 +219,7 @@ describe('Transfer Controller', () => {
   })
 
   const checkResetForm = () => {
-    expect(transferController.amount).toBe('0')
+    expect(transferController.amount).toBe('')
     expect(transferController.maxAmount).toBe('0')
     expect(transferController.recipientAddress).toBe('')
     expect(transferController.recipientEnsAddress).toBe('')

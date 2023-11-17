@@ -40,7 +40,7 @@ export class TransferController extends EventEmitter {
 
   isSWWarningAgreed = false
 
-  amount = '0'
+  amount = ''
 
   maxAmount = '0'
 
@@ -70,7 +70,7 @@ export class TransferController extends EventEmitter {
   #humanizerInfo: HumanizerInfoType | null = null
 
   resetForm() {
-    this.amount = '0'
+    this.amount = ''
     this.maxAmount = '0'
     this.recipientAddress = ''
     this.recipientEnsAddress = ''
@@ -117,7 +117,7 @@ export class TransferController extends EventEmitter {
     }
 
     // Validate the amount
-    if (this.selectedToken && (this.amount !== '0' || this.recipientAddress !== '')) {
+    if (this.selectedToken && (this.amount !== '' || this.recipientAddress !== '')) {
       validationFormMsgsNew.amount = validateSendTransferAmount(this.amount, this.selectedToken)
     }
 
@@ -315,7 +315,7 @@ export class TransferController extends EventEmitter {
     this.selectedToken = matchingToken
     this.#selectedTokenNetworkData =
       networks.find(({ id }) => id === matchingToken.networkId) || null
-    this.amount = '0'
+    this.amount = ''
     this.maxAmount = formatUnits(matchingTokenAmount, Number(decimals))
     this.isSWWarningVisible =
       !!this.selectedToken?.address &&
