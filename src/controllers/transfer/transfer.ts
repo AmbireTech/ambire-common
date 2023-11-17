@@ -71,11 +71,11 @@ export class TransferController extends EventEmitter {
     ) {
       this.#selectedToken = token
       this.amount = ''
+      this.#setSWWarningVisibleIfNeeded()
     }
     // on portfolio update the max available amount can change for the selectedToken
     // in that case don't update the selectedToken and amount in the form but only the maxAmount value
     this.maxAmount = token ? formatUnits(token.amount, Number(token.decimals)) : '0'
-    this.#setSWWarningVisibleIfNeeded()
   }
 
   get selectedToken() {
