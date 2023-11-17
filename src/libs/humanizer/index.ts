@@ -125,8 +125,8 @@ const checkRedefine = async (
       !res?.data?.insights?.issues &&
         options.emitError({
           level: 'silent',
-          message: `Error with redefine's API, ${JSON.stringify(res)}but status 200`,
-          error: new Error("Error with redefine's API")
+          message: `Error with redefine's API, ${JSON.stringify(res)} but status 200`,
+          error: new Error(`Error with redefine's API ${JSON.stringify(res)}`)
         })
     })
   )
