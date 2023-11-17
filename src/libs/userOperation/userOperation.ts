@@ -4,9 +4,7 @@ import { AccountOp, getSignableCalls } from "../accountOp/accountOp";
 import AmbireAccount from "../../../contracts/compiled/AmbireAccount.json";
 import AmbireAccountFactory from "../../../contracts/compiled/AmbireAccountFactory.json";
 import { AMBIRE_PAYMASTER, AMBIRE_PAYMASTER_SIGNER, ENTRY_POINT_MARKER, ERC_4337_ENTRYPOINT } from "../../../src/consts/deploy";
-import { networks } from "../../consts/networks";
 import { NetworkDescriptor } from "interfaces/networkDescriptor";
-import { getCallDataAdditional } from "../../libs/gasPrice/gasPrice";
 import { SPOOF_SIGTYPE } from "../../consts/signatures";
 
 export interface UserOperation {
@@ -25,27 +23,12 @@ export interface UserOperation {
   isEdgeCase: boolean,
 }
 
-/**
- * Calculation is as follows:
- * - 21000 gas for mempool validation
- * - callData size (4 bytes for 0, 16 bytes for 1)
- * - a difficult to calculate per_userop_overhead that we harcode to
- * 22874 for now and call it a day.
- * More information on this can be found here:
- * https://www.stackup.sh/blog/an-analysis-of-preverificationgas
- *
- * @param accountOp
- * @param network
- * @param accountState
- * @returns bigint preVerificationGas
- */
-function getPVG(
-  accountOp: AccountOp,
-  network: NetworkDescriptor,
-  accountState: AccountOnchainState
-) {
-  const perUseropOverhead = 12500n
-  return perUseropOverhead + getCallDataAdditional(accountOp, network!, accountState)
+export function calculateCallDataCost(callData: string): bigint {
+  if (callData === '0x') return 0n
+  const bytes = Buffer.from(callData.substring(2))
+  const nonZeroBytes = BigInt(bytes.filter(b => b).length)
+  const zeroBytes = BigInt(BigInt(bytes.length) - nonZeroBytes)
+  return zeroBytes * 4n + nonZeroBytes * 16n
 }
 
 export function toUserOperation(
@@ -104,8 +87,13 @@ export function toUserOperation(
     callData = ambireAccount.interface.encodeFunctionData('executeBySender', [getSignableCalls(accountOp)])
   }
 
-  const network = networks.find(net => net.id == accountOp.networkId)
-  const preVerificationGas = getPVG(accountOp, network!, accountState)
+  // 27000n initial + deploy, callData, paymaster, signature
+  let preVerificationGas = 27000n
+  preVerificationGas += calculateCallDataCost(initCode)
+  preVerificationGas += calculateCallDataCost(getPaymasterSpoof())
+  preVerificationGas += calculateCallDataCost(
+    '0x0dc2d37f7b285a2243b2e1e6ba7195c578c72b395c0f76556f8961b0bca97ddc44e2d7a249598f56081a375837d2b82414c3c94940db3c1e64110108021161ca1c01'
+  ) // signature
 
   accountOp.asUserOperation = {
     sender: accountOp.accountAddr,
