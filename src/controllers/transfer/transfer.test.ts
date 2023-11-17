@@ -1,4 +1,4 @@
-import { formatUnits, JsonRpcProvider } from 'ethers'
+import { JsonRpcProvider } from 'ethers'
 import fetch from 'node-fetch'
 
 import { expect } from '@jest/globals'
@@ -191,24 +191,30 @@ describe('Transfer Controller', () => {
     // Because we are not transferring the native token
     expect(transferController.userRequest?.action.value).toBe(0n)
   })
-  // test('should build user request with native token transfer', async () => {
-  //   transferController.handleTokenChange(`0x${'0'.repeat(40)}-ethereum`)
-  //   transferController.update({
-  //     amount: '1'
-  //   })
-  //   await transferController.buildUserRequest()
+  test('should build user request with native token transfer', async () => {
+    const tokens = await getTokens()
+    const nativeToken = tokens.find(
+      (t) =>
+        t.address === '0x0000000000000000000000000000000000000000' && t.networkId === 'ethereum'
+    )
 
-  //   expect(transferController.userRequest?.accountAddr).toBe(PLACEHOLDER_SELECTED_ACCOUNT)
-  //   expect(transferController.userRequest?.action.kind).toBe('call')
+    transferController.update({ selectedToken: nativeToken })
+    transferController.update({
+      amount: '1'
+    })
+    await transferController.buildUserRequest()
 
-  //   // Fixes TS errors
-  //   if (transferController.userRequest?.action.kind !== 'call') return
+    expect(transferController.userRequest?.accountAddr).toBe(PLACEHOLDER_SELECTED_ACCOUNT)
+    expect(transferController.userRequest?.action.kind).toBe('call')
 
-  //   expect(transferController.userRequest?.action.to.toLowerCase()).toBe(
-  //     PLACEHOLDER_RECIPIENT_LOWERCASE
-  //   )
-  //   expect(transferController.userRequest?.action.value).toBe(1000000000000000000n)
-  // })
+    // Fixes TS errors
+    if (transferController.userRequest?.action.kind !== 'call') return
+
+    expect(transferController.userRequest?.action.to.toLowerCase()).toBe(
+      PLACEHOLDER_RECIPIENT_LOWERCASE
+    )
+    expect(transferController.userRequest?.action.value).toBe(1000000000000000000n)
+  })
 
   const checkResetForm = () => {
     expect(transferController.amount).toBe('')
