@@ -75,6 +75,7 @@ export class TransferController extends EventEmitter {
     // on portfolio update the max available amount can change for the selectedToken
     // in that case don't update the selectedToken and amount in the form but only the maxAmount value
     this.maxAmount = token ? formatUnits(token.amount, Number(token.decimals)) : '0'
+    this.#setSWWarningVisibleIfNeeded()
   }
 
   get selectedToken() {
@@ -314,11 +315,16 @@ export class TransferController extends EventEmitter {
       updatedTokens[0] ||
       null
 
+    this.emitUpdate()
+  }
+
+  #setSWWarningVisibleIfNeeded() {
     this.#selectedTokenNetworkData =
       networks.find(({ id }) => id === this.selectedToken?.networkId) || null
 
     this.isSWWarningVisible =
       !!this.selectedToken?.address &&
+      Number(this.selectedToken?.address) === 0 &&
       networks
         .filter((n) => n.id !== 'ethereum')
         .map(({ id }) => id)
