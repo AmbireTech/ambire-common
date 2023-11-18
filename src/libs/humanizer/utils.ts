@@ -1,9 +1,10 @@
 import dotenv from 'dotenv'
 import { ethers } from 'ethers'
 
+import { geckoNetworkIdMapper } from '../../consts/coingecko'
 import { networks } from '../../consts/networks'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
-import { HumanizerFragment, HumanizerSettings, HumanizerVisualization } from './interfaces'
+import { HumanizerFragment, HumanizerSettings, HumanizerVisualization, IrCall } from './interfaces'
 
 dotenv.config()
 const COINGECKO_PRO_API_KEY = process.env.COINGECKO_PRO_API_KEY
@@ -74,42 +75,75 @@ export async function getTokenInfo(
   address: string,
   options: any
 ): Promise<HumanizerFragment | null> {
-  const network = networks.find((n: NetworkDescriptor) => n.id === humanizerSettings.networkId)?.id
-  // @TODO update coingecko call with https://github.com/AmbireTech/ambire-common/pull/328
+  const network = networks.find((n: NetworkDescriptor) => n.id === humanizerSettings.networkId)
+  const platformId = geckoNetworkIdMapper(network!.id)
   try {
     const baseUrl = COINGECKO_PRO_API_KEY
       ? 'https://pro-api.coingecko.com/api/v3'
       : 'https://api.coingecko.com/api/v3'
     const postfix = COINGECKO_PRO_API_KEY ? `?&x_cg_pro_api_key=${COINGECKO_PRO_API_KEY}` : ''
-    const coingeckoQueryUrl = `${baseUrl}/coins/${network}/contract/${address}${postfix}`
+    const coingeckoQueryUrl = `${baseUrl}/coins/${
+      platformId || network?.chainId
+    }/contract/${address}${postfix}`
     let response = await options.fetch(coingeckoQueryUrl)
     response = await response.json()
-    if (response.symbol && response.detail_platforms?.ethereum.decimal_place)
+    if (response.symbol && response.detail_platforms?.ethereum?.decimal_place)
       return {
         key: `tokens:${address}`,
         isGlobal: true,
-        value: [response.symbol.toUpperCase(), response.detail_platforms?.ethereum.decimal_place]
+        value: [response.symbol.toUpperCase(), response.detail_platforms?.ethereum?.decimal_place]
       }
+
+    // @TODO: rething error levels
+    if (response.symbol && response.detail_platforms) {
+      options.emitError({
+        message: `getTokenInfo: token not supported on network ${network?.name} `,
+        error: new Error(`token not supported on network ${network?.name}`),
+        level: 'silent'
+      })
+      return null
+    }
     options.emitError({
-      message: 'getTokenInfo: something is wrong goingecko reponse format',
-      error: new Error('unexpected response format'),
-      level: 'minor'
+      message: 'getTokenInfo: something is wrong goingecko reponse format or 404',
+      error: new Error('unexpected response format or 404'),
+      level: 'silent'
     })
     return null
-  } catch (e) {
+  } catch (e: any) {
     options.emitError({
-      message: 'getTokenInfo: something is wrong with coingecko api',
+      message: `getTokenInfo: something is wrong with coingecko api ${e.message}`,
       error: e,
-      level: 'minor'
+      level: 'silent'
     })
     return null
   }
 }
 
-export function checkIfUnknowAction(v: Array<HumanizerVisualization>) {
+export function checkIfUnknownAction(v: Array<HumanizerVisualization>) {
   try {
     return v[0].type === 'action' && v?.[0]?.content?.startsWith('Unknown action')
   } catch (e) {
     return false
   }
+}
+
+export function getUnknownVisualization(name: string, call: IrCall) {
+  const unknownVisualization = [
+    getAction(`Unknown action (${name})`),
+    getLabel('to'),
+    getAddress(call.to)
+  ]
+  if (call.value)
+    unknownVisualization.push(
+      ...[getLabel('and'), getAction('Send'), getToken(ethers.ZeroAddress, call.value)]
+    )
+  return unknownVisualization
+}
+
+export function getWraping(address: string, amount: bigint) {
+  return [getAction('Wrap'), getToken(address, amount)]
+}
+
+export function getUnwraping(address: string, amount: bigint) {
+  return [getAction('Unwrap'), getToken(address, amount)]
 }

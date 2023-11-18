@@ -1,6 +1,3 @@
-/* eslint-disable no-console */
-/* eslint-disable prettier/prettier */
-
 const ethers = require('ethers')
 const fsPromises = require('fs').promises
 const path = require('path')
@@ -8,52 +5,86 @@ const path = require('path')
 const fetch = require('node-fetch')
 require('dotenv').config()
 
-console.log(process.env.AMBIRE_CONSTANTS_URL)
-const AMBIRE_CONSTANTS_URL = process.env.AMBIRE_CONSTANTS_URL || 'http://localhost:5000/result.json'
+const AMBIRE_CONSTANTS_URL = process.env.AMBIRE_CONSTANTS_URL || 'http://localhost:5000'
+
+const resultPath = path.join(__dirname, '..', 'src', 'consts', 'humanizerInfo.json')
+const storedAmbireConstantsPath = path.join(
+  __dirname,
+  '..',
+  'src',
+  'consts',
+  'ambireConstants.json'
+)
+
+// @TODO: rename dappSelectors.json file name
+const sigHashesPath = path.join(__dirname, '..', 'src', 'consts', 'dappSelectors.json')
+const dappNamesPath = path.join(__dirname, '..', 'src', 'consts', 'dappAddressList.json')
 
 function initHumanizerMeta(humanizerMeta) {
-	const newHumanizerMeta = {}
-	Object.keys(humanizerMeta?.tokens).forEach((k2) => {
-	  newHumanizerMeta[`tokens:${ethers.getAddress(k2)}`] = humanizerMeta.tokens?.[k2]
-	})
-	Object.keys(humanizerMeta?.abis).forEach((k2) => {
-	  newHumanizerMeta[`abis:${k2}`] = humanizerMeta.abis?.[k2]
-	})
-  
-	Object.keys(humanizerMeta?.names).forEach((k2) => {
-	  newHumanizerMeta[`names:${ethers.getAddress(k2)}`] = humanizerMeta.names?.[k2]
-	})
+  const humanizerInfo = humanizerMeta.humanizerInfo
+  const newHumanizerMeta = {}
+  Object.keys(humanizerInfo?.tokens).forEach((k2) => {
+    newHumanizerMeta[`tokens:${ethers.getAddress(k2)}`] = humanizerInfo.tokens?.[k2]
+  })
 
-	Object.keys(humanizerMeta?.errorSelectors).forEach((k) => {
-		newHumanizerMeta[`errorSelectors:${k}`] = humanizerMeta.errorSelectors?.[k]
-	})
+  Object.keys(humanizerInfo?.abis).forEach((k2) => {
+    newHumanizerMeta[`abis:${k2}`] = humanizerInfo.abis?.[k2]
+  })
 
-	Object.keys(humanizerMeta?.funcSelectors).forEach((k) => {
-		newHumanizerMeta[`funcSelectors:${k}`] = humanizerMeta.funcSelectors?.[k]
-	})
+  Object.keys(humanizerInfo?.names).forEach((k2) => {
+    newHumanizerMeta[`names:${ethers.getAddress(k2)}`] = humanizerInfo.names?.[k2]
+  })
 
-  
-	return {
-	  ...newHumanizerMeta,
-	  yearnVaults: humanizerMeta.yearnVaults,
-	  tesseractVaults: humanizerMeta.yearnVaults
-	}
+  return {
+    ...newHumanizerMeta,
+    yearnVaults: humanizerInfo.yearnVaults
   }
-const resultPath = path.join(__dirname, '..', 'src', 'consts', 'humanizerInfo.json')
-
-const main = async () => {
-	const oldFileConstants = await fsPromises.readFile(resultPath, 'utf-8').then(JSON.parse)
-	console.log(Object.keys(oldFileConstants).length)
-	let newAmbirConstants = await (fetch(`${AMBIRE_CONSTANTS_URL}/result.json`).then(r=>r.json()).then(r=>r.humanizerInfo).then(initHumanizerMeta)).catch(e=>{console.log(`Error: ${e.message}`)})
-	if (!newAmbirConstants) {
-		console.log('Error with reaching ambire-constants, old file wil be used')
-		newAmbirConstants = oldFileConstants
-	}
-
-	newAmbirConstants
-	await fsPromises.writeFile(resultPath, JSON.stringify(newAmbirConstants, null, 4), 'utf8')
-	console.log(`Old file had ${Object.keys(oldFileConstants).length} keys, the new object has ${Object.keys(newAmbirConstants).length} keys. Res written to ${resultPath}`)
 }
 
+const addExtraStoredData = async () => {
+  const funcAndErrSigHashes = await fsPromises.readFile(sigHashesPath, 'utf-8').then(JSON.parse)
+  const dappNames = await fsPromises.readFile(dappNamesPath, 'utf-8').then(JSON.parse)
+
+  const res = { ...funcAndErrSigHashes }
+
+  Object.entries(dappNames[1]).forEach(([address, values]) => {
+    res[`names:${address}`] = values.appName
+  })
+  return res
+}
+
+const getAmbireConstants = async () => {
+  const fethcedAmbireConstants = await fetch(`${AMBIRE_CONSTANTS_URL}/result.json`)
+    .then((res) => res.json())
+    .catch(console.log)
+  const storedAmbireConstants = await fsPromises
+    .readFile(storedAmbireConstantsPath, 'utf-8')
+    .then(JSON.parse)
+    .catch(console.log)
+  if (fethcedAmbireConstants) {
+    await fsPromises
+      .writeFile(storedAmbireConstantsPath, JSON.stringify(fethcedAmbireConstants), 'utf8')
+      .then(() => console.log('stored fetched ambire-constants'))
+      .catch((e) => console.log(`failed to store fetched ambire-constants, ${e}`))
+  }
+  return fethcedAmbireConstants || storedAmbireConstants
+}
+const main = async () => {
+  const oldHumanizerMeta = await fsPromises.readFile(resultPath, 'utf-8').then(JSON.parse)
+
+  const ambireConstants = await getAmbireConstants()
+  const parsedAmbireConstants = initHumanizerMeta(ambireConstants)
+  const extraStoredData = await addExtraStoredData()
+  const finalJson = { ...extraStoredData, ...parsedAmbireConstants }
+  // await fsPromises.writeFile(resultPath, JSON.stringify(finalJson, null, 4), 'utf8')
+  await fsPromises.writeFile(resultPath, JSON.stringify(finalJson), 'utf8')
+
+  // console.log(JSON.stringify(finalJson, null, 4))
+  console.log(
+    `Old file had ${Object.keys(oldHumanizerMeta).length} keys, the new object has ${
+      Object.keys(finalJson).length
+    } keys. Res written to ${resultPath}`
+  )
+}
 
 main()

@@ -15,6 +15,7 @@ import { estimate } from '../../libs/estimate/estimate'
 import { getGasPriceRecommendations } from '../../libs/gasPrice/gasPrice'
 import { KeystoreController } from '../keystore/keystore'
 import { PortfolioController } from '../portfolio/portfolio'
+import { SettingsController } from '../settings/settings'
 import { SignAccountOpController, SigningStatus } from './signAccountOp'
 
 const providers = Object.fromEntries(
@@ -66,8 +67,6 @@ class InternalSigner {
 const createAccountOp = (signingKeyAddr: string) => {
   const account = {
     addr: '0xa07D75aacEFd11b425AF7181958F0F85c312f143',
-    label: '',
-    pfp: '',
     associatedKeys: ['0xd6e371526cdaeE04cd8AF225D42e37Bc14688D9E'],
     creation: {
       factoryAddr: '0xBf07a0Df119Ca234634588fbDb5625594E2a5BCA',
@@ -135,7 +134,7 @@ describe('SignAccountOp Controller ', () => {
     const keystore = new KeystoreController(storage, { internal: InternalSigner })
     await keystore.addSecret('passphrase', pass, '', false)
     await keystore.unlockWithSecret('passphrase', pass)
-    await keystore.addKeys([{ privateKey: privKey, label: keyPublicAddress }])
+    await keystore.addKeys([{ privateKey: privKey }])
 
     const ethereum = networks.find((x) => x.id === 'ethereum')!
     const provider = new JsonRpcProvider(ethereum!.rpcUrl)
@@ -147,7 +146,8 @@ describe('SignAccountOp Controller ', () => {
     const accountStates = await getAccountsInfo(accounts)
     const portfolio = new PortfolioController(storage, 'https://staging-relayer.ambire.com', [])
     await portfolio.updateSelectedAccount(accounts, networks, account.addr)
-    const controller = new SignAccountOpController(keystore, portfolio, storage, fetch, {
+    const settings = new SettingsController(storage, networks)
+    const controller = new SignAccountOpController(keystore, portfolio, settings, storage, fetch, {
       ethereum: provider
     })
     controller.status = { type: SigningStatus.ReadyToSign }

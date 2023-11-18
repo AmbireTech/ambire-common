@@ -1,3 +1,4 @@
+/* eslint-disable no-console */
 import { ethers } from 'ethers'
 import {
   getAction,
@@ -5,7 +6,8 @@ import {
   getToken,
   getRecipientText,
   getAddress,
-  getDeadlineText
+  getDeadlineText,
+  getUnknownVisualization
 } from '../../utils'
 
 import { AccountOp } from '../../../accountOp/accountOp'
@@ -20,14 +22,12 @@ const uniV32Mapping = (
   return {
     // uint256 is deadline
     // 0x5ae401dc
-    [`${ifaceV32.getFunction('multicall(uint256,bytes[])')?.selector}`]: (
+    [ifaceV32.getFunction('multicall(uint256,bytes[])')?.selector!]: (
       accountOp: AccountOp,
       call: IrCall
     ): IrCall[] => {
       const [deadline, calls] = ifaceV32.parseTransaction(call)?.args || []
       const mappingResult = uniV32Mapping(humanizerInfo)
-      // @TODO: Multicall that outputs ETH should be detected as such and displayed as one action
-      // the current verbosity of "Swap ..., unwrap WETH to ETH" will be a nice pedantic quirk
       const parsed: IrCall[] = calls
         .map((data: string): IrCall[] => {
           const sigHash = data.slice(0, 10)
@@ -44,17 +44,15 @@ const uniV32Mapping = (
         .filter((x: any) => x)
       return parsed.length
         ? parsed
-        : [{ ...call, fullVisualization: [getLabel('Unknown Uni V3 interaction')] }]
+        : [{ ...call, fullVisualization: getUnknownVisualization('Uni V3', call) }]
     },
     // 0xac9650d8
-    [`${ifaceV32.getFunction('multicall(bytes[])')?.selector}`]: (
+    [ifaceV32.getFunction('multicall(bytes[])')?.selector!]: (
       accountOp: AccountOp,
       call: IrCall
     ): IrCall[] => {
       const [calls] = ifaceV32.parseTransaction(call)?.args || []
       const mappingResult = uniV32Mapping(humanizerInfo)
-      // @TODO: Multicall that outputs ETH should be detected as such and displayed as one action
-      // the current verbosity of "Swap ..., unwrap WETH to ETH" will be a nice pedantic quirk
       const parsed = calls
         .map((data: string) => {
           const sigHash = data.slice(0, 10)
@@ -65,18 +63,16 @@ const uniV32Mapping = (
         .filter((x: any) => x)
       return parsed.length
         ? parsed
-        : [{ ...call, fullVisualization: [getLabel('Unknown Uni V3 interaction')] }]
+        : [{ ...call, fullVisualization: getUnknownVisualization('Uni V3', call) }]
     },
     // bytes32 is prevBlockHash
     // 0x1f0464d1
-    [`${ifaceV32.getFunction('multicall(bytes32, bytes[])')?.selector}`]: (
+    [ifaceV32.getFunction('multicall(bytes32, bytes[])')?.selector!]: (
       accountOp: AccountOp,
       call: IrCall
     ): IrCall[] => {
       const [prevBlockHash, calls] = ifaceV32.parseTransaction(call)?.args || []
       const mappingResult = uniV32Mapping(humanizerInfo)
-      // @TODO: Multicall that outputs ETH should be detected as such and displayed as one action
-      // the current verbosity of "Swap ..., unwrap WETH to ETH" will be a nice pedantic quirk
       const parsed = calls
         .map((data: string) => {
           const sigHash = data.slice(0, 10)
@@ -100,7 +96,7 @@ const uniV32Mapping = (
             {
               ...call,
               fullVisualization: [
-                getLabel('Unknown Uni V3 interaction'),
+                ...getUnknownVisualization('Uni V3', call),
                 getLabel(`after block ${prevBlockHash}`)
               ]
             }
@@ -108,7 +104,7 @@ const uniV32Mapping = (
     },
     // NOTE: selfPermit is not supported cause it requires an ecrecover signature
     // 0x04e45aaf
-    [`${ifaceV32.getFunction('exactInputSingle')?.selector}`]: (
+    [ifaceV32.getFunction('exactInputSingle')?.selector!]: (
       accountOp: AccountOp,
       call: IrCall
     ): IrCall[] => {
@@ -129,7 +125,7 @@ const uniV32Mapping = (
       ]
     },
     // 0xb858183f
-    [`${ifaceV32.getFunction('exactInput')?.selector}`]: (
+    [ifaceV32.getFunction('exactInput')?.selector!]: (
       accountOp: AccountOp,
       call: IrCall
     ): IrCall[] => {
@@ -149,7 +145,7 @@ const uniV32Mapping = (
       ]
     },
     // 0x5023b4df
-    [`${ifaceV32.getFunction('exactOutputSingle')?.selector}`]: (
+    [ifaceV32.getFunction('exactOutputSingle')?.selector!]: (
       accountOp: AccountOp,
       call: IrCall
     ): IrCall[] => {
@@ -168,7 +164,7 @@ const uniV32Mapping = (
       ]
     },
     // 0x09b81346
-    [`${ifaceV32.getFunction('exactOutput')?.selector}`]: (
+    [ifaceV32.getFunction('exactOutput')?.selector!]: (
       accountOp: AccountOp,
       call: IrCall
     ): IrCall[] => {
@@ -188,7 +184,7 @@ const uniV32Mapping = (
       ]
     },
     // 0x42712a67
-    [`${ifaceV32.getFunction('swapTokensForExactTokens')?.selector}`]: (
+    [ifaceV32.getFunction('swapTokensForExactTokens')?.selector!]: (
       accountOp: AccountOp,
       call: IrCall
     ): IrCall[] => {
@@ -207,7 +203,7 @@ const uniV32Mapping = (
       ]
     },
     // 0x472b43f3
-    [`${ifaceV32.getFunction('swapExactTokensForTokens')?.selector}`]: (
+    [ifaceV32.getFunction('swapExactTokensForTokens')?.selector!]: (
       accountOp: AccountOp,
       call: IrCall
     ): IrCall[] => {
@@ -226,7 +222,7 @@ const uniV32Mapping = (
       ]
     },
     // 0x49616997
-    [`${ifaceV32.getFunction('unwrapWETH9(uint256)')?.selector}`]: (
+    [ifaceV32.getFunction('unwrapWETH9(uint256)')?.selector!]: (
       accountOp: AccountOp,
       call: IrCall
     ): IrCall[] => {
@@ -240,7 +236,7 @@ const uniV32Mapping = (
     },
     // address is recipient
     // 0x49404b7c
-    [`${ifaceV32.getFunction('unwrapWETH9(uint256,address)')?.selector}`]: (
+    [ifaceV32.getFunction('unwrapWETH9(uint256,address)')?.selector!]: (
       accountOp: AccountOp,
       call: IrCall
     ): IrCall[] => {
@@ -257,7 +253,7 @@ const uniV32Mapping = (
       ]
     },
     // 0xe90a182f
-    [`${ifaceV32.getFunction('sweepToken(address,uint256)')?.selector}`]: (
+    [ifaceV32.getFunction('sweepToken(address,uint256)')?.selector!]: (
       accountOp: AccountOp,
       call: IrCall
     ): IrCall[] => {
@@ -274,7 +270,7 @@ const uniV32Mapping = (
       ]
     },
     // 0xdf2ab5bb
-    [`${ifaceV32.getFunction('sweepToken(address,uint256,address)')?.selector}`]: (
+    [ifaceV32.getFunction('sweepToken(address,uint256,address)')?.selector!]: (
       accountOp: AccountOp,
       call: IrCall
     ): IrCall[] => {
@@ -292,7 +288,7 @@ const uniV32Mapping = (
       ]
     },
     // 0x3068c554
-    [`${ifaceV32.getFunction('sweepTokenWithFee(address,uint256,uint256,address)')?.selector}`]: (
+    [ifaceV32.getFunction('sweepTokenWithFee(address,uint256,uint256,address)')?.selector!]: (
       accountOp: AccountOp,
       call: IrCall
     ): IrCall[] => {
@@ -344,15 +340,13 @@ const uniV3Mapping = (
   const ifaceV3 = new ethers.Interface(humanizerInfo?.['abis:UniV3Router'])
   return {
     // 0xac9650d8
-    [`${ifaceV3.getFunction('multicall')?.selector}`]: (
+    [ifaceV3.getFunction('multicall')?.selector!]: (
       accountOp: AccountOp,
       call: IrCall
     ): IrCall[] => {
       const args = ifaceV3.parseTransaction(call)?.args || []
       const calls = args[args.length - 1]
       const mappingResult = uniV3Mapping(humanizerInfo)
-      // @TODO: Multicall that outputs ETH should be detected as such and displayed as one action
-      // the current verbosity of "Swap ..., unwrap WETH to ETH" will be a nice pedantic quirk
       const parsed = calls
         .map((data: string) => {
           const sigHash = data.slice(0, 10)
@@ -363,11 +357,11 @@ const uniV3Mapping = (
         .filter((x: any) => x)
       return parsed.length
         ? parsed
-        : [{ ...call, fullVisualization: [getLabel('Unknown Uni V3 interaction')] }]
+        : [{ ...call, fullVisualization: getUnknownVisualization('Uni V3', call) }]
     },
     // NOTE: selfPermit is not supported cause it requires an ecrecover signature
     // 0x414bf389
-    [`${ifaceV3.getFunction('exactInputSingle')?.selector}`]: (
+    [ifaceV3.getFunction('exactInputSingle')?.selector!]: (
       accountOp: AccountOp,
       call: IrCall
     ): IrCall[] => {
@@ -388,7 +382,7 @@ const uniV3Mapping = (
       ]
     },
     // 0xc04b8d59
-    [`${ifaceV3.getFunction('exactInput')?.selector}`]: (
+    [ifaceV3.getFunction('exactInput')?.selector!]: (
       accountOp: AccountOp,
       call: IrCall
     ): IrCall[] => {
@@ -409,7 +403,7 @@ const uniV3Mapping = (
       ]
     },
     // 0xdb3e2198
-    [`${ifaceV3.getFunction('exactOutputSingle')?.selector}`]: (
+    [ifaceV3.getFunction('exactOutputSingle')?.selector!]: (
       accountOp: AccountOp,
       call: IrCall
     ): IrCall[] => {
@@ -429,7 +423,7 @@ const uniV3Mapping = (
       ]
     },
     // 0xf28c0498
-    [`${ifaceV3.getFunction('exactOutput')?.selector}`]: (
+    [ifaceV3.getFunction('exactOutput')?.selector!]: (
       accountOp: AccountOp,
       call: IrCall
     ): IrCall[] => {
@@ -450,7 +444,7 @@ const uniV3Mapping = (
       ]
     },
     // 0x49404b7c
-    [`${ifaceV3.getFunction('unwrapWETH9')?.selector}`]: (
+    [ifaceV3.getFunction('unwrapWETH9')?.selector!]: (
       accountOp: AccountOp,
       call: IrCall
     ): IrCall[] => {
@@ -467,7 +461,7 @@ const uniV3Mapping = (
       ]
     },
     // 0x9b2c0a37
-    [`${ifaceV3.getFunction('unwrapWETH9WithFee')?.selector}`]: (
+    [ifaceV3.getFunction('unwrapWETH9WithFee')?.selector!]: (
       accountOp: AccountOp,
       call: IrCall
     ): IrCall[] => {
@@ -490,7 +484,7 @@ const uniV3Mapping = (
     },
     // 0x12210e8a
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    [`${ifaceV3.getFunction('refundETH()')?.selector}`]: (
+    [ifaceV3.getFunction('refundETH()')?.selector!]: (
       accountOp: AccountOp,
       call: IrCall
     ): IrCall[] => {

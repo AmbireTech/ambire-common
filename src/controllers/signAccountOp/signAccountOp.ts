@@ -5,6 +5,7 @@ import { Account, AccountStates } from '../../interfaces/account'
 import { Key } from '../../interfaces/keystore'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { Storage } from '../../interfaces/storage'
+import { getKnownAddressLabels } from '../../libs/account/account'
 import { AccountOp, accountOpSignableHash, GasFeePayment } from '../../libs/accountOp/accountOp'
 import { EstimateResult } from '../../libs/estimate/estimate'
 import { GasRecommendation } from '../../libs/gasPrice/gasPrice'
@@ -14,6 +15,7 @@ import { Price, TokenResult } from '../../libs/portfolio'
 import EventEmitter from '../eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
 import { PortfolioController } from '../portfolio/portfolio'
+import { SettingsController } from '../settings/settings'
 
 export enum SigningStatus {
   UnableToSign = 'unable-to-sign',
@@ -67,6 +69,8 @@ export class SignAccountOpController extends EventEmitter {
 
   #portfolio: PortfolioController
 
+  #settings: SettingsController
+
   #storage: Storage
 
   #fetch: Function
@@ -98,6 +102,7 @@ export class SignAccountOpController extends EventEmitter {
   constructor(
     keystore: KeystoreController,
     portfolio: PortfolioController,
+    settings: SettingsController,
     storage: Storage,
     fetch: Function,
     providers: { [key: string]: JsonRpcProvider }
@@ -106,6 +111,7 @@ export class SignAccountOpController extends EventEmitter {
 
     this.#keystore = keystore
     this.#portfolio = portfolio
+    this.#settings = settings
     this.#storage = storage
     this.#fetch = fetch
     this.#providers = providers
@@ -148,6 +154,15 @@ export class SignAccountOpController extends EventEmitter {
     signingKeyAddr?: Key['addr']
     signingKeyType?: Key['type']
   }) {
+    if (!this.#accounts) {
+      return this.emitError({
+        message:
+          'Something went wrong when updating the current account operation information. Missing accounts data. Please try to initiate the account operation again.',
+        level: 'major',
+        error: new Error('signAccountOp: missing accounts')
+      })
+    }
+
     if (gasPrices) this.#gasPrices = gasPrices
 
     if (estimation) this.#estimation = estimation
@@ -162,10 +177,15 @@ export class SignAccountOpController extends EventEmitter {
         this.accountOp = accountOp
       }
 
-      // TODO: add knownAddresses
+      const knownAddressLabels = getKnownAddressLabels(
+        this.#accounts,
+        this.#settings.accountPreferences,
+        this.#keystore.keys,
+        this.#settings.keyPreferences
+      )
       callsHumanizer(
         this.accountOp,
-        [],
+        knownAddressLabels,
         this.#storage,
         this.#fetch,
         (humanizedCalls) => {
@@ -396,8 +416,8 @@ export class SignAccountOpController extends EventEmitter {
     const account = this.#getAccount()
     if (!account || !this.isInitialized) return []
 
-    // in other modes: relayer and gas tank - current account + all EOAs can pay
-    return this.#estimation!.feePaymentOptions
+    // FeeOptions having amount
+    return this.#estimation!.feePaymentOptions.filter((feeOption) => feeOption.availableAmount)
   }
 
   // eslint-disable-next-line class-methods-use-this
@@ -472,7 +492,7 @@ export class SignAccountOpController extends EventEmitter {
           // @TODO - config/const
           const feeToken = this.#getPortfolioToken(this.accountOp.gasFeePayment.inToken)
 
-          const call = {
+          this.accountOp.feeCall = {
             to: feeCollector,
             value: 0n,
             data: abiCoder.encode(
@@ -480,30 +500,28 @@ export class SignAccountOpController extends EventEmitter {
               ['gasTank', this.accountOp.gasFeePayment.amount, feeToken?.symbol]
             )
           }
-
-          this.accountOp.calls.push(call)
         } else if (this.accountOp.gasFeePayment.inToken) {
           // TODO: add the fee payment only if it hasn't been added already
           if (
             this.accountOp.gasFeePayment.inToken == '0x0000000000000000000000000000000000000000'
           ) {
             // native payment
-            this.accountOp.calls.push({
+            this.accountOp.feeCall = {
               to: feeCollector,
               value: this.accountOp.gasFeePayment.amount,
               data: '0x'
-            })
+            }
           } else {
             // token payment
             const ERC20Interface = new ethers.Interface(ERC20.abi)
-            this.accountOp.calls.push({
+            this.accountOp.feeCall = {
               to: this.accountOp.gasFeePayment.inToken,
               value: 0n,
               data: ERC20Interface.encodeFunctionData('transfer', [
                 feeCollector,
                 this.accountOp.gasFeePayment.amount
               ])
-            })
+            }
           }
         }
 

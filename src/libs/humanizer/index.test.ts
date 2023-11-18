@@ -1,18 +1,19 @@
+/* eslint-disable no-console */
 import { ethers } from 'ethers'
-import { Message, TypedMessage } from 'interfaces/userRequest'
-import { HumanizerVisualization, IrCall, IrMessage } from 'libs/humanizer/interfaces'
 import fetch from 'node-fetch'
 
 import { describe, expect, jest, test } from '@jest/globals'
 
-import { ErrorRef } from 'controllers/eventEmitter'
 import { produceMemoryStore } from '../../../test/helpers'
 import humanizerJSON from '../../consts/humanizerInfo.json'
+import { ErrorRef } from '../../controllers/eventEmitter'
 import { Account } from '../../interfaces/account'
 import { Key } from '../../interfaces/keystore'
 import { Storage } from '../../interfaces/storage'
+import { Message, TypedMessage } from '../../interfaces/userRequest'
 import { AccountOp } from '../accountOp/accountOp'
-import { callsHumanizer, messageHumanizer } from '.'
+import { callsHumanizer, messageHumanizer } from './index'
+import { HumanizerVisualization, IrCall, IrMessage } from './interfaces'
 
 const HUMANIZER_META_KEY = 'HumanizerMeta'
 
@@ -48,8 +49,6 @@ const accountOp: AccountOp = {
 const accounts: Account[] = [
   {
     addr: '0xAAbBbC841F29Dc6b09EF9f6c8fd59DA807bc6248',
-    label: 'First account',
-    pfp: 'string',
     associatedKeys: ['string[]'],
     creation: null
   }
@@ -58,7 +57,6 @@ const keys: Key[] = [
   {
     addr: '0xABcdeF398CBb1285Eeb2DC42be2c429eB1d55f02',
     type: 'internal',
-    label: 'Second account',
     isExternallyStored: true,
     meta: null
   }
@@ -217,7 +215,7 @@ const transactions = {
 const emitError = jest.fn((err: ErrorRef) => {
   console.log(err)
 })
-describe('HumanizerController', () => {
+describe('Humanizer main function', () => {
   let storage: Storage
   beforeEach(async () => {
     storage = produceMemoryStore()
@@ -267,7 +265,7 @@ describe('HumanizerController', () => {
       )
     })
     accountOp.calls = [...transactions.generic]
-    await callsHumanizer(accountOp, [], storage, fetch, onUpdate, emitError)
+    await callsHumanizer(accountOp, {}, storage, fetch, onUpdate, emitError)
     expect(onUpdate).toHaveBeenCalledTimes(1)
   })
 
@@ -297,7 +295,7 @@ describe('HumanizerController', () => {
       iterations += 1
     })
     accountOp.calls = [...transactions.unknownFuncSelector]
-    await callsHumanizer(accountOp, [], storage, fetch, onUpdate, emitError)
+    await callsHumanizer(accountOp, {}, storage, fetch, onUpdate, emitError)
     expect(onUpdate).toHaveBeenCalledTimes(2)
   })
 })
@@ -400,6 +398,7 @@ describe('TypedMessages', () => {
       { type: 'label', content: 'already expired' }
     ]
     const onUpdate = jest.fn((newMessage: IrMessage) => {
+      expect(newMessage).toMatchObject({ warnings: [], fullVisualization: expect.anything() })
       if (newMessage.id === 1)
         newMessage.fullVisualization?.forEach((v, i) =>
           expect(expectedVisualizations[i]).toMatchObject(v)
@@ -411,8 +410,8 @@ describe('TypedMessages', () => {
         ])
     })
 
-    await messageHumanizer(messages[0], [], storage, fetch, onUpdate, emitError)
-    await messageHumanizer(messages[1], [], storage, fetch, onUpdate, emitError)
+    await messageHumanizer(messages[0], {}, storage, fetch, onUpdate, emitError)
+    await messageHumanizer(messages[1], {}, storage, fetch, onUpdate, emitError)
     // two times from first message, one from the second
     expect(onUpdate).toHaveBeenCalledTimes(3)
   })
@@ -452,7 +451,9 @@ describe('with (Account | Key)[] arg', () => {
         )
       )
     })
-    await callsHumanizer(accountOp, [...accounts, ...keys], storage, fetch, onUpdate, emitError)
+
+    const knownAddresses = { [accounts[0].addr]: 'First account', [keys[0].addr]: 'Second account' }
+    await callsHumanizer(accountOp, knownAddresses, storage, fetch, onUpdate, emitError)
     expect(onUpdate).toHaveBeenCalledTimes(1)
   })
 })

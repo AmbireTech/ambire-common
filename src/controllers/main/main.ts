@@ -10,7 +10,12 @@ import { Key, KeystoreSignerType } from '../../interfaces/keystore'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
 import { Storage } from '../../interfaces/storage'
 import { Message, UserRequest } from '../../interfaces/userRequest'
-import { AccountOp, Call as AccountOpCall, callToTuple } from '../../libs/accountOp/accountOp'
+import {
+  AccountOp,
+  AccountOpStatus,
+  Call as AccountOpCall,
+  getSignableCalls
+} from '../../libs/accountOp/accountOp'
 import { getAccountState } from '../../libs/accountState/accountState'
 import {
   getAccountOpBannersForEOA,
@@ -30,8 +35,9 @@ import { EmailVaultController } from '../emailVault'
 import EventEmitter from '../eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
 import { PortfolioController } from '../portfolio/portfolio'
+import { SettingsController } from '../settings/settings'
 /* eslint-disable no-underscore-dangle */
-import { SignAccountOpController, SigningStatus } from '../signAccountOp/signAccountOp'
+import { SignAccountOpController } from '../signAccountOp/signAccountOp'
 import { SignMessageController } from '../signMessage/signMessage'
 import { TransferController } from '../transfer/transfer'
 
@@ -70,13 +76,12 @@ export class MainController extends EventEmitter {
 
   activity!: ActivityController
 
+  settings: SettingsController
+
   // @TODO read networks from settings
   accounts: Account[] = []
 
   selectedAccount: string | null = null
-
-  // @TODO: structure
-  settings: { networks: NetworkDescriptor[] }
 
   userRequests: UserRequest[] = []
 
@@ -138,7 +143,7 @@ export class MainController extends EventEmitter {
 
     this.portfolio = new PortfolioController(this.#storage, relayerUrl, pinned)
     this.keystore = new KeystoreController(this.#storage, keystoreSigners)
-    this.settings = { networks }
+    this.settings = new SettingsController(this.#storage, networks)
     this.#initialLoadPromise = this.#load()
     this.emailVault = new EmailVaultController(
       this.#storage,
@@ -176,6 +181,7 @@ export class MainController extends EventEmitter {
     this.accountStates = await this.#getAccountsInfo(this.accounts)
     this.signMessage = new SignMessageController(
       this.keystore,
+      this.settings,
       this.#providers,
       this.#storage,
       this.#fetch
@@ -183,11 +189,15 @@ export class MainController extends EventEmitter {
     this.signAccountOp = new SignAccountOpController(
       this.keystore,
       this.portfolio,
+      this.settings,
       this.#storage,
       this.#fetch,
       this.#providers
     )
     this.activity = new ActivityController(this.#storage, this.accountStates)
+    if (this.selectedAccount) {
+      this.activity.init({ filters: { account: this.selectedAccount } })
+    }
 
     const addReadyToAddAccountsIfNeeded = () => {
       if (
@@ -202,6 +212,16 @@ export class MainController extends EventEmitter {
 
     this.isReady = true
     this.emitUpdate()
+  }
+
+  async updateAccountsOpsStatuses() {
+    await this.#initialLoadPromise
+
+    const hasUpdatedStatuses = await this.activity.updateAccountsOpsStatuses()
+
+    if (hasUpdatedStatuses) {
+      this.emitUpdate()
+    }
   }
 
   async #updateGasPrice() {
@@ -225,10 +245,13 @@ export class MainController extends EventEmitter {
     )
   }
 
-  async #getAccountsInfo(accounts: Account[]): Promise<AccountStates> {
+  async #getAccountsInfo(
+    accounts: Account[],
+    blockTag: string | number = 'latest'
+  ): Promise<AccountStates> {
     const result = await Promise.all(
       this.settings.networks.map((network) =>
-        getAccountState(this.#providers[network.id], network, accounts)
+        getAccountState(this.#providers[network.id], network, accounts, blockTag)
       )
     )
 
@@ -246,8 +269,8 @@ export class MainController extends EventEmitter {
     return Object.fromEntries(states)
   }
 
-  async updateAccountStates() {
-    this.accountStates = await this.#getAccountsInfo(this.accounts)
+  async updateAccountStates(blockTag: string | number = 'latest') {
+    this.accountStates = await this.#getAccountsInfo(this.accounts, blockTag)
     this.lastUpdate = new Date()
     this.emitUpdate()
   }
@@ -262,6 +285,7 @@ export class MainController extends EventEmitter {
 
     this.selectedAccount = toAccountAddr
     await this.#storage.set('selectedAccount', toAccountAddr)
+    this.activity.init({ filters: { account: toAccountAddr } })
     this.updateSelectedAccount(toAccountAddr)
     this.onUpdateDappSelectedAccount(toAccountAddr)
     this.emitUpdate()
@@ -320,11 +344,7 @@ export class MainController extends EventEmitter {
       return uCalls
     }, [])
 
-    const accAvailableKeys = this.keystore.keys.filter((key) =>
-      account.associatedKeys.includes(key.addr)
-    )
-
-    if (!calls.length || !accAvailableKeys.length) return null
+    if (!calls.length) return null
 
     const currentAccountOp = this.accountOpsToBeSigned[accountAddr][networkId]?.accountOp
     return {
@@ -336,7 +356,7 @@ export class MainController extends EventEmitter {
       gasFeePayment: currentAccountOp?.gasFeePayment || null,
       // We use the AccountInfo to determine
       nonce: this.accountStates[accountAddr][networkId].nonce,
-      signature: generateSpoofSig(accAvailableKeys[0].addr),
+      signature: account.associatedKeys[0] ? generateSpoofSig(account.associatedKeys[0]) : null,
       // @TODO from pending recoveries
       accountOpToExecuteBefore: null,
       calls
@@ -468,9 +488,14 @@ export class MainController extends EventEmitter {
     // TODO check if needed data in accountStates are available
     // this.accountStates[accountOp.accountAddr][accountOp.networkId].
     const account = this.accounts.find((x) => x.addr === accountOp.accountAddr)
-    const otherEOAaccounts = this.accounts.filter(
-      (acc) => !acc.creation && acc.addr !== accountOp.accountAddr
-    )
+
+    // Here, we list EOA accounts for which you can also obtain an estimation of the AccountOp payment.
+    // In the case of operating with a smart account (an account with creation code), all other EOAs can pay the fee.
+    //
+    // If the current account is an EOA, only this account can pay the fee,
+    // and there's no need for checking other EOA accounts native balances.
+    // This is already handled and estimated as a fee option in the estimate library, which is why we pass an empty array here.
+    const EOAaccounts = account?.creation ? this.accounts.filter((acc) => !acc.creation) : []
     const feeTokens =
       this.portfolio.latest?.[accountOp.accountAddr]?.[accountOp.networkId]?.result?.tokens
         .filter((t) => t.flags.isFeeToken)
@@ -502,7 +527,7 @@ export class MainController extends EventEmitter {
         network,
         account,
         accountOp,
-        otherEOAaccounts.map((acc) => acc.addr),
+        EOAaccounts.map((acc) => acc.addr),
         // @TODO - first time calling this, portfolio is still not loaded.
         feeTokens
       )
@@ -566,7 +591,7 @@ export class MainController extends EventEmitter {
         const ambireAccount = new ethers.Interface(AmbireAccount.abi)
         to = accountOp.accountAddr
         data = ambireAccount.encodeFunctionData('execute', [
-          accountOp.calls.map((call) => callToTuple(call)),
+          getSignableCalls(accountOp),
           accountOp.signature
         ])
       } else {
@@ -575,13 +600,13 @@ export class MainController extends EventEmitter {
         data = ambireFactory.encodeFunctionData('deployAndExecute', [
           account.creation.bytecode,
           account.creation.salt,
-          accountOp.calls.map((call) => callToTuple(call)),
+          getSignableCalls(accountOp),
           accountOp.signature
         ])
       }
 
       const broadcastKey = this.keystore.keys.find(
-        (key) => key.addr == accountOp.gasFeePayment!.paidBy
+        (key) => key.addr === accountOp.gasFeePayment!.paidBy
       )
       const signer = await this.keystore.getSigner(
         accountOp.gasFeePayment!.paidBy,
@@ -622,7 +647,7 @@ export class MainController extends EventEmitter {
       try {
         const body = {
           gasLimit: Number(accountOp.gasFeePayment!.simulatedGasLimit),
-          txns: accountOp.calls.map((call) => callToTuple(call)),
+          txns: getSignableCalls(accountOp),
           signature: accountOp.signature,
           signer: {
             address: accountOp.signingKeyAddr
@@ -646,32 +671,30 @@ export class MainController extends EventEmitter {
       } catch (e: any) {
         return this.#throwAccountOpBroadcastError(e)
       }
-
-      this.broadcastStatus = 'DONE'
-      this.emitUpdate()
-
-      await wait(1)
-      this.broadcastStatus = 'INITIAL'
-      this.emitUpdate()
     }
 
     if (transactionRes) {
       await this.activity.addAccountOp({
         ...accountOp,
+        status: AccountOpStatus.BroadcastedButNotConfirmed,
         txnId: transactionRes.hash,
         nonce: BigInt(transactionRes.nonce)
       })
       accountOp.calls.forEach((call) => {
         if (call.fromUserRequestId) {
           this.removeUserRequest(call.fromUserRequestId)
-          this.onResolveDappRequest({ hash: accountOp.signature }, call.fromUserRequestId)
+          this.onResolveDappRequest({ hash: transactionRes?.hash }, call.fromUserRequestId)
         }
       })
       console.log('broadcasted:', transactionRes)
       !!this.onBroadcastSuccess && this.onBroadcastSuccess('account-op')
-      // TODO: impl "benzina"
+      this.broadcastStatus = 'DONE'
       this.emitUpdate()
+      await wait(1)
     }
+
+    this.broadcastStatus = 'INITIAL'
+    this.emitUpdate()
   }
 
   async broadcastSignedMessage(signedMessage: Message) {
@@ -710,7 +733,8 @@ export class MainController extends EventEmitter {
       ...accountOpSmartAccountBanners,
       ...accountOpEOABanners,
       ...pendingAccountOpEOABanners,
-      ...messageBanners
+      ...messageBanners,
+      ...this.activity.banners
     ]
   }
 

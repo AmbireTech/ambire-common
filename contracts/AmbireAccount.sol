@@ -18,7 +18,7 @@ contract AmbireAccount {
 	address private constant FALLBACK_HANDLER_SLOT = address(0x6969);
 
 	// @dev This is how we understand if msg.sender is the entry point
-	address private constant ENTRY_POINT_MARKER = address(0x7171);
+	bytes32 private constant ENTRY_POINT_MARKER = 0x0000000000000000000000000000000000000000000000000000000000007171;
 
 	// Externally validated signatures
 	uint8 private constant SIGMODE_EXTERNALLY_VALIDATED = 255;
@@ -150,7 +150,6 @@ contract AmbireAccount {
 		uint8 sigMode = uint8(signature[signature.length - 1]);
 		uint256 currentNonce = nonce;
 		// we increment the nonce here (not using `nonce++` to save some gas)
-		// in case shouldExecute is false, we revert it back
 		nonce = currentNonce + 1;
 
 		if (sigMode == SIGMODE_EXTERNALLY_VALIDATED) {
@@ -301,7 +300,7 @@ contract AmbireAccount {
 		// enable running executeMultiple operation through the entryPoint if
 		// a paymaster sponsors it with a commitment one-time nonce.
 		// two use cases:
-		// 1) enable 4337 on a network by giving priviledges to the entryPoint
+		// 1) enable 4337 on a network by giving privileges to the entryPoint
 		// 2) key recovery. If the key is lost, we cannot sign the userOp,
 		// so we have to go to `execute` to trigger the recovery logic
 		// Why executeMultiple but not execute?
@@ -319,7 +318,7 @@ contract AmbireAccount {
 			return SIG_VALIDATION_SUCCESS;
 		}
 
-		require(address(uint160(uint256(privileges[msg.sender]))) == ENTRY_POINT_MARKER, 'validateUserOp: not from entryPoint');
+		require(privileges[msg.sender] == ENTRY_POINT_MARKER, 'validateUserOp: not from entryPoint');
 
 		// this is replay-safe because userOpHash is retrieved like this: keccak256(abi.encode(userOp.hash(), address(this), block.chainid))
 		address signer = SignatureValidator.recoverAddr(userOpHash, op.signature);
@@ -328,7 +327,7 @@ contract AmbireAccount {
 		// NOTE: we do not have to pay the entryPoint if SIG_VALIDATION_FAILED, so we just return on those
 		if (missingAccountFunds > 0) {
 			// NOTE: MAY pay more than the minimum, to deposit for future transactions
-			(bool success,) = payable(msg.sender).call{value : missingAccountFunds}('');
+			(bool success,) = msg.sender.call{value : missingAccountFunds}('');
 			// ignore failure (its EntryPoint's job to verify, not account.)
 			(success);
 		}

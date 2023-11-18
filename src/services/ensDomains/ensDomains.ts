@@ -31,16 +31,16 @@ async function resolveForCoin(resolver, bip44Item) {
   return resolver.getAddress()
 }
 
-function isCorrectAddress(address) {
+export function isCorrectAddress(address) {
   return !(ADDRESS_ZERO === address) && isAddress(address)
 }
 
-async function resolveENSDomain(domain, bip44Item) {
+async function resolveENSDomain(domain, bip44Item): string {
   const normalizedDomainName = normalizeDomain(domain)
-  if (!normalizedDomainName) return null
+  if (!normalizedDomainName) return ''
   const provider = getProvider(ETH_ID)
   const resolver = await provider.getResolver(normalizedDomainName)
-  if (!resolver) return null
+  if (!resolver) return ''
   const ethAddress = await resolver.getAddress()
   const addressForCoin = await resolveForCoin(resolver, bip44Item).catch(() => null)
   return isCorrectAddress(addressForCoin) ? addressForCoin : ethAddress

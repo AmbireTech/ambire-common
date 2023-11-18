@@ -1,6 +1,6 @@
 import { ethers } from "hardhat";
 import { Account, AccountOnchainState } from "../../interfaces/account";
-import { AccountOp, callToTuple } from "../accountOp/accountOp";
+import { AccountOp, getSignableCalls } from "../accountOp/accountOp";
 import AmbireAccount from "../../../contracts/compiled/AmbireAccount.json";
 import { EstimateResult } from "libs/estimate/estimate";
 
@@ -80,7 +80,7 @@ export function toUserOperation(
     ]))
   }
 
-  const callData = ambireAccount.interface.encodeFunctionData('executeBySender', [accountOp.calls.map(call => callToTuple(call))])
+  const callData = ambireAccount.interface.encodeFunctionData('executeBySender', [getSignableCalls(accountOp)])
   const preVerificationGas = getPreverificationGas(callData)
   const verificationGasLimit = getVerificationGasLimit(initCode)
   const callGasLimit = estimation.gasUsed - (BigInt(verificationGasLimit) + BigInt(preVerificationGas))

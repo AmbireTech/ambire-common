@@ -6,7 +6,8 @@ const networks: NetworkDescriptor[] = [
     id: 'ethereum',
     name: 'Ethereum',
     nativeAssetSymbol: 'ETH',
-    rpcUrl: 'https://rpc.ankr.com/eth',
+    rpcUrl:
+      'https://rpc.ankr.com/eth/5c7b8f0ac82c95161753873289e1a4f39aa69019b905b8032d76909962719be9',
     rpcNoStateOverride: false,
     chainId: 1n,
     explorerUrl: 'https://etherscan.io',
@@ -17,7 +18,8 @@ const networks: NetworkDescriptor[] = [
     id: 'polygon',
     name: 'Polygon',
     nativeAssetSymbol: 'MATIC',
-    rpcUrl: 'https://rpc.ankr.com/polygon',
+    rpcUrl:
+      'https://rpc.ankr.com/polygon/5c7b8f0ac82c95161753873289e1a4f39aa69019b905b8032d76909962719be9',
     rpcNoStateOverride: false,
     chainId: 137n,
     explorerUrl: 'https://polygonscan.com',
@@ -33,12 +35,13 @@ const networks: NetworkDescriptor[] = [
     id: 'optimism',
     name: 'Optimism',
     nativeAssetSymbol: 'ETH',
-    rpcUrl: 'https://rpc.ankr.com/optimism',
+    rpcUrl:
+      'https://rpc.ankr.com/optimism/5c7b8f0ac82c95161753873289e1a4f39aa69019b905b8032d76909962719be9',
     rpcNoStateOverride: false,
     chainId: 10n,
     explorerUrl: 'https://optimistic.etherscan.io',
     erc4337: {
-      enabled: true,
+      enabled: false,
       entryPointAddr: ERC_4337_ENTRYPOINT,
       entryPointMarker: ENTRY_POINT_MARKER
     },
@@ -55,9 +58,4 @@ const networks: NetworkDescriptor[] = [
   // }
 ]
 
-const nativeTokens: { [key: NetworkId]: [string, number] } = {
-  ethereum: ['ETH', 18],
-  polygon: ['MATIC', 18],
-  fanthom: ['FTM', 18]
-}
-export { networks, nativeTokens }
+export { networks }

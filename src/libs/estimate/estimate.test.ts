@@ -16,8 +16,6 @@ const providerOptimism = new JsonRpcProvider(optimism.rpcUrl)
 
 const account = {
   addr: '0xa07D75aacEFd11b425AF7181958F0F85c312f143',
-  label: '',
-  pfp: '',
   associatedKeys: ['0xd6e371526cdaeE04cd8AF225D42e37Bc14688D9E'],
   creation: {
     factoryAddr: '0xBf07a0Df119Ca234634588fbDb5625594E2a5BCA',
@@ -33,9 +31,9 @@ const tomorrowHex = Math.floor((Date.now() + 86400000) / 1000).toString(16)
 // we set swap deadline always for tomorrow, in order to prevent the test failure with 'TRANSACTION TOO OLD'
 const expire = '0'.repeat(64 - tomorrowHex.length) + tomorrowHex
 
-// USDT -> USDC swap
-// Fee tokens: USDT, USDC
-const data = `0x5ae401dc${expire}00000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000e404e45aaf000000000000000000000000dac17f958d2ee523a2206206994597c13d831ec7000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb4800000000000000000000000000000000000000000000000000000000000001f4000000000000000000000000a07d75aacefd11b425af7181958f0f85c312f14300000000000000000000000000000000000000000000000000000000000f424000000000000000000000000000000000000000000000000000000000000c33d9000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000`
+// USDC -> USDT swap
+// Fee tokens: USDC, USDT
+const data = `0x5ae401dc${expire}00000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000e404e45aaf000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48000000000000000000000000dac17f958d2ee523a2206206994597c13d831ec700000000000000000000000000000000000000000000000000000000000001f4000000000000000000000000a07d75aacefd11b425af7181958f0f85c312f14300000000000000000000000000000000000000000000000000000000000f424000000000000000000000000000000000000000000000000000000000000c33d9000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000`
 
 const SPOOF_SIGTYPE = '03'
 const spoofSig =
@@ -68,8 +66,6 @@ describe('estimate', () => {
   it('estimates gasUsage and native balance for EOA', async () => {
     const EOAAccount = {
       addr: '0x40b38765696e3d5d8d9d834d8aad4bb6e418e489',
-      label: '',
-      pfp: '',
       associatedKeys: ['0x40b38765696e3d5d8d9d834d8aad4bb6e418e489'],
       creation: null
     }
@@ -133,9 +129,9 @@ describe('estimate', () => {
 
     // This is the min gas unit we can spend, but we expect more than that having in mind that multiple computations happens in the Contract
     expect(response.gasUsed).toBeGreaterThan(21000n)
-    // As we swap 1 USDT for 1 USDC, we expect the estimate (outcome) balance of USDC to be greater than before the estimate (portfolio value)
-    expect(usdcOutcome!.availableAmount).toBeGreaterThan(usdc!.amount)
-    expect(usdtOutcome!.availableAmount).toBeLessThan(usdt!.amount)
+    // As we swap 1 USDC for 1 USDT, we expect the estimate (outcome) balance of USDT to be greater than before the estimate (portfolio value)
+    expect(usdtOutcome!.availableAmount).toBeGreaterThan(usdt?.amount || 0n)
+    expect(usdcOutcome!.availableAmount).toBeLessThan(usdc!.amount)
     checkNativeBalance(response.feePaymentOptions, nativeToCheck)
     expect(response.nonce).toBeGreaterThan(1)
   })
@@ -196,8 +192,6 @@ describe('estimate', () => {
   it('estimates with `addedNative`', async () => {
     const accountOptimism = {
       addr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
-      label: '',
-      pfp: '',
       associatedKeys: ['0x5Be214147EA1AE3653f289E17fE7Dc17A73AD175'],
       creation: {
         factoryAddr: '0xBf07a0Df119Ca234634588fbDb5625594E2a5BCA',

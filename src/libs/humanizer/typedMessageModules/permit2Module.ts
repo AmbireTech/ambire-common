@@ -74,8 +74,8 @@ export const permit2Module: HumanizerTypedMessaageModule = (tm: TypedMessage) =>
         )
       })
     }
-    return visualizations
+    return { fullVisualization: visualizations }
   }
 
-  return []
+  return { fullVisualization: [] }
 }

@@ -105,16 +105,12 @@ describe('KeystoreController', () => {
     })
   })
 
-  test('should not unlock with wrong secret', (done) => {
-    keystore.unlockWithSecret('passphrase', `${pass}1`)
-
-    const unsubscribe = keystore.onError((e) => {
-      expect(e.error.message).toBe('keystore: wrong secret')
-      expect(keystore.isUnlocked).toBe(false)
-
-      unsubscribe()
-      done()
-    })
+  test('should not unlock with wrong secret', async () => {
+    try {
+      await keystore.unlockWithSecret('passphrase', `${pass}1`)
+    } catch {
+      expect(keystore.errorMessage).toBe('keystore: wrong secret')
+    }
   })
 
   test('should unlock with secret', (done) => {
@@ -131,7 +127,7 @@ describe('KeystoreController', () => {
   })
 
   test('should add an internal key', (done) => {
-    keystore.addKeys([{ privateKey: privKey, label: 'test key' }])
+    keystore.addKeys([{ privateKey: privKey }])
 
     const unsubscribe = keystore.onUpdate(async () => {
       if (keystore.latestMethodCall === 'addKeys' && keystore.status === 'DONE') {
@@ -146,20 +142,17 @@ describe('KeystoreController', () => {
   })
 
   test('should not add twice internal key that is already added', (done) => {
-    const keysWithPrivateKeyAlreadyAdded = [
-      { privateKey: privKey, label: 'test key 1' },
-      { privateKey: privKey, label: 'test key 2 with the same private key as test key 1' }
-    ]
+    // two keys with the same private key
+    const keysWithPrivateKeyAlreadyAdded = [{ privateKey: privKey }, { privateKey: privKey }]
 
     const anotherPrivateKeyNotAddedYet =
       '0x574f261b776b26b1ad75a991173d0e8ca2ca1d481bd7822b2b58b2ef8a969f12'
     const anotherPrivateKeyPublicAddress = '0x9188fdd757Df66B4F693D624Ed6A13a15Cf717D7'
     const keysWithPrivateKeyDuplicatedInParams = [
-      { privateKey: anotherPrivateKeyNotAddedYet, label: 'test key 3' },
-      {
-        privateKey: anotherPrivateKeyNotAddedYet,
-        label: 'test key 4 with the same private key as key 3'
-      }
+      // test key 3
+      { privateKey: anotherPrivateKeyNotAddedYet },
+      // test key 4 with the same private key as key 3
+      { privateKey: anotherPrivateKeyNotAddedYet }
     ]
 
     keystore.addKeys([...keysWithPrivateKeyAlreadyAdded, ...keysWithPrivateKeyDuplicatedInParams])
@@ -182,9 +175,7 @@ describe('KeystoreController', () => {
   test('should add an external key', (done) => {
     const publicAddress = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'
 
-    keystore.addKeysExternallyStored([
-      { addr: publicAddress, label: 'test external key', type: 'trezor', meta: null }
-    ])
+    keystore.addKeysExternallyStored([{ addr: publicAddress, type: 'trezor', meta: null }])
 
     const unsubscribe = keystore.onUpdate(async () => {
       if (keystore.latestMethodCall === 'addKeysExternallyStored' && keystore.status === 'DONE') {
@@ -201,10 +192,11 @@ describe('KeystoreController', () => {
   test('should not add twice external key that is already added', (done) => {
     const publicAddress = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'
     const keysWithPrivateKeyAlreadyAdded = [
-      { addr: publicAddress, label: 'test key 1', type: 'trezor' as 'trezor', meta: null },
+      // test key 1
+      { addr: publicAddress, type: 'trezor' as 'trezor', meta: null },
+      // test key 2 with the same id (public address) as test key 1'
       {
         addr: publicAddress,
-        label: 'test key 2 with the same id (public address) as test key 1',
         type: 'trezor' as 'trezor',
         meta: null
       }
@@ -212,15 +204,15 @@ describe('KeystoreController', () => {
 
     const anotherAddressNotAddedYet = '0x42c06A1722DEb11022A339d3448BafFf8dFF99Ac'
     const keysWithPrivateKeyDuplicatedInParams = [
+      // test key 3
       {
         addr: anotherAddressNotAddedYet,
-        label: 'test key 3',
         type: 'trezor' as 'trezor',
         meta: null
       },
+      // test key 4 with the same private key as key 3',
       {
         addr: anotherAddressNotAddedYet,
-        label: 'test key 4 with the same private key as key 3',
         type: 'trezor' as 'trezor',
         meta: null
       }
@@ -247,9 +239,9 @@ describe('KeystoreController', () => {
 
   test('should add both keys when they have the same address but different type', (done) => {
     const externalKeysToAddWithDuplicateOnes = [
-      { addr: keyPublicAddress, label: 'test key 2', type: 'trezor' as 'trezor', meta: null },
-      { addr: keyPublicAddress, label: 'test key 2', type: 'trezor' as 'trezor', meta: null },
-      { addr: keyPublicAddress, label: 'test key 3', type: 'ledger' as 'ledger', meta: null }
+      { addr: keyPublicAddress, type: 'trezor' as 'trezor', meta: null },
+      { addr: keyPublicAddress, type: 'trezor' as 'trezor', meta: null },
+      { addr: keyPublicAddress, type: 'ledger' as 'ledger', meta: null }
     ]
 
     keystore.addKeysExternallyStored(externalKeysToAddWithDuplicateOnes)

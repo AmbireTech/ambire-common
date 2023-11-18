@@ -21,8 +21,6 @@ describe('Main Controller ', () => {
   const accounts = [
     {
       addr: '0xa07D75aacEFd11b425AF7181958F0F85c312f143',
-      label: '',
-      pfp: '',
       associatedKeys: ['0xd6e371526cdaeE04cd8AF225D42e37Bc14688D9E'],
       creation: {
         factoryAddr: '0xBf07a0Df119Ca234634588fbDb5625594E2a5BCA',
@@ -33,8 +31,6 @@ describe('Main Controller ', () => {
     },
     {
       addr: '0x6C0937c7a04487573673a47F22E4Af9e96b91ecd',
-      label: '',
-      pfp: '',
       associatedKeys: ['0xfF3f6D14DF43c112aB98834Ee1F82083E07c26BF'],
       creation: {
         factoryAddr: '0xBf07a0Df119Ca234634588fbDb5625594E2a5BCA',
@@ -45,8 +41,6 @@ describe('Main Controller ', () => {
     },
     {
       addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
-      label: '',
-      pfp: '',
       associatedKeys: [],
       creation: {
         factoryAddr: '0xBf07a0Df119Ca234634588fbDb5625594E2a5BCA',
@@ -174,15 +168,19 @@ describe('Main Controller ', () => {
     // Same mechanism to generating this one as used for the
     // `accountNotDeployed` in accountState.test.ts
     const accountPendingCreation = {
-      addr: getAmbireAccountAddress(AMBIRE_ACCOUNT_FACTORY, bytecode),
-      label: 'test account',
-      pfp: 'pfp',
-      associatedKeys: [signerAddr],
-      creation: {
-        factoryAddr: AMBIRE_ACCOUNT_FACTORY,
-        bytecode,
-        salt: ethers.toBeHex(0, 32)
-      }
+      account: {
+        addr: getAmbireAccountAddress(AMBIRE_ACCOUNT_FACTORY, bytecode),
+        associatedKeys: [signerAddr],
+        creation: {
+          factoryAddr: AMBIRE_ACCOUNT_FACTORY,
+          bytecode,
+          salt: ethers.toBeHex(0, 32)
+        }
+      },
+      accountKeyAddr: signerAddr,
+      slot: 1,
+      index: 0,
+      isLinked: false
     }
 
     const addAccounts = () => {
@@ -214,7 +212,7 @@ describe('Main Controller ', () => {
         if (emitCounter === 1 && controller.isReady) addAccounts()
 
         if (emitCounter === 2) {
-          expect(controller.accounts).toContainEqual(accountPendingCreation)
+          expect(controller.accounts).toContainEqual(accountPendingCreation.account)
           unsubscribe()
           resolve(true)
         }
