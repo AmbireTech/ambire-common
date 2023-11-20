@@ -428,7 +428,8 @@ export class SignAccountOpController extends EventEmitter {
     this.emitUpdate()
   }
 
-  async sign() {
+  // TODO: missing type, should be one of LedgerController, TrezorController, LatticeController
+  async sign(controller?: any) {
     if (!this.accountOp?.signingKeyAddr || !this.accountOp?.signingKeyType)
       return this.#setSigningError('no signing key set')
     if (!this.accountOp?.gasFeePayment) return this.#setSigningError('no gasFeePayment set')
@@ -449,6 +450,7 @@ export class SignAccountOpController extends EventEmitter {
 
     const gasFeePayment = this.accountOp.gasFeePayment
 
+    if (signer.init) signer.init(controller)
     const provider = this.#providers[this.accountOp.networkId]
     const nonce = await provider.getTransactionCount(this.accountOp.accountAddr)
     try {
