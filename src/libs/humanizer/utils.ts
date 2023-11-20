@@ -69,7 +69,7 @@ export function getDeadlineText(deadlineSecs: bigint): HumanizerVisualization {
   if (diff < 0) return getLabel('already expired')
   if (diff < minute) return getLabel('expires in less than a minute')
   if (diff < 10 * minute) return getLabel(`expires in ${Math.floor(diff / minute)} minutes`)
-  return getLabel(`valid until ${new Date(deadline / 1000).toLocaleString()}`)
+  return getLabel(`valid until ${new Date(deadline).toLocaleString()}`)
 }
 
 export function shortenAddress(addr: string) {
