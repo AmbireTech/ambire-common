@@ -19,6 +19,7 @@ import { nameParsing } from './parsers/nameParsing'
 import { tokenParsing } from './parsers/tokenParsing'
 import { getAction, getLabel, getToken } from './utils'
 import { sushiSwapModule } from './modules/sushiSwapModule'
+import { gasTankModule } from './modules/gasTankModule'
 
 const humanizerInfo = require('../../consts/humanizerInfo.json')
 
@@ -189,6 +190,13 @@ const transactions: { [key: string]: Array<IrCall> } = {
       value: 0n,
       data: '0x2646478b0000000000000000000000000d500b1d8e8ef31e21c99d1db9a6444d3adf127000000000000000000000000000000000000000000000000000016bcc41e900000000000000000000000000008f3cf7ad23cd3cadbd9735aff958023239c6a06300000000000000000000000000000000000000000000000000013d425a52399d0000000000000000000000006969174fd72466430a46e18234d0b530c9fd5f4900000000000000000000000000000000000000000000000000000000000000c00000000000000000000000000000000000000000000000000000000000000042020d500B1d8E8eF31E21C99d1Db9A6444d3ADf127001ffff008929D3FEa77398F64448c85015633c2d6472fB29016969174FD72466430a46e18234D0b530c9FD5f49000000000000000000000000000000000000000000000000000000000000'
     }
+  ],
+  gasTank: [
+    {
+      to: '0x942f9CE5D9a33a82F88D233AEb3292E680230348',
+      value: 500000000000000000n,
+      data: '0x'
+    }
   ]
 }
 
@@ -223,7 +231,10 @@ describe('module tests', () => {
       'Rage leave with 2019.750399052452828721 WALLET 0x47Cd7E91C3CBaAF266369fe8518345fc4FC12935 (WALLET Staking Pool)',
       'Deposit 690.0 yDAI to 0xdA816459F1AB5631232FE5e97a05BBBb94970c95 (Yearn DAI Vault)',
       'Withdraw 23736.387977148798767461 yDAI from 0xdA816459F1AB5631232FE5e97a05BBBb94970c95 (Yearn DAI Vault)',
-      'Approve 0xC92E8bdf79f0507f65a392b0ab4667716BFE0110 (CowSwap) for 33427.0 yDAI'
+      'Approve 0xC92E8bdf79f0507f65a392b0ab4667716BFE0110 (CowSwap) for 33427.0 yDAI',
+      // @TODO debug this
+      'Call processRoute(address,uint256,address,uint256,address,bytes) from 0xE7eb31f23A5BefEEFf76dbD2ED6AdC822568a5d2 (SushiSwap)',
+      'Send 0.5 ETH to 0x942f9CE5D9a33a82F88D233AEb3292E680230348 (Gas Tank)'
     ]
     const allCalls = Object.keys(transactions)
       .map((key: string) => transactions[key])
@@ -251,7 +262,7 @@ describe('module tests', () => {
     irCalls = parsedCalls
     asyncOps.push(...newAsyncOps)
     const res = irCalls.map((call: IrCall) => visualizationToText(call, standartOptions))
-
+    expect(expectedTexification.length).toBe(res.length)
     expectedTexification.forEach((et: string, i: number) => expect(et).toEqual(res[i]))
   })
   test('uniV3', () => {
