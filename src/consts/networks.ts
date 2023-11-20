@@ -48,6 +48,23 @@ const networks: NetworkDescriptor[] = [
       hasPaymaster: false
     },
     unstoppableDomainsChain: 'ERC20'
+  },
+  {
+    id: 'avalanche',
+    name: 'Avalanche',
+    nativeAssetSymbol: 'AVAX',
+    rpcUrl:
+      'https://rpc.ankr.com/avalanche/5c7b8f0ac82c95161753873289e1a4f39aa69019b905b8032d76909962719be9',
+    rpcNoStateOverride: false,
+    chainId: 43114n,
+    explorerUrl: 'https://avascan.info',
+    erc4337: {
+      enabled: true,
+      entryPointAddr: ERC_4337_ENTRYPOINT,
+      entryPointMarker: ENTRY_POINT_MARKER,
+      hasPaymaster: true
+    },
+    unstoppableDomainsChain: 'ERC20'
   }
   // This breaks the background service of the extension
   // {

@@ -17,7 +17,7 @@ import { KeystoreController } from '../keystore/keystore'
 import { PortfolioController } from '../portfolio/portfolio'
 import { getTargetEdgeCaseNonce, isErc4337Broadcast } from '../../libs/userOperation/userOperation'
 import EntryPointAbi from '../../../contracts/compiled/EntryPoint.json'
-import { ERC_4337_ENTRYPOINT } from '../../consts/deploy'
+import { AMBIRE_PAYMASTER, ERC_4337_ENTRYPOINT } from '../../consts/deploy'
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import { SettingsController } from '../settings/settings'
 
@@ -597,8 +597,11 @@ export class SignAccountOpController extends EventEmitter {
           const response = await this.#callRelayer(
             `/v2/paymaster/${this.accountOp.networkId}/sign`,
             'POST',
-            // send without the isEdgeCase prop
-            {userOperation: (({ isEdgeCase, ...o }) => o)(userOperation)}
+            {
+              // send without the isEdgeCase prop
+              userOperation: (({ isEdgeCase, ...o }) => o)(userOperation),
+              paymaster: AMBIRE_PAYMASTER
+            }
           )
           if (response.success) {
             userOperation.paymasterAndData = response.data.paymasterAndData
