@@ -13,11 +13,6 @@ import EventEmitter from '../eventEmitter'
 
 const ERC20 = new Interface(erc20Abi)
 
-const getTokenAddressAndNetworkFromId = (id: string) => {
-  const [address, networkId] = id.split('-')
-  return [address, networkId]
-}
-
 const DEFAULT_VALIDATION_FORM_MSGS = {
   amount: {
     success: false,
@@ -31,16 +26,15 @@ const DEFAULT_VALIDATION_FORM_MSGS = {
 
 export class TransferController extends EventEmitter {
   // State
+  #tokens: TokenResult[] = []
 
-  tokens: TokenResult[] = []
-
-  selectedToken: TokenResult | null = null
+  #selectedToken: TokenResult | null = null
 
   isSWWarningVisible = false
 
   isSWWarningAgreed = false
 
-  amount = '0'
+  amount = ''
 
   maxAmount = '0'
 
@@ -69,12 +63,43 @@ export class TransferController extends EventEmitter {
 
   #humanizerInfo: HumanizerInfoType | null = null
 
+  // every time when updating selectedToken update the amount and maxAmount of the form
+  set selectedToken(token: TokenResult | null) {
+    if (
+      this.selectedToken?.address !== token?.address ||
+      this.selectedToken?.networkId !== token?.networkId
+    ) {
+      this.#selectedToken = token
+      this.amount = ''
+      this.#setSWWarningVisibleIfNeeded()
+    }
+    // on portfolio update the max available amount can change for the selectedToken
+    // in that case don't update the selectedToken and amount in the form but only the maxAmount value
+    this.maxAmount = token ? formatUnits(token.amount, Number(token.decimals)) : '0'
+  }
+
+  get selectedToken() {
+    return this.#selectedToken
+  }
+
+  set tokens(tokenResults: TokenResult[]) {
+    const filteredTokens = tokenResults.filter((token) => token.amount !== 0n)
+    this.#tokens = filteredTokens
+    this.#updateSelectedTokenIfNeeded(filteredTokens)
+  }
+
+  get tokens() {
+    return this.#tokens
+  }
+
   resetForm() {
-    this.amount = '0'
+    this.amount = ''
     this.maxAmount = '0'
     this.recipientAddress = ''
     this.recipientEnsAddress = ''
     this.recipientUDAddress = ''
+    this.selectedToken = null
+    this.#selectedTokenNetworkData = null
     this.isRecipientAddressUnknown = false
     this.isRecipientDomainResolving = false
     this.userRequest = null
@@ -91,8 +116,6 @@ export class TransferController extends EventEmitter {
     this.tokens = []
     this.#humanizerInfo = null
     this.#selectedAccount = null
-    this.selectedToken = null
-    this.#selectedTokenNetworkData = null
 
     this.emitUpdate()
   }
@@ -117,7 +140,7 @@ export class TransferController extends EventEmitter {
     }
 
     // Validate the amount
-    if (this.selectedToken && (this.amount !== '0' || this.recipientAddress !== '')) {
+    if (this.selectedToken && (this.amount !== '' || this.recipientAddress !== '')) {
       validationFormMsgsNew.amount = validateSendTransferAmount(this.amount, this.selectedToken)
     }
 
@@ -147,12 +170,11 @@ export class TransferController extends EventEmitter {
 
   update({
     selectedAccount,
-    preSelectedToken,
     humanizerInfo,
     tokens,
+    selectedToken,
     amount,
     recipientAddress,
-    setMaxAmount,
     isSWWarningAgreed,
     isRecipientAddressUnknownAgreed
   }: {
@@ -160,9 +182,9 @@ export class TransferController extends EventEmitter {
     preSelectedToken?: string
     humanizerInfo?: HumanizerInfoType
     tokens?: TokenResult[]
+    selectedToken?: TokenResult
     amount?: string
     recipientAddress?: string
-    setMaxAmount?: boolean
     isSWWarningAgreed?: boolean
     isRecipientAddressUnknownAgreed?: boolean
   }) {
@@ -171,25 +193,17 @@ export class TransferController extends EventEmitter {
     }
     if (selectedAccount) {
       this.#selectedAccount = selectedAccount
+      this.amount = ''
     }
     if (tokens) {
-      this.tokens = tokens.filter((token) => token.amount !== 0n)
-
-      if (preSelectedToken) {
-        this.handleTokenChange(preSelectedToken)
-      } else if (!preSelectedToken && this.tokens.length > 0) {
-        this.#handleTokenChangeToFirstToken()
-      }
+      this.tokens = tokens
     }
-
+    if (selectedToken) {
+      this.selectedToken = selectedToken
+    }
     // If we do a regular check the value won't update if it's '' or '0'
     if (typeof amount === 'string') {
       this.amount = amount
-    }
-    // We can do a regular check here, because the property defines if it should be updated
-    // and not the actual value
-    if (setMaxAmount) {
-      this.amount = this.maxAmount
     }
     // If we do a regular check the value won't update if it's '' or '0'
     if (typeof recipientAddress === 'string') {
@@ -217,10 +231,11 @@ export class TransferController extends EventEmitter {
       this.#throwNotInitialized()
       return
     }
-    const recipientAddress =
-      this.recipientUDAddress || this.recipientEnsAddress || this.recipientAddress
 
     if (!this.selectedToken || !this.#selectedTokenNetworkData || !this.#selectedAccount) return
+
+    const recipientAddress =
+      this.recipientUDAddress || this.recipientEnsAddress || this.recipientAddress
 
     const bigNumberHexAmount = `0x${parseUnits(
       this.amount,
@@ -240,15 +255,13 @@ export class TransferController extends EventEmitter {
       txn.data = '0x'
     }
 
-    const req: UserRequest = {
+    this.userRequest = {
       id: new Date().getTime(),
       networkId: this.#selectedTokenNetworkData.id,
       accountAddr: this.#selectedAccount,
       forceNonce: null,
       action: txn
     }
-
-    this.userRequest = req
 
     this.emitUpdate()
   }
@@ -292,42 +305,32 @@ export class TransferController extends EventEmitter {
     this.emitUpdate()
   }
 
-  handleTokenChange(tokenAddressAndNetwork: string) {
-    const [selectedTokenAddress, selectedTokenNetwork] =
-      getTokenAddressAndNetworkFromId(tokenAddressAndNetwork)
-
-    let matchingToken = this.tokens[0]
-
-    if (selectedTokenAddress && selectedTokenNetwork) {
-      matchingToken =
-        this.tokens.find(
-          ({ address: tokenAddress, networkId: tokenNetworkId }) =>
-            tokenAddress === selectedTokenAddress && tokenNetworkId === selectedTokenNetwork
-        ) || this.tokens[0]
-    }
-
-    if (!matchingToken) return
-
-    const { amount: matchingTokenAmount, decimals } = matchingToken
-
-    this.selectedToken = matchingToken
-    this.#selectedTokenNetworkData =
-      networks.find(({ id }) => id === matchingToken.networkId) || null
-    this.amount = '0'
-    this.maxAmount = formatUnits(matchingTokenAmount, Number(decimals))
-    this.isSWWarningVisible =
-      !!this.selectedToken?.address &&
-      Number(this.selectedToken?.address) === 0 &&
-      networks
-        .map(({ id }) => id)
-        .filter((id) => id !== 'ethereum')
-        .includes(this.#selectedTokenNetworkData?.id || 'ethereum')
+  #updateSelectedTokenIfNeeded(updatedTokens: TokenResult[]) {
+    this.selectedToken =
+      updatedTokens.find(
+        ({ address: tokenAddress, networkId: tokenNetworkId }) =>
+          tokenAddress === this.selectedToken?.address &&
+          tokenNetworkId === this.selectedToken?.networkId
+      ) ||
+      updatedTokens[0] ||
+      null
 
     this.emitUpdate()
   }
 
-  #handleTokenChangeToFirstToken() {
-    this.handleTokenChange('')
+  #setSWWarningVisibleIfNeeded() {
+    this.#selectedTokenNetworkData =
+      networks.find(({ id }) => id === this.selectedToken?.networkId) || null
+
+    this.isSWWarningVisible =
+      !!this.selectedToken?.address &&
+      Number(this.selectedToken?.address) === 0 &&
+      networks
+        .filter((n) => n.id !== 'ethereum')
+        .map(({ id }) => id)
+        .includes(this.#selectedTokenNetworkData?.id || 'ethereum')
+
+    this.emitUpdate()
   }
 
   #throwNotInitialized() {
@@ -345,7 +348,9 @@ export class TransferController extends EventEmitter {
       ...this,
       validationFormMsgs: this.validationFormMsgs,
       isFormValid: this.isFormValid,
-      isInitialized: this.isInitialized
+      isInitialized: this.isInitialized,
+      selectedToken: this.selectedToken,
+      tokens: this.tokens
     }
   }
 }

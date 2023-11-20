@@ -9,7 +9,7 @@ import { Message } from '../../interfaces/userRequest'
 import { getKnownAddressLabels } from '../../libs/account/account'
 import { messageHumanizer } from '../../libs/humanizer'
 import { IrMessage } from '../../libs/humanizer/interfaces'
-import { verifyMessage } from '../../libs/signMessage/signMessage'
+import { verifyMessage, wrapEIP712, wrapEthSign } from '../../libs/signMessage/signMessage'
 import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
 import EventEmitter from '../eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
@@ -77,7 +77,9 @@ export class SignMessageController extends EventEmitter {
       this.#accountStates = accountStates
       const knownAddressLabels = getKnownAddressLabels(
         this.#accounts,
-        this.#settings.accountPreferences
+        this.#settings.accountPreferences,
+        this.#keystore.keys,
+        this.#settings.keyPreferences
       )
 
       messageHumanizer(
@@ -167,6 +169,7 @@ export class SignMessageController extends EventEmitter {
           const messageHex = message instanceof Uint8Array ? ethers.hexlify(message) : message
 
           signature = await signer.signMessage(messageHex)
+          if (signature && account.creation) signature = wrapEthSign(signature)
         } catch (error: any) {
           console.log(error)
           throw new Error(
@@ -191,6 +194,7 @@ export class SignMessageController extends EventEmitter {
 
           const { domain } = this.messageToSign.content
           signature = await signer.signTypedData(this.messageToSign.content)
+          if (signature && account.creation) signature = wrapEIP712(signature)
           const requestedNetwork = networks.find(
             (n) => Number(n.chainId) === Number(domain.chainId)
           )
@@ -218,7 +222,9 @@ export class SignMessageController extends EventEmitter {
 
       const isValidSignature = await verifyMessage({
         provider: this.#providers[network?.id || 'ethereum'],
-        signer: this.signingKeyAddr,
+        // the signer is always the account even if the actual
+        // signature is from a key that has privs to the account
+        signer: this.messageToSign?.accountAddr,
         signature,
         // @ts-ignore TODO: Be aware of the type mismatch, could cause troubles
         message: this.messageToSign.content.kind === 'message' ? personalMsgToValidate : undefined,

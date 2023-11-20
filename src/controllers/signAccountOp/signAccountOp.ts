@@ -6,15 +6,19 @@ import { Key } from '../../interfaces/keystore'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { Storage } from '../../interfaces/storage'
 import { getKnownAddressLabels } from '../../libs/account/account'
-import { AccountOp, accountOpSignableHash, GasFeePayment } from '../../libs/accountOp/accountOp'
+import { AccountOp, accountOpSignableHash, GasFeePayment, getSignableCalls, isNative } from '../../libs/accountOp/accountOp'
 import { EstimateResult } from '../../libs/estimate/estimate'
-import { GasRecommendation } from '../../libs/gasPrice/gasPrice'
+import { GasRecommendation, getCallDataAdditional } from '../../libs/gasPrice/gasPrice'
 import { callsHumanizer } from '../../libs/humanizer'
 import { IrCall } from '../../libs/humanizer/interfaces'
 import { Price, TokenResult } from '../../libs/portfolio'
 import EventEmitter from '../eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
 import { PortfolioController } from '../portfolio/portfolio'
+import { getTargetEdgeCaseNonce, isErc4337Broadcast } from '../../libs/userOperation/userOperation'
+import EntryPointAbi from '../../../contracts/compiled/EntryPoint.json'
+import { ERC_4337_ENTRYPOINT } from '../../consts/deploy'
+import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import { SettingsController } from '../settings/settings'
 
 export enum SigningStatus {
@@ -99,13 +103,16 @@ export class SignAccountOpController extends EventEmitter {
 
   status: Status | null = null
 
+  #callRelayer: Function
+
   constructor(
     keystore: KeystoreController,
     portfolio: PortfolioController,
     settings: SettingsController,
     storage: Storage,
     fetch: Function,
-    providers: { [key: string]: JsonRpcProvider }
+    providers: { [key: string]: JsonRpcProvider },
+    callRelayer: Function
   ) {
     super()
 
@@ -115,6 +122,7 @@ export class SignAccountOpController extends EventEmitter {
     this.#storage = storage
     this.#fetch = fetch
     this.#providers = providers
+    this.#callRelayer = callRelayer
   }
 
   get isInitialized(): boolean {
@@ -179,7 +187,9 @@ export class SignAccountOpController extends EventEmitter {
 
       const knownAddressLabels = getKnownAddressLabels(
         this.#accounts,
-        this.#settings.accountPreferences
+        this.#settings.accountPreferences,
+        this.#keystore.keys,
+        this.#settings.keyPreferences
       )
       callsHumanizer(
         this.accountOp,
@@ -312,6 +322,23 @@ export class SignAccountOpController extends EventEmitter {
     return BigInt(ratio * 1e18)
   }
 
+  #getAmountAfterFeeTokenConvert(
+    simulatedGasLimit: bigint,
+    gasPrice: bigint,
+    nativeRatio: bigint,
+    feeTokenDecimals: number
+  ) {
+    const amountInWei = simulatedGasLimit * gasPrice + this.#estimation!.addedNative
+
+    // Let's break down the process of converting the amount into FeeToken:
+    // 1. Initially, we multiply the amount in wei by the native to fee token ratio.
+    // 2. Next, we address the decimal places:
+    // 2.1. First, we convert wei to native by dividing by 10^18 (representing the decimals).
+    // 2.2. Now, with the amount in the native token, we incorporate nativeRatio decimals into the calculation (18 + 18) to standardize the amount.
+    // 2.3. At this point, we precisely determine the number of fee tokens. For instance, if the amount is 3 USDC, we must convert it to a BigInt value, while also considering feeToken.decimals.
+    return (amountInWei * nativeRatio) / BigInt(10 ** (18 + 18 - feeTokenDecimals))
+  }
+
   get feeSpeeds(): {
     type: string
     amount: bigint
@@ -325,6 +352,7 @@ export class SignAccountOpController extends EventEmitter {
     const account = this.#getAccount()
     const gasUsed = this.#estimation!.gasUsed
     const feeToken = this.#getPortfolioToken(this.selectedTokenAddr)
+    const network = this.#networks?.find((n) => n.id === this.accountOp?.networkId)
 
     return this.#gasPrices.map((gasRecommendation) => {
       let amount
@@ -344,10 +372,22 @@ export class SignAccountOpController extends EventEmitter {
       if (!account || !account?.creation) {
         simulatedGasLimit = gasUsed
         amount = simulatedGasLimit * gasPrice + this.#estimation!.addedNative
+      } else if (this.#estimation!.erc4337estimation) {
+        // ERC 4337
+        const nativeRatio = this.#getNativeToFeeTokenRatio(feeToken!)
+        const feeTokenGasUsed = this.#estimation!.feePaymentOptions.find(
+          (option) => option.address === feeToken?.address
+        )!.gasUsed!
+
+        simulatedGasLimit = this.#estimation!.erc4337estimation.gasUsed + feeTokenGasUsed
+        amount = this.#getAmountAfterFeeTokenConvert(simulatedGasLimit, gasPrice, nativeRatio, feeToken!.decimals)
       } else if (this.paidBy !== this.accountOp!.accountAddr) {
         // Smart account, but EOA pays the fee
-        // @TODO - add comment why we add 21k gas here
-        simulatedGasLimit = gasUsed + 21000n
+        simulatedGasLimit = gasUsed
+
+        const accountState = this.#accountStates![this.accountOp!.accountAddr][this.accountOp!.networkId]
+        simulatedGasLimit += getCallDataAdditional(this.accountOp!, network!, accountState)
+
         amount = simulatedGasLimit * gasPrice + this.#estimation!.addedNative
       } else {
         // Relayer.
@@ -357,17 +397,12 @@ export class SignAccountOpController extends EventEmitter {
           (option) => option.address === feeToken?.address
         )!.gasUsed!
         // @TODO - add comment why here we use `feePaymentOptions`, but we don't use it in EOA
-        simulatedGasLimit = gasUsed + feeTokenGasUsed + 21000n
+        simulatedGasLimit = gasUsed + feeTokenGasUsed
 
-        const amountInWei = simulatedGasLimit * gasPrice + this.#estimation!.addedNative
+        const accountState = this.#accountStates![this.accountOp!.accountAddr][this.accountOp!.networkId]
+        simulatedGasLimit += getCallDataAdditional(this.accountOp!, network!, accountState)
 
-        // Let's break down the process of converting the amount into FeeToken:
-        // 1. Initially, we multiply the amount in wei by the native to fee token ratio.
-        // 2. Next, we address the decimal places:
-        // 2.1. First, we convert wei to native by dividing by 10^18 (representing the decimals).
-        // 2.2. Now, with the amount in the native token, we incorporate nativeRatio decimals into the calculation (18 + 18) to standardize the amount.
-        // 2.3. At this point, we precisely determine the number of fee tokens. For instance, if the amount is 3 USDC, we must convert it to a BigInt value, while also considering feeToken.decimals.
-        amount = (amountInWei * nativeRatio) / BigInt(10 ** (18 + 18 - feeToken!.decimals))
+        amount = this.#getAmountAfterFeeTokenConvert(simulatedGasLimit, gasPrice, nativeRatio, feeToken!.decimals)
       }
 
       return {
@@ -392,9 +427,11 @@ export class SignAccountOpController extends EventEmitter {
       (speed) => speed.type === this.selectedFeeSpeed
     )!
 
+    const accountState = this.#accountStates![this.accountOp!.accountAddr][this.accountOp!.networkId]
+    const network = this.#networks?.find((n) => n.id === this.accountOp?.networkId)
     return {
       paidBy: this.paidBy,
-      isERC4337: false,
+      isERC4337: isErc4337Broadcast(network!, accountState),
       isGasTank: feeToken?.networkId === 'gasTank',
       inToken: feeToken!.address,
       amount,
@@ -426,6 +463,50 @@ export class SignAccountOpController extends EventEmitter {
   #setSigningError(error: string) {
     this.status = { type: SigningStatus.UnableToSign, error }
     this.emitUpdate()
+  }
+
+  #addFeePayment() {
+    // TODO: add the fee payment only if it hasn't been added already
+
+    // In case of gas tank token fee payment, we need to include one more call to account op
+    const abiCoder = new ethers.AbiCoder()
+    const feeCollector = '0x942f9CE5D9a33a82F88D233AEb3292E680230348'
+
+    if (this.accountOp!.gasFeePayment!.isGasTank) {
+      // @TODO - config/const
+      const feeToken = this.#getPortfolioToken(this.accountOp!.gasFeePayment!.inToken)
+
+      this.accountOp!.feeCall = {
+        to: feeCollector,
+        value: 0n,
+        data: abiCoder.encode(
+          ['string', 'uint256', 'string'],
+          ['gasTank', this.accountOp!.gasFeePayment!.amount, feeToken?.symbol]
+        )
+      }
+
+      return
+    }
+
+    if (this.accountOp!.gasFeePayment!.inToken == '0x0000000000000000000000000000000000000000') {
+      // native payment
+      this.accountOp!.feeCall = {
+        to: feeCollector,
+        value: this.accountOp!.gasFeePayment!.amount,
+        data: '0x'
+      }
+    } else {
+      // token payment
+      const ERC20Interface = new ethers.Interface(ERC20.abi)
+      this.accountOp!.feeCall = {
+        to: this.accountOp!.gasFeePayment!.inToken,
+        value: 0n,
+        data: ERC20Interface.encodeFunctionData('transfer', [
+          feeCollector,
+          this.accountOp!.gasFeePayment!.amount
+        ])
+      }
+    }
   }
 
   async sign() {
@@ -477,52 +558,73 @@ export class SignAccountOpController extends EventEmitter {
           await signer.signMessage(ethers.hexlify(accountOpSignableHash(this.accountOp)))
         )
       } else if (this.accountOp.gasFeePayment.isERC4337) {
-        // TODO:
-        // transform accountOp to userOperation
-        // sign it
-      } else {
-        // Relayer
+        const userOperation = this.accountOp.asUserOperation
+        if (!userOperation) {
+          return this.#setSigningError(
+            `Cannot sign as no user operation is present foxr account op ${this.accountOp.accountAddr}`
+          )
+        }
 
-        // In case of gas tank token fee payment, we need to include one more call to account op
-        const abiCoder = new ethers.AbiCoder()
-        const feeCollector = '0x942f9CE5D9a33a82F88D233AEb3292E680230348'
-        if (this.accountOp.gasFeePayment.isGasTank) {
-          // @TODO - config/const
-          const feeToken = this.#getPortfolioToken(this.accountOp.gasFeePayment.inToken)
+        const gasPrice = (gasFeePayment.amount - this.#estimation!.addedNative) / gasFeePayment.simulatedGasLimit
+        userOperation.maxFeePerGas = ethers.toBeHex(gasPrice)
+        userOperation.maxPriorityFeePerGas = ethers.toBeHex(gasPrice)
 
-          this.accountOp.feeCall = {
-            to: feeCollector,
-            value: 0n,
-            data: abiCoder.encode(
-              ['string', 'uint256', 'string'],
-              ['gasTank', this.accountOp.gasFeePayment.amount, feeToken?.symbol]
-            )
-          }
-        } else if (this.accountOp.gasFeePayment.inToken) {
-          // TODO: add the fee payment only if it hasn't been added already
-          if (
-            this.accountOp.gasFeePayment.inToken == '0x0000000000000000000000000000000000000000'
-          ) {
-            // native payment
-            this.accountOp.feeCall = {
-              to: feeCollector,
-              value: this.accountOp.gasFeePayment.amount,
-              data: '0x'
+        if (userOperation?.isEdgeCase || !isNative(this.accountOp.gasFeePayment)) {
+          this.#addFeePayment()
+        } else {
+          delete this.accountOp.feeCall
+        }
+
+        // if we're in the edge case scenario, set the callData to
+        // executeMultiple and sign it
+        if (userOperation.isEdgeCase) {
+          const ambireAccount = new ethers.Interface(AmbireAccount.abi)
+          const signature = wrapEthSign(
+            await signer.signMessage(ethers.hexlify(accountOpSignableHash(this.accountOp)))
+          )
+          userOperation.callData = ambireAccount.encodeFunctionData('executeMultiple', [[[
+            getSignableCalls(this.accountOp),
+            signature
+          ]]])
+          this.accountOp.signature = signature
+        }
+
+        // call the paymaster for the edgeCase or for non-native payments
+        if (
+          userOperation.isEdgeCase ||
+          !isNative(this.accountOp.gasFeePayment!)
+        ) {
+          const response = await this.#callRelayer(
+            `/v2/paymaster/${this.accountOp.networkId}/sign`,
+            'POST',
+            // send without the isEdgeCase prop
+            {userOperation: (({ isEdgeCase, ...o }) => o)(userOperation)}
+          )
+          if (response.success) {
+            userOperation.paymasterAndData = response.data.paymasterAndData
+
+            // after getting the paymaster data, if we're in the edge case,
+            // we have to set the correct edge case nonce
+            if (userOperation.isEdgeCase) {
+              userOperation.nonce = getTargetEdgeCaseNonce(userOperation)
             }
           } else {
-            // token payment
-            const ERC20Interface = new ethers.Interface(ERC20.abi)
-            this.accountOp.feeCall = {
-              to: this.accountOp.gasFeePayment.inToken,
-              value: 0n,
-              data: ERC20Interface.encodeFunctionData('transfer', [
-                feeCollector,
-                this.accountOp.gasFeePayment.amount
-              ])
-            }
+            this.#setSigningError(`User operation signing failed on paymaster approval: ${response.data.errorState}`)
           }
         }
 
+        // in normal cases (not edgeCase), we sign the user operation
+        if (!userOperation.isEdgeCase) { 
+          const entryPoint: any = new ethers.BaseContract(ERC_4337_ENTRYPOINT, EntryPointAbi, provider)
+          const userOpHash = await entryPoint.getUserOpHash(userOperation)
+          const signature = wrapEthSign(await signer.signMessage(userOpHash))
+          userOperation.signature = signature
+          this.accountOp.signature = signature
+        }
+        this.accountOp.asUserOperation = userOperation
+      } else {
+        // Relayer
+        this.#addFeePayment()
         this.accountOp.signature = wrapEthSign(
           await signer.signMessage(ethers.hexlify(accountOpSignableHash(this.accountOp)))
         )

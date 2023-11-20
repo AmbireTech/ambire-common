@@ -3,8 +3,8 @@ import fetch from 'node-fetch'
 import AMBIRE_ACCOUNT from '../../contracts/compiled/AmbireAccount.json'
 import ENTRY_POINT_ABI from './ENTRY_POINT.json'
 import { StaticJsonRpcProvider } from '@ethersproject/providers'
-import { AMBIRE_ACCOUNT_FACTORY_ERC_4337 } from '../../src/consts/deploy'
-import { get4437Bytecode } from '../../src/libs/proxyDeploy/bytecode'
+import { AMBIRE_ACCOUNT_FACTORY } from '../../src/consts/deploy'
+import { getBytecode } from '../../src/libs/proxyDeploy/bytecode'
 import { networks } from '../../src/consts/networks'
 import { wrapEthSign } from '../../test/ambireSign'
 
@@ -60,8 +60,8 @@ async function test() {
   ]
   console.log(signer.address)
   console.log(secondKeyAddr)
-  const bytecodeWithArgs = await get4437Bytecode(polygon, privs)
-  const senderAddress = getAmbireAccountAddress(AMBIRE_ACCOUNT_FACTORY_ERC_4337, bytecodeWithArgs)
+  const bytecodeWithArgs = await getBytecode(polygon, privs)
+  const senderAddress = getAmbireAccountAddress(AMBIRE_ACCOUNT_FACTORY, bytecodeWithArgs)
 
   const ambireAccount = new Contract(senderAddress, AMBIRE_ACCOUNT.abi, provider)
   const entryPoint = new Contract(ENTRY_POINT_ADDR, ENTRY_POINT_ABI, provider)
@@ -79,7 +79,7 @@ async function test() {
   )
   const s = wrapEthSign(await signer.signMessage(msg))
   const initCode = ethers.hexlify(ethers.concat([
-    AMBIRE_ACCOUNT_FACTORY_ERC_4337,
+    AMBIRE_ACCOUNT_FACTORY,
     getDeployCalldata(bytecodeWithArgs, [txn], s)
   ]))
 
