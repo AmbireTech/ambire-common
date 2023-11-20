@@ -121,7 +121,8 @@ describe('AccountState', () => {
 
     const acc4337deployed = state[4]
     expect(acc4337deployed.nonce).toBeGreaterThanOrEqual(0n)
-    expect(acc4337deployed.associatedKeys).toHaveProperty(ERC_4337_ENTRYPOINT)
+    // TODO: polygon is no longer the erc-4337 network so the below is not valid
+    // expect(acc4337deployed.associatedKeys).toHaveProperty(ERC_4337_ENTRYPOINT)
 
     const accEOANonZero = state[5]
     expect(accEOANonZero.isEOA).toBe(true)
