@@ -33,6 +33,7 @@ const humanizerModules: HumanizerCallModule[] = [
   // oneInchHumanizer,
   WALLETModule,
   yearnVaultModule,
+  sushiSwapModule,
   fallbackHumanizer
 ]
 const TETHER_ADDRESS = '0xdAC17F958D2ee523a2206206994597C13D831ec7'
@@ -238,8 +239,7 @@ describe('module tests', () => {
       'Deposit 690.0 yDAI to 0xdA816459F1AB5631232FE5e97a05BBBb94970c95 (Yearn DAI Vault)',
       'Withdraw 23736.387977148798767461 yDAI from 0xdA816459F1AB5631232FE5e97a05BBBb94970c95 (Yearn DAI Vault)',
       'Approve 0xC92E8bdf79f0507f65a392b0ab4667716BFE0110 (CowSwap) for 33427.0 yDAI',
-      // @TODO debug this
-      'Call processRoute(address,uint256,address,uint256,address,bytes) from 0xE7eb31f23A5BefEEFf76dbD2ED6AdC822568a5d2 (SushiSwap)',
+      'Swap 0.0004 WMATIC for 0.000348830169184669 DAI and send it to 0x6969174FD72466430a46e18234D0b530c9FD5f49 (0x696...f49)',
       'Fuel gas tank with 0.5 ETH',
       'Fuel gas tank with 0.001 USDC.e'
     ]
