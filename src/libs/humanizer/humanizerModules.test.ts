@@ -26,6 +26,7 @@ const humanizerInfo = require('../../consts/humanizerInfo.json')
 const humanizerModules: HumanizerCallModule[] = [
   genericErc20Humanizer,
   genericErc721Humanizer,
+  gasTankModule,
   uniswapHumanizer,
   wrappingModule,
   aaveHumanizer,
@@ -196,6 +197,11 @@ const transactions: { [key: string]: Array<IrCall> } = {
       to: '0x942f9CE5D9a33a82F88D233AEb3292E680230348',
       value: 500000000000000000n,
       data: '0x'
+    },
+    {
+      to: '0x2791bca1f2de4661ed88a30c99a7a9449aa84174',
+      value: 0n,
+      data: '0xa9059cbb000000000000000000000000942f9ce5d9a33a82f88d233aeb3292e68023034800000000000000000000000000000000000000000000000000000000000003e8'
     }
   ]
 }
@@ -234,7 +240,8 @@ describe('module tests', () => {
       'Approve 0xC92E8bdf79f0507f65a392b0ab4667716BFE0110 (CowSwap) for 33427.0 yDAI',
       // @TODO debug this
       'Call processRoute(address,uint256,address,uint256,address,bytes) from 0xE7eb31f23A5BefEEFf76dbD2ED6AdC822568a5d2 (SushiSwap)',
-      'Send 0.5 ETH to 0x942f9CE5D9a33a82F88D233AEb3292E680230348 (Gas Tank)'
+      'Fuel gas tank with 0.5 ETH',
+      'Fuel gas tank with 0.001 USDC.e'
     ]
     const allCalls = Object.keys(transactions)
       .map((key: string) => transactions[key])
