@@ -4,6 +4,7 @@ import { Key } from 'interfaces/keystore'
 import { networks } from '../../consts/networks'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
 import { stringify } from '../bigintJson/bigintJson'
+import { UserOperation } from '../../libs/userOperation/userOperation'
 
 export interface Call {
   to: string
@@ -33,6 +34,7 @@ export interface GasFeePayment {
 export enum AccountOpStatus {
   Pending = 'pending',
   BroadcastedButNotConfirmed = 'broadcasted-but-not-confirmed',
+  Show4337BroadcastedBanner = 'show-4337-broadcasted-banner',
   Success = 'success',
   Failure = 'failure',
   UnknownButPastNonce = 'unknown-but-past-nonce'
@@ -72,7 +74,9 @@ export interface AccountOp {
   // "remembered" at the time of signing in order to visualize history properly
   humanizerMeta?: { [key: string]: any }
   txnId?: string
-  status?: AccountOpStatus
+  status?: AccountOpStatus,
+  // in the case of ERC-4337, we need an UserOperation structure for the AccountOp
+  asUserOperation?: UserOperation
 }
 
 export function callToTuple(call: Call): [string, string, string] {
@@ -161,6 +165,19 @@ export function accountOpSignableHash(op: AccountOp): Uint8Array {
       )
     )
   )
+}
+
+/**
+ * We're paying the fee in native only if:
+ * - it's not a gas tank payment
+ * - the gasFeePayment.inToken points to address 0
+ *
+ * @param gasFeePayment
+ * @returns boolean
+ */
+export function isNative(gasFeePayment: GasFeePayment): boolean {
+  return !gasFeePayment.isGasTank &&
+    gasFeePayment.inToken == '0x0000000000000000000000000000000000000000'
 }
 
 export function getSignableCalls(op: AccountOp) {

@@ -27,7 +27,8 @@ const networks: NetworkDescriptor[] = [
       // TODO: temp disabled (only while testing)
       enabled: false,
       entryPointAddr: ERC_4337_ENTRYPOINT,
-      entryPointMarker: ENTRY_POINT_MARKER
+      entryPointMarker: ENTRY_POINT_MARKER,
+      hasPaymaster: true
     },
     unstoppableDomainsChain: 'MATIC'
   },
@@ -43,7 +44,8 @@ const networks: NetworkDescriptor[] = [
     erc4337: {
       enabled: false,
       entryPointAddr: ERC_4337_ENTRYPOINT,
-      entryPointMarker: ENTRY_POINT_MARKER
+      entryPointMarker: ENTRY_POINT_MARKER,
+      hasPaymaster: false
     },
     unstoppableDomainsChain: 'ERC20'
   }
