@@ -1,11 +1,23 @@
+import { Transaction } from 'ethers'
+
 import { HD_PATH_TEMPLATE_TYPE } from '../consts/derivation'
+import { Call, GasFeePayment } from '../libs/accountOp/accountOp'
 import { Account } from './account'
+import { NetworkDescriptor } from './networkDescriptor'
 import { TypedMessage } from './userRequest'
 
 export interface KeystoreSigner {
   // TODO: missing type, should be one of LedgerController, TrezorController, LatticeController
   init?: (controller: any) => void
-  signRawTransaction: (params: any) => Promise<string>
+  signRawTransaction: (txnRequest: {
+    to: Call['to']
+    value: Call['value']
+    data: Call['data']
+    chainId: NetworkDescriptor['chainId']
+    nonce: number
+    gasLimit: GasFeePayment['simulatedGasLimit']
+    gasPrice: bigint
+  }) => Promise<Transaction['serialized']>
   signTypedData: (typedMessage: TypedMessage) => Promise<string>
   signMessage: (hex: string) => Promise<string>
 }
