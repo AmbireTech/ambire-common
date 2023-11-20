@@ -364,7 +364,7 @@ describe('TypedMessages', () => {
       {
         type: 'address',
         address: '0x000000000022D473030F116dDEE9F6B43aC78BA3',
-        name: 'Permi 2 contract'
+        name: 'Permit 2 contract'
       },
       { type: 'label', content: 'to use' },
       {
@@ -384,7 +384,7 @@ describe('TypedMessages', () => {
       {
         type: 'address',
         address: '0x000000000022D473030F116dDEE9F6B43aC78BA3',
-        name: 'Permi 2 contract'
+        name: 'Permit 2 contract'
       },
       { type: 'label', content: 'to use' },
       {
