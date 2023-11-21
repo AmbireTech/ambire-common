@@ -1,7 +1,6 @@
 /* eslint-disable no-await-in-loop */
-import dotenv from 'dotenv'
-import { networks } from '../../consts/networks'
 import { ErrorRef } from '../../controllers/eventEmitter'
+
 import { Storage } from '../../interfaces/storage'
 import { Message } from '../../interfaces/userRequest'
 import { AccountOp } from '../accountOp/accountOp'
@@ -35,9 +34,6 @@ import {
   permit2Module
 } from './typedMessageModules'
 
-dotenv.config()
-
-const REDEFINE_API_KEY = process.env.REDEFINE_API_KEY
 const HUMANIZER_META_KEY = 'HumanizerMeta'
 // generic in the begining
 // the final humanization is the final triggered module
@@ -61,73 +57,6 @@ const parsingModules: HumanizerParsingModule[] = [nameParsing, tokenParsing]
 // the final visualization and warnings are from the first triggered module
 const humanizerTMModules = [erc20Module, erc721Module, permit2Module, fallbackEIP712Humanizer]
 
-// @TODOD add test for this
-const checkRedefine = async (
-  accountOp: AccountOp,
-  irCalls: IrCall[],
-  callback: Function,
-  options?: any
-) => {
-  const newCalls = await Promise.all(
-    irCalls.map(async (call: IrCall) => {
-      const res = await options
-        .fetch('https://api.redefine.net/v2/risk-analysis/txns', {
-          method: 'POST',
-          headers: {
-            'X-API-Key': REDEFINE_API_KEY,
-            'content-type': 'application/json'
-          },
-          body: JSON.stringify({
-            payload: {
-              method: 'eth_sendTransaction',
-              params: [
-                {
-                  from: accountOp.accountAddr,
-                  to: call.to,
-                  value: '0x0', // `0x${call.value.toString(16)}`,
-                  data: call.data
-                }
-              ]
-            },
-            chainId: networks.find((n: any) => n.id === accountOp.networkId)?.chainId.toString()
-          })
-        })
-        .then((response: any) => {
-          // asuming all failing cases return err different from 200
-          if (response.status !== 200)
-            throw new Error(`Error with redefine's API, status=${response.status}`)
-          return response
-        })
-        .then((response: any) => response.json())
-        .catch((e: Error) => {
-          options.emitError({
-            level: 'silent',
-            message: `Error with redefine api ${e.message}`,
-            error: e
-          })
-        })
-      res?.data?.insights?.issues?.length &&
-        call.warnings?.push(
-          ...res.data.insights.issues.map((issue: any) => ({
-            content: issue.description.short as string,
-            level:
-              { '1': 'caution', '2': 'caution', '3': 'alarm', '4': 'alert' }[
-                issue?.severity?.code?.toString() as string
-              ] || 'alert'
-          }))
-        )
-      // false on [], true on null/undefined
-      !res?.data?.insights?.issues &&
-        options.emitError({
-          level: 'silent',
-          message: `Error with redefine's API, ${JSON.stringify(res)} but status 200`,
-          error: new Error(`Error with redefine's API ${JSON.stringify(res)}`)
-        })
-      return call
-    })
-  )
-  callback(newCalls)
-}
 const handleAsyncOps = async (
   asyncOps: Promise<HumanizerFragment | null>[],
   storage: Storage,
@@ -242,19 +171,7 @@ export const callsHumanizer = async (
   callback: (irCalls: IrCall[]) => void,
   emitError: (err: ErrorRef) => void
 ) => {
-  let humanizedCalls: IrCall[] = []
-  await sharedHumanization(
-    accountOp,
-    knownAddressLabels,
-    storage,
-    fetch,
-    (irCalls: IrCall[]) => {
-      humanizedCalls = irCalls
-      callback(irCalls)
-    },
-    emitError
-  )
-  await checkRedefine(accountOp, humanizedCalls, callback, { emitError, fetch }).catch(console.log)
+  await sharedHumanization(accountOp, knownAddressLabels, storage, fetch, callback, emitError)
 }
 
 export const messageHumanizer = async (
