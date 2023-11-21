@@ -11,7 +11,7 @@ export interface KeystoreSigner {
   init?: (controller: any) => void
   signRawTransaction: (txnRequest: {
     to: Call['to']
-    value: Call['value']
+    value?: Call['value']
     data: Call['data']
     chainId: NetworkDescriptor['chainId']
     nonce: number
