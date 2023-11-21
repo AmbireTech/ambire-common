@@ -679,7 +679,7 @@ export class MainController extends EventEmitter {
       // returning a tx id and when an user op hash
       transactionRes = {
         hash: userOperationHash,
-        nonce: Number(accountOp.nonce)
+        nonce: Number(userOperation!.nonce)
       }
     }
     // Relayer broadcast
@@ -714,15 +714,9 @@ export class MainController extends EventEmitter {
     }
 
     if (transactionRes) {
-      const is4337Broadcast = isErc4337Broadcast(
-        network!,
-        this.accountStates[accountOp.accountAddr][accountOp.networkId]
-      )
       await this.activity.addAccountOp({
         ...accountOp,
-        status: is4337Broadcast
-          ? AccountOpStatus.BroadcastedButNotConfirmed4337
-          : AccountOpStatus.BroadcastedButNotConfirmed,
+        status: AccountOpStatus.BroadcastedButNotConfirmed,
         txnId: transactionRes.hash,
         nonce: BigInt(transactionRes.nonce)
       })
