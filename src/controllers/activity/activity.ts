@@ -265,13 +265,18 @@ export class ActivityController extends EventEmitter {
 
               shouldEmitUpdate = true
 
-              // 4337
-              // find the correct txn hash for the 4337 broadcast and only after
-              // set its status to BroadcastedButNotConfirmed
+              // for 4337, we don't have a txn hash at the beginning,
+              // but a user operation hash. So, we call the bundler to find the txn hash.
+              // if the hash could not be found or is rejected, we set the status
+              // to AccountOpStatus.Failure
               if (accountOp.status === AccountOpStatus.BroadcastedButNotConfirmed4337) {
                 this.#accountsOps[this.filters!.account][network][accountOpIndex].status = AccountOpStatus.BroadcastedButNotConfirmed
-                this.#accountsOps[this.filters!.account][network][accountOpIndex].txnId =
-                  await bundler.getTxnHash(accountOp.txnId, networkConfig!)
+                const txnHash = await bundler.getTxnHash(accountOp.txnId, networkConfig!)
+                if (txnHash) {
+                  this.#accountsOps[this.filters!.account][network][accountOpIndex].txnId = txnHash
+                } else {
+                  this.#accountsOps[this.filters!.account][network][accountOpIndex].status = AccountOpStatus.Failure
+                }
                 return
               }
 
