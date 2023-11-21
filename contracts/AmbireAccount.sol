@@ -245,8 +245,8 @@ contract AmbireAccount {
 	 * @return  bytes4  is it a success or a failure
 	 */
 	function isValidSignature(bytes32 hash, bytes calldata signature) external view returns (bytes4) {
-		(address recovered, bool usedUnbound) = SignatureValidator.recoverAddrAllowUnbound(hash, signature, false);
-		if (uint256(privileges[recovered]) > (usedUnbound ? 1 : 0)) {
+		(address recovered, bool usedUnprotected) = SignatureValidator.recoverAddrAllowUnprotected(hash, signature, false);
+		if (uint256(privileges[recovered]) > (usedUnprotected ? 1 : 0)) {
 			// bytes4(keccak256("isValidSignature(bytes32,bytes)")
 			return 0x1626ba7e;
 		} else {
