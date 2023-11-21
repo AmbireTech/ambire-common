@@ -270,10 +270,10 @@ export class ActivityController extends EventEmitter {
               // if the hash could not be found or is rejected, we set the status
               // to AccountOpStatus.Failure
               if (accountOp.status === AccountOpStatus.BroadcastedButNotConfirmed4337) {
-                this.#accountsOps[this.filters!.account][network][accountOpIndex].status = AccountOpStatus.BroadcastedButNotConfirmed
                 const txnHash = await bundler.getTxnHash(accountOp.txnId, networkConfig!)
                 if (txnHash) {
                   this.#accountsOps[this.filters!.account][network][accountOpIndex].txnId = txnHash
+                  this.#accountsOps[this.filters!.account][network][accountOpIndex].status = AccountOpStatus.BroadcastedButNotConfirmed
                 } else {
                   this.#accountsOps[this.filters!.account][network][accountOpIndex].status = AccountOpStatus.Failure
                 }
