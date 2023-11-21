@@ -68,8 +68,9 @@ const checkRedefine = async (
   callback: Function,
   options?: any
 ) => {
-  await Promise.all(
+  const newCalls = await Promise.all(
     irCalls.map(async (call: IrCall) => {
+      // @TODO make helper
       const res = await options
         .fetch('https://api.redefine.net/v2/risk-analysis/txns', {
           method: 'POST',
@@ -128,8 +129,10 @@ const checkRedefine = async (
           message: `Error with redefine's API, ${JSON.stringify(res)} but status 200`,
           error: new Error(`Error with redefine's API ${JSON.stringify(res)}`)
         })
+      return call
     })
   )
+  callback(newCalls)
 }
 const handleAsyncOps = async (
   asyncOps: Promise<HumanizerFragment | null>[],
