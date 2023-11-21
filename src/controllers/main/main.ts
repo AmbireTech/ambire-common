@@ -110,6 +110,8 @@ export class MainController extends EventEmitter {
 
   broadcastStatus: 'INITIAL' | 'LOADING' | 'DONE' = 'INITIAL'
 
+  #relayerUrl: string
+
   onResolveDappRequest: (data: any, id?: number) => void
 
   onRejectDappRequest: (err: any, id?: number) => void
@@ -160,6 +162,7 @@ export class MainController extends EventEmitter {
     })
     this.transfer = new TransferController()
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch: this.#fetch })
+    this.#relayerUrl = relayerUrl
     this.onResolveDappRequest = onResolveDappRequest
     this.onRejectDappRequest = onRejectDappRequest
     this.onUpdateDappSelectedAccount = onUpdateDappSelectedAccount
@@ -197,7 +200,7 @@ export class MainController extends EventEmitter {
       this.#providers,
       this.#callRelayer
     )
-    this.activity = new ActivityController(this.#storage, this.accountStates)
+    this.activity = new ActivityController(this.#storage, this.accountStates, this.#relayerUrl)
     if (this.selectedAccount) {
       this.activity.init({ filters: { account: this.selectedAccount } })
     }

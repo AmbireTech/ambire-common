@@ -110,11 +110,14 @@ export class ActivityController extends EventEmitter {
 
   isInitialized: boolean = false
 
-  constructor(storage: Storage, accounts: AccountStates) {
+  #relayerUrl: string
+
+  constructor(storage: Storage, accounts: AccountStates, relayerUrl: string) {
     super()
     this.#storage = storage
     this.#accounts = accounts
     this.#initialLoadPromise = this.#load()
+    this.#relayerUrl = relayerUrl
   }
 
   async #load(): Promise<void> {
@@ -420,7 +423,7 @@ export class ActivityController extends EventEmitter {
           {
             label: 'Check',
             actionName: 'open-external-url',
-            meta: { url: is4337 ? `https://explorer.ambire.com/userOp/${accountOp.txnId}` : `${network.explorerUrl}/tx/${accountOp.txnId}` }
+            meta: { url: is4337 ? `${this.#relayerUrl}/userOp/${accountOp.txnId}` : `${network.explorerUrl}/tx/${accountOp.txnId}` }
           }
         ]
       } as Banner
