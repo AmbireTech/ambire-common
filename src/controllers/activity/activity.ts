@@ -266,34 +266,26 @@ export class ActivityController extends EventEmitter {
               shouldEmitUpdate = true
 
               // 4337
-              // once we've shown the banner, just switch it's status to the
-              // final one (Success/Failure) and move on
-              const is4337 = isErc4337Broadcast(
-                networkConfig!,
-                this.#accounts[accountOp.accountAddr][accountOp.networkId]
-              )
-              if (is4337 && accountOp.status === AccountOpStatus.BroadcastedButNotConfirmed) {
-                this.#accountsOps[this.filters!.account][network][accountOpIndex].status =
-                  accountOp.success ? AccountOpStatus.Success : AccountOpStatus.Failure
+              // find the correct txn hash for the 4337 broadcast and only after
+              // set its status to BroadcastedButNotConfirmed
+              if (accountOp.status === AccountOpStatus.BroadcastedButNotConfirmed4337) {
+                this.#accountsOps[this.filters!.account][network][accountOpIndex].status = AccountOpStatus.BroadcastedButNotConfirmed
+                this.#accountsOps[this.filters!.account][network][accountOpIndex].txnId =
+                  await bundler.getTxnHash(accountOp.txnId, networkConfig!)
                 return
               }
 
               // getting the receipt is different in 4337
               // @TODO: should we make own our provider that encapsulates this?
-              const receipt = !is4337
-                ? await provider.getTransactionReceipt(accountOp.txnId)
-                : await bundler.getReceipt(accountOp.txnId, networkConfig!)
+              const receipt = await provider.getTransactionReceipt(accountOp.txnId)
               if (receipt) {
-                if (is4337) {
-                  this.#accountsOps[this.filters!.account][network][accountOpIndex].status = AccountOpStatus.BroadcastedButNotConfirmed
-                  this.#accountsOps[this.filters!.account][network][accountOpIndex].txnId = receipt.receipt.transactionHash
-                  this.#accountsOps[this.filters!.account][network][accountOpIndex].success = receipt.receipt.status
-                } else {
-                  this.#accountsOps[this.filters!.account][network][accountOpIndex].status =
-                    receipt.status ? AccountOpStatus.Success : AccountOpStatus.Failure
-                }
+                this.#accountsOps[this.filters!.account][network][accountOpIndex].status =
+                  receipt.status ? AccountOpStatus.Success : AccountOpStatus.Failure
               } else if (
-                !is4337 &&
+                !isErc4337Broadcast(
+                  networkConfig!,
+                  this.#accounts[accountOp.accountAddr][accountOp.networkId]
+                ) &&
                 this.#accounts[accountOp.accountAddr][accountOp.networkId].nonce > accountOp.nonce
               ) {
                 this.#accountsOps[this.filters!.account][network][accountOpIndex].status =
