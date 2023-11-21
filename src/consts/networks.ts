@@ -54,7 +54,7 @@ const networks: NetworkDescriptor[] = [
     name: 'Avalanche',
     nativeAssetSymbol: 'AVAX',
     rpcUrl:
-      'https://rpc.ankr.com/avalanche/5c7b8f0ac82c95161753873289e1a4f39aa69019b905b8032d76909962719be9',
+      'https://api.avax.network/ext/bc/C/rpc',
     rpcNoStateOverride: false,
     chainId: 43114n,
     explorerUrl: 'https://avascan.info',
