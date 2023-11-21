@@ -423,7 +423,7 @@ export class ActivityController extends EventEmitter {
           {
             label: 'Check',
             actionName: 'open-external-url',
-            meta: { url: is4337 ? `${this.#relayerUrl}/userOp/${accountOp.txnId}` : `${network.explorerUrl}/tx/${accountOp.txnId}` }
+            meta: { url: is4337 ? `${this.#relayerUrl}/userOp/${accountOp.networkId}/${accountOp.txnId}` : `${network.explorerUrl}/tx/${accountOp.txnId}` }
           }
         ]
       } as Banner
