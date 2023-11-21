@@ -57,7 +57,7 @@ const networks: NetworkDescriptor[] = [
       'https://api.avax.network/ext/bc/C/rpc',
     rpcNoStateOverride: false,
     chainId: 43114n,
-    explorerUrl: 'https://avascan.info',
+    explorerUrl: 'https://snowtrace.io',
     erc4337: {
       enabled: true,
       entryPointAddr: ERC_4337_ENTRYPOINT,

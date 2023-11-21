@@ -8,6 +8,7 @@ import { AccountOp, AccountOpStatus } from '../../libs/accountOp/accountOp'
 import EventEmitter from '../eventEmitter'
 import { Banner } from '../../interfaces/banner'
 import bundler from '../../services/bundlers'
+import { isErc4337Broadcast } from '../../libs/userOperation/userOperation'
 
 interface Pagination {
   fromPage: number
@@ -259,7 +260,7 @@ export class ActivityController extends EventEmitter {
               // as the statuses are already updated in the previous calls.
               if (
                 accountOp.status !== AccountOpStatus.BroadcastedButNotConfirmed &&
-                accountOp.status !== AccountOpStatus.Show4337BroadcastedBanner
+                accountOp.status !== AccountOpStatus.BroadcastedButNotConfirmed4337
               ) return
 
               shouldEmitUpdate = true
@@ -267,7 +268,11 @@ export class ActivityController extends EventEmitter {
               // 4337
               // once we've shown the banner, just switch it's status to the
               // final one (Success/Failure) and move on
-              if (accountOp.status === AccountOpStatus.Show4337BroadcastedBanner) {
+              const is4337 = isErc4337Broadcast(
+                networkConfig!,
+                this.#accounts[accountOp.accountAddr][accountOp.networkId]
+              )
+              if (is4337 && accountOp.status === AccountOpStatus.BroadcastedButNotConfirmed) {
                 this.#accountsOps[this.filters!.account][network][accountOpIndex].status =
                   accountOp.success ? AccountOpStatus.Success : AccountOpStatus.Failure
                 return
@@ -275,14 +280,12 @@ export class ActivityController extends EventEmitter {
 
               // getting the receipt is different in 4337
               // @TODO: should we make own our provider that encapsulates this?
-              const is4337 = accountOp.gasFeePayment?.isERC4337
               const receipt = !is4337
                 ? await provider.getTransactionReceipt(accountOp.txnId)
                 : await bundler.getReceipt(accountOp.txnId, networkConfig!)
-
               if (receipt) {
                 if (is4337) {
-                  this.#accountsOps[this.filters!.account][network][accountOpIndex].status = AccountOpStatus.Show4337BroadcastedBanner
+                  this.#accountsOps[this.filters!.account][network][accountOpIndex].status = AccountOpStatus.BroadcastedButNotConfirmed
                   this.#accountsOps[this.filters!.account][network][accountOpIndex].txnId = receipt.receipt.transactionHash
                   this.#accountsOps[this.filters!.account][network][accountOpIndex].success = receipt.receipt.status
                 } else {
@@ -402,7 +405,7 @@ export class ActivityController extends EventEmitter {
     })
   }
 
-  get broadcastedButNotConfirmed(): SubmittedAccountOp[] {
+  get activityRefreshStatuses(): SubmittedAccountOp[] {
     // Here we don't rely on `this.isInitialized` flag, as it checks for both `this.filters.account` and `this.filters.network` existence.
     // Banners are network agnostic, and that's the reason we check for `this.filters.account` only and having this.#accountsOps loaded.
     if (!this.filters?.account || !this.#accountsOps[this.filters.account]) return []
@@ -410,9 +413,19 @@ export class ActivityController extends EventEmitter {
     return Object.values(this.#accountsOps[this.filters.account])
       .flat()
       .filter((accountOp) => (
-        (accountOp.status === AccountOpStatus.BroadcastedButNotConfirmed && !accountOp.gasFeePayment?.isERC4337) ||
-        (accountOp.status === AccountOpStatus.Show4337BroadcastedBanner)
+        accountOp.status === AccountOpStatus.BroadcastedButNotConfirmed ||
+        accountOp.status === AccountOpStatus.BroadcastedButNotConfirmed4337
       ))
+  }
+
+  get broadcastedButNotConfirmed(): SubmittedAccountOp[] {
+    // Here we don't rely on `this.isInitialized` flag, as it checks for both `this.filters.account` and `this.filters.network` existence.
+    // Banners are network agnostic, and that's the reason we check for `this.filters.account` only and having this.#accountsOps loaded.
+    if (!this.filters?.account || !this.#accountsOps[this.filters.account]) return []
+
+    return Object.values(this.#accountsOps[this.filters.account])
+      .flat()
+      .filter((accountOp) => (accountOp.status === AccountOpStatus.BroadcastedButNotConfirmed))
   }
 
   get banners(): Banner[] {
@@ -439,6 +452,7 @@ export class ActivityController extends EventEmitter {
     return {
       ...this,
       broadcastedButNotConfirmed: this.broadcastedButNotConfirmed, // includes the getter in the stringified instance
+      activityRefreshStatuses: this.activityRefreshStatuses,
       banners: this.banners // includes the getter in the stringified instance
     }
   }

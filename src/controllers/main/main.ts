@@ -569,6 +569,7 @@ export class MainController extends EventEmitter {
 
     const provider: JsonRpcProvider = this.#providers[accountOp.networkId]
     const account = this.accounts.find((acc) => acc.addr === accountOp.accountAddr)
+    const network = this.settings.networks.find((n) => n.id === accountOp.networkId)
 
     if (!provider) {
       return this.#throwAccountOpBroadcastError(
@@ -634,7 +635,6 @@ export class MainController extends EventEmitter {
         accountOp.gasFeePayment!.paidBy,
         broadcastKey!.type
       )
-      const network = this.settings.networks.find((n) => n.id === accountOp.networkId)
 
       if (!network) {
         return this.#throwAccountOpBroadcastError(
@@ -670,7 +670,6 @@ export class MainController extends EventEmitter {
       }
 
       // broadcast through bundler's service
-      const network = this.settings.networks.find((n) => n.id === accountOp.networkId)
       const userOperationHash = await bundler.broadcast(userOperation!, network!)
       if (!userOperationHash) {
         this.#throwAccountOpBroadcastError(new Error('was not able to broadcast'))
@@ -715,9 +714,15 @@ export class MainController extends EventEmitter {
     }
 
     if (transactionRes) {
+      const is4337Broadcast = isErc4337Broadcast(
+        network!,
+        this.accountStates[accountOp.accountAddr][accountOp.networkId]
+      )
       await this.activity.addAccountOp({
         ...accountOp,
-        status: AccountOpStatus.BroadcastedButNotConfirmed,
+        status: is4337Broadcast
+          ? AccountOpStatus.BroadcastedButNotConfirmed4337
+          : AccountOpStatus.BroadcastedButNotConfirmed,
         txnId: transactionRes.hash,
         nonce: BigInt(transactionRes.nonce)
       })
