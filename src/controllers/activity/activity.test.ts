@@ -19,6 +19,19 @@ describe('Activity Controller ', () => {
         isEOA: false,
         deployError: false
       }
+    },
+    '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5': {
+      ethereum: {
+        accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
+        nonce: 225n,
+        isDeployed: true,
+        associatedKeys: ['0xd6e371526cdaeE04cd8AF225D42e37Bc14688D9E'],
+        isV2: true,
+        scheduledRecoveries: [],
+        balance: 0n,
+        isEOA: false,
+        deployError: false
+      }
     }
   } as unknown as AccountStates
 
