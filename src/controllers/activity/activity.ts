@@ -8,6 +8,7 @@ import { AccountOp, AccountOpStatus } from '../../libs/accountOp/accountOp'
 import EventEmitter from '../eventEmitter'
 import { Banner } from '../../interfaces/banner'
 import { isErc4337Broadcast } from '../../libs/userOperation/userOperation'
+import bundler from '../../services/bundlers'
 
 interface Pagination {
   fromPage: number
@@ -261,19 +262,19 @@ export class ActivityController extends EventEmitter {
 
               shouldEmitUpdate = true
 
-              // getting the receipt is different in 4337
-              // @TODO: should we make own our provider that encapsulates this?
-              const receipt = await provider.getTransactionReceipt(accountOp.txnId)
+              const is4337 = isErc4337Broadcast(
+                networkConfig!,
+                this.#accounts[accountOp.accountAddr][accountOp.networkId]
+              )
+              const receipt = is4337
+                ? await bundler.getReceipt(accountOp.txnId, networkConfig!)
+                : await provider.getTransactionReceipt(accountOp.txnId)
               if (receipt) {
                 this.#accountsOps[this.filters!.account][network][accountOpIndex].status =
                   receipt.status ? AccountOpStatus.Success : AccountOpStatus.Failure
                 return
               }
 
-              const is4337 = isErc4337Broadcast(
-                networkConfig!,
-                this.#accounts[accountOp.accountAddr][accountOp.networkId]
-              )
               if (
                 (
                   !is4337 &&
