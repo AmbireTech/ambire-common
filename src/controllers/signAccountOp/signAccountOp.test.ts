@@ -17,6 +17,7 @@ import { KeystoreController } from '../keystore/keystore'
 import { PortfolioController } from '../portfolio/portfolio'
 import { SettingsController } from '../settings/settings'
 import { SignAccountOpController, SigningStatus } from './signAccountOp'
+import { relayerCall } from '../../libs/relayerCall/relayerCall'
 
 const providers = Object.fromEntries(
   networks.map((network) => [network.id, new JsonRpcProvider(network.rpcUrl)])
@@ -146,10 +147,11 @@ describe('SignAccountOp Controller ', () => {
     const accountStates = await getAccountsInfo(accounts)
     const portfolio = new PortfolioController(storage, 'https://staging-relayer.ambire.com', [])
     await portfolio.updateSelectedAccount(accounts, networks, account.addr)
+    const callRelayer = relayerCall.bind({ url: '', fetch: fetch })
     const settings = new SettingsController(storage, networks)
     const controller = new SignAccountOpController(keystore, portfolio, settings, storage, fetch, {
       ethereum: provider
-    })
+    }, callRelayer)
     controller.status = { type: SigningStatus.ReadyToSign }
 
     controller.updateMainDeps({

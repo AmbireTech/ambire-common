@@ -1,12 +1,22 @@
-import { Provider, JsonRpcProvider, Interface } from 'ethers'
+import { Provider, JsonRpcProvider, Interface, AbiCoder } from 'ethers'
 import { fromDescriptor } from '../deployless/deployless'
 import { getAccountDeployParams } from '../account/account'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { AccountOp } from '../accountOp/accountOp'
 import { Account } from '../../interfaces/account'
 import Estimation from '../../../contracts/compiled/Estimation.json'
+import Estimation4337 from '../../../contracts/compiled/Estimation4337.json'
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFactory.json'
+import { ERC_4337_ENTRYPOINT } from '../../consts/deploy'
+import { getPaymasterSpoof, getTargetEdgeCaseNonce } from '../../libs/userOperation/userOperation'
+import { SPOOF_SIGTYPE } from '../../consts/signatures'
+
+interface Erc4337estimation {
+  verificationGasLimit: bigint,
+  callGasLimit: bigint,
+  gasUsed: bigint,
+}
 
 export interface EstimateResult {
   gasUsed: bigint
@@ -18,6 +28,7 @@ export interface EstimateResult {
     address: string
     gasUsed?: bigint
   }[]
+  erc4337estimation: Erc4337estimation | null
 }
 
 export async function estimate(
@@ -29,6 +40,7 @@ export async function estimate(
   feeTokens: string[],
   opts?: {
     calculateRefund?: boolean
+    is4337Broadcast?: boolean
   },
   blockFrom: string = '0x0000000000000000000000000000000000000001',
   blockTag: string | number = 'latest'
@@ -64,7 +76,8 @@ export async function estimate(
           paidBy: account.addr,
           availableAmount: balance
         }
-      ]
+      ],
+      erc4337estimation: null
     }
   }
 
@@ -90,7 +103,40 @@ export async function estimate(
     nativeToCheck
   ]
 
+  // estimate 4337
+  let estimation4337
+  if (opts && opts.is4337Broadcast) {
+    // using Object.assign as typescript doesn't work otherwise
+    const userOp = Object.assign({}, op.asUserOperation)
+    userOp!.paymasterAndData = getPaymasterSpoof()
+    const deployless4337Estimator = fromDescriptor(provider, Estimation4337, !network.rpcNoStateOverride)
+    const functionArgs = [
+      userOp,
+      ERC_4337_ENTRYPOINT
+    ]
+    if (userOp.isEdgeCase) {
+      userOp.nonce = getTargetEdgeCaseNonce(userOp)
+    } else {
+      const abiCoder = new AbiCoder()
+      const spoofSig = abiCoder.encode(['address'], [account.associatedKeys[0]]) + SPOOF_SIGTYPE
+      userOp!.signature = spoofSig
+    }
+    estimation4337 = deployless4337Estimator.call('estimate', functionArgs, {
+      from: blockFrom,
+      blockTag
+    })
+  }
+
   /* eslint-disable prefer-const */
+  const estimation = deploylessEstimator.call('estimate', args, {
+    from: blockFrom,
+    blockTag
+  })
+
+  let estimations = estimation4337
+    ? await Promise.all([estimation, estimation4337])
+    : await Promise.all([estimation])
+
   let [
     [
       deployment,
@@ -103,13 +149,34 @@ export async function estimate(
       ,
       l1GasEstimation // [gasUsed, baseFee, totalFee, gasOracle]
     ]
-  ] = await deploylessEstimator.call('estimate', args, {
-    from: blockFrom,
-    blockTag
-  })
+  ] = estimations[0]
   /* eslint-enable prefer-const */
 
-  let gasUsed = deployment.gasUsed + accountOpToExecuteBefore.gasUsed + accountOp.gasUsed
+  let erc4337estimation: Erc4337estimation | null = null
+  if (opts && opts.is4337Broadcast) {
+    const [
+      [
+        verificationGasLimit,
+        gasUsed,
+        failure
+      ]
+    ] = estimations[1]
+
+    // TODO<Bobby>: handle estimation failure
+    if (failure != '0x') {
+      console.log(Buffer.from(failure.substring(2), 'hex').toString())
+    }
+
+    erc4337estimation = {
+      verificationGasLimit: BigInt(verificationGasLimit) + 5000n, // added buffer,
+      callGasLimit: BigInt(gasUsed) + 10000n, // added buffer
+      gasUsed: BigInt(gasUsed) // the minimum for payments
+    }
+  }
+
+  let gasUsed = erc4337estimation
+    ? erc4337estimation.gasUsed
+    : deployment.gasUsed + accountOpToExecuteBefore.gasUsed + accountOp.gasUsed
 
   if (opts?.calculateRefund) {
     const IAmbireAccount = new Interface(AmbireAccount.abi)
@@ -143,14 +210,29 @@ export async function estimate(
     if (estimatedRefund <= gasUsed / 5n && estimatedRefund > 0n) gasUsed = estimatedGas
   }
 
-  const feeTokenOptions = feeTokenOutcomes.map((token: any, key: number) => ({
+  let finalFeeTokenOptions = feeTokenOutcomes
+  let finalNativeTokenOptions = nativeAssetBalances
+  if (opts && opts.is4337Broadcast) {
+
+    // if there's no paymaster, we cannot pay in tokens
+    if (!network.erc4337?.hasPaymaster) {
+      finalFeeTokenOptions = []
+    }
+
+    // native should be payed from the smart account only
+    finalNativeTokenOptions = finalNativeTokenOptions.filter((balance: bigint, key: number) => {
+      return nativeToCheck[key] == account.addr
+    })
+  }
+
+  const feeTokenOptions = finalFeeTokenOptions.map((token: any, key: number) => ({
     address: feeTokens[key],
     paidBy: account.addr,
     availableAmount: token.amount,
     gasUsed: token.gasUsed
   }))
 
-  const nativeTokenOptions = nativeAssetBalances.map((balance: bigint, key: number) => ({
+  const nativeTokenOptions = finalNativeTokenOptions.map((balance: bigint, key: number) => ({
     address: nativeAddr,
     paidBy: nativeToCheck[key],
     availableAmount: balance
@@ -160,6 +242,7 @@ export async function estimate(
     gasUsed,
     nonce,
     addedNative: l1GasEstimation.fee || 0n,
-    feePaymentOptions: [...feeTokenOptions, ...nativeTokenOptions]
+    feePaymentOptions: [...feeTokenOptions, ...nativeTokenOptions],
+    erc4337estimation
   }
 }

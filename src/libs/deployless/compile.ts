@@ -55,6 +55,10 @@ export function compile(contractName: string, options: Options = {}) {
       ? contractsFolder
       : ''
 
+    if (libPath.indexOf('contracts/libs') !== -1) {
+      compileFolder = ''
+    }
+
     return {
       contents: fs.readFileSync(
         path.resolve(`${__dirname}../../../../`, compileFolder, libPath),

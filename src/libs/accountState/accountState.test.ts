@@ -4,11 +4,10 @@ import { describe, expect, test } from '@jest/globals'
 
 import {
   AMBIRE_ACCOUNT_FACTORY,
-  AMBIRE_ACCOUNT_FACTORY_ERC_4337,
   ERC_4337_ENTRYPOINT
 } from '../../consts/deploy'
 import { networks } from '../../consts/networks'
-import { get4437Bytecode, getBytecode } from '../proxyDeploy/bytecode'
+import { getBytecode } from '../proxyDeploy/bytecode'
 import { getAmbireAccountAddress } from '../proxyDeploy/getAmbireAddressTwo'
 import { getAccountState } from './accountState'
 
@@ -77,7 +76,7 @@ describe('AccountState', () => {
       { addr: '0x9188fdd757Df66B4F693D624Ed6A13a15Cf717D7', hash: true },
       { addr: '0x43Ec7De60E89dabB7cAedc89Cd1F3c8D52707312', hash: true }
     ]
-    const bytecodeErc4337 = await get4437Bytecode(polygon, privs)
+    const bytecodeErc4337 = await getBytecode(polygon, privs)
     const accountErc4337 = {
       addr: '0x76b277955846313Ec50F26eD155C26f5aED295B1',
       associatedKeys: [
@@ -85,7 +84,7 @@ describe('AccountState', () => {
         '0x43Ec7De60E89dabB7cAedc89Cd1F3c8D52707312'
       ],
       creation: {
-        factoryAddr: AMBIRE_ACCOUNT_FACTORY_ERC_4337,
+        factoryAddr: AMBIRE_ACCOUNT_FACTORY,
         bytecode: bytecodeErc4337,
         salt: '0x0'
       }
@@ -122,7 +121,8 @@ describe('AccountState', () => {
 
     const acc4337deployed = state[4]
     expect(acc4337deployed.nonce).toBeGreaterThanOrEqual(0n)
-    expect(acc4337deployed.associatedKeys).not.toHaveProperty(ERC_4337_ENTRYPOINT)
+    // TODO: polygon is no longer the erc-4337 network so the below is not valid
+    // expect(acc4337deployed.associatedKeys).toHaveProperty(ERC_4337_ENTRYPOINT)
 
     const accEOANonZero = state[5]
     expect(accEOANonZero.isEOA).toBe(true)
