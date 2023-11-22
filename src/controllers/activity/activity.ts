@@ -2,14 +2,14 @@ import { JsonRpcProvider } from 'ethers'
 
 import { networks } from '../../consts/networks'
 import { AccountStates } from '../../interfaces/account'
+import { Banner } from '../../interfaces/banner'
 import { Storage } from '../../interfaces/storage'
 import { Message } from '../../interfaces/userRequest'
 import { AccountOp, AccountOpStatus } from '../../libs/accountOp/accountOp'
-import EventEmitter from '../eventEmitter'
-import { Banner } from '../../interfaces/banner'
 import bundler from '../../services/bundlers'
+import EventEmitter from '../eventEmitter'
 
-interface Pagination {
+export interface Pagination {
   fromPage: number
   itemsPerPage: number
 }
@@ -260,7 +260,8 @@ export class ActivityController extends EventEmitter {
               if (
                 accountOp.status !== AccountOpStatus.BroadcastedButNotConfirmed &&
                 accountOp.status !== AccountOpStatus.Show4337BroadcastedBanner
-              ) return
+              )
+                return
 
               shouldEmitUpdate = true
 
@@ -282,9 +283,12 @@ export class ActivityController extends EventEmitter {
 
               if (receipt) {
                 if (is4337) {
-                  this.#accountsOps[this.filters!.account][network][accountOpIndex].status = AccountOpStatus.Show4337BroadcastedBanner
-                  this.#accountsOps[this.filters!.account][network][accountOpIndex].txnId = receipt.receipt.transactionHash
-                  this.#accountsOps[this.filters!.account][network][accountOpIndex].success = receipt.receipt.status
+                  this.#accountsOps[this.filters!.account][network][accountOpIndex].status =
+                    AccountOpStatus.Show4337BroadcastedBanner
+                  this.#accountsOps[this.filters!.account][network][accountOpIndex].txnId =
+                    receipt.receipt.transactionHash
+                  this.#accountsOps[this.filters!.account][network][accountOpIndex].success =
+                    receipt.receipt.status
                 } else {
                   this.#accountsOps[this.filters!.account][network][accountOpIndex].status =
                     receipt.status ? AccountOpStatus.Success : AccountOpStatus.Failure
@@ -409,10 +413,12 @@ export class ActivityController extends EventEmitter {
 
     return Object.values(this.#accountsOps[this.filters.account])
       .flat()
-      .filter((accountOp) => (
-        (accountOp.status === AccountOpStatus.BroadcastedButNotConfirmed && !accountOp.gasFeePayment?.isERC4337) ||
-        (accountOp.status === AccountOpStatus.Show4337BroadcastedBanner)
-      ))
+      .filter(
+        (accountOp) =>
+          (accountOp.status === AccountOpStatus.BroadcastedButNotConfirmed &&
+            !accountOp.gasFeePayment?.isERC4337) ||
+          accountOp.status === AccountOpStatus.Show4337BroadcastedBanner
+      )
   }
 
   get banners(): Banner[] {
