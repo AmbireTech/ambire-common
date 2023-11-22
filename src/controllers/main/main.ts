@@ -27,6 +27,8 @@ import { estimate, EstimateResult } from '../../libs/estimate/estimate'
 import { GasRecommendation, getGasPriceRecommendations } from '../../libs/gasPrice/gasPrice'
 import { shouldGetAdditionalPortfolio } from '../../libs/portfolio/helpers'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
+import { isErc4337Broadcast, toUserOperation } from '../../libs/userOperation/userOperation'
+import bundler from '../../services/bundlers'
 import generateSpoofSig from '../../utils/generateSpoofSig'
 import wait from '../../utils/wait'
 import { AccountAdderController } from '../accountAdder/accountAdder'
@@ -40,8 +42,6 @@ import { SettingsController } from '../settings/settings'
 import { SignAccountOpController } from '../signAccountOp/signAccountOp'
 import { SignMessageController } from '../signMessage/signMessage'
 import { TransferController } from '../transfer/transfer'
-import bundler from '../../services/bundlers'
-import { isErc4337Broadcast, toUserOperation } from '../../libs/userOperation/userOperation'
 
 export class MainController extends EventEmitter {
   #storage: Storage
@@ -515,7 +515,10 @@ export class MainController extends EventEmitter {
 
     // start transforming the accountOp to userOp if the network is 4337
     // and it's not a legacy account
-    const is4337Broadcast = isErc4337Broadcast(network, this.accountStates[accountOp.accountAddr][accountOp.networkId])
+    const is4337Broadcast = isErc4337Broadcast(
+      network,
+      this.accountStates[accountOp.accountAddr][accountOp.networkId]
+    )
     if (is4337Broadcast) {
       accountOp = toUserOperation(
         account,
@@ -547,7 +550,7 @@ export class MainController extends EventEmitter {
         EOAaccounts.map((acc) => acc.addr),
         // @TODO - first time calling this, portfolio is still not loaded.
         feeTokens,
-        {is4337Broadcast}
+        { is4337Broadcast }
       )
     ])
     // @TODO compare intent between accountOp and this.accountOpsToBeSigned[accountOp.accountAddr][accountOp.networkId].accountOp
@@ -555,8 +558,12 @@ export class MainController extends EventEmitter {
 
     // add the estimation to the user operation
     if (is4337Broadcast) {
-      accountOp.asUserOperation!.verificationGasLimit = ethers.toBeHex(estimation.erc4337estimation!.verificationGasLimit)
-      accountOp.asUserOperation!.callGasLimit = ethers.toBeHex(estimation.erc4337estimation!.callGasLimit)
+      accountOp.asUserOperation!.verificationGasLimit = ethers.toBeHex(
+        estimation.erc4337estimation!.verificationGasLimit
+      )
+      accountOp.asUserOperation!.callGasLimit = ethers.toBeHex(
+        estimation.erc4337estimation!.callGasLimit
+      )
       this.accountOpsToBeSigned[accountOp.accountAddr][accountOp.networkId]!.accountOp = accountOp
     }
   }
@@ -652,7 +659,7 @@ export class MainController extends EventEmitter {
         nonce: await provider.getTransactionCount(accountOp.gasFeePayment!.paidBy),
         // TODO: fix simulatedGasLimit as multiplying by 2 is just
         // a quick fix
-        gasLimit: accountOp.gasFeePayment.simulatedGasLimit * 2n,
+        gasLimit: accountOp.gasFeePayment.simulatedGasLimit,
         gasPrice:
           (accountOp.gasFeePayment.amount - estimation!.addedNative) /
           accountOp.gasFeePayment.simulatedGasLimit
@@ -663,12 +670,13 @@ export class MainController extends EventEmitter {
       } catch (error: any) {
         this.#throwAccountOpBroadcastError(new Error(error), error.message || undefined)
       }
-    }
-    else if (accountOp.gasFeePayment && accountOp.gasFeePayment.isERC4337) {
+    } else if (accountOp.gasFeePayment && accountOp.gasFeePayment.isERC4337) {
       const userOperation = accountOp.asUserOperation
       if (!userOperation) {
         this.#throwAccountOpBroadcastError(
-          new Error(`Trying to broadcast an ERC-4337 request but userOperation is not set for ${accountOp.accountAddr}`)
+          new Error(
+            `Trying to broadcast an ERC-4337 request but userOperation is not set for ${accountOp.accountAddr}`
+          )
         )
       }
 
