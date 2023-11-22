@@ -18,9 +18,9 @@ export interface ExternalSignerController {
   deviceId: string
   isUnlocked: () => boolean
   unlock: () => Promise<any>
+  cleanUp: () => void // Trezor and Ledger specific
   // TODO: Refine the rest of the props
-  cleanUp?: () => void // Trezor and Ledger specific
-  hdk?: any // Trezor and Ledger specific
+  hdk: any // Trezor and Ledger specific
   hasHIDPermission?: boolean | null // Ledger specific
   isWebHID?: boolean // Ledger specific
   transport?: any // Ledger specific
