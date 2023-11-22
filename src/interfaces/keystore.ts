@@ -6,9 +6,33 @@ import { Account } from './account'
 import { NetworkDescriptor } from './networkDescriptor'
 import { TypedMessage } from './userRequest'
 
+/**
+ * Hardware wallets usually need this additional external signer controller,
+ * that is app-specific (web, mobile) and is used to interact with the device.
+ * (example: LedgerController, TrezorController, LatticeController)
+ */
+export interface ExternalSignerController {
+  type: string
+  hdPathTemplate: HD_PATH_TEMPLATE_TYPE
+  deviceModel: string
+  deviceId: string
+  isUnlocked: () => boolean
+  cleanUp: () => void
+  unlock: () => Promise<any>
+  // TODO: Refine the rest of the props
+  hdk?: any // Trezor and Ledger specific
+  hasHIDPermission?: boolean | null // Ledger specific
+  isWebHID?: boolean // Ledger specific
+  transport?: any // Ledger specific
+  app?: any // Ledger specific
+  appName?: string // Lattice specific
+  sdkSession?: any // Lattice specific
+  creds?: any // Lattice specific
+  network?: any // Lattice specific
+}
+
 export interface KeystoreSigner {
-  // TODO: missing type, should be one of LedgerController, TrezorController, LatticeController
-  init?: (controller: any) => void
+  init?: (externalSignerController?: ExternalSignerController) => void
   signRawTransaction: (txnRequest: {
     to: Call['to']
     value?: Call['value']
