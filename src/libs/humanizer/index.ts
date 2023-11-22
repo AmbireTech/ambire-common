@@ -37,7 +37,7 @@ import {
 
 dotenv.config()
 
-const REDEFINE_API_KEY = process.env.REDEFINE_API_KEY
+const REDEFINE_API_KEY = process.env.REDEFINE_API_KEY!
 const HUMANIZER_META_KEY = 'HumanizerMeta'
 // generic in the begining
 // the final humanization is the final triggered module
@@ -60,7 +60,59 @@ const parsingModules: HumanizerParsingModule[] = [nameParsing, tokenParsing]
 // generic at the end
 // the final visualization and warnings are from the first triggered module
 const humanizerTMModules = [erc20Module, erc721Module, permit2Module, fallbackEIP712Humanizer]
-
+const redefineCallsCheck = async (
+  from: string,
+  call: any,
+  networkId: string,
+  apiKey: string,
+  options: any
+) => {
+  let res = null
+  options
+    .fetch('https://api.redefine.net/v2/risk-analysis/txns', {
+      method: 'POST',
+      headers: {
+        'X-API-Key': apiKey,
+        'content-type': 'application/json'
+      },
+      body: JSON.stringify({
+        payload: {
+          method: 'eth_sendTransaction',
+          params: [
+            {
+              from,
+              to: call.to,
+              value: `0x${call.value.toString(16)}`,
+              data: call.data
+            }
+          ]
+        },
+        chainId: networks.find((n: any) => n.id === networkId)?.chainId.toString()
+      })
+    })
+    .then((response: any) => {
+      // asuming all failing cases return err different from 200
+      if (response.status !== 200) {
+        options.emitError({
+          level: 'silent',
+          message: `Error with redefine's API, status=${response.status}`,
+          error: new Error(`Error with redefine's API, status=${response.status}`)
+        })
+      }
+      return response
+    })
+    .then(async (response: any) => {
+      res = await response.json()
+    })
+    .catch((e: Error) => {
+      options.emitError({
+        level: 'silent',
+        message: `Error with redefine api ${e.message}`,
+        error: e
+      })
+    })
+  return res
+}
 // @TODOD add test for this
 const checkRedefine = async (
   accountOp: AccountOp,
@@ -71,47 +123,15 @@ const checkRedefine = async (
   const newCalls = await Promise.all(
     irCalls.map(async (call: IrCall) => {
       // @TODO make helper
-      const res = await options
-        .fetch('https://api.redefine.net/v2/risk-analysis/txns', {
-          method: 'POST',
-          headers: {
-            'X-API-Key': REDEFINE_API_KEY,
-            'content-type': 'application/json'
-          },
-          body: JSON.stringify({
-            payload: {
-              method: 'eth_sendTransaction',
-              params: [
-                {
-                  from: accountOp.accountAddr,
-                  to: call.to,
-                  value: '0x0', // `0x${call.value.toString(16)}`,
-                  data: call.data
-                }
-              ]
-            },
-            chainId: networks.find((n: any) => n.id === accountOp.networkId)?.chainId.toString()
-          })
-        })
-        .then((response: any) => {
-          // asuming all failing cases return err different from 200
-          if (response.status !== 200) {
-            options.emitError({
-              level: 'silent',
-              message: `Error with redefine's API, status=${response.status}`,
-              error: new Error(`Error with redefine's API, status=${response.status}`)
-            })
-          }
-          return response
-        })
-        .then((response: any) => response.json())
-        .catch((e: Error) => {
-          options.emitError({
-            level: 'silent',
-            message: `Error with redefine api ${e.message}`,
-            error: e
-          })
-        })
+      const res: any = await redefineCallsCheck(
+        accountOp.accountAddr,
+        call,
+        accountOp.networkId,
+        REDEFINE_API_KEY,
+        options
+      )
+      // @NOTE to be removed once redefine start returning err statuses on all error cases
+      if (!res) return call
       res?.data?.insights?.issues?.length &&
         call.warnings?.push(
           ...res.data.insights.issues.map((issue: any) => ({
