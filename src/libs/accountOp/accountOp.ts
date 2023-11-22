@@ -4,7 +4,7 @@ import { Key } from 'interfaces/keystore'
 import { networks } from '../../consts/networks'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
 import { stringify } from '../bigintJson/bigintJson'
-import { UserOperation } from '../../libs/userOperation/userOperation'
+import { UserOperation } from '../userOperation/types'
 
 export interface Call {
   to: string
@@ -34,7 +34,6 @@ export interface GasFeePayment {
 export enum AccountOpStatus {
   Pending = 'pending',
   BroadcastedButNotConfirmed = 'broadcasted-but-not-confirmed',
-  Show4337BroadcastedBanner = 'show-4337-broadcasted-banner',
   Success = 'success',
   Failure = 'failure',
   UnknownButPastNonce = 'unknown-but-past-nonce'
@@ -53,11 +52,11 @@ export interface AccountOp {
   // this is a number and not a bigint because of ethers (it uses number for nonces)
   nonce: bigint | null
   // @TODO: nonce namespace? it is dependent on gasFeePayment
-  calls: Call[],
+  calls: Call[]
   // the feeCall is an extra call we add manually when there's a
   // relayer/paymaster transaction so that the relayer/paymaster
   // can authorize the payment
-  feeCall?: Call,
+  feeCall?: Call
   gasLimit: number | null
   signature: string | null
   gasFeePayment: GasFeePayment | null
@@ -74,7 +73,7 @@ export interface AccountOp {
   // "remembered" at the time of signing in order to visualize history properly
   humanizerMeta?: { [key: string]: any }
   txnId?: string
-  status?: AccountOpStatus,
+  status?: AccountOpStatus
   // in the case of ERC-4337, we need an UserOperation structure for the AccountOp
   asUserOperation?: UserOperation
 }
@@ -122,6 +121,12 @@ export function isAccountOpsIntentEqual(
   return stringify(createIntent(accountOps1)) === stringify(createIntent(accountOps2))
 }
 
+export function getSignableCalls(op: AccountOp) {
+  const callsToSign = op.calls.map((call: Call) => callToTuple(call))
+  if (op.feeCall) callsToSign.push(callToTuple(op.feeCall))
+  return callsToSign
+}
+
 /**
  * This function returns the hash as a Uint8Array instead of string
  * and the reason for this is the implementation that follows:
@@ -156,12 +161,7 @@ export function accountOpSignableHash(op: AccountOp): Uint8Array {
     ethers.keccak256(
       abiCoder.encode(
         ['address', 'uint', 'uint', 'tuple(address, uint, bytes)[]'],
-        [
-          op.accountAddr,
-          opNetworks[0].chainId,
-          op.nonce ?? 0n,
-          getSignableCalls(op)
-        ]
+        [op.accountAddr, opNetworks[0].chainId, op.nonce ?? 0n, getSignableCalls(op)]
       )
     )
   )
@@ -176,12 +176,8 @@ export function accountOpSignableHash(op: AccountOp): Uint8Array {
  * @returns boolean
  */
 export function isNative(gasFeePayment: GasFeePayment): boolean {
-  return !gasFeePayment.isGasTank &&
-    gasFeePayment.inToken == '0x0000000000000000000000000000000000000000'
-}
-
-export function getSignableCalls(op: AccountOp) {
-  const callsToSign = op.calls.map((call: Call) => callToTuple(call))
-  if (op.feeCall) callsToSign.push(callToTuple(op.feeCall))
-  return callsToSign
+  return (
+    !gasFeePayment.isGasTank &&
+    gasFeePayment.inToken === '0x0000000000000000000000000000000000000000'
+  )
 }

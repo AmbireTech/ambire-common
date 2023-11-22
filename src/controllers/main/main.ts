@@ -110,6 +110,8 @@ export class MainController extends EventEmitter {
 
   broadcastStatus: 'INITIAL' | 'LOADING' | 'DONE' = 'INITIAL'
 
+  #relayerUrl: string
+
   onResolveDappRequest: (data: any, id?: number) => void
 
   onRejectDappRequest: (err: any, id?: number) => void
@@ -160,6 +162,7 @@ export class MainController extends EventEmitter {
     })
     this.transfer = new TransferController()
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch: this.#fetch })
+    this.#relayerUrl = relayerUrl
     this.onResolveDappRequest = onResolveDappRequest
     this.onRejectDappRequest = onRejectDappRequest
     this.onUpdateDappSelectedAccount = onUpdateDappSelectedAccount
@@ -197,7 +200,7 @@ export class MainController extends EventEmitter {
       this.#providers,
       this.#callRelayer
     )
-    this.activity = new ActivityController(this.#storage, this.accountStates)
+    this.activity = new ActivityController(this.#storage, this.accountStates, this.#relayerUrl)
     if (this.selectedAccount) {
       this.activity.init({ filters: { account: this.selectedAccount } })
     }
@@ -569,6 +572,7 @@ export class MainController extends EventEmitter {
 
     const provider: JsonRpcProvider = this.#providers[accountOp.networkId]
     const account = this.accounts.find((acc) => acc.addr === accountOp.accountAddr)
+    const network = this.settings.networks.find((n) => n.id === accountOp.networkId)
 
     if (!provider) {
       return this.#throwAccountOpBroadcastError(
@@ -634,7 +638,6 @@ export class MainController extends EventEmitter {
         accountOp.gasFeePayment!.paidBy,
         broadcastKey!.type
       )
-      const network = this.settings.networks.find((n) => n.id === accountOp.networkId)
 
       if (!network) {
         return this.#throwAccountOpBroadcastError(
@@ -670,7 +673,6 @@ export class MainController extends EventEmitter {
       }
 
       // broadcast through bundler's service
-      const network = this.settings.networks.find((n) => n.id === accountOp.networkId)
       const userOperationHash = await bundler.broadcast(userOperation!, network!)
       if (!userOperationHash) {
         this.#throwAccountOpBroadcastError(new Error('was not able to broadcast'))
@@ -680,7 +682,7 @@ export class MainController extends EventEmitter {
       // returning a tx id and when an user op hash
       transactionRes = {
         hash: userOperationHash,
-        nonce: Number(accountOp.nonce)
+        nonce: Number(userOperation!.nonce)
       }
     }
     // Relayer broadcast

@@ -3,7 +3,7 @@ import { ethers, JsonRpcProvider } from 'ethers'
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import EntryPointAbi from '../../../contracts/compiled/EntryPoint.json'
 import ERC20 from '../../../contracts/compiled/IERC20.json'
-import { ERC_4337_ENTRYPOINT } from '../../consts/deploy'
+import { AMBIRE_PAYMASTER, ERC_4337_ENTRYPOINT } from '../../consts/deploy'
 import { Account, AccountStates } from '../../interfaces/account'
 import { Key } from '../../interfaces/keystore'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
@@ -507,7 +507,7 @@ export class SignAccountOpController extends EventEmitter {
       return
     }
 
-    if (this.accountOp!.gasFeePayment!.inToken == '0x0000000000000000000000000000000000000000') {
+    if (this.accountOp!.gasFeePayment!.inToken === '0x0000000000000000000000000000000000000000') {
       // native payment
       this.accountOp!.feeCall = {
         to: feeCollector,
@@ -613,8 +613,11 @@ export class SignAccountOpController extends EventEmitter {
           const response = await this.#callRelayer(
             `/v2/paymaster/${this.accountOp.networkId}/sign`,
             'POST',
-            // send without the isEdgeCase prop
-            { userOperation: (({ isEdgeCase, ...o }) => o)(userOperation) }
+            {
+              // send without the isEdgeCase prop
+              userOperation: (({ isEdgeCase, ...o }) => o)(userOperation),
+              paymaster: AMBIRE_PAYMASTER
+            }
           )
           if (response.success) {
             userOperation.paymasterAndData = response.data.paymasterAndData
