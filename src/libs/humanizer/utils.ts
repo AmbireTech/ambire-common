@@ -147,3 +147,57 @@ export function getWraping(address: string, amount: bigint) {
 export function getUnwraping(address: string, amount: bigint) {
   return [getAction('Unwrap'), getToken(address, amount)]
 }
+
+export async function redefineCallsCheck(
+  from: string,
+  call: any,
+  networkId: string,
+  apiKey: string,
+  options: any
+) {
+  let res = null
+  options
+    .fetch('https://api.redefine.net/v2/risk-analysis/txns', {
+      method: 'POST',
+      headers: {
+        'X-API-Key': apiKey,
+        'content-type': 'application/json'
+      },
+      body: JSON.stringify({
+        payload: {
+          method: 'eth_sendTransaction',
+          params: [
+            {
+              from,
+              to: call.to,
+              value: `0x${call.value.toString(16)}`,
+              data: call.data
+            }
+          ]
+        },
+        chainId: networks.find((n: any) => n.id === networkId)?.chainId.toString()
+      })
+    })
+    .then((response: any) => {
+      // asuming all failing cases return err different from 200
+      if (response.status !== 200) {
+        options.emitError({
+          level: 'silent',
+          message: `Error with redefine's API, status=${response.status}`,
+          error: new Error(`Error with redefine's API, status=${response.status}`)
+        })
+      }
+      return response
+    })
+    .then(async (response: any) => {
+      res = await response.json()
+    })
+    .catch((e: Error) => {
+      options.emitError({
+        level: 'silent',
+        message: `Error with redefine api ${e.message}`,
+        error: e
+      })
+    })
+  return res
+}
