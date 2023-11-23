@@ -27,7 +27,8 @@ const networks: NetworkDescriptor[] = [
       // TODO: temp disabled (only while testing)
       enabled: false,
       entryPointAddr: ERC_4337_ENTRYPOINT,
-      entryPointMarker: ENTRY_POINT_MARKER
+      entryPointMarker: ENTRY_POINT_MARKER,
+      hasPaymaster: true
     },
     unstoppableDomainsChain: 'MATIC'
   },
@@ -43,7 +44,25 @@ const networks: NetworkDescriptor[] = [
     erc4337: {
       enabled: false,
       entryPointAddr: ERC_4337_ENTRYPOINT,
-      entryPointMarker: ENTRY_POINT_MARKER
+      entryPointMarker: ENTRY_POINT_MARKER,
+      hasPaymaster: false
+    },
+    unstoppableDomainsChain: 'ERC20'
+  },
+  {
+    id: 'avalanche',
+    name: 'Avalanche',
+    nativeAssetSymbol: 'AVAX',
+    rpcUrl:
+      'https://api.avax.network/ext/bc/C/rpc',
+    rpcNoStateOverride: false,
+    chainId: 43114n,
+    explorerUrl: 'https://snowtrace.io',
+    erc4337: {
+      enabled: true,
+      entryPointAddr: ERC_4337_ENTRYPOINT,
+      entryPointMarker: ENTRY_POINT_MARKER,
+      hasPaymaster: true
     },
     unstoppableDomainsChain: 'ERC20'
   }
@@ -58,9 +77,4 @@ const networks: NetworkDescriptor[] = [
   // }
 ]
 
-const nativeTokens: { [key: NetworkId]: [string, number] } = {
-  ethereum: ['ETH', 18],
-  polygon: ['MATIC', 18],
-  fanthom: ['FTM', 18]
-}
-export { networks, nativeTokens }
+export { networks }

@@ -4,6 +4,9 @@ import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET } from '../../consts/derivation'
 import { networks } from '../../consts/networks'
 import { Account } from '../../interfaces/account'
+import { Key } from '../../interfaces/keystore'
+import { AccountPreferences, KeyPreferences } from '../../interfaces/settings'
+import { KnownAddressLabels } from '../humanizer/interfaces'
 import { getBytecode } from '../proxyDeploy/bytecode'
 import { getAmbireAccountAddress } from '../proxyDeploy/getAmbireAddressTwo'
 
@@ -60,3 +63,41 @@ export const isSmartAccount = (account: Account) => !!account.creation
  */
 export const isDerivedForSmartAccountKeyOnly = (index: number) =>
   index >= SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
+
+/**
+ * Map account addresses to their respective labels (if they have ones) in order
+ * to display user-friendly labels instead of raw addresses. The addresses
+ * for which there is a label are considered "known addresses".
+ */
+export const getKnownAddressLabels = (
+  accounts: Account[],
+  accountPreferences: AccountPreferences,
+  keys: Key[],
+  keyPreferences: KeyPreferences
+): KnownAddressLabels => {
+  const knownAddressLabels: KnownAddressLabels = {}
+
+  // Check if the address is in the key preferences (lowest priority)
+  keys.forEach((key) => {
+    // Note: not using .findLast, because it's not compatible with TypeScript, blah
+    const filteredKeyPreferences = keyPreferences.filter((x) => x.addr === key.addr && !!x.label)
+    // There could be more than one, since there could be more than one key
+    // with the same address. In that case, the last (probably newest) one wins.
+    const currentKeyPreferences = filteredKeyPreferences[filteredKeyPreferences.length - 1]
+    if (currentKeyPreferences) {
+      knownAddressLabels[key.addr] = currentKeyPreferences.label
+    }
+  })
+
+  // TODO: Check if the address is in the address book (second lowest)
+
+  // Check if address is in the account preferences (highest priority)
+  accounts.forEach((acc) => {
+    const accPref = accountPreferences[acc.addr]
+    if (accPref?.label) {
+      knownAddressLabels[acc.addr] = accPref.label
+    }
+  })
+
+  return knownAddressLabels
+}

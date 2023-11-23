@@ -7,6 +7,8 @@ import { Message } from '../../interfaces/userRequest'
 import { AccountOp, AccountOpStatus } from '../../libs/accountOp/accountOp'
 import EventEmitter from '../eventEmitter'
 import { Banner } from '../../interfaces/banner'
+import { isErc4337Broadcast } from '../../libs/userOperation/userOperation'
+import bundler from '../../services/bundlers'
 
 interface Pagination {
   fromPage: number
@@ -108,11 +110,14 @@ export class ActivityController extends EventEmitter {
 
   isInitialized: boolean = false
 
-  constructor(storage: Storage, accounts: AccountStates) {
+  #relayerUrl: string
+
+  constructor(storage: Storage, accounts: AccountStates, relayerUrl: string) {
     super()
     this.#storage = storage
     this.#accounts = accounts
     this.#initialLoadPromise = this.#load()
+    this.#relayerUrl = relayerUrl
   }
 
   async #load(): Promise<void> {
@@ -258,13 +263,29 @@ export class ActivityController extends EventEmitter {
               if (accountOp.status !== AccountOpStatus.BroadcastedButNotConfirmed) return
 
               shouldEmitUpdate = true
-              const receipt = await provider.getTransactionReceipt(accountOp.txnId)
 
+              const is4337 = isErc4337Broadcast(
+                networkConfig!,
+                this.#accounts[accountOp.accountAddr][accountOp.networkId]
+              )
+              const receipt = is4337
+                ? await bundler.getReceipt(accountOp.txnId, networkConfig!)
+                : await provider.getTransactionReceipt(accountOp.txnId)
               if (receipt) {
                 this.#accountsOps[this.filters!.account][network][accountOpIndex].status =
                   receipt.status ? AccountOpStatus.Success : AccountOpStatus.Failure
-              } else if (
-                this.#accounts[accountOp.accountAddr][accountOp.networkId].nonce > accountOp.nonce
+                return
+              }
+
+              if (
+                (
+                  !is4337 &&
+                  this.#accounts[accountOp.accountAddr][accountOp.networkId].nonce > accountOp.nonce
+                ) ||
+                (
+                  is4337 &&
+                  this.#accounts[accountOp.accountAddr][accountOp.networkId].erc4337Nonce > accountOp.nonce
+                )
               ) {
                 this.#accountsOps[this.filters!.account][network][accountOpIndex].status =
                   AccountOpStatus.UnknownButPastNonce
@@ -382,13 +403,17 @@ export class ActivityController extends EventEmitter {
 
     return Object.values(this.#accountsOps[this.filters.account])
       .flat()
-      .filter((accountOp) => accountOp.status === AccountOpStatus.BroadcastedButNotConfirmed)
+      .filter((accountOp) => (accountOp.status === AccountOpStatus.BroadcastedButNotConfirmed))
   }
 
   get banners(): Banner[] {
     return this.broadcastedButNotConfirmed.map((accountOp) => {
       const network = networks.find((x) => x.id === accountOp.networkId)!
 
+      const is4337 = isErc4337Broadcast(
+        networks.find((x) => x.id === accountOp.networkId)!,
+        this.#accounts[accountOp.accountAddr][accountOp.networkId]
+      )
       return {
         id: new Date().getTime(),
         topic: 'TRANSACTION',
@@ -398,10 +423,18 @@ export class ActivityController extends EventEmitter {
           {
             label: 'Check',
             actionName: 'open-external-url',
-            meta: { url: `${network.explorerUrl}/tx/${accountOp.txnId}` }
+            meta: { url: is4337 ? `${this.#relayerUrl}/userOp/${accountOp.networkId}/${accountOp.txnId}` : `${network.explorerUrl}/tx/${accountOp.txnId}` }
           }
         ]
       } as Banner
     })
+  }
+
+  toJSON() {
+    return {
+      ...this,
+      broadcastedButNotConfirmed: this.broadcastedButNotConfirmed, // includes the getter in the stringified instance
+      banners: this.banners // includes the getter in the stringified instance
+    }
   }
 }

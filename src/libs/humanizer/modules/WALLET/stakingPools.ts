@@ -23,7 +23,7 @@ const STAKING_POOLS: { [key: string]: { [key: string]: string } } = {
 export const StakingPools = (humanizerInfo: any) => {
   const iface = new ethers.Interface(humanizerInfo?.['abis:StakingPool'])
   return {
-    [`${iface.getFunction('enter')?.selector}`]: (accountOp: AccountOp, call: IrCall) => {
+    [iface.getFunction('enter')?.selector!]: (accountOp: AccountOp, call: IrCall) => {
       const { amount } = iface.parseTransaction(call)!.args
       return [
         getAction('Deposit'),
@@ -32,7 +32,7 @@ export const StakingPools = (humanizerInfo: any) => {
         getAddress(call.to)
       ]
     },
-    [`${iface.getFunction('leave')?.selector}`]: (accountOp: AccountOp, call: IrCall) => {
+    [iface.getFunction('leave')?.selector!]: (accountOp: AccountOp, call: IrCall) => {
       const { shares } = iface.parseTransaction(call)!.args
 
       return [
@@ -42,7 +42,7 @@ export const StakingPools = (humanizerInfo: any) => {
         getAddress(call.to)
       ]
     },
-    [`${iface.getFunction('withdraw')?.selector}`]: (accountOp: AccountOp, call: IrCall) => {
+    [iface.getFunction('withdraw')?.selector!]: (accountOp: AccountOp, call: IrCall) => {
       const { shares } = iface.parseTransaction(call)!.args
       return [
         getAction('Withdraw'),
@@ -52,7 +52,7 @@ export const StakingPools = (humanizerInfo: any) => {
       ]
     },
 
-    [`${iface.getFunction('rageLeave')?.selector}`]: (accountOp: AccountOp, call: IrCall) => {
+    [iface.getFunction('rageLeave')?.selector!]: (accountOp: AccountOp, call: IrCall) => {
       const { shares } = iface.parseTransaction(call)!.args
       return [
         getAction('Rage leave'),

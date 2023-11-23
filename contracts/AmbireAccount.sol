@@ -245,7 +245,8 @@ contract AmbireAccount {
 	 * @return  bytes4  is it a success or a failure
 	 */
 	function isValidSignature(bytes32 hash, bytes calldata signature) external view returns (bytes4) {
-		if (privileges[SignatureValidator.recoverAddr(hash, signature)] != bytes32(0)) {
+		(address recovered, bool usedUnprotected) = SignatureValidator.recoverAddrAllowUnprotected(hash, signature, false);
+		if (uint256(privileges[recovered]) > (usedUnprotected ? 1 : 0)) {
 			// bytes4(keccak256("isValidSignature(bytes32,bytes)")
 			return 0x1626ba7e;
 		} else {
@@ -320,7 +321,7 @@ contract AmbireAccount {
 		require(privileges[msg.sender] == ENTRY_POINT_MARKER, 'validateUserOp: not from entryPoint');
 
 		// this is replay-safe because userOpHash is retrieved like this: keccak256(abi.encode(userOp.hash(), address(this), block.chainid))
-		address signer = SignatureValidator.recoverAddr(userOpHash, op.signature);
+		address signer = SignatureValidator.recoverAddrImpl(userOpHash, op.signature, true);
 		if (privileges[signer] == bytes32(0)) return SIG_VALIDATION_FAILED;
 
 		// NOTE: we do not have to pay the entryPoint if SIG_VALIDATION_FAILED, so we just return on those

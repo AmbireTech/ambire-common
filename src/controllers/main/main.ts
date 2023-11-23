@@ -27,6 +27,8 @@ import { estimate, EstimateResult } from '../../libs/estimate/estimate'
 import { GasRecommendation, getGasPriceRecommendations } from '../../libs/gasPrice/gasPrice'
 import { shouldGetAdditionalPortfolio } from '../../libs/portfolio/helpers'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
+import { isErc4337Broadcast, toUserOperation } from '../../libs/userOperation/userOperation'
+import bundler from '../../services/bundlers'
 import generateSpoofSig from '../../utils/generateSpoofSig'
 import wait from '../../utils/wait'
 import { AccountAdderController } from '../accountAdder/accountAdder'
@@ -110,6 +112,8 @@ export class MainController extends EventEmitter {
 
   broadcastStatus: 'INITIAL' | 'LOADING' | 'DONE' = 'INITIAL'
 
+  #relayerUrl: string
+
   onResolveDappRequest: (data: any, id?: number) => void
 
   onRejectDappRequest: (err: any, id?: number) => void
@@ -160,6 +164,7 @@ export class MainController extends EventEmitter {
     })
     this.transfer = new TransferController()
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch: this.#fetch })
+    this.#relayerUrl = relayerUrl
     this.onResolveDappRequest = onResolveDappRequest
     this.onRejectDappRequest = onRejectDappRequest
     this.onUpdateDappSelectedAccount = onUpdateDappSelectedAccount
@@ -183,6 +188,7 @@ export class MainController extends EventEmitter {
     this.accountStates = await this.#getAccountsInfo(this.accounts)
     this.signMessage = new SignMessageController(
       this.keystore,
+      this.settings,
       this.#providers,
       this.#storage,
       this.#fetch
@@ -235,12 +241,15 @@ export class MainController extends EventEmitter {
     this.signAccountOp = new SignAccountOpController(
       this.keystore,
       this.portfolio,
+      this.settings,
       account,
+      this.accountStates,
       network,
       accountOpToBeSigned,
       this.#storage,
       this.#fetch,
-      this.#providers
+      this.#providers,
+      this.#callRelayer
     )
 
     this.emitUpdate()
@@ -547,6 +556,20 @@ export class MainController extends EventEmitter {
     const network = this.settings.networks.find((x) => x.id === accountOp.networkId)
     if (!network)
       throw new Error(`estimateAccountOp: ${accountOp.networkId}: network does not exist`)
+
+    // start transforming the accountOp to userOp if the network is 4337
+    // and it's not a legacy account
+    const is4337Broadcast = isErc4337Broadcast(
+      network,
+      this.accountStates[accountOp.accountAddr][accountOp.networkId]
+    )
+    if (is4337Broadcast) {
+      accountOp = toUserOperation(
+        account,
+        this.accountStates[accountOp.accountAddr][accountOp.networkId],
+        accountOp
+      )
+    }
     const [, , estimation] = await Promise.all([
       // NOTE: we are not emitting an update here because the portfolio controller will do that
       // NOTE: the portfolio controller has it's own logic of constructing/caching providers, this is intentional, as
@@ -570,11 +593,23 @@ export class MainController extends EventEmitter {
         accountOp,
         EOAaccounts.map((acc) => acc.addr),
         // @TODO - first time calling this, portfolio is still not loaded.
-        feeTokens
+        feeTokens,
+        { is4337Broadcast }
       )
     ])
     // @TODO compare intent between accountOp and this.accountOpsToBeSigned[accountOp.accountAddr][accountOp.networkId].accountOp
     this.accountOpsToBeSigned[accountOp.accountAddr][accountOp.networkId]!.estimation = estimation
+
+    // add the estimation to the user operation
+    if (is4337Broadcast) {
+      accountOp.asUserOperation!.verificationGasLimit = ethers.toBeHex(
+        estimation.erc4337estimation!.verificationGasLimit
+      )
+      accountOp.asUserOperation!.callGasLimit = ethers.toBeHex(
+        estimation.erc4337estimation!.callGasLimit
+      )
+      this.accountOpsToBeSigned[accountOp.accountAddr][accountOp.networkId]!.accountOp = accountOp
+    }
   }
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars, class-methods-use-this
@@ -588,6 +623,7 @@ export class MainController extends EventEmitter {
 
     const provider: JsonRpcProvider = this.#providers[accountOp.networkId]
     const account = this.accounts.find((acc) => acc.addr === accountOp.accountAddr)
+    const network = this.settings.networks.find((n) => n.id === accountOp.networkId)
 
     if (!provider) {
       return this.#throwAccountOpBroadcastError(
@@ -653,7 +689,6 @@ export class MainController extends EventEmitter {
         accountOp.gasFeePayment!.paidBy,
         broadcastKey!.type
       )
-      const network = this.settings.networks.find((n) => n.id === accountOp.networkId)
 
       if (!network) {
         return this.#throwAccountOpBroadcastError(
@@ -668,7 +703,7 @@ export class MainController extends EventEmitter {
         nonce: await provider.getTransactionCount(accountOp.gasFeePayment!.paidBy),
         // TODO: fix simulatedGasLimit as multiplying by 2 is just
         // a quick fix
-        gasLimit: accountOp.gasFeePayment.simulatedGasLimit * 2n,
+        gasLimit: accountOp.gasFeePayment.simulatedGasLimit,
         gasPrice:
           (accountOp.gasFeePayment.amount - estimation!.addedNative) /
           accountOp.gasFeePayment.simulatedGasLimit
@@ -679,9 +714,28 @@ export class MainController extends EventEmitter {
       } catch (error: any) {
         this.#throwAccountOpBroadcastError(new Error(error), error.message || undefined)
       }
-    }
-    // TO DO: ERC-4337 broadcast
-    else if (accountOp.gasFeePayment && accountOp.gasFeePayment.isERC4337) {
+    } else if (accountOp.gasFeePayment && accountOp.gasFeePayment.isERC4337) {
+      const userOperation = accountOp.asUserOperation
+      if (!userOperation) {
+        this.#throwAccountOpBroadcastError(
+          new Error(
+            `Trying to broadcast an ERC-4337 request but userOperation is not set for ${accountOp.accountAddr}`
+          )
+        )
+      }
+
+      // broadcast through bundler's service
+      const userOperationHash = await bundler.broadcast(userOperation!, network!)
+      if (!userOperationHash) {
+        this.#throwAccountOpBroadcastError(new Error('was not able to broadcast'))
+      }
+      // broadcast the userOperationHash
+      // TODO: maybe a type property should exist to diff when we're
+      // returning a tx id and when an user op hash
+      transactionRes = {
+        hash: userOperationHash,
+        nonce: Number(userOperation!.nonce)
+      }
     }
     // Relayer broadcast
     else {

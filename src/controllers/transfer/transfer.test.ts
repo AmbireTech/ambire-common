@@ -1,8 +1,9 @@
-import { formatUnits, JsonRpcProvider } from 'ethers'
+import { JsonRpcProvider } from 'ethers'
 import fetch from 'node-fetch'
 
 import { expect } from '@jest/globals'
-import humanizerInfo from '../../consts/ambireConstantsHumanizerInfo.json'
+
+import { humanizerInfo } from '../../consts/ambireConstants.json'
 import { networks } from '../../consts/networks'
 import { Portfolio } from '../../libs/portfolio'
 import { initRpcProviders } from '../../services/provider'
@@ -30,12 +31,39 @@ const ethPortfolio = new Portfolio(fetch, provider, ethereum)
 const polygonPortfolio = new Portfolio(fetch, polygonProvider, polygon)
 
 let transferController: TransferController
+let errorCount = 0
+
+const getTokens = async () => {
+  const ethAccPortfolio = await ethPortfolio.get(PLACEHOLDER_SELECTED_ACCOUNT)
+  const polygonAccPortfolio = await polygonPortfolio.get(PLACEHOLDER_SELECTED_ACCOUNT)
+
+  return [...ethAccPortfolio.tokens, ...polygonAccPortfolio.tokens]
+}
 
 describe('Transfer Controller', () => {
+  test('should emit not initialized error', () => {
+    transferController = new TransferController()
+
+    transferController.onRecipientAddressChange()
+    errorCount++
+    transferController.buildUserRequest()
+    errorCount++
+
+    expect(transferController.getErrors().length).toBe(errorCount)
+  })
+  test("shouldn't build userRequest when tokens.length === 0", () => {
+    transferController.update({
+      selectedAccount: PLACEHOLDER_SELECTED_ACCOUNT,
+      tokens: [],
+      humanizerInfo: humanizerInfo as any
+    })
+
+    transferController.buildUserRequest()
+
+    expect(transferController.userRequest).toBe(null)
+  })
   test('should initialize', async () => {
-    const ethAccPortfolio = await ethPortfolio.get(PLACEHOLDER_SELECTED_ACCOUNT)
-    const polygonAccPortfolio = await polygonPortfolio.get(PLACEHOLDER_SELECTED_ACCOUNT)
-    const tokens = [...ethAccPortfolio.tokens, ...polygonAccPortfolio.tokens]
+    const tokens = await getTokens()
     transferController = new TransferController()
     await transferController.update({
       selectedAccount: PLACEHOLDER_SELECTED_ACCOUNT,
@@ -65,7 +93,7 @@ describe('Transfer Controller', () => {
     transferController.update({
       recipientAddress: '0x7a250d5630b4cf539739df2c5dacb4c659f2488d'
     })
-    transferController.onRecipientAddressChange()
+    await transferController.onRecipientAddressChange()
     expect(transferController.isRecipientSmartContract).toBe(true)
   })
   test('should resolve UnstoppableDomains', async () => {
@@ -78,35 +106,47 @@ describe('Transfer Controller', () => {
       PLACEHOLDER_RECIPIENT_LOWERCASE
     )
   })
-  test('should show SW warning', async () => {
-    await transferController.handleTokenChange(`0x${'0'.repeat(40)}-polygon`)
+  test('should reset recipientUDAddress and recipientEnsAddress when recipientAddress is set to a normal address', () => {
+    transferController.update({
+      recipientAddress: PLACEHOLDER_RECIPIENT
+    })
+    transferController.onRecipientAddressChange()
 
+    expect(transferController.recipientUDAddress).toBe('')
+    expect(transferController.recipientEnsAddress).toBe('')
+  })
+  test('should show SW warning', async () => {
+    const tokens = await getTokens()
+    const maticOnPolygon = tokens.find(
+      (t) => t.address === '0x0000000000000000000000000000000000000000' && t.networkId === 'polygon'
+    )
+
+    transferController.update({ selectedToken: maticOnPolygon })
     expect(transferController.isSWWarningVisible).toBe(true)
   })
-  test('should change selected token', () => {
-    transferController.handleTokenChange(`${XWALLET_ADDRESS}-ethereum`)
+  test('should change selected token', async () => {
+    const tokens = await getTokens()
+    const xwalletOnEthereum = tokens.find(
+      (t) => t.address === XWALLET_ADDRESS && t.networkId === 'ethereum'
+    )
+    transferController.update({ selectedToken: xwalletOnEthereum })
+
     expect(transferController.selectedToken?.address).toBe(XWALLET_ADDRESS)
     expect(transferController.selectedToken?.networkId).toBe('ethereum')
   })
+
   test('should set amount', () => {
     transferController.update({
       amount: '1'
     })
     expect(transferController.amount).toBe('1')
   })
-  test('should set max amount', async () => {
-    const selectedTokenMaxAmount = formatUnits(
-      transferController.selectedToken?.amount || 0n,
-      Number(transferController.selectedToken?.decimals)
-    )
-
+  test('should set sw warning agreed', () => {
     transferController.update({
-      setMaxAmount: true
+      isSWWarningAgreed: true
     })
-
-    expect(transferController.maxAmount).toBe(selectedTokenMaxAmount)
+    expect(transferController.isSWWarningAgreed).toBe(true)
   })
-  // @TODO: Validation tests
   test('should set validation form messages', async () => {
     expect(transferController.validationFormMsgs.amount.success).toBe(true)
     expect(transferController.validationFormMsgs.recipientAddress.success).toBe(false)
@@ -124,7 +164,7 @@ describe('Transfer Controller', () => {
     expect(transferController.validationFormMsgs.amount.success).toBe(false)
 
     transferController.update({
-      setMaxAmount: true
+      amount: transferController.maxAmount
     })
     transferController.update({
       amount: String(Number(transferController.amount) + 1)
@@ -134,7 +174,7 @@ describe('Transfer Controller', () => {
 
     // Reset
     transferController.update({
-      setMaxAmount: true
+      amount: transferController.maxAmount
     })
   })
   test('should build user request with non-native token transfer', async () => {
@@ -152,7 +192,13 @@ describe('Transfer Controller', () => {
     expect(transferController.userRequest?.action.value).toBe(0n)
   })
   test('should build user request with native token transfer', async () => {
-    transferController.handleTokenChange(`0x${'0'.repeat(40)}-ethereum`)
+    const tokens = await getTokens()
+    const nativeToken = tokens.find(
+      (t) =>
+        t.address === '0x0000000000000000000000000000000000000000' && t.networkId === 'ethereum'
+    )
+
+    transferController.update({ selectedToken: nativeToken })
     transferController.update({
       amount: '1'
     })
@@ -168,5 +214,39 @@ describe('Transfer Controller', () => {
       PLACEHOLDER_RECIPIENT_LOWERCASE
     )
     expect(transferController.userRequest?.action.value).toBe(1000000000000000000n)
+  })
+
+  const checkResetForm = () => {
+    expect(transferController.amount).toBe('')
+    expect(transferController.maxAmount).toBe('0')
+    expect(transferController.recipientAddress).toBe('')
+    expect(transferController.recipientEnsAddress).toBe('')
+    expect(transferController.recipientUDAddress).toBe('')
+    expect(transferController.selectedToken).toBe(null)
+    expect(transferController.isRecipientAddressUnknown).toBe(false)
+    expect(transferController.isRecipientDomainResolving).toBe(false)
+    expect(transferController.userRequest).toBe(null)
+    expect(transferController.isRecipientAddressUnknownAgreed).toBe(false)
+    expect(transferController.isRecipientSmartContract).toBe(false)
+    expect(transferController.isSWWarningVisible).toBe(false)
+    expect(transferController.isSWWarningAgreed).toBe(false)
+  }
+
+  test('should reset form', () => {
+    transferController.resetForm()
+
+    checkResetForm()
+  })
+
+  test('should reset all state', () => {
+    transferController.reset()
+
+    checkResetForm()
+    expect(transferController.tokens.length).toBe(0)
+  })
+
+  test('should toJSON()', () => {
+    const json = transferController.toJSON()
+    expect(json).toBeDefined()
   })
 })

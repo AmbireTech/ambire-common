@@ -19,13 +19,26 @@ describe('Activity Controller ', () => {
         isEOA: false,
         deployError: false
       }
+    },
+    '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5': {
+      ethereum: {
+        accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
+        nonce: 225n,
+        isDeployed: true,
+        associatedKeys: ['0xd6e371526cdaeE04cd8AF225D42e37Bc14688D9E'],
+        isV2: true,
+        scheduledRecoveries: [],
+        balance: 0n,
+        isEOA: false,
+        deployError: false
+      }
     }
   } as unknown as AccountStates
 
   describe('AccountsOps', () => {
     test('Retrieved from Controller and persisted in Storage', async () => {
       const storage = produceMemoryStore()
-      const controller = new ActivityController(storage, accounts)
+      const controller = new ActivityController(storage, accounts, '')
 
       controller.init({
         filters: {
@@ -70,7 +83,7 @@ describe('Activity Controller ', () => {
 
     test('Pagination and filtration handled correctly', async () => {
       const storage = produceMemoryStore()
-      const controller = new ActivityController(storage, accounts)
+      const controller = new ActivityController(storage, accounts, '')
 
       controller.init({
         filters: {
@@ -198,7 +211,7 @@ describe('Activity Controller ', () => {
 
     test('`success` status is set correctly', async () => {
       const storage = produceMemoryStore()
-      const controller = new ActivityController(storage, accounts)
+      const controller = new ActivityController(storage, accounts, '')
 
       controller.init({
         filters: {
@@ -241,7 +254,7 @@ describe('Activity Controller ', () => {
 
     test('`failed` status is set correctly', async () => {
       const storage = produceMemoryStore()
-      const controller = new ActivityController(storage, accounts)
+      const controller = new ActivityController(storage, accounts, '')
 
       controller.init({
         filters: {
@@ -284,7 +297,7 @@ describe('Activity Controller ', () => {
 
     test('`Unknown but past nonce` status is set correctly', async () => {
       const storage = produceMemoryStore()
-      const controller = new ActivityController(storage, accounts)
+      const controller = new ActivityController(storage, accounts, '')
 
       controller.init({
         filters: {
@@ -327,7 +340,7 @@ describe('Activity Controller ', () => {
 
     test('Keeps no more than 1000 items', async () => {
       const storage = produceMemoryStore()
-      const controller = new ActivityController(storage, accounts)
+      const controller = new ActivityController(storage, accounts, '')
 
       controller.init({
         filters: {
@@ -378,7 +391,7 @@ describe('Activity Controller ', () => {
   describe('SignedMessages', () => {
     test('Retrieved from Controller and persisted in Storage', async () => {
       const storage = produceMemoryStore()
-      const controller = new ActivityController(storage, accounts)
+      const controller = new ActivityController(storage, accounts, '')
 
       controller.init({
         filters: {
@@ -415,7 +428,7 @@ describe('Activity Controller ', () => {
 
     test('Pagination and filtration handled correctly', async () => {
       const storage = produceMemoryStore()
-      const controller = new ActivityController(storage, accounts)
+      const controller = new ActivityController(storage, accounts, '')
 
       controller.init({
         filters: {
@@ -458,7 +471,7 @@ describe('Activity Controller ', () => {
 
     test('Keeps no more than 1000 items', async () => {
       const storage = produceMemoryStore()
-      const controller = new ActivityController(storage, accounts)
+      const controller = new ActivityController(storage, accounts, '')
 
       controller.init({
         filters: {
