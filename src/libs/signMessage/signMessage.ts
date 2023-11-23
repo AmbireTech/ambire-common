@@ -19,7 +19,7 @@ import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
  * for ambire to recognize it
  */
 export const wrapEIP712 = (signature: string) => {
-  return signature + '00'
+  return `${signature}00`
 }
 
 /**
@@ -27,7 +27,7 @@ export const wrapEIP712 = (signature: string) => {
  * for ambire to recognize it
  */
 export const wrapEthSign = (signature: string) => {
-  return signature + '01'
+  return `${signature}01`
 }
 
 /**
