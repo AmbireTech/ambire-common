@@ -25,10 +25,19 @@ export interface SubmittedAccountOp extends AccountOp {
   txnId: string
   nonce: bigint
   success?: boolean
+  timestamp: number
+}
+
+export interface SignedMessage extends Message {
+  dapp: {
+    name: string
+    icon: string
+  } | null
+  timestamp: number
 }
 
 interface AccountsOps extends PaginationResult<SubmittedAccountOp> {}
-interface MessagesToBeSigned extends PaginationResult<Message> {}
+interface MessagesToBeSigned extends PaginationResult<SignedMessage> {}
 
 export interface Filters {
   account: string
@@ -42,7 +51,7 @@ interface InternalAccountsOps {
 
 interface InternalSignedMessages {
   // account => Message[]
-  [key: string]: Message[]
+  [key: string]: SignedMessage[]
 }
 
 // We are limiting items array to include no more than 1000 records,
@@ -318,7 +327,7 @@ export class ActivityController extends EventEmitter {
     return shouldEmitUpdate
   }
 
-  async addSignedMessage(signedMessage: Message, account: string) {
+  async addSignedMessage(signedMessage: SignedMessage, account: string) {
     if (!this.isInitialized) {
       this.#throwNotInitialized()
       return

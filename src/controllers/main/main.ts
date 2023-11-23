@@ -9,7 +9,7 @@ import { Banner } from '../../interfaces/banner'
 import { Key, KeystoreSignerType } from '../../interfaces/keystore'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
 import { Storage } from '../../interfaces/storage'
-import { Message, SignedMessage, UserRequest } from '../../interfaces/userRequest'
+import { Message, UserRequest } from '../../interfaces/userRequest'
 import {
   AccountOp,
   AccountOpStatus,
@@ -32,7 +32,7 @@ import bundler from '../../services/bundlers'
 import generateSpoofSig from '../../utils/generateSpoofSig'
 import wait from '../../utils/wait'
 import { AccountAdderController } from '../accountAdder/accountAdder'
-import { ActivityController } from '../activity/activity'
+import { ActivityController, SignedMessage, SubmittedAccountOp } from '../activity/activity'
 import { EmailVaultController } from '../emailVault'
 import EventEmitter from '../eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
@@ -727,8 +727,9 @@ export class MainController extends EventEmitter {
         ...accountOp,
         status: AccountOpStatus.BroadcastedButNotConfirmed,
         txnId: transactionRes.hash,
-        nonce: BigInt(transactionRes.nonce)
-      })
+        nonce: BigInt(transactionRes.nonce),
+        timestamp: new Date().getTime()
+      } as SubmittedAccountOp)
       accountOp.calls.forEach((call) => {
         if (call.fromUserRequestId) {
           this.removeUserRequest(call.fromUserRequestId)

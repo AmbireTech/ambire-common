@@ -37,14 +37,6 @@ export interface Message {
   networkId?: NetworkId
 }
 
-export interface SignedMessage extends Message {
-  dapp: {
-    name: string
-    icon: string
-  } | null
-  timestamp: number
-}
-
 export interface UserRequest {
   // Unlike the AccountOp, which we compare by content,
   // we need a distinct identifier here that's set by whoever is posting the request
