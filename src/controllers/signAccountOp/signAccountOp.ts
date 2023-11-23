@@ -89,6 +89,8 @@ export class SignAccountOpController extends EventEmitter {
 
   #account: Account
 
+  #accounts: Account[]
+
   #accountStates: AccountStates
 
   #network: NetworkDescriptor
@@ -116,6 +118,7 @@ export class SignAccountOpController extends EventEmitter {
     portfolio: PortfolioController,
     settings: SettingsController,
     account: Account,
+    accounts: Account[],
     accountStates: AccountStates,
     network: NetworkDescriptor,
     accountOp: AccountOp,
@@ -129,6 +132,7 @@ export class SignAccountOpController extends EventEmitter {
     this.#portfolio = portfolio
     this.#settings = settings
     this.#account = account
+    this.#accounts = accounts
     this.#accountStates = accountStates
     this.#network = network
     this.accountOp = accountOp

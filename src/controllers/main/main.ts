@@ -243,6 +243,7 @@ export class MainController extends EventEmitter {
       this.portfolio,
       this.settings,
       account,
+      this.accounts,
       this.accountStates,
       network,
       accountOpToBeSigned,
