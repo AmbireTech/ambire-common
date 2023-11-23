@@ -193,7 +193,7 @@ export class MainController extends EventEmitter {
       this.#storage,
       this.#fetch
     )
-    this.activity = new ActivityController(this.#storage, this.accountStates, '')
+    this.activity = new ActivityController(this.#storage, this.accountStates, this.#relayerUrl)
     if (this.selectedAccount) {
       this.activity.init({ filters: { account: this.selectedAccount } })
     }
