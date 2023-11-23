@@ -351,6 +351,7 @@ export class SignAccountOpController extends EventEmitter {
     simulatedGasLimit: bigint
     amountFormatted: string
     amountUsd: string
+    maxPriorityFeePerGas?: bigint
   }[] {
     if (!this.isInitialized || !this.#gasPrices || !this.paidBy || !this.selectedTokenAddr)
       return []
@@ -423,7 +424,7 @@ export class SignAccountOpController extends EventEmitter {
         )
       }
 
-      return {
+      const fee: any = {
         type: gasRecommendation.name,
         simulatedGasLimit,
         amount,
@@ -431,6 +432,12 @@ export class SignAccountOpController extends EventEmitter {
         amountFormatted: ethers.formatUnits(amount, Number(feeToken?.decimals)),
         amountUsd: getTokenUsdAmount(feeToken!, amount)
       }
+
+      if ('maxPriorityFeePerGas' in gasRecommendation) {
+        fee.maxPriorityFeePerGas = gasRecommendation.maxPriorityFeePerGas
+      }
+
+      return fee
     })
   }
 
@@ -441,21 +448,25 @@ export class SignAccountOpController extends EventEmitter {
     if (!this.paidBy) throw new Error('signAccountOp: paying account not selected')
 
     const feeToken = this.#getPortfolioToken(this.selectedTokenAddr)
-    const { amount, simulatedGasLimit } = this.feeSpeeds.find(
-      (speed) => speed.type === this.selectedFeeSpeed
-    )!
+    const chosenSpeed = this.feeSpeeds.find((speed) => speed.type === this.selectedFeeSpeed)!
 
     const accountState =
       this.#accountStates![this.accountOp!.accountAddr][this.accountOp!.networkId]
     const network = this.#networks?.find((n) => n.id === this.accountOp?.networkId)
-    return {
+    const gasFeePayment: GasFeePayment = {
       paidBy: this.paidBy,
       isERC4337: isErc4337Broadcast(network!, accountState),
       isGasTank: feeToken?.networkId === 'gasTank',
       inToken: feeToken!.address,
-      amount,
-      simulatedGasLimit
+      amount: chosenSpeed.amount,
+      simulatedGasLimit: chosenSpeed.simulatedGasLimit
     }
+
+    if (chosenSpeed.maxPriorityFeePerGas) {
+      gasFeePayment.maxPriorityFeePerGas = chosenSpeed.maxPriorityFeePerGas
+    }
+
+    return gasFeePayment
   }
 
   get feeToken(): string | null {
@@ -587,7 +598,7 @@ export class SignAccountOpController extends EventEmitter {
         const gasPrice =
           (gasFeePayment.amount - this.#estimation!.addedNative) / gasFeePayment.simulatedGasLimit
         userOperation.maxFeePerGas = ethers.toBeHex(gasPrice)
-        userOperation.maxPriorityFeePerGas = ethers.toBeHex(gasPrice)
+        userOperation.maxPriorityFeePerGas = ethers.toBeHex(gasFeePayment.maxPriorityFeePerGas!)
 
         if (userOperation?.isEdgeCase || !isNative(this.accountOp.gasFeePayment)) {
           this.#addFeePayment()

@@ -29,6 +29,7 @@ export interface GasFeePayment {
   inToken: string
   amount: bigint
   simulatedGasLimit: bigint
+  maxPriorityFeePerGas?: bigint
 }
 
 export enum AccountOpStatus {

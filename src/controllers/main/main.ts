@@ -657,8 +657,6 @@ export class MainController extends EventEmitter {
         data,
         chainId: network.chainId,
         nonce: await provider.getTransactionCount(accountOp.gasFeePayment!.paidBy),
-        // TODO: fix simulatedGasLimit as multiplying by 2 is just
-        // a quick fix
         gasLimit: accountOp.gasFeePayment.simulatedGasLimit,
         gasPrice:
           (accountOp.gasFeePayment.amount - estimation!.addedNative) /
