@@ -11,9 +11,9 @@ import { messageHumanizer } from '../../libs/humanizer'
 import { IrMessage } from '../../libs/humanizer/interfaces'
 import {
   verifyMessage,
+  wrapCounterfactualSign,
   wrapEIP712,
-  wrapEthSign,
-  wrapSignature
+  wrapEthSign
 } from '../../libs/signMessage/signMessage'
 import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
 import EventEmitter from '../eventEmitter'
@@ -222,8 +222,8 @@ export class SignMessageController extends EventEmitter {
 
       // https://eips.ethereum.org/EIPS/eip-6492
       const accountState = this.#accountStates![account.addr][network!.id]
-      if (!accountState.isDeployed) {
-        signature = wrapSignature(signature, account.creation!)
+      if (account.creation && !accountState.isDeployed) {
+        signature = wrapCounterfactualSign(signature, account.creation!)
       }
 
       const personalMsgToValidate =
