@@ -31,9 +31,13 @@ jobs:
     - name: Install NPM packages ♾️🕳️
       run: npm ci
 
-    - name: Run tests 🧑‍🔬
+    - name: Hardhat Tests 🧑‍🔬
       env:
         COINGECKO_PRO_API_KEY: ${{ secrets.COINGECKO_PRO_API_KEY }}
-      run: npm run test
-
+      run: npm run hardhat
+    
+    - name: JEST Tests 🧑‍🔬
+      env:
+        COINGECKO_PRO_API_KEY: ${{ secrets.COINGECKO_PRO_API_KEY }}
+      run: npm run jest
 
