@@ -74,7 +74,9 @@ export class MainController extends EventEmitter {
 
   signMessage!: SignMessageController
 
-  signAccountOp!: SignAccountOpController
+  signAccountOp: SignAccountOpController | null = null
+
+  signAccOpInitError: string | null = null
 
   activity!: ActivityController
 
@@ -191,16 +193,7 @@ export class MainController extends EventEmitter {
       this.#storage,
       this.#fetch
     )
-    this.signAccountOp = new SignAccountOpController(
-      this.keystore,
-      this.portfolio,
-      this.settings,
-      this.#storage,
-      this.#fetch,
-      this.#providers,
-      this.#callRelayer
-    )
-    this.activity = new ActivityController(this.#storage, this.accountStates, this.#relayerUrl)
+    this.activity = new ActivityController(this.#storage, this.accountStates, '')
     if (this.selectedAccount) {
       this.activity.init({ filters: { account: this.selectedAccount } })
     }
@@ -217,6 +210,56 @@ export class MainController extends EventEmitter {
     this.accountAdder.onUpdate(addReadyToAddAccountsIfNeeded)
 
     this.isReady = true
+    this.emitUpdate()
+  }
+
+  initSignAccOp(accountAddr: string, networkId: string): null | void {
+    const accountOpToBeSigned = this.accountOpsToBeSigned?.[accountAddr]?.[networkId]?.accountOp
+    const account = this.accounts?.find((acc) => acc.addr === accountAddr)
+    const network = networks.find((net) => net.id === networkId)
+
+    if (!account) {
+      this.signAccOpInitError =
+        'We cannot initiate the signing process as we are unable to locate the specified account.'
+      return null
+    }
+
+    if (!network) {
+      this.signAccOpInitError =
+        'We cannot initiate the signing process as we are unable to locate the specified network.'
+      return null
+    }
+
+    if (!accountOpToBeSigned) {
+      this.signAccOpInitError =
+        'We cannot initiate the signing process because no transaction has been found for the specified account and network.'
+      return null
+    }
+
+    this.signAccOpInitError = null
+
+    this.signAccountOp = new SignAccountOpController(
+      this.keystore,
+      this.portfolio,
+      this.settings,
+      account,
+      this.accounts,
+      this.accountStates,
+      network,
+      accountOpToBeSigned,
+      this.#storage,
+      this.#fetch,
+      this.#providers,
+      this.#callRelayer
+    )
+
+    this.emitUpdate()
+
+    this.reestimateAndUpdatePrices(accountAddr, networkId)
+  }
+
+  destroySignAccOp() {
+    this.signAccountOp = null
     this.emitUpdate()
   }
 
@@ -464,6 +507,8 @@ export class MainController extends EventEmitter {
    * Otherwise, if either of the variables has not been recently updated, it may lead to an incorrect gas amount result.
    */
   async reestimateAndUpdatePrices(accountAddr: AccountId, networkId: NetworkId) {
+    if (!this.signAccountOp) return
+
     await Promise.all([
       this.#updateGasPrice(),
       async () => {
@@ -797,7 +842,7 @@ export class MainController extends EventEmitter {
     })
     // To enable another try for signing in case of broadcast fail
     // broadcast is called in the FE only after successful signing
-    this.signAccountOp.updateStatusToReadyToSign()
+    this.signAccountOp?.updateStatusToReadyToSign()
     this.broadcastStatus = 'INITIAL'
     this.emitUpdate()
   }
