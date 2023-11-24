@@ -6,7 +6,7 @@ import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFacto
 import { networks } from '../../consts/networks'
 import { Account, AccountId, AccountStates } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
-import { Key, KeystoreSignerType } from '../../interfaces/keystore'
+import { Key, KeystoreSignerType, TxnRequest } from '../../interfaces/keystore'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
 import { Storage } from '../../interfaces/storage'
 import { Message, UserRequest } from '../../interfaces/userRequest'
@@ -645,8 +645,46 @@ export class MainController extends EventEmitter {
 
     // EOA account
     if (!account.creation) {
+      const estimation =
+        this.accountOpsToBeSigned[accountOp.accountAddr][accountOp.networkId]!.estimation
+      if (!estimation) {
+        return this.#throwAccountOpBroadcastError(
+          new Error(`Estimation not done for account with address: ${accountOp.accountAddr}`)
+        )
+      }
+
       try {
-        transactionRes = await provider.broadcastTransaction(accountOp.signature)
+        const gasFeePayment = accountOp.gasFeePayment!
+        const { to, value, data } = accountOp.calls[0]
+        const gasPrice =
+          (gasFeePayment.amount - estimation!.addedNative) / gasFeePayment.simulatedGasLimit
+        const rawTxn: TxnRequest = {
+          to,
+          value,
+          data,
+          chainId: network!.chainId,
+          nonce: await provider.getTransactionCount(accountOp.accountAddr),
+          gasLimit: gasFeePayment.simulatedGasLimit
+        }
+
+        // if it's eip1559, send it as such. If no, go to legacy
+        if (gasFeePayment.maxPriorityFeePerGas) {
+          rawTxn.maxFeePerGas = gasPrice
+          rawTxn.maxPriorityFeePerGas = gasFeePayment.maxPriorityFeePerGas
+        } else {
+          rawTxn.gasPrice = gasPrice
+        }
+
+        const broadcastKey = this.keystore.keys.find(
+          (key) => key.addr === accountOp.gasFeePayment!.paidBy
+        )
+        const signer = await this.keystore.getSigner(
+          accountOp.gasFeePayment!.paidBy,
+          broadcastKey!.type
+        )
+        transactionRes = await provider.broadcastTransaction(
+          await signer.signRawTransaction(rawTxn)
+        )
       } catch (error: any) {
         return this.#throwAccountOpBroadcastError(new Error(error), error.message || undefined)
       }
@@ -700,16 +738,26 @@ export class MainController extends EventEmitter {
         )
       }
 
-      const signedTxn = await signer.signRawTransaction({
+      const gasPrice =
+        (accountOp.gasFeePayment.amount - estimation!.addedNative) /
+        accountOp.gasFeePayment.simulatedGasLimit
+      const rawTxn: TxnRequest = {
         to,
         data,
         chainId: network.chainId,
         nonce: await provider.getTransactionCount(accountOp.gasFeePayment!.paidBy),
-        gasLimit: accountOp.gasFeePayment.simulatedGasLimit,
-        gasPrice:
-          (accountOp.gasFeePayment.amount - estimation!.addedNative) /
-          accountOp.gasFeePayment.simulatedGasLimit
-      })
+        gasLimit: accountOp.gasFeePayment.simulatedGasLimit
+      }
+
+      // if it's eip1559, send it as such. If no, go to legacy
+      if (accountOp.gasFeePayment.maxPriorityFeePerGas) {
+        rawTxn.maxFeePerGas = gasPrice
+        rawTxn.maxPriorityFeePerGas = accountOp.gasFeePayment.maxPriorityFeePerGas
+      } else {
+        rawTxn.gasPrice = gasPrice
+      }
+
+      const signedTxn = await signer.signRawTransaction(rawTxn)
 
       try {
         transactionRes = await provider.broadcastTransaction(signedTxn)

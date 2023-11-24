@@ -590,7 +590,6 @@ export class SignAccountOpController extends EventEmitter {
 
     if (signer.init) signer.init(externalSignerController)
     const provider = this.#providers[this.accountOp.networkId]
-    const nonce = await provider.getTransactionCount(this.accountOp.accountAddr)
     try {
       // In case of EOA account
       if (!this.#account.creation) {
@@ -598,17 +597,10 @@ export class SignAccountOpController extends EventEmitter {
           return this.#setSigningError(
             'Tried to sign an EOA transaction with multiple or zero calls.'
           )
-        const { to, value, data } = this.accountOp.calls[0]
-        this.accountOp.signature = await signer.signRawTransaction({
-          to,
-          value,
-          data,
-          chainId: this.#network.chainId,
-          gasLimit: gasFeePayment.simulatedGasLimit,
-          nonce,
-          gasPrice:
-            (gasFeePayment.amount - this.#estimation!.addedNative) / gasFeePayment.simulatedGasLimit
-        })
+
+        // In legacy mode, we sign the transaction directly.
+        // that means the signing will happen on broadcast and here
+        // checking whether the call is 1 and 1 only is enough
       } else if (this.accountOp.gasFeePayment.paidBy !== this.#account.addr) {
         // Smart account, but EOA pays the fee
         // EOA pays for execute() - relayerless

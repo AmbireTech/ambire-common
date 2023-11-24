@@ -31,17 +31,21 @@ export interface ExternalSignerController {
   network?: any // Lattice specific
 }
 
+export interface TxnRequest {
+  to: Call['to']
+  value?: Call['value']
+  data: Call['data']
+  chainId: NetworkDescriptor['chainId']
+  nonce: number
+  gasLimit: GasFeePayment['simulatedGasLimit']
+  gasPrice?: bigint
+  maxFeePerGas?: bigint
+  maxPriorityFeePerGas?: bigint
+}
+
 export interface KeystoreSigner {
   init?: (externalSignerController?: ExternalSignerController) => void
-  signRawTransaction: (txnRequest: {
-    to: Call['to']
-    value?: Call['value']
-    data: Call['data']
-    chainId: NetworkDescriptor['chainId']
-    nonce: number
-    gasLimit: GasFeePayment['simulatedGasLimit']
-    gasPrice: bigint
-  }) => Promise<Transaction['serialized']>
+  signRawTransaction: (txnRequest: TxnRequest) => Promise<Transaction['serialized']>
   signTypedData: (typedMessage: TypedMessage) => Promise<string>
   signMessage: (hex: string) => Promise<string>
 }

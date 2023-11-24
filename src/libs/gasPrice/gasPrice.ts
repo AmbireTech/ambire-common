@@ -74,7 +74,7 @@ export async function getGasPriceRecommendations(
   if (lastBlock == null) throw new Error('unable to retrieve block')
   // https://github.com/ethers-io/ethers.js/issues/3683#issuecomment-1436554995
   const txns = lastBlock.prefetchedTransactions
-  if (lastBlock.baseFeePerGas != null) {
+  if (network.feeOptions.is1559 && lastBlock.baseFeePerGas != null) {
     // https://eips.ethereum.org/EIPS/eip-1559
     const gasTarget = lastBlock.gasLimit / ELASTICITY_MULTIPLIER
     const baseFeePerGas = lastBlock.baseFeePerGas
