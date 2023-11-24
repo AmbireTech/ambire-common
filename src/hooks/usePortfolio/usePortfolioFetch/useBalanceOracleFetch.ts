@@ -248,6 +248,10 @@ export default function useBalanceOracleFetch({
         rpc: true
       }
     }))
+    const shouldWaitForPending =
+      eligibleRequests.length === 1 && eligibleRequests[0].id.includes('approve')
+
+    if (shouldWaitForPending) return
     const unsignedRequests = eligibleRequests
       .map((t) => ({ ...t, txns: [t.txn.to, t.txn.value, t.txn.data] }))
       .map((t) => t.txns)
