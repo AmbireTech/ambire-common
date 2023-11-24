@@ -2,24 +2,11 @@ import { Interface, Provider } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFactory.json'
-import { networks } from '../../consts/networks'
 import { AccountOnchainState } from '../../interfaces/account'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
 import { getBytecode } from '../proxyDeploy/bytecode'
 import { isErc4337Broadcast } from '../userOperation/userOperation'
-
-interface NetworkFeeOptions {
-  [networkId: string]: {
-    minBaseFee: bigint
-  }
-}
-
-const networkFeeOptions: NetworkFeeOptions = {
-  avalanche: {
-    minBaseFee: 25000000000n // 25 gwei
-  }
-}
 
 // https://eips.ethereum.org/EIPS/eip-1559
 const BASE_FEE_MAX_CHANGE_DENOMINATOR = 8n
@@ -80,6 +67,7 @@ function average(data: bigint[]): bigint {
 
 export async function getGasPriceRecommendations(
   provider: Provider,
+  network: NetworkDescriptor,
   blockTag: string | number = -1
 ): Promise<GasRecommendation[]> {
   const lastBlock = await provider.getBlock(blockTag, true)
@@ -102,14 +90,8 @@ export async function getGasPriceRecommendations(
     }
 
     // if the estimated fee is below the chain minimum, set it to the min
-    const network = await provider.getNetwork()
-    const commonNetwork = networks.find((net) => net.chainId === network.chainId)!
-    if (
-      networkFeeOptions[commonNetwork.id] &&
-      networkFeeOptions[commonNetwork.id].minBaseFee &&
-      expectedBaseFee < networkFeeOptions[commonNetwork.id].minBaseFee
-    ) {
-      expectedBaseFee = networkFeeOptions[commonNetwork.id].minBaseFee
+    if (network.feeOptions.minBaseFee && expectedBaseFee < network.feeOptions.minBaseFee) {
+      expectedBaseFee = network.feeOptions.minBaseFee
     }
 
     const tips = filterOutliers(txns.map((x) => x.maxPriorityFeePerGas!).filter((x) => x > 0))

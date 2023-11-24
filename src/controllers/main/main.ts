@@ -289,7 +289,10 @@ export class MainController extends EventEmitter {
 
     await Promise.all(
       gasPriceNetworks.map(async (network) => {
-        this.gasPrices[network] = await getGasPriceRecommendations(this.#providers[network])
+        this.gasPrices[network] = await getGasPriceRecommendations(
+          this.#providers[network],
+          networks.find((net) => net.id === network)!
+        )
       })
     )
   }
