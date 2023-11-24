@@ -6,6 +6,7 @@ import { Banner } from '../../interfaces/banner'
 import { Storage } from '../../interfaces/storage'
 import { Message } from '../../interfaces/userRequest'
 import { AccountOp, AccountOpStatus } from '../../libs/accountOp/accountOp'
+import { isErc4337Broadcast } from '../../libs/userOperation/userOperation'
 import bundler from '../../services/bundlers'
 import EventEmitter from '../eventEmitter'
 
@@ -119,11 +120,14 @@ export class ActivityController extends EventEmitter {
 
   isInitialized: boolean = false
 
-  constructor(storage: Storage, accounts: AccountStates) {
+  #relayerUrl: string
+
+  constructor(storage: Storage, accounts: AccountStates, relayerUrl: string) {
     super()
     this.#storage = storage
     this.#accounts = accounts
     this.#initialLoadPromise = this.#load()
+    this.#relayerUrl = relayerUrl
   }
 
   async #load(): Promise<void> {
@@ -266,45 +270,30 @@ export class ActivityController extends EventEmitter {
             async (accountOp, accountOpIndex) => {
               // Don't update the current network account ops statuses,
               // as the statuses are already updated in the previous calls.
-              if (
-                accountOp.status !== AccountOpStatus.BroadcastedButNotConfirmed &&
-                accountOp.status !== AccountOpStatus.Show4337BroadcastedBanner
-              )
-                return
+              if (accountOp.status !== AccountOpStatus.BroadcastedButNotConfirmed) return
 
               shouldEmitUpdate = true
 
-              // 4337
-              // once we've shown the banner, just switch it's status to the
-              // final one (Success/Failure) and move on
-              if (accountOp.status === AccountOpStatus.Show4337BroadcastedBanner) {
+              const is4337 = isErc4337Broadcast(
+                networkConfig!,
+                this.#accounts[accountOp.accountAddr][accountOp.networkId]
+              )
+              const receipt = is4337
+                ? await bundler.getReceipt(accountOp.txnId, networkConfig!)
+                : await provider.getTransactionReceipt(accountOp.txnId)
+              if (receipt) {
                 this.#accountsOps[this.filters!.account][network][accountOpIndex].status =
-                  accountOp.success ? AccountOpStatus.Success : AccountOpStatus.Failure
+                  receipt.status ? AccountOpStatus.Success : AccountOpStatus.Failure
                 return
               }
 
-              // getting the receipt is different in 4337
-              // @TODO: should we make own our provider that encapsulates this?
-              const is4337 = accountOp.gasFeePayment?.isERC4337
-              const receipt = !is4337
-                ? await provider.getTransactionReceipt(accountOp.txnId)
-                : await bundler.getReceipt(accountOp.txnId, networkConfig!)
-
-              if (receipt) {
-                if (is4337) {
-                  this.#accountsOps[this.filters!.account][network][accountOpIndex].status =
-                    AccountOpStatus.Show4337BroadcastedBanner
-                  this.#accountsOps[this.filters!.account][network][accountOpIndex].txnId =
-                    receipt.receipt.transactionHash
-                  this.#accountsOps[this.filters!.account][network][accountOpIndex].success =
-                    receipt.receipt.status
-                } else {
-                  this.#accountsOps[this.filters!.account][network][accountOpIndex].status =
-                    receipt.status ? AccountOpStatus.Success : AccountOpStatus.Failure
-                }
-              } else if (
-                !is4337 &&
-                this.#accounts[accountOp.accountAddr][accountOp.networkId].nonce > accountOp.nonce
+              if (
+                (!is4337 &&
+                  this.#accounts[accountOp.accountAddr][accountOp.networkId].nonce >
+                    accountOp.nonce) ||
+                (is4337 &&
+                  this.#accounts[accountOp.accountAddr][accountOp.networkId].erc4337Nonce >
+                    accountOp.nonce)
               ) {
                 this.#accountsOps[this.filters!.account][network][accountOpIndex].status =
                   AccountOpStatus.UnknownButPastNonce
@@ -422,18 +411,17 @@ export class ActivityController extends EventEmitter {
 
     return Object.values(this.#accountsOps[this.filters.account])
       .flat()
-      .filter(
-        (accountOp) =>
-          (accountOp.status === AccountOpStatus.BroadcastedButNotConfirmed &&
-            !accountOp.gasFeePayment?.isERC4337) ||
-          accountOp.status === AccountOpStatus.Show4337BroadcastedBanner
-      )
+      .filter((accountOp) => accountOp.status === AccountOpStatus.BroadcastedButNotConfirmed)
   }
 
   get banners(): Banner[] {
     return this.broadcastedButNotConfirmed.map((accountOp) => {
       const network = networks.find((x) => x.id === accountOp.networkId)!
 
+      const is4337 = isErc4337Broadcast(
+        networks.find((x) => x.id === accountOp.networkId)!,
+        this.#accounts[accountOp.accountAddr][accountOp.networkId]
+      )
       return {
         id: new Date().getTime(),
         topic: 'TRANSACTION',
@@ -443,7 +431,11 @@ export class ActivityController extends EventEmitter {
           {
             label: 'Check',
             actionName: 'open-external-url',
-            meta: { url: `${network.explorerUrl}/tx/${accountOp.txnId}` }
+            meta: {
+              url: is4337
+                ? `${this.#relayerUrl}/userOp/${accountOp.networkId}/${accountOp.txnId}`
+                : `${network.explorerUrl}/tx/${accountOp.txnId}`
+            }
           }
         ]
       } as Banner
