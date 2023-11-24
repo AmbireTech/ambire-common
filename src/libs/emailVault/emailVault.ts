@@ -1,18 +1,10 @@
 import { relayerCall } from '../relayerCall/relayerCall'
-import { EmailVaultData, EmailVaultSecrets, RecoveryKey } from '../../interfaces/emailVault'
-
-export interface Secret {
-  key: String
-  type: String
-}
-
-// NOTE: its a quick fix. Will be updated in other branch
-export interface EmailVaultInfo {
-  email: String
-  recoveryKey: String
-  availableSecrets: Secret[]
-  availableAccounts: any
-}
+import {
+  EmailVaultData,
+  EmailVaultInfo,
+  EmailVaultSecrets,
+  RecoveryKey
+} from '../../interfaces/emailVault'
 
 export class EmailVault {
   private callRelayer: Function
