@@ -1,35 +1,37 @@
 import { ethers } from 'hardhat'
-import {
-  AmbireAccount,
-  addressOne,
-  addressTwo,
-  chainId,
-  expect,
-  deploySalt,
-  deployGasLimit,
-  buildInfo,
-  addressFour
-} from '../config'
-import { wrapEthSign } from '../ambireSign'
+
 import {
   getProxyDeployBytecode,
   getStorageSlotsFromArtifact
 } from '../../src/libs/proxyDeploy/deploy'
+import { wrapEthSign, wrapTypedData } from '../ambireSign'
+import {
+  addressFour,
+  addressOne,
+  addressTwo,
+  AmbireAccount,
+  buildInfo,
+  chainId,
+  deployGasLimit,
+  deploySalt,
+  expect
+} from '../config'
 import { getAmbireAccountAddress } from '../implementations'
+
 const abiCoder = new ethers.AbiCoder()
 
 let factoryAddress: string
 let factoryContract: any
 let dummyBytecode: any
 
-describe('AmbireAccountFactory tests', function () {
-  it('deploys the factory', async function () {
+describe('AmbireAccountFactory tests', () => {
+  it('deploys the factory', async () => {
     const [signer] = await ethers.getSigners()
     const factory = await ethers.deployContract('AmbireAccountFactory', [signer.address])
     factoryAddress = await factory.getAddress()
     factoryContract = factory
   })
-  it('deploys the ambire account via the factory; no revert upon redeploy to same address', async function () {
+  it('deploys the ambire account via the factory; no revert upon redeploy to same address', async () => {
     const [signer] = await ethers.getSigners()
     const bytecode = AmbireAccount.bin
     const accountAddr = getAmbireAccountAddress(factoryAddress, bytecode)
@@ -41,7 +43,7 @@ describe('AmbireAccountFactory tests', function () {
     // just confirm that no reverts happen
     await factoryContract.deploy(bytecode, deploySalt)
   })
-  it('deploy the contract and execute a transaction along with the deploy', async function () {
+  it('deploy the contract and execute a transaction along with the deploy', async () => {
     const [signer, signer2] = await ethers.getSigners()
     const contract = await ethers.deployContract('AmbireAccount')
     const bytecode = getProxyDeployBytecode(
@@ -61,23 +63,18 @@ describe('AmbireAccountFactory tests', function () {
       ethers.toBeHex(1, 32)
     ])
     const setPrivTxn = [[ambireAccountAddress, 0, calldata]]
-    const msg = ethers.getBytes(
-      ethers.keccak256(
-        abiCoder.encode(
-          ['address', 'uint', 'uint', 'tuple(address, uint, bytes)[]'],
-          [ambireAccountAddress, chainId, 0, setPrivTxn]
-        )
+    const executeHash = ethers.keccak256(
+      abiCoder.encode(
+        ['address', 'uint', 'uint', 'tuple(address, uint, bytes)[]'],
+        [ambireAccountAddress, chainId, 0, setPrivTxn]
       )
     )
-    const s = wrapEthSign(await signer2.signMessage(msg))
-
-    await factoryContract.deployAndExecute(
-      bytecode,
-      deploySalt,
-      setPrivTxn,
-      s,
-      { deployGasLimit }
+    const typedData = wrapTypedData(chainId, ambireAccountAddress, executeHash)
+    const s = wrapEthSign(
+      await signer2.signTypedData(typedData.domain, typedData.types, typedData.value)
     )
+
+    await factoryContract.deployAndExecute(bytecode, deploySalt, setPrivTxn, s, { deployGasLimit })
     const ambireAccount: any = new ethers.BaseContract(
       ambireAccountAddress,
       AmbireAccount.abi,
@@ -92,7 +89,7 @@ describe('AmbireAccountFactory tests', function () {
       '0x0000000000000000000000000000000000000000000000000000000000000001'
     )
   })
-  it('deploy and execute on an already deployed contract - it should execute the call', async function () {
+  it('deploy and execute on an already deployed contract - it should execute the call', async () => {
     const [signer, signer2] = await ethers.getSigners()
     const accountAddr = getAmbireAccountAddress(factoryAddress, dummyBytecode)
 
@@ -103,21 +100,17 @@ describe('AmbireAccountFactory tests', function () {
       ethers.toBeHex(1, 32)
     ])
     const setPrivTxn = [[accountAddr, 0, calldata]]
-    const msg = ethers.getBytes(
-      ethers.keccak256(
-        abiCoder.encode(
-          ['address', 'uint', 'uint', 'tuple(address, uint, bytes)[]'],
-          [accountAddr, chainId, 1, setPrivTxn]
-        )
+    const executeHash = ethers.keccak256(
+      abiCoder.encode(
+        ['address', 'uint', 'uint', 'tuple(address, uint, bytes)[]'],
+        [accountAddr, chainId, 1, setPrivTxn]
       )
     )
-    const s = wrapEthSign(await signer2.signMessage(msg))
-    await factoryContract.deployAndExecute(
-      dummyBytecode,
-      deploySalt,
-      setPrivTxn,
-      s
+    const typedData = wrapTypedData(chainId, accountAddr, executeHash)
+    const s = wrapEthSign(
+      await signer2.signTypedData(typedData.domain, typedData.types, typedData.value)
     )
+    await factoryContract.deployAndExecute(dummyBytecode, deploySalt, setPrivTxn, s)
     const ambireAccount: any = new ethers.BaseContract(accountAddr, AmbireAccount.abi, signer)
     const canSignTwo = await ambireAccount.privileges(addressFour)
     expect(canSignTwo).to.equal(
