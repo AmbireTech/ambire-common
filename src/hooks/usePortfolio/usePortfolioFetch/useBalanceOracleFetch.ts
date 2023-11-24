@@ -248,6 +248,18 @@ export default function useBalanceOracleFetch({
         rpc: true
       }
     }))
+    // This is a fix to not fetch balance oracle if there is
+    // only one approve transaction in pending state.
+    // Sometimes when we stake tokens we have 2 transactions:
+    // 1. approve, 2. stake
+    // Because we trigger the request on each new transaction
+    // there is an edge case where the 1. approve is slower
+    // than the 2. stake transaction and the response from balance oracle
+    // overrides the correct one
+    const shouldWaitForPending =
+      eligibleRequests.length === 1 && eligibleRequests[0].id.includes('approve')
+
+    if (shouldWaitForPending) return
     const unsignedRequests = eligibleRequests
       .map((t) => ({ ...t, txns: [t.txn.to, t.txn.value, t.txn.data] }))
       .map((t) => t.txns)
