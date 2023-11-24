@@ -6,6 +6,7 @@
     "generate:humanizerSelectorsAndNames": "node scripts/compileContractSelectorsAndNames.js",
     "generate:combineHumanizerJsons": "node scripts/combineHumanizerJsons.js",
     "compile:contracts": "ts-node scripts/compileContracts.js",
+    "compile:tsSchemas": "ts-node src/services/schemaValidation/generateSchemas.ts",
     "test": "npx hardhat compile; npx hardhat test; jest --forceExit",
     "jest": "jest --forceExit",
     "build": "tsc src/libs/deployless/deployless.ts -t es5",
