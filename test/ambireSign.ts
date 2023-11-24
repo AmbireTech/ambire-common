@@ -1,4 +1,5 @@
-const { ethers } = require('ethers')
+import { TypedDataDomain } from 'ethers'
+import { ethers } from 'hardhat'
 
 /**
  * SignatureMode.EIP712 sign
@@ -70,4 +71,39 @@ function wrapCancel(sig: string) {
   return `${sig}${'fe'}`
 }
 
-export { wrapEIP712, wrapEthSign, wrapSchnorr, wrapMultiSig, wrapRecover, wrapCancel, wrapExternallyValidated }
+function wrapTypedData(chainId: bigint, ambireAccountAddress: string, executeHash: string) {
+  const domain: TypedDataDomain = {
+    name: 'Ambire',
+    version: '1',
+    chainId,
+    verifyingContract: ambireAccountAddress,
+    salt: ethers.toBeHex(0, 32)
+  }
+  const types = {
+    AmbireOperation: [
+      { name: 'account', type: 'address' },
+      { name: 'hash', type: 'bytes32' }
+    ]
+  }
+  const value = {
+    account: ambireAccountAddress,
+    hash: executeHash
+  }
+
+  return {
+    domain,
+    types,
+    value
+  }
+}
+
+export {
+  wrapEIP712,
+  wrapEthSign,
+  wrapSchnorr,
+  wrapMultiSig,
+  wrapRecover,
+  wrapCancel,
+  wrapExternallyValidated,
+  wrapTypedData
+}

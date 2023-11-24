@@ -1,89 +1,94 @@
 import { ethers } from 'hardhat'
+
+import { wrapEthSign, wrapTypedData } from '../ambireSign'
 import {
-  AmbireAccount,
-  addressOne,
-  addressTwo,
-  chainId,
   abiCoder,
-  addressThree,
   addressFour,
-  provider,
-  expect
+  addressOne,
+  addressThree,
+  addressTwo,
+  AmbireAccount,
+  chainId,
+  expect,
+  provider
 } from '../config'
-import { sendFunds, getPriviledgeTxn, getTimelockData } from '../helpers'
-import { wrapEthSign } from '../ambireSign'
+import { getPriviledgeTxn, getTimelockData, sendFunds } from '../helpers'
 import { deployAmbireAccountHardhatNetwork } from '../implementations'
 
 let ambireAccountAddress: string
 
-describe('Basic Ambire Account tests', function () {
-  it('successfully deploys the ambire account', async function () {
+describe('Basic Ambire Account tests', () => {
+  before('successfully deploys the ambire account', async () => {
     const [signer] = await ethers.getSigners()
     const { ambireAccountAddress: addr } = await deployAmbireAccountHardhatNetwork([
       { addr: signer.address, hash: true }
     ])
     ambireAccountAddress = addr
   })
-  it('ONLY_ACCOUNT_CAN_CALL on setAddrPrivilege', async function () {
+  it('ONLY_ACCOUNT_CAN_CALL on setAddrPrivilege', async () => {
     const [signer] = await ethers.getSigners()
     const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signer)
-    await expect(contract.setAddrPrivilege(addressTwo, ethers.toBeHex(1, 32)))
-      .to.be.revertedWith('ONLY_ACCOUNT_CAN_CALL')
+    await expect(contract.setAddrPrivilege(addressTwo, ethers.toBeHex(1, 32))).to.be.revertedWith(
+      'ONLY_ACCOUNT_CAN_CALL'
+    )
   })
-  it('ONLY_ACCOUNT_CAN_CALL on tryCatch', async function () {
+  it('ONLY_ACCOUNT_CAN_CALL on tryCatch', async () => {
     const [signer] = await ethers.getSigners()
     const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signer)
-    await expect(contract.tryCatch(addressTwo, 1, '0x00'))
-      .to.be.revertedWith('ONLY_ACCOUNT_CAN_CALL')
+    await expect(contract.tryCatch(addressTwo, 1, '0x00')).to.be.revertedWith(
+      'ONLY_ACCOUNT_CAN_CALL'
+    )
   })
-  it('ONLY_ACCOUNT_CAN_CALL on tryCatchLimit', async function () {
+  it('ONLY_ACCOUNT_CAN_CALL on tryCatchLimit', async () => {
     const [signer] = await ethers.getSigners()
     const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signer)
-    await expect(contract.tryCatchLimit(addressTwo, 1, '0x00', 100000))
-      .to.be.revertedWith('ONLY_ACCOUNT_CAN_CALL')
+    await expect(contract.tryCatchLimit(addressTwo, 1, '0x00', 100000)).to.be.revertedWith(
+      'ONLY_ACCOUNT_CAN_CALL'
+    )
   })
-  it('ONLY_ACCOUNT_CAN_CALL on executeBySelf', async function () {
+  it('ONLY_ACCOUNT_CAN_CALL on executeBySelf', async () => {
     const [signer] = await ethers.getSigners()
     const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signer)
-    await expect(contract.executeBySelf([[addressTwo, 1, '0x00']]))
-      .to.be.revertedWith('ONLY_ACCOUNT_CAN_CALL')
+    await expect(contract.executeBySelf([[addressTwo, 1, '0x00']])).to.be.revertedWith(
+      'ONLY_ACCOUNT_CAN_CALL'
+    )
   })
-  it('execute should fail if the account does not have privileges', async function () {
+  it('execute should fail if the account does not have privileges', async () => {
     const [signer, signer2] = await ethers.getSigners()
     const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signer)
     await sendFunds(ambireAccountAddress, 1)
     const nonce = await contract.nonce()
     const normalTxns = [[addressTwo, ethers.parseEther('0.01'), '0x00']]
-    const msg = ethers.getBytes(
-      ethers.keccak256(
-        abiCoder.encode(
-          ['address', 'uint', 'uint', 'tuple(address, uint, bytes)[]'],
-          [ambireAccountAddress, chainId, nonce, normalTxns]
-        )
+    const executeHash = ethers.keccak256(
+      abiCoder.encode(
+        ['address', 'uint', 'uint', 'tuple(address, uint, bytes)[]'],
+        [ambireAccountAddress, chainId, nonce, normalTxns]
       )
     )
-    const s = wrapEthSign(await signer2.signMessage(msg))
-    await expect(contract.execute(normalTxns, s))
-      .to.be.revertedWith('INSUFFICIENT_PRIVILEGE')
+    const typedData = wrapTypedData(chainId, ambireAccountAddress, executeHash)
+    const s = wrapEthSign(
+      await signer2.signTypedData(typedData.domain, typedData.types, typedData.value)
+    )
+    await expect(contract.execute(normalTxns, s)).to.be.revertedWith('INSUFFICIENT_PRIVILEGE')
   })
-  it('fail on downgrading my own key priviledge', async function () {
+  it('fail on downgrading my own key priviledge', async () => {
     const [signer] = await ethers.getSigners()
     const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signer)
     const txns = [getPriviledgeTxn(ambireAccountAddress, addressOne, false)]
     const nonce = await contract.nonce()
-    const msg = ethers.getBytes(
-      ethers.keccak256(
-        abiCoder.encode(
-          ['address', 'uint', 'uint', 'tuple(address, uint, bytes)[]'],
-          [ambireAccountAddress, chainId, nonce, txns]
-        )
+    const executeHash = ethers.keccak256(
+      abiCoder.encode(
+        ['address', 'uint', 'uint', 'tuple(address, uint, bytes)[]'],
+        [ambireAccountAddress, chainId, nonce, txns]
       )
     )
-    const s = wrapEthSign(await signer.signMessage(msg))
-    await expect(contract.execute(txns, s))
-      .to.be.revertedWith('PRIVILEGE_NOT_DOWNGRADED')
+    const typedData = wrapTypedData(chainId, ambireAccountAddress, executeHash)
+    const s = wrapEthSign(
+      await signer.signTypedData(typedData.domain, typedData.types, typedData.value)
+    )
+    await expect(contract.execute(txns, s)).to.be.revertedWith('PRIVILEGE_NOT_DOWNGRADED')
   })
-  it('should successfully set the timelock permission to 1', async function () {
+  it('should successfully set the timelock permission to 1', async () => {
     const [signer] = await ethers.getSigners()
     const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signer)
 
@@ -121,7 +126,7 @@ describe('Basic Ambire Account tests', function () {
       '0x0000000000000000000000000000000000000000000000000000000000000001'
     )
   })
-  it('successfully remove the timelock', async function () {
+  it('successfully remove the timelock', async () => {
     const [signer] = await ethers.getSigners()
     const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signer)
 
@@ -159,14 +164,13 @@ describe('Basic Ambire Account tests', function () {
       '0x0000000000000000000000000000000000000000000000000000000000000000'
     )
   })
-  it('executeBySender should fail if the account does not have privileges', async function () {
+  it('executeBySender should fail if the account does not have privileges', async () => {
     const [, signer2] = await ethers.getSigners()
     const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signer2)
     const txns = [[addressOne, 1, '0x00']]
-    await expect(contract.executeBySender(txns))
-      .to.be.revertedWith('INSUFFICIENT_PRIVILEGE')
+    await expect(contract.executeBySender(txns)).to.be.revertedWith('INSUFFICIENT_PRIVILEGE')
   })
-  it('should successfully executeMultiple', async function () {
+  it('should successfully executeMultiple', async () => {
     const [signer] = await ethers.getSigners()
     const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signer)
     await sendFunds(ambireAccountAddress, 1)
@@ -175,28 +179,30 @@ describe('Basic Ambire Account tests', function () {
       [addressTwo, ethers.parseEther('0.01'), '0x00'],
       [addressThree, ethers.parseEther('0.01'), '0x00']
     ]
-    const msg = ethers.getBytes(
-      ethers.keccak256(
-        abiCoder.encode(
-          ['address', 'uint', 'uint', 'tuple(address, uint, bytes)[]'],
-          [ambireAccountAddress, chainId, nonce, firstBatch]
-        )
+    const executeHash = ethers.keccak256(
+      abiCoder.encode(
+        ['address', 'uint', 'uint', 'tuple(address, uint, bytes)[]'],
+        [ambireAccountAddress, chainId, nonce, firstBatch]
       )
     )
-    const s = wrapEthSign(await signer.signMessage(msg))
+    const typedData = wrapTypedData(chainId, ambireAccountAddress, executeHash)
+    const s = wrapEthSign(
+      await signer.signTypedData(typedData.domain, typedData.types, typedData.value)
+    )
     const secondBatch = [
       [addressOne, ethers.parseEther('0.01'), '0x00'],
       [addressFour, ethers.parseEther('0.01'), '0x00']
     ]
-    const msg2 = ethers.getBytes(
-      ethers.keccak256(
-        abiCoder.encode(
-          ['address', 'uint', 'uint', 'tuple(address, uint, bytes)[]'],
-          [ambireAccountAddress, chainId, nonce + ethers.toBigInt(1), secondBatch]
-        )
+    const executeHash2 = ethers.keccak256(
+      abiCoder.encode(
+        ['address', 'uint', 'uint', 'tuple(address, uint, bytes)[]'],
+        [ambireAccountAddress, chainId, nonce + ethers.toBigInt(1), secondBatch]
       )
     )
-    const s2 = wrapEthSign(await signer.signMessage(msg2))
+    const typedData2 = wrapTypedData(chainId, ambireAccountAddress, executeHash2)
+    const s2 = wrapEthSign(
+      await signer.signTypedData(typedData2.domain, typedData2.types, typedData2.value)
+    )
     const balance = await provider.getBalance(ambireAccountAddress)
     const multipleTxn = await contract.executeMultiple([
       [firstBatch, s],
@@ -206,7 +212,7 @@ describe('Basic Ambire Account tests', function () {
     const postBalance = await provider.getBalance(ambireAccountAddress, receipt.blockNumber)
     expect(balance - postBalance).to.equal(ethers.parseEther('0.04'))
   })
-  it('should successfully perform execute and validate that the nonce has moved', async function () {
+  it('should successfully perform execute and validate that the nonce has moved', async () => {
     const [signer] = await ethers.getSigners()
     const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signer)
     await sendFunds(ambireAccountAddress, 1)
@@ -215,35 +221,39 @@ describe('Basic Ambire Account tests', function () {
       [addressTwo, ethers.parseEther('0.01'), '0x00'],
       [addressThree, ethers.parseEther('0.01'), '0x00']
     ]
-    const msg = ethers.getBytes(
-      ethers.keccak256(
-        abiCoder.encode(
-          ['address', 'uint', 'uint', 'tuple(address, uint, bytes)[]'],
-          [ambireAccountAddress, chainId, nonce, txns]
-        )
-      )
-    )
-    const s = wrapEthSign(await signer.signMessage(msg))
-    await contract.execute(txns, s)
-    const nonceAfterExecute = await contract.nonce()
-    expect(nonceAfterExecute).to.equal(nonce + 1n)
-  })
-  it('should successfully execute a txn using accountOpSignableHash', async function () {
-    const [signer] = await ethers.getSigners()
-    const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signer)
-    await sendFunds(ambireAccountAddress, 1)
-    const nonce = await contract.nonce()
-    const txns = [
-      [addressTwo, ethers.parseEther('0.01'), '0x00'],
-      [addressThree, ethers.parseEther('0.01'), '0x00']
-    ]
-    const msg = ethers.getBytes(ethers.keccak256(
+    const executeHash = ethers.keccak256(
       abiCoder.encode(
         ['address', 'uint', 'uint', 'tuple(address, uint, bytes)[]'],
         [ambireAccountAddress, chainId, nonce, txns]
       )
-    ))
-    const s = wrapEthSign(await signer.signMessage(msg))
+    )
+    const typedData = wrapTypedData(chainId, ambireAccountAddress, executeHash)
+    const s = wrapEthSign(
+      await signer.signTypedData(typedData.domain, typedData.types, typedData.value)
+    )
+    await contract.execute(txns, s)
+    const nonceAfterExecute = await contract.nonce()
+    expect(nonceAfterExecute).to.equal(nonce + 1n)
+  })
+  it('should successfully execute a txn using accountOpSignableHash', async () => {
+    const [signer] = await ethers.getSigners()
+    const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signer)
+    await sendFunds(ambireAccountAddress, 1)
+    const nonce = await contract.nonce()
+    const txns = [
+      [addressTwo, ethers.parseEther('0.01'), '0x00'],
+      [addressThree, ethers.parseEther('0.01'), '0x00']
+    ]
+    const executeHash = ethers.keccak256(
+      abiCoder.encode(
+        ['address', 'uint', 'uint', 'tuple(address, uint, bytes)[]'],
+        [ambireAccountAddress, chainId, nonce, txns]
+      )
+    )
+    const typedData = wrapTypedData(chainId, ambireAccountAddress, executeHash)
+    const s = wrapEthSign(
+      await signer.signTypedData(typedData.domain, typedData.types, typedData.value)
+    )
     const balance = await provider.getBalance(ambireAccountAddress)
     const txn = await contract.execute(txns, s)
     const receipt = await txn.wait()
