@@ -1,6 +1,8 @@
 import { TypedDataDomain } from 'ethers'
 import { ethers } from 'hardhat'
 
+import { abiCoder } from './config'
+
 /**
  * SignatureMode.EIP712 sign
  *
@@ -71,12 +73,12 @@ function wrapCancel(sig: string) {
   return `${sig}${'fe'}`
 }
 
-function wrapTypedData(chainId: bigint, ambireAccountAddress: string, executeHash: string) {
+function wrapTypedData(chainId: bigint, verifyingAddr: string, executeHash: string) {
   const domain: TypedDataDomain = {
     name: 'Ambire',
     version: '1',
     chainId,
-    verifyingContract: ambireAccountAddress,
+    verifyingContract: verifyingAddr,
     salt: ethers.toBeHex(0, 32)
   }
   const types = {
@@ -86,7 +88,7 @@ function wrapTypedData(chainId: bigint, ambireAccountAddress: string, executeHas
     ]
   }
   const value = {
-    account: ambireAccountAddress,
+    account: verifyingAddr,
     hash: executeHash
   }
 
@@ -97,6 +99,50 @@ function wrapTypedData(chainId: bigint, ambireAccountAddress: string, executeHas
   }
 }
 
+function getRawTypedDataFinalDigest(
+  chainId: bigint,
+  ambireAccountAddress: string,
+  executeHash: string
+) {
+  const typedData = wrapTypedData(chainId, ambireAccountAddress, executeHash)
+  const domain = ethers.keccak256(
+    abiCoder.encode(
+      ['bytes32', 'bytes32', 'bytes32', 'uint256', 'address', 'bytes32'],
+      [
+        ethers.keccak256(
+          ethers.toUtf8Bytes(
+            'EIP712Domain(string name,string version,uint256 chainId,address verifyingContract,bytes32 salt)'
+          )
+        ),
+        ethers.keccak256(ethers.toUtf8Bytes(typedData.domain.name!)),
+        ethers.keccak256(ethers.toUtf8Bytes(typedData.domain.version!)),
+        typedData.domain.chainId!,
+        typedData.domain.verifyingContract!,
+        typedData.domain.salt!
+      ]
+    )
+  )
+  return ethers.keccak256(
+    ethers.solidityPacked(
+      ['string', 'bytes32', 'bytes32'],
+      [
+        '\x19\x01',
+        domain,
+        ethers.keccak256(
+          abiCoder.encode(
+            ['bytes32', 'address', 'bytes32'],
+            [
+              ethers.keccak256(ethers.toUtf8Bytes('AmbireOperation(address account,bytes32 hash)')),
+              ambireAccountAddress,
+              executeHash
+            ]
+          )
+        )
+      ]
+    )
+  )
+}
+
 export {
   wrapEIP712,
   wrapEthSign,
@@ -105,5 +151,6 @@ export {
   wrapRecover,
   wrapCancel,
   wrapExternallyValidated,
-  wrapTypedData
+  wrapTypedData,
+  getRawTypedDataFinalDigest
 }
