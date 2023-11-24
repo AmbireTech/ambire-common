@@ -5,7 +5,7 @@ import EntryPointAbi from '../../../contracts/compiled/EntryPoint.json'
 import ERC20 from '../../../contracts/compiled/IERC20.json'
 import { AMBIRE_PAYMASTER, ERC_4337_ENTRYPOINT } from '../../consts/deploy'
 import { Account, AccountStates } from '../../interfaces/account'
-import { Key } from '../../interfaces/keystore'
+import { ExternalSignerController, Key } from '../../interfaces/keystore'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { Storage } from '../../interfaces/storage'
 import { getKnownAddressLabels } from '../../libs/account/account'
@@ -564,7 +564,7 @@ export class SignAccountOpController extends EventEmitter {
     }
   }
 
-  async sign() {
+  async sign(externalSignerController?: ExternalSignerController) {
     if (!this.accountOp?.signingKeyAddr || !this.accountOp?.signingKeyType)
       return this.#setSigningError('We cannot sign your transaction. Please choose a signer.')
 
@@ -588,6 +588,7 @@ export class SignAccountOpController extends EventEmitter {
 
     const gasFeePayment = this.accountOp.gasFeePayment
 
+    if (signer.init) signer.init(externalSignerController)
     const provider = this.#providers[this.accountOp.networkId]
     const nonce = await provider.getTransactionCount(this.accountOp.accountAddr)
     try {

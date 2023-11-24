@@ -1,18 +1,19 @@
 import { ethers } from 'hardhat'
-import { AmbireAccount, addressOne, addressTwo, expect } from '../config'
+
+import { addressOne, addressTwo, AmbireAccount, expect } from '../config'
 import { deployAmbireAccountHardhatNetwork } from '../implementations'
 
 let ambireAccountAddress: string
 
-describe('NFT 721 and 1155 tests original contract tests', function () {
-  it('successfully deploys the ambire account', async function () {
+describe('NFT 721 and 1155 tests original contract tests', () => {
+  it('successfully deploys the ambire account', async () => {
     const [signer] = await ethers.getSigners()
     const { ambireAccountAddress: addr } = await deployAmbireAccountHardhatNetwork([
       { addr: signer.address, hash: true }
     ])
     ambireAccountAddress = addr
   })
-  it('should call onERC721Received and return its signature', async function () {
+  it('should call onERC721Received and return its signature', async () => {
     const [signer] = await ethers.getSigners()
     const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signer)
     const result = await contract.onERC721Received(addressOne, addressTwo, 1, '0x00')
@@ -22,7 +23,7 @@ describe('NFT 721 and 1155 tests original contract tests', function () {
     expect(result).to.equal(signature)
     expect(result).to.equal('0x150b7a02')
   })
-  it('should call onERC1155Received and return its signature', async function () {
+  it('should call onERC1155Received and return its signature', async () => {
     const [signer] = await ethers.getSigners()
     const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signer)
     const result = await contract.onERC1155Received(addressOne, addressTwo, 1, 2, '0x00')
@@ -32,7 +33,7 @@ describe('NFT 721 and 1155 tests original contract tests', function () {
     expect(result).to.equal(signature)
     expect(result).to.equal('0xf23a6e61')
   })
-  it('should call onERC1155BatchReceived and return its signature', async function () {
+  it('should call onERC1155BatchReceived and return its signature', async () => {
     const [signer] = await ethers.getSigners()
     const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signer)
     const result = await contract.onERC1155BatchReceived(
