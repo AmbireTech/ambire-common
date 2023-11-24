@@ -3,7 +3,6 @@ import { ethers, JsonRpcProvider, TransactionResponse } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFactory.json'
-import { networks } from '../../consts/networks'
 import { Account, AccountId, AccountStates } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
 import { Key, KeystoreSignerType } from '../../interfaces/keystore'
@@ -145,7 +144,7 @@ export class MainController extends EventEmitter {
 
     this.portfolio = new PortfolioController(this.#storage, relayerUrl, pinned)
     this.keystore = new KeystoreController(this.#storage, keystoreSigners)
-    this.settings = new SettingsController(this.#storage, networks)
+    this.settings = new SettingsController(this.#storage)
     this.#initialLoadPromise = this.#load()
     this.emailVault = new EmailVaultController(
       this.#storage,
