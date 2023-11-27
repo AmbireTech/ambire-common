@@ -55,7 +55,9 @@ const networks: NetworkDescriptor[] = [
     },
     unstoppableDomainsChain: 'ERC20',
     feeOptions: {
-      is1559: true
+      is1559: true,
+      elasticityMultiplier: 6n,
+      baseFeeMaxChangeDenominator: 50n
     }
   },
   {

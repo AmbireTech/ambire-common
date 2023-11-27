@@ -10,6 +10,8 @@ export interface Erc4337settings {
 interface FeeOptions {
   is1559: boolean
   minBaseFee?: bigint
+  elasticityMultiplier?: bigint
+  baseFeeMaxChangeDenominator?: bigint
 }
 
 // NetworkId is a string: this is our internal identifier for the network

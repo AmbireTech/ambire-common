@@ -8,8 +8,8 @@ import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
 import { isErc4337Broadcast } from '../userOperation/userOperation'
 
 // https://eips.ethereum.org/EIPS/eip-1559
-const BASE_FEE_MAX_CHANGE_DENOMINATOR = 8n
-const ELASTICITY_MULTIPLIER = 2n
+const DEFAULT_BASE_FEE_MAX_CHANGE_DENOMINATOR = 8n
+const DEFAULT_ELASTICITY_MULTIPLIER = 2n
 
 // multipliers from the old: https://github.com/AmbireTech/relayer/blob/wallet-v2/src/utils/gasOracle.js#L64-L76
 // 2x, 2x*0.4, 2x*0.2 - all of them divided by 8 so 0.25, 0.1, 0.05 - those seem usable; with a slight tweak for the ape
@@ -75,10 +75,15 @@ export async function getGasPriceRecommendations(
   const txns = lastBlock.prefetchedTransactions
   if (network.feeOptions.is1559 && lastBlock.baseFeePerGas != null) {
     // https://eips.ethereum.org/EIPS/eip-1559
-    const gasTarget = lastBlock.gasLimit / ELASTICITY_MULTIPLIER
+    const elasticityMultiplier =
+      network.feeOptions.elasticityMultiplier ?? DEFAULT_ELASTICITY_MULTIPLIER
+    const baseFeeMaxChangeDenominator =
+      network.feeOptions.baseFeeMaxChangeDenominator ?? DEFAULT_BASE_FEE_MAX_CHANGE_DENOMINATOR
+
+    const gasTarget = lastBlock.gasLimit / elasticityMultiplier
     const baseFeePerGas = lastBlock.baseFeePerGas
     const getBaseFeeDelta = (delta: bigint) =>
-      (baseFeePerGas * delta) / gasTarget / BASE_FEE_MAX_CHANGE_DENOMINATOR
+      (baseFeePerGas * delta) / gasTarget / baseFeeMaxChangeDenominator
     let expectedBaseFee = baseFeePerGas
     if (lastBlock.gasUsed > gasTarget) {
       const baseFeeDelta = getBaseFeeDelta(lastBlock.gasUsed - gasTarget)
