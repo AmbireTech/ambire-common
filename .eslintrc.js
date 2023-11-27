@@ -39,6 +39,8 @@ module.exports = {
     '@typescript-eslint/indent': 'off',
     'react/no-unstable-nested-components': 'off',
     'react-hooks/exhaustive-deps': 'warn',
-    'react/react-in-jsx-scope': 'off'
+    'react/react-in-jsx-scope': 'off',
+    'no-nested-ternary': 'off',
+    '@typescript-eslint/no-misused-promises': 'error'
   }
 }
