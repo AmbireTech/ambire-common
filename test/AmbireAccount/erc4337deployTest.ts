@@ -1,14 +1,23 @@
-import { ethers } from 'hardhat'
-import { wrapEthSign } from '../../test/ambireSign'
-import { PrivLevels, getProxyDeployBytecode, getStorageSlotsFromArtifact } from '../../src/libs/proxyDeploy/deploy'
 import { BaseContract } from 'ethers'
-import { abiCoder, expect, provider } from '../config'
+import { ethers } from 'hardhat'
+
+import {
+  getProxyDeployBytecode,
+  getStorageSlotsFromArtifact,
+  PrivLevels
+} from '../../src/libs/proxyDeploy/deploy'
+import { wrapEthSign, wrapTypedData } from '../ambireSign'
+import { abiCoder, chainId, expect, provider } from '../config'
 import { buildUserOp, getPriviledgeTxnWithCustomHash, getTargetNonce } from '../helpers'
 
 const salt = '0x0'
 
 function getAmbireAccountAddress(factoryAddress: string, bytecode: string) {
-  return ethers.getCreate2Address(factoryAddress, ethers.toBeHex(salt, 32), ethers.keccak256(bytecode))
+  return ethers.getCreate2Address(
+    factoryAddress,
+    ethers.toBeHex(salt, 32),
+    ethers.keccak256(bytecode)
+  )
 }
 
 function getDeployCalldata(bytecodeWithArgs: string) {
@@ -17,11 +26,9 @@ function getDeployCalldata(bytecodeWithArgs: string) {
   return iface.encodeFunctionData('deploy', [bytecodeWithArgs, salt])
 }
 
-export async function get4437Bytecode(
-  priLevels: PrivLevels[]
-): Promise<string> {
+export async function get4437Bytecode(priLevels: PrivLevels[]): Promise<string> {
   const contract: BaseContract = await ethers.deployContract('AmbireAccount')
-  
+
   // get the bytecode and deploy it
   return getProxyDeployBytecode(await contract.getAddress(), priLevels, {
     ...getStorageSlotsFromArtifact(null)
@@ -33,24 +40,25 @@ let paymaster: any
 let entryPoint: any
 let proxy: any
 
-describe('ERC-4337 deploys the account via userOp and adds the entry point permissions in the initCode', function () {
-  before('deploy the necessary contracts and adds an entry point deposit for the paymaster', async function(){
-    const [relayer] = await ethers.getSigners()
-    factory = await ethers.deployContract('AmbireAccountFactory', [relayer.address])
-    paymaster = await ethers.deployContract('AmbirePaymaster', [relayer.address])
-    entryPoint = await ethers.deployContract('EntryPoint', relayer)
-    proxy = await ethers.deployContract('AmbireAccount')
+describe('ERC-4337 deploys the account via userOp and adds the entry point permissions in the initCode', () => {
+  before(
+    'deploy the necessary contracts and adds an entry point deposit for the paymaster',
+    async () => {
+      const [relayer] = await ethers.getSigners()
+      factory = await ethers.deployContract('AmbireAccountFactory', [relayer.address])
+      paymaster = await ethers.deployContract('AmbirePaymaster', [relayer.address])
+      entryPoint = await ethers.deployContract('EntryPoint', relayer)
+      proxy = await ethers.deployContract('AmbireAccount')
 
-    // paymaster deposit
-    await entryPoint.depositTo(await paymaster.getAddress(), {
-      value: ethers.parseEther('1')
-    })
-  })
-  it('successfully deploys the account with entry point without a userOp signature', async function () {
+      // paymaster deposit
+      await entryPoint.depositTo(await paymaster.getAddress(), {
+        value: ethers.parseEther('1')
+      })
+    }
+  )
+  it('successfully deploys the account with entry point without a userOp signature', async () => {
     const [relayer, signer] = await ethers.getSigners()
-    const privs = [
-      { addr: signer.address, hash: true },
-    ]
+    const privs = [{ addr: signer.address, hash: true }]
     const bytecodeWithArgs = await get4437Bytecode(privs)
     const senderAddress = getAmbireAccountAddress(await factory.getAddress(), bytecodeWithArgs)
     const txn = getPriviledgeTxnWithCustomHash(
@@ -58,19 +66,19 @@ describe('ERC-4337 deploys the account via userOp and adds the entry point permi
       await entryPoint.getAddress(),
       '0x0000000000000000000000000000000000000000000000000000000000007171'
     )
-    const msg = ethers.getBytes(
-      ethers.keccak256(
-        abiCoder.encode(
-          ['address', 'uint', 'uint', 'tuple(address, uint, bytes)[]'],
-          [senderAddress, 31337, 0, [txn]]
-        )
+    const executeHash = ethers.keccak256(
+      abiCoder.encode(
+        ['address', 'uint', 'uint', 'tuple(address, uint, bytes)[]'],
+        [senderAddress, 31337, 0, [txn]]
       )
     )
-    const s = wrapEthSign(await signer.signMessage(msg))
-    const initCode = ethers.hexlify(ethers.concat([
-      await factory.getAddress(),
-      getDeployCalldata(bytecodeWithArgs)
-    ]))
+    const typedData = wrapTypedData(chainId, senderAddress, executeHash)
+    const s = wrapEthSign(
+      await signer.signTypedData(typedData.domain, typedData.types, typedData.value)
+    )
+    const initCode = ethers.hexlify(
+      ethers.concat([await factory.getAddress(), getDeployCalldata(bytecodeWithArgs)])
+    )
 
     const callData = proxy.interface.encodeFunctionData('executeMultiple', [[[[txn], s]]])
     const userOperation = await buildUserOp(paymaster, await entryPoint.getAddress(), {
@@ -88,11 +96,20 @@ describe('ERC-4337 deploys the account via userOp and adds the entry point permi
     const userOperation2 = await buildUserOp(paymaster, await entryPoint.getAddress(), {
       sender: senderAddress,
       userOpNonce: ethers.toBeHex(await entryPoint.getNonce(senderAddress, 0), 1),
-      callData: proxy.interface.encodeFunctionData('executeBySender', [[nextTxn]]),
+      callData: proxy.interface.encodeFunctionData('executeBySender', [[nextTxn]])
     })
-    const signature = wrapEthSign(await signer.signMessage(
-      ethers.getBytes(await entryPoint.getUserOpHash(userOperation2))
-    ))
+    const typedDataUserOp = wrapTypedData(
+      chainId,
+      senderAddress,
+      await entryPoint.getUserOpHash(userOperation2)
+    )
+    const signature = wrapEthSign(
+      await signer.signTypedData(
+        typedDataUserOp.domain,
+        typedDataUserOp.types,
+        typedDataUserOp.value
+      )
+    )
     userOperation2.signature = signature
     await entryPoint.handleOps([userOperation2], relayer)
     // if it doesn't revert, all's good. The paymaster has payed
@@ -120,9 +137,18 @@ describe('ERC-4337 deploys the account via userOp and adds the entry point permi
       paymasterAndData: '0x',
       signature: '0x'
     }
-    const sig = wrapEthSign(await signer.signMessage(
-      ethers.getBytes(await entryPoint.getUserOpHash(userOperation3))
-    ))
+    const typedDataUserOp3 = wrapTypedData(
+      chainId,
+      senderAddress,
+      await entryPoint.getUserOpHash(userOperation3)
+    )
+    const sig = wrapEthSign(
+      await signer.signTypedData(
+        typedDataUserOp3.domain,
+        typedDataUserOp3.types,
+        typedDataUserOp3.value
+      )
+    )
     userOperation3.signature = sig
     await entryPoint.handleOps([userOperation3], relayer)
 
@@ -147,9 +173,18 @@ describe('ERC-4337 deploys the account via userOp and adds the entry point permi
       paymasterAndData: '0x',
       signature: '0x'
     }
-    const sigLatest = wrapEthSign(await signer.signMessage(
-      ethers.getBytes(await entryPoint.getUserOpHash(userOperation4))
-    ))
+    const typedDataUserOp4 = wrapTypedData(
+      chainId,
+      senderAddress,
+      await entryPoint.getUserOpHash(userOperation4)
+    )
+    const sigLatest = wrapEthSign(
+      await signer.signTypedData(
+        typedDataUserOp4.domain,
+        typedDataUserOp4.types,
+        typedDataUserOp4.value
+      )
+    )
     userOperation4.signature = sigLatest
     await entryPoint.handleOps([userOperation4], relayer)
 
