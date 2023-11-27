@@ -9,7 +9,12 @@ import { Message } from '../../interfaces/userRequest'
 import { getKnownAddressLabels } from '../../libs/account/account'
 import { messageHumanizer } from '../../libs/humanizer'
 import { IrMessage } from '../../libs/humanizer/interfaces'
-import { verifyMessage, wrapEIP712, wrapEthSign } from '../../libs/signMessage/signMessage'
+import {
+  verifyMessage,
+  wrapCounterfactualSign,
+  wrapEIP712,
+  wrapEthSign
+} from '../../libs/signMessage/signMessage'
 import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
 import EventEmitter from '../eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
@@ -212,6 +217,12 @@ export class SignMessageController extends EventEmitter {
         throw new Error(
           'Ambire was not able to retrieve the signature. Please try again or contact support if the problem persists.'
         )
+      }
+
+      // https://eips.ethereum.org/EIPS/eip-6492
+      const accountState = this.#accountStates![account.addr][network!.id]
+      if (account.creation && !accountState.isDeployed) {
+        signature = wrapCounterfactualSign(signature, account.creation!)
       }
 
       const personalMsgToValidate =

@@ -20,7 +20,7 @@ contract AmbirePaymaster is IPaymaster {
 	 * @param	data	the call data
 	 * @param	gas	the call gas
 	 */
-	function call(address to, uint256 value, bytes calldata data, uint256 gas) external {
+	function call(address to, uint256 value, bytes calldata data, uint256 gas) external payable {
 		require(msg.sender == relayer, 'call: not relayer');
 		(bool success, bytes memory err) = to.call{ gas: gas, value: value }(data);
 		require(success, string(err));
