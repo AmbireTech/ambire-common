@@ -135,7 +135,10 @@ export async function verifyMessage({
   // ERC-6492, ERC-1271 and ecrecover, and return the value to us
   const coder = new AbiCoder()
 
-  if (!provider) throw new Error('Missing RPC provider during signature verification')
+  if (!provider)
+    throw new Error(
+      'RPC provider failed to fetch the needed data. Please check your RPC settings or try again later.'
+    )
 
   const callResult = await provider!.call({
     data: concat([

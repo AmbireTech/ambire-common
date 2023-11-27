@@ -49,7 +49,10 @@ export async function estimate(
 ): Promise<EstimateResult> {
   const nativeAddr = '0x0000000000000000000000000000000000000000'
 
-  if (!provider) throw new Error('Missing RPC provider during gas price estimation')
+  if (!provider)
+    throw new Error(
+      'RPC provider failed to fetch transaction estimation data. Please check your RPC settings or try again later.'
+    )
 
   if (!account.creation) {
     if (op.calls.length !== 1) {

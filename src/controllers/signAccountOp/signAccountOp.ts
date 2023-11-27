@@ -582,7 +582,10 @@ export class SignAccountOpController extends EventEmitter {
     if (signer.init) signer.init(externalSignerController)
     const provider = this.#providers[this.accountOp.networkId]
 
-    if (!provider) return this.#setSigningError('Unable to sign as no RPC provider is available.')
+    if (!provider)
+      return this.#setSigningError(
+        'RPC provider failed to fetch the needed data. Please check your RPC settings or try again later.'
+      )
 
     const nonce = await provider.getTransactionCount(this.accountOp.accountAddr)
     try {
