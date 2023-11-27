@@ -41,7 +41,6 @@ module.exports = {
     'react-hooks/exhaustive-deps': 'warn',
     'react/react-in-jsx-scope': 'off',
     'no-nested-ternary': 'off',
-    '@typescript-eslint/no-misused-promises': 'error',
-    '@typescript-eslint/no-floating-promises': 'error'
+    '@typescript-eslint/no-misused-promises': 'error'
   }
 }
