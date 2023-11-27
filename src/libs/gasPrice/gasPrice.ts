@@ -5,7 +5,6 @@ import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFacto
 import { AccountOnchainState } from '../../interfaces/account'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
-import { getBytecode } from '../proxyDeploy/bytecode'
 import { isErc4337Broadcast } from '../userOperation/userOperation'
 
 // https://eips.ethereum.org/EIPS/eip-1559
@@ -131,12 +130,7 @@ export function getCallDataAdditional(
     // deployAndExecuteMultiple is the worst case
     const ambireAccountFactory = new Interface(AmbireAccountFactory.abi)
     estimationCallData = ambireAccountFactory.encodeFunctionData('deployAndExecuteMultiple', [
-      getBytecode(network, [
-        {
-          addr: '0x0000000000000000000000000000000000000000',
-          hash: '0x0000000000000000000000000000000000000000000000000000000000000001'
-        }
-      ]),
+      '0x7f00000000000000000000000000000000000000000000000000000000000000017fad3228b676f7d3cd4284a5443f17f1962b36e491b30a40b2405849e597ba5fb5553d602d80604d3d3981f3363d3d373d3d3d363d7353a31973ebcc225e219bb0d7c0c9324773f5b3e95af43d82803e903d91602b57fd5bf3',
       '0x0000000000000000000000000000000000000000000000000000000000000000',
       [
         [
