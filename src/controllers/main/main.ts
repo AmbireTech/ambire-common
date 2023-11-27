@@ -8,6 +8,7 @@ import { Account, AccountId, AccountStates } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
 import { Key, KeystoreSignerType } from '../../interfaces/keystore'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
+import { Providers } from '../../interfaces/providers'
 import { Storage } from '../../interfaces/storage'
 import { Message, UserRequest } from '../../interfaces/userRequest'
 import {
@@ -48,12 +49,12 @@ export class MainController extends EventEmitter {
 
   #fetch: Function
 
-  #providers: { [key: string]: JsonRpcProvider } = {}
-
   // Holds the initial load promise, so that one can wait until it completes
   #initialLoadPromise: Promise<void>
 
   #callRelayer: Function
+
+  providers: Providers = {}
 
   accountStates: AccountStates = {}
 
@@ -180,16 +181,33 @@ export class MainController extends EventEmitter {
       this.#storage.get('accounts', []),
       this.#storage.get('selectedAccount', null)
     ])
-    this.#providers = Object.fromEntries(
-      this.settings.networks.map((network) => [network.id, new JsonRpcProvider(network.rpcUrl)])
-    )
+    this.providers = await networks.reduce(async (acc, network) => {
+      try {
+        const provider = new JsonRpcProvider(network.rpcUrl)
+
+        if ((await provider.getNetwork())?.chainId !== network.chainId) {
+          throw new Error(`Network ${network.id} is not available`)
+        }
+
+        return {
+          ...(await acc),
+          [network.id]: provider
+        }
+      } catch (e) {
+        return {
+          ...(await acc),
+          [network.id]: null
+        }
+      }
+    }, {})
+
     // @TODO reload those
     // @TODO error handling here
     this.accountStates = await this.#getAccountsInfo(this.accounts)
     this.signMessage = new SignMessageController(
       this.keystore,
       this.settings,
-      this.#providers,
+      this.providers,
       this.#storage,
       this.#fetch
     )
@@ -249,7 +267,7 @@ export class MainController extends EventEmitter {
       accountOpToBeSigned,
       this.#storage,
       this.#fetch,
-      this.#providers,
+      this.providers,
       this.#callRelayer
     )
 
@@ -289,7 +307,7 @@ export class MainController extends EventEmitter {
 
     await Promise.all(
       gasPriceNetworks.map(async (network) => {
-        this.gasPrices[network] = await getGasPriceRecommendations(this.#providers[network])
+        this.gasPrices[network] = await getGasPriceRecommendations(this.providers[network])
       })
     )
   }
@@ -300,7 +318,15 @@ export class MainController extends EventEmitter {
   ): Promise<AccountStates> {
     const result = await Promise.all(
       this.settings.networks.map((network) =>
-        getAccountState(this.#providers[network.id], network, accounts, blockTag)
+        getAccountState(this.providers[network.id], network, accounts, blockTag).catch((e) => {
+          this.emitError({
+            message: e.message,
+            level: 'major',
+            error: new Error(e.message)
+          })
+
+          return []
+        })
       )
     )
 
@@ -588,7 +614,7 @@ export class MainController extends EventEmitter {
       shouldGetAdditionalPortfolio(account) &&
         this.portfolio.getAdditionalPortfolio(accountOp.accountAddr),
       estimate(
-        this.#providers[accountOp.networkId],
+        this.providers[accountOp.networkId],
         network,
         account,
         accountOp,
@@ -622,7 +648,7 @@ export class MainController extends EventEmitter {
       return this.#throwAccountOpBroadcastError(new Error('AccountOp missing props'))
     }
 
-    const provider: JsonRpcProvider = this.#providers[accountOp.networkId]
+    const provider = this.providers[accountOp.networkId]
     const account = this.accounts.find((acc) => acc.addr === accountOp.accountAddr)
     const network = this.settings.networks.find((n) => n.id === accountOp.networkId)
 
