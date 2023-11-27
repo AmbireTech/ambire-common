@@ -1,7 +1,7 @@
 import { JsonRpcProvider } from 'ethers'
 import fetch from 'node-fetch'
 
-import { describe, expect, jest, test } from '@jest/globals'
+import { beforeAll, describe, expect, jest, test } from '@jest/globals'
 
 import { produceMemoryStore } from '../../../test/helpers'
 import { networks } from '../../consts/networks'
@@ -24,6 +24,8 @@ const account: Account = {
   creation: null
 }
 
+let accountStates: AccountStates
+
 const getAccountsInfo = async (accounts: Account[]): Promise<AccountStates> => {
   const result = await Promise.all(
     networks.map((network) => getAccountState(providers[network.id], network, accounts))
@@ -45,6 +47,10 @@ describe('SignMessageController', () => {
   let signMessageController: SignMessageController
   let keystore: KeystoreController
   let settings: SettingsController
+
+  beforeAll(async () => {
+    accountStates = await getAccountsInfo([account])
+  })
 
   beforeEach(() => {
     const keystoreSigners = { internal: InternalSigner }
@@ -143,7 +149,7 @@ describe('SignMessageController', () => {
     expect(signMessageController.signingKeyAddr).toBe(signingKeyAddr)
   })
 
-  test('should sign a message', async () => {
+  test('should sign a message', (done) => {
     const messageToSign: Message = {
       id: 1,
       content: {
@@ -182,13 +188,14 @@ describe('SignMessageController', () => {
         expect(signMessageController.signedMessage?.signature).toBe(dummySignature)
 
         getSignerSpy.mockRestore() // cleans up the spy
+        done()
       }
     })
 
     signMessageController.init({
       messageToSign,
       accounts: [account],
-      accountStates: await getAccountsInfo([account])
+      accountStates
     })
     signMessageController.setSigningKey(signingKeyAddr, 'internal')
     signMessageController.sign()
