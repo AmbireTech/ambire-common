@@ -2,10 +2,7 @@ import { ethers, JsonRpcProvider } from 'ethers'
 
 import { describe, expect, test } from '@jest/globals'
 
-import {
-  AMBIRE_ACCOUNT_FACTORY,
-  ERC_4337_ENTRYPOINT
-} from '../../consts/deploy'
+import { AMBIRE_ACCOUNT_FACTORY, ERC_4337_ENTRYPOINT } from '../../consts/deploy'
 import { networks } from '../../consts/networks'
 import { getBytecode } from '../proxyDeploy/bytecode'
 import { getAmbireAccountAddress } from '../proxyDeploy/getAmbireAddressTwo'
