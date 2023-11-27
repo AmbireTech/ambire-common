@@ -1,4 +1,4 @@
-import { Provider } from 'ethers'
+import { Provider } from 'interfaces/providers'
 
 import AmbireAccountState from '../../../contracts/compiled/AmbireAccountState.json'
 import { MAX_UINT256 } from '../../consts/deploy'
@@ -13,6 +13,8 @@ export async function getAccountState(
   accounts: Account[],
   blockTag: string | number = 'latest'
 ): Promise<AccountOnchainState[]> {
+  if (!provider) return []
+
   const deploylessAccountState = fromDescriptor(
     provider,
     AmbireAccountState,
@@ -39,6 +41,10 @@ export async function getAccountState(
   })
 
   async function getEOAsNonce(eoaAccounts: any[]): Promise<{ [addr: string]: number }> {
+    if (!provider)
+      throw new Error(
+        'RPC provider failed to fetch the needed data. Please check your RPC settings or try again later.'
+      )
     const nonces: any = await Promise.all(
       eoaAccounts.map((addr: string) => provider.getTransactionCount(addr))
     )

@@ -1,11 +1,13 @@
-import { Provider, Interface } from 'ethers'
-import AmbireAccount from "../../../contracts/compiled/AmbireAccount.json";
-import AmbireAccountFactory from "../../../contracts/compiled/AmbireAccountFactory.json";
-import { AccountOp, getSignableCalls } from '../../libs/accountOp/accountOp';
-import { getBytecode } from '../../libs/proxyDeploy/bytecode';
-import { NetworkDescriptor } from '../../interfaces/networkDescriptor';
-import { AccountOnchainState } from '../../interfaces/account';
-import { isErc4337Broadcast } from '../../libs/userOperation/userOperation';
+import { Interface } from 'ethers'
+
+import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
+import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFactory.json'
+import { AccountOnchainState } from '../../interfaces/account'
+import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
+import { Provider } from '../../interfaces/providers'
+import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
+import { getBytecode } from '../proxyDeploy/bytecode'
+import { isErc4337Broadcast } from '../userOperation/userOperation'
 
 // https://eips.ethereum.org/EIPS/eip-1559
 const BASE_FEE_MAX_CHANGE_DENOMINATOR = 8n
@@ -35,6 +37,7 @@ export async function getGasPriceRecommendations(
   provider: Provider,
   blockTag: string | number = -1
 ): Promise<GasRecommendation[]> {
+  if (!provider) throw new Error('Missing RPC provider during gas price estimation')
   const lastBlock = await provider.getBlock(blockTag, true)
   if (lastBlock == null) throw new Error('unable to retrieve block')
   // https://github.com/ethers-io/ethers.js/issues/3683#issuecomment-1436554995
@@ -101,7 +104,6 @@ function average(data: bigint[]): bigint {
   return data.reduce((a, b) => a + b, 0n) / BigInt(data.length)
 }
 
-
 export function getCallDataAdditional(
   accountOp: AccountOp,
   network: NetworkDescriptor,
@@ -113,29 +115,37 @@ export function getCallDataAdditional(
   // we disregard the initCode
   if (accountState.isDeployed || isErc4337Broadcast(network, accountState)) {
     const ambireAccount = new Interface(AmbireAccount.abi)
-    estimationCallData = ambireAccount.encodeFunctionData('executeMultiple', [[[
-      getSignableCalls(accountOp),
-      '0x0dc2d37f7b285a2243b2e1e6ba7195c578c72b395c0f76556f8961b0bca97ddc44e2d7a249598f56081a375837d2b82414c3c94940db3c1e64110108021161ca1c01'
-    ]]])
+    estimationCallData = ambireAccount.encodeFunctionData('executeMultiple', [
+      [
+        [
+          getSignableCalls(accountOp),
+          '0x0dc2d37f7b285a2243b2e1e6ba7195c578c72b395c0f76556f8961b0bca97ddc44e2d7a249598f56081a375837d2b82414c3c94940db3c1e64110108021161ca1c01'
+        ]
+      ]
+    ])
   } else {
     // deployAndExecuteMultiple is the worst case
     const ambireAccountFactory = new Interface(AmbireAccountFactory.abi)
     estimationCallData = ambireAccountFactory.encodeFunctionData('deployAndExecuteMultiple', [
-      getBytecode(network, [{
-        addr: '0x0000000000000000000000000000000000000000',
-        hash: '0x0000000000000000000000000000000000000000000000000000000000000001'
-      }]),
+      getBytecode(network, [
+        {
+          addr: '0x0000000000000000000000000000000000000000',
+          hash: '0x0000000000000000000000000000000000000000000000000000000000000001'
+        }
+      ]),
       '0x0000000000000000000000000000000000000000000000000000000000000000',
-      [[
-        getSignableCalls(accountOp),
-        '0x0dc2d37f7b285a2243b2e1e6ba7195c578c72b395c0f76556f8961b0bca97ddc44e2d7a249598f56081a375837d2b82414c3c94940db3c1e64110108021161ca1c01'
-      ]]
+      [
+        [
+          getSignableCalls(accountOp),
+          '0x0dc2d37f7b285a2243b2e1e6ba7195c578c72b395c0f76556f8961b0bca97ddc44e2d7a249598f56081a375837d2b82414c3c94940db3c1e64110108021161ca1c01'
+        ]
+      ]
     ])
   }
 
   const FIXED_OVERHEAD = 21000n
   const bytes = Buffer.from(estimationCallData.substring(2))
-  const nonZeroBytes = BigInt(bytes.filter(b => b).length)
+  const nonZeroBytes = BigInt(bytes.filter((b) => b).length)
   const zeroBytes = BigInt(BigInt(bytes.length) - nonZeroBytes)
   const txDataGas = zeroBytes * 4n + nonZeroBytes * 16n
   return txDataGas + FIXED_OVERHEAD

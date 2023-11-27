@@ -1,4 +1,4 @@
-import { ethers, JsonRpcProvider } from 'ethers'
+import { ethers } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import EntryPointAbi from '../../../contracts/compiled/EntryPoint.json'
@@ -7,6 +7,7 @@ import { AMBIRE_PAYMASTER, ERC_4337_ENTRYPOINT } from '../../consts/deploy'
 import { Account, AccountStates } from '../../interfaces/account'
 import { ExternalSignerController, Key } from '../../interfaces/keystore'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
+import { Providers } from '../../interfaces/providers'
 import { Storage } from '../../interfaces/storage'
 import { getKnownAddressLabels } from '../../libs/account/account'
 import {
@@ -85,7 +86,7 @@ export class SignAccountOpController extends EventEmitter {
 
   #fetch: Function
 
-  #providers: { [key: string]: JsonRpcProvider }
+  #providers: Providers
 
   #account: Account
 
@@ -124,7 +125,7 @@ export class SignAccountOpController extends EventEmitter {
     accountOp: AccountOp,
     storage: Storage,
     fetch: Function,
-    providers: { [key: string]: JsonRpcProvider },
+    providers: Providers,
     callRelayer: Function
   ) {
     super()
@@ -580,6 +581,9 @@ export class SignAccountOpController extends EventEmitter {
 
     if (signer.init) signer.init(externalSignerController)
     const provider = this.#providers[this.accountOp.networkId]
+
+    if (!provider) return this.#setSigningError('Unable to sign as no RPC provider is available.')
+
     const nonce = await provider.getTransactionCount(this.accountOp.accountAddr)
     try {
       // In case of EOA account

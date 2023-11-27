@@ -1,9 +1,10 @@
-import { ethers, JsonRpcProvider } from 'ethers'
+import { ethers } from 'ethers'
 
 import { networks } from '../../consts/networks'
 import { Account, AccountStates } from '../../interfaces/account'
 import { ExternalSignerController, Key } from '../../interfaces/keystore'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
+import { Providers } from '../../interfaces/providers'
 import { Storage } from '../../interfaces/storage'
 import { Message } from '../../interfaces/userRequest'
 import { getKnownAddressLabels } from '../../libs/account/account'
@@ -20,7 +21,7 @@ export class SignMessageController extends EventEmitter {
 
   #settings: SettingsController
 
-  #providers: { [key: string]: JsonRpcProvider }
+  #providers: Providers
 
   #storage: Storage
 
@@ -49,7 +50,7 @@ export class SignMessageController extends EventEmitter {
   constructor(
     keystore: KeystoreController,
     settings: SettingsController,
-    providers: { [key: string]: JsonRpcProvider },
+    providers: Providers,
     storage: Storage,
     fetch: Function
   ) {
