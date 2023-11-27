@@ -110,7 +110,7 @@ export function toUserOperation(
     ],
     [Object.values(userOperation)]
   )
-  userOperation.preVerificationGas = ethers.toBeHex(27000n + calculateCallDataCost(packed))
+  userOperation.preVerificationGas = ethers.toBeHex(21000n + calculateCallDataCost(packed))
   userOperation.paymasterAndData = '0x'
   userOperation.signature = '0x'
   userOperation.isEdgeCase = isEdgeCase
