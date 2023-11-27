@@ -2,7 +2,7 @@ import { ethers, JsonRpcProvider } from 'ethers'
 
 import { networks } from '../../consts/networks'
 import { Account, AccountStates } from '../../interfaces/account'
-import { Key } from '../../interfaces/keystore'
+import { ExternalSignerController, Key } from '../../interfaces/keystore'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { Storage } from '../../interfaces/storage'
 import { Message } from '../../interfaces/userRequest'
@@ -136,8 +136,7 @@ export class SignMessageController extends EventEmitter {
     this.emitUpdate()
   }
 
-  // TODO: missing type, should be one of LedgerController, TrezorController, LatticeController
-  async sign(controller?: any) {
+  async sign(externalSignerController?: ExternalSignerController) {
     if (!this.isInitialized || !this.messageToSign) {
       this.#throwNotInitialized()
       return
@@ -156,7 +155,7 @@ export class SignMessageController extends EventEmitter {
 
     try {
       const signer = await this.#keystore.getSigner(this.signingKeyAddr, this.signingKeyType)
-      if (signer.init) signer.init(controller)
+      if (signer.init) signer.init(externalSignerController)
 
       const account = this.#accounts!.find((acc) => acc.addr === this.messageToSign?.accountAddr)
       if (!account) {
