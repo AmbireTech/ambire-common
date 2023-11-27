@@ -88,20 +88,12 @@ export function toUserOperation(
     ])
   }
 
-  // 27000n initial + deploy, callData, paymaster, signature
-  let preVerificationGas = 27000n
-  preVerificationGas += calculateCallDataCost(initCode)
-  preVerificationGas += calculateCallDataCost(getPaymasterSpoof())
-  preVerificationGas += calculateCallDataCost(
-    '0x0dc2d37f7b285a2243b2e1e6ba7195c578c72b395c0f76556f8961b0bca97ddc44e2d7a249598f56081a375837d2b82414c3c94940db3c1e64110108021161ca1c01'
-  ) // signature
-
-  accountOp.asUserOperation = {
+  const userOperation = {
     sender: accountOp.accountAddr,
     nonce: ethers.toBeHex(accountState.erc4337Nonce),
     initCode,
     callData,
-    preVerificationGas: ethers.toBeHex(preVerificationGas),
+    preVerificationGas: ethers.toBeHex(0),
     callGasLimit: ethers.toBeHex(150000), // hardcoded fake for estimation
     verificationGasLimit: ethers.toBeHex(150000), // hardcoded fake for estimation
     maxFeePerGas: ethers.toBeHex(1),
@@ -111,6 +103,15 @@ export function toUserOperation(
     isEdgeCase
   }
 
+  const abiCoder = new ethers.AbiCoder()
+  const packed = abiCoder.encode(
+    [
+      'tuple(address, uint256, bytes, bytes, uint256, uint256, uint256, uint256, uint256, bytes, bytes)'
+    ],
+    [userOperation]
+  )
+  userOperation.preVerificationGas = ethers.toBeHex(27000n + calculateCallDataCost(packed))
+  accountOp.asUserOperation = userOperation
   return accountOp
 }
 
@@ -123,9 +124,8 @@ export function toUserOperation(
  */
 export function getTargetEdgeCaseNonce(userOperation: UserOperation) {
   const abiCoder = new ethers.AbiCoder()
-  return (
-    '0x' +
-    ethers
+  return `0x
+    ${ethers
       .keccak256(
         abiCoder.encode(
           ['bytes', 'bytes', 'uint256', 'uint256', 'uint256', 'uint256', 'uint256', 'bytes'],
@@ -141,9 +141,8 @@ export function getTargetEdgeCaseNonce(userOperation: UserOperation) {
           ]
         )
       )
-      .substring(18) +
-    ethers.toBeHex(0, 8).substring(2)
-  )
+      .substring(18)}${ethers.toBeHex(0, 8).substring(2)}
+    `
 }
 
 export function isErc4337Broadcast(
