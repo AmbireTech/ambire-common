@@ -88,7 +88,7 @@ export function toUserOperation(
     ])
   }
 
-  const userOperation = {
+  const userOperation: any = {
     sender: accountOp.accountAddr,
     nonce: ethers.toBeHex(accountState.erc4337Nonce),
     initCode,
@@ -98,9 +98,9 @@ export function toUserOperation(
     verificationGasLimit: ethers.toBeHex(150000), // hardcoded fake for estimation
     maxFeePerGas: ethers.toBeHex(1),
     maxPriorityFeePerGas: ethers.toBeHex(1),
-    paymasterAndData: '0x',
-    signature: '0x',
-    isEdgeCase
+    paymasterAndData: getPaymasterSpoof(),
+    signature:
+      '0x0dc2d37f7b285a2243b2e1e6ba7195c578c72b395c0f76556f8961b0bca97ddc44e2d7a249598f56081a375837d2b82414c3c94940db3c1e64110108021161ca1c01'
   }
 
   const abiCoder = new ethers.AbiCoder()
@@ -108,9 +108,12 @@ export function toUserOperation(
     [
       'tuple(address, uint256, bytes, bytes, uint256, uint256, uint256, uint256, uint256, bytes, bytes)'
     ],
-    [userOperation]
+    [Object.values(userOperation)]
   )
   userOperation.preVerificationGas = ethers.toBeHex(27000n + calculateCallDataCost(packed))
+  userOperation.paymasterAndData = '0x'
+  userOperation.signature = '0x'
+  userOperation.isEdgeCase = isEdgeCase
   accountOp.asUserOperation = userOperation
   return accountOp
 }
