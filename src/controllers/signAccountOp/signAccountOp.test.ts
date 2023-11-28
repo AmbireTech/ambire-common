@@ -147,21 +147,27 @@ describe('SignAccountOp Controller ', () => {
     const accountStates = await getAccountsInfo(accounts)
     const portfolio = new PortfolioController(storage, 'https://staging-relayer.ambire.com', [])
     await portfolio.updateSelectedAccount(accounts, networks, account.addr)
-    const callRelayer = relayerCall.bind({ url: '', fetch: fetch })
+    const callRelayer = relayerCall.bind({ url: '', fetch })
     const settings = new SettingsController(storage, networks)
-    const controller = new SignAccountOpController(keystore, portfolio, settings, storage, fetch, {
-      ethereum: provider
-    }, callRelayer)
+    const controller = new SignAccountOpController(
+      keystore,
+      portfolio,
+      settings,
+      account,
+      accounts,
+      accountStates,
+      networks.find((n) => n.id === 'ethereum')!,
+      op,
+      storage,
+      fetch,
+      {
+        ethereum: provider
+      },
+      callRelayer
+    )
     controller.status = { type: SigningStatus.ReadyToSign }
 
-    controller.updateMainDeps({
-      accounts,
-      networks,
-      accountStates
-    })
-
     controller.update({
-      accountOp: op,
       gasPrices: prices,
       estimation,
       feeTokenAddr: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48', // USDC

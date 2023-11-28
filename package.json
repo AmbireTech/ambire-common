@@ -8,6 +8,7 @@
     "compile:contracts": "ts-node scripts/compileContracts.js",
     "compile:tsSchemas": "ts-node src/services/schemaValidation/generateSchemas.ts",
     "test": "npx hardhat compile; npx hardhat test; jest --forceExit",
+    "hardhat": "npx hardhat compile; npx hardhat test",
     "jest": "jest --forceExit",
     "build": "tsc src/libs/deployless/deployless.ts -t es5",
     "prettier": "prettier --write 'contracts/**/*.sol'",
