@@ -24,7 +24,7 @@ export interface EstimateResult {
   gasUsed: bigint
   nonce: number
   addedNative: bigint
-  l1BaseFee: bigint
+  addedNativeWithPayment: bigint
   feePaymentOptions: {
     availableAmount: bigint
     paidBy: string
@@ -74,7 +74,7 @@ export async function estimate(
       gasUsed,
       nonce,
       addedNative: 0n,
-      l1BaseFee: 0n,
+      addedNativeWithPayment: 0n,
       feePaymentOptions: [
         {
           address: nativeAddr,
@@ -242,7 +242,7 @@ export async function estimate(
     gasUsed,
     nonce,
     addedNative: l1GasEstimation.fee,
-    l1BaseFee: l1GasEstimation.baseFee,
+    addedNativeWithPayment: l1GasEstimation.feeWithPayment,
     feePaymentOptions: [...feeTokenOptions, ...nativeTokenOptions],
     erc4337estimation
   }

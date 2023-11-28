@@ -47,6 +47,7 @@ contract Estimation {
     uint256 gasUsed;
     uint256 baseFee;
     uint256 fee;
+    uint256 feeWithPayment;
     address gasOracle;
   }
 
@@ -116,7 +117,12 @@ contract Estimation {
         outcome.feeTokenOutcomes = simulateFeePayments(account, feeTokens, spoofSig, relayer);
       }
 
-      outcome.l1GasEstimation = this.getL1GasEstimation(probableCallData);
+      bytes memory feeCall = abi.encode(
+        address(0x942f9CE5D9a33a82F88D233AEb3292E680230348),
+        1,
+        '0x'
+      );
+      outcome.l1GasEstimation = this.getL1GasEstimation(probableCallData, feeCall);
     }
 
     if (associatedKeys.length != 0) {
@@ -288,7 +294,8 @@ contract Estimation {
   }
 
   function getL1GasEstimation(
-    bytes calldata data
+    bytes calldata data,
+    bytes calldata feeCall
   ) external returns (L1GasEstimation memory l1GasEstimation) {
     l1Oracles[10] = address(0x420000000000000000000000000000000000000F);
     l1Oracles[8453] = address(0x420000000000000000000000000000000000000F);
@@ -296,6 +303,9 @@ contract Estimation {
     if (l1Oracles[block.chainid] != address(0)) {
       l1GasEstimation.gasUsed = IGasPriceOracle(l1Oracles[block.chainid]).getL1GasUsed(data);
       l1GasEstimation.fee = IGasPriceOracle(l1Oracles[block.chainid]).getL1Fee(data);
+      l1GasEstimation.feeWithPayment = IGasPriceOracle(l1Oracles[block.chainid]).getL1Fee(
+        bytes.concat(data, feeCall)
+      );
       l1GasEstimation.baseFee = IGasPriceOracle(l1Oracles[block.chainid]).l1BaseFee();
       l1GasEstimation.gasOracle = l1Oracles[block.chainid];
     }

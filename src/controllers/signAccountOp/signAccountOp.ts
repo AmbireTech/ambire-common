@@ -332,16 +332,9 @@ export class SignAccountOpController extends EventEmitter {
     simulatedGasLimit: bigint,
     gasPrice: bigint,
     nativeRatio: bigint,
-    feeTokenDecimals: number,
-    feeTokenGasUsed: bigint
+    feeTokenDecimals: number
   ) {
-    let amountInWei = simulatedGasLimit * gasPrice + this.#estimation!.addedNative
-
-    // if we have an l1BaseFee, add the fee token gas to the
-    // total amount, calculated with the l1BaseFee
-    if (this.#estimation!.l1BaseFee > 0n) {
-      amountInWei += feeTokenGasUsed * this.#estimation!.l1BaseFee
-    }
+    const amountInWei = simulatedGasLimit * gasPrice + this.#estimation!.addedNativeWithPayment
 
     // Let's break down the process of converting the amount into FeeToken:
     // 1. Initially, we multiply the amount in wei by the native to fee token ratio.
@@ -396,8 +389,7 @@ export class SignAccountOpController extends EventEmitter {
           simulatedGasLimit,
           gasPrice,
           nativeRatio,
-          feeToken!.decimals,
-          feeTokenGasUsed
+          feeToken!.decimals
         )
       } else if (this.paidBy !== this.accountOp!.accountAddr) {
         // Smart account, but EOA pays the fee
@@ -426,8 +418,7 @@ export class SignAccountOpController extends EventEmitter {
           simulatedGasLimit,
           gasPrice,
           nativeRatio,
-          feeToken!.decimals,
-          feeTokenGasUsed
+          feeToken!.decimals
         )
       }
 
