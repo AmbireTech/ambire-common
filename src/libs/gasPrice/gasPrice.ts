@@ -36,7 +36,12 @@ function filterOutliers(data: bigint[]): bigint[] {
   if (!data.length) return []
 
   // numeric sort, a - b doesn't work for bigint
-  data.sort((a, b) => (a === b ? 0 : a > b ? 1 : -1))
+  data.sort((a, b) => {
+    if (a === b) return 0
+    if (a > b) return 1
+    return -1
+  })
+
   const q1 = data[Math.floor(data.length / 4)]
   const endPosition = Math.ceil(data.length * (3 / 4))
   const q2 = data[endPosition < data.length ? endPosition : data.length - 1]
