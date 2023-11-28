@@ -117,11 +117,11 @@ export async function getGasPriceRecommendations(
   }))
 }
 
-export function getCallDataAdditional(
+export function getProbableCallData(
   accountOp: AccountOp,
   network: NetworkDescriptor,
   accountState: AccountOnchainState
-): bigint {
+): string {
   let estimationCallData
 
   // always call executeMultiple as the worts case scenario
@@ -151,6 +151,15 @@ export function getCallDataAdditional(
     ])
   }
 
+  return estimationCallData
+}
+
+export function getCallDataAdditional(
+  accountOp: AccountOp,
+  network: NetworkDescriptor,
+  accountState: AccountOnchainState
+): bigint {
+  const estimationCallData = getProbableCallData(accountOp, network, accountState)
   const FIXED_OVERHEAD = 21000n
   const bytes = Buffer.from(estimationCallData.substring(2))
   const nonZeroBytes = BigInt(bytes.filter((b) => b).length)
