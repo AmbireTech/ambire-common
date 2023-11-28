@@ -27,6 +27,7 @@ contract Estimation {
     uint nonce;
     IAmbireAccount.Transaction[] calls;
     bytes signature;
+    bytes probableCallData;
   }
 
   // We do not care about nonces here, unlike portfolio simulations
@@ -111,13 +112,11 @@ contract Estimation {
       );
       outcome.nonce = op.account.nonce();
       // Get fee tokens amounts after the simulation, and simulate their gas cost for transfer
-      if (feeTokens.length != 0)
-        (outcome.feeTokenOutcomes, outcome.l1GasEstimation) = simulateFeePayments(
-          account,
-          feeTokens,
-          spoofSig,
-          relayer
-        );
+      if (feeTokens.length != 0) {
+        outcome.feeTokenOutcomes = simulateFeePayments(account, feeTokens, spoofSig, relayer);
+      }
+
+      outcome.l1GasEstimation = this.getL1GasEstimation(op.probableCallData);
     }
 
     if (associatedKeys.length != 0) {
@@ -198,14 +197,8 @@ contract Estimation {
     address[] memory feeTokens,
     bytes memory spoofSig,
     address relayer
-  )
-    public
-    returns (FeeTokenOutcome[] memory feeTokenOutcomes, L1GasEstimation memory l1GasEstimation)
-  {
+  ) public returns (FeeTokenOutcome[] memory feeTokenOutcomes) {
     uint baseGasConsumption = calculateBaseGas(account, spoofSig);
-
-    l1Oracles[10] = address(0x420000000000000000000000000000000000000F);
-    l1Oracles[8453] = address(0x420000000000000000000000000000000000000F);
 
     feeTokenOutcomes = new FeeTokenOutcome[](feeTokens.length);
     for (uint i = 0; i != feeTokens.length; i++) {
@@ -228,17 +221,6 @@ contract Estimation {
           relayer,
           1
         );
-
-        if (l1Oracles[block.chainid] != address(0)) {
-          l1GasEstimation.gasUsed = IGasPriceOracle(l1Oracles[block.chainid]).getL1GasUsed(
-            simulationOp.calls[0].data
-          );
-          l1GasEstimation.fee = IGasPriceOracle(l1Oracles[block.chainid]).getL1Fee(
-            simulationOp.calls[0].data
-          );
-          l1GasEstimation.baseFee = IGasPriceOracle(l1Oracles[block.chainid]).l1BaseFee();
-          l1GasEstimation.gasOracle = l1Oracles[block.chainid];
-        }
 
         try this.getERC20Balance(IERC20Subset(feeToken), address(account)) returns (uint amount) {
           feeTokenOutcomes[i].amount = amount;
@@ -303,6 +285,20 @@ contract Estimation {
 
     uint diff = twoCallOpOutcome.gasUsed - emptyOpOutcome.gasUsed;
     return emptyOpOutcome.gasUsed - diff;
+  }
+
+  function getL1GasEstimation(
+    bytes calldata data
+  ) external returns (L1GasEstimation memory l1GasEstimation) {
+    l1Oracles[10] = address(0x420000000000000000000000000000000000000F);
+    l1Oracles[8453] = address(0x420000000000000000000000000000000000000F);
+
+    if (l1Oracles[block.chainid] != address(0)) {
+      l1GasEstimation.gasUsed = IGasPriceOracle(l1Oracles[block.chainid]).getL1GasUsed(data);
+      l1GasEstimation.fee = IGasPriceOracle(l1Oracles[block.chainid]).getL1Fee(data);
+      l1GasEstimation.baseFee = IGasPriceOracle(l1Oracles[block.chainid]).l1BaseFee();
+      l1GasEstimation.gasOracle = l1Oracles[block.chainid];
+    }
   }
 
   // We need this function so that we can try-catch the parsing of the return value as well

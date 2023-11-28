@@ -1,21 +1,23 @@
-import { Provider, JsonRpcProvider, Interface, AbiCoder } from 'ethers'
-import { fromDescriptor } from '../deployless/deployless'
-import { getAccountDeployParams } from '../account/account'
-import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
-import { AccountOp } from '../accountOp/accountOp'
-import { Account } from '../../interfaces/account'
-import Estimation from '../../../contracts/compiled/Estimation.json'
-import Estimation4337 from '../../../contracts/compiled/Estimation4337.json'
+import { AbiCoder, Interface, JsonRpcProvider, Provider } from 'ethers'
+
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFactory.json'
+import Estimation from '../../../contracts/compiled/Estimation.json'
+import Estimation4337 from '../../../contracts/compiled/Estimation4337.json'
 import { ERC_4337_ENTRYPOINT } from '../../consts/deploy'
-import { getPaymasterSpoof, getTargetEdgeCaseNonce } from '../../libs/userOperation/userOperation'
 import { SPOOF_SIGTYPE } from '../../consts/signatures'
+import { Account, AccountOnchainState } from '../../interfaces/account'
+import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
+import { getAccountDeployParams } from '../account/account'
+import { AccountOp } from '../accountOp/accountOp'
+import { fromDescriptor } from '../deployless/deployless'
+import { getProbableCallData } from '../gasPrice/gasPrice'
+import { getPaymasterSpoof, getTargetEdgeCaseNonce } from '../userOperation/userOperation'
 
 interface Erc4337estimation {
-  verificationGasLimit: bigint,
-  callGasLimit: bigint,
-  gasUsed: bigint,
+  verificationGasLimit: bigint
+  callGasLimit: bigint
+  gasUsed: bigint
 }
 
 export interface EstimateResult {
@@ -36,6 +38,7 @@ export async function estimate(
   network: NetworkDescriptor,
   account: Account,
   op: AccountOp,
+  accountState: AccountOnchainState,
   nativeToCheck: string[],
   feeTokens: string[],
   opts?: {
@@ -94,7 +97,8 @@ export async function estimate(
       account.addr,
       op.accountOpToExecuteBefore?.nonce || 0,
       op.accountOpToExecuteBefore?.calls || [],
-      op.accountOpToExecuteBefore?.signature || '0x'
+      op.accountOpToExecuteBefore?.signature || '0x',
+      getProbableCallData(op, network, accountState)
     ],
     [account.addr, op.nonce || 1, op.calls, '0x'],
     account.associatedKeys,
@@ -109,11 +113,12 @@ export async function estimate(
     // using Object.assign as typescript doesn't work otherwise
     const userOp = Object.assign({}, op.asUserOperation)
     userOp!.paymasterAndData = getPaymasterSpoof()
-    const deployless4337Estimator = fromDescriptor(provider, Estimation4337, !network.rpcNoStateOverride)
-    const functionArgs = [
-      userOp,
-      ERC_4337_ENTRYPOINT
-    ]
+    const deployless4337Estimator = fromDescriptor(
+      provider,
+      Estimation4337,
+      !network.rpcNoStateOverride
+    )
+    const functionArgs = [userOp, ERC_4337_ENTRYPOINT]
     if (userOp.isEdgeCase) {
       userOp.nonce = getTargetEdgeCaseNonce(userOp)
     } else {
@@ -154,16 +159,10 @@ export async function estimate(
 
   let erc4337estimation: Erc4337estimation | null = null
   if (opts && opts.is4337Broadcast) {
-    const [
-      [
-        verificationGasLimit,
-        gasUsed,
-        failure
-      ]
-    ] = estimations[1]
+    const [[verificationGasLimit, gasUsed, failure]] = estimations[1]
 
     // TODO<Bobby>: handle estimation failure
-    if (failure != '0x') {
+    if (failure !== '0x') {
       console.log(Buffer.from(failure.substring(2), 'hex').toString())
     }
 
@@ -213,7 +212,6 @@ export async function estimate(
   let finalFeeTokenOptions = feeTokenOutcomes
   let finalNativeTokenOptions = nativeAssetBalances
   if (opts && opts.is4337Broadcast) {
-
     // if there's no paymaster, we cannot pay in tokens
     if (!network.erc4337?.hasPaymaster) {
       finalFeeTokenOptions = []
@@ -221,7 +219,7 @@ export async function estimate(
 
     // native should be payed from the smart account only
     finalNativeTokenOptions = finalNativeTokenOptions.filter((balance: bigint, key: number) => {
-      return nativeToCheck[key] == account.addr
+      return nativeToCheck[key] === account.addr
     })
   }
 
