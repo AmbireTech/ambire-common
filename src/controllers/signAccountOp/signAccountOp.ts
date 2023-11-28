@@ -156,6 +156,14 @@ export class SignAccountOpController extends EventEmitter {
         "We are unable to estimate your transaction as you don't have tokens with balances to cover the fee."
       )
 
+    if (!this.getAccountKeyStoreKeys.length)
+      errors.push('We are unable to sign your transaction as there is no available signer.')
+
+    // This error should not happen, as in the update method we are always setting a default signer.
+    // It may occur, only if there are no available signer.
+    if (!this.accountOp?.signingKeyType || !this.accountOp?.signingKeyAddr)
+      errors.push('Please select a signer to sign the transaction.')
+
     if (!this.accountOp?.gasFeePayment)
       errors.push('Please select a token and an account for paying the gas fee.')
 
@@ -263,6 +271,19 @@ export class SignAccountOpController extends EventEmitter {
       this.paidBy = defaultFeeOption.paidBy
       this.selectedTokenAddr = defaultFeeOption.address
     }
+    // Set the first signer as the default one.
+    // If there are more available signers, the user will be able to select a different signer from the application.
+    // The main benefit of having a default signer
+    // is that it drastically simplifies the logic of determining whether the account is ready for signing.
+    // For example, in the `sign` method and on the application screen, we can simply rely on the `this.readyToSign` flag.
+    // Otherwise, if we don't have a default value, then `this.readyToSign` will always be false unless we set a signer.
+    // In that case, on the application, we want the "Sign" button to be clickable/enabled,
+    // and we have to check and expose the `SignAccountOp` controller's inner state to make this check possible.
+    if (this.isInitialized && (!this.accountOp.signingKeyAddr || !this.accountOp.signingKeyType)) {
+      const accountKeyStoreKeys = this.getAccountKeyStoreKeys
+      this.accountOp.signingKeyAddr = accountKeyStoreKeys[0].addr
+      this.accountOp.signingKeyType = accountKeyStoreKeys[0].type
+    }
 
     if (this.isInitialized && this.paidBy && this.selectedTokenAddr && this.selectedFeeSpeed) {
       this.accountOp!.gasFeePayment = this.#getGasFeePayment()
@@ -276,6 +297,7 @@ export class SignAccountOpController extends EventEmitter {
       this.isInitialized &&
       this.#estimation &&
       this.accountOp?.signingKeyAddr &&
+      this.accountOp?.signingKeyType &&
       this.accountOp?.gasFeePayment &&
       !this.errors.length
     ) {
@@ -500,6 +522,10 @@ export class SignAccountOpController extends EventEmitter {
     return this.#estimation!.feePaymentOptions.filter((feeOption) => feeOption.availableAmount)
   }
 
+  get getAccountKeyStoreKeys(): Key[] {
+    return this.#keystore.keys.filter((key) => this.#account?.associatedKeys.includes(key.addr))
+  }
+
   // eslint-disable-next-line class-methods-use-this
   get speedOptions() {
     return Object.values(FeeSpeed) as string[]
@@ -700,6 +726,7 @@ export class SignAccountOpController extends EventEmitter {
       hasSelectedAccountOp: this.hasSelectedAccountOp,
       readyToSign: this.readyToSign,
       availableFeeOptions: this.availableFeeOptions,
+      accountKeyStoreKeys: this.getAccountKeyStoreKeys,
       feeSpeeds: this.feeSpeeds,
       feeToken: this.feeToken,
       feePaidBy: this.feePaidBy,
