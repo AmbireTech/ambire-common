@@ -27,7 +27,6 @@ contract Estimation {
     uint nonce;
     IAmbireAccount.Transaction[] calls;
     bytes signature;
-    bytes probableCallData;
   }
 
   // We do not care about nonces here, unlike portfolio simulations
@@ -78,6 +77,7 @@ contract Estimation {
     // @TODO is there a more elegant way than passing those in full
     AccountOp memory preExecute,
     AccountOp memory op,
+    bytes calldata probableCallData,
     address[] memory associatedKeys,
     // Only needed in case we simulate fee tokens
     // @TODO: perhaps we can wrap this in a struct
@@ -116,7 +116,7 @@ contract Estimation {
         outcome.feeTokenOutcomes = simulateFeePayments(account, feeTokens, spoofSig, relayer);
       }
 
-      outcome.l1GasEstimation = this.getL1GasEstimation(op.probableCallData);
+      outcome.l1GasEstimation = this.getL1GasEstimation(probableCallData);
     }
 
     if (associatedKeys.length != 0) {

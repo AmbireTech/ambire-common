@@ -97,10 +97,10 @@ export async function estimate(
       account.addr,
       op.accountOpToExecuteBefore?.nonce || 0,
       op.accountOpToExecuteBefore?.calls || [],
-      op.accountOpToExecuteBefore?.signature || '0x',
-      getProbableCallData(op, network, accountState)
+      op.accountOpToExecuteBefore?.signature || '0x'
     ],
     [account.addr, op.nonce || 1, op.calls, '0x'],
+    getProbableCallData(op, network, accountState),
     account.associatedKeys,
     feeTokens,
     relayerAddress,
