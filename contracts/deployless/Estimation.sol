@@ -1,16 +1,19 @@
 // SPDX-License-Identifier: agpl-3.0
 pragma solidity 0.8.19;
 
-import "./IAmbireAccount.sol";
+import './IAmbireAccount.sol';
 
 interface IERC20Subset {
   function balanceOf(address account) external view returns (uint256);
+
   function transfer(address recipient, uint256 amount) external returns (bool);
 }
 
 interface IGasPriceOracle {
   function getL1GasUsed(bytes memory _data) external view returns (uint256);
+
   function getL1Fee(bytes memory _data) external view returns (uint256);
+
   function l1BaseFee() external view returns (uint256);
 }
 
@@ -59,7 +62,7 @@ contract Estimation {
     L1GasEstimation l1GasEstimation;
   }
 
-  mapping (uint256 => address) l1Oracles;
+  mapping(uint256 => address) l1Oracles;
 
   function makeSpoofSignature(address key) internal pure returns (bytes memory spoofSig) {
     spoofSig = abi.encodePacked(uint256(uint160(key)), uint8(0x03));
@@ -69,7 +72,8 @@ contract Estimation {
   // vs the regular accountOp for which we use simulateUnsigned
   function estimate(
     IAmbireAccount account,
-    address factory, bytes memory factoryCalldata,
+    address factory,
+    bytes memory factoryCalldata,
     // @TODO is there a more elegant way than passing those in full
     AccountOp memory preExecute,
     AccountOp memory op,
@@ -85,7 +89,7 @@ contract Estimation {
     // txn fee anomalies (like in Optimism, paying the L1 calldata fee)
     // this is first, because when it comes to paying with native (EOA), the starting balance is taken
     outcome.nativeAssetBalances = new uint[](checkNativeAssetOn.length);
-    for (uint i=0; i!=checkNativeAssetOn.length; i++) {
+    for (uint i = 0; i != checkNativeAssetOn.length; i++) {
       outcome.nativeAssetBalances[i] = checkNativeAssetOn[i].balance;
     }
 
@@ -96,27 +100,46 @@ contract Estimation {
     if (outcome.deployment.success && preExecute.calls.length != 0) {
       outcome.accountOpToExecuteBefore = simulateSigned(preExecute);
     }
-    if (outcome.deployment.success && (preExecute.calls.length == 0 || outcome.accountOpToExecuteBefore.success)) {
+    if (
+      outcome.deployment.success &&
+      (preExecute.calls.length == 0 || outcome.accountOpToExecuteBefore.success)
+    ) {
       bytes memory spoofSig;
-      (outcome.op, outcome.associatedKeyPrivileges, spoofSig) = simulateUnsigned(op, associatedKeys);
+      (outcome.op, outcome.associatedKeyPrivileges, spoofSig) = simulateUnsigned(
+        op,
+        associatedKeys
+      );
       outcome.nonce = op.account.nonce();
       // Get fee tokens amounts after the simulation, and simulate their gas cost for transfer
-      if (feeTokens.length != 0) (outcome.feeTokenOutcomes, outcome.l1GasEstimation) = simulateFeePayments(account, feeTokens, spoofSig, relayer);
+      if (feeTokens.length != 0)
+        (outcome.feeTokenOutcomes, outcome.l1GasEstimation) = simulateFeePayments(
+          account,
+          feeTokens,
+          spoofSig,
+          relayer
+        );
     }
 
     if (associatedKeys.length != 0) {
       // Safety check: anti-bricking
       bool isOk;
-      for (uint i=0; i!=associatedKeys.length; i++) {
-        if (op.account.privileges(associatedKeys[i]) != bytes32(0)) { isOk = true; break; }
+      for (uint i = 0; i != associatedKeys.length; i++) {
+        if (op.account.privileges(associatedKeys[i]) != bytes32(0)) {
+          isOk = true;
+          break;
+        }
       }
-      require(isOk, "Anti-bricking check failed, this means that none of the passed associatedKeys has privileges after simulation");
+      require(
+        isOk,
+        'Anti-bricking check failed, this means that none of the passed associatedKeys has privileges after simulation'
+      );
     }
   }
 
   function simulateDeployment(
     IAmbireAccount account,
-    address factory, bytes memory factoryCalldata
+    address factory,
+    bytes memory factoryCalldata
   ) public returns (SimulationOutcome memory outcome) {
     if (address(account).code.length > 0) {
       outcome.success = true;
@@ -127,14 +150,21 @@ contract Estimation {
     outcome.gasUsed = gasInitial - gasleft();
   }
 
-  function simulateUnsigned(AccountOp memory op, address[] memory associatedKeys)
+  function simulateUnsigned(
+    AccountOp memory op,
+    address[] memory associatedKeys
+  )
     public
-    returns (SimulationOutcome memory outcome, bytes32[] memory associatedKeyPrivileges, bytes memory spoofSig)
+    returns (
+      SimulationOutcome memory outcome,
+      bytes32[] memory associatedKeyPrivileges,
+      bytes memory spoofSig
+    )
   {
     // setting the nonce is just for the purposes of passing the safety check in simulateSigned; it's a spoof sig so it doesn't matter
     op.nonce = op.account.nonce();
     associatedKeyPrivileges = new bytes32[](associatedKeys.length);
-    for (uint i=0; i!=associatedKeys.length; i++) {
+    for (uint i = 0; i != associatedKeys.length; i++) {
       address key = associatedKeys[i];
       bytes32 value = op.account.privileges(key);
       associatedKeyPrivileges[i] = value;
@@ -149,7 +179,7 @@ contract Estimation {
   function simulateSigned(AccountOp memory op) public returns (SimulationOutcome memory outcome) {
     // safety check in case what's passed in is wrong
     if (op.nonce != op.account.nonce()) {
-      outcome.err = bytes("NONCE_ERROR");
+      outcome.err = bytes('NONCE_ERROR');
       return outcome;
     }
     uint gasInitial = gasleft();
@@ -163,7 +193,12 @@ contract Estimation {
     outcome.gasUsed = gasInitial - gasleft();
   }
 
-  function simulateFeePayments(IAmbireAccount account, address[] memory feeTokens, bytes memory spoofSig, address relayer)
+  function simulateFeePayments(
+    IAmbireAccount account,
+    address[] memory feeTokens,
+    bytes memory spoofSig,
+    address relayer
+  )
     public
     returns (FeeTokenOutcome[] memory feeTokenOutcomes, L1GasEstimation memory l1GasEstimation)
   {
@@ -173,7 +208,7 @@ contract Estimation {
     l1Oracles[8453] = address(0x420000000000000000000000000000000000000F);
 
     feeTokenOutcomes = new FeeTokenOutcome[](feeTokens.length);
-    for (uint i=0; i!=feeTokens.length; i++) {
+    for (uint i = 0; i != feeTokens.length; i++) {
       address feeToken = feeTokens[i];
       AccountOp memory simulationOp;
       simulationOp.account = account;
@@ -188,18 +223,26 @@ contract Estimation {
         simulationOp.calls[0].value = 1;
       } else {
         simulationOp.calls[0].to = feeToken;
-        simulationOp.calls[0].data = abi.encodeWithSelector(IERC20Subset.transfer.selector, relayer, 1);
-        
-        if(l1Oracles[block.chainid] != address(0)) {
-          l1GasEstimation.gasUsed = IGasPriceOracle(l1Oracles[block.chainid]).getL1GasUsed(simulationOp.calls[0].data);
-          l1GasEstimation.fee = IGasPriceOracle(l1Oracles[block.chainid]).getL1Fee(simulationOp.calls[0].data);
+        simulationOp.calls[0].data = abi.encodeWithSelector(
+          IERC20Subset.transfer.selector,
+          relayer,
+          1
+        );
+
+        if (l1Oracles[block.chainid] != address(0)) {
+          l1GasEstimation.gasUsed = IGasPriceOracle(l1Oracles[block.chainid]).getL1GasUsed(
+            simulationOp.calls[0].data
+          );
+          l1GasEstimation.fee = IGasPriceOracle(l1Oracles[block.chainid]).getL1Fee(
+            simulationOp.calls[0].data
+          );
           l1GasEstimation.baseFee = IGasPriceOracle(l1Oracles[block.chainid]).l1BaseFee();
           l1GasEstimation.gasOracle = l1Oracles[block.chainid];
         }
-        
+
         try this.getERC20Balance(IERC20Subset(feeToken), address(account)) returns (uint amount) {
           feeTokenOutcomes[i].amount = amount;
-        // Ignore errors on purpose here, we just leave the amount 0
+          // Ignore errors on purpose here, we just leave the amount 0
         } catch {}
       }
 
@@ -210,7 +253,7 @@ contract Estimation {
         // We only care about `gasUsed - baseGasConsumption` because paying the fee will be a part of
         // another AccountOp, so we don't care about the base AccountOp overhead
         if (outcome.gasUsed > 0) {
-          require(outcome.gasUsed >= baseGasConsumption, "IMPOSSIBLE_GAS_CONSUMPTION");
+          require(outcome.gasUsed >= baseGasConsumption, 'IMPOSSIBLE_GAS_CONSUMPTION');
           feeTokenOutcomes[i].gasUsed = outcome.gasUsed - baseGasConsumption;
         }
       }
@@ -236,7 +279,9 @@ contract Estimation {
     require(
       emptyOpOutcome.success,
       // @TODO: fix: it is wrong to cast this as string since we'll double-wrap it in Error()
-      emptyOpOutcome.err.length > 0 ? string(emptyOpOutcome.err) : "calculateBaseFee: unable to execute emptyOpOutcome, cannot calc base fee"
+      emptyOpOutcome.err.length > 0
+        ? string(emptyOpOutcome.err)
+        : 'calculateBaseFee: unable to execute emptyOpOutcome, cannot calc base fee'
     );
     AccountOp memory twoCallOp = emptyOp;
     twoCallOp.nonce = account.nonce();
@@ -247,7 +292,9 @@ contract Estimation {
     require(
       twoCallOpOutcome.success,
       // @TODO: fix: it is wrong to cast this as string since we'll double-wrap it in Error()
-      twoCallOpOutcome.err.length > 0 ? string(twoCallOpOutcome.err) : "calculateBaseFee: unable to execute twoCallOpOutcome, cannot calc base fee"
+      twoCallOpOutcome.err.length > 0
+        ? string(twoCallOpOutcome.err)
+        : 'calculateBaseFee: unable to execute twoCallOpOutcome, cannot calc base fee'
     );
 
     // This will happen if we haven't accessed the account before. As such, the second one will
@@ -265,5 +312,6 @@ contract Estimation {
 
   // Empty fallback so we can call ourselves from the account
   fallback() external payable {}
+
   receive() external payable {}
 }
