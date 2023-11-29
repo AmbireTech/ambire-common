@@ -1,3 +1,5 @@
+/* eslint-disable new-cap */
+/* eslint-disable @typescript-eslint/no-shadow */
 import aes from 'aes-js'
 import { concat, getBytes, hexlify, keccak256, randomBytes, toUtf8Bytes, Wallet } from 'ethers'
 import scrypt from 'scrypt-js'
@@ -492,6 +494,91 @@ export class KeystoreController extends EventEmitter {
 
     // @ts-ignore TODO: Figure out the correct type definition
     return new SignerInitializer(key)
+  }
+
+  async #updateSecret(secretId: string, secret: string, newSecret: string) {
+    const secrets = await this.getMainKeyEncryptedWithSecrets()
+    const secretEntry = secrets.find((x) => x.id === secretId)
+
+    if (!secretEntry) {
+      return this.emitError({
+        message:
+          'Key Store not configured yet. Please try again or contact support if the problem persists.',
+        level: 'major',
+        error: new Error('keystore: secret not found')
+      })
+    }
+
+    const { scryptParams, aesEncrypted } = secretEntry
+    if (aesEncrypted.cipherType !== CIPHER) {
+      return this.emitError({
+        message:
+          'Something went wrong when changing your Key Store password. Please try again or contact support if the problem persists.',
+        level: 'major',
+        error: new Error(`keystore: unsupported cipherType ${aesEncrypted.cipherType}`)
+      })
+    }
+
+    const key = await scrypt.scrypt(
+      getBytesForSecret(secret),
+      getBytes(scryptParams.salt),
+      scryptParams.N,
+      scryptParams.r,
+      scryptParams.p,
+      scryptParams.dkLen,
+      () => {}
+    )
+    const iv = getBytes(aesEncrypted.iv)
+    const derivedKey = key.slice(0, 16)
+    const macPrefix = key.slice(16, 32)
+    const counter = new aes.Counter(iv)
+    const aesCtr = new aes.ModeOfOperation.ctr(derivedKey, counter)
+    const mac = keccak256(concat([macPrefix, aesEncrypted.ciphertext]))
+    if (mac !== aesEncrypted.mac) {
+      // Throw, because that's handled as a form field error
+      throw new Error('keystore: wrong secret')
+    }
+
+    const decrypted = aesCtr.decrypt(getBytes(aesEncrypted.ciphertext))
+    const mainKeyDecrypted = { key: decrypted.slice(0, 16), iv: decrypted.slice(16, 32) }
+
+    console.log(mainKeyDecrypted, this.#mainKey)
+    // const keys: StoredKey[] = await this.#storage.get('keystoreKeys', [])
+    // const onlyInternalKeys = keys.filter((k) => k.type === 'internal')
+    // const otherKeys = keys.filter((k) => k.type !== 'internal')
+
+    // const updatedInternalKeys = onlyInternalKeys.map((k) => {
+    //   if (!this.isUnlocked) throw new Error('keystore: not unlocked')
+
+    //   const encryptedBytes = getBytes(k.privKey as string)
+    //   const decryptedBytes = aesCtr.decrypt(encryptedBytes)
+    //   const decryptedPrivateKey = aes.utils.hex.fromBytes(decryptedBytes)
+
+    //   return {
+    //     ...k,
+    //     privKey: hexlify(aesCtr.encrypt(aes.utils.hex.toBytes(decryptedPrivateKey)))
+    //   }
+    // })
+
+    // const newKeys = [...updatedInternalKeys, ...otherKeys]
+
+    // if (!newKeys.length) return
+
+    // const nextKeys = [...keys, ...newKeys]
+
+    // await this.#storage.set('keystoreKeys', nextKeys)
+    // this.keys = await this.getKeys()
+
+    // await this.#storage.set(
+    //   'keystoreSecrets',
+    //   secrets.filter((x) => x.id !== secretId)
+    // )
+  }
+
+  async updateSecret(secretId: string, secret: string, newSecret: string) {
+    await this.wrapKeystoreAction('updateSecret', () =>
+      this.#updateSecret(secretId, secret, newSecret)
+    )
   }
 
   resetErrorState() {
