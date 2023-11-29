@@ -96,17 +96,9 @@ export async function estimate(
   // so we could do proper estimation
   const abiCoder = new AbiCoder()
   const probableTxn = {
-    from: blockFrom,
-    to: account.addr,
-    data: getProbableCallData(op, network, accountState),
-    gasLimit: toBeHex(100000),
-    gasPrice: toBeHex(100000)
+    data: getProbableCallData(op, network, accountState)
   }
-  const encoded = abiCoder.encode(
-    ['from', 'to', 'data', 'gasLimit', 'gasPrice'],
-    [...Object.values(probableTxn)]
-  )
-
+  const encoded = abiCoder.encode(['bytes'], [probableTxn.data])
   const args = [
     account.addr,
     ...getAccountDeployParams(account),
