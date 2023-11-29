@@ -1,9 +1,9 @@
 // @TODO: move to interfaces folder
 import { NetworkId } from 'interfaces/networkDescriptor'
 
-import { Account } from '../../interfaces/account'
-import { Message, TypedMessage } from '../../interfaces/userRequest'
-import { AccountOp, Call } from '../accountOp/accountOp'
+import { Account } from './account'
+import { Message, TypedMessage } from './userRequest'
+import { AccountOp, Call } from '../libs/accountOp/accountOp'
 
 export type HumanizerVisualization = {
   type: 'token' | 'address' | 'label' | 'action' | 'nft' | 'danger'

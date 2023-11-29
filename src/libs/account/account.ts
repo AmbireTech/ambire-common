@@ -6,7 +6,7 @@ import { networks } from '../../consts/networks'
 import { Account } from '../../interfaces/account'
 import { Key } from '../../interfaces/keystore'
 import { AccountPreferences, KeyPreferences } from '../../interfaces/settings'
-import { KnownAddressLabels } from '../humanizer/interfaces'
+import { KnownAddressLabels } from '../../interfaces/humanizer'
 import { getBytecode } from '../proxyDeploy/bytecode'
 import { getAmbireAccountAddress } from '../proxyDeploy/getAmbireAddressTwo'
 

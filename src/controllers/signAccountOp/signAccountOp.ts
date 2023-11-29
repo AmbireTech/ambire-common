@@ -19,7 +19,7 @@ import {
 import { EstimateResult } from '../../libs/estimate/estimate'
 import { GasRecommendation, getCallDataAdditional } from '../../libs/gasPrice/gasPrice'
 import { callsHumanizer } from '../../libs/humanizer'
-import { IrCall } from '../../libs/humanizer/interfaces'
+import { IrCall } from '../../interfaces/humanizer'
 import { Price, TokenResult } from '../../libs/portfolio'
 import { getTargetEdgeCaseNonce, isErc4337Broadcast } from '../../libs/userOperation/userOperation'
 import EventEmitter from '../eventEmitter'

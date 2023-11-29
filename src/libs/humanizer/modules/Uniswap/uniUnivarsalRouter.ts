@@ -10,7 +10,7 @@ import {
   getUnknownVisualization
 } from '../../utils'
 import { AccountOp } from '../../../accountOp/accountOp'
-import { IrCall } from '../../interfaces'
+import { IrCall } from '../../../../interfaces/humanizer'
 import { COMMANDS, COMMANDS_DESCRIPTIONS } from './Commands'
 import { parsePath } from './utils'
 

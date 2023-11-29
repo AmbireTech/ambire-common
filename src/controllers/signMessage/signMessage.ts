@@ -8,7 +8,7 @@ import { Storage } from '../../interfaces/storage'
 import { Message } from '../../interfaces/userRequest'
 import { getKnownAddressLabels } from '../../libs/account/account'
 import { messageHumanizer } from '../../libs/humanizer'
-import { IrMessage } from '../../libs/humanizer/interfaces'
+import { IrMessage } from '../../interfaces/humanizer'
 import {
   verifyMessage,
   wrapCounterfactualSign,

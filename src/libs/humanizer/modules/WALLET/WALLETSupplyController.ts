@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { ethers } from 'ethers'
 
-import { HumanizerVisualization, IrCall } from '../../interfaces'
+import { HumanizerVisualization, IrCall } from '../../../../interfaces/humanizer'
 import { getAction, getLabel } from '../../utils'
 import { AccountOp } from '../../../accountOp/accountOp'
 import WALLETSupplyControllerABI from '../../../../../contracts/compiled/WALLETSupplyController.json'

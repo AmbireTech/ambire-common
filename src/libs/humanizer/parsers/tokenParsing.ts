@@ -6,7 +6,7 @@ import {
   HumanizerParsingModule,
   HumanizerSettings,
   HumanizerVisualization
-} from '../interfaces'
+} from '../../../interfaces/humanizer'
 import { getLabel, getTokenInfo } from '../utils'
 import { MAX_UINT256 } from '../../../consts/deploy'
 
