@@ -58,7 +58,8 @@ const networks: NetworkDescriptor[] = [
       is1559: true,
       elasticityMultiplier: 6n,
       baseFeeMaxChangeDenominator: 50n
-    }
+    },
+    reestimateOn: 6000
   },
   {
     id: 'avalanche',

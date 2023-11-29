@@ -1,4 +1,4 @@
-import { AbiCoder, encodeRlp, Interface, JsonRpcProvider, Provider, toBeHex } from 'ethers'
+import { AbiCoder, encodeRlp, Interface, JsonRpcProvider, Provider } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFactory.json'
@@ -95,10 +95,10 @@ export async function estimate(
   // craft the probableTxn that's going to be saved on the L1
   // so we could do proper estimation
   const abiCoder = new AbiCoder()
-  const probableTxn = {
-    data: getProbableCallData(op, network, accountState)
-  }
-  const encoded = abiCoder.encode(['bytes'], [probableTxn.data])
+  const encodedCallData = abiCoder.encode(
+    ['bytes'],
+    [getProbableCallData(op, network, accountState)]
+  )
   const args = [
     account.addr,
     ...getAccountDeployParams(account),
@@ -110,7 +110,7 @@ export async function estimate(
       op.accountOpToExecuteBefore?.signature || '0x'
     ],
     [account.addr, op.nonce || 1, op.calls, '0x'],
-    encodeRlp(encoded),
+    encodeRlp(encodedCallData),
     account.associatedKeys,
     feeTokens,
     relayerAddress,
