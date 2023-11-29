@@ -13,21 +13,30 @@ const COMPILER_OPTIONS: TJS.CompilerOptions = {
 }
 
 const source = TJS.getProgramFromFiles(
-  [resolve('src', 'interfaces', 'emailVault.ts')],
+  [
+    resolve('src', 'interfaces', 'emailVault.ts'),
+    resolve('src', 'interfaces', 'account.ts'),
+    resolve('src', 'interfaces', 'portfolio.ts')
+  ],
   COMPILER_OPTIONS,
   __dirname
 )
 
-const generator = TJS.buildGenerator(source, SETTINGS)!
+const generator = TJS.buildGenerator(source, SETTINGS)
+// console.log(generator)
 // const emailVaultInterfaces = ['EmailVaultSecrets']
-const emailVaultInterfaces = ['EmailVaultSecrets', 'RecoveryKey', 'EmailVaultData']
+const allInterfaces = [
+  'EmailVaultSecrets',
+  'RecoveryKey',
+  'EmailVaultData',
+  'RelayerResponseLinkedAccount',
+  'RelayerReponsePortfolioAdditional'
+]
 
-const allInterfaces = [...emailVaultInterfaces]
-
-allInterfaces.forEach((interfaceName) =>
+allInterfaces.forEach((interfaceName) => {
   fs.writeFile(
     resolve(__dirname, 'schemas', `${interfaceName}.json`),
-    JSON.stringify(generator.getSchemaForSymbol(interfaceName), null, 4),
+    JSON.stringify(generator?.getSchemaForSymbol(interfaceName), null, 4),
     'utf-8'
   )
-)
+})
