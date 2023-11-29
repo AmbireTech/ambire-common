@@ -21,6 +21,7 @@ import {
   getAccountOpBannersForEOA,
   getAccountOpBannersForSmartAccount,
   getMessageBanners,
+  getNetworksWithFailedRPC,
   getPendingAccountOpBannersForEOA
 } from '../../libs/banners/banners'
 import { estimate, EstimateResult } from '../../libs/estimate/estimate'
@@ -289,7 +290,17 @@ export class MainController extends EventEmitter {
 
     await Promise.all(
       gasPriceNetworks.map(async (network) => {
-        this.gasPrices[network] = await getGasPriceRecommendations(this.#providers[network])
+        try {
+          this.gasPrices[network] = await getGasPriceRecommendations(this.#providers[network])
+        } catch {
+          this.emitError({
+            level: 'major',
+            message: `Failed to fetch gas price for ${
+              networks.find((n) => n.id === network)?.name
+            }`,
+            error: new Error('Failed to fetch gas price')
+          })
+        }
       })
     )
   }
@@ -299,9 +310,13 @@ export class MainController extends EventEmitter {
     blockTag: string | number = 'latest'
   ): Promise<AccountStates> {
     const result = await Promise.all(
-      this.settings.networks.map((network) =>
-        getAccountState(this.#providers[network.id], network, accounts, blockTag)
-      )
+      this.settings.networks.map(async (network) => {
+        try {
+          return await getAccountState(this.#providers[network.id], network, accounts, blockTag)
+        } catch {
+          return []
+        }
+      })
     )
 
     const states = accounts.map((acc: Account, accIndex: number) => {
@@ -309,7 +324,12 @@ export class MainController extends EventEmitter {
         acc.addr,
         Object.fromEntries(
           this.settings.networks.map((network: NetworkDescriptor, netIndex: number) => {
-            return [network.id, result[netIndex][accIndex]]
+            if (!(netIndex in result) || !(accIndex in result[netIndex])) return [network.id, null]
+            try {
+              return [network.id, result[netIndex][accIndex]]
+            } catch {
+              return [network.id, null]
+            }
           })
         )
       ]
@@ -359,7 +379,7 @@ export class MainController extends EventEmitter {
     await this.#initialLoadPromise
     // Initial sanity check: does this account even exist?
     if (!this.accounts.find((x) => x.addr === accountAddr))
-      throw new Error(`ensureAccountInfo: called for non-existant acc ${accountAddr}`)
+      throw new Error(`ensureAccountInfo: called for non-existent acc ${accountAddr}`)
     // If this still didn't work, re-load
     // @TODO: should we re-start the whole load or only specific things?
     if (!this.accountStates[accountAddr]?.[networkId])
@@ -367,7 +387,7 @@ export class MainController extends EventEmitter {
     // If this still didn't work, throw error: this prob means that we're calling for a non-existant acc/network
     if (!this.accountStates[accountAddr]?.[networkId])
       throw new Error(
-        `ensureAccountInfo: acc info for ${accountAddr} on ${networkId} was not retrieved`
+        `Failed to retrieve account info for ${networkId}, because of one of the following reasons: 1) network doesn't exist, 2) RPC is down for this network`
       )
   }
 
@@ -596,8 +616,18 @@ export class MainController extends EventEmitter {
         // @TODO - first time calling this, portfolio is still not loaded.
         feeTokens,
         { is4337Broadcast }
-      )
+      ).catch((e) => {
+        this.emitError({
+          level: 'major',
+          message: `Failed to estimate account op for ${accountOp.accountAddr} on ${accountOp.networkId}`,
+          error: e
+        })
+
+        return null
+      })
     ])
+
+    if (!estimation) return
     // @TODO compare intent between accountOp and this.accountOpsToBeSigned[accountOp.accountAddr][accountOp.networkId].accountOp
     this.accountOpsToBeSigned[accountOp.accountAddr][accountOp.networkId]!.estimation = estimation
 
@@ -697,23 +727,26 @@ export class MainController extends EventEmitter {
         )
       }
 
-      const signedTxn = await signer.signRawTransaction({
-        to,
-        data,
-        chainId: network.chainId,
-        nonce: await provider.getTransactionCount(accountOp.gasFeePayment!.paidBy),
-        // TODO: fix simulatedGasLimit as multiplying by 2 is just
-        // a quick fix
-        gasLimit: accountOp.gasFeePayment.simulatedGasLimit,
-        gasPrice:
-          (accountOp.gasFeePayment.amount - estimation!.addedNative) /
-          accountOp.gasFeePayment.simulatedGasLimit
-      })
-
       try {
+        const nonce = await provider.getTransactionCount(accountOp.gasFeePayment!.paidBy)
+        const signedTxn = await signer.signRawTransaction({
+          to,
+          data,
+          chainId: network.chainId,
+          nonce,
+          // TODO: fix simulatedGasLimit as multiplying by 2 is just
+          // a quick fix
+          gasLimit: accountOp.gasFeePayment.simulatedGasLimit,
+          gasPrice:
+            (accountOp.gasFeePayment.amount - estimation!.addedNative) /
+            accountOp.gasFeePayment.simulatedGasLimit
+        })
+
         transactionRes = await provider.broadcastTransaction(signedTxn)
-      } catch (error: any) {
-        this.#throwAccountOpBroadcastError(new Error(error), error.message || undefined)
+      } catch {
+        this.#throwAccountOpBroadcastError(
+          new Error(`Failed to broadcast transaction on ${accountOp.networkId}`)
+        )
       }
     } else if (accountOp.gasFeePayment && accountOp.gasFeePayment.isERC4337) {
       const userOperation = accountOp.asUserOperation
@@ -824,13 +857,18 @@ export class MainController extends EventEmitter {
       accounts
     })
     const messageBanners = getMessageBanners({ userRequests })
+    const networksWithFailedRPCBanners = getNetworksWithFailedRPC({
+      accountStates: this.accountStates,
+      networks: this.settings.networks
+    })
 
     return [
       ...accountOpSmartAccountBanners,
       ...accountOpEOABanners,
       ...pendingAccountOpEOABanners,
       ...messageBanners,
-      ...this.activity.banners
+      ...this.activity.banners,
+      ...networksWithFailedRPCBanners
     ]
   }
 

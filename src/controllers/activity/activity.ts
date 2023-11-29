@@ -2,13 +2,13 @@ import { JsonRpcProvider } from 'ethers'
 
 import { networks } from '../../consts/networks'
 import { AccountStates } from '../../interfaces/account'
+import { Banner } from '../../interfaces/banner'
 import { Storage } from '../../interfaces/storage'
 import { Message } from '../../interfaces/userRequest'
 import { AccountOp, AccountOpStatus } from '../../libs/accountOp/accountOp'
-import EventEmitter from '../eventEmitter'
-import { Banner } from '../../interfaces/banner'
 import { isErc4337Broadcast } from '../../libs/userOperation/userOperation'
 import bundler from '../../services/bundlers'
+import EventEmitter from '../eventEmitter'
 
 interface Pagination {
   fromPage: number
@@ -268,24 +268,30 @@ export class ActivityController extends EventEmitter {
                 networkConfig!,
                 this.#accounts[accountOp.accountAddr][accountOp.networkId]
               )
-              const receipt = is4337
-                ? await bundler.getReceipt(accountOp.txnId, networkConfig!)
-                : await provider.getTransactionReceipt(accountOp.txnId)
-              if (receipt) {
-                this.#accountsOps[this.filters!.account][network][accountOpIndex].status =
-                  receipt.status ? AccountOpStatus.Success : AccountOpStatus.Failure
-                return
+              try {
+                const receipt = is4337
+                  ? await bundler.getReceipt(accountOp.txnId, networkConfig!)
+                  : await provider.getTransactionReceipt(accountOp.txnId)
+                if (receipt) {
+                  this.#accountsOps[this.filters!.account][network][accountOpIndex].status =
+                    receipt.status ? AccountOpStatus.Success : AccountOpStatus.Failure
+                  return
+                }
+              } catch {
+                this.emitError({
+                  level: 'major',
+                  message: `Failed to determine transaction status on ${accountOp.networkId}. Retry, or contact support if issue persists.`,
+                  error: new Error('activity: failed to get transaction receipt')
+                })
               }
 
               if (
-                (
-                  !is4337 &&
-                  this.#accounts[accountOp.accountAddr][accountOp.networkId].nonce > accountOp.nonce
-                ) ||
-                (
-                  is4337 &&
-                  this.#accounts[accountOp.accountAddr][accountOp.networkId].erc4337Nonce > accountOp.nonce
-                )
+                (!is4337 &&
+                  this.#accounts[accountOp.accountAddr][accountOp.networkId].nonce >
+                    accountOp.nonce) ||
+                (is4337 &&
+                  this.#accounts[accountOp.accountAddr][accountOp.networkId].erc4337Nonce >
+                    accountOp.nonce)
               ) {
                 this.#accountsOps[this.filters!.account][network][accountOpIndex].status =
                   AccountOpStatus.UnknownButPastNonce
@@ -403,7 +409,7 @@ export class ActivityController extends EventEmitter {
 
     return Object.values(this.#accountsOps[this.filters.account])
       .flat()
-      .filter((accountOp) => (accountOp.status === AccountOpStatus.BroadcastedButNotConfirmed))
+      .filter((accountOp) => accountOp.status === AccountOpStatus.BroadcastedButNotConfirmed)
   }
 
   get banners(): Banner[] {
@@ -423,7 +429,11 @@ export class ActivityController extends EventEmitter {
           {
             label: 'Check',
             actionName: 'open-external-url',
-            meta: { url: is4337 ? `${this.#relayerUrl}/userOp/${accountOp.networkId}/${accountOp.txnId}` : `${network.explorerUrl}/tx/${accountOp.txnId}` }
+            meta: {
+              url: is4337
+                ? `${this.#relayerUrl}/userOp/${accountOp.networkId}/${accountOp.txnId}`
+                : `${network.explorerUrl}/tx/${accountOp.txnId}`
+            }
           }
         ]
       } as Banner

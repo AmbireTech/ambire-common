@@ -1,6 +1,6 @@
 import { ethers, JsonRpcProvider } from 'ethers'
 
-import { PROXY_AMBIRE_ACCOUNT } from '../../../src/consts/deploy'
+import { PROXY_AMBIRE_ACCOUNT } from '../../consts/deploy'
 import {
   HD_PATH_TEMPLATE_TYPE,
   SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
@@ -557,34 +557,44 @@ export class AccountAdderController extends EventEmitter {
     const promises = Object.keys(providers).map(async (providerKey: NetworkId) => {
       const network = networkLookup[providerKey]
       if (network) {
-        const accountState = await getAccountState(
-          providers[providerKey],
-          network,
-          accounts.map((acc) => acc.account)
-        )
+        try {
+          const accountState = await getAccountState(
+            providers[providerKey],
+            network,
+            accounts.map((acc) => acc.account)
+          )
 
-        accountState.forEach((acc: AccountOnchainState) => {
-          const isUsedOnThisNetwork =
-            // Known limitation: checks only the native token balance. If this
-            // account has any other tokens than native ones, this check will
-            // fail to detect that the account was used on this network.
-            acc.balance > BigInt(0) ||
-            (acc.isEOA
-              ? acc.nonce > BigInt(0)
-              : // For smart accounts, check for 'isDeployed' instead because in
-                // the erc-4337 scenario many cases might be missed with checking
-                // the `acc.nonce`. For instance, `acc.nonce` could be 0, but user
-                // might be actively using the account. This is because in erc-4337,
-                // we use the entry point nonce. However, detecting the entry point
-                // nonce is also not okay, because for various cases we do not use
-                // sequential nonce - i.e., the entry point nonce could still be 0,
-                // but the account is deployed. So the 'isDeployed' check is the
-                // only reliable way to detect if account is used on network.
-                acc.isDeployed)
-          if (isUsedOnThisNetwork) {
-            accountsObj[acc.accountAddr].account.usedOnNetworks.push(network)
-          }
-        })
+          accountState.forEach((acc: AccountOnchainState) => {
+            const isUsedOnThisNetwork =
+              // Known limitation: checks only the native token balance. If this
+              // account has any other tokens than native ones, this check will
+              // fail to detect that the account was used on this network.
+              acc.balance > BigInt(0) ||
+              (acc.isEOA
+                ? acc.nonce > BigInt(0)
+                : // For smart accounts, check for 'isDeployed' instead because in
+                  // the erc-4337 scenario many cases might be missed with checking
+                  // the `acc.nonce`. For instance, `acc.nonce` could be 0, but user
+                  // might be actively using the account. This is because in erc-4337,
+                  // we use the entry point nonce. However, detecting the entry point
+                  // nonce is also not okay, because for various cases we do not use
+                  // sequential nonce - i.e., the entry point nonce could still be 0,
+                  // but the account is deployed. So the 'isDeployed' check is the
+                  // only reliable way to detect if account is used on network.
+                  acc.isDeployed)
+            if (isUsedOnThisNetwork) {
+              accountsObj[acc.accountAddr].account.usedOnNetworks.push(network)
+            }
+          })
+        } catch {
+          this.emitError({
+            level: 'major',
+            message: `Failed to derive accounts on ${network.name}. Please try again later or contact support if the problem persists.`,
+            error: new Error(
+              `accountAdder.#getAccountsUsedOnNetworks: failed to derive accounts on ${network.name}`
+            )
+          })
+        }
       }
     })
 
