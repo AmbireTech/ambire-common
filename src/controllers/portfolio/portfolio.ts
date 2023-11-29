@@ -4,6 +4,7 @@
 import { JsonRpcProvider } from 'ethers'
 import fetch from 'node-fetch'
 
+import { schemas } from '../../services/schemaValidation/validateScehmas'
 import { Account, AccountId } from '../../interfaces/account'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { Storage } from '../../interfaces/storage'
@@ -90,6 +91,16 @@ export class PortfolioController extends EventEmitter {
     let res: any
     try {
       res = await this.#callRelayer(`/v2/identity/${accountId}/portfolio-additional`)
+      const { data } = res
+      const isValid = schemas.RelayerReponsePortfolioAdditional(data)
+      if (!isValid) {
+        this.emitError({
+          level: 'minor',
+          message: 'Error to fetch portfolio-additional from the relayer, please contact support.',
+          error: new Error(schemas.RelayerReponsePortfolioAdditional.errors)
+        })
+        return
+      }
     } catch (e: any) {
       console.error('relayer error for portfolio additional')
       this.#setNetworkLoading(accountId, 'gasTank', false, e)
@@ -264,6 +275,7 @@ export class PortfolioController extends EventEmitter {
 
         const forceUpdate = opts?.forceUpdate || areAccountOpsChanged
 
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
         const [isSuccessfulLatestUpdate, isSuccessfulPendingUpdate] = await Promise.all([
           // Latest state update
           updatePortfolioState(

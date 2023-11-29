@@ -755,8 +755,8 @@ export class MainController extends EventEmitter {
           'POST',
           body
         )
-
-        if (response.success) {
+        // res doesn't need more validation than this
+        if (response.success && response.txId) {
           transactionRes = {
             hash: response.txId,
             nonce: Number(accountOp.nonce)

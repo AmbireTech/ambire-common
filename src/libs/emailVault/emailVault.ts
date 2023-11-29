@@ -6,6 +6,7 @@ import {
   RecoveryKey
 } from '../../interfaces/emailVault'
 
+// @TODO needs schema validation
 export class EmailVault {
   private callRelayer: Function
 

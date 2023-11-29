@@ -1,3 +1,4 @@
+// @TODO: move to interfaces folder
 import { NetworkId } from 'interfaces/networkDescriptor'
 
 import { Account } from '../../interfaces/account'

@@ -640,6 +640,7 @@ export class SignAccountOpController extends EventEmitter {
 
         // call the paymaster for the edgeCase or for non-native payments
         if (userOperation.isEdgeCase || !isNative(this.accountOp.gasFeePayment!)) {
+          // @TODO needs validation and testing
           const response = await this.#callRelayer(
             `/v2/paymaster/${this.accountOp.networkId}/sign`,
             'POST',
