@@ -1,3 +1,5 @@
+import { NetworkDescriptor } from 'interfaces/networkDescriptor'
+
 import { Account } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
 import { UserRequest } from '../../interfaces/userRequest'
@@ -149,4 +151,40 @@ export const getAccountOpBannersForSmartAccount = ({
   })
 
   return txnBanners
+}
+
+export const getNetworksWithFailedRPC = ({
+  accountStates,
+  networks
+}: {
+  accountStates: any
+  networks: NetworkDescriptor[]
+}): Banner[] => {
+  let networksWithFailedRPC: string[] = []
+  Object.keys(accountStates).forEach((account) => {
+    const currentAccount = accountStates[account]
+
+    Object.keys(currentAccount).forEach((networkId) => {
+      if (currentAccount[networkId] === null) {
+        if (networksWithFailedRPC.includes(networkId)) return
+
+        networksWithFailedRPC.push(networkId)
+        return
+      }
+
+      networksWithFailedRPC = networksWithFailedRPC.filter((network) => network !== networkId)
+    })
+  })
+
+  return networksWithFailedRPC.map((network) => {
+    const networkData = networks.find((n: NetworkDescriptor) => n.id === network)
+
+    return {
+      id: new Date().getTime(),
+      topic: 'WARNING',
+      title: `Failed to retrieve network data for ${networkData?.name}(RPC error)`,
+      text: `Affected features(${networkData?.name}): visible tokens, sign message/transaction, ENS/UD domain resolving, add account. Please try again later or contact support.`,
+      actions: []
+    }
+  })
 }
