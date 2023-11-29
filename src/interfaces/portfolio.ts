@@ -11,8 +11,7 @@ export interface RelayerReponsePortfolioAdditional {
       root: string
       signedRoot: string
     }
-    // @TODo any!
-    multipliers: any[]
+    multipliers: { mul: number; name: string }[]
     xWalletClaimableBalance: {
       address: string
       symbol: string
@@ -47,6 +46,4 @@ export interface RelayerReponsePortfolioAdditional {
       price: number
     }[]
   }
-  // @TODO finish
-  multipliers?: any[]
 }

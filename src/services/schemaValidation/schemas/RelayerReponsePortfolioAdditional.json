@@ -51,7 +51,21 @@
                 },
                 "multipliers": {
                     "type": "array",
-                    "items": {}
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "mul": {
+                                "type": "number"
+                            },
+                            "name": {
+                                "type": "string"
+                            }
+                        },
+                        "required": [
+                            "mul",
+                            "name"
+                        ]
+                    }
                 },
                 "xWalletClaimableBalance": {
                     "type": "object",
@@ -196,10 +210,6 @@
             "required": [
                 "availableGasTankAssets"
             ]
-        },
-        "multipliers": {
-            "type": "array",
-            "items": {}
         }
     },
     "$schema": "http://json-schema.org/draft-07/schema#"
