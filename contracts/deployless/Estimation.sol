@@ -117,12 +117,16 @@ contract Estimation {
         outcome.feeTokenOutcomes = simulateFeePayments(account, feeTokens, spoofSig, relayer);
       }
 
-      bytes memory feeCall = abi.encode(
-        address(0x942f9CE5D9a33a82F88D233AEb3292E680230348),
-        1,
-        '0x'
+      bytes memory fakeFeeCall = abi.encode(
+        relayer,
+        0,
+        abi.encodeWithSelector(
+          IERC20Subset.transfer.selector,
+          relayer,
+          1
+        )
       );
-      outcome.l1GasEstimation = this.getL1GasEstimation(probableCallData, feeCall);
+      outcome.l1GasEstimation = this.getL1GasEstimation(probableCallData, fakeFeeCall);
     }
 
     if (associatedKeys.length != 0) {

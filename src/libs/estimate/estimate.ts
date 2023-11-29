@@ -1,4 +1,4 @@
-import { AbiCoder, Interface, JsonRpcProvider, Provider } from 'ethers'
+import { AbiCoder, encodeRlp, Interface, JsonRpcProvider, Provider, toBeHex } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFactory.json'
@@ -91,6 +91,22 @@ export async function estimate(
   // @TODO - .env or passed as parameter?
   const relayerAddress = '0x942f9CE5D9a33a82F88D233AEb3292E680230348'
 
+  // @L2s
+  // craft the probableTxn that's going to be saved on the L1
+  // so we could do proper estimation
+  const abiCoder = new AbiCoder()
+  const probableTxn = {
+    from: blockFrom,
+    to: account.addr,
+    data: getProbableCallData(op, network, accountState),
+    gasLimit: toBeHex(100000),
+    gasPrice: toBeHex(100000)
+  }
+  const encoded = abiCoder.encode(
+    ['from', 'to', 'data', 'gasLimit', 'gasPrice'],
+    [...Object.values(probableTxn)]
+  )
+
   const args = [
     account.addr,
     ...getAccountDeployParams(account),
@@ -102,7 +118,7 @@ export async function estimate(
       op.accountOpToExecuteBefore?.signature || '0x'
     ],
     [account.addr, op.nonce || 1, op.calls, '0x'],
-    getProbableCallData(op, network, accountState),
+    encodeRlp(encoded),
     account.associatedKeys,
     feeTokens,
     relayerAddress,
@@ -124,7 +140,6 @@ export async function estimate(
     if (userOp.isEdgeCase) {
       userOp.nonce = getTargetEdgeCaseNonce(userOp)
     } else {
-      const abiCoder = new AbiCoder()
       const spoofSig = abiCoder.encode(['address'], [account.associatedKeys[0]]) + SPOOF_SIGTYPE
       userOp!.signature = spoofSig
     }

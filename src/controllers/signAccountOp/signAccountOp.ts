@@ -616,6 +616,7 @@ export class SignAccountOpController extends EventEmitter {
           )
         }
 
+        // set as maxFeePerGas only the L2 gas price
         const gasPrice =
           (gasFeePayment.amount - this.#estimation!.addedNative) / gasFeePayment.simulatedGasLimit
         userOperation.maxFeePerGas = ethers.toBeHex(gasPrice)
