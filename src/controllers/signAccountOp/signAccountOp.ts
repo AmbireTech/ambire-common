@@ -3,9 +3,9 @@ import { ethers, JsonRpcProvider } from 'ethers'
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import EntryPointAbi from '../../../contracts/compiled/EntryPoint.json'
 import ERC20 from '../../../contracts/compiled/IERC20.json'
-import { ERC_4337_ENTRYPOINT } from '../../consts/deploy'
+import { AMBIRE_PAYMASTER, ERC_4337_ENTRYPOINT } from '../../consts/deploy'
 import { Account, AccountStates } from '../../interfaces/account'
-import { Key } from '../../interfaces/keystore'
+import { ExternalSignerController, Key } from '../../interfaces/keystore'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { Storage } from '../../interfaces/storage'
 import { getKnownAddressLabels } from '../../libs/account/account'
@@ -87,13 +87,15 @@ export class SignAccountOpController extends EventEmitter {
 
   #providers: { [key: string]: JsonRpcProvider }
 
-  #accounts: Account[] | null = null
+  #account: Account
 
-  #networks: NetworkDescriptor[] | null = null
+  #accounts: Account[]
 
-  #accountStates: AccountStates | null = null
+  #accountStates: AccountStates
 
-  accountOp: AccountOp | null = null
+  #network: NetworkDescriptor
+
+  accountOp: AccountOp
 
   #gasPrices: GasRecommendation[] | null = null
 
@@ -115,30 +117,127 @@ export class SignAccountOpController extends EventEmitter {
     keystore: KeystoreController,
     portfolio: PortfolioController,
     settings: SettingsController,
+    account: Account,
+    accounts: Account[],
+    accountStates: AccountStates,
+    network: NetworkDescriptor,
+    accountOp: AccountOp,
     storage: Storage,
     fetch: Function,
     providers: { [key: string]: JsonRpcProvider },
     callRelayer: Function
   ) {
     super()
-
     this.#keystore = keystore
     this.#portfolio = portfolio
     this.#settings = settings
+    this.#account = account
+    this.#accounts = accounts
+    this.#accountStates = accountStates
+    this.#network = network
+    this.accountOp = accountOp
     this.#storage = storage
     this.#fetch = fetch
     this.#providers = providers
     this.#callRelayer = callRelayer
+
+    this.#humanizeAccountOp()
   }
 
   get isInitialized(): boolean {
-    return !!(
-      this.#accounts &&
-      this.#networks &&
-      this.#accountStates &&
-      this.accountOp &&
-      this.#estimation
+    return !!(this.#account && this.#network && this.accountOp && this.#estimation)
+  }
+
+  #setDefaults() {
+    if (this.availableFeeOptions.length && !this.paidBy && !this.selectedTokenAddr) {
+      const defaultFeeOption = this.availableFeeOptions[0]
+
+      this.paidBy = defaultFeeOption.paidBy
+      this.selectedTokenAddr = defaultFeeOption.address
+    }
+    // Set the first signer as the default one.
+    // If there are more available signers, the user will be able to select a different signer from the application.
+    // The main benefit of having a default signer
+    // is that it drastically simplifies the logic of determining whether the account is ready for signing.
+    // For example, in the `sign` method and on the application screen, we can simply rely on the `this.readyToSign` flag.
+    // Otherwise, if we don't have a default value, then `this.readyToSign` will always be false unless we set a signer.
+    // In that case, on the application, we want the "Sign" button to be clickable/enabled,
+    // and we have to check and expose the `SignAccountOp` controller's inner state to make this check possible.
+    if (!this.accountOp.signingKeyAddr || !this.accountOp.signingKeyType) {
+      const accountKeyStoreKeys = this.getAccountKeyStoreKeys
+      this.accountOp.signingKeyAddr = accountKeyStoreKeys[0].addr
+      this.accountOp.signingKeyType = accountKeyStoreKeys[0].type
+    }
+  }
+
+  #setGasFeePayment() {
+    if (this.isInitialized && this.paidBy && this.selectedTokenAddr && this.selectedFeeSpeed) {
+      this.accountOp!.gasFeePayment = this.#getGasFeePayment()
+    }
+  }
+
+  #humanizeAccountOp() {
+    const knownAddressLabels = getKnownAddressLabels(
+      this.#accounts,
+      this.#settings.accountPreferences,
+      this.#keystore.keys,
+      this.#settings.keyPreferences
     )
+    callsHumanizer(
+      this.accountOp,
+      knownAddressLabels,
+      this.#storage,
+      this.#fetch,
+      (humanizedCalls) => {
+        this.humanReadable = humanizedCalls
+        this.emitUpdate()
+      },
+      (err) => this.emitError(err)
+    )
+  }
+
+  get errors(): string[] {
+    const errors: string[] = []
+
+    if (!this.isInitialized) return errors
+
+    if (!this.availableFeeOptions.length)
+      errors.push(
+        "We are unable to estimate your transaction as you don't have tokens with balances to cover the fee."
+      )
+
+    if (!this.getAccountKeyStoreKeys.length)
+      errors.push('We are unable to sign your transaction as there is no available signer.')
+
+    // This error should not happen, as in the update method we are always setting a default signer.
+    // It may occur, only if there are no available signer.
+    if (!this.accountOp?.signingKeyType || !this.accountOp?.signingKeyAddr)
+      errors.push('Please select a signer to sign the transaction.')
+
+    if (!this.accountOp?.gasFeePayment)
+      errors.push('Please select a token and an account for paying the gas fee.')
+
+    if (this.accountOp?.gasFeePayment && this.availableFeeOptions.length) {
+      const feeToken = this.availableFeeOptions.find(
+        (feeOption) =>
+          feeOption.paidBy === this.accountOp?.gasFeePayment?.paidBy &&
+          feeOption.address === this.accountOp?.gasFeePayment?.inToken
+      )
+
+      if (feeToken!.availableAmount < this.accountOp?.gasFeePayment.amount) {
+        errors.push(
+          "Signing is not possible with the selected account's token as it doesn't have sufficient funds to cover the gas payment fee."
+        )
+      }
+    }
+
+    // If signing fails, we know the exact error and aim to forward it to the remaining errors,
+    // as the application will exclusively render `signAccountOp.errors`.
+    if (this.status?.type === SigningStatus.UnableToSign) {
+      errors.push(this.status.error)
+    }
+
+    return errors
   }
 
   get hasSelectedAccountOp() {
@@ -150,7 +249,6 @@ export class SignAccountOpController extends EventEmitter {
   }
 
   update({
-    accountOp,
     gasPrices,
     estimation,
     feeTokenAddr,
@@ -168,47 +266,9 @@ export class SignAccountOpController extends EventEmitter {
     signingKeyAddr?: Key['addr']
     signingKeyType?: Key['type']
   }) {
-    if (!this.#accounts) {
-      return this.emitError({
-        message:
-          'Something went wrong when updating the current account operation information. Missing accounts data. Please try to initiate the account operation again.',
-        level: 'major',
-        error: new Error('signAccountOp: missing accounts')
-      })
-    }
-
     if (gasPrices) this.#gasPrices = gasPrices
 
     if (estimation) this.#estimation = estimation
-
-    if (accountOp) {
-      if (!this.accountOp) {
-        this.accountOp = accountOp
-      } else if (
-        this.accountOp.accountAddr === accountOp.accountAddr &&
-        this.accountOp.networkId === accountOp.networkId
-      ) {
-        this.accountOp = accountOp
-      }
-
-      const knownAddressLabels = getKnownAddressLabels(
-        this.#accounts,
-        this.#settings.accountPreferences,
-        this.#keystore.keys,
-        this.#settings.keyPreferences
-      )
-      callsHumanizer(
-        this.accountOp,
-        knownAddressLabels,
-        this.#storage,
-        this.#fetch,
-        (humanizedCalls) => {
-          this.humanReadable = humanizedCalls
-          this.emitUpdate()
-        },
-        (err) => this.emitError(err)
-      )
-    }
 
     if (feeTokenAddr && paidBy) {
       this.paidBy = paidBy
@@ -224,40 +284,10 @@ export class SignAccountOpController extends EventEmitter {
       this.accountOp!.signingKeyType = signingKeyType
     }
 
-    // Setting defaults
-    if (this.availableFeeOptions.length && !this.paidBy && !this.feeToken) {
-      const defaultFeeOption = this.availableFeeOptions[0]
-
-      this.paidBy = defaultFeeOption.paidBy
-      this.selectedTokenAddr = defaultFeeOption.address
-    }
-
-    if (this.isInitialized && this.paidBy && this.selectedTokenAddr && this.selectedFeeSpeed) {
-      this.accountOp!.gasFeePayment = this.#getGasFeePayment()
-    }
-
-    this.updateStatusToReadyToSign()
-  }
-
-  /**
-   * We decided to split the update method into two separate methods: update and updateMainDeps,
-   * only to separate user-related information (such as paidBy, feeTokenAddr, etc.)
-   * from the main components (such as accounts, networks, etc.).
-   * There is nothing more than that.
-   */
-  updateMainDeps({
-    accounts,
-    networks,
-    accountStates
-  }: {
-    accounts?: Account[]
-    networks?: NetworkDescriptor[]
-    accountStates?: AccountStates
-  }) {
-    if (accounts) this.#accounts = accounts
-    if (networks) this.#networks = networks
-    if (accountStates) this.#accountStates = accountStates
-
+    // Set defaults, if some of the optional params are omitted
+    this.#setDefaults()
+    // Here, we expect to have most of the fields set, so we can safely set GasFeePayment
+    this.#setGasFeePayment()
     this.updateStatusToReadyToSign()
   }
 
@@ -266,7 +296,9 @@ export class SignAccountOpController extends EventEmitter {
       this.isInitialized &&
       this.#estimation &&
       this.accountOp?.signingKeyAddr &&
-      this.accountOp?.gasFeePayment
+      this.accountOp?.signingKeyType &&
+      this.accountOp?.gasFeePayment &&
+      !this.errors.length
     ) {
       this.status = { type: SigningStatus.ReadyToSign }
     }
@@ -274,7 +306,6 @@ export class SignAccountOpController extends EventEmitter {
   }
 
   reset() {
-    this.accountOp = null
     this.#gasPrices = null
     this.#estimation = null
     this.selectedFeeSpeed = FeeSpeed.Fast
@@ -288,16 +319,6 @@ export class SignAccountOpController extends EventEmitter {
   resetStatus() {
     this.status = null
     this.emitUpdate()
-  }
-
-  // internal helper to get the account
-  #getAccount(): Account | null {
-    if (!this.accountOp || !this.#accounts) return null
-    const account = this.#accounts.find((x) => x.addr === this.accountOp!.accountAddr)
-    if (!account) {
-      throw new Error(`accountOp selected with non-existant account: ${this.accountOp.accountAddr}`)
-    }
-    return account
   }
 
   #getPortfolioToken(addr: string): TokenResult | undefined {
@@ -355,10 +376,8 @@ export class SignAccountOpController extends EventEmitter {
     if (!this.isInitialized || !this.#gasPrices || !this.paidBy || !this.selectedTokenAddr)
       return []
 
-    const account = this.#getAccount()
     const gasUsed = this.#estimation!.gasUsed
     const feeToken = this.#getPortfolioToken(this.selectedTokenAddr)
-    const network = this.#networks?.find((n) => n.id === this.accountOp?.networkId)
 
     return this.#gasPrices.map((gasRecommendation) => {
       let amount
@@ -375,7 +394,7 @@ export class SignAccountOpController extends EventEmitter {
         gasPrice = gasRecommendation.baseFeePerGas + gasRecommendation.maxPriorityFeePerGas
 
       // EOA
-      if (!account || !account?.creation) {
+      if (!this.#account || !this.#account?.creation) {
         simulatedGasLimit = gasUsed
         amount = simulatedGasLimit * gasPrice + this.#estimation!.addedNative
       } else if (this.#estimation!.erc4337estimation) {
@@ -398,7 +417,7 @@ export class SignAccountOpController extends EventEmitter {
 
         const accountState =
           this.#accountStates![this.accountOp!.accountAddr][this.accountOp!.networkId]
-        simulatedGasLimit += getCallDataAdditional(this.accountOp!, network!, accountState)
+        simulatedGasLimit += getCallDataAdditional(this.accountOp!, this.#network, accountState)
 
         amount = simulatedGasLimit * gasPrice + this.#estimation!.addedNative
       } else {
@@ -413,7 +432,7 @@ export class SignAccountOpController extends EventEmitter {
 
         const accountState =
           this.#accountStates![this.accountOp!.accountAddr][this.accountOp!.networkId]
-        simulatedGasLimit += getCallDataAdditional(this.accountOp!, network!, accountState)
+        simulatedGasLimit += getCallDataAdditional(this.accountOp!, this.#network, accountState)
 
         amount = this.#getAmountAfterFeeTokenConvert(
           simulatedGasLimit,
@@ -434,11 +453,40 @@ export class SignAccountOpController extends EventEmitter {
     })
   }
 
-  #getGasFeePayment(): GasFeePayment {
-    if (!this.isInitialized) throw new Error('signAccountOp: not initialized')
+  #getGasFeePayment(): GasFeePayment | null {
+    if (!this.isInitialized) {
+      this.emitError({
+        level: 'major',
+        message:
+          'Something went wrong while setting up the gas fee payment account and token. Please try again, selecting the account and token option. If the problem persists, contact support.',
+        error: new Error(
+          'SignAccountOpController: The controller is not initialized while we are trying to build GasFeePayment.'
+        )
+      })
 
-    if (!this.selectedTokenAddr) throw new Error('signAccountOp: token not selected')
-    if (!this.paidBy) throw new Error('signAccountOp: paying account not selected')
+      return null
+    }
+
+    // Emitting silent errors for both `selectedTokenAddr` and `paidBy`
+    // since we already validated for both fields in `update` method before calling #getGasFeePayment
+    if (!this.selectedTokenAddr) {
+      this.emitError({
+        level: 'silent',
+        message: '',
+        error: new Error('SignAccountOpController: token not selected')
+      })
+
+      return null
+    }
+    if (!this.paidBy) {
+      this.emitError({
+        level: 'silent',
+        message: '',
+        error: new Error('SignAccountOpController: paying account not selected')
+      })
+
+      return null
+    }
 
     const feeToken = this.#getPortfolioToken(this.selectedTokenAddr)
     const { amount, simulatedGasLimit } = this.feeSpeeds.find(
@@ -447,10 +495,10 @@ export class SignAccountOpController extends EventEmitter {
 
     const accountState =
       this.#accountStates![this.accountOp!.accountAddr][this.accountOp!.networkId]
-    const network = this.#networks?.find((n) => n.id === this.accountOp?.networkId)
+
     return {
       paidBy: this.paidBy,
-      isERC4337: isErc4337Broadcast(network!, accountState),
+      isERC4337: isErc4337Broadcast(this.#network, accountState),
       isGasTank: feeToken?.networkId === 'gasTank',
       inToken: feeToken!.address,
       amount,
@@ -467,11 +515,14 @@ export class SignAccountOpController extends EventEmitter {
   }
 
   get availableFeeOptions(): EstimateResult['feePaymentOptions'] {
-    const account = this.#getAccount()
-    if (!account || !this.isInitialized) return []
+    if (!this.isInitialized) return []
 
     // FeeOptions having amount
     return this.#estimation!.feePaymentOptions.filter((feeOption) => feeOption.availableAmount)
+  }
+
+  get getAccountKeyStoreKeys(): Key[] {
+    return this.#keystore.keys.filter((key) => this.#account?.associatedKeys.includes(key.addr))
   }
 
   // eslint-disable-next-line class-methods-use-this
@@ -507,7 +558,7 @@ export class SignAccountOpController extends EventEmitter {
       return
     }
 
-    if (this.accountOp!.gasFeePayment!.inToken == '0x0000000000000000000000000000000000000000') {
+    if (this.accountOp!.gasFeePayment!.inToken === '0x0000000000000000000000000000000000000000') {
       // native payment
       this.accountOp!.feeCall = {
         to: feeCollector,
@@ -528,20 +579,23 @@ export class SignAccountOpController extends EventEmitter {
     }
   }
 
-  async sign() {
+  async sign(externalSignerController?: ExternalSignerController) {
     if (!this.accountOp?.signingKeyAddr || !this.accountOp?.signingKeyType)
-      return this.#setSigningError('no signing key set')
-    if (!this.accountOp?.gasFeePayment) return this.#setSigningError('no gasFeePayment set')
-    if (!this.readyToSign) return this.#setSigningError('not ready to sign')
-    const network = this.#networks?.find((n) => n.id === this.accountOp?.networkId)
-    if (!network) return this.#setSigningError('sign: unsupported network')
+      return this.#setSigningError('We cannot sign your transaction. Please choose a signer.')
 
-    const account = this.#getAccount()
+    if (!this.accountOp?.gasFeePayment)
+      return this.#setSigningError('Please select a token and an account for paying the gas fee.')
+
+    // This error should never happen, as we already validated the mandatory fields such as signingKeyAddr and signingKeyType, and gasFeePayment.
+    if (!this.readyToSign)
+      return this.#setSigningError(
+        'We are unable to sign your transaction as some of the mandatory signing fields have not been set.'
+      )
+
     const signer = await this.#keystore.getSigner(
       this.accountOp.signingKeyAddr,
       this.accountOp.signingKeyType
     )
-    if (!account) return this.#setSigningError('non-existent account')
     if (!signer) return this.#setSigningError('no available signer')
 
     this.status = { type: SigningStatus.InProgress }
@@ -549,27 +603,28 @@ export class SignAccountOpController extends EventEmitter {
 
     const gasFeePayment = this.accountOp.gasFeePayment
 
+    if (signer.init) signer.init(externalSignerController)
     const provider = this.#providers[this.accountOp.networkId]
     const nonce = await provider.getTransactionCount(this.accountOp.accountAddr)
     try {
       // In case of EOA account
-      if (!account.creation) {
+      if (!this.#account.creation) {
         if (this.accountOp.calls.length !== 1)
           return this.#setSigningError(
-            'tried to sign an EOA transaction with multiple or zero calls'
+            'Tried to sign an EOA transaction with multiple or zero calls.'
           )
         const { to, value, data } = this.accountOp.calls[0]
         this.accountOp.signature = await signer.signRawTransaction({
           to,
           value,
           data,
-          chainId: network.chainId,
+          chainId: this.#network.chainId,
           gasLimit: gasFeePayment.simulatedGasLimit,
           nonce,
           gasPrice:
             (gasFeePayment.amount - this.#estimation!.addedNative) / gasFeePayment.simulatedGasLimit
         })
-      } else if (this.accountOp.gasFeePayment.paidBy !== account.addr) {
+      } else if (this.accountOp.gasFeePayment.paidBy !== this.#account.addr) {
         // Smart account, but EOA pays the fee
         // EOA pays for execute() - relayerless
 
@@ -613,8 +668,11 @@ export class SignAccountOpController extends EventEmitter {
           const response = await this.#callRelayer(
             `/v2/paymaster/${this.accountOp.networkId}/sign`,
             'POST',
-            // send without the isEdgeCase prop
-            { userOperation: (({ isEdgeCase, ...o }) => o)(userOperation) }
+            {
+              // send without the isEdgeCase prop
+              userOperation: (({ isEdgeCase, ...o }) => o)(userOperation),
+              paymaster: AMBIRE_PAYMASTER
+            }
           )
           if (response.success) {
             userOperation.paymasterAndData = response.data.paymasterAndData
@@ -667,10 +725,12 @@ export class SignAccountOpController extends EventEmitter {
       hasSelectedAccountOp: this.hasSelectedAccountOp,
       readyToSign: this.readyToSign,
       availableFeeOptions: this.availableFeeOptions,
+      accountKeyStoreKeys: this.getAccountKeyStoreKeys,
       feeSpeeds: this.feeSpeeds,
       feeToken: this.feeToken,
       feePaidBy: this.feePaidBy,
-      speedOptions: this.speedOptions
+      speedOptions: this.speedOptions,
+      errors: this.errors
     }
   }
 }

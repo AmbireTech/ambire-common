@@ -1,9 +1,10 @@
-import { ERC_4337_ENTRYPOINT } from "../../../dist/src/consts/deploy";
-import { UserOperation } from "../../libs/userOperation/userOperation";
-import { NetworkDescriptor } from "../../interfaces/networkDescriptor";
-import { StaticJsonRpcProvider } from "@ethersproject/providers";
+import { StaticJsonRpcProvider } from '@ethersproject/providers'
 
-require('dotenv').config();
+import { ERC_4337_ENTRYPOINT } from '../../../dist/src/consts/deploy'
+import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
+import { UserOperation } from '../../libs/userOperation/types'
+
+require('dotenv').config()
 
 export class Bundler {
   /**
@@ -22,7 +23,7 @@ export class Bundler {
   async getReceipt(userOperationHash: string, network: NetworkDescriptor) {
     const url = `https://api.pimlico.io/v1/${network.id}/rpc?apikey=${process.env.REACT_APP_PIMLICO_API_KEY}`
     const provider = new StaticJsonRpcProvider(url)
-    return provider.send("eth_getUserOperationReceipt", [userOperationHash])
+    return provider.send('eth_getUserOperationReceipt', [userOperationHash])
   }
 
   /**
@@ -52,9 +53,9 @@ export class Bundler {
     const url = `https://api.pimlico.io/v1/${network.id}/rpc?apikey=${process.env.REACT_APP_PIMLICO_API_KEY}`
     const provider = new StaticJsonRpcProvider(url)
 
-    return provider.send(
-      "eth_sendUserOperation",
-      [(({ isEdgeCase, ...o }) => o)(userOperation), ERC_4337_ENTRYPOINT]
-    )
+    return provider.send('eth_sendUserOperation', [
+      (({ isEdgeCase, ...o }) => o)(userOperation),
+      ERC_4337_ENTRYPOINT
+    ])
   }
 }

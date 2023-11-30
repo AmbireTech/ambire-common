@@ -2,14 +2,19 @@ import { ethers, JsonRpcProvider } from 'ethers'
 
 import { networks } from '../../consts/networks'
 import { Account, AccountStates } from '../../interfaces/account'
-import { Key } from '../../interfaces/keystore'
+import { ExternalSignerController, Key } from '../../interfaces/keystore'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { Storage } from '../../interfaces/storage'
 import { Message } from '../../interfaces/userRequest'
 import { getKnownAddressLabels } from '../../libs/account/account'
 import { messageHumanizer } from '../../libs/humanizer'
 import { IrMessage } from '../../libs/humanizer/interfaces'
-import { verifyMessage, wrapEIP712, wrapEthSign } from '../../libs/signMessage/signMessage'
+import {
+  verifyMessage,
+  wrapCounterfactualSign,
+  wrapEIP712,
+  wrapEthSign
+} from '../../libs/signMessage/signMessage'
 import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
 import EventEmitter from '../eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
@@ -131,8 +136,7 @@ export class SignMessageController extends EventEmitter {
     this.emitUpdate()
   }
 
-  // TODO: missing type, should be one of LedgerController, TrezorController, LatticeController
-  async sign(controller?: any) {
+  async sign(externalSignerController?: ExternalSignerController) {
     if (!this.isInitialized || !this.messageToSign) {
       this.#throwNotInitialized()
       return
@@ -151,7 +155,7 @@ export class SignMessageController extends EventEmitter {
 
     try {
       const signer = await this.#keystore.getSigner(this.signingKeyAddr, this.signingKeyType)
-      if (signer.init) signer.init(controller)
+      if (signer.init) signer.init(externalSignerController)
 
       const account = this.#accounts!.find((acc) => acc.addr === this.messageToSign?.accountAddr)
       if (!account) {
@@ -213,6 +217,12 @@ export class SignMessageController extends EventEmitter {
         throw new Error(
           'Ambire was not able to retrieve the signature. Please try again or contact support if the problem persists.'
         )
+      }
+
+      // https://eips.ethereum.org/EIPS/eip-6492
+      const accountState = this.#accountStates![account.addr][network!.id]
+      if (account.creation && !accountState.isDeployed) {
+        signature = wrapCounterfactualSign(signature, account.creation!)
       }
 
       const personalMsgToValidate =
