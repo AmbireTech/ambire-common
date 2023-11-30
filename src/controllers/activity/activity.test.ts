@@ -2,8 +2,7 @@ import { describe, expect } from '@jest/globals'
 
 import { produceMemoryStore } from '../../../test/helpers'
 import { AccountStates } from '../../interfaces/account'
-import { Message } from '../../interfaces/userRequest'
-import { ActivityController, SubmittedAccountOp } from './activity'
+import { ActivityController, SignedMessage, SubmittedAccountOp } from './activity'
 
 describe('Activity Controller ', () => {
   const accounts = {
@@ -400,9 +399,14 @@ describe('Activity Controller ', () => {
         }
       })
 
-      const signedMessage: Message = {
+      const signedMessage: SignedMessage = {
         id: 1,
         accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
+        dapp: {
+          icon: '',
+          name: 'dapp-name'
+        },
+        timestamp: 1701345600000,
         content: {
           kind: 'message',
           message: '0x74657374'
@@ -437,9 +441,14 @@ describe('Activity Controller ', () => {
         }
       })
 
-      const signedMessage: Message = {
+      const signedMessage: SignedMessage = {
         id: 1,
         accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
+        dapp: {
+          icon: '',
+          name: 'dapp-name'
+        },
+        timestamp: 1701345600000,
         content: {
           kind: 'message',
           message: '0x74657374'
@@ -480,9 +489,14 @@ describe('Activity Controller ', () => {
         }
       })
 
-      const signedMessage: Message = {
+      const signedMessage: SignedMessage = {
         id: 1,
         accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
+        dapp: {
+          icon: '',
+          name: 'dapp-name'
+        },
+        timestamp: 1701345600000,
         content: {
           kind: 'message',
           message: '0x123456'

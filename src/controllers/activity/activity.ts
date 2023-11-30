@@ -227,7 +227,7 @@ export class ActivityController extends EventEmitter {
     if (!this.#accountsOps[account]) this.#accountsOps[account] = {}
     if (!this.#accountsOps[account][network]) this.#accountsOps[account][network] = []
 
-    this.#accountsOps[account][network].push({ ...accountOp })
+    this.#accountsOps[account][network].unshift({ ...accountOp })
     trim(this.#accountsOps[account][network])
 
     this.accountsOps = this.filterAndPaginateAccountOps(
@@ -326,7 +326,7 @@ export class ActivityController extends EventEmitter {
 
     if (!this.#signedMessages[account]) this.#signedMessages[account] = []
 
-    this.#signedMessages[account].push(signedMessage)
+    this.#signedMessages[account].unshift(signedMessage)
     trim(this.#signedMessages[account])
     this.signedMessages = this.filterAndPaginateSignedMessages(
       this.#signedMessages,
