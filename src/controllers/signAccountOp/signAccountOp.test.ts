@@ -13,11 +13,11 @@ import { Storage } from '../../interfaces/storage'
 import { getAccountState } from '../../libs/accountState/accountState'
 import { estimate } from '../../libs/estimate/estimate'
 import { getGasPriceRecommendations } from '../../libs/gasPrice/gasPrice'
+import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { KeystoreController } from '../keystore/keystore'
 import { PortfolioController } from '../portfolio/portfolio'
 import { SettingsController } from '../settings/settings'
 import { SignAccountOpController, SigningStatus } from './signAccountOp'
-import { relayerCall } from '../../libs/relayerCall/relayerCall'
 
 const providers = Object.fromEntries(
   networks.map((network) => [network.id, new JsonRpcProvider(network.rpcUrl)])
@@ -139,12 +139,20 @@ describe('SignAccountOp Controller ', () => {
 
     const ethereum = networks.find((x) => x.id === 'ethereum')!
     const provider = new JsonRpcProvider(ethereum!.rpcUrl)
-    const prices = await getGasPriceRecommendations(provider)
+    const prices = await getGasPriceRecommendations(provider, ethereum)
 
     const { op, account, nativeToCheck, feeTokens } = createAccountOp(keyPublicAddress)
-    const estimation = await estimate(provider, ethereum, account, op, nativeToCheck, feeTokens)
     const accounts = [account]
     const accountStates = await getAccountsInfo(accounts)
+    const estimation = await estimate(
+      provider,
+      ethereum,
+      account,
+      op,
+      accountStates[account.addr][ethereum.id],
+      nativeToCheck,
+      feeTokens
+    )
     const portfolio = new PortfolioController(storage, 'https://staging-relayer.ambire.com', [])
     await portfolio.updateSelectedAccount(accounts, networks, account.addr)
     const callRelayer = relayerCall.bind({ url: '', fetch })
