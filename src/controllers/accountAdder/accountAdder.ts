@@ -1,6 +1,6 @@
 import { ethers, JsonRpcProvider } from 'ethers'
 
-import { schemas } from '../../services/schemaValidation/validateScehmas'
+import { schemas } from '../../libs/schemaValidation/validateScehmas'
 import { PROXY_AMBIRE_ACCOUNT } from '../../consts/deploy'
 import {
   HD_PATH_TEMPLATE_TYPE,

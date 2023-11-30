@@ -4,7 +4,7 @@
 import { JsonRpcProvider } from 'ethers'
 import fetch from 'node-fetch'
 
-import { schemas } from '../../services/schemaValidation/validateScehmas'
+import { schemas } from '../../libs/schemaValidation/validateScehmas'
 import { Account, AccountId } from '../../interfaces/account'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { Storage } from '../../interfaces/storage'
