@@ -1,5 +1,6 @@
 import { ethers, JsonRpcProvider } from 'ethers'
 
+import { schemas } from '../../libs/schemaValidation/validateScehmas'
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import EntryPointAbi from '../../../contracts/compiled/EntryPoint.json'
 import ERC20 from '../../../contracts/compiled/IERC20.json'
@@ -651,6 +652,15 @@ export class SignAccountOpController extends EventEmitter {
             }
           )
           if (response.success) {
+            const isValid = schemas.RelayerResponsePaymasterSign(response.data)
+            if (!isValid) {
+              this.emitError({
+                level: 'minor',
+                message: 'Error submit signature to paymaster/sign. Please contact support.',
+                error: new Error(schemas.RelayerResponsePaymasterSign.errors)
+              })
+              return null
+            }
             userOperation.paymasterAndData = response.data.paymasterAndData
 
             // after getting the paymaster data, if we're in the edge case,

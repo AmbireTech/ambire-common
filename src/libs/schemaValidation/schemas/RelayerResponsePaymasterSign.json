@@ -1,0 +1,23 @@
+{
+    "type": "object",
+    "properties": {
+        "data": {
+            "type": "object",
+            "properties": {
+                "paymasterAndData": {}
+            },
+            "required": [
+                "paymasterAndData"
+            ]
+        },
+        "errorState": {
+            "type": "array",
+            "items": {}
+        }
+    },
+    "required": [
+        "data",
+        "errorState"
+    ],
+    "$schema": "http://json-schema.org/draft-07/schema#"
+}

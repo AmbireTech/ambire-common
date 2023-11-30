@@ -16,7 +16,8 @@ const source = TJS.getProgramFromFiles(
   [
     resolve('src', 'interfaces', 'emailVault.ts'),
     resolve('src', 'interfaces', 'account.ts'),
-    resolve('src', 'interfaces', 'portfolio.ts')
+    resolve('src', 'interfaces', 'portfolio.ts'),
+    resolve('src', 'interfaces', 'accountOp.ts')
   ],
   COMPILER_OPTIONS,
   __dirname
@@ -30,7 +31,8 @@ const allInterfaces = [
   'RecoveryKey',
   'EmailVaultData',
   'RelayerResponseLinkedAccount',
-  'RelayerReponsePortfolioAdditional'
+  'RelayerReponsePortfolioAdditional',
+  'RelayerResponsePaymasterSign'
 ]
 
 allInterfaces.forEach((interfaceName) => {

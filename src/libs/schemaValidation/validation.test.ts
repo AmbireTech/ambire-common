@@ -33,6 +33,9 @@ const data = {
         errors: [new Error('asd')]
       }
     ]
+  },
+  RelayerResponsePaymasterSign: {
+    correct: [{ data: { paymasterAndData: 'paymasterAndData' }, errorState: [] }]
   }
 }
 
@@ -41,5 +44,10 @@ describe('Describe', () => {
     const res = schemas.EmailVaultData(data.EmailVaultData.correct[0])
     expect(res).toBeTruthy()
     expect(schemas.EmailVaultData.errors).toBeNull()
+  })
+  test('RelayerResponsePaymasterSign', () => {
+    const res = schemas.RelayerResponsePaymasterSign(data.RelayerResponsePaymasterSign.correct[0])
+    expect(res).toBeTruthy()
+    expect(schemas.RelayerResponsePaymasterSign.errors).toBeNull()
   })
 })

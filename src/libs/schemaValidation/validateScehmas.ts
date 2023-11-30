@@ -10,5 +10,6 @@ export const schemas: any = {
   RelayerResponseLinkedAccount: ajv.compile(require('./schemas/RelayerResponseLinkedAccount.json')),
   RelayerReponsePortfolioAdditional: ajv.compile(
     require('./schemas/RelayerReponsePortfolioAdditional.json')
-  )
+  ),
+  RelayerResponsePaymasterSign: ajv.compile(require('./schemas/RelayerResponsePaymasterSign.json'))
 }
