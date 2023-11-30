@@ -12,8 +12,6 @@ import { isValidAddress } from '../../services/address'
 import EventEmitter from '../eventEmitter'
 
 export class SettingsController extends EventEmitter {
-  networks: NetworkDescriptor[] = []
-
   accountPreferences: AccountPreferences = {}
 
   keyPreferences: KeyPreferences = []
@@ -29,6 +27,20 @@ export class SettingsController extends EventEmitter {
     this.#load()
   }
 
+  get networks(): NetworkDescriptor[] {
+    return networks.map((network) => {
+      const networkPreferences = this.#networkPreferences[network.id]
+      if (networkPreferences) {
+        return {
+          ...network,
+          ...networkPreferences
+        }
+      }
+
+      return network
+    })
+  }
+
   async #load() {
     try {
       // @ts-ignore
@@ -40,8 +52,6 @@ export class SettingsController extends EventEmitter {
           this.#storage.get('networkPreferences', {})
         ]
       )
-
-      this.#syncNetworkPreferences()
     } catch (e) {
       this.emitError({
         message:
@@ -69,20 +79,6 @@ export class SettingsController extends EventEmitter {
         error: new Error('settings: failed to store updated settings')
       })
     }
-  }
-
-  #syncNetworkPreferences() {
-    this.networks = networks.map((network) => {
-      const networkPreferences = this.#networkPreferences[network.id]
-      if (networkPreferences) {
-        return {
-          ...network,
-          ...networkPreferences
-        }
-      }
-
-      return network
-    })
   }
 
   async addAccountPreferences(newAccountPreferences: AccountPreferences) {
@@ -199,7 +195,6 @@ export class SettingsController extends EventEmitter {
       ...changedNetworkPreferences
     }
 
-    this.#syncNetworkPreferences()
     await this.#storePreferences()
     this.emitUpdate()
   }
@@ -214,7 +209,6 @@ export class SettingsController extends EventEmitter {
 
     delete this.#networkPreferences[networkId][key]
 
-    this.#syncNetworkPreferences()
     await this.#storePreferences()
     this.emitUpdate()
   }
@@ -230,5 +224,12 @@ export class SettingsController extends EventEmitter {
         )}`
       )
     })
+  }
+
+  toJSON() {
+    return {
+      ...this,
+      networks: this.networks
+    }
   }
 }
