@@ -61,7 +61,7 @@ interface InternalSignedMessages {
 const trim = <T>(items: T[], maxSize = 1000): void => {
   if (items.length > maxSize) {
     // If the array size is greater than maxSize, remove the first (oldest) item
-    items.shift()
+    items.pop()
   }
 }
 
@@ -326,7 +326,7 @@ export class ActivityController extends EventEmitter {
 
     if (!this.#signedMessages[account]) this.#signedMessages[account] = []
 
-    this.#signedMessages[account].unshift(signedMessage)
+    this.#signedMessages[account] = [signedMessage, ...this.#signedMessages[account]]
     trim(this.#signedMessages[account])
     this.signedMessages = this.filterAndPaginateSignedMessages(
       this.#signedMessages,
