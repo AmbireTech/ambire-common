@@ -1,4 +1,5 @@
 export interface RelayerResponsePaymasterSign {
-  data: { paymasterAndData: any }
+  success: true
+  data: { paymasterAndData: string }
   errorState: any[]
 }

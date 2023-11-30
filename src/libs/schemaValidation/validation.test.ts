@@ -35,7 +35,13 @@ const data = {
     ]
   },
   RelayerResponsePaymasterSign: {
-    correct: [{ data: { paymasterAndData: 'paymasterAndData' }, errorState: [] }]
+    correct: [
+      {
+        success: true,
+        data: { paymasterAndData: 'string' },
+        errorState: []
+      }
+    ]
   }
 }
 
