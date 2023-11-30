@@ -1,7 +1,6 @@
-import { ethers } from 'hardhat'
 import chai, { expect } from 'chai'
 import chaiAssertionsCount from 'chai-assertions-count'
-import fs from 'fs'
+import { ethers } from 'hardhat'
 
 chai.use(chaiAssertionsCount)
 
@@ -22,7 +21,7 @@ const provider = ethers.provider
 const wallet = new ethers.Wallet(pk1, provider)
 const wallet2 = new ethers.Wallet(pk2, provider)
 const wallet3 = new ethers.Wallet(pk3, provider)
-const chainId = 31337
+const chainId = 31337n
 const abiCoder = new ethers.AbiCoder()
 const assertion = chai.Assertion
 const deploySalt = 0
@@ -30,7 +29,7 @@ const deployGasLimit = 1000000
 
 // if storageSlot 0 is privileges then this will work. If we change it in AmbireAccount.sol then we have to include the file below.
 // const filenames = fs.readdirSync(`${__dirname}/../artifacts/build-info`)
-const buildInfo = null //filenames.length ? require(`../artifacts/build-info/${filenames[0]}`) : null
+const buildInfo = null
 
 export {
   pk1,
