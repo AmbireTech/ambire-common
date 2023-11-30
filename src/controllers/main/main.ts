@@ -215,7 +215,7 @@ export class MainController extends EventEmitter {
   initSignAccOp(accountAddr: string, networkId: string): null | void {
     const accountOpToBeSigned = this.accountOpsToBeSigned?.[accountAddr]?.[networkId]?.accountOp
     const account = this.accounts?.find((acc) => acc.addr === accountAddr)
-    const network = networks.find((net) => net.id === networkId)
+    const network = this.settings.networks.find((net) => net.id === networkId)
 
     if (!account) {
       this.signAccOpInitError =

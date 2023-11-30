@@ -55,7 +55,7 @@ describe('SignMessageController', () => {
   beforeEach(() => {
     const keystoreSigners = { internal: InternalSigner }
     keystore = new KeystoreController(produceMemoryStore(), keystoreSigners)
-    settings = new SettingsController(produceMemoryStore(), networks)
+    settings = new SettingsController(produceMemoryStore())
 
     signMessageController = new SignMessageController(
       keystore,
