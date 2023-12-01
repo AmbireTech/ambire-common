@@ -1,5 +1,5 @@
-import { NetworkDescriptor, NetworkId } from '../interfaces/networkDescriptor'
-import { ENTRY_POINT_MARKER, ERC_4337_ENTRYPOINT } from './deploy'
+import { NetworkDescriptor } from '../interfaces/networkDescriptor'
+import { ERC_4337_ENTRYPOINT } from './deploy'
 
 const networks: NetworkDescriptor[] = [
   {
@@ -27,7 +27,6 @@ const networks: NetworkDescriptor[] = [
       // TODO: temp disabled (only while testing)
       enabled: false,
       entryPointAddr: ERC_4337_ENTRYPOINT,
-      entryPointMarker: ENTRY_POINT_MARKER,
       hasPaymaster: true
     },
     unstoppableDomainsChain: 'MATIC'
@@ -44,7 +43,6 @@ const networks: NetworkDescriptor[] = [
     erc4337: {
       enabled: false,
       entryPointAddr: ERC_4337_ENTRYPOINT,
-      entryPointMarker: ENTRY_POINT_MARKER,
       hasPaymaster: false
     },
     unstoppableDomainsChain: 'ERC20'
@@ -53,28 +51,33 @@ const networks: NetworkDescriptor[] = [
     id: 'avalanche',
     name: 'Avalanche',
     nativeAssetSymbol: 'AVAX',
-    rpcUrl:
-      'https://api.avax.network/ext/bc/C/rpc',
+    rpcUrl: 'https://api.avax.network/ext/bc/C/rpc',
     rpcNoStateOverride: false,
     chainId: 43114n,
     explorerUrl: 'https://snowtrace.io',
     erc4337: {
       enabled: true,
       entryPointAddr: ERC_4337_ENTRYPOINT,
-      entryPointMarker: ENTRY_POINT_MARKER,
+      hasPaymaster: true
+    },
+    unstoppableDomainsChain: 'ERC20'
+  },
+  {
+    id: 'arbitrum',
+    name: 'Arbitrum',
+    nativeAssetSymbol: 'ETH',
+    rpcUrl:
+      'https://rpc.ankr.com/arbitrum/cd6074e892c575c13b0e2f1db154a5290100c5904a6ef081fadffbd37a4fdee5',
+    rpcNoStateOverride: false,
+    chainId: 42161n,
+    explorerUrl: 'https://arbiscan.io',
+    erc4337: {
+      enabled: false,
+      entryPointAddr: ERC_4337_ENTRYPOINT,
       hasPaymaster: true
     },
     unstoppableDomainsChain: 'ERC20'
   }
-  // This breaks the background service of the extension
-  // {
-  //   id: 'hardhat',
-  //   name: 'hardhat',
-  //   nativeAssetSymbol: 'ETH',
-  //   rpcUrl: '',
-  //   rpcNoStateOverride: true,
-  //   chainId: 31337n
-  // }
 ]
 
 export { networks }

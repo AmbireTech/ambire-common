@@ -3,7 +3,6 @@ export type NetworkId = string
 export interface Erc4337settings {
   enabled: boolean
   entryPointAddr: string
-  entryPointMarker: string,
   hasPaymaster: boolean
 }
 
