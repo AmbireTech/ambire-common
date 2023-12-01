@@ -60,7 +60,8 @@ interface InternalSignedMessages {
 // We do this to maintain optimal storage and performance.
 const trim = <T>(items: T[], maxSize = 1000): void => {
   if (items.length > maxSize) {
-    // If the array size is greater than maxSize, remove the first (oldest) item
+    // If the array size is greater than maxSize, remove the last (oldest) item
+    // newest items are added to the beginning of the array so oldest will be at the end (thats why we .pop())
     items.pop()
   }
 }
@@ -227,6 +228,7 @@ export class ActivityController extends EventEmitter {
     if (!this.#accountsOps[account]) this.#accountsOps[account] = {}
     if (!this.#accountsOps[account][network]) this.#accountsOps[account][network] = []
 
+    // newest SubmittedAccountOp goes first in the list
     this.#accountsOps[account][network].unshift({ ...accountOp })
     trim(this.#accountsOps[account][network])
 
@@ -326,7 +328,8 @@ export class ActivityController extends EventEmitter {
 
     if (!this.#signedMessages[account]) this.#signedMessages[account] = []
 
-    this.#signedMessages[account] = [signedMessage, ...this.#signedMessages[account]]
+    // newest SignedMessage goes first in the list
+    this.#signedMessages[account].unshift(signedMessage)
     trim(this.#signedMessages[account])
     this.signedMessages = this.filterAndPaginateSignedMessages(
       this.#signedMessages,

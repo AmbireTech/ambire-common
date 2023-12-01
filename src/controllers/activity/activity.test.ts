@@ -337,55 +337,55 @@ describe('Activity Controller ', () => {
       })
     })
 
-    // TODO: fix test
-    // test('Keeps no more than 1000 items', async () => {
-    //   const storage = produceMemoryStore()
-    //   const controller = new ActivityController(storage, accounts, '')
+    test('Keeps no more than 1000 items', async () => {
+      const storage = produceMemoryStore()
+      const controller = new ActivityController(storage, accounts, '')
 
-    //   controller.init({
-    //     filters: {
-    //       account: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
-    //       network: 'ethereum'
-    //     }
-    //   })
+      controller.init({
+        filters: {
+          account: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
+          network: 'ethereum'
+        }
+      })
 
-    //   const accountOp = {
-    //     accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
-    //     signingKeyAddr: '0x5Be214147EA1AE3653f289E17fE7Dc17A73AD175',
-    //     gasLimit: null,
-    //     gasFeePayment: null,
-    //     networkId: 'ethereum',
-    //     nonce: 225n,
-    //     signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503',
-    //     calls: [
-    //       {
-    //         to: '0x18Ce9CF7156584CDffad05003410C3633EFD1ad0',
-    //         value: BigInt(0),
-    //         data: '0x23b872dd000000000000000000000000b674f3fd5f43464db0448a57529eaf37f04ccea500000000000000000000000077777777789a8bbee6c64381e5e89e501fb0e4c80000000000000000000000000000000000000000000000000000000000000089'
-    //       }
-    //     ],
-    //     txnId: '0x891e12877c24a8292fd73fd741897682f38a7bcd497374a6b68e8add89e1c0fb',
-    //     status: 'broadcasted-but-not-confirmed'
-    //   } as SubmittedAccountOp
+      const accountOp = {
+        accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
+        signingKeyAddr: '0x5Be214147EA1AE3653f289E17fE7Dc17A73AD175',
+        gasLimit: null,
+        gasFeePayment: null,
+        networkId: 'ethereum',
+        nonce: 225n,
+        signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503',
+        calls: [
+          {
+            to: '0x18Ce9CF7156584CDffad05003410C3633EFD1ad0',
+            value: BigInt(0),
+            data: '0x23b872dd000000000000000000000000b674f3fd5f43464db0448a57529eaf37f04ccea500000000000000000000000077777777789a8bbee6c64381e5e89e501fb0e4c80000000000000000000000000000000000000000000000000000000000000089'
+          }
+        ],
+        txnId: '0x891e12877c24a8292fd73fd741897682f38a7bcd497374a6b68e8add89e1c0fb',
+        status: 'broadcasted-but-not-confirmed'
+      } as SubmittedAccountOp
 
-    //   const accountsOps = Array.from(Array(1500).keys()).map((key) => ({
-    //     ...accountOp,
-    //     nonce: BigInt(key)
-    //   }))
+      const accountsOps = Array.from(Array(1500).keys()).map((key) => ({
+        ...accountOp,
+        nonce: BigInt(key)
+      }))
 
-    //   // eslint-disable-next-line no-restricted-syntax
-    //   for (const ao of accountsOps) {
-    //     // eslint-disable-next-line no-await-in-loop
-    //     await controller.addAccountOp(ao)
-    //   }
+      // eslint-disable-next-line no-restricted-syntax
+      for (const ao of accountsOps) {
+        // eslint-disable-next-line no-await-in-loop
+        await controller.addAccountOp(ao)
+      }
 
-    //   await controller.setAccountsOpsPagination({ fromPage: 0, itemsPerPage: 1000 })
-    //   const controllerAccountsOps = controller.accountsOps
-
-    //   expect(controllerAccountsOps!.itemsTotal).toEqual(1000)
-    //   expect(controllerAccountsOps!.items[0].nonce).toEqual(500n)
-    //   expect(controllerAccountsOps!.items[999].nonce).toEqual(1499n)
-    // })
+      await controller.setAccountsOpsPagination({ fromPage: 0, itemsPerPage: 1000 })
+      const controllerAccountsOps = controller.accountsOps
+      expect(controllerAccountsOps!.itemsTotal).toEqual(1000)
+      // newest added item will be added to the beginning of the array
+      // in this case newest item is with nonce 1499n and should be at index 0
+      expect(controllerAccountsOps!.items[0].nonce).toEqual(1499n)
+      expect(controllerAccountsOps!.items[999].nonce).toEqual(500n)
+    })
   })
 
   describe('SignedMessages', () => {
@@ -521,6 +521,8 @@ describe('Activity Controller ', () => {
       const controllerSignedMessages = controller.signedMessages
 
       expect(controllerSignedMessages!.itemsTotal).toEqual(1000)
+      // newest added item will be added to the beginning of the array
+      // in this case newest item is with signature 1499 and should be at index 0
       expect(controllerSignedMessages!.items[0].signature).toEqual('1499')
       expect(controllerSignedMessages!.items[999].signature).toEqual('500')
     })
