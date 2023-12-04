@@ -157,7 +157,7 @@ export function accountOpSignableHash(op: AccountOp): Uint8Array {
   if (!opNetworks.length) throw new Error('unsupported network')
 
   const abiCoder = new ethers.AbiCoder()
-  return ethers.getBytes(
+  const res = ethers.getBytes(
     ethers.keccak256(
       abiCoder.encode(
         ['address', 'uint', 'uint', 'tuple(address, uint, bytes)[]'],
@@ -165,6 +165,9 @@ export function accountOpSignableHash(op: AccountOp): Uint8Array {
       )
     )
   )
+
+  console.log({ res })
+  return res
 }
 
 /**

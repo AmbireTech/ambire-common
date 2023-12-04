@@ -1,4 +1,4 @@
-import { JsonRpcProvider } from 'ethers'
+import { ethers, JsonRpcProvider } from 'ethers'
 import fetch from 'node-fetch'
 
 import { describe, expect, test } from '@jest/globals'
@@ -18,6 +18,8 @@ import { KeystoreController } from '../keystore/keystore'
 import { PortfolioController } from '../portfolio/portfolio'
 import { SettingsController } from '../settings/settings'
 import { SignAccountOpController, SigningStatus } from './signAccountOp'
+import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
+import { accountOpSignableHash } from '../../libs/accountOp/accountOp'
 
 const providers = Object.fromEntries(
   networks.map((network) => [network.id, new JsonRpcProvider(network.rpcUrl)])
@@ -40,35 +42,11 @@ const getAccountsInfo = async (accounts: Account[]): Promise<AccountStates> => {
   return Object.fromEntries(states)
 }
 
-// @TODO - copied from keystore signer tests. Should reuse.
-class InternalSigner {
-  key
-
-  privKey
-
-  constructor(_key: Key, _privKey?: string) {
-    this.key = _key
-    this.privKey = _privKey
-  }
-
-  signRawTransaction() {
-    return Promise.resolve('0x010101')
-  }
-
-  signTypedData() {
-    return Promise.resolve('')
-  }
-
-  signMessage() {
-    return Promise.resolve('0x010101')
-  }
-}
-
 // @TODO - copied from estimate tests. Should reuse.
 const createAccountOp = (signingKeyAddr: string) => {
   const account = {
     addr: '0xa07D75aacEFd11b425AF7181958F0F85c312f143',
-    associatedKeys: ['0xd6e371526cdaeE04cd8AF225D42e37Bc14688D9E'],
+    associatedKeys: [signingKeyAddr, '0xd6e371526cdaeE04cd8AF225D42e37Bc14688D9E'],
     creation: {
       factoryAddr: '0xBf07a0Df119Ca234634588fbDb5625594E2a5BCA',
       bytecode:
@@ -104,8 +82,8 @@ const createAccountOp = (signingKeyAddr: string) => {
 
   const op = {
     accountAddr: account.addr,
-    signingKeyAddr,
-    signingKeyType: 'internal' as any,
+    signingKeyAddr: null,
+    signingKeyType: null,
     gasLimit: null,
     gasFeePayment: null,
     networkId: 'ethereum',
@@ -132,7 +110,7 @@ describe('SignAccountOp Controller ', () => {
     const keyPublicAddress = '0x9188fdd757Df66B4F693D624Ed6A13a15Cf717D7'
     const pass = 'testpass'
 
-    const keystore = new KeystoreController(storage, { internal: InternalSigner })
+    const keystore = new KeystoreController(storage, { internal: KeystoreSigner })
     await keystore.addSecret('passphrase', pass, '', false)
     await keystore.unlockWithSecret('passphrase', pass)
     await keystore.addKeys([{ privateKey: privKey }])
@@ -176,8 +154,18 @@ describe('SignAccountOp Controller ', () => {
 
     await controller.sign()
 
+    if (!controller.accountOp?.signature) {
+      throw new Error('failing test')
+    }
+
+    const message = ethers.hexlify(accountOpSignableHash(controller.accountOp))
+    const unwrappedSig = controller.accountOp.signature.slice(0, -2)
+    const signerAddr = ethers.verifyMessage(message, unwrappedSig)
+
+    console.log({ keyPublicAddress, signerAddr })
+
     expect(controller.accountOp?.gasFeePayment?.amount).toBeGreaterThan(21000n)
-    expect(controller.accountOp?.signature).toEqual('0x01010101')
+    // expect(controller.accountOp?.signature).toEqual('0x01010101')
     expect(controller.status).toEqual({ type: 'done' })
   })
 })

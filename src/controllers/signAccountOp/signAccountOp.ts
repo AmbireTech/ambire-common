@@ -71,6 +71,7 @@ function getTokenUsdAmount(token: TokenResult, gasAmount: bigint): string {
  * @returns hex string
  */
 function wrapEthSign(sig: string): string {
+  console.log({ sig })
   return `${sig}${'01'}`
 }
 
@@ -704,9 +705,13 @@ export class SignAccountOpController extends EventEmitter {
       } else {
         // Relayer
         this.#addFeePayment()
-        this.accountOp.signature = wrapEthSign(
-          await signer.signMessage(ethers.hexlify(accountOpSignableHash(this.accountOp)))
-        )
+
+        const message = ethers.hexlify(accountOpSignableHash(this.accountOp))
+        const sig = await signer.signMessage(message)
+        const signerAddr = ethers.verifyMessage(message, sig)
+
+        console.log({ message, signerAddr, keystoreKeys: await this.#keystore.getKeys() }, this)
+        this.accountOp.signature = wrapEthSign(sig)
       }
 
       this.status = { type: SigningStatus.Done }
