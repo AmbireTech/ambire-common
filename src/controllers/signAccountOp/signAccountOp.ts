@@ -164,9 +164,8 @@ export class SignAccountOpController extends EventEmitter {
     // In that case, on the application, we want the "Sign" button to be clickable/enabled,
     // and we have to check and expose the `SignAccountOp` controller's inner state to make this check possible.
     if (!this.accountOp.signingKeyAddr || !this.accountOp.signingKeyType) {
-      const accountKeyStoreKeys = this.getAccountKeyStoreKeys
-      this.accountOp.signingKeyAddr = accountKeyStoreKeys[0].addr
-      this.accountOp.signingKeyType = accountKeyStoreKeys[0].type
+      this.accountOp.signingKeyAddr = this.accountKeyStoreKeys[0].addr
+      this.accountOp.signingKeyType = this.accountKeyStoreKeys[0].type
     }
   }
 
@@ -206,7 +205,7 @@ export class SignAccountOpController extends EventEmitter {
         "We are unable to estimate your transaction as you don't have tokens with balances to cover the fee."
       )
 
-    if (!this.getAccountKeyStoreKeys.length)
+    if (!this.accountKeyStoreKeys.length)
       errors.push('We are unable to sign your transaction as there is no available signer.')
 
     // This error should not happen, as in the update method we are always setting a default signer.
@@ -531,7 +530,7 @@ export class SignAccountOpController extends EventEmitter {
     return this.#estimation!.feePaymentOptions.filter((feeOption) => feeOption.availableAmount)
   }
 
-  get getAccountKeyStoreKeys(): Key[] {
+  get accountKeyStoreKeys(): Key[] {
     return this.#keystore.keys.filter((key) => this.#account?.associatedKeys.includes(key.addr))
   }
 
@@ -728,7 +727,7 @@ export class SignAccountOpController extends EventEmitter {
       hasSelectedAccountOp: this.hasSelectedAccountOp,
       readyToSign: this.readyToSign,
       availableFeeOptions: this.availableFeeOptions,
-      accountKeyStoreKeys: this.getAccountKeyStoreKeys,
+      accountKeyStoreKeys: this.accountKeyStoreKeys,
       feeSpeeds: this.feeSpeeds,
       feeToken: this.feeToken,
       feePaidBy: this.feePaidBy,

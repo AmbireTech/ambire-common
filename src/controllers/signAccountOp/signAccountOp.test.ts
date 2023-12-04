@@ -156,7 +156,7 @@ describe('SignAccountOp Controller ', () => {
     const portfolio = new PortfolioController(storage, 'https://staging-relayer.ambire.com', [])
     await portfolio.updateSelectedAccount(accounts, networks, account.addr)
     const callRelayer = relayerCall.bind({ url: '', fetch })
-    const settings = new SettingsController(storage, networks)
+    const settings = new SettingsController(storage)
     const controller = new SignAccountOpController(
       keystore,
       portfolio,

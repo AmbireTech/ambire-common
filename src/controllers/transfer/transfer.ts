@@ -1,5 +1,5 @@
 import erc20Abi from 'adex-protocol-eth/abi/ERC20.json'
-import { formatUnits, Interface, parseUnits } from 'ethers'
+import { formatUnits, getAddress, Interface, parseUnits } from 'ethers'
 
 import { HumanizerInfoType } from '../../../v1/hooks/useConstants'
 import { networks } from '../../consts/networks'
@@ -234,8 +234,9 @@ export class TransferController extends EventEmitter {
 
     if (!this.selectedToken || !this.#selectedTokenNetworkData || !this.#selectedAccount) return
 
-    const recipientAddress =
+    const recipientAddress = getAddress(
       this.recipientUDAddress || this.recipientEnsAddress || this.recipientAddress
+    )
 
     const bigNumberHexAmount = `0x${parseUnits(
       this.amount,
