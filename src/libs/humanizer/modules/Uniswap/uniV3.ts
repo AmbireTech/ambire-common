@@ -110,7 +110,6 @@ const uniV32Mapping = (
     ): IrCall[] => {
       const [params] = ifaceV32.parseTransaction(call)?.args || []
       // @TODO: consider fees
-      console.log(params)
       return [
         {
           ...call,
