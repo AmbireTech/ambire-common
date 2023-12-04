@@ -625,6 +625,7 @@ export class SignAccountOpController extends EventEmitter {
         // In legacy mode, we sign the transaction directly.
         // that means the signing will happen on broadcast and here
         // checking whether the call is 1 and 1 only is enough
+        this.accountOp.signature = '0x'
       } else if (this.accountOp.gasFeePayment.paidBy !== this.#account.addr) {
         // Smart account, but EOA pays the fee
         // EOA pays for execute() - relayerless
