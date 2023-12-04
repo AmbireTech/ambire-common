@@ -76,16 +76,22 @@ export function toUserOperation(
 
   // get estimation calldata
   let callData
+  let verificationGasLimit
+  let callGasLimit
   if (isEdgeCase) {
     const abiCoder = new ethers.AbiCoder()
     const spoofSig = abiCoder.encode(['address'], [account.associatedKeys[0]]) + SPOOF_SIGTYPE
     callData = ambireAccount.interface.encodeFunctionData('executeMultiple', [
       [[getSignableCalls(accountOp), spoofSig]]
     ])
+    verificationGasLimit = 250000n
+    callGasLimit = 380000n
   } else {
     callData = ambireAccount.interface.encodeFunctionData('executeBySender', [
       getSignableCalls(accountOp)
     ])
+    verificationGasLimit = 150000n
+    callGasLimit = 250000n
   }
 
   const userOperation: any = {
@@ -94,8 +100,8 @@ export function toUserOperation(
     initCode,
     callData,
     preVerificationGas: ethers.toBeHex(0),
-    callGasLimit: ethers.toBeHex(150000), // hardcoded fake for estimation
-    verificationGasLimit: ethers.toBeHex(150000), // hardcoded fake for estimation
+    callGasLimit, // hardcoded fake for estimation
+    verificationGasLimit, // hardcoded fake for estimation
     maxFeePerGas: ethers.toBeHex(1),
     maxPriorityFeePerGas: ethers.toBeHex(1),
     paymasterAndData: getPaymasterSpoof(),
