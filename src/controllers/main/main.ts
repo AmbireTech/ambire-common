@@ -5,10 +5,11 @@ import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFactory.json'
 import { Account, AccountId, AccountStates } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
-import { Key, KeystoreSignerType } from '../../interfaces/keystore'
+import { ExternalSignerController, Key, KeystoreSignerType } from '../../interfaces/keystore'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
 import { Storage } from '../../interfaces/storage'
 import { Message, UserRequest } from '../../interfaces/userRequest'
+import { isSmartAccount } from '../../libs/account/account'
 import {
   AccountOp,
   AccountOpStatus,
@@ -612,8 +613,20 @@ export class MainController extends EventEmitter {
     }
   }
 
+  /**
+   * TODO: Describe better.
+   *
+   * There are 4 ways to broadcast an AccountOp:
+   *   - legacy
+   *   - EOA for smart acc
+   *   - relayer
+   *   - erc4337
+   */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars, class-methods-use-this
-  async broadcastSignedAccountOp(accountOp: AccountOp) {
+  async broadcastSignedAccountOp(
+    accountOp: AccountOp,
+    externalSignerController?: ExternalSignerController
+  ) {
     this.broadcastStatus = 'LOADING'
     this.emitUpdate()
 
@@ -623,6 +636,14 @@ export class MainController extends EventEmitter {
 
     const provider: JsonRpcProvider = this.#providers[accountOp.networkId]
     const account = this.accounts.find((acc) => acc.addr === accountOp.accountAddr)
+    // TODO: Could find multiple.
+    const broadcastKeys = this.keystore.keys.filter(
+      (key) => key.addr === accountOp.gasFeePayment!.paidBy
+    )
+    const broadcastKey =
+      // Temporarily prioritize the key with the same type as the signing key.
+      // TODO: Implement a way to choose the key type to broadcast with.
+      broadcastKeys.find((key) => key.type === accountOp.signingKeyType) || broadcastKeys[0]
     const network = this.settings.networks.find((n) => n.id === accountOp.networkId)
 
     if (!provider) {
@@ -637,10 +658,26 @@ export class MainController extends EventEmitter {
       )
     }
 
+    if (!broadcastKey) {
+      return this.#throwAccountOpBroadcastError(
+        new Error(
+          `Key with address ${accountOp.gasFeePayment!.paidBy} for account with address: ${
+            accountOp.accountAddr
+          } not found`
+        )
+      )
+    }
+
+    if (!network) {
+      return this.#throwAccountOpBroadcastError(
+        new Error(`Network with id: ${accountOp.networkId} not found`)
+      )
+    }
+
     let transactionRes: TransactionResponse | { hash: string; nonce: number } | null = null
 
     // EOA account
-    if (!account.creation) {
+    if (!isSmartAccount(account)) {
       try {
         transactionRes = await provider.broadcastTransaction(accountOp.signature)
       } catch (error: any) {
@@ -682,34 +719,25 @@ export class MainController extends EventEmitter {
         ])
       }
 
-      const broadcastKey = this.keystore.keys.find(
-        (key) => key.addr === accountOp.gasFeePayment!.paidBy
-      )
-      const signer = await this.keystore.getSigner(
-        accountOp.gasFeePayment!.paidBy,
-        broadcastKey!.type
-      )
-
-      if (!network) {
-        return this.#throwAccountOpBroadcastError(
-          new Error(`Network with id: ${accountOp.networkId} not found`)
-        )
-      }
-
-      const signedTxn = await signer.signRawTransaction({
-        to,
-        data,
-        chainId: network.chainId,
-        nonce: await provider.getTransactionCount(accountOp.gasFeePayment!.paidBy),
-        // TODO: fix simulatedGasLimit as multiplying by 2 is just
-        // a quick fix
-        gasLimit: accountOp.gasFeePayment.simulatedGasLimit,
-        gasPrice:
-          (accountOp.gasFeePayment.amount - estimation!.addedNative) /
-          accountOp.gasFeePayment.simulatedGasLimit
-      })
-
       try {
+        const signer = await this.keystore.getSigner(broadcastKey.addr, broadcastKey.type)
+        if (signer.init) signer.init(externalSignerController)
+
+        const signedTxn = await signer.signRawTransaction({
+          to,
+          data,
+          // We ultimately do a smart contract call, which means we don't need
+          // to send any `value` from the EOA address. The actual `value` will
+          // get taken from the value encoded in the `data` field.
+          value: BigInt(0),
+          chainId: network.chainId,
+          nonce: await provider.getTransactionCount(accountOp.gasFeePayment!.paidBy),
+          gasLimit: accountOp.gasFeePayment.simulatedGasLimit,
+          gasPrice:
+            (accountOp.gasFeePayment.amount - estimation!.addedNative) /
+            accountOp.gasFeePayment.simulatedGasLimit
+        })
+
         transactionRes = await provider.broadcastTransaction(signedTxn)
       } catch (error: any) {
         this.#throwAccountOpBroadcastError(new Error(error), error.message || undefined)
@@ -745,6 +773,7 @@ export class MainController extends EventEmitter {
           txns: getSignableCalls(accountOp),
           signature: accountOp.signature,
           signer: {
+            // TODO: Double-check this
             address: accountOp.signingKeyAddr
           },
           nonce: Number(accountOp.nonce)
