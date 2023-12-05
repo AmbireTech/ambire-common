@@ -61,7 +61,7 @@ export async function estimate(
     const call = op.calls[0]
     const nonce = await provider.getTransactionCount(account.addr)
 
-    const [gasUsed, balance, l1GasEstimation] = await Promise.all([
+    const [gasUsed, balance, [l1GasEstimation]] = await Promise.all([
       provider.estimateGas({
         from: account.addr,
         to: call.to,
