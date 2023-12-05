@@ -776,10 +776,7 @@ export class MainController extends EventEmitter {
           gasLimit: Number(accountOp.gasFeePayment!.simulatedGasLimit),
           txns: getSignableCalls(accountOp),
           signature: accountOp.signature,
-          signer: {
-            // TODO: Double-check this
-            address: accountOp.signingKeyAddr
-          },
+          signer: { address: accountOp.signingKeyAddr },
           nonce: Number(accountOp.nonce)
         }
         const response = await this.#callRelayer(
