@@ -614,15 +614,18 @@ export class MainController extends EventEmitter {
   }
 
   /**
-   * TODO: Describe better.
-   *
    * There are 4 ways to broadcast an AccountOp:
-   *   - legacy
-   *   - EOA for smart acc
-   *   - relayer
-   *   - erc4337
+   *   1. For legacy accounts (EOA), there is only one way to do that. After
+   *   signing the transaction, the serialized signed transaction object gets
+   *   send to the network.
+   *   2. For smart accounts, when EOA pays the fee. Two signatures are needed
+   *   for this. The first one is the signature of the AccountOp itself. The
+   *   second one is the signature of the transaction that will be executed
+   *   by the smart account.
+   *   3. For smart accounts that broadcast the ERC-4337 way.
+   *   4. for smart accounts, when the Relayer does the broadcast.
+   *
    */
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars, class-methods-use-this
   async broadcastSignedAccountOp(
     accountOp: AccountOp,
     externalSignerController?: ExternalSignerController
@@ -636,7 +639,6 @@ export class MainController extends EventEmitter {
 
     const provider: JsonRpcProvider = this.#providers[accountOp.networkId]
     const account = this.accounts.find((acc) => acc.addr === accountOp.accountAddr)
-    // TODO: Could find multiple.
     const broadcastKeys = this.keystore.keys.filter(
       (key) => key.addr === accountOp.gasFeePayment!.paidBy
     )
@@ -676,7 +678,7 @@ export class MainController extends EventEmitter {
 
     let transactionRes: TransactionResponse | { hash: string; nonce: number } | null = null
 
-    // EOA account
+    // Legacy account (EOA)
     if (!isSmartAccount(account)) {
       try {
         transactionRes = await provider.broadcastTransaction(accountOp.signature)
@@ -742,7 +744,9 @@ export class MainController extends EventEmitter {
       } catch (error: any) {
         this.#throwAccountOpBroadcastError(new Error(error), error.message || undefined)
       }
-    } else if (accountOp.gasFeePayment && accountOp.gasFeePayment.isERC4337) {
+    }
+    // Smart account via the ERC-4337 way
+    else if (accountOp.gasFeePayment && accountOp.gasFeePayment.isERC4337) {
       const userOperation = accountOp.asUserOperation
       if (!userOperation) {
         this.#throwAccountOpBroadcastError(
@@ -765,7 +769,7 @@ export class MainController extends EventEmitter {
         nonce: Number(userOperation!.nonce)
       }
     }
-    // Relayer broadcast
+    // Smart account via the Relayer broadcast
     else {
       try {
         const body = {
