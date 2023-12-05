@@ -764,7 +764,11 @@ export class MainController extends EventEmitter {
           return this.#throwAccountOpBroadcastError(new Error(response.message))
         }
       } catch (e: any) {
-        return this.#throwAccountOpBroadcastError(e)
+        let message
+        if (e.message === 'relayer call error: transaction fee underpriced') {
+          message = 'Transaction fee underpriced. Please choose a higher fee and try again'
+        }
+        return this.#throwAccountOpBroadcastError(e, message)
       }
     }
 
