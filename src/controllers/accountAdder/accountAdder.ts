@@ -493,10 +493,11 @@ export class AccountAdderController extends EventEmitter {
       this.hdPathTemplate
     )
 
+    const smartAccountsPromises: Promise<DerivedAccountWithoutNetworkMeta | null>[] = []
     // Replace the parallel getKeys with foreach to prevent issues with Ledger,
     // which can only handle one request at a time.
     // eslint-disable-next-line no-restricted-syntax
-    for await (const [index, smartAccKey] of smartAccKeys.entries()) {
+    for (const [index, smartAccKey] of smartAccKeys.entries()) {
       const slot = startIdx + (index + 1)
 
       // The derived EOA (legacy) account which is the key for the smart account
@@ -504,20 +505,28 @@ export class AccountAdderController extends EventEmitter {
       const indexWithOffset = slot - 1 + SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
       accounts.push({ account, isLinked: false, slot, index: indexWithOffset })
 
-      try {
-        // The smart account on this slot
-        const smartAccount = await getSmartAccount(smartAccKey)
-        accounts.push({ account: smartAccount, isLinked: false, slot, index: slot - 1 })
-      } catch {
-        this.emitError({
-          level: 'major',
-          message: `Failed to derive smart accounts on slot ${slot}. Please try again later or contact support if the problem persists.`,
-          error: new Error(
-            `accountAdder.#deriveAccounts: failed to derive smart accounts on slot ${slot}`
-          )
-        })
-      }
+      // Derive the Ambire (smart) account
+      smartAccountsPromises.push(
+        getSmartAccount(smartAccKey)
+          .then((smartAccount) => {
+            return { account: smartAccount, isLinked: false, slot, index: slot - 1 }
+          })
+          // If the error isn't caught here and the promise is rejected, Promise.all
+          // will be rejected entirely.
+          .catch(() => {
+            // No need for emitting an error here, because a relevant error is already
+            // emitted in the method #getAccountsUsedOnNetworks
+            return null
+          })
+      )
     }
+
+    const unfilteredSmartAccountsList = await Promise.all(smartAccountsPromises)
+    const smartAccounts = unfilteredSmartAccountsList.filter(
+      (x) => x !== null
+    ) as DerivedAccountWithoutNetworkMeta[]
+
+    accounts.push(...smartAccounts)
 
     // eslint-disable-next-line no-restricted-syntax
     for (const [index, legacyAccKey] of legacyAccKeys.entries()) {
