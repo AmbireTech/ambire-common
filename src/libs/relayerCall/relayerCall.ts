@@ -7,7 +7,7 @@ class RelayerError extends Error {
   public output: any
 
   constructor(message: string, input: any, output: any) {
-    super(`relayer call error: ${message}`)
+    super(message)
     this.input = input
     this.output = output
   }
