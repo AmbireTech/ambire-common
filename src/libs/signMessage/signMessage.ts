@@ -39,7 +39,7 @@ export const wrapEthSign = (signature: string) => {
  * @param {object} account
  * @returns {string} - EIP6492 signature
  */
-export const wrapSignature = (signature: string, creation: AccountCreation) => {
+export const wrapCounterfactualSign = (signature: string, creation: AccountCreation) => {
   // EIP6492 signature ends in magicBytes, which ends with a 0x92,
   // which makes it is impossible for it to collide with a valid ecrecover signature if packed in the r,s,v format,
   // as 0x92 is not a valid value for v.

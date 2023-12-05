@@ -13,11 +13,11 @@ import { Storage } from '../../interfaces/storage'
 import { getAccountState } from '../../libs/accountState/accountState'
 import { estimate } from '../../libs/estimate/estimate'
 import { getGasPriceRecommendations } from '../../libs/gasPrice/gasPrice'
+import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { KeystoreController } from '../keystore/keystore'
 import { PortfolioController } from '../portfolio/portfolio'
 import { SettingsController } from '../settings/settings'
 import { SignAccountOpController, SigningStatus } from './signAccountOp'
-import { relayerCall } from '../../libs/relayerCall/relayerCall'
 
 const providers = Object.fromEntries(
   networks.map((network) => [network.id, new JsonRpcProvider(network.rpcUrl)])
@@ -148,7 +148,7 @@ describe('SignAccountOp Controller ', () => {
     const portfolio = new PortfolioController(storage, 'https://staging-relayer.ambire.com', [])
     await portfolio.updateSelectedAccount(accounts, networks, account.addr)
     const callRelayer = relayerCall.bind({ url: '', fetch })
-    const settings = new SettingsController(storage, networks)
+    const settings = new SettingsController(storage)
     const controller = new SignAccountOpController(
       keystore,
       portfolio,

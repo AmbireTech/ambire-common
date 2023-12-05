@@ -7,7 +7,7 @@ import { SettingsController } from './settings'
 describe('Settings Controller', () => {
   let settingsController: SettingsController
   beforeEach(() => {
-    settingsController = new SettingsController(produceMemoryStore(), networks)
+    settingsController = new SettingsController(produceMemoryStore())
   })
 
   test('should throw if adding an account preference is requested with invalid address', (done) => {
@@ -147,5 +147,55 @@ describe('Settings Controller', () => {
     })
 
     settingsController.addKeyPreferences([preference])
+  })
+
+  test('should update network preferences', (done) => {
+    const preferences = {
+      rpcUrl: 'https://eth-mainnet.alchemyapi.io/v2/123abc123abc123abc123abc123abcde',
+      explorerUrl: 'https://etherscan.io/custom'
+    }
+
+    let emitCounter = 0
+    settingsController.onUpdate(() => {
+      emitCounter++
+
+      if (emitCounter === 1) {
+        const modifiedNetwork = settingsController.networks.find(({ id }) => id === 'ethereum')
+        expect(modifiedNetwork?.explorerUrl).toEqual('https://etherscan.io/custom')
+        expect(modifiedNetwork?.rpcUrl).toEqual(
+          'https://eth-mainnet.alchemyapi.io/v2/123abc123abc123abc123abc123abcde'
+        )
+        done()
+      }
+    })
+
+    settingsController.updateNetworkPreferences(preferences, 'ethereum')
+  })
+
+  test('should reset network preferences', (done) => {
+    const ethereumStatic = networks.find(({ id }) => id === 'ethereum')
+    const modifiedNetwork = settingsController.networks.find(({ id }) => id === 'ethereum')
+
+    let emitCounter = 0
+    settingsController.onUpdate(() => {
+      emitCounter++
+
+      if (emitCounter === 1) {
+        settingsController.resetNetworkPreference('rpcUrl', 'ethereum')
+      }
+      if (emitCounter === 3) {
+        expect(modifiedNetwork?.rpcUrl).toEqual(ethereumStatic?.rpcUrl)
+        expect(modifiedNetwork?.explorerUrl).toEqual('https://etherscan.io/custom') // Should remain the same
+      }
+      done()
+    })
+
+    settingsController.updateNetworkPreferences(
+      {
+        rpcUrl: 'https://eth-mainnet.alchemyapi.io/v2/123abc123abc123abc123abc123abcde',
+        explorerUrl: 'https://etherscan.io/custom'
+      },
+      'ethereum'
+    )
   })
 })

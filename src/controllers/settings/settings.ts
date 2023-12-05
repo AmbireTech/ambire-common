@@ -1,34 +1,57 @@
+import { networks } from '../../consts/networks'
 import { Key } from '../../interfaces/keystore'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
-import { AccountPreferences, KeyPreferences } from '../../interfaces/settings'
+import {
+  AccountPreferences,
+  KeyPreferences,
+  NetworkPreference,
+  NetworkPreferences
+} from '../../interfaces/settings'
 import { Storage } from '../../interfaces/storage'
 import { isValidAddress } from '../../services/address'
 import EventEmitter from '../eventEmitter'
 
 export class SettingsController extends EventEmitter {
-  networks: NetworkDescriptor[]
-
   accountPreferences: AccountPreferences = {}
 
   keyPreferences: KeyPreferences = []
 
+  #networkPreferences: NetworkPreferences = {}
+
   #storage: Storage
 
-  constructor(storage: Storage, networks: NetworkDescriptor[]) {
+  constructor(storage: Storage) {
     super()
     this.#storage = storage
-    this.networks = networks
 
     this.#load()
   }
 
+  get networks(): NetworkDescriptor[] {
+    return networks.map((network) => {
+      const networkPreferences = this.#networkPreferences[network.id]
+      if (networkPreferences) {
+        return {
+          ...network,
+          ...networkPreferences
+        }
+      }
+
+      return network
+    })
+  }
+
   async #load() {
     try {
-      ;[this.accountPreferences, this.keyPreferences] = await Promise.all([
-        // Should get the storage data from all keys here
-        this.#storage.get('accountPreferences', {}),
-        this.#storage.get('keyPreferences', [])
-      ])
+      // @ts-ignore
+      ;[this.accountPreferences, this.keyPreferences, this.#networkPreferences] = await Promise.all(
+        [
+          // Should get the storage data from all keys here
+          this.#storage.get('accountPreferences', {}),
+          this.#storage.get('keyPreferences', []),
+          this.#storage.get('networkPreferences', {})
+        ]
+      )
     } catch (e) {
       this.emitError({
         message:
@@ -45,7 +68,8 @@ export class SettingsController extends EventEmitter {
     try {
       await Promise.all([
         this.#storage.set('accountPreferences', this.accountPreferences),
-        this.#storage.set('keyPreferences', this.keyPreferences)
+        this.#storage.set('keyPreferences', this.keyPreferences),
+        this.#storage.set('networkPreferences', this.#networkPreferences)
       ])
     } catch (e) {
       this.emitError({
@@ -143,6 +167,52 @@ export class SettingsController extends EventEmitter {
     this.emitUpdate()
   }
 
+  async updateNetworkPreferences(
+    networkPreferences: NetworkPreference,
+    networkId: NetworkDescriptor['id']
+  ) {
+    if (!Object.keys(networkPreferences).length) return
+
+    const networkData = this.networks.find((network) => network.id === networkId)
+
+    const changedNetworkPreferences = Object.keys(networkPreferences).reduce((acc, key) => {
+      if (!networkData) return acc
+
+      // No need to save unchanged network preferences.
+      // Here we filter the network preferences that are the same as the ones in the storage.
+      if (
+        networkPreferences[key as keyof NetworkPreference] ===
+        networkData[key as keyof NetworkPreference]
+      )
+        return acc
+
+      return { ...acc, [key]: networkPreferences[key as keyof NetworkPreference] }
+    }, {})
+
+    // Update the network preferences with the incoming new values
+    this.#networkPreferences[networkId] = {
+      ...this.#networkPreferences[networkId],
+      ...changedNetworkPreferences
+    }
+
+    await this.#storePreferences()
+    this.emitUpdate()
+  }
+
+  async resetNetworkPreference(key: keyof NetworkPreference, networkId: NetworkDescriptor['id']) {
+    if (
+      !networkId ||
+      !(networkId in this.#networkPreferences) ||
+      !(key in this.#networkPreferences[networkId])
+    )
+      return
+
+    delete this.#networkPreferences[networkId][key]
+
+    await this.#storePreferences()
+    this.emitUpdate()
+  }
+
   #throwInvalidAddress(addresses: string[]) {
     return this.emitError({
       message:
@@ -154,5 +224,12 @@ export class SettingsController extends EventEmitter {
         )}`
       )
     })
+  }
+
+  toJSON() {
+    return {
+      ...this,
+      networks: this.networks
+    }
   }
 }

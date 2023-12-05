@@ -1,12 +1,14 @@
 import { JsonRpcProvider } from 'ethers'
 import fetch from 'node-fetch'
 
-import { describe, expect, jest, test } from '@jest/globals'
+import { beforeAll, describe, expect, jest, test } from '@jest/globals'
 
 import { produceMemoryStore } from '../../../test/helpers'
 import { networks } from '../../consts/networks'
-import { Account } from '../../interfaces/account'
+import { Account, AccountStates } from '../../interfaces/account'
+import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { Message } from '../../interfaces/userRequest'
+import { getAccountState } from '../../libs/accountState/accountState'
 import { KeystoreController } from '../keystore/keystore'
 import { InternalSigner } from '../keystore/keystore.test'
 import { SettingsController } from '../settings/settings'
@@ -22,15 +24,38 @@ const account: Account = {
   creation: null
 }
 
+let accountStates: AccountStates
+
+const getAccountsInfo = async (accounts: Account[]): Promise<AccountStates> => {
+  const result = await Promise.all(
+    networks.map((network) => getAccountState(providers[network.id], network, accounts))
+  )
+  const states = accounts.map((acc: Account, accIndex: number) => {
+    return [
+      acc.addr,
+      Object.fromEntries(
+        networks.map((network: NetworkDescriptor, netIndex: number) => {
+          return [network.id, result[netIndex][accIndex]]
+        })
+      )
+    ]
+  })
+  return Object.fromEntries(states)
+}
+
 describe('SignMessageController', () => {
   let signMessageController: SignMessageController
   let keystore: KeystoreController
   let settings: SettingsController
 
+  beforeAll(async () => {
+    accountStates = await getAccountsInfo([account])
+  })
+
   beforeEach(() => {
     const keystoreSigners = { internal: InternalSigner }
     keystore = new KeystoreController(produceMemoryStore(), keystoreSigners)
-    settings = new SettingsController(produceMemoryStore(), networks)
+    settings = new SettingsController(produceMemoryStore())
 
     signMessageController = new SignMessageController(
       keystore,
@@ -167,7 +192,11 @@ describe('SignMessageController', () => {
       }
     })
 
-    signMessageController.init({ messageToSign, accounts: [account], accountStates: {} })
+    signMessageController.init({
+      messageToSign,
+      accounts: [account],
+      accountStates
+    })
     signMessageController.setSigningKey(signingKeyAddr, 'internal')
     signMessageController.sign()
   })

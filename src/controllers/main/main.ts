@@ -3,7 +3,6 @@ import { ethers, JsonRpcProvider, TransactionResponse } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFactory.json'
-import { networks } from '../../consts/networks'
 import { Account, AccountId, AccountStates } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
 import { Key, KeystoreSignerType } from '../../interfaces/keystore'
@@ -33,7 +32,7 @@ import bundler from '../../services/bundlers'
 import generateSpoofSig from '../../utils/generateSpoofSig'
 import wait from '../../utils/wait'
 import { AccountAdderController } from '../accountAdder/accountAdder'
-import { ActivityController } from '../activity/activity'
+import { ActivityController, SignedMessage, SubmittedAccountOp } from '../activity/activity'
 import { EmailVaultController } from '../emailVault'
 import EventEmitter from '../eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
@@ -150,7 +149,7 @@ export class MainController extends EventEmitter {
 
     this.portfolio = new PortfolioController(this.#storage, relayerUrl, pinned)
     this.keystore = new KeystoreController(this.#storage, keystoreSigners)
-    this.settings = new SettingsController(this.#storage, networks)
+    this.settings = new SettingsController(this.#storage)
     this.#initialLoadPromise = this.#load()
     this.emailVault = new EmailVaultController(
       this.#storage,
@@ -217,7 +216,7 @@ export class MainController extends EventEmitter {
   initSignAccOp(accountAddr: string, networkId: string): null | void {
     const accountOpToBeSigned = this.accountOpsToBeSigned?.[accountAddr]?.[networkId]?.accountOp
     const account = this.accounts?.find((acc) => acc.addr === accountAddr)
-    const network = networks.find((net) => net.id === networkId)
+    const network = this.settings.networks.find((net) => net.id === networkId)
 
     if (!account) {
       this.signAccOpInitError =
@@ -807,8 +806,9 @@ export class MainController extends EventEmitter {
         ...accountOp,
         status: AccountOpStatus.BroadcastedButNotConfirmed,
         txnId: transactionRes.hash,
-        nonce: BigInt(transactionRes.nonce)
-      })
+        nonce: BigInt(transactionRes.nonce),
+        timestamp: new Date().getTime()
+      } as SubmittedAccountOp)
       accountOp.calls.forEach((call) => {
         if (call.fromUserRequestId) {
           this.removeUserRequest(call.fromUserRequestId)
@@ -826,7 +826,7 @@ export class MainController extends EventEmitter {
     this.emitUpdate()
   }
 
-  async broadcastSignedMessage(signedMessage: Message) {
+  async broadcastSignedMessage(signedMessage: SignedMessage) {
     this.broadcastStatus = 'LOADING'
     this.emitUpdate()
 
