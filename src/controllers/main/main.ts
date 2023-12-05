@@ -663,7 +663,7 @@ export class MainController extends EventEmitter {
     if (!broadcastKey) {
       return this.#throwAccountOpBroadcastError(
         new Error(
-          `Key with address ${accountOp.gasFeePayment!.paidBy} for account with address: ${
+          `Key with address: ${accountOp.gasFeePayment!.paidBy} for account with address: ${
             accountOp.accountAddr
           } not found`
         )
@@ -745,7 +745,7 @@ export class MainController extends EventEmitter {
         this.#throwAccountOpBroadcastError(new Error(error), error.message || undefined)
       }
     }
-    // Smart account via the ERC-4337 way
+    // Smart account, the ERC-4337 way
     else if (accountOp.gasFeePayment && accountOp.gasFeePayment.isERC4337) {
       const userOperation = accountOp.asUserOperation
       if (!userOperation) {
@@ -769,7 +769,7 @@ export class MainController extends EventEmitter {
         nonce: Number(userOperation!.nonce)
       }
     }
-    // Smart account via the Relayer broadcast
+    // Smart account, the Relayer way
     else {
       try {
         const body = {
