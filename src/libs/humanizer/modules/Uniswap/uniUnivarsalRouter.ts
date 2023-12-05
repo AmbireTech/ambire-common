@@ -133,7 +133,7 @@ export const uniUniversalRouter = (
               parsed.push({
                 ...call,
                 fullVisualization: [
-                  getAction('Transfer'),
+                  getAction('Send'),
                   getToken(params.token, params.value),
                   getLabel('to'),
                   getAddress(params.recipient)
