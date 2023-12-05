@@ -50,6 +50,8 @@ export async function estimate(
   blockTag: string | number = 'latest'
 ): Promise<EstimateResult> {
   const nativeAddr = '0x0000000000000000000000000000000000000000'
+  const deploylessEstimator = fromDescriptor(provider, Estimation, !network.rpcNoStateOverride)
+  const abiCoder = new AbiCoder()
 
   if (!account.creation) {
     if (op.calls.length !== 1) {
@@ -59,7 +61,7 @@ export async function estimate(
     const call = op.calls[0]
     const nonce = await provider.getTransactionCount(account.addr)
 
-    const [gasUsed, balance] = await Promise.all([
+    const [gasUsed, balance, l1GasEstimation] = await Promise.all([
       provider.estimateGas({
         from: account.addr,
         to: call.to,
@@ -67,13 +69,26 @@ export async function estimate(
         data: call.data,
         nonce
       }),
-      provider.getBalance(account.addr)
+      provider.getBalance(account.addr),
+      deploylessEstimator.call(
+        'getL1GasEstimation',
+        [
+          encodeRlp(
+            abiCoder.encode(['address', 'uint256', 'bytes'], [call.to, call.value, call.data])
+          ),
+          '0x'
+        ],
+        {
+          from: blockFrom,
+          blockTag
+        }
+      )
     ])
 
     return {
       gasUsed,
       nonce,
-      addedNative: 0n,
+      addedNative: l1GasEstimation.fee,
       addedNativeWithPayment: 0n,
       feePaymentOptions: [
         {
@@ -86,15 +101,12 @@ export async function estimate(
     }
   }
 
-  const deploylessEstimator = fromDescriptor(provider, Estimation, !network.rpcNoStateOverride)
-
   // @TODO - .env or passed as parameter?
   const relayerAddress = '0x942f9CE5D9a33a82F88D233AEb3292E680230348'
 
   // @L2s
   // craft the probableTxn that's going to be saved on the L1
   // so we could do proper estimation
-  const abiCoder = new AbiCoder()
   const encodedCallData = abiCoder.encode(
     ['bytes'],
     [getProbableCallData(op, network, accountState)]
