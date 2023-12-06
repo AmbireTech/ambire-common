@@ -1,3 +1,8 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
+/* eslint-disable class-methods-use-this */
+/* eslint-disable @typescript-eslint/no-useless-constructor */
+/* eslint-disable max-classes-per-file */
+
 import { JsonRpcProvider } from 'ethers'
 import fetch from 'node-fetch'
 
@@ -56,7 +61,7 @@ class InternalSigner {
   }
 
   signTypedData() {
-    return Promise.resolve('')
+    return Promise.resolve('0x020202')
   }
 
   signMessage() {
@@ -177,7 +182,7 @@ describe('SignAccountOp Controller ', () => {
     await controller.sign()
 
     expect(controller.accountOp?.gasFeePayment?.amount).toBeGreaterThan(21000n)
-    expect(controller.accountOp?.signature).toEqual('0x01010101')
+    expect(controller.accountOp?.signature).toEqual('0x020202')
     expect(controller.status).toEqual({ type: 'done' })
   })
 })

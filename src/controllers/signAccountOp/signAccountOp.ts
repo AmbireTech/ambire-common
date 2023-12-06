@@ -1,5 +1,4 @@
 import { ethers, JsonRpcProvider } from 'ethers'
-import { getTypedData, wrapStandard } from 'libs/signMessage/signMessage'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import EntryPointAbi from '../../../contracts/compiled/EntryPoint.json'
@@ -22,6 +21,7 @@ import { GasRecommendation, getCallDataAdditional } from '../../libs/gasPrice/ga
 import { callsHumanizer } from '../../libs/humanizer'
 import { IrCall } from '../../libs/humanizer/interfaces'
 import { Price, TokenResult } from '../../libs/portfolio'
+import { getTypedData, wrapStandard } from '../../libs/signMessage/signMessage'
 import { getTargetEdgeCaseNonce, isErc4337Broadcast } from '../../libs/userOperation/userOperation'
 import EventEmitter from '../eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
