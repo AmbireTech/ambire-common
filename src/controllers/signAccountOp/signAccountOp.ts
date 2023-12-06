@@ -141,10 +141,59 @@ export class SignAccountOpController extends EventEmitter {
     this.#fetch = fetch
     this.#providers = providers
     this.#callRelayer = callRelayer
+
+    this.#humanizeAccountOp()
   }
 
   get isInitialized(): boolean {
     return !!(this.#account && this.#network && this.accountOp && this.#estimation)
+  }
+
+  #setDefaults() {
+    if (this.availableFeeOptions.length && !this.paidBy && !this.selectedTokenAddr) {
+      const defaultFeeOption = this.availableFeeOptions[0]
+
+      this.paidBy = defaultFeeOption.paidBy
+      this.selectedTokenAddr = defaultFeeOption.address
+    }
+    // Set the first signer as the default one.
+    // If there are more available signers, the user will be able to select a different signer from the application.
+    // The main benefit of having a default signer
+    // is that it drastically simplifies the logic of determining whether the account is ready for signing.
+    // For example, in the `sign` method and on the application screen, we can simply rely on the `this.readyToSign` flag.
+    // Otherwise, if we don't have a default value, then `this.readyToSign` will always be false unless we set a signer.
+    // In that case, on the application, we want the "Sign" button to be clickable/enabled,
+    // and we have to check and expose the `SignAccountOp` controller's inner state to make this check possible.
+    if (!this.accountOp.signingKeyAddr || !this.accountOp.signingKeyType) {
+      this.accountOp.signingKeyAddr = this.accountKeyStoreKeys[0].addr
+      this.accountOp.signingKeyType = this.accountKeyStoreKeys[0].type
+    }
+  }
+
+  #setGasFeePayment() {
+    if (this.isInitialized && this.paidBy && this.selectedTokenAddr && this.selectedFeeSpeed) {
+      this.accountOp!.gasFeePayment = this.#getGasFeePayment()
+    }
+  }
+
+  #humanizeAccountOp() {
+    const knownAddressLabels = getKnownAddressLabels(
+      this.#accounts,
+      this.#settings.accountPreferences,
+      this.#keystore.keys,
+      this.#settings.keyPreferences
+    )
+    callsHumanizer(
+      this.accountOp,
+      knownAddressLabels,
+      this.#storage,
+      this.#fetch,
+      (humanizedCalls) => {
+        this.humanReadable = humanizedCalls
+        this.emitUpdate()
+      },
+      (err) => this.emitError(err)
+    )
   }
 
   get errors(): string[] {
@@ -156,6 +205,14 @@ export class SignAccountOpController extends EventEmitter {
       errors.push(
         "We are unable to estimate your transaction as you don't have tokens with balances to cover the fee."
       )
+
+    if (!this.accountKeyStoreKeys.length)
+      errors.push('We are unable to sign your transaction as there is no available signer.')
+
+    // This error should not happen, as in the update method we are always setting a default signer.
+    // It may occur, only if there are no available signer.
+    if (!this.accountOp?.signingKeyType || !this.accountOp?.signingKeyAddr)
+      errors.push('Please select a signer to sign the transaction.')
 
     if (!this.accountOp?.gasFeePayment)
       errors.push('Please select a token and an account for paying the gas fee.')
@@ -192,7 +249,6 @@ export class SignAccountOpController extends EventEmitter {
   }
 
   update({
-    accountOp,
     gasPrices,
     estimation,
     feeTokenAddr,
@@ -214,35 +270,6 @@ export class SignAccountOpController extends EventEmitter {
 
     if (estimation) this.#estimation = estimation
 
-    if (accountOp) {
-      if (!this.accountOp) {
-        this.accountOp = accountOp
-      } else if (
-        this.accountOp.accountAddr === accountOp.accountAddr &&
-        this.accountOp.networkId === accountOp.networkId
-      ) {
-        this.accountOp = accountOp
-      }
-
-      const knownAddressLabels = getKnownAddressLabels(
-        this.#accounts,
-        this.#settings.accountPreferences,
-        this.#keystore.keys,
-        this.#settings.keyPreferences
-      )
-      callsHumanizer(
-        this.accountOp,
-        knownAddressLabels,
-        this.#storage,
-        this.#fetch,
-        (humanizedCalls) => {
-          this.humanReadable = humanizedCalls
-          this.emitUpdate()
-        },
-        (err) => this.emitError(err)
-      )
-    }
-
     if (feeTokenAddr && paidBy) {
       this.paidBy = paidBy
       this.selectedTokenAddr = feeTokenAddr
@@ -257,18 +284,10 @@ export class SignAccountOpController extends EventEmitter {
       this.accountOp!.signingKeyType = signingKeyType
     }
 
-    // Setting defaults
-    if (this.availableFeeOptions.length && !this.paidBy && !this.selectedTokenAddr) {
-      const defaultFeeOption = this.availableFeeOptions[0]
-
-      this.paidBy = defaultFeeOption.paidBy
-      this.selectedTokenAddr = defaultFeeOption.address
-    }
-
-    if (this.isInitialized && this.paidBy && this.selectedTokenAddr && this.selectedFeeSpeed) {
-      this.accountOp!.gasFeePayment = this.#getGasFeePayment()
-    }
-
+    // Set defaults, if some of the optional params are omitted
+    this.#setDefaults()
+    // Here, we expect to have most of the fields set, so we can safely set GasFeePayment
+    this.#setGasFeePayment()
     this.updateStatusToReadyToSign()
   }
 
@@ -277,6 +296,7 @@ export class SignAccountOpController extends EventEmitter {
       this.isInitialized &&
       this.#estimation &&
       this.accountOp?.signingKeyAddr &&
+      this.accountOp?.signingKeyType &&
       this.accountOp?.gasFeePayment &&
       !this.errors.length
     ) {
@@ -501,6 +521,10 @@ export class SignAccountOpController extends EventEmitter {
     return this.#estimation!.feePaymentOptions.filter((feeOption) => feeOption.availableAmount)
   }
 
+  get accountKeyStoreKeys(): Key[] {
+    return this.#keystore.keys.filter((key) => this.#account?.associatedKeys.includes(key.addr))
+  }
+
   // eslint-disable-next-line class-methods-use-this
   get speedOptions() {
     return Object.values(FeeSpeed) as string[]
@@ -711,6 +735,7 @@ export class SignAccountOpController extends EventEmitter {
       hasSelectedAccountOp: this.hasSelectedAccountOp,
       readyToSign: this.readyToSign,
       availableFeeOptions: this.availableFeeOptions,
+      accountKeyStoreKeys: this.accountKeyStoreKeys,
       feeSpeeds: this.feeSpeeds,
       feeToken: this.feeToken,
       feePaidBy: this.feePaidBy,

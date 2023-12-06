@@ -30,6 +30,7 @@ const wrapSwapReducer = (calls: IrCall[]) => {
         value: calls[i].value + calls[i + 1].value,
         // the unwrap call.data is omitted
         data: calls[i].data,
+        fromUserRequestId: calls[i].fromUserRequestId,
         fullVisualization: newVisualization
       })
       i += 1
@@ -47,6 +48,7 @@ const wrapSwapReducer = (calls: IrCall[]) => {
         value: calls[i].value + calls[i + 1].value,
         // the wrap data is omitted
         data: calls[i + 1].data,
+        fromUserRequestId: calls[i].fromUserRequestId,
         fullVisualization: newVisualization
       })
       i += 1
