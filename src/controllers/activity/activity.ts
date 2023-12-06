@@ -291,9 +291,11 @@ export class ActivityController extends EventEmitter {
                 }
               } catch {
                 this.emitError({
-                  level: 'major',
-                  message: `Failed to determine transaction status on ${accountOp.networkId}. Retry, or contact support if issue persists.`,
-                  error: new Error('activity: failed to get transaction receipt')
+                  level: 'silent',
+                  message: `Failed to determine transaction status on ${accountOp.networkId} for ${accountOp.txnId}.`,
+                  error: new Error(
+                    `activity: failed to get transaction receipt for ${accountOp.txnId}`
+                  )
                 })
               }
 
