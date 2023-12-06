@@ -11,7 +11,7 @@ export interface RelayerReponsePortfolioAdditional {
       root: string
       signedRoot: string
     }
-    multipliers: { mul: number; name: string }[]
+    multipliers?: { mul: number; name: string }[]
     xWalletClaimableBalance: {
       address: string
       symbol: string

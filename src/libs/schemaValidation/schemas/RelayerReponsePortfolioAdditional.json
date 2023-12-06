@@ -115,7 +115,6 @@
             },
             "required": [
                 "claimableRewardsData",
-                "multipliers",
                 "supplyControllerAddr",
                 "xWalletClaimableBalance"
             ]
