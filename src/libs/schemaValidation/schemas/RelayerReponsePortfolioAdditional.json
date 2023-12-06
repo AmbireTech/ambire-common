@@ -42,10 +42,6 @@
                         "addr",
                         "fromADXClaimable",
                         "fromBalanceClaimable",
-                        "leaf",
-                        "proof",
-                        "root",
-                        "signedRoot",
                         "totalClaimable"
                     ]
                 },

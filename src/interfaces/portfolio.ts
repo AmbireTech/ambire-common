@@ -6,10 +6,10 @@ export interface RelayerReponsePortfolioAdditional {
       fromBalanceClaimable: number
       fromADXClaimable: number
       totalClaimable: string
-      leaf: string
-      proof: string[]
-      root: string
-      signedRoot: string
+      leaf?: string
+      proof?: string[]
+      root?: string
+      signedRoot?: string
     }
     multipliers?: { mul: number; name: string }[]
     xWalletClaimableBalance: {
