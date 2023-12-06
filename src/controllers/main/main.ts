@@ -794,7 +794,7 @@ export class MainController extends EventEmitter {
           return this.#throwAccountOpBroadcastError(new Error(response.message))
         }
       } catch (e: any) {
-        return this.#throwAccountOpBroadcastError(e)
+        return this.#throwAccountOpBroadcastError(e, e.message)
       }
     }
 
