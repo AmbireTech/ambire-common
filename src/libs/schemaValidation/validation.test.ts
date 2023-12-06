@@ -48,12 +48,12 @@ const data = {
 describe('Describe', () => {
   test('EmailVaultData', () => {
     const res = schemas.EmailVaultData(data.EmailVaultData.correct[0])
-    expect(res).toBeTruthy()
-    expect(schemas.EmailVaultData.errors).toBeNull()
+    expect(res.isValid).toBeTruthy()
+    expect(res.error).toBeNull()
   })
   test('RelayerResponsePaymasterSign', () => {
     const res = schemas.RelayerResponsePaymasterSign(data.RelayerResponsePaymasterSign.correct[0])
-    expect(res).toBeTruthy()
-    expect(schemas.RelayerResponsePaymasterSign.errors).toBeNull()
+    expect(res.isValid).toBeTruthy()
+    expect(res.error).toBeNull()
   })
 })

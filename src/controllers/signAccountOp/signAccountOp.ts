@@ -676,12 +676,12 @@ export class SignAccountOpController extends EventEmitter {
             }
           )
           if (response.success) {
-            const isValid = schemas.RelayerResponsePaymasterSign(response.data)
-            if (!isValid) {
+            const schemasRes = schemas.RelayerResponsePaymasterSign(response.data)
+            if (!schemasRes.isValid) {
               this.emitError({
                 level: 'minor',
                 message: 'Error submit signature to paymaster/sign. Please contact support.',
-                error: new Error(schemas.RelayerResponsePaymasterSign.errors)
+                error: new Error(schemasRes.error)
               })
               return null
             }

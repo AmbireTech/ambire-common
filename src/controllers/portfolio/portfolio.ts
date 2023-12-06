@@ -92,12 +92,12 @@ export class PortfolioController extends EventEmitter {
     try {
       res = await this.#callRelayer(`/v2/identity/${accountId}/portfolio-additional`)
       const { data } = res
-      const isValid = schemas.RelayerReponsePortfolioAdditional(data)
-      if (!isValid) {
+      const schemasRes = schemas.RelayerReponsePortfolioAdditional(data)
+      if (!schemasRes.isValid) {
         this.emitError({
           level: 'minor',
           message: 'Error to fetch portfolio-additional from the relayer, please contact support.',
-          error: new Error(schemas.RelayerReponsePortfolioAdditional.errors)
+          error: new Error(schemasRes.error)
         })
         return
       }

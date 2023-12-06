@@ -624,12 +624,12 @@ export class AccountAdderController extends EventEmitter {
     const url = `/v2/account-by-key/linked/accounts?${keys}`
 
     const { data } = await this.#callRelayer(url)
-    const isValid = schemas.RelayerResponseLinkedAccount(data)
-    if (!isValid) {
+    const schemasRes = schemas.RelayerResponseLinkedAccount(data)
+    if (!schemasRes.isValid) {
       this.emitError({
         level: 'minor',
         message: 'Error to fetch identities from the relayer, please contact support.',
-        error: new Error(schemas.RelayerResponseLinkedAccount.errors)
+        error: new Error(schemasRes.error)
       })
       return
     }
