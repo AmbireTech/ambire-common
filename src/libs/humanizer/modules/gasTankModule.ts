@@ -11,15 +11,26 @@ export const gasTankModule: HumanizerCallModule = (
   options?: any
 ) => {
   const newCalls = irCalls.map((call) => {
-    return accountOp.humanizerMeta?.[`names:${call.to}`] === 'Gas Tank'
-      ? {
-          ...call,
-          fullVisualization: [
-            getAction('Fuel gas tank with'),
-            getToken(ethers.ZeroAddress, call.value)
-          ]
-        }
-      : call
+    if (accountOp.humanizerMeta?.[`names:${call.to}`] === 'Gas Tank')
+      return {
+        ...call,
+        fullVisualization: [
+          getAction('Fuel gas tank with'),
+          getToken(ethers.ZeroAddress, call.value)
+        ]
+      }
+    if (
+      call.fullVisualization?.[0]?.content === 'Send' &&
+      call.fullVisualization?.[1]?.type === 'token' &&
+      call.fullVisualization?.[2]?.content === 'to' &&
+      call.fullVisualization?.[3].type === 'address' &&
+      accountOp.humanizerMeta?.[`names:${call.fullVisualization?.[3]?.address}`] === 'Gas Tank'
+    )
+      return {
+        ...call,
+        fullVisualization: [getAction('Fuel gas tank with'), call.fullVisualization[1]]
+      }
+    return call
   })
   return [newCalls, []]
 }
