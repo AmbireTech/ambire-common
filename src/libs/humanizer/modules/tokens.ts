@@ -21,7 +21,7 @@ export const genericErc721Humanizer: HumanizerCallModule = (
   const nftTransferVisualization = (call: IrCall) => {
     const args = iface.parseTransaction(call)?.args.toArray() || []
     return args[0] === accountOp.accountAddr
-      ? [getAction('Transfer'), getNft(call.to, args[2]), getLabel('to'), getAddress(args[1])]
+      ? [getAction('Send'), getNft(call.to, args[2]), getLabel('to'), getAddress(args[1])]
       : [
           getAction('Transfer'),
           getNft(call.to, args[2]),
@@ -104,12 +104,7 @@ export const genericErc20Humanizer: HumanizerCallModule = (
     },
     [iface.getFunction('transfer')?.selector!]: (call: IrCall) => {
       const args = iface.parseTransaction(call)?.args.toArray() || []
-      return [
-        getAction('Transfer'),
-        getToken(call.to, args[1]),
-        getLabel('to'),
-        getAddress(args[0])
-      ]
+      return [getAction('Send'), getToken(call.to, args[1]), getLabel('to'), getAddress(args[0])]
     },
     [iface.getFunction('transferFrom')?.selector!]: (call: IrCall) => {
       const args = iface.parseTransaction(call)?.args.toArray() || []

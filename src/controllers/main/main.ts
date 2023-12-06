@@ -5,10 +5,16 @@ import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFactory.json'
 import { Account, AccountId, AccountStates } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
-import { Key, KeystoreSignerType, TxnRequest } from '../../interfaces/keystore'
+import {
+  ExternalSignerController,
+  Key,
+  KeystoreSignerType,
+  TxnRequest
+} from '../../interfaces/keystore'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
 import { Storage } from '../../interfaces/storage'
 import { Message, UserRequest } from '../../interfaces/userRequest'
+import { isSmartAccount } from '../../libs/account/account'
 import {
   AccountOp,
   AccountOpStatus,
@@ -616,8 +622,23 @@ export class MainController extends EventEmitter {
     }
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars, class-methods-use-this
-  async broadcastSignedAccountOp(accountOp: AccountOp) {
+  /**
+   * There are 4 ways to broadcast an AccountOp:
+   *   1. For legacy accounts (EOA), there is only one way to do that. After
+   *   signing the transaction, the serialized signed transaction object gets
+   *   send to the network.
+   *   2. For smart accounts, when EOA pays the fee. Two signatures are needed
+   *   for this. The first one is the signature of the AccountOp itself. The
+   *   second one is the signature of the transaction that will be executed
+   *   by the smart account.
+   *   3. For smart accounts that broadcast the ERC-4337 way.
+   *   4. for smart accounts, when the Relayer does the broadcast.
+   *
+   */
+  async broadcastSignedAccountOp(
+    accountOp: AccountOp,
+    externalSignerController?: ExternalSignerController
+  ) {
     this.broadcastStatus = 'LOADING'
     this.emitUpdate()
 
@@ -627,6 +648,13 @@ export class MainController extends EventEmitter {
 
     const provider: JsonRpcProvider = this.#providers[accountOp.networkId]
     const account = this.accounts.find((acc) => acc.addr === accountOp.accountAddr)
+    const broadcastKeys = this.keystore.keys.filter(
+      (key) => key.addr === accountOp.gasFeePayment!.paidBy
+    )
+    const broadcastKey =
+      // Temporarily prioritize the key with the same type as the signing key.
+      // TODO: Implement a way to choose the key type to broadcast with.
+      broadcastKeys.find((key) => key.type === accountOp.signingKeyType) || broadcastKeys[0]
     const network = this.settings.networks.find((n) => n.id === accountOp.networkId)
 
     if (!provider) {
@@ -641,23 +669,34 @@ export class MainController extends EventEmitter {
       )
     }
 
+    if (!broadcastKey) {
+      return this.#throwAccountOpBroadcastError(
+        new Error(
+          `Key with address: ${accountOp.gasFeePayment!.paidBy} for account with address: ${
+            accountOp.accountAddr
+          } not found`
+        )
+      )
+    }
+
+    if (!network) {
+      return this.#throwAccountOpBroadcastError(
+        new Error(`Network with id: ${accountOp.networkId} not found`)
+      )
+    }
+
     let transactionRes: TransactionResponse | { hash: string; nonce: number } | null = null
 
-    // EOA account
-    if (!account.creation) {
-      const estimation =
-        this.accountOpsToBeSigned[accountOp.accountAddr][accountOp.networkId]!.estimation
-      if (!estimation) {
-        return this.#throwAccountOpBroadcastError(
-          new Error(`Estimation not done for account with address: ${accountOp.accountAddr}`)
-        )
-      }
-
+    // Legacy account (EOA)
+    if (!isSmartAccount(account)) {
       try {
+        const signer = await this.keystore.getSigner(broadcastKey.addr, broadcastKey.type)
+        if (signer.init) signer.init(externalSignerController)
+
         const gasFeePayment = accountOp.gasFeePayment!
+        const estimation =
+          this.accountOpsToBeSigned[accountOp.accountAddr][accountOp.networkId]!.estimation
         const { to, value, data } = accountOp.calls[0]
-        const gasPrice =
-          (gasFeePayment.amount - estimation!.addedNative) / gasFeePayment.simulatedGasLimit
         const rawTxn: TxnRequest = {
           to,
           value,
@@ -668,6 +707,8 @@ export class MainController extends EventEmitter {
         }
 
         // if it's eip1559, send it as such. If no, go to legacy
+        const gasPrice =
+          (gasFeePayment.amount - estimation!.addedNative) / gasFeePayment.simulatedGasLimit
         if (gasFeePayment.maxPriorityFeePerGas) {
           rawTxn.maxFeePerGas = gasPrice
           rawTxn.maxPriorityFeePerGas = gasFeePayment.maxPriorityFeePerGas
@@ -675,13 +716,6 @@ export class MainController extends EventEmitter {
           rawTxn.gasPrice = gasPrice
         }
 
-        const broadcastKey = this.keystore.keys.find(
-          (key) => key.addr === accountOp.gasFeePayment!.paidBy
-        )
-        const signer = await this.keystore.getSigner(
-          accountOp.gasFeePayment!.paidBy,
-          broadcastKey!.type
-        )
         transactionRes = await provider.broadcastTransaction(
           await signer.signRawTransaction(rawTxn)
         )
@@ -697,12 +731,6 @@ export class MainController extends EventEmitter {
     ) {
       const estimation =
         this.accountOpsToBeSigned[accountOp.accountAddr][accountOp.networkId]!.estimation
-      if (!estimation) {
-        return this.#throwAccountOpBroadcastError(
-          new Error(`Estimation not done for account with address: ${accountOp.accountAddr}`)
-        )
-      }
-
       const accountState = this.accountStates[accountOp.accountAddr][accountOp.networkId]
       let data
       let to
@@ -724,47 +752,40 @@ export class MainController extends EventEmitter {
         ])
       }
 
-      const broadcastKey = this.keystore.keys.find(
-        (key) => key.addr === accountOp.gasFeePayment!.paidBy
-      )
-      const signer = await this.keystore.getSigner(
-        accountOp.gasFeePayment!.paidBy,
-        broadcastKey!.type
-      )
-
-      if (!network) {
-        return this.#throwAccountOpBroadcastError(
-          new Error(`Network with id: ${accountOp.networkId} not found`)
-        )
-      }
-
-      const gasPrice =
-        (accountOp.gasFeePayment.amount - estimation!.addedNative) /
-        accountOp.gasFeePayment.simulatedGasLimit
-      const rawTxn: TxnRequest = {
-        to,
-        data,
-        chainId: network.chainId,
-        nonce: await provider.getTransactionCount(accountOp.gasFeePayment!.paidBy),
-        gasLimit: accountOp.gasFeePayment.simulatedGasLimit
-      }
-
-      // if it's eip1559, send it as such. If no, go to legacy
-      if (accountOp.gasFeePayment.maxPriorityFeePerGas) {
-        rawTxn.maxFeePerGas = gasPrice
-        rawTxn.maxPriorityFeePerGas = accountOp.gasFeePayment.maxPriorityFeePerGas
-      } else {
-        rawTxn.gasPrice = gasPrice
-      }
-
-      const signedTxn = await signer.signRawTransaction(rawTxn)
-
       try {
+        const signer = await this.keystore.getSigner(broadcastKey.addr, broadcastKey.type)
+        if (signer.init) signer.init(externalSignerController)
+
+        const gasPrice =
+          (accountOp.gasFeePayment.amount - estimation!.addedNative) /
+          accountOp.gasFeePayment.simulatedGasLimit
+        const rawTxn: TxnRequest = {
+          to,
+          data,
+          // We ultimately do a smart contract call, which means we don't need
+          // to send any `value` from the EOA address. The actual `value` will
+          // get taken from the value encoded in the `data` field.
+          value: BigInt(0),
+          chainId: network.chainId,
+          nonce: await provider.getTransactionCount(accountOp.gasFeePayment!.paidBy),
+          gasLimit: accountOp.gasFeePayment.simulatedGasLimit
+        }
+
+        if (accountOp.gasFeePayment.maxPriorityFeePerGas) {
+          rawTxn.maxFeePerGas = gasPrice
+          rawTxn.maxPriorityFeePerGas = accountOp.gasFeePayment.maxPriorityFeePerGas
+        } else {
+          rawTxn.gasPrice = gasPrice
+        }
+
+        const signedTxn = await signer.signRawTransaction(rawTxn)
         transactionRes = await provider.broadcastTransaction(signedTxn)
       } catch (error: any) {
         this.#throwAccountOpBroadcastError(new Error(error), error.message || undefined)
       }
-    } else if (accountOp.gasFeePayment && accountOp.gasFeePayment.isERC4337) {
+    }
+    // Smart account, the ERC-4337 way
+    else if (accountOp.gasFeePayment && accountOp.gasFeePayment.isERC4337) {
       const userOperation = accountOp.asUserOperation
       if (!userOperation) {
         this.#throwAccountOpBroadcastError(
@@ -787,16 +808,14 @@ export class MainController extends EventEmitter {
         nonce: Number(userOperation!.nonce)
       }
     }
-    // Relayer broadcast
+    // Smart account, the Relayer way
     else {
       try {
         const body = {
           gasLimit: Number(accountOp.gasFeePayment!.simulatedGasLimit),
           txns: getSignableCalls(accountOp),
           signature: accountOp.signature,
-          signer: {
-            address: accountOp.signingKeyAddr
-          },
+          signer: { address: accountOp.signingKeyAddr },
           nonce: Number(accountOp.nonce)
         }
         const response = await this.#callRelayer(
