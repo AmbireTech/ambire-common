@@ -6,7 +6,7 @@ import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFacto
 import { Account, AccountId, AccountStates } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
 import { Key, KeystoreSignerType } from '../../interfaces/keystore'
-import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
+import { NetworkId } from '../../interfaces/networkDescriptor'
 import { Storage } from '../../interfaces/storage'
 import { Message, UserRequest } from '../../interfaces/userRequest'
 import {
@@ -295,7 +295,7 @@ export class MainController extends EventEmitter {
           this.emitError({
             level: 'major',
             message: `Failed to fetch gas price for ${
-              networks.find((n) => n.id === network)?.name
+              this.settings.networks.find((n) => n.id === network)?.name
             }`,
             error: new Error('Failed to fetch gas price')
           })
@@ -318,23 +318,26 @@ export class MainController extends EventEmitter {
       })
     )
 
-    const states = accounts.map((acc: Account, accIndex: number) => {
-      return [
-        acc.addr,
-        Object.fromEntries(
-          this.settings.networks.map((network: NetworkDescriptor, netIndex: number) => {
-            if (!(netIndex in result) || !(accIndex in result[netIndex])) return [network.id, null]
-            try {
-              return [network.id, result[netIndex][accIndex]]
-            } catch {
-              return [network.id, null]
-            }
-          })
-        )
-      ]
-    })
+    const states = accounts.reduce((accStates: AccountStates, acc: Account, accIndex: number) => {
+      const networkStates = this.settings.networks.reduce(
+        (netStates: AccountStates[keyof AccountStates], network, netIndex: number) => {
+          if (!(netIndex in result) || !(accIndex in result[netIndex])) return netStates
 
-    return Object.fromEntries(states)
+          return {
+            ...netStates,
+            [network.id]: result[netIndex][accIndex]
+          }
+        },
+        {}
+      )
+
+      return {
+        ...accStates,
+        [acc.addr]: networkStates
+      }
+    }, {})
+
+    return states
   }
 
   async updateAccountStates(blockTag: string | number = 'latest') {
@@ -394,7 +397,7 @@ export class MainController extends EventEmitter {
     const account = this.accounts.find((x) => x.addr === accountAddr)
     if (!account)
       throw new Error(
-        `makeAccountOpFromUserRequests: tried to run for non-existant account ${accountAddr}`
+        `makeAccountOpFromUserRequests: tried to run for non-existent account ${accountAddr}`
       )
     // Note: we use reduce instead of filter/map so that the compiler can deduce that we're checking .kind
     const calls = this.userRequests.reduce((uCalls: AccountOpCall[], req) => {
@@ -415,6 +418,7 @@ export class MainController extends EventEmitter {
     if (!calls.length) return null
 
     const currentAccountOp = this.accountOpsToBeSigned[accountAddr][networkId]?.accountOp
+
     return {
       accountAddr,
       networkId,

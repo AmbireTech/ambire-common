@@ -164,15 +164,16 @@ export const getNetworksWithFailedRPC = ({
   Object.keys(accountStates).forEach((account) => {
     const currentAccount = accountStates[account]
 
-    Object.keys(currentAccount).forEach((networkId) => {
-      if (currentAccount[networkId] === null) {
-        if (networksWithFailedRPC.includes(networkId)) return
+    // Check if all networks have accounts states. Ones that don't are the ones with failed RPC.
+    networks.forEach((network) => {
+      if (!currentAccount[network.id]) {
+        if (networksWithFailedRPC.includes(network.id)) return
 
-        networksWithFailedRPC.push(networkId)
+        networksWithFailedRPC.push(network.id)
         return
       }
 
-      networksWithFailedRPC = networksWithFailedRPC.filter((network) => network !== networkId)
+      networksWithFailedRPC = networksWithFailedRPC.filter((n) => network.id !== n)
     })
   })
 
