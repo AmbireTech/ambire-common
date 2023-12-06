@@ -1,6 +1,6 @@
 import { NetworkDescriptor } from 'interfaces/networkDescriptor'
 
-import { Account } from '../../interfaces/account'
+import { Account, AccountStates } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
 import { UserRequest } from '../../interfaces/userRequest'
 
@@ -157,7 +157,7 @@ export const getNetworksWithFailedRPC = ({
   accountStates,
   networks
 }: {
-  accountStates: any
+  accountStates: AccountStates
   networks: NetworkDescriptor[]
 }): Banner[] => {
   let networksWithFailedRPC: string[] = []
