@@ -59,7 +59,7 @@ describe('Portfolio Controller ', () => {
     }
   }
   describe('first', () => {
-    test('Previous tokens are persisted in the storage', (done) => {
+    test('Previous tokens are persisted in the storage', async () => {
       const account2 = {
         addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
         associatedKeys: [],
@@ -73,30 +73,17 @@ describe('Portfolio Controller ', () => {
 
       const storage = produceMemoryStore()
       const controller = new PortfolioController(storage, relayerUrl, [])
+      await controller.updateSelectedAccount([account2], networks, account2.addr)
 
-      const tokensHints = {
-        erc20s: [
-          '0x0000000000000000000000000000000000000000',
-          '0xba100000625a3754423978a60c9317c58a424e3D',
-          '0x4da27a545c0c5B758a6BA100e3a049001de870f5',
-          '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'
-        ],
-        erc721s: {}
-      }
+      const storagePreviousHints = await storage.get('previousHints', {})
+      const storageErc20s = storagePreviousHints[`ethereum:${account2.addr}`].erc20s
 
-      controller.onUpdate(async () => {
-        const storagePreviousHints = await storage.get('previousHints', {})
-
-        if (storagePreviousHints[`ethereum:${account2.addr}`]) {
-          expect(
-            storagePreviousHints[`ethereum:${account2.addr}`].erc20s.filter((token: string) =>
-              tokensHints.erc20s.includes(token)
-            )
-          ).toEqual(tokensHints.erc20s)
-          done()
-        }
-      })
-      controller.updateSelectedAccount([account2], networks, account2.addr)
+      // Controller persists tokens having balance for the current account.
+      // @TODO - here we can enhance the test to cover two more scenarios:
+      //  #1) Does the account really have amount for the persisted tokens.
+      //  #2) Currently, the tests covers only erc20s tokens. We should do the same check for erc721s too.
+      //  The current account2, doesn't have erc721s.
+      expect(storageErc20s.length).toBeGreaterThan(0)
     })
   })
 

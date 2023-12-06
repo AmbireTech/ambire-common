@@ -4,12 +4,18 @@ import { ethers } from 'ethers'
 import { geckoNetworkIdMapper } from '../../consts/coingecko'
 import { networks } from '../../consts/networks'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
-import { HumanizerFragment, HumanizerSettings, HumanizerVisualization, IrCall } from './interfaces'
+import {
+  HumanizerFragment,
+  HumanizerSettings,
+  HumanizerVisualization,
+  HumanizerWarning,
+  IrCall
+} from './interfaces'
 
 dotenv.config()
 const COINGECKO_PRO_API_KEY = process.env.COINGECKO_PRO_API_KEY
 
-export function getWarning(content: string, level: string = 'caution') {
+export function getWarning(content: string, level: HumanizerWarning['level'] = 'caution') {
   return { content, level }
 }
 
@@ -51,19 +57,19 @@ export function getRecipientText(from: string, recipient: string): HumanizerVisu
 }
 
 export function getDeadlineText(deadlineSecs: bigint): HumanizerVisualization {
+  if (
+    deadlineSecs.toString() ===
+    '115792089237316195423570985008687907853269984665640564039457584007913129639935'
+  )
+    return getLabel('no deadline')
   const minute = 60000
-  let deadline
-  if (typeof deadlineSecs === 'bigint') {
-    deadline = Number(deadlineSecs * 1000n)
-  } else {
-    deadline = Number(BigInt(deadlineSecs) * 1000n)
-  }
+  const deadline = Number(BigInt(deadlineSecs) * 1000n)
   const diff = deadline - Date.now()
   if (diff < 0 && diff > -minute * 2) return getLabel('expired just now')
   if (diff < 0) return getLabel('already expired')
   if (diff < minute) return getLabel('expires in less than a minute')
   if (diff < 10 * minute) return getLabel(`expires in ${Math.floor(diff / minute)} minutes`)
-  return getLabel(`valid until ${new Date(deadline / 1000).toLocaleString()}`)
+  return getLabel(`valid until ${new Date(deadline).toLocaleString()}`)
 }
 
 export function shortenAddress(addr: string) {
