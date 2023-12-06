@@ -6,12 +6,14 @@ import {
   hexlify,
   Interface,
   JsonRpcProvider,
+  toBeHex,
   TypedDataDomain,
   TypedDataEncoder,
   TypedDataField
 } from 'ethers'
 
 import { AccountCreation } from '../../interfaces/account'
+import { TypedMessage } from '../../interfaces/userRequest'
 import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
 
 /**
@@ -28,6 +30,49 @@ export const wrapEIP712 = (signature: string) => {
  */
 export const wrapEthSign = (signature: string) => {
   return `${signature}01`
+}
+
+/**
+ * For EIP-712 signatures, we need to append 01 at the end
+ * for ambire to recognize it
+ */
+export const wrapStandard = (signature: string) => {
+  return `${signature}01`
+}
+
+/**
+ * Return the typed data for EIP-712 sign
+ */
+export const getTypedData = (
+  chainId: bigint,
+  verifyingAddr: string,
+  executeHash: string
+): TypedMessage => {
+  const domain: TypedDataDomain = {
+    name: 'Ambire',
+    version: '1',
+    chainId,
+    verifyingContract: verifyingAddr,
+    salt: toBeHex(0, 32)
+  }
+  const types = {
+    AmbireOperation: [
+      { name: 'account', type: 'address' },
+      { name: 'hash', type: 'bytes32' }
+    ]
+  }
+  const message = {
+    account: verifyingAddr,
+    hash: executeHash
+  }
+
+  return {
+    kind: 'typedMessage',
+    domain,
+    types,
+    message,
+    primaryType: 'AmbireOperation'
+  }
 }
 
 /**

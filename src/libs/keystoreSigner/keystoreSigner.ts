@@ -1,5 +1,5 @@
 /* eslint-disable new-cap */
-import { TransactionRequest, Wallet, getBytes, isHexString } from 'ethers'
+import { getBytes, isHexString, TransactionRequest, Wallet } from 'ethers'
 
 import { Key, KeystoreSigner as KeystoreSignerInterface } from '../../interfaces/keystore'
 import { TypedMessage } from '../../interfaces/userRequest'
@@ -51,7 +51,7 @@ export class KeystoreSigner implements KeystoreSignerInterface {
     // or you might do ethers.hexlify() if you don't care
     // therefore, it's the job of the client to think what he wants
     // to pass. Throwing an error here might save debuging hours
-    if (! isHexString(hex)) {
+    if (!isHexString(hex)) {
       throw new Error('Keystore signer, signMessage: passed value is not a hex')
     }
 

@@ -1,4 +1,5 @@
 import { ethers, JsonRpcProvider } from 'ethers'
+import { getTypedData, wrapStandard } from 'libs/signMessage/signMessage'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import EntryPointAbi from '../../../contracts/compiled/EntryPoint.json'
@@ -59,19 +60,6 @@ function getTokenUsdAmount(token: TokenResult, gasAmount: bigint): string {
 
   // 18 it's because we multiply usdPrice * 1e18 and here we need to deduct it
   return ethers.formatUnits(gasAmount * usdPrice, 18 + token.decimals)
-}
-
-/**
- * In Ambire, signatures have types. The last byte of each signature
- * represents its type. Description in: SignatureValidator -> SignatureMode.
- * To indicate that we want to perform an ETH sign, we have to add a 01
- * hex (equal to the number 1) at the end of the signature.
- *
- * @param sig hex string
- * @returns hex string
- */
-function wrapEthSign(sig: string): string {
-  return `${sig}${'01'}`
 }
 
 export class SignAccountOpController extends EventEmitter {
@@ -627,9 +615,12 @@ export class SignAccountOpController extends EventEmitter {
         // Smart account, but EOA pays the fee
         // EOA pays for execute() - relayerless
 
-        this.accountOp.signature = wrapEthSign(
-          await signer.signMessage(ethers.hexlify(accountOpSignableHash(this.accountOp)))
+        const typedData = getTypedData(
+          this.#network.chainId,
+          this.accountOp.accountAddr,
+          ethers.hexlify(accountOpSignableHash(this.accountOp))
         )
+        this.accountOp.signature = wrapStandard(await signer.signTypedData(typedData))
       } else if (this.accountOp.gasFeePayment.isERC4337) {
         const userOperation = this.accountOp.asUserOperation
         if (!userOperation) {
@@ -653,9 +644,12 @@ export class SignAccountOpController extends EventEmitter {
         // executeMultiple and sign it
         if (userOperation.isEdgeCase) {
           const ambireAccount = new ethers.Interface(AmbireAccount.abi)
-          const signature = wrapEthSign(
-            await signer.signMessage(ethers.hexlify(accountOpSignableHash(this.accountOp)))
+          const typedData = getTypedData(
+            this.#network.chainId,
+            this.accountOp.accountAddr,
+            ethers.hexlify(accountOpSignableHash(this.accountOp))
           )
+          const signature = wrapStandard(await signer.signTypedData(typedData))
           userOperation.callData = ambireAccount.encodeFunctionData('executeMultiple', [
             [[getSignableCalls(this.accountOp), signature]]
           ])
@@ -695,8 +689,12 @@ export class SignAccountOpController extends EventEmitter {
             EntryPointAbi,
             provider
           )
-          const userOpHash = await entryPoint.getUserOpHash(userOperation)
-          const signature = wrapEthSign(await signer.signMessage(userOpHash))
+          const typedData = getTypedData(
+            this.#network.chainId,
+            this.accountOp.accountAddr,
+            await entryPoint.getUserOpHash(userOperation)
+          )
+          const signature = wrapStandard(await signer.signTypedData(typedData))
           userOperation.signature = signature
           this.accountOp.signature = signature
         }
@@ -704,9 +702,12 @@ export class SignAccountOpController extends EventEmitter {
       } else {
         // Relayer
         this.#addFeePayment()
-        this.accountOp.signature = wrapEthSign(
-          await signer.signMessage(ethers.hexlify(accountOpSignableHash(this.accountOp)))
+        const typedData = getTypedData(
+          this.#network.chainId,
+          this.accountOp.accountAddr,
+          ethers.hexlify(accountOpSignableHash(this.accountOp))
         )
+        this.accountOp.signature = wrapStandard(await signer.signTypedData(typedData))
       }
 
       this.status = { type: SigningStatus.Done }
