@@ -1,15 +1,13 @@
 /* eslint-disable global-require */
-import Ajv from 'ajv'
-
-const ajv = new Ajv()
+import tv4 from 'tv4'
 
 export const schemas: any = {
-  EmailVaultData: ajv.compile(require('./schemas/EmailVaultData.json')),
-  RecoveryKey: ajv.compile(require('./schemas/RecoveryKey.json')),
-  EmailVaultSecrets: ajv.compile(require('./schemas/EmailVaultSecrets.json')),
-  RelayerResponseLinkedAccount: ajv.compile(require('./schemas/RelayerResponseLinkedAccount.json')),
-  RelayerReponsePortfolioAdditional: ajv.compile(
+  EmailVaultData: tv4.compile(require('./schemas/EmailVaultData.json')),
+  RecoveryKey: tv4.compile(require('./schemas/RecoveryKey.json')),
+  EmailVaultSecrets: tv4.compile(require('./schemas/EmailVaultSecrets.json')),
+  RelayerResponseLinkedAccount: tv4.compile(require('./schemas/RelayerResponseLinkedAccount.json')),
+  RelayerReponsePortfolioAdditional: tv4.compile(
     require('./schemas/RelayerReponsePortfolioAdditional.json')
   ),
-  RelayerResponsePaymasterSign: ajv.compile(require('./schemas/RelayerResponsePaymasterSign.json'))
+  RelayerResponsePaymasterSign: tv4.compile(require('./schemas/RelayerResponsePaymasterSign.json'))
 }
