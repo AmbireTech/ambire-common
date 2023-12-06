@@ -601,9 +601,9 @@ export class AccountAdderController extends EventEmitter {
         } catch {
           this.emitError({
             level: 'major',
-            message: `Failed to derive accounts on ${network.name}. Please try again later or contact support if the problem persists.`,
+            message: `Failed to determine if accounts are used on ${network.name}.`,
             error: new Error(
-              `accountAdder.#getAccountsUsedOnNetworks: failed to derive accounts on ${network.name}`
+              `accountAdder.#getAccountsUsedOnNetworks: failed to determine if accounts are used on ${network.name}`
             )
           })
         }
