@@ -42,12 +42,6 @@ type UnableToSignStatus = {
   error: string
 }
 
-// TODO: maybe?
-type ReadyToRetryStatus = {
-  type: SigningStatus.ReadyToRetrySign
-  error: string
-}
-
 type ReadyToSignStatus = {
   type: SigningStatus.ReadyToSign
   error?: string
@@ -55,7 +49,6 @@ type ReadyToSignStatus = {
 
 export type Status =
   | UnableToSignStatus
-  | ReadyToRetryStatus
   | ReadyToSignStatus
   | {
       type: Exclude<SigningStatus, SigningStatus.UnableToSign>
@@ -547,13 +540,8 @@ export class SignAccountOpController extends EventEmitter {
     return Object.values(FeeSpeed) as string[]
   }
 
-  #setSigningError(error: string) {
-    this.status = { type: SigningStatus.UnableToSign, error }
-    this.emitUpdate()
-  }
-
-  #setSigningWarning(error: string) {
-    this.status = { type: SigningStatus.ReadyToSign, error }
+  #setSigningError(error: string, type = SigningStatus.UnableToSign) {
+    this.status = { type, error }
     this.emitUpdate()
   }
 
@@ -735,7 +723,7 @@ export class SignAccountOpController extends EventEmitter {
       this.status = { type: SigningStatus.Done }
       this.emitUpdate()
     } catch (error: any) {
-      this.#setSigningWarning(`Signing failed: ${error?.message}`)
+      this.#setSigningError(`Signing failed: ${error?.message}`, SigningStatus.ReadyToSign)
     }
     // TODO: Now, the UI needs to call mainCtrl.broadcastSignedAccountOp(mainCtrl.signAccountOp.accountOp)
   }
