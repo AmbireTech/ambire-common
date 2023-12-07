@@ -109,7 +109,7 @@ const createAccountOp = (signingKeyAddr: string) => {
     gasLimit: null,
     gasFeePayment: null,
     networkId: 'ethereum',
-    nonce: null, // does not matter when estimating
+    nonce: 1n,
     calls: [{ to, value: BigInt(0), data }],
     accountOpToExecuteBefore: null,
     signature: null
