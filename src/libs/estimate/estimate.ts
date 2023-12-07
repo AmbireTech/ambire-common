@@ -23,13 +23,12 @@ interface Erc4337estimation {
 export interface EstimateResult {
   gasUsed: bigint
   nonce: number
-  addedNative: bigint
-  addedNativeWithPayment: bigint
   feePaymentOptions: {
     availableAmount: bigint
     paidBy: string
     address: string
     gasUsed?: bigint
+    addedNative: bigint
   }[]
   erc4337estimation: Erc4337estimation | null
 }
@@ -88,13 +87,12 @@ export async function estimate(
     return {
       gasUsed,
       nonce,
-      addedNative: l1GasEstimation.fee,
-      addedNativeWithPayment: 0n,
       feePaymentOptions: [
         {
           address: nativeAddr,
           paidBy: account.addr,
-          availableAmount: balance
+          availableAmount: balance,
+          addedNative: l1GasEstimation.fee
         }
       ],
       erc4337estimation: null
@@ -248,20 +246,26 @@ export async function estimate(
     address: feeTokens[key],
     paidBy: account.addr,
     availableAmount: token.amount,
-    gasUsed: token.gasUsed
+    gasUsed: token.gasUsed,
+    addedNative: l1GasEstimation.feeWithPayment
   }))
 
   const nativeTokenOptions = finalNativeTokenOptions.map((balance: bigint, key: number) => ({
     address: nativeAddr,
     paidBy: nativeToCheck[key],
-    availableAmount: balance
+    availableAmount: balance,
+    addedNative:
+      // is fee payed by the SA not in 4337 mode
+      ((!opts || !opts.is4337Broadcast) && nativeToCheck[key] === account.addr) ||
+      // is fee payed by the SA in 4337 edge case mode
+      (opts && opts.is4337Broadcast && op.asUserOperation?.isEdgeCase)
+        ? l1GasEstimation.feeWithPayment
+        : l1GasEstimation.fee
   }))
 
   return {
     gasUsed,
     nonce,
-    addedNative: l1GasEstimation.fee,
-    addedNativeWithPayment: l1GasEstimation.feeWithPayment,
     feePaymentOptions: [...feeTokenOptions, ...nativeTokenOptions],
     erc4337estimation
   }

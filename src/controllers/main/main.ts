@@ -686,6 +686,11 @@ export class MainController extends EventEmitter {
     }
 
     let transactionRes: TransactionResponse | { hash: string; nonce: number } | null = null
+    const estimation =
+      this.accountOpsToBeSigned[accountOp.accountAddr][accountOp.networkId]!.estimation!
+    const feeTokenEstimation = estimation.feePaymentOptions.find(
+      (option) => option.address === this.signAccountOp!.selectedTokenAddr
+    )!
 
     // Legacy account (EOA)
     if (!isSmartAccount(account)) {
@@ -694,8 +699,6 @@ export class MainController extends EventEmitter {
         if (signer.init) signer.init(externalSignerController)
 
         const gasFeePayment = accountOp.gasFeePayment!
-        const estimation =
-          this.accountOpsToBeSigned[accountOp.accountAddr][accountOp.networkId]!.estimation
         const { to, value, data } = accountOp.calls[0]
         const rawTxn: TxnRequest = {
           to,
@@ -708,7 +711,7 @@ export class MainController extends EventEmitter {
 
         // if it's eip1559, send it as such. If no, go to legacy
         const gasPrice =
-          (gasFeePayment.amount - estimation!.addedNative) / gasFeePayment.simulatedGasLimit
+          (gasFeePayment.amount - feeTokenEstimation.addedNative) / gasFeePayment.simulatedGasLimit
         if (gasFeePayment.maxPriorityFeePerGas) {
           rawTxn.maxFeePerGas = gasPrice
           rawTxn.maxPriorityFeePerGas = gasFeePayment.maxPriorityFeePerGas
@@ -729,8 +732,6 @@ export class MainController extends EventEmitter {
       accountOp.gasFeePayment &&
       accountOp.gasFeePayment.paidBy !== account.addr
     ) {
-      const estimation =
-        this.accountOpsToBeSigned[accountOp.accountAddr][accountOp.networkId]!.estimation
       const accountState = this.accountStates[accountOp.accountAddr][accountOp.networkId]
       let data
       let to
@@ -757,7 +758,7 @@ export class MainController extends EventEmitter {
         if (signer.init) signer.init(externalSignerController)
 
         const gasPrice =
-          (accountOp.gasFeePayment.amount - estimation!.addedNative) /
+          (accountOp.gasFeePayment.amount - feeTokenEstimation.addedNative) /
           accountOp.gasFeePayment.simulatedGasLimit
         const rawTxn: TxnRequest = {
           to,
