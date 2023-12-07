@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/brace-style */
-import { ethers, JsonRpcProvider, TransactionResponse } from 'ethers'
+import { ethers, TransactionResponse } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFactory.json'
@@ -146,9 +146,14 @@ export class MainController extends EventEmitter {
     this.#storage = storage
     this.#fetch = fetch
 
-    this.portfolio = new PortfolioController(this.#storage, relayerUrl, pinned)
     this.keystore = new KeystoreController(this.#storage, keystoreSigners)
     this.settings = new SettingsController(this.#storage)
+    this.portfolio = new PortfolioController(
+      this.#storage,
+      this.settings.providers,
+      relayerUrl,
+      pinned
+    )
     this.#initialLoadPromise = this.#load()
     this.emailVault = new EmailVaultController(
       this.#storage,
@@ -172,12 +177,6 @@ export class MainController extends EventEmitter {
     // @TODO
   }
 
-  get #providers() {
-    return Object.fromEntries(
-      this.settings.networks.map((network) => [network.id, new JsonRpcProvider(network.rpcUrl)])
-    )
-  }
-
   async #load(): Promise<void> {
     this.isReady = false
     this.emitUpdate()
@@ -191,7 +190,7 @@ export class MainController extends EventEmitter {
     this.signMessage = new SignMessageController(
       this.keystore,
       this.settings,
-      this.#providers,
+      this.settings.providers,
       this.#storage,
       this.#fetch
     )
@@ -251,7 +250,7 @@ export class MainController extends EventEmitter {
       accountOpToBeSigned,
       this.#storage,
       this.#fetch,
-      this.#providers,
+      this.settings.providers,
       this.#callRelayer
     )
 
@@ -292,7 +291,9 @@ export class MainController extends EventEmitter {
     await Promise.all(
       gasPriceNetworks.map(async (network) => {
         try {
-          this.gasPrices[network] = await getGasPriceRecommendations(this.#providers[network])
+          this.gasPrices[network] = await getGasPriceRecommendations(
+            this.settings.providers[network]
+          )
         } catch {
           this.emitError({
             level: 'major',
@@ -313,7 +314,12 @@ export class MainController extends EventEmitter {
     const result = await Promise.all(
       this.settings.networks.map(async (network) => {
         try {
-          return await getAccountState(this.#providers[network.id], network, accounts, blockTag)
+          return await getAccountState(
+            this.settings.providers[network.id],
+            network,
+            accounts,
+            blockTag
+          )
         } catch {
           return []
         }
@@ -613,7 +619,7 @@ export class MainController extends EventEmitter {
       shouldGetAdditionalPortfolio(account) &&
         this.portfolio.getAdditionalPortfolio(accountOp.accountAddr),
       estimate(
-        this.#providers[accountOp.networkId],
+        this.settings.providers[accountOp.networkId],
         network,
         account,
         accountOp,
@@ -672,7 +678,7 @@ export class MainController extends EventEmitter {
       return this.#throwAccountOpBroadcastError(new Error('AccountOp missing props'))
     }
 
-    const provider: JsonRpcProvider = this.#providers[accountOp.networkId]
+    const provider = this.settings.providers[accountOp.networkId]
     const account = this.accounts.find((acc) => acc.addr === accountOp.accountAddr)
     const broadcastKeys = this.keystore.keys.filter(
       (key) => key.addr === accountOp.gasFeePayment!.paidBy

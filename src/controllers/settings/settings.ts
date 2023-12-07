@@ -1,3 +1,5 @@
+import { JsonRpcProvider } from 'ethers'
+
 import { networks } from '../../consts/networks'
 import { Key } from '../../interfaces/keystore'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
@@ -16,6 +18,8 @@ export class SettingsController extends EventEmitter {
 
   keyPreferences: KeyPreferences = []
 
+  providers: { [networkId: string]: JsonRpcProvider } = {}
+
   #networkPreferences: NetworkPreferences = {}
 
   #storage: Storage
@@ -30,13 +34,30 @@ export class SettingsController extends EventEmitter {
   get networks(): NetworkDescriptor[] {
     return networks.map((network) => {
       const networkPreferences = this.#networkPreferences[network.id]
+      const provider = this.providers[network.id]
+      const newRpcUrl = networkPreferences?.rpcUrl || network.rpcUrl
+
+      // Only update the RPC if the new RPC is different from the current one
+      // or if there is no provider for this network yet.
+      // eslint-disable-next-line no-underscore-dangle
+      if (!provider || provider?._getConnection().url !== newRpcUrl) {
+        const oldRPC = this.providers[network.id]
+
+        if (oldRPC) {
+          // Failing RPCs try to reconnect every 30 seconds. If we don't destroy the old RPC
+          // it will keep trying to reconnect forever.
+          oldRPC.destroy()
+        }
+
+        this.providers[network.id] = new JsonRpcProvider(newRpcUrl)
+      }
+
       if (networkPreferences) {
         return {
           ...network,
           ...networkPreferences
         }
       }
-
       return network
     })
   }
@@ -229,7 +250,8 @@ export class SettingsController extends EventEmitter {
   toJSON() {
     return {
       ...this,
-      networks: this.networks
+      networks: this.networks,
+      providers: this.providers
     }
   }
 }

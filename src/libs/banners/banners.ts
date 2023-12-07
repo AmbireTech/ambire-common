@@ -181,7 +181,7 @@ export const getNetworksWithFailedRPC = ({
     const networkData = networks.find((n: NetworkDescriptor) => n.id === network)
 
     return {
-      id: new Date().getTime(),
+      id: networkData?.id || new Date().getTime(),
       topic: 'WARNING',
       title: `Failed to retrieve network data for ${networkData?.name}(RPC error)`,
       text: `Affected features(${networkData?.name}): visible tokens, sign message/transaction, ENS/UD domain resolving, add account. Please try again later or contact support.`,
