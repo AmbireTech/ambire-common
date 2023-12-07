@@ -49,8 +49,6 @@ export class MainController extends EventEmitter {
 
   #fetch: Function
 
-  #providers: { [key: string]: JsonRpcProvider } = {}
-
   // Holds the initial load promise, so that one can wait until it completes
   #initialLoadPromise: Promise<void>
 
@@ -174,6 +172,12 @@ export class MainController extends EventEmitter {
     // @TODO
   }
 
+  get #providers() {
+    return Object.fromEntries(
+      this.settings.networks.map((network) => [network.id, new JsonRpcProvider(network.rpcUrl)])
+    )
+  }
+
   async #load(): Promise<void> {
     this.isReady = false
     this.emitUpdate()
@@ -181,9 +185,6 @@ export class MainController extends EventEmitter {
       this.#storage.get('accounts', []),
       this.#storage.get('selectedAccount', null)
     ])
-    this.#providers = Object.fromEntries(
-      this.settings.networks.map((network) => [network.id, new JsonRpcProvider(network.rpcUrl)])
-    )
     // @TODO reload those
     // @TODO error handling here
     this.accountStates = await this.#getAccountsInfo(this.accounts)
