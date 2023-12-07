@@ -137,7 +137,7 @@ describe('estimate', () => {
       gasLimit: null,
       gasFeePayment: null,
       networkId: 'ethereum',
-      nonce: null, // does not matter when estimating
+      nonce: 1n,
       signature: spoofSig,
       calls: [{ to, value: BigInt(0), data }],
       accountOpToExecuteBefore: null
@@ -185,7 +185,7 @@ describe('estimate', () => {
       gasLimit: null,
       gasFeePayment: null,
       networkId: 'ethereum',
-      nonce: null, // does not matter when estimating
+      nonce: 1n,
       signature: spoofSig,
       calls: [{ to, value: BigInt(0), data }],
       accountOpToExecuteBefore: null
@@ -198,7 +198,7 @@ describe('estimate', () => {
       gasLimit: null,
       gasFeePayment: null,
       networkId: 'ethereum',
-      nonce: null, // does not matter when estimating
+      nonce: 1n,
       signature: spoofSig,
       calls: [{ to, value: BigInt(0), data }],
       accountOpToExecuteBefore: {
@@ -261,7 +261,7 @@ describe('estimate', () => {
       gasLimit: null,
       gasFeePayment: null,
       networkId: 'optimism',
-      nonce: null, // does not matter when estimating
+      nonce: 1n,
       signature: spoofSig,
       calls: [{ to, value: BigInt(0), data: dataOptimism }],
       accountOpToExecuteBefore: null
@@ -278,6 +278,8 @@ describe('estimate', () => {
       feeTokens
     )
 
-    expect(response.addedNative).toBeGreaterThan(0n)
+    response.feePaymentOptions.forEach((feeToken) => {
+      expect(feeToken.addedNative).toBeGreaterThan(0n)
+    })
   })
 })
