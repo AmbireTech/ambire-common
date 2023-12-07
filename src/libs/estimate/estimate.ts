@@ -59,6 +59,18 @@ export async function estimate(
 
     const call = op.calls[0]
     const nonce = await provider.getTransactionCount(account.addr)
+    const encodedCallData = abiCoder.encode(
+      [
+        'bytes', // data
+        'address', // to
+        'address', // from
+        'uint256', // gasPrice
+        'uint256', // type
+        'uint256', // nonce
+        'uint256' // gasLimit
+      ],
+      [call.data, call.to, account.addr, 100000000, 2, nonce, 100000]
+    )
 
     const [gasUsed, balance, [l1GasEstimation]] = await Promise.all([
       provider.estimateGas({
@@ -69,19 +81,10 @@ export async function estimate(
         nonce
       }),
       provider.getBalance(account.addr),
-      deploylessEstimator.call(
-        'getL1GasEstimation',
-        [
-          encodeRlp(
-            abiCoder.encode(['address', 'uint256', 'bytes'], [call.to, call.value, call.data])
-          ),
-          '0x'
-        ],
-        {
-          from: blockFrom,
-          blockTag
-        }
-      )
+      deploylessEstimator.call('getL1GasEstimation', [encodeRlp(encodedCallData), '0x'], {
+        from: blockFrom,
+        blockTag
+      })
     ])
 
     return {
@@ -106,8 +109,24 @@ export async function estimate(
   // craft the probableTxn that's going to be saved on the L1
   // so we could do proper estimation
   const encodedCallData = abiCoder.encode(
-    ['bytes'],
-    [getProbableCallData(op, network, accountState)]
+    [
+      'bytes', // data
+      'address', // to
+      'address', // from
+      'uint256', // gasPrice
+      'uint256', // type
+      'uint256', // nonce
+      'uint256' // gasLimit
+    ],
+    [
+      getProbableCallData(op, network, accountState),
+      op.accountAddr,
+      relayerAddress,
+      100000000,
+      2,
+      op.nonce,
+      100000
+    ]
   )
   const args = [
     account.addr,
