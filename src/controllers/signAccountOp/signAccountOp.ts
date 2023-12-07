@@ -380,7 +380,7 @@ export class SignAccountOpController extends EventEmitter {
     const gasUsed = this.#estimation!.gasUsed
     const feeToken = this.#getPortfolioToken(this.selectedTokenAddr)
     const feeTokenEstimation = this.#estimation!.feePaymentOptions.find(
-      (option) => option.address === feeToken?.address
+      (option) => option.address === this.selectedTokenAddr && this.paidBy === option.paidBy
     )!
 
     return this.#gasPrices.map((gasRecommendation) => {
@@ -619,7 +619,7 @@ export class SignAccountOpController extends EventEmitter {
     if (signer.init) signer.init(externalSignerController)
     const provider = this.#providers[this.accountOp.networkId]
     const feeTokenEstimation = this.#estimation!.feePaymentOptions.find(
-      (option) => option.address === this.selectedTokenAddr!
+      (option) => option.address === this.selectedTokenAddr && this.paidBy === option.paidBy
     )!
     try {
       // In case of EOA account

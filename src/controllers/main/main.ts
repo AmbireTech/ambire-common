@@ -673,7 +673,9 @@ export class MainController extends EventEmitter {
     const estimation =
       this.accountOpsToBeSigned[accountOp.accountAddr][accountOp.networkId]!.estimation!
     const feeTokenEstimation = estimation.feePaymentOptions.find(
-      (option) => option.address === accountOp.gasFeePayment?.inToken
+      (option) =>
+        option.address === accountOp.gasFeePayment?.inToken &&
+        option.paidBy === accountOp.gasFeePayment?.paidBy
     )!
 
     // Legacy account (EOA)

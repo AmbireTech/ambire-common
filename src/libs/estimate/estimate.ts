@@ -251,8 +251,8 @@ export async function estimate(
     gasUsed: token.gasUsed,
     addedNative:
       feeTokens[key] !== '0x0000000000000000000000000000000000000000' || // non-native fee token
-      isEdgeCase || // user operation edge case
-      (!is4337Broadcast && nativeToCheck[key] === account.addr) // relayer
+      !is4337Broadcast || // relayer
+      isEdgeCase
         ? l1GasEstimation.feeWithPayment
         : l1GasEstimation.fee
   }))
