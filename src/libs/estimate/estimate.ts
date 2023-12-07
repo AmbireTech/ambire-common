@@ -23,13 +23,12 @@ interface Erc4337estimation {
 export interface EstimateResult {
   gasUsed: bigint
   nonce: number
-  addedNative: bigint
-  addedNativeWithPayment: bigint
   feePaymentOptions: {
     availableAmount: bigint
     paidBy: string
     address: string
     gasUsed?: bigint
+    addedNative: bigint
   }[]
   erc4337estimation: Erc4337estimation | null
 }
@@ -88,13 +87,12 @@ export async function estimate(
     return {
       gasUsed,
       nonce,
-      addedNative: l1GasEstimation.fee,
-      addedNativeWithPayment: 0n,
       feePaymentOptions: [
         {
           address: nativeAddr,
           paidBy: account.addr,
-          availableAmount: balance
+          availableAmount: balance,
+          addedNative: l1GasEstimation.fee
         }
       ],
       erc4337estimation: null
@@ -131,7 +129,9 @@ export async function estimate(
 
   // estimate 4337
   let estimation4337
-  if (opts && opts.is4337Broadcast) {
+  const is4337Broadcast = opts && opts.is4337Broadcast
+  const isEdgeCase = opts && opts.is4337Broadcast && op.asUserOperation?.isEdgeCase
+  if (is4337Broadcast) {
     // using Object.assign as typescript doesn't work otherwise
     const userOp = Object.assign({}, op.asUserOperation)
     userOp!.paymasterAndData = getPaymasterSpoof()
@@ -141,7 +141,7 @@ export async function estimate(
       !network.rpcNoStateOverride
     )
     const functionArgs = [userOp, ERC_4337_ENTRYPOINT]
-    if (userOp.isEdgeCase) {
+    if (isEdgeCase) {
       userOp.nonce = getTargetEdgeCaseNonce(userOp)
     } else {
       const spoofSig = abiCoder.encode(['address'], [account.associatedKeys[0]]) + SPOOF_SIGTYPE
@@ -179,7 +179,7 @@ export async function estimate(
   /* eslint-enable prefer-const */
 
   let erc4337estimation: Erc4337estimation | null = null
-  if (opts && opts.is4337Broadcast) {
+  if (is4337Broadcast) {
     const [[verificationGasLimit, gasUsed, failure]] = estimations[1]
 
     // TODO<Bobby>: handle estimation failure
@@ -232,36 +232,41 @@ export async function estimate(
 
   let finalFeeTokenOptions = feeTokenOutcomes
   let finalNativeTokenOptions = nativeAssetBalances
-  if (opts && opts.is4337Broadcast) {
-    // if there's no paymaster, we cannot pay in tokens
+  if (is4337Broadcast) {
+    // if there's no paymaster, we can pay only in native
     if (!network.erc4337?.hasPaymaster) {
-      finalFeeTokenOptions = []
+      finalFeeTokenOptions = finalFeeTokenOptions.filter((token: any, key: number) => {
+        return feeTokens[key] === '0x0000000000000000000000000000000000000000'
+      })
     }
 
-    // native should be payed from the smart account only
-    finalNativeTokenOptions = finalNativeTokenOptions.filter((balance: bigint, key: number) => {
-      return nativeToCheck[key] === account.addr
-    })
+    // native from other accounts are not allowed
+    finalNativeTokenOptions = []
   }
 
   const feeTokenOptions = finalFeeTokenOptions.map((token: any, key: number) => ({
     address: feeTokens[key],
     paidBy: account.addr,
     availableAmount: token.amount,
-    gasUsed: token.gasUsed
+    gasUsed: token.gasUsed,
+    addedNative:
+      feeTokens[key] !== '0x0000000000000000000000000000000000000000' || // non-native fee token
+      isEdgeCase || // user operation edge case
+      (!is4337Broadcast && nativeToCheck[key] === account.addr) // relayer
+        ? l1GasEstimation.feeWithPayment
+        : l1GasEstimation.fee
   }))
 
   const nativeTokenOptions = finalNativeTokenOptions.map((balance: bigint, key: number) => ({
     address: nativeAddr,
     paidBy: nativeToCheck[key],
-    availableAmount: balance
+    availableAmount: balance,
+    addedNative: l1GasEstimation.fee
   }))
 
   return {
     gasUsed,
     nonce,
-    addedNative: l1GasEstimation.fee,
-    addedNativeWithPayment: l1GasEstimation.feeWithPayment,
     feePaymentOptions: [...feeTokenOptions, ...nativeTokenOptions],
     erc4337estimation
   }

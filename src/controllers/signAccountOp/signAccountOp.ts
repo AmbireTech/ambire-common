@@ -348,13 +348,14 @@ export class SignAccountOpController extends EventEmitter {
     return BigInt(ratio * 1e18)
   }
 
-  #getAmountAfterFeeTokenConvert(
+  static getAmountAfterFeeTokenConvert(
     simulatedGasLimit: bigint,
     gasPrice: bigint,
     nativeRatio: bigint,
-    feeTokenDecimals: number
+    feeTokenDecimals: number,
+    addedNative: bigint
   ) {
-    const amountInWei = simulatedGasLimit * gasPrice + this.#estimation!.addedNativeWithPayment
+    const amountInWei = simulatedGasLimit * gasPrice + addedNative
 
     // Let's break down the process of converting the amount into FeeToken:
     // 1. Initially, we multiply the amount in wei by the native to fee token ratio.
@@ -378,6 +379,9 @@ export class SignAccountOpController extends EventEmitter {
 
     const gasUsed = this.#estimation!.gasUsed
     const feeToken = this.#getPortfolioToken(this.selectedTokenAddr)
+    const feeTokenEstimation = this.#estimation!.feePaymentOptions.find(
+      (option) => option.address === feeToken?.address
+    )!
 
     return this.#gasPrices.map((gasRecommendation) => {
       let amount
@@ -396,20 +400,19 @@ export class SignAccountOpController extends EventEmitter {
       // EOA
       if (!this.#account || !this.#account?.creation) {
         simulatedGasLimit = gasUsed
-        amount = simulatedGasLimit * gasPrice + this.#estimation!.addedNative
+        amount = simulatedGasLimit * gasPrice + feeTokenEstimation.addedNative
       } else if (this.#estimation!.erc4337estimation) {
         // ERC 4337
         const nativeRatio = this.#getNativeToFeeTokenRatio(feeToken!)
-        const feeTokenGasUsed = this.#estimation!.feePaymentOptions.find(
-          (option) => option.address === feeToken?.address
-        )!.gasUsed!
 
-        simulatedGasLimit = this.#estimation!.erc4337estimation.gasUsed + feeTokenGasUsed
-        amount = this.#getAmountAfterFeeTokenConvert(
+        simulatedGasLimit =
+          this.#estimation!.erc4337estimation.gasUsed + feeTokenEstimation.gasUsed!
+        amount = SignAccountOpController.getAmountAfterFeeTokenConvert(
           simulatedGasLimit,
           gasPrice,
           nativeRatio,
-          feeToken!.decimals
+          feeToken!.decimals,
+          feeTokenEstimation.addedNative
         )
       } else if (this.paidBy !== this.accountOp!.accountAddr) {
         // Smart account, but EOA pays the fee
@@ -419,7 +422,7 @@ export class SignAccountOpController extends EventEmitter {
           this.#accountStates![this.accountOp!.accountAddr][this.accountOp!.networkId]
         simulatedGasLimit += getCallDataAdditional(this.accountOp!, this.#network, accountState)
 
-        amount = simulatedGasLimit * gasPrice + this.#estimation!.addedNative
+        amount = simulatedGasLimit * gasPrice + feeTokenEstimation.addedNative
       } else {
         // Relayer.
         // relayer or 4337, we need to add feeTokenOutome.gasUsed
@@ -434,11 +437,12 @@ export class SignAccountOpController extends EventEmitter {
           this.#accountStates![this.accountOp!.accountAddr][this.accountOp!.networkId]
         simulatedGasLimit += getCallDataAdditional(this.accountOp!, this.#network, accountState)
 
-        amount = this.#getAmountAfterFeeTokenConvert(
+        amount = SignAccountOpController.getAmountAfterFeeTokenConvert(
           simulatedGasLimit,
           gasPrice,
           nativeRatio,
-          feeToken!.decimals
+          feeToken!.decimals,
+          feeTokenEstimation.addedNative
         )
       }
 
@@ -614,6 +618,9 @@ export class SignAccountOpController extends EventEmitter {
 
     if (signer.init) signer.init(externalSignerController)
     const provider = this.#providers[this.accountOp.networkId]
+    const feeTokenEstimation = this.#estimation!.feePaymentOptions.find(
+      (option) => option.address === this.selectedTokenAddr!
+    )!
     try {
       // In case of EOA account
       if (!this.#account.creation) {
@@ -643,7 +650,7 @@ export class SignAccountOpController extends EventEmitter {
 
         // set as maxFeePerGas only the L2 gas price
         const gasPrice =
-          (gasFeePayment.amount - this.#estimation!.addedNative) / gasFeePayment.simulatedGasLimit
+          (gasFeePayment.amount - feeTokenEstimation.addedNative) / gasFeePayment.simulatedGasLimit
         userOperation.maxFeePerGas = ethers.toBeHex(gasPrice)
         userOperation.maxPriorityFeePerGas = ethers.toBeHex(gasFeePayment.maxPriorityFeePerGas!)
 
