@@ -30,6 +30,8 @@ import { SettingsController } from '../settings/settings'
 export enum SigningStatus {
   UnableToSign = 'unable-to-sign',
   ReadyToSign = 'ready-to-sign',
+  // TODO: maybe?
+  ReadyToRetrySign = 'ready-to-retry-sign',
   InProgress = 'in-progress',
   InProgressAwaitingUserInput = 'in-progress-awaiting-user-input',
   Done = 'done'
@@ -40,8 +42,21 @@ type UnableToSignStatus = {
   error: string
 }
 
+// TODO: maybe?
+type ReadyToRetryStatus = {
+  type: SigningStatus.ReadyToRetrySign
+  error: string
+}
+
+type ReadyToSignStatus = {
+  type: SigningStatus.ReadyToSign
+  error?: string
+}
+
 export type Status =
   | UnableToSignStatus
+  | ReadyToRetryStatus
+  | ReadyToSignStatus
   | {
       type: Exclude<SigningStatus, SigningStatus.UnableToSign>
     }
@@ -232,7 +247,10 @@ export class SignAccountOpController extends EventEmitter {
 
     // If signing fails, we know the exact error and aim to forward it to the remaining errors,
     // as the application will exclusively render `signAccountOp.errors`.
-    if (this.status?.type === SigningStatus.UnableToSign) {
+    if (
+      this.status?.type === SigningStatus.UnableToSign ||
+      (this.status?.type === SigningStatus.ReadyToSign && this.status?.error)
+    ) {
       errors.push(this.status.error)
     }
 
@@ -534,6 +552,11 @@ export class SignAccountOpController extends EventEmitter {
     this.emitUpdate()
   }
 
+  #setSigningWarning(error: string) {
+    this.status = { type: SigningStatus.ReadyToSign, error }
+    this.emitUpdate()
+  }
+
   #addFeePayment() {
     // TODO: add the fee payment only if it hasn't been added already
 
@@ -580,7 +603,7 @@ export class SignAccountOpController extends EventEmitter {
 
   async sign(externalSignerController?: ExternalSignerController) {
     if (!this.accountOp?.signingKeyAddr || !this.accountOp?.signingKeyType)
-      return this.#setSigningError('We cannot sign your transaction. Please choose a signer.')
+      return this.#setSigningError('We cannot sign your transaction. Please choose a signer key.')
 
     if (!this.accountOp?.gasFeePayment)
       return this.#setSigningError('Please select a token and an account for paying the gas fee.')
@@ -712,7 +735,7 @@ export class SignAccountOpController extends EventEmitter {
       this.status = { type: SigningStatus.Done }
       this.emitUpdate()
     } catch (error: any) {
-      this.#setSigningError(`Signing failed: ${error?.message}`)
+      this.#setSigningWarning(`Signing failed: ${error?.message}`)
     }
     // TODO: Now, the UI needs to call mainCtrl.broadcastSignedAccountOp(mainCtrl.signAccountOp.accountOp)
   }
