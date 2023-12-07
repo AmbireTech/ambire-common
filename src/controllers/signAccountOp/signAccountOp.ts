@@ -1,5 +1,3 @@
-/* eslint-disable class-methods-use-this */
-
 import { ethers, JsonRpcProvider } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
@@ -350,7 +348,7 @@ export class SignAccountOpController extends EventEmitter {
     return BigInt(ratio * 1e18)
   }
 
-  #getAmountAfterFeeTokenConvert(
+  static getAmountAfterFeeTokenConvert(
     simulatedGasLimit: bigint,
     gasPrice: bigint,
     nativeRatio: bigint,
@@ -409,7 +407,7 @@ export class SignAccountOpController extends EventEmitter {
 
         simulatedGasLimit =
           this.#estimation!.erc4337estimation.gasUsed + feeTokenEstimation.gasUsed!
-        amount = this.#getAmountAfterFeeTokenConvert(
+        amount = SignAccountOpController.getAmountAfterFeeTokenConvert(
           simulatedGasLimit,
           gasPrice,
           nativeRatio,
@@ -439,7 +437,7 @@ export class SignAccountOpController extends EventEmitter {
           this.#accountStates![this.accountOp!.accountAddr][this.accountOp!.networkId]
         simulatedGasLimit += getCallDataAdditional(this.accountOp!, this.#network, accountState)
 
-        amount = this.#getAmountAfterFeeTokenConvert(
+        amount = SignAccountOpController.getAmountAfterFeeTokenConvert(
           simulatedGasLimit,
           gasPrice,
           nativeRatio,
