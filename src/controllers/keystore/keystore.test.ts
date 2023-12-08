@@ -8,7 +8,7 @@ import { Wallet } from 'ethers'
 import { describe, expect, test } from '@jest/globals'
 
 import { produceMemoryStore } from '../../../test/helpers'
-import { Key } from '../../interfaces/keystore'
+import { Key, KeyPrivilege } from '../../interfaces/keystore'
 import { KeystoreController } from './keystore'
 
 export class InternalSigner {
@@ -127,7 +127,7 @@ describe('KeystoreController', () => {
   })
 
   test('should add an internal key', (done) => {
-    keystore.addKeys([{ privateKey: privKey }])
+    keystore.addKeys([{ privateKey: privKey, priv: 'full' }])
 
     const unsubscribe = keystore.onUpdate(async () => {
       if (keystore.latestMethodCall === 'addKeys' && keystore.status === 'DONE') {
@@ -143,16 +143,21 @@ describe('KeystoreController', () => {
 
   test('should not add twice internal key that is already added', (done) => {
     // two keys with the same private key
-    const keysWithPrivateKeyAlreadyAdded = [{ privateKey: privKey }, { privateKey: privKey }]
+    const fullPriv: KeyPrivilege = 'full'
+    const standardPriv: KeyPrivilege = 'only_standard'
+    const keysWithPrivateKeyAlreadyAdded = [
+      { privateKey: privKey, priv: fullPriv },
+      { privateKey: privKey, priv: fullPriv }
+    ]
 
     const anotherPrivateKeyNotAddedYet =
       '0x574f261b776b26b1ad75a991173d0e8ca2ca1d481bd7822b2b58b2ef8a969f12'
     const anotherPrivateKeyPublicAddress = '0x9188fdd757Df66B4F693D624Ed6A13a15Cf717D7'
     const keysWithPrivateKeyDuplicatedInParams = [
       // test key 3
-      { privateKey: anotherPrivateKeyNotAddedYet },
+      { privateKey: anotherPrivateKeyNotAddedYet, priv: standardPriv },
       // test key 4 with the same private key as key 3
-      { privateKey: anotherPrivateKeyNotAddedYet }
+      { privateKey: anotherPrivateKeyNotAddedYet, priv: standardPriv }
     ]
 
     keystore.addKeys([...keysWithPrivateKeyAlreadyAdded, ...keysWithPrivateKeyDuplicatedInParams])

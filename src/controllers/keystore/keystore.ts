@@ -1,3 +1,5 @@
+/* eslint-disable new-cap */
+
 import aes from 'aes-js'
 import { concat, getBytes, hexlify, keccak256, randomBytes, toUtf8Bytes, Wallet } from 'ethers'
 import scrypt from 'scrypt-js'
@@ -5,6 +7,7 @@ import scrypt from 'scrypt-js'
 import {
   ExternalKey,
   Key,
+  KeyPrivilege,
   KeystoreSignerType,
   MainKey,
   MainKeyEncryptedWithSecret,
@@ -280,15 +283,15 @@ export class KeystoreController extends EventEmitter {
   async getKeys(): Promise<Key[]> {
     const keys: StoredKey[] = await this.#storage.get('keystoreKeys', [])
 
-    return keys.map(({ addr, type, meta }) => {
+    return keys.map(({ addr, type, priv, meta }) => {
       // Written with this 'internal' type guard (if) on purpose, because this
       // way TypeScript will be able to narrow down the types properly and infer
       // the return type of the map function correctly.
       if (type === 'internal') {
-        return { addr, type, meta, isExternallyStored: false }
+        return { addr, type, priv, meta, isExternallyStored: false }
       }
 
-      return { addr, type, meta: meta as ExternalKey['meta'], isExternallyStored: true }
+      return { addr, type, priv, meta: meta as ExternalKey['meta'], isExternallyStored: true }
     })
   }
 
@@ -338,7 +341,7 @@ export class KeystoreController extends EventEmitter {
     )
   }
 
-  async #addKeys(keysToAdd: { privateKey: string }[]) {
+  async #addKeys(keysToAdd: { privateKey: string; priv: KeyPrivilege }[]) {
     if (this.#mainKey === null) throw new Error('keystore: needs to be unlocked')
     if (!keysToAdd.length) return
 
@@ -357,7 +360,7 @@ export class KeystoreController extends EventEmitter {
     const keys: [StoredKey] = await this.#storage.get('keystoreKeys', [])
 
     const newKeys: StoredKey[] = uniqueKeysToAdd
-      .map(({ privateKey }) => {
+      .map(({ privateKey, priv }) => {
         // eslint-disable-next-line no-param-reassign
         privateKey = privateKey.substring(0, 2) === '0x' ? privateKey.substring(2) : privateKey
 
@@ -371,6 +374,7 @@ export class KeystoreController extends EventEmitter {
         return {
           addr: wallet.address,
           type: 'internal' as 'internal',
+          priv,
           // @TODO: consider an MAC?
           privKey: hexlify(aesCtr.encrypt(aes.utils.hex.toBytes(privateKey))),
           meta: null
@@ -387,7 +391,7 @@ export class KeystoreController extends EventEmitter {
     this.keys = await this.getKeys()
   }
 
-  async addKeys(keysToAdd: { privateKey: string }[]) {
+  async addKeys(keysToAdd: { privateKey: string; priv: KeyPrivilege }[]) {
     await this.wrapKeystoreAction('addKeys', () => this.#addKeys(keysToAdd))
   }
 

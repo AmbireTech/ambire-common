@@ -74,15 +74,25 @@ export type MainKey = {
 
 export type Key = (InternalKey | ExternalKey) & { isExternallyStored: boolean }
 
+// keys can have two priv types:
+// - full - can sign everything
+// - only_standard - can sign only EIP-712 messages/txns
+export type KeyPrivilege = 'full' | 'only_standard'
+export const standardSigningOnlyPriv =
+  '0x0000000000000000000000000000000000000000000000000000000000000001'
+export const fullSigningPriv = '0x0000000000000000000000000000000000000000000000000000000000000002'
+
 export type InternalKey = {
   addr: Account['addr']
   type: 'internal'
+  priv: KeyPrivilege
   meta: null
 }
 
 export type ExternalKey = {
   addr: Account['addr']
   type: 'trezor' | 'ledger' | 'lattice' | string
+  priv: KeyPrivilege
   meta: {
     deviceId: string
     deviceModel: string

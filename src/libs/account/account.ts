@@ -8,6 +8,7 @@ import { Key } from '../../interfaces/keystore'
 import { AccountPreferences, KeyPreferences } from '../../interfaces/settings'
 import { KnownAddressLabels } from '../humanizer/interfaces'
 import { getBytecode } from '../proxyDeploy/bytecode'
+import { PrivLevels } from '../proxyDeploy/deploy'
 import { getAmbireAccountAddress } from '../proxyDeploy/getAmbireAddressTwo'
 
 // returns to, data
@@ -28,22 +29,18 @@ export function getLegacyAccount(key: string): Account {
   }
 }
 
-export async function getSmartAccount(address: string): Promise<Account> {
+export async function getSmartAccount(privileges: PrivLevels[]): Promise<Account> {
   // Temporarily use the polygon network,
   // to be discussed which network we would use for
   // getBytocode once the contract is deployed on all of them
   const polygon = networks.find((x) => x.id === 'polygon')
   if (!polygon) throw new Error('unable to find polygon network in consts')
 
-  const priv = {
-    addr: address,
-    hash: '0x0000000000000000000000000000000000000000000000000000000000000001'
-  }
-  const bytecode = await getBytecode(polygon, [priv])
+  const bytecode = await getBytecode(polygon, privileges)
 
   return {
     addr: getAmbireAccountAddress(AMBIRE_ACCOUNT_FACTORY, bytecode),
-    associatedKeys: [address],
+    associatedKeys: privileges.map((priv) => priv.addr),
     creation: {
       factoryAddr: AMBIRE_ACCOUNT_FACTORY,
       bytecode,

@@ -1,12 +1,13 @@
 import { ethers, JsonRpcProvider } from 'ethers'
 
-import { PROXY_AMBIRE_ACCOUNT } from '../../../src/consts/deploy'
+import { PROXY_AMBIRE_ACCOUNT } from '../../consts/deploy'
 import {
   HD_PATH_TEMPLATE_TYPE,
   SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
 } from '../../consts/derivation'
 import { Account, AccountOnchainState } from '../../interfaces/account'
 import { KeyIterator } from '../../interfaces/keyIterator'
+import { fullSigningPriv } from '../../interfaces/keystore'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
 import { Storage } from '../../interfaces/storage'
 import {
@@ -507,7 +508,9 @@ export class AccountAdderController extends EventEmitter {
 
       // Derive the Ambire (smart) account
       smartAccountsPromises.push(
-        getSmartAccount(smartAccKey).then((smartAccount) => {
+        // set the privileges of the account to 2 as these keys are safe
+        // https://github.com/orgs/AmbireTech/projects/39/views/1?pane=issue&itemId=46644031
+        getSmartAccount([{ addr: smartAccKey, hash: fullSigningPriv }]).then((smartAccount) => {
           return { account: smartAccount, isLinked: false, slot, index: slot - 1 }
         })
       )
