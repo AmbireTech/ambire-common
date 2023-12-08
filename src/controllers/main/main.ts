@@ -1,12 +1,13 @@
 /* eslint-disable @typescript-eslint/brace-style */
 import { ethers, TransactionResponse } from 'ethers'
+import { NetworkPreference, NetworkPreferences } from 'interfaces/settings'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFactory.json'
 import { Account, AccountId, AccountStates } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
 import { ExternalSignerController, Key, KeystoreSignerType } from '../../interfaces/keystore'
-import { NetworkId } from '../../interfaces/networkDescriptor'
+import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
 import { Storage } from '../../interfaces/storage'
 import { Message, UserRequest } from '../../interfaces/userRequest'
 import { isSmartAccount } from '../../libs/account/account'
@@ -443,9 +444,16 @@ export class MainController extends EventEmitter {
     }
   }
 
-  async updateSelectedAccount(selectedAccount: string | null = null) {
+  async updateSelectedAccount(selectedAccount: string | null = null, forceUpdate: boolean = false) {
     if (!selectedAccount) return
-    this.portfolio.updateSelectedAccount(this.accounts, this.settings.networks, selectedAccount)
+
+    this.portfolio.updateSelectedAccount(
+      this.accounts,
+      this.settings.networks,
+      selectedAccount,
+      undefined,
+      { forceUpdate }
+    )
 
     const account = this.accounts.find(({ addr }) => addr === selectedAccount)
     if (shouldGetAdditionalPortfolio(account))
@@ -884,6 +892,29 @@ export class MainController extends EventEmitter {
     await wait(1)
     this.broadcastStatus = 'INITIAL'
     this.emitUpdate()
+  }
+
+  async updateNetworkPreferences(
+    networkPreferences: NetworkPreferences,
+    networkId: NetworkDescriptor['id']
+  ) {
+    await this.settings.updateNetworkPreferences(networkPreferences, networkId)
+
+    if (networkPreferences?.rpcUrl) {
+      await this.updateAccountStates('latest')
+      await this.updateSelectedAccount(this.selectedAccount, true)
+    }
+  }
+
+  async resetNetworkPreference(
+    preferenceKey: keyof NetworkPreference,
+    networkId: NetworkDescriptor['id']
+  ) {
+    await this.settings.resetNetworkPreference(preferenceKey, networkId)
+
+    await this.updateAccountStates('latest')
+
+    this.updateSelectedAccount(this.selectedAccount, true)
   }
 
   get banners(): Banner[] {

@@ -250,7 +250,14 @@ export class PortfolioController extends EventEmitter {
     await Promise.all(
       networks.map(async (network) => {
         const key = `${network.id}:${accountId}`
-        if (!this.#portfolioLibs.has(key)) {
+        // Initialize a new Portfolio lib if:
+        // 1. It does not exist in the portfolioLibs map
+        // 2. The network RPC URL has changed
+        if (
+          !this.#portfolioLibs.has(key) ||
+          this.#portfolioLibs.get(key)?.network?.rpcUrl !==
+            this.#providers[network.id]?._getConnection().url
+        ) {
           this.#portfolioLibs.set(key, new Portfolio(fetch, this.#providers[network.id], network))
         }
         const portfolioLib = this.#portfolioLibs.get(key)!
