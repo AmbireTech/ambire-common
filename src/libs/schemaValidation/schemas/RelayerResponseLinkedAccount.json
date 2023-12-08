@@ -1,0 +1,77 @@
+{
+    "type": "object",
+    "properties": {
+        "keys": {
+            "type": "object",
+            "additionalProperties": {
+                "type": "object",
+                "additionalProperties": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "accounts": {
+            "type": "object",
+            "additionalProperties": {
+                "allOf": [
+                    {
+                        "$ref": "#/definitions/AccountCreation"
+                    },
+                    {
+                        "type": "object",
+                        "properties": {
+                            "associatedKeys": {
+                                "type": "object",
+                                "additionalProperties": {
+                                    "type": [
+                                        "string",
+                                        "boolean"
+                                    ]
+                                }
+                            },
+                            "initialPrivilegesAddrs": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string"
+                                }
+                            }
+                        },
+                        "required": [
+                            "associatedKeys",
+                            "initialPrivilegesAddrs"
+                        ]
+                    }
+                ]
+            }
+        }
+    },
+    "required": [
+        "accounts",
+        "keys"
+    ],
+    "definitions": {
+        "AccountCreation": {
+            "type": "object",
+            "properties": {
+                "factoryAddr": {
+                    "type": "string"
+                },
+                "bytecode": {
+                    "type": "string"
+                },
+                "salt": {
+                    "type": "string"
+                }
+            },
+            "required": [
+                "bytecode",
+                "factoryAddr",
+                "salt"
+            ]
+        }
+    },
+    "$schema": "http://json-schema.org/draft-07/schema#"
+}

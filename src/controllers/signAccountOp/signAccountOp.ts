@@ -1,5 +1,6 @@
 import { ethers, JsonRpcProvider } from 'ethers'
 
+import { schemas } from '../../libs/schemaValidation/validateScehmas'
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import EntryPointAbi from '../../../contracts/compiled/EntryPoint.json'
 import ERC20 from '../../../contracts/compiled/IERC20.json'
@@ -19,7 +20,7 @@ import {
 import { EstimateResult } from '../../libs/estimate/estimate'
 import { GasRecommendation, getCallDataAdditional } from '../../libs/gasPrice/gasPrice'
 import { callsHumanizer } from '../../libs/humanizer'
-import { IrCall } from '../../libs/humanizer/interfaces'
+import { IrCall } from '../../interfaces/humanizer'
 import { Price, TokenResult } from '../../libs/portfolio'
 import { getTargetEdgeCaseNonce, isErc4337Broadcast } from '../../libs/userOperation/userOperation'
 import EventEmitter from '../eventEmitter'
@@ -664,6 +665,7 @@ export class SignAccountOpController extends EventEmitter {
 
         // call the paymaster for the edgeCase or for non-native payments
         if (userOperation.isEdgeCase || !isNative(this.accountOp.gasFeePayment!)) {
+          // @TODO needs validation and testing
           const response = await this.#callRelayer(
             `/v2/paymaster/${this.accountOp.networkId}/sign`,
             'POST',
@@ -674,6 +676,15 @@ export class SignAccountOpController extends EventEmitter {
             }
           )
           if (response.success) {
+            const schemasRes = schemas.RelayerResponsePaymasterSign(response.data)
+            if (!schemasRes.isValid) {
+              this.emitError({
+                level: 'minor',
+                message: 'Error submit signature to paymaster/sign. Please contact support.',
+                error: new Error(schemasRes.error)
+              })
+              return null
+            }
             userOperation.paymasterAndData = response.data.paymasterAndData
 
             // after getting the paymaster data, if we're in the edge case,

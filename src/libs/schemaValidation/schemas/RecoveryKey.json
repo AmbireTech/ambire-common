@@ -1,0 +1,44 @@
+{
+    "type": "object",
+    "properties": {
+        "key": {
+            "type": "object",
+            "additionalProperties": false,
+            "patternProperties": {
+                "^[0-9]+$": {
+                    "type": "string"
+                }
+            },
+            "properties": {
+                "length": {
+                    "type": "number"
+                }
+            },
+            "required": [
+                "length"
+            ]
+        },
+        "type": {
+            "type": "object",
+            "additionalProperties": false,
+            "patternProperties": {
+                "^[0-9]+$": {
+                    "type": "string"
+                }
+            },
+            "properties": {
+                "length": {
+                    "type": "number"
+                }
+            },
+            "required": [
+                "length"
+            ]
+        }
+    },
+    "required": [
+        "key",
+        "type"
+    ],
+    "$schema": "http://json-schema.org/draft-07/schema#"
+}

@@ -10,7 +10,7 @@ import {
   HumanizerVisualization,
   HumanizerWarning,
   IrCall
-} from './interfaces'
+} from '../../interfaces/humanizer'
 
 dotenv.config()
 const COINGECKO_PRO_API_KEY = process.env.COINGECKO_PRO_API_KEY

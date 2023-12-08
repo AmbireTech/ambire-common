@@ -1,5 +1,5 @@
 import { AccountOp } from '../../../accountOp/accountOp'
-import { HumanizerCallModule, IrCall } from '../../interfaces'
+import { HumanizerCallModule, IrCall } from '../../../../interfaces/humanizer'
 import { uniUniversalRouter } from './uniUnivarsalRouter'
 import { uniV2Mapping } from './uniV2'
 import { uniV32Mapping, uniV3Mapping } from './uniV3'

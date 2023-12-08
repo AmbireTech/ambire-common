@@ -1,0 +1,136 @@
+{
+    "type": "object",
+    "properties": {
+        "recoveryKey": {
+            "type": "string"
+        },
+        "email": {
+            "type": "string"
+        },
+        "availableAccounts": {
+            "type": "object",
+            "additionalProperties": {
+                "$ref": "#/definitions/EmailVaultAccountInfo"
+            }
+        },
+        "availableSecrets": {
+            "type": "object",
+            "additionalProperties": {
+                "$ref": "#/definitions/EmailVaultSecrets"
+            }
+        },
+        "criticalError": {
+            "$ref": "#/definitions/Error"
+        },
+        "errors": {
+            "type": "array",
+            "items": {
+                "$ref": "#/definitions/Error"
+            }
+        }
+    },
+    "required": [
+        "availableAccounts",
+        "availableSecrets",
+        "email",
+        "recoveryKey"
+    ],
+    "definitions": {
+        "EmailVaultAccountInfo": {
+            "type": "object",
+            "properties": {
+                "addr": {
+                    "type": "string"
+                },
+                "associatedKeys": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "object",
+                        "additionalProperties": {
+                            "type": "string"
+                        }
+                    }
+                },
+                "creation": {
+                    "anyOf": [
+                        {
+                            "$ref": "#/definitions/AccountCreation"
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ]
+                }
+            },
+            "required": [
+                "addr",
+                "associatedKeys",
+                "creation"
+            ]
+        },
+        "AccountCreation": {
+            "type": "object",
+            "properties": {
+                "factoryAddr": {
+                    "type": "string"
+                },
+                "bytecode": {
+                    "type": "string"
+                },
+                "salt": {
+                    "type": "string"
+                }
+            },
+            "required": [
+                "bytecode",
+                "factoryAddr",
+                "salt"
+            ]
+        },
+        "EmailVaultSecrets": {
+            "type": "object",
+            "properties": {
+                "key": {
+                    "type": "string"
+                },
+                "value": {
+                    "type": "string"
+                },
+                "type": {
+                    "$ref": "#/definitions/SecretType"
+                }
+            },
+            "required": [
+                "key",
+                "type"
+            ]
+        },
+        "SecretType": {
+            "type": "string",
+            "enum": [
+                "recoveryKey",
+                "keyStore",
+                "keyBackup"
+            ]
+        },
+        "Error": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "stack": {
+                    "type": "string"
+                }
+            },
+            "required": [
+                "message",
+                "name"
+            ]
+        }
+    },
+    "$schema": "http://json-schema.org/draft-07/schema#"
+}

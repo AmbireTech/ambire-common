@@ -11,7 +11,7 @@ import {
 } from '../../utils'
 
 import { AccountOp } from '../../../accountOp/accountOp'
-import { IrCall } from '../../interfaces'
+import { IrCall } from '../../../../interfaces/humanizer'
 import { parsePath } from './utils'
 
 // Stolen from ambire-wallet

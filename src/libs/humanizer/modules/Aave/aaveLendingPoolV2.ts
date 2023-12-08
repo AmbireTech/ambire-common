@@ -1,7 +1,7 @@
 import { ethers } from 'ethers'
 import { getAction, getLabel, getToken, getOnBehalfOf } from '../../utils'
 import { AccountOp } from '../../../accountOp/accountOp'
-import { IrCall } from '../../interfaces'
+import { IrCall } from '../../../../interfaces/humanizer'
 
 export const aaveLendingPoolV2 = (humanizerInfo: any): { [key: string]: Function } => {
   const iface = new ethers.Interface(humanizerInfo?.['abis:AaveLendingPoolV2'])

@@ -1,5 +1,5 @@
 import { ethers } from 'ethers'
-import { IrCall } from '../../interfaces'
+import { IrCall } from '../../../../interfaces/humanizer'
 import { getAction, getOnBehalfOf, getToken, getLabel } from '../../utils'
 import { AccountOp } from '../../../accountOp/accountOp'
 

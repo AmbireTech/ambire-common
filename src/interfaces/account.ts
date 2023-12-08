@@ -37,3 +37,19 @@ export type AccountStates = {
     [networkId: string]: AccountOnchainState
   }
 }
+
+export interface RelayerResponseLinkedAccount {
+  keys: {
+    [identityAddress: string]: {
+      [network: string]: {
+        [key: string]: string
+      }
+    }
+  }
+  accounts: {
+    [identityAddr: string]: AccountCreation & {
+      associatedKeys: { [key: string]: string | boolean }
+      initialPrivilegesAddrs: string[]
+    }
+  }
+}

@@ -9,7 +9,7 @@ import {
   getTokenInfo,
   getUnknownVisualization
 } from '../utils'
-import { HumanizerFragment, HumanizerCallModule, IrCall } from '../interfaces'
+import { HumanizerFragment, HumanizerCallModule, IrCall } from '../../../interfaces/humanizer'
 
 export const genericErc721Humanizer: HumanizerCallModule = (
   accountOp: AccountOp,

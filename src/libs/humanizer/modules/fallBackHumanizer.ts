@@ -6,7 +6,7 @@ import {
   HumanizerCallModule,
   HumanizerVisualization,
   IrCall
-} from '../interfaces'
+} from '../../../interfaces/humanizer'
 import { checkIfUnknownAction, getAction, getAddress, getLabel, getToken } from '../utils'
 
 async function fetchFuncEtherface(

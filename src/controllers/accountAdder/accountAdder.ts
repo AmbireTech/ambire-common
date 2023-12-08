@@ -1,6 +1,7 @@
 import { ethers, JsonRpcProvider } from 'ethers'
 
-import { PROXY_AMBIRE_ACCOUNT } from '../../../src/consts/deploy'
+import { schemas } from '../../libs/schemaValidation/validateScehmas'
+import { PROXY_AMBIRE_ACCOUNT } from '../../consts/deploy'
 import {
   HD_PATH_TEMPLATE_TYPE,
   SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
@@ -419,6 +420,7 @@ export class AccountAdderController extends EventEmitter {
       }))
 
       try {
+        // doesn't need aditional schema validation
         const res = await this.#callRelayer('/v2/identity/create-multiple', 'POST', {
           accounts: body
         })
@@ -622,6 +624,15 @@ export class AccountAdderController extends EventEmitter {
     const url = `/v2/account-by-key/linked/accounts?${keys}`
 
     const { data } = await this.#callRelayer(url)
+    const schemasRes = schemas.RelayerResponseLinkedAccount(data)
+    if (!schemasRes.isValid) {
+      this.emitError({
+        level: 'minor',
+        message: 'Error to fetch identities from the relayer, please contact support.',
+        error: new Error(schemasRes.error)
+      })
+      return
+    }
     const linkedAccounts: { account: Account; isLinked: boolean }[] = Object.keys(
       data.accounts
     ).flatMap((addr: string) => {

@@ -1,7 +1,7 @@
 import { ethers } from 'ethers'
 import { getAction, getLabel, getToken, getAddress } from '../../utils'
 import { AccountOp } from '../../../accountOp/accountOp'
-import { IrCall } from '../../interfaces'
+import { IrCall } from '../../../../interfaces/humanizer'
 
 const STAKING_POOLS: { [key: string]: { [key: string]: string } } = {
   '0x47Cd7E91C3CBaAF266369fe8518345fc4FC12935': {

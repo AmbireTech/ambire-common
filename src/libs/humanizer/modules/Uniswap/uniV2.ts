@@ -2,7 +2,7 @@ import { ethers } from 'ethers'
 import { getAction, getLabel, getToken, getRecipientText, getDeadlineText } from '../../utils'
 
 import { AccountOp } from '../../../accountOp/accountOp'
-import { IrCall } from '../../interfaces'
+import { IrCall } from '../../../../interfaces/humanizer'
 
 const uniV2Mapping = (
   humanizerInfo: any
