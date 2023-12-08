@@ -30,8 +30,6 @@ import { SettingsController } from '../settings/settings'
 export enum SigningStatus {
   UnableToSign = 'unable-to-sign',
   ReadyToSign = 'ready-to-sign',
-  // TODO: maybe?
-  ReadyToRetrySign = 'ready-to-retry-sign',
   InProgress = 'in-progress',
   InProgressAwaitingUserInput = 'in-progress-awaiting-user-input',
   Done = 'done'
@@ -42,14 +40,8 @@ type UnableToSignStatus = {
   error: string
 }
 
-type ReadyToSignStatus = {
-  type: SigningStatus.ReadyToSign
-  error?: string
-}
-
 export type Status =
   | UnableToSignStatus
-  | ReadyToSignStatus
   | {
       type: Exclude<SigningStatus, SigningStatus.UnableToSign>
     }
@@ -240,10 +232,14 @@ export class SignAccountOpController extends EventEmitter {
 
     // If signing fails, we know the exact error and aim to forward it to the remaining errors,
     // as the application will exclusively render `signAccountOp.errors`.
-    if (
-      this.status?.type === SigningStatus.UnableToSign ||
-      (this.status?.type === SigningStatus.ReadyToSign && this.status?.error)
-    ) {
+    if (this.status?.type === SigningStatus.UnableToSign) {
+      errors.push(this.status.error)
+    }
+
+    // The signing might fail, tell the user why but allow the user to retry signing,
+    // @ts-ignore fix TODO: type mismatch
+    if (this.status?.type === SigningStatus.ReadyToSign && !!this.status.error) {
+      // @ts-ignore typescript complains, but the error being present gets checked above
       errors.push(this.status.error)
     }
 
