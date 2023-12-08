@@ -296,7 +296,7 @@ export class KeystoreController extends EventEmitter {
   }
 
   async #addKeysExternallyStored(
-    keysToAdd: { addr: Key['addr']; type: Key['type']; meta: Key['meta'] }[]
+    keysToAdd: { addr: Key['addr']; type: Key['type']; priv: KeyPrivilege; meta: Key['meta'] }[]
   ) {
     if (!keysToAdd.length) return
 
@@ -316,9 +316,10 @@ export class KeystoreController extends EventEmitter {
     const keys: [StoredKey] = await this.#storage.get('keystoreKeys', [])
 
     const newKeys = uniqueKeysToAdd
-      .map(({ addr, type, meta }) => ({
+      .map(({ addr, type, priv, meta }) => ({
         addr,
         type,
+        priv,
         meta,
         privKey: null
       }))
@@ -334,7 +335,7 @@ export class KeystoreController extends EventEmitter {
   }
 
   async addKeysExternallyStored(
-    keysToAdd: { addr: Key['addr']; type: Key['type']; meta: Key['meta'] }[]
+    keysToAdd: { addr: Key['addr']; type: Key['type']; priv: KeyPrivilege; meta: Key['meta'] }[]
   ) {
     await this.wrapKeystoreAction('addKeysExternallyStored', () =>
       this.#addKeysExternallyStored(keysToAdd)
