@@ -38,13 +38,13 @@ export class SettingsController extends EventEmitter {
       const newRpcUrl = networkPreferences?.rpcUrl || network.rpcUrl
 
       // Only update the RPC if the new RPC is different from the current one
-      // or if there is no provider for this network yet.
+      // or if there is no RPC for this network yet.
       // eslint-disable-next-line no-underscore-dangle
       if (!provider || provider?._getConnection().url !== newRpcUrl) {
         const oldRPC = this.providers[network.id]
 
         if (oldRPC) {
-          // Failing RPCs try to reconnect every 30 seconds. If we don't destroy the old RPC
+          // If an RPC fails once it will try to reconnect every second. If we don't destroy the old RPC
           // it will keep trying to reconnect forever.
           oldRPC.destroy()
         }
