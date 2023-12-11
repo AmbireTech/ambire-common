@@ -574,9 +574,13 @@ export class AccountAdderController extends EventEmitter {
           network,
           accounts.map((acc) => acc.account)
         ).catch(() => {
+          const message = `Failed to determine if accounts are used on ${network.name}.`
+          // Prevents toast spamming
+          if (this.getErrors().find((err) => err.message === message)) return
+
           this.emitError({
             level: 'major',
-            message: `Failed to determine if accounts are used on ${network.name}.`,
+            message,
             error: new Error(
               `accountAdder.#getAccountsUsedOnNetworks: failed to determine if accounts are used on ${network.name}`
             )
