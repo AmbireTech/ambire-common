@@ -681,14 +681,14 @@ export class MainController extends EventEmitter {
     // Legacy account (EOA)
     if (!isSmartAccount(account)) {
       try {
-        const broadcastKeys = this.keystore.keys.filter(
+        const feePayerKeys = this.keystore.keys.filter(
           (key) => key.addr === accountOp.gasFeePayment!.paidBy
         )
-        const broadcastKey =
+        const feePayerKey =
           // Temporarily prioritize the key with the same type as the signing key.
           // TODO: Implement a way to choose the key type to broadcast with.
-          broadcastKeys.find((key) => key.type === accountOp.signingKeyType) || broadcastKeys[0]
-        if (!broadcastKey) {
+          feePayerKeys.find((key) => key.type === accountOp.signingKeyType) || feePayerKeys[0]
+        if (!feePayerKey) {
           return this.#throwAccountOpBroadcastError(
             new Error(
               `Key with address: ${accountOp.gasFeePayment!.paidBy} for account with address: ${
@@ -697,7 +697,7 @@ export class MainController extends EventEmitter {
             )
           )
         }
-        const signer = await this.keystore.getSigner(broadcastKey.addr, broadcastKey.type)
+        const signer = await this.keystore.getSigner(feePayerKey.addr, feePayerKey.type)
         if (signer.init) signer.init(externalSignerController)
 
         const gasFeePayment = accountOp.gasFeePayment!
@@ -734,14 +734,14 @@ export class MainController extends EventEmitter {
       accountOp.gasFeePayment &&
       accountOp.gasFeePayment.paidBy !== account.addr
     ) {
-      const broadcastKeys = this.keystore.keys.filter(
+      const feePayerKeys = this.keystore.keys.filter(
         (key) => key.addr === accountOp.gasFeePayment!.paidBy
       )
-      const broadcastKey =
+      const feePayerKey =
         // Temporarily prioritize the key with the same type as the signing key.
         // TODO: Implement a way to choose the key type to broadcast with.
-        broadcastKeys.find((key) => key.type === accountOp.signingKeyType) || broadcastKeys[0]
-      if (!broadcastKey) {
+        feePayerKeys.find((key) => key.type === accountOp.signingKeyType) || feePayerKeys[0]
+      if (!feePayerKey) {
         return this.#throwAccountOpBroadcastError(
           new Error(
             `Key with address: ${accountOp.gasFeePayment!.paidBy} for account with address: ${
@@ -773,7 +773,7 @@ export class MainController extends EventEmitter {
       }
 
       try {
-        const signer = await this.keystore.getSigner(broadcastKey.addr, broadcastKey.type)
+        const signer = await this.keystore.getSigner(feePayerKey.addr, feePayerKey.type)
         if (signer.init) signer.init(externalSignerController)
 
         const gasPrice =
