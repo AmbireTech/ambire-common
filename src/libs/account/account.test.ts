@@ -1,5 +1,6 @@
 import { ethers } from 'ethers'
 import { Account, AccountCreation } from 'interfaces/account'
+import { fullSigningPriv } from 'interfaces/keystore'
 
 /* eslint-disable no-new */
 import { describe, expect, test } from '@jest/globals'
@@ -28,7 +29,9 @@ describe('Account', () => {
   })
   test('should return smartAccount', async () => {
     expect.assertions(3)
-    const newSmartAccount = await getSmartAccount(keyPublicAddress)
+    const newSmartAccount = await getSmartAccount([
+      { addr: keyPublicAddress, hash: fullSigningPriv }
+    ])
     const priv = {
       addr: keyPublicAddress,
       hash: '0x0000000000000000000000000000000000000000000000000000000000000001'

@@ -162,7 +162,6 @@ export class MainController extends EventEmitter {
     })
     this.transfer = new TransferController()
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch: this.#fetch })
-    this.#relayerUrl = relayerUrl
     this.onResolveDappRequest = onResolveDappRequest
     this.onRejectDappRequest = onRejectDappRequest
     this.onUpdateDappSelectedAccount = onUpdateDappSelectedAccount

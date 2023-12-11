@@ -140,7 +140,7 @@ describe('SignAccountOp Controller ', () => {
     const keystore = new KeystoreController(storage, { internal: InternalSigner })
     await keystore.addSecret('passphrase', pass, '', false)
     await keystore.unlockWithSecret('passphrase', pass)
-    await keystore.addKeys([{ privateKey: privKey }])
+    await keystore.addKeys([{ privateKey: privKey, priv: 'full' }])
 
     const ethereum = networks.find((x) => x.id === 'ethereum')!
     const provider = new JsonRpcProvider(ethereum!.rpcUrl)
