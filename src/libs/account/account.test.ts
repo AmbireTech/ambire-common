@@ -4,15 +4,12 @@ import { ethers } from 'ethers'
 import { describe, expect, test } from '@jest/globals'
 
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
-import { networks } from '../../consts/networks'
 import { Account, AccountCreation } from '../../interfaces/account'
 import { fullSigningPriv } from '../../interfaces/keystore'
 import { getBytecode } from '../proxyDeploy/bytecode'
 import { getAmbireAccountAddress } from '../proxyDeploy/getAmbireAddressTwo'
 import { getAccountDeployParams, getLegacyAccount, getSmartAccount } from './account'
 
-const polygon = networks.find((x) => x.id === 'polygon')
-if (!polygon) throw new Error('unable to find polygon network in consts')
 const keyPublicAddress = '0x9188fdd757Df66B4F693D624Ed6A13a15Cf717D7'
 
 const legacyAccount: Account = {
@@ -36,7 +33,7 @@ describe('Account', () => {
       addr: keyPublicAddress,
       hash: '0x0000000000000000000000000000000000000000000000000000000000000002'
     }
-    const bytecode = await getBytecode(polygon, [priv])
+    const bytecode = await getBytecode([priv])
     const accountNotDeployed = {
       addr: getAmbireAccountAddress(AMBIRE_ACCOUNT_FACTORY, bytecode),
       associatedKeys: [keyPublicAddress],
@@ -61,7 +58,7 @@ describe('Account', () => {
   test('should return account deploy params', async () => {
     expect.assertions(1)
     const priv = { addr: keyPublicAddress, hash: true }
-    const bytecode = await getBytecode(polygon, [priv])
+    const bytecode = await getBytecode([priv])
     const accountNotDeployed = {
       addr: getAmbireAccountAddress(AMBIRE_ACCOUNT_FACTORY, bytecode),
       associatedKeys: [keyPublicAddress],

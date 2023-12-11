@@ -494,7 +494,7 @@ export class AccountAdderController extends EventEmitter {
       this.hdPathTemplate
     )
 
-    const smartAccountsPromises: Promise<DerivedAccountWithoutNetworkMeta>[] = []
+    const smartAccountsPromises: Promise<DerivedAccountWithoutNetworkMeta | null>[] = []
     // Replace the parallel getKeys with foreach to prevent issues with Ledger,
     // which can only handle one request at a time.
     // eslint-disable-next-line no-restricted-syntax
@@ -508,15 +508,25 @@ export class AccountAdderController extends EventEmitter {
 
       // Derive the Ambire (smart) account
       smartAccountsPromises.push(
-        // set the privileges of the account to 2 as these keys are safe
-        // https://github.com/orgs/AmbireTech/projects/39/views/1?pane=issue&itemId=46644031
-        getSmartAccount([{ addr: smartAccKey, hash: fullSigningPriv }]).then((smartAccount) => {
-          return { account: smartAccount, isLinked: false, slot, index: slot - 1 }
-        })
+        getSmartAccount([{ addr: smartAccKey, hash: fullSigningPriv }])
+          .then((smartAccount) => {
+            return { account: smartAccount, isLinked: false, slot, index: slot - 1 }
+          })
+          // If the error isn't caught here and the promise is rejected, Promise.all
+          // will be rejected entirely.
+          .catch(() => {
+            // No need for emitting an error here, because a relevant error is already
+            // emitted in the method #getAccountsUsedOnNetworks
+            return null
+          })
       )
     }
 
-    const smartAccounts = await Promise.all(smartAccountsPromises)
+    const unfilteredSmartAccountsList = await Promise.all(smartAccountsPromises)
+    const smartAccounts = unfilteredSmartAccountsList.filter(
+      (x) => x !== null
+    ) as DerivedAccountWithoutNetworkMeta[]
+
     accounts.push(...smartAccounts)
 
     // eslint-disable-next-line no-restricted-syntax
@@ -564,7 +574,21 @@ export class AccountAdderController extends EventEmitter {
           providers[providerKey],
           network,
           accounts.map((acc) => acc.account)
-        )
+        ).catch(() => {
+          const message = `Failed to determine if accounts are used on ${network.name}.`
+          // Prevents toast spamming
+          if (this.getErrors().find((err) => err.message === message)) return
+
+          this.emitError({
+            level: 'major',
+            message,
+            error: new Error(
+              `accountAdder.#getAccountsUsedOnNetworks: failed to determine if accounts are used on ${network.name}`
+            )
+          })
+        })
+
+        if (!accountState) return
 
         accountState.forEach((acc: AccountOnchainState) => {
           const isUsedOnThisNetwork =

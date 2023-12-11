@@ -150,7 +150,12 @@ describe('SignAccountOp Controller ', () => {
     const estimation = await estimate(provider, ethereum, account, op, nativeToCheck, feeTokens)
     const accounts = [account]
     const accountStates = await getAccountsInfo(accounts)
-    const portfolio = new PortfolioController(storage, 'https://staging-relayer.ambire.com', [])
+    const portfolio = new PortfolioController(
+      storage,
+      providers,
+      'https://staging-relayer.ambire.com',
+      []
+    )
     await portfolio.updateSelectedAccount(accounts, networks, account.addr)
     const callRelayer = relayerCall.bind({ url: '', fetch })
     const settings = new SettingsController(storage)

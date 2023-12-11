@@ -2,7 +2,6 @@ import { ethers, Interface } from 'ethers'
 
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET } from '../../consts/derivation'
-import { networks } from '../../consts/networks'
 import { Account } from '../../interfaces/account'
 import { Key } from '../../interfaces/keystore'
 import { AccountPreferences, KeyPreferences } from '../../interfaces/settings'
@@ -30,13 +29,7 @@ export function getLegacyAccount(key: string): Account {
 }
 
 export async function getSmartAccount(privileges: PrivLevels[]): Promise<Account> {
-  // Temporarily use the polygon network,
-  // to be discussed which network we would use for
-  // getBytocode once the contract is deployed on all of them
-  const polygon = networks.find((x) => x.id === 'polygon')
-  if (!polygon) throw new Error('unable to find polygon network in consts')
-
-  const bytecode = await getBytecode(polygon, privileges)
+  const bytecode = await getBytecode(privileges)
 
   return {
     addr: getAmbireAccountAddress(AMBIRE_ACCOUNT_FACTORY, bytecode),

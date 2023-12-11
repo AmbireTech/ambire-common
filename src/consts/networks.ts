@@ -1,4 +1,4 @@
-import { NetworkDescriptor, NetworkId } from '../interfaces/networkDescriptor'
+import { NetworkDescriptor } from '../interfaces/networkDescriptor'
 import { ENTRY_POINT_MARKER, ERC_4337_ENTRYPOINT } from './deploy'
 
 const networks: NetworkDescriptor[] = [
@@ -53,8 +53,7 @@ const networks: NetworkDescriptor[] = [
     id: 'avalanche',
     name: 'Avalanche',
     nativeAssetSymbol: 'AVAX',
-    rpcUrl:
-      'https://api.avax.network/ext/bc/C/rpc',
+    rpcUrl: 'https://api.avax.network/ext/bc/C/rpc',
     rpcNoStateOverride: false,
     chainId: 43114n,
     explorerUrl: 'https://snowtrace.io',
