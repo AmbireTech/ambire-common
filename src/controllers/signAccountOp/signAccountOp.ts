@@ -611,8 +611,8 @@ export class SignAccountOpController extends EventEmitter {
 
     if (signer.init) signer.init(externalSignerController)
     const provider = this.#providers[this.accountOp.networkId]
-    const nonce = await provider.getTransactionCount(this.accountOp.accountAddr)
     try {
+      const nonce = await provider.getTransactionCount(this.accountOp.accountAddr)
       // In case of EOA account
       if (!this.#account.creation) {
         if (this.accountOp.calls.length !== 1)

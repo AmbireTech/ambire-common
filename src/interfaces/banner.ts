@@ -7,7 +7,7 @@ export const BANNER_TOPICS = {
 export type BannerTopic = 'TRANSACTION' | 'ANNOUNCEMENT' | 'WARNING'
 
 export interface Banner {
-  id: number
+  id: number | string
   topic: BannerTopic
   title: string
   text: string
