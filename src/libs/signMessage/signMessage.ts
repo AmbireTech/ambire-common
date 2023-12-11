@@ -17,19 +17,11 @@ import { TypedMessage } from '../../interfaces/userRequest'
 import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
 
 /**
- * For EIP712 signatures, we need to append 00 at the end
+ * For Unprotected signatures, we need to append 00 at the end
  * for ambire to recognize it
  */
-export const wrapEIP712 = (signature: string) => {
+export const wrapUnprotected = (signature: string) => {
   return `${signature}00`
-}
-
-/**
- * For EthSign signatures, we need to append 01 at the end
- * for ambire to recognize it
- */
-export const wrapEthSign = (signature: string) => {
-  return `${signature}01`
 }
 
 /**
@@ -46,7 +38,7 @@ export const wrapStandard = (signature: string) => {
 export const getTypedData = (
   chainId: bigint,
   verifyingAddr: string,
-  executeHash: string
+  msgHash: string
 ): TypedMessage => {
   const domain: TypedDataDomain = {
     name: 'Ambire',
@@ -63,7 +55,7 @@ export const getTypedData = (
   }
   const message = {
     account: verifyingAddr,
-    hash: executeHash
+    hash: msgHash
   }
 
   return {

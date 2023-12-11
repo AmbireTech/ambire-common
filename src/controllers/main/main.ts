@@ -112,8 +112,6 @@ export class MainController extends EventEmitter {
 
   broadcastStatus: 'INITIAL' | 'LOADING' | 'DONE' = 'INITIAL'
 
-  #relayerUrl: string
-
   onResolveDappRequest: (data: any, id?: number) => void
 
   onRejectDappRequest: (err: any, id?: number) => void

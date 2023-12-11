@@ -32,6 +32,7 @@ export interface ExternalSignerController {
 }
 
 export interface KeystoreSigner {
+  key: Key
   init?: (externalSignerController?: ExternalSignerController) => void
   signRawTransaction: (txnRequest: {
     to: Call['to']

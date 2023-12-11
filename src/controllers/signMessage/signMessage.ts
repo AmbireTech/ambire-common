@@ -10,10 +10,11 @@ import { getKnownAddressLabels } from '../../libs/account/account'
 import { messageHumanizer } from '../../libs/humanizer'
 import { IrMessage } from '../../libs/humanizer/interfaces'
 import {
+  getTypedData,
   verifyMessage,
   wrapCounterfactualSign,
-  wrapEIP712,
-  wrapEthSign
+  wrapStandard,
+  wrapUnprotected
 } from '../../libs/signMessage/signMessage'
 import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
 import { SignedMessage } from '../activity/activity'
@@ -33,6 +34,11 @@ export class SignMessageController extends EventEmitter {
   #fetch: Function
 
   #accounts: Account[] | null = null
+
+  // this is the signer from keystore.ts
+  // we don't have a correct return type at getSigner so
+  // I'm leaving it as any
+  #signer: any
 
   // TODO: use it to determine whether the account is deployed and if not
   // apply EIP6492 but first the msg to sign should include the address of the account
@@ -151,6 +157,55 @@ export class SignMessageController extends EventEmitter {
     this.emitUpdate()
   }
 
+  async #signPlainMsg() {
+    if (!this.messageToSign) {
+      this.#throwNotInitialized()
+      return
+    }
+
+    try {
+      const { message } = this.messageToSign.content
+      const messageHex = message instanceof Uint8Array ? ethers.hexlify(message) : message
+      const signature = await this.#signer.signMessage(messageHex)
+      return signature
+    } catch (error: any) {
+      throw new Error(
+        'Something went wrong while signing the message. Please try again later or contact support if the problem persists.'
+      )
+    }
+  }
+
+  async #signEip712() {
+    if (!this.messageToSign) {
+      this.#throwNotInitialized()
+      return
+    }
+
+    try {
+      // @ts-ignore checked before calling the mehtod
+      if (!this.messageToSign.content.types.EIP712Domain) {
+        throw new Error(
+          'Ambire only supports signing EIP712 typed data messages. Please try again with a valid EIP712 message.'
+        )
+      }
+
+      // @ts-ignore checked before calling the mehtod
+      if (!this.messageToSign.content.primaryType) {
+        throw new Error(
+          'The primaryType is missing in the typed data message incoming. Please try again with a valid EIP712 message.'
+        )
+      }
+
+      const signature = await this.#signer.signTypedData(this.messageToSign.content)
+      return signature
+    } catch (error: any) {
+      throw new Error(
+        error?.message ||
+          'Something went wrong while signing the typed data message. Please try again later or contact support if the problem persists.'
+      )
+    }
+  }
+
   async sign(externalSignerController?: ExternalSignerController) {
     if (!this.isInitialized || !this.messageToSign) {
       this.#throwNotInitialized()
@@ -169,8 +224,8 @@ export class SignMessageController extends EventEmitter {
     this.emitUpdate()
 
     try {
-      const signer = await this.#keystore.getSigner(this.signingKeyAddr, this.signingKeyType)
-      if (signer.init) signer.init(externalSignerController)
+      this.#signer = await this.#keystore.getSigner(this.signingKeyAddr, this.signingKeyType)
+      if (this.#signer.init) this.#signer.init(externalSignerController)
 
       const account = this.#accounts!.find((acc) => acc.addr === this.messageToSign?.accountAddr)
       if (!account) {
@@ -179,51 +234,43 @@ export class SignMessageController extends EventEmitter {
         )
       }
 
-      let network = networks.find((n: NetworkDescriptor) => n.id === 'ethereum')
+      const keyPriv = this.#signer.key.priv
+      const network = networks.find(
+        // @ts-ignore this.messageToSign is not null and it has a check
+        // but typescript malfunctions here
+        (n: NetworkDescriptor) => n.id === this.messageToSign.networkId
+      )
       let signature
 
       if (this.messageToSign.content.kind === 'message') {
-        try {
-          const { message } = this.messageToSign.content
-          const messageHex = message instanceof Uint8Array ? ethers.hexlify(message) : message
-
-          signature = await signer.signMessage(messageHex)
-          if (signature && account.creation) signature = wrapEthSign(signature)
-        } catch (error: any) {
-          console.log(error)
-          throw new Error(
-            'Something went wrong while signing the message. Please try again later or contact support if the problem persists.'
+        if (!account.creation) {
+          signature = await this.#signPlainMsg()
+        } else if (keyPriv === 'full') {
+          signature = wrapUnprotected(await this.#signPlainMsg())
+        } else {
+          // in case of only_standard priv key, we transform the data
+          // for signing to EIP-712. This is because the key is not labeled safe
+          // and it should inform the user that he's performing an Ambire Op.
+          // This is important as this key could be a metamask one and someone
+          // could be phishing him into approving an Ambire Op without him
+          // knowing
+          const typedData = getTypedData(
+            network!.chainId,
+            account.addr,
+            ethers.hexlify(this.messageToSign.content.message)
           )
+          signature = wrapStandard(await this.#signer.signTypedData(typedData))
         }
       }
 
       if (this.messageToSign.content.kind === 'typedMessage') {
-        try {
-          if (!this.messageToSign.content.types.EIP712Domain) {
-            throw new Error(
-              'Ambire only supports signing EIP712 typed data messages. Please try again with a valid EIP712 message.'
-            )
-          }
-
-          if (!this.messageToSign.content.primaryType) {
-            throw new Error(
-              'The primaryType is missing in the typed data message incoming. Please try again with a valid EIP712 message.'
-            )
-          }
-
-          const { domain } = this.messageToSign.content
-          signature = await signer.signTypedData(this.messageToSign.content)
-          if (signature && account.creation) signature = wrapEIP712(signature)
-          const requestedNetwork = networks.find(
-            (n) => Number(n.chainId) === Number(domain.chainId)
-          )
-          if (requestedNetwork) {
-            network = requestedNetwork
-          }
-        } catch (error: any) {
+        if (!account.creation) {
+          signature = await this.#signEip712()
+        } else if (keyPriv === 'full') {
+          signature = wrapUnprotected(await this.#signEip712())
+        } else {
           throw new Error(
-            error?.message ||
-              'Something went wrong while signing the typed data message. Please try again later or contact support if the problem persists.'
+            `Signer with address ${this.signingKeyAddr} does not have privileges to execute this operation. Please choose a different signer and try again`
           )
         }
       }

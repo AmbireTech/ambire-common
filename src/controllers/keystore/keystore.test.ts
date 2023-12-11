@@ -35,8 +35,12 @@ export class InternalSigner {
 }
 
 class LedgerSigner {
+  key
+
   // eslint-disable-next-line @typescript-eslint/no-empty-function
-  constructor(_key: Key) {}
+  constructor(_key: Key) {
+    this.key = _key
+  }
 
   signRawTransaction() {
     return Promise.resolve('')

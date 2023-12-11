@@ -468,11 +468,12 @@ export class KeystoreController extends EventEmitter {
     )
 
     if (!storedKey) throw new Error('keystore: key not found')
-    const { addr, type, meta } = storedKey
+    const { addr, type, priv, meta } = storedKey
 
     const key = {
       addr,
       type,
+      priv,
       meta,
       isExternallyStored: type !== 'internal'
     }
