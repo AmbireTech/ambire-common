@@ -389,17 +389,17 @@ export class MainController extends EventEmitter {
   async #ensureAccountInfo(accountAddr: AccountId, networkId: NetworkId) {
     await this.#initialLoadPromise
     // Initial sanity check: does this account even exist?
-    if (!this.accounts.find((x) => x.addr === accountAddr))
-      throw new Error(`ensureAccountInfo: called for non-existent acc ${accountAddr}`)
+    if (!this.accounts.find((x) => x.addr === accountAddr)) {
+      this.signAccOpInitError = `Account ${accountAddr} does not exist`
+      return
+    }
     // If this still didn't work, re-load
     // @TODO: should we re-start the whole load or only specific things?
     if (!this.accountStates[accountAddr]?.[networkId])
       await (this.#initialLoadPromise = this.#load())
     // If this still didn't work, throw error: this prob means that we're calling for a non-existant acc/network
     if (!this.accountStates[accountAddr]?.[networkId])
-      throw new Error(
-        `Failed to retrieve account info for ${networkId}, because of one of the following reasons: 1) network doesn't exist, 2) RPC is down for this network`
-      )
+      this.signAccOpInitError = `Failed to retrieve account info for ${networkId}, because of one of the following reasons: 1) network doesn't exist, 2) RPC is down for this network`
   }
 
   #makeAccountOpFromUserRequests(accountAddr: AccountId, networkId: NetworkId): AccountOp | null {
@@ -476,6 +476,9 @@ export class MainController extends EventEmitter {
       // 4) manage recalc on removeUserRequest too in order to handle EOAs
       // @TODO consider re-using this whole block in removeUserRequest
       await this.#ensureAccountInfo(accountAddr, networkId)
+
+      if (this.signAccOpInitError) return
+
       const accountOp = this.#makeAccountOpFromUserRequests(accountAddr, networkId)
       if (accountOp) {
         this.accountOpsToBeSigned[accountAddr][networkId] = { accountOp, estimation: null }
