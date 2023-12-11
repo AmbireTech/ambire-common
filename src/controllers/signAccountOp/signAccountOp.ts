@@ -13,15 +13,19 @@ import {
   AccountOp,
   accountOpSignableHash,
   GasFeePayment,
-  getSignableCalls,
-  isNative
+  getSignableCalls
 } from '../../libs/accountOp/accountOp'
 import { EstimateResult } from '../../libs/estimate/estimate'
 import { GasRecommendation, getCallDataAdditional } from '../../libs/gasPrice/gasPrice'
 import { callsHumanizer } from '../../libs/humanizer'
 import { IrCall } from '../../libs/humanizer/interfaces'
 import { Price, TokenResult } from '../../libs/portfolio'
-import { getTargetEdgeCaseNonce, isErc4337Broadcast } from '../../libs/userOperation/userOperation'
+import {
+  getOneTimeNonce,
+  isErc4337Broadcast,
+  shouldUseOneTimeNonce,
+  shouldUsePaymaster
+} from '../../libs/userOperation/userOperation'
 import EventEmitter from '../eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
 import { PortfolioController } from '../portfolio/portfolio'
@@ -661,15 +665,20 @@ export class SignAccountOpController extends EventEmitter {
         userOperation.maxFeePerGas = ethers.toBeHex(gasPrice)
         userOperation.maxPriorityFeePerGas = ethers.toBeHex(gasFeePayment.maxPriorityFeePerGas!)
 
-        if (userOperation?.isEdgeCase || !isNative(this.accountOp.gasFeePayment)) {
+        const usesOneTimeNonce = shouldUseOneTimeNonce(userOperation)
+        const usesPaymaster = shouldUsePaymaster(
+          userOperation,
+          this.accountOp.gasFeePayment.inToken
+        )
+        if (usesPaymaster) {
           this.#addFeePayment()
         } else {
           delete this.accountOp.feeCall
         }
 
-        // if we're in the edge case scenario, set the callData to
+        // if we're in doing activation or recovery, set the callData to
         // executeMultiple and sign it
-        if (userOperation.isEdgeCase) {
+        if (usesOneTimeNonce) {
           const ambireAccount = new ethers.Interface(AmbireAccount.abi)
           const signature = wrapEthSign(
             await signer.signMessage(ethers.hexlify(accountOpSignableHash(this.accountOp)))
@@ -680,24 +689,21 @@ export class SignAccountOpController extends EventEmitter {
           this.accountOp.signature = signature
         }
 
-        // call the paymaster for the edgeCase or for non-native payments
-        if (userOperation.isEdgeCase || !isNative(this.accountOp.gasFeePayment!)) {
+        if (usesPaymaster) {
           const response = await this.#callRelayer(
             `/v2/paymaster/${this.accountOp.networkId}/sign`,
             'POST',
             {
-              // send without the isEdgeCase prop
-              userOperation: (({ isEdgeCase, ...o }) => o)(userOperation),
+              // send without the requestType prop
+              userOperation: (({ requestType, ...o }) => o)(userOperation),
               paymaster: AMBIRE_PAYMASTER
             }
           )
           if (response.success) {
             userOperation.paymasterAndData = response.data.paymasterAndData
 
-            // after getting the paymaster data, if we're in the edge case,
-            // we have to set the correct edge case nonce
-            if (userOperation.isEdgeCase) {
-              userOperation.nonce = getTargetEdgeCaseNonce(userOperation)
+            if (usesOneTimeNonce) {
+              userOperation.nonce = getOneTimeNonce(userOperation)
             }
           } else {
             this.#setSigningError(
@@ -706,8 +712,7 @@ export class SignAccountOpController extends EventEmitter {
           }
         }
 
-        // in normal cases (not edgeCase), we sign the user operation
-        if (!userOperation.isEdgeCase) {
+        if (userOperation.requestType === 'standard') {
           const entryPoint: any = new ethers.BaseContract(
             ERC_4337_ENTRYPOINT,
             EntryPointAbi,

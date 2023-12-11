@@ -167,18 +167,3 @@ export function accountOpSignableHash(op: AccountOp): Uint8Array {
     )
   )
 }
-
-/**
- * We're paying the fee in native only if:
- * - it's not a gas tank payment
- * - the gasFeePayment.inToken points to address 0
- *
- * @param gasFeePayment
- * @returns boolean
- */
-export function isNative(gasFeePayment: GasFeePayment): boolean {
-  return (
-    !gasFeePayment.isGasTank &&
-    gasFeePayment.inToken === '0x0000000000000000000000000000000000000000'
-  )
-}

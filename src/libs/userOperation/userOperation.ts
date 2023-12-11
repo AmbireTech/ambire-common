@@ -35,7 +35,7 @@ export function toUserOperation(
   accountOp: AccountOp
 ): AccountOp {
   let initCode = '0x'
-  let isEdgeCase = false
+  let requestType = 'standard'
 
   // if the account is not deployed, prepare the deploy in the initCode
   if (!accountState.isDeployed) {
@@ -55,7 +55,7 @@ export function toUserOperation(
       ])
     )
 
-    isEdgeCase = true
+    requestType = 'activator'
   }
 
   // give permissions to the entry if there aren't nay
@@ -71,14 +71,14 @@ export function toUserOperation(
       data: givePermsToEntryPointData
     })
 
-    isEdgeCase = true
+    requestType = 'activator'
   }
 
   // get estimation calldata
   let callData
   let verificationGasLimit
   let callGasLimit
-  if (isEdgeCase) {
+  if (requestType !== 'standard') {
     const abiCoder = new ethers.AbiCoder()
     const spoofSig = abiCoder.encode(['address'], [account.associatedKeys[0]]) + SPOOF_SIGTYPE
     callData = ambireAccount.interface.encodeFunctionData('executeMultiple', [
@@ -119,19 +119,19 @@ export function toUserOperation(
   userOperation.preVerificationGas = ethers.toBeHex(21000n + calculateCallDataCost(packed))
   userOperation.paymasterAndData = '0x'
   userOperation.signature = '0x'
-  userOperation.isEdgeCase = isEdgeCase
+  userOperation.requestType = requestType
   accountOp.asUserOperation = userOperation
   return accountOp
 }
 
 /**
- * Get the target nonce we're expecting in validateUserOp
- * when we're going through the edge case
+ * Get the nonce we're expecting in validateUserOp
+ * when we're going through the activation | recovery
  *
  * @param UserOperation userOperation
  * @returns hex string
  */
-export function getTargetEdgeCaseNonce(userOperation: UserOperation) {
+export function getOneTimeNonce(userOperation: UserOperation) {
   const abiCoder = new ethers.AbiCoder()
   return `0x${ethers
     .keccak256(
@@ -160,4 +160,15 @@ export function isErc4337Broadcast(
   const isEnabled = network && network.erc4337 ? network.erc4337.enabled : false
 
   return isEnabled && accountState.isV2
+}
+
+export function shouldUseOneTimeNonce(userOp: UserOperation) {
+  return userOp.requestType !== 'standard'
+}
+
+export function shouldUsePaymaster(userOp: UserOperation, feeTokenAddr: string) {
+  return (
+    userOp.requestType !== 'standard' ||
+    feeTokenAddr !== '0x0000000000000000000000000000000000000000'
+  )
 }

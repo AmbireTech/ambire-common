@@ -12,7 +12,12 @@ import { getAccountDeployParams } from '../account/account'
 import { AccountOp } from '../accountOp/accountOp'
 import { fromDescriptor } from '../deployless/deployless'
 import { getProbableCallData } from '../gasPrice/gasPrice'
-import { getPaymasterSpoof, getTargetEdgeCaseNonce } from '../userOperation/userOperation'
+import {
+  getOneTimeNonce,
+  getPaymasterSpoof,
+  shouldUseOneTimeNonce,
+  shouldUsePaymaster
+} from '../userOperation/userOperation'
 
 interface Erc4337estimation {
   verificationGasLimit: bigint
@@ -149,7 +154,8 @@ export async function estimate(
   // estimate 4337
   let estimation4337
   const is4337Broadcast = opts && opts.is4337Broadcast
-  const isEdgeCase = opts && opts.is4337Broadcast && op.asUserOperation?.isEdgeCase
+  const usesOneTimeNonce =
+    opts && opts.is4337Broadcast && shouldUseOneTimeNonce(op.asUserOperation!)
   if (is4337Broadcast) {
     // using Object.assign as typescript doesn't work otherwise
     const userOp = Object.assign({}, op.asUserOperation)
@@ -160,8 +166,8 @@ export async function estimate(
       !network.rpcNoStateOverride
     )
     const functionArgs = [userOp, ERC_4337_ENTRYPOINT]
-    if (isEdgeCase) {
-      userOp.nonce = getTargetEdgeCaseNonce(userOp)
+    if (usesOneTimeNonce) {
+      userOp.nonce = getOneTimeNonce(userOp)
     } else {
       const spoofSig = abiCoder.encode(['address'], [account.associatedKeys[0]]) + SPOOF_SIGTYPE
       userOp!.signature = spoofSig
@@ -269,9 +275,8 @@ export async function estimate(
     availableAmount: token.amount,
     gasUsed: token.gasUsed,
     addedNative:
-      feeTokens[key] !== '0x0000000000000000000000000000000000000000' || // non-native fee token
       !is4337Broadcast || // relayer
-      isEdgeCase
+      shouldUsePaymaster(op.asUserOperation!, feeTokens[key])
         ? l1GasEstimation.feeWithPayment
         : l1GasEstimation.fee
   }))
