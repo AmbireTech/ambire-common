@@ -2,6 +2,7 @@ import { Transaction } from 'ethers'
 
 import { HD_PATH_TEMPLATE_TYPE } from '../consts/derivation'
 import { Call, GasFeePayment } from '../libs/accountOp/accountOp'
+import { getHdPathFromTemplate } from '../utils/hdPath'
 import { Account } from './account'
 import { NetworkDescriptor } from './networkDescriptor'
 import { TypedMessage } from './userRequest'
@@ -17,11 +18,12 @@ export interface ExternalSignerController {
   deviceModel: string
   deviceId: string
   isUnlocked: () => boolean
-  unlock: () => Promise<any>
+  unlock: (
+    path?: ReturnType<typeof getHdPathFromTemplate>
+  ) => Promise<'ALREADY_UNLOCKED' | 'JUST_UNLOCKED'>
   cleanUp: () => void // Trezor and Ledger specific
   // TODO: Refine the rest of the props
   hdk: any // Trezor and Ledger specific
-  hasHIDPermission?: boolean | null // Ledger specific
   isWebHID?: boolean // Ledger specific
   transport?: any // Ledger specific
   app?: any // Ledger specific
