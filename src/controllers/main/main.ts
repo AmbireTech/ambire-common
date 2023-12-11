@@ -915,9 +915,10 @@ export class MainController extends EventEmitter {
   ) {
     await this.settings.resetNetworkPreference(preferenceKey, networkId)
 
-    await this.updateAccountStates('latest')
-
-    this.updateSelectedAccount(this.selectedAccount, true)
+    if (preferenceKey === 'rpcUrl') {
+      await this.updateAccountStates('latest')
+      await this.updateSelectedAccount(this.selectedAccount, true)
+    }
   }
 
   get banners(): Banner[] {
