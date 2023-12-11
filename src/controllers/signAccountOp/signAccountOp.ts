@@ -625,9 +625,6 @@ export class SignAccountOpController extends EventEmitter {
 
     if (signer.init) signer.init(externalSignerController)
     const provider = this.#providers[this.accountOp.networkId]
-    const feeTokenEstimation = this.#estimation!.feePaymentOptions.find(
-      (option) => option.address === this.selectedTokenAddr && this.paidBy === option.paidBy
-    )!
     try {
       // In case of EOA account
       if (!this.#account.creation) {
@@ -656,6 +653,9 @@ export class SignAccountOpController extends EventEmitter {
         }
 
         // set as maxFeePerGas only the L2 gas price
+        const feeTokenEstimation = this.#estimation!.feePaymentOptions.find(
+          (option) => option.address === this.selectedTokenAddr && this.paidBy === option.paidBy
+        )!
         const gasPrice =
           (gasFeePayment.amount - feeTokenEstimation.addedNative) / gasFeePayment.simulatedGasLimit
         userOperation.maxFeePerGas = ethers.toBeHex(gasPrice)

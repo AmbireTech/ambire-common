@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/brace-style */
-import { ethers, JsonRpcProvider, TransactionResponse } from 'ethers'
+import { ethers, TransactionResponse } from 'ethers'
+import { NetworkPreference, NetworkPreferences } from 'interfaces/settings'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFactory.json'
@@ -26,6 +27,7 @@ import {
   getAccountOpBannersForEOA,
   getAccountOpBannersForSmartAccount,
   getMessageBanners,
+  getNetworksWithFailedRPC,
   getPendingAccountOpBannersForEOA
 } from '../../libs/banners/banners'
 import { estimate, EstimateResult } from '../../libs/estimate/estimate'
@@ -52,8 +54,6 @@ export class MainController extends EventEmitter {
   #storage: Storage
 
   #fetch: Function
-
-  #providers: { [key: string]: JsonRpcProvider } = {}
 
   // Holds the initial load promise, so that one can wait until it completes
   #initialLoadPromise: Promise<void>
@@ -152,9 +152,14 @@ export class MainController extends EventEmitter {
     this.#storage = storage
     this.#fetch = fetch
 
-    this.portfolio = new PortfolioController(this.#storage, relayerUrl, pinned)
     this.keystore = new KeystoreController(this.#storage, keystoreSigners)
     this.settings = new SettingsController(this.#storage)
+    this.portfolio = new PortfolioController(
+      this.#storage,
+      this.settings.providers,
+      relayerUrl,
+      pinned
+    )
     this.#initialLoadPromise = this.#load()
     this.emailVault = new EmailVaultController(
       this.#storage,
@@ -185,16 +190,13 @@ export class MainController extends EventEmitter {
       this.#storage.get('accounts', []),
       this.#storage.get('selectedAccount', null)
     ])
-    this.#providers = Object.fromEntries(
-      this.settings.networks.map((network) => [network.id, new JsonRpcProvider(network.rpcUrl)])
-    )
     // @TODO reload those
     // @TODO error handling here
     this.accountStates = await this.#getAccountsInfo(this.accounts)
     this.signMessage = new SignMessageController(
       this.keystore,
       this.settings,
-      this.#providers,
+      this.settings.providers,
       this.#storage,
       this.#fetch
     )
@@ -254,7 +256,7 @@ export class MainController extends EventEmitter {
       accountOpToBeSigned,
       this.#storage,
       this.#fetch,
-      this.#providers,
+      this.settings.providers,
       this.#callRelayer
     )
 
@@ -294,10 +296,20 @@ export class MainController extends EventEmitter {
 
     await Promise.all(
       gasPriceNetworks.map(async (network) => {
-        this.gasPrices[network] = await getGasPriceRecommendations(
-          this.#providers[network],
-          this.settings.networks.find((net) => net.id === network)!
-        )
+        try {
+          this.gasPrices[network] = await getGasPriceRecommendations(
+            this.settings.providers[network],
+            this.settings.networks.find((net) => net.id === network)!
+          )
+        } catch {
+          this.emitError({
+            level: 'major',
+            message: `Failed to fetch gas price for ${
+              this.settings.networks.find((n) => n.id === network)?.name
+            }`,
+            error: new Error('Failed to fetch gas price')
+          })
+        }
       })
     )
   }
@@ -307,23 +319,40 @@ export class MainController extends EventEmitter {
     blockTag: string | number = 'latest'
   ): Promise<AccountStates> {
     const result = await Promise.all(
-      this.settings.networks.map((network) =>
-        getAccountState(this.#providers[network.id], network, accounts, blockTag)
-      )
+      this.settings.networks.map(async (network) => {
+        try {
+          return await getAccountState(
+            this.settings.providers[network.id],
+            network,
+            accounts,
+            blockTag
+          )
+        } catch {
+          return []
+        }
+      })
     )
 
-    const states = accounts.map((acc: Account, accIndex: number) => {
-      return [
-        acc.addr,
-        Object.fromEntries(
-          this.settings.networks.map((network: NetworkDescriptor, netIndex: number) => {
-            return [network.id, result[netIndex][accIndex]]
-          })
-        )
-      ]
-    })
+    const states = accounts.reduce((accStates: AccountStates, acc: Account, accIndex: number) => {
+      const networkStates = this.settings.networks.reduce(
+        (netStates: AccountStates[keyof AccountStates], network, netIndex: number) => {
+          if (!(netIndex in result) || !(accIndex in result[netIndex])) return netStates
 
-    return Object.fromEntries(states)
+          return {
+            ...netStates,
+            [network.id]: result[netIndex][accIndex]
+          }
+        },
+        {}
+      )
+
+      return {
+        ...accStates,
+        [acc.addr]: networkStates
+      }
+    }, {})
+
+    return states
   }
 
   async updateAccountStates(blockTag: string | number = 'latest') {
@@ -367,24 +396,24 @@ export class MainController extends EventEmitter {
   async #ensureAccountInfo(accountAddr: AccountId, networkId: NetworkId) {
     await this.#initialLoadPromise
     // Initial sanity check: does this account even exist?
-    if (!this.accounts.find((x) => x.addr === accountAddr))
-      throw new Error(`ensureAccountInfo: called for non-existant acc ${accountAddr}`)
+    if (!this.accounts.find((x) => x.addr === accountAddr)) {
+      this.signAccOpInitError = `Account ${accountAddr} does not exist`
+      return
+    }
     // If this still didn't work, re-load
     // @TODO: should we re-start the whole load or only specific things?
     if (!this.accountStates[accountAddr]?.[networkId])
       await (this.#initialLoadPromise = this.#load())
     // If this still didn't work, throw error: this prob means that we're calling for a non-existant acc/network
     if (!this.accountStates[accountAddr]?.[networkId])
-      throw new Error(
-        `ensureAccountInfo: acc info for ${accountAddr} on ${networkId} was not retrieved`
-      )
+      this.signAccOpInitError = `Failed to retrieve account info for ${networkId}, because of one of the following reasons: 1) network doesn't exist, 2) RPC is down for this network`
   }
 
   #makeAccountOpFromUserRequests(accountAddr: AccountId, networkId: NetworkId): AccountOp | null {
     const account = this.accounts.find((x) => x.addr === accountAddr)
     if (!account)
       throw new Error(
-        `makeAccountOpFromUserRequests: tried to run for non-existant account ${accountAddr}`
+        `makeAccountOpFromUserRequests: tried to run for non-existent account ${accountAddr}`
       )
     // Note: we use reduce instead of filter/map so that the compiler can deduce that we're checking .kind
     const calls = this.userRequests.reduce((uCalls: AccountOpCall[], req) => {
@@ -405,6 +434,7 @@ export class MainController extends EventEmitter {
     if (!calls.length) return null
 
     const currentAccountOp = this.accountOpsToBeSigned[accountAddr][networkId]?.accountOp
+
     return {
       accountAddr,
       networkId,
@@ -421,9 +451,16 @@ export class MainController extends EventEmitter {
     }
   }
 
-  async updateSelectedAccount(selectedAccount: string | null = null) {
+  async updateSelectedAccount(selectedAccount: string | null = null, forceUpdate: boolean = false) {
     if (!selectedAccount) return
-    this.portfolio.updateSelectedAccount(this.accounts, this.settings.networks, selectedAccount)
+
+    this.portfolio.updateSelectedAccount(
+      this.accounts,
+      this.settings.networks,
+      selectedAccount,
+      undefined,
+      { forceUpdate }
+    )
 
     const account = this.accounts.find(({ addr }) => addr === selectedAccount)
     if (shouldGetAdditionalPortfolio(account))
@@ -446,6 +483,9 @@ export class MainController extends EventEmitter {
       // 4) manage recalc on removeUserRequest too in order to handle EOAs
       // @TODO consider re-using this whole block in removeUserRequest
       await this.#ensureAccountInfo(accountAddr, networkId)
+
+      if (this.signAccOpInitError) return
+
       const accountOp = this.#makeAccountOpFromUserRequests(accountAddr, networkId)
       if (accountOp) {
         this.accountOpsToBeSigned[accountAddr][networkId] = { accountOp, estimation: null }
@@ -597,7 +637,7 @@ export class MainController extends EventEmitter {
       shouldGetAdditionalPortfolio(account) &&
         this.portfolio.getAdditionalPortfolio(accountOp.accountAddr),
       estimate(
-        this.#providers[accountOp.networkId],
+        this.settings.providers[accountOp.networkId],
         network,
         account,
         accountOp,
@@ -606,8 +646,18 @@ export class MainController extends EventEmitter {
         // @TODO - first time calling this, portfolio is still not loaded.
         feeTokens,
         { is4337Broadcast }
-      )
+      ).catch((e) => {
+        this.emitError({
+          level: 'major',
+          message: `Failed to estimate account op for ${accountOp.accountAddr} on ${accountOp.networkId}`,
+          error: e
+        })
+
+        return null
+      })
     ])
+
+    if (!estimation) return
     // @TODO compare intent between accountOp and this.accountOpsToBeSigned[accountOp.accountAddr][accountOp.networkId].accountOp
     this.accountOpsToBeSigned[accountOp.accountAddr][accountOp.networkId]!.estimation = estimation
 
@@ -647,7 +697,7 @@ export class MainController extends EventEmitter {
       return this.#throwAccountOpBroadcastError(new Error('AccountOp missing props'))
     }
 
-    const provider: JsonRpcProvider = this.#providers[accountOp.networkId]
+    const provider = this.settings.providers[accountOp.networkId]
     const account = this.accounts.find((acc) => acc.addr === accountOp.accountAddr)
     const network = this.settings.networks.find((n) => n.id === accountOp.networkId)
 
@@ -800,8 +850,10 @@ export class MainController extends EventEmitter {
 
         const signedTxn = await signer.signRawTransaction(rawTxn)
         transactionRes = await provider.broadcastTransaction(signedTxn)
-      } catch (error: any) {
-        this.#throwAccountOpBroadcastError(new Error(error), error.message || undefined)
+      } catch {
+        this.#throwAccountOpBroadcastError(
+          new Error(`Failed to broadcast transaction on ${accountOp.networkId}`)
+        )
       }
     }
     // Smart account, the ERC-4337 way
@@ -902,6 +954,30 @@ export class MainController extends EventEmitter {
     this.emitUpdate()
   }
 
+  async updateNetworkPreferences(
+    networkPreferences: NetworkPreferences,
+    networkId: NetworkDescriptor['id']
+  ) {
+    await this.settings.updateNetworkPreferences(networkPreferences, networkId)
+
+    if (networkPreferences?.rpcUrl) {
+      await this.updateAccountStates('latest')
+      await this.updateSelectedAccount(this.selectedAccount, true)
+    }
+  }
+
+  async resetNetworkPreference(
+    preferenceKey: keyof NetworkPreference,
+    networkId: NetworkDescriptor['id']
+  ) {
+    await this.settings.resetNetworkPreference(preferenceKey, networkId)
+
+    if (preferenceKey === 'rpcUrl') {
+      await this.updateAccountStates('latest')
+      await this.updateSelectedAccount(this.selectedAccount, true)
+    }
+  }
+
   get banners(): Banner[] {
     const userRequests =
       this.userRequests.filter((req) => req.accountAddr === this.selectedAccount) || []
@@ -913,13 +989,18 @@ export class MainController extends EventEmitter {
       accounts
     })
     const messageBanners = getMessageBanners({ userRequests })
+    const networksWithFailedRPCBanners = getNetworksWithFailedRPC({
+      accountStates: this.accountStates,
+      networks: this.settings.networks
+    })
 
     return [
       ...accountOpSmartAccountBanners,
       ...accountOpEOABanners,
       ...pendingAccountOpEOABanners,
       ...messageBanners,
-      ...this.activity.banners
+      ...this.activity.banners,
+      ...networksWithFailedRPCBanners
     ]
   }
 

@@ -4,6 +4,7 @@ import { Resolution } from '@unstoppabledomains/resolution'
 
 import { networks } from '../../consts/networks'
 
+// @TODO: Get RPC urls from settings controller
 const resolution = new Resolution({
   sourceConfig: {
     uns: {

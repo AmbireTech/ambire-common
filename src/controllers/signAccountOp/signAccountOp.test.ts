@@ -1,3 +1,5 @@
+/* eslint-disable class-methods-use-this */
+
 import { JsonRpcProvider } from 'ethers'
 import fetch from 'node-fetch'
 
@@ -153,7 +155,12 @@ describe('SignAccountOp Controller ', () => {
       nativeToCheck,
       feeTokens
     )
-    const portfolio = new PortfolioController(storage, 'https://staging-relayer.ambire.com', [])
+    const portfolio = new PortfolioController(
+      storage,
+      providers,
+      'https://staging-relayer.ambire.com',
+      []
+    )
     await portfolio.updateSelectedAccount(accounts, networks, account.addr)
     const callRelayer = relayerCall.bind({ url: '', fetch })
     const settings = new SettingsController(storage)
