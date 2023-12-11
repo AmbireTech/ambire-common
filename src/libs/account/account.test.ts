@@ -1,12 +1,12 @@
 import { ethers } from 'ethers'
-import { Account, AccountCreation } from 'interfaces/account'
-import { fullSigningPriv } from 'interfaces/keystore'
 
 /* eslint-disable no-new */
 import { describe, expect, test } from '@jest/globals'
 
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { networks } from '../../consts/networks'
+import { Account, AccountCreation } from '../../interfaces/account'
+import { fullSigningPriv } from '../../interfaces/keystore'
 import { getBytecode } from '../proxyDeploy/bytecode'
 import { getAmbireAccountAddress } from '../proxyDeploy/getAmbireAddressTwo'
 import { getAccountDeployParams, getLegacyAccount, getSmartAccount } from './account'
@@ -34,7 +34,7 @@ describe('Account', () => {
     ])
     const priv = {
       addr: keyPublicAddress,
-      hash: '0x0000000000000000000000000000000000000000000000000000000000000001'
+      hash: '0x0000000000000000000000000000000000000000000000000000000000000002'
     }
     const bytecode = await getBytecode(polygon, [priv])
     const accountNotDeployed = {

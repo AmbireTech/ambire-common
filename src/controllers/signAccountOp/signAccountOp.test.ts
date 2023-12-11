@@ -182,7 +182,7 @@ describe('SignAccountOp Controller ', () => {
     await controller.sign()
 
     expect(controller.accountOp?.gasFeePayment?.amount).toBeGreaterThan(21000n)
-    expect(controller.accountOp?.signature).toEqual('0x020202')
+    expect(controller.accountOp?.signature).toEqual('0x02020201')
     expect(controller.status).toEqual({ type: 'done' })
   })
 })
