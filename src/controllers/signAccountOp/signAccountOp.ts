@@ -377,6 +377,18 @@ export class SignAccountOpController extends EventEmitter {
     return (amountInWei * nativeRatio) / BigInt(10 ** (18 + 18 - feeTokenDecimals))
   }
 
+  /**
+   * Increase the fee we send to the feeCollector according to the specified
+   * options in the network tab
+   */
+  #increaseFee(amount: bigint): bigint {
+    if (!this.#network.feeOptions.feeIncrease) {
+      return amount
+    }
+
+    return amount + (amount * this.#network.feeOptions.feeIncrease) / 100n
+  }
+
   get feeSpeeds(): {
     type: string
     amount: bigint
@@ -425,6 +437,9 @@ export class SignAccountOpController extends EventEmitter {
           feeToken!.decimals,
           feeTokenEstimation.addedNative
         )
+        if (shouldUsePaymaster(this.accountOp.asUserOperation!, feeToken!.address)) {
+          amount = this.#increaseFee(amount)
+        }
       } else if (this.paidBy !== this.accountOp!.accountAddr) {
         // Smart account, but EOA pays the fee
         simulatedGasLimit = gasUsed
@@ -455,6 +470,7 @@ export class SignAccountOpController extends EventEmitter {
           feeToken!.decimals,
           feeTokenEstimation.addedNative
         )
+        amount = this.#increaseFee(amount)
       }
 
       const fee: any = {
@@ -560,8 +576,6 @@ export class SignAccountOpController extends EventEmitter {
   }
 
   #addFeePayment() {
-    // TODO: add the fee payment only if it hasn't been added already
-
     // In case of gas tank token fee payment, we need to include one more call to account op
     const abiCoder = new ethers.AbiCoder()
     const feeCollector = '0x942f9CE5D9a33a82F88D233AEb3292E680230348'
@@ -676,10 +690,8 @@ export class SignAccountOpController extends EventEmitter {
           delete this.accountOp.feeCall
         }
 
-        // if we're in doing activation or recovery, set the callData to
-        // executeMultiple and sign it
+        const ambireAccount = new ethers.Interface(AmbireAccount.abi)
         if (usesOneTimeNonce) {
-          const ambireAccount = new ethers.Interface(AmbireAccount.abi)
           const signature = wrapEthSign(
             await signer.signMessage(ethers.hexlify(accountOpSignableHash(this.accountOp)))
           )
@@ -687,6 +699,10 @@ export class SignAccountOpController extends EventEmitter {
             [[getSignableCalls(this.accountOp), signature]]
           ])
           this.accountOp.signature = signature
+        } else {
+          userOperation.callData = ambireAccount.encodeFunctionData('executeBySender', [
+            getSignableCalls(this.accountOp)
+          ])
         }
 
         if (usesPaymaster) {

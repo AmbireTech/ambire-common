@@ -12,6 +12,8 @@ interface FeeOptions {
   minBaseFee?: bigint
   elasticityMultiplier?: bigint
   baseFeeMaxChangeDenominator?: bigint
+  // should we increase the relayer fee in %
+  feeIncrease?: bigint
 }
 
 // NetworkId is a string: this is our internal identifier for the network

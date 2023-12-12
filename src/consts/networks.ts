@@ -35,7 +35,8 @@ const networks: NetworkDescriptor[] = [
     },
     unstoppableDomainsChain: 'MATIC',
     feeOptions: {
-      is1559: false
+      is1559: false,
+      feeIncrease: 10n // %
     }
   },
   {
@@ -57,7 +58,8 @@ const networks: NetworkDescriptor[] = [
     feeOptions: {
       is1559: true,
       elasticityMultiplier: 6n,
-      baseFeeMaxChangeDenominator: 50n
+      baseFeeMaxChangeDenominator: 50n,
+      feeIncrease: 4n // %
     },
     reestimateOn: 6000
   },
@@ -78,7 +80,8 @@ const networks: NetworkDescriptor[] = [
     unstoppableDomainsChain: 'ERC20',
     feeOptions: {
       is1559: true,
-      minBaseFee: 25000000000n // 25 gwei
+      minBaseFee: 25000000000n, // 25 gwei
+      feeIncrease: 5n // %
     }
   }
   // This breaks the background service of the extension
