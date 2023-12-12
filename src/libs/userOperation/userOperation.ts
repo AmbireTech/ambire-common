@@ -35,7 +35,7 @@ export function toUserOperation(
   accountOp: AccountOp
 ): AccountOp {
   let initCode = '0x'
-  let isEdgeCase = false
+  let requestType = 'standard'
 
   // if the account is not deployed, prepare the deploy in the initCode
   if (!accountState.isDeployed) {
@@ -55,7 +55,7 @@ export function toUserOperation(
       ])
     )
 
-    isEdgeCase = true
+    requestType = 'activator'
   }
 
   // give permissions to the entry if there aren't nay
@@ -71,79 +71,85 @@ export function toUserOperation(
       data: givePermsToEntryPointData
     })
 
-    isEdgeCase = true
+    requestType = 'activator'
   }
 
   // get estimation calldata
   let callData
-  if (isEdgeCase) {
+  let verificationGasLimit
+  let callGasLimit
+  if (requestType !== 'standard') {
     const abiCoder = new ethers.AbiCoder()
     const spoofSig = abiCoder.encode(['address'], [account.associatedKeys[0]]) + SPOOF_SIGTYPE
     callData = ambireAccount.interface.encodeFunctionData('executeMultiple', [
       [[getSignableCalls(accountOp), spoofSig]]
     ])
+    verificationGasLimit = 250000n
+    callGasLimit = 380000n
   } else {
     callData = ambireAccount.interface.encodeFunctionData('executeBySender', [
       getSignableCalls(accountOp)
     ])
+    verificationGasLimit = 150000n
+    callGasLimit = 250000n
   }
 
-  // 27000n initial + deploy, callData, paymaster, signature
-  let preVerificationGas = 27000n
-  preVerificationGas += calculateCallDataCost(initCode)
-  preVerificationGas += calculateCallDataCost(getPaymasterSpoof())
-  preVerificationGas += calculateCallDataCost(
-    '0x0dc2d37f7b285a2243b2e1e6ba7195c578c72b395c0f76556f8961b0bca97ddc44e2d7a249598f56081a375837d2b82414c3c94940db3c1e64110108021161ca1c01'
-  ) // signature
-
-  accountOp.asUserOperation = {
+  const userOperation: any = {
     sender: accountOp.accountAddr,
     nonce: ethers.toBeHex(accountState.erc4337Nonce),
     initCode,
     callData,
-    preVerificationGas: ethers.toBeHex(preVerificationGas),
-    callGasLimit: ethers.toBeHex(150000), // hardcoded fake for estimation
-    verificationGasLimit: ethers.toBeHex(150000), // hardcoded fake for estimation
+    preVerificationGas: ethers.toBeHex(0),
+    callGasLimit, // hardcoded fake for estimation
+    verificationGasLimit, // hardcoded fake for estimation
     maxFeePerGas: ethers.toBeHex(1),
     maxPriorityFeePerGas: ethers.toBeHex(1),
-    paymasterAndData: '0x',
-    signature: '0x',
-    isEdgeCase
+    paymasterAndData: getPaymasterSpoof(),
+    signature:
+      '0x0dc2d37f7b285a2243b2e1e6ba7195c578c72b395c0f76556f8961b0bca97ddc44e2d7a249598f56081a375837d2b82414c3c94940db3c1e64110108021161ca1c01'
   }
 
+  const abiCoder = new ethers.AbiCoder()
+  const packed = abiCoder.encode(
+    [
+      'tuple(address, uint256, bytes, bytes, uint256, uint256, uint256, uint256, uint256, bytes, bytes)'
+    ],
+    [Object.values(userOperation)]
+  )
+  userOperation.preVerificationGas = ethers.toBeHex(21000n + calculateCallDataCost(packed))
+  userOperation.paymasterAndData = '0x'
+  userOperation.signature = '0x'
+  userOperation.requestType = requestType
+  accountOp.asUserOperation = userOperation
   return accountOp
 }
 
 /**
- * Get the target nonce we're expecting in validateUserOp
- * when we're going through the edge case
+ * Get the nonce we're expecting in validateUserOp
+ * when we're going through the activation | recovery
  *
  * @param UserOperation userOperation
  * @returns hex string
  */
-export function getTargetEdgeCaseNonce(userOperation: UserOperation) {
+export function getOneTimeNonce(userOperation: UserOperation) {
   const abiCoder = new ethers.AbiCoder()
-  return (
-    '0x' +
-    ethers
-      .keccak256(
-        abiCoder.encode(
-          ['bytes', 'bytes', 'uint256', 'uint256', 'uint256', 'uint256', 'uint256', 'bytes'],
-          [
-            userOperation.initCode,
-            userOperation.callData,
-            userOperation.callGasLimit,
-            userOperation.verificationGasLimit,
-            userOperation.preVerificationGas,
-            userOperation.maxFeePerGas,
-            userOperation.maxPriorityFeePerGas,
-            userOperation.paymasterAndData
-          ]
-        )
+  return `0x${ethers
+    .keccak256(
+      abiCoder.encode(
+        ['bytes', 'bytes', 'uint256', 'uint256', 'uint256', 'uint256', 'uint256', 'bytes'],
+        [
+          userOperation.initCode,
+          userOperation.callData,
+          userOperation.callGasLimit,
+          userOperation.verificationGasLimit,
+          userOperation.preVerificationGas,
+          userOperation.maxFeePerGas,
+          userOperation.maxPriorityFeePerGas,
+          userOperation.paymasterAndData
+        ]
       )
-      .substring(18) +
-    ethers.toBeHex(0, 8).substring(2)
-  )
+    )
+    .substring(18)}${ethers.toBeHex(0, 8).substring(2)}`
 }
 
 export function isErc4337Broadcast(
@@ -154,4 +160,15 @@ export function isErc4337Broadcast(
   const isEnabled = network && network.erc4337 ? network.erc4337.enabled : false
 
   return isEnabled && accountState.isV2
+}
+
+export function shouldUseOneTimeNonce(userOp: UserOperation) {
+  return userOp.requestType !== 'standard'
+}
+
+export function shouldUsePaymaster(userOp: UserOperation, feeTokenAddr: string) {
+  return (
+    userOp.requestType !== 'standard' ||
+    feeTokenAddr !== '0x0000000000000000000000000000000000000000'
+  )
 }

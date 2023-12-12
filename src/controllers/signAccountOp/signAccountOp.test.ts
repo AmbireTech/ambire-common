@@ -1,3 +1,5 @@
+/* eslint-disable class-methods-use-this */
+
 import { JsonRpcProvider } from 'ethers'
 import fetch from 'node-fetch'
 
@@ -109,7 +111,7 @@ const createAccountOp = (signingKeyAddr: string) => {
     gasLimit: null,
     gasFeePayment: null,
     networkId: 'ethereum',
-    nonce: null, // does not matter when estimating
+    nonce: 1n,
     calls: [{ to, value: BigInt(0), data }],
     accountOpToExecuteBefore: null,
     signature: null
@@ -139,12 +141,20 @@ describe('SignAccountOp Controller ', () => {
 
     const ethereum = networks.find((x) => x.id === 'ethereum')!
     const provider = new JsonRpcProvider(ethereum!.rpcUrl)
-    const prices = await getGasPriceRecommendations(provider)
+    const prices = await getGasPriceRecommendations(provider, ethereum)
 
     const { op, account, nativeToCheck, feeTokens } = createAccountOp(keyPublicAddress)
-    const estimation = await estimate(provider, ethereum, account, op, nativeToCheck, feeTokens)
     const accounts = [account]
     const accountStates = await getAccountsInfo(accounts)
+    const estimation = await estimate(
+      provider,
+      ethereum,
+      account,
+      op,
+      accountStates[account.addr][ethereum.id],
+      nativeToCheck,
+      feeTokens
+    )
     const portfolio = new PortfolioController(
       storage,
       providers,

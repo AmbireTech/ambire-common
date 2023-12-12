@@ -8,8 +8,8 @@ import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
 import { isErc4337Broadcast } from '../userOperation/userOperation'
 
 // https://eips.ethereum.org/EIPS/eip-1559
-const BASE_FEE_MAX_CHANGE_DENOMINATOR = 8n
-const ELASTICITY_MULTIPLIER = 2n
+const DEFAULT_BASE_FEE_MAX_CHANGE_DENOMINATOR = 8n
+const DEFAULT_ELASTICITY_MULTIPLIER = 2n
 
 // multipliers from the old: https://github.com/AmbireTech/relayer/blob/wallet-v2/src/utils/gasOracle.js#L64-L76
 // 2x, 2x*0.4, 2x*0.2 - all of them divided by 8 so 0.25, 0.1, 0.05 - those seem usable; with a slight tweak for the ape
@@ -71,18 +71,24 @@ function average(data: bigint[]): bigint {
 
 export async function getGasPriceRecommendations(
   provider: Provider,
+  network: NetworkDescriptor,
   blockTag: string | number = -1
 ): Promise<GasRecommendation[]> {
   const lastBlock = await provider.getBlock(blockTag, true)
   if (lastBlock == null) throw new Error('unable to retrieve block')
   // https://github.com/ethers-io/ethers.js/issues/3683#issuecomment-1436554995
   const txns = lastBlock.prefetchedTransactions
-  if (lastBlock.baseFeePerGas != null) {
+  if (network.feeOptions.is1559 && lastBlock.baseFeePerGas != null) {
     // https://eips.ethereum.org/EIPS/eip-1559
-    const gasTarget = lastBlock.gasLimit / ELASTICITY_MULTIPLIER
+    const elasticityMultiplier =
+      network.feeOptions.elasticityMultiplier ?? DEFAULT_ELASTICITY_MULTIPLIER
+    const baseFeeMaxChangeDenominator =
+      network.feeOptions.baseFeeMaxChangeDenominator ?? DEFAULT_BASE_FEE_MAX_CHANGE_DENOMINATOR
+
+    const gasTarget = lastBlock.gasLimit / elasticityMultiplier
     const baseFeePerGas = lastBlock.baseFeePerGas
     const getBaseFeeDelta = (delta: bigint) =>
-      (baseFeePerGas * delta) / gasTarget / BASE_FEE_MAX_CHANGE_DENOMINATOR
+      (baseFeePerGas * delta) / gasTarget / baseFeeMaxChangeDenominator
     let expectedBaseFee = baseFeePerGas
     if (lastBlock.gasUsed > gasTarget) {
       const baseFeeDelta = getBaseFeeDelta(lastBlock.gasUsed - gasTarget)
@@ -90,6 +96,11 @@ export async function getGasPriceRecommendations(
     } else if (lastBlock.gasUsed < gasTarget) {
       const baseFeeDelta = getBaseFeeDelta(gasTarget - lastBlock.gasUsed)
       expectedBaseFee -= baseFeeDelta
+    }
+
+    // if the estimated fee is below the chain minimum, set it to the min
+    if (network.feeOptions.minBaseFee && expectedBaseFee < network.feeOptions.minBaseFee) {
+      expectedBaseFee = network.feeOptions.minBaseFee
     }
 
     const tips = filterOutliers(txns.map((x) => x.maxPriorityFeePerGas!).filter((x) => x > 0))
@@ -106,11 +117,11 @@ export async function getGasPriceRecommendations(
   }))
 }
 
-export function getCallDataAdditional(
+export function getProbableCallData(
   accountOp: AccountOp,
   network: NetworkDescriptor,
   accountState: AccountOnchainState
-): bigint {
+): string {
   let estimationCallData
 
   // always call executeMultiple as the worts case scenario
@@ -140,6 +151,15 @@ export function getCallDataAdditional(
     ])
   }
 
+  return estimationCallData
+}
+
+export function getCallDataAdditional(
+  accountOp: AccountOp,
+  network: NetworkDescriptor,
+  accountState: AccountOnchainState
+): bigint {
+  const estimationCallData = getProbableCallData(accountOp, network, accountState)
   const FIXED_OVERHEAD = 21000n
   const bytes = Buffer.from(estimationCallData.substring(2))
   const nonZeroBytes = BigInt(bytes.filter((b) => b).length)
