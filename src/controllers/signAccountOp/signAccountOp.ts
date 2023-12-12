@@ -237,6 +237,13 @@ export class SignAccountOpController extends EventEmitter {
       errors.push(this.status.error)
     }
 
+    // The signing might fail, tell the user why but allow the user to retry signing,
+    // @ts-ignore fix TODO: type mismatch
+    if (this.status?.type === SigningStatus.ReadyToSign && !!this.status.error) {
+      // @ts-ignore typescript complains, but the error being present gets checked above
+      errors.push(this.status.error)
+    }
+
     return errors
   }
 
@@ -530,8 +537,8 @@ export class SignAccountOpController extends EventEmitter {
     return Object.values(FeeSpeed) as string[]
   }
 
-  #setSigningError(error: string) {
-    this.status = { type: SigningStatus.UnableToSign, error }
+  #setSigningError(error: string, type = SigningStatus.UnableToSign) {
+    this.status = { type, error }
     this.emitUpdate()
   }
 
@@ -581,7 +588,7 @@ export class SignAccountOpController extends EventEmitter {
 
   async sign(externalSignerController?: ExternalSignerController) {
     if (!this.accountOp?.signingKeyAddr || !this.accountOp?.signingKeyType)
-      return this.#setSigningError('We cannot sign your transaction. Please choose a signer.')
+      return this.#setSigningError('We cannot sign your transaction. Please choose a signer key.')
 
     if (!this.accountOp?.gasFeePayment)
       return this.#setSigningError('Please select a token and an account for paying the gas fee.')
@@ -605,8 +612,8 @@ export class SignAccountOpController extends EventEmitter {
 
     if (signer.init) signer.init(externalSignerController)
     const provider = this.#providers[this.accountOp.networkId]
-    const nonce = await provider.getTransactionCount(this.accountOp.accountAddr)
     try {
+      const nonce = await provider.getTransactionCount(this.accountOp.accountAddr)
       // In case of EOA account
       if (!this.#account.creation) {
         if (this.accountOp.calls.length !== 1)
@@ -723,7 +730,7 @@ export class SignAccountOpController extends EventEmitter {
       this.status = { type: SigningStatus.Done }
       this.emitUpdate()
     } catch (error: any) {
-      this.#setSigningError(`Signing failed: ${error?.message}`)
+      this.#setSigningError(`Signing failed: ${error?.message}`, SigningStatus.ReadyToSign)
     }
     // TODO: Now, the UI needs to call mainCtrl.broadcastSignedAccountOp(mainCtrl.signAccountOp.accountOp)
   }

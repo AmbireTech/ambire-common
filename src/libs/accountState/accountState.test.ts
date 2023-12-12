@@ -47,7 +47,7 @@ describe('AccountState', () => {
 
     const signerAddr = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
     const priv = { addr: signerAddr, hash: true }
-    const bytecode = await getBytecode(polygon, [priv])
+    const bytecode = await getBytecode([priv])
     const accountNotDeployed = {
       addr: getAmbireAccountAddress(AMBIRE_ACCOUNT_FACTORY, bytecode),
       associatedKeys: [signerAddr],
@@ -73,7 +73,7 @@ describe('AccountState', () => {
       { addr: '0x9188fdd757Df66B4F693D624Ed6A13a15Cf717D7', hash: true },
       { addr: '0x43Ec7De60E89dabB7cAedc89Cd1F3c8D52707312', hash: true }
     ]
-    const bytecodeErc4337 = await getBytecode(polygon, privs)
+    const bytecodeErc4337 = await getBytecode(privs)
     const accountErc4337 = {
       addr: '0x76b277955846313Ec50F26eD155C26f5aED295B1',
       associatedKeys: [

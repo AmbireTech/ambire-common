@@ -280,13 +280,23 @@ export class ActivityController extends EventEmitter {
                 networkConfig!,
                 this.#accounts[accountOp.accountAddr][accountOp.networkId]
               )
-              const receipt = is4337
-                ? await bundler.getReceipt(accountOp.txnId, networkConfig!)
-                : await provider.getTransactionReceipt(accountOp.txnId)
-              if (receipt) {
-                this.#accountsOps[this.filters!.account][network][accountOpIndex].status =
-                  receipt.status ? AccountOpStatus.Success : AccountOpStatus.Failure
-                return
+              try {
+                const receipt = is4337
+                  ? await bundler.getReceipt(accountOp.txnId, networkConfig!)
+                  : await provider.getTransactionReceipt(accountOp.txnId)
+                if (receipt) {
+                  this.#accountsOps[this.filters!.account][network][accountOpIndex].status =
+                    receipt.status ? AccountOpStatus.Success : AccountOpStatus.Failure
+                  return
+                }
+              } catch {
+                this.emitError({
+                  level: 'silent',
+                  message: `Failed to determine transaction status on ${accountOp.networkId} for ${accountOp.txnId}.`,
+                  error: new Error(
+                    `activity: failed to get transaction receipt for ${accountOp.txnId}`
+                  )
+                })
               }
 
               if (

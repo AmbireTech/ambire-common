@@ -51,16 +51,24 @@ export class PortfolioController extends EventEmitter {
 
   #storage: Storage
 
+  #providers: { [networkId: string]: JsonRpcProvider } = {}
+
   #callRelayer: Function
 
   #pinned: string[]
 
   #minUpdateInterval: number = 20000 // 20 seconds
 
-  constructor(storage: Storage, relayerUrl: string, pinned: string[]) {
+  constructor(
+    storage: Storage,
+    providers: { [networkId: string]: JsonRpcProvider },
+    relayerUrl: string,
+    pinned: string[]
+  ) {
     super()
     this.latest = {}
     this.pending = {}
+    this.#providers = providers
     this.#portfolioLibs = new Map()
     this.#storage = storage
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
@@ -253,9 +261,15 @@ export class PortfolioController extends EventEmitter {
     await Promise.all(
       networks.map(async (network) => {
         const key = `${network.id}:${accountId}`
-        if (!this.#portfolioLibs.has(key)) {
-          const provider = new JsonRpcProvider(network.rpcUrl)
-          this.#portfolioLibs.set(key, new Portfolio(fetch, provider, network))
+        // Initialize a new Portfolio lib if:
+        // 1. It does not exist in the portfolioLibs map
+        // 2. The network RPC URL has changed
+        if (
+          !this.#portfolioLibs.has(key) ||
+          this.#portfolioLibs.get(key)?.network?.rpcUrl !==
+            this.#providers[network.id]?._getConnection().url
+        ) {
+          this.#portfolioLibs.set(key, new Portfolio(fetch, this.#providers[network.id], network))
         }
         const portfolioLib = this.#portfolioLibs.get(key)!
 
@@ -269,7 +283,7 @@ export class PortfolioController extends EventEmitter {
         // 2. No change occurs if both variables are undefined.
         const areAccountOpsChanged =
           // eslint-disable-next-line prettier/prettier
-        (currentAccountOps && simulatedAccountOps)
+          currentAccountOps && simulatedAccountOps
             ? !isAccountOpsIntentEqual(currentAccountOps, simulatedAccountOps)
             : currentAccountOps !== simulatedAccountOps
 

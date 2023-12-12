@@ -14,6 +14,7 @@ describe('Portfolio Controller ', () => {
   const ethereum = networks.find((x) => x.id === 'ethereum')
   if (!ethereum) throw new Error('unable to find ethereum network in consts')
   const provider = new JsonRpcProvider(ethereum.rpcUrl)
+  const providers = { ethereum: provider }
 
   const account = {
     addr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
@@ -72,7 +73,7 @@ describe('Portfolio Controller ', () => {
       }
 
       const storage = produceMemoryStore()
-      const controller = new PortfolioController(storage, relayerUrl, [])
+      const controller = new PortfolioController(storage, providers, relayerUrl, [])
       await controller.updateSelectedAccount([account2], networks, account2.addr)
 
       const storagePreviousHints = await storage.get('previousHints', {})
@@ -90,7 +91,7 @@ describe('Portfolio Controller ', () => {
   describe('Latest tokens', () => {
     test('Latest tokens are fetched and kept in the controller, while the pending should not be fetched (no AccountOp passed)', (done) => {
       const storage = produceMemoryStore()
-      const controller = new PortfolioController(storage, relayerUrl, [])
+      const controller = new PortfolioController(storage, providers, relayerUrl, [])
 
       controller.onUpdate(() => {
         const latestState =
@@ -116,7 +117,7 @@ describe('Portfolio Controller ', () => {
       const done = jest.fn(() => null)
 
       const storage = produceMemoryStore()
-      const controller = new PortfolioController(storage, relayerUrl, [])
+      const controller = new PortfolioController(storage, providers, relayerUrl, [])
       let pendingState1: any
       controller.onUpdate(() => {
         if (!pendingState1?.isReady) {
@@ -138,7 +139,7 @@ describe('Portfolio Controller ', () => {
 
     test('Latest and Pending are fetched, because `forceUpdate` flag is set', (done) => {
       const storage = produceMemoryStore()
-      const controller = new PortfolioController(storage, relayerUrl, [])
+      const controller = new PortfolioController(storage, providers, relayerUrl, [])
 
       controller.onUpdate(() => {
         const latestState =
@@ -172,7 +173,7 @@ describe('Portfolio Controller ', () => {
       const accountOp = await getAccountOp()
 
       const storage = produceMemoryStore()
-      const controller = new PortfolioController(storage, relayerUrl, [])
+      const controller = new PortfolioController(storage, providers, relayerUrl, [])
 
       await controller.updateSelectedAccount([account], networks, account.addr, accountOp)
 
@@ -226,7 +227,7 @@ describe('Portfolio Controller ', () => {
       const accountOp = await getAccountOp()
 
       const storage = produceMemoryStore()
-      const controller = new PortfolioController(storage, relayerUrl, [])
+      const controller = new PortfolioController(storage, providers, relayerUrl, [])
       let pendingState1: any
       let pendingState2: any
       controller.onUpdate(() => {
@@ -253,7 +254,7 @@ describe('Portfolio Controller ', () => {
       const accountOp = await getAccountOp()
 
       const storage = produceMemoryStore()
-      const controller = new PortfolioController(storage, relayerUrl, [])
+      const controller = new PortfolioController(storage, providers, relayerUrl, [])
 
       await controller.updateSelectedAccount([account], networks, account.addr, accountOp)
       const pendingState1 =
@@ -274,7 +275,7 @@ describe('Portfolio Controller ', () => {
       const accountOp = await getAccountOp()
 
       const storage = produceMemoryStore()
-      const controller = new PortfolioController(storage, relayerUrl, [])
+      const controller = new PortfolioController(storage, providers, relayerUrl, [])
 
       await controller.updateSelectedAccount([account], networks, account.addr, accountOp)
       const pendingState1 =

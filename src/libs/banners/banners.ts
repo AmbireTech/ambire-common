@@ -1,4 +1,6 @@
-import { Account } from '../../interfaces/account'
+import { NetworkDescriptor } from 'interfaces/networkDescriptor'
+
+import { Account, AccountStates } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
 import { UserRequest } from '../../interfaces/userRequest'
 
@@ -149,4 +151,41 @@ export const getAccountOpBannersForSmartAccount = ({
   })
 
   return txnBanners
+}
+
+export const getNetworksWithFailedRPC = ({
+  accountStates,
+  networks
+}: {
+  accountStates: AccountStates
+  networks: NetworkDescriptor[]
+}): Banner[] => {
+  let networksWithFailedRPC: string[] = []
+  Object.keys(accountStates).forEach((account) => {
+    const currentAccount = accountStates[account]
+
+    // Check if all networks have accounts states. Ones that don't are the ones with failed RPC.
+    networks.forEach((network) => {
+      if (!currentAccount[network.id]) {
+        if (networksWithFailedRPC.includes(network.id)) return
+
+        networksWithFailedRPC.push(network.id)
+        return
+      }
+
+      networksWithFailedRPC = networksWithFailedRPC.filter((n) => network.id !== n)
+    })
+  })
+
+  return networksWithFailedRPC.map((network) => {
+    const networkData = networks.find((n: NetworkDescriptor) => n.id === network)
+
+    return {
+      id: networkData?.id || new Date().getTime(),
+      topic: 'WARNING',
+      title: `Failed to retrieve network data for ${networkData?.name}(RPC error)`,
+      text: `Affected features(${networkData?.name}): visible tokens, sign message/transaction, ENS/UD domain resolving, add account. Please try again later or contact support.`,
+      actions: []
+    }
+  })
 }

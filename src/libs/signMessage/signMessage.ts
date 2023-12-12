@@ -134,12 +134,19 @@ export async function verifyMessage({
   // this 'magic' universal validator contract will deploy itself within the eth_call, try to verify the signature using
   // ERC-6492, ERC-1271 and ecrecover, and return the value to us
   const coder = new AbiCoder()
-  const callResult = await provider!.call({
-    data: concat([
-      universalValidator,
-      coder.encode(['address', 'bytes32', 'bytes'], [signer, finalDigest, signature])
-    ])
-  })
+  let callResult
+  try {
+    callResult = await provider!.call({
+      data: concat([
+        universalValidator,
+        coder.encode(['address', 'bytes32', 'bytes'], [signer, finalDigest, signature])
+      ])
+    })
+  } catch {
+    throw new Error(
+      'Something went wrong while validating the message you signed. If the problem persists, please contact Ambire support. Error details: call to UniversalValidator failed.'
+    )
+  }
 
   if (callResult === '0x01') return true
   if (callResult === '0x00') return false
