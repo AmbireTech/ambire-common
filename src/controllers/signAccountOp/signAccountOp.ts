@@ -674,8 +674,15 @@ export class SignAccountOpController extends EventEmitter {
         const feeTokenEstimation = this.#estimation!.feePaymentOptions.find(
           (option) => option.address === this.selectedTokenAddr && this.paidBy === option.paidBy
         )!
+        let amountInWei = gasFeePayment.amount
+        const feeToken = this.#getPortfolioToken(this.selectedTokenAddr!)
+        if (feeToken?.address !== '0x0000000000000000000000000000000000000000') {
+          const nativeRatio = this.#getNativeToFeeTokenRatio(feeToken!)
+          amountInWei =
+            (gasFeePayment.amount * BigInt(10 ** (18 + 18 - feeToken!.decimals))) / nativeRatio
+        }
         const gasPrice =
-          (gasFeePayment.amount - feeTokenEstimation.addedNative) / gasFeePayment.simulatedGasLimit
+          (amountInWei - feeTokenEstimation.addedNative) / gasFeePayment.simulatedGasLimit
         userOperation.maxFeePerGas = ethers.toBeHex(gasPrice)
         userOperation.maxPriorityFeePerGas = ethers.toBeHex(gasFeePayment.maxPriorityFeePerGas!)
 
