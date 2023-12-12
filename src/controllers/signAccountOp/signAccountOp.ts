@@ -713,25 +713,22 @@ export class SignAccountOpController extends EventEmitter {
         }
 
         if (usesPaymaster) {
-          const response = await this.#callRelayer(
-            `/v2/paymaster/${this.accountOp.networkId}/sign`,
-            'POST',
-            {
-              // send without the requestType prop
-              userOperation: (({ requestType, ...o }) => o)(userOperation),
-              paymaster: AMBIRE_PAYMASTER
-            }
-          )
-          if (response.success) {
+          try {
+            const response = await this.#callRelayer(
+              `/v2/paymaster/${this.accountOp.networkId}/sign`,
+              'POST',
+              {
+                // send without the requestType prop
+                userOperation: (({ requestType, ...o }) => o)(userOperation),
+                paymaster: AMBIRE_PAYMASTER
+              }
+            )
             userOperation.paymasterAndData = response.data.paymasterAndData
-
             if (usesOneTimeNonce) {
               userOperation.nonce = getOneTimeNonce(userOperation)
             }
-          } else {
-            this.#setSigningError(
-              `User operation signing failed on paymaster approval: ${response.data.errorState}`
-            )
+          } catch (e: any) {
+            return this.#setSigningError(e.message)
           }
         }
 
