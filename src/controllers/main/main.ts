@@ -4,7 +4,7 @@ import { NetworkPreference, NetworkPreferences } from 'interfaces/settings'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFactory.json'
-import { Account, AccountId, AccountStates } from '../../interfaces/account'
+import { Account, AccountId, AccountOnchainState, AccountStates } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
 import {
   ExternalSignerController,
@@ -321,20 +321,22 @@ export class MainController extends EventEmitter {
   ): Promise<AccountStates> {
     // if any, update the account state only for the passed networks; else - all
     const updateOnlyPassedNetworks = updateOnlyNetworksWithIds.length
-    const updateOnNetworks = updateOnlyPassedNetworks
+    const networksToUpdate = updateOnlyPassedNetworks
       ? this.settings.networks.filter((network) => updateOnlyNetworksWithIds.includes(network.id))
       : this.settings.networks
 
     const fetchedState = await Promise.all(
-      updateOnNetworks.map(async (network) =>
+      networksToUpdate.map(async (network) =>
         getAccountState(this.settings.providers[network.id], network, accounts, blockTag).catch(
           () => []
         )
       )
     )
-    // format into NetworkDescriptor['id'] => AccountOnChainState | []
-    const networkState: any = {}
-    updateOnNetworks.forEach((network: NetworkDescriptor, index) => {
+
+    const networkState: { [networkId: NetworkDescriptor['id']]: AccountOnchainState[] } = {}
+    networksToUpdate.forEach((network: NetworkDescriptor, index) => {
+      if (!fetchedState[index].length) return
+
       networkState[network.id] = fetchedState[index]
     })
 
