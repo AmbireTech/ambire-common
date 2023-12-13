@@ -317,10 +317,13 @@ export class MainController extends EventEmitter {
   async #getAccountsInfo(
     accounts: Account[],
     blockTag: string | number = 'latest',
-    networks: NetworkDescriptor[] = []
+    updateOnlyNetworksWithIds: NetworkDescriptor['id'][] = []
   ): Promise<AccountStates> {
     // if any, update the account state only for the passed networks; else - all
-    const updateOnNetworks = networks.length ? networks : this.settings.networks
+    const updateOnlyPassedNetworks = updateOnlyNetworksWithIds.length
+    const updateOnNetworks = updateOnlyPassedNetworks
+      ? this.settings.networks.filter((network) => updateOnlyNetworksWithIds.includes(network.id))
+      : this.settings.networks
 
     const result = await Promise.all(
       updateOnNetworks.map(async (network) => {
@@ -338,10 +341,18 @@ export class MainController extends EventEmitter {
     )
 
     const states = accounts.reduce((accStates: AccountStates, acc: Account, accIndex: number) => {
-      const networkStates = updateOnNetworks.reduce(
+      const networkStates = this.settings.networks.reduce(
         (netStates: AccountStates[keyof AccountStates], network, netIndex: number) => {
-          if (!(netIndex in result) || !(accIndex in result[netIndex])) return netStates
+          // if a flag for updateOnlyPassedNetworks is passed, we load
+          // the ones not requested from the previous state
+          if (updateOnlyPassedNetworks && !updateOnlyNetworksWithIds.includes(network.id)) {
+            return {
+              ...netStates,
+              [network.id]: this.accountStates[acc.addr][network.id]
+            }
+          }
 
+          if (!(netIndex in result) || !(accIndex in result[netIndex])) return netStates
           return {
             ...netStates,
             [network.id]: result[netIndex][accIndex]
@@ -361,7 +372,7 @@ export class MainController extends EventEmitter {
 
   async updateAccountStates(
     blockTag: string | number = 'latest',
-    networks: NetworkDescriptor[] = []
+    networks: NetworkDescriptor['id'][] = []
   ) {
     this.accountStates = await this.#getAccountsInfo(this.accounts, blockTag, networks)
     this.lastUpdate = new Date()
@@ -968,7 +979,7 @@ export class MainController extends EventEmitter {
     await this.settings.updateNetworkPreferences(networkPreferences, networkId)
 
     if (networkPreferences?.rpcUrl) {
-      await this.updateAccountStates('latest')
+      await this.updateAccountStates('latest', [networkId])
       await this.updateSelectedAccount(this.selectedAccount, true)
     }
   }
@@ -980,7 +991,7 @@ export class MainController extends EventEmitter {
     await this.settings.resetNetworkPreference(preferenceKey, networkId)
 
     if (preferenceKey === 'rpcUrl') {
-      await this.updateAccountStates('latest')
+      await this.updateAccountStates('latest', [networkId])
       await this.updateSelectedAccount(this.selectedAccount, true)
     }
   }
