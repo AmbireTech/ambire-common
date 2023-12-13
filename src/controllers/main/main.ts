@@ -325,24 +325,22 @@ export class MainController extends EventEmitter {
       ? this.settings.networks.filter((network) => updateOnlyNetworksWithIds.includes(network.id))
       : this.settings.networks
 
-    const result = await Promise.all(
-      updateOnNetworks.map(async (network) => {
-        try {
-          return await getAccountState(
-            this.settings.providers[network.id],
-            network,
-            accounts,
-            blockTag
-          )
-        } catch {
-          return []
-        }
-      })
+    const fetchedState = await Promise.all(
+      updateOnNetworks.map(async (network) =>
+        getAccountState(this.settings.providers[network.id], network, accounts, blockTag).catch(
+          () => []
+        )
+      )
     )
+    // format into NetworkDescriptor['id'] => AccountOnChainState | []
+    const networkState: any = {}
+    updateOnNetworks.forEach((network: NetworkDescriptor, index) => {
+      networkState[network.id] = fetchedState[index]
+    })
 
     const states = accounts.reduce((accStates: AccountStates, acc: Account, accIndex: number) => {
       const networkStates = this.settings.networks.reduce(
-        (netStates: AccountStates[keyof AccountStates], network, netIndex: number) => {
+        (netStates: AccountStates[keyof AccountStates], network) => {
           // if a flag for updateOnlyPassedNetworks is passed, we load
           // the ones not requested from the previous state
           if (updateOnlyPassedNetworks && !updateOnlyNetworksWithIds.includes(network.id)) {
@@ -352,10 +350,11 @@ export class MainController extends EventEmitter {
             }
           }
 
-          if (!(netIndex in result) || !(accIndex in result[netIndex])) return netStates
+          if (!(network.id in networkState) || !(accIndex in networkState[network.id]))
+            return netStates
           return {
             ...netStates,
-            [network.id]: result[netIndex][accIndex]
+            [network.id]: networkState[network.id][accIndex]
           }
         },
         {}
