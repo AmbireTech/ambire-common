@@ -27,7 +27,7 @@ import {
   getAccountOpBannersForEOA,
   getAccountOpBannersForSmartAccount,
   getMessageBanners,
-  getNetworksWithFailedRPC,
+  getNetworksWithFailedRPCBanners,
   getPendingAccountOpBannersForEOA
 } from '../../libs/banners/banners'
 import { estimate, EstimateResult } from '../../libs/estimate/estimate'
@@ -316,10 +316,14 @@ export class MainController extends EventEmitter {
 
   async #getAccountsInfo(
     accounts: Account[],
-    blockTag: string | number = 'latest'
+    blockTag: string | number = 'latest',
+    networks: NetworkDescriptor[] = []
   ): Promise<AccountStates> {
+    // if any, update the account state only for the passed networks; else - all
+    const updateOnNetworks = networks.length ? networks : this.settings.networks
+
     const result = await Promise.all(
-      this.settings.networks.map(async (network) => {
+      updateOnNetworks.map(async (network) => {
         try {
           return await getAccountState(
             this.settings.providers[network.id],
@@ -334,7 +338,7 @@ export class MainController extends EventEmitter {
     )
 
     const states = accounts.reduce((accStates: AccountStates, acc: Account, accIndex: number) => {
-      const networkStates = this.settings.networks.reduce(
+      const networkStates = updateOnNetworks.reduce(
         (netStates: AccountStates[keyof AccountStates], network, netIndex: number) => {
           if (!(netIndex in result) || !(accIndex in result[netIndex])) return netStates
 
@@ -355,8 +359,11 @@ export class MainController extends EventEmitter {
     return states
   }
 
-  async updateAccountStates(blockTag: string | number = 'latest') {
-    this.accountStates = await this.#getAccountsInfo(this.accounts, blockTag)
+  async updateAccountStates(
+    blockTag: string | number = 'latest',
+    networks: NetworkDescriptor[] = []
+  ) {
+    this.accountStates = await this.#getAccountsInfo(this.accounts, blockTag, networks)
     this.lastUpdate = new Date()
     this.emitUpdate()
   }
@@ -989,7 +996,7 @@ export class MainController extends EventEmitter {
       accounts
     })
     const messageBanners = getMessageBanners({ userRequests })
-    const networksWithFailedRPCBanners = getNetworksWithFailedRPC({
+    const networksWithFailedRPCBanners = getNetworksWithFailedRPCBanners({
       accountStates: this.accountStates,
       networks: this.settings.networks
     })
