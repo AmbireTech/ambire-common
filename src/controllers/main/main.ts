@@ -6,7 +6,12 @@ import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFactory.json'
 import { Account, AccountId, AccountStates } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
-import { ExternalSignerController, Key, KeystoreSignerType } from '../../interfaces/keystore'
+import {
+  ExternalSignerController,
+  Key,
+  KeystoreSignerType,
+  TxnRequest
+} from '../../interfaces/keystore'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
 import { Storage } from '../../interfaces/storage'
 import { Message, UserRequest } from '../../interfaces/userRequest'
@@ -195,7 +200,7 @@ export class MainController extends EventEmitter {
       this.#storage,
       this.#fetch
     )
-    this.activity = new ActivityController(this.#storage, this.accountStates, '')
+    this.activity = new ActivityController(this.#storage, this.accountStates, this.#relayerUrl)
     if (this.selectedAccount) {
       this.activity.init({ filters: { account: this.selectedAccount } })
     }
@@ -293,7 +298,8 @@ export class MainController extends EventEmitter {
       gasPriceNetworks.map(async (network) => {
         try {
           this.gasPrices[network] = await getGasPriceRecommendations(
-            this.settings.providers[network]
+            this.settings.providers[network],
+            this.settings.networks.find((net) => net.id === network)!
           )
         } catch {
           this.emitError({
@@ -635,6 +641,7 @@ export class MainController extends EventEmitter {
         network,
         account,
         accountOp,
+        this.accountStates[accountOp.accountAddr][accountOp.networkId],
         EOAaccounts.map((acc) => acc.addr),
         // @TODO - first time calling this, portfolio is still not loaded.
         feeTokens,
@@ -713,11 +720,60 @@ export class MainController extends EventEmitter {
     }
 
     let transactionRes: TransactionResponse | { hash: string; nonce: number } | null = null
+    const estimation =
+      this.accountOpsToBeSigned[accountOp.accountAddr][accountOp.networkId]!.estimation!
+    const feeTokenEstimation = estimation.feePaymentOptions.find(
+      (option) =>
+        option.address === accountOp.gasFeePayment?.inToken &&
+        option.paidBy === accountOp.gasFeePayment?.paidBy
+    )!
 
     // Legacy account (EOA)
     if (!isSmartAccount(account)) {
       try {
-        transactionRes = await provider.broadcastTransaction(accountOp.signature)
+        const feePayerKeys = this.keystore.keys.filter(
+          (key) => key.addr === accountOp.gasFeePayment!.paidBy
+        )
+        const feePayerKey =
+          // Temporarily prioritize the key with the same type as the signing key.
+          // TODO: Implement a way to choose the key type to broadcast with.
+          feePayerKeys.find((key) => key.type === accountOp.signingKeyType) || feePayerKeys[0]
+        if (!feePayerKey) {
+          return this.#throwAccountOpBroadcastError(
+            new Error(
+              `Key with address: ${accountOp.gasFeePayment!.paidBy} for account with address: ${
+                accountOp.accountAddr
+              } not found`
+            )
+          )
+        }
+        const signer = await this.keystore.getSigner(feePayerKey.addr, feePayerKey.type)
+        if (signer.init) signer.init(externalSignerController)
+
+        const gasFeePayment = accountOp.gasFeePayment!
+        const { to, value, data } = accountOp.calls[0]
+        const rawTxn: TxnRequest = {
+          to,
+          value,
+          data,
+          chainId: network!.chainId,
+          nonce: await provider.getTransactionCount(accountOp.accountAddr),
+          gasLimit: gasFeePayment.simulatedGasLimit
+        }
+
+        // if it's eip1559, send it as such. If no, go to legacy
+        const gasPrice =
+          (gasFeePayment.amount - feeTokenEstimation.addedNative) / gasFeePayment.simulatedGasLimit
+        if (gasFeePayment.maxPriorityFeePerGas) {
+          rawTxn.maxFeePerGas = gasPrice
+          rawTxn.maxPriorityFeePerGas = gasFeePayment.maxPriorityFeePerGas
+        } else {
+          rawTxn.gasPrice = gasPrice
+        }
+
+        transactionRes = await provider.broadcastTransaction(
+          await signer.signRawTransaction(rawTxn)
+        )
       } catch (error: any) {
         return this.#throwAccountOpBroadcastError(new Error(error), error.message || undefined)
       }
@@ -728,22 +784,14 @@ export class MainController extends EventEmitter {
       accountOp.gasFeePayment &&
       accountOp.gasFeePayment.paidBy !== account.addr
     ) {
-      const estimation =
-        this.accountOpsToBeSigned[accountOp.accountAddr][accountOp.networkId]!.estimation
-      if (!estimation) {
-        return this.#throwAccountOpBroadcastError(
-          new Error(`Estimation not done for account with address: ${accountOp.accountAddr}`)
-        )
-      }
-
-      const broadcastKeys = this.keystore.keys.filter(
+      const feePayerKeys = this.keystore.keys.filter(
         (key) => key.addr === accountOp.gasFeePayment!.paidBy
       )
-      const broadcastKey =
+      const feePayerKey =
         // Temporarily prioritize the key with the same type as the signing key.
         // TODO: Implement a way to choose the key type to broadcast with.
-        broadcastKeys.find((key) => key.type === accountOp.signingKeyType) || broadcastKeys[0]
-      if (!broadcastKey) {
+        feePayerKeys.find((key) => key.type === accountOp.signingKeyType) || feePayerKeys[0]
+      if (!feePayerKey) {
         return this.#throwAccountOpBroadcastError(
           new Error(
             `Key with address: ${accountOp.gasFeePayment!.paidBy} for account with address: ${
@@ -775,10 +823,13 @@ export class MainController extends EventEmitter {
       }
 
       try {
-        const signer = await this.keystore.getSigner(broadcastKey.addr, broadcastKey.type)
+        const signer = await this.keystore.getSigner(feePayerKey.addr, feePayerKey.type)
         if (signer.init) signer.init(externalSignerController)
 
-        const signedTxn = await signer.signRawTransaction({
+        const gasPrice =
+          (accountOp.gasFeePayment.amount - feeTokenEstimation.addedNative) /
+          accountOp.gasFeePayment.simulatedGasLimit
+        const rawTxn: TxnRequest = {
           to,
           data,
           // We ultimately do a smart contract call, which means we don't need
@@ -787,12 +838,17 @@ export class MainController extends EventEmitter {
           value: BigInt(0),
           chainId: network.chainId,
           nonce: await provider.getTransactionCount(accountOp.gasFeePayment!.paidBy),
-          gasLimit: accountOp.gasFeePayment.simulatedGasLimit,
-          gasPrice:
-            (accountOp.gasFeePayment.amount - estimation!.addedNative) /
-            accountOp.gasFeePayment.simulatedGasLimit
-        })
+          gasLimit: accountOp.gasFeePayment.simulatedGasLimit
+        }
 
+        if (accountOp.gasFeePayment.maxPriorityFeePerGas) {
+          rawTxn.maxFeePerGas = gasPrice
+          rawTxn.maxPriorityFeePerGas = accountOp.gasFeePayment.maxPriorityFeePerGas
+        } else {
+          rawTxn.gasPrice = gasPrice
+        }
+
+        const signedTxn = await signer.signRawTransaction(rawTxn)
         transactionRes = await provider.broadcastTransaction(signedTxn)
       } catch {
         this.#throwAccountOpBroadcastError(
