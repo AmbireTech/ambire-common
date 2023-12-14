@@ -5,6 +5,9 @@ import { describe, expect } from '@jest/globals'
 
 import { getNonce } from '../../../test/helpers'
 import { networks } from '../../consts/networks'
+import { Account, AccountStates } from '../../interfaces/account'
+import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
+import { getAccountState } from '../accountState/accountState'
 import { Portfolio } from '../portfolio/portfolio'
 import { estimate, EstimateResult } from './estimate'
 
@@ -51,6 +54,26 @@ const feeTokens = [
 
 const portfolio = new Portfolio(fetch, provider, ethereum)
 
+const providers = Object.fromEntries(
+  networks.map((network) => [network.id, new JsonRpcProvider(network.rpcUrl)])
+)
+const getAccountsInfo = async (accounts: Account[]): Promise<AccountStates> => {
+  const result = await Promise.all(
+    networks.map((network) => getAccountState(providers[network.id], network, accounts))
+  )
+  const states = accounts.map((acc: Account, accIndex: number) => {
+    return [
+      acc.addr,
+      Object.fromEntries(
+        networks.map((network: NetworkDescriptor, netIndex: number) => {
+          return [network.id, result[netIndex][accIndex]]
+        })
+      )
+    ]
+  })
+  return Object.fromEntries(states)
+}
+
 describe('estimate', () => {
   const checkNativeBalance = (
     responseTokens: EstimateResult['feePaymentOptions'],
@@ -89,7 +112,16 @@ describe('estimate', () => {
       accountOpToExecuteBefore: null
     }
 
-    const response = await estimate(provider, ethereum, EOAAccount, op, [], [])
+    const accountStates = await getAccountsInfo([EOAAccount])
+    const response = await estimate(
+      provider,
+      ethereum,
+      EOAAccount,
+      op,
+      accountStates[EOAAccount.addr][ethereum.id],
+      [],
+      []
+    )
 
     // This is the min gas unit we can spend
     expect(response.gasUsed).toBeGreaterThan(21000n)
@@ -105,7 +137,7 @@ describe('estimate', () => {
       gasLimit: null,
       gasFeePayment: null,
       networkId: 'ethereum',
-      nonce: null, // does not matter when estimating
+      nonce: 1n,
       signature: spoofSig,
       calls: [{ to, value: BigInt(0), data }],
       accountOpToExecuteBefore: null
@@ -119,7 +151,16 @@ describe('estimate', () => {
       (token) => token.address === '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'
     )
 
-    const response = await estimate(provider, ethereum, account, op, nativeToCheck, feeTokens)
+    const accountStates = await getAccountsInfo([account])
+    const response = await estimate(
+      provider,
+      ethereum,
+      account,
+      op,
+      accountStates[account.addr][ethereum.id],
+      nativeToCheck,
+      feeTokens
+    )
     const usdtOutcome = response.feePaymentOptions!.find(
       (token) => token.address === '0xdAC17F958D2ee523a2206206994597C13D831ec7'
     )
@@ -144,7 +185,7 @@ describe('estimate', () => {
       gasLimit: null,
       gasFeePayment: null,
       networkId: 'ethereum',
-      nonce: null, // does not matter when estimating
+      nonce: 1n,
       signature: spoofSig,
       calls: [{ to, value: BigInt(0), data }],
       accountOpToExecuteBefore: null
@@ -157,7 +198,7 @@ describe('estimate', () => {
       gasLimit: null,
       gasFeePayment: null,
       networkId: 'ethereum',
-      nonce: null, // does not matter when estimating
+      nonce: 1n,
       signature: spoofSig,
       calls: [{ to, value: BigInt(0), data }],
       accountOpToExecuteBefore: {
@@ -174,12 +215,22 @@ describe('estimate', () => {
       }
     }
 
-    const response = await estimate(provider, ethereum, account, op, nativeToCheck, feeTokens)
+    const accountStates = await getAccountsInfo([account])
+    const response = await estimate(
+      provider,
+      ethereum,
+      account,
+      op,
+      accountStates[account.addr][ethereum.id],
+      nativeToCheck,
+      feeTokens
+    )
     const responseWithExecuteBefore = await estimate(
       provider,
       ethereum,
       account,
       opWithExecuteBefore,
+      accountStates[account.addr][ethereum.id],
       nativeToCheck,
       feeTokens,
       { calculateRefund: true }
@@ -210,21 +261,25 @@ describe('estimate', () => {
       gasLimit: null,
       gasFeePayment: null,
       networkId: 'optimism',
-      nonce: null, // does not matter when estimating
+      nonce: 1n,
       signature: spoofSig,
       calls: [{ to, value: BigInt(0), data: dataOptimism }],
       accountOpToExecuteBefore: null
     }
 
+    const accountStates = await getAccountsInfo([accountOptimism])
     const response = await estimate(
       providerOptimism,
       optimism,
       accountOptimism,
       opOptimism,
+      accountStates[accountOptimism.addr][optimism.id],
       nativeToCheck,
       feeTokens
     )
 
-    expect(response.addedNative).toBeGreaterThan(0n)
+    response.feePaymentOptions.forEach((feeToken) => {
+      expect(feeToken.addedNative).toBeGreaterThan(0n)
+    })
   })
 })

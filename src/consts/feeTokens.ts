@@ -103,5 +103,9 @@ export default [
   {
     address: '0x4fabb145d64652a948d72533023f6e7a623c7c53',
     networkId: 'optimism'
+  },
+  {
+    address: '0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E',
+    networkId: 'avalanche'
   }
 ]
