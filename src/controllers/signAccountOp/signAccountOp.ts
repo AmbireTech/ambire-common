@@ -71,7 +71,6 @@ function getTokenUsdAmount(token: TokenResult, gasAmount: bigint): string {
  * @returns hex string
  */
 function wrapEthSign(sig: string): string {
-  console.log({ sig })
   return `${sig}${'01'}`
 }
 
@@ -363,7 +362,7 @@ export class SignAccountOpController extends EventEmitter {
     // 2.1. First, we convert wei to native by dividing by 10^18 (representing the decimals).
     // 2.2. Now, with the amount in the native token, we incorporate nativeRatio decimals into the calculation (18 + 18) to standardize the amount.
     // 2.3. At this point, we precisely determine the number of fee tokens. For instance, if the amount is 3 USDC, we must convert it to a BigInt value, while also considering feeToken.decimals.
-    return (amountInWei * nativeRatio) / BigInt(10 ** (18 + 18 - feeTokenDecimals))
+    return (amountInWei * nativeRatio) / BigInt(10) ** BigInt(18 + 18 - feeTokenDecimals)
   }
 
   get feeSpeeds(): {
@@ -708,9 +707,7 @@ export class SignAccountOpController extends EventEmitter {
 
         const message = ethers.hexlify(accountOpSignableHash(this.accountOp))
         const sig = await signer.signMessage(message)
-        const signerAddr = ethers.verifyMessage(message, sig)
 
-        console.log({ message, signerAddr, keystoreKeys: await this.#keystore.getKeys() }, this)
         this.accountOp.signature = wrapEthSign(sig)
       }
 
