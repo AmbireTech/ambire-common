@@ -13,15 +13,19 @@ import {
   AccountOp,
   accountOpSignableHash,
   GasFeePayment,
-  getSignableCalls,
-  isNative
+  getSignableCalls
 } from '../../libs/accountOp/accountOp'
 import { EstimateResult } from '../../libs/estimate/estimate'
 import { GasRecommendation, getCallDataAdditional } from '../../libs/gasPrice/gasPrice'
 import { callsHumanizer } from '../../libs/humanizer'
 import { IrCall } from '../../libs/humanizer/interfaces'
 import { Price, TokenResult } from '../../libs/portfolio'
-import { getTargetEdgeCaseNonce, isErc4337Broadcast } from '../../libs/userOperation/userOperation'
+import {
+  getOneTimeNonce,
+  isErc4337Broadcast,
+  shouldUseOneTimeNonce,
+  shouldUsePaymaster
+} from '../../libs/userOperation/userOperation'
 import EventEmitter from '../eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
 import { PortfolioController } from '../portfolio/portfolio'
@@ -236,6 +240,13 @@ export class SignAccountOpController extends EventEmitter {
       errors.push(this.status.error)
     }
 
+    // The signing might fail, tell the user why but allow the user to retry signing,
+    // @ts-ignore fix TODO: type mismatch
+    if (this.status?.type === SigningStatus.ReadyToSign && !!this.status.error) {
+      // @ts-ignore typescript complains, but the error being present gets checked above
+      errors.push(this.status.error)
+    }
+
     return errors
   }
 
@@ -348,13 +359,14 @@ export class SignAccountOpController extends EventEmitter {
     return BigInt(ratio * 1e18)
   }
 
-  #getAmountAfterFeeTokenConvert(
+  static getAmountAfterFeeTokenConvert(
     simulatedGasLimit: bigint,
     gasPrice: bigint,
     nativeRatio: bigint,
-    feeTokenDecimals: number
+    feeTokenDecimals: number,
+    addedNative: bigint
   ) {
-    const amountInWei = simulatedGasLimit * gasPrice + this.#estimation!.addedNative
+    const amountInWei = simulatedGasLimit * gasPrice + addedNative
 
     // Let's break down the process of converting the amount into FeeToken:
     // 1. Initially, we multiply the amount in wei by the native to fee token ratio.
@@ -365,18 +377,34 @@ export class SignAccountOpController extends EventEmitter {
     return (amountInWei * nativeRatio) / BigInt(10) ** BigInt(18 + 18 - feeTokenDecimals)
   }
 
+  /**
+   * Increase the fee we send to the feeCollector according to the specified
+   * options in the network tab
+   */
+  #increaseFee(amount: bigint): bigint {
+    if (!this.#network.feeOptions.feeIncrease) {
+      return amount
+    }
+
+    return amount + (amount * this.#network.feeOptions.feeIncrease) / 100n
+  }
+
   get feeSpeeds(): {
     type: string
     amount: bigint
     simulatedGasLimit: bigint
     amountFormatted: string
     amountUsd: string
+    maxPriorityFeePerGas?: bigint
   }[] {
     if (!this.isInitialized || !this.#gasPrices || !this.paidBy || !this.selectedTokenAddr)
       return []
 
     const gasUsed = this.#estimation!.gasUsed
     const feeToken = this.#getPortfolioToken(this.selectedTokenAddr)
+    const feeTokenEstimation = this.#estimation!.feePaymentOptions.find(
+      (option) => option.address === this.selectedTokenAddr && this.paidBy === option.paidBy
+    )!
 
     return this.#gasPrices.map((gasRecommendation) => {
       let amount
@@ -395,21 +423,23 @@ export class SignAccountOpController extends EventEmitter {
       // EOA
       if (!this.#account || !this.#account?.creation) {
         simulatedGasLimit = gasUsed
-        amount = simulatedGasLimit * gasPrice + this.#estimation!.addedNative
+        amount = simulatedGasLimit * gasPrice + feeTokenEstimation.addedNative
       } else if (this.#estimation!.erc4337estimation) {
         // ERC 4337
         const nativeRatio = this.#getNativeToFeeTokenRatio(feeToken!)
-        const feeTokenGasUsed = this.#estimation!.feePaymentOptions.find(
-          (option) => option.address === feeToken?.address
-        )!.gasUsed!
 
-        simulatedGasLimit = this.#estimation!.erc4337estimation.gasUsed + feeTokenGasUsed
-        amount = this.#getAmountAfterFeeTokenConvert(
+        simulatedGasLimit =
+          this.#estimation!.erc4337estimation.gasUsed + feeTokenEstimation.gasUsed!
+        amount = SignAccountOpController.getAmountAfterFeeTokenConvert(
           simulatedGasLimit,
           gasPrice,
           nativeRatio,
-          feeToken!.decimals
+          feeToken!.decimals,
+          feeTokenEstimation.addedNative
         )
+        if (shouldUsePaymaster(this.accountOp.asUserOperation!, feeToken!.address)) {
+          amount = this.#increaseFee(amount)
+        }
       } else if (this.paidBy !== this.accountOp!.accountAddr) {
         // Smart account, but EOA pays the fee
         simulatedGasLimit = gasUsed
@@ -418,7 +448,7 @@ export class SignAccountOpController extends EventEmitter {
           this.#accountStates![this.accountOp!.accountAddr][this.accountOp!.networkId]
         simulatedGasLimit += getCallDataAdditional(this.accountOp!, this.#network, accountState)
 
-        amount = simulatedGasLimit * gasPrice + this.#estimation!.addedNative
+        amount = simulatedGasLimit * gasPrice + feeTokenEstimation.addedNative
       } else {
         // Relayer.
         // relayer or 4337, we need to add feeTokenOutome.gasUsed
@@ -433,15 +463,17 @@ export class SignAccountOpController extends EventEmitter {
           this.#accountStates![this.accountOp!.accountAddr][this.accountOp!.networkId]
         simulatedGasLimit += getCallDataAdditional(this.accountOp!, this.#network, accountState)
 
-        amount = this.#getAmountAfterFeeTokenConvert(
+        amount = SignAccountOpController.getAmountAfterFeeTokenConvert(
           simulatedGasLimit,
           gasPrice,
           nativeRatio,
-          feeToken!.decimals
+          feeToken!.decimals,
+          feeTokenEstimation.addedNative
         )
+        amount = this.#increaseFee(amount)
       }
 
-      return {
+      const fee: any = {
         type: gasRecommendation.name,
         simulatedGasLimit,
         amount,
@@ -449,6 +481,12 @@ export class SignAccountOpController extends EventEmitter {
         amountFormatted: ethers.formatUnits(amount, Number(feeToken?.decimals)),
         amountUsd: getTokenUsdAmount(feeToken!, amount)
       }
+
+      if ('maxPriorityFeePerGas' in gasRecommendation) {
+        fee.maxPriorityFeePerGas = gasRecommendation.maxPriorityFeePerGas
+      }
+
+      return fee
     })
   }
 
@@ -488,21 +526,24 @@ export class SignAccountOpController extends EventEmitter {
     }
 
     const feeToken = this.#getPortfolioToken(this.selectedTokenAddr)
-    const { amount, simulatedGasLimit } = this.feeSpeeds.find(
-      (speed) => speed.type === this.selectedFeeSpeed
-    )!
+    const chosenSpeed = this.feeSpeeds.find((speed) => speed.type === this.selectedFeeSpeed)!
 
     const accountState =
       this.#accountStates![this.accountOp!.accountAddr][this.accountOp!.networkId]
-
-    return {
+    const gasFeePayment: GasFeePayment = {
       paidBy: this.paidBy,
       isERC4337: isErc4337Broadcast(this.#network, accountState),
       isGasTank: feeToken?.networkId === 'gasTank',
       inToken: feeToken!.address,
-      amount,
-      simulatedGasLimit
+      amount: chosenSpeed.amount,
+      simulatedGasLimit: chosenSpeed.simulatedGasLimit
     }
+
+    if (chosenSpeed.maxPriorityFeePerGas) {
+      gasFeePayment.maxPriorityFeePerGas = chosenSpeed.maxPriorityFeePerGas
+    }
+
+    return gasFeePayment
   }
 
   get feeToken(): string | null {
@@ -529,14 +570,12 @@ export class SignAccountOpController extends EventEmitter {
     return Object.values(FeeSpeed) as string[]
   }
 
-  #setSigningError(error: string) {
-    this.status = { type: SigningStatus.UnableToSign, error }
+  #setSigningError(error: string, type = SigningStatus.UnableToSign) {
+    this.status = { type, error }
     this.emitUpdate()
   }
 
   #addFeePayment() {
-    // TODO: add the fee payment only if it hasn't been added already
-
     // In case of gas tank token fee payment, we need to include one more call to account op
     const abiCoder = new ethers.AbiCoder()
     const feeCollector = '0x942f9CE5D9a33a82F88D233AEb3292E680230348'
@@ -580,7 +619,7 @@ export class SignAccountOpController extends EventEmitter {
 
   async sign(externalSignerController?: ExternalSignerController) {
     if (!this.accountOp?.signingKeyAddr || !this.accountOp?.signingKeyType)
-      return this.#setSigningError('We cannot sign your transaction. Please choose a signer.')
+      return this.#setSigningError('We cannot sign your transaction. Please choose a signer key.')
 
     if (!this.accountOp?.gasFeePayment)
       return this.#setSigningError('Please select a token and an account for paying the gas fee.')
@@ -604,7 +643,6 @@ export class SignAccountOpController extends EventEmitter {
 
     if (signer.init) signer.init(externalSignerController)
     const provider = this.#providers[this.accountOp.networkId]
-    const nonce = await provider.getTransactionCount(this.accountOp.accountAddr)
     try {
       // In case of EOA account
       if (!this.#account.creation) {
@@ -612,17 +650,11 @@ export class SignAccountOpController extends EventEmitter {
           return this.#setSigningError(
             'Tried to sign an EOA transaction with multiple or zero calls.'
           )
-        const { to, value, data } = this.accountOp.calls[0]
-        this.accountOp.signature = await signer.signRawTransaction({
-          to,
-          value,
-          data,
-          chainId: this.#network.chainId,
-          gasLimit: gasFeePayment.simulatedGasLimit,
-          nonce,
-          gasPrice:
-            (gasFeePayment.amount - this.#estimation!.addedNative) / gasFeePayment.simulatedGasLimit
-        })
+
+        // In legacy mode, we sign the transaction directly.
+        // that means the signing will happen on broadcast and here
+        // checking whether the call is 1 and 1 only is enough
+        this.accountOp.signature = '0x'
       } else if (this.accountOp.gasFeePayment.paidBy !== this.#account.addr) {
         // Smart account, but EOA pays the fee
         // EOA pays for execute() - relayerless
@@ -638,21 +670,35 @@ export class SignAccountOpController extends EventEmitter {
           )
         }
 
+        // set as maxFeePerGas only the L2 gas price
+        const feeTokenEstimation = this.#estimation!.feePaymentOptions.find(
+          (option) => option.address === this.selectedTokenAddr && this.paidBy === option.paidBy
+        )!
+        let amountInWei = gasFeePayment.amount
+        const feeToken = this.#getPortfolioToken(this.selectedTokenAddr!)
+        if (feeToken?.address !== '0x0000000000000000000000000000000000000000') {
+          const nativeRatio = this.#getNativeToFeeTokenRatio(feeToken!)
+          amountInWei =
+            (gasFeePayment.amount * BigInt(10 ** (18 + 18 - feeToken!.decimals))) / nativeRatio
+        }
         const gasPrice =
-          (gasFeePayment.amount - this.#estimation!.addedNative) / gasFeePayment.simulatedGasLimit
+          (amountInWei - feeTokenEstimation.addedNative) / gasFeePayment.simulatedGasLimit
         userOperation.maxFeePerGas = ethers.toBeHex(gasPrice)
-        userOperation.maxPriorityFeePerGas = ethers.toBeHex(gasPrice)
+        userOperation.maxPriorityFeePerGas = ethers.toBeHex(gasFeePayment.maxPriorityFeePerGas!)
 
-        if (userOperation?.isEdgeCase || !isNative(this.accountOp.gasFeePayment)) {
+        const usesOneTimeNonce = shouldUseOneTimeNonce(userOperation)
+        const usesPaymaster = shouldUsePaymaster(
+          userOperation,
+          this.accountOp.gasFeePayment.inToken
+        )
+        if (usesPaymaster) {
           this.#addFeePayment()
         } else {
           delete this.accountOp.feeCall
         }
 
-        // if we're in the edge case scenario, set the callData to
-        // executeMultiple and sign it
-        if (userOperation.isEdgeCase) {
-          const ambireAccount = new ethers.Interface(AmbireAccount.abi)
+        const ambireAccount = new ethers.Interface(AmbireAccount.abi)
+        if (usesOneTimeNonce) {
           const signature = wrapEthSign(
             await signer.signMessage(ethers.hexlify(accountOpSignableHash(this.accountOp)))
           )
@@ -660,36 +706,33 @@ export class SignAccountOpController extends EventEmitter {
             [[getSignableCalls(this.accountOp), signature]]
           ])
           this.accountOp.signature = signature
+        } else {
+          userOperation.callData = ambireAccount.encodeFunctionData('executeBySender', [
+            getSignableCalls(this.accountOp)
+          ])
         }
 
-        // call the paymaster for the edgeCase or for non-native payments
-        if (userOperation.isEdgeCase || !isNative(this.accountOp.gasFeePayment!)) {
-          const response = await this.#callRelayer(
-            `/v2/paymaster/${this.accountOp.networkId}/sign`,
-            'POST',
-            {
-              // send without the isEdgeCase prop
-              userOperation: (({ isEdgeCase, ...o }) => o)(userOperation),
-              paymaster: AMBIRE_PAYMASTER
-            }
-          )
-          if (response.success) {
-            userOperation.paymasterAndData = response.data.paymasterAndData
-
-            // after getting the paymaster data, if we're in the edge case,
-            // we have to set the correct edge case nonce
-            if (userOperation.isEdgeCase) {
-              userOperation.nonce = getTargetEdgeCaseNonce(userOperation)
-            }
-          } else {
-            this.#setSigningError(
-              `User operation signing failed on paymaster approval: ${response.data.errorState}`
+        if (usesPaymaster) {
+          try {
+            const response = await this.#callRelayer(
+              `/v2/paymaster/${this.accountOp.networkId}/sign`,
+              'POST',
+              {
+                // send without the requestType prop
+                userOperation: (({ requestType, ...o }) => o)(userOperation),
+                paymaster: AMBIRE_PAYMASTER
+              }
             )
+            userOperation.paymasterAndData = response.data.paymasterAndData
+            if (usesOneTimeNonce) {
+              userOperation.nonce = getOneTimeNonce(userOperation)
+            }
+          } catch (e: any) {
+            return this.#setSigningError(e.message)
           }
         }
 
-        // in normal cases (not edgeCase), we sign the user operation
-        if (!userOperation.isEdgeCase) {
+        if (userOperation.requestType === 'standard') {
           const entryPoint: any = new ethers.BaseContract(
             ERC_4337_ENTRYPOINT,
             EntryPointAbi,
@@ -714,7 +757,7 @@ export class SignAccountOpController extends EventEmitter {
       this.status = { type: SigningStatus.Done }
       this.emitUpdate()
     } catch (error: any) {
-      this.#setSigningError(`Signing failed: ${error?.message}`)
+      this.#setSigningError(`Signing failed: ${error?.message}`, SigningStatus.ReadyToSign)
     }
     // TODO: Now, the UI needs to call mainCtrl.broadcastSignedAccountOp(mainCtrl.signAccountOp.accountOp)
   }

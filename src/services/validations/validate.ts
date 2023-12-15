@@ -1,4 +1,4 @@
-import { formatUnits } from 'ethers'
+import { formatUnits, getAddress } from 'ethers'
 import isEmail from 'validator/es/lib/isEmail'
 
 import { ConstantsType } from '../../../v1/hooks/useConstants'
@@ -17,6 +17,15 @@ const validateAddress = (address: string) => {
     return {
       success: false,
       message: 'Invalid address.'
+    }
+  }
+
+  try {
+    getAddress(address)
+  } catch {
+    return {
+      success: false,
+      message: 'Invalid checksum. Verify the address and try again.'
     }
   }
 

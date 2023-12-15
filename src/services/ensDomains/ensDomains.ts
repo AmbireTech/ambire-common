@@ -35,6 +35,7 @@ export function isCorrectAddress(address) {
   return !(ADDRESS_ZERO === address) && isAddress(address)
 }
 
+// @TODO: Get RPC provider url from settings controller
 async function resolveENSDomain(domain, bip44Item): string {
   const normalizedDomainName = normalizeDomain(domain)
   if (!normalizedDomainName) return ''
