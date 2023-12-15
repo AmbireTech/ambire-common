@@ -64,7 +64,7 @@ const createAccountOp = (account: Account) => {
     gasLimit: null,
     gasFeePayment: null,
     networkId: 'ethereum',
-    nonce: null, // does not matter when estimating
+    nonce: 0n, // does not matter when estimating
     calls: [{ to, value: BigInt(0), data }],
     accountOpToExecuteBefore: null,
     signature: null
@@ -140,16 +140,30 @@ const init = async (
 
   const ethereum = networks.find((x) => x.id === 'ethereum')!
   const provider = new JsonRpcProvider(ethereum!.rpcUrl)
+  const accounts = [account]
+  const accountStates = await getAccountsInfo(accounts)
 
-  const prices = gasPricesMock || (await getGasPriceRecommendations(provider))
+  const prices = gasPricesMock || (await getGasPriceRecommendations(provider, ethereum))
 
   const { op, nativeToCheck, feeTokens } = accountOp
   const estimation =
-    estimationMock || (await estimate(provider, ethereum, account, op, nativeToCheck, feeTokens))
+    estimationMock ||
+    (await estimate(
+      provider,
+      ethereum,
+      account,
+      op,
+      accountStates[account.addr][ethereum.id],
+      nativeToCheck,
+      feeTokens
+    ))
 
-  const accounts = [account]
-  const accountStates = await getAccountsInfo(accounts)
-  const portfolio = new PortfolioController(storage, 'https://staging-relayer.ambire.com', [])
+  const portfolio = new PortfolioController(
+    storage,
+    providers,
+    'https://staging-relayer.ambire.com',
+    []
+  )
   await portfolio.updateSelectedAccount(accounts, networks, account.addr)
 
   if (portfolio.latest?.[account.addr]?.ethereum?.result) {
@@ -243,13 +257,13 @@ describe('SignAccountOp Controller ', () => {
       {
         gasUsed: 10000n,
         nonce: 0,
-        addedNative: 5000n,
         feePaymentOptions: [
           {
             address: '0x0000000000000000000000000000000000000000',
             paidBy: eoaAccount.addr,
             availableAmount: 1000000000000000000n, // 1 ETH
-            gasUsed: 0n
+            gasUsed: 0n,
+            addedNative: 5000n
           }
         ],
         erc4337estimation: null
@@ -300,19 +314,11 @@ describe('SignAccountOp Controller ', () => {
       isGasTank: false,
       inToken: '0x0000000000000000000000000000000000000000',
       amount: 6005000n, // ((300 + 300) × 10000) + 10000, i.e. ((baseFee + priorityFee) * gasUsed) + addedNative
-      simulatedGasLimit: 10000n // 10000, i.e. gasUsed
+      simulatedGasLimit: 10000n, // 10000, i.e. gasUsed,
+      maxPriorityFeePerGas: 300n
     })
 
-    // Parse the signed transaction
-    const parsedTransaction = ethers.Transaction.from(controller.accountOp.signature)
-
-    expect(parsedTransaction.gasLimit).toEqual(10000n) // 10000, gasUsed
-    expect(parsedTransaction.gasPrice).toEqual(600n) // 6005000 - 5000 / 10000 (gasFeePayment.amount - addedNative) / gasFeePayment.simulatedGasLimit
-
-    // We expect the transaction to be signed with the passed signer address (keyPublicAddress)
-    expect(parsedTransaction.from).toEqual(eoaSigner.keyPublicAddress)
-
-    // If signing is successful, we expect controller's status to be done
+    expect(controller.accountOp.signature).toEqual('0x') // broadcasting and signRawTransaction is handled in main controller
     expect(controller.status).toEqual({ type: 'done' })
   })
 
@@ -323,7 +329,6 @@ describe('SignAccountOp Controller ', () => {
       eoaSigner,
       {
         gasUsed: 50000n,
-        addedNative: 0n,
         nonce: 0,
         erc4337estimation: null,
         feePaymentOptions: [
@@ -331,19 +336,22 @@ describe('SignAccountOp Controller ', () => {
             address: '0x0000000000000000000000000000000000000000',
             paidBy: smartAccount.addr,
             availableAmount: 500000000n,
-            gasUsed: 25000n
+            gasUsed: 25000n,
+            addedNative: 0n
           },
           {
             address: '0xdAC17F958D2ee523a2206206994597C13D831ec7',
             paidBy: smartAccount.addr,
             availableAmount: 500000000n,
-            gasUsed: 50000n
+            gasUsed: 50000n,
+            addedNative: 0n
           },
           {
             address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
             paidBy: smartAccount.addr,
             availableAmount: 500000000n,
-            gasUsed: 25000n
+            gasUsed: 25000n,
+            addedNative: 0n
           }
         ]
       },
@@ -425,13 +433,13 @@ describe('SignAccountOp Controller ', () => {
       {
         gasUsed: 10000n,
         nonce: 0,
-        addedNative: 5000n,
         feePaymentOptions: [
           {
             address: '0x0000000000000000000000000000000000000000',
             paidBy: eoaAccount.addr,
             availableAmount: 1000000000000000000n, // 1 ETH
-            gasUsed: 0n
+            gasUsed: 0n,
+            addedNative: 5000n
           }
         ],
         erc4337estimation: null
@@ -486,7 +494,8 @@ describe('SignAccountOp Controller ', () => {
       isGasTank: false,
       inToken: '0x0000000000000000000000000000000000000000',
       amount: 9005000n, // *300 + 300) × (10000+5000) + 10000, i.e. (baseFee + priorityFee) * (gasUsed + additionalCall) + addedNative
-      simulatedGasLimit: 15000n // 10000 + 5000, i.e. gasUsed + additionalCall
+      simulatedGasLimit: 15000n, // 10000 + 5000, i.e. gasUsed + additionalCall
+      maxPriorityFeePerGas: 300n
     })
 
     const message = ethers.hexlify(accountOpSignableHash(controller.accountOp))
