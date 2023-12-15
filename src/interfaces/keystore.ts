@@ -21,9 +21,10 @@ export interface ExternalSignerController {
   unlock: (
     path?: ReturnType<typeof getHdPathFromTemplate>
   ) => Promise<'ALREADY_UNLOCKED' | 'JUST_UNLOCKED'>
+  unlockedPath: string
+  unlockedPathKeyAddr: string
   cleanUp: () => void // Trezor and Ledger specific
   // TODO: Refine the rest of the props
-  hdk: any // Trezor and Ledger specific
   isWebHID?: boolean // Ledger specific
   transport?: any // Ledger specific
   app?: any // Ledger specific
