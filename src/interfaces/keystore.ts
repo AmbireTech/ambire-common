@@ -17,7 +17,7 @@ export interface ExternalSignerController {
   hdPathTemplate: HD_PATH_TEMPLATE_TYPE
   deviceModel: string
   deviceId: string
-  isUnlocked: () => boolean
+  isUnlocked: (path?: string, expectedKeyOnThisPath?: string) => boolean
   unlock: (
     path?: ReturnType<typeof getHdPathFromTemplate>
   ) => Promise<'ALREADY_UNLOCKED' | 'JUST_UNLOCKED'>
