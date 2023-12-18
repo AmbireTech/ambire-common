@@ -719,7 +719,7 @@ export class SignAccountOpController extends EventEmitter {
       this.status = { type: SigningStatus.Done }
       this.emitUpdate()
     } catch (error: any) {
-      this.#setSigningError(`Signing failed: ${error?.message}`, SigningStatus.ReadyToSign)
+      this.#setSigningError(error?.message, SigningStatus.ReadyToSign)
     }
     // TODO: Now, the UI needs to call mainCtrl.broadcastSignedAccountOp(mainCtrl.signAccountOp.accountOp)
   }
