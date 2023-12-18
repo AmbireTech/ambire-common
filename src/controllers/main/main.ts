@@ -60,6 +60,8 @@ export class MainController extends EventEmitter {
 
   #callRelayer: Function
 
+  #relayerUrl: string
+
   accountStates: AccountStates = {}
 
   isReady: boolean = false
@@ -149,6 +151,7 @@ export class MainController extends EventEmitter {
     super()
     this.#storage = storage
     this.#fetch = fetch
+    this.#relayerUrl = relayerUrl
 
     this.keystore = new KeystoreController(this.#storage, keystoreSigners)
     this.settings = new SettingsController(this.#storage)
