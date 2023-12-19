@@ -352,8 +352,13 @@ export class MainController extends EventEmitter {
             }
           }
 
-          if (!(network.id in networkState) || !(accIndex in networkState[network.id]))
+          if (!(network.id in networkState) || !(accIndex in networkState[network.id])) {
+            this.settings.updateProviderIsWorking(network.id, false)
             return netStates
+          }
+
+          this.settings.updateProviderIsWorking(network.id, true)
+
           return {
             ...netStates,
             [network.id]: networkState[network.id][accIndex]
@@ -1009,8 +1014,9 @@ export class MainController extends EventEmitter {
     })
     const messageBanners = getMessageBanners({ userRequests })
     const networksWithFailedRPCBanners = getNetworksWithFailedRPCBanners({
-      accountStates: this.accountStates,
-      networks: this.settings.networks
+      providers: this.settings.providers,
+      networks: this.settings.networks,
+      networksWithAssets: this.portfolio.networksWithAssets
     })
 
     return [
