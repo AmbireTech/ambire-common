@@ -1,7 +1,7 @@
 import dotenv from 'dotenv'
 import { ethers } from 'ethers'
 
-import { geckoNetworkIdMapper } from '../../consts/coingecko'
+import { geckoIdMapper, geckoNetworkIdMapper } from '../../consts/coingecko'
 import { networks } from '../../consts/networks'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import {
@@ -76,16 +76,29 @@ export function shortenAddress(addr: string) {
   return addr ? `${addr.slice(0, 5)}...${addr.slice(-3)}` : null
 }
 
-export async function getNativePrice(network: NetworkDescriptor, fetch: Function): Promise<any> {
-  const platformId = geckoNetworkIdMapper(network.id)
+/**
+ * Make a request to coingecko to fetch the latest price of the native token.
+ * This is used by benzina and hence we cannot wrap the errors in emitError
+ */
+export async function getNativePrice(network: NetworkDescriptor, fetch: Function): Promise<number> {
+  const platformId = geckoIdMapper(ethers.ZeroAddress, network.id)
+  if (!platformId) {
+    throw new Error(`getNativePrice: ${network.name} is not supported`)
+  }
+
   const baseUrl = COINGECKO_PRO_API_KEY
     ? 'https://pro-api.coingecko.com/api/v3'
     : 'https://api.coingecko.com/api/v3'
-  const postfix = COINGECKO_PRO_API_KEY ? `?&x_cg_pro_api_key=${COINGECKO_PRO_API_KEY}` : ''
+  const postfix = COINGECKO_PRO_API_KEY ? `&x_cg_pro_api_key=${COINGECKO_PRO_API_KEY}` : ''
   const coingeckoQueryUrl = `${baseUrl}/simple/price?ids=${platformId}&vs_currencies=usd${postfix}`
   let response = await fetch(coingeckoQueryUrl)
   response = await response.json()
-  return response
+
+  if (!response[platformId] || !response[platformId].usd) {
+    throw new Error(`getNativePrice: could not fetch native token price for ${network.name} `)
+  }
+
+  return response[platformId].usd
 }
 
 export async function getTokenInfo(
