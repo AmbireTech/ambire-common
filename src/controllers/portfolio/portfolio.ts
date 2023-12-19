@@ -1,11 +1,11 @@
 /* eslint-disable import/no-extraneous-dependencies */
 /* eslint-disable no-param-reassign */
 /* eslint-disable no-restricted-syntax */
-import { JsonRpcProvider } from 'ethers'
 import fetch from 'node-fetch'
 
 import { Account, AccountId } from '../../interfaces/account'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
+import { RPCProviders } from '../../interfaces/settings'
 import { Storage } from '../../interfaces/storage'
 import { AccountOp, isAccountOpsIntentEqual } from '../../libs/accountOp/accountOp'
 import { getFlags } from '../../libs/portfolio/helpers'
@@ -50,20 +50,19 @@ export class PortfolioController extends EventEmitter {
 
   #storage: Storage
 
-  #providers: { [networkId: string]: JsonRpcProvider } = {}
+  #providers: RPCProviders = {}
 
   #callRelayer: Function
 
   #pinned: string[]
 
+  #networksWithAssetsByAccounts: {
+    [accountId: string]: string[]
+  } = {}
+
   #minUpdateInterval: number = 20000 // 20 seconds
 
-  constructor(
-    storage: Storage,
-    providers: { [networkId: string]: JsonRpcProvider },
-    relayerUrl: string,
-    pinned: string[]
-  ) {
+  constructor(storage: Storage, providers: RPCProviders, relayerUrl: string, pinned: string[]) {
     super()
     this.latest = {}
     this.pending = {}
@@ -72,6 +71,75 @@ export class PortfolioController extends EventEmitter {
     this.#storage = storage
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
     this.#pinned = pinned
+  }
+
+  async #updateNetworksWithAssets(
+    accounts: Account[],
+    networkId: NetworkDescriptor['id'],
+    accountId: AccountId,
+    result: PortfolioGetResult | null
+  ) {
+    const storageStateByAccount = await this.#storage.get('networksWithAssetsByAccount', {})
+    const prevNetworksWithAssets = this.#networksWithAssetsByAccounts[accountId] || []
+    const isRPCDown = !this.#providers[networkId].isWorking
+
+    // On the first call
+    if (Object.keys(this.#networksWithAssetsByAccounts).length === 0) {
+      // Remove old accounts from storage
+      const storageAccounts = Object.keys(storageStateByAccount)
+      const currentAccounts = accounts.map(({ addr }) => addr)
+      const accountsToRemove = storageAccounts.filter((x) => !currentAccounts.includes(x))
+
+      for (const account of accountsToRemove) {
+        delete storageStateByAccount[account]
+      }
+
+      // Sync storage state with current state
+      this.#networksWithAssetsByAccounts = storageStateByAccount
+    }
+
+    const applyChanges = async () => {
+      this.emitUpdate()
+      await this.#storage.set('networksWithAssetsByAccount', this.#networksWithAssetsByAccounts)
+    }
+
+    // RPC is down or an error occurred
+    if (!result || isRPCDown) {
+      // The user has assets on this network and the RPC is down
+      if (
+        storageStateByAccount[accountId]?.includes(networkId) &&
+        !prevNetworksWithAssets.includes(networkId)
+      ) {
+        this.#networksWithAssetsByAccounts[accountId] = [...prevNetworksWithAssets, networkId]
+      }
+      await applyChanges()
+      return
+    }
+
+    // RPC is up
+    const nonZeroTokens = result.tokens.filter(({ amount }) => Number(amount) !== 0)
+    const hasCollectibles = result.collections.length > 0
+
+    // The user has assets on this network
+    if (nonZeroTokens.length || hasCollectibles) {
+      if (prevNetworksWithAssets.includes(networkId)) return
+
+      this.#networksWithAssetsByAccounts[accountId] = [...prevNetworksWithAssets, networkId]
+      await applyChanges()
+      return
+    }
+
+    // The user doesn't have assets on this network
+    if (!prevNetworksWithAssets.includes(networkId)) return
+
+    this.#networksWithAssetsByAccounts[accountId] = prevNetworksWithAssets.filter(
+      (id) => id !== networkId
+    )
+    await applyChanges()
+  }
+
+  get networksWithAssets() {
+    return [...new Set(Object.values(this.#networksWithAssetsByAccounts).flat())]
   }
 
   // gets additional portfolio state from the relayer that isn't retrieved from the portfolio library
@@ -236,12 +304,14 @@ export class PortfolioController extends EventEmitter {
           ...portfolioProps
         })
         _accountState[network.id] = { isReady: true, isLoading: false, errors: [], result }
+        await this.#updateNetworksWithAssets(accounts, network.id, accountId, result)
         this.emitUpdate()
         return true
       } catch (e: any) {
         state.isLoading = false
         if (!state.isReady) state.criticalError = e
         else state.errors.push(e)
+        await this.#updateNetworksWithAssets(accounts, network.id, accountId, null)
         this.emitUpdate()
         return false
       }
@@ -340,5 +410,12 @@ export class PortfolioController extends EventEmitter {
     this.emitUpdate()
 
     // console.log({ latest: this.latest, pending: this.pending })
+  }
+
+  toJSON() {
+    return {
+      ...this,
+      networksWithAssets: this.networksWithAssets
+    }
   }
 }
