@@ -76,6 +76,18 @@ export function shortenAddress(addr: string) {
   return addr ? `${addr.slice(0, 5)}...${addr.slice(-3)}` : null
 }
 
+export async function getNativePrice(network: NetworkDescriptor, fetch: Function): Promise<any> {
+  const platformId = geckoNetworkIdMapper(network.id)
+  const baseUrl = COINGECKO_PRO_API_KEY
+    ? 'https://pro-api.coingecko.com/api/v3'
+    : 'https://api.coingecko.com/api/v3'
+  const postfix = COINGECKO_PRO_API_KEY ? `?&x_cg_pro_api_key=${COINGECKO_PRO_API_KEY}` : ''
+  const coingeckoQueryUrl = `${baseUrl}/simple/price?ids=${platformId}&vs_currencies=usd${postfix}`
+  let response = await fetch(coingeckoQueryUrl)
+  response = await response.json()
+  return response
+}
+
 export async function getTokenInfo(
   humanizerSettings: HumanizerSettings,
   address: string,
