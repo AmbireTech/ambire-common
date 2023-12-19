@@ -27,7 +27,6 @@ export interface ExternalSignerController {
   // TODO: Refine the rest of the props
   isWebHID?: boolean // Ledger specific
   transport?: any // Ledger specific
-  app?: any // Ledger specific
   appName?: string // Lattice specific
   sdkSession?: any // Lattice specific
   creds?: any // Lattice specific
