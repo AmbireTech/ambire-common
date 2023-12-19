@@ -3,6 +3,7 @@ import { NetworkDescriptor } from 'interfaces/networkDescriptor'
 import { Account, AccountStates } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
 import { UserRequest } from '../../interfaces/userRequest'
+import { getNetworksWithFailedRPC } from '../accountState/accountState'
 
 export const getMessageBanners = ({ userRequests }: { userRequests: UserRequest[] }) => {
   const txnBanners: Banner[] = []
@@ -153,31 +154,14 @@ export const getAccountOpBannersForSmartAccount = ({
   return txnBanners
 }
 
-export const getNetworksWithFailedRPC = ({
+export const getNetworksWithFailedRPCBanners = ({
   accountStates,
   networks
 }: {
   accountStates: AccountStates
   networks: NetworkDescriptor[]
 }): Banner[] => {
-  let networksWithFailedRPC: string[] = []
-  Object.keys(accountStates).forEach((account) => {
-    const currentAccount = accountStates[account]
-
-    // Check if all networks have accounts states. Ones that don't are the ones with failed RPC.
-    networks.forEach((network) => {
-      if (!currentAccount[network.id]) {
-        if (networksWithFailedRPC.includes(network.id)) return
-
-        networksWithFailedRPC.push(network.id)
-        return
-      }
-
-      networksWithFailedRPC = networksWithFailedRPC.filter((n) => network.id !== n)
-    })
-  })
-
-  return networksWithFailedRPC.map((network) => {
+  return getNetworksWithFailedRPC({ accountStates, networks }).map((network) => {
     const networkData = networks.find((n: NetworkDescriptor) => n.id === network)
 
     return {
