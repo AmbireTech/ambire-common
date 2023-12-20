@@ -487,9 +487,9 @@ export class AccountAdderController extends EventEmitter {
     const endIdx = (this.page - 1) * this.pageSize + (this.pageSize - 1)
 
     // Combine the requests for all accounts in one call to the keyIterator.
-    // That's optimization primary focused on hardware wallets, to reduce the
+    // That's optimization primarily focused on hardware wallets, to reduce the
     // number of calls to the hardware device. This is important, especially
-    // for the Trezor, because it fires a confirmation popup for each call.
+    // for Trezor, because it fires a confirmation popup for each call.
     const combinedLegacyAndSmartAccKeys = await this.#keyIterator.retrieve(
       [
         // Indices for the legacy (EOA) accounts
