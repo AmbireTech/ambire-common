@@ -376,7 +376,7 @@ export class SignAccountOpController extends EventEmitter {
     // 2.3. At this point, we precisely determine the number of fee tokens. For instance, if the amount is 3 USDC, we must convert it to a BigInt value, while also considering feeToken.decimals.
     const extraDecimals = BigInt(10 ** 18)
     const feeTokenDecimalsInWei = BigInt(10 ** (18 - feeTokenDecimals))
-    const pow = extraDecimals + feeTokenDecimalsInWei
+    const pow = extraDecimals * feeTokenDecimalsInWei
     return (amountInWei * nativeRatio) / pow
   }
 
