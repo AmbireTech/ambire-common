@@ -19,12 +19,11 @@ const getAccountNetworksWithAssets = (
 
     // RPC is down or an error occurred
     if (!result || isRPCDown) {
-      // The user wasn't previously in storage, because the account is new.
-      // Since the RPC is down we can't know if the user has assets on this network.
+      // The account isn't in storage and was added after the RPC stopped working.
       // We assume the presence of assets, avoiding unnecessary concern during the RPC outage.
       if (!storageStateByAccount[accountId]) networksWithAssets.push(networkId)
 
-      // The user has assets on this network and the RPC is down
+      // The account has assets on this network and the RPC is down
       if (
         storageStateByAccount[accountId]?.includes(networkId) &&
         !networksWithAssets.includes(networkId)
@@ -38,7 +37,7 @@ const getAccountNetworksWithAssets = (
     const nonZeroTokens = result.tokens.filter(({ amount }) => Number(amount) !== 0)
     const hasCollectibles = result.collections.length > 0
 
-    // The user has assets on this network
+    // The account has assets on this network
     if (nonZeroTokens.length || hasCollectibles) {
       if (networksWithAssets.includes(networkId)) return
 
@@ -46,7 +45,7 @@ const getAccountNetworksWithAssets = (
       return
     }
 
-    // The user doesn't have assets on this network
+    // The account doesn't have assets on this network
     networksWithAssets = networksWithAssets.filter((id) => id !== networkId)
   })
 
