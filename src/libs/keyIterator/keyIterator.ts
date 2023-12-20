@@ -9,13 +9,6 @@ import {
 import { KeyIterator as KeyIteratorInterface } from '../../interfaces/keyIterator'
 import { getHdPathFromTemplate } from '../../utils/hdPath'
 
-// DOCS
-// - Serves for retrieving a range of addresses/keys from a given private key or seed phrase
-
-// USAGE
-// const iterator = new KeyIterator('your-private-key-or-seed-phrase')
-// const keys = await iterator.retrieve(0, 9, "derivation-path")
-
 export function isValidPrivateKey(value: string): boolean {
   try {
     return !!new Wallet(value)
@@ -56,6 +49,9 @@ export function derivePrivateKeyFromAnotherPrivateKey(privateKey: string) {
   return ethers.keccak256(buffer)
 }
 
+/**
+ * Serves for retrieving a range of addresses/keys from a given private key or seed phrase
+ */
 export class KeyIterator implements KeyIteratorInterface {
   #privateKey: string | null = null
 
