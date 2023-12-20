@@ -77,30 +77,38 @@ export class KeyIterator implements KeyIteratorInterface {
     throw new Error('keyIterator: invalid argument provided to constructor')
   }
 
-  async retrieve(from: number, to: number, hdPathTemplate?: HD_PATH_TEMPLATE_TYPE) {
-    if ((!from && from !== 0) || (!to && to !== 0) || !hdPathTemplate)
-      throw new Error('keyIterator: invalid or missing arguments')
-
+  async retrieve(
+    fromToArr: { from: number; to: number }[],
+    hdPathTemplate?: HD_PATH_TEMPLATE_TYPE
+  ) {
     const keys: string[] = []
 
-    if (this.#privateKey) {
-      // Private keys for accounts used as smart account keys should be derived
-      const shouldDerive = from >= SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
-      const finalPrivateKey = shouldDerive
-        ? derivePrivateKeyFromAnotherPrivateKey(this.#privateKey)
-        : this.#privateKey
+    fromToArr.forEach(({ from, to }) => {
+      if ((!from && from !== 0) || (!to && to !== 0) || !hdPathTemplate)
+        throw new Error('keyIterator: invalid or missing arguments')
 
-      keys.push(new Wallet(finalPrivateKey).address)
-    }
+      if (this.#privateKey) {
+        // Private keys for accounts used as smart account keys should be derived
+        const shouldDerive = from >= SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
+        const finalPrivateKey = shouldDerive
+          ? derivePrivateKeyFromAnotherPrivateKey(this.#privateKey)
+          : this.#privateKey
 
-    if (this.#seedPhrase) {
-      const mnemonic = Mnemonic.fromPhrase(this.#seedPhrase)
-
-      for (let i = from; i <= to; i++) {
-        const wallet = HDNodeWallet.fromMnemonic(mnemonic, getHdPathFromTemplate(hdPathTemplate, i))
-        keys.push(wallet.address)
+        keys.push(new Wallet(finalPrivateKey).address)
       }
-    }
+
+      if (this.#seedPhrase) {
+        const mnemonic = Mnemonic.fromPhrase(this.#seedPhrase)
+
+        for (let i = from; i <= to; i++) {
+          const wallet = HDNodeWallet.fromMnemonic(
+            mnemonic,
+            getHdPathFromTemplate(hdPathTemplate, i)
+          )
+          keys.push(wallet.address)
+        }
+      }
+    })
 
     return keys
   }
