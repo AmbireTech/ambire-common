@@ -17,16 +17,16 @@ export interface ExternalSignerController {
   hdPathTemplate: HD_PATH_TEMPLATE_TYPE
   deviceModel: string
   deviceId: string
-  isUnlocked: () => boolean
+  isUnlocked: (path?: string, expectedKeyOnThisPath?: string) => boolean
   unlock: (
     path?: ReturnType<typeof getHdPathFromTemplate>
   ) => Promise<'ALREADY_UNLOCKED' | 'JUST_UNLOCKED'>
+  unlockedPath: string
+  unlockedPathKeyAddr: string
   cleanUp: () => void // Trezor and Ledger specific
   // TODO: Refine the rest of the props
-  hdk: any // Trezor and Ledger specific
   isWebHID?: boolean // Ledger specific
   transport?: any // Ledger specific
-  app?: any // Ledger specific
   appName?: string // Lattice specific
   sdkSession?: any // Lattice specific
   creds?: any // Lattice specific
