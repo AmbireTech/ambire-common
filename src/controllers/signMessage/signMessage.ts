@@ -234,7 +234,7 @@ export class SignMessageController extends EventEmitter {
         )
       }
 
-      const keyPriv = this.#signer.key.priv
+      const dedicatedToOneSA = this.#signer.key.dedicatedToOneSA
       const network = networks.find(
         // @ts-ignore this.messageToSign is not null and it has a check
         // but typescript malfunctions here
@@ -245,7 +245,7 @@ export class SignMessageController extends EventEmitter {
       if (this.messageToSign.content.kind === 'message') {
         if (!account.creation) {
           signature = await this.#signPlainMsg()
-        } else if (keyPriv === 'full') {
+        } else if (dedicatedToOneSA) {
           signature = wrapUnprotected(await this.#signPlainMsg())
         } else {
           // in case of only_standard priv key, we transform the data
@@ -266,7 +266,7 @@ export class SignMessageController extends EventEmitter {
       if (this.messageToSign.content.kind === 'typedMessage') {
         if (!account.creation) {
           signature = await this.#signEip712()
-        } else if (keyPriv === 'full') {
+        } else if (dedicatedToOneSA) {
           signature = wrapUnprotected(await this.#signEip712())
         } else {
           throw new Error(

@@ -135,7 +135,7 @@ const init = async (
   await keystore.addSecret('passphrase', signer.pass, '', false)
   await keystore.unlockWithSecret('passphrase', signer.pass)
 
-  await keystore.addKeys([{ privateKey: signer.privKey, priv: 'full' }])
+  await keystore.addKeys([{ privateKey: signer.privKey, dedicatedToOneSA: true }])
 
   const ethereum = networks.find((x) => x.id === 'ethereum')!
   const provider = new JsonRpcProvider(ethereum!.rpcUrl)

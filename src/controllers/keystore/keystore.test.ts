@@ -8,7 +8,7 @@ import { Wallet } from 'ethers'
 import { describe, expect, test } from '@jest/globals'
 
 import { produceMemoryStore } from '../../../test/helpers'
-import { Key, KeyPrivilege } from '../../interfaces/keystore'
+import { Key } from '../../interfaces/keystore'
 import { KeystoreController } from './keystore'
 
 export class InternalSigner {
@@ -131,7 +131,7 @@ describe('KeystoreController', () => {
   })
 
   test('should add an internal key', (done) => {
-    keystore.addKeys([{ privateKey: privKey, priv: 'full' }])
+    keystore.addKeys([{ privateKey: privKey, dedicatedToOneSA: true }])
 
     const unsubscribe = keystore.onUpdate(async () => {
       if (keystore.latestMethodCall === 'addKeys' && keystore.status === 'DONE') {
@@ -147,11 +147,9 @@ describe('KeystoreController', () => {
 
   test('should not add twice internal key that is already added', (done) => {
     // two keys with the same private key
-    const fullPriv: KeyPrivilege = 'full'
-    const standardPriv: KeyPrivilege = 'only_standard'
     const keysWithPrivateKeyAlreadyAdded = [
-      { privateKey: privKey, priv: fullPriv },
-      { privateKey: privKey, priv: fullPriv }
+      { privateKey: privKey, dedicatedToOneSA: true },
+      { privateKey: privKey, dedicatedToOneSA: true }
     ]
 
     const anotherPrivateKeyNotAddedYet =
@@ -159,9 +157,9 @@ describe('KeystoreController', () => {
     const anotherPrivateKeyPublicAddress = '0x9188fdd757Df66B4F693D624Ed6A13a15Cf717D7'
     const keysWithPrivateKeyDuplicatedInParams = [
       // test key 3
-      { privateKey: anotherPrivateKeyNotAddedYet, priv: standardPriv },
+      { privateKey: anotherPrivateKeyNotAddedYet, dedicatedToOneSA: false },
       // test key 4 with the same private key as key 3
-      { privateKey: anotherPrivateKeyNotAddedYet, priv: standardPriv }
+      { privateKey: anotherPrivateKeyNotAddedYet, dedicatedToOneSA: false }
     ]
 
     keystore.addKeys([...keysWithPrivateKeyAlreadyAdded, ...keysWithPrivateKeyDuplicatedInParams])
@@ -185,7 +183,7 @@ describe('KeystoreController', () => {
     const publicAddress = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'
 
     keystore.addKeysExternallyStored([
-      { addr: publicAddress, priv: 'full', type: 'trezor', meta: null }
+      { addr: publicAddress, dedicatedToOneSA: true, type: 'trezor', meta: null }
     ])
 
     const unsubscribe = keystore.onUpdate(async () => {
@@ -202,15 +200,14 @@ describe('KeystoreController', () => {
 
   test('should not add twice external key that is already added', (done) => {
     const publicAddress = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'
-    const priv: KeyPrivilege = 'full'
     const keysWithPrivateKeyAlreadyAdded = [
       // test key 1
-      { addr: publicAddress, type: 'trezor' as 'trezor', priv, meta: null },
+      { addr: publicAddress, type: 'trezor' as 'trezor', dedicatedToOneSA: true, meta: null },
       // test key 2 with the same id (public address) as test key 1'
       {
         addr: publicAddress,
         type: 'trezor' as 'trezor',
-        priv,
+        dedicatedToOneSA: true,
         meta: null
       }
     ]
@@ -221,14 +218,14 @@ describe('KeystoreController', () => {
       {
         addr: anotherAddressNotAddedYet,
         type: 'trezor' as 'trezor',
-        priv,
+        dedicatedToOneSA: true,
         meta: null
       },
       // test key 4 with the same private key as key 3',
       {
         addr: anotherAddressNotAddedYet,
         type: 'trezor' as 'trezor',
-        priv,
+        dedicatedToOneSA: true,
         meta: null
       }
     ]
@@ -253,11 +250,10 @@ describe('KeystoreController', () => {
   })
 
   test('should add both keys when they have the same address but different type', (done) => {
-    const priv: KeyPrivilege = 'full'
     const externalKeysToAddWithDuplicateOnes = [
-      { addr: keyPublicAddress, type: 'trezor' as 'trezor', priv, meta: null },
-      { addr: keyPublicAddress, type: 'trezor' as 'trezor', priv, meta: null },
-      { addr: keyPublicAddress, type: 'ledger' as 'ledger', priv, meta: null }
+      { addr: keyPublicAddress, type: 'trezor' as 'trezor', dedicatedToOneSA: true, meta: null },
+      { addr: keyPublicAddress, type: 'trezor' as 'trezor', dedicatedToOneSA: true, meta: null },
+      { addr: keyPublicAddress, type: 'ledger' as 'ledger', dedicatedToOneSA: true, meta: null }
     ]
 
     keystore.addKeysExternallyStored(externalKeysToAddWithDuplicateOnes)
