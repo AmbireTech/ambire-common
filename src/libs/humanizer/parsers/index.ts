@@ -7,7 +7,7 @@ import {
   HumanizerWarning,
   IrCall,
   IrMessage
-} from '../interfaces'
+} from '../../../interfaces/humanizer'
 
 const runModules = (
   _visualization: HumanizerVisualization[],

@@ -1,7 +1,7 @@
 // update return ir to be {...ir,calls:newCalls} instead of {calls:newCalls} everywhere
 import { WALLETSupplyControllerMapping } from './WALLETSupplyController'
 import { StakingPools } from './stakingPools'
-import { HumanizerCallModule, IrCall } from '../../interfaces'
+import { HumanizerCallModule, IrCall } from '../../../../interfaces/humanizer'
 import { AccountOp } from '../../../accountOp/accountOp'
 import { checkIfUnknownAction, getUnknownVisualization } from '../../utils'
 

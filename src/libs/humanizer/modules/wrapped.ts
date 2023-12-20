@@ -1,5 +1,5 @@
 import { ethers } from 'ethers'
-import { HumanizerCallModule, IrCall } from '../interfaces'
+import { HumanizerCallModule, IrCall } from '../../../interfaces/humanizer'
 import { AccountOp } from '../../accountOp/accountOp'
 import { getUnknownVisualization, getUnwraping, getWraping } from '../utils'
 

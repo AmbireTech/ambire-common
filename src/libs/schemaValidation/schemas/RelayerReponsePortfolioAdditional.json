@@ -1,0 +1,211 @@
+{
+    "type": "object",
+    "properties": {
+        "rewards": {
+            "type": "object",
+            "properties": {
+                "supplyControllerAddr": {
+                    "type": "string"
+                },
+                "claimableRewardsData": {
+                    "type": "object",
+                    "properties": {
+                        "addr": {
+                            "type": "string"
+                        },
+                        "fromBalanceClaimable": {
+                            "type": "number"
+                        },
+                        "fromADXClaimable": {
+                            "type": "number"
+                        },
+                        "totalClaimable": {
+                            "type": "string"
+                        },
+                        "leaf": {
+                            "type": "string"
+                        },
+                        "proof": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        },
+                        "root": {
+                            "type": "string"
+                        },
+                        "signedRoot": {
+                            "type": "string"
+                        }
+                    },
+                    "required": [
+                        "addr",
+                        "fromADXClaimable",
+                        "fromBalanceClaimable",
+                        "totalClaimable"
+                    ]
+                },
+                "multipliers": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "mul": {
+                                "type": "number"
+                            },
+                            "name": {
+                                "type": "string"
+                            }
+                        },
+                        "required": [
+                            "mul",
+                            "name"
+                        ]
+                    }
+                },
+                "xWalletClaimableBalance": {
+                    "type": "object",
+                    "properties": {
+                        "address": {
+                            "type": "string"
+                        },
+                        "symbol": {
+                            "type": "string"
+                        },
+                        "amount": {
+                            "type": "string"
+                        },
+                        "decimals": {
+                            "type": "number"
+                        },
+                        "networkId": {
+                            "type": "string"
+                        },
+                        "priceIn": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "baseCurrency": {
+                                        "type": "string"
+                                    },
+                                    "price": {
+                                        "type": "number"
+                                    }
+                                },
+                                "required": [
+                                    "baseCurrency",
+                                    "price"
+                                ]
+                            }
+                        }
+                    },
+                    "required": [
+                        "address",
+                        "amount",
+                        "decimals",
+                        "networkId",
+                        "symbol"
+                    ]
+                }
+            },
+            "required": [
+                "claimableRewardsData",
+                "supplyControllerAddr",
+                "xWalletClaimableBalance"
+            ]
+        },
+        "gasTank": {
+            "type": "object",
+            "properties": {
+                "balance": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "address": {
+                                "type": "string"
+                            },
+                            "symbol": {
+                                "type": "string"
+                            },
+                            "amount": {
+                                "type": "string"
+                            },
+                            "decimals": {
+                                "type": "number"
+                            },
+                            "networkId": {
+                                "type": "string"
+                            },
+                            "priceIn": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "baseCurrency": {
+                                            "type": "string"
+                                        },
+                                        "price": {
+                                            "type": "number"
+                                        }
+                                    },
+                                    "required": [
+                                        "baseCurrency",
+                                        "price"
+                                    ]
+                                }
+                            }
+                        },
+                        "required": [
+                            "address",
+                            "amount",
+                            "decimals",
+                            "networkId",
+                            "priceIn",
+                            "symbol"
+                        ]
+                    }
+                },
+                "availableGasTankAssets": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "address": {
+                                "type": "string"
+                            },
+                            "symbol": {
+                                "type": "string"
+                            },
+                            "network": {
+                                "type": "string"
+                            },
+                            "decimals": {
+                                "type": "number"
+                            },
+                            "icon": {
+                                "type": "string"
+                            },
+                            "price": {
+                                "type": "number"
+                            }
+                        },
+                        "required": [
+                            "address",
+                            "decimals",
+                            "icon",
+                            "network",
+                            "price",
+                            "symbol"
+                        ]
+                    }
+                }
+            },
+            "required": [
+                "availableGasTankAssets"
+            ]
+        }
+    },
+    "$schema": "http://json-schema.org/draft-07/schema#"
+}

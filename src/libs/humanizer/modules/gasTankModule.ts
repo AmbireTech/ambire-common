@@ -1,6 +1,6 @@
 import { ethers } from 'ethers'
 import { AccountOp } from '../../accountOp/accountOp'
-import { HumanizerCallModule, IrCall } from '../interfaces'
+import { HumanizerCallModule, IrCall } from '../../../interfaces/humanizer'
 import { getAction, getToken } from '../utils'
 
 // @TODO add test

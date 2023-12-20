@@ -1,6 +1,6 @@
 import { getUnknownVisualization } from '../../utils'
 import { AccountOp } from '../../../accountOp/accountOp'
-import { HumanizerCallModule, IrCall } from '../../interfaces'
+import { HumanizerCallModule, IrCall } from '../../../../interfaces/humanizer'
 import { aaveLendingPoolV2 } from './aaveLendingPoolV2'
 import { aaveWethGatewayV2 } from './aaveWethGatewayV2'
 

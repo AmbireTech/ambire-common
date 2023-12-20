@@ -1,7 +1,7 @@
 import { ethers } from 'ethers'
 
 import { TypedMessage } from '../../../interfaces/userRequest'
-import { HumanizerTypedMessaageModule, HumanizerVisualization } from '../interfaces'
+import { HumanizerTypedMessaageModule, HumanizerVisualization } from '../../../interfaces/humanizer'
 import { getAction, getAddress, getDeadlineText, getLabel, getToken } from '../utils'
 
 // interfaces

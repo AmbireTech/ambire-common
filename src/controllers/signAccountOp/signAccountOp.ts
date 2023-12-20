@@ -5,6 +5,7 @@ import EntryPointAbi from '../../../contracts/compiled/EntryPoint.json'
 import ERC20 from '../../../contracts/compiled/IERC20.json'
 import { AMBIRE_PAYMASTER, ERC_4337_ENTRYPOINT } from '../../consts/deploy'
 import { Account, AccountStates } from '../../interfaces/account'
+import { IrCall } from '../../interfaces/humanizer'
 import { ExternalSignerController, Key } from '../../interfaces/keystore'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { Storage } from '../../interfaces/storage'
@@ -18,8 +19,8 @@ import {
 import { EstimateResult } from '../../libs/estimate/estimate'
 import { GasRecommendation, getCallDataAdditional } from '../../libs/gasPrice/gasPrice'
 import { callsHumanizer } from '../../libs/humanizer'
-import { IrCall } from '../../libs/humanizer/interfaces'
 import { Price, TokenResult } from '../../libs/portfolio'
+import { schemas } from '../../libs/schemaValidation/validateScehmas'
 import {
   getOneTimeNonce,
   isErc4337Broadcast,
@@ -723,6 +724,15 @@ export class SignAccountOpController extends EventEmitter {
                 paymaster: AMBIRE_PAYMASTER
               }
             )
+            const schemasRes = schemas.RelayerResponsePaymasterSign(response.data)
+            if (!schemasRes.isValid) {
+              this.emitError({
+                level: 'minor',
+                message: 'Error submit signature to paymaster/sign. Please contact support.',
+                error: new Error(schemasRes.error)
+              })
+              return null
+            }
             userOperation.paymasterAndData = response.data.paymasterAndData
             if (usesOneTimeNonce) {
               userOperation.nonce = getOneTimeNonce(userOperation)

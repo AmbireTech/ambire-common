@@ -9,7 +9,7 @@ import {
   HumanizerTypedMessaageModule,
   IrCall,
   IrMessage
-} from './interfaces'
+} from '../../interfaces/humanizer'
 import { getAction, getLabel } from './utils'
 
 export function humanizeCalls(

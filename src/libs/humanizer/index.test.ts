@@ -13,7 +13,7 @@ import { Storage } from '../../interfaces/storage'
 import { Message, TypedMessage } from '../../interfaces/userRequest'
 import { AccountOp } from '../accountOp/accountOp'
 import { callsHumanizer, messageHumanizer } from './index'
-import { HumanizerVisualization, IrCall, IrMessage } from './interfaces'
+import { HumanizerVisualization, IrCall, IrMessage } from '../../interfaces/humanizer'
 
 const HUMANIZER_META_KEY = 'HumanizerMeta'
 

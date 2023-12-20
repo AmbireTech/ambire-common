@@ -1,0 +1,30 @@
+{
+    "type": "object",
+    "properties": {
+        "success": {
+            "type": "boolean",
+            "const": true
+        },
+        "data": {
+            "type": "object",
+            "properties": {
+                "paymasterAndData": {
+                    "type": "string"
+                }
+            },
+            "required": [
+                "paymasterAndData"
+            ]
+        },
+        "errorState": {
+            "type": "array",
+            "items": {}
+        }
+    },
+    "required": [
+        "data",
+        "errorState",
+        "success"
+    ],
+    "$schema": "http://json-schema.org/draft-07/schema#"
+}

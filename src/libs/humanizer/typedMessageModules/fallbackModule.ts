@@ -1,5 +1,5 @@
 import { TypedMessage } from 'interfaces/userRequest'
-import { HumanizerTypedMessaageModule, HumanizerVisualization } from '../interfaces'
+import { HumanizerTypedMessaageModule, HumanizerVisualization } from '../../../interfaces/humanizer'
 import { getLabel } from '../utils'
 
 const fallbackParser = (

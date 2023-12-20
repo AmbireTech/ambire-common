@@ -3,7 +3,7 @@ import {
   HumanizerSettings,
   HumanizerVisualization,
   HumanizerWarning
-} from '../interfaces'
+} from '../../../interfaces/humanizer'
 import { getWarning, shortenAddress } from '../utils'
 
 const getName = (address: string, humanizerMeta: any) => {

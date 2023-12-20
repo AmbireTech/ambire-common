@@ -13,7 +13,7 @@ import {
   IrCall,
   IrMessage,
   KnownAddressLabels
-} from './interfaces'
+} from '../../interfaces/humanizer'
 import { aaveHumanizer } from './modules/Aave'
 import { fallbackHumanizer } from './modules/fallBackHumanizer'
 import { gasTankModule } from './modules/gasTankModule'

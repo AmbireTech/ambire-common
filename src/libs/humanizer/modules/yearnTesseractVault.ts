@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-shadow */
 import { ethers } from 'ethers'
-import { HumanizerCallModule, IrCall } from '../interfaces'
+import { HumanizerCallModule, IrCall } from '../../../interfaces/humanizer'
 import { getAddress, getAction, getLabel, getToken, getUnknownVisualization } from '../utils'
 import { AccountOp } from '../../accountOp/accountOp'
 

@@ -1,6 +1,6 @@
 import { ethers } from 'ethers'
 import { AccountOp } from '../../accountOp/accountOp'
-import { HumanizerCallModule, IrCall } from '../interfaces'
+import { HumanizerCallModule, IrCall } from '../../../interfaces/humanizer'
 import { getAction, getLabel, getToken, getUnknownVisualization } from '../utils'
 
 const parseZeroAddressIfNeeded = (address: string) => {

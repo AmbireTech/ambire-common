@@ -1,6 +1,6 @@
 import { AccountOp } from 'libs/accountOp/accountOp'
 import { ethers } from 'ethers'
-import { HumanizerCallModule, IrCall } from '../interfaces'
+import { HumanizerCallModule, IrCall } from '../../../interfaces/humanizer'
 import { getAction, getLabel, getRecipientText, getToken, getUnknownVisualization } from '../utils'
 
 export const sushiSwapModule: HumanizerCallModule = (

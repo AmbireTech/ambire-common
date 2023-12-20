@@ -1,6 +1,6 @@
 import { ethers } from 'ethers'
 import { TypedMessage } from '../../../interfaces/userRequest'
-import { HumanizerTypedMessaageModule, HumanizerVisualization } from '../interfaces'
+import { HumanizerTypedMessaageModule, HumanizerVisualization } from '../../../interfaces/humanizer'
 import { getAction, getDeadlineText, getAddress, getLabel, getNft } from '../utils'
 
 const visualizePermit = (
