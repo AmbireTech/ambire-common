@@ -58,4 +58,10 @@ export class Bundler {
       ERC_4337_ENTRYPOINT
     ])
   }
+
+  static async getStatusAndTxnId(userOperationHash: string, network: NetworkDescriptor) {
+    const url = `https://api.pimlico.io/v1/${network.id}/rpc?apikey=${process.env.REACT_APP_PIMLICO_API_KEY}`
+    const provider = new StaticJsonRpcProvider(url)
+    return provider.send('pimlico_getUserOperationStatus', [userOperationHash])
+  }
 }
