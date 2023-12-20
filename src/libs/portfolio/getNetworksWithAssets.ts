@@ -14,6 +14,8 @@ const getAccountNetworksWithAssets = (
   let networksWithAssets: NetworkDescriptor['id'][] = []
 
   Object.keys(accountState).forEach((networkId) => {
+    if (!providers[networkId]) return
+
     const isRPCDown = !providers[networkId].isWorking
     const result = accountState[networkId]?.result
 
