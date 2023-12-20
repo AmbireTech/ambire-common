@@ -1,5 +1,6 @@
 /* eslint-disable import/no-extraneous-dependencies */
 /* eslint-disable no-restricted-syntax */
+/* eslint-disable no-param-reassign */
 import fetch from 'node-fetch'
 
 import { Account, AccountId } from '../../interfaces/account'
@@ -7,7 +8,6 @@ import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { RPCProviders } from '../../interfaces/settings'
 import { Storage } from '../../interfaces/storage'
 import { AccountOp, isAccountOpsIntentEqual } from '../../libs/accountOp/accountOp'
-/* eslint-disable no-param-reassign */
 import getAccountNetworksWithAssets from '../../libs/portfolio/getNetworksWithAssets'
 import { getFlags } from '../../libs/portfolio/helpers'
 import {
@@ -273,14 +273,12 @@ export class PortfolioController extends EventEmitter {
           ...portfolioProps
         })
         _accountState[network.id] = { isReady: true, isLoading: false, errors: [], result }
-        // await this.#updateNetworksWithAssets(accounts, network.id, accountId, result)
         this.emitUpdate()
         return true
       } catch (e: any) {
         state.isLoading = false
         if (!state.isReady) state.criticalError = e
         else state.errors.push(e)
-        // await this.#updateNetworksWithAssets(accounts, network.id, accountId, null)
         this.emitUpdate()
         return false
       }
@@ -295,6 +293,7 @@ export class PortfolioController extends EventEmitter {
         if (
           !this.#portfolioLibs.has(key) ||
           this.#portfolioLibs.get(key)?.network?.rpcUrl !==
+            // eslint-disable-next-line no-underscore-dangle
             this.#providers[network.id]?._getConnection().url
         ) {
           this.#portfolioLibs.set(key, new Portfolio(fetch, this.#providers[network.id], network))
@@ -355,11 +354,6 @@ export class PortfolioController extends EventEmitter {
 
         // Persist previousHints in the disk storage for further requests, when:
         // latest state was updated successful and hints were fetched successful too (no hintsError from portfolio result)
-
-        // console.log({isSuccessfulLatestUpdate});
-        // console.log('accountState ::', accountState[network.id]);
-        // console.log({key})
-
         if (isSuccessfulLatestUpdate && !accountState[network.id]!.result!.hintsError) {
           storagePreviousHints[key] = getHintsWithBalance(accountState[network.id]!.result!)
           await this.#storage.set('previousHints', storagePreviousHints)
@@ -377,12 +371,9 @@ export class PortfolioController extends EventEmitter {
       })
     )
 
-    // console.log({ accountState })
     await this.#updateNetworksWithAssets(accounts, accountId, accountState)
 
     this.emitUpdate()
-
-    // console.log({ latest: this.latest, pending: this.pending })
   }
 
   toJSON() {
