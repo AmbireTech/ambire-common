@@ -7,7 +7,8 @@ import {
   AccountPreferences,
   KeyPreferences,
   NetworkPreference,
-  NetworkPreferences
+  NetworkPreferences,
+  RPCProviders
 } from '../../interfaces/settings'
 import { Storage } from '../../interfaces/storage'
 import { isValidAddress } from '../../services/address'
@@ -18,7 +19,7 @@ export class SettingsController extends EventEmitter {
 
   keyPreferences: KeyPreferences = []
 
-  providers: { [networkId: string]: JsonRpcProvider } = {}
+  providers: RPCProviders = {}
 
   #networkPreferences: NetworkPreferences = {}
 
@@ -60,6 +61,12 @@ export class SettingsController extends EventEmitter {
       }
       return network
     })
+  }
+
+  updateProviderIsWorking(networkId: NetworkDescriptor['id'], isWorking: boolean) {
+    this.providers[networkId].isWorking = isWorking
+
+    this.emitUpdate()
   }
 
   async #load() {
