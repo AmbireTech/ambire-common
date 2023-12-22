@@ -5,7 +5,7 @@ import { describe, expect, test } from '@jest/globals'
 
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { Account, AccountCreation } from '../../interfaces/account'
-import { fullSigningPriv } from '../../interfaces/keystore'
+import { dedicatedToOneSAPriv } from '../../interfaces/keystore'
 import { getBytecode } from '../proxyDeploy/bytecode'
 import { getAmbireAccountAddress } from '../proxyDeploy/getAmbireAddressTwo'
 import { getAccountDeployParams, getLegacyAccount, getSmartAccount } from './account'
@@ -27,7 +27,7 @@ describe('Account', () => {
   test('should return smartAccount', async () => {
     expect.assertions(3)
     const newSmartAccount = await getSmartAccount([
-      { addr: keyPublicAddress, hash: fullSigningPriv }
+      { addr: keyPublicAddress, hash: dedicatedToOneSAPriv }
     ])
     const priv = {
       addr: keyPublicAddress,

@@ -83,7 +83,8 @@ export type Key = (InternalKey | ExternalKey) & { isExternallyStored: boolean }
 
 export const standardSigningOnlyPriv =
   '0x0000000000000000000000000000000000000000000000000000000000000001'
-export const fullSigningPriv = '0x0000000000000000000000000000000000000000000000000000000000000002'
+export const dedicatedToOneSAPriv =
+  '0x0000000000000000000000000000000000000000000000000000000000000002'
 
 export type InternalKey = {
   addr: Account['addr']

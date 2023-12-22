@@ -7,7 +7,7 @@ import {
 } from '../../consts/derivation'
 import { Account, AccountOnchainState } from '../../interfaces/account'
 import { KeyIterator } from '../../interfaces/keyIterator'
-import { fullSigningPriv } from '../../interfaces/keystore'
+import { dedicatedToOneSAPriv } from '../../interfaces/keystore'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
 import { Storage } from '../../interfaces/storage'
 import {
@@ -508,7 +508,7 @@ export class AccountAdderController extends EventEmitter {
 
       // Derive the Ambire (smart) account
       smartAccountsPromises.push(
-        getSmartAccount([{ addr: smartAccKey, hash: fullSigningPriv }])
+        getSmartAccount([{ addr: smartAccKey, hash: dedicatedToOneSAPriv }])
           .then((smartAccount) => {
             return { account: smartAccount, isLinked: false, slot, index: slot - 1 }
           })
