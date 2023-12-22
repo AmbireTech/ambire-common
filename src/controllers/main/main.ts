@@ -119,7 +119,14 @@ export class MainController extends EventEmitter {
 
   #relayerUrl: string
 
-  onResolveDappRequest: (data: any, id?: number) => void
+  onResolveDappRequest: (
+    data: {
+      hash: string | null
+      networkId?: NetworkId
+      isUserOp?: boolean
+    },
+    id?: number
+  ) => void
 
   onRejectDappRequest: (err: any, id?: number) => void
 
@@ -142,7 +149,14 @@ export class MainController extends EventEmitter {
     fetch: Function
     relayerUrl: string
     keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>
-    onResolveDappRequest: (data: any, id?: number) => void
+    onResolveDappRequest: (
+      data: {
+        hash: string | null
+        networkId?: NetworkId
+        isUserOp?: boolean
+      },
+      id?: number
+    ) => void
     onRejectDappRequest: (err: any, id?: number) => void
     onUpdateDappSelectedAccount: (accountAddr: string) => void
     onBroadcastSuccess?: (type: 'message' | 'typed-data' | 'account-op') => void
@@ -943,7 +957,14 @@ export class MainController extends EventEmitter {
       accountOp.calls.forEach((call) => {
         if (call.fromUserRequestId) {
           this.removeUserRequest(call.fromUserRequestId)
-          this.onResolveDappRequest({ hash: transactionRes?.hash }, call.fromUserRequestId)
+          this.onResolveDappRequest(
+            {
+              hash: transactionRes?.hash || null,
+              networkId: network.id,
+              isUserOp: !!accountOp?.asUserOperation
+            },
+            call.fromUserRequestId
+          )
         }
       })
       console.log('broadcasted:', transactionRes)
