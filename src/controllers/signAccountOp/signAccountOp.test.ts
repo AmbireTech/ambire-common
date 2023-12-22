@@ -15,6 +15,7 @@ import { estimate, EstimateResult } from '../../libs/estimate/estimate'
 import * as gasPricesLib from '../../libs/gasPrice/gasPrice'
 import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
+import { getTypedData } from '../../libs/signMessage/signMessage'
 import { KeystoreController } from '../keystore/keystore'
 import { PortfolioController } from '../portfolio/portfolio'
 import { SettingsController } from '../settings/settings'
@@ -402,9 +403,18 @@ describe('SignAccountOp Controller ', () => {
       throw new Error('Signing failed!')
     }
 
-    const message = ethers.hexlify(accountOpSignableHash(controller.accountOp))
+    const typedData = getTypedData(
+      1n,
+      controller.accountOp.accountAddr,
+      ethers.hexlify(accountOpSignableHash(controller.accountOp))
+    )
     const unwrappedSig = controller.accountOp.signature.slice(0, -2)
-    const signerAddr = ethers.verifyMessage(ethers.getBytes(message), unwrappedSig)
+    const signerAddr = ethers.verifyTypedData(
+      typedData.domain,
+      typedData.types,
+      typedData.message,
+      unwrappedSig
+    )
 
     // We expect the transaction to be signed with the passed signer address (keyPublicAddress)
     expect(eoaAccount.addr).toEqual(signerAddr)
@@ -498,9 +508,18 @@ describe('SignAccountOp Controller ', () => {
       maxPriorityFeePerGas: 300n
     })
 
-    const message = ethers.hexlify(accountOpSignableHash(controller.accountOp))
+    const typedData = getTypedData(
+      1n,
+      controller.accountOp.accountAddr,
+      ethers.hexlify(accountOpSignableHash(controller.accountOp))
+    )
     const unwrappedSig = controller.accountOp.signature.slice(0, -2)
-    const signerAddr = ethers.verifyMessage(ethers.getBytes(message), unwrappedSig)
+    const signerAddr = ethers.verifyTypedData(
+      typedData.domain,
+      typedData.types,
+      typedData.message,
+      unwrappedSig
+    )
 
     // We expect the transaction to be signed with the passed signer address (keyPublicAddress)
     expect(eoaSigner.keyPublicAddress).toEqual(signerAddr)

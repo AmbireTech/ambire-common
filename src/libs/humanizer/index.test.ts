@@ -57,7 +57,7 @@ const keys: Key[] = [
   {
     addr: '0xABcdeF398CBb1285Eeb2DC42be2c429eB1d55f02',
     type: 'internal',
-    priv: 'full',
+    dedicatedToOneSA: true,
     isExternallyStored: true,
     meta: null
   }

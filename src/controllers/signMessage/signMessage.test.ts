@@ -172,7 +172,7 @@ describe('SignMessageController', () => {
       key: {
         addr: signingKeyAddr,
         type: 'internal',
-        priv: 'full',
+        dedicatedToOneSA: true,
         meta: {}
       }
     }

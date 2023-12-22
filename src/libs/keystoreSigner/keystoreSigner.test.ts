@@ -11,7 +11,7 @@ const keyPublicAddress = '0x9188fdd757Df66B4F693D624Ed6A13a15Cf717D7'
 const key: Key = {
   addr: keyPublicAddress,
   type: 'internal',
-  priv: 'full',
+  dedicatedToOneSA: true,
   isExternallyStored: false,
   meta: null
 }
