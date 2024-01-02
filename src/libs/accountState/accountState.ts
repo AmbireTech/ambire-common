@@ -2,7 +2,7 @@ import { Provider } from 'ethers'
 
 import AmbireAccountState from '../../../contracts/compiled/AmbireAccountState.json'
 import { MAX_UINT256 } from '../../consts/deploy'
-import { Account, AccountOnchainState, AccountStates } from '../../interfaces/account'
+import { Account, AccountOnchainState } from '../../interfaces/account'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { getAccountDeployParams } from '../account/account'
 import { fromDescriptor } from '../deployless/deployless'
@@ -95,31 +95,4 @@ export async function getAccountState(
   })
 
   return result
-}
-
-export const getNetworksWithFailedRPC = ({
-  accountStates,
-  networks
-}: {
-  accountStates: AccountStates
-  networks: NetworkDescriptor[]
-}): string[] => {
-  let networksWithFailedRPC: string[] = []
-  Object.keys(accountStates).forEach((account) => {
-    const currentAccount = accountStates[account]
-
-    // Check if all networks have accounts states. Ones that don't are the ones with failed RPC.
-    networks.forEach((network) => {
-      if (!currentAccount[network.id]) {
-        if (networksWithFailedRPC.includes(network.id)) return
-
-        networksWithFailedRPC.push(network.id)
-        return
-      }
-
-      networksWithFailedRPC = networksWithFailedRPC.filter((n) => network.id !== n)
-    })
-  })
-
-  return networksWithFailedRPC
 }
