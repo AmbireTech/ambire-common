@@ -432,7 +432,7 @@ export class ActivityController extends EventEmitter {
       const network = networks.find((x) => x.id === accountOp.networkId)!
 
       const is4337 = isErc4337Broadcast(
-        networks.find((x) => x.id === accountOp.networkId)!,
+        network,
         this.#accounts[accountOp.accountAddr][accountOp.networkId]
       )
       return {
