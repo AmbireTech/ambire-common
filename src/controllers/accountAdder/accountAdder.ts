@@ -409,8 +409,7 @@ export class AccountAdderController extends EventEmitter {
         addr: account.addr,
         associatedKeys: account.associatedKeys.map((key) => [
           ethers.getAddress(key), // the Relayer expects checksumed address
-          // Handle special priv hashes at a later stage, when (if) needed
-          '0x0000000000000000000000000000000000000000000000000000000000000001'
+          dedicatedToOneSAPriv
         ]),
         creation: {
           factoryAddr: account.creation!.factoryAddr,
