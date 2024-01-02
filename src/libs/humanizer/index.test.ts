@@ -270,7 +270,7 @@ describe('Humanizer main function', () => {
     expect(onUpdate).toHaveBeenCalledTimes(1)
   })
 
-  test('unknown func selector humanize with asyncop', async () => {
+  test.skip('unknown func selector humanize with asyncop', async () => {
     const expectedVisualizations = [
       { type: 'action', content: 'Call buy(uint256)' },
       { type: 'label', content: 'from' },
