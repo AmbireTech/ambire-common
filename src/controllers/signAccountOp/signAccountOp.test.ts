@@ -1,4 +1,5 @@
 import { ethers, JsonRpcProvider } from 'ethers'
+import { TokenResult } from 'libs/portfolio'
 import fetch from 'node-fetch'
 
 import { describe, expect, jest, test } from '@jest/globals'
@@ -9,17 +10,16 @@ import { networks } from '../../consts/networks'
 import { Account, AccountStates } from '../../interfaces/account'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { Storage } from '../../interfaces/storage'
+import { accountOpSignableHash } from '../../libs/accountOp/accountOp'
 import { getAccountState } from '../../libs/accountState/accountState'
 import { estimate, EstimateResult } from '../../libs/estimate/estimate'
 import * as gasPricesLib from '../../libs/gasPrice/gasPrice'
-import { GasRecommendation, getGasPriceRecommendations } from '../../libs/gasPrice/gasPrice'
+import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { KeystoreController } from '../keystore/keystore'
 import { PortfolioController } from '../portfolio/portfolio'
 import { SettingsController } from '../settings/settings'
 import { SignAccountOpController } from './signAccountOp'
-import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
-import { accountOpSignableHash } from '../../libs/accountOp/accountOp'
 
 const providers = Object.fromEntries(
   networks.map((network) => [network.id, new JsonRpcProvider(network.rpcUrl)])
@@ -55,7 +55,13 @@ const createAccountOp = (account: Account) => {
   const data = `0x5ae401dc${expire}00000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000e404e45aaf000000000000000000000000dac17f958d2ee523a2206206994597c13d831ec7000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb4800000000000000000000000000000000000000000000000000000000000001f4000000000000000000000000a07d75aacefd11b425af7181958f0f85c312f14300000000000000000000000000000000000000000000000000000000000f424000000000000000000000000000000000000000000000000000000000000c33d9000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000`
 
   const nativeToCheck = ['0xAa0e9a1E2D2CcF2B867fda047bb5394BEF1883E0']
-  const feeTokens = ['0x0000000000000000000000000000000000000000']
+  const feeTokens = [
+    {
+      address: '0x0000000000000000000000000000000000000000',
+      isGasTank: false,
+      amount: 1
+    }
+  ]
 
   const op = {
     accountAddr: account.addr,
@@ -122,12 +128,42 @@ const smartAccount: Account = {
   }
 }
 
+const nativeFeeToken: TokenResult = {
+  address: '0x0000000000000000000000000000000000000000',
+  symbol: 'ETH',
+  amount: 1000n,
+  networkId: 'ethereum',
+  decimals: Number(18),
+  priceIn: [{ baseCurrency: 'usd', price: 5000 }],
+  flags: {
+    onGasTank: false,
+    rewardsType: null,
+    canTopUpGasTank: true,
+    isFeeToken: true
+  }
+}
+
+const usdcFeeToken: TokenResult = {
+  amount: 54409383n,
+  networkId: 'ethereum',
+  decimals: Number(6),
+  priceIn: [{ baseCurrency: 'usd', price: 1.0 }],
+  symbol: 'USDC',
+  address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+  flags: {
+    onGasTank: false,
+    rewardsType: null,
+    canTopUpGasTank: true,
+    isFeeToken: true
+  }
+}
+
 const init = async (
   account: Account,
   accountOp: any,
   signer: any,
   estimationMock?: EstimateResult,
-  gasPricesMock?: GasRecommendation[]
+  gasPricesMock?: gasPricesLib.GasRecommendation[]
 ) => {
   const storage: Storage = produceMemoryStore()
   await storage.set('HumanizerMeta', humanizerMeta)
@@ -143,7 +179,8 @@ const init = async (
   const accounts = [account]
   const accountStates = await getAccountsInfo(accounts)
 
-  const prices = gasPricesMock || (await getGasPriceRecommendations(provider, ethereum))
+  const prices =
+    gasPricesMock || (await gasPricesLib.getGasPriceRecommendations(provider, ethereum))
 
   const { op, nativeToCheck, feeTokens } = accountOp
   const estimation =
@@ -263,7 +300,8 @@ describe('SignAccountOp Controller ', () => {
             paidBy: eoaAccount.addr,
             availableAmount: 1000000000000000000n, // 1 ETH
             gasUsed: 0n,
-            addedNative: 5000n
+            addedNative: 5000n,
+            isGasTank: false
           }
         ],
         erc4337estimation: null
@@ -297,7 +335,7 @@ describe('SignAccountOp Controller ', () => {
       estimation,
       signingKeyAddr: eoaSigner.keyPublicAddress,
       signingKeyType: 'internal',
-      feeTokenAddr: '0x0000000000000000000000000000000000000000', // ETH
+      feeToken: nativeFeeToken,
       paidBy: eoaAccount.addr
     })
 
@@ -337,21 +375,24 @@ describe('SignAccountOp Controller ', () => {
             paidBy: smartAccount.addr,
             availableAmount: 500000000n,
             gasUsed: 25000n,
-            addedNative: 0n
+            addedNative: 0n,
+            isGasTank: false
           },
           {
             address: '0xdAC17F958D2ee523a2206206994597C13D831ec7',
             paidBy: smartAccount.addr,
             availableAmount: 500000000n,
             gasUsed: 50000n,
-            addedNative: 0n
+            addedNative: 0n,
+            isGasTank: false
           },
           {
             address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
             paidBy: smartAccount.addr,
             availableAmount: 500000000n,
             gasUsed: 25000n,
-            addedNative: 0n
+            addedNative: 0n,
+            isGasTank: false
           }
         ]
       },
@@ -389,7 +430,7 @@ describe('SignAccountOp Controller ', () => {
     })
 
     controller.update({
-      feeTokenAddr: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48', // USDC
+      feeToken: usdcFeeToken,
       paidBy: smartAccount.addr,
       signingKeyAddr: eoaSigner.keyPublicAddress,
       signingKeyType: 'internal'
@@ -439,7 +480,8 @@ describe('SignAccountOp Controller ', () => {
             paidBy: eoaAccount.addr,
             availableAmount: 1000000000000000000n, // 1 ETH
             gasUsed: 0n,
-            addedNative: 5000n
+            addedNative: 5000n,
+            isGasTank: false
           }
         ],
         erc4337estimation: null
@@ -475,7 +517,7 @@ describe('SignAccountOp Controller ', () => {
     controller.update({
       gasPrices: prices,
       estimation,
-      feeTokenAddr: '0x0000000000000000000000000000000000000000', // ETH
+      feeToken: nativeFeeToken,
       paidBy: eoaSigner.keyPublicAddress,
       signingKeyAddr: eoaSigner.keyPublicAddress,
       signingKeyType: 'internal'
