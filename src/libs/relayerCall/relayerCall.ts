@@ -7,7 +7,7 @@ class RelayerError extends Error {
   public output: any
 
   constructor(message: string, input: any, output: any) {
-    super(`relayer call error: ${message}`)
+    super(message)
     this.input = input
     this.output = output
   }
@@ -59,7 +59,13 @@ export async function relayerCall(
   headers: any = null
 ): Promise<any> {
   const res = await relayerCallUncaught(this.url + path, this.fetch, method, body, headers)
-  if (!res.success)
-    throw new RelayerError(res.message, { url: this.url, path, method, body, headers }, { res })
+  if (!res.success) {
+    const firstError = res.errorState && res.errorState.length ? res.errorState[0] : res.message
+    throw new RelayerError(
+      firstError.message,
+      { url: this.url, path, method, body, headers },
+      { res }
+    )
+  }
   return res
 }

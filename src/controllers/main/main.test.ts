@@ -6,16 +6,12 @@ import { describe, expect, test } from '@jest/globals'
 import { produceMemoryStore } from '../../../test/helpers'
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'
-import { networks } from '../../consts/networks'
 import { UserRequest } from '../../interfaces/userRequest'
 import { KeyIterator } from '../../libs/keyIterator/keyIterator'
 import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
 import { getBytecode } from '../../libs/proxyDeploy/bytecode'
 import { getAmbireAccountAddress } from '../../libs/proxyDeploy/getAmbireAddressTwo'
 import { MainController } from './main'
-
-const polygon = networks.find((x) => x.id === 'polygon')
-if (!polygon) throw new Error('unable to find polygon network in consts')
 
 describe('Main Controller ', () => {
   const accounts = [
@@ -163,7 +159,7 @@ describe('Main Controller ', () => {
 
     const signerAddr = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
     const priv = { addr: signerAddr, hash: ethers.toBeHex(1, 32) }
-    const bytecode = await getBytecode(polygon, [priv])
+    const bytecode = await getBytecode([priv])
 
     // Same mechanism to generating this one as used for the
     // `accountNotDeployed` in accountState.test.ts

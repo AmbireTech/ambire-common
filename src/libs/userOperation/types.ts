@@ -1,3 +1,5 @@
+export type UserOpRequestType = 'standard' | 'activator' | 'recovery'
+
 export interface UserOperation {
   sender: string
   nonce: string // hex string
@@ -11,5 +13,5 @@ export interface UserOperation {
   paymasterAndData: string // hex string
   signature: string // hex string
   // https://github.com/AmbireTech/ambire-app/wiki/Ambire-Flows-(wrap,-sign,-payment,-broadcast)#erc-4337-edge-case
-  isEdgeCase: boolean
+  requestType: UserOpRequestType
 }

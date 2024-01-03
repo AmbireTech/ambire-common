@@ -1,34 +1,85 @@
+import { JsonRpcProvider } from 'ethers'
+
+import { networks } from '../../consts/networks'
 import { Key } from '../../interfaces/keystore'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
-import { AccountPreferences, KeyPreferences } from '../../interfaces/settings'
+import {
+  AccountPreferences,
+  KeyPreferences,
+  NetworkPreference,
+  NetworkPreferences,
+  RPCProviders
+} from '../../interfaces/settings'
 import { Storage } from '../../interfaces/storage'
 import { isValidAddress } from '../../services/address'
 import EventEmitter from '../eventEmitter'
 
 export class SettingsController extends EventEmitter {
-  networks: NetworkDescriptor[]
-
   accountPreferences: AccountPreferences = {}
 
   keyPreferences: KeyPreferences = []
 
+  providers: RPCProviders = {}
+
+  #networkPreferences: NetworkPreferences = {}
+
   #storage: Storage
 
-  constructor(storage: Storage, networks: NetworkDescriptor[]) {
+  constructor(storage: Storage) {
     super()
     this.#storage = storage
-    this.networks = networks
 
     this.#load()
   }
 
+  get networks(): NetworkDescriptor[] {
+    return networks.map((network) => {
+      const networkPreferences = this.#networkPreferences[network.id]
+      const provider = this.providers[network.id]
+      const newRpcUrl = networkPreferences?.rpcUrl || network.rpcUrl
+
+      // Only update the RPC if the new RPC is different from the current one
+      // or if there is no RPC for this network yet.
+      // eslint-disable-next-line no-underscore-dangle
+      if (!provider || provider?._getConnection().url !== newRpcUrl) {
+        const oldRPC = this.providers[network.id]
+
+        if (oldRPC) {
+          // If an RPC fails once it will try to reconnect every second. If we don't destroy the old RPC
+          // it will keep trying to reconnect forever.
+          oldRPC.destroy()
+        }
+
+        this.providers[network.id] = new JsonRpcProvider(newRpcUrl)
+      }
+
+      if (networkPreferences) {
+        return {
+          ...network,
+          ...networkPreferences
+        }
+      }
+      return network
+    })
+  }
+
+  updateProviderIsWorking(networkId: NetworkDescriptor['id'], isWorking: boolean) {
+    this.providers[networkId].isWorking = isWorking
+
+    this.emitUpdate()
+  }
+
   async #load() {
     try {
-      ;[this.accountPreferences, this.keyPreferences] = await Promise.all([
-        // Should get the storage data from all keys here
-        this.#storage.get('accountPreferences', {}),
-        this.#storage.get('keyPreferences', [])
-      ])
+      // @ts-ignore
+      ;[this.accountPreferences, this.keyPreferences, this.#networkPreferences] = await Promise.all(
+        [
+          // Should get the storage data from all keys here
+          this.#storage.get('accountPreferences', {}),
+          this.#storage.get('keyPreferences', []),
+          this.#storage.get('networkPreferences', {})
+        ]
+      )
     } catch (e) {
       this.emitError({
         message:
@@ -45,7 +96,8 @@ export class SettingsController extends EventEmitter {
     try {
       await Promise.all([
         this.#storage.set('accountPreferences', this.accountPreferences),
-        this.#storage.set('keyPreferences', this.keyPreferences)
+        this.#storage.set('keyPreferences', this.keyPreferences),
+        this.#storage.set('networkPreferences', this.#networkPreferences)
       ])
     } catch (e) {
       this.emitError({
@@ -143,6 +195,52 @@ export class SettingsController extends EventEmitter {
     this.emitUpdate()
   }
 
+  async updateNetworkPreferences(
+    networkPreferences: NetworkPreference,
+    networkId: NetworkDescriptor['id']
+  ) {
+    if (!Object.keys(networkPreferences).length) return
+
+    const networkData = this.networks.find((network) => network.id === networkId)
+
+    const changedNetworkPreferences = Object.keys(networkPreferences).reduce((acc, key) => {
+      if (!networkData) return acc
+
+      // No need to save unchanged network preferences.
+      // Here we filter the network preferences that are the same as the ones in the storage.
+      if (
+        networkPreferences[key as keyof NetworkPreference] ===
+        networkData[key as keyof NetworkPreference]
+      )
+        return acc
+
+      return { ...acc, [key]: networkPreferences[key as keyof NetworkPreference] }
+    }, {})
+
+    // Update the network preferences with the incoming new values
+    this.#networkPreferences[networkId] = {
+      ...this.#networkPreferences[networkId],
+      ...changedNetworkPreferences
+    }
+
+    await this.#storePreferences()
+    this.emitUpdate()
+  }
+
+  async resetNetworkPreference(key: keyof NetworkPreference, networkId: NetworkDescriptor['id']) {
+    if (
+      !networkId ||
+      !(networkId in this.#networkPreferences) ||
+      !(key in this.#networkPreferences[networkId])
+    )
+      return
+
+    delete this.#networkPreferences[networkId][key]
+
+    await this.#storePreferences()
+    this.emitUpdate()
+  }
+
   #throwInvalidAddress(addresses: string[]) {
     return this.emitError({
       message:
@@ -154,5 +252,13 @@ export class SettingsController extends EventEmitter {
         )}`
       )
     })
+  }
+
+  toJSON() {
+    return {
+      ...this,
+      networks: this.networks,
+      providers: this.providers
+    }
   }
 }

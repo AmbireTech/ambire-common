@@ -2,15 +2,15 @@ import { JsonRpcProvider } from 'ethers'
 
 import { networks } from '../../consts/networks'
 import { AccountStates } from '../../interfaces/account'
+import { Banner } from '../../interfaces/banner'
 import { Storage } from '../../interfaces/storage'
 import { Message } from '../../interfaces/userRequest'
 import { AccountOp, AccountOpStatus } from '../../libs/accountOp/accountOp'
-import EventEmitter from '../eventEmitter'
-import { Banner } from '../../interfaces/banner'
 import { isErc4337Broadcast } from '../../libs/userOperation/userOperation'
 import bundler from '../../services/bundlers'
+import EventEmitter from '../eventEmitter'
 
-interface Pagination {
+export interface Pagination {
   fromPage: number
   itemsPerPage: number
 }
@@ -25,10 +25,20 @@ interface PaginationResult<T> {
 export interface SubmittedAccountOp extends AccountOp {
   txnId: string
   nonce: bigint
+  success?: boolean
+  timestamp: number
+}
+
+export interface SignedMessage extends Message {
+  dapp: {
+    name: string
+    icon: string
+  } | null
+  timestamp: number
 }
 
 interface AccountsOps extends PaginationResult<SubmittedAccountOp> {}
-interface MessagesToBeSigned extends PaginationResult<Message> {}
+interface MessagesToBeSigned extends PaginationResult<SignedMessage> {}
 
 export interface Filters {
   account: string
@@ -42,7 +52,7 @@ interface InternalAccountsOps {
 
 interface InternalSignedMessages {
   // account => Message[]
-  [key: string]: Message[]
+  [key: string]: SignedMessage[]
 }
 
 // We are limiting items array to include no more than 1000 records,
@@ -50,8 +60,9 @@ interface InternalSignedMessages {
 // We do this to maintain optimal storage and performance.
 const trim = <T>(items: T[], maxSize = 1000): void => {
   if (items.length > maxSize) {
-    // If the array size is greater than maxSize, remove the first (oldest) item
-    items.shift()
+    // If the array size is greater than maxSize, remove the last (oldest) item
+    // newest items are added to the beginning of the array so oldest will be at the end (thats why we .pop())
+    items.pop()
   }
 }
 
@@ -217,7 +228,8 @@ export class ActivityController extends EventEmitter {
     if (!this.#accountsOps[account]) this.#accountsOps[account] = {}
     if (!this.#accountsOps[account][network]) this.#accountsOps[account][network] = []
 
-    this.#accountsOps[account][network].push({ ...accountOp })
+    // newest SubmittedAccountOp goes first in the list
+    this.#accountsOps[account][network].unshift({ ...accountOp })
     trim(this.#accountsOps[account][network])
 
     this.accountsOps = this.filterAndPaginateAccountOps(
@@ -268,24 +280,32 @@ export class ActivityController extends EventEmitter {
                 networkConfig!,
                 this.#accounts[accountOp.accountAddr][accountOp.networkId]
               )
-              const receipt = is4337
-                ? await bundler.getReceipt(accountOp.txnId, networkConfig!)
-                : await provider.getTransactionReceipt(accountOp.txnId)
-              if (receipt) {
-                this.#accountsOps[this.filters!.account][network][accountOpIndex].status =
-                  receipt.status ? AccountOpStatus.Success : AccountOpStatus.Failure
-                return
+              try {
+                const receipt = is4337
+                  ? await bundler.getReceipt(accountOp.txnId, networkConfig!)
+                  : await provider.getTransactionReceipt(accountOp.txnId)
+                if (receipt) {
+                  this.#accountsOps[this.filters!.account][network][accountOpIndex].status =
+                    receipt.status ? AccountOpStatus.Success : AccountOpStatus.Failure
+                  return
+                }
+              } catch {
+                this.emitError({
+                  level: 'silent',
+                  message: `Failed to determine transaction status on ${accountOp.networkId} for ${accountOp.txnId}.`,
+                  error: new Error(
+                    `activity: failed to get transaction receipt for ${accountOp.txnId}`
+                  )
+                })
               }
 
               if (
-                (
-                  !is4337 &&
-                  this.#accounts[accountOp.accountAddr][accountOp.networkId].nonce > accountOp.nonce
-                ) ||
-                (
-                  is4337 &&
-                  this.#accounts[accountOp.accountAddr][accountOp.networkId].erc4337Nonce > accountOp.nonce
-                )
+                (!is4337 &&
+                  this.#accounts[accountOp.accountAddr][accountOp.networkId].nonce >
+                    accountOp.nonce) ||
+                (is4337 &&
+                  this.#accounts[accountOp.accountAddr][accountOp.networkId].erc4337Nonce >
+                    accountOp.nonce)
               ) {
                 this.#accountsOps[this.filters!.account][network][accountOpIndex].status =
                   AccountOpStatus.UnknownButPastNonce
@@ -308,7 +328,7 @@ export class ActivityController extends EventEmitter {
     return shouldEmitUpdate
   }
 
-  async addSignedMessage(signedMessage: Message, account: string) {
+  async addSignedMessage(signedMessage: SignedMessage, account: string) {
     if (!this.isInitialized) {
       this.#throwNotInitialized()
       return
@@ -318,7 +338,8 @@ export class ActivityController extends EventEmitter {
 
     if (!this.#signedMessages[account]) this.#signedMessages[account] = []
 
-    this.#signedMessages[account].push(signedMessage)
+    // newest SignedMessage goes first in the list
+    this.#signedMessages[account].unshift(signedMessage)
     trim(this.#signedMessages[account])
     this.signedMessages = this.filterAndPaginateSignedMessages(
       this.#signedMessages,
@@ -403,7 +424,7 @@ export class ActivityController extends EventEmitter {
 
     return Object.values(this.#accountsOps[this.filters.account])
       .flat()
-      .filter((accountOp) => (accountOp.status === AccountOpStatus.BroadcastedButNotConfirmed))
+      .filter((accountOp) => accountOp.status === AccountOpStatus.BroadcastedButNotConfirmed)
   }
 
   get banners(): Banner[] {
@@ -423,7 +444,11 @@ export class ActivityController extends EventEmitter {
           {
             label: 'Check',
             actionName: 'open-external-url',
-            meta: { url: is4337 ? `${this.#relayerUrl}/userOp/${accountOp.networkId}/${accountOp.txnId}` : `${network.explorerUrl}/tx/${accountOp.txnId}` }
+            meta: {
+              url: is4337
+                ? `${this.#relayerUrl}/userOp/${accountOp.networkId}/${accountOp.txnId}`
+                : `${network.explorerUrl}/tx/${accountOp.txnId}`
+            }
           }
         ]
       } as Banner

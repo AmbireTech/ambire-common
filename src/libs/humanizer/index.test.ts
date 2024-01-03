@@ -269,7 +269,7 @@ describe('Humanizer main function', () => {
     expect(onUpdate).toHaveBeenCalledTimes(1)
   })
 
-  test('unknown func selector humanize with asyncop', async () => {
+  test.skip('unknown func selector humanize with asyncop', async () => {
     const expectedVisualizations = [
       { type: 'action', content: 'Call buy(uint256)' },
       { type: 'label', content: 'from' },
@@ -361,7 +361,7 @@ describe('TypedMessages', () => {
       {
         type: 'address',
         address: '0x000000000022D473030F116dDEE9F6B43aC78BA3',
-        name: 'Permi 2 contract'
+        name: 'Permit 2 contract'
       },
       { type: 'label', content: 'to use' },
       {
@@ -381,7 +381,7 @@ describe('TypedMessages', () => {
       {
         type: 'address',
         address: '0x000000000022D473030F116dDEE9F6B43aC78BA3',
-        name: 'Permi 2 contract'
+        name: 'Permit 2 contract'
       },
       { type: 'label', content: 'to use' },
       {

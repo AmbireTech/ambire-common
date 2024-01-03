@@ -1,5 +1,5 @@
 import erc20Abi from 'adex-protocol-eth/abi/ERC20.json'
-import { formatUnits, Interface, parseUnits } from 'ethers'
+import { formatUnits, getAddress, Interface, parseUnits } from 'ethers'
 
 import { HumanizerInfoType } from '../../../v1/hooks/useConstants'
 import { networks } from '../../consts/networks'
@@ -234,8 +234,9 @@ export class TransferController extends EventEmitter {
 
     if (!this.selectedToken || !this.#selectedTokenNetworkData || !this.#selectedAccount) return
 
-    const recipientAddress =
+    const recipientAddress = getAddress(
       this.recipientUDAddress || this.recipientEnsAddress || this.recipientAddress
+    )
 
     const bigNumberHexAmount = `0x${parseUnits(
       this.amount,
@@ -281,14 +282,36 @@ export class TransferController extends EventEmitter {
     }
 
     if (this.selectedToken?.networkId && this.#selectedTokenNetworkData && canBeEnsOrUd) {
-      this.recipientUDAddress = await resolveUDomain(
-        address,
-        this.selectedToken.symbol,
-        this.#selectedTokenNetworkData.unstoppableDomainsChain
-      )
+      try {
+        this.recipientUDAddress = await resolveUDomain(
+          address,
+          this.selectedToken.symbol,
+          this.#selectedTokenNetworkData.unstoppableDomainsChain
+        )
+      } catch {
+        this.emitError({
+          level: 'major',
+          message:
+            'We encountered an internal error during UD resolving. Retry, or contact support if the issue persists.',
+          error: new Error('transfer: UD resolving failed')
+        })
+      }
 
       const bip44Item = getBip44Items(this.selectedToken.symbol)
-      this.recipientEnsAddress = await resolveENSDomain(address, bip44Item)
+
+      try {
+        this.recipientEnsAddress = await resolveENSDomain(address, bip44Item)
+      } catch {
+        // Don't throw an error if the address is already resolved as UD
+        if (!this.recipientUDAddress) {
+          this.emitError({
+            level: 'major',
+            message:
+              'We encountered an internal error during ENS resolving. Retry, or contact support if the issue persists.',
+            error: new Error('transfer: ENS resolving failed')
+          })
+        }
+      }
     }
     if (this.#humanizerInfo) {
       // @TODO: could fetch address code

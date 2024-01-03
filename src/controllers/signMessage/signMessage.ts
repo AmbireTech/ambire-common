@@ -16,6 +16,7 @@ import {
   wrapEthSign
 } from '../../libs/signMessage/signMessage'
 import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
+import { SignedMessage } from '../activity/activity'
 import EventEmitter from '../eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
 import { SettingsController } from '../settings/settings'
@@ -41,6 +42,11 @@ export class SignMessageController extends EventEmitter {
 
   status: 'INITIAL' | 'LOADING' | 'DONE' = 'INITIAL'
 
+  dapp: {
+    name: string
+    icon: string
+  } | null = null
+
   messageToSign: Message | null = null
 
   signingKeyAddr: Key['addr'] | null = null
@@ -49,7 +55,7 @@ export class SignMessageController extends EventEmitter {
 
   humanReadable: IrMessage | null = null
 
-  signedMessage: Message | null = null
+  signedMessage: SignedMessage | null = null
 
   constructor(
     keystore: KeystoreController,
@@ -68,15 +74,23 @@ export class SignMessageController extends EventEmitter {
   }
 
   init({
+    dapp,
     messageToSign,
     accounts,
     accountStates
   }: {
+    dapp?: {
+      name: string
+      icon: string
+    }
     messageToSign: Message
     accounts: Account[]
     accountStates: AccountStates
   }) {
     if (['message', 'typedMessage'].includes(messageToSign.content.kind)) {
+      if (dapp) {
+        this.dapp = dapp
+      }
       this.messageToSign = messageToSign
       this.#accounts = accounts
       this.#accountStates = accountStates
@@ -115,6 +129,7 @@ export class SignMessageController extends EventEmitter {
 
   reset() {
     this.isInitialized = false
+    this.dapp = null
     this.messageToSign = null
     this.#accountStates = null
     this.#accounts = null
@@ -256,8 +271,11 @@ export class SignMessageController extends EventEmitter {
 
       this.signedMessage = {
         id: this.messageToSign.id,
+        dapp: this.dapp,
         accountAddr: this.messageToSign.accountAddr,
+        networkId: this.messageToSign.networkId,
         signature,
+        timestamp: new Date().getTime(),
         content: this.messageToSign.content
       }
     } catch (e: any) {
