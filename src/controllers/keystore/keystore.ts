@@ -124,36 +124,39 @@ export class KeystoreController extends EventEmitter {
   }
 
   // @TODO time before unlocking
-  async #unlockWithSecret(secretId: string, secret: string) {
+  async #unlockWithSecret(secretId: string, secret: string): Promise<'SUCCESS' | 'ERROR'> {
     // @TODO should we check if already locked? probably not cause this function can  be used in order to verify if a secret is correct
     const secrets = await this.getMainKeyEncryptedWithSecrets()
     if (!secrets.length) {
-      return this.emitError({
+      this.emitError({
         message:
           'Trying to unlock Ambire, but the lock mechanism was not fully configured yet. Please try again or contact support if the problem persists.',
         level: 'major',
         error: new Error('keystore: no secrets yet')
       })
+      return 'ERROR'
     }
 
     const secretEntry = secrets.find((x) => x.id === secretId)
     if (!secretEntry) {
-      return this.emitError({
+      this.emitError({
         message:
           'Something went wrong when trying to unlock Ambire. Please try again or contact support if the problem persists.',
         level: 'major',
         error: new Error(`keystore: secret ${secretId} not found`)
       })
+      return 'ERROR'
     }
 
     const { scryptParams, aesEncrypted } = secretEntry
     if (aesEncrypted.cipherType !== CIPHER) {
-      return this.emitError({
+      this.emitError({
         message:
           'Something went wrong when unlocking Ambire. Please try again or contact support if the problem persists.',
         level: 'major',
         error: new Error(`keystore: unsupported cipherType ${aesEncrypted.cipherType}`)
       })
+      return 'ERROR'
     }
     // @TODO: progressCallback?
 
@@ -179,6 +182,7 @@ export class KeystoreController extends EventEmitter {
 
     const decrypted = aesCtr.decrypt(getBytes(aesEncrypted.ciphertext))
     this.#mainKey = { key: decrypted.slice(0, 16), iv: decrypted.slice(16, 32) }
+    return 'SUCCESS'
   }
 
   async unlockWithSecret(secretId: string, secret: string) {
@@ -199,7 +203,7 @@ export class KeystoreController extends EventEmitter {
       throw new Error(`keystore: trying to add duplicate secret ${secretId}`)
 
     let mainKey: MainKey | null = this.#mainKey
-    // We are not not unlocked
+    // We are not unlocked
     if (!mainKey) {
       if (!secrets.length) {
         const key = getBytes(keccak256(concat([randomBytes(32), toUtf8Bytes(extraEntropy)]))).slice(
@@ -496,88 +500,30 @@ export class KeystoreController extends EventEmitter {
     return new SignerInitializer(key)
   }
 
-  async #updateSecret(secretId: string, secret: string, newSecret: string) {
+  async #changeKeystorePassword(oldSecret: string, newSecret: string) {
+    const res = await this.#unlockWithSecret('password', oldSecret)
+    if (res !== 'SUCCESS') return
+
+    if (!this.isUnlocked) {
+      return this.emitError({
+        message:
+          'Key Store not unlocked. Please try again or contact support if the problem persists.',
+        level: 'major',
+        error: new Error('keystore: not unlocked')
+      })
+    }
+
     const secrets = await this.getMainKeyEncryptedWithSecrets()
-    const secretEntry = secrets.find((x) => x.id === secretId)
-
-    if (!secretEntry) {
-      return this.emitError({
-        message:
-          'Key Store not configured yet. Please try again or contact support if the problem persists.',
-        level: 'major',
-        error: new Error('keystore: secret not found')
-      })
-    }
-
-    const { scryptParams, aesEncrypted } = secretEntry
-    if (aesEncrypted.cipherType !== CIPHER) {
-      return this.emitError({
-        message:
-          'Something went wrong when changing your Key Store password. Please try again or contact support if the problem persists.',
-        level: 'major',
-        error: new Error(`keystore: unsupported cipherType ${aesEncrypted.cipherType}`)
-      })
-    }
-
-    const key = await scrypt.scrypt(
-      getBytesForSecret(secret),
-      getBytes(scryptParams.salt),
-      scryptParams.N,
-      scryptParams.r,
-      scryptParams.p,
-      scryptParams.dkLen,
-      () => {}
+    await this.#storage.set(
+      'keystoreSecrets',
+      secrets.filter((x) => x.id !== 'password')
     )
-    const iv = getBytes(aesEncrypted.iv)
-    const derivedKey = key.slice(0, 16)
-    const macPrefix = key.slice(16, 32)
-    const counter = new aes.Counter(iv)
-    const aesCtr = new aes.ModeOfOperation.ctr(derivedKey, counter)
-    const mac = keccak256(concat([macPrefix, aesEncrypted.ciphertext]))
-    if (mac !== aesEncrypted.mac) {
-      // Throw, because that's handled as a form field error
-      throw new Error('keystore: wrong secret')
-    }
-
-    const decrypted = aesCtr.decrypt(getBytes(aesEncrypted.ciphertext))
-    const mainKeyDecrypted = { key: decrypted.slice(0, 16), iv: decrypted.slice(16, 32) }
-
-    console.log(mainKeyDecrypted, this.#mainKey)
-    // const keys: StoredKey[] = await this.#storage.get('keystoreKeys', [])
-    // const onlyInternalKeys = keys.filter((k) => k.type === 'internal')
-    // const otherKeys = keys.filter((k) => k.type !== 'internal')
-
-    // const updatedInternalKeys = onlyInternalKeys.map((k) => {
-    //   if (!this.isUnlocked) throw new Error('keystore: not unlocked')
-
-    //   const encryptedBytes = getBytes(k.privKey as string)
-    //   const decryptedBytes = aesCtr.decrypt(encryptedBytes)
-    //   const decryptedPrivateKey = aes.utils.hex.fromBytes(decryptedBytes)
-
-    //   return {
-    //     ...k,
-    //     privKey: hexlify(aesCtr.encrypt(aes.utils.hex.toBytes(decryptedPrivateKey)))
-    //   }
-    // })
-
-    // const newKeys = [...updatedInternalKeys, ...otherKeys]
-
-    // if (!newKeys.length) return
-
-    // const nextKeys = [...keys, ...newKeys]
-
-    // await this.#storage.set('keystoreKeys', nextKeys)
-    // this.keys = await this.getKeys()
-
-    // await this.#storage.set(
-    //   'keystoreSecrets',
-    //   secrets.filter((x) => x.id !== secretId)
-    // )
+    await this.#addSecret('password', newSecret, '', true)
   }
 
-  async updateSecret(secretId: string, secret: string, newSecret: string) {
-    await this.wrapKeystoreAction('updateSecret', () =>
-      this.#updateSecret(secretId, secret, newSecret)
+  async changeKeystorePassword(oldSecret: string, newSecret: string) {
+    await this.wrapKeystoreAction('changeKeystorePassword', () =>
+      this.#changeKeystorePassword(oldSecret, newSecret)
     )
   }
 
