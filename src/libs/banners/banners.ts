@@ -93,7 +93,7 @@ export const getPendingAccountOpBannersForEOA = ({
 
   return [
     {
-      id: new Date().getTime(),
+      id: pendingUserRequests[0].id,
       topic: 'TRANSACTION',
       title: `${numberOfPendingRequest} More pending transactions are waiting to be signed`,
       text: '' // TODO:
@@ -132,7 +132,7 @@ export const getAccountOpBannersForSmartAccount = ({
 
   groupedRequestsArray.forEach((group) => {
     txnBanners.push({
-      id: new Date().getTime(),
+      id: group[0].id,
       topic: 'TRANSACTION',
       title: `${group.length} Transactions waiting to be signed`,
       text: '', // TODO:
@@ -166,10 +166,10 @@ export const getNetworksWithFailedRPCBanners = ({
   return getNetworksWithFailedRPC({ providers })
     .filter((networkId) => networksWithAssets.includes(networkId))
     .map((network) => {
-      const networkData = networks.find((n: NetworkDescriptor) => n.id === network)
+      const networkData = networks.find((n: NetworkDescriptor) => n.id === network)!
 
       return {
-        id: networkData?.id || new Date().getTime(),
+        id: `${networkData.id}-${new Date().getTime()}`,
         topic: 'WARNING',
         title: `Failed to retrieve network data for ${networkData?.name}(RPC error)`,
         text: `Affected features(${networkData?.name}): visible tokens, sign message/transaction, ENS/UD domain resolving, add account. Please try again later or contact support.`,
