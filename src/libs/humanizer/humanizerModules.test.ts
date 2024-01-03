@@ -225,7 +225,7 @@ describe('module tests', () => {
       'Swap 422.775565331912310692 SHARES for at least 2454.922038 USDC and send it to 0xca124B356bf11dc153B886ECB4596B5cb9395C41 (0xca1...C41) already expired',
       'Swap up to 4825320403256397423633 0x6E975115250B05C828ecb8edeDb091975Fc20a5d token for 0.941 WETH and send it to 0xbb6C8c037b9Cc3bF1a4C4188d92e5D86bfCE76A8 (0xbb6...6A8) already expired',
       'Swap 0.0001 ETH for at least 0.178131 USDC already expired',
-      'Swap 100.0 USDC for at least 72003605256085551 0x2e9a6Df78E42a30712c10a9Dc4b1C8656f8F2879 token and send it to 0x02a3109c4CE8354Ee771fEaC419B5da04Ef15761 (0x02a...761) already expired',
+      'Swap 100.0 USDC for at least 0.072003605256085551 MKR and send it to 0x02a3109c4CE8354Ee771fEaC419B5da04Ef15761 (0x02a...761) already expired',
       'Wrap 1.0 ETH',
       'Unwrap 0.0089 ETH',
       'Call deposit() from 0xE592427A0AEce92De3Edee1F18E0157C05861564 (Uniswap) and Send 1.0 ETH',
