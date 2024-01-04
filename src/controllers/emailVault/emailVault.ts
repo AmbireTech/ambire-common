@@ -12,7 +12,7 @@ import {
 import { Storage } from '../../interfaces/storage'
 import { getKeySyncBanner } from '../../libs/banners/banners'
 import { EmailVault } from '../../libs/emailVault/emailVault'
-import EventEmitter from '../../libs/eventEmitter/eventEmitter'
+import EventEmitter from '../eventEmitter'
 import { requestMagicLink } from '../../libs/magicLink/magicLink'
 import { Polling } from '../../libs/polling/polling'
 import wait from '../../utils/wait'

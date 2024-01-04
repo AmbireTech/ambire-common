@@ -30,7 +30,7 @@ import {
   StoredKey
 } from '../../interfaces/keystore'
 import { Storage } from '../../interfaces/storage'
-import EventEmitter from '../../libs/eventEmitter/eventEmitter'
+import EventEmitter from '../eventEmitter'
 import wait from '../../utils/wait'
 
 const scryptDefaults = { N: 131072, r: 8, p: 1, dkLen: 64 }
