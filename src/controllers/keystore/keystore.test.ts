@@ -307,6 +307,7 @@ describe('KeystoreController', () => {
   })
 
   test('should export key backup, create wallet and compare public address', (done) => {
+    // changeKeystorePassword changed the password in the tests above so now unlock with the new password
     keystore.unlockWithSecret('password', `${pass}1`)
 
     const unsubscribe = keystore.onUpdate(async () => {
