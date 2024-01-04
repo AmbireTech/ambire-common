@@ -1,5 +1,6 @@
+/* eslint-disable no-nested-ternary */
 import { ethers } from 'ethers'
-import { nativeTokens } from '../../../consts/networks'
+import { networks } from '../../../consts/networks'
 import {
   HumanizerFragment,
   HumanizerParsingModule,
@@ -7,23 +8,24 @@ import {
   HumanizerVisualization
 } from '../interfaces'
 import { getLabel, getTokenInfo } from '../utils'
+import { MAX_UINT256 } from '../../../consts/deploy'
 
 export const tokenParsing: HumanizerParsingModule = (
   humanizerSettings: HumanizerSettings,
   visualization: HumanizerVisualization[],
   options?: any
 ) => {
+  const nativeSymbol = networks.find((n) => n.id === humanizerSettings.networkId)?.nativeAssetSymbol
   const asyncOps: Promise<HumanizerFragment | null>[] = []
   const fullVisualization: HumanizerVisualization[] = visualization.map(
     (v: HumanizerVisualization) => {
       if (v.type === 'token') {
         const tokenMeta =
           v.address === ethers.ZeroAddress
-            ? nativeTokens[humanizerSettings.networkId]
+            ? nativeSymbol && [nativeSymbol, 18]
             : humanizerSettings.humanizerMeta?.[`tokens:${v.address}`]
         if (tokenMeta) {
-          return v.amount ===
-            115792089237316195423570985008687907853269984665640564039457584007913129639935n
+          return v.amount === MAX_UINT256
             ? getLabel(`all ${tokenMeta[0]}`)
             : {
                 ...v,
@@ -31,10 +33,11 @@ export const tokenParsing: HumanizerParsingModule = (
                 decimals: tokenMeta[1],
                 readableAmount:
                   // only F's
-                  v.amount ===
-                  115792089237316195423570985008687907853269984665640564039457584007913129639935n
+                  v.amount === MAX_UINT256
                     ? 'all'
-                    : ethers.formatUnits(v.amount as bigint, tokenMeta[1])
+                    : v.amount
+                    ? ethers.formatUnits(v.amount as bigint, tokenMeta[1])
+                    : '0'
               }
         }
         asyncOps.push(getTokenInfo(humanizerSettings, v.address as string, options))

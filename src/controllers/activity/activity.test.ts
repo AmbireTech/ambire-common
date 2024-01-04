@@ -2,8 +2,7 @@ import { describe, expect } from '@jest/globals'
 
 import { produceMemoryStore } from '../../../test/helpers'
 import { AccountStates } from '../../interfaces/account'
-import { Message } from '../../interfaces/userRequest'
-import { ActivityController, SubmittedAccountOp } from './activity'
+import { ActivityController, SignedMessage, SubmittedAccountOp } from './activity'
 
 describe('Activity Controller ', () => {
   const accounts = {
@@ -19,13 +18,26 @@ describe('Activity Controller ', () => {
         isEOA: false,
         deployError: false
       }
+    },
+    '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5': {
+      ethereum: {
+        accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
+        nonce: 225n,
+        isDeployed: true,
+        associatedKeys: ['0xd6e371526cdaeE04cd8AF225D42e37Bc14688D9E'],
+        isV2: true,
+        scheduledRecoveries: [],
+        balance: 0n,
+        isEOA: false,
+        deployError: false
+      }
     }
   } as unknown as AccountStates
 
   describe('AccountsOps', () => {
     test('Retrieved from Controller and persisted in Storage', async () => {
       const storage = produceMemoryStore()
-      const controller = new ActivityController(storage, accounts)
+      const controller = new ActivityController(storage, accounts, '')
 
       controller.init({
         filters: {
@@ -49,7 +61,8 @@ describe('Activity Controller ', () => {
             data: '0x23b872dd000000000000000000000000b674f3fd5f43464db0448a57529eaf37f04ccea500000000000000000000000077777777789a8bbee6c64381e5e89e501fb0e4c80000000000000000000000000000000000000000000000000000000000000089'
           }
         ],
-        txnId: '0x891e12877c24a8292fd73fd741897682f38a7bcd497374a6b68e8add89e1c0fb'
+        txnId: '0x891e12877c24a8292fd73fd741897682f38a7bcd497374a6b68e8add89e1c0fb',
+        status: 'broadcasted-but-not-confirmed'
       } as SubmittedAccountOp
 
       await controller.addAccountOp(accountOp)
@@ -57,19 +70,19 @@ describe('Activity Controller ', () => {
       const storageAccountsOps = await storage.get('accountsOps', {})
 
       expect(controllerAccountsOps).toEqual({
-        items: [{ ...accountOp, status: 'pending' }], // everytime we add a new AccountOp, it gets pending status
+        items: [{ ...accountOp, status: 'broadcasted-but-not-confirmed' }], // everytime we add a new AccountOp, it gets broadcasted-but-not-confirmed status
         itemsTotal: 1,
         currentPage: 0,
         maxPages: 1
       })
       expect(storageAccountsOps['0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'].ethereum).toEqual([
-        { ...accountOp, status: 'pending' }
+        { ...accountOp, status: 'broadcasted-but-not-confirmed' }
       ])
     })
 
     test('Pagination and filtration handled correctly', async () => {
       const storage = produceMemoryStore()
-      const controller = new ActivityController(storage, accounts)
+      const controller = new ActivityController(storage, accounts, '')
 
       controller.init({
         filters: {
@@ -94,7 +107,8 @@ describe('Activity Controller ', () => {
               data: '0x23b872dd000000000000000000000000b674f3fd5f43464db0448a57529eaf37f04ccea500000000000000000000000077777777789a8bbee6c64381e5e89e501fb0e4c80000000000000000000000000000000000000000000000000000000000000089'
             }
           ],
-          txnId: '0x891e12877c24a8292fd73fd741897682f38a7bcd497374a6b68e8add89e1c0fb'
+          txnId: '0x891e12877c24a8292fd73fd741897682f38a7bcd497374a6b68e8add89e1c0fb',
+          status: 'broadcasted-but-not-confirmed'
         },
         {
           accountAddr: '0x40b38765696e3d5d8d9d834d8aad4bb6e418e489',
@@ -111,7 +125,8 @@ describe('Activity Controller ', () => {
               data: '0x23b872dd000000000000000000000000b674f3fd5f43464db0448a57529eaf37f04ccea500000000000000000000000077777777789a8bbee6c64381e5e89e501fb0e4c80000000000000000000000000000000000000000000000000000000000000089'
             }
           ],
-          txnId: '0x891e12877c24a8292fd73fd741897682f38a7bcd497374a6b68e8add89e1c0fb'
+          txnId: '0x891e12877c24a8292fd73fd741897682f38a7bcd497374a6b68e8add89e1c0fb',
+          status: 'broadcasted-but-not-confirmed'
         },
         {
           accountAddr: '0x40b38765696e3d5d8d9d834d8aad4bb6e418e489',
@@ -128,7 +143,8 @@ describe('Activity Controller ', () => {
               data: '0x23b872dd000000000000000000000000b674f3fd5f43464db0448a57529eaf37f04ccea500000000000000000000000077777777789a8bbee6c64381e5e89e501fb0e4c80000000000000000000000000000000000000000000000000000000000000089'
             }
           ],
-          txnId: '0x891e12877c24a8292fd73fd741897682f38a7bcd497374a6b68e8add89e1c0fb'
+          txnId: '0x891e12877c24a8292fd73fd741897682f38a7bcd497374a6b68e8add89e1c0fb',
+          status: 'broadcasted-but-not-confirmed'
         },
         {
           accountAddr: '0x40b38765696e3d5d8d9d834d8aad4bb6e418e489',
@@ -145,7 +161,8 @@ describe('Activity Controller ', () => {
               data: '0x23b872dd000000000000000000000000b674f3fd5f43464db0448a57529eaf37f04ccea500000000000000000000000077777777789a8bbee6c64381e5e89e501fb0e4c80000000000000000000000000000000000000000000000000000000000000089'
             }
           ],
-          txnId: '0x891e12877c24a8292fd73fd741897682f38a7bcd497374a6b68e8add89e1c0fb'
+          txnId: '0x891e12877c24a8292fd73fd741897682f38a7bcd497374a6b68e8add89e1c0fb',
+          status: 'broadcasted-but-not-confirmed'
         }
       ] as SubmittedAccountOp[]
 
@@ -181,7 +198,7 @@ describe('Activity Controller ', () => {
                 data: '0x23b872dd000000000000000000000000b674f3fd5f43464db0448a57529eaf37f04ccea500000000000000000000000077777777789a8bbee6c64381e5e89e501fb0e4c80000000000000000000000000000000000000000000000000000000000000089'
               }
             ],
-            status: 'pending', // everytime we add a new AccountOp, it gets pending status
+            status: 'broadcasted-but-not-confirmed', // everytime we add a new AccountOp, it gets broadcasted-but-not-confirmed status
             txnId: '0x891e12877c24a8292fd73fd741897682f38a7bcd497374a6b68e8add89e1c0fb'
           }
         ],
@@ -193,7 +210,7 @@ describe('Activity Controller ', () => {
 
     test('`success` status is set correctly', async () => {
       const storage = produceMemoryStore()
-      const controller = new ActivityController(storage, accounts)
+      const controller = new ActivityController(storage, accounts, '')
 
       controller.init({
         filters: {
@@ -218,7 +235,8 @@ describe('Activity Controller ', () => {
           }
         ],
         // this txn is already mined and has `success` status
-        txnId: '0x891e12877c24a8292fd73fd741897682f38a7bcd497374a6b68e8add89e1c0fb'
+        txnId: '0x891e12877c24a8292fd73fd741897682f38a7bcd497374a6b68e8add89e1c0fb',
+        status: 'broadcasted-but-not-confirmed'
       } as SubmittedAccountOp
 
       await controller.addAccountOp(accountOp)
@@ -235,7 +253,7 @@ describe('Activity Controller ', () => {
 
     test('`failed` status is set correctly', async () => {
       const storage = produceMemoryStore()
-      const controller = new ActivityController(storage, accounts)
+      const controller = new ActivityController(storage, accounts, '')
 
       controller.init({
         filters: {
@@ -260,7 +278,8 @@ describe('Activity Controller ', () => {
           }
         ],
         // this txn is already mined, but has `fail` status
-        txnId: '0x67ec3acc5274a88c50d1e79e9b9d4c2c3d5e0e3ba3cc33b32d65f3fdb3b5a258'
+        txnId: '0x67ec3acc5274a88c50d1e79e9b9d4c2c3d5e0e3ba3cc33b32d65f3fdb3b5a258',
+        status: 'broadcasted-but-not-confirmed'
       } as SubmittedAccountOp
 
       await controller.addAccountOp(accountOp)
@@ -277,7 +296,7 @@ describe('Activity Controller ', () => {
 
     test('`Unknown but past nonce` status is set correctly', async () => {
       const storage = produceMemoryStore()
-      const controller = new ActivityController(storage, accounts)
+      const controller = new ActivityController(storage, accounts, '')
 
       controller.init({
         filters: {
@@ -302,7 +321,8 @@ describe('Activity Controller ', () => {
           }
         ],
         // wrong txn id, so we can simulate nullish getTransactionReceipt()
-        txnId: '0x0000000000000000000000000000000000000000000000000000000000000001'
+        txnId: '0x0000000000000000000000000000000000000000000000000000000000000001',
+        status: 'broadcasted-but-not-confirmed'
       } as SubmittedAccountOp
 
       await controller.addAccountOp(accountOp)
@@ -319,7 +339,7 @@ describe('Activity Controller ', () => {
 
     test('Keeps no more than 1000 items', async () => {
       const storage = produceMemoryStore()
-      const controller = new ActivityController(storage, accounts)
+      const controller = new ActivityController(storage, accounts, '')
 
       controller.init({
         filters: {
@@ -343,7 +363,8 @@ describe('Activity Controller ', () => {
             data: '0x23b872dd000000000000000000000000b674f3fd5f43464db0448a57529eaf37f04ccea500000000000000000000000077777777789a8bbee6c64381e5e89e501fb0e4c80000000000000000000000000000000000000000000000000000000000000089'
           }
         ],
-        txnId: '0x891e12877c24a8292fd73fd741897682f38a7bcd497374a6b68e8add89e1c0fb'
+        txnId: '0x891e12877c24a8292fd73fd741897682f38a7bcd497374a6b68e8add89e1c0fb',
+        status: 'broadcasted-but-not-confirmed'
       } as SubmittedAccountOp
 
       const accountsOps = Array.from(Array(1500).keys()).map((key) => ({
@@ -359,17 +380,18 @@ describe('Activity Controller ', () => {
 
       await controller.setAccountsOpsPagination({ fromPage: 0, itemsPerPage: 1000 })
       const controllerAccountsOps = controller.accountsOps
-
       expect(controllerAccountsOps!.itemsTotal).toEqual(1000)
-      expect(controllerAccountsOps!.items[0].nonce).toEqual(500n)
-      expect(controllerAccountsOps!.items[999].nonce).toEqual(1499n)
+      // newest added item will be added to the beginning of the array
+      // in this case newest item is with nonce 1499n and should be at index 0
+      expect(controllerAccountsOps!.items[0].nonce).toEqual(1499n)
+      expect(controllerAccountsOps!.items[999].nonce).toEqual(500n)
     })
   })
 
   describe('SignedMessages', () => {
     test('Retrieved from Controller and persisted in Storage', async () => {
       const storage = produceMemoryStore()
-      const controller = new ActivityController(storage, accounts)
+      const controller = new ActivityController(storage, accounts, '')
 
       controller.init({
         filters: {
@@ -378,9 +400,14 @@ describe('Activity Controller ', () => {
         }
       })
 
-      const signedMessage: Message = {
+      const signedMessage: SignedMessage = {
         id: 1,
         accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
+        dapp: {
+          icon: '',
+          name: 'dapp-name'
+        },
+        timestamp: 1701345600000,
         content: {
           kind: 'message',
           message: '0x74657374'
@@ -406,7 +433,7 @@ describe('Activity Controller ', () => {
 
     test('Pagination and filtration handled correctly', async () => {
       const storage = produceMemoryStore()
-      const controller = new ActivityController(storage, accounts)
+      const controller = new ActivityController(storage, accounts, '')
 
       controller.init({
         filters: {
@@ -415,9 +442,14 @@ describe('Activity Controller ', () => {
         }
       })
 
-      const signedMessage: Message = {
+      const signedMessage: SignedMessage = {
         id: 1,
         accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
+        dapp: {
+          icon: '',
+          name: 'dapp-name'
+        },
+        timestamp: 1701345600000,
         content: {
           kind: 'message',
           message: '0x74657374'
@@ -449,7 +481,7 @@ describe('Activity Controller ', () => {
 
     test('Keeps no more than 1000 items', async () => {
       const storage = produceMemoryStore()
-      const controller = new ActivityController(storage, accounts)
+      const controller = new ActivityController(storage, accounts, '')
 
       controller.init({
         filters: {
@@ -458,9 +490,14 @@ describe('Activity Controller ', () => {
         }
       })
 
-      const signedMessage: Message = {
+      const signedMessage: SignedMessage = {
         id: 1,
         accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
+        dapp: {
+          icon: '',
+          name: 'dapp-name'
+        },
+        timestamp: 1701345600000,
         content: {
           kind: 'message',
           message: '0x123456'
@@ -484,8 +521,10 @@ describe('Activity Controller ', () => {
       const controllerSignedMessages = controller.signedMessages
 
       expect(controllerSignedMessages!.itemsTotal).toEqual(1000)
-      expect(controllerSignedMessages!.items[0].signature).toEqual('500')
-      expect(controllerSignedMessages!.items[999].signature).toEqual('1499')
+      // newest added item will be added to the beginning of the array
+      // in this case newest item is with signature 1499 and should be at index 0
+      expect(controllerSignedMessages!.items[0].signature).toEqual('1499')
+      expect(controllerSignedMessages!.items[999].signature).toEqual('500')
     })
   })
 })

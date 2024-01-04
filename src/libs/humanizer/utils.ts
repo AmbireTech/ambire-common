@@ -1,14 +1,21 @@
 import dotenv from 'dotenv'
 import { ethers } from 'ethers'
 
+import { geckoIdMapper, geckoNetworkIdMapper } from '../../consts/coingecko'
 import { networks } from '../../consts/networks'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
-import { HumanizerFragment, HumanizerSettings, HumanizerVisualization } from './interfaces'
+import {
+  HumanizerFragment,
+  HumanizerSettings,
+  HumanizerVisualization,
+  HumanizerWarning,
+  IrCall
+} from './interfaces'
 
 dotenv.config()
 const COINGECKO_PRO_API_KEY = process.env.COINGECKO_PRO_API_KEY
 
-export function getWarning(content: string, level: string = 'caution') {
+export function getWarning(content: string, level: HumanizerWarning['level'] = 'caution') {
   return { content, level }
 }
 
@@ -50,23 +57,48 @@ export function getRecipientText(from: string, recipient: string): HumanizerVisu
 }
 
 export function getDeadlineText(deadlineSecs: bigint): HumanizerVisualization {
+  if (
+    deadlineSecs.toString() ===
+    '115792089237316195423570985008687907853269984665640564039457584007913129639935'
+  )
+    return getLabel('no deadline')
   const minute = 60000
-  let deadline
-  if (typeof deadlineSecs === 'bigint') {
-    deadline = Number(deadlineSecs * 1000n)
-  } else {
-    deadline = Number(BigInt(deadlineSecs) * 1000n)
-  }
+  const deadline = Number(BigInt(deadlineSecs) * 1000n)
   const diff = deadline - Date.now()
   if (diff < 0 && diff > -minute * 2) return getLabel('expired just now')
   if (diff < 0) return getLabel('already expired')
   if (diff < minute) return getLabel('expires in less than a minute')
   if (diff < 10 * minute) return getLabel(`expires in ${Math.floor(diff / minute)} minutes`)
-  return getLabel(`valid until ${new Date(deadline / 1000).toLocaleString()}`)
+  return getLabel(`valid until ${new Date(deadline).toLocaleString()}`)
 }
 
 export function shortenAddress(addr: string) {
   return addr ? `${addr.slice(0, 5)}...${addr.slice(-3)}` : null
+}
+
+/**
+ * Make a request to coingecko to fetch the latest price of the native token.
+ * This is used by benzina and hence we cannot wrap the errors in emitError
+ */
+export async function getNativePrice(network: NetworkDescriptor, fetch: Function): Promise<number> {
+  const platformId = geckoIdMapper(ethers.ZeroAddress, network.id)
+  if (!platformId) {
+    throw new Error(`getNativePrice: ${network.name} is not supported`)
+  }
+
+  const baseUrl = COINGECKO_PRO_API_KEY
+    ? 'https://pro-api.coingecko.com/api/v3'
+    : 'https://api.coingecko.com/api/v3'
+  const postfix = COINGECKO_PRO_API_KEY ? `&x_cg_pro_api_key=${COINGECKO_PRO_API_KEY}` : ''
+  const coingeckoQueryUrl = `${baseUrl}/simple/price?ids=${platformId}&vs_currencies=usd${postfix}`
+  let response = await fetch(coingeckoQueryUrl)
+  response = await response.json()
+
+  if (!response[platformId] || !response[platformId].usd) {
+    throw new Error(`getNativePrice: could not fetch native token price for ${network.name} `)
+  }
+
+  return response[platformId].usd
 }
 
 export async function getTokenInfo(
@@ -74,42 +106,75 @@ export async function getTokenInfo(
   address: string,
   options: any
 ): Promise<HumanizerFragment | null> {
-  const network = networks.find((n: NetworkDescriptor) => n.id === humanizerSettings.networkId)?.id
-  // @TODO update coingecko call with https://github.com/AmbireTech/ambire-common/pull/328
+  const network = networks.find((n: NetworkDescriptor) => n.id === humanizerSettings.networkId)
+  const platformId = geckoNetworkIdMapper(network!.id)
   try {
     const baseUrl = COINGECKO_PRO_API_KEY
       ? 'https://pro-api.coingecko.com/api/v3'
       : 'https://api.coingecko.com/api/v3'
     const postfix = COINGECKO_PRO_API_KEY ? `?&x_cg_pro_api_key=${COINGECKO_PRO_API_KEY}` : ''
-    const coingeckoQueryUrl = `${baseUrl}/coins/${network}/contract/${address}${postfix}`
+    const coingeckoQueryUrl = `${baseUrl}/coins/${
+      platformId || network?.chainId
+    }/contract/${address}${postfix}`
     let response = await options.fetch(coingeckoQueryUrl)
     response = await response.json()
-    if (response.symbol && response.detail_platforms?.ethereum.decimal_place)
+    if (response.symbol && response.detail_platforms?.ethereum?.decimal_place)
       return {
         key: `tokens:${address}`,
         isGlobal: true,
-        value: [response.symbol.toUpperCase(), response.detail_platforms?.ethereum.decimal_place]
+        value: [response.symbol.toUpperCase(), response.detail_platforms?.ethereum?.decimal_place]
       }
+
+    // @TODO: rething error levels
+    if (response.symbol && response.detail_platforms) {
+      options.emitError({
+        message: `getTokenInfo: token not supported on network ${network?.name} `,
+        error: new Error(`token not supported on network ${network?.name}`),
+        level: 'silent'
+      })
+      return null
+    }
     options.emitError({
-      message: 'getTokenInfo: something is wrong goingecko reponse format',
-      error: new Error('unexpected response format'),
-      level: 'minor'
+      message: 'getTokenInfo: something is wrong goingecko reponse format or 404',
+      error: new Error('unexpected response format or 404'),
+      level: 'silent'
     })
     return null
-  } catch (e) {
+  } catch (e: any) {
     options.emitError({
-      message: 'getTokenInfo: something is wrong with coingecko api',
+      message: `getTokenInfo: something is wrong with coingecko api ${e.message}`,
       error: e,
-      level: 'minor'
+      level: 'silent'
     })
     return null
   }
 }
 
-export function checkIfUnknowAction(v: Array<HumanizerVisualization>) {
+export function checkIfUnknownAction(v: Array<HumanizerVisualization>) {
   try {
     return v[0].type === 'action' && v?.[0]?.content?.startsWith('Unknown action')
   } catch (e) {
     return false
   }
+}
+
+export function getUnknownVisualization(name: string, call: IrCall) {
+  const unknownVisualization = [
+    getAction(`Unknown action (${name})`),
+    getLabel('to'),
+    getAddress(call.to)
+  ]
+  if (call.value)
+    unknownVisualization.push(
+      ...[getLabel('and'), getAction('Send'), getToken(ethers.ZeroAddress, call.value)]
+    )
+  return unknownVisualization
+}
+
+export function getWraping(address: string, amount: bigint) {
+  return [getAction('Wrap'), getToken(address, amount)]
+}
+
+export function getUnwraping(address: string, amount: bigint) {
+  return [getAction('Unwrap'), getToken(address, amount)]
 }

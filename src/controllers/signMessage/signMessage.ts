@@ -2,19 +2,29 @@ import { ethers, JsonRpcProvider } from 'ethers'
 
 import { networks } from '../../consts/networks'
 import { Account, AccountStates } from '../../interfaces/account'
-import { Key } from '../../interfaces/keystore'
+import { ExternalSignerController, Key } from '../../interfaces/keystore'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { Storage } from '../../interfaces/storage'
 import { Message } from '../../interfaces/userRequest'
+import { getKnownAddressLabels } from '../../libs/account/account'
 import { messageHumanizer } from '../../libs/humanizer'
 import { IrMessage } from '../../libs/humanizer/interfaces'
-import { verifyMessage } from '../../libs/signMessage/signMessage'
+import {
+  verifyMessage,
+  wrapCounterfactualSign,
+  wrapEIP712,
+  wrapEthSign
+} from '../../libs/signMessage/signMessage'
 import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
-import EventEmitter from '../../libs/eventEmitter/eventEmitter'
+import { SignedMessage } from '../activity/activity'
+import EventEmitter from '../eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
+import { SettingsController } from '../settings/settings'
 
 export class SignMessageController extends EventEmitter {
   #keystore: KeystoreController
+
+  #settings: SettingsController
 
   #providers: { [key: string]: JsonRpcProvider }
 
@@ -32,6 +42,11 @@ export class SignMessageController extends EventEmitter {
 
   status: 'INITIAL' | 'LOADING' | 'DONE' = 'INITIAL'
 
+  dapp: {
+    name: string
+    icon: string
+  } | null = null
+
   messageToSign: Message | null = null
 
   signingKeyAddr: Key['addr'] | null = null
@@ -40,10 +55,11 @@ export class SignMessageController extends EventEmitter {
 
   humanReadable: IrMessage | null = null
 
-  signedMessage: Message | null = null
+  signedMessage: SignedMessage | null = null
 
   constructor(
     keystore: KeystoreController,
+    settings: SettingsController,
     providers: { [key: string]: JsonRpcProvider },
     storage: Storage,
     fetch: Function
@@ -51,29 +67,43 @@ export class SignMessageController extends EventEmitter {
     super()
 
     this.#keystore = keystore
+    this.#settings = settings
     this.#providers = providers
     this.#storage = storage
     this.#fetch = fetch
   }
 
   init({
+    dapp,
     messageToSign,
     accounts,
     accountStates
   }: {
+    dapp?: {
+      name: string
+      icon: string
+    }
     messageToSign: Message
     accounts: Account[]
     accountStates: AccountStates
   }) {
     if (['message', 'typedMessage'].includes(messageToSign.content.kind)) {
+      if (dapp) {
+        this.dapp = dapp
+      }
       this.messageToSign = messageToSign
       this.#accounts = accounts
       this.#accountStates = accountStates
+      const knownAddressLabels = getKnownAddressLabels(
+        this.#accounts,
+        this.#settings.accountPreferences,
+        this.#keystore.keys,
+        this.#settings.keyPreferences
+      )
 
-      // TODO: add knownAddresses
       messageHumanizer(
         messageToSign,
-        [],
+        knownAddressLabels,
         this.#storage,
         this.#fetch,
         (humanizedMessage: IrMessage) => {
@@ -99,6 +129,7 @@ export class SignMessageController extends EventEmitter {
 
   reset() {
     this.isInitialized = false
+    this.dapp = null
     this.messageToSign = null
     this.#accountStates = null
     this.#accounts = null
@@ -120,8 +151,7 @@ export class SignMessageController extends EventEmitter {
     this.emitUpdate()
   }
 
-  // TODO: missing type, should be one of LedgerController, TrezorController, LatticeController
-  async sign(controller?: any) {
+  async sign(externalSignerController?: ExternalSignerController) {
     if (!this.isInitialized || !this.messageToSign) {
       this.#throwNotInitialized()
       return
@@ -140,7 +170,7 @@ export class SignMessageController extends EventEmitter {
 
     try {
       const signer = await this.#keystore.getSigner(this.signingKeyAddr, this.signingKeyType)
-      if (signer.init) signer.init(controller)
+      if (signer.init) signer.init(externalSignerController)
 
       const account = this.#accounts!.find((acc) => acc.addr === this.messageToSign?.accountAddr)
       if (!account) {
@@ -158,6 +188,7 @@ export class SignMessageController extends EventEmitter {
           const messageHex = message instanceof Uint8Array ? ethers.hexlify(message) : message
 
           signature = await signer.signMessage(messageHex)
+          if (signature && account.creation) signature = wrapEthSign(signature)
         } catch (error: any) {
           console.log(error)
           throw new Error(
@@ -182,6 +213,7 @@ export class SignMessageController extends EventEmitter {
 
           const { domain } = this.messageToSign.content
           signature = await signer.signTypedData(this.messageToSign.content)
+          if (signature && account.creation) signature = wrapEIP712(signature)
           const requestedNetwork = networks.find(
             (n) => Number(n.chainId) === Number(domain.chainId)
           )
@@ -202,6 +234,12 @@ export class SignMessageController extends EventEmitter {
         )
       }
 
+      // https://eips.ethereum.org/EIPS/eip-6492
+      const accountState = this.#accountStates![account.addr][network!.id]
+      if (account.creation && !accountState.isDeployed) {
+        signature = wrapCounterfactualSign(signature, account.creation!)
+      }
+
       const personalMsgToValidate =
         typeof this.messageToSign.content.message === 'string'
           ? hexStringToUint8Array(this.messageToSign.content.message)
@@ -209,7 +247,9 @@ export class SignMessageController extends EventEmitter {
 
       const isValidSignature = await verifyMessage({
         provider: this.#providers[network?.id || 'ethereum'],
-        signer: this.signingKeyAddr,
+        // the signer is always the account even if the actual
+        // signature is from a key that has privs to the account
+        signer: this.messageToSign?.accountAddr,
         signature,
         // @ts-ignore TODO: Be aware of the type mismatch, could cause troubles
         message: this.messageToSign.content.kind === 'message' ? personalMsgToValidate : undefined,
@@ -231,8 +271,11 @@ export class SignMessageController extends EventEmitter {
 
       this.signedMessage = {
         id: this.messageToSign.id,
+        dapp: this.dapp,
         accountAddr: this.messageToSign.accountAddr,
+        networkId: this.messageToSign.networkId,
         signature,
+        timestamp: new Date().getTime(),
         content: this.messageToSign.content
       }
     } catch (e: any) {

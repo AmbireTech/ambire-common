@@ -1,4 +1,6 @@
 import { NetworkId } from 'interfaces/networkDescriptor'
+
+import { Account } from '../../interfaces/account'
 import { Message, TypedMessage } from '../../interfaces/userRequest'
 import { AccountOp, Call } from '../accountOp/accountOp'
 
@@ -23,7 +25,7 @@ export interface IrMessage extends Message {
 }
 export interface HumanizerWarning {
   content: string
-  level?: string
+  level?: 'caution' | 'alert' | 'alarm'
 }
 export interface Ir {
   calls: IrCall[]
@@ -44,7 +46,7 @@ export interface HumanizerCallModule {
 }
 
 export interface HumanizerTypedMessaageModule {
-  (typedMessage: TypedMessage): HumanizerVisualization[]
+  (typedMessage: TypedMessage): Omit<IrMessage, keyof Message>
 }
 
 export interface HumanizerMeta {
@@ -65,3 +67,5 @@ export interface HumanizerParsingModule {
 }
 
 export type DataToHumanize = AccountOp | Message
+
+export type KnownAddressLabels = { [key in Account['addr']]: string }

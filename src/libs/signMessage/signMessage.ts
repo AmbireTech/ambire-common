@@ -15,6 +15,22 @@ import { AccountCreation } from '../../interfaces/account'
 import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
 
 /**
+ * For EIP712 signatures, we need to append 00 at the end
+ * for ambire to recognize it
+ */
+export const wrapEIP712 = (signature: string) => {
+  return `${signature}00`
+}
+
+/**
+ * For EthSign signatures, we need to append 01 at the end
+ * for ambire to recognize it
+ */
+export const wrapEthSign = (signature: string) => {
+  return `${signature}01`
+}
+
+/**
  * Produce EIP6492 signature for Predeploy Contracts
  *
  * More info: https://eips.ethereum.org/EIPS/eip-6492
@@ -23,7 +39,7 @@ import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
  * @param {object} account
  * @returns {string} - EIP6492 signature
  */
-export const wrapSignature = (signature: string, creation: AccountCreation) => {
+export const wrapCounterfactualSign = (signature: string, creation: AccountCreation) => {
   // EIP6492 signature ends in magicBytes, which ends with a 0x92,
   // which makes it is impossible for it to collide with a valid ecrecover signature if packed in the r,s,v format,
   // as 0x92 is not a valid value for v.
@@ -118,12 +134,19 @@ export async function verifyMessage({
   // this 'magic' universal validator contract will deploy itself within the eth_call, try to verify the signature using
   // ERC-6492, ERC-1271 and ecrecover, and return the value to us
   const coder = new AbiCoder()
-  const callResult = await provider!.call({
-    data: concat([
-      universalValidator,
-      coder.encode(['address', 'bytes32', 'bytes'], [signer, finalDigest, signature])
-    ])
-  })
+  let callResult
+  try {
+    callResult = await provider!.call({
+      data: concat([
+        universalValidator,
+        coder.encode(['address', 'bytes32', 'bytes'], [signer, finalDigest, signature])
+      ])
+    })
+  } catch {
+    throw new Error(
+      'Something went wrong while validating the message you signed. If the problem persists, please contact Ambire support. Error details: call to UniversalValidator failed.'
+    )
+  }
 
   if (callResult === '0x01') return true
   if (callResult === '0x00') return false

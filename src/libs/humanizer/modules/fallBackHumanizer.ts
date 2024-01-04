@@ -7,7 +7,7 @@ import {
   HumanizerVisualization,
   IrCall
 } from '../interfaces'
-import { checkIfUnknowAction, getAction, getAddress, getLabel, getToken } from '../utils'
+import { checkIfUnknownAction, getAction, getAddress, getLabel, getToken } from '../utils'
 
 async function fetchFuncEtherface(
   selector: string,
@@ -51,7 +51,7 @@ async function fetchFuncEtherface(
   options.emitError({
     message: `fetchFuncEtherface: Err with etherface api, selector ${selector.slice(0, 10)}`,
     error: new Error(`Failed to fetch info from etherface's api about ${selector.slice(0, 10)}`),
-    level: 'minor'
+    level: 'silent'
   })
   return null
 }
@@ -63,7 +63,7 @@ export const fallbackHumanizer: HumanizerCallModule = (
 ) => {
   const asyncOps: Promise<HumanizerFragment | null>[] = []
   const newCalls = currentIrCalls.map((call) => {
-    if (call.fullVisualization && !checkIfUnknowAction(call?.fullVisualization)) return call
+    if (call.fullVisualization && !checkIfUnknownAction(call?.fullVisualization)) return call
 
     const visualization: Array<HumanizerVisualization> = []
     if (call.data !== '0x') {
@@ -89,7 +89,7 @@ export const fallbackHumanizer: HumanizerCallModule = (
       ...call,
       fullVisualization: visualization.length
         ? visualization
-        : [getAction('No data, no value call to'), getAddress(call.to)]
+        : [getAction('No data, no value, call to'), getAddress(call.to)]
     }
   })
 

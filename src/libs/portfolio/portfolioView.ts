@@ -1,3 +1,4 @@
+import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import {
   AccountState,
   AdditionalAccountState,
@@ -86,4 +87,49 @@ export function calculateAccountPortfolio(
     collections: updatedCollections,
     isAllReady: allReady
   }
+}
+
+export type PendingToken = TokenResultInterface & {
+  amountToSend: TokenResultInterface['amount']
+  type: 'send' | 'receive' | null
+}
+
+export function calculateTokensPendingState(
+  selectedAccount: string,
+  network: NetworkDescriptor,
+  state: { pending: PortfolioControllerState }
+): PendingToken[] {
+  const pendingData = state.pending[selectedAccount][network.id]
+
+  if (!pendingData || !pendingData.isReady || !pendingData.result) {
+    return []
+  }
+
+  const { tokens } = pendingData.result
+
+  const tokensWithChangedAmounts = tokens.filter(
+    (token) => token.amount !== token.amountPostSimulation
+  )
+
+  return tokensWithChangedAmounts.map((token) => {
+    let type: PendingToken['type'] = null
+    const amountToSend =
+      token.amount - token.amountPostSimulation! >= 0n
+        ? token.amount - token.amountPostSimulation!
+        : token.amountPostSimulation! - token.amount!
+
+    if (token.amount > token.amountPostSimulation!) {
+      type = 'send'
+    }
+
+    if (token.amount < token.amountPostSimulation!) {
+      type = 'receive'
+    }
+
+    return {
+      ...token,
+      amountToSend,
+      type
+    }
+  })
 }

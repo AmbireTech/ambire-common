@@ -1,4 +1,5 @@
 /* eslint-disable no-prototype-builtins */
+import { parse, stringify } from '../bigintJson/bigintJson'
 
 class RelayerError extends Error {
   public input: any
@@ -6,7 +7,7 @@ class RelayerError extends Error {
   public output: any
 
   constructor(message: string, input: any, output: any) {
-    super(`relayer call error: ${message}`)
+    super(message)
     this.input = input
     this.output = output
   }
@@ -31,13 +32,13 @@ export async function relayerCallUncaught(
       'Content-Type': 'application/json',
       ...headers
     },
-    body: body ? JSON.stringify(body) : undefined
+    body: body ? stringify(body) : undefined
   })
 
   const text = await res.text()
   const isStatusOk = res.status < 300 && res.status >= 200
   try {
-    const json = JSON.parse(text)
+    const json = parse(text)
     if (!json.hasOwnProperty('success')) {
       return { success: isStatusOk, ...json, status: res.status }
     }
@@ -58,7 +59,13 @@ export async function relayerCall(
   headers: any = null
 ): Promise<any> {
   const res = await relayerCallUncaught(this.url + path, this.fetch, method, body, headers)
-  if (!res.success)
-    throw new RelayerError(res.message, { url: this.url, path, method, body, headers }, { res })
+  if (!res.success) {
+    const firstError = res.errorState && res.errorState.length ? res.errorState[0] : res.message
+    throw new RelayerError(
+      firstError.message,
+      { url: this.url, path, method, body, headers },
+      { res }
+    )
+  }
   return res
 }

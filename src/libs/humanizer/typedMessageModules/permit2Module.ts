@@ -42,7 +42,7 @@ const PERMIT_2_ADDRESS = '0x000000000022D473030F116dDEE9F6B43aC78BA3'
 const visualizePermit = (permit: PermitDetails): HumanizerVisualization[] => {
   return [
     getAction('Permit'),
-    getAddress(PERMIT_2_ADDRESS, 'Permi 2 contract'),
+    getAddress(PERMIT_2_ADDRESS, 'Permit 2 contract'),
     getLabel('to use'),
     getToken(permit.token, permit.amount),
     getLabel('for time period'),
@@ -74,8 +74,8 @@ export const permit2Module: HumanizerTypedMessaageModule = (tm: TypedMessage) =>
         )
       })
     }
-    return visualizations
+    return { fullVisualization: visualizations }
   }
 
-  return []
+  return { fullVisualization: [] }
 }

@@ -4,6 +4,16 @@ export interface Erc4337settings {
   enabled: boolean
   entryPointAddr: string
   entryPointMarker: string
+  hasPaymaster: boolean
+}
+
+interface FeeOptions {
+  is1559: boolean
+  minBaseFee?: bigint
+  elasticityMultiplier?: bigint
+  baseFeeMaxChangeDenominator?: bigint
+  // should we increase the relayer fee in %
+  feeIncrease?: bigint
 }
 
 // NetworkId is a string: this is our internal identifier for the network
@@ -21,6 +31,8 @@ export interface NetworkDescriptor {
   erc4337: Erc4337settings | null
   rpcNoStateOverride: boolean
   unstoppableDomainsChain: string
+  feeOptions: FeeOptions
+  reestimateOn?: number
   // NOTE: should this be here? keep in mind networks can be user-inputted, so it's prob better to have
   // a separate mapping somewhere
   // @TODO remove this, add a separate mapping

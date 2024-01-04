@@ -12,6 +12,10 @@ export default [
     networkId: 'optimism'
   },
   {
+    address: '0x0000000000000000000000000000000000000000',
+    networkId: 'avalanche'
+  },
+  {
     address: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
     networkId: 'ethereum'
   },
@@ -99,5 +103,9 @@ export default [
   {
     address: '0x4fabb145d64652a948d72533023f6e7a623c7c53',
     networkId: 'optimism'
+  },
+  {
+    address: '0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E',
+    networkId: 'avalanche'
   }
 ]

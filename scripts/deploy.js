@@ -8,7 +8,7 @@ const polygonChainId = 137
 const provider = new JsonRpcProvider(polygonUrl)
 
 // This is a deploy script that deploys a proxy AmbireAccount, not the original one.
-// this one doesn't have any priviledges, nor can be configured.
+// this one doesn't have any privileges, nor can be configured.
 // You can get a mined one in deploy.ts (PROXY_AMBIRE_ACCOUNT)
 async function generateAmbireProxyDeploy (gasPrice) {
 	const txn = {}
@@ -62,31 +62,6 @@ async function generateManager (gasPrice) {
 	txn.nonce = await provider.getTransactionCount(fundWallet.address)
 	txn.chainId = polygonChainId
 	return await fundWallet.signTransaction(txn)
-}
-
-async function setFallbackHandler(gasPrice) {
-	const pk = process.env.SIGNER_PRIV_KEY
-	const fundWallet = new ethers.Wallet(pk, provider)
-	const AMBIRE_ACCOUNT_ADDR = '0xD1cE5E6AE56693D2D3D52b2EBDf969C1D7901971'
-	const ERC_4337_MANAGER = '0xba9b9B22aBf1b088c22967f01947236d723432c9'
-	const ambireAccount = new ethers.Contract(AMBIRE_ACCOUNT_ADDR, AmbireAccount.abi, fundWallet)
-
-	const setAddrPrivilegeABI = ['function setAddrPrivilege(address addr, bytes32 priv)']
-	const iface = new ethers.Interface(setAddrPrivilegeABI)
-	const calldata = iface.encodeFunctionData('setAddrPrivilege', [
-		ethers.toBeHex(0x6969, 20),
-		ethers.toBeHex(ERC_4337_MANAGER, 32)
-	])
-	const setPrivTxn = [AMBIRE_ACCOUNT_ADDR, 0, calldata]
-	const data = await ambireAccount.interface.encodeFunctionData('executeBySender', [[setPrivTxn]])
-	const txn = await fundWallet.sendTransaction({
-		to: AMBIRE_ACCOUNT_ADDR,
-		value: 0,
-		data: data,
-		gasPrice: gasPrice,
-		gasLimit: 100000n
-	})
-	return txn
 }
 
 async function deploy() {

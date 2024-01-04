@@ -26,8 +26,6 @@ const key1PublicAddress = '0x9188fdd757Df66B4F693D624Ed6A13a15Cf717D7'
 
 const legacyAccount: Account = {
   addr: key1PublicAddress,
-  label: '',
-  pfp: '',
   associatedKeys: [key1PublicAddress],
   initialPrivileges: [
     [key1PublicAddress, '0x0000000000000000000000000000000000000000000000000000000000000001']
@@ -69,7 +67,7 @@ describe('AccountAdder', () => {
         const errors = accountAdder.getErrors()
         expect(errors.length).toEqual(1)
         expect(errors[0].error.message).toEqual(
-          'accountAdder: requested method `#calculateAccounts`, but the AccountAdder is not initialized'
+          'accountAdder: requested method `#deriveAccounts`, but the AccountAdder is not initialized'
         )
         done()
       }
@@ -94,7 +92,7 @@ describe('AccountAdder', () => {
       emitCounter++
 
       if (emitCounter === 1) {
-        // First emit is triggered when account calculation is done
+        // First emit is triggered when account derivation is done
         expect(accountAdder.accountsOnPage.length).toEqual(
           // One smart account for every legacy account
           PAGE_SIZE * 2
@@ -119,7 +117,7 @@ describe('AccountAdder', () => {
     accountAdder.onUpdate(() => {
       emitCounter++
 
-      // First emit is triggered when account calculation is done, int the
+      // First emit is triggered when account derivation is done, int the
       // second emit it should start the searching for linked accounts
       if (emitCounter === 2) {
         expect(accountAdder.linkedAccountsLoading).toBe(true)
@@ -141,7 +139,7 @@ describe('AccountAdder', () => {
     accountAdder.onUpdate(() => {
       emitCounter++
 
-      // First emit is triggered when account calculation is done, int the
+      // First emit is triggered when account derivation is done, int the
       // second emit it should start the searching for linked accounts,
       // on the third emit there should be linked accounts fetched
       if (emitCounter === 3) {
@@ -153,11 +151,11 @@ describe('AccountAdder', () => {
           .map(({ account }) => account.addr)
         expect(accountsOnSlot1).toContain('0x740523d7876Fbb8AF246c5B307f26d4b2D2BFDA9')
 
-        expect(linkedAccountsOnPage.filter(({ slot }) => slot === 2).length).toEqual(1)
-
         const accountsOnSlot3 = linkedAccountsOnPage
           .filter(({ slot }) => slot === 3)
           .map(({ account }) => account.addr)
+        expect(accountsOnSlot3).toContain('0x0ace96748e66F42EBeA22D777C2a99eA2c83D8A6')
+        expect(accountsOnSlot3).toContain('0xc583f33d502dE560dd2C60D4103043d5998A98E5')
         expect(accountsOnSlot3).toContain('0x63caaD57Cd66A69A4c56b595E3A4a1e4EeA066d8')
         expect(accountsOnSlot3).toContain('0x619A6a273c628891dD0994218BC0625947653AC7')
         expect(accountsOnSlot3).toContain('0x7ab87ab041EB1c4f0d4f4d1ABD5b0973B331e2E7')
@@ -174,7 +172,13 @@ describe('AccountAdder', () => {
       hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
     })
     accountAdder.selectedAccounts = [
-      { ...legacyAccount, eoaAddress: key1PublicAddress, slot: 1, isLinked: false }
+      {
+        account: legacyAccount,
+        accountKeyAddr: key1PublicAddress,
+        slot: 1,
+        index: 0,
+        isLinked: false
+      }
     ]
 
     let emitCounter = 0

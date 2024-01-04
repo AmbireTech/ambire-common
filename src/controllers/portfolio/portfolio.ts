@@ -3,13 +3,15 @@
 /* eslint-disable @typescript-eslint/no-shadow */
 /* eslint-disable no-param-reassign */
 /* eslint-disable no-restricted-syntax */
-import { JsonRpcProvider } from 'ethers'
+/* eslint-disable no-param-reassign */
 import fetch from 'node-fetch'
 
 import { Account, AccountId } from '../../interfaces/account'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
+import { RPCProviders } from '../../interfaces/settings'
 import { Storage } from '../../interfaces/storage'
 import { AccountOp, isAccountOpsIntentEqual } from '../../libs/accountOp/accountOp'
+import getAccountNetworksWithAssets from '../../libs/portfolio/getNetworksWithAssets'
 import { getFlags } from '../../libs/portfolio/helpers'
 import {
   AccountState,
@@ -52,20 +54,64 @@ export class PortfolioController extends EventEmitter {
 
   #storage: Storage
 
+  #providers: RPCProviders = {}
+
   #callRelayer: Function
 
   #pinned: string[]
 
+  #networksWithAssetsByAccounts: {
+    [accountId: string]: NetworkDescriptor['id'][]
+  } = {}
+
   #minUpdateInterval: number = 20000 // 20 seconds
 
-  constructor(storage: Storage, relayerUrl: string, pinned: string[]) {
+  constructor(storage: Storage, providers: RPCProviders, relayerUrl: string, pinned: string[]) {
     super()
     this.latest = {}
     this.pending = {}
+    this.#providers = providers
     this.#portfolioLibs = new Map()
     this.#storage = storage
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
     this.#pinned = pinned
+  }
+
+  async #updateNetworksWithAssets(
+    accounts: Account[],
+    accountId: AccountId,
+    accountState: AccountState
+  ) {
+    const storageStateByAccount = await this.#storage.get('networksWithAssetsByAccount', {})
+
+    // On the first run
+    if (Object.keys(this.#networksWithAssetsByAccounts).length === 0) {
+      // Remove old accounts from storage
+      const storageAccounts = Object.keys(storageStateByAccount)
+      const currentAccounts = accounts.map(({ addr }) => addr)
+      const accountsToRemove = storageAccounts.filter((x) => !currentAccounts.includes(x))
+
+      for (const account of accountsToRemove) {
+        delete storageStateByAccount[account]
+      }
+
+      // Set the initial state
+      this.#networksWithAssetsByAccounts = storageStateByAccount
+    }
+
+    this.#networksWithAssetsByAccounts[accountId] = getAccountNetworksWithAssets(
+      accountId,
+      accountState,
+      storageStateByAccount,
+      this.#providers
+    )
+
+    this.emitUpdate()
+    await this.#storage.set('networksWithAssetsByAccount', this.#networksWithAssetsByAccounts)
+  }
+
+  get networksWithAssets() {
+    return [...new Set(Object.values(this.#networksWithAssetsByAccounts).flat())]
   }
 
   // gets additional portfolio state from the relayer that isn't retrieved from the portfolio library
@@ -244,9 +290,16 @@ export class PortfolioController extends EventEmitter {
     await Promise.all(
       networks.map(async (network) => {
         const key = `${network.id}:${accountId}`
-        if (!this.#portfolioLibs.has(key)) {
-          const provider = new JsonRpcProvider(network.rpcUrl)
-          this.#portfolioLibs.set(key, new Portfolio(fetch, provider, network))
+        // Initialize a new Portfolio lib if:
+        // 1. It does not exist in the portfolioLibs map
+        // 2. The network RPC URL has changed
+        if (
+          !this.#portfolioLibs.has(key) ||
+          this.#portfolioLibs.get(key)?.network?.rpcUrl !==
+            // eslint-disable-next-line no-underscore-dangle
+            this.#providers[network.id]?._getConnection().url
+        ) {
+          this.#portfolioLibs.set(key, new Portfolio(fetch, this.#providers[network.id], network))
         }
         const portfolioLib = this.#portfolioLibs.get(key)!
 
@@ -260,7 +313,7 @@ export class PortfolioController extends EventEmitter {
         // 2. No change occurs if both variables are undefined.
         const areAccountOpsChanged =
           // eslint-disable-next-line prettier/prettier
-        (currentAccountOps && simulatedAccountOps)
+          currentAccountOps && simulatedAccountOps
             ? !isAccountOpsIntentEqual(currentAccountOps, simulatedAccountOps)
             : currentAccountOps !== simulatedAccountOps
 
@@ -304,11 +357,6 @@ export class PortfolioController extends EventEmitter {
 
         // Persist previousHints in the disk storage for further requests, when:
         // latest state was updated successful and hints were fetched successful too (no hintsError from portfolio result)
-
-        // console.log({isSuccessfulLatestUpdate});
-        // console.log('accountState ::', accountState[network.id]);
-        // console.log({key})
-
         if (isSuccessfulLatestUpdate && !accountState[network.id]!.result!.hintsError) {
           storagePreviousHints[key] = getHintsWithBalance(accountState[network.id]!.result!)
           await this.#storage.set('previousHints', storagePreviousHints)
@@ -317,13 +365,24 @@ export class PortfolioController extends EventEmitter {
         // We cache the previously simulated AccountOps
         // in order to compare them with the newly passed AccountOps before executing a new updatePortfolioState.
         // This allows us to identify any differences between the two.
-        if (isSuccessfulPendingUpdate && currentAccountOps) {
-          pendingState[network.id]!.accountOps = currentAccountOps
-        }
+        // TODO: If we enable the below line, pending states stopped working in the application (extension).
+        //  In the case we run this logic under a testing environment, then it works as expected.
+        //  As it is not a deal-breaker (for now), we will comment it out and will fix it later this week.
+        // if (isSuccessfulPendingUpdate && currentAccountOps) {
+        //   pendingState[network.id]!.accountOps = currentAccountOps
+        // }
       })
     )
-    this.emitUpdate()
 
-    // console.log({ latest: this.latest, pending: this.pending })
+    await this.#updateNetworksWithAssets(accounts, accountId, accountState)
+
+    this.emitUpdate()
+  }
+
+  toJSON() {
+    return {
+      ...this,
+      networksWithAssets: this.networksWithAssets
+    }
   }
 }

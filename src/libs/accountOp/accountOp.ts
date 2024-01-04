@@ -1,8 +1,10 @@
 import { ethers } from 'ethers'
+import { Key } from 'interfaces/keystore'
 
 import { networks } from '../../consts/networks'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
 import { stringify } from '../bigintJson/bigintJson'
+import { UserOperation } from '../userOperation/types'
 
 export interface Call {
   to: string
@@ -25,11 +27,14 @@ export interface GasFeePayment {
   isGasTank: boolean
   paidBy: string
   inToken: string
-  amount: number
+  amount: bigint
+  simulatedGasLimit: bigint
+  maxPriorityFeePerGas?: bigint
 }
 
 export enum AccountOpStatus {
   Pending = 'pending',
+  BroadcastedButNotConfirmed = 'broadcasted-but-not-confirmed',
   Success = 'success',
   Failure = 'failure',
   UnknownButPastNonce = 'unknown-but-past-nonce'
@@ -42,12 +47,17 @@ export interface AccountOp {
   accountAddr: string
   networkId: NetworkId
   // this may not be defined, in case the user has not picked a key yet
-  signingKeyAddr: string | null
+  signingKeyAddr: Key['addr'] | null
+  signingKeyType: Key['type'] | null
   // this may not be set in case we haven't set it yet
   // this is a number and not a bigint because of ethers (it uses number for nonces)
   nonce: bigint | null
   // @TODO: nonce namespace? it is dependent on gasFeePayment
   calls: Call[]
+  // the feeCall is an extra call we add manually when there's a
+  // relayer/paymaster transaction so that the relayer/paymaster
+  // can authorize the payment
+  feeCall?: Call
   gasLimit: number | null
   signature: string | null
   gasFeePayment: GasFeePayment | null
@@ -65,10 +75,12 @@ export interface AccountOp {
   humanizerMeta?: { [key: string]: any }
   txnId?: string
   status?: AccountOpStatus
+  // in the case of ERC-4337, we need an UserOperation structure for the AccountOp
+  asUserOperation?: UserOperation
 }
 
-export function callToTuple(call: Call): [string, bigint, string] {
-  return [call.to, call.value, call.data]
+export function callToTuple(call: Call): [string, string, string] {
+  return [call.to, call.value.toString(), call.data]
 }
 
 export function canBroadcast(op: AccountOp, accountIsEOA: boolean): boolean {
@@ -110,6 +122,12 @@ export function isAccountOpsIntentEqual(
   return stringify(createIntent(accountOps1)) === stringify(createIntent(accountOps2))
 }
 
+export function getSignableCalls(op: AccountOp) {
+  const callsToSign = op.calls.map((call: Call) => callToTuple(call))
+  if (op.feeCall) callsToSign.push(callToTuple(op.feeCall))
+  return callsToSign
+}
+
 /**
  * This function returns the hash as a Uint8Array instead of string
  * and the reason for this is the implementation that follows:
@@ -136,7 +154,7 @@ export function isAccountOpsIntentEqual(
  * @returns Uint8Array
  */
 export function accountOpSignableHash(op: AccountOp): Uint8Array {
-  const opNetworks = networks.filter((network: NetworkDescriptor) => op.networkId == network.id)
+  const opNetworks = networks.filter((network: NetworkDescriptor) => op.networkId === network.id)
   if (!opNetworks.length) throw new Error('unsupported network')
 
   const abiCoder = new ethers.AbiCoder()
@@ -144,12 +162,7 @@ export function accountOpSignableHash(op: AccountOp): Uint8Array {
     ethers.keccak256(
       abiCoder.encode(
         ['address', 'uint', 'uint', 'tuple(address, uint, bytes)[]'],
-        [
-          op.accountAddr,
-          opNetworks[0].chainId,
-          op.nonce ?? 0n,
-          op.calls.map((call: Call) => [call.to, call.value, call.data])
-        ]
+        [op.accountAddr, opNetworks[0].chainId, op.nonce ?? 0n, getSignableCalls(op)]
       )
     )
   )

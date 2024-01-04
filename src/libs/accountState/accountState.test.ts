@@ -5,14 +5,14 @@ import { describe, expect, test } from '@jest/globals'
 
 import {
   AMBIRE_ACCOUNT_FACTORY,
-  AMBIRE_ACCOUNT_FACTORY_ERC_4337,
   ENTRY_POINT_MARKER,
   ERC_4337_ENTRYPOINT
 } from '../../consts/deploy'
 import { networks } from '../../consts/networks'
-import { get4437Bytecode, getBytecode } from '../proxyDeploy/bytecode'
+import { getBytecode } from '../proxyDeploy/bytecode'
 import { getAmbireAccountAddress } from '../proxyDeploy/getAmbireAddressTwo'
 import { getAccountState } from './accountState'
+import { get4437Bytecode } from '../../../test/AmbireAccount/erc4337deployTest'
 
 const polygon = networks.find((x) => x.id === 'polygon')
 if (!polygon) throw new Error('unable to find polygon network in consts')
@@ -22,8 +22,6 @@ describe('AccountState', () => {
   test('should get the account state and check if a v1 address and v2 address (not deployed) are returned correctly', async () => {
     const account: Account = {
       addr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
-      label: '',
-      pfp: '',
       associatedKeys: [],
       initialPrivileges: [],
       creation: {
@@ -36,8 +34,6 @@ describe('AccountState', () => {
 
     const accountEOA: Account = {
       addr: '0x1f9090aaE28b8a3dCeaDf281B0F12828e676c326',
-      label: '',
-      pfp: '',
       associatedKeys: [],
       initialPrivileges: [],
       creation: {
@@ -47,11 +43,10 @@ describe('AccountState', () => {
       }
     }
 
-    const accountEOANonceNonZero = {
+    const accountEOANonceNonZero= {
       addr: '0xf5ffA17725754dC00adB255fF296E4177B0982c7',
-      label: '',
-      pfp: '',
       associatedKeys: [],
+      initialPrivileges:[],
       creation: {
         factoryAddr: '0x0000000000000000000000000000000000000000',
         bytecode: '0x00',
@@ -69,8 +64,6 @@ describe('AccountState', () => {
     const bytecode = await getBytecode(privileges)
     const accountNotDeployed: Account = {
       addr: getAmbireAccountAddress(AMBIRE_ACCOUNT_FACTORY, bytecode),
-      label: 'test account',
-      pfp: 'pfp',
       associatedKeys: [signerAddr],
       initialPrivileges: privileges.map((priv) => [priv.addr, priv.hash]),
       creation: {
@@ -89,8 +82,6 @@ describe('AccountState', () => {
     ]
     const account4337: Account = {
       addr: '0xD1cE5E6AE56693D2D3D52b2EBDf969C1D7901971',
-      label: '',
-      pfp: '',
       associatedKeys: ['0x9188fdd757Df66B4F693D624Ed6A13a15Cf717D7', ERC_4337_ENTRYPOINT],
       initialPrivileges: privs4337.map((priv) => [priv.addr, priv.hash]),
       creation: {
@@ -111,24 +102,22 @@ describe('AccountState', () => {
         hash: '0x0000000000000000000000000000000000000000000000000000000000000001'
       }
     ]
-    const bytecodeErc4337 = await get4437Bytecode(polygon, privs)
+    const bytecodeErc4337 = await get4437Bytecode(privs)
     const accountErc4337: Account = {
       addr: '0x76b277955846313Ec50F26eD155C26f5aED295B1',
-      label: '',
-      pfp: '',
       associatedKeys: [
         '0x9188fdd757Df66B4F693D624Ed6A13a15Cf717D7',
         '0x43Ec7De60E89dabB7cAedc89Cd1F3c8D52707312'
       ],
       initialPrivileges: privs.map((priv) => [priv.addr, priv.hash]),
       creation: {
-        factoryAddr: AMBIRE_ACCOUNT_FACTORY_ERC_4337,
+        factoryAddr: AMBIRE_ACCOUNT_FACTORY,
         bytecode: bytecodeErc4337,
         salt: '0x0'
       }
     }
 
-    const accounts = [
+    const accounts:Account[] = [
       account,
       accountNotDeployed,
       accountEOA,
@@ -159,10 +148,8 @@ describe('AccountState', () => {
 
     const acc4337deployed = state[4]
     expect(acc4337deployed.nonce).toBeGreaterThanOrEqual(0n)
-    expect(acc4337deployed.associatedKeys).toHaveProperty(ERC_4337_ENTRYPOINT)
-    expect(acc4337deployed.associatedKeys[ERC_4337_ENTRYPOINT]).toBe(
-      '0x42144640c7cb5ff8aa9595ae175ffcb6dd152db6e737c13cc2d5d07576967020'
-    )
+    // TODO: polygon is no longer the erc-4337 network so the below is not valid
+    // expect(acc4337deployed.associatedKeys).toHaveProperty(ERC_4337_ENTRYPOINT)
 
     const accEOANonZero = state[5]
     expect(accEOANonZero.isEOA).toBe(true)

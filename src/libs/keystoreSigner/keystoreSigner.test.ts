@@ -11,7 +11,6 @@ const keyPublicAddress = '0x9188fdd757Df66B4F693D624Ed6A13a15Cf717D7'
 const key: Key = {
   addr: keyPublicAddress,
   type: 'internal',
-  label: 'test-key',
   isExternallyStored: false,
   meta: null
 }
@@ -75,7 +74,8 @@ describe('KeystoreSigner', () => {
   test('should sign message', async () => {
     expect.assertions(1)
     const signer = new KeystoreSigner(key, privKey)
-    const res = await signer.signMessage('test')
+    // message = 'test'
+    const res = await signer.signMessage('0x74657374')
     expect(res).toMatch(/^0x/)
   })
 })

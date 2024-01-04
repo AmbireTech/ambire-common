@@ -2,15 +2,13 @@ export type AccountId = string
 
 export interface Account {
   addr: AccountId
-  label: string
-  // URL (https, ipfs or nft721://contractAddr/tokenId)
-  pfp: string
   // Associated keys that can control thte account
   // For EOAs thits must be set to [account.addr]
   associatedKeys: string[]
   initialPrivileges: [string, string][]
   // Creation data; `null` in case of an EOA
-  creation: AccountCreation | null
+  creation: AccountCreation | null,
+  email?: string
 }
 
 export interface AccountCreation {
@@ -26,12 +24,14 @@ export interface AccountOnchainState {
   isDeployed: boolean
   // this is a number and not a bigint because of ethers (it uses number for nonces)
   nonce: bigint
+  erc4337Nonce: bigint
   associatedKeysPriviliges: { [key: string]: string }
   deployError: boolean
   balance: bigint
   isEOA: boolean
   isErc4337Enabled: boolean
   isErc4337Nonce: boolean
+  isV2: boolean
 }
 
 export type AccountStates = {

@@ -7,7 +7,7 @@ export const BANNER_TOPICS = {
 export type BannerTopic = 'TRANSACTION' | 'ANNOUNCEMENT' | 'WARNING'
 
 export interface Banner {
-  id: number
+  id: number | string
   accountAddr?: string
   topic: BannerTopic
   title: string
@@ -39,3 +39,10 @@ export type Action =
         keys: string[]
       }
     }
+  | {
+    label: string
+    actionName: 'open-external-url'
+    meta: {
+      url: string
+    }
+  }
