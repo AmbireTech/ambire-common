@@ -276,14 +276,6 @@ describe('SignAccountOp Controller ', () => {
     // It sets a default signer
     expect(controller.accountOp.signingKeyAddr).toEqual(eoaSigner.keyPublicAddress)
     expect(controller.accountOp.signingKeyType).toEqual('internal')
-
-    // It sets GasFeePayment with the first feePaymentOptions (as a default option)
-    expect(controller.accountOp.gasFeePayment?.paidBy).toEqual(
-      estimation.feePaymentOptions[0].paidBy
-    )
-    expect(controller.accountOp.gasFeePayment?.inToken).toEqual(
-      estimation.feePaymentOptions[0].address
-    )
   })
 
   test('Signing [EOA]: EOA account paying with a native token', async () => {

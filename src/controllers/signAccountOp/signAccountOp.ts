@@ -109,8 +109,6 @@ export class SignAccountOpController extends EventEmitter {
 
   feeTokenResult: TokenResult | null = null
 
-  selectedTokenAddr: string | null = null
-
   selectedFeeSpeed: FeeSpeed = FeeSpeed.Fast
 
   humanReadable: IrCall[] = []
@@ -155,31 +153,6 @@ export class SignAccountOpController extends EventEmitter {
   }
 
   #setDefaults() {
-    if (this.availableFeeOptions.length && !this.paidBy && !this.selectedTokenAddr) {
-      const defaultFeeOption = this.availableFeeOptions[0]
-
-      this.paidBy = defaultFeeOption.paidBy
-      this.selectedTokenAddr = defaultFeeOption.address
-
-      // the current implementation works with defaults
-      // we don't really care about most of the information below
-      // we just want to have a default to enable the flow. After rerender,
-      // everything is displayed correct
-      this.feeTokenResult = {
-        address: '0x0000000000000000000000000000000000000000',
-        symbol: 'ETH',
-        amount: 1000n,
-        networkId: 'ethereum',
-        decimals: Number(18),
-        priceIn: [{ baseCurrency: 'usd', price: 5000 }],
-        flags: {
-          onGasTank: false,
-          rewardsType: null,
-          canTopUpGasTank: true,
-          isFeeToken: true
-        }
-      }
-    }
     // Set the first signer as the default one.
     // If there are more available signers, the user will be able to select a different signer from the application.
     // The main benefit of having a default signer
@@ -303,7 +276,6 @@ export class SignAccountOpController extends EventEmitter {
 
     if (feeToken && paidBy) {
       this.paidBy = paidBy
-      this.selectedTokenAddr = feeToken.address
       this.feeTokenResult = feeToken
     }
 
@@ -342,7 +314,6 @@ export class SignAccountOpController extends EventEmitter {
     this.#estimation = null
     this.selectedFeeSpeed = FeeSpeed.Fast
     this.paidBy = null
-    this.selectedTokenAddr = null
     this.feeTokenResult = null
     this.status = null
     this.humanReadable = []
