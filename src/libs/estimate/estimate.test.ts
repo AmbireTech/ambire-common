@@ -47,9 +47,9 @@ const nativeToCheck = [
   '0x942f9CE5D9a33a82F88D233AEb3292E680230348'
 ]
 const feeTokens = [
-  '0x0000000000000000000000000000000000000000',
-  '0xdAC17F958D2ee523a2206206994597C13D831ec7',
-  '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'
+  { address: '0x0000000000000000000000000000000000000000', isGasTank: false, amount: 1n },
+  { address: '0xdAC17F958D2ee523a2206206994597C13D831ec7', isGasTank: false, amount: 1n },
+  { address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48', isGasTank: false, amount: 1n }
 ]
 
 const portfolio = new Portfolio(fetch, provider, ethereum)
