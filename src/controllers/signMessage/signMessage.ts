@@ -190,9 +190,9 @@ export class SignMessageController extends EventEmitter {
           signature = await signer.signMessage(messageHex)
           if (signature && account.creation) signature = wrapEthSign(signature)
         } catch (error: any) {
-          console.log(error)
           throw new Error(
-            'Something went wrong while signing the message. Please try again later or contact support if the problem persists.'
+            error?.message ||
+              'Something went wrong while signing the message. Please try again later or contact support if the problem persists.'
           )
         }
       }

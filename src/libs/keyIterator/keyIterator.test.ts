@@ -29,14 +29,20 @@ describe('KeyIterator', () => {
   test('should retrieve a single key', async () => {
     expect.assertions(2)
     const keyIteratorWithPrivKey = new KeyIterator(privKey)
-    const keys = await keyIteratorWithPrivKey.retrieve(0, 9, BIP44_STANDARD_DERIVATION_TEMPLATE)
+    const keys = await keyIteratorWithPrivKey.retrieve(
+      [{ from: 0, to: 9 }],
+      BIP44_STANDARD_DERIVATION_TEMPLATE
+    )
     expect(keys).toHaveLength(1)
     expect(keys?.[0]).toEqual(privKeyPublicAddress)
   })
   test('should retrieve first 10 keys', async () => {
     expect.assertions(2)
     const keyIteratorWithPrivKey = new KeyIterator(seedPhrase)
-    const keys = await keyIteratorWithPrivKey.retrieve(0, 9, BIP44_STANDARD_DERIVATION_TEMPLATE)
+    const keys = await keyIteratorWithPrivKey.retrieve(
+      [{ from: 0, to: 9 }],
+      BIP44_STANDARD_DERIVATION_TEMPLATE
+    )
     expect(keys).toHaveLength(10)
     expect(keys?.[0]).toEqual(seedPhrasePublicAddress1)
   })
@@ -45,7 +51,7 @@ describe('KeyIterator', () => {
     try {
       const keyIteratorWithPrivKey = new KeyIterator(privKey)
       // @ts-ignore
-      await keyIteratorWithPrivKey.retrieve(0)
+      await keyIteratorWithPrivKey.retrieve([{ from: 0 }])
     } catch (e) {
       // @ts-ignore
       expect(e.message).toBe('keyIterator: invalid or missing arguments')
@@ -54,7 +60,10 @@ describe('KeyIterator', () => {
   test('should retrieve the correct addresses with BIP-44 derivation path', async () => {
     expect.assertions(3)
     const keyIteratorWithPrivKey = new KeyIterator(seedPhrase)
-    const keys = await keyIteratorWithPrivKey.retrieve(0, 2, BIP44_STANDARD_DERIVATION_TEMPLATE)
+    const keys = await keyIteratorWithPrivKey.retrieve(
+      [{ from: 0, to: 2 }],
+      BIP44_STANDARD_DERIVATION_TEMPLATE
+    )
 
     expect(keys?.[0]).toEqual(seedPhrasePublicAddress1)
     expect(keys?.[1]).toEqual('0xc7E32B118989296eaEa88D86Bd9041Feca77Ed36')
