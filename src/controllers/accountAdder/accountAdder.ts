@@ -409,35 +409,25 @@ export class AccountAdderController extends EventEmitter {
       .filter((x) => !isAmbireV1LinkedAccount(x.account.creation?.factoryAddr))
 
     if (accountsToAddOnRelayer.length) {
-      // const body = accountsToAddOnRelayer.map(({ account }) => ({
-      //   addr: account.addr,
-      //   associatedKeys: account.associatedKeys.map((key) => [
-      //     ethers.getAddress(key), // the Relayer expects checksumed address
-      //     // Handle special priv hashes at a later stage, when (if) needed
-      //     '0x0000000000000000000000000000000000000000000000000000000000000001'
-      //   ]),
-      //   creation: {
-      //     factoryAddr: account.creation!.factoryAddr,
-      //     salt: account.creation!.salt,
-      //     baseIdentityAddr: PROXY_AMBIRE_ACCOUNT
-      //   }
-      // }))
+      const body = accountsToAddOnRelayer.map(({ account }: SelectedAccount) => ({
+        addr: account.addr,
+        ...(account.email ? { email: account.email } : {}),
+        associatedKeys: account.associatedKeys.map((key) => [
+          ethers.getAddress(key), // the Relayer expects checksumed address
+          // Handle special priv hashes at a later stage, when (if) needed
+          '0x0000000000000000000000000000000000000000000000000000000000000001'
+        ]),
+
+        creation: {
+          factoryAddr: account.creation!.factoryAddr,
+          salt: account.creation!.salt,
+          baseIdentityAddr: PROXY_AMBIRE_ACCOUNT
+        }
+      }))
 
       try {
         const res = await this.#callRelayer('/v2/identity/create-multiple', 'POST', {
-          // addr
-          // associated keys
-          // creation
-          accounts: accountsToAddOnRelayer.map(({ account }: SelectedAccount) => ({
-            addr: account.addr,
-            ...(account.email ? { email: account.email } : {}),
-            associatedKeys: account.initialPrivileges,
-            creation: {
-              factoryAddr: account.creation!.factoryAddr,
-              salt: account.creation!.salt,
-              baseIdentityAddr: PROXY_AMBIRE_ACCOUNT
-            }
-          }))
+          accounts: body
         })
 
         if (!res.success) {
