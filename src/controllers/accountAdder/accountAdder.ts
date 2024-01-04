@@ -495,7 +495,7 @@ export class AccountAdderController extends EventEmitter {
       return
     }
 
-    const keyPublicAddress: string = (await this.#keyIterator.retrieve(0, 1))[0]
+    const keyPublicAddress: string = (await this.#keyIterator.retrieve([{ from: 0, to: 1 }]))[0]
 
     const emailSmartAccount = await getEmailAccount(
       {
