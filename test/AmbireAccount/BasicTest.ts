@@ -21,7 +21,7 @@ describe('Basic Ambire Account tests', () => {
   before('successfully deploys the ambire account', async () => {
     const [signer] = await ethers.getSigners()
     const { ambireAccountAddress: addr } = await deployAmbireAccountHardhatNetwork([
-      { addr: signer.address, hash: true }
+      { addr: signer.address, hash: '0x0000000000000000000000000000000000000000000000000000000000000001' }
     ])
     ambireAccountAddress = addr
   })
