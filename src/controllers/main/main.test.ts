@@ -137,11 +137,10 @@ describe('Main Controller ', () => {
     // console.log(
     //   JSON.stringify(controller.emailVault.emailVaultStates[email].availableSecrets, null, 2)
     // )
-    console.log('uploading')
     controller.emailVault.uploadKeyStoreSecret(email)
     // eslint-disable-next-line no-promise-executor-return
     await new Promise((resolve) => controller.emailVault.onUpdate(() => resolve(null)))
-    console.log(JSON.stringify(controller.emailVault, null, 2))
+    // console.log(JSON.stringify(controller.emailVault, null, 2))
   })
 
   test('unlock keyStore with recovery secret emailVault', async () => {
