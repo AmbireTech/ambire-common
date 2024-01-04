@@ -138,8 +138,8 @@ describe('happy cases', () => {
     // used to add keystore uid
     await keystore.addSecret('smth', 'secret', '', false)
     await keystore.unlockWithSecret('smth', 'secret')
-    await keystore.addKeys([{ privateKey: keys[0].privateKey, label: keys[0].address }])
-    await keystore.addKeys([{ privateKey: keys[1].privateKey, label: keys[1].address }])
+    await keystore.addKeys([{ privateKey: keys[0].privateKey }])
+    await keystore.addKeys([{ privateKey: keys[1].privateKey }])
 
     // ev 2
     const ev2 = new EmailVaultController(storage2, fetch, relayerUrl, keystore2)
@@ -157,7 +157,6 @@ describe('happy cases', () => {
     )
     expect(JSON.parse(ev2.emailVaultStates.email[email].operations[0].value || '{}')).toMatchObject(
       {
-        label: keys[0].address,
         privateKey: {
           iv: expect.anything(),
           ephemPublicKey: expect.anything(),
@@ -168,7 +167,6 @@ describe('happy cases', () => {
     )
     expect(JSON.parse(ev2.emailVaultStates.email[email].operations[1].value || '{}')).toMatchObject(
       {
-        label: keys[1].address,
         privateKey: {
           iv: expect.anything(),
           ephemPublicKey: expect.anything(),
@@ -180,7 +178,6 @@ describe('happy cases', () => {
     expect(await keystore2.getSigner(keys[0].address, 'internal')).toMatchObject({
       key: {
         addr: keys[0].address,
-        label: keys[0].address,
         type: 'internal',
         meta: null,
         isExternallyStored: false
@@ -190,7 +187,6 @@ describe('happy cases', () => {
     expect(await keystore2.getSigner(keys[1].address, 'internal')).toMatchObject({
       key: {
         addr: keys[1].address,
-        label: keys[1].address,
         type: 'internal',
         meta: null,
         isExternallyStored: false

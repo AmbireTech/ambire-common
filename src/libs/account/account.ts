@@ -70,7 +70,9 @@ export async function getSmartAccount(address: string): Promise<Account> {
 
   return {
     addr: getAmbireAccountAddress(AMBIRE_ACCOUNT_FACTORY, bytecode),
-    initialPrivileges:[[address,'0x0000000000000000000000000000000000000000000000000000000000000001']],
+    initialPrivileges: [
+      [address, '0x0000000000000000000000000000000000000000000000000000000000000001']
+    ],
     associatedKeys: [address],
     creation: {
       factoryAddr: AMBIRE_ACCOUNT_FACTORY,

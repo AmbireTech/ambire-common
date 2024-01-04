@@ -40,7 +40,10 @@ type AccountDerivationMeta = {
  * It's always one of the visible accounts returned by the accountsOnPage().
  * Could be either a legacy (EOA) account, a smart account or a linked account.
  */
-type SelectedAccount = AccountDerivationMeta & { account: Account; accountKeyAddr: Account['addr'] }
+export type SelectedAccount = AccountDerivationMeta & {
+  account: Account
+  accountKeyAddr: Account['addr']
+}
 
 /**
  * The account that is derived programmatically and internally by Ambire.
@@ -426,7 +429,7 @@ export class AccountAdderController extends EventEmitter {
           // addr
           // associated keys
           // creation
-          accounts: accountsToAddOnRelayer.map(({ account }) => ({
+          accounts: accountsToAddOnRelayer.map(({ account }: SelectedAccount) => ({
             addr: account.addr,
             ...(account.email ? { email: account.email } : {}),
             associatedKeys: account.initialPrivileges,
@@ -747,13 +750,15 @@ export class AccountAdderController extends EventEmitter {
 
         return []
       }
-
       return [
         {
           account: {
             addr,
             associatedKeys: Object.keys(associatedKeys),
-            initialPrivileges: [],
+            initialPrivileges: data.accounts[addr].initialPrivilegesAddrs.map((a: string) => [
+              a,
+              '0x0000000000000000000000000000000000000000000000000000000000000001'
+            ]),
             creation: {
               factoryAddr,
               bytecode,

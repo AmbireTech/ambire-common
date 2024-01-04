@@ -9,10 +9,10 @@ import {
   ERC_4337_ENTRYPOINT
 } from '../../consts/deploy'
 import { networks } from '../../consts/networks'
-import { getBytecode } from '../proxyDeploy/bytecode'
+import { getBytecode, get4437Bytecode } from '../proxyDeploy/bytecode'
 import { getAmbireAccountAddress } from '../proxyDeploy/getAmbireAddressTwo'
 import { getAccountState } from './accountState'
-import { get4437Bytecode } from '../../../test/AmbireAccount/erc4337deployTest'
+// import { get4437Bytecode } from ''
 
 const polygon = networks.find((x) => x.id === 'polygon')
 if (!polygon) throw new Error('unable to find polygon network in consts')
@@ -43,10 +43,10 @@ describe('AccountState', () => {
       }
     }
 
-    const accountEOANonceNonZero= {
+    const accountEOANonceNonZero = {
       addr: '0xf5ffA17725754dC00adB255fF296E4177B0982c7',
       associatedKeys: [],
-      initialPrivileges:[],
+      initialPrivileges: [],
       creation: {
         factoryAddr: '0x0000000000000000000000000000000000000000',
         bytecode: '0x00',
@@ -102,7 +102,8 @@ describe('AccountState', () => {
         hash: '0x0000000000000000000000000000000000000000000000000000000000000001'
       }
     ]
-    const bytecodeErc4337 = await get4437Bytecode(privs)
+    const bytecodeErc4337 = await get4437Bytecode(polygon, privs)
+
     const accountErc4337: Account = {
       addr: '0x76b277955846313Ec50F26eD155C26f5aED295B1',
       associatedKeys: [
@@ -117,7 +118,7 @@ describe('AccountState', () => {
       }
     }
 
-    const accounts:Account[] = [
+    const accounts: Account[] = [
       account,
       accountNotDeployed,
       accountEOA,

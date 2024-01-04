@@ -492,7 +492,7 @@ export class KeystoreController extends EventEmitter {
     return result
   }
 
-  async importKeyWithPublicKeyEncryption(encryptedSk: Encrypted, label: string) {
+  async importKeyWithPublicKeyEncryption(encryptedSk: Encrypted) {
     if (this.#mainKey === null) throw new Error('keystore: needs to be unlocked')
     const privateKey: string = await decryptWithPrivateKey(
       hexlify(getBytes(concat([this.#mainKey.key, this.#mainKey.iv]))),
@@ -500,7 +500,7 @@ export class KeystoreController extends EventEmitter {
     )
     if (!privateKey) throw new Error('keystore: wrong encryptedSk or private key')
 
-    await this.addKeys([{ privateKey, label }])
+    await this.addKeys([{ privateKey }])
   }
 
   async getSigner(keyAddress: Key['addr'], keyType: Key['type']) {

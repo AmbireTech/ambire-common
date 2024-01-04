@@ -58,7 +58,12 @@ describe('ERC-4337 deploys the account via userOp and adds the entry point permi
   )
   it('successfully deploys the account with entry point without a userOp signature', async () => {
     const [relayer, signer] = await ethers.getSigners()
-    const privs = [{ addr: signer.address, hash: true }]
+    const privs = [
+      {
+        addr: signer.address,
+        hash: '0x0000000000000000000000000000000000000000000000000000000000000001'
+      }
+    ]
     const bytecodeWithArgs = await get4437Bytecode(privs)
     const senderAddress = getAmbireAccountAddress(await factory.getAddress(), bytecodeWithArgs)
     const txn = getPriviledgeTxnWithCustomHash(

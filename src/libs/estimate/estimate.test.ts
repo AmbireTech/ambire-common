@@ -1,5 +1,4 @@
 import { AbiCoder, JsonRpcProvider } from 'ethers'
-import { Account } from 'interfaces/account'
 import fetch from 'node-fetch'
 
 import { describe, expect } from '@jest/globals'

@@ -359,17 +359,18 @@ describe('import/export with pub key test', () => {
         expect(keystore.keys[0]).toMatchObject({ addr: wallet.address, type: 'internal' })
 
         exported = await keystore.exportKeyWithPublicKeyEncryption(wallet.address, uid2)
-        await keystore2.importKeyWithPublicKeyEncryption(exported, label)
+        await keystore2.importKeyWithPublicKeyEncryption(exported)
         unsubscribe()
       }
     })
     const getImportedKeyOnUpdate = () => {
+      // eslint-disable-next-line @typescript-eslint/no-floating-promises
       keystore2.getSigner(wallet.address, 'internal').then((signer) => {
         expect(signer).toMatchObject({
           key: {
             addr: wallet.address,
             isExternallyStored: false,
-            label,
+            // label,
             type: 'internal',
             meta: null
           },
@@ -384,6 +385,6 @@ describe('import/export with pub key test', () => {
         unsubscribe2()
       }
     })
-    keystore.addKeys([{ privateKey: wallet.privateKey.slice(2), label }])
+    keystore.addKeys([{ privateKey: wallet.privateKey.slice(2) }])
   })
 })

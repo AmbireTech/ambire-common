@@ -367,9 +367,9 @@ export class EmailVaultController extends EventEmitter {
           // @TODO actually add them to the keystore
           for (let i = 0; i < cloudOperations!.length; i++) {
             const op = cloudOperations![i]
-            const { privateKey, label } = JSON.parse(op?.value || '{}')
+            const { privateKey } = JSON.parse(op?.value || '{}')
             if (op.requestType === 'requestKeySync') {
-              await this.#keyStore.importKeyWithPublicKeyEncryption(privateKey, label)
+              await this.#keyStore.importKeyWithPublicKeyEncryption(privateKey)
             }
           }
           this.emailVaultStates.email[email].operations = cloudOperations!
@@ -396,11 +396,9 @@ export class EmailVaultController extends EventEmitter {
       const newOperations: Operation[] = await Promise.all(
         operations.map(async (op): Promise<Operation> => {
           if (op.requestType === 'requestKeySync') {
-            const label = storedKeys.find((k) => k.addr === op.key)?.label
             return {
               ...op,
               value: JSON.stringify({
-                label,
                 privateKey: await this.#keyStore.exportKeyWithPublicKeyEncryption(
                   op.key,
                   op.requester
