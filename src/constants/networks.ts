@@ -132,6 +132,7 @@ const networks: NetworkType[] = [
     name: 'Moonbeam',
     explorerUrl: 'https://moonscan.io/',
     unstoppableDomainsChain: 'ERC20',
+    hide: true,
     isGasTankAvailable: true,
     relayerlessOnly: false,
     nativeAsset: {
@@ -148,6 +149,7 @@ const networks: NetworkType[] = [
     name: 'Moonriver',
     explorerUrl: 'https://moonriver.moonscan.io/',
     unstoppableDomainsChain: 'ERC20',
+    hide: true,
     isGasTankAvailable: true,
     relayerlessOnly: false,
     nativeAsset: {
@@ -196,7 +198,7 @@ const networks: NetworkType[] = [
     name: 'KCC KuCoin',
     explorerUrl: 'https://explorer.kcc.io',
     unstoppableDomainsChain: 'ERC20',
-    hide: false,
+    hide: true,
     isGasTankAvailable: false,
     relayerlessOnly: false,
     nativeAsset: {
@@ -261,6 +263,7 @@ const networks: NetworkType[] = [
     name: 'OKX Chain',
     explorerUrl: 'https://www.oklink.com/en/okc',
     unstoppableDomainsChain: 'ERC20',
+    hide: true,
     isGasTankAvailable: true,
     relayerlessOnly: false,
     nativeAsset: {

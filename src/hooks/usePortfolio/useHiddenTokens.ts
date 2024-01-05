@@ -46,8 +46,8 @@ export default function useHiddenTokens({ useToasts, useStorage }: any): any {
           return [...prevHiddenCollectibles, ...updatedHiddenCollectibles]
         })
       } else {
-        setHiddenCollectibles((prevHiddenCollectibles: any) => {
-          const { data } = prevHiddenCollectibles.assets.find(
+        setHiddenCollectibles((prevHiddenCollectibles: Collectible[]) => {
+          const collectible = hiddenCollectible.assets.find(
             ({ tokenId }: any) => tokenId === assetId
           )
           const updatedHiddenCollectible = {
@@ -56,7 +56,9 @@ export default function useHiddenTokens({ useToasts, useStorage }: any): any {
               (asset: any) => asset.tokenId === assetId && { ...asset, isHidden: true }
             )
           }
-          addToast(`${data.name} collectible is hidden from your assets list!`)
+          addToast(
+            `${collectible && collectible.data.name} collectible is hidden from your assets list!`
+          )
           return [...prevHiddenCollectibles, updatedHiddenCollectible]
         })
       }
