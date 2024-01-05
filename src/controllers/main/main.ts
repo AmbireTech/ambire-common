@@ -46,7 +46,7 @@ import { KeystoreController } from '../keystore/keystore'
 import { PortfolioController } from '../portfolio/portfolio'
 import { SettingsController } from '../settings/settings'
 /* eslint-disable no-underscore-dangle */
-import { SignAccountOpController } from '../signAccountOp/signAccountOp'
+import { SignAccountOpController, SigningStatus } from '../signAccountOp/signAccountOp'
 import { SignMessageController } from '../signMessage/signMessage'
 import { TransferController } from '../transfer/transfer'
 
@@ -80,6 +80,8 @@ export class MainController extends EventEmitter {
   signMessage!: SignMessageController
 
   signAccountOp: SignAccountOpController | null = null
+
+  signAccountOpListener: ReturnType<EventEmitter['onUpdate']> = () => {}
 
   signAccOpInitError: string | null = null
 
@@ -274,6 +276,17 @@ export class MainController extends EventEmitter {
       this.#callRelayer
     )
 
+    const broadcastSignedAccountOpIfNeeded = async () => {
+      if (
+        this.signAccountOp &&
+        this.signAccountOp.accountOp.signature &&
+        this.signAccountOp.status?.type === SigningStatus.Done
+      ) {
+        await this.broadcastSignedAccountOp(this.signAccountOp.accountOp)
+      }
+    }
+    this.signAccountOpListener = this.signAccountOp.onUpdate(broadcastSignedAccountOpIfNeeded)
+
     this.emitUpdate()
 
     this.reestimateAndUpdatePrices(accountAddr, networkId)
@@ -281,6 +294,7 @@ export class MainController extends EventEmitter {
 
   destroySignAccOp() {
     this.signAccountOp = null
+    this.signAccountOpListener()
     this.emitUpdate()
   }
 
