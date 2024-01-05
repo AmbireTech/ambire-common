@@ -154,7 +154,7 @@ export class MainController extends EventEmitter {
     fetch: Function
     relayerUrl: string
     keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>
-    externalSignerControllers: Partial<{ [key in Key['type']]: ExternalSignerController
+    externalSignerControllers: Partial<{ [key in Key['type']]: ExternalSignerController }>
     onResolveDappRequest: (
       data: {
         hash: string | null
