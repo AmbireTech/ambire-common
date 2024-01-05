@@ -1,7 +1,8 @@
 import { Transaction } from 'ethers'
 
 import { HD_PATH_TEMPLATE_TYPE } from '../consts/derivation'
-import { Call, GasFeePayment } from '../libs/accountOp/accountOp'
+import { GasFeePayment } from '../libs/accountOp/accountOp'
+import { Call } from '../libs/accountOp/types'
 import { getHdPathFromTemplate } from '../utils/hdPath'
 import { Account } from './account'
 import { NetworkDescriptor } from './networkDescriptor'
