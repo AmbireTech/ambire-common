@@ -277,6 +277,7 @@ export class MainController extends EventEmitter {
     )
 
     const broadcastSignedAccountOpIfNeeded = async () => {
+      // Signing is completed, therefore broadcast the transaction
       if (
         this.signAccountOp &&
         this.signAccountOp.accountOp.signature &&
