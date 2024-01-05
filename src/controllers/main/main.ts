@@ -295,7 +295,7 @@ export class MainController extends EventEmitter {
 
   destroySignAccOp() {
     this.signAccountOp = null
-    this.signAccountOpListener()
+    this.signAccountOpListener() // unsubscribes for further updates
     this.emitUpdate()
   }
 
