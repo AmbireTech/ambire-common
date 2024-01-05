@@ -66,6 +66,8 @@ export class MainController extends EventEmitter {
 
   keystore: KeystoreController
 
+  externalSignerControllers: Partial<{ [key in Key['type']]: ExternalSignerController }> = {}
+
   accountAdder: AccountAdderController
 
   // Subcontrollers
@@ -141,6 +143,7 @@ export class MainController extends EventEmitter {
     fetch,
     relayerUrl,
     keystoreSigners,
+    externalSignerControllers,
     onResolveDappRequest,
     onRejectDappRequest,
     onUpdateDappSelectedAccount,
@@ -151,6 +154,7 @@ export class MainController extends EventEmitter {
     fetch: Function
     relayerUrl: string
     keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>
+    externalSignerControllers: Partial<{ [key in Key['type']]: ExternalSignerController
     onResolveDappRequest: (
       data: {
         hash: string | null
@@ -169,6 +173,7 @@ export class MainController extends EventEmitter {
     this.#fetch = fetch
 
     this.keystore = new KeystoreController(this.#storage, keystoreSigners)
+    this.externalSignerControllers = externalSignerControllers
     this.settings = new SettingsController(this.#storage)
     this.portfolio = new PortfolioController(
       this.#storage,
@@ -739,10 +744,7 @@ export class MainController extends EventEmitter {
    *   4. for smart accounts, when the Relayer does the broadcast.
    *
    */
-  async broadcastSignedAccountOp(
-    accountOp: AccountOp,
-    externalSignerController?: ExternalSignerController
-  ) {
+  async broadcastSignedAccountOp(accountOp: AccountOp) {
     this.broadcastStatus = 'LOADING'
     this.emitUpdate()
 
@@ -801,7 +803,7 @@ export class MainController extends EventEmitter {
           )
         }
         const signer = await this.keystore.getSigner(feePayerKey.addr, feePayerKey.type)
-        if (signer.init) signer.init(externalSignerController)
+        if (signer.init) signer.init(this.externalSignerControllers[feePayerKey.type])
 
         const gasFeePayment = accountOp.gasFeePayment!
         const { to, value, data } = accountOp.calls[0]

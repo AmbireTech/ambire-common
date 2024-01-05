@@ -762,7 +762,6 @@ export class SignAccountOpController extends EventEmitter {
     } catch (error: any) {
       this.#setSigningError(error?.message, SigningStatus.ReadyToSign)
     }
-    // TODO: Now, the UI needs to call mainCtrl.broadcastSignedAccountOp(mainCtrl.signAccountOp.accountOp)
   }
 
   toJSON() {
