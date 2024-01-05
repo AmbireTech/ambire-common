@@ -436,7 +436,7 @@ export class ActivityController extends EventEmitter {
         this.#accounts[accountOp.accountAddr][accountOp.networkId]
       )
       return {
-        id: new Date().getTime(),
+        id: accountOp.txnId,
         topic: 'TRANSACTION',
         title: 'Transaction successfully signed and sent!\nCheck it out on the block explorer!',
         text: '',

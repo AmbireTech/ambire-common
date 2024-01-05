@@ -685,6 +685,7 @@ export class SignAccountOpController extends EventEmitter {
           userOperation,
           this.accountOp.gasFeePayment.inToken
         )
+
         if (usesPaymaster) {
           this.#addFeePayment()
         } else {
@@ -716,7 +717,7 @@ export class SignAccountOpController extends EventEmitter {
               'POST',
               {
                 // send without the requestType prop
-                userOperation: (({ requestType, ...o }) => o)(userOperation),
+                userOperation: (({ requestType, activatorCall, ...o }) => o)(userOperation),
                 paymaster: AMBIRE_PAYMASTER
               }
             )

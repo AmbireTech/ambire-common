@@ -242,37 +242,44 @@ export class SignMessageController extends EventEmitter {
       )
       let signature
 
-      if (this.messageToSign.content.kind === 'message') {
-        if (!account.creation) {
-          signature = await this.#signPlainMsg()
-        } else if (dedicatedToOneSA) {
-          signature = wrapUnprotected(await this.#signPlainMsg())
-        } else {
-          // in case of only_standard priv key, we transform the data
-          // for signing to EIP-712. This is because the key is not labeled safe
-          // and it should inform the user that he's performing an Ambire Op.
-          // This is important as this key could be a metamask one and someone
-          // could be phishing him into approving an Ambire Op without him
-          // knowing
-          const typedData = getTypedData(
-            network!.chainId,
-            account.addr,
-            ethers.hexlify(this.messageToSign.content.message)
-          )
-          signature = wrapStandard(await this.#signer.signTypedData(typedData))
+      try {
+        if (this.messageToSign.content.kind === 'message') {
+          if (!account.creation) {
+            signature = await this.#signPlainMsg()
+          } else if (dedicatedToOneSA) {
+            signature = wrapUnprotected(await this.#signPlainMsg())
+          } else {
+            // in case of only_standard priv key, we transform the data
+            // for signing to EIP-712. This is because the key is not labeled safe
+            // and it should inform the user that he's performing an Ambire Op.
+            // This is important as this key could be a metamask one and someone
+            // could be phishing him into approving an Ambire Op without him
+            // knowing
+            const typedData = getTypedData(
+              network!.chainId,
+              account.addr,
+              ethers.hexlify(this.messageToSign.content.message)
+            )
+            signature = wrapStandard(await this.#signer.signTypedData(typedData))
+          }
         }
-      }
 
-      if (this.messageToSign.content.kind === 'typedMessage') {
-        if (!account.creation) {
-          signature = await this.#signEip712()
-        } else if (dedicatedToOneSA) {
-          signature = wrapUnprotected(await this.#signEip712())
-        } else {
-          throw new Error(
-            `Signer with address ${this.signingKeyAddr} does not have privileges to execute this operation. Please choose a different signer and try again`
-          )
+        if (this.messageToSign.content.kind === 'typedMessage') {
+          if (!account.creation) {
+            signature = await this.#signEip712()
+          } else if (dedicatedToOneSA) {
+            signature = wrapUnprotected(await this.#signEip712())
+          } else {
+            throw new Error(
+              `Signer with address ${this.signingKeyAddr} does not have privileges to execute this operation. Please choose a different signer and try again`
+            )
+          }
         }
+      } catch (error: any) {
+        throw new Error(
+          error?.message ||
+            'Something went wrong while signing the message. Please try again later or contact support if the problem persists.'
+        )
       }
 
       if (!signature) {

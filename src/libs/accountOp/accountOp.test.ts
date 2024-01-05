@@ -2,7 +2,8 @@ import { ethers } from 'ethers'
 
 import { describe, expect, test } from '@jest/globals'
 
-import { AccountOp, accountOpSignableHash, Call } from './accountOp'
+import { AccountOp, accountOpSignableHash } from './accountOp'
+import { Call } from './types'
 
 describe('AccountOp', () => {
   test('should generate a valid hash for signing', async () => {
