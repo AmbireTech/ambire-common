@@ -809,11 +809,14 @@ export class MainController extends EventEmitter {
           rawTxn.gasPrice = gasPrice
         }
 
-        transactionRes = await provider.broadcastTransaction(
-          await signer.signRawTransaction(rawTxn)
-        )
-      } catch (error: any) {
-        return this.#throwAccountOpBroadcastError(new Error(error), error.message || undefined)
+        const signedTxn = await signer.signRawTransaction(rawTxn)
+        transactionRes = await provider.broadcastTransaction(signedTxn)
+      } catch (e: any) {
+        const errorMsg =
+          e?.message || 'Please try again or contact support if the problem persists.'
+        const message = `Failed to broadcast transaction on ${accountOp.networkId}. ${errorMsg}`
+
+        return this.#throwAccountOpBroadcastError(new Error(message), message)
       }
     }
     // Smart account but EOA pays the fee
@@ -888,17 +891,18 @@ export class MainController extends EventEmitter {
 
         const signedTxn = await signer.signRawTransaction(rawTxn)
         transactionRes = await provider.broadcastTransaction(signedTxn)
-      } catch {
-        this.#throwAccountOpBroadcastError(
-          new Error(`Failed to broadcast transaction on ${accountOp.networkId}`)
-        )
+      } catch (e: any) {
+        const errorMsg =
+          e?.message || 'Please try again or contact support if the problem persists.'
+        const message = `Failed to broadcast transaction on ${accountOp.networkId}. ${errorMsg}`
+        return this.#throwAccountOpBroadcastError(new Error(message), message)
       }
     }
     // Smart account, the ERC-4337 way
     else if (accountOp.gasFeePayment && accountOp.gasFeePayment.isERC4337) {
       const userOperation = accountOp.asUserOperation
       if (!userOperation) {
-        this.#throwAccountOpBroadcastError(
+        return this.#throwAccountOpBroadcastError(
           new Error(
             `Trying to broadcast an ERC-4337 request but userOperation is not set for ${accountOp.accountAddr}`
           )
@@ -908,7 +912,7 @@ export class MainController extends EventEmitter {
       // broadcast through bundler's service
       const userOperationHash = await bundler.broadcast(userOperation!, network!)
       if (!userOperationHash) {
-        this.#throwAccountOpBroadcastError(new Error('was not able to broadcast'))
+        return this.#throwAccountOpBroadcastError(new Error('was not able to broadcast'))
       }
       // broadcast the userOperationHash
       // TODO: maybe a type property should exist to diff when we're
