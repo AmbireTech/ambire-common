@@ -43,11 +43,33 @@ export const getTypedData = (
   const domain: TypedDataDomain = {
     name: 'Ambire',
     version: '1',
-    chainId,
+    chainId: chainId.toString(),
     verifyingContract: verifyingAddr,
     salt: toBeHex(0, 32)
   }
   const types = {
+    EIP712Domain: [
+      {
+        name: 'name',
+        type: 'string'
+      },
+      {
+        name: 'version',
+        type: 'string'
+      },
+      {
+        name: 'chainId',
+        type: 'string'
+      },
+      {
+        name: 'verifyingContract',
+        type: 'address'
+      },
+      {
+        name: 'salt',
+        type: 'Bytes'
+      }
+    ],
     AmbireOperation: [
       { name: 'account', type: 'address' },
       { name: 'hash', type: 'bytes32' }
