@@ -481,7 +481,7 @@ export class KeystoreController extends EventEmitter {
       this.emitUpdate()
     } catch (error: any) {
       if (error?.message === 'keystore: wrong secret') {
-        this.errorMessage = 'Invalid Device password.'
+        this.errorMessage = 'Invalid Device Password.'
       } else if (error?.message === 'keystore: not unlocked') {
         this.emitError({
           message: 'App not unlocked. Please try again or contact support if the problem persists.',
