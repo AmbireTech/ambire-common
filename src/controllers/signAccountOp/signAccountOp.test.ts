@@ -408,6 +408,7 @@ describe('SignAccountOp Controller ', () => {
       controller.accountOp.accountAddr,
       ethers.hexlify(accountOpSignableHash(controller.accountOp))
     )
+    delete typedData.types.EIP712Domain
     const unwrappedSig = controller.accountOp.signature.slice(0, -2)
     const signerAddr = ethers.verifyTypedData(
       typedData.domain,
@@ -514,6 +515,7 @@ describe('SignAccountOp Controller ', () => {
       ethers.hexlify(accountOpSignableHash(controller.accountOp))
     )
     const unwrappedSig = controller.accountOp.signature.slice(0, -2)
+    delete typedData.types.EIP712Domain
     const signerAddr = ethers.verifyTypedData(
       typedData.domain,
       typedData.types,
