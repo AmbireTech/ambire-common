@@ -59,7 +59,7 @@ export const getTypedData = (
       },
       {
         name: 'chainId',
-        type: 'string'
+        type: 'uint256'
       },
       {
         name: 'verifyingContract',
@@ -67,7 +67,7 @@ export const getTypedData = (
       },
       {
         name: 'salt',
-        type: 'Bytes'
+        type: 'bytes32'
       }
     ],
     AmbireOperation: [
