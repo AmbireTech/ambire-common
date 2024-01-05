@@ -72,7 +72,13 @@ describe('KeystoreController', () => {
       expect(keystore.isUnlocked).toBe(false)
 
       unsubscribe()
-      done()
+    })
+
+    const unsubscribeUpdate = keystore.onUpdate(async () => {
+      if (keystore.latestMethodCall === 'unlockWithSecret' && keystore.status === 'DONE') {
+        unsubscribeUpdate()
+        done()
+      }
     })
   })
 
@@ -98,11 +104,17 @@ describe('KeystoreController', () => {
     keystore.unlockWithSecret('playstation', '')
 
     const unsubscribe = keystore.onError((e) => {
-      expect(e.error.message).toBe('keystore: secret playstation not found')
+      expect(e.error.message).toBe('keystore: secret not found: playstation')
       expect(keystore.isUnlocked).toBe(false)
 
       unsubscribe()
-      done()
+    })
+
+    const unsubscribeUpdate = keystore.onUpdate(async () => {
+      if (keystore.latestMethodCall === 'unlockWithSecret' && keystore.status === 'DONE') {
+        unsubscribeUpdate()
+        done()
+      }
     })
   })
 

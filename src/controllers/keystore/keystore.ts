@@ -59,7 +59,7 @@ export class KeystoreController extends EventEmitter {
 
   isReadyToStoreKeys: boolean = false
 
-  status: 'INITIAL' | 'LOADING' | 'DONE' = 'INITIAL'
+  status: 'INITIAL' | 'LOADING' | 'SUCCESS' | 'DONE' = 'INITIAL'
 
   errorMessage: string = ''
 
@@ -124,39 +124,21 @@ export class KeystoreController extends EventEmitter {
   }
 
   // @TODO time before unlocking
-  async #unlockWithSecret(secretId: string, secret: string): Promise<'SUCCESS' | 'ERROR'> {
+  async #unlockWithSecret(secretId: string, secret: string) {
     // @TODO should we check if already locked? probably not cause this function can  be used in order to verify if a secret is correct
     const secrets = await this.getMainKeyEncryptedWithSecrets()
     if (!secrets.length) {
-      this.emitError({
-        message:
-          'Trying to unlock Ambire, but the lock mechanism was not fully configured yet. Please try again or contact support if the problem persists.',
-        level: 'major',
-        error: new Error('keystore: no secrets yet')
-      })
-      return 'ERROR'
+      throw new Error('keystore: no secrets yet')
     }
 
     const secretEntry = secrets.find((x) => x.id === secretId)
     if (!secretEntry) {
-      this.emitError({
-        message:
-          'Something went wrong when trying to unlock Ambire. Please try again or contact support if the problem persists.',
-        level: 'major',
-        error: new Error(`keystore: secret ${secretId} not found`)
-      })
-      return 'ERROR'
+      throw new Error(`keystore: secret not found: ${secretId}`)
     }
 
     const { scryptParams, aesEncrypted } = secretEntry
     if (aesEncrypted.cipherType !== CIPHER) {
-      this.emitError({
-        message:
-          'Something went wrong when unlocking Ambire. Please try again or contact support if the problem persists.',
-        level: 'major',
-        error: new Error(`keystore: unsupported cipherType ${aesEncrypted.cipherType}`)
-      })
-      return 'ERROR'
+      throw new Error(`keystore: unsupported cipherType ${aesEncrypted.cipherType}`)
     }
     // @TODO: progressCallback?
 
@@ -182,11 +164,10 @@ export class KeystoreController extends EventEmitter {
 
     const decrypted = aesCtr.decrypt(getBytes(aesEncrypted.ciphertext))
     this.#mainKey = { key: decrypted.slice(0, 16), iv: decrypted.slice(16, 32) }
-    return 'SUCCESS'
   }
 
   async unlockWithSecret(secretId: string, secret: string) {
-    return this.wrapKeystoreAction('unlockWithSecret', () =>
+    return this.#wrapKeystoreAction('unlockWithSecret', () =>
       this.#unlockWithSecret(secretId, secret)
     )
   }
@@ -262,7 +243,7 @@ export class KeystoreController extends EventEmitter {
   }
 
   async addSecret(secretId: string, secret: string, extraEntropy: string, leaveUnlocked: boolean) {
-    await this.wrapKeystoreAction('addSecret', () =>
+    await this.#wrapKeystoreAction('addSecret', () =>
       this.#addSecret(secretId, secret, extraEntropy, leaveUnlocked)
     )
   }
@@ -280,7 +261,7 @@ export class KeystoreController extends EventEmitter {
   }
 
   async removeSecret(secretId: string) {
-    await this.wrapKeystoreAction('removeSecret', () => this.#removeSecret(secretId))
+    await this.#wrapKeystoreAction('removeSecret', () => this.#removeSecret(secretId))
   }
 
   async getKeys(): Promise<Key[]> {
@@ -339,7 +320,7 @@ export class KeystoreController extends EventEmitter {
   async addKeysExternallyStored(
     keysToAdd: { addr: Key['addr']; type: Key['type']; meta: Key['meta'] }[]
   ) {
-    await this.wrapKeystoreAction('addKeysExternallyStored', () =>
+    await this.#wrapKeystoreAction('addKeysExternallyStored', () =>
       this.#addKeysExternallyStored(keysToAdd)
     )
   }
@@ -394,37 +375,7 @@ export class KeystoreController extends EventEmitter {
   }
 
   async addKeys(keysToAdd: { privateKey: string }[]) {
-    await this.wrapKeystoreAction('addKeys', () => this.#addKeys(keysToAdd))
-  }
-
-  async wrapKeystoreAction(callName: string, fn: Function) {
-    if (this.status === 'LOADING') return
-    this.latestMethodCall = callName
-    this.errorMessage = ''
-    this.status = 'LOADING'
-    this.emitUpdate()
-    try {
-      await fn()
-    } catch (error: any) {
-      if (error?.message === 'keystore: wrong secret') {
-        this.errorMessage = 'Invalid Key Store passphrase.'
-      } else {
-        this.emitError({
-          message: 'Keystore unexpected error. If the problem persists, please contact support.',
-          level: 'major',
-          error
-        })
-      }
-    }
-    this.status = 'DONE'
-    this.emitUpdate()
-
-    // reset the status in the next tick to ensure the FE receives the 'DONE' state
-    await wait(1)
-    if (this.latestMethodCall === callName) {
-      this.status = 'INITIAL'
-      this.emitUpdate()
-    }
+    await this.#wrapKeystoreAction('addKeys', () => this.#addKeys(keysToAdd))
   }
 
   async removeKey(addr: Key['addr'], type: Key['type']) {
@@ -501,17 +452,8 @@ export class KeystoreController extends EventEmitter {
   }
 
   async #changeKeystorePassword(oldSecret: string, newSecret: string) {
-    const res = await this.#unlockWithSecret('password', oldSecret)
-    if (res !== 'SUCCESS') return
-
-    if (!this.isUnlocked) {
-      return this.emitError({
-        message:
-          'Key Store not unlocked. Please try again or contact support if the problem persists.',
-        level: 'major',
-        error: new Error('keystore: not unlocked')
-      })
-    }
+    await this.#unlockWithSecret('password', oldSecret)
+    if (!this.isUnlocked) throw new Error('keystore: not unlocked')
 
     const secrets = await this.getMainKeyEncryptedWithSecrets()
     await this.#storage.set(
@@ -522,9 +464,67 @@ export class KeystoreController extends EventEmitter {
   }
 
   async changeKeystorePassword(oldSecret: string, newSecret: string) {
-    await this.wrapKeystoreAction('changeKeystorePassword', () =>
+    await this.#wrapKeystoreAction('changeKeystorePassword', () =>
       this.#changeKeystorePassword(oldSecret, newSecret)
     )
+  }
+
+  async #wrapKeystoreAction(callName: string, fn: Function) {
+    if (this.status === 'LOADING') return
+    this.latestMethodCall = callName
+    this.errorMessage = ''
+    this.status = 'LOADING'
+    this.emitUpdate()
+    try {
+      await fn()
+      this.status = 'SUCCESS'
+      this.emitUpdate()
+    } catch (error: any) {
+      if (error?.message === 'keystore: wrong secret') {
+        this.errorMessage = 'Invalid Device password.'
+      } else if (error?.message === 'keystore: not unlocked') {
+        this.emitError({
+          message: 'App not unlocked. Please try again or contact support if the problem persists.',
+          level: 'major',
+          error
+        })
+      } else if (error?.message === 'keystore: no secrets yet') {
+        this.emitError({
+          message:
+            'Trying to unlock Ambire, but the lock mechanism was not fully configured yet. Please try again or contact support if the problem persists.',
+          level: 'major',
+          error
+        })
+      } else if (
+        error?.message?.includes('keystore: secret not found:') ||
+        error?.message?.includes('keystore: unsupported cipherType')
+      ) {
+        this.emitError({
+          message:
+            'Something went wrong when trying to unlock Ambire. Please try again or contact support if the problem persists.',
+          level: 'major',
+          error
+        })
+      } else {
+        this.emitError({
+          message: 'Keystore unexpected error. If the problem persists, please contact support.',
+          level: 'major',
+          error
+        })
+      }
+    }
+
+    // set status in the next tick to ensure the FE receives the 'SUCCESS' status
+    await wait(1)
+    this.status = 'DONE'
+    this.emitUpdate()
+
+    // reset the status in the next tick to ensure the FE receives the 'DONE' status
+    await wait(1)
+    if (this.latestMethodCall === callName) {
+      this.status = 'INITIAL'
+      this.emitUpdate()
+    }
   }
 
   resetErrorState() {
