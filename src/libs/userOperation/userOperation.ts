@@ -11,7 +11,7 @@ import {
 } from '../../consts/deploy'
 import { SPOOF_SIGTYPE } from '../../consts/signatures'
 import { Account, AccountOnchainState } from '../../interfaces/account'
-import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
+import { AccountOp, callToTuple, getSignableCalls } from '../accountOp/accountOp'
 import { Call } from '../accountOp/types'
 import { UserOperation } from './types'
 
@@ -112,13 +112,16 @@ export function toUserOperation(
   }
 
   const abiCoder = new ethers.AbiCoder()
-  const packed = abiCoder.encode(
+  let packed = abiCoder.encode(
     [
       'tuple(address, uint256, bytes, bytes, uint256, uint256, uint256, uint256, uint256, bytes, bytes)'
     ],
     [Object.values(userOperation)]
   )
-  if (activatorCall) userOperation.activatorCall = activatorCall
+  if (activatorCall) {
+    userOperation.activatorCall = activatorCall
+    packed += abiCoder.encode(['address', 'uint256', 'bytes'], callToTuple(activatorCall))
+  }
   userOperation.preVerificationGas = ethers.toBeHex(21000n + calculateCallDataCost(packed))
   userOperation.paymasterAndData = '0x'
   userOperation.signature = '0x'
