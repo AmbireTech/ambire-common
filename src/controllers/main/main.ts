@@ -16,12 +16,8 @@ import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor
 import { Storage } from '../../interfaces/storage'
 import { Message, UserRequest } from '../../interfaces/userRequest'
 import { isSmartAccount } from '../../libs/account/account'
-import {
-  AccountOp,
-  AccountOpStatus,
-  Call as AccountOpCall,
-  getSignableCalls
-} from '../../libs/accountOp/accountOp'
+import { AccountOp, AccountOpStatus, getSignableCalls } from '../../libs/accountOp/accountOp'
+import { Call as AccountOpCall } from '../../libs/accountOp/types'
 import { getAccountState } from '../../libs/accountState/accountState'
 import {
   getAccountOpBannersForEOA,

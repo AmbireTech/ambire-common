@@ -11,7 +11,8 @@ import {
 } from '../../consts/deploy'
 import { SPOOF_SIGTYPE } from '../../consts/signatures'
 import { Account, AccountOnchainState } from '../../interfaces/account'
-import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
+import { AccountOp, callToTuple, getSignableCalls } from '../accountOp/accountOp'
+import { Call } from '../accountOp/types'
 import { UserOperation } from './types'
 
 export function calculateCallDataCost(callData: string): bigint {
@@ -60,16 +61,17 @@ export function toUserOperation(
 
   // give permissions to the entry if there aren't nay
   const ambireAccount = new ethers.BaseContract(accountOp.accountAddr, AmbireAccount.abi)
+  let activatorCall: Call | null = null
   if (!accountState.isErc4337Enabled) {
     const givePermsToEntryPointData = ambireAccount.interface.encodeFunctionData(
       'setAddrPrivilege',
       [ERC_4337_ENTRYPOINT, ENTRY_POINT_MARKER]
     )
-    accountOp.calls.push({
+    activatorCall = {
       to: accountOp.accountAddr,
       value: 0n,
       data: givePermsToEntryPointData
-    })
+    }
 
     requestType = 'activator'
   }
@@ -110,12 +112,16 @@ export function toUserOperation(
   }
 
   const abiCoder = new ethers.AbiCoder()
-  const packed = abiCoder.encode(
+  let packed = abiCoder.encode(
     [
       'tuple(address, uint256, bytes, bytes, uint256, uint256, uint256, uint256, uint256, bytes, bytes)'
     ],
     [Object.values(userOperation)]
   )
+  if (activatorCall) {
+    userOperation.activatorCall = activatorCall
+    packed += abiCoder.encode(['address', 'uint256', 'bytes'], callToTuple(activatorCall))
+  }
   userOperation.preVerificationGas = ethers.toBeHex(21000n + calculateCallDataCost(packed))
   userOperation.paymasterAndData = '0x'
   userOperation.signature = '0x'
