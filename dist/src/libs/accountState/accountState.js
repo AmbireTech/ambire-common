@@ -46,8 +46,7 @@ async function getAccountState(provider, network, accounts, blockTag = 'latest')
             isErc4337Enabled: !!(network?.erc4337?.enabled &&
                 accResult.erc4337Nonce < deploy_1.MAX_UINT256 &&
                 associatedKeys.find((associatedKey) => associatedKey[0] === network?.erc4337?.entryPointAddr &&
-                    (associatedKey[1] === network.erc4337?.entryPointMarker ||
-                        associatedKey[1] === `0x${'0'.repeat(63)}1`))),
+                    (associatedKey[1] === `0x${'0'.repeat(63)}1`))),
             deployError: accounts[index].associatedKeys.length > 0 && accResult.associatedKeyPrivileges.length === 0
         };
         return res;
