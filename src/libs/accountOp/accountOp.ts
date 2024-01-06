@@ -5,16 +5,7 @@ import { networks } from '../../consts/networks'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
 import { stringify } from '../bigintJson/bigintJson'
 import { UserOperation } from '../userOperation/types'
-
-export interface Call {
-  to: string
-  value: bigint
-  data: string
-  // if this call is associated with a particular user request
-  // multiple calls can be associated with the same user request, for example
-  // when a batching request is made
-  fromUserRequestId?: number
-}
+import { Call } from './types'
 
 // This is an abstract representation of the gas fee payment
 // 1) it cannot contain details about maxFeePerGas/baseFee because some networks might not be aware of EIP-1559; it only cares about total amount
@@ -29,6 +20,7 @@ export interface GasFeePayment {
   inToken: string
   amount: bigint
   simulatedGasLimit: bigint
+  maxPriorityFeePerGas?: bigint
 }
 
 export enum AccountOpStatus {
@@ -123,6 +115,8 @@ export function isAccountOpsIntentEqual(
 
 export function getSignableCalls(op: AccountOp) {
   const callsToSign = op.calls.map((call: Call) => callToTuple(call))
+  if (op.asUserOperation && op.asUserOperation.activatorCall)
+    callsToSign.push(callToTuple(op.asUserOperation.activatorCall))
   if (op.feeCall) callsToSign.push(callToTuple(op.feeCall))
   return callsToSign
 }
@@ -164,20 +158,5 @@ export function accountOpSignableHash(op: AccountOp): Uint8Array {
         [op.accountAddr, opNetworks[0].chainId, op.nonce ?? 0n, getSignableCalls(op)]
       )
     )
-  )
-}
-
-/**
- * We're paying the fee in native only if:
- * - it's not a gas tank payment
- * - the gasFeePayment.inToken points to address 0
- *
- * @param gasFeePayment
- * @returns boolean
- */
-export function isNative(gasFeePayment: GasFeePayment): boolean {
-  return (
-    !gasFeePayment.isGasTank &&
-    gasFeePayment.inToken === '0x0000000000000000000000000000000000000000'
   )
 }

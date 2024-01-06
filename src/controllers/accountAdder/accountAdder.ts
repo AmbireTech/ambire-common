@@ -1,6 +1,6 @@
 import { ethers, JsonRpcProvider } from 'ethers'
 
-import { PROXY_AMBIRE_ACCOUNT } from '../../../src/consts/deploy'
+import { PROXY_AMBIRE_ACCOUNT } from '../../consts/deploy'
 import {
   HD_PATH_TEMPLATE_TYPE,
   SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
@@ -486,14 +486,30 @@ export class AccountAdderController extends EventEmitter {
     const startIdx = (this.page - 1) * this.pageSize
     const endIdx = (this.page - 1) * this.pageSize + (this.pageSize - 1)
 
-    const legacyAccKeys = await this.#keyIterator.retrieve(startIdx, endIdx, this.hdPathTemplate)
-    const smartAccKeys = await this.#keyIterator.retrieve(
-      startIdx + SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET,
-      endIdx + SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET,
+    // Combine the requests for all accounts in one call to the keyIterator.
+    // That's optimization primarily focused on hardware wallets, to reduce the
+    // number of calls to the hardware device. This is important, especially
+    // for Trezor, because it fires a confirmation popup for each call.
+    const combinedLegacyAndSmartAccKeys = await this.#keyIterator.retrieve(
+      [
+        // Indices for the legacy (EOA) accounts
+        { from: startIdx, to: endIdx },
+        // Indices for the smart accounts
+        {
+          from: startIdx + SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET,
+          to: endIdx + SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
+        }
+      ],
       this.hdPathTemplate
     )
 
-    const smartAccountsPromises: Promise<DerivedAccountWithoutNetworkMeta>[] = []
+    const legacyAccKeys = combinedLegacyAndSmartAccKeys.slice(0, this.pageSize)
+    const smartAccKeys = combinedLegacyAndSmartAccKeys.slice(
+      this.pageSize,
+      combinedLegacyAndSmartAccKeys.length
+    )
+
+    const smartAccountsPromises: Promise<DerivedAccountWithoutNetworkMeta | null>[] = []
     // Replace the parallel getKeys with foreach to prevent issues with Ledger,
     // which can only handle one request at a time.
     // eslint-disable-next-line no-restricted-syntax
@@ -507,13 +523,25 @@ export class AccountAdderController extends EventEmitter {
 
       // Derive the Ambire (smart) account
       smartAccountsPromises.push(
-        getSmartAccount(smartAccKey).then((smartAccount) => {
-          return { account: smartAccount, isLinked: false, slot, index: slot - 1 }
-        })
+        getSmartAccount(smartAccKey)
+          .then((smartAccount) => {
+            return { account: smartAccount, isLinked: false, slot, index: slot - 1 }
+          })
+          // If the error isn't caught here and the promise is rejected, Promise.all
+          // will be rejected entirely.
+          .catch(() => {
+            // No need for emitting an error here, because a relevant error is already
+            // emitted in the method #getAccountsUsedOnNetworks
+            return null
+          })
       )
     }
 
-    const smartAccounts = await Promise.all(smartAccountsPromises)
+    const unfilteredSmartAccountsList = await Promise.all(smartAccountsPromises)
+    const smartAccounts = unfilteredSmartAccountsList.filter(
+      (x) => x !== null
+    ) as DerivedAccountWithoutNetworkMeta[]
+
     accounts.push(...smartAccounts)
 
     // eslint-disable-next-line no-restricted-syntax
@@ -561,7 +589,21 @@ export class AccountAdderController extends EventEmitter {
           providers[providerKey],
           network,
           accounts.map((acc) => acc.account)
-        )
+        ).catch(() => {
+          const message = `Failed to determine if accounts are used on ${network.name}.`
+          // Prevents toast spamming
+          if (this.getErrors().find((err) => err.message === message)) return
+
+          this.emitError({
+            level: 'major',
+            message,
+            error: new Error(
+              `accountAdder.#getAccountsUsedOnNetworks: failed to determine if accounts are used on ${network.name}`
+            )
+          })
+        })
+
+        if (!accountState) return
 
         accountState.forEach((acc: AccountOnchainState) => {
           const isUsedOnThisNetwork =

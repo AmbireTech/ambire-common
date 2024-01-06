@@ -1,32 +1,39 @@
-import { Provider, JsonRpcProvider, Interface, AbiCoder } from 'ethers'
-import { fromDescriptor } from '../deployless/deployless'
-import { getAccountDeployParams } from '../account/account'
-import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
-import { AccountOp } from '../accountOp/accountOp'
-import { Account } from '../../interfaces/account'
-import Estimation from '../../../contracts/compiled/Estimation.json'
-import Estimation4337 from '../../../contracts/compiled/Estimation4337.json'
+import { AbiCoder, encodeRlp, Interface, JsonRpcProvider, Provider } from 'ethers'
+
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFactory.json'
+import Estimation from '../../../contracts/compiled/Estimation.json'
+import Estimation4337 from '../../../contracts/compiled/Estimation4337.json'
 import { ERC_4337_ENTRYPOINT } from '../../consts/deploy'
-import { getPaymasterSpoof, getTargetEdgeCaseNonce } from '../../libs/userOperation/userOperation'
 import { SPOOF_SIGTYPE } from '../../consts/signatures'
+import { Account, AccountOnchainState } from '../../interfaces/account'
+import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
+import { getAccountDeployParams } from '../account/account'
+import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
+import { fromDescriptor } from '../deployless/deployless'
+import { getProbableCallData } from '../gasPrice/gasPrice'
+import {
+  getOneTimeNonce,
+  getPaymasterSpoof,
+  shouldUseOneTimeNonce,
+  shouldUsePaymaster
+} from '../userOperation/userOperation'
 
 interface Erc4337estimation {
-  verificationGasLimit: bigint,
-  callGasLimit: bigint,
-  gasUsed: bigint,
+  verificationGasLimit: bigint
+  callGasLimit: bigint
+  gasUsed: bigint
 }
 
 export interface EstimateResult {
   gasUsed: bigint
   nonce: number
-  addedNative: bigint
   feePaymentOptions: {
     availableAmount: bigint
     paidBy: string
     address: string
     gasUsed?: bigint
+    addedNative: bigint
   }[]
   erc4337estimation: Erc4337estimation | null
 }
@@ -36,6 +43,7 @@ export async function estimate(
   network: NetworkDescriptor,
   account: Account,
   op: AccountOp,
+  accountState: AccountOnchainState,
   nativeToCheck: string[],
   feeTokens: string[],
   opts?: {
@@ -46,6 +54,8 @@ export async function estimate(
   blockTag: string | number = 'latest'
 ): Promise<EstimateResult> {
   const nativeAddr = '0x0000000000000000000000000000000000000000'
+  const deploylessEstimator = fromDescriptor(provider, Estimation, !network.rpcNoStateOverride)
+  const abiCoder = new AbiCoder()
 
   if (!account.creation) {
     if (op.calls.length !== 1) {
@@ -54,8 +64,20 @@ export async function estimate(
 
     const call = op.calls[0]
     const nonce = await provider.getTransactionCount(account.addr)
+    const encodedCallData = abiCoder.encode(
+      [
+        'bytes', // data
+        'address', // to
+        'address', // from
+        'uint256', // gasPrice
+        'uint256', // type
+        'uint256', // nonce
+        'uint256' // gasLimit
+      ],
+      [call.data, call.to, account.addr, 100000000, 2, nonce, 100000]
+    )
 
-    const [gasUsed, balance] = await Promise.all([
+    const [gasUsed, balance, [l1GasEstimation]] = await Promise.all([
       provider.estimateGas({
         from: account.addr,
         to: call.to,
@@ -63,29 +85,54 @@ export async function estimate(
         data: call.data,
         nonce
       }),
-      provider.getBalance(account.addr)
+      provider.getBalance(account.addr),
+      deploylessEstimator.call('getL1GasEstimation', [encodeRlp(encodedCallData), '0x'], {
+        from: blockFrom,
+        blockTag
+      })
     ])
 
     return {
       gasUsed,
       nonce,
-      addedNative: 0n,
       feePaymentOptions: [
         {
           address: nativeAddr,
           paidBy: account.addr,
-          availableAmount: balance
+          availableAmount: balance,
+          addedNative: l1GasEstimation.fee
         }
       ],
       erc4337estimation: null
     }
   }
 
-  const deploylessEstimator = fromDescriptor(provider, Estimation, !network.rpcNoStateOverride)
-
   // @TODO - .env or passed as parameter?
   const relayerAddress = '0x942f9CE5D9a33a82F88D233AEb3292E680230348'
 
+  // @L2s
+  // craft the probableTxn that's going to be saved on the L1
+  // so we could do proper estimation
+  const encodedCallData = abiCoder.encode(
+    [
+      'bytes', // data
+      'address', // to
+      'address', // from
+      'uint256', // gasPrice
+      'uint256', // type
+      'uint256', // nonce
+      'uint256' // gasLimit
+    ],
+    [
+      getProbableCallData(op, network, accountState),
+      op.accountAddr,
+      relayerAddress,
+      100000000,
+      2,
+      op.nonce,
+      100000
+    ]
+  )
   const args = [
     account.addr,
     ...getAccountDeployParams(account),
@@ -97,6 +144,7 @@ export async function estimate(
       op.accountOpToExecuteBefore?.signature || '0x'
     ],
     [account.addr, op.nonce || 1, op.calls, '0x'],
+    encodeRlp(encodedCallData),
     account.associatedKeys,
     feeTokens,
     relayerAddress,
@@ -105,19 +153,32 @@ export async function estimate(
 
   // estimate 4337
   let estimation4337
-  if (opts && opts.is4337Broadcast) {
+  const is4337Broadcast = opts && opts.is4337Broadcast
+  const usesOneTimeNonce =
+    opts && opts.is4337Broadcast && shouldUseOneTimeNonce(op.asUserOperation!)
+  const IAmbireAccount = new Interface(AmbireAccount.abi)
+  if (is4337Broadcast) {
     // using Object.assign as typescript doesn't work otherwise
     const userOp = Object.assign({}, op.asUserOperation)
     userOp!.paymasterAndData = getPaymasterSpoof()
-    const deployless4337Estimator = fromDescriptor(provider, Estimation4337, !network.rpcNoStateOverride)
-    const functionArgs = [
-      userOp,
-      ERC_4337_ENTRYPOINT
-    ]
-    if (userOp.isEdgeCase) {
-      userOp.nonce = getTargetEdgeCaseNonce(userOp)
+
+    // add the activatorCall to the estimation
+    if (userOp.activatorCall) {
+      const spoofSig = abiCoder.encode(['address'], [account.associatedKeys[0]]) + SPOOF_SIGTYPE
+      userOp.callData = IAmbireAccount.encodeFunctionData('executeMultiple', [
+        [[getSignableCalls(op), spoofSig]]
+      ])
+    }
+
+    const deployless4337Estimator = fromDescriptor(
+      provider,
+      Estimation4337,
+      !network.rpcNoStateOverride
+    )
+    const functionArgs = [userOp, ERC_4337_ENTRYPOINT]
+    if (usesOneTimeNonce) {
+      userOp.nonce = getOneTimeNonce(userOp)
     } else {
-      const abiCoder = new AbiCoder()
       const spoofSig = abiCoder.encode(['address'], [account.associatedKeys[0]]) + SPOOF_SIGTYPE
       userOp!.signature = spoofSig
     }
@@ -153,17 +214,11 @@ export async function estimate(
   /* eslint-enable prefer-const */
 
   let erc4337estimation: Erc4337estimation | null = null
-  if (opts && opts.is4337Broadcast) {
-    const [
-      [
-        verificationGasLimit,
-        gasUsed,
-        failure
-      ]
-    ] = estimations[1]
+  if (is4337Broadcast) {
+    const [[verificationGasLimit, gasUsed, failure]] = estimations[1]
 
     // TODO<Bobby>: handle estimation failure
-    if (failure != '0x') {
+    if (failure !== '0x') {
       console.log(Buffer.from(failure.substring(2), 'hex').toString())
     }
 
@@ -179,7 +234,6 @@ export async function estimate(
     : deployment.gasUsed + accountOpToExecuteBefore.gasUsed + accountOp.gasUsed
 
   if (opts?.calculateRefund) {
-    const IAmbireAccount = new Interface(AmbireAccount.abi)
     const IAmbireAccountFactory = new Interface(AmbireAccountFactory.abi)
 
     const accountCalldata = op.accountOpToExecuteBefore
@@ -212,36 +266,40 @@ export async function estimate(
 
   let finalFeeTokenOptions = feeTokenOutcomes
   let finalNativeTokenOptions = nativeAssetBalances
-  if (opts && opts.is4337Broadcast) {
-
-    // if there's no paymaster, we cannot pay in tokens
+  if (is4337Broadcast) {
+    // if there's no paymaster, we can pay only in native
     if (!network.erc4337?.hasPaymaster) {
-      finalFeeTokenOptions = []
+      finalFeeTokenOptions = finalFeeTokenOptions.filter((token: any, key: number) => {
+        return feeTokens[key] === '0x0000000000000000000000000000000000000000'
+      })
     }
 
-    // native should be payed from the smart account only
-    finalNativeTokenOptions = finalNativeTokenOptions.filter((balance: bigint, key: number) => {
-      return nativeToCheck[key] == account.addr
-    })
+    // native from other accounts are not allowed
+    finalNativeTokenOptions = []
   }
 
   const feeTokenOptions = finalFeeTokenOptions.map((token: any, key: number) => ({
     address: feeTokens[key],
     paidBy: account.addr,
     availableAmount: token.amount,
-    gasUsed: token.gasUsed
+    gasUsed: token.gasUsed,
+    addedNative:
+      !is4337Broadcast || // relayer
+      shouldUsePaymaster(op.asUserOperation!, feeTokens[key])
+        ? l1GasEstimation.feeWithPayment
+        : l1GasEstimation.fee
   }))
 
   const nativeTokenOptions = finalNativeTokenOptions.map((balance: bigint, key: number) => ({
     address: nativeAddr,
     paidBy: nativeToCheck[key],
-    availableAmount: balance
+    availableAmount: balance,
+    addedNative: l1GasEstimation.fee
   }))
 
   return {
     gasUsed,
     nonce,
-    addedNative: l1GasEstimation.fee || 0n,
     feePaymentOptions: [...feeTokenOptions, ...nativeTokenOptions],
     erc4337estimation
   }

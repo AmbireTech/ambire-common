@@ -2,7 +2,8 @@ import { NetworkId } from 'interfaces/networkDescriptor'
 
 import { Account } from '../../interfaces/account'
 import { Message, TypedMessage } from '../../interfaces/userRequest'
-import { AccountOp, Call } from '../accountOp/accountOp'
+import { AccountOp } from '../accountOp/accountOp'
+import { Call } from '../accountOp/types'
 
 export type HumanizerVisualization = {
   type: 'token' | 'address' | 'label' | 'action' | 'nft' | 'danger'
@@ -25,7 +26,7 @@ export interface IrMessage extends Message {
 }
 export interface HumanizerWarning {
   content: string
-  level?: string
+  level?: 'caution' | 'alert' | 'alarm'
 }
 export interface Ir {
   calls: IrCall[]

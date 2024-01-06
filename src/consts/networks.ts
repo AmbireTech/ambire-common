@@ -12,7 +12,10 @@ const networks: NetworkDescriptor[] = [
     chainId: 1n,
     explorerUrl: 'https://etherscan.io',
     erc4337: null,
-    unstoppableDomainsChain: 'ERC20'
+    unstoppableDomainsChain: 'ERC20',
+    feeOptions: {
+      is1559: true
+    }
   },
   {
     id: 'polygon',
@@ -29,7 +32,11 @@ const networks: NetworkDescriptor[] = [
       entryPointAddr: ERC_4337_ENTRYPOINT,
       hasPaymaster: true
     },
-    unstoppableDomainsChain: 'MATIC'
+    unstoppableDomainsChain: 'MATIC',
+    feeOptions: {
+      is1559: false,
+      feeIncrease: 10n // %
+    }
   },
   {
     id: 'optimism',
@@ -45,7 +52,14 @@ const networks: NetworkDescriptor[] = [
       entryPointAddr: ERC_4337_ENTRYPOINT,
       hasPaymaster: false
     },
-    unstoppableDomainsChain: 'ERC20'
+    unstoppableDomainsChain: 'ERC20',
+    feeOptions: {
+      is1559: true,
+      elasticityMultiplier: 6n,
+      baseFeeMaxChangeDenominator: 50n,
+      feeIncrease: 2n // %
+    },
+    reestimateOn: 6000
   },
   {
     id: 'avalanche',
@@ -60,7 +74,12 @@ const networks: NetworkDescriptor[] = [
       entryPointAddr: ERC_4337_ENTRYPOINT,
       hasPaymaster: true
     },
-    unstoppableDomainsChain: 'ERC20'
+    unstoppableDomainsChain: 'ERC20',
+    feeOptions: {
+      is1559: true,
+      minBaseFee: 25000000000n, // 25 gwei
+      feeIncrease: 5n // %
+    }
   },
   {
     id: 'arbitrum',
@@ -76,7 +95,10 @@ const networks: NetworkDescriptor[] = [
       entryPointAddr: ERC_4337_ENTRYPOINT,
       hasPaymaster: true
     },
-    unstoppableDomainsChain: 'ERC20'
+    unstoppableDomainsChain: 'ERC20',
+    feeOptions: {
+      is1559: false
+    }
   }
 ]
 

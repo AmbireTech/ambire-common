@@ -63,11 +63,11 @@ const defaultOptions: GetOptions = {
 }
 
 export class Portfolio {
+  network: NetworkDescriptor
+
   private batchedVelcroDiscovery: Function
 
   private batchedGecko: Function
-
-  private network: NetworkDescriptor
 
   private deploylessTokens: Deployless
 
@@ -152,12 +152,14 @@ export class Portfolio {
     const [tokensWithErr, collectionsWithErr] = await Promise.all([
       flattenResults(
         paginate(hints.erc20s, limits.erc20).map((page) =>
-          getTokens(this.network, this.deploylessTokens, opts, accountAddr, page)
+          getTokens(this.network, this.deploylessTokens, opts, accountAddr, page).catch(() => [])
         )
       ),
       flattenResults(
         paginate(collectionsHints, limits.erc721).map((page) =>
-          getNFTs(this.network, this.deploylessNfts, opts, accountAddr, page, limits)
+          getNFTs(this.network, this.deploylessNfts, opts, accountAddr, page, limits).catch(
+            () => []
+          )
         )
       )
     ])

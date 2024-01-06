@@ -1,7 +1,9 @@
 import { Transaction } from 'ethers'
 
 import { HD_PATH_TEMPLATE_TYPE } from '../consts/derivation'
-import { Call, GasFeePayment } from '../libs/accountOp/accountOp'
+import { GasFeePayment } from '../libs/accountOp/accountOp'
+import { Call } from '../libs/accountOp/types'
+import { getHdPathFromTemplate } from '../utils/hdPath'
 import { Account } from './account'
 import { NetworkDescriptor } from './networkDescriptor'
 import { TypedMessage } from './userRequest'
@@ -16,32 +18,37 @@ export interface ExternalSignerController {
   hdPathTemplate: HD_PATH_TEMPLATE_TYPE
   deviceModel: string
   deviceId: string
-  isUnlocked: () => boolean
-  unlock: () => Promise<any>
+  isUnlocked: (path?: string, expectedKeyOnThisPath?: string) => boolean
+  unlock: (
+    path?: ReturnType<typeof getHdPathFromTemplate>
+  ) => Promise<'ALREADY_UNLOCKED' | 'JUST_UNLOCKED'>
+  unlockedPath: string
+  unlockedPathKeyAddr: string
   cleanUp: () => void // Trezor and Ledger specific
   // TODO: Refine the rest of the props
-  hdk: any // Trezor and Ledger specific
-  hasHIDPermission?: boolean | null // Ledger specific
   isWebHID?: boolean // Ledger specific
   transport?: any // Ledger specific
-  app?: any // Ledger specific
   appName?: string // Lattice specific
   sdkSession?: any // Lattice specific
   creds?: any // Lattice specific
   network?: any // Lattice specific
 }
 
+export interface TxnRequest {
+  to: Call['to']
+  value?: Call['value']
+  data: Call['data']
+  chainId: NetworkDescriptor['chainId']
+  nonce: number
+  gasLimit: GasFeePayment['simulatedGasLimit']
+  gasPrice?: bigint
+  maxFeePerGas?: bigint
+  maxPriorityFeePerGas?: bigint
+}
+
 export interface KeystoreSigner {
   init?: (externalSignerController?: ExternalSignerController) => void
-  signRawTransaction: (txnRequest: {
-    to: Call['to']
-    value?: Call['value']
-    data: Call['data']
-    chainId: NetworkDescriptor['chainId']
-    nonce: number
-    gasLimit: GasFeePayment['simulatedGasLimit']
-    gasPrice: bigint
-  }) => Promise<Transaction['serialized']>
+  signRawTransaction: (txnRequest: TxnRequest) => Promise<Transaction['serialized']>
   signTypedData: (typedMessage: TypedMessage) => Promise<string>
   signMessage: (hex: string) => Promise<string>
 }

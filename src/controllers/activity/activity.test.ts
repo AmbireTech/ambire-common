@@ -2,8 +2,7 @@ import { describe, expect } from '@jest/globals'
 
 import { produceMemoryStore } from '../../../test/helpers'
 import { AccountStates } from '../../interfaces/account'
-import { Message } from '../../interfaces/userRequest'
-import { ActivityController, SubmittedAccountOp } from './activity'
+import { ActivityController, SignedMessage, SubmittedAccountOp } from './activity'
 
 describe('Activity Controller ', () => {
   const accounts = {
@@ -381,10 +380,11 @@ describe('Activity Controller ', () => {
 
       await controller.setAccountsOpsPagination({ fromPage: 0, itemsPerPage: 1000 })
       const controllerAccountsOps = controller.accountsOps
-
       expect(controllerAccountsOps!.itemsTotal).toEqual(1000)
-      expect(controllerAccountsOps!.items[0].nonce).toEqual(500n)
-      expect(controllerAccountsOps!.items[999].nonce).toEqual(1499n)
+      // newest added item will be added to the beginning of the array
+      // in this case newest item is with nonce 1499n and should be at index 0
+      expect(controllerAccountsOps!.items[0].nonce).toEqual(1499n)
+      expect(controllerAccountsOps!.items[999].nonce).toEqual(500n)
     })
   })
 
@@ -400,9 +400,14 @@ describe('Activity Controller ', () => {
         }
       })
 
-      const signedMessage: Message = {
+      const signedMessage: SignedMessage = {
         id: 1,
         accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
+        dapp: {
+          icon: '',
+          name: 'dapp-name'
+        },
+        timestamp: 1701345600000,
         content: {
           kind: 'message',
           message: '0x74657374'
@@ -437,9 +442,14 @@ describe('Activity Controller ', () => {
         }
       })
 
-      const signedMessage: Message = {
+      const signedMessage: SignedMessage = {
         id: 1,
         accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
+        dapp: {
+          icon: '',
+          name: 'dapp-name'
+        },
+        timestamp: 1701345600000,
         content: {
           kind: 'message',
           message: '0x74657374'
@@ -480,9 +490,14 @@ describe('Activity Controller ', () => {
         }
       })
 
-      const signedMessage: Message = {
+      const signedMessage: SignedMessage = {
         id: 1,
         accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
+        dapp: {
+          icon: '',
+          name: 'dapp-name'
+        },
+        timestamp: 1701345600000,
         content: {
           kind: 'message',
           message: '0x123456'
@@ -506,8 +521,10 @@ describe('Activity Controller ', () => {
       const controllerSignedMessages = controller.signedMessages
 
       expect(controllerSignedMessages!.itemsTotal).toEqual(1000)
-      expect(controllerSignedMessages!.items[0].signature).toEqual('500')
-      expect(controllerSignedMessages!.items[999].signature).toEqual('1499')
+      // newest added item will be added to the beginning of the array
+      // in this case newest item is with signature 1499 and should be at index 0
+      expect(controllerSignedMessages!.items[0].signature).toEqual('1499')
+      expect(controllerSignedMessages!.items[999].signature).toEqual('500')
     })
   })
 })
