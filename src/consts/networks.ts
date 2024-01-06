@@ -85,8 +85,7 @@ const networks: NetworkDescriptor[] = [
     id: 'arbitrum',
     name: 'Arbitrum',
     nativeAssetSymbol: 'ETH',
-    rpcUrl:
-      'https://rpc.ankr.com/arbitrum/cd6074e892c575c13b0e2f1db154a5290100c5904a6ef081fadffbd37a4fdee5',
+    rpcUrl: 'https://rpc.arb1.arbitrum.gateway.fm	',
     rpcNoStateOverride: false,
     chainId: 42161n,
     explorerUrl: 'https://arbiscan.io',
