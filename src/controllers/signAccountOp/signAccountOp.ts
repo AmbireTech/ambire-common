@@ -540,7 +540,7 @@ export class SignAccountOpController extends EventEmitter {
       simulatedGasLimit: chosenSpeed.simulatedGasLimit
     }
 
-    if (chosenSpeed.maxPriorityFeePerGas) {
+    if ('maxPriorityFeePerGas' in chosenSpeed) {
       gasFeePayment.maxPriorityFeePerGas = chosenSpeed.maxPriorityFeePerGas
     }
 

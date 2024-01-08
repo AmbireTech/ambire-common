@@ -107,7 +107,8 @@ export async function getGasPriceRecommendations(
     return speeds.map(({ name, baseFeeAddBps }, i) => ({
       name,
       baseFeePerGas: expectedBaseFee + (expectedBaseFee * baseFeeAddBps) / 10000n,
-      maxPriorityFeePerGas: average(nthGroup(tips, i, speeds.length))
+      maxPriorityFeePerGas:
+        network.id === 'arbitrum' ? 0n : average(nthGroup(tips, i, speeds.length))
     }))
   }
   const prices = filterOutliers(txns.map((x) => x.gasPrice!).filter((x) => x > 0))

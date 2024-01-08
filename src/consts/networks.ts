@@ -96,8 +96,10 @@ const networks: NetworkDescriptor[] = [
     },
     unstoppableDomainsChain: 'ERC20',
     feeOptions: {
-      is1559: false
-    }
+      is1559: true,
+      minBaseFee: 100000000n // 1 gwei
+    },
+    reestimateOn: 6000
   }
 ]
 
