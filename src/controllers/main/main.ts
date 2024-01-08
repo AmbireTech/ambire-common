@@ -227,16 +227,14 @@ export class MainController extends EventEmitter {
       this.activity.init({ filters: { account: this.selectedAccount } })
     }
 
-    const addReadyToAddAccountsIfNeeded = () => {
-      if (
-        !this.accountAdder.readyToAddAccounts.length &&
-        this.accountAdder.addAccountsStatus !== 'SUCCESS'
-      )
-        return
+    const addReadyToAddAccountsAndKeysIfNeeded = () => {
+      if (this.accountAdder.addAccountsStatus !== 'SUCCESS') return
 
       this.addAccounts(this.accountAdder.readyToAddAccounts)
+      this.keystore.addKeys(this.accountAdder.readyToAddKeys.internal)
+      this.keystore.addKeysExternallyStored(this.accountAdder.readyToAddKeys.external)
     }
-    this.accountAdder.onUpdate(addReadyToAddAccountsIfNeeded)
+    this.accountAdder.onUpdate(addReadyToAddAccountsAndKeysIfNeeded)
 
     this.isReady = true
     this.emitUpdate()
