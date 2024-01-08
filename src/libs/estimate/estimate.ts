@@ -1,5 +1,9 @@
 import { AbiCoder, encodeRlp, Interface, JsonRpcProvider, Provider } from 'ethers'
 
+import { NodeInterface__factory } from '@arbitrum/sdk/dist/lib/abi/factories/NodeInterface__factory'
+import { NODE_INTERFACE_ADDRESS } from '@arbitrum/sdk/dist/lib/dataEntities/constants'
+import { StaticJsonRpcProvider } from '@ethersproject/providers'
+
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFactory.json'
 import Estimation from '../../../contracts/compiled/Estimation.json'
@@ -9,7 +13,7 @@ import { SPOOF_SIGTYPE } from '../../consts/signatures'
 import { Account, AccountOnchainState } from '../../interfaces/account'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { getAccountDeployParams } from '../account/account'
-import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
+import { AccountOp, callToTuple, getSignableCalls } from '../accountOp/accountOp'
 import { fromDescriptor } from '../deployless/deployless'
 import { getProbableCallData } from '../gasPrice/gasPrice'
 import {
@@ -264,6 +268,49 @@ export async function estimate(
     if (estimatedRefund <= gasUsed / 5n && estimatedRefund > 0n) gasUsed = estimatedGas
   }
 
+  if (network.id === 'arbitrum') {
+    const IAmbireAccountFactory = new Interface(AmbireAccountFactory.abi)
+    const arbitrumProvider = new StaticJsonRpcProvider(network.rpcUrl)
+    const nodeInterface = NodeInterface__factory.connect(NODE_INTERFACE_ADDRESS, arbitrumProvider)
+
+    // TODO: IF IT'S ERC-4337, we should make the txData point
+    // to handleOps
+    const txData = accountState.isDeployed
+      ? IAmbireAccount.encodeFunctionData('execute', [
+          op.calls.map((call) => callToTuple(call)),
+          '0x0dc2d37f7b285a2243b2e1e6ba7195c578c72b395c0f76556f8961b0bca97ddc44e2d7a249598f56081a375837d2b82414c3c94940db3c1e64110108021161ca1c01'
+        ])
+      : IAmbireAccountFactory.encodeFunctionData('deployAndExecute', [
+          account.creation.bytecode,
+          account.creation.salt,
+          op.calls.map((call) => callToTuple(call)),
+          '0x0dc2d37f7b285a2243b2e1e6ba7195c578c72b395c0f76556f8961b0bca97ddc44e2d7a249598f56081a375837d2b82414c3c94940db3c1e64110108021161ca1c01'
+        ])
+    const gasEstimateComponents = await nodeInterface.callStatic.gasEstimateComponents(
+      op.accountAddr,
+      false,
+      txData,
+      {
+        blockTag: 'latest'
+      }
+    )
+
+    // Getting useful values for calculating the formula
+    const l1GasEstimated = gasEstimateComponents.gasEstimateForL1
+    const l2EstimatedPrice = gasEstimateComponents.baseFee
+    const l1EstimatedPrice = gasEstimateComponents.l1BaseFeeEstimate.mul(16)
+
+    const l1Cost = l1GasEstimated.mul(l2EstimatedPrice)
+    const l1Size = l1Cost.div(l1EstimatedPrice)
+    const L1C = l1EstimatedPrice.mul(l1Size)
+    const B = L1C.div(l2EstimatedPrice)
+
+    // the gasUsed calculated until now is the L2 gasUsed. We afterwards
+    // set the gasLimit of the transaction to the gasUsed. We add the L1
+    // gas calculations to the final gasUsed
+    gasUsed = gasUsed.add(B)
+  }
+
   let finalFeeTokenOptions = feeTokenOutcomes
   let finalNativeTokenOptions = nativeAssetBalances
   if (is4337Broadcast) {
@@ -296,6 +343,11 @@ export async function estimate(
     availableAmount: balance,
     addedNative: l1GasEstimation.fee
   }))
+
+  // set the final gasUsed for the erc4337estimation as well if it has changes
+  if (erc4337estimation && erc4337estimation.gasUsed) {
+    erc4337estimation.gasUsed = gasUsed
+  }
 
   return {
     gasUsed,
