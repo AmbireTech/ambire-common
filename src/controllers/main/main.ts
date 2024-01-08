@@ -887,7 +887,7 @@ export class MainController extends EventEmitter {
 
       try {
         const signer = await this.keystore.getSigner(feePayerKey.addr, feePayerKey.type)
-        if (signer.init) signer.init(externalSignerController)
+        if (signer.init) signer.init(this.#externalSignerControllers[feePayerKey.type])
 
         const gasPrice =
           (accountOp.gasFeePayment.amount - feeTokenEstimation.addedNative) /
