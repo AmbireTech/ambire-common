@@ -9,17 +9,16 @@ import { networks } from '../../consts/networks'
 import { Account, AccountStates } from '../../interfaces/account'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { Storage } from '../../interfaces/storage'
+import { accountOpSignableHash } from '../../libs/accountOp/accountOp'
 import { getAccountState } from '../../libs/accountState/accountState'
 import { estimate, EstimateResult } from '../../libs/estimate/estimate'
 import * as gasPricesLib from '../../libs/gasPrice/gasPrice'
-import { GasRecommendation, getGasPriceRecommendations } from '../../libs/gasPrice/gasPrice'
+import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { KeystoreController } from '../keystore/keystore'
 import { PortfolioController } from '../portfolio/portfolio'
 import { SettingsController } from '../settings/settings'
 import { SignAccountOpController } from './signAccountOp'
-import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
-import { accountOpSignableHash } from '../../libs/accountOp/accountOp'
 
 const providers = Object.fromEntries(
   networks.map((network) => [network.id, new JsonRpcProvider(network.rpcUrl)])
@@ -127,7 +126,7 @@ const init = async (
   accountOp: any,
   signer: any,
   estimationMock?: EstimateResult,
-  gasPricesMock?: GasRecommendation[]
+  gasPricesMock?: gasPricesLib.GasRecommendation[]
 ) => {
   const storage: Storage = produceMemoryStore()
   await storage.set('HumanizerMeta', humanizerMeta)
@@ -143,7 +142,8 @@ const init = async (
   const accounts = [account]
   const accountStates = await getAccountsInfo(accounts)
 
-  const prices = gasPricesMock || (await getGasPriceRecommendations(provider, ethereum))
+  const prices =
+    gasPricesMock || (await gasPricesLib.getGasPriceRecommendations(provider, ethereum))
 
   const { op, nativeToCheck, feeTokens } = accountOp
   const estimation =
@@ -201,10 +201,12 @@ const init = async (
 
   const callRelayer = relayerCall.bind({ url: '', fetch })
   const settings = new SettingsController(storage)
+  settings.providers = { ethereum: provider }
   const controller = new SignAccountOpController(
     keystore,
     portfolio,
     settings,
+    {},
     account,
     accounts,
     accountStates,
@@ -212,9 +214,6 @@ const init = async (
     op,
     storage,
     fetch,
-    {
-      ethereum: provider
-    },
     callRelayer
   )
 
