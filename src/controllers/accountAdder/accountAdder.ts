@@ -7,6 +7,7 @@ import {
 } from '../../consts/derivation'
 import { Account, AccountOnchainState } from '../../interfaces/account'
 import { KeyIterator } from '../../interfaces/keyIterator'
+import { Key } from '../../interfaces/keystore'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
 import { Storage } from '../../interfaces/storage'
 import {
@@ -48,6 +49,11 @@ type DerivedAccount = AccountDerivationMeta & { account: AccountWithNetworkMeta 
 // Sub-type, used during intermediate step during the deriving accounts process
 type DerivedAccountWithoutNetworkMeta = Omit<DerivedAccount, 'account'> & { account: Account }
 
+type ReadyToAddKeys = {
+  internal: { privateKey: string }[]
+  external: { addr: Key['addr']; type: Key['type']; meta: Key['meta'] }[]
+}
+
 /**
  * Account Adder Controller
  * is responsible for listing accounts that can be selected for adding, and for
@@ -78,6 +84,8 @@ export class AccountAdderController extends EventEmitter {
   // Smart accounts which identity is created on the Relayer, and are ready
   // to be added to the user's account list by the Main Controller
   readyToAddAccounts: Account[] = []
+
+  readyToAddKeys: ReadyToAddKeys = { internal: [], external: [] }
 
   // Identity for the smart accounts must be created on the Relayer, this
   // represents the status of the operation, needed managing UI state
@@ -371,7 +379,10 @@ export class AccountAdderController extends EventEmitter {
     })
   }
 
-  async addAccounts(accounts: SelectedAccount[] = []) {
+  async addAccounts(
+    accounts: SelectedAccount[] = [],
+    readyToAddKeys: ReadyToAddKeys = { internal: [], external: [] }
+  ) {
     if (!this.isInitialized) {
       return this.emitError({
         level: 'major',
@@ -441,6 +452,7 @@ export class AccountAdderController extends EventEmitter {
     }
 
     this.readyToAddAccounts = [...accounts.map((x) => x.account)]
+    this.readyToAddKeys = readyToAddKeys
     this.addAccountsStatus = 'SUCCESS'
     this.emitUpdate()
 
