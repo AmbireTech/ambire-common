@@ -1,3 +1,5 @@
+/* eslint-disable new-cap */
+/* eslint-disable @typescript-eslint/no-shadow */
 import aes from 'aes-js'
 import { concat, getBytes, hexlify, keccak256, randomBytes, toUtf8Bytes, Wallet } from 'ethers'
 import scrypt from 'scrypt-js'
@@ -57,7 +59,7 @@ export class KeystoreController extends EventEmitter {
 
   isReadyToStoreKeys: boolean = false
 
-  status: 'INITIAL' | 'LOADING' | 'DONE' = 'INITIAL'
+  status: 'INITIAL' | 'LOADING' | 'SUCCESS' | 'DONE' = 'INITIAL'
 
   errorMessage: string = ''
 
@@ -126,32 +128,17 @@ export class KeystoreController extends EventEmitter {
     // @TODO should we check if already locked? probably not cause this function can  be used in order to verify if a secret is correct
     const secrets = await this.getMainKeyEncryptedWithSecrets()
     if (!secrets.length) {
-      return this.emitError({
-        message:
-          'Trying to unlock Ambire, but the lock mechanism was not fully configured yet. Please try again or contact support if the problem persists.',
-        level: 'major',
-        error: new Error('keystore: no secrets yet')
-      })
+      throw new Error('keystore: no secrets yet')
     }
 
     const secretEntry = secrets.find((x) => x.id === secretId)
     if (!secretEntry) {
-      return this.emitError({
-        message:
-          'Something went wrong when trying to unlock Ambire. Please try again or contact support if the problem persists.',
-        level: 'major',
-        error: new Error(`keystore: secret ${secretId} not found`)
-      })
+      throw new Error(`keystore: secret not found: ${secretId}`)
     }
 
     const { scryptParams, aesEncrypted } = secretEntry
     if (aesEncrypted.cipherType !== CIPHER) {
-      return this.emitError({
-        message:
-          'Something went wrong when unlocking Ambire. Please try again or contact support if the problem persists.',
-        level: 'major',
-        error: new Error(`keystore: unsupported cipherType ${aesEncrypted.cipherType}`)
-      })
+      throw new Error(`keystore: unsupported cipherType ${aesEncrypted.cipherType}`)
     }
     // @TODO: progressCallback?
 
@@ -180,7 +167,7 @@ export class KeystoreController extends EventEmitter {
   }
 
   async unlockWithSecret(secretId: string, secret: string) {
-    return this.wrapKeystoreAction('unlockWithSecret', () =>
+    return this.#wrapKeystoreAction('unlockWithSecret', () =>
       this.#unlockWithSecret(secretId, secret)
     )
   }
@@ -197,7 +184,7 @@ export class KeystoreController extends EventEmitter {
       throw new Error(`keystore: trying to add duplicate secret ${secretId}`)
 
     let mainKey: MainKey | null = this.#mainKey
-    // We are not not unlocked
+    // We are not unlocked
     if (!mainKey) {
       if (!secrets.length) {
         const key = getBytes(keccak256(concat([randomBytes(32), toUtf8Bytes(extraEntropy)]))).slice(
@@ -256,7 +243,7 @@ export class KeystoreController extends EventEmitter {
   }
 
   async addSecret(secretId: string, secret: string, extraEntropy: string, leaveUnlocked: boolean) {
-    await this.wrapKeystoreAction('addSecret', () =>
+    await this.#wrapKeystoreAction('addSecret', () =>
       this.#addSecret(secretId, secret, extraEntropy, leaveUnlocked)
     )
   }
@@ -274,7 +261,7 @@ export class KeystoreController extends EventEmitter {
   }
 
   async removeSecret(secretId: string) {
-    await this.wrapKeystoreAction('removeSecret', () => this.#removeSecret(secretId))
+    await this.#wrapKeystoreAction('removeSecret', () => this.#removeSecret(secretId))
   }
 
   async getKeys(): Promise<Key[]> {
@@ -333,7 +320,7 @@ export class KeystoreController extends EventEmitter {
   async addKeysExternallyStored(
     keysToAdd: { addr: Key['addr']; type: Key['type']; meta: Key['meta'] }[]
   ) {
-    await this.wrapKeystoreAction('addKeysExternallyStored', () =>
+    await this.#wrapKeystoreAction('addKeysExternallyStored', () =>
       this.#addKeysExternallyStored(keysToAdd)
     )
   }
@@ -388,37 +375,7 @@ export class KeystoreController extends EventEmitter {
   }
 
   async addKeys(keysToAdd: { privateKey: string }[]) {
-    await this.wrapKeystoreAction('addKeys', () => this.#addKeys(keysToAdd))
-  }
-
-  async wrapKeystoreAction(callName: string, fn: Function) {
-    if (this.status === 'LOADING') return
-    this.latestMethodCall = callName
-    this.errorMessage = ''
-    this.status = 'LOADING'
-    this.emitUpdate()
-    try {
-      await fn()
-    } catch (error: any) {
-      if (error?.message === 'keystore: wrong secret') {
-        this.errorMessage = 'Invalid Key Store passphrase.'
-      } else {
-        this.emitError({
-          message: 'Keystore unexpected error. If the problem persists, please contact support.',
-          level: 'major',
-          error
-        })
-      }
-    }
-    this.status = 'DONE'
-    this.emitUpdate()
-
-    // reset the status in the next tick to ensure the FE receives the 'DONE' state
-    await wait(1)
-    if (this.latestMethodCall === callName) {
-      this.status = 'INITIAL'
-      this.emitUpdate()
-    }
+    await this.#wrapKeystoreAction('addKeys', () => this.#addKeys(keysToAdd))
   }
 
   async removeKey(addr: Key['addr'], type: Key['type']) {
@@ -492,6 +449,82 @@ export class KeystoreController extends EventEmitter {
 
     // @ts-ignore TODO: Figure out the correct type definition
     return new SignerInitializer(key)
+  }
+
+  async #changeKeystorePassword(oldSecret: string, newSecret: string) {
+    await this.#unlockWithSecret('password', oldSecret)
+    if (!this.isUnlocked) throw new Error('keystore: not unlocked')
+
+    const secrets = await this.getMainKeyEncryptedWithSecrets()
+    await this.#storage.set(
+      'keystoreSecrets',
+      secrets.filter((x) => x.id !== 'password')
+    )
+    await this.#addSecret('password', newSecret, '', true)
+  }
+
+  async changeKeystorePassword(oldSecret: string, newSecret: string) {
+    await this.#wrapKeystoreAction('changeKeystorePassword', () =>
+      this.#changeKeystorePassword(oldSecret, newSecret)
+    )
+  }
+
+  async #wrapKeystoreAction(callName: string, fn: Function) {
+    if (this.status === 'LOADING') return
+    this.latestMethodCall = callName
+    this.errorMessage = ''
+    this.status = 'LOADING'
+    this.emitUpdate()
+    try {
+      await fn()
+      this.status = 'SUCCESS'
+      this.emitUpdate()
+    } catch (error: any) {
+      if (error?.message === 'keystore: wrong secret') {
+        this.errorMessage = 'Invalid Device Password.'
+      } else if (error?.message === 'keystore: not unlocked') {
+        this.emitError({
+          message: 'App not unlocked. Please try again or contact support if the problem persists.',
+          level: 'major',
+          error
+        })
+      } else if (error?.message === 'keystore: no secrets yet') {
+        this.emitError({
+          message:
+            'Trying to unlock Ambire, but the lock mechanism was not fully configured yet. Please try again or contact support if the problem persists.',
+          level: 'major',
+          error
+        })
+      } else if (
+        error?.message?.includes('keystore: secret not found:') ||
+        error?.message?.includes('keystore: unsupported cipherType')
+      ) {
+        this.emitError({
+          message:
+            'Something went wrong when trying to unlock Ambire. Please try again or contact support if the problem persists.',
+          level: 'major',
+          error
+        })
+      } else {
+        this.emitError({
+          message: 'Keystore unexpected error. If the problem persists, please contact support.',
+          level: 'major',
+          error
+        })
+      }
+    }
+
+    // set status in the next tick to ensure the FE receives the 'SUCCESS' status
+    await wait(1)
+    this.status = 'DONE'
+    this.emitUpdate()
+
+    // reset the status in the next tick to ensure the FE receives the 'DONE' status
+    await wait(1)
+    if (this.latestMethodCall === callName) {
+      this.status = 'INITIAL'
+      this.emitUpdate()
+    }
   }
 
   resetErrorState() {

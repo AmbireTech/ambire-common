@@ -58,20 +58,27 @@ const privKey = '207d56b2f2b06fd9c74562ec81f42d47393a55cfcf5c182605220ad7fdfbe60
 const keyPublicAddress = '0xB6C923c6586eDb44fc4CC0AE4F60869271e75407'
 
 describe('KeystoreController', () => {
+  const storage = produceMemoryStore()
   test('should initialize', () => {
-    keystore = new KeystoreController(produceMemoryStore(), keystoreSigners)
+    keystore = new KeystoreController(storage, keystoreSigners)
     expect(keystore).toBeDefined()
   })
 
   test('should not unlock with non-existent secret (when no secrets exist)', (done) => {
-    keystore.unlockWithSecret('passphrase', pass)
+    keystore.unlockWithSecret('password', pass)
 
     const unsubscribe = keystore.onError((e) => {
       expect(e.error.message).toBe('keystore: no secrets yet')
       expect(keystore.isUnlocked).toBe(false)
 
       unsubscribe()
-      done()
+    })
+
+    const unsubscribeUpdate = keystore.onUpdate(async () => {
+      if (keystore.latestMethodCall === 'unlockWithSecret' && keystore.status === 'DONE') {
+        unsubscribeUpdate()
+        done()
+      }
     })
   })
 
@@ -80,7 +87,7 @@ describe('KeystoreController', () => {
   })
 
   test('should add a secret', (done) => {
-    keystore.addSecret('passphrase', pass, '', false)
+    keystore.addSecret('password', pass, '', false)
 
     const unsubscribe = keystore.onUpdate(async () => {
       if (keystore.latestMethodCall === 'addSecret' && keystore.status === 'DONE') {
@@ -97,24 +104,30 @@ describe('KeystoreController', () => {
     keystore.unlockWithSecret('playstation', '')
 
     const unsubscribe = keystore.onError((e) => {
-      expect(e.error.message).toBe('keystore: secret playstation not found')
+      expect(e.error.message).toBe('keystore: secret not found: playstation')
       expect(keystore.isUnlocked).toBe(false)
 
       unsubscribe()
-      done()
+    })
+
+    const unsubscribeUpdate = keystore.onUpdate(async () => {
+      if (keystore.latestMethodCall === 'unlockWithSecret' && keystore.status === 'DONE') {
+        unsubscribeUpdate()
+        done()
+      }
     })
   })
 
   test('should not unlock with wrong secret', async () => {
     try {
-      await keystore.unlockWithSecret('passphrase', `${pass}1`)
+      await keystore.unlockWithSecret('password', `${pass}1`)
     } catch {
       expect(keystore.errorMessage).toBe('keystore: wrong secret')
     }
   })
 
   test('should unlock with secret', (done) => {
-    keystore.unlockWithSecret('passphrase', pass)
+    keystore.unlockWithSecret('password', pass)
 
     const unsubscribe = keystore.onUpdate(async () => {
       if (keystore.latestMethodCall === 'unlockWithSecret' && keystore.status === 'DONE') {
@@ -265,6 +278,20 @@ describe('KeystoreController', () => {
     })
   })
 
+  test('should change keystore password', (done) => {
+    keystore.changeKeystorePassword(pass, `${pass}1`)
+
+    const unsubscribe = keystore.onUpdate(async () => {
+      if (keystore.latestMethodCall === 'changeKeystorePassword' && keystore.status === 'DONE') {
+        const secrets = await storage.get('keystoreSecrets', [])
+        expect(secrets).toHaveLength(1)
+
+        unsubscribe()
+        done()
+      }
+    })
+  })
+
   test('should get an internal signer', async () => {
     expect.assertions(2)
     const internalSigner: any = await keystore.getSigner(keyPublicAddress, 'internal')
@@ -292,7 +319,8 @@ describe('KeystoreController', () => {
   })
 
   test('should export key backup, create wallet and compare public address', (done) => {
-    keystore.unlockWithSecret('passphrase', pass)
+    // changeKeystorePassword changed the password in the tests above so now unlock with the new password
+    keystore.unlockWithSecret('password', `${pass}1`)
 
     const unsubscribe = keystore.onUpdate(async () => {
       if (keystore.latestMethodCall === 'unlockWithSecret' && keystore.status === 'DONE') {
