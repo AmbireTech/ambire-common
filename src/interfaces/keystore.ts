@@ -8,9 +8,13 @@ import { NetworkDescriptor } from './networkDescriptor'
 import { TypedMessage } from './userRequest'
 
 /**
- * Hardware wallets usually need this additional external signer controller,
- * that is app-specific (web, mobile) and is used to interact with the device.
- * (example: LedgerController, TrezorController, LatticeController)
+ * The ExternalSignerController interface defines the structure for controllers
+ * that interact with hardware wallets. Each hardware wallet type (Ledger,
+ * Trezor, Lattice) will have its own implementation of this interface.
+ * The interface includes methods for unlocking the device, checking if it's
+ * unlocked, and cleaning up after use. It also includes properties specific to
+ * each type of hardware wallet, such as the device model and ID, the path to
+ * the unlocked device, and any necessary credentials.
  */
 export interface ExternalSignerController {
   type: string
@@ -32,6 +36,7 @@ export interface ExternalSignerController {
   creds?: any // Lattice specific
   network?: any // Lattice specific
 }
+export type ExternalSignerControllers = Partial<{ [key in Key['type']]: ExternalSignerController }>
 
 export interface TxnRequest {
   to: Call['to']

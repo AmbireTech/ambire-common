@@ -7,7 +7,7 @@ import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFacto
 import { Account, AccountId, AccountOnchainState, AccountStates } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
 import {
-  ExternalSignerController,
+  ExternalSignerControllers,
   Key,
   KeystoreSignerType,
   TxnRequest
@@ -66,7 +66,12 @@ export class MainController extends EventEmitter {
 
   keystore: KeystoreController
 
-  externalSignerControllers: Partial<{ [key in Key['type']]: ExternalSignerController }> = {}
+  /**
+   * Hardware wallets (usually) need an additional (external signer) controller,
+   * that is app-specific (web, mobile) and is used to interact with the device.
+   * (example: LedgerController, TrezorController, LatticeController)
+   */
+  #externalSignerControllers: ExternalSignerControllers = {}
 
   accountAdder: AccountAdderController
 
@@ -154,7 +159,7 @@ export class MainController extends EventEmitter {
     fetch: Function
     relayerUrl: string
     keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>
-    externalSignerControllers: Partial<{ [key in Key['type']]: ExternalSignerController }>
+    externalSignerControllers: ExternalSignerControllers
     onResolveDappRequest: (
       data: {
         hash: string | null
@@ -173,7 +178,7 @@ export class MainController extends EventEmitter {
     this.#fetch = fetch
 
     this.keystore = new KeystoreController(this.#storage, keystoreSigners)
-    this.externalSignerControllers = externalSignerControllers
+    this.#externalSignerControllers = externalSignerControllers
     this.settings = new SettingsController(this.#storage)
     this.portfolio = new PortfolioController(
       this.#storage,
@@ -217,7 +222,7 @@ export class MainController extends EventEmitter {
     this.signMessage = new SignMessageController(
       this.keystore,
       this.settings,
-      this.settings.providers,
+      this.#externalSignerControllers,
       this.#storage,
       this.#fetch
     )
@@ -270,6 +275,7 @@ export class MainController extends EventEmitter {
       this.keystore,
       this.portfolio,
       this.settings,
+      this.#externalSignerControllers,
       account,
       this.accounts,
       this.accountStates,
@@ -277,7 +283,6 @@ export class MainController extends EventEmitter {
       accountOpToBeSigned,
       this.#storage,
       this.#fetch,
-      this.settings.providers,
       this.#callRelayer
     )
 
@@ -803,7 +808,7 @@ export class MainController extends EventEmitter {
           )
         }
         const signer = await this.keystore.getSigner(feePayerKey.addr, feePayerKey.type)
-        if (signer.init) signer.init(this.externalSignerControllers[feePayerKey.type])
+        if (signer.init) signer.init(this.#externalSignerControllers[feePayerKey.type])
 
         const gasFeePayment = accountOp.gasFeePayment!
         const { to, value, data } = accountOp.calls[0]
