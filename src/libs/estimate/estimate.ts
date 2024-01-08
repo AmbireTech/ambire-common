@@ -1,16 +1,15 @@
-import { AbiCoder, Contract, encodeRlp, Interface, JsonRpcProvider, Provider } from 'ethers'
+import { AbiCoder, encodeRlp, Interface, JsonRpcProvider, Provider } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFactory.json'
 import Estimation from '../../../contracts/compiled/Estimation.json'
 import Estimation4337 from '../../../contracts/compiled/Estimation4337.json'
-import ArbitrumFactoryAbi from '../../consts/arbitrumFactoryAbi.json'
 import { ERC_4337_ENTRYPOINT } from '../../consts/deploy'
 import { SPOOF_SIGTYPE } from '../../consts/signatures'
 import { Account, AccountOnchainState } from '../../interfaces/account'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { getAccountDeployParams } from '../account/account'
-import { AccountOp, callToTuple, getSignableCalls } from '../accountOp/accountOp'
+import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
 import { fromDescriptor } from '../deployless/deployless'
 import { getProbableCallData } from '../gasPrice/gasPrice'
 import {
@@ -19,6 +18,7 @@ import {
   shouldUseOneTimeNonce,
   shouldUsePaymaster
 } from '../userOperation/userOperation'
+import { estimateArbitrumL1GasUsed } from './estimateArbitrum'
 
 interface Erc4337estimation {
   verificationGasLimit: bigint
@@ -153,7 +153,9 @@ export async function estimate(
   ]
 
   // estimate 4337
-  let estimation4337
+  let estimation4337 = new Promise((resolve) => {
+    resolve(null)
+  })
   const is4337Broadcast = opts && opts.is4337Broadcast
   const usesOneTimeNonce =
     opts && opts.is4337Broadcast && shouldUseOneTimeNonce(op.asUserOperation!)
@@ -194,10 +196,9 @@ export async function estimate(
     from: blockFrom,
     blockTag
   })
-
-  let estimations = estimation4337
-    ? await Promise.all([estimation, estimation4337])
-    : await Promise.all([estimation])
+  const arbitrumEstimation = estimateArbitrumL1GasUsed(op, account, accountState, provider)
+  const estimations = await Promise.all([estimation, estimation4337, arbitrumEstimation])
+  const arbitrumL1FeeIfArbitrum = estimations[2]
 
   let [
     [
@@ -216,7 +217,7 @@ export async function estimate(
 
   let erc4337estimation: Erc4337estimation | null = null
   if (is4337Broadcast) {
-    const [[verificationGasLimit, gasUsed, failure]] = estimations[1]
+    const [[verificationGasLimit, gasUsed, failure]]: any = estimations[1]
 
     // TODO<Bobby>: handle estimation failure
     if (failure !== '0x') {
@@ -233,6 +234,7 @@ export async function estimate(
   let gasUsed = erc4337estimation
     ? erc4337estimation.gasUsed
     : deployment.gasUsed + accountOpToExecuteBefore.gasUsed + accountOp.gasUsed
+  gasUsed += arbitrumL1FeeIfArbitrum
 
   if (opts?.calculateRefund) {
     const IAmbireAccountFactory = new Interface(AmbireAccountFactory.abi)
@@ -263,45 +265,6 @@ export async function estimate(
 
     // As of EIP-3529, the max refund is 1/5th of the entire cost
     if (estimatedRefund <= gasUsed / 5n && estimatedRefund > 0n) gasUsed = estimatedGas
-  }
-
-  if (network.id === 'arbitrum') {
-    const IAmbireAccountFactory = new Interface(AmbireAccountFactory.abi)
-
-    // TODO: IF IT'S ERC-4337, we should make the txData point
-    // to handleOps
-    const txData = accountState.isDeployed
-      ? IAmbireAccount.encodeFunctionData('execute', [
-          op.calls.map((call) => callToTuple(call)),
-          '0x0dc2d37f7b285a2243b2e1e6ba7195c578c72b395c0f76556f8961b0bca97ddc44e2d7a249598f56081a375837d2b82414c3c94940db3c1e64110108021161ca1c01'
-        ])
-      : IAmbireAccountFactory.encodeFunctionData('deployAndExecute', [
-          account.creation.bytecode,
-          account.creation.salt,
-          op.calls.map((call) => callToTuple(call)),
-          '0x0dc2d37f7b285a2243b2e1e6ba7195c578c72b395c0f76556f8961b0bca97ddc44e2d7a249598f56081a375837d2b82414c3c94940db3c1e64110108021161ca1c01'
-        ])
-
-    const nodeInterface: Contract = new Contract(
-      '0x00000000000000000000000000000000000000C8',
-      ArbitrumFactoryAbi,
-      provider
-    )
-    const gasEstimateComponents = await nodeInterface.gasEstimateL1Component.staticCall(
-      op.accountAddr,
-      accountState.isDeployed,
-      txData
-    )
-    const l2EstimatedPrice = gasEstimateComponents.baseFee
-    const l1EstimatedPrice = gasEstimateComponents.l1BaseFeeEstimate * 16n
-    const l1Cost = BigInt(gasEstimateComponents.gasEstimateForL1 * l2EstimatedPrice)
-    const l1Size = l1Cost / l1EstimatedPrice
-    const l1gasUsed = (l1EstimatedPrice * l1Size) / l2EstimatedPrice
-
-    // the gasUsed calculated until now is the L2 gasUsed. We afterwards
-    // set the gasLimit of the transaction to the gasUsed. We add the L1
-    // gas calculations to the final gasUsed
-    gasUsed += l1gasUsed
   }
 
   let finalFeeTokenOptions = feeTokenOutcomes

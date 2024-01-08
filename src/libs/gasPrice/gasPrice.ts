@@ -167,3 +167,15 @@ export function getCallDataAdditional(
   const txDataGas = zeroBytes * 4n + nonZeroBytes * 16n
   return txDataGas + FIXED_OVERHEAD
 }
+
+export function getCallDataAdditionalByNetwork(
+  accountOp: AccountOp,
+  network: NetworkDescriptor,
+  accountState: AccountOnchainState
+): bigint {
+  // no additional call data is required for arbitrum as the bytes are already
+  // added in the calculation for the L1 fee
+  if (network.id === 'arbitrum') return 0n
+
+  return getCallDataAdditional(accountOp, network, accountState)
+}

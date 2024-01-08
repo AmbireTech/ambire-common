@@ -16,7 +16,7 @@ import {
   getSignableCalls
 } from '../../libs/accountOp/accountOp'
 import { EstimateResult } from '../../libs/estimate/estimate'
-import { GasRecommendation, getCallDataAdditional } from '../../libs/gasPrice/gasPrice'
+import { GasRecommendation, getCallDataAdditionalByNetwork } from '../../libs/gasPrice/gasPrice'
 import { callsHumanizer } from '../../libs/humanizer'
 import { IrCall } from '../../libs/humanizer/interfaces'
 import { Price, TokenResult } from '../../libs/portfolio'
@@ -438,9 +438,11 @@ export class SignAccountOpController extends EventEmitter {
         const accountState =
           this.#accountStates![this.accountOp!.accountAddr][this.accountOp!.networkId]
 
-        if (this.accountOp!.networkId !== 'arbitrum') {
-          simulatedGasLimit += getCallDataAdditional(this.accountOp!, this.#network, accountState)
-        }
+        simulatedGasLimit += getCallDataAdditionalByNetwork(
+          this.accountOp!,
+          this.#network,
+          accountState
+        )
 
         amount = simulatedGasLimit * gasPrice + feeTokenEstimation.addedNative
       } else {
@@ -456,9 +458,11 @@ export class SignAccountOpController extends EventEmitter {
         const accountState =
           this.#accountStates![this.accountOp!.accountAddr][this.accountOp!.networkId]
 
-        if (this.accountOp!.networkId !== 'arbitrum') {
-          simulatedGasLimit += getCallDataAdditional(this.accountOp!, this.#network, accountState)
-        }
+        simulatedGasLimit += getCallDataAdditionalByNetwork(
+          this.accountOp!,
+          this.#network,
+          accountState
+        )
 
         amount = SignAccountOpController.getAmountAfterFeeTokenConvert(
           simulatedGasLimit,
