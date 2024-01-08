@@ -437,7 +437,10 @@ export class SignAccountOpController extends EventEmitter {
 
         const accountState =
           this.#accountStates![this.accountOp!.accountAddr][this.accountOp!.networkId]
-        simulatedGasLimit += getCallDataAdditional(this.accountOp!, this.#network, accountState)
+
+        if (this.accountOp!.networkId !== 'arbitrum') {
+          simulatedGasLimit += getCallDataAdditional(this.accountOp!, this.#network, accountState)
+        }
 
         amount = simulatedGasLimit * gasPrice + feeTokenEstimation.addedNative
       } else {
@@ -452,7 +455,10 @@ export class SignAccountOpController extends EventEmitter {
 
         const accountState =
           this.#accountStates![this.accountOp!.accountAddr][this.accountOp!.networkId]
-        simulatedGasLimit += getCallDataAdditional(this.accountOp!, this.#network, accountState)
+
+        if (this.accountOp!.networkId !== 'arbitrum') {
+          simulatedGasLimit += getCallDataAdditional(this.accountOp!, this.#network, accountState)
+        }
 
         amount = SignAccountOpController.getAmountAfterFeeTokenConvert(
           simulatedGasLimit,
