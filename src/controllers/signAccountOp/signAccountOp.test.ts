@@ -126,7 +126,7 @@ const init = async (
   accountOp: any,
   signer: any,
   estimationMock?: EstimateResult,
-  gasPricesMock?: GasRecommendation[]
+  gasPricesMock?: gasPricesLib.GasRecommendation[]
 ) => {
   const storage: Storage = produceMemoryStore()
   await storage.set('HumanizerMeta', humanizerMeta)
@@ -142,7 +142,8 @@ const init = async (
   const accounts = [account]
   const accountStates = await getAccountsInfo(accounts)
 
-  const prices = gasPricesMock || (await getGasPriceRecommendations(provider, ethereum))
+  const prices =
+    gasPricesMock || (await gasPricesLib.getGasPriceRecommendations(provider, ethereum))
 
   const { op, nativeToCheck, feeTokens } = accountOp
   const estimation =
