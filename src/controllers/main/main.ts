@@ -231,8 +231,11 @@ export class MainController extends EventEmitter {
       if (this.accountAdder.addAccountsStatus !== 'SUCCESS') return
 
       this.addAccounts(this.accountAdder.readyToAddAccounts)
+
       this.keystore.addKeys(this.accountAdder.readyToAddKeys.internal)
       this.keystore.addKeysExternallyStored(this.accountAdder.readyToAddKeys.external)
+
+      this.settings.addKeyPreferences(this.accountAdder.readyToAddKeyPreferences)
     }
     this.accountAdder.onUpdate(addReadyToAddAccountsAndKeysIfNeeded)
 
