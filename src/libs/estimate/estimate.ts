@@ -37,6 +37,7 @@ export interface EstimateResult {
     addedNative: bigint
   }[]
   erc4337estimation: Erc4337estimation | null
+  arbitrumL1FeeIfArbitrum: { noFee: bigint; withFee: bigint }
 }
 
 export async function estimate(
@@ -104,7 +105,8 @@ export async function estimate(
           addedNative: l1GasEstimation.fee
         }
       ],
-      erc4337estimation: null
+      erc4337estimation: null,
+      arbitrumL1FeeIfArbitrum: { noFee: 0n, withFee: 0n }
     }
   }
 
@@ -234,7 +236,6 @@ export async function estimate(
   let gasUsed = erc4337estimation
     ? erc4337estimation.gasUsed
     : deployment.gasUsed + accountOpToExecuteBefore.gasUsed + accountOp.gasUsed
-  gasUsed += arbitrumL1FeeIfArbitrum
 
   if (opts?.calculateRefund) {
     const IAmbireAccountFactory = new Interface(AmbireAccountFactory.abi)
@@ -304,6 +305,7 @@ export async function estimate(
     gasUsed,
     nonce,
     feePaymentOptions: [...feeTokenOptions, ...nativeTokenOptions],
-    erc4337estimation
+    erc4337estimation,
+    arbitrumL1FeeIfArbitrum
   }
 }

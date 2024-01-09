@@ -419,8 +419,12 @@ export class SignAccountOpController extends EventEmitter {
         // ERC 4337
         const nativeRatio = this.#getNativeToFeeTokenRatio(feeToken!)
 
+        const usesPaymaster = shouldUsePaymaster(this.accountOp.asUserOperation!, feeToken!.address)
         simulatedGasLimit =
           this.#estimation!.erc4337estimation.gasUsed + feeTokenEstimation.gasUsed!
+        simulatedGasLimit += usesPaymaster
+          ? this.#estimation!.arbitrumL1FeeIfArbitrum.withFee
+          : this.#estimation!.arbitrumL1FeeIfArbitrum.noFee
         amount = SignAccountOpController.getAmountAfterFeeTokenConvert(
           simulatedGasLimit,
           gasPrice,
@@ -428,12 +432,12 @@ export class SignAccountOpController extends EventEmitter {
           feeToken!.decimals,
           feeTokenEstimation.addedNative
         )
-        if (shouldUsePaymaster(this.accountOp.asUserOperation!, feeToken!.address)) {
+        if (usesPaymaster) {
           amount = this.#increaseFee(amount)
         }
       } else if (this.paidBy !== this.accountOp!.accountAddr) {
         // Smart account, but EOA pays the fee
-        simulatedGasLimit = gasUsed
+        simulatedGasLimit = gasUsed + this.#estimation!.arbitrumL1FeeIfArbitrum.noFee
 
         const accountState =
           this.#accountStates![this.accountOp!.accountAddr][this.accountOp!.networkId]
@@ -453,7 +457,8 @@ export class SignAccountOpController extends EventEmitter {
           (option) => option.address === feeToken?.address
         )!.gasUsed!
         // @TODO - add comment why here we use `feePaymentOptions`, but we don't use it in EOA
-        simulatedGasLimit = gasUsed + feeTokenGasUsed
+        simulatedGasLimit =
+          gasUsed + feeTokenGasUsed + this.#estimation!.arbitrumL1FeeIfArbitrum.withFee
 
         const accountState =
           this.#accountStates![this.accountOp!.accountAddr][this.accountOp!.networkId]
