@@ -1,4 +1,5 @@
 import { ethers, JsonRpcProvider } from 'ethers'
+import { KeyPreferences } from 'interfaces/settings'
 
 import { PROXY_AMBIRE_ACCOUNT } from '../../consts/deploy'
 import {
@@ -86,6 +87,8 @@ export class AccountAdderController extends EventEmitter {
   readyToAddAccounts: Account[] = []
 
   readyToAddKeys: ReadyToAddKeys = { internal: [], external: [] }
+
+  readyToAddKeyPreferences: KeyPreferences = []
 
   // Identity for the smart accounts must be created on the Relayer, this
   // represents the status of the operation, needed managing UI state
@@ -246,6 +249,8 @@ export class AccountAdderController extends EventEmitter {
 
     this.addAccountsStatus = 'INITIAL'
     this.readyToAddAccounts = []
+    this.readyToAddKeys = { internal: [], external: [] }
+    this.readyToAddKeyPreferences = []
     this.isInitialized = false
 
     this.emitUpdate()
@@ -381,7 +386,8 @@ export class AccountAdderController extends EventEmitter {
 
   async addAccounts(
     accounts: SelectedAccount[] = [],
-    readyToAddKeys: ReadyToAddKeys = { internal: [], external: [] }
+    readyToAddKeys: ReadyToAddKeys = { internal: [], external: [] },
+    readyToAddKeyPreferences: KeyPreferences = []
   ) {
     if (!this.isInitialized) {
       return this.emitError({
@@ -453,6 +459,7 @@ export class AccountAdderController extends EventEmitter {
 
     this.readyToAddAccounts = [...accounts.map((x) => x.account)]
     this.readyToAddKeys = readyToAddKeys
+    this.readyToAddKeyPreferences = readyToAddKeyPreferences
     this.addAccountsStatus = 'SUCCESS'
     this.emitUpdate()
 
