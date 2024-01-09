@@ -56,11 +56,12 @@ describe('SignMessageController', () => {
     const keystoreSigners = { internal: InternalSigner }
     keystore = new KeystoreController(produceMemoryStore(), keystoreSigners)
     settings = new SettingsController(produceMemoryStore())
+    settings.providers = providers
 
     signMessageController = new SignMessageController(
       keystore,
       settings,
-      providers,
+      {},
       produceMemoryStore(),
       fetch
     )

@@ -1,11 +1,11 @@
-import { ethers, JsonRpcProvider } from 'ethers'
+import { ethers } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import EntryPointAbi from '../../../contracts/compiled/EntryPoint.json'
 import ERC20 from '../../../contracts/compiled/IERC20.json'
 import { AMBIRE_PAYMASTER, ERC_4337_ENTRYPOINT } from '../../consts/deploy'
 import { Account, AccountStates } from '../../interfaces/account'
-import { ExternalSignerController, Key } from '../../interfaces/keystore'
+import { ExternalSignerControllers, Key } from '../../interfaces/keystore'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { Storage } from '../../interfaces/storage'
 import { getKnownAddressLabels } from '../../libs/account/account'
@@ -73,11 +73,11 @@ export class SignAccountOpController extends EventEmitter {
 
   #settings: SettingsController
 
+  #externalSignerControllers: ExternalSignerControllers
+
   #storage: Storage
 
   #fetch: Function
-
-  #providers: { [key: string]: JsonRpcProvider }
 
   #account: Account
 
@@ -109,6 +109,7 @@ export class SignAccountOpController extends EventEmitter {
     keystore: KeystoreController,
     portfolio: PortfolioController,
     settings: SettingsController,
+    externalSignerControllers: ExternalSignerControllers,
     account: Account,
     accounts: Account[],
     accountStates: AccountStates,
@@ -116,13 +117,13 @@ export class SignAccountOpController extends EventEmitter {
     accountOp: AccountOp,
     storage: Storage,
     fetch: Function,
-    providers: { [key: string]: JsonRpcProvider },
     callRelayer: Function
   ) {
     super()
     this.#keystore = keystore
     this.#portfolio = portfolio
     this.#settings = settings
+    this.#externalSignerControllers = externalSignerControllers
     this.#account = account
     this.#accounts = accounts
     this.#accountStates = accountStates
@@ -130,7 +131,6 @@ export class SignAccountOpController extends EventEmitter {
     this.accountOp = accountOp
     this.#storage = storage
     this.#fetch = fetch
-    this.#providers = providers
     this.#callRelayer = callRelayer
 
     this.#humanizeAccountOp()
@@ -608,7 +608,7 @@ export class SignAccountOpController extends EventEmitter {
     }
   }
 
-  async sign(externalSignerController?: ExternalSignerController) {
+  async sign() {
     if (!this.accountOp?.signingKeyAddr || !this.accountOp?.signingKeyType)
       return this.#setSigningError('We cannot sign your transaction. Please choose a signer key.')
 
@@ -632,8 +632,8 @@ export class SignAccountOpController extends EventEmitter {
 
     const gasFeePayment = this.accountOp.gasFeePayment
 
-    if (signer.init) signer.init(externalSignerController)
-    const provider = this.#providers[this.accountOp.networkId]
+    if (signer.init) signer.init(this.#externalSignerControllers[this.accountOp.signingKeyType])
+    const provider = this.#settings.providers[this.accountOp.networkId]
     try {
       // In case of EOA account
       if (!this.#account.creation) {
@@ -762,7 +762,6 @@ export class SignAccountOpController extends EventEmitter {
     } catch (error: any) {
       this.#setSigningError(error?.message, SigningStatus.ReadyToSign)
     }
-    // TODO: Now, the UI needs to call mainCtrl.broadcastSignedAccountOp(mainCtrl.signAccountOp.accountOp)
   }
 
   toJSON() {

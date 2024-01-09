@@ -202,10 +202,12 @@ const init = async (
 
   const callRelayer = relayerCall.bind({ url: '', fetch })
   const settings = new SettingsController(storage)
+  settings.providers = { ethereum: provider }
   const controller = new SignAccountOpController(
     keystore,
     portfolio,
     settings,
+    {},
     account,
     accounts,
     accountStates,
@@ -213,9 +215,6 @@ const init = async (
     op,
     storage,
     fetch,
-    {
-      ethereum: provider
-    },
     callRelayer
   )
 

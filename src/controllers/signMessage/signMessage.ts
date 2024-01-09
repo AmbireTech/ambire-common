@@ -1,8 +1,8 @@
-import { ethers, JsonRpcProvider } from 'ethers'
+import { ethers } from 'ethers'
 
 import { networks } from '../../consts/networks'
 import { Account, AccountStates } from '../../interfaces/account'
-import { ExternalSignerController, Key } from '../../interfaces/keystore'
+import { ExternalSignerControllers, Key } from '../../interfaces/keystore'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { Storage } from '../../interfaces/storage'
 import { Message } from '../../interfaces/userRequest'
@@ -27,7 +27,7 @@ export class SignMessageController extends EventEmitter {
 
   #settings: SettingsController
 
-  #providers: { [key: string]: JsonRpcProvider }
+  #externalSignerControllers: ExternalSignerControllers
 
   #storage: Storage
 
@@ -66,7 +66,7 @@ export class SignMessageController extends EventEmitter {
   constructor(
     keystore: KeystoreController,
     settings: SettingsController,
-    providers: { [key: string]: JsonRpcProvider },
+    externalSignerControllers: ExternalSignerControllers,
     storage: Storage,
     fetch: Function
   ) {
@@ -74,7 +74,7 @@ export class SignMessageController extends EventEmitter {
 
     this.#keystore = keystore
     this.#settings = settings
-    this.#providers = providers
+    this.#externalSignerControllers = externalSignerControllers
     this.#storage = storage
     this.#fetch = fetch
   }
@@ -206,7 +206,7 @@ export class SignMessageController extends EventEmitter {
     }
   }
 
-  async sign(externalSignerController?: ExternalSignerController) {
+  async sign() {
     if (!this.isInitialized || !this.messageToSign) {
       this.#throwNotInitialized()
       return
@@ -225,7 +225,7 @@ export class SignMessageController extends EventEmitter {
 
     try {
       this.#signer = await this.#keystore.getSigner(this.signingKeyAddr, this.signingKeyType)
-      if (this.#signer.init) this.#signer.init(externalSignerController)
+      if (this.#signer.init) this.#signer.init(this.#externalSignerControllers[this.signingKeyType])
 
       const account = this.#accounts!.find((acc) => acc.addr === this.messageToSign?.accountAddr)
       if (!account) {
@@ -300,7 +300,7 @@ export class SignMessageController extends EventEmitter {
           : this.messageToSign.content.message
 
       const isValidSignature = await verifyMessage({
-        provider: this.#providers[network?.id || 'ethereum'],
+        provider: this.#settings.providers[network?.id || 'ethereum'],
         // the signer is always the account even if the actual
         // signature is from a key that has privs to the account
         signer: this.messageToSign?.accountAddr,
