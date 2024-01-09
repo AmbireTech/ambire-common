@@ -417,6 +417,7 @@ export class MainController extends EventEmitter {
   ) {
     this.accountStates = await this.#getAccountsInfo(this.accounts, blockTag, networks)
     this.lastUpdate = new Date()
+    this.activity.setAccounts(this.accountStates)
     this.emitUpdate()
   }
 
