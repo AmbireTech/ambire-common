@@ -50,7 +50,7 @@ type DerivedAccount = AccountDerivationMeta & { account: AccountWithNetworkMeta 
 // Sub-type, used during intermediate step during the deriving accounts process
 type DerivedAccountWithoutNetworkMeta = Omit<DerivedAccount, 'account'> & { account: Account }
 
-type ReadyToAddKeys = {
+export type ReadyToAddKeys = {
   internal: { privateKey: string }[]
   external: { addr: Key['addr']; type: Key['type']; meta: Key['meta'] }[]
 }
