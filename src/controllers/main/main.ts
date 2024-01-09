@@ -15,7 +15,7 @@ import {
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
 import { Storage } from '../../interfaces/storage'
 import { Message, UserRequest } from '../../interfaces/userRequest'
-import { isSmartAccount } from '../../libs/account/account'
+import { getDefaultSelectedAccount, isSmartAccount } from '../../libs/account/account'
 import { AccountOp, AccountOpStatus, getSignableCalls } from '../../libs/accountOp/accountOp'
 import { Call as AccountOpCall } from '../../libs/accountOp/types'
 import { getAccountState } from '../../libs/accountState/accountState'
@@ -227,15 +227,18 @@ export class MainController extends EventEmitter {
       this.activity.init({ filters: { account: this.selectedAccount } })
     }
 
-    const addReadyToAddAccountsAndKeysIfNeeded = () => {
+    const addReadyToAddAccountsAndKeysIfNeeded = async () => {
       if (this.accountAdder.addAccountsStatus !== 'SUCCESS') return
 
-      this.addAccounts(this.accountAdder.readyToAddAccounts)
+      await this.addAccounts(this.accountAdder.readyToAddAccounts)
 
-      this.keystore.addKeys(this.accountAdder.readyToAddKeys.internal)
-      this.keystore.addKeysExternallyStored(this.accountAdder.readyToAddKeys.external)
+      await this.keystore.addKeys(this.accountAdder.readyToAddKeys.internal)
+      await this.keystore.addKeysExternallyStored(this.accountAdder.readyToAddKeys.external)
 
-      this.settings.addKeyPreferences(this.accountAdder.readyToAddKeyPreferences)
+      await this.settings.addKeyPreferences(this.accountAdder.readyToAddKeyPreferences)
+
+      const defaultSelectedAccount = getDefaultSelectedAccount(this.accountAdder.readyToAddAccounts)
+      if (defaultSelectedAccount) await this.selectAccount(defaultSelectedAccount.addr)
     }
     this.accountAdder.onUpdate(addReadyToAddAccountsAndKeysIfNeeded)
 
