@@ -1,5 +1,4 @@
 import { ethers, JsonRpcProvider } from 'ethers'
-import { KeyPreferences } from 'interfaces/settings'
 
 import { PROXY_AMBIRE_ACCOUNT } from '../../consts/deploy'
 import {
@@ -10,6 +9,7 @@ import { Account, AccountOnchainState } from '../../interfaces/account'
 import { KeyIterator } from '../../interfaces/keyIterator'
 import { Key } from '../../interfaces/keystore'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
+import { KeyPreferences } from '../../interfaces/settings'
 import { Storage } from '../../interfaces/storage'
 import {
   getLegacyAccount,
@@ -82,12 +82,16 @@ export class AccountAdderController extends EventEmitter {
 
   preselectedAccounts: Account[] = []
 
-  // Smart accounts which identity is created on the Relayer, and are ready
+  // Accounts which identity is created on the Relayer (if needed), and are ready
   // to be added to the user's account list by the Main Controller
   readyToAddAccounts: Account[] = []
 
+  // The keys for the `readyToAddAccounts`, that are ready to be added to the
+  // user's keystore by the Main Controller
   readyToAddKeys: ReadyToAddKeys = { internal: [], external: [] }
 
+  // The key preferences for the `readyToAddKeys`, that are ready to be added to
+  // the user's settings by the Main Controller
   readyToAddKeyPreferences: KeyPreferences = []
 
   // Identity for the smart accounts must be created on the Relayer, this
