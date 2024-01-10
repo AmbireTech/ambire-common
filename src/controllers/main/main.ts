@@ -277,7 +277,11 @@ export class MainController extends EventEmitter {
       this.status = 'SUCCESS'
       this.emitUpdate()
     } catch (error: any) {
-      // Fail silently
+      this.emitError({
+        level: 'major',
+        message: `An error encountered. Please try again. If the problem persists, please contact support.', ${callName}`,
+        error
+      })
     }
 
     // set status in the next tick to ensure the FE receives the 'SUCCESS' status
