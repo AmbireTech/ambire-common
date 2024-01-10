@@ -54,6 +54,10 @@ export class MainController extends EventEmitter {
   // Holds the initial load promise, so that one can wait until it completes
   #initialLoadPromise: Promise<void>
 
+  status: 'INITIAL' | 'LOADING' | 'SUCCESS' | 'DONE' = 'INITIAL'
+
+  latestMethodCall: string | null = null
+
   #callRelayer: Function
 
   accountStates: AccountStates = {}
@@ -227,23 +231,56 @@ export class MainController extends EventEmitter {
       this.activity.init({ filters: { account: this.selectedAccount } })
     }
 
-    const addReadyToAddAccountsAndKeysIfNeeded = async () => {
+    const onAccountAdderSuccess = () => {
       if (this.accountAdder.addAccountsStatus !== 'SUCCESS') return
 
-      await this.addAccounts(this.accountAdder.readyToAddAccounts)
+      return this.#statusWrapper('onAccountAdderSuccess', () =>
+        Promise.all([
+          this.addAccounts(this.accountAdder.readyToAddAccounts),
+          this.keystore.addKeys(this.accountAdder.readyToAddKeys.internal),
+          this.keystore.addKeysExternallyStored(this.accountAdder.readyToAddKeys.external),
+          this.settings.addKeyPreferences(this.accountAdder.readyToAddKeyPreferences),
+          (() => {
+            const defaultSelectedAccount = getDefaultSelectedAccount(
+              this.accountAdder.readyToAddAccounts
+            )
+            if (!defaultSelectedAccount) return Promise.resolve()
 
-      await this.keystore.addKeys(this.accountAdder.readyToAddKeys.internal)
-      await this.keystore.addKeysExternallyStored(this.accountAdder.readyToAddKeys.external)
-
-      await this.settings.addKeyPreferences(this.accountAdder.readyToAddKeyPreferences)
-
-      const defaultSelectedAccount = getDefaultSelectedAccount(this.accountAdder.readyToAddAccounts)
-      if (defaultSelectedAccount) await this.selectAccount(defaultSelectedAccount.addr)
+            return this.selectAccount(defaultSelectedAccount.addr)
+          })()
+        ])
+      )
     }
-    this.accountAdder.onUpdate(addReadyToAddAccountsAndKeysIfNeeded)
+    this.accountAdder.onUpdate(onAccountAdderSuccess)
 
     this.isReady = true
     this.emitUpdate()
+  }
+
+  async #statusWrapper(callName: string, fn: Function) {
+    if (this.status === 'LOADING') return
+    this.latestMethodCall = callName
+    this.status = 'LOADING'
+    this.emitUpdate()
+    try {
+      await fn()
+      this.status = 'SUCCESS'
+      this.emitUpdate()
+    } catch (error: any) {
+      // Fail silently
+    }
+
+    // set status in the next tick to ensure the FE receives the 'SUCCESS' status
+    await wait(1)
+    this.status = 'DONE'
+    this.emitUpdate()
+
+    // reset the status in the next tick to ensure the FE receives the 'DONE' status
+    await wait(1)
+    if (this.latestMethodCall === callName) {
+      this.status = 'INITIAL'
+      this.emitUpdate()
+    }
   }
 
   initSignAccOp(accountAddr: string, networkId: string): null | void {
