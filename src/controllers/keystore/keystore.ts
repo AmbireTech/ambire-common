@@ -474,21 +474,31 @@ export class KeystoreController extends EventEmitter {
     return JSON.stringify(keyBackup)
   }
 
+  /*
+    DOCS
+    keyAddress: string - the address of the key you want to export
+    publicKey: string - the public key, with which to encypt it (used for key sync with other device's keystoreId)
+  */
   async exportKeyWithPublicKeyEncryption(
     keyAddress: string,
     publicKey: string
   ): Promise<Encrypted> {
     if (this.#mainKey === null) throw new Error('keystore: needs to be unlocked')
     const keys = await this.#storage.get('keystoreKeys', [])
+
     const storedKey: StoredKey = keys.find((x: StoredKey) => x.addr === keyAddress)
     if (!storedKey) throw new Error('keystore: key not found')
     if (storedKey.type !== 'internal') throw new Error('keystore: key does not have privateKey')
+
+    // decrypt the pk of keyAddress with the keystore's key
     const encryptedBytes = getBytes(storedKey.privKey as string)
     const counter = new aes.Counter(this.#mainKey.iv)
     const aesCtr = new aes.ModeOfOperation.ctr(this.#mainKey.key, counter)
+    // encrypt the pk of keyAddress with publicKey
     const decryptedBytes = aesCtr.decrypt(encryptedBytes)
     const decryptedPrivateKey = aes.utils.hex.fromBytes(decryptedBytes)
     const result = await encryptWithPublicKey(publicKey, decryptedPrivateKey)
+
     return result
   }
 

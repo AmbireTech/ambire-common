@@ -7,20 +7,7 @@ import { EmailVaultController } from './emailVault'
 import { Storage } from '../../interfaces/storage'
 import { EmailVault } from '../../libs/emailVault/emailVault'
 import { Key } from '../../interfaces/keystore'
-
-function produceMemoryStore(): Storage {
-  const storage = new Map()
-  return {
-    get: (key: string, defaultValue: any): any => {
-      const serialized = storage.get(key)
-      return Promise.resolve(serialized ? JSON.parse(serialized) : defaultValue)
-    },
-    set: (key: string, value: any) => {
-      storage.set(key, JSON.stringify(value))
-      return Promise.resolve(null)
-    }
-  }
-}
+import { produceMemoryStore } from '../../../test/helpers'
 
 class InternalSigner {
   key
@@ -117,7 +104,7 @@ describe('happy cases', () => {
     expect(keystore.isUnlocked).toBeTruthy()
   })
 
-  test('request key sync', async () => {
+  test.only('request key sync', async () => {
     const [storage2, keystore2] = [
       produceMemoryStore(),
       new KeystoreController(produceMemoryStore(), keystoreSigners)

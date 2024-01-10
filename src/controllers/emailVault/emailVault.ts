@@ -364,7 +364,6 @@ export class EmailVaultController extends EventEmitter {
           .reduce((a, b) => a && b, !!cloudOperations.length)
 
         if (fulfilled) {
-          // @TODO actually add them to the keystore
           for (let i = 0; i < cloudOperations!.length; i++) {
             const op = cloudOperations![i]
             const { privateKey } = JSON.parse(op?.value || '{}')
@@ -390,9 +389,9 @@ export class EmailVaultController extends EventEmitter {
   async fulfillSyncRequests(email: string) {
     await this.#getEmailVaultInfo(email)
     const operations = this.emailVaultStates.email[email].operations
-    const storedKeys = await this.#keyStore.getKeys()
     const key = (await this.#getMagicLinkKey(email))?.key || (await this.#getSessionKey(email))
     if (key) {
+      // pull keys from keystore for every operation
       const newOperations: Operation[] = await Promise.all(
         operations.map(async (op): Promise<Operation> => {
           if (op.requestType === 'requestKeySync') {
