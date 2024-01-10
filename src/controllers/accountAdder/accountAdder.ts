@@ -9,7 +9,7 @@ import { Account, AccountOnchainState } from '../../interfaces/account'
 import { KeyIterator } from '../../interfaces/keyIterator'
 import { Key } from '../../interfaces/keystore'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
-import { KeyPreferences } from '../../interfaces/settings'
+import { AccountPreferences, KeyPreferences } from '../../interfaces/settings'
 import { Storage } from '../../interfaces/storage'
 import {
   getLegacyAccount,
@@ -93,6 +93,10 @@ export class AccountAdderController extends EventEmitter {
   // The key preferences for the `readyToAddKeys`, that are ready to be added to
   // the user's settings by the Main Controller
   readyToAddKeyPreferences: KeyPreferences = []
+
+  // The account preferences for the `readyToAddAccounts`, that are ready to be
+  // added to the user's settings by the Main Controller
+  readyToAddAccountPreferences: AccountPreferences = {}
 
   // Identity for the smart accounts must be created on the Relayer, this
   // represents the status of the operation, needed managing UI state
@@ -255,6 +259,7 @@ export class AccountAdderController extends EventEmitter {
     this.readyToAddAccounts = []
     this.readyToAddKeys = { internal: [], external: [] }
     this.readyToAddKeyPreferences = []
+    this.readyToAddAccountPreferences = {}
     this.isInitialized = false
 
     this.emitUpdate()
@@ -390,6 +395,7 @@ export class AccountAdderController extends EventEmitter {
 
   async addAccounts(
     accounts: SelectedAccount[] = [],
+    readyToAddAccountPreferences: AccountPreferences = {},
     readyToAddKeys: ReadyToAddKeys = { internal: [], external: [] },
     readyToAddKeyPreferences: KeyPreferences = []
   ) {
@@ -464,6 +470,7 @@ export class AccountAdderController extends EventEmitter {
     this.readyToAddAccounts = [...accounts.map((x) => x.account)]
     this.readyToAddKeys = readyToAddKeys
     this.readyToAddKeyPreferences = readyToAddKeyPreferences
+    this.readyToAddAccountPreferences = readyToAddAccountPreferences
     this.addAccountsStatus = 'SUCCESS'
     this.emitUpdate()
 

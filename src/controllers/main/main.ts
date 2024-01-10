@@ -234,12 +234,22 @@ export class MainController extends EventEmitter {
     const onAccountAdderSuccess = () => {
       if (this.accountAdder.addAccountsStatus !== 'SUCCESS') return
 
-      return this.#statusWrapper('onAccountAdderSuccess', () =>
-        Promise.all([
-          this.addAccounts(this.accountAdder.readyToAddAccounts),
-          this.keystore.addKeys(this.accountAdder.readyToAddKeys.internal),
-          this.keystore.addKeysExternallyStored(this.accountAdder.readyToAddKeys.external),
+      return this.#statusWrapper('onAccountAdderSuccess', async () => {
+        // Add accounts first, because some of the next steps have validation
+        // if accounts exists.
+        await this.addAccounts(this.accountAdder.readyToAddAccounts)
+
+        // Then add keys, because some of the next steps could have validation
+        // if keys exists. Should be separate (not combined in Promise.all,
+        // since firing multiple keystore actions is not possible
+        // (the #wrapKeystoreAction listens for the first one to finish and
+        // skips the parallel one, if one is requested).
+        await this.keystore.addKeys(this.accountAdder.readyToAddKeys.internal)
+        await this.keystore.addKeysExternallyStored(this.accountAdder.readyToAddKeys.external)
+
+        await Promise.all([
           this.settings.addKeyPreferences(this.accountAdder.readyToAddKeyPreferences),
+          this.settings.addAccountPreferences(this.accountAdder.readyToAddAccountPreferences),
           (() => {
             const defaultSelectedAccount = getDefaultSelectedAccount(
               this.accountAdder.readyToAddAccounts
@@ -249,7 +259,7 @@ export class MainController extends EventEmitter {
             return this.selectAccount(defaultSelectedAccount.addr)
           })()
         ])
-      )
+      })
     }
     this.accountAdder.onUpdate(onAccountAdderSuccess)
 
