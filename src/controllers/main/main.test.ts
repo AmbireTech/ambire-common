@@ -209,7 +209,10 @@ describe('Main Controller ', () => {
 
         if (emitCounter === 1 && controller.isReady) addAccounts()
 
-        if (emitCounter === 2) {
+        if (
+          controller.status === 'SUCCESS' &&
+          controller.latestMethodCall === 'onAccountAdderSuccess'
+        ) {
           expect(controller.accounts).toContainEqual(accountPendingCreation.account)
           unsubscribe()
           resolve(true)

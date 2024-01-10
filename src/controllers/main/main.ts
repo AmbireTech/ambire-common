@@ -15,7 +15,7 @@ import {
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
 import { Storage } from '../../interfaces/storage'
 import { Message, UserRequest } from '../../interfaces/userRequest'
-import { isSmartAccount } from '../../libs/account/account'
+import { getDefaultSelectedAccount, isSmartAccount } from '../../libs/account/account'
 import { AccountOp, AccountOpStatus, getSignableCalls } from '../../libs/accountOp/accountOp'
 import { Call as AccountOpCall } from '../../libs/accountOp/types'
 import { getAccountState } from '../../libs/accountState/accountState'
@@ -53,6 +53,10 @@ export class MainController extends EventEmitter {
 
   // Holds the initial load promise, so that one can wait until it completes
   #initialLoadPromise: Promise<void>
+
+  status: 'INITIAL' | 'LOADING' | 'SUCCESS' | 'DONE' = 'INITIAL'
+
+  latestMethodCall: string | null = null
 
   #callRelayer: Function
 
@@ -227,19 +231,70 @@ export class MainController extends EventEmitter {
       this.activity.init({ filters: { account: this.selectedAccount } })
     }
 
-    const addReadyToAddAccountsIfNeeded = () => {
-      if (
-        !this.accountAdder.readyToAddAccounts.length &&
-        this.accountAdder.addAccountsStatus !== 'SUCCESS'
-      )
-        return
+    const onAccountAdderSuccess = () => {
+      if (this.accountAdder.addAccountsStatus !== 'SUCCESS') return
 
-      this.addAccounts(this.accountAdder.readyToAddAccounts)
+      return this.#statusWrapper('onAccountAdderSuccess', async () => {
+        // Add accounts first, because some of the next steps have validation
+        // if accounts exists.
+        await this.addAccounts(this.accountAdder.readyToAddAccounts)
+
+        // Then add keys, because some of the next steps could have validation
+        // if keys exists. Should be separate (not combined in Promise.all,
+        // since firing multiple keystore actions is not possible
+        // (the #wrapKeystoreAction listens for the first one to finish and
+        // skips the parallel one, if one is requested).
+        await this.keystore.addKeys(this.accountAdder.readyToAddKeys.internal)
+        await this.keystore.addKeysExternallyStored(this.accountAdder.readyToAddKeys.external)
+
+        await Promise.all([
+          this.settings.addKeyPreferences(this.accountAdder.readyToAddKeyPreferences),
+          this.settings.addAccountPreferences(this.accountAdder.readyToAddAccountPreferences),
+          (() => {
+            const defaultSelectedAccount = getDefaultSelectedAccount(
+              this.accountAdder.readyToAddAccounts
+            )
+            if (!defaultSelectedAccount) return Promise.resolve()
+
+            return this.selectAccount(defaultSelectedAccount.addr)
+          })()
+        ])
+      })
     }
-    this.accountAdder.onUpdate(addReadyToAddAccountsIfNeeded)
+    this.accountAdder.onUpdate(onAccountAdderSuccess)
 
     this.isReady = true
     this.emitUpdate()
+  }
+
+  async #statusWrapper(callName: string, fn: Function) {
+    if (this.status === 'LOADING') return
+    this.latestMethodCall = callName
+    this.status = 'LOADING'
+    this.emitUpdate()
+    try {
+      await fn()
+      this.status = 'SUCCESS'
+      this.emitUpdate()
+    } catch (error: any) {
+      this.emitError({
+        level: 'major',
+        message: `An error encountered. Please try again. If the problem persists, please contact support.', ${callName}`,
+        error
+      })
+    }
+
+    // set status in the next tick to ensure the FE receives the 'SUCCESS' status
+    await wait(1)
+    this.status = 'DONE'
+    this.emitUpdate()
+
+    // reset the status in the next tick to ensure the FE receives the 'DONE' status
+    await wait(1)
+    if (this.latestMethodCall === callName) {
+      this.status = 'INITIAL'
+      this.emitUpdate()
+    }
   }
 
   initSignAccOp(accountAddr: string, networkId: string): null | void {

@@ -326,8 +326,8 @@ export class KeystoreController extends EventEmitter {
   }
 
   async #addKeys(keysToAdd: { privateKey: string }[]) {
-    if (this.#mainKey === null) throw new Error('keystore: needs to be unlocked')
     if (!keysToAdd.length) return
+    if (this.#mainKey === null) throw new Error('keystore: needs to be unlocked')
 
     // Strip out keys with duplicated private keys. One unique key is enough.
     const uniquePrivateKeysToAddSet = new Set()
