@@ -399,15 +399,6 @@ export class ActivityController extends EventEmitter {
     this.emitUpdate()
   }
 
-  setAccounts(accounts: AccountStates) {
-    if (!this.isInitialized) {
-      this.#throwNotInitialized()
-      return
-    }
-
-    this.#accounts = accounts
-  }
-
   #throwNotInitialized() {
     this.emitError({
       level: 'major',
