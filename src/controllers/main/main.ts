@@ -415,9 +415,15 @@ export class MainController extends EventEmitter {
     blockTag: string | number = 'latest',
     networks: NetworkDescriptor['id'][] = []
   ) {
-    this.accountStates = await this.#getAccountsInfo(this.accounts, blockTag, networks)
+    const nextAccountStates = await this.#getAccountsInfo(this.accounts, blockTag, networks)
+    // Use `Object.assign` to update `this.accountStates` on purpose! That's
+    // in order NOT to break the the reference link between `this.accountStates`
+    // in the MainController and in the ActivityController. Reassigning
+    // `this.accountStates` to a new object would break the reference link which
+    // is crucial for ensuring that updates to account states are synchronized
+    // across both classes.
+    Object.assign(this.accountStates, {}, nextAccountStates)
     this.lastUpdate = new Date()
-    if (this.accounts.length) this.activity.setAccounts(this.accountStates)
     this.emitUpdate()
   }
 
