@@ -9,7 +9,7 @@ import { SPOOF_SIGTYPE } from '../../consts/signatures'
 import { Account, AccountOnchainState } from '../../interfaces/account'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { getAccountDeployParams } from '../account/account'
-import { AccountOp } from '../accountOp/accountOp'
+import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
 import { fromDescriptor } from '../deployless/deployless'
 import { getProbableCallData } from '../gasPrice/gasPrice'
 import {
@@ -158,10 +158,20 @@ export async function estimate(
   const is4337Broadcast = opts && opts.is4337Broadcast
   const usesOneTimeNonce =
     opts && opts.is4337Broadcast && shouldUseOneTimeNonce(op.asUserOperation!)
+  const IAmbireAccount = new Interface(AmbireAccount.abi)
   if (is4337Broadcast) {
     // using Object.assign as typescript doesn't work otherwise
     const userOp = Object.assign({}, op.asUserOperation)
     userOp!.paymasterAndData = getPaymasterSpoof()
+
+    // add the activatorCall to the estimation
+    if (userOp.activatorCall) {
+      const spoofSig = abiCoder.encode(['address'], [account.associatedKeys[0]]) + SPOOF_SIGTYPE
+      userOp.callData = IAmbireAccount.encodeFunctionData('executeMultiple', [
+        [[getSignableCalls(op), spoofSig]]
+      ])
+    }
+
     const deployless4337Estimator = fromDescriptor(
       provider,
       Estimation4337,
@@ -226,7 +236,6 @@ export async function estimate(
     : deployment.gasUsed + accountOpToExecuteBefore.gasUsed + accountOp.gasUsed
 
   if (opts?.calculateRefund) {
-    const IAmbireAccount = new Interface(AmbireAccount.abi)
     const IAmbireAccountFactory = new Interface(AmbireAccountFactory.abi)
 
     const accountCalldata = op.accountOpToExecuteBefore

@@ -486,11 +486,27 @@ export class AccountAdderController extends EventEmitter {
     const startIdx = (this.page - 1) * this.pageSize
     const endIdx = (this.page - 1) * this.pageSize + (this.pageSize - 1)
 
-    const legacyAccKeys = await this.#keyIterator.retrieve(startIdx, endIdx, this.hdPathTemplate)
-    const smartAccKeys = await this.#keyIterator.retrieve(
-      startIdx + SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET,
-      endIdx + SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET,
+    // Combine the requests for all accounts in one call to the keyIterator.
+    // That's optimization primarily focused on hardware wallets, to reduce the
+    // number of calls to the hardware device. This is important, especially
+    // for Trezor, because it fires a confirmation popup for each call.
+    const combinedLegacyAndSmartAccKeys = await this.#keyIterator.retrieve(
+      [
+        // Indices for the legacy (EOA) accounts
+        { from: startIdx, to: endIdx },
+        // Indices for the smart accounts
+        {
+          from: startIdx + SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET,
+          to: endIdx + SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
+        }
+      ],
       this.hdPathTemplate
+    )
+
+    const legacyAccKeys = combinedLegacyAndSmartAccKeys.slice(0, this.pageSize)
+    const smartAccKeys = combinedLegacyAndSmartAccKeys.slice(
+      this.pageSize,
+      combinedLegacyAndSmartAccKeys.length
     )
 
     const smartAccountsPromises: Promise<DerivedAccountWithoutNetworkMeta | null>[] = []

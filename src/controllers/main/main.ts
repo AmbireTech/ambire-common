@@ -7,7 +7,7 @@ import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFacto
 import { Account, AccountId, AccountOnchainState, AccountStates } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
 import {
-  ExternalSignerController,
+  ExternalSignerControllers,
   Key,
   KeystoreSignerType,
   TxnRequest
@@ -16,12 +16,8 @@ import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor
 import { Storage } from '../../interfaces/storage'
 import { Message, UserRequest } from '../../interfaces/userRequest'
 import { isSmartAccount } from '../../libs/account/account'
-import {
-  AccountOp,
-  AccountOpStatus,
-  Call as AccountOpCall,
-  getSignableCalls
-} from '../../libs/accountOp/accountOp'
+import { AccountOp, AccountOpStatus, getSignableCalls } from '../../libs/accountOp/accountOp'
+import { Call as AccountOpCall } from '../../libs/accountOp/types'
 import { getAccountState } from '../../libs/accountState/accountState'
 import {
   getAccountOpBannersForEOA,
@@ -46,7 +42,7 @@ import { KeystoreController } from '../keystore/keystore'
 import { PortfolioController } from '../portfolio/portfolio'
 import { SettingsController } from '../settings/settings'
 /* eslint-disable no-underscore-dangle */
-import { SignAccountOpController } from '../signAccountOp/signAccountOp'
+import { SignAccountOpController, SigningStatus } from '../signAccountOp/signAccountOp'
 import { SignMessageController } from '../signMessage/signMessage'
 import { TransferController } from '../transfer/transfer'
 
@@ -66,6 +62,13 @@ export class MainController extends EventEmitter {
 
   keystore: KeystoreController
 
+  /**
+   * Hardware wallets (usually) need an additional (external signer) controller,
+   * that is app-specific (web, mobile) and is used to interact with the device.
+   * (example: LedgerController, TrezorController, LatticeController)
+   */
+  #externalSignerControllers: ExternalSignerControllers = {}
+
   accountAdder: AccountAdderController
 
   // Subcontrollers
@@ -80,6 +83,8 @@ export class MainController extends EventEmitter {
   signMessage!: SignMessageController
 
   signAccountOp: SignAccountOpController | null = null
+
+  signAccountOpListener: ReturnType<EventEmitter['onUpdate']> = () => {}
 
   signAccOpInitError: string | null = null
 
@@ -139,6 +144,7 @@ export class MainController extends EventEmitter {
     fetch,
     relayerUrl,
     keystoreSigners,
+    externalSignerControllers,
     onResolveDappRequest,
     onRejectDappRequest,
     onUpdateDappSelectedAccount,
@@ -149,6 +155,7 @@ export class MainController extends EventEmitter {
     fetch: Function
     relayerUrl: string
     keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>
+    externalSignerControllers: ExternalSignerControllers
     onResolveDappRequest: (
       data: {
         hash: string | null
@@ -167,6 +174,7 @@ export class MainController extends EventEmitter {
     this.#fetch = fetch
 
     this.keystore = new KeystoreController(this.#storage, keystoreSigners)
+    this.#externalSignerControllers = externalSignerControllers
     this.settings = new SettingsController(this.#storage)
     this.portfolio = new PortfolioController(
       this.#storage,
@@ -210,7 +218,7 @@ export class MainController extends EventEmitter {
     this.signMessage = new SignMessageController(
       this.keystore,
       this.settings,
-      this.settings.providers,
+      this.#externalSignerControllers,
       this.#storage,
       this.#fetch
     )
@@ -263,6 +271,7 @@ export class MainController extends EventEmitter {
       this.keystore,
       this.portfolio,
       this.settings,
+      this.#externalSignerControllers,
       account,
       this.accounts,
       this.accountStates,
@@ -270,9 +279,20 @@ export class MainController extends EventEmitter {
       accountOpToBeSigned,
       this.#storage,
       this.#fetch,
-      this.settings.providers,
       this.#callRelayer
     )
+
+    const broadcastSignedAccountOpIfNeeded = async () => {
+      // Signing is completed, therefore broadcast the transaction
+      if (
+        this.signAccountOp &&
+        this.signAccountOp.accountOp.signature &&
+        this.signAccountOp.status?.type === SigningStatus.Done
+      ) {
+        await this.broadcastSignedAccountOp(this.signAccountOp.accountOp)
+      }
+    }
+    this.signAccountOpListener = this.signAccountOp.onUpdate(broadcastSignedAccountOpIfNeeded)
 
     this.emitUpdate()
 
@@ -281,6 +301,7 @@ export class MainController extends EventEmitter {
 
   destroySignAccOp() {
     this.signAccountOp = null
+    this.signAccountOpListener() // unsubscribes for further updates
     this.emitUpdate()
   }
 
@@ -396,6 +417,7 @@ export class MainController extends EventEmitter {
   ) {
     this.accountStates = await this.#getAccountsInfo(this.accounts, blockTag, networks)
     this.lastUpdate = new Date()
+    if (this.accounts.length) this.activity.setAccounts(this.accountStates)
     this.emitUpdate()
   }
 
@@ -736,10 +758,7 @@ export class MainController extends EventEmitter {
    *   4. for smart accounts, when the Relayer does the broadcast.
    *
    */
-  async broadcastSignedAccountOp(
-    accountOp: AccountOp,
-    externalSignerController?: ExternalSignerController
-  ) {
+  async broadcastSignedAccountOp(accountOp: AccountOp) {
     this.broadcastStatus = 'LOADING'
     this.emitUpdate()
 
@@ -798,7 +817,7 @@ export class MainController extends EventEmitter {
           )
         }
         const signer = await this.keystore.getSigner(feePayerKey.addr, feePayerKey.type)
-        if (signer.init) signer.init(externalSignerController)
+        if (signer.init) signer.init(this.#externalSignerControllers[feePayerKey.type])
 
         const gasFeePayment = accountOp.gasFeePayment!
         const { to, value, data } = accountOp.calls[0]
@@ -821,11 +840,14 @@ export class MainController extends EventEmitter {
           rawTxn.gasPrice = gasPrice
         }
 
-        transactionRes = await provider.broadcastTransaction(
-          await signer.signRawTransaction(rawTxn)
-        )
-      } catch (error: any) {
-        return this.#throwAccountOpBroadcastError(new Error(error), error.message || undefined)
+        const signedTxn = await signer.signRawTransaction(rawTxn)
+        transactionRes = await provider.broadcastTransaction(signedTxn)
+      } catch (e: any) {
+        const errorMsg =
+          e?.message || 'Please try again or contact support if the problem persists.'
+        const message = `Failed to broadcast transaction on ${accountOp.networkId}. ${errorMsg}`
+
+        return this.#throwAccountOpBroadcastError(new Error(message), message)
       }
     }
     // Smart account but EOA pays the fee
@@ -874,7 +896,7 @@ export class MainController extends EventEmitter {
 
       try {
         const signer = await this.keystore.getSigner(feePayerKey.addr, feePayerKey.type)
-        if (signer.init) signer.init(externalSignerController)
+        if (signer.init) signer.init(this.#externalSignerControllers[feePayerKey.type])
 
         const gasPrice =
           (accountOp.gasFeePayment.amount - feeTokenEstimation.addedNative) /
@@ -900,17 +922,18 @@ export class MainController extends EventEmitter {
 
         const signedTxn = await signer.signRawTransaction(rawTxn)
         transactionRes = await provider.broadcastTransaction(signedTxn)
-      } catch {
-        this.#throwAccountOpBroadcastError(
-          new Error(`Failed to broadcast transaction on ${accountOp.networkId}`)
-        )
+      } catch (e: any) {
+        const errorMsg =
+          e?.message || 'Please try again or contact support if the problem persists.'
+        const message = `Failed to broadcast transaction on ${accountOp.networkId}. ${errorMsg}`
+        return this.#throwAccountOpBroadcastError(new Error(message), message)
       }
     }
     // Smart account, the ERC-4337 way
     else if (accountOp.gasFeePayment && accountOp.gasFeePayment.isERC4337) {
       const userOperation = accountOp.asUserOperation
       if (!userOperation) {
-        this.#throwAccountOpBroadcastError(
+        return this.#throwAccountOpBroadcastError(
           new Error(
             `Trying to broadcast an ERC-4337 request but userOperation is not set for ${accountOp.accountAddr}`
           )
@@ -920,7 +943,7 @@ export class MainController extends EventEmitter {
       // broadcast through bundler's service
       const userOperationHash = await bundler.broadcast(userOperation!, network!)
       if (!userOperationHash) {
-        this.#throwAccountOpBroadcastError(new Error('was not able to broadcast'))
+        return this.#throwAccountOpBroadcastError(new Error('was not able to broadcast'))
       }
       // broadcast the userOperationHash
       // TODO: maybe a type property should exist to diff when we're
