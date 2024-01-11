@@ -231,6 +231,16 @@ export class MainController extends EventEmitter {
       this.activity.init({ filters: { account: this.selectedAccount } })
     }
 
+    /**
+     * Listener that gets triggered as a finalization step of adding new
+     * accounts via the AccountAdder controller flow.
+     *
+     * VIEW-ONLY ACCOUNTS: In case of changes in this method, make sure these
+     * changes are reflected for view-only accounts as well. Because the
+     * view-only accounts import flow bypasses the AccountAdder, this method
+     * won't click for them. Their on add success flow continues in the
+     * MAIN_CONTROLLER_ADD_VIEW_ONLY_ACCOUNTS action case.
+     */
     const onAccountAdderSuccess = () => {
       if (this.accountAdder.addAccountsStatus !== 'SUCCESS') return
 
@@ -498,6 +508,10 @@ export class MainController extends EventEmitter {
     this.emitUpdate()
   }
 
+  /**
+   * Adds and stores in the MainController the required data for the newly
+   * added accounts by the AccountAdder controller.
+   */
   async addAccounts(accounts: Account[] = []) {
     if (!accounts.length) return
 
