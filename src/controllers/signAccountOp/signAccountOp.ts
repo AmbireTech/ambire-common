@@ -218,7 +218,8 @@ export class SignAccountOpController extends EventEmitter {
       const feeToken = this.availableFeeOptions.find(
         (feeOption) =>
           feeOption.paidBy === this.accountOp?.gasFeePayment?.paidBy &&
-          feeOption.address === this.accountOp?.gasFeePayment?.inToken
+          feeOption.address === this.accountOp?.gasFeePayment?.inToken &&
+          feeOption.isGasTank === this.accountOp?.gasFeePayment?.isGasTank
       )
 
       if (feeToken!.availableAmount < this.accountOp?.gasFeePayment.amount) {
@@ -385,7 +386,7 @@ export class SignAccountOpController extends EventEmitter {
   }
 
   get feeSpeeds(): {
-    type: string
+    type: FeeSpeed
     amount: bigint
     simulatedGasLimit: bigint
     amountFormatted: string
@@ -396,7 +397,10 @@ export class SignAccountOpController extends EventEmitter {
 
     const gasUsed = this.#estimation!.gasUsed
     const feeTokenEstimation = this.#estimation!.feePaymentOptions.find(
-      (option) => option.address === this.feeTokenResult?.address && this.paidBy === option.paidBy
+      (option) =>
+        option.address === this.feeTokenResult?.address &&
+        this.paidBy === option.paidBy &&
+        this.feeTokenResult?.flags.onGasTank === option.isGasTank
     )!
 
     return this.#gasPrices.map((gasRecommendation) => {
@@ -657,7 +661,9 @@ export class SignAccountOpController extends EventEmitter {
         // set as maxFeePerGas only the L2 gas price
         const feeTokenEstimation = this.#estimation!.feePaymentOptions.find(
           (option) =>
-            option.address === this.feeTokenResult?.address && this.paidBy === option.paidBy
+            option.address === this.feeTokenResult?.address &&
+            this.paidBy === option.paidBy &&
+            this.feeTokenResult?.flags.onGasTank === option.isGasTank
         )!
         let amountInWei = gasFeePayment.amount
         if (this.feeTokenResult?.address !== '0x0000000000000000000000000000000000000000') {
