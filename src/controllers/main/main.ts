@@ -691,9 +691,17 @@ export class MainController extends EventEmitter {
     ])
 
     const gasPrices = this.gasPrices[networkId]
-    const estimation = this.accountOpsToBeSigned[accountAddr][networkId]?.estimation
 
-    this.signAccountOp.update({ gasPrices, ...(estimation && { estimation }) })
+    // FIXME: Sometimes `this.accountOpsToBeSigned[accountAddr]` is undefined,
+    // which breaks the logic. Figure out why.
+    try {
+      const estimation = this.accountOpsToBeSigned[accountAddr][networkId]?.estimation
+      this.signAccountOp.update({ gasPrices, ...(estimation && { estimation }) })
+    } catch (e) {
+      debugger
+      console.log('ERROROROROOROROR', e)
+    }
+
     this.emitUpdate()
   }
 
