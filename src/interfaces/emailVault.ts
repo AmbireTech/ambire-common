@@ -22,6 +22,12 @@ export enum OperationRequestType {
   requestKeySync
 }
 
+// id - a vallue that is randomly assigned by the relayer if the operation is legit
+// requestType - a label for the intention of the operation
+// requester - in the context of the EmailVault this is the deveices keystoreId, that is acting as a public key for encryption
+// key - in the context of the EV and syncing keys this is the address for the EOA we want th eprivate key (might not be applicable for (if any) new operation types )
+// value - the fetched value
+// @TODO: add OTP for key syncing requests
 export interface Operation {
   id?: string
   requestType: string

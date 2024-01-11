@@ -46,6 +46,10 @@ export type SessionKeys = {
 function base64UrlEncode(str: string) {
   return str.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 }
+
+// DOCS
+// extended documentation about the EV and its internal mechanisms
+// https://github.com/AmbireTech/ambire-common/wiki/Email-Vault-Documentation
 export class EmailVaultController extends EventEmitter {
   private storage: Storage
 
@@ -279,6 +283,7 @@ export class EmailVaultController extends EventEmitter {
   async #recoverKeyStore(email: string): Promise<EmailVaultSecret | null> {
     const uid = await this.#keyStore.getKeyStoreUid()
     const state = this.emailVaultStates
+    // @TODO emit error for this conditional
     if (
       !state.email[email] ||
       !state.email[email].availableSecrets[uid] ||

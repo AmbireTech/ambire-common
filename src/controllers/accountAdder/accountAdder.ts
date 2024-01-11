@@ -760,8 +760,9 @@ export class AccountAdderController extends EventEmitter {
           account: {
             addr,
             associatedKeys: Object.keys(associatedKeys),
-            initialPrivileges: data.accounts[addr].initialPrivilegesAddrs.map((a: string) => [
-              a,
+            initialPrivileges: data.accounts[addr].initialPrivilegesAddrs.map((address: string) => [
+              address,
+              // this is a default privilege hex we add on account creation
               '0x0000000000000000000000000000000000000000000000000000000000000001'
             ]),
             creation: {
