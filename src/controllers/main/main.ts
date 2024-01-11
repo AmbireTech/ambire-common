@@ -509,7 +509,7 @@ export class MainController extends EventEmitter {
     const nextAccounts = [...this.accounts, ...newAccounts]
     await this.#storage.set('accounts', nextAccounts)
     this.accounts = nextAccounts
-    this.updateAccountStates()
+    await this.updateAccountStates()
 
     this.emitUpdate()
   }
