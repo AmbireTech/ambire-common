@@ -554,7 +554,7 @@ export class MainController extends EventEmitter {
 
     if (!calls.length) return null
 
-    const currentAccountOp = this.accountOpsToBeSigned[accountAddr][networkId]?.accountOp
+    const currentAccountOp = this.accountOpsToBeSigned[accountAddr]?.[networkId]?.accountOp
 
     return {
       accountAddr,
@@ -609,6 +609,7 @@ export class MainController extends EventEmitter {
 
       const accountOp = this.#makeAccountOpFromUserRequests(accountAddr, networkId)
       if (accountOp) {
+        this.accountOpsToBeSigned[accountAddr] ||= {}
         this.accountOpsToBeSigned[accountAddr][networkId] = { accountOp, estimation: null }
         try {
           await this.#estimateAccountOp(accountOp)
@@ -648,6 +649,7 @@ export class MainController extends EventEmitter {
       // @TODO ensure acc info, re-estimate
       const accountOp = this.#makeAccountOpFromUserRequests(accountAddr, networkId)
       if (accountOp) {
+        this.accountOpsToBeSigned[accountAddr] ||= {}
         this.accountOpsToBeSigned[accountAddr][networkId] = { accountOp, estimation: null }
         try {
           await this.#estimateAccountOp(accountOp)
@@ -656,7 +658,7 @@ export class MainController extends EventEmitter {
           console.error(e)
         }
       } else {
-        delete this.accountOpsToBeSigned[accountAddr][networkId]
+        delete this.accountOpsToBeSigned[accountAddr]?.[networkId]
         if (!Object.keys(this.accountOpsToBeSigned[accountAddr] || {}).length)
           delete this.accountOpsToBeSigned[accountAddr]
       }
@@ -682,7 +684,7 @@ export class MainController extends EventEmitter {
     await Promise.all([
       this.#updateGasPrice(),
       async () => {
-        const accountOp = this.accountOpsToBeSigned[accountAddr][networkId]?.accountOp
+        const accountOp = this.accountOpsToBeSigned[accountAddr]?.[networkId]?.accountOp
         // non-fatal, no need to do anything
         if (!accountOp) return
 
@@ -691,8 +693,7 @@ export class MainController extends EventEmitter {
     ])
 
     const gasPrices = this.gasPrices[networkId]
-    const estimation = this.accountOpsToBeSigned[accountAddr][networkId]?.estimation
-
+    const estimation = this.accountOpsToBeSigned[accountAddr]?.[networkId]?.estimation
     this.signAccountOp.update({ gasPrices, ...(estimation && { estimation }) })
     this.emitUpdate()
   }
@@ -779,6 +780,7 @@ export class MainController extends EventEmitter {
     ])
 
     if (!estimation) return
+    this.accountOpsToBeSigned[accountOp.accountAddr] ||= {}
     // @TODO compare intent between accountOp and this.accountOpsToBeSigned[accountOp.accountAddr][accountOp.networkId].accountOp
     this.accountOpsToBeSigned[accountOp.accountAddr][accountOp.networkId]!.estimation = estimation
 
