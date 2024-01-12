@@ -42,7 +42,7 @@ const MeanFinance = (humanizerInfo) => {
             'for',
             {
               type: 'token',
-              ...token(humanizerInfo, _to, -1, true)
+              ...token(humanizerInfo, _to, 0, true)
             },
             `Split into ${_amountOfSwaps} swaps over ${getInterval(
               _swapInterval * _amountOfSwaps
@@ -80,7 +80,7 @@ const MeanFinance = (humanizerInfo) => {
             'for',
             {
               type: 'token',
-              ...token(humanizerInfo, _to, -1, true)
+              ...token(humanizerInfo, _to, 0, true)
             },
             `Split into ${_amountOfSwaps} swaps over ${getInterval(
               _swapInterval * _amountOfSwaps

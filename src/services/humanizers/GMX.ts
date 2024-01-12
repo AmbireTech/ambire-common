@@ -35,7 +35,7 @@ const GMX = (humanizerInfo) => {
       if (extended)
         return [
           [
-            'Open GMX position',
+            'Interact with GMX position',
             'from',
             {
               type: 'token',
