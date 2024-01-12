@@ -720,6 +720,8 @@ export class MainController extends EventEmitter {
 
     // Take the fee tokens from two places: the user's tokens and his gasTank
     // The gastTank tokens participate on each network as they belong everywhere
+    // NOTE: at some point we should check all the "?" signs below and if
+    // an error pops out, we should notify the user about it
     const networkFeeTokens =
       this.portfolio.latest?.[accountOp.accountAddr]?.[accountOp.networkId]?.result?.tokens ?? []
     const gasTankFeeTokens =
