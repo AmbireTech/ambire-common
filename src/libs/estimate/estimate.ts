@@ -158,13 +158,11 @@ export async function estimate(
   let estimation4337 = new Promise((resolve) => {
     resolve(null)
   })
-  const is4337Broadcast = opts && opts.is4337Broadcast
-  const usesOneTimeNonce =
-    opts && opts.is4337Broadcast && shouldUseOneTimeNonce(op.asUserOperation!)
+  const is4337Broadcast = Boolean(opts && opts.is4337Broadcast)
+  const usesOneTimeNonce = is4337Broadcast && shouldUseOneTimeNonce(op.asUserOperation!)
   const IAmbireAccount = new Interface(AmbireAccount.abi)
+  const userOp = Object.assign({}, op.asUserOperation)
   if (is4337Broadcast) {
-    // using Object.assign as typescript doesn't work otherwise
-    const userOp = Object.assign({}, op.asUserOperation)
     userOp!.paymasterAndData = getPaymasterSpoof()
 
     // add the activatorCall to the estimation
@@ -198,7 +196,14 @@ export async function estimate(
     from: blockFrom,
     blockTag
   })
-  const arbitrumEstimation = estimateArbitrumL1GasUsed(op, account, accountState, provider)
+  const arbitrumEstimation = estimateArbitrumL1GasUsed(
+    op,
+    account,
+    accountState,
+    provider,
+    userOp,
+    is4337Broadcast
+  )
   const estimations = await Promise.all([estimation, estimation4337, arbitrumEstimation])
   const arbitrumL1FeeIfArbitrum = estimations[2]
 

@@ -2,20 +2,27 @@ import { AbiCoder, Contract, Interface, JsonRpcProvider, Provider } from 'ethers
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFactory.json'
+import EntryPointAbi from '../../../contracts/compiled/EntryPoint.json'
 import ArbitrumFactoryAbi from '../../consts/arbitrumFactoryAbi.json'
 import { Account, AccountOnchainState } from '../../interfaces/account'
 import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
+import { UserOperation } from '../userOperation/types'
+import { getCleanUserOp } from '../userOperation/userOperation'
 
 function getTxnData(
   accountState: AccountOnchainState,
   account: Account,
-  calls: [string, string, string][]
+  calls: [string, string, string][],
+  userOp: UserOperation,
+  is4337Broadcast: boolean
 ) {
+  if (is4337Broadcast) {
+    const EntryPoint = new Interface(EntryPointAbi)
+    return EntryPoint.encodeFunctionData('handleOps', [getCleanUserOp(userOp), account.addr])
+  }
+
   const IAmbireAccountFactory = new Interface(AmbireAccountFactory.abi)
   const IAmbireAccount = new Interface(AmbireAccount.abi)
-
-  // TODO: IF IT'S ERC-4337, we should make the txData point
-  // to handleOps
   return accountState.isDeployed
     ? IAmbireAccount.encodeFunctionData('execute', [
         calls,
@@ -45,7 +52,9 @@ export async function estimateArbitrumL1GasUsed(
   accountOp: AccountOp,
   account: Account,
   accountState: AccountOnchainState,
-  provider: Provider | JsonRpcProvider
+  provider: Provider | JsonRpcProvider,
+  userOp: UserOperation,
+  is4337Broadcast: boolean
 ): Promise<{ noFee: bigint; withFee: bigint }> {
   // if network is not arbitrum, just return a 0n
   // additional l1 gas estimation is only needed when the account is a smart one
@@ -74,12 +83,12 @@ export async function estimateArbitrumL1GasUsed(
     nodeInterface.gasEstimateL1Component.staticCall(
       op.accountAddr,
       accountState.isDeployed,
-      getTxnData(accountState, account, callsWithoutFee)
+      getTxnData(accountState, account, callsWithoutFee, userOp, is4337Broadcast)
     ),
     nodeInterface.gasEstimateL1Component.staticCall(
       op.accountAddr,
       accountState.isDeployed,
-      getTxnData(accountState, account, callsWithFee)
+      getTxnData(accountState, account, callsWithFee, userOp, is4337Broadcast)
     )
   ])
   return {
