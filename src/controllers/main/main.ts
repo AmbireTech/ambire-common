@@ -15,7 +15,7 @@ import {
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
 import { Storage } from '../../interfaces/storage'
 import { Message, UserRequest } from '../../interfaces/userRequest'
-import { isSmartAccount } from '../../libs/account/account'
+import { getDefaultSelectedAccount, isSmartAccount } from '../../libs/account/account'
 import { AccountOp, AccountOpStatus, getSignableCalls } from '../../libs/accountOp/accountOp'
 import { Call as AccountOpCall } from '../../libs/accountOp/types'
 import { getAccountState } from '../../libs/accountState/accountState'
@@ -53,6 +53,10 @@ export class MainController extends EventEmitter {
 
   // Holds the initial load promise, so that one can wait until it completes
   #initialLoadPromise: Promise<void>
+
+  status: 'INITIAL' | 'LOADING' | 'SUCCESS' | 'DONE' = 'INITIAL'
+
+  latestMethodCall: string | null = null
 
   #callRelayer: Function
 
@@ -227,19 +231,70 @@ export class MainController extends EventEmitter {
       this.activity.init({ filters: { account: this.selectedAccount } })
     }
 
-    const addReadyToAddAccountsIfNeeded = () => {
-      if (
-        !this.accountAdder.readyToAddAccounts.length &&
-        this.accountAdder.addAccountsStatus !== 'SUCCESS'
-      )
-        return
+    const onAccountAdderSuccess = () => {
+      if (this.accountAdder.addAccountsStatus !== 'SUCCESS') return
 
-      this.addAccounts(this.accountAdder.readyToAddAccounts)
+      return this.#statusWrapper('onAccountAdderSuccess', async () => {
+        // Add accounts first, because some of the next steps have validation
+        // if accounts exists.
+        await this.addAccounts(this.accountAdder.readyToAddAccounts)
+
+        // Then add keys, because some of the next steps could have validation
+        // if keys exists. Should be separate (not combined in Promise.all,
+        // since firing multiple keystore actions is not possible
+        // (the #wrapKeystoreAction listens for the first one to finish and
+        // skips the parallel one, if one is requested).
+        await this.keystore.addKeys(this.accountAdder.readyToAddKeys.internal)
+        await this.keystore.addKeysExternallyStored(this.accountAdder.readyToAddKeys.external)
+
+        await Promise.all([
+          this.settings.addKeyPreferences(this.accountAdder.readyToAddKeyPreferences),
+          this.settings.addAccountPreferences(this.accountAdder.readyToAddAccountPreferences),
+          (() => {
+            const defaultSelectedAccount = getDefaultSelectedAccount(
+              this.accountAdder.readyToAddAccounts
+            )
+            if (!defaultSelectedAccount) return Promise.resolve()
+
+            return this.selectAccount(defaultSelectedAccount.addr)
+          })()
+        ])
+      })
     }
-    this.accountAdder.onUpdate(addReadyToAddAccountsIfNeeded)
+    this.accountAdder.onUpdate(onAccountAdderSuccess)
 
     this.isReady = true
     this.emitUpdate()
+  }
+
+  async #statusWrapper(callName: string, fn: Function) {
+    if (this.status === 'LOADING') return
+    this.latestMethodCall = callName
+    this.status = 'LOADING'
+    this.emitUpdate()
+    try {
+      await fn()
+      this.status = 'SUCCESS'
+      this.emitUpdate()
+    } catch (error: any) {
+      this.emitError({
+        level: 'major',
+        message: `An error encountered. Please try again. If the problem persists, please contact support.', ${callName}`,
+        error
+      })
+    }
+
+    // set status in the next tick to ensure the FE receives the 'SUCCESS' status
+    await wait(1)
+    this.status = 'DONE'
+    this.emitUpdate()
+
+    // reset the status in the next tick to ensure the FE receives the 'DONE' status
+    await wait(1)
+    if (this.latestMethodCall === callName) {
+      this.status = 'INITIAL'
+      this.emitUpdate()
+    }
   }
 
   initSignAccOp(accountAddr: string, networkId: string): null | void {
@@ -415,7 +470,14 @@ export class MainController extends EventEmitter {
     blockTag: string | number = 'latest',
     networks: NetworkDescriptor['id'][] = []
   ) {
-    this.accountStates = await this.#getAccountsInfo(this.accounts, blockTag, networks)
+    const nextAccountStates = await this.#getAccountsInfo(this.accounts, blockTag, networks)
+    // Use `Object.assign` to update `this.accountStates` on purpose! That's
+    // in order NOT to break the the reference link between `this.accountStates`
+    // in the MainController and in the ActivityController. Reassigning
+    // `this.accountStates` to a new object would break the reference link which
+    // is crucial for ensuring that updates to account states are synchronized
+    // across both classes.
+    Object.assign(this.accountStates, {}, nextAccountStates)
     this.lastUpdate = new Date()
     this.emitUpdate()
   }
@@ -447,7 +509,7 @@ export class MainController extends EventEmitter {
     const nextAccounts = [...this.accounts, ...newAccounts]
     await this.#storage.set('accounts', nextAccounts)
     this.accounts = nextAccounts
-    this.updateAccountStates()
+    await this.updateAccountStates()
 
     this.emitUpdate()
   }
@@ -492,7 +554,7 @@ export class MainController extends EventEmitter {
 
     if (!calls.length) return null
 
-    const currentAccountOp = this.accountOpsToBeSigned[accountAddr][networkId]?.accountOp
+    const currentAccountOp = this.accountOpsToBeSigned[accountAddr]?.[networkId]?.accountOp
 
     return {
       accountAddr,
@@ -547,6 +609,7 @@ export class MainController extends EventEmitter {
 
       const accountOp = this.#makeAccountOpFromUserRequests(accountAddr, networkId)
       if (accountOp) {
+        this.accountOpsToBeSigned[accountAddr] ||= {}
         this.accountOpsToBeSigned[accountAddr][networkId] = { accountOp, estimation: null }
         try {
           await this.#estimateAccountOp(accountOp)
@@ -586,6 +649,7 @@ export class MainController extends EventEmitter {
       // @TODO ensure acc info, re-estimate
       const accountOp = this.#makeAccountOpFromUserRequests(accountAddr, networkId)
       if (accountOp) {
+        this.accountOpsToBeSigned[accountAddr] ||= {}
         this.accountOpsToBeSigned[accountAddr][networkId] = { accountOp, estimation: null }
         try {
           await this.#estimateAccountOp(accountOp)
@@ -594,7 +658,7 @@ export class MainController extends EventEmitter {
           console.error(e)
         }
       } else {
-        delete this.accountOpsToBeSigned[accountAddr][networkId]
+        delete this.accountOpsToBeSigned[accountAddr]?.[networkId]
         if (!Object.keys(this.accountOpsToBeSigned[accountAddr] || {}).length)
           delete this.accountOpsToBeSigned[accountAddr]
       }
@@ -620,7 +684,7 @@ export class MainController extends EventEmitter {
     await Promise.all([
       this.#updateGasPrice(),
       async () => {
-        const accountOp = this.accountOpsToBeSigned[accountAddr][networkId]?.accountOp
+        const accountOp = this.accountOpsToBeSigned[accountAddr]?.[networkId]?.accountOp
         // non-fatal, no need to do anything
         if (!accountOp) return
 
@@ -629,8 +693,7 @@ export class MainController extends EventEmitter {
     ])
 
     const gasPrices = this.gasPrices[networkId]
-    const estimation = this.accountOpsToBeSigned[accountAddr][networkId]?.estimation
-
+    const estimation = this.accountOpsToBeSigned[accountAddr]?.[networkId]?.estimation
     this.signAccountOp.update({ gasPrices, ...(estimation && { estimation }) })
     this.emitUpdate()
   }
@@ -717,6 +780,7 @@ export class MainController extends EventEmitter {
     ])
 
     if (!estimation) return
+    this.accountOpsToBeSigned[accountOp.accountAddr] ||= {}
     // @TODO compare intent between accountOp and this.accountOpsToBeSigned[accountOp.accountAddr][accountOp.networkId].accountOp
     this.accountOpsToBeSigned[accountOp.accountAddr][accountOp.networkId]!.estimation = estimation
 
