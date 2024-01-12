@@ -143,6 +143,21 @@ const nativeFeeToken: TokenResult = {
   }
 }
 
+const gasTankToken: TokenResult = {
+  address: '0x0000000000000000000000000000000000000000',
+  symbol: 'ETH',
+  amount: 323871237812612123123n,
+  networkId: 'ethereum',
+  decimals: Number(18),
+  priceIn: [{ baseCurrency: 'usd', price: 5000 }],
+  flags: {
+    onGasTank: true,
+    rewardsType: null,
+    canTopUpGasTank: true,
+    isFeeToken: true
+  }
+}
+
 const usdcFeeToken: TokenResult = {
   amount: 54409383n,
   networkId: 'ethereum',
@@ -457,6 +472,114 @@ describe('SignAccountOp Controller ', () => {
     expect(controller.accountOp?.signature.slice(-2)).toEqual('01')
   })
 
+  test('Signing [Relayer]: Smart account paying with gas tank.', async () => {
+    const { controller, estimation, prices } = await init(
+      smartAccount,
+      createAccountOp(smartAccount),
+      eoaSigner,
+      {
+        gasUsed: 50000n,
+        nonce: 0,
+        erc4337estimation: null,
+        feePaymentOptions: [
+          {
+            address: '0x0000000000000000000000000000000000000000',
+            paidBy: smartAccount.addr,
+            availableAmount: 5000000000000000000n,
+            gasUsed: 25000n,
+            addedNative: 0n,
+            isGasTank: true
+          },
+          {
+            address: '0xdAC17F958D2ee523a2206206994597C13D831ec7',
+            paidBy: smartAccount.addr,
+            availableAmount: 500000000n,
+            gasUsed: 50000n,
+            addedNative: 0n,
+            isGasTank: false
+          },
+          {
+            address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+            paidBy: smartAccount.addr,
+            availableAmount: 500000000n,
+            gasUsed: 25000n,
+            addedNative: 0n,
+            isGasTank: false
+          }
+        ]
+      },
+      [
+        {
+          name: 'slow',
+          baseFeePerGas: 1000000000n,
+          maxPriorityFeePerGas: 1000000000n
+        },
+        {
+          name: 'medium',
+          baseFeePerGas: 2000000000n,
+          maxPriorityFeePerGas: 2000000000n
+        },
+        {
+          name: 'fast',
+          baseFeePerGas: 5000000000n,
+          maxPriorityFeePerGas: 5000000000n
+        },
+        {
+          name: 'ape',
+          baseFeePerGas: 7000000000n,
+          maxPriorityFeePerGas: 7000000000n
+        }
+      ]
+    )
+
+    // We are mocking estimation and prices values, in order to validate the gas prices calculation in the test.
+    // Knowing the exact amount of estimation and gas prices, we can predict GasFeePayment values.
+    jest.spyOn(gasPricesLib, 'getCallDataAdditional').mockReturnValue(25000n)
+
+    controller.update({
+      gasPrices: prices,
+      estimation
+    })
+
+    // @ts-ignore
+    controller.update({
+      feeToken: gasTankToken,
+      paidBy: smartAccount.addr,
+      signingKeyAddr: eoaSigner.keyPublicAddress,
+      signingKeyType: 'internal'
+    })
+
+    await controller.sign()
+
+    if (!controller.accountOp?.signature) {
+      console.log('Signing errors:', controller.errors)
+      throw new Error('Signing failed!')
+    }
+
+    const message = ethers.hexlify(accountOpSignableHash(controller.accountOp))
+    const unwrappedSig = controller.accountOp.signature.slice(0, -2)
+    const signerAddr = ethers.verifyMessage(ethers.getBytes(message), unwrappedSig)
+
+    // We expect the transaction to be signed with the passed signer address (keyPublicAddress)
+    expect(eoaAccount.addr).toEqual(signerAddr)
+    // If signing is successful, we expect controller's status to be done
+    expect(controller.status).toEqual({ type: 'done' })
+
+    // We expect the fee payment call to be added.
+    const abiCoder = new ethers.AbiCoder()
+    expect(controller.accountOp.feeCall!.to).toEqual('0x942f9CE5D9a33a82F88D233AEb3292E680230348')
+    expect(controller.accountOp.feeCall!.value).toEqual(0n)
+    expect(controller.accountOp.feeCall!.data).toEqual(
+      abiCoder.encode(
+        ['string', 'uint256', 'string'],
+        ['gasTank', controller.accountOp!.gasFeePayment!.amount, 'ETH']
+      )
+    )
+
+    // We expect the signature to be wrapped with an Ambire type. More info: wrapEthSign().
+    expect(controller.accountOp?.signature.slice(-2)).toEqual('01')
+  })
+
   test('Signing: Smart account, but EOA pays the fee', async () => {
     const { controller, estimation, prices } = await init(
       smartAccount,
@@ -504,6 +627,8 @@ describe('SignAccountOp Controller ', () => {
     // We are mocking estimation and prices values, in order to validate the gas prices calculation in the test.
     // Knowing the exact amount of estimation and gas prices, we can predict GasFeePayment values.
     jest.spyOn(gasPricesLib, 'getCallDataAdditional').mockReturnValue(5000n)
+
+    console.log(nativeFeeToken)
 
     controller.update({
       gasPrices: prices,

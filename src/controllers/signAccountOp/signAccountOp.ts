@@ -401,7 +401,16 @@ export class SignAccountOpController extends EventEmitter {
         option.address === this.feeTokenResult?.address &&
         this.paidBy === option.paidBy &&
         this.feeTokenResult?.flags.onGasTank === option.isGasTank
-    )!
+    )
+
+    if (!feeTokenEstimation) {
+      this.emitError({
+        level: 'major',
+        message:
+          'Something went wrong while setting up the gas fee payment account and token. Please try again, selecting the account and token option. If the problem persists, contact support.',
+        error: new Error('SignAccountOpController: The fee token is now found in the estimation.')
+      })
+    }
 
     return this.#gasPrices.map((gasRecommendation) => {
       let amount
@@ -420,19 +429,19 @@ export class SignAccountOpController extends EventEmitter {
       // EOA
       if (!this.#account || !this.#account?.creation) {
         simulatedGasLimit = gasUsed
-        amount = simulatedGasLimit * gasPrice + feeTokenEstimation.addedNative
+        amount = simulatedGasLimit * gasPrice + feeTokenEstimation!.addedNative
       } else if (this.#estimation!.erc4337estimation) {
         // ERC 4337
         const nativeRatio = this.#getNativeToFeeTokenRatio(this.feeTokenResult!)
 
         simulatedGasLimit =
-          this.#estimation!.erc4337estimation.gasUsed + feeTokenEstimation.gasUsed!
+          this.#estimation!.erc4337estimation.gasUsed + feeTokenEstimation!.gasUsed!
         amount = SignAccountOpController.getAmountAfterFeeTokenConvert(
           simulatedGasLimit,
           gasPrice,
           nativeRatio,
           this.feeTokenResult!.decimals,
-          feeTokenEstimation.addedNative
+          feeTokenEstimation!.addedNative
         )
         if (shouldUsePaymaster(this.accountOp.asUserOperation!, this.feeTokenResult!.address)) {
           amount = this.#increaseFee(amount)
@@ -445,7 +454,7 @@ export class SignAccountOpController extends EventEmitter {
           this.#accountStates![this.accountOp!.accountAddr][this.accountOp!.networkId]
         simulatedGasLimit += getCallDataAdditional(this.accountOp!, this.#network, accountState)
 
-        amount = simulatedGasLimit * gasPrice + feeTokenEstimation.addedNative
+        amount = simulatedGasLimit * gasPrice + feeTokenEstimation!.addedNative
       } else {
         // Relayer.
         // relayer or 4337, we need to add feeTokenOutome.gasUsed
@@ -465,7 +474,7 @@ export class SignAccountOpController extends EventEmitter {
           gasPrice,
           nativeRatio,
           this.feeTokenResult!.decimals,
-          feeTokenEstimation.addedNative
+          feeTokenEstimation!.addedNative
         )
         amount = this.#increaseFee(amount)
       }
