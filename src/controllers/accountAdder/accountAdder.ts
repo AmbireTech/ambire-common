@@ -51,8 +51,8 @@ type DerivedAccount = AccountDerivationMeta & { account: AccountWithNetworkMeta 
 type DerivedAccountWithoutNetworkMeta = Omit<DerivedAccount, 'account'> & { account: Account }
 
 export type ReadyToAddKeys = {
-  internal: { privateKey: string }[]
-  external: { addr: Key['addr']; type: Key['type']; meta: Key['meta'] }[]
+  internal: { privateKey: string; dedicatedToOneSA: boolean }[]
+  external: { addr: Key['addr']; type: Key['type']; dedicatedToOneSA: boolean; meta: Key['meta'] }[]
 }
 
 /**
