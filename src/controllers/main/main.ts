@@ -695,7 +695,6 @@ export class MainController extends EventEmitter {
     const gasPrices = this.gasPrices[networkId]
     const estimation = this.accountOpsToBeSigned[accountAddr]?.[networkId]?.estimation
     this.signAccountOp.update({ gasPrices, ...(estimation && { estimation }) })
-
     this.emitUpdate()
   }
 
