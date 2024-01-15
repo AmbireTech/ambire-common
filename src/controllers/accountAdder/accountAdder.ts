@@ -7,7 +7,7 @@ import {
 } from '../../consts/derivation'
 import { Account, AccountOnchainState } from '../../interfaces/account'
 import { KeyIterator } from '../../interfaces/keyIterator'
-import { Key } from '../../interfaces/keystore'
+import { dedicatedToOneSAPriv, Key } from '../../interfaces/keystore'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
 import { AccountPreferences, KeyPreferences } from '../../interfaces/settings'
 import { Storage } from '../../interfaces/storage'
@@ -51,8 +51,8 @@ type DerivedAccount = AccountDerivationMeta & { account: AccountWithNetworkMeta 
 type DerivedAccountWithoutNetworkMeta = Omit<DerivedAccount, 'account'> & { account: Account }
 
 export type ReadyToAddKeys = {
-  internal: { privateKey: string }[]
-  external: { addr: Key['addr']; type: Key['type']; meta: Key['meta'] }[]
+  internal: { privateKey: string; dedicatedToOneSA: boolean }[]
+  external: { addr: Key['addr']; type: Key['type']; dedicatedToOneSA: boolean; meta: Key['meta'] }[]
 }
 
 /**
@@ -435,8 +435,7 @@ export class AccountAdderController extends EventEmitter {
         addr: account.addr,
         associatedKeys: account.associatedKeys.map((key) => [
           ethers.getAddress(key), // the Relayer expects checksumed address
-          // Handle special priv hashes at a later stage, when (if) needed
-          '0x0000000000000000000000000000000000000000000000000000000000000001'
+          dedicatedToOneSAPriv
         ]),
         creation: {
           factoryAddr: account.creation!.factoryAddr,
@@ -553,7 +552,7 @@ export class AccountAdderController extends EventEmitter {
 
       // Derive the Ambire (smart) account
       smartAccountsPromises.push(
-        getSmartAccount(smartAccKey)
+        getSmartAccount([{ addr: smartAccKey, hash: dedicatedToOneSAPriv }])
           .then((smartAccount) => {
             return { account: smartAccount, isLinked: false, slot, index: slot - 1 }
           })

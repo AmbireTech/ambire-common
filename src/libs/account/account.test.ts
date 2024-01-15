@@ -1,10 +1,11 @@
 import { ethers } from 'ethers'
-import { Account, AccountCreation } from 'interfaces/account'
 
 /* eslint-disable no-new */
 import { describe, expect, test } from '@jest/globals'
 
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
+import { Account, AccountCreation } from '../../interfaces/account'
+import { dedicatedToOneSAPriv } from '../../interfaces/keystore'
 import { getBytecode } from '../proxyDeploy/bytecode'
 import { getAmbireAccountAddress } from '../proxyDeploy/getAmbireAddressTwo'
 import { getAccountDeployParams, getLegacyAccount, getSmartAccount } from './account'
@@ -25,10 +26,12 @@ describe('Account', () => {
   })
   test('should return smartAccount', async () => {
     expect.assertions(3)
-    const newSmartAccount = await getSmartAccount(keyPublicAddress)
+    const newSmartAccount = await getSmartAccount([
+      { addr: keyPublicAddress, hash: dedicatedToOneSAPriv }
+    ])
     const priv = {
       addr: keyPublicAddress,
-      hash: '0x0000000000000000000000000000000000000000000000000000000000000001'
+      hash: '0x0000000000000000000000000000000000000000000000000000000000000002'
     }
     const bytecode = await getBytecode([priv])
     const accountNotDeployed = {
@@ -68,7 +71,7 @@ describe('Account', () => {
     const accountData = getAccountDeployParams(accountNotDeployed)
     expect(accountData as any).toEqual([
       AMBIRE_ACCOUNT_FACTORY,
-      '0x9c4ae2d000000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000005b60017fbacd3e9e8aed42b26f997f28d90ae31f73d67222ec769cf7d8552e5f95f8f48d553d602d80602e3d3981f3363d3d373d3d3d363d7353a31973ebcc225e219bb0d7c0c9324773f5b3e95af43d82803e903d91602b57fd5bf30000000000'
+      '0x9c4ae2d000000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000005b60017fbacd3e9e8aed42b26f997f28d90ae31f73d67222ec769cf7d8552e5f95f8f48d553d602d80602e3d3981f3363d3d373d3d3d363d730e370942ebe4d026d05d2cf477ff386338fc415a5af43d82803e903d91602b57fd5bf30000000000'
     ])
   })
 })

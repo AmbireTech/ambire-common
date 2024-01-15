@@ -57,6 +57,7 @@ const keys: Key[] = [
   {
     addr: '0xABcdeF398CBb1285Eeb2DC42be2c429eB1d55f02',
     type: 'internal',
+    dedicatedToOneSA: true,
     isExternallyStored: true,
     meta: null
   }
@@ -343,7 +344,8 @@ describe('TypedMessages', () => {
         id: 1,
         accountAddr: accountOp.accountAddr,
         content: tmTemplate,
-        signature: null
+        signature: null,
+        networkId: 'ethereum'
       },
       {
         id: 2,
@@ -352,7 +354,8 @@ describe('TypedMessages', () => {
           kind: 'message',
           message: 'random message'
         },
-        signature: null
+        signature: null,
+        networkId: 'ethereum'
       }
     ]
     const expectedVisualizations = [

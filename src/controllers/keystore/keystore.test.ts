@@ -35,8 +35,12 @@ export class InternalSigner {
 }
 
 class LedgerSigner {
+  key
+
   // eslint-disable-next-line @typescript-eslint/no-empty-function
-  constructor(_key: Key) {}
+  constructor(_key: Key) {
+    this.key = _key
+  }
 
   signRawTransaction() {
     return Promise.resolve('')
@@ -140,7 +144,7 @@ describe('KeystoreController', () => {
   })
 
   test('should add an internal key', (done) => {
-    keystore.addKeys([{ privateKey: privKey }])
+    keystore.addKeys([{ privateKey: privKey, dedicatedToOneSA: true }])
 
     const unsubscribe = keystore.onUpdate(async () => {
       if (keystore.latestMethodCall === 'addKeys' && keystore.status === 'DONE') {
@@ -156,16 +160,19 @@ describe('KeystoreController', () => {
 
   test('should not add twice internal key that is already added', (done) => {
     // two keys with the same private key
-    const keysWithPrivateKeyAlreadyAdded = [{ privateKey: privKey }, { privateKey: privKey }]
+    const keysWithPrivateKeyAlreadyAdded = [
+      { privateKey: privKey, dedicatedToOneSA: true },
+      { privateKey: privKey, dedicatedToOneSA: true }
+    ]
 
     const anotherPrivateKeyNotAddedYet =
       '0x574f261b776b26b1ad75a991173d0e8ca2ca1d481bd7822b2b58b2ef8a969f12'
     const anotherPrivateKeyPublicAddress = '0x9188fdd757Df66B4F693D624Ed6A13a15Cf717D7'
     const keysWithPrivateKeyDuplicatedInParams = [
       // test key 3
-      { privateKey: anotherPrivateKeyNotAddedYet },
+      { privateKey: anotherPrivateKeyNotAddedYet, dedicatedToOneSA: false },
       // test key 4 with the same private key as key 3
-      { privateKey: anotherPrivateKeyNotAddedYet }
+      { privateKey: anotherPrivateKeyNotAddedYet, dedicatedToOneSA: false }
     ]
 
     keystore.addKeys([...keysWithPrivateKeyAlreadyAdded, ...keysWithPrivateKeyDuplicatedInParams])
@@ -188,7 +195,9 @@ describe('KeystoreController', () => {
   test('should add an external key', (done) => {
     const publicAddress = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'
 
-    keystore.addKeysExternallyStored([{ addr: publicAddress, type: 'trezor', meta: null }])
+    keystore.addKeysExternallyStored([
+      { addr: publicAddress, dedicatedToOneSA: true, type: 'trezor', meta: null }
+    ])
 
     const unsubscribe = keystore.onUpdate(async () => {
       if (keystore.latestMethodCall === 'addKeysExternallyStored' && keystore.status === 'DONE') {
@@ -206,11 +215,12 @@ describe('KeystoreController', () => {
     const publicAddress = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'
     const keysWithPrivateKeyAlreadyAdded = [
       // test key 1
-      { addr: publicAddress, type: 'trezor' as 'trezor', meta: null },
+      { addr: publicAddress, type: 'trezor' as 'trezor', dedicatedToOneSA: true, meta: null },
       // test key 2 with the same id (public address) as test key 1'
       {
         addr: publicAddress,
         type: 'trezor' as 'trezor',
+        dedicatedToOneSA: true,
         meta: null
       }
     ]
@@ -221,12 +231,14 @@ describe('KeystoreController', () => {
       {
         addr: anotherAddressNotAddedYet,
         type: 'trezor' as 'trezor',
+        dedicatedToOneSA: true,
         meta: null
       },
       // test key 4 with the same private key as key 3',
       {
         addr: anotherAddressNotAddedYet,
         type: 'trezor' as 'trezor',
+        dedicatedToOneSA: true,
         meta: null
       }
     ]
@@ -252,9 +264,9 @@ describe('KeystoreController', () => {
 
   test('should add both keys when they have the same address but different type', (done) => {
     const externalKeysToAddWithDuplicateOnes = [
-      { addr: keyPublicAddress, type: 'trezor' as 'trezor', meta: null },
-      { addr: keyPublicAddress, type: 'trezor' as 'trezor', meta: null },
-      { addr: keyPublicAddress, type: 'ledger' as 'ledger', meta: null }
+      { addr: keyPublicAddress, type: 'trezor' as 'trezor', dedicatedToOneSA: true, meta: null },
+      { addr: keyPublicAddress, type: 'trezor' as 'trezor', dedicatedToOneSA: true, meta: null },
+      { addr: keyPublicAddress, type: 'ledger' as 'ledger', dedicatedToOneSA: true, meta: null }
     ]
 
     keystore.addKeysExternallyStored(externalKeysToAddWithDuplicateOnes)

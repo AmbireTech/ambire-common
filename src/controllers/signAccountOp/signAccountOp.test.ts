@@ -16,6 +16,7 @@ import { estimate, EstimateResult } from '../../libs/estimate/estimate'
 import * as gasPricesLib from '../../libs/gasPrice/gasPrice'
 import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
+import { getTypedData } from '../../libs/signMessage/signMessage'
 import { KeystoreController } from '../keystore/keystore'
 import { PortfolioController } from '../portfolio/portfolio'
 import { SettingsController } from '../settings/settings'
@@ -187,7 +188,7 @@ const init = async (
   await keystore.addSecret('passphrase', signer.pass, '', false)
   await keystore.unlockWithSecret('passphrase', signer.pass)
 
-  await keystore.addKeys([{ privateKey: signer.privKey }])
+  await keystore.addKeys([{ privateKey: signer.privKey, dedicatedToOneSA: true }])
 
   const ethereum = networks.find((x) => x.id === 'ethereum')!
   const provider = new JsonRpcProvider(ethereum!.rpcUrl)
@@ -449,9 +450,19 @@ describe('SignAccountOp Controller ', () => {
       throw new Error('Signing failed!')
     }
 
-    const message = ethers.hexlify(accountOpSignableHash(controller.accountOp))
+    const typedData = getTypedData(
+      1n,
+      controller.accountOp.accountAddr,
+      ethers.hexlify(accountOpSignableHash(controller.accountOp))
+    )
+    delete typedData.types.EIP712Domain
     const unwrappedSig = controller.accountOp.signature.slice(0, -2)
-    const signerAddr = ethers.verifyMessage(ethers.getBytes(message), unwrappedSig)
+    const signerAddr = ethers.verifyTypedData(
+      typedData.domain,
+      typedData.types,
+      typedData.message,
+      unwrappedSig
+    )
 
     // We expect the transaction to be signed with the passed signer address (keyPublicAddress)
     expect(eoaAccount.addr).toEqual(signerAddr)
@@ -555,10 +566,19 @@ describe('SignAccountOp Controller ', () => {
       console.log('Signing errors:', controller.errors)
       throw new Error('Signing failed!')
     }
-
-    const message = ethers.hexlify(accountOpSignableHash(controller.accountOp))
+    const typedData = getTypedData(
+      1n,
+      controller.accountOp.accountAddr,
+      ethers.hexlify(accountOpSignableHash(controller.accountOp))
+    )
+    delete typedData.types.EIP712Domain
     const unwrappedSig = controller.accountOp.signature.slice(0, -2)
-    const signerAddr = ethers.verifyMessage(ethers.getBytes(message), unwrappedSig)
+    const signerAddr = ethers.verifyTypedData(
+      typedData.domain,
+      typedData.types,
+      typedData.message,
+      unwrappedSig
+    )
 
     // We expect the transaction to be signed with the passed signer address (keyPublicAddress)
     expect(eoaAccount.addr).toEqual(signerAddr)
@@ -628,8 +648,6 @@ describe('SignAccountOp Controller ', () => {
     // Knowing the exact amount of estimation and gas prices, we can predict GasFeePayment values.
     jest.spyOn(gasPricesLib, 'getCallDataAdditional').mockReturnValue(5000n)
 
-    console.log(nativeFeeToken)
-
     controller.update({
       gasPrices: prices,
       estimation,
@@ -656,9 +674,19 @@ describe('SignAccountOp Controller ', () => {
       maxPriorityFeePerGas: 300n
     })
 
-    const message = ethers.hexlify(accountOpSignableHash(controller.accountOp))
+    const typedData = getTypedData(
+      1n,
+      controller.accountOp.accountAddr,
+      ethers.hexlify(accountOpSignableHash(controller.accountOp))
+    )
     const unwrappedSig = controller.accountOp.signature.slice(0, -2)
-    const signerAddr = ethers.verifyMessage(ethers.getBytes(message), unwrappedSig)
+    delete typedData.types.EIP712Domain
+    const signerAddr = ethers.verifyTypedData(
+      typedData.domain,
+      typedData.types,
+      typedData.message,
+      unwrappedSig
+    )
 
     // We expect the transaction to be signed with the passed signer address (keyPublicAddress)
     expect(eoaSigner.keyPublicAddress).toEqual(signerAddr)

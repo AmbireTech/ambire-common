@@ -7,6 +7,7 @@ import { Key } from '../../interfaces/keystore'
 import { AccountPreferences, KeyPreferences } from '../../interfaces/settings'
 import { KnownAddressLabels } from '../humanizer/interfaces'
 import { getBytecode } from '../proxyDeploy/bytecode'
+import { PrivLevels } from '../proxyDeploy/deploy'
 import { getAmbireAccountAddress } from '../proxyDeploy/getAmbireAddressTwo'
 
 // returns to, data
@@ -27,16 +28,12 @@ export function getLegacyAccount(key: string): Account {
   }
 }
 
-export async function getSmartAccount(address: string): Promise<Account> {
-  const priv = {
-    addr: address,
-    hash: '0x0000000000000000000000000000000000000000000000000000000000000001'
-  }
-  const bytecode = await getBytecode([priv])
+export async function getSmartAccount(privileges: PrivLevels[]): Promise<Account> {
+  const bytecode = await getBytecode(privileges)
 
   return {
     addr: getAmbireAccountAddress(AMBIRE_ACCOUNT_FACTORY, bytecode),
-    associatedKeys: [address],
+    associatedKeys: privileges.map((priv) => priv.addr),
     creation: {
       factoryAddr: AMBIRE_ACCOUNT_FACTORY,
       bytecode,
