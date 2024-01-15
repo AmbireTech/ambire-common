@@ -12,7 +12,7 @@ function getAddress(humanizerInfo, address) {
   }
 }
 const MATIC_ON_ETH_ADDRESS = '0x7d1afa7b718fb893db30a3abc0cfc608aacfebb0'
-const Lido = (humanizerInfo) => { 
+const Lido = (humanizerInfo) => {
   const ifaceETH = new Interface(humanizerInfo.abis.LidoStETH)
   const ifaceMATIC = new Interface(humanizerInfo.abis.LidoStMATIC)
   const unstIfaceETH = new Interface(humanizerInfo.abis.unstETH)
@@ -47,21 +47,21 @@ const Lido = (humanizerInfo) => {
     ) => {
       const { _amounts, _owner } = unstIfaceETH.parseTransaction(txn).args
       if (extended) {
-        return _owner === txn.from || _owner === '0x0000000000000000000000000000000000000000'
-          ? ['Request', 'withdrawal from', getAddress(humanizerIngo, txn.to)]
-          : [
-              'Request',
-              'withdrawal from',
-              getAddress(humanizerIngo, txn.to),
-              'for',
-              getAddress(humanizerInfo, _owner)
-            ]
+        return [
+          _owner === txn.from || _owner === '0x0000000000000000000000000000000000000000'
+            ? ['Request', 'withdrawal from', getAddress(humanizerIngo, txn.to)]
+            : [
+                'Request',
+                'withdrawal from',
+                getAddress(humanizerIngo, txn.to),
+                'for',
+                getAddress(humanizerInfo, _owner)
+              ]
+        ]
       }
-      return [
-        _owner === txn.from || _owner === '0x0000000000000000000000000000000000000000'
-          ? [`Request withdrawal from ${getName(humanizerInfo, txn.to)}`]
-          : [`Request withdrawal from ${getName(humanizerInfo, txn.to)} for ${_owner}`]
-      ]
+      return _owner === txn.from || _owner === '0x0000000000000000000000000000000000000000'
+        ? [`Request withdrawal from ${getName(humanizerInfo, txn.to)}`]
+        : [`Request withdrawal from ${getName(humanizerInfo, txn.to)} for ${_owner}`]
     },
     [ifaceMATIC.getSighash('submit')]: (txn, network, { extended }) => {
       const { _amount } = ifaceMATIC.parseTransaction(txn).args

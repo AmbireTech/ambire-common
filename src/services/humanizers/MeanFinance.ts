@@ -1,10 +1,10 @@
-/* eslint-disable import/no-cycle */
 /* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable @typescript-eslint/naming-convention */
 // TODO: add types
 // @ts-nocheck
 
 import { Interface } from 'ethers/lib/utils'
+// eslint-disable-next-line import/no-cycle
 import { token, getName } from '../humanReadableTransactions'
 
 export function getInterval(seconds) {
