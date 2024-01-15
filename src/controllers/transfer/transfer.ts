@@ -83,7 +83,9 @@ export class TransferController extends EventEmitter {
   }
 
   set tokens(tokenResults: TokenResult[]) {
-    const filteredTokens = tokenResults.filter((token) => token.amount !== 0n)
+    const filteredTokens = tokenResults.filter(
+      (token) => token.amount !== 0n && !token.flags.onGasTank
+    )
     this.#tokens = filteredTokens
     this.#updateSelectedTokenIfNeeded(filteredTokens)
   }

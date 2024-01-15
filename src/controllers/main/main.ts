@@ -718,10 +718,24 @@ export class MainController extends EventEmitter {
     // and there's no need for checking other EOA accounts native balances.
     // This is already handled and estimated as a fee option in the estimate library, which is why we pass an empty array here.
     const EOAaccounts = account?.creation ? this.accounts.filter((acc) => !acc.creation) : []
+
+    // Take the fee tokens from two places: the user's tokens and his gasTank
+    // The gastTank tokens participate on each network as they belong everywhere
+    // NOTE: at some point we should check all the "?" signs below and if
+    // an error pops out, we should notify the user about it
+    const networkFeeTokens =
+      this.portfolio.latest?.[accountOp.accountAddr]?.[accountOp.networkId]?.result?.tokens ?? []
+    const gasTankFeeTokens =
+      this.portfolio.latest?.[accountOp.accountAddr]?.gasTank?.result?.tokens ?? []
+
     const feeTokens =
-      this.portfolio.latest?.[accountOp.accountAddr]?.[accountOp.networkId]?.result?.tokens
+      [...networkFeeTokens, ...gasTankFeeTokens]
         .filter((t) => t.flags.isFeeToken)
-        .map((token) => token.address) || []
+        .map((token) => ({
+          address: token.address,
+          isGasTank: token.flags.onGasTank,
+          amount: BigInt(token.amount)
+        })) || []
 
     if (!account)
       throw new Error(`estimateAccountOp: ${accountOp.accountAddr}: account does not exist`)
