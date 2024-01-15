@@ -2,17 +2,20 @@
 import {
   AbiCoder,
   concat,
+  getBytes,
   hashMessage,
   hexlify,
   Interface,
+  isHexString,
   JsonRpcProvider,
   toBeHex,
+  toUtf8Bytes,
   TypedDataDomain,
   TypedDataEncoder,
   TypedDataField
 } from 'ethers'
 
-import { AccountCreation, AccountOnchainState } from '../../interfaces/account'
+import { Account, AccountCreation, AccountOnchainState } from '../../interfaces/account'
 import { KeystoreSigner } from '../../interfaces/keystore'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { TypedMessage } from '../../interfaces/userRequest'
@@ -247,5 +250,42 @@ export async function getExecuteSignature(
     accountState.accountAddr,
     hexlify(accountOpSignableHash(accountOp))
   )
+  return wrapStandard(await signer.signTypedData(typedData))
+}
+
+export async function getPlainTextSignature(
+  message: string | Uint8Array,
+  network: NetworkDescriptor,
+  account: Account,
+  accountState: AccountOnchainState,
+  signer: KeystoreSigner
+): Promise<string> {
+  const dedicatedToOneSA = signer.key.dedicatedToOneSA
+
+  let messageHex
+  if (message instanceof Uint8Array) {
+    messageHex = hexlify(message)
+  } else if (!isHexString(message)) {
+    messageHex = hexlify(toUtf8Bytes(message))
+  } else {
+    messageHex = message
+  }
+
+  if (!account.creation) {
+    const signature = await signer.signMessage(messageHex)
+    return signature
+  }
+
+  if (dedicatedToOneSA) {
+    return wrapUnprotected(await signer.signMessage(messageHex))
+  }
+
+  // in case of only_standard priv key, we transform the data
+  // for signing to EIP-712. This is because the key is not labeled safe
+  // and it should inform the user that he's performing an Ambire Op.
+  // This is important as this key could be a metamask one and someone
+  // could be phishing him into approving an Ambire Op without him
+  // knowing
+  const typedData = getTypedData(network!.chainId, account.addr, hashMessage(getBytes(messageHex)))
   return wrapStandard(await signer.signTypedData(typedData))
 }
