@@ -15,7 +15,7 @@ import { GasRecommendation, getCallDataAdditionalByNetwork } from '../../libs/ga
 import { callsHumanizer } from '../../libs/humanizer'
 import { IrCall } from '../../libs/humanizer/interfaces'
 import { Price, TokenResult } from '../../libs/portfolio'
-import { authorizeCalls, getTypedData, wrapStandard } from '../../libs/signMessage/signMessage'
+import { getExecuteSignature, getTypedData, wrapStandard } from '../../libs/signMessage/signMessage'
 import {
   getOneTimeNonce,
   isErc4337Broadcast,
@@ -649,7 +649,7 @@ export class SignAccountOpController extends EventEmitter {
       } else if (this.accountOp.gasFeePayment.paidBy !== this.#account.addr) {
         // Smart account, but EOA pays the fee
         // EOA pays for execute() - relayerless
-        this.accountOp.signature = await authorizeCalls(
+        this.accountOp.signature = await getExecuteSignature(
           this.#network,
           this.accountOp,
           accountState,
@@ -696,7 +696,7 @@ export class SignAccountOpController extends EventEmitter {
 
         const ambireAccount = new ethers.Interface(AmbireAccount.abi)
         if (usesOneTimeNonce) {
-          const signature = await authorizeCalls(
+          const signature = await getExecuteSignature(
             this.#network,
             this.accountOp,
             accountState,
@@ -751,7 +751,7 @@ export class SignAccountOpController extends EventEmitter {
       } else {
         // Relayer
         this.#addFeePayment()
-        this.accountOp.signature = await authorizeCalls(
+        this.accountOp.signature = await getExecuteSignature(
           this.#network,
           this.accountOp,
           accountState,

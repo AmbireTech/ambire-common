@@ -227,7 +227,7 @@ export async function verifyMessage({
 }
 
 // Authorize the execute calls according to the version of the smart account
-export async function authorizeCalls(
+export async function getExecuteSignature(
   network: NetworkDescriptor,
   accountOp: AccountOp,
   accountState: AccountOnchainState,
