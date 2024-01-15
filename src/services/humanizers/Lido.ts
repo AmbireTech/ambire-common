@@ -50,11 +50,11 @@ const Lido = (humanizerInfo) => {
       if (extended) {
         return [
           _owner === txn.from || _owner === '0x0000000000000000000000000000000000000000'
-            ? ['Request', 'withdrawal from', getAddress(humanizerIngo, txn.to)]
+            ? ['Request', 'withdrawal from', getAddress(humanizerInfo, txn.to)]
             : [
                 'Request',
                 'withdrawal from',
-                getAddress(humanizerIngo, txn.to),
+                getAddress(humanizerInfo, txn.to),
                 'for',
                 getAddress(humanizerInfo, _owner)
               ]
