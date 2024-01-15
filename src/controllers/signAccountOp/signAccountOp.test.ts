@@ -566,10 +566,19 @@ describe('SignAccountOp Controller ', () => {
       console.log('Signing errors:', controller.errors)
       throw new Error('Signing failed!')
     }
-
-    const message = ethers.hexlify(accountOpSignableHash(controller.accountOp))
+    const typedData = getTypedData(
+      1n,
+      controller.accountOp.accountAddr,
+      ethers.hexlify(accountOpSignableHash(controller.accountOp))
+    )
+    delete typedData.types.EIP712Domain
     const unwrappedSig = controller.accountOp.signature.slice(0, -2)
-    const signerAddr = ethers.verifyMessage(ethers.getBytes(message), unwrappedSig)
+    const signerAddr = ethers.verifyTypedData(
+      typedData.domain,
+      typedData.types,
+      typedData.message,
+      unwrappedSig
+    )
 
     // We expect the transaction to be signed with the passed signer address (keyPublicAddress)
     expect(eoaAccount.addr).toEqual(signerAddr)
@@ -638,8 +647,6 @@ describe('SignAccountOp Controller ', () => {
     // We are mocking estimation and prices values, in order to validate the gas prices calculation in the test.
     // Knowing the exact amount of estimation and gas prices, we can predict GasFeePayment values.
     jest.spyOn(gasPricesLib, 'getCallDataAdditional').mockReturnValue(5000n)
-
-    console.log(nativeFeeToken)
 
     controller.update({
       gasPrices: prices,
