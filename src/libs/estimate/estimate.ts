@@ -18,6 +18,7 @@ import {
   shouldUseOneTimeNonce,
   shouldUsePaymaster
 } from '../userOperation/userOperation'
+import { estimateArbitrumL1GasUsed } from './estimateArbitrum'
 
 interface Erc4337estimation {
   verificationGasLimit: bigint
@@ -37,6 +38,7 @@ export interface EstimateResult {
     isGasTank: boolean
   }[]
   erc4337estimation: Erc4337estimation | null
+  arbitrumL1FeeIfArbitrum: { noFee: bigint; withFee: bigint }
 }
 
 export async function estimate(
@@ -105,7 +107,8 @@ export async function estimate(
           isGasTank: false
         }
       ],
-      erc4337estimation: null
+      erc4337estimation: null,
+      arbitrumL1FeeIfArbitrum: { noFee: 0n, withFee: 0n }
     }
   }
 
@@ -154,14 +157,14 @@ export async function estimate(
   ]
 
   // estimate 4337
-  let estimation4337
-  const is4337Broadcast = opts && opts.is4337Broadcast
-  const usesOneTimeNonce =
-    opts && opts.is4337Broadcast && shouldUseOneTimeNonce(op.asUserOperation!)
+  let estimation4337 = new Promise((resolve) => {
+    resolve(null)
+  })
+  const is4337Broadcast = Boolean(opts && opts.is4337Broadcast)
+  const usesOneTimeNonce = is4337Broadcast && shouldUseOneTimeNonce(op.asUserOperation!)
   const IAmbireAccount = new Interface(AmbireAccount.abi)
+  const userOp = Object.assign({}, op.asUserOperation)
   if (is4337Broadcast) {
-    // using Object.assign as typescript doesn't work otherwise
-    const userOp = Object.assign({}, op.asUserOperation)
     userOp!.paymasterAndData = getPaymasterSpoof()
 
     // add the activatorCall to the estimation
@@ -195,10 +198,16 @@ export async function estimate(
     from: blockFrom,
     blockTag
   })
-
-  let estimations = estimation4337
-    ? await Promise.all([estimation, estimation4337])
-    : await Promise.all([estimation])
+  const arbitrumEstimation = estimateArbitrumL1GasUsed(
+    op,
+    account,
+    accountState,
+    provider,
+    userOp,
+    is4337Broadcast
+  )
+  const estimations = await Promise.all([estimation, estimation4337, arbitrumEstimation])
+  const arbitrumL1FeeIfArbitrum = estimations[2]
 
   let [
     [
@@ -217,7 +226,7 @@ export async function estimate(
 
   let erc4337estimation: Erc4337estimation | null = null
   if (is4337Broadcast) {
-    const [[verificationGasLimit, gasUsed, failure]] = estimations[1]
+    const [[verificationGasLimit, gasUsed, failure]]: any = estimations[1]
 
     // TODO<Bobby>: handle estimation failure
     if (failure !== '0x') {
@@ -305,6 +314,7 @@ export async function estimate(
     gasUsed,
     nonce,
     feePaymentOptions: [...feeTokenOptions, ...nativeTokenOptions],
-    erc4337estimation
+    erc4337estimation,
+    arbitrumL1FeeIfArbitrum
   }
 }

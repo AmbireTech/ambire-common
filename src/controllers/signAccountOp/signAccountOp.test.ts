@@ -311,7 +311,8 @@ describe('SignAccountOp Controller ', () => {
             isGasTank: false
           }
         ],
-        erc4337estimation: null
+        erc4337estimation: null,
+        arbitrumL1FeeIfArbitrum: { noFee: 0n, withFee: 0n }
       },
       [
         {
@@ -401,7 +402,8 @@ describe('SignAccountOp Controller ', () => {
             addedNative: 0n,
             isGasTank: false
           }
-        ]
+        ],
+        arbitrumL1FeeIfArbitrum: { noFee: 0n, withFee: 0n }
       },
       [
         {
@@ -429,7 +431,7 @@ describe('SignAccountOp Controller ', () => {
 
     // We are mocking estimation and prices values, in order to validate the gas prices calculation in the test.
     // Knowing the exact amount of estimation and gas prices, we can predict GasFeePayment values.
-    jest.spyOn(gasPricesLib, 'getCallDataAdditional').mockReturnValue(25000n)
+    jest.spyOn(gasPricesLib, 'getCallDataAdditionalByNetwork').mockReturnValue(25000n)
 
     controller.update({
       gasPrices: prices,
@@ -517,7 +519,8 @@ describe('SignAccountOp Controller ', () => {
             addedNative: 0n,
             isGasTank: false
           }
-        ]
+        ],
+        arbitrumL1FeeIfArbitrum: { noFee: 0n, withFee: 0n }
       },
       [
         {
@@ -545,7 +548,7 @@ describe('SignAccountOp Controller ', () => {
 
     // We are mocking estimation and prices values, in order to validate the gas prices calculation in the test.
     // Knowing the exact amount of estimation and gas prices, we can predict GasFeePayment values.
-    jest.spyOn(gasPricesLib, 'getCallDataAdditional').mockReturnValue(25000n)
+    jest.spyOn(gasPricesLib, 'getCallDataAdditionalByNetwork').mockReturnValue(25000n)
 
     controller.update({
       gasPrices: prices,
@@ -618,7 +621,8 @@ describe('SignAccountOp Controller ', () => {
             isGasTank: false
           }
         ],
-        erc4337estimation: null
+        erc4337estimation: null,
+        arbitrumL1FeeIfArbitrum: { noFee: 0n, withFee: 0n }
       },
       [
         {
@@ -646,7 +650,7 @@ describe('SignAccountOp Controller ', () => {
 
     // We are mocking estimation and prices values, in order to validate the gas prices calculation in the test.
     // Knowing the exact amount of estimation and gas prices, we can predict GasFeePayment values.
-    jest.spyOn(gasPricesLib, 'getCallDataAdditional').mockReturnValue(5000n)
+    jest.spyOn(gasPricesLib, 'getCallDataAdditionalByNetwork').mockReturnValue(5000n)
 
     controller.update({
       gasPrices: prices,
@@ -669,7 +673,7 @@ describe('SignAccountOp Controller ', () => {
       isERC4337: false,
       isGasTank: false,
       inToken: '0x0000000000000000000000000000000000000000',
-      amount: 9005000n, // *300 + 300) × (10000+5000) + 10000, i.e. (baseFee + priorityFee) * (gasUsed + additionalCall) + addedNative
+      amount: 9005000n, // (300 + 300) × (10000+5000) + 10000, i.e. (baseFee + priorityFee) * (gasUsed + additionalCall) + addedNative
       simulatedGasLimit: 15000n, // 10000 + 5000, i.e. gasUsed + additionalCall
       maxPriorityFeePerGas: 300n
     })

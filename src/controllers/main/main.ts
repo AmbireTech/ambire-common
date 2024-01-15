@@ -898,7 +898,7 @@ export class MainController extends EventEmitter {
         // if it's eip1559, send it as such. If no, go to legacy
         const gasPrice =
           (gasFeePayment.amount - feeTokenEstimation.addedNative) / gasFeePayment.simulatedGasLimit
-        if (gasFeePayment.maxPriorityFeePerGas) {
+        if ('maxPriorityFeePerGas' in gasFeePayment) {
           rawTxn.maxFeePerGas = gasPrice
           rawTxn.maxPriorityFeePerGas = gasFeePayment.maxPriorityFeePerGas
         } else {
@@ -978,7 +978,7 @@ export class MainController extends EventEmitter {
           gasLimit: accountOp.gasFeePayment.simulatedGasLimit
         }
 
-        if (accountOp.gasFeePayment.maxPriorityFeePerGas) {
+        if ('maxPriorityFeePerGas' in accountOp.gasFeePayment) {
           rawTxn.maxFeePerGas = gasPrice
           rawTxn.maxPriorityFeePerGas = accountOp.gasFeePayment.maxPriorityFeePerGas
         } else {

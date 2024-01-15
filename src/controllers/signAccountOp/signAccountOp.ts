@@ -16,7 +16,7 @@ import {
   getSignableCalls
 } from '../../libs/accountOp/accountOp'
 import { EstimateResult } from '../../libs/estimate/estimate'
-import { GasRecommendation, getCallDataAdditional } from '../../libs/gasPrice/gasPrice'
+import { GasRecommendation, getCallDataAdditionalByNetwork } from '../../libs/gasPrice/gasPrice'
 import { callsHumanizer } from '../../libs/humanizer'
 import { IrCall } from '../../libs/humanizer/interfaces'
 import { Price, TokenResult } from '../../libs/portfolio'
@@ -400,6 +400,12 @@ export class SignAccountOpController extends EventEmitter {
       })
     }
 
+    const callDataAdditionalGasCost = getCallDataAdditionalByNetwork(
+      this.accountOp!,
+      this.#network,
+      this.#accountStates![this.accountOp!.accountAddr][this.accountOp!.networkId]
+    )
+
     return this.#gasPrices.map((gasRecommendation) => {
       let amount
       let simulatedGasLimit
@@ -422,8 +428,15 @@ export class SignAccountOpController extends EventEmitter {
         // ERC 4337
         const nativeRatio = this.#getNativeToFeeTokenRatio(this.feeTokenResult!)
 
+        const usesPaymaster = shouldUsePaymaster(
+          this.accountOp.asUserOperation!,
+          this.feeTokenResult!.address
+        )
         simulatedGasLimit =
           this.#estimation!.erc4337estimation.gasUsed + feeTokenEstimation!.gasUsed!
+        simulatedGasLimit += usesPaymaster
+          ? this.#estimation!.arbitrumL1FeeIfArbitrum.withFee
+          : this.#estimation!.arbitrumL1FeeIfArbitrum.noFee
         amount = SignAccountOpController.getAmountAfterFeeTokenConvert(
           simulatedGasLimit,
           gasPrice,
@@ -431,17 +444,13 @@ export class SignAccountOpController extends EventEmitter {
           this.feeTokenResult!.decimals,
           feeTokenEstimation!.addedNative
         )
-        if (shouldUsePaymaster(this.accountOp.asUserOperation!, this.feeTokenResult!.address)) {
+        if (usesPaymaster) {
           amount = this.#increaseFee(amount)
         }
       } else if (this.paidBy !== this.accountOp!.accountAddr) {
         // Smart account, but EOA pays the fee
-        simulatedGasLimit = gasUsed
-
-        const accountState =
-          this.#accountStates![this.accountOp!.accountAddr][this.accountOp!.networkId]
-        simulatedGasLimit += getCallDataAdditional(this.accountOp!, this.#network, accountState)
-
+        simulatedGasLimit =
+          gasUsed + callDataAdditionalGasCost + this.#estimation!.arbitrumL1FeeIfArbitrum.noFee
         amount = simulatedGasLimit * gasPrice + feeTokenEstimation!.addedNative
       } else {
         // Relayer.
@@ -451,11 +460,11 @@ export class SignAccountOpController extends EventEmitter {
           (option) => option.address === this.feeTokenResult!.address
         )!.gasUsed!
         // @TODO - add comment why here we use `feePaymentOptions`, but we don't use it in EOA
-        simulatedGasLimit = gasUsed + feeTokenGasUsed
-
-        const accountState =
-          this.#accountStates![this.accountOp!.accountAddr][this.accountOp!.networkId]
-        simulatedGasLimit += getCallDataAdditional(this.accountOp!, this.#network, accountState)
+        simulatedGasLimit =
+          gasUsed +
+          callDataAdditionalGasCost +
+          feeTokenGasUsed +
+          this.#estimation!.arbitrumL1FeeIfArbitrum.withFee
 
         amount = SignAccountOpController.getAmountAfterFeeTokenConvert(
           simulatedGasLimit,
@@ -527,7 +536,7 @@ export class SignAccountOpController extends EventEmitter {
       simulatedGasLimit: chosenSpeed.simulatedGasLimit
     }
 
-    if (chosenSpeed.maxPriorityFeePerGas) {
+    if ('maxPriorityFeePerGas' in chosenSpeed) {
       gasFeePayment.maxPriorityFeePerGas = chosenSpeed.maxPriorityFeePerGas
     }
 
