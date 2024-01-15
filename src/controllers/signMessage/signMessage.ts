@@ -10,10 +10,9 @@ import { getKnownAddressLabels } from '../../libs/account/account'
 import { messageHumanizer } from '../../libs/humanizer'
 import { IrMessage } from '../../libs/humanizer/interfaces'
 import {
-  getTypedData,
+  getPlainTextSignature,
   verifyMessage,
   wrapCounterfactualSign,
-  wrapStandard,
   wrapUnprotected
 } from '../../libs/signMessage/signMessage'
 import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
@@ -233,35 +232,28 @@ export class SignMessageController extends EventEmitter {
           'Account details needed for the signing mechanism are not found. Please try again, re-import your account or contact support if nothing else helps.'
         )
       }
-
-      const dedicatedToOneSA = this.#signer.key.dedicatedToOneSA
       const network = networks.find(
         // @ts-ignore this.messageToSign is not null and it has a check
         // but typescript malfunctions here
         (n: NetworkDescriptor) => n.id === this.messageToSign.networkId
       )
-      let signature
+      if (!network) {
+        throw new Error('Network not supported on Ambire. Please contract support.')
+      }
 
+      const dedicatedToOneSA = this.#signer.key.dedicatedToOneSA
+      const accountState = this.#accountStates![account.addr][network!.id]
+
+      let signature
       try {
         if (this.messageToSign.content.kind === 'message') {
-          if (!account.creation) {
-            signature = await this.#signPlainMsg()
-          } else if (dedicatedToOneSA) {
-            signature = wrapUnprotected(await this.#signPlainMsg())
-          } else {
-            // in case of only_standard priv key, we transform the data
-            // for signing to EIP-712. This is because the key is not labeled safe
-            // and it should inform the user that he's performing an Ambire Op.
-            // This is important as this key could be a metamask one and someone
-            // could be phishing him into approving an Ambire Op without him
-            // knowing
-            const typedData = getTypedData(
-              network!.chainId,
-              account.addr,
-              ethers.hexlify(this.messageToSign.content.message)
-            )
-            signature = wrapStandard(await this.#signer.signTypedData(typedData))
-          }
+          signature = await getPlainTextSignature(
+            this.messageToSign.content.message,
+            network,
+            account,
+            accountState,
+            this.#signer
+          )
         }
 
         if (this.messageToSign.content.kind === 'typedMessage') {
@@ -289,7 +281,6 @@ export class SignMessageController extends EventEmitter {
       }
 
       // https://eips.ethereum.org/EIPS/eip-6492
-      const accountState = this.#accountStates![account.addr][network!.id]
       if (account.creation && !accountState.isDeployed) {
         signature = wrapCounterfactualSign(signature, account.creation!)
       }
