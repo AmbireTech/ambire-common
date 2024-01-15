@@ -9,18 +9,13 @@ import { ExternalSignerControllers, Key } from '../../interfaces/keystore'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { Storage } from '../../interfaces/storage'
 import { getKnownAddressLabels } from '../../libs/account/account'
-import {
-  AccountOp,
-  accountOpSignableHash,
-  GasFeePayment,
-  getSignableCalls
-} from '../../libs/accountOp/accountOp'
+import { AccountOp, GasFeePayment, getSignableCalls } from '../../libs/accountOp/accountOp'
 import { EstimateResult } from '../../libs/estimate/estimate'
 import { GasRecommendation, getCallDataAdditionalByNetwork } from '../../libs/gasPrice/gasPrice'
 import { callsHumanizer } from '../../libs/humanizer'
 import { IrCall } from '../../libs/humanizer/interfaces'
 import { Price, TokenResult } from '../../libs/portfolio'
-import { getTypedData, wrapStandard } from '../../libs/signMessage/signMessage'
+import { getExecuteSignature, getTypedData, wrapStandard } from '../../libs/signMessage/signMessage'
 import {
   getOneTimeNonce,
   isErc4337Broadcast,
@@ -637,6 +632,8 @@ export class SignAccountOpController extends EventEmitter {
 
     if (signer.init) signer.init(this.#externalSignerControllers[this.accountOp.signingKeyType])
     const provider = this.#settings.providers[this.accountOp.networkId]
+    const accountState =
+      this.#accountStates![this.accountOp!.accountAddr][this.accountOp!.networkId]
     try {
       // In case of EOA account
       if (!this.#account.creation) {
@@ -652,13 +649,12 @@ export class SignAccountOpController extends EventEmitter {
       } else if (this.accountOp.gasFeePayment.paidBy !== this.#account.addr) {
         // Smart account, but EOA pays the fee
         // EOA pays for execute() - relayerless
-
-        const typedData = getTypedData(
-          this.#network.chainId,
-          this.accountOp.accountAddr,
-          ethers.hexlify(accountOpSignableHash(this.accountOp))
+        this.accountOp.signature = await getExecuteSignature(
+          this.#network,
+          this.accountOp,
+          accountState,
+          signer
         )
-        this.accountOp.signature = wrapStandard(await signer.signTypedData(typedData))
       } else if (this.accountOp.gasFeePayment.isERC4337) {
         const userOperation = this.accountOp.asUserOperation
         if (!userOperation) {
@@ -700,12 +696,12 @@ export class SignAccountOpController extends EventEmitter {
 
         const ambireAccount = new ethers.Interface(AmbireAccount.abi)
         if (usesOneTimeNonce) {
-          const typedData = getTypedData(
-            this.#network.chainId,
-            this.accountOp.accountAddr,
-            ethers.hexlify(accountOpSignableHash(this.accountOp))
+          const signature = await getExecuteSignature(
+            this.#network,
+            this.accountOp,
+            accountState,
+            signer
           )
-          const signature = wrapStandard(await signer.signTypedData(typedData))
           userOperation.callData = ambireAccount.encodeFunctionData('executeMultiple', [
             [[getSignableCalls(this.accountOp), signature]]
           ])
@@ -755,12 +751,12 @@ export class SignAccountOpController extends EventEmitter {
       } else {
         // Relayer
         this.#addFeePayment()
-        const typedData = getTypedData(
-          this.#network.chainId,
-          this.accountOp.accountAddr,
-          ethers.hexlify(accountOpSignableHash(this.accountOp))
+        this.accountOp.signature = await getExecuteSignature(
+          this.#network,
+          this.accountOp,
+          accountState,
+          signer
         )
-        this.accountOp.signature = wrapStandard(await signer.signTypedData(typedData))
       }
 
       this.status = { type: SigningStatus.Done }

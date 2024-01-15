@@ -12,9 +12,12 @@ import {
   TypedDataField
 } from 'ethers'
 
-import { AccountCreation } from '../../interfaces/account'
+import { AccountCreation, AccountOnchainState } from '../../interfaces/account'
+import { KeystoreSigner } from '../../interfaces/keystore'
+import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { TypedMessage } from '../../interfaces/userRequest'
 import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
+import { AccountOp, accountOpSignableHash } from '../accountOp/accountOp'
 
 /**
  * For Unprotected signatures, we need to append 00 at the end
@@ -26,7 +29,9 @@ export const wrapUnprotected = (signature: string) => {
 
 /**
  * For EIP-712 signatures, we need to append 01 at the end
- * for ambire to recognize it
+ * for ambire to recognize it.
+ * For v1 contracts, we do ETH sign at the 01 slot, which we'll
+ * call standard from now on
  */
 export const wrapStandard = (signature: string) => {
   return `${signature}01`
@@ -219,4 +224,28 @@ export async function verifyMessage({
   throw new Error(
     `Ambire failed to validate the signature. Please make sure you are signing with the correct key or device. If the problem persists, please contact Ambire support. Error details: unexpected result from the UniversalValidator: ${callResult}`
   )
+}
+
+// Authorize the execute calls according to the version of the smart account
+export async function getExecuteSignature(
+  network: NetworkDescriptor,
+  accountOp: AccountOp,
+  accountState: AccountOnchainState,
+  signer: KeystoreSigner
+) {
+  // if we're authorizing calls for a v1 contract, we do a sign message
+  // on the hash of the calls
+  if (!accountState.isV2) {
+    const message = hexlify(accountOpSignableHash(accountOp))
+    return wrapStandard(await signer.signMessage(message))
+  }
+
+  // txns for v2 contracts are always eip-712 so we put the hash of the calls
+  // in eip-712 format
+  const typedData = getTypedData(
+    network.chainId,
+    accountState.accountAddr,
+    hexlify(accountOpSignableHash(accountOp))
+  )
+  return wrapStandard(await signer.signTypedData(typedData))
 }
