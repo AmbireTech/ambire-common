@@ -8,6 +8,7 @@ import {
   Interface,
   isHexString,
   JsonRpcProvider,
+  keccak256,
   toBeHex,
   toUtf8Bytes,
   TypedDataDomain,
@@ -276,6 +277,13 @@ export async function getPlainTextSignature(
     return signature
   }
 
+  // v1 accounts sign plain text messages in SignatureMode.EthSign;
+  // in v2, this is wrapStandard
+  if (!accountState.isV2) {
+    return wrapStandard(await signer.signMessage(keccak256(messageHex)))
+  }
+
+  // if it's safe, we proceed
   if (dedicatedToOneSA) {
     return wrapUnprotected(await signer.signMessage(messageHex))
   }

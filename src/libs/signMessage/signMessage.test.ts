@@ -1,11 +1,15 @@
 import {
   Contract,
+  getBytes,
   hashMessage,
+  hexlify,
   JsonRpcProvider,
+  keccak256,
   toUtf8Bytes,
   verifyMessage,
   verifyTypedData
 } from 'ethers'
+import { ethers } from 'hardhat'
 
 import { beforeAll, describe, expect, test } from '@jest/globals'
 
@@ -29,6 +33,11 @@ const eoaSigner = {
   keyPublicAddress: '0x49355Fa4514FA49531C3Be16c75dE6c96B99718C',
   pass: 'testpass'
 }
+const v1siger = {
+  privKey: '0x9b33bde36ad2252f03e8342a4479464a5342285954330c394879b15da0c7f252',
+  keyPublicAddress: '0xB336900deb329bE6E6E515954c31AE610c13B771',
+  pass: 'testpass'
+}
 const eoaAccount: Account = {
   addr: eoaSigner.keyPublicAddress,
   associatedKeys: [eoaSigner.keyPublicAddress],
@@ -43,6 +52,17 @@ const smartAccount: Account = {
     bytecode:
       '0x7f00000000000000000000000000000000000000000000000000000000000000027f4cddd6c90a7055aa3d00deceb0664950d2f31114946678b79df2a5540a3238f8553d602d80604d3d3981f3363d3d373d3d3d363d730e370942ebe4d026d05d2cf477ff386338fc415a5af43d82803e903d91602b57fd5bf3',
     salt: '0x0000000000000000000000000000000000000000000000000000000000000000'
+  }
+}
+
+const v1Account = {
+  addr: '0x254D526978D15C9619288949f9419e918977F9F3',
+  associatedKeys: [v1siger.keyPublicAddress],
+  creation: {
+    factoryAddr: '0xBf07a0Df119Ca234634588fbDb5625594E2a5BCA',
+    bytecode:
+      '0x7f00000000000000000000000000000000000000000000000000000000000000017f832a45b3e3616710ac5703e98191d3827c46e7f1107596b00d26584abe24d690553d602d80604d3d3981f3363d3d373d3d3d363d732a2b85eb1054d6f0c6c2e37da05ed3e5fea684ef5af43d82803e903d91602b57fd5bf3',
+    salt: '0x0000000000000000000000000000000000000000000000000000000000000001'
   }
 }
 
@@ -68,13 +88,16 @@ const getAccountsInfo = async (accounts: Account[]): Promise<AccountStates> => {
 }
 
 let keystore: KeystoreController
-describe('Sign Message with key dedicatedToOneSA: true ', () => {
+describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
   beforeAll(async () => {
     const storage: Storage = produceMemoryStore()
     keystore = new KeystoreController(storage, { internal: KeystoreSigner })
     await keystore.addSecret('passphrase', eoaSigner.pass, '', false)
     await keystore.unlockWithSecret('passphrase', eoaSigner.pass)
-    await keystore.addKeys([{ privateKey: eoaSigner.privKey, dedicatedToOneSA: true }])
+    await keystore.addKeys([
+      { privateKey: eoaSigner.privKey, dedicatedToOneSA: true },
+      { privateKey: v1siger.privKey, dedicatedToOneSA: false }
+    ])
   })
   test('Signing [EOA]: plain text', async () => {
     const accountStates = await getAccountsInfo([eoaAccount])
@@ -131,9 +154,35 @@ describe('Sign Message with key dedicatedToOneSA: true ', () => {
     const isValidSig = await contract.isValidSignature(hashMessage('test'), signatureForPlainText)
     expect(isValidSig).toBe(contractSuccess)
   })
+  test('Signing [V1 SA]: plain text', async () => {
+    const accountStates = await getAccountsInfo([v1Account])
+    const signer = await keystore.getSigner(v1siger.keyPublicAddress, 'internal')
+
+    const signatureForPlainText = await getPlainTextSignature(
+      'test',
+      ethereumNetwork,
+      v1Account,
+      accountStates[v1Account.addr][ethereumNetwork.id],
+      signer
+    )
+    expect(signatureForPlainText.slice(-2)).toEqual('01')
+
+    const unwrappedSig = signatureForPlainText.slice(0, -2)
+    expect(verifyMessage(getBytes(keccak256(hexlify(toUtf8Bytes('test')))), unwrappedSig)).toBe(
+      v1siger.keyPublicAddress
+    )
+
+    const provider = new JsonRpcProvider(polygonNetwork.rpcUrl)
+    const contract = new Contract(v1Account.addr, AmbireAccount.abi, provider)
+    const isValidSig = await contract.isValidSignature(
+      keccak256(toUtf8Bytes('test')),
+      signatureForPlainText
+    )
+    expect(isValidSig).toBe(contractSuccess)
+  })
 })
 
-describe('Sign Message with key dedicatedToOneSA: false', () => {
+describe('Sign Message, Keystore with key dedicatedToOneSA: false', () => {
   beforeAll(async () => {
     const storage: Storage = produceMemoryStore()
     keystore = new KeystoreController(storage, { internal: KeystoreSigner })
