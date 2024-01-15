@@ -13,9 +13,11 @@ import { estimate, EstimateResult } from './estimate'
 
 const ethereum = networks.find((x) => x.id === 'ethereum')
 const optimism = networks.find((x) => x.id === 'optimism')
-if (!ethereum || !optimism) throw new Error('no network')
+const arbitrum = networks.find((x) => x.id === 'arbitrum')
+if (!ethereum || !optimism || !arbitrum) throw new Error('no network')
 const provider = new JsonRpcProvider(ethereum.rpcUrl)
 const providerOptimism = new JsonRpcProvider(optimism.rpcUrl)
+const providerArbitrum = new JsonRpcProvider(arbitrum.rpcUrl)
 
 const account = {
   addr: '0xa07D75aacEFd11b425AF7181958F0F85c312f143',
@@ -238,6 +240,9 @@ describe('estimate', () => {
 
     // Gas used in case of `accountOpToExecuteBefore` should be greater, because more AccountOps are simulated
     expect(responseWithExecuteBefore.gasUsed).toBeGreaterThan(response.gasUsed)
+
+    expect(response.arbitrumL1FeeIfArbitrum.noFee).toEqual(0n)
+    expect(response.arbitrumL1FeeIfArbitrum.withFee).toEqual(0n)
   })
 
   it('estimates with `addedNative`', async () => {
@@ -281,5 +286,48 @@ describe('estimate', () => {
     response.feePaymentOptions.forEach((feeToken) => {
       expect(feeToken.addedNative).toBeGreaterThan(0n)
     })
+
+    expect(response.arbitrumL1FeeIfArbitrum.noFee).toEqual(0n)
+    expect(response.arbitrumL1FeeIfArbitrum.withFee).toEqual(0n)
+  })
+
+  it('estimates an arbitrum request', async () => {
+    const accountArbitrum = {
+      addr: '0x4AA524DDa82630cE769e5C9d7ec7a45B94a41bc6',
+      associatedKeys: ['0x141A14B5C4dbA2aC7a7943E02eDFE2E7eDfdA28F'],
+      creation: {
+        factoryAddr: '0xa8202f888b9b2dfa5ceb2204865018133f6f179a',
+        bytecode:
+          '0x7f00000000000000000000000000000000000000000000000000000000000000027fa70e7c3e588683d0493e3cad10209993d632b6631bc4637b53a4174bad869718553d602d80604d3d3981f3363d3d373d3d3d363d730e370942ebe4d026d05d2cf477ff386338fc415a5af43d82803e903d91602b57fd5bf3',
+        salt: '0x0000000000000000000000000000000000000000000000000000000000000000'
+      }
+    }
+
+    const opArbitrum = {
+      accountAddr: accountArbitrum.addr,
+      signingKeyAddr: accountArbitrum.associatedKeys[0],
+      signingKeyType: null,
+      gasLimit: null,
+      gasFeePayment: null,
+      networkId: 'arbitrum',
+      nonce: 1n,
+      signature: spoofSig,
+      calls: [{ to, value: BigInt(100000000000), data: '0x' }],
+      accountOpToExecuteBefore: null
+    }
+
+    const accountStates = await getAccountsInfo([accountArbitrum])
+    const response = await estimate(
+      providerArbitrum,
+      arbitrum,
+      accountArbitrum,
+      opArbitrum,
+      accountStates[accountArbitrum.addr][arbitrum.id],
+      nativeToCheck,
+      feeTokens
+    )
+
+    expect(response.arbitrumL1FeeIfArbitrum.noFee).toBeGreaterThan(0n)
+    expect(response.arbitrumL1FeeIfArbitrum.withFee).toBeGreaterThan(0n)
   })
 })
