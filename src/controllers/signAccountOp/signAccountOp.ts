@@ -400,6 +400,12 @@ export class SignAccountOpController extends EventEmitter {
       })
     }
 
+    const callDataAdditionalGasCost = getCallDataAdditionalByNetwork(
+      this.accountOp!,
+      this.#network,
+      this.#accountStates![this.accountOp!.accountAddr][this.accountOp!.networkId]
+    )
+
     return this.#gasPrices.map((gasRecommendation) => {
       let amount
       let simulatedGasLimit
@@ -443,17 +449,8 @@ export class SignAccountOpController extends EventEmitter {
         }
       } else if (this.paidBy !== this.accountOp!.accountAddr) {
         // Smart account, but EOA pays the fee
-        simulatedGasLimit = gasUsed + this.#estimation!.arbitrumL1FeeIfArbitrum.noFee
-
-        const accountState =
-          this.#accountStates![this.accountOp!.accountAddr][this.accountOp!.networkId]
-
-        simulatedGasLimit += getCallDataAdditionalByNetwork(
-          this.accountOp!,
-          this.#network,
-          accountState
-        )
-
+        simulatedGasLimit =
+          gasUsed + callDataAdditionalGasCost + this.#estimation!.arbitrumL1FeeIfArbitrum.noFee
         amount = simulatedGasLimit * gasPrice + feeTokenEstimation!.addedNative
       } else {
         // Relayer.
@@ -464,16 +461,10 @@ export class SignAccountOpController extends EventEmitter {
         )!.gasUsed!
         // @TODO - add comment why here we use `feePaymentOptions`, but we don't use it in EOA
         simulatedGasLimit =
-          gasUsed + feeTokenGasUsed + this.#estimation!.arbitrumL1FeeIfArbitrum.withFee
-
-        const accountState =
-          this.#accountStates![this.accountOp!.accountAddr][this.accountOp!.networkId]
-
-        simulatedGasLimit += getCallDataAdditionalByNetwork(
-          this.accountOp!,
-          this.#network,
-          accountState
-        )
+          gasUsed +
+          callDataAdditionalGasCost +
+          feeTokenGasUsed +
+          this.#estimation!.arbitrumL1FeeIfArbitrum.withFee
 
         amount = SignAccountOpController.getAmountAfterFeeTokenConvert(
           simulatedGasLimit,
