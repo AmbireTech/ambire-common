@@ -35,6 +35,7 @@ export interface EstimateResult {
     address: string
     gasUsed?: bigint
     addedNative: bigint
+    isGasTank: boolean
   }[]
   erc4337estimation: Erc4337estimation | null
   arbitrumL1FeeIfArbitrum: { noFee: bigint; withFee: bigint }
@@ -47,7 +48,7 @@ export async function estimate(
   op: AccountOp,
   accountState: AccountOnchainState,
   nativeToCheck: string[],
-  feeTokens: string[],
+  feeTokens: { address: string; isGasTank: boolean; amount: bigint }[],
   opts?: {
     calculateRefund?: boolean
     is4337Broadcast?: boolean
@@ -102,7 +103,8 @@ export async function estimate(
           address: nativeAddr,
           paidBy: account.addr,
           availableAmount: balance,
-          addedNative: l1GasEstimation.fee
+          addedNative: l1GasEstimation.fee,
+          isGasTank: false
         }
       ],
       erc4337estimation: null,
@@ -149,7 +151,7 @@ export async function estimate(
     [account.addr, op.nonce || 1, op.calls, '0x'],
     encodeRlp(encodedCallData),
     account.associatedKeys,
-    feeTokens,
+    feeTokens.map((token) => token.address),
     relayerAddress,
     nativeToCheck
   ]
@@ -279,7 +281,7 @@ export async function estimate(
     // if there's no paymaster, we can pay only in native
     if (!network.erc4337?.hasPaymaster) {
       finalFeeTokenOptions = finalFeeTokenOptions.filter((token: any, key: number) => {
-        return feeTokens[key] === '0x0000000000000000000000000000000000000000'
+        return feeTokens[key].address === '0x0000000000000000000000000000000000000000'
       })
     }
 
@@ -288,22 +290,24 @@ export async function estimate(
   }
 
   const feeTokenOptions = finalFeeTokenOptions.map((token: any, key: number) => ({
-    address: feeTokens[key],
+    address: feeTokens[key].address,
     paidBy: account.addr,
-    availableAmount: token.amount,
+    availableAmount: feeTokens[key].isGasTank ? feeTokens[key].amount : token.amount,
     gasUsed: token.gasUsed,
     addedNative:
       !is4337Broadcast || // relayer
-      shouldUsePaymaster(op.asUserOperation!, feeTokens[key])
+      shouldUsePaymaster(op.asUserOperation!, feeTokens[key].address)
         ? l1GasEstimation.feeWithPayment
-        : l1GasEstimation.fee
+        : l1GasEstimation.fee,
+    isGasTank: feeTokens[key].isGasTank
   }))
 
   const nativeTokenOptions = finalNativeTokenOptions.map((balance: bigint, key: number) => ({
     address: nativeAddr,
     paidBy: nativeToCheck[key],
     availableAmount: balance,
-    addedNative: l1GasEstimation.fee
+    addedNative: l1GasEstimation.fee,
+    isGasTank: false
   }))
 
   return {

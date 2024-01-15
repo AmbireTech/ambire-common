@@ -6,8 +6,7 @@ const networks: NetworkDescriptor[] = [
     id: 'ethereum',
     name: 'Ethereum',
     nativeAssetSymbol: 'ETH',
-    rpcUrl:
-      'https://rpc.ankr.com/eth/5c7b8f0ac82c95161753873289e1a4f39aa69019b905b8032d76909962719be9',
+    rpcUrl: 'https://invictus.ambire.com/ethereum',
     rpcNoStateOverride: false,
     chainId: 1n,
     explorerUrl: 'https://etherscan.io',
@@ -21,8 +20,7 @@ const networks: NetworkDescriptor[] = [
     id: 'polygon',
     name: 'Polygon',
     nativeAssetSymbol: 'MATIC',
-    rpcUrl:
-      'https://rpc.ankr.com/polygon/5c7b8f0ac82c95161753873289e1a4f39aa69019b905b8032d76909962719be9',
+    rpcUrl: 'https://invictus.ambire.com/polygon',
     rpcNoStateOverride: false,
     chainId: 137n,
     explorerUrl: 'https://polygonscan.com',
@@ -42,8 +40,7 @@ const networks: NetworkDescriptor[] = [
     id: 'optimism',
     name: 'Optimism',
     nativeAssetSymbol: 'ETH',
-    rpcUrl:
-      'https://rpc.ankr.com/optimism/5c7b8f0ac82c95161753873289e1a4f39aa69019b905b8032d76909962719be9',
+    rpcUrl: 'https://invictus.ambire.com/optimism',
     rpcNoStateOverride: false,
     chainId: 10n,
     explorerUrl: 'https://optimistic.etherscan.io',
@@ -65,7 +62,7 @@ const networks: NetworkDescriptor[] = [
     id: 'avalanche',
     name: 'Avalanche',
     nativeAssetSymbol: 'AVAX',
-    rpcUrl: 'https://api.avax.network/ext/bc/C/rpc',
+    rpcUrl: 'https://invictus.ambire.com/avalanche',
     rpcNoStateOverride: false,
     chainId: 43114n,
     explorerUrl: 'https://snowtrace.io',

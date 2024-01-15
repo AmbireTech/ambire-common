@@ -97,7 +97,7 @@ export class ActivityController extends EventEmitter {
 
   #initialLoadPromise: Promise<void>
 
-  #accounts: AccountStates
+  #accountStates: AccountStates
 
   #accountsOps: InternalAccountsOps = {}
 
@@ -123,10 +123,10 @@ export class ActivityController extends EventEmitter {
 
   #relayerUrl: string
 
-  constructor(storage: Storage, accounts: AccountStates, relayerUrl: string) {
+  constructor(storage: Storage, accountStates: AccountStates, relayerUrl: string) {
     super()
     this.#storage = storage
-    this.#accounts = accounts
+    this.#accountStates = accountStates
     this.#initialLoadPromise = this.#load()
     this.#relayerUrl = relayerUrl
   }
@@ -278,7 +278,7 @@ export class ActivityController extends EventEmitter {
 
               const is4337 = isErc4337Broadcast(
                 networkConfig!,
-                this.#accounts[accountOp.accountAddr][accountOp.networkId]
+                this.#accountStates[accountOp.accountAddr][accountOp.networkId]
               )
               try {
                 const receipt = is4337
@@ -301,10 +301,10 @@ export class ActivityController extends EventEmitter {
 
               if (
                 (!is4337 &&
-                  this.#accounts[accountOp.accountAddr][accountOp.networkId].nonce >
+                  this.#accountStates[accountOp.accountAddr][accountOp.networkId].nonce >
                     accountOp.nonce) ||
                 (is4337 &&
-                  this.#accounts[accountOp.accountAddr][accountOp.networkId].erc4337Nonce >
+                  this.#accountStates[accountOp.accountAddr][accountOp.networkId].erc4337Nonce >
                     accountOp.nonce)
               ) {
                 this.#accountsOps[this.filters!.account][network][accountOpIndex].status =
@@ -399,15 +399,6 @@ export class ActivityController extends EventEmitter {
     this.emitUpdate()
   }
 
-  setAccounts(accounts: AccountStates) {
-    if (!this.isInitialized) {
-      this.#throwNotInitialized()
-      return
-    }
-
-    this.#accounts = accounts
-  }
-
   #throwNotInitialized() {
     this.emitError({
       level: 'major',
@@ -433,7 +424,7 @@ export class ActivityController extends EventEmitter {
 
       const is4337 = isErc4337Broadcast(
         network,
-        this.#accounts[accountOp.accountAddr][accountOp.networkId]
+        this.#accountStates[accountOp.accountAddr][accountOp.networkId]
       )
       return {
         id: accountOp.txnId,
