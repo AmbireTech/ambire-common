@@ -9,7 +9,6 @@ import {
   verifyMessage,
   verifyTypedData
 } from 'ethers'
-import { ethers } from 'hardhat'
 
 import { beforeAll, describe, expect, test } from '@jest/globals'
 
