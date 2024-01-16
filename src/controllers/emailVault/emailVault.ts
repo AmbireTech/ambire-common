@@ -284,12 +284,31 @@ export class EmailVaultController extends EventEmitter {
     const uid = await this.#keyStore.getKeyStoreUid()
     const state = this.emailVaultStates
     // @TODO emit error for this conditional
-    if (
-      !state.email[email] ||
-      !state.email[email].availableSecrets[uid] ||
-      state.email[email].availableSecrets[uid].type !== SecretType.KeyStore
-    )
+    if (!state.email[email]) {
+      this.emitError({
+        message: `Keystore recovery: email ${email} not imported`,
+        level: 'major',
+        error: new Error(`Keystore recovery: email ${email} not imported`)
+      })
       return null
+    }
+
+    if (!state.email[email].availableSecrets[uid]) {
+      this.emitError({
+        message: 'Keystore recovery: no keystore secret for this device',
+        level: 'major',
+        error: new Error('Keystore recovery: no keystore secret for this device')
+      })
+      return null
+    }
+    if (state.email[email].availableSecrets[uid].type !== SecretType.KeyStore) {
+      this.emitError({
+        message: `Keystore recovery: no keystore secret for email ${email}`,
+        level: 'major',
+        error: new Error(`Keystore recovery: no keystore secret for email ${email}`)
+      })
+      return null
+    }
 
     const key = (await this.#getMagicLinkKey(email))?.key
     let result: any = null

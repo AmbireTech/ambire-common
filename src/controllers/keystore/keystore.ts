@@ -453,7 +453,7 @@ export class KeystoreController extends EventEmitter {
   /*
     DOCS
     keyAddress: string - the address of the key you want to export
-    publicKey: string - the public key, with which to encypt it (used for key sync with other device's keystoreId)
+    publicKey: string - the public key, with which to asymmetrically encypt it (used for key sync with other device's keystoreId)
   */
   async exportKeyWithPublicKeyEncryption(
     keyAddress: string,
