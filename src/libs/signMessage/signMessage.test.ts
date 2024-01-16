@@ -255,6 +255,26 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
     )
     expect(isValidSig).toBe(contractSuccess)
   })
+  test('Signing [V1 SA]: eip-712, should throw an error', async () => {
+    const accountStates = await getAccountsInfo([v1Account])
+    const accountState = accountStates[v1Account.addr][ethereumNetwork.id]
+    const signer = await keystore.getSigner(v1siger.keyPublicAddress, 'internal')
+
+    const typedData = getTypedData(
+      ethereumNetwork.chainId,
+      accountState.accountAddr,
+      hashMessage('test')
+    )
+    try {
+      await getEIP712Signature(typedData, v1Account, accountState, signer)
+      console.log('No error was thrown for [V1 SA]: eip-712, but it should have')
+      expect(true).toEqual(false)
+    } catch (e: any) {
+      expect(e.message).toBe(
+        'Signing eip-712 messages is disallowed for v1 accounts. Please contact support to proceed'
+      )
+    }
+  })
 })
 
 describe('Sign Message, Keystore with key dedicatedToOneSA: false', () => {
@@ -290,5 +310,25 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: false', () => {
     const contract = new Contract(smartAccount.addr, AmbireAccount.abi, provider)
     const isValidSig = await contract.isValidSignature(hashMessage('test'), signatureForPlainText)
     expect(isValidSig).toBe(contractSuccess)
+  })
+  test('Signing [Not dedicated to one SA]: eip-712, should throw an error', async () => {
+    const accountStates = await getAccountsInfo([smartAccount])
+    const accountState = accountStates[smartAccount.addr][polygonNetwork.id]
+    const signer = await keystore.getSigner(eoaSigner.keyPublicAddress, 'internal')
+
+    const typedData = getTypedData(
+      polygonNetwork.chainId,
+      accountState.accountAddr,
+      hashMessage('test')
+    )
+    try {
+      await getEIP712Signature(typedData, smartAccount, accountState, signer)
+      console.log('No error was thrown for [Not dedicated to one SA]: eip-712, but it should have')
+      expect(true).toEqual(false)
+    } catch (e: any) {
+      expect(e.message).toBe(
+        `Signer with address ${signer.key.addr} does not have privileges to execute this operation. Please choose a different signer and try again`
+      )
+    }
   })
 })
