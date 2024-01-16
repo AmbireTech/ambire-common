@@ -1,5 +1,3 @@
-import { ethers } from 'ethers'
-
 import { networks } from '../../consts/networks'
 import { Account, AccountStates } from '../../interfaces/account'
 import { ExternalSignerControllers, Key } from '../../interfaces/keystore'
@@ -10,10 +8,10 @@ import { getKnownAddressLabels } from '../../libs/account/account'
 import { messageHumanizer } from '../../libs/humanizer'
 import { IrMessage } from '../../libs/humanizer/interfaces'
 import {
+  getEIP712Signature,
   getPlainTextSignature,
   verifyMessage,
-  wrapCounterfactualSign,
-  wrapUnprotected
+  wrapCounterfactualSign
 } from '../../libs/signMessage/signMessage'
 import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
 import { SignedMessage } from '../activity/activity'
@@ -156,55 +154,6 @@ export class SignMessageController extends EventEmitter {
     this.emitUpdate()
   }
 
-  async #signPlainMsg() {
-    if (!this.messageToSign) {
-      this.#throwNotInitialized()
-      return
-    }
-
-    try {
-      const { message } = this.messageToSign.content
-      const messageHex = message instanceof Uint8Array ? ethers.hexlify(message) : message
-      const signature = await this.#signer.signMessage(messageHex)
-      return signature
-    } catch (error: any) {
-      throw new Error(
-        'Something went wrong while signing the message. Please try again later or contact support if the problem persists.'
-      )
-    }
-  }
-
-  async #signEip712() {
-    if (!this.messageToSign) {
-      this.#throwNotInitialized()
-      return
-    }
-
-    try {
-      // @ts-ignore checked before calling the mehtod
-      if (!this.messageToSign.content.types.EIP712Domain) {
-        throw new Error(
-          'Ambire only supports signing EIP712 typed data messages. Please try again with a valid EIP712 message.'
-        )
-      }
-
-      // @ts-ignore checked before calling the mehtod
-      if (!this.messageToSign.content.primaryType) {
-        throw new Error(
-          'The primaryType is missing in the typed data message incoming. Please try again with a valid EIP712 message.'
-        )
-      }
-
-      const signature = await this.#signer.signTypedData(this.messageToSign.content)
-      return signature
-    } catch (error: any) {
-      throw new Error(
-        error?.message ||
-          'Something went wrong while signing the typed data message. Please try again later or contact support if the problem persists.'
-      )
-    }
-  }
-
   async sign() {
     if (!this.isInitialized || !this.messageToSign) {
       this.#throwNotInitialized()
@@ -241,9 +190,7 @@ export class SignMessageController extends EventEmitter {
         throw new Error('Network not supported on Ambire. Please contract support.')
       }
 
-      const dedicatedToOneSA = this.#signer.key.dedicatedToOneSA
       const accountState = this.#accountStates![account.addr][network!.id]
-
       let signature
       try {
         if (this.messageToSign.content.kind === 'message') {
@@ -257,15 +204,12 @@ export class SignMessageController extends EventEmitter {
         }
 
         if (this.messageToSign.content.kind === 'typedMessage') {
-          if (!account.creation) {
-            signature = await this.#signEip712()
-          } else if (dedicatedToOneSA) {
-            signature = wrapUnprotected(await this.#signEip712())
-          } else {
-            throw new Error(
-              `Signer with address ${this.signingKeyAddr} does not have privileges to execute this operation. Please choose a different signer and try again`
-            )
-          }
+          signature = await getEIP712Signature(
+            this.messageToSign.content,
+            account,
+            accountState,
+            this.#signer
+          )
         }
       } catch (error: any) {
         throw new Error(
