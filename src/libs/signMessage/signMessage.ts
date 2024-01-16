@@ -8,7 +8,6 @@ import {
   Interface,
   isHexString,
   JsonRpcProvider,
-  keccak256,
   toBeHex,
   toUtf8Bytes,
   TypedDataDomain,
@@ -277,10 +276,16 @@ export async function getPlainTextSignature(
     return signature
   }
 
-  // v1 accounts sign plain text messages in SignatureMode.EthSign;
-  // in v2, this is wrapStandard
   if (!accountState.isV2) {
-    return wrapStandard(await signer.signMessage(keccak256(messageHex)))
+    // the below commented out code is the way this should work if we enable it
+    // we're disabling it from the extension for v1 account as signatures
+    // produced in plain text are malleable, meaning they could be reused
+    // somewhere else. If demand is big enough for v1 account, we might
+    // re-enable them
+    // return wrapUnprotected(await signer.signMessage(messageHex))
+    throw new Error(
+      'Signing messages is disallowed for v1 accounts. Please contact support to proceed'
+    )
   }
 
   // if it's safe, we proceed
@@ -296,4 +301,45 @@ export async function getPlainTextSignature(
   // knowing
   const typedData = getTypedData(network!.chainId, account.addr, hashMessage(getBytes(messageHex)))
   return wrapStandard(await signer.signTypedData(typedData))
+}
+
+export async function getEIP712Signature(
+  message: TypedMessage,
+  account: Account,
+  accountState: AccountOnchainState,
+  signer: KeystoreSigner
+): Promise<string> {
+  if (!message.types.EIP712Domain) {
+    throw new Error(
+      'Ambire only supports signing EIP712 typed data messages. Please try again with a valid EIP712 message.'
+    )
+  }
+  if (!message.primaryType) {
+    throw new Error(
+      'The primaryType is missing in the typed data message incoming. Please try again with a valid EIP712 message.'
+    )
+  }
+
+  if (!account.creation) {
+    const signature = await signer.signTypedData(message)
+    return signature
+  }
+
+  if (!accountState.isV2) {
+    throw new Error(
+      'Signing eip-712 messages is disallowed for v1 accounts. Please contact support to proceed'
+    )
+  }
+
+  // if it's safe, we proceed
+  const dedicatedToOneSA = signer.key.dedicatedToOneSA
+  if (dedicatedToOneSA) {
+    return wrapUnprotected(await signer.signTypedData(message))
+  }
+
+  // we do not allow signers who are not dedicated to one account to sign eip-712
+  // messsages in v2 as it could lead to reusing that key from
+  throw new Error(
+    `Signer with address ${signer.key.addr} does not have privileges to execute this operation. Please choose a different signer and try again`
+  )
 }

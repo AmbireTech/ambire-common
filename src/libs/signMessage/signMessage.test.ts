@@ -1,11 +1,9 @@
 import {
   Contract,
-  getBytes,
   hashMessage,
-  hexlify,
   JsonRpcProvider,
-  keccak256,
   toUtf8Bytes,
+  TypedDataEncoder,
   verifyMessage,
   verifyTypedData
 } from 'ethers'
@@ -21,7 +19,7 @@ import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { Storage } from '../../interfaces/storage'
 import { getAccountState } from '../accountState/accountState'
 import { KeystoreSigner } from '../keystoreSigner/keystoreSigner'
-import { getPlainTextSignature, getTypedData } from './signMessage'
+import { getEIP712Signature, getPlainTextSignature, getTypedData } from './signMessage'
 
 const ethereumNetwork = networks.find((net) => net.id === 'ethereum')!
 const polygonNetwork = networks.find((net) => net.id === 'polygon')!
@@ -142,7 +140,7 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
       accountStates[smartAccount.addr][polygonNetwork.id],
       signer
     )
-    // the key should dedicatedToOneSA, so we expect the signature to end in 00
+    // the key should be dedicatedToOneSA, so we expect the signature to end in 00
     expect(signatureForPlainText.slice(-2)).toEqual('00')
 
     const unwrappedSig = signatureForPlainText.slice(0, -2)
@@ -153,31 +151,129 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
     const isValidSig = await contract.isValidSignature(hashMessage('test'), signatureForPlainText)
     expect(isValidSig).toBe(contractSuccess)
   })
-  test('Signing [V1 SA]: plain text', async () => {
+  test('Signing [V1 SA]: plain text, should throw an error', async () => {
     const accountStates = await getAccountsInfo([v1Account])
     const signer = await keystore.getSigner(v1siger.keyPublicAddress, 'internal')
 
-    const signatureForPlainText = await getPlainTextSignature(
-      'test',
-      ethereumNetwork,
-      v1Account,
-      accountStates[v1Account.addr][ethereumNetwork.id],
-      signer
-    )
-    expect(signatureForPlainText.slice(-2)).toEqual('01')
+    try {
+      await getPlainTextSignature(
+        'test',
+        ethereumNetwork,
+        v1Account,
+        accountStates[v1Account.addr][ethereumNetwork.id],
+        signer
+      )
+      console.log('No error was thrown for [V1 SA]: plain text, but it should have')
+      expect(true).toEqual(false)
+    } catch (e: any) {
+      expect(e.message).toBe(
+        'Signing messages is disallowed for v1 accounts. Please contact support to proceed'
+      )
+    }
+  })
 
-    const unwrappedSig = signatureForPlainText.slice(0, -2)
-    expect(verifyMessage(getBytes(keccak256(hexlify(toUtf8Bytes('test')))), unwrappedSig)).toBe(
-      v1siger.keyPublicAddress
+  // NOTE: do not delete the test below
+  // if we enable v1 plain text signing in the extension, the below
+  // test showcases how it should work.
+
+  // test('Signing [V1 SA]: plain text', async () => {
+  //   const accountStates = await getAccountsInfo([v1Account])
+  //   const signer = await keystore.getSigner(v1siger.keyPublicAddress, 'internal')
+
+  //   const signatureForPlainText = await getPlainTextSignature(
+  //     'test',
+  //     ethereumNetwork,
+  //     v1Account,
+  //     accountStates[v1Account.addr][ethereumNetwork.id],
+  //     signer
+  //   )
+  //   expect(signatureForPlainText.slice(-2)).toEqual('00')
+
+  //   const unwrappedSig = signatureForPlainText.slice(0, -2)
+  //   expect(verifyMessage('test', unwrappedSig)).toBe(v1siger.keyPublicAddress)
+
+  //   const provider = new JsonRpcProvider(polygonNetwork.rpcUrl)
+  //   const contract = new Contract(v1Account.addr, AmbireAccount.abi, provider)
+  //   const isValidSig = await contract.isValidSignature(hashMessage('test'), signatureForPlainText)
+  //   expect(isValidSig).toBe(contractSuccess)
+  // })
+
+  test('Signing [EOA]: eip-712', async () => {
+    const accountStates = await getAccountsInfo([eoaAccount])
+    const accountState = accountStates[eoaAccount.addr][ethereumNetwork.id]
+    const signer = await keystore.getSigner(eoaSigner.keyPublicAddress, 'internal')
+
+    const typedDataTest = getTypedData(
+      ethereumNetwork.chainId,
+      accountState.accountAddr,
+      hashMessage('test')
     )
+    const eip712Sig = await getEIP712Signature(typedDataTest, eoaAccount, accountState, signer)
+    expect(
+      verifyTypedData(typedDataTest.domain, typedDataTest.types, typedDataTest.message, eip712Sig)
+    ).toBe(eoaSigner.keyPublicAddress)
+
+    const typedDataNumber = getTypedData(
+      ethereumNetwork.chainId,
+      accountState.accountAddr,
+      hashMessage('12')
+    )
+    const eip712SigNum = await getEIP712Signature(typedDataNumber, eoaAccount, accountState, signer)
+    expect(
+      verifyTypedData(
+        typedDataNumber.domain,
+        typedDataNumber.types,
+        typedDataNumber.message,
+        eip712SigNum
+      )
+    ).toBe(eoaSigner.keyPublicAddress)
+  })
+  test('Signing [Dedicated to one SA]: eip-712', async () => {
+    const accountStates = await getAccountsInfo([smartAccount])
+    const accountState = accountStates[smartAccount.addr][polygonNetwork.id]
+    const signer = await keystore.getSigner(eoaSigner.keyPublicAddress, 'internal')
+
+    const typedData = getTypedData(
+      polygonNetwork.chainId,
+      accountState.accountAddr,
+      hashMessage('test')
+    )
+    const eip712Sig = await getEIP712Signature(typedData, smartAccount, accountState, signer)
+    // the key should be dedicatedToOneSA, so we expect the signature to end in 00
+    expect(eip712Sig.slice(-2)).toEqual('00')
+
+    const unwrappedSig = eip712Sig.slice(0, -2)
+    expect(
+      verifyTypedData(typedData.domain, typedData.types, typedData.message, unwrappedSig)
+    ).toBe(eoaSigner.keyPublicAddress)
 
     const provider = new JsonRpcProvider(polygonNetwork.rpcUrl)
-    const contract = new Contract(v1Account.addr, AmbireAccount.abi, provider)
+    const contract = new Contract(smartAccount.addr, AmbireAccount.abi, provider)
     const isValidSig = await contract.isValidSignature(
-      keccak256(toUtf8Bytes('test')),
-      signatureForPlainText
+      TypedDataEncoder.hash(typedData.domain, typedData.types, typedData.message),
+      eip712Sig
     )
     expect(isValidSig).toBe(contractSuccess)
+  })
+  test('Signing [V1 SA]: eip-712, should throw an error', async () => {
+    const accountStates = await getAccountsInfo([v1Account])
+    const accountState = accountStates[v1Account.addr][ethereumNetwork.id]
+    const signer = await keystore.getSigner(v1siger.keyPublicAddress, 'internal')
+
+    const typedData = getTypedData(
+      ethereumNetwork.chainId,
+      accountState.accountAddr,
+      hashMessage('test')
+    )
+    try {
+      await getEIP712Signature(typedData, v1Account, accountState, signer)
+      console.log('No error was thrown for [V1 SA]: eip-712, but it should have')
+      expect(true).toEqual(false)
+    } catch (e: any) {
+      expect(e.message).toBe(
+        'Signing eip-712 messages is disallowed for v1 accounts. Please contact support to proceed'
+      )
+    }
   })
 })
 
@@ -214,5 +310,25 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: false', () => {
     const contract = new Contract(smartAccount.addr, AmbireAccount.abi, provider)
     const isValidSig = await contract.isValidSignature(hashMessage('test'), signatureForPlainText)
     expect(isValidSig).toBe(contractSuccess)
+  })
+  test('Signing [Not dedicated to one SA]: eip-712, should throw an error', async () => {
+    const accountStates = await getAccountsInfo([smartAccount])
+    const accountState = accountStates[smartAccount.addr][polygonNetwork.id]
+    const signer = await keystore.getSigner(eoaSigner.keyPublicAddress, 'internal')
+
+    const typedData = getTypedData(
+      polygonNetwork.chainId,
+      accountState.accountAddr,
+      hashMessage('test')
+    )
+    try {
+      await getEIP712Signature(typedData, smartAccount, accountState, signer)
+      console.log('No error was thrown for [Not dedicated to one SA]: eip-712, but it should have')
+      expect(true).toEqual(false)
+    } catch (e: any) {
+      expect(e.message).toBe(
+        `Signer with address ${signer.key.addr} does not have privileges to execute this operation. Please choose a different signer and try again`
+      )
+    }
   })
 })
