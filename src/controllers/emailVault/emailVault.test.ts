@@ -39,6 +39,7 @@ const getRandomEmail = () => {
 }
 let storage: Storage
 const relayerUrl: string = 'https://staging-relayer.ambire.com'
+// const relayerUrl: string = 'http://localhost:1934'
 let keystore: KeystoreController
 let email: string
 describe('happy cases', () => {
@@ -104,7 +105,7 @@ describe('happy cases', () => {
     expect(keystore.isUnlocked).toBeTruthy()
   })
 
-  test.only('request key sync', async () => {
+  test('request key sync', async () => {
     const [storage2, keystore2] = [
       produceMemoryStore(),
       new KeystoreController(produceMemoryStore(), keystoreSigners)

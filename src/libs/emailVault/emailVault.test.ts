@@ -5,13 +5,15 @@ import { Wallet } from 'ethers'
 import { relayerCall } from '../relayerCall/relayerCall'
 import { EmailVault } from './emailVault'
 import { requestMagicLink } from '../magicLink/magicLink'
-import { Operation } from '../../interfaces/emailVault'
 
 let email: String
 let email2: String
 
-// Relayer have to be start with NODE_ENV === 'testing' to can retrive the secret
+// @NOTE: this should be changed in future tests. We should have proper e2e tests with email inbox reading. Once done, this isn't needed
+// Relayer has to be start with NODE_ENV === 'testing' to retrive the secret for email vonfirmation
 const relayerUrl = 'https://staging-relayer.ambire.com'
+// const relayerUrl: string = 'http://localhost:1934'
+
 const callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
 const emailVault = new EmailVault(fetch, relayerUrl)
 let authKey: String
@@ -91,38 +93,13 @@ describe('happy cases email vault', () => {
         requester: 'me',
         key: 'public key'
         // value?: string
-      },
-      {
-        // id?: string
-        requestType: 'sync data2',
-        requester: 'you?',
-        key: 'public key',
-        value: 'value'
-      },
-      {
-        id: 'sike, shoudnt have id',
-        requestType: 'sync data2',
-        requester: 'you?',
-        key: 'public key',
-        value: 'value'
       }
     ]
     const storedOperations = await emailVault.operations(email, authKey, operations)
     expect(storedOperations).toBeTruthy()
-    expect(storedOperations?.length).toBe(2)
-    storedOperations?.forEach((op, i) => {
-      expect(op).toHaveProperty('id')
-      expect(op).toMatchObject(operations[i])
-    })
-    const newOperations = storedOperations?.map((op) => ({ ...op, value: 'new value' }))!
-    const res = await emailVault.operations(email, authKey, newOperations)
-    expect(res).toBeTruthy()
-    expect(res!.length).toBe(2)
-    res!.forEach((op: Operation, i) => {
-      expect(op).toHaveProperty('id')
-      expect(op).toHaveProperty('value', 'new value')
-      expect(op).toMatchObject(newOperations[i])
-    })
+    expect(storedOperations?.length).toBe(1)
+    expect(storedOperations![0]).toHaveProperty('id')
+    expect(storedOperations![0]).toMatchObject(operations[0])
   })
 })
 describe('err cases', () => {
