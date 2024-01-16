@@ -21,7 +21,7 @@ import {
   isSmartAccount
 } from '../../libs/account/account'
 import { getAccountState } from '../../libs/accountState/accountState'
-import EventEmitter from '../eventEmitter'
+import EventEmitter from '../../libs/eventEmitter/eventEmitter'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import wait from '../../utils/wait'
 
