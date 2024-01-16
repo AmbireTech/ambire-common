@@ -9,7 +9,7 @@ import { SPOOF_SIGTYPE } from '../../consts/signatures'
 import { Account, AccountOnchainState } from '../../interfaces/account'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { getAccountDeployParams } from '../account/account'
-import { AccountOp } from '../accountOp/accountOp'
+import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
 import { fromDescriptor } from '../deployless/deployless'
 import { getProbableCallData } from '../gasPrice/gasPrice'
 import {
@@ -18,6 +18,7 @@ import {
   shouldUseOneTimeNonce,
   shouldUsePaymaster
 } from '../userOperation/userOperation'
+import { estimateArbitrumL1GasUsed } from './estimateArbitrum'
 
 interface Erc4337estimation {
   verificationGasLimit: bigint
@@ -34,8 +35,10 @@ export interface EstimateResult {
     address: string
     gasUsed?: bigint
     addedNative: bigint
+    isGasTank: boolean
   }[]
   erc4337estimation: Erc4337estimation | null
+  arbitrumL1FeeIfArbitrum: { noFee: bigint; withFee: bigint }
 }
 
 export async function estimate(
@@ -45,7 +48,7 @@ export async function estimate(
   op: AccountOp,
   accountState: AccountOnchainState,
   nativeToCheck: string[],
-  feeTokens: string[],
+  feeTokens: { address: string; isGasTank: boolean; amount: bigint }[],
   opts?: {
     calculateRefund?: boolean
     is4337Broadcast?: boolean
@@ -100,10 +103,12 @@ export async function estimate(
           address: nativeAddr,
           paidBy: account.addr,
           availableAmount: balance,
-          addedNative: l1GasEstimation.fee
+          addedNative: l1GasEstimation.fee,
+          isGasTank: false
         }
       ],
-      erc4337estimation: null
+      erc4337estimation: null,
+      arbitrumL1FeeIfArbitrum: { noFee: 0n, withFee: 0n }
     }
   }
 
@@ -146,20 +151,30 @@ export async function estimate(
     [account.addr, op.nonce || 1, op.calls, '0x'],
     encodeRlp(encodedCallData),
     account.associatedKeys,
-    feeTokens,
+    feeTokens.map((token) => token.address),
     relayerAddress,
     nativeToCheck
   ]
 
   // estimate 4337
-  let estimation4337
-  const is4337Broadcast = opts && opts.is4337Broadcast
-  const usesOneTimeNonce =
-    opts && opts.is4337Broadcast && shouldUseOneTimeNonce(op.asUserOperation!)
+  let estimation4337 = new Promise((resolve) => {
+    resolve(null)
+  })
+  const is4337Broadcast = Boolean(opts && opts.is4337Broadcast)
+  const usesOneTimeNonce = is4337Broadcast && shouldUseOneTimeNonce(op.asUserOperation!)
+  const IAmbireAccount = new Interface(AmbireAccount.abi)
+  const userOp = Object.assign({}, op.asUserOperation)
   if (is4337Broadcast) {
-    // using Object.assign as typescript doesn't work otherwise
-    const userOp = Object.assign({}, op.asUserOperation)
     userOp!.paymasterAndData = getPaymasterSpoof()
+
+    // add the activatorCall to the estimation
+    if (userOp.activatorCall) {
+      const spoofSig = abiCoder.encode(['address'], [account.associatedKeys[0]]) + SPOOF_SIGTYPE
+      userOp.callData = IAmbireAccount.encodeFunctionData('executeMultiple', [
+        [[getSignableCalls(op), spoofSig]]
+      ])
+    }
+
     const deployless4337Estimator = fromDescriptor(
       provider,
       Estimation4337,
@@ -183,10 +198,16 @@ export async function estimate(
     from: blockFrom,
     blockTag
   })
-
-  let estimations = estimation4337
-    ? await Promise.all([estimation, estimation4337])
-    : await Promise.all([estimation])
+  const arbitrumEstimation = estimateArbitrumL1GasUsed(
+    op,
+    account,
+    accountState,
+    provider,
+    userOp,
+    is4337Broadcast
+  )
+  const estimations = await Promise.all([estimation, estimation4337, arbitrumEstimation])
+  const arbitrumL1FeeIfArbitrum = estimations[2]
 
   let [
     [
@@ -205,7 +226,7 @@ export async function estimate(
 
   let erc4337estimation: Erc4337estimation | null = null
   if (is4337Broadcast) {
-    const [[verificationGasLimit, gasUsed, failure]] = estimations[1]
+    const [[verificationGasLimit, gasUsed, failure]]: any = estimations[1]
 
     // TODO<Bobby>: handle estimation failure
     if (failure !== '0x') {
@@ -224,7 +245,6 @@ export async function estimate(
     : deployment.gasUsed + accountOpToExecuteBefore.gasUsed + accountOp.gasUsed
 
   if (opts?.calculateRefund) {
-    const IAmbireAccount = new Interface(AmbireAccount.abi)
     const IAmbireAccountFactory = new Interface(AmbireAccountFactory.abi)
 
     const accountCalldata = op.accountOpToExecuteBefore
@@ -261,7 +281,7 @@ export async function estimate(
     // if there's no paymaster, we can pay only in native
     if (!network.erc4337?.hasPaymaster) {
       finalFeeTokenOptions = finalFeeTokenOptions.filter((token: any, key: number) => {
-        return feeTokens[key] === '0x0000000000000000000000000000000000000000'
+        return feeTokens[key].address === '0x0000000000000000000000000000000000000000'
       })
     }
 
@@ -270,28 +290,31 @@ export async function estimate(
   }
 
   const feeTokenOptions = finalFeeTokenOptions.map((token: any, key: number) => ({
-    address: feeTokens[key],
+    address: feeTokens[key].address,
     paidBy: account.addr,
-    availableAmount: token.amount,
+    availableAmount: feeTokens[key].isGasTank ? feeTokens[key].amount : token.amount,
     gasUsed: token.gasUsed,
     addedNative:
       !is4337Broadcast || // relayer
-      shouldUsePaymaster(op.asUserOperation!, feeTokens[key])
+      shouldUsePaymaster(op.asUserOperation!, feeTokens[key].address)
         ? l1GasEstimation.feeWithPayment
-        : l1GasEstimation.fee
+        : l1GasEstimation.fee,
+    isGasTank: feeTokens[key].isGasTank
   }))
 
   const nativeTokenOptions = finalNativeTokenOptions.map((balance: bigint, key: number) => ({
     address: nativeAddr,
     paidBy: nativeToCheck[key],
     availableAmount: balance,
-    addedNative: l1GasEstimation.fee
+    addedNative: l1GasEstimation.fee,
+    isGasTank: false
   }))
 
   return {
     gasUsed,
     nonce,
     feePaymentOptions: [...feeTokenOptions, ...nativeTokenOptions],
-    erc4337estimation
+    erc4337estimation,
+    arbitrumL1FeeIfArbitrum
   }
 }

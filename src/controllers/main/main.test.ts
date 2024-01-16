@@ -59,6 +59,7 @@ describe('Main Controller ', () => {
       fetch,
       relayerUrl,
       keystoreSigners: { internal: KeystoreSigner },
+      externalSignerControllers: {},
       onResolveDappRequest: () => {},
       onRejectDappRequest: () => {},
       onUpdateDappSelectedAccount: () => {},
@@ -164,6 +165,7 @@ describe('Main Controller ', () => {
       fetch,
       relayerUrl,
       keystoreSigners: { internal: KeystoreSigner },
+      externalSignerControllers: {},
       onResolveDappRequest: () => {},
       onRejectDappRequest: () => {},
       onUpdateDappSelectedAccount: () => {},
@@ -226,7 +228,10 @@ describe('Main Controller ', () => {
 
         if (emitCounter === 1 && controller.isReady) addAccounts()
 
-        if (emitCounter === 2) {
+        if (
+          controller.status === 'SUCCESS' &&
+          controller.latestMethodCall === 'onAccountAdderSuccess'
+        ) {
           expect(controller.accounts).toContainEqual(accountPendingCreation.account)
           unsubscribe()
           resolve(true)

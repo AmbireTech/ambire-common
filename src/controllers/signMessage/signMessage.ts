@@ -1,8 +1,6 @@
-import { ethers, JsonRpcProvider } from 'ethers'
-
 import { networks } from '../../consts/networks'
 import { Account, AccountStates } from '../../interfaces/account'
-import { ExternalSignerController, Key } from '../../interfaces/keystore'
+import { ExternalSignerControllers, Key } from '../../interfaces/keystore'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { Storage } from '../../interfaces/storage'
 import { Message } from '../../interfaces/userRequest'
@@ -10,10 +8,10 @@ import { getKnownAddressLabels } from '../../libs/account/account'
 import { messageHumanizer } from '../../libs/humanizer'
 import { IrMessage } from '../../libs/humanizer/interfaces'
 import {
+  getEIP712Signature,
+  getPlainTextSignature,
   verifyMessage,
-  wrapCounterfactualSign,
-  wrapEIP712,
-  wrapEthSign
+  wrapCounterfactualSign
 } from '../../libs/signMessage/signMessage'
 import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
 import { SignedMessage } from '../activity/activity'
@@ -26,13 +24,18 @@ export class SignMessageController extends EventEmitter {
 
   #settings: SettingsController
 
-  #providers: { [key: string]: JsonRpcProvider }
+  #externalSignerControllers: ExternalSignerControllers
 
   #storage: Storage
 
   #fetch: Function
 
   #accounts: Account[] | null = null
+
+  // this is the signer from keystore.ts
+  // we don't have a correct return type at getSigner so
+  // I'm leaving it as any
+  #signer: any
 
   // TODO: use it to determine whether the account is deployed and if not
   // apply EIP6492 but first the msg to sign should include the address of the account
@@ -60,7 +63,7 @@ export class SignMessageController extends EventEmitter {
   constructor(
     keystore: KeystoreController,
     settings: SettingsController,
-    providers: { [key: string]: JsonRpcProvider },
+    externalSignerControllers: ExternalSignerControllers,
     storage: Storage,
     fetch: Function
   ) {
@@ -68,7 +71,7 @@ export class SignMessageController extends EventEmitter {
 
     this.#keystore = keystore
     this.#settings = settings
-    this.#providers = providers
+    this.#externalSignerControllers = externalSignerControllers
     this.#storage = storage
     this.#fetch = fetch
   }
@@ -151,7 +154,7 @@ export class SignMessageController extends EventEmitter {
     this.emitUpdate()
   }
 
-  async sign(externalSignerController?: ExternalSignerController) {
+  async sign() {
     if (!this.isInitialized || !this.messageToSign) {
       this.#throwNotInitialized()
       return
@@ -169,8 +172,8 @@ export class SignMessageController extends EventEmitter {
     this.emitUpdate()
 
     try {
-      const signer = await this.#keystore.getSigner(this.signingKeyAddr, this.signingKeyType)
-      if (signer.init) signer.init(externalSignerController)
+      this.#signer = await this.#keystore.getSigner(this.signingKeyAddr, this.signingKeyType)
+      if (this.#signer.init) this.#signer.init(this.#externalSignerControllers[this.signingKeyType])
 
       const account = this.#accounts!.find((acc) => acc.addr === this.messageToSign?.accountAddr)
       if (!account) {
@@ -178,54 +181,41 @@ export class SignMessageController extends EventEmitter {
           'Account details needed for the signing mechanism are not found. Please try again, re-import your account or contact support if nothing else helps.'
         )
       }
-
-      let network = networks.find((n: NetworkDescriptor) => n.id === 'ethereum')
-      let signature
-
-      if (this.messageToSign.content.kind === 'message') {
-        try {
-          const { message } = this.messageToSign.content
-          const messageHex = message instanceof Uint8Array ? ethers.hexlify(message) : message
-
-          signature = await signer.signMessage(messageHex)
-          if (signature && account.creation) signature = wrapEthSign(signature)
-        } catch (error: any) {
-          throw new Error(
-            error?.message ||
-              'Something went wrong while signing the message. Please try again later or contact support if the problem persists.'
-          )
-        }
+      const network = networks.find(
+        // @ts-ignore this.messageToSign is not null and it has a check
+        // but typescript malfunctions here
+        (n: NetworkDescriptor) => n.id === this.messageToSign.networkId
+      )
+      if (!network) {
+        throw new Error('Network not supported on Ambire. Please contract support.')
       }
 
-      if (this.messageToSign.content.kind === 'typedMessage') {
-        try {
-          if (!this.messageToSign.content.types.EIP712Domain) {
-            throw new Error(
-              'Ambire only supports signing EIP712 typed data messages. Please try again with a valid EIP712 message.'
-            )
-          }
-
-          if (!this.messageToSign.content.primaryType) {
-            throw new Error(
-              'The primaryType is missing in the typed data message incoming. Please try again with a valid EIP712 message.'
-            )
-          }
-
-          const { domain } = this.messageToSign.content
-          signature = await signer.signTypedData(this.messageToSign.content)
-          if (signature && account.creation) signature = wrapEIP712(signature)
-          const requestedNetwork = networks.find(
-            (n) => Number(n.chainId) === Number(domain.chainId)
-          )
-          if (requestedNetwork) {
-            network = requestedNetwork
-          }
-        } catch (error: any) {
-          throw new Error(
-            error?.message ||
-              'Something went wrong while signing the typed data message. Please try again later or contact support if the problem persists.'
+      const accountState = this.#accountStates![account.addr][network!.id]
+      let signature
+      try {
+        if (this.messageToSign.content.kind === 'message') {
+          signature = await getPlainTextSignature(
+            this.messageToSign.content.message,
+            network,
+            account,
+            accountState,
+            this.#signer
           )
         }
+
+        if (this.messageToSign.content.kind === 'typedMessage') {
+          signature = await getEIP712Signature(
+            this.messageToSign.content,
+            account,
+            accountState,
+            this.#signer
+          )
+        }
+      } catch (error: any) {
+        throw new Error(
+          error?.message ||
+            'Something went wrong while signing the message. Please try again later or contact support if the problem persists.'
+        )
       }
 
       if (!signature) {
@@ -235,7 +225,6 @@ export class SignMessageController extends EventEmitter {
       }
 
       // https://eips.ethereum.org/EIPS/eip-6492
-      const accountState = this.#accountStates![account.addr][network!.id]
       if (account.creation && !accountState.isDeployed) {
         signature = wrapCounterfactualSign(signature, account.creation!)
       }
@@ -246,7 +235,7 @@ export class SignMessageController extends EventEmitter {
           : this.messageToSign.content.message
 
       const isValidSignature = await verifyMessage({
-        provider: this.#providers[network?.id || 'ethereum'],
+        provider: this.#settings.providers[network?.id || 'ethereum'],
         // the signer is always the account even if the actual
         // signature is from a key that has privs to the account
         signer: this.messageToSign?.accountAddr,

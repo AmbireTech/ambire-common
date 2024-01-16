@@ -62,11 +62,12 @@ describe('SignMessageController', () => {
     const keystoreSigners = { internal: InternalSigner }
     keystore = new KeystoreController(produceMemoryStore(), keystoreSigners)
     settings = new SettingsController(produceMemoryStore())
+    settings.providers = providers
 
     signMessageController = new SignMessageController(
       keystore,
       settings,
-      providers,
+      {},
       produceMemoryStore(),
       fetch
     )
@@ -80,7 +81,8 @@ describe('SignMessageController', () => {
         message: '0x74657374'
       },
       accountAddr: '0x9188fdd757Df66B4F693D624Ed6A13a15Cf717D7',
-      signature: null
+      signature: null,
+      networkId: 'ethereum'
     }
 
     let emitCounter = 0
@@ -145,7 +147,8 @@ describe('SignMessageController', () => {
         message: '0x74657374'
       },
       accountAddr: '0x9188fdd757Df66B4F693D624Ed6A13a15Cf717D7',
-      signature: null
+      signature: null,
+      networkId: 'ethereum'
     }
     const signingKeyAddr = '0x9188fdd757Df66B4F693D624Ed6A13a15Cf717D7'
 
@@ -163,14 +166,23 @@ describe('SignMessageController', () => {
         message: '0x74657374'
       },
       accountAddr: '0x9188fdd757Df66B4F693D624Ed6A13a15Cf717D7',
-      signature: null
+      signature: null,
+      networkId: 'ethereum'
     }
     const signingKeyAddr = '0x9188fdd757Df66B4F693D624Ed6A13a15Cf717D7'
     const dummySignature =
       '0x5b2dce98c7179051d21407be04bcd088243cd388ed51c4c64ccae115ca8787d85cff933dcde45220c3adfcc40f7958305e195dbd4c54580dfbf61e43438cbe9a1c'
 
-    // @ts-ignore for mocking purposes only
-    const mockSigner = { signMessage: jest.fn().mockResolvedValue(dummySignature) }
+    const mockSigner = {
+      // @ts-ignore for mocking purposes only
+      signMessage: jest.fn().mockResolvedValue(dummySignature),
+      key: {
+        addr: signingKeyAddr,
+        type: 'internal',
+        dedicatedToOneSA: true,
+        meta: {}
+      }
+    }
 
     // @ts-ignore spy on the getSigner method and mock its implementation
     const getSignerSpy = jest.spyOn(keystore, 'getSigner').mockResolvedValue(mockSigner)

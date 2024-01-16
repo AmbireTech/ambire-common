@@ -373,7 +373,7 @@ export class EmailVaultController extends EventEmitter {
             const op = cloudOperations![i]
             const { privateKey } = JSON.parse(op?.value || '{}')
             if (op.requestType === 'requestKeySync') {
-              await this.#keyStore.importKeyWithPublicKeyEncryption(privateKey)
+              await this.#keyStore.importKeyWithPublicKeyEncryption(privateKey, true)
             }
           }
           this.emailVaultStates.email[email].operations = cloudOperations!

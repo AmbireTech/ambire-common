@@ -107,7 +107,8 @@ export async function getGasPriceRecommendations(
     return speeds.map(({ name, baseFeeAddBps }, i) => ({
       name,
       baseFeePerGas: expectedBaseFee + (expectedBaseFee * baseFeeAddBps) / 10000n,
-      maxPriorityFeePerGas: average(nthGroup(tips, i, speeds.length))
+      maxPriorityFeePerGas:
+        network.id === 'arbitrum' ? 0n : average(nthGroup(tips, i, speeds.length))
     }))
   }
   const prices = filterOutliers(txns.map((x) => x.gasPrice!).filter((x) => x > 0))
@@ -166,4 +167,16 @@ export function getCallDataAdditional(
   const zeroBytes = BigInt(BigInt(bytes.length) - nonZeroBytes)
   const txDataGas = zeroBytes * 4n + nonZeroBytes * 16n
   return txDataGas + FIXED_OVERHEAD
+}
+
+export function getCallDataAdditionalByNetwork(
+  accountOp: AccountOp,
+  network: NetworkDescriptor,
+  accountState: AccountOnchainState
+): bigint {
+  // no additional call data is required for arbitrum as the bytes are already
+  // added in the calculation for the L1 fee
+  if (network.id === 'arbitrum') return 0n
+
+  return getCallDataAdditional(accountOp, network, accountState)
 }

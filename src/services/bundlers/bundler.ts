@@ -54,7 +54,7 @@ export class Bundler {
     const provider = new StaticJsonRpcProvider(url)
 
     return provider.send('eth_sendUserOperation', [
-      (({ requestType, ...o }) => o)(userOperation),
+      (({ requestType, activatorCall, ...o }) => o)(userOperation),
       ERC_4337_ENTRYPOINT
     ])
   }

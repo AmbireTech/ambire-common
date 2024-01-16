@@ -8,7 +8,9 @@ import {
 
 import { Account, AccountOnchainState } from '../../interfaces/account'
 import { KeyIterator } from '../../interfaces/keyIterator'
+import { dedicatedToOneSAPriv, Key } from '../../interfaces/keystore'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
+import { AccountPreferences, KeyPreferences } from '../../interfaces/settings'
 import { Storage } from '../../interfaces/storage'
 import {
   getEmailAccount,
@@ -53,6 +55,11 @@ type DerivedAccount = AccountDerivationMeta & { account: AccountWithNetworkMeta 
 // Sub-type, used during intermediate step during the deriving accounts process
 type DerivedAccountWithoutNetworkMeta = Omit<DerivedAccount, 'account'> & { account: Account }
 
+export type ReadyToAddKeys = {
+  internal: { privateKey: string; dedicatedToOneSA: boolean }[]
+  external: { addr: Key['addr']; type: Key['type']; dedicatedToOneSA: boolean; meta: Key['meta'] }[]
+}
+
 /**
  * Account Adder Controller
  * is responsible for listing accounts that can be selected for adding, and for
@@ -80,9 +87,21 @@ export class AccountAdderController extends EventEmitter {
 
   preselectedAccounts: Account[] = []
 
-  // Smart accounts which identity is created on the Relayer, and are ready
+  // Accounts which identity is created on the Relayer (if needed), and are ready
   // to be added to the user's account list by the Main Controller
   readyToAddAccounts: Account[] = []
+
+  // The keys for the `readyToAddAccounts`, that are ready to be added to the
+  // user's keystore by the Main Controller
+  readyToAddKeys: ReadyToAddKeys = { internal: [], external: [] }
+
+  // The key preferences for the `readyToAddKeys`, that are ready to be added to
+  // the user's settings by the Main Controller
+  readyToAddKeyPreferences: KeyPreferences = []
+
+  // The account preferences for the `readyToAddAccounts`, that are ready to be
+  // added to the user's settings by the Main Controller
+  readyToAddAccountPreferences: AccountPreferences = {}
 
   // Identity for the smart accounts must be created on the Relayer, this
   // represents the status of the operation, needed managing UI state
@@ -243,6 +262,9 @@ export class AccountAdderController extends EventEmitter {
 
     this.addAccountsStatus = 'INITIAL'
     this.readyToAddAccounts = []
+    this.readyToAddKeys = { internal: [], external: [] }
+    this.readyToAddKeyPreferences = []
+    this.readyToAddAccountPreferences = {}
     this.isInitialized = false
 
     this.emitUpdate()
@@ -376,7 +398,12 @@ export class AccountAdderController extends EventEmitter {
     })
   }
 
-  async addAccounts(accounts: SelectedAccount[] = []) {
+  async addAccounts(
+    accounts: SelectedAccount[] = [],
+    readyToAddAccountPreferences: AccountPreferences = {},
+    readyToAddKeys: ReadyToAddKeys = { internal: [], external: [] },
+    readyToAddKeyPreferences: KeyPreferences = []
+  ) {
     if (!this.isInitialized) {
       return this.emitError({
         level: 'major',
@@ -414,8 +441,7 @@ export class AccountAdderController extends EventEmitter {
         ...(account.email ? { email: account.email } : {}),
         associatedKeys: account.associatedKeys.map((key) => [
           ethers.getAddress(key), // the Relayer expects checksumed address
-          // Handle special priv hashes at a later stage, when (if) needed
-          '0x0000000000000000000000000000000000000000000000000000000000000001'
+          dedicatedToOneSAPriv
         ]),
 
         creation: {
@@ -448,6 +474,9 @@ export class AccountAdderController extends EventEmitter {
     }
 
     this.readyToAddAccounts = [...accounts.map((x) => x.account)]
+    this.readyToAddKeys = readyToAddKeys
+    this.readyToAddKeyPreferences = readyToAddKeyPreferences
+    this.readyToAddAccountPreferences = readyToAddAccountPreferences
     this.addAccountsStatus = 'SUCCESS'
     this.emitUpdate()
 
@@ -582,7 +611,7 @@ export class AccountAdderController extends EventEmitter {
 
       // Derive the Ambire (smart) account
       smartAccountsPromises.push(
-        getSmartAccount(smartAccKey)
+        getSmartAccount([{ addr: smartAccKey, hash: dedicatedToOneSAPriv }])
           .then((smartAccount) => {
             return { account: smartAccount, isLinked: false, slot, index: slot - 1 }
           })
