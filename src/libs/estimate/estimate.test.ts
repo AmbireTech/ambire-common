@@ -1,4 +1,5 @@
 import { AbiCoder, JsonRpcProvider } from 'ethers'
+import { AccountOp } from 'libs/accountOp/accountOp'
 import fetch from 'node-fetch'
 
 import { describe, expect } from '@jest/globals'
@@ -9,15 +10,18 @@ import { Account, AccountStates } from '../../interfaces/account'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { getAccountState } from '../accountState/accountState'
 import { Portfolio } from '../portfolio/portfolio'
+import { toUserOperation } from '../userOperation/userOperation'
 import { estimate, EstimateResult } from './estimate'
 
 const ethereum = networks.find((x) => x.id === 'ethereum')
 const optimism = networks.find((x) => x.id === 'optimism')
 const arbitrum = networks.find((x) => x.id === 'arbitrum')
-if (!ethereum || !optimism || !arbitrum) throw new Error('no network')
+const avalanche = networks.find((x) => x.id === 'avalanche')
+if (!ethereum || !optimism || !arbitrum || !avalanche) throw new Error('no network')
 const provider = new JsonRpcProvider(ethereum.rpcUrl)
 const providerOptimism = new JsonRpcProvider(optimism.rpcUrl)
 const providerArbitrum = new JsonRpcProvider(arbitrum.rpcUrl)
+const providerAvalanche = new JsonRpcProvider(avalanche.rpcUrl)
 
 const account = {
   addr: '0xa07D75aacEFd11b425AF7181958F0F85c312f143',
@@ -74,6 +78,28 @@ const getAccountsInfo = async (accounts: Account[]): Promise<AccountStates> => {
     ]
   })
   return Object.fromEntries(states)
+}
+
+const smartAccountv2eip712 = {
+  addr: '0x4AA524DDa82630cE769e5C9d7ec7a45B94a41bc6',
+  associatedKeys: ['0x141A14B5C4dbA2aC7a7943E02eDFE2E7eDfdA28F'],
+  creation: {
+    factoryAddr: '0xa8202f888b9b2dfa5ceb2204865018133f6f179a',
+    bytecode:
+      '0x7f00000000000000000000000000000000000000000000000000000000000000027fa70e7c3e588683d0493e3cad10209993d632b6631bc4637b53a4174bad869718553d602d80604d3d3981f3363d3d373d3d3d363d730e370942ebe4d026d05d2cf477ff386338fc415a5af43d82803e903d91602b57fd5bf3',
+    salt: '0x0000000000000000000000000000000000000000000000000000000000000000'
+  }
+}
+
+const trezorSlot6v2NotDeployed = {
+  addr: '0x29e54b17CAe69edaf2D7138053c23436aac1B379',
+  associatedKeys: ['0x71c3D24a627f0416db45107353d8d0A5ae0401ae'],
+  creation: {
+    factoryAddr: '0xa8202f888b9b2dfa5ceb2204865018133f6f179a',
+    bytecode:
+      '0x7f00000000000000000000000000000000000000000000000000000000000000027f3369d2838e4eeae4638428c523923f47cfb9039c70a8c40d546493e82c7ba866553d602d80604d3d3981f3363d3d373d3d3d363d730e370942ebe4d026d05d2cf477ff386338fc415a5af43d82803e903d91602b57fd5bf3',
+    salt: '0x0000000000000000000000000000000000000000000000000000000000000000'
+  }
 }
 
 describe('estimate', () => {
@@ -292,20 +318,9 @@ describe('estimate', () => {
   })
 
   it('estimates an arbitrum request', async () => {
-    const accountArbitrum = {
-      addr: '0x4AA524DDa82630cE769e5C9d7ec7a45B94a41bc6',
-      associatedKeys: ['0x141A14B5C4dbA2aC7a7943E02eDFE2E7eDfdA28F'],
-      creation: {
-        factoryAddr: '0xa8202f888b9b2dfa5ceb2204865018133f6f179a',
-        bytecode:
-          '0x7f00000000000000000000000000000000000000000000000000000000000000027fa70e7c3e588683d0493e3cad10209993d632b6631bc4637b53a4174bad869718553d602d80604d3d3981f3363d3d373d3d3d363d730e370942ebe4d026d05d2cf477ff386338fc415a5af43d82803e903d91602b57fd5bf3',
-        salt: '0x0000000000000000000000000000000000000000000000000000000000000000'
-      }
-    }
-
     const opArbitrum = {
-      accountAddr: accountArbitrum.addr,
-      signingKeyAddr: accountArbitrum.associatedKeys[0],
+      accountAddr: smartAccountv2eip712.addr,
+      signingKeyAddr: smartAccountv2eip712.associatedKeys[0],
       signingKeyType: null,
       gasLimit: null,
       gasFeePayment: null,
@@ -316,18 +331,95 @@ describe('estimate', () => {
       accountOpToExecuteBefore: null
     }
 
-    const accountStates = await getAccountsInfo([accountArbitrum])
+    const accountStates = await getAccountsInfo([smartAccountv2eip712])
     const response = await estimate(
       providerArbitrum,
       arbitrum,
-      accountArbitrum,
+      smartAccountv2eip712,
       opArbitrum,
-      accountStates[accountArbitrum.addr][arbitrum.id],
+      accountStates[smartAccountv2eip712.addr][arbitrum.id],
       nativeToCheck,
       feeTokens
     )
 
     expect(response.arbitrumL1FeeIfArbitrum.noFee).toBeGreaterThan(0n)
     expect(response.arbitrumL1FeeIfArbitrum.withFee).toBeGreaterThan(0n)
+  })
+
+  it('estimates an arbitrum 4337 request that should fail with paymaster deposit too low', async () => {
+    let opArbitrum: AccountOp = {
+      accountAddr: trezorSlot6v2NotDeployed.addr,
+      signingKeyAddr: trezorSlot6v2NotDeployed.associatedKeys[0],
+      signingKeyType: null,
+      gasLimit: null,
+      gasFeePayment: null,
+      networkId: 'arbitrum',
+      nonce: 1n,
+      signature: spoofSig,
+      calls: [{ to, value: BigInt(100000000000), data: '0x' }],
+      accountOpToExecuteBefore: null
+    }
+    const accountStates = await getAccountsInfo([trezorSlot6v2NotDeployed])
+    const accountState = accountStates[trezorSlot6v2NotDeployed.addr][arbitrum.id]
+    opArbitrum = toUserOperation(trezorSlot6v2NotDeployed, accountState, opArbitrum)
+
+    try {
+      await estimate(
+        providerArbitrum,
+        arbitrum,
+        trezorSlot6v2NotDeployed,
+        opArbitrum,
+        accountStates[trezorSlot6v2NotDeployed.addr][arbitrum.id],
+        nativeToCheck,
+        feeTokens,
+        { is4337Broadcast: true }
+      )
+      console.log('Estimation did not fail but it should have')
+      expect(true).toBe(false)
+    } catch (e: any) {
+      const message = Buffer.from(e.message.substring(2), 'hex').toString()
+      expect(message).toContain('paymaster deposit too low')
+    }
+  })
+
+  it('estimates a 4337 request on the avalanche chain with an initCode and 4337 activator', async () => {
+    let opAvalanche: AccountOp = {
+      accountAddr: trezorSlot6v2NotDeployed.addr,
+      signingKeyAddr: trezorSlot6v2NotDeployed.associatedKeys[0],
+      signingKeyType: null,
+      gasLimit: null,
+      gasFeePayment: null,
+      networkId: 'avalanche',
+      nonce: 0n,
+      signature: '0x',
+      calls: [{ to, value: BigInt(100000000000), data: '0x' }],
+      accountOpToExecuteBefore: null
+    }
+    const accountStates = await getAccountsInfo([trezorSlot6v2NotDeployed])
+    const accountState = accountStates[trezorSlot6v2NotDeployed.addr][avalanche.id]
+    opAvalanche = toUserOperation(trezorSlot6v2NotDeployed, accountState, opAvalanche)
+
+    expect(opAvalanche.asUserOperation!.paymasterAndData).toEqual('0x')
+
+    const response = await estimate(
+      providerAvalanche,
+      avalanche,
+      trezorSlot6v2NotDeployed,
+      opAvalanche,
+      accountState,
+      nativeToCheck,
+      feeTokens,
+      { is4337Broadcast: true }
+    )
+
+    expect(opAvalanche.asUserOperation!.paymasterAndData).toEqual('0x')
+
+    expect(response.arbitrumL1FeeIfArbitrum.noFee).toEqual(0n)
+    expect(response.arbitrumL1FeeIfArbitrum.withFee).toEqual(0n)
+
+    expect(response.erc4337estimation).not.toBe(null)
+    expect(response.erc4337estimation?.gasUsed).toBeGreaterThan(0n)
+    expect(response.erc4337estimation?.verificationGasLimit).toBeGreaterThan(5000n)
+    expect(response.erc4337estimation?.callGasLimit).toBeGreaterThan(10000n)
   })
 })

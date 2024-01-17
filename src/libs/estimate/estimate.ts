@@ -4,7 +4,7 @@ import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFactory.json'
 import Estimation from '../../../contracts/compiled/Estimation.json'
 import Estimation4337 from '../../../contracts/compiled/Estimation4337.json'
-import { ERC_4337_ENTRYPOINT } from '../../consts/deploy'
+import { AMBIRE_PAYMASTER, ERC_4337_ENTRYPOINT } from '../../consts/deploy'
 import { SPOOF_SIGTYPE } from '../../consts/signatures'
 import { Account, AccountOnchainState } from '../../interfaces/account'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
@@ -39,6 +39,37 @@ export interface EstimateResult {
   }[]
   erc4337estimation: Erc4337estimation | null
   arbitrumL1FeeIfArbitrum: { noFee: bigint; withFee: bigint }
+}
+
+export function handleEstimationFailure(e: any /* error */, errorFunc: Function, acOp: AccountOp) {
+  const cause = e.cause ?? 'Unknown'
+  const message =
+    cause === 'ERC-4337' ? Buffer.from(e.message.substring(2), 'hex').toString() : e.message
+
+  // TODO<Bobby>: introduce more cases
+  if (message.includes('paymaster deposit too low')) {
+    errorFunc({
+      level: 'major',
+      message: `Paymaster with address ${AMBIRE_PAYMASTER} does not have enough funds to execute this request. Please contact support`,
+      error: e
+    })
+    return
+  }
+
+  if (cause === 'ERC-4337') {
+    errorFunc({
+      level: 'major',
+      message: `Failed to estimate a 4337 Request for ${acOp.accountAddr} on ${acOp.networkId}`,
+      error: e
+    })
+    return
+  }
+
+  errorFunc({
+    level: 'major',
+    message: `Failed to estimate account op for ${acOp.accountAddr} on ${acOp.networkId}`,
+    error: e
+  })
 }
 
 export async function estimate(
@@ -163,7 +194,7 @@ export async function estimate(
   const is4337Broadcast = Boolean(opts && opts.is4337Broadcast)
   const usesOneTimeNonce = is4337Broadcast && shouldUseOneTimeNonce(op.asUserOperation!)
   const IAmbireAccount = new Interface(AmbireAccount.abi)
-  const userOp = Object.assign({}, op.asUserOperation)
+  const userOp = { ...op.asUserOperation! }
   if (is4337Broadcast) {
     userOp!.paymasterAndData = getPaymasterSpoof()
 
@@ -227,11 +258,7 @@ export async function estimate(
   let erc4337estimation: Erc4337estimation | null = null
   if (is4337Broadcast) {
     const [[verificationGasLimit, gasUsed, failure]]: any = estimations[1]
-
-    // TODO<Bobby>: handle estimation failure
-    if (failure !== '0x') {
-      console.log(Buffer.from(failure.substring(2), 'hex').toString())
-    }
+    if (failure !== '0x') throw new Error(failure, { cause: 'ERC-4337' })
 
     erc4337estimation = {
       verificationGasLimit: BigInt(verificationGasLimit) + 5000n, // added buffer,

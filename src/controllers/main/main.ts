@@ -26,7 +26,7 @@ import {
   getNetworksWithFailedRPCBanners,
   getPendingAccountOpBannersForEOA
 } from '../../libs/banners/banners'
-import { estimate, EstimateResult } from '../../libs/estimate/estimate'
+import { estimate, EstimateResult, handleEstimationFailure } from '../../libs/estimate/estimate'
 import { GasRecommendation, getGasPriceRecommendations } from '../../libs/gasPrice/gasPrice'
 import { shouldGetAdditionalPortfolio } from '../../libs/portfolio/helpers'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
@@ -783,12 +783,7 @@ export class MainController extends EventEmitter {
         feeTokens,
         { is4337Broadcast }
       ).catch((e) => {
-        this.emitError({
-          level: 'major',
-          message: `Failed to estimate account op for ${accountOp.accountAddr} on ${accountOp.networkId}`,
-          error: e
-        })
-
+        handleEstimationFailure(e, this.emitError, accountOp)
         return null
       })
     ])
