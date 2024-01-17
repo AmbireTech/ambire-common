@@ -10,15 +10,21 @@ export type ErrorRef = {
 }
 
 export default class EventEmitter {
-  private callbacks: (() => void)[] = []
+  callbacks: {
+    id: string | null
+    cb: () => void
+  }[] = []
 
-  private errorCallbacks: ((error: ErrorRef) => void)[] = []
+  errorCallbacks: {
+    id: string | null
+    cb: (error: ErrorRef) => void
+  }[] = []
 
   #errors: ErrorRef[] = []
 
   protected emitUpdate() {
     // eslint-disable-next-line no-restricted-syntax
-    for (const cb of this.callbacks) cb()
+    for (const i of this.callbacks) i.cb()
   }
 
   protected emitError(error: ErrorRef) {
@@ -26,7 +32,7 @@ export default class EventEmitter {
     this.trimErrorsIfNeeded()
 
     // eslint-disable-next-line no-restricted-syntax
-    for (const cb of this.errorCallbacks) cb(error)
+    for (const i of this.errorCallbacks) i.cb(error)
   }
 
   // Prevents memory leaks and storing huge amount of errors
@@ -42,14 +48,31 @@ export default class EventEmitter {
   }
 
   // returns an unsub function
-  onUpdate(cb: () => void): () => void {
-    this.callbacks.push(cb)
-    return () => this.callbacks.splice(this.callbacks.indexOf(cb), 1)
+  onUpdate(cb: () => void, id?: string): () => void {
+    const callbackId = id || new Date().getTime().toString()
+    this.callbacks.push({
+      id: callbackId,
+      cb
+    })
+
+    return () => {
+      this.callbacks = this.callbacks.filter((callbackItem) => callbackItem.id !== callbackId)
+    }
   }
 
   // returns an unsub function for error events
-  onError(cb: (error: ErrorRef) => void): () => void {
-    this.errorCallbacks.push(cb)
-    return () => this.errorCallbacks.splice(this.errorCallbacks.indexOf(cb), 1)
+  onError(cb: (error: ErrorRef) => void, id?: string): () => void {
+    const callbackId = id || new Date().getTime().toString()
+
+    this.errorCallbacks.push({
+      id: callbackId,
+      cb
+    })
+
+    return () => {
+      this.errorCallbacks = this.errorCallbacks.filter(
+        (callbackItem) => callbackItem.id !== callbackId
+      )
+    }
   }
 }
