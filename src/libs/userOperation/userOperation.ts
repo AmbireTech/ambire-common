@@ -45,7 +45,7 @@ export function toUserOperation(
   account: Account,
   accountState: AccountOnchainState,
   accountOp: AccountOp
-): AccountOp {
+): UserOperation {
   let initCode = '0x'
   let requestType = 'standard'
 
@@ -137,8 +137,7 @@ export function toUserOperation(
   userOperation.paymasterAndData = '0x'
   userOperation.signature = '0x'
   userOperation.requestType = requestType
-  accountOp.asUserOperation = userOperation
-  return accountOp
+  return userOperation
 }
 
 /**
