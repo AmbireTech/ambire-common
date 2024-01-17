@@ -1,3 +1,5 @@
+/* eslint no-console: "off" */
+
 import { AbiCoder, JsonRpcProvider } from 'ethers'
 import { AccountOp } from 'libs/accountOp/accountOp'
 import fetch from 'node-fetch'
@@ -56,6 +58,11 @@ const feeTokens = [
   { address: '0x0000000000000000000000000000000000000000', isGasTank: false, amount: 1n },
   { address: '0xdAC17F958D2ee523a2206206994597C13D831ec7', isGasTank: false, amount: 1n },
   { address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48', isGasTank: false, amount: 1n }
+]
+
+const feeTokensAvalanche = [
+  { address: '0x0000000000000000000000000000000000000000', isGasTank: false, amount: 1n },
+  { address: '0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E', isGasTank: false, amount: 1n }
 ]
 
 const portfolio = new Portfolio(fetch, provider, ethereum)
@@ -412,7 +419,7 @@ describe('estimate', () => {
       opAvalanche,
       accountState,
       nativeToCheck,
-      feeTokens,
+      feeTokensAvalanche,
       { is4337Broadcast: true }
     )
 
@@ -425,5 +432,12 @@ describe('estimate', () => {
     expect(response.erc4337estimation?.gasUsed).toBeGreaterThan(0n)
     expect(response.erc4337estimation?.verificationGasLimit).toBeGreaterThan(5000n)
     expect(response.erc4337estimation?.callGasLimit).toBeGreaterThan(10000n)
+
+    expect(response.feePaymentOptions.length).toBeGreaterThan(0)
+    response.feePaymentOptions.forEach((opt) => {
+      expect(opt.addedNative).toBe(0n)
+      // no basic acc payment
+      expect(opt.paidBy).toBe(trezorSlot6v2NotDeployed.addr)
+    })
   })
 })

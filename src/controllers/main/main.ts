@@ -88,7 +88,7 @@ export class MainController extends EventEmitter {
 
   signAccountOp: SignAccountOpController | null = null
 
-  signAccountOpListener: ReturnType<EventEmitter['onUpdate']> = () => {}
+  static signAccountOpListener: ReturnType<EventEmitter['onUpdate']> = () => {}
 
   signAccOpInitError: string | null = null
 
@@ -347,7 +347,9 @@ export class MainController extends EventEmitter {
         await this.broadcastSignedAccountOp(this.signAccountOp.accountOp)
       }
     }
-    this.signAccountOpListener = this.signAccountOp.onUpdate(broadcastSignedAccountOpIfNeeded)
+    MainController.signAccountOpListener = this.signAccountOp.onUpdate(
+      broadcastSignedAccountOpIfNeeded
+    )
 
     this.emitUpdate()
 
@@ -356,7 +358,7 @@ export class MainController extends EventEmitter {
 
   destroySignAccOp() {
     this.signAccountOp = null
-    this.signAccountOpListener() // unsubscribes for further updates
+    MainController.signAccountOpListener() // unsubscribes for further updates
     this.emitUpdate()
   }
 
