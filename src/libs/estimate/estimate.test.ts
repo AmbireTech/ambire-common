@@ -347,7 +347,7 @@ describe('estimate', () => {
   })
 
   it('estimates an arbitrum 4337 request that should fail with paymaster deposit too low', async () => {
-    let opArbitrum: AccountOp = {
+    const opArbitrum: AccountOp = {
       accountAddr: trezorSlot6v2NotDeployed.addr,
       signingKeyAddr: trezorSlot6v2NotDeployed.associatedKeys[0],
       signingKeyType: null,
@@ -361,7 +361,7 @@ describe('estimate', () => {
     }
     const accountStates = await getAccountsInfo([trezorSlot6v2NotDeployed])
     const accountState = accountStates[trezorSlot6v2NotDeployed.addr][arbitrum.id]
-    opArbitrum = toUserOperation(trezorSlot6v2NotDeployed, accountState, opArbitrum)
+    opArbitrum.asUserOperation = toUserOperation(trezorSlot6v2NotDeployed, accountState, opArbitrum)
 
     try {
       await estimate(
@@ -383,7 +383,7 @@ describe('estimate', () => {
   })
 
   it('estimates a 4337 request on the avalanche chain with an initCode and 4337 activator', async () => {
-    let opAvalanche: AccountOp = {
+    const opAvalanche: AccountOp = {
       accountAddr: trezorSlot6v2NotDeployed.addr,
       signingKeyAddr: trezorSlot6v2NotDeployed.associatedKeys[0],
       signingKeyType: null,
@@ -397,7 +397,11 @@ describe('estimate', () => {
     }
     const accountStates = await getAccountsInfo([trezorSlot6v2NotDeployed])
     const accountState = accountStates[trezorSlot6v2NotDeployed.addr][avalanche.id]
-    opAvalanche = toUserOperation(trezorSlot6v2NotDeployed, accountState, opAvalanche)
+    opAvalanche.asUserOperation = toUserOperation(
+      trezorSlot6v2NotDeployed,
+      accountState,
+      opAvalanche
+    )
 
     expect(opAvalanche.asUserOperation!.paymasterAndData).toEqual('0x')
 

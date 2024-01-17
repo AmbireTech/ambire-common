@@ -700,6 +700,9 @@ export class MainController extends EventEmitter {
 
   // @TODO: protect this from race conditions/simultanous executions
   async #estimateAccountOp(accountOp: AccountOp) {
+    // make a local copy to avoid updating the main reference
+    const localAccountOp: AccountOp = { ...accountOp }
+
     await this.#initialLoadPromise
     // new accountOps should have spoof signatures so that they can be easily simulated
     // this is not used by the Estimator, because it iterates through all associatedKeys and
@@ -709,7 +712,7 @@ export class MainController extends EventEmitter {
 
     // TODO check if needed data in accountStates are available
     // this.accountStates[accountOp.accountAddr][accountOp.networkId].
-    const account = this.accounts.find((x) => x.addr === accountOp.accountAddr)
+    const account = this.accounts.find((x) => x.addr === localAccountOp.accountAddr)
 
     // Here, we list EOA accounts for which you can also obtain an estimation of the AccountOp payment.
     // In the case of operating with a smart account (an account with creation code), all other EOAs can pay the fee.
@@ -724,9 +727,10 @@ export class MainController extends EventEmitter {
     // NOTE: at some point we should check all the "?" signs below and if
     // an error pops out, we should notify the user about it
     const networkFeeTokens =
-      this.portfolio.latest?.[accountOp.accountAddr]?.[accountOp.networkId]?.result?.tokens ?? []
+      this.portfolio.latest?.[localAccountOp.accountAddr]?.[localAccountOp.networkId]?.result
+        ?.tokens ?? []
     const gasTankFeeTokens =
-      this.portfolio.latest?.[accountOp.accountAddr]?.gasTank?.result?.tokens ?? []
+      this.portfolio.latest?.[localAccountOp.accountAddr]?.gasTank?.result?.tokens ?? []
 
     const feeTokens =
       [...networkFeeTokens, ...gasTankFeeTokens]
@@ -738,22 +742,22 @@ export class MainController extends EventEmitter {
         })) || []
 
     if (!account)
-      throw new Error(`estimateAccountOp: ${accountOp.accountAddr}: account does not exist`)
-    const network = this.settings.networks.find((x) => x.id === accountOp.networkId)
+      throw new Error(`estimateAccountOp: ${localAccountOp.accountAddr}: account does not exist`)
+    const network = this.settings.networks.find((x) => x.id === localAccountOp.networkId)
     if (!network)
-      throw new Error(`estimateAccountOp: ${accountOp.networkId}: network does not exist`)
+      throw new Error(`estimateAccountOp: ${localAccountOp.networkId}: network does not exist`)
 
     // start transforming the accountOp to userOp if the network is 4337
     // and it's not a legacy account
     const is4337Broadcast = isErc4337Broadcast(
       network,
-      this.accountStates[accountOp.accountAddr][accountOp.networkId]
+      this.accountStates[localAccountOp.accountAddr][localAccountOp.networkId]
     )
     if (is4337Broadcast) {
-      accountOp = toUserOperation(
+      localAccountOp.asUserOperation = toUserOperation(
         account,
-        this.accountStates[accountOp.accountAddr][accountOp.networkId],
-        accountOp
+        this.accountStates[localAccountOp.accountAddr][localAccountOp.networkId],
+        localAccountOp
       )
     }
     const [, , estimation] = await Promise.all([
@@ -763,45 +767,47 @@ export class MainController extends EventEmitter {
       this.portfolio.updateSelectedAccount(
         this.accounts,
         this.settings.networks,
-        accountOp.accountAddr,
+        localAccountOp.accountAddr,
         Object.fromEntries(
-          Object.entries(this.accountOpsToBeSigned[accountOp.accountAddr])
+          Object.entries(this.accountOpsToBeSigned[localAccountOp.accountAddr])
             .filter(([, accOp]) => accOp)
             .map(([networkId, x]) => [networkId, [x!.accountOp]])
         )
       ),
       shouldGetAdditionalPortfolio(account) &&
-        this.portfolio.getAdditionalPortfolio(accountOp.accountAddr),
+        this.portfolio.getAdditionalPortfolio(localAccountOp.accountAddr),
       estimate(
-        this.settings.providers[accountOp.networkId],
+        this.settings.providers[localAccountOp.networkId],
         network,
         account,
-        accountOp,
-        this.accountStates[accountOp.accountAddr][accountOp.networkId],
+        localAccountOp,
+        this.accountStates[localAccountOp.accountAddr][localAccountOp.networkId],
         EOAaccounts.map((acc) => acc.addr),
         // @TODO - first time calling this, portfolio is still not loaded.
         feeTokens,
         { is4337Broadcast }
       ).catch((e) => {
-        handleEstimationFailure(e, this.emitError, accountOp)
+        handleEstimationFailure(e, this.emitError, localAccountOp)
         return null
       })
     ])
 
     if (!estimation) return
-    this.accountOpsToBeSigned[accountOp.accountAddr] ||= {}
+    this.accountOpsToBeSigned[localAccountOp.accountAddr] ||= {}
     // @TODO compare intent between accountOp and this.accountOpsToBeSigned[accountOp.accountAddr][accountOp.networkId].accountOp
-    this.accountOpsToBeSigned[accountOp.accountAddr][accountOp.networkId]!.estimation = estimation
+    this.accountOpsToBeSigned[localAccountOp.accountAddr][localAccountOp.networkId]!.estimation =
+      estimation
 
     // add the estimation to the user operation
     if (is4337Broadcast) {
-      accountOp.asUserOperation!.verificationGasLimit = ethers.toBeHex(
+      localAccountOp.asUserOperation!.verificationGasLimit = ethers.toBeHex(
         estimation.erc4337estimation!.verificationGasLimit
       )
-      accountOp.asUserOperation!.callGasLimit = ethers.toBeHex(
+      localAccountOp.asUserOperation!.callGasLimit = ethers.toBeHex(
         estimation.erc4337estimation!.callGasLimit
       )
-      this.accountOpsToBeSigned[accountOp.accountAddr][accountOp.networkId]!.accountOp = accountOp
+      this.accountOpsToBeSigned[localAccountOp.accountAddr][localAccountOp.networkId]!.accountOp =
+        localAccountOp
     }
   }
 
