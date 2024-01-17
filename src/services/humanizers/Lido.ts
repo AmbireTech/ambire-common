@@ -1,0 +1,95 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
+/* eslint-disable import/no-cycle */
+// @ts-nocheck
+/* eslint-disable @typescript-eslint/naming-convention */
+import { Interface } from 'ethers/lib/utils'
+import { token, getName, nativeToken } from '../humanReadableTransactions'
+
+function getAddress(humanizerInfo, address) {
+  return {
+    type: 'address',
+    address,
+    name: getName(humanizerInfo, address)
+  }
+}
+const MATIC_ON_ETH_ADDRESS = '0x7d1afa7b718fb893db30a3abc0cfc608aacfebb0'
+const Lido = (humanizerInfo) => {
+  const ifaceETH = new Interface(humanizerInfo.abis.LidoStETH)
+  const ifaceMATIC = new Interface(humanizerInfo.abis.LidoStMATIC)
+  const unstIfaceETH = new Interface(humanizerInfo.abis.unstETH)
+
+  return {
+    [ifaceETH.getSighash('submit')]: (txn, network, { extended }) => {
+      const { _positionId, _recipient } = ifaceETH.parseTransaction(txn).args
+      if (extended)
+        return [
+          _recipient === txn.from
+            ? [`Stake ${nativeToken(network, txn.value)}`]
+            : [
+                'Stake',
+                {
+                  type: 'token',
+                  ...(nativeToken(network, txn.value, true) as object)
+                },
+                'to',
+                getAddress(humanizerInfo, txn.to)
+              ]
+        ]
+      return [
+        _recipient === txn.from
+          ? [`Withdraw swapped tokens from position ${_positionId}`]
+          : [`Send swapped tokens from position ${_positionId} to ${_recipient}`]
+      ]
+    },
+    [unstIfaceETH.getSighash('requestWithdrawals(uint256[],address)')]: (
+      txn,
+      network,
+      { extended }
+    ) => {
+      const { _amounts, _owner } = unstIfaceETH.parseTransaction(txn).args
+      if (extended) {
+        return [
+          _owner === txn.from || _owner === '0x0000000000000000000000000000000000000000'
+            ? ['Request', 'withdrawal from', getAddress(humanizerInfo, txn.to)]
+            : [
+                'Request',
+                'withdrawal from',
+                getAddress(humanizerInfo, txn.to),
+                'for',
+                getAddress(humanizerInfo, _owner)
+              ]
+        ]
+      }
+      return _owner === txn.from || _owner === '0x0000000000000000000000000000000000000000'
+        ? [`Request withdrawal from ${getName(humanizerInfo, txn.to)}`]
+        : [`Request withdrawal from ${getName(humanizerInfo, txn.to)} for ${_owner}`]
+    },
+    [ifaceMATIC.getSighash('submit')]: (txn, network, { extended }) => {
+      const { _amount } = ifaceMATIC.parseTransaction(txn).args
+      if (extended)
+        return [
+          [
+            'Stake',
+            {
+              type: 'token',
+              ...(token(humanizerInfo, MATIC_ON_ETH_ADDRESS, _amount, true) as object)
+            }
+          ]
+        ]
+      return [[`Stake ${token(humanizerInfo, MATIC_ON_ETH_ADDRESS, _amount)}`]]
+    },
+    [ifaceMATIC.getSighash('requestWithdraw')]: (txn, network, { extended }) => {
+      const { _amount } = ifaceMATIC.parseTransaction(txn).args
+      if (extended) {
+        return [
+          [
+            'Withdraw',
+            { type: 'token', ...token(humanizerInfo, MATIC_ON_ETH_ADDRESS, _amount, true) }
+          ]
+        ]
+      }
+      return [[`Withdraw  ${token(humanizerInfo, MATIC_ON_ETH_ADDRESS, _amount)}`]]
+    }
+  }
+}
+export default Lido
