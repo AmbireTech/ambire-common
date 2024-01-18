@@ -3,7 +3,7 @@ import {
   EmailVaultData,
   EmailVaultSecret,
   RecoveryKey,
-  Operation
+  EmailVaultOperation
 } from '../../interfaces/emailVault'
 
 export interface Secret {
@@ -36,7 +36,10 @@ export class EmailVault {
   }
 
   async getEmailVaultInfo(email: String, authKey: String): Promise<EmailVaultData | null> {
-    const result = (await this.callRelayer(`/email-vault/emailVaultInfo/${email}/${authKey}`)).data
+    const result = await this.callRelayer(`/email-vault/emailVaultInfo/${email}/${authKey}`).then(
+      (res: any) => res.data
+    )
+
     return {
       ...result,
       availableAccounts: Object.fromEntries(
@@ -51,10 +54,22 @@ export class EmailVault {
   async operations(
     email: String,
     authKey: String,
-    operations: Operation[]
-  ): Promise<Operation[] | null> {
+    operations: EmailVaultOperation[]
+  ): Promise<EmailVaultOperation[] | null> {
     return (
       await this.callRelayer(`/email-vault/operation/${email}/${authKey}`, 'POST', {
+        operations
+      })
+    ).data
+  }
+
+  async getOperations(
+    email: String,
+    authKey: String,
+    operations: EmailVaultOperation[]
+  ): Promise<EmailVaultOperation[] | null> {
+    return (
+      await this.callRelayer(`/email-vault/getOperations/${email}/${authKey}`, 'POST', {
         operations
       })
     ).data

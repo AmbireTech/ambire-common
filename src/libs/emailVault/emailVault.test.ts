@@ -11,8 +11,8 @@ let email2: String
 
 // @NOTE: this should be changed in future tests. We should have proper e2e tests with email inbox reading. Once done, this isn't needed
 // Relayer has to be start with NODE_ENV === 'testing' to retrive the secret for email vonfirmation
-const relayerUrl = 'https://staging-relayer.ambire.com'
-// const relayerUrl: string = 'http://localhost:1934'
+// const relayerUrl = 'https://staging-relayer.ambire.com'
+const relayerUrl: string = 'http://localhost:1934'
 
 const callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
 const emailVault = new EmailVault(fetch, relayerUrl)
@@ -89,7 +89,7 @@ describe('happy cases email vault', () => {
     const operations = [
       {
         // id?: string
-        requestType: 'sync data',
+        type: 'sync data',
         requester: 'me',
         key: 'public key'
         // value?: string

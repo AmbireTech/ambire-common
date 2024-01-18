@@ -28,12 +28,13 @@ export enum OperationRequestType {
 // key - in the context of the EV and syncing keys this is the address for the EOA we want th eprivate key (might not be applicable for (if any) new operation types )
 // value - the fetched value
 // @TODO: add OTP for key syncing requests
-export interface Operation {
+export interface EmailVaultOperation {
   id?: string
-  requestType: string
+  type: string
   requester: string
   key: string
   value?: string
+  password?: string
 }
 
 export interface EmailVaultData {
@@ -41,7 +42,7 @@ export interface EmailVaultData {
   email: string
   availableAccounts: { [addr: string]: EmailVaultAccountInfo }
   availableSecrets: { [key: string]: EmailVaultSecret }
-  operations: Operation[]
+  operations: EmailVaultOperation[]
 }
 
 export interface RecoveryKey {

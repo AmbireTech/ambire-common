@@ -6,13 +6,13 @@ import { Banner } from '../../interfaces/banner'
 import {
   EmailVaultData,
   EmailVaultSecret,
-  Operation,
+  EmailVaultOperation,
   SecretType
 } from '../../interfaces/emailVault'
 import { Storage } from '../../interfaces/storage'
 import { getKeySyncBanner } from '../../libs/banners/banners'
 import { EmailVault } from '../../libs/emailVault/emailVault'
-import EventEmitter from '../../libs/eventEmitter/eventEmitter'
+import EventEmitter, { ErrorRef } from '../../libs/eventEmitter/eventEmitter'
 import { requestMagicLink } from '../../libs/magicLink/magicLink'
 import { Polling } from '../../libs/polling/polling'
 import wait from '../../utils/wait'
@@ -47,9 +47,15 @@ function base64UrlEncode(str: string) {
   return str.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 }
 
-// DOCS
-// extended documentation about the EV and its internal mechanisms
-// https://github.com/AmbireTech/ambire-common/wiki/Email-Vault-Documentation
+/**
+ * EmailVaultController
+ * @class
+ * The purpouse of this controller is to provide easy interface to the EmailVault, keystore and magic link libraries
+ * The most important thing it achieves is handling magicLink and session keys with polling.
+ * Emits the porper states e.g. loading, ready, awaiting email magicLink confirmation etc.
+ * Extended documentation about the EV and its internal mechanisms
+ * https://github.com/AmbireTech/ambire-common/wiki/Email-Vault-Documentation
+ */
 export class EmailVaultController extends EventEmitter {
   private storage: Storage
 
@@ -123,19 +129,15 @@ export class EmailVaultController extends EventEmitter {
 
   async #requestSessionKey(email: string) {
     // if magicLinkKey => get sessionKey
-    // <<==>>
     const key = (await this.#getMagicLinkKey(email))?.key
     if (!key) return
     this.#sessionKeys[email] = await this.#emailVault.getSessionKey(email, key)
-    // <<==>>
 
     // store magicLinkKey and sessionKey
-    // <<==>>
     await Promise.all([
       this.storage.set(MAGIC_LINK_STORAGE_KEY, this.#magicLinkKeys),
       this.storage.set(SESSION_KEYS_STORAGE_KEY, this.#sessionKeys)
     ])
-    // <<==>>
   }
 
   async #handleMagicLinkKey(email: string, fn: Function) {
@@ -157,7 +159,13 @@ export class EmailVaultController extends EventEmitter {
         this.#isWaitingEmailConfirmation = true
         this.emitUpdate()
       } else if (polling.state.isError) {
-        // @NOTE: we now have this.emitError()
+        this.emitError({
+          message: `Can't request magic link for email ${email}: ${polling.state.error.message}`,
+          level: 'major',
+          error: new Error(
+            `Can't request magic link for email ${email}: ${polling.state.error.message}`
+          )
+        })
         this.emailVaultStates.errors = [polling.state.error]
         this.emitUpdate()
       }
@@ -183,21 +191,17 @@ export class EmailVaultController extends EventEmitter {
   }
 
   async #getSessionKey(email: string): Promise<string | null> {
-    // <<==>>
     await this.initialLoadPromise
     return this.#sessionKeys[email]
-    // <<==>>
   }
 
   async #getMagicLinkKey(email: string): Promise<MagicLinkKey | null> {
     // if we have valid magicLinkKey => returns it else null
-    // <<==>>
     await this.initialLoadPromise
     const result = this.#magicLinkKeys[email]
     if (!result || !result.confirmed) return null
     if (new Date().getTime() - result.requestedAt.getTime() > this.#magicLinkLifeTime) return null
     return result
-    // <<==>>
   }
 
   #parseMagicLinkKeys(mks: any): MagicLinkKeys {
@@ -224,21 +228,27 @@ export class EmailVaultController extends EventEmitter {
 
     let emailVault: EmailVaultData | null = null
     if (key) {
-      emailVault = await this.#emailVault.getEmailVaultInfo(email, key) // .catch(() => null)
+      emailVault = await this.#emailVault.getEmailVaultInfo(email, key).catch((e: any) => {
+        this.emitError({
+          message: `Error getting email vault for ${email} ${e.message}`,
+          level: 'major',
+          error: new Error(`Error getting email vault for ${email} ${e.message}`)
+        })
+        this.emailVaultStates.errors = []
+        this.emailVaultStates.errors = [new Error('error retrieving data for email vault')]
+
+        return null
+      })
     } else {
       await this.#handleMagicLinkKey(email, () => this.#getEmailVaultInfo(email))
     }
 
     if (emailVault) {
-      this.emailVaultStates.errors = []
       this.emailVaultStates.email[email] = emailVault
-
       await this.storage.set(EMAIL_VAULT_STORAGE_KEY, this.emailVaultStates)
       if (!existsSessionKey) {
         await this.#requestSessionKey(email)
       }
-    } else {
-      this.emailVaultStates.errors = [new Error('error retrieving data for email vault')]
     }
 
     this.#isWaitingEmailConfirmation = false
@@ -352,8 +362,8 @@ export class EmailVaultController extends EventEmitter {
       this.#keyStore.getKeyStoreUid()
     ])
 
-    const operations: Operation[] = keys.map((key) => ({
-      requestType: 'requestKeySync',
+    const operations: EmailVaultOperation[] = keys.map((key) => ({
+      type: 'requestKeySync',
       requester: keyStoreUid,
       key
     }))
@@ -365,60 +375,78 @@ export class EmailVaultController extends EventEmitter {
       ))!
       this.emailVaultStates.email[email].operations = newOperations
       this.emitUpdate()
-      await this.#handleKeysSync(email, newOperations)
     }
     await this.#handleMagicLinkKey(email, () => this.#requestKeysSync(email, keys))
   }
 
-  async #handleKeysSync(email: string, operations: Operation[]) {
-    let fulfilled = false
-    const requestedKeys = operations.map((op) => op.key)
-    while (!fulfilled) {
-      const authKey =
-        (await this.#getMagicLinkKey(email))?.key || (await this.#getSessionKey(email))
-      if (authKey) {
-        // eslint-disable-next-line no-await-in-loop
-        const cloudOperations = (await this.#emailVault.getEmailVaultInfo(email, authKey))
-          ?.operations
-        if (!cloudOperations) this.emailVaultStates.errors?.push(new Error('No keys to sync'))
-
-        fulfilled = !!cloudOperations
-          ?.filter((op) => requestedKeys.includes(op.key))
-          .map((op) => !!op.value)
-          .reduce((a, b) => a && b, !!cloudOperations.length)
-
-        if (fulfilled) {
-          for (let i = 0; i < cloudOperations!.length; i++) {
-            const op = cloudOperations![i]
-            const { privateKey } = JSON.parse(op?.value || '{}')
-            if (op.requestType === 'requestKeySync') {
-              await this.#keyStore.importKeyWithPublicKeyEncryption(privateKey, true)
-            }
-          }
-          this.emailVaultStates.email[email].operations = cloudOperations!
-          this.emitUpdate()
-          return
-        }
-        await wait(500)
-      } else {
-        await this.#handleMagicLinkKey(email, () => this.#handleKeysSync(email, operations))
+  async #finalizeSyncKeys(email: string, operations: EmailVaultOperation[]) {
+    const authKey = (await this.#getMagicLinkKey(email))?.key || (await this.#getSessionKey(email))
+    if (authKey) {
+      const cloudOperations = await this.#emailVault
+        .getOperations(email, authKey, operations)
+        .catch((e) => {
+          this.emitError({
+            message: `Can't pull operations: ${e}`,
+            level: 'major',
+            error: new Error(`Can't pull operations: ${e}`)
+          })
+        })
+      if (!cloudOperations) {
+        this.emitError({
+          message: "Can't pull operations",
+          level: 'major',
+          error: new Error("Can't pull operations")
+        })
       }
+
+      // Promise.all makes race conditions
+      for (let i = 0; i < cloudOperations!.length; i++) {
+        const op = cloudOperations![i]
+        if (op.type === 'requestKeySync' && op.value) {
+          const { privateKey } = JSON.parse(op.value || '{}')
+          await this.#keyStore.importKeyWithPublicKeyEncryption(privateKey, true)
+        }
+      }
+      this.emitUpdate()
+    } else {
+      await this.#handleMagicLinkKey(email, () => this.#finalizeSyncKeys(email, operations))
     }
+  }
+
+  async finalizeSyncKeys(email: string, keys: string[]) {
+    const operations: any[] = keys
+      .map((key) => {
+        const res = this.emailVaultStates.email[email].operations.find((op) => op.key === key)
+        if (!res) {
+          this.emitError({
+            message: `No sync request for key ${key}`,
+            level: 'major',
+            error: new Error(`No sync request for key ${key}`)
+          })
+          return null
+        }
+        return res
+      })
+      .filter((x) => x)
+    await this.#wrapEmailVaultPublicMethod('finalizeSyncRequest', () =>
+      this.#finalizeSyncKeys(email, operations)
+    )
   }
 
   // DOCS
   // this function:
   // - checks if there are sync requests via the operations route of the relayer
   // - exports the encrypted private key and sends it back to the relayer (fulfills)
+  // @TODO add password
   async fulfillSyncRequests(email: string) {
     await this.#getEmailVaultInfo(email)
     const operations = this.emailVaultStates.email[email].operations
     const key = (await this.#getMagicLinkKey(email))?.key || (await this.#getSessionKey(email))
     if (key) {
       // pull keys from keystore for every operation
-      const newOperations: Operation[] = await Promise.all(
-        operations.map(async (op): Promise<Operation> => {
-          if (op.requestType === 'requestKeySync') {
+      const newOperations: EmailVaultOperation[] = await Promise.all(
+        operations.map(async (op): Promise<EmailVaultOperation> => {
+          if (op.type === 'requestKeySync') {
             return {
               ...op,
               value: JSON.stringify({

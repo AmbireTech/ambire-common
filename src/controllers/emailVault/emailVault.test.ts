@@ -38,8 +38,8 @@ const getRandomEmail = () => {
   return `unufri+${Math.random().toString().slice(2)}@ambire.com`
 }
 let storage: Storage
-const relayerUrl: string = 'https://staging-relayer.ambire.com'
-// const relayerUrl: string = 'http://localhost:1934'
+// const relayerUrl: string = 'https://staging-relayer.ambire.com'
+const relayerUrl: string = 'http://localhost:1934'
 let keystore: KeystoreController
 let email: string
 describe('happy cases', () => {
@@ -105,7 +105,7 @@ describe('happy cases', () => {
     expect(keystore.isUnlocked).toBeTruthy()
   })
 
-  test('request key sync', async () => {
+  test('full keystore sync', async () => {
     const [storage2, keystore2] = [
       produceMemoryStore(),
       new KeystoreController(produceMemoryStore(), keystoreSigners)
@@ -134,52 +134,20 @@ describe('happy cases', () => {
     await ev2.getEmailVaultInfo(email)
     await keystore2.addSecret('smth2', 'secret2', '', false)
     await keystore2.unlockWithSecret('smth2', 'secret2')
-    ev2.onUpdate(async () => {
-      if (ev2.emailVaultStates.email[email].operations[0]?.id) {
-        await ev.fulfillSyncRequests(email)
-      }
-    })
+
+    // make two sync requests
     await ev2.requestKeysSync(
       email,
       keys.map((k) => k.address)
     )
-    expect(JSON.parse(ev2.emailVaultStates.email[email].operations[0].value || '{}')).toMatchObject(
-      {
-        privateKey: {
-          iv: expect.anything(),
-          ephemPublicKey: expect.anything(),
-          ciphertext: expect.anything(),
-          mac: expect.anything()
-        }
-      }
+    expect(ev2.emailVaultStates.email[email].operations.length).toBe(2)
+
+    await ev.fulfillSyncRequests(email)
+    expect(ev.emailVaultStates.email[email].operations.length).toBe(2)
+    await ev2.finalizeSyncKeys(
+      email,
+      keys.map((k) => k.address)
     )
-    expect(JSON.parse(ev2.emailVaultStates.email[email].operations[1].value || '{}')).toMatchObject(
-      {
-        privateKey: {
-          iv: expect.anything(),
-          ephemPublicKey: expect.anything(),
-          ciphertext: expect.anything(),
-          mac: expect.anything()
-        }
-      }
-    )
-    expect(await keystore2.getSigner(keys[0].address, 'internal')).toMatchObject({
-      key: {
-        addr: keys[0].address,
-        type: 'internal',
-        meta: null,
-        isExternallyStored: false
-      },
-      privKey: keys[0].privateKey
-    })
-    expect(await keystore2.getSigner(keys[1].address, 'internal')).toMatchObject({
-      key: {
-        addr: keys[1].address,
-        type: 'internal',
-        meta: null,
-        isExternallyStored: false
-      },
-      privKey: keys[1].privateKey
-    })
+    expect(await keystore2.getKeys().then((d) => d.length)).toBe(2)
   })
 })
