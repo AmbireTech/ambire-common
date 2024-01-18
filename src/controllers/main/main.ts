@@ -26,7 +26,7 @@ import {
   getNetworksWithFailedRPCBanners,
   getPendingAccountOpBannersForEOA
 } from '../../libs/banners/banners'
-import { estimate, EstimateResult, handleEstimationFailure } from '../../libs/estimate/estimate'
+import { estimate, EstimateResult, getEstimationFailure } from '../../libs/estimate/estimate'
 import { GasRecommendation, getGasPriceRecommendations } from '../../libs/gasPrice/gasPrice'
 import { shouldGetAdditionalPortfolio } from '../../libs/portfolio/helpers'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
@@ -789,7 +789,7 @@ export class MainController extends EventEmitter {
         feeTokens,
         { is4337Broadcast }
       ).catch((e) => {
-        handleEstimationFailure(e, this.emitError, localAccountOp)
+        this.emitError(getEstimationFailure(e, localAccountOp))
         return null
       })
     ])
