@@ -694,10 +694,15 @@ export class MainController extends EventEmitter {
       }
     ])
 
-    const gasPrices = this.gasPrices[networkId]
-    const estimation = this.accountOpsToBeSigned[accountAddr]?.[networkId]?.estimation
-    this.signAccountOp.update({ gasPrices, ...(estimation && { estimation }) })
-    this.emitUpdate()
+    // there's a chance signAccountOp gets destroyed between the time
+    // the first "if (!this.signAccountOp) return" is performed and
+    // the time we get here. To prevent issues, we check one more time
+    if (this.signAccountOp) {
+      const gasPrices = this.gasPrices[networkId]
+      const estimation = this.accountOpsToBeSigned[accountAddr]?.[networkId]?.estimation
+      this.signAccountOp.update({ gasPrices, ...(estimation && { estimation }) })
+      this.emitUpdate()
+    }
   }
 
   // @TODO: protect this from race conditions/simultanous executions
@@ -811,6 +816,10 @@ export class MainController extends EventEmitter {
       this.accountOpsToBeSigned[localAccountOp.accountAddr][localAccountOp.networkId]!.accountOp =
         localAccountOp
     }
+
+    // update the signAccountOp controller once estimation finishes;
+    // this eliminates the infinite loading bug if the estimation comes slower
+    if (this.signAccountOp) this.signAccountOp.update({ estimation })
   }
 
   /**
