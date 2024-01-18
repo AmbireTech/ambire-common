@@ -173,7 +173,7 @@ export class SignAccountOpController extends EventEmitter {
         this.emitUpdate()
       },
       (err) => this.emitError(err)
-    )
+    ).catch((err) => this.emitError(err))
   }
 
   get errors(): string[] {
@@ -631,7 +631,6 @@ export class SignAccountOpController extends EventEmitter {
     const gasFeePayment = this.accountOp.gasFeePayment
 
     if (signer.init) signer.init(this.#externalSignerControllers[this.accountOp.signingKeyType])
-    const provider = this.#settings.providers[this.accountOp.networkId]
     const accountState =
       this.#accountStates![this.accountOp!.accountAddr][this.accountOp!.networkId]
     try {
@@ -733,6 +732,7 @@ export class SignAccountOpController extends EventEmitter {
         }
 
         if (userOperation.requestType === 'standard') {
+          const provider = this.#settings.providers[this.accountOp.networkId]
           const entryPoint: any = new ethers.BaseContract(
             ERC_4337_ENTRYPOINT,
             EntryPointAbi,

@@ -1,22 +1,28 @@
+/* eslint no-console: "off" */
+
 import { ethers, JsonRpcProvider } from 'ethers'
-import { TokenResult } from 'libs/portfolio'
 import fetch from 'node-fetch'
 
 import { describe, expect, jest, test } from '@jest/globals'
 
+import EntryPointAbi from '../../../contracts/compiled/EntryPoint.json'
+import { trezorSlot7v24337Deployed } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
+import { ERC_4337_ENTRYPOINT } from '../../consts/deploy'
 import humanizerJSON from '../../consts/humanizerInfo.json'
 import { networks } from '../../consts/networks'
 import { Account, AccountStates } from '../../interfaces/account'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
 import { Storage } from '../../interfaces/storage'
-import { accountOpSignableHash } from '../../libs/accountOp/accountOp'
+import { AccountOp, accountOpSignableHash } from '../../libs/accountOp/accountOp'
 import { getAccountState } from '../../libs/accountState/accountState'
-import { estimate, EstimateResult } from '../../libs/estimate/estimate'
+import { estimate, EstimateResult, FeeToken } from '../../libs/estimate/estimate'
 import * as gasPricesLib from '../../libs/gasPrice/gasPrice'
 import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
+import { TokenResult } from '../../libs/portfolio'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { getTypedData } from '../../libs/signMessage/signMessage'
+import { toUserOperation } from '../../libs/userOperation/userOperation'
 import { KeystoreController } from '../keystore/keystore'
 import { PortfolioController } from '../portfolio/portfolio'
 import { SettingsController } from '../settings/settings'
@@ -43,7 +49,14 @@ const getAccountsInfo = async (accounts: Account[]): Promise<AccountStates> => {
   return Object.fromEntries(states)
 }
 
-const createAccountOp = (account: Account, networkId: NetworkId = 'ethereum') => {
+const createAccountOp = (
+  account: Account,
+  networkId: NetworkId = 'ethereum'
+): {
+  op: AccountOp
+  nativeToCheck: string[]
+  feeTokens: FeeToken[]
+} => {
   const to = '0x68b3465833fb72a70ecdf485e0e4c7bd8665fc45'
 
   const tomorrowHex = Math.floor((Date.now() + 86400000) / 1000).toString(16)
@@ -60,11 +73,11 @@ const createAccountOp = (account: Account, networkId: NetworkId = 'ethereum') =>
     {
       address: '0x0000000000000000000000000000000000000000',
       isGasTank: false,
-      amount: 1
+      amount: 1n
     }
   ]
 
-  const op = {
+  const op: AccountOp = {
     accountAddr: account.addr,
     signingKeyAddr: null,
     signingKeyType: null,
@@ -86,7 +99,13 @@ const createEOAAccountOp = (account: Account) => {
   const data = '0x'
 
   const nativeToCheck = [account.addr]
-  const feeTokens = ['0x0000000000000000000000000000000000000000']
+  const feeTokens = [
+    {
+      address: '0x0000000000000000000000000000000000000000',
+      isGasTank: false,
+      amount: 1n
+    }
+  ]
 
   const op = {
     accountAddr: account.addr,
@@ -111,6 +130,9 @@ const eoaSigner = {
   keyPublicAddress: '0x16c81367c30c71d6B712355255A07FCe8fd3b5bB',
   pass: 'testpass'
 }
+
+// add the eoaSigner as an associatedKey
+trezorSlot7v24337Deployed.associatedKeys.push(eoaSigner.keyPublicAddress)
 
 const eoaAccount: Account = {
   addr: eoaSigner.keyPublicAddress,
@@ -147,6 +169,21 @@ const nativeFeeToken: TokenResult = {
   networkId: 'ethereum',
   decimals: Number(18),
   priceIn: [{ baseCurrency: 'usd', price: 5000 }],
+  flags: {
+    onGasTank: false,
+    rewardsType: null,
+    canTopUpGasTank: true,
+    isFeeToken: true
+  }
+}
+
+const nativeFeeTokenAvalanche: TokenResult = {
+  address: '0x0000000000000000000000000000000000000000',
+  symbol: 'AVAX',
+  amount: 1000n,
+  networkId: 'avalanche',
+  decimals: Number(18),
+  priceIn: [{ baseCurrency: 'usd', price: 100 }],
   flags: {
     onGasTank: false,
     rewardsType: null,
@@ -202,10 +239,15 @@ const usdcFeeToken: TokenResult = {
 
 const init = async (
   account: Account,
-  accountOp: any,
+  accountOp: {
+    op: AccountOp
+    nativeToCheck: string[]
+    feeTokens: FeeToken[]
+  },
   signer: any,
   estimationMock?: EstimateResult,
-  gasPricesMock?: gasPricesLib.GasRecommendation[]
+  gasPricesMock?: gasPricesLib.GasRecommendation[],
+  isErc4337?: boolean
 ) => {
   const storage: Storage = produceMemoryStore()
   await storage.set('HumanizerMeta', humanizerMeta)
@@ -216,26 +258,38 @@ const init = async (
 
   await keystore.addKeys([{ privateKey: signer.privKey, dedicatedToOneSA: true }])
 
-  const ethereum = networks.find((x) => x.id === 'ethereum')!
-  const provider = new JsonRpcProvider(ethereum!.rpcUrl)
+  const { op, nativeToCheck, feeTokens } = accountOp
+  const network = networks.find((x) => x.id === op.networkId)!
+  const provider = new JsonRpcProvider(network.rpcUrl)
   const accounts = [account]
   const accountStates = await getAccountsInfo(accounts)
 
-  const prices =
-    gasPricesMock || (await gasPricesLib.getGasPriceRecommendations(provider, ethereum))
+  const prices = gasPricesMock || (await gasPricesLib.getGasPriceRecommendations(provider, network))
 
-  const { op, nativeToCheck, feeTokens } = accountOp
+  // if the request is a 4337 one, set the user op before the estimation
+  if (isErc4337) {
+    op.asUserOperation = toUserOperation(account, accountStates[op.accountAddr][op.networkId], op)
+  }
+
   const estimation =
     estimationMock ||
     (await estimate(
       provider,
-      ethereum,
+      network,
       account,
       op,
-      accountStates[account.addr][ethereum.id],
+      accountStates[account.addr][network.id],
       nativeToCheck,
       feeTokens
     ))
+
+  // if the request is a 4337 one, set the final estimation properties
+  if (estimation.erc4337estimation) {
+    op.asUserOperation!.verificationGasLimit = ethers.toBeHex(
+      estimation.erc4337estimation.verificationGasLimit
+    )
+    op.asUserOperation!.callGasLimit = ethers.toBeHex(estimation.erc4337estimation.callGasLimit)
+  }
 
   const portfolio = new PortfolioController(
     storage,
@@ -245,48 +299,11 @@ const init = async (
   )
   await portfolio.updateSelectedAccount(accounts, networks, account.addr)
 
-  const copiedOverNetworks = ['ethereum', 'polygon']
-  copiedOverNetworks.forEach((networkId) => {
-    if (portfolio.latest?.[account.addr][networkId]!.result) {
-      portfolio!.latest[account.addr][networkId]!.result!.tokens = [
-        {
-          amount: 1n,
-          networkId,
-          decimals: Number(18),
-          symbol: 'ETH',
-          address: '0x0000000000000000000000000000000000000000',
-          flags: {
-            onGasTank: false,
-            rewardsType: null,
-            canTopUpGasTank: true,
-            isFeeToken: true
-          },
-          priceIn: [{ baseCurrency: 'usd', price: 1000.0 }] //  For the sake of simplicity we mocked 1 ETH = 1000 USD
-        },
-        {
-          amount: 54409383n,
-          networkId,
-          decimals: Number(6),
-          symbol: 'USDC',
-          address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
-          flags: {
-            onGasTank: false,
-            rewardsType: null,
-            canTopUpGasTank: true,
-            isFeeToken: true
-          },
-          priceIn: [{ baseCurrency: 'usd', price: 1.0 }]
-        }
-      ]
-    }
-  })
-
-  // add the same result as above for polygon
-  if (portfolio.latest?.[account.addr]?.polygon?.result) {
-    portfolio!.latest[account.addr]!.polygon!.result!.tokens = [
+  if (portfolio.latest?.[account.addr][op.networkId]!.result) {
+    portfolio!.latest[account.addr][op.networkId]!.result!.tokens = [
       {
         amount: 1n,
-        networkId: 'polygon',
+        networkId: op.networkId,
         decimals: Number(18),
         symbol: 'ETH',
         address: '0x0000000000000000000000000000000000000000',
@@ -300,7 +317,7 @@ const init = async (
       },
       {
         amount: 54409383n,
-        networkId: 'polygon',
+        networkId: op.networkId,
         decimals: Number(6),
         symbol: 'USDC',
         address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
@@ -317,7 +334,7 @@ const init = async (
 
   const callRelayer = relayerCall.bind({ url: '', fetch })
   const settings = new SettingsController(storage)
-  settings.providers = { ethereum: provider }
+  settings.providers = { [op.networkId]: provider }
   const controller = new SignAccountOpController(
     keystore,
     portfolio,
@@ -326,7 +343,7 @@ const init = async (
     account,
     accounts,
     accountStates,
-    networks.find((n) => n.id === 'ethereum')!,
+    networks.find((n) => n.id === op.networkId)!,
     op,
     storage,
     fetch,
@@ -432,9 +449,11 @@ describe('SignAccountOp Controller ', () => {
   })
 
   test('Signing [Relayer]: Smart account paying with ERC-20 token.', async () => {
+    const networkId = 'polygon'
+    const network = networks.find((net) => net.id === networkId)!
     const { controller, estimation, prices } = await init(
       smartAccount,
-      createAccountOp(smartAccount, 'polygon'),
+      createAccountOp(smartAccount, network.id),
       eoaSigner,
       {
         gasUsed: 50000n,
@@ -515,8 +534,11 @@ describe('SignAccountOp Controller ', () => {
       throw new Error('Signing failed!')
     }
 
+    expect(controller.accountOp!.gasFeePayment?.isERC4337).toBe(false)
+    expect(controller.accountOp!.gasFeePayment?.paidBy).toBe(smartAccount.addr)
+
     const typedData = getTypedData(
-      1n,
+      network.chainId,
       controller.accountOp.accountAddr,
       ethers.hexlify(accountOpSignableHash(controller.accountOp))
     )
@@ -549,9 +571,11 @@ describe('SignAccountOp Controller ', () => {
   })
 
   test('Signing [Relayer]: Smart account paying with gas tank.', async () => {
+    const networkId = 'polygon'
+    const network = networks.find((net) => net.id === networkId)!
     const { controller, estimation, prices } = await init(
       smartAccount,
-      createAccountOp(smartAccount, 'polygon'),
+      createAccountOp(smartAccount, network.id),
       eoaSigner,
       {
         gasUsed: 50000n,
@@ -633,7 +657,7 @@ describe('SignAccountOp Controller ', () => {
       throw new Error('Signing failed!')
     }
     const typedData = getTypedData(
-      1n,
+      network.chainId,
       controller.accountOp.accountAddr,
       ethers.hexlify(accountOpSignableHash(controller.accountOp))
     )
@@ -667,9 +691,10 @@ describe('SignAccountOp Controller ', () => {
   })
 
   test('Signing: Smart account, but EOA pays the fee', async () => {
+    const network = networks.find((net) => net.id === 'polygon')!
     const { controller, estimation, prices } = await init(
       smartAccount,
-      createAccountOp(smartAccount, 'polygon'),
+      createAccountOp(smartAccount, network.id),
       eoaSigner,
       {
         gasUsed: 10000n,
@@ -742,7 +767,7 @@ describe('SignAccountOp Controller ', () => {
     })
 
     const typedData = getTypedData(
-      1n,
+      network.chainId,
       controller.accountOp.accountAddr,
       ethers.hexlify(accountOpSignableHash(controller.accountOp))
     )
@@ -836,6 +861,108 @@ describe('SignAccountOp Controller ', () => {
     // We expect the signature to be wrapped with an Ambire type. More info: wrapEthSign().
     expect(controller.accountOp?.signature.slice(-2)).toEqual('01')
 
+    // If signing is successful, we expect controller's status to be done
+    expect(controller.status).toEqual({ type: 'done' })
+  })
+
+  test('Signing [ERC-4337]: Smart account paying in native', async () => {
+    const { controller, estimation, prices } = await init(
+      trezorSlot7v24337Deployed,
+      createAccountOp(trezorSlot7v24337Deployed, 'avalanche'),
+      eoaSigner,
+      {
+        gasUsed: 200000n,
+        nonce: 0,
+        erc4337estimation: { verificationGasLimit: 6000n, callGasLimit: 12000n, gasUsed: 200000n },
+        feePaymentOptions: [
+          {
+            address: '0x0000000000000000000000000000000000000000',
+            paidBy: trezorSlot7v24337Deployed.addr,
+            availableAmount: ethers.parseEther('10'),
+            gasUsed: 25000n,
+            addedNative: 0n,
+            isGasTank: false
+          }
+        ],
+        arbitrumL1FeeIfArbitrum: { noFee: 0n, withFee: 0n }
+      },
+      [
+        {
+          name: 'slow',
+          baseFeePerGas: 1000000000n,
+          maxPriorityFeePerGas: 1000000000n
+        },
+        {
+          name: 'medium',
+          baseFeePerGas: 2000000000n,
+          maxPriorityFeePerGas: 2000000000n
+        },
+        {
+          name: 'fast',
+          baseFeePerGas: 5000000000n,
+          maxPriorityFeePerGas: 5000000000n
+        },
+        {
+          name: 'ape',
+          baseFeePerGas: 7000000000n,
+          maxPriorityFeePerGas: 7000000000n
+        }
+      ],
+      true
+    )
+
+    expect(controller.accountOp.asUserOperation).not.toBe(null)
+    expect(controller.accountOp.asUserOperation!.verificationGasLimit).toBe(ethers.toBeHex(6000n))
+    expect(controller.accountOp.asUserOperation!.callGasLimit).toBe(ethers.toBeHex(12000))
+
+    // We are mocking estimation and prices values, in order to validate the gas prices calculation in the test.
+    // Knowing the exact amount of estimation and gas prices, we can predict GasFeePayment values.
+    jest.spyOn(gasPricesLib, 'getCallDataAdditionalByNetwork').mockReturnValue(25000n)
+
+    controller.update({
+      gasPrices: prices,
+      estimation
+    })
+
+    controller.update({
+      feeToken: nativeFeeTokenAvalanche,
+      paidBy: trezorSlot7v24337Deployed.addr,
+      signingKeyAddr: eoaSigner.keyPublicAddress,
+      signingKeyType: 'internal'
+    })
+
+    await controller.sign()
+
+    if (!controller.accountOp?.signature) {
+      console.log('Signing errors:', controller.errors)
+      throw new Error('Signing failed!')
+    }
+
+    expect(controller.accountOp!.gasFeePayment?.isERC4337).toBe(true)
+    expect(controller.accountOp.asUserOperation!.requestType).toBe('standard')
+
+    const entryPoint: any = new ethers.BaseContract(
+      ERC_4337_ENTRYPOINT,
+      EntryPointAbi,
+      providers.avalanche
+    )
+    const typedData = getTypedData(
+      43114n, // avalanche
+      controller.accountOp.accountAddr,
+      await entryPoint.getUserOpHash(controller.accountOp.asUserOperation!)
+    )
+    delete typedData.types.EIP712Domain
+    const unwrappedSig = controller.accountOp.signature.slice(0, -2)
+    expect(controller.accountOp.signature.slice(-2)).toBe('01')
+    const signerAddr = ethers.verifyTypedData(
+      typedData.domain,
+      typedData.types,
+      typedData.message,
+      unwrappedSig
+    )
+
+    // We expect the transaction to be signed with the passed signer address (keyPublicAddress)
+    expect(eoaAccount.addr).toEqual(signerAddr)
     // If signing is successful, we expect controller's status to be done
     expect(controller.status).toEqual({ type: 'done' })
   })
