@@ -26,6 +26,12 @@ interface Erc4337estimation {
   gasUsed: bigint
 }
 
+export interface FeeToken {
+  address: string
+  isGasTank: boolean
+  amount: bigint // how much the user has (from portfolio)
+}
+
 export interface EstimateResult {
   gasUsed: bigint
   nonce: number
@@ -79,7 +85,7 @@ export async function estimate(
   op: AccountOp,
   accountState: AccountOnchainState,
   nativeToCheck: string[],
-  feeTokens: { address: string; isGasTank: boolean; amount: bigint }[],
+  feeTokens: FeeToken[],
   opts?: {
     calculateRefund?: boolean
     is4337Broadcast?: boolean

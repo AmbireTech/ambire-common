@@ -31,6 +31,17 @@ const deployGasLimit = 1000000
 // const filenames = fs.readdirSync(`${__dirname}/../artifacts/build-info`)
 const buildInfo = null
 
+const trezorSlot7v24337Deployed = {
+  addr: '0xaA2450102D8C039A69d7B3daA7C13Cf73F55F742',
+  associatedKeys: ['0xf8FF717A6099de9058541d1Ac6cdC9500E9fB1AF'],
+  creation: {
+    factoryAddr: '0xa8202f888b9b2dfa5ceb2204865018133f6f179a',
+    bytecode:
+      '0x7f00000000000000000000000000000000000000000000000000000000000000027fabb251cd0bc873c8f01fdc27fc133835d7b4900eb6429cb319361b180fada709553d602d80604d3d3981f3363d3d373d3d3d363d730e370942ebe4d026d05d2cf477ff386338fc415a5af43d82803e903d91602b57fd5bf3',
+    salt: '0x0000000000000000000000000000000000000000000000000000000000000000'
+  }
+}
+
 export {
   pk1,
   pk2,
@@ -54,5 +65,6 @@ export {
   buildInfo,
   deploySalt,
   deployGasLimit,
-  assertion
+  assertion,
+  trezorSlot7v24337Deployed
 }

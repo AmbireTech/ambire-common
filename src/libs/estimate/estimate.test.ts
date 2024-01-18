@@ -6,6 +6,7 @@ import fetch from 'node-fetch'
 
 import { describe, expect } from '@jest/globals'
 
+import { trezorSlot7v24337Deployed } from '../../../test/config'
 import { getNonce } from '../../../test/helpers'
 import { networks } from '../../consts/networks'
 import { Account, AccountStates } from '../../interfaces/account'
@@ -438,6 +439,58 @@ describe('estimate', () => {
       expect(opt.addedNative).toBe(0n)
       // no basic acc payment
       expect(opt.paidBy).toBe(trezorSlot6v2NotDeployed.addr)
+    })
+  })
+
+  it('estimates a 4337 request on the avalanche chain with a deployed account paying in native', async () => {
+    const opAvalanche: AccountOp = {
+      accountAddr: trezorSlot7v24337Deployed.addr,
+      signingKeyAddr: trezorSlot7v24337Deployed.associatedKeys[0],
+      signingKeyType: null,
+      gasLimit: null,
+      gasFeePayment: null,
+      networkId: 'avalanche',
+      nonce: 0n,
+      signature: '0x',
+      calls: [{ to, value: BigInt(100000000000), data: '0x' }],
+      accountOpToExecuteBefore: null
+    }
+    const accountStates = await getAccountsInfo([trezorSlot7v24337Deployed])
+    const accountState = accountStates[trezorSlot7v24337Deployed.addr][avalanche.id]
+    opAvalanche.asUserOperation = toUserOperation(
+      trezorSlot7v24337Deployed,
+      accountState,
+      opAvalanche
+    )
+
+    expect(opAvalanche.asUserOperation!.paymasterAndData).toEqual('0x')
+
+    const response = await estimate(
+      providerAvalanche,
+      avalanche,
+      trezorSlot7v24337Deployed,
+      opAvalanche,
+      accountState,
+      nativeToCheck,
+      feeTokensAvalanche,
+      { is4337Broadcast: true }
+    )
+
+    expect(opAvalanche.asUserOperation!.paymasterAndData).toEqual('0x')
+
+    expect(response.arbitrumL1FeeIfArbitrum.noFee).toEqual(0n)
+    expect(response.arbitrumL1FeeIfArbitrum.withFee).toEqual(0n)
+
+    expect(response.erc4337estimation).not.toBe(null)
+    expect(response.erc4337estimation?.gasUsed).toBeGreaterThan(0n)
+    expect(response.erc4337estimation?.verificationGasLimit).toBeGreaterThan(5000n)
+    expect(response.erc4337estimation?.callGasLimit).toBeGreaterThan(10000n)
+
+    expect(response.feePaymentOptions.length).toBeGreaterThan(0)
+    response.feePaymentOptions.forEach((opt) => {
+      expect(opt.addedNative).toBe(0n)
+      // no basic acc payment
+      expect(opt.paidBy).toBe(trezorSlot7v24337Deployed.addr)
     })
   })
 })

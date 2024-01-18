@@ -1,7 +1,7 @@
 import { Provider } from 'ethers'
 
 import AmbireAccountState from '../../../contracts/compiled/AmbireAccountState.json'
-import { MAX_UINT256 } from '../../consts/deploy'
+import { ENTRY_POINT_MARKER, ERC_4337_ENTRYPOINT, MAX_UINT256 } from '../../consts/deploy'
 import { Account, AccountOnchainState } from '../../interfaces/account'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { getAccountDeployParams } from '../account/account'
@@ -21,9 +21,8 @@ export async function getAccountState(
 
   const args = accounts.map((account) => {
     const associatedKeys =
-      network?.erc4337?.enabled &&
-      !account.associatedKeys.includes(network?.erc4337?.entryPointAddr)
-        ? [...account.associatedKeys, network?.erc4337?.entryPointAddr]
+      network?.erc4337?.enabled && !account.associatedKeys.includes(ERC_4337_ENTRYPOINT)
+        ? [...account.associatedKeys, ERC_4337_ENTRYPOINT]
         : account.associatedKeys
 
     return [
@@ -32,9 +31,7 @@ export async function getAccountState(
       ...(account.creation == null
         ? ['0x0000000000000000000000000000000000000000', '0x']
         : getAccountDeployParams(account)),
-      network?.erc4337?.enabled
-        ? network?.erc4337?.entryPointAddr
-        : '0x0000000000000000000000000000000000000000'
+      network?.erc4337?.enabled ? ERC_4337_ENTRYPOINT : '0x0000000000000000000000000000000000000000'
     ]
   })
 
@@ -82,8 +79,7 @@ export async function getAccountState(
         accResult.erc4337Nonce < MAX_UINT256 &&
         associatedKeys.find(
           (associatedKey: string[]) =>
-            associatedKey[0] === network?.erc4337?.entryPointAddr &&
-            associatedKey[1] === `0x${'0'.repeat(63)}1`
+            associatedKey[0] === ERC_4337_ENTRYPOINT && associatedKey[1] === ENTRY_POINT_MARKER
         )
       ),
       deployError:
