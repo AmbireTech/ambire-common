@@ -12,7 +12,7 @@ import {
 } from '../../interfaces/settings'
 import { Storage } from '../../interfaces/storage'
 import { isValidAddress } from '../../services/address'
-import EventEmitter from '../../libs/eventEmitter/eventEmitter'
+import EventEmitter from '../eventEmitter/eventEmitter'
 
 export class SettingsController extends EventEmitter {
   accountPreferences: AccountPreferences = {}

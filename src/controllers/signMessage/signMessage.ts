@@ -15,7 +15,7 @@ import {
 } from '../../libs/signMessage/signMessage'
 import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
 import { SignedMessage } from '../activity/activity'
-import EventEmitter from '../../libs/eventEmitter/eventEmitter'
+import EventEmitter from '../eventEmitter/eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
 import { SettingsController } from '../settings/settings'
 

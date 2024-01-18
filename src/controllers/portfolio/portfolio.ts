@@ -22,7 +22,7 @@ import {
 } from '../../libs/portfolio/interfaces'
 import { GetOptions, Portfolio } from '../../libs/portfolio/portfolio'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
-import EventEmitter from '../../libs/eventEmitter/eventEmitter'
+import EventEmitter from '../eventEmitter/eventEmitter'
 
 // We already know that `results.tokens` and `result.collections` tokens have a balance (this is handled by the portfolio lib).
 // Based on that, we can easily find out which hint tokens also have a balance.

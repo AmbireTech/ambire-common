@@ -1,4 +1,4 @@
-import EventEmitter from '../eventEmitter/eventEmitter'
+import EventEmitter from '../../controllers/eventEmitter/eventEmitter'
 
 const DEFAULT_TIMEOUT = 60000
 // DOCS

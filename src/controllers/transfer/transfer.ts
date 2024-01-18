@@ -9,7 +9,7 @@ import { isKnownTokenOrContract } from '../../services/address'
 import { getBip44Items, resolveENSDomain } from '../../services/ensDomains'
 import { resolveUDomain } from '../../services/unstoppableDomains'
 import { validateSendTransferAddress, validateSendTransferAmount } from '../../services/validations'
-import EventEmitter from '../../libs/eventEmitter/eventEmitter'
+import EventEmitter from '../eventEmitter/eventEmitter'
 
 const ERC20 = new Interface(erc20Abi)
 

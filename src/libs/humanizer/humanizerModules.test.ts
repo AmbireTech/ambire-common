@@ -2,7 +2,7 @@ import fetch from 'node-fetch'
 import { describe, expect, test } from '@jest/globals'
 import { ethers } from 'ethers'
 
-import { ErrorRef } from '../eventEmitter/eventEmitter'
+import { ErrorRef } from '../../controllers/eventEmitter/eventEmitter'
 
 import { AccountOp } from '../accountOp/accountOp'
 import { humanizeCalls, visualizationToText } from './humanizerFuncs'
