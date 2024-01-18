@@ -1,3 +1,4 @@
+import { ErrorRef } from 'controllers/eventEmitter'
 import { AbiCoder, encodeRlp, Interface, JsonRpcProvider, Provider } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
@@ -47,35 +48,33 @@ export interface EstimateResult {
   arbitrumL1FeeIfArbitrum: { noFee: bigint; withFee: bigint }
 }
 
-export function handleEstimationFailure(e: any /* error */, errorFunc: Function, acOp: AccountOp) {
+export function getEstimationFailure(e: any /* error */, acOp: AccountOp): ErrorRef {
   const cause = e.cause ?? 'Unknown'
   const message =
     cause === 'ERC-4337' ? Buffer.from(e.message.substring(2), 'hex').toString() : e.message
 
   // TODO<Bobby>: introduce more cases
   if (message.includes('paymaster deposit too low')) {
-    errorFunc({
+    return {
       level: 'major',
       message: `Paymaster with address ${AMBIRE_PAYMASTER} does not have enough funds to execute this request. Please contact support`,
       error: e
-    })
-    return
+    }
   }
 
   if (cause === 'ERC-4337') {
-    errorFunc({
+    return {
       level: 'major',
       message: `Failed to estimate a 4337 Request for ${acOp.accountAddr} on ${acOp.networkId}`,
       error: e
-    })
-    return
+    }
   }
 
-  errorFunc({
+  return {
     level: 'major',
     message: `Failed to estimate account op for ${acOp.accountAddr} on ${acOp.networkId}`,
     error: e
-  })
+  }
 }
 
 export async function estimate(
