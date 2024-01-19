@@ -77,7 +77,7 @@ export function getEstimationFailure(e: any /* error */, acOp: AccountOp): Error
   }
 }
 
-async function reestimate(estimateRequests: any, counter: number = 0): Promise<any> {
+async function reestimate(fetchRequests: Function, counter: number = 0): Promise<any> {
   // stop the execution on 5 fails;
   // the below error message is not shown to the user so we are safe
   if (counter >= 5) throw new Error('could not estimate')
@@ -90,11 +90,11 @@ async function reestimate(estimateRequests: any, counter: number = 0): Promise<a
 
   // try to estimate the request with a given timeout.
   // if the request reaches the timeout, it cancels it and retries
-  let result = await Promise.race([estimateRequests, estimationTimeout])
+  let result = await Promise.race([Promise.all(fetchRequests()), estimationTimeout])
 
   if (typeof result === 'string') {
     const incremented = counter + 1
-    result = await reestimate(estimateRequests, incremented)
+    result = await reestimate(fetchRequests, incremented)
   }
 
   // if the requests do not reach the timeout but any of them
@@ -103,7 +103,7 @@ async function reestimate(estimateRequests: any, counter: number = 0): Promise<a
     const hasError = result.find((res) => res instanceof Error)
     if (hasError) {
       const incremented = counter + 1
-      result = await reestimate(estimateRequests, incremented)
+      result = await reestimate(fetchRequests, incremented)
     }
   }
 
@@ -148,7 +148,7 @@ export async function estimate(
       ],
       [call.data, call.to, account.addr, 100000000, 2, nonce, 100000]
     )
-    const estimateRequests = Promise.all([
+    const initializeRequests = () => [
       provider
         .estimateGas({
           from: account.addr,
@@ -165,9 +165,8 @@ export async function estimate(
           blockTag
         })
         .catch((e) => e)
-    ])
-
-    const result = await reestimate(estimateRequests)
+    ]
+    const result = await reestimate(initializeRequests)
     const [gasUsed, balance, [l1GasEstimation]] = result
 
     return {
@@ -232,13 +231,12 @@ export async function estimate(
   ]
 
   // estimate 4337
-  let estimation4337 = new Promise((resolve) => {
-    resolve(null)
-  })
   const is4337Broadcast = Boolean(opts && opts.is4337Broadcast)
   const usesOneTimeNonce = is4337Broadcast && shouldUseOneTimeNonce(op.asUserOperation!)
   const IAmbireAccount = new Interface(AmbireAccount.abi)
   const userOp = { ...op.asUserOperation! }
+  let deployless4337Estimator: any = null
+  let functionArgs: any = null
   if (is4337Broadcast) {
     userOp!.paymasterAndData = getPaymasterSpoof()
 
@@ -250,43 +248,39 @@ export async function estimate(
       ])
     }
 
-    const deployless4337Estimator = fromDescriptor(
-      provider,
-      Estimation4337,
-      !network.rpcNoStateOverride
-    )
-    const functionArgs = [userOp, ERC_4337_ENTRYPOINT]
+    deployless4337Estimator = fromDescriptor(provider, Estimation4337, !network.rpcNoStateOverride)
+    functionArgs = [userOp, ERC_4337_ENTRYPOINT]
     if (usesOneTimeNonce) {
       userOp.nonce = getOneTimeNonce(userOp)
     } else {
       const spoofSig = abiCoder.encode(['address'], [account.associatedKeys[0]]) + SPOOF_SIGTYPE
       userOp!.signature = spoofSig
     }
-    estimation4337 = deployless4337Estimator
-      .call('estimate', functionArgs, {
-        from: blockFrom,
-        blockTag
-      })
-      .catch((e) => e)
   }
 
   /* eslint-disable prefer-const */
-  const estimation = deploylessEstimator
-    .call('estimate', args, {
-      from: blockFrom,
-      blockTag
-    })
-    .catch((e) => e)
-  const arbitrumEstimation = estimateArbitrumL1GasUsed(
-    op,
-    account,
-    accountState,
-    provider,
-    userOp,
+  const initializeRequests = () => [
+    deploylessEstimator
+      .call('estimate', args, {
+        from: blockFrom,
+        blockTag
+      })
+      .catch((e) => e),
     is4337Broadcast
-  ).catch((e) => e)
-  const estimateRequests = Promise.all([estimation, estimation4337, arbitrumEstimation])
-  const estimations = await reestimate(estimateRequests)
+      ? deployless4337Estimator
+          .call('estimate', functionArgs, {
+            from: blockFrom,
+            blockTag
+          })
+          .catch((e: any) => e)
+      : new Promise((resolve) => {
+          resolve(null)
+        }),
+    estimateArbitrumL1GasUsed(op, account, accountState, provider, userOp, is4337Broadcast).catch(
+      (e) => e
+    )
+  ]
+  const estimations = await reestimate(initializeRequests)
   const arbitrumL1FeeIfArbitrum = estimations[2]
 
   let [
