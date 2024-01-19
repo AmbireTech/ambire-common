@@ -77,6 +77,39 @@ export function getEstimationFailure(e: any /* error */, acOp: AccountOp): Error
   }
 }
 
+async function reestimate(estimateRequests: any, counter: number = 0): Promise<any> {
+  // stop the execution on 5 fails;
+  // the below error message is not shown to the user so we are safe
+  if (counter >= 5) throw new Error('could not estimate')
+
+  const estimationTimeout = new Promise((resolve) => {
+    setTimeout(() => {
+      resolve('Timeout reached')
+    }, 15000)
+  })
+
+  // try to estimate the request with a given timeout.
+  // if the request reaches the timeout, it cancels it and retries
+  let result = await Promise.race([estimateRequests, estimationTimeout])
+
+  if (typeof result === 'string') {
+    const incremented = counter + 1
+    result = await reestimate(estimateRequests, incremented)
+  }
+
+  // if the requests do not reach the timeout but any of them
+  // results in a failure, we should try them again. That's what we do here
+  if (Array.isArray(result)) {
+    const hasError = result.find((res) => res instanceof Error)
+    if (hasError) {
+      const incremented = counter + 1
+      result = await reestimate(estimateRequests, incremented)
+    }
+  }
+
+  return result
+}
+
 export async function estimate(
   provider: Provider | JsonRpcProvider,
   network: NetworkDescriptor,
@@ -115,21 +148,27 @@ export async function estimate(
       ],
       [call.data, call.to, account.addr, 100000000, 2, nonce, 100000]
     )
-
-    const [gasUsed, balance, [l1GasEstimation]] = await Promise.all([
-      provider.estimateGas({
-        from: account.addr,
-        to: call.to,
-        value: call.value,
-        data: call.data,
-        nonce
-      }),
-      provider.getBalance(account.addr),
-      deploylessEstimator.call('getL1GasEstimation', [encodeRlp(encodedCallData), '0x'], {
-        from: blockFrom,
-        blockTag
-      })
+    const estimateRequests = Promise.all([
+      provider
+        .estimateGas({
+          from: account.addr,
+          to: call.to,
+          value: call.value,
+          data: call.data,
+          nonce
+        })
+        .catch((e) => e),
+      provider.getBalance(account.addr).catch((e) => e),
+      deploylessEstimator
+        .call('getL1GasEstimation', [encodeRlp(encodedCallData), '0x'], {
+          from: blockFrom,
+          blockTag
+        })
+        .catch((e) => e)
     ])
+
+    const result = await reestimate(estimateRequests)
+    const [gasUsed, balance, [l1GasEstimation]] = result
 
     return {
       gasUsed,
@@ -223,17 +262,21 @@ export async function estimate(
       const spoofSig = abiCoder.encode(['address'], [account.associatedKeys[0]]) + SPOOF_SIGTYPE
       userOp!.signature = spoofSig
     }
-    estimation4337 = deployless4337Estimator.call('estimate', functionArgs, {
-      from: blockFrom,
-      blockTag
-    })
+    estimation4337 = deployless4337Estimator
+      .call('estimate', functionArgs, {
+        from: blockFrom,
+        blockTag
+      })
+      .catch((e) => e)
   }
 
   /* eslint-disable prefer-const */
-  const estimation = deploylessEstimator.call('estimate', args, {
-    from: blockFrom,
-    blockTag
-  })
+  const estimation = deploylessEstimator
+    .call('estimate', args, {
+      from: blockFrom,
+      blockTag
+    })
+    .catch((e) => e)
   const arbitrumEstimation = estimateArbitrumL1GasUsed(
     op,
     account,
@@ -241,8 +284,9 @@ export async function estimate(
     provider,
     userOp,
     is4337Broadcast
-  )
-  const estimations = await Promise.all([estimation, estimation4337, arbitrumEstimation])
+  ).catch((e) => e)
+  const estimateRequests = Promise.all([estimation, estimation4337, arbitrumEstimation])
+  const estimations = await reestimate(estimateRequests)
   const arbitrumL1FeeIfArbitrum = estimations[2]
 
   let [
