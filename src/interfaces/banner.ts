@@ -40,9 +40,13 @@ export type Action =
       }
     }
   | {
-    label: string
-    actionName: 'open-external-url'
-    meta: {
-      url: string
+      label: string
+      actionName: 'open-external-url'
+      meta: {
+        url: string
+      }
     }
-  }
+  | {
+      label: string
+      actionName: 'backup-keystore-secret'
+    }
