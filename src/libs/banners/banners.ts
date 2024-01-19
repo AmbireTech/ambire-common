@@ -156,7 +156,7 @@ export const getAccountOpBannersForSmartAccount = ({
 
 export const getKeySyncBanner = (addr: string, email: string, keys: string[]) => {
   const banner: Banner = {
-    id: `${addr}:${email}:${JSON.stringify(keys)}:${Math.random()}`,
+    id: `keys-sync:${addr}:${email}`,
     accountAddr: addr,
     topic: 'ANNOUNCEMENT',
     title: 'Sync Key Store keys',

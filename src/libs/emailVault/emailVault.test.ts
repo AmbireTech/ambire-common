@@ -2,6 +2,7 @@ import { beforeAll, describe, expect, test } from '@jest/globals'
 import fetch from 'node-fetch'
 import { Wallet } from 'ethers'
 
+import { OperationRequestType } from '../../interfaces/emailVault'
 import { relayerCall } from '../relayerCall/relayerCall'
 import { EmailVault } from './emailVault'
 import { requestMagicLink } from '../magicLink/magicLink'
@@ -89,7 +90,7 @@ describe('happy cases email vault', () => {
     const operations = [
       {
         // id?: string
-        type: 'sync data',
+        type: OperationRequestType.requestKeySync,
         requester: 'me',
         key: 'public key'
         // value?: string

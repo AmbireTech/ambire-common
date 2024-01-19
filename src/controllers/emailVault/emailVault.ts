@@ -7,7 +7,8 @@ import {
   EmailVaultData,
   EmailVaultSecret,
   EmailVaultOperation,
-  SecretType
+  SecretType,
+  OperationRequestType
 } from '../../interfaces/emailVault'
 import { Storage } from '../../interfaces/storage'
 import { getKeySyncBanner } from '../../libs/banners/banners'
@@ -363,7 +364,7 @@ export class EmailVaultController extends EventEmitter {
     ])
 
     const operations: EmailVaultOperation[] = keys.map((key) => ({
-      type: 'requestKeySync',
+      type: OperationRequestType.requestKeySync,
       requester: keyStoreUid,
       key
     }))

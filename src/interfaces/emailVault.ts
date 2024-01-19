@@ -19,18 +19,22 @@ export interface EmailVaultAccountInfo {
 }
 
 export enum OperationRequestType {
-  requestKeySync
+  requestKeySync = 'requestKeySync'
 }
-
-// id - a vallue that is randomly assigned by the relayer if the operation is legit
-// requestType - a label for the intention of the operation
-// requester - in the context of the EmailVault this is the deveices keystoreId, that is acting as a public key for encryption
-// key - in the context of the EV and syncing keys this is the address for the EOA we want th eprivate key (might not be applicable for (if any) new operation types )
-// value - the fetched value
-// @TODO: add OTP for key syncing requests
+/**
+ * Operations are used for communication between devices.
+ *
+ * @interface EmailVaultOperation
+ * @property {string} [id] - A value that is randomly assigned by the relayer if the operation is legit.
+ * @property {OperationRequestType} type - A label for the intention of the operation.
+ * @property {string} requester - In the context of the EmailVault, this is the device's keystoreId, acting as a public key for encryption.
+ * @property {string} key - In the context of the EmailVault and syncing keys, this is the address for the EOA we want the private key for (might not be applicable for new operation types, if any).
+ * @property {string} [value] - The fetched value.
+ * @property {string} [password] - The password associated with the operation. The relayer doesn't return the value of the op if wrong password
+ */
 export interface EmailVaultOperation {
   id?: string
-  type: string
+  type: OperationRequestType
   requester: string
   key: string
   value?: string
