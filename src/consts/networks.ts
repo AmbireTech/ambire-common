@@ -1,5 +1,4 @@
 import { NetworkDescriptor } from '../interfaces/networkDescriptor'
-import { ERC_4337_ENTRYPOINT } from './deploy'
 
 const networks: NetworkDescriptor[] = [
   {
@@ -25,9 +24,7 @@ const networks: NetworkDescriptor[] = [
     chainId: 137n,
     explorerUrl: 'https://polygonscan.com',
     erc4337: {
-      // TODO: temp disabled (only while testing)
       enabled: false,
-      entryPointAddr: ERC_4337_ENTRYPOINT,
       hasPaymaster: true
     },
     unstoppableDomainsChain: 'MATIC',
@@ -46,8 +43,7 @@ const networks: NetworkDescriptor[] = [
     explorerUrl: 'https://optimistic.etherscan.io',
     erc4337: {
       enabled: false,
-      entryPointAddr: ERC_4337_ENTRYPOINT,
-      hasPaymaster: false
+      hasPaymaster: true
     },
     unstoppableDomainsChain: 'ERC20',
     feeOptions: {
@@ -68,7 +64,6 @@ const networks: NetworkDescriptor[] = [
     explorerUrl: 'https://snowtrace.io',
     erc4337: {
       enabled: true,
-      entryPointAddr: ERC_4337_ENTRYPOINT,
       hasPaymaster: true
     },
     unstoppableDomainsChain: 'ERC20',
@@ -88,7 +83,6 @@ const networks: NetworkDescriptor[] = [
     explorerUrl: 'https://arbiscan.io',
     erc4337: {
       enabled: false,
-      entryPointAddr: ERC_4337_ENTRYPOINT,
       hasPaymaster: true
     },
     unstoppableDomainsChain: 'ERC20',

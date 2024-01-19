@@ -1,10 +1,11 @@
 import { AbiCoder, encodeRlp, Interface, JsonRpcProvider, Provider } from 'ethers'
+import { ErrorRef } from '../../controllers/eventEmitter/eventEmitter'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFactory.json'
 import Estimation from '../../../contracts/compiled/Estimation.json'
 import Estimation4337 from '../../../contracts/compiled/Estimation4337.json'
-import { ERC_4337_ENTRYPOINT } from '../../consts/deploy'
+import { AMBIRE_PAYMASTER, ERC_4337_ENTRYPOINT } from '../../consts/deploy'
 import { SPOOF_SIGTYPE } from '../../consts/signatures'
 import { Account, AccountOnchainState } from '../../interfaces/account'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
@@ -26,6 +27,12 @@ interface Erc4337estimation {
   gasUsed: bigint
 }
 
+export interface FeeToken {
+  address: string
+  isGasTank: boolean
+  amount: bigint // how much the user has (from portfolio)
+}
+
 export interface EstimateResult {
   gasUsed: bigint
   nonce: number
@@ -41,6 +48,68 @@ export interface EstimateResult {
   arbitrumL1FeeIfArbitrum: { noFee: bigint; withFee: bigint }
 }
 
+export function getEstimationFailure(e: any /* error */, acOp: AccountOp): ErrorRef {
+  const cause = e.cause ?? 'Unknown'
+  const message =
+    cause === 'ERC-4337' ? Buffer.from(e.message.substring(2), 'hex').toString() : e.message
+
+  // TODO<Bobby>: introduce more cases
+  if (message.includes('paymaster deposit too low')) {
+    return {
+      level: 'major',
+      message: `Paymaster with address ${AMBIRE_PAYMASTER} does not have enough funds to execute this request. Please contact support`,
+      error: e
+    }
+  }
+
+  if (cause === 'ERC-4337') {
+    return {
+      level: 'major',
+      message: `Failed to estimate a 4337 Request for ${acOp.accountAddr} on ${acOp.networkId}`,
+      error: e
+    }
+  }
+
+  return {
+    level: 'major',
+    message: `Failed to estimate account op for ${acOp.accountAddr} on ${acOp.networkId}`,
+    error: e
+  }
+}
+
+async function reestimate(fetchRequests: Function, counter: number = 0): Promise<any> {
+  // stop the execution on 5 fails;
+  // the below error message is not shown to the user so we are safe
+  if (counter >= 5) throw new Error('could not estimate')
+
+  const estimationTimeout = new Promise((resolve) => {
+    setTimeout(() => {
+      resolve('Timeout reached')
+    }, 15000)
+  })
+
+  // try to estimate the request with a given timeout.
+  // if the request reaches the timeout, it cancels it and retries
+  let result = await Promise.race([Promise.all(fetchRequests()), estimationTimeout])
+
+  if (typeof result === 'string') {
+    const incremented = counter + 1
+    result = await reestimate(fetchRequests, incremented)
+  }
+
+  // if the requests do not reach the timeout but any of them
+  // results in a failure, we should try them again. That's what we do here
+  if (Array.isArray(result)) {
+    const hasError = result.find((res) => res instanceof Error)
+    if (hasError) {
+      const incremented = counter + 1
+      result = await reestimate(fetchRequests, incremented)
+    }
+  }
+
+  return result
+}
+
 export async function estimate(
   provider: Provider | JsonRpcProvider,
   network: NetworkDescriptor,
@@ -48,7 +117,7 @@ export async function estimate(
   op: AccountOp,
   accountState: AccountOnchainState,
   nativeToCheck: string[],
-  feeTokens: { address: string; isGasTank: boolean; amount: bigint }[],
+  feeTokens: FeeToken[],
   opts?: {
     calculateRefund?: boolean
     is4337Broadcast?: boolean
@@ -79,21 +148,26 @@ export async function estimate(
       ],
       [call.data, call.to, account.addr, 100000000, 2, nonce, 100000]
     )
-
-    const [gasUsed, balance, [l1GasEstimation]] = await Promise.all([
-      provider.estimateGas({
-        from: account.addr,
-        to: call.to,
-        value: call.value,
-        data: call.data,
-        nonce
-      }),
-      provider.getBalance(account.addr),
-      deploylessEstimator.call('getL1GasEstimation', [encodeRlp(encodedCallData), '0x'], {
-        from: blockFrom,
-        blockTag
-      })
-    ])
+    const initializeRequests = () => [
+      provider
+        .estimateGas({
+          from: account.addr,
+          to: call.to,
+          value: call.value,
+          data: call.data,
+          nonce
+        })
+        .catch((e) => e),
+      provider.getBalance(account.addr).catch((e) => e),
+      deploylessEstimator
+        .call('getL1GasEstimation', [encodeRlp(encodedCallData), '0x'], {
+          from: blockFrom,
+          blockTag
+        })
+        .catch((e) => e)
+    ]
+    const result = await reestimate(initializeRequests)
+    const [gasUsed, balance, [l1GasEstimation]] = result
 
     return {
       gasUsed,
@@ -157,13 +231,12 @@ export async function estimate(
   ]
 
   // estimate 4337
-  let estimation4337 = new Promise((resolve) => {
-    resolve(null)
-  })
   const is4337Broadcast = Boolean(opts && opts.is4337Broadcast)
   const usesOneTimeNonce = is4337Broadcast && shouldUseOneTimeNonce(op.asUserOperation!)
   const IAmbireAccount = new Interface(AmbireAccount.abi)
-  const userOp = Object.assign({}, op.asUserOperation)
+  const userOp = { ...op.asUserOperation! }
+  let deployless4337Estimator: any = null
+  let functionArgs: any = null
   if (is4337Broadcast) {
     userOp!.paymasterAndData = getPaymasterSpoof()
 
@@ -175,38 +248,39 @@ export async function estimate(
       ])
     }
 
-    const deployless4337Estimator = fromDescriptor(
-      provider,
-      Estimation4337,
-      !network.rpcNoStateOverride
-    )
-    const functionArgs = [userOp, ERC_4337_ENTRYPOINT]
+    deployless4337Estimator = fromDescriptor(provider, Estimation4337, !network.rpcNoStateOverride)
+    functionArgs = [userOp, ERC_4337_ENTRYPOINT]
     if (usesOneTimeNonce) {
       userOp.nonce = getOneTimeNonce(userOp)
     } else {
       const spoofSig = abiCoder.encode(['address'], [account.associatedKeys[0]]) + SPOOF_SIGTYPE
       userOp!.signature = spoofSig
     }
-    estimation4337 = deployless4337Estimator.call('estimate', functionArgs, {
-      from: blockFrom,
-      blockTag
-    })
   }
 
   /* eslint-disable prefer-const */
-  const estimation = deploylessEstimator.call('estimate', args, {
-    from: blockFrom,
-    blockTag
-  })
-  const arbitrumEstimation = estimateArbitrumL1GasUsed(
-    op,
-    account,
-    accountState,
-    provider,
-    userOp,
+  const initializeRequests = () => [
+    deploylessEstimator
+      .call('estimate', args, {
+        from: blockFrom,
+        blockTag
+      })
+      .catch((e) => e),
     is4337Broadcast
-  )
-  const estimations = await Promise.all([estimation, estimation4337, arbitrumEstimation])
+      ? deployless4337Estimator
+          .call('estimate', functionArgs, {
+            from: blockFrom,
+            blockTag
+          })
+          .catch((e: any) => e)
+      : new Promise((resolve) => {
+          resolve(null)
+        }),
+    estimateArbitrumL1GasUsed(op, account, accountState, provider, userOp, is4337Broadcast).catch(
+      (e) => e
+    )
+  ]
+  const estimations = await reestimate(initializeRequests)
   const arbitrumL1FeeIfArbitrum = estimations[2]
 
   let [
@@ -227,11 +301,7 @@ export async function estimate(
   let erc4337estimation: Erc4337estimation | null = null
   if (is4337Broadcast) {
     const [[verificationGasLimit, gasUsed, failure]]: any = estimations[1]
-
-    // TODO<Bobby>: handle estimation failure
-    if (failure !== '0x') {
-      console.log(Buffer.from(failure.substring(2), 'hex').toString())
-    }
+    if (failure !== '0x') throw new Error(failure, { cause: 'ERC-4337' })
 
     erc4337estimation = {
       verificationGasLimit: BigInt(verificationGasLimit) + 5000n, // added buffer,

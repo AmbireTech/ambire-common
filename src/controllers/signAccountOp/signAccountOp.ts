@@ -84,7 +84,7 @@ export class SignAccountOpController extends EventEmitter {
 
   accountOp: AccountOp
 
-  #gasPrices: GasRecommendation[] | null = null
+  gasPrices: GasRecommendation[] | null = null
 
   #estimation: EstimateResult | null = null
 
@@ -173,7 +173,7 @@ export class SignAccountOpController extends EventEmitter {
         this.emitUpdate()
       },
       (err) => this.emitError(err)
-    )
+    ).catch((err) => this.emitError(err))
   }
 
   get errors(): string[] {
@@ -194,8 +194,9 @@ export class SignAccountOpController extends EventEmitter {
     if (!this.accountOp?.signingKeyType || !this.accountOp?.signingKeyAddr)
       errors.push('Please select a signer to sign the transaction.')
 
-    if (!this.accountOp?.gasFeePayment)
+    if (!this.accountOp?.gasFeePayment && this.feeSpeeds.length) {
       errors.push('Please select a token and an account for paying the gas fee.')
+    }
 
     if (this.accountOp?.gasFeePayment && this.availableFeeOptions.length) {
       const feeToken = this.availableFeeOptions.find(
@@ -254,7 +255,7 @@ export class SignAccountOpController extends EventEmitter {
     signingKeyAddr?: Key['addr']
     signingKeyType?: Key['type']
   }) {
-    if (gasPrices) this.#gasPrices = gasPrices
+    if (gasPrices) this.gasPrices = gasPrices
 
     if (estimation) this.#estimation = estimation
 
@@ -294,7 +295,7 @@ export class SignAccountOpController extends EventEmitter {
   }
 
   reset() {
-    this.#gasPrices = null
+    this.gasPrices = null
     this.#estimation = null
     this.selectedFeeSpeed = FeeSpeed.Fast
     this.paidBy = null
@@ -376,7 +377,7 @@ export class SignAccountOpController extends EventEmitter {
     amountUsd: string
     maxPriorityFeePerGas?: bigint
   }[] {
-    if (!this.isInitialized || !this.#gasPrices || !this.paidBy || !this.feeTokenResult) return []
+    if (!this.isInitialized || !this.gasPrices || !this.paidBy || !this.feeTokenResult) return []
 
     const gasUsed = this.#estimation!.gasUsed
     const feeTokenEstimation = this.#estimation!.feePaymentOptions.find(
@@ -401,7 +402,7 @@ export class SignAccountOpController extends EventEmitter {
       this.#accountStates![this.accountOp!.accountAddr][this.accountOp!.networkId]
     )
 
-    return this.#gasPrices.map((gasRecommendation) => {
+    return this.gasPrices.map((gasRecommendation) => {
       let amount
       let simulatedGasLimit
 
@@ -631,7 +632,6 @@ export class SignAccountOpController extends EventEmitter {
     const gasFeePayment = this.accountOp.gasFeePayment
 
     if (signer.init) signer.init(this.#externalSignerControllers[this.accountOp.signingKeyType])
-    const provider = this.#settings.providers[this.accountOp.networkId]
     const accountState =
       this.#accountStates![this.accountOp!.accountAddr][this.accountOp!.networkId]
     try {
@@ -733,6 +733,7 @@ export class SignAccountOpController extends EventEmitter {
         }
 
         if (userOperation.requestType === 'standard') {
+          const provider = this.#settings.providers[this.accountOp.networkId]
           const entryPoint: any = new ethers.BaseContract(
             ERC_4337_ENTRYPOINT,
             EntryPointAbi,

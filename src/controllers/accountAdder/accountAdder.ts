@@ -398,6 +398,13 @@ export class AccountAdderController extends EventEmitter {
     })
   }
 
+  /**
+   * Triggers the process of adding accounts via the AccountAdder flow by
+   * creating identity for the smart accounts (if needed) on the Relayer.
+   * Then the `onAccountAdderSuccess` listener in the Main Controller gets
+   * triggered, which uses the `readyToAdd...` properties to further set
+   * the newly added accounts data (like preferences, keys and others)
+   */
   async addAccounts(
     accounts: SelectedAccount[] = [],
     readyToAddAccountPreferences: AccountPreferences = {},
