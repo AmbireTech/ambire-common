@@ -24,6 +24,7 @@ struct AccountInfo {
     uint256 balance;
     bool isEOA;
     uint erc4337Nonce;
+    uint currentBlock;
 }
 
 contract AmbireAccountState {
@@ -61,6 +62,8 @@ contract AmbireAccountState {
                 accountResult[i].deployErr = err;
                 continue;
             }
+
+            accountResult[i].currentBlock = block.number;
         }
         return accountResult;
     }

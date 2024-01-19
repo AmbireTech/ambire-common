@@ -30,6 +30,7 @@ export interface AccountOnchainState {
   isErc4337Enabled: boolean
   isErc4337Nonce: boolean
   isV2: boolean
+  currentBlock: bigint
 }
 
 export type AccountStates = {
