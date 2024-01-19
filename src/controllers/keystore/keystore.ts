@@ -74,6 +74,8 @@ export class KeystoreController extends EventEmitter {
 
   keys: Key[] = []
 
+  keyStoreUid: string | null
+
   isReadyToStoreKeys: boolean = false
 
   status: 'INITIAL' | 'LOADING' | 'DONE' = 'INITIAL'
@@ -90,6 +92,7 @@ export class KeystoreController extends EventEmitter {
     this.#storage = _storage
     this.#keystoreSigners = _keystoreSigners
     this.#mainKey = null
+    this.keyStoreUid = null
 
     this.#load()
   }
@@ -97,6 +100,7 @@ export class KeystoreController extends EventEmitter {
   async #load() {
     try {
       this.keys = await this.getKeys()
+      this.keyStoreUid = await this.#storage.get('keyStoreUid', null)
     } catch (e) {
       this.emitError({
         message:
@@ -134,7 +138,7 @@ export class KeystoreController extends EventEmitter {
   }
 
   async getKeyStoreUid() {
-    const uid = await this.#storage.get('keyStoreUid', null)
+    const uid = this.keyStoreUid
     if (!uid) throw new Error('keystore: adding secret before get uid')
 
     return uid
@@ -268,6 +272,7 @@ export class KeystoreController extends EventEmitter {
     // produce uid if one doesn't exist (should be created when the first secret is added)
     if (!(await this.#storage.get('keyStoreUid', null))) {
       const uid = publicKeyByPrivateKey(hexlify(getBytes(concat([mainKey.key, mainKey.iv]))))
+      this.keyStoreUid = uid
       await this.#storage.set('keyStoreUid', uid)
     }
 
