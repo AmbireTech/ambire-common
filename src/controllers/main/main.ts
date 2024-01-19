@@ -1040,8 +1040,6 @@ export class MainController extends EventEmitter {
       return banner.accountAddr === this.selectedAccount
     })
 
-    console.log({ emailVaultBanners })
-
     const accountOpEOABanners = getAccountOpBannersForEOA({ userRequests, accounts })
     const pendingAccountOpEOABanners = getPendingAccountOpBannersForEOA({ userRequests, accounts })
     const accountOpSmartAccountBanners = getAccountOpBannersForSmartAccount({
