@@ -82,6 +82,7 @@ export async function getAccountState(
             associatedKey[0] === ERC_4337_ENTRYPOINT && associatedKey[1] === ENTRY_POINT_MARKER
         )
       ),
+      currentBlock: accResult.currentBlock,
       deployError:
         accounts[index].associatedKeys.length > 0 && accResult.associatedKeyPrivileges.length === 0
     }
