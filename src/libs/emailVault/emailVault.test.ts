@@ -12,8 +12,8 @@ let email2: String
 
 // @NOTE: this should be changed in future tests. We should have proper e2e tests with email inbox reading. Once done, this isn't needed
 // Relayer has to be start with NODE_ENV === 'testing' to retrive the secret for email vonfirmation
-// const relayerUrl = 'https://staging-relayer.ambire.com'
-const relayerUrl: string = 'http://localhost:1934'
+const relayerUrl = 'https://staging-relayer.ambire.com'
+// const relayerUrl: string = 'http://localhost:1934'
 
 const callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
 const emailVault = new EmailVault(fetch, relayerUrl)
@@ -34,7 +34,7 @@ const initEmailVaultTest = async () => {
   const keys2 = await requestMagicLink(email2, relayerUrl, fetch)
   authKey2 = keys2.key
   authSecret2 = keys2.secret!
-  await callRelayer(`/email-vault/confirmationKey/${email}/${authKey}/${authSecret}`)
+  await callRelayer(`/email-vault/confirm-key/${email}/${authKey}/${authSecret}`)
 }
 
 describe('happy cases email vault', () => {
@@ -43,7 +43,7 @@ describe('happy cases email vault', () => {
     const result = await requestMagicLink(email, relayerUrl, fetch)
     authKey = result.key
     authSecret = result.secret!
-    await callRelayer(`/email-vault/confirmationKey/${email}/${authKey}/${authSecret}`)
+    await callRelayer(`/email-vault/confirm-key/${email}/${authKey}/${authSecret}`)
   })
 
   test('create an email vault', async () => {
@@ -169,14 +169,14 @@ describe('err cases', () => {
       ).rejects.toHaveProperty(['output', 'res', 'message'], 'missing uid or not a valid address')
     })
     test('vault not created', async () => {
-      await callRelayer(`/email-vault/confirmationKey/${email2}/${authKey2}/${authSecret2}`)
+      await callRelayer(`/email-vault/confirm-key/${email2}/${authKey2}/${authSecret2}`)
 
       await expect(
         emailVault.addKeyStoreSecret(email2, authKey2, '', keyStoreSecret)
       ).rejects.toHaveProperty(['output', 'res', 'message'], 'missing uid or not a valid address')
     })
     test('no secret in body', async () => {
-      await callRelayer(`/email-vault/confirmationKey/${email2}/${authKey2}/${authSecret2}`)
+      await callRelayer(`/email-vault/confirm-key/${email2}/${authKey2}/${authSecret2}`)
 
       await emailVault.getEmailVaultInfo(email2, authKey2)
       await expect(emailVault.addKeyStoreSecret(email2, authKey2, '', '')).rejects.toHaveProperty(
@@ -208,14 +208,14 @@ describe('err cases', () => {
       ).rejects.toHaveProperty(['output', 'res', 'message'], 'invalid key')
     })
     test('vault not created', async () => {
-      await callRelayer(`/email-vault/confirmationKey/${email2}/${authKey2}/${authSecret2}`)
+      await callRelayer(`/email-vault/confirm-key/${email2}/${authKey2}/${authSecret2}`)
 
       await expect(
         emailVault.retrieveKeyStoreSecret(email2, authKey2, recoveryKey)
       ).rejects.toHaveProperty(['output', 'res', 'message'], 'email vault does not exist')
     })
     test('no secret uploaded', async () => {
-      await callRelayer(`/email-vault/confirmationKey/${email2}/${authKey2}/${authSecret2}`)
+      await callRelayer(`/email-vault/confirm-key/${email2}/${authKey2}/${authSecret2}`)
 
       await emailVault.getEmailVaultInfo(email2, authKey2)
       recoveryKey2 = (await emailVault.getRecoveryKeyAddress(email2, authKey2)).key

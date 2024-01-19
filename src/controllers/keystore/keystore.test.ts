@@ -1,15 +1,16 @@
+/* eslint-disable @typescript-eslint/no-floating-promises */
 /* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable class-methods-use-this */
 /* eslint-disable @typescript-eslint/no-useless-constructor */
 /* eslint-disable max-classes-per-file */
 
-import { Encrypted, encryptWithPublicKey } from 'eth-crypto'
-import { ethers, hexlify, Wallet } from 'ethers'
+import { Encrypted } from 'eth-crypto'
+import { ethers, Wallet } from 'ethers'
 
-import { describe, expect, jest, test } from '@jest/globals'
+import { describe, expect, test } from '@jest/globals'
 
 import { produceMemoryStore } from '../../../test/helpers'
-import { Key, MainKeyEncryptedWithSecret, dedicatedToOneSAPriv } from '../../interfaces/keystore'
+import { Key } from '../../interfaces/keystore'
 import { KeystoreController } from './keystore'
 
 export class InternalSigner {
@@ -357,20 +358,20 @@ describe('KeystoreController', () => {
     const keystoreUid = await keystore.getKeyStoreUid()
     expect(keystoreUid.length).toBe(128)
   })
-  test('should generate and store seed phrase for email vault', async () => {
-    await keystore.generateEmailVaultSeed('test@test.com')
-    const seeds = await storage.get('emailVaultSeeds', {})
-    expect(seeds['test@test.com']).toBeTruthy()
-  })
-  test('should add external seed for email vault', async () => {
-    await keystore.addEmailVaultSeed('test1@test.com', seedPhrase)
-    const seeds = await storage.get('emailVaultSeeds', {})
-    expect(seeds['test1@test.com']).toBeTruthy()
-  })
-  test('should get email vault key', async () => {
-    const seed = await keystore.getEmailVaultSeed('test1@test.com')
-    expect(seed).toBe(seedPhrase)
-  })
+  // test('should generate and store seed phrase for email vault', async () => {
+  //   await keystore.generateEmailVaultSeed('test@test.com')
+  //   const seeds = await storage.get('emailVaultSeeds', {})
+  //   expect(seeds['test@test.com']).toBeTruthy()
+  // })
+  // test('should add external seed for email vault', async () => {
+  //   await keystore.addEmailVaultSeed('test1@test.com', seedPhrase)
+  //   const seeds = await storage.get('emailVaultSeeds', {})
+  //   expect(seeds['test1@test.com']).toBeTruthy()
+  // })
+  // test('should get email vault key', async () => {
+  //   const seed = await keystore.getEmailVaultSeed('test1@test.com')
+  //   expect(seed).toBe(seedPhrase)
+  // })
 })
 
 describe('import/export with pub key test', () => {

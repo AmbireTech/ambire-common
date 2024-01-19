@@ -119,8 +119,6 @@ describe('Main Controller ', () => {
     const promise = new Promise((resolve) => controller.emailVault.onUpdate(() => resolve(null)))
     await controller.emailVault.getEmailVaultInfo(email)
     await promise
-    // eslint-disable-next-line no-promise-executor-return
-    console.log(controller.emailVault.emailVaultStates)
     expect(controller.emailVault.emailVaultStates).toMatchObject({
       email: {
         [email]: {

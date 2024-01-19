@@ -14,13 +14,13 @@ export async function requestMagicLink(
   relayerUrl: String,
   fetch: Function
 ): Promise<MagicLinkData> {
-  const resp = await fetch(`${relayerUrl}/email-vault/requestKey/${email}`)
+  const resp = await fetch(`${relayerUrl}/email-vault/request-key/${email}`)
   const result: RequestMagicLinkResult = await resp.json()
 
   if (result?.data?.secret)
     setTimeout(() => {
       fetch(
-        `${relayerUrl}/email-vault/confirmationKey/${email}/${result.data.key}/${result.data.secret}`
+        `${relayerUrl}/email-vault/confirm-key/${email}/${result.data.key}/${result.data.secret}`
       )
     }, 2000)
 

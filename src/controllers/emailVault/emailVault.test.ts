@@ -38,8 +38,8 @@ const getRandomEmail = () => {
   return `unufri+${Math.random().toString().slice(2)}@ambire.com`
 }
 let storage: Storage
-// const relayerUrl: string = 'https://staging-relayer.ambire.com'
-const relayerUrl: string = 'http://localhost:1934'
+const relayerUrl: string = 'https://staging-relayer.ambire.com'
+// const relayerUrl: string = 'http://localhost:1934'
 let keystore: KeystoreController
 let email: string
 describe('happy cases', () => {
@@ -66,7 +66,7 @@ describe('happy cases', () => {
     const evLib = new EmailVault(fetch, relayerUrl)
     const ev = new EmailVaultController(storage, fetch, relayerUrl, keystore)
     const keys = await requestMagicLink(email, relayerUrl, fetch)
-    await fetch(`${relayerUrl}/email-vault/confirmationKey/${email}/${keys.key}/${keys.secret}`)
+    await fetch(`${relayerUrl}/email-vault/confirm-key/${email}/${keys.key}/${keys.secret}`)
     // createing
     await evLib.getEmailVaultInfo(email, keys.key)
     // not logged in
@@ -105,6 +105,9 @@ describe('happy cases', () => {
     expect(keystore.isUnlocked).toBeTruthy()
   })
 
+  // @NOTE this test is supposed to fail because we have a new route for pulling the fulfilled operations
+  // once the staging-relayer is updated we can continue with this.
+  // (updating the staging would break the old version of the controller, we have to migrate both common and relayer at the same time)
   test('full keystore sync', async () => {
     const [storage2, keystore2] = [
       produceMemoryStore(),

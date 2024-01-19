@@ -16,7 +16,6 @@
     "@jest/globals": "^29.6.1",
     "aes-js": "^3.1.2",
     "ambire-constants": "github:AmbireTech/ambire-constants",
-    "bip39": "^3.1.0",
     "dotenv": "^16.3.1",
     "eth-crypto": "^2.6.0",
     "ethers": "^6.8.0",
