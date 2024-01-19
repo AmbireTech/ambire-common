@@ -287,7 +287,9 @@ export class SignAccountOpController extends EventEmitter {
       this.accountOp?.signingKeyAddr &&
       this.accountOp?.signingKeyType &&
       this.accountOp?.gasFeePayment &&
-      !this.errors.length
+      !this.errors.length &&
+      // FIXME: Figure out which other conditions to cover in here
+      this.status?.type !== SigningStatus.InProgress
     ) {
       this.status = { type: SigningStatus.ReadyToSign }
     }
