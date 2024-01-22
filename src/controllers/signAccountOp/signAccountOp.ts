@@ -283,7 +283,7 @@ export class SignAccountOpController extends EventEmitter {
   updateStatusToReadyToSign() {
     const isInTheMiddleOfSigning =
       this.status &&
-      ![SigningStatus.InProgress, SigningStatus.InProgressAwaitingUserInput].includes(
+      [SigningStatus.InProgress, SigningStatus.InProgressAwaitingUserInput].includes(
         this.status?.type
       )
 
