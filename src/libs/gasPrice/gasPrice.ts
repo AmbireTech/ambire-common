@@ -75,6 +75,7 @@ export async function getGasPriceRecommendations(
   blockTag: string | number = -1
 ): Promise<GasRecommendation[]> {
   const lastBlock = await provider.getBlock(blockTag, true)
+  // FIXME: Figure out why sometimes this condition clicks when initiating Account Op
   if (lastBlock == null) throw new Error('unable to retrieve block')
   // https://github.com/ethers-io/ethers.js/issues/3683#issuecomment-1436554995
   const txns = lastBlock.prefetchedTransactions
