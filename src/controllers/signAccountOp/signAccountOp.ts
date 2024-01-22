@@ -189,8 +189,7 @@ export class SignAccountOpController extends EventEmitter {
         "We are unable to estimate your transaction as you don't have tokens with balances to cover the fee."
       )
 
-    if (!this.accountKeyStoreKeys.length)
-      errors.push('We are unable to sign your transaction as there is no available signer.')
+    if (!this.accountKeyStoreKeys.length) errors.push('No key available for the selected account.')
 
     // This error should not happen, as in the update method we are always setting a default signer.
     // It may occur, only if there are no available signer.
