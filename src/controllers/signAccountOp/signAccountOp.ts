@@ -277,18 +277,27 @@ export class SignAccountOpController extends EventEmitter {
     this.#setDefaults()
     // Here, we expect to have most of the fields set, so we can safely set GasFeePayment
     this.#setGasFeePayment()
-    // If status is already set, don't override it. Meant to set the status only initially here.
-    if (!this.status) this.updateStatusToReadyToSign()
+    this.updateStatusToReadyToSign()
   }
 
   updateStatusToReadyToSign() {
+    const isInTheMiddleOfSigning =
+      this.status &&
+      ![SigningStatus.InProgress, SigningStatus.InProgressAwaitingUserInput].includes(
+        this.status?.type
+      )
+
     if (
       this.isInitialized &&
       this.#estimation &&
       this.accountOp?.signingKeyAddr &&
       this.accountOp?.signingKeyType &&
       this.accountOp?.gasFeePayment &&
-      !this.errors.length
+      !this.errors.length &&
+      // Update if status is NOT already set (that's the initial state update)
+      // or in general if the user is not in the middle of signing (otherwise
+      // it resets the loading state back to ready to sign)
+      (!this.status || !isInTheMiddleOfSigning)
     ) {
       this.status = { type: SigningStatus.ReadyToSign }
     }
