@@ -277,10 +277,10 @@ export class SignAccountOpController extends EventEmitter {
     this.#setDefaults()
     // Here, we expect to have most of the fields set, so we can safely set GasFeePayment
     this.#setGasFeePayment()
-    this.updateStatusToReadyToSign()
+    this.updateStatusInitiallyToReadyToSign()
   }
 
-  updateStatusToReadyToSign() {
+  updateStatusInitiallyToReadyToSign() {
     if (
       this.isInitialized &&
       this.#estimation &&
@@ -288,8 +288,8 @@ export class SignAccountOpController extends EventEmitter {
       this.accountOp?.signingKeyType &&
       this.accountOp?.gasFeePayment &&
       !this.errors.length &&
-      // FIXME: Figure out which other conditions to cover in here
-      this.status?.type !== SigningStatus.InProgress
+      !this.status // if status is already set, don't override it, this method
+      // is called on every update and is meant to set the status only initially
     ) {
       this.status = { type: SigningStatus.ReadyToSign }
     }
