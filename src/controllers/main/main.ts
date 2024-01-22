@@ -28,6 +28,7 @@ import {
 } from '../../libs/banners/banners'
 import { estimate, EstimateResult, getEstimationFailure } from '../../libs/estimate/estimate'
 import { GasRecommendation, getGasPriceRecommendations } from '../../libs/gasPrice/gasPrice'
+import { getNativePrice } from '../../libs/humanizer/utils'
 import { shouldGetAdditionalPortfolio } from '../../libs/portfolio/helpers'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { isErc4337Broadcast, toUserOperation } from '../../libs/userOperation/userOperation'
@@ -334,7 +335,6 @@ export class MainController extends EventEmitter {
 
     this.signAccountOp = new SignAccountOpController(
       this.keystore,
-      this.portfolio,
       this.settings,
       this.#externalSignerControllers,
       account,
@@ -344,7 +344,8 @@ export class MainController extends EventEmitter {
       accountOpToBeSigned,
       this.#storage,
       this.#fetch,
-      this.#callRelayer
+      this.#callRelayer,
+      () => getNativePrice(network, this.#fetch)
     )
 
     const broadcastSignedAccountOpIfNeeded = async () => {

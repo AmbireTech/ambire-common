@@ -24,7 +24,6 @@ import {
 } from '../../libs/userOperation/userOperation'
 import EventEmitter from '../eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
-import { PortfolioController } from '../portfolio/portfolio'
 import { SettingsController } from '../settings/settings'
 
 export enum SigningStatus {
@@ -64,8 +63,6 @@ function getTokenUsdAmount(token: TokenResult, gasAmount: bigint): string {
 export class SignAccountOpController extends EventEmitter {
   #keystore: KeystoreController
 
-  #portfolio: PortfolioController
-
   #settings: SettingsController
 
   #externalSignerControllers: ExternalSignerControllers
@@ -100,9 +97,10 @@ export class SignAccountOpController extends EventEmitter {
 
   #callRelayer: Function
 
+  #nativePrice: number
+
   constructor(
     keystore: KeystoreController,
-    portfolio: PortfolioController,
     settings: SettingsController,
     externalSignerControllers: ExternalSignerControllers,
     account: Account,
@@ -112,11 +110,11 @@ export class SignAccountOpController extends EventEmitter {
     accountOp: AccountOp,
     storage: Storage,
     fetch: Function,
-    callRelayer: Function
+    callRelayer: Function,
+    getNativePrice: Function
   ) {
     super()
     this.#keystore = keystore
-    this.#portfolio = portfolio
     this.#settings = settings
     this.#externalSignerControllers = externalSignerControllers
     this.#account = account
@@ -127,8 +125,25 @@ export class SignAccountOpController extends EventEmitter {
     this.#storage = storage
     this.#fetch = fetch
     this.#callRelayer = callRelayer
-
+    this.#nativePrice = 0
+    this.refetchNativePrice(getNativePrice)
     this.#humanizeAccountOp()
+  }
+
+  refetchNativePrice(call: Function) {
+    call()
+      .then((price: number) => {
+        this.#nativePrice = price
+      })
+      .catch((e: any) => {
+        this.emitError({
+          level: 'silent',
+          message: 'SignAccountOpController: could not fetch native price.',
+          error: new Error('SignAccountOpController: could not fetch native price.')
+        })
+        this.refetchNativePrice(call)
+        return e
+      })
   }
 
   get isInitialized(): boolean {
@@ -322,13 +337,8 @@ export class SignAccountOpController extends EventEmitter {
    * such as amount, gasLimit, etc., are also represented as BigInt numbers.
    */
   #getNativeToFeeTokenRatio(feeToken: TokenResult): bigint {
-    const native = this.#portfolio.latest?.[this.accountOp!.accountAddr]?.[
-      this.accountOp!.networkId
-    ]?.result?.tokens.find(
-      (token) => token.address === '0x0000000000000000000000000000000000000000'
-    )
     const isUsd = (price: Price) => price.baseCurrency === 'usd'
-    const ratio = native!.priceIn.find(isUsd)!.price / feeToken!.priceIn.find(isUsd)!.price
+    const ratio = this.#nativePrice / feeToken!.priceIn.find(isUsd)!.price
 
     // Here we multiply it by 1e18, in order to keep the decimal precision.
     // Otherwise, passing the ratio to the BigInt constructor, we will lose the numbers after the decimal point.

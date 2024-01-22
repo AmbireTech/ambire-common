@@ -337,7 +337,6 @@ const init = async (
   settings.providers = { [op.networkId]: provider }
   const controller = new SignAccountOpController(
     keystore,
-    portfolio,
     settings,
     {},
     account,
@@ -347,7 +346,11 @@ const init = async (
     op,
     storage,
     fetch,
-    callRelayer
+    callRelayer,
+    () =>
+      new Promise((resolve) => {
+        resolve(1000.0)
+      })
   )
 
   return { controller, prices, estimation }
