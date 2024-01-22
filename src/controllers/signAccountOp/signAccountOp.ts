@@ -277,19 +277,18 @@ export class SignAccountOpController extends EventEmitter {
     this.#setDefaults()
     // Here, we expect to have most of the fields set, so we can safely set GasFeePayment
     this.#setGasFeePayment()
-    this.updateStatusInitiallyToReadyToSign()
+    // If status is already set, don't override it. Meant to set the status only initially here.
+    if (!this.status) this.updateStatusToReadyToSign()
   }
 
-  updateStatusInitiallyToReadyToSign() {
+  updateStatusToReadyToSign() {
     if (
       this.isInitialized &&
       this.#estimation &&
       this.accountOp?.signingKeyAddr &&
       this.accountOp?.signingKeyType &&
       this.accountOp?.gasFeePayment &&
-      !this.errors.length &&
-      !this.status // if status is already set, don't override it, this method
-      // is called on every update and is meant to set the status only initially
+      !this.errors.length
     ) {
       this.status = { type: SigningStatus.ReadyToSign }
     }
