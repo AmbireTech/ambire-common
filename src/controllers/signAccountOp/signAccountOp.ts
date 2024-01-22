@@ -144,7 +144,10 @@ export class SignAccountOpController extends EventEmitter {
     // Otherwise, if we don't have a default value, then `this.readyToSign` will always be false unless we set a signer.
     // In that case, on the application, we want the "Sign" button to be clickable/enabled,
     // and we have to check and expose the `SignAccountOp` controller's inner state to make this check possible.
-    if (!this.accountOp.signingKeyAddr || !this.accountOp.signingKeyType) {
+    if (
+      this.accountKeyStoreKeys.length &&
+      (!this.accountOp.signingKeyAddr || !this.accountOp.signingKeyType)
+    ) {
       this.accountOp.signingKeyAddr = this.accountKeyStoreKeys[0].addr
       this.accountOp.signingKeyType = this.accountKeyStoreKeys[0].type
     }
