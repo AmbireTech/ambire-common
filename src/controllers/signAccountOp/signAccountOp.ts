@@ -281,13 +281,23 @@ export class SignAccountOpController extends EventEmitter {
   }
 
   updateStatusToReadyToSign() {
+    const isInTheMiddleOfSigning =
+      this.status &&
+      [SigningStatus.InProgress, SigningStatus.InProgressAwaitingUserInput].includes(
+        this.status?.type
+      )
+
     if (
       this.isInitialized &&
       this.#estimation &&
       this.accountOp?.signingKeyAddr &&
       this.accountOp?.signingKeyType &&
       this.accountOp?.gasFeePayment &&
-      !this.errors.length
+      !this.errors.length &&
+      // Update if status is NOT already set (that's the initial state update)
+      // or in general if the user is not in the middle of signing (otherwise
+      // it resets the loading state back to ready to sign)
+      (!this.status || !isInTheMiddleOfSigning)
     ) {
       this.status = { type: SigningStatus.ReadyToSign }
     }
