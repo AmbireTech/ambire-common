@@ -6,8 +6,6 @@ import { networks } from '../../consts/networks'
 import { UserRequest } from '../../interfaces/userRequest'
 import { TokenResult } from '../../libs/portfolio'
 import { isKnownTokenOrContract } from '../../services/address'
-import { getBip44Items, resolveENSDomain } from '../../services/ensDomains'
-import { resolveUDomain } from '../../services/unstoppableDomains'
 import { validateSendTransferAddress, validateSendTransferAmount } from '../../services/validations'
 import EventEmitter from '../eventEmitter'
 
@@ -24,6 +22,13 @@ const DEFAULT_VALIDATION_FORM_MSGS = {
   }
 }
 
+const DEFAULT_RECIPIENT = {
+  address: '',
+  isENS: false,
+  isUD: false,
+  isDomainResolving: false
+}
+
 export class TransferController extends EventEmitter {
   // State
   #tokens: TokenResult[] = []
@@ -38,13 +43,7 @@ export class TransferController extends EventEmitter {
 
   maxAmount = '0'
 
-  recipientAddress = ''
-
-  recipientEnsAddress = ''
-
-  recipientUDAddress = ''
-
-  isRecipientDomainResolving = false
+  recipient = DEFAULT_RECIPIENT
 
   isRecipientAddressUnknown = false
 
@@ -97,13 +96,10 @@ export class TransferController extends EventEmitter {
   resetForm() {
     this.amount = ''
     this.maxAmount = '0'
-    this.recipientAddress = ''
-    this.recipientEnsAddress = ''
-    this.recipientUDAddress = ''
     this.selectedToken = null
     this.#selectedTokenNetworkData = null
     this.isRecipientAddressUnknown = false
-    this.isRecipientDomainResolving = false
+    this.recipient = DEFAULT_RECIPIENT
     this.userRequest = null
     this.isRecipientAddressUnknownAgreed = false
     this.isRecipientSmartContract = false
@@ -126,23 +122,20 @@ export class TransferController extends EventEmitter {
     const validationFormMsgsNew = DEFAULT_VALIDATION_FORM_MSGS
 
     if (this.#humanizerInfo && this.#selectedAccount) {
-      const isUDAddress = !!this.recipientUDAddress
-      const isEnsAddress = !!this.recipientEnsAddress
-
       validationFormMsgsNew.recipientAddress = validateSendTransferAddress(
-        this.recipientUDAddress || this.recipientEnsAddress || this.recipientAddress,
+        this.recipient.address,
         this.#selectedAccount,
         this.isRecipientAddressUnknownAgreed,
         this.isRecipientAddressUnknown,
         this.#humanizerInfo,
-        isUDAddress,
-        isEnsAddress,
-        this.isRecipientDomainResolving
+        this.recipient.isUD,
+        this.recipient.isENS,
+        this.recipient.isDomainResolving
       )
     }
 
     // Validate the amount
-    if (this.selectedToken && (this.amount !== '' || this.recipientAddress !== '')) {
+    if (this.selectedToken && (this.amount !== '' || this.recipient.address !== '')) {
       validationFormMsgsNew.amount = validateSendTransferAmount(this.amount, this.selectedToken)
     }
 
@@ -162,7 +155,7 @@ export class TransferController extends EventEmitter {
       areFormFieldsValid &&
       isSWWarningMissingOrAccepted &&
       isRecipientAddressUnknownMissingOrAccepted &&
-      !this.isRecipientDomainResolving
+      !this.recipient.isDomainResolving
     )
   }
 
@@ -176,7 +169,7 @@ export class TransferController extends EventEmitter {
     tokens,
     selectedToken,
     amount,
-    recipientAddress,
+    recipient,
     isSWWarningAgreed,
     isRecipientAddressUnknownAgreed
   }: {
@@ -186,7 +179,7 @@ export class TransferController extends EventEmitter {
     tokens?: TokenResult[]
     selectedToken?: TokenResult
     amount?: string
-    recipientAddress?: string
+    recipient?: any
     isSWWarningAgreed?: boolean
     isRecipientAddressUnknownAgreed?: boolean
   }) {
@@ -207,12 +200,8 @@ export class TransferController extends EventEmitter {
     if (typeof amount === 'string') {
       this.amount = amount
     }
-    // If we do a regular check the value won't update if it's '' or '0'
-    if (typeof recipientAddress === 'string') {
-      const canBeEnsOrUd = recipientAddress.indexOf('.') !== -1
-      this.isRecipientDomainResolving = canBeEnsOrUd
-
-      this.recipientAddress = recipientAddress.trim()
+    if (recipient) {
+      this.recipient = recipient
     }
     // We can do a regular check here, because the property defines if it should be updated
     // and not the actual value
@@ -236,9 +225,7 @@ export class TransferController extends EventEmitter {
 
     if (!this.selectedToken || !this.#selectedTokenNetworkData || !this.#selectedAccount) return
 
-    const recipientAddress = getAddress(
-      this.recipientUDAddress || this.recipientEnsAddress || this.recipientAddress
-    )
+    const recipientAddress = getAddress(this.recipient.address)
 
     const bigNumberHexAmount = `0x${parseUnits(
       this.amount,
@@ -275,57 +262,20 @@ export class TransferController extends EventEmitter {
       this.#throwNotInitialized()
       return
     }
-    const address = this.recipientAddress.trim()
-    const canBeEnsOrUd = address.indexOf('.') !== -1
 
-    if (!canBeEnsOrUd) {
-      if (this.recipientUDAddress) this.recipientUDAddress = ''
-      if (this.recipientEnsAddress) this.recipientEnsAddress = ''
-    }
-
-    if (this.selectedToken?.networkId && this.#selectedTokenNetworkData && canBeEnsOrUd) {
-      try {
-        this.recipientUDAddress = await resolveUDomain(
-          address,
-          this.selectedToken.symbol,
-          this.#selectedTokenNetworkData.unstoppableDomainsChain
-        )
-      } catch {
-        this.emitError({
-          level: 'major',
-          message:
-            'We encountered an internal error during UD resolving. Retry, or contact support if the issue persists.',
-          error: new Error('transfer: UD resolving failed')
-        })
-      }
-
-      const bip44Item = getBip44Items(this.selectedToken.symbol)
-
-      try {
-        this.recipientEnsAddress = await resolveENSDomain(address, bip44Item)
-      } catch {
-        // Don't throw an error if the address is already resolved as UD
-        if (!this.recipientUDAddress) {
-          this.emitError({
-            level: 'major',
-            message:
-              'We encountered an internal error during ENS resolving. Retry, or contact support if the issue persists.',
-            error: new Error('transfer: ENS resolving failed')
-          })
-        }
-      }
-    }
     if (this.#humanizerInfo) {
       // @TODO: could fetch address code
-      this.isRecipientSmartContract = isKnownTokenOrContract(this.#humanizerInfo, address)
+      this.isRecipientSmartContract = isKnownTokenOrContract(
+        this.#humanizerInfo,
+        this.recipient.address
+      )
     }
 
-    if (this.recipientUDAddress || this.recipientEnsAddress) {
+    if (this.recipient.isUD || this.recipient.isENS) {
       this.isRecipientAddressUnknown = true // @TODO: check from the address book
     }
 
     this.isRecipientAddressUnknown = true // @TODO: isValidAddress & check from the address book
-    this.isRecipientDomainResolving = false
 
     this.emitUpdate()
   }
