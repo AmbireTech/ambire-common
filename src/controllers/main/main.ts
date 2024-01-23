@@ -403,13 +403,13 @@ export class MainController extends EventEmitter {
             this.settings.providers[network],
             this.settings.networks.find((net) => net.id === network)!
           )
-        } catch {
+        } catch (e: any) {
           this.emitError({
             level: 'major',
-            message: `Failed to fetch gas price for ${
+            message: `Unable to get gas price for ${
               this.settings.networks.find((n) => n.id === network)?.name
             }`,
-            error: new Error('Failed to fetch gas price')
+            error: new Error('Failed to fetch gas price: '+e?.message)
           })
         }
       })
