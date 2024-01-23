@@ -16,13 +16,12 @@ export interface TransferControllerState {
 
   maxAmount: string
 
-  recipientAddress: string
-
-  recipientEnsAddress: string
-
-  recipientUDAddress: string
-
-  isRecipientDomainResolving: boolean
+  recipient: {
+    address: string
+    isENS: boolean
+    isUD: boolean
+    isDomainResolving: boolean
+  }
 
   isRecipientAddressUnknown: boolean
 
