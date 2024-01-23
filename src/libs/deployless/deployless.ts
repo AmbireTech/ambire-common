@@ -96,6 +96,7 @@ export class Deployless {
       ])
     )
     // any response bigger than 0x is sufficient to know that state override worked
+    // the response would be just "0x" if state override doesn't work
     this.stateOverrideSupported = code.startsWith('0x') && code.length > 2
     this.contractRuntimeCode = mapResponse(code)
   }

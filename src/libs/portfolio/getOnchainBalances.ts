@@ -24,7 +24,7 @@ class SimulationError extends Error {
   }
 }
 
-const handleSimulationError = (error: string, beforeNonce: bigint, afterNonce: bigint) => {
+function handleSimulationError (error: string, beforeNonce: bigint, afterNonce: bigint) {
   if (error !== '0x') throw new SimulationError(parseErr(error) || error, beforeNonce, afterNonce)
   // If the afterNonce is 0, it means that we reverted, even if the error is empty
   // In both BalanceOracle and NFTOracle, afterSimulation and therefore afterNonce will be left empty
@@ -38,6 +38,14 @@ const handleSimulationError = (error: string, beforeNonce: bigint, afterNonce: b
     )
 }
 
+function getDeploylessOpts (accountAddr: string, opts: Partial<GetOptions>) {
+  return {
+    blockTag: opts.blockTag,
+    from: DEPLOYLESS_SIMULATION_FROM,
+    stateToOverride: opts.isEOA ? { [accountAddr]: '0x363d3d373d3d3d363d732a2b85eb1054d6f0c6c2e37da05ed3e5fea684ef5af43d82803e903d91602b57fd5bf3' } : null
+  }
+}
+
 export async function getNFTs(
   network: NetworkDescriptor,
   deployless: Deployless,
@@ -46,7 +54,7 @@ export async function getNFTs(
   tokenAddrs: [string, any][],
   limits: LimitsOptions
 ): Promise<[number, CollectionResult][]> {
-  const deploylessOpts = { blockTag: opts.blockTag, from: DEPLOYLESS_SIMULATION_FROM }
+  const deploylessOpts = getDeploylessOpts(accountAddr, opts)
   const mapToken = (token: any) => {
     return {
       name: token.name,
@@ -129,7 +137,7 @@ export async function getTokens(
       address,
       flags: getFlags({}, network.id, network.id, address)
     } as TokenResult)
-  const deploylessOpts = { blockTag: opts.blockTag, from: DEPLOYLESS_SIMULATION_FROM }
+  const deploylessOpts = getDeploylessOpts(accountAddr, opts)
   if (!opts.simulation) {
     const [results] = await deployless.call(
       'getBalances',

@@ -52,6 +52,7 @@ export interface GetOptions {
     erc20s: Hints['erc20s']
     erc721s: Hints['erc721s']
   }
+  isEOA: boolean
   pinned?: string[]
 }
 
@@ -59,7 +60,8 @@ const defaultOptions: GetOptions = {
   baseCurrency: 'usd',
   blockTag: 'latest',
   priceRecency: 0,
-  pinned: []
+  pinned: [],
+  isEOA: false
 }
 
 export class Portfolio {
