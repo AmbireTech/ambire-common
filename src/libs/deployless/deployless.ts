@@ -136,7 +136,7 @@ export class Deployless {
               gas: opts?.gasLimit
             },
             opts.blockTag,
-            { [arbitraryAddr]: { code: this.contractRuntimeCode }, ...opts.stateToOverride }
+            { [arbitraryAddr]: { code: this.contractRuntimeCode }, ...(opts.stateToOverride || {}) }
           ])
         : this.provider.call({
             blockTag: opts.blockTag,

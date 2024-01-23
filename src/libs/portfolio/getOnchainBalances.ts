@@ -47,9 +47,9 @@ function getDeploylessOpts (accountAddr: string, opts: Partial<GetOptions>) {
     stateToOverride: opts.isEOA ? {
       [accountAddr]: {
         code: '0x363d3d373d3d3d363d732a2b85eb1054d6f0c6c2e37da05ed3e5fea684ef5af43d82803e903d91602b57fd5bf3',
-        /*stateDiff: {
-          [privSlot(0, 'address', accountAddr, 'bytes32')]: '0x0000000000000000000000000000000000000000000000000000000000000001'
-        }*/
+        stateDiff: {
+          ['0x'+privSlot(0, 'address', accountAddr, 'bytes32')]: '0x0000000000000000000000000000000000000000000000000000000000000001'
+        }
       },
     } : null
   }
