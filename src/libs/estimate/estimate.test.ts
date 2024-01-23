@@ -8,6 +8,7 @@ import { describe, expect } from '@jest/globals'
 
 import { trezorSlot7v24337Deployed } from '../../../test/config'
 import { getNonce } from '../../../test/helpers'
+import { AMBIRE_PAYMASTER } from '../../consts/deploy'
 import { networks } from '../../consts/networks'
 import { Account, AccountStates } from '../../interfaces/account'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
@@ -371,23 +372,21 @@ describe('estimate', () => {
     const accountState = accountStates[trezorSlot6v2NotDeployed.addr][arbitrum.id]
     opArbitrum.asUserOperation = toUserOperation(trezorSlot6v2NotDeployed, accountState, opArbitrum)
 
-    try {
-      await estimate(
-        providerArbitrum,
-        arbitrum,
-        trezorSlot6v2NotDeployed,
-        opArbitrum,
-        accountStates[trezorSlot6v2NotDeployed.addr][arbitrum.id],
-        nativeToCheck,
-        feeTokens,
-        { is4337Broadcast: true }
-      )
-      console.log('Estimation did not fail but it should have')
-      expect(true).toBe(false)
-    } catch (e: any) {
-      const message = Buffer.from(e.message.substring(2), 'hex').toString()
-      expect(message).toContain('paymaster deposit too low')
-    }
+    const response = await estimate(
+      providerArbitrum,
+      arbitrum,
+      trezorSlot6v2NotDeployed,
+      opArbitrum,
+      accountStates[trezorSlot6v2NotDeployed.addr][arbitrum.id],
+      nativeToCheck,
+      feeTokens,
+      { is4337Broadcast: true }
+    )
+    expect(response.error).not.toBe(null)
+    console.log(response.error?.message)
+    expect(response.error?.message).toBe(
+      `Paymaster with address ${AMBIRE_PAYMASTER} does not have enough funds to execute this request. Please contact support`
+    )
   })
 
   it('estimates a 4337 request on the avalanche chain with an initCode and 4337 activator', async () => {
