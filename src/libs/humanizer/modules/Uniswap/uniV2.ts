@@ -1,5 +1,5 @@
 import { ethers } from 'ethers'
-import { getAction, getLabel, getToken, getRecipientText, getDeadlineText } from '../../utils'
+import { getAction, getLabel, getToken, getRecipientText, getDeadline } from '../../utils'
 
 import { AccountOp } from '../../../accountOp/accountOp'
 import { IrCall } from '../../interfaces'
@@ -26,7 +26,7 @@ const uniV2Mapping = (
             getLabel('for at least'),
             getToken(outputAsset, amountOutMin),
             ...getRecipientText(accountOp.accountAddr, to),
-            getDeadlineText(deadline)
+            getDeadline(deadline)
           ]
         }
       ]
@@ -47,7 +47,7 @@ const uniV2Mapping = (
             getLabel('for at least'),
             getToken(outputAsset, amountOut),
             ...getRecipientText(accountOp.accountAddr, to),
-            getDeadlineText(deadline)
+            getDeadline(deadline)
           ]
         }
       ]
@@ -68,7 +68,7 @@ const uniV2Mapping = (
             getLabel('for at least'),
             getToken(outputAsset, amountOutMin),
             ...getRecipientText(accountOp.accountAddr, to),
-            getDeadlineText(deadline)
+            getDeadline(deadline)
           ]
         }
       ]
@@ -88,7 +88,7 @@ const uniV2Mapping = (
             getLabel('for at least'),
             getToken(ethers.ZeroAddress, amountOut),
             ...getRecipientText(accountOp.accountAddr, to),
-            getDeadlineText(deadline)
+            getDeadline(deadline)
           ]
         }
       ]
@@ -107,7 +107,7 @@ const uniV2Mapping = (
             getLabel('for at least'),
             getToken(ethers.ZeroAddress, amountOutMin),
             ...getRecipientText(accountOp.accountAddr, to),
-            getDeadlineText(deadline)
+            getDeadline(deadline)
           ]
         }
       ]
@@ -129,7 +129,7 @@ const uniV2Mapping = (
             getLabel('for at least'),
             getToken(outputAsset, amountOut),
             ...getRecipientText(accountOp.accountAddr, to),
-            getDeadlineText(deadline)
+            getDeadline(deadline)
           ]
         }
       ]
@@ -158,7 +158,7 @@ const uniV2Mapping = (
             getLabel('and'),
             getToken(tokenB, amountBDesired),
             ...getRecipientText(accountOp.accountAddr, to),
-            getDeadlineText(deadline)
+            getDeadline(deadline)
           ]
         }
       ]
@@ -179,7 +179,7 @@ const uniV2Mapping = (
             getLabel('and'),
             getToken(ethers.ZeroAddress, value),
             ...getRecipientText(accountOp.accountAddr, to),
-            getDeadlineText(deadline)
+            getDeadline(deadline)
           ]
         }
       ]
@@ -200,7 +200,7 @@ const uniV2Mapping = (
             getLabel('and'),
             getToken(tokenB, amountBMin),
             ...getRecipientText(accountOp.accountAddr, to),
-            getDeadlineText(deadline)
+            getDeadline(deadline)
           ]
         }
       ]
@@ -221,7 +221,7 @@ const uniV2Mapping = (
             getLabel('and'),
             getToken(ethers.ZeroAddress, amountETHMin),
             ...getRecipientText(accountOp.accountAddr, to),
-            getDeadlineText(deadline)
+            getDeadline(deadline)
           ]
         }
       ]

@@ -56,20 +56,23 @@ export function getRecipientText(from: string, recipient: string): HumanizerVisu
     : [getLabel('and send it to'), getAddress(recipient)]
 }
 
-export function getDeadlineText(deadlineSecs: bigint): HumanizerVisualization {
-  if (
-    deadlineSecs.toString() ===
-    '115792089237316195423570985008687907853269984665640564039457584007913129639935'
-  )
-    return getLabel('no deadline')
-  const minute = 60000
-  const deadline = Number(BigInt(deadlineSecs) * 1000n)
-  const diff = deadline - Date.now()
-  if (diff < 0 && diff > -minute * 2) return getLabel('expired just now')
-  if (diff < 0) return getLabel('already expired')
-  if (diff < minute) return getLabel('expires in less than a minute')
-  if (diff < 10 * minute) return getLabel(`expires in ${Math.floor(diff / minute)} minutes`)
-  return getLabel(`valid until ${new Date(deadline).toLocaleString()}`)
+export function getDeadlineText(deadline: bigint): string {
+  const minute = 60000n
+  const diff = deadline - BigInt(Date.now())
+
+  if (diff < 0 && diff > -minute * 2n) return 'expired just now'
+  if (diff < 0) return 'already expired'
+  if (diff < minute) return 'expires in less than a minute'
+  if (diff < 10n * minute) return `expires in ${Math.floor(Number(diff / minute))} minutes`
+  return `valid until ${new Date(Number(deadline)).toLocaleString()}`
+}
+
+export function getDeadline(deadlineSecs: bigint): HumanizerVisualization {
+  const deadline = deadlineSecs * 1000n
+  return {
+    type: 'deadline',
+    amount: deadline
+  }
 }
 
 export function shortenAddress(addr: string) {

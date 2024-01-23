@@ -6,7 +6,7 @@ import { AccountOp } from '../accountOp/accountOp'
 import { Call } from '../accountOp/types'
 
 export type HumanizerVisualization = {
-  type: 'token' | 'address' | 'label' | 'action' | 'nft' | 'danger'
+  type: 'token' | 'address' | 'label' | 'action' | 'nft' | 'danger' | 'deadline'
   address?: string
   content?: string
   amount?: bigint
