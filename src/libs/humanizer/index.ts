@@ -17,6 +17,7 @@ import {
 import { aaveHumanizer } from './modules/Aave'
 import { fallbackHumanizer } from './modules/fallBackHumanizer'
 import { gasTankModule } from './modules/gasTankModule'
+import { privilegeHumanizer } from './modules/privileges'
 import { sushiSwapModule } from './modules/sushiSwapModule'
 import { genericErc20Humanizer, genericErc721Humanizer } from './modules/tokens'
 import { uniswapHumanizer } from './modules/Uniswap'
@@ -37,7 +38,7 @@ import {
 const HUMANIZER_META_KEY = 'HumanizerMeta'
 // generic in the begining
 // the final humanization is the final triggered module
-const humanizerCallModules: HumanizerCallModule[] = [
+export const humanizerCallModules: HumanizerCallModule[] = [
   genericErc20Humanizer,
   genericErc721Humanizer,
   gasTankModule,
@@ -46,6 +47,7 @@ const humanizerCallModules: HumanizerCallModule[] = [
   aaveHumanizer,
   // oneInchHumanizer,
   WALLETModule,
+  privilegeHumanizer,
   yearnVaultModule,
   sushiSwapModule,
   fallbackHumanizer
