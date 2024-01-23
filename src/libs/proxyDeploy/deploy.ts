@@ -12,14 +12,11 @@ function evmPush(data: any) {
 }
 
 // @TODO: fix the any
-export function privSlot(slotNumber: any, keyType: any, key: any, valueType: any) {
-  const buf = abi.rawEncode([keyType, valueType], [key, slotNumber])
-  return keccak256(buf)  
-}
-
-// @TODO: fix the any
+// @TODO we can use solidityPackedKeccak256
 function sstoreCode(slotNumber: any, keyType: any, key: any, valueType: any, valueBuf: any) {
-  const slot = privSlot(slotNumber, keyType, key, valueType)
+  // @TODO why are we using valueType for the slotNumber? this has to be a hardcoded uint256 and valueType is pointless
+  const buf = abi.rawEncode([keyType, valueType], [key, slotNumber])
+  const slot = keccak256(buf)
   return Buffer.concat([
     evmPush(typeof valueBuf === 'string' ? Buffer.from(valueBuf.slice(2), 'hex') : valueBuf),
     evmPush(Buffer.from(slot, 'hex')),
