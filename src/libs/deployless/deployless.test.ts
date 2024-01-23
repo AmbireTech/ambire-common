@@ -25,6 +25,18 @@ describe('Deployless', () => {
     })).rejects.toThrow('state override passed but not requested')
   })
 
+  /*
+  test('should throw if StateOverride is requested but not supported', async () => {
+    // @TODO we can't find a provider that doesn't support state override
+    const noStateOverrideProvider = new JsonRpcProvider('https://rpc.gnosischain.com')
+    const localDeployless = new Deployless(noStateOverrideProvider, helloWorld.abi, helloWorld.bin)
+    await expect(localDeployless.call('helloWorld', [], {
+      mode: DeploylessMode.StateOverride,
+      stateToOverride: {}
+    })).rejects.toThrow('state override requested but not supported')
+  })
+  */
+
   test('should invoke a method: proxy mode', async () => {
     const localDeployless = new Deployless(mainnetProvider, helloWorld.abi, helloWorld.bin)
     const [result] = await localDeployless.call('helloWorld', [], {
