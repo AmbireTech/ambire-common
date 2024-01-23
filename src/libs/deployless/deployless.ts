@@ -96,7 +96,7 @@ export class Deployless {
       ])
     )
     // any response bigger than 0x is sufficient to know that state override worked
-    this.stateOverrideSupported = code.length > 2
+    this.stateOverrideSupported = code.startsWith('0x') && code.length > 2
     this.contractRuntimeCode = mapResponse(code)
   }
 
@@ -115,7 +115,6 @@ export class Deployless {
       throw new Error('state override passed but not requested')
     }
     if (opts.mode === DeploylessMode.StateOverride && !this.stateOverrideSupported) {
-      // @TODO test this case
       throw new Error('state override requested but not supported')
     }
 
