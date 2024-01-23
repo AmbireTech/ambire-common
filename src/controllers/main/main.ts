@@ -698,16 +698,14 @@ export class MainController extends EventEmitter {
   async reestimateAndUpdatePrices(accountAddr: AccountId, networkId: NetworkId) {
     if (!this.signAccountOp) return
 
-    await Promise.all([
-      this.#updateGasPrice(),
-      async () => {
-        const accountOp = this.accountOpsToBeSigned[accountAddr]?.[networkId]?.accountOp
-        // non-fatal, no need to do anything
-        if (!accountOp) return
+    const accountOp = this.accountOpsToBeSigned[accountAddr]?.[networkId]?.accountOp
+    const reestimate = accountOp
+      ? this.#estimateAccountOp(accountOp)
+      : new Promise((resolve) => {
+          resolve(true)
+        })
 
-        await this.#estimateAccountOp(accountOp)
-      }
-    ])
+    await Promise.all([this.#updateGasPrice(), reestimate])
 
     // there's a chance signAccountOp gets destroyed between the time
     // the first "if (!this.signAccountOp) return" is performed and
