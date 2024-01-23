@@ -292,7 +292,7 @@ describe('module tests', () => {
           type: 'address',
           address: '0x0000000000000000000000000000000000000000'
         },
-        { type: 'label', content: 'already expired' }
+        { type: 'deadline', amount: 1692784103000n }
       ],
       [
         { type: 'action', content: 'Unwrap' },
@@ -325,7 +325,7 @@ describe('module tests', () => {
           type: 'address',
           address: '0xbb6C8c037b9Cc3bF1a4C4188d92e5D86bfCE76A8'
         },
-        { type: 'label', content: 'already expired' }
+        { type: 'deadline', amount: 1692786121000n }
       ],
       [
         { type: 'action', content: 'Swap' },
@@ -345,7 +345,7 @@ describe('module tests', () => {
           type: 'address',
           address: '0xca124B356bf11dc153B886ECB4596B5cb9395C41'
         },
-        { type: 'label', content: 'already expired' }
+        { type: 'deadline', amount: 1692781751000n }
       ],
       [
         { type: 'action', content: 'Swap up to' },
@@ -365,7 +365,7 @@ describe('module tests', () => {
           type: 'address',
           address: '0xbb6C8c037b9Cc3bF1a4C4188d92e5D86bfCE76A8'
         },
-        { type: 'label', content: 'already expired' }
+        { type: 'deadline', amount: 1692784529000n }
       ],
       // problematic one
       [
@@ -389,7 +389,7 @@ describe('module tests', () => {
           address: '0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85',
           amount: 178131n
         },
-        { type: 'label', content: 'already expired' }
+        { type: 'deadline', amount: 1699015475000n }
       ],
       [
         { type: 'action', content: 'Swap' },
@@ -409,7 +409,7 @@ describe('module tests', () => {
           type: 'address',
           address: '0x02a3109c4CE8354Ee771fEaC419B5da04Ef15761'
         },
-        { type: 'label', content: 'already expired' }
+        { type: 'deadline', amount: 1700232005000n }
       ]
     ]
     accountOp.calls = [...transactions.uniV3]
