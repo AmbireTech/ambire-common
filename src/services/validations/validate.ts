@@ -56,17 +56,32 @@ const validateSendTransferAddress = (
   isEnsAddress: boolean,
   isRecipientDomainResolving: boolean
 ) => {
-  const isValidAddr = validateAddress(address)
-  if (!isValidAddr.success && !isRecipientDomainResolving) return isValidAddr
+  // Basic validation is handled in the AddressInput component and we don't want to overwrite it.
+  if (!isValidAddress(address) || isRecipientDomainResolving) {
+    return {
+      success: true,
+      message: ''
+    }
+  }
 
-  if (address && selectedAcc && address === selectedAcc) {
+  // Validate checksum
+  try {
+    getAddress(address)
+  } catch {
+    return {
+      success: false,
+      message: 'Invalid checksum. Verify the address and try again.'
+    }
+  }
+
+  if (selectedAcc && address === selectedAcc) {
     return {
       success: false,
       message: 'The entered address should be different than the your own account address.'
     }
   }
 
-  if (address && isKnownTokenOrContract(humanizerInfo, address)) {
+  if (isKnownTokenOrContract(humanizerInfo, address)) {
     return {
       success: false,
       message: 'You are trying to send tokens to a smart contract. Doing so would burn them.'
@@ -74,7 +89,6 @@ const validateSendTransferAddress = (
   }
 
   if (
-    address &&
     isRecipientAddressUnknown &&
     !addressConfirmed &&
     !isUDAddress &&
@@ -89,7 +103,6 @@ const validateSendTransferAddress = (
   }
 
   if (
-    address &&
     isRecipientAddressUnknown &&
     !addressConfirmed &&
     (isUDAddress || isEnsAddress) &&
