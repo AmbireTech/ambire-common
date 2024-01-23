@@ -2,32 +2,99 @@
 import {
   AbiCoder,
   concat,
+  getBytes,
   hashMessage,
   hexlify,
   Interface,
+  isHexString,
   JsonRpcProvider,
+  toBeHex,
+  toUtf8Bytes,
   TypedDataDomain,
   TypedDataEncoder,
   TypedDataField
 } from 'ethers'
 
-import { AccountCreation } from '../../interfaces/account'
+import { Account, AccountCreation, AccountOnchainState } from '../../interfaces/account'
+import { KeystoreSigner } from '../../interfaces/keystore'
+import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
+import { TypedMessage } from '../../interfaces/userRequest'
 import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
+import { AccountOp, accountOpSignableHash } from '../accountOp/accountOp'
 
 /**
- * For EIP712 signatures, we need to append 00 at the end
+ * For Unprotected signatures, we need to append 00 at the end
  * for ambire to recognize it
  */
-export const wrapEIP712 = (signature: string) => {
+export const wrapUnprotected = (signature: string) => {
   return `${signature}00`
 }
 
 /**
- * For EthSign signatures, we need to append 01 at the end
- * for ambire to recognize it
+ * For EIP-712 signatures, we need to append 01 at the end
+ * for ambire to recognize it.
+ * For v1 contracts, we do ETH sign at the 01 slot, which we'll
+ * call standard from now on
  */
-export const wrapEthSign = (signature: string) => {
+export const wrapStandard = (signature: string) => {
   return `${signature}01`
+}
+
+/**
+ * Return the typed data for EIP-712 sign
+ */
+export const getTypedData = (
+  chainId: bigint,
+  verifyingAddr: string,
+  msgHash: string
+): TypedMessage => {
+  const domain: TypedDataDomain = {
+    name: 'Ambire',
+    version: '1',
+    chainId: chainId.toString(),
+    verifyingContract: verifyingAddr,
+    salt: toBeHex(0, 32)
+  }
+  const types = {
+    EIP712Domain: [
+      {
+        name: 'name',
+        type: 'string'
+      },
+      {
+        name: 'version',
+        type: 'string'
+      },
+      {
+        name: 'chainId',
+        type: 'uint256'
+      },
+      {
+        name: 'verifyingContract',
+        type: 'address'
+      },
+      {
+        name: 'salt',
+        type: 'bytes32'
+      }
+    ],
+    AmbireOperation: [
+      { name: 'account', type: 'address' },
+      { name: 'hash', type: 'bytes32' }
+    ]
+  }
+  const message = {
+    account: verifyingAddr,
+    hash: msgHash
+  }
+
+  return {
+    kind: 'typedMessage',
+    domain,
+    types,
+    message,
+    primaryType: 'AmbireOperation'
+  }
 }
 
 /**
@@ -159,5 +226,120 @@ export async function verifyMessage({
 
   throw new Error(
     `Ambire failed to validate the signature. Please make sure you are signing with the correct key or device. If the problem persists, please contact Ambire support. Error details: unexpected result from the UniversalValidator: ${callResult}`
+  )
+}
+
+// Authorize the execute calls according to the version of the smart account
+export async function getExecuteSignature(
+  network: NetworkDescriptor,
+  accountOp: AccountOp,
+  accountState: AccountOnchainState,
+  signer: KeystoreSigner
+) {
+  // if we're authorizing calls for a v1 contract, we do a sign message
+  // on the hash of the calls
+  if (!accountState.isV2) {
+    const message = hexlify(accountOpSignableHash(accountOp))
+    return wrapStandard(await signer.signMessage(message))
+  }
+
+  // txns for v2 contracts are always eip-712 so we put the hash of the calls
+  // in eip-712 format
+  const typedData = getTypedData(
+    network.chainId,
+    accountState.accountAddr,
+    hexlify(accountOpSignableHash(accountOp))
+  )
+  return wrapStandard(await signer.signTypedData(typedData))
+}
+
+export async function getPlainTextSignature(
+  message: string | Uint8Array,
+  network: NetworkDescriptor,
+  account: Account,
+  accountState: AccountOnchainState,
+  signer: KeystoreSigner
+): Promise<string> {
+  const dedicatedToOneSA = signer.key.dedicatedToOneSA
+
+  let messageHex
+  if (message instanceof Uint8Array) {
+    messageHex = hexlify(message)
+  } else if (!isHexString(message)) {
+    messageHex = hexlify(toUtf8Bytes(message))
+  } else {
+    messageHex = message
+  }
+
+  if (!account.creation) {
+    const signature = await signer.signMessage(messageHex)
+    return signature
+  }
+
+  if (!accountState.isV2) {
+    // the below commented out code is the way this should work if we enable it
+    // we're disabling it from the extension for v1 account as signatures
+    // produced in plain text are malleable, meaning they could be reused
+    // somewhere else. If demand is big enough for v1 account, we might
+    // re-enable them
+    // return wrapUnprotected(await signer.signMessage(messageHex))
+    throw new Error(
+      'Signing messages is disallowed for v1 accounts. Please contact support to proceed'
+    )
+  }
+
+  // if it's safe, we proceed
+  if (dedicatedToOneSA) {
+    return wrapUnprotected(await signer.signMessage(messageHex))
+  }
+
+  // in case of only_standard priv key, we transform the data
+  // for signing to EIP-712. This is because the key is not labeled safe
+  // and it should inform the user that he's performing an Ambire Op.
+  // This is important as this key could be a metamask one and someone
+  // could be phishing him into approving an Ambire Op without him
+  // knowing
+  const typedData = getTypedData(network!.chainId, account.addr, hashMessage(getBytes(messageHex)))
+  return wrapStandard(await signer.signTypedData(typedData))
+}
+
+export async function getEIP712Signature(
+  message: TypedMessage,
+  account: Account,
+  accountState: AccountOnchainState,
+  signer: KeystoreSigner
+): Promise<string> {
+  if (!message.types.EIP712Domain) {
+    throw new Error(
+      'Ambire only supports signing EIP712 typed data messages. Please try again with a valid EIP712 message.'
+    )
+  }
+  if (!message.primaryType) {
+    throw new Error(
+      'The primaryType is missing in the typed data message incoming. Please try again with a valid EIP712 message.'
+    )
+  }
+
+  if (!account.creation) {
+    const signature = await signer.signTypedData(message)
+    return signature
+  }
+
+  if (!accountState.isV2) {
+    throw new Error(
+      'Signing eip-712 messages is disallowed for v1 accounts. Please contact support to proceed'
+    )
+  }
+
+  // if it's safe, we proceed
+  const dedicatedToOneSA = signer.key.dedicatedToOneSA
+  if (dedicatedToOneSA) {
+    return wrapUnprotected(await signer.signTypedData(message))
+  }
+
+  // we do not allow signers who are not dedicated to one account to sign eip-712
+  // messsages in v2 as it could lead to reusing that key from
+  throw new Error(
+    `Signer with address ${signer.key.addr} does not have privileges to execute this operation. Please choose a different signer and try again`
   )
 }

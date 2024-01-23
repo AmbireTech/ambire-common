@@ -52,6 +52,7 @@ export interface TxnRequest {
 }
 
 export interface KeystoreSigner {
+  key: Key
   init?: (externalSignerController?: ExternalSignerController) => void
   signRawTransaction: (txnRequest: TxnRequest) => Promise<Transaction['serialized']>
   signTypedData: (typedMessage: TypedMessage) => Promise<string>
@@ -86,15 +87,22 @@ export type MainKey = {
 
 export type Key = (InternalKey | ExternalKey) & { isExternallyStored: boolean }
 
+export const standardSigningOnlyPriv =
+  '0x0000000000000000000000000000000000000000000000000000000000000001'
+export const dedicatedToOneSAPriv =
+  '0x0000000000000000000000000000000000000000000000000000000000000002'
+
 export type InternalKey = {
   addr: Account['addr']
   type: 'internal'
+  dedicatedToOneSA: boolean
   meta: null
 }
 
 export type ExternalKey = {
   addr: Account['addr']
   type: 'trezor' | 'ledger' | 'lattice' | string
+  dedicatedToOneSA: boolean
   meta: {
     deviceId: string
     deviceModel: string

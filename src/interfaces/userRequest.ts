@@ -34,7 +34,7 @@ export interface Message {
   // or any other data that needs to otherwise be retrieved in an async manner and/or needs to be
   // "remembered" at the time of signing in order to visualize history properly
   humanizerMeta?: { [key: string]: any }
-  networkId?: NetworkId
+  networkId: NetworkId
 }
 
 export interface UserRequest {

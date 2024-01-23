@@ -1,5 +1,4 @@
 import { NetworkDescriptor } from '../interfaces/networkDescriptor'
-import { ENTRY_POINT_MARKER, ERC_4337_ENTRYPOINT } from './deploy'
 
 const networks: NetworkDescriptor[] = [
   {
@@ -25,10 +24,7 @@ const networks: NetworkDescriptor[] = [
     chainId: 137n,
     explorerUrl: 'https://polygonscan.com',
     erc4337: {
-      // TODO: temp disabled (only while testing)
       enabled: false,
-      entryPointAddr: ERC_4337_ENTRYPOINT,
-      entryPointMarker: ENTRY_POINT_MARKER,
       hasPaymaster: true
     },
     unstoppableDomainsChain: 'MATIC',
@@ -47,9 +43,7 @@ const networks: NetworkDescriptor[] = [
     explorerUrl: 'https://optimistic.etherscan.io',
     erc4337: {
       enabled: false,
-      entryPointAddr: ERC_4337_ENTRYPOINT,
-      entryPointMarker: ENTRY_POINT_MARKER,
-      hasPaymaster: false
+      hasPaymaster: true
     },
     unstoppableDomainsChain: 'ERC20',
     feeOptions: {
@@ -70,8 +64,6 @@ const networks: NetworkDescriptor[] = [
     explorerUrl: 'https://snowtrace.io',
     erc4337: {
       enabled: true,
-      entryPointAddr: ERC_4337_ENTRYPOINT,
-      entryPointMarker: ENTRY_POINT_MARKER,
       hasPaymaster: true
     },
     unstoppableDomainsChain: 'ERC20',
@@ -80,16 +72,26 @@ const networks: NetworkDescriptor[] = [
       minBaseFee: 25000000000n, // 25 gwei
       feeIncrease: 5n // %
     }
+  },
+  {
+    id: 'arbitrum',
+    name: 'Arbitrum',
+    nativeAssetSymbol: 'ETH',
+    rpcUrl: 'https://invictus.ambire.com/arbitrum',
+    rpcNoStateOverride: false,
+    chainId: 42161n,
+    explorerUrl: 'https://arbiscan.io',
+    erc4337: {
+      enabled: false,
+      hasPaymaster: true
+    },
+    unstoppableDomainsChain: 'ERC20',
+    feeOptions: {
+      is1559: true,
+      minBaseFee: 100000000n // 1 gwei
+    },
+    reestimateOn: 6000
   }
-  // This breaks the background service of the extension
-  // {
-  //   id: 'hardhat',
-  //   name: 'hardhat',
-  //   nativeAssetSymbol: 'ETH',
-  //   rpcUrl: '',
-  //   rpcNoStateOverride: true,
-  //   chainId: 31337n
-  // }
 ]
 
 export { networks }

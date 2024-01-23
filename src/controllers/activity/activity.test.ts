@@ -413,7 +413,8 @@ describe('Activity Controller ', () => {
           message: '0x74657374'
         },
         fromUserRequestId: 1,
-        signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503'
+        signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503',
+        networkId: 'ethereum'
       }
 
       await controller.addSignedMessage(signedMessage, '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5')
@@ -455,7 +456,8 @@ describe('Activity Controller ', () => {
           message: '0x74657374'
         },
         fromUserRequestId: 1,
-        signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503'
+        signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503',
+        networkId: 'ethereum'
       }
 
       await controller.addSignedMessage(signedMessage, '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5')
@@ -503,7 +505,8 @@ describe('Activity Controller ', () => {
           message: '0x123456'
         },
         fromUserRequestId: 1,
-        signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503'
+        signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503',
+        networkId: 'ethereum'
       }
 
       const signedMessages = Array.from(Array(1500).keys()).map((key) => ({

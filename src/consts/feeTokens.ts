@@ -16,6 +16,10 @@ export default [
     networkId: 'avalanche'
   },
   {
+    address: '0x0000000000000000000000000000000000000000',
+    networkId: 'arbitrum'
+  },
+  {
     address: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
     networkId: 'ethereum'
   },
@@ -107,5 +111,13 @@ export default [
   {
     address: '0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E',
     networkId: 'avalanche'
+  },
+  {
+    address: '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359',
+    networkId: 'polygon'
+  },
+  {
+    address: '0xc2132D05D31c914a87C6611C10748AEb04B58e8F',
+    networkId: 'polygon'
   }
 ]

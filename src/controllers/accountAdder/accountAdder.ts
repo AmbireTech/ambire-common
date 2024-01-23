@@ -7,7 +7,7 @@ import {
 } from '../../consts/derivation'
 import { Account, AccountOnchainState } from '../../interfaces/account'
 import { KeyIterator } from '../../interfaces/keyIterator'
-import { Key } from '../../interfaces/keystore'
+import { dedicatedToOneSAPriv, Key } from '../../interfaces/keystore'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
 import { AccountPreferences, KeyPreferences } from '../../interfaces/settings'
 import { Storage } from '../../interfaces/storage'
@@ -51,8 +51,8 @@ type DerivedAccount = AccountDerivationMeta & { account: AccountWithNetworkMeta 
 type DerivedAccountWithoutNetworkMeta = Omit<DerivedAccount, 'account'> & { account: Account }
 
 export type ReadyToAddKeys = {
-  internal: { privateKey: string }[]
-  external: { addr: Key['addr']; type: Key['type']; meta: Key['meta'] }[]
+  internal: { privateKey: string; dedicatedToOneSA: boolean }[]
+  external: { addr: Key['addr']; type: Key['type']; dedicatedToOneSA: boolean; meta: Key['meta'] }[]
 }
 
 /**
@@ -299,10 +299,16 @@ export class AccountAdderController extends EventEmitter {
       ({ slot }) => slot === accountOnPage.slot
     )
 
+    // eslint-disable-next-line no-nested-ternary
     const accountKey = isSmartAccount(accountOnPage.account)
-      ? // The key of the smart account is the EOA (legacy) account derived on the
-        // same slot, but with the `SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET` offset.
-        allAccountsOnThisSlot.find(({ index }) => isDerivedForSmartAccountKeyOnly(index))
+      ? accountOnPage.isLinked
+        ? // The key of the linked account is the EOA (legacy) account on the same slot with the same index
+          allAccountsOnThisSlot.find(
+            ({ account, index }) => !isSmartAccount(account) && accountOnPage.index === index
+          )
+        : // The key of the smart account is the EOA (legacy) account derived on the
+          // same slot, but with the `SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET` offset.
+          allAccountsOnThisSlot.find(({ index }) => isDerivedForSmartAccountKeyOnly(index))
       : // The key of the legacy account is the legacy account itself.
         accountOnPage
 
@@ -393,6 +399,13 @@ export class AccountAdderController extends EventEmitter {
     })
   }
 
+  /**
+   * Triggers the process of adding accounts via the AccountAdder flow by
+   * creating identity for the smart accounts (if needed) on the Relayer.
+   * Then the `onAccountAdderSuccess` listener in the Main Controller gets
+   * triggered, which uses the `readyToAdd...` properties to further set
+   * the newly added accounts data (like preferences, keys and others)
+   */
   async addAccounts(
     accounts: SelectedAccount[] = [],
     readyToAddAccountPreferences: AccountPreferences = {},
@@ -435,8 +448,7 @@ export class AccountAdderController extends EventEmitter {
         addr: account.addr,
         associatedKeys: account.associatedKeys.map((key) => [
           ethers.getAddress(key), // the Relayer expects checksumed address
-          // Handle special priv hashes at a later stage, when (if) needed
-          '0x0000000000000000000000000000000000000000000000000000000000000001'
+          dedicatedToOneSAPriv
         ]),
         creation: {
           factoryAddr: account.creation!.factoryAddr,
@@ -553,7 +565,7 @@ export class AccountAdderController extends EventEmitter {
 
       // Derive the Ambire (smart) account
       smartAccountsPromises.push(
-        getSmartAccount(smartAccKey)
+        getSmartAccount([{ addr: smartAccKey, hash: dedicatedToOneSAPriv }])
           .then((smartAccount) => {
             return { account: smartAccount, isLinked: false, slot, index: slot - 1 }
           })

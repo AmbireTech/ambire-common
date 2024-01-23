@@ -30,11 +30,22 @@ export function getPaymasterSpoof() {
   return ethers.hexlify(ethers.concat([AMBIRE_PAYMASTER, simulationData]))
 }
 
+/**
+ * When we use abi.encode or send the user operation to the bundler,
+ * we need to strip it of the specific ambire-common properties that we use
+ *
+ * @param UserOperation userOp
+ * @returns EntryPoint userOp
+ */
+export function getCleanUserOp(userOp: UserOperation) {
+  return [(({ requestType, activatorCall, ...o }) => o)(userOp)]
+}
+
 export function toUserOperation(
   account: Account,
   accountState: AccountOnchainState,
   accountOp: AccountOp
-): AccountOp {
+): UserOperation {
   let initCode = '0x'
   let requestType = 'standard'
 
@@ -126,8 +137,7 @@ export function toUserOperation(
   userOperation.paymasterAndData = '0x'
   userOperation.signature = '0x'
   userOperation.requestType = requestType
-  accountOp.asUserOperation = userOperation
-  return accountOp
+  return userOperation
 }
 
 /**

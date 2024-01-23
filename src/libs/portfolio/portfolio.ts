@@ -154,14 +154,12 @@ export class Portfolio {
     const [tokensWithErr, collectionsWithErr] = await Promise.all([
       flattenResults(
         paginate(hints.erc20s, limits.erc20).map((page) =>
-          getTokens(this.network, this.deploylessTokens, opts, accountAddr, page).catch(() => [])
+          getTokens(this.network, this.deploylessTokens, opts, accountAddr, page)
         )
       ),
       flattenResults(
         paginate(collectionsHints, limits.erc721).map((page) =>
-          getNFTs(this.network, this.deploylessNfts, opts, accountAddr, page, limits).catch(
-            () => []
-          )
+          getNFTs(this.network, this.deploylessNfts, opts, accountAddr, page, limits)
         )
       )
     ])
