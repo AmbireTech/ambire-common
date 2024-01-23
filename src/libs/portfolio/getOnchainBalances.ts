@@ -1,7 +1,7 @@
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { getAccountDeployParams } from '../account/account'
 import { callToTuple } from '../accountOp/accountOp'
-import { Deployless, parseErr } from '../deployless/deployless'
+import { Deployless, parseErr, DeploylessMode } from '../deployless/deployless'
 import { getFlags } from './helpers'
 import { Collectible, CollectionResult, LimitsOptions, TokenResult } from './interfaces'
 import { GetOptions } from './portfolio'
@@ -42,7 +42,10 @@ function getDeploylessOpts (accountAddr: string, opts: Partial<GetOptions>) {
   return {
     blockTag: opts.blockTag,
     from: DEPLOYLESS_SIMULATION_FROM,
-    stateToOverride: opts.isEOA ? { [accountAddr]: '0x363d3d373d3d3d363d732a2b85eb1054d6f0c6c2e37da05ed3e5fea684ef5af43d82803e903d91602b57fd5bf3' } : null
+    mode: opts.isEOA ? DeploylessMode.StateOverride : DeploylessMode.Detect,
+    stateToOverride: opts.isEOA ? {
+      [accountAddr]: '0x363d3d373d3d3d363d732a2b85eb1054d6f0c6c2e37da05ed3e5fea684ef5af43d82803e903d91602b57fd5bf3'
+    } : null
   }
 }
 
