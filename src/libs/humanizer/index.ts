@@ -1,6 +1,5 @@
 /* eslint-disable no-await-in-loop */
 import { ErrorRef } from '../../controllers/eventEmitter'
-
 import { Storage } from '../../interfaces/storage'
 import { Message } from '../../interfaces/userRequest'
 import { AccountOp } from '../accountOp/accountOp'
@@ -76,6 +75,23 @@ const handleAsyncOps = async (
 
   await storage.set(HUMANIZER_META_KEY, { ...storedHumanizerMeta, ...globalFragmentData })
   return [globalFragmentData, nonGlobalFragmentData]
+}
+
+export const humanizeAccountOp = async (
+  storage: Storage,
+  accountOp: AccountOp,
+  fetch: Function,
+  emitError: Function
+): Promise<IrCall[]> => {
+  const storedHumanizerMeta = await storage.get(HUMANIZER_META_KEY, {})
+
+  const [irCalls] = humanizeCalls(
+    { ...accountOp!, humanizerMeta: { ...accountOp!.humanizerMeta, ...storedHumanizerMeta } },
+    humanizerCallModules,
+    { fetch, emitError }
+  )
+
+  return irCalls
 }
 
 export const sharedHumanization = async <Data extends AccountOp | Message>(

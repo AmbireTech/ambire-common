@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/brace-style */
-import { ethers, TransactionResponse } from 'ethers'
+import { ethers, isAddress, TransactionResponse } from 'ethers'
 import { NetworkPreference, NetworkPreferences } from 'interfaces/settings'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
@@ -28,6 +28,7 @@ import {
 } from '../../libs/banners/banners'
 import { estimate, EstimateResult, getEstimationFailure } from '../../libs/estimate/estimate'
 import { GasRecommendation, getGasPriceRecommendations } from '../../libs/gasPrice/gasPrice'
+import { humanizeAccountOp } from '../../libs/humanizer'
 import { shouldGetAdditionalPortfolio } from '../../libs/portfolio/helpers'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { isErc4337Broadcast, toUserOperation } from '../../libs/userOperation/userOperation'
@@ -781,6 +782,19 @@ export class MainController extends EventEmitter {
         localAccountOp
       )
     }
+    const humanization = await humanizeAccountOp(
+      this.#storage,
+      localAccountOp,
+      this.#fetch,
+      this.emitError
+    )
+    const addresses = humanization
+      .map((call) =>
+        !call.fullVisualization ? '' : call.fullVisualization.map((vis) => vis.address ?? '')
+      )
+      .flat()
+      .filter((addr) => isAddress(addr))
+
     const [, , estimation] = await Promise.all([
       // NOTE: we are not emitting an update here because the portfolio controller will do that
       // NOTE: the portfolio controller has it's own logic of constructing/caching providers, this is intentional, as
@@ -793,7 +807,8 @@ export class MainController extends EventEmitter {
           Object.entries(this.accountOpsToBeSigned[localAccountOp.accountAddr])
             .filter(([, accOp]) => accOp)
             .map(([networkId, x]) => [networkId, [x!.accountOp]])
-        )
+        ),
+        { forceUpdate: true, pinned: addresses }
       ),
       shouldGetAdditionalPortfolio(account) &&
         this.portfolio.getAdditionalPortfolio(localAccountOp.accountAddr),
