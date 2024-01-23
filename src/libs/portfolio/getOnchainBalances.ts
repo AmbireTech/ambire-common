@@ -5,7 +5,7 @@ import { Deployless, parseErr, DeploylessMode } from '../deployless/deployless'
 import { getFlags } from './helpers'
 import { Collectible, CollectionResult, LimitsOptions, TokenResult } from './interfaces'
 import { GetOptions } from './portfolio'
-import { privSlot } from '../proxyDeploy/deploy'
+import { solidityPackedKeccak256 } from 'ethers'
 
 // 0x00..01 is the address from which simulation signatures are valid
 const DEPLOYLESS_SIMULATION_FROM = '0x0000000000000000000000000000000000000001'
@@ -45,8 +45,10 @@ function getDeploylessOpts (accountAddr: string, opts: Partial<GetOptions>) {
     from: DEPLOYLESS_SIMULATION_FROM,
     mode: opts.isEOA ? DeploylessMode.StateOverride : DeploylessMode.Detect,
     stateToOverride: opts.isEOA ? {
-      [accountAddr]: '0x363d3d373d3d3d363d732a2b85eb1054d6f0c6c2e37da05ed3e5fea684ef5af43d82803e903d91602b57fd5bf3',
-      [privSlot(0, 'address', accountAddr, 'bool')]: '0x0000000000000000000000000000000000000000000000000000000000000001'
+      [accountAddr]: {
+        code: '0x363d3d373d3d3d363d732a2b85eb1054d6f0c6c2e37da05ed3e5fea684ef5af43d82803e903d91602b57fd5bf3',
+        [solidityPackedKeccak256(['address', 'uint'], [accountAddr, 0])]: '0x0000000000000000000000000000000000000000000000000000000000000001'
+      },
     } : null
   }
 }
