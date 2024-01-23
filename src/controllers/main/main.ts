@@ -26,7 +26,7 @@ import {
   getNetworksWithFailedRPCBanners,
   getPendingAccountOpBannersForEOA
 } from '../../libs/banners/banners'
-import { estimate, EstimateResult, getEstimationFailure } from '../../libs/estimate/estimate'
+import { estimate, EstimateResult } from '../../libs/estimate/estimate'
 import { GasRecommendation, getGasPriceRecommendations } from '../../libs/gasPrice/gasPrice'
 import { humanizeAccountOp } from '../../libs/humanizer'
 import { shouldGetAdditionalPortfolio } from '../../libs/portfolio/helpers'
@@ -791,7 +791,7 @@ export class MainController extends EventEmitter {
         !call.fullVisualization ? '' : call.fullVisualization.map((vis) => vis.address ?? '')
       )
       .flat()
-      .filter((addr) => isAddress(addr))
+      .filter(isAddress)
 
     const [, , estimation] = await Promise.all([
       // NOTE: we are not emitting an update here because the portfolio controller will do that
@@ -821,7 +821,11 @@ export class MainController extends EventEmitter {
         feeTokens,
         { is4337Broadcast }
       ).catch((e) => {
-        this.emitError(getEstimationFailure(e, localAccountOp))
+        this.emitError({
+          level: 'major',
+          message: `Failed to estimate account op for ${localAccountOp.accountAddr} on ${localAccountOp.networkId}`,
+          error: e
+        })
         return null
       })
     ])

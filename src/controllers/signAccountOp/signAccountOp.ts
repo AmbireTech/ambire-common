@@ -28,6 +28,7 @@ import { PortfolioController } from '../portfolio/portfolio'
 import { SettingsController } from '../settings/settings'
 
 export enum SigningStatus {
+  EstimationError = 'estimation-error',
   UnableToSign = 'unable-to-sign',
   ReadyToSign = 'ready-to-sign',
   InProgress = 'in-progress',
@@ -184,6 +185,11 @@ export class SignAccountOpController extends EventEmitter {
 
     if (!this.isInitialized) return errors
 
+    // if there's an estimation error, show it
+    if (this.#estimation?.error) {
+      errors.push(this.#estimation.error.message)
+    }
+
     if (!this.availableFeeOptions.length)
       errors.push(
         "We are unable to estimate your transaction as you don't have tokens with balances to cover the fee."
@@ -260,6 +266,10 @@ export class SignAccountOpController extends EventEmitter {
     if (gasPrices) this.gasPrices = gasPrices
 
     if (estimation) this.#estimation = estimation
+
+    if (this.#estimation?.error) {
+      this.status = { type: SigningStatus.EstimationError }
+    }
 
     if (feeToken && paidBy) {
       this.paidBy = paidBy
