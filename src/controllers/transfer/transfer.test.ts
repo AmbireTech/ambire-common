@@ -72,48 +72,37 @@ describe('Transfer Controller', () => {
     })
     expect(transferController.isInitialized).toBe(true)
   })
-  test('should set recipient address', () => {
+  test('should set recipient', async () => {
     transferController.update({
-      recipientAddress: PLACEHOLDER_RECIPIENT
-    })
-    expect(transferController.recipientAddress).toBe(PLACEHOLDER_RECIPIENT)
-  })
-  test('should resolve ENS', async () => {
-    transferController.update({
-      recipientAddress: 'elmoto.eth'
+      recipient: {
+        address: PLACEHOLDER_RECIPIENT,
+        isENS: false,
+        isUD: false,
+        isDomainResolving: false
+      }
     })
     await transferController.onRecipientAddressChange()
-
-    expect(transferController.recipientEnsAddress).toBe(PLACEHOLDER_RECIPIENT)
+    expect(transferController.recipient).toStrictEqual({
+      address: PLACEHOLDER_RECIPIENT,
+      isENS: false,
+      isUD: false,
+      isDomainResolving: false
+    })
   })
   test('should set recipient address unknown', () => {
     expect(transferController.isRecipientAddressUnknown).toBe(true)
   })
   test('should flag recipient address as a smart contract', async () => {
     transferController.update({
-      recipientAddress: '0x7a250d5630b4cf539739df2c5dacb4c659f2488d'
+      recipient: {
+        address: XWALLET_ADDRESS,
+        isENS: false,
+        isUD: false,
+        isDomainResolving: false
+      }
     })
     await transferController.onRecipientAddressChange()
     expect(transferController.isRecipientSmartContract).toBe(true)
-  })
-  test('should resolve UnstoppableDomains', async () => {
-    transferController.update({
-      recipientAddress: '0xyakmotoru.wallet'
-    })
-    await transferController.onRecipientAddressChange()
-
-    expect(transferController.recipientUDAddress?.toLowerCase()).toBe(
-      PLACEHOLDER_RECIPIENT_LOWERCASE
-    )
-  })
-  test('should reset recipientUDAddress and recipientEnsAddress when recipientAddress is set to a normal address', () => {
-    transferController.update({
-      recipientAddress: PLACEHOLDER_RECIPIENT
-    })
-    transferController.onRecipientAddressChange()
-
-    expect(transferController.recipientUDAddress).toBe('')
-    expect(transferController.recipientEnsAddress).toBe('')
   })
   test('should show SW warning', async () => {
     const tokens = await getTokens()
@@ -148,6 +137,17 @@ describe('Transfer Controller', () => {
     expect(transferController.isSWWarningAgreed).toBe(true)
   })
   test('should set validation form messages', async () => {
+    // Reset address to a valid one
+    transferController.update({
+      recipient: {
+        address: PLACEHOLDER_RECIPIENT,
+        isENS: false,
+        isUD: false,
+        isDomainResolving: false
+      }
+    })
+    await transferController.onRecipientAddressChange()
+
     expect(transferController.validationFormMsgs.amount.success).toBe(true)
     expect(transferController.validationFormMsgs.recipientAddress.success).toBe(false)
 
@@ -219,12 +219,14 @@ describe('Transfer Controller', () => {
   const checkResetForm = () => {
     expect(transferController.amount).toBe('')
     expect(transferController.maxAmount).toBe('0')
-    expect(transferController.recipientAddress).toBe('')
-    expect(transferController.recipientEnsAddress).toBe('')
-    expect(transferController.recipientUDAddress).toBe('')
+    expect(transferController.recipient).toStrictEqual({
+      address: '',
+      isENS: false,
+      isUD: false,
+      isDomainResolving: false
+    })
     expect(transferController.selectedToken).toBe(null)
     expect(transferController.isRecipientAddressUnknown).toBe(false)
-    expect(transferController.isRecipientDomainResolving).toBe(false)
     expect(transferController.userRequest).toBe(null)
     expect(transferController.isRecipientAddressUnknownAgreed).toBe(false)
     expect(transferController.isRecipientSmartContract).toBe(false)
