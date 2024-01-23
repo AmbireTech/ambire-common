@@ -111,8 +111,8 @@ export class Deployless {
     }
     await this.detectionPromise
 
-    if (opts.stateToOverride && opts.mode !== DeploylessMode.StateOverride) {
-      throw new Error('state override required but not requested')
+    if (opts.stateToOverride !== null && opts.mode !== DeploylessMode.StateOverride) {
+      throw new Error('state override passed but not requested')
     }
     if (opts.mode === DeploylessMode.StateOverride && !this.stateOverrideSupported) {
       // @TODO test this case

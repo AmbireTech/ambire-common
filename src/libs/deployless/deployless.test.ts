@@ -17,6 +17,14 @@ describe('Deployless', () => {
     expect(deployless.isLimitedAt24kbData).toBe(true)
   })
 
+  test('should not allow stateToOverride if mode is not state override', async () => {
+    const localDeployless = new Deployless(mainnetProvider, helloWorld.abi, helloWorld.bin)
+    await expect(localDeployless.call('helloWorld', [], {
+      mode: DeploylessMode.ProxyContract,
+      stateToOverride: {}
+    })).rejects.toThrow('state override passed but not requested')
+  })
+
   test('should invoke a method: proxy mode', async () => {
     const localDeployless = new Deployless(mainnetProvider, helloWorld.abi, helloWorld.bin)
     const [result] = await localDeployless.call('helloWorld', [], {
