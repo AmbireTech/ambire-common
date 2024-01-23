@@ -10,7 +10,7 @@ import {
   IrCall,
   IrMessage
 } from './interfaces'
-import { getAction, getLabel } from './utils'
+import { getAction, getLabel, getDeadlineText } from './utils'
 
 export function humanizeCalls(
   _accountOp: AccountOp,
@@ -50,6 +50,9 @@ export const visualizationToText = (call: IrCall, options: any): string => {
     if (v.type === 'address') text += v.name ? `${v.address} (${v.name})` : v.address
     if (v.type === 'token') {
       text += `${v.readableAmount || v.amount} ${v.symbol ? v.symbol : `${v.address} token`}`
+    }
+    if (v.type === 'deadline') {
+      text += getDeadlineText(v.amount)
     }
   })
   if (text) {
