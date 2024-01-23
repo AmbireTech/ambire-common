@@ -1,6 +1,7 @@
 const abi = require('ethereumjs-abi')
 const keccak256 = require('js-sha3').keccak256
 
+// @TODO: fix the any
 function evmPush(data: any) {
   if (data.length < 1) throw new Error('evmPush: no data')
   if (data.length > 32) throw new Error('evmPush: data too long')
@@ -10,9 +11,15 @@ function evmPush(data: any) {
   return Buffer.concat([opCodeBuf, data])
 }
 
-function sstoreCode(slotNumber: any, keyType: any, key: any, valueType: any, valueBuf: any) {
+// @TODO: fix the any
+export function privSlot(slotNumber: any, keyType: any, key: any, valueType: any) {
   const buf = abi.rawEncode([keyType, valueType], [key, slotNumber])
-  const slot = keccak256(buf)
+  return keccak256(buf)  
+}
+
+// @TODO: fix the any
+function sstoreCode(slotNumber: any, keyType: any, key: any, valueType: any, valueBuf: any) {
+  const slot = privSlot(slotNumber, keyType, key, valueType)
   return Buffer.concat([
     evmPush(typeof valueBuf === 'string' ? Buffer.from(valueBuf.slice(2), 'hex') : valueBuf),
     evmPush(Buffer.from(slot, 'hex')),
