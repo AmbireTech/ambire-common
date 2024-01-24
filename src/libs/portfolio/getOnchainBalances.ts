@@ -3,7 +3,7 @@ import { AbiCoder } from 'ethers'
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import { SPOOF_SIGTYPE } from '../../consts/signatures'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
-import { getAccountDeployParams } from '../account/account'
+import { getAccountDeployParams, isSmartAccount } from '../account/account'
 import { callToTuple } from '../accountOp/accountOp'
 import { Deployless, DeploylessMode, parseErr } from '../deployless/deployless'
 import { privSlot } from '../proxyDeploy/deploy'
@@ -166,7 +166,12 @@ export async function getTokens(
   const { accountOps, account } = opts.simulation
   const [factory, factoryCalldata] = getAccountDeployParams(account)
   const abiCoder = new AbiCoder()
-  const addrWithPrivs = account.associatedKeys.length ? account.associatedKeys[0] : null
+
+  // get the spoof key if any
+  let addrWithPrivs = null
+  if (!isSmartAccount(account)) addrWithPrivs = accountAddr
+  else if (account.associatedKeys.length) addrWithPrivs = account.associatedKeys[0]
+
   const spoofSig = addrWithPrivs
     ? abiCoder.encode(['address'], [addrWithPrivs]) + SPOOF_SIGTYPE
     : null
@@ -177,8 +182,8 @@ export async function getTokens(
       tokenAddrs,
       factory,
       factoryCalldata,
-      accountOps.map(({ nonce, calls, signature }) => [
-        nonce,
+      accountOps.map(({ nonce, calls, signature }, index) => [
+        isSmartAccount(account) ? nonce : BigInt(index), // EOA simulation always starts from 0
         calls.map(callToTuple),
         spoofSig ?? signature
       ])

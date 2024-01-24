@@ -12,7 +12,10 @@ import { getAmbireAccountAddress } from '../proxyDeploy/getAmbireAddressTwo'
 
 // returns to, data
 export function getAccountDeployParams(account: Account): [string, string] {
-  if (account.creation === null) throw new Error('tried to get deployment params for an EOA')
+  // for EOAs, we do not throw an error anymore as we need fake
+  // values for the simulation
+  if (account.creation === null) return [ethers.ZeroAddress, '0x']
+
   const factory = new Interface(['function deploy(bytes calldata code, uint256 salt) external'])
   return [
     account.creation.factoryAddr,
