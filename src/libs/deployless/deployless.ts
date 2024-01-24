@@ -36,11 +36,13 @@ export type CallOptions = {
   from?: string
   gasPrice?: string
   gasLimit?: string
+  stateToOverride: object | null
 }
 const defaultOptions: CallOptions = {
   mode: DeploylessMode.Detect,
   blockTag: 'latest',
-  from: undefined
+  from: undefined,
+  stateToOverride: null
 }
 
 export class Deployless {
@@ -99,7 +101,8 @@ export class Deployless {
       ])
     )
     // any response bigger than 0x is sufficient to know that state override worked
-    this.stateOverrideSupported = code.length > 2
+    // the response would be just "0x" if state override doesn't work
+    this.stateOverrideSupported = code.startsWith('0x') && code.length > 2
     this.contractRuntimeCode = mapResponse(code)
   }
 
@@ -114,8 +117,10 @@ export class Deployless {
     }
     await this.detectionPromise
 
+    if (opts.stateToOverride !== null && opts.mode !== DeploylessMode.StateOverride) {
+      throw new Error('state override passed but not requested')
+    }
     if (opts.mode === DeploylessMode.StateOverride && !this.stateOverrideSupported) {
-      // @TODO test this case
       throw new Error('state override requested but not supported')
     }
 
@@ -131,7 +136,7 @@ export class Deployless {
               gas: opts?.gasLimit
             },
             opts.blockTag,
-            { [arbitraryAddr]: { code: this.contractRuntimeCode } }
+            { [arbitraryAddr]: { code: this.contractRuntimeCode }, ...(opts.stateToOverride || {}) }
           ])
         : this.provider.call({
             blockTag: opts.blockTag,
