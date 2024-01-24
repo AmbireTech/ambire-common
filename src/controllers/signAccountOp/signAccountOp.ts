@@ -704,6 +704,7 @@ export class SignAccountOpController extends EventEmitter {
         let amountInWei = gasFeePayment.amount
         if (this.feeTokenResult?.address !== '0x0000000000000000000000000000000000000000') {
           const nativeRatio = this.#getNativeToFeeTokenRatio(this.feeTokenResult!)
+          if (!nativeRatio) throw new Error('Could not retrieve the native token price.')
           amountInWei =
             (gasFeePayment.amount * BigInt(10 ** (18 + 18 - this.feeTokenResult!.decimals))) /
             nativeRatio
