@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-floating-promises */
 import { ethers, JsonRpcProvider } from 'ethers'
 
 import { PROXY_AMBIRE_ACCOUNT } from '../../consts/deploy'
@@ -446,10 +447,7 @@ export class AccountAdderController extends EventEmitter {
       const body = accountsToAddOnRelayer.map(({ account }: SelectedAccount) => ({
         addr: account.addr,
         ...(account.email ? { email: account.email } : {}),
-        associatedKeys: account.associatedKeys.map((key) => [
-          ethers.getAddress(key), // the Relayer expects checksumed address
-          dedicatedToOneSAPriv
-        ]),
+        associatedKeys: account.initialPrivileges,
 
         creation: {
           factoryAddr: account.creation!.factoryAddr,
