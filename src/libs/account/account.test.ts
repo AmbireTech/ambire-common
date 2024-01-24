@@ -1,4 +1,4 @@
-import { ethers } from 'ethers'
+import { ethers, ZeroAddress } from 'ethers'
 
 /* eslint-disable no-new */
 import { describe, expect, test } from '@jest/globals'
@@ -47,13 +47,10 @@ describe('Account', () => {
     expect(newSmartAccount.creation as AccountCreation).not.toBe(null)
     expect(newSmartAccount.associatedKeys[0]).toBe(keyPublicAddress)
   })
-  test('should fail to return deploy params if legacy account is passed', async () => {
+  test('should return zero address and 0x deploy data if legacy account is passed', async () => {
     expect.assertions(1)
-    try {
-      getAccountDeployParams(legacyAccount)
-    } catch (e: any) {
-      expect(e.message).toBe('tried to get deployment params for an EOA')
-    }
+    const accountData = getAccountDeployParams(legacyAccount)
+    expect(accountData as any).toEqual([ZeroAddress, '0x'])
   })
   test('should return account deploy params', async () => {
     expect.assertions(1)
