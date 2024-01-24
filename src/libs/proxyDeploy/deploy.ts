@@ -38,13 +38,13 @@ export function getProxyDeployBytecode(
   privLevels: PrivLevels[],
   opts = { privSlot: 0 }
 ) {
-  const { privSlot = 0 } = opts
+  const slotNumber = opts.privSlot ?? 0
   if (privLevels.length > 3) throw new Error('getProxyDeployBytecode: max 3 privLevels')
   const storage = Buffer.concat(
     privLevels.map(({ addr, hash }) => {
       return hash !== true
-        ? sstoreCode(privSlot, 'address', addr, 'bytes32', hash)
-        : sstoreCode(privSlot, 'address', addr, 'bool', Buffer.from('01', 'hex'))
+        ? sstoreCode(slotNumber, 'address', addr, 'bytes32', hash)
+        : sstoreCode(slotNumber, 'address', addr, 'bool', Buffer.from('01', 'hex'))
     })
   )
   const initial = Buffer.from('3d602d80', 'hex')
@@ -72,7 +72,7 @@ export function getStorageSlotsFromArtifact(buildInfo: any) {
   const storageVariableNodes = identityNode.nodes.filter(
     (n: any) => n.nodeType === 'VariableDeclaration' && !n.constant && n.stateVariable
   )
-  const privSlot = storageVariableNodes.findIndex((x: any) => x.name === 'privileges')
+  const slotNumber = storageVariableNodes.findIndex((x: any) => x.name === 'privileges')
 
-  return { privSlot }
+  return { privSlot: slotNumber }
 }
