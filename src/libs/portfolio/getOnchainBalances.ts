@@ -168,10 +168,13 @@ export async function getTokens(
   const abiCoder = new AbiCoder()
 
   // get the spoof key if any
-  let addrWithPrivs = null
-  if (!isSmartAccount(account)) addrWithPrivs = accountAddr
-  else if (account.associatedKeys.length) addrWithPrivs = account.associatedKeys[0]
-
+  // account.associatedKeys[0] is great for EOA as the associated key
+  // is the same as the account address and will always have privs;
+  // on the other hand, it's not optimal for SA as it could not have privs
+  // for the smart account. This will change in a later version where
+  // we change simulateAndGetBalances by sending all associatedKeys to it
+  // and searching for the one with the privs
+  const addrWithPrivs = account.associatedKeys.length ? account.associatedKeys[0] : null
   const spoofSig = addrWithPrivs
     ? abiCoder.encode(['address'], [addrWithPrivs]) + SPOOF_SIGTYPE
     : null
