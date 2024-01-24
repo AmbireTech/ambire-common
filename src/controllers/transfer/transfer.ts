@@ -271,11 +271,8 @@ export class TransferController extends EventEmitter {
       )
     }
 
-    if (this.recipient.isUD || this.recipient.isENS) {
-      this.isRecipientAddressUnknown = true // @TODO: check from the address book
-    }
-
     this.isRecipientAddressUnknown = true // @TODO: isValidAddress & check from the address book
+    this.isRecipientAddressUnknownAgreed = false
 
     this.emitUpdate()
   }
