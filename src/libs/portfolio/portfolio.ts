@@ -9,7 +9,7 @@ import { geckoRequestBatcher, geckoResponseIdentifier } from './gecko'
 import { getNFTs, getTokens } from './getOnchainBalances'
 import {
   CollectionResult,
-  GetOptionsSimulation,
+  GetOptions,
   Hints,
   Limits,
   LimitsOptions,
@@ -41,19 +41,6 @@ export const getEmptyHints = (networkId: string, accountAddr: string): Hints => 
   prices: {},
   hasHints: false
 })
-
-export interface GetOptions {
-  baseCurrency: string
-  blockTag: string | number
-  simulation?: GetOptionsSimulation
-  priceCache?: PriceCache
-  priceRecency: number
-  previousHints?: {
-    erc20s: Hints['erc20s']
-    erc721s: Hints['erc721s']
-  }
-  pinned?: string[]
-}
 
 const defaultOptions: GetOptions = {
   baseCurrency: 'usd',

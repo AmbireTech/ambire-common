@@ -1,10 +1,12 @@
+import { AbiCoder } from 'ethers'
+
+import { SPOOF_SIGTYPE } from '../../consts/signatures'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { getAccountDeployParams } from '../account/account'
 import { callToTuple } from '../accountOp/accountOp'
 import { Deployless, parseErr } from '../deployless/deployless'
 import { getFlags } from './helpers'
-import { Collectible, CollectionResult, LimitsOptions, TokenResult } from './interfaces'
-import { GetOptions } from './portfolio'
+import { Collectible, CollectionResult, GetOptions, LimitsOptions, TokenResult } from './interfaces'
 
 // 0x00..01 is the address from which simulation signatures are valid
 const DEPLOYLESS_SIMULATION_FROM = '0x0000000000000000000000000000000000000001'
@@ -55,7 +57,7 @@ export async function getNFTs(
       amount: BigInt(token.nfts.length),
       decimals: 1,
       collectibles: [...(token.nfts as any[])].map(
-        (token: any) => ({ id: token.id, url: token.uri } as Collectible)
+        (colToken: any) => ({ id: colToken.id, url: colToken.uri } as Collectible)
       )
     } as CollectionResult
   }
@@ -67,7 +69,7 @@ export async function getNFTs(
         [
           accountAddr,
           tokenAddrs.map(([address]) => address),
-          tokenAddrs.map(([_, x]) =>
+          tokenAddrs.map(([, x]) =>
             x.enumerable ? [] : x.tokens.slice(0, limits.erc721TokensInput)
           ),
           limits.erc721Tokens
@@ -87,7 +89,7 @@ export async function getNFTs(
     [
       accountAddr,
       tokenAddrs.map(([address]) => address),
-      tokenAddrs.map(([_, x]) => (x.enumerable ? [] : x.tokens.slice(0, limits.erc721TokensInput))),
+      tokenAddrs.map(([, x]) => (x.enumerable ? [] : x.tokens.slice(0, limits.erc721TokensInput))),
       limits.erc721Tokens,
 
       factory,
@@ -121,7 +123,7 @@ export async function getTokens(
     ({
       amount: token.amount,
       networkId: network.id,
-      decimals: new Number(token.decimals),
+      decimals: Number(token.decimals),
       symbol:
         address === '0x0000000000000000000000000000000000000000'
           ? network.nativeAssetSymbol
@@ -141,6 +143,8 @@ export async function getTokens(
   }
   const { accountOps, account } = opts.simulation
   const [factory, factoryCalldata] = getAccountDeployParams(account)
+  const abiCoder = new AbiCoder()
+  const spoofSig = abiCoder.encode(['address'], [account.associatedKeys[0]]) + SPOOF_SIGTYPE
   const [before, after, simulationErr] = await deployless.call(
     'simulateAndGetBalances',
     [
@@ -148,7 +152,7 @@ export async function getTokens(
       tokenAddrs,
       factory,
       factoryCalldata,
-      accountOps.map(({ nonce, calls, signature }) => [nonce, calls.map(callToTuple), signature])
+      accountOps.map(({ nonce, calls }) => [nonce, calls.map(callToTuple), spoofSig])
     ],
     deploylessOpts
   )

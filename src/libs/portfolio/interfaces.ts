@@ -143,3 +143,16 @@ export interface Limits {
   deploylessProxyMode: LimitsOptions
   deploylessStateOverrideMode: LimitsOptions
 }
+
+export interface GetOptions {
+  baseCurrency: string
+  blockTag: string | number
+  simulation?: GetOptionsSimulation
+  priceCache?: PriceCache
+  priceRecency: number
+  previousHints?: {
+    erc20s: Hints['erc20s']
+    erc721s: Hints['erc721s']
+  }
+  pinned?: string[]
+}
