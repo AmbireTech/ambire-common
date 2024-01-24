@@ -532,6 +532,16 @@ export class SignAccountOpController extends EventEmitter {
       return null
     }
 
+    if (!this.feeSpeeds.length) {
+      this.emitError({
+        level: 'silent',
+        message: '',
+        error: new Error('SignAccountOpController: fee speeds not available')
+      })
+
+      return null
+    }
+
     const chosenSpeed = this.feeSpeeds.find((speed) => speed.type === this.selectedFeeSpeed)
     if (!chosenSpeed) {
       this.emitError({
