@@ -144,7 +144,10 @@ export async function getTokens(
   const { accountOps, account } = opts.simulation
   const [factory, factoryCalldata] = getAccountDeployParams(account)
   const abiCoder = new AbiCoder()
-  const spoofSig = abiCoder.encode(['address'], [account.associatedKeys[0]]) + SPOOF_SIGTYPE
+  const addrWithPrivs = account.associatedKeys.length ? account.associatedKeys[0] : null
+  const spoofSig = addrWithPrivs
+    ? abiCoder.encode(['address'], [addrWithPrivs]) + SPOOF_SIGTYPE
+    : null
   const [before, after, simulationErr] = await deployless.call(
     'simulateAndGetBalances',
     [
@@ -152,7 +155,11 @@ export async function getTokens(
       tokenAddrs,
       factory,
       factoryCalldata,
-      accountOps.map(({ nonce, calls }) => [nonce, calls.map(callToTuple), spoofSig])
+      accountOps.map(({ nonce, calls, signature }) => [
+        nonce,
+        calls.map(callToTuple),
+        spoofSig ?? signature
+      ])
     ],
     deploylessOpts
   )
