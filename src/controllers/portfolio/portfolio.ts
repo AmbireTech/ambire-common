@@ -213,8 +213,14 @@ export class PortfolioController extends EventEmitter {
     accountOps?: { [key: string]: AccountOp[] },
     opts?: {
       forceUpdate: boolean
+      pinned?: string[]
     }
   ) {
+    // set the additional pinned items if there are any
+    if (opts?.pinned) {
+      this.#pinned = [...this.#pinned, ...opts.pinned]
+    }
+
     // Load storage cached hints
     const storagePreviousHints = await this.#storage.get('previousHints', {})
 
@@ -316,7 +322,7 @@ export class PortfolioController extends EventEmitter {
 
         const forceUpdate = opts?.forceUpdate || areAccountOpsChanged
 
-        const [isSuccessfulLatestUpdate, isSuccessfulPendingUpdate] = await Promise.all([
+        const [isSuccessfulLatestUpdate] = await Promise.all([
           // Latest state update
           updatePortfolioState(
             accountState,

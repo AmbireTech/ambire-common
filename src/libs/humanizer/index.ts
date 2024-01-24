@@ -1,6 +1,5 @@
 /* eslint-disable no-await-in-loop */
 import { ErrorRef } from '../../controllers/eventEmitter'
-
 import { Storage } from '../../interfaces/storage'
 import { Message } from '../../interfaces/userRequest'
 import { AccountOp } from '../accountOp/accountOp'
@@ -17,6 +16,7 @@ import {
 import { aaveHumanizer } from './modules/Aave'
 import { fallbackHumanizer } from './modules/fallBackHumanizer'
 import { gasTankModule } from './modules/gasTankModule'
+import { privilegeHumanizer } from './modules/privileges'
 import { sushiSwapModule } from './modules/sushiSwapModule'
 import { genericErc20Humanizer, genericErc721Humanizer } from './modules/tokens'
 import { uniswapHumanizer } from './modules/Uniswap'
@@ -37,7 +37,7 @@ import {
 const HUMANIZER_META_KEY = 'HumanizerMeta'
 // generic in the begining
 // the final humanization is the final triggered module
-const humanizerCallModules: HumanizerCallModule[] = [
+export const humanizerCallModules: HumanizerCallModule[] = [
   genericErc20Humanizer,
   genericErc721Humanizer,
   gasTankModule,
@@ -46,6 +46,7 @@ const humanizerCallModules: HumanizerCallModule[] = [
   aaveHumanizer,
   // oneInchHumanizer,
   WALLETModule,
+  privilegeHumanizer,
   yearnVaultModule,
   sushiSwapModule,
   fallbackHumanizer
@@ -76,6 +77,23 @@ const handleAsyncOps = async (
 
   await storage.set(HUMANIZER_META_KEY, { ...storedHumanizerMeta, ...globalFragmentData })
   return [globalFragmentData, nonGlobalFragmentData]
+}
+
+export const humanizeAccountOp = async (
+  storage: Storage,
+  accountOp: AccountOp,
+  fetch: Function,
+  emitError: Function
+): Promise<IrCall[]> => {
+  const storedHumanizerMeta = await storage.get(HUMANIZER_META_KEY, {})
+
+  const [irCalls] = humanizeCalls(
+    { ...accountOp!, humanizerMeta: { ...accountOp!.humanizerMeta, ...storedHumanizerMeta } },
+    humanizerCallModules,
+    { fetch, emitError }
+  )
+
+  return irCalls
 }
 
 export const sharedHumanization = async <Data extends AccountOp | Message>(
