@@ -48,7 +48,8 @@ function getDeploylessOpts (accountAddr: string, opts: Partial<GetOptions>) {
       [accountAddr]: {
         code: '0x363d3d373d3d3d363d732a2b85eb1054d6f0c6c2e37da05ed3e5fea684ef5af43d82803e903d91602b57fd5bf3',
         stateDiff: {
-          ['0x'+privSlot(0, 'address', accountAddr, 'bytes32')]: '0x0000000000000000000000000000000000000000000000000000000000000001'
+          // if we use 0x00...01 we get a geth bug: "invalid argument 2: hex number with leading zero digits\" - on some RPC providers
+          ['0x'+privSlot(0, 'address', accountAddr, 'bytes32')]: '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'
         }
       },
     } : null
