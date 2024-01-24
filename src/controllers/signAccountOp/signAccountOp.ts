@@ -208,7 +208,7 @@ export class SignAccountOpController extends EventEmitter {
     if (!this.feeSpeeds.length)
       errors.push('Estimating the transaction fee failed. Please try again later.')
 
-    if (!this.accountOp?.gasFeePayment) {
+    if (!this.accountOp?.gasFeePayment && this.feeSpeeds.length) {
       errors.push('Please select a token and an account for paying the gas fee.')
     }
 
@@ -345,13 +345,13 @@ export class SignAccountOpController extends EventEmitter {
    * We require the ratio to be in a BigInt format since all the application values,
    * such as amount, gasLimit, etc., are also represented as BigInt numbers.
    */
-  #getNativeToFeeTokenRatio(feeToken: TokenResult): bigint {
+  #getNativeToFeeTokenRatio(feeToken: TokenResult): bigint | null {
     const native = this.#portfolio.latest[this.accountOp.accountAddr][
       this.accountOp.networkId
     ]?.result?.tokens.find(
       (token) => token.address === '0x0000000000000000000000000000000000000000'
     )
-    if (!native) throw new Error('Failed to fetch network native token price.')
+    if (!native) return null
 
     const isUsd = (price: Price) => price.baseCurrency === 'usd'
     const ratio = native!.priceIn.find(isUsd)!.price / feeToken!.priceIn.find(isUsd)!.price
@@ -406,16 +406,10 @@ export class SignAccountOpController extends EventEmitter {
         this.feeTokenResult?.flags.onGasTank === option.isGasTank
     )
 
-    if (!feeTokenEstimation) {
-      this.emitError({
-        level: 'major',
-        message:
-          'Something went wrong while setting up the gas fee payment account and token. Please try again, selecting the account and token option. If the problem persists, contact support.',
-        error: new Error('SignAccountOpController: The fee token is now found in the estimation.')
-      })
+    if (!feeTokenEstimation) return []
 
-      return []
-    }
+    const nativeRatio = this.#getNativeToFeeTokenRatio(this.feeTokenResult)
+    if (!nativeRatio) return []
 
     const callDataAdditionalGasCost = getCallDataAdditionalByNetwork(
       this.accountOp!,
@@ -423,7 +417,7 @@ export class SignAccountOpController extends EventEmitter {
       this.#accountStates![this.accountOp!.accountAddr][this.accountOp!.networkId]
     )
 
-    return this.gasPrices.flatMap((gasRecommendation) => {
+    return this.gasPrices.map((gasRecommendation) => {
       let amount
       let simulatedGasLimit
 
@@ -443,14 +437,6 @@ export class SignAccountOpController extends EventEmitter {
         amount = simulatedGasLimit * gasPrice + feeTokenEstimation.addedNative
       } else if (this.#estimation!.erc4337estimation) {
         // ERC 4337
-        let nativeRatio
-        try {
-          nativeRatio = this.#getNativeToFeeTokenRatio(this.feeTokenResult!)
-        } catch (e) {
-          this.#throwGetNativeToFeeTokenRatio(e)
-          return []
-        }
-
         const usesPaymaster = shouldUsePaymaster(
           this.accountOp.asUserOperation!,
           this.feeTokenResult!.address
@@ -478,14 +464,6 @@ export class SignAccountOpController extends EventEmitter {
       } else {
         // Relayer.
         // relayer or 4337, we need to add feeTokenOutome.gasUsed
-        let nativeRatio
-        try {
-          nativeRatio = this.#getNativeToFeeTokenRatio(this.feeTokenResult!)
-        } catch (e) {
-          this.#throwGetNativeToFeeTokenRatio(e)
-          return []
-        }
-
         const feeTokenGasUsed = this.#estimation!.feePaymentOptions.find(
           (option) => option.address === this.feeTokenResult!.address
         )!.gasUsed!
@@ -518,7 +496,7 @@ export class SignAccountOpController extends EventEmitter {
         fee.maxPriorityFeePerGas = gasRecommendation.maxPriorityFeePerGas
       }
 
-      return [fee]
+      return fee
     })
   }
 
@@ -808,14 +786,6 @@ export class SignAccountOpController extends EventEmitter {
     } catch (error: any) {
       this.#setSigningError(error?.message, SigningStatus.ReadyToSign)
     }
-  }
-
-  #throwGetNativeToFeeTokenRatio = (e: any) => {
-    this.emitError({
-      level: 'major',
-      message: `Something went wrong while setting up the gas fee payment account and token: ${e?.message}`,
-      error: new Error(e?.message)
-    })
   }
 
   toJSON() {
