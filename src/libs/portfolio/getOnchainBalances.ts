@@ -1,10 +1,12 @@
 import { AbiCoder } from 'ethers'
 
+import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import { SPOOF_SIGTYPE } from '../../consts/signatures'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { getAccountDeployParams } from '../account/account'
 import { callToTuple } from '../accountOp/accountOp'
-import { Deployless, parseErr } from '../deployless/deployless'
+import { Deployless, DeploylessMode, parseErr } from '../deployless/deployless'
+import { privSlot } from '../proxyDeploy/deploy'
 import { getFlags } from './helpers'
 import { Collectible, CollectionResult, GetOptions, LimitsOptions, TokenResult } from './interfaces'
 
@@ -26,7 +28,7 @@ class SimulationError extends Error {
   }
 }
 
-const handleSimulationError = (error: string, beforeNonce: bigint, afterNonce: bigint) => {
+function handleSimulationError(error: string, beforeNonce: bigint, afterNonce: bigint) {
   if (error !== '0x') throw new SimulationError(parseErr(error) || error, beforeNonce, afterNonce)
   // If the afterNonce is 0, it means that we reverted, even if the error is empty
   // In both BalanceOracle and NFTOracle, afterSimulation and therefore afterNonce will be left empty
@@ -40,6 +42,26 @@ const handleSimulationError = (error: string, beforeNonce: bigint, afterNonce: b
     )
 }
 
+function getDeploylessOpts(accountAddr: string, opts: Partial<GetOptions>) {
+  return {
+    blockTag: opts.blockTag,
+    from: DEPLOYLESS_SIMULATION_FROM,
+    mode: opts.isEOA ? DeploylessMode.StateOverride : DeploylessMode.Detect,
+    stateToOverride: opts.isEOA
+      ? {
+          [accountAddr]: {
+            code: AmbireAccount.binRuntime,
+            stateDiff: {
+              // if we use 0x00...01 we get a geth bug: "invalid argument 2: hex number with leading zero digits\" - on some RPC providers
+              [`0x${privSlot(0, 'address', accountAddr, 'bytes32')}`]:
+                '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'
+            }
+          }
+        }
+      : null
+  }
+}
+
 export async function getNFTs(
   network: NetworkDescriptor,
   deployless: Deployless,
@@ -48,7 +70,7 @@ export async function getNFTs(
   tokenAddrs: [string, any][],
   limits: LimitsOptions
 ): Promise<[number, CollectionResult][]> {
-  const deploylessOpts = { blockTag: opts.blockTag, from: DEPLOYLESS_SIMULATION_FROM }
+  const deploylessOpts = getDeploylessOpts(accountAddr, opts)
   const mapToken = (token: any) => {
     return {
       name: token.name,
@@ -131,7 +153,7 @@ export async function getTokens(
       address,
       flags: getFlags({}, network.id, network.id, address)
     } as TokenResult)
-  const deploylessOpts = { blockTag: opts.blockTag, from: DEPLOYLESS_SIMULATION_FROM }
+  const deploylessOpts = getDeploylessOpts(accountAddr, opts)
   if (!opts.simulation) {
     const [results] = await deployless.call(
       'getBalances',
