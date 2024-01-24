@@ -270,7 +270,8 @@ export async function estimate(
   ] = estimations[0]
   /* eslint-enable prefer-const */
 
-  // if the calls don't pass, we stop the execution with a CALLS_FAILURE
+  // if the calls don't pass, we set a CALLS_FAILURE error but
+  // allow the execution to proceed.
   // we should explain to the user that the calls don't pass and stop
   // the re-estimation for this accountOp
   let estimationError = null

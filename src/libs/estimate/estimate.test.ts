@@ -383,7 +383,6 @@ describe('estimate', () => {
       { is4337Broadcast: true }
     )
     expect(response.error).not.toBe(null)
-    console.log(response.error?.message)
     expect(response.error?.message).toBe(
       `Paymaster with address ${AMBIRE_PAYMASTER} does not have enough funds to execute this request. Please contact support`
     )
