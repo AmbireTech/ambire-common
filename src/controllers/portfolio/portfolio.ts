@@ -7,6 +7,7 @@ import { Account, AccountId } from '../../interfaces/account'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { RPCProviders } from '../../interfaces/settings'
 import { Storage } from '../../interfaces/storage'
+import { isSmartAccount } from '../../libs/account/account'
 import { AccountOp, isAccountOpsIntentEqual } from '../../libs/accountOp/accountOp'
 import getAccountNetworksWithAssets from '../../libs/portfolio/getNetworksWithAssets'
 import { getFlags } from '../../libs/portfolio/helpers'
@@ -283,6 +284,11 @@ export class PortfolioController extends EventEmitter {
         this.emitUpdate()
         return true
       } catch (e: any) {
+        this.emitError({
+          level: 'silent',
+          message: e.message,
+          error: e
+        })
         state.isLoading = false
         if (!state.isReady) state.criticalError = e
         else state.errors.push(e)
@@ -352,6 +358,7 @@ export class PortfolioController extends EventEmitter {
                       accountOps: currentAccountOps
                     }
                   }),
+                  isEOA: !isSmartAccount(selectedAccount),
                   pinned: this.#pinned
                 },
                 forceUpdate
