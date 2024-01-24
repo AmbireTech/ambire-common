@@ -13,11 +13,12 @@ import { getFlags } from '../../libs/portfolio/helpers'
 import {
   AccountState,
   AdditionalAccountState,
+  GetOptions,
   Hints,
   PortfolioControllerState,
   PortfolioGetResult
 } from '../../libs/portfolio/interfaces'
-import { GetOptions, Portfolio } from '../../libs/portfolio/portfolio'
+import { Portfolio } from '../../libs/portfolio/portfolio'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import EventEmitter from '../eventEmitter'
 

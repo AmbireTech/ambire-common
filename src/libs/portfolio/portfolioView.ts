@@ -107,6 +107,13 @@ export function calculateTokensPendingState(
 
   const { tokens } = pendingData.result
 
+  // sometimes an old pending state that does not yet have amountPostSimulation
+  // set and breaks the logic below. If that's the case, wait for the
+  // simulation to complete
+  if (!tokens.length || !('amountPostSimulation' in tokens[0])) {
+    return []
+  }
+
   const tokensWithChangedAmounts = tokens.filter(
     (token) => token.amount !== token.amountPostSimulation
   )

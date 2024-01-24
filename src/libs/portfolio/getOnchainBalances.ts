@@ -1,12 +1,14 @@
+import { AbiCoder } from 'ethers'
+
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
+import { SPOOF_SIGTYPE } from '../../consts/signatures'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { getAccountDeployParams } from '../account/account'
 import { callToTuple } from '../accountOp/accountOp'
 import { Deployless, DeploylessMode, parseErr } from '../deployless/deployless'
 import { privSlot } from '../proxyDeploy/deploy'
 import { getFlags } from './helpers'
-import { Collectible, CollectionResult, LimitsOptions, TokenResult } from './interfaces'
-import { GetOptions } from './portfolio'
+import { Collectible, CollectionResult, GetOptions, LimitsOptions, TokenResult } from './interfaces'
 
 // 0x00..01 is the address from which simulation signatures are valid
 const DEPLOYLESS_SIMULATION_FROM = '0x0000000000000000000000000000000000000001'
@@ -163,6 +165,11 @@ export async function getTokens(
   }
   const { accountOps, account } = opts.simulation
   const [factory, factoryCalldata] = getAccountDeployParams(account)
+  const abiCoder = new AbiCoder()
+  const addrWithPrivs = account.associatedKeys.length ? account.associatedKeys[0] : null
+  const spoofSig = addrWithPrivs
+    ? abiCoder.encode(['address'], [addrWithPrivs]) + SPOOF_SIGTYPE
+    : null
   const [before, after, simulationErr] = await deployless.call(
     'simulateAndGetBalances',
     [
@@ -170,7 +177,11 @@ export async function getTokens(
       tokenAddrs,
       factory,
       factoryCalldata,
-      accountOps.map(({ nonce, calls, signature }) => [nonce, calls.map(callToTuple), signature])
+      accountOps.map(({ nonce, calls, signature }) => [
+        nonce,
+        calls.map(callToTuple),
+        spoofSig ?? signature
+      ])
     ],
     deploylessOpts
   )
