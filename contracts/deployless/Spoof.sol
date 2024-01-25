@@ -18,11 +18,10 @@ contract Spoof {
       address key = associatedKeys[i];
       bytes32 value = account.privileges(key);
       if (value != bytes32(0)) {
-        spoofSig = makeSpoofSignature(key);
-        break;
+        return makeSpoofSignature(key);
       }
     }
 
-    require(spoofSig.length > 0, 'BalanceGetter: wrong keys');
+    revert('BalanceGetter: wrong keys');
   }
 }
