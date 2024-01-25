@@ -212,7 +212,11 @@ export class SignAccountOpController extends EventEmitter {
     )
     if (currentPortfolioNetwork?.criticalError || !currentPortfolioNetworkNative)
       errors.push(
-        'Unable to estimate transaction fee as fetching the latest price updates failed. Please try again later.'
+        `Unable to estimate transaction fee as fetching the latest price updates failed. Please try again later. ${
+          currentPortfolioNetwork?.criticalError
+            ? `\n${currentPortfolioNetwork?.criticalError}`
+            : ''
+        }`
       )
 
     if (!this.accountOp?.gasFeePayment && this.feeSpeeds.length) {
