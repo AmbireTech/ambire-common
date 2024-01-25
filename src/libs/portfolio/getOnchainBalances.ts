@@ -1,7 +1,4 @@
-import { AbiCoder } from 'ethers'
-
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
-import { SPOOF_SIGTYPE } from '../../consts/signatures'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { getAccountDeployParams, isSmartAccount } from '../account/account'
 import { callToTuple } from '../accountOp/accountOp'
@@ -110,13 +107,13 @@ export async function getNFTs(
     'simulateAndGetAllNFTs',
     [
       accountAddr,
+      account.associatedKeys,
       tokenAddrs.map(([address]) => address),
       tokenAddrs.map(([, x]) => (x.enumerable ? [] : x.tokens.slice(0, limits.erc721TokensInput))),
       limits.erc721Tokens,
-
       factory,
       factoryCalldata,
-      accountOps.map(({ nonce, calls, signature }) => [nonce, calls.map(callToTuple), signature])
+      accountOps.map(({ nonce, calls }) => [nonce, calls.map(callToTuple)])
     ],
     deploylessOpts
   )
@@ -165,30 +162,17 @@ export async function getTokens(
   }
   const { accountOps, account } = opts.simulation
   const [factory, factoryCalldata] = getAccountDeployParams(account)
-  const abiCoder = new AbiCoder()
-
-  // get the spoof key if any
-  // account.associatedKeys[0] is great for EOA as the associated key
-  // is the same as the account address and will always have privs;
-  // on the other hand, it's not optimal for SA as it could not have privs
-  // for the smart account. This will change in a later version where
-  // we change simulateAndGetBalances by sending all associatedKeys to it
-  // and searching for the one with the privs
-  const addrWithPrivs = account.associatedKeys.length ? account.associatedKeys[0] : null
-  const spoofSig = addrWithPrivs
-    ? abiCoder.encode(['address'], [addrWithPrivs]) + SPOOF_SIGTYPE
-    : null
   const [before, after, simulationErr] = await deployless.call(
     'simulateAndGetBalances',
     [
       accountAddr,
+      account.associatedKeys,
       tokenAddrs,
       factory,
       factoryCalldata,
-      accountOps.map(({ nonce, calls, signature }, index) => [
+      accountOps.map(({ nonce, calls }, index) => [
         isSmartAccount(account) ? nonce : BigInt(index), // EOA simulation always starts from 0
-        calls.map(callToTuple),
-        spoofSig ?? signature
+        calls.map(callToTuple)
       ])
     ],
     deploylessOpts
