@@ -212,7 +212,7 @@ export class SignAccountOpController extends EventEmitter {
     )
     if (!currentPortfolioNetworkNative)
       errors.push(
-        'Unable to estimate the transaction fee as fetching the latest price updates for the network native token failed. Please try again later.'
+        'Unable to estimate the transaction fee as fetching the latest price update for the network native token failed. Please try again later.'
       )
 
     if (!this.accountOp?.gasFeePayment && this.feeSpeeds.length) {
