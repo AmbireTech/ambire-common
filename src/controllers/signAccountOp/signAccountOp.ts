@@ -210,13 +210,9 @@ export class SignAccountOpController extends EventEmitter {
     const currentPortfolioNetworkNative = currentPortfolioNetwork?.result?.tokens.find(
       (token) => token.address === '0x0000000000000000000000000000000000000000'
     )
-    if (currentPortfolioNetwork?.criticalError || !currentPortfolioNetworkNative)
+    if (!currentPortfolioNetworkNative)
       errors.push(
-        `Unable to estimate transaction fee as fetching the latest price updates failed. Please try again later. ${
-          currentPortfolioNetwork?.criticalError
-            ? `\n${currentPortfolioNetwork?.criticalError}`
-            : ''
-        }`
+        'Unable to estimate the transaction fee as fetching the latest price updates for the network native token failed. Please try again later.'
       )
 
     if (!this.accountOp?.gasFeePayment && this.feeSpeeds.length) {
