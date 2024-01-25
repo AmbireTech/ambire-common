@@ -414,7 +414,7 @@ export class EmailVaultController extends EventEmitter {
     }
   }
 
-  async finalizeSyncKeys(email: string, keys: string[]) {
+  async finalizeSyncKeys(email: string, keys: string[], password: string) {
     const operations: any[] = keys
       .map((key) => {
         const res = this.emailVaultStates.email[email].operations.find((op) => op.key === key)
@@ -426,7 +426,7 @@ export class EmailVaultController extends EventEmitter {
           })
           return null
         }
-        return res
+        return { ...res, password }
       })
       .filter((x) => x)
     await this.#wrapEmailVaultPublicMethod('finalizeSyncRequest', () =>
@@ -439,7 +439,7 @@ export class EmailVaultController extends EventEmitter {
   // - checks if there are sync requests via the operations route of the relayer
   // - exports the encrypted private key and sends it back to the relayer (fulfills)
   // @TODO add password
-  async fulfillSyncRequests(email: string) {
+  async fulfillSyncRequests(email: string, password: string) {
     await this.#getEmailVaultInfo(email)
     const operations = this.emailVaultStates.email[email].operations
     const key = (await this.#getMagicLinkKey(email))?.key || (await this.#getSessionKey(email))
@@ -455,7 +455,8 @@ export class EmailVaultController extends EventEmitter {
                   op.key,
                   op.requester
                 )
-              })
+              }),
+              password
             }
           }
           return op
@@ -464,7 +465,7 @@ export class EmailVaultController extends EventEmitter {
       await this.#emailVault.operations(email, key, newOperations)
       this.emitUpdate()
     } else {
-      await this.#handleMagicLinkKey(email, () => this.fulfillSyncRequests(email))
+      await this.#handleMagicLinkKey(email, () => this.fulfillSyncRequests(email, password))
     }
     this.emitUpdate()
   }

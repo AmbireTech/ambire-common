@@ -145,11 +145,12 @@ describe('happy cases', () => {
     )
     expect(ev2.emailVaultStates.email[email].operations.length).toBe(2)
 
-    await ev.fulfillSyncRequests(email)
+    await ev.fulfillSyncRequests(email, 'password')
     expect(ev.emailVaultStates.email[email].operations.length).toBe(2)
     await ev2.finalizeSyncKeys(
       email,
-      keys.map((k) => k.address)
+      keys.map((k) => k.address),
+      'password'
     )
     expect(await keystore2.getKeys().then((d) => d.length)).toBe(2)
   })
