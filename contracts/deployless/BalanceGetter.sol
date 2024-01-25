@@ -57,6 +57,7 @@ contract BalanceGetter is Simulation {
 
   function simulateAndGetBalances(
     IAmbireAccount account,
+    address[] memory associatedKeys,
     address[] calldata tokenAddrs,
     // instead of passing {factory, code, salt}, we'll just have factory and factoryCalldata
     address factory,
@@ -76,6 +77,7 @@ contract BalanceGetter is Simulation {
 
     (uint startNonce, bool success, bytes memory err) = Simulation.simulate(
       account,
+      associatedKeys,
       factory,
       factoryCalldata,
       toSimulate

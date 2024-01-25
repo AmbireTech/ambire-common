@@ -100,6 +100,7 @@ contract NFTGetter is Simulation {
 
   function simulateAndGetAllNFTs(
     IAmbireAccount account,
+    address[] memory associatedKeys,
     NFT[] memory collections,
     uint[][] memory tokenIds,
     uint tokenPerCollectionLimit,
@@ -121,6 +122,7 @@ contract NFTGetter is Simulation {
 
     (uint startNonce, bool success, bytes memory err) = Simulation.simulate(
       account,
+      associatedKeys,
       factory,
       factoryCalldata,
       toSimulate
