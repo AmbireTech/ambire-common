@@ -24,10 +24,12 @@ contract Simulation is Spoof {
     startingNonce = account.nonce();
     for (uint256 i = 0; i < toSimulate.length; i++) {
       if (account.nonce() == toSimulate[i].nonce) {
-        try account.execute(toSimulate[i].txns, getSpoof(account, associatedKeys)) {} catch (
-          bytes memory err
-        ) {
-          return (startingNonce, false, err);
+        try this.getSpoof(account, associatedKeys) returns (bytes memory spoofSig) {
+          try account.execute(toSimulate[i].txns, spoofSig) {} catch (bytes memory err) {
+            return (startingNonce, false, err);
+          }
+        } catch (bytes memory spoofErr) {
+          return (startingNonce, false, spoofErr);
         }
       }
     }

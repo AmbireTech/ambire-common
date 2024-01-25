@@ -202,7 +202,7 @@ export function parseErr(data: string): string | null {
   }
   if (data.startsWith(errorSig)) {
     try {
-      return abiCoder.decode(['string'], '0x' + dataNoPrefix)[0]
+      return abiCoder.decode(['string'], `0x${dataNoPrefix}`)[0]
     } catch (e: any) {
       if (e.code === 'BUFFER_OVERRUN' || e.code === 'NUMERIC_FAULT') return dataNoPrefix
       else throw e
