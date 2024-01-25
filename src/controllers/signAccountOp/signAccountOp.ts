@@ -205,8 +205,15 @@ export class SignAccountOpController extends EventEmitter {
     if (!this.accountOp?.signingKeyType || !this.accountOp?.signingKeyAddr)
       errors.push('Please select a signer to sign the transaction.')
 
-    if (!this.feeSpeeds.length)
-      errors.push('Estimating the transaction fee failed. Please try again later.')
+    const currentPortfolioNetwork =
+      this.#portfolio.latest[this.accountOp.accountAddr][this.accountOp.networkId]
+    const currentPortfolioNetworkNative = currentPortfolioNetwork?.result?.tokens.find(
+      (token) => token.address === '0x0000000000000000000000000000000000000000'
+    )
+    if (currentPortfolioNetwork?.criticalError || !currentPortfolioNetworkNative)
+      errors.push(
+        'Unable to estimate transaction fee as fetching the latest price updates failed. Please try again later.'
+      )
 
     if (!this.accountOp?.gasFeePayment && this.feeSpeeds.length) {
       errors.push('Please select a token and an account for paying the gas fee.')
