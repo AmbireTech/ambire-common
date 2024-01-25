@@ -270,7 +270,7 @@ describe('Portfolio', () => {
         isEOA: true
       })
     } catch (e: any) {
-      expect(e.message).toBe('simulation error: SV_NO_KEYS')
+      expect(e.message).toBe('simulation error: BalanceGetter: no keys')
     }
   })
 
@@ -310,7 +310,7 @@ describe('Portfolio', () => {
         isEOA: true
       })
     } catch (e: any) {
-      expect(e.message).toBe('simulation error: SV_WRONG_KEYS')
+      expect(e.message).toBe('simulation error: BalanceGetter: wrong keys')
     }
   })
 })
