@@ -41,7 +41,7 @@ export function getProxyDeployBytecode(
   const slotNumber = opts.privSlot ?? 0
   if (privLevels.length > 3) throw new Error('getProxyDeployBytecode: max 3 privLevels')
   const storage = Buffer.concat(
-    privLevels.map(({ addr, hash }) => sstoreCode(privSlot, 'address', addr, 'bytes32', hash))
+    privLevels.map(({ addr, hash }) => sstoreCode(slotNumber, 'address', addr, 'bytes32', hash))
   )
   const initial = Buffer.from('3d602d80', 'hex')
   // NOTE: this means we can't support offset>256
