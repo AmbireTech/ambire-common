@@ -12,9 +12,15 @@ library SignatureValidator {
 
 	enum SignatureMode {
 		// the first mode Unprotected is used in combination with EIP-1271 signature verification to do
-		// EIP-712 verifications, as well as "Ethereum signed message" message verifications
+		// EIP-712 verifications, as well as "Ethereum signed message:" message verifications
 		// The caveat with this is that we need to ensure that the signer key used for it isn't reused, or the message body
 		// itself contains context about the wallet (such as it's address)
+		// We do this, rather than applying the prefix on-chain, because if we do you won't be able to see the message
+		// when signing on a hardware wallet (you'll only see the hash) - since `isValidSignature` can only receive the hash -
+		// if the prefix is applied on-chain you can never match it - it's hash(prefix+hash(msg)) vs hash(prefix+msg)
+		// As for transactions (`execute()`), those can be signed with any of the modes
+		// Otherwise, if it's reused, we MUST use `Standard` mode which always wraps the final digest hash, but unfortnately this means
+		// you can't preview the full message when signing on a HW wallet
 		Unprotected,
 		Standard,
 		SmartWallet,
