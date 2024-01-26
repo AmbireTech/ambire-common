@@ -63,6 +63,8 @@ export class TransferController extends EventEmitter {
 
   #humanizerInfo: HumanizerInfoType | null = null
 
+  isTopUp: boolean = false
+
   // every time when updating selectedToken update the amount and maxAmount of the form
   set selectedToken(token: TokenResult | null) {
     if (
@@ -150,6 +152,13 @@ export class TransferController extends EventEmitter {
   }
 
   get isFormValid() {
+    // if the amount is set, it's enough in topUp mode
+    if (this.isTopUp) {
+      return (
+        this.selectedToken && validateSendTransferAmount(this.amount, this.selectedToken).success
+      )
+    }
+
     const areFormFieldsValid =
       this.validationFormMsgs.amount.success && this.validationFormMsgs.recipientAddress.success
 
@@ -178,7 +187,8 @@ export class TransferController extends EventEmitter {
     amount,
     recipientAddress,
     isSWWarningAgreed,
-    isRecipientAddressUnknownAgreed
+    isRecipientAddressUnknownAgreed,
+    isTopUp
   }: {
     selectedAccount?: string
     preSelectedToken?: string
@@ -189,6 +199,7 @@ export class TransferController extends EventEmitter {
     recipientAddress?: string
     isSWWarningAgreed?: boolean
     isRecipientAddressUnknownAgreed?: boolean
+    isTopUp?: boolean
   }) {
     if (humanizerInfo) {
       this.#humanizerInfo = humanizerInfo
@@ -225,6 +236,11 @@ export class TransferController extends EventEmitter {
       this.isRecipientAddressUnknownAgreed = !this.isRecipientAddressUnknownAgreed
     }
 
+    if (typeof isTopUp === 'boolean') {
+      this.isTopUp = isTopUp
+      this.#setSWWarningVisibleIfNeeded()
+    }
+
     this.emitUpdate()
   }
 
@@ -236,9 +252,10 @@ export class TransferController extends EventEmitter {
 
     if (!this.selectedToken || !this.#selectedTokenNetworkData || !this.#selectedAccount) return
 
-    const recipientAddress = getAddress(
-      this.recipientUDAddress || this.recipientEnsAddress || this.recipientAddress
-    )
+    // if the request is a top up, the recipient is the relayer
+    const recipientAddress = this.isTopUp
+      ? '0x942f9CE5D9a33a82F88D233AEb3292E680230348'
+      : getAddress(this.recipientUDAddress || this.recipientEnsAddress || this.recipientAddress)
 
     const bigNumberHexAmount = `0x${parseUnits(
       this.amount,
@@ -348,6 +365,7 @@ export class TransferController extends EventEmitter {
       networks.find(({ id }) => id === this.selectedToken?.networkId) || null
 
     this.isSWWarningVisible =
+      !this.isTopUp &&
       !!this.selectedToken?.address &&
       Number(this.selectedToken?.address) === 0 &&
       networks
