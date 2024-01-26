@@ -1,4 +1,5 @@
-import { Account } from '../../interfaces/account'
+import { PortfolioController } from '../../controllers/portfolio/portfolio'
+import { Account, AccountId } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { RPCProviders } from '../../interfaces/settings'
@@ -175,5 +176,46 @@ export const getNetworksWithFailedRPCBanners = ({
         text: `Affected features(${networkData?.name}): visible tokens, sign message/transaction, ENS/UD domain resolving, add account. Please try again later or contact support.`,
         actions: []
       }
+    })
+}
+
+export const getNetworksWithCriticalPortfolioErrorBanners = ({
+  selectedAccount,
+  networks,
+  portfolio
+}: {
+  selectedAccount: AccountId | null
+  networks: NetworkDescriptor[]
+  portfolio: PortfolioController
+}): Banner[] => {
+  if (!selectedAccount) return []
+
+  const selectedAccPortfolio = portfolio.latest[selectedAccount]
+  if (!selectedAccPortfolio) return []
+
+  return Object.keys(selectedAccPortfolio)
+    .filter((networkId) => portfolio.networksWithAssets.includes(networkId))
+    .flatMap((network) => {
+      const portfolioForNetwork = selectedAccPortfolio[network]
+
+      const criticalError = portfolioForNetwork?.criticalError
+      if (!criticalError) return []
+
+      const networkData = networks.find((n: NetworkDescriptor) => n.id === network)
+      if (!networkData) return []
+
+      return [
+        {
+          id: `${networkData.id}-${new Date().getTime()}`,
+          topic: 'WARNING',
+          title: `Failed to retrieve the portfolio data for ${networkData.name}`,
+          text: `Affected features(${
+            networkData.name
+          }): account balances, assets. Please try again later or contact support.${
+            criticalError?.message ? `\nError: ${criticalError.message}` : ''
+          }`,
+          actions: []
+        }
+      ]
     })
 }
