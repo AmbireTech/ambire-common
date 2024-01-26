@@ -283,7 +283,9 @@ export class PortfolioController extends EventEmitter {
         _accountState[network.id] = { isReady: true, isLoading: false, errors: [], result }
         this.emitUpdate()
         return true
-      } catch (e: any) {
+      } catch (_e: any) {
+        const e = _e instanceof Error ? _e : new Error(_e?.error || _e?.message || _e)
+
         this.emitError({
           level: 'silent',
           message: e.message,
