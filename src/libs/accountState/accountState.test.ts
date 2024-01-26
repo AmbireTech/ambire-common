@@ -1,12 +1,18 @@
 import { ethers, JsonRpcProvider } from 'ethers'
+import { Account } from 'interfaces/account'
 
 import { describe, expect, test } from '@jest/globals'
 
-import { AMBIRE_ACCOUNT_FACTORY, ERC_4337_ENTRYPOINT } from '../../consts/deploy'
+import {
+  AMBIRE_ACCOUNT_FACTORY,
+  ENTRY_POINT_MARKER,
+  ERC_4337_ENTRYPOINT
+} from '../../consts/deploy'
 import { networks } from '../../consts/networks'
-import { getBytecode } from '../proxyDeploy/bytecode'
+import { getBytecode, get4437Bytecode } from '../proxyDeploy/bytecode'
 import { getAmbireAccountAddress } from '../proxyDeploy/getAmbireAddressTwo'
 import { getAccountState } from './accountState'
+// import { get4437Bytecode } from ''
 
 const polygon = networks.find((x) => x.id === 'polygon')
 if (!polygon) throw new Error('unable to find polygon network in consts')
@@ -14,9 +20,10 @@ const provider = new JsonRpcProvider(polygon.rpcUrl)
 
 describe('AccountState', () => {
   test('should get the account state and check if a v1 address and v2 address (not deployed) are returned correctly', async () => {
-    const account = {
+    const account: Account = {
       addr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
       associatedKeys: [],
+      initialPrivileges: [],
       creation: {
         factoryAddr: '0xBf07a0Df119Ca234634588fbDb5625594E2a5BCA',
         bytecode:
@@ -25,9 +32,10 @@ describe('AccountState', () => {
       }
     }
 
-    const accountEOA = {
+    const accountEOA: Account = {
       addr: '0x1f9090aaE28b8a3dCeaDf281B0F12828e676c326',
       associatedKeys: [],
+      initialPrivileges: [],
       creation: {
         factoryAddr: '0x0000000000000000000000000000000000000000',
         bytecode: '0x00',
@@ -38,6 +46,7 @@ describe('AccountState', () => {
     const accountEOANonceNonZero = {
       addr: '0xf5ffA17725754dC00adB255fF296E4177B0982c7',
       associatedKeys: [],
+      initialPrivileges: [],
       creation: {
         factoryAddr: '0x0000000000000000000000000000000000000000',
         bytecode: '0x00',
@@ -46,11 +55,17 @@ describe('AccountState', () => {
     }
 
     const signerAddr = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
-    const priv = { addr: signerAddr, hash: true }
-    const bytecode = await getBytecode([priv])
-    const accountNotDeployed = {
+    const privileges = [
+      {
+        addr: signerAddr,
+        hash: '0x0000000000000000000000000000000000000000000000000000000000000001'
+      }
+    ]
+    const bytecode = await getBytecode(privileges)
+    const accountNotDeployed: Account = {
       addr: getAmbireAccountAddress(AMBIRE_ACCOUNT_FACTORY, bytecode),
       associatedKeys: [signerAddr],
+      initialPrivileges: privileges.map((priv) => [priv.addr, priv.hash]),
       creation: {
         factoryAddr: AMBIRE_ACCOUNT_FACTORY,
         bytecode,
@@ -58,9 +73,17 @@ describe('AccountState', () => {
       }
     }
 
-    const account4337 = {
+    const privs4337 = [
+      {
+        addr: '0x9188fdd757Df66B4F693D624Ed6A13a15Cf717D7',
+        hash: '0x0000000000000000000000000000000000000000000000000000000000000001'
+      },
+      { addr: ERC_4337_ENTRYPOINT, hash: ENTRY_POINT_MARKER }
+    ]
+    const account4337: Account = {
       addr: '0xD1cE5E6AE56693D2D3D52b2EBDf969C1D7901971',
       associatedKeys: ['0x9188fdd757Df66B4F693D624Ed6A13a15Cf717D7', ERC_4337_ENTRYPOINT],
+      initialPrivileges: privs4337.map((priv) => [priv.addr, priv.hash]),
       creation: {
         factoryAddr: '0xA3A22Bf212C03ce55eE7C3845D4c177a6fEC418B',
         bytecode:
@@ -70,16 +93,24 @@ describe('AccountState', () => {
     }
 
     const privs = [
-      { addr: '0x9188fdd757Df66B4F693D624Ed6A13a15Cf717D7', hash: true },
-      { addr: '0x43Ec7De60E89dabB7cAedc89Cd1F3c8D52707312', hash: true }
+      {
+        addr: '0x9188fdd757Df66B4F693D624Ed6A13a15Cf717D7',
+        hash: '0x0000000000000000000000000000000000000000000000000000000000000001'
+      },
+      {
+        addr: '0x43Ec7De60E89dabB7cAedc89Cd1F3c8D52707312',
+        hash: '0x0000000000000000000000000000000000000000000000000000000000000001'
+      }
     ]
-    const bytecodeErc4337 = await getBytecode(privs)
-    const accountErc4337 = {
+    const bytecodeErc4337 = await get4437Bytecode(polygon, privs)
+
+    const accountErc4337: Account = {
       addr: '0x76b277955846313Ec50F26eD155C26f5aED295B1',
       associatedKeys: [
         '0x9188fdd757Df66B4F693D624Ed6A13a15Cf717D7',
         '0x43Ec7De60E89dabB7cAedc89Cd1F3c8D52707312'
       ],
+      initialPrivileges: privs.map((priv) => [priv.addr, priv.hash]),
       creation: {
         factoryAddr: AMBIRE_ACCOUNT_FACTORY,
         bytecode: bytecodeErc4337,
@@ -87,7 +118,7 @@ describe('AccountState', () => {
       }
     }
 
-    const accounts = [
+    const accounts: Account[] = [
       account,
       accountNotDeployed,
       accountEOA,

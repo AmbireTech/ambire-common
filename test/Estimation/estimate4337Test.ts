@@ -40,7 +40,7 @@ describe('Estimate 4337 Tests', function () {
     entryPoint = await ethers.deployContract('EntryPoint')
     paymaster = await ethers.deployContract('AmbirePaymaster', [relayer.address])
     const { ambireAccount: acc } = await deployAmbireAccountHardhatNetwork([
-      { addr: signer.address, hash: true }
+      { addr: signer.address, hash: '0x0000000000000000000000000000000000000000000000000000000000000001' }
     ])
     ambireAccount = acc
     ambireAccountAddress = await ambireAccount.getAddress()
@@ -143,7 +143,7 @@ describe('Estimate 4337 Tests', function () {
       AmbireAccountFactory.abi,
     )
     const privs = [
-      { addr: relayer.address, hash: true },
+      { addr: relayer.address, hash: '0x0000000000000000000000000000000000000000000000000000000000000001' },
       { addr: await entryPoint.getAddress(), hash: ENTRY_POINT_MARKER },
     ]
     const bytecode = await get4437Bytecode(privs)

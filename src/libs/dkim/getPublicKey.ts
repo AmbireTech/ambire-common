@@ -18,3 +18,19 @@ export default function getPublicKey({ domain, selector }: any) {
     };
   });
 };
+
+/**
+ * A wrapper to help getPublicKey reverts when a pub key is not found.
+ * We don't want that
+ *
+ * @param {domain: string, selector: string}
+ * @returns base64encoded | null
+ */
+export async function getPublicKeyIfAny({ domain, selector }: any) {
+  try {
+    const dkimKey = await getPublicKey({domain, selector: selector})
+    return dkimKey
+  } catch (e) {
+    return null
+  }
+}

@@ -3,6 +3,7 @@ import fetch from 'node-fetch'
 
 import { describe, expect, test } from '@jest/globals'
 
+import { SelectedAccount } from 'controllers/accountAdder/accountAdder'
 import { produceMemoryStore } from '../../../test/helpers'
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'
@@ -114,35 +115,45 @@ describe('Main Controller ', () => {
   })
 
   test('login with emailVault', async () => {
-    controller.emailVault.login(email)
     // eslint-disable-next-line no-promise-executor-return
-    await new Promise((resolve) => controller.emailVault.onUpdate(() => resolve(null)))
-    // console.log(controller.emailVault.emailVaultStates)
+    const promise = new Promise((resolve) => controller.emailVault.onUpdate(() => resolve(null)))
+    await controller.emailVault.getEmailVaultInfo(email)
+    await promise
+    expect(controller.emailVault.emailVaultStates).toMatchObject({
+      email: {
+        [email]: {
+          email,
+          recoveryKey: expect.anything(),
+          availableSecrets: expect.anything(),
+          availableAccounts: {},
+          operations: []
+        }
+      }
+    })
   })
 
-  test('beckup keyStore secret emailVault', async () => {
+  test('backup keyStore secret emailVault', async () => {
     // console.log(
     //   JSON.stringify(controller.emailVault.emailVaultStates[email].availableSecrets, null, 2)
     // )
-    controller.emailVault.backupRecoveryKeyStoreSecret(email)
+    controller.emailVault.uploadKeyStoreSecret(email)
     // eslint-disable-next-line no-promise-executor-return
     await new Promise((resolve) => controller.emailVault.onUpdate(() => resolve(null)))
-    // console.log(
-    //   JSON.stringify(controller.emailVault.emailVaultStates[email].availableSecrets, null, 2)
-    // )
+    // console.log(JSON.stringify(controller.emailVault, null, 2))
   })
 
   test('unlock keyStore with recovery secret emailVault', async () => {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     async function wait(ms: number) {
       // eslint-disable-next-line no-promise-executor-return
       return new Promise((resolve) => setTimeout(() => resolve(null), ms))
     }
     // controller.lock()
-    controller.emailVault.recoverKeyStore(email)
+    await controller.emailVault.recoverKeyStore(email)
     // console.log('isUnlock ==>', controller.isUnlock())
     // eslint-disable-next-line no-promise-executor-return
-    await new Promise((resolve) => controller.emailVault.onUpdate(() => resolve(null)))
-    await wait(10000)
+    // await new Promise((resolve) => controller.emailVault.onUpdate(() => resolve(null)))
+    // await wait(10000)
     // console.log('isUnlock ==>', controller.isUnlock())
   })
 
@@ -165,7 +176,7 @@ describe('Main Controller ', () => {
 
     // Same mechanism to generating this one as used for the
     // `accountNotDeployed` in accountState.test.ts
-    const accountPendingCreation = {
+    const accountPendingCreation: SelectedAccount = {
       account: {
         addr: getAmbireAccountAddress(AMBIRE_ACCOUNT_FACTORY, bytecode),
         associatedKeys: [signerAddr],
@@ -173,7 +184,13 @@ describe('Main Controller ', () => {
           factoryAddr: AMBIRE_ACCOUNT_FACTORY,
           bytecode,
           salt: ethers.toBeHex(0, 32)
-        }
+        },
+        initialPrivileges: [
+          [
+            '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
+            '0x0000000000000000000000000000000000000000000000000000000000000001'
+          ]
+        ]
       },
       accountKeyAddr: signerAddr,
       slot: 1,

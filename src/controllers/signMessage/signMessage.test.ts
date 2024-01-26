@@ -21,6 +21,12 @@ const providers = Object.fromEntries(
 const account: Account = {
   addr: '0x9188fdd757Df66B4F693D624Ed6A13a15Cf717D7',
   associatedKeys: ['0x9188fdd757Df66B4F693D624Ed6A13a15Cf717D7'],
+  initialPrivileges: [
+    [
+      '0x9188fdd757Df66B4F693D624Ed6A13a15Cf717D7',
+      '0x0000000000000000000000000000000000000000000000000000000000000001'
+    ]
+  ],
   creation: null
 }
 

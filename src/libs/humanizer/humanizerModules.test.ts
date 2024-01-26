@@ -2,10 +2,10 @@ import { ethers } from 'ethers'
 import fetch from 'node-fetch'
 
 import { describe, expect, test } from '@jest/globals'
+import { ErrorRef } from '../../controllers/eventEmitter/eventEmitter'
 
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import humanizerInfo from '../../consts/humanizerInfo.json'
-import { ErrorRef } from '../../controllers/eventEmitter'
 import { AccountOp } from '../accountOp/accountOp'
 import { humanizeCalls, visualizationToText } from './humanizerFuncs'
 import { humanizerCallModules as humanizerModules } from './index'

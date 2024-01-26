@@ -6,7 +6,7 @@ import { describe, expect, jest, test } from '@jest/globals'
 
 import { produceMemoryStore } from '../../../test/helpers'
 import humanizerJSON from '../../consts/humanizerInfo.json'
-import { ErrorRef } from '../../controllers/eventEmitter'
+import { ErrorRef } from '../../controllers/eventEmitter/eventEmitter'
 import { Account } from '../../interfaces/account'
 import { Key } from '../../interfaces/keystore'
 import { Storage } from '../../interfaces/storage'
@@ -50,6 +50,7 @@ const accounts: Account[] = [
   {
     addr: '0xAAbBbC841F29Dc6b09EF9f6c8fd59DA807bc6248',
     associatedKeys: ['string[]'],
+    initialPrivileges: [],
     creation: null
   }
 ]

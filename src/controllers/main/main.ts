@@ -36,9 +36,9 @@ import bundler from '../../services/bundlers'
 import generateSpoofSig from '../../utils/generateSpoofSig'
 import wait from '../../utils/wait'
 import { AccountAdderController } from '../accountAdder/accountAdder'
+import { EmailVaultController } from '../emailVault/emailVault'
 import { ActivityController, SignedMessage, SubmittedAccountOp } from '../activity/activity'
-import { EmailVaultController } from '../emailVault'
-import EventEmitter from '../eventEmitter'
+import EventEmitter from '../eventEmitter/eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
 import { PortfolioController } from '../portfolio/portfolio'
 import { SettingsController } from '../settings/settings'
@@ -1169,7 +1169,13 @@ export class MainController extends EventEmitter {
   get banners(): Banner[] {
     const userRequests =
       this.userRequests.filter((req) => req.accountAddr === this.selectedAccount) || []
-    const accounts = this.accounts
+      const accounts = this.accounts
+
+
+    const emailVaultBanners = this.emailVault.banners.filter(
+      (banner) => banner.accountAddr === this.selectedAccount
+    )
+    
     const accountOpEOABanners = getAccountOpBannersForEOA({ userRequests, accounts })
     const pendingAccountOpEOABanners = getPendingAccountOpBannersForEOA({ userRequests, accounts })
     const accountOpSmartAccountBanners = getAccountOpBannersForSmartAccount({
@@ -1184,6 +1190,7 @@ export class MainController extends EventEmitter {
     })
 
     return [
+      ...emailVaultBanners,
       ...accountOpSmartAccountBanners,
       ...accountOpEOABanners,
       ...pendingAccountOpEOABanners,

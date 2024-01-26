@@ -1,14 +1,39 @@
 import { ethers, Interface } from 'ethers'
 
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
-import { SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET } from '../../consts/derivation'
 import { Account } from '../../interfaces/account'
+import { DKIM_VALIDATOR_ADDR, getSignerKey, RECOVERY_DEFAULTS } from '../dkim/recovery'
+import { SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET } from '../../consts/derivation'
 import { Key } from '../../interfaces/keystore'
 import { AccountPreferences, KeyPreferences } from '../../interfaces/settings'
 import { KnownAddressLabels } from '../humanizer/interfaces'
 import { getBytecode } from '../proxyDeploy/bytecode'
 import { PrivLevels } from '../proxyDeploy/deploy'
 import { getAmbireAccountAddress } from '../proxyDeploy/getAmbireAddressTwo'
+
+/**
+ * The minimum requirements are emailFrom and secondaryKey.
+ * - emailFrom is the email from the email vault
+ * - secondaryKey is the recoveryKey set in the email vault
+ * - acceptUnknownSelectors: sets whether recovery can be done by DNSSEC keys
+ * - waitUntilAcceptAdded: how much time to wait before the user accepts
+ * a DNSSEC key
+ * - waitUntilAcceptRemoved: how much time to wait before the user accepts
+ * a removal of a DNSSEC key
+ * - acceptEmptyDKIMSig: can recovery be performed without DKIM
+ * - acceptEmptySecondSig: can recovery be performed without secondaryKey
+ * - onlyOneSigTimelock: in case of 1/2 multisig, how much time to wait
+ * before the recovery transaction can be executed
+ */
+interface DKIMRecoveryAccInfo {
+  emailFrom: string
+  secondaryKey: string
+  waitUntilAcceptAdded?: BigInt
+  waitUntilAcceptRemoved?: BigInt
+  acceptEmptyDKIMSig?: boolean
+  acceptEmptySecondSig?: boolean
+  onlyOneSigTimelock?: BigInt
+}
 
 // returns to, data
 export function getAccountDeployParams(account: Account): [string, string] {
@@ -27,6 +52,7 @@ export function getLegacyAccount(key: string): Account {
   return {
     addr: key,
     associatedKeys: [key],
+    initialPrivileges: [],
     creation: null
   }
 }
@@ -36,6 +62,7 @@ export async function getSmartAccount(privileges: PrivLevels[]): Promise<Account
 
   return {
     addr: getAmbireAccountAddress(AMBIRE_ACCOUNT_FACTORY, bytecode),
+    initialPrivileges: privileges.map((priv) => [priv.addr, priv.hash]),
     associatedKeys: privileges.map((priv) => priv.addr),
     creation: {
       factoryAddr: AMBIRE_ACCOUNT_FACTORY,
@@ -43,6 +70,88 @@ export async function getSmartAccount(privileges: PrivLevels[]): Promise<Account
       salt: ethers.toBeHex(0, 32)
     }
   }
+}
+
+/**
+ * Create a DKIM recoverable email smart account
+ *
+ * @param recoveryInfo DKIMRecoveryAccInfo
+ * @param associatedKey the key that has privileges
+ * @returns Promise<Account>
+ */
+export async function getEmailAccount(
+  recoveryInfo: DKIMRecoveryAccInfo,
+  associatedKey: string
+): Promise<Account> {
+  // const domain: string = recoveryInfo.emailFrom.split('@')[1]
+
+  // TODO: make getEmailAccount work with cloudflare
+
+  // try to take the dkimKey from the list of knownSelectors
+  // if we cannot, we query a list of frequentlyUsedSelectors to try
+  // to find the dkim key
+  // let selector = knownSelectors[domain as keyof typeof knownSelectors] ?? ''
+  // let dkimKey = selector ? await getPublicKeyIfAny({domain, selector: selector}) : ''
+  // if (!dkimKey) {
+  //   const promises = frequentlyUsedSelectors.map(sel => getPublicKeyIfAny({domain, selector: sel}))
+  //   const results = await Promise.all(promises)
+  //   for (let i = 0; i < results.length; i++) {
+  //     if (results[i]) {
+  //       dkimKey = results[i]
+  //       selector = frequentlyUsedSelectors[i]
+  //       break
+  //     }
+  //   }
+  // }
+
+  // if there's no dkimKey, standard DKIM recovery is not possible
+  // we leave the defaults empty and the user will have to rely on
+  // keys added through DNSSEC
+  const selector = ethers.hexlify(ethers.toUtf8Bytes(''))
+  const modulus = ethers.hexlify(ethers.toUtf8Bytes(''))
+  const exponent = ethers.hexlify(ethers.toUtf8Bytes(''))
+  // if (dkimKey) {
+  //   const key = publicKeyToComponents(dkimKey.publicKey)
+  //   modulus = ethers.hexlify(key.modulus)
+  //   exponent = ethers.hexlify(ethers.toBeHex(key.exponent))
+  // }
+
+  // acceptUnknownSelectors should be always true
+  // and should not be overriden by the FE at this point
+  const acceptUnknownSelectors = RECOVERY_DEFAULTS.acceptUnknownSelectors
+  const waitUntilAcceptAdded =
+    recoveryInfo.waitUntilAcceptAdded ?? RECOVERY_DEFAULTS.waitUntilAcceptAdded
+  const waitUntilAcceptRemoved =
+    recoveryInfo.waitUntilAcceptRemoved ?? RECOVERY_DEFAULTS.waitUntilAcceptRemoved
+  const acceptEmptyDKIMSig = recoveryInfo.acceptEmptyDKIMSig ?? RECOVERY_DEFAULTS.acceptEmptyDKIMSig
+  const acceptEmptySecondSig =
+    recoveryInfo.acceptEmptySecondSig ?? RECOVERY_DEFAULTS.acceptEmptySecondSig
+  const onlyOneSigTimelock = recoveryInfo.onlyOneSigTimelock ?? RECOVERY_DEFAULTS.onlyOneSigTimelock
+
+  const abiCoder = new ethers.AbiCoder()
+  const validatorAddr = DKIM_VALIDATOR_ADDR
+  const validatorData = abiCoder.encode(
+    ['tuple(string,string,string,bytes,bytes,address,bool,uint32,uint32,bool,bool,uint32)'],
+    [
+      [
+        recoveryInfo.emailFrom,
+        RECOVERY_DEFAULTS.emailTo,
+        selector,
+        modulus,
+        exponent,
+        recoveryInfo.secondaryKey,
+        acceptUnknownSelectors,
+        waitUntilAcceptAdded,
+        waitUntilAcceptRemoved,
+        acceptEmptyDKIMSig,
+        acceptEmptySecondSig,
+        onlyOneSigTimelock
+      ]
+    ]
+  )
+  const { hash } = getSignerKey(validatorAddr, validatorData)
+  const privileges = [{ addr: associatedKey, hash }]
+  return getSmartAccount(privileges)
 }
 
 export const isAmbireV1LinkedAccount = (factoryAddr?: string) =>

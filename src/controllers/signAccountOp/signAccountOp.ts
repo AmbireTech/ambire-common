@@ -23,7 +23,7 @@ import {
   shouldUseOneTimeNonce,
   shouldUsePaymaster
 } from '../../libs/userOperation/userOperation'
-import EventEmitter from '../eventEmitter'
+import EventEmitter from '../eventEmitter/eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
 import { PortfolioController } from '../portfolio/portfolio'
 import { SettingsController } from '../settings/settings'

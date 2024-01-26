@@ -28,9 +28,15 @@ const providerOptimism = new JsonRpcProvider(optimism.rpcUrl)
 const providerArbitrum = new JsonRpcProvider(arbitrum.rpcUrl)
 const providerAvalanche = new JsonRpcProvider(avalanche.rpcUrl)
 
-const account = {
+const account: Account = {
   addr: '0xa07D75aacEFd11b425AF7181958F0F85c312f143',
   associatedKeys: ['0xd6e371526cdaeE04cd8AF225D42e37Bc14688D9E'],
+  initialPrivileges: [
+    [
+      '0xd6e371526cdaeE04cd8AF225D42e37Bc14688D9E',
+      '0x0000000000000000000000000000000000000000000000000000000000000001'
+    ]
+  ],
   creation: {
     factoryAddr: '0xBf07a0Df119Ca234634588fbDb5625594E2a5BCA',
     bytecode:
@@ -87,7 +93,7 @@ const getAccountsInfo = async (accounts: Account[]): Promise<AccountStates> => {
   return Object.fromEntries(states)
 }
 
-const smartAccountv2eip712 = {
+const smartAccountv2eip712: Account = {
   addr: '0x4AA524DDa82630cE769e5C9d7ec7a45B94a41bc6',
   associatedKeys: ['0x141A14B5C4dbA2aC7a7943E02eDFE2E7eDfdA28F'],
   creation: {
@@ -95,10 +101,11 @@ const smartAccountv2eip712 = {
     bytecode:
       '0x7f00000000000000000000000000000000000000000000000000000000000000027fa70e7c3e588683d0493e3cad10209993d632b6631bc4637b53a4174bad869718553d602d80604d3d3981f3363d3d373d3d3d363d730e370942ebe4d026d05d2cf477ff386338fc415a5af43d82803e903d91602b57fd5bf3',
     salt: '0x0000000000000000000000000000000000000000000000000000000000000000'
-  }
+  },
+  initialPrivileges: []
 }
 
-const trezorSlot6v2NotDeployed = {
+const trezorSlot6v2NotDeployed: Account = {
   addr: '0x29e54b17CAe69edaf2D7138053c23436aac1B379',
   associatedKeys: ['0x71c3D24a627f0416db45107353d8d0A5ae0401ae'],
   creation: {
@@ -106,7 +113,8 @@ const trezorSlot6v2NotDeployed = {
     bytecode:
       '0x7f00000000000000000000000000000000000000000000000000000000000000027f3369d2838e4eeae4638428c523923f47cfb9039c70a8c40d546493e82c7ba866553d602d80604d3d3981f3363d3d373d3d3d363d730e370942ebe4d026d05d2cf477ff386338fc415a5af43d82803e903d91602b57fd5bf3',
     salt: '0x0000000000000000000000000000000000000000000000000000000000000000'
-  }
+  },
+  initialPrivileges: []
 }
 
 describe('estimate', () => {
@@ -122,9 +130,15 @@ describe('estimate', () => {
   }
 
   it('estimates gasUsage and native balance for EOA', async () => {
-    const EOAAccount = {
+    const EOAAccount: Account = {
       addr: '0x40b38765696e3d5d8d9d834d8aad4bb6e418e489',
       associatedKeys: ['0x40b38765696e3d5d8d9d834d8aad4bb6e418e489'],
+      initialPrivileges: [
+        [
+          '0x40b38765696e3d5d8d9d834d8aad4bb6e418e489',
+          '0x0000000000000000000000000000000000000000000000000000000000000001'
+        ]
+      ],
       creation: null
     }
 
@@ -279,9 +293,15 @@ describe('estimate', () => {
   })
 
   it('estimates with `addedNative`', async () => {
-    const accountOptimism = {
+    const accountOptimism: Account = {
       addr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
       associatedKeys: ['0x5Be214147EA1AE3653f289E17fE7Dc17A73AD175'],
+      initialPrivileges: [
+        [
+          '0x5Be214147EA1AE3653f289E17fE7Dc17A73AD175',
+          '0x0000000000000000000000000000000000000000000000000000000000000001'
+        ]
+      ],
       creation: {
         factoryAddr: '0xBf07a0Df119Ca234634588fbDb5625594E2a5BCA',
         bytecode:
@@ -325,6 +345,19 @@ describe('estimate', () => {
   })
 
   it('estimates an arbitrum request', async () => {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const accountArbitrum: Account = {
+      addr: '0x4AA524DDa82630cE769e5C9d7ec7a45B94a41bc6',
+      associatedKeys: ['0x141A14B5C4dbA2aC7a7943E02eDFE2E7eDfdA28F'],
+      creation: {
+        factoryAddr: '0xa8202f888b9b2dfa5ceb2204865018133f6f179a',
+        bytecode:
+          '0x7f00000000000000000000000000000000000000000000000000000000000000027fa70e7c3e588683d0493e3cad10209993d632b6631bc4637b53a4174bad869718553d602d80604d3d3981f3363d3d373d3d3d363d730e370942ebe4d026d05d2cf477ff386338fc415a5af43d82803e903d91602b57fd5bf3',
+        salt: '0x0000000000000000000000000000000000000000000000000000000000000000'
+      },
+      initialPrivileges: []
+    }
+
     const opArbitrum = {
       accountAddr: smartAccountv2eip712.addr,
       signingKeyAddr: smartAccountv2eip712.associatedKeys[0],

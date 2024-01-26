@@ -1,6 +1,7 @@
 import chai, { expect } from 'chai'
 import chaiAssertionsCount from 'chai-assertions-count'
 import { ethers } from 'hardhat'
+import { Account } from '../src/interfaces/account'
 
 chai.use(chaiAssertionsCount)
 
@@ -31,7 +32,7 @@ const deployGasLimit = 1000000
 // const filenames = fs.readdirSync(`${__dirname}/../artifacts/build-info`)
 const buildInfo = null
 
-const trezorSlot7v24337Deployed = {
+const trezorSlot7v24337Deployed: Account = {
   addr: '0xaA2450102D8C039A69d7B3daA7C13Cf73F55F742',
   associatedKeys: ['0xf8FF717A6099de9058541d1Ac6cdC9500E9fB1AF'],
   creation: {
@@ -39,7 +40,8 @@ const trezorSlot7v24337Deployed = {
     bytecode:
       '0x7f00000000000000000000000000000000000000000000000000000000000000027fabb251cd0bc873c8f01fdc27fc133835d7b4900eb6429cb319361b180fada709553d602d80604d3d3981f3363d3d373d3d3d363d730e370942ebe4d026d05d2cf477ff386338fc415a5af43d82803e903d91602b57fd5bf3',
     salt: '0x0000000000000000000000000000000000000000000000000000000000000000'
-  }
+  },
+  initialPrivileges: []
 }
 
 export {

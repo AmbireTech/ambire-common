@@ -37,7 +37,7 @@ let ambireAccountAddress: string
 describe('Two of two multisignature tests', () => {
   it('successfully deploys the ambire account', async () => {
     const { ambireAccountAddress: addr } = await deployAmbireAccountHardhatNetwork([
-      { addr: getMsAddress(), hash: true }
+      { addr: getMsAddress(), hash: '0x0000000000000000000000000000000000000000000000000000000000000001' }
     ])
     ambireAccountAddress = addr
   })
@@ -136,7 +136,7 @@ describe('Two of two multisignature tests', () => {
 describe('Three of three multisignature tests', () => {
   before('successfully deploys the ambire account', async () => {
     const { ambireAccountAddress: addr } = await deployAmbireAccountHardhatNetwork([
-      { addr: getMsAddress([addressOne, addressTwo, addressThree]), hash: true }
+      { addr: getMsAddress([addressOne, addressTwo, addressThree]), hash: '0x0000000000000000000000000000000000000000000000000000000000000001' }
     ])
     ambireAccountAddress = addr
   })

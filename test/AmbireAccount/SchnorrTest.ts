@@ -23,7 +23,7 @@ let ambireAccountAddress: string
 describe('Schnorr tests', () => {
   before('successfully deploys the ambire account', async () => {
     const { ambireAccountAddress: addr } = await deployAmbireAccountHardhatNetwork([
-      { addr: getSchnorrAddress(), hash: true }
+      { addr: getSchnorrAddress(), hash: '0x0000000000000000000000000000000000000000000000000000000000000001' }
     ])
     ambireAccountAddress = addr
   })

@@ -1,4 +1,5 @@
 import { AbiCoder, encodeRlp, Interface, JsonRpcProvider, Provider } from 'ethers'
+import { ErrorRef } from '../../controllers/eventEmitter/eventEmitter'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFactory.json'

@@ -138,6 +138,7 @@ trezorSlot7v24337Deployed.associatedKeys.push(eoaSigner.keyPublicAddress)
 const eoaAccount: Account = {
   addr: eoaSigner.keyPublicAddress,
   associatedKeys: [eoaSigner.keyPublicAddress],
+  initialPrivileges: [],
   creation: null
 }
 
@@ -149,12 +150,19 @@ const smartAccount: Account = {
     bytecode:
       '0x7f00000000000000000000000000000000000000000000000000000000000000027fa70e7c3e588683d0493e3cad10209993d632b6631bc4637b53a4174bad869718553d602d80604d3d3981f3363d3d373d3d3d363d730e370942ebe4d026d05d2cf477ff386338fc415a5af43d82803e903d91602b57fd5bf3',
     salt: '0x0000000000000000000000000000000000000000000000000000000000000000'
-  }
+  },
+  initialPrivileges: [
+    [
+      '0x141A14B5C4dbA2aC7a7943E02eDFE2E7eDfdA28F',
+      '0x0000000000000000000000000000000000000000000000000000000000000001'
+    ]
+  ]
 }
 
 const v1Account = {
   addr: '0xa07D75aacEFd11b425AF7181958F0F85c312f143',
   associatedKeys: ['0xd6e371526cdaeE04cd8AF225D42e37Bc14688D9E', eoaSigner.keyPublicAddress],
+  initialPrivileges: [],
   creation: {
     factoryAddr: '0xBf07a0Df119Ca234634588fbDb5625594E2a5BCA',
     bytecode:

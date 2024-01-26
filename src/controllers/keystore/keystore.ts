@@ -1,6 +1,14 @@
+/* eslint-disable class-methods-use-this */
 /* eslint-disable new-cap */
 /* eslint-disable @typescript-eslint/no-shadow */
 import aes from 'aes-js'
+// import { entropyToMnemonic } from 'bip39'
+import {
+  decryptWithPrivateKey,
+  Encrypted,
+  encryptWithPublicKey,
+  publicKeyByPrivateKey
+} from 'eth-crypto'
 import { concat, getBytes, hexlify, keccak256, randomBytes, toUtf8Bytes, Wallet } from 'ethers'
 import scrypt from 'scrypt-js'
 
@@ -13,8 +21,8 @@ import {
   StoredKey
 } from '../../interfaces/keystore'
 import { Storage } from '../../interfaces/storage'
+import EventEmitter from '../eventEmitter/eventEmitter'
 import wait from '../../utils/wait'
-import EventEmitter from '../eventEmitter'
 
 const scryptDefaults = { N: 131072, r: 8, p: 1, dkLen: 64 }
 const CIPHER = 'aes-128-ctr'
@@ -235,7 +243,7 @@ export class KeystoreController extends EventEmitter {
 
     // produce uid if one doesn't exist (should be created when the first secret is added)
     if (!(await this.#storage.get('keyStoreUid', null))) {
-      const uid = keccak256(mainKey.key).slice(2, 34)
+      const uid = publicKeyByPrivateKey(hexlify(getBytes(concat([mainKey.key, mainKey.iv]))))
       await this.#storage.set('keyStoreUid', uid)
     }
 
@@ -431,6 +439,45 @@ export class KeystoreController extends EventEmitter {
     return JSON.stringify(keyBackup)
   }
 
+  /*
+    DOCS
+    keyAddress: string - the address of the key you want to export
+    publicKey: string - the public key, with which to asymmetrically encypt it (used for key sync with other device's keystoreId)
+  */
+  async exportKeyWithPublicKeyEncryption(
+    keyAddress: string,
+    publicKey: string
+  ): Promise<Encrypted> {
+    if (this.#mainKey === null) throw new Error('keystore: needs to be unlocked')
+    const keys = await this.#storage.get('keystoreKeys', [])
+
+    const storedKey: StoredKey = keys.find((x: StoredKey) => x.addr === keyAddress)
+    if (!storedKey) throw new Error('keystore: key not found')
+    if (storedKey.type !== 'internal') throw new Error('keystore: key does not have privateKey')
+
+    // decrypt the pk of keyAddress with the keystore's key
+    const encryptedBytes = getBytes(storedKey.privKey as string)
+    const counter = new aes.Counter(this.#mainKey.iv)
+    const aesCtr = new aes.ModeOfOperation.ctr(this.#mainKey.key, counter)
+    // encrypt the pk of keyAddress with publicKey
+    const decryptedBytes = aesCtr.decrypt(encryptedBytes)
+    const decryptedPrivateKey = aes.utils.hex.fromBytes(decryptedBytes)
+    const result = await encryptWithPublicKey(publicKey, decryptedPrivateKey)
+
+    return result
+  }
+
+  async importKeyWithPublicKeyEncryption(encryptedSk: Encrypted, dedicatedToOneSA: boolean) {
+    if (this.#mainKey === null) throw new Error('keystore: needs to be unlocked')
+    const privateKey: string = await decryptWithPrivateKey(
+      hexlify(getBytes(concat([this.#mainKey.key, this.#mainKey.iv]))),
+      encryptedSk
+    )
+    if (!privateKey) throw new Error('keystore: wrong encryptedSk or private key')
+
+    await this.addKeys([{ privateKey, dedicatedToOneSA }])
+  }
+
   async getSigner(keyAddress: Key['addr'], keyType: Key['type']) {
     const keys = await this.#storage.get('keystoreKeys', [])
     const storedKey: StoredKey = keys.find(
@@ -468,24 +515,6 @@ export class KeystoreController extends EventEmitter {
 
     // @ts-ignore TODO: Figure out the correct type definition
     return new SignerInitializer(key)
-  }
-
-  async #changeKeystorePassword(oldSecret: string, newSecret: string) {
-    await this.#unlockWithSecret('password', oldSecret)
-    if (!this.isUnlocked) throw new Error('keystore: not unlocked')
-
-    const secrets = await this.getMainKeyEncryptedWithSecrets()
-    await this.#storage.set(
-      'keystoreSecrets',
-      secrets.filter((x) => x.id !== 'password')
-    )
-    await this.#addSecret('password', newSecret, '', true)
-  }
-
-  async changeKeystorePassword(oldSecret: string, newSecret: string) {
-    await this.#wrapKeystoreAction('changeKeystorePassword', () =>
-      this.#changeKeystorePassword(oldSecret, newSecret)
-    )
   }
 
   async #wrapKeystoreAction(callName: string, fn: Function) {
@@ -544,6 +573,24 @@ export class KeystoreController extends EventEmitter {
       this.status = 'INITIAL'
       this.emitUpdate()
     }
+  }
+
+  async #changeKeystorePassword(oldSecret: string, newSecret: string) {
+    await this.#unlockWithSecret('password', oldSecret)
+    if (!this.isUnlocked) throw new Error('keystore: not unlocked')
+
+    const secrets = await this.getMainKeyEncryptedWithSecrets()
+    await this.#storage.set(
+      'keystoreSecrets',
+      secrets.filter((x) => x.id !== 'password')
+    )
+    await this.#addSecret('password', newSecret, '', true)
+  }
+
+  async changeKeystorePassword(oldSecret: string, newSecret: string) {
+    await this.#wrapKeystoreAction('changeKeystorePassword', () =>
+      this.#changeKeystorePassword(oldSecret, newSecret)
+    )
   }
 
   resetErrorState() {

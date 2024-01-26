@@ -30,7 +30,7 @@ function sstoreCode(slotNumber: any, keyType: any, key: any, valueType: any, val
 
 export interface PrivLevels {
   addr: string
-  hash: string | boolean
+  hash: string
 }
 
 export function getProxyDeployBytecode(
@@ -41,11 +41,7 @@ export function getProxyDeployBytecode(
   const slotNumber = opts.privSlot ?? 0
   if (privLevels.length > 3) throw new Error('getProxyDeployBytecode: max 3 privLevels')
   const storage = Buffer.concat(
-    privLevels.map(({ addr, hash }) => {
-      return hash !== true
-        ? sstoreCode(slotNumber, 'address', addr, 'bytes32', hash)
-        : sstoreCode(slotNumber, 'address', addr, 'bool', Buffer.from('01', 'hex'))
-    })
+    privLevels.map(({ addr, hash }) => sstoreCode(slotNumber, 'address', addr, 'bytes32', hash))
   )
   const initial = Buffer.from('3d602d80', 'hex')
   // NOTE: this means we can't support offset>256
