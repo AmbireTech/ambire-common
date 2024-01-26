@@ -8,6 +8,7 @@ import { describe, expect, jest, test } from '@jest/globals'
 import EntryPointAbi from '../../../contracts/compiled/EntryPoint.json'
 import { trezorSlot7v24337Deployed } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
+import { FEE_COLLECTOR } from '../../consts/addresses'
 import { ERC_4337_ENTRYPOINT } from '../../consts/deploy'
 import humanizerJSON from '../../consts/humanizerInfo.json'
 import { networks } from '../../consts/networks'
@@ -680,7 +681,7 @@ describe('SignAccountOp Controller ', () => {
 
     // We expect the fee payment call to be added.
     const abiCoder = new ethers.AbiCoder()
-    expect(controller.accountOp.feeCall!.to).toEqual('0x942f9CE5D9a33a82F88D233AEb3292E680230348')
+    expect(controller.accountOp.feeCall!.to).toEqual(FEE_COLLECTOR)
     expect(controller.accountOp.feeCall!.value).toEqual(0n)
     expect(controller.accountOp.feeCall!.data).toEqual(
       abiCoder.encode(

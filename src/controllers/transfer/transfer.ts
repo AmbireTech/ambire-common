@@ -2,6 +2,7 @@ import erc20Abi from 'adex-protocol-eth/abi/ERC20.json'
 import { formatUnits, getAddress, Interface, parseUnits } from 'ethers'
 
 import { HumanizerInfoType } from '../../../v1/hooks/useConstants'
+import { FEE_COLLECTOR } from '../../consts/addresses'
 import { networks } from '../../consts/networks'
 import { UserRequest } from '../../interfaces/userRequest'
 import { TokenResult } from '../../libs/portfolio'
@@ -254,7 +255,7 @@ export class TransferController extends EventEmitter {
 
     // if the request is a top up, the recipient is the relayer
     const recipientAddress = this.isTopUp
-      ? '0x942f9CE5D9a33a82F88D233AEb3292E680230348'
+      ? FEE_COLLECTOR
       : getAddress(this.recipientUDAddress || this.recipientEnsAddress || this.recipientAddress)
 
     const bigNumberHexAmount = `0x${parseUnits(

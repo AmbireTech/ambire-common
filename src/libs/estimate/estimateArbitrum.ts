@@ -3,6 +3,7 @@ import { AbiCoder, Contract, Interface, JsonRpcProvider, Provider } from 'ethers
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFactory.json'
 import EntryPointAbi from '../../../contracts/compiled/EntryPoint.json'
+import { FEE_COLLECTOR } from '../../consts/addresses'
 import ArbitrumFactoryAbi from '../../consts/arbitrumFactoryAbi.json'
 import { Account, AccountOnchainState } from '../../interfaces/account'
 import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
@@ -64,10 +65,9 @@ export async function estimateArbitrumL1GasUsed(
 
   const op = { ...accountOp }
   const callsWithoutFee = getSignableCalls(op)
-  const feeCollector = '0x942f9CE5D9a33a82F88D233AEb3292E680230348'
   const abiCoder = new AbiCoder()
   op.feeCall = {
-    to: feeCollector,
+    to: FEE_COLLECTOR,
     value: 0n,
     data: abiCoder.encode(['string', 'uint256', 'string'], ['gasTank', 100, 'USDC'])
   }

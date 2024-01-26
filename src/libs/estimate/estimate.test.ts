@@ -8,6 +8,7 @@ import { describe, expect } from '@jest/globals'
 
 import { trezorSlot7v24337Deployed } from '../../../test/config'
 import { getNonce } from '../../../test/helpers'
+import { FEE_COLLECTOR } from '../../consts/addresses'
 import { AMBIRE_PAYMASTER } from '../../consts/deploy'
 import { networks } from '../../consts/networks'
 import { Account, AccountStates } from '../../interfaces/account'
@@ -52,10 +53,7 @@ const SPOOF_SIGTYPE = '03'
 const spoofSig =
   new AbiCoder().encode(['address'], ['0xd6e371526cdaeE04cd8AF225D42e37Bc14688D9E']) + SPOOF_SIGTYPE
 
-const nativeToCheck = [
-  '0x0000000000000000000000000000000000000001',
-  '0x942f9CE5D9a33a82F88D233AEb3292E680230348'
-]
+const nativeToCheck = ['0x0000000000000000000000000000000000000001', FEE_COLLECTOR]
 const feeTokens = [
   { address: '0x0000000000000000000000000000000000000000', isGasTank: false, amount: 1n },
   { address: '0xdAC17F958D2ee523a2206206994597C13D831ec7', isGasTank: false, amount: 1n },
