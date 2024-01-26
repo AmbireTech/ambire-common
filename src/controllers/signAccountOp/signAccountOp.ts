@@ -3,6 +3,7 @@ import { ethers } from 'ethers'
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import EntryPointAbi from '../../../contracts/compiled/EntryPoint.json'
 import ERC20 from '../../../contracts/compiled/IERC20.json'
+import { FEE_COLLECTOR } from '../../consts/addresses'
 import { AMBIRE_PAYMASTER, ERC_4337_ENTRYPOINT } from '../../consts/deploy'
 import { Account, AccountStates } from '../../interfaces/account'
 import { ExternalSignerControllers, Key } from '../../interfaces/keystore'
@@ -619,11 +620,10 @@ export class SignAccountOpController extends EventEmitter {
   #addFeePayment() {
     // In case of gas tank token fee payment, we need to include one more call to account op
     const abiCoder = new ethers.AbiCoder()
-    const feeCollector = '0x942f9CE5D9a33a82F88D233AEb3292E680230348'
 
     if (this.accountOp!.gasFeePayment!.isGasTank) {
       this.accountOp!.feeCall = {
-        to: feeCollector,
+        to: FEE_COLLECTOR,
         value: 0n,
         data: abiCoder.encode(
           ['string', 'uint256', 'string'],
@@ -637,7 +637,7 @@ export class SignAccountOpController extends EventEmitter {
     if (this.accountOp!.gasFeePayment!.inToken === '0x0000000000000000000000000000000000000000') {
       // native payment
       this.accountOp!.feeCall = {
-        to: feeCollector,
+        to: FEE_COLLECTOR,
         value: this.accountOp!.gasFeePayment!.amount,
         data: '0x'
       }
@@ -648,7 +648,7 @@ export class SignAccountOpController extends EventEmitter {
         to: this.accountOp!.gasFeePayment!.inToken,
         value: 0n,
         data: ERC20Interface.encodeFunctionData('transfer', [
-          feeCollector,
+          FEE_COLLECTOR,
           this.accountOp!.gasFeePayment!.amount
         ])
       }

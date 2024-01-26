@@ -4,6 +4,7 @@ import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFactory.json'
 import Estimation from '../../../contracts/compiled/Estimation.json'
 import Estimation4337 from '../../../contracts/compiled/Estimation4337.json'
+import { FEE_COLLECTOR } from '../../consts/addresses'
 import { AMBIRE_PAYMASTER, ERC_4337_ENTRYPOINT } from '../../consts/deploy'
 import { SPOOF_SIGTYPE } from '../../consts/signatures'
 import { Account, AccountOnchainState } from '../../interfaces/account'
@@ -158,9 +159,6 @@ export async function estimate(
     }
   }
 
-  // @TODO - .env or passed as parameter?
-  const relayerAddress = '0x942f9CE5D9a33a82F88D233AEb3292E680230348'
-
   // @L2s
   // craft the probableTxn that's going to be saved on the L1
   // so we could do proper estimation
@@ -177,7 +175,7 @@ export async function estimate(
     [
       getProbableCallData(op, network, accountState),
       op.accountAddr,
-      relayerAddress,
+      FEE_COLLECTOR,
       100000000,
       2,
       op.nonce,
@@ -198,7 +196,7 @@ export async function estimate(
     encodeRlp(encodedCallData),
     account.associatedKeys,
     feeTokens.map((token) => token.address),
-    relayerAddress,
+    FEE_COLLECTOR,
     nativeToCheck
   ]
 
