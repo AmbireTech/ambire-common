@@ -122,7 +122,7 @@ describe('typed message tests', () => {
         type: 'address',
         address: address2
       },
-      { type: 'label', content: 'already expired' }
+      { type: 'deadline', amount: 968187600000n }
     ]
 
     tmTemplate.message = typedMessages.erc20[0]
@@ -142,7 +142,7 @@ describe('typed message tests', () => {
         type: 'address',
         address: address2
       },
-      { type: 'label', content: 'already expired' }
+      { type: 'deadline', amount: 968187600000n }
     ]
 
     tmTemplate.message = typedMessages.erc721[0]
@@ -166,9 +166,9 @@ describe('typed message tests', () => {
         amount: 1000000000000000000n
       },
       { type: 'label', content: 'for time period' },
-      { type: 'label', content: 'already expired' },
+      { type: 'deadline', amount: 968187600000n },
       { type: 'label', content: 'this whole signatuere' },
-      { type: 'label', content: 'already expired' }
+      { type: 'deadline', amount: 968187600000n }
     ]
     tmTemplate.types = { PermitSingle: [{ name: 'details', type: 'PermitDetails' }] }
     tmTemplate.domain.verifyingContract = '0x000000000022D473030F116dDEE9F6B43aC78BA3'
@@ -194,9 +194,9 @@ describe('typed message tests', () => {
         amount: 1000000000000000000n
       },
       { type: 'label', content: 'for time period' },
-      { type: 'label', content: 'already expired' },
+      { type: 'deadline', amount: 968187600000n },
       { type: 'label', content: 'this whole signatuere' },
-      { type: 'label', content: 'already expired' },
+      { type: 'deadline', amount: 968187600000n },
       { type: 'label', content: 'Permit #2' },
       { type: 'action', content: 'Permit' },
       {
@@ -211,9 +211,9 @@ describe('typed message tests', () => {
         amount: 500000000000000000n
       },
       { type: 'label', content: 'for time period' },
-      { type: 'label', content: 'already expired' },
+      { type: 'deadline', amount: 969187600000n },
       { type: 'label', content: 'this whole signatuere' },
-      { type: 'label', content: 'already expired' }
+      { type: 'deadline', amount: 968187600000n }
     ]
     tmTemplate.types = { PermitBatch: [{ name: 'details', type: 'PermitDetails[]' }] }
     tmTemplate.domain.verifyingContract = '0x000000000022D473030F116dDEE9F6B43aC78BA3'

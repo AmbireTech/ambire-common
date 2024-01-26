@@ -305,10 +305,16 @@ export class AccountAdderController extends EventEmitter {
       ({ slot }) => slot === accountOnPage.slot
     )
 
+    // eslint-disable-next-line no-nested-ternary
     const accountKey = isSmartAccount(accountOnPage.account)
-      ? // The key of the smart account is the EOA (legacy) account derived on the
-        // same slot, but with the `SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET` offset.
-        allAccountsOnThisSlot.find(({ index }) => isDerivedForSmartAccountKeyOnly(index))
+      ? accountOnPage.isLinked
+        ? // The key of the linked account is the EOA (legacy) account on the same slot with the same index
+          allAccountsOnThisSlot.find(
+            ({ account, index }) => !isSmartAccount(account) && accountOnPage.index === index
+          )
+        : // The key of the smart account is the EOA (legacy) account derived on the
+          // same slot, but with the `SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET` offset.
+          allAccountsOnThisSlot.find(({ index }) => isDerivedForSmartAccountKeyOnly(index))
       : // The key of the legacy account is the legacy account itself.
         accountOnPage
 

@@ -46,3 +46,8 @@ export type Action =
         url: string
       }
     }
+  | {
+      label: 'Enable'
+      actionName: 'enable-default-wallet'
+      meta: {}
+    }

@@ -266,7 +266,7 @@ describe('module tests', () => {
           type: 'token',
           address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'
         },
-        { type: 'label', content: 'already expired' }
+        { type: 'deadline', amount: 1690449491000n }
       ],
       [
         { type: 'action', content: 'Swap up to' },
@@ -279,7 +279,7 @@ describe('module tests', () => {
           type: 'token',
           address: '0x6B175474E89094C44Da98b954EedeAC495271d0F'
         },
-        { type: 'label', content: 'already expired' }
+        { type: 'deadline', amount: 1690448831000n }
       ],
       [
         { type: 'action', content: 'Swap up to' },
@@ -297,7 +297,7 @@ describe('module tests', () => {
           type: 'address',
           address: '0x5a5Be6b067d6B5B018adBCD27EE6972105B3b400'
         },
-        { type: 'label', content: 'already expired' }
+        { type: 'deadline', amount: 1691677015000n }
       ],
       [{ type: 'action', content: 'Refund' }]
     ]
@@ -310,7 +310,7 @@ describe('module tests', () => {
     })
   })
 
-  test.skip('fallback', async () => {
+  test('fallback', async () => {
     accountOp.calls = [...transactions.generic]
     delete accountOp.humanizerMeta?.['funcSelectors:0x095ea7b3']
     let irCalls: IrCall[] = accountOp.calls

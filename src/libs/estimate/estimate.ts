@@ -5,6 +5,7 @@ import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFactory.json'
 import Estimation from '../../../contracts/compiled/Estimation.json'
 import Estimation4337 from '../../../contracts/compiled/Estimation4337.json'
+import { FEE_COLLECTOR } from '../../consts/addresses'
 import { AMBIRE_PAYMASTER, ERC_4337_ENTRYPOINT } from '../../consts/deploy'
 import { SPOOF_SIGTYPE } from '../../consts/signatures'
 import { Account, AccountOnchainState } from '../../interfaces/account'
@@ -46,35 +47,7 @@ export interface EstimateResult {
   }[]
   erc4337estimation: Erc4337estimation | null
   arbitrumL1FeeIfArbitrum: { noFee: bigint; withFee: bigint }
-}
-
-export function getEstimationFailure(e: any /* error */, acOp: AccountOp): ErrorRef {
-  const cause = e.cause ?? 'Unknown'
-  const message =
-    cause === 'ERC-4337' ? Buffer.from(e.message.substring(2), 'hex').toString() : e.message
-
-  // TODO<Bobby>: introduce more cases
-  if (message.includes('paymaster deposit too low')) {
-    return {
-      level: 'major',
-      message: `Paymaster with address ${AMBIRE_PAYMASTER} does not have enough funds to execute this request. Please contact support`,
-      error: e
-    }
-  }
-
-  if (cause === 'ERC-4337') {
-    return {
-      level: 'major',
-      message: `Failed to estimate a 4337 Request for ${acOp.accountAddr} on ${acOp.networkId}`,
-      error: e
-    }
-  }
-
-  return {
-    level: 'major',
-    message: `Failed to estimate account op for ${acOp.accountAddr} on ${acOp.networkId}`,
-    error: e
-  }
+  error: Error | null
 }
 
 async function reestimate(fetchRequests: Function, counter: number = 0): Promise<any> {
@@ -182,12 +155,10 @@ export async function estimate(
         }
       ],
       erc4337estimation: null,
-      arbitrumL1FeeIfArbitrum: { noFee: 0n, withFee: 0n }
+      arbitrumL1FeeIfArbitrum: { noFee: 0n, withFee: 0n },
+      error: null
     }
   }
-
-  // @TODO - .env or passed as parameter?
-  const relayerAddress = '0x942f9CE5D9a33a82F88D233AEb3292E680230348'
 
   // @L2s
   // craft the probableTxn that's going to be saved on the L1
@@ -205,7 +176,7 @@ export async function estimate(
     [
       getProbableCallData(op, network, accountState),
       op.accountAddr,
-      relayerAddress,
+      FEE_COLLECTOR,
       100000000,
       2,
       op.nonce,
@@ -226,7 +197,7 @@ export async function estimate(
     encodeRlp(encodedCallData),
     account.associatedKeys,
     feeTokens.map((token) => token.address),
-    relayerAddress,
+    FEE_COLLECTOR,
     nativeToCheck
   ]
 
@@ -298,15 +269,44 @@ export async function estimate(
   ] = estimations[0]
   /* eslint-enable prefer-const */
 
+  // if the calls don't pass, we set a CALLS_FAILURE error but
+  // allow the execution to proceed.
+  // we should explain to the user that the calls don't pass and stop
+  // the re-estimation for this accountOp
+  let estimationError = null
+  if (!accountOp.success) {
+    estimationError = new Error(`Simulation failed for ${op.accountAddr} on ${op.networkId}`, {
+      cause: 'CALLS_FAILURE'
+    })
+  }
+
   let erc4337estimation: Erc4337estimation | null = null
   if (is4337Broadcast) {
     const [[verificationGasLimit, gasUsed, failure]]: any = estimations[1]
-    if (failure !== '0x') throw new Error(failure, { cause: 'ERC-4337' })
 
-    erc4337estimation = {
-      verificationGasLimit: BigInt(verificationGasLimit) + 5000n, // added buffer,
-      callGasLimit: BigInt(gasUsed) + 10000n, // added buffer
-      gasUsed: BigInt(gasUsed) // the minimum for payments
+    // if there's an estimation failure, set default values, place the error
+    // and allow the code to move on
+    if (failure !== '0x') {
+      const errorMsg = Buffer.from(failure.substring(2), 'hex').toString()
+
+      let humanReadableMsg = `Failed to estimate a 4337 Request for ${op.accountAddr} on ${op.networkId}`
+      if (errorMsg.includes('paymaster deposit too low')) {
+        humanReadableMsg = `Paymaster with address ${AMBIRE_PAYMASTER} does not have enough funds to execute this request. Please contact support`
+      }
+      estimationError = new Error(humanReadableMsg, {
+        cause: 'ERC_4337'
+      })
+      erc4337estimation = {
+        verificationGasLimit: 0n,
+        callGasLimit: 0n,
+        gasUsed: 0n
+      }
+    } else {
+      erc4337estimation = {
+        verificationGasLimit: BigInt(verificationGasLimit) + 5000n, // added buffer,
+        callGasLimit: BigInt(gasUsed) + 10000n, // added buffer
+        gasUsed: BigInt(gasUsed) // the minimum for payments
+      }
     }
   }
 
@@ -385,6 +385,7 @@ export async function estimate(
     nonce,
     feePaymentOptions: [...feeTokenOptions, ...nativeTokenOptions],
     erc4337estimation,
-    arbitrumL1FeeIfArbitrum
+    arbitrumL1FeeIfArbitrum,
+    error: estimationError
   }
 }

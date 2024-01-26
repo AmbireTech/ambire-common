@@ -1,7 +1,7 @@
 import { ethers } from 'ethers'
 import { TypedMessage } from '../../../interfaces/userRequest'
 import { HumanizerTypedMessaageModule, HumanizerVisualization } from '../interfaces'
-import { getAction, getDeadlineText, getAddress, getLabel, getToken } from '../utils'
+import { getAction, getDeadline, getAddress, getLabel, getToken } from '../utils'
 
 const visualizePermit = (
   spender: string,
@@ -10,7 +10,7 @@ const visualizePermit = (
   token: string
 ): HumanizerVisualization[] => {
   const res = [getAction('Send'), getToken(token, value), getLabel('to'), getAddress(spender)]
-  if (getDeadlineText(deadline)) res.push(getDeadlineText(deadline) as HumanizerVisualization)
+  if (getDeadline(deadline)) res.push(getDeadline(deadline) as HumanizerVisualization)
   return res
 }
 

@@ -271,7 +271,7 @@ describe('Humanizer main function', () => {
     expect(onUpdate).toHaveBeenCalledTimes(1)
   })
 
-  test.skip('unknown func selector humanize with asyncop', async () => {
+  test('unknown func selector humanize with asyncop', async () => {
     const expectedVisualizations = [
       { type: 'action', content: 'Call buy(uint256)' },
       { type: 'label', content: 'from' },
@@ -377,9 +377,9 @@ describe('TypedMessages', () => {
         symbol: 'WETH'
       },
       { type: 'label', content: 'for time period' },
-      { type: 'label', content: 'already expired' },
+      { type: 'deadline', amount: 968187600000n },
       { type: 'label', content: 'this whole signatuere' },
-      { type: 'label', content: 'already expired' },
+      { type: 'deadline', amount: 968187600000n },
       { type: 'label', content: 'Permit #2' },
       { type: 'action', content: 'Permit' },
       {
@@ -397,9 +397,9 @@ describe('TypedMessages', () => {
         symbol: 'WETH'
       },
       { type: 'label', content: 'for time period' },
-      { type: 'label', content: 'already expired' },
+      { type: 'deadline', amount: 969187600000n },
       { type: 'label', content: 'this whole signatuere' },
-      { type: 'label', content: 'already expired' }
+      { type: 'deadline', amount: 968187600000n }
     ]
     const onUpdate = jest.fn((newMessage: IrMessage) => {
       expect(newMessage).toMatchObject({ warnings: [], fullVisualization: expect.anything() })
