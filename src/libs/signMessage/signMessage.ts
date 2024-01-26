@@ -326,7 +326,12 @@ export async function getEIP712Signature(
   }
 
   if (!accountState.isV2) {
-    if (message.domain.name === 'Permit2') {
+    const uniswapPermit2Addr = '0x000000000022d473030f116ddee9f6b43ac78ba3'
+
+    if (
+      message.domain.name === 'Permit2' &&
+      message.domain.verifyingContract === uniswapPermit2Addr
+    ) {
       return wrapUnprotected(await signer.signTypedData(message))
     }
 
