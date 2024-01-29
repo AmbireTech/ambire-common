@@ -172,8 +172,8 @@ export const getNetworksWithFailedRPCBanners = ({
       return {
         id: `${networkData.id}-${new Date().getTime()}`,
         topic: 'WARNING',
-        title: `Failed to retrieve network data for ${networkData?.name}(RPC error)`,
-        text: `Affected features(${networkData?.name}): visible tokens, sign message/transaction, ENS/UD domain resolving, add account. Please try again later or contact support.`,
+        title: `Failed to retrieve network data for ${networkData?.name} (RPC is down)`,
+        text: 'Affected features: visible tokens, sign message/transaction, ENS/UD domain resolving, add account. Please try again later or contact support.',
         actions: []
       }
     })
@@ -209,9 +209,7 @@ export const getNetworksWithCriticalPortfolioErrorBanners = ({
           id: `${networkData.id}-${new Date().getTime()}`,
           topic: 'WARNING',
           title: `Failed to retrieve the portfolio data for ${networkData.name}`,
-          text: `Affected features(${
-            networkData.name
-          }): account balances, assets. Please try again later or contact support.${
+          text: `Affected features: account balances, assets. Please try again later or contact support.${
             criticalError?.message ? `\nError: ${criticalError.message}` : ''
           }`,
           actions: []
