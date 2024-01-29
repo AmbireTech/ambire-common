@@ -1,5 +1,4 @@
 import { AbiCoder, encodeRlp, Interface, JsonRpcProvider, Provider } from 'ethers'
-import { ErrorRef } from '../../controllers/eventEmitter/eventEmitter'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFactory.json'
@@ -20,6 +19,7 @@ import {
   shouldUseOneTimeNonce,
   shouldUsePaymaster
 } from '../userOperation/userOperation'
+import { mapTxnErrMsg } from './errors'
 import { estimateArbitrumL1GasUsed } from './estimateArbitrum'
 
 interface Erc4337estimation {
@@ -275,7 +275,7 @@ export async function estimate(
   // the re-estimation for this accountOp
   let estimationError = null
   if (!accountOp.success) {
-    estimationError = new Error(`Simulation failed for ${op.accountAddr} on ${op.networkId}`, {
+    estimationError = new Error(mapTxnErrMsg(accountOp.err, op), {
       cause: 'CALLS_FAILURE'
     })
   }

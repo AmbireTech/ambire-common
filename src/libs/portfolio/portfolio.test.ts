@@ -1,9 +1,9 @@
 import { AbiCoder, ethers, JsonRpcProvider } from 'ethers'
+import { Account } from 'interfaces/account'
 import fetch from 'node-fetch'
 
 import { describe, expect, jest, test } from '@jest/globals'
 
-import { Account } from 'interfaces/account'
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import { networks } from '../../consts/networks'
 import { AccountOp } from '../accountOp/accountOp'
@@ -316,7 +316,7 @@ describe('Portfolio', () => {
         isEOA: true
       })
     } catch (e: any) {
-      expect(e.message).toBe('simulation error: BalanceGetter: wrong keys')
+      expect(e.message).toBe('simulation error: Spoof failed: wrong keys')
     }
   })
 })

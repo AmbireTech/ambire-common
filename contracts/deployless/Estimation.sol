@@ -2,6 +2,7 @@
 pragma solidity 0.8.19;
 
 import './IAmbireAccount.sol';
+import './Spoof.sol';
 
 interface IERC20Subset {
   function balanceOf(address account) external view returns (uint256);
@@ -17,7 +18,7 @@ interface IGasPriceOracle {
   function l1BaseFee() external view returns (uint256);
 }
 
-contract Estimation {
+contract Estimation is Spoof {
   // NOTE: this contract doesn't need to be aware of ERC-4337 or entryPoint/entryPoint.getNonce()
   // It uses account.execute() directly with spoof signatures, this is ok before:
   // 1) signed accountOps (preExecute) are always signed in an agnostic way (using external sig validator, which uses it's own nonce-agnostic hash)
@@ -65,10 +66,6 @@ contract Estimation {
 
   mapping(uint256 => address) l1Oracles;
 
-  function makeSpoofSignature(address key) internal pure returns (bytes memory spoofSig) {
-    spoofSig = abi.encodePacked(uint256(uint160(key)), uint8(0x03));
-  }
-
   // `estimate` takes the `accountOpToExecuteBefore` parameters separately because it's simulated via `simulateSigned`
   // vs the regular accountOp for which we use simulateUnsigned
   function estimate(
@@ -102,34 +99,32 @@ contract Estimation {
     if (outcome.deployment.success && preExecute.calls.length != 0) {
       outcome.accountOpToExecuteBefore = simulateSigned(preExecute);
     }
+    bytes memory spoofSig;
     if (
       outcome.deployment.success &&
       (preExecute.calls.length == 0 || outcome.accountOpToExecuteBefore.success)
     ) {
-      bytes memory spoofSig;
       (outcome.op, outcome.associatedKeyPrivileges, spoofSig) = simulateUnsigned(
         op,
         associatedKeys
       );
       outcome.nonce = op.account.nonce();
       // Get fee tokens amounts after the simulation, and simulate their gas cost for transfer
-      if (feeTokens.length != 0) {
+      if (feeTokens.length != 0 && keccak256(spoofSig) != keccak256(bytes(''))) {
         outcome.feeTokenOutcomes = simulateFeePayments(account, feeTokens, spoofSig, relayer);
       }
 
       bytes memory fakeFeeCall = abi.encode(
         relayer,
         0,
-        abi.encodeWithSelector(
-          IERC20Subset.transfer.selector,
-          relayer,
-          1
-        )
+        abi.encodeWithSelector(IERC20Subset.transfer.selector, relayer, 1)
       );
       outcome.l1GasEstimation = this.getL1GasEstimation(probableCallData, fakeFeeCall);
     }
 
-    if (associatedKeys.length != 0) {
+    // if there are associatedKeys and a valid spoofSig was generated, check if the account
+    // was not bricked
+    if (associatedKeys.length != 0 && keccak256(spoofSig) != keccak256(bytes(''))) {
       // Safety check: anti-bricking
       bool isOk;
       for (uint i = 0; i != associatedKeys.length; i++) {
@@ -173,16 +168,14 @@ contract Estimation {
     // setting the nonce is just for the purposes of passing the safety check in simulateSigned; it's a spoof sig so it doesn't matter
     op.nonce = op.account.nonce();
     associatedKeyPrivileges = new bytes32[](associatedKeys.length);
-    for (uint i = 0; i != associatedKeys.length; i++) {
-      address key = associatedKeys[i];
-      bytes32 value = op.account.privileges(key);
-      associatedKeyPrivileges[i] = value;
-      if (value != bytes32(0)) {
-        if (spoofSig.length == 0) spoofSig = makeSpoofSignature(key);
-      }
+    try this.getSpoof(op.account, associatedKeys) returns (bytes memory spoof) {
+      spoofSig = spoof;
+      op.signature = spoof;
+      outcome = simulateSigned(op);
+    } catch (bytes memory spoofErr) {
+      op.signature = '';
+      outcome.err = spoofErr;
     }
-    op.signature = spoofSig;
-    outcome = simulateSigned(op);
   }
 
   function simulateSigned(AccountOp memory op) public returns (SimulationOutcome memory outcome) {

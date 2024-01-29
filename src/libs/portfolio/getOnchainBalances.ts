@@ -29,8 +29,7 @@ function handleSimulationError(error: string, beforeNonce: bigint, afterNonce: b
   if (error !== '0x') throw new SimulationError(parseErr(error) || error, beforeNonce, afterNonce)
   // If the afterNonce is 0, it means that we reverted, even if the error is empty
   // In both BalanceOracle and NFTOracle, afterSimulation and therefore afterNonce will be left empty
-  if (afterNonce === 0n)
-    throw new SimulationError('unknown error: simulation reverted', beforeNonce, afterNonce)
+  if (afterNonce === 0n) throw new SimulationError('Simulation reverted', beforeNonce, afterNonce)
   if (afterNonce < beforeNonce)
     throw new SimulationError(
       'lower "after" nonce, should not be possible',
