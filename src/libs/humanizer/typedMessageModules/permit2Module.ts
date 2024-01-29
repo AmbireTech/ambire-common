@@ -1,5 +1,6 @@
 import { ethers } from 'ethers'
 
+import { PERMIT_2_ADDRESS } from '../../../consts/addresses'
 import { TypedMessage } from '../../../interfaces/userRequest'
 import { HumanizerTypedMessaageModule, HumanizerVisualization } from '../interfaces'
 import { getAction, getAddress, getDeadline, getLabel, getToken } from '../utils'
@@ -38,7 +39,6 @@ interface PermitDetails {
   nonce: bigint
 }
 
-const PERMIT_2_ADDRESS = '0x000000000022D473030F116dDEE9F6B43aC78BA3'
 const visualizePermit = (permit: PermitDetails): HumanizerVisualization[] => {
   return [
     getAction('Permit'),
