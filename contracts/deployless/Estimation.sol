@@ -110,7 +110,8 @@ contract Estimation is Spoof {
       );
       outcome.nonce = op.account.nonce();
       // Get fee tokens amounts after the simulation, and simulate their gas cost for transfer
-      if (feeTokens.length != 0 && keccak256(spoofSig) != keccak256(bytes(''))) {
+      // TODO<Bobby>: make the feeTokenOutcomes pass even without a valid spoofSig
+      if (feeTokens.length != 0 && spoofSig.length > 0) {
         outcome.feeTokenOutcomes = simulateFeePayments(account, feeTokens, spoofSig, relayer);
       }
 
@@ -124,7 +125,7 @@ contract Estimation is Spoof {
 
     // if there are associatedKeys and a valid spoofSig was generated, check if the account
     // was not bricked
-    if (associatedKeys.length != 0 && keccak256(spoofSig) != keccak256(bytes(''))) {
+    if (associatedKeys.length != 0 && spoofSig.length > 0) {
       // Safety check: anti-bricking
       bool isOk;
       for (uint i = 0; i != associatedKeys.length; i++) {
@@ -168,13 +169,19 @@ contract Estimation is Spoof {
     // setting the nonce is just for the purposes of passing the safety check in simulateSigned; it's a spoof sig so it doesn't matter
     op.nonce = op.account.nonce();
     associatedKeyPrivileges = new bytes32[](associatedKeys.length);
-    try this.getSpoof(op.account, associatedKeys) returns (bytes memory spoof) {
-      spoofSig = spoof;
-      op.signature = spoof;
+    for (uint i = 0; i != associatedKeys.length; i++) {
+      address key = associatedKeys[i];
+      bytes32 value = op.account.privileges(key);
+      associatedKeyPrivileges[i] = value;
+      if (value != bytes32(0)) {
+        if (spoofSig.length == 0) spoofSig = makeSpoofSignature(key);
+      }
+    }
+    op.signature = spoofSig;
+    if (spoofSig.length > 0) {
       outcome = simulateSigned(op);
-    } catch (bytes memory spoofErr) {
-      op.signature = '';
-      outcome.err = spoofErr;
+    } else {
+      outcome.err = bytes('SPOOF_ERROR');
     }
   }
 

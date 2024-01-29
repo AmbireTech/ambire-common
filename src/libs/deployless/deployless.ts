@@ -19,6 +19,8 @@ const deployErrorSig = '0xb4f54111'
 const errorSig = '0x08c379a0'
 // Signature of Panic(uint256)
 const panicSig = '0x4e487b71'
+// uniswap swap expired
+const expiredSig = '0x5bf6f916'
 
 // any made up addr would work
 const arbitraryAddr = '0x0000000000000000000000000000000000696969'
@@ -207,6 +209,10 @@ export function parseErr(data: string): string | null {
       if (e.code === 'BUFFER_OVERRUN' || e.code === 'NUMERIC_FAULT') return dataNoPrefix
       else throw e
     }
+  }
+  // uniswap expired error
+  if (data === expiredSig) {
+    return 'Swap expired'
   }
   return null
 }
