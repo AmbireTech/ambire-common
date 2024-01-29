@@ -1,4 +1,3 @@
-import { PERMIT_2_ADDRESS } from 'consts/addresses'
 /* eslint-disable no-param-reassign */
 import {
   AbiCoder,
@@ -16,6 +15,7 @@ import {
   TypedDataField
 } from 'ethers'
 
+import { PERMIT_2_ADDRESS } from '../../consts/addresses'
 import { Account, AccountCreation, AccountOnchainState } from '../../interfaces/account'
 import { KeystoreSigner } from '../../interfaces/keystore'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
