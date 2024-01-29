@@ -1,3 +1,5 @@
+import logger from '@web/utils/logger'
+
 import { PortfolioController } from '../../controllers/portfolio/portfolio'
 import { Account, AccountId } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
@@ -202,7 +204,12 @@ export const getNetworksWithCriticalPortfolioErrorBanners = ({
       if (!criticalError) return []
 
       const networkData = networks.find((n: NetworkDescriptor) => n.id === network)
-      if (!networkData) return []
+      if (!networkData) {
+        // Should never happen
+        logger.error(`Network with id ${network} not found in the network list`)
+
+        return []
+      }
 
       return [
         {
