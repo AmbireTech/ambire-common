@@ -78,6 +78,8 @@ export class AccountAdderController extends EventEmitter {
 
   pageSize: number = PAGE_SIZE
 
+  pageLoaded: boolean = false
+
   selectedAccounts: SelectedAccount[] = []
 
   preselectedAccounts: Account[] = []
@@ -254,6 +256,7 @@ export class AccountAdderController extends EventEmitter {
     this.page = INITIAL_PAGE_INDEX
     this.pageSize = PAGE_SIZE
     this.hdPathTemplate = undefined
+    this.pageLoaded = false
 
     this.addAccountsStatus = 'INITIAL'
     this.readyToAddAccounts = []
@@ -372,6 +375,7 @@ export class AccountAdderController extends EventEmitter {
     }
 
     this.page = page
+    this.pageLoaded = false
     this.#derivedAccounts = []
     this.#linkedAccounts = []
     this.accountsLoading = true
@@ -379,7 +383,8 @@ export class AccountAdderController extends EventEmitter {
     this.#derivedAccounts = await this.#deriveAccounts({ networks, providers })
     this.accountsLoading = false
     this.emitUpdate()
-    this.#findAndSetLinkedAccounts({
+
+    const linkedAccountsWithNetworks: DerivedAccount[] = await this.#getLinkedAccounts({
       accounts: this.#derivedAccounts
         .filter(
           (acc) =>
@@ -397,6 +402,11 @@ export class AccountAdderController extends EventEmitter {
       networks,
       providers
     })
+
+    this.#linkedAccounts = linkedAccountsWithNetworks
+    this.linkedAccountsLoading = false
+    this.pageLoaded = true
+    this.emitUpdate()
   }
 
   /**
@@ -688,7 +698,7 @@ export class AccountAdderController extends EventEmitter {
     return sortedAccountsWithNetworksArray
   }
 
-  async #findAndSetLinkedAccounts({
+  async #getLinkedAccounts({
     accounts,
     networks,
     providers
@@ -697,7 +707,7 @@ export class AccountAdderController extends EventEmitter {
     networks: NetworkDescriptor[]
     providers: { [key: string]: JsonRpcProvider }
   }) {
-    if (accounts.length === 0) return
+    if (accounts.length === 0) return []
 
     this.linkedAccountsLoading = true
     this.emitUpdate()
@@ -761,10 +771,7 @@ export class AccountAdderController extends EventEmitter {
       providers
     })
 
-    this.#linkedAccounts = linkedAccountsWithNetworks
-
-    this.linkedAccountsLoading = false
-    this.emitUpdate()
+    return linkedAccountsWithNetworks
   }
 
   toJSON() {
