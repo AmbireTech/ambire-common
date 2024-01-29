@@ -275,7 +275,7 @@ describe('Portfolio', () => {
         isEOA: true
       })
     } catch (e: any) {
-      expect(e.message).toBe('simulation error: BalanceGetter: no keys')
+      expect(e.message).toBe('simulation error: Spoof failed: no keys')
     }
   })
 
