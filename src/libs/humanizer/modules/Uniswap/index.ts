@@ -1,9 +1,9 @@
 import { AccountOp } from '../../../accountOp/accountOp'
 import { HumanizerCallModule, IrCall } from '../../interfaces'
+import { getUnknownVisualization } from '../../utils'
 import { uniUniversalRouter } from './uniUnivarsalRouter'
 import { uniV2Mapping } from './uniV2'
 import { uniV32Mapping, uniV3Mapping } from './uniV3'
-import { getUnknownVisualization } from '../../utils'
 
 export const uniswapHumanizer: HumanizerCallModule = (
   accountOp: AccountOp,
@@ -34,6 +34,11 @@ export const uniswapHumanizer: HumanizerCallModule = (
     ),
     // polygon
     '0x643770E279d5D0733F21d6DC03A8efbABf3255B4': uniUniversalRouter(
+      accountOp.humanizerMeta,
+      options
+    ),
+    // avalanche
+    '0x82635AF6146972cD6601161c4472ffe97237D292': uniUniversalRouter(
       accountOp.humanizerMeta,
       options
     )
