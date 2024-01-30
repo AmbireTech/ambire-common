@@ -19,15 +19,17 @@ const errorSig = '0x08c379a0'
 const expiredSig = '0x5bf6f916'
 
 export function mapTxnErrMsg(contractError: string, op: AccountOp) {
-  let msg = contractError
+  let msg = ''
   if (contractError.startsWith(errorSig)) {
     try {
       msg = new AbiCoder().decode(['string'], `0x${contractError.slice(10)}`)[0]
     } catch (e: any) {
       msg = '0x'
     }
+  } else if (contractError === expiredSig) {
+    msg = contractError
   } else {
-    msg = Buffer.from(msg.substring(2), 'hex').toString()
+    msg = Buffer.from(contractError.substring(2), 'hex').toString()
   }
 
   if (!msg || msg === '0x') return `Estimation failed for ${op.accountAddr} on ${op.networkId}`
