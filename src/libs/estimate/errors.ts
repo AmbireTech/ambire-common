@@ -15,7 +15,7 @@ const contractErrors = [
 
 // Signature of Error(string)
 const errorSig = '0x08c379a0'
-// Signature of Error(string)
+// Signature of TransactionDeadlinePassed
 const expiredSig = '0x5bf6f916'
 
 export function mapTxnErrMsg(contractError: string, op: AccountOp) {
