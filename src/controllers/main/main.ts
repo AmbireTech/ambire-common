@@ -830,10 +830,12 @@ export class MainController extends EventEmitter {
       })
     ])
 
-    this.accountOpsToBeSigned[localAccountOp.accountAddr] ||= {}
-    // @TODO compare intent between accountOp and this.accountOpsToBeSigned[accountOp.accountAddr][accountOp.networkId].accountOp
-    this.accountOpsToBeSigned[localAccountOp.accountAddr][localAccountOp.networkId]!.estimation =
-      estimation
+    if (estimation) {
+      this.accountOpsToBeSigned[localAccountOp.accountAddr] ||= {}
+      // @TODO compare intent between accountOp and this.accountOpsToBeSigned[accountOp.accountAddr][accountOp.networkId].accountOp
+      this.accountOpsToBeSigned[localAccountOp.accountAddr][localAccountOp.networkId]!.estimation =
+        estimation
+    }
 
     // add the estimation to the user operation
     if (is4337Broadcast && estimation) {
