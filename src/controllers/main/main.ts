@@ -36,8 +36,8 @@ import bundler from '../../services/bundlers'
 import generateSpoofSig from '../../utils/generateSpoofSig'
 import wait from '../../utils/wait'
 import { AccountAdderController } from '../accountAdder/accountAdder'
-import { EmailVaultController } from '../emailVault/emailVault'
 import { ActivityController, SignedMessage, SubmittedAccountOp } from '../activity/activity'
+import { EmailVaultController } from '../emailVault/emailVault'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
 import { PortfolioController } from '../portfolio/portfolio'
@@ -830,14 +830,13 @@ export class MainController extends EventEmitter {
       })
     ])
 
-    if (!estimation) return
     this.accountOpsToBeSigned[localAccountOp.accountAddr] ||= {}
     // @TODO compare intent between accountOp and this.accountOpsToBeSigned[accountOp.accountAddr][accountOp.networkId].accountOp
     this.accountOpsToBeSigned[localAccountOp.accountAddr][localAccountOp.networkId]!.estimation =
       estimation
 
     // add the estimation to the user operation
-    if (is4337Broadcast) {
+    if (is4337Broadcast && estimation) {
       localAccountOp.asUserOperation!.verificationGasLimit = ethers.toBeHex(
         estimation.erc4337estimation!.verificationGasLimit
       )
@@ -850,7 +849,11 @@ export class MainController extends EventEmitter {
 
     // update the signAccountOp controller once estimation finishes;
     // this eliminates the infinite loading bug if the estimation comes slower
-    if (this.signAccountOp) this.signAccountOp.update({ estimation })
+    if (this.signAccountOp) {
+      estimation
+        ? this.signAccountOp.update({ estimation, accountOp: localAccountOp })
+        : this.signAccountOp.update({ accountOp: localAccountOp })
+    }
   }
 
   /**
@@ -1169,13 +1172,12 @@ export class MainController extends EventEmitter {
   get banners(): Banner[] {
     const userRequests =
       this.userRequests.filter((req) => req.accountAddr === this.selectedAccount) || []
-      const accounts = this.accounts
-
+    const accounts = this.accounts
 
     const emailVaultBanners = this.emailVault.banners.filter(
       (banner) => banner.accountAddr === this.selectedAccount
     )
-    
+
     const accountOpEOABanners = getAccountOpBannersForEOA({ userRequests, accounts })
     const pendingAccountOpEOABanners = getPendingAccountOpBannersForEOA({ userRequests, accounts })
     const accountOpSmartAccountBanners = getAccountOpBannersForSmartAccount({

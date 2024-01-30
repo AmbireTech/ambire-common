@@ -266,6 +266,7 @@ export class SignAccountOpController extends EventEmitter {
   }
 
   update({
+    accountOp,
     gasPrices,
     estimation,
     feeToken,
@@ -286,6 +287,8 @@ export class SignAccountOpController extends EventEmitter {
     if (gasPrices) this.gasPrices = gasPrices
 
     if (estimation) this.#estimation = estimation
+
+    if (accountOp) this.accountOp = accountOp
 
     if (this.#estimation?.error) {
       this.status = { type: SigningStatus.EstimationError }
