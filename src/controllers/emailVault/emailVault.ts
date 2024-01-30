@@ -179,6 +179,7 @@ export class EmailVaultController extends EventEmitter {
       1000
     )
     if (ev && !ev.error) {
+      this.#isWaitingEmailConfirmation = false
       this.#magicLinkKeys[email] = {
         key: newKey.key,
         requestedAt: new Date(),
@@ -294,7 +295,7 @@ export class EmailVaultController extends EventEmitter {
   async #recoverKeyStore(email: string): Promise<EmailVaultSecret | null> {
     const uid = await this.#keyStore.getKeyStoreUid()
     const state = this.emailVaultStates
-    // @TODO emit error for this conditional
+
     if (!state.email[email]) {
       this.emitError({
         message: `Keystore recovery: email ${email} not imported`,
@@ -336,7 +337,7 @@ export class EmailVaultController extends EventEmitter {
 
       result = await this.#emailVault.retrieveKeyStoreSecret(email, key, uid)
     } else {
-      await this.#handleMagicLinkKey(email, () => this.#getEmailVaultInfo(email))
+      await this.#handleMagicLinkKey(email, () => this.#recoverKeyStore(email))
     }
     if (result && !result.error) {
       this.emailVaultStates.email[email].availableSecrets[result.key] = result
@@ -494,12 +495,39 @@ export class EmailVaultController extends EventEmitter {
     }
   }
 
-  get banners(): Banner[] {
-    if (!Object.keys(this.emailVaultStates?.email).length) return []
+  get hasKeystoreRecovery() {
+    const keyStoreUid = this.#keyStore.keyStoreUid
+    const EVEmails = Object.keys(this.emailVaultStates.email)
 
+    if (!keyStoreUid || !EVEmails.length) return false
+
+    return !!EVEmails.find((email) => {
+      return (
+        this.emailVaultStates.email[email].availableSecrets[keyStoreUid]?.type ===
+        SecretType.KeyStore
+      )
+    })
+  }
+
+  get banners(): Banner[] {
     const banners: Banner[] = []
 
-    Object.keys(this.emailVaultStates?.email || {}).forEach((email) => {
+    if (!this.hasKeystoreRecovery) {
+      banners.push({
+        id: 'keystore-secret-backup',
+        topic: 'WARNING',
+        title: 'Enable local key store recovery with Email Vault',
+        text: "Email Vault recovers your Device Password. It is securely stored in Ambire's infrastructure cloud.",
+        actions: [
+          {
+            label: 'Backup',
+            actionName: 'backup-keystore-secret'
+          }
+        ]
+      })
+    }
+
+    Object.keys(this.emailVaultStates.email).forEach((email) => {
       const emailVaultData = this.emailVaultStates?.email?.[email]
       Object.values(emailVaultData.availableAccounts || {}).forEach((accInfo) => {
         const keystoreKeys = this.#keyStore.keys.filter((key) =>
@@ -518,7 +546,8 @@ export class EmailVaultController extends EventEmitter {
     return {
       ...this,
       currentState: this.currentState, // includes the getter in the stringified instance
-      banners: this.banners // includes the getter in the stringified instance
+      hasKeystoreRecovery: this.hasKeystoreRecovery,
+      banners: this.banners // includes the getter in the stringified instance,
     }
   }
 }
