@@ -47,6 +47,10 @@ export type Action =
       }
     }
   | {
+      label: string
+      actionName: 'backup-keystore-secret'
+    }
+  | {
       label: 'Enable'
       actionName: 'enable-default-wallet'
       meta: {}

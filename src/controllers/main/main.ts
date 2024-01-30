@@ -1169,13 +1169,16 @@ export class MainController extends EventEmitter {
   get banners(): Banner[] {
     const userRequests =
       this.userRequests.filter((req) => req.accountAddr === this.selectedAccount) || []
-      const accounts = this.accounts
+    const accounts = this.accounts
 
+    // Filter EV banners by the currently selected account only if the banner is account-specific.
+    const emailVaultBanners = this.emailVault.banners.filter((banner) => {
+      // Do not filter out the banner if it is not related to a specific account.
+      if (!banner.accountAddr) return true
 
-    const emailVaultBanners = this.emailVault.banners.filter(
-      (banner) => banner.accountAddr === this.selectedAccount
-    )
-    
+      return banner.accountAddr === this.selectedAccount
+    })
+
     const accountOpEOABanners = getAccountOpBannersForEOA({ userRequests, accounts })
     const pendingAccountOpEOABanners = getPendingAccountOpBannersForEOA({ userRequests, accounts })
     const accountOpSmartAccountBanners = getAccountOpBannersForSmartAccount({
