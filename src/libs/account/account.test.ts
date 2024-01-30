@@ -1,10 +1,11 @@
-import { ethers } from 'ethers'
-import { Account, AccountCreation } from 'interfaces/account'
+import { ethers, ZeroAddress } from 'ethers'
 
 /* eslint-disable no-new */
 import { describe, expect, test } from '@jest/globals'
 
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
+import { Account, AccountCreation } from '../../interfaces/account'
+import { dedicatedToOneSAPriv, standardSigningOnlyPriv } from '../../interfaces/keystore'
 import { getBytecode } from '../proxyDeploy/bytecode'
 import { getAmbireAccountAddress } from '../proxyDeploy/getAmbireAddressTwo'
 import {
@@ -30,11 +31,12 @@ describe('Account', () => {
     expect(newLegacyAccount as Account).toStrictEqual(legacyAccount)
   })
   test('should return smartAccount', async () => {
+    expect.assertions(3)
     const priv = {
       addr: keyPublicAddress,
-      hash: '0x0000000000000000000000000000000000000000000000000000000000000001'
+      hash: dedicatedToOneSAPriv
     }
-    const newSmartAccount = await getSmartAccount(keyPublicAddress)
+    const newSmartAccount = await getSmartAccount([priv])
     const bytecode = await getBytecode([priv])
     const accountNotDeployed = {
       addr: getAmbireAccountAddress(AMBIRE_ACCOUNT_FACTORY, bytecode),
@@ -50,13 +52,10 @@ describe('Account', () => {
     expect(newSmartAccount.creation as AccountCreation).not.toBe(null)
     expect(newSmartAccount.associatedKeys[0]).toBe(keyPublicAddress)
   })
-  test('should fail to return deploy params if legacy account is passed', async () => {
+  test('should return zero address and 0x deploy data if legacy account is passed', async () => {
     expect.assertions(1)
-    try {
-      getAccountDeployParams(legacyAccount)
-    } catch (e: any) {
-      expect(e.message).toBe('tried to get deployment params for an EOA')
-    }
+    const accountData = getAccountDeployParams(legacyAccount)
+    expect(accountData as any).toEqual([ZeroAddress, '0x'])
   })
   test('should return account deploy params', async () => {
     expect.assertions(1)
@@ -65,20 +64,21 @@ describe('Account', () => {
       hash: '0x0000000000000000000000000000000000000000000000000000000000000001'
     }
     const bytecode = await getBytecode([priv])
+
     const accountNotDeployed: Account = {
       addr: getAmbireAccountAddress(AMBIRE_ACCOUNT_FACTORY, bytecode),
-      associatedKeys: [keyPublicAddress],
+      associatedKeys: [priv.addr],
       initialPrivileges: [[priv.addr, priv.hash]],
       creation: {
         factoryAddr: AMBIRE_ACCOUNT_FACTORY,
         bytecode,
-        salt: ethers.toBeHex(0, 32)
+        salt: ethers.toBeHex(1, 32)
       }
     }
     const accountData = getAccountDeployParams(accountNotDeployed)
     expect(accountData as any).toEqual([
       AMBIRE_ACCOUNT_FACTORY,
-      '0x9c4ae2d000000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000007a7f00000000000000000000000000000000000000000000000000000000000000017fbacd3e9e8aed42b26f997f28d90ae31f73d67222ec769cf7d8552e5f95f8f48d553d602d80604d3d3981f3363d3d373d3d3d363d7353a31973ebcc225e219bb0d7c0c9324773f5b3e95af43d82803e903d91602b57fd5bf3000000000000'
+      '0x9c4ae2d000000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000007a7f00000000000000000000000000000000000000000000000000000000000000017fbacd3e9e8aed42b26f997f28d90ae31f73d67222ec769cf7d8552e5f95f8f48d553d602d80604d3d3981f3363d3d373d3d3d363d730e370942ebe4d026d05d2cf477ff386338fc415a5af43d82803e903d91602b57fd5bf3000000000000'
     ])
   })
   test('should return a gmail emailAccount successfully', async () => {

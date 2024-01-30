@@ -1,3 +1,5 @@
+import { Call } from '../accountOp/types'
+
 export type UserOpRequestType = 'standard' | 'activator' | 'recovery'
 
 export interface UserOperation {
@@ -14,4 +16,5 @@ export interface UserOperation {
   signature: string // hex string
   // https://github.com/AmbireTech/ambire-app/wiki/Ambire-Flows-(wrap,-sign,-payment,-broadcast)#erc-4337-edge-case
   requestType: UserOpRequestType
+  activatorCall?: Call
 }

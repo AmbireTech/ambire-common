@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/brace-style */
-import { ethers, TransactionResponse } from 'ethers'
+import { ethers, isAddress, TransactionResponse } from 'ethers'
 import { NetworkPreference, NetworkPreferences } from 'interfaces/settings'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
@@ -7,7 +7,7 @@ import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFacto
 import { Account, AccountId, AccountOnchainState, AccountStates } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
 import {
-  ExternalSignerController,
+  ExternalSignerControllers,
   Key,
   KeystoreSignerType,
   TxnRequest
@@ -15,13 +15,9 @@ import {
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
 import { Storage } from '../../interfaces/storage'
 import { Message, UserRequest } from '../../interfaces/userRequest'
-import { isSmartAccount } from '../../libs/account/account'
-import {
-  AccountOp,
-  AccountOpStatus,
-  Call as AccountOpCall,
-  getSignableCalls
-} from '../../libs/accountOp/accountOp'
+import { getDefaultSelectedAccount, isSmartAccount } from '../../libs/account/account'
+import { AccountOp, AccountOpStatus, getSignableCalls } from '../../libs/accountOp/accountOp'
+import { Call as AccountOpCall } from '../../libs/accountOp/types'
 import { getAccountState } from '../../libs/accountState/accountState'
 import {
   getAccountOpBannersForEOA,
@@ -32,6 +28,7 @@ import {
 } from '../../libs/banners/banners'
 import { estimate, EstimateResult } from '../../libs/estimate/estimate'
 import { GasRecommendation, getGasPriceRecommendations } from '../../libs/gasPrice/gasPrice'
+import { humanizeAccountOp } from '../../libs/humanizer'
 import { shouldGetAdditionalPortfolio } from '../../libs/portfolio/helpers'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { isErc4337Broadcast, toUserOperation } from '../../libs/userOperation/userOperation'
@@ -41,12 +38,12 @@ import wait from '../../utils/wait'
 import { AccountAdderController } from '../accountAdder/accountAdder'
 import { EmailVaultController } from '../emailVault/emailVault'
 import { ActivityController, SignedMessage, SubmittedAccountOp } from '../activity/activity'
-import EventEmitter from '../eventEmitter'
+import EventEmitter from '../eventEmitter/eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
 import { PortfolioController } from '../portfolio/portfolio'
 import { SettingsController } from '../settings/settings'
 /* eslint-disable no-underscore-dangle */
-import { SignAccountOpController } from '../signAccountOp/signAccountOp'
+import { SignAccountOpController, SigningStatus } from '../signAccountOp/signAccountOp'
 import { SignMessageController } from '../signMessage/signMessage'
 import { TransferController } from '../transfer/transfer'
 
@@ -58,6 +55,10 @@ export class MainController extends EventEmitter {
   // Holds the initial load promise, so that one can wait until it completes
   #initialLoadPromise: Promise<void>
 
+  status: 'INITIAL' | 'LOADING' | 'SUCCESS' | 'DONE' = 'INITIAL'
+
+  latestMethodCall: string | null = null
+
   #callRelayer: Function
 
   accountStates: AccountStates = {}
@@ -65,6 +66,13 @@ export class MainController extends EventEmitter {
   isReady: boolean = false
 
   keystore: KeystoreController
+
+  /**
+   * Hardware wallets (usually) need an additional (external signer) controller,
+   * that is app-specific (web, mobile) and is used to interact with the device.
+   * (example: LedgerController, TrezorController, LatticeController)
+   */
+  #externalSignerControllers: ExternalSignerControllers = {}
 
   accountAdder: AccountAdderController
 
@@ -80,6 +88,8 @@ export class MainController extends EventEmitter {
   signMessage!: SignMessageController
 
   signAccountOp: SignAccountOpController | null = null
+
+  static signAccountOpListener: ReturnType<EventEmitter['onUpdate']> = () => {}
 
   signAccOpInitError: string | null = null
 
@@ -139,6 +149,7 @@ export class MainController extends EventEmitter {
     fetch,
     relayerUrl,
     keystoreSigners,
+    externalSignerControllers,
     onResolveDappRequest,
     onRejectDappRequest,
     onUpdateDappSelectedAccount,
@@ -149,6 +160,7 @@ export class MainController extends EventEmitter {
     fetch: Function
     relayerUrl: string
     keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>
+    externalSignerControllers: ExternalSignerControllers
     onResolveDappRequest: (
       data: {
         hash: string | null
@@ -165,8 +177,10 @@ export class MainController extends EventEmitter {
     super()
     this.#storage = storage
     this.#fetch = fetch
+    this.#relayerUrl = relayerUrl
 
     this.keystore = new KeystoreController(this.#storage, keystoreSigners)
+    this.#externalSignerControllers = externalSignerControllers
     this.settings = new SettingsController(this.#storage)
     this.portfolio = new PortfolioController(
       this.#storage,
@@ -188,7 +202,6 @@ export class MainController extends EventEmitter {
     })
     this.transfer = new TransferController()
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch: this.#fetch })
-    this.#relayerUrl = relayerUrl
     this.onResolveDappRequest = onResolveDappRequest
     this.onRejectDappRequest = onRejectDappRequest
     this.onUpdateDappSelectedAccount = onUpdateDappSelectedAccount
@@ -210,7 +223,7 @@ export class MainController extends EventEmitter {
     this.signMessage = new SignMessageController(
       this.keystore,
       this.settings,
-      this.settings.providers,
+      this.#externalSignerControllers,
       this.#storage,
       this.#fetch
     )
@@ -219,19 +232,80 @@ export class MainController extends EventEmitter {
       this.activity.init({ filters: { account: this.selectedAccount } })
     }
 
-    const addReadyToAddAccountsIfNeeded = () => {
-      if (
-        !this.accountAdder.readyToAddAccounts.length &&
-        this.accountAdder.addAccountsStatus !== 'SUCCESS'
-      )
-        return
+    /**
+     * Listener that gets triggered as a finalization step of adding new
+     * accounts via the AccountAdder controller flow.
+     *
+     * VIEW-ONLY ACCOUNTS: In case of changes in this method, make sure these
+     * changes are reflected for view-only accounts as well. Because the
+     * view-only accounts import flow bypasses the AccountAdder, this method
+     * won't click for them. Their on add success flow continues in the
+     * MAIN_CONTROLLER_ADD_VIEW_ONLY_ACCOUNTS action case.
+     */
+    const onAccountAdderSuccess = () => {
+      if (this.accountAdder.addAccountsStatus !== 'SUCCESS') return
 
-      this.addAccounts(this.accountAdder.readyToAddAccounts)
+      return this.#statusWrapper('onAccountAdderSuccess', async () => {
+        // Add accounts first, because some of the next steps have validation
+        // if accounts exists.
+        await this.addAccounts(this.accountAdder.readyToAddAccounts)
+
+        // Then add keys, because some of the next steps could have validation
+        // if keys exists. Should be separate (not combined in Promise.all,
+        // since firing multiple keystore actions is not possible
+        // (the #wrapKeystoreAction listens for the first one to finish and
+        // skips the parallel one, if one is requested).
+        await this.keystore.addKeys(this.accountAdder.readyToAddKeys.internal)
+        await this.keystore.addKeysExternallyStored(this.accountAdder.readyToAddKeys.external)
+
+        await Promise.all([
+          this.settings.addKeyPreferences(this.accountAdder.readyToAddKeyPreferences),
+          this.settings.addAccountPreferences(this.accountAdder.readyToAddAccountPreferences),
+          (() => {
+            const defaultSelectedAccount = getDefaultSelectedAccount(
+              this.accountAdder.readyToAddAccounts
+            )
+            if (!defaultSelectedAccount) return Promise.resolve()
+
+            return this.selectAccount(defaultSelectedAccount.addr)
+          })()
+        ])
+      })
     }
-    this.accountAdder.onUpdate(addReadyToAddAccountsIfNeeded)
+    this.accountAdder.onUpdate(onAccountAdderSuccess)
 
     this.isReady = true
     this.emitUpdate()
+  }
+
+  async #statusWrapper(callName: string, fn: Function) {
+    if (this.status === 'LOADING') return
+    this.latestMethodCall = callName
+    this.status = 'LOADING'
+    this.emitUpdate()
+    try {
+      await fn()
+      this.status = 'SUCCESS'
+      this.emitUpdate()
+    } catch (error: any) {
+      this.emitError({
+        level: 'major',
+        message: `An error encountered. Please try again. If the problem persists, please contact support.', ${callName}`,
+        error
+      })
+    }
+
+    // set status in the next tick to ensure the FE receives the 'SUCCESS' status
+    await wait(1)
+    this.status = 'DONE'
+    this.emitUpdate()
+
+    // reset the status in the next tick to ensure the FE receives the 'DONE' status
+    await wait(1)
+    if (this.latestMethodCall === callName) {
+      this.status = 'INITIAL'
+      this.emitUpdate()
+    }
   }
 
   initSignAccOp(accountAddr: string, networkId: string): null | void {
@@ -263,6 +337,7 @@ export class MainController extends EventEmitter {
       this.keystore,
       this.portfolio,
       this.settings,
+      this.#externalSignerControllers,
       account,
       this.accounts,
       this.accountStates,
@@ -270,8 +345,21 @@ export class MainController extends EventEmitter {
       accountOpToBeSigned,
       this.#storage,
       this.#fetch,
-      this.settings.providers,
       this.#callRelayer
+    )
+
+    const broadcastSignedAccountOpIfNeeded = async () => {
+      // Signing is completed, therefore broadcast the transaction
+      if (
+        this.signAccountOp &&
+        this.signAccountOp.accountOp.signature &&
+        this.signAccountOp.status?.type === SigningStatus.Done
+      ) {
+        await this.broadcastSignedAccountOp(this.signAccountOp.accountOp)
+      }
+    }
+    MainController.signAccountOpListener = this.signAccountOp.onUpdate(
+      broadcastSignedAccountOpIfNeeded
     )
 
     this.emitUpdate()
@@ -281,6 +369,7 @@ export class MainController extends EventEmitter {
 
   destroySignAccOp() {
     this.signAccountOp = null
+    MainController.signAccountOpListener() // unsubscribes for further updates
     this.emitUpdate()
   }
 
@@ -315,13 +404,13 @@ export class MainController extends EventEmitter {
             this.settings.providers[network],
             this.settings.networks.find((net) => net.id === network)!
           )
-        } catch {
+        } catch (e: any) {
           this.emitError({
             level: 'major',
-            message: `Failed to fetch gas price for ${
+            message: `Unable to get gas price for ${
               this.settings.networks.find((n) => n.id === network)?.name
             }`,
-            error: new Error('Failed to fetch gas price')
+            error: new Error(`Failed to fetch gas price: ${e?.message}`)
           })
         }
       })
@@ -394,7 +483,14 @@ export class MainController extends EventEmitter {
     blockTag: string | number = 'latest',
     networks: NetworkDescriptor['id'][] = []
   ) {
-    this.accountStates = await this.#getAccountsInfo(this.accounts, blockTag, networks)
+    const nextAccountStates = await this.#getAccountsInfo(this.accounts, blockTag, networks)
+    // Use `Object.assign` to update `this.accountStates` on purpose! That's
+    // in order NOT to break the the reference link between `this.accountStates`
+    // in the MainController and in the ActivityController. Reassigning
+    // `this.accountStates` to a new object would break the reference link which
+    // is crucial for ensuring that updates to account states are synchronized
+    // across both classes.
+    Object.assign(this.accountStates, {}, nextAccountStates)
     this.lastUpdate = new Date()
     this.emitUpdate()
   }
@@ -415,6 +511,10 @@ export class MainController extends EventEmitter {
     this.emitUpdate()
   }
 
+  /**
+   * Adds and stores in the MainController the required data for the newly
+   * added accounts by the AccountAdder controller.
+   */
   async addAccounts(accounts: Account[] = []) {
     if (!accounts.length) return
 
@@ -426,7 +526,7 @@ export class MainController extends EventEmitter {
     const nextAccounts = [...this.accounts, ...newAccounts]
     await this.#storage.set('accounts', nextAccounts)
     this.accounts = nextAccounts
-    this.updateAccountStates()
+    await this.updateAccountStates()
 
     this.emitUpdate()
   }
@@ -471,7 +571,7 @@ export class MainController extends EventEmitter {
 
     if (!calls.length) return null
 
-    const currentAccountOp = this.accountOpsToBeSigned[accountAddr][networkId]?.accountOp
+    const currentAccountOp = this.accountOpsToBeSigned[accountAddr]?.[networkId]?.accountOp
 
     return {
       accountAddr,
@@ -526,6 +626,7 @@ export class MainController extends EventEmitter {
 
       const accountOp = this.#makeAccountOpFromUserRequests(accountAddr, networkId)
       if (accountOp) {
+        this.accountOpsToBeSigned[accountAddr] ||= {}
         this.accountOpsToBeSigned[accountAddr][networkId] = { accountOp, estimation: null }
         try {
           await this.#estimateAccountOp(accountOp)
@@ -565,6 +666,7 @@ export class MainController extends EventEmitter {
       // @TODO ensure acc info, re-estimate
       const accountOp = this.#makeAccountOpFromUserRequests(accountAddr, networkId)
       if (accountOp) {
+        this.accountOpsToBeSigned[accountAddr] ||= {}
         this.accountOpsToBeSigned[accountAddr][networkId] = { accountOp, estimation: null }
         try {
           await this.#estimateAccountOp(accountOp)
@@ -573,7 +675,7 @@ export class MainController extends EventEmitter {
           console.error(e)
         }
       } else {
-        delete this.accountOpsToBeSigned[accountAddr][networkId]
+        delete this.accountOpsToBeSigned[accountAddr]?.[networkId]
         if (!Object.keys(this.accountOpsToBeSigned[accountAddr] || {}).length)
           delete this.accountOpsToBeSigned[accountAddr]
       }
@@ -596,26 +698,31 @@ export class MainController extends EventEmitter {
   async reestimateAndUpdatePrices(accountAddr: AccountId, networkId: NetworkId) {
     if (!this.signAccountOp) return
 
-    await Promise.all([
-      this.#updateGasPrice(),
-      async () => {
-        const accountOp = this.accountOpsToBeSigned[accountAddr][networkId]?.accountOp
-        // non-fatal, no need to do anything
-        if (!accountOp) return
+    const accountOp = this.accountOpsToBeSigned[accountAddr]?.[networkId]?.accountOp
+    const reestimate = accountOp
+      ? this.#estimateAccountOp(accountOp)
+      : new Promise((resolve) => {
+          resolve(true)
+        })
 
-        await this.#estimateAccountOp(accountOp)
-      }
-    ])
+    await Promise.all([this.#updateGasPrice(), reestimate])
 
-    const gasPrices = this.gasPrices[networkId]
-    const estimation = this.accountOpsToBeSigned[accountAddr][networkId]?.estimation
-
-    this.signAccountOp.update({ gasPrices, ...(estimation && { estimation }) })
-    this.emitUpdate()
+    // there's a chance signAccountOp gets destroyed between the time
+    // the first "if (!this.signAccountOp) return" is performed and
+    // the time we get here. To prevent issues, we check one more time
+    if (this.signAccountOp) {
+      const gasPrices = this.gasPrices[networkId]
+      const estimation = this.accountOpsToBeSigned[accountAddr]?.[networkId]?.estimation
+      this.signAccountOp.update({ gasPrices, ...(estimation && { estimation }) })
+      this.emitUpdate()
+    }
   }
 
   // @TODO: protect this from race conditions/simultanous executions
   async #estimateAccountOp(accountOp: AccountOp) {
+    // make a local copy to avoid updating the main reference
+    const localAccountOp: AccountOp = { ...accountOp }
+
     await this.#initialLoadPromise
     // new accountOps should have spoof signatures so that they can be easily simulated
     // this is not used by the Estimator, because it iterates through all associatedKeys and
@@ -625,7 +732,7 @@ export class MainController extends EventEmitter {
 
     // TODO check if needed data in accountStates are available
     // this.accountStates[accountOp.accountAddr][accountOp.networkId].
-    const account = this.accounts.find((x) => x.addr === accountOp.accountAddr)
+    const account = this.accounts.find((x) => x.addr === localAccountOp.accountAddr)
 
     // Here, we list EOA accounts for which you can also obtain an estimation of the AccountOp payment.
     // In the case of operating with a smart account (an account with creation code), all other EOAs can pay the fee.
@@ -634,30 +741,58 @@ export class MainController extends EventEmitter {
     // and there's no need for checking other EOA accounts native balances.
     // This is already handled and estimated as a fee option in the estimate library, which is why we pass an empty array here.
     const EOAaccounts = account?.creation ? this.accounts.filter((acc) => !acc.creation) : []
+
+    // Take the fee tokens from two places: the user's tokens and his gasTank
+    // The gastTank tokens participate on each network as they belong everywhere
+    // NOTE: at some point we should check all the "?" signs below and if
+    // an error pops out, we should notify the user about it
+    const networkFeeTokens =
+      this.portfolio.latest?.[localAccountOp.accountAddr]?.[localAccountOp.networkId]?.result
+        ?.tokens ?? []
+    const gasTankFeeTokens =
+      this.portfolio.latest?.[localAccountOp.accountAddr]?.gasTank?.result?.tokens ?? []
+
     const feeTokens =
-      this.portfolio.latest?.[accountOp.accountAddr]?.[accountOp.networkId]?.result?.tokens
+      [...networkFeeTokens, ...gasTankFeeTokens]
         .filter((t) => t.flags.isFeeToken)
-        .map((token) => token.address) || []
+        .map((token) => ({
+          address: token.address,
+          isGasTank: token.flags.onGasTank,
+          amount: BigInt(token.amount)
+        })) || []
 
     if (!account)
-      throw new Error(`estimateAccountOp: ${accountOp.accountAddr}: account does not exist`)
-    const network = this.settings.networks.find((x) => x.id === accountOp.networkId)
+      throw new Error(`estimateAccountOp: ${localAccountOp.accountAddr}: account does not exist`)
+    const network = this.settings.networks.find((x) => x.id === localAccountOp.networkId)
     if (!network)
-      throw new Error(`estimateAccountOp: ${accountOp.networkId}: network does not exist`)
+      throw new Error(`estimateAccountOp: ${localAccountOp.networkId}: network does not exist`)
 
     // start transforming the accountOp to userOp if the network is 4337
     // and it's not a legacy account
     const is4337Broadcast = isErc4337Broadcast(
       network,
-      this.accountStates[accountOp.accountAddr][accountOp.networkId]
+      this.accountStates[localAccountOp.accountAddr][localAccountOp.networkId]
     )
     if (is4337Broadcast) {
-      accountOp = toUserOperation(
+      localAccountOp.asUserOperation = toUserOperation(
         account,
-        this.accountStates[accountOp.accountAddr][accountOp.networkId],
-        accountOp
+        this.accountStates[localAccountOp.accountAddr][localAccountOp.networkId],
+        localAccountOp
       )
     }
+    const humanization = await humanizeAccountOp(
+      this.#storage,
+      localAccountOp,
+      this.#fetch,
+      this.emitError
+    )
+    const addresses = humanization
+      .map((call) =>
+        !call.fullVisualization ? '' : call.fullVisualization.map((vis) => vis.address ?? '')
+      )
+      .flat()
+      .filter(isAddress)
+
     const [, , estimation] = await Promise.all([
       // NOTE: we are not emitting an update here because the portfolio controller will do that
       // NOTE: the portfolio controller has it's own logic of constructing/caching providers, this is intentional, as
@@ -665,21 +800,22 @@ export class MainController extends EventEmitter {
       this.portfolio.updateSelectedAccount(
         this.accounts,
         this.settings.networks,
-        accountOp.accountAddr,
+        localAccountOp.accountAddr,
         Object.fromEntries(
-          Object.entries(this.accountOpsToBeSigned[accountOp.accountAddr])
+          Object.entries(this.accountOpsToBeSigned[localAccountOp.accountAddr])
             .filter(([, accOp]) => accOp)
             .map(([networkId, x]) => [networkId, [x!.accountOp]])
-        )
+        ),
+        { forceUpdate: true, pinned: addresses }
       ),
       shouldGetAdditionalPortfolio(account) &&
-        this.portfolio.getAdditionalPortfolio(accountOp.accountAddr),
+        this.portfolio.getAdditionalPortfolio(localAccountOp.accountAddr),
       estimate(
-        this.settings.providers[accountOp.networkId],
+        this.settings.providers[localAccountOp.networkId],
         network,
         account,
-        accountOp,
-        this.accountStates[accountOp.accountAddr][accountOp.networkId],
+        localAccountOp,
+        this.accountStates[localAccountOp.accountAddr][localAccountOp.networkId],
         EOAaccounts.map((acc) => acc.addr),
         // @TODO - first time calling this, portfolio is still not loaded.
         feeTokens,
@@ -687,28 +823,34 @@ export class MainController extends EventEmitter {
       ).catch((e) => {
         this.emitError({
           level: 'major',
-          message: `Failed to estimate account op for ${accountOp.accountAddr} on ${accountOp.networkId}`,
+          message: `Failed to estimate account op for ${localAccountOp.accountAddr} on ${localAccountOp.networkId}`,
           error: e
         })
-
         return null
       })
     ])
 
     if (!estimation) return
+    this.accountOpsToBeSigned[localAccountOp.accountAddr] ||= {}
     // @TODO compare intent between accountOp and this.accountOpsToBeSigned[accountOp.accountAddr][accountOp.networkId].accountOp
-    this.accountOpsToBeSigned[accountOp.accountAddr][accountOp.networkId]!.estimation = estimation
+    this.accountOpsToBeSigned[localAccountOp.accountAddr][localAccountOp.networkId]!.estimation =
+      estimation
 
     // add the estimation to the user operation
     if (is4337Broadcast) {
-      accountOp.asUserOperation!.verificationGasLimit = ethers.toBeHex(
+      localAccountOp.asUserOperation!.verificationGasLimit = ethers.toBeHex(
         estimation.erc4337estimation!.verificationGasLimit
       )
-      accountOp.asUserOperation!.callGasLimit = ethers.toBeHex(
+      localAccountOp.asUserOperation!.callGasLimit = ethers.toBeHex(
         estimation.erc4337estimation!.callGasLimit
       )
-      this.accountOpsToBeSigned[accountOp.accountAddr][accountOp.networkId]!.accountOp = accountOp
+      this.accountOpsToBeSigned[localAccountOp.accountAddr][localAccountOp.networkId]!.accountOp =
+        localAccountOp
     }
+
+    // update the signAccountOp controller once estimation finishes;
+    // this eliminates the infinite loading bug if the estimation comes slower
+    if (this.signAccountOp) this.signAccountOp.update({ estimation })
   }
 
   /**
@@ -724,10 +866,7 @@ export class MainController extends EventEmitter {
    *   4. for smart accounts, when the Relayer does the broadcast.
    *
    */
-  async broadcastSignedAccountOp(
-    accountOp: AccountOp,
-    externalSignerController?: ExternalSignerController
-  ) {
+  async broadcastSignedAccountOp(accountOp: AccountOp) {
     this.broadcastStatus = 'LOADING'
     this.emitUpdate()
 
@@ -786,7 +925,7 @@ export class MainController extends EventEmitter {
           )
         }
         const signer = await this.keystore.getSigner(feePayerKey.addr, feePayerKey.type)
-        if (signer.init) signer.init(externalSignerController)
+        if (signer.init) signer.init(this.#externalSignerControllers[feePayerKey.type])
 
         const gasFeePayment = accountOp.gasFeePayment!
         const { to, value, data } = accountOp.calls[0]
@@ -802,7 +941,7 @@ export class MainController extends EventEmitter {
         // if it's eip1559, send it as such. If no, go to legacy
         const gasPrice =
           (gasFeePayment.amount - feeTokenEstimation.addedNative) / gasFeePayment.simulatedGasLimit
-        if (gasFeePayment.maxPriorityFeePerGas) {
+        if ('maxPriorityFeePerGas' in gasFeePayment) {
           rawTxn.maxFeePerGas = gasPrice
           rawTxn.maxPriorityFeePerGas = gasFeePayment.maxPriorityFeePerGas
         } else {
@@ -865,7 +1004,7 @@ export class MainController extends EventEmitter {
 
       try {
         const signer = await this.keystore.getSigner(feePayerKey.addr, feePayerKey.type)
-        if (signer.init) signer.init(externalSignerController)
+        if (signer.init) signer.init(this.#externalSignerControllers[feePayerKey.type])
 
         const gasPrice =
           (accountOp.gasFeePayment.amount - feeTokenEstimation.addedNative) /
@@ -882,7 +1021,7 @@ export class MainController extends EventEmitter {
           gasLimit: accountOp.gasFeePayment.simulatedGasLimit
         }
 
-        if (accountOp.gasFeePayment.maxPriorityFeePerGas) {
+        if ('maxPriorityFeePerGas' in accountOp.gasFeePayment) {
           rawTxn.maxFeePerGas = gasPrice
           rawTxn.maxPriorityFeePerGas = accountOp.gasFeePayment.maxPriorityFeePerGas
         } else {

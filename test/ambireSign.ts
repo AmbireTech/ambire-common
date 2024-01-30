@@ -77,7 +77,7 @@ function wrapTypedData(chainId: bigint, verifyingAddr: string, executeHash: stri
   const domain: TypedDataDomain = {
     name: 'Ambire',
     version: '1',
-    chainId,
+    chainId: chainId.toString(),
     verifyingContract: verifyingAddr,
     salt: ethers.toBeHex(0, 32)
   }

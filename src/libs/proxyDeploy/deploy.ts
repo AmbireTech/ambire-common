@@ -1,6 +1,7 @@
 const abi = require('ethereumjs-abi')
 const keccak256 = require('js-sha3').keccak256
 
+// @TODO: fix the any
 function evmPush(data: any) {
   if (data.length < 1) throw new Error('evmPush: no data')
   if (data.length > 32) throw new Error('evmPush: data too long')
@@ -10,9 +11,16 @@ function evmPush(data: any) {
   return Buffer.concat([opCodeBuf, data])
 }
 
-function sstoreCode(slotNumber: any, keyType: any, key: any, valueType: any, valueBuf: any) {
+// @TODO: fix the any
+export function privSlot(slotNumber: any, keyType: any, key: any, valueType: any) {
   const buf = abi.rawEncode([keyType, valueType], [key, slotNumber])
-  const slot = keccak256(buf)
+  return keccak256(buf)
+}
+
+// @TODO: fix the any
+function sstoreCode(slotNumber: any, keyType: any, key: any, valueType: any, valueBuf: any) {
+  // @TODO why are we using valueType for the slotNumber? this has to be a hardcoded uint256 and valueType is pointless
+  const slot = privSlot(slotNumber, keyType, key, valueType)
   return Buffer.concat([
     evmPush(typeof valueBuf === 'string' ? Buffer.from(valueBuf.slice(2), 'hex') : valueBuf),
     evmPush(Buffer.from(slot, 'hex')),
@@ -30,10 +38,10 @@ export function getProxyDeployBytecode(
   privLevels: PrivLevels[],
   opts = { privSlot: 0 }
 ) {
-  const { privSlot = 0 } = opts
+  const slotNumber = opts.privSlot ?? 0
   if (privLevels.length > 3) throw new Error('getProxyDeployBytecode: max 3 privLevels')
   const storage = Buffer.concat(
-    privLevels.map(({ addr, hash }) => sstoreCode(privSlot, 'address', addr, 'bytes32', hash))
+    privLevels.map(({ addr, hash }) => sstoreCode(slotNumber, 'address', addr, 'bytes32', hash))
   )
   const initial = Buffer.from('3d602d80', 'hex')
   // NOTE: this means we can't support offset>256
@@ -60,7 +68,7 @@ export function getStorageSlotsFromArtifact(buildInfo: any) {
   const storageVariableNodes = identityNode.nodes.filter(
     (n: any) => n.nodeType === 'VariableDeclaration' && !n.constant && n.stateVariable
   )
-  const privSlot = storageVariableNodes.findIndex((x: any) => x.name === 'privileges')
+  const slotNumber = storageVariableNodes.findIndex((x: any) => x.name === 'privileges')
 
-  return { privSlot }
+  return { privSlot: slotNumber }
 }

@@ -21,8 +21,7 @@ const networks = [
         chainId: 137n,
         erc4337: {
             enabled: true,
-            entryPointAddr: deploy_1.ERC_4337_ENTRYPOINT,
-            entryPointMarker: deploy_1.ENTRY_POINT_MARKER
+            entryPointAddr: deploy_1.ERC_4337_ENTRYPOINT
         }
     },
     {
@@ -34,8 +33,7 @@ const networks = [
         chainId: 10n,
         erc4337: {
             enabled: true,
-            entryPointAddr: deploy_1.ERC_4337_ENTRYPOINT,
-            entryPointMarker: deploy_1.ENTRY_POINT_MARKER
+            entryPointAddr: deploy_1.ERC_4337_ENTRYPOINT
         }
     }
     // This breaks the background service of the extension

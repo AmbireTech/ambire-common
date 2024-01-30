@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-floating-promises */
 import { ethers, JsonRpcProvider } from 'ethers'
 
 import { PROXY_AMBIRE_ACCOUNT } from '../../consts/deploy'
@@ -8,7 +9,9 @@ import {
 
 import { Account, AccountOnchainState } from '../../interfaces/account'
 import { KeyIterator } from '../../interfaces/keyIterator'
+import { dedicatedToOneSAPriv, Key } from '../../interfaces/keystore'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
+import { AccountPreferences, KeyPreferences } from '../../interfaces/settings'
 import { Storage } from '../../interfaces/storage'
 import {
   getEmailAccount,
@@ -19,7 +22,7 @@ import {
   isSmartAccount
 } from '../../libs/account/account'
 import { getAccountState } from '../../libs/accountState/accountState'
-import EventEmitter from '../eventEmitter'
+import EventEmitter from '../eventEmitter/eventEmitter'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import wait from '../../utils/wait'
 
@@ -53,6 +56,11 @@ type DerivedAccount = AccountDerivationMeta & { account: AccountWithNetworkMeta 
 // Sub-type, used during intermediate step during the deriving accounts process
 type DerivedAccountWithoutNetworkMeta = Omit<DerivedAccount, 'account'> & { account: Account }
 
+export type ReadyToAddKeys = {
+  internal: { privateKey: string; dedicatedToOneSA: boolean }[]
+  external: { addr: Key['addr']; type: Key['type']; dedicatedToOneSA: boolean; meta: Key['meta'] }[]
+}
+
 /**
  * Account Adder Controller
  * is responsible for listing accounts that can be selected for adding, and for
@@ -80,9 +88,21 @@ export class AccountAdderController extends EventEmitter {
 
   preselectedAccounts: Account[] = []
 
-  // Smart accounts which identity is created on the Relayer, and are ready
+  // Accounts which identity is created on the Relayer (if needed), and are ready
   // to be added to the user's account list by the Main Controller
   readyToAddAccounts: Account[] = []
+
+  // The keys for the `readyToAddAccounts`, that are ready to be added to the
+  // user's keystore by the Main Controller
+  readyToAddKeys: ReadyToAddKeys = { internal: [], external: [] }
+
+  // The key preferences for the `readyToAddKeys`, that are ready to be added to
+  // the user's settings by the Main Controller
+  readyToAddKeyPreferences: KeyPreferences = []
+
+  // The account preferences for the `readyToAddAccounts`, that are ready to be
+  // added to the user's settings by the Main Controller
+  readyToAddAccountPreferences: AccountPreferences = {}
 
   // Identity for the smart accounts must be created on the Relayer, this
   // represents the status of the operation, needed managing UI state
@@ -243,6 +263,9 @@ export class AccountAdderController extends EventEmitter {
 
     this.addAccountsStatus = 'INITIAL'
     this.readyToAddAccounts = []
+    this.readyToAddKeys = { internal: [], external: [] }
+    this.readyToAddKeyPreferences = []
+    this.readyToAddAccountPreferences = {}
     this.isInitialized = false
 
     this.emitUpdate()
@@ -282,10 +305,16 @@ export class AccountAdderController extends EventEmitter {
       ({ slot }) => slot === accountOnPage.slot
     )
 
+    // eslint-disable-next-line no-nested-ternary
     const accountKey = isSmartAccount(accountOnPage.account)
-      ? // The key of the smart account is the EOA (legacy) account derived on the
-        // same slot, but with the `SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET` offset.
-        allAccountsOnThisSlot.find(({ index }) => isDerivedForSmartAccountKeyOnly(index))
+      ? accountOnPage.isLinked
+        ? // The key of the linked account is the EOA (legacy) account on the same slot with the same index
+          allAccountsOnThisSlot.find(
+            ({ account, index }) => !isSmartAccount(account) && accountOnPage.index === index
+          )
+        : // The key of the smart account is the EOA (legacy) account derived on the
+          // same slot, but with the `SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET` offset.
+          allAccountsOnThisSlot.find(({ index }) => isDerivedForSmartAccountKeyOnly(index))
       : // The key of the legacy account is the legacy account itself.
         accountOnPage
 
@@ -376,7 +405,19 @@ export class AccountAdderController extends EventEmitter {
     })
   }
 
-  async addAccounts(accounts: SelectedAccount[] = []) {
+  /**
+   * Triggers the process of adding accounts via the AccountAdder flow by
+   * creating identity for the smart accounts (if needed) on the Relayer.
+   * Then the `onAccountAdderSuccess` listener in the Main Controller gets
+   * triggered, which uses the `readyToAdd...` properties to further set
+   * the newly added accounts data (like preferences, keys and others)
+   */
+  async addAccounts(
+    accounts: SelectedAccount[] = [],
+    readyToAddAccountPreferences: AccountPreferences = {},
+    readyToAddKeys: ReadyToAddKeys = { internal: [], external: [] },
+    readyToAddKeyPreferences: KeyPreferences = []
+  ) {
     if (!this.isInitialized) {
       return this.emitError({
         level: 'major',
@@ -412,11 +453,7 @@ export class AccountAdderController extends EventEmitter {
       const body = accountsToAddOnRelayer.map(({ account }: SelectedAccount) => ({
         addr: account.addr,
         ...(account.email ? { email: account.email } : {}),
-        associatedKeys: account.associatedKeys.map((key) => [
-          ethers.getAddress(key), // the Relayer expects checksumed address
-          // Handle special priv hashes at a later stage, when (if) needed
-          '0x0000000000000000000000000000000000000000000000000000000000000001'
-        ]),
+        associatedKeys: account.initialPrivileges,
 
         creation: {
           factoryAddr: account.creation!.factoryAddr,
@@ -448,6 +485,9 @@ export class AccountAdderController extends EventEmitter {
     }
 
     this.readyToAddAccounts = [...accounts.map((x) => x.account)]
+    this.readyToAddKeys = readyToAddKeys
+    this.readyToAddKeyPreferences = readyToAddKeyPreferences
+    this.readyToAddAccountPreferences = readyToAddAccountPreferences
     this.addAccountsStatus = 'SUCCESS'
     this.emitUpdate()
 
@@ -582,7 +622,7 @@ export class AccountAdderController extends EventEmitter {
 
       // Derive the Ambire (smart) account
       smartAccountsPromises.push(
-        getSmartAccount(smartAccKey)
+        getSmartAccount([{ addr: smartAccKey, hash: dedicatedToOneSAPriv }])
           .then((smartAccount) => {
             return { account: smartAccount, isLinked: false, slot, index: slot - 1 }
           })
@@ -760,8 +800,9 @@ export class AccountAdderController extends EventEmitter {
           account: {
             addr,
             associatedKeys: Object.keys(associatedKeys),
-            initialPrivileges: data.accounts[addr].initialPrivilegesAddrs.map((a: string) => [
-              a,
+            initialPrivileges: data.accounts[addr].initialPrivilegesAddrs.map((address: string) => [
+              address,
+              // this is a default privilege hex we add on account creation
               '0x0000000000000000000000000000000000000000000000000000000000000001'
             ]),
             creation: {

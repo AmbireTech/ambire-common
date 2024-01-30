@@ -6,7 +6,7 @@ import {
   getToken,
   getRecipientText,
   getAddress,
-  getDeadlineText,
+  getDeadline,
   getUnknownVisualization
 } from '../../utils'
 
@@ -38,7 +38,7 @@ const uniV32Mapping = (
         .map(
           (newCall: IrCall): IrCall => ({
             ...newCall,
-            fullVisualization: [...(newCall.fullVisualization || []), getDeadlineText(deadline)]
+            fullVisualization: [...(newCall.fullVisualization || []), getDeadline(deadline)]
           })
         )
         .filter((x: any) => x)
@@ -376,7 +376,7 @@ const uniV3Mapping = (
             getLabel('for at least'),
             getToken(params.tokenOut, params.amountOutMinimum),
             ...getRecipientText(accountOp.accountAddr, params.recipient),
-            getDeadlineText(params.deadline)
+            getDeadline(params.deadline)
           ]
         }
       ]
@@ -397,7 +397,7 @@ const uniV3Mapping = (
             getLabel('for at least'),
             getToken(path[path.length - 1], params.amountOutMinimum),
             ...getRecipientText(accountOp.accountAddr, params.recipient),
-            getDeadlineText(params.deadline)
+            getDeadline(params.deadline)
           ]
         }
       ]
@@ -417,7 +417,7 @@ const uniV3Mapping = (
             getLabel('for'),
             getToken(params.tokenOut, params.amountOut),
             ...getRecipientText(accountOp.accountAddr, params.recipient),
-            getDeadlineText(params.deadline)
+            getDeadline(params.deadline)
           ]
         }
       ]
@@ -438,7 +438,7 @@ const uniV3Mapping = (
             getLabel('for'),
             getToken(path[0], params.amountOut),
             ...getRecipientText(accountOp.accountAddr, params.recipient),
-            getDeadlineText(params.deadline)
+            getDeadline(params.deadline)
           ]
         }
       ]

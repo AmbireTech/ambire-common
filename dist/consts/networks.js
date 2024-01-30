@@ -26,7 +26,6 @@ const networks = [
             // TODO: temp disabled (only while testing)
             enabled: false,
             entryPointAddr: deploy_1.ERC_4337_ENTRYPOINT,
-            entryPointMarker: deploy_1.ENTRY_POINT_MARKER,
             hasPaymaster: true
         },
         unstoppableDomainsChain: 'MATIC'
@@ -42,7 +41,6 @@ const networks = [
         erc4337: {
             enabled: false,
             entryPointAddr: deploy_1.ERC_4337_ENTRYPOINT,
-            entryPointMarker: deploy_1.ENTRY_POINT_MARKER,
             hasPaymaster: false
         },
         unstoppableDomainsChain: 'ERC20'
@@ -58,7 +56,6 @@ const networks = [
         erc4337: {
             enabled: true,
             entryPointAddr: deploy_1.ERC_4337_ENTRYPOINT,
-            entryPointMarker: deploy_1.ENTRY_POINT_MARKER,
             hasPaymaster: true
         },
         unstoppableDomainsChain: 'ERC20'

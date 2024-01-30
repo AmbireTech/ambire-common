@@ -19,7 +19,7 @@ describe('Polling', () => {
   beforeEach(async () => {
     const callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
     const keys = await requestMagicLink(email, relayerUrl, fetch)
-    await callRelayer(`/email-vault/confirmationKey/${email}/${keys.key}/${keys.secret}`)
+    await callRelayer(`/email-vault/confirm-key/${email}/${keys.key}/${keys.secret}`)
     await ev.getEmailVaultInfo(email, keys.key)
   })
   test('test', async () => {

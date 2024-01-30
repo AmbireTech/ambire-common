@@ -2,10 +2,11 @@ import { NetworkId } from 'interfaces/networkDescriptor'
 
 import { Account } from '../../interfaces/account'
 import { Message, TypedMessage } from '../../interfaces/userRequest'
-import { AccountOp, Call } from '../accountOp/accountOp'
+import { AccountOp } from '../accountOp/accountOp'
+import { Call } from '../accountOp/types'
 
 export type HumanizerVisualization = {
-  type: 'token' | 'address' | 'label' | 'action' | 'nft' | 'danger'
+  type: 'token' | 'address' | 'label' | 'action' | 'nft' | 'danger' | 'deadline'
   address?: string
   content?: string
   amount?: bigint

@@ -6,7 +6,7 @@ import { describe, expect, jest, test } from '@jest/globals'
 
 import { produceMemoryStore } from '../../../test/helpers'
 import humanizerJSON from '../../consts/humanizerInfo.json'
-import { ErrorRef } from '../eventEmitter/eventEmitter'
+import { ErrorRef } from '../../controllers/eventEmitter/eventEmitter'
 import { Account } from '../../interfaces/account'
 import { Key } from '../../interfaces/keystore'
 import { Storage } from '../../interfaces/storage'
@@ -58,6 +58,7 @@ const keys: Key[] = [
   {
     addr: '0xABcdeF398CBb1285Eeb2DC42be2c429eB1d55f02',
     type: 'internal',
+    dedicatedToOneSA: true,
     isExternallyStored: true,
     meta: null
   }
@@ -270,7 +271,7 @@ describe('Humanizer main function', () => {
     expect(onUpdate).toHaveBeenCalledTimes(1)
   })
 
-  test.skip('unknown func selector humanize with asyncop', async () => {
+  test('unknown func selector humanize with asyncop', async () => {
     const expectedVisualizations = [
       { type: 'action', content: 'Call buy(uint256)' },
       { type: 'label', content: 'from' },
@@ -344,7 +345,8 @@ describe('TypedMessages', () => {
         id: 1,
         accountAddr: accountOp.accountAddr,
         content: tmTemplate,
-        signature: null
+        signature: null,
+        networkId: 'ethereum'
       },
       {
         id: 2,
@@ -353,7 +355,8 @@ describe('TypedMessages', () => {
           kind: 'message',
           message: 'random message'
         },
-        signature: null
+        signature: null,
+        networkId: 'ethereum'
       }
     ]
     const expectedVisualizations = [
@@ -374,9 +377,9 @@ describe('TypedMessages', () => {
         symbol: 'WETH'
       },
       { type: 'label', content: 'for time period' },
-      { type: 'label', content: 'already expired' },
+      { type: 'deadline', amount: 968187600000n },
       { type: 'label', content: 'this whole signatuere' },
-      { type: 'label', content: 'already expired' },
+      { type: 'deadline', amount: 968187600000n },
       { type: 'label', content: 'Permit #2' },
       { type: 'action', content: 'Permit' },
       {
@@ -394,9 +397,9 @@ describe('TypedMessages', () => {
         symbol: 'WETH'
       },
       { type: 'label', content: 'for time period' },
-      { type: 'label', content: 'already expired' },
+      { type: 'deadline', amount: 969187600000n },
       { type: 'label', content: 'this whole signatuere' },
-      { type: 'label', content: 'already expired' }
+      { type: 'deadline', amount: 968187600000n }
     ]
     const onUpdate = jest.fn((newMessage: IrMessage) => {
       expect(newMessage).toMatchObject({ warnings: [], fullVisualization: expect.anything() })

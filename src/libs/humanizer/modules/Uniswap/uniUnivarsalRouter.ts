@@ -1,7 +1,7 @@
 import { ethers } from 'ethers'
 import {
   getAction,
-  getDeadlineText,
+  getDeadline,
   getLabel,
   getRecipientText,
   getToken,
@@ -78,7 +78,7 @@ export const uniUniversalRouter = (
                   getToken(path[0], params.amountIn),
                   getLabel('for at least'),
                   getToken(path[path.length - 1], params.amountOutMin),
-                  getDeadlineText(deadline)
+                  getDeadline(deadline)
                 ]
               })
             } else if (command === COMMANDS.V3_SWAP_EXACT_OUT) {
@@ -93,7 +93,7 @@ export const uniUniversalRouter = (
                   getToken(path[path.length - 1], params.amountInMax),
                   getLabel('for'),
                   getToken(path[0], params.amountOut),
-                  getDeadlineText(deadline)
+                  getDeadline(deadline)
                 ]
               })
             } else if (command === COMMANDS.SWEEP) {
@@ -151,7 +151,7 @@ export const uniUniversalRouter = (
                   getToken(path[0], params.amountIn),
                   getLabel('for at least'),
                   getToken(path[path.length - 1], params.amountOutMin),
-                  getDeadlineText(deadline)
+                  getDeadline(deadline)
                 ]
               })
             } else if (command === COMMANDS.V2_SWAP_EXACT_OUT) {
@@ -166,7 +166,7 @@ export const uniUniversalRouter = (
                   getToken(path[0], params.amountInMax),
                   getLabel('for'),
                   getToken(path[path.length - 1], params.amountOut),
-                  getDeadlineText(deadline)
+                  getDeadline(deadline)
                 ]
               })
             } else if (command === COMMANDS.PERMIT2_PERMIT) {

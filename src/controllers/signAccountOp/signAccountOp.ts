@@ -1,37 +1,35 @@
-import { ethers, JsonRpcProvider } from 'ethers'
+import { ethers } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import EntryPointAbi from '../../../contracts/compiled/EntryPoint.json'
 import ERC20 from '../../../contracts/compiled/IERC20.json'
+import { FEE_COLLECTOR } from '../../consts/addresses'
 import { AMBIRE_PAYMASTER, ERC_4337_ENTRYPOINT } from '../../consts/deploy'
 import { Account, AccountStates } from '../../interfaces/account'
-import { ExternalSignerController, Key } from '../../interfaces/keystore'
+import { ExternalSignerControllers, Key } from '../../interfaces/keystore'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { Storage } from '../../interfaces/storage'
 import { getKnownAddressLabels } from '../../libs/account/account'
-import {
-  AccountOp,
-  accountOpSignableHash,
-  GasFeePayment,
-  getSignableCalls
-} from '../../libs/accountOp/accountOp'
+import { AccountOp, GasFeePayment, getSignableCalls } from '../../libs/accountOp/accountOp'
 import { EstimateResult } from '../../libs/estimate/estimate'
-import { GasRecommendation, getCallDataAdditional } from '../../libs/gasPrice/gasPrice'
+import { GasRecommendation, getCallDataAdditionalByNetwork } from '../../libs/gasPrice/gasPrice'
 import { callsHumanizer } from '../../libs/humanizer'
 import { IrCall } from '../../libs/humanizer/interfaces'
 import { Price, TokenResult } from '../../libs/portfolio'
+import { getExecuteSignature, getTypedData, wrapStandard } from '../../libs/signMessage/signMessage'
 import {
   getOneTimeNonce,
   isErc4337Broadcast,
   shouldUseOneTimeNonce,
   shouldUsePaymaster
 } from '../../libs/userOperation/userOperation'
-import EventEmitter from '../eventEmitter'
+import EventEmitter from '../eventEmitter/eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
 import { PortfolioController } from '../portfolio/portfolio'
 import { SettingsController } from '../settings/settings'
 
 export enum SigningStatus {
+  EstimationError = 'estimation-error',
   UnableToSign = 'unable-to-sign',
   ReadyToSign = 'ready-to-sign',
   InProgress = 'in-progress',
@@ -57,25 +55,21 @@ export enum FeeSpeed {
   Ape = 'ape'
 }
 
+type FanSpeed = {
+  type: FeeSpeed
+  amount: bigint
+  simulatedGasLimit: bigint
+  amountFormatted: string
+  amountUsd: string
+  maxPriorityFeePerGas?: bigint
+}
+
 function getTokenUsdAmount(token: TokenResult, gasAmount: bigint): string {
   const isUsd = (price: Price) => price.baseCurrency === 'usd'
   const usdPrice = BigInt(token.priceIn.find(isUsd)!.price * 1e18)
 
   // 18 it's because we multiply usdPrice * 1e18 and here we need to deduct it
   return ethers.formatUnits(gasAmount * usdPrice, 18 + token.decimals)
-}
-
-/**
- * In Ambire, signatures have types. The last byte of each signature
- * represents its type. Description in: SignatureValidator -> SignatureMode.
- * To indicate that we want to perform an ETH sign, we have to add a 01
- * hex (equal to the number 1) at the end of the signature.
- *
- * @param sig hex string
- * @returns hex string
- */
-function wrapEthSign(sig: string): string {
-  return `${sig}${'01'}`
 }
 
 export class SignAccountOpController extends EventEmitter {
@@ -85,11 +79,11 @@ export class SignAccountOpController extends EventEmitter {
 
   #settings: SettingsController
 
+  #externalSignerControllers: ExternalSignerControllers
+
   #storage: Storage
 
   #fetch: Function
-
-  #providers: { [key: string]: JsonRpcProvider }
 
   #account: Account
 
@@ -101,13 +95,13 @@ export class SignAccountOpController extends EventEmitter {
 
   accountOp: AccountOp
 
-  #gasPrices: GasRecommendation[] | null = null
+  gasPrices: GasRecommendation[] | null = null
 
   #estimation: EstimateResult | null = null
 
   paidBy: string | null = null
 
-  selectedTokenAddr: string | null = null
+  feeTokenResult: TokenResult | null = null
 
   selectedFeeSpeed: FeeSpeed = FeeSpeed.Fast
 
@@ -121,6 +115,7 @@ export class SignAccountOpController extends EventEmitter {
     keystore: KeystoreController,
     portfolio: PortfolioController,
     settings: SettingsController,
+    externalSignerControllers: ExternalSignerControllers,
     account: Account,
     accounts: Account[],
     accountStates: AccountStates,
@@ -128,13 +123,13 @@ export class SignAccountOpController extends EventEmitter {
     accountOp: AccountOp,
     storage: Storage,
     fetch: Function,
-    providers: { [key: string]: JsonRpcProvider },
     callRelayer: Function
   ) {
     super()
     this.#keystore = keystore
     this.#portfolio = portfolio
     this.#settings = settings
+    this.#externalSignerControllers = externalSignerControllers
     this.#account = account
     this.#accounts = accounts
     this.#accountStates = accountStates
@@ -142,7 +137,6 @@ export class SignAccountOpController extends EventEmitter {
     this.accountOp = accountOp
     this.#storage = storage
     this.#fetch = fetch
-    this.#providers = providers
     this.#callRelayer = callRelayer
 
     this.#humanizeAccountOp()
@@ -153,12 +147,6 @@ export class SignAccountOpController extends EventEmitter {
   }
 
   #setDefaults() {
-    if (this.availableFeeOptions.length && !this.paidBy && !this.selectedTokenAddr) {
-      const defaultFeeOption = this.availableFeeOptions[0]
-
-      this.paidBy = defaultFeeOption.paidBy
-      this.selectedTokenAddr = defaultFeeOption.address
-    }
     // Set the first signer as the default one.
     // If there are more available signers, the user will be able to select a different signer from the application.
     // The main benefit of having a default signer
@@ -167,14 +155,17 @@ export class SignAccountOpController extends EventEmitter {
     // Otherwise, if we don't have a default value, then `this.readyToSign` will always be false unless we set a signer.
     // In that case, on the application, we want the "Sign" button to be clickable/enabled,
     // and we have to check and expose the `SignAccountOp` controller's inner state to make this check possible.
-    if (!this.accountOp.signingKeyAddr || !this.accountOp.signingKeyType) {
+    if (
+      this.accountKeyStoreKeys.length &&
+      (!this.accountOp.signingKeyAddr || !this.accountOp.signingKeyType)
+    ) {
       this.accountOp.signingKeyAddr = this.accountKeyStoreKeys[0].addr
       this.accountOp.signingKeyType = this.accountKeyStoreKeys[0].type
     }
   }
 
   #setGasFeePayment() {
-    if (this.isInitialized && this.paidBy && this.selectedTokenAddr && this.selectedFeeSpeed) {
+    if (this.isInitialized && this.paidBy && this.selectedFeeSpeed && this.feeTokenResult) {
       this.accountOp!.gasFeePayment = this.#getGasFeePayment()
     }
   }
@@ -196,7 +187,7 @@ export class SignAccountOpController extends EventEmitter {
         this.emitUpdate()
       },
       (err) => this.emitError(err)
-    )
+    ).catch((err) => this.emitError(err))
   }
 
   get errors(): string[] {
@@ -204,27 +195,43 @@ export class SignAccountOpController extends EventEmitter {
 
     if (!this.isInitialized) return errors
 
+    // if there's an estimation error, show it
+    if (this.#estimation?.error) {
+      errors.push(this.#estimation.error.message)
+    }
+
     if (!this.availableFeeOptions.length)
       errors.push(
         "We are unable to estimate your transaction as you don't have tokens with balances to cover the fee."
       )
 
-    if (!this.accountKeyStoreKeys.length)
-      errors.push('We are unable to sign your transaction as there is no available signer.')
+    if (!this.accountKeyStoreKeys.length) errors.push('No key available for the selected account.')
 
     // This error should not happen, as in the update method we are always setting a default signer.
     // It may occur, only if there are no available signer.
     if (!this.accountOp?.signingKeyType || !this.accountOp?.signingKeyAddr)
       errors.push('Please select a signer to sign the transaction.')
 
-    if (!this.accountOp?.gasFeePayment)
+    const currentPortfolioNetwork =
+      this.#portfolio.latest[this.accountOp.accountAddr][this.accountOp.networkId]
+    const currentPortfolioNetworkNative = currentPortfolioNetwork?.result?.tokens.find(
+      (token) => token.address === '0x0000000000000000000000000000000000000000'
+    )
+    if (!currentPortfolioNetworkNative)
+      errors.push(
+        'Unable to estimate the transaction fee as fetching the latest price update for the network native token failed. Please try again later.'
+      )
+
+    if (!this.accountOp?.gasFeePayment && this.feeSpeeds.length) {
       errors.push('Please select a token and an account for paying the gas fee.')
+    }
 
     if (this.accountOp?.gasFeePayment && this.availableFeeOptions.length) {
       const feeToken = this.availableFeeOptions.find(
         (feeOption) =>
           feeOption.paidBy === this.accountOp?.gasFeePayment?.paidBy &&
-          feeOption.address === this.accountOp?.gasFeePayment?.inToken
+          feeOption.address === this.accountOp?.gasFeePayment?.inToken &&
+          feeOption.isGasTank === this.accountOp?.gasFeePayment?.isGasTank
       )
 
       if (feeToken!.availableAmount < this.accountOp?.gasFeePayment.amount) {
@@ -261,7 +268,7 @@ export class SignAccountOpController extends EventEmitter {
   update({
     gasPrices,
     estimation,
-    feeTokenAddr,
+    feeToken,
     paidBy,
     speed,
     signingKeyAddr,
@@ -270,19 +277,23 @@ export class SignAccountOpController extends EventEmitter {
     accountOp?: AccountOp
     gasPrices?: GasRecommendation[]
     estimation?: EstimateResult
-    feeTokenAddr?: string
+    feeToken?: TokenResult
     paidBy?: string
     speed?: FeeSpeed
     signingKeyAddr?: Key['addr']
     signingKeyType?: Key['type']
   }) {
-    if (gasPrices) this.#gasPrices = gasPrices
+    if (gasPrices) this.gasPrices = gasPrices
 
     if (estimation) this.#estimation = estimation
 
-    if (feeTokenAddr && paidBy) {
+    if (this.#estimation?.error) {
+      this.status = { type: SigningStatus.EstimationError }
+    }
+
+    if (feeToken && paidBy) {
       this.paidBy = paidBy
-      this.selectedTokenAddr = feeTokenAddr
+      this.feeTokenResult = feeToken
     }
 
     if (speed && this.isInitialized) {
@@ -302,13 +313,23 @@ export class SignAccountOpController extends EventEmitter {
   }
 
   updateStatusToReadyToSign() {
+    const isInTheMiddleOfSigning =
+      this.status &&
+      [SigningStatus.InProgress, SigningStatus.InProgressAwaitingUserInput].includes(
+        this.status?.type
+      )
+
     if (
       this.isInitialized &&
       this.#estimation &&
       this.accountOp?.signingKeyAddr &&
       this.accountOp?.signingKeyType &&
       this.accountOp?.gasFeePayment &&
-      !this.errors.length
+      !this.errors.length &&
+      // Update if status is NOT already set (that's the initial state update)
+      // or in general if the user is not in the middle of signing (otherwise
+      // it resets the loading state back to ready to sign)
+      (!this.status || !isInTheMiddleOfSigning)
     ) {
       this.status = { type: SigningStatus.ReadyToSign }
     }
@@ -316,11 +337,11 @@ export class SignAccountOpController extends EventEmitter {
   }
 
   reset() {
-    this.#gasPrices = null
+    this.gasPrices = null
     this.#estimation = null
     this.selectedFeeSpeed = FeeSpeed.Fast
     this.paidBy = null
-    this.selectedTokenAddr = null
+    this.feeTokenResult = null
     this.status = null
     this.humanReadable = []
     this.emitUpdate()
@@ -329,12 +350,6 @@ export class SignAccountOpController extends EventEmitter {
   resetStatus() {
     this.status = null
     this.emitUpdate()
-  }
-
-  #getPortfolioToken(addr: string): TokenResult | undefined {
-    return this.#portfolio.latest?.[this.accountOp!.accountAddr]?.[
-      this.accountOp!.networkId
-    ]?.result?.tokens.find((token) => token.address === addr)
   }
 
   /**
@@ -348,8 +363,14 @@ export class SignAccountOpController extends EventEmitter {
    * We require the ratio to be in a BigInt format since all the application values,
    * such as amount, gasLimit, etc., are also represented as BigInt numbers.
    */
-  #getNativeToFeeTokenRatio(feeToken: TokenResult): bigint {
-    const native = this.#getPortfolioToken('0x0000000000000000000000000000000000000000')
+  #getNativeToFeeTokenRatio(feeToken: TokenResult): bigint | null {
+    const native = this.#portfolio.latest[this.accountOp.accountAddr][
+      this.accountOp.networkId
+    ]?.result?.tokens.find(
+      (token) => token.address === '0x0000000000000000000000000000000000000000'
+    )
+    if (!native) return null
+
     const isUsd = (price: Price) => price.baseCurrency === 'usd'
     const ratio = native!.priceIn.find(isUsd)!.price / feeToken!.priceIn.find(isUsd)!.price
 
@@ -392,24 +413,29 @@ export class SignAccountOpController extends EventEmitter {
     return amount + (amount * this.#network.feeOptions.feeIncrease) / 100n
   }
 
-  get feeSpeeds(): {
-    type: string
-    amount: bigint
-    simulatedGasLimit: bigint
-    amountFormatted: string
-    amountUsd: string
-    maxPriorityFeePerGas?: bigint
-  }[] {
-    if (!this.isInitialized || !this.#gasPrices || !this.paidBy || !this.selectedTokenAddr)
-      return []
+  get feeSpeeds(): FanSpeed[] {
+    if (!this.isInitialized || !this.gasPrices || !this.paidBy || !this.feeTokenResult) return []
 
     const gasUsed = this.#estimation!.gasUsed
-    const feeToken = this.#getPortfolioToken(this.selectedTokenAddr)
     const feeTokenEstimation = this.#estimation!.feePaymentOptions.find(
-      (option) => option.address === this.selectedTokenAddr && this.paidBy === option.paidBy
-    )!
+      (option) =>
+        option.address === this.feeTokenResult?.address &&
+        this.paidBy === option.paidBy &&
+        this.feeTokenResult?.flags.onGasTank === option.isGasTank
+    )
 
-    return this.#gasPrices.map((gasRecommendation) => {
+    if (!feeTokenEstimation) return []
+
+    const nativeRatio = this.#getNativeToFeeTokenRatio(this.feeTokenResult)
+    if (!nativeRatio) return []
+
+    const callDataAdditionalGasCost = getCallDataAdditionalByNetwork(
+      this.accountOp!,
+      this.#network,
+      this.#accountStates![this.accountOp!.accountAddr][this.accountOp!.networkId]
+    )
+
+    return this.gasPrices.map((gasRecommendation) => {
       let amount
       let simulatedGasLimit
 
@@ -429,48 +455,48 @@ export class SignAccountOpController extends EventEmitter {
         amount = simulatedGasLimit * gasPrice + feeTokenEstimation.addedNative
       } else if (this.#estimation!.erc4337estimation) {
         // ERC 4337
-        const nativeRatio = this.#getNativeToFeeTokenRatio(feeToken!)
-
+        const usesPaymaster = shouldUsePaymaster(
+          this.accountOp.asUserOperation!,
+          this.feeTokenResult!.address
+        )
         simulatedGasLimit =
           this.#estimation!.erc4337estimation.gasUsed + feeTokenEstimation.gasUsed!
+        simulatedGasLimit += usesPaymaster
+          ? this.#estimation!.arbitrumL1FeeIfArbitrum.withFee
+          : this.#estimation!.arbitrumL1FeeIfArbitrum.noFee
         amount = SignAccountOpController.getAmountAfterFeeTokenConvert(
           simulatedGasLimit,
           gasPrice,
           nativeRatio,
-          feeToken!.decimals,
+          this.feeTokenResult!.decimals,
           feeTokenEstimation.addedNative
         )
-        if (shouldUsePaymaster(this.accountOp.asUserOperation!, feeToken!.address)) {
+        if (usesPaymaster) {
           amount = this.#increaseFee(amount)
         }
       } else if (this.paidBy !== this.accountOp!.accountAddr) {
         // Smart account, but EOA pays the fee
-        simulatedGasLimit = gasUsed
-
-        const accountState =
-          this.#accountStates![this.accountOp!.accountAddr][this.accountOp!.networkId]
-        simulatedGasLimit += getCallDataAdditional(this.accountOp!, this.#network, accountState)
-
+        simulatedGasLimit =
+          gasUsed + callDataAdditionalGasCost + this.#estimation!.arbitrumL1FeeIfArbitrum.noFee
         amount = simulatedGasLimit * gasPrice + feeTokenEstimation.addedNative
       } else {
         // Relayer.
         // relayer or 4337, we need to add feeTokenOutome.gasUsed
-        const nativeRatio = this.#getNativeToFeeTokenRatio(feeToken!)
         const feeTokenGasUsed = this.#estimation!.feePaymentOptions.find(
-          (option) => option.address === feeToken?.address
+          (option) => option.address === this.feeTokenResult!.address
         )!.gasUsed!
         // @TODO - add comment why here we use `feePaymentOptions`, but we don't use it in EOA
-        simulatedGasLimit = gasUsed + feeTokenGasUsed
-
-        const accountState =
-          this.#accountStates![this.accountOp!.accountAddr][this.accountOp!.networkId]
-        simulatedGasLimit += getCallDataAdditional(this.accountOp!, this.#network, accountState)
+        simulatedGasLimit =
+          gasUsed +
+          callDataAdditionalGasCost +
+          feeTokenGasUsed +
+          this.#estimation!.arbitrumL1FeeIfArbitrum.withFee
 
         amount = SignAccountOpController.getAmountAfterFeeTokenConvert(
           simulatedGasLimit,
           gasPrice,
           nativeRatio,
-          feeToken!.decimals,
+          this.feeTokenResult!.decimals,
           feeTokenEstimation.addedNative
         )
         amount = this.#increaseFee(amount)
@@ -480,9 +506,8 @@ export class SignAccountOpController extends EventEmitter {
         type: gasRecommendation.name,
         simulatedGasLimit,
         amount,
-        // TODO - fix type Number(feeToken?.decimals)
-        amountFormatted: ethers.formatUnits(amount, Number(feeToken?.decimals)),
-        amountUsd: getTokenUsdAmount(feeToken!, amount)
+        amountFormatted: ethers.formatUnits(amount, Number(this.feeTokenResult!.decimals)),
+        amountUsd: getTokenUsdAmount(this.feeTokenResult!, amount)
       }
 
       if ('maxPriorityFeePerGas' in gasRecommendation) {
@@ -506,18 +531,6 @@ export class SignAccountOpController extends EventEmitter {
 
       return null
     }
-
-    // Emitting silent errors for both `selectedTokenAddr` and `paidBy`
-    // since we already validated for both fields in `update` method before calling #getGasFeePayment
-    if (!this.selectedTokenAddr) {
-      this.emitError({
-        level: 'silent',
-        message: '',
-        error: new Error('SignAccountOpController: token not selected')
-      })
-
-      return null
-    }
     if (!this.paidBy) {
       this.emitError({
         level: 'silent',
@@ -527,22 +540,48 @@ export class SignAccountOpController extends EventEmitter {
 
       return null
     }
+    if (!this.feeTokenResult) {
+      this.emitError({
+        level: 'silent',
+        message: '',
+        error: new Error('SignAccountOpController: fee token not selected')
+      })
 
-    const feeToken = this.#getPortfolioToken(this.selectedTokenAddr)
-    const chosenSpeed = this.feeSpeeds.find((speed) => speed.type === this.selectedFeeSpeed)!
+      return null
+    }
 
-    const accountState =
-      this.#accountStates![this.accountOp!.accountAddr][this.accountOp!.networkId]
+    if (!this.feeSpeeds.length) {
+      this.emitError({
+        level: 'silent',
+        message: '',
+        error: new Error('SignAccountOpController: fee speeds not available')
+      })
+
+      return null
+    }
+
+    const chosenSpeed = this.feeSpeeds.find((speed) => speed.type === this.selectedFeeSpeed)
+    if (!chosenSpeed) {
+      this.emitError({
+        level: 'silent',
+        message: '',
+        error: new Error('SignAccountOpController: fee speed not selected')
+      })
+
+      return null
+    }
+
+    const accountState = this.#accountStates[this.accountOp.accountAddr][this.accountOp.networkId]
     const gasFeePayment: GasFeePayment = {
       paidBy: this.paidBy,
       isERC4337: isErc4337Broadcast(this.#network, accountState),
-      isGasTank: feeToken?.networkId === 'gasTank',
-      inToken: feeToken!.address,
+      isGasTank: this.feeTokenResult.flags.onGasTank,
+      inToken: this.feeTokenResult.address,
       amount: chosenSpeed.amount,
       simulatedGasLimit: chosenSpeed.simulatedGasLimit
     }
 
-    if (chosenSpeed.maxPriorityFeePerGas) {
+    if ('maxPriorityFeePerGas' in chosenSpeed) {
       gasFeePayment.maxPriorityFeePerGas = chosenSpeed.maxPriorityFeePerGas
     }
 
@@ -581,18 +620,14 @@ export class SignAccountOpController extends EventEmitter {
   #addFeePayment() {
     // In case of gas tank token fee payment, we need to include one more call to account op
     const abiCoder = new ethers.AbiCoder()
-    const feeCollector = '0x942f9CE5D9a33a82F88D233AEb3292E680230348'
 
     if (this.accountOp!.gasFeePayment!.isGasTank) {
-      // @TODO - config/const
-      const feeToken = this.#getPortfolioToken(this.accountOp!.gasFeePayment!.inToken)
-
       this.accountOp!.feeCall = {
-        to: feeCollector,
+        to: FEE_COLLECTOR,
         value: 0n,
         data: abiCoder.encode(
           ['string', 'uint256', 'string'],
-          ['gasTank', this.accountOp!.gasFeePayment!.amount, feeToken?.symbol]
+          ['gasTank', this.accountOp!.gasFeePayment!.amount, this.feeTokenResult?.symbol]
         )
       }
 
@@ -602,7 +637,7 @@ export class SignAccountOpController extends EventEmitter {
     if (this.accountOp!.gasFeePayment!.inToken === '0x0000000000000000000000000000000000000000') {
       // native payment
       this.accountOp!.feeCall = {
-        to: feeCollector,
+        to: FEE_COLLECTOR,
         value: this.accountOp!.gasFeePayment!.amount,
         data: '0x'
       }
@@ -613,14 +648,14 @@ export class SignAccountOpController extends EventEmitter {
         to: this.accountOp!.gasFeePayment!.inToken,
         value: 0n,
         data: ERC20Interface.encodeFunctionData('transfer', [
-          feeCollector,
+          FEE_COLLECTOR,
           this.accountOp!.gasFeePayment!.amount
         ])
       }
     }
   }
 
-  async sign(externalSignerController?: ExternalSignerController) {
+  async sign() {
     if (!this.accountOp?.signingKeyAddr || !this.accountOp?.signingKeyType)
       return this.#setSigningError('We cannot sign your transaction. Please choose a signer key.')
 
@@ -644,8 +679,9 @@ export class SignAccountOpController extends EventEmitter {
 
     const gasFeePayment = this.accountOp.gasFeePayment
 
-    if (signer.init) signer.init(externalSignerController)
-    const provider = this.#providers[this.accountOp.networkId]
+    if (signer.init) signer.init(this.#externalSignerControllers[this.accountOp.signingKeyType])
+    const accountState =
+      this.#accountStates![this.accountOp!.accountAddr][this.accountOp!.networkId]
     try {
       // In case of EOA account
       if (!this.#account.creation) {
@@ -661,9 +697,11 @@ export class SignAccountOpController extends EventEmitter {
       } else if (this.accountOp.gasFeePayment.paidBy !== this.#account.addr) {
         // Smart account, but EOA pays the fee
         // EOA pays for execute() - relayerless
-
-        this.accountOp.signature = wrapEthSign(
-          await signer.signMessage(ethers.hexlify(accountOpSignableHash(this.accountOp)))
+        this.accountOp.signature = await getExecuteSignature(
+          this.#network,
+          this.accountOp,
+          accountState,
+          signer
         )
       } else if (this.accountOp.gasFeePayment.isERC4337) {
         const userOperation = this.accountOp.asUserOperation
@@ -675,14 +713,18 @@ export class SignAccountOpController extends EventEmitter {
 
         // set as maxFeePerGas only the L2 gas price
         const feeTokenEstimation = this.#estimation!.feePaymentOptions.find(
-          (option) => option.address === this.selectedTokenAddr && this.paidBy === option.paidBy
+          (option) =>
+            option.address === this.feeTokenResult?.address &&
+            this.paidBy === option.paidBy &&
+            this.feeTokenResult?.flags.onGasTank === option.isGasTank
         )!
         let amountInWei = gasFeePayment.amount
-        const feeToken = this.#getPortfolioToken(this.selectedTokenAddr!)
-        if (feeToken?.address !== '0x0000000000000000000000000000000000000000') {
-          const nativeRatio = this.#getNativeToFeeTokenRatio(feeToken!)
+        if (this.feeTokenResult?.address !== '0x0000000000000000000000000000000000000000') {
+          const nativeRatio = this.#getNativeToFeeTokenRatio(this.feeTokenResult!)
+          if (!nativeRatio) throw new Error('Could not retrieve the native token price.')
           amountInWei =
-            (gasFeePayment.amount * BigInt(10 ** (18 + 18 - feeToken!.decimals))) / nativeRatio
+            (gasFeePayment.amount * BigInt(10 ** (18 + 18 - this.feeTokenResult!.decimals))) /
+            nativeRatio
         }
         const gasPrice =
           (amountInWei - feeTokenEstimation.addedNative) / gasFeePayment.simulatedGasLimit
@@ -694,6 +736,7 @@ export class SignAccountOpController extends EventEmitter {
           userOperation,
           this.accountOp.gasFeePayment.inToken
         )
+
         if (usesPaymaster) {
           this.#addFeePayment()
         } else {
@@ -702,8 +745,11 @@ export class SignAccountOpController extends EventEmitter {
 
         const ambireAccount = new ethers.Interface(AmbireAccount.abi)
         if (usesOneTimeNonce) {
-          const signature = wrapEthSign(
-            await signer.signMessage(ethers.hexlify(accountOpSignableHash(this.accountOp)))
+          const signature = await getExecuteSignature(
+            this.#network,
+            this.accountOp,
+            accountState,
+            signer
           )
           userOperation.callData = ambireAccount.encodeFunctionData('executeMultiple', [
             [[getSignableCalls(this.accountOp), signature]]
@@ -722,7 +768,7 @@ export class SignAccountOpController extends EventEmitter {
               'POST',
               {
                 // send without the requestType prop
-                userOperation: (({ requestType, ...o }) => o)(userOperation),
+                userOperation: (({ requestType, activatorCall, ...o }) => o)(userOperation),
                 paymaster: AMBIRE_PAYMASTER
               }
             )
@@ -736,13 +782,18 @@ export class SignAccountOpController extends EventEmitter {
         }
 
         if (userOperation.requestType === 'standard') {
+          const provider = this.#settings.providers[this.accountOp.networkId]
           const entryPoint: any = new ethers.BaseContract(
             ERC_4337_ENTRYPOINT,
             EntryPointAbi,
             provider
           )
-          const userOpHash = await entryPoint.getUserOpHash(userOperation)
-          const signature = wrapEthSign(await signer.signMessage(userOpHash))
+          const typedData = getTypedData(
+            this.#network.chainId,
+            this.accountOp.accountAddr,
+            await entryPoint.getUserOpHash(userOperation)
+          )
+          const signature = wrapStandard(await signer.signTypedData(typedData))
           userOperation.signature = signature
           this.accountOp.signature = signature
         }
@@ -750,11 +801,12 @@ export class SignAccountOpController extends EventEmitter {
       } else {
         // Relayer
         this.#addFeePayment()
-
-        const message = ethers.hexlify(accountOpSignableHash(this.accountOp))
-        const sig = await signer.signMessage(message)
-
-        this.accountOp.signature = wrapEthSign(sig)
+        this.accountOp.signature = await getExecuteSignature(
+          this.#network,
+          this.accountOp,
+          accountState,
+          signer
+        )
       }
 
       this.status = { type: SigningStatus.Done }
@@ -762,7 +814,6 @@ export class SignAccountOpController extends EventEmitter {
     } catch (error: any) {
       this.#setSigningError(error?.message, SigningStatus.ReadyToSign)
     }
-    // TODO: Now, the UI needs to call mainCtrl.broadcastSignedAccountOp(mainCtrl.signAccountOp.accountOp)
   }
 
   toJSON() {

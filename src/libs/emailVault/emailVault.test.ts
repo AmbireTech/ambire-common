@@ -2,16 +2,19 @@ import { beforeAll, describe, expect, test } from '@jest/globals'
 import fetch from 'node-fetch'
 import { Wallet } from 'ethers'
 
+import { OperationRequestType } from '../../interfaces/emailVault'
 import { relayerCall } from '../relayerCall/relayerCall'
 import { EmailVault } from './emailVault'
 import { requestMagicLink } from '../magicLink/magicLink'
-import { Operation } from '../../interfaces/emailVault'
 
 let email: String
 let email2: String
 
-// Relayer have to be start with NODE_ENV === 'testing' to can retrive the secret
+// @NOTE: this should be changed in future tests. We should have proper e2e tests with email inbox reading. Once done, this isn't needed
+// Relayer has to be start with NODE_ENV === 'testing' to retrive the secret for email vonfirmation
 const relayerUrl = 'https://staging-relayer.ambire.com'
+// const relayerUrl: string = 'http://localhost:1934'
+
 const callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
 const emailVault = new EmailVault(fetch, relayerUrl)
 let authKey: String
@@ -31,7 +34,7 @@ const initEmailVaultTest = async () => {
   const keys2 = await requestMagicLink(email2, relayerUrl, fetch)
   authKey2 = keys2.key
   authSecret2 = keys2.secret!
-  await callRelayer(`/email-vault/confirmationKey/${email}/${authKey}/${authSecret}`)
+  await callRelayer(`/email-vault/confirm-key/${email}/${authKey}/${authSecret}`)
 }
 
 describe('happy cases email vault', () => {
@@ -40,7 +43,7 @@ describe('happy cases email vault', () => {
     const result = await requestMagicLink(email, relayerUrl, fetch)
     authKey = result.key
     authSecret = result.secret!
-    await callRelayer(`/email-vault/confirmationKey/${email}/${authKey}/${authSecret}`)
+    await callRelayer(`/email-vault/confirm-key/${email}/${authKey}/${authSecret}`)
   })
 
   test('create an email vault', async () => {
@@ -87,42 +90,17 @@ describe('happy cases email vault', () => {
     const operations = [
       {
         // id?: string
-        requestType: 'sync data',
+        type: OperationRequestType.requestKeySync,
         requester: 'me',
         key: 'public key'
         // value?: string
-      },
-      {
-        // id?: string
-        requestType: 'sync data2',
-        requester: 'you?',
-        key: 'public key',
-        value: 'value'
-      },
-      {
-        id: 'sike, shoudnt have id',
-        requestType: 'sync data2',
-        requester: 'you?',
-        key: 'public key',
-        value: 'value'
       }
     ]
     const storedOperations = await emailVault.operations(email, authKey, operations)
     expect(storedOperations).toBeTruthy()
-    expect(storedOperations?.length).toBe(2)
-    storedOperations?.forEach((op, i) => {
-      expect(op).toHaveProperty('id')
-      expect(op).toMatchObject(operations[i])
-    })
-    const newOperations = storedOperations?.map((op) => ({ ...op, value: 'new value' }))!
-    const res = await emailVault.operations(email, authKey, newOperations)
-    expect(res).toBeTruthy()
-    expect(res!.length).toBe(2)
-    res!.forEach((op: Operation, i) => {
-      expect(op).toHaveProperty('id')
-      expect(op).toHaveProperty('value', 'new value')
-      expect(op).toMatchObject(newOperations[i])
-    })
+    expect(storedOperations?.length).toBe(1)
+    expect(storedOperations![0]).toHaveProperty('id')
+    expect(storedOperations![0]).toMatchObject(operations[0])
   })
 })
 describe('err cases', () => {
@@ -191,14 +169,14 @@ describe('err cases', () => {
       ).rejects.toHaveProperty(['output', 'res', 'message'], 'missing uid or not a valid address')
     })
     test('vault not created', async () => {
-      await callRelayer(`/email-vault/confirmationKey/${email2}/${authKey2}/${authSecret2}`)
+      await callRelayer(`/email-vault/confirm-key/${email2}/${authKey2}/${authSecret2}`)
 
       await expect(
         emailVault.addKeyStoreSecret(email2, authKey2, '', keyStoreSecret)
       ).rejects.toHaveProperty(['output', 'res', 'message'], 'missing uid or not a valid address')
     })
     test('no secret in body', async () => {
-      await callRelayer(`/email-vault/confirmationKey/${email2}/${authKey2}/${authSecret2}`)
+      await callRelayer(`/email-vault/confirm-key/${email2}/${authKey2}/${authSecret2}`)
 
       await emailVault.getEmailVaultInfo(email2, authKey2)
       await expect(emailVault.addKeyStoreSecret(email2, authKey2, '', '')).rejects.toHaveProperty(
@@ -230,14 +208,14 @@ describe('err cases', () => {
       ).rejects.toHaveProperty(['output', 'res', 'message'], 'invalid key')
     })
     test('vault not created', async () => {
-      await callRelayer(`/email-vault/confirmationKey/${email2}/${authKey2}/${authSecret2}`)
+      await callRelayer(`/email-vault/confirm-key/${email2}/${authKey2}/${authSecret2}`)
 
       await expect(
         emailVault.retrieveKeyStoreSecret(email2, authKey2, recoveryKey)
       ).rejects.toHaveProperty(['output', 'res', 'message'], 'email vault does not exist')
     })
     test('no secret uploaded', async () => {
-      await callRelayer(`/email-vault/confirmationKey/${email2}/${authKey2}/${authSecret2}`)
+      await callRelayer(`/email-vault/confirm-key/${email2}/${authKey2}/${authSecret2}`)
 
       await emailVault.getEmailVaultInfo(email2, authKey2)
       recoveryKey2 = (await emailVault.getRecoveryKeyAddress(email2, authKey2)).key

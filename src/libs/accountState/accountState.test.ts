@@ -126,7 +126,7 @@ describe('AccountState', () => {
       accountErc4337,
       accountEOANonceNonZero
     ]
-    const state: any = await getAccountState(provider, polygon, accounts)
+    const state = await getAccountState(provider, polygon, accounts)
 
     expect(state.length).toBe(6)
 
@@ -134,11 +134,13 @@ describe('AccountState', () => {
     expect(v1Acc.isEOA).toBe(false)
     expect(v1Acc.isV2).toBeFalsy()
     expect(v1Acc.isDeployed).toBeTruthy()
+    expect(v1Acc.currentBlock).toBeGreaterThan(0)
 
     const v2Acc = state[1]
     expect(v2Acc.isV2).toBeTruthy()
     expect(v2Acc.isEOA).toBe(false)
     expect(v2Acc.isDeployed).toBeFalsy()
+    expect(v2Acc.currentBlock).toBeGreaterThan(0)
 
     const eoaAcc = state[2]
     expect(eoaAcc.isEOA).toBe(true)

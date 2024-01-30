@@ -10,19 +10,21 @@ import { Account, AccountId } from '../../interfaces/account'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { RPCProviders } from '../../interfaces/settings'
 import { Storage } from '../../interfaces/storage'
+import { isSmartAccount } from '../../libs/account/account'
 import { AccountOp, isAccountOpsIntentEqual } from '../../libs/accountOp/accountOp'
 import getAccountNetworksWithAssets from '../../libs/portfolio/getNetworksWithAssets'
 import { getFlags } from '../../libs/portfolio/helpers'
 import {
   AccountState,
   AdditionalAccountState,
+  GetOptions,
   Hints,
   PortfolioControllerState,
   PortfolioGetResult
 } from '../../libs/portfolio/interfaces'
-import { GetOptions, Portfolio } from '../../libs/portfolio/portfolio'
+import { Portfolio } from '../../libs/portfolio/portfolio'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
-import EventEmitter from '../eventEmitter'
+import EventEmitter from '../eventEmitter/eventEmitter'
 
 // We already know that `results.tokens` and `result.collections` tokens have a balance (this is handled by the portfolio lib).
 // Based on that, we can easily find out which hint tokens also have a balance.
@@ -216,8 +218,14 @@ export class PortfolioController extends EventEmitter {
     accountOps?: { [key: string]: AccountOp[] },
     opts?: {
       forceUpdate: boolean
+      pinned?: string[]
     }
   ) {
+    // set the additional pinned items if there are any
+    if (opts?.pinned) {
+      this.#pinned = [...this.#pinned, ...opts.pinned]
+    }
+
     // Load storage cached hints
     const storagePreviousHints = await this.#storage.get('previousHints', {})
 
@@ -279,6 +287,11 @@ export class PortfolioController extends EventEmitter {
         this.emitUpdate()
         return true
       } catch (e: any) {
+        this.emitError({
+          level: 'silent',
+          message: e.message,
+          error: e
+        })
         state.isLoading = false
         if (!state.isReady) state.criticalError = e
         else state.errors.push(e)
@@ -319,7 +332,7 @@ export class PortfolioController extends EventEmitter {
 
         const forceUpdate = opts?.forceUpdate || areAccountOpsChanged
 
-        const [isSuccessfulLatestUpdate, isSuccessfulPendingUpdate] = await Promise.all([
+        const [isSuccessfulLatestUpdate] = await Promise.all([
           // Latest state update
           updatePortfolioState(
             accountState,
@@ -348,6 +361,7 @@ export class PortfolioController extends EventEmitter {
                       accountOps: currentAccountOps
                     }
                   }),
+                  isEOA: !isSmartAccount(selectedAccount),
                   pinned: this.#pinned
                 },
                 forceUpdate

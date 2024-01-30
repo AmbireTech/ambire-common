@@ -1,8 +1,9 @@
 import { ethers } from 'ethers'
 
+import { PERMIT_2_ADDRESS } from '../../../consts/addresses'
 import { TypedMessage } from '../../../interfaces/userRequest'
 import { HumanizerTypedMessaageModule, HumanizerVisualization } from '../interfaces'
-import { getAction, getAddress, getDeadlineText, getLabel, getToken } from '../utils'
+import { getAction, getAddress, getDeadline, getLabel, getToken } from '../utils'
 
 // interfaces
 // export interface PermitSingle {
@@ -38,7 +39,6 @@ interface PermitDetails {
   nonce: bigint
 }
 
-const PERMIT_2_ADDRESS = '0x000000000022D473030F116dDEE9F6B43aC78BA3'
 const visualizePermit = (permit: PermitDetails): HumanizerVisualization[] => {
   return [
     getAction('Permit'),
@@ -46,7 +46,7 @@ const visualizePermit = (permit: PermitDetails): HumanizerVisualization[] => {
     getLabel('to use'),
     getToken(permit.token, permit.amount),
     getLabel('for time period'),
-    getDeadlineText(permit.expiration)
+    getDeadline(permit.expiration)
   ]
 }
 
@@ -60,7 +60,7 @@ export const permit2Module: HumanizerTypedMessaageModule = (tm: TypedMessage) =>
       visualizations.push(
         ...visualizePermit(tm.message.details),
         getLabel('this whole signatuere'),
-        getDeadlineText(tm.message.sigDeadline)
+        getDeadline(tm.message.sigDeadline)
       )
     } else if (tm.types?.PermitBatch?.[0]?.type === 'PermitDetails[]') {
       tm.message.details.forEach((permitDetails: PermitDetails, i: number) => {
@@ -69,7 +69,7 @@ export const permit2Module: HumanizerTypedMessaageModule = (tm: TypedMessage) =>
             getLabel(`Permit #${i + 1}`),
             ...visualizePermit(permitDetails),
             getLabel('this whole signatuere'),
-            getDeadlineText(tm.message.sigDeadline) as HumanizerVisualization
+            getDeadline(tm.message.sigDeadline) as HumanizerVisualization
           ]
         )
       })

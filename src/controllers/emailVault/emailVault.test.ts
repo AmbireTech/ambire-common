@@ -7,20 +7,7 @@ import { EmailVaultController } from './emailVault'
 import { Storage } from '../../interfaces/storage'
 import { EmailVault } from '../../libs/emailVault/emailVault'
 import { Key } from '../../interfaces/keystore'
-
-function produceMemoryStore(): Storage {
-  const storage = new Map()
-  return {
-    get: (key: string, defaultValue: any): any => {
-      const serialized = storage.get(key)
-      return Promise.resolve(serialized ? JSON.parse(serialized) : defaultValue)
-    },
-    set: (key: string, value: any) => {
-      storage.set(key, JSON.stringify(value))
-      return Promise.resolve(null)
-    }
-  }
-}
+import { produceMemoryStore } from '../../../test/helpers'
 
 class InternalSigner {
   key
@@ -52,6 +39,7 @@ const getRandomEmail = () => {
 }
 let storage: Storage
 const relayerUrl: string = 'https://staging-relayer.ambire.com'
+// const relayerUrl: string = 'http://localhost:1934'
 let keystore: KeystoreController
 let email: string
 describe('happy cases', () => {
@@ -78,7 +66,7 @@ describe('happy cases', () => {
     const evLib = new EmailVault(fetch, relayerUrl)
     const ev = new EmailVaultController(storage, fetch, relayerUrl, keystore)
     const keys = await requestMagicLink(email, relayerUrl, fetch)
-    await fetch(`${relayerUrl}/email-vault/confirmationKey/${email}/${keys.key}/${keys.secret}`)
+    await fetch(`${relayerUrl}/email-vault/confirm-key/${email}/${keys.key}/${keys.secret}`)
     // createing
     await evLib.getEmailVaultInfo(email, keys.key)
     // not logged in
@@ -117,7 +105,10 @@ describe('happy cases', () => {
     expect(keystore.isUnlocked).toBeTruthy()
   })
 
-  test('request key sync', async () => {
+  // @NOTE this test is supposed to fail because we have a new route for pulling the fulfilled operations
+  // once the staging-relayer is updated we can continue with this.
+  // (updating the staging would break the old version of the controller, we have to migrate both common and relayer at the same time)
+  test('full keystore sync', async () => {
     const [storage2, keystore2] = [
       produceMemoryStore(),
       new KeystoreController(produceMemoryStore(), keystoreSigners)
@@ -138,60 +129,29 @@ describe('happy cases', () => {
     // used to add keystore uid
     await keystore.addSecret('smth', 'secret', '', false)
     await keystore.unlockWithSecret('smth', 'secret')
-    await keystore.addKeys([{ privateKey: keys[0].privateKey }])
-    await keystore.addKeys([{ privateKey: keys[1].privateKey }])
+    await keystore.addKeys([{ privateKey: keys[0].privateKey, dedicatedToOneSA: false }])
+    await keystore.addKeys([{ privateKey: keys[1].privateKey, dedicatedToOneSA: false }])
 
     // ev 2
     const ev2 = new EmailVaultController(storage2, fetch, relayerUrl, keystore2)
     await ev2.getEmailVaultInfo(email)
     await keystore2.addSecret('smth2', 'secret2', '', false)
     await keystore2.unlockWithSecret('smth2', 'secret2')
-    ev2.onUpdate(async () => {
-      if (ev2.emailVaultStates.email[email].operations[0]?.id) {
-        await ev.fulfillSyncRequests(email)
-      }
-    })
+
+    // make two sync requests
     await ev2.requestKeysSync(
       email,
       keys.map((k) => k.address)
     )
-    expect(JSON.parse(ev2.emailVaultStates.email[email].operations[0].value || '{}')).toMatchObject(
-      {
-        privateKey: {
-          iv: expect.anything(),
-          ephemPublicKey: expect.anything(),
-          ciphertext: expect.anything(),
-          mac: expect.anything()
-        }
-      }
+    expect(ev2.emailVaultStates.email[email].operations.length).toBe(2)
+
+    await ev.fulfillSyncRequests(email, 'password')
+    expect(ev.emailVaultStates.email[email].operations.length).toBe(2)
+    await ev2.finalizeSyncKeys(
+      email,
+      keys.map((k) => k.address),
+      'password'
     )
-    expect(JSON.parse(ev2.emailVaultStates.email[email].operations[1].value || '{}')).toMatchObject(
-      {
-        privateKey: {
-          iv: expect.anything(),
-          ephemPublicKey: expect.anything(),
-          ciphertext: expect.anything(),
-          mac: expect.anything()
-        }
-      }
-    )
-    expect(await keystore2.getSigner(keys[0].address, 'internal')).toMatchObject({
-      key: {
-        addr: keys[0].address,
-        type: 'internal',
-        meta: null,
-        isExternallyStored: false
-      },
-      privKey: keys[0].privateKey
-    })
-    expect(await keystore2.getSigner(keys[1].address, 'internal')).toMatchObject({
-      key: {
-        addr: keys[1].address,
-        type: 'internal',
-        meta: null,
-        isExternallyStored: false
-      },
-      privKey: keys[1].privateKey
-    })
+    expect(await keystore2.getKeys().then((d) => d.length)).toBe(2)
   })
 })

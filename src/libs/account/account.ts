@@ -2,20 +2,13 @@ import { ethers, Interface } from 'ethers'
 
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { Account } from '../../interfaces/account'
-import { getPublicKeyIfAny } from '../dkim/getPublicKey'
-import publicKeyToComponents from '../dkim/publicKeyToComponents'
-import {
-  DKIM_VALIDATOR_ADDR,
-  frequentlyUsedSelectors,
-  getSignerKey,
-  knownSelectors,
-  RECOVERY_DEFAULTS
-} from '../dkim/recovery'
+import { DKIM_VALIDATOR_ADDR, getSignerKey, RECOVERY_DEFAULTS } from '../dkim/recovery'
 import { SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET } from '../../consts/derivation'
 import { Key } from '../../interfaces/keystore'
 import { AccountPreferences, KeyPreferences } from '../../interfaces/settings'
 import { KnownAddressLabels } from '../humanizer/interfaces'
 import { getBytecode } from '../proxyDeploy/bytecode'
+import { PrivLevels } from '../proxyDeploy/deploy'
 import { getAmbireAccountAddress } from '../proxyDeploy/getAmbireAddressTwo'
 
 /**
@@ -44,7 +37,10 @@ interface DKIMRecoveryAccInfo {
 
 // returns to, data
 export function getAccountDeployParams(account: Account): [string, string] {
-  if (account.creation === null) throw new Error('tried to get deployment params for an EOA')
+  // for EOAs, we do not throw an error anymore as we need fake
+  // values for the simulation
+  if (account.creation === null) return [ethers.ZeroAddress, '0x']
+
   const factory = new Interface(['function deploy(bytes calldata code, uint256 salt) external'])
   return [
     account.creation.factoryAddr,
@@ -61,19 +57,13 @@ export function getLegacyAccount(key: string): Account {
   }
 }
 
-export async function getSmartAccount(address: string): Promise<Account> {
-  const priv = {
-    addr: address,
-    hash: '0x0000000000000000000000000000000000000000000000000000000000000001'
-  }
-  const bytecode = await getBytecode([priv])
+export async function getSmartAccount(privileges: PrivLevels[]): Promise<Account> {
+  const bytecode = await getBytecode(privileges)
 
   return {
     addr: getAmbireAccountAddress(AMBIRE_ACCOUNT_FACTORY, bytecode),
-    initialPrivileges: [
-      [address, '0x0000000000000000000000000000000000000000000000000000000000000001']
-    ],
-    associatedKeys: [address],
+    initialPrivileges: privileges.map((priv) => [priv.addr, priv.hash]),
+    associatedKeys: privileges.map((priv) => priv.addr),
     creation: {
       factoryAddr: AMBIRE_ACCOUNT_FACTORY,
       bytecode,
@@ -93,7 +83,7 @@ export async function getEmailAccount(
   recoveryInfo: DKIMRecoveryAccInfo,
   associatedKey: string
 ): Promise<Account> {
-  const domain: string = recoveryInfo.emailFrom.split('@')[1]
+  // const domain: string = recoveryInfo.emailFrom.split('@')[1]
 
   // TODO: make getEmailAccount work with cloudflare
 
@@ -161,7 +151,7 @@ export async function getEmailAccount(
   )
   const { hash } = getSignerKey(validatorAddr, validatorData)
   const privileges = [{ addr: associatedKey, hash }]
-  return getSmartAccount(associatedKey)
+  return getSmartAccount(privileges)
 }
 
 export const isAmbireV1LinkedAccount = (factoryAddr?: string) =>
@@ -212,4 +202,13 @@ export const getKnownAddressLabels = (
   })
 
   return knownAddressLabels
+}
+
+export const getDefaultSelectedAccount = (accounts: Account[]) => {
+  if (accounts.length === 0) return null
+
+  const smartAccounts = accounts.filter((acc) => acc.creation)
+  if (smartAccounts.length) return smartAccounts[0]
+
+  return accounts[0]
 }

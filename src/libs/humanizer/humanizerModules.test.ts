@@ -1,15 +1,18 @@
-import fetch from 'node-fetch'
-import { describe, expect, test } from '@jest/globals'
 import { ethers } from 'ethers'
+import fetch from 'node-fetch'
 
-import { ErrorRef } from '../eventEmitter/eventEmitter'
+import { describe, expect, test } from '@jest/globals'
+import { ErrorRef } from '../../controllers/eventEmitter/eventEmitter'
 
+import { FEE_COLLECTOR } from '../../consts/addresses'
+import humanizerInfo from '../../consts/humanizerInfo.json'
 import { AccountOp } from '../accountOp/accountOp'
 import { humanizeCalls, visualizationToText } from './humanizerFuncs'
-import { HumanizerCallModule, HumanizerVisualization, IrCall } from './interfaces'
+import { humanizerCallModules as humanizerModules } from './index'
+import { HumanizerVisualization, IrCall } from './interfaces'
 import { aaveHumanizer } from './modules/Aave'
-import { fallbackHumanizer } from './modules/fallBackHumanizer'
-import { genericErc20Humanizer, genericErc721Humanizer } from './modules/tokens'
+import { privilegeHumanizer } from './modules/privileges'
+import { sushiSwapModule } from './modules/sushiSwapModule'
 import { uniswapHumanizer } from './modules/Uniswap'
 // import { oneInchHumanizer } from './modules/oneInch'
 import { WALLETModule } from './modules/WALLET'
@@ -19,24 +22,7 @@ import { parseCalls } from './parsers'
 import { nameParsing } from './parsers/nameParsing'
 import { tokenParsing } from './parsers/tokenParsing'
 import { getAction, getLabel, getToken } from './utils'
-import { sushiSwapModule } from './modules/sushiSwapModule'
-import { gasTankModule } from './modules/gasTankModule'
 
-const humanizerInfo = require('../../consts/humanizerInfo.json')
-
-const humanizerModules: HumanizerCallModule[] = [
-  genericErc20Humanizer,
-  genericErc721Humanizer,
-  gasTankModule,
-  uniswapHumanizer,
-  wrappingModule,
-  aaveHumanizer,
-  // oneInchHumanizer,
-  WALLETModule,
-  yearnVaultModule,
-  sushiSwapModule,
-  fallbackHumanizer
-]
 const TETHER_ADDRESS = '0xdAC17F958D2ee523a2206206994597C13D831ec7'
 const WETH_ADDRESS = '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2'
 const accountOp: AccountOp = {
@@ -196,7 +182,7 @@ const transactions: { [key: string]: Array<IrCall> } = {
   ],
   gasTank: [
     {
-      to: '0x942f9CE5D9a33a82F88D233AEb3292E680230348',
+      to: FEE_COLLECTOR,
       value: 500000000000000000n,
       data: '0x'
     },
@@ -204,6 +190,23 @@ const transactions: { [key: string]: Array<IrCall> } = {
       to: '0x2791bca1f2de4661ed88a30c99a7a9449aa84174',
       value: 0n,
       data: '0xa9059cbb000000000000000000000000942f9ce5d9a33a82f88d233aeb3292e68023034800000000000000000000000000000000000000000000000000000000000003e8'
+    }
+  ],
+  privileges: [
+    {
+      to: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
+      value: 0n,
+      data: '0x0d5828d40000000000000000000000005ff137d4b0fdcd49dca30c7cf57e578a026d27890000000000000000000000000000000000000000000000000000000000007171'
+    },
+    {
+      to: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
+      value: 0n,
+      data: '0x0d5828d40000000000000000000000006969174FD72466430a46e18234D0b530c9FD5f490000000000000000000000000000000000000000000000000000000000000001'
+    },
+    {
+      to: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
+      value: 0n,
+      data: '0x0d5828d40000000000000000000000006969174FD72466430a46e18234D0b530c9FD5f490000000000000000000000000000000000000000000000000000000000000000'
     }
   ]
 }
@@ -242,7 +245,10 @@ describe('module tests', () => {
       'Approve 0xC92E8bdf79f0507f65a392b0ab4667716BFE0110 (CowSwap) for 33427.0 yDAI',
       'Swap 0.0004 WMATIC for 0.000348830169184669 DAI and send it to 0x6969174FD72466430a46e18234D0b530c9FD5f49 (0x696...f49)',
       'Fuel gas tank with 0.5 ETH',
-      'Fuel gas tank with 0.001 USDC.e'
+      'Fuel gas tank with 0.001 USDC.e',
+      'Enable 0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789 (ERC-4337 Entry Point 0.6.0)',
+      'Update access status of 0x6969174FD72466430a46e18234D0b530c9FD5f49 (0x696...f49) to regular access',
+      'Revoke access of 0x6969174FD72466430a46e18234D0b530c9FD5f49 (0x696...f49)'
     ]
     const allCalls = Object.keys(transactions)
       .map((key: string) => transactions[key])
@@ -293,7 +299,7 @@ describe('module tests', () => {
           type: 'address',
           address: '0x0000000000000000000000000000000000000000'
         },
-        { type: 'label', content: 'already expired' }
+        { type: 'deadline', amount: 1692784103000n }
       ],
       [
         { type: 'action', content: 'Unwrap' },
@@ -326,7 +332,7 @@ describe('module tests', () => {
           type: 'address',
           address: '0xbb6C8c037b9Cc3bF1a4C4188d92e5D86bfCE76A8'
         },
-        { type: 'label', content: 'already expired' }
+        { type: 'deadline', amount: 1692786121000n }
       ],
       [
         { type: 'action', content: 'Swap' },
@@ -346,7 +352,7 @@ describe('module tests', () => {
           type: 'address',
           address: '0xca124B356bf11dc153B886ECB4596B5cb9395C41'
         },
-        { type: 'label', content: 'already expired' }
+        { type: 'deadline', amount: 1692781751000n }
       ],
       [
         { type: 'action', content: 'Swap up to' },
@@ -366,7 +372,7 @@ describe('module tests', () => {
           type: 'address',
           address: '0xbb6C8c037b9Cc3bF1a4C4188d92e5D86bfCE76A8'
         },
-        { type: 'label', content: 'already expired' }
+        { type: 'deadline', amount: 1692784529000n }
       ],
       // problematic one
       [
@@ -390,7 +396,7 @@ describe('module tests', () => {
           address: '0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85',
           amount: 178131n
         },
-        { type: 'label', content: 'already expired' }
+        { type: 'deadline', amount: 1699015475000n }
       ],
       [
         { type: 'action', content: 'Swap' },
@@ -410,7 +416,7 @@ describe('module tests', () => {
           type: 'address',
           address: '0x02a3109c4CE8354Ee771fEaC419B5da04Ef15761'
         },
-        { type: 'label', content: 'already expired' }
+        { type: 'deadline', amount: 1700232005000n }
       ]
     ]
     accountOp.calls = [...transactions.uniV3]
@@ -632,6 +638,49 @@ describe('module tests', () => {
     expect(irCalls.length).toBe(1)
     expectedhumanization.forEach((h: HumanizerVisualization, i: number) => {
       expect(irCalls[0]?.fullVisualization?.[i]).toMatchObject(h)
+    })
+  })
+
+  test('Privilege Humanizer', async () => {
+    const expectedhumanization: HumanizerVisualization[][] = [
+      [
+        { type: 'action', content: 'Enable' },
+        {
+          type: 'address',
+          address: '0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789'
+        }
+      ],
+      [
+        { type: 'action', content: 'Update access status' },
+        { type: 'label', content: 'of' },
+        {
+          type: 'address',
+          address: '0x6969174FD72466430a46e18234D0b530c9FD5f49'
+        },
+        { type: 'label', content: 'to' },
+        {
+          type: 'label',
+          content: 'regular access'
+        }
+      ],
+      [
+        { type: 'action', content: 'Revoke access' },
+        { type: 'label', content: 'of' },
+        {
+          type: 'address',
+          address: '0x6969174FD72466430a46e18234D0b530c9FD5f49'
+        }
+      ]
+    ]
+    accountOp.calls = [...transactions.privileges]
+    let irCalls: IrCall[] = accountOp.calls
+    ;[irCalls] = privilegeHumanizer(accountOp, irCalls)
+
+    expect(irCalls.length).toBe(expectedhumanization.length)
+    expectedhumanization.forEach((callHumanization: HumanizerVisualization[], i: number) => {
+      callHumanization.forEach((h: HumanizerVisualization, j: number) =>
+        expect(irCalls[i]?.fullVisualization?.[j]).toMatchObject(h)
+      )
     })
   })
 })
