@@ -11,12 +11,12 @@ export const uniswapHumanizer: HumanizerCallModule = (
   options?: any
 ) => {
   const matcher: { [x: string]: { [x: string]: (a: AccountOp, c: IrCall) => IrCall[] } } = {
-    '0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D': uniV2Mapping(accountOp.humanizerMeta),
-    '0xE592427A0AEce92De3Edee1F18E0157C05861564': uniV3Mapping(accountOp.humanizerMeta),
+    '0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D': uniV2Mapping(accountOp.humanizerMeta, options),
+    '0xE592427A0AEce92De3Edee1F18E0157C05861564': uniV3Mapping(accountOp.humanizerMeta, options),
     // Mainnet, Goerli, Arbitrum, Optimism, Polygon Address
-    '0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45': uniV32Mapping(accountOp.humanizerMeta),
+    '0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45': uniV32Mapping(accountOp.humanizerMeta, options),
     // same as above line but on on base (https://docs.uniswap.org/contracts/v3/reference/deployments)
-    '0x2626664c2603336E57B271c5C0b26F421741e481': uniV32Mapping(accountOp.humanizerMeta),
+    '0x2626664c2603336E57B271c5C0b26F421741e481': uniV32Mapping(accountOp.humanizerMeta, options),
     // empirical address from wallet txns
     '0x4C60051384bd2d3C01bfc845Cf5F4b44bcbE9de5': uniUniversalRouter(
       accountOp.humanizerMeta,

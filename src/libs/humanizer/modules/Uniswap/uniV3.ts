@@ -1,24 +1,26 @@
 /* eslint-disable no-console */
 import { ethers } from 'ethers'
-import {
-  getAction,
-  getLabel,
-  getToken,
-  getRecipientText,
-  getAddress,
-  getDeadline,
-  getUnknownVisualization
-} from '../../utils'
 
 import { AccountOp } from '../../../accountOp/accountOp'
 import { IrCall } from '../../interfaces'
+import {
+  getAction,
+  getAddress,
+  getDeadline,
+  getLabel,
+  getRecipientText,
+  getToken,
+  getUnknownVisualization
+} from '../../utils'
 import { parsePath } from './utils'
 
 // Stolen from ambire-wallet
 const uniV32Mapping = (
-  humanizerInfo: any
+  humanizerInfo: any,
+  options?: any
 ): { [key: string]: (a: AccountOp, c: IrCall) => IrCall[] } => {
   const ifaceV32 = new ethers.Interface(humanizerInfo?.['abis:UniV3Router2'])
+  const shouldShowDeadline = options?.uniswap?.showDeadline ?? true
   return {
     // uint256 is deadline
     // 0x5ae401dc
@@ -35,12 +37,14 @@ const uniV32Mapping = (
           return humanizer ? humanizer(accountOp, { ...call, data }) : []
         })
         .flat()
-        .map(
-          (newCall: IrCall): IrCall => ({
+        .map((newCall: IrCall): IrCall => {
+          const fullVisualization = [...(newCall.fullVisualization || [])]
+          if (shouldShowDeadline) fullVisualization.push(getDeadline(deadline))
+          return {
             ...newCall,
-            fullVisualization: [...(newCall.fullVisualization || []), getDeadline(deadline)]
-          })
-        )
+            fullVisualization
+          }
+        })
         .filter((x: any) => x)
       return parsed.length
         ? parsed
@@ -335,9 +339,11 @@ const uniV32Mapping = (
 }
 
 const uniV3Mapping = (
-  humanizerInfo: any
+  humanizerInfo: any,
+  options?: any
 ): { [key: string]: (a: AccountOp, c: IrCall) => IrCall[] } => {
   const ifaceV3 = new ethers.Interface(humanizerInfo?.['abis:UniV3Router'])
+  const shouldShowDeadline = options?.uniswap?.showDeadline ?? true
   return {
     // 0xac9650d8
     [ifaceV3.getFunction('multicall')?.selector!]: (
@@ -366,18 +372,21 @@ const uniV3Mapping = (
       call: IrCall
     ): IrCall[] => {
       const [params] = ifaceV3.parseTransaction(call)?.args || []
+      const fullVisualization = [
+        getAction('Swap'),
+        getToken(params.tokenIn, params.amountIn),
+        getLabel('for at least'),
+        getToken(params.tokenOut, params.amountOutMinimum),
+        ...getRecipientText(accountOp.accountAddr, params.recipient)
+      ]
+      if (shouldShowDeadline) {
+        fullVisualization.push(getDeadline(params.deadline))
+      }
       // @TODO: consider fees
       return [
         {
           ...call,
-          fullVisualization: [
-            getAction('Swap'),
-            getToken(params.tokenIn, params.amountIn),
-            getLabel('for at least'),
-            getToken(params.tokenOut, params.amountOutMinimum),
-            ...getRecipientText(accountOp.accountAddr, params.recipient),
-            getDeadline(params.deadline)
-          ]
+          fullVisualization
         }
       ]
     },
@@ -388,17 +397,20 @@ const uniV3Mapping = (
     ): IrCall[] => {
       const [params] = ifaceV3.parseTransaction(call)?.args || []
       const path = parsePath(params.path)
+      const fullVisualization = [
+        getAction('Swap'),
+        getToken(path[0], params.amountIn),
+        getLabel('for at least'),
+        getToken(path[path.length - 1], params.amountOutMinimum),
+        ...getRecipientText(accountOp.accountAddr, params.recipient)
+      ]
+      if (shouldShowDeadline) {
+        fullVisualization.push(getDeadline(params.deadline))
+      }
       return [
         {
           ...call,
-          fullVisualization: [
-            getAction('Swap'),
-            getToken(path[0], params.amountIn),
-            getLabel('for at least'),
-            getToken(path[path.length - 1], params.amountOutMinimum),
-            ...getRecipientText(accountOp.accountAddr, params.recipient),
-            getDeadline(params.deadline)
-          ]
+          fullVisualization
         }
       ]
     },
@@ -408,17 +420,20 @@ const uniV3Mapping = (
       call: IrCall
     ): IrCall[] => {
       const [params] = ifaceV3.parseTransaction(call)?.args || []
+      const fullVisualization = [
+        getAction('Swap up to'),
+        getToken(params.tokenIn, params.amountInMaximum),
+        getLabel('for'),
+        getToken(params.tokenOut, params.amountOut),
+        ...getRecipientText(accountOp.accountAddr, params.recipient)
+      ]
+      if (shouldShowDeadline) {
+        fullVisualization.push(getDeadline(params.deadline))
+      }
       return [
         {
           ...call,
-          fullVisualization: [
-            getAction('Swap up to'),
-            getToken(params.tokenIn, params.amountInMaximum),
-            getLabel('for'),
-            getToken(params.tokenOut, params.amountOut),
-            ...getRecipientText(accountOp.accountAddr, params.recipient),
-            getDeadline(params.deadline)
-          ]
+          fullVisualization
         }
       ]
     },
@@ -429,17 +444,20 @@ const uniV3Mapping = (
     ): IrCall[] => {
       const [params] = ifaceV3.parseTransaction(call)?.args || []
       const path = parsePath(params.path)
+      const fullVisualization = [
+        getAction('Swap up to'),
+        getToken(path[path.length - 1], params.amountInMaximum),
+        getLabel('for'),
+        getToken(path[0], params.amountOut),
+        ...getRecipientText(accountOp.accountAddr, params.recipient)
+      ]
+      if (shouldShowDeadline) {
+        fullVisualization.push(getDeadline(params.deadline))
+      }
       return [
         {
           ...call,
-          fullVisualization: [
-            getAction('Swap up to'),
-            getToken(path[path.length - 1], params.amountInMaximum),
-            getLabel('for'),
-            getToken(path[0], params.amountOut),
-            ...getRecipientText(accountOp.accountAddr, params.recipient),
-            getDeadline(params.deadline)
-          ]
+          fullVisualization
         }
       ]
     },
