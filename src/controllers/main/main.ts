@@ -23,6 +23,7 @@ import {
   getAccountOpBannersForEOA,
   getAccountOpBannersForSmartAccount,
   getMessageBanners,
+  getNetworksWithCriticalPortfolioErrorBanners,
   getNetworksWithFailedRPCBanners,
   getPendingAccountOpBannersForEOA
 } from '../../libs/banners/banners'
@@ -100,7 +101,7 @@ export class MainController extends EventEmitter {
   // @TODO read networks from settings
   accounts: Account[] = []
 
-  selectedAccount: string | null = null
+  selectedAccount: AccountId | null = null
 
   userRequests: UserRequest[] = []
 
@@ -231,6 +232,8 @@ export class MainController extends EventEmitter {
     if (this.selectedAccount) {
       this.activity.init({ filters: { account: this.selectedAccount } })
     }
+
+    this.updateSelectedAccount(this.selectedAccount)
 
     /**
      * Listener that gets triggered as a finalization step of adding new
@@ -1196,6 +1199,11 @@ export class MainController extends EventEmitter {
       networks: this.settings.networks,
       networksWithAssets: this.portfolio.networksWithAssets
     })
+    const networksWithCriticalPortfolioErrorBanners = getNetworksWithCriticalPortfolioErrorBanners({
+      selectedAccount: this.selectedAccount,
+      networks: this.settings.networks,
+      portfolio: this.portfolio
+    })
 
     return [
       ...emailVaultBanners,
@@ -1204,7 +1212,8 @@ export class MainController extends EventEmitter {
       ...pendingAccountOpEOABanners,
       ...messageBanners,
       ...this.activity.banners,
-      ...networksWithFailedRPCBanners
+      ...networksWithFailedRPCBanners,
+      ...networksWithCriticalPortfolioErrorBanners
     ]
   }
 
