@@ -1,6 +1,7 @@
 import { formatUnits, getAddress } from 'ethers'
 import isEmail from 'validator/es/lib/isEmail'
 
+import { TransferControllerState } from '../../interfaces/transfer'
 import { TokenResult } from '../../libs/portfolio'
 import { isValidAddress } from '../address'
 
@@ -50,7 +51,7 @@ const validateSendTransferAddress = (
   selectedAcc: string,
   addressConfirmed: any,
   isRecipientAddressUnknown: boolean,
-  isRecipientSmartContract: boolean,
+  isRecipientHumanizerKnownTokenOrSmartContract: TransferControllerState['isRecipientHumanizerKnownTokenOrSmartContract'],
   isRecipientFeeCollector: boolean,
   isUDAddress: boolean,
   isEnsAddress: boolean,
@@ -66,7 +67,7 @@ const validateSendTransferAddress = (
     }
   }
 
-  if (address && isRecipientSmartContract && !isRecipientFeeCollector) {
+  if (address && isRecipientHumanizerKnownTokenOrSmartContract) {
     return {
       success: false,
       message: 'You are trying to send tokens to a smart contract. Doing so would burn them.'
@@ -146,7 +147,7 @@ const validateSendNftAddress = (
   selectedAcc: any,
   addressConfirmed: any,
   isKnownAddress: any,
-  isRecipientSmartContract: boolean,
+  isRecipientHumanizerKnownTokenOrSmartContract: TransferControllerState['isRecipientHumanizerKnownTokenOrSmartContract'],
   isRecipientFeeCollector: boolean,
   metadata: any,
   selectedNetwork: any,
@@ -160,7 +161,7 @@ const validateSendNftAddress = (
     selectedAcc,
     addressConfirmed,
     isKnownAddress,
-    isRecipientSmartContract,
+    isRecipientHumanizerKnownTokenOrSmartContract,
     isRecipientFeeCollector,
     isUDAddress,
     isEnsAddress,
