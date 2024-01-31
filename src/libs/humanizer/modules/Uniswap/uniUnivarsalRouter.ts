@@ -1,16 +1,17 @@
 import { ethers } from 'ethers'
+
+import { AccountOp } from '../../../accountOp/accountOp'
+import { IrCall } from '../../interfaces'
 import {
   getAction,
+  getAddress,
   getDeadline,
   getLabel,
   getRecipientText,
   getToken,
-  getWraping,
-  getAddress,
-  getUnknownVisualization
+  getUnknownVisualization,
+  getWraping
 } from '../../utils'
-import { AccountOp } from '../../../accountOp/accountOp'
-import { IrCall } from '../../interfaces'
 import { COMMANDS, COMMANDS_DESCRIPTIONS } from './Commands'
 import { parsePath } from './utils'
 
@@ -53,6 +54,7 @@ export const uniUniversalRouter = (
   options?: any
 ): { [x: string]: (a: AccountOp, c: IrCall) => IrCall[] } => {
   const ifaceUniversalRouter = new ethers.Interface(humanizerInfo?.['abis:UniswapUniversalRouter'])
+  const shouldShowDeadline = options?.uniswap?.showDeadline ?? true
   return {
     [`${
       ifaceUniversalRouter.getFunction(
@@ -71,30 +73,37 @@ export const uniUniversalRouter = (
               const { inputsDetails } = COMMANDS_DESCRIPTIONS.V3_SWAP_EXACT_IN
               const params = extractParams(inputsDetails, inputs[index])
               const path = parsePath(params.path)
+              const fullVisualization = [
+                getAction('Swap'),
+                getToken(path[0], params.amountIn),
+                getLabel('for at least'),
+                getToken(path[path.length - 1], params.amountOutMin)
+              ]
+              if (shouldShowDeadline) {
+                fullVisualization.push(getDeadline(deadline))
+              }
+
               parsed.push({
                 ...call,
-                fullVisualization: [
-                  getAction('Swap'),
-                  getToken(path[0], params.amountIn),
-                  getLabel('for at least'),
-                  getToken(path[path.length - 1], params.amountOutMin),
-                  getDeadline(deadline)
-                ]
+                fullVisualization
               })
             } else if (command === COMMANDS.V3_SWAP_EXACT_OUT) {
               const { inputsDetails } = COMMANDS_DESCRIPTIONS.V3_SWAP_EXACT_OUT
               const params = extractParams(inputsDetails, inputs[index])
               const path = parsePath(params.path)
+              const fullVisualization = [
+                getAction('Swap up  to'),
+                getToken(path[path.length - 1], params.amountInMax),
+                getLabel('for'),
+                getToken(path[0], params.amountOut)
+              ]
+              if (shouldShowDeadline) {
+                fullVisualization.push(getDeadline(deadline))
+              }
 
               parsed.push({
                 ...call,
-                fullVisualization: [
-                  getAction('Swap up  to'),
-                  getToken(path[path.length - 1], params.amountInMax),
-                  getLabel('for'),
-                  getToken(path[0], params.amountOut),
-                  getDeadline(deadline)
-                ]
+                fullVisualization
               })
             } else if (command === COMMANDS.SWEEP) {
               // @NOTE: no need to be displayed, generally uses sentinel values
@@ -143,31 +152,37 @@ export const uniUniversalRouter = (
               const { inputsDetails } = COMMANDS_DESCRIPTIONS.V2_SWAP_EXACT_IN
               const params = extractParams(inputsDetails, inputs[index])
               const path = params.path
+              const fullVisualization = [
+                getAction('Swap'),
+                getToken(path[0], params.amountIn),
+                getLabel('for at least'),
+                getToken(path[path.length - 1], params.amountOutMin)
+              ]
+              if (shouldShowDeadline) {
+                fullVisualization.push(getDeadline(deadline))
+              }
 
               parsed.push({
                 ...call,
-                fullVisualization: [
-                  getAction('Swap'),
-                  getToken(path[0], params.amountIn),
-                  getLabel('for at least'),
-                  getToken(path[path.length - 1], params.amountOutMin),
-                  getDeadline(deadline)
-                ]
+                fullVisualization
               })
             } else if (command === COMMANDS.V2_SWAP_EXACT_OUT) {
               const { inputsDetails } = COMMANDS_DESCRIPTIONS.V2_SWAP_EXACT_OUT
               const params = extractParams(inputsDetails, inputs[index])
               const path = params.path
+              const fullVisualization = [
+                getAction('Swap up  to'),
+                getToken(path[0], params.amountInMax),
+                getLabel('for'),
+                getToken(path[path.length - 1], params.amountOut)
+              ]
+              if (shouldShowDeadline) {
+                fullVisualization.push(getDeadline(deadline))
+              }
 
               parsed.push({
                 ...call,
-                fullVisualization: [
-                  getAction('Swap up  to'),
-                  getToken(path[0], params.amountInMax),
-                  getLabel('for'),
-                  getToken(path[path.length - 1], params.amountOut),
-                  getDeadline(deadline)
-                ]
+                fullVisualization
               })
             } else if (command === COMMANDS.PERMIT2_PERMIT) {
               parsed.push({
