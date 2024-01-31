@@ -3,6 +3,7 @@ import fetch from 'node-fetch'
 
 import { expect } from '@jest/globals'
 
+import { FEE_COLLECTOR } from '../../consts/addresses'
 import { humanizerInfo } from '../../consts/ambireConstants.json'
 import { networks } from '../../consts/networks'
 import { Portfolio } from '../../libs/portfolio'
@@ -214,6 +215,13 @@ describe('Transfer Controller', () => {
       PLACEHOLDER_RECIPIENT_LOWERCASE
     )
     expect(transferController.userRequest?.action.value).toBe(1000000000000000000n)
+  })
+
+  test('should detect that the recipient is the fee collector', () => {
+    transferController.update({ recipientAddress: FEE_COLLECTOR })
+
+    expect(transferController.isRecipientSmartContract).toBeTruthy()
+    expect(transferController.isRecipientFeeCollector).toBeTruthy()
   })
 
   const checkResetForm = () => {
