@@ -347,7 +347,7 @@ export class TransferController extends EventEmitter {
     }
 
     this.isRecipientFeeCollector = address === FEE_COLLECTOR
-    this.isRecipientAddressUnknown = true // @TODO: isValidAddress & check from the address book
+    this.isRecipientAddressUnknown = !this.isRecipientFeeCollector // @TODO: isValidAddress & check from the address book
     this.isRecipientDomainResolving = false
 
     this.emitUpdate()
