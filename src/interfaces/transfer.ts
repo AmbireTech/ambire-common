@@ -44,4 +44,6 @@ export interface TransferControllerState {
   }
 
   isFormValid: boolean
+
+  isTopUp: boolean
 }

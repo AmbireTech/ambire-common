@@ -12,20 +12,16 @@ contract Spoof {
     IAmbireAccount account,
     address[] memory associatedKeys
   ) public returns (bytes memory spoofSig) {
-    require(associatedKeys.length > 0, 'SV_NO_KEYS');
-
-    bytes32[] memory associatedKeyPrivileges = new bytes32[](associatedKeys.length);
+    require(associatedKeys.length > 0, 'BalanceGetter: no keys');
 
     for (uint i = 0; i != associatedKeys.length; i++) {
       address key = associatedKeys[i];
       bytes32 value = account.privileges(key);
-      associatedKeyPrivileges[i] = value;
-      if (value != bytes32(0) && spoofSig.length == 0) {
-        spoofSig = makeSpoofSignature(key);
-        break;
+      if (value != bytes32(0)) {
+        return makeSpoofSignature(key);
       }
     }
 
-    require(spoofSig.length > 0, 'SV_WRONG_KEYS');
+    revert('BalanceGetter: wrong keys');
   }
 }

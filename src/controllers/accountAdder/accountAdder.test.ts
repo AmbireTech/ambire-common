@@ -27,6 +27,9 @@ const key1PublicAddress = '0x9188fdd757Df66B4F693D624Ed6A13a15Cf717D7'
 const legacyAccount: Account = {
   addr: key1PublicAddress,
   associatedKeys: [key1PublicAddress],
+  initialPrivileges: [
+    [key1PublicAddress, '0x0000000000000000000000000000000000000000000000000000000000000001']
+  ],
   creation: null
 }
 

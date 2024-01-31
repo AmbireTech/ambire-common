@@ -3,6 +3,7 @@ import fetch from 'node-fetch'
 
 import { describe, expect, jest, test } from '@jest/globals'
 
+import { Account } from 'interfaces/account'
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import { networks } from '../../consts/networks'
 import { AccountOp } from '../accountOp/accountOp'
@@ -66,6 +67,7 @@ describe('Portfolio', () => {
     }
     const account = {
       addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      initialPrivileges: [],
       associatedKeys: ['0xe5a4Dad2Ea987215460379Ab285DF87136E83BEA'],
       creation: {
         factoryAddr: '0xBf07a0Df119Ca234634588fbDb5625594E2a5BCA',
@@ -116,6 +118,7 @@ describe('Portfolio', () => {
     }
     const account = {
       addr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
+      initialPrivileges: [],
       associatedKeys: ['0x5Be214147EA1AE3653f289E17fE7Dc17A73AD175'],
       creation: {
         factoryAddr: '0xBf07a0Df119Ca234634588fbDb5625594E2a5BCA',
@@ -212,7 +215,7 @@ describe('Portfolio', () => {
         }
       ]
     }
-    const account = {
+    const account: Account = {
       addr: acc,
       associatedKeys: [acc],
       creation: {
@@ -221,7 +224,8 @@ describe('Portfolio', () => {
         bytecode:
           '0x7f00000000000000000000000000000000000000000000000000000000000000017f02c94ba85f2ea274a3869293a0a9bf447d073c83c617963b0be7c862ec2ee44e553d602d80604d3d3981f3363d3d373d3d3d363d732a2b85eb1054d6f0c6c2e37da05ed3e5fea684ef5af43d82803e903d91602b57fd5bf3',
         salt: '0x2ee01d932ede47b0b2fb1b6af48868de9f86bfc9a5be2f0b42c0111cf261d04c'
-      }
+      },
+      initialPrivileges: []
     }
     const postSimulation = await portfolio.get(acc, {
       simulation: { accountOps: [accountOp], account },
@@ -252,7 +256,7 @@ describe('Portfolio', () => {
         }
       ]
     }
-    const account = {
+    const account: Account = {
       addr: acc,
       associatedKeys: [],
       creation: {
@@ -261,7 +265,8 @@ describe('Portfolio', () => {
         bytecode:
           '0x7f00000000000000000000000000000000000000000000000000000000000000017f02c94ba85f2ea274a3869293a0a9bf447d073c83c617963b0be7c862ec2ee44e553d602d80604d3d3981f3363d3d373d3d3d363d732a2b85eb1054d6f0c6c2e37da05ed3e5fea684ef5af43d82803e903d91602b57fd5bf3',
         salt: '0x2ee01d932ede47b0b2fb1b6af48868de9f86bfc9a5be2f0b42c0111cf261d04c'
-      }
+      },
+      initialPrivileges: []
     }
 
     try {
@@ -270,7 +275,7 @@ describe('Portfolio', () => {
         isEOA: true
       })
     } catch (e: any) {
-      expect(e.message).toBe('simulation error: SV_NO_KEYS')
+      expect(e.message).toBe('simulation error: BalanceGetter: no keys')
     }
   })
 
@@ -292,7 +297,7 @@ describe('Portfolio', () => {
         }
       ]
     }
-    const account = {
+    const account: Account = {
       addr: acc,
       associatedKeys: ['0xdAC17F958D2ee523a2206206994597C13D831ec7'],
       creation: {
@@ -301,7 +306,8 @@ describe('Portfolio', () => {
         bytecode:
           '0x7f00000000000000000000000000000000000000000000000000000000000000017f02c94ba85f2ea274a3869293a0a9bf447d073c83c617963b0be7c862ec2ee44e553d602d80604d3d3981f3363d3d373d3d3d363d732a2b85eb1054d6f0c6c2e37da05ed3e5fea684ef5af43d82803e903d91602b57fd5bf3',
         salt: '0x2ee01d932ede47b0b2fb1b6af48868de9f86bfc9a5be2f0b42c0111cf261d04c'
-      }
+      },
+      initialPrivileges: []
     }
 
     try {
@@ -310,7 +316,7 @@ describe('Portfolio', () => {
         isEOA: true
       })
     } catch (e: any) {
-      expect(e.message).toBe('simulation error: SV_WRONG_KEYS')
+      expect(e.message).toBe('simulation error: BalanceGetter: wrong keys')
     }
   })
 })

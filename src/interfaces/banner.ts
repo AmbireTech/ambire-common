@@ -8,6 +8,7 @@ export type BannerTopic = 'TRANSACTION' | 'ANNOUNCEMENT' | 'WARNING'
 
 export interface Banner {
   id: number | string
+  accountAddr?: string
   topic: BannerTopic
   title: string
   text: string
@@ -28,6 +29,14 @@ export type Action =
       meta: {
         ids: number[]
         err: string
+      }
+    }
+  | {
+      label: 'Sync'
+      actionName: 'sync-keys'
+      meta: {
+        email: string
+        keys: string[]
       }
     }
   | {

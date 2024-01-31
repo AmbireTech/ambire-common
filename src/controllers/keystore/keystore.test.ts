@@ -1,9 +1,11 @@
+/* eslint-disable @typescript-eslint/no-floating-promises */
 /* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable class-methods-use-this */
 /* eslint-disable @typescript-eslint/no-useless-constructor */
 /* eslint-disable max-classes-per-file */
 
-import { Wallet } from 'ethers'
+import { Encrypted } from 'eth-crypto'
+import { ethers, Wallet } from 'ethers'
 
 import { describe, expect, test } from '@jest/globals'
 
@@ -58,6 +60,8 @@ class LedgerSigner {
 let keystore: KeystoreController
 const pass = 'hoiHoi'
 const keystoreSigners = { internal: InternalSigner, ledger: LedgerSigner }
+const seedPhrase =
+  'brisk rich glide impose category stuff company you appear remain decorate monkey'
 const privKey = '207d56b2f2b06fd9c74562ec81f42d47393a55cfcf5c182605220ad7fdfbe600'
 const keyPublicAddress = '0xB6C923c6586eDb44fc4CC0AE4F60869271e75407'
 
@@ -352,6 +356,61 @@ describe('KeystoreController', () => {
 
   test('should return uid', async () => {
     const keystoreUid = await keystore.getKeyStoreUid()
-    expect(keystoreUid.length).toBe(32)
+    expect(keystoreUid.length).toBe(128)
+  })
+})
+
+describe('import/export with pub key test', () => {
+  const label = 'new key'
+  const wallet = ethers.Wallet.createRandom()
+  let keystore2: KeystoreController
+  let uid2: string
+
+  beforeEach(async () => {
+    keystore = new KeystoreController(produceMemoryStore(), keystoreSigners)
+    keystore2 = new KeystoreController(produceMemoryStore(), keystoreSigners)
+
+    await keystore2.addSecret('123', '123', '', false)
+    await keystore2.unlockWithSecret('123', '123')
+    uid2 = await keystore2.getKeyStoreUid()
+
+    await keystore.addSecret('a', 'b', '', false)
+    await keystore.unlockWithSecret('a', 'b')
+  })
+
+  test('import Key With Public Key Encryption', (done) => {
+    let exported: Encrypted
+    const unsubscribe = keystore.onUpdate(async () => {
+      if (keystore.latestMethodCall === 'addKeys' && keystore.status === 'DONE') {
+        expect(keystore.keys[0]).toMatchObject({ addr: wallet.address, type: 'internal' })
+
+        exported = await keystore.exportKeyWithPublicKeyEncryption(wallet.address, uid2)
+        await keystore2.importKeyWithPublicKeyEncryption(exported, true)
+        unsubscribe()
+      }
+    })
+    const getImportedKeyOnUpdate = () => {
+      // eslint-disable-next-line @typescript-eslint/no-floating-promises
+      keystore2.getSigner(wallet.address, 'internal').then((signer) => {
+        expect(signer).toMatchObject({
+          key: {
+            addr: wallet.address,
+            isExternallyStored: false,
+            // label,
+            type: 'internal',
+            meta: null
+          },
+          privKey: wallet.privateKey.slice(2)
+        })
+        done()
+      })
+    }
+    const unsubscribe2 = keystore2.onUpdate(async () => {
+      if (exported && keystore2.latestMethodCall === 'addKeys' && keystore2.status === 'DONE') {
+        getImportedKeyOnUpdate()
+        unsubscribe2()
+      }
+    })
+    keystore.addKeys([{ privateKey: wallet.privateKey.slice(2), dedicatedToOneSA: true }])
   })
 })
