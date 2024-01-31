@@ -223,6 +223,7 @@ describe('Transfer Controller', () => {
 
     expect(transferController.isRecipientSmartContract).toBeTruthy()
     expect(transferController.isRecipientFeeCollector).toBeTruthy()
+    expect(transferController.isRecipientAddressUnknown).toBeFalsy()
   })
 
   const checkResetForm = () => {
