@@ -12,7 +12,7 @@ contract Spoof {
     IAmbireAccount account,
     address[] memory associatedKeys
   ) public returns (bytes memory spoofSig) {
-    require(associatedKeys.length > 0, 'BalanceGetter: no keys');
+    require(associatedKeys.length > 0, 'Spoof failed: no keys');
 
     for (uint i = 0; i != associatedKeys.length; i++) {
       address key = associatedKeys[i];
@@ -22,6 +22,6 @@ contract Spoof {
       }
     }
 
-    revert('BalanceGetter: wrong keys');
+    revert('Spoof failed: wrong keys');
   }
 }

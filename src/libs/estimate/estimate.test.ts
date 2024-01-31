@@ -1,6 +1,6 @@
 /* eslint no-console: "off" */
 
-import { AbiCoder, JsonRpcProvider } from 'ethers'
+import { AbiCoder, ethers, JsonRpcProvider } from 'ethers'
 import { AccountOp } from 'libs/accountOp/accountOp'
 import fetch from 'node-fetch'
 
@@ -22,11 +22,13 @@ const ethereum = networks.find((x) => x.id === 'ethereum')
 const optimism = networks.find((x) => x.id === 'optimism')
 const arbitrum = networks.find((x) => x.id === 'arbitrum')
 const avalanche = networks.find((x) => x.id === 'avalanche')
-if (!ethereum || !optimism || !arbitrum || !avalanche) throw new Error('no network')
+const polygon = networks.find((x) => x.id === 'polygon')
+if (!ethereum || !optimism || !arbitrum || !avalanche || !polygon) throw new Error('no network')
 const provider = new JsonRpcProvider(ethereum.rpcUrl)
 const providerOptimism = new JsonRpcProvider(optimism.rpcUrl)
 const providerArbitrum = new JsonRpcProvider(arbitrum.rpcUrl)
 const providerAvalanche = new JsonRpcProvider(avalanche.rpcUrl)
+const providerPolygon = new JsonRpcProvider(polygon.rpcUrl)
 
 const account: Account = {
   addr: '0xa07D75aacEFd11b425AF7181958F0F85c312f143',
@@ -47,6 +49,7 @@ const account: Account = {
 const to = '0x68b3465833fb72a70ecdf485e0e4c7bd8665fc45'
 
 const tomorrowHex = Math.floor((Date.now() + 86400000) / 1000).toString(16)
+const yesterdayHex = Math.floor((Date.now() - 86400000) / 1000).toString(16)
 // 64 chars expire hex
 // we set swap deadline always for tomorrow, in order to prevent the test failure with 'TRANSACTION TOO OLD'
 const expire = '0'.repeat(64 - tomorrowHex.length) + tomorrowHex
@@ -54,6 +57,9 @@ const expire = '0'.repeat(64 - tomorrowHex.length) + tomorrowHex
 // USDC -> USDT swap
 // Fee tokens: USDC, USDT
 const data = `0x5ae401dc${expire}00000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000e404e45aaf000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48000000000000000000000000dac17f958d2ee523a2206206994597c13d831ec700000000000000000000000000000000000000000000000000000000000001f4000000000000000000000000a07d75aacefd11b425af7181958f0f85c312f14300000000000000000000000000000000000000000000000000000000000f424000000000000000000000000000000000000000000000000000000000000c33d9000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000`
+
+const expired = '0'.repeat(64 - yesterdayHex.length) + yesterdayHex
+const expiredData = `0x5ae401dc${expired}00000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000e404e45aaf000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48000000000000000000000000dac17f958d2ee523a2206206994597c13d831ec700000000000000000000000000000000000000000000000000000000000001f4000000000000000000000000a07d75aacefd11b425af7181958f0f85c312f14300000000000000000000000000000000000000000000000000000000000f424000000000000000000000000000000000000000000000000000000000000c33d9000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000`
 
 const SPOOF_SIGTYPE = '03'
 const spoofSig =
@@ -345,19 +351,6 @@ describe('estimate', () => {
   })
 
   it('estimates an arbitrum request', async () => {
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const accountArbitrum: Account = {
-      addr: '0x4AA524DDa82630cE769e5C9d7ec7a45B94a41bc6',
-      associatedKeys: ['0x141A14B5C4dbA2aC7a7943E02eDFE2E7eDfdA28F'],
-      creation: {
-        factoryAddr: '0xa8202f888b9b2dfa5ceb2204865018133f6f179a',
-        bytecode:
-          '0x7f00000000000000000000000000000000000000000000000000000000000000027fa70e7c3e588683d0493e3cad10209993d632b6631bc4637b53a4174bad869718553d602d80604d3d3981f3363d3d373d3d3d363d730e370942ebe4d026d05d2cf477ff386338fc415a5af43d82803e903d91602b57fd5bf3',
-        salt: '0x0000000000000000000000000000000000000000000000000000000000000000'
-      },
-      initialPrivileges: []
-    }
-
     const opArbitrum = {
       accountAddr: smartAccountv2eip712.addr,
       signingKeyAddr: smartAccountv2eip712.associatedKeys[0],
@@ -419,17 +412,17 @@ describe('estimate', () => {
     )
   })
 
-  it('estimates a 4337 request on the avalanche chain with an initCode and 4337 activator', async () => {
+  it('estimates a 4337 request on the avalanche chain with an initCode and 4337 activator that results in a good erc-4337 estimation but a failure in the calls as the account does not have any funds', async () => {
     const opAvalanche: AccountOp = {
       accountAddr: trezorSlot6v2NotDeployed.addr,
       signingKeyAddr: trezorSlot6v2NotDeployed.associatedKeys[0],
       signingKeyType: null,
       gasLimit: null,
       gasFeePayment: null,
-      networkId: 'avalanche',
+      networkId: avalanche.id,
       nonce: 0n,
       signature: '0x',
-      calls: [{ to, value: BigInt(100000000000), data: '0x' }],
+      calls: [{ to: account.addr, value: BigInt(100000000000), data: '0x' }],
       accountOpToExecuteBefore: null
     }
     const accountStates = await getAccountsInfo([trezorSlot6v2NotDeployed])
@@ -469,6 +462,13 @@ describe('estimate', () => {
       // no basic acc payment
       expect(opt.paidBy).toBe(trezorSlot6v2NotDeployed.addr)
     })
+
+    // because the account does not have any funds, the call should result in a failure
+    // and execution should be stopped
+    expect(response.error).not.toBe(null)
+    expect(response.error?.message).toBe(
+      `Estimation failed for ${opAvalanche.accountAddr} on ${opAvalanche.networkId}`
+    )
   })
 
   it('estimates a 4337 request on the avalanche chain with a deployed account paying in native', async () => {
@@ -521,5 +521,94 @@ describe('estimate', () => {
       // no basic acc payment
       expect(opt.paidBy).toBe(trezorSlot7v24337Deployed.addr)
     })
+
+    expect(response.error).toBe(null)
+  })
+
+  it('estimates a polygon request with insufficient funds for txn and estimation should fail with estimation failed', async () => {
+    const opPolygonFailBzNoFunds: AccountOp = {
+      accountAddr: smartAccountv2eip712.addr,
+      signingKeyAddr: smartAccountv2eip712.associatedKeys[0],
+      signingKeyType: null,
+      gasLimit: null,
+      gasFeePayment: null,
+      networkId: polygon.id,
+      nonce: 1n,
+      signature: '0x',
+      calls: [{ to: trezorSlot6v2NotDeployed.addr, value: ethers.parseEther('10'), data: '0x' }],
+      accountOpToExecuteBefore: null
+    }
+    const accountStates = await getAccountsInfo([smartAccountv2eip712])
+
+    const response = await estimate(
+      providerPolygon,
+      polygon,
+      smartAccountv2eip712,
+      opPolygonFailBzNoFunds,
+      accountStates[smartAccountv2eip712.addr][polygon.id],
+      nativeToCheck,
+      feeTokens
+    )
+    expect(response.error).not.toBe(null)
+    expect(response.error?.message).toBe(
+      `Estimation failed for ${opPolygonFailBzNoFunds.accountAddr} on ${opPolygonFailBzNoFunds.networkId}`
+    )
+  })
+
+  it('estimates a polygon request with wrong signer and estimation should fail with insufficient privileges', async () => {
+    const opPolygonFailBzNoFunds: AccountOp = {
+      accountAddr: smartAccountv2eip712.addr,
+      signingKeyAddr: trezorSlot6v2NotDeployed.associatedKeys[0],
+      signingKeyType: null,
+      gasLimit: null,
+      gasFeePayment: null,
+      networkId: polygon.id,
+      nonce: 1n,
+      signature: '0x',
+      calls: [{ to: trezorSlot6v2NotDeployed.addr, value: 100000n, data: '0x' }],
+      accountOpToExecuteBefore: null
+    }
+    const accountStates = await getAccountsInfo([smartAccountv2eip712])
+
+    const response = await estimate(
+      providerPolygon,
+      polygon,
+      { ...smartAccountv2eip712, associatedKeys: [trezorSlot6v2NotDeployed.associatedKeys[0]] },
+      opPolygonFailBzNoFunds,
+      accountStates[smartAccountv2eip712.addr][polygon.id],
+      nativeToCheck,
+      feeTokens
+    )
+    expect(response.error).not.toBe(null)
+    expect(response.error?.message).toBe('Your signer address is not authorized')
+  })
+
+  it('estimates an expired uniswap swap and it should display error properly', async () => {
+    const op = {
+      accountAddr: account.addr,
+      signingKeyAddr: null,
+      signingKeyType: null,
+      gasLimit: null,
+      gasFeePayment: null,
+      networkId: 'ethereum',
+      nonce: 1n,
+      signature: '0x',
+      calls: [{ to, value: BigInt(0), data: expiredData }],
+      accountOpToExecuteBefore: null
+    }
+
+    const accountStates = await getAccountsInfo([account])
+    const response = await estimate(
+      provider,
+      ethereum,
+      account,
+      op,
+      accountStates[account.addr][ethereum.id],
+      nativeToCheck,
+      feeTokens
+    )
+
+    expect(response.error).not.toBe(null)
+    expect(response.error?.message).toBe('Swap expired')
   })
 })

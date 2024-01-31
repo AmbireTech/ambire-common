@@ -1,5 +1,7 @@
 /* eslint-disable no-nested-ternary */
 import { ethers } from 'ethers'
+
+import { MAX_UINT256 } from '../../../consts/deploy'
 import { networks } from '../../../consts/networks'
 import {
   HumanizerFragment,
@@ -8,7 +10,6 @@ import {
   HumanizerVisualization
 } from '../interfaces'
 import { getLabel, getTokenInfo } from '../utils'
-import { MAX_UINT256 } from '../../../consts/deploy'
 
 export const tokenParsing: HumanizerParsingModule = (
   humanizerSettings: HumanizerSettings,

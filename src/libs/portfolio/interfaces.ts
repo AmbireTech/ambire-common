@@ -68,14 +68,18 @@ export interface Hints {
   error?: string
 }
 
+interface ExtendedError extends Error {
+  simulationErrorMsg?: string
+}
+
 export type AccountState = {
   // network id
   [key: string]:
     | {
         isReady: boolean
         isLoading: boolean
-        criticalError?: Error
-        errors: Error[]
+        criticalError?: ExtendedError
+        errors: ExtendedError[]
         result?: PortfolioGetResult
         // We store the previously simulated AccountOps only for the pending state.
         // Prior to triggering a pending state update, we compare the newly passed AccountOp[] (updateSelectedAccount) with the cached version.
