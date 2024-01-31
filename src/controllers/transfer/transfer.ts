@@ -6,7 +6,7 @@ import { FEE_COLLECTOR } from '../../consts/addresses'
 import { networks } from '../../consts/networks'
 import { UserRequest } from '../../interfaces/userRequest'
 import { TokenResult } from '../../libs/portfolio'
-import { isKnownTokenOrContract } from '../../services/address'
+import { isHumanizerKnownTokenOrSmartContract } from '../../services/address'
 import { getBip44Items, resolveENSDomain } from '../../services/ensDomains'
 import { resolveUDomain } from '../../services/unstoppableDomains'
 import { validateSendTransferAddress, validateSendTransferAmount } from '../../services/validations'
@@ -339,7 +339,10 @@ export class TransferController extends EventEmitter {
     }
     if (this.#humanizerInfo) {
       // @TODO: could fetch address code
-      this.isRecipientSmartContract = isKnownTokenOrContract(this.#humanizerInfo, address)
+      this.isRecipientSmartContract = isHumanizerKnownTokenOrSmartContract(
+        this.#humanizerInfo,
+        address
+      )
     }
 
     if (this.recipientUDAddress || this.recipientEnsAddress) {
