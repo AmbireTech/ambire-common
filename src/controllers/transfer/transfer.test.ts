@@ -217,8 +217,9 @@ describe('Transfer Controller', () => {
     expect(transferController.userRequest?.action.value).toBe(1000000000000000000n)
   })
 
-  test('should detect that the recipient is the fee collector', () => {
+  test('should detect that the recipient is the fee collector', async () => {
     transferController.update({ recipientAddress: FEE_COLLECTOR })
+    await transferController.onRecipientAddressChange()
 
     expect(transferController.isRecipientSmartContract).toBeTruthy()
     expect(transferController.isRecipientFeeCollector).toBeTruthy()
