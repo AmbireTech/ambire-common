@@ -82,7 +82,7 @@ export class Portfolio {
 
   async get(accountAddr: string, opts: Partial<GetOptions> = {}): Promise<PortfolioGetResult> {
     const localOpts = { ...defaultOptions, ...opts }
-    const { baseCurrency, pinned } = localOpts
+    const { baseCurrency, pinned = [] } = localOpts
     if (localOpts.simulation && localOpts.simulation.account.addr !== accountAddr)
       throw new Error('wrong account passed')
 
@@ -120,7 +120,7 @@ export class Portfolio {
 
     // add pinned tokens to the hints and dedup
     // Those will appear in the result even if they're zero amount
-    hints.erc20s = [...new Set([...hints.erc20s, ...pinned!])]
+    hints.erc20s = [...new Set([...hints.erc20s, ...pinned.map((x) => x.address)])]
 
     // This also allows getting prices, this is used for more exotic tokens that cannot be retrieved via Coingecko
     const priceCache: PriceCache = localOpts.priceCache || new Map()
@@ -163,7 +163,13 @@ export class Portfolio {
     }
 
     const tokenFilter = ([error, result]: [string, TokenResult]): boolean =>
-      (result.amount > 0 || pinned!.includes(result.address)) &&
+      (result.amount > 0 ||
+        !!pinned.find((pinnedToken) => {
+          // Pinned tokens from the humanizer don't have a networkId
+          if (pinnedToken.networkId === null) return pinnedToken.address === result.address
+
+          return pinnedToken.networkId === networkId && pinnedToken.address === result.address
+        })) &&
       error === '0x' &&
       result.symbol !== ''
 

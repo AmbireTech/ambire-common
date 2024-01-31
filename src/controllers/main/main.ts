@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/brace-style */
 import { ethers, isAddress, TransactionResponse } from 'ethers'
 import { NetworkPreference, NetworkPreferences } from 'interfaces/settings'
+import { PinnedTokens } from 'libs/portfolio/interfaces'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFactory.json'
@@ -173,7 +174,7 @@ export class MainController extends EventEmitter {
     onRejectDappRequest: (err: any, id?: number) => void
     onUpdateDappSelectedAccount: (accountAddr: string) => void
     onBroadcastSuccess?: (type: 'message' | 'typed-data' | 'account-op') => void
-    pinned: string[]
+    pinned: PinnedTokens
   }) {
     super()
     this.#storage = storage
@@ -791,7 +792,13 @@ export class MainController extends EventEmitter {
     )
     const addresses = humanization
       .map((call) =>
-        !call.fullVisualization ? '' : call.fullVisualization.map((vis) => vis.address ?? '')
+        !call.fullVisualization
+          ? []
+          : call.fullVisualization.map((vis) => ({
+              address: vis.address || '',
+              networkId: null,
+              onGasTank: false
+            }))
       )
       .flat()
       .filter(isAddress)
@@ -809,7 +816,7 @@ export class MainController extends EventEmitter {
             .filter(([, accOp]) => accOp)
             .map(([networkId, x]) => [networkId, [x!.accountOp]])
         ),
-        { forceUpdate: true, pinned: addresses }
+        { forceUpdate: true, pinned: addresses.filter(({ address }) => address) }
       ),
       shouldGetAdditionalPortfolio(account) &&
         this.portfolio.getAdditionalPortfolio(localAccountOp.accountAddr),
