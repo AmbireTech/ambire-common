@@ -51,7 +51,7 @@ export class TransferController extends EventEmitter {
 
   isRecipientAddressUnknownAgreed = false
 
-  isRecipientSmartContract = false
+  isRecipientHumanizerKnownTokenOrSmartContract = false
 
   isRecipientFeeCollector = false
 
@@ -111,7 +111,7 @@ export class TransferController extends EventEmitter {
     this.isRecipientDomainResolving = false
     this.userRequest = null
     this.isRecipientAddressUnknownAgreed = false
-    this.isRecipientSmartContract = false
+    this.isRecipientHumanizerKnownTokenOrSmartContract = false
     this.isRecipientFeeCollector = false
     this.isSWWarningVisible = false
     this.isSWWarningAgreed = false
@@ -140,7 +140,7 @@ export class TransferController extends EventEmitter {
         this.#selectedAccount,
         this.isRecipientAddressUnknownAgreed,
         this.isRecipientAddressUnknown,
-        this.isRecipientSmartContract,
+        this.isRecipientHumanizerKnownTokenOrSmartContract,
         this.isRecipientFeeCollector,
         isUDAddress,
         isEnsAddress,
@@ -339,7 +339,7 @@ export class TransferController extends EventEmitter {
     }
     if (this.#humanizerInfo) {
       // @TODO: could fetch address code
-      this.isRecipientSmartContract = isHumanizerKnownTokenOrSmartContract(
+      this.isRecipientHumanizerKnownTokenOrSmartContract = isHumanizerKnownTokenOrSmartContract(
         this.#humanizerInfo,
         address
       )
