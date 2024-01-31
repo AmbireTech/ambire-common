@@ -342,12 +342,11 @@ export class TransferController extends EventEmitter {
       this.isRecipientSmartContract = isKnownTokenOrContract(this.#humanizerInfo, address)
     }
 
-    this.isRecipientFeeCollector = address === FEE_COLLECTOR
-
     if (this.recipientUDAddress || this.recipientEnsAddress) {
       this.isRecipientAddressUnknown = true // @TODO: check from the address book
     }
 
+    this.isRecipientFeeCollector = address === FEE_COLLECTOR
     this.isRecipientAddressUnknown = true // @TODO: isValidAddress & check from the address book
     this.isRecipientDomainResolving = false
 
