@@ -246,7 +246,7 @@ describe('module tests', () => {
       'Swap 0.0004 WMATIC for 0.000348830169184669 DAI and send it to 0x6969174FD72466430a46e18234D0b530c9FD5f49 (0x696...f49)',
       'Fuel gas tank with 0.5 ETH',
       'Fuel gas tank with 0.001 USDC.e',
-      'Update access status of 0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789 (Account abstraction entry point v0.6.0) to 0x0000000000000000000000000000000000000000000000000000000000007171',
+      'Enable 0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789 (Account abstraction entry point v0.6.0)',
       'Update access status of 0x6969174FD72466430a46e18234D0b530c9FD5f49 (0x696...f49) to regular access',
       'Revoke access of 0x6969174FD72466430a46e18234D0b530c9FD5f49 (0x696...f49)'
     ]
@@ -644,16 +644,10 @@ describe('module tests', () => {
   test('Privilege Humanizer', async () => {
     const expectedhumanization: HumanizerVisualization[][] = [
       [
-        { type: 'action', content: 'Update access status' },
-        { type: 'label', content: 'of' },
+        { type: 'action', content: 'Enable' },
         {
           type: 'address',
           address: '0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789'
-        },
-        { type: 'label', content: 'to' },
-        {
-          type: 'label',
-          content: '0x0000000000000000000000000000000000000000000000000000000000007171'
         }
       ],
       [
