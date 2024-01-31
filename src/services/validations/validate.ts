@@ -1,9 +1,8 @@
 import { formatUnits, getAddress } from 'ethers'
 import isEmail from 'validator/es/lib/isEmail'
 
-import { ConstantsType } from '../../../v1/hooks/useConstants'
 import { TokenResult } from '../../libs/portfolio'
-import { isKnownTokenOrContract, isValidAddress } from '../address'
+import { isValidAddress } from '../address'
 
 const validateAddress = (address: string) => {
   if (!(address && address.length)) {
@@ -51,7 +50,8 @@ const validateSendTransferAddress = (
   selectedAcc: string,
   addressConfirmed: any,
   isRecipientAddressUnknown: boolean,
-  humanizerInfo: ConstantsType['humanizerInfo'],
+  isRecipientSmartContract: boolean,
+  isRecipientFeeCollector: boolean,
   isUDAddress: boolean,
   isEnsAddress: boolean,
   isRecipientDomainResolving: boolean
@@ -66,7 +66,7 @@ const validateSendTransferAddress = (
     }
   }
 
-  if (address && isKnownTokenOrContract(humanizerInfo, address)) {
+  if (address && isRecipientSmartContract && !isRecipientFeeCollector) {
     return {
       success: false,
       message: 'You are trying to send tokens to a smart contract. Doing so would burn them.'
@@ -146,10 +146,11 @@ const validateSendNftAddress = (
   selectedAcc: any,
   addressConfirmed: any,
   isKnownAddress: any,
+  isRecipientSmartContract: boolean,
+  isRecipientFeeCollector: boolean,
   metadata: any,
   selectedNetwork: any,
   network: any,
-  humanizerInfo: ConstantsType['humanizerInfo'],
   isUDAddress: boolean,
   isEnsAddress: boolean,
   isRecipientDomainResolving: boolean
@@ -159,7 +160,8 @@ const validateSendNftAddress = (
     selectedAcc,
     addressConfirmed,
     isKnownAddress,
-    humanizerInfo,
+    isRecipientSmartContract,
+    isRecipientFeeCollector,
     isUDAddress,
     isEnsAddress,
     isRecipientDomainResolving
