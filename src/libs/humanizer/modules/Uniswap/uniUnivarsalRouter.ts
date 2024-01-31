@@ -92,7 +92,7 @@ export const uniUniversalRouter = (
               const params = extractParams(inputsDetails, inputs[index])
               const path = parsePath(params.path)
               const fullVisualization = [
-                getAction('Swap up  to'),
+                getAction('Swap up to'),
                 getToken(path[path.length - 1], params.amountInMax),
                 getLabel('for'),
                 getToken(path[0], params.amountOut)
