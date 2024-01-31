@@ -19,8 +19,10 @@ import {
   AdditionalAccountState,
   GetOptions,
   Hints,
+  PinnedTokens,
   PortfolioControllerState,
-  PortfolioGetResult
+  PortfolioGetResult,
+  TokenResult
 } from '../../libs/portfolio/interfaces'
 import { Portfolio } from '../../libs/portfolio/portfolio'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
@@ -60,7 +62,7 @@ export class PortfolioController extends EventEmitter {
 
   #callRelayer: Function
 
-  #pinned: string[]
+  #pinned: PinnedTokens
 
   #networksWithAssetsByAccounts: {
     [accountId: string]: NetworkDescriptor['id'][]
@@ -68,7 +70,7 @@ export class PortfolioController extends EventEmitter {
 
   #minUpdateInterval: number = 20000 // 20 seconds
 
-  constructor(storage: Storage, providers: RPCProviders, relayerUrl: string, pinned: string[]) {
+  constructor(storage: Storage, providers: RPCProviders, relayerUrl: string, pinned: PinnedTokens) {
     super()
     this.latest = {}
     this.pending = {}
@@ -185,13 +187,64 @@ export class PortfolioController extends EventEmitter {
       ...t,
       flags: getFlags(res.data, 'gasTank', t.networkId, t.address)
     }))
+
+    let pinnedGasTankTokens: TokenResult[] = []
+
+    if (res.data.gasTank.availableGasTankAssets) {
+      const availableGasTankAssets = res.data.gasTank.availableGasTankAssets
+
+      pinnedGasTankTokens = availableGasTankAssets.reduce((acc: TokenResult[], token: any) => {
+        const isGasTankToken = !!gasTankTokens.find(
+          (gasTankToken: TokenResult) =>
+            gasTankToken.symbol.toLowerCase() === token.symbol.toLowerCase()
+        )
+        const isAlreadyPinned = !!acc.find(
+          (accToken) => accToken.symbol.toLowerCase() === token.symbol.toLowerCase()
+        )
+
+        if (isGasTankToken || isAlreadyPinned) return acc
+
+        const correspondingPinnedToken = this.#pinned.find(
+          (pinnedToken) =>
+            pinnedToken.address === token.address && pinnedToken.networkId === token.network
+        )
+
+        if (
+          correspondingPinnedToken &&
+          correspondingPinnedToken.networkId !== null &&
+          correspondingPinnedToken.onGasTank
+        ) {
+          acc.push({
+            address: token.address,
+            symbol: token.symbol.toUpperCase(),
+            amount: 0n,
+            networkId: correspondingPinnedToken.networkId,
+            decimals: token.decimals,
+            priceIn: [
+              {
+                baseCurrency: 'USD',
+                price: token.price
+              }
+            ],
+            flags: {
+              rewardsType: null,
+              canTopUpGasTank: true,
+              isFeeToken: true,
+              onGasTank: true
+            }
+          })
+        }
+        return acc
+      }, [])
+    }
+
     accountState.gasTank = {
       isReady: true,
       isLoading: false,
       errors: [],
       result: {
         updateStarted: start,
-        tokens: gasTankTokens,
+        tokens: [...gasTankTokens, ...pinnedGasTankTokens],
         total: getTotal(gasTankTokens)
       }
     }
@@ -218,7 +271,7 @@ export class PortfolioController extends EventEmitter {
     accountOps?: { [key: string]: AccountOp[] },
     opts?: {
       forceUpdate: boolean
-      pinned?: string[]
+      pinned?: PinnedTokens
     }
   ) {
     // set the additional pinned items if there are any
