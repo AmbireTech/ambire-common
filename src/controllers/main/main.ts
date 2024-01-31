@@ -37,8 +37,8 @@ import bundler from '../../services/bundlers'
 import generateSpoofSig from '../../utils/generateSpoofSig'
 import wait from '../../utils/wait'
 import { AccountAdderController } from '../accountAdder/accountAdder'
-import { EmailVaultController } from '../emailVault/emailVault'
 import { ActivityController, SignedMessage, SubmittedAccountOp } from '../activity/activity'
+import { EmailVaultController } from '../emailVault/emailVault'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
 import { PortfolioController } from '../portfolio/portfolio'
@@ -232,6 +232,8 @@ export class MainController extends EventEmitter {
     if (this.selectedAccount) {
       this.activity.init({ filters: { account: this.selectedAccount } })
     }
+
+    this.updateSelectedAccount(this.selectedAccount)
 
     /**
      * Listener that gets triggered as a finalization step of adding new
