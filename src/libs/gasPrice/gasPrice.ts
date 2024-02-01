@@ -82,7 +82,7 @@ async function refetchBlock(
   // If we change the design and decide to display this as an error
   // somewhere else, we should probably not throw, but return the
   // error instead
-  if (counter >= 5) throw new Error('could not fetch gas price')
+  if (counter >= 5) throw new Error('unable to retrieve block')
 
   let lastBlock = null
   try {
