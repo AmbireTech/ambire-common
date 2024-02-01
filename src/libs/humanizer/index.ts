@@ -1,5 +1,6 @@
 /* eslint-disable no-await-in-loop */
-import { ErrorRef } from '../../controllers/eventEmitter'
+import { ErrorRef } from '../../controllers/eventEmitter/eventEmitter'
+
 import { Storage } from '../../interfaces/storage'
 import { Message } from '../../interfaces/userRequest'
 import { AccountOp } from '../accountOp/accountOp'

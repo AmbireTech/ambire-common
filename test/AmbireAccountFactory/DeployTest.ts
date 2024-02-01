@@ -48,7 +48,7 @@ describe('AmbireAccountFactory tests', () => {
     const contract = await ethers.deployContract('AmbireAccount')
     const bytecode = getProxyDeployBytecode(
       await contract.getAddress(),
-      [{ addr: addressTwo, hash: true }],
+      [{ addr: addressTwo, hash: '0x0000000000000000000000000000000000000000000000000000000000000001' }],
       {
         ...getStorageSlotsFromArtifact(buildInfo)
       }

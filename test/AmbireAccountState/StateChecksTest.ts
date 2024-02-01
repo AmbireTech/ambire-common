@@ -18,7 +18,12 @@ describe('Account state checks tests', () => {
       factoryAddress,
       bytecode,
       deploySalt
-    } = await deployAmbireAccountHardhatNetwork([{ addr: signer.address, hash: true }])
+    } = await deployAmbireAccountHardhatNetwork([
+      {
+        addr: signer.address,
+        hash: '0x0000000000000000000000000000000000000000000000000000000000000001'
+      }
+    ])
     ambireAccountAddress = addr
     factoryAddr = factoryAddress
     addrBytecode = bytecode

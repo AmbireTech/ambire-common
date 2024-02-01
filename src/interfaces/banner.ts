@@ -8,6 +8,7 @@ export type BannerTopic = 'TRANSACTION' | 'ANNOUNCEMENT' | 'WARNING'
 
 export interface Banner {
   id: number | string
+  accountAddr?: string
   topic: BannerTopic
   title: string
   text: string
@@ -31,11 +32,23 @@ export type Action =
       }
     }
   | {
+      label: 'Sync'
+      actionName: 'sync-keys'
+      meta: {
+        email: string
+        keys: string[]
+      }
+    }
+  | {
       label: string
       actionName: 'open-external-url'
       meta: {
         url: string
       }
+    }
+  | {
+      label: string
+      actionName: 'backup-keystore-secret'
     }
   | {
       label: 'Enable'

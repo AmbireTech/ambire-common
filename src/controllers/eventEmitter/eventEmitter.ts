@@ -1,3 +1,4 @@
+/* eslint-disable no-restricted-syntax */
 const LIMIT_ON_THE_NUMBER_OF_ERRORS = 100
 
 export type ErrorRef = {

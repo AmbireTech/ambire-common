@@ -1,12 +1,18 @@
-import fetch from 'node-fetch'
-import { describe, expect, test } from '@jest/globals'
 import { ethers } from 'ethers'
+import fetch from 'node-fetch'
 
-import { ErrorRef } from '../../controllers/eventEmitter'
+import { describe, expect, test } from '@jest/globals'
+
+import { FEE_COLLECTOR } from '../../consts/addresses'
+import humanizerInfo from '../../consts/humanizerInfo.json'
+import { ErrorRef } from '../../controllers/eventEmitter/eventEmitter'
 import { AccountOp } from '../accountOp/accountOp'
 import { humanizeCalls, visualizationToText } from './humanizerFuncs'
+import { humanizerCallModules as humanizerModules } from './index'
 import { HumanizerVisualization, IrCall } from './interfaces'
 import { aaveHumanizer } from './modules/Aave'
+import { privilegeHumanizer } from './modules/privileges'
+import { sushiSwapModule } from './modules/sushiSwapModule'
 import { uniswapHumanizer } from './modules/Uniswap'
 // import { oneInchHumanizer } from './modules/oneInch'
 import { WALLETModule } from './modules/WALLET'
@@ -16,11 +22,6 @@ import { parseCalls } from './parsers'
 import { nameParsing } from './parsers/nameParsing'
 import { tokenParsing } from './parsers/tokenParsing'
 import { getAction, getLabel, getToken } from './utils'
-import { sushiSwapModule } from './modules/sushiSwapModule'
-import { privilegeHumanizer } from './modules/privileges'
-
-import humanizerInfo from '../../consts/humanizerInfo.json'
-import { humanizerCallModules as humanizerModules } from '.'
 
 const TETHER_ADDRESS = '0xdAC17F958D2ee523a2206206994597C13D831ec7'
 const WETH_ADDRESS = '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2'
@@ -181,7 +182,7 @@ const transactions: { [key: string]: Array<IrCall> } = {
   ],
   gasTank: [
     {
-      to: '0x942f9CE5D9a33a82F88D233AEb3292E680230348',
+      to: FEE_COLLECTOR,
       value: 500000000000000000n,
       data: '0x'
     },
@@ -245,7 +246,7 @@ describe('module tests', () => {
       'Swap 0.0004 WMATIC for 0.000348830169184669 DAI and send it to 0x6969174FD72466430a46e18234D0b530c9FD5f49 (0x696...f49)',
       'Fuel gas tank with 0.5 ETH',
       'Fuel gas tank with 0.001 USDC.e',
-      'Enable 0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789 (ERC-4337 Entry Point 0.6.0)',
+      'Enable 0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789 (Account abstraction entry point v0.6.0)',
       'Update access status of 0x6969174FD72466430a46e18234D0b530c9FD5f49 (0x696...f49) to regular access',
       'Revoke access of 0x6969174FD72466430a46e18234D0b530c9FD5f49 (0x696...f49)'
     ]
@@ -276,7 +277,7 @@ describe('module tests', () => {
     asyncOps.push(...newAsyncOps)
     const res = irCalls.map((call: IrCall) => visualizationToText(call, standartOptions))
     expect(expectedTexification.length).toBe(res.length)
-    expectedTexification.forEach((et: string, i: number) => expect(et).toEqual(res[i]))
+    expectedTexification.forEach((et: string, i: number) => expect(res[i]).toEqual(et))
   })
   test('uniV3', () => {
     const expectedhumanization = [

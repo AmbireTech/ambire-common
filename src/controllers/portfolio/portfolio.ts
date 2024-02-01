@@ -1,4 +1,7 @@
 /* eslint-disable import/no-extraneous-dependencies */
+/* eslint-disable @typescript-eslint/no-use-before-define */
+/* eslint-disable @typescript-eslint/no-shadow */
+/* eslint-disable no-param-reassign */
 /* eslint-disable no-restricted-syntax */
 /* eslint-disable no-param-reassign */
 import fetch from 'node-fetch'
@@ -21,7 +24,7 @@ import {
 } from '../../libs/portfolio/interfaces'
 import { Portfolio } from '../../libs/portfolio/portfolio'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
-import EventEmitter from '../eventEmitter'
+import EventEmitter from '../eventEmitter/eventEmitter'
 
 // We already know that `results.tokens` and `result.collections` tokens have a balance (this is handled by the portfolio lib).
 // Based on that, we can easily find out which hint tokens also have a balance.
@@ -283,7 +286,9 @@ export class PortfolioController extends EventEmitter {
         _accountState[network.id] = { isReady: true, isLoading: false, errors: [], result }
         this.emitUpdate()
         return true
-      } catch (e: any) {
+      } catch (_e: any) {
+        const e = _e instanceof Error ? _e : new Error(_e?.error || _e?.message || _e)
+
         this.emitError({
           level: 'silent',
           message: e.message,

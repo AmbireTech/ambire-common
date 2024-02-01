@@ -93,7 +93,7 @@ async function deployAmbireAccountAndEntryPointAndPaymaster(validatorDataOptions
   const { signerKey, hash } = getSignerKey(await dkimRecovery.getAddress(), validatorData)
   const { ambireAccountAddress: addr } = await deployAmbireAccountHardhatNetwork([
     { addr: signerKey, hash },
-    { addr: signerWithPrivs.address, hash: true }
+    { addr: signerWithPrivs.address, hash: '0x0000000000000000000000000000000000000000000000000000000000000001' }
   ])
   ambireAccountAddress = addr
   account = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signerWithPrivs)
@@ -727,7 +727,7 @@ describe('DKIM sigMode Both with acceptUnknownSelectors true', () => {
     )
     const { ambireAccountAddress: addr } = await deployAmbireAccountHardhatNetwork([
       { addr: signerKey, hash },
-      { addr: signerWithPrivs.address, hash: true }
+      { addr: signerWithPrivs.address, hash: '0x0000000000000000000000000000000000000000000000000000000000000001' }
     ])
     ambireAccountAddress = addr
     account = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signerWithPrivs)

@@ -2,6 +2,7 @@ import erc20Abi from 'adex-protocol-eth/abi/ERC20.json'
 import { formatUnits, getAddress, Interface, parseUnits } from 'ethers'
 
 import { HumanizerInfoType } from '../../../v1/hooks/useConstants'
+import { FEE_COLLECTOR } from '../../consts/addresses'
 import { networks } from '../../consts/networks'
 import { UserRequest } from '../../interfaces/userRequest'
 import { TokenResult } from '../../libs/portfolio'
@@ -9,7 +10,7 @@ import { isKnownTokenOrContract } from '../../services/address'
 import { getBip44Items, resolveENSDomain } from '../../services/ensDomains'
 import { resolveUDomain } from '../../services/unstoppableDomains'
 import { validateSendTransferAddress, validateSendTransferAmount } from '../../services/validations'
-import EventEmitter from '../eventEmitter'
+import EventEmitter from '../eventEmitter/eventEmitter'
 
 const ERC20 = new Interface(erc20Abi)
 
@@ -62,6 +63,8 @@ export class TransferController extends EventEmitter {
   #selectedAccount: string | null = null
 
   #humanizerInfo: HumanizerInfoType | null = null
+
+  isTopUp: boolean = false
 
   // every time when updating selectedToken update the amount and maxAmount of the form
   set selectedToken(token: TokenResult | null) {
@@ -150,6 +153,13 @@ export class TransferController extends EventEmitter {
   }
 
   get isFormValid() {
+    // if the amount is set, it's enough in topUp mode
+    if (this.isTopUp) {
+      return (
+        this.selectedToken && validateSendTransferAmount(this.amount, this.selectedToken).success
+      )
+    }
+
     const areFormFieldsValid =
       this.validationFormMsgs.amount.success && this.validationFormMsgs.recipientAddress.success
 
@@ -178,7 +188,8 @@ export class TransferController extends EventEmitter {
     amount,
     recipientAddress,
     isSWWarningAgreed,
-    isRecipientAddressUnknownAgreed
+    isRecipientAddressUnknownAgreed,
+    isTopUp
   }: {
     selectedAccount?: string
     preSelectedToken?: string
@@ -189,6 +200,7 @@ export class TransferController extends EventEmitter {
     recipientAddress?: string
     isSWWarningAgreed?: boolean
     isRecipientAddressUnknownAgreed?: boolean
+    isTopUp?: boolean
   }) {
     if (humanizerInfo) {
       this.#humanizerInfo = humanizerInfo
@@ -225,6 +237,11 @@ export class TransferController extends EventEmitter {
       this.isRecipientAddressUnknownAgreed = !this.isRecipientAddressUnknownAgreed
     }
 
+    if (typeof isTopUp === 'boolean') {
+      this.isTopUp = isTopUp
+      this.#setSWWarningVisibleIfNeeded()
+    }
+
     this.emitUpdate()
   }
 
@@ -236,9 +253,10 @@ export class TransferController extends EventEmitter {
 
     if (!this.selectedToken || !this.#selectedTokenNetworkData || !this.#selectedAccount) return
 
-    const recipientAddress = getAddress(
-      this.recipientUDAddress || this.recipientEnsAddress || this.recipientAddress
-    )
+    // if the request is a top up, the recipient is the relayer
+    const recipientAddress = this.isTopUp
+      ? FEE_COLLECTOR
+      : getAddress(this.recipientUDAddress || this.recipientEnsAddress || this.recipientAddress)
 
     const bigNumberHexAmount = `0x${parseUnits(
       this.amount,
@@ -348,6 +366,7 @@ export class TransferController extends EventEmitter {
       networks.find(({ id }) => id === this.selectedToken?.networkId) || null
 
     this.isSWWarningVisible =
+      !this.isTopUp &&
       !!this.selectedToken?.address &&
       Number(this.selectedToken?.address) === 0 &&
       networks

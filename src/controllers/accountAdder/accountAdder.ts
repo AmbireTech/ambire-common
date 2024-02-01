@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-floating-promises */
 import { ethers, JsonRpcProvider } from 'ethers'
 
 import { PROXY_AMBIRE_ACCOUNT } from '../../consts/deploy'
@@ -5,6 +6,7 @@ import {
   HD_PATH_TEMPLATE_TYPE,
   SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
 } from '../../consts/derivation'
+
 import { Account, AccountOnchainState } from '../../interfaces/account'
 import { KeyIterator } from '../../interfaces/keyIterator'
 import { dedicatedToOneSAPriv, Key } from '../../interfaces/keystore'
@@ -12,6 +14,7 @@ import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor
 import { AccountPreferences, KeyPreferences } from '../../interfaces/settings'
 import { Storage } from '../../interfaces/storage'
 import {
+  getEmailAccount,
   getLegacyAccount,
   getSmartAccount,
   isAmbireV1LinkedAccount,
@@ -19,9 +22,9 @@ import {
   isSmartAccount
 } from '../../libs/account/account'
 import { getAccountState } from '../../libs/accountState/accountState'
+import EventEmitter from '../eventEmitter/eventEmitter'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import wait from '../../utils/wait'
-import EventEmitter from '../eventEmitter'
 
 const INITIAL_PAGE_INDEX = 1
 const PAGE_SIZE = 5
@@ -39,7 +42,10 @@ type AccountDerivationMeta = {
  * It's always one of the visible accounts returned by the accountsOnPage().
  * Could be either a legacy (EOA) account, a smart account or a linked account.
  */
-type SelectedAccount = AccountDerivationMeta & { account: Account; accountKeyAddr: Account['addr'] }
+export type SelectedAccount = AccountDerivationMeta & {
+  account: Account
+  accountKeyAddr: Account['addr']
+}
 
 /**
  * The account that is derived programmatically and internally by Ambire.
@@ -454,12 +460,11 @@ export class AccountAdderController extends EventEmitter {
       .filter((x) => !isAmbireV1LinkedAccount(x.account.creation?.factoryAddr))
 
     if (accountsToAddOnRelayer.length) {
-      const body = accountsToAddOnRelayer.map(({ account }) => ({
+      const body = accountsToAddOnRelayer.map(({ account }: SelectedAccount) => ({
         addr: account.addr,
-        associatedKeys: account.associatedKeys.map((key) => [
-          ethers.getAddress(key), // the Relayer expects checksumed address
-          dedicatedToOneSAPriv
-        ]),
+        ...(account.email ? { email: account.email } : {}),
+        associatedKeys: account.initialPrivileges,
+
         creation: {
           factoryAddr: account.creation!.factoryAddr,
           salt: account.creation!.salt,
@@ -499,6 +504,58 @@ export class AccountAdderController extends EventEmitter {
     // reset the addAccountsStatus in the next tick to ensure the FE receives the 'SUCCESS' state
     await wait(1)
     this.addAccountsStatus = 'INITIAL'
+    this.emitUpdate()
+  }
+
+  async createAndAddEmailAccount(selectedAccount: SelectedAccount) {
+    const {
+      account: { email },
+      accountKeyAddr: recoveryKey
+    } = selectedAccount
+    if (!this.isInitialized) {
+      return this.emitError({
+        level: 'major',
+        message:
+          'Something went wrong with calculating the accounts. Please start the process again. If the problem persists, contact support.',
+        error: new Error(
+          'accountAdder: requested method `#deriveAccounts`, but the AccountAdder is not initialized'
+        )
+      })
+    }
+
+    if (!this.#keyIterator) {
+      this.emitError({
+        level: 'major',
+        message:
+          'Something went wrong with calculating the accounts. Please start the process again. If the problem persists, contact support.',
+        error: new Error(
+          'accountAdder: requested method `#deriveAccounts`, but keyIterator is not initialized'
+        )
+      })
+      return
+    }
+
+    const keyPublicAddress: string = (await this.#keyIterator.retrieve([{ from: 0, to: 1 }]))[0]
+
+    const emailSmartAccount = await getEmailAccount(
+      {
+        emailFrom: email!,
+        secondaryKey: recoveryKey
+      },
+      keyPublicAddress
+    )
+
+    await this.addAccounts([{ ...selectedAccount, account: { ...emailSmartAccount, email } }])
+  }
+
+  // updates the account adder state so the main ctrl receives the readyToAddAccounts
+  // that should be added to the storage of the app
+  async addExistingEmailAccounts(accounts: Account[]) {
+    // There is no need to call the addAccounts method in order to add that
+    // account to the relayer because this func will be called only for accounts returned
+    // from relayer that only need to be stored in the storage of the app
+    this.readyToAddAccounts = accounts
+    this.addAccountsStatus = 'SUCCESS'
     this.emitUpdate()
   }
 
@@ -748,12 +805,16 @@ export class AccountAdderController extends EventEmitter {
 
         return []
       }
-
       return [
         {
           account: {
             addr,
             associatedKeys: Object.keys(associatedKeys),
+            initialPrivileges: data.accounts[addr].initialPrivilegesAddrs.map((address: string) => [
+              address,
+              // this is a default privilege hex we add on account creation
+              '0x0000000000000000000000000000000000000000000000000000000000000001'
+            ]),
             creation: {
               factoryAddr,
               bytecode,

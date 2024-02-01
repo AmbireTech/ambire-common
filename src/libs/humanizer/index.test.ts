@@ -6,7 +6,7 @@ import { describe, expect, jest, test } from '@jest/globals'
 
 import { produceMemoryStore } from '../../../test/helpers'
 import humanizerJSON from '../../consts/humanizerInfo.json'
-import { ErrorRef } from '../../controllers/eventEmitter'
+import { ErrorRef } from '../../controllers/eventEmitter/eventEmitter'
 import { Account } from '../../interfaces/account'
 import { Key } from '../../interfaces/keystore'
 import { Storage } from '../../interfaces/storage'
@@ -50,6 +50,7 @@ const accounts: Account[] = [
   {
     addr: '0xAAbBbC841F29Dc6b09EF9f6c8fd59DA807bc6248',
     associatedKeys: ['string[]'],
+    initialPrivileges: [],
     creation: null
   }
 ]
@@ -245,25 +246,23 @@ describe('Humanizer main function', () => {
         { type: 'action', content: 'Grant approval' },
         { type: 'label', content: 'for' },
         {
-          type: 'nft',
-          address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2'
-          // id: 115792089237316195423570985008687907853269984665640564039457584007913129639935n
+          type: 'label',
+          content: 'all WETH'
         },
         { type: 'label', content: 'to' },
         {
           type: 'address',
           address: '0xE5c783EE536cf5E63E792988335c4255169be4E1',
           name: 'OpenSea (old)'
-          //   name: '0xE5c...4E1'
         }
       ]
     ]
     const onUpdate = jest.fn((newCalls: IrCall[]) => {
-      newCalls.forEach((call, i) =>
-        call.fullVisualization?.forEach((v, j) =>
+      newCalls.forEach((call, i) => {
+        call.fullVisualization?.forEach((v, j) => {
           expect(v).toMatchObject(expectedVisualizations[i][j])
-        )
-      )
+        })
+      })
     })
     accountOp.calls = [...transactions.generic]
     await callsHumanizer(accountOp, {}, storage, fetch, onUpdate, emitError)
@@ -433,14 +432,14 @@ describe('with (Account | Key)[] arg', () => {
       [
         { type: 'action', content: 'Grant approval' },
         { type: 'label', content: 'for' },
-        { type: 'nft' },
+        { type: 'token' },
         { type: 'label', content: 'to' },
         { name: 'First account' }
       ],
       [
         { type: 'action', content: 'Grant approval' },
         { type: 'label', content: 'for' },
-        { type: 'nft' },
+        { type: 'token' },
         { type: 'label', content: 'to' },
         { name: 'Second account' }
       ]
