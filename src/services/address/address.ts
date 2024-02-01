@@ -12,7 +12,7 @@ const isHumanizerKnownTokenOrSmartContract = (
   // In order to humanize the fee collector as "Gas Tank", it is included in the
   // "names" in the humanizer (all others are smart contract addresses). But the
   // fee collector is not a smart contract (or token). It is an EOA.
-  if (address === FEE_COLLECTOR) return false
+  if (address === FEE_COLLECTOR.toLowerCase()) return false
 
   return (
     Object.keys(humanizerInfo.tokens).includes(address) || // token addresses

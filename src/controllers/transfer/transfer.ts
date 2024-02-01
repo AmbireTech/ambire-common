@@ -1,5 +1,5 @@
 import erc20Abi from 'adex-protocol-eth/abi/ERC20.json'
-import { formatUnits, getAddress, Interface, parseUnits } from 'ethers'
+import { ethers, formatUnits, getAddress, Interface, parseUnits } from 'ethers'
 
 import { HumanizerInfoType } from '../../../v1/hooks/useConstants'
 import { FEE_COLLECTOR } from '../../consts/addresses'
@@ -345,7 +345,7 @@ export class TransferController extends EventEmitter {
       this.isRecipientAddressUnknown = true // @TODO: check from the address book
     }
 
-    this.isRecipientAddressUnknown = address !== FEE_COLLECTOR // @TODO: isValidAddress & check from the address book
+    this.isRecipientAddressUnknown = ethers.getAddress(address) !== FEE_COLLECTOR // @TODO: isValidAddress & check from the address book
     this.isRecipientDomainResolving = false
 
     this.emitUpdate()
