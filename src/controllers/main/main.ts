@@ -1,7 +1,6 @@
 /* eslint-disable @typescript-eslint/brace-style */
 import { ethers, isAddress, TransactionResponse } from 'ethers'
 import { NetworkPreference, NetworkPreferences } from 'interfaces/settings'
-import { PinnedTokens } from 'libs/portfolio/interfaces'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFactory.json'
@@ -32,6 +31,7 @@ import { estimate, EstimateResult } from '../../libs/estimate/estimate'
 import { GasRecommendation, getGasPriceRecommendations } from '../../libs/gasPrice/gasPrice'
 import { humanizeAccountOp } from '../../libs/humanizer'
 import { shouldGetAdditionalPortfolio } from '../../libs/portfolio/helpers'
+import { PinnedTokens } from '../../libs/portfolio/interfaces'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { isErc4337Broadcast, toUserOperation } from '../../libs/userOperation/userOperation'
 import bundler from '../../services/bundlers'
