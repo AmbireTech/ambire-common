@@ -1,6 +1,5 @@
-import { NetworkDescriptor, NetworkId } from 'interfaces/networkDescriptor'
-
 import { Account } from '../../interfaces/account'
+import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
 import { AccountOp } from '../accountOp/accountOp'
 
 export interface Price {
