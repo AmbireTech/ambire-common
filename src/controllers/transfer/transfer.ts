@@ -53,8 +53,6 @@ export class TransferController extends EventEmitter {
 
   isRecipientHumanizerKnownTokenOrSmartContract = false
 
-  isRecipientFeeCollector = false
-
   userRequest: UserRequest | null = null
 
   #selectedTokenNetworkData: {
@@ -112,7 +110,6 @@ export class TransferController extends EventEmitter {
     this.userRequest = null
     this.isRecipientAddressUnknownAgreed = false
     this.isRecipientHumanizerKnownTokenOrSmartContract = false
-    this.isRecipientFeeCollector = false
     this.isSWWarningVisible = false
     this.isSWWarningAgreed = false
 
@@ -141,7 +138,6 @@ export class TransferController extends EventEmitter {
         this.isRecipientAddressUnknownAgreed,
         this.isRecipientAddressUnknown,
         this.isRecipientHumanizerKnownTokenOrSmartContract,
-        this.isRecipientFeeCollector,
         isUDAddress,
         isEnsAddress,
         this.isRecipientDomainResolving
@@ -349,8 +345,7 @@ export class TransferController extends EventEmitter {
       this.isRecipientAddressUnknown = true // @TODO: check from the address book
     }
 
-    this.isRecipientFeeCollector = address === FEE_COLLECTOR
-    this.isRecipientAddressUnknown = !this.isRecipientFeeCollector // @TODO: isValidAddress & check from the address book
+    this.isRecipientAddressUnknown = address !== FEE_COLLECTOR // @TODO: isValidAddress & check from the address book
     this.isRecipientDomainResolving = false
 
     this.emitUpdate()
