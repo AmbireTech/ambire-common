@@ -1,6 +1,5 @@
-import { NetworkId } from 'interfaces/networkDescriptor'
-
 import { Account } from '../../interfaces/account'
+import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
 import { AccountOp } from '../accountOp/accountOp'
 
 export interface Price {
@@ -148,6 +147,12 @@ export interface Limits {
   deploylessStateOverrideMode: LimitsOptions
 }
 
+export type PinnedTokens = {
+  networkId: NetworkDescriptor['id'] | null
+  address: string
+  onGasTank: boolean
+}[]
+
 export interface GetOptions {
   baseCurrency: string
   blockTag: string | number
@@ -159,5 +164,5 @@ export interface GetOptions {
     erc721s: Hints['erc721s']
   }
   isEOA: boolean
-  pinned?: string[]
+  pinned?: PinnedTokens
 }

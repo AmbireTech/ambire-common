@@ -31,6 +31,7 @@ import { estimate, EstimateResult } from '../../libs/estimate/estimate'
 import { GasRecommendation, getGasPriceRecommendations } from '../../libs/gasPrice/gasPrice'
 import { humanizeAccountOp } from '../../libs/humanizer'
 import { shouldGetAdditionalPortfolio } from '../../libs/portfolio/helpers'
+import { PinnedTokens } from '../../libs/portfolio/interfaces'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { isErc4337Broadcast, toUserOperation } from '../../libs/userOperation/userOperation'
 import bundler from '../../services/bundlers'
@@ -173,7 +174,7 @@ export class MainController extends EventEmitter {
     onRejectDappRequest: (err: any, id?: number) => void
     onUpdateDappSelectedAccount: (accountAddr: string) => void
     onBroadcastSuccess?: (type: 'message' | 'typed-data' | 'account-op') => void
-    pinned: string[]
+    pinned: PinnedTokens
   }) {
     super()
     this.#storage = storage
@@ -791,10 +792,16 @@ export class MainController extends EventEmitter {
     )
     const addresses = humanization
       .map((call) =>
-        !call.fullVisualization ? '' : call.fullVisualization.map((vis) => vis.address ?? '')
+        !call.fullVisualization
+          ? []
+          : call.fullVisualization.map((vis) => ({
+              address: vis.address || '',
+              networkId: null,
+              onGasTank: false
+            }))
       )
       .flat()
-      .filter(isAddress)
+      .filter(({ address }) => isAddress(address))
 
     const [, , estimation] = await Promise.all([
       // NOTE: we are not emitting an update here because the portfolio controller will do that
