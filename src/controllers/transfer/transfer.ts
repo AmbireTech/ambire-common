@@ -1,12 +1,12 @@
 import erc20Abi from 'adex-protocol-eth/abi/ERC20.json'
-import { formatUnits, getAddress, Interface, parseUnits } from 'ethers'
+import { ethers, formatUnits, getAddress, Interface, parseUnits } from 'ethers'
 
 import { HumanizerInfoType } from '../../../v1/hooks/useConstants'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { networks } from '../../consts/networks'
 import { UserRequest } from '../../interfaces/userRequest'
 import { TokenResult } from '../../libs/portfolio'
-import { isKnownTokenOrContract } from '../../services/address'
+import { isHumanizerKnownTokenOrSmartContract } from '../../services/address'
 import { getBip44Items, resolveENSDomain } from '../../services/ensDomains'
 import { resolveUDomain } from '../../services/unstoppableDomains'
 import { validateSendTransferAddress, validateSendTransferAmount } from '../../services/validations'
@@ -51,7 +51,7 @@ export class TransferController extends EventEmitter {
 
   isRecipientAddressUnknownAgreed = false
 
-  isRecipientSmartContract = false
+  isRecipientHumanizerKnownTokenOrSmartContract = false
 
   userRequest: UserRequest | null = null
 
@@ -109,7 +109,7 @@ export class TransferController extends EventEmitter {
     this.isRecipientDomainResolving = false
     this.userRequest = null
     this.isRecipientAddressUnknownAgreed = false
-    this.isRecipientSmartContract = false
+    this.isRecipientHumanizerKnownTokenOrSmartContract = false
     this.isSWWarningVisible = false
     this.isSWWarningAgreed = false
 
@@ -137,7 +137,7 @@ export class TransferController extends EventEmitter {
         this.#selectedAccount,
         this.isRecipientAddressUnknownAgreed,
         this.isRecipientAddressUnknown,
-        this.#humanizerInfo,
+        this.isRecipientHumanizerKnownTokenOrSmartContract,
         isUDAddress,
         isEnsAddress,
         this.isRecipientDomainResolving
@@ -335,14 +335,21 @@ export class TransferController extends EventEmitter {
     }
     if (this.#humanizerInfo) {
       // @TODO: could fetch address code
-      this.isRecipientSmartContract = isKnownTokenOrContract(this.#humanizerInfo, address)
+      this.isRecipientHumanizerKnownTokenOrSmartContract = isHumanizerKnownTokenOrSmartContract(
+        this.#humanizerInfo,
+        address
+      )
     }
 
     if (this.recipientUDAddress || this.recipientEnsAddress) {
       this.isRecipientAddressUnknown = true // @TODO: check from the address book
     }
 
-    this.isRecipientAddressUnknown = true // @TODO: isValidAddress & check from the address book
+    // @TODO: isValidAddress & check from the address book
+    this.isRecipientAddressUnknown =
+      (!this.recipientUDAddress && !this.recipientEnsAddress
+        ? ethers.getAddress(address)
+        : address) !== FEE_COLLECTOR
     this.isRecipientDomainResolving = false
 
     this.emitUpdate()
