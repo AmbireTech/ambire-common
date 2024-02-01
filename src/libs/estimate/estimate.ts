@@ -53,7 +53,10 @@ export interface EstimateResult {
 async function reestimate(fetchRequests: Function, counter: number = 0): Promise<any> {
   // stop the execution on 5 fails;
   // the below error message is not shown to the user so we are safe
-  if (counter >= 5) throw new Error('could not estimate')
+  if (counter >= 5)
+    return new Error(
+      'Estimation failure, retrying in a couple of seconds. If this issue persists, please change your RPC provider or contact Ambire support'
+    )
 
   const estimationTimeout = new Promise((resolve) => {
     setTimeout(() => {
@@ -104,7 +107,16 @@ export async function estimate(
 
   if (!account.creation) {
     if (op.calls.length !== 1) {
-      throw new Error("EOA can't have more than one call!")
+      return {
+        gasUsed: 0n,
+        nonce: 0,
+        feePaymentOptions: [],
+        erc4337estimation: null,
+        arbitrumL1FeeIfArbitrum: { noFee: 0n, withFee: 0n },
+        error: new Error(
+          "Trying to make multiple calls with a Basic Account which shouldn't happen. Please try again or contact support."
+        )
+      }
     }
 
     const call = op.calls[0]
@@ -140,7 +152,7 @@ export async function estimate(
         .catch((e) => e)
     ]
     const result = await reestimate(initializeRequests)
-    const [gasUsed, balance, [l1GasEstimation]] = result
+    const [gasUsed, balance, [l1GasEstimation]] = result instanceof Error ? [0n, 0n, [0n]] : result
 
     return {
       gasUsed,
@@ -156,7 +168,7 @@ export async function estimate(
       ],
       erc4337estimation: null,
       arbitrumL1FeeIfArbitrum: { noFee: 0n, withFee: 0n },
-      error: null
+      error: result instanceof Error ? result : null
     }
   }
 
@@ -252,6 +264,20 @@ export async function estimate(
     )
   ]
   const estimations = await reestimate(initializeRequests)
+
+  // this error usually means there's an RPC issue and we cannot make
+  // the estimation at the moment. Say so to the user
+  if (estimations instanceof Error) {
+    return {
+      gasUsed: 0n,
+      nonce: 0,
+      feePaymentOptions: [],
+      erc4337estimation: null,
+      arbitrumL1FeeIfArbitrum: { noFee: 0n, withFee: 0n },
+      error: estimations
+    }
+  }
+
   const arbitrumL1FeeIfArbitrum = estimations[2]
 
   let [
