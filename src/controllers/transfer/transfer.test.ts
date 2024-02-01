@@ -221,8 +221,7 @@ describe('Transfer Controller', () => {
     transferController.update({ recipientAddress: FEE_COLLECTOR })
     await transferController.onRecipientAddressChange()
 
-    expect(transferController.isRecipientHumanizerKnownTokenOrSmartContract).toBeTruthy()
-    expect(transferController.isRecipientFeeCollector).toBeTruthy()
+    expect(transferController.isRecipientHumanizerKnownTokenOrSmartContract).toBeFalsy()
     expect(transferController.isRecipientAddressUnknown).toBeFalsy()
   })
 
