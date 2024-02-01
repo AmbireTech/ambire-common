@@ -801,7 +801,7 @@ export class MainController extends EventEmitter {
             }))
       )
       .flat()
-      .filter(isAddress)
+      .filter(({ address }) => isAddress(address))
 
     const [, , estimation] = await Promise.all([
       // NOTE: we are not emitting an update here because the portfolio controller will do that
@@ -816,7 +816,7 @@ export class MainController extends EventEmitter {
             .filter(([, accOp]) => accOp)
             .map(([networkId, x]) => [networkId, [x!.accountOp]])
         ),
-        { forceUpdate: true, pinned: addresses.filter(({ address }) => address) }
+        { forceUpdate: true, pinned: addresses }
       ),
       shouldGetAdditionalPortfolio(account) &&
         this.portfolio.getAdditionalPortfolio(localAccountOp.accountAddr),
