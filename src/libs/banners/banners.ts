@@ -232,9 +232,7 @@ export const getNetworksWithCriticalPortfolioErrorBanners = ({
           id: `${networkData.id}-${new Date().getTime()}`,
           topic: 'WARNING',
           title: `Failed to retrieve the portfolio data for ${networkData.name}`,
-          text: `Affected features: account balances, assets. Please try again later or contact support.${
-            criticalError?.message ? `\nError: ${criticalError.message}` : ''
-          }`,
+          text: 'Affected features: account balances, assets. Please try again later or contact support.',
           actions: []
         }
       ]
