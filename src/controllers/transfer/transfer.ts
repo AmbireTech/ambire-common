@@ -217,6 +217,7 @@ export class TransferController extends EventEmitter {
         ...this.addressState,
         ...addressState
       }
+      this.#onRecipientAddressChange()
     }
     // We can do a regular check here, because the property defines if it should be updated
     // and not the actual value
@@ -280,7 +281,7 @@ export class TransferController extends EventEmitter {
   }
 
   // Allows for debounce implementation in the UI
-  async onRecipientAddressChange() {
+  #onRecipientAddressChange() {
     if (!this.isInitialized) {
       this.#throwNotInitialized()
       return
