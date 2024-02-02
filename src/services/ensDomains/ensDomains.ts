@@ -36,7 +36,7 @@ export function isCorrectAddress(address) {
 }
 
 // @TODO: Get RPC provider url from settings controller
-async function resolveENSDomain(domain, bip44Item): string {
+async function resolveENSDomain(domain, bip44Item?: any): Promise<string> {
   const normalizedDomainName = normalizeDomain(domain)
   if (!normalizedDomainName) return ''
   const provider = getProvider(ETH_ID)
