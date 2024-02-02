@@ -1066,13 +1066,17 @@ export class MainController extends EventEmitter {
       }
 
       // broadcast through bundler's service
-      const userOperationHash = await bundler.broadcast(userOperation!, network!)
-      if (!userOperationHash) {
-        return this.#throwAccountOpBroadcastError(new Error('was not able to broadcast'))
+      let userOperationHash
+      try {
+        userOperationHash = await bundler.broadcast(userOperation!, network!)
+      } catch (e) {
+        return this.#throwAccountOpBroadcastError(new Error('bundler broadcast failed'))
       }
+      if (!userOperationHash) {
+        return this.#throwAccountOpBroadcastError(new Error('bundler broadcast failed'))
+      }
+
       // broadcast the userOperationHash
-      // TODO: maybe a type property should exist to diff when we're
-      // returning a tx id and when an user op hash
       transactionRes = {
         hash: userOperationHash,
         nonce: Number(userOperation!.nonce)
