@@ -1,4 +1,5 @@
 import { AbiCoder, ethers, JsonRpcProvider } from 'ethers'
+import { Account } from 'interfaces/account'
 import fetch from 'node-fetch'
 
 import { describe, expect, jest, test } from '@jest/globals'
@@ -12,7 +13,7 @@ import { Portfolio } from './portfolio'
 describe('Portfolio', () => {
   const ethereum = networks.find((x) => x.id === 'ethereum')
   if (!ethereum) throw new Error('unable to find ethereum network in consts')
-  const provider = new JsonRpcProvider(ethereum.rpcUrl)
+  const provider = new JsonRpcProvider('https://invictus.ambire.com/ethereum')
   const portfolio = new Portfolio(fetch, provider, ethereum)
 
   async function getNonce(address: string) {
@@ -66,7 +67,8 @@ describe('Portfolio', () => {
     }
     const account = {
       addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
-      associatedKeys: [],
+      initialPrivileges: [],
+      associatedKeys: ['0xe5a4Dad2Ea987215460379Ab285DF87136E83BEA'],
       creation: {
         factoryAddr: '0xBf07a0Df119Ca234634588fbDb5625594E2a5BCA',
         bytecode:
@@ -116,7 +118,8 @@ describe('Portfolio', () => {
     }
     const account = {
       addr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
-      associatedKeys: [],
+      initialPrivileges: [],
+      associatedKeys: ['0x5Be214147EA1AE3653f289E17fE7Dc17A73AD175'],
       creation: {
         factoryAddr: '0xBf07a0Df119Ca234634588fbDb5625594E2a5BCA',
         bytecode:
@@ -192,5 +195,128 @@ describe('Portfolio', () => {
     // Portfolio should determine the tokens' balances and prices
     // @ts-ignore
     expect(result.total.usd).toBeGreaterThan(100)
+  })
+
+  test('simulation works for EOAs', async () => {
+    const acc = '0x7a15866aFfD2149189Aa52EB8B40a8F9166441D9'
+    const accountOp: any = {
+      accountAddr: acc,
+      signingKeyAddr: acc,
+      gasLimit: null,
+      gasFeePayment: null,
+      networkId: 'ethereum',
+      nonce: 0, // for EOA simulation it always has to be 0; @TODO should be handled in portfolio
+      signature: '0x0000000000000000000000007a15866aFfD2149189Aa52EB8B40a8F9166441D903',
+      calls: [
+        {
+          to: '0xdAC17F958D2ee523a2206206994597C13D831ec7',
+          value: BigInt(0),
+          data: '0xa9059cbb000000000000000000000000e5a4dad2ea987215460379ab285df87136e83bea00000000000000000000000000000000000000000000000000000000005040aa'
+        }
+      ]
+    }
+    const account: Account = {
+      addr: acc,
+      associatedKeys: [acc],
+      creation: {
+        // Those parameters are not relevant
+        factoryAddr: '0xBf07a0Df119Ca234634588fbDb5625594E2a5BCA',
+        bytecode:
+          '0x7f00000000000000000000000000000000000000000000000000000000000000017f02c94ba85f2ea274a3869293a0a9bf447d073c83c617963b0be7c862ec2ee44e553d602d80604d3d3981f3363d3d373d3d3d363d732a2b85eb1054d6f0c6c2e37da05ed3e5fea684ef5af43d82803e903d91602b57fd5bf3',
+        salt: '0x2ee01d932ede47b0b2fb1b6af48868de9f86bfc9a5be2f0b42c0111cf261d04c'
+      },
+      initialPrivileges: []
+    }
+    const postSimulation = await portfolio.get(acc, {
+      simulation: { accountOps: [accountOp], account },
+      isEOA: true
+    })
+    const entry = postSimulation.tokens.find((x) => x.symbol === 'USDT')
+    if (!entry || entry.amountPostSimulation === undefined) {
+      throw new Error('Entry not found or `amountPostSimulation` is not calculated')
+    }
+    expect(entry.amount - entry.amountPostSimulation).toBe(5259434n)
+  })
+
+  test('simulation should revert with SV_NO_KEYS for an account we do not posses the assoicated key for', async () => {
+    const acc = '0x7a15866aFfD2149189Aa52EB8B40a8F9166441D9'
+    const accountOp: any = {
+      accountAddr: acc,
+      signingKeyAddr: acc,
+      gasLimit: null,
+      gasFeePayment: null,
+      networkId: 'ethereum',
+      nonce: 0, // for EOA simulation it always has to be 0; @TODO should be handled in portfolio
+      signature: '0x0000000000000000000000007a15866aFfD2149189Aa52EB8B40a8F9166441D903',
+      calls: [
+        {
+          to: '0xdAC17F958D2ee523a2206206994597C13D831ec7',
+          value: BigInt(0),
+          data: '0xa9059cbb000000000000000000000000e5a4dad2ea987215460379ab285df87136e83bea00000000000000000000000000000000000000000000000000000000005040aa'
+        }
+      ]
+    }
+    const account: Account = {
+      addr: acc,
+      associatedKeys: [],
+      creation: {
+        // Those parameters are not relevant
+        factoryAddr: '0xBf07a0Df119Ca234634588fbDb5625594E2a5BCA',
+        bytecode:
+          '0x7f00000000000000000000000000000000000000000000000000000000000000017f02c94ba85f2ea274a3869293a0a9bf447d073c83c617963b0be7c862ec2ee44e553d602d80604d3d3981f3363d3d373d3d3d363d732a2b85eb1054d6f0c6c2e37da05ed3e5fea684ef5af43d82803e903d91602b57fd5bf3',
+        salt: '0x2ee01d932ede47b0b2fb1b6af48868de9f86bfc9a5be2f0b42c0111cf261d04c'
+      },
+      initialPrivileges: []
+    }
+
+    try {
+      await portfolio.get(acc, {
+        simulation: { accountOps: [accountOp], account },
+        isEOA: true
+      })
+    } catch (e: any) {
+      expect(e.message).toBe('simulation error: Spoof failed: no keys')
+    }
+  })
+
+  test('simulation should revert with SV_WRONG_KEYS for an account that we pass a wrong associated key', async () => {
+    const acc = '0x7a15866aFfD2149189Aa52EB8B40a8F9166441D9'
+    const accountOp: any = {
+      accountAddr: acc,
+      signingKeyAddr: acc,
+      gasLimit: null,
+      gasFeePayment: null,
+      networkId: 'ethereum',
+      nonce: 0, // for EOA simulation it always has to be 0; @TODO should be handled in portfolio
+      signature: '0x0000000000000000000000007a15866aFfD2149189Aa52EB8B40a8F9166441D903',
+      calls: [
+        {
+          to: '0xdAC17F958D2ee523a2206206994597C13D831ec7',
+          value: BigInt(0),
+          data: '0xa9059cbb000000000000000000000000e5a4dad2ea987215460379ab285df87136e83bea00000000000000000000000000000000000000000000000000000000005040aa'
+        }
+      ]
+    }
+    const account: Account = {
+      addr: acc,
+      associatedKeys: ['0xdAC17F958D2ee523a2206206994597C13D831ec7'],
+      creation: {
+        // Those parameters are not relevant
+        factoryAddr: '0xBf07a0Df119Ca234634588fbDb5625594E2a5BCA',
+        bytecode:
+          '0x7f00000000000000000000000000000000000000000000000000000000000000017f02c94ba85f2ea274a3869293a0a9bf447d073c83c617963b0be7c862ec2ee44e553d602d80604d3d3981f3363d3d373d3d3d363d732a2b85eb1054d6f0c6c2e37da05ed3e5fea684ef5af43d82803e903d91602b57fd5bf3',
+        salt: '0x2ee01d932ede47b0b2fb1b6af48868de9f86bfc9a5be2f0b42c0111cf261d04c'
+      },
+      initialPrivileges: []
+    }
+
+    try {
+      await portfolio.get(acc, {
+        simulation: { accountOps: [accountOp], account },
+        isEOA: true
+      })
+    } catch (e: any) {
+      expect(e.message).toBe('simulation error: Spoof failed: wrong keys')
+    }
   })
 })

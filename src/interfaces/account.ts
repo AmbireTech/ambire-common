@@ -5,8 +5,10 @@ export interface Account {
   // Associated keys that can control thte account
   // For EOAs thits must be set to [account.addr]
   associatedKeys: string[]
+  initialPrivileges: [string, string][]
   // Creation data; `null` in case of an EOA
   creation: AccountCreation | null
+  email?: string
 }
 
 export interface AccountCreation {

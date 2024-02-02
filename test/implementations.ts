@@ -1,14 +1,10 @@
 import { ethers } from 'hardhat'
+import { AmbireAccount, expect, buildInfo, deploySalt, deployGasLimit, assertion } from './config'
 import {
-  AmbireAccount,
-  expect,
-  buildInfo,
-  deploySalt,
-  deployGasLimit,
-  assertion
-} from './config'
-import { getProxyDeployBytecode, getStorageSlotsFromArtifact } from '../src/libs/proxyDeploy/deploy'
-import { PrivLevels } from '../src/libs/proxyDeploy/deploy'
+  getProxyDeployBytecode,
+  getStorageSlotsFromArtifact,
+  PrivLevels
+} from '../src/libs/proxyDeploy/deploy'
 
 // get the expect address after the contract is deployed by the deployer
 function getAmbireAccountAddress(factoryAddress: string, bytecode: string) {
@@ -35,18 +31,25 @@ async function deployAmbireAccountHardhatNetwork(priLevels: PrivLevels[]) {
   await factory.deploy(bytecode, deploySalt, { deployGasLimit })
 
   const ambireAccountAddress = getAmbireAccountAddress(await factory.getAddress(), bytecode)
-  const ambireAccount: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signer)
+  const ambireAccount: any = new ethers.BaseContract(
+    ambireAccountAddress,
+    AmbireAccount.abi,
+    signer
+  )
 
-  const promises = priLevels.map(priv => ambireAccount.privileges(priv.addr))
+  const promises = priLevels.map((priv) => ambireAccount.privileges(priv.addr))
   const result = await Promise.all(promises)
   result.map((res, index) => {
     const expected = priLevels[index].hash === true ? ethers.toBeHex(1, 32) : priLevels[index].hash
     expect(res).to.equal(expected)
   })
-  return {ambireAccount, ambireAccountAddress, factoryAddress: await factory.getAddress(), bytecode, deploySalt}
+  return {
+    ambireAccount,
+    ambireAccountAddress,
+    factoryAddress: await factory.getAddress(),
+    bytecode,
+    deploySalt
+  }
 }
 
-export {
-  getAmbireAccountAddress,
-  deployAmbireAccountHardhatNetwork
-}
+export { getAmbireAccountAddress, deployAmbireAccountHardhatNetwork }

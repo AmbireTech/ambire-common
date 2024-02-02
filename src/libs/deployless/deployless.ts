@@ -19,6 +19,8 @@ const deployErrorSig = '0xb4f54111'
 const errorSig = '0x08c379a0'
 // Signature of Panic(uint256)
 const panicSig = '0x4e487b71'
+// uniswap swap expired
+const expiredSig = '0x5bf6f916'
 
 // any made up addr would work
 const arbitraryAddr = '0x0000000000000000000000000000000000696969'
@@ -36,11 +38,13 @@ export type CallOptions = {
   from?: string
   gasPrice?: string
   gasLimit?: string
+  stateToOverride: object | null
 }
 const defaultOptions: CallOptions = {
   mode: DeploylessMode.Detect,
   blockTag: 'latest',
-  from: undefined
+  from: undefined,
+  stateToOverride: null
 }
 
 export class Deployless {
@@ -99,7 +103,8 @@ export class Deployless {
       ])
     )
     // any response bigger than 0x is sufficient to know that state override worked
-    this.stateOverrideSupported = code.length > 2
+    // the response would be just "0x" if state override doesn't work
+    this.stateOverrideSupported = code.startsWith('0x') && code.length > 2
     this.contractRuntimeCode = mapResponse(code)
   }
 
@@ -114,8 +119,10 @@ export class Deployless {
     }
     await this.detectionPromise
 
+    if (opts.stateToOverride !== null && opts.mode !== DeploylessMode.StateOverride) {
+      throw new Error('state override passed but not requested')
+    }
     if (opts.mode === DeploylessMode.StateOverride && !this.stateOverrideSupported) {
-      // @TODO test this case
       throw new Error('state override requested but not supported')
     }
 
@@ -131,7 +138,7 @@ export class Deployless {
               gas: opts?.gasLimit
             },
             opts.blockTag,
-            { [arbitraryAddr]: { code: this.contractRuntimeCode } }
+            { [arbitraryAddr]: { code: this.contractRuntimeCode }, ...(opts.stateToOverride || {}) }
           ])
         : this.provider.call({
             blockTag: opts.blockTag,
@@ -197,11 +204,15 @@ export function parseErr(data: string): string | null {
   }
   if (data.startsWith(errorSig)) {
     try {
-      return abiCoder.decode(['string'], '0x' + dataNoPrefix)[0]
+      return abiCoder.decode(['string'], `0x${dataNoPrefix}`)[0]
     } catch (e: any) {
       if (e.code === 'BUFFER_OVERRUN' || e.code === 'NUMERIC_FAULT') return dataNoPrefix
       else throw e
     }
+  }
+  // uniswap expired error
+  if (data === expiredSig) {
+    return 'Swap expired'
   }
   return null
 }

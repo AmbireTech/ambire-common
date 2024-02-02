@@ -9,7 +9,7 @@ import { requestMagicLink } from './magicLink'
 
 const playstationEmail = 'playstation'
 const exMagicLinkKey = 'b12239309b38294f4075463ff131ac8cfe32ef2f99fc'
-const email = 'unifri@ambire.com'
+const email = 'unufri+playstation@ambire.com'
 const relayerUrl = 'https://staging-relayer.ambire.com'
 
 describe('MagicLink', () => {

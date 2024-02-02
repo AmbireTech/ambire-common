@@ -1,9 +1,10 @@
 import { ethers } from 'ethers'
-import { AccountOp } from '../../accountOp/accountOp'
-import { HumanizerCallModule, IrCall } from '../interfaces'
-import { getAction, getLabel, getAddress } from '../utils'
+
 import AmbireAccount from '../../../../contracts/compiled/AmbireAccount.json'
 import { ENTRY_POINT_MARKER } from '../../../consts/deploy'
+import { AccountOp } from '../../accountOp/accountOp'
+import { HumanizerCallModule, IrCall } from '../interfaces'
+import { getAction, getAddress, getLabel } from '../utils'
 
 const iface = new ethers.Interface(AmbireAccount.abi)
 
@@ -17,7 +18,7 @@ export const privilegeHumanizer: HumanizerCallModule = (
     [iface.getFunction('setAddrPrivilege')?.selector!]: (accounutOp: AccountOp, call: IrCall) => {
       const { addr, priv } = iface.parseTransaction(call)!.args
       if (
-        accountOp.humanizerMeta?.[`names:${addr}`]?.includes('Entry Point') &&
+        accountOp.humanizerMeta?.[`names:${addr}`]?.includes('entry point') &&
         priv === ENTRY_POINT_MARKER
       )
         return [getAction('Enable'), getAddress(addr)]

@@ -1,15 +1,16 @@
 import { ethers } from 'ethers'
+
 import { AccountOp } from '../../accountOp/accountOp'
+import { HumanizerCallModule, HumanizerFragment, IrCall } from '../interfaces'
 import {
-  getLabel,
   getAction,
   getAddress,
+  getLabel,
   getNft,
   getToken,
   getTokenInfo,
   getUnknownVisualization
 } from '../utils'
-import { HumanizerFragment, HumanizerCallModule, IrCall } from '../interfaces'
 
 export const genericErc721Humanizer: HumanizerCallModule = (
   accountOp: AccountOp,
@@ -68,7 +69,17 @@ export const genericErc721Humanizer: HumanizerCallModule = (
   }
 
   const newCalls = currentIrCalls.map((call) => {
-    return matcher[call.data.substring(0, 10)] // could do additional check if it is actually NFT contract
+    // the humanizer works like this:
+    // first, humanize ERC-20
+    // second, humanize ERC-721
+    // but the sigHash for approve is the same on both standards
+    // so on approve, ERC-20 humanization is replaced by ERC-721.
+    // that's why we check if it's a known token to prevent humanization.
+    // If it's not a known token, using the same humanization is okay as
+    // we cannot humanize it further
+    const isActuallyKnownToken = !!accountOp.humanizerMeta?.[`tokens:${call.to}`]
+    // could do additional check if it is actually NFT contract
+    return matcher[call.data.substring(0, 10)] && !isActuallyKnownToken
       ? {
           ...call,
           fullVisualization: matcher[call.data.substring(0, 10)](call)
@@ -91,6 +102,7 @@ export const genericErc20Humanizer: HumanizerCallModule = (
       return args[1] !== BigInt(0)
         ? [
             getAction('Grant approval'),
+            getLabel('for'),
             getToken(call.to, args[1]),
             getLabel('to'),
             getAddress(args[0])

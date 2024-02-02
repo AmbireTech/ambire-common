@@ -15,6 +15,7 @@ import {
   TypedDataField
 } from 'ethers'
 
+import { PERMIT_2_ADDRESS } from '../../consts/addresses'
 import { Account, AccountCreation, AccountOnchainState } from '../../interfaces/account'
 import { KeystoreSigner } from '../../interfaces/keystore'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
@@ -326,6 +327,13 @@ export async function getEIP712Signature(
   }
 
   if (!accountState.isV2) {
+    if (
+      message.domain.name === 'Permit2' &&
+      message.domain.verifyingContract === PERMIT_2_ADDRESS
+    ) {
+      return wrapUnprotected(await signer.signTypedData(message))
+    }
+
     throw new Error(
       'Signing eip-712 messages is disallowed for v1 accounts. Please contact support to proceed'
     )

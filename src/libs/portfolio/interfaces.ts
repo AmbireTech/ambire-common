@@ -1,6 +1,5 @@
-import { NetworkId } from 'interfaces/networkDescriptor'
-
 import { Account } from '../../interfaces/account'
+import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
 import { AccountOp } from '../accountOp/accountOp'
 
 export interface Price {
@@ -68,14 +67,18 @@ export interface Hints {
   error?: string
 }
 
+interface ExtendedError extends Error {
+  simulationErrorMsg?: string
+}
+
 export type AccountState = {
   // network id
   [key: string]:
     | {
         isReady: boolean
         isLoading: boolean
-        criticalError?: Error
-        errors: Error[]
+        criticalError?: ExtendedError
+        errors: ExtendedError[]
         result?: PortfolioGetResult
         // We store the previously simulated AccountOps only for the pending state.
         // Prior to triggering a pending state update, we compare the newly passed AccountOp[] (updateSelectedAccount) with the cached version.
@@ -142,4 +145,24 @@ export interface LimitsOptions {
 export interface Limits {
   deploylessProxyMode: LimitsOptions
   deploylessStateOverrideMode: LimitsOptions
+}
+
+export type PinnedTokens = {
+  networkId: NetworkDescriptor['id'] | null
+  address: string
+  onGasTank: boolean
+}[]
+
+export interface GetOptions {
+  baseCurrency: string
+  blockTag: string | number
+  simulation?: GetOptionsSimulation
+  priceCache?: PriceCache
+  priceRecency: number
+  previousHints?: {
+    erc20s: Hints['erc20s']
+    erc721s: Hints['erc721s']
+  }
+  isEOA: boolean
+  pinned?: PinnedTokens
 }

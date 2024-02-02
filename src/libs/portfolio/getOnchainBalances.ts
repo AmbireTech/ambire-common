@@ -1,10 +1,11 @@
+import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
-import { getAccountDeployParams } from '../account/account'
+import { getAccountDeployParams, isSmartAccount } from '../account/account'
 import { callToTuple } from '../accountOp/accountOp'
-import { Deployless, parseErr } from '../deployless/deployless'
+import { Deployless, DeploylessMode, parseErr } from '../deployless/deployless'
+import { privSlot } from '../proxyDeploy/deploy'
 import { getFlags } from './helpers'
-import { Collectible, CollectionResult, LimitsOptions, TokenResult } from './interfaces'
-import { GetOptions } from './portfolio'
+import { Collectible, CollectionResult, GetOptions, LimitsOptions, TokenResult } from './interfaces'
 
 // 0x00..01 is the address from which simulation signatures are valid
 const DEPLOYLESS_SIMULATION_FROM = '0x0000000000000000000000000000000000000001'
@@ -24,18 +25,37 @@ class SimulationError extends Error {
   }
 }
 
-const handleSimulationError = (error: string, beforeNonce: bigint, afterNonce: bigint) => {
+function handleSimulationError(error: string, beforeNonce: bigint, afterNonce: bigint) {
   if (error !== '0x') throw new SimulationError(parseErr(error) || error, beforeNonce, afterNonce)
   // If the afterNonce is 0, it means that we reverted, even if the error is empty
   // In both BalanceOracle and NFTOracle, afterSimulation and therefore afterNonce will be left empty
-  if (afterNonce === 0n)
-    throw new SimulationError('unknown error: simulation reverted', beforeNonce, afterNonce)
+  if (afterNonce === 0n) throw new SimulationError('Simulation reverted', beforeNonce, afterNonce)
   if (afterNonce < beforeNonce)
     throw new SimulationError(
       'lower "after" nonce, should not be possible',
       beforeNonce,
       afterNonce
     )
+}
+
+function getDeploylessOpts(accountAddr: string, opts: Partial<GetOptions>) {
+  return {
+    blockTag: opts.blockTag,
+    from: DEPLOYLESS_SIMULATION_FROM,
+    mode: opts.isEOA ? DeploylessMode.StateOverride : DeploylessMode.Detect,
+    stateToOverride: opts.isEOA
+      ? {
+          [accountAddr]: {
+            code: AmbireAccount.binRuntime,
+            stateDiff: {
+              // if we use 0x00...01 we get a geth bug: "invalid argument 2: hex number with leading zero digits\" - on some RPC providers
+              [`0x${privSlot(0, 'address', accountAddr, 'bytes32')}`]:
+                '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'
+            }
+          }
+        }
+      : null
+  }
 }
 
 export async function getNFTs(
@@ -46,7 +66,7 @@ export async function getNFTs(
   tokenAddrs: [string, any][],
   limits: LimitsOptions
 ): Promise<[number, CollectionResult][]> {
-  const deploylessOpts = { blockTag: opts.blockTag, from: DEPLOYLESS_SIMULATION_FROM }
+  const deploylessOpts = getDeploylessOpts(accountAddr, opts)
   const mapToken = (token: any) => {
     return {
       name: token.name,
@@ -55,7 +75,7 @@ export async function getNFTs(
       amount: BigInt(token.nfts.length),
       decimals: 1,
       collectibles: [...(token.nfts as any[])].map(
-        (token: any) => ({ id: token.id, url: token.uri } as Collectible)
+        (colToken: any) => ({ id: colToken.id, url: colToken.uri } as Collectible)
       )
     } as CollectionResult
   }
@@ -67,7 +87,7 @@ export async function getNFTs(
         [
           accountAddr,
           tokenAddrs.map(([address]) => address),
-          tokenAddrs.map(([_, x]) =>
+          tokenAddrs.map(([, x]) =>
             x.enumerable ? [] : x.tokens.slice(0, limits.erc721TokensInput)
           ),
           limits.erc721Tokens
@@ -86,13 +106,13 @@ export async function getNFTs(
     'simulateAndGetAllNFTs',
     [
       accountAddr,
+      account.associatedKeys,
       tokenAddrs.map(([address]) => address),
-      tokenAddrs.map(([_, x]) => (x.enumerable ? [] : x.tokens.slice(0, limits.erc721TokensInput))),
+      tokenAddrs.map(([, x]) => (x.enumerable ? [] : x.tokens.slice(0, limits.erc721TokensInput))),
       limits.erc721Tokens,
-
       factory,
       factoryCalldata,
-      accountOps.map(({ nonce, calls, signature }) => [nonce, calls.map(callToTuple), signature])
+      accountOps.map(({ nonce, calls }) => [nonce, calls.map(callToTuple)])
     ],
     deploylessOpts
   )
@@ -121,7 +141,7 @@ export async function getTokens(
     ({
       amount: token.amount,
       networkId: network.id,
-      decimals: new Number(token.decimals),
+      decimals: Number(token.decimals),
       symbol:
         address === '0x0000000000000000000000000000000000000000'
           ? network.nativeAssetSymbol
@@ -129,7 +149,7 @@ export async function getTokens(
       address,
       flags: getFlags({}, network.id, network.id, address)
     } as TokenResult)
-  const deploylessOpts = { blockTag: opts.blockTag, from: DEPLOYLESS_SIMULATION_FROM }
+  const deploylessOpts = getDeploylessOpts(accountAddr, opts)
   if (!opts.simulation) {
     const [results] = await deployless.call(
       'getBalances',
@@ -145,10 +165,14 @@ export async function getTokens(
     'simulateAndGetBalances',
     [
       accountAddr,
+      account.associatedKeys,
       tokenAddrs,
       factory,
       factoryCalldata,
-      accountOps.map(({ nonce, calls, signature }) => [nonce, calls.map(callToTuple), signature])
+      accountOps.map(({ nonce, calls }, index) => [
+        isSmartAccount(account) ? nonce : BigInt(index), // EOA simulation always starts from 0
+        calls.map(callToTuple)
+      ])
     ],
     deploylessOpts
   )

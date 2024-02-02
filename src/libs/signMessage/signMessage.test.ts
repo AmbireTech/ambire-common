@@ -38,7 +38,8 @@ const v1siger = {
 const eoaAccount: Account = {
   addr: eoaSigner.keyPublicAddress,
   associatedKeys: [eoaSigner.keyPublicAddress],
-  creation: null
+  creation: null,
+  initialPrivileges: []
 }
 
 const smartAccount: Account = {
@@ -49,10 +50,11 @@ const smartAccount: Account = {
     bytecode:
       '0x7f00000000000000000000000000000000000000000000000000000000000000027f4cddd6c90a7055aa3d00deceb0664950d2f31114946678b79df2a5540a3238f8553d602d80604d3d3981f3363d3d373d3d3d363d730e370942ebe4d026d05d2cf477ff386338fc415a5af43d82803e903d91602b57fd5bf3',
     salt: '0x0000000000000000000000000000000000000000000000000000000000000000'
-  }
+  },
+  initialPrivileges: []
 }
 
-const v1Account = {
+const v1Account: Account = {
   addr: '0x254D526978D15C9619288949f9419e918977F9F3',
   associatedKeys: [v1siger.keyPublicAddress],
   creation: {
@@ -60,7 +62,8 @@ const v1Account = {
     bytecode:
       '0x7f00000000000000000000000000000000000000000000000000000000000000017f832a45b3e3616710ac5703e98191d3827c46e7f1107596b00d26584abe24d690553d602d80604d3d3981f3363d3d373d3d3d363d732a2b85eb1054d6f0c6c2e37da05ed3e5fea684ef5af43d82803e903d91602b57fd5bf3',
     salt: '0x0000000000000000000000000000000000000000000000000000000000000001'
-  }
+  },
+  initialPrivileges: []
 }
 
 const providers = Object.fromEntries(

@@ -1,9 +1,9 @@
 import { formatUnits, getAddress } from 'ethers'
 import isEmail from 'validator/es/lib/isEmail'
 
-import { ConstantsType } from '../../../v1/hooks/useConstants'
+import { TransferControllerState } from '../../interfaces/transfer'
 import { TokenResult } from '../../libs/portfolio'
-import { isKnownTokenOrContract, isValidAddress } from '../address'
+import { isValidAddress } from '../address'
 
 const validateAddress = (address: string) => {
   if (!(address && address.length)) {
@@ -50,8 +50,8 @@ const validateSendTransferAddress = (
   address: string,
   selectedAcc: string,
   addressConfirmed: any,
-  isRecipientAddressUnknown: boolean,
-  humanizerInfo: ConstantsType['humanizerInfo'],
+  isRecipientAddressUnknown: TransferControllerState['isRecipientAddressUnknown'],
+  isRecipientHumanizerKnownTokenOrSmartContract: TransferControllerState['isRecipientHumanizerKnownTokenOrSmartContract'],
   isUDAddress: boolean,
   isEnsAddress: boolean,
   isRecipientDomainResolving: boolean
@@ -81,7 +81,7 @@ const validateSendTransferAddress = (
     }
   }
 
-  if (isKnownTokenOrContract(humanizerInfo, address)) {
+  if (isRecipientHumanizerKnownTokenOrSmartContract) {
     return {
       success: false,
       message: 'You are trying to send tokens to a smart contract. Doing so would burn them.'
@@ -158,11 +158,11 @@ const validateSendNftAddress = (
   address: string,
   selectedAcc: any,
   addressConfirmed: any,
-  isKnownAddress: any,
+  isRecipientAddressUnknown: TransferControllerState['isRecipientAddressUnknown'],
+  isRecipientHumanizerKnownTokenOrSmartContract: TransferControllerState['isRecipientHumanizerKnownTokenOrSmartContract'],
   metadata: any,
   selectedNetwork: any,
   network: any,
-  humanizerInfo: ConstantsType['humanizerInfo'],
   isUDAddress: boolean,
   isEnsAddress: boolean,
   isRecipientDomainResolving: boolean
@@ -171,8 +171,8 @@ const validateSendNftAddress = (
     address,
     selectedAcc,
     addressConfirmed,
-    isKnownAddress,
-    humanizerInfo,
+    isRecipientAddressUnknown,
+    isRecipientHumanizerKnownTokenOrSmartContract,
     isUDAddress,
     isEnsAddress,
     isRecipientDomainResolving

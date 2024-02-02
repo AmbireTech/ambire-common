@@ -23,13 +23,15 @@ import {
   getAccountOpBannersForEOA,
   getAccountOpBannersForSmartAccount,
   getMessageBanners,
+  getNetworksWithCriticalPortfolioErrorBanners,
   getNetworksWithFailedRPCBanners,
   getPendingAccountOpBannersForEOA
 } from '../../libs/banners/banners'
-import { estimate, EstimateResult, getEstimationFailure } from '../../libs/estimate/estimate'
+import { estimate, EstimateResult } from '../../libs/estimate/estimate'
 import { GasRecommendation, getGasPriceRecommendations } from '../../libs/gasPrice/gasPrice'
 import { humanizeAccountOp } from '../../libs/humanizer'
 import { shouldGetAdditionalPortfolio } from '../../libs/portfolio/helpers'
+import { PinnedTokens } from '../../libs/portfolio/interfaces'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { isErc4337Broadcast, toUserOperation } from '../../libs/userOperation/userOperation'
 import bundler from '../../services/bundlers'
@@ -37,8 +39,8 @@ import generateSpoofSig from '../../utils/generateSpoofSig'
 import wait from '../../utils/wait'
 import { AccountAdderController } from '../accountAdder/accountAdder'
 import { ActivityController, SignedMessage, SubmittedAccountOp } from '../activity/activity'
-import { EmailVaultController } from '../emailVault'
-import EventEmitter from '../eventEmitter'
+import { EmailVaultController } from '../emailVault/emailVault'
+import EventEmitter from '../eventEmitter/eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
 import { PortfolioController } from '../portfolio/portfolio'
 import { SettingsController } from '../settings/settings'
@@ -100,7 +102,7 @@ export class MainController extends EventEmitter {
   // @TODO read networks from settings
   accounts: Account[] = []
 
-  selectedAccount: string | null = null
+  selectedAccount: AccountId | null = null
 
   userRequests: UserRequest[] = []
 
@@ -172,7 +174,7 @@ export class MainController extends EventEmitter {
     onRejectDappRequest: (err: any, id?: number) => void
     onUpdateDappSelectedAccount: (accountAddr: string) => void
     onBroadcastSuccess?: (type: 'message' | 'typed-data' | 'account-op') => void
-    pinned: string[]
+    pinned: PinnedTokens
   }) {
     super()
     this.#storage = storage
@@ -231,6 +233,8 @@ export class MainController extends EventEmitter {
     if (this.selectedAccount) {
       this.activity.init({ filters: { account: this.selectedAccount } })
     }
+
+    this.updateSelectedAccount(this.selectedAccount)
 
     /**
      * Listener that gets triggered as a finalization step of adding new
@@ -788,10 +792,16 @@ export class MainController extends EventEmitter {
     )
     const addresses = humanization
       .map((call) =>
-        !call.fullVisualization ? '' : call.fullVisualization.map((vis) => vis.address ?? '')
+        !call.fullVisualization
+          ? []
+          : call.fullVisualization.map((vis) => ({
+              address: vis.address || '',
+              networkId: null,
+              onGasTank: false
+            }))
       )
       .flat()
-      .filter((addr) => isAddress(addr))
+      .filter(({ address }) => isAddress(address))
 
     const [, , estimation] = await Promise.all([
       // NOTE: we are not emitting an update here because the portfolio controller will do that
@@ -821,19 +831,26 @@ export class MainController extends EventEmitter {
         feeTokens,
         { is4337Broadcast }
       ).catch((e) => {
-        this.emitError(getEstimationFailure(e, localAccountOp))
+        this.emitError({
+          level: 'major',
+          message: `Failed to estimate account op for ${localAccountOp.accountAddr} on ${localAccountOp.networkId}`,
+          error: e
+        })
         return null
       })
     ])
 
-    if (!estimation) return
     this.accountOpsToBeSigned[localAccountOp.accountAddr] ||= {}
+    this.accountOpsToBeSigned[localAccountOp.accountAddr][localAccountOp.networkId] ||= {
+      accountOp: localAccountOp,
+      estimation
+    }
     // @TODO compare intent between accountOp and this.accountOpsToBeSigned[accountOp.accountAddr][accountOp.networkId].accountOp
     this.accountOpsToBeSigned[localAccountOp.accountAddr][localAccountOp.networkId]!.estimation =
       estimation
 
     // add the estimation to the user operation
-    if (is4337Broadcast) {
+    if (is4337Broadcast && estimation) {
       localAccountOp.asUserOperation!.verificationGasLimit = ethers.toBeHex(
         estimation.erc4337estimation!.verificationGasLimit
       )
@@ -846,7 +863,11 @@ export class MainController extends EventEmitter {
 
     // update the signAccountOp controller once estimation finishes;
     // this eliminates the infinite loading bug if the estimation comes slower
-    if (this.signAccountOp) this.signAccountOp.update({ estimation })
+    if (this.signAccountOp) {
+      estimation
+        ? this.signAccountOp.update({ estimation, accountOp: localAccountOp })
+        : this.signAccountOp.update({ accountOp: localAccountOp })
+    }
   }
 
   /**
@@ -1166,6 +1187,15 @@ export class MainController extends EventEmitter {
     const userRequests =
       this.userRequests.filter((req) => req.accountAddr === this.selectedAccount) || []
     const accounts = this.accounts
+
+    // Filter EV banners by the currently selected account only if the banner is account-specific.
+    const emailVaultBanners = this.emailVault.banners.filter((banner) => {
+      // Do not filter out the banner if it is not related to a specific account.
+      if (!banner.accountAddr) return true
+
+      return banner.accountAddr === this.selectedAccount
+    })
+
     const accountOpEOABanners = getAccountOpBannersForEOA({ userRequests, accounts })
     const pendingAccountOpEOABanners = getPendingAccountOpBannersForEOA({ userRequests, accounts })
     const accountOpSmartAccountBanners = getAccountOpBannersForSmartAccount({
@@ -1178,14 +1208,21 @@ export class MainController extends EventEmitter {
       networks: this.settings.networks,
       networksWithAssets: this.portfolio.networksWithAssets
     })
+    const networksWithCriticalPortfolioErrorBanners = getNetworksWithCriticalPortfolioErrorBanners({
+      selectedAccount: this.selectedAccount,
+      networks: this.settings.networks,
+      portfolio: this.portfolio
+    })
 
     return [
+      ...emailVaultBanners,
       ...accountOpSmartAccountBanners,
       ...accountOpEOABanners,
       ...pendingAccountOpEOABanners,
       ...messageBanners,
       ...this.activity.banners,
-      ...networksWithFailedRPCBanners
+      ...networksWithFailedRPCBanners,
+      ...networksWithCriticalPortfolioErrorBanners
     ]
   }
 

@@ -27,7 +27,7 @@ export interface TransferControllerState {
 
   isRecipientAddressUnknownAgreed: boolean
 
-  isRecipientSmartContract: boolean
+  isRecipientHumanizerKnownTokenOrSmartContract: boolean
 
   userRequest: UserRequest
 
@@ -43,4 +43,6 @@ export interface TransferControllerState {
   }
 
   isFormValid: boolean
+
+  isTopUp: boolean
 }

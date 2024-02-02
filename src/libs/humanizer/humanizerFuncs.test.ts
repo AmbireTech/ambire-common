@@ -4,7 +4,7 @@ import fetch from 'node-fetch'
 /* eslint-disable no-console */
 import { describe, expect, test } from '@jest/globals'
 
-import { ErrorRef } from '../../controllers/eventEmitter'
+import { ErrorRef } from '../../controllers/eventEmitter/eventEmitter'
 import { AccountOp } from '../accountOp/accountOp'
 import { HumanizerFragment, HumanizerVisualization, IrCall } from './interfaces'
 import { fallbackHumanizer } from './modules/fallBackHumanizer'
@@ -310,7 +310,7 @@ describe('module tests', () => {
     })
   })
 
-  test.skip('fallback', async () => {
+  test('fallback', async () => {
     accountOp.calls = [...transactions.generic]
     delete accountOp.humanizerMeta?.['funcSelectors:0x095ea7b3']
     let irCalls: IrCall[] = accountOp.calls
