@@ -1,4 +1,4 @@
-import { Interface, Provider } from 'ethers'
+import { Block, Interface, Provider } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFactory.json'
@@ -69,13 +69,50 @@ function average(data: bigint[]): bigint {
   return data.reduce((a, b) => a + b, 0n) / BigInt(data.length)
 }
 
+// if there's an RPC issue, try refetching the block at least
+// 5 times before declaring a failure
+async function refetchBlock(
+  provider: Provider,
+  blockTag: string | number = -1,
+  counter = 0
+): Promise<Block> {
+  // the reason we throw an error here is that getGasPriceRecommendations is
+  // used in main.ts #updateGasPrice where we emit an error with a predefined
+  // msg, which in turn displays a notification popup with the error.
+  // If we change the design and decide to display this as an error
+  // somewhere else, we should probably not throw, but return the
+  // error instead
+  if (counter >= 5) throw new Error('unable to retrieve block')
+
+  let lastBlock = null
+  try {
+    lastBlock = await provider.getBlock(blockTag, true)
+  } catch (e) {
+    lastBlock = null
+  }
+
+  if (!lastBlock) {
+    // delay the refetch with a bit of time to give the RPC a chance
+    // to get back up
+    const delayPromise = (ms: number) =>
+      new Promise((resolve) => {
+        setTimeout(resolve, ms)
+      })
+    await delayPromise(250)
+
+    const localCounter = counter + 1
+    lastBlock = await refetchBlock(provider, blockTag, localCounter)
+  }
+
+  return lastBlock
+}
+
 export async function getGasPriceRecommendations(
   provider: Provider,
   network: NetworkDescriptor,
   blockTag: string | number = -1
 ): Promise<GasRecommendation[]> {
-  const lastBlock = await provider.getBlock(blockTag, true)
-  if (lastBlock == null) throw new Error('unable to retrieve block')
+  const lastBlock = await refetchBlock(provider, blockTag)
   // https://github.com/ethers-io/ethers.js/issues/3683#issuecomment-1436554995
   const txns = lastBlock.prefetchedTransactions
   if (network.feeOptions.is1559 && lastBlock.baseFeePerGas != null) {

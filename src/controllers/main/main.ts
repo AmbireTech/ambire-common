@@ -392,12 +392,13 @@ export class MainController extends EventEmitter {
 
     // We want to update the gas price only for the networks having account ops.
     // Together with that, we make sure `ethereum` is included, as we always want to know its gas price (once we have a gas indicator, we will need it).
+    // Note<Bobby>: remove ethereum as the above currently is not true
     const gasPriceNetworks = [
       ...new Set([
         ...Object.keys(this.accountOpsToBeSigned)
           .map((accountAddr) => Object.keys(this.accountOpsToBeSigned[accountAddr]))
-          .flat(),
-        'ethereum'
+          .flat()
+        // 'ethereum'
       ])
     ]
 
