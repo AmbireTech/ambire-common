@@ -31,6 +31,7 @@ import { estimate, EstimateResult } from '../../libs/estimate/estimate'
 import { GasRecommendation, getGasPriceRecommendations } from '../../libs/gasPrice/gasPrice'
 import { humanizeAccountOp } from '../../libs/humanizer'
 import { shouldGetAdditionalPortfolio } from '../../libs/portfolio/helpers'
+import { PinnedTokens } from '../../libs/portfolio/interfaces'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { isErc4337Broadcast, toUserOperation } from '../../libs/userOperation/userOperation'
 import bundler from '../../services/bundlers'
@@ -173,7 +174,7 @@ export class MainController extends EventEmitter {
     onRejectDappRequest: (err: any, id?: number) => void
     onUpdateDappSelectedAccount: (accountAddr: string) => void
     onBroadcastSuccess?: (type: 'message' | 'typed-data' | 'account-op') => void
-    pinned: string[]
+    pinned: PinnedTokens
   }) {
     super()
     this.#storage = storage
@@ -792,10 +793,16 @@ export class MainController extends EventEmitter {
     )
     const addresses = humanization
       .map((call) =>
-        !call.fullVisualization ? '' : call.fullVisualization.map((vis) => vis.address ?? '')
+        !call.fullVisualization
+          ? []
+          : call.fullVisualization.map((vis) => ({
+              address: vis.address || '',
+              networkId: null,
+              onGasTank: false
+            }))
       )
       .flat()
-      .filter(isAddress)
+      .filter(({ address }) => isAddress(address))
 
     const [, , estimation] = await Promise.all([
       // NOTE: we are not emitting an update here because the portfolio controller will do that
@@ -1060,13 +1067,17 @@ export class MainController extends EventEmitter {
       }
 
       // broadcast through bundler's service
-      const userOperationHash = await bundler.broadcast(userOperation!, network!)
-      if (!userOperationHash) {
-        return this.#throwAccountOpBroadcastError(new Error('was not able to broadcast'))
+      let userOperationHash
+      try {
+        userOperationHash = await bundler.broadcast(userOperation!, network!)
+      } catch (e) {
+        return this.#throwAccountOpBroadcastError(new Error('bundler broadcast failed'))
       }
+      if (!userOperationHash) {
+        return this.#throwAccountOpBroadcastError(new Error('bundler broadcast failed'))
+      }
+
       // broadcast the userOperationHash
-      // TODO: maybe a type property should exist to diff when we're
-      // returning a tx id and when an user op hash
       transactionRes = {
         hash: userOperationHash,
         nonce: Number(userOperation!.nonce)

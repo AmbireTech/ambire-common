@@ -28,7 +28,7 @@ export interface TransferControllerState {
 
   isRecipientAddressUnknownAgreed: boolean
 
-  isRecipientSmartContract: boolean
+  isRecipientHumanizerKnownTokenOrSmartContract: boolean
 
   userRequest: UserRequest
 

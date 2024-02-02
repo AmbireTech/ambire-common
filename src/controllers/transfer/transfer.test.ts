@@ -3,6 +3,7 @@ import fetch from 'node-fetch'
 
 import { expect } from '@jest/globals'
 
+import { FEE_COLLECTOR } from '../../consts/addresses'
 import { humanizerInfo } from '../../consts/ambireConstants.json'
 import { networks } from '../../consts/networks'
 import { Portfolio } from '../../libs/portfolio'
@@ -94,7 +95,7 @@ describe('Transfer Controller', () => {
       recipientAddress: '0x7a250d5630b4cf539739df2c5dacb4c659f2488d'
     })
     await transferController.onRecipientAddressChange()
-    expect(transferController.isRecipientSmartContract).toBe(true)
+    expect(transferController.isRecipientHumanizerKnownTokenOrSmartContract).toBe(true)
   })
   test('should resolve UnstoppableDomains', async () => {
     transferController.update({
@@ -216,6 +217,14 @@ describe('Transfer Controller', () => {
     expect(transferController.userRequest?.action.value).toBe(1000000000000000000n)
   })
 
+  test('should detect that the recipient is the fee collector', async () => {
+    transferController.update({ recipientAddress: FEE_COLLECTOR })
+    await transferController.onRecipientAddressChange()
+
+    expect(transferController.isRecipientHumanizerKnownTokenOrSmartContract).toBeFalsy()
+    expect(transferController.isRecipientAddressUnknown).toBeFalsy()
+  })
+
   const checkResetForm = () => {
     expect(transferController.amount).toBe('')
     expect(transferController.maxAmount).toBe('0')
@@ -227,7 +236,7 @@ describe('Transfer Controller', () => {
     expect(transferController.isRecipientDomainResolving).toBe(false)
     expect(transferController.userRequest).toBe(null)
     expect(transferController.isRecipientAddressUnknownAgreed).toBe(false)
-    expect(transferController.isRecipientSmartContract).toBe(false)
+    expect(transferController.isRecipientHumanizerKnownTokenOrSmartContract).toBe(false)
     expect(transferController.isSWWarningVisible).toBe(false)
     expect(transferController.isSWWarningAgreed).toBe(false)
   }
