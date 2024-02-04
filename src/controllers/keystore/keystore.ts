@@ -580,8 +580,26 @@ export class KeystoreController extends EventEmitter {
     }
   }
 
-  async #changeKeystorePassword(oldSecret: string, newSecret: string) {
-    await this.#unlockWithSecret('password', oldSecret)
+  async #changeKeystorePassword(newSecret: string, oldSecret?: string) {
+    // In the case the user wants to change their device password,
+    // they should also provide the previous password (oldSecret).
+    //
+    // However, in the case of KeyStore recovery, the user may have already forgotten the password,
+    // but the Keystore is already unlocked with the recovery secret.
+    // Therefore, in the last case, we can't provide the oldSecret, and we should not validate it.
+    //
+    // However, there is one problem if we leave it that way:
+    //
+    //     1. If the user recovers and unlocks the Keystore.
+    //     2. But doesn't enter a new 'password' in the recovery flow (just closes the tab).
+    //     3. And later decides to change the old password from Settings.
+    //     4. Then they would not be able to do it because they don't know the old password.
+    //
+    // We are going to discuss it in the next meeting, but for now, we are leaving it as it is.
+    // The long-term solution would be to refactor EmailVault recovery logic
+    // and not unlock the Keystore with the recovery secret unless the user provides a new passphrase.
+    if (oldSecret) await this.#unlockWithSecret('password', oldSecret)
+
     if (!this.isUnlocked) throw new Error('keystore: not unlocked')
 
     const secrets = await this.getMainKeyEncryptedWithSecrets()
@@ -592,9 +610,9 @@ export class KeystoreController extends EventEmitter {
     await this.#addSecret('password', newSecret, '', true)
   }
 
-  async changeKeystorePassword(oldSecret: string, newSecret: string) {
+  async changeKeystorePassword(newSecret: string, oldSecret?: string) {
     await this.#wrapKeystoreAction('changeKeystorePassword', () =>
-      this.#changeKeystorePassword(oldSecret, newSecret)
+      this.#changeKeystorePassword(newSecret, oldSecret)
     )
   }
 
