@@ -516,11 +516,11 @@ export class EmailVaultController extends EventEmitter {
       banners.push({
         id: 'keystore-secret-backup',
         topic: 'WARNING',
-        title: 'Enable local key store recovery with Email Vault',
+        title: 'Enable device password reset via email',
         text: "Email Vault recovers your Device Password. It is securely stored in Ambire's infrastructure cloud.",
         actions: [
           {
-            label: 'Backup',
+            label: 'Enable',
             actionName: 'backup-keystore-secret'
           }
         ]
