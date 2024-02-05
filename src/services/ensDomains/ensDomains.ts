@@ -42,9 +42,19 @@ async function resolveENSDomain(domain, bip44Item?: any): Promise<string> {
   const provider = getProvider(ETH_ID)
   const resolver = await provider.getResolver(normalizedDomainName)
   if (!resolver) return ''
-  const ethAddress = await resolver.getAddress()
-  const addressForCoin = await resolveForCoin(resolver, bip44Item).catch(() => null)
-  return isCorrectAddress(addressForCoin) ? addressForCoin : ethAddress
+  try {
+    const ethAddress = await resolver.getAddress()
+    const addressForCoin = await resolveForCoin(resolver, bip44Item).catch(() => null)
+    return isCorrectAddress(addressForCoin) ? addressForCoin : ethAddress
+  } catch (e) {
+    // If the error comes from an internal server error don't
+    // show it to the user, because it happens when a domain
+    // doesn't exist and we already show a message for that.
+    // https://dnssec-oracle.ens.domains/ 500 (ISE)
+    if (e.message?.includes('500_SERVER_ERROR')) return ''
+
+    throw e
+  }
 }
 
 function getBip44Items(coinTicker) {
