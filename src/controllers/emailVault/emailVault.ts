@@ -94,6 +94,8 @@ export class EmailVaultController extends EventEmitter {
     email: {}
   }
 
+  cancelLoginAttampt: Function | null = null
+
   constructor(storage: Storage, fetch: Function, relayerUrl: string, keyStore: KeystoreController) {
     super()
     this.#fetch = fetch
@@ -179,6 +181,8 @@ export class EmailVaultController extends EventEmitter {
       15000,
       1000
     )
+    this.cancelLoginAttampt = polling.cancel
+
     if (ev && !ev.error) {
       this.#isWaitingEmailConfirmation = false
       this.#magicLinkKeys[email] = {
@@ -335,7 +339,7 @@ export class EmailVaultController extends EventEmitter {
           this.emailVaultStates.errors = [polling.state.error]
         }
       })
-
+      // @TODO shouldn't this be in polling.exec too?
       result = await this.#emailVault.retrieveKeyStoreSecret(email, key, uid)
     } else {
       await this.#handleMagicLinkKey(email, () => this.#recoverKeyStore(email))
