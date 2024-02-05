@@ -217,6 +217,8 @@ export class TransferController extends EventEmitter {
         ...this.addressState,
         ...addressState
       }
+      if (!this.isInitialized) return
+
       this.#onRecipientAddressChange()
     }
     // We can do a regular check here, because the property defines if it should be updated
