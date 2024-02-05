@@ -17,12 +17,12 @@ export async function requestMagicLink(
   const resp = await fetch(`${relayerUrl}/email-vault/request-key/${email}`)
   const result: RequestMagicLinkResult = await resp.json()
 
-  if (result?.data?.secret)
-    setTimeout(() => {
-      fetch(
-        `${relayerUrl}/email-vault/confirm-key/${email}/${result.data.key}/${result.data.secret}`
-      )
-    }, 2000)
+  // if (result?.data?.secret)
+  //   setTimeout(() => {
+  //     fetch(
+  //       `${relayerUrl}/email-vault/confirm-key/${email}/${result.data.key}/${result.data.secret}`
+  //     )
+  //   }, 2000)
 
   if (!result.success) throw new Error(`magicLink: error getting magic link: ${result.message}`)
   return result.data

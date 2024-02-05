@@ -22,7 +22,7 @@ describe('Polling', () => {
     await callRelayer(`/email-vault/confirm-key/${email}/${keys.key}/${keys.secret}`)
     await ev.getEmailVaultInfo(email, keys.key)
   })
-  test('test', async () => {
+  test('Email vault polling', async () => {
     const polling = new Polling()
     const magicLinkKey = await requestMagicLink(email, relayerUrl, fetch)
 
@@ -31,10 +31,11 @@ describe('Polling', () => {
         console.log('[onUpdate] last status:', polling.state.error.output.res.status)
       }
     })
-    const result: EmailVaultData | null = await polling.exec(ev.getEmailVaultInfo.bind(ev), [
-      email,
-      magicLinkKey.key
-    ])
+    const result: EmailVaultData | null = await polling.exec(
+      ev.getEmailVaultInfo.bind(ev),
+      [email, magicLinkKey.key],
+      null
+    )
     expect(result).toMatchObject({
       isError: false,
       email,
@@ -44,5 +45,19 @@ describe('Polling', () => {
       operations: []
     })
     // console.log({ result })
+  })
+
+  test('cleanup test', (done) => {
+    const polling = new Polling()
+
+    let i = 0
+    const increment = () => {
+      i += 1
+    }
+    polling.onUpdate(() => {
+      console.log(i)
+    })
+
+    polling.exec(increment, [], () => done(), 1500, 1000)
   })
 })

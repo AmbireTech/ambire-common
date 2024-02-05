@@ -33,11 +33,12 @@ export class Polling extends EventEmitter {
   async exec<T>(
     fn: Function,
     params: any,
+    cleanup: Function | null,
     timeout?: number,
     pollingtime?: number
   ): Promise<T | null> {
     const execTimeout = pollingtime || 0
-    return new Promise((resolve) =>
+    const promise: T | null = await new Promise((resolve) =>
       // eslint-disable-next-line no-promise-executor-return
       setTimeout(async () => {
         this.state = {
@@ -61,8 +62,12 @@ export class Polling extends EventEmitter {
 
         if (!result.isError) return resolve(result)
 
-        return resolve(await this.exec(fn, params, timeout || DEFAULT_TIMEOUT, this.defaultTimeout))
+        return resolve(
+          await this.exec(fn, params, cleanup, timeout || DEFAULT_TIMEOUT, this.defaultTimeout)
+        )
       }, execTimeout)
     )
+    cleanup && cleanup()
+    return promise
   }
 }
