@@ -16,18 +16,12 @@ export class Polling extends EventEmitter {
 
   startTime: number = new Date().getTime()
 
-  #shouldStop: boolean = false
-
   constructor(allowableErrors?: number[]) {
     super()
     this.state = {
       isError: false
     }
     if (allowableErrors) this.allowableErrors = allowableErrors
-  }
-
-  cancel() {
-    this.#shouldStop = true
   }
 
   async exec<T>(
@@ -45,7 +39,6 @@ export class Polling extends EventEmitter {
           isError: false,
           error: {}
         }
-        if (this.#shouldStop) return resolve(null)
         const result = await fn(...params)
           .catch((error: any) => ({ isError: true, error }))
           .then((res: any) => ({ isError: false, ...res }))

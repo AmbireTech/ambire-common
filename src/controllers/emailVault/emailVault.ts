@@ -94,8 +94,6 @@ export class EmailVaultController extends EventEmitter {
     email: {}
   }
 
-  cancelLoginAttampt: Function | null = null
-
   constructor(storage: Storage, fetch: Function, relayerUrl: string, keyStore: KeystoreController) {
     super()
     this.#fetch = fetch
@@ -183,7 +181,6 @@ export class EmailVaultController extends EventEmitter {
       15000,
       1000
     )
-    this.cancelLoginAttampt = polling.cancel
 
     if (ev && !ev.error) {
       this.#isWaitingEmailConfirmation = false
