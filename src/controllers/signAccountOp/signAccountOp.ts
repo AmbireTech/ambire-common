@@ -33,7 +33,6 @@ export enum SigningStatus {
   UnableToSign = 'unable-to-sign',
   ReadyToSign = 'ready-to-sign',
   InProgress = 'in-progress',
-  InProgressAwaitingUserInput = 'in-progress-awaiting-user-input',
   Done = 'done'
 }
 
@@ -63,6 +62,9 @@ type FanSpeed = {
   amountUsd: string
   maxPriorityFeePerGas?: bigint
 }
+
+// declare the statuses we don't want state updates on
+const noStateUpdateStatuses = [SigningStatus.InProgress, SigningStatus.Done]
 
 function getTokenUsdAmount(token: TokenResult, gasAmount: bigint): string {
   const isUsd = (price: Price) => price.baseCurrency === 'usd'
@@ -284,6 +286,17 @@ export class SignAccountOpController extends EventEmitter {
     signingKeyAddr?: Key['addr']
     signingKeyType?: Key['type']
   }) {
+    // once the user commits to the things he sees on his screen,
+    // we need to be sure nothing changes afterwards.
+    // For example, signing can be slow if it's done by a hardware wallet.
+    // The estimation gets refreshed on the other hand each 12 seconds (6 on optimism)
+    // If we allow the estimation to affect the controller state during sign,
+    // there could be discrepancy between what the user has agreed upon and what
+    // we broadcast in the end
+    if (this.status?.type && noStateUpdateStatuses.indexOf(this.status?.type) !== -1) {
+      return
+    }
+
     if (gasPrices) this.gasPrices = gasPrices
 
     if (estimation) this.#estimation = estimation
@@ -316,11 +329,7 @@ export class SignAccountOpController extends EventEmitter {
   }
 
   updateStatusToReadyToSign() {
-    const isInTheMiddleOfSigning =
-      this.status &&
-      [SigningStatus.InProgress, SigningStatus.InProgressAwaitingUserInput].includes(
-        this.status?.type
-      )
+    const isInTheMiddleOfSigning = this.status?.type === SigningStatus.InProgress
 
     if (
       this.isInitialized &&
@@ -659,17 +668,20 @@ export class SignAccountOpController extends EventEmitter {
   }
 
   async sign() {
+    if (!this.readyToSign)
+      return this.#setSigningError(
+        'We are unable to sign your transaction as some of the mandatory signing fields have not been set.'
+      )
+
+    // when signing begings, we stop immediatelly state updates on the controller
+    // by changing the status to InProgress. Check update() for more info
+    this.status = { type: SigningStatus.InProgress }
+
     if (!this.accountOp?.signingKeyAddr || !this.accountOp?.signingKeyType)
       return this.#setSigningError('We cannot sign your transaction. Please choose a signer key.')
 
     if (!this.accountOp?.gasFeePayment)
       return this.#setSigningError('Please select a token and an account for paying the gas fee.')
-
-    // This error should never happen, as we already validated the mandatory fields such as signingKeyAddr and signingKeyType, and gasFeePayment.
-    if (!this.readyToSign)
-      return this.#setSigningError(
-        'We are unable to sign your transaction as some of the mandatory signing fields have not been set.'
-      )
 
     const signer = await this.#keystore.getSigner(
       this.accountOp.signingKeyAddr,
@@ -677,7 +689,8 @@ export class SignAccountOpController extends EventEmitter {
     )
     if (!signer) return this.#setSigningError('no available signer')
 
-    this.status = { type: SigningStatus.InProgress }
+    // we update the FE with the changed status (in progress) only after the checks
+    // above confirm everything is okay to prevent two different state updates
     this.emitUpdate()
 
     const gasFeePayment = this.accountOp.gasFeePayment
