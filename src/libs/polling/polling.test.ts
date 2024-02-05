@@ -47,17 +47,51 @@ describe('Polling', () => {
     // console.log({ result })
   })
 
-  test('cleanup test', (done) => {
-    const polling = new Polling()
-
-    let i = 0
-    const increment = () => {
-      i += 1
-    }
-    polling.onUpdate(() => {
-      console.log(i)
+  describe('cleanup', () => {
+    test('cleanup test happy case', (done) => {
+      const polling = new Polling()
+      // eslint-disable-next-line @typescript-eslint/no-floating-promises
+      polling.exec(
+        async () => {},
+        [],
+        () => done(),
+        15000,
+        1000
+      )
     })
+    test('cleanup timout', (done) => {
+      const polling = new Polling()
+      let i = 0
+      const increment = async () => {
+        i += 1
+        // eslint-disable-next-line @typescript-eslint/no-throw-literal
+        throw { output: { res: { status: 401 } } }
+      }
 
-    polling.exec(increment, [], () => done(), 1500, 1000)
+      const doneIfReady = () => {
+        // assuming there will be latency and will be called at least 5 times for 15 seconds
+        if (i > 5) done()
+        else expect(0).toBe(1)
+      }
+
+      polling.exec(increment, [], doneIfReady, 15000, 1000)
+    })
+    test('cleanup major fail', (done) => {
+      const polling = new Polling()
+      let i = 0
+      const increment = async () => {
+        i += 1
+        // eslint-disable-next-line @typescript-eslint/no-throw-literal
+        throw { output: { res: { status: 404 } } }
+      }
+
+      const doneIfReady = () => {
+        // should enter the failing function only once
+        if (i === 1) done()
+        else expect(0).toBe(1)
+      }
+
+      polling.exec(increment, [], doneIfReady, 15000, 1000)
+    })
   })
 })
