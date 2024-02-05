@@ -28,7 +28,7 @@ describe('Polling', () => {
 
     polling.onUpdate(() => {
       if (polling.state.isError) {
-        console.log('[onUpdate] last status:', polling.state.error.output.res.status)
+        // console.log('[onUpdate] last status:', polling.state.error.output.res.status)
       }
     })
     const result: EmailVaultData | null = await polling.exec(
