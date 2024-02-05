@@ -157,6 +157,7 @@ export class EmailVaultController extends EventEmitter {
     const polling = new Polling()
     polling.onUpdate(async () => {
       if (polling.state.isError && polling.state.error.output.res.status === 401) {
+        console.log('in pollingn onUpdate')
         this.#isWaitingEmailConfirmation = true
         this.emitUpdate()
       } else if (polling.state.isError) {
