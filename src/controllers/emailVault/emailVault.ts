@@ -298,7 +298,7 @@ export class EmailVaultController extends EventEmitter {
 
     if (!state.email[email]) {
       this.emitError({
-        message: `Keystore recovery: email ${email} not imported`,
+        message: `Resetting the password on this device is not enabled for ${email}.`,
         level: 'major',
         error: new Error(`Keystore recovery: email ${email} not imported`)
       })
@@ -307,7 +307,7 @@ export class EmailVaultController extends EventEmitter {
 
     if (!state.email[email].availableSecrets[uid]) {
       this.emitError({
-        message: 'Keystore recovery: no keystore secret for this device',
+        message: `Resetting the password on this device is not enabled for ${email}.`,
         level: 'major',
         error: new Error('Keystore recovery: no keystore secret for this device')
       })
@@ -315,7 +315,7 @@ export class EmailVaultController extends EventEmitter {
     }
     if (state.email[email].availableSecrets[uid].type !== SecretType.KeyStore) {
       this.emitError({
-        message: `Keystore recovery: no keystore secret for email ${email}`,
+        message: `Resetting the password on this device is not enabled for ${email}.`,
         level: 'major',
         error: new Error(`Keystore recovery: no keystore secret for email ${email}`)
       })
