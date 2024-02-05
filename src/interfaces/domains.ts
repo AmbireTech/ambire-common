@@ -12,4 +12,10 @@ type AddressStateOptional = {
   isDomainResolving?: AddressState['isDomainResolving']
 }
 
-export type { AddressState, AddressStateOptional }
+type CachedResolvedDomain = {
+  name: string
+  address: string
+  type: 'ens' | 'ud'
+}
+
+export type { AddressState, AddressStateOptional, CachedResolvedDomain }
