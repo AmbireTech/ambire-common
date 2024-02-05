@@ -64,16 +64,6 @@ const validateSendTransferAddress = (
     }
   }
 
-  // Validate checksum
-  try {
-    getAddress(address)
-  } catch {
-    return {
-      success: false,
-      message: 'Invalid checksum. Verify the address and try again.'
-    }
-  }
-
   if (selectedAcc && address === selectedAcc) {
     return {
       success: false,
