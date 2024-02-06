@@ -292,14 +292,15 @@ export class EmailVaultController extends EventEmitter {
     }
   }
 
-  async recoverKeyStore(email: string) {
-    await this.#wrapEmailVaultPublicMethod('recoverKeyStore', () => this.#recoverKeyStore(email))
+  async recoverKeyStore(email: string, newPassword: string) {
+    await this.#wrapEmailVaultPublicMethod('recoverKeyStore', () =>
+      this.#recoverKeyStore(email, newPassword)
+    )
   }
 
-  async #recoverKeyStore(email: string): Promise<EmailVaultSecret | null> {
+  async #recoverKeyStore(email: string, newPassword: string): Promise<EmailVaultSecret | null> {
     const uid = await this.#keyStore.getKeyStoreUid()
     const state = this.emailVaultStates
-
     if (!state.email[email]) {
       this.emitError({
         message: `Keystore recovery: email ${email} not imported`,
@@ -341,12 +342,14 @@ export class EmailVaultController extends EventEmitter {
       // @TODO shouldn't this be in polling.exec too?
       result = await this.#emailVault.retrieveKeyStoreSecret(email, key, uid)
     } else {
-      await this.handleMagicLinkKey(email, () => this.#recoverKeyStore(email))
+      await this.handleMagicLinkKey(email, () => this.#recoverKeyStore(email, newPassword))
     }
     if (result && !result.error) {
       this.emailVaultStates.email[email].availableSecrets[result.key] = result
 
       await this.#keyStore.unlockWithSecret(RECOVERY_SECRET_ID, result.value)
+      await this.#keyStore.addSecret('password', newPassword, '', false)
+
       await this.storage.set(EMAIL_VAULT_STORAGE_KEY, this.emailVaultStates)
       this.emitUpdate()
       return result

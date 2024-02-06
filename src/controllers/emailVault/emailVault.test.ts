@@ -101,7 +101,9 @@ describe('happy cases', () => {
     expect(Object.keys(ev.emailVaultStates.email[email].availableSecrets).length).toBe(2)
 
     expect(keystore.isUnlocked).toBeFalsy()
-    await ev.recoverKeyStore(email)
+    await ev.recoverKeyStore(email, 'new_password')
+    await keystore.unlockWithSecret('password', 'new_password')
+
     expect(keystore.isUnlocked).toBeTruthy()
   })
 
