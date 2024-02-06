@@ -295,7 +295,7 @@ describe('KeystoreController', () => {
   })
 
   test('should change keystore password', (done) => {
-    keystore.changeKeystorePassword(pass, `${pass}1`)
+    keystore.changeKeystorePassword(`${pass}1`, pass)
 
     const unsubscribe = keystore.onUpdate(async () => {
       if (keystore.latestMethodCall === 'changeKeystorePassword' && keystore.status === 'DONE') {
