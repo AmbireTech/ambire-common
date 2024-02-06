@@ -309,7 +309,7 @@ contract AmbireAccount {
 		if (op.callData.length >= 4 && bytes4(op.callData[0:4]) == this.executeMultiple.selector) {
 			// Require a paymaster, otherwise this mode can be used by anyone to get the user to spend their deposit
 			require(op.signature.length == 0, 'validateUserOp: empty signature required in execute() mode');
-			require(op.paymasterAndData.length >= 20, 'validateUserOp: paymaster required in execute() mode');
+			require(op.paymasterAndData.length >= 20 && bytes20(op.paymasterAndData[0:20]) != bytes20(0), 'validateUserOp: paymaster required in execute() mode');
 			// hashing in everything except sender (nonces are scoped by sender anyway), nonce, signature
 			uint256 targetNonce = uint256(keccak256(
 				abi.encode(op.initCode, op.callData, op.callGasLimit, op.verificationGasLimit, op.preVerificationGas, op.maxFeePerGas, op.maxPriorityFeePerGas, op.paymasterAndData)
