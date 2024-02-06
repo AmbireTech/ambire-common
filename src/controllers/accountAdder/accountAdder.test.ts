@@ -24,7 +24,7 @@ const key1PublicAddress = '0x9188fdd757Df66B4F693D624Ed6A13a15Cf717D7'
 // const key2PublicAddress = '0xE4166d78C834367B186Ce6492993ac8D52De738F'
 // const key3PublicAddress = '0xcC48f0C6d79b6E79F90a3228E284324b5F2cC529'
 
-const legacyAccount: Account = {
+const basicAccount: Account = {
   addr: key1PublicAddress,
   associatedKeys: [key1PublicAddress],
   initialPrivileges: [
@@ -49,12 +49,12 @@ describe('AccountAdder', () => {
     const keyIterator = new KeyIterator(seedPhrase)
     accountAdder.init({
       keyIterator,
-      preselectedAccounts: [legacyAccount],
+      preselectedAccounts: [basicAccount],
       hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
     })
 
     expect(accountAdder.isInitialized).toBeTruthy()
-    expect(accountAdder.preselectedAccounts).toContainEqual(legacyAccount)
+    expect(accountAdder.preselectedAccounts).toContainEqual(basicAccount)
     expect(accountAdder.selectedAccounts).toEqual([])
   })
 
@@ -76,7 +76,7 @@ describe('AccountAdder', () => {
     accountAdder.setPage({ page: 1, networks, providers })
   })
 
-  test('should set first page and retrieve one smart account for every legacy account', (done) => {
+  test('should set first page and retrieve one smart account for every basic account', (done) => {
     const keyIterator = new KeyIterator(seedPhrase)
     const PAGE_SIZE = 3
     accountAdder.init({
@@ -94,7 +94,7 @@ describe('AccountAdder', () => {
       if (emitCounter === 1) {
         // First emit is triggered when account derivation is done
         expect(accountAdder.accountsOnPage.length).toEqual(
-          // One smart account for every legacy account
+          // One smart account for every basic account
           PAGE_SIZE * 2
         )
         expect(accountAdder.accountsLoading).toBe(false)
@@ -167,13 +167,13 @@ describe('AccountAdder', () => {
     const keyIterator = new KeyIterator(seedPhrase)
     accountAdder.init({
       keyIterator,
-      preselectedAccounts: [legacyAccount],
+      preselectedAccounts: [basicAccount],
       pageSize: 1,
       hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
     })
     accountAdder.selectedAccounts = [
       {
-        account: legacyAccount,
+        account: basicAccount,
         accountKeyAddr: key1PublicAddress,
         slot: 1,
         index: 0,
@@ -195,6 +195,6 @@ describe('AccountAdder', () => {
       }
     })
 
-    accountAdder.deselectAccount(legacyAccount)
+    accountAdder.deselectAccount(basicAccount)
   })
 })
