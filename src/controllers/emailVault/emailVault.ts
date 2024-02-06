@@ -141,7 +141,7 @@ export class EmailVaultController extends EventEmitter {
     ])
   }
 
-  async #handleMagicLinkKey(email: string, fn: Function) {
+  async handleMagicLinkKey(email: string, fn: Function) {
     await this.initialLoadPromise
     const currentKey = (await this.#getMagicLinkKey(email))?.key
     if (currentKey) {
@@ -246,7 +246,7 @@ export class EmailVaultController extends EventEmitter {
         return null
       })
     } else {
-      await this.#handleMagicLinkKey(email, () => this.#getEmailVaultInfo(email))
+      await this.handleMagicLinkKey(email, () => this.#getEmailVaultInfo(email))
     }
 
     if (emailVault) {
@@ -282,7 +282,7 @@ export class EmailVaultController extends EventEmitter {
       const keyStoreUid = await this.#keyStore.getKeyStoreUid()
       result = await this.#emailVault.addKeyStoreSecret(email, magicKey.key, keyStoreUid, newSecret)
     } else {
-      await this.#handleMagicLinkKey(email, () => this.#uploadKeyStoreSecret(email))
+      await this.handleMagicLinkKey(email, () => this.#uploadKeyStoreSecret(email))
     }
 
     if (result) {
@@ -341,7 +341,7 @@ export class EmailVaultController extends EventEmitter {
       // @TODO shouldn't this be in polling.exec too?
       result = await this.#emailVault.retrieveKeyStoreSecret(email, key, uid)
     } else {
-      await this.#handleMagicLinkKey(email, () => this.#recoverKeyStore(email))
+      await this.handleMagicLinkKey(email, () => this.#recoverKeyStore(email))
     }
     if (result && !result.error) {
       this.emailVaultStates.email[email].availableSecrets[result.key] = result
@@ -382,7 +382,7 @@ export class EmailVaultController extends EventEmitter {
       this.emailVaultStates.email[email].operations = newOperations
       this.emitUpdate()
     }
-    await this.#handleMagicLinkKey(email, () => this.#requestKeysSync(email, keys))
+    await this.handleMagicLinkKey(email, () => this.#requestKeysSync(email, keys))
   }
 
   async #finalizeSyncKeys(email: string, operations: EmailVaultOperation[]) {
@@ -415,7 +415,7 @@ export class EmailVaultController extends EventEmitter {
       }
       this.emitUpdate()
     } else {
-      await this.#handleMagicLinkKey(email, () => this.#finalizeSyncKeys(email, operations))
+      await this.handleMagicLinkKey(email, () => this.#finalizeSyncKeys(email, operations))
     }
   }
 
@@ -470,7 +470,7 @@ export class EmailVaultController extends EventEmitter {
       await this.#emailVault.operations(email, key, newOperations)
       this.emitUpdate()
     } else {
-      await this.#handleMagicLinkKey(email, () => this.fulfillSyncRequests(email, password))
+      await this.handleMagicLinkKey(email, () => this.fulfillSyncRequests(email, password))
     }
     this.emitUpdate()
   }
