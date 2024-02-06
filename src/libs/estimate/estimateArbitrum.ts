@@ -14,10 +14,9 @@ function getTxnData(
   accountState: AccountOnchainState,
   account: Account,
   calls: [string, string, string][],
-  userOp: UserOperation,
-  is4337Broadcast: boolean
+  userOp: UserOperation | null
 ) {
-  if (is4337Broadcast) {
+  if (userOp) {
     const EntryPoint = new Interface(EntryPointAbi)
     return EntryPoint.encodeFunctionData('handleOps', [getCleanUserOp(userOp), account.addr])
   }
@@ -54,8 +53,7 @@ export async function estimateArbitrumL1GasUsed(
   account: Account,
   accountState: AccountOnchainState,
   provider: Provider | JsonRpcProvider,
-  userOp: UserOperation,
-  is4337Broadcast: boolean
+  userOp: UserOperation | null
 ): Promise<{ noFee: bigint; withFee: bigint }> {
   // if network is not arbitrum, just return a 0n
   // additional l1 gas estimation is only needed when the account is a smart one
@@ -83,12 +81,12 @@ export async function estimateArbitrumL1GasUsed(
     nodeInterface.gasEstimateL1Component.staticCall(
       op.accountAddr,
       accountState.isDeployed,
-      getTxnData(accountState, account, callsWithoutFee, userOp, is4337Broadcast)
+      getTxnData(accountState, account, callsWithoutFee, userOp)
     ),
     nodeInterface.gasEstimateL1Component.staticCall(
       op.accountAddr,
       accountState.isDeployed,
-      getTxnData(accountState, account, callsWithFee, userOp, is4337Broadcast)
+      getTxnData(accountState, account, callsWithFee, userOp)
     )
   ])
   return {

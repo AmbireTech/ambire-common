@@ -33,7 +33,7 @@ import { humanizeAccountOp } from '../../libs/humanizer'
 import { shouldGetAdditionalPortfolio } from '../../libs/portfolio/helpers'
 import { PinnedTokens } from '../../libs/portfolio/interfaces'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
-import { isErc4337Broadcast, toUserOperation } from '../../libs/userOperation/userOperation'
+import { isErc4337Broadcast } from '../../libs/userOperation/userOperation'
 import bundler from '../../services/bundlers'
 import generateSpoofSig from '../../utils/generateSpoofSig'
 import wait from '../../utils/wait'
@@ -772,19 +772,6 @@ export class MainController extends EventEmitter {
     if (!network)
       throw new Error(`estimateAccountOp: ${localAccountOp.networkId}: network does not exist`)
 
-    // start transforming the accountOp to userOp if the network is 4337
-    // and it's not a basic account
-    const is4337Broadcast = isErc4337Broadcast(
-      network,
-      this.accountStates[localAccountOp.accountAddr][localAccountOp.networkId]
-    )
-    if (is4337Broadcast) {
-      localAccountOp.asUserOperation = toUserOperation(
-        account,
-        this.accountStates[localAccountOp.accountAddr][localAccountOp.networkId],
-        localAccountOp
-      )
-    }
     const humanization = await humanizeAccountOp(
       this.#storage,
       localAccountOp,
@@ -830,7 +817,12 @@ export class MainController extends EventEmitter {
         EOAaccounts.map((acc) => acc.addr),
         // @TODO - first time calling this, portfolio is still not loaded.
         feeTokens,
-        { is4337Broadcast }
+        {
+          is4337Broadcast: isErc4337Broadcast(
+            network,
+            this.accountStates[localAccountOp.accountAddr][localAccountOp.networkId]
+          )
+        }
       ).catch((e) => {
         this.emitError({
           level: 'major',
@@ -850,24 +842,10 @@ export class MainController extends EventEmitter {
     this.accountOpsToBeSigned[localAccountOp.accountAddr][localAccountOp.networkId]!.estimation =
       estimation
 
-    // add the estimation to the user operation
-    if (is4337Broadcast && estimation) {
-      localAccountOp.asUserOperation!.verificationGasLimit = ethers.toBeHex(
-        estimation.erc4337estimation!.verificationGasLimit
-      )
-      localAccountOp.asUserOperation!.callGasLimit = ethers.toBeHex(
-        estimation.erc4337estimation!.callGasLimit
-      )
-      this.accountOpsToBeSigned[localAccountOp.accountAddr][localAccountOp.networkId]!.accountOp =
-        localAccountOp
-    }
-
     // update the signAccountOp controller once estimation finishes;
     // this eliminates the infinite loading bug if the estimation comes slower
-    if (this.signAccountOp) {
-      estimation
-        ? this.signAccountOp.update({ estimation, accountOp: localAccountOp })
-        : this.signAccountOp.update({ accountOp: localAccountOp })
+    if (this.signAccountOp && estimation) {
+      this.signAccountOp.update({ estimation })
     }
   }
 
@@ -1069,7 +1047,7 @@ export class MainController extends EventEmitter {
       // broadcast through bundler's service
       let userOperationHash
       try {
-        userOperationHash = await bundler.broadcast(userOperation!, network!)
+        userOperationHash = await bundler.broadcast(userOperation, network!)
       } catch (e) {
         return this.#throwAccountOpBroadcastError(new Error('bundler broadcast failed'))
       }
@@ -1080,7 +1058,7 @@ export class MainController extends EventEmitter {
       // broadcast the userOperationHash
       transactionRes = {
         hash: userOperationHash,
-        nonce: Number(userOperation!.nonce)
+        nonce: Number(userOperation.nonce)
       }
     }
     // Smart account, the Relayer way
