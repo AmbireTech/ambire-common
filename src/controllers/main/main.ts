@@ -851,7 +851,7 @@ export class MainController extends EventEmitter {
 
   /**
    * There are 4 ways to broadcast an AccountOp:
-   *   1. For legacy accounts (EOA), there is only one way to do that. After
+   *   1. For basic accounts (EOA), there is only one way to do that. After
    *   signing the transaction, the serialized signed transaction object gets
    *   send to the network.
    *   2. For smart accounts, when EOA pays the fee. Two signatures are needed
@@ -901,7 +901,7 @@ export class MainController extends EventEmitter {
         option.paidBy === accountOp.gasFeePayment?.paidBy
     )!
 
-    // Legacy account (EOA)
+    // Basic account (EOA)
     if (!isSmartAccount(account)) {
       try {
         const feePayerKeys = this.keystore.keys.filter(

@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.isAmbireV1LinkedAccount = exports.getSmartAccount = exports.getLegacyAccount = exports.getAccountDeployParams = void 0;
+exports.isAmbireV1LinkedAccount = exports.getSmartAccount = exports.getBasicAccount = exports.getAccountDeployParams = void 0;
 const ethers_1 = require("ethers");
 const deploy_1 = require("../../consts/deploy");
 const networks_1 = require("../../consts/networks");
@@ -17,7 +17,7 @@ function getAccountDeployParams(account) {
     ];
 }
 exports.getAccountDeployParams = getAccountDeployParams;
-function getLegacyAccount(key) {
+function getBasicAccount(key) {
     return {
         addr: key,
         label: '',
@@ -26,7 +26,7 @@ function getLegacyAccount(key) {
         creation: null
     };
 }
-exports.getLegacyAccount = getLegacyAccount;
+exports.getBasicAccount = getBasicAccount;
 async function getSmartAccount(address) {
     // Temporarily use the polygon network,
     // to be discussed which network we would use for

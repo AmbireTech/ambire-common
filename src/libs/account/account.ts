@@ -1,11 +1,11 @@
 import { ethers, Interface } from 'ethers'
 
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
-import { Account } from '../../interfaces/account'
-import { DKIM_VALIDATOR_ADDR, getSignerKey, RECOVERY_DEFAULTS } from '../dkim/recovery'
 import { SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET } from '../../consts/derivation'
+import { Account } from '../../interfaces/account'
 import { Key } from '../../interfaces/keystore'
 import { AccountPreferences, KeyPreferences } from '../../interfaces/settings'
+import { DKIM_VALIDATOR_ADDR, getSignerKey, RECOVERY_DEFAULTS } from '../dkim/recovery'
 import { KnownAddressLabels } from '../humanizer/interfaces'
 import { getBytecode } from '../proxyDeploy/bytecode'
 import { PrivLevels } from '../proxyDeploy/deploy'
@@ -48,7 +48,7 @@ export function getAccountDeployParams(account: Account): [string, string] {
   ]
 }
 
-export function getLegacyAccount(key: string): Account {
+export function getBasicAccount(key: string): Account {
   return {
     addr: key,
     associatedKeys: [key],
@@ -160,7 +160,7 @@ export const isAmbireV1LinkedAccount = (factoryAddr?: string) =>
 export const isSmartAccount = (account: Account) => !!account.creation
 
 /**
- * Checks if a (legacy) EOA account is a derived one,
+ * Checks if a (basic) EOA account is a derived one,
  * that is meant to be used as a smart account key only.
  */
 export const isDerivedForSmartAccountKeyOnly = (index: number) =>
