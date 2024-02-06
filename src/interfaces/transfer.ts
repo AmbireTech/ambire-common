@@ -1,4 +1,6 @@
+import { HumanizerInfoType } from '../../v1/hooks/useConstants'
 import { TokenResult } from '../libs/portfolio'
+import { AddressState, AddressStateOptional } from './domains'
 import { UserRequest } from './userRequest'
 
 export interface TransferControllerState {
@@ -16,13 +18,7 @@ export interface TransferControllerState {
 
   maxAmount: string
 
-  recipientAddress: string
-
-  recipientEnsAddress: string
-
-  recipientUDAddress: string
-
-  isRecipientDomainResolving: boolean
+  addressState: AddressState
 
   isRecipientAddressUnknown: boolean
 
@@ -46,4 +42,17 @@ export interface TransferControllerState {
   isFormValid: boolean
 
   isTopUp: boolean
+}
+
+export interface TransferUpdate {
+  selectedAccount?: string
+  preSelectedToken?: string
+  humanizerInfo?: HumanizerInfoType
+  tokens?: TokenResult[]
+  selectedToken?: TokenResult
+  amount?: string
+  addressState?: AddressStateOptional
+  isSWWarningAgreed?: boolean
+  isRecipientAddressUnknownAgreed?: boolean
+  isTopUp?: boolean
 }

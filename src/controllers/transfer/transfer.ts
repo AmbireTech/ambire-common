@@ -1,18 +1,25 @@
 import erc20Abi from 'adex-protocol-eth/abi/ERC20.json'
-import { ethers, formatUnits, getAddress, Interface, parseUnits } from 'ethers'
+import { formatUnits, Interface, parseUnits } from 'ethers'
 
 import { HumanizerInfoType } from '../../../v1/hooks/useConstants'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { networks } from '../../consts/networks'
+import { AddressState } from '../../interfaces/domains'
+import { TransferUpdate } from '../../interfaces/transfer'
 import { UserRequest } from '../../interfaces/userRequest'
 import { TokenResult } from '../../libs/portfolio'
 import { isHumanizerKnownTokenOrSmartContract } from '../../services/address'
-import { getBip44Items, resolveENSDomain } from '../../services/ensDomains'
-import { resolveUDomain } from '../../services/unstoppableDomains'
 import { validateSendTransferAddress, validateSendTransferAmount } from '../../services/validations'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 const ERC20 = new Interface(erc20Abi)
+
+const DEFAULT_ADDRESS_STATE = {
+  fieldValue: '',
+  ensAddress: '',
+  udAddress: '',
+  isDomainResolving: false
+}
 
 const DEFAULT_VALIDATION_FORM_MSGS = {
   amount: {
@@ -39,13 +46,7 @@ export class TransferController extends EventEmitter {
 
   maxAmount = '0'
 
-  recipientAddress = ''
-
-  recipientEnsAddress = ''
-
-  recipientUDAddress = ''
-
-  isRecipientDomainResolving = false
+  addressState: AddressState = { ...DEFAULT_ADDRESS_STATE }
 
   isRecipientAddressUnknown = false
 
@@ -100,13 +101,10 @@ export class TransferController extends EventEmitter {
   resetForm() {
     this.amount = ''
     this.maxAmount = '0'
-    this.recipientAddress = ''
-    this.recipientEnsAddress = ''
-    this.recipientUDAddress = ''
+    this.addressState = { ...DEFAULT_ADDRESS_STATE }
     this.selectedToken = null
     this.#selectedTokenNetworkData = null
     this.isRecipientAddressUnknown = false
-    this.isRecipientDomainResolving = false
     this.userRequest = null
     this.isRecipientAddressUnknownAgreed = false
     this.isRecipientHumanizerKnownTokenOrSmartContract = false
@@ -129,23 +127,23 @@ export class TransferController extends EventEmitter {
     const validationFormMsgsNew = DEFAULT_VALIDATION_FORM_MSGS
 
     if (this.#humanizerInfo && this.#selectedAccount) {
-      const isUDAddress = !!this.recipientUDAddress
-      const isEnsAddress = !!this.recipientEnsAddress
+      const isUDAddress = !!this.addressState.udAddress
+      const isEnsAddress = !!this.addressState.ensAddress
 
       validationFormMsgsNew.recipientAddress = validateSendTransferAddress(
-        this.recipientUDAddress || this.recipientEnsAddress || this.recipientAddress,
+        this.recipientAddress,
         this.#selectedAccount,
         this.isRecipientAddressUnknownAgreed,
         this.isRecipientAddressUnknown,
         this.isRecipientHumanizerKnownTokenOrSmartContract,
         isUDAddress,
         isEnsAddress,
-        this.isRecipientDomainResolving
+        this.addressState.isDomainResolving
       )
     }
 
     // Validate the amount
-    if (this.selectedToken && (this.amount !== '' || this.recipientAddress !== '')) {
+    if (this.selectedToken && (this.amount !== '' || this.addressState.fieldValue !== '')) {
       validationFormMsgsNew.amount = validateSendTransferAmount(this.amount, this.selectedToken)
     }
 
@@ -172,12 +170,18 @@ export class TransferController extends EventEmitter {
       areFormFieldsValid &&
       isSWWarningMissingOrAccepted &&
       isRecipientAddressUnknownMissingOrAccepted &&
-      !this.isRecipientDomainResolving
+      !this.addressState.isDomainResolving
     )
   }
 
   get isInitialized() {
     return !!this.#humanizerInfo && !!this.#selectedAccount && !!this.tokens
+  }
+
+  get recipientAddress() {
+    return (
+      this.addressState.ensAddress || this.addressState.udAddress || this.addressState.fieldValue
+    )
   }
 
   update({
@@ -186,22 +190,11 @@ export class TransferController extends EventEmitter {
     tokens,
     selectedToken,
     amount,
-    recipientAddress,
+    addressState,
     isSWWarningAgreed,
     isRecipientAddressUnknownAgreed,
     isTopUp
-  }: {
-    selectedAccount?: string
-    preSelectedToken?: string
-    humanizerInfo?: HumanizerInfoType
-    tokens?: TokenResult[]
-    selectedToken?: TokenResult
-    amount?: string
-    recipientAddress?: string
-    isSWWarningAgreed?: boolean
-    isRecipientAddressUnknownAgreed?: boolean
-    isTopUp?: boolean
-  }) {
+  }: TransferUpdate) {
     if (humanizerInfo) {
       this.#humanizerInfo = humanizerInfo
     }
@@ -219,12 +212,14 @@ export class TransferController extends EventEmitter {
     if (typeof amount === 'string') {
       this.amount = amount
     }
-    // If we do a regular check the value won't update if it's '' or '0'
-    if (typeof recipientAddress === 'string') {
-      const canBeEnsOrUd = recipientAddress.indexOf('.') !== -1
-      this.isRecipientDomainResolving = canBeEnsOrUd
+    if (addressState) {
+      this.addressState = {
+        ...this.addressState,
+        ...addressState
+      }
+      if (!this.isInitialized) return
 
-      this.recipientAddress = recipientAddress.trim()
+      this.#onRecipientAddressChange()
     }
     // We can do a regular check here, because the property defines if it should be updated
     // and not the actual value
@@ -255,8 +250,8 @@ export class TransferController extends EventEmitter {
 
     // if the request is a top up, the recipient is the relayer
     const recipientAddress = this.isTopUp
-      ? FEE_COLLECTOR
-      : getAddress(this.recipientUDAddress || this.recipientEnsAddress || this.recipientAddress)
+      ? FEE_COLLECTOR.toLowerCase()
+      : this.recipientAddress.toLowerCase()
 
     const bigNumberHexAmount = `0x${parseUnits(
       this.amount,
@@ -288,69 +283,23 @@ export class TransferController extends EventEmitter {
   }
 
   // Allows for debounce implementation in the UI
-  async onRecipientAddressChange() {
+  #onRecipientAddressChange() {
     if (!this.isInitialized) {
       this.#throwNotInitialized()
       return
     }
-    const address = this.recipientAddress.trim()
-    const canBeEnsOrUd = address.indexOf('.') !== -1
 
-    if (!canBeEnsOrUd) {
-      if (this.recipientUDAddress) this.recipientUDAddress = ''
-      if (this.recipientEnsAddress) this.recipientEnsAddress = ''
-    }
-
-    if (this.selectedToken?.networkId && this.#selectedTokenNetworkData && canBeEnsOrUd) {
-      try {
-        this.recipientUDAddress = await resolveUDomain(
-          address,
-          this.selectedToken.symbol,
-          this.#selectedTokenNetworkData.unstoppableDomainsChain
-        )
-      } catch {
-        this.emitError({
-          level: 'major',
-          message:
-            'We encountered an internal error during UD resolving. Retry, or contact support if the issue persists.',
-          error: new Error('transfer: UD resolving failed')
-        })
-      }
-
-      const bip44Item = getBip44Items(this.selectedToken.symbol)
-
-      try {
-        this.recipientEnsAddress = await resolveENSDomain(address, bip44Item)
-      } catch {
-        // Don't throw an error if the address is already resolved as UD
-        if (!this.recipientUDAddress) {
-          this.emitError({
-            level: 'major',
-            message:
-              'We encountered an internal error during ENS resolving. Retry, or contact support if the issue persists.',
-            error: new Error('transfer: ENS resolving failed')
-          })
-        }
-      }
-    }
     if (this.#humanizerInfo) {
       // @TODO: could fetch address code
       this.isRecipientHumanizerKnownTokenOrSmartContract = isHumanizerKnownTokenOrSmartContract(
         this.#humanizerInfo,
-        address
+        this.recipientAddress
       )
-    }
-
-    if (this.recipientUDAddress || this.recipientEnsAddress) {
-      this.isRecipientAddressUnknown = true // @TODO: check from the address book
     }
 
     // @TODO: isValidAddress & check from the address book
     this.isRecipientAddressUnknown =
-      (!this.recipientUDAddress && !this.recipientEnsAddress
-        ? ethers.getAddress(address)
-        : address) !== FEE_COLLECTOR
-    this.isRecipientDomainResolving = false
+      this.recipientAddress.toLowerCase() !== FEE_COLLECTOR.toLowerCase()
 
     this.emitUpdate()
   }
