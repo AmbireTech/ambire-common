@@ -28,6 +28,7 @@ export class Polling extends EventEmitter {
     fn: Function,
     params: any,
     cleanup: Function | null,
+    shouldStop: Function | null,
     timeout?: number,
     pollingtime?: number
   ): Promise<T | null> {
@@ -39,6 +40,7 @@ export class Polling extends EventEmitter {
           isError: false,
           error: {}
         }
+        if (shouldStop && shouldStop()) return resolve(null)
         const result = await fn(...params)
           .catch((error: any) => ({ isError: true, error }))
           .then((res: any) => ({ isError: false, ...res }))
@@ -56,7 +58,14 @@ export class Polling extends EventEmitter {
         if (!result.isError) return resolve(result)
 
         return resolve(
-          await this.exec(fn, params, cleanup, timeout || DEFAULT_TIMEOUT, this.defaultTimeout)
+          await this.exec(
+            fn,
+            params,
+            cleanup,
+            shouldStop,
+            timeout || DEFAULT_TIMEOUT,
+            this.defaultTimeout
+          )
         )
       }, execTimeout)
     )

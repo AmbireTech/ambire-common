@@ -34,6 +34,7 @@ describe('Polling', () => {
     const result: EmailVaultData | null = await polling.exec(
       ev.getEmailVaultInfo.bind(ev),
       [email, magicLinkKey.key],
+      null,
       null
     )
     expect(result).toMatchObject({
@@ -55,6 +56,7 @@ describe('Polling', () => {
         async () => {},
         [],
         () => done(),
+        null,
         15000,
         1000
       )
@@ -74,7 +76,7 @@ describe('Polling', () => {
         else expect(0).toBe(1)
       }
 
-      polling.exec(increment, [], doneIfReady, 15000, 1000)
+      polling.exec(increment, [], doneIfReady, null, 15000, 1000)
     })
     test('cleanup major fail', (done) => {
       const polling = new Polling()
@@ -91,7 +93,63 @@ describe('Polling', () => {
         else expect(0).toBe(1)
       }
 
-      polling.exec(increment, [], doneIfReady, 15000, 1000)
+      polling.exec(increment, [], doneIfReady, null, 15000, 1000)
+    })
+  })
+  describe('cancel', () => {
+    test('cancel after 3 tries', (done) => {
+      const polling = new Polling()
+      let i = 0
+      const increment = async () => {
+        i += 1
+        // eslint-disable-next-line @typescript-eslint/no-throw-literal
+        throw { output: { res: { status: 401 } } }
+      }
+      const isReady = () => {
+        expect(i).toBe(3)
+        done()
+      }
+      // eslint-disable-next-line @typescript-eslint/no-floating-promises
+      polling.exec(
+        increment,
+        [],
+        () => isReady(),
+        () => {
+          return i === 3
+        },
+        15000,
+        1000
+      )
+    })
+
+    test('cancel after 3 tries', (done) => {
+      const polling = new Polling()
+      let i = 0
+      let shouldStop = false
+      const increment = async () => {
+        i += 1
+        // eslint-disable-next-line @typescript-eslint/no-throw-literal
+        throw { output: { res: { status: 401 } } }
+      }
+      const isReady = () => {
+        // we expect at least 4 calls for the 10 seconds (polling can be slow)
+        expect(i).toBeGreaterThan(4)
+        done()
+      }
+
+      setTimeout(() => {
+        shouldStop = true
+      }, 10000)
+
+      // eslint-disable-next-line @typescript-eslint/no-floating-promises
+      polling.exec(
+        increment,
+        [],
+        () => isReady(),
+        () => shouldStop,
+        15000,
+        1000
+      )
     })
   })
 })

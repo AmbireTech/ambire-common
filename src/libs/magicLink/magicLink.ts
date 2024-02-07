@@ -12,12 +12,12 @@ export interface RequestMagicLinkResult {
 export async function requestMagicLink(
   email: String,
   relayerUrl: String,
-  fetch: Function
+  fetch: Function,
+  options?: { autoConfirm?: boolean }
 ): Promise<MagicLinkData> {
   const resp = await fetch(`${relayerUrl}/email-vault/request-key/${email}`)
   const result: RequestMagicLinkResult = await resp.json()
-
-  if (result?.data?.secret)
+  if (result?.data?.secret && options?.autoConfirm)
     setTimeout(() => {
       fetch(
         `${relayerUrl}/email-vault/confirm-key/${email}/${result.data.key}/${result.data.secret}`

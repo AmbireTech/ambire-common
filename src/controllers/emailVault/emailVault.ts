@@ -72,6 +72,10 @@ export class EmailVaultController extends EventEmitter {
 
   #sessionKeys: SessionKeys = {}
 
+  #shouldStopConfirmationPolling: boolean = false
+
+  #autoConfirmMagicLink: boolean = false
+
   #fetch: Function
 
   #relayerUrl: string
@@ -94,7 +98,13 @@ export class EmailVaultController extends EventEmitter {
     email: {}
   }
 
-  constructor(storage: Storage, fetch: Function, relayerUrl: string, keyStore: KeystoreController) {
+  constructor(
+    storage: Storage,
+    fetch: Function,
+    relayerUrl: string,
+    keyStore: KeystoreController,
+    options?: { autoConfirmMagicLink?: boolean }
+  ) {
     super()
     this.#fetch = fetch
     this.#relayerUrl = relayerUrl
@@ -102,6 +112,7 @@ export class EmailVaultController extends EventEmitter {
     this.#emailVault = new EmailVault(fetch, relayerUrl)
     this.#keyStore = keyStore
     this.initialLoadPromise = this.load()
+    this.#autoConfirmMagicLink = options?.autoConfirmMagicLink || false
   }
 
   private async load(): Promise<void> {
@@ -153,7 +164,10 @@ export class EmailVaultController extends EventEmitter {
     this.#isWaitingEmailConfirmation = true
     this.emitUpdate()
 
-    const newKey = await requestMagicLink(email, this.#relayerUrl, this.#fetch)
+    const newKey = await requestMagicLink(email, this.#relayerUrl, this.#fetch, {
+      autoConfirm: this.#autoConfirmMagicLink
+    })
+
     const polling = new Polling()
     polling.onUpdate(async () => {
       if (polling.state.isError && polling.state.error.output.res.status === 401) {
@@ -178,6 +192,7 @@ export class EmailVaultController extends EventEmitter {
       () => {
         this.#isWaitingEmailConfirmation = false
       },
+      () => this.#shouldStopConfirmationPolling,
       15000,
       1000
     )
@@ -500,6 +515,11 @@ export class EmailVaultController extends EventEmitter {
       this.latestMethodStatus = 'INITIAL'
       this.emitUpdate()
     }
+  }
+
+  cancelEmailConfirmation() {
+    this.#shouldStopConfirmationPolling = true
+    this.#isWaitingEmailConfirmation = false
   }
 
   get hasKeystoreRecovery() {

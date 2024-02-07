@@ -3,7 +3,7 @@ import fetch from 'node-fetch'
 import { expect } from '@jest/globals'
 import { KeystoreController } from '../keystore/keystore'
 import { requestMagicLink } from '../../libs/magicLink/magicLink'
-import { EmailVaultController } from './emailVault'
+import { EmailVaultController, EmailVaultState } from './emailVault'
 import { Storage } from '../../interfaces/storage'
 import { EmailVault } from '../../libs/emailVault/emailVault'
 import { Key } from '../../interfaces/keystore'
@@ -42,6 +42,7 @@ const relayerUrl: string = 'https://staging-relayer.ambire.com'
 // const relayerUrl: string = 'http://localhost:1934'
 let keystore: KeystoreController
 let email: string
+const testingOptions = { autoConfirmMagicLink: true }
 describe('happy cases', () => {
   beforeEach(() => {
     email = getRandomEmail()
@@ -51,7 +52,7 @@ describe('happy cases', () => {
     ]
   })
   test('login first time', async () => {
-    const ev = new EmailVaultController(storage, fetch, relayerUrl, keystore)
+    const ev = new EmailVaultController(storage, fetch, relayerUrl, keystore, testingOptions)
     await ev.getEmailVaultInfo(email)
 
     expect(ev.emailVaultStates.email[email]).toMatchObject({
@@ -64,7 +65,7 @@ describe('happy cases', () => {
   })
   test('login into existing', async () => {
     const evLib = new EmailVault(fetch, relayerUrl)
-    const ev = new EmailVaultController(storage, fetch, relayerUrl, keystore)
+    const ev = new EmailVaultController(storage, fetch, relayerUrl, keystore, testingOptions)
     const keys = await requestMagicLink(email, relayerUrl, fetch)
     await fetch(`${relayerUrl}/email-vault/confirm-key/${email}/${keys.key}/${keys.secret}`)
     // createing
@@ -82,7 +83,7 @@ describe('happy cases', () => {
     })
   })
   test('upload keystore secret', async () => {
-    const ev = new EmailVaultController(storage, fetch, relayerUrl, keystore)
+    const ev = new EmailVaultController(storage, fetch, relayerUrl, keystore, testingOptions)
     await ev.getEmailVaultInfo(email)
     expect(Object.keys(ev.emailVaultStates.email[email].availableSecrets).length).toBe(1)
     await ev.uploadKeyStoreSecret(email)
@@ -93,7 +94,7 @@ describe('happy cases', () => {
     expect(newSecrets[key!]).toMatchObject({ key, type: 'keyStore' })
   })
   test('recoverKeyStore', async () => {
-    const ev = new EmailVaultController(storage, fetch, relayerUrl, keystore)
+    const ev = new EmailVaultController(storage, fetch, relayerUrl, keystore, testingOptions)
 
     await ev.getEmailVaultInfo(email)
     expect(Object.keys(ev.emailVaultStates.email[email].availableSecrets).length).toBe(1)
@@ -126,7 +127,7 @@ describe('happy cases', () => {
       }
     ]
     // ev 1
-    const ev = new EmailVaultController(storage, fetch, relayerUrl, keystore)
+    const ev = new EmailVaultController(storage, fetch, relayerUrl, keystore, testingOptions)
     await ev.getEmailVaultInfo(email)
     // used to add keystore uid
     await keystore.addSecret('smth', 'secret', '', false)
@@ -135,7 +136,7 @@ describe('happy cases', () => {
     await keystore.addKeys([{ privateKey: keys[1].privateKey, dedicatedToOneSA: false }])
 
     // ev 2
-    const ev2 = new EmailVaultController(storage2, fetch, relayerUrl, keystore2)
+    const ev2 = new EmailVaultController(storage2, fetch, relayerUrl, keystore2, testingOptions)
     await ev2.getEmailVaultInfo(email)
     await keystore2.addSecret('smth2', 'secret2', '', false)
     await keystore2.unlockWithSecret('smth2', 'secret2')
@@ -155,5 +156,19 @@ describe('happy cases', () => {
       'password'
     )
     expect(await keystore2.getKeys().then((d) => d.length)).toBe(2)
+  })
+
+  test('cancel login attempt', (done) => {
+    const ev = new EmailVaultController(storage, fetch, relayerUrl, keystore)
+
+    setTimeout(() => {
+      expect(ev.currentState).toBe(EmailVaultState.WaitingEmailConfirmation)
+      ev.cancelEmailConfirmation()
+      expect(ev.currentState).toBe(EmailVaultState.Ready)
+      expect(Object.keys(ev.emailVaultStates.email).length).toBe(0)
+      done()
+    }, 4000)
+
+    ev.handleMagicLinkKey(email, () => console.log('ready'))
   })
 })
