@@ -7,5 +7,6 @@ module.exports = {
   transform: {
     'node_modules/validator/.+\\.(j|t)sx?$': 'ts-jest'
   },
-  transformIgnorePatterns: ['node_modules/(?!validator/.*)']
+  transformIgnorePatterns: ['node_modules/(?!validator/.*)'],
+  setupFiles: ['dotenv/config']
 }
