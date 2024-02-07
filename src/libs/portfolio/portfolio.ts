@@ -1,3 +1,6 @@
+/* eslint-disable no-restricted-syntax */
+/* eslint-disable guard-for-in */
+
 import { JsonRpcProvider, Provider } from 'ethers'
 
 import BalanceGetter from '../../../contracts/compiled/BalanceGetter.json'
@@ -195,11 +198,17 @@ export class Portfolio {
 
     const oracleCallDone = Date.now()
 
-    // Update prices
+    // Update prices and set the priceIn for each token by reference,
+    // updating the final tokens array as a result
     await Promise.all(
       tokens.map(async (token) => {
         const cachedPriceIn = getPriceFromCache(token.address)
         if (cachedPriceIn) {
+          // reassinging priceIn to the function param is not an ideal
+          // solution in this case as it's harder for reading but we're
+          // going along with it. Please understand that the final tokens
+          // array is updated with the edited token in this scope
+          /* eslint-disable-next-line no-param-reassign */
           token.priceIn = cachedPriceIn
           return
         }
@@ -210,11 +219,12 @@ export class Portfolio {
           // this is what to look for in the coingecko response object
           responseIdentifier: geckoResponseIdentifier(token.address, networkId)
         })
-        const priceIn: Price[] = Object.entries(priceData || {}).map(([baseCurrency, price]) => ({
-          baseCurrency,
+        const priceIn: Price[] = Object.entries(priceData || {}).map(([baseCurr, price]) => ({
+          baseCurrency: baseCurr,
           price: price as number
         }))
         if (priceIn.length) priceCache.set(token.address, [Date.now(), priceIn])
+        /* eslint-disable-next-line no-param-reassign */
         token.priceIn = priceIn
       })
     )
@@ -234,11 +244,13 @@ export class Portfolio {
         .map(([error, result]) => ({ error, address: result.address })),
       collections: collections.filter((x) => x.collectibles?.length),
       total: tokens.reduce((cur, token) => {
+        const localCur = cur
         for (const x of token.priceIn) {
-          cur[x.baseCurrency] =
-            (cur[x.baseCurrency] || 0) + (Number(token.amount) / 10 ** token.decimals) * x.price
+          localCur[x.baseCurrency] =
+            (localCur[x.baseCurrency] || 0) +
+            (Number(token.amount) / 10 ** token.decimals) * x.price
         }
-        return cur
+        return localCur
       }, {}),
       // Add error field conditionally
       ...(hints.error && { hintsError: hints.error })
