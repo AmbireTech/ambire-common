@@ -1,3 +1,6 @@
+/* eslint-disable no-restricted-syntax */
+/* eslint-disable guard-for-in */
+
 import { JsonRpcProvider, Provider } from 'ethers'
 
 import BalanceGetter from '../../../contracts/compiled/BalanceGetter.json'
@@ -124,11 +127,11 @@ export class Portfolio {
 
     // This also allows getting prices, this is used for more exotic tokens that cannot be retrieved via Coingecko
     const priceCache: PriceCache = localOpts.priceCache || new Map()
-    Object.keys(hints.prices || {}).forEach((addr) => {
+    for (const addr in hints.prices || {}) {
       const priceHint = hints.prices[addr]
       // @TODO consider validating the external response here, before doing the .set; or validating the whole velcro response
       priceCache.set(addr, [start, Array.isArray(priceHint) ? priceHint : [priceHint]])
-    })
+    }
     const discoveryDone = Date.now()
 
     // .isLimitedAt24kbData should be the same for both instances; @TODO more elegant check?
@@ -242,11 +245,11 @@ export class Portfolio {
       collections: collections.filter((x) => x.collectibles?.length),
       total: tokens.reduce((cur, token) => {
         const localCur = cur
-        const prices: Price[] = Object.values(token.priceIn)
-        prices.forEach((x: Price) => {
+        for (const x of token.priceIn) {
           localCur[x.baseCurrency] =
-            (cur[x.baseCurrency] || 0) + (Number(token.amount) / 10 ** token.decimals) * x.price
-        })
+            (localCur[x.baseCurrency] || 0) +
+            (Number(token.amount) / 10 ** token.decimals) * x.price
+        }
         return localCur
       }, {}),
       // Add error field conditionally
