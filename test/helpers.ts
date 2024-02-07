@@ -3,8 +3,8 @@ import { ethers } from 'hardhat'
 
 import { Storage } from '../src/interfaces/storage'
 import { parse, stringify } from '../src/libs/bigintJson/bigintJson'
-import { wrapEthSign, wrapTypedData } from './ambireSign'
-import { abiCoder, addressOne, addressTwo, AmbireAccount, chainId } from './config'
+import { wrapUnprotected } from './ambireSign'
+import { abiCoder, addressOne, addressTwo, AmbireAccount } from './config'
 
 async function sendFunds(to: string, ether: number) {
   const [signer] = await ethers.getSigners()
@@ -173,10 +173,7 @@ async function buildUserOp(paymaster: BaseContract, entryPointAddr: string, opti
       ]
     )
   )
-  const typedData = wrapTypedData(chainId, await paymaster.getAddress(), hash)
-  const signature = wrapEthSign(
-    await relayer.signTypedData(typedData.domain, typedData.types, typedData.value)
-  )
+  const signature = wrapUnprotected(await relayer.signMessage(ethers.getBytes(hash)))
 
   // abi.decode(userOp.paymasterAndData[20:], (uint48, uint48, bytes))
   const paymasterData = abiCoder.encode(
