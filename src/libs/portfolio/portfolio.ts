@@ -124,11 +124,11 @@ export class Portfolio {
 
     // This also allows getting prices, this is used for more exotic tokens that cannot be retrieved via Coingecko
     const priceCache: PriceCache = localOpts.priceCache || new Map()
-    for (const addr in hints.prices || {}) {
+    Object.keys(hints.prices || {}).forEach((addr) => {
       const priceHint = hints.prices[addr]
       // @TODO consider validating the external response here, before doing the .set; or validating the whole velcro response
       priceCache.set(addr, [start, Array.isArray(priceHint) ? priceHint : [priceHint]])
-    }
+    })
     const discoveryDone = Date.now()
 
     // .isLimitedAt24kbData should be the same for both instances; @TODO more elegant check?
@@ -195,11 +195,17 @@ export class Portfolio {
 
     const oracleCallDone = Date.now()
 
-    // Update prices
+    // Update prices and set the priceIn for each token by reference,
+    // updating the final tokens array as a result
     await Promise.all(
       tokens.map(async (token) => {
         const cachedPriceIn = getPriceFromCache(token.address)
         if (cachedPriceIn) {
+          // reassinging priceIn to the function param is not an ideal
+          // solution in this case as it's harder for reading but we're
+          // going along with it. Please understand that the final tokens
+          // array is updated with the edited token in this scope
+          /* eslint-disable-next-line no-param-reassign */
           token.priceIn = cachedPriceIn
           return
         }
@@ -210,11 +216,12 @@ export class Portfolio {
           // this is what to look for in the coingecko response object
           responseIdentifier: geckoResponseIdentifier(token.address, networkId)
         })
-        const priceIn: Price[] = Object.entries(priceData || {}).map(([baseCurrency, price]) => ({
-          baseCurrency,
+        const priceIn: Price[] = Object.entries(priceData || {}).map(([baseCurr, price]) => ({
+          baseCurrency: baseCurr,
           price: price as number
         }))
         if (priceIn.length) priceCache.set(token.address, [Date.now(), priceIn])
+        /* eslint-disable-next-line no-param-reassign */
         token.priceIn = priceIn
       })
     )
@@ -234,11 +241,13 @@ export class Portfolio {
         .map(([error, result]) => ({ error, address: result.address })),
       collections: collections.filter((x) => x.collectibles?.length),
       total: tokens.reduce((cur, token) => {
-        for (const x of token.priceIn) {
-          cur[x.baseCurrency] =
+        const localCur = cur
+        const prices: Price[] = Object.values(token.priceIn)
+        prices.forEach((x: Price) => {
+          localCur[x.baseCurrency] =
             (cur[x.baseCurrency] || 0) + (Number(token.amount) / 10 ** token.decimals) * x.price
-        }
-        return cur
+        })
+        return localCur
       }, {}),
       // Add error field conditionally
       ...(hints.error && { hintsError: hints.error })
