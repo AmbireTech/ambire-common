@@ -12,8 +12,6 @@ const path = require('path')
 
 const infoSourcePath = path.join(__dirname, '..', 'src', 'consts', 'humanizer', 'dappAddressList.json')
 const dappSelectorsPath = path.join(__dirname, '..', 'src', 'consts', 'humanizer', 'dappSelectors.json')
-const dappNamesPath = path.join(__dirname, '..', 'src', 'consts', 'humanizer', 'dappNames.json')
-const ambireConstantsPath = path.join(__dirname, '..', 'src', 'consts', 'ambireConstants.json')
 
 // used for turingng revoke.cash files to json
 // const getAllDataFromFolder = async (dirPath) => {
@@ -30,7 +28,6 @@ const ambireConstantsPath = path.join(__dirname, '..', 'src', 'consts', 'ambireC
 // }
 
 const getFnSelectorAndSignature = (f)=>{
-	// @TODO add inputs names, not only types
 	const selector = ethers.keccak256(ethers.toUtf8Bytes(`${f.name}(${f.inputs.map(i=>i.type).join(',')})`))
 	const signature = `${f.name}(${f.inputs.map(i=>`${i.type} ${i.name}`).join(',')})`
 	return [selector.slice(0, 10), signature]
@@ -48,27 +45,11 @@ const main  = async () => {
 	if (!ETHERSCAN_API_KEY) throw Error('NO ETHERSCAN_API_KEY')
 	// taking addresses from json only for mainnet
 	const initialJson = JSON.parse(await fsPromises.readFile(infoSourcePath, 'utf8'))
-	const ambireConstants = JSON.parse(await fsPromises.readFile(ambireConstantsPath, 'utf8'))
 	const addressListJson = initialJson?.['1']
 	const addressList = Object.keys(addressListJson)
 	// takes interfaces
 	const interfaces = await getContractInterfaces(addressList)
-	const funcAndErrSelectorEntries = []
-	const nameEntries = []
-
-	// get selctors from ambireConstants abis
-	Object.values(ambireConstants.humanizerInfo.abis).forEach((abi)=>{
-		abi.forEach((f)=>{
-
-			let signature
-			let  selector
-			if (f.type === 'function' || f.type === 'error') {
-				;[selector, signature] = getFnSelectorAndSignature(f)
-			}
-			if (f.type === 'function') funcAndErrSelectorEntries.push([`funcSelectors:${selector}`, signature])
-			if (f.type === 'error') funcAndErrSelectorEntries.push([`errorSelectors:${selector}`, signature])
-		})
-	})
+	const funcAndErrSelectorEntries = {}
 
 	// get seledctors from fetched abis
 	interfaces.forEach((i)=>{
@@ -78,20 +59,13 @@ const main  = async () => {
 			if (f.type === 'function' || f.type === 'error') {
 				;[selector, signature] = getFnSelectorAndSignature(f)
 			}
-			if (f.type === 'function') funcAndErrSelectorEntries.push([`funcSelectors:${selector}`, signature])
-			if (f.type === 'error') funcAndErrSelectorEntries.push([`errorSelectors:${selector}`, signature])
+			if (f.type === 'error') funcAndErrSelectorEntries[selector] = { type: 'error', value: signature }
+			if (f.type === 'function') funcAndErrSelectorEntries[selector] = { type: 'function', value: signature }
 		})
 	})
 
-	// get all contract names
-	Object.keys(initialJson).forEach(n=>Object.keys(initialJson[n]).forEach((a)=>nameEntries.push([`names:${a}`, initialJson[n][a].appName])))
-	const fetchedSelectors = Object.fromEntries(funcAndErrSelectorEntries)
-	const namesData = Object.fromEntries(nameEntries)
-
-	const storeNamesdData = JSON.parse(await fsPromises.readFile(dappNamesPath, 'utf8') || '{}')
 	const storedSelectorsData = JSON.parse(await fsPromises.readFile(dappSelectorsPath, 'utf8') || '{}')
-	await fsPromises.writeFile(dappNamesPath, JSON.stringify({ ...storeNamesdData, ...namesData }, null, 4), 'utf8')
-	await fsPromises.writeFile(dappSelectorsPath, JSON.stringify({ ...storedSelectorsData, ...fetchedSelectors }, null, 4), 'utf8')
+	await fsPromises.writeFile(dappSelectorsPath, JSON.stringify({ ...storedSelectorsData, ...funcAndErrSelectorEntries }, null, 4), 'utf8')
 }
 
 main()

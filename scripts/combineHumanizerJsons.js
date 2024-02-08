@@ -6,9 +6,15 @@ const fetch = require('node-fetch')
 require('dotenv').config()
 
 const AMBIRE_CONSTANTS_URL = process.env.AMBIRE_CONSTANTS_URL || 'http://localhost:5000'
-// const AMBIRE_CONSTANTS_URL = 'http://localhost:5000'
 
-const humanizerV2ResultPath = path.join(__dirname, '..', 'src', 'consts', 'humanizerInfo.json')
+const humanizerV2ResultPath = path.join(
+  __dirname,
+  '..',
+  'src',
+  'consts',
+  'humanizer',
+  'humanizerInfo.json'
+)
 const humanizerLagacyResultPath = path.join(
   __dirname,
   '..',
@@ -16,7 +22,6 @@ const humanizerLagacyResultPath = path.join(
   'consts',
   'ambireConstants.json'
 )
-
 // @TODO: rename dappSelectors.json file name
 const sigHashesSourcePath = path.join(
   __dirname,
@@ -35,42 +40,47 @@ const dappNamesSourcePath = path.join(
   'dappAddressList.json'
 )
 
-function parseToV2HumanizerMeta(humanizerMeta) {
-  const { humanizerInfo } = humanizerMeta
-  const newHumanizerMeta = {}
-  Object.keys(humanizerInfo?.tokens).forEach((k2) => {
-    newHumanizerMeta[`tokens:${ethers.getAddress(k2)}`] = humanizerInfo.tokens?.[k2]
-  })
-
-  Object.keys(humanizerInfo?.abis).forEach((k2) => {
-    newHumanizerMeta[`abis:${k2}`] = humanizerInfo.abis?.[k2]
-  })
-
-  Object.keys(humanizerInfo?.names).forEach((k2) => {
-    newHumanizerMeta[`names:${ethers.getAddress(k2)}`] = humanizerInfo.names?.[k2]
-  })
-
-  return {
-    ...newHumanizerMeta,
-    yearnVaults: humanizerInfo.yearnVaults
-  }
-}
-
-const readExtraStoredData = async () => {
-  const funcAndErrSigHashes = await fsPromises
+const enrichAndParseLegacyConstantsToV2 = async (legacyConstants) => {
+  // read files
+  const additionalSighashes = await fsPromises
     .readFile(sigHashesSourcePath, 'utf-8')
     .then(JSON.parse)
-  const dappNames = await fsPromises.readFile(dappNamesSourcePath, 'utf-8').then(JSON.parse)
 
-  const res = { ...funcAndErrSigHashes }
+  const dappAddressList = await fsPromises.readFile(dappNamesSourcePath, 'utf-8').then(JSON.parse)
 
-  Object.entries(dappNames[1]).forEach(([address, values]) => {
-    res[`names:${address}`] = values.appName
+  // extract from ambire-constatns
+  const {
+    humanizerInfo: { humanizerV2: result }
+  } = legacyConstants
+
+  // add present sighashes and signatures from file
+  result.abis.NO_ABI = {}
+  const knownSignatures = Object.values(result.abis).reduce((a, b) => ({ ...a, ...b }), {})
+  Object.entries(additionalSighashes).forEach(([selector, data]) => {
+    if (!knownSignatures[selector]) result.abis.NO_ABI[selector] = data
   })
-  return res
+  // add dapps from address list
+  const dappAddressesToAdd = Object.fromEntries(
+    Object.values(dappAddressList)
+      .map((dappObj) => {
+        return Object.entries(dappObj)
+      })
+      .flat()
+      .map(([address, { appName, label }]) => [
+        address,
+        {
+          address,
+          name: appName,
+          isSC: {}
+        }
+      ])
+  )
+  result.knownAddresses = { ...dappAddressesToAdd, ...result.knownAddresses }
+
+  return result
 }
 
-const fetchAmbireConstants = async () => {
+const fetchAndStoreAmbireConstants = async () => {
   const fethcedAmbireConstants = await fetch(`${AMBIRE_CONSTANTS_URL}/result.json`)
     .then((res) => res.json())
     .catch(console.log)
@@ -91,22 +101,29 @@ const main = async () => {
     .readFile(humanizerV2ResultPath, 'utf-8')
     .then(JSON.parse)
 
-  const fetchedConstants = await fetchAmbireConstants()
+  const fetchedConstants = await fetchAndStoreAmbireConstants()
+  const finalV2HumanizerMeta = await enrichAndParseLegacyConstantsToV2(fetchedConstants)
 
-  const parsedAmbireConstants = parseToV2HumanizerMeta(fetchedConstants)
-
-  const extraStoredData = await readExtraStoredData()
-
-  const finalV2HumanizerMeta = { ...extraStoredData, ...parsedAmbireConstants }
   // await fsPromises.writeFile(resultPath, JSON.stringify(finalJson, null, 4), 'utf8')
-  await fsPromises.writeFile(humanizerV2ResultPath, JSON.stringify(finalV2HumanizerMeta), 'utf8')
-
-  // console.log(JSON.stringify(finalJson, null, 4))
-  console.log(
-    `Old file had ${Object.keys(initialV2HumanizerMeta).length} keys, the new object has ${
-      Object.keys(finalV2HumanizerMeta).length
-    } keys. Res written to ${humanizerV2ResultPath}`
+  await fsPromises.writeFile(
+    humanizerV2ResultPath,
+    JSON.stringify(finalV2HumanizerMeta, null, 4),
+    'utf8'
   )
+
+  const updates = {
+    'difference-in-abi-count':
+      Object.keys(finalV2HumanizerMeta.abis).length -
+      Object.keys(initialV2HumanizerMeta.abis).length,
+    'difference-in-unknown-sighashes':
+      Object.keys(finalV2HumanizerMeta.abis.NO_ABI).length -
+      Object.keys(initialV2HumanizerMeta.abis.NO_ABI).length,
+    'difference-in-known-addresses':
+      Object.keys(finalV2HumanizerMeta.knownAddresses).length -
+      Object.keys(initialV2HumanizerMeta.knownAddresses).length
+  }
+  if (Object.values(updates).find((n) => n < 0)) console.log('SOMETHING WAS DELETED')
+  console.log(updates)
 }
 
 main()
