@@ -11,7 +11,7 @@ import { Account, AccountOnchainState } from '../../interfaces/account'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { getAccountDeployParams } from '../account/account'
 import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
-import { fromDescriptor } from '../deployless/deployless'
+import { fromDescriptor, parseErr } from '../deployless/deployless'
 import { getProbableCallData } from '../gasPrice/gasPrice'
 import { UserOperation } from '../userOperation/types'
 import {
@@ -21,7 +21,6 @@ import {
   shouldUsePaymaster,
   toUserOperation
 } from '../userOperation/userOperation'
-import { mapTxnErrMsg } from './errors'
 import { estimateArbitrumL1GasUsed } from './estimateArbitrum'
 
 interface Erc4337estimation {
@@ -252,7 +251,7 @@ export async function estimate(
         from: blockFrom,
         blockTag
       })
-      .catch((e) => e),
+      .catch((e: any) => e),
     is4337Broadcast
       ? deployless4337Estimator
           .call('estimate', functionArgs, {
@@ -263,20 +262,34 @@ export async function estimate(
       : new Promise((resolve) => {
           resolve(null)
         }),
-    estimateArbitrumL1GasUsed(op, account, accountState, provider, estimateUserOp).catch((e) => e)
+    estimateArbitrumL1GasUsed(op, account, accountState, provider, estimateUserOp).catch(
+      (e: any) => e
+    )
   ]
   const estimations = await reestimate(initializeRequests)
 
-  // this error usually means there's an RPC issue and we cannot make
-  // the estimation at the moment. Say so to the user
+  // none of the estimations above end up with a string unless
+  // they have an error in them. In that case, stop the estimation and
+  // provide the error details
+  let localError = null
   if (estimations instanceof Error) {
+    localError = estimations
+  } else {
+    estimations.forEach((res: any) => {
+      if (typeof res === 'string') {
+        localError = new Error(res)
+      }
+    })
+  }
+
+  if (localError) {
     return {
       gasUsed: 0n,
       nonce: 0,
       feePaymentOptions: [],
       erc4337estimation: null,
       arbitrumL1FeeIfArbitrum: { noFee: 0n, withFee: 0n },
-      error: estimations
+      error: localError
     }
   }
 
@@ -303,7 +316,9 @@ export async function estimate(
   // the re-estimation for this accountOp
   let estimationError = null
   if (!accountOp.success) {
-    estimationError = new Error(mapTxnErrMsg(accountOp.err, op), {
+    let error = parseErr(accountOp.err)
+    if (!error) error = `Estimation failed for ${op.accountAddr} on ${op.networkId}`
+    estimationError = new Error(error, {
       cause: 'CALLS_FAILURE'
     })
   }

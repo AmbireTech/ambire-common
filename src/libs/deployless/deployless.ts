@@ -19,7 +19,8 @@ const deployErrorSig = '0xb4f54111'
 const errorSig = '0x08c379a0'
 // Signature of Panic(uint256)
 const panicSig = '0x4e487b71'
-// uniswap swap expired
+
+// uniswap expired sig
 const expiredSig = '0x5bf6f916'
 
 // any made up addr would work
@@ -46,6 +47,15 @@ const defaultOptions: CallOptions = {
   from: undefined,
   stateToOverride: null
 }
+
+const contractErrors = [
+  'caller is a contract',
+  'contract not allowed',
+  'contract not supported',
+  'No contractz allowed',
+  /* no */ 'contracts allowed',
+  /* c or C */ 'ontract is not allowed'
+]
 
 export class Deployless {
   private iface: Interface
@@ -207,13 +217,24 @@ export function parseErr(data: string): string | null {
       return abiCoder.decode(['string'], `0x${dataNoPrefix}`)[0]
     } catch (e: any) {
       if (e.code === 'BUFFER_OVERRUN' || e.code === 'NUMERIC_FAULT') return dataNoPrefix
-      else throw e
+      return e
     }
   }
-  // uniswap expired error
+
   if (data === expiredSig) {
     return 'Swap expired'
   }
+
+  const msgString = Buffer.from(data.substring(2), 'hex').toString()
+  if (msgString.includes('Router: EXPIRED') || msgString.includes('Transaction too old'))
+    return 'Swap expired'
+  if (msgString.includes('Router: INSUFFICIENT_OUTPUT_AMOUNT'))
+    return 'Swap will suffer slippage higher than your requirements'
+  if (msgString.includes('SPOOF_ERROR') || msgString.includes('INSUFFICIENT_PRIVILEGE'))
+    return 'Your signer address is not authorized'
+  if (contractErrors.find((contractMsg) => msgString.includes(contractMsg)))
+    return 'This dApp does not support smart wallets'
+
   return null
 }
 
