@@ -51,6 +51,20 @@ export interface EstimateResult {
   error: Error | null
 }
 
+function catchEstimationFailure(e: Error | string | null) {
+  if (e instanceof Error) {
+    return e
+  }
+
+  if (typeof e === 'string') {
+    return new Error(e)
+  }
+
+  return new Error(
+    'Estimation failed with unknown reason. Please try again to initialize your request or contact Ambire support'
+  )
+}
+
 async function reestimate(fetchRequests: Function, counter: number = 0): Promise<any> {
   // stop the execution on 5 fails;
   // the below error message is not shown to the user so we are safe
@@ -74,14 +88,10 @@ async function reestimate(fetchRequests: Function, counter: number = 0): Promise
     result = await reestimate(fetchRequests, incremented)
   }
 
-  // if the requests do not reach the timeout but any of them
-  // results in a failure, we should try them again. That's what we do here
+  // if one of the calls returns an error, return it
   if (Array.isArray(result)) {
-    const hasError = result.find((res) => res instanceof Error)
-    if (hasError) {
-      const incremented = counter + 1
-      result = await reestimate(fetchRequests, incremented)
-    }
+    const error = result.find((res) => res instanceof Error)
+    if (error) throw error
   }
 
   return result
@@ -143,14 +153,14 @@ export async function estimate(
           data: call.data,
           nonce
         })
-        .catch((e) => e),
-      provider.getBalance(account.addr).catch((e) => e),
+        .catch(catchEstimationFailure),
+      provider.getBalance(account.addr).catch(catchEstimationFailure),
       deploylessEstimator
         .call('getL1GasEstimation', [encodeRlp(encodedCallData), '0x'], {
           from: blockFrom,
           blockTag
         })
-        .catch((e) => e)
+        .catch(catchEstimationFailure)
     ]
     const result = await reestimate(initializeRequests)
     const [gasUsed, balance, [l1GasEstimation]] = result instanceof Error ? [0n, 0n, [0n]] : result
@@ -252,7 +262,7 @@ export async function estimate(
         from: blockFrom,
         blockTag
       })
-      .catch((e) => e),
+      .catch(catchEstimationFailure),
     is4337Broadcast
       ? deployless4337Estimator
           .call('estimate', functionArgs, {
@@ -263,7 +273,9 @@ export async function estimate(
       : new Promise((resolve) => {
           resolve(null)
         }),
-    estimateArbitrumL1GasUsed(op, account, accountState, provider, estimateUserOp).catch((e) => e)
+    estimateArbitrumL1GasUsed(op, account, accountState, provider, estimateUserOp).catch(
+      catchEstimationFailure
+    )
   ]
   const estimations = await reestimate(initializeRequests)
 
@@ -303,7 +315,9 @@ export async function estimate(
   // the re-estimation for this accountOp
   let estimationError = null
   if (!accountOp.success) {
-    estimationError = new Error(mapTxnErrMsg(accountOp.err, op), {
+    let error = mapTxnErrMsg(accountOp.err)
+    if (!error) error = `Estimation failed for ${op.accountAddr} on ${op.networkId}`
+    estimationError = new Error(error, {
       cause: 'CALLS_FAILURE'
     })
   }
