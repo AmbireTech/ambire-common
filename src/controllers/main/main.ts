@@ -100,7 +100,7 @@ export class MainController extends EventEmitter {
   settings: SettingsController
 
   // @TODO read networks from settings
-  accounts: Account[] = []
+  accounts: (Account & { newlyCreated?: boolean })[] = []
 
   selectedAccount: AccountId | null = null
 
@@ -520,15 +520,18 @@ export class MainController extends EventEmitter {
    * Adds and stores in the MainController the required data for the newly
    * added accounts by the AccountAdder controller.
    */
-  async addAccounts(accounts: Account[] = []) {
+  async addAccounts(accounts: (Account & { newlyCreated?: boolean })[] = []) {
     if (!accounts.length) return
-
     const alreadyAddedAddressSet = new Set(this.accounts.map((account) => account.addr))
     const newAccounts = accounts.filter((account) => !alreadyAddedAddressSet.has(account.addr))
 
     if (!newAccounts.length) return
 
-    const nextAccounts = [...this.accounts, ...newAccounts]
+    const nextAccounts = [
+      // when adding accounts for a second time reset the newlyCreated state for the previously added accounts
+      ...this.accounts.map((acc) => ({ ...acc, newlyCreated: false })),
+      ...newAccounts
+    ]
     await this.#storage.set('accounts', nextAccounts)
     this.accounts = nextAccounts
     await this.updateAccountStates()
