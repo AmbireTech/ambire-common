@@ -17,7 +17,10 @@ describe('Send User Operation Tests', () => {
     paymaster = await ethers.deployContract('AmbirePaymaster', [relayer.address])
     entryPoint = await ethers.deployContract('EntryPoint')
     const { ambireAccount: acc } = await deployAmbireAccountHardhatNetwork([
-      { addr: relayer.address, hash: '0x0000000000000000000000000000000000000000000000000000000000000001' }
+      {
+        addr: relayer.address,
+        hash: '0x0000000000000000000000000000000000000000000000000000000000000001'
+      }
     ])
     ambireAccount = acc
     ambireAccountAddress = await ambireAccount.getAddress()

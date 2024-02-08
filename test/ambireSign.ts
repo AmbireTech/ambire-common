@@ -9,7 +9,7 @@ import { abiCoder } from './config'
  * @param BytesLike sig
  * @returns BytesLike
  */
-function wrapEIP712(sig: string) {
+function wrapUnprotected(sig: string) {
   return `${sig}${'00'}`
 }
 
@@ -144,7 +144,7 @@ function getRawTypedDataFinalDigest(
 }
 
 export {
-  wrapEIP712,
+  wrapUnprotected,
   wrapEthSign,
   wrapSchnorr,
   wrapMultiSig,

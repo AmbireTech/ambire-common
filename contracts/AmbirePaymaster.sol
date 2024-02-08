@@ -84,7 +84,10 @@ contract AmbirePaymaster is IPaymaster {
 			userOp.maxFeePerGas,
 			userOp.maxPriorityFeePerGas
 		));
-		bool isValidSig = SignatureValidator.recoverAddrImpl(hash, signature, true) == relayer;
+		// make the hash suitable for ETH sign message
+		hash = keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", hash));
+		(address sigAddr, ) = SignatureValidator.recoverAddrAllowUnprotected(hash, signature, true);
+		bool isValidSig = sigAddr == relayer;
 		// see _packValidationData: https://github.com/eth-infinitism/account-abstraction/blob/f2b09e60a92d5b3177c68d9f382912ccac19e8db/contracts/core/Helpers.sol#L73-L80
 		return ("", uint160(isValidSig ? 0 : 1) | (uint256(validUntil) << 160) | (uint256(validAfter) << 208));
 	}
