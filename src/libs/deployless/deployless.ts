@@ -207,7 +207,7 @@ export function parseErr(data: string): string | null {
       return abiCoder.decode(['string'], `0x${dataNoPrefix}`)[0]
     } catch (e: any) {
       if (e.code === 'BUFFER_OVERRUN' || e.code === 'NUMERIC_FAULT') return dataNoPrefix
-      else throw e
+      return e
     }
   }
   // uniswap expired error

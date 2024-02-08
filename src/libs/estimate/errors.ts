@@ -2,8 +2,6 @@
 
 import { AbiCoder } from 'ethers'
 
-import { AccountOp } from '../accountOp/accountOp'
-
 const contractErrors = [
   'caller is a contract',
   'contract not allowed',
@@ -18,7 +16,7 @@ const errorSig = '0x08c379a0'
 // Signature of TransactionDeadlinePassed
 const expiredSig = '0x5bf6f916'
 
-export function mapTxnErrMsg(contractError: string, op: AccountOp) {
+export function mapTxnErrMsg(contractError: string): string | null {
   let msg = ''
   if (contractError.startsWith(errorSig)) {
     try {
@@ -32,7 +30,7 @@ export function mapTxnErrMsg(contractError: string, op: AccountOp) {
     msg = Buffer.from(contractError.substring(2), 'hex').toString()
   }
 
-  if (!msg || msg === '0x') return `Estimation failed for ${op.accountAddr} on ${op.networkId}`
+  if (!msg || msg === '0x') return null
 
   if (msg.includes('Router: EXPIRED') || msg.includes('Transaction too old') || msg === expiredSig)
     return 'Swap expired'
@@ -42,5 +40,6 @@ export function mapTxnErrMsg(contractError: string, op: AccountOp) {
     return 'Your signer address is not authorized'
   if (contractErrors.find((contractMsg) => msg.includes(contractMsg)))
     return 'This dApp does not support smart wallets'
-  return msg
+
+  return null
 }
