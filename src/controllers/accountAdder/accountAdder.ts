@@ -89,7 +89,7 @@ export class AccountAdderController extends EventEmitter {
 
   // Accounts which identity is created on the Relayer (if needed), and are ready
   // to be added to the user's account list by the Main Controller
-  readyToAddAccounts: Account[] = []
+  readyToAddAccounts: (Account & { newlyCreated?: boolean })[] = []
 
   // The keys for the `readyToAddAccounts`, that are ready to be added to the
   // user's keystore by the Main Controller
@@ -442,6 +442,7 @@ export class AccountAdderController extends EventEmitter {
     this.addAccountsStatus = 'LOADING'
     this.emitUpdate()
 
+    let newlyCreatedAccounts: Account['addr'][] = []
     const accountsToAddOnRelayer: SelectedAccount[] = accounts
       // Identity only for the smart accounts must be created on the Relayer
       .filter((x) => isSmartAccount(x.account))
@@ -469,6 +470,21 @@ export class AccountAdderController extends EventEmitter {
         if (!res.success) {
           throw new Error(res?.message || 'No response received from the Ambire Relayer.')
         }
+
+        type AccResType = {
+          identity: string
+          status: {
+            created: boolean
+            reason?: string
+          }
+        }
+
+        type BodyType = AccResType[]
+        if (res.body) {
+          newlyCreatedAccounts = (res.body as BodyType)
+            .filter((acc: AccResType) => acc.status.created)
+            .map((acc: AccResType) => acc.identity)
+        }
       } catch (e: any) {
         this.emitError({
           level: 'major',
@@ -483,7 +499,12 @@ export class AccountAdderController extends EventEmitter {
       }
     }
 
-    this.readyToAddAccounts = [...accounts.map((x) => x.account)]
+    this.readyToAddAccounts = [
+      ...accounts.map((x) => ({
+        ...x.account,
+        newlyCreated: newlyCreatedAccounts.includes(x.account.addr)
+      }))
+    ]
     this.readyToAddKeys = readyToAddKeys
     this.readyToAddKeyPreferences = readyToAddKeyPreferences
     this.readyToAddAccountPreferences = readyToAddAccountPreferences
