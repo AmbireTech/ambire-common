@@ -139,7 +139,7 @@ export class SignAccountOpController extends EventEmitter {
     this.#accounts = accounts
     this.#accountStates = accountStates
     this.#network = network
-    this.accountOp = accountOp
+    this.accountOp = { ...accountOp }
     this.#storage = storage
     this.#fetch = fetch
     this.#callRelayer = callRelayer
@@ -303,7 +303,7 @@ export class SignAccountOpController extends EventEmitter {
     }
 
     if (accountOp) {
-      this.accountOp = accountOp
+      this.accountOp = { ...accountOp }
       this.#humanizeAccountOp()
     }
 
