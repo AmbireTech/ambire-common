@@ -91,9 +91,7 @@ async function reestimate(fetchRequests: Function, counter: number = 0): Promise
   // if one of the calls returns an error, return it
   if (Array.isArray(result)) {
     const error = result.find((res) => res instanceof Error)
-    if (error) {
-      return new Error(error)
-    }
+    if (error) throw error
   }
 
   return result
