@@ -50,7 +50,29 @@ export interface EstimateResult {
   error: Error | null
 }
 
-async function reestimate(fetchRequests: Function, counter: number = 0): Promise<any> {
+function catchEstimationFailure(e: Error | string | null) {
+  if (e instanceof Error) {
+    return e
+  }
+
+  if (typeof e === 'string') {
+    return new Error(e)
+  }
+
+  return new Error(
+    'Estimation failed with unknown reason. Please try again to initialize your request or contact Ambire support'
+  )
+}
+
+async function reestimate(
+  fetchRequests: Function,
+  counter: number = 0,
+  error: Error | null = null
+): Promise<any> {
+  // if the estimation fails 2 times because of a error in the estimation,
+  // stop the reestimate and return the error
+  if (counter >= 2 && error) return error
+
   // stop the execution on 5 fails;
   // the below error message is not shown to the user so we are safe
   if (counter >= 5)
@@ -61,7 +83,7 @@ async function reestimate(fetchRequests: Function, counter: number = 0): Promise
   const estimationTimeout = new Promise((resolve) => {
     setTimeout(() => {
       resolve('Timeout reached')
-    }, 15000)
+    }, 8000)
   })
 
   // try to estimate the request with a given timeout.
@@ -79,7 +101,7 @@ async function reestimate(fetchRequests: Function, counter: number = 0): Promise
     const hasError = result.find((res) => res instanceof Error)
     if (hasError) {
       const incremented = counter + 1
-      result = await reestimate(fetchRequests, incremented)
+      result = await reestimate(fetchRequests, incremented, hasError)
     }
   }
 
@@ -142,14 +164,14 @@ export async function estimate(
           data: call.data,
           nonce
         })
-        .catch((e) => e),
-      provider.getBalance(account.addr).catch((e) => e),
+        .catch(catchEstimationFailure),
+      provider.getBalance(account.addr).catch(catchEstimationFailure),
       deploylessEstimator
         .call('getL1GasEstimation', [encodeRlp(encodedCallData), '0x'], {
           from: blockFrom,
           blockTag
         })
-        .catch((e) => e)
+        .catch(catchEstimationFailure)
     ]
     const result = await reestimate(initializeRequests)
     const [gasUsed, balance, [l1GasEstimation]] = result instanceof Error ? [0n, 0n, [0n]] : result
@@ -251,45 +273,30 @@ export async function estimate(
         from: blockFrom,
         blockTag
       })
-      .catch((e: any) => e),
+      .catch(catchEstimationFailure),
     is4337Broadcast
       ? deployless4337Estimator
           .call('estimate', functionArgs, {
             from: blockFrom,
             blockTag
           })
-          .catch((e: any) => e)
+          .catch(catchEstimationFailure)
       : new Promise((resolve) => {
-          resolve(null)
+          resolve({})
         }),
     estimateArbitrumL1GasUsed(op, account, accountState, provider, estimateUserOp).catch(
-      (e: any) => e
+      catchEstimationFailure
     )
   ]
   const estimations = await reestimate(initializeRequests)
-
-  // none of the estimations above end up with a string unless
-  // they have an error in them. In that case, stop the estimation and
-  // provide the error details
-  let localError = null
   if (estimations instanceof Error) {
-    localError = estimations
-  } else {
-    estimations.forEach((res: any) => {
-      if (typeof res === 'string') {
-        localError = new Error(res)
-      }
-    })
-  }
-
-  if (localError) {
     return {
       gasUsed: 0n,
       nonce: 0,
       feePaymentOptions: [],
       erc4337estimation: null,
       arbitrumL1FeeIfArbitrum: { noFee: 0n, withFee: 0n },
-      error: localError
+      error: estimations
     }
   }
 

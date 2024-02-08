@@ -59,12 +59,17 @@ const contractErrors = [
 
 export class Deployless {
   private iface: Interface
+
   // the contract deploy (constructor) code: this is the code that tjhe solidity compiler outputs
   private contractBytecode: string
+
   private provider: JsonRpcProvider | Provider
+
   // We need to detect whether the provider supports state override
   private detectionPromise?: Promise<void>
+
   private stateOverrideSupported?: boolean
+
   // the code of the contract after it's actually deployed (or in our case, simulate-deployed)
   // see this: https://medium.com/coinmonks/the-difference-between-bytecode-and-deployed-bytecode-64594db723df
   private contractRuntimeCode?: string
