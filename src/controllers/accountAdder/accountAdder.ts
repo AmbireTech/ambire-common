@@ -261,6 +261,8 @@ export class AccountAdderController extends EventEmitter {
     this.hdPathTemplate = undefined
 
     this.addAccountsStatus = 'INITIAL'
+    this.#derivedAccounts = []
+    this.#linkedAccounts = []
     this.readyToAddAccounts = []
     this.readyToAddKeys = { internal: [], external: [] }
     this.readyToAddKeyPreferences = []
