@@ -4,6 +4,7 @@ import { ethers, JsonRpcProvider, toBeHex } from 'ethers'
 import fetch from 'node-fetch'
 
 import { describe, expect, jest, test } from '@jest/globals'
+import structuredClone from '@ungap/structured-clone'
 
 import EntryPointAbi from '../../../contracts/compiled/EntryPoint.json'
 import { trezorSlot7v24337Deployed } from '../../../test/config'
@@ -28,6 +29,8 @@ import { KeystoreController } from '../keystore/keystore'
 import { PortfolioController } from '../portfolio/portfolio'
 import { SettingsController } from '../settings/settings'
 import { SignAccountOpController } from './signAccountOp'
+
+global.structuredClone = structuredClone as any
 
 const providers = Object.fromEntries(
   networks.map((network) => [network.id, new JsonRpcProvider(network.rpcUrl)])
