@@ -139,7 +139,7 @@ export class SignAccountOpController extends EventEmitter {
     this.#accounts = accounts
     this.#accountStates = accountStates
     this.#network = network
-    this.accountOp = accountOp
+    this.accountOp = { ...accountOp }
     this.#storage = storage
     this.#fetch = fetch
     this.#callRelayer = callRelayer
@@ -279,8 +279,10 @@ export class SignAccountOpController extends EventEmitter {
     paidBy,
     speed,
     signingKeyAddr,
-    signingKeyType
+    signingKeyType,
+    accountOp
   }: {
+    accountOp?: AccountOp
     gasPrices?: GasRecommendation[]
     estimation?: EstimateResult
     feeToken?: TokenResult
@@ -298,6 +300,11 @@ export class SignAccountOpController extends EventEmitter {
     // we broadcast in the end
     if (this.status?.type && noStateUpdateStatuses.indexOf(this.status?.type) !== -1) {
       return
+    }
+
+    if (accountOp) {
+      this.accountOp = { ...accountOp }
+      this.#humanizeAccountOp()
     }
 
     if (gasPrices) this.gasPrices = gasPrices
