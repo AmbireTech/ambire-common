@@ -168,9 +168,6 @@ export class Portfolio {
     const tokenFilter = ([error, result]: [string, TokenResult]): boolean =>
       (result.amount > 0 ||
         !!pinned.find((pinnedToken) => {
-          // Pinned tokens from the humanizer don't have a networkId
-          if (pinnedToken.networkId === null) return pinnedToken.address === result.address
-
           return pinnedToken.networkId === networkId && pinnedToken.address === result.address
         })) &&
       error === '0x' &&

@@ -209,11 +209,7 @@ export class PortfolioController extends EventEmitter {
             pinnedToken.address === token.address && pinnedToken.networkId === token.network
         )
 
-        if (
-          correspondingPinnedToken &&
-          correspondingPinnedToken.networkId !== null &&
-          correspondingPinnedToken.onGasTank
-        ) {
+        if (correspondingPinnedToken && correspondingPinnedToken.onGasTank) {
           acc.push({
             address: token.address,
             symbol: token.symbol.toUpperCase(),

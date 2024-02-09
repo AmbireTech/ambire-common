@@ -148,7 +148,7 @@ export interface Limits {
 }
 
 export type PinnedTokens = {
-  networkId: NetworkDescriptor['id'] | null
+  networkId: NetworkDescriptor['id']
   address: string
   onGasTank: boolean
 }[]
