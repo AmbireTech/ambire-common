@@ -17,6 +17,7 @@ import { callsHumanizer } from '../../libs/humanizer'
 import { IrCall } from '../../libs/humanizer/interfaces'
 import { Price, TokenResult } from '../../libs/portfolio'
 import { getExecuteSignature, getTypedData, wrapStandard } from '../../libs/signMessage/signMessage'
+import { UserOperation } from '../../libs/userOperation/types'
 import {
   getOneTimeNonce,
   isErc4337Broadcast,
@@ -97,6 +98,8 @@ export class SignAccountOpController extends EventEmitter {
 
   accountOp: AccountOp
 
+  #userOperation: UserOperation | null
+
   gasPrices: GasRecommendation[] | null = null
 
   #estimation: EstimateResult | null = null
@@ -136,10 +139,12 @@ export class SignAccountOpController extends EventEmitter {
     this.#accounts = accounts
     this.#accountStates = accountStates
     this.#network = network
-    this.accountOp = accountOp
+    this.accountOp = structuredClone(accountOp)
     this.#storage = storage
     this.#fetch = fetch
     this.#callRelayer = callRelayer
+    // it's real value is set on update()
+    this.#userOperation = null
 
     this.#humanizeAccountOp()
   }
@@ -268,14 +273,14 @@ export class SignAccountOpController extends EventEmitter {
   }
 
   update({
-    accountOp,
     gasPrices,
     estimation,
     feeToken,
     paidBy,
     speed,
     signingKeyAddr,
-    signingKeyType
+    signingKeyType,
+    accountOp
   }: {
     accountOp?: AccountOp
     gasPrices?: GasRecommendation[]
@@ -297,11 +302,21 @@ export class SignAccountOpController extends EventEmitter {
       return
     }
 
+    if (accountOp) {
+      this.accountOp = structuredClone(accountOp)
+      this.#humanizeAccountOp()
+    }
+
     if (gasPrices) this.gasPrices = gasPrices
 
-    if (estimation) this.#estimation = estimation
+    if (estimation) {
+      // set a new copy of the user op if 4337
+      this.#userOperation = estimation.erc4337estimation
+        ? { ...estimation.erc4337estimation.userOp }
+        : null
 
-    if (accountOp) this.accountOp = accountOp
+      this.#estimation = estimation
+    }
 
     if (this.#estimation?.error) {
       this.status = { type: SigningStatus.EstimationError }
@@ -465,14 +480,11 @@ export class SignAccountOpController extends EventEmitter {
       if (!this.#account || !this.#account?.creation) {
         simulatedGasLimit = gasUsed
         amount = simulatedGasLimit * gasPrice + feeTokenEstimation.addedNative
-      } else if (this.#estimation!.erc4337estimation) {
+      } else if (this.#userOperation) {
         // ERC 4337
-        const usesPaymaster = shouldUsePaymaster(
-          this.accountOp.asUserOperation!,
-          this.feeTokenResult!.address
-        )
+        const usesPaymaster = shouldUsePaymaster(this.#userOperation, this.feeTokenResult!.address)
         simulatedGasLimit =
-          this.#estimation!.erc4337estimation.gasUsed + feeTokenEstimation.gasUsed!
+          this.#estimation!.erc4337estimation!.gasUsed + feeTokenEstimation.gasUsed!
         simulatedGasLimit += usesPaymaster
           ? this.#estimation!.arbitrumL1FeeIfArbitrum.withFee
           : this.#estimation!.arbitrumL1FeeIfArbitrum.noFee
@@ -720,10 +732,10 @@ export class SignAccountOpController extends EventEmitter {
           signer
         )
       } else if (this.accountOp.gasFeePayment.isERC4337) {
-        const userOperation = this.accountOp.asUserOperation
+        const userOperation = this.#userOperation
         if (!userOperation) {
           return this.#setSigningError(
-            `Cannot sign as no user operation is present foxr account op ${this.accountOp.accountAddr}`
+            `Cannot sign as no user operation is present for account op ${this.accountOp.accountAddr}`
           )
         }
 

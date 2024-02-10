@@ -1,4 +1,4 @@
-import { JsonRpcProvider } from 'ethers'
+import { JsonRpcProvider, Wallet } from 'ethers'
 import { Account } from 'interfaces/account'
 import fetch from 'node-fetch'
 
@@ -8,7 +8,7 @@ import { describe, expect, test } from '@jest/globals'
 import { produceMemoryStore } from '../../../test/helpers'
 import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'
 import { networks } from '../../consts/networks'
-import { KeyIterator } from '../../libs/keyIterator/keyIterator'
+import { getPrivateKeyFromSeed, KeyIterator } from '../../libs/keyIterator/keyIterator'
 import { AccountAdderController } from './accountAdder'
 
 const providers = Object.fromEntries(
@@ -17,12 +17,9 @@ const providers = Object.fromEntries(
 
 const relayerUrl = 'https://staging-relayer.ambire.com'
 
-const seedPhrase =
-  'brisk rich glide impose category stuff company you appear remain decorate monkey'
-// const privKey = '0x574f261b776b26b1ad75a991173d0e8ca2ca1d481bd7822b2b58b2ef8a969f12'
-const key1PublicAddress = '0x9188fdd757Df66B4F693D624Ed6A13a15Cf717D7'
-// const key2PublicAddress = '0xE4166d78C834367B186Ce6492993ac8D52De738F'
-// const key3PublicAddress = '0xcC48f0C6d79b6E79F90a3228E284324b5F2cC529'
+const key1PublicAddress = new Wallet(
+  getPrivateKeyFromSeed(process.env.SEED, 0, BIP44_STANDARD_DERIVATION_TEMPLATE)
+).address
 
 const basicAccount: Account = {
   addr: key1PublicAddress,
@@ -46,7 +43,7 @@ describe('AccountAdder', () => {
   test('should initialize accountAdder', () => {
     expect(accountAdder.isInitialized).toBeFalsy()
 
-    const keyIterator = new KeyIterator(seedPhrase)
+    const keyIterator = new KeyIterator(process.env.SEED)
     accountAdder.init({
       keyIterator,
       preselectedAccounts: [basicAccount],
@@ -77,7 +74,7 @@ describe('AccountAdder', () => {
   })
 
   test('should set first page and retrieve one smart account for every basic account', (done) => {
-    const keyIterator = new KeyIterator(seedPhrase)
+    const keyIterator = new KeyIterator(process.env.SEED)
     const PAGE_SIZE = 3
     accountAdder.init({
       keyIterator,
@@ -104,7 +101,7 @@ describe('AccountAdder', () => {
     })
   })
   test('should start the searching for linked accounts', (done) => {
-    const keyIterator = new KeyIterator(seedPhrase)
+    const keyIterator = new KeyIterator(process.env.SEED)
     accountAdder.init({
       keyIterator,
       preselectedAccounts: [],
@@ -126,7 +123,7 @@ describe('AccountAdder', () => {
     })
   })
   test('should find linked accounts', (done) => {
-    const keyIterator = new KeyIterator(seedPhrase)
+    const keyIterator = new KeyIterator(process.env.SEED)
     accountAdder.init({
       keyIterator,
       preselectedAccounts: [],
@@ -164,7 +161,7 @@ describe('AccountAdder', () => {
     })
   })
   test('should not be able to deselect a preselected account', (done) => {
-    const keyIterator = new KeyIterator(seedPhrase)
+    const keyIterator = new KeyIterator(process.env.SEED)
     accountAdder.init({
       keyIterator,
       preselectedAccounts: [basicAccount],

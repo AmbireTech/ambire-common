@@ -22,6 +22,7 @@ import { KeystoreController } from '../keystore/keystore'
 export enum EmailVaultState {
   Loading,
   WaitingEmailConfirmation,
+  UploadingSecret,
   Ready
 }
 
@@ -63,6 +64,8 @@ export class EmailVaultController extends EventEmitter {
   private initialLoadPromise: Promise<void>
 
   #isWaitingEmailConfirmation: boolean = false
+
+  #isUploadingSecret: boolean = false
 
   #emailVault: EmailVault
 
@@ -125,6 +128,8 @@ export class EmailVaultController extends EventEmitter {
   get currentState(): EmailVaultState {
     if (!this.isReady) return EmailVaultState.Loading
     if (this.#isWaitingEmailConfirmation) return EmailVaultState.WaitingEmailConfirmation
+    if (this.#isUploadingSecret) return EmailVaultState.UploadingSecret
+
     return EmailVaultState.Ready
   }
 
@@ -271,6 +276,7 @@ export class EmailVaultController extends EventEmitter {
     let result: Boolean | null = false
     const magicKey = await this.#getMagicLinkKey(email)
     if (magicKey?.key) {
+      this.#isUploadingSecret = true
       const randomBytes = crypto.randomBytes(32)
       // toString('base64url') doesn't work for some reason in the browser extension
       const newSecret = base64UrlEncode(randomBytes.toString('base64'))
@@ -286,6 +292,9 @@ export class EmailVaultController extends EventEmitter {
     } else {
       this.emailVaultStates.errors = [new Error('error upload keyStore to email vault')]
     }
+
+    this.#isUploadingSecret = false
+    this.emitUpdate()
   }
 
   async recoverKeyStore(email: string) {

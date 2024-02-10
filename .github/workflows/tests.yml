@@ -34,10 +34,12 @@ jobs:
     - name: Hardhat Tests 🧑‍🔬
       env:
         COINGECKO_PRO_API_KEY: ${{ secrets.COINGECKO_PRO_API_KEY }}
+        SEED: ${{ secrets.SEED }}
       run: npm run hardhat
     
     - name: JEST Tests 🧑‍🔬
       env:
         COINGECKO_PRO_API_KEY: ${{ secrets.COINGECKO_PRO_API_KEY }}
+        SEED: ${{ secrets.SEED }}
       run: npm run jest
 

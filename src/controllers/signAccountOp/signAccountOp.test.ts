@@ -1,9 +1,10 @@
 /* eslint no-console: "off" */
 
-import { ethers, JsonRpcProvider } from 'ethers'
+import { ethers, JsonRpcProvider, toBeHex } from 'ethers'
 import fetch from 'node-fetch'
 
 import { describe, expect, jest, test } from '@jest/globals'
+import structuredClone from '@ungap/structured-clone'
 
 import EntryPointAbi from '../../../contracts/compiled/EntryPoint.json'
 import { trezorSlot7v24337Deployed } from '../../../test/config'
@@ -28,6 +29,8 @@ import { KeystoreController } from '../keystore/keystore'
 import { PortfolioController } from '../portfolio/portfolio'
 import { SettingsController } from '../settings/settings'
 import { SignAccountOpController } from './signAccountOp'
+
+global.structuredClone = structuredClone as any
 
 const providers = Object.fromEntries(
   networks.map((network) => [network.id, new JsonRpcProvider(network.rpcUrl)])
@@ -255,8 +258,7 @@ const init = async (
   },
   signer: any,
   estimationMock?: EstimateResult,
-  gasPricesMock?: gasPricesLib.GasRecommendation[],
-  isErc4337?: boolean
+  gasPricesMock?: gasPricesLib.GasRecommendation[]
 ) => {
   const storage: Storage = produceMemoryStore()
   await storage.set('HumanizerMeta', humanizerMeta)
@@ -275,11 +277,6 @@ const init = async (
 
   const prices = gasPricesMock || (await gasPricesLib.getGasPriceRecommendations(provider, network))
 
-  // if the request is a 4337 one, set the user op before the estimation
-  if (isErc4337) {
-    op.asUserOperation = toUserOperation(account, accountStates[op.accountAddr][op.networkId], op)
-  }
-
   const estimation =
     estimationMock ||
     (await estimate(
@@ -291,14 +288,6 @@ const init = async (
       nativeToCheck,
       feeTokens
     ))
-
-  // if the request is a 4337 one, set the final estimation properties
-  if (estimation.erc4337estimation) {
-    op.asUserOperation!.verificationGasLimit = ethers.toBeHex(
-      estimation.erc4337estimation.verificationGasLimit
-    )
-    op.asUserOperation!.callGasLimit = ethers.toBeHex(estimation.erc4337estimation.callGasLimit)
-  }
 
   const portfolio = new PortfolioController(
     storage,
@@ -880,14 +869,24 @@ describe('SignAccountOp Controller ', () => {
   })
 
   test('Signing [ERC-4337]: Smart account paying in native', async () => {
+    const accOpInfo = createAccountOp(trezorSlot7v24337Deployed, 'avalanche')
+    const accOp = accOpInfo.op
+    const accountStates = await getAccountsInfo([trezorSlot7v24337Deployed])
+    const userOp = toUserOperation(
+      trezorSlot7v24337Deployed,
+      accountStates[accOp.accountAddr][accOp.networkId],
+      accOp
+    )
+    userOp.verificationGasLimit = toBeHex(6000n)
+    userOp.callGasLimit = toBeHex(12000n)
     const { controller, estimation, prices } = await init(
       trezorSlot7v24337Deployed,
-      createAccountOp(trezorSlot7v24337Deployed, 'avalanche'),
+      accOpInfo,
       eoaSigner,
       {
         gasUsed: 200000n,
         nonce: 0,
-        erc4337estimation: { verificationGasLimit: 6000n, callGasLimit: 12000n, gasUsed: 200000n },
+        erc4337estimation: { userOp, gasUsed: 200000n },
         feePaymentOptions: [
           {
             address: '0x0000000000000000000000000000000000000000',
@@ -922,13 +921,10 @@ describe('SignAccountOp Controller ', () => {
           baseFeePerGas: 7000000000n,
           maxPriorityFeePerGas: 7000000000n
         }
-      ],
-      true
+      ]
     )
 
-    expect(controller.accountOp.asUserOperation).not.toBe(null)
-    expect(controller.accountOp.asUserOperation!.verificationGasLimit).toBe(ethers.toBeHex(6000n))
-    expect(controller.accountOp.asUserOperation!.callGasLimit).toBe(ethers.toBeHex(12000))
+    expect(controller.accountOp.asUserOperation).toBe(undefined)
 
     // We are mocking estimation and prices values, in order to validate the gas prices calculation in the test.
     // Knowing the exact amount of estimation and gas prices, we can predict GasFeePayment values.
