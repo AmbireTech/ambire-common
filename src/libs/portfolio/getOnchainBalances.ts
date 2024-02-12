@@ -42,19 +42,28 @@ function handleSimulationError(
   // If the afterNonce is 0, it means that we reverted, even if the error is empty
   // In both BalanceOracle and NFTOracle, afterSimulation and therefore afterNonce will be left empty
   if (afterNonce === 0n) throw new SimulationError('Simulation reverted', beforeNonce, afterNonce)
-  if (afterNonce <= beforeNonce)
+  if (afterNonce < beforeNonce)
     throw new SimulationError(
-      'lower or equal "after" nonce, should not be possible',
+      'lower "after" nonce, should not be possible',
+      beforeNonce,
+      afterNonce
+    )
+  if (simulationOps.length && afterNonce === beforeNonce)
+    throw new SimulationError(
+      'Account op passed for simulation but the nonce did not increment. Perhaps wrong nonce set in Account op',
       beforeNonce,
       afterNonce
     )
 
-  // make sure the final afterNonce (after all the accOps execution) is bigger
-  // than the last lastAccOpNonce
-  const lastAccOpNonce = simulationOps.length ? simulationOps[simulationOps.length - 1].nonce : null
-  if (lastAccOpNonce && afterNonce < lastAccOpNonce + 1n) {
+  // make sure the afterNonce (after all the accOps execution) is
+  // at least the same as the final nonce in the simulationOps
+  const nonces: bigint[] = simulationOps
+    .map((op) => op.nonce ?? -1n)
+    .filter((nonce) => nonce !== -1n)
+    .sort()
+  if (nonces.length && afterNonce < nonces[nonces.length - 1] + 1n) {
     throw new SimulationError(
-      'lower or equal "after" nonce, should not be possible',
+      'Failed to increment the nonce to the final account op nonce',
       beforeNonce,
       afterNonce
     )

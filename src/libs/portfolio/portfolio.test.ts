@@ -219,13 +219,7 @@ describe('Portfolio', () => {
     const account: Account = {
       addr: acc,
       associatedKeys: [acc],
-      creation: {
-        // Those parameters are not relevant
-        factoryAddr: '0xBf07a0Df119Ca234634588fbDb5625594E2a5BCA',
-        bytecode:
-          '0x7f00000000000000000000000000000000000000000000000000000000000000017f02c94ba85f2ea274a3869293a0a9bf447d073c83c617963b0be7c862ec2ee44e553d602d80604d3d3981f3363d3d373d3d3d363d732a2b85eb1054d6f0c6c2e37da05ed3e5fea684ef5af43d82803e903d91602b57fd5bf3',
-        salt: '0x2ee01d932ede47b0b2fb1b6af48868de9f86bfc9a5be2f0b42c0111cf261d04c'
-      },
+      creation: null,
       initialPrivileges: []
     }
     const postSimulation = await portfolio.get(acc, {
@@ -237,6 +231,25 @@ describe('Portfolio', () => {
       throw new Error('Entry not found or `amountPostSimulation` is not calculated')
     }
     expect(entry.amount - entry.amountPostSimulation).toBe(5259434n)
+  })
+
+  test('simulation works with empty account ops', async () => {
+    const acc = '0x7a15866aFfD2149189Aa52EB8B40a8F9166441D9'
+    const account: Account = {
+      addr: acc,
+      associatedKeys: [acc],
+      creation: null,
+      initialPrivileges: []
+    }
+    const postSimulation = await portfolio.get(acc, {
+      simulation: { accountOps: [], account },
+      isEOA: true
+    })
+    const entry = postSimulation.tokens.find((x) => x.symbol === 'USDT')
+    if (!entry || entry.amountPostSimulation === undefined) {
+      throw new Error('Entry not found or `amountPostSimulation` is not calculated')
+    }
+    expect(entry.amount - entry.amountPostSimulation).toBe(0n)
   })
 
   test('simulation works for smart accounts imported as EOAs', async () => {
@@ -274,7 +287,7 @@ describe('Portfolio', () => {
     expect(entry.amount - entry.amountPostSimulation).toBe(10000000000000000n)
   })
 
-  test('token simulation should throw a simulation error if the account op nonce is lower or higher', async () => {
+  test('token simulation should throw a simulation error if the account op nonce is lower or higher than the original contract nonce', async () => {
     const accountOp: any = {
       accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
       signingKeyAddr: '0xe5a4Dad2Ea987215460379Ab285DF87136E83BEA',
@@ -310,7 +323,7 @@ describe('Portfolio', () => {
       expect(true).toBe(false)
     } catch (e: any) {
       expect(e.message).toBe(
-        'simulation error: lower or equal "after" nonce, should not be possible'
+        'simulation error: Account op passed for simulation but the nonce did not increment. Perhaps wrong nonce set in Account op'
       )
     }
 
@@ -323,7 +336,7 @@ describe('Portfolio', () => {
       expect(true).toBe(false)
     } catch (e: any) {
       expect(e.message).toBe(
-        'simulation error: lower or equal "after" nonce, should not be possible'
+        'simulation error: Account op passed for simulation but the nonce did not increment. Perhaps wrong nonce set in Account op'
       )
     }
   })
@@ -407,6 +420,93 @@ describe('Portfolio', () => {
       })
     } catch (e: any) {
       expect(e.message).toBe('simulation error: Spoof failed: wrong keys')
+    }
+  })
+
+  test('token simulation works with two account ops', async () => {
+    const accountOp: any = {
+      accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      signingKeyAddr: '0xe5a4Dad2Ea987215460379Ab285DF87136E83BEA',
+      gasLimit: null,
+      gasFeePayment: null,
+      networkId: 'ethereum',
+      nonce: await getNonce('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'),
+      signature: '0x000000000000000000000000e5a4Dad2Ea987215460379Ab285DF87136E83BEA03',
+      calls: [
+        {
+          to: '0xdAC17F958D2ee523a2206206994597C13D831ec7',
+          value: BigInt(0),
+          data: '0xa9059cbb000000000000000000000000e5a4dad2ea987215460379ab285df87136e83bea00000000000000000000000000000000000000000000000000000000005040aa'
+        }
+      ]
+    }
+    const account = {
+      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      initialPrivileges: [],
+      associatedKeys: ['0xe5a4Dad2Ea987215460379Ab285DF87136E83BEA'],
+      creation: {
+        factoryAddr: '0xBf07a0Df119Ca234634588fbDb5625594E2a5BCA',
+        bytecode:
+          '0x7f00000000000000000000000000000000000000000000000000000000000000017f02c94ba85f2ea274a3869293a0a9bf447d073c83c617963b0be7c862ec2ee44e553d602d80604d3d3981f3363d3d373d3d3d363d732a2b85eb1054d6f0c6c2e37da05ed3e5fea684ef5af43d82803e903d91602b57fd5bf3',
+        salt: '0x2ee01d932ede47b0b2fb1b6af48868de9f86bfc9a5be2f0b42c0111cf261d04c'
+      }
+    }
+    const secondAccountOp = { ...accountOp }
+    secondAccountOp.nonce = accountOp.nonce + 1n
+    const postSimulation = await portfolio.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', {
+      simulation: { accountOps: [accountOp, secondAccountOp], account }
+    })
+    const entry = postSimulation.tokens.find((x) => x.symbol === 'USDT')
+
+    if (!entry || entry.amountPostSimulation === undefined) {
+      throw new Error('Token not found or `amountPostSimulation` is not calculated')
+    }
+
+    // If there is a diff, it means the above txn simulation is successful
+    // and the diff amount would be deduced from entry.amount when the txn is executed
+    expect(entry.amount - entry.amountPostSimulation).toBeGreaterThan(0)
+  })
+
+  test('token simulation works fails if there are two account ops but the last one has a higher nonce than expected', async () => {
+    const accountOp: any = {
+      accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      signingKeyAddr: '0xe5a4Dad2Ea987215460379Ab285DF87136E83BEA',
+      gasLimit: null,
+      gasFeePayment: null,
+      networkId: 'ethereum',
+      nonce: await getNonce('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'),
+      signature: '0x000000000000000000000000e5a4Dad2Ea987215460379Ab285DF87136E83BEA03',
+      calls: [
+        {
+          to: '0xdAC17F958D2ee523a2206206994597C13D831ec7',
+          value: BigInt(0),
+          data: '0xa9059cbb000000000000000000000000e5a4dad2ea987215460379ab285df87136e83bea00000000000000000000000000000000000000000000000000000000005040aa'
+        }
+      ]
+    }
+    const account = {
+      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      initialPrivileges: [],
+      associatedKeys: ['0xe5a4Dad2Ea987215460379Ab285DF87136E83BEA'],
+      creation: {
+        factoryAddr: '0xBf07a0Df119Ca234634588fbDb5625594E2a5BCA',
+        bytecode:
+          '0x7f00000000000000000000000000000000000000000000000000000000000000017f02c94ba85f2ea274a3869293a0a9bf447d073c83c617963b0be7c862ec2ee44e553d602d80604d3d3981f3363d3d373d3d3d363d732a2b85eb1054d6f0c6c2e37da05ed3e5fea684ef5af43d82803e903d91602b57fd5bf3',
+        salt: '0x2ee01d932ede47b0b2fb1b6af48868de9f86bfc9a5be2f0b42c0111cf261d04c'
+      }
+    }
+    const secondAccountOp = { ...accountOp }
+    secondAccountOp.nonce = accountOp.nonce + 2n // wrong, should be +1n
+    try {
+      await portfolio.get('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', {
+        simulation: { accountOps: [accountOp, secondAccountOp], account }
+      })
+      // portfolio.get should revert and not come here
+      expect(true).toBe(false)
+    } catch (e: any) {
+      expect(e.message).toBe(
+        'simulation error: Failed to increment the nonce to the final account op nonce'
+      )
     }
   })
 })
