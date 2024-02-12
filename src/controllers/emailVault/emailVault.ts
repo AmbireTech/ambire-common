@@ -167,6 +167,7 @@ export class EmailVaultController extends EventEmitter {
     }
 
     this.#isWaitingEmailConfirmation = true
+    this.#shouldStopConfirmationPolling = false
     this.emitUpdate()
 
     const newKey = await requestMagicLink(email, this.#relayerUrl, this.#fetch, {
@@ -529,6 +530,7 @@ export class EmailVaultController extends EventEmitter {
   cancelEmailConfirmation() {
     this.#shouldStopConfirmationPolling = true
     this.#isWaitingEmailConfirmation = false
+    this.emitUpdate()
   }
 
   get hasKeystoreRecovery() {
