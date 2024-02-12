@@ -87,7 +87,9 @@ export class Portfolio {
     const localOpts = { ...defaultOptions, ...opts }
     const { baseCurrency } = localOpts
     const pinned = localOpts.pinned
-      ? localOpts.pinned.filter((pin) => pin.accountId === accountAddr)
+      ? localOpts.pinned.filter(
+          (pinnedToken) => !('accountId' in pinnedToken) || pinnedToken.accountId === accountAddr
+        )
       : []
     if (localOpts.simulation && localOpts.simulation.account.addr !== accountAddr)
       throw new Error('wrong account passed')
