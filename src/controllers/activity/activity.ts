@@ -428,7 +428,7 @@ export class ActivityController extends EventEmitter {
       )
       return {
         id: accountOp.txnId,
-        topic: 'TRANSACTION',
+        type: 'success',
         title: 'Transaction successfully signed and sent!\nCheck it out on the block explorer!',
         text: '',
         actions: [

@@ -15,7 +15,7 @@ export const getMessageBanners = ({ userRequests }: { userRequests: UserRequest[
     if (req.action.kind === 'message' || req.action.kind === 'typedMessage') {
       txnBanners.push({
         id: req.id,
-        topic: 'TRANSACTION',
+        type: 'info',
         title: 'Message waiting to be signed',
         text: `Message type: ${req.action.kind === 'message' ? 'personal_sign' : 'typed_data'}`, // TODO:
         actions: [
@@ -39,10 +39,12 @@ export const getMessageBanners = ({ userRequests }: { userRequests: UserRequest[
 
 export const getAccountOpBannersForEOA = ({
   userRequests,
-  accounts
+  accounts,
+  networks
 }: {
   userRequests: UserRequest[]
   accounts: Account[]
+  networks: NetworkDescriptor[]
 }): Banner[] => {
   if (!userRequests) return []
 
@@ -53,22 +55,24 @@ export const getAccountOpBannersForEOA = ({
 
   if (!activeUserRequest) return []
 
+  const networkName = networks.filter((n) => n.id === activeUserRequest.networkId)[0].name
+
   return [
     {
       id: activeUserRequest.id,
-      topic: 'TRANSACTION',
-      title: 'Transaction waiting to be signed',
+      type: 'info',
+      title: `Transaction waiting to be signed ${networkName ? `on ${networkName}` : ''}`,
       text: '', // TODO:
       actions: [
-        {
-          label: 'Open',
-          actionName: 'open',
-          meta: { ids: [activeUserRequest.id] }
-        },
         {
           label: 'Reject',
           actionName: 'reject',
           meta: { ids: [activeUserRequest.id], err: 'User rejected the transaction request' }
+        },
+        {
+          label: 'Open',
+          actionName: 'open',
+          meta: { ids: [activeUserRequest.id] }
         }
       ]
     } as Banner
@@ -95,7 +99,7 @@ export const getPendingAccountOpBannersForEOA = ({
   return [
     {
       id: pendingUserRequests[0].id,
-      topic: 'TRANSACTION',
+      type: 'info',
       title: `${numberOfPendingRequest} More pending transactions are waiting to be signed`,
       text: '' // TODO:
     } as Banner
@@ -104,10 +108,12 @@ export const getPendingAccountOpBannersForEOA = ({
 
 export const getAccountOpBannersForSmartAccount = ({
   userRequests,
-  accounts
+  accounts,
+  networks
 }: {
   userRequests: UserRequest[]
   accounts: Account[]
+  networks: NetworkDescriptor[]
 }) => {
   const txnBanners: Banner[] = []
 
@@ -132,21 +138,25 @@ export const getAccountOpBannersForSmartAccount = ({
   ).filter((group: any) => group.length)
 
   groupedRequestsArray.forEach((group) => {
+    const networkName = networks.filter((n) => n.id === group[0].networkId)[0].name
+
     txnBanners.push({
       id: group[0].id,
-      topic: 'TRANSACTION',
-      title: `${group.length} Transactions waiting to be signed`,
+      type: 'info',
+      title: `${group.length} ${
+        group.length === 1 ? 'Transaction' : 'Transactions'
+      } waiting to be signed ${networkName ? `on ${networkName}` : ''}`,
       text: '', // TODO:
       actions: [
-        {
-          label: 'Open',
-          actionName: 'open',
-          meta: { ids: [group[0].id] }
-        },
         {
           label: 'Reject',
           actionName: 'reject',
           meta: { ids: group.map((g) => g.id), err: 'User rejected the transaction request' }
+        },
+        {
+          label: 'Open',
+          actionName: 'open',
+          meta: { ids: [group[0].id] }
         }
       ]
     })
@@ -159,7 +169,7 @@ export const getKeySyncBanner = (addr: string, email: string, keys: string[]) =>
   const banner: Banner = {
     id: `keys-sync:${addr}:${email}`,
     accountAddr: addr,
-    topic: 'ANNOUNCEMENT',
+    type: 'info',
     title: 'Sync Key Store keys',
     text: 'This account has no signing keys added therefore it is in a view-only mode. Make a request for keys sync from another device.',
     actions: [
@@ -189,7 +199,7 @@ export const getNetworksWithFailedRPCBanners = ({
 
       return {
         id: `${networkData.id}-rpc-down`,
-        topic: 'WARNING',
+        type: 'warning',
         title: `Failed to retrieve network data for ${networkData?.name} (RPC is down)`,
         text: 'Affected features: visible tokens, sign message/transaction, ENS/UD domain resolving, add account. Please try again later or contact support.',
         actions: []
@@ -230,7 +240,7 @@ export const getNetworksWithCriticalPortfolioErrorBanners = ({
       return [
         {
           id: `${networkData.id}-portfolio-critical-error`,
-          topic: 'WARNING',
+          type: 'error',
           title: `Failed to retrieve the portfolio data for ${networkData.name}`,
           text: 'Affected features: account balances, assets. Please try again later or contact support.',
           actions: []
