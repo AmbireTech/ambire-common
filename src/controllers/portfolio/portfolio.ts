@@ -206,7 +206,9 @@ export class PortfolioController extends EventEmitter {
 
         const correspondingPinnedToken = this.#pinned.find(
           (pinnedToken) =>
-            pinnedToken.address === token.address && pinnedToken.networkId === token.network
+            pinnedToken.accountId === accountId &&
+            pinnedToken.address === token.address &&
+            pinnedToken.networkId === token.network
         )
 
         if (correspondingPinnedToken && correspondingPinnedToken.onGasTank) {

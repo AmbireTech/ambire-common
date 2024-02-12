@@ -792,6 +792,7 @@ export class MainController extends EventEmitter {
           : call.fullVisualization.map((vis) => ({
               address: vis.address || '',
               networkId: localAccountOp.networkId,
+              accountId: localAccountOp.accountAddr,
               onGasTank: false
             }))
       )

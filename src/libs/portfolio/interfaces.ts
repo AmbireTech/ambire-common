@@ -1,4 +1,4 @@
-import { Account } from '../../interfaces/account'
+import { Account, AccountId } from '../../interfaces/account'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
 import { AccountOp } from '../accountOp/accountOp'
 
@@ -148,6 +148,7 @@ export interface Limits {
 }
 
 export type PinnedTokens = {
+  accountId: AccountId
   networkId: NetworkDescriptor['id']
   address: string
   onGasTank: boolean

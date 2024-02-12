@@ -85,7 +85,10 @@ export class Portfolio {
 
   async get(accountAddr: string, opts: Partial<GetOptions> = {}): Promise<PortfolioGetResult> {
     const localOpts = { ...defaultOptions, ...opts }
-    const { baseCurrency, pinned = [] } = localOpts
+    const { baseCurrency } = localOpts
+    const pinned = localOpts.pinned
+      ? localOpts.pinned.filter((pin) => pin.accountId === accountAddr)
+      : []
     if (localOpts.simulation && localOpts.simulation.account.addr !== accountAddr)
       throw new Error('wrong account passed')
 
