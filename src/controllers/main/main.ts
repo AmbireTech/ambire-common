@@ -1187,11 +1187,16 @@ export class MainController extends EventEmitter {
       return banner.accountAddr === this.selectedAccount
     })
 
-    const accountOpEOABanners = getAccountOpBannersForEOA({ userRequests, accounts })
+    const accountOpEOABanners = getAccountOpBannersForEOA({
+      userRequests,
+      accounts,
+      networks: this.settings.networks
+    })
     const pendingAccountOpEOABanners = getPendingAccountOpBannersForEOA({ userRequests, accounts })
     const accountOpSmartAccountBanners = getAccountOpBannersForSmartAccount({
       userRequests,
-      accounts
+      accounts,
+      networks: this.settings.networks
     })
     const messageBanners = getMessageBanners({ userRequests })
     const networksWithFailedRPCBanners = getNetworksWithFailedRPCBanners({

@@ -5,18 +5,18 @@ import crypto from 'crypto'
 import { Banner } from '../../interfaces/banner'
 import {
   EmailVaultData,
-  EmailVaultSecret,
   EmailVaultOperation,
-  SecretType,
-  OperationRequestType
+  EmailVaultSecret,
+  OperationRequestType,
+  SecretType
 } from '../../interfaces/emailVault'
 import { Storage } from '../../interfaces/storage'
 import { getKeySyncBanner } from '../../libs/banners/banners'
 import { EmailVault } from '../../libs/emailVault/emailVault'
-import EventEmitter, { ErrorRef } from '../eventEmitter/eventEmitter'
 import { requestMagicLink } from '../../libs/magicLink/magicLink'
 import { Polling } from '../../libs/polling/polling'
 import wait from '../../utils/wait'
+import EventEmitter, { ErrorRef } from '../eventEmitter/eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
 
 export enum EmailVaultState {
@@ -524,7 +524,7 @@ export class EmailVaultController extends EventEmitter {
     if (!this.hasKeystoreRecovery) {
       banners.push({
         id: 'keystore-secret-backup',
-        topic: 'WARNING',
+        type: 'info',
         title: 'Enable device password reset via email',
         text: "Email Vault recovers your Device Password. It is securely stored in Ambire's infrastructure cloud.",
         actions: [
