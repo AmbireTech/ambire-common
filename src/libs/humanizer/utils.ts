@@ -1,11 +1,14 @@
 import dotenv from 'dotenv'
 import { ethers } from 'ethers'
 
+import { ErrorRef } from 'controllers/eventEmitter/eventEmitter'
 import { geckoIdMapper, geckoNetworkIdMapper } from '../../consts/coingecko'
 import { networks } from '../../consts/networks'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import {
+  AbiFragment,
   HumanizerFragment,
+  HumanizerMeta,
   HumanizerSettings,
   HumanizerVisualization,
   HumanizerWarning,
@@ -76,8 +79,8 @@ export function getDeadline(deadlineSecs: bigint): HumanizerVisualization {
   }
 }
 
-export function shortenAddress(addr: string) {
-  return addr ? `${addr.slice(0, 5)}...${addr.slice(-3)}` : null
+export function shortenAddress(addr: string): string {
+  return `${addr.slice(0, 5)}...${addr.slice(-3)}`
 }
 
 /**
@@ -114,9 +117,13 @@ export async function getTokenInfo(
     response = await response.json()
     if (response.symbol && response.detail_platforms?.ethereum?.decimal_place)
       return {
-        key: `tokens:${address}`,
-        isGlobal: true,
-        value: [response.symbol.toUpperCase(), response.detail_platforms?.ethereum?.decimal_place]
+        type: 'token',
+        key: address.toLowerCase(),
+        value: {
+          symbol: response.symbol.toUpperCase(),
+          decimals: response.detail_platforms?.ethereum?.decimal_place
+        },
+        isGlobal: true
       }
 
     // @TODO: rething error levels
@@ -171,4 +178,21 @@ export function getWraping(address: string, amount: bigint) {
 
 export function getUnwraping(address: string, amount: bigint) {
   return [getAction('Unwrap'), getToken(address, amount)]
+}
+
+export function getAbi(
+  humanizerMeta: HumanizerMeta | undefined,
+  abiName: string,
+  options?: any // @TODO make HumanizerOptions interface
+): string[] {
+  if (!humanizerMeta) {
+    options.emitError({})
+    options.emitError({
+      message: 'getAbi: tried to use the humanizer without humanizerMeta',
+      level: 'major',
+      error: new Error('getAbi: tried to use the humanizer without humanizerMeta')
+    } as ErrorRef)
+    return []
+  }
+  return Object.values(humanizerMeta.abis[abiName]).map((i: AbiFragment): string => i.signature)
 }

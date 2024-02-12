@@ -5,6 +5,8 @@ import { Message, TypedMessage } from '../../interfaces/userRequest'
 import { AccountOp } from '../accountOp/accountOp'
 import { Call } from '../accountOp/types'
 
+// @TODO properties to be removed - decimals,readableAmount?symbol, name
+// @TODO add properties humanizerMeta
 export type HumanizerVisualization = {
   type: 'token' | 'address' | 'label' | 'action' | 'nft' | 'danger' | 'deadline'
   address?: string
@@ -34,9 +36,10 @@ export interface Ir {
 }
 
 export interface HumanizerFragment {
-  key: string
+  type: 'knownAddresses' | 'abis' | 'selector' | 'token'
   isGlobal: boolean
-  value: string | Array<any> | object
+  key: string
+  value: string | Array<any> | AbiFragment | any
 }
 
 export interface HumanizerCallModule {
@@ -50,8 +53,31 @@ export interface HumanizerTypedMessaageModule {
   (typedMessage: TypedMessage): Omit<IrMessage, keyof Message>
 }
 
+export interface AbiFragment {
+  selector: string
+  type: 'error' | 'function' | 'event'
+  signature: string
+}
+
+// more infor here https://github.com/AmbireTech/ambire-app/issues/1662
 export interface HumanizerMeta {
-  [key: string]: any
+  abis: {
+    [name: string]: {
+      [selector: string]: AbiFragment
+    }
+    NO_ABI: {
+      [selector: string]: AbiFragment
+    }
+  }
+  knownAddresses: {
+    [address: string]: {
+      name?: string
+      // undefined means it is not a token
+      token?: { symbol: string; decimals: number; networks?: string[] }
+      // undefined means not a SC, {} means it is SC but we have no more info
+      isSC?: { isAA?: boolean; abiName?: string }
+    }
+  }
 }
 export interface HumanizerSettings {
   humanizerMeta?: HumanizerMeta

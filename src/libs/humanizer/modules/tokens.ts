@@ -3,6 +3,7 @@ import { ethers } from 'ethers'
 import { AccountOp } from '../../accountOp/accountOp'
 import { HumanizerCallModule, HumanizerFragment, IrCall } from '../interfaces'
 import {
+  getAbi,
   getAction,
   getAddress,
   getLabel,
@@ -18,7 +19,7 @@ export const genericErc721Humanizer: HumanizerCallModule = (
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   options?: any
 ) => {
-  const iface = new ethers.Interface(accountOp.humanizerMeta?.['abis:ERC721'])
+  const iface = new ethers.Interface(getAbi(accountOp.humanizerMeta, 'ERC721', options))
   const nftTransferVisualization = (call: IrCall) => {
     const args = iface.parseTransaction(call)?.args.toArray() || []
     return args[0] === accountOp.accountAddr
@@ -77,7 +78,8 @@ export const genericErc721Humanizer: HumanizerCallModule = (
     // that's why we check if it's a known token to prevent humanization.
     // If it's not a known token, using the same humanization is okay as
     // we cannot humanize it further
-    const isActuallyKnownToken = !!accountOp.humanizerMeta?.[`tokens:${call.to}`]
+    const isActuallyKnownToken =
+      !!accountOp.humanizerMeta?.knownAddresses[call.to.toLocaleLowerCase()]?.token
     // could do additional check if it is actually NFT contract
     return matcher[call.data.substring(0, 10)] && !isActuallyKnownToken
       ? {
@@ -95,7 +97,7 @@ export const genericErc20Humanizer: HumanizerCallModule = (
   options?: any
 ) => {
   const asyncOps: Promise<HumanizerFragment | null>[] = []
-  const iface = new ethers.Interface(accountOp.humanizerMeta?.['abis:ERC20'])
+  const iface = new ethers.Interface(getAbi(accountOp.humanizerMeta, 'ERC20', options))
   const matcher = {
     [iface.getFunction('approve')?.selector!]: (call: IrCall) => {
       const args = iface.parseTransaction(call)?.args.toArray() || []
@@ -148,17 +150,20 @@ export const genericErc20Humanizer: HumanizerCallModule = (
   }
   const newCalls = currentIrCalls.map((call) => {
     const sigHash = call.data.substring(0, 10)
+    const isToKnownToken = !!accountOp.humanizerMeta?.knownAddresses[call.to.toLowerCase()]?.token
     // if proper func selector and no such token found in meta
-    if (matcher[sigHash] && !accountOp.humanizerMeta?.[`tokens:${call.to}`]) {
+    // console.log(matcher[sigHash], isToKnownToken)
+    if (matcher[sigHash] && !isToKnownToken) {
       const asyncTokenInfo = getTokenInfo(accountOp, call.to, options)
       asyncOps.push(asyncTokenInfo)
     }
-    if (matcher[sigHash] && accountOp.humanizerMeta?.[`tokens:${call.to}`])
+    if (matcher[sigHash] && isToKnownToken) {
       return {
         ...call,
         fullVisualization: matcher[sigHash](call)
       }
-    if (accountOp.humanizerMeta?.[`tokens:${call.to}`] && !matcher[sigHash])
+    }
+    if (isToKnownToken && !matcher[sigHash])
       return {
         ...call,
         fullVisualization: getUnknownVisualization('ERC-20', call)

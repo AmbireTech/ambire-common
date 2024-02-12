@@ -1,14 +1,13 @@
 import { ethers } from 'ethers'
-import { getAction, getLabel, getToken, getRecipientText, getDeadline } from '../../utils'
+import { getAction, getLabel, getToken, getRecipientText, getDeadline, getAbi } from '../../utils'
 
 import { AccountOp } from '../../../accountOp/accountOp'
-import { IrCall } from '../../interfaces'
+import { HumanizerMeta, IrCall } from '../../interfaces'
 
 const uniV2Mapping = (
-  humanizerInfo: any
+  humanizerInfo: HumanizerMeta
 ): { [key: string]: (a: AccountOp, c: IrCall) => IrCall[] } => {
-  const iface = new ethers.Interface(humanizerInfo?.['abis:UniV2Router'])
-
+  const iface = new ethers.Interface(getAbi(humanizerInfo, 'UniV2Router'))
   return {
     // ordered in the same order as the router
     [iface.getFunction('swapExactTokensForTokens')?.selector!]: (

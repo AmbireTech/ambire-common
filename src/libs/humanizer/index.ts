@@ -8,6 +8,7 @@ import { humanizeCalls, humanizePlainTextMessage, humanizeTypedMessage } from '.
 import {
   HumanizerCallModule,
   HumanizerFragment,
+  HumanizerMeta,
   HumanizerParsingModule,
   HumanizerSettings,
   IrCall,
@@ -24,7 +25,6 @@ import { uniswapHumanizer } from './modules/Uniswap'
 // import { oneInchHumanizer } from '.modules/oneInch'
 import { WALLETModule } from './modules/WALLET'
 import { wrappingModule } from './modules/wrapped'
-import { yearnVaultModule } from './modules/yearnTesseractVault'
 import { parseCalls, parseMessage } from './parsers'
 import { nameParsing } from './parsers/nameParsing'
 import { tokenParsing } from './parsers/tokenParsing'
@@ -35,7 +35,7 @@ import {
   permit2Module
 } from './typedMessageModules'
 
-const HUMANIZER_META_KEY = 'HumanizerMeta'
+const HUMANIZER_META_KEY = 'HumanizerMetaV2'
 // generic in the begining
 // the final humanization is the final triggered module
 export const humanizerCallModules: HumanizerCallModule[] = [
@@ -48,7 +48,6 @@ export const humanizerCallModules: HumanizerCallModule[] = [
   // oneInchHumanizer,
   WALLETModule,
   privilegeHumanizer,
-  yearnVaultModule,
   sushiSwapModule,
   fallbackHumanizer
 ]
@@ -59,25 +58,51 @@ const parsingModules: HumanizerParsingModule[] = [nameParsing, tokenParsing]
 // the final visualization and warnings are from the first triggered module
 const humanizerTMModules = [erc20Module, erc721Module, permit2Module, fallbackEIP712Humanizer]
 
-const handleAsyncOps = async (
-  asyncOps: Promise<HumanizerFragment | null>[],
-  storage: Storage,
-  storedHumanizerMeta: any
-) => {
-  let globalFragmentData = {}
-  let nonGlobalFragmentData = {}
-  const fragments = (await Promise.all(asyncOps)).filter((f) => f) as HumanizerFragment[]
-  if (!fragments.length) [{}, {}]
-
-  // eslint-disable-next-line @typescript-eslint/no-loop-func
+const integrateFragments = (
+  _humanizerMeta: HumanizerMeta,
+  fragments: HumanizerFragment[]
+): HumanizerMeta => {
+  const humanizerMeta = _humanizerMeta
   fragments.forEach((f) => {
-    f.isGlobal
-      ? (globalFragmentData = { ...globalFragmentData, [f.key]: f.value })
-      : (nonGlobalFragmentData = { ...nonGlobalFragmentData, [f.key]: f.value })
+    // @TODO rename types to singular  also add enum
+    if (f.type === 'abis') humanizerMeta.abis[f.key] = f.value
+    if (f.type === 'selector') humanizerMeta.abis.NO_ABI[f.key] = f.value
+    if (f.type === 'knownAddresses')
+      humanizerMeta.knownAddresses[f.key] = { ...humanizerMeta.knownAddresses[f.key], ...f.value }
+    if (f.type === 'token') {
+      humanizerMeta.knownAddresses[f.key] = {
+        ...humanizerMeta.knownAddresses?.[f.key],
+        token: f.value
+      }
+    }
   })
+  return humanizerMeta
+}
 
-  await storage.set(HUMANIZER_META_KEY, { ...storedHumanizerMeta, ...globalFragmentData })
-  return [globalFragmentData, nonGlobalFragmentData]
+// @TODO move to constants????
+export const combineKnownHumanizerInfo = async (
+  storage: Storage,
+  addressBook: { [address: string]: string },
+  passedHumanizerMeta: HumanizerMeta | undefined,
+  humanizerFragments?: HumanizerFragment[]
+): Promise<HumanizerMeta> => {
+  const stored = await storage.get(HUMANIZER_META_KEY, {})
+  const globalFrags = humanizerFragments?.filter((f) => f.isGlobal) || []
+  const nonGlobalFragments = humanizerFragments?.filter((f) => !f.isGlobal) || []
+
+  const toStore = integrateFragments(stored, globalFrags)
+  await storage.set(HUMANIZER_META_KEY, toStore)
+
+  const toReturn = integrateFragments(toStore, nonGlobalFragments)
+  // add addressBook
+  Object.entries(addressBook).forEach(([_address, name]) => {
+    const address = _address.toLowerCase()
+    const addressInfo = toReturn.knownAddresses[address]
+    if (addressInfo) toReturn.knownAddresses[address] = { ...addressInfo, name }
+    else toReturn.knownAddresses[address] = { name }
+  })
+  // @TODO add passed data (humanizer meta from tge accountOp)
+  return toReturn
 }
 
 export const humanizeAccountOp = async (
@@ -97,16 +122,16 @@ export const humanizeAccountOp = async (
   return irCalls
 }
 
-export const sharedHumanization = async <Data extends AccountOp | Message>(
-  data: Data,
-  knownAddressLabel: { [addr in string]: string },
+// @TODO: update iterface name
+export const sharedHumanization = async <InputData extends AccountOp | Message>(
+  data: InputData,
+  knownAddressLabel: { [addr: string]: string },
   storage: Storage,
   fetch: Function,
   callback: ((response: IrCall[]) => void) | ((response: IrMessage) => void),
   emitError: (err: ErrorRef) => void
 ) => {
-  let globalFragmentData = {}
-  let nonGlobalFragmentData = {}
+  let humanizerFragments: HumanizerFragment[] = []
   let op: AccountOp
   let irCalls
   let asyncOps: Promise<HumanizerFragment | null>[] = []
@@ -114,29 +139,25 @@ export const sharedHumanization = async <Data extends AccountOp | Message>(
   if ('calls' in data) {
     op = {
       ...data,
-      humanizerMeta: {
-        ...(await storage.get(HUMANIZER_META_KEY, {})),
-        ...Object.fromEntries(
-          Object.entries(knownAddressLabel).map(([addr, label]) => {
-            return [`names:${addr}`, label]
-          })
-        ),
-        ...data.humanizerMeta
-      }
+      humanizerMeta: await combineKnownHumanizerInfo(
+        storage,
+        knownAddressLabel,
+        data.humanizerMeta as HumanizerMeta
+      )
     }
   }
+
   for (let i = 0; i <= 3; i++) {
-    const storedHumanizerMeta = await storage.get(HUMANIZER_META_KEY, {})
+    // @TODO should we always do this
+    const updateddHumanizerMeta = await combineKnownHumanizerInfo(
+      storage,
+      knownAddressLabel,
+      data.humanizerMeta as HumanizerMeta | undefined,
+      humanizerFragments
+    )
     if ('calls' in data) {
-      op!.humanizerMeta = {
-        ...op!.humanizerMeta,
-        ...nonGlobalFragmentData
-      }
-      ;[irCalls, asyncOps] = humanizeCalls(
-        { ...op!, humanizerMeta: { ...op!.humanizerMeta, ...storedHumanizerMeta } },
-        humanizerCallModules,
-        { fetch, emitError }
-      )
+      op!.humanizerMeta = updateddHumanizerMeta
+      ;[irCalls, asyncOps] = humanizeCalls(op!, humanizerCallModules, { fetch, emitError })
       const [parsedCalls, newAsyncOps] = parseCalls(op!, irCalls, parsingModules, {
         fetch,
         emitError
@@ -147,16 +168,7 @@ export const sharedHumanization = async <Data extends AccountOp | Message>(
       const humanizerSettings: HumanizerSettings = {
         accountAddr: data.accountAddr,
         networkId: data?.networkId || 'ethereum',
-        humanizerMeta: {
-          ...(await storage.get(HUMANIZER_META_KEY, {})),
-          ...Object.fromEntries(
-            Object.entries(knownAddressLabel).map(([addr, label]) => {
-              return [`names:${addr}`, label]
-            })
-          ),
-          ...data.humanizerMeta,
-          ...nonGlobalFragmentData
-        }
+        humanizerMeta: updateddHumanizerMeta
       }
       const irMessage: IrMessage = {
         ...data,
@@ -172,13 +184,11 @@ export const sharedHumanization = async <Data extends AccountOp | Message>(
       ;(callback as (response: IrMessage) => void)(parsedMessage)
     }
 
-    ;[globalFragmentData, nonGlobalFragmentData] = await handleAsyncOps(
-      asyncOps,
-      storage,
-      storedHumanizerMeta
+    humanizerFragments = await Promise.all(asyncOps).then(
+      (frags) => frags.filter((x) => x) as HumanizerFragment[]
     )
-    if (!Object.keys(globalFragmentData).length && !Object.keys(nonGlobalFragmentData).length)
-      return
+
+    if (!humanizerFragments.length) return
   }
 }
 

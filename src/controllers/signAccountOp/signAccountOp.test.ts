@@ -275,7 +275,7 @@ const init = async (
   gasPricesMock?: gasPricesLib.GasRecommendation[]
 ) => {
   const storage: Storage = produceMemoryStore()
-  await storage.set('HumanizerMeta', humanizerMeta)
+  await storage.set('HumanizerMetaV2', humanizerMeta)
 
   const keystore = new KeystoreController(storage, { internal: KeystoreSigner })
   await keystore.addSecret('passphrase', signer.pass, '', false)
