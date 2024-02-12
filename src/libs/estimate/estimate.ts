@@ -52,12 +52,17 @@ export interface EstimateResult {
 }
 
 function catchEstimationFailure(e: Error | string | null) {
+  let message = null
+
   if (e instanceof Error) {
-    return e
+    message = e.message
+  } else if (typeof e === 'string') {
+    message = e
   }
 
-  if (typeof e === 'string') {
-    return new Error(e)
+  if (message) {
+    message = mapTxnErrMsg(message)
+    if (message) return new Error(message)
   }
 
   return new Error(
@@ -91,7 +96,7 @@ async function reestimate(fetchRequests: Function, counter: number = 0): Promise
   // if one of the calls returns an error, return it
   if (Array.isArray(result)) {
     const error = result.find((res) => res instanceof Error)
-    if (error) throw error
+    if (error) return error
   }
 
   return result
@@ -163,7 +168,8 @@ export async function estimate(
         .catch(catchEstimationFailure)
     ]
     const result = await reestimate(initializeRequests)
-    const [gasUsed, balance, [l1GasEstimation]] = result instanceof Error ? [0n, 0n, [0n]] : result
+    const [gasUsed, balance, [l1GasEstimation]] =
+      result instanceof Error ? [0n, 0n, [{ fee: 0n }]] : result
 
     return {
       gasUsed,
