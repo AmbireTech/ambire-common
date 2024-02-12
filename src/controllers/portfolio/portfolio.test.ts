@@ -28,6 +28,13 @@ describe('Portfolio Controller ', () => {
     }
   }
 
+  const EOA = {
+    addr: '0x16c81367c30c71d6B712355255A07FCe8fd3b5bB',
+    associatedKeys: ['0x16c81367c30c71d6B712355255A07FCe8fd3b5bB'],
+    initialPrivileges: [],
+    creation: null
+  }
+
   async function getAccountOp() {
     const ABI = ['function transferFrom(address from, address to, uint256 tokenId)']
     const iface = new ethers.Interface(ABI)
@@ -289,6 +296,74 @@ describe('Portfolio Controller ', () => {
       expect(pendingState2.result?.updateStarted).toBeGreaterThan(
         pendingState1.result?.updateStarted!
       )
+    })
+  })
+
+  describe('Pinned tokens', () => {
+    test('Pinned tokens are set for a given account and are not fetched for anotherre-fetched if AccountOp is changed', async () => {
+      const storage = produceMemoryStore()
+      const avalanche = networks.find((x) => x.id === 'avalanche')
+      if (!avalanche) throw new Error('unable to find avalanche network in consts')
+      const avalancheProvider = new JsonRpcProvider(avalanche.rpcUrl)
+      const controller = new PortfolioController(
+        storage,
+        { avalanche: avalancheProvider },
+        relayerUrl,
+        []
+      )
+
+      const joeAddress = '0x6e84a6216eA6dACC71eE8E6b0a5B7322EEbC0fDd'
+      await controller.updateSelectedAccount(
+        [account],
+        networks,
+        account.addr,
+        {},
+        {
+          forceUpdate: true,
+          pinned: [
+            {
+              // JOE token
+              address: joeAddress,
+              networkId: 'avalanche',
+              onGasTank: false,
+              accountId: account.addr
+            }
+          ]
+        }
+      )
+      // confirm the JOE token is here
+      const latestState = controller.latest[account.addr].avalanche!
+      expect(latestState.isLoading).toBe(false)
+      expect(latestState.isReady).toBe(true)
+      const joe = latestState.result?.tokens.find((token) => token.address === joeAddress)
+      expect(joe).not.toBe(null)
+      expect(joe?.address).toBe(joeAddress)
+
+      // switch account and confirm joe is not there
+      await controller.updateSelectedAccount([EOA], networks, EOA.addr, {}, { forceUpdate: true })
+      const latestStateEOA = controller.latest[EOA.addr].avalanche!
+      expect(latestStateEOA.isLoading).toBe(false)
+      expect(latestStateEOA.isReady).toBe(true)
+      const joeEOA = latestStateEOA.result?.tokens.find((token) => token.address === joeAddress)
+      expect(joeEOA).toBe(undefined)
+
+      // call the original update without pinned - JOE should be there
+      await controller.updateSelectedAccount(
+        [account],
+        networks,
+        account.addr,
+        {},
+        { forceUpdate: true }
+      )
+
+      const latestStateNoExtraPinned = controller.latest[account.addr].avalanche!
+      expect(latestStateNoExtraPinned.isLoading).toBe(false)
+      expect(latestStateNoExtraPinned.isReady).toBe(true)
+      const joeEvenWithoutPinned = latestStateNoExtraPinned.result?.tokens.find(
+        (token) => token.address === joeAddress
+      )
+      expect(joeEvenWithoutPinned).not.toBe(null)
+      expect(joeEvenWithoutPinned?.address).toBe(joeAddress)
     })
   })
 })
