@@ -5,19 +5,19 @@ import { describe, expect, test } from '@jest/globals'
 
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { Account, AccountCreation } from '../../interfaces/account'
-import { dedicatedToOneSAPriv, standardSigningOnlyPriv } from '../../interfaces/keystore'
+import { dedicatedToOneSAPriv } from '../../interfaces/keystore'
 import { getBytecode } from '../proxyDeploy/bytecode'
 import { getAmbireAccountAddress } from '../proxyDeploy/getAmbireAddressTwo'
 import {
   getAccountDeployParams,
+  getBasicAccount,
   getEmailAccount,
-  getLegacyAccount,
   getSmartAccount
 } from './account'
 
 const keyPublicAddress = '0x9188fdd757Df66B4F693D624Ed6A13a15Cf717D7'
 
-const legacyAccount: Account = {
+const basicAccount: Account = {
   addr: keyPublicAddress,
   associatedKeys: [keyPublicAddress],
   initialPrivileges: [],
@@ -25,10 +25,10 @@ const legacyAccount: Account = {
 }
 
 describe('Account', () => {
-  test('should return legacyAccount', () => {
+  test('should return basic account', () => {
     expect.assertions(1)
-    const newLegacyAccount = getLegacyAccount(keyPublicAddress)
-    expect(newLegacyAccount as Account).toStrictEqual(legacyAccount)
+    const newBasicAccount = getBasicAccount(keyPublicAddress)
+    expect(newBasicAccount as Account).toStrictEqual(basicAccount)
   })
   test('should return smartAccount', async () => {
     expect.assertions(3)
@@ -52,9 +52,9 @@ describe('Account', () => {
     expect(newSmartAccount.creation as AccountCreation).not.toBe(null)
     expect(newSmartAccount.associatedKeys[0]).toBe(keyPublicAddress)
   })
-  test('should return zero address and 0x deploy data if legacy account is passed', async () => {
+  test('should return zero address and 0x deploy data if basic account is passed', async () => {
     expect.assertions(1)
-    const accountData = getAccountDeployParams(legacyAccount)
+    const accountData = getAccountDeployParams(basicAccount)
     expect(accountData as any).toEqual([ZeroAddress, '0x'])
   })
   test('should return account deploy params', async () => {

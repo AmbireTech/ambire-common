@@ -17,6 +17,7 @@ import { callsHumanizer } from '../../libs/humanizer'
 import { IrCall } from '../../libs/humanizer/interfaces'
 import { Price, TokenResult } from '../../libs/portfolio'
 import { getExecuteSignature, getTypedData, wrapStandard } from '../../libs/signMessage/signMessage'
+import { UserOperation } from '../../libs/userOperation/types'
 import {
   getOneTimeNonce,
   isErc4337Broadcast,
@@ -33,7 +34,6 @@ export enum SigningStatus {
   UnableToSign = 'unable-to-sign',
   ReadyToSign = 'ready-to-sign',
   InProgress = 'in-progress',
-  InProgressAwaitingUserInput = 'in-progress-awaiting-user-input',
   Done = 'done'
 }
 
@@ -63,6 +63,9 @@ type FanSpeed = {
   amountUsd: string
   maxPriorityFeePerGas?: bigint
 }
+
+// declare the statuses we don't want state updates on
+const noStateUpdateStatuses = [SigningStatus.InProgress, SigningStatus.Done]
 
 function getTokenUsdAmount(token: TokenResult, gasAmount: bigint): string {
   const isUsd = (price: Price) => price.baseCurrency === 'usd'
@@ -94,6 +97,8 @@ export class SignAccountOpController extends EventEmitter {
   #network: NetworkDescriptor
 
   accountOp: AccountOp
+
+  #userOperation: UserOperation | null
 
   gasPrices: GasRecommendation[] | null = null
 
@@ -134,10 +139,12 @@ export class SignAccountOpController extends EventEmitter {
     this.#accounts = accounts
     this.#accountStates = accountStates
     this.#network = network
-    this.accountOp = accountOp
+    this.accountOp = structuredClone(accountOp)
     this.#storage = storage
     this.#fetch = fetch
     this.#callRelayer = callRelayer
+    // it's real value is set on update()
+    this.#userOperation = null
 
     this.#humanizeAccountOp()
   }
@@ -266,14 +273,14 @@ export class SignAccountOpController extends EventEmitter {
   }
 
   update({
-    accountOp,
     gasPrices,
     estimation,
     feeToken,
     paidBy,
     speed,
     signingKeyAddr,
-    signingKeyType
+    signingKeyType,
+    accountOp
   }: {
     accountOp?: AccountOp
     gasPrices?: GasRecommendation[]
@@ -284,11 +291,32 @@ export class SignAccountOpController extends EventEmitter {
     signingKeyAddr?: Key['addr']
     signingKeyType?: Key['type']
   }) {
+    // once the user commits to the things he sees on his screen,
+    // we need to be sure nothing changes afterwards.
+    // For example, signing can be slow if it's done by a hardware wallet.
+    // The estimation gets refreshed on the other hand each 12 seconds (6 on optimism)
+    // If we allow the estimation to affect the controller state during sign,
+    // there could be discrepancy between what the user has agreed upon and what
+    // we broadcast in the end
+    if (this.status?.type && noStateUpdateStatuses.indexOf(this.status?.type) !== -1) {
+      return
+    }
+
+    if (accountOp) {
+      this.accountOp = structuredClone(accountOp)
+      this.#humanizeAccountOp()
+    }
+
     if (gasPrices) this.gasPrices = gasPrices
 
-    if (estimation) this.#estimation = estimation
+    if (estimation) {
+      // set a new copy of the user op if 4337
+      this.#userOperation = estimation.erc4337estimation
+        ? { ...estimation.erc4337estimation.userOp }
+        : null
 
-    if (accountOp) this.accountOp = accountOp
+      this.#estimation = estimation
+    }
 
     if (this.#estimation?.error) {
       this.status = { type: SigningStatus.EstimationError }
@@ -316,11 +344,7 @@ export class SignAccountOpController extends EventEmitter {
   }
 
   updateStatusToReadyToSign() {
-    const isInTheMiddleOfSigning =
-      this.status &&
-      [SigningStatus.InProgress, SigningStatus.InProgressAwaitingUserInput].includes(
-        this.status?.type
-      )
+    const isInTheMiddleOfSigning = this.status?.type === SigningStatus.InProgress
 
     if (
       this.isInitialized &&
@@ -456,14 +480,11 @@ export class SignAccountOpController extends EventEmitter {
       if (!this.#account || !this.#account?.creation) {
         simulatedGasLimit = gasUsed
         amount = simulatedGasLimit * gasPrice + feeTokenEstimation.addedNative
-      } else if (this.#estimation!.erc4337estimation) {
+      } else if (this.#userOperation) {
         // ERC 4337
-        const usesPaymaster = shouldUsePaymaster(
-          this.accountOp.asUserOperation!,
-          this.feeTokenResult!.address
-        )
+        const usesPaymaster = shouldUsePaymaster(this.#userOperation, this.feeTokenResult!.address)
         simulatedGasLimit =
-          this.#estimation!.erc4337estimation.gasUsed + feeTokenEstimation.gasUsed!
+          this.#estimation!.erc4337estimation!.gasUsed + feeTokenEstimation.gasUsed!
         simulatedGasLimit += usesPaymaster
           ? this.#estimation!.arbitrumL1FeeIfArbitrum.withFee
           : this.#estimation!.arbitrumL1FeeIfArbitrum.noFee
@@ -659,17 +680,20 @@ export class SignAccountOpController extends EventEmitter {
   }
 
   async sign() {
+    if (!this.readyToSign)
+      return this.#setSigningError(
+        'We are unable to sign your transaction as some of the mandatory signing fields have not been set.'
+      )
+
+    // when signing begings, we stop immediatelly state updates on the controller
+    // by changing the status to InProgress. Check update() for more info
+    this.status = { type: SigningStatus.InProgress }
+
     if (!this.accountOp?.signingKeyAddr || !this.accountOp?.signingKeyType)
       return this.#setSigningError('We cannot sign your transaction. Please choose a signer key.')
 
     if (!this.accountOp?.gasFeePayment)
       return this.#setSigningError('Please select a token and an account for paying the gas fee.')
-
-    // This error should never happen, as we already validated the mandatory fields such as signingKeyAddr and signingKeyType, and gasFeePayment.
-    if (!this.readyToSign)
-      return this.#setSigningError(
-        'We are unable to sign your transaction as some of the mandatory signing fields have not been set.'
-      )
 
     const signer = await this.#keystore.getSigner(
       this.accountOp.signingKeyAddr,
@@ -677,7 +701,8 @@ export class SignAccountOpController extends EventEmitter {
     )
     if (!signer) return this.#setSigningError('no available signer')
 
-    this.status = { type: SigningStatus.InProgress }
+    // we update the FE with the changed status (in progress) only after the checks
+    // above confirm everything is okay to prevent two different state updates
     this.emitUpdate()
 
     const gasFeePayment = this.accountOp.gasFeePayment
@@ -707,10 +732,10 @@ export class SignAccountOpController extends EventEmitter {
           signer
         )
       } else if (this.accountOp.gasFeePayment.isERC4337) {
-        const userOperation = this.accountOp.asUserOperation
+        const userOperation = this.#userOperation
         if (!userOperation) {
           return this.#setSigningError(
-            `Cannot sign as no user operation is present foxr account op ${this.accountOp.accountAddr}`
+            `Cannot sign as no user operation is present for account op ${this.accountOp.accountAddr}`
           )
         }
 

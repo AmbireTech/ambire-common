@@ -22,6 +22,7 @@ import { KeystoreController } from '../keystore/keystore'
 export enum EmailVaultState {
   Loading,
   WaitingEmailConfirmation,
+  UploadingSecret,
   Ready
 }
 
@@ -63,6 +64,8 @@ export class EmailVaultController extends EventEmitter {
   private initialLoadPromise: Promise<void>
 
   #isWaitingEmailConfirmation: boolean = false
+
+  #isUploadingSecret: boolean = false
 
   #emailVault: EmailVault
 
@@ -136,6 +139,8 @@ export class EmailVaultController extends EventEmitter {
   get currentState(): EmailVaultState {
     if (!this.isReady) return EmailVaultState.Loading
     if (this.#isWaitingEmailConfirmation) return EmailVaultState.WaitingEmailConfirmation
+    if (this.#isUploadingSecret) return EmailVaultState.UploadingSecret
+
     return EmailVaultState.Ready
   }
 
@@ -290,6 +295,7 @@ export class EmailVaultController extends EventEmitter {
     let result: Boolean | null = false
     const magicKey = await this.#getMagicLinkKey(email)
     if (magicKey?.key) {
+      this.#isUploadingSecret = true
       const randomBytes = crypto.randomBytes(32)
       // toString('base64url') doesn't work for some reason in the browser extension
       const newSecret = base64UrlEncode(randomBytes.toString('base64'))
@@ -305,6 +311,9 @@ export class EmailVaultController extends EventEmitter {
     } else {
       this.emailVaultStates.errors = [new Error('error upload keyStore to email vault')]
     }
+
+    this.#isUploadingSecret = false
+    this.emitUpdate()
   }
 
   async recoverKeyStore(email: string, newPassword: string) {
@@ -318,7 +327,7 @@ export class EmailVaultController extends EventEmitter {
     const state = this.emailVaultStates
     if (!state.email[email]) {
       this.emitError({
-        message: `Keystore recovery: email ${email} not imported`,
+        message: `Resetting the password on this device is not enabled for ${email}.`,
         level: 'major',
         error: new Error(`Keystore recovery: email ${email} not imported`)
       })
@@ -327,7 +336,7 @@ export class EmailVaultController extends EventEmitter {
 
     if (!state.email[email].availableSecrets[uid]) {
       this.emitError({
-        message: 'Keystore recovery: no keystore secret for this device',
+        message: `Resetting the password on this device is not enabled for ${email}.`,
         level: 'major',
         error: new Error('Keystore recovery: no keystore secret for this device')
       })
@@ -335,7 +344,7 @@ export class EmailVaultController extends EventEmitter {
     }
     if (state.email[email].availableSecrets[uid].type !== SecretType.KeyStore) {
       this.emitError({
-        message: `Keystore recovery: no keystore secret for email ${email}`,
+        message: `Resetting the password on this device is not enabled for ${email}.`,
         level: 'major',
         error: new Error(`Keystore recovery: no keystore secret for email ${email}`)
       })

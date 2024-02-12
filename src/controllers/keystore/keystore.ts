@@ -21,8 +21,8 @@ import {
   StoredKey
 } from '../../interfaces/keystore'
 import { Storage } from '../../interfaces/storage'
-import EventEmitter from '../eventEmitter/eventEmitter'
 import wait from '../../utils/wait'
+import EventEmitter from '../eventEmitter/eventEmitter'
 
 const scryptDefaults = { N: 131072, r: 8, p: 1, dkLen: 64 }
 const CIPHER = 'aes-128-ctr'
