@@ -5,7 +5,7 @@ import fetch from 'node-fetch'
 import { describe, expect, jest, test } from '@jest/globals'
 
 import { produceMemoryStore } from '../../../test/helpers'
-import humanizerJSON from '../../consts/humanizerInfo.json'
+import humanizerJSON from '../../consts/humanizer/humanizerInfo.json'
 import { ErrorRef } from '../../controllers/eventEmitter/eventEmitter'
 import { Account } from '../../interfaces/account'
 import { Key } from '../../interfaces/keystore'
@@ -13,9 +13,9 @@ import { Storage } from '../../interfaces/storage'
 import { Message, TypedMessage } from '../../interfaces/userRequest'
 import { AccountOp } from '../accountOp/accountOp'
 import { callsHumanizer, messageHumanizer } from './index'
-import { HumanizerVisualization, IrCall, IrMessage } from './interfaces'
+import { HumanizerMeta, HumanizerVisualization, IrCall, IrMessage } from './interfaces'
 
-const HUMANIZER_META_KEY = 'HumanizerMeta'
+const HUMANIZER_META_KEY = 'HumanizerMetaV2'
 
 // const address1 = '0x6942069420694206942069420694206942069420'
 const address2 = '0xaAaAaAaaAaAaAaaAaAAAAAAAAaaaAaAaAaaAaaAa'
@@ -38,12 +38,12 @@ const accountOp: AccountOp = {
   // This is used when we have an account recovery to finalize before executing the AccountOp,
   // And we set this to the recovery finalization AccountOp; could be used in other scenarios too in the future,
   // for example account migration (from v1 QuickAcc to v2)
-  accountOpToExecuteBefore: null,
+  accountOpToExecuteBefore: null
   // This is fed into the humanizer to help visualize the accountOp
   // This can contain info like the value of specific share tokens at the time of signing,
   // or any other data that needs to otherwise be retrieved in an async manner and/or needs to be
   // "remembered" at the time of signing in order to visualize history properly
-  humanizerMeta: {}
+  // humanizerMeta: {}
 }
 
 const accounts: Account[] = [
@@ -223,7 +223,7 @@ describe('Humanizer main function', () => {
     storage = produceMemoryStore()
     await storage.set(HUMANIZER_META_KEY, humanizerMeta)
     accountOp.calls = []
-    accountOp.humanizerMeta = humanizerJSON
+    accountOp.humanizerMeta = { ...(humanizerJSON as HumanizerMeta) }
   })
 
   test('generic humanize', async () => {
@@ -302,8 +302,9 @@ describe('Humanizer main function', () => {
 
 describe('TypedMessages', () => {
   let storage: Storage
-  beforeEach(() => {
+  beforeEach(async () => {
     storage = produceMemoryStore()
+    await storage.set(HUMANIZER_META_KEY, { abis: { NO_ABI: {} }, knownAddresses: {} })
   })
   test('simple humanization', async () => {
     const message = {
@@ -425,7 +426,7 @@ describe('with (Account | Key)[] arg', () => {
     storage = produceMemoryStore()
     await storage.set(HUMANIZER_META_KEY, humanizerMeta)
     accountOp.calls = []
-    accountOp.humanizerMeta = humanizerJSON
+    accountOp.humanizerMeta = { ...(humanizerJSON as HumanizerMeta) }
   })
   test('with calls', async () => {
     const expectedVisualizations = [

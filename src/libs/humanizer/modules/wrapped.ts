@@ -1,7 +1,7 @@
 import { ethers } from 'ethers'
 import { HumanizerCallModule, IrCall } from '../interfaces'
 import { AccountOp } from '../../accountOp/accountOp'
-import { getUnknownVisualization, getUnwraping, getWraping } from '../utils'
+import { getAbi, getUnknownVisualization, getUnwraping, getWraping } from '../utils'
 
 const WRAPPEDISH_ADDRESSES: { [kjey: string]: string } = {
   [ethers.ZeroAddress]: 'native',
@@ -65,14 +65,15 @@ export const wrappingModule: HumanizerCallModule = (
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   options?: any
 ) => {
-  const iface = new ethers.Interface(accountOp.humanizerMeta?.['abis:WETH'])
+  const iface = new ethers.Interface(getAbi(accountOp.humanizerMeta, 'WETH', options))
   const newCalls = irCalls.map((call: IrCall) => {
+    const knownAddressData = accountOp.humanizerMeta?.knownAddresses[call.to.toLowerCase()]
     if (
-      accountOp.humanizerMeta?.[`names:${call.to}`] === 'Wrapped ETH' ||
-      accountOp.humanizerMeta?.[`names:${call.to}`] === 'WETH' ||
-      accountOp.humanizerMeta?.[`tokens:${call.to}`]?.[0] === 'WETH' ||
-      accountOp.humanizerMeta?.[`names:${call.to}`] === 'WMATIC' ||
-      accountOp.humanizerMeta?.[`tokens:${call.to}`]?.[0] === 'WMATIC'
+      knownAddressData?.name === 'Wrapped ETH' ||
+      knownAddressData?.name === 'WETH' ||
+      knownAddressData?.token?.symbol === 'WETH' ||
+      knownAddressData?.name === 'WMATIC' ||
+      knownAddressData?.token?.symbol === 'WMATIC'
     ) {
       // 0xd0e30db0
       if (call.data.slice(0, 10) === iface.getFunction('deposit')?.selector) {

@@ -6,14 +6,22 @@ import { describe, expect, test } from '@jest/globals'
 
 import { ErrorRef } from '../../controllers/eventEmitter/eventEmitter'
 import { AccountOp } from '../accountOp/accountOp'
-import { HumanizerFragment, HumanizerVisualization, IrCall } from './interfaces'
+import {
+  AbiFragment,
+  HumanizerFragment,
+  HumanizerMeta,
+  HumanizerVisualization,
+  IrCall
+} from './interfaces'
 import { fallbackHumanizer } from './modules/fallBackHumanizer'
 import { genericErc20Humanizer, genericErc721Humanizer } from './modules/tokens'
 import { uniswapHumanizer } from './modules/Uniswap'
 import { parseCalls } from './parsers'
 import { nameParsing } from './parsers/nameParsing'
 
-const humanizerInfo = require('../../consts/humanizerInfo.json')
+import humanizerInfo from '../../consts/humanizer/humanizerInfo.json'
+import { combineKnownHumanizerInfo } from '.'
+import { produceMemoryStore } from '../../../test/helpers'
 
 const mockEmitError = (e: ErrorRef) => console.log(e)
 
@@ -40,12 +48,12 @@ const accountOp: AccountOp = {
   // This is used when we have an account recovery to finalize before executing the AccountOp,
   // And we set this to the recovery finalization AccountOp; could be used in other scenarios too in the future,
   // for example account migration (from v1 QuickAcc to v2)
-  accountOpToExecuteBefore: null,
+  accountOpToExecuteBefore: null
   // This is fed into the humanizer to help visualize the accountOp
   // This can contain info like the value of specific share tokens at the time of signing,
   // or any other data that needs to otherwise be retrieved in an async manner and/or needs to be
   // "remembered" at the time of signing in order to visualize history properly
-  humanizerMeta: {}
+  // humanizerMeta: {}
 }
 const transactions = {
   generic: [
@@ -191,16 +199,17 @@ const transactions = {
 
 describe('asyncOps tests', () => {
   beforeEach(async () => {
-    accountOp.humanizerMeta = { ...humanizerInfo }
+    accountOp.humanizerMeta = JSON.parse(JSON.stringify(humanizerInfo))
     accountOp.calls = []
   })
 
   test('getTokenInfo', async () => {
     accountOp.calls = transactions.erc20
-    delete accountOp.humanizerMeta!['tokens:0xdAC17F958D2ee523a2206206994597C13D831ec7']
+    delete accountOp.humanizerMeta!.knownAddresses['0xdac17f958d2ee523a2206206994597c13d831ec7']
+      .token
     if (accountOp.humanizerMeta)
-      Object.keys(accountOp.humanizerMeta).forEach((k) => {
-        k.includes('tokens') ? delete accountOp.humanizerMeta?.[k] : null
+      Object.keys(accountOp.humanizerMeta.knownAddresses).forEach((k) => {
+        delete accountOp.humanizerMeta?.knownAddresses[k]
       })
     const irCalls: IrCall[] = accountOp.calls
     const [, asyncOps] = genericErc20Humanizer(accountOp, irCalls, {
@@ -208,13 +217,20 @@ describe('asyncOps tests', () => {
       emitError: mockEmitError
     })
     const asyncData = await Promise.all(asyncOps)
-    expect(asyncData[0]).toMatchObject({ key: `tokens:${irCalls[0].to}`, value: ['USDT', 6] })
+    expect(asyncData[0]).toMatchObject({
+      key: irCalls[0].to.toLowerCase(),
+      type: 'token',
+      value: {
+        decimals: 6,
+        symbol: 'USDT'
+      }
+    })
   })
 })
 
 describe('module tests', () => {
   beforeEach(async () => {
-    accountOp.humanizerMeta = { ...humanizerInfo }
+    accountOp.humanizerMeta = JSON.parse(JSON.stringify(humanizerInfo))
     accountOp.calls = []
   })
   test('callsToIr', () => {
@@ -223,6 +239,7 @@ describe('module tests', () => {
     expect(irCalls.length).toBe(transactions.erc20.length + transactions.generic.length)
     expect(irCalls[0]).toEqual({ ...transactions.generic[0], fullVisualization: undefined })
   })
+  // @TODO err
   test('genericErc20Humanizer', () => {
     accountOp.calls = [...transactions.erc20]
     const irCalls: IrCall[] = accountOp.calls
@@ -311,8 +328,12 @@ describe('module tests', () => {
   })
 
   test('fallback', async () => {
+    const HUMANIZER_META_KEY = 'HumanizerMetaV2'
+    const storage = produceMemoryStore()
+    await storage.set(HUMANIZER_META_KEY, { abis: { NO_ABI: {} }, knownAddresses: {} })
+
     accountOp.calls = [...transactions.generic]
-    delete accountOp.humanizerMeta?.['funcSelectors:0x095ea7b3']
+    accountOp.humanizerMeta!.abis = { NO_ABI: {} }
     let irCalls: IrCall[] = accountOp.calls
     let asyncOps = []
     ;[irCalls, asyncOps] = fallbackHumanizer(accountOp, irCalls, {
@@ -321,12 +342,21 @@ describe('module tests', () => {
     })
     asyncOps = (await Promise.all(asyncOps)).filter((a) => a) as HumanizerFragment[]
     expect(asyncOps.length).toBe(1)
-    expect(asyncOps[0]).toMatchObject({ key: 'funcSelectors:0x095ea7b3' })
+    expect(asyncOps[0]).toMatchObject({ key: '0x095ea7b3' })
+
+    accountOp.humanizerMeta = await combineKnownHumanizerInfo(
+      storage,
+      {},
+      { abis: { NO_ABI: {} }, knownAddresses: {} },
+      asyncOps
+    )
+
+    // @TODO finish the leraning funvtion
     asyncOps.forEach((a) => {
-      accountOp.humanizerMeta = { ...accountOp.humanizerMeta, [a.key]: a.value }
+      if (a.type === 'selector' && accountOp.humanizerMeta?.abis.NO_ABI)
+        accountOp.humanizerMeta.abis.NO_ABI![(a.value as AbiFragment).selector] =
+          a.value as AbiFragment
     })
-    // etherface api might be asparagus
-    expect(accountOp.humanizerMeta).toHaveProperty('funcSelectors:0x095ea7b3')
     ;[irCalls, asyncOps] = fallbackHumanizer(accountOp, irCalls, { fetch })
     expect(irCalls[1]?.fullVisualization?.[0]).toMatchObject({
       type: 'action',

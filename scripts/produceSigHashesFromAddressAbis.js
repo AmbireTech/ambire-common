@@ -27,11 +27,7 @@ const dappSelectorsPath = path.join(__dirname, '..', 'src', 'consts', 'humanizer
 //   return allAddresses
 // }
 
-const getFnSelectorAndSignature = (f)=>{
-	const selector = ethers.keccak256(ethers.toUtf8Bytes(`${f.name}(${f.inputs.map(i=>i.type).join(',')})`))
-	const signature = `${f.name}(${f.inputs.map(i=>`${i.type} ${i.name}`).join(',')})`
-	return [selector.slice(0, 10), signature]
-}
+
 
 const getContractInterfaces = async (addresses) => {
 	const provider = new ethers.EtherscanProvider( 'mainnet', ETHERSCAN_API_KEY )
@@ -57,10 +53,11 @@ const main  = async () => {
 			let signature
 			let  selector
 			if (f.type === 'function' || f.type === 'error') {
-				;[selector, signature] = getFnSelectorAndSignature(f)
+				;[selector, signature] = [f.selector, f.format('full')]
 			}
-			if (f.type === 'error') funcAndErrSelectorEntries[selector] = { type: 'error', value: signature }
-			if (f.type === 'function') funcAndErrSelectorEntries[selector] = { type: 'function', value: signature }
+
+			if (f.type === 'error') funcAndErrSelectorEntries[selector] = { type: 'error', signature, selector }
+			if (f.type === 'function') funcAndErrSelectorEntries[selector] = { type: 'function', signature, selector }
 		})
 	})
 

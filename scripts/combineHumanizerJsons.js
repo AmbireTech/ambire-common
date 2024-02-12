@@ -1,4 +1,3 @@
-const ethers = require('ethers')
 const fsPromises = require('fs').promises
 const path = require('path')
 // eslint-disable-next-line import/no-extraneous-dependencies
@@ -67,9 +66,9 @@ const enrichAndParseLegacyConstantsToV2 = async (legacyConstants) => {
       })
       .flat()
       .map(([address, { appName, label }]) => [
-        address,
+        address.toLowerCase(),
         {
-          address,
+          address: address.toLowerCase(),
           name: appName,
           isSC: {}
         }
@@ -102,6 +101,7 @@ const main = async () => {
     .then(JSON.parse)
 
   const fetchedConstants = await fetchAndStoreAmbireConstants()
+
   const finalV2HumanizerMeta = await enrichAndParseLegacyConstantsToV2(fetchedConstants)
 
   // await fsPromises.writeFile(resultPath, JSON.stringify(finalJson, null, 4), 'utf8')

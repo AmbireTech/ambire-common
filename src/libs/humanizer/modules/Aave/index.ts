@@ -11,12 +11,12 @@ export const aaveHumanizer: HumanizerCallModule = (
   options?: any
 ) => {
   const matcher = {
-    ...aaveLendingPoolV2(accountOp.humanizerMeta),
-    ...aaveWethGatewayV2(accountOp.humanizerMeta)
+    ...aaveLendingPoolV2(accountOp.humanizerMeta!),
+    ...aaveWethGatewayV2(accountOp.humanizerMeta!)
   }
   const newCalls = irCalls.map((call) => {
     const sigHash = call.data.slice(0, 10)
-    if (accountOp.humanizerMeta?.[`names:${call.to}`] === 'Aave') {
+    if (accountOp.humanizerMeta?.knownAddresses[call.to.toLowerCase()]?.name === 'Aave') {
       return matcher[sigHash]
         ? { ...call, fullVisualization: matcher[sigHash](accountOp, call) }
         : {

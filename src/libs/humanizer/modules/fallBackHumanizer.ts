@@ -5,10 +5,13 @@ import {
   HumanizerFragment,
   HumanizerCallModule,
   HumanizerVisualization,
-  IrCall
+  IrCall,
+  HumanizerMeta
 } from '../interfaces'
 import { checkIfUnknownAction, getAction, getAddress, getLabel, getToken } from '../utils'
 
+// etherface was down for some time and we replaced it with 4bytes
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 async function fetchFuncEtherface(
   selector: string,
   options: any
@@ -44,7 +47,8 @@ async function fetchFuncEtherface(
   const func = res?.items?.[0]
   if (func)
     return {
-      key: `funcSelectors:${selector}`,
+      type: 'selector',
+      key: selector,
       isGlobal: true,
       value: func.text
     }
@@ -67,8 +71,8 @@ async function fetchFunc4bytes(selector: string, options: any): Promise<Humanize
   // often fails due to timeout => loop for retrying
   for (let i = 0; i < 3; i++) {
     try {
-      res = await (
-        await options.fetch(
+      res = await options
+        .fetch(
           `https://www.4byte.directory/api/v1/signatures/?format=json&hex_signature=${selector.slice(
             2,
             10
@@ -78,7 +82,7 @@ async function fetchFunc4bytes(selector: string, options: any): Promise<Humanize
             timeout: 7500
           }
         )
-      ).json()
+        .then((r: any) => r.json())
       break
     } catch (e: any) {
       options.emitError({
@@ -102,9 +106,10 @@ async function fetchFunc4bytes(selector: string, options: any): Promise<Humanize
   }
   if (func)
     return {
-      key: `funcSelectors:${func.hex_signature}`,
+      type: 'selector',
+      key: func.hex_signature,
       isGlobal: true,
-      value: func.text_signature
+      value: { signature: func.text_signature, selector: func.hex_signature }
     }
   options.emitError({
     message: `fetchFunc4bytes: Err with 4bytes api, selector ${selector.slice(0, 10)}`,
@@ -123,11 +128,24 @@ export const fallbackHumanizer: HumanizerCallModule = (
   const newCalls = currentIrCalls.map((call) => {
     if (call.fullVisualization && !checkIfUnknownAction(call?.fullVisualization)) return call
 
+    const knownSigHashes: HumanizerMeta['abis']['NO_ABI'] = Object.values(
+      accountOp.humanizerMeta?.abis as HumanizerMeta['abis']
+    ).reduce((a, b) => ({ ...a, ...b }), {})
+
     const visualization: Array<HumanizerVisualization> = []
     if (call.data !== '0x') {
-      if (accountOp.humanizerMeta?.[`funcSelectors:${call.data.slice(0, 10)}`]) {
+      if (knownSigHashes[call.data.slice(0, 10)]) {
         visualization.push(
-          getAction(`Call ${accountOp.humanizerMeta?.[`funcSelectors:${call.data.slice(0, 10)}`]}`),
+          getAction(
+            `Call ${
+              //  from function asd(address asd) returns ... => asd(address asd)
+              knownSigHashes[call.data.slice(0, 10)].signature
+                .split('function ')
+                .filter((x) => x !== '')[0]
+                .split(' returns')
+                .filter((x) => x !== '')[0]
+            }`
+          ),
           getLabel('from'),
           getAddress(call.to)
         )

@@ -23,21 +23,21 @@ export const tokenParsing: HumanizerParsingModule = (
       if (v.type === 'token') {
         const tokenMeta =
           v.address === ethers.ZeroAddress
-            ? nativeSymbol && [nativeSymbol, 18]
-            : humanizerSettings.humanizerMeta?.[`tokens:${v.address}`]
+            ? nativeSymbol && { symbol: nativeSymbol, decimals: 18, networks: [] }
+            : humanizerSettings.humanizerMeta?.knownAddresses?.[v.address!.toLowerCase()]?.token
         if (tokenMeta) {
           return v.amount === MAX_UINT256
-            ? getLabel(`all ${tokenMeta[0]}`)
+            ? getLabel(`all ${tokenMeta.symbol}`)
             : {
                 ...v,
-                symbol: v.symbol || tokenMeta[0],
-                decimals: tokenMeta[1],
+                symbol: v.symbol || tokenMeta.symbol,
+                decimals: tokenMeta.decimals,
                 readableAmount:
                   // only F's
                   v.amount === MAX_UINT256
                     ? 'all'
                     : v.amount
-                    ? ethers.formatUnits(v.amount as bigint, tokenMeta[1])
+                    ? ethers.formatUnits(v.amount as bigint, tokenMeta.decimals)
                     : '0'
               }
         }

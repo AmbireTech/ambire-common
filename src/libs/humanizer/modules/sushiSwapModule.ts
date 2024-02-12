@@ -1,7 +1,14 @@
 import { AccountOp } from 'libs/accountOp/accountOp'
 import { ethers } from 'ethers'
 import { HumanizerCallModule, IrCall } from '../interfaces'
-import { getAction, getLabel, getRecipientText, getToken, getUnknownVisualization } from '../utils'
+import {
+  getAbi,
+  getAction,
+  getLabel,
+  getRecipientText,
+  getToken,
+  getUnknownVisualization
+} from '../utils'
 
 export const sushiSwapModule: HumanizerCallModule = (
   accountOp: AccountOp,
@@ -9,8 +16,9 @@ export const sushiSwapModule: HumanizerCallModule = (
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   options?: any
 ) => {
-  //   const sushiSwapIface = new ethers.Interface(accountOp.humanizerMeta?.['abis:SushiSwap'])
-  const routeProcessorIface = new ethers.Interface(accountOp.humanizerMeta?.['abis:RouteProcessor'])
+  const routeProcessorIface = new ethers.Interface(
+    Object.values(getAbi(accountOp.humanizerMeta, 'RouteProcessor', options))
+  )
   const matcher = {
     [`${routeProcessorIface.getFunction('processRoute')?.selector}`]: (
       _accountOp: AccountOp,
@@ -36,8 +44,10 @@ export const sushiSwapModule: HumanizerCallModule = (
   }
   const newCalls: IrCall[] = irCalls.map((call: IrCall) => {
     if (
-      accountOp.humanizerMeta?.[`names:${call.to}`]?.includes('SushiSwap') ||
-      accountOp.humanizerMeta?.[`names:${call.to}`]?.includes('RouterProcessor')
+      accountOp.humanizerMeta?.knownAddresses[call.to.toLowerCase()]?.name?.includes('SushiSwap') ||
+      accountOp.humanizerMeta?.knownAddresses[call.to.toLowerCase()]?.name?.includes(
+        'RouterProcessor'
+      )
     ) {
       if (matcher[call.data.slice(0, 10)]) {
         return matcher[call.data.slice(0, 10)](accountOp, call)

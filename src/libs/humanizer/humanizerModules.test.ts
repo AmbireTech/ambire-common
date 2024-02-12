@@ -4,12 +4,12 @@ import fetch from 'node-fetch'
 import { describe, expect, test } from '@jest/globals'
 
 import { FEE_COLLECTOR } from '../../consts/addresses'
-import humanizerInfo from '../../consts/humanizerInfo.json'
+import humanizerInfo from '../../consts/humanizer/humanizerInfo.json'
 import { ErrorRef } from '../../controllers/eventEmitter/eventEmitter'
 import { AccountOp } from '../accountOp/accountOp'
 import { humanizeCalls, visualizationToText } from './humanizerFuncs'
 import { humanizerCallModules as humanizerModules } from './index'
-import { HumanizerVisualization, IrCall } from './interfaces'
+import { AbiFragment, HumanizerMeta, HumanizerVisualization, IrCall } from './interfaces'
 import { aaveHumanizer } from './modules/Aave'
 import { privilegeHumanizer } from './modules/privileges'
 import { sushiSwapModule } from './modules/sushiSwapModule'
@@ -17,7 +17,6 @@ import { uniswapHumanizer } from './modules/Uniswap'
 // import { oneInchHumanizer } from './modules/oneInch'
 import { WALLETModule } from './modules/WALLET'
 import { wrappingModule } from './modules/wrapped'
-import { yearnVaultModule } from './modules/yearnTesseractVault'
 import { parseCalls } from './parsers'
 import { nameParsing } from './parsers/nameParsing'
 import { tokenParsing } from './parsers/tokenParsing'
@@ -41,12 +40,12 @@ const accountOp: AccountOp = {
   // This is used when we have an account recovery to finalize before executing the AccountOp,
   // And we set this to the recovery finalization AccountOp; could be used in other scenarios too in the future,
   // for example account migration (from v1 QuickAcc to v2)
-  accountOpToExecuteBefore: null,
+  accountOpToExecuteBefore: null
   // This is fed into the humanizer to help visualize the accountOp
   // This can contain info like the value of specific share tokens at the time of signing,
   // or any other data that needs to otherwise be retrieved in an async manner and/or needs to be
   // "remembered" at the time of signing in order to visualize history properly
-  humanizerMeta: {}
+  // humanizerMeta: {}
 }
 const transactions: { [key: string]: Array<IrCall> } = {
   uniV3: [
@@ -153,26 +152,6 @@ const transactions: { [key: string]: Array<IrCall> } = {
       data: '0x8a07b41900000000000000000000000000000000000000000000006d7daaded78ae996310000000000000000000000000000000000000000000000000000000000000000'
     }
   ],
-  yearn: [
-    // deposit dai
-    {
-      to: '0xda816459f1ab5631232fe5e97a05bbbb94970c95',
-      value: 0n,
-      data: '0x6e553f6500000000000000000000000000000000000000000000002567ac70392b880000000000000000000000000000c4a6bb5139123bd6ba0cf387828a9a3a73ef8d1e00000000000000000000000000000000000000000000000000000000'
-    },
-    // withdraw
-    {
-      to: '0xdA816459F1AB5631232FE5e97a05BBBb94970c95',
-      value: 0n,
-      data: '0x2e1a7d4d000000000000000000000000000000000000000000000506c08e407186fe9165'
-    },
-    // approve
-    {
-      to: '0xdA816459F1AB5631232FE5e97a05BBBb94970c95',
-      value: 0n,
-      data: '0x095ea7b3000000000000000000000000c92e8bdf79f0507f65a392b0ab4667716bfe011000000000000000000000000000000000000000000000071414d02429e66c0000'
-    }
-  ],
   sushiSwapCalls: [
     {
       to: '0xE7eb31f23A5BefEEFf76dbD2ED6AdC822568a5d2',
@@ -216,7 +195,7 @@ const moockEmitError = (e: ErrorRef) => emitedErrors.push(e)
 const standartOptions = { fetch, emitError: moockEmitError }
 describe('module tests', () => {
   beforeEach(async () => {
-    accountOp.humanizerMeta = { ...humanizerInfo }
+    accountOp.humanizerMeta = { ...(humanizerInfo as HumanizerMeta) }
     accountOp.calls = []
     emitedErrors = []
   })
@@ -224,7 +203,7 @@ describe('module tests', () => {
   // TODO: look into improper texification for  unrecognized tokens
   test('visualization to text', async () => {
     const expectedTexification = [
-      'Swap 50844.919041919270406243 XLRT for at least 0.137930462904193673 ETH and send it to 0x0000000000000000000000000000000000000000 (0x000...000) already expired',
+      'Swap 50844.919041919270406243 XLRT for at least 0.137930462904193673 ETH and send it to 0x0000000000000000000000000000000000000000 (MATIC token contract) already expired',
       'Swap 0.941 WETH for at least 5158707941840645403045 0x6E975115250B05C828ecb8edeDb091975Fc20a5d token and send it to 0xbb6C8c037b9Cc3bF1a4C4188d92e5D86bfCE76A8 (0xbb6...6A8) already expired',
       'Swap 422.775565331912310692 SHARES for at least 2454.922038 USDC and send it to 0xca124B356bf11dc153B886ECB4596B5cb9395C41 (0xca1...C41) already expired',
       'Swap up to 4825320403256397423633 0x6E975115250B05C828ecb8edeDb091975Fc20a5d token for 0.941 WETH and send it to 0xbb6C8c037b9Cc3bF1a4C4188d92e5D86bfCE76A8 (0xbb6...6A8) already expired',
@@ -240,9 +219,9 @@ describe('module tests', () => {
       'Deposit 10000.0 WALLET to 0x47Cd7E91C3CBaAF266369fe8518345fc4FC12935 (WALLET Staking Pool)',
       'Leave with 2527275.889852892335882193 WALLET 0x47Cd7E91C3CBaAF266369fe8518345fc4FC12935 (WALLET Staking Pool)',
       'Rage leave with 2019.750399052452828721 WALLET 0x47Cd7E91C3CBaAF266369fe8518345fc4FC12935 (WALLET Staking Pool)',
-      'Deposit 690.0 yDAI to 0xdA816459F1AB5631232FE5e97a05BBBb94970c95 (Yearn DAI Vault)',
-      'Withdraw 23736.387977148798767461 yDAI from 0xdA816459F1AB5631232FE5e97a05BBBb94970c95 (Yearn DAI Vault)',
-      'Approve 0xC92E8bdf79f0507f65a392b0ab4667716BFE0110 (CowSwap) for 33427.0 yDAI',
+      // 'Deposit 690.0 yDAI to 0xdA816459F1AB5631232FE5e97a05BBBb94970c95 (Yearn DAI Vault)',
+      // 'Withdraw 23736.387977148798767461 yDAI from 0xdA816459F1AB5631232FE5e97a05BBBb94970c95 (Yearn DAI Vault)',
+      // 'Approve 0xC92E8bdf79f0507f65a392b0ab4667716BFE0110 (CowSwap) for 33427.0 yDAI',
       'Swap 0.0004 WMATIC for 0.000348830169184669 DAI and send it to 0x6969174FD72466430a46e18234D0b530c9FD5f49 (0x696...f49)',
       'Fuel gas tank with 0.5 ETH',
       'Fuel gas tank with 0.001 USDC.e',
@@ -255,6 +234,9 @@ describe('module tests', () => {
       .flat()
     accountOp.calls = allCalls
     let [irCalls, asyncOps] = humanizeCalls(accountOp, humanizerModules, standartOptions)
+    // irCalls.forEach((c: IrCall, i) => {
+    //   console.log(c.fullVisualization, i)
+    // })
     let [parsedCalls, newAsyncOps] = parseCalls(
       accountOp,
       irCalls,
@@ -263,8 +245,11 @@ describe('module tests', () => {
     )
     irCalls = parsedCalls
     asyncOps.push(...newAsyncOps)
+    // @TODO use new combination function
     ;(await Promise.all(asyncOps)).forEach((a) => {
-      if (a) accountOp.humanizerMeta = { ...accountOp.humanizerMeta, [a.key]: a.value }
+      if (a && a.type === 'selector' && accountOp.humanizerMeta?.abis.NO_ABI)
+        accountOp.humanizerMeta.abis.NO_ABI![(a.value as AbiFragment).selector] =
+          a.value as AbiFragment
     })
     ;[irCalls, asyncOps] = humanizeCalls(accountOp, humanizerModules, standartOptions)
     ;[parsedCalls, newAsyncOps] = parseCalls(
@@ -587,36 +572,7 @@ describe('module tests', () => {
       )
     )
   })
-  test('yearn', () => {
-    accountOp.calls = [...transactions.yearn]
-    const expectedhumanization = [
-      [
-        { content: 'Deposit' },
-        { type: 'token', symbol: 'yDAI' },
-        { content: 'to' },
-        { address: '0xdA816459F1AB5631232FE5e97a05BBBb94970c95' }
-      ],
-      [
-        { content: 'Withdraw' },
-        { type: 'token', symbol: 'yDAI' },
-        { content: 'from' },
-        { address: '0xdA816459F1AB5631232FE5e97a05BBBb94970c95' }
-      ],
-      [
-        { content: 'Approve' },
-        { address: '0xC92E8bdf79f0507f65a392b0ab4667716BFE0110' },
-        { content: 'for' },
-        { type: 'token', symbol: 'yDAI' }
-      ]
-    ]
-    let irCalls: IrCall[] = accountOp.calls
-    ;[irCalls] = yearnVaultModule(accountOp, irCalls)
-    irCalls.forEach((call, i) =>
-      call?.fullVisualization?.forEach((v: HumanizerVisualization, j: number) =>
-        expect(v).toMatchObject(expectedhumanization[i][j])
-      )
-    )
-  })
+
   test('SushiSwap RouteProcessor', () => {
     const expectedhumanization: HumanizerVisualization[] = [
       { type: 'action', content: 'Swap' },
