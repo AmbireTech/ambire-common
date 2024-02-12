@@ -467,7 +467,7 @@ describe('Portfolio', () => {
     expect(entry.amount - entry.amountPostSimulation).toBeGreaterThan(0)
   })
 
-  test('token simulation works fails if there are two account ops but the last one has a higher nonce than expected', async () => {
+  test('token simulation fails if there are two account ops but the last one has a higher nonce than expected', async () => {
     const accountOp: any = {
       accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
       signingKeyAddr: '0xe5a4Dad2Ea987215460379Ab285DF87136E83BEA',

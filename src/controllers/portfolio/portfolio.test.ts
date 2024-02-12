@@ -300,7 +300,7 @@ describe('Portfolio Controller ', () => {
   })
 
   describe('Pinned tokens', () => {
-    test('Pinned tokens are set for a given account and are not fetched for anotherre-fetched if AccountOp is changed', async () => {
+    test('Pinned tokens are set for a given account and are not fetched for another; also, they are refetched for the current one if pinned tokens are not passed in the future', async () => {
       const storage = produceMemoryStore()
       const avalanche = networks.find((x) => x.id === 'avalanche')
       if (!avalanche) throw new Error('unable to find avalanche network in consts')
