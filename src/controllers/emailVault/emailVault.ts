@@ -328,7 +328,7 @@ export class EmailVaultController extends EventEmitter {
     )
   }
 
-  async #recoverKeyStore(email: string, newPassword: string): Promise<EmailVaultSecret | null> {
+  async #recoverKeyStore(email: string, newPassword: string): Promise<void> {
     const uid = await this.#keyStore.getKeyStoreUid()
     const state = this.emailVaultStates
     if (!state.email[email]) {
@@ -337,7 +337,7 @@ export class EmailVaultController extends EventEmitter {
         level: 'major',
         error: new Error(`Keystore recovery: email ${email} not imported`)
       })
-      return null
+      return
     }
 
     if (!state.email[email].availableSecrets[uid]) {
@@ -346,7 +346,7 @@ export class EmailVaultController extends EventEmitter {
         level: 'major',
         error: new Error('Keystore recovery: no keystore secret for this device')
       })
-      return null
+      return
     }
     if (state.email[email].availableSecrets[uid].type !== SecretType.KeyStore) {
       this.emitError({
@@ -354,7 +354,7 @@ export class EmailVaultController extends EventEmitter {
         level: 'major',
         error: new Error(`Keystore recovery: no keystore secret for email ${email}`)
       })
-      return null
+      return
     }
 
     const emitExpiredMagicLinkError = () => {
@@ -374,7 +374,7 @@ export class EmailVaultController extends EventEmitter {
 
     if (!key) {
       emitExpiredMagicLinkError()
-      return null
+      return
     }
 
     let result
@@ -383,7 +383,7 @@ export class EmailVaultController extends EventEmitter {
     } catch (e: any) {
       if (e?.output?.res?.message === 'invalid key') {
         emitExpiredMagicLinkError()
-        return null
+        return
       }
     }
 
@@ -397,7 +397,7 @@ export class EmailVaultController extends EventEmitter {
         )
       })
 
-      return null
+      return
     }
 
     // Once we are here - it means we pass all the above validations,
