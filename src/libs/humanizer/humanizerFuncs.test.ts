@@ -6,13 +6,7 @@ import { describe, expect, test } from '@jest/globals'
 
 import { ErrorRef } from '../../controllers/eventEmitter/eventEmitter'
 import { AccountOp } from '../accountOp/accountOp'
-import {
-  AbiFragment,
-  HumanizerFragment,
-  HumanizerMeta,
-  HumanizerVisualization,
-  IrCall
-} from './interfaces'
+import { AbiFragment, HumanizerFragment, HumanizerVisualization, IrCall } from './interfaces'
 import { fallbackHumanizer } from './modules/fallBackHumanizer'
 import { genericErc20Humanizer, genericErc721Humanizer } from './modules/tokens'
 import { uniswapHumanizer } from './modules/Uniswap'

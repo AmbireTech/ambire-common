@@ -35,6 +35,7 @@ export interface Ir {
   messages: IrMessage[]
 }
 
+// @TODO make this an enum
 export interface HumanizerFragment {
   type: 'knownAddresses' | 'abis' | 'selector' | 'token'
   isGlobal: boolean
@@ -42,6 +43,7 @@ export interface HumanizerFragment {
   value: string | Array<any> | AbiFragment | any
 }
 
+// @TODO make humanizer options interface
 export interface HumanizerCallModule {
   (AccountOp: AccountOp, calls: IrCall[], options?: any): [
     IrCall[],

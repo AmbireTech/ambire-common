@@ -18,7 +18,10 @@ import {
 dotenv.config()
 const COINGECKO_PRO_API_KEY = process.env.COINGECKO_PRO_API_KEY
 
-export function getWarning(content: string, level: HumanizerWarning['level'] = 'caution') {
+export function getWarning(
+  content: string,
+  level: HumanizerWarning['level'] = 'caution'
+): HumanizerWarning {
   return { content, level }
 }
 
@@ -28,13 +31,11 @@ export function getLabel(content: string): HumanizerVisualization {
 export function getAction(content: string): HumanizerVisualization {
   return { type: 'action', content }
 }
-export function getAddress(_address: string, name?: string): HumanizerVisualization {
-  const address = ethers.getAddress(_address)
+export function getAddress(address: string, name?: string): HumanizerVisualization {
   return name ? { type: 'address', address, name } : { type: 'address', address }
 }
 
-export function getToken(_address: string, amount: bigint, name?: string): HumanizerVisualization {
-  const address = ethers.getAddress(_address)
+export function getToken(address: string, amount: bigint, name?: string): HumanizerVisualization {
   return name ? { type: 'token', address, amount, name } : { type: 'token', address, amount }
 }
 
@@ -86,6 +87,7 @@ export function shortenAddress(addr: string): string {
  * Make a request to coingecko to fetch the latest price of the native token.
  * This is used by benzina and hence we cannot wrap the errors in emitError
  */
+// @TODO this shouldn't be here, a more suitable place would be portfolio/gecko
 export async function getNativePrice(network: NetworkDescriptor, fetch: Function): Promise<number> {
   const platformId = geckoIdMapper(ethers.ZeroAddress, network.id)
   if (!platformId) {
@@ -107,6 +109,7 @@ export async function getNativePrice(network: NetworkDescriptor, fetch: Function
   return response[platformId].usd
 }
 
+// @TODO maybe this shouldn't be here, more suitable place would be humanizer/modules/tokens
 export async function getTokenInfo(
   humanizerSettings: HumanizerSettings,
   address: string,
@@ -160,15 +163,15 @@ export async function getTokenInfo(
   }
 }
 
-export function checkIfUnknownAction(v: Array<HumanizerVisualization>) {
+export function checkIfUnknownAction(v: Array<HumanizerVisualization>): boolean {
   try {
-    return v[0].type === 'action' && v?.[0]?.content?.startsWith('Unknown action')
+    return !!(v[0].type === 'action' && v?.[0]?.content?.startsWith('Unknown action'))
   } catch (e) {
     return false
   }
 }
 
-export function getUnknownVisualization(name: string, call: IrCall) {
+export function getUnknownVisualization(name: string, call: IrCall): HumanizerVisualization[] {
   const unknownVisualization = [
     getAction(`Unknown action (${name})`),
     getLabel('to'),
@@ -181,11 +184,11 @@ export function getUnknownVisualization(name: string, call: IrCall) {
   return unknownVisualization
 }
 
-export function getWraping(address: string, amount: bigint) {
+export function getWraping(address: string, amount: bigint): HumanizerVisualization[] {
   return [getAction('Wrap'), getToken(address, amount)]
 }
 
-export function getUnwraping(address: string, amount: bigint) {
+export function getUnwraping(address: string, amount: bigint): HumanizerVisualization[] {
   return [getAction('Unwrap'), getToken(address, amount)]
 }
 
