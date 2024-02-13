@@ -9,7 +9,7 @@ import {
   HumanizerSettings,
   HumanizerVisualization
 } from '../interfaces'
-import { getLabel, getTokenInfo } from '../utils'
+import { getKnownToken, getLabel, getTokenInfo } from '../utils'
 
 export const tokenParsing: HumanizerParsingModule = (
   humanizerSettings: HumanizerSettings,
@@ -24,7 +24,7 @@ export const tokenParsing: HumanizerParsingModule = (
         const tokenMeta =
           v.address === ethers.ZeroAddress
             ? nativeSymbol && { symbol: nativeSymbol, decimals: 18, networks: [] }
-            : humanizerSettings.humanizerMeta?.knownAddresses?.[v.address!.toLowerCase()]?.token
+            : getKnownToken(humanizerSettings.humanizerMeta, v.address!)
         if (tokenMeta) {
           return v.amount === MAX_UINT256
             ? getLabel(`all ${tokenMeta.symbol}`)

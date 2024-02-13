@@ -10,7 +10,8 @@ import {
   getNft,
   getToken,
   getTokenInfo,
-  getUnknownVisualization
+  getUnknownVisualization,
+  getKnownToken
 } from '../utils'
 
 export const genericErc721Humanizer: HumanizerCallModule = (
@@ -83,8 +84,7 @@ export const genericErc721Humanizer: HumanizerCallModule = (
     // that's why we check if it's a known token to prevent humanization.
     // If it's not a known token, using the same humanization is okay as
     // we cannot humanize it further
-    const isActuallyKnownToken =
-      !!accountOp.humanizerMeta?.knownAddresses[call.to.toLocaleLowerCase()]?.token
+    const isActuallyKnownToken = !!getKnownToken(accountOp.humanizerMeta, call.to)
     // could do additional check if it is actually NFT contract
     return matcher[call.data.substring(0, 10)] && !isActuallyKnownToken
       ? {
@@ -160,7 +160,7 @@ export const genericErc20Humanizer: HumanizerCallModule = (
   }
   const newCalls = currentIrCalls.map((call) => {
     const sigHash = call.data.substring(0, 10)
-    const isToKnownToken = !!accountOp.humanizerMeta?.knownAddresses[call.to.toLowerCase()]?.token
+    const isToKnownToken = !!getKnownToken(accountOp.humanizerMeta, call.to)
     // if proper func selector and no such token found in meta
     // console.log(matcher[sigHash], isToKnownToken)
     if (matcher[sigHash] && !isToKnownToken) {

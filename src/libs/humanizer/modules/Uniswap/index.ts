@@ -1,6 +1,6 @@
 import { AccountOp } from '../../../accountOp/accountOp'
 import { HumanizerCallModule, IrCall } from '../../interfaces'
-import { getUnknownVisualization } from '../../utils'
+import { getKnownName, getUnknownVisualization } from '../../utils'
 import { uniUniversalRouter } from './uniUnivarsalRouter'
 import { uniV2Mapping } from './uniV2'
 import { uniV32Mapping, uniV3Mapping } from './uniV3'
@@ -50,7 +50,7 @@ export const uniswapHumanizer: HumanizerCallModule = (
   currentIrCalls.forEach((call: IrCall) => {
     const sigHash = call.data.substring(0, 10)
     // check against sus contracts with same func selectors
-    if (accountOp.humanizerMeta?.knownAddresses[call.to.toLowerCase()]?.name?.includes('Uniswap')) {
+    if (getKnownName(accountOp.humanizerMeta, call.to)?.includes('Uniswap')) {
       if (matcher?.[call.to.toLowerCase()]?.[sigHash]) {
         matcher[call.to.toLowerCase()]
           [sigHash](accountOp, call)

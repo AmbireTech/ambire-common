@@ -1,7 +1,7 @@
 import { ethers } from 'ethers'
 import { AccountOp } from '../../accountOp/accountOp'
 import { HumanizerCallModule, IrCall } from '../interfaces'
-import { getAction, getToken } from '../utils'
+import { getAction, getKnownName, getToken } from '../utils'
 
 // @TODO add test
 export const gasTankModule: HumanizerCallModule = (
@@ -11,7 +11,7 @@ export const gasTankModule: HumanizerCallModule = (
   options?: any
 ) => {
   const newCalls = irCalls.map((call) => {
-    if (accountOp.humanizerMeta?.knownAddresses[call.to.toLowerCase()]?.name === 'Gas Tank')
+    if (getKnownName(accountOp.humanizerMeta, call.to) === 'Gas Tank')
       return {
         ...call,
         fullVisualization: [
@@ -24,8 +24,7 @@ export const gasTankModule: HumanizerCallModule = (
       call.fullVisualization?.[1]?.type === 'token' &&
       call.fullVisualization?.[2]?.content === 'to' &&
       call.fullVisualization?.[3].type === 'address' &&
-      accountOp.humanizerMeta?.knownAddresses[call.fullVisualization[3].address!.toLowerCase()]
-        .name === 'Gas Tank'
+      getKnownName(accountOp.humanizerMeta, call.fullVisualization[3].address!) === 'Gas Tank'
     )
       return {
         ...call,

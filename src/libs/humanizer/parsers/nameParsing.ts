@@ -4,9 +4,11 @@ import {
   HumanizerVisualization,
   HumanizerWarning
 } from '../interfaces'
-import { getWarning, shortenAddress } from '../utils'
+import { getKnownName, getWarning, shortenAddress } from '../utils'
 
 // adds 'name' proeprty to visualization of addresses (needs initialHumanizer to work on unparsed transactions)
+// @TODO name parsing should be no more
+// @TODO name should be replaced with humanizerMeta
 export const nameParsing: HumanizerParsingModule = (
   humanizerSettings: HumanizerSettings,
   visualization: HumanizerVisualization[],
@@ -18,8 +20,7 @@ export const nameParsing: HumanizerParsingModule = (
     (v: HumanizerVisualization) => {
       if (v.type === 'address' && !v.name) {
         // console.log(humanizerSettings.humanizerMeta?.knownAddresses[v.address!])
-        const newName =
-          humanizerSettings.humanizerMeta?.knownAddresses[v.address!.toLowerCase()]?.name
+        const newName = getKnownName(humanizerSettings.humanizerMeta, v.address!)
         if (!newName) warnings.push(getWarning('Unknown address'))
         // @TODO remove name property and replace it with knownData in the future
         return {
