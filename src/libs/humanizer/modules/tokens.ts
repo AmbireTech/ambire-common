@@ -3,7 +3,7 @@ import { ethers } from 'ethers'
 import { AccountOp } from '../../accountOp/accountOp'
 import { HumanizerCallModule, HumanizerFragment, IrCall } from '../interfaces'
 import {
-  getAbi,
+  getKnownAbi,
   getAction,
   getAddressVisualization,
   getLabel,
@@ -19,7 +19,7 @@ export const genericErc721Humanizer: HumanizerCallModule = (
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   options?: any
 ) => {
-  const iface = new ethers.Interface(getAbi(accountOp.humanizerMeta, 'ERC721', options))
+  const iface = new ethers.Interface(getKnownAbi(accountOp.humanizerMeta, 'ERC721', options))
   const nftTransferVisualization = (call: IrCall) => {
     const args = iface.parseTransaction(call)?.args.toArray() || []
     return args[0] === accountOp.accountAddr
@@ -102,7 +102,7 @@ export const genericErc20Humanizer: HumanizerCallModule = (
   options?: any
 ) => {
   const asyncOps: Promise<HumanizerFragment | null>[] = []
-  const iface = new ethers.Interface(getAbi(accountOp.humanizerMeta, 'ERC20', options))
+  const iface = new ethers.Interface(getKnownAbi(accountOp.humanizerMeta, 'ERC20', options))
   const matcher = {
     [iface.getFunction('approve')?.selector!]: (call: IrCall) => {
       const args = iface.parseTransaction(call)?.args.toArray() || []

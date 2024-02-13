@@ -194,7 +194,7 @@ export function getUnwraping(address: string, amount: bigint): HumanizerVisualiz
   return [getAction('Unwrap'), getToken(address, amount)]
 }
 
-export function getAbi(
+export function getKnownAbi(
   humanizerMeta: HumanizerMeta | undefined,
   abiName: string,
   options?: any // @TODO make HumanizerOptions interface
@@ -202,15 +202,22 @@ export function getAbi(
   if (!humanizerMeta) {
     options.emitError({})
     options.emitError({
-      message: 'getAbi: tried to use the humanizer without humanizerMeta',
+      message: 'getKnownAbi: tried to use the humanizer without humanizerMeta',
       level: 'major',
-      error: new Error('getAbi: tried to use the humanizer without humanizerMeta')
+      error: new Error('getKnownAbi: tried to use the humanizer without humanizerMeta')
     } as ErrorRef)
     return []
   }
   return Object.values(humanizerMeta.abis[abiName]).map((i: AbiFragment): string => i.signature)
 }
 
-export function getName(humanizerMeta: HumanizerMeta, address: string): string | undefined {
+export function getKnownName(humanizerMeta: HumanizerMeta, address: string): string | undefined {
   return humanizerMeta.knownAddresses?.[address.toLowerCase()]?.name
+}
+
+export function getKnownToken(
+  humanizerMeta: HumanizerMeta,
+  address: string
+): { decimals: number; symbol: string } | undefined {
+  return humanizerMeta.knownAddresses?.[address.toLowerCase()]?.token
 }
