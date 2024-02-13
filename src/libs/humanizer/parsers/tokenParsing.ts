@@ -41,6 +41,8 @@ export const tokenParsing: HumanizerParsingModule = (
                     : '0'
               }
         }
+        // @TODO this shouldn't be here, fetching tokens data should be in tokens module
+        // parsing modules should be as clean as possiblr
         asyncOps.push(getTokenInfo(humanizerSettings, v.address as string, options))
       }
       return v
