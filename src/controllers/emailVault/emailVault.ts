@@ -357,37 +357,59 @@ export class EmailVaultController extends EventEmitter {
       return null
     }
 
-    const key = (await this.#getMagicLinkKey(email))?.key
-    let result: any = null
-    if (key) {
-      const polling = new Polling()
-      polling.onUpdate(() => {
-        if (polling.state.isError && polling.state.error.output.res.status === 401) {
-          this.#isWaitingEmailConfirmation = true
-          this.emitUpdate()
-        } else if (polling.state.isError) {
-          this.emailVaultStates.errors = [polling.state.error]
-        }
+    const emitExpiredMagicLinkError = () => {
+      this.emitError({
+        message: `The time allotted for changing your password has expired for ${email}. Please verify your email again!`,
+        level: 'major',
+        error: new Error(`Keystore recovery: magic link expired for ${email}`)
       })
-      // @TODO shouldn't this be in polling.exec too?
-      result = await this.#emailVault.retrieveKeyStoreSecret(email, key, uid)
-    } else {
-      await this.handleMagicLinkKey(email, () => this.#recoverKeyStore(email, newPassword))
-    }
-    if (result && !result.error) {
-      this.emailVaultStates.email[email].availableSecrets[result.key] = result
 
-      await this.#keyStore.unlockWithSecret(RECOVERY_SECRET_ID, result.value)
-      await this.#keyStore.removeSecret('password')
-      await this.#keyStore.addSecret('password', newPassword, '', false)
-
-      await this.storage.set(EMAIL_VAULT_STORAGE_KEY, this.emailVaultStates)
+      // Here, we want to emit an update so that the `hasConfirmedRecoveryEmail` getter can be recalculated.
+      // The application relies on this flag to make decisions regarding
+      // which step the user should be in during the Forgotten Password flow.
       this.emitUpdate()
-      return result
     }
 
+    const key = (await this.#getMagicLinkKey(email))?.key
+
+    if (!key) {
+      emitExpiredMagicLinkError()
+      return null
+    }
+
+    let result
+    try {
+      result = await this.#emailVault.retrieveKeyStoreSecret(email, key, uid)
+    } catch (e: any) {
+      if (e?.output?.res?.message === 'invalid key') {
+        emitExpiredMagicLinkError()
+        return null
+      }
+    }
+
+    if (!result || !result.value) {
+      this.emitError({
+        message:
+          'Something goes wrong while we are resetting your password! Please try again! If the problem persists, please contact support',
+        level: 'major',
+        error: new Error(
+          "Keystore recovery: retrieveKeyStoreSecret doesn't return result or result.value."
+        )
+      })
+
+      return null
+    }
+
+    // Once we are here - it means we pass all the above validations,
+    // and we are ready to change the keystore password secret
+    this.emailVaultStates.email[email].availableSecrets[result.key] = result
+
+    await this.#keyStore.unlockWithSecret(RECOVERY_SECRET_ID, result.value)
+    await this.#keyStore.removeSecret('password')
+    await this.#keyStore.addSecret('password', newPassword, '', false)
+
+    await this.storage.set(EMAIL_VAULT_STORAGE_KEY, this.emailVaultStates)
     this.emitUpdate()
-    return null
   }
 
   async requestKeysSync(email: string, keys: string[]) {
