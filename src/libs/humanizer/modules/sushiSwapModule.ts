@@ -7,7 +7,8 @@ import {
   getLabel,
   getRecipientText,
   getToken,
-  getUnknownVisualization
+  getUnknownVisualization,
+  getKnownName
 } from '../utils'
 
 export const sushiSwapModule: HumanizerCallModule = (
@@ -44,10 +45,8 @@ export const sushiSwapModule: HumanizerCallModule = (
   }
   const newCalls: IrCall[] = irCalls.map((call: IrCall) => {
     if (
-      accountOp.humanizerMeta?.knownAddresses[call.to.toLowerCase()]?.name?.includes('SushiSwap') ||
-      accountOp.humanizerMeta?.knownAddresses[call.to.toLowerCase()]?.name?.includes(
-        'RouterProcessor'
-      )
+      getKnownName(accountOp.humanizerMeta, call.to)?.includes('SushiSwap') ||
+      getKnownName(accountOp.humanizerMeta, call.to)?.includes('RouterProcessor')
     ) {
       if (matcher[call.data.slice(0, 10)]) {
         return matcher[call.data.slice(0, 10)](accountOp, call)

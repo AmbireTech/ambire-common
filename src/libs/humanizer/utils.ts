@@ -202,13 +202,16 @@ export function getKnownAbi(
   return Object.values(humanizerMeta.abis[abiName]).map((i: AbiFragment): string => i.signature)
 }
 
-export function getKnownName(humanizerMeta: HumanizerMeta, address: string): string | undefined {
-  return humanizerMeta.knownAddresses?.[address.toLowerCase()]?.name
+export function getKnownName(
+  humanizerMeta: HumanizerMeta | undefined,
+  address: string
+): string | undefined {
+  return humanizerMeta?.knownAddresses?.[address.toLowerCase()]?.name
 }
 
 export function getKnownToken(
-  humanizerMeta: HumanizerMeta,
+  humanizerMeta: HumanizerMeta | undefined,
   address: string
 ): { decimals: number; symbol: string } | undefined {
-  return humanizerMeta.knownAddresses?.[address.toLowerCase()]?.token
+  return humanizerMeta?.knownAddresses?.[address.toLowerCase()]?.token
 }

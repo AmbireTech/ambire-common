@@ -4,14 +4,14 @@ import AmbireAccount from '../../../../contracts/compiled/AmbireAccount.json'
 import { ENTRY_POINT_MARKER } from '../../../consts/deploy'
 import { AccountOp } from '../../accountOp/accountOp'
 import { HumanizerCallModule, HumanizerVisualization, IrCall } from '../interfaces'
-import { getAction, getAddressVisualization, getLabel } from '../utils'
+import { getAction, getAddressVisualization, getKnownName, getLabel } from '../utils'
 
 const iface = new ethers.Interface(AmbireAccount.abi)
 
 const parsePriviligeCall = (accountOp: AccountOp, call: IrCall): HumanizerVisualization[] => {
   const { addr, priv } = iface.parseTransaction(call)!.args
   if (
-    accountOp.humanizerMeta?.knownAddresses[addr.toLowerCase()]?.name?.includes('entry point') &&
+    getKnownName(accountOp.humanizerMeta, addr)?.includes('entry point') &&
     priv === ENTRY_POINT_MARKER
   )
     return [getAction('Enable'), getAddressVisualization(addr)]
