@@ -11,8 +11,8 @@ export function getFlags(
 ) {
   const onGasTank = networkId === 'gasTank'
   let rewardsType = null
-  if (networkData?.xWalletClaimableBalance?.address === address) rewardsType = 'wallet-vesting'
-  if (networkData?.walletClaimableBalance?.address === address) rewardsType = 'wallet-rewards'
+  if (networkData?.xWalletClaimableBalance?.address === address) rewardsType = 'wallet-rewards'
+  if (networkData?.walletClaimableBalance?.address === address) rewardsType = 'wallet-vesting'
 
   const canTopUpGasTank = gasTankFeeTokens.some(
     (t) =>
