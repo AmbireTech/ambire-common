@@ -238,15 +238,13 @@ export const getNetworksWithPortfolioErrorBanners = ({
       return []
     }
 
-    if (!criticalError) {
-      const priceMissingForAllTokens =
-        !portfolioForNetwork?.result ||
-        portfolioForNetwork?.result.tokens
-          // WALLET prices are not retrieved from coingecko
-          .filter((t) => !t.symbol.includes('WALLET'))
-          .every((token) => !token.priceIn.length)
+    if (!criticalError && portfolioForNetwork?.result) {
+      const priceMissingForAllTokens = portfolioForNetwork?.result.tokens
+        // WALLET prices are not retrieved from coingecko
+        .filter((t) => !t.symbol.includes('WALLET'))
+        .every((token) => !token.priceIn.length)
 
-      if (priceMissingForAllTokens)
+      if (priceMissingForAllTokens && portfolioForNetwork?.result.tokens.length > 0)
         return [
           {
             id: `${networkData.id}-portfolio-prices-error`,
