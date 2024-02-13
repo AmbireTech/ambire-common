@@ -1,7 +1,7 @@
 import { ethers } from 'ethers'
 import { HumanizerCallModule, IrCall } from '../interfaces'
 import { AccountOp } from '../../accountOp/accountOp'
-import { getAbi, getUnknownVisualization, getUnwraping, getWraping } from '../utils'
+import { getKnownAbi, getUnknownVisualization, getUnwraping, getWraping } from '../utils'
 
 const WRAPPEDISH_ADDRESSES: { [kjey: string]: string } = {
   [ethers.ZeroAddress]: 'native',
@@ -65,7 +65,7 @@ export const wrappingModule: HumanizerCallModule = (
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   options?: any
 ) => {
-  const iface = new ethers.Interface(getAbi(accountOp.humanizerMeta, 'WETH', options))
+  const iface = new ethers.Interface(getKnownAbi(accountOp.humanizerMeta, 'WETH', options))
   const newCalls = irCalls.map((call: IrCall) => {
     const knownAddressData = accountOp.humanizerMeta?.knownAddresses[call.to.toLowerCase()]
     if (

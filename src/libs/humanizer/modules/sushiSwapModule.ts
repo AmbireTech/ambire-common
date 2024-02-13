@@ -2,7 +2,7 @@ import { AccountOp } from 'libs/accountOp/accountOp'
 import { ethers } from 'ethers'
 import { HumanizerCallModule, IrCall } from '../interfaces'
 import {
-  getAbi,
+  getKnownAbi,
   getAction,
   getLabel,
   getRecipientText,
@@ -17,7 +17,7 @@ export const sushiSwapModule: HumanizerCallModule = (
   options?: any
 ) => {
   const routeProcessorIface = new ethers.Interface(
-    Object.values(getAbi(accountOp.humanizerMeta, 'RouteProcessor', options))
+    Object.values(getKnownAbi(accountOp.humanizerMeta, 'RouteProcessor', options))
   )
   const matcher = {
     [`${routeProcessorIface.getFunction('processRoute')?.selector}`]: (

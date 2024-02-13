@@ -8,7 +8,7 @@ import {
   getWraping,
   getAddressVisualization,
   getUnknownVisualization,
-  getAbi
+  getKnownAbi
 } from '../../utils'
 import { AccountOp } from '../../../accountOp/accountOp'
 import { HumanizerMeta, IrCall } from '../../interfaces'
@@ -53,7 +53,9 @@ export const uniUniversalRouter = (
   humanizerInfo: HumanizerMeta,
   options?: any
 ): { [x: string]: (a: AccountOp, c: IrCall) => IrCall[] } => {
-  const ifaceUniversalRouter = new ethers.Interface(getAbi(humanizerInfo, 'UniswapUniversalRouter'))
+  const ifaceUniversalRouter = new ethers.Interface(
+    getKnownAbi(humanizerInfo, 'UniswapUniversalRouter')
+  )
   return {
     [`${
       ifaceUniversalRouter.getFunction(
