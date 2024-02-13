@@ -109,6 +109,10 @@ export class EmailVaultController extends EventEmitter {
 
   private async load(): Promise<void> {
     this.isReady = false
+    // #load is called in the constructor which is synchronous
+    // we await (1 ms/next tick) for the constructor to extend the EventEmitter class
+    // and then we call it's methods
+    await wait(1)
     this.emitUpdate()
     const result = await Promise.all([
       this.storage.get(EMAIL_VAULT_STORAGE_KEY, {
