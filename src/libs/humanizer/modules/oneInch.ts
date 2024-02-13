@@ -47,7 +47,7 @@ export const oneInchHumanizer: HumanizerCallModule = (
     ...OneInchMapping(accountOp.humanizerMeta!)
   }
   const newCalls = irCalls.map((call) => {
-    if (call.to === '0x1111111254fb6c44bAC0beD2854e76F90643097d') {
+    if (call.to === '0x1111111254fb6c44bac0bed2854e76f90643097d') {
       const sigHash = call.data.slice(0, 10)
 
       return matcher[sigHash]

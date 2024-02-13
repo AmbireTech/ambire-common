@@ -5,7 +5,7 @@ import { HumanizerCallModule, HumanizerFragment, IrCall } from '../interfaces'
 import {
   getAbi,
   getAction,
-  getAddress,
+  getAddressVisualization,
   getLabel,
   getNft,
   getToken,
@@ -23,14 +23,19 @@ export const genericErc721Humanizer: HumanizerCallModule = (
   const nftTransferVisualization = (call: IrCall) => {
     const args = iface.parseTransaction(call)?.args.toArray() || []
     return args[0] === accountOp.accountAddr
-      ? [getAction('Send'), getNft(call.to, args[2]), getLabel('to'), getAddress(args[1])]
+      ? [
+          getAction('Send'),
+          getNft(call.to, args[2]),
+          getLabel('to'),
+          getAddressVisualization(args[1])
+        ]
       : [
           getAction('Transfer'),
           getNft(call.to, args[2]),
           getLabel('from'),
-          getAddress(args[0]),
+          getAddressVisualization(args[0]),
           getLabel('to'),
-          getAddress(args[1])
+          getAddressVisualization(args[1])
         ]
   }
   const matcher = {
@@ -43,7 +48,7 @@ export const genericErc721Humanizer: HumanizerCallModule = (
             getLabel('for'),
             getNft(call.to, args[1]),
             getLabel('to'),
-            getAddress(args[0])
+            getAddressVisualization(args[0])
           ]
     },
     [iface.getFunction('setApprovalForAll')?.selector!]: (call: IrCall) => {
@@ -54,9 +59,9 @@ export const genericErc721Humanizer: HumanizerCallModule = (
             getLabel('for all nfts'),
             getNft(call.to, args[1]),
             getLabel('to'),
-            getAddress(args[0])
+            getAddressVisualization(args[0])
           ]
-        : [getAction('Revoke approval'), getLabel('for all nfts'), getAddress(args[0])]
+        : [getAction('Revoke approval'), getLabel('for all nfts'), getAddressVisualization(args[0])]
     },
     // not in tests
     [iface.getFunction('safeTransferFrom', ['address', 'address', 'uint256'])?.selector!]:
@@ -107,18 +112,23 @@ export const genericErc20Humanizer: HumanizerCallModule = (
             getLabel('for'),
             getToken(call.to, args[1]),
             getLabel('to'),
-            getAddress(args[0])
+            getAddressVisualization(args[0])
           ]
         : [
             getAction('Revoke approval'),
             getToken(call.to, args[1]),
             getLabel('for'),
-            getAddress(args[0])
+            getAddressVisualization(args[0])
           ]
     },
     [iface.getFunction('transfer')?.selector!]: (call: IrCall) => {
       const args = iface.parseTransaction(call)?.args.toArray() || []
-      return [getAction('Send'), getToken(call.to, args[1]), getLabel('to'), getAddress(args[0])]
+      return [
+        getAction('Send'),
+        getToken(call.to, args[1]),
+        getLabel('to'),
+        getAddressVisualization(args[0])
+      ]
     },
     [iface.getFunction('transferFrom')?.selector!]: (call: IrCall) => {
       const args = iface.parseTransaction(call)?.args.toArray() || []
@@ -127,7 +137,7 @@ export const genericErc20Humanizer: HumanizerCallModule = (
           getAction('Transfer'),
           getToken(call.to, args[2]),
           getLabel('to'),
-          getAddress(args[1])
+          getAddressVisualization(args[1])
         ]
       }
       if (args[1] === accountOp.accountAddr) {
@@ -135,16 +145,16 @@ export const genericErc20Humanizer: HumanizerCallModule = (
           getAction('Take'),
           getToken(call.to, args[2]),
           getLabel('from'),
-          getAddress(args[0])
+          getAddressVisualization(args[0])
         ]
       }
       return [
         getAction('Move'),
         getToken(call.to, args[2]),
         getLabel('from'),
-        getAddress(args[0]),
+        getAddressVisualization(args[0]),
         getLabel('to'),
-        getAddress(args[1])
+        getAddressVisualization(args[1])
       ]
     }
   }

@@ -18,8 +18,8 @@ import { HumanizerMeta, HumanizerVisualization, IrCall, IrMessage } from './inte
 const HUMANIZER_META_KEY = 'HumanizerMetaV2'
 
 // const address1 = '0x6942069420694206942069420694206942069420'
-const address2 = '0xaAaAaAaaAaAaAaaAaAAAAAAAAaaaAaAaAaaAaaAa'
-const WETH_ADDRESS = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2'
+const address2 = '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+const WETH_ADDRESS = '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2'
 
 const humanizerMeta = humanizerJSON
 const accountOp: AccountOp = {
@@ -66,10 +66,10 @@ const keys: Key[] = [
 const transactions = {
   generic: [
     // simple transafer
-    { to: '0xc4Ce03B36F057591B2a360d773eDB9896255051e', value: BigInt(10 ** 18), data: '0x' },
+    { to: '0xc4ce03b36f057591b2a360d773edb9896255051e', value: BigInt(10 ** 18), data: '0x' },
     // simple contract call (WETH approve)
     {
-      to: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
+      to: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
       value: BigInt(0),
       data: '0x095ea7b3000000000000000000000000e5c783ee536cf5e63e792988335c4255169be4e1ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'
     }
@@ -193,7 +193,7 @@ const transactions = {
   ],
   unknownFuncSelector: [
     {
-      to: '0x519856887AF544De7e67f51A4F2271521b01432b',
+      to: '0x519856887af544de7e67f51a4f2271521b01432b',
       value: BigInt(0),
       data: '0xd96a094a0000000000000000000000000000000000000000000000000000000064c233bf'
     }
@@ -239,7 +239,7 @@ describe('Humanizer main function', () => {
         { type: 'label', content: 'to' },
         {
           type: 'address',
-          address: '0xc4Ce03B36F057591B2a360d773eDB9896255051e'
+          address: '0xc4ce03b36f057591b2a360d773edb9896255051e'
         }
       ],
       [
@@ -252,7 +252,7 @@ describe('Humanizer main function', () => {
         { type: 'label', content: 'to' },
         {
           type: 'address',
-          address: '0xE5c783EE536cf5E63E792988335c4255169be4E1',
+          address: '0xe5c783ee536cf5e63e792988335c4255169be4e1',
           name: 'OpenSea (old)'
         }
       ]
@@ -275,7 +275,7 @@ describe('Humanizer main function', () => {
       { type: 'label', content: 'from' },
       {
         type: 'address',
-        address: '0x519856887AF544De7e67f51A4F2271521b01432b'
+        address: '0x519856887af544de7e67f51a4f2271521b01432b'
       }
     ]
     let iterations = 0
@@ -331,7 +331,7 @@ describe('TypedMessages', () => {
         name: 'random contract',
         version: '1',
         chainId: 1n,
-        verifyingContract: '0x000000000022D473030F116dDEE9F6B43aC78BA3',
+        verifyingContract: '0x000000000022d473030f116ddee9f6b43ac78ba3',
         salt: '1'
       },
       types: { PermitBatch: [{ name: 'details', type: 'PermitDetails[]' }] },
@@ -363,13 +363,13 @@ describe('TypedMessages', () => {
       { type: 'action', content: 'Permit' },
       {
         type: 'address',
-        address: '0x000000000022D473030F116dDEE9F6B43aC78BA3',
+        address: '0x000000000022d473030f116ddee9f6b43ac78ba3',
         name: 'Permit 2 contract'
       },
       { type: 'label', content: 'to use' },
       {
         type: 'token',
-        address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
+        address: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
         amount: 1000000000000000000n,
         decimals: 18,
         readableAmount: '1.0',
@@ -383,13 +383,13 @@ describe('TypedMessages', () => {
       { type: 'action', content: 'Permit' },
       {
         type: 'address',
-        address: '0x000000000022D473030F116dDEE9F6B43aC78BA3',
+        address: '0x000000000022d473030f116ddee9f6b43ac78ba3',
         name: 'Permit 2 contract'
       },
       { type: 'label', content: 'to use' },
       {
         type: 'token',
-        address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
+        address: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
         amount: 500000000000000000n,
         decimals: 18,
         readableAmount: '0.5',

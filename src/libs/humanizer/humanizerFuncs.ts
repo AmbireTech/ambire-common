@@ -1,5 +1,3 @@
-import { ethers } from 'ethers'
-
 import { ErrorRef } from '../../controllers/eventEmitter/eventEmitter'
 
 import { Message, PlainTextMessage, TypedMessage } from '../../interfaces/userRequest'
@@ -21,7 +19,7 @@ export function humanizeCalls(
   let error = null
   const accountOp = {
     ..._accountOp,
-    calls: _accountOp.calls.map((c) => ({ ...c, to: ethers.getAddress(c.to) }))
+    calls: _accountOp.calls.map((c) => ({ ...c, to: c.to }))
   }
   let currentCalls: IrCall[] = accountOp.calls
   let asyncOps: Promise<HumanizerFragment | null>[] = []

@@ -7,9 +7,9 @@ const WRAPPEDISH_ADDRESSES: { [kjey: string]: string } = {
   [ethers.ZeroAddress]: 'native',
   '0x4200000000000000000000000000000000000042': 'OP',
   '0x4200000000000000000000000000000000000006': 'WETHOptimism',
-  '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2': 'WETH',
-  '0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619': 'WETHPolygon',
-  '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270': 'WMATIC'
+  '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2': 'WETH',
+  '0x7ceb23fd6bc0add59e62ac25578270cff1b9f619': 'WETHPolygon',
+  '0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270': 'WMATIC'
 }
 const wrapSwapReducer = (calls: IrCall[]) => {
   const newCalls: IrCall[] = []

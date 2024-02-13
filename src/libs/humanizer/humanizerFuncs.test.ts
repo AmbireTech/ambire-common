@@ -52,10 +52,10 @@ const accountOp: AccountOp = {
 const transactions = {
   generic: [
     // simple transafer
-    { to: '0xc4Ce03B36F057591B2a360d773eDB9896255051e', value: BigInt(10 ** 18), data: '0x' },
+    { to: '0xc4ce03b36f057591b2a360d773edb9896255051e', value: BigInt(10 ** 18), data: '0x' },
     // simple contract call (WETH approve)
     {
-      to: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
+      to: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
       value: BigInt(0),
       data: '0x095ea7b3000000000000000000000000e5c783ee536cf5e63e792988335c4255169be4e1ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'
     }
@@ -269,13 +269,13 @@ describe('module tests', () => {
         { type: 'action', content: 'Swap' },
         {
           type: 'token',
-          address: '0x88800092fF476844f74dC2FC427974BBee2794Ae',
+          address: '0x88800092ff476844f74dc2fc427974bbee2794ae',
           amount: 1000000000000000000000n
         },
         { type: 'label', content: 'for at least' },
         {
           type: 'token',
-          address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'
+          address: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48'
         },
         { type: 'deadline', amount: 1690449491000n }
       ],
@@ -283,12 +283,12 @@ describe('module tests', () => {
         { type: 'action', content: 'Swap up to' },
         {
           type: 'token',
-          address: '0xADE00C28244d5CE17D72E40330B1c318cD12B7c3'
+          address: '0xade00c28244d5ce17d72e40330b1c318cd12b7c3'
         },
         { type: 'label', content: 'for' },
         {
           type: 'token',
-          address: '0x6B175474E89094C44Da98b954EedeAC495271d0F'
+          address: '0x6b175474e89094c44da98b954eedeac495271d0f'
         },
         { type: 'deadline', amount: 1690448831000n }
       ],
@@ -296,17 +296,17 @@ describe('module tests', () => {
         { type: 'action', content: 'Swap up to' },
         {
           type: 'token',
-          address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2'
+          address: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2'
         },
         { type: 'label', content: 'for' },
         {
           type: 'token',
-          address: '0x046EeE2cc3188071C02BfC1745A6b17c656e3f3d'
+          address: '0x046eee2cc3188071c02bfc1745a6b17c656e3f3d'
         },
         { type: 'label', content: 'and send it to' },
         {
           type: 'address',
-          address: '0x5a5Be6b067d6B5B018adBCD27EE6972105B3b400'
+          address: '0x5a5be6b067d6b5b018adbcd27ee6972105b3b400'
         },
         { type: 'deadline', amount: 1691677015000n }
       ],
