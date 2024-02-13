@@ -5,15 +5,15 @@ import crypto from 'crypto'
 import { Banner } from '../../interfaces/banner'
 import {
   EmailVaultData,
-  EmailVaultSecret,
   EmailVaultOperation,
-  SecretType,
-  OperationRequestType
+  EmailVaultSecret,
+  OperationRequestType,
+  SecretType
 } from '../../interfaces/emailVault'
 import { Storage } from '../../interfaces/storage'
 import { getKeySyncBanner } from '../../libs/banners/banners'
 import { EmailVault } from '../../libs/emailVault/emailVault'
-import EventEmitter, { ErrorRef } from '../eventEmitter/eventEmitter'
+import EventEmitter from '../eventEmitter/eventEmitter'
 import { requestMagicLink } from '../../libs/magicLink/magicLink'
 import { Polling } from '../../libs/polling/polling'
 import wait from '../../utils/wait'
@@ -157,7 +157,7 @@ export class EmailVaultController extends EventEmitter {
     ])
   }
 
-  async handleMagicLinkKey(email: string, fn: Function) {
+  async handleMagicLinkKey(email: string, fn?: Function) {
     await this.initialLoadPromise
     const currentKey = (await this.#getMagicLinkKey(email))?.key
     if (currentKey) {
@@ -210,7 +210,7 @@ export class EmailVaultController extends EventEmitter {
         requestedAt: new Date(),
         confirmed: true
       }
-      await fn()
+      fn && (await fn())
       this.storage.set(MAGIC_LINK_STORAGE_KEY, this.#magicLinkKeys)
       this.#requestSessionKey(email)
     }
@@ -222,13 +222,18 @@ export class EmailVaultController extends EventEmitter {
     return this.#sessionKeys[email]
   }
 
-  async #getMagicLinkKey(email: string): Promise<MagicLinkKey | null> {
-    // if we have valid magicLinkKey => returns it else null
-    await this.initialLoadPromise
+  getMagicLinkKeyByEmail(email: string): MagicLinkKey | null {
     const result = this.#magicLinkKeys[email]
     if (!result || !result.confirmed) return null
     if (new Date().getTime() - result.requestedAt.getTime() > this.#magicLinkLifeTime) return null
     return result
+  }
+
+  async #getMagicLinkKey(email: string): Promise<MagicLinkKey | null> {
+    // if we have valid magicLinkKey => returns it else null
+    await this.initialLoadPromise
+
+    return this.getMagicLinkKeyByEmail(email)
   }
 
   #parseMagicLinkKeys(mks: any): MagicLinkKeys {
@@ -373,6 +378,7 @@ export class EmailVaultController extends EventEmitter {
       this.emailVaultStates.email[email].availableSecrets[result.key] = result
 
       await this.#keyStore.unlockWithSecret(RECOVERY_SECRET_ID, result.value)
+      await this.#keyStore.removeSecret('password')
       await this.#keyStore.addSecret('password', newPassword, '', false)
 
       await this.storage.set(EMAIL_VAULT_STORAGE_KEY, this.emailVaultStates)
@@ -533,18 +539,32 @@ export class EmailVaultController extends EventEmitter {
     this.emitUpdate()
   }
 
-  get hasKeystoreRecovery() {
+  getKeystoreRecoveryEmail(): string | undefined {
     const keyStoreUid = this.#keyStore.keyStoreUid
     const EVEmails = Object.keys(this.emailVaultStates.email)
 
-    if (!keyStoreUid || !EVEmails.length) return false
+    if (!keyStoreUid || !EVEmails.length) return
 
-    return !!EVEmails.find((email) => {
+    return EVEmails.find((email) => {
       return (
         this.emailVaultStates.email[email].availableSecrets[keyStoreUid]?.type ===
         SecretType.KeyStore
       )
     })
+  }
+
+  get hasKeystoreRecovery() {
+    return !!this.getKeystoreRecoveryEmail()
+  }
+
+  get hasConfirmedRecoveryEmail(): boolean {
+    if (!this.isReady) return false
+
+    const recoveryEmail = this.getKeystoreRecoveryEmail()
+
+    if (!recoveryEmail) return false
+
+    return !!this.getMagicLinkKeyByEmail(recoveryEmail)
   }
 
   get banners(): Banner[] {
@@ -585,6 +605,7 @@ export class EmailVaultController extends EventEmitter {
       ...this,
       currentState: this.currentState, // includes the getter in the stringified instance
       hasKeystoreRecovery: this.hasKeystoreRecovery,
+      hasConfirmedRecoveryEmail: this.hasConfirmedRecoveryEmail,
       banners: this.banners // includes the getter in the stringified instance,
     }
   }
