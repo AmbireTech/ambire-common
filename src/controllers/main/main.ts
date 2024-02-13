@@ -23,8 +23,8 @@ import {
   getAccountOpBannersForEOA,
   getAccountOpBannersForSmartAccount,
   getMessageBanners,
-  getNetworksWithCriticalPortfolioErrorBanners,
   getNetworksWithFailedRPCBanners,
+  getNetworksWithPortfolioErrorBanners,
   getPendingAccountOpBannersForEOA
 } from '../../libs/banners/banners'
 import { estimate, EstimateResult } from '../../libs/estimate/estimate'
@@ -1204,7 +1204,7 @@ export class MainController extends EventEmitter {
       networks: this.settings.networks,
       networksWithAssets: this.portfolio.networksWithAssets
     })
-    const networksWithCriticalPortfolioErrorBanners = getNetworksWithCriticalPortfolioErrorBanners({
+    const networksWithPortfolioErrorBanners = getNetworksWithPortfolioErrorBanners({
       selectedAccount: this.selectedAccount,
       networks: this.settings.networks,
       portfolio: this.portfolio
@@ -1218,7 +1218,7 @@ export class MainController extends EventEmitter {
       ...messageBanners,
       ...this.activity.banners,
       ...networksWithFailedRPCBanners,
-      ...networksWithCriticalPortfolioErrorBanners
+      ...networksWithPortfolioErrorBanners
     ]
   }
 

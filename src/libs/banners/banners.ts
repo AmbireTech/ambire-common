@@ -207,7 +207,7 @@ export const getNetworksWithFailedRPCBanners = ({
     })
 }
 
-export const getNetworksWithCriticalPortfolioErrorBanners = ({
+export const getNetworksWithPortfolioErrorBanners = ({
   selectedAccount,
   networks,
   portfolio
@@ -219,32 +219,55 @@ export const getNetworksWithCriticalPortfolioErrorBanners = ({
   if (!selectedAccount) return []
 
   const selectedAccPortfolio = portfolio.latest[selectedAccount]
+
   if (!selectedAccPortfolio) return []
 
-  return Object.keys(selectedAccPortfolio)
-    .filter((networkId) => portfolio.networksWithAssets.includes(networkId))
-    .flatMap((network) => {
-      const portfolioForNetwork = selectedAccPortfolio[network]
+  return Object.keys(selectedAccPortfolio).flatMap((network) => {
+    if (['rewards', 'gasTank'].includes(network)) return []
 
-      const criticalError = portfolioForNetwork?.criticalError
-      if (!criticalError) return []
+    const portfolioForNetwork = selectedAccPortfolio[network]
 
-      const networkData = networks.find((n: NetworkDescriptor) => n.id === network)
-      if (!networkData) {
-        // Should never happen
-        console.error(`Network with id ${network} not found in the network list`)
+    const criticalError = portfolioForNetwork?.criticalError
 
-        return []
+    const networkData = networks.find((n: NetworkDescriptor) => n.id === network)
+
+    if (!networkData) {
+      // Should never happen
+      console.error(`Network with id ${network} not found in the network list`)
+
+      return []
+    }
+
+    if (!criticalError) {
+      const priceMissingForAllTokens =
+        !portfolioForNetwork?.result ||
+        portfolioForNetwork?.result.tokens
+          // WALLET prices are not retrieved from coingecko
+          .filter((t) => !t.symbol.includes('WALLET'))
+          .every((token) => !token.priceIn.length)
+
+      if (priceMissingForAllTokens)
+        return [
+          {
+            id: `${networkData.id}-portfolio-prices-error`,
+            type: 'error',
+            title: `Failed to retrieve token prices for ${networkData.name}`,
+            text: 'Affected features: token prices, account balances. Please try again later or contact support.',
+            actions: []
+          }
+        ]
+
+      return []
+    }
+
+    return [
+      {
+        id: `${networkData.id}-portfolio-critical-error`,
+        type: 'error',
+        title: `Failed to retrieve the portfolio data for ${networkData.name}`,
+        text: 'Affected features: account balances, assets. Please try again later or contact support.',
+        actions: []
       }
-
-      return [
-        {
-          id: `${networkData.id}-portfolio-critical-error`,
-          type: 'error',
-          title: `Failed to retrieve the portfolio data for ${networkData.name}`,
-          text: 'Affected features: account balances, assets. Please try again later or contact support.',
-          actions: []
-        }
-      ]
-    })
+    ]
+  })
 }
