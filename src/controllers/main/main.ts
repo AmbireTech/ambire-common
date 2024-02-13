@@ -214,6 +214,10 @@ export class MainController extends EventEmitter {
 
   async #load(): Promise<void> {
     this.isReady = false
+    // #load is called in the constructor which is synchronous
+    // we await (1 ms/next tick) for the constructor to extend the EventEmitter class
+    // and then we call it's methods
+    await wait(1)
     this.emitUpdate()
     ;[this.accounts, this.selectedAccount] = await Promise.all([
       this.#storage.get('accounts', []),
@@ -1210,13 +1214,15 @@ export class MainController extends EventEmitter {
       portfolio: this.portfolio
     })
 
+    const activityBanners = this.activity?.banners || []
+
     return [
       ...emailVaultBanners,
       ...accountOpSmartAccountBanners,
       ...accountOpEOABanners,
       ...pendingAccountOpEOABanners,
       ...messageBanners,
-      ...this.activity.banners,
+      ...activityBanners,
       ...networksWithFailedRPCBanners,
       ...networksWithCriticalPortfolioErrorBanners
     ]

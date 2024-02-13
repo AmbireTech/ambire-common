@@ -223,8 +223,7 @@ describe('Main Controller ', () => {
     await new Promise((resolve) => {
       const unsubscribe = controller.onUpdate(() => {
         emitCounter++
-
-        if (emitCounter === 1 && controller.isReady) addAccounts()
+        if (emitCounter === 2 && controller.isReady) addAccounts()
 
         if (
           controller.status === 'SUCCESS' &&
