@@ -27,8 +27,8 @@ export const sushiSwapModule: HumanizerCallModule = (
       const params = routeProcessorIface.parseTransaction(call)!.args
       let { tokenIn, tokenOut /* route */ } = params
       const { amountIn, amountOutMin, to } = params
-      if (tokenIn === '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE') tokenIn = ethers.ZeroAddress
-      if (tokenOut === '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE') tokenOut = ethers.ZeroAddress
+      if (tokenIn === '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee') tokenIn = ethers.ZeroAddress
+      if (tokenOut === '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee') tokenOut = ethers.ZeroAddress
 
       return {
         ...call,

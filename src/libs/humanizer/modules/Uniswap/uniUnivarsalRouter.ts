@@ -6,7 +6,7 @@ import {
   getRecipientText,
   getToken,
   getWraping,
-  getAddress,
+  getAddressVisualization,
   getUnknownVisualization,
   getAbi
 } from '../../utils'
@@ -137,7 +137,7 @@ export const uniUniversalRouter = (
                   getAction('Send'),
                   getToken(params.token, params.value),
                   getLabel('to'),
-                  getAddress(params.recipient)
+                  getAddressVisualization(params.recipient)
                 ]
               })
             } else if (command === COMMANDS.V2_SWAP_EXACT_IN) {

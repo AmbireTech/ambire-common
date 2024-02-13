@@ -4,7 +4,7 @@ import AmbireAccount from '../../../../contracts/compiled/AmbireAccount.json'
 import { ENTRY_POINT_MARKER } from '../../../consts/deploy'
 import { AccountOp } from '../../accountOp/accountOp'
 import { HumanizerCallModule, HumanizerVisualization, IrCall } from '../interfaces'
-import { getAction, getAddress, getLabel } from '../utils'
+import { getAction, getAddressVisualization, getLabel } from '../utils'
 
 const iface = new ethers.Interface(AmbireAccount.abi)
 
@@ -14,13 +14,13 @@ const parsePriviligeCall = (accountOp: AccountOp, call: IrCall): HumanizerVisual
     accountOp.humanizerMeta?.knownAddresses[addr.toLowerCase()]?.name?.includes('entry point') &&
     priv === ENTRY_POINT_MARKER
   )
-    return [getAction('Enable'), getAddress(addr)]
+    return [getAction('Enable'), getAddressVisualization(addr)]
   if (priv === ethers.ZeroHash)
-    return [getAction('Revoke access'), getLabel('of'), getAddress(addr)]
+    return [getAction('Revoke access'), getLabel('of'), getAddressVisualization(addr)]
   return [
     getAction('Update access status'),
     getLabel('of'),
-    getAddress(addr),
+    getAddressVisualization(addr),
     getLabel('to'),
     priv === '0x0000000000000000000000000000000000000000000000000000000000000001'
       ? getLabel('regular access')

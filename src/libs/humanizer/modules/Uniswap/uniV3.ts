@@ -5,7 +5,7 @@ import {
   getLabel,
   getToken,
   getRecipientText,
-  getAddress,
+  getAddressVisualization,
   getDeadline,
   getUnknownVisualization,
   getAbi
@@ -305,7 +305,7 @@ const uniV32Mapping = (
             getLabel('with fee'),
             getToken(token, feeBips),
             getLabel('to'),
-            getAddress(feeRecipient)
+            getAddressVisualization(feeRecipient)
           ]
         }
       ]
@@ -326,7 +326,7 @@ const uniV32Mapping = (
             getLabel('with fee'),
             getToken(token, feeBips),
             getLabel('to'),
-            getAddress(feeRecipient),
+            getAddressVisualization(feeRecipient),
             ...getRecipientText(accountOp.accountAddr, recipient)
           ]
         }
@@ -477,7 +477,7 @@ const uniV3Mapping = (
             getLabel('with fee'),
             getToken(ethers.ZeroAddress, feeBips),
             getLabel('to'),
-            getAddress(feeRecipient),
+            getAddressVisualization(feeRecipient),
             ...getRecipientText(accountOp.accountAddr, recipient)
           ]
         }

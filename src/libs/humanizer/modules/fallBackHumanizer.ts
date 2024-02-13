@@ -8,7 +8,13 @@ import {
   IrCall,
   HumanizerMeta
 } from '../interfaces'
-import { checkIfUnknownAction, getAction, getAddress, getLabel, getToken } from '../utils'
+import {
+  checkIfUnknownAction,
+  getAction,
+  getAddressVisualization,
+  getLabel,
+  getToken
+} from '../utils'
 
 // etherface was down for some time and we replaced it with 4bytes
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -147,26 +153,30 @@ export const fallbackHumanizer: HumanizerCallModule = (
             }`
           ),
           getLabel('from'),
-          getAddress(call.to)
+          getAddressVisualization(call.to)
         )
       } else {
         // const promise = fetchFuncEtherface(call.data.slice(0, 10), options)
         const promise = fetchFunc4bytes(call.data.slice(0, 10), options)
         asyncOps.push(promise)
 
-        visualization.push(getAction('Unknown action'), getLabel('to'), getAddress(call.to))
+        visualization.push(
+          getAction('Unknown action'),
+          getLabel('to'),
+          getAddressVisualization(call.to)
+        )
       }
     }
     if (call.value) {
       if (call.data !== '0x') visualization.push(getLabel('and'))
       visualization.push(getAction('Send'), getToken(ethers.ZeroAddress, call.value))
-      if (call.data === '0x') visualization.push(getLabel('to'), getAddress(call.to))
+      if (call.data === '0x') visualization.push(getLabel('to'), getAddressVisualization(call.to))
     }
     return {
       ...call,
       fullVisualization: visualization.length
         ? visualization
-        : [getAction('No data, no value, call to'), getAddress(call.to)]
+        : [getAction('No data, no value, call to'), getAddressVisualization(call.to)]
     }
   })
 

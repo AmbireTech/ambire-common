@@ -31,11 +31,13 @@ export function getLabel(content: string): HumanizerVisualization {
 export function getAction(content: string): HumanizerVisualization {
   return { type: 'action', content }
 }
-export function getAddress(address: string, name?: string): HumanizerVisualization {
+export function getAddressVisualization(_address: string, name?: string): HumanizerVisualization {
+  const address = _address.toLowerCase()
   return name ? { type: 'address', address, name } : { type: 'address', address }
 }
 
-export function getToken(address: string, amount: bigint, name?: string): HumanizerVisualization {
+export function getToken(_address: string, amount: bigint, name?: string): HumanizerVisualization {
+  const address = _address.toLowerCase()
   return name ? { type: 'token', address, amount, name } : { type: 'token', address, amount }
 }
 
@@ -49,7 +51,7 @@ export function getOnBehalfOf(
   name?: string
 ): HumanizerVisualization[] {
   return onBehalfOf.toLowerCase() !== sender.toLowerCase()
-    ? [getLabel('on befalf of'), getAddress(onBehalfOf, name)]
+    ? [getLabel('on befalf of'), getAddressVisualization(onBehalfOf, name)]
     : []
 }
 
@@ -57,7 +59,7 @@ export function getOnBehalfOf(
 export function getRecipientText(from: string, recipient: string): HumanizerVisualization[] {
   return from.toLowerCase() === recipient.toLowerCase()
     ? []
-    : [getLabel('and send it to'), getAddress(recipient)]
+    : [getLabel('and send it to'), getAddressVisualization(recipient)]
 }
 
 export function getDeadlineText(deadline: bigint): string {
@@ -175,7 +177,7 @@ export function getUnknownVisualization(name: string, call: IrCall): HumanizerVi
   const unknownVisualization = [
     getAction(`Unknown action (${name})`),
     getLabel('to'),
-    getAddress(call.to)
+    getAddressVisualization(call.to)
   ]
   if (call.value)
     unknownVisualization.push(
@@ -207,4 +209,8 @@ export function getAbi(
     return []
   }
   return Object.values(humanizerMeta.abis[abiName]).map((i: AbiFragment): string => i.signature)
+}
+
+export function getName(humanizerMeta: HumanizerMeta, address: string): string | undefined {
+  return humanizerMeta.knownAddresses?.[address.toLowerCase()]?.name
 }

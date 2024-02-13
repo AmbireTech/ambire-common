@@ -1,20 +1,20 @@
 import { ethers } from 'ethers'
-import { getAction, getLabel, getToken, getAddress, getAbi } from '../../utils'
+import { getAction, getLabel, getToken, getAddressVisualization, getAbi } from '../../utils'
 import { AccountOp } from '../../../accountOp/accountOp'
 import { IrCall } from '../../interfaces'
 
 const STAKING_POOLS: { [key: string]: { [key: string]: string } } = {
-  '0x47Cd7E91C3CBaAF266369fe8518345fc4FC12935': {
-    baseToken: '0x88800092fF476844f74dC2FC427974BBee2794Ae',
+  '0x47cd7e91c3cbaaf266369fe8518345fc4fc12935': {
+    baseToken: '0x88800092ff476844f74dc2fc427974bbee2794ae',
     name: 'WALLET Staking Pool'
   },
-  '0xB6456b57f03352bE48Bf101B46c1752a0813491a': {
-    baseToken: '0xADE00C28244d5CE17D72E40330B1c318cD12B7c3',
+  '0xb6456b57f03352be48bf101b46c1752a0813491a': {
+    baseToken: '0xade00c28244d5ce17d72e40330b1c318cd12b7c3',
     name: 'ADX Staking Pool'
   },
   // this is on polygon for tests
-  '0xEc3b10ce9cabAb5dbF49f946A623E294963fBB4E': {
-    baseToken: '0xE9415E904143e42007865E6864f7F632Bd054A08',
+  '0xec3b10ce9cabab5dbf49f946a623e294963fbb4e': {
+    baseToken: '0xe9415e904143e42007865e6864f7f632bd054a08',
     name: 'WALLET Staking Pool (Test)'
   }
 }
@@ -29,7 +29,7 @@ export const StakingPools = (humanizerInfo: any) => {
         getAction('Deposit'),
         getToken(STAKING_POOLS[call.to].baseToken, amount),
         getLabel('to'),
-        getAddress(call.to)
+        getAddressVisualization(call.to)
       ]
     },
     [iface.getFunction('leave')?.selector!]: (accountOp: AccountOp, call: IrCall) => {
@@ -39,7 +39,7 @@ export const StakingPools = (humanizerInfo: any) => {
         getAction('Leave'),
         getLabel('with'),
         getToken(STAKING_POOLS[call.to].baseToken, shares),
-        getAddress(call.to)
+        getAddressVisualization(call.to)
       ]
     },
     [iface.getFunction('withdraw')?.selector!]: (accountOp: AccountOp, call: IrCall) => {
@@ -48,7 +48,7 @@ export const StakingPools = (humanizerInfo: any) => {
         getAction('Withdraw'),
         getToken(STAKING_POOLS[call.to].baseToken, shares),
         getLabel('from'),
-        getAddress(call.to)
+        getAddressVisualization(call.to)
       ]
     },
 
@@ -58,7 +58,7 @@ export const StakingPools = (humanizerInfo: any) => {
         getAction('Rage leave'),
         getLabel('with'),
         getToken(STAKING_POOLS[call.to].baseToken, shares),
-        getAddress(call.to)
+        getAddressVisualization(call.to)
       ]
     }
   }
