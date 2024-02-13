@@ -48,10 +48,6 @@ export default [
     networkId: 'ethereum'
   },
   {
-    address: '0x47Cd7E91C3CBaAF266369fe8518345fc4FC12935',
-    networkId: 'ethereum'
-  },
-  {
     address: '0x028171bca77440897b824ca71d1c56cac55b68a3',
     networkId: 'ethereum'
   },

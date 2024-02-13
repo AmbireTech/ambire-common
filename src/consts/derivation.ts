@@ -37,7 +37,7 @@ export const HD_PATHS: HDPath[] = [
 ]
 
 /**
- * For legacy (EOA) accounts that are Ambire smart account keys use the derived
+ * For basic (EOA) accounts that are Ambire smart account keys use the derived
  * address at index N + x, where N is this derivation offset (this constant),
  * and x is the given <account> index in the derivation (template) path.
  */

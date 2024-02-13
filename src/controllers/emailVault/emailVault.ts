@@ -5,23 +5,24 @@ import crypto from 'crypto'
 import { Banner } from '../../interfaces/banner'
 import {
   EmailVaultData,
-  EmailVaultSecret,
   EmailVaultOperation,
-  SecretType,
-  OperationRequestType
+  EmailVaultSecret,
+  OperationRequestType,
+  SecretType
 } from '../../interfaces/emailVault'
 import { Storage } from '../../interfaces/storage'
 import { getKeySyncBanner } from '../../libs/banners/banners'
 import { EmailVault } from '../../libs/emailVault/emailVault'
-import EventEmitter, { ErrorRef } from '../eventEmitter/eventEmitter'
 import { requestMagicLink } from '../../libs/magicLink/magicLink'
 import { Polling } from '../../libs/polling/polling'
 import wait from '../../utils/wait'
+import EventEmitter, { ErrorRef } from '../eventEmitter/eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
 
 export enum EmailVaultState {
   Loading,
   WaitingEmailConfirmation,
+  UploadingSecret,
   Ready
 }
 
@@ -63,6 +64,8 @@ export class EmailVaultController extends EventEmitter {
   private initialLoadPromise: Promise<void>
 
   #isWaitingEmailConfirmation: boolean = false
+
+  #isUploadingSecret: boolean = false
 
   #emailVault: EmailVault
 
@@ -125,6 +128,8 @@ export class EmailVaultController extends EventEmitter {
   get currentState(): EmailVaultState {
     if (!this.isReady) return EmailVaultState.Loading
     if (this.#isWaitingEmailConfirmation) return EmailVaultState.WaitingEmailConfirmation
+    if (this.#isUploadingSecret) return EmailVaultState.UploadingSecret
+
     return EmailVaultState.Ready
   }
 
@@ -271,6 +276,7 @@ export class EmailVaultController extends EventEmitter {
     let result: Boolean | null = false
     const magicKey = await this.#getMagicLinkKey(email)
     if (magicKey?.key) {
+      this.#isUploadingSecret = true
       const randomBytes = crypto.randomBytes(32)
       // toString('base64url') doesn't work for some reason in the browser extension
       const newSecret = base64UrlEncode(randomBytes.toString('base64'))
@@ -286,6 +292,9 @@ export class EmailVaultController extends EventEmitter {
     } else {
       this.emailVaultStates.errors = [new Error('error upload keyStore to email vault')]
     }
+
+    this.#isUploadingSecret = false
+    this.emitUpdate()
   }
 
   async recoverKeyStore(email: string) {
@@ -298,7 +307,7 @@ export class EmailVaultController extends EventEmitter {
 
     if (!state.email[email]) {
       this.emitError({
-        message: `Keystore recovery: email ${email} not imported`,
+        message: `Resetting the password on this device is not enabled for ${email}.`,
         level: 'major',
         error: new Error(`Keystore recovery: email ${email} not imported`)
       })
@@ -307,7 +316,7 @@ export class EmailVaultController extends EventEmitter {
 
     if (!state.email[email].availableSecrets[uid]) {
       this.emitError({
-        message: 'Keystore recovery: no keystore secret for this device',
+        message: `Resetting the password on this device is not enabled for ${email}.`,
         level: 'major',
         error: new Error('Keystore recovery: no keystore secret for this device')
       })
@@ -315,7 +324,7 @@ export class EmailVaultController extends EventEmitter {
     }
     if (state.email[email].availableSecrets[uid].type !== SecretType.KeyStore) {
       this.emitError({
-        message: `Keystore recovery: no keystore secret for email ${email}`,
+        message: `Resetting the password on this device is not enabled for ${email}.`,
         level: 'major',
         error: new Error(`Keystore recovery: no keystore secret for email ${email}`)
       })
@@ -515,7 +524,7 @@ export class EmailVaultController extends EventEmitter {
     if (!this.hasKeystoreRecovery) {
       banners.push({
         id: 'keystore-secret-backup',
-        topic: 'WARNING',
+        type: 'info',
         title: 'Enable device password reset via email',
         text: "Email Vault recovers your Device Password. It is securely stored in Ambire's infrastructure cloud.",
         actions: [

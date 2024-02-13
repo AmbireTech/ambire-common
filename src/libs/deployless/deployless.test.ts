@@ -1,8 +1,10 @@
-import { AbiCoder, JsonRpcProvider, concat, getDefaultProvider, toBeHex } from 'ethers'
-import { compile } from './compile'
-import { addressOne } from '../../../test/config'
-import { Deployless, DeploylessMode } from './deployless'
+import { AbiCoder, concat, getDefaultProvider, JsonRpcProvider, toBeHex } from 'ethers'
+
 import { describe, expect, test } from '@jest/globals'
+
+import { addressOne } from '../../../test/config'
+import { compile } from './compile'
+import { Deployless, DeploylessMode } from './deployless'
 
 const helloWorld = compile('HelloWorld', {
   contractsFolder: 'test/contracts'
@@ -19,10 +21,12 @@ describe('Deployless', () => {
 
   test('should not allow stateToOverride if mode is not state override', async () => {
     const localDeployless = new Deployless(mainnetProvider, helloWorld.abi, helloWorld.bin)
-    await expect(localDeployless.call('helloWorld', [], {
-      mode: DeploylessMode.ProxyContract,
-      stateToOverride: {}
-    })).rejects.toThrow('state override passed but not requested')
+    await expect(
+      localDeployless.call('helloWorld', [], {
+        mode: DeploylessMode.ProxyContract,
+        stateToOverride: {}
+      })
+    ).rejects.toThrow('state override passed but not requested')
   })
 
   /*
@@ -58,17 +62,21 @@ describe('Deployless', () => {
   test('should not alllow initializing with wrong deploy code', () => {
     expect.assertions(2)
     try {
-      new Deployless(mainnetProvider, helloWorld.abi, helloWorld.bin.slice(2))
+      const success = new Deployless(mainnetProvider, helloWorld.abi, helloWorld.bin.slice(2))
+      // the below should not happen
+      expect(!!success).toBe(false)
     } catch (e: any) {
       expect(e.message).toBe('contract code must start with 0x')
     }
     try {
-      new Deployless(
+      const success = new Deployless(
         mainnetProvider,
         helloWorld.abi,
         helloWorld.bin,
         helloWorld.bin.slice(2)
       )
+      // the below should not happen
+      expect(!!success).toBe(false)
     } catch (e: any) {
       expect(e.message).toBe('contract code (runtime) must start with 0x')
     }
@@ -77,9 +85,9 @@ describe('Deployless', () => {
   test('should not allow detect with another Provider', async () => {
     expect.assertions(1)
     const homesteadProvider = getDefaultProvider('homestead')
-    const deployless = new Deployless(homesteadProvider, helloWorld.abi, helloWorld.bin)
+    const localDeployless = new Deployless(homesteadProvider, helloWorld.abi, helloWorld.bin)
     try {
-      await deployless.call('helloWorld', [])
+      await localDeployless.call('helloWorld', [])
     } catch (e: any) {
       expect(e.message).toBe(
         'state override mode (or auto-detect) not available unless you use JsonRpcProvider'
@@ -98,34 +106,36 @@ describe('Deployless', () => {
   })
 
   test('should deploy error: state override mode', async () => {
-    const deployless = new Deployless(mainnetProvider, helloWorld.abi, deployErrBin)
+    const localDeployless = new Deployless(mainnetProvider, helloWorld.abi, deployErrBin)
     expect.assertions(2)
     try {
-      await deployless.call('helloWorld', [])
+      await localDeployless.call('helloWorld', [])
     } catch (e: any) {
       expect(e.message).toBe('contract deploy failed')
       // detection stil succeeded
-      expect(deployless.isLimitedAt24kbData).toBe(false)
+      expect(localDeployless.isLimitedAt24kbData).toBe(false)
     }
   })
 
   test('should deploy error: state override without detection', async () => {
-    const deployless = new Deployless(
+    const localDeployless = new Deployless(
       mainnetProvider,
       helloWorld.abi,
       helloWorld.bin,
       helloWorld.binRuntime
     )
     // we should already be aware that we are not limited by the 24kb limit
-    expect(deployless.isLimitedAt24kbData).toBe(false)
-    const [result] = await deployless.call('helloWorld', [], { mode: DeploylessMode.StateOverride })
+    expect(localDeployless.isLimitedAt24kbData).toBe(false)
+    const [result] = await localDeployless.call('helloWorld', [], {
+      mode: DeploylessMode.StateOverride
+    })
     expect(result).toBe('hello world')
-    const [result2] = await deployless.call('helloWorld', [])
+    const [result2] = await localDeployless.call('helloWorld', [])
     expect(result2).toBe('hello world')
   })
 
   test('should custom block tag', async () => {
-    const deployless = new Deployless(
+    const localDeployless = new Deployless(
       mainnetProvider,
       helloWorld.abi,
       helloWorld.bin,
@@ -133,20 +143,23 @@ describe('Deployless', () => {
     )
     expect.assertions(2)
     try {
-      await deployless.call('helloWorld', [], { blockTag: '0x1' })
+      await localDeployless.call('helloWorld', [], { blockTag: '0x1' })
     } catch (e: any) {
       // we are relying on the fact that we do not have the SHR opcode in block 0x1
       expect(e.info.error.message.includes('invalid opcode: SHR')).toBe(true)
     }
     try {
-      await deployless.call('helloWorld', [], {
+      await localDeployless.call('helloWorld', [], {
         blockTag: '0x1',
         mode: DeploylessMode.ProxyContract
       })
     } catch (e: any) {
       // ethers wraps the error if we use the Provider; perhaps we should un-wrap it
       // fails with out-of-gas when wrapped in the ProxyContract mode (or invalid opcode: SHL)
-      expect(e.info.error.message.includes('out of gas') || e.info.error.message.includes('invalid opcode: SHL')).toBe(true)
+      expect(
+        e.info.error.message.includes('out of gas') ||
+          e.info.error.message.includes('invalid opcode: SHL')
+      ).toBe(true)
     }
   })
 
@@ -173,7 +186,7 @@ describe('Deployless', () => {
     }
   })
 
-  test('should throw an solidity assert error', async function () {
+  test('should throw an solidity assert error', async () => {
     expect.assertions(1)
     const contract = new Deployless(
       mainnetProvider,
@@ -188,7 +201,7 @@ describe('Deployless', () => {
     }
   })
 
-  test('should throw an arithmetic error', async function () {
+  test('should throw an arithmetic error', async () => {
     expect.assertions(1)
     const contract = new Deployless(
       mainnetProvider,
@@ -203,7 +216,7 @@ describe('Deployless', () => {
     }
   })
 
-  test('should throw a division by zero error', async function () {
+  test('should throw a division by zero error', async () => {
     expect.assertions(1)
     const contract = new Deployless(
       mainnetProvider,
@@ -218,7 +231,7 @@ describe('Deployless', () => {
     }
   })
 
-  test('should throw a panic error', async function () {
+  test('should throw a panic error', async () => {
     expect.assertions(1)
     const contract = new Deployless(
       mainnetProvider,

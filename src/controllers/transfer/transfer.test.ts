@@ -45,8 +45,6 @@ describe('Transfer Controller', () => {
   test('should emit not initialized error', () => {
     transferController = new TransferController()
 
-    transferController.onRecipientAddressChange()
-    errorCount++
     transferController.buildUserRequest()
     errorCount++
 
@@ -73,48 +71,30 @@ describe('Transfer Controller', () => {
     })
     expect(transferController.isInitialized).toBe(true)
   })
-  test('should set recipient address', () => {
+  test('should set address state', () => {
     transferController.update({
-      recipientAddress: PLACEHOLDER_RECIPIENT
+      addressState: {
+        fieldValue: PLACEHOLDER_RECIPIENT,
+        ensAddress: '',
+        udAddress: '',
+        isDomainResolving: false
+      }
     })
-    expect(transferController.recipientAddress).toBe(PLACEHOLDER_RECIPIENT)
-  })
-  test('should resolve ENS', async () => {
-    transferController.update({
-      recipientAddress: 'elmoto.eth'
-    })
-    await transferController.onRecipientAddressChange()
-
-    expect(transferController.recipientEnsAddress).toBe(PLACEHOLDER_RECIPIENT)
+    expect(transferController.addressState.fieldValue).toBe(PLACEHOLDER_RECIPIENT)
   })
   test('should set recipient address unknown', () => {
     expect(transferController.isRecipientAddressUnknown).toBe(true)
   })
   test('should flag recipient address as a smart contract', async () => {
     transferController.update({
-      recipientAddress: '0x7a250d5630b4cf539739df2c5dacb4c659f2488d'
+      addressState: {
+        fieldValue: XWALLET_ADDRESS,
+        ensAddress: '',
+        udAddress: '',
+        isDomainResolving: false
+      }
     })
-    await transferController.onRecipientAddressChange()
     expect(transferController.isRecipientHumanizerKnownTokenOrSmartContract).toBe(true)
-  })
-  test('should resolve UnstoppableDomains', async () => {
-    transferController.update({
-      recipientAddress: '0xyakmotoru.wallet'
-    })
-    await transferController.onRecipientAddressChange()
-
-    expect(transferController.recipientUDAddress?.toLowerCase()).toBe(
-      PLACEHOLDER_RECIPIENT_LOWERCASE
-    )
-  })
-  test('should reset recipientUDAddress and recipientEnsAddress when recipientAddress is set to a normal address', () => {
-    transferController.update({
-      recipientAddress: PLACEHOLDER_RECIPIENT
-    })
-    transferController.onRecipientAddressChange()
-
-    expect(transferController.recipientUDAddress).toBe('')
-    expect(transferController.recipientEnsAddress).toBe('')
   })
   test('should show SW warning', async () => {
     const tokens = await getTokens()
@@ -149,6 +129,15 @@ describe('Transfer Controller', () => {
     expect(transferController.isSWWarningAgreed).toBe(true)
   })
   test('should set validation form messages', async () => {
+    transferController.update({
+      addressState: {
+        fieldValue: PLACEHOLDER_RECIPIENT,
+        ensAddress: '',
+        udAddress: '',
+        isDomainResolving: false
+      }
+    })
+
     expect(transferController.validationFormMsgs.amount.success).toBe(true)
     expect(transferController.validationFormMsgs.recipientAddress.success).toBe(false)
 
@@ -218,9 +207,14 @@ describe('Transfer Controller', () => {
   })
 
   test('should detect that the recipient is the fee collector', async () => {
-    transferController.update({ recipientAddress: FEE_COLLECTOR })
-    await transferController.onRecipientAddressChange()
-
+    transferController.update({
+      addressState: {
+        fieldValue: FEE_COLLECTOR,
+        ensAddress: '',
+        udAddress: '',
+        isDomainResolving: false
+      }
+    })
     expect(transferController.isRecipientHumanizerKnownTokenOrSmartContract).toBeFalsy()
     expect(transferController.isRecipientAddressUnknown).toBeFalsy()
   })
@@ -229,11 +223,14 @@ describe('Transfer Controller', () => {
     expect(transferController.amount).toBe('')
     expect(transferController.maxAmount).toBe('0')
     expect(transferController.recipientAddress).toBe('')
-    expect(transferController.recipientEnsAddress).toBe('')
-    expect(transferController.recipientUDAddress).toBe('')
     expect(transferController.selectedToken).toBe(null)
     expect(transferController.isRecipientAddressUnknown).toBe(false)
-    expect(transferController.isRecipientDomainResolving).toBe(false)
+    expect(transferController.addressState).toEqual({
+      fieldValue: '',
+      ensAddress: '',
+      udAddress: '',
+      isDomainResolving: false
+    })
     expect(transferController.userRequest).toBe(null)
     expect(transferController.isRecipientAddressUnknownAgreed).toBe(false)
     expect(transferController.isRecipientHumanizerKnownTokenOrSmartContract).toBe(false)

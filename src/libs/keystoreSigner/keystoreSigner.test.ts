@@ -1,12 +1,15 @@
+import { Wallet } from 'ethers'
+
 /* eslint-disable no-new */
 import { describe, expect, test } from '@jest/globals'
 
+import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'
 import { Key } from '../../interfaces/keystore'
+import { getPrivateKeyFromSeed } from '../keyIterator/keyIterator'
 import { KeystoreSigner } from './keystoreSigner'
 
-// const seedPhrase = 'brisk rich glide impose category stuff company you appear remain decorate monkey'
-const privKey = '0x574f261b776b26b1ad75a991173d0e8ca2ca1d481bd7822b2b58b2ef8a969f12'
-const keyPublicAddress = '0x9188fdd757Df66B4F693D624Ed6A13a15Cf717D7'
+const privKey = getPrivateKeyFromSeed(process.env.SEED, 199, BIP44_STANDARD_DERIVATION_TEMPLATE)
+const keyPublicAddress = new Wallet(privKey).address
 
 const key: Key = {
   addr: keyPublicAddress,
@@ -30,7 +33,7 @@ describe('KeystoreSigner', () => {
     const transactionRequest = {
       type: null,
       to: '0x5C657c725928FF3108bD98aAFB587592b3c94681',
-      from: '0x9188fdd757Df66B4F693D624Ed6A13a15Cf717D7',
+      from: keyPublicAddress,
       nonce: 0,
       gasLimit: '200000',
       gasPrice: '1000000000',

@@ -10,7 +10,10 @@ import { ethers, Wallet } from 'ethers'
 import { describe, expect, test } from '@jest/globals'
 
 import { produceMemoryStore } from '../../../test/helpers'
+import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'
 import { Key } from '../../interfaces/keystore'
+import { getPrivateKeyFromSeed } from '../../libs/keyIterator/keyIterator'
+import { stripHexPrefix } from '../../utils/stripHexPrefix'
 import { KeystoreController } from './keystore'
 
 export class InternalSigner {
@@ -60,10 +63,11 @@ class LedgerSigner {
 let keystore: KeystoreController
 const pass = 'hoiHoi'
 const keystoreSigners = { internal: InternalSigner, ledger: LedgerSigner }
-const seedPhrase =
-  'brisk rich glide impose category stuff company you appear remain decorate monkey'
-const privKey = '207d56b2f2b06fd9c74562ec81f42d47393a55cfcf5c182605220ad7fdfbe600'
-const keyPublicAddress = '0xB6C923c6586eDb44fc4CC0AE4F60869271e75407'
+
+const privKey = stripHexPrefix(
+  getPrivateKeyFromSeed(process.env.SEED, 5, BIP44_STANDARD_DERIVATION_TEMPLATE)
+)
+const keyPublicAddress = new ethers.Wallet(privKey).address
 
 describe('KeystoreController', () => {
   const storage = produceMemoryStore()
@@ -295,7 +299,7 @@ describe('KeystoreController', () => {
   })
 
   test('should change keystore password', (done) => {
-    keystore.changeKeystorePassword(pass, `${pass}1`)
+    keystore.changeKeystorePassword(`${pass}1`, pass)
 
     const unsubscribe = keystore.onUpdate(async () => {
       if (keystore.latestMethodCall === 'changeKeystorePassword' && keystore.status === 'DONE') {
@@ -361,7 +365,6 @@ describe('KeystoreController', () => {
 })
 
 describe('import/export with pub key test', () => {
-  const label = 'new key'
   const wallet = ethers.Wallet.createRandom()
   let keystore2: KeystoreController
   let uid2: string

@@ -1,9 +1,9 @@
+import { SelectedAccount } from 'controllers/accountAdder/accountAdder'
 import { ethers } from 'ethers'
 import fetch from 'node-fetch'
 
 import { describe, expect, test } from '@jest/globals'
 
-import { SelectedAccount } from 'controllers/accountAdder/accountAdder'
 import { produceMemoryStore } from '../../../test/helpers'
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'
@@ -230,7 +230,10 @@ describe('Main Controller ', () => {
           controller.status === 'SUCCESS' &&
           controller.latestMethodCall === 'onAccountAdderSuccess'
         ) {
-          expect(controller.accounts).toContainEqual(accountPendingCreation.account)
+          expect(controller.accounts).toContainEqual({
+            ...accountPendingCreation.account,
+            newlyCreated: false
+          })
           unsubscribe()
           resolve(true)
         }

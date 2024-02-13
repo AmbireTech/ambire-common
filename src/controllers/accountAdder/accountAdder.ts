@@ -6,7 +6,6 @@ import {
   HD_PATH_TEMPLATE_TYPE,
   SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
 } from '../../consts/derivation'
-
 import { Account, AccountOnchainState } from '../../interfaces/account'
 import { KeyIterator } from '../../interfaces/keyIterator'
 import { dedicatedToOneSAPriv, Key } from '../../interfaces/keystore'
@@ -14,17 +13,17 @@ import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor
 import { AccountPreferences, KeyPreferences } from '../../interfaces/settings'
 import { Storage } from '../../interfaces/storage'
 import {
+  getBasicAccount,
   getEmailAccount,
-  getLegacyAccount,
   getSmartAccount,
   isAmbireV1LinkedAccount,
   isDerivedForSmartAccountKeyOnly,
   isSmartAccount
 } from '../../libs/account/account'
 import { getAccountState } from '../../libs/accountState/accountState'
-import EventEmitter from '../eventEmitter/eventEmitter'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import wait from '../../utils/wait'
+import EventEmitter from '../eventEmitter/eventEmitter'
 
 const INITIAL_PAGE_INDEX = 1
 const PAGE_SIZE = 5
@@ -40,7 +39,7 @@ type AccountDerivationMeta = {
 /**
  * The account that the user has actively chosen (selected) via the app UI.
  * It's always one of the visible accounts returned by the accountsOnPage().
- * Could be either a legacy (EOA) account, a smart account or a linked account.
+ * Could be either a basic (EOA) account, a smart account or a linked account.
  */
 export type SelectedAccount = AccountDerivationMeta & {
   account: Account
@@ -49,8 +48,8 @@ export type SelectedAccount = AccountDerivationMeta & {
 
 /**
  * The account that is derived programmatically and internally by Ambire.
- * Could be either a legacy (EOA) account, a derived with custom derivation
- * legacy (EOA) account (used for smart account key only) or a smart account.
+ * Could be either a basic (EOA) account, a derived with custom derivation
+ * basic (EOA) account (used for smart account key only) or a smart account.
  */
 type DerivedAccount = AccountDerivationMeta & { account: AccountWithNetworkMeta }
 // Sub-type, used during intermediate step during the deriving accounts process
@@ -90,7 +89,7 @@ export class AccountAdderController extends EventEmitter {
 
   // Accounts which identity is created on the Relayer (if needed), and are ready
   // to be added to the user's account list by the Main Controller
-  readyToAddAccounts: Account[] = []
+  readyToAddAccounts: (Account & { newlyCreated?: boolean })[] = []
 
   // The keys for the `readyToAddAccounts`, that are ready to be added to the
   // user's keystore by the Main Controller
@@ -133,7 +132,7 @@ export class AccountAdderController extends EventEmitter {
   get accountsOnPage(): DerivedAccount[] {
     const processedAccounts = this.#derivedAccounts
       // The displayed (visible) accounts on page should not include the derived
-      // EOA (legacy) accounts only used as smart account keys, they should not
+      // EOA (basic) accounts only used as smart account keys, they should not
       // be visible nor importable (or selectable).
       .filter((x) => !isDerivedForSmartAccountKeyOnly(x.index))
       .flatMap((derivedAccount) => {
@@ -262,6 +261,8 @@ export class AccountAdderController extends EventEmitter {
     this.hdPathTemplate = undefined
 
     this.addAccountsStatus = 'INITIAL'
+    this.#derivedAccounts = []
+    this.#linkedAccounts = []
     this.readyToAddAccounts = []
     this.readyToAddKeys = { internal: [], external: [] }
     this.readyToAddKeyPreferences = []
@@ -308,14 +309,14 @@ export class AccountAdderController extends EventEmitter {
     // eslint-disable-next-line no-nested-ternary
     const accountKey = isSmartAccount(accountOnPage.account)
       ? accountOnPage.isLinked
-        ? // The key of the linked account is the EOA (legacy) account on the same slot with the same index
+        ? // The key of the linked account is the EOA (basic) account on the same slot with the same index
           allAccountsOnThisSlot.find(
             ({ account, index }) => !isSmartAccount(account) && accountOnPage.index === index
           )
-        : // The key of the smart account is the EOA (legacy) account derived on the
+        : // The key of the smart account is the EOA (basic) account derived on the
           // same slot, but with the `SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET` offset.
           allAccountsOnThisSlot.find(({ index }) => isDerivedForSmartAccountKeyOnly(index))
-      : // The key of the legacy account is the legacy account itself.
+      : // The key of the basic account is the basic account itself.
         accountOnPage
 
     if (!accountKey)
@@ -323,7 +324,7 @@ export class AccountAdderController extends EventEmitter {
         level: 'major',
         message: `Selecting ${_account.addr} account failed because some of the details for this account are missing. Please try again or contact support if the problem persists.`,
         error: new Error(
-          `The legacy account for the ${_account.addr} account was not found on this slot.`
+          `The basic account for the ${_account.addr} account was not found on this slot.`
         )
       })
 
@@ -389,11 +390,11 @@ export class AccountAdderController extends EventEmitter {
       accounts: this.#derivedAccounts
         .filter(
           (acc) =>
-            // Search for linked accounts to the legacy (EOA) accounts only.
+            // Search for linked accounts to the basic (EOA) accounts only.
             // Searching for linked accounts to another Ambire smart accounts
             // is a feature that Ambire is yet to support.
             !isSmartAccount(acc.account) &&
-            // Skip searching for linked accounts to the derived EOA (legacy)
+            // Skip searching for linked accounts to the derived EOA (basic)
             // accounts that are used for smart account keys only. They are
             // solely purposed to manage 1 particular (smart) account,
             // not at all for linking.
@@ -443,6 +444,7 @@ export class AccountAdderController extends EventEmitter {
     this.addAccountsStatus = 'LOADING'
     this.emitUpdate()
 
+    let newlyCreatedAccounts: Account['addr'][] = []
     const accountsToAddOnRelayer: SelectedAccount[] = accounts
       // Identity only for the smart accounts must be created on the Relayer
       .filter((x) => isSmartAccount(x.account))
@@ -470,6 +472,21 @@ export class AccountAdderController extends EventEmitter {
         if (!res.success) {
           throw new Error(res?.message || 'No response received from the Ambire Relayer.')
         }
+
+        type AccResType = {
+          identity: string
+          status: {
+            created: boolean
+            reason?: string
+          }
+        }
+
+        type BodyType = AccResType[]
+        if (res.body) {
+          newlyCreatedAccounts = (res.body as BodyType)
+            .filter((acc: AccResType) => acc.status.created)
+            .map((acc: AccResType) => acc.identity)
+        }
       } catch (e: any) {
         this.emitError({
           level: 'major',
@@ -484,7 +501,12 @@ export class AccountAdderController extends EventEmitter {
       }
     }
 
-    this.readyToAddAccounts = [...accounts.map((x) => x.account)]
+    this.readyToAddAccounts = [
+      ...accounts.map((x) => ({
+        ...x.account,
+        newlyCreated: newlyCreatedAccounts.includes(x.account.addr)
+      }))
+    ]
     this.readyToAddKeys = readyToAddKeys
     this.readyToAddKeyPreferences = readyToAddKeyPreferences
     this.readyToAddAccountPreferences = readyToAddAccountPreferences
@@ -589,9 +611,9 @@ export class AccountAdderController extends EventEmitter {
     // That's optimization primarily focused on hardware wallets, to reduce the
     // number of calls to the hardware device. This is important, especially
     // for Trezor, because it fires a confirmation popup for each call.
-    const combinedLegacyAndSmartAccKeys = await this.#keyIterator.retrieve(
+    const combinedBasicAndSmartAccKeys = await this.#keyIterator.retrieve(
       [
-        // Indices for the legacy (EOA) accounts
+        // Indices for the basic (EOA) accounts
         { from: startIdx, to: endIdx },
         // Indices for the smart accounts
         {
@@ -602,10 +624,10 @@ export class AccountAdderController extends EventEmitter {
       this.hdPathTemplate
     )
 
-    const legacyAccKeys = combinedLegacyAndSmartAccKeys.slice(0, this.pageSize)
-    const smartAccKeys = combinedLegacyAndSmartAccKeys.slice(
+    const basicAccKeys = combinedBasicAndSmartAccKeys.slice(0, this.pageSize)
+    const smartAccKeys = combinedBasicAndSmartAccKeys.slice(
       this.pageSize,
-      combinedLegacyAndSmartAccKeys.length
+      combinedBasicAndSmartAccKeys.length
     )
 
     const smartAccountsPromises: Promise<DerivedAccountWithoutNetworkMeta | null>[] = []
@@ -615,8 +637,8 @@ export class AccountAdderController extends EventEmitter {
     for (const [index, smartAccKey] of smartAccKeys.entries()) {
       const slot = startIdx + (index + 1)
 
-      // The derived EOA (legacy) account which is the key for the smart account
-      const account = getLegacyAccount(smartAccKey)
+      // The derived EOA (basic) account which is the key for the smart account
+      const account = getBasicAccount(smartAccKey)
       const indexWithOffset = slot - 1 + SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
       accounts.push({ account, isLinked: false, slot, index: indexWithOffset })
 
@@ -644,11 +666,11 @@ export class AccountAdderController extends EventEmitter {
     accounts.push(...smartAccounts)
 
     // eslint-disable-next-line no-restricted-syntax
-    for (const [index, legacyAccKey] of legacyAccKeys.entries()) {
+    for (const [index, basicAccKey] of basicAccKeys.entries()) {
       const slot = startIdx + (index + 1)
 
-      // The EOA (legacy) account on this slot
-      const account = getLegacyAccount(legacyAccKey)
+      // The EOA (basic) account on this slot
+      const account = getBasicAccount(basicAccKey)
       accounts.push({ account, isLinked: false, slot, index: slot - 1 })
     }
 
