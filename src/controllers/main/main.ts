@@ -604,7 +604,7 @@ export class MainController extends EventEmitter {
   async updateSelectedAccount(selectedAccount: string | null = null, forceUpdate: boolean = false) {
     if (!selectedAccount) return
 
-    await this.portfolio.updateSelectedAccount(
+    this.portfolio.updateSelectedAccount(
       this.accounts,
       this.settings.networks,
       selectedAccount,
