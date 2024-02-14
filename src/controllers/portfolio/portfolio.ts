@@ -13,7 +13,10 @@ import { isSmartAccount } from '../../libs/account/account'
 import { AccountOp, isAccountOpsIntentEqual } from '../../libs/accountOp/accountOp'
 /* eslint-disable no-restricted-syntax */
 // eslint-disable-next-line import/no-cycle
-import { getNetworksWithPortfolioErrorBanners } from '../../libs/banners/banners'
+import {
+  getNetworksWithFailedRPCBanners,
+  getNetworksWithPortfolioErrorBanners
+} from '../../libs/banners/banners'
 import getAccountNetworksWithAssets from '../../libs/portfolio/getNetworksWithAssets'
 import { getFlags } from '../../libs/portfolio/helpers'
 import {
@@ -458,10 +461,17 @@ export class PortfolioController extends EventEmitter {
   }
 
   get banners() {
-    return getNetworksWithPortfolioErrorBanners({
+    const networksWithFailedRPCBanners = getNetworksWithFailedRPCBanners({
+      providers: this.#providers,
+      networks: this.#networks,
+      networksWithAssets: this.networksWithAssets
+    })
+    const networksWithPortfolioErrorBanners = getNetworksWithPortfolioErrorBanners({
       networks: this.#networks,
       portfolioLatest: this.latest
     })
+
+    return [...networksWithFailedRPCBanners, ...networksWithPortfolioErrorBanners]
   }
 
   toJSON() {
