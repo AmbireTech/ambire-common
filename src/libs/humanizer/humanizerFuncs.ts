@@ -6,6 +6,7 @@ import {
   HumanizerCallModule,
   HumanizerFragment,
   HumanizerTypedMessaageModule,
+  HumanizerVisualization,
   IrCall,
   IrMessage
 } from './interfaces'
@@ -42,7 +43,7 @@ export function humanizeCalls(
 export const visualizationToText = (call: IrCall, options: any): string => {
   let text = ''
   const visualization = call?.fullVisualization
-  visualization?.forEach((v: { [key: string]: any }, i: number) => {
+  visualization?.forEach((v: HumanizerVisualization, i: number) => {
     // if not first iteration
     if (i) text += ' '
     if (v.type === 'action' || v.type === 'label') text += `${v.content}`
@@ -51,7 +52,7 @@ export const visualizationToText = (call: IrCall, options: any): string => {
       text += `${v.readableAmount || v.amount} ${v.symbol ? v.symbol : `${v.address} token`}`
     }
     if (v.type === 'deadline') {
-      text += getDeadlineText(v.amount)
+      text += getDeadlineText(v.amount!)
     }
   })
   if (text) {

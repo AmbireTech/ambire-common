@@ -30,7 +30,7 @@ export const tokenParsing: HumanizerParsingModule = (
             ? getLabel(`all ${tokenMeta.symbol}`)
             : {
                 ...v,
-                symbol: v.symbol || tokenMeta.symbol,
+                symbol: tokenMeta.symbol,
                 decimals: tokenMeta.decimals,
                 readableAmount:
                   // only F's

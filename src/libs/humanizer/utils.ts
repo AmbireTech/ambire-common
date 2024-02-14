@@ -33,25 +33,25 @@ export function getAction(content: string): HumanizerVisualization {
 }
 export function getAddressVisualization(_address: string, name?: string): HumanizerVisualization {
   const address = _address.toLowerCase()
-  return name ? { type: 'address', address, name } : { type: 'address', address }
+  return { type: 'address', address, name }
 }
 
-export function getToken(_address: string, amount: bigint, name?: string): HumanizerVisualization {
+export function getToken(_address: string, amount: bigint): HumanizerVisualization {
   const address = _address.toLowerCase()
-  return name ? { type: 'token', address, amount, name } : { type: 'token', address, amount }
+  return {
+    type: 'token',
+    address,
+    amount
+  }
 }
 
 export function getNft(address: string, id: bigint): HumanizerVisualization {
   return { type: 'nft', address, id }
 }
 
-export function getOnBehalfOf(
-  onBehalfOf: string,
-  sender: string,
-  name?: string
-): HumanizerVisualization[] {
+export function getOnBehalfOf(onBehalfOf: string, sender: string): HumanizerVisualization[] {
   return onBehalfOf.toLowerCase() !== sender.toLowerCase()
-    ? [getLabel('on befalf of'), getAddressVisualization(onBehalfOf, name)]
+    ? [getLabel('on befalf of'), getAddressVisualization(onBehalfOf)]
     : []
 }
 

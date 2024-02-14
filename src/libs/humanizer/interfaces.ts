@@ -16,6 +16,7 @@ export type HumanizerVisualization = {
   readableAmount?: string
   symbol?: string
   name?: string
+  // humanizerMeta?: HumanizerMetaAddress
   id?: bigint
 }
 export interface IrCall extends Call {
@@ -61,6 +62,14 @@ export interface AbiFragment {
   signature: string
 }
 
+export interface HumanizerMetaAddress {
+  name?: string
+  // undefined means it is not a token
+  token?: { symbol: string; decimals: number; networks?: string[] }
+  // undefined means not a SC, {} means it is SC but we have no more info
+  isSC?: { abiName?: string }
+}
+
 // more infor here https://github.com/AmbireTech/ambire-app/issues/1662
 export interface HumanizerMeta {
   abis: {
@@ -72,13 +81,7 @@ export interface HumanizerMeta {
     }
   }
   knownAddresses: {
-    [address: string]: {
-      name?: string
-      // undefined means it is not a token
-      token?: { symbol: string; decimals: number; networks?: string[] }
-      // undefined means not a SC, {} means it is SC but we have no more info
-      isSC?: { isAA?: boolean; abiName?: string }
-    }
+    [address: string]: HumanizerMetaAddress
   }
 }
 export interface HumanizerSettings {
