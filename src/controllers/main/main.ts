@@ -1178,12 +1178,11 @@ export class MainController extends EventEmitter {
     }
   }
 
-  /*
-    Banners that depend on async data from sub-controllers should be implemented
-    in the sub-controllers themselves. This is because updates in the sub-controllers
-    will not trigger emitUpdate in the MainController, therefore the banners will
-    remain the same until a subsequent update in the MainController.
-  */
+  // ! IMPORTANT !
+  // Banners that depend on async data from sub-controllers should be implemented
+  // in the sub-controllers themselves. This is because updates in the sub-controllers
+  // will not trigger emitUpdate in the MainController, therefore the banners will
+  // remain the same until a subsequent update in the MainController.
   get banners(): Banner[] {
     const userRequests =
       this.userRequests.filter((req) => req.accountAddr === this.selectedAccount) || []
