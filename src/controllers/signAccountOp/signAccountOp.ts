@@ -419,7 +419,8 @@ export class SignAccountOpController extends EventEmitter {
     if (!native) return null
 
     // In case the fee token is the native token we don't want to depend to priceIn, as it might not be available.
-    if (native.address === feeToken.address) return BigInt(1 * 1e18)
+    if (native.address === feeToken.address && native.networkId === feeToken.networkId)
+      return BigInt(1 * 1e18)
 
     const isUsd = (price: Price) => price.baseCurrency === 'usd'
 
