@@ -6,6 +6,7 @@ import {
 } from '../interfaces'
 import { getKnownName, getWarning, shortenAddress } from '../utils'
 
+// THIS FUNCTION HAS TO BE COMPLETELY REMOVED, MAYBY PARSETOKENS TOO
 // adds 'name' proeprty to visualization of addresses (needs initialHumanizer to work on unparsed transactions)
 // @TODO name parsing should be no more
 // @TODO name should be replaced with humanizerMeta
