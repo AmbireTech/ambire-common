@@ -24,7 +24,7 @@ describe('Polling', () => {
   })
   test('Email vault polling', async () => {
     const polling = new Polling()
-    const magicLinkKey = await requestMagicLink(email, relayerUrl, fetch)
+    const magicLinkKey = await requestMagicLink(email, relayerUrl, fetch, { autoConfirm: true })
 
     polling.onUpdate(() => {
       if (polling.state.isError) {
