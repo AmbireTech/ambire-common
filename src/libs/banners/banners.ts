@@ -222,6 +222,7 @@ export const getNetworksWithPortfolioErrorBanners = ({
 
     if (!accPortfolio) return
 
+    // @ts-expect-error
     Object.keys(accPortfolio).forEach((network) => {
       if (['rewards', 'gasTank'].includes(network)) return []
 
