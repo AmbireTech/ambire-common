@@ -6,7 +6,6 @@ import { Banner } from '../../interfaces/banner'
 import {
   EmailVaultData,
   EmailVaultOperation,
-  EmailVaultSecret,
   OperationRequestType,
   SecretType
 } from '../../interfaces/emailVault'
@@ -20,10 +19,10 @@ import wait from '../../utils/wait'
 import { KeystoreController } from '../keystore/keystore'
 
 export enum EmailVaultState {
-  Loading,
-  WaitingEmailConfirmation,
-  UploadingSecret,
-  Ready
+  Loading = 'loading',
+  WaitingEmailConfirmation = 'WaitingEmailConfirmation',
+  UploadingSecret = 'UploadingSecret',
+  Ready = 'Ready'
 }
 
 export type MagicLinkKey = {
@@ -553,6 +552,18 @@ export class EmailVaultController extends EventEmitter {
       this.latestMethodStatus = 'INITIAL'
       this.emitUpdate()
     }
+  }
+
+  async cleanMagicAndSessionKeys() {
+    this.#magicLinkKeys = {}
+    this.#sessionKeys = {}
+
+    await Promise.all([
+      this.storage.set(MAGIC_LINK_STORAGE_KEY, this.#magicLinkKeys),
+      this.storage.set(SESSION_KEYS_STORAGE_KEY, this.#sessionKeys)
+    ])
+
+    this.emitUpdate()
   }
 
   cancelEmailConfirmation() {
