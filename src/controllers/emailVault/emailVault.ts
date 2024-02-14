@@ -6,7 +6,6 @@ import { Banner } from '../../interfaces/banner'
 import {
   EmailVaultData,
   EmailVaultOperation,
-  EmailVaultSecret,
   OperationRequestType,
   SecretType
 } from '../../interfaces/emailVault'
@@ -16,14 +15,14 @@ import { EmailVault } from '../../libs/emailVault/emailVault'
 import { requestMagicLink } from '../../libs/magicLink/magicLink'
 import { Polling } from '../../libs/polling/polling'
 import wait from '../../utils/wait'
-import EventEmitter, { ErrorRef } from '../eventEmitter/eventEmitter'
+import EventEmitter from '../eventEmitter/eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
 
 export enum EmailVaultState {
-  Loading,
-  WaitingEmailConfirmation,
-  UploadingSecret,
-  Ready
+  Loading = 'loading',
+  WaitingEmailConfirmation = 'WaitingEmailConfirmation',
+  UploadingSecret = 'UploadingSecret',
+  Ready = 'Ready'
 }
 
 export type MagicLinkKey = {
@@ -75,6 +74,10 @@ export class EmailVaultController extends EventEmitter {
 
   #sessionKeys: SessionKeys = {}
 
+  #shouldStopConfirmationPolling: boolean = false
+
+  #autoConfirmMagicLink: boolean = false
+
   #fetch: Function
 
   #relayerUrl: string
@@ -97,7 +100,13 @@ export class EmailVaultController extends EventEmitter {
     email: {}
   }
 
-  constructor(storage: Storage, fetch: Function, relayerUrl: string, keyStore: KeystoreController) {
+  constructor(
+    storage: Storage,
+    fetch: Function,
+    relayerUrl: string,
+    keyStore: KeystoreController,
+    options?: { autoConfirmMagicLink?: boolean }
+  ) {
     super()
     this.#fetch = fetch
     this.#relayerUrl = relayerUrl
@@ -105,6 +114,7 @@ export class EmailVaultController extends EventEmitter {
     this.#emailVault = new EmailVault(fetch, relayerUrl)
     this.#keyStore = keyStore
     this.initialLoadPromise = this.load()
+    this.#autoConfirmMagicLink = options?.autoConfirmMagicLink || false
   }
 
   private async load(): Promise<void> {
@@ -150,7 +160,7 @@ export class EmailVaultController extends EventEmitter {
     ])
   }
 
-  async #handleMagicLinkKey(email: string, fn: Function) {
+  async handleMagicLinkKey(email: string, fn?: Function) {
     await this.initialLoadPromise
     const currentKey = (await this.#getMagicLinkKey(email))?.key
     if (currentKey) {
@@ -160,9 +170,13 @@ export class EmailVaultController extends EventEmitter {
     }
 
     this.#isWaitingEmailConfirmation = true
+    this.#shouldStopConfirmationPolling = false
     this.emitUpdate()
 
-    const newKey = await requestMagicLink(email, this.#relayerUrl, this.#fetch)
+    const newKey = await requestMagicLink(email, this.#relayerUrl, this.#fetch, {
+      autoConfirm: this.#autoConfirmMagicLink
+    })
+
     const polling = new Polling()
     polling.onUpdate(async () => {
       if (polling.state.isError && polling.state.error.output.res.status === 401) {
@@ -184,9 +198,14 @@ export class EmailVaultController extends EventEmitter {
     const ev: any = await polling.exec(
       this.#emailVault.getEmailVaultInfo.bind(this.#emailVault),
       [email, newKey.key],
+      () => {
+        this.#isWaitingEmailConfirmation = false
+      },
+      () => this.#shouldStopConfirmationPolling,
       15000,
       1000
     )
+
     if (ev && !ev.error) {
       this.#isWaitingEmailConfirmation = false
       this.#magicLinkKeys[email] = {
@@ -194,7 +213,7 @@ export class EmailVaultController extends EventEmitter {
         requestedAt: new Date(),
         confirmed: true
       }
-      await fn()
+      fn && (await fn())
       this.storage.set(MAGIC_LINK_STORAGE_KEY, this.#magicLinkKeys)
       this.#requestSessionKey(email)
     }
@@ -206,13 +225,18 @@ export class EmailVaultController extends EventEmitter {
     return this.#sessionKeys[email]
   }
 
-  async #getMagicLinkKey(email: string): Promise<MagicLinkKey | null> {
-    // if we have valid magicLinkKey => returns it else null
-    await this.initialLoadPromise
+  getMagicLinkKeyByEmail(email: string): MagicLinkKey | null {
     const result = this.#magicLinkKeys[email]
     if (!result || !result.confirmed) return null
     if (new Date().getTime() - result.requestedAt.getTime() > this.#magicLinkLifeTime) return null
     return result
+  }
+
+  async #getMagicLinkKey(email: string): Promise<MagicLinkKey | null> {
+    // if we have valid magicLinkKey => returns it else null
+    await this.initialLoadPromise
+
+    return this.getMagicLinkKeyByEmail(email)
   }
 
   #parseMagicLinkKeys(mks: any): MagicLinkKeys {
@@ -251,7 +275,7 @@ export class EmailVaultController extends EventEmitter {
         return null
       })
     } else {
-      await this.#handleMagicLinkKey(email, () => this.#getEmailVaultInfo(email))
+      await this.handleMagicLinkKey(email, () => this.#getEmailVaultInfo(email))
     }
 
     if (emailVault) {
@@ -288,7 +312,7 @@ export class EmailVaultController extends EventEmitter {
       const keyStoreUid = await this.#keyStore.getKeyStoreUid()
       result = await this.#emailVault.addKeyStoreSecret(email, magicKey.key, keyStoreUid, newSecret)
     } else {
-      await this.#handleMagicLinkKey(email, () => this.#uploadKeyStoreSecret(email))
+      await this.handleMagicLinkKey(email, () => this.#uploadKeyStoreSecret(email))
     }
 
     if (result) {
@@ -301,21 +325,22 @@ export class EmailVaultController extends EventEmitter {
     this.emitUpdate()
   }
 
-  async recoverKeyStore(email: string) {
-    await this.#wrapEmailVaultPublicMethod('recoverKeyStore', () => this.#recoverKeyStore(email))
+  async recoverKeyStore(email: string, newPassword: string) {
+    await this.#wrapEmailVaultPublicMethod('recoverKeyStore', () =>
+      this.#recoverKeyStore(email, newPassword)
+    )
   }
 
-  async #recoverKeyStore(email: string): Promise<EmailVaultSecret | null> {
+  async #recoverKeyStore(email: string, newPassword: string): Promise<void> {
     const uid = await this.#keyStore.getKeyStoreUid()
     const state = this.emailVaultStates
-
     if (!state.email[email]) {
       this.emitError({
         message: `Resetting the password on this device is not enabled for ${email}.`,
         level: 'major',
         error: new Error(`Keystore recovery: email ${email} not imported`)
       })
-      return null
+      return
     }
 
     if (!state.email[email].availableSecrets[uid]) {
@@ -324,7 +349,7 @@ export class EmailVaultController extends EventEmitter {
         level: 'major',
         error: new Error('Keystore recovery: no keystore secret for this device')
       })
-      return null
+      return
     }
     if (state.email[email].availableSecrets[uid].type !== SecretType.KeyStore) {
       this.emitError({
@@ -332,37 +357,62 @@ export class EmailVaultController extends EventEmitter {
         level: 'major',
         error: new Error(`Keystore recovery: no keystore secret for email ${email}`)
       })
-      return null
+      return
+    }
+
+    const emitExpiredMagicLinkError = () => {
+      this.emitError({
+        message: `The time allotted for changing your password has expired for ${email}. Please verify your email again!`,
+        level: 'major',
+        error: new Error(`Keystore recovery: magic link expired for ${email}`)
+      })
+
+      // Here, we want to emit an update so that the `hasConfirmedRecoveryEmail` getter can be recalculated.
+      // The application relies on this flag to make decisions regarding
+      // which step the user should be in during the Forgotten Password flow.
+      this.emitUpdate()
     }
 
     const key = (await this.#getMagicLinkKey(email))?.key
-    let result: any = null
-    if (key) {
-      const polling = new Polling()
-      polling.onUpdate(() => {
-        if (polling.state.isError && polling.state.error.output.res.status === 401) {
-          this.#isWaitingEmailConfirmation = true
-          this.emitUpdate()
-        } else if (polling.state.isError) {
-          this.emailVaultStates.errors = [polling.state.error]
-        }
+
+    if (!key) {
+      emitExpiredMagicLinkError()
+      return
+    }
+
+    let result
+    try {
+      result = await this.#emailVault.retrieveKeyStoreSecret(email, key, uid)
+    } catch (e: any) {
+      if (e?.output?.res?.message === 'invalid key') {
+        emitExpiredMagicLinkError()
+        return
+      }
+    }
+
+    if (!result || !result.value) {
+      this.emitError({
+        message:
+          'Something goes wrong while we are resetting your password! Please try again! If the problem persists, please contact support',
+        level: 'major',
+        error: new Error(
+          "Keystore recovery: retrieveKeyStoreSecret doesn't return result or result.value."
+        )
       })
 
-      result = await this.#emailVault.retrieveKeyStoreSecret(email, key, uid)
-    } else {
-      await this.#handleMagicLinkKey(email, () => this.#recoverKeyStore(email))
-    }
-    if (result && !result.error) {
-      this.emailVaultStates.email[email].availableSecrets[result.key] = result
-
-      await this.#keyStore.unlockWithSecret(RECOVERY_SECRET_ID, result.value)
-      await this.storage.set(EMAIL_VAULT_STORAGE_KEY, this.emailVaultStates)
-      this.emitUpdate()
-      return result
+      return
     }
 
+    // Once we are here - it means we pass all the above validations,
+    // and we are ready to change the keystore password secret
+    this.emailVaultStates.email[email].availableSecrets[result.key] = result
+
+    await this.#keyStore.unlockWithSecret(RECOVERY_SECRET_ID, result.value)
+    await this.#keyStore.removeSecret('password')
+    await this.#keyStore.addSecret('password', newPassword, '', false)
+
+    await this.storage.set(EMAIL_VAULT_STORAGE_KEY, this.emailVaultStates)
     this.emitUpdate()
-    return null
   }
 
   async requestKeysSync(email: string, keys: string[]) {
@@ -391,7 +441,7 @@ export class EmailVaultController extends EventEmitter {
       this.emailVaultStates.email[email].operations = newOperations
       this.emitUpdate()
     }
-    await this.#handleMagicLinkKey(email, () => this.#requestKeysSync(email, keys))
+    await this.handleMagicLinkKey(email, () => this.#requestKeysSync(email, keys))
   }
 
   async #finalizeSyncKeys(email: string, operations: EmailVaultOperation[]) {
@@ -424,7 +474,7 @@ export class EmailVaultController extends EventEmitter {
       }
       this.emitUpdate()
     } else {
-      await this.#handleMagicLinkKey(email, () => this.#finalizeSyncKeys(email, operations))
+      await this.handleMagicLinkKey(email, () => this.#finalizeSyncKeys(email, operations))
     }
   }
 
@@ -479,7 +529,7 @@ export class EmailVaultController extends EventEmitter {
       await this.#emailVault.operations(email, key, newOperations)
       this.emitUpdate()
     } else {
-      await this.#handleMagicLinkKey(email, () => this.fulfillSyncRequests(email, password))
+      await this.handleMagicLinkKey(email, () => this.fulfillSyncRequests(email, password))
     }
     this.emitUpdate()
   }
@@ -508,13 +558,31 @@ export class EmailVaultController extends EventEmitter {
     }
   }
 
-  get hasKeystoreRecovery() {
+  async cleanMagicAndSessionKeys() {
+    this.#magicLinkKeys = {}
+    this.#sessionKeys = {}
+
+    await Promise.all([
+      this.storage.set(MAGIC_LINK_STORAGE_KEY, this.#magicLinkKeys),
+      this.storage.set(SESSION_KEYS_STORAGE_KEY, this.#sessionKeys)
+    ])
+
+    this.emitUpdate()
+  }
+
+  cancelEmailConfirmation() {
+    this.#shouldStopConfirmationPolling = true
+    this.#isWaitingEmailConfirmation = false
+    this.emitUpdate()
+  }
+
+  getKeystoreRecoveryEmail(): string | undefined {
     const keyStoreUid = this.#keyStore.keyStoreUid
     const EVEmails = Object.keys(this.emailVaultStates.email)
 
-    if (!keyStoreUid || !EVEmails.length) return false
+    if (!keyStoreUid || !EVEmails.length) return
 
-    return !!EVEmails.find((email) => {
+    return EVEmails.find((email) => {
       return (
         this.emailVaultStates.email[email].availableSecrets[keyStoreUid]?.type ===
         SecretType.KeyStore
@@ -522,10 +590,26 @@ export class EmailVaultController extends EventEmitter {
     })
   }
 
+  get hasKeystoreRecovery() {
+    return !!this.getKeystoreRecoveryEmail()
+  }
+
+  get hasConfirmedRecoveryEmail(): boolean {
+    if (!this.isReady) return false
+
+    const recoveryEmail = this.getKeystoreRecoveryEmail()
+
+    if (!recoveryEmail) return false
+
+    return !!this.getMagicLinkKeyByEmail(recoveryEmail)
+  }
+
   get banners(): Banner[] {
     const banners: Banner[] = []
 
-    if (!this.hasKeystoreRecovery) {
+    // Show the banner if the keystore is already configured (for HW and ViewOnly accounts the app can run without keystore)
+    // and if the keystore secret backup is not enabled already
+    if (this.#keyStore.isReadyToStoreKeys && !this.hasKeystoreRecovery) {
       banners.push({
         id: 'keystore-secret-backup',
         type: 'info',
@@ -560,6 +644,7 @@ export class EmailVaultController extends EventEmitter {
       ...this,
       currentState: this.currentState, // includes the getter in the stringified instance
       hasKeystoreRecovery: this.hasKeystoreRecovery,
+      hasConfirmedRecoveryEmail: this.hasConfirmedRecoveryEmail,
       banners: this.banners // includes the getter in the stringified instance,
     }
   }
