@@ -71,7 +71,8 @@ export default function useCoingeckoFetch({
                 tokenImageUrl: response?.image?.small,
                 symbol: response?.symbol.toUpperCase(),
                 price: response?.market_data.current_price.usd,
-                decimals: response?.detail_platforms[coingeckoNets[currentNetwork]]?.decimal_place,
+                decimals:
+                  response?.detail_platforms[coingeckoNets[currentNetwork]]?.decimal_place || 18,
                 isHidden: false
               }
             } catch (e) {
