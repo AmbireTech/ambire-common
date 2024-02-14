@@ -1,15 +1,9 @@
-export const BANNER_TOPICS = {
-  TRANSACTION: 'TRANSACTION',
-  ANNOUNCEMENT: 'ANNOUNCEMENT',
-  WARNING: 'WARNING'
-} as const
-
-export type BannerTopic = 'TRANSACTION' | 'ANNOUNCEMENT' | 'WARNING'
+export type BannerType = 'error' | 'warning' | 'info' | 'success'
 
 export interface Banner {
   id: number | string
   accountAddr?: string
-  topic: BannerTopic
+  type: BannerType
   title: string
   text: string
   actions: Action[]
@@ -51,7 +45,7 @@ export type Action =
       actionName: 'backup-keystore-secret'
     }
   | {
-      label: 'Enable'
-      actionName: 'enable-default-wallet'
+      label: 'Switch'
+      actionName: 'switch-default-wallet'
       meta: {}
     }

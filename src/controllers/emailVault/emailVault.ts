@@ -12,10 +12,10 @@ import {
 import { Storage } from '../../interfaces/storage'
 import { getKeySyncBanner } from '../../libs/banners/banners'
 import { EmailVault } from '../../libs/emailVault/emailVault'
-import EventEmitter from '../eventEmitter/eventEmitter'
 import { requestMagicLink } from '../../libs/magicLink/magicLink'
 import { Polling } from '../../libs/polling/polling'
 import wait from '../../utils/wait'
+import EventEmitter from '../eventEmitter/eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
 
 export enum EmailVaultState {
@@ -119,6 +119,10 @@ export class EmailVaultController extends EventEmitter {
 
   private async load(): Promise<void> {
     this.isReady = false
+    // #load is called in the constructor which is synchronous
+    // we await (1 ms/next tick) for the constructor to extend the EventEmitter class
+    // and then we call it's methods
+    await wait(1)
     this.emitUpdate()
     const result = await Promise.all([
       this.storage.get(EMAIL_VAULT_STORAGE_KEY, {
@@ -608,7 +612,7 @@ export class EmailVaultController extends EventEmitter {
     if (this.#keyStore.isReadyToStoreKeys && !this.hasKeystoreRecovery) {
       banners.push({
         id: 'keystore-secret-backup',
-        topic: 'WARNING',
+        type: 'info',
         title: 'Enable device password reset via email',
         text: "Email Vault recovers your Device Password. It is securely stored in Ambire's infrastructure cloud.",
         actions: [

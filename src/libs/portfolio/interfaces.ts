@@ -148,10 +148,10 @@ export interface Limits {
 }
 
 export type PinnedTokens = {
-  accountId: AccountId
   networkId: NetworkDescriptor['id']
   address: string
   onGasTank: boolean
+  accountId?: AccountId
 }[]
 
 export interface GetOptions {
