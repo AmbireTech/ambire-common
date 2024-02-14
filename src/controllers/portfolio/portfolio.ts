@@ -2,7 +2,6 @@
 /* eslint-disable @typescript-eslint/no-use-before-define */
 /* eslint-disable @typescript-eslint/no-shadow */
 /* eslint-disable no-param-reassign */
-/* eslint-disable no-restricted-syntax */
 /* eslint-disable no-param-reassign */
 import fetch from 'node-fetch'
 
@@ -12,6 +11,12 @@ import { RPCProviders } from '../../interfaces/settings'
 import { Storage } from '../../interfaces/storage'
 import { isSmartAccount } from '../../libs/account/account'
 import { AccountOp, isAccountOpsIntentEqual } from '../../libs/accountOp/accountOp'
+/* eslint-disable no-restricted-syntax */
+// eslint-disable-next-line import/no-cycle
+import {
+  getNetworksWithFailedRPCBanners,
+  getNetworksWithPortfolioErrorBanners
+} from '../../libs/banners/banners'
 import getAccountNetworksWithAssets from '../../libs/portfolio/getNetworksWithAssets'
 import { getFlags } from '../../libs/portfolio/helpers'
 import {
@@ -60,6 +65,8 @@ export class PortfolioController extends EventEmitter {
 
   #providers: RPCProviders = {}
 
+  #networks: NetworkDescriptor[] = []
+
   #callRelayer: Function
 
   #pinned: PinnedTokens
@@ -70,11 +77,18 @@ export class PortfolioController extends EventEmitter {
 
   #minUpdateInterval: number = 20000 // 20 seconds
 
-  constructor(storage: Storage, providers: RPCProviders, relayerUrl: string, pinned: PinnedTokens) {
+  constructor(
+    storage: Storage,
+    providers: RPCProviders,
+    networks: NetworkDescriptor[],
+    relayerUrl: string,
+    pinned: PinnedTokens
+  ) {
     super()
     this.latest = {}
     this.pending = {}
     this.#providers = providers
+    this.#networks = networks
     this.#portfolioLibs = new Map()
     this.#storage = storage
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
@@ -112,10 +126,6 @@ export class PortfolioController extends EventEmitter {
 
     this.emitUpdate()
     await this.#storage.set('networksWithAssetsByAccount', this.#networksWithAssetsByAccounts)
-  }
-
-  get networksWithAssets() {
-    return [...new Set(Object.values(this.#networksWithAssetsByAccounts).flat())]
   }
 
   // gets additional portfolio state from the relayer that isn't retrieved from the portfolio library
@@ -446,10 +456,29 @@ export class PortfolioController extends EventEmitter {
     this.emitUpdate()
   }
 
+  get networksWithAssets() {
+    return [...new Set(Object.values(this.#networksWithAssetsByAccounts).flat())]
+  }
+
+  get banners() {
+    const networksWithFailedRPCBanners = getNetworksWithFailedRPCBanners({
+      providers: this.#providers,
+      networks: this.#networks,
+      networksWithAssets: this.networksWithAssets
+    })
+    const networksWithPortfolioErrorBanners = getNetworksWithPortfolioErrorBanners({
+      networks: this.#networks,
+      portfolioLatest: this.latest
+    })
+
+    return [...networksWithFailedRPCBanners, ...networksWithPortfolioErrorBanners]
+  }
+
   toJSON() {
     return {
       ...this,
-      networksWithAssets: this.networksWithAssets
+      networksWithAssets: this.networksWithAssets,
+      banners: this.banners
     }
   }
 }
