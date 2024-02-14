@@ -55,6 +55,13 @@ type DerivedAccount = AccountDerivationMeta & { account: AccountWithNetworkMeta 
 // Sub-type, used during intermediate step during the deriving accounts process
 type DerivedAccountWithoutNetworkMeta = Omit<DerivedAccount, 'account'> & { account: Account }
 
+/**
+ * All the accounts that should be visible on the current page - the Basic
+ * Accounts, Smart Accounts and the linked accounts. Excludes the derived
+ * EOA (basic) accounts used for smart account keys only.
+ */
+type AccountOnPage = DerivedAccount & { alreadyImportedWithSameKey: boolean }
+
 export type ReadyToAddKeys = {
   internal: { privateKey: string; dedicatedToOneSA: boolean }[]
   external: { addr: Key['addr']; type: Key['type']; dedicatedToOneSA: boolean; meta: Key['meta'] }[]
@@ -127,9 +134,10 @@ export class AccountAdderController extends EventEmitter {
     super()
     this.storage = storage
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
+    // TODO: Figure out a way to access all currently imported accounts and keys
   }
 
-  get accountsOnPage(): DerivedAccount[] {
+  get accountsOnPage(): AccountOnPage[] {
     const processedAccounts = this.#derivedAccounts
       // The displayed (visible) accounts on page should not include the derived
       // EOA (basic) accounts only used as smart account keys, they should not
@@ -146,10 +154,15 @@ export class AccountAdderController extends EventEmitter {
           (acc) => isSmartAccount(acc.account) && acc.slot === derivedAccount.slot
         )
 
-        let accountsToReturn = []
+        let accountsToReturn: AccountOnPage[] = []
 
         if (!isSmartAccount(derivedAccount.account)) {
-          accountsToReturn.push(derivedAccount)
+          accountsToReturn.push({
+            ...derivedAccount,
+            // Check if it is imported (mainCtrl.accounts) and if it is imported
+            // with the same key (mainCtrl.keystore.keys) and the same key type
+            alreadyImportedWithSameKey: false
+          })
 
           const duplicate = associatedLinkedAccounts.find(
             (linkedAcc) => linkedAcc.account.addr === correspondingSmartAccount?.account?.addr
@@ -160,7 +173,12 @@ export class AccountAdderController extends EventEmitter {
           if (duplicate) duplicate.isLinked = false
 
           if (!duplicate && correspondingSmartAccount) {
-            accountsToReturn.push(correspondingSmartAccount)
+            accountsToReturn.push({
+              ...correspondingSmartAccount,
+              // Check if it is imported (mainCtrl.accounts) and if it is imported
+              // with the same key (mainCtrl.keystore.keys) and the same key type
+              alreadyImportedWithSameKey: false
+            })
           }
         }
 
@@ -168,7 +186,10 @@ export class AccountAdderController extends EventEmitter {
           associatedLinkedAccounts.map((linkedAcc) => ({
             ...linkedAcc,
             slot: derivedAccount.slot,
-            index: derivedAccount.index
+            index: derivedAccount.index,
+            // Check if it is imported (mainCtrl.accounts) and if it is imported
+            // with the same key (mainCtrl.keystore.keys) and the same key type
+            alreadyImportedWithSameKey: false
           }))
         )
 
@@ -208,7 +229,10 @@ export class AccountAdderController extends EventEmitter {
           {
             ...linkedAcc,
             slot: correspondingDerivedAccount.slot,
-            index: correspondingDerivedAccount.index
+            index: correspondingDerivedAccount.index,
+            // Check if it is imported (mainCtrl.accounts) and if it is imported
+            // with the same key (mainCtrl.keystore.keys) and the same key type
+            alreadyImportedWithSameKey: false
           }
         ]
       })
