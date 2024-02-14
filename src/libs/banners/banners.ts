@@ -1,3 +1,4 @@
+// eslint-disable-next-line import/no-cycle
 import { PortfolioController } from '../../controllers/portfolio/portfolio'
 import { Account, AccountId } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
@@ -208,64 +209,66 @@ export const getNetworksWithFailedRPCBanners = ({
 }
 
 export const getNetworksWithPortfolioErrorBanners = ({
-  selectedAccount,
   networks,
-  portfolio
+  portfolioLatest
 }: {
-  selectedAccount: AccountId | null
   networks: NetworkDescriptor[]
-  portfolio: PortfolioController
+  portfolioLatest: PortfolioController['latest']
 }): Banner[] => {
-  if (!selectedAccount) return []
+  const banners: Banner[] = []
 
-  const selectedAccPortfolio = portfolio.latest[selectedAccount]
+  Object.keys(portfolioLatest).forEach((accId: AccountId) => {
+    const accPortfolio = portfolioLatest[accId]
 
-  if (!selectedAccPortfolio) return []
+    if (!accPortfolio) return
 
-  return Object.keys(selectedAccPortfolio).flatMap((network) => {
-    if (['rewards', 'gasTank'].includes(network)) return []
+    Object.keys(accPortfolio).forEach((network) => {
+      if (['rewards', 'gasTank'].includes(network)) return []
 
-    const portfolioForNetwork = selectedAccPortfolio[network]
+      const portfolioForNetwork = accPortfolio[network]
 
-    const criticalError = portfolioForNetwork?.criticalError
+      const criticalError = portfolioForNetwork?.criticalError
 
-    const networkData = networks.find((n: NetworkDescriptor) => n.id === network)
+      const networkData = networks.find((n: NetworkDescriptor) => n.id === network)
 
-    if (!networkData) {
-      // Should never happen
-      console.error(`Network with id ${network} not found in the network list`)
+      if (!networkData) {
+        // Should never happen
+        console.error(`Network with id ${network} not found in the network list`)
 
-      return []
-    }
+        return
+      }
 
-    if (!criticalError && portfolioForNetwork?.result) {
-      const priceMissingForAllTokens = portfolioForNetwork?.result.tokens
-        // WALLET prices are not retrieved from coingecko
-        .filter((t) => !t.symbol.includes('WALLET'))
-        .every((token) => !token.priceIn.length)
+      if (portfolioForNetwork?.isLoading) return
 
-      if (priceMissingForAllTokens && portfolioForNetwork?.result.tokens.length > 0)
-        return [
-          {
+      if (!criticalError && portfolioForNetwork?.result) {
+        const priceMissingForAllTokens = portfolioForNetwork?.result.tokens
+          // WALLET prices are not retrieved from coingecko
+          .filter((t) => !t.symbol.includes('WALLET'))
+          .every((token) => !token.priceIn.length)
+
+        if (priceMissingForAllTokens && portfolioForNetwork?.result.tokens.length > 0)
+          banners.push({
+            accountAddr: accId,
             id: `${networkData.id}-portfolio-prices-error`,
             type: 'error',
             title: `Failed to retrieve token prices for ${networkData.name}`,
             text: 'Affected features: token prices, account balances. Please try again later or contact support.',
             actions: []
-          }
-        ]
+          })
 
-      return []
-    }
+        return
+      }
 
-    return [
-      {
+      banners.push({
+        accountAddr: accId,
         id: `${networkData.id}-portfolio-critical-error`,
         type: 'error',
         title: `Failed to retrieve the portfolio data for ${networkData.name}`,
         text: 'Affected features: account balances, assets. Please try again later or contact support.',
         actions: []
-      }
-    ]
+      })
+    })
   })
+
+  return banners
 }

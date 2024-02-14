@@ -24,7 +24,6 @@ import {
   getAccountOpBannersForSmartAccount,
   getMessageBanners,
   getNetworksWithFailedRPCBanners,
-  getNetworksWithPortfolioErrorBanners,
   getPendingAccountOpBannersForEOA
 } from '../../libs/banners/banners'
 import { estimate, EstimateResult } from '../../libs/estimate/estimate'
@@ -187,6 +186,7 @@ export class MainController extends EventEmitter {
     this.portfolio = new PortfolioController(
       this.#storage,
       this.settings.providers,
+      this.settings.networks,
       relayerUrl,
       pinned
     )
@@ -600,7 +600,7 @@ export class MainController extends EventEmitter {
   async updateSelectedAccount(selectedAccount: string | null = null, forceUpdate: boolean = false) {
     if (!selectedAccount) return
 
-    this.portfolio.updateSelectedAccount(
+    await this.portfolio.updateSelectedAccount(
       this.accounts,
       this.settings.networks,
       selectedAccount,
@@ -1179,14 +1179,6 @@ export class MainController extends EventEmitter {
       this.userRequests.filter((req) => req.accountAddr === this.selectedAccount) || []
     const accounts = this.accounts
 
-    // Filter EV banners by the currently selected account only if the banner is account-specific.
-    const emailVaultBanners = this.emailVault.banners.filter((banner) => {
-      // Do not filter out the banner if it is not related to a specific account.
-      if (!banner.accountAddr) return true
-
-      return banner.accountAddr === this.selectedAccount
-    })
-
     const accountOpEOABanners = getAccountOpBannersForEOA({
       userRequests,
       accounts,
@@ -1204,21 +1196,13 @@ export class MainController extends EventEmitter {
       networks: this.settings.networks,
       networksWithAssets: this.portfolio.networksWithAssets
     })
-    const networksWithPortfolioErrorBanners = getNetworksWithPortfolioErrorBanners({
-      selectedAccount: this.selectedAccount,
-      networks: this.settings.networks,
-      portfolio: this.portfolio
-    })
 
     return [
-      ...emailVaultBanners,
       ...accountOpSmartAccountBanners,
       ...accountOpEOABanners,
       ...pendingAccountOpEOABanners,
       ...messageBanners,
-      ...this.activity.banners,
-      ...networksWithFailedRPCBanners,
-      ...networksWithPortfolioErrorBanners
+      ...networksWithFailedRPCBanners
     ]
   }
 
