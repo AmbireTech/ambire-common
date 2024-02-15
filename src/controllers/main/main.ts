@@ -23,7 +23,6 @@ import {
   getAccountOpBannersForEOA,
   getAccountOpBannersForSmartAccount,
   getMessageBanners,
-  getNetworksWithFailedRPCBanners,
   getPendingAccountOpBannersForEOA
 } from '../../libs/banners/banners'
 import { estimate, EstimateResult } from '../../libs/estimate/estimate'
@@ -1105,14 +1104,9 @@ export class MainController extends EventEmitter {
           'POST',
           body
         )
-
-        if (response.success) {
-          transactionRes = {
-            hash: response.txId,
-            nonce: Number(accountOp.nonce)
-          }
-        } else {
-          return this.#throwAccountOpBroadcastError(new Error(response.message))
+        transactionRes = {
+          hash: response.txId,
+          nonce: Number(accountOp.nonce)
         }
       } catch (e: any) {
         return this.#throwAccountOpBroadcastError(e, e.message)
