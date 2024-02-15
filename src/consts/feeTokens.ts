@@ -1,3 +1,9 @@
+// When adding a token to this list, please consider the following:
+// 1. Open a block explorer and confirm the address is legit
+// 2. Check if the token address exists on the relayer side
+
+// <TODO>: Address 0 should always be a fee token and we shouldn't
+// have to add it explicitly for each network
 export default [
   {
     address: '0x0000000000000000000000000000000000000000',
@@ -98,5 +104,40 @@ export default [
     // USDT
     address: '0xc2132D05D31c914a87C6611C10748AEb04B58e8F',
     networkId: 'polygon'
+  },
+  {
+    // USDT.e
+    address: '0xc7198437980c041c805a1edcba50c1ce5db95118',
+    networkId: 'avalanche'
+  },
+  {
+    // USDT
+    address: '0x94b008aA00579c1307B0EF2c499aD98a8ce58e58',
+    networkId: 'optimism'
+  },
+  {
+    // USDC.e
+    address: '0x7F5c764cBc14f9669B88837ca1490cCa17c31607',
+    networkId: 'optimism'
+  },
+  {
+    // DAI
+    address: '0xDA10009cBd5D07dd0CeCc66161FC93D7c9000da1',
+    networkId: 'optimism'
+  },
+  {
+    // USDT
+    address: '0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9',
+    networkId: 'arbitrum'
+  },
+  {
+    // USDC.e
+    address: '0xFF970A61A04b1cA14834A43f5dE4533eBDDB5CC8',
+    networkId: 'arbitrum'
+  },
+  {
+    // DAI
+    address: '0xDA10009cBd5D07dd0CeCc66161FC93D7c9000da1',
+    networkId: 'arbitrum'
   }
 ]
