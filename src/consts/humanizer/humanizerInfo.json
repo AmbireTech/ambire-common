@@ -17730,8 +17730,7 @@
         },
         "0x942f9ce5d9a33a82f88d233aeb3292e680230348": {
             "name": "Gas Tank",
-            "address": "0x942f9ce5d9a33a82f88d233aeb3292e680230348",
-            "isSC": {}
+            "address": "0x942f9ce5d9a33a82f88d233aeb3292e680230348"
         },
         "0x60ae616a2155ee3d9a68541ba4544862310933d4": {
             "name": "Joe Router",
