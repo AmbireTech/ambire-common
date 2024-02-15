@@ -789,7 +789,7 @@ export class MainController extends EventEmitter {
       this.#fetch,
       this.emitError
     )
-    const addresses = humanization
+    const pinned = humanization
       .map((call) =>
         !call.fullVisualization
           ? []
@@ -802,6 +802,20 @@ export class MainController extends EventEmitter {
       )
       .flat()
       .filter(({ address }) => isAddress(address))
+
+    const isNativeInPortfolio = this.portfolio.latest?.[localAccountOp.accountAddr]?.[
+      localAccountOp.networkId
+    ]?.result?.tokens.find((token) => token.address === ethers.ZeroAddress)
+
+    // The native token is required for the estimation
+    if (!isNativeInPortfolio) {
+      pinned.push({
+        address: ethers.ZeroAddress,
+        networkId: localAccountOp.networkId,
+        accountId: localAccountOp.accountAddr,
+        onGasTank: false
+      })
+    }
 
     const [, , estimation] = await Promise.all([
       // NOTE: we are not emitting an update here because the portfolio controller will do that
@@ -816,7 +830,10 @@ export class MainController extends EventEmitter {
             .filter(([, accOp]) => accOp)
             .map(([networkId, x]) => [networkId, [x!.accountOp]])
         ),
-        { forceUpdate: true, pinned: addresses }
+        {
+          forceUpdate: true,
+          pinned
+        }
       ),
       shouldGetAdditionalPortfolio(account) &&
         this.portfolio.getAdditionalPortfolio(localAccountOp.accountAddr),
