@@ -1,6 +1,7 @@
 export interface MagicLinkData {
   key: string
   secret?: String // this will not be return in prod mode
+  expiry: number
 }
 
 export interface RequestMagicLinkResult {
