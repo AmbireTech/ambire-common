@@ -269,7 +269,7 @@ export class SignAccountOpController extends EventEmitter {
       errors.push(this.status.error)
     }
 
-    if (!this.feeSpeeds.length) {
+    if (!this.#feeSpeedsLoading && !this.feeSpeeds.length) {
       errors.push('Unable to estimate transaction fee speeds. Try changing the fee token.')
     }
 
@@ -470,8 +470,12 @@ export class SignAccountOpController extends EventEmitter {
     return amount + (amount * this.#network.feeOptions.feeIncrease) / 100n
   }
 
+  get #feeSpeedsLoading() {
+    return !this.isInitialized || !this.gasPrices || !this.paidBy || !this.feeTokenResult
+  }
+
   get feeSpeeds(): FanSpeed[] {
-    if (!this.isInitialized || !this.gasPrices || !this.paidBy || !this.feeTokenResult) return []
+    if (this.#feeSpeedsLoading) return []
 
     const gasUsed = this.#estimation!.gasUsed
     const feeTokenEstimation = this.#estimation!.feePaymentOptions.find(
@@ -483,7 +487,7 @@ export class SignAccountOpController extends EventEmitter {
 
     if (!feeTokenEstimation) return []
 
-    const nativeRatio = this.#getNativeToFeeTokenRatio(this.feeTokenResult)
+    const nativeRatio = this.#getNativeToFeeTokenRatio(this.feeTokenResult as TokenResult)
     if (!nativeRatio) return []
 
     const callDataAdditionalGasCost = getCallDataAdditionalByNetwork(
@@ -492,7 +496,7 @@ export class SignAccountOpController extends EventEmitter {
       this.#accountStates![this.accountOp!.accountAddr][this.accountOp!.networkId]
     )
 
-    return this.gasPrices.map((gasRecommendation) => {
+    return (this.gasPrices || []).map((gasRecommendation) => {
       let amount
       let simulatedGasLimit
 
