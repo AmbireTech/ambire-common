@@ -35,7 +35,7 @@ import {
   permit2Module
 } from './typedMessageModules'
 
-const HUMANIZER_META_KEY = 'HumanizerMetaV2'
+export const HUMANIZER_META_KEY = 'HumanizerMetaV2'
 // generic in the begining
 // the final humanization is the final triggered module
 export const humanizerCallModules: HumanizerCallModule[] = [
