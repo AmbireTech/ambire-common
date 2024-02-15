@@ -23,7 +23,6 @@ import {
   getAccountOpBannersForEOA,
   getAccountOpBannersForSmartAccount,
   getMessageBanners,
-  getNetworksWithFailedRPCBanners,
   getPendingAccountOpBannersForEOA
 } from '../../libs/banners/banners'
 import { estimate, EstimateResult } from '../../libs/estimate/estimate'
@@ -52,6 +51,8 @@ export class MainController extends EventEmitter {
   #storage: Storage
 
   #fetch: Function
+
+  error: Error = new Error('supp')
 
   // Holds the initial load promise, so that one can wait until it completes
   #initialLoadPromise: Promise<void>
