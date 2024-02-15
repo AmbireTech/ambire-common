@@ -230,7 +230,7 @@ export class PortfolioController extends EventEmitter {
             decimals: token.decimals,
             priceIn: [
               {
-                baseCurrency: 'USD',
+                baseCurrency: 'usd',
                 price: token.price
               }
             ],
