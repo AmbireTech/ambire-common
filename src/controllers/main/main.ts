@@ -805,12 +805,12 @@ export class MainController extends EventEmitter {
 
     const isNativeInPortfolio = this.portfolio.latest?.[localAccountOp.accountAddr]?.[
       localAccountOp.networkId
-    ]?.result?.tokens.find((token) => token.address === `0x${'0'.repeat(40)}`)
+    ]?.result?.tokens.find((token) => token.address === ethers.ZeroAddress)
 
     // The native token is required for the estimation
     if (!isNativeInPortfolio) {
       pinned.push({
-        address: `0x${'0'.repeat(40)}`,
+        address: ethers.ZeroAddress,
         networkId: localAccountOp.networkId,
         accountId: localAccountOp.accountAddr,
         onGasTank: false
