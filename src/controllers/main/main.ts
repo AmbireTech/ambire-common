@@ -23,7 +23,6 @@ import {
   getAccountOpBannersForEOA,
   getAccountOpBannersForSmartAccount,
   getMessageBanners,
-  getNetworksWithCriticalPortfolioErrorBanners,
   getNetworksWithFailedRPCBanners,
   getPendingAccountOpBannersForEOA
 } from '../../libs/banners/banners'
@@ -187,6 +186,7 @@ export class MainController extends EventEmitter {
     this.portfolio = new PortfolioController(
       this.#storage,
       this.settings.providers,
+      this.settings.networks,
       relayerUrl,
       pinned
     )
@@ -789,7 +789,7 @@ export class MainController extends EventEmitter {
       this.#fetch,
       this.emitError
     )
-    const addresses = humanization
+    const pinned = humanization
       .map((call) =>
         !call.fullVisualization
           ? []
@@ -802,6 +802,20 @@ export class MainController extends EventEmitter {
       )
       .flat()
       .filter(({ address }) => isAddress(address))
+
+    const isNativeInPortfolio = this.portfolio.latest?.[localAccountOp.accountAddr]?.[
+      localAccountOp.networkId
+    ]?.result?.tokens.find((token) => token.address === ethers.ZeroAddress)
+
+    // The native token is required for the estimation
+    if (!isNativeInPortfolio) {
+      pinned.push({
+        address: ethers.ZeroAddress,
+        networkId: localAccountOp.networkId,
+        accountId: localAccountOp.accountAddr,
+        onGasTank: false
+      })
+    }
 
     const [, , estimation] = await Promise.all([
       // NOTE: we are not emitting an update here because the portfolio controller will do that
@@ -816,7 +830,10 @@ export class MainController extends EventEmitter {
             .filter(([, accOp]) => accOp)
             .map(([networkId, x]) => [networkId, [x!.accountOp]])
         ),
-        { forceUpdate: true, pinned: addresses }
+        {
+          forceUpdate: true,
+          pinned
+        }
       ),
       shouldGetAdditionalPortfolio(account) &&
         this.portfolio.getAdditionalPortfolio(localAccountOp.accountAddr),
@@ -1178,18 +1195,15 @@ export class MainController extends EventEmitter {
     }
   }
 
+  // ! IMPORTANT !
+  // Banners that depend on async data from sub-controllers should be implemented
+  // in the sub-controllers themselves. This is because updates in the sub-controllers
+  // will not trigger emitUpdate in the MainController, therefore the banners will
+  // remain the same until a subsequent update in the MainController.
   get banners(): Banner[] {
     const userRequests =
       this.userRequests.filter((req) => req.accountAddr === this.selectedAccount) || []
     const accounts = this.accounts
-
-    // Filter EV banners by the currently selected account only if the banner is account-specific.
-    const emailVaultBanners = this.emailVault.banners.filter((banner) => {
-      // Do not filter out the banner if it is not related to a specific account.
-      if (!banner.accountAddr) return true
-
-      return banner.accountAddr === this.selectedAccount
-    })
 
     const accountOpEOABanners = getAccountOpBannersForEOA({
       userRequests,
@@ -1203,28 +1217,12 @@ export class MainController extends EventEmitter {
       networks: this.settings.networks
     })
     const messageBanners = getMessageBanners({ userRequests })
-    const networksWithFailedRPCBanners = getNetworksWithFailedRPCBanners({
-      providers: this.settings.providers,
-      networks: this.settings.networks,
-      networksWithAssets: this.portfolio.networksWithAssets
-    })
-    const networksWithCriticalPortfolioErrorBanners = getNetworksWithCriticalPortfolioErrorBanners({
-      selectedAccount: this.selectedAccount,
-      networks: this.settings.networks,
-      portfolio: this.portfolio
-    })
-
-    const activityBanners = this.activity?.banners || []
 
     return [
-      ...emailVaultBanners,
       ...accountOpSmartAccountBanners,
       ...accountOpEOABanners,
       ...pendingAccountOpEOABanners,
-      ...messageBanners,
-      ...activityBanners,
-      ...networksWithFailedRPCBanners,
-      ...networksWithCriticalPortfolioErrorBanners
+      ...messageBanners
     ]
   }
 

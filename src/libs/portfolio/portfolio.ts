@@ -214,20 +214,26 @@ export class Portfolio {
           token.priceIn = cachedPriceIn
           return
         }
-        const priceData = await this.batchedGecko({
-          ...token,
-          networkId,
-          baseCurrency,
-          // this is what to look for in the coingecko response object
-          responseIdentifier: geckoResponseIdentifier(token.address, networkId)
-        })
-        const priceIn: Price[] = Object.entries(priceData || {}).map(([baseCurr, price]) => ({
-          baseCurrency: baseCurr,
-          price: price as number
-        }))
-        if (priceIn.length) priceCache.set(token.address, [Date.now(), priceIn])
-        /* eslint-disable-next-line no-param-reassign */
-        token.priceIn = priceIn
+
+        try {
+          const priceData = await this.batchedGecko({
+            ...token,
+            networkId,
+            baseCurrency,
+            // this is what to look for in the coingecko response object
+            responseIdentifier: geckoResponseIdentifier(token.address, networkId)
+          })
+          const priceIn: Price[] = Object.entries(priceData || {}).map(([baseCurr, price]) => ({
+            baseCurrency: baseCurr,
+            price: price as number
+          }))
+          if (priceIn.length) priceCache.set(token.address, [Date.now(), priceIn])
+          /* eslint-disable-next-line no-param-reassign */
+          token.priceIn = priceIn
+        } catch {
+          /* eslint-disable-next-line no-param-reassign */
+          token.priceIn = []
+        }
       })
     )
     const priceUpdateDone = Date.now()
