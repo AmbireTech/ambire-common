@@ -6,6 +6,7 @@ import fetch from 'node-fetch'
 import { describe, expect, jest, test } from '@jest/globals'
 import structuredClone from '@ungap/structured-clone'
 
+import { HUMANIZER_META_KEY } from '../../libs/humanizer'
 import EntryPointAbi from '../../../contracts/compiled/EntryPoint.json'
 import { trezorSlot7v24337Deployed } from '../../../test/config'
 import { produceMemoryStore } from '../../../test/helpers'
@@ -261,7 +262,7 @@ const init = async (
   gasPricesMock?: gasPricesLib.GasRecommendation[]
 ) => {
   const storage: Storage = produceMemoryStore()
-  await storage.set('HumanizerMetaV2', humanizerMeta)
+  await storage.set(HUMANIZER_META_KEY, humanizerMeta)
 
   const keystore = new KeystoreController(storage, { internal: KeystoreSigner })
   await keystore.addSecret('passphrase', signer.pass, '', false)

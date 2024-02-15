@@ -14,7 +14,7 @@ import { parseCalls } from './parsers'
 import { nameParsing } from './parsers/nameParsing'
 
 import humanizerInfo from '../../consts/humanizer/humanizerInfo.json'
-import { combineKnownHumanizerInfo } from '.'
+import { combineKnownHumanizerInfo, HUMANIZER_META_KEY } from '.'
 import { produceMemoryStore } from '../../../test/helpers'
 
 const mockEmitError = (e: ErrorRef) => console.log(e)
@@ -322,7 +322,6 @@ describe('module tests', () => {
   })
 
   test('fallback', async () => {
-    const HUMANIZER_META_KEY = 'HumanizerMetaV2'
     const storage = produceMemoryStore()
     await storage.set(HUMANIZER_META_KEY, { abis: { NO_ABI: {} }, knownAddresses: {} })
 

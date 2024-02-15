@@ -12,10 +12,8 @@ import { Key } from '../../interfaces/keystore'
 import { Storage } from '../../interfaces/storage'
 import { Message, TypedMessage } from '../../interfaces/userRequest'
 import { AccountOp } from '../accountOp/accountOp'
-import { callsHumanizer, messageHumanizer } from './index'
+import { callsHumanizer, messageHumanizer, HUMANIZER_META_KEY } from './index'
 import { HumanizerMeta, HumanizerVisualization, IrCall, IrMessage } from './interfaces'
-
-const HUMANIZER_META_KEY = 'HumanizerMetaV2'
 
 // const address1 = '0x6942069420694206942069420694206942069420'
 const address2 = '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
