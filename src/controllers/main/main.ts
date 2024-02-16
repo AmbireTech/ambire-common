@@ -23,7 +23,6 @@ import {
   getAccountOpBannersForEOA,
   getAccountOpBannersForSmartAccount,
   getMessageBanners,
-  getNetworksWithFailedRPCBanners,
   getPendingAccountOpBannersForEOA
 } from '../../libs/banners/banners'
 import { estimate, EstimateResult } from '../../libs/estimate/estimate'
@@ -198,6 +197,8 @@ export class MainController extends EventEmitter {
       this.keystore
     )
     this.accountAdder = new AccountAdderController({
+      alreadyImportedAccounts: this.accounts,
+      keystore: this.keystore,
       storage: this.#storage,
       relayerUrl,
       fetch: this.#fetch
@@ -537,6 +538,7 @@ export class MainController extends EventEmitter {
       ...newAccounts
     ]
     await this.#storage.set('accounts', nextAccounts)
+    // TODO: To keep the ref, do not re-assign
     this.accounts = nextAccounts
     await this.updateAccountStates()
 
