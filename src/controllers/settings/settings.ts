@@ -257,6 +257,7 @@ export class SettingsController extends EventEmitter {
   toJSON() {
     return {
       ...this,
+      ...super.toJSON(),
       networks: this.networks,
       providers: this.providers
     }
