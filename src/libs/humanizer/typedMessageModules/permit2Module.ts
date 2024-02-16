@@ -40,7 +40,7 @@ interface PermitDetails {
 const visualizePermit = (permit: PermitDetails): HumanizerVisualization[] => {
   return [
     getAction('Permit'),
-    getAddressVisualization(PERMIT_2_ADDRESS, 'Permit 2 contract'),
+    getAddressVisualization(PERMIT_2_ADDRESS),
     getLabel('to use'),
     getToken(permit.token, permit.amount),
     getLabel('for time period'),

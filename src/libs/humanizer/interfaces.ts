@@ -12,10 +12,8 @@ export type HumanizerVisualization = {
   address?: string
   content?: string
   amount?: bigint
-  decimals?: number
-  readableAmount?: string
-  symbol?: string
-  name?: string
+  humanizerMeta?: HumanizerMetaAddress
+  warning?: boolean
   // humanizerMeta?: HumanizerMetaAddress
   id?: bigint
 }

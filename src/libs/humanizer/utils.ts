@@ -32,9 +32,9 @@ export function getLabel(content: string): HumanizerVisualization {
 export function getAction(content: string): HumanizerVisualization {
   return { type: 'action', content }
 }
-export function getAddressVisualization(_address: string, name?: string): HumanizerVisualization {
+export function getAddressVisualization(_address: string): HumanizerVisualization {
   const address = _address.toLowerCase()
-  return { type: 'address', address, name }
+  return { type: 'address', address }
 }
 
 export function getToken(_address: string, amount: bigint): HumanizerVisualization {

@@ -18,8 +18,7 @@ import { uniswapHumanizer } from './modules/Uniswap'
 import { WALLETModule } from './modules/WALLET'
 import { wrappingModule } from './modules/wrapped'
 import { parseCalls } from './parsers'
-import { nameParsing } from './parsers/nameParsing'
-import { tokenParsing } from './parsers/tokenParsing'
+import { humanizerMetaParsing } from './parsers/humanizerMetaParsing'
 import { getAction, getLabel, getToken } from './utils'
 
 const TETHER_ADDRESS = '0xdac17f958d2ee523a2206206994597c13d831ec7'
@@ -203,28 +202,28 @@ describe('module tests', () => {
   // TODO: look into improper texification for  unrecognized tokens
   test('visualization to text', async () => {
     const expectedTexification = [
-      'Swap 50844.919041919270406243 XLRT for at least 0.137930462904193673 ETH and send it to 0x0000000000000000000000000000000000000000 (MATIC token contract) already expired',
-      'Swap 0.941 WETH for at least 5158707941840645403045 0x6e975115250b05c828ecb8ededb091975fc20a5d token and send it to 0xbb6c8c037b9cc3bf1a4c4188d92e5d86bfce76a8 (0xbb6...6a8) already expired',
-      'Swap 422.775565331912310692 SHARES for at least 2454.922038 USDC and send it to 0xca124b356bf11dc153b886ecb4596b5cb9395c41 (0xca1...c41) already expired',
-      'Swap up to 4825320403256397423633 0x6e975115250b05c828ecb8ededb091975fc20a5d token for 0.941 WETH and send it to 0xbb6c8c037b9cc3bf1a4c4188d92e5d86bfce76a8 (0xbb6...6a8) already expired',
+      'Swap 50844.919041919270406243 XLRT for at least 0.137930462904193673 ETH and send it to 0x0000000000000000000000000000000000000000 already expired',
+      'Swap 0.941 WETH for at least 5158707941840645403045 0x6e975115250b05c828ecb8ededb091975fc20a5d token and send it to 0xbb6c8c037b9cc3bf1a4c4188d92e5d86bfce76a8 already expired',
+      'Swap 422.775565331912310692 SHARES for at least 2454.922038 USDC and send it to 0xca124b356bf11dc153b886ecb4596b5cb9395c41 already expired',
+      'Swap up to 4825320403256397423633 0x6e975115250b05c828ecb8ededb091975fc20a5d token for 0.941 WETH and send it to 0xbb6c8c037b9cc3bf1a4c4188d92e5d86bfce76a8 already expired',
       'Swap 0.0001 ETH for at least 0.178131 USDC already expired',
-      'Swap 100.0 USDC for at least 0.072003605256085551 MKR and send it to 0x02a3109c4ce8354ee771feac419b5da04ef15761 (0x02a...761) already expired',
+      'Swap 100.0 USDC for at least 0.072003605256085551 MKR and send it to 0x02a3109c4ce8354ee771feac419b5da04ef15761 already expired',
       'Wrap 1.0 ETH',
       'Unwrap 0.0089 ETH',
       'Call deposit() from 0xe592427a0aece92de3edee1f18e0157c05861564 (Uniswap) and Send 1.0 ETH',
-      'Deposit 11.72018633376687831 STETH to Aave lending pool on befalf of 0x7f4cf2e68f968cc050b3783268c474a15b8bdc2e (0x7f4...c2e)',
-      'Withdraw all USDC from Aave lending pool on befalf of 0x8bc110db7029197c3621bea8092ab1996d5dd7be (0x8bc...7be)',
-      'Deposit 0.135592697552 ETH to Aave lending pool on befalf of 0x47c353467326e6bd0c01e728e8f7d1a06a849395 (0x47c...395)',
-      'Withdraw 0.000000000473401923 ETH from Aave lending pool on befalf of 0x0df1a69fcdf15fec04e37aa5eca4268927b111e7 (0x0df...1e7)',
+      'Deposit 11.72018633376687831 STETH to Aave lending pool on befalf of 0x7f4cf2e68f968cc050b3783268c474a15b8bdc2e',
+      'Withdraw all USDC from Aave lending pool on befalf of 0x8bc110db7029197c3621bea8092ab1996d5dd7be',
+      'Deposit 0.135592697552 ETH to Aave lending pool on befalf of 0x47c353467326e6bd0c01e728e8f7d1a06a849395',
+      'Withdraw 0.000000000473401923 ETH from Aave lending pool on befalf of 0x0df1a69fcdf15fec04e37aa5eca4268927b111e7',
       'Deposit 10000.0 WALLET to 0x47cd7e91c3cbaaf266369fe8518345fc4fc12935 (WALLET Staking Pool)',
       'Leave with 2527275.889852892335882193 WALLET 0x47cd7e91c3cbaaf266369fe8518345fc4fc12935 (WALLET Staking Pool)',
       'Rage leave with 2019.750399052452828721 WALLET 0x47cd7e91c3cbaaf266369fe8518345fc4fc12935 (WALLET Staking Pool)',
-      'Swap 0.0004 WMATIC for 0.000348830169184669 DAI and send it to 0x6969174fd72466430a46e18234d0b530c9fd5f49 (0x696...f49)',
+      'Swap 0.0004 WMATIC for 0.000348830169184669 DAI and send it to 0x6969174fd72466430a46e18234d0b530c9fd5f49',
       'Fuel gas tank with 0.5 ETH',
       'Fuel gas tank with 0.001 USDC.e',
       'Enable 0x5ff137d4b0fdcd49dca30c7cf57e578a026d2789 (Account abstraction entry point v0.6.0)',
-      'Update access status of 0x6969174fd72466430a46e18234d0b530c9fd5f49 (0x696...f49) to regular access',
-      'Revoke access of 0x6969174fd72466430a46e18234d0b530c9fd5f49 (0x696...f49)'
+      'Update access status of 0x6969174fd72466430a46e18234d0b530c9fd5f49 to regular access',
+      'Revoke access of 0x6969174fd72466430a46e18234d0b530c9fd5f49'
     ]
     const allCalls = Object.keys(transactions)
       .map((key: string) => transactions[key])
@@ -237,7 +236,7 @@ describe('module tests', () => {
     let [parsedCalls, newAsyncOps] = parseCalls(
       accountOp,
       irCalls,
-      [nameParsing, tokenParsing],
+      [humanizerMetaParsing],
       standartOptions
     )
     irCalls = parsedCalls
@@ -252,7 +251,7 @@ describe('module tests', () => {
     ;[parsedCalls, newAsyncOps] = parseCalls(
       accountOp,
       irCalls,
-      [nameParsing, tokenParsing],
+      [humanizerMetaParsing],
       standartOptions
     )
     irCalls = parsedCalls

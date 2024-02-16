@@ -156,8 +156,7 @@ describe('typed message tests', () => {
       { type: 'action', content: 'Permit' },
       {
         type: 'address',
-        address: '0x000000000022d473030f116ddee9f6b43ac78ba3',
-        name: 'Permit 2 contract'
+        address: '0x000000000022d473030f116ddee9f6b43ac78ba3'
       },
       { type: 'label', content: 'to use' },
       {
@@ -184,8 +183,7 @@ describe('typed message tests', () => {
       { type: 'action', content: 'Permit' },
       {
         type: 'address',
-        address: '0x000000000022d473030f116ddee9f6b43ac78ba3',
-        name: 'Permit 2 contract'
+        address: '0x000000000022d473030f116ddee9f6b43ac78ba3'
       },
       { type: 'label', content: 'to use' },
       {
@@ -201,8 +199,7 @@ describe('typed message tests', () => {
       { type: 'action', content: 'Permit' },
       {
         type: 'address',
-        address: '0x000000000022d473030f116ddee9f6b43ac78ba3',
-        name: 'Permit 2 contract'
+        address: '0x000000000022d473030f116ddee9f6b43ac78ba3'
       },
       { type: 'label', content: 'to use' },
       {

@@ -11,11 +11,11 @@ import { fallbackHumanizer } from './modules/fallBackHumanizer'
 import { genericErc20Humanizer, genericErc721Humanizer } from './modules/tokens'
 import { uniswapHumanizer } from './modules/Uniswap'
 import { parseCalls } from './parsers'
-import { nameParsing } from './parsers/nameParsing'
 
 import humanizerInfo from '../../consts/humanizer/humanizerInfo.json'
 import { combineKnownHumanizerInfo, HUMANIZER_META_KEY } from '.'
 import { produceMemoryStore } from '../../../test/helpers'
+import { humanizerMetaParsing } from './parsers/humanizerMetaParsing'
 
 const mockEmitError = (e: ErrorRef) => console.log(e)
 
@@ -149,7 +149,7 @@ const transactions = {
       data: '0x42842e0e000000000000000000000000C89B38119C58536d818f3Bf19a9E3870828C199400000000000000000000000046705dfff24256421a05d056c29e81bdc09723b80000000000000000000000000000000000000000000000000000000000000000'
     }
   ],
-  namingTransactions: [
+  humanizerMetatransaction: [
     // ETH to uniswap (bad example, sending eth to contract)
     {
       to: '0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D',
@@ -162,9 +162,9 @@ const transactions = {
       value: BigInt(0),
       data: '0xa9059cbb0000000000000000000000007a250d5630b4cf539739df2c5dacb4c659f2488d000000000000000000000000000000000000000000000000000000003b9aca00'
     },
-    // ETH to arbitrary address (expects to shortened address)
+    // ETH to random address (expects to shortened address)
     {
-      to: '0xb674f3fd5f43464db0448a57529eaf37f04ccea5',
+      to: '0x1234f3fd5f43464db0448a57529eaf37f04c1234',
       value: BigInt(10 * 18),
       data: '0x'
     }
@@ -357,36 +357,33 @@ describe('module tests', () => {
     expect(asyncOps.length).toBe(0)
   })
 
-  test('nameParsing', () => {
-    accountOp.calls = [...transactions.namingTransactions]
+  // @TODO humanizerMetaParsing
+  test('metaParsing', () => {
+    accountOp.calls = [...transactions.humanizerMetatransaction]
     let irCalls = accountOp.calls
     ;[irCalls] = genericErc20Humanizer(accountOp, irCalls)
     ;[irCalls] = fallbackHumanizer(accountOp, irCalls)
-    const [newCalls] = parseCalls(accountOp, irCalls, [nameParsing], { fetch })
-    expect(newCalls.length).toBe(transactions.namingTransactions.length)
-    expect(newCalls[0].warnings?.length).toBeFalsy()
-    expect(newCalls[1].warnings?.length).toBeFalsy()
-    expect(newCalls[2].warnings?.length).toBe(1)
+    const [newCalls] = parseCalls(accountOp, irCalls, [humanizerMetaParsing], { fetch })
+    expect(newCalls.length).toBe(transactions.humanizerMetatransaction.length)
     expect(
       newCalls[0]?.fullVisualization?.find((v: HumanizerVisualization) => v.type === 'address')
     ).toMatchObject({
       type: 'address',
       address: expect.anything(),
-      name: expect.not.stringMatching(/^0x[a-fA-F0-9]{3}\.{3}[a-fA-F0-9]{3}$/)
+      humanizerMeta: {}
     })
     expect(
       newCalls[1]?.fullVisualization?.find((v: HumanizerVisualization) => v.type === 'address')
     ).toMatchObject({
       type: 'address',
       address: expect.anything(),
-      name: expect.not.stringMatching(/^0x[a-fA-F0-9]{3}\.{3}[a-fA-F0-9]{3}$/)
+      humanizerMeta: {}
     })
     expect(
       newCalls[2]?.fullVisualization?.find((v: HumanizerVisualization) => v.type === 'address')
     ).toMatchObject({
       type: 'address',
-      address: expect.anything(),
-      name: expect.stringMatching(/^0x[a-fA-F0-9]{3}\.{3}[a-fA-F0-9]{3}$/)
+      address: expect.anything()
     })
   })
 })
