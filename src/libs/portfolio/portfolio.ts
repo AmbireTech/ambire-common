@@ -131,11 +131,10 @@ export class Portfolio {
     }
 
     if (localOpts.fetchPinned) {
-      // add pinned tokens to the hints and dedup
-      // Those will appear in the result even if they're zero amount
       hints.erc20s = [...hints.erc20s, ...PINNED_TOKENS.map((x) => x.address)]
     }
 
+    // Remove duplicates
     hints.erc20s = [...new Set(hints.erc20s)]
 
     // This also allows getting prices, this is used for more exotic tokens that cannot be retrieved via Coingecko
