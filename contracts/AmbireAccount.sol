@@ -12,8 +12,6 @@ import './libs/erc4337/UserOperation.sol';
  * makes the Solidity compiler add an extra check for `msg.value`, which in this case is wasted gas
  */
 contract AmbireAccount {
-	using Bytes for bytes;
-
 	// @dev We do not have a constructor. This contract cannot be initialized with any valid `privileges` by itself!
 	// The intended use case is to deploy one base implementation contract, and create a minimal proxy for each user wallet, by
 	// using our own code generation to insert SSTOREs to initialize `privileges` (it was previously called IdentityProxyDeploy.js, now src/libs/proxyDeploy/deploy.ts)
@@ -247,18 +245,6 @@ contract AmbireAccount {
 	 * @return  bytes4  is it a success or a failure
 	 */
 	function isValidSignature(bytes32 hash, bytes calldata signature) external view returns (bytes4) {
-		// during simulation, we might encounter a case where this address
-		// as an EOA gets send an EOA signature; in thah case, validate the signature
-		// this should happen only in simulation when this address actually
-		// is not a real smart account but it's overriden as such
-		if (signature.length == 65) {
-			bytes32 r = signature.readBytes32(0);
-			bytes32 s = signature.readBytes32(32);
-			uint8 v = uint8(signature[64]);
-			require(ecrecover(hash, v, r, s) == address(this), 'Invalid signature');
-			return 0x1626ba7e;
-		}
-
 		(address recovered, bool usedUnprotected) = SignatureValidator.recoverAddrAllowUnprotected(hash, signature, false);
 		if (uint256(privileges[recovered]) > (usedUnprotected ? 1 : 0)) {
 			// bytes4(keccak256("isValidSignature(bytes32,bytes)")
