@@ -213,7 +213,7 @@ export class PortfolioController extends EventEmitter {
 
     let pinnedGasTankTokens: TokenResult[] = []
 
-    // Don't set pinnedGasTank tokens if the user has > 1 non-zero tokens
+    // Don't set pinnedGasTankTokens if the user has > 1 non-zero tokens
     if (res.data.gasTank.availableGasTankAssets && !hasNonZeroTokens) {
       const availableGasTankAssets = res.data.gasTank.availableGasTankAssets
 
