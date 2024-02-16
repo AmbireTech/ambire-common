@@ -115,7 +115,7 @@ export class Portfolio {
       hints = {
         ...hints,
         // Unique list of previously discovered and currently discovered erc20s
-        erc20s: [...new Set([...localOpts.previousHints.erc20s, ...hints.erc20s])],
+        erc20s: [...localOpts.previousHints.erc20s, ...hints.erc20s],
         // Please note 2 things:
         // 1. Velcro hints data takes advantage over previous hints because, in most cases, Velcro data is more up-to-date than the previously cached hints.
         // 2. There is only one use-case where the previous hints data is more recent, and that is when we find an NFT token via a pending simulation.
@@ -127,14 +127,16 @@ export class Portfolio {
     }
 
     if (localOpts.temporaryAdditionalHints) {
-      hints.erc20s = [...new Set([...hints.erc20s, ...localOpts.temporaryAdditionalHints])]
+      hints.erc20s = [...hints.erc20s, ...localOpts.temporaryAdditionalHints]
     }
 
     if (localOpts.fetchPinned) {
       // add pinned tokens to the hints and dedup
       // Those will appear in the result even if they're zero amount
-      hints.erc20s = [...new Set([...hints.erc20s, ...PINNED_TOKENS.map((x) => x.address)])]
+      hints.erc20s = [...hints.erc20s, ...PINNED_TOKENS.map((x) => x.address)]
     }
+
+    hints.erc20s = [...new Set(hints.erc20s)]
 
     // This also allows getting prices, this is used for more exotic tokens that cannot be retrieved via Coingecko
     const priceCache: PriceCache = localOpts.priceCache || new Map()
