@@ -373,6 +373,7 @@ export class MainController extends EventEmitter {
 
   destroySignAccOp() {
     this.signAccountOp = null
+    this.portfolio.additionalHints = []
     MainController.signAccountOpListener() // unsubscribes for further updates
     this.emitUpdate()
   }

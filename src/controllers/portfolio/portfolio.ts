@@ -91,6 +91,8 @@ export class PortfolioController extends EventEmitter {
 
   #minUpdateInterval: number = 20000 // 20 seconds
 
+  #additionalHints: GetOptions['additionalHints'] = []
+
   constructor(
     storage: Storage,
     providers: RPCProviders,
@@ -295,6 +297,7 @@ export class PortfolioController extends EventEmitter {
       additionalHints?: GetOptions['additionalHints']
     }
   ) {
+    if (opts?.additionalHints) this.#additionalHints = opts.additionalHints
     const hasNonZeroTokens = !this.#networksWithAssetsByAccounts?.[accountId]?.length
     // Load storage cached hints
     const storagePreviousHints = await this.#storage.get('previousHints', {})
@@ -414,7 +417,7 @@ export class PortfolioController extends EventEmitter {
             {
               blockTag: 'latest',
               previousHints: storagePreviousHints[key],
-              additionalHints: opts?.additionalHints
+              additionalHints: this.#additionalHints
             },
             forceUpdate
           ),
@@ -435,7 +438,7 @@ export class PortfolioController extends EventEmitter {
                     }
                   }),
                   isEOA: !isSmartAccount(selectedAccount),
-                  additionalHints: opts?.additionalHints
+                  additionalHints: this.#additionalHints
                 },
                 forceUpdate
               )
@@ -448,7 +451,7 @@ export class PortfolioController extends EventEmitter {
           storagePreviousHints[key] = getHintsWithBalance(
             accountState[network.id]!.result!,
             !hasNonZeroTokens,
-            opts?.additionalHints
+            this.#additionalHints
           )
           await this.#storage.set('previousHints', storagePreviousHints)
         }
@@ -468,6 +471,10 @@ export class PortfolioController extends EventEmitter {
     await this.#updateNetworksWithAssets(accounts, accountId, accountState)
 
     this.emitUpdate()
+  }
+
+  set additionalHints(hints: GetOptions['additionalHints']) {
+    this.#additionalHints = hints
   }
 
   get networksWithAssets() {
