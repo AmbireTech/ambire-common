@@ -184,14 +184,12 @@ export class Portfolio {
       const isPinned = !!PINNED_TOKENS.find((pinnedToken) => {
         return pinnedToken.networkId === networkId && pinnedToken.address === result.address
       })
+      const isInTemporaryAdditionalHints = localOpts.temporaryAdditionalHints?.includes(
+        result.address
+      )
+      const isNative = result.address === ZeroAddress
 
-      if (isPinned) return true
-
-      if (localOpts.temporaryAdditionalHints?.includes(result.address)) return true
-
-      if (result.address === ZeroAddress) return true
-
-      return false
+      return isPinned || isInTemporaryAdditionalHints || isNative
     }
 
     const tokens = tokensWithErr
