@@ -800,7 +800,7 @@ export class AccountAdderController extends EventEmitter {
         ).catch(() => {
           const message = `Failed to determine if accounts are used on ${network.name}.`
           // Prevents toast spamming
-          if (this.getErrors().find((err) => err.message === message)) return
+          if (this.emittedErrors.find((err) => err.message === message)) return
 
           this.emitError({
             level: 'major',
@@ -940,6 +940,7 @@ export class AccountAdderController extends EventEmitter {
   toJSON() {
     return {
       ...this,
+      ...super.toJSON(),
       accountsOnPage: this.accountsOnPage // includes the getter in the stringified instance
     }
   }

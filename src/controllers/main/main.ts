@@ -1107,14 +1107,9 @@ export class MainController extends EventEmitter {
           'POST',
           body
         )
-
-        if (response.success) {
-          transactionRes = {
-            hash: response.txId,
-            nonce: Number(accountOp.nonce)
-          }
-        } else {
-          return this.#throwAccountOpBroadcastError(new Error(response.message))
+        transactionRes = {
+          hash: response.txId,
+          nonce: Number(accountOp.nonce)
         }
       } catch (e: any) {
         return this.#throwAccountOpBroadcastError(e, e.message)
@@ -1247,6 +1242,7 @@ export class MainController extends EventEmitter {
   toJSON() {
     return {
       ...this,
+      ...super.toJSON(),
       banners: this.banners
     }
   }

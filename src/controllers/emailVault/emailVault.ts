@@ -642,6 +642,7 @@ export class EmailVaultController extends EventEmitter {
   toJSON() {
     return {
       ...this,
+      ...super.toJSON(),
       currentState: this.currentState, // includes the getter in the stringified instance
       hasKeystoreRecovery: this.hasKeystoreRecovery,
       hasConfirmedRecoveryEmail: this.hasConfirmedRecoveryEmail,

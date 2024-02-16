@@ -453,8 +453,8 @@ export class SignAccountOpController extends EventEmitter {
     // 2.2. Now, with the amount in the native token, we incorporate nativeRatio decimals into the calculation (18 + 18) to standardize the amount.
     // 2.3. At this point, we precisely determine the number of fee tokens. For instance, if the amount is 3 USDC, we must convert it to a BigInt value, while also considering feeToken.decimals.
     const extraDecimals = BigInt(10 ** 18)
-    const feeTokenDecimalsInWei = BigInt(10 ** (18 - feeTokenDecimals))
-    const pow = extraDecimals * feeTokenDecimalsInWei
+    const feeTokenExtraDecimals = BigInt(10 ** (18 - feeTokenDecimals))
+    const pow = extraDecimals * feeTokenExtraDecimals
     return (amountInWei * nativeRatio) / pow
   }
 
@@ -541,7 +541,10 @@ export class SignAccountOpController extends EventEmitter {
         // Relayer.
         // relayer or 4337, we need to add feeTokenOutome.gasUsed
         const feeTokenGasUsed = this.#estimation!.feePaymentOptions.find(
-          (option) => option.address === this.feeTokenResult!.address
+          (option) =>
+            option.address === this.feeTokenResult?.address &&
+            this.paidBy === option.paidBy &&
+            this.feeTokenResult?.flags.onGasTank === option.isGasTank
         )!.gasUsed!
         // @TODO - add comment why here we use `feePaymentOptions`, but we don't use it in EOA
         simulatedGasLimit =
