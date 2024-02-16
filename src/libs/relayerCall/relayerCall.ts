@@ -1,5 +1,5 @@
 /* eslint-disable no-prototype-builtins */
-import { parse, stringify } from '../bigintJson/bigintJson'
+import { parse, stringify } from '../richJson/richJson'
 
 class RelayerError extends Error {
   public input: any
