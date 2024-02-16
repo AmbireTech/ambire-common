@@ -3,9 +3,8 @@ import fetch from 'node-fetch'
 
 import { expect } from '@jest/globals'
 
-import { HumanizerMeta } from '../../libs/humanizer/interfaces'
 import { FEE_COLLECTOR } from '../../consts/addresses'
-import humanizerInfo from '../../consts/humanizer/humanizerInfo.json'
+import { humanizerInfo } from '../../consts/ambireConstants.json'
 import { networks } from '../../consts/networks'
 import { Portfolio } from '../../libs/portfolio'
 import { initRpcProviders } from '../../services/provider'
@@ -55,7 +54,7 @@ describe('Transfer Controller', () => {
     transferController.update({
       selectedAccount: PLACEHOLDER_SELECTED_ACCOUNT,
       tokens: [],
-      humanizerInfo: humanizerInfo as HumanizerMeta
+      humanizerInfo: humanizerInfo as any
     })
 
     transferController.buildUserRequest()
@@ -68,7 +67,7 @@ describe('Transfer Controller', () => {
     await transferController.update({
       selectedAccount: PLACEHOLDER_SELECTED_ACCOUNT,
       tokens,
-      humanizerInfo: humanizerInfo as HumanizerMeta
+      humanizerInfo: humanizerInfo as any
     })
     expect(transferController.isInitialized).toBe(true)
   })
