@@ -1,6 +1,6 @@
 import { describe, expect } from '@jest/globals'
 
-import { parse, stringify } from './bigintJson'
+import { parse, stringify } from './richJson'
 
 describe('bigintJson', () => {
   it('stringify/parse bigint object values', async () => {

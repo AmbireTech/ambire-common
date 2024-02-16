@@ -7,7 +7,7 @@ import { describe, expect, jest, test } from '@jest/globals'
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import { networks } from '../../consts/networks'
 import { AccountOp } from '../accountOp/accountOp'
-import { stringify } from '../bigintJson/bigintJson'
+import { stringify } from '../richJson/richJson'
 import { EOA_SIMULATION_NONCE } from './getOnchainBalances'
 import { Portfolio } from './portfolio'
 
