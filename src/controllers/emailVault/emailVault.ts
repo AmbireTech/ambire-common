@@ -226,7 +226,7 @@ export class EmailVaultController extends EventEmitter {
   getMagicLinkKeyByEmail(email: string): MagicLinkKey | null {
     const result = this.#magicLinkKeys[email]
     if (!result || !result.confirmed) return null
-    if (Date.now() > result.expiry.getTime()) return null
+    if (Date.now() >= result.expiry.getTime()) return null
     return result
   }
 
