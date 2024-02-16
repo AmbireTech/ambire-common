@@ -156,7 +156,8 @@ export class PortfolioController extends EventEmitter {
 
   async getAdditionalPortfolio(accountId: AccountId) {
     if (!this.latest[accountId]) this.latest[accountId] = {}
-    const hasNonZeroTokens = !this.#networksWithAssetsByAccounts?.[accountId]?.length
+    const hasNonZeroTokens = !!this.#networksWithAssetsByAccounts?.[accountId]?.length
+
     const start = Date.now()
     const accountState = this.latest[accountId] as AdditionalAccountState
 
@@ -298,7 +299,7 @@ export class PortfolioController extends EventEmitter {
     }
   ) {
     if (opts?.additionalHints) this.#additionalHints = opts.additionalHints
-    const hasNonZeroTokens = !this.#networksWithAssetsByAccounts?.[accountId]?.length
+    const hasNonZeroTokens = !!this.#networksWithAssetsByAccounts?.[accountId]?.length
     // Load storage cached hints
     const storagePreviousHints = await this.#storage.get('previousHints', {})
 
