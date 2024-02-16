@@ -1,5 +1,5 @@
 /* eslint-disable no-prototype-builtins */
-import { parse, stringify } from '../bigintJson/bigintJson'
+import { parse, stringify } from '../richJson/richJson'
 
 class RelayerError extends Error {
   public input: any
@@ -60,12 +60,9 @@ export async function relayerCall(
 ): Promise<any> {
   const res = await relayerCallUncaught(this.url + path, this.fetch, method, body, headers)
   if (!res.success) {
-    const firstError = res.errorState && res.errorState.length ? res.errorState[0] : res.message
-    throw new RelayerError(
-      firstError.message,
-      { url: this.url, path, method, body, headers },
-      { res }
-    )
+    const firstError =
+      res.errorState && res.errorState.length ? res.errorState[0].message : res.message
+    throw new RelayerError(firstError, { url: this.url, path, method, body, headers }, { res })
   }
   return res
 }

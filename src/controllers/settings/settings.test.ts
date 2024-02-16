@@ -16,7 +16,7 @@ describe('Settings Controller', () => {
       emitCounter++
 
       if (emitCounter === 1) {
-        const errors = settingsController.getErrors()
+        const errors = settingsController.emittedErrors
         expect(errors.length).toEqual(1)
         done()
       }
@@ -97,8 +97,7 @@ describe('Settings Controller', () => {
       emitCounter++
 
       if (emitCounter === 1) {
-        const errors = settingsController.getErrors()
-        expect(errors.length).toEqual(1)
+        expect(settingsController.emittedErrors.length).toEqual(1)
         done()
       }
     })

@@ -4,7 +4,7 @@ import { Key } from 'interfaces/keystore'
 import { HumanizerMeta } from 'libs/humanizer/interfaces'
 import { networks } from '../../consts/networks'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
-import { stringify } from '../bigintJson/bigintJson'
+import { stringify } from '../richJson/richJson'
 import { UserOperation } from '../userOperation/types'
 import { Call } from './types'
 

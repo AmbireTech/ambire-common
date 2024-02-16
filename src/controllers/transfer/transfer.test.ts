@@ -49,7 +49,7 @@ describe('Transfer Controller', () => {
     transferController.buildUserRequest()
     errorCount++
 
-    expect(transferController.getErrors().length).toBe(errorCount)
+    expect(transferController.emittedErrors.length).toBe(errorCount)
   })
   test("shouldn't build userRequest when tokens.length === 0", () => {
     transferController.update({

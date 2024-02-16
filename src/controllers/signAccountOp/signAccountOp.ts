@@ -66,12 +66,20 @@ type FanSpeed = {
 // declare the statuses we don't want state updates on
 const noStateUpdateStatuses = [SigningStatus.InProgress, SigningStatus.Done]
 
-function getTokenUsdAmount(token: TokenResult, gasAmount: bigint): string {
+function getTokenUsdAmount(token: TokenResult, gasAmount: bigint): string | null {
   const isUsd = (price: Price) => price.baseCurrency === 'usd'
-  const usdPrice = BigInt(token.priceIn.find(isUsd)!.price * 1e18)
+  const usdPrice = token.priceIn.find(isUsd)?.price
+
+  if (!usdPrice) return null
+
+  const usdPriceFormatted = BigInt(usdPrice * 1e18)
 
   // 18 it's because we multiply usdPrice * 1e18 and here we need to deduct it
-  return ethers.formatUnits(gasAmount * usdPrice, 18 + token.decimals)
+  return ethers.formatUnits(gasAmount * usdPriceFormatted, 18 + token.decimals)
+}
+
+const NON_CRITICAL_ERRORS = {
+  feeUsdEstimation: 'Unable to estimate the transaction fee in USD.'
 }
 
 export class SignAccountOpController extends EventEmitter {
@@ -253,6 +261,14 @@ export class SignAccountOpController extends EventEmitter {
       errors.push(this.status.error)
     }
 
+    if (!this.#feeSpeedsLoading && !this.feeSpeeds.length) {
+      errors.push('Unable to estimate transaction fee speeds. Try changing the fee token.')
+    }
+
+    if (this.feeSpeeds.some((speed) => speed.amountUsd === null)) {
+      errors.push(NON_CRITICAL_ERRORS.feeUsdEstimation)
+    }
+
     return errors
   }
 
@@ -338,13 +354,17 @@ export class SignAccountOpController extends EventEmitter {
   updateStatusToReadyToSign() {
     const isInTheMiddleOfSigning = this.status?.type === SigningStatus.InProgress
 
+    const criticalErrors = this.errors.filter(
+      (error) => !Object.values(NON_CRITICAL_ERRORS).includes(error)
+    )
+
     if (
       this.isInitialized &&
       this.#estimation &&
       this.accountOp?.signingKeyAddr &&
       this.accountOp?.signingKeyType &&
       this.accountOp?.gasFeePayment &&
-      !this.errors.length &&
+      !criticalErrors.length &&
       // Update if status is NOT already set (that's the initial state update)
       // or in general if the user is not in the middle of signing (otherwise
       // it resets the loading state back to ready to sign)
@@ -390,8 +410,18 @@ export class SignAccountOpController extends EventEmitter {
     )
     if (!native) return null
 
+    // In case the fee token is the native token we don't want to depend to priceIn, as it might not be available.
+    if (native.address === feeToken.address && native.networkId === feeToken.networkId)
+      return BigInt(1 * 1e18)
+
     const isUsd = (price: Price) => price.baseCurrency === 'usd'
-    const ratio = native!.priceIn.find(isUsd)!.price / feeToken!.priceIn.find(isUsd)!.price
+
+    const nativePrice = native.priceIn.find(isUsd)?.price
+    const feeTokenPrice = feeToken.priceIn.find(isUsd)?.price
+
+    if (!nativePrice || !feeTokenPrice) return null
+
+    const ratio = nativePrice / feeTokenPrice
 
     // Here we multiply it by 1e18, in order to keep the decimal precision.
     // Otherwise, passing the ratio to the BigInt constructor, we will lose the numbers after the decimal point.
@@ -415,8 +445,8 @@ export class SignAccountOpController extends EventEmitter {
     // 2.2. Now, with the amount in the native token, we incorporate nativeRatio decimals into the calculation (18 + 18) to standardize the amount.
     // 2.3. At this point, we precisely determine the number of fee tokens. For instance, if the amount is 3 USDC, we must convert it to a BigInt value, while also considering feeToken.decimals.
     const extraDecimals = BigInt(10 ** 18)
-    const feeTokenDecimalsInWei = BigInt(10 ** (18 - feeTokenDecimals))
-    const pow = extraDecimals * feeTokenDecimalsInWei
+    const feeTokenExtraDecimals = BigInt(10 ** (18 - feeTokenDecimals))
+    const pow = extraDecimals * feeTokenExtraDecimals
     return (amountInWei * nativeRatio) / pow
   }
 
@@ -432,8 +462,12 @@ export class SignAccountOpController extends EventEmitter {
     return amount + (amount * this.#network.feeOptions.feeIncrease) / 100n
   }
 
+  get #feeSpeedsLoading() {
+    return !this.isInitialized || !this.gasPrices || !this.paidBy || !this.feeTokenResult
+  }
+
   get feeSpeeds(): FanSpeed[] {
-    if (!this.isInitialized || !this.gasPrices || !this.paidBy || !this.feeTokenResult) return []
+    if (this.#feeSpeedsLoading) return []
 
     const gasUsed = this.#estimation!.gasUsed
     const feeTokenEstimation = this.#estimation!.feePaymentOptions.find(
@@ -445,7 +479,7 @@ export class SignAccountOpController extends EventEmitter {
 
     if (!feeTokenEstimation) return []
 
-    const nativeRatio = this.#getNativeToFeeTokenRatio(this.feeTokenResult)
+    const nativeRatio = this.#getNativeToFeeTokenRatio(this.feeTokenResult as TokenResult)
     if (!nativeRatio) return []
 
     const callDataAdditionalGasCost = getCallDataAdditionalByNetwork(
@@ -454,7 +488,7 @@ export class SignAccountOpController extends EventEmitter {
       this.#accountStates![this.accountOp!.accountAddr][this.accountOp!.networkId]
     )
 
-    return this.gasPrices.map((gasRecommendation) => {
+    return (this.gasPrices || []).map((gasRecommendation) => {
       let amount
       let simulatedGasLimit
 
@@ -499,7 +533,10 @@ export class SignAccountOpController extends EventEmitter {
         // Relayer.
         // relayer or 4337, we need to add feeTokenOutome.gasUsed
         const feeTokenGasUsed = this.#estimation!.feePaymentOptions.find(
-          (option) => option.address === this.feeTokenResult!.address
+          (option) =>
+            option.address === this.feeTokenResult?.address &&
+            this.paidBy === option.paidBy &&
+            this.feeTokenResult?.flags.onGasTank === option.isGasTank
         )!.gasUsed!
         // @TODO - add comment why here we use `feePaymentOptions`, but we don't use it in EOA
         simulatedGasLimit =
@@ -702,6 +739,17 @@ export class SignAccountOpController extends EventEmitter {
     if (signer.init) signer.init(this.#externalSignerControllers[this.accountOp.signingKeyType])
     const accountState =
       this.#accountStates![this.accountOp!.accountAddr][this.accountOp!.networkId]
+
+    // just in-case: before signing begins, we delete the feeCall;
+    // if there's a need for it, it will be added later on in the code.
+    // We need this precaution because this could happen:
+    // - try to broadcast with the relayer
+    // - the feel call gets added
+    // - the relayer broadcast fails
+    // - the user does another broadcast, this time with EOA pays for SA
+    // - the fee call stays, causing a low gas limit revert
+    delete this.accountOp.feeCall
+
     try {
       // In case of EOA account
       if (!this.#account.creation) {
@@ -759,8 +807,6 @@ export class SignAccountOpController extends EventEmitter {
 
         if (usesPaymaster) {
           this.#addFeePayment()
-        } else {
-          delete this.accountOp.feeCall
         }
 
         const ambireAccount = new ethers.Interface(AmbireAccount.abi)
