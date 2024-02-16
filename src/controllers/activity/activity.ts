@@ -449,6 +449,7 @@ export class ActivityController extends EventEmitter {
   toJSON() {
     return {
       ...this,
+      ...super.toJSON(),
       broadcastedButNotConfirmed: this.broadcastedButNotConfirmed, // includes the getter in the stringified instance
       banners: this.banners // includes the getter in the stringified instance
     }

@@ -1239,6 +1239,7 @@ export class MainController extends EventEmitter {
   toJSON() {
     return {
       ...this,
+      ...super.toJSON(),
       banners: this.banners
     }
   }
