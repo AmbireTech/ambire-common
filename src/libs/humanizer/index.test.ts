@@ -263,7 +263,7 @@ describe('Humanizer main function', () => {
       })
     })
     accountOp.calls = [...transactions.generic]
-    await callsHumanizer(accountOp, {}, storage, fetch, onUpdate, emitError)
+    await callsHumanizer(accountOp, storage, fetch, onUpdate, emitError)
     expect(onUpdate).toHaveBeenCalledTimes(1)
   })
 
@@ -293,7 +293,7 @@ describe('Humanizer main function', () => {
       iterations += 1
     })
     accountOp.calls = [...transactions.unknownFuncSelector]
-    await callsHumanizer(accountOp, {}, storage, fetch, onUpdate, emitError)
+    await callsHumanizer(accountOp, storage, fetch, onUpdate, emitError)
     expect(onUpdate).toHaveBeenCalledTimes(2)
   })
 })
@@ -411,8 +411,8 @@ describe('TypedMessages', () => {
         ])
     })
 
-    await messageHumanizer(messages[0], {}, storage, fetch, onUpdate, emitError)
-    await messageHumanizer(messages[1], {}, storage, fetch, onUpdate, emitError)
+    await messageHumanizer(messages[0], storage, fetch, onUpdate, emitError)
+    await messageHumanizer(messages[1], storage, fetch, onUpdate, emitError)
     // two times from first message, one from the second
     expect(onUpdate).toHaveBeenCalledTimes(3)
   })
@@ -433,14 +433,14 @@ describe('with (Account | Key)[] arg', () => {
         { type: 'label', content: 'for' },
         { type: 'token' },
         { type: 'label', content: 'to' },
-        { name: 'First account' }
+        { address: accounts[0].addr.toLowerCase() }
       ],
       [
         { type: 'action', content: 'Grant approval' },
         { type: 'label', content: 'for' },
         { type: 'token' },
         { type: 'label', content: 'to' },
-        { name: 'Second account' }
+        { address: keys[0].addr.toLowerCase() }
       ]
     ]
     accountOp.calls = [...transactions.accountOrKeyArg]
@@ -453,8 +453,7 @@ describe('with (Account | Key)[] arg', () => {
       )
     })
 
-    const knownAddresses = { [accounts[0].addr]: 'First account', [keys[0].addr]: 'Second account' }
-    await callsHumanizer(accountOp, knownAddresses, storage, fetch, onUpdate, emitError)
+    await callsHumanizer(accountOp, storage, fetch, onUpdate, emitError)
     expect(onUpdate).toHaveBeenCalledTimes(1)
   })
 })

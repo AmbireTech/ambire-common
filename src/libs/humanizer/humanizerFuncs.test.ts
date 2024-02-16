@@ -339,7 +339,6 @@ describe('module tests', () => {
 
     accountOp.humanizerMeta = await combineKnownHumanizerInfo(
       storage,
-      {},
       { abis: { NO_ABI: {} }, knownAddresses: {} },
       asyncOps
     )
