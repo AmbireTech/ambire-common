@@ -24,7 +24,6 @@ export function stringify(obj: any): string {
       const error: any = {}
 
       Object.getOwnPropertyNames(value).forEach((propName) => {
-        // @ts-ignore
         error[propName] = value[propName]
       })
 

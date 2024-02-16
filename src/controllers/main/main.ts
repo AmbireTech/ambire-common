@@ -52,8 +52,6 @@ export class MainController extends EventEmitter {
 
   #fetch: Function
 
-  error: Error = new Error('supp')
-
   // Holds the initial load promise, so that one can wait until it completes
   #initialLoadPromise: Promise<void>
 
