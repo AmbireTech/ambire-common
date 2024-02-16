@@ -1,10 +1,11 @@
 /* eslint-disable no-restricted-syntax */
 /* eslint-disable guard-for-in */
 
-import { JsonRpcProvider, Provider } from 'ethers'
+import { JsonRpcProvider, Provider, ZeroAddress } from 'ethers'
 
 import BalanceGetter from '../../../contracts/compiled/BalanceGetter.json'
 import NFTGetter from '../../../contracts/compiled/NFTGetter.json'
+import { PINNED_TOKENS } from '../../consts/pinnedTokens'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { Deployless, fromDescriptor } from '../deployless/deployless'
 import batcher from './batcher'
@@ -49,7 +50,8 @@ const defaultOptions: GetOptions = {
   baseCurrency: 'usd',
   blockTag: 'latest',
   priceRecency: 0,
-  pinned: [],
+  temporaryAdditionalHints: [],
+  fetchPinned: true,
   isEOA: false
 }
 
@@ -86,11 +88,6 @@ export class Portfolio {
   async get(accountAddr: string, opts: Partial<GetOptions> = {}): Promise<PortfolioGetResult> {
     const localOpts = { ...defaultOptions, ...opts }
     const { baseCurrency } = localOpts
-    const pinned = localOpts.pinned
-      ? localOpts.pinned.filter(
-          (pinnedToken) => !('accountId' in pinnedToken) || pinnedToken.accountId === accountAddr
-        )
-      : []
     if (localOpts.simulation && localOpts.simulation.account.addr !== accountAddr)
       throw new Error('wrong account passed')
 
@@ -110,6 +107,9 @@ export class Portfolio {
       }
     }
 
+    // Always add 0x00 to hints
+    hints.erc20s = [...hints.erc20s, ZeroAddress]
+
     // Enrich hints with the previously found and cached hints, especially in the case the Velcro discovery fails.
     if (localOpts.previousHints) {
       hints = {
@@ -126,9 +126,15 @@ export class Portfolio {
       }
     }
 
-    // add pinned tokens to the hints and dedup
-    // Those will appear in the result even if they're zero amount
-    hints.erc20s = [...new Set([...hints.erc20s, ...pinned.map((x) => x.address)])]
+    if (localOpts.temporaryAdditionalHints) {
+      hints.erc20s = [...new Set([...hints.erc20s, ...localOpts.temporaryAdditionalHints])]
+    }
+
+    if (localOpts.fetchPinned) {
+      // add pinned tokens to the hints and dedup
+      // Those will appear in the result even if they're zero amount
+      hints.erc20s = [...new Set([...hints.erc20s, ...PINNED_TOKENS.map((x) => x.address)])]
+    }
 
     // This also allows getting prices, this is used for more exotic tokens that cannot be retrieved via Coingecko
     const priceCache: PriceCache = localOpts.priceCache || new Map()
@@ -170,13 +176,23 @@ export class Portfolio {
       return null
     }
 
-    const tokenFilter = ([error, result]: [string, TokenResult]): boolean =>
-      (result.amount > 0 ||
-        !!pinned.find((pinnedToken) => {
-          return pinnedToken.networkId === networkId && pinnedToken.address === result.address
-        })) &&
-      error === '0x' &&
-      result.symbol !== ''
+    const tokenFilter = ([error, result]: [string, TokenResult]): boolean => {
+      if (error !== '0x' || result.symbol === '') return false
+
+      if (result.amount > 0) return true
+
+      const isPinned = !!PINNED_TOKENS.find((pinnedToken) => {
+        return pinnedToken.networkId === networkId && pinnedToken.address === result.address
+      })
+
+      if (isPinned) return true
+
+      if (localOpts.temporaryAdditionalHints?.includes(result.address)) return true
+
+      if (result.address === ZeroAddress) return true
+
+      return false
+    }
 
     const tokens = tokensWithErr
       .filter((tokenWithErr) => tokenFilter(tokenWithErr))
