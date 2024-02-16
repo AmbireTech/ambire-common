@@ -37,7 +37,7 @@ import EventEmitter from '../eventEmitter/eventEmitter'
 function getHintsWithBalance(
   result: PortfolioGetResult,
   keepPinned: boolean,
-  temporaryAdditionalHints: GetOptions['temporaryAdditionalHints'] = []
+  additionalHints: GetOptions['additionalHints'] = []
 ): {
   erc20s: Hints['erc20s']
   erc721s: Hints['erc721s']
@@ -46,7 +46,7 @@ function getHintsWithBalance(
     .filter((token) => {
       return (
         token.amount > 0n ||
-        temporaryAdditionalHints.includes(token.address) ||
+        additionalHints.includes(token.address) ||
         // Delete pinned tokens' hints if the user has > 1 non-zero tokens
         (keepPinned &&
           PINNED_TOKENS.find(
@@ -292,7 +292,7 @@ export class PortfolioController extends EventEmitter {
     accountOps?: { [key: string]: AccountOp[] },
     opts?: {
       forceUpdate: boolean
-      temporaryAdditionalHints?: GetOptions['temporaryAdditionalHints']
+      additionalHints?: GetOptions['additionalHints']
     }
   ) {
     const hasNonZeroTokens = !this.#networksWithAssetsByAccounts?.[accountId]?.length
@@ -414,7 +414,7 @@ export class PortfolioController extends EventEmitter {
             {
               blockTag: 'latest',
               previousHints: storagePreviousHints[key],
-              temporaryAdditionalHints: opts?.temporaryAdditionalHints
+              additionalHints: opts?.additionalHints
             },
             forceUpdate
           ),
@@ -435,7 +435,7 @@ export class PortfolioController extends EventEmitter {
                     }
                   }),
                   isEOA: !isSmartAccount(selectedAccount),
-                  temporaryAdditionalHints: opts?.temporaryAdditionalHints
+                  additionalHints: opts?.additionalHints
                 },
                 forceUpdate
               )
@@ -448,7 +448,7 @@ export class PortfolioController extends EventEmitter {
           storagePreviousHints[key] = getHintsWithBalance(
             accountState[network.id]!.result!,
             !hasNonZeroTokens,
-            opts?.temporaryAdditionalHints
+            opts?.additionalHints
           )
           await this.#storage.set('previousHints', storagePreviousHints)
         }

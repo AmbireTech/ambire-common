@@ -50,7 +50,7 @@ const defaultOptions: GetOptions = {
   baseCurrency: 'usd',
   blockTag: 'latest',
   priceRecency: 0,
-  temporaryAdditionalHints: [],
+  additionalHints: [],
   fetchPinned: true,
   isEOA: false
 }
@@ -126,8 +126,8 @@ export class Portfolio {
       }
     }
 
-    if (localOpts.temporaryAdditionalHints) {
-      hints.erc20s = [...hints.erc20s, ...localOpts.temporaryAdditionalHints]
+    if (localOpts.additionalHints) {
+      hints.erc20s = [...hints.erc20s, ...localOpts.additionalHints]
     }
 
     if (localOpts.fetchPinned) {
@@ -186,12 +186,10 @@ export class Portfolio {
       const isPinned = !!PINNED_TOKENS.find((pinnedToken) => {
         return pinnedToken.networkId === networkId && pinnedToken.address === result.address
       })
-      const isInTemporaryAdditionalHints = localOpts.temporaryAdditionalHints?.includes(
-        result.address
-      )
+      const isInAdditionalHints = localOpts.additionalHints?.includes(result.address)
       const isNative = result.address === ZeroAddress
 
-      return isPinned || isInTemporaryAdditionalHints || isNative
+      return isPinned || isInAdditionalHints || isNative
     }
 
     const tokens = tokensWithErr

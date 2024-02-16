@@ -783,7 +783,7 @@ export class MainController extends EventEmitter {
       this.#fetch,
       this.emitError
     )
-    const temporaryAdditionalHints: GetOptions['temporaryAdditionalHints'] = humanization
+    const additionalHints: GetOptions['additionalHints'] = humanization
       .map((call) =>
         !call.fullVisualization ? [] : call.fullVisualization.map((vis) => vis.address || '')
       )
@@ -805,7 +805,7 @@ export class MainController extends EventEmitter {
         ),
         {
           forceUpdate: true,
-          temporaryAdditionalHints
+          additionalHints
         }
       ),
       shouldGetAdditionalPortfolio(account) &&
