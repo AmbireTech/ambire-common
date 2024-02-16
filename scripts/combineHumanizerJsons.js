@@ -14,13 +14,7 @@ const humanizerV2ResultPath = path.join(
   'humanizer',
   'humanizerInfo.json'
 )
-const humanizerLagacyResultPath = path.join(
-  __dirname,
-  '..',
-  'src',
-  'consts',
-  'ambireConstants.json'
-)
+
 // @TODO: rename dappSelectors.json file name
 const sigHashesSourcePath = path.join(
   __dirname,
@@ -79,28 +73,19 @@ const enrichAndParseLegacyConstantsToV2 = async (legacyConstants) => {
   return result
 }
 
-const fetchAndStoreAmbireConstants = async () => {
+const fetchAmbireConstants = async () => {
   const fethcedAmbireConstants = await fetch(`${AMBIRE_CONSTANTS_URL}/result.json`)
     .then((res) => res.json())
     .catch(console.log)
-  const storedAmbireConstants = await fsPromises
-    .readFile(humanizerLagacyResultPath, 'utf-8')
-    .then(JSON.parse)
-    .catch(console.log)
-  if (fethcedAmbireConstants) {
-    await fsPromises
-      .writeFile(humanizerLagacyResultPath, JSON.stringify(fethcedAmbireConstants), 'utf8')
-      .then(() => console.log('stored fetched ambire-constants'))
-      .catch((e) => console.log(`failed to store fetched ambire-constants, ${e}`))
-  }
-  return fethcedAmbireConstants || storedAmbireConstants
+
+  return fethcedAmbireConstants
 }
 const main = async () => {
   const initialV2HumanizerMeta = await fsPromises
     .readFile(humanizerV2ResultPath, 'utf-8')
     .then(JSON.parse)
 
-  const fetchedConstants = await fetchAndStoreAmbireConstants()
+  const fetchedConstants = await fetchAmbireConstants()
 
   const finalV2HumanizerMeta = await enrichAndParseLegacyConstantsToV2(fetchedConstants)
 
