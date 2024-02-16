@@ -82,7 +82,6 @@ const integrateFragments = (
 // @TODO move to constants????
 export const combineKnownHumanizerInfo = async (
   storage: Storage,
-  addressBook: { [address: string]: string },
   passedHumanizerMeta: HumanizerMeta | undefined,
   humanizerFragments?: HumanizerFragment[]
 ): Promise<HumanizerMeta> => {
@@ -94,14 +93,11 @@ export const combineKnownHumanizerInfo = async (
   await storage.set(HUMANIZER_META_KEY, toStore)
 
   const toReturn = integrateFragments(toStore, nonGlobalFragments)
-  // add addressBook
-  Object.entries(addressBook).forEach(([_address, name]) => {
-    const address = _address.toLowerCase()
-    const addressInfo = toReturn.knownAddresses[address]
-    if (addressInfo) toReturn.knownAddresses[address] = { ...addressInfo, name }
-    else toReturn.knownAddresses[address] = { name }
-  })
-  // @TODO add passed data (humanizer meta from tge accountOp)
+  toReturn.abis.NO_ABI = { ...toReturn.abis.NO_ABI, ...passedHumanizerMeta?.abis.NO_ABI }
+  toReturn.knownAddresses = { ...toReturn.knownAddresses, ...passedHumanizerMeta?.knownAddresses }
+  // this operation should only append and not override
+  toReturn.abis = { ...passedHumanizerMeta?.abis, ...toReturn.abis }
+
   return toReturn
 }
 
@@ -125,7 +121,6 @@ export const humanizeAccountOp = async (
 // @TODO: update iterface name
 export const sharedHumanization = async <InputData extends AccountOp | Message>(
   data: InputData,
-  knownAddressLabel: { [addr: string]: string },
   storage: Storage,
   fetch: Function,
   callback: ((response: IrCall[]) => void) | ((response: IrMessage) => void),
@@ -139,11 +134,7 @@ export const sharedHumanization = async <InputData extends AccountOp | Message>(
   if ('calls' in data) {
     op = {
       ...data,
-      humanizerMeta: await combineKnownHumanizerInfo(
-        storage,
-        knownAddressLabel,
-        data.humanizerMeta as HumanizerMeta
-      )
+      humanizerMeta: await combineKnownHumanizerInfo(storage, data.humanizerMeta as HumanizerMeta)
     }
   }
 
@@ -151,7 +142,6 @@ export const sharedHumanization = async <InputData extends AccountOp | Message>(
     // @TODO should we always do this
     const updateddHumanizerMeta = await combineKnownHumanizerInfo(
       storage,
-      knownAddressLabel,
       data.humanizerMeta as HumanizerMeta | undefined,
       humanizerFragments
     )
@@ -194,22 +184,20 @@ export const sharedHumanization = async <InputData extends AccountOp | Message>(
 
 export const callsHumanizer = async (
   accountOp: AccountOp,
-  knownAddressLabels: KnownAddressLabels,
   storage: Storage,
   fetch: Function,
   callback: (irCalls: IrCall[]) => void,
   emitError: (err: ErrorRef) => void
 ) => {
-  await sharedHumanization(accountOp, knownAddressLabels, storage, fetch, callback, emitError)
+  await sharedHumanization(accountOp, storage, fetch, callback, emitError)
 }
 
 export const messageHumanizer = async (
   message: Message,
-  knownAddressLabels: KnownAddressLabels,
   storage: Storage,
   fetch: Function,
   callback: (msgs: IrMessage) => void,
   emitError: (err: ErrorRef) => void
 ) => {
-  await sharedHumanization(message, knownAddressLabels, storage, fetch, callback, emitError)
+  await sharedHumanization(message, storage, fetch, callback, emitError)
 }

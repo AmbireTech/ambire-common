@@ -9,7 +9,6 @@ import { Account, AccountStates } from '../../interfaces/account'
 import { ExternalSignerControllers, Key } from '../../interfaces/keystore'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { Storage } from '../../interfaces/storage'
-import { getKnownAddressLabels } from '../../libs/account/account'
 import { AccountOp, GasFeePayment, getSignableCalls } from '../../libs/accountOp/accountOp'
 import { EstimateResult } from '../../libs/estimate/estimate'
 import { GasRecommendation, getCallDataAdditionalByNetwork } from '../../libs/gasPrice/gasPrice'
@@ -178,15 +177,8 @@ export class SignAccountOpController extends EventEmitter {
   }
 
   #humanizeAccountOp() {
-    const knownAddressLabels = getKnownAddressLabels(
-      this.#accounts,
-      this.#settings.accountPreferences,
-      this.#keystore.keys,
-      this.#settings.keyPreferences
-    )
     callsHumanizer(
       this.accountOp,
-      knownAddressLabels,
       this.#storage,
       this.#fetch,
       (humanizedCalls) => {
