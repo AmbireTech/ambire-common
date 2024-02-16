@@ -12,8 +12,7 @@ import {
   HumanizerParsingModule,
   HumanizerSettings,
   IrCall,
-  IrMessage,
-  KnownAddressLabels
+  IrMessage
 } from './interfaces'
 import { aaveHumanizer } from './modules/Aave'
 import { fallbackHumanizer } from './modules/fallBackHumanizer'
@@ -26,8 +25,7 @@ import { uniswapHumanizer } from './modules/Uniswap'
 import { WALLETModule } from './modules/WALLET'
 import { wrappingModule } from './modules/wrapped'
 import { parseCalls, parseMessage } from './parsers'
-import { nameParsing } from './parsers/nameParsing'
-import { tokenParsing } from './parsers/tokenParsing'
+import { humanizerMetaParsing } from './parsers/humanizerMetaParsing'
 import {
   erc20Module,
   erc721Module,
@@ -52,7 +50,7 @@ export const humanizerCallModules: HumanizerCallModule[] = [
   fallbackHumanizer
 ]
 
-const parsingModules: HumanizerParsingModule[] = [nameParsing, tokenParsing]
+const parsingModules: HumanizerParsingModule[] = [humanizerMetaParsing]
 
 // generic at the end
 // the final visualization and warnings are from the first triggered module
@@ -85,7 +83,8 @@ export const combineKnownHumanizerInfo = async (
   passedHumanizerMeta: HumanizerMeta | undefined,
   humanizerFragments?: HumanizerFragment[]
 ): Promise<HumanizerMeta> => {
-  const stored = await storage.get(HUMANIZER_META_KEY, {})
+  let stored = await storage.get(HUMANIZER_META_KEY, {})
+  if (Object.keys(stored).length === 0) stored = { abis: { NO_ABI: {} }, knownAddresses: {} }
   const globalFrags = humanizerFragments?.filter((f) => f.isGlobal) || []
   const nonGlobalFragments = humanizerFragments?.filter((f) => !f.isGlobal) || []
 
@@ -93,10 +92,10 @@ export const combineKnownHumanizerInfo = async (
   await storage.set(HUMANIZER_META_KEY, toStore)
 
   const toReturn = integrateFragments(toStore, nonGlobalFragments)
-  toReturn.abis.NO_ABI = { ...toReturn.abis.NO_ABI, ...passedHumanizerMeta?.abis.NO_ABI }
-  toReturn.knownAddresses = { ...toReturn.knownAddresses, ...passedHumanizerMeta?.knownAddresses }
+  toReturn.abis.NO_ABI = { ...toReturn?.abis?.NO_ABI, ...passedHumanizerMeta?.abis?.NO_ABI }
+  toReturn.knownAddresses = { ...toReturn?.knownAddresses, ...passedHumanizerMeta?.knownAddresses }
   // this operation should only append and not override
-  toReturn.abis = { ...passedHumanizerMeta?.abis, ...toReturn.abis }
+  toReturn.abis = { ...passedHumanizerMeta?.abis, ...toReturn?.abis }
 
   return toReturn
 }

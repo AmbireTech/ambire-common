@@ -244,14 +244,16 @@ describe('Humanizer main function', () => {
         { type: 'action', content: 'Grant approval' },
         { type: 'label', content: 'for' },
         {
-          type: 'label',
-          content: 'all WETH'
+          type: 'token',
+          address: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
+          amount: 115792089237316195423570985008687907853269984665640564039457584007913129639935n,
+          humanizerMeta: { token: { symbol: 'WETH', decimals: 18 } }
         },
         { type: 'label', content: 'to' },
         {
           type: 'address',
           address: '0xe5c783ee536cf5e63e792988335c4255169be4e1',
-          name: 'OpenSea (old)'
+          humanizerMeta: { name: 'OpenSea (old)', isSC: {} }
         }
       ]
     ]
@@ -369,9 +371,13 @@ describe('TypedMessages', () => {
         type: 'token',
         address: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
         amount: 1000000000000000000n,
-        decimals: 18,
-        readableAmount: '1.0',
-        symbol: 'WETH'
+        humanizerMeta: {
+          token: {
+            decimals: 18,
+            symbol: 'WETH'
+          }
+        },
+        warning: true
       },
       { type: 'label', content: 'for time period' },
       { type: 'deadline', amount: 968187600000n },
@@ -389,9 +395,13 @@ describe('TypedMessages', () => {
         type: 'token',
         address: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
         amount: 500000000000000000n,
-        decimals: 18,
-        readableAmount: '0.5',
-        symbol: 'WETH'
+        humanizerMeta: {
+          token: {
+            decimals: 18,
+            symbol: 'WETH'
+          }
+        },
+        warning: true
       },
       { type: 'label', content: 'for time period' },
       { type: 'deadline', amount: 969187600000n },
@@ -399,7 +409,6 @@ describe('TypedMessages', () => {
       { type: 'deadline', amount: 968187600000n }
     ]
     const onUpdate = jest.fn((newMessage: IrMessage) => {
-      expect(newMessage).toMatchObject({ warnings: [], fullVisualization: expect.anything() })
       if (newMessage.id === 1)
         newMessage.fullVisualization?.forEach((v, i) =>
           expect(expectedVisualizations[i]).toMatchObject(v)
