@@ -431,7 +431,7 @@ describe('Portfolio Controller ', () => {
 
     expect(token).toBeTruthy()
 
-    controller.additionalHints = []
+    controller.resetAdditionalHints()
 
     await controller.updateSelectedAccount([account], networks, account.addr, undefined, {
       forceUpdate: true

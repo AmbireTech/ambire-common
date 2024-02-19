@@ -154,6 +154,10 @@ export class PortfolioController extends EventEmitter {
     }
   }
 
+  resetAdditionalHints() {
+    this.#additionalHints = []
+  }
+
   async getAdditionalPortfolio(accountId: AccountId) {
     if (!this.latest[accountId]) this.latest[accountId] = {}
     const hasNonZeroTokens = !!this.#networksWithAssetsByAccounts?.[accountId]?.length
@@ -472,10 +476,6 @@ export class PortfolioController extends EventEmitter {
     await this.#updateNetworksWithAssets(accounts, accountId, accountState)
 
     this.emitUpdate()
-  }
-
-  set additionalHints(hints: GetOptions['additionalHints']) {
-    this.#additionalHints = hints
   }
 
   get networksWithAssets() {
