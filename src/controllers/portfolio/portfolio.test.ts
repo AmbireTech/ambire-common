@@ -1,5 +1,4 @@
-import { ethers, JsonRpcProvider } from 'ethers'
-import { RPCProvider } from 'interfaces/settings'
+import { ethers, JsonRpcProvider, ZeroAddress } from 'ethers'
 import { CollectionResult } from 'libs/portfolio/interfaces'
 
 import { describe, expect, jest } from '@jest/globals'
@@ -8,6 +7,7 @@ import { getNonce, produceMemoryStore } from '../../../test/helpers'
 import { networks } from '../../consts/networks'
 import { PINNED_TOKENS } from '../../consts/pinnedTokens'
 import { Account } from '../../interfaces/account'
+import { RPCProvider, RPCProviders } from '../../interfaces/settings'
 import { AccountOp } from '../../libs/accountOp/accountOp'
 import { PortfolioController } from './portfolio'
 
@@ -442,5 +442,25 @@ describe('Portfolio Controller ', () => {
     )
 
     expect(tokenAgain).toBeUndefined()
+  })
+
+  test('Native tokens are fetched for all networks', async () => {
+    const storage = produceMemoryStore()
+    const providers: RPCProviders = {}
+
+    networks.forEach((network) => {
+      providers[network.id] = new JsonRpcProvider(network.rpcUrl)
+    })
+    const controller = new PortfolioController(storage, providers, networks, relayerUrl)
+
+    await controller.updateSelectedAccount([account], networks, account.addr, undefined)
+
+    networks.forEach((network) => {
+      const nativeToken = controller.latest[account.addr][network.id]?.result?.tokens.find(
+        (token) => token.address === ZeroAddress
+      )
+
+      expect(nativeToken).toBeTruthy()
+    })
   })
 })
