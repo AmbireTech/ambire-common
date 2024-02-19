@@ -143,7 +143,7 @@ export class TransferController extends EventEmitter {
     }
 
     // Validate the amount
-    if (this.selectedToken && (this.amount !== '' || this.addressState.fieldValue !== '')) {
+    if (this.selectedToken) {
       validationFormMsgsNew.amount = validateSendTransferAmount(this.amount, this.selectedToken)
     }
 
