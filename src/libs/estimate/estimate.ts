@@ -197,6 +197,10 @@ export async function estimate(
     }
   }
 
+  // is the estimation a 4337 one
+  const is4337Broadcast = opts && opts.is4337Broadcast
+  const userOp = is4337Broadcast ? toUserOperation(account, accountState, op) : null
+
   // @L2s
   // craft the probableTxn that's going to be saved on the L1
   // so we could do proper estimation
@@ -211,7 +215,7 @@ export async function estimate(
       'uint256' // gasLimit
     ],
     [
-      getProbableCallData(op, network, accountState),
+      getProbableCallData(op, accountState, userOp),
       op.accountAddr,
       FEE_COLLECTOR,
       100000000,
@@ -239,8 +243,6 @@ export async function estimate(
   ]
 
   // estimate 4337
-  const is4337Broadcast = opts && opts.is4337Broadcast
-  const userOp = is4337Broadcast ? toUserOperation(account, accountState, op) : null
   const IAmbireAccount = new Interface(AmbireAccount.abi)
   let deployless4337Estimator: any = null
   let functionArgs: any = null
