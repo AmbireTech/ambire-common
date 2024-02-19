@@ -61,7 +61,7 @@ describe('AccountAdder', () => {
       emitCounter++
 
       if (emitCounter === 1) {
-        const errors = accountAdder.getErrors()
+        const errors = accountAdder.emittedErrors
         expect(errors.length).toEqual(1)
         expect(errors[0].error.message).toEqual(
           'accountAdder: requested method `#deriveAccounts`, but the AccountAdder is not initialized'
@@ -183,7 +183,7 @@ describe('AccountAdder', () => {
       emitCounter++
 
       if (emitCounter === 1) {
-        const errors = accountAdder.getErrors()
+        const errors = accountAdder.emittedErrors
         expect(errors.length).toEqual(1)
         expect(errors[0].error.message).toEqual(
           'accountAdder: a preselected account cannot be deselected'

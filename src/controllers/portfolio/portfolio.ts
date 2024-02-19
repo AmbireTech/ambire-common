@@ -499,6 +499,7 @@ export class PortfolioController extends EventEmitter {
   toJSON() {
     return {
       ...this,
+      ...super.toJSON(),
       networksWithAssets: this.networksWithAssets,
       banners: this.banners
     }

@@ -346,6 +346,7 @@ export class TransferController extends EventEmitter {
   toJSON() {
     return {
       ...this,
+      ...super.toJSON(),
       validationFormMsgs: this.validationFormMsgs,
       isFormValid: this.isFormValid,
       isInitialized: this.isInitialized,

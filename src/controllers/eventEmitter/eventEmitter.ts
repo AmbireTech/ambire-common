@@ -35,6 +35,12 @@ export default class EventEmitter {
     return this.#errorCallbacksWithId.map((item) => item.id)
   }
 
+  // called emittedErrors and not just errors because some of the other controllers
+  // that extend this one have errors defined already
+  get emittedErrors() {
+    return this.#errors
+  }
+
   protected emitUpdate() {
     // eslint-disable-next-line no-restricted-syntax
     for (const i of this.#callbacksWithId) i.cb()
@@ -43,6 +49,7 @@ export default class EventEmitter {
   }
 
   protected emitError(error: ErrorRef) {
+    console.error(`Emitted error in: ${this.constructor.name}`, error)
     this.#errors.push(error)
     this.#trimErrorsIfNeeded()
 
@@ -58,10 +65,6 @@ export default class EventEmitter {
       const excessErrors = this.#errors.length - LIMIT_ON_THE_NUMBER_OF_ERRORS
       this.#errors = this.#errors.slice(excessErrors)
     }
-  }
-
-  getErrors() {
-    return this.#errors
   }
 
   // returns an unsub function
@@ -99,6 +102,13 @@ export default class EventEmitter {
       } else {
         this.#errorCallbacks.splice(this.#errorCallbacks.indexOf(cb), 1)
       }
+    }
+  }
+
+  toJSON() {
+    return {
+      ...this,
+      emittedErrors: this.emittedErrors // includes the getter in the stringified instance
     }
   }
 }

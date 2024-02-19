@@ -82,8 +82,8 @@ describe('Portfolio Controller ', () => {
       }
 
       const storage = produceMemoryStore()
-      const controller = new PortfolioController(storage, providers, networks, relayerUrl)
-      await controller.updateSelectedAccount([account2], networks, account2.addr)
+      const controller = new PortfolioController(storage, providers, [ethereum], relayerUrl)
+      await controller.updateSelectedAccount([account2], [ethereum], account2.addr)
 
       const storagePreviousHints = await storage.get('previousHints', {})
       const storageErc20s = storagePreviousHints[`ethereum:${account2.addr}`].erc20s
@@ -100,7 +100,7 @@ describe('Portfolio Controller ', () => {
   describe('Latest tokens', () => {
     test('Latest tokens are fetched and kept in the controller, while the pending should not be fetched (no AccountOp passed)', (done) => {
       const storage = produceMemoryStore()
-      const controller = new PortfolioController(storage, providers, networks, relayerUrl)
+      const controller = new PortfolioController(storage, providers, [ethereum], relayerUrl)
 
       controller.onUpdate(() => {
         const latestState =
@@ -118,7 +118,7 @@ describe('Portfolio Controller ', () => {
         }
       })
 
-      controller.updateSelectedAccount([account], networks, account.addr)
+      controller.updateSelectedAccount([account], [ethereum], account.addr)
     })
 
     // @TODO redo this test
@@ -126,7 +126,7 @@ describe('Portfolio Controller ', () => {
       const done = jest.fn(() => null)
 
       const storage = produceMemoryStore()
-      const controller = new PortfolioController(storage, providers, networks, relayerUrl)
+      const controller = new PortfolioController(storage, providers, [ethereum], relayerUrl)
       let pendingState1: any
       controller.onUpdate(() => {
         if (!pendingState1?.isReady) {
@@ -140,15 +140,15 @@ describe('Portfolio Controller ', () => {
             done()
         }
       })
-      await controller.updateSelectedAccount([account], networks, account.addr)
-      await controller.updateSelectedAccount([account], networks, account.addr)
+      await controller.updateSelectedAccount([account], [ethereum], account.addr)
+      await controller.updateSelectedAccount([account], [ethereum], account.addr)
 
       expect(done).not.toHaveBeenCalled()
     })
 
     test('Latest and Pending are fetched, because `forceUpdate` flag is set', (done) => {
       const storage = produceMemoryStore()
-      const controller = new PortfolioController(storage, providers, networks, relayerUrl)
+      const controller = new PortfolioController(storage, providers, [ethereum], relayerUrl)
 
       controller.onUpdate(() => {
         const latestState =
@@ -171,7 +171,7 @@ describe('Portfolio Controller ', () => {
         }
       })
 
-      controller.updateSelectedAccount([account], networks, account.addr, undefined, {
+      controller.updateSelectedAccount([account], [ethereum], account.addr, undefined, {
         forceUpdate: true
       })
     })
@@ -182,9 +182,8 @@ describe('Portfolio Controller ', () => {
       const accountOp = await getAccountOp()
 
       const storage = produceMemoryStore()
-      const controller = new PortfolioController(storage, providers, networks, relayerUrl)
-
-      await controller.updateSelectedAccount([account], networks, account.addr, accountOp)
+      const controller = new PortfolioController(storage, providers, [ethereum], relayerUrl)
+      await controller.updateSelectedAccount([account], [ethereum], account.addr, accountOp)
 
       controller.onUpdate(() => {
         const pendingState =
@@ -203,7 +202,7 @@ describe('Portfolio Controller ', () => {
       })
     })
 
-    // TODO: currently we disable this optimization in portfolio controller, as in the application it doesn't work at all
+    // TODO: currently we disable this optimizatin in portfolio controller, as in the application it doesn't work at all
     //   Under the tests, the caching works as expected, but once ran in the extension - it doesn't fetch the pending state.
     // test('Pending tokens are fetched only once if AccountOp is the same during the calls', async () => {
     //   const done = jest.fn(() => null)
@@ -236,7 +235,7 @@ describe('Portfolio Controller ', () => {
       const accountOp = await getAccountOp()
 
       const storage = produceMemoryStore()
-      const controller = new PortfolioController(storage, providers, networks, relayerUrl)
+      const controller = new PortfolioController(storage, providers, [ethereum], relayerUrl)
       let pendingState1: any
       let pendingState2: any
       controller.onUpdate(() => {
@@ -251,8 +250,8 @@ describe('Portfolio Controller ', () => {
           done()
         }
       })
-      await controller.updateSelectedAccount([account], networks, account.addr, accountOp)
-      await controller.updateSelectedAccount([account], networks, account.addr, accountOp, {
+      await controller.updateSelectedAccount([account], [ethereum], account.addr, accountOp)
+      await controller.updateSelectedAccount([account], [ethereum], account.addr, accountOp, {
         forceUpdate: true
       })
 
@@ -263,13 +262,13 @@ describe('Portfolio Controller ', () => {
       const accountOp = await getAccountOp()
 
       const storage = produceMemoryStore()
-      const controller = new PortfolioController(storage, providers, networks, relayerUrl)
+      const controller = new PortfolioController(storage, providers, [ethereum], relayerUrl)
 
-      await controller.updateSelectedAccount([account], networks, account.addr, accountOp)
+      await controller.updateSelectedAccount([account], [ethereum], account.addr, accountOp)
       const pendingState1 =
         controller.pending['0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'].ethereum!
 
-      await controller.updateSelectedAccount([account], networks, account.addr, accountOp, {
+      await controller.updateSelectedAccount([account], [ethereum], account.addr, accountOp, {
         forceUpdate: true
       })
       const pendingState2 =
@@ -284,9 +283,9 @@ describe('Portfolio Controller ', () => {
       const accountOp = await getAccountOp()
 
       const storage = produceMemoryStore()
-      const controller = new PortfolioController(storage, providers, networks, relayerUrl)
+      const controller = new PortfolioController(storage, providers, [ethereum], relayerUrl)
 
-      await controller.updateSelectedAccount([account], networks, account.addr, accountOp)
+      await controller.updateSelectedAccount([account], [ethereum], account.addr, accountOp)
       const pendingState1 =
         controller.pending['0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'].ethereum!
 
@@ -294,7 +293,7 @@ describe('Portfolio Controller ', () => {
       // Change the address
       accountOp2.ethereum[0].accountAddr = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA4'
 
-      await controller.updateSelectedAccount([account], networks, account.addr, accountOp2)
+      await controller.updateSelectedAccount([account], [ethereum], account.addr, accountOp2)
       const pendingState2 =
         controller.pending['0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'].ethereum!
 

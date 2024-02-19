@@ -108,7 +108,7 @@ export async function estimate(
   account: Account,
   op: AccountOp,
   accountState: AccountOnchainState,
-  nativeToCheck: string[],
+  EOAaccounts: Account[],
   feeTokens: FeeToken[],
   opts?: {
     calculateRefund?: boolean
@@ -117,6 +117,14 @@ export async function estimate(
   blockFrom: string = '0x0000000000000000000000000000000000000001',
   blockTag: string | number = 'latest'
 ): Promise<EstimateResult> {
+  // we're excluding the view only accounts from the natives to check
+  // in all cases EXCEPT the case where we're making an estimation for
+  // the view only account itself. In all other, view only accounts options
+  // should not be present as the user cannot pay the fee with them (no key)
+  const nativeToCheck = EOAaccounts.filter(
+    (acc) => acc.addr === op.accountAddr || acc.associatedKeys.length
+  ).map((acc) => acc.addr)
+
   const nativeAddr = '0x0000000000000000000000000000000000000000'
   const deploylessEstimator = fromDescriptor(provider, Estimation, !network.rpcNoStateOverride)
   const abiCoder = new AbiCoder()
