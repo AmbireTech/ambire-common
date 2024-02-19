@@ -171,7 +171,7 @@ describe('AccountAdder', () => {
     accountAdder.selectedAccounts = [
       {
         account: basicAccount,
-        accountKeyAddr: key1PublicAddress,
+        accountKeyAddresses: [key1PublicAddress],
         slot: 1,
         index: 0,
         isLinked: false
