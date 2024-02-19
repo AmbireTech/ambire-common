@@ -252,7 +252,7 @@ export class KeystoreController extends EventEmitter {
     await this.#storage.set('keystoreSecrets', this.#keystoreSecrets)
 
     // produce uid if one doesn't exist (should be created when the first secret is added)
-    if (!(await this.#storage.get('keyStoreUid', null))) {
+    if (!this.keyStoreUid) {
       const uid = publicKeyByPrivateKey(hexlify(getBytes(concat([mainKey.key, mainKey.iv]))))
       this.keyStoreUid = uid
       await this.#storage.set('keyStoreUid', uid)
