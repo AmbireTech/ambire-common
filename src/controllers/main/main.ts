@@ -842,7 +842,7 @@ export class MainController extends EventEmitter {
         account,
         localAccountOp,
         this.accountStates[localAccountOp.accountAddr][localAccountOp.networkId],
-        EOAaccounts.map((acc) => acc.addr),
+        EOAaccounts,
         // @TODO - first time calling this, portfolio is still not loaded.
         feeTokens,
         {

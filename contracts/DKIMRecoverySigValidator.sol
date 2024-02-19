@@ -226,7 +226,7 @@ contract DKIMRecoverySigValidator is ExternalSigValidator {
         );
       }
       if (
-        !(SignatureValidator.recoverAddrImpl(identifier, secondSig, true) == accInfo.secondaryKey)
+        !(SignatureValidator.recoverAddr(identifier, secondSig, true) == accInfo.secondaryKey)
       ) {
         return (false, 0);
       }
