@@ -45,10 +45,6 @@ library SignatureValidator {
 		return (sig, modeRaw);
 	}
 
-	function recoverAddr(bytes32 hash, bytes memory sig) internal view returns (address) {
-		return recoverAddrImpl(hash, sig, false);
-	}
-
 	function recoverAddrImpl(bytes32 hash, bytes memory sig, bool allowSpoofing) internal view returns (address) {
 		(address recovered, bool usedUnprotected) = recoverAddrAllowUnprotected(hash, sig, allowSpoofing);
 		require(!usedUnprotected, 'SV_USED_UNBOUND');
