@@ -9,7 +9,8 @@ const WRAPPEDISH_ADDRESSES: { [kjey: string]: string } = {
   '0x4200000000000000000000000000000000000006': 'WETHOptimism',
   '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2': 'WETH',
   '0x7ceb23fd6bc0add59e62ac25578270cff1b9f619': 'WETHPolygon',
-  '0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270': 'WMATIC'
+  '0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270': 'WMATIC',
+  '0x82af49447d8a07e3bd95bd0d56f35241523fbab1': 'WETHArbitrum'
 }
 const wrapSwapReducer = (calls: IrCall[]) => {
   const newCalls: IrCall[] = []
