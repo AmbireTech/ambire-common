@@ -1,6 +1,7 @@
+import { hashMessage } from 'ethers'
 import { ethers } from 'hardhat'
 
-import { wrapEthSign, wrapTypedData } from '../ambireSign'
+import { wrapEIP712, wrapEthSign, wrapTypedData } from '../ambireSign'
 import {
   abiCoder,
   addressFour,
@@ -21,7 +22,10 @@ describe('Basic Ambire Account tests', () => {
   before('successfully deploys the ambire account', async () => {
     const [signer] = await ethers.getSigners()
     const { ambireAccountAddress: addr } = await deployAmbireAccountHardhatNetwork([
-      { addr: signer.address, hash: '0x0000000000000000000000000000000000000000000000000000000000000001' }
+      {
+        addr: signer.address,
+        hash: '0x0000000000000000000000000000000000000000000000000000000000000002'
+      }
     ])
     ambireAccountAddress = addr
   })
@@ -259,5 +263,25 @@ describe('Basic Ambire Account tests', () => {
     const receipt = await txn.wait()
     const postBalance = await provider.getBalance(ambireAccountAddress, receipt.blockNumber)
     expect(balance - postBalance).to.equal(ethers.parseEther('0.02'))
+  })
+  it('should not allow a txn with a signature length of 65 to execute as it should be rendered unprotected', async () => {
+    const [signer] = await ethers.getSigners()
+    const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signer)
+    const txns = [
+      [addressTwo, ethers.parseEther('0.01'), '0x00'],
+      [addressThree, ethers.parseEther('0.01'), '0x00']
+    ]
+    const s = await signer.signMessage('message does not matter')
+    await expect(contract.execute(txns, s)).to.be.revertedWith('SV_USED_UNBOUND')
+  })
+  it('should allow a signed message to validate for the signer with a signature length of 65', async () => {
+    const [signer] = await ethers.getSigners()
+    const contract: any = new ethers.BaseContract(ambireAccountAddress, AmbireAccount.abi, signer)
+    const msg = 'message does not matter'
+    const s = await signer.signMessage(msg)
+    const isValid = await contract.isValidSignature(hashMessage(msg), s)
+    const isValidStandardWrap = await contract.isValidSignature(hashMessage(msg), wrapEIP712(s))
+    expect(isValid).to.equal('0x1626ba7e')
+    expect(isValidStandardWrap).to.equal('0x1626ba7e')
   })
 })

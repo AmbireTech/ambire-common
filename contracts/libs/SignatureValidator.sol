@@ -54,24 +54,15 @@ library SignatureValidator {
 	function recoverAddrAllowUnprotected(bytes32 hash, bytes memory sig, bool allowSpoofing) internal view returns (address, bool) {
 		require(sig.length != 0, 'SV_SIGLEN');
 
-		// during simulation, we might encounter a case where this address
-		// as an EOA gets send an EOA signature; in thah case, validate the signature
-		// this should happen only in simulation when this address actually
-		// is not a real smart account but it's overriden as such
-		if (sig.length == 65) {
-			bytes32 r = sig.readBytes32(0);
-			bytes32 s = sig.readBytes32(32);
-			uint8 v = uint8(sig[64]);
-			require(ecrecover(hash, v, r, s) == address(this), 'Invalid signature');
-			return (address(this), false);
-		}
-
 		uint8 modeRaw;
 		unchecked {
 			modeRaw = uint8(sig[sig.length - 1]);
 		}
 		// Ensure we're in bounds for mode; Solidity does this as well but it will just silently blow up rather than showing a decent error
-		require(modeRaw < uint8(SignatureMode.LastUnused), 'SV_SIGMODE');
+		if (modeRaw >= uint8(SignatureMode.LastUnused)) {
+			if (sig.length == 65) modeRaw = uint8(SignatureMode.Unprotected);
+			else revert('SV_SIGMODE');
+		}
 		SignatureMode mode = SignatureMode(modeRaw);
 
 		// the address of the key we are gonna be returning
@@ -103,7 +94,7 @@ library SignatureValidator {
 
 		// {r}{s}{v}{mode}
 		if (mode == SignatureMode.Unprotected || mode == SignatureMode.Standard) {
-			require(sig.length == 66, 'SV_LEN');
+			require(sig.length == 65 || sig.length == 66, 'SV_LEN');
 			bytes32 r = sig.readBytes32(0);
 			bytes32 s = sig.readBytes32(32);
 			uint8 v = uint8(sig[64]);
