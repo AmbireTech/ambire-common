@@ -53,6 +53,8 @@ export function derivePrivateKeyFromAnotherPrivateKey(privateKey: string) {
  * Serves for retrieving a range of addresses/keys from a given private key or seed phrase
  */
 export class KeyIterator implements KeyIteratorInterface {
+  type = 'internal'
+
   #privateKey: string | null = null
 
   #seedPhrase: string | null = null
