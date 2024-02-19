@@ -27,6 +27,8 @@ library SignatureValidator {
 		Spoof,
 		Schnorr,
 		Multisig,
+		// WARNING: Signature modes should not be more than 26 as the "v"
+		// value for standard ecrecover is 27/28
 		// WARNING: must always be last
 		LastUnused
 	}
