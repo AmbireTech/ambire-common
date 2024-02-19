@@ -42,9 +42,10 @@ type AccountDerivationMeta = {
  * It's always one of the visible accounts returned by the accountsOnPage().
  * Could be either a basic (EOA) account, a smart account or a linked account.
  */
-export type SelectedAccount = AccountDerivationMeta & {
+export type SelectedAccount = {
   account: Account
-  accountKeyAddr: Account['addr']
+  isLinked: boolean
+  accountKeys: (Omit<AccountDerivationMeta, 'isLinked'> & { addr: Account['addr'] })[]
 }
 
 /**
@@ -152,9 +153,9 @@ export class AccountAdderController extends EventEmitter {
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
   }
 
-  getAccountOnPageKeyMeta(accountOnPage: AccountOnPage): AccountOnPageKeyMeta {
+  getAccountOnPageKeyMeta(account: Account): AccountOnPageKeyMeta {
     const isAlreadyImported = this.#alreadyImportedAccounts.some(
-      ({ addr }) => addr === accountOnPage.account.addr
+      ({ addr }) => addr === account.addr
     )
 
     // If an account with this address is NOT imported, skip
@@ -165,7 +166,7 @@ export class AccountAdderController extends EventEmitter {
       }
 
     const importedAccountKeystoreKeys = this.#keystore.keys.filter((key) =>
-      accountOnPage.account.associatedKeys.includes(key.addr)
+      account.associatedKeys.includes(key.addr)
     )
 
     // If the imported account has no keys (view only), skip
@@ -178,21 +179,17 @@ export class AccountAdderController extends EventEmitter {
     // If is imported and has key, check if the imported key is the same
     // (including type) as the key existing in this keystore session
     const alreadyImportedWithSameKey = importedAccountKeystoreKeys.some(
-      (key) => key.addr === accountOnPage.account.addr && key.type === this.#keyIterator.type
+      (key) => key.addr === account.addr && key.type === this.#keyIterator?.type
     )
-
-    if (alreadyImportedWithSameKey) {
-      return {
-        alreadyImportedWithSameKey,
-        alreadyImportedWithDifferentKey: false
-      }
-    }
+    const alreadyImportedWithDifferentKey = importedAccountKeystoreKeys.some(
+      (key) => key.addr === account.addr && key.type !== this.#keyIterator?.type
+    )
 
     // TODO: Check if this covers the Basic accounts
     // TODO: Check if this covers the linked accounts
     return {
-      alreadyImportedWithSameKey: false,
-      alreadyImportedWithDifferentKey: true
+      alreadyImportedWithSameKey,
+      alreadyImportedWithDifferentKey
     }
   }
 
@@ -220,8 +217,9 @@ export class AccountAdderController extends EventEmitter {
             ...derivedAccount,
             // Check if it is imported (mainCtrl.accounts) and if it is imported
             // with the same key (mainCtrl.keystore.keys) and the same key type
-            alreadyImportedWithSameKey: false,
-            alreadyImportedWithDifferentKey: false
+            ...this.getAccountOnPageKeyMeta(derivedAccount.account)
+            // alreadyImportedWithSameKey: false,
+            // alreadyImportedWithDifferentKey: false
           })
 
           const duplicate = associatedLinkedAccounts.find(
@@ -237,8 +235,9 @@ export class AccountAdderController extends EventEmitter {
               ...correspondingSmartAccount,
               // Check if it is imported (mainCtrl.accounts) and if it is imported
               // with the same key (mainCtrl.keystore.keys) and the same key type
-              alreadyImportedWithSameKey: false,
-              alreadyImportedWithDifferentKey: false
+              ...this.getAccountOnPageKeyMeta(correspondingSmartAccount.account)
+              // alreadyImportedWithSameKey: false,
+              // alreadyImportedWithDifferentKey: false
             })
           }
         }
@@ -250,8 +249,9 @@ export class AccountAdderController extends EventEmitter {
             index: derivedAccount.index,
             // Check if it is imported (mainCtrl.accounts) and if it is imported
             // with the same key (mainCtrl.keystore.keys) and the same key type
-            alreadyImportedWithSameKey: false,
-            alreadyImportedWithDifferentKey: false
+            ...this.getAccountOnPageKeyMeta(derivedAccount.account)
+            // alreadyImportedWithSameKey: false,
+            // alreadyImportedWithDifferentKey: false
           }))
         )
 
@@ -375,12 +375,69 @@ export class AccountAdderController extends EventEmitter {
     this.setPage({ page: INITIAL_PAGE_INDEX, networks, providers })
   }
 
+  #getAccountKeys(account: Account, pagesWhereThisAccIsFound: AccountOnPage[]) {
+    // should never happen
+    if (pagesWhereThisAccIsFound.length === 0) {
+      console.error(`accountAdder: account ${account.addr} was not found in the accountsOnPage.`)
+      return []
+    }
+
+    // Case 1: The account is a Basic account
+    const isBasicAcc = !isSmartAccount(account)
+    // The key of the Basic account is the basic account itself
+    if (isBasicAcc) return pagesWhereThisAccIsFound
+
+    // Case 2: The account is a Smart account, but not a linked one
+    const isSmartAccountAndNotLinked =
+      isSmartAccount(account) &&
+      pagesWhereThisAccIsFound.length === 1 &&
+      pagesWhereThisAccIsFound[0].isLinked === false
+
+    if (isSmartAccountAndNotLinked) {
+      // The key of the smart account is the Basic account on the same slot
+      // that is explicitly derived for a smart account key only.
+      const basicAccOnThisSlotDerivedForSmartAccKey = this.#derivedAccounts.find(
+        (a) =>
+          a.slot === pagesWhereThisAccIsFound[0].slot &&
+          !isSmartAccount(a.account) &&
+          isDerivedForSmartAccountKeyOnly(a.index)
+      )
+
+      return basicAccOnThisSlotDerivedForSmartAccKey
+        ? [basicAccOnThisSlotDerivedForSmartAccKey]
+        : []
+    }
+
+    // Case 3: The account is a Smart account and a linked one. For this case,
+    // there could exist multiple keys (basic accounts) found on different slots.
+    const basicAccOnEverySlotWhereThisAddrIsFound = pagesWhereThisAccIsFound
+      .map((a) => a.slot)
+      .flatMap((slot) => {
+        const basicAccOnThisSlot = this.#derivedAccounts.find(
+          (a) =>
+            a.slot === slot &&
+            !isSmartAccount(a.account) &&
+            // The key of the linked account is always the EOA (basic) account
+            // on the same slot that is not explicitly used for smart account keys only.
+            !isDerivedForSmartAccountKeyOnly(a.index)
+        )
+
+        return basicAccOnThisSlot ? [basicAccOnThisSlot] : []
+      })
+
+    return basicAccOnEverySlotWhereThisAddrIsFound
+  }
+
   selectAccount(_account: Account) {
-    const accountOnPage = this.accountsOnPage.find(
+    // Needed, because linked accounts could have multiple keys (basic accounts),
+    // and therefore - same linked account could be found on different slots.
+    // TODO: Can we have scenario where it is not a linked account,
+    // but it is still found on multiple slots?
+    const pagesWhereThisAccIsFound = this.accountsOnPage.filter(
       (accOnPage) => accOnPage.account.addr === _account.addr
     )
-
-    if (!accountOnPage)
+    const accountKeys = this.#getAccountKeys(_account, pagesWhereThisAccIsFound)
+    if (!accountKeys.length)
       return this.emitError({
         level: 'major',
         message: `Selecting ${_account.addr} account failed because the details for this account are missing. Please try again or contact support if the problem persists.`,
@@ -389,42 +446,19 @@ export class AccountAdderController extends EventEmitter {
         )
       })
 
-    const allAccountsOnThisSlot = this.#derivedAccounts.filter(
-      ({ slot }) => slot === accountOnPage.slot
-    )
-
-    // eslint-disable-next-line no-nested-ternary
-    const accountKey = isSmartAccount(accountOnPage.account)
-      ? accountOnPage.isLinked
-        ? // The key of the linked account is the EOA (basic) account on the same slot with the same index
-          allAccountsOnThisSlot.find(
-            ({ account, index }) => !isSmartAccount(account) && accountOnPage.index === index
-          )
-        : // The key of the smart account is the EOA (basic) account derived on the
-          // same slot, but with the `SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET` offset.
-          allAccountsOnThisSlot.find(({ index }) => isDerivedForSmartAccountKeyOnly(index))
-      : // The key of the basic account is the basic account itself.
-        accountOnPage
-
-    if (!accountKey)
-      return this.emitError({
-        level: 'major',
-        message: `Selecting ${_account.addr} account failed because some of the details for this account are missing. Please try again or contact support if the problem persists.`,
-        error: new Error(
-          `The basic account for the ${_account.addr} account was not found on this slot.`
-        )
-      })
-
     this.selectedAccounts.push({
       account: _account,
-      accountKeyAddr: accountKey.account.addr,
-      slot: accountOnPage.slot,
-      isLinked: accountOnPage.isLinked,
-      index: accountKey.index
+      isLinked: accountKeys.length > 1, // TODO: Check if this is correct
+      accountKeys: accountKeys.map((a) => ({
+        addr: a.account.addr,
+        slot: a.slot,
+        index: a.index
+      }))
     })
     this.emitUpdate()
   }
 
+  // TODO: Sync based on the latest select account changes
   async deselectAccount(account: Account) {
     const accIdx = this.selectedAccounts.findIndex((x) => x.account.addr === account.addr)
     const accPreselectedIdx = this.preselectedAccounts.findIndex((acc) => acc.addr === account.addr)
@@ -609,7 +643,7 @@ export class AccountAdderController extends EventEmitter {
   async createAndAddEmailAccount(selectedAccount: SelectedAccount) {
     const {
       account: { email },
-      accountKeyAddr: recoveryKey
+      accountKeyAddresses: [recoveryKey]
     } = selectedAccount
     if (!this.isInitialized) {
       return this.emitError({
