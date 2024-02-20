@@ -87,39 +87,38 @@ export function toUserOperation(
     requestType = 'activator'
   }
 
-  // get estimation calldata
-  let callData
-  let verificationGasLimit
-  let callGasLimit
-  if (requestType !== 'standard') {
-    const abiCoder = new ethers.AbiCoder()
-    const spoofSig = abiCoder.encode(['address'], [account.associatedKeys[0]]) + SPOOF_SIGTYPE
-    callData = ambireAccount.interface.encodeFunctionData('executeMultiple', [
-      [[getSignableCalls(accountOp), spoofSig]]
-    ])
-    verificationGasLimit = 250000n
-    callGasLimit = 380000n
-  } else {
-    callData = ambireAccount.interface.encodeFunctionData('executeBySender', [
-      getSignableCalls(accountOp)
-    ])
-    verificationGasLimit = 150000n
-    callGasLimit = 250000n
-  }
-
   const userOperation: any = {
     sender: accountOp.accountAddr,
     nonce: ethers.toBeHex(accountState.erc4337Nonce),
     initCode,
-    callData,
+    callData: '0x',
     preVerificationGas: ethers.toBeHex(0),
-    callGasLimit, // hardcoded fake for estimation
-    verificationGasLimit, // hardcoded fake for estimation
+    callGasLimit: '0x',
+    verificationGasLimit: '0x',
     maxFeePerGas: ethers.toBeHex(1),
     maxPriorityFeePerGas: ethers.toBeHex(1),
     paymasterAndData: getPaymasterSpoof(),
     signature:
       '0x0dc2d37f7b285a2243b2e1e6ba7195c578c72b395c0f76556f8961b0bca97ddc44e2d7a249598f56081a375837d2b82414c3c94940db3c1e64110108021161ca1c01'
+  }
+
+  // get estimation calldata
+  const localAccOp = { ...accountOp }
+  localAccOp.asUserOperation = userOperation
+  if (requestType !== 'standard') {
+    const abiCoder = new ethers.AbiCoder()
+    const spoofSig = abiCoder.encode(['address'], [account.associatedKeys[0]]) + SPOOF_SIGTYPE
+    userOperation.callData = ambireAccount.interface.encodeFunctionData('executeMultiple', [
+      [[getSignableCalls(localAccOp), spoofSig]]
+    ])
+    userOperation.verificationGasLimit = 250000n
+    userOperation.callGasLimit = 380000n
+  } else {
+    userOperation.callData = ambireAccount.interface.encodeFunctionData('executeBySender', [
+      getSignableCalls(localAccOp)
+    ])
+    userOperation.verificationGasLimit = 150000n
+    userOperation.callGasLimit = 250000n
   }
 
   const abiCoder = new ethers.AbiCoder()
