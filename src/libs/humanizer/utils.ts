@@ -90,8 +90,8 @@ export async function getNativePrice(network: NetworkDescriptor, fetch: Function
     throw new Error(`getNativePrice: ${network.name} is not supported`)
   }
 
-  const coingeckoQueryUrl = `${baseUrlCena}/simple/price?ids=${platformId}&vs_currencies=usd`
-  let response = await fetch(coingeckoQueryUrl)
+  const queryUrl = `${baseUrlCena}/simple/price?ids=${platformId}&vs_currencies=usd`
+  let response = await fetch(queryUrl)
   response = await response.json()
 
   if (!response[platformId] || !response[platformId].usd) {
@@ -109,10 +109,8 @@ export async function getTokenInfo(
   const network = networks.find((n: NetworkDescriptor) => n.id === humanizerSettings.networkId)
   const platformId = geckoNetworkIdMapper(network!.id)
   try {
-    const coingeckoQueryUrl = `${baseUrlCena}/coins/${
-      platformId || network?.chainId
-    }/contract/${address}`
-    let response = await options.fetch(coingeckoQueryUrl)
+    const queryUrl = `${baseUrlCena}/coins/${platformId || network?.chainId}/contract/${address}`
+    let response = await options.fetch(queryUrl)
     response = await response.json()
     if (response.symbol && response.detail_platforms?.ethereum?.decimal_place)
       return {
