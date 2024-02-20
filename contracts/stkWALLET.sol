@@ -8,7 +8,6 @@ interface IXWallet {
 	function transferFrom(address from, address to, uint amount) external returns (bool);
 }
 
-
 contract stkWALLET {
 	// ERC20 stuff
 	// Constants
@@ -28,7 +27,7 @@ contract stkWALLET {
 	event Transfer(address indexed from, address indexed to, uint amount);
 
 	// ERC20 methods
-	// @TODO note: any xWALLET sent to this contract will be burned as there's nothing that can be done with it
+	// Note: any xWALLET sent to this contract will be burned as there's nothing that can be done with it. Expected behavior.
 	function totalSupply() external view returns (uint) {
 		return (xWallet.balanceOf(address(this)) * xWallet.shareValue()) / 1e18;
 	}
@@ -69,9 +68,7 @@ contract stkWALLET {
 		xWallet = token;
 	}
 
-	// enter with $WALLLET
-	// no need for this atm, we can just use wrap/unwrap
-	// function stake(uint amount) external {}
+	// NTE: no need to implement entering/exiting with $WALLET, we can just use wrap/unwrap
 
 	// convert xWALLET to stkWALLET
 	function wrapAll() external {
