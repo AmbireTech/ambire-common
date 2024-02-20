@@ -14,6 +14,8 @@ import {
 
 dotenv.config()
 
+const baseUrlCena = 'https://cena.ambire.com/api/v3'
+
 export function getWarning(content: string, level: HumanizerWarning['level'] = 'caution') {
   return { content, level }
 }
@@ -88,8 +90,7 @@ export async function getNativePrice(network: NetworkDescriptor, fetch: Function
     throw new Error(`getNativePrice: ${network.name} is not supported`)
   }
 
-  const baseUrl = 'https://cena.ambire.com/api/v3'
-  const coingeckoQueryUrl = `${baseUrl}/simple/price?ids=${platformId}&vs_currencies=usd`
+  const coingeckoQueryUrl = `${baseUrlCena}/simple/price?ids=${platformId}&vs_currencies=usd`
   let response = await fetch(coingeckoQueryUrl)
   response = await response.json()
 
@@ -108,8 +109,7 @@ export async function getTokenInfo(
   const network = networks.find((n: NetworkDescriptor) => n.id === humanizerSettings.networkId)
   const platformId = geckoNetworkIdMapper(network!.id)
   try {
-    const baseUrl = 'https://cena.ambire.com/api/v3'
-    const coingeckoQueryUrl = `${baseUrl}/coins/${
+    const coingeckoQueryUrl = `${baseUrlCena}/coins/${
       platformId || network?.chainId
     }/contract/${address}`
     let response = await options.fetch(coingeckoQueryUrl)
