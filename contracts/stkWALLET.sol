@@ -68,15 +68,18 @@ contract stkWALLET {
 	// no need for this atm, we can just use wrap/unwrap
 	// function stake(uint amount) external {}
 
+	// @TODO wrapAll?
 	// convert xWALLET to stkWALLET
 	function wrap(uint shareAmount) external {
 		shares[msg.sender] += shareAmount;
 		require(xWallet.transferFrom(msg.sender, address(this), shareAmount));
+		emit Transfer(address(0), msg.sender, (shareAmount * xWallet.shareValue()) / 1e18);
 	}
 
 	// this is used to trigger unstaking
 	function unwrap(uint shareAmount) external {
 		shares[msg.sender] -= shareAmount;
 		require(xWallet.transfer(msg.sender, shareAmount));
+		emit Transfer(msg.sender, address(0), (shareAmount * xWallet.shareValue()) / 1e18);
 	}
 }
