@@ -11,7 +11,7 @@ import { describe, expect, test } from '@jest/globals'
 
 import { produceMemoryStore } from '../../../test/helpers'
 import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'
-import { Key } from '../../interfaces/keystore'
+import { ExternalKey, Key } from '../../interfaces/keystore'
 import { getPrivateKeyFromSeed } from '../../libs/keyIterator/keyIterator'
 import { stripHexPrefix } from '../../utils/stripHexPrefix'
 import { KeystoreController } from './keystore'
@@ -204,7 +204,17 @@ describe('KeystoreController', () => {
     const publicAddress = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'
 
     keystore.addKeysExternallyStored([
-      { addr: publicAddress, dedicatedToOneSA: true, type: 'trezor', meta: null }
+      {
+        addr: publicAddress,
+        dedicatedToOneSA: true,
+        type: 'trezor',
+        meta: {
+          deviceId: '1',
+          deviceModel: 'trezor',
+          hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
+          index: 1
+        }
+      }
     ])
 
     const unsubscribe = keystore.onUpdate(async () => {
@@ -221,33 +231,58 @@ describe('KeystoreController', () => {
 
   test('should not add twice external key that is already added', (done) => {
     const publicAddress = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'
-    const keysWithPrivateKeyAlreadyAdded = [
+    const keysWithPrivateKeyAlreadyAdded: ExternalKey[] = [
       // test key 1
-      { addr: publicAddress, type: 'trezor' as 'trezor', dedicatedToOneSA: true, meta: null },
+      {
+        addr: publicAddress,
+        type: 'trezor' as 'trezor',
+        dedicatedToOneSA: true,
+        meta: {
+          deviceId: '1',
+          deviceModel: 'trezor',
+          hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
+          index: 1
+        }
+      },
       // test key 2 with the same id (public address) as test key 1'
       {
         addr: publicAddress,
         type: 'trezor' as 'trezor',
         dedicatedToOneSA: true,
-        meta: null
+        meta: {
+          deviceId: '1',
+          deviceModel: 'trezor',
+          hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
+          index: 1
+        }
       }
     ]
 
     const anotherAddressNotAddedYet = '0x42c06A1722DEb11022A339d3448BafFf8dFF99Ac'
-    const keysWithPrivateKeyDuplicatedInParams = [
+    const keysWithPrivateKeyDuplicatedInParams: ExternalKey[] = [
       // test key 3
       {
         addr: anotherAddressNotAddedYet,
         type: 'trezor' as 'trezor',
         dedicatedToOneSA: true,
-        meta: null
+        meta: {
+          deviceId: '1',
+          deviceModel: 'trezor',
+          hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
+          index: 1
+        }
       },
       // test key 4 with the same private key as key 3',
       {
         addr: anotherAddressNotAddedYet,
         type: 'trezor' as 'trezor',
         dedicatedToOneSA: true,
-        meta: null
+        meta: {
+          deviceId: '1',
+          deviceModel: 'trezor',
+          hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
+          index: 1
+        }
       }
     ]
 
@@ -271,10 +306,40 @@ describe('KeystoreController', () => {
   })
 
   test('should add both keys when they have the same address but different type', (done) => {
-    const externalKeysToAddWithDuplicateOnes = [
-      { addr: keyPublicAddress, type: 'trezor' as 'trezor', dedicatedToOneSA: true, meta: null },
-      { addr: keyPublicAddress, type: 'trezor' as 'trezor', dedicatedToOneSA: true, meta: null },
-      { addr: keyPublicAddress, type: 'ledger' as 'ledger', dedicatedToOneSA: true, meta: null }
+    const externalKeysToAddWithDuplicateOnes: ExternalKey[] = [
+      {
+        addr: keyPublicAddress,
+        type: 'trezor' as 'trezor',
+        dedicatedToOneSA: true,
+        meta: {
+          deviceId: '1',
+          deviceModel: 'trezor',
+          hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
+          index: 1
+        }
+      },
+      {
+        addr: keyPublicAddress,
+        type: 'trezor' as 'trezor',
+        dedicatedToOneSA: true,
+        meta: {
+          deviceId: '1',
+          deviceModel: 'trezor',
+          hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
+          index: 1
+        }
+      },
+      {
+        addr: keyPublicAddress,
+        type: 'ledger' as 'ledger',
+        dedicatedToOneSA: true,
+        meta: {
+          deviceId: '1',
+          deviceModel: 'trezor',
+          hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
+          index: 1
+        }
+      }
     ]
 
     keystore.addKeysExternallyStored(externalKeysToAddWithDuplicateOnes)

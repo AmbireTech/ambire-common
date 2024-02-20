@@ -8,7 +8,7 @@ import {
 } from '../../consts/derivation'
 import { Account, AccountOnchainState } from '../../interfaces/account'
 import { KeyIterator } from '../../interfaces/keyIterator'
-import { dedicatedToOneSAPriv, Key } from '../../interfaces/keystore'
+import { dedicatedToOneSAPriv, ExternalKey, Key } from '../../interfaces/keystore'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
 import { AccountPreferences, KeyPreferences } from '../../interfaces/settings'
 import { Storage } from '../../interfaces/storage'
@@ -57,7 +57,12 @@ type DerivedAccountWithoutNetworkMeta = Omit<DerivedAccount, 'account'> & { acco
 
 export type ReadyToAddKeys = {
   internal: { privateKey: string; dedicatedToOneSA: boolean }[]
-  external: { addr: Key['addr']; type: Key['type']; dedicatedToOneSA: boolean; meta: Key['meta'] }[]
+  external: {
+    addr: Key['addr']
+    type: Key['type']
+    dedicatedToOneSA: boolean
+    meta: ExternalKey['meta']
+  }[]
 }
 
 /**
