@@ -325,7 +325,7 @@ export class AccountAdderController extends EventEmitter {
     hdPathTemplate
   }: {
     keyIterator: KeyIterator | null
-    preselectedAccounts: Account[]
+    preselectedAccounts?: Account[]
     page?: number
     pageSize?: number
     hdPathTemplate: HD_PATH_TEMPLATE_TYPE
