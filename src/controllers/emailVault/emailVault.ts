@@ -193,14 +193,14 @@ export class EmailVaultController extends EventEmitter {
       }
     })
 
-    const ev: any = await polling.exec(
+    const ev: (EmailVaultData & { error?: any; canceled?: boolean }) | null = await polling.exec(
       this.#emailVault.getEmailVaultInfo.bind(this.#emailVault),
       [email, newKey.key],
       () => {
         this.#isWaitingEmailConfirmation = false
       },
       () => this.#shouldStopConfirmationPolling,
-      15000,
+      3 * 60 * 1000,
       1000
     )
 
@@ -214,7 +214,12 @@ export class EmailVaultController extends EventEmitter {
       fn && (await fn())
       this.storage.set(MAGIC_LINK_STORAGE_KEY, this.#magicLinkKeys)
       this.#requestSessionKey(email)
-    }
+    } else if (this.#shouldStopConfirmationPolling)
+      this.emitError({
+        message: `Unexpected error getting email vault for ${email} ${ev?.error}`,
+        level: 'major',
+        error: new Error(`Unexpected error getting email vault for ${email} ${ev?.error}`)
+      })
     this.emitUpdate()
   }
 
@@ -309,14 +314,20 @@ export class EmailVaultController extends EventEmitter {
       await this.#keyStore.addSecret(RECOVERY_SECRET_ID, newSecret, '', false)
       const keyStoreUid = await this.#keyStore.getKeyStoreUid()
       result = await this.#emailVault.addKeyStoreSecret(email, magicKey.key, keyStoreUid, newSecret)
-    } else {
-      await this.handleMagicLinkKey(email, () => this.#uploadKeyStoreSecret(email))
-    }
-
+    } else if (this.#shouldStopConfirmationPolling)
+      this.emitError({
+        message: 'Email key not confirmed',
+        level: 'minor',
+        error: new Error('uploadKeyStoreSecret: not confirmed magic link key')
+      })
     if (result) {
       await this.#getEmailVaultInfo(email)
     } else {
-      this.emailVaultStates.errors = [new Error('error upload keyStore to email vault')]
+      this.emitError({
+        level: 'minor',
+        message: 'Error upload keyStore to email vault',
+        error: new Error('error upload keyStore to email vault')
+      })
     }
 
     this.#isUploadingSecret = false
