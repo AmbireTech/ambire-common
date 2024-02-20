@@ -307,8 +307,7 @@ const init = async (
     storage,
     providers,
     networks,
-    'https://staging-relayer.ambire.com',
-    []
+    'https://staging-relayer.ambire.com'
   )
   await portfolio.updateSelectedAccount(accounts, networks, account.addr)
 

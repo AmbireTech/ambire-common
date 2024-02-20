@@ -1,6 +1,5 @@
 /* eslint-disable @typescript-eslint/brace-style */
 import { ethers, isAddress, TransactionResponse } from 'ethers'
-import { NetworkPreference, NetworkPreferences } from 'interfaces/settings'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFactory.json'
@@ -13,6 +12,7 @@ import {
   TxnRequest
 } from '../../interfaces/keystore'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
+import { NetworkPreference, NetworkPreferences } from '../../interfaces/settings'
 import { Storage } from '../../interfaces/storage'
 import { Message, UserRequest } from '../../interfaces/userRequest'
 import { getDefaultSelectedAccount, isSmartAccount } from '../../libs/account/account'
@@ -29,7 +29,7 @@ import { estimate, EstimateResult } from '../../libs/estimate/estimate'
 import { GasRecommendation, getGasPriceRecommendations } from '../../libs/gasPrice/gasPrice'
 import { humanizeAccountOp } from '../../libs/humanizer'
 import { shouldGetAdditionalPortfolio } from '../../libs/portfolio/helpers'
-import { PinnedTokens } from '../../libs/portfolio/interfaces'
+import { GetOptions } from '../../libs/portfolio/interfaces'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { isErc4337Broadcast } from '../../libs/userOperation/userOperation'
 import bundler from '../../services/bundlers'
@@ -153,8 +153,7 @@ export class MainController extends EventEmitter {
     onResolveDappRequest,
     onRejectDappRequest,
     onUpdateDappSelectedAccount,
-    onBroadcastSuccess,
-    pinned
+    onBroadcastSuccess
   }: {
     storage: Storage
     fetch: Function
@@ -172,7 +171,6 @@ export class MainController extends EventEmitter {
     onRejectDappRequest: (err: any, id?: number) => void
     onUpdateDappSelectedAccount: (accountAddr: string) => void
     onBroadcastSuccess?: (type: 'message' | 'typed-data' | 'account-op') => void
-    pinned: PinnedTokens
   }) {
     super()
     this.#storage = storage
@@ -186,8 +184,7 @@ export class MainController extends EventEmitter {
       this.#storage,
       this.settings.providers,
       this.settings.networks,
-      relayerUrl,
-      pinned
+      relayerUrl
     )
     this.#initialLoadPromise = this.#load()
     this.emailVault = new EmailVaultController(
@@ -376,6 +373,7 @@ export class MainController extends EventEmitter {
 
   destroySignAccOp() {
     this.signAccountOp = null
+    this.portfolio.resetAdditionalHints()
     MainController.signAccountOpListener() // unsubscribes for further updates
     this.emitUpdate()
   }
@@ -603,17 +601,15 @@ export class MainController extends EventEmitter {
   async updateSelectedAccount(selectedAccount: string | null = null, forceUpdate: boolean = false) {
     if (!selectedAccount) return
 
-    this.portfolio.updateSelectedAccount(
-      this.accounts,
-      this.settings.networks,
-      selectedAccount,
-      undefined,
-      { forceUpdate }
-    )
-
-    const account = this.accounts.find(({ addr }) => addr === selectedAccount)
-    if (shouldGetAdditionalPortfolio(account))
-      this.portfolio.getAdditionalPortfolio(selectedAccount)
+    this.portfolio
+      .updateSelectedAccount(this.accounts, this.settings.networks, selectedAccount, undefined, {
+        forceUpdate
+      })
+      .then(() => {
+        const account = this.accounts.find(({ addr }) => addr === selectedAccount)
+        if (shouldGetAdditionalPortfolio(account))
+          this.portfolio.getAdditionalPortfolio(selectedAccount)
+      })
   }
 
   async addUserRequest(req: UserRequest) {
@@ -788,33 +784,12 @@ export class MainController extends EventEmitter {
       this.#fetch,
       this.emitError
     )
-    const pinned = humanization
+    const additionalHints: GetOptions['additionalHints'] = humanization
       .map((call) =>
-        !call.fullVisualization
-          ? []
-          : call.fullVisualization.map((vis) => ({
-              address: vis.address || '',
-              networkId: localAccountOp.networkId,
-              accountId: localAccountOp.accountAddr,
-              onGasTank: false
-            }))
+        !call.fullVisualization ? [] : call.fullVisualization.map((vis) => vis.address || '')
       )
       .flat()
-      .filter(({ address }) => isAddress(address))
-
-    const isNativeInPortfolio = this.portfolio.latest?.[localAccountOp.accountAddr]?.[
-      localAccountOp.networkId
-    ]?.result?.tokens.find((token) => token.address === ethers.ZeroAddress)
-
-    // The native token is required for the estimation
-    if (!isNativeInPortfolio) {
-      pinned.push({
-        address: ethers.ZeroAddress,
-        networkId: localAccountOp.networkId,
-        accountId: localAccountOp.accountAddr,
-        onGasTank: false
-      })
-    }
+      .filter((x) => isAddress(x))
 
     const [, , estimation] = await Promise.all([
       // NOTE: we are not emitting an update here because the portfolio controller will do that
@@ -831,7 +806,7 @@ export class MainController extends EventEmitter {
         ),
         {
           forceUpdate: true,
-          pinned
+          additionalHints
         }
       ),
       shouldGetAdditionalPortfolio(account) &&
