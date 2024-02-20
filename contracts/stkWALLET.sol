@@ -8,7 +8,7 @@ interface IXWallet {
 }
 
 
-contract StakingPool {
+contract stkWALLET {
 	// ERC20 stuff
 	// Constants
 	string public constant name = "Staked $WALLET";
