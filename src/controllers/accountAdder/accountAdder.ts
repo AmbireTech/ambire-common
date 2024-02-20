@@ -67,7 +67,7 @@ type AccountOnPageKeyMeta = {
   alreadyImportedWithSameKey: boolean
   alreadyImportedWithDifferentKey: boolean
 }
-type AccountOnPage = DerivedAccount & AccountOnPageKeyMeta
+export type AccountOnPage = DerivedAccount & AccountOnPageKeyMeta
 
 export type ReadyToAddKeys = {
   internal: { privateKey: string; dedicatedToOneSA: boolean }[]
@@ -179,10 +179,10 @@ export class AccountAdderController extends EventEmitter {
     // If is imported and has key, check if the imported key is the same
     // (including type) as the key existing in this keystore session
     const alreadyImportedWithSameKey = importedAccountKeystoreKeys.some(
-      (key) => key.addr === account.addr && key.type === this.#keyIterator?.type
+      (key) => account.associatedKeys.includes(key.addr) && key.type === this.#keyIterator?.type
     )
     const alreadyImportedWithDifferentKey = importedAccountKeystoreKeys.some(
-      (key) => key.addr === account.addr && key.type !== this.#keyIterator?.type
+      (key) => account.associatedKeys.includes(key.addr) && key.type !== this.#keyIterator?.type
     )
 
     // TODO: Check if this covers the Basic accounts
@@ -249,7 +249,7 @@ export class AccountAdderController extends EventEmitter {
             index: derivedAccount.index,
             // Check if it is imported (mainCtrl.accounts) and if it is imported
             // with the same key (mainCtrl.keystore.keys) and the same key type
-            ...this.getAccountOnPageKeyMeta(derivedAccount.account)
+            ...this.getAccountOnPageKeyMeta(linkedAcc.account)
             // alreadyImportedWithSameKey: false,
             // alreadyImportedWithDifferentKey: false
           }))
