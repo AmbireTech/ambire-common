@@ -130,7 +130,7 @@ const validateSendTransferAmount = (amount: string, selectedAsset: TokenResult) 
       )
       const currentAmount = Number(amount)
 
-      if (currentAmount && selectedAssetMaxAmount && Number(amount) > selectedAssetMaxAmount) {
+      if (currentAmount > selectedAssetMaxAmount) {
         return {
           success: false,
           message: `The amount is greater than the asset's balance: ${selectedAssetMaxAmount} ${selectedAsset?.symbol}.`
