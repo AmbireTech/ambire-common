@@ -35,19 +35,17 @@ export function geckoRequestBatcher(queue: QueueElement[]): Request[] {
     const baseCurrency = queueSegment[0]!.data.baseCurrency
     const geckoPlatform = geckoNetworkIdMapper(queueSegment[0]!.data.networkId)
 
-    const cgKey = process.env.COINGECKO_PRO_API_KEY
-    const mainApiUrl = cgKey ? 'https://pro-api.coingecko.com' : 'https://api.coingecko.com'
-    const apiKeyString = cgKey ? `&x_cg_pro_api_key=${cgKey}` : ''
+    const mainApiUrl = 'https://cena.ambire.com'
 
     let url
     if (key.endsWith('natives'))
       url = `${mainApiUrl}/api/v3/simple/price?ids=${dedup(
         queueSegment.map((x) => geckoIdMapper(x.data.address, x.data.networkId))
-      ).join('%2C')}&vs_currencies=${baseCurrency}${apiKeyString}`
+      ).join('%2C')}&vs_currencies=${baseCurrency}`
     else
       url = `${mainApiUrl}/api/v3/simple/token_price/${geckoPlatform}?contract_addresses=${dedup(
         queueSegment.map((x) => x.data.address)
-      ).join('%2C')}&vs_currencies=${baseCurrency}${apiKeyString}`
+      ).join('%2C')}&vs_currencies=${baseCurrency}`
     return { url, queueSegment }
   })
 }
