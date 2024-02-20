@@ -2,10 +2,12 @@ import { Block, Interface, Provider } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFactory.json'
+import EntryPoint from '../../../contracts/compiled/EntryPoint.json'
 import { AccountOnchainState } from '../../interfaces/account'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
-import { isErc4337Broadcast } from '../userOperation/userOperation'
+import { UserOperation } from '../userOperation/types'
+import { getCleanUserOp } from '../userOperation/userOperation'
 
 // https://eips.ethereum.org/EIPS/eip-1559
 const DEFAULT_BASE_FEE_MAX_CHANGE_DENOMINATOR = 8n
@@ -157,14 +159,25 @@ export async function getGasPriceRecommendations(
 
 export function getProbableCallData(
   accountOp: AccountOp,
-  network: NetworkDescriptor,
-  accountState: AccountOnchainState
+  accountState: AccountOnchainState,
+  // the userOp should be passed during estimation only as we strictly
+  // use it to determine the extra L1 fee that the user should pay
+  userOp: UserOperation | null = null
 ): string {
   let estimationCallData
 
+  if (userOp) {
+    const entryPoint = new Interface(EntryPoint)
+    estimationCallData = entryPoint.encodeFunctionData('handleOps', [
+      getCleanUserOp(userOp),
+      accountOp.accountAddr
+    ])
+    return estimationCallData
+  }
+
   // always call executeMultiple as the worts case scenario
   // we disregard the initCode
-  if (accountState.isDeployed || isErc4337Broadcast(network, accountState)) {
+  if (accountState.isDeployed) {
     const ambireAccount = new Interface(AmbireAccount.abi)
     estimationCallData = ambireAccount.encodeFunctionData('executeMultiple', [
       [
@@ -194,10 +207,9 @@ export function getProbableCallData(
 
 export function getCallDataAdditional(
   accountOp: AccountOp,
-  network: NetworkDescriptor,
   accountState: AccountOnchainState
 ): bigint {
-  const estimationCallData = getProbableCallData(accountOp, network, accountState)
+  const estimationCallData = getProbableCallData(accountOp, accountState)
   const FIXED_OVERHEAD = 21000n
   const bytes = Buffer.from(estimationCallData.substring(2))
   const nonZeroBytes = BigInt(bytes.filter((b) => b).length)
@@ -215,5 +227,5 @@ export function getCallDataAdditionalByNetwork(
   // added in the calculation for the L1 fee
   if (network.id === 'arbitrum') return 0n
 
-  return getCallDataAdditional(accountOp, network, accountState)
+  return getCallDataAdditional(accountOp, accountState)
 }

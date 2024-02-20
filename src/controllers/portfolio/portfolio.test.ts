@@ -1,14 +1,19 @@
-import { ethers, JsonRpcProvider } from 'ethers'
+import { ethers, JsonRpcProvider, ZeroAddress } from 'ethers'
 import { CollectionResult } from 'libs/portfolio/interfaces'
 
 import { describe, expect, jest } from '@jest/globals'
 
 import { getNonce, produceMemoryStore } from '../../../test/helpers'
 import { networks } from '../../consts/networks'
+import { PINNED_TOKENS } from '../../consts/pinnedTokens'
+import { Account } from '../../interfaces/account'
+import { RPCProvider, RPCProviders } from '../../interfaces/settings'
 import { AccountOp } from '../../libs/accountOp/accountOp'
 import { PortfolioController } from './portfolio'
 
 const relayerUrl = 'https://staging-relayer.ambire.com'
+
+const EMPTY_ACCOUNT_ADDR = '0xA098B9BccaDd9BAEc311c07433e94C9d260CbC07'
 
 describe('Portfolio Controller ', () => {
   const ethereum = networks.find((x) => x.id === 'ethereum')
@@ -77,8 +82,8 @@ describe('Portfolio Controller ', () => {
       }
 
       const storage = produceMemoryStore()
-      const controller = new PortfolioController(storage, providers, networks, relayerUrl, [])
-      await controller.updateSelectedAccount([account2], networks, account2.addr)
+      const controller = new PortfolioController(storage, providers, [ethereum], relayerUrl)
+      await controller.updateSelectedAccount([account2], [ethereum], account2.addr)
 
       const storagePreviousHints = await storage.get('previousHints', {})
       const storageErc20s = storagePreviousHints[`ethereum:${account2.addr}`].erc20s
@@ -95,7 +100,7 @@ describe('Portfolio Controller ', () => {
   describe('Latest tokens', () => {
     test('Latest tokens are fetched and kept in the controller, while the pending should not be fetched (no AccountOp passed)', (done) => {
       const storage = produceMemoryStore()
-      const controller = new PortfolioController(storage, providers, networks, relayerUrl, [])
+      const controller = new PortfolioController(storage, providers, [ethereum], relayerUrl)
 
       controller.onUpdate(() => {
         const latestState =
@@ -113,7 +118,7 @@ describe('Portfolio Controller ', () => {
         }
       })
 
-      controller.updateSelectedAccount([account], networks, account.addr)
+      controller.updateSelectedAccount([account], [ethereum], account.addr)
     })
 
     // @TODO redo this test
@@ -121,7 +126,7 @@ describe('Portfolio Controller ', () => {
       const done = jest.fn(() => null)
 
       const storage = produceMemoryStore()
-      const controller = new PortfolioController(storage, providers, networks, relayerUrl, [])
+      const controller = new PortfolioController(storage, providers, [ethereum], relayerUrl)
       let pendingState1: any
       controller.onUpdate(() => {
         if (!pendingState1?.isReady) {
@@ -135,15 +140,15 @@ describe('Portfolio Controller ', () => {
             done()
         }
       })
-      await controller.updateSelectedAccount([account], networks, account.addr)
-      await controller.updateSelectedAccount([account], networks, account.addr)
+      await controller.updateSelectedAccount([account], [ethereum], account.addr)
+      await controller.updateSelectedAccount([account], [ethereum], account.addr)
 
       expect(done).not.toHaveBeenCalled()
     })
 
     test('Latest and Pending are fetched, because `forceUpdate` flag is set', (done) => {
       const storage = produceMemoryStore()
-      const controller = new PortfolioController(storage, providers, networks, relayerUrl, [])
+      const controller = new PortfolioController(storage, providers, [ethereum], relayerUrl)
 
       controller.onUpdate(() => {
         const latestState =
@@ -166,7 +171,7 @@ describe('Portfolio Controller ', () => {
         }
       })
 
-      controller.updateSelectedAccount([account], networks, account.addr, undefined, {
+      controller.updateSelectedAccount([account], [ethereum], account.addr, undefined, {
         forceUpdate: true
       })
     })
@@ -177,9 +182,8 @@ describe('Portfolio Controller ', () => {
       const accountOp = await getAccountOp()
 
       const storage = produceMemoryStore()
-      const controller = new PortfolioController(storage, providers, networks, relayerUrl, [])
-
-      await controller.updateSelectedAccount([account], networks, account.addr, accountOp)
+      const controller = new PortfolioController(storage, providers, [ethereum], relayerUrl)
+      await controller.updateSelectedAccount([account], [ethereum], account.addr, accountOp)
 
       controller.onUpdate(() => {
         const pendingState =
@@ -198,14 +202,14 @@ describe('Portfolio Controller ', () => {
       })
     })
 
-    // TODO: currently we disable this optimization in portfolio controller, as in the application it doesn't work at all
+    // TODO: currently we disable this optimizatin in portfolio controller, as in the application it doesn't work at all
     //   Under the tests, the caching works as expected, but once ran in the extension - it doesn't fetch the pending state.
     // test('Pending tokens are fetched only once if AccountOp is the same during the calls', async () => {
     //   const done = jest.fn(() => null)
     //   const accountOp = await getAccountOp()
     //
     //   const storage = produceMemoryStore()
-    //   const controller = new PortfolioController(storage, relayerUrl, [])
+    //   const controller = new PortfolioController(storage, relayerUrl)
     //   let pendingState1: any
     //   let pendingState2: any
     //   controller.onUpdate(() => {
@@ -231,7 +235,7 @@ describe('Portfolio Controller ', () => {
       const accountOp = await getAccountOp()
 
       const storage = produceMemoryStore()
-      const controller = new PortfolioController(storage, providers, networks, relayerUrl, [])
+      const controller = new PortfolioController(storage, providers, [ethereum], relayerUrl)
       let pendingState1: any
       let pendingState2: any
       controller.onUpdate(() => {
@@ -246,8 +250,8 @@ describe('Portfolio Controller ', () => {
           done()
         }
       })
-      await controller.updateSelectedAccount([account], networks, account.addr, accountOp)
-      await controller.updateSelectedAccount([account], networks, account.addr, accountOp, {
+      await controller.updateSelectedAccount([account], [ethereum], account.addr, accountOp)
+      await controller.updateSelectedAccount([account], [ethereum], account.addr, accountOp, {
         forceUpdate: true
       })
 
@@ -258,13 +262,13 @@ describe('Portfolio Controller ', () => {
       const accountOp = await getAccountOp()
 
       const storage = produceMemoryStore()
-      const controller = new PortfolioController(storage, providers, networks, relayerUrl, [])
+      const controller = new PortfolioController(storage, providers, [ethereum], relayerUrl)
 
-      await controller.updateSelectedAccount([account], networks, account.addr, accountOp)
+      await controller.updateSelectedAccount([account], [ethereum], account.addr, accountOp)
       const pendingState1 =
         controller.pending['0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'].ethereum!
 
-      await controller.updateSelectedAccount([account], networks, account.addr, accountOp, {
+      await controller.updateSelectedAccount([account], [ethereum], account.addr, accountOp, {
         forceUpdate: true
       })
       const pendingState2 =
@@ -279,9 +283,9 @@ describe('Portfolio Controller ', () => {
       const accountOp = await getAccountOp()
 
       const storage = produceMemoryStore()
-      const controller = new PortfolioController(storage, providers, networks, relayerUrl, [])
+      const controller = new PortfolioController(storage, providers, [ethereum], relayerUrl)
 
-      await controller.updateSelectedAccount([account], networks, account.addr, accountOp)
+      await controller.updateSelectedAccount([account], [ethereum], account.addr, accountOp)
       const pendingState1 =
         controller.pending['0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'].ethereum!
 
@@ -289,7 +293,7 @@ describe('Portfolio Controller ', () => {
       // Change the address
       accountOp2.ethereum[0].accountAddr = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA4'
 
-      await controller.updateSelectedAccount([account], networks, account.addr, accountOp2)
+      await controller.updateSelectedAccount([account], [ethereum], account.addr, accountOp2)
       const pendingState2 =
         controller.pending['0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'].ethereum!
 
@@ -300,71 +304,162 @@ describe('Portfolio Controller ', () => {
   })
 
   describe('Pinned tokens', () => {
-    test('Pinned tokens are set for a given account and are not fetched for another; also, they are refetched for the current one if pinned tokens are not passed in the future', async () => {
+    test('Pinned tokens are set in an account with no tokens', async () => {
       const storage = produceMemoryStore()
-      const avalanche = networks.find((x) => x.id === 'avalanche')
-      if (!avalanche) throw new Error('unable to find avalanche network in consts')
-      const avalancheProvider = new JsonRpcProvider(avalanche.rpcUrl)
+      const ethereumProvider: RPCProvider = new JsonRpcProvider(ethereum.rpcUrl)
+      ethereumProvider.isWorking = true
+
+      const emptyAccount: Account = {
+        addr: EMPTY_ACCOUNT_ADDR,
+        initialPrivileges: [],
+        associatedKeys: [],
+        creation: null
+      }
+
       const controller = new PortfolioController(
         storage,
-        { avalanche: avalancheProvider },
+        { ethereum: ethereumProvider },
         networks,
-        relayerUrl,
-        []
+        relayerUrl
       )
 
-      const joeAddress = '0x6e84a6216eA6dACC71eE8E6b0a5B7322EEbC0fDd'
       await controller.updateSelectedAccount(
-        [account],
+        [emptyAccount],
         networks,
-        account.addr,
-        {},
+        emptyAccount.addr,
+        undefined,
         {
-          forceUpdate: true,
-          pinned: [
-            {
-              // JOE token
-              address: joeAddress,
-              networkId: 'avalanche',
-              onGasTank: false,
-              accountId: account.addr
-            }
-          ]
+          forceUpdate: true
         }
       )
-      // confirm the JOE token is here
-      const latestState = controller.latest[account.addr].avalanche!
-      expect(latestState.isLoading).toBe(false)
-      expect(latestState.isReady).toBe(true)
-      const joe = latestState.result?.tokens.find((token) => token.address === joeAddress)
-      expect(joe).not.toBe(null)
-      expect(joe?.address).toBe(joeAddress)
 
-      // switch account and confirm joe is not there
-      await controller.updateSelectedAccount([EOA], networks, EOA.addr, {}, { forceUpdate: true })
-      const latestStateEOA = controller.latest[EOA.addr].avalanche!
-      expect(latestStateEOA.isLoading).toBe(false)
-      expect(latestStateEOA.isReady).toBe(true)
-      const joeEOA = latestStateEOA.result?.tokens.find((token) => token.address === joeAddress)
-      expect(joeEOA).toBe(undefined)
+      PINNED_TOKENS.filter((token) => token.networkId === 'ethereum').forEach((pinnedToken) => {
+        const token = controller.latest[emptyAccount.addr].ethereum?.result?.tokens.find(
+          (t) => t.address === pinnedToken.address
+        )
 
-      // call the original update without pinned - JOE should be there
-      await controller.updateSelectedAccount(
-        [account],
+        expect(token).toBeTruthy()
+      })
+    })
+    test('Pinned gas tank tokens are set in a smart account with no tokens', async () => {
+      const storage = produceMemoryStore()
+      const ethereumProvider: RPCProvider = new JsonRpcProvider(ethereum.rpcUrl)
+
+      ethereumProvider.isWorking = true
+      const emptyAccount: Account = {
+        addr: '0x018D034c782db8462d864996dE3c297bcf66f86A',
+        initialPrivileges: [
+          [
+            '0xdD6487aa74f0158733e8a36E466A98f4aEE9c179',
+            '0x0000000000000000000000000000000000000000000000000000000000000002'
+          ]
+        ],
+        associatedKeys: ['0xdD6487aa74f0158733e8a36E466A98f4aEE9c179'],
+        creation: {
+          factoryAddr: '0xa8202f888b9b2dfa5ceb2204865018133f6f179a',
+          bytecode:
+            '0x7f00000000000000000000000000000000000000000000000000000000000000027f9405c22160986551985df269a2a18b4e60aa0a1347bd75cbcea777ea18692b1c553d602d80604d3d3981f3363d3d373d3d3d363d730e370942ebe4d026d05d2cf477ff386338fc415a5af43d82803e903d91602b57fd5bf3',
+          salt: '0x0000000000000000000000000000000000000000000000000000000000000000'
+        }
+      }
+      const controller = new PortfolioController(
+        storage,
+        { ethereum: ethereumProvider },
         networks,
-        account.addr,
-        {},
-        { forceUpdate: true }
+        relayerUrl
       )
 
-      const latestStateNoExtraPinned = controller.latest[account.addr].avalanche!
-      expect(latestStateNoExtraPinned.isLoading).toBe(false)
-      expect(latestStateNoExtraPinned.isReady).toBe(true)
-      const joeEvenWithoutPinned = latestStateNoExtraPinned.result?.tokens.find(
-        (token) => token.address === joeAddress
+      await controller.updateSelectedAccount([emptyAccount], networks, emptyAccount.addr, undefined)
+      await controller.getAdditionalPortfolio(emptyAccount.addr)
+
+      PINNED_TOKENS.filter((token) => token.onGasTank && token.networkId === 'ethereum').forEach(
+        (pinnedToken) => {
+          const token = controller.latest[emptyAccount.addr].gasTank?.result?.tokens.find(
+            (t) => t.address === pinnedToken.address
+          )
+
+          expect(token).toBeTruthy()
+        }
       )
-      expect(joeEvenWithoutPinned).not.toBe(null)
-      expect(joeEvenWithoutPinned?.address).toBe(joeAddress)
+    })
+    test('Pinned gas tank tokens are not set in an account with tokens', async () => {
+      const storage = produceMemoryStore()
+      const ethereumProvider: RPCProvider = new JsonRpcProvider(ethereum.rpcUrl)
+      ethereumProvider.isWorking = true
+
+      const controller = new PortfolioController(
+        storage,
+        { ethereum: ethereumProvider },
+        networks,
+        relayerUrl
+      )
+
+      await controller.updateSelectedAccount([account], networks, account.addr, undefined)
+
+      await controller.getAdditionalPortfolio(account.addr)
+
+      controller.latest[account.addr].ethereum?.result?.tokens.forEach((token) => {
+        expect(token.amount > 0)
+      })
+      controller.latest[account.addr].gasTank?.result?.tokens.forEach((token) => {
+        expect(token.amount > 0)
+      })
+    })
+  })
+
+  test('Additional hints', async () => {
+    const storage = produceMemoryStore()
+    const ethereumProvider = new JsonRpcProvider(ethereum.rpcUrl)
+    const BANANA_TOKEN_ADDR = '0x94e496474F1725f1c1824cB5BDb92d7691A4F03a'
+
+    const controller = new PortfolioController(
+      storage,
+      { ethereum: ethereumProvider },
+      networks,
+      relayerUrl
+    )
+
+    await controller.updateSelectedAccount([account], networks, account.addr, undefined, {
+      additionalHints: [BANANA_TOKEN_ADDR],
+      forceUpdate: false
+    })
+
+    const token = controller.latest[account.addr].ethereum?.result?.tokens.find(
+      (token) => token.address === BANANA_TOKEN_ADDR
+    )
+
+    expect(token).toBeTruthy()
+
+    controller.resetAdditionalHints()
+
+    await controller.updateSelectedAccount([account], networks, account.addr, undefined, {
+      forceUpdate: true
+    })
+
+    const tokenAgain = controller.latest[account.addr].ethereum?.result?.tokens.find(
+      (token) => token.address === BANANA_TOKEN_ADDR
+    )
+
+    expect(tokenAgain).toBeUndefined()
+  })
+
+  test('Native tokens are fetched for all networks', async () => {
+    const storage = produceMemoryStore()
+    const providers: RPCProviders = {}
+
+    networks.forEach((network) => {
+      providers[network.id] = new JsonRpcProvider(network.rpcUrl)
+    })
+    const controller = new PortfolioController(storage, providers, networks, relayerUrl)
+
+    await controller.updateSelectedAccount([account], networks, account.addr, undefined)
+
+    networks.forEach((network) => {
+      const nativeToken = controller.latest[account.addr][network.id]?.result?.tokens.find(
+        (token) => token.address === ZeroAddress
+      )
+
+      expect(nativeToken).toBeTruthy()
     })
   })
 })

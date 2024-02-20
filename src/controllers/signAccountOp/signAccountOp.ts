@@ -318,10 +318,13 @@ export class SignAccountOpController extends EventEmitter {
     if (gasPrices) this.gasPrices = gasPrices
 
     if (estimation) {
-      // set a new copy of the user op if 4337
-      this.#userOperation = estimation.erc4337estimation
-        ? { ...estimation.erc4337estimation.userOp }
-        : null
+      if (estimation.erc4337estimation) {
+        // set a new copy of the user op if 4337
+        this.#userOperation = structuredClone(estimation.erc4337estimation.userOp)
+        // set the accountOp user op as a reference to this.#userOperation
+        // it's overriden during sign() to it's safe
+        this.accountOp.asUserOperation = this.#userOperation
+      }
 
       this.#estimation = estimation
     }

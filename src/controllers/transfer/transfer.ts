@@ -68,6 +68,13 @@ export class TransferController extends EventEmitter {
 
   // every time when updating selectedToken update the amount and maxAmount of the form
   set selectedToken(token: TokenResult | null) {
+    if (token?.amount && Number(token?.amount) === 0) {
+      this.#selectedToken = null
+      this.amount = ''
+      this.maxAmount = '0'
+      return
+    }
+
     if (
       this.selectedToken?.address !== token?.address ||
       this.selectedToken?.networkId !== token?.networkId
@@ -87,7 +94,7 @@ export class TransferController extends EventEmitter {
 
   set tokens(tokenResults: TokenResult[]) {
     const filteredTokens = tokenResults.filter(
-      (token) => token.amount !== 0n && !token.flags.onGasTank
+      (token) => Number(token.amount) > 0 && !token.flags.onGasTank
     )
     this.#tokens = filteredTokens
     this.#updateSelectedTokenIfNeeded(filteredTokens)
@@ -142,7 +149,7 @@ export class TransferController extends EventEmitter {
     }
 
     // Validate the amount
-    if (this.selectedToken && (this.amount !== '' || this.addressState.fieldValue !== '')) {
+    if (this.selectedToken) {
       validationFormMsgsNew.amount = validateSendTransferAmount(this.amount, this.selectedToken)
     }
 

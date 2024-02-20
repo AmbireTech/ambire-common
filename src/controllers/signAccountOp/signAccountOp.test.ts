@@ -59,7 +59,7 @@ const createAccountOp = (
   networkId: NetworkId = 'ethereum'
 ): {
   op: AccountOp
-  nativeToCheck: string[]
+  nativeToCheck: Account[]
   feeTokens: FeeToken[]
 } => {
   const to = '0x68b3465833fb72a70ecdf485e0e4c7bd8665fc45'
@@ -73,7 +73,14 @@ const createAccountOp = (
   // Fee tokens: USDT, USDC
   const data = `0x5ae401dc${expire}00000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000e404e45aaf000000000000000000000000dac17f958d2ee523a2206206994597c13d831ec7000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb4800000000000000000000000000000000000000000000000000000000000001f4000000000000000000000000a07d75aacefd11b425af7181958f0f85c312f14300000000000000000000000000000000000000000000000000000000000f424000000000000000000000000000000000000000000000000000000000000c33d9000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000`
 
-  const nativeToCheck = ['0xAa0e9a1E2D2CcF2B867fda047bb5394BEF1883E0']
+  const nativeToCheck: Account[] = [
+    {
+      addr: '0xAa0e9a1E2D2CcF2B867fda047bb5394BEF1883E0',
+      associatedKeys: ['0xAa0e9a1E2D2CcF2B867fda047bb5394BEF1883E0'],
+      initialPrivileges: [],
+      creation: null
+    }
+  ]
   const feeTokens = [
     {
       address: '0x0000000000000000000000000000000000000000',
@@ -103,7 +110,14 @@ const createEOAAccountOp = (account: Account) => {
 
   const data = '0x'
 
-  const nativeToCheck = [account.addr]
+  const nativeToCheck: Account[] = [
+    {
+      addr: account.addr,
+      associatedKeys: [account.addr],
+      initialPrivileges: [],
+      creation: null
+    }
+  ]
   const feeTokens = [
     {
       address: '0x0000000000000000000000000000000000000000',
@@ -254,7 +268,7 @@ const init = async (
   account: Account,
   accountOp: {
     op: AccountOp
-    nativeToCheck: string[]
+    nativeToCheck: Account[]
     feeTokens: FeeToken[]
   },
   signer: any,
@@ -294,8 +308,7 @@ const init = async (
     storage,
     providers,
     networks,
-    'https://staging-relayer.ambire.com',
-    []
+    'https://staging-relayer.ambire.com'
   )
   await portfolio.updateSelectedAccount(accounts, networks, account.addr)
 
