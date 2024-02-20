@@ -216,9 +216,9 @@ export class EmailVaultController extends EventEmitter {
       this.#requestSessionKey(email)
     } else if (this.#shouldStopConfirmationPolling)
       this.emitError({
-        message: `Unexpected error getting email vault for ${email} ${ev?.error}`,
+        message: `Unexpected error getting email vault for ${email}`,
         level: 'major',
-        error: new Error(`Unexpected error getting email vault for ${email} ${ev?.error}`)
+        error: new Error(`Unexpected error getting email vault for ${email}`)
       })
     this.emitUpdate()
   }
