@@ -2,6 +2,7 @@
 pragma solidity ^0.8.19;
 
 interface IXWallet {
+	function balanceOf(address owner) external view returns (uint);
 	function shareValue() external view returns (uint);
 	function transfer(address to, uint amount) external returns (bool);
 	function transferFrom(address from, address to, uint amount) external returns (bool);
@@ -19,7 +20,6 @@ contract stkWALLET {
 	IXWallet xWallet;
 
 	// Mutable variables
-	uint public totalSupply;
 	mapping(address => uint) private shares;
 	mapping(address => mapping(address => uint)) private allowed;
 
@@ -28,6 +28,11 @@ contract stkWALLET {
 	event Transfer(address indexed from, address indexed to, uint amount);
 
 	// ERC20 methods
+	// @TODO note: any xWALLET sent to this contract will be burned as there's nothing that can be done with it
+	function totalSupply() external view returns (uint) {
+		return (xWallet.balanceOf(address(this)) * xWallet.shareValue()) / 1e18;
+	}
+
 	function balanceOf(address owner) external view returns (uint balance) {
 		return (shares[owner] * xWallet.shareValue()) / 1e18;
 	}
