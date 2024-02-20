@@ -103,6 +103,7 @@ export class AccountAdderController extends EventEmitter {
 
   selectedAccounts: SelectedAccount[] = []
 
+  // TODO: Remove
   preselectedAccounts: Account[] = []
 
   // Accounts which identity is created on the Relayer (if needed), and are ready
@@ -318,7 +319,7 @@ export class AccountAdderController extends EventEmitter {
 
   init({
     keyIterator,
-    preselectedAccounts,
+    preselectedAccounts = [],
     page,
     pageSize,
     hdPathTemplate
