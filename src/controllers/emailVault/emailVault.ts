@@ -27,7 +27,7 @@ export enum EmailVaultState {
 
 export type MagicLinkKey = {
   key: string
-  requestedAt: Date
+  expiry: Date
   confirmed: boolean
 }
 
@@ -67,8 +67,6 @@ export class EmailVaultController extends EventEmitter {
   #isUploadingSecret: boolean = false
 
   #emailVault: EmailVault
-
-  #magicLinkLifeTime: number = 300000
 
   #magicLinkKeys: MagicLinkKeys = {}
 
@@ -124,15 +122,15 @@ export class EmailVaultController extends EventEmitter {
     // and then we call it's methods
     await wait(1)
     this.emitUpdate()
-    const result = await Promise.all([
+    const [emailVaultState, magicLinkKey] = await Promise.all([
       this.storage.get(EMAIL_VAULT_STORAGE_KEY, {
         email: {}
       }),
       this.storage.get(MAGIC_LINK_STORAGE_KEY, {})
     ])
 
-    this.emailVaultStates = result[0]
-    this.#magicLinkKeys = this.#parseMagicLinkKeys(result[1])
+    this.emailVaultStates = emailVaultState
+    this.#magicLinkKeys = this.#parseMagicLinkKeys(magicLinkKey)
 
     this.lastUpdate = new Date()
     this.isReady = true
@@ -210,7 +208,7 @@ export class EmailVaultController extends EventEmitter {
       this.#isWaitingEmailConfirmation = false
       this.#magicLinkKeys[email] = {
         key: newKey.key,
-        requestedAt: new Date(),
+        expiry: new Date(newKey.expiry),
         confirmed: true
       }
       fn && (await fn())
@@ -228,7 +226,7 @@ export class EmailVaultController extends EventEmitter {
   getMagicLinkKeyByEmail(email: string): MagicLinkKey | null {
     const result = this.#magicLinkKeys[email]
     if (!result || !result.confirmed) return null
-    if (new Date().getTime() - result.requestedAt.getTime() > this.#magicLinkLifeTime) return null
+    if (Date.now() >= result.expiry.getTime()) return null
     return result
   }
 
@@ -243,7 +241,7 @@ export class EmailVaultController extends EventEmitter {
     return Object.fromEntries(
       Object.keys(mks).map((email) => [
         email,
-        { ...mks[email], requestedAt: new Date(mks[email].requestedAt) }
+        { ...mks[email], expiry: new Date(mks[email].expiry) }
       ])
     )
   }

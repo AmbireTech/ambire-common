@@ -15,7 +15,7 @@ import { Account, AccountStates } from '../../interfaces/account'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { getAccountState } from '../accountState/accountState'
 import { Portfolio } from '../portfolio/portfolio'
-import { estimate, EstimateResult } from './estimate'
+import { estimate } from './estimate'
 
 const ethereum = networks.find((x) => x.id === 'ethereum')
 const optimism = networks.find((x) => x.id === 'optimism')
@@ -64,7 +64,27 @@ const SPOOF_SIGTYPE = '03'
 const spoofSig =
   new AbiCoder().encode(['address'], ['0xd6e371526cdaeE04cd8AF225D42e37Bc14688D9E']) + SPOOF_SIGTYPE
 
-const nativeToCheck = ['0x0000000000000000000000000000000000000001', FEE_COLLECTOR]
+const viewOnlyAcc = {
+  addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+  creation: null,
+  initialPrivileges: [],
+  associatedKeys: [] // this means it's a view only acc
+}
+const nativeToCheck: Account[] = [
+  {
+    addr: '0x0000000000000000000000000000000000000001',
+    initialPrivileges: [],
+    associatedKeys: ['0x0000000000000000000000000000000000000001'],
+    creation: null
+  },
+  {
+    addr: FEE_COLLECTOR,
+    initialPrivileges: [],
+    associatedKeys: ['0x0000000000000000000000000000000000000001'],
+    creation: null
+  },
+  viewOnlyAcc
+]
 const feeTokens = [
   { address: '0x0000000000000000000000000000000000000000', isGasTank: false, amount: 1n },
   { address: '0xdAC17F958D2ee523a2206206994597C13D831ec7', isGasTank: false, amount: 1n },
@@ -123,17 +143,6 @@ const trezorSlot6v2NotDeployed: Account = {
 }
 
 describe('estimate', () => {
-  const checkNativeBalance = (
-    responseTokens: EstimateResult['feePaymentOptions'],
-    tokenAddresses: string[]
-  ) => {
-    tokenAddresses.forEach((tokenAddress) => {
-      expect(
-        responseTokens!.find((t) => t.paidBy === tokenAddress)!.availableAmount
-      ).toBeGreaterThan(0n)
-    })
-  }
-
   it('estimates gasUsage and native balance for EOA', async () => {
     const EOAAccount: Account = {
       addr: '0x40b38765696e3d5d8d9d834d8aad4bb6e418e489',
@@ -227,8 +236,93 @@ describe('estimate', () => {
     // As we swap 1 USDC for 1 USDT, we expect the estimate (outcome) balance of USDT to be greater than before the estimate (portfolio value)
     expect(usdtOutcome!.availableAmount).toBeGreaterThan(usdt?.amount || 0n)
     expect(usdcOutcome!.availableAmount).toBeLessThan(usdc!.amount)
-    checkNativeBalance(response.feePaymentOptions, nativeToCheck)
     expect(response.nonce).toBeGreaterThan(1)
+
+    // make sure there's a native fee payment option in the same acc addr
+    const noFeePaymentViewOnlyAcc = response.feePaymentOptions.find(
+      (opt) => opt.paidBy === account.addr && opt.address === ethers.ZeroAddress
+    )
+    expect(noFeePaymentViewOnlyAcc).not.toBe(undefined)
+
+    // make sure everything but the view only acc exists as a few option
+    const feePaymentAddrOne = response.feePaymentOptions.find(
+      (opt) => opt.paidBy === nativeToCheck[0].addr && opt.address === ethers.ZeroAddress
+    )
+    expect(feePaymentAddrOne).not.toBe(undefined)
+    const feePaymentAddrTwo = response.feePaymentOptions.find(
+      (opt) => opt.paidBy === nativeToCheck[1].addr && opt.address === ethers.ZeroAddress
+    )
+    expect(feePaymentAddrTwo).not.toBe(undefined)
+
+    // the view only should be undefined
+    const viewOnlyAccOption = response.feePaymentOptions.find(
+      (opt) => opt.paidBy === viewOnlyAcc.addr && opt.address === ethers.ZeroAddress
+    )
+    expect(viewOnlyAccOption).toBe(undefined)
+  })
+
+  it('estimates correctly by passing multiple view only accounts to estimation and removing the fee options for them as they are not valid', async () => {
+    const op = {
+      accountAddr: account.addr,
+      signingKeyAddr: null,
+      signingKeyType: null,
+      gasLimit: null,
+      gasFeePayment: null,
+      networkId: 'ethereum',
+      nonce: 1n,
+      signature: spoofSig,
+      calls: [{ to, value: BigInt(0), data }],
+      accountOpToExecuteBefore: null
+    }
+
+    const accountStates = await getAccountsInfo([account])
+    const response = await estimate(
+      provider,
+      ethereum,
+      account,
+      op,
+      accountStates[account.addr][ethereum.id],
+      nativeToCheck,
+      feeTokens
+    )
+
+    const viewOnlyAccOption = response.feePaymentOptions.find(
+      (opt) => opt.paidBy === viewOnlyAcc.addr
+    )
+    // view only accounts shouldn't appear as payment options for other accounts
+    expect(viewOnlyAccOption).toBe(undefined)
+  })
+
+  it('estimate a view only account op', async () => {
+    const op = {
+      accountAddr: viewOnlyAcc.addr,
+      signingKeyAddr: null,
+      signingKeyType: null,
+      gasLimit: null,
+      gasFeePayment: null,
+      networkId: 'ethereum',
+      nonce: 1n,
+      signature: spoofSig,
+      calls: [{ to, value: BigInt(1), data: '0x' }],
+      accountOpToExecuteBefore: null
+    }
+
+    const accountStates = await getAccountsInfo([viewOnlyAcc])
+    const response = await estimate(
+      provider,
+      ethereum,
+      viewOnlyAcc,
+      op,
+      accountStates[viewOnlyAcc.addr][ethereum.id],
+      nativeToCheck,
+      feeTokens
+    )
+
+    // make sure we display the view only account payment option
+    const viewOnlyAccOption = response.feePaymentOptions.find(
+      (opt) => opt.paidBy === viewOnlyAcc.addr
+    )
+    expect(viewOnlyAccOption).not.toBe(undefined)
   })
 
   it('estimates with `accountOpToExecuteBefore`', async () => {

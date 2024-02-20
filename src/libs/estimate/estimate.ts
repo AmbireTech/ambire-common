@@ -108,7 +108,7 @@ export async function estimate(
   account: Account,
   op: AccountOp,
   accountState: AccountOnchainState,
-  nativeToCheck: string[],
+  EOAaccounts: Account[],
   feeTokens: FeeToken[],
   opts?: {
     calculateRefund?: boolean
@@ -117,6 +117,14 @@ export async function estimate(
   blockFrom: string = '0x0000000000000000000000000000000000000001',
   blockTag: string | number = 'latest'
 ): Promise<EstimateResult> {
+  // we're excluding the view only accounts from the natives to check
+  // in all cases EXCEPT the case where we're making an estimation for
+  // the view only account itself. In all other, view only accounts options
+  // should not be present as the user cannot pay the fee with them (no key)
+  const nativeToCheck = EOAaccounts.filter(
+    (acc) => acc.addr === op.accountAddr || acc.associatedKeys.length
+  ).map((acc) => acc.addr)
+
   const nativeAddr = '0x0000000000000000000000000000000000000000'
   const deploylessEstimator = fromDescriptor(provider, Estimation, !network.rpcNoStateOverride)
   const abiCoder = new AbiCoder()
@@ -189,6 +197,10 @@ export async function estimate(
     }
   }
 
+  // is the estimation a 4337 one
+  const is4337Broadcast = opts && opts.is4337Broadcast
+  const userOp = is4337Broadcast ? toUserOperation(account, accountState, op) : null
+
   // @L2s
   // craft the probableTxn that's going to be saved on the L1
   // so we could do proper estimation
@@ -203,7 +215,7 @@ export async function estimate(
       'uint256' // gasLimit
     ],
     [
-      getProbableCallData(op, network, accountState),
+      getProbableCallData(op, accountState, userOp),
       op.accountAddr,
       FEE_COLLECTOR,
       100000000,
@@ -231,8 +243,6 @@ export async function estimate(
   ]
 
   // estimate 4337
-  const is4337Broadcast = opts && opts.is4337Broadcast
-  const userOp = is4337Broadcast ? toUserOperation(account, accountState, op) : null
   const IAmbireAccount = new Interface(AmbireAccount.abi)
   let deployless4337Estimator: any = null
   let functionArgs: any = null
