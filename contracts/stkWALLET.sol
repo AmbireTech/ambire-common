@@ -20,7 +20,7 @@ contract stkWALLET {
 	IXWallet xWallet;
 
 	// Mutable variables
-	mapping(address => uint) private shares;
+	mapping(address => uint) public shares;
 	mapping(address => mapping(address => uint)) private allowed;
 
 	// ERC20 events
