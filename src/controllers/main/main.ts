@@ -677,7 +677,7 @@ export class MainController extends EventEmitter {
       if (accountOp) {
         this.accountOpsToBeSigned[accountAddr] ||= {}
         this.accountOpsToBeSigned[accountAddr][networkId] = { accountOp, estimation: null }
-        if (this.signAccountOp) this.signAccountOp.update({ accountOp })
+        if (this.signAccountOp) this.signAccountOp.update({ accountOp, clearEstimation: true })
 
         try {
           await this.#estimateAccountOp(accountOp)
