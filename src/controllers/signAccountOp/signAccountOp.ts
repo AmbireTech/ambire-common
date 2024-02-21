@@ -296,18 +296,16 @@ export class SignAccountOpController extends EventEmitter {
     speed,
     signingKeyAddr,
     signingKeyType,
-    accountOp,
-    clearEstimation
+    accountOp
   }: {
     accountOp?: AccountOp
     gasPrices?: GasRecommendation[]
-    estimation?: EstimateResult
+    estimation?: EstimateResult | null
     feeToken?: TokenResult
     paidBy?: string
     speed?: FeeSpeed
     signingKeyAddr?: Key['addr']
     signingKeyType?: Key['type']
-    clearEstimation?: boolean
   }) {
     // once the user commits to the things he sees on his screen,
     // we need to be sure nothing changes afterwards.
@@ -339,7 +337,9 @@ export class SignAccountOpController extends EventEmitter {
       this.#estimation = estimation
     }
 
-    if (clearEstimation) this.#estimation = null
+    // if estimation is undefined, do not clear the estimation.
+    // We do this only if strictly specified as null
+    if (estimation === null) this.#estimation = null
 
     if (this.#estimation?.error) {
       this.status = { type: SigningStatus.EstimationError }
