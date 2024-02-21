@@ -93,7 +93,7 @@ export function toUserOperation(
     initCode,
     callData: '0x',
     preVerificationGas: ethers.toBeHex(0),
-    callGasLimit: '0x',
+    callGasLimit: 20000000n,
     verificationGasLimit: '0x',
     maxFeePerGas: ethers.toBeHex(1),
     maxPriorityFeePerGas: ethers.toBeHex(1),
@@ -112,13 +112,11 @@ export function toUserOperation(
       [[getSignableCalls(localAccOp), spoofSig]]
     ])
     userOperation.verificationGasLimit = 250000n
-    userOperation.callGasLimit = 380000n
   } else {
     userOperation.callData = ambireAccount.interface.encodeFunctionData('executeBySender', [
       getSignableCalls(localAccOp)
     ])
     userOperation.verificationGasLimit = 150000n
-    userOperation.callGasLimit = 250000n
   }
 
   const abiCoder = new ethers.AbiCoder()
