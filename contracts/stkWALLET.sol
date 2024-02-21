@@ -25,6 +25,8 @@ contract stkWALLET {
 	// ERC20 events
 	event Approval(address indexed owner, address indexed spender, uint amount);
 	event Transfer(address indexed from, address indexed to, uint amount);
+	// Custom events
+	event ShareValueUpdate(uint shareValue);
 
 	// ERC20 methods
 	// Note: any xWALLET sent to this contract will be burned as there's nothing that can be done with it. Expected behavior.
@@ -38,19 +40,23 @@ contract stkWALLET {
 
 	function transfer(address to, uint amount) external returns (bool success) {
 		require(to != address(this), "BAD_ADDRESS");
-		uint sharesAmount = (amount * 1e18) / xWallet.shareValue();
+		uint shareValue = xWallet.shareValue();
+		uint sharesAmount = (amount * 1e18) / shareValue;
 		shares[msg.sender] = shares[msg.sender] - sharesAmount;
 		shares[to] = shares[to] + sharesAmount;
 		emit Transfer(msg.sender, to, amount);
+		emit ShareValueUpdate(shareValue);
 		return true;
 	}
 
 	function transferFrom(address from, address to, uint amount) external returns (bool success) {
-		uint sharesAmount = (amount * 1e18) / xWallet.shareValue();
+		uint shareValue = xWallet.shareValue();
+		uint sharesAmount = (amount * 1e18) / shareValue;
 		shares[from] = shares[from] - sharesAmount;
 		allowed[from][msg.sender] = allowed[from][msg.sender] - amount;
 		shares[to] = shares[to] + sharesAmount;
 		emit Transfer(from, to, amount);
+		emit ShareValueUpdate(shareValue);
 		return true;
 	}
 
