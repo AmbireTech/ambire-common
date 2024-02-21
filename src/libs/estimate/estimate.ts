@@ -359,8 +359,14 @@ export async function estimate(
         gasUsed: 0n
       }
     } else {
+      // set the callGasLimit buffer. We take 5% of the gasUsed
+      // and compare it with 10k. The bigger one gets added on as a buffer
+      const gasLimitBufferInPercentage = gasUsed / 20n // 5%
+      const gasLimitBuffer =
+        gasLimitBufferInPercentage > 10000n ? gasLimitBufferInPercentage : 10000n
+
       userOp.verificationGasLimit = toBeHex(BigInt(verificationGasLimit) + 5000n)
-      userOp.callGasLimit = toBeHex(BigInt(gasUsed) + 10000n)
+      userOp.callGasLimit = toBeHex(gasUsed + gasLimitBuffer)
       erc4337estimation = {
         userOp,
         gasUsed: BigInt(gasUsed) // the minimum for payments
