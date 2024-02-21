@@ -27,7 +27,7 @@ export enum EmailVaultState {
 
 export type MagicLinkKey = {
   key: string
-  requestedAt: Date
+  expiry: Date
   confirmed: boolean
 }
 
@@ -67,8 +67,6 @@ export class EmailVaultController extends EventEmitter {
   #isUploadingSecret: boolean = false
 
   #emailVault: EmailVault
-
-  #magicLinkLifeTime: number = 300000
 
   #magicLinkKeys: MagicLinkKeys = {}
 
@@ -124,15 +122,15 @@ export class EmailVaultController extends EventEmitter {
     // and then we call it's methods
     await wait(1)
     this.emitUpdate()
-    const result = await Promise.all([
+    const [emailVaultState, magicLinkKey] = await Promise.all([
       this.storage.get(EMAIL_VAULT_STORAGE_KEY, {
         email: {}
       }),
       this.storage.get(MAGIC_LINK_STORAGE_KEY, {})
     ])
 
-    this.emailVaultStates = result[0]
-    this.#magicLinkKeys = this.#parseMagicLinkKeys(result[1])
+    this.emailVaultStates = emailVaultState
+    this.#magicLinkKeys = this.#parseMagicLinkKeys(magicLinkKey)
 
     this.lastUpdate = new Date()
     this.isReady = true
@@ -195,14 +193,14 @@ export class EmailVaultController extends EventEmitter {
       }
     })
 
-    const ev: any = await polling.exec(
+    const ev: (EmailVaultData & { error?: any; canceled?: boolean }) | null = await polling.exec(
       this.#emailVault.getEmailVaultInfo.bind(this.#emailVault),
       [email, newKey.key],
       () => {
         this.#isWaitingEmailConfirmation = false
       },
       () => this.#shouldStopConfirmationPolling,
-      15000,
+      3 * 60 * 1000,
       1000
     )
 
@@ -210,13 +208,18 @@ export class EmailVaultController extends EventEmitter {
       this.#isWaitingEmailConfirmation = false
       this.#magicLinkKeys[email] = {
         key: newKey.key,
-        requestedAt: new Date(),
+        expiry: new Date(newKey.expiry),
         confirmed: true
       }
       fn && (await fn())
       this.storage.set(MAGIC_LINK_STORAGE_KEY, this.#magicLinkKeys)
       this.#requestSessionKey(email)
-    }
+    } else if (this.#shouldStopConfirmationPolling)
+      this.emitError({
+        message: `Unexpected error getting email vault for ${email}`,
+        level: 'major',
+        error: new Error(`Unexpected error getting email vault for ${email}`)
+      })
     this.emitUpdate()
   }
 
@@ -228,7 +231,7 @@ export class EmailVaultController extends EventEmitter {
   getMagicLinkKeyByEmail(email: string): MagicLinkKey | null {
     const result = this.#magicLinkKeys[email]
     if (!result || !result.confirmed) return null
-    if (new Date().getTime() - result.requestedAt.getTime() > this.#magicLinkLifeTime) return null
+    if (Date.now() >= result.expiry.getTime()) return null
     return result
   }
 
@@ -243,7 +246,7 @@ export class EmailVaultController extends EventEmitter {
     return Object.fromEntries(
       Object.keys(mks).map((email) => [
         email,
-        { ...mks[email], requestedAt: new Date(mks[email].requestedAt) }
+        { ...mks[email], expiry: new Date(mks[email].expiry) }
       ])
     )
   }
@@ -311,14 +314,20 @@ export class EmailVaultController extends EventEmitter {
       await this.#keyStore.addSecret(RECOVERY_SECRET_ID, newSecret, '', false)
       const keyStoreUid = await this.#keyStore.getKeyStoreUid()
       result = await this.#emailVault.addKeyStoreSecret(email, magicKey.key, keyStoreUid, newSecret)
-    } else {
-      await this.handleMagicLinkKey(email, () => this.#uploadKeyStoreSecret(email))
-    }
-
+    } else if (this.#shouldStopConfirmationPolling)
+      this.emitError({
+        message: 'Email key not confirmed',
+        level: 'minor',
+        error: new Error('uploadKeyStoreSecret: not confirmed magic link key')
+      })
     if (result) {
       await this.#getEmailVaultInfo(email)
     } else {
-      this.emailVaultStates.errors = [new Error('error upload keyStore to email vault')]
+      this.emitError({
+        level: 'minor',
+        message: 'Error upload keyStore to email vault',
+        error: new Error('error upload keyStore to email vault')
+      })
     }
 
     this.#isUploadingSecret = false

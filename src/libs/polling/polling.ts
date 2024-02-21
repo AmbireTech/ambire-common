@@ -61,7 +61,7 @@ export class Polling extends EventEmitter {
           await this.exec(
             fn,
             params,
-            cleanup,
+            () => null,
             shouldStop,
             timeout || DEFAULT_TIMEOUT,
             this.defaultTimeout

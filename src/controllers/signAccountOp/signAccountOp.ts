@@ -326,10 +326,13 @@ export class SignAccountOpController extends EventEmitter {
     if (gasPrices) this.gasPrices = gasPrices
 
     if (estimation) {
-      // set a new copy of the user op if 4337
-      this.#userOperation = estimation.erc4337estimation
-        ? { ...estimation.erc4337estimation.userOp }
-        : null
+      if (estimation.erc4337estimation) {
+        // set a new copy of the user op if 4337
+        this.#userOperation = structuredClone(estimation.erc4337estimation.userOp)
+        // set the accountOp user op as a reference to this.#userOperation
+        // it's overriden during sign() to it's safe
+        this.accountOp.asUserOperation = this.#userOperation
+      }
 
       this.#estimation = estimation
     }
@@ -747,6 +750,17 @@ export class SignAccountOpController extends EventEmitter {
     if (signer.init) signer.init(this.#externalSignerControllers[this.accountOp.signingKeyType])
     const accountState =
       this.#accountStates![this.accountOp!.accountAddr][this.accountOp!.networkId]
+
+    // just in-case: before signing begins, we delete the feeCall;
+    // if there's a need for it, it will be added later on in the code.
+    // We need this precaution because this could happen:
+    // - try to broadcast with the relayer
+    // - the feel call gets added
+    // - the relayer broadcast fails
+    // - the user does another broadcast, this time with EOA pays for SA
+    // - the fee call stays, causing a low gas limit revert
+    delete this.accountOp.feeCall
+
     try {
       // In case of EOA account
       if (!this.#account.creation) {
@@ -804,8 +818,6 @@ export class SignAccountOpController extends EventEmitter {
 
         if (usesPaymaster) {
           this.#addFeePayment()
-        } else {
-          delete this.accountOp.feeCall
         }
 
         const ambireAccount = new ethers.Interface(AmbireAccount.abi)

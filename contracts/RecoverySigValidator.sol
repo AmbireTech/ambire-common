@@ -42,7 +42,7 @@ contract RecoverySigValidator is ExternalSigValidator {
       require(scheduled == 0, 'RecoverySig: already scheduled');
       require(scheduled != type(uint256).max, 'RecoverySig: already finalized');
 
-      address recoveryKey = SignatureValidator.recoverAddrImpl(
+      address recoveryKey = SignatureValidator.recoverAddr(
         isCancel ? keccak256(abi.encode(hash, 0x63616E63)) : hash,
         innerSig,
         true
