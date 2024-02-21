@@ -616,9 +616,9 @@ export class EmailVaultController extends EventEmitter {
   get banners(): Banner[] {
     const banners: Banner[] = []
 
-    // Show the banner if the keystore is already configured (for HW and ViewOnly accounts the app can run without keystore)
+    // Show the banner if the keystore is already configured and the `password` secret is already set (for HW and ViewOnly accounts the app can run without keystore)
     // and if the keystore secret backup is not enabled already
-    if (this.#keyStore.isReadyToStoreKeys && !this.hasKeystoreRecovery) {
+    if (this.#keyStore.hasPasswordSecret && !this.hasKeystoreRecovery) {
       banners.push({
         id: 'keystore-secret-backup',
         type: 'info',
