@@ -607,12 +607,17 @@ export class KeystoreController extends EventEmitter {
     this.emitUpdate()
   }
 
+  get hasPasswordSecret() {
+    return !!this.#keystoreSecrets.find((x) => x.id === 'password')
+  }
+
   toJSON() {
     return {
       ...this,
       ...super.toJSON(),
       isUnlocked: this.isUnlocked, // includes the getter in the stringified instance
-      keys: this.keys
+      keys: this.keys,
+      hasPasswordSecret: this.hasPasswordSecret
     }
   }
 }
