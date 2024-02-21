@@ -165,5 +165,6 @@ export interface GetOptions {
     erc721s: Hints['erc721s']
   }
   isEOA: boolean
-  pinned?: PinnedTokens
+  fetchPinned: boolean
+  additionalHints?: Hints['erc20s']
 }

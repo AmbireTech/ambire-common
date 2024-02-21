@@ -2,7 +2,7 @@ import { BaseContract, JsonRpcProvider } from 'ethers'
 import { ethers } from 'hardhat'
 
 import { Storage } from '../src/interfaces/storage'
-import { parse, stringify } from '../src/libs/bigintJson/bigintJson'
+import { parse, stringify } from '../src/libs/richJson/richJson'
 import { wrapEthSign, wrapTypedData } from './ambireSign'
 import { abiCoder, addressOne, addressTwo, AmbireAccount, chainId } from './config'
 

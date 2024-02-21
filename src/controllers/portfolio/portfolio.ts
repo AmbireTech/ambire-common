@@ -2,9 +2,9 @@
 /* eslint-disable @typescript-eslint/no-use-before-define */
 /* eslint-disable @typescript-eslint/no-shadow */
 /* eslint-disable no-param-reassign */
-/* eslint-disable no-param-reassign */
 import fetch from 'node-fetch'
 
+import { PINNED_TOKENS } from '../../consts/pinnedTokens'
 import { Account, AccountId } from '../../interfaces/account'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { RPCProviders } from '../../interfaces/settings'
@@ -24,7 +24,6 @@ import {
   AdditionalAccountState,
   GetOptions,
   Hints,
-  PinnedTokens,
   PortfolioControllerState,
   PortfolioGetResult,
   TokenResult
@@ -35,11 +34,28 @@ import EventEmitter from '../eventEmitter/eventEmitter'
 
 // We already know that `results.tokens` and `result.collections` tokens have a balance (this is handled by the portfolio lib).
 // Based on that, we can easily find out which hint tokens also have a balance.
-function getHintsWithBalance(result: PortfolioGetResult): {
+function getHintsWithBalance(
+  result: PortfolioGetResult,
+  keepPinned: boolean,
+  additionalHints: GetOptions['additionalHints'] = []
+): {
   erc20s: Hints['erc20s']
   erc721s: Hints['erc721s']
 } {
-  const erc20s = result.tokens.map((token) => token.address)
+  const erc20s = result.tokens
+    .filter((token) => {
+      return (
+        token.amount > 0n ||
+        additionalHints.includes(token.address) ||
+        // Delete pinned tokens' hints if the user has > 1 non-zero tokens
+        (keepPinned &&
+          PINNED_TOKENS.find(
+            (pinnedToken) =>
+              pinnedToken.address === token.address && pinnedToken.networkId === token.networkId
+          ))
+      )
+    })
+    .map((token) => token.address)
 
   const erc721s = Object.fromEntries(
     result.collections.map((collection) => [
@@ -69,20 +85,19 @@ export class PortfolioController extends EventEmitter {
 
   #callRelayer: Function
 
-  #pinned: PinnedTokens
-
   #networksWithAssetsByAccounts: {
     [accountId: string]: NetworkDescriptor['id'][]
   } = {}
 
   #minUpdateInterval: number = 20000 // 20 seconds
 
+  #additionalHints: GetOptions['additionalHints'] = []
+
   constructor(
     storage: Storage,
     providers: RPCProviders,
     networks: NetworkDescriptor[],
-    relayerUrl: string,
-    pinned: PinnedTokens
+    relayerUrl: string
   ) {
     super()
     this.latest = {}
@@ -92,7 +107,6 @@ export class PortfolioController extends EventEmitter {
     this.#portfolioLibs = new Map()
     this.#storage = storage
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
-    this.#pinned = pinned
   }
 
   async #updateNetworksWithAssets(
@@ -140,8 +154,14 @@ export class PortfolioController extends EventEmitter {
     }
   }
 
+  resetAdditionalHints() {
+    this.#additionalHints = []
+  }
+
   async getAdditionalPortfolio(accountId: AccountId) {
     if (!this.latest[accountId]) this.latest[accountId] = {}
+    const hasNonZeroTokens = !!this.#networksWithAssetsByAccounts?.[accountId]?.length
+
     const start = Date.now()
     const accountState = this.latest[accountId] as AdditionalAccountState
 
@@ -200,7 +220,8 @@ export class PortfolioController extends EventEmitter {
 
     let pinnedGasTankTokens: TokenResult[] = []
 
-    if (res.data.gasTank.availableGasTankAssets) {
+    // Don't set pinnedGasTankTokens if the user has > 1 non-zero tokens
+    if (res.data.gasTank.availableGasTankAssets && !hasNonZeroTokens) {
       const availableGasTankAssets = res.data.gasTank.availableGasTankAssets
 
       pinnedGasTankTokens = availableGasTankAssets.reduce((acc: TokenResult[], token: any) => {
@@ -214,7 +235,7 @@ export class PortfolioController extends EventEmitter {
 
         if (isGasTankToken || isAlreadyPinned) return acc
 
-        const correspondingPinnedToken = this.#pinned.find(
+        const correspondingPinnedToken = PINNED_TOKENS.find(
           (pinnedToken) =>
             (!('accountId' in pinnedToken) || pinnedToken.accountId === accountId) &&
             pinnedToken.address === token.address &&
@@ -230,7 +251,7 @@ export class PortfolioController extends EventEmitter {
             decimals: token.decimals,
             priceIn: [
               {
-                baseCurrency: 'USD',
+                baseCurrency: 'usd',
                 price: token.price
               }
             ],
@@ -275,18 +296,14 @@ export class PortfolioController extends EventEmitter {
     accounts: Account[],
     networks: NetworkDescriptor[],
     accountId: AccountId,
-    // network => AccountOp
     accountOps?: { [key: string]: AccountOp[] },
     opts?: {
       forceUpdate: boolean
-      pinned?: PinnedTokens
+      additionalHints?: GetOptions['additionalHints']
     }
   ) {
-    // set the additional pinned items if there are any
-    if (opts?.pinned) {
-      this.#pinned = [...this.#pinned, ...opts.pinned]
-    }
-
+    if (opts?.additionalHints) this.#additionalHints = opts.additionalHints
+    const hasNonZeroTokens = !!this.#networksWithAssetsByAccounts?.[accountId]?.length
     // Load storage cached hints
     const storagePreviousHints = await this.#storage.get('previousHints', {})
 
@@ -342,6 +359,7 @@ export class PortfolioController extends EventEmitter {
         const result = await portfolioLib.get(accountId, {
           priceRecency: 60000,
           priceCache: state.result?.priceCache,
+          fetchPinned: !hasNonZeroTokens,
           ...portfolioProps
         })
         _accountState[network.id] = { isReady: true, isLoading: false, errors: [], result }
@@ -404,7 +422,7 @@ export class PortfolioController extends EventEmitter {
             {
               blockTag: 'latest',
               previousHints: storagePreviousHints[key],
-              pinned: this.#pinned
+              additionalHints: this.#additionalHints
             },
             forceUpdate
           ),
@@ -425,7 +443,7 @@ export class PortfolioController extends EventEmitter {
                     }
                   }),
                   isEOA: !isSmartAccount(selectedAccount),
-                  pinned: this.#pinned
+                  additionalHints: this.#additionalHints
                 },
                 forceUpdate
               )
@@ -435,7 +453,11 @@ export class PortfolioController extends EventEmitter {
         // Persist previousHints in the disk storage for further requests, when:
         // latest state was updated successful and hints were fetched successful too (no hintsError from portfolio result)
         if (isSuccessfulLatestUpdate && !accountState[network.id]!.result!.hintsError) {
-          storagePreviousHints[key] = getHintsWithBalance(accountState[network.id]!.result!)
+          storagePreviousHints[key] = getHintsWithBalance(
+            accountState[network.id]!.result!,
+            !hasNonZeroTokens,
+            this.#additionalHints
+          )
           await this.#storage.set('previousHints', storagePreviousHints)
         }
 
@@ -477,6 +499,7 @@ export class PortfolioController extends EventEmitter {
   toJSON() {
     return {
       ...this,
+      ...super.toJSON(),
       networksWithAssets: this.networksWithAssets,
       banners: this.banners
     }

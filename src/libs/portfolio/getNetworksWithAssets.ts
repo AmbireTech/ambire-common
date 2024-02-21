@@ -19,6 +19,8 @@ const getAccountNetworksWithAssets = (
     const isRPCDown = !providers[networkId].isWorking
     const result = accountState[networkId]?.result
 
+    // !!! Important: Add the flag isWorking to rpc providers when writing tests if you
+    // rely on networksWithAssets
     // RPC is down or an error occurred
     if (!result || isRPCDown) {
       // The account isn't in storage and was added after the RPC stopped working.

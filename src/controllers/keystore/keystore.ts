@@ -624,6 +624,7 @@ export class KeystoreController extends EventEmitter {
   toJSON() {
     return {
       ...this,
+      ...super.toJSON(),
       isUnlocked: this.isUnlocked // includes the getter in the stringified instance
     }
   }

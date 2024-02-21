@@ -42,7 +42,7 @@ const networks: NetworkDescriptor[] = [
     chainId: 10n,
     explorerUrl: 'https://optimistic.etherscan.io',
     erc4337: {
-      enabled: false,
+      enabled: true,
       hasPaymaster: true
     },
     unstoppableDomainsChain: 'ERC20',
