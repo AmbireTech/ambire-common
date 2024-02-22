@@ -300,7 +300,7 @@ export class SignAccountOpController extends EventEmitter {
   }: {
     accountOp?: AccountOp
     gasPrices?: GasRecommendation[]
-    estimation?: EstimateResult
+    estimation?: EstimateResult | null
     feeToken?: TokenResult
     paidBy?: string
     speed?: FeeSpeed
@@ -336,6 +336,10 @@ export class SignAccountOpController extends EventEmitter {
 
       this.#estimation = estimation
     }
+
+    // if estimation is undefined, do not clear the estimation.
+    // We do this only if strictly specified as null
+    if (estimation === null) this.#estimation = null
 
     if (this.#estimation?.error) {
       this.status = { type: SigningStatus.EstimationError }
