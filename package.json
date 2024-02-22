@@ -2,6 +2,7 @@
   "version": "1.0.7",
   "name": "ambire-common",
   "description": "Common ground for the Ambire apps",
+  "public": true,
   "peerDependencies": {
     "@ambire/signature-validator": "^1.0.3",
     "@ensdomains/eth-ens-namehash": "^2.0.15",
