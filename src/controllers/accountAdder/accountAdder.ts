@@ -623,7 +623,7 @@ export class AccountAdderController extends EventEmitter {
   async createAndAddEmailAccount(selectedAccount: SelectedAccount) {
     const {
       account: { email },
-      accountKeyAddresses: [recoveryKey]
+      accountKeys: [recoveryKey]
     } = selectedAccount
     if (!this.isInitialized) {
       return this.emitError({
