@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable no-console */
 import { ethers } from 'ethers'
 import {
@@ -5,20 +6,22 @@ import {
   getLabel,
   getToken,
   getRecipientText,
-  getAddress,
+  getAddressVisualization,
   getDeadline,
-  getUnknownVisualization
+  getUnknownVisualization,
+  getKnownAbi
 } from '../../utils'
 
 import { AccountOp } from '../../../accountOp/accountOp'
-import { IrCall } from '../../interfaces'
+import { HumanizerMeta, IrCall } from '../../interfaces'
 import { parsePath } from './utils'
 
 // Stolen from ambire-wallet
 const uniV32Mapping = (
-  humanizerInfo: any
+  humanizerInfo: HumanizerMeta,
+  _options?: any
 ): { [key: string]: (a: AccountOp, c: IrCall) => IrCall[] } => {
-  const ifaceV32 = new ethers.Interface(humanizerInfo?.['abis:UniV3Router2'])
+  const ifaceV32 = new ethers.Interface(getKnownAbi(humanizerInfo, 'UniV3Router2'))
   return {
     // uint256 is deadline
     // 0x5ae401dc
@@ -223,7 +226,7 @@ const uniV32Mapping = (
     },
     // 0x49616997
     [ifaceV32.getFunction('unwrapWETH9(uint256)')?.selector!]: (
-      accountOp: AccountOp,
+      _accountOp: AccountOp,
       call: IrCall
     ): IrCall[] => {
       const [amountMin] = ifaceV32.parseTransaction(call)?.args || []
@@ -254,7 +257,7 @@ const uniV32Mapping = (
     },
     // 0xe90a182f
     [ifaceV32.getFunction('sweepToken(address,uint256)')?.selector!]: (
-      accountOp: AccountOp,
+      _accountOp: AccountOp,
       call: IrCall
     ): IrCall[] => {
       const [token, amountMinimum] = ifaceV32.parseTransaction(call)?.args || []
@@ -289,7 +292,7 @@ const uniV32Mapping = (
     },
     // 0x3068c554
     [ifaceV32.getFunction('sweepTokenWithFee(address,uint256,uint256,address)')?.selector!]: (
-      accountOp: AccountOp,
+      _accountOp: AccountOp,
       call: IrCall
     ): IrCall[] => {
       const [token, amountMinimum, feeBips, feeRecipient] =
@@ -304,7 +307,7 @@ const uniV32Mapping = (
             getLabel('with fee'),
             getToken(token, feeBips),
             getLabel('to'),
-            getAddress(feeRecipient)
+            getAddressVisualization(feeRecipient)
           ]
         }
       ]
@@ -325,7 +328,7 @@ const uniV32Mapping = (
             getLabel('with fee'),
             getToken(token, feeBips),
             getLabel('to'),
-            getAddress(feeRecipient),
+            getAddressVisualization(feeRecipient),
             ...getRecipientText(accountOp.accountAddr, recipient)
           ]
         }
@@ -335,9 +338,10 @@ const uniV32Mapping = (
 }
 
 const uniV3Mapping = (
-  humanizerInfo: any
+  humanizerInfo: HumanizerMeta,
+  _options?: any
 ): { [key: string]: (a: AccountOp, c: IrCall) => IrCall[] } => {
-  const ifaceV3 = new ethers.Interface(humanizerInfo?.['abis:UniV3Router'])
+  const ifaceV3 = new ethers.Interface(getKnownAbi(humanizerInfo, 'UniV3Router'))
   return {
     // 0xac9650d8
     [ifaceV3.getFunction('multicall')?.selector!]: (
@@ -476,7 +480,7 @@ const uniV3Mapping = (
             getLabel('with fee'),
             getToken(ethers.ZeroAddress, feeBips),
             getLabel('to'),
-            getAddress(feeRecipient),
+            getAddressVisualization(feeRecipient),
             ...getRecipientText(accountOp.accountAddr, recipient)
           ]
         }
@@ -485,7 +489,7 @@ const uniV3Mapping = (
     // 0x12210e8a
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     [ifaceV3.getFunction('refundETH()')?.selector!]: (
-      accountOp: AccountOp,
+      _accountOp: AccountOp,
       call: IrCall
     ): IrCall[] => {
       return [{ ...call, fullVisualization: [getAction('Refund')] }]

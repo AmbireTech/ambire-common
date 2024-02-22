@@ -1,10 +1,10 @@
 import { ethers } from 'ethers'
-import { IrCall } from '../../interfaces'
-import { getAction, getOnBehalfOf, getToken, getLabel } from '../../utils'
+import { HumanizerMeta, IrCall } from '../../interfaces'
+import { getAction, getOnBehalfOf, getToken, getLabel, getKnownAbi } from '../../utils'
 import { AccountOp } from '../../../accountOp/accountOp'
 
-export const aaveWethGatewayV2 = (humanizerInfo: any): { [key: string]: Function } => {
-  const iface = new ethers.Interface(humanizerInfo?.['abis:AaveWethGatewayV2'])
+export const aaveWethGatewayV2 = (humanizerInfo: HumanizerMeta): { [key: string]: Function } => {
+  const iface = new ethers.Interface(getKnownAbi(humanizerInfo, 'AaveWethGatewayV2'))
   return {
     [iface.getFunction('depositETH')?.selector!]: (accountOp: AccountOp, call: IrCall) => {
       const [, onBehalfOf] = iface.parseTransaction(call)?.args || []

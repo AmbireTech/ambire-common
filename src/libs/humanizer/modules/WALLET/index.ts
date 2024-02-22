@@ -6,9 +6,9 @@ import { AccountOp } from '../../../accountOp/accountOp'
 import { checkIfUnknownAction, getUnknownVisualization } from '../../utils'
 
 const stakingAddresses = [
-  '0x47Cd7E91C3CBaAF266369fe8518345fc4FC12935',
-  '0xB6456b57f03352bE48Bf101B46c1752a0813491a',
-  '0xEc3b10ce9cabAb5dbF49f946A623E294963fBB4E'
+  '0x47cd7e91c3cbaaf266369fe8518345fc4fc12935',
+  '0xb6456b57f03352be48bf101b46c1752a0813491a',
+  '0xec3b10ce9cabab5dbf49f946a623e294963fbb4e'
 ]
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars

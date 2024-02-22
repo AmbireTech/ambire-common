@@ -1,15 +1,16 @@
 import { ethers } from 'ethers'
 import { HumanizerCallModule, IrCall } from '../interfaces'
 import { AccountOp } from '../../accountOp/accountOp'
-import { getUnknownVisualization, getUnwraping, getWraping } from '../utils'
+import { getKnownAbi, getUnknownVisualization, getUnwraping, getWraping } from '../utils'
 
 const WRAPPEDISH_ADDRESSES: { [kjey: string]: string } = {
   [ethers.ZeroAddress]: 'native',
   '0x4200000000000000000000000000000000000042': 'OP',
   '0x4200000000000000000000000000000000000006': 'WETHOptimism',
-  '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2': 'WETH',
-  '0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619': 'WETHPolygon',
-  '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270': 'WMATIC'
+  '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2': 'WETH',
+  '0x7ceb23fd6bc0add59e62ac25578270cff1b9f619': 'WETHPolygon',
+  '0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270': 'WMATIC',
+  '0x82af49447d8a07e3bd95bd0d56f35241523fbab1': 'WETHArbitrum'
 }
 const wrapSwapReducer = (calls: IrCall[]) => {
   const newCalls: IrCall[] = []
@@ -65,14 +66,15 @@ export const wrappingModule: HumanizerCallModule = (
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   options?: any
 ) => {
-  const iface = new ethers.Interface(accountOp.humanizerMeta?.['abis:WETH'])
+  const iface = new ethers.Interface(getKnownAbi(accountOp.humanizerMeta, 'WETH', options))
   const newCalls = irCalls.map((call: IrCall) => {
+    const knownAddressData = accountOp.humanizerMeta?.knownAddresses[call.to.toLowerCase()]
     if (
-      accountOp.humanizerMeta?.[`names:${call.to}`] === 'Wrapped ETH' ||
-      accountOp.humanizerMeta?.[`names:${call.to}`] === 'WETH' ||
-      accountOp.humanizerMeta?.[`tokens:${call.to}`]?.[0] === 'WETH' ||
-      accountOp.humanizerMeta?.[`names:${call.to}`] === 'WMATIC' ||
-      accountOp.humanizerMeta?.[`tokens:${call.to}`]?.[0] === 'WMATIC'
+      knownAddressData?.name === 'Wrapped ETH' ||
+      knownAddressData?.name === 'WETH' ||
+      knownAddressData?.token?.symbol === 'WETH' ||
+      knownAddressData?.name === 'WMATIC' ||
+      knownAddressData?.token?.symbol === 'WMATIC'
     ) {
       // 0xd0e30db0
       if (call.data.slice(0, 10) === iface.getFunction('deposit')?.selector) {

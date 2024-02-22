@@ -1,7 +1,15 @@
 import { AccountOp } from 'libs/accountOp/accountOp'
 import { ethers } from 'ethers'
 import { HumanizerCallModule, IrCall } from '../interfaces'
-import { getAction, getLabel, getRecipientText, getToken, getUnknownVisualization } from '../utils'
+import {
+  getKnownAbi,
+  getAction,
+  getLabel,
+  getRecipientText,
+  getToken,
+  getUnknownVisualization,
+  getKnownName
+} from '../utils'
 
 export const sushiSwapModule: HumanizerCallModule = (
   accountOp: AccountOp,
@@ -9,8 +17,9 @@ export const sushiSwapModule: HumanizerCallModule = (
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   options?: any
 ) => {
-  //   const sushiSwapIface = new ethers.Interface(accountOp.humanizerMeta?.['abis:SushiSwap'])
-  const routeProcessorIface = new ethers.Interface(accountOp.humanizerMeta?.['abis:RouteProcessor'])
+  const routeProcessorIface = new ethers.Interface(
+    Object.values(getKnownAbi(accountOp.humanizerMeta, 'RouteProcessor', options))
+  )
   const matcher = {
     [`${routeProcessorIface.getFunction('processRoute')?.selector}`]: (
       _accountOp: AccountOp,
@@ -19,8 +28,8 @@ export const sushiSwapModule: HumanizerCallModule = (
       const params = routeProcessorIface.parseTransaction(call)!.args
       let { tokenIn, tokenOut /* route */ } = params
       const { amountIn, amountOutMin, to } = params
-      if (tokenIn === '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE') tokenIn = ethers.ZeroAddress
-      if (tokenOut === '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE') tokenOut = ethers.ZeroAddress
+      if (tokenIn === '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee') tokenIn = ethers.ZeroAddress
+      if (tokenOut === '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee') tokenOut = ethers.ZeroAddress
 
       return {
         ...call,
@@ -36,8 +45,8 @@ export const sushiSwapModule: HumanizerCallModule = (
   }
   const newCalls: IrCall[] = irCalls.map((call: IrCall) => {
     if (
-      accountOp.humanizerMeta?.[`names:${call.to}`]?.includes('SushiSwap') ||
-      accountOp.humanizerMeta?.[`names:${call.to}`]?.includes('RouterProcessor')
+      getKnownName(accountOp.humanizerMeta, call.to)?.includes('SushiSwap') ||
+      getKnownName(accountOp.humanizerMeta, call.to)?.includes('RouterProcessor')
     ) {
       if (matcher[call.data.slice(0, 10)]) {
         return matcher[call.data.slice(0, 10)](accountOp, call)

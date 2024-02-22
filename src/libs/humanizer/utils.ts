@@ -1,11 +1,14 @@
 import dotenv from 'dotenv'
 import { ethers } from 'ethers'
 
+import { ErrorRef } from 'controllers/eventEmitter/eventEmitter'
 import { geckoIdMapper, geckoNetworkIdMapper } from '../../consts/coingecko'
 import { networks } from '../../consts/networks'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import {
+  AbiFragment,
   HumanizerFragment,
+  HumanizerMeta,
   HumanizerSettings,
   HumanizerVisualization,
   HumanizerWarning,
@@ -16,7 +19,10 @@ dotenv.config()
 
 const baseUrlCena = 'https://cena.ambire.com/api/v3'
 
-export function getWarning(content: string, level: HumanizerWarning['level'] = 'caution') {
+export function getWarning(
+  content: string,
+  level: HumanizerWarning['level'] = 'caution'
+): HumanizerWarning {
   return { content, level }
 }
 
@@ -26,27 +32,27 @@ export function getLabel(content: string): HumanizerVisualization {
 export function getAction(content: string): HumanizerVisualization {
   return { type: 'action', content }
 }
-export function getAddress(_address: string, name?: string): HumanizerVisualization {
-  const address = ethers.getAddress(_address)
-  return name ? { type: 'address', address, name } : { type: 'address', address }
+export function getAddressVisualization(_address: string): HumanizerVisualization {
+  const address = _address.toLowerCase()
+  return { type: 'address', address }
 }
 
-export function getToken(_address: string, amount: bigint, name?: string): HumanizerVisualization {
-  const address = ethers.getAddress(_address)
-  return name ? { type: 'token', address, amount, name } : { type: 'token', address, amount }
+export function getToken(_address: string, amount: bigint): HumanizerVisualization {
+  const address = _address.toLowerCase()
+  return {
+    type: 'token',
+    address,
+    amount
+  }
 }
 
 export function getNft(address: string, id: bigint): HumanizerVisualization {
   return { type: 'nft', address, id }
 }
 
-export function getOnBehalfOf(
-  onBehalfOf: string,
-  sender: string,
-  name?: string
-): HumanizerVisualization[] {
+export function getOnBehalfOf(onBehalfOf: string, sender: string): HumanizerVisualization[] {
   return onBehalfOf.toLowerCase() !== sender.toLowerCase()
-    ? [getLabel('on befalf of'), getAddress(onBehalfOf, name)]
+    ? [getLabel('on befalf of'), getAddressVisualization(onBehalfOf)]
     : []
 }
 
@@ -54,7 +60,7 @@ export function getOnBehalfOf(
 export function getRecipientText(from: string, recipient: string): HumanizerVisualization[] {
   return from.toLowerCase() === recipient.toLowerCase()
     ? []
-    : [getLabel('and send it to'), getAddress(recipient)]
+    : [getLabel('and send it to'), getAddressVisualization(recipient)]
 }
 
 export function getDeadlineText(deadline: bigint): string {
@@ -76,14 +82,15 @@ export function getDeadline(deadlineSecs: bigint): HumanizerVisualization {
   }
 }
 
-export function shortenAddress(addr: string) {
-  return addr ? `${addr.slice(0, 5)}...${addr.slice(-3)}` : null
+export function shortenAddress(addr: string): string {
+  return `${addr.slice(0, 5)}...${addr.slice(-3)}`
 }
 
 /**
  * Make a request to coingecko to fetch the latest price of the native token.
  * This is used by benzina and hence we cannot wrap the errors in emitError
  */
+// @TODO this shouldn't be here, a more suitable place would be portfolio/gecko
 export async function getNativePrice(network: NetworkDescriptor, fetch: Function): Promise<number> {
   const platformId = geckoIdMapper(ethers.ZeroAddress, network.id)
   if (!platformId) {
@@ -101,6 +108,7 @@ export async function getNativePrice(network: NetworkDescriptor, fetch: Function
   return response[platformId].usd
 }
 
+// @TODO maybe this shouldn't be here, more suitable place would be humanizer/modules/tokens
 export async function getTokenInfo(
   humanizerSettings: HumanizerSettings,
   address: string,
@@ -114,9 +122,13 @@ export async function getTokenInfo(
     response = await response.json()
     if (response.symbol && response.detail_platforms?.ethereum?.decimal_place)
       return {
-        key: `tokens:${address}`,
-        isGlobal: true,
-        value: [response.symbol.toUpperCase(), response.detail_platforms?.ethereum?.decimal_place]
+        type: 'token',
+        key: address.toLowerCase(),
+        value: {
+          symbol: response.symbol.toUpperCase(),
+          decimals: response.detail_platforms?.ethereum?.decimal_place
+        },
+        isGlobal: true
       }
 
     // @TODO: rething error levels
@@ -144,19 +156,19 @@ export async function getTokenInfo(
   }
 }
 
-export function checkIfUnknownAction(v: Array<HumanizerVisualization>) {
+export function checkIfUnknownAction(v: Array<HumanizerVisualization>): boolean {
   try {
-    return v[0].type === 'action' && v?.[0]?.content?.startsWith('Unknown action')
+    return !!(v[0].type === 'action' && v?.[0]?.content?.startsWith('Unknown action'))
   } catch (e) {
     return false
   }
 }
 
-export function getUnknownVisualization(name: string, call: IrCall) {
+export function getUnknownVisualization(name: string, call: IrCall): HumanizerVisualization[] {
   const unknownVisualization = [
     getAction(`Unknown action (${name})`),
     getLabel('to'),
-    getAddress(call.to)
+    getAddressVisualization(call.to)
   ]
   if (call.value)
     unknownVisualization.push(
@@ -165,10 +177,41 @@ export function getUnknownVisualization(name: string, call: IrCall) {
   return unknownVisualization
 }
 
-export function getWraping(address: string, amount: bigint) {
+export function getWraping(address: string, amount: bigint): HumanizerVisualization[] {
   return [getAction('Wrap'), getToken(address, amount)]
 }
 
-export function getUnwraping(address: string, amount: bigint) {
+export function getUnwraping(address: string, amount: bigint): HumanizerVisualization[] {
   return [getAction('Unwrap'), getToken(address, amount)]
+}
+
+export function getKnownAbi(
+  humanizerMeta: HumanizerMeta | undefined,
+  abiName: string,
+  options?: any // @TODO make HumanizerOptions interface
+): string[] {
+  if (!humanizerMeta) {
+    options.emitError({})
+    options.emitError({
+      message: 'getKnownAbi: tried to use the humanizer without humanizerMeta',
+      level: 'major',
+      error: new Error('getKnownAbi: tried to use the humanizer without humanizerMeta')
+    } as ErrorRef)
+    return []
+  }
+  return Object.values(humanizerMeta.abis[abiName]).map((i: AbiFragment): string => i.signature)
+}
+
+export function getKnownName(
+  humanizerMeta: HumanizerMeta | undefined,
+  address: string
+): string | undefined {
+  return humanizerMeta?.knownAddresses?.[address.toLowerCase()]?.name
+}
+
+export function getKnownToken(
+  humanizerMeta: HumanizerMeta | undefined,
+  address: string
+): { decimals: number; symbol: string } | undefined {
+  return humanizerMeta?.knownAddresses?.[address.toLowerCase()]?.token
 }

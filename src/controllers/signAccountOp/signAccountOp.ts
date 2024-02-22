@@ -9,7 +9,6 @@ import { Account, AccountStates } from '../../interfaces/account'
 import { ExternalSignerControllers, Key } from '../../interfaces/keystore'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { Storage } from '../../interfaces/storage'
-import { getKnownAddressLabels } from '../../libs/account/account'
 import { AccountOp, GasFeePayment, getSignableCalls } from '../../libs/accountOp/accountOp'
 import { EstimateResult } from '../../libs/estimate/estimate'
 import { GasRecommendation, getCallDataAdditionalByNetwork } from '../../libs/gasPrice/gasPrice'
@@ -186,15 +185,8 @@ export class SignAccountOpController extends EventEmitter {
   }
 
   #humanizeAccountOp() {
-    const knownAddressLabels = getKnownAddressLabels(
-      this.#accounts,
-      this.#settings.accountPreferences,
-      this.#keystore.keys,
-      this.#settings.keyPreferences
-    )
     callsHumanizer(
       this.accountOp,
-      knownAddressLabels,
       this.#storage,
       this.#fetch,
       (humanizedCalls) => {
@@ -300,7 +292,7 @@ export class SignAccountOpController extends EventEmitter {
   }: {
     accountOp?: AccountOp
     gasPrices?: GasRecommendation[]
-    estimation?: EstimateResult
+    estimation?: EstimateResult | null
     feeToken?: TokenResult
     paidBy?: string
     speed?: FeeSpeed
@@ -336,6 +328,10 @@ export class SignAccountOpController extends EventEmitter {
 
       this.#estimation = estimation
     }
+
+    // if estimation is undefined, do not clear the estimation.
+    // We do this only if strictly specified as null
+    if (estimation === null) this.#estimation = null
 
     if (this.#estimation?.error) {
       this.status = { type: SigningStatus.EstimationError }

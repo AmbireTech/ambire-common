@@ -1,7 +1,6 @@
-import { ethers } from 'ethers'
 import { TypedMessage } from '../../../interfaces/userRequest'
 import { HumanizerTypedMessaageModule, HumanizerVisualization } from '../interfaces'
-import { getAction, getDeadline, getAddress, getLabel, getToken } from '../utils'
+import { getAction, getDeadline, getAddressVisualization, getLabel, getToken } from '../utils'
 
 const visualizePermit = (
   spender: string,
@@ -9,7 +8,12 @@ const visualizePermit = (
   deadline: bigint,
   token: string
 ): HumanizerVisualization[] => {
-  const res = [getAction('Send'), getToken(token, value), getLabel('to'), getAddress(spender)]
+  const res = [
+    getAction('Send'),
+    getToken(token, value),
+    getLabel('to'),
+    getAddressVisualization(spender)
+  ]
   if (getDeadline(deadline)) res.push(getDeadline(deadline) as HumanizerVisualization)
   return res
 }
@@ -25,10 +29,10 @@ export const erc20Module: HumanizerTypedMessaageModule = (tm: TypedMessage) => {
     ) {
       return {
         fullVisualization: visualizePermit(
-          ethers.getAddress(tm.message.spender),
+          tm.message.spender,
           tm.message.value,
           tm.message.deadline,
-          ethers.getAddress(tm.domain.verifyingContract as string)
+          tm.domain.verifyingContract as string
         )
       }
     }
