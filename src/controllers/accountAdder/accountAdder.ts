@@ -1,4 +1,3 @@
-import { KeystoreController } from 'controllers/keystore/keystore'
 /* eslint-disable @typescript-eslint/no-floating-promises */
 import { ethers, JsonRpcProvider } from 'ethers'
 
@@ -25,6 +24,7 @@ import { getAccountState } from '../../libs/accountState/accountState'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import wait from '../../utils/wait'
 import EventEmitter from '../eventEmitter/eventEmitter'
+import { KeystoreController } from '../keystore/keystore'
 
 const INITIAL_PAGE_INDEX = 1
 const PAGE_SIZE = 5
@@ -57,17 +57,21 @@ type DerivedAccount = AccountDerivationMeta & { account: AccountWithNetworkMeta 
 // Sub-type, used during intermediate step during the deriving accounts process
 type DerivedAccountWithoutNetworkMeta = Omit<DerivedAccount, 'account'> & { account: Account }
 
+export enum ImportStatus {
+  NotImported = 'not-imported',
+  ImportedWithoutKey = 'imported-without-key', // as a view only account
+  ImportedWithSameKey = 'imported-with-same-key', // same key meaning not only
+  // the key address is the same, but the key type also
+  ImportedWithDifferentKey = 'is-imported-with-different-key' // different key
+  // meaning that could be a key with the same address but different type,
+  // or a key with different address altogether.
+}
 /**
  * All the accounts that should be visible on the current page - the Basic
  * Accounts, Smart Accounts and the linked accounts. Excludes the derived
  * EOA (basic) accounts used for smart account keys only.
  */
-type AccountOnPageKeyMeta = {
-  // TODO: Maybe use status instead of 2 flags
-  alreadyImportedWithSameKey: boolean
-  alreadyImportedWithDifferentKey: boolean
-}
-export type AccountOnPage = DerivedAccount & AccountOnPageKeyMeta
+export type AccountOnPage = DerivedAccount & { importStatus: ImportStatus }
 
 export type ReadyToAddKeys = {
   internal: { privateKey: string; dedicatedToOneSA: boolean }[]
@@ -154,44 +158,28 @@ export class AccountAdderController extends EventEmitter {
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
   }
 
-  getAccountOnPageKeyMeta(account: Account): AccountOnPageKeyMeta {
+  getAccountOnPageImportStatus(account: Account): { importStatus: ImportStatus } {
     const isAlreadyImported = this.#alreadyImportedAccounts.some(
       ({ addr }) => addr === account.addr
     )
-
-    // If an account with this address is NOT imported, skip
-    if (!isAlreadyImported)
-      return {
-        alreadyImportedWithSameKey: false,
-        alreadyImportedWithDifferentKey: false
-      }
+    if (!isAlreadyImported) return { importStatus: ImportStatus.NotImported }
 
     const importedAccountKeystoreKeys = this.#keystore.keys.filter((key) =>
       account.associatedKeys.includes(key.addr)
     )
+    // Could be imported as a view only account (and therefore, without a key)
+    if (!importedAccountKeystoreKeys) return { importStatus: ImportStatus.ImportedWithoutKey }
 
-    // If the imported account has no keys (view only), skip
-    if (!importedAccountKeystoreKeys)
-      return {
-        alreadyImportedWithSameKey: false,
-        alreadyImportedWithDifferentKey: false
-      }
-
-    // If is imported and has key, check if the imported key is the same
-    // (including type) as the key existing in this keystore session
-    const alreadyImportedWithSameKey = importedAccountKeystoreKeys.some(
+    // Same key in this context means not only the same key address, but the
+    // same type too. Because user can opt in to import same key address with
+    // many different hardware wallets (Trezor, Ledger, GridPlus, etc.) or
+    // the same address with seed (private key).
+    const isImportedWithTheSameKey = importedAccountKeystoreKeys.some(
       (key) => account.associatedKeys.includes(key.addr) && key.type === this.#keyIterator?.type
     )
-    const alreadyImportedWithDifferentKey = importedAccountKeystoreKeys.some(
-      (key) => account.associatedKeys.includes(key.addr) && key.type !== this.#keyIterator?.type
-    )
+    if (isImportedWithTheSameKey) return { importStatus: ImportStatus.ImportedWithSameKey }
 
-    // TODO: Check if this covers the Basic accounts
-    // TODO: Check if this covers the linked accounts
-    return {
-      alreadyImportedWithSameKey,
-      alreadyImportedWithDifferentKey
-    }
+    return { importStatus: ImportStatus.ImportedWithDifferentKey }
   }
 
   get accountsOnPage(): AccountOnPage[] {
@@ -218,9 +206,7 @@ export class AccountAdderController extends EventEmitter {
             ...derivedAccount,
             // Check if it is imported (mainCtrl.accounts) and if it is imported
             // with the same key (mainCtrl.keystore.keys) and the same key type
-            ...this.getAccountOnPageKeyMeta(derivedAccount.account)
-            // alreadyImportedWithSameKey: false,
-            // alreadyImportedWithDifferentKey: false
+            ...this.getAccountOnPageImportStatus(derivedAccount.account)
           })
 
           const duplicate = associatedLinkedAccounts.find(
@@ -236,9 +222,7 @@ export class AccountAdderController extends EventEmitter {
               ...correspondingSmartAccount,
               // Check if it is imported (mainCtrl.accounts) and if it is imported
               // with the same key (mainCtrl.keystore.keys) and the same key type
-              ...this.getAccountOnPageKeyMeta(correspondingSmartAccount.account)
-              // alreadyImportedWithSameKey: false,
-              // alreadyImportedWithDifferentKey: false
+              ...this.getAccountOnPageImportStatus(correspondingSmartAccount.account)
             })
           }
         }
@@ -250,9 +234,7 @@ export class AccountAdderController extends EventEmitter {
             index: derivedAccount.index,
             // Check if it is imported (mainCtrl.accounts) and if it is imported
             // with the same key (mainCtrl.keystore.keys) and the same key type
-            ...this.getAccountOnPageKeyMeta(linkedAcc.account)
-            // alreadyImportedWithSameKey: false,
-            // alreadyImportedWithDifferentKey: false
+            ...this.getAccountOnPageImportStatus(linkedAcc.account)
           }))
         )
 
@@ -293,10 +275,7 @@ export class AccountAdderController extends EventEmitter {
             ...linkedAcc,
             slot: correspondingDerivedAccount.slot,
             index: correspondingDerivedAccount.index,
-            // Check if it is imported (mainCtrl.accounts) and if it is imported
-            // with the same key (mainCtrl.keystore.keys) and the same key type
-            alreadyImportedWithSameKey: false,
-            alreadyImportedWithDifferentKey: false
+            ...this.getAccountOnPageImportStatus(linkedAcc.account)
           }
         ]
       })
