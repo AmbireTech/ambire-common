@@ -121,6 +121,10 @@ export class SignAccountOpController extends EventEmitter {
 
   status: Status | null = null
 
+  gasUsedTooHigh: boolean
+
+  gasUsedTooHighAgreed: boolean
+
   #callRelayer: Function
 
   constructor(
@@ -154,6 +158,8 @@ export class SignAccountOpController extends EventEmitter {
     this.#userOperation = null
 
     this.#humanizeAccountOp()
+    this.gasUsedTooHigh = false
+    this.gasUsedTooHighAgreed = false
   }
 
   get isInitialized(): boolean {
@@ -288,7 +294,8 @@ export class SignAccountOpController extends EventEmitter {
     speed,
     signingKeyAddr,
     signingKeyType,
-    accountOp
+    accountOp,
+    gasUsedTooHighAgreed
   }: {
     accountOp?: AccountOp
     gasPrices?: GasRecommendation[]
@@ -298,6 +305,7 @@ export class SignAccountOpController extends EventEmitter {
     speed?: FeeSpeed
     signingKeyAddr?: Key['addr']
     signingKeyType?: Key['type']
+    gasUsedTooHighAgreed?: boolean
   }) {
     // once the user commits to the things he sees on his screen,
     // we need to be sure nothing changes afterwards.
@@ -326,6 +334,7 @@ export class SignAccountOpController extends EventEmitter {
         this.accountOp.asUserOperation = this.#userOperation
       }
 
+      this.gasUsedTooHigh = estimation.gasUsed > 10000000n
       this.#estimation = estimation
     }
 
@@ -351,6 +360,8 @@ export class SignAccountOpController extends EventEmitter {
       this.accountOp!.signingKeyType = signingKeyType
     }
 
+    if (gasUsedTooHighAgreed !== undefined) this.gasUsedTooHighAgreed = gasUsedTooHighAgreed
+
     // Set defaults, if some of the optional params are omitted
     this.#setDefaults()
     // Here, we expect to have most of the fields set, so we can safely set GasFeePayment
@@ -375,9 +386,14 @@ export class SignAccountOpController extends EventEmitter {
       // Update if status is NOT already set (that's the initial state update)
       // or in general if the user is not in the middle of signing (otherwise
       // it resets the loading state back to ready to sign)
-      (!this.status || !isInTheMiddleOfSigning)
+      (!this.status || !isInTheMiddleOfSigning) &&
+      // if the gas used is too high, do not allow the user to sign
+      // until he explicitly agrees to the risks
+      (!this.gasUsedTooHigh || this.gasUsedTooHighAgreed)
     ) {
       this.status = { type: SigningStatus.ReadyToSign }
+    } else {
+      this.status = null
     }
     this.emitUpdate()
   }
