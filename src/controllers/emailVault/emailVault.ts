@@ -350,7 +350,7 @@ export class EmailVaultController extends EventEmitter {
     const state = this.emailVaultStates
     if (!state.email[email]) {
       this.emitError({
-        message: `Not logged in with ${email}`,
+        message: `You are not logged in with ${email} on this device.`,
         level: 'major',
         error: new Error(`Keystore recovery: email ${email} not imported`)
       })
@@ -359,7 +359,7 @@ export class EmailVaultController extends EventEmitter {
 
     if (!state.email[email].availableSecrets[uid]) {
       this.emitError({
-        message: `No keystore recovery for ${email} with this device.`,
+        message: `Resetting the password on this device is not enabled for ${email}.`,
         level: 'major',
         error: new Error('Keystore recovery: no keystore secret for this device')
       })
@@ -367,7 +367,7 @@ export class EmailVaultController extends EventEmitter {
     }
     if (state.email[email].availableSecrets[uid].type !== SecretType.KeyStore) {
       this.emitError({
-        message: `No keystore recovery for ${email} with this device. 2`,
+        message: `Resetting the password on this device is not enabled for ${email}.`,
         level: 'major',
         error: new Error(`Keystore recovery: no keystore secret for email ${email}`)
       })
@@ -375,11 +375,6 @@ export class EmailVaultController extends EventEmitter {
     }
 
     if (email !== this.keystoreRecoveryEmail) {
-      this.emitError({
-        message: `${email} is not the keystore recovery email`,
-        level: 'major',
-        error: new Error(`${email} is not the keystore recovery email`)
-      })
       return
     }
     const emitExpiredMagicLinkError = () => {
