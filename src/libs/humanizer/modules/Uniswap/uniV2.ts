@@ -1,11 +1,20 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 import { ethers } from 'ethers'
-import { getAction, getLabel, getToken, getRecipientText, getDeadline, getKnownAbi } from '../../utils'
+import {
+  getAction,
+  getLabel,
+  getToken,
+  getRecipientText,
+  getDeadline,
+  getKnownAbi
+} from '../../utils'
 
 import { AccountOp } from '../../../accountOp/accountOp'
 import { HumanizerMeta, IrCall } from '../../interfaces'
 
 const uniV2Mapping = (
-  humanizerInfo: HumanizerMeta
+  humanizerInfo: HumanizerMeta,
+  _options?: any
 ): { [key: string]: (a: AccountOp, c: IrCall) => IrCall[] } => {
   const iface = new ethers.Interface(getKnownAbi(humanizerInfo, 'UniV2Router'))
   return {

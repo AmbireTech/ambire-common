@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable no-console */
 import { ethers } from 'ethers'
 import {
@@ -17,7 +18,8 @@ import { parsePath } from './utils'
 
 // Stolen from ambire-wallet
 const uniV32Mapping = (
-  humanizerInfo: HumanizerMeta
+  humanizerInfo: HumanizerMeta,
+  _options?: any
 ): { [key: string]: (a: AccountOp, c: IrCall) => IrCall[] } => {
   const ifaceV32 = new ethers.Interface(getKnownAbi(humanizerInfo, 'UniV3Router2'))
   return {
@@ -224,7 +226,7 @@ const uniV32Mapping = (
     },
     // 0x49616997
     [ifaceV32.getFunction('unwrapWETH9(uint256)')?.selector!]: (
-      accountOp: AccountOp,
+      _accountOp: AccountOp,
       call: IrCall
     ): IrCall[] => {
       const [amountMin] = ifaceV32.parseTransaction(call)?.args || []
@@ -255,7 +257,7 @@ const uniV32Mapping = (
     },
     // 0xe90a182f
     [ifaceV32.getFunction('sweepToken(address,uint256)')?.selector!]: (
-      accountOp: AccountOp,
+      _accountOp: AccountOp,
       call: IrCall
     ): IrCall[] => {
       const [token, amountMinimum] = ifaceV32.parseTransaction(call)?.args || []
@@ -290,7 +292,7 @@ const uniV32Mapping = (
     },
     // 0x3068c554
     [ifaceV32.getFunction('sweepTokenWithFee(address,uint256,uint256,address)')?.selector!]: (
-      accountOp: AccountOp,
+      _accountOp: AccountOp,
       call: IrCall
     ): IrCall[] => {
       const [token, amountMinimum, feeBips, feeRecipient] =
@@ -336,7 +338,8 @@ const uniV32Mapping = (
 }
 
 const uniV3Mapping = (
-  humanizerInfo: HumanizerMeta
+  humanizerInfo: HumanizerMeta,
+  _options?: any
 ): { [key: string]: (a: AccountOp, c: IrCall) => IrCall[] } => {
   const ifaceV3 = new ethers.Interface(getKnownAbi(humanizerInfo, 'UniV3Router'))
   return {
@@ -486,7 +489,7 @@ const uniV3Mapping = (
     // 0x12210e8a
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     [ifaceV3.getFunction('refundETH()')?.selector!]: (
-      accountOp: AccountOp,
+      _accountOp: AccountOp,
       call: IrCall
     ): IrCall[] => {
       return [{ ...call, fullVisualization: [getAction('Refund')] }]
