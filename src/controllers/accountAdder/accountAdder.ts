@@ -168,7 +168,8 @@ export class AccountAdderController extends EventEmitter {
       account.associatedKeys.includes(key.addr)
     )
     // Could be imported as a view only account (and therefore, without a key)
-    if (!importedAccountKeystoreKeys) return { importStatus: ImportStatus.ImportedWithoutKey }
+    if (!importedAccountKeystoreKeys.length)
+      return { importStatus: ImportStatus.ImportedWithoutKey }
 
     // Same key in this context means not only the same key address, but the
     // same type too. Because user can opt in to import same key address with
