@@ -268,7 +268,15 @@ export class SignAccountOpController extends EventEmitter {
     }
 
     if (!this.#feeSpeedsLoading && !this.feeSpeeds.length) {
-      errors.push('Unable to estimate transaction fee speeds. Try changing the fee token.')
+      if (!this.feeTokenResult?.priceIn.length) {
+        errors.push(
+          `Currently, ${this.feeTokenResult?.symbol} is unavailable as a fee token as we're experiencing troubles fetching its price. Please select another or contact support`
+        )
+      } else {
+        errors.push(
+          'Unable to estimate the transaction fee. Please try changing the fee token or contact support.'
+        )
+      }
     }
 
     if (this.feeSpeeds.some((speed) => speed.amountUsd === null)) {
