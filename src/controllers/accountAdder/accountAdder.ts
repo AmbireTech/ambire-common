@@ -408,7 +408,7 @@ export class AccountAdderController extends EventEmitter {
         level: 'major',
         message: `Selecting ${_account.addr} account failed because the details for this account are missing. Please try again or contact support if the problem persists.`,
         error: new Error(
-          `Trying to select ${_account.addr} account, but this account was not found in the accountsOnPage.`
+          `Trying to select ${_account.addr} account, but this account was not found in the accountsOnPage or it's keys were not found.`
         )
       })
 
