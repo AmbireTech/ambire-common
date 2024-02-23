@@ -88,6 +88,22 @@ describe('AccountAdder', () => {
     accountAdder.addAccounts([], {}, { internal: [], external: [] }, [])
   })
 
+  test('should throw if AccountAdder controller gets initialized, but the keyIterator is missing', (done) => {
+    const unsubscribe = accountAdder.onError(() => {
+      const missingKeyIteratorError = accountAdder.emittedErrors.find(
+        (e) => e.error.message === 'accountAdder: missing keyIterator'
+      )
+
+      if (missingKeyIteratorError) {
+        expect(missingKeyIteratorError).toBeTruthy()
+        unsubscribe()
+        done()
+      }
+    })
+
+    accountAdder.init({ keyIterator: null, hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE })
+  })
+
   test('should set first page and retrieve one smart account for every basic account', (done) => {
     const keyIterator = new KeyIterator(process.env.SEED)
     const PAGE_SIZE = 3
