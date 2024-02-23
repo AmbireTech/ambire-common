@@ -205,7 +205,6 @@ describe('Main Controller ', () => {
       )
       controller.accountAdder.init({
         keyIterator,
-        preselectedAccounts: [],
         hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
       })
       controller.accountAdder.addAccounts([accountPendingCreation]).catch(console.error)

@@ -107,9 +107,6 @@ export class AccountAdderController extends EventEmitter {
 
   selectedAccounts: SelectedAccount[] = []
 
-  // TODO: Remove
-  preselectedAccounts: Account[] = []
-
   // Accounts which identity is created on the Relayer (if needed), and are ready
   // to be added to the user's account list by the Main Controller
   readyToAddAccounts: (Account & { newlyCreated?: boolean })[] = []
@@ -299,19 +296,16 @@ export class AccountAdderController extends EventEmitter {
 
   init({
     keyIterator,
-    preselectedAccounts = [],
     page,
     pageSize,
     hdPathTemplate
   }: {
     keyIterator: KeyIterator | null
-    preselectedAccounts?: Account[]
     page?: number
     pageSize?: number
     hdPathTemplate: HD_PATH_TEMPLATE_TYPE
   }): void {
     this.#keyIterator = keyIterator
-    this.preselectedAccounts = preselectedAccounts
     this.page = page || INITIAL_PAGE_INDEX
     this.pageSize = pageSize || PAGE_SIZE
     this.hdPathTemplate = hdPathTemplate
@@ -322,7 +316,6 @@ export class AccountAdderController extends EventEmitter {
 
   reset() {
     this.#keyIterator = null
-    this.preselectedAccounts = []
     this.selectedAccounts = []
     this.page = INITIAL_PAGE_INDEX
     this.pageSize = PAGE_SIZE
@@ -439,20 +432,12 @@ export class AccountAdderController extends EventEmitter {
     this.emitUpdate()
   }
 
-  // TODO: Sync based on the latest select account changes
   async deselectAccount(account: Account) {
     const accIdx = this.selectedAccounts.findIndex((x) => x.account.addr === account.addr)
-    const accPreselectedIdx = this.preselectedAccounts.findIndex((acc) => acc.addr === account.addr)
 
-    if (accIdx !== -1 && accPreselectedIdx === -1) {
+    if (accIdx !== -1) {
       this.selectedAccounts = this.selectedAccounts.filter((_, i) => i !== accIdx)
       this.emitUpdate()
-    } else if (accPreselectedIdx !== -1) {
-      return this.emitError({
-        level: 'major',
-        message: 'This account cannot be deselected. Please reload and try again.',
-        error: new Error('accountAdder: a preselected account cannot be deselected')
-      })
     } else {
       return this.emitError({
         level: 'major',

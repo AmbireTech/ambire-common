@@ -9,6 +9,7 @@ import { produceMemoryStore } from '../../../test/helpers'
 import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'
 import { networks } from '../../consts/networks'
 import { getPrivateKeyFromSeed, KeyIterator } from '../../libs/keyIterator/keyIterator'
+import { KeystoreController } from '../keystore/keystore'
 import { AccountAdderController } from './accountAdder'
 
 const providers = Object.fromEntries(
@@ -34,6 +35,8 @@ describe('AccountAdder', () => {
   let accountAdder: AccountAdderController
   beforeEach(() => {
     accountAdder = new AccountAdderController({
+      alreadyImportedAccounts: [],
+      keystore: new KeystoreController(produceMemoryStore(), {}),
       storage: produceMemoryStore(),
       relayerUrl,
       fetch
@@ -46,12 +49,10 @@ describe('AccountAdder', () => {
     const keyIterator = new KeyIterator(process.env.SEED)
     accountAdder.init({
       keyIterator,
-      preselectedAccounts: [basicAccount],
       hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
     })
 
     expect(accountAdder.isInitialized).toBeTruthy()
-    expect(accountAdder.preselectedAccounts).toContainEqual(basicAccount)
     expect(accountAdder.selectedAccounts).toEqual([])
   })
 
@@ -78,7 +79,6 @@ describe('AccountAdder', () => {
     const PAGE_SIZE = 3
     accountAdder.init({
       keyIterator,
-      preselectedAccounts: [],
       pageSize: PAGE_SIZE,
       hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
     })
@@ -104,7 +104,6 @@ describe('AccountAdder', () => {
     const keyIterator = new KeyIterator(process.env.SEED)
     accountAdder.init({
       keyIterator,
-      preselectedAccounts: [],
       pageSize: 4,
       hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
     })
@@ -126,7 +125,6 @@ describe('AccountAdder', () => {
     const keyIterator = new KeyIterator(process.env.SEED)
     accountAdder.init({
       keyIterator,
-      preselectedAccounts: [],
       pageSize: 3,
       hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
     })
@@ -164,16 +162,19 @@ describe('AccountAdder', () => {
     const keyIterator = new KeyIterator(process.env.SEED)
     accountAdder.init({
       keyIterator,
-      preselectedAccounts: [basicAccount],
       pageSize: 1,
       hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
     })
     accountAdder.selectedAccounts = [
       {
         account: basicAccount,
-        accountKeyAddresses: [key1PublicAddress],
-        slot: 1,
-        index: 0,
+        accountKeys: [
+          {
+            addr: key1PublicAddress,
+            slot: 1,
+            index: 0
+          }
+        ],
         isLinked: false
       }
     ]
