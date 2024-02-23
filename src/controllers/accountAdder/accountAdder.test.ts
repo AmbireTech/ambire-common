@@ -58,7 +58,7 @@ describe('AccountAdder', () => {
 
   test('should throw if operation is triggered, but the controller is not initialized yet', (done) => {
     let emitCounter = 0
-    accountAdder.onError(() => {
+    const unsubscribe = accountAdder.onError(() => {
       emitCounter++
 
       if (emitCounter === 1) {
@@ -67,6 +67,7 @@ describe('AccountAdder', () => {
         expect(errors[0].error.message).toEqual(
           'accountAdder: requested method `#deriveAccounts`, but the AccountAdder is not initialized'
         )
+        unsubscribe()
         done()
       }
     })
@@ -85,7 +86,7 @@ describe('AccountAdder', () => {
     accountAdder.setPage({ page: 1, networks, providers })
 
     let emitCounter = 0
-    accountAdder.onUpdate(() => {
+    const unsubscribe = accountAdder.onUpdate(() => {
       emitCounter++
 
       if (emitCounter === 1) {
@@ -96,6 +97,7 @@ describe('AccountAdder', () => {
         )
         expect(accountAdder.accountsLoading).toBe(false)
         expect(accountAdder.linkedAccountsLoading).toBe(false)
+        unsubscribe()
         done()
       }
     })
@@ -110,13 +112,14 @@ describe('AccountAdder', () => {
     accountAdder.setPage({ page: 1, networks, providers })
 
     let emitCounter = 0
-    accountAdder.onUpdate(() => {
+    const unsubscribe = accountAdder.onUpdate(() => {
       emitCounter++
 
       // First emit is triggered when account derivation is done, int the
       // second emit it should start the searching for linked accounts
       if (emitCounter === 2) {
         expect(accountAdder.linkedAccountsLoading).toBe(true)
+        unsubscribe()
         done()
       }
     })
@@ -131,7 +134,7 @@ describe('AccountAdder', () => {
     accountAdder.setPage({ page: 1, networks, providers })
 
     let emitCounter = 0
-    accountAdder.onUpdate(() => {
+    const unsubscribe = accountAdder.onUpdate(() => {
       emitCounter++
 
       // First emit is triggered when account derivation is done, int the
@@ -154,45 +157,48 @@ describe('AccountAdder', () => {
         expect(accountsOnSlot3).toContain('0x63caaD57Cd66A69A4c56b595E3A4a1e4EeA066d8')
         expect(accountsOnSlot3).toContain('0x619A6a273c628891dD0994218BC0625947653AC7')
         expect(accountsOnSlot3).toContain('0x7ab87ab041EB1c4f0d4f4d1ABD5b0973B331e2E7')
+        unsubscribe()
         done()
       }
     })
   })
-  test('should not be able to deselect a preselected account', (done) => {
+  test('should be able to deselect an account', (done) => {
+    let emitCounter = 0
+    let doneCalled = false
+    const unsubscribe = accountAdder.onUpdate(() => {
+      emitCounter++
+
+      if (emitCounter === 1) {
+        accountAdder.selectedAccounts = [
+          {
+            account: basicAccount,
+            accountKeys: [{ addr: basicAccount.addr, slot: 1, index: 0 }],
+            isLinked: false
+          }
+        ]
+
+        expect(
+          accountAdder.selectedAccounts.map((a) => a.account.addr).includes(basicAccount.addr)
+        ).toBeTruthy()
+
+        accountAdder.deselectAccount(basicAccount)
+      }
+
+      if (emitCounter === 2) {
+        expect(accountAdder.selectedAccounts).toEqual([])
+        unsubscribe()
+        if (!doneCalled) {
+          doneCalled = true
+          done()
+        }
+      }
+    })
+
     const keyIterator = new KeyIterator(process.env.SEED)
     accountAdder.init({
       keyIterator,
       pageSize: 1,
       hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
     })
-    accountAdder.selectedAccounts = [
-      {
-        account: basicAccount,
-        accountKeys: [
-          {
-            addr: key1PublicAddress,
-            slot: 1,
-            index: 0
-          }
-        ],
-        isLinked: false
-      }
-    ]
-
-    let emitCounter = 0
-    accountAdder.onError(() => {
-      emitCounter++
-
-      if (emitCounter === 1) {
-        const errors = accountAdder.emittedErrors
-        expect(errors.length).toEqual(1)
-        expect(errors[0].error.message).toEqual(
-          'accountAdder: a preselected account cannot be deselected'
-        )
-        done()
-      }
-    })
-
-    accountAdder.deselectAccount(basicAccount)
   })
 })
