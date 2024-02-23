@@ -1,5 +1,4 @@
 import { JsonRpcProvider, Wallet } from 'ethers'
-import { Account } from 'interfaces/account'
 import fetch from 'node-fetch'
 
 /* eslint-disable no-new */
@@ -8,6 +7,7 @@ import { describe, expect, test } from '@jest/globals'
 import { produceMemoryStore } from '../../../test/helpers'
 import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'
 import { networks } from '../../consts/networks'
+import { Account } from '../../interfaces/account'
 import { getPrivateKeyFromSeed, KeyIterator } from '../../libs/keyIterator/keyIterator'
 import { KeystoreController } from '../keystore/keystore'
 import { AccountAdderController } from './accountAdder'
@@ -164,6 +164,7 @@ describe('AccountAdder', () => {
   })
   test('should be able to deselect an account', (done) => {
     let emitCounter = 0
+    // FIXME: temporary workaround for done() being called multiple times
     let doneCalled = false
     const unsubscribe = accountAdder.onUpdate(() => {
       emitCounter++
