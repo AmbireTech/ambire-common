@@ -343,9 +343,9 @@ export class AccountAdderController extends EventEmitter {
     this.setPage({ page: INITIAL_PAGE_INDEX, networks, providers })
   }
 
-  #getAccountKeys(account: Account, pagesWhereThisAccIsFound: AccountOnPage[]) {
+  #getAccountKeys(account: Account, accountsOnPageWithThisAcc: AccountOnPage[]) {
     // should never happen
-    if (pagesWhereThisAccIsFound.length === 0) {
+    if (accountsOnPageWithThisAcc.length === 0) {
       console.error(`accountAdder: account ${account.addr} was not found in the accountsOnPage.`)
       return []
     }
@@ -353,20 +353,20 @@ export class AccountAdderController extends EventEmitter {
     // Case 1: The account is a Basic account
     const isBasicAcc = !isSmartAccount(account)
     // The key of the Basic account is the basic account itself
-    if (isBasicAcc) return pagesWhereThisAccIsFound
+    if (isBasicAcc) return accountsOnPageWithThisAcc
 
     // Case 2: The account is a Smart account, but not a linked one
     const isSmartAccountAndNotLinked =
       isSmartAccount(account) &&
-      pagesWhereThisAccIsFound.length === 1 &&
-      pagesWhereThisAccIsFound[0].isLinked === false
+      accountsOnPageWithThisAcc.length === 1 &&
+      accountsOnPageWithThisAcc[0].isLinked === false
 
     if (isSmartAccountAndNotLinked) {
       // The key of the smart account is the Basic account on the same slot
       // that is explicitly derived for a smart account key only.
       const basicAccOnThisSlotDerivedForSmartAccKey = this.#derivedAccounts.find(
         (a) =>
-          a.slot === pagesWhereThisAccIsFound[0].slot &&
+          a.slot === accountsOnPageWithThisAcc[0].slot &&
           !isSmartAccount(a.account) &&
           isDerivedForSmartAccountKeyOnly(a.index)
       )
@@ -378,7 +378,7 @@ export class AccountAdderController extends EventEmitter {
 
     // Case 3: The account is a Smart account and a linked one. For this case,
     // there could exist multiple keys (basic accounts) found on different slots.
-    const basicAccOnEverySlotWhereThisAddrIsFound = pagesWhereThisAccIsFound
+    const basicAccOnEverySlotWhereThisAddrIsFound = accountsOnPageWithThisAcc
       .map((a) => a.slot)
       .flatMap((slot) => {
         const basicAccOnThisSlot = this.#derivedAccounts.find(
@@ -399,12 +399,10 @@ export class AccountAdderController extends EventEmitter {
   selectAccount(_account: Account) {
     // Needed, because linked accounts could have multiple keys (basic accounts),
     // and therefore - same linked account could be found on different slots.
-    // TODO: Can we have scenario where it is not a linked account,
-    // but it is still found on multiple slots?
-    const pagesWhereThisAccIsFound = this.accountsOnPage.filter(
+    const accountsOnPageWithThisAcc = this.accountsOnPage.filter(
       (accOnPage) => accOnPage.account.addr === _account.addr
     )
-    const accountKeys = this.#getAccountKeys(_account, pagesWhereThisAccIsFound)
+    const accountKeys = this.#getAccountKeys(_account, accountsOnPageWithThisAcc)
     if (!accountKeys.length)
       return this.emitError({
         level: 'major',
