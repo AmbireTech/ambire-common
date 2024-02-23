@@ -44,7 +44,7 @@ type AccountDerivationMeta = {
  */
 export type SelectedAccount = {
   account: Account
-  isLinked: boolean
+  isLinked: AccountDerivationMeta['isLinked']
   accountKeys: (Omit<AccountDerivationMeta, 'isLinked'> & { addr: Account['addr'] })[]
 }
 
