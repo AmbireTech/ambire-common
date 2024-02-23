@@ -608,7 +608,7 @@ export class KeystoreController extends EventEmitter {
   }
 
   get hasPasswordSecret() {
-    return !!this.#keystoreSecrets.find((x) => x.id === 'password')
+    return this.#keystoreSecrets.some((x) => x.id === 'password')
   }
 
   toJSON() {
