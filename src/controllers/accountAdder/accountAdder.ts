@@ -639,7 +639,7 @@ export class AccountAdderController extends EventEmitter {
     const emailSmartAccount = await getEmailAccount(
       {
         emailFrom: email!,
-        secondaryKey: recoveryKey
+        secondaryKey: recoveryKey.addr
       },
       keyPublicAddress
     )
