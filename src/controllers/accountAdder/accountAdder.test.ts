@@ -10,7 +10,7 @@ import { networks } from '../../consts/networks'
 import { Account } from '../../interfaces/account'
 import { getPrivateKeyFromSeed, KeyIterator } from '../../libs/keyIterator/keyIterator'
 import { KeystoreController } from '../keystore/keystore'
-import { AccountAdderController } from './accountAdder'
+import { AccountAdderController, DEFAULT_PAGE, DEFAULT_PAGE_SIZE } from './accountAdder'
 
 const providers = Object.fromEntries(
   networks.map((network) => [network.id, new JsonRpcProvider(network.rpcUrl)])
@@ -43,17 +43,28 @@ describe('AccountAdder', () => {
     })
   })
 
-  test('should initialize accountAdder', () => {
-    expect(accountAdder.isInitialized).toBeFalsy()
+  test('should initialize', (done) => {
+    let emitCounter = 0
+    const unsubscribe = accountAdder.onUpdate(() => {
+      emitCounter++
+
+      if (emitCounter === 1) {
+        expect(accountAdder.page).toEqual(DEFAULT_PAGE)
+        expect(accountAdder.pageSize).toEqual(DEFAULT_PAGE_SIZE)
+        expect(accountAdder.isInitialized).toBeTruthy()
+        expect(accountAdder.selectedAccounts).toEqual([])
+        expect(accountAdder.hdPathTemplate).toEqual(BIP44_STANDARD_DERIVATION_TEMPLATE)
+
+        unsubscribe()
+        done()
+      }
+    })
 
     const keyIterator = new KeyIterator(process.env.SEED)
     accountAdder.init({
       keyIterator,
       hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
     })
-
-    expect(accountAdder.isInitialized).toBeTruthy()
-    expect(accountAdder.selectedAccounts).toEqual([])
   })
 
   test('should throw if operation is triggered, but the controller is not initialized yet', (done) => {
