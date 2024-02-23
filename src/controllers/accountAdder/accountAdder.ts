@@ -202,8 +202,6 @@ export class AccountAdderController extends EventEmitter {
         if (!isSmartAccount(derivedAccount.account)) {
           accountsToReturn.push({
             ...derivedAccount,
-            // Check if it is imported (mainCtrl.accounts) and if it is imported
-            // with the same key (mainCtrl.keystore.keys) and the same key type
             ...this.getAccountOnPageImportStatus(derivedAccount.account)
           })
 
@@ -218,8 +216,6 @@ export class AccountAdderController extends EventEmitter {
           if (!duplicate && correspondingSmartAccount) {
             accountsToReturn.push({
               ...correspondingSmartAccount,
-              // Check if it is imported (mainCtrl.accounts) and if it is imported
-              // with the same key (mainCtrl.keystore.keys) and the same key type
               ...this.getAccountOnPageImportStatus(correspondingSmartAccount.account)
             })
           }
@@ -230,8 +226,6 @@ export class AccountAdderController extends EventEmitter {
             ...linkedAcc,
             slot: derivedAccount.slot,
             index: derivedAccount.index,
-            // Check if it is imported (mainCtrl.accounts) and if it is imported
-            // with the same key (mainCtrl.keystore.keys) and the same key type
             ...this.getAccountOnPageImportStatus(linkedAcc.account)
           }))
         )
