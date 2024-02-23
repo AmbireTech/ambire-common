@@ -69,8 +69,14 @@ describe('AccountAdder', () => {
 
   test('should throw if AccountAdder controller method is requested, but the controller was not initialized beforehand', (done) => {
     const unsubscribe = accountAdder.onError(() => {
-      if (accountAdder.emittedErrors.length === 4) {
-        expect(accountAdder.emittedErrors.length).toEqual(4)
+      const notInitializedErrorsCount = accountAdder.emittedErrors.filter(
+        (e) =>
+          e.error.message ===
+          'accountAdder: requested a method of the AccountAdder controller, but the controller was not initialized'
+      ).length
+
+      if (notInitializedErrorsCount === 4) {
+        expect(notInitializedErrorsCount).toEqual(4)
         unsubscribe()
         done()
       }
