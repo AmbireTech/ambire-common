@@ -193,9 +193,7 @@ describe('Main Controller ', () => {
           ]
         ]
       },
-      accountKeyAddresses: [signerAddr],
-      slot: 1,
-      index: 0,
+      accountKeys: [{ addr: signerAddr, index: 0, slot: 1 }],
       isLinked: false
     }
 
