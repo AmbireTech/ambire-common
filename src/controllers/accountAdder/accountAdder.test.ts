@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-floating-promises */
 import { JsonRpcProvider, Wallet } from 'ethers'
 import fetch from 'node-fetch'
 
@@ -66,23 +67,19 @@ describe('AccountAdder', () => {
     })
   })
 
-  test('should throw if operation is triggered, but the controller is not initialized yet', (done) => {
-    let emitCounter = 0
+  test('should throw if AccountAdder controller method is requested, but the controller was not initialized beforehand', (done) => {
     const unsubscribe = accountAdder.onError(() => {
-      emitCounter++
-
-      if (emitCounter === 1) {
-        const errors = accountAdder.emittedErrors
-        expect(errors.length).toEqual(1)
-        expect(errors[0].error.message).toEqual(
-          'accountAdder: requested method `#deriveAccounts`, but the AccountAdder is not initialized'
-        )
+      if (accountAdder.emittedErrors.length === 4) {
+        expect(accountAdder.emittedErrors.length).toEqual(4)
         unsubscribe()
         done()
       }
     })
 
     accountAdder.setPage({ page: 1, networks, providers })
+    accountAdder.selectAccount(basicAccount)
+    accountAdder.deselectAccount(basicAccount)
+    accountAdder.addAccounts([], {}, { internal: [], external: [] }, [])
   })
 
   test('should set first page and retrieve one smart account for every basic account', (done) => {

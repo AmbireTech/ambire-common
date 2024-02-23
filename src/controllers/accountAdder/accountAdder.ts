@@ -242,6 +242,7 @@ export class AccountAdderController extends EventEmitter {
           linkedAcc.account.associatedKeys.includes(derivedAccount.account.addr)
         )
 
+        // FIXME: Emitting in a getter method is a no-go.
         // The `correspondingDerivedAccount` should always be found,
         // except something is wrong with the data we have stored on the Relayer
         if (!correspondingDerivedAccount) {
@@ -294,6 +295,8 @@ export class AccountAdderController extends EventEmitter {
     hdPathTemplate: HD_PATH_TEMPLATE_TYPE
   }): void {
     this.#keyIterator = keyIterator
+    if (!this.#keyIterator) return this.#throwMissingKeyIterator()
+
     this.page = page || DEFAULT_PAGE
     this.pageSize = pageSize || DEFAULT_PAGE_SIZE
     this.hdPathTemplate = hdPathTemplate
@@ -321,6 +324,7 @@ export class AccountAdderController extends EventEmitter {
     this.emitUpdate()
   }
 
+  // TODO: Not implemented yet
   setHDPathTemplate({
     path,
     networks,
@@ -391,6 +395,9 @@ export class AccountAdderController extends EventEmitter {
   }
 
   selectAccount(_account: Account) {
+    if (!this.isInitialized) return this.#throwNotInitialized()
+    if (!this.#keyIterator) return this.#throwMissingKeyIterator()
+
     // Needed, because linked accounts could have multiple keys (basic accounts),
     // and therefore - same linked account could be found on different slots.
     const accountsOnPageWithThisAcc = this.accountsOnPage.filter(
@@ -422,6 +429,9 @@ export class AccountAdderController extends EventEmitter {
   }
 
   async deselectAccount(account: Account) {
+    if (!this.isInitialized) return this.#throwNotInitialized()
+    if (!this.#keyIterator) return this.#throwMissingKeyIterator()
+
     const accIdx = this.selectedAccounts.findIndex((x) => x.account.addr === account.addr)
 
     if (accIdx !== -1) {
@@ -445,6 +455,9 @@ export class AccountAdderController extends EventEmitter {
     networks: NetworkDescriptor[]
     providers: { [key: string]: JsonRpcProvider }
   }): Promise<void> {
+    if (!this.isInitialized) return this.#throwNotInitialized()
+    if (!this.#keyIterator) return this.#throwMissingKeyIterator()
+
     if (page <= 0) {
       return this.emitError({
         level: 'major',
@@ -495,16 +508,8 @@ export class AccountAdderController extends EventEmitter {
     readyToAddKeys: ReadyToAddKeys = { internal: [], external: [] },
     readyToAddKeyPreferences: KeyPreferences = []
   ) {
-    if (!this.isInitialized) {
-      return this.emitError({
-        level: 'major',
-        message:
-          'Something went wrong with deriving the accounts. Please start the process again. If the problem persists, contact support.',
-        error: new Error(
-          'accountAdder: requested method `addAccounts`, but the AccountAdder is not initialized'
-        )
-      })
-    }
+    if (!this.isInitialized) return this.#throwNotInitialized()
+    if (!this.#keyIterator) return this.#throwMissingKeyIterator()
 
     if (!accounts.length) {
       return this.emitError({
@@ -600,28 +605,8 @@ export class AccountAdderController extends EventEmitter {
       account: { email },
       accountKeys: [recoveryKey]
     } = selectedAccount
-    if (!this.isInitialized) {
-      return this.emitError({
-        level: 'major',
-        message:
-          'Something went wrong with calculating the accounts. Please start the process again. If the problem persists, contact support.',
-        error: new Error(
-          'accountAdder: requested method `#deriveAccounts`, but the AccountAdder is not initialized'
-        )
-      })
-    }
-
-    if (!this.#keyIterator) {
-      this.emitError({
-        level: 'major',
-        message:
-          'Something went wrong with calculating the accounts. Please start the process again. If the problem persists, contact support.',
-        error: new Error(
-          'accountAdder: requested method `#deriveAccounts`, but keyIterator is not initialized'
-        )
-      })
-      return
-    }
+    if (!this.isInitialized) return this.#throwNotInitialized()
+    if (!this.#keyIterator) return this.#throwMissingKeyIterator()
 
     const keyPublicAddress: string = (await this.#keyIterator.retrieve([{ from: 0, to: 1 }]))[0]
 
@@ -654,27 +639,10 @@ export class AccountAdderController extends EventEmitter {
     networks: NetworkDescriptor[]
     providers: { [key: string]: JsonRpcProvider }
   }): Promise<DerivedAccount[]> {
-    if (!this.isInitialized) {
-      this.emitError({
-        level: 'major',
-        message:
-          'Something went wrong with deriving the accounts. Please start the process again. If the problem persists, contact support.',
-        error: new Error(
-          'accountAdder: requested method `#deriveAccounts`, but the AccountAdder is not initialized'
-        )
-      })
-      return []
-    }
-
+    // Should never happen, because before the #deriveAccounts method gets
+    // called - there is a check if the #keyIterator exists.
     if (!this.#keyIterator) {
-      this.emitError({
-        level: 'major',
-        message:
-          'Something went wrong with deriving the accounts. Please start the process again. If the problem persists, contact support.',
-        error: new Error(
-          'accountAdder: requested method `#deriveAccounts`, but keyIterator is not initialized'
-        )
-      })
+      console.error('accountAdder: missing keyIterator')
       return []
     }
 
@@ -924,6 +892,26 @@ export class AccountAdderController extends EventEmitter {
 
     this.linkedAccountsLoading = false
     this.emitUpdate()
+  }
+
+  #throwNotInitialized() {
+    this.emitError({
+      level: 'major',
+      message:
+        'Something went wrong with deriving the accounts. Please start the process again. If the problem persists, contact support.',
+      error: new Error(
+        'accountAdder: requested a method of the AccountAdder controller, but the controller was not initialized'
+      )
+    })
+  }
+
+  #throwMissingKeyIterator() {
+    this.emitError({
+      level: 'major',
+      message:
+        'Something went wrong with deriving the accounts. Please start the process again. If the problem persists, contact support.',
+      error: new Error('accountAdder: missing keyIterator')
+    })
   }
 
   toJSON() {
