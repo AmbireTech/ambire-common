@@ -26,8 +26,8 @@ import wait from '../../utils/wait'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
 
-const INITIAL_PAGE_INDEX = 1
-const PAGE_SIZE = 5
+export const DEFAULT_PAGE = 1
+export const DEFAULT_PAGE_SIZE = 5
 
 type AccountWithNetworkMeta = Account & { usedOnNetworks: NetworkDescriptor[] }
 
@@ -101,9 +101,9 @@ export class AccountAdderController extends EventEmitter {
   isInitialized: boolean = false
 
   // This is only the index of the current page
-  page: number = INITIAL_PAGE_INDEX
+  page: number = DEFAULT_PAGE
 
-  pageSize: number = PAGE_SIZE
+  pageSize: number = DEFAULT_PAGE_SIZE
 
   selectedAccounts: SelectedAccount[] = []
 
@@ -300,8 +300,8 @@ export class AccountAdderController extends EventEmitter {
     hdPathTemplate: HD_PATH_TEMPLATE_TYPE
   }): void {
     this.#keyIterator = keyIterator
-    this.page = page || INITIAL_PAGE_INDEX
-    this.pageSize = pageSize || PAGE_SIZE
+    this.page = page || DEFAULT_PAGE
+    this.pageSize = pageSize || DEFAULT_PAGE_SIZE
     this.hdPathTemplate = hdPathTemplate
     this.isInitialized = true
 
@@ -311,8 +311,8 @@ export class AccountAdderController extends EventEmitter {
   reset() {
     this.#keyIterator = null
     this.selectedAccounts = []
-    this.page = INITIAL_PAGE_INDEX
-    this.pageSize = PAGE_SIZE
+    this.page = DEFAULT_PAGE
+    this.pageSize = DEFAULT_PAGE_SIZE
     this.hdPathTemplate = undefined
 
     this.addAccountsStatus = 'INITIAL'
@@ -337,10 +337,10 @@ export class AccountAdderController extends EventEmitter {
     providers: { [key: string]: JsonRpcProvider }
   }): void {
     this.hdPathTemplate = path
-    this.page = INITIAL_PAGE_INDEX
+    this.page = DEFAULT_PAGE
     this.emitUpdate()
     // get the first page with the new hdPathTemplate (derivation)
-    this.setPage({ page: INITIAL_PAGE_INDEX, networks, providers })
+    this.setPage({ page: DEFAULT_PAGE, networks, providers })
   }
 
   #getAccountKeys(account: Account, accountsOnPageWithThisAcc: AccountOnPage[]) {
