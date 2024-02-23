@@ -414,7 +414,10 @@ export class AccountAdderController extends EventEmitter {
 
     this.selectedAccounts.push({
       account: _account,
-      isLinked: accountKeys.length > 1, // TODO: Check if this is correct
+      // If the account has more than 1 key, it is for sure linked account,
+      // since Basic accounts have only 1 key and smart accounts with more than
+      // one key present should always be found as linked accounts anyways.
+      isLinked: accountKeys.length > 1,
       accountKeys: accountKeys.map((a) => ({
         addr: a.account.addr,
         slot: a.slot,
