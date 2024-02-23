@@ -149,7 +149,7 @@ export class AccountAdderController extends EventEmitter {
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
   }
 
-  getAccountOnPageImportStatus(account: Account): { importStatus: ImportStatus } {
+  #getAccountOnPageImportStatus(account: Account): { importStatus: ImportStatus } {
     const isAlreadyImported = this.#alreadyImportedAccounts.some(
       ({ addr }) => addr === account.addr
     )
@@ -196,7 +196,7 @@ export class AccountAdderController extends EventEmitter {
         if (!isSmartAccount(derivedAccount.account)) {
           accountsToReturn.push({
             ...derivedAccount,
-            ...this.getAccountOnPageImportStatus(derivedAccount.account)
+            ...this.#getAccountOnPageImportStatus(derivedAccount.account)
           })
 
           const duplicate = associatedLinkedAccounts.find(
@@ -210,7 +210,7 @@ export class AccountAdderController extends EventEmitter {
           if (!duplicate && correspondingSmartAccount) {
             accountsToReturn.push({
               ...correspondingSmartAccount,
-              ...this.getAccountOnPageImportStatus(correspondingSmartAccount.account)
+              ...this.#getAccountOnPageImportStatus(correspondingSmartAccount.account)
             })
           }
         }
@@ -220,7 +220,7 @@ export class AccountAdderController extends EventEmitter {
             ...linkedAcc,
             slot: derivedAccount.slot,
             index: derivedAccount.index,
-            ...this.getAccountOnPageImportStatus(linkedAcc.account)
+            ...this.#getAccountOnPageImportStatus(linkedAcc.account)
           }))
         )
 
@@ -261,7 +261,7 @@ export class AccountAdderController extends EventEmitter {
             ...linkedAcc,
             slot: correspondingDerivedAccount.slot,
             index: correspondingDerivedAccount.index,
-            ...this.getAccountOnPageImportStatus(linkedAcc.account)
+            ...this.#getAccountOnPageImportStatus(linkedAcc.account)
           }
         ]
       })
