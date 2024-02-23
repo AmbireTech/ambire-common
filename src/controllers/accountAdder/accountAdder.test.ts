@@ -37,7 +37,6 @@ describe('AccountAdder', () => {
     accountAdder = new AccountAdderController({
       alreadyImportedAccounts: [],
       keystore: new KeystoreController(produceMemoryStore(), {}),
-      storage: produceMemoryStore(),
       relayerUrl,
       fetch
     })

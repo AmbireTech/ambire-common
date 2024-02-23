@@ -196,7 +196,6 @@ export class MainController extends EventEmitter {
     this.accountAdder = new AccountAdderController({
       alreadyImportedAccounts: this.accounts,
       keystore: this.keystore,
-      storage: this.#storage,
       relayerUrl,
       fetch: this.#fetch
     })

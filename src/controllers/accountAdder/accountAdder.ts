@@ -11,7 +11,6 @@ import { KeyIterator } from '../../interfaces/keyIterator'
 import { dedicatedToOneSAPriv, Key } from '../../interfaces/keystore'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
 import { AccountPreferences, KeyPreferences } from '../../interfaces/settings'
-import { Storage } from '../../interfaces/storage'
 import {
   getBasicAccount,
   getEmailAccount,
@@ -88,8 +87,6 @@ export type ReadyToAddKeys = {
 export class AccountAdderController extends EventEmitter {
   #callRelayer: Function
 
-  storage: Storage
-
   #alreadyImportedAccounts: Account[]
 
   #keystore: KeystoreController
@@ -138,20 +135,17 @@ export class AccountAdderController extends EventEmitter {
   constructor({
     alreadyImportedAccounts,
     keystore,
-    storage,
     relayerUrl,
     fetch
   }: {
     alreadyImportedAccounts: Account[]
     keystore: KeystoreController
-    storage: Storage
     relayerUrl: string
     fetch: Function
   }) {
     super()
     this.#alreadyImportedAccounts = alreadyImportedAccounts
     this.#keystore = keystore
-    this.storage = storage
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
   }
 
