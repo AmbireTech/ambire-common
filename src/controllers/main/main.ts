@@ -1089,13 +1089,17 @@ export class MainController extends EventEmitter {
     }
 
     if (transactionRes) {
-      await this.activity.addAccountOp({
+      const submittedAccountOp: SubmittedAccountOp = {
         ...accountOp,
         status: AccountOpStatus.BroadcastedButNotConfirmed,
         txnId: transactionRes.hash,
         nonce: BigInt(transactionRes.nonce),
         timestamp: new Date().getTime()
-      } as SubmittedAccountOp)
+      }
+      if (accountOp.gasFeePayment?.isERC4337) {
+        submittedAccountOp.userOpHash = transactionRes.hash
+      }
+      await this.activity.addAccountOp(submittedAccountOp)
       accountOp.calls.forEach((call) => {
         if (call.fromUserRequestId) {
           this.removeUserRequest(call.fromUserRequestId)
