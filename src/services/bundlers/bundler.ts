@@ -1,3 +1,8 @@
+/* eslint-disable no-restricted-syntax */
+/* eslint-disable guard-for-in */
+
+import { Gas1559Recommendation } from 'libs/gasPrice/gasPrice'
+
 import { StaticJsonRpcProvider } from '@ethersproject/providers'
 
 import { ERC_4337_ENTRYPOINT } from '../../../dist/src/consts/deploy'
@@ -36,7 +41,10 @@ export class Bundler {
   async poll(userOperationHash: string, network: NetworkDescriptor): Promise<any> {
     const receipt = await this.getReceipt(userOperationHash, network)
     if (!receipt) {
-      const delayPromise = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+      const delayPromise = (ms: number) =>
+        new Promise((resolve) => {
+          setTimeout(resolve, ms)
+        })
       await delayPromise(this.pollWaitTime)
       return this.poll(userOperationHash, network)
     }
@@ -63,5 +71,46 @@ export class Bundler {
     const url = `https://api.pimlico.io/v1/${network.id}/rpc?apikey=${process.env.REACT_APP_PIMLICO_API_KEY}`
     const provider = new StaticJsonRpcProvider(url)
     return provider.send('pimlico_getUserOperationStatus', [userOperationHash])
+  }
+
+  static async getUserOpGasPrice(network: NetworkDescriptor) {
+    const url = `https://api.pimlico.io/v1/${network.id}/rpc?apikey=${process.env.REACT_APP_PIMLICO_API_KEY}`
+    const provider = new StaticJsonRpcProvider(url)
+    return provider.send('pimlico_getUserOperationGasPrice', [])
+  }
+
+  async pollGetUserOpGasPrice(
+    network: NetworkDescriptor,
+    counter = 0
+  ): Promise<Gas1559Recommendation[]> {
+    if (counter >= 5) {
+      throw new Error('unable to fetch bundler gas prices')
+    }
+    const prices = await Bundler.getUserOpGasPrice(network)
+    if (!prices) {
+      const delayPromise = (ms: number) =>
+        new Promise((resolve) => {
+          setTimeout(resolve, ms)
+        })
+      await delayPromise(this.pollWaitTime)
+      return this.pollGetUserOpGasPrice(network, counter + 1)
+    }
+
+    // set in the correct ambire format
+    prices.medium = prices.standard
+    prices.ape = prices.fast
+    delete prices.standard
+
+    // transfrom to bigint
+    const gasPrices = []
+    for (const [key] of Object.entries(prices)) {
+      gasPrices.push({
+        name: key,
+        baseFeePerGas: BigInt(prices[key].maxFeePerGas) - BigInt(prices[key].maxPriorityFeePerGas),
+        maxPriorityFeePerGas: BigInt(prices[key].maxPriorityFeePerGas)
+      })
+    }
+
+    return gasPrices
   }
 }

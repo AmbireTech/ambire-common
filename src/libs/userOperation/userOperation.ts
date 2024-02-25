@@ -11,8 +11,7 @@ import {
 } from '../../consts/deploy'
 import { SPOOF_SIGTYPE } from '../../consts/signatures'
 import { Account, AccountOnchainState } from '../../interfaces/account'
-import { AccountOp, callToTuple, getSignableCalls } from '../accountOp/accountOp'
-import { Call } from '../accountOp/types'
+import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
 import { UserOperation } from './types'
 
 export function calculateCallDataCost(callData: string): bigint {
@@ -30,6 +29,10 @@ export function getPaymasterSpoof() {
   return ethers.hexlify(ethers.concat([AMBIRE_PAYMASTER, simulationData]))
 }
 
+export function getSigForCalculations() {
+  return '0x0dc2d37f7b285a2243b2e1e6ba7195c578c72b395c0f76556f8961b0bca97ddc44e2d7a249598f56081a375837d2b82414c3c94940db3c1e64110108021161ca1c01'
+}
+
 /**
  * When we use abi.encode or send the user operation to the bundler,
  * we need to strip it of the specific ambire-common properties that we use
@@ -39,6 +42,28 @@ export function getPaymasterSpoof() {
  */
 export function getCleanUserOp(userOp: UserOperation) {
   return [(({ requestType, activatorCall, ...o }) => o)(userOp)]
+}
+
+export function getPreVerificationGas(
+  userOperation: UserOperation,
+  usesPaymaster: boolean,
+  l1FeeAsL2Gas: bigint = 0n
+): string {
+  const abiCoder = new ethers.AbiCoder()
+  const localUserOp = { ...userOperation }
+
+  // we change the paymasterAndData only for the calculation
+  if (usesPaymaster) {
+    localUserOp.paymasterAndData = getPaymasterSpoof()
+  }
+
+  const packed = abiCoder.encode(
+    [
+      'tuple(address, uint256, bytes, bytes, uint256, uint256, uint256, uint256, uint256, bytes, bytes)'
+    ],
+    [Object.values(getCleanUserOp(localUserOp)[0])]
+  )
+  return ethers.toBeHex(21000n + calculateCallDataCost(packed) + l1FeeAsL2Gas)
 }
 
 export function toUserOperation(
@@ -70,23 +95,6 @@ export function toUserOperation(
     requestType = 'activator'
   }
 
-  // give permissions to the entry if there aren't nay
-  const ambireAccount = new ethers.BaseContract(accountOp.accountAddr, AmbireAccount.abi)
-  let activatorCall: Call | null = null
-  if (!accountState.isErc4337Enabled) {
-    const givePermsToEntryPointData = ambireAccount.interface.encodeFunctionData(
-      'setAddrPrivilege',
-      [ERC_4337_ENTRYPOINT, ENTRY_POINT_MARKER]
-    )
-    activatorCall = {
-      to: accountOp.accountAddr,
-      value: 0n,
-      data: givePermsToEntryPointData
-    }
-
-    requestType = 'activator'
-  }
-
   const userOperation: any = {
     sender: accountOp.accountAddr,
     nonce: ethers.toBeHex(accountState.erc4337Nonce),
@@ -100,6 +108,22 @@ export function toUserOperation(
     paymasterAndData: getPaymasterSpoof(),
     signature:
       '0x0dc2d37f7b285a2243b2e1e6ba7195c578c72b395c0f76556f8961b0bca97ddc44e2d7a249598f56081a375837d2b82414c3c94940db3c1e64110108021161ca1c01'
+  }
+
+  // give permissions to the entry if there aren't nay
+  const ambireAccount = new ethers.BaseContract(accountOp.accountAddr, AmbireAccount.abi)
+  if (!accountState.isErc4337Enabled) {
+    const givePermsToEntryPointData = ambireAccount.interface.encodeFunctionData(
+      'setAddrPrivilege',
+      [ERC_4337_ENTRYPOINT, ENTRY_POINT_MARKER]
+    )
+    userOperation.activatorCall = {
+      to: accountOp.accountAddr,
+      value: 0n,
+      data: givePermsToEntryPointData
+    }
+
+    requestType = 'activator'
   }
 
   // get estimation calldata
@@ -119,18 +143,7 @@ export function toUserOperation(
     userOperation.verificationGasLimit = 150000n
   }
 
-  const abiCoder = new ethers.AbiCoder()
-  let packed = abiCoder.encode(
-    [
-      'tuple(address, uint256, bytes, bytes, uint256, uint256, uint256, uint256, uint256, bytes, bytes)'
-    ],
-    [Object.values(userOperation)]
-  )
-  if (activatorCall) {
-    userOperation.activatorCall = activatorCall
-    packed += abiCoder.encode(['address', 'uint256', 'bytes'], callToTuple(activatorCall))
-  }
-  userOperation.preVerificationGas = ethers.toBeHex(21000n + calculateCallDataCost(packed))
+  userOperation.preVerificationGas = getPreVerificationGas(userOperation, true)
   userOperation.paymasterAndData = '0x'
   userOperation.signature = '0x'
   userOperation.requestType = requestType
