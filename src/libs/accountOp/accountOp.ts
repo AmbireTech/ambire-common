@@ -1,7 +1,7 @@
 import { ethers } from 'ethers'
 import { Key } from 'interfaces/keystore'
-
 import { HumanizerMeta } from 'libs/humanizer/interfaces'
+
 import { networks } from '../../consts/networks'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
 import { stringify } from '../richJson/richJson'
@@ -22,6 +22,7 @@ export interface GasFeePayment {
   amount: bigint
   simulatedGasLimit: bigint
   maxPriorityFeePerGas?: bigint
+  baseFeePerGas?: bigint
 }
 
 export enum AccountOpStatus {

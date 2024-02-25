@@ -19,6 +19,7 @@ import { getExecuteSignature, getTypedData, wrapStandard } from '../../libs/sign
 import { UserOperation } from '../../libs/userOperation/types'
 import {
   getOneTimeNonce,
+  getPreVerificationGas,
   isErc4337Broadcast,
   shouldUseOneTimeNonce,
   shouldUsePaymaster
@@ -61,6 +62,7 @@ type FanSpeed = {
   amountFormatted: string
   amountUsd: string
   maxPriorityFeePerGas?: bigint
+  baseFeePerGas?: bigint
 }
 
 // declare the statuses we don't want state updates on
@@ -596,6 +598,7 @@ export class SignAccountOpController extends EventEmitter {
 
       if ('maxPriorityFeePerGas' in gasRecommendation) {
         fee.maxPriorityFeePerGas = gasRecommendation.maxPriorityFeePerGas
+        fee.baseFeePerGas = gasRecommendation.baseFeePerGas
       }
 
       return fee
@@ -856,6 +859,23 @@ export class SignAccountOpController extends EventEmitter {
           userOperation.callData = ambireAccount.encodeFunctionData('executeBySender', [
             getSignableCalls(this.accountOp)
           ])
+        }
+
+        // TODO: ARBITRUM 4337 IMPLEMENTATION
+        // TODO: Not working for networks that do not support EIP-1559 and demand a L1 fee
+        // Set the real preVerificationGas
+        if (feeTokenEstimation.addedNative > 0n) {
+          const l1FeeAsL2Gas =
+            feeTokenEstimation.addedNative /
+            BigInt(this.feeSpeeds.find((speed) => speed.type === 'fast')?.baseFeePerGas!)
+
+          userOperation.preVerificationGas = getPreVerificationGas(
+            userOperation,
+            usesPaymaster,
+            l1FeeAsL2Gas
+          )
+        } else {
+          userOperation.preVerificationGas = getPreVerificationGas(userOperation, usesPaymaster)
         }
 
         if (usesPaymaster) {

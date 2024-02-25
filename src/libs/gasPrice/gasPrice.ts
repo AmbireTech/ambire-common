@@ -5,6 +5,7 @@ import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFacto
 import EntryPoint from '../../../contracts/compiled/EntryPoint.json'
 import { AccountOnchainState } from '../../interfaces/account'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
+import bundler from '../../services/bundlers'
 import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
 import { UserOperation } from '../userOperation/types'
 import { getCleanUserOp } from '../userOperation/userOperation'
@@ -117,6 +118,16 @@ export async function getGasPriceRecommendations(
   const lastBlock = await refetchBlock(provider, blockTag)
   // https://github.com/ethers-io/ethers.js/issues/3683#issuecomment-1436554995
   const txns = lastBlock.prefetchedTransactions
+
+  // Call the bundler to fetch the correct userOp prices for the time being.
+  // We want someday to estimate these ourselves as we don't want to rely
+  // on the bundler. But estimation is pretty difficult and each network
+  // comes with its caveats. Also, the bundlers will start disallowing soon
+  // user ops with low fees, making our estimation riskier
+  if (network.erc4337?.enabled) {
+    return bundler.pollGetUserOpGasPrice(network)
+  }
+
   if (network.feeOptions.is1559 && lastBlock.baseFeePerGas != null) {
     // https://eips.ethereum.org/EIPS/eip-1559
     const elasticityMultiplier =
