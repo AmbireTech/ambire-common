@@ -6,7 +6,10 @@ import fetch from 'node-fetch'
 import { describe, expect, test } from '@jest/globals'
 
 import { produceMemoryStore } from '../../../test/helpers'
-import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'
+import {
+  BIP44_STANDARD_DERIVATION_TEMPLATE,
+  SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
+} from '../../consts/derivation'
 import { networks } from '../../consts/networks'
 import { Account } from '../../interfaces/account'
 import { isSmartAccount } from '../../libs/account/account'
@@ -25,6 +28,18 @@ const key1to11BasicAccPublicAddresses = Array.from(
   (_, i) =>
     new Wallet(getPrivateKeyFromSeed(process.env.SEED, i, BIP44_STANDARD_DERIVATION_TEMPLATE))
       .address
+)
+
+const key1to11BasicAccUsedForSmartAccKeysOnlyPublicAddresses = Array.from(
+  { length: 11 },
+  (_, i) =>
+    new Wallet(
+      getPrivateKeyFromSeed(
+        process.env.SEED,
+        i + SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET,
+        BIP44_STANDARD_DERIVATION_TEMPLATE
+      )
+    ).address
 )
 
 const key1PublicAddress = key1to11BasicAccPublicAddresses[0]
@@ -132,12 +147,28 @@ describe('AccountAdder', () => {
         expect(basicAccountAddressesOnPage).toEqual(key1to11BasicAccPublicAddresses)
 
         // Check the Smart Addresses retrieved
-        const smartAccountAddressesOnPage = accountAdder.accountsOnPage
-          .filter((x) => isSmartAccount(x.account))
-          .map((x) => x.account.addr)
+        const smartAccountAddressesOnPage = accountAdder.accountsOnPage.filter((x) =>
+          isSmartAccount(x.account)
+        )
         expect(smartAccountAddressesOnPage).toHaveLength(PAGE_SIZE)
-        // TODO: Check the addresses too.
+        // TODO: Check if the calculated smart account addresses are connect
         // expect(basicAccountAddressesOnPage).toEqual(key1to11SmartAccPublicAddresses)
+
+        // Smart account associated keys should be different than the basic
+        // account addresses, since we use derived addresses for the smart account keys
+        const noneOfTheSmartAccountsShouldHaveBasicAccountsAsAssociatedKeys =
+          smartAccountAddressesOnPage.every(
+            (x) => !x.account.associatedKeys.some((y) => basicAccountAddressesOnPage.includes(y))
+          )
+        expect(noneOfTheSmartAccountsShouldHaveBasicAccountsAsAssociatedKeys).toBeTruthy()
+
+        // Smart account associated keys should be the special derived addresses
+        const allSmartAccAssociatedKeysAddresses = smartAccountAddressesOnPage.flatMap(
+          (x) => x.account.associatedKeys
+        )
+        expect(allSmartAccAssociatedKeysAddresses).toEqual(
+          key1to11BasicAccUsedForSmartAccKeysOnlyPublicAddresses
+        )
 
         unsubscribe()
         done()
