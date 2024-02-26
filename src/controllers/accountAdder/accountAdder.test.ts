@@ -9,6 +9,7 @@ import { produceMemoryStore } from '../../../test/helpers'
 import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'
 import { networks } from '../../consts/networks'
 import { Account } from '../../interfaces/account'
+import { isSmartAccount } from '../../libs/account/account'
 import { getPrivateKeyFromSeed, KeyIterator } from '../../libs/keyIterator/keyIterator'
 import { KeystoreController } from '../keystore/keystore'
 import { AccountAdderController, DEFAULT_PAGE, DEFAULT_PAGE_SIZE } from './accountAdder'
@@ -19,9 +20,14 @@ const providers = Object.fromEntries(
 
 const relayerUrl = 'https://staging-relayer.ambire.com'
 
-const key1PublicAddress = new Wallet(
-  getPrivateKeyFromSeed(process.env.SEED, 0, BIP44_STANDARD_DERIVATION_TEMPLATE)
-).address
+const key1to11BasicAccPublicAddresses = Array.from(
+  { length: 11 },
+  (_, i) =>
+    new Wallet(getPrivateKeyFromSeed(process.env.SEED, i, BIP44_STANDARD_DERIVATION_TEMPLATE))
+      .address
+)
+
+const key1PublicAddress = key1to11BasicAccPublicAddresses[0]
 
 const basicAccount: Account = {
   addr: key1PublicAddress,
@@ -104,32 +110,47 @@ describe('AccountAdder', () => {
     accountAdder.init({ keyIterator: null, hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE })
   })
 
-  test('should set first page and retrieve one smart account for every basic account', (done) => {
+  test('should retrieve one smart account and one basic account on every slot (per page)', (done) => {
+    const PAGE_SIZE = 11
+
+    let emitCounter = 0
+    const unsubscribe = accountAdder.onUpdate(() => {
+      emitCounter++
+
+      // Trigger when the accountsLoading resolves (first emit gets skipped, because it's the initial state)
+      if (emitCounter > 1 && !accountAdder.accountsLoading) {
+        // There should be one basic and one smart account on each slot, meaning
+        // there should be PAGE_SIZE * 2 accounts on the page (without the linked ones)
+        const allAccountsExceptLinked = accountAdder.accountsOnPage.filter((x) => !x.isLinked)
+        expect(allAccountsExceptLinked).toHaveLength(PAGE_SIZE * 2)
+
+        // Check the Basic Addresses retrieved
+        const basicAccountAddressesOnPage = accountAdder.accountsOnPage
+          .filter((x) => !isSmartAccount(x.account))
+          .map((x) => x.account.addr)
+        expect(basicAccountAddressesOnPage).toHaveLength(PAGE_SIZE)
+        expect(basicAccountAddressesOnPage).toEqual(key1to11BasicAccPublicAddresses)
+
+        // Check the Smart Addresses retrieved
+        const smartAccountAddressesOnPage = accountAdder.accountsOnPage
+          .filter((x) => isSmartAccount(x.account))
+          .map((x) => x.account.addr)
+        expect(smartAccountAddressesOnPage).toHaveLength(PAGE_SIZE)
+        // TODO: Check the addresses too.
+        // expect(basicAccountAddressesOnPage).toEqual(key1to11SmartAccPublicAddresses)
+
+        unsubscribe()
+        done()
+      }
+    })
+
     const keyIterator = new KeyIterator(process.env.SEED)
-    const PAGE_SIZE = 3
     accountAdder.init({
       keyIterator,
       pageSize: PAGE_SIZE,
       hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
     })
     accountAdder.setPage({ page: 1, networks, providers })
-
-    let emitCounter = 0
-    const unsubscribe = accountAdder.onUpdate(() => {
-      emitCounter++
-
-      if (emitCounter === 1) {
-        // First emit is triggered when account derivation is done
-        expect(accountAdder.accountsOnPage.length).toEqual(
-          // One smart account for every basic account
-          PAGE_SIZE * 2
-        )
-        expect(accountAdder.accountsLoading).toBe(false)
-        expect(accountAdder.linkedAccountsLoading).toBe(false)
-        unsubscribe()
-        done()
-      }
-    })
   })
   test('should start the searching for linked accounts', (done) => {
     const keyIterator = new KeyIterator(process.env.SEED)
