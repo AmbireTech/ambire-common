@@ -72,6 +72,10 @@ export function getOneTimeNonce(userOperation: UserOperation) {
     .substring(18)}${ethers.toBeHex(0, 8).substring(2)}`
 }
 
+export function shouldUseOneTimeNonce(userOp: UserOperation) {
+  return userOp.requestType !== 'standard'
+}
+
 export function getPreVerificationGas(
   userOperation: UserOperation,
   usesPaymaster: boolean,
@@ -86,7 +90,7 @@ export function getPreVerificationGas(
   if (usesPaymaster) {
     localUserOp.paymasterAndData = getPaymasterSpoof()
   }
-  if (userOperation.requestType !== 'standard') {
+  if (shouldUseOneTimeNonce(localUserOp)) {
     localUserOp.nonce = getOneTimeNonce(localUserOp)
   }
 
@@ -191,10 +195,6 @@ export function isErc4337Broadcast(
   const isEnabled = network && network.erc4337 ? network.erc4337.enabled : false
 
   return isEnabled && accountState.isV2
-}
-
-export function shouldUseOneTimeNonce(userOp: UserOperation) {
-  return userOp.requestType !== 'standard'
 }
 
 export function shouldUsePaymaster(userOp: UserOperation, feeTokenAddr: string) {
