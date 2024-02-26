@@ -125,9 +125,10 @@ async function fetchFunc4bytes(selector: string, options: any): Promise<Humanize
   return null
 }
 
-function extractAddresses(data: string, selector: string): string[] {
-  const iface = new ethers.Interface([`function ${selector}`])
-  const args = iface.decodeFunctionData(`function ${selector}`, data)
+function extractAddresses(data: string, _selector: string): string[] {
+  const selector = _selector.startsWith('function') ? _selector : `function ${_selector}`
+  const iface = new ethers.Interface([selector])
+  const args = iface.decodeFunctionData(selector, data)
   const deepSearchForAddress = (obj: { [prop: string]: any }): string[] => {
     return (
       Object.values(obj)
@@ -159,10 +160,11 @@ export const fallbackHumanizer: HumanizerCallModule = (
     if (call.data !== '0x') {
       let extractedAddresses: string[] = []
       try {
-        extractedAddresses = extractAddresses(
-          call.data,
-          knownSigHashes[call.data.slice(0, 10)].signature
-        )
+        if (knownSigHashes[call.data.slice(0, 10)]?.signature)
+          extractedAddresses = extractAddresses(
+            call.data,
+            knownSigHashes[call.data.slice(0, 10)].signature
+          )
       } catch (e) {
         options.emitError({
           message: 'Failed to extract addresses and token from this txn',
