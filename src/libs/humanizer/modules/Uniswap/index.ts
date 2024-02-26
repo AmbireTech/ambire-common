@@ -1,6 +1,6 @@
 import { AccountOp } from '../../../accountOp/accountOp'
 import { HumanizerCallModule, HumanizerWarning, IrCall } from '../../interfaces'
-import { getUnknownVisualization } from '../../utils'
+import { getUnknownVisualization, getWarning } from '../../utils'
 import { uniUniversalRouter } from './uniUnivarsalRouter'
 import { uniV2Mapping } from './uniV2'
 import { uniV32Mapping, uniV3Mapping } from './uniV3'
@@ -64,12 +64,7 @@ export const uniswapHumanizer: HumanizerCallModule = (
     } else if (fallbackFlatUniswapsObject[sigHash]) {
       fallbackFlatUniswapsObject[sigHash](accountOp, call).forEach((hc: IrCall, index: number) => {
         // if multicall has value it shouldnt result in multiple calls with value
-        const warnings: HumanizerWarning[] = [
-          {
-            content: 'Unknown uniswap address',
-            level: 'alarm'
-          }
-        ]
+        const warnings: HumanizerWarning[] = [getWarning('Unknown uniswap address', 'alarm')]
         index === 0
           ? newCalls.push({ ...hc, warnings })
           : newCalls.push({ ...hc, value: 0n, warnings })
