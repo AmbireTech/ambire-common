@@ -166,5 +166,6 @@ export interface GetOptions {
   }
   isEOA: boolean
   fetchPinned: boolean
+  tokenPreferences: []
   additionalHints?: Hints['erc20s']
 }

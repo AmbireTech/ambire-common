@@ -52,6 +52,7 @@ const defaultOptions: GetOptions = {
   priceRecency: 0,
   additionalHints: [],
   fetchPinned: true,
+  tokenPreferences: [],
   isEOA: false
 }
 
@@ -134,6 +135,13 @@ export class Portfolio {
       hints.erc20s = [...hints.erc20s, ...PINNED_TOKENS.map((x) => x.address)]
     }
 
+    if (localOpts.tokenPreferences) {
+      hints.erc20s = [
+        ...hints.erc20s,
+        ...localOpts.tokenPreferences.filter((x) => x.standard === 'ERC20').map((x) => x.address)
+      ]
+    }
+
     // Remove duplicates
     hints.erc20s = [...new Set(hints.erc20s)]
 
@@ -180,15 +188,17 @@ export class Portfolio {
     const tokenFilter = ([error, result]: [string, TokenResult]): boolean => {
       if (error !== '0x' || result.symbol === '') return false
 
-      if (result.amount > 0) return true
-
+      // if (result.amount > 0) return true
+      const isTokenPreference = localOpts.tokenPreferences?.find((tokenPreference) => {
+        return tokenPreference.address === result.address
+      })
       const isPinned = !!PINNED_TOKENS.find((pinnedToken) => {
         return pinnedToken.networkId === networkId && pinnedToken.address === result.address
       })
       const isInAdditionalHints = localOpts.additionalHints?.includes(result.address)
       const isNative = result.address === ZeroAddress
 
-      return isPinned || isInAdditionalHints || isNative
+      return isPinned || isInAdditionalHints || isNative || isTokenPreference
     }
 
     const tokens = tokensWithErr

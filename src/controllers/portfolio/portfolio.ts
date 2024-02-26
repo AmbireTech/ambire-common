@@ -75,6 +75,8 @@ export class PortfolioController extends EventEmitter {
 
   pending: PortfolioControllerState
 
+  tokenPreferences: any[] = []
+
   #portfolioLibs: Map<string, Portfolio>
 
   #storage: Storage
@@ -107,6 +109,11 @@ export class PortfolioController extends EventEmitter {
     this.#portfolioLibs = new Map()
     this.#storage = storage
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
+  }
+
+  async updateTokenPreferences(tokens: any[]) {
+    this.tokenPreferences = tokens
+    await this.#storage.set('tokenPreferences', tokens)
   }
 
   async #updateNetworksWithAssets(
@@ -355,11 +362,14 @@ export class PortfolioController extends EventEmitter {
       state.isLoading = true
       this.emitUpdate()
 
+      const tokenPreferences = await this.#storage.get('tokenPreferences', [])
+
       try {
         const result = await portfolioLib.get(accountId, {
           priceRecency: 60000,
           priceCache: state.result?.priceCache,
           fetchPinned: !hasNonZeroTokens,
+          tokenPreferences,
           ...portfolioProps
         })
         _accountState[network.id] = { isReady: true, isLoading: false, errors: [], result }
