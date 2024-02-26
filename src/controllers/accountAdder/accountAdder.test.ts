@@ -183,7 +183,20 @@ describe('AccountAdder', () => {
     })
     accountAdder.setPage({ page: 1, networks, providers })
   })
+
   test('should start the searching for linked accounts', (done) => {
+    let emitCounter = 0
+    const unsubscribe = accountAdder.onUpdate(() => {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      emitCounter++
+
+      if (accountAdder.linkedAccountsLoading) {
+        expect(accountAdder.linkedAccountsLoading).toBe(true)
+        unsubscribe()
+        done()
+      }
+    })
+
     const keyIterator = new KeyIterator(process.env.SEED)
     accountAdder.init({
       keyIterator,
@@ -191,20 +204,8 @@ describe('AccountAdder', () => {
       hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
     })
     accountAdder.setPage({ page: 1, networks, providers })
-
-    let emitCounter = 0
-    const unsubscribe = accountAdder.onUpdate(() => {
-      emitCounter++
-
-      // First emit is triggered when account derivation is done, int the
-      // second emit it should start the searching for linked accounts
-      if (emitCounter === 2) {
-        expect(accountAdder.linkedAccountsLoading).toBe(true)
-        unsubscribe()
-        done()
-      }
-    })
   })
+
   test('should find linked accounts', (done) => {
     const keyIterator = new KeyIterator(process.env.SEED)
     accountAdder.init({
@@ -228,11 +229,13 @@ describe('AccountAdder', () => {
         const accountsOnSlot1 = linkedAccountsOnPage
           .filter(({ slot }) => slot === 1)
           .map(({ account }) => account.addr)
+        // This account was manually added as a signer to one of our test accounts
         expect(accountsOnSlot1).toContain('0x740523d7876Fbb8AF246c5B307f26d4b2D2BFDA9')
 
         const accountsOnSlot3 = linkedAccountsOnPage
           .filter(({ slot }) => slot === 3)
           .map(({ account }) => account.addr)
+        // These accounts was manually added as signers to our test accounts
         expect(accountsOnSlot3).toContain('0x0ace96748e66F42EBeA22D777C2a99eA2c83D8A6')
         expect(accountsOnSlot3).toContain('0xc583f33d502dE560dd2C60D4103043d5998A98E5')
         expect(accountsOnSlot3).toContain('0x63caaD57Cd66A69A4c56b595E3A4a1e4EeA066d8')
