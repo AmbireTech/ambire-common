@@ -193,7 +193,10 @@ export function getProbableCallData(
     localOp.verificationGasLimit = toBeHex(100000n)
     localOp.callGasLimit = toBeHex(100000n)
     localOp.signature = getSigForCalculations()
-    localOp.nonce = getOneTimeNonce(localOp)
+
+    if (localOp.requestType !== 'standard') {
+      localOp.nonce = getOneTimeNonce(localOp)
+    }
 
     // include the paymaster as a fee commitment always as we can't detect at
     // this stage whether we're using a fee token (should use paymaster)

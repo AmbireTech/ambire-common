@@ -867,7 +867,7 @@ export class SignAccountOpController extends EventEmitter {
         if (feeTokenEstimation.addedNative > 0n) {
           const l1FeeAsL2Gas =
             feeTokenEstimation.addedNative /
-            BigInt(this.feeSpeeds.find((speed) => speed.type === 'slow')?.baseFeePerGas!)
+            BigInt(this.feeSpeeds.find((speed) => speed.type === 'medium')?.baseFeePerGas!)
 
           userOperation.preVerificationGas = getPreVerificationGas(
             userOperation,
