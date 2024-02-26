@@ -315,7 +315,53 @@ describe('AccountAdder', () => {
       if (emitCounter2 === 4) {
         expect(accountAdder.selectedAccounts[0].accountKeys).toHaveLength(1)
         const keyAddr = accountAdder.selectedAccounts[0].accountKeys[0].addr
+        const keyIndex = accountAdder.selectedAccounts[0].accountKeys[0].index
         expect(keyAddr).toEqual(basicAccount.addr)
+        expect(keyIndex).toEqual(0)
+
+        unsubscribe1()
+        unsubscribe2()
+        done()
+      }
+    })
+
+    const keyIterator = new KeyIterator(process.env.SEED)
+    accountAdder.init({
+      keyIterator,
+      hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
+    })
+    accountAdder.setPage({ page: 1, networks, providers })
+  })
+
+  test('should be able to find all the keys of a selected smart account', (done) => {
+    // Subscription to select an account
+    let emitCounter1 = 0
+    const unsubscribe1 = accountAdder.onUpdate(() => {
+      emitCounter1++
+
+      // First - init, second - start deriving, third - deriving done
+      if (emitCounter1 === 3) {
+        const firstSmartAccount = accountAdder.accountsOnPage.find(
+          (x) => x.slot === 1 && isSmartAccount(x.account)
+        )
+        if (firstSmartAccount) accountAdder.selectAccount(firstSmartAccount.account)
+      }
+    })
+
+    let emitCounter2 = 0
+    const unsubscribe2 = accountAdder.onUpdate(() => {
+      emitCounter2++
+
+      // Select account emit is triggered
+      if (emitCounter2 === 4) {
+        expect(accountAdder.selectedAccounts[0].accountKeys)
+          // Might contain other keys too, but this one should be in there,
+          // since that's the derived used only for smart account key
+          .toContainEqual({
+            addr: key1to11BasicAccUsedForSmartAccKeysOnlyPublicAddresses[0],
+            index: SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET,
+            slot: 1
+          })
 
         unsubscribe1()
         unsubscribe2()
