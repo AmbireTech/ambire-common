@@ -247,7 +247,7 @@ describe('AccountAdder', () => {
     })
   })
 
-  test.only('should be able to select and then deselect an account', (done) => {
+  test('should be able to select and then deselect an account', (done) => {
     // Subscription to select an account and trigger a deselect
     let emitCounter1 = 0
     const unsubscribe1 = accountAdder.onUpdate(() => {
