@@ -6,11 +6,12 @@ import {
   getRecipientText,
   getToken,
   getWraping,
-  getAddress,
-  getUnknownVisualization
+  getAddressVisualization,
+  getUnknownVisualization,
+  getKnownAbi
 } from '../../utils'
 import { AccountOp } from '../../../accountOp/accountOp'
-import { IrCall } from '../../interfaces'
+import { HumanizerMeta, IrCall } from '../../interfaces'
 import { COMMANDS, COMMANDS_DESCRIPTIONS } from './Commands'
 import { parsePath } from './utils'
 
@@ -49,10 +50,12 @@ function parseCommands(commands: string, emitError: Function): string[] | null {
 
 // @TODO add txns parsing (example for turning swap 1.15 and send 0.15 to swap 1.00)
 export const uniUniversalRouter = (
-  humanizerInfo: any,
+  humanizerInfo: HumanizerMeta,
   options?: any
 ): { [x: string]: (a: AccountOp, c: IrCall) => IrCall[] } => {
-  const ifaceUniversalRouter = new ethers.Interface(humanizerInfo?.['abis:UniswapUniversalRouter'])
+  const ifaceUniversalRouter = new ethers.Interface(
+    getKnownAbi(humanizerInfo, 'UniswapUniversalRouter')
+  )
   return {
     [`${
       ifaceUniversalRouter.getFunction(
@@ -136,7 +139,7 @@ export const uniUniversalRouter = (
                   getAction('Send'),
                   getToken(params.token, params.value),
                   getLabel('to'),
-                  getAddress(params.recipient)
+                  getAddressVisualization(params.recipient)
                 ]
               })
             } else if (command === COMMANDS.V2_SWAP_EXACT_IN) {

@@ -1,6 +1,6 @@
 import { ethers } from 'ethers'
 import { AccountOp } from '../../accountOp/accountOp'
-import { HumanizerCallModule, IrCall } from '../interfaces'
+import { HumanizerCallModule, HumanizerMeta, IrCall } from '../interfaces'
 import { getAction, getLabel, getToken, getUnknownVisualization } from '../utils'
 
 const parseZeroAddressIfNeeded = (address: string) => {
@@ -9,11 +9,11 @@ const parseZeroAddressIfNeeded = (address: string) => {
     : address
 }
 
-const OneInchMapping = (humanizerInfo: any) => {
-  const iface = new ethers.Interface(humanizerInfo?.['abis:Swappin'])
+const OneInchMapping = (humanizerInfo: HumanizerMeta) => {
+  const iface = new ethers.Interface(Object.values(humanizerInfo?.abis.Swappin))
 
   return {
-    [iface.getFunction('swap')?.selector!]: (accounutOp: AccountOp, call: IrCall) => {
+    [iface.getFunction('swap')?.selector!]: (_: any, call: IrCall) => {
       const { desc } = iface.parseTransaction(call)!.args
       return [
         getAction('Swap'),
@@ -22,7 +22,7 @@ const OneInchMapping = (humanizerInfo: any) => {
         getToken(parseZeroAddressIfNeeded(desc.dstToken), desc.minReturnAmount)
       ]
     },
-    [iface.getFunction('unoswap')?.selector!]: (accounutOp: AccountOp, call: IrCall) => {
+    [iface.getFunction('unoswap')?.selector!]: (_: any, call: IrCall) => {
       const { amount, minReturn, srcToken } = iface.parseTransaction(call)!.args
 
       return [
@@ -44,10 +44,10 @@ export const oneInchHumanizer: HumanizerCallModule = (
   options?: any
 ) => {
   const matcher = {
-    ...OneInchMapping(accountOp.humanizerMeta)
+    ...OneInchMapping(accountOp.humanizerMeta!)
   }
   const newCalls = irCalls.map((call) => {
-    if (call.to === '0x1111111254fb6c44bAC0beD2854e76F90643097d') {
+    if (call.to === '0x1111111254fb6c44bac0bed2854e76f90643097d') {
       const sigHash = call.data.slice(0, 10)
 
       return matcher[sigHash]

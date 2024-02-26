@@ -6,14 +6,16 @@ import { describe, expect, test } from '@jest/globals'
 
 import { ErrorRef } from '../../controllers/eventEmitter/eventEmitter'
 import { AccountOp } from '../accountOp/accountOp'
-import { HumanizerFragment, HumanizerVisualization, IrCall } from './interfaces'
+import { AbiFragment, HumanizerFragment, HumanizerVisualization, IrCall } from './interfaces'
 import { fallbackHumanizer } from './modules/fallBackHumanizer'
 import { genericErc20Humanizer, genericErc721Humanizer } from './modules/tokens'
 import { uniswapHumanizer } from './modules/Uniswap'
 import { parseCalls } from './parsers'
-import { nameParsing } from './parsers/nameParsing'
 
-const humanizerInfo = require('../../consts/humanizerInfo.json')
+import humanizerInfo from '../../consts/humanizer/humanizerInfo.json'
+import { combineKnownHumanizerInfo, HUMANIZER_META_KEY } from '.'
+import { produceMemoryStore } from '../../../test/helpers'
+import { humanizerMetaParsing } from './parsers/humanizerMetaParsing'
 
 const mockEmitError = (e: ErrorRef) => console.log(e)
 
@@ -40,20 +42,20 @@ const accountOp: AccountOp = {
   // This is used when we have an account recovery to finalize before executing the AccountOp,
   // And we set this to the recovery finalization AccountOp; could be used in other scenarios too in the future,
   // for example account migration (from v1 QuickAcc to v2)
-  accountOpToExecuteBefore: null,
+  accountOpToExecuteBefore: null
   // This is fed into the humanizer to help visualize the accountOp
   // This can contain info like the value of specific share tokens at the time of signing,
   // or any other data that needs to otherwise be retrieved in an async manner and/or needs to be
   // "remembered" at the time of signing in order to visualize history properly
-  humanizerMeta: {}
+  // humanizerMeta: {}
 }
 const transactions = {
   generic: [
     // simple transafer
-    { to: '0xc4Ce03B36F057591B2a360d773eDB9896255051e', value: BigInt(10 ** 18), data: '0x' },
+    { to: '0xc4ce03b36f057591b2a360d773edb9896255051e', value: BigInt(10 ** 18), data: '0x' },
     // simple contract call (WETH approve)
     {
-      to: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
+      to: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
       value: BigInt(0),
       data: '0x095ea7b3000000000000000000000000e5c783ee536cf5e63e792988335c4255169be4e1ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'
     }
@@ -147,7 +149,7 @@ const transactions = {
       data: '0x42842e0e000000000000000000000000C89B38119C58536d818f3Bf19a9E3870828C199400000000000000000000000046705dfff24256421a05d056c29e81bdc09723b80000000000000000000000000000000000000000000000000000000000000000'
     }
   ],
-  namingTransactions: [
+  humanizerMetatransaction: [
     // ETH to uniswap (bad example, sending eth to contract)
     {
       to: '0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D',
@@ -160,9 +162,9 @@ const transactions = {
       value: BigInt(0),
       data: '0xa9059cbb0000000000000000000000007a250d5630b4cf539739df2c5dacb4c659f2488d000000000000000000000000000000000000000000000000000000003b9aca00'
     },
-    // ETH to arbitrary address (expects to shortened address)
+    // ETH to random address (expects to shortened address)
     {
-      to: '0xb674f3fd5f43464db0448a57529eaf37f04ccea5',
+      to: '0x1234f3fd5f43464db0448a57529eaf37f04c1234',
       value: BigInt(10 * 18),
       data: '0x'
     }
@@ -191,16 +193,17 @@ const transactions = {
 
 describe('asyncOps tests', () => {
   beforeEach(async () => {
-    accountOp.humanizerMeta = { ...humanizerInfo }
+    accountOp.humanizerMeta = JSON.parse(JSON.stringify(humanizerInfo))
     accountOp.calls = []
   })
 
   test('getTokenInfo', async () => {
     accountOp.calls = transactions.erc20
-    delete accountOp.humanizerMeta!['tokens:0xdAC17F958D2ee523a2206206994597C13D831ec7']
+    delete accountOp.humanizerMeta!.knownAddresses['0xdac17f958d2ee523a2206206994597c13d831ec7']
+      .token
     if (accountOp.humanizerMeta)
-      Object.keys(accountOp.humanizerMeta).forEach((k) => {
-        k.includes('tokens') ? delete accountOp.humanizerMeta?.[k] : null
+      Object.keys(accountOp.humanizerMeta.knownAddresses).forEach((k) => {
+        delete accountOp.humanizerMeta?.knownAddresses[k]
       })
     const irCalls: IrCall[] = accountOp.calls
     const [, asyncOps] = genericErc20Humanizer(accountOp, irCalls, {
@@ -208,13 +211,20 @@ describe('asyncOps tests', () => {
       emitError: mockEmitError
     })
     const asyncData = await Promise.all(asyncOps)
-    expect(asyncData[0]).toMatchObject({ key: `tokens:${irCalls[0].to}`, value: ['USDT', 6] })
+    expect(asyncData[0]).toMatchObject({
+      key: irCalls[0].to.toLowerCase(),
+      type: 'token',
+      value: {
+        decimals: 6,
+        symbol: 'USDT'
+      }
+    })
   })
 })
 
 describe('module tests', () => {
   beforeEach(async () => {
-    accountOp.humanizerMeta = { ...humanizerInfo }
+    accountOp.humanizerMeta = JSON.parse(JSON.stringify(humanizerInfo))
     accountOp.calls = []
   })
   test('callsToIr', () => {
@@ -223,6 +233,7 @@ describe('module tests', () => {
     expect(irCalls.length).toBe(transactions.erc20.length + transactions.generic.length)
     expect(irCalls[0]).toEqual({ ...transactions.generic[0], fullVisualization: undefined })
   })
+  // @TODO err
   test('genericErc20Humanizer', () => {
     accountOp.calls = [...transactions.erc20]
     const irCalls: IrCall[] = accountOp.calls
@@ -258,13 +269,13 @@ describe('module tests', () => {
         { type: 'action', content: 'Swap' },
         {
           type: 'token',
-          address: '0x88800092fF476844f74dC2FC427974BBee2794Ae',
+          address: '0x88800092ff476844f74dc2fc427974bbee2794ae',
           amount: 1000000000000000000000n
         },
         { type: 'label', content: 'for at least' },
         {
           type: 'token',
-          address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'
+          address: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48'
         },
         { type: 'deadline', amount: 1690449491000n }
       ],
@@ -272,12 +283,12 @@ describe('module tests', () => {
         { type: 'action', content: 'Swap up to' },
         {
           type: 'token',
-          address: '0xADE00C28244d5CE17D72E40330B1c318cD12B7c3'
+          address: '0xade00c28244d5ce17d72e40330b1c318cd12b7c3'
         },
         { type: 'label', content: 'for' },
         {
           type: 'token',
-          address: '0x6B175474E89094C44Da98b954EedeAC495271d0F'
+          address: '0x6b175474e89094c44da98b954eedeac495271d0f'
         },
         { type: 'deadline', amount: 1690448831000n }
       ],
@@ -285,17 +296,17 @@ describe('module tests', () => {
         { type: 'action', content: 'Swap up to' },
         {
           type: 'token',
-          address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2'
+          address: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2'
         },
         { type: 'label', content: 'for' },
         {
           type: 'token',
-          address: '0x046EeE2cc3188071C02BfC1745A6b17c656e3f3d'
+          address: '0x046eee2cc3188071c02bfc1745a6b17c656e3f3d'
         },
         { type: 'label', content: 'and send it to' },
         {
           type: 'address',
-          address: '0x5a5Be6b067d6B5B018adBCD27EE6972105B3b400'
+          address: '0x5a5be6b067d6b5b018adbcd27ee6972105b3b400'
         },
         { type: 'deadline', amount: 1691677015000n }
       ],
@@ -311,8 +322,11 @@ describe('module tests', () => {
   })
 
   test('fallback', async () => {
+    const storage = produceMemoryStore()
+    await storage.set(HUMANIZER_META_KEY, { abis: { NO_ABI: {} }, knownAddresses: {} })
+
     accountOp.calls = [...transactions.generic]
-    delete accountOp.humanizerMeta?.['funcSelectors:0x095ea7b3']
+    accountOp.humanizerMeta!.abis = { NO_ABI: {} }
     let irCalls: IrCall[] = accountOp.calls
     let asyncOps = []
     ;[irCalls, asyncOps] = fallbackHumanizer(accountOp, irCalls, {
@@ -321,12 +335,20 @@ describe('module tests', () => {
     })
     asyncOps = (await Promise.all(asyncOps)).filter((a) => a) as HumanizerFragment[]
     expect(asyncOps.length).toBe(1)
-    expect(asyncOps[0]).toMatchObject({ key: 'funcSelectors:0x095ea7b3' })
+    expect(asyncOps[0]).toMatchObject({ key: '0x095ea7b3' })
+
+    accountOp.humanizerMeta = await combineKnownHumanizerInfo(
+      storage,
+      { abis: { NO_ABI: {} }, knownAddresses: {} },
+      asyncOps
+    )
+
+    // @TODO finish the leraning funvtion
     asyncOps.forEach((a) => {
-      accountOp.humanizerMeta = { ...accountOp.humanizerMeta, [a.key]: a.value }
+      if (a.type === 'selector' && accountOp.humanizerMeta?.abis.NO_ABI)
+        accountOp.humanizerMeta.abis.NO_ABI![(a.value as AbiFragment).selector] =
+          a.value as AbiFragment
     })
-    // etherface api might be asparagus
-    expect(accountOp.humanizerMeta).toHaveProperty('funcSelectors:0x095ea7b3')
     ;[irCalls, asyncOps] = fallbackHumanizer(accountOp, irCalls, { fetch })
     expect(irCalls[1]?.fullVisualization?.[0]).toMatchObject({
       type: 'action',
@@ -335,36 +357,33 @@ describe('module tests', () => {
     expect(asyncOps.length).toBe(0)
   })
 
-  test('nameParsing', () => {
-    accountOp.calls = [...transactions.namingTransactions]
+  // @TODO humanizerMetaParsing
+  test('metaParsing', () => {
+    accountOp.calls = [...transactions.humanizerMetatransaction]
     let irCalls = accountOp.calls
     ;[irCalls] = genericErc20Humanizer(accountOp, irCalls)
     ;[irCalls] = fallbackHumanizer(accountOp, irCalls)
-    const [newCalls] = parseCalls(accountOp, irCalls, [nameParsing], { fetch })
-    expect(newCalls.length).toBe(transactions.namingTransactions.length)
-    expect(newCalls[0].warnings?.length).toBeFalsy()
-    expect(newCalls[1].warnings?.length).toBeFalsy()
-    expect(newCalls[2].warnings?.length).toBe(1)
+    const [newCalls] = parseCalls(accountOp, irCalls, [humanizerMetaParsing], { fetch })
+    expect(newCalls.length).toBe(transactions.humanizerMetatransaction.length)
     expect(
       newCalls[0]?.fullVisualization?.find((v: HumanizerVisualization) => v.type === 'address')
     ).toMatchObject({
       type: 'address',
       address: expect.anything(),
-      name: expect.not.stringMatching(/^0x[a-fA-F0-9]{3}\.{3}[a-fA-F0-9]{3}$/)
+      humanizerMeta: {}
     })
     expect(
       newCalls[1]?.fullVisualization?.find((v: HumanizerVisualization) => v.type === 'address')
     ).toMatchObject({
       type: 'address',
       address: expect.anything(),
-      name: expect.not.stringMatching(/^0x[a-fA-F0-9]{3}\.{3}[a-fA-F0-9]{3}$/)
+      humanizerMeta: {}
     })
     expect(
       newCalls[2]?.fullVisualization?.find((v: HumanizerVisualization) => v.type === 'address')
     ).toMatchObject({
       type: 'address',
-      address: expect.anything(),
-      name: expect.stringMatching(/^0x[a-fA-F0-9]{3}\.{3}[a-fA-F0-9]{3}$/)
+      address: expect.anything()
     })
   })
 })

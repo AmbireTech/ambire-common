@@ -1,14 +1,13 @@
 import erc20Abi from 'adex-protocol-eth/abi/ERC20.json'
 import { formatUnits, Interface, parseUnits } from 'ethers'
 
-import { HumanizerInfoType } from '../../../v1/hooks/useConstants'
+import { HumanizerMeta } from '../../libs/humanizer/interfaces'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { networks } from '../../consts/networks'
 import { AddressState } from '../../interfaces/domains'
 import { TransferUpdate } from '../../interfaces/transfer'
 import { UserRequest } from '../../interfaces/userRequest'
 import { TokenResult } from '../../libs/portfolio'
-import { isHumanizerKnownTokenOrSmartContract } from '../../services/address'
 import { validateSendTransferAddress, validateSendTransferAmount } from '../../services/validations'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
@@ -63,7 +62,7 @@ export class TransferController extends EventEmitter {
 
   #selectedAccount: string | null = null
 
-  #humanizerInfo: HumanizerInfoType | null = null
+  #humanizerInfo: HumanizerMeta | null = null
 
   isTopUp: boolean = false
 
@@ -298,10 +297,8 @@ export class TransferController extends EventEmitter {
 
     if (this.#humanizerInfo) {
       // @TODO: could fetch address code
-      this.isRecipientHumanizerKnownTokenOrSmartContract = isHumanizerKnownTokenOrSmartContract(
-        this.#humanizerInfo,
-        this.recipientAddress
-      )
+      this.isRecipientHumanizerKnownTokenOrSmartContract =
+        !!this.#humanizerInfo.knownAddresses[this.recipientAddress.toLowerCase()]?.isSC
     }
 
     // @TODO: isValidAddress & check from the address book

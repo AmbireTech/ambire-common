@@ -1,13 +1,18 @@
-import { Block, Interface, Provider } from 'ethers'
+import { Block, Interface, Provider, toBeHex } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFactory.json'
 import EntryPoint from '../../../contracts/compiled/EntryPoint.json'
 import { AccountOnchainState } from '../../interfaces/account'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
+import bundler from '../../services/bundlers'
 import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
 import { UserOperation } from '../userOperation/types'
-import { getCleanUserOp } from '../userOperation/userOperation'
+import {
+  getCleanUserOp,
+  getPaymasterSpoof,
+  getSigForCalculations
+} from '../userOperation/userOperation'
 
 // https://eips.ethereum.org/EIPS/eip-1559
 const DEFAULT_BASE_FEE_MAX_CHANGE_DENOMINATOR = 8n
@@ -117,6 +122,16 @@ export async function getGasPriceRecommendations(
   const lastBlock = await refetchBlock(provider, blockTag)
   // https://github.com/ethers-io/ethers.js/issues/3683#issuecomment-1436554995
   const txns = lastBlock.prefetchedTransactions
+
+  // Call the bundler to fetch the correct userOp prices for the time being.
+  // We want someday to estimate these ourselves as we don't want to rely
+  // on the bundler. But estimation is pretty difficult and each network
+  // comes with its caveats. Also, the bundlers will start disallowing soon
+  // user ops with low fees, making our estimation riskier
+  if (network.erc4337?.enabled) {
+    return bundler.pollGetUserOpGasPrice(network)
+  }
+
   if (network.feeOptions.is1559 && lastBlock.baseFeePerGas != null) {
     // https://eips.ethereum.org/EIPS/eip-1559
     const elasticityMultiplier =
@@ -167,9 +182,23 @@ export function getProbableCallData(
   let estimationCallData
 
   if (userOp) {
+    // fake most of the user op properties to get a better
+    // callData estimation for the l1 fee
+    const localOp = { ...userOp }
+    localOp.maxFeePerGas = toBeHex(100000n)
+    localOp.maxPriorityFeePerGas = toBeHex(100000n)
+    localOp.verificationGasLimit = toBeHex(100000n)
+    localOp.callGasLimit = toBeHex(100000n)
+    localOp.signature = getSigForCalculations()
+
+    // TODO<Bobby>: This is not perfect
+    if (localOp.requestType !== 'standard') {
+      localOp.paymasterAndData = getPaymasterSpoof()
+    }
+
     const entryPoint = new Interface(EntryPoint)
     estimationCallData = entryPoint.encodeFunctionData('handleOps', [
-      getCleanUserOp(userOp),
+      getCleanUserOp(localOp),
       accountOp.accountAddr
     ])
     return estimationCallData

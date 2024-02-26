@@ -4,12 +4,12 @@ import fetch from 'node-fetch'
 import { describe, expect, test } from '@jest/globals'
 
 import { FEE_COLLECTOR } from '../../consts/addresses'
-import humanizerInfo from '../../consts/humanizerInfo.json'
+import humanizerInfo from '../../consts/humanizer/humanizerInfo.json'
 import { ErrorRef } from '../../controllers/eventEmitter/eventEmitter'
 import { AccountOp } from '../accountOp/accountOp'
 import { humanizeCalls, visualizationToText } from './humanizerFuncs'
 import { humanizerCallModules as humanizerModules } from './index'
-import { HumanizerVisualization, IrCall } from './interfaces'
+import { AbiFragment, HumanizerMeta, HumanizerVisualization, IrCall } from './interfaces'
 import { aaveHumanizer } from './modules/Aave'
 import { privilegeHumanizer } from './modules/privileges'
 import { sushiSwapModule } from './modules/sushiSwapModule'
@@ -17,13 +17,11 @@ import { uniswapHumanizer } from './modules/Uniswap'
 // import { oneInchHumanizer } from './modules/oneInch'
 import { WALLETModule } from './modules/WALLET'
 import { wrappingModule } from './modules/wrapped'
-import { yearnVaultModule } from './modules/yearnTesseractVault'
 import { parseCalls } from './parsers'
-import { nameParsing } from './parsers/nameParsing'
-import { tokenParsing } from './parsers/tokenParsing'
+import { humanizerMetaParsing } from './parsers/humanizerMetaParsing'
 import { getAction, getLabel, getToken } from './utils'
 
-const TETHER_ADDRESS = '0xdAC17F958D2ee523a2206206994597C13D831ec7'
+const TETHER_ADDRESS = '0xdac17f958d2ee523a2206206994597c13d831ec7'
 const WETH_ADDRESS = '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2'
 const accountOp: AccountOp = {
   accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
@@ -41,37 +39,37 @@ const accountOp: AccountOp = {
   // This is used when we have an account recovery to finalize before executing the AccountOp,
   // And we set this to the recovery finalization AccountOp; could be used in other scenarios too in the future,
   // for example account migration (from v1 QuickAcc to v2)
-  accountOpToExecuteBefore: null,
+  accountOpToExecuteBefore: null
   // This is fed into the humanizer to help visualize the accountOp
   // This can contain info like the value of specific share tokens at the time of signing,
   // or any other data that needs to otherwise be retrieved in an async manner and/or needs to be
   // "remembered" at the time of signing in order to visualize history properly
-  humanizerMeta: {}
+  // humanizerMeta: {}
 }
 const transactions: { [key: string]: Array<IrCall> } = {
   uniV3: [
     // first part of this has recipient 0x000...000. idk why
     // muticall
     {
-      to: '0xE592427A0AEce92De3Edee1F18E0157C05861564',
+      to: '0xe592427a0aece92de3edee1f18e0157c05861564',
       value: 0n,
       data: '0xac9650d800000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000001800000000000000000000000000000000000000000000000000000000000000104414bf3890000000000000000000000008a3c710e41cd95799c535f22dbae371d7c858651000000000000000000000000c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2000000000000000000000000000000000000000000000000000000000000271000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000064e5d5e7000000000000000000000000000000000000000000000ac44eff60b2f4be486300000000000000000000000000000000000000000000000001ea0706751c1289000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000004449404b7c00000000000000000000000000000000000000000000000001ea0706751c1289000000000000000000000000bc5a0707cc6c731debea1f0388a4240df93259e400000000000000000000000000000000000000000000000000000000'
     },
     // exactInputSingle
     {
-      to: '0xE592427A0AEce92De3Edee1F18E0157C05861564',
+      to: '0xe592427a0aece92de3edee1f18e0157c05861564',
       value: 0n,
       data: '0x414bf389000000000000000000000000c02aaa39b223fe8d0a0e5c4f27ead9083c756cc20000000000000000000000006e975115250b05c828ecb8ededb091975fc20a5d00000000000000000000000000000000000000000000000000000000000001f4000000000000000000000000bb6c8c037b9cc3bf1a4c4188d92e5d86bfce76a80000000000000000000000000000000000000000000000000000000064e5ddc90000000000000000000000000000000000000000000000000d0f1a83ada48000000000000000000000000000000000000000000000000117a7744519162631a50000000000000000000000000000000000000000000000000000000000000000'
     },
     // exactInput
     {
-      to: '0xE592427A0AEce92De3Edee1F18E0157C05861564',
+      to: '0xe592427a0aece92de3edee1f18e0157c05861564',
       value: 0n,
       data: '0xc04b8d59000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000a0000000000000000000000000ca124b356bf11dc153b886ecb4596b5cb9395c410000000000000000000000000000000000000000000000000000000064e5ccb7000000000000000000000000000000000000000000000016eb3088b55b95bfa400000000000000000000000000000000000000000000000000000000925323360000000000000000000000000000000000000000000000000000000000000042ebb82c932759b515b2efc1cfbb6bf2f6dbace404002710c02aaa39b223fe8d0a0e5c4f27ead9083c756cc20001f4a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48000000000000000000000000000000000000000000000000000000000000'
     },
     // exactOutputSingle
     {
-      to: '0xE592427A0AEce92De3Edee1F18E0157C05861564',
+      to: '0xe592427a0aece92de3edee1f18e0157c05861564',
       value: 0n,
       data: '0xdb3e21980000000000000000000000006e975115250b05c828ecb8ededb091975fc20a5d000000000000000000000000c02aaa39b223fe8d0a0e5c4f27ead9083c756cc200000000000000000000000000000000000000000000000000000000000001f4000000000000000000000000bb6c8c037b9cc3bf1a4c4188d92e5d86bfce76a80000000000000000000000000000000000000000000000000000000064e5d7910000000000000000000000000000000000000000000000000d0f1a83ada4800000000000000000000000000000000000000000000000010594c5cd1e563664110000000000000000000000000000000000000000000000000000000000000000'
     },
@@ -85,24 +83,30 @@ const transactions: { [key: string]: Array<IrCall> } = {
       to: '0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45',
       value: 0n,
       data: '0x5ae401dc0000000000000000000000000000000000000000000000000000000065577b450000000000000000000000000000000000000000000000000000000000000040000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000124b858183f0000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000008000000000000000000000000002a3109c4ce8354ee771feac419b5da04ef157610000000000000000000000000000000000000000000000000000000005f5e10000000000000000000000000000000000000000000000000000ffcee5c1d6202f0000000000000000000000000000000000000000000000000000000000000042ff970a61a04b1ca14834a43f5de4533ebddb5cc80001f482af49447d8a07e3bd95bd0d56f35241523fbab10027102e9a6df78e42a30712c10a9dc4b1c8656f8f287900000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000'
+    },
+    // multicall with typed data signature
+    {
+      to: '0x643770E279d5D0733F21d6DC03A8efbABf3255B4',
+      value: 0n,
+      data: '0x3593564c000000000000000000000000000000000000000000000000000000000000006000000000000000000000000000000000000000000000000000000000000000a00000000000000000000000000000000000000000000000000000000065cfa09900000000000000000000000000000000000000000000000000000000000000030a000c00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000003000000000000000000000000000000000000000000000000000000000000006000000000000000000000000000000000000000000000000000000000000001e0000000000000000000000000000000000000000000000000000000000000030000000000000000000000000000000000000000000000000000000000000001600000000000000000000000003c499c542cef5e3811e1192ce70d8cc03d5c3359000000000000000000000000ffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000065f72aff0000000000000000000000000000000000000000000000000000000000000002000000000000000000000000643770e279d5d0733f21d6dc03a8efbabf3255b40000000000000000000000000000000000000000000000000000000065cfa50700000000000000000000000000000000000000000000000000000000000000e0000000000000000000000000000000000000000000000000000000000000004187f8e3fd141a1d34658366ac8b3a1254c581fa087f43b539933a32561fb6638956c28fc6681ce67fa0fd946a3de61ff11633ea07572b12b1534b239e81c5600e1b000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000027100000000000000000000000000000000000000000000000000024ba5664e2f5f600000000000000000000000000000000000000000000000000000000000000a00000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000002b3c499c542cef5e3811e1192ce70d8cc03d5c33590001f40d500b1d8e8ef31e21c99d1db9a6444d3adf1270000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000024ba5664e2f5f6'
     }
   ],
   weth: [
     // deposit
     {
-      to: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
+      to: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
       value: 1000000000000000000n,
       data: '0xd0e30db0'
     },
     // withdraw
     {
-      to: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
+      to: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
       value: 1000000000000000000n,
       data: '0x2e1a7d4d000000000000000000000000000000000000000000000000001f9e80ba804000'
     },
     // should not enter weth module, should be Call deposit(), a func not in UniV3
     {
-      to: '0xE592427A0AEce92De3Edee1F18E0157C05861564',
+      to: '0xe592427a0aece92de3edee1f18e0157c05861564',
       value: 1000000000000000000n,
       data: '0xd0e30db0'
     }
@@ -138,39 +142,19 @@ const transactions: { [key: string]: Array<IrCall> } = {
   WALLET: [
     // enter
     {
-      to: '0x47Cd7E91C3CBaAF266369fe8518345fc4FC12935',
+      to: '0x47cd7e91c3cbaaf266369fe8518345fc4fc12935',
       value: 0n,
       data: '0xa59f3e0c00000000000000000000000000000000000000000000021e19e0c9bab2400000'
     }, // leave
     {
-      to: '0x47Cd7E91C3CBaAF266369fe8518345fc4FC12935',
+      to: '0x47cd7e91c3cbaaf266369fe8518345fc4fc12935',
       value: 0n,
       data: '0x9b4ee06400000000000000000000000000000000000000000002172be687fbab0bd4bfd10000000000000000000000000000000000000000000000000000000000000000'
     }, // rage leave
     {
-      to: '0x47Cd7E91C3CBaAF266369fe8518345fc4FC12935',
+      to: '0x47cd7e91c3cbaaf266369fe8518345fc4fc12935',
       value: 0n,
       data: '0x8a07b41900000000000000000000000000000000000000000000006d7daaded78ae996310000000000000000000000000000000000000000000000000000000000000000'
-    }
-  ],
-  yearn: [
-    // deposit dai
-    {
-      to: '0xda816459f1ab5631232fe5e97a05bbbb94970c95',
-      value: 0n,
-      data: '0x6e553f6500000000000000000000000000000000000000000000002567ac70392b880000000000000000000000000000c4a6bb5139123bd6ba0cf387828a9a3a73ef8d1e00000000000000000000000000000000000000000000000000000000'
-    },
-    // withdraw
-    {
-      to: '0xdA816459F1AB5631232FE5e97a05BBBb94970c95',
-      value: 0n,
-      data: '0x2e1a7d4d000000000000000000000000000000000000000000000506c08e407186fe9165'
-    },
-    // approve
-    {
-      to: '0xdA816459F1AB5631232FE5e97a05BBBb94970c95',
-      value: 0n,
-      data: '0x095ea7b3000000000000000000000000c92e8bdf79f0507f65a392b0ab4667716bfe011000000000000000000000000000000000000000000000071414d02429e66c0000'
     }
   ],
   sushiSwapCalls: [
@@ -216,7 +200,7 @@ const moockEmitError = (e: ErrorRef) => emitedErrors.push(e)
 const standartOptions = { fetch, emitError: moockEmitError }
 describe('module tests', () => {
   beforeEach(async () => {
-    accountOp.humanizerMeta = { ...humanizerInfo }
+    accountOp.humanizerMeta = { ...(humanizerInfo as HumanizerMeta) }
     accountOp.calls = []
     emitedErrors = []
   })
@@ -224,53 +208,58 @@ describe('module tests', () => {
   // TODO: look into improper texification for  unrecognized tokens
   test('visualization to text', async () => {
     const expectedTexification = [
-      'Swap 50844.919041919270406243 XLRT for at least 0.137930462904193673 ETH and send it to 0x0000000000000000000000000000000000000000 (0x000...000) already expired',
-      'Swap 0.941 WETH for at least 5158707941840645403045 0x6E975115250B05C828ecb8edeDb091975Fc20a5d token and send it to 0xbb6C8c037b9Cc3bF1a4C4188d92e5D86bfCE76A8 (0xbb6...6A8) already expired',
-      'Swap 422.775565331912310692 SHARES for at least 2454.922038 USDC and send it to 0xca124B356bf11dc153B886ECB4596B5cb9395C41 (0xca1...C41) already expired',
-      'Swap up to 4825320403256397423633 0x6E975115250B05C828ecb8edeDb091975Fc20a5d token for 0.941 WETH and send it to 0xbb6C8c037b9Cc3bF1a4C4188d92e5D86bfCE76A8 (0xbb6...6A8) already expired',
+      'Swap 50844.919041919270406243 XLRT for at least 0.137930462904193673 ETH and send it to 0x0000000000000000000000000000000000000000 already expired',
+      'Swap 0.941 WETH for at least 5158707941840645403045 0x6e975115250b05c828ecb8ededb091975fc20a5d token and send it to 0xbb6c8c037b9cc3bf1a4c4188d92e5d86bfce76a8 already expired',
+      'Swap 422.775565331912310692 SHARES for at least 2454.922038 USDC and send it to 0xca124b356bf11dc153b886ecb4596b5cb9395c41 already expired',
+      'Swap up to 4825320403256397423633 0x6e975115250b05c828ecb8ededb091975fc20a5d token for 0.941 WETH and send it to 0xbb6c8c037b9cc3bf1a4c4188d92e5d86bfce76a8 already expired',
       'Swap 0.0001 ETH for at least 0.178131 USDC already expired',
-      'Swap 100.0 USDC for at least 0.072003605256085551 MKR and send it to 0x02a3109c4CE8354Ee771fEaC419B5da04Ef15761 (0x02a...761) already expired',
+      'Swap 100.0 USDC for at least 0.072003605256085551 MKR and send it to 0x02a3109c4ce8354ee771feac419b5da04ef15761 already expired',
+      'Approved Uniswap to use the following token via signed message.',
+      'Swap 0.01 USDC for at least 0.01033797938413311 ETH already expired',
       'Wrap 1.0 ETH',
       'Unwrap 0.0089 ETH',
-      'Call deposit() from 0xE592427A0AEce92De3Edee1F18E0157C05861564 (Uniswap) and Send 1.0 ETH',
-      'Deposit 11.72018633376687831 STETH to Aave lending pool on befalf of 0x7F4cF2E68f968cc050B3783268C474a15b8BDC2e (0x7F4...C2e)',
-      'Withdraw all USDC from Aave lending pool on befalf of 0x8BC110Db7029197C3621bEA8092aB1996D5DD7BE (0x8BC...7BE)',
-      'Deposit 0.135592697552 ETH to Aave lending pool on befalf of 0x47c353467326E6Bd0c01E728E8F7D1A06A849395 (0x47c...395)',
-      'Withdraw 0.000000000473401923 ETH from Aave lending pool on befalf of 0x0DF1A69fCDf15FEC04e37Aa5ECA4268927B111e7 (0x0DF...1e7)',
-      'Deposit 10000.0 WALLET to 0x47Cd7E91C3CBaAF266369fe8518345fc4FC12935 (WALLET Staking Pool)',
-      'Leave with 2527275.889852892335882193 WALLET 0x47Cd7E91C3CBaAF266369fe8518345fc4FC12935 (WALLET Staking Pool)',
-      'Rage leave with 2019.750399052452828721 WALLET 0x47Cd7E91C3CBaAF266369fe8518345fc4FC12935 (WALLET Staking Pool)',
-      'Deposit 690.0 yDAI to 0xdA816459F1AB5631232FE5e97a05BBBb94970c95 (Yearn DAI Vault)',
-      'Withdraw 23736.387977148798767461 yDAI from 0xdA816459F1AB5631232FE5e97a05BBBb94970c95 (Yearn DAI Vault)',
-      'Approve 0xC92E8bdf79f0507f65a392b0ab4667716BFE0110 (CowSwap) for 33427.0 yDAI',
-      'Swap 0.0004 WMATIC for 0.000348830169184669 DAI and send it to 0x6969174FD72466430a46e18234D0b530c9FD5f49 (0x696...f49)',
+      'Call deposit() from 0xe592427a0aece92de3edee1f18e0157c05861564 (Uniswap) and Send 1.0 ETH',
+      'Deposit 11.72018633376687831 STETH to Aave lending pool on befalf of 0x7f4cf2e68f968cc050b3783268c474a15b8bdc2e',
+      'Withdraw all USDC from Aave lending pool on befalf of 0x8bc110db7029197c3621bea8092ab1996d5dd7be',
+      'Deposit 0.135592697552 ETH to Aave lending pool on befalf of 0x47c353467326e6bd0c01e728e8f7d1a06a849395',
+      'Withdraw 0.000000000473401923 ETH from Aave lending pool on befalf of 0x0df1a69fcdf15fec04e37aa5eca4268927b111e7',
+      'Deposit 10000.0 WALLET to 0x47cd7e91c3cbaaf266369fe8518345fc4fc12935 (WALLET Staking Pool)',
+      'Leave with 2527275.889852892335882193 WALLET 0x47cd7e91c3cbaaf266369fe8518345fc4fc12935 (WALLET Staking Pool)',
+      'Rage leave with 2019.750399052452828721 WALLET 0x47cd7e91c3cbaaf266369fe8518345fc4fc12935 (WALLET Staking Pool)',
+      'Swap 0.0004 WMATIC for 0.000348830169184669 DAI and send it to 0x6969174fd72466430a46e18234d0b530c9fd5f49',
       'Fuel gas tank with 0.5 ETH',
       'Fuel gas tank with 0.001 USDC.e',
-      'Enable 0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789 (Account abstraction entry point v0.6.0)',
-      'Update access status of 0x6969174FD72466430a46e18234D0b530c9FD5f49 (0x696...f49) to regular access',
-      'Revoke access of 0x6969174FD72466430a46e18234D0b530c9FD5f49 (0x696...f49)'
+      'Enable 0x5ff137d4b0fdcd49dca30c7cf57e578a026d2789 (Account abstraction entry point v0.6.0)',
+      'Update access status of 0x6969174fd72466430a46e18234d0b530c9fd5f49 to regular access',
+      'Revoke access of 0x6969174fd72466430a46e18234d0b530c9fd5f49'
     ]
     const allCalls = Object.keys(transactions)
       .map((key: string) => transactions[key])
       .flat()
     accountOp.calls = allCalls
     let [irCalls, asyncOps] = humanizeCalls(accountOp, humanizerModules, standartOptions)
+    // irCalls.forEach((c: IrCall, i) => {
+    //   console.log(c.fullVisualization, i)
+    // })
     let [parsedCalls, newAsyncOps] = parseCalls(
       accountOp,
       irCalls,
-      [nameParsing, tokenParsing],
+      [humanizerMetaParsing],
       standartOptions
     )
     irCalls = parsedCalls
     asyncOps.push(...newAsyncOps)
+    // @TODO use new combination function
     ;(await Promise.all(asyncOps)).forEach((a) => {
-      if (a) accountOp.humanizerMeta = { ...accountOp.humanizerMeta, [a.key]: a.value }
+      if (a && a.type === 'selector' && accountOp.humanizerMeta?.abis.NO_ABI)
+        accountOp.humanizerMeta.abis.NO_ABI![(a.value as AbiFragment).selector] =
+          a.value as AbiFragment
     })
     ;[irCalls, asyncOps] = humanizeCalls(accountOp, humanizerModules, standartOptions)
     ;[parsedCalls, newAsyncOps] = parseCalls(
       accountOp,
       irCalls,
-      [nameParsing, tokenParsing],
+      [humanizerMetaParsing],
       standartOptions
     )
     irCalls = parsedCalls
@@ -285,13 +274,13 @@ describe('module tests', () => {
         { type: 'action', content: 'Swap' },
         {
           type: 'token',
-          address: '0x8a3C710E41cD95799C535f22DBaE371D7C858651',
+          address: '0x8a3c710e41cd95799c535f22dbae371d7c858651',
           amount: 50844919041919270406243n
         },
         { type: 'label', content: 'for at least' },
         {
           type: 'token',
-          address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
+          address: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
           amount: 137930462904193673n
         },
         { type: 'label', content: 'and send it to' },
@@ -311,26 +300,26 @@ describe('module tests', () => {
         { type: 'label', content: 'and send it to' },
         {
           type: 'address',
-          address: '0xBc5A0707cc6c731debEA1f0388a4240Df93259E4'
+          address: '0xbc5a0707cc6c731debea1f0388a4240df93259e4'
         }
       ],
       [
         { type: 'action', content: 'Swap' },
         {
           type: 'token',
-          address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
+          address: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
           amount: 941000000000000000n
         },
         { type: 'label', content: 'for at least' },
         {
           type: 'token',
-          address: '0x6E975115250B05C828ecb8edeDb091975Fc20a5d',
+          address: '0x6e975115250b05c828ecb8ededb091975fc20a5d',
           amount: 5158707941840645403045n
         },
         { type: 'label', content: 'and send it to' },
         {
           type: 'address',
-          address: '0xbb6C8c037b9Cc3bF1a4C4188d92e5D86bfCE76A8'
+          address: '0xbb6c8c037b9cc3bf1a4c4188d92e5d86bfce76a8'
         },
         { type: 'deadline', amount: 1692786121000n }
       ],
@@ -338,19 +327,19 @@ describe('module tests', () => {
         { type: 'action', content: 'Swap' },
         {
           type: 'token',
-          address: '0xebB82c932759B515B2efc1CfBB6BF2F6dbaCe404',
+          address: '0xebb82c932759b515b2efc1cfbb6bf2f6dbace404',
           amount: 422775565331912310692n
         },
         { type: 'label', content: 'for at least' },
         {
           type: 'token',
-          address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+          address: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48',
           amount: 2454922038n
         },
         { type: 'label', content: 'and send it to' },
         {
           type: 'address',
-          address: '0xca124B356bf11dc153B886ECB4596B5cb9395C41'
+          address: '0xca124b356bf11dc153b886ecb4596b5cb9395c41'
         },
         { type: 'deadline', amount: 1692781751000n }
       ],
@@ -358,19 +347,19 @@ describe('module tests', () => {
         { type: 'action', content: 'Swap up to' },
         {
           type: 'token',
-          address: '0x6E975115250B05C828ecb8edeDb091975Fc20a5d',
+          address: '0x6e975115250b05c828ecb8ededb091975fc20a5d',
           amount: 4825320403256397423633n
         },
         { type: 'label', content: 'for' },
         {
           type: 'token',
-          address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
+          address: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
           amount: 941000000000000000n
         },
         { type: 'label', content: 'and send it to' },
         {
           type: 'address',
-          address: '0xbb6C8c037b9Cc3bF1a4C4188d92e5D86bfCE76A8'
+          address: '0xbb6c8c037b9cc3bf1a4c4188d92e5d86bfce76a8'
         },
         { type: 'deadline', amount: 1692784529000n }
       ],
@@ -393,7 +382,7 @@ describe('module tests', () => {
         { type: 'label', content: 'for at least' },
         {
           type: 'token',
-          address: '0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85',
+          address: '0x0b2c639c533813f4aa9d7837caf62653d097ff85',
           amount: 178131n
         },
         { type: 'deadline', amount: 1699015475000n }
@@ -402,21 +391,55 @@ describe('module tests', () => {
         { type: 'action', content: 'Swap' },
         {
           type: 'token',
-          address: '0xFF970A61A04b1cA14834A43f5dE4533eBDDB5CC8',
+          address: '0xff970a61a04b1ca14834a43f5de4533ebddb5cc8',
           amount: 100000000n
         },
         { type: 'label', content: 'for at least' },
         {
           type: 'token',
-          address: '0x2e9a6Df78E42a30712c10a9Dc4b1C8656f8F2879',
+          address: '0x2e9a6df78e42a30712c10a9dc4b1c8656f8f2879',
           amount: 72003605256085551n
         },
         { type: 'label', content: 'and send it to' },
         {
           type: 'address',
-          address: '0x02a3109c4CE8354Ee771fEaC419B5da04Ef15761'
+          address: '0x02a3109c4ce8354ee771feac419b5da04ef15761'
         },
         { type: 'deadline', amount: 1700232005000n }
+      ],
+      [
+        {
+          type: 'label',
+          content: 'Approved Uniswap to use the following token via signed message.'
+        }
+      ],
+      [
+        { type: 'action', content: 'Swap' },
+        {
+          type: 'token',
+          address: '0x3c499c542cef5e3811e1192ce70d8cc03d5c3359',
+          amount: 10000n
+        },
+        { type: 'label', content: 'for at least' },
+        {
+          type: 'token',
+          address: '0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270',
+          amount: 10337979384133110n
+        },
+        { type: 'deadline', amount: 1708105881000n }
+      ],
+      [
+        { type: 'action', content: 'Unwrap' },
+        {
+          type: 'token',
+          address: '0x0000000000000000000000000000000000000000',
+          amount: 10337979384133110n
+        },
+        { type: 'label', content: 'and send it to' },
+        {
+          type: 'address',
+          address: '0x0000000000000000000000000000000000000001'
+        }
       ]
     ]
     accountOp.calls = [...transactions.uniV3]
@@ -479,7 +502,7 @@ describe('module tests', () => {
       { type: 'action', content: 'Swap' },
       {
         type: 'token',
-        address: '0xdAC17F958D2ee523a2206206994597C13D831ec7',
+        address: '0xdac17f958d2ee523a2206206994597c13d831ec7',
         amount: 1000000000n
       },
       { type: 'label', content: '0x123456789' },
@@ -541,13 +564,13 @@ describe('module tests', () => {
         { type: 'action', content: 'Deposit' },
         {
           type: 'token',
-          address: '0x88800092fF476844f74dC2FC427974BBee2794Ae',
+          address: '0x88800092ff476844f74dc2fc427974bbee2794ae',
           amount: 10000000000000000000000n
         },
         { type: 'label', content: 'to' },
         {
           type: 'address',
-          address: '0x47Cd7E91C3CBaAF266369fe8518345fc4FC12935'
+          address: '0x47cd7e91c3cbaaf266369fe8518345fc4fc12935'
         }
       ],
       [
@@ -555,12 +578,12 @@ describe('module tests', () => {
         { type: 'label', content: 'with' },
         {
           type: 'token',
-          address: '0x88800092fF476844f74dC2FC427974BBee2794Ae',
+          address: '0x88800092ff476844f74dc2fc427974bbee2794ae',
           amount: 2527275889852892335882193n
         },
         {
           type: 'address',
-          address: '0x47Cd7E91C3CBaAF266369fe8518345fc4FC12935'
+          address: '0x47cd7e91c3cbaaf266369fe8518345fc4fc12935'
         }
       ],
       [
@@ -568,12 +591,12 @@ describe('module tests', () => {
         { type: 'label', content: 'with' },
         {
           type: 'token',
-          address: '0x88800092fF476844f74dC2FC427974BBee2794Ae',
+          address: '0x88800092ff476844f74dc2fc427974bbee2794ae',
           amount: 2019750399052452828721n
         },
         {
           type: 'address',
-          address: '0x47Cd7E91C3CBaAF266369fe8518345fc4FC12935'
+          address: '0x47cd7e91c3cbaaf266369fe8518345fc4fc12935'
         }
       ]
     ]
@@ -587,48 +610,19 @@ describe('module tests', () => {
       )
     )
   })
-  test('yearn', () => {
-    accountOp.calls = [...transactions.yearn]
-    const expectedhumanization = [
-      [
-        { content: 'Deposit' },
-        { type: 'token', symbol: 'yDAI' },
-        { content: 'to' },
-        { address: '0xdA816459F1AB5631232FE5e97a05BBBb94970c95' }
-      ],
-      [
-        { content: 'Withdraw' },
-        { type: 'token', symbol: 'yDAI' },
-        { content: 'from' },
-        { address: '0xdA816459F1AB5631232FE5e97a05BBBb94970c95' }
-      ],
-      [
-        { content: 'Approve' },
-        { address: '0xC92E8bdf79f0507f65a392b0ab4667716BFE0110' },
-        { content: 'for' },
-        { type: 'token', symbol: 'yDAI' }
-      ]
-    ]
-    let irCalls: IrCall[] = accountOp.calls
-    ;[irCalls] = yearnVaultModule(accountOp, irCalls)
-    irCalls.forEach((call, i) =>
-      call?.fullVisualization?.forEach((v: HumanizerVisualization, j: number) =>
-        expect(v).toMatchObject(expectedhumanization[i][j])
-      )
-    )
-  })
+
   test('SushiSwap RouteProcessor', () => {
     const expectedhumanization: HumanizerVisualization[] = [
       { type: 'action', content: 'Swap' },
       {
         type: 'token',
-        address: '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270',
+        address: '0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270',
         amount: 400000000000000n
       },
       { type: 'label', content: 'for' },
       {
         type: 'token',
-        address: '0x8f3Cf7ad23Cd3CaDbD9735AFf958023239c6A063',
+        address: '0x8f3cf7ad23cd3cadbd9735aff958023239c6a063',
         amount: 348830169184669n
       }
     ]
@@ -647,7 +641,7 @@ describe('module tests', () => {
         { type: 'action', content: 'Enable' },
         {
           type: 'address',
-          address: '0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789'
+          address: '0x5ff137d4b0fdcd49dca30c7cf57e578a026d2789'
         }
       ],
       [
@@ -655,7 +649,7 @@ describe('module tests', () => {
         { type: 'label', content: 'of' },
         {
           type: 'address',
-          address: '0x6969174FD72466430a46e18234D0b530c9FD5f49'
+          address: '0x6969174fd72466430a46e18234d0b530c9fd5f49'
         },
         { type: 'label', content: 'to' },
         {
@@ -668,7 +662,7 @@ describe('module tests', () => {
         { type: 'label', content: 'of' },
         {
           type: 'address',
-          address: '0x6969174FD72466430a46e18234D0b530c9FD5f49'
+          address: '0x6969174fd72466430a46e18234d0b530c9fd5f49'
         }
       ]
     ]
