@@ -246,14 +246,14 @@ describe('AccountAdder', () => {
       }
     })
   })
-  test('should be able to deselect an account', (done) => {
-    let emitCounter = 0
-    // FIXME: temporary workaround for done() being called multiple times
-    let doneCalled = false
-    const unsubscribe = accountAdder.onUpdate(() => {
-      emitCounter++
 
-      if (emitCounter === 1) {
+  test.only('should be able to select and then deselect an account', (done) => {
+    // Subscription to select an account and trigger a deselect
+    let emitCounter1 = 0
+    const unsubscribe1 = accountAdder.onUpdate(() => {
+      emitCounter1++
+
+      if (emitCounter1 === 1) {
         accountAdder.selectedAccounts = [
           {
             account: basicAccount,
@@ -262,20 +262,26 @@ describe('AccountAdder', () => {
           }
         ]
 
-        expect(
-          accountAdder.selectedAccounts.map((a) => a.account.addr).includes(basicAccount.addr)
-        ).toBeTruthy()
+        const selectedAccountAddr = accountAdder.selectedAccounts.map((a) => a.account.addr)
+        expect(selectedAccountAddr).toContain(basicAccount.addr)
 
         accountAdder.deselectAccount(basicAccount)
       }
+    })
 
-      if (emitCounter === 2) {
-        expect(accountAdder.selectedAccounts).toEqual([])
-        unsubscribe()
-        if (!doneCalled) {
-          doneCalled = true
-          done()
-        }
+    // A separate subscription to check if the account got deselected
+    let emitCounter2 = 0
+    const unsubscribe2 = accountAdder.onUpdate(() => {
+      emitCounter2++
+
+      // First emit is triggered when Account Adder initializes, the second
+      // emit is triggered when the account is selected.
+      if (emitCounter2 === 2) {
+        expect(accountAdder.selectedAccounts).toHaveLength(0)
+
+        unsubscribe1()
+        unsubscribe2()
+        done()
       }
     })
 
