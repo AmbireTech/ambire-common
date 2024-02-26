@@ -242,20 +242,12 @@ export class AccountAdderController extends EventEmitter {
           linkedAcc.account.associatedKeys.includes(derivedAccount.account.addr)
         )
 
-        // FIXME: Emitting in a getter method is a no-go.
-        // The `correspondingDerivedAccount` should always be found,
-        // except something is wrong with the data we have stored on the Relayer
-        if (!correspondingDerivedAccount) {
-          this.emitError({
-            level: 'major',
-            message: `Something went wrong with finding the corresponding account in the associated keys of the linked account with address ${linkedAcc.account.addr}. Please start the process again. If the problem persists, contact support.`,
-            error: new Error(
-              `Something went wrong with finding the corresponding account in the associated keys of the linked account with address ${linkedAcc.account.addr}.`
-            )
-          })
-
-          return []
-        }
+        // The `correspondingDerivedAccount` should always be found, except when
+        // something is wrong with the data we have stored on the Relayer.
+        // The this.#verifyLinkedAndDerivedAccounts() method should have
+        // already emitted an error in that case. Do not emit here, since
+        // this is a getter method (and emitting here is a no-go).
+        if (!correspondingDerivedAccount) return []
 
         return [
           {
@@ -889,9 +881,35 @@ export class AccountAdderController extends EventEmitter {
     })
 
     this.#linkedAccounts = linkedAccountsWithNetworks
+    this.#verifyLinkedAccounts()
 
     this.linkedAccountsLoading = false
     this.emitUpdate()
+  }
+
+  /**
+   * The corresponding derived account for the linked accounts should always be found,
+   * except when something is wrong with the data we have stored on the Relayer.
+   * Also, could be an attack vector. So indicate to the user that something is wrong.
+   */
+  #verifyLinkedAccounts() {
+    this.#linkedAccounts.forEach((linkedAcc) => {
+      const correspondingDerivedAccount = this.#derivedAccounts.find((derivedAccount) =>
+        linkedAcc.account.associatedKeys.includes(derivedAccount.account.addr)
+      )
+
+      // The `correspondingDerivedAccount` should always be found,
+      // except something is wrong with the data we have stored on the Relayer
+      if (!correspondingDerivedAccount) {
+        this.emitError({
+          level: 'major',
+          message: `Something went wrong with finding the corresponding account in the associated keys of the linked account with address ${linkedAcc.account.addr}. Please start the process again. If the problem persists, contact support.`,
+          error: new Error(
+            `Something went wrong with finding the corresponding account in the associated keys of the linked account with address ${linkedAcc.account.addr}.`
+          )
+        })
+      }
+    })
   }
 
   #throwNotInitialized() {
