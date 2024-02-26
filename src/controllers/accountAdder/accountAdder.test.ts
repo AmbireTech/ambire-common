@@ -293,7 +293,7 @@ describe('AccountAdder', () => {
     })
   })
 
-  test('should be able to find all the keys of a selected basic account (always one key)', (done) => {
+  test('should be able to select all the keys of a selected basic account (always one key)', (done) => {
     // Subscription to select an account
     let emitCounter1 = 0
     const unsubscribe1 = accountAdder.onUpdate(() => {
@@ -333,7 +333,7 @@ describe('AccountAdder', () => {
     accountAdder.setPage({ page: 1, networks, providers })
   })
 
-  test('should be able to find all the keys of a selected smart account', (done) => {
+  test('should be able to select all the keys of a selected smart account (derived key)', (done) => {
     // Subscription to select an account
     let emitCounter1 = 0
     const unsubscribe1 = accountAdder.onUpdate(() => {
