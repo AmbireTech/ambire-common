@@ -44,6 +44,34 @@ export function getCleanUserOp(userOp: UserOperation) {
   return [(({ requestType, activatorCall, ...o }) => o)(userOp)]
 }
 
+/**
+ * Get the nonce we're expecting in validateUserOp
+ * when we're going through the activation | recovery
+ *
+ * @param UserOperation userOperation
+ * @returns hex string
+ */
+export function getOneTimeNonce(userOperation: UserOperation) {
+  const abiCoder = new ethers.AbiCoder()
+  return `0x${ethers
+    .keccak256(
+      abiCoder.encode(
+        ['bytes', 'bytes', 'uint256', 'uint256', 'uint256', 'uint256', 'uint256', 'bytes'],
+        [
+          userOperation.initCode,
+          userOperation.callData,
+          userOperation.callGasLimit,
+          userOperation.verificationGasLimit,
+          userOperation.preVerificationGas,
+          userOperation.maxFeePerGas,
+          userOperation.maxPriorityFeePerGas,
+          userOperation.paymasterAndData
+        ]
+      )
+    )
+    .substring(18)}${ethers.toBeHex(0, 8).substring(2)}`
+}
+
 export function getPreVerificationGas(
   userOperation: UserOperation,
   usesPaymaster: boolean,
@@ -52,9 +80,14 @@ export function getPreVerificationGas(
   const abiCoder = new ethers.AbiCoder()
   const localUserOp = { ...userOperation }
 
-  // we change the paymasterAndData only for the calculation
+  // set fake properties for better estimation
+  localUserOp.signature = getSigForCalculations()
+
   if (usesPaymaster) {
     localUserOp.paymasterAndData = getPaymasterSpoof()
+  }
+  if (userOperation.requestType !== 'standard') {
+    localUserOp.nonce = getOneTimeNonce(localUserOp)
   }
 
   const packed = abiCoder.encode(
@@ -148,34 +181,6 @@ export function toUserOperation(
   userOperation.signature = '0x'
   userOperation.requestType = requestType
   return userOperation
-}
-
-/**
- * Get the nonce we're expecting in validateUserOp
- * when we're going through the activation | recovery
- *
- * @param UserOperation userOperation
- * @returns hex string
- */
-export function getOneTimeNonce(userOperation: UserOperation) {
-  const abiCoder = new ethers.AbiCoder()
-  return `0x${ethers
-    .keccak256(
-      abiCoder.encode(
-        ['bytes', 'bytes', 'uint256', 'uint256', 'uint256', 'uint256', 'uint256', 'bytes'],
-        [
-          userOperation.initCode,
-          userOperation.callData,
-          userOperation.callGasLimit,
-          userOperation.verificationGasLimit,
-          userOperation.preVerificationGas,
-          userOperation.maxFeePerGas,
-          userOperation.maxPriorityFeePerGas,
-          userOperation.paymasterAndData
-        ]
-      )
-    )
-    .substring(18)}${ethers.toBeHex(0, 8).substring(2)}`
 }
 
 export function isErc4337Broadcast(

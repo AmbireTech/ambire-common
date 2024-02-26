@@ -10,6 +10,7 @@ import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
 import { UserOperation } from '../userOperation/types'
 import {
   getCleanUserOp,
+  getOneTimeNonce,
   getPaymasterSpoof,
   getSigForCalculations,
   isErc4337Broadcast
@@ -192,18 +193,18 @@ export function getProbableCallData(
     localOp.verificationGasLimit = toBeHex(100000n)
     localOp.callGasLimit = toBeHex(100000n)
     localOp.signature = getSigForCalculations()
+    localOp.nonce = getOneTimeNonce(localOp)
 
-    // TODO<Bobby>: This is not perfect
-    if (localOp.requestType !== 'standard') {
-      localOp.paymasterAndData = getPaymasterSpoof()
-    }
+    // include the paymaster as a fee commitment always as we can't detect at
+    // this stage whether we're using a fee token (should use paymaster)
+    // and it's better to overestimate instead of under
+    localOp.paymasterAndData = getPaymasterSpoof()
 
     const entryPoint = new Interface(EntryPoint)
-    estimationCallData = entryPoint.encodeFunctionData('handleOps', [
+    return entryPoint.encodeFunctionData('handleOps', [
       getCleanUserOp(localOp),
       accountOp.accountAddr
     ])
-    return estimationCallData
   }
 
   // always call executeMultiple as the worts case scenario
