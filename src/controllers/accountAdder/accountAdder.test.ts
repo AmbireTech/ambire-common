@@ -292,4 +292,42 @@ describe('AccountAdder', () => {
       hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
     })
   })
+
+  test('should be able to find all the keys of a selected basic account (always one key)', (done) => {
+    // Subscription to select an account
+    let emitCounter1 = 0
+    const unsubscribe1 = accountAdder.onUpdate(() => {
+      emitCounter1++
+      console.log('emitCounter1', accountAdder.accountsLoading)
+
+      // First - init, second - start deriving, third - deriving done
+      if (emitCounter1 === 3) {
+        accountAdder.selectAccount(basicAccount)
+      }
+    })
+
+    let emitCounter2 = 0
+    const unsubscribe2 = accountAdder.onUpdate(() => {
+      emitCounter2++
+      console.log('emitCounter2', emitCounter2)
+
+      // Select account emit is triggered
+      if (emitCounter2 === 4) {
+        expect(accountAdder.selectedAccounts[0].accountKeys).toHaveLength(1)
+        const keyAddr = accountAdder.selectedAccounts[0].accountKeys[0].addr
+        expect(keyAddr).toEqual(basicAccount.addr)
+
+        unsubscribe1()
+        unsubscribe2()
+        done()
+      }
+    })
+
+    const keyIterator = new KeyIterator(process.env.SEED)
+    accountAdder.init({
+      keyIterator,
+      hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
+    })
+    accountAdder.setPage({ page: 1, networks, providers })
+  })
 })
