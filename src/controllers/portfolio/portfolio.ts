@@ -95,6 +95,8 @@ export class PortfolioController extends EventEmitter {
 
   #additionalHints: GetOptions['additionalHints'] = []
 
+  #tokenPreferences: any[] = []
+
   constructor(
     storage: Storage,
     providers: RPCProviders,
@@ -109,9 +111,33 @@ export class PortfolioController extends EventEmitter {
     this.#portfolioLibs = new Map()
     this.#storage = storage
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
+
+    this.#load()
+  }
+
+  async #load() {
+    try {
+      this.tokenPreferences = await this.#storage.get('tokenPreferences', [])
+      this.#tokenPreferences = await this.#storage.get('tokenPreferences', [])
+    } catch (e) {
+      this.emitError({
+        message:
+          'Something went wrong when loading portfolio. Please try again or contact support if the problem persists.',
+        level: 'major',
+        error: new Error('portfolio: failed to pull keys from storage')
+      })
+    }
+
+    this.emitUpdate()
+  }
+
+  async updateLocalTokenPreferences(tokens: any[]) {
+    this.#tokenPreferences = tokens
   }
 
   async updateTokenPreferences(tokens: any[]) {
+    this.#tokenPreferences = []
+
     this.tokenPreferences = tokens
     await this.#storage.set('tokenPreferences', tokens)
   }
@@ -362,8 +388,8 @@ export class PortfolioController extends EventEmitter {
       state.isLoading = true
       this.emitUpdate()
 
-      const tokenPreferences = await this.#storage.get('tokenPreferences', [])
-
+      const tokenPreferences = [...this.tokenPreferences, ...this.#tokenPreferences]
+      console.log({ tokenPreferences })
       try {
         const result = await portfolioLib.get(accountId, {
           priceRecency: 60000,
