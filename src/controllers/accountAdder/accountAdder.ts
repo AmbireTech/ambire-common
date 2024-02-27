@@ -59,9 +59,11 @@ type DerivedAccountWithoutNetworkMeta = Omit<DerivedAccount, 'account'> & { acco
 export enum ImportStatus {
   NotImported = 'not-imported',
   ImportedWithoutKey = 'imported-without-key', // as a view only account
-  ImportedWithSameKey = 'imported-with-same-key', // same key meaning not only
-  // the key address is the same, but the key type also
-  ImportedWithDifferentKey = 'imported-with-different-key' // different key
+  ImportedWithSomeOfTheKeys = 'imported-with-some-of-the-keys', // imported with
+  // some of the keys (having the same key type), but not all found on the current page
+  ImportedWithTheSameKeys = 'imported-with-the-same-keys', // imported with all
+  // keys (having the same key type) found on the current page
+  ImportedWithDifferentKeys = 'imported-with-different-keys' // different key
   // meaning that could be a key with the same address but different type,
   // or a key with different address altogether.
 }
@@ -149,7 +151,10 @@ export class AccountAdderController extends EventEmitter {
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
   }
 
-  #getAccountOnPageImportStatus(account: Account): { importStatus: ImportStatus } {
+  #getAccountOnPageImportStatus(
+    account: Account,
+    _accountsOnPage: Omit<AccountOnPage, 'importStatus'>[]
+  ): { importStatus: ImportStatus } {
     const isAlreadyImported = this.#alreadyImportedAccounts.some(
       ({ addr }) => addr === account.addr
     )
@@ -166,12 +171,26 @@ export class AccountAdderController extends EventEmitter {
     // same type too. Because user can opt in to import same key address with
     // many different hardware wallets (Trezor, Ledger, GridPlus, etc.) or
     // the same address with seed (private key).
-    const isImportedWithTheSameKey = importedAccountKeystoreKeys.some(
+    const associatedKeysAlreadyImported = importedAccountKeystoreKeys.filter(
       (key) => account.associatedKeys.includes(key.addr) && key.type === this.#keyIterator?.type
     )
-    if (isImportedWithTheSameKey) return { importStatus: ImportStatus.ImportedWithSameKey }
+    if (associatedKeysAlreadyImported.length) {
+      const associatedKeysNotImportedYet = account.associatedKeys.filter((keyAddr) =>
+        associatedKeysAlreadyImported.some((x) => x.addr !== keyAddr)
+      )
 
-    return { importStatus: ImportStatus.ImportedWithDifferentKey }
+      const notImportedYetKeysExistInPage = _accountsOnPage.some((x) =>
+        associatedKeysNotImportedYet.includes(x.account.addr)
+      )
+
+      return {
+        importStatus: notImportedYetKeysExistInPage
+          ? ImportStatus.ImportedWithSomeOfTheKeys
+          : ImportStatus.ImportedWithTheSameKeys
+      }
+    }
+
+    return { importStatus: ImportStatus.NotImported }
   }
 
   get accountsOnPage(): AccountOnPage[] {
@@ -191,13 +210,10 @@ export class AccountAdderController extends EventEmitter {
           (acc) => isSmartAccount(acc.account) && acc.slot === derivedAccount.slot
         )
 
-        let accountsToReturn: AccountOnPage[] = []
+        let accountsToReturn: Omit<AccountOnPage, 'importStatus'>[] = []
 
         if (!isSmartAccount(derivedAccount.account)) {
-          accountsToReturn.push({
-            ...derivedAccount,
-            ...this.#getAccountOnPageImportStatus(derivedAccount.account)
-          })
+          accountsToReturn.push(derivedAccount)
 
           const duplicate = associatedLinkedAccounts.find(
             (linkedAcc) => linkedAcc.account.addr === correspondingSmartAccount?.account?.addr
@@ -208,10 +224,7 @@ export class AccountAdderController extends EventEmitter {
           if (duplicate) duplicate.isLinked = false
 
           if (!duplicate && correspondingSmartAccount) {
-            accountsToReturn.push({
-              ...correspondingSmartAccount,
-              ...this.#getAccountOnPageImportStatus(correspondingSmartAccount.account)
-            })
+            accountsToReturn.push(correspondingSmartAccount)
           }
         }
 
@@ -219,8 +232,7 @@ export class AccountAdderController extends EventEmitter {
           associatedLinkedAccounts.map((linkedAcc) => ({
             ...linkedAcc,
             slot: derivedAccount.slot,
-            index: derivedAccount.index,
-            ...this.#getAccountOnPageImportStatus(linkedAcc.account)
+            index: derivedAccount.index
           }))
         )
 
@@ -253,8 +265,7 @@ export class AccountAdderController extends EventEmitter {
           {
             ...linkedAcc,
             slot: correspondingDerivedAccount.slot,
-            index: correspondingDerivedAccount.index,
-            ...this.#getAccountOnPageImportStatus(linkedAcc.account)
+            index: correspondingDerivedAccount.index
           }
         ]
       })
@@ -272,7 +283,10 @@ export class AccountAdderController extends EventEmitter {
       return prioritizeAccountType(a) - prioritizeAccountType(b) || a.slot - b.slot
     })
 
-    return mergedAccounts
+    return mergedAccounts.map((acc) => ({
+      ...acc,
+      ...this.#getAccountOnPageImportStatus(acc.account, mergedAccounts)
+    }))
   }
 
   init({
