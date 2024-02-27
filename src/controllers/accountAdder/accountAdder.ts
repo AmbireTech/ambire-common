@@ -11,7 +11,6 @@ import { KeyIterator } from '../../interfaces/keyIterator'
 import { dedicatedToOneSAPriv, Key } from '../../interfaces/keystore'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
 import { AccountPreferences, KeyPreferences } from '../../interfaces/settings'
-import { Storage } from '../../interfaces/storage'
 import {
   getBasicAccount,
   getEmailAccount,
@@ -24,9 +23,10 @@ import { getAccountState } from '../../libs/accountState/accountState'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import wait from '../../utils/wait'
 import EventEmitter from '../eventEmitter/eventEmitter'
+import { KeystoreController } from '../keystore/keystore'
 
-const INITIAL_PAGE_INDEX = 1
-const PAGE_SIZE = 5
+export const DEFAULT_PAGE = 1
+export const DEFAULT_PAGE_SIZE = 5
 
 type AccountWithNetworkMeta = Account & { usedOnNetworks: NetworkDescriptor[] }
 
@@ -41,9 +41,10 @@ type AccountDerivationMeta = {
  * It's always one of the visible accounts returned by the accountsOnPage().
  * Could be either a basic (EOA) account, a smart account or a linked account.
  */
-export type SelectedAccount = AccountDerivationMeta & {
+export type SelectedAccount = {
   account: Account
-  accountKeyAddr: Account['addr']
+  isLinked: AccountDerivationMeta['isLinked']
+  accountKeys: (Omit<AccountDerivationMeta, 'isLinked'> & { addr: Account['addr'] })[]
 }
 
 /**
@@ -54,6 +55,24 @@ export type SelectedAccount = AccountDerivationMeta & {
 type DerivedAccount = AccountDerivationMeta & { account: AccountWithNetworkMeta }
 // Sub-type, used during intermediate step during the deriving accounts process
 type DerivedAccountWithoutNetworkMeta = Omit<DerivedAccount, 'account'> & { account: Account }
+
+export enum ImportStatus {
+  NotImported = 'not-imported',
+  ImportedWithoutKey = 'imported-without-key', // as a view only account
+  ImportedWithSomeOfTheKeys = 'imported-with-some-of-the-keys', // imported with
+  // some of the keys (having the same key type), but not all found on the current page
+  ImportedWithTheSameKeys = 'imported-with-the-same-keys', // imported with all
+  // keys (having the same key type) found on the current page
+  ImportedWithDifferentKeys = 'imported-with-different-keys' // different key
+  // meaning that could be a key with the same address but different type,
+  // or a key with different address altogether.
+}
+/**
+ * All the accounts that should be visible on the current page - the Basic
+ * Accounts, Smart Accounts and the linked accounts. Excludes the derived
+ * EOA (basic) accounts used for smart account keys only.
+ */
+export type AccountOnPage = DerivedAccount & { importStatus: ImportStatus }
 
 export type ReadyToAddKeys = {
   internal: { privateKey: string; dedicatedToOneSA: boolean }[]
@@ -70,7 +89,9 @@ export type ReadyToAddKeys = {
 export class AccountAdderController extends EventEmitter {
   #callRelayer: Function
 
-  storage: Storage
+  #alreadyImportedAccounts: Account[]
+
+  #keystore: KeystoreController
 
   #keyIterator?: KeyIterator | null
 
@@ -79,13 +100,11 @@ export class AccountAdderController extends EventEmitter {
   isInitialized: boolean = false
 
   // This is only the index of the current page
-  page: number = INITIAL_PAGE_INDEX
+  page: number = DEFAULT_PAGE
 
-  pageSize: number = PAGE_SIZE
+  pageSize: number = DEFAULT_PAGE_SIZE
 
   selectedAccounts: SelectedAccount[] = []
-
-  preselectedAccounts: Account[] = []
 
   // Accounts which identity is created on the Relayer (if needed), and are ready
   // to be added to the user's account list by the Main Controller
@@ -116,20 +135,65 @@ export class AccountAdderController extends EventEmitter {
   #linkedAccounts: { account: AccountWithNetworkMeta; isLinked: boolean }[] = []
 
   constructor({
-    storage,
+    alreadyImportedAccounts,
+    keystore,
     relayerUrl,
     fetch
   }: {
-    storage: Storage
+    alreadyImportedAccounts: Account[]
+    keystore: KeystoreController
     relayerUrl: string
     fetch: Function
   }) {
     super()
-    this.storage = storage
+    this.#alreadyImportedAccounts = alreadyImportedAccounts
+    this.#keystore = keystore
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
   }
 
-  get accountsOnPage(): DerivedAccount[] {
+  #getAccountOnPageImportStatus(
+    account: Account,
+    _accountsOnPage: Omit<AccountOnPage, 'importStatus'>[]
+  ): { importStatus: ImportStatus } {
+    const isAlreadyImported = this.#alreadyImportedAccounts.some(
+      ({ addr }) => addr === account.addr
+    )
+    if (!isAlreadyImported) return { importStatus: ImportStatus.NotImported }
+
+    const importedAccountKeystoreKeys = this.#keystore.keys.filter((key) =>
+      account.associatedKeys.includes(key.addr)
+    )
+    // Could be imported as a view only account (and therefore, without a key)
+    if (!importedAccountKeystoreKeys.length)
+      return { importStatus: ImportStatus.ImportedWithoutKey }
+
+    // Same key in this context means not only the same key address, but the
+    // same type too. Because user can opt in to import same key address with
+    // many different hardware wallets (Trezor, Ledger, GridPlus, etc.) or
+    // the same address with seed (private key).
+    const associatedKeysAlreadyImported = importedAccountKeystoreKeys.filter(
+      (key) => account.associatedKeys.includes(key.addr) && key.type === this.#keyIterator?.type
+    )
+    if (associatedKeysAlreadyImported.length) {
+      const associatedKeysNotImportedYet = account.associatedKeys.filter((keyAddr) =>
+        associatedKeysAlreadyImported.some((x) => x.addr !== keyAddr)
+      )
+
+      const notImportedYetKeysExistInPage = _accountsOnPage.some((x) =>
+        associatedKeysNotImportedYet.includes(x.account.addr)
+      )
+
+      return {
+        importStatus: notImportedYetKeysExistInPage
+          ? ImportStatus.ImportedWithSomeOfTheKeys
+          : ImportStatus.ImportedWithTheSameKeys
+      }
+    }
+
+    return { importStatus: ImportStatus.NotImported }
+  }
+
+  get accountsOnPage(): AccountOnPage[] {
     const processedAccounts = this.#derivedAccounts
       // The displayed (visible) accounts on page should not include the derived
       // EOA (basic) accounts only used as smart account keys, they should not
@@ -146,7 +210,7 @@ export class AccountAdderController extends EventEmitter {
           (acc) => isSmartAccount(acc.account) && acc.slot === derivedAccount.slot
         )
 
-        let accountsToReturn = []
+        let accountsToReturn: Omit<AccountOnPage, 'importStatus'>[] = []
 
         if (!isSmartAccount(derivedAccount.account)) {
           accountsToReturn.push(derivedAccount)
@@ -190,19 +254,12 @@ export class AccountAdderController extends EventEmitter {
           linkedAcc.account.associatedKeys.includes(derivedAccount.account.addr)
         )
 
-        // The `correspondingDerivedAccount` should always be found,
-        // except something is wrong with the data we have stored on the Relayer
-        if (!correspondingDerivedAccount) {
-          this.emitError({
-            level: 'major',
-            message: `Something went wrong with finding the corresponding account in the associated keys of the linked account with address ${linkedAcc.account.addr}. Please start the process again. If the problem persists, contact support.`,
-            error: new Error(
-              `Something went wrong with finding the corresponding account in the associated keys of the linked account with address ${linkedAcc.account.addr}.`
-            )
-          })
-
-          return []
-        }
+        // The `correspondingDerivedAccount` should always be found, except when
+        // something is wrong with the data we have stored on the Relayer.
+        // The this.#verifyLinkedAndDerivedAccounts() method should have
+        // already emitted an error in that case. Do not emit here, since
+        // this is a getter method (and emitting here is a no-go).
+        if (!correspondingDerivedAccount) return []
 
         return [
           {
@@ -226,26 +283,28 @@ export class AccountAdderController extends EventEmitter {
       return prioritizeAccountType(a) - prioritizeAccountType(b) || a.slot - b.slot
     })
 
-    return mergedAccounts
+    return mergedAccounts.map((acc) => ({
+      ...acc,
+      ...this.#getAccountOnPageImportStatus(acc.account, mergedAccounts)
+    }))
   }
 
   init({
     keyIterator,
-    preselectedAccounts,
     page,
     pageSize,
     hdPathTemplate
   }: {
     keyIterator: KeyIterator | null
-    preselectedAccounts: Account[]
     page?: number
     pageSize?: number
     hdPathTemplate: HD_PATH_TEMPLATE_TYPE
   }): void {
     this.#keyIterator = keyIterator
-    this.preselectedAccounts = preselectedAccounts
-    this.page = page || INITIAL_PAGE_INDEX
-    this.pageSize = pageSize || PAGE_SIZE
+    if (!this.#keyIterator) return this.#throwMissingKeyIterator()
+
+    this.page = page || DEFAULT_PAGE
+    this.pageSize = pageSize || DEFAULT_PAGE_SIZE
     this.hdPathTemplate = hdPathTemplate
     this.isInitialized = true
 
@@ -254,10 +313,9 @@ export class AccountAdderController extends EventEmitter {
 
   reset() {
     this.#keyIterator = null
-    this.preselectedAccounts = []
     this.selectedAccounts = []
-    this.page = INITIAL_PAGE_INDEX
-    this.pageSize = PAGE_SIZE
+    this.page = DEFAULT_PAGE
+    this.pageSize = DEFAULT_PAGE_SIZE
     this.hdPathTemplate = undefined
 
     this.addAccountsStatus = 'INITIAL'
@@ -272,6 +330,7 @@ export class AccountAdderController extends EventEmitter {
     this.emitUpdate()
   }
 
+  // TODO: Not implemented yet
   setHDPathTemplate({
     path,
     networks,
@@ -282,75 +341,108 @@ export class AccountAdderController extends EventEmitter {
     providers: { [key: string]: JsonRpcProvider }
   }): void {
     this.hdPathTemplate = path
-    this.page = INITIAL_PAGE_INDEX
+    this.page = DEFAULT_PAGE
     this.emitUpdate()
     // get the first page with the new hdPathTemplate (derivation)
-    this.setPage({ page: INITIAL_PAGE_INDEX, networks, providers })
+    this.setPage({ page: DEFAULT_PAGE, networks, providers })
+  }
+
+  #getAccountKeys(account: Account, accountsOnPageWithThisAcc: AccountOnPage[]) {
+    // should never happen
+    if (accountsOnPageWithThisAcc.length === 0) {
+      console.error(`accountAdder: account ${account.addr} was not found in the accountsOnPage.`)
+      return []
+    }
+
+    // Case 1: The account is a Basic account
+    const isBasicAcc = !isSmartAccount(account)
+    // The key of the Basic account is the basic account itself
+    if (isBasicAcc) return accountsOnPageWithThisAcc
+
+    // Case 2: The account is a Smart account, but not a linked one
+    const isSmartAccountAndNotLinked =
+      isSmartAccount(account) &&
+      accountsOnPageWithThisAcc.length === 1 &&
+      accountsOnPageWithThisAcc[0].isLinked === false
+
+    if (isSmartAccountAndNotLinked) {
+      // The key of the smart account is the Basic account on the same slot
+      // that is explicitly derived for a smart account key only.
+      const basicAccOnThisSlotDerivedForSmartAccKey = this.#derivedAccounts.find(
+        (a) =>
+          a.slot === accountsOnPageWithThisAcc[0].slot &&
+          !isSmartAccount(a.account) &&
+          isDerivedForSmartAccountKeyOnly(a.index)
+      )
+
+      return basicAccOnThisSlotDerivedForSmartAccKey
+        ? [basicAccOnThisSlotDerivedForSmartAccKey]
+        : []
+    }
+
+    // Case 3: The account is a Smart account and a linked one. For this case,
+    // there could exist multiple keys (basic accounts) found on different slots.
+    const basicAccOnEverySlotWhereThisAddrIsFound = accountsOnPageWithThisAcc
+      .map((a) => a.slot)
+      .flatMap((slot) => {
+        const basicAccOnThisSlot = this.#derivedAccounts.find(
+          (a) =>
+            a.slot === slot &&
+            !isSmartAccount(a.account) &&
+            // The key of the linked account is always the EOA (basic) account
+            // on the same slot that is not explicitly used for smart account keys only.
+            !isDerivedForSmartAccountKeyOnly(a.index)
+        )
+
+        return basicAccOnThisSlot ? [basicAccOnThisSlot] : []
+      })
+
+    return basicAccOnEverySlotWhereThisAddrIsFound
   }
 
   selectAccount(_account: Account) {
-    const accountOnPage = this.accountsOnPage.find(
+    if (!this.isInitialized) return this.#throwNotInitialized()
+    if (!this.#keyIterator) return this.#throwMissingKeyIterator()
+
+    // Needed, because linked accounts could have multiple keys (basic accounts),
+    // and therefore - same linked account could be found on different slots.
+    const accountsOnPageWithThisAcc = this.accountsOnPage.filter(
       (accOnPage) => accOnPage.account.addr === _account.addr
     )
-
-    if (!accountOnPage)
+    const accountKeys = this.#getAccountKeys(_account, accountsOnPageWithThisAcc)
+    if (!accountKeys.length)
       return this.emitError({
         level: 'major',
         message: `Selecting ${_account.addr} account failed because the details for this account are missing. Please try again or contact support if the problem persists.`,
         error: new Error(
-          `Trying to select ${_account.addr} account, but this account was not found in the accountsOnPage.`
-        )
-      })
-
-    const allAccountsOnThisSlot = this.#derivedAccounts.filter(
-      ({ slot }) => slot === accountOnPage.slot
-    )
-
-    // eslint-disable-next-line no-nested-ternary
-    const accountKey = isSmartAccount(accountOnPage.account)
-      ? accountOnPage.isLinked
-        ? // The key of the linked account is the EOA (basic) account on the same slot with the same index
-          allAccountsOnThisSlot.find(
-            ({ account, index }) => !isSmartAccount(account) && accountOnPage.index === index
-          )
-        : // The key of the smart account is the EOA (basic) account derived on the
-          // same slot, but with the `SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET` offset.
-          allAccountsOnThisSlot.find(({ index }) => isDerivedForSmartAccountKeyOnly(index))
-      : // The key of the basic account is the basic account itself.
-        accountOnPage
-
-    if (!accountKey)
-      return this.emitError({
-        level: 'major',
-        message: `Selecting ${_account.addr} account failed because some of the details for this account are missing. Please try again or contact support if the problem persists.`,
-        error: new Error(
-          `The basic account for the ${_account.addr} account was not found on this slot.`
+          `Trying to select ${_account.addr} account, but this account was not found in the accountsOnPage or it's keys were not found.`
         )
       })
 
     this.selectedAccounts.push({
       account: _account,
-      accountKeyAddr: accountKey.account.addr,
-      slot: accountOnPage.slot,
-      isLinked: accountOnPage.isLinked,
-      index: accountKey.index
+      // If the account has more than 1 key, it is for sure linked account,
+      // since Basic accounts have only 1 key and smart accounts with more than
+      // one key present should always be found as linked accounts anyways.
+      isLinked: accountKeys.length > 1,
+      accountKeys: accountKeys.map((a) => ({
+        addr: a.account.addr,
+        slot: a.slot,
+        index: a.index
+      }))
     })
     this.emitUpdate()
   }
 
   async deselectAccount(account: Account) {
-    const accIdx = this.selectedAccounts.findIndex((x) => x.account.addr === account.addr)
-    const accPreselectedIdx = this.preselectedAccounts.findIndex((acc) => acc.addr === account.addr)
+    if (!this.isInitialized) return this.#throwNotInitialized()
+    if (!this.#keyIterator) return this.#throwMissingKeyIterator()
 
-    if (accIdx !== -1 && accPreselectedIdx === -1) {
+    const accIdx = this.selectedAccounts.findIndex((x) => x.account.addr === account.addr)
+
+    if (accIdx !== -1) {
       this.selectedAccounts = this.selectedAccounts.filter((_, i) => i !== accIdx)
       this.emitUpdate()
-    } else if (accPreselectedIdx !== -1) {
-      return this.emitError({
-        level: 'major',
-        message: 'This account cannot be deselected. Please reload and try again.',
-        error: new Error('accountAdder: a preselected account cannot be deselected')
-      })
     } else {
       return this.emitError({
         level: 'major',
@@ -369,6 +461,9 @@ export class AccountAdderController extends EventEmitter {
     networks: NetworkDescriptor[]
     providers: { [key: string]: JsonRpcProvider }
   }): Promise<void> {
+    if (!this.isInitialized) return this.#throwNotInitialized()
+    if (!this.#keyIterator) return this.#throwMissingKeyIterator()
+
     if (page <= 0) {
       return this.emitError({
         level: 'major',
@@ -419,16 +514,8 @@ export class AccountAdderController extends EventEmitter {
     readyToAddKeys: ReadyToAddKeys = { internal: [], external: [] },
     readyToAddKeyPreferences: KeyPreferences = []
   ) {
-    if (!this.isInitialized) {
-      return this.emitError({
-        level: 'major',
-        message:
-          'Something went wrong with deriving the accounts. Please start the process again. If the problem persists, contact support.',
-        error: new Error(
-          'accountAdder: requested method `addAccounts`, but the AccountAdder is not initialized'
-        )
-      })
-    }
+    if (!this.isInitialized) return this.#throwNotInitialized()
+    if (!this.#keyIterator) return this.#throwMissingKeyIterator()
 
     if (!accounts.length) {
       return this.emitError({
@@ -522,37 +609,17 @@ export class AccountAdderController extends EventEmitter {
   async createAndAddEmailAccount(selectedAccount: SelectedAccount) {
     const {
       account: { email },
-      accountKeyAddr: recoveryKey
+      accountKeys: [recoveryKey]
     } = selectedAccount
-    if (!this.isInitialized) {
-      return this.emitError({
-        level: 'major',
-        message:
-          'Something went wrong with calculating the accounts. Please start the process again. If the problem persists, contact support.',
-        error: new Error(
-          'accountAdder: requested method `#deriveAccounts`, but the AccountAdder is not initialized'
-        )
-      })
-    }
-
-    if (!this.#keyIterator) {
-      this.emitError({
-        level: 'major',
-        message:
-          'Something went wrong with calculating the accounts. Please start the process again. If the problem persists, contact support.',
-        error: new Error(
-          'accountAdder: requested method `#deriveAccounts`, but keyIterator is not initialized'
-        )
-      })
-      return
-    }
+    if (!this.isInitialized) return this.#throwNotInitialized()
+    if (!this.#keyIterator) return this.#throwMissingKeyIterator()
 
     const keyPublicAddress: string = (await this.#keyIterator.retrieve([{ from: 0, to: 1 }]))[0]
 
     const emailSmartAccount = await getEmailAccount(
       {
         emailFrom: email!,
-        secondaryKey: recoveryKey
+        secondaryKey: recoveryKey.addr
       },
       keyPublicAddress
     )
@@ -578,27 +645,10 @@ export class AccountAdderController extends EventEmitter {
     networks: NetworkDescriptor[]
     providers: { [key: string]: JsonRpcProvider }
   }): Promise<DerivedAccount[]> {
-    if (!this.isInitialized) {
-      this.emitError({
-        level: 'major',
-        message:
-          'Something went wrong with deriving the accounts. Please start the process again. If the problem persists, contact support.',
-        error: new Error(
-          'accountAdder: requested method `#deriveAccounts`, but the AccountAdder is not initialized'
-        )
-      })
-      return []
-    }
-
+    // Should never happen, because before the #deriveAccounts method gets
+    // called - there is a check if the #keyIterator exists.
     if (!this.#keyIterator) {
-      this.emitError({
-        level: 'major',
-        message:
-          'Something went wrong with deriving the accounts. Please start the process again. If the problem persists, contact support.',
-        error: new Error(
-          'accountAdder: requested method `#deriveAccounts`, but keyIterator is not initialized'
-        )
-      })
+      console.error('accountAdder: missing keyIterator')
       return []
     }
 
@@ -845,9 +895,55 @@ export class AccountAdderController extends EventEmitter {
     })
 
     this.#linkedAccounts = linkedAccountsWithNetworks
+    this.#verifyLinkedAccounts()
 
     this.linkedAccountsLoading = false
     this.emitUpdate()
+  }
+
+  /**
+   * The corresponding derived account for the linked accounts should always be found,
+   * except when something is wrong with the data we have stored on the Relayer.
+   * Also, could be an attack vector. So indicate to the user that something is wrong.
+   */
+  #verifyLinkedAccounts() {
+    this.#linkedAccounts.forEach((linkedAcc) => {
+      const correspondingDerivedAccount = this.#derivedAccounts.find((derivedAccount) =>
+        linkedAcc.account.associatedKeys.includes(derivedAccount.account.addr)
+      )
+
+      // The `correspondingDerivedAccount` should always be found,
+      // except something is wrong with the data we have stored on the Relayer
+      if (!correspondingDerivedAccount) {
+        this.emitError({
+          level: 'major',
+          message: `Something went wrong with finding the corresponding account in the associated keys of the linked account with address ${linkedAcc.account.addr}. Please start the process again. If the problem persists, contact support.`,
+          error: new Error(
+            `Something went wrong with finding the corresponding account in the associated keys of the linked account with address ${linkedAcc.account.addr}.`
+          )
+        })
+      }
+    })
+  }
+
+  #throwNotInitialized() {
+    this.emitError({
+      level: 'major',
+      message:
+        'Something went wrong with deriving the accounts. Please start the process again. If the problem persists, contact support.',
+      error: new Error(
+        'accountAdder: requested a method of the AccountAdder controller, but the controller was not initialized'
+      )
+    })
+  }
+
+  #throwMissingKeyIterator() {
+    this.emitError({
+      level: 'major',
+      message:
+        'Something went wrong with deriving the accounts. Please start the process again. If the problem persists, contact support.',
+      error: new Error('accountAdder: missing keyIterator')
+    })
   }
 
   toJSON() {
