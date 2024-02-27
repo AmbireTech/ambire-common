@@ -253,15 +253,11 @@ describe('AccountAdder', () => {
     const unsubscribe1 = accountAdder.onUpdate(() => {
       emitCounter1++
 
-      if (emitCounter1 === 1) {
-        accountAdder.selectedAccounts = [
-          {
-            account: basicAccount,
-            accountKeys: [{ addr: basicAccount.addr, slot: 1, index: 0 }],
-            isLinked: false
-          }
-        ]
+      if (emitCounter1 === 3) {
+        accountAdder.selectAccount(basicAccount)
+      }
 
+      if (emitCounter1 === 4) {
         const selectedAccountAddr = accountAdder.selectedAccounts.map((a) => a.account.addr)
         expect(selectedAccountAddr).toContain(basicAccount.addr)
 
@@ -276,7 +272,7 @@ describe('AccountAdder', () => {
 
       // First emit is triggered when Account Adder initializes, the second
       // emit is triggered when the account is selected.
-      if (emitCounter2 === 2) {
+      if (emitCounter2 === 5) {
         expect(accountAdder.selectedAccounts).toHaveLength(0)
 
         unsubscribe1()
@@ -291,6 +287,7 @@ describe('AccountAdder', () => {
       pageSize: 1,
       hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
     })
+    accountAdder.setPage({ page: 1, networks, providers })
   })
 
   test('should be able to select all the keys of a selected basic account (always one key)', (done) => {
