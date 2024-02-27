@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/brace-style */
-import { ethers, isAddress, TransactionResponse } from 'ethers'
+import { ethers, getAddress, isAddress, TransactionResponse } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFactory.json'
@@ -788,7 +788,9 @@ export class MainController extends EventEmitter {
     )
     const additionalHints: GetOptions['additionalHints'] = humanization
       .map((call) =>
-        !call.fullVisualization ? [] : call.fullVisualization.map((vis) => vis.address || '')
+        !call.fullVisualization
+          ? []
+          : call.fullVisualization.map((vis) => (vis.address ? getAddress(vis.address) : ''))
       )
       .flat()
       .filter((x) => isAddress(x))
