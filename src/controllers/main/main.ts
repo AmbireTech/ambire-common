@@ -790,7 +790,9 @@ export class MainController extends EventEmitter {
       .map((call) =>
         !call.fullVisualization
           ? []
-          : call.fullVisualization.map((vis) => (vis.address ? getAddress(vis.address) : ''))
+          : call.fullVisualization.map((vis) =>
+              vis.address && isAddress(vis.address) ? getAddress(vis.address) : ''
+            )
       )
       .flat()
       .filter((x) => isAddress(x))
