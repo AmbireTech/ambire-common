@@ -298,7 +298,6 @@ describe('AccountAdder', () => {
     let emitCounter1 = 0
     const unsubscribe1 = accountAdder.onUpdate(() => {
       emitCounter1++
-      console.log('emitCounter1', accountAdder.accountsLoading)
 
       // First - init, second - start deriving, third - deriving done
       if (emitCounter1 === 3) {
@@ -309,7 +308,6 @@ describe('AccountAdder', () => {
     let emitCounter2 = 0
     const unsubscribe2 = accountAdder.onUpdate(() => {
       emitCounter2++
-      console.log('emitCounter2', emitCounter2)
 
       // Select account emit is triggered
       if (emitCounter2 === 4) {
