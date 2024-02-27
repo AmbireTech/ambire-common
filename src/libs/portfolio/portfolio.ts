@@ -1,7 +1,7 @@
 /* eslint-disable no-restricted-syntax */
 /* eslint-disable guard-for-in */
 
-import { JsonRpcProvider, Provider, ZeroAddress } from 'ethers'
+import { getAddress, JsonRpcProvider, Provider, ZeroAddress } from 'ethers'
 
 import BalanceGetter from '../../../contracts/compiled/BalanceGetter.json'
 import NFTGetter from '../../../contracts/compiled/NFTGetter.json'
@@ -135,7 +135,7 @@ export class Portfolio {
     }
 
     // Remove duplicates
-    hints.erc20s = [...new Set(hints.erc20s)]
+    hints.erc20s = [...new Set(hints.erc20s.map((erc20) => getAddress(erc20)))]
 
     // This also allows getting prices, this is used for more exotic tokens that cannot be retrieved via Coingecko
     const priceCache: PriceCache = localOpts.priceCache || new Map()

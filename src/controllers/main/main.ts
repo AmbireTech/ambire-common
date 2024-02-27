@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/brace-style */
-import { ethers, isAddress, TransactionResponse } from 'ethers'
+import { ethers, getAddress, isAddress, TransactionResponse } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFactory.json'
@@ -194,7 +194,8 @@ export class MainController extends EventEmitter {
       this.keystore
     )
     this.accountAdder = new AccountAdderController({
-      storage: this.#storage,
+      alreadyImportedAccounts: this.accounts,
+      keystore: this.keystore,
       relayerUrl,
       fetch: this.#fetch
     })
@@ -215,10 +216,15 @@ export class MainController extends EventEmitter {
     // and then we call it's methods
     await wait(1)
     this.emitUpdate()
-    ;[this.accounts, this.selectedAccount] = await Promise.all([
+    const [accounts, selectedAccount] = await Promise.all([
       this.#storage.get('accounts', []),
       this.#storage.get('selectedAccount', null)
     ])
+    // Do not re-assign `this.accounts`, use `push` instead in order NOT to break
+    // the the reference link between `this.accounts` in the nested controllers.
+    this.accounts.push(...accounts)
+    this.selectedAccount = selectedAccount
+
     // @TODO reload those
     // @TODO error handling here
     this.accountStates = await this.#getAccountsInfo(this.accounts)
@@ -408,7 +414,9 @@ export class MainController extends EventEmitter {
         try {
           this.gasPrices[network] = await getGasPriceRecommendations(
             this.settings.providers[network],
-            this.settings.networks.find((net) => net.id === network)!
+            this.settings.networks.find((net) => net.id === network)!,
+            -1,
+            this.selectedAccount ? this.accountStates[this.selectedAccount][network] : null
           )
         } catch (e: any) {
           this.emitError({
@@ -534,7 +542,12 @@ export class MainController extends EventEmitter {
       ...newAccounts
     ]
     await this.#storage.set('accounts', nextAccounts)
-    this.accounts = nextAccounts
+    // Clean the existing array ref and use `push` instead of re-assigning
+    // `this.accounts` to a new array in order NOT to break the the reference
+    // link between `this.accounts` in the nested controllers.
+    this.accounts.length = 0
+    this.accounts.push(...nextAccounts)
+
     await this.updateAccountStates()
 
     this.emitUpdate()
@@ -786,7 +799,11 @@ export class MainController extends EventEmitter {
     )
     const additionalHints: GetOptions['additionalHints'] = humanization
       .map((call) =>
-        !call.fullVisualization ? [] : call.fullVisualization.map((vis) => vis.address || '')
+        !call.fullVisualization
+          ? []
+          : call.fullVisualization.map((vis) =>
+              vis.address && isAddress(vis.address) ? getAddress(vis.address) : ''
+            )
       )
       .flat()
       .filter((x) => isAddress(x))
@@ -1089,13 +1106,17 @@ export class MainController extends EventEmitter {
     }
 
     if (transactionRes) {
-      await this.activity.addAccountOp({
+      const submittedAccountOp: SubmittedAccountOp = {
         ...accountOp,
         status: AccountOpStatus.BroadcastedButNotConfirmed,
         txnId: transactionRes.hash,
         nonce: BigInt(transactionRes.nonce),
         timestamp: new Date().getTime()
-      } as SubmittedAccountOp)
+      }
+      if (accountOp.gasFeePayment?.isERC4337) {
+        submittedAccountOp.userOpHash = transactionRes.hash
+      }
+      await this.activity.addAccountOp(submittedAccountOp)
       accountOp.calls.forEach((call) => {
         if (call.fromUserRequestId) {
           this.removeUserRequest(call.fromUserRequestId)

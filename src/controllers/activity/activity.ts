@@ -1,4 +1,7 @@
+/* eslint-disable import/no-extraneous-dependencies */
+
 import { JsonRpcProvider } from 'ethers'
+import fetch from 'node-fetch'
 
 import { networks } from '../../consts/networks'
 import { AccountStates } from '../../interfaces/account'
@@ -7,7 +10,7 @@ import { Storage } from '../../interfaces/storage'
 import { Message } from '../../interfaces/userRequest'
 import { AccountOp, AccountOpStatus } from '../../libs/accountOp/accountOp'
 import { isErc4337Broadcast } from '../../libs/userOperation/userOperation'
-import bundler from '../../services/bundlers'
+import { fetchUserOp } from '../../services/explorers/jiffyscan'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 export interface Pagination {
@@ -26,6 +29,7 @@ export interface SubmittedAccountOp extends AccountOp {
   txnId: string
   nonce: bigint
   success?: boolean
+  userOpHash?: string
   timestamp: number
 }
 
@@ -276,14 +280,14 @@ export class ActivityController extends EventEmitter {
 
               shouldEmitUpdate = true
 
-              const is4337 = isErc4337Broadcast(
-                networkConfig!,
-                this.#accountStates[accountOp.accountAddr][accountOp.networkId]
-              )
               try {
-                const receipt = is4337
-                  ? await bundler.getReceipt(accountOp.txnId, networkConfig!)
-                  : await provider.getTransactionReceipt(accountOp.txnId)
+                let txnId = accountOp.txnId
+                if (accountOp.userOpHash) {
+                  txnId = await fetchUserOp(accountOp.userOpHash, fetch)
+                  this.#accountsOps[this.filters!.account][network][accountOpIndex].txnId = txnId
+                }
+
+                const receipt = await provider.getTransactionReceipt(txnId)
                 if (receipt) {
                   this.#accountsOps[this.filters!.account][network][accountOpIndex].status =
                     receipt.status ? AccountOpStatus.Success : AccountOpStatus.Failure
@@ -300,10 +304,10 @@ export class ActivityController extends EventEmitter {
               }
 
               if (
-                (!is4337 &&
+                (!accountOp.userOpHash &&
                   this.#accountStates[accountOp.accountAddr][accountOp.networkId].nonce >
                     accountOp.nonce) ||
-                (is4337 &&
+                (accountOp.userOpHash &&
                   this.#accountStates[accountOp.accountAddr][accountOp.networkId].erc4337Nonce >
                     accountOp.nonce)
               ) {
