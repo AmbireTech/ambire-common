@@ -193,9 +193,7 @@ describe('Main Controller ', () => {
           ]
         ]
       },
-      accountKeyAddr: signerAddr,
-      slot: 1,
-      index: 0,
+      accountKeys: [{ addr: signerAddr, index: 0, slot: 1 }],
       isLinked: false
     }
 
@@ -205,7 +203,6 @@ describe('Main Controller ', () => {
       )
       controller.accountAdder.init({
         keyIterator,
-        preselectedAccounts: [],
         hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
       })
       controller.accountAdder.addAccounts([accountPendingCreation]).catch(console.error)

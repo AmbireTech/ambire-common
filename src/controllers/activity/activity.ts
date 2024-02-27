@@ -1,4 +1,7 @@
+/* eslint-disable import/no-extraneous-dependencies */
+
 import { JsonRpcProvider } from 'ethers'
+import fetch from 'node-fetch'
 
 import { networks } from '../../consts/networks'
 import { AccountStates } from '../../interfaces/account'
@@ -7,7 +10,7 @@ import { Storage } from '../../interfaces/storage'
 import { Message } from '../../interfaces/userRequest'
 import { AccountOp, AccountOpStatus } from '../../libs/accountOp/accountOp'
 import { isErc4337Broadcast } from '../../libs/userOperation/userOperation'
-import bundler from '../../services/bundlers'
+import { fetchUserOp } from '../../services/explorers/jiffyscan'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 export interface Pagination {
@@ -278,19 +281,16 @@ export class ActivityController extends EventEmitter {
               shouldEmitUpdate = true
 
               try {
-                const receipt = accountOp.userOpHash
-                  ? await bundler.getReceipt(accountOp.userOpHash, networkConfig!)
-                  : await provider.getTransactionReceipt(accountOp.txnId)
+                let txnId = accountOp.txnId
+                if (accountOp.userOpHash) {
+                  txnId = await fetchUserOp(accountOp.userOpHash, fetch)
+                  this.#accountsOps[this.filters!.account][network][accountOpIndex].txnId = txnId
+                }
+
+                const receipt = await provider.getTransactionReceipt(txnId)
                 if (receipt) {
                   this.#accountsOps[this.filters!.account][network][accountOpIndex].status =
                     receipt.status ? AccountOpStatus.Success : AccountOpStatus.Failure
-
-                  // set the original txn ID once we have it from the bundler
-                  if (accountOp.userOpHash) {
-                    this.#accountsOps[this.filters!.account][network][accountOpIndex].txnId =
-                      receipt.receipt.transactionHash
-                  }
-
                   return
                 }
               } catch {
