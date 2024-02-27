@@ -5,21 +5,19 @@ import fetch from 'node-fetch'
 import { describe, expect, jest, test } from '@jest/globals'
 
 import { produceMemoryStore } from '../../../test/helpers'
-import humanizerJSON from '../../consts/humanizerInfo.json'
+import humanizerJSON from '../../consts/humanizer/humanizerInfo.json'
 import { ErrorRef } from '../../controllers/eventEmitter/eventEmitter'
 import { Account } from '../../interfaces/account'
 import { Key } from '../../interfaces/keystore'
 import { Storage } from '../../interfaces/storage'
 import { Message, TypedMessage } from '../../interfaces/userRequest'
 import { AccountOp } from '../accountOp/accountOp'
-import { callsHumanizer, messageHumanizer } from './index'
-import { HumanizerVisualization, IrCall, IrMessage } from './interfaces'
-
-const HUMANIZER_META_KEY = 'HumanizerMeta'
+import { callsHumanizer, messageHumanizer, HUMANIZER_META_KEY } from './index'
+import { HumanizerMeta, HumanizerVisualization, IrCall, IrMessage } from './interfaces'
 
 // const address1 = '0x6942069420694206942069420694206942069420'
-const address2 = '0xaAaAaAaaAaAaAaaAaAAAAAAAAaaaAaAaAaaAaaAa'
-const WETH_ADDRESS = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2'
+const address2 = '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+const WETH_ADDRESS = '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2'
 
 const humanizerMeta = humanizerJSON
 const accountOp: AccountOp = {
@@ -38,12 +36,12 @@ const accountOp: AccountOp = {
   // This is used when we have an account recovery to finalize before executing the AccountOp,
   // And we set this to the recovery finalization AccountOp; could be used in other scenarios too in the future,
   // for example account migration (from v1 QuickAcc to v2)
-  accountOpToExecuteBefore: null,
+  accountOpToExecuteBefore: null
   // This is fed into the humanizer to help visualize the accountOp
   // This can contain info like the value of specific share tokens at the time of signing,
   // or any other data that needs to otherwise be retrieved in an async manner and/or needs to be
   // "remembered" at the time of signing in order to visualize history properly
-  humanizerMeta: {}
+  // humanizerMeta: {}
 }
 
 const accounts: Account[] = [
@@ -66,10 +64,10 @@ const keys: Key[] = [
 const transactions = {
   generic: [
     // simple transafer
-    { to: '0xc4Ce03B36F057591B2a360d773eDB9896255051e', value: BigInt(10 ** 18), data: '0x' },
+    { to: '0xc4ce03b36f057591b2a360d773edb9896255051e', value: BigInt(10 ** 18), data: '0x' },
     // simple contract call (WETH approve)
     {
-      to: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
+      to: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
       value: BigInt(0),
       data: '0x095ea7b3000000000000000000000000e5c783ee536cf5e63e792988335c4255169be4e1ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'
     }
@@ -193,7 +191,7 @@ const transactions = {
   ],
   unknownFuncSelector: [
     {
-      to: '0x519856887AF544De7e67f51A4F2271521b01432b',
+      to: '0x519856887af544de7e67f51a4f2271521b01432b',
       value: BigInt(0),
       data: '0xd96a094a0000000000000000000000000000000000000000000000000000000064c233bf'
     }
@@ -223,7 +221,7 @@ describe('Humanizer main function', () => {
     storage = produceMemoryStore()
     await storage.set(HUMANIZER_META_KEY, humanizerMeta)
     accountOp.calls = []
-    accountOp.humanizerMeta = humanizerJSON
+    accountOp.humanizerMeta = { ...(humanizerJSON as HumanizerMeta) }
   })
 
   test('generic humanize', async () => {
@@ -239,21 +237,23 @@ describe('Humanizer main function', () => {
         { type: 'label', content: 'to' },
         {
           type: 'address',
-          address: '0xc4Ce03B36F057591B2a360d773eDB9896255051e'
+          address: '0xc4ce03b36f057591b2a360d773edb9896255051e'
         }
       ],
       [
         { type: 'action', content: 'Grant approval' },
         { type: 'label', content: 'for' },
         {
-          type: 'label',
-          content: 'all WETH'
+          type: 'token',
+          address: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
+          amount: 115792089237316195423570985008687907853269984665640564039457584007913129639935n,
+          humanizerMeta: { token: { symbol: 'WETH', decimals: 18 } }
         },
         { type: 'label', content: 'to' },
         {
           type: 'address',
-          address: '0xE5c783EE536cf5E63E792988335c4255169be4E1',
-          name: 'OpenSea (old)'
+          address: '0xe5c783ee536cf5e63e792988335c4255169be4e1',
+          humanizerMeta: { name: 'OpenSea (old)', isSC: {} }
         }
       ]
     ]
@@ -265,7 +265,7 @@ describe('Humanizer main function', () => {
       })
     })
     accountOp.calls = [...transactions.generic]
-    await callsHumanizer(accountOp, {}, storage, fetch, onUpdate, emitError)
+    await callsHumanizer(accountOp, storage, fetch, onUpdate, emitError)
     expect(onUpdate).toHaveBeenCalledTimes(1)
   })
 
@@ -275,7 +275,7 @@ describe('Humanizer main function', () => {
       { type: 'label', content: 'from' },
       {
         type: 'address',
-        address: '0x519856887AF544De7e67f51A4F2271521b01432b'
+        address: '0x519856887af544de7e67f51a4f2271521b01432b'
       }
     ]
     let iterations = 0
@@ -295,15 +295,16 @@ describe('Humanizer main function', () => {
       iterations += 1
     })
     accountOp.calls = [...transactions.unknownFuncSelector]
-    await callsHumanizer(accountOp, {}, storage, fetch, onUpdate, emitError)
+    await callsHumanizer(accountOp, storage, fetch, onUpdate, emitError)
     expect(onUpdate).toHaveBeenCalledTimes(2)
   })
 })
 
 describe('TypedMessages', () => {
   let storage: Storage
-  beforeEach(() => {
+  beforeEach(async () => {
     storage = produceMemoryStore()
+    await storage.set(HUMANIZER_META_KEY, { abis: { NO_ABI: {} }, knownAddresses: {} })
   })
   test('simple humanization', async () => {
     const message = {
@@ -330,7 +331,7 @@ describe('TypedMessages', () => {
         name: 'random contract',
         version: '1',
         chainId: 1n,
-        verifyingContract: '0x000000000022D473030F116dDEE9F6B43aC78BA3',
+        verifyingContract: '0x000000000022d473030f116ddee9f6b43ac78ba3',
         salt: '1'
       },
       types: { PermitBatch: [{ name: 'details', type: 'PermitDetails[]' }] },
@@ -362,17 +363,21 @@ describe('TypedMessages', () => {
       { type: 'action', content: 'Permit' },
       {
         type: 'address',
-        address: '0x000000000022D473030F116dDEE9F6B43aC78BA3',
+        address: '0x000000000022d473030f116ddee9f6b43ac78ba3',
         name: 'Permit 2 contract'
       },
       { type: 'label', content: 'to use' },
       {
         type: 'token',
-        address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
+        address: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
         amount: 1000000000000000000n,
-        decimals: 18,
-        readableAmount: '1.0',
-        symbol: 'WETH'
+        humanizerMeta: {
+          token: {
+            decimals: 18,
+            symbol: 'WETH'
+          }
+        },
+        warning: true
       },
       { type: 'label', content: 'for time period' },
       { type: 'deadline', amount: 968187600000n },
@@ -382,17 +387,21 @@ describe('TypedMessages', () => {
       { type: 'action', content: 'Permit' },
       {
         type: 'address',
-        address: '0x000000000022D473030F116dDEE9F6B43aC78BA3',
+        address: '0x000000000022d473030f116ddee9f6b43ac78ba3',
         name: 'Permit 2 contract'
       },
       { type: 'label', content: 'to use' },
       {
         type: 'token',
-        address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
+        address: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
         amount: 500000000000000000n,
-        decimals: 18,
-        readableAmount: '0.5',
-        symbol: 'WETH'
+        humanizerMeta: {
+          token: {
+            decimals: 18,
+            symbol: 'WETH'
+          }
+        },
+        warning: true
       },
       { type: 'label', content: 'for time period' },
       { type: 'deadline', amount: 969187600000n },
@@ -400,7 +409,6 @@ describe('TypedMessages', () => {
       { type: 'deadline', amount: 968187600000n }
     ]
     const onUpdate = jest.fn((newMessage: IrMessage) => {
-      expect(newMessage).toMatchObject({ warnings: [], fullVisualization: expect.anything() })
       if (newMessage.id === 1)
         newMessage.fullVisualization?.forEach((v, i) =>
           expect(expectedVisualizations[i]).toMatchObject(v)
@@ -412,8 +420,8 @@ describe('TypedMessages', () => {
         ])
     })
 
-    await messageHumanizer(messages[0], {}, storage, fetch, onUpdate, emitError)
-    await messageHumanizer(messages[1], {}, storage, fetch, onUpdate, emitError)
+    await messageHumanizer(messages[0], storage, fetch, onUpdate, emitError)
+    await messageHumanizer(messages[1], storage, fetch, onUpdate, emitError)
     // two times from first message, one from the second
     expect(onUpdate).toHaveBeenCalledTimes(3)
   })
@@ -425,7 +433,7 @@ describe('with (Account | Key)[] arg', () => {
     storage = produceMemoryStore()
     await storage.set(HUMANIZER_META_KEY, humanizerMeta)
     accountOp.calls = []
-    accountOp.humanizerMeta = humanizerJSON
+    accountOp.humanizerMeta = { ...(humanizerJSON as HumanizerMeta) }
   })
   test('with calls', async () => {
     const expectedVisualizations = [
@@ -434,14 +442,14 @@ describe('with (Account | Key)[] arg', () => {
         { type: 'label', content: 'for' },
         { type: 'token' },
         { type: 'label', content: 'to' },
-        { name: 'First account' }
+        { address: accounts[0].addr.toLowerCase() }
       ],
       [
         { type: 'action', content: 'Grant approval' },
         { type: 'label', content: 'for' },
         { type: 'token' },
         { type: 'label', content: 'to' },
-        { name: 'Second account' }
+        { address: keys[0].addr.toLowerCase() }
       ]
     ]
     accountOp.calls = [...transactions.accountOrKeyArg]
@@ -454,8 +462,7 @@ describe('with (Account | Key)[] arg', () => {
       )
     })
 
-    const knownAddresses = { [accounts[0].addr]: 'First account', [keys[0].addr]: 'Second account' }
-    await callsHumanizer(accountOp, knownAddresses, storage, fetch, onUpdate, emitError)
+    await callsHumanizer(accountOp, storage, fetch, onUpdate, emitError)
     expect(onUpdate).toHaveBeenCalledTimes(1)
   })
 })

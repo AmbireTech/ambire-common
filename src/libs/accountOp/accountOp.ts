@@ -1,5 +1,6 @@
 import { ethers } from 'ethers'
 import { Key } from 'interfaces/keystore'
+import { HumanizerMeta } from 'libs/humanizer/interfaces'
 
 import { networks } from '../../consts/networks'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
@@ -21,6 +22,7 @@ export interface GasFeePayment {
   amount: bigint
   simulatedGasLimit: bigint
   maxPriorityFeePerGas?: bigint
+  baseFeePerGas?: bigint
 }
 
 export enum AccountOpStatus {
@@ -63,7 +65,7 @@ export interface AccountOp {
   // This can contain info like the value of specific share tokens at the time of signing,
   // or any other data that needs to otherwise be retrieved in an async manner and/or needs to be
   // "remembered" at the time of signing in order to visualize history properly
-  humanizerMeta?: { [key: string]: any }
+  humanizerMeta?: HumanizerMeta
   txnId?: string
   status?: AccountOpStatus
   // in the case of ERC-4337, we need an UserOperation structure for the AccountOp

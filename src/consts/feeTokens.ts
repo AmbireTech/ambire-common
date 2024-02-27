@@ -121,6 +121,11 @@ export default [
     networkId: 'optimism'
   },
   {
+    // USDC
+    address: '0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85',
+    networkId: 'optimism'
+  },
+  {
     // DAI
     address: '0xDA10009cBd5D07dd0CeCc66161FC93D7c9000da1',
     networkId: 'optimism'

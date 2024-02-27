@@ -397,12 +397,10 @@ export class PortfolioController extends EventEmitter {
         _accountState[network.id] = { isReady: true, isLoading: false, errors: [], result }
         this.emitUpdate()
         return true
-      } catch (_e: any) {
-        const e = _e instanceof Error ? _e : new Error(_e?.error || _e?.message || _e)
-
+      } catch (e: any) {
         this.emitError({
           level: 'silent',
-          message: e.message,
+          message: "Error while executing the 'get' function in the portfolio library.",
           error: e
         })
         state.isLoading = false

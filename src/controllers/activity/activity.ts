@@ -26,6 +26,7 @@ export interface SubmittedAccountOp extends AccountOp {
   txnId: string
   nonce: bigint
   success?: boolean
+  userOpHash?: string
   timestamp: number
 }
 
@@ -276,17 +277,20 @@ export class ActivityController extends EventEmitter {
 
               shouldEmitUpdate = true
 
-              const is4337 = isErc4337Broadcast(
-                networkConfig!,
-                this.#accountStates[accountOp.accountAddr][accountOp.networkId]
-              )
               try {
-                const receipt = is4337
-                  ? await bundler.getReceipt(accountOp.txnId, networkConfig!)
+                const receipt = accountOp.userOpHash
+                  ? await bundler.getReceipt(accountOp.userOpHash, networkConfig!)
                   : await provider.getTransactionReceipt(accountOp.txnId)
                 if (receipt) {
                   this.#accountsOps[this.filters!.account][network][accountOpIndex].status =
                     receipt.status ? AccountOpStatus.Success : AccountOpStatus.Failure
+
+                  // set the original txn ID once we have it from the bundler
+                  if (accountOp.userOpHash) {
+                    this.#accountsOps[this.filters!.account][network][accountOpIndex].txnId =
+                      receipt.receipt.transactionHash
+                  }
+
                   return
                 }
               } catch {
@@ -300,10 +304,10 @@ export class ActivityController extends EventEmitter {
               }
 
               if (
-                (!is4337 &&
+                (!accountOp.userOpHash &&
                   this.#accountStates[accountOp.accountAddr][accountOp.networkId].nonce >
                     accountOp.nonce) ||
-                (is4337 &&
+                (accountOp.userOpHash &&
                   this.#accountStates[accountOp.accountAddr][accountOp.networkId].erc4337Nonce >
                     accountOp.nonce)
               ) {

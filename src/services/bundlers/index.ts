@@ -1,4 +1,4 @@
-import {Bundler} from './bundler'
+import { Bundler } from './bundler'
 
 const bundler = new Bundler()
 export default bundler

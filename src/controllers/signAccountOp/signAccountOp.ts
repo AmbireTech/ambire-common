@@ -9,7 +9,6 @@ import { Account, AccountStates } from '../../interfaces/account'
 import { ExternalSignerControllers, Key } from '../../interfaces/keystore'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { Storage } from '../../interfaces/storage'
-import { getKnownAddressLabels } from '../../libs/account/account'
 import { AccountOp, GasFeePayment, getSignableCalls } from '../../libs/accountOp/accountOp'
 import { EstimateResult } from '../../libs/estimate/estimate'
 import { GasRecommendation, getCallDataAdditionalByNetwork } from '../../libs/gasPrice/gasPrice'
@@ -20,6 +19,7 @@ import { getExecuteSignature, getTypedData, wrapStandard } from '../../libs/sign
 import { UserOperation } from '../../libs/userOperation/types'
 import {
   getOneTimeNonce,
+  getPreVerificationGas,
   isErc4337Broadcast,
   shouldUseOneTimeNonce,
   shouldUsePaymaster
@@ -62,6 +62,7 @@ type FanSpeed = {
   amountFormatted: string
   amountUsd: string
   maxPriorityFeePerGas?: bigint
+  baseFeePerGas?: bigint
 }
 
 // declare the statuses we don't want state updates on
@@ -122,6 +123,10 @@ export class SignAccountOpController extends EventEmitter {
 
   status: Status | null = null
 
+  gasUsedTooHigh: boolean
+
+  gasUsedTooHighAgreed: boolean
+
   #callRelayer: Function
 
   constructor(
@@ -155,6 +160,8 @@ export class SignAccountOpController extends EventEmitter {
     this.#userOperation = null
 
     this.#humanizeAccountOp()
+    this.gasUsedTooHigh = false
+    this.gasUsedTooHighAgreed = false
   }
 
   get isInitialized(): boolean {
@@ -186,15 +193,8 @@ export class SignAccountOpController extends EventEmitter {
   }
 
   #humanizeAccountOp() {
-    const knownAddressLabels = getKnownAddressLabels(
-      this.#accounts,
-      this.#settings.accountPreferences,
-      this.#keystore.keys,
-      this.#settings.keyPreferences
-    )
     callsHumanizer(
       this.accountOp,
-      knownAddressLabels,
       this.#storage,
       this.#fetch,
       (humanizedCalls) => {
@@ -270,7 +270,15 @@ export class SignAccountOpController extends EventEmitter {
     }
 
     if (!this.#feeSpeedsLoading && !this.feeSpeeds.length) {
-      errors.push('Unable to estimate transaction fee speeds. Try changing the fee token.')
+      if (!this.feeTokenResult?.priceIn.length) {
+        errors.push(
+          `Currently, ${this.feeTokenResult?.symbol} is unavailable as a fee token as we're experiencing troubles fetching its price. Please select another or contact support`
+        )
+      } else {
+        errors.push(
+          'Unable to estimate the transaction fee. Please try changing the fee token or contact support.'
+        )
+      }
     }
 
     if (this.feeSpeeds.some((speed) => speed.amountUsd === null)) {
@@ -296,7 +304,8 @@ export class SignAccountOpController extends EventEmitter {
     speed,
     signingKeyAddr,
     signingKeyType,
-    accountOp
+    accountOp,
+    gasUsedTooHighAgreed
   }: {
     accountOp?: AccountOp
     gasPrices?: GasRecommendation[]
@@ -306,6 +315,7 @@ export class SignAccountOpController extends EventEmitter {
     speed?: FeeSpeed
     signingKeyAddr?: Key['addr']
     signingKeyType?: Key['type']
+    gasUsedTooHighAgreed?: boolean
   }) {
     // once the user commits to the things he sees on his screen,
     // we need to be sure nothing changes afterwards.
@@ -334,6 +344,7 @@ export class SignAccountOpController extends EventEmitter {
         this.accountOp.asUserOperation = this.#userOperation
       }
 
+      this.gasUsedTooHigh = estimation.gasUsed > 10000000n
       this.#estimation = estimation
     }
 
@@ -359,6 +370,8 @@ export class SignAccountOpController extends EventEmitter {
       this.accountOp!.signingKeyType = signingKeyType
     }
 
+    if (gasUsedTooHighAgreed !== undefined) this.gasUsedTooHighAgreed = gasUsedTooHighAgreed
+
     // Set defaults, if some of the optional params are omitted
     this.#setDefaults()
     // Here, we expect to have most of the fields set, so we can safely set GasFeePayment
@@ -383,9 +396,14 @@ export class SignAccountOpController extends EventEmitter {
       // Update if status is NOT already set (that's the initial state update)
       // or in general if the user is not in the middle of signing (otherwise
       // it resets the loading state back to ready to sign)
-      (!this.status || !isInTheMiddleOfSigning)
+      (!this.status || !isInTheMiddleOfSigning) &&
+      // if the gas used is too high, do not allow the user to sign
+      // until he explicitly agrees to the risks
+      (!this.gasUsedTooHigh || this.gasUsedTooHighAgreed)
     ) {
       this.status = { type: SigningStatus.ReadyToSign }
+    } else {
+      this.status = null
     }
     this.emitUpdate()
   }
@@ -580,6 +598,7 @@ export class SignAccountOpController extends EventEmitter {
 
       if ('maxPriorityFeePerGas' in gasRecommendation) {
         fee.maxPriorityFeePerGas = gasRecommendation.maxPriorityFeePerGas
+        fee.baseFeePerGas = gasRecommendation.baseFeePerGas
       }
 
       return fee
@@ -840,6 +859,23 @@ export class SignAccountOpController extends EventEmitter {
           userOperation.callData = ambireAccount.encodeFunctionData('executeBySender', [
             getSignableCalls(this.accountOp)
           ])
+        }
+
+        // TODO: ARBITRUM 4337 IMPLEMENTATION
+        // TODO: Not working for networks that do not support EIP-1559 and demand a L1 fee
+        // Set the real preVerificationGas
+        if (feeTokenEstimation.addedNative > 0n) {
+          const l1FeeAsL2Gas =
+            feeTokenEstimation.addedNative /
+            BigInt(this.feeSpeeds.find((speed) => speed.type === 'fast')?.baseFeePerGas!)
+
+          userOperation.preVerificationGas = getPreVerificationGas(
+            userOperation,
+            usesPaymaster,
+            l1FeeAsL2Gas
+          )
+        } else {
+          userOperation.preVerificationGas = getPreVerificationGas(userOperation, usesPaymaster)
         }
 
         if (usesPaymaster) {
