@@ -74,8 +74,8 @@ export function getDeadlineText(deadline: bigint): string {
   return `valid until ${new Date(Number(deadline)).toLocaleString()}`
 }
 
-export function getDeadline(deadlineSecs: bigint): HumanizerVisualization {
-  const deadline = deadlineSecs * 1000n
+export function getDeadline(deadlineSecs: bigint | number): HumanizerVisualization {
+  const deadline = BigInt(deadlineSecs) * 1000n
   return {
     type: 'deadline',
     amount: deadline
