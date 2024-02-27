@@ -95,8 +95,6 @@ export class PortfolioController extends EventEmitter {
 
   #additionalHints: GetOptions['additionalHints'] = []
 
-  #tokenPreferences: any[] = []
-
   constructor(
     storage: Storage,
     providers: RPCProviders,
@@ -118,7 +116,6 @@ export class PortfolioController extends EventEmitter {
   async #load() {
     try {
       this.tokenPreferences = await this.#storage.get('tokenPreferences', [])
-      this.#tokenPreferences = await this.#storage.get('tokenPreferences', [])
     } catch (e) {
       this.emitError({
         message:
@@ -131,13 +128,12 @@ export class PortfolioController extends EventEmitter {
     this.emitUpdate()
   }
 
-  async updateLocalTokenPreferences(tokens: any[]) {
-    this.#tokenPreferences = tokens
+  updateLocalTokenPreferences(tokens: any[]) {
+    this.#additionalHints = [...this.#additionalHints, ...tokens]
   }
 
   async updateTokenPreferences(tokens: any[]) {
-    this.#tokenPreferences = []
-
+    this.resetAdditionalHints()
     this.tokenPreferences = tokens
     await this.#storage.set('tokenPreferences', tokens)
   }
@@ -388,8 +384,8 @@ export class PortfolioController extends EventEmitter {
       state.isLoading = true
       this.emitUpdate()
 
-      const tokenPreferences = [...this.tokenPreferences, ...this.#tokenPreferences]
-      console.log({ tokenPreferences })
+      const tokenPreferences = this.tokenPreferences
+
       try {
         const result = await portfolioLib.get(accountId, {
           priceRecency: 60000,
