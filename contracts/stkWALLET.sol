@@ -39,7 +39,7 @@ contract stkWALLET {
 	}
 
 	function transfer(address to, uint amount) external returns (bool success) {
-		require(to != address(this), "BAD_ADDRESS");
+		require(to != address(this) && to != address(0), "BAD_ADDRESS");
 		uint shareValue = xWallet.shareValue();
 		uint sharesAmount = (amount * 1e18) / shareValue;
 		shares[msg.sender] = shares[msg.sender] - sharesAmount;
@@ -50,6 +50,7 @@ contract stkWALLET {
 	}
 
 	function transferFrom(address from, address to, uint amount) external returns (bool success) {
+		require(to != address(this) && to != address(0), "BAD_ADDRESS");
 		uint shareValue = xWallet.shareValue();
 		uint sharesAmount = (amount * 1e18) / shareValue;
 		shares[from] = shares[from] - sharesAmount;
