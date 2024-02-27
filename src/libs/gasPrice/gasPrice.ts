@@ -10,8 +10,10 @@ import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
 import { UserOperation } from '../userOperation/types'
 import {
   getCleanUserOp,
+  getOneTimeNonce,
   getPaymasterSpoof,
-  getSigForCalculations
+  getSigForCalculations,
+  isErc4337Broadcast
 } from '../userOperation/userOperation'
 
 // https://eips.ethereum.org/EIPS/eip-1559
@@ -117,7 +119,8 @@ async function refetchBlock(
 export async function getGasPriceRecommendations(
   provider: Provider,
   network: NetworkDescriptor,
-  blockTag: string | number = -1
+  blockTag: string | number = -1,
+  selectedAccountState: AccountOnchainState | null = null
 ): Promise<GasRecommendation[]> {
   const lastBlock = await refetchBlock(provider, blockTag)
   // https://github.com/ethers-io/ethers.js/issues/3683#issuecomment-1436554995
@@ -128,7 +131,7 @@ export async function getGasPriceRecommendations(
   // on the bundler. But estimation is pretty difficult and each network
   // comes with its caveats. Also, the bundlers will start disallowing soon
   // user ops with low fees, making our estimation riskier
-  if (network.erc4337?.enabled) {
+  if (selectedAccountState && isErc4337Broadcast(network, selectedAccountState)) {
     return bundler.pollGetUserOpGasPrice(network)
   }
 
@@ -191,17 +194,20 @@ export function getProbableCallData(
     localOp.callGasLimit = toBeHex(100000n)
     localOp.signature = getSigForCalculations()
 
-    // TODO<Bobby>: This is not perfect
     if (localOp.requestType !== 'standard') {
-      localOp.paymasterAndData = getPaymasterSpoof()
+      localOp.nonce = getOneTimeNonce(localOp)
     }
 
+    // include the paymaster as a fee commitment always as we can't detect at
+    // this stage whether we're using a fee token (should use paymaster)
+    // and it's better to overestimate instead of under
+    localOp.paymasterAndData = getPaymasterSpoof()
+
     const entryPoint = new Interface(EntryPoint)
-    estimationCallData = entryPoint.encodeFunctionData('handleOps', [
+    return entryPoint.encodeFunctionData('handleOps', [
       getCleanUserOp(localOp),
       accountOp.accountAddr
     ])
-    return estimationCallData
   }
 
   // always call executeMultiple as the worts case scenario

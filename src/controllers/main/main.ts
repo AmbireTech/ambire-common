@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/brace-style */
-import { ethers, isAddress, TransactionResponse } from 'ethers'
+import { ethers, getAddress, isAddress, TransactionResponse } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFactory.json'
@@ -408,7 +408,9 @@ export class MainController extends EventEmitter {
         try {
           this.gasPrices[network] = await getGasPriceRecommendations(
             this.settings.providers[network],
-            this.settings.networks.find((net) => net.id === network)!
+            this.settings.networks.find((net) => net.id === network)!,
+            -1,
+            this.selectedAccount ? this.accountStates[this.selectedAccount][network] : null
           )
         } catch (e: any) {
           this.emitError({
@@ -786,7 +788,11 @@ export class MainController extends EventEmitter {
     )
     const additionalHints: GetOptions['additionalHints'] = humanization
       .map((call) =>
-        !call.fullVisualization ? [] : call.fullVisualization.map((vis) => vis.address || '')
+        !call.fullVisualization
+          ? []
+          : call.fullVisualization.map((vis) =>
+              vis.address && isAddress(vis.address) ? getAddress(vis.address) : ''
+            )
       )
       .flat()
       .filter((x) => isAddress(x))
