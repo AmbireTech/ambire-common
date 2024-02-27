@@ -61,7 +61,7 @@ export enum ImportStatus {
   ImportedWithoutKey = 'imported-without-key', // as a view only account
   ImportedWithSameKey = 'imported-with-same-key', // same key meaning not only
   // the key address is the same, but the key type also
-  ImportedWithDifferentKey = 'is-imported-with-different-key' // different key
+  ImportedWithDifferentKey = 'imported-with-different-key' // different key
   // meaning that could be a key with the same address but different type,
   // or a key with different address altogether.
 }
