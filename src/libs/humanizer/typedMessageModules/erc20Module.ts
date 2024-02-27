@@ -36,7 +36,7 @@ export const erc20Module: HumanizerTypedMessaageModule = (tm: TypedMessage) => {
           getLabel('Approve'),
           getAddressVisualization(tm.message.spender),
           getLabel('to use'),
-          getToken(tm.message.details.token, tm.message.details.amount),
+          getToken(tm.message.details.token, BigInt(tm.message.details.amount)),
           getDeadline(tm.message.details.expiration)
         ]
       }
