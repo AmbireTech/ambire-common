@@ -4,7 +4,6 @@ import { ExternalSignerControllers, Key } from '../../interfaces/keystore'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { Storage } from '../../interfaces/storage'
 import { Message } from '../../interfaces/userRequest'
-import { getKnownAddressLabels } from '../../libs/account/account'
 import { messageHumanizer } from '../../libs/humanizer'
 import { IrMessage } from '../../libs/humanizer/interfaces'
 import {
@@ -97,16 +96,9 @@ export class SignMessageController extends EventEmitter {
       this.messageToSign = messageToSign
       this.#accounts = accounts
       this.#accountStates = accountStates
-      const knownAddressLabels = getKnownAddressLabels(
-        this.#accounts,
-        this.#settings.accountPreferences,
-        this.#keystore.keys,
-        this.#settings.keyPreferences
-      )
 
       messageHumanizer(
         messageToSign,
-        knownAddressLabels,
         this.#storage,
         this.#fetch,
         (humanizedMessage: IrMessage) => {

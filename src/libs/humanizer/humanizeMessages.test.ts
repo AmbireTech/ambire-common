@@ -11,8 +11,8 @@ import {
 } from './typedMessageModules'
 
 const address1 = '0x6942069420694206942069420694206942069420'
-const address2 = '0xaAaAaAaaAaAaAaaAaAAAAAAAAaaaAaAaAaaAaaAa'
-const WETH_ADDRESS = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2'
+const address2 = '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+const WETH_ADDRESS = '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2'
 
 const typedMessages = {
   erc20: [
@@ -156,13 +156,12 @@ describe('typed message tests', () => {
       { type: 'action', content: 'Permit' },
       {
         type: 'address',
-        address: '0x000000000022D473030F116dDEE9F6B43aC78BA3',
-        name: 'Permit 2 contract'
+        address: '0x000000000022d473030f116ddee9f6b43ac78ba3'
       },
       { type: 'label', content: 'to use' },
       {
         type: 'token',
-        address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
+        address: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
         amount: 1000000000000000000n
       },
       { type: 'label', content: 'for time period' },
@@ -171,7 +170,7 @@ describe('typed message tests', () => {
       { type: 'deadline', amount: 968187600000n }
     ]
     tmTemplate.types = { PermitSingle: [{ name: 'details', type: 'PermitDetails' }] }
-    tmTemplate.domain.verifyingContract = '0x000000000022D473030F116dDEE9F6B43aC78BA3'
+    tmTemplate.domain.verifyingContract = '0x000000000022d473030f116ddee9f6b43ac78ba3'
     tmTemplate.message = typedMessages.permit2[0]
     const { fullVisualization } = permit2Module(tmTemplate)
     expect(expectedSingleVisualization.length).toEqual(fullVisualization?.length)
@@ -184,13 +183,12 @@ describe('typed message tests', () => {
       { type: 'action', content: 'Permit' },
       {
         type: 'address',
-        address: '0x000000000022D473030F116dDEE9F6B43aC78BA3',
-        name: 'Permit 2 contract'
+        address: '0x000000000022d473030f116ddee9f6b43ac78ba3'
       },
       { type: 'label', content: 'to use' },
       {
         type: 'token',
-        address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
+        address: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
         amount: 1000000000000000000n
       },
       { type: 'label', content: 'for time period' },
@@ -201,13 +199,12 @@ describe('typed message tests', () => {
       { type: 'action', content: 'Permit' },
       {
         type: 'address',
-        address: '0x000000000022D473030F116dDEE9F6B43aC78BA3',
-        name: 'Permit 2 contract'
+        address: '0x000000000022d473030f116ddee9f6b43ac78ba3'
       },
       { type: 'label', content: 'to use' },
       {
         type: 'token',
-        address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
+        address: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
         amount: 500000000000000000n
       },
       { type: 'label', content: 'for time period' },
@@ -216,7 +213,7 @@ describe('typed message tests', () => {
       { type: 'deadline', amount: 968187600000n }
     ]
     tmTemplate.types = { PermitBatch: [{ name: 'details', type: 'PermitDetails[]' }] }
-    tmTemplate.domain.verifyingContract = '0x000000000022D473030F116dDEE9F6B43aC78BA3'
+    tmTemplate.domain.verifyingContract = '0x000000000022d473030f116ddee9f6b43ac78ba3'
     tmTemplate.message = typedMessages.permit2[1]
     const { fullVisualization } = permit2Module(tmTemplate)
     expect(fullVisualization?.length).toEqual(expectedBatchVisualization.length)
@@ -232,7 +229,7 @@ describe('typed message tests', () => {
       ' address: 0x6942069420694206942069420694206942069420\n',
       'to: \n',
       ' name: B\n',
-      ' address: 0xaAaAaAaaAaAaAaaAaAAAAAAAAaaaAaAaAaaAaaAa\n',
+      ' address: 0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n',
       'subject: angry mail\n',
       'withRegards: false\n'
     ]

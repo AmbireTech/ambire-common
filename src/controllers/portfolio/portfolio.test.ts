@@ -7,7 +7,7 @@ import { getNonce, produceMemoryStore } from '../../../test/helpers'
 import { networks } from '../../consts/networks'
 import { PINNED_TOKENS } from '../../consts/pinnedTokens'
 import { Account } from '../../interfaces/account'
-import { RPCProvider, RPCProviders } from '../../interfaces/settings'
+import { RPCProviders } from '../../interfaces/settings'
 import { AccountOp } from '../../libs/accountOp/accountOp'
 import { PortfolioController } from './portfolio'
 
@@ -15,12 +15,16 @@ const relayerUrl = 'https://staging-relayer.ambire.com'
 
 const EMPTY_ACCOUNT_ADDR = '0xA098B9BccaDd9BAEc311c07433e94C9d260CbC07'
 
-describe('Portfolio Controller ', () => {
-  const ethereum = networks.find((x) => x.id === 'ethereum')
-  if (!ethereum) throw new Error('unable to find ethereum network in consts')
-  const provider = new JsonRpcProvider(ethereum.rpcUrl)
-  const providers = { ethereum: provider }
+const providers: RPCProviders = {}
 
+networks.forEach((network) => {
+  providers[network.id] = new JsonRpcProvider(network.rpcUrl)
+  providers[network.id].isWorking = true
+})
+
+const ethereum = networks.find((network) => network.id === 'ethereum')!
+
+describe('Portfolio Controller ', () => {
   const account = {
     addr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
     initialPrivileges: [],
@@ -49,7 +53,7 @@ describe('Portfolio Controller ', () => {
       137
     ])
 
-    const nonce = await getNonce('0xB674F3fd5F43464dB0448a57529eAF37F04cceA5', provider)
+    const nonce = await getNonce('0xB674F3fd5F43464dB0448a57529eAF37F04cceA5', providers.ethereum)
     const calls = [{ to: '0x18Ce9CF7156584CDffad05003410C3633EFD1ad0', value: BigInt(0), data }]
 
     return {
@@ -306,8 +310,6 @@ describe('Portfolio Controller ', () => {
   describe('Pinned tokens', () => {
     test('Pinned tokens are set in an account with no tokens', async () => {
       const storage = produceMemoryStore()
-      const ethereumProvider: RPCProvider = new JsonRpcProvider(ethereum.rpcUrl)
-      ethereumProvider.isWorking = true
 
       const emptyAccount: Account = {
         addr: EMPTY_ACCOUNT_ADDR,
@@ -316,16 +318,11 @@ describe('Portfolio Controller ', () => {
         creation: null
       }
 
-      const controller = new PortfolioController(
-        storage,
-        { ethereum: ethereumProvider },
-        networks,
-        relayerUrl
-      )
+      const controller = new PortfolioController(storage, providers, networks, relayerUrl)
 
       await controller.updateSelectedAccount(
         [emptyAccount],
-        networks,
+        [ethereum],
         emptyAccount.addr,
         undefined,
         {
@@ -343,9 +340,7 @@ describe('Portfolio Controller ', () => {
     })
     test('Pinned gas tank tokens are set in a smart account with no tokens', async () => {
       const storage = produceMemoryStore()
-      const ethereumProvider: RPCProvider = new JsonRpcProvider(ethereum.rpcUrl)
 
-      ethereumProvider.isWorking = true
       const emptyAccount: Account = {
         addr: '0x018D034c782db8462d864996dE3c297bcf66f86A',
         initialPrivileges: [
@@ -362,14 +357,14 @@ describe('Portfolio Controller ', () => {
           salt: '0x0000000000000000000000000000000000000000000000000000000000000000'
         }
       }
-      const controller = new PortfolioController(
-        storage,
-        { ethereum: ethereumProvider },
-        networks,
-        relayerUrl
-      )
+      const controller = new PortfolioController(storage, providers, [ethereum], relayerUrl)
 
-      await controller.updateSelectedAccount([emptyAccount], networks, emptyAccount.addr, undefined)
+      await controller.updateSelectedAccount(
+        [emptyAccount],
+        [ethereum],
+        emptyAccount.addr,
+        undefined
+      )
       await controller.getAdditionalPortfolio(emptyAccount.addr)
 
       PINNED_TOKENS.filter((token) => token.onGasTank && token.networkId === 'ethereum').forEach(
@@ -384,17 +379,10 @@ describe('Portfolio Controller ', () => {
     })
     test('Pinned gas tank tokens are not set in an account with tokens', async () => {
       const storage = produceMemoryStore()
-      const ethereumProvider: RPCProvider = new JsonRpcProvider(ethereum.rpcUrl)
-      ethereumProvider.isWorking = true
 
-      const controller = new PortfolioController(
-        storage,
-        { ethereum: ethereumProvider },
-        networks,
-        relayerUrl
-      )
+      const controller = new PortfolioController(storage, providers, [ethereum], relayerUrl)
 
-      await controller.updateSelectedAccount([account], networks, account.addr, undefined)
+      await controller.updateSelectedAccount([account], [ethereum], account.addr, undefined)
 
       await controller.getAdditionalPortfolio(account.addr)
 
@@ -409,19 +397,13 @@ describe('Portfolio Controller ', () => {
 
   test('Additional hints', async () => {
     const storage = produceMemoryStore()
-    const ethereumProvider = new JsonRpcProvider(ethereum.rpcUrl)
     const BANANA_TOKEN_ADDR = '0x94e496474F1725f1c1824cB5BDb92d7691A4F03a'
 
-    const controller = new PortfolioController(
-      storage,
-      { ethereum: ethereumProvider },
-      networks,
-      relayerUrl
-    )
+    const controller = new PortfolioController(storage, providers, [ethereum], relayerUrl)
 
     await controller.updateSelectedAccount([account], networks, account.addr, undefined, {
       additionalHints: [BANANA_TOKEN_ADDR],
-      forceUpdate: false
+      forceUpdate: true
     })
 
     const token = controller.latest[account.addr].ethereum?.result?.tokens.find(
@@ -445,11 +427,7 @@ describe('Portfolio Controller ', () => {
 
   test('Native tokens are fetched for all networks', async () => {
     const storage = produceMemoryStore()
-    const providers: RPCProviders = {}
 
-    networks.forEach((network) => {
-      providers[network.id] = new JsonRpcProvider(network.rpcUrl)
-    })
     const controller = new PortfolioController(storage, providers, networks, relayerUrl)
 
     await controller.updateSelectedAccount([account], networks, account.addr, undefined)

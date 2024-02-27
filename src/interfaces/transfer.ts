@@ -1,4 +1,4 @@
-import { HumanizerInfoType } from '../../v1/hooks/useConstants'
+import { HumanizerMeta } from '../libs/humanizer/interfaces'
 import { TokenResult } from '../libs/portfolio'
 import { AddressState, AddressStateOptional } from './domains'
 import { UserRequest } from './userRequest'
@@ -47,7 +47,7 @@ export interface TransferControllerState {
 export interface TransferUpdate {
   selectedAccount?: string
   preSelectedToken?: string
-  humanizerInfo?: HumanizerInfoType
+  humanizerInfo?: HumanizerMeta
   tokens?: TokenResult[]
   selectedToken?: TokenResult
   amount?: string

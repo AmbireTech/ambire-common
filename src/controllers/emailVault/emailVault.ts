@@ -193,14 +193,14 @@ export class EmailVaultController extends EventEmitter {
       }
     })
 
-    const ev: any = await polling.exec(
+    const ev: (EmailVaultData & { error?: any; canceled?: boolean }) | null = await polling.exec(
       this.#emailVault.getEmailVaultInfo.bind(this.#emailVault),
       [email, newKey.key],
       () => {
         this.#isWaitingEmailConfirmation = false
       },
       () => this.#shouldStopConfirmationPolling,
-      15000,
+      3 * 60 * 1000,
       1000
     )
 
@@ -214,7 +214,12 @@ export class EmailVaultController extends EventEmitter {
       fn && (await fn())
       this.storage.set(MAGIC_LINK_STORAGE_KEY, this.#magicLinkKeys)
       this.#requestSessionKey(email)
-    }
+    } else if (this.#shouldStopConfirmationPolling)
+      this.emitError({
+        message: `Unexpected error getting email vault for ${email}`,
+        level: 'major',
+        error: new Error(`Unexpected error getting email vault for ${email}`)
+      })
     this.emitUpdate()
   }
 
@@ -300,7 +305,12 @@ export class EmailVaultController extends EventEmitter {
     }
 
     let result: Boolean | null = false
-    const magicKey = await this.#getMagicLinkKey(email)
+    let magicKey = await this.#getMagicLinkKey(email)
+    if (!magicKey?.key && !this.#shouldStopConfirmationPolling) {
+      await this.handleMagicLinkKey(email, async () => {
+        magicKey = await this.#getMagicLinkKey(email)
+      })
+    }
     if (magicKey?.key) {
       this.#isUploadingSecret = true
       const randomBytes = crypto.randomBytes(32)
@@ -309,14 +319,20 @@ export class EmailVaultController extends EventEmitter {
       await this.#keyStore.addSecret(RECOVERY_SECRET_ID, newSecret, '', false)
       const keyStoreUid = await this.#keyStore.getKeyStoreUid()
       result = await this.#emailVault.addKeyStoreSecret(email, magicKey.key, keyStoreUid, newSecret)
-    } else {
-      await this.handleMagicLinkKey(email, () => this.#uploadKeyStoreSecret(email))
-    }
-
+    } else if (this.#shouldStopConfirmationPolling)
+      this.emitError({
+        message: 'Email key not confirmed',
+        level: 'minor',
+        error: new Error('uploadKeyStoreSecret: not confirmed magic link key')
+      })
     if (result) {
       await this.#getEmailVaultInfo(email)
     } else {
-      this.emailVaultStates.errors = [new Error('error upload keyStore to email vault')]
+      this.emitError({
+        level: 'minor',
+        message: 'Error upload keyStore to email vault',
+        error: new Error('error upload keyStore to email vault')
+      })
     }
 
     this.#isUploadingSecret = false
@@ -334,7 +350,7 @@ export class EmailVaultController extends EventEmitter {
     const state = this.emailVaultStates
     if (!state.email[email]) {
       this.emitError({
-        message: `Resetting the password on this device is not enabled for ${email}.`,
+        message: `You are not logged in with ${email} on this device.`,
         level: 'major',
         error: new Error(`Keystore recovery: email ${email} not imported`)
       })
@@ -358,6 +374,9 @@ export class EmailVaultController extends EventEmitter {
       return
     }
 
+    if (email !== this.keystoreRecoveryEmail) {
+      return
+    }
     const emitExpiredMagicLinkError = () => {
       this.emitError({
         message: `The time allotted for changing your password has expired for ${email}. Please verify your email again!`,
@@ -574,7 +593,7 @@ export class EmailVaultController extends EventEmitter {
     this.emitUpdate()
   }
 
-  getKeystoreRecoveryEmail(): string | undefined {
+  get keystoreRecoveryEmail(): string | undefined {
     const keyStoreUid = this.#keyStore.keyStoreUid
     const EVEmails = Object.keys(this.emailVaultStates.email)
 
@@ -589,13 +608,13 @@ export class EmailVaultController extends EventEmitter {
   }
 
   get hasKeystoreRecovery() {
-    return !!this.getKeystoreRecoveryEmail()
+    return !!this.keystoreRecoveryEmail
   }
 
   get hasConfirmedRecoveryEmail(): boolean {
     if (!this.isReady) return false
 
-    const recoveryEmail = this.getKeystoreRecoveryEmail()
+    const recoveryEmail = this.keystoreRecoveryEmail
 
     if (!recoveryEmail) return false
 
@@ -644,7 +663,8 @@ export class EmailVaultController extends EventEmitter {
       currentState: this.currentState, // includes the getter in the stringified instance
       hasKeystoreRecovery: this.hasKeystoreRecovery,
       hasConfirmedRecoveryEmail: this.hasConfirmedRecoveryEmail,
-      banners: this.banners // includes the getter in the stringified instance,
+      banners: this.banners, // includes the getter in the stringified instance,
+      keystoreRecoveryEmail: this.keystoreRecoveryEmail
     }
   }
 }

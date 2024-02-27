@@ -408,7 +408,9 @@ export class MainController extends EventEmitter {
         try {
           this.gasPrices[network] = await getGasPriceRecommendations(
             this.settings.providers[network],
-            this.settings.networks.find((net) => net.id === network)!
+            this.settings.networks.find((net) => net.id === network)!,
+            -1,
+            this.selectedAccount ? this.accountStates[this.selectedAccount][network] : null
           )
         } catch (e: any) {
           this.emitError({
@@ -677,7 +679,7 @@ export class MainController extends EventEmitter {
       if (accountOp) {
         this.accountOpsToBeSigned[accountAddr] ||= {}
         this.accountOpsToBeSigned[accountAddr][networkId] = { accountOp, estimation: null }
-        if (this.signAccountOp) this.signAccountOp.update({ accountOp })
+        if (this.signAccountOp) this.signAccountOp.update({ accountOp, estimation: null })
 
         try {
           await this.#estimateAccountOp(accountOp)
@@ -1089,13 +1091,17 @@ export class MainController extends EventEmitter {
     }
 
     if (transactionRes) {
-      await this.activity.addAccountOp({
+      const submittedAccountOp: SubmittedAccountOp = {
         ...accountOp,
         status: AccountOpStatus.BroadcastedButNotConfirmed,
         txnId: transactionRes.hash,
         nonce: BigInt(transactionRes.nonce),
         timestamp: new Date().getTime()
-      } as SubmittedAccountOp)
+      }
+      if (accountOp.gasFeePayment?.isERC4337) {
+        submittedAccountOp.userOpHash = transactionRes.hash
+      }
+      await this.activity.addAccountOp(submittedAccountOp)
       accountOp.calls.forEach((call) => {
         if (call.fromUserRequestId) {
           this.removeUserRequest(call.fromUserRequestId)
