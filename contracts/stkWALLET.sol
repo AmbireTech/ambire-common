@@ -53,7 +53,8 @@ contract stkWALLET {
 		uint shareValue = xWallet.shareValue();
 		uint sharesAmount = (amount * 1e18) / shareValue;
 		shares[from] = shares[from] - sharesAmount;
-		allowed[from][msg.sender] = allowed[from][msg.sender] - amount;
+		uint prevAllowance = allowed[from][msg.sender];
+		if (prevAllowance < type(uint256).max) allowed[from][msg.sender] = prevAllowance - amount;
 		shares[to] = shares[to] + sharesAmount;
 		emit Transfer(from, to, amount);
 		emit ShareValueUpdate(shareValue);
