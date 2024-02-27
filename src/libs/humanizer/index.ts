@@ -1,4 +1,5 @@
 /* eslint-disable no-await-in-loop */
+import { stringify, parse } from '../richJson/richJson'
 import { ErrorRef } from '../../controllers/eventEmitter/eventEmitter'
 
 import { Storage } from '../../interfaces/storage'
@@ -78,18 +79,15 @@ const integrateFragments = (
 }
 
 // @TODO move to constants????
-export const combineKnownHumanizerInfo = async (
-  storage: Storage,
+export const combineKnownHumanizerInfo = (
+  stored: HumanizerMeta,
   passedHumanizerMeta: HumanizerMeta | undefined,
   humanizerFragments?: HumanizerFragment[]
-): Promise<HumanizerMeta> => {
-  let stored = await storage.get(HUMANIZER_META_KEY, {})
-  if (Object.keys(stored).length === 0) stored = { abis: { NO_ABI: {} }, knownAddresses: {} }
+): { toStore: HumanizerMeta; toReturn: HumanizerMeta } => {
   const globalFrags = humanizerFragments?.filter((f) => f.isGlobal) || []
   const nonGlobalFragments = humanizerFragments?.filter((f) => !f.isGlobal) || []
 
-  const toStore = integrateFragments(stored, globalFrags)
-  await storage.set(HUMANIZER_META_KEY, toStore)
+  const toStore: HumanizerMeta = integrateFragments(stored, globalFrags)
 
   const toReturn = integrateFragments(toStore, nonGlobalFragments)
   toReturn.abis.NO_ABI = { ...toReturn?.abis?.NO_ABI, ...passedHumanizerMeta?.abis?.NO_ABI }
@@ -97,7 +95,7 @@ export const combineKnownHumanizerInfo = async (
   // this operation should only append and not override
   toReturn.abis = { ...passedHumanizerMeta?.abis, ...toReturn?.abis }
 
-  return toReturn
+  return { toStore, toReturn }
 }
 
 export const humanizeAccountOp = async (
@@ -131,21 +129,24 @@ export const sharedHumanization = async <InputData extends AccountOp | Message>(
   let asyncOps: Promise<HumanizerFragment | null>[] = []
   let parsedMessage: IrMessage
   if ('calls' in data) {
-    op = {
-      ...data,
-      humanizerMeta: await combineKnownHumanizerInfo(storage, data.humanizerMeta as HumanizerMeta)
-    }
+    op = parse(stringify(data))
   }
+
+  const storedHumanizerMeta = await storage.get(HUMANIZER_META_KEY, {
+    knownAddresses: {},
+    abis: { NO_ABI: {} }
+  } as HumanizerMeta)
 
   for (let i = 0; i <= 3; i++) {
     // @TODO should we always do this
-    const updateddHumanizerMeta = await combineKnownHumanizerInfo(
-      storage,
+
+    const { toReturn: toBeUsed, toStore } = combineKnownHumanizerInfo(
+      storedHumanizerMeta,
       data.humanizerMeta as HumanizerMeta | undefined,
       humanizerFragments
     )
     if ('calls' in data) {
-      op!.humanizerMeta = updateddHumanizerMeta
+      op!.humanizerMeta = toBeUsed
       ;[irCalls, asyncOps] = humanizeCalls(op!, humanizerCallModules, { fetch, emitError })
       const [parsedCalls, newAsyncOps] = parseCalls(op!, irCalls, parsingModules, {
         fetch,
@@ -157,7 +158,7 @@ export const sharedHumanization = async <InputData extends AccountOp | Message>(
       const humanizerSettings: HumanizerSettings = {
         accountAddr: data.accountAddr,
         networkId: data?.networkId || 'ethereum',
-        humanizerMeta: updateddHumanizerMeta
+        humanizerMeta: toBeUsed
       }
       const irMessage: IrMessage = {
         ...data,
@@ -176,7 +177,7 @@ export const sharedHumanization = async <InputData extends AccountOp | Message>(
     humanizerFragments = await Promise.all(asyncOps).then(
       (frags) => frags.filter((x) => x) as HumanizerFragment[]
     )
-
+    await storage.set(HUMANIZER_META_KEY, toStore)
     if (!humanizerFragments.length) return
   }
 }
