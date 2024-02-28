@@ -283,7 +283,19 @@ export class ActivityController extends EventEmitter {
               try {
                 let txnId = accountOp.txnId
                 if (accountOp.userOpHash) {
-                  txnId = await fetchUserOp(accountOp.userOpHash, fetch)
+                  const response = await fetchUserOp(accountOp.userOpHash, fetch)
+
+                  // nothing we can do if we don't have information
+                  if (response.status !== 200) return
+
+                  const data = await response.json()
+                  const userOps = data.userOps
+
+                  // if there are not user ops, it means the userOpHash is not
+                  // indexed, yet, so we wait
+                  if (!userOps.length) return
+
+                  txnId = userOps[0].transactionHash
                   this.#accountsOps[this.filters!.account][network][accountOpIndex].txnId = txnId
                 }
 
@@ -430,6 +442,11 @@ export class ActivityController extends EventEmitter {
         network,
         this.#accountStates[accountOp.accountAddr][accountOp.networkId]
       )
+      const url =
+        is4337 && accountOp.txnId === accountOp.userOpHash
+          ? `https://jiffyscan.xyz/userOpHash/${accountOp.userOpHash}?network=${network.id}`
+          : `${network.explorerUrl}/tx/${accountOp.txnId}`
+
       return {
         id: accountOp.txnId,
         type: 'success',
@@ -439,11 +456,7 @@ export class ActivityController extends EventEmitter {
           {
             label: 'Check',
             actionName: 'open-external-url',
-            meta: {
-              url: is4337
-                ? `${this.#relayerUrl}/userOp/${accountOp.networkId}/${accountOp.txnId}`
-                : `${network.explorerUrl}/tx/${accountOp.txnId}`
-            }
+            meta: { url }
           }
         ]
       } as Banner
