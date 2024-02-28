@@ -177,7 +177,7 @@ export async function estimate(
         .catch(catchEstimationFailure),
       provider.getBalance(account.addr).catch(catchEstimationFailure),
       deploylessEstimator
-        .call('getL1GasEstimation', [encodeRlp(encodedCallData), '0x'], {
+        .call('getL1GasEstimation', [encodeRlp(encodedCallData), FEE_COLLECTOR], {
           from: blockFrom,
           blockTag
         })
