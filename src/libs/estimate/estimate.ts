@@ -430,7 +430,7 @@ export async function estimate(
     gasUsed: token.gasUsed,
     addedNative:
       !is4337Broadcast || // relayer
-      (userOp && shouldUsePaymaster(userOp, feeTokens[key].address))
+      (userOp && shouldUsePaymaster(network))
         ? l1GasEstimation.feeWithPayment
         : l1GasEstimation.fee,
     isGasTank: feeTokens[key].isGasTank

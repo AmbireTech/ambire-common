@@ -541,7 +541,7 @@ export class SignAccountOpController extends EventEmitter {
         amount = simulatedGasLimit * gasPrice + feeTokenEstimation.addedNative
       } else if (this.#userOperation) {
         // ERC 4337
-        const usesPaymaster = shouldUsePaymaster(this.#userOperation, this.feeTokenResult!.address)
+        const usesPaymaster = shouldUsePaymaster(this.#network)
         simulatedGasLimit =
           this.#estimation!.erc4337estimation!.gasUsed + feeTokenEstimation.gasUsed!
         simulatedGasLimit += usesPaymaster
@@ -834,10 +834,7 @@ export class SignAccountOpController extends EventEmitter {
         userOperation.maxPriorityFeePerGas = ethers.toBeHex(gasFeePayment.maxPriorityFeePerGas!)
 
         const usesOneTimeNonce = shouldUseOneTimeNonce(userOperation)
-        const usesPaymaster = shouldUsePaymaster(
-          userOperation,
-          this.accountOp.gasFeePayment.inToken
-        )
+        const usesPaymaster = shouldUsePaymaster(this.#network)
 
         if (usesPaymaster) {
           this.#addFeePayment()

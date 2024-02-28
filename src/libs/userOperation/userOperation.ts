@@ -197,9 +197,7 @@ export function isErc4337Broadcast(
   return isEnabled && accountState.isV2
 }
 
-export function shouldUsePaymaster(userOp: UserOperation, feeTokenAddr: string) {
-  return (
-    userOp.requestType !== 'standard' ||
-    feeTokenAddr !== '0x0000000000000000000000000000000000000000'
-  )
+export function shouldUsePaymaster(network: NetworkDescriptor): boolean {
+  // if there's a paymaster on the network, we pay with it. Simple
+  return !!network.erc4337?.hasPaymaster
 }
