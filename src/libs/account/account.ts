@@ -199,7 +199,10 @@ export const getAccountImportStatus = ({
   // many different hardware wallets (Trezor, Ledger, GridPlus, etc.) or
   // the same address with seed (private key).
   const associatedKeysAlreadyImported = importedKeysForThisAcc.filter(
-    (key) => account.associatedKeys.includes(key.addr) && key.type === keyIteratorType
+    (key) =>
+      account.associatedKeys.includes(key.addr) &&
+      // if key type is not provided, skip this part of the check on purpose
+      (keyIteratorType ? key.type === keyIteratorType : true)
   )
   if (associatedKeysAlreadyImported.length) {
     const associatedKeysNotImportedYet = account.associatedKeys.filter((keyAddr) =>
