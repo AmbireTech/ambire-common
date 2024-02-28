@@ -198,9 +198,8 @@ export function getProbableCallData(
       localOp.nonce = getOneTimeNonce(localOp)
     }
 
-    // include the paymaster as a fee commitment always as we can't detect at
-    // this stage whether we're using a fee token (should use paymaster)
-    // and it's better to overestimate instead of under
+    // TODO: if the network doesn't have a paymaster, do not include
+    // the paymaster in the l1 fee calculations
     localOp.paymasterAndData = getPaymasterSpoof()
 
     const entryPoint = new Interface(EntryPoint)

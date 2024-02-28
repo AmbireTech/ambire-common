@@ -1,12 +1,4 @@
-import {
-  AbiCoder,
-  encodeRlp,
-  Interface,
-  JsonRpcProvider,
-  Provider,
-  toBeHex,
-  ZeroAddress
-} from 'ethers'
+import { AbiCoder, Interface, JsonRpcProvider, Provider, toBeHex, ZeroAddress } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFactory.json'
@@ -177,7 +169,7 @@ export async function estimate(
         .catch(catchEstimationFailure),
       provider.getBalance(account.addr).catch(catchEstimationFailure),
       deploylessEstimator
-        .call('getL1GasEstimation', [encodeRlp(encodedCallData), FEE_COLLECTOR], {
+        .call('getL1GasEstimation', [encodedCallData, FEE_COLLECTOR], {
           from: blockFrom,
           blockTag
         })
@@ -226,7 +218,7 @@ export async function estimate(
       getProbableCallData(op, accountState, userOp),
       op.accountAddr,
       FEE_COLLECTOR,
-      100000000,
+      100000,
       2,
       op.nonce,
       100000
@@ -243,7 +235,7 @@ export async function estimate(
       op.accountOpToExecuteBefore?.signature || '0x'
     ],
     [account.addr, op.nonce || 1, op.calls, '0x'],
-    encodeRlp(encodedCallData),
+    encodedCallData,
     account.associatedKeys,
     feeTokens.map((token) => token.address),
     FEE_COLLECTOR,
