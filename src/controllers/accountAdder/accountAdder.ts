@@ -6,9 +6,18 @@ import {
   HD_PATH_TEMPLATE_TYPE,
   SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
 } from '../../consts/derivation'
-import { Account, AccountOnchainState } from '../../interfaces/account'
+import {
+  Account,
+  AccountOnchainState,
+  AccountOnPage,
+  AccountWithNetworkMeta,
+  DerivedAccount,
+  DerivedAccountWithoutNetworkMeta,
+  ImportStatus,
+  SelectedAccount
+} from '../../interfaces/account'
 import { KeyIterator } from '../../interfaces/keyIterator'
-import { dedicatedToOneSAPriv, ExternalKey, Key } from '../../interfaces/keystore'
+import { dedicatedToOneSAPriv, ReadyToAddKeys } from '../../interfaces/keystore'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
 import { AccountPreferences, KeyPreferences } from '../../interfaces/settings'
 import {
@@ -27,62 +36,6 @@ import { KeystoreController } from '../keystore/keystore'
 
 export const DEFAULT_PAGE = 1
 export const DEFAULT_PAGE_SIZE = 5
-
-type AccountWithNetworkMeta = Account & { usedOnNetworks: NetworkDescriptor[] }
-
-type AccountDerivationMeta = {
-  slot: number // the iteration on which the account is derived, starting from 1
-  index: number // the derivation index of the <account> in the slot, starting from 0
-  isLinked: boolean // linked accounts are also smart accounts, so use a flag to differentiate
-}
-
-/**
- * The account that the user has actively chosen (selected) via the app UI.
- * It's always one of the visible accounts returned by the accountsOnPage().
- * Could be either a basic (EOA) account, a smart account or a linked account.
- */
-export type SelectedAccount = {
-  account: Account
-  isLinked: AccountDerivationMeta['isLinked']
-  accountKeys: (Omit<AccountDerivationMeta, 'isLinked'> & { addr: Account['addr'] })[]
-}
-
-/**
- * The account that is derived programmatically and internally by Ambire.
- * Could be either a basic (EOA) account, a derived with custom derivation
- * basic (EOA) account (used for smart account key only) or a smart account.
- */
-type DerivedAccount = AccountDerivationMeta & { account: AccountWithNetworkMeta }
-// Sub-type, used during intermediate step during the deriving accounts process
-type DerivedAccountWithoutNetworkMeta = Omit<DerivedAccount, 'account'> & { account: Account }
-
-export enum ImportStatus {
-  NotImported = 'not-imported',
-  ImportedWithoutKey = 'imported-without-key', // as a view only account
-  ImportedWithSomeOfTheKeys = 'imported-with-some-of-the-keys', // imported with
-  // some of the keys (having the same key type), but not all found on the current page
-  ImportedWithTheSameKeys = 'imported-with-the-same-keys', // imported with all
-  // keys (having the same key type) found on the current page
-  ImportedWithDifferentKeys = 'imported-with-different-keys' // different key
-  // meaning that could be a key with the same address but different type,
-  // or a key with different address altogether.
-}
-/**
- * All the accounts that should be visible on the current page - the Basic
- * Accounts, Smart Accounts and the linked accounts. Excludes the derived
- * EOA (basic) accounts used for smart account keys only.
- */
-export type AccountOnPage = DerivedAccount & { importStatus: ImportStatus }
-
-export type ReadyToAddKeys = {
-  internal: { privateKey: string; dedicatedToOneSA: boolean }[]
-  external: {
-    addr: Key['addr']
-    type: Key['type']
-    dedicatedToOneSA: boolean
-    meta: ExternalKey['meta']
-  }[]
-}
 
 /**
  * Account Adder Controller
