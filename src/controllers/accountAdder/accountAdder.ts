@@ -13,7 +13,6 @@ import {
   AccountWithNetworkMeta,
   DerivedAccount,
   DerivedAccountWithoutNetworkMeta,
-  ImportStatus,
   SelectedAccountForImport
 } from '../../interfaces/account'
 import { KeyIterator } from '../../interfaces/keyIterator'
@@ -21,6 +20,7 @@ import { dedicatedToOneSAPriv, ReadyToAddKeys } from '../../interfaces/keystore'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
 import { AccountPreferences, KeyPreferences } from '../../interfaces/settings'
 import {
+  getAccountOnPageImportStatus,
   getBasicAccount,
   getEmailAccount,
   getSmartAccount,
@@ -107,48 +107,6 @@ export class AccountAdderController extends EventEmitter {
     this.#alreadyImportedAccounts = alreadyImportedAccounts
     this.#keystore = keystore
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
-  }
-
-  #getAccountOnPageImportStatus(
-    account: Account,
-    _accountsOnPage: Omit<AccountOnPage, 'importStatus'>[]
-  ): { importStatus: ImportStatus } {
-    const isAlreadyImported = this.#alreadyImportedAccounts.some(
-      ({ addr }) => addr === account.addr
-    )
-    if (!isAlreadyImported) return { importStatus: ImportStatus.NotImported }
-
-    const importedAccountKeystoreKeys = this.#keystore.keys.filter((key) =>
-      account.associatedKeys.includes(key.addr)
-    )
-    // Could be imported as a view only account (and therefore, without a key)
-    if (!importedAccountKeystoreKeys.length)
-      return { importStatus: ImportStatus.ImportedWithoutKey }
-
-    // Same key in this context means not only the same key address, but the
-    // same type too. Because user can opt in to import same key address with
-    // many different hardware wallets (Trezor, Ledger, GridPlus, etc.) or
-    // the same address with seed (private key).
-    const associatedKeysAlreadyImported = importedAccountKeystoreKeys.filter(
-      (key) => account.associatedKeys.includes(key.addr) && key.type === this.#keyIterator?.type
-    )
-    if (associatedKeysAlreadyImported.length) {
-      const associatedKeysNotImportedYet = account.associatedKeys.filter((keyAddr) =>
-        associatedKeysAlreadyImported.some((x) => x.addr !== keyAddr)
-      )
-
-      const notImportedYetKeysExistInPage = _accountsOnPage.some((x) =>
-        associatedKeysNotImportedYet.includes(x.account.addr)
-      )
-
-      return {
-        importStatus: notImportedYetKeysExistInPage
-          ? ImportStatus.ImportedWithSomeOfTheKeys
-          : ImportStatus.ImportedWithTheSameKeys
-      }
-    }
-
-    return { importStatus: ImportStatus.NotImported }
   }
 
   get accountsOnPage(): AccountOnPage[] {
@@ -243,7 +201,13 @@ export class AccountAdderController extends EventEmitter {
 
     return mergedAccounts.map((acc) => ({
       ...acc,
-      ...this.#getAccountOnPageImportStatus(acc.account, mergedAccounts)
+      ...getAccountOnPageImportStatus({
+        account: acc.account,
+        alreadyImportedAccounts: this.#alreadyImportedAccounts,
+        keys: this.#keystore.keys,
+        accountsOnPage: mergedAccounts,
+        keyIteratorType: this.#keyIterator?.type
+      })
     }))
   }
 

@@ -2,8 +2,10 @@ import { ethers, Interface } from 'ethers'
 
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET } from '../../consts/derivation'
-import { Account } from '../../interfaces/account'
+import { Account, AccountOnPage, ImportStatus } from '../../interfaces/account'
+import { Key } from '../../interfaces/keystore'
 import { DKIM_VALIDATOR_ADDR, getSignerKey, RECOVERY_DEFAULTS } from '../dkim/recovery'
+import { KeyIterator } from '../keyIterator/keyIterator'
 import { getBytecode } from '../proxyDeploy/bytecode'
 import { PrivLevels } from '../proxyDeploy/deploy'
 import { getAmbireAccountAddress } from '../proxyDeploy/getAmbireAddressTwo'
@@ -170,4 +172,50 @@ export const getDefaultSelectedAccount = (accounts: Account[]) => {
   if (smartAccounts.length) return smartAccounts[0]
 
   return accounts[0]
+}
+
+export const getAccountOnPageImportStatus = ({
+  account,
+  alreadyImportedAccounts,
+  keys,
+  accountsOnPage,
+  keyIteratorType
+}: {
+  account: Account
+  alreadyImportedAccounts: Account[]
+  keys: Key[]
+  accountsOnPage: Omit<AccountOnPage, 'importStatus'>[]
+  keyIteratorType?: KeyIterator['type']
+}): { importStatus: ImportStatus } => {
+  const isAlreadyImported = alreadyImportedAccounts.some(({ addr }) => addr === account.addr)
+  if (!isAlreadyImported) return { importStatus: ImportStatus.NotImported }
+
+  const importedKeysForThisAcc = keys.filter((key) => account.associatedKeys.includes(key.addr))
+  // Could be imported as a view only account (and therefore, without a key)
+  if (!importedKeysForThisAcc.length) return { importStatus: ImportStatus.ImportedWithoutKey }
+
+  // Same key in this context means not only the same key address, but the
+  // same type too. Because user can opt in to import same key address with
+  // many different hardware wallets (Trezor, Ledger, GridPlus, etc.) or
+  // the same address with seed (private key).
+  const associatedKeysAlreadyImported = importedKeysForThisAcc.filter(
+    (key) => account.associatedKeys.includes(key.addr) && key.type === keyIteratorType
+  )
+  if (associatedKeysAlreadyImported.length) {
+    const associatedKeysNotImportedYet = account.associatedKeys.filter((keyAddr) =>
+      associatedKeysAlreadyImported.some((x) => x.addr !== keyAddr)
+    )
+
+    const notImportedYetKeysExistInPage = accountsOnPage.some((x) =>
+      associatedKeysNotImportedYet.includes(x.account.addr)
+    )
+
+    return {
+      importStatus: notImportedYetKeysExistInPage
+        ? ImportStatus.ImportedWithSomeOfTheKeys
+        : ImportStatus.ImportedWithTheSameKeys
+    }
+  }
+
+  return { importStatus: ImportStatus.NotImported }
 }
