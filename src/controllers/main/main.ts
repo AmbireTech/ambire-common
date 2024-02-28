@@ -194,7 +194,8 @@ export class MainController extends EventEmitter {
       this.keystore
     )
     this.accountAdder = new AccountAdderController({
-      storage: this.#storage,
+      alreadyImportedAccounts: this.accounts,
+      keystore: this.keystore,
       relayerUrl,
       fetch: this.#fetch
     })
@@ -215,10 +216,15 @@ export class MainController extends EventEmitter {
     // and then we call it's methods
     await wait(1)
     this.emitUpdate()
-    ;[this.accounts, this.selectedAccount] = await Promise.all([
+    const [accounts, selectedAccount] = await Promise.all([
       this.#storage.get('accounts', []),
       this.#storage.get('selectedAccount', null)
     ])
+    // Do not re-assign `this.accounts`, use `push` instead in order NOT to break
+    // the the reference link between `this.accounts` in the nested controllers.
+    this.accounts.push(...accounts)
+    this.selectedAccount = selectedAccount
+
     // @TODO reload those
     // @TODO error handling here
     this.accountStates = await this.#getAccountsInfo(this.accounts)
@@ -536,7 +542,12 @@ export class MainController extends EventEmitter {
       ...newAccounts
     ]
     await this.#storage.set('accounts', nextAccounts)
-    this.accounts = nextAccounts
+    // Clean the existing array ref and use `push` instead of re-assigning
+    // `this.accounts` to a new array in order NOT to break the the reference
+    // link between `this.accounts` in the nested controllers.
+    this.accounts.length = 0
+    this.accounts.push(...nextAccounts)
+
     await this.updateAccountStates()
 
     this.emitUpdate()

@@ -1,4 +1,7 @@
+/* eslint-disable import/no-extraneous-dependencies */
+
 import { JsonRpcProvider } from 'ethers'
+import fetch from 'node-fetch'
 
 import { networks } from '../../consts/networks'
 import { AccountStates } from '../../interfaces/account'
@@ -7,7 +10,7 @@ import { Storage } from '../../interfaces/storage'
 import { Message } from '../../interfaces/userRequest'
 import { AccountOp, AccountOpStatus } from '../../libs/accountOp/accountOp'
 import { isErc4337Broadcast } from '../../libs/userOperation/userOperation'
-import bundler from '../../services/bundlers'
+import { fetchUserOp } from '../../services/explorers/jiffyscan'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 export interface Pagination {
@@ -278,19 +281,28 @@ export class ActivityController extends EventEmitter {
               shouldEmitUpdate = true
 
               try {
-                const receipt = accountOp.userOpHash
-                  ? await bundler.getReceipt(accountOp.userOpHash, networkConfig!)
-                  : await provider.getTransactionReceipt(accountOp.txnId)
+                let txnId = accountOp.txnId
+                if (accountOp.userOpHash) {
+                  const response = await fetchUserOp(accountOp.userOpHash, fetch)
+
+                  // nothing we can do if we don't have information
+                  if (response.status !== 200) return
+
+                  const data = await response.json()
+                  const userOps = data.userOps
+
+                  // if there are not user ops, it means the userOpHash is not
+                  // indexed, yet, so we wait
+                  if (!userOps.length) return
+
+                  txnId = userOps[0].transactionHash
+                  this.#accountsOps[this.filters!.account][network][accountOpIndex].txnId = txnId
+                }
+
+                const receipt = await provider.getTransactionReceipt(txnId)
                 if (receipt) {
                   this.#accountsOps[this.filters!.account][network][accountOpIndex].status =
                     receipt.status ? AccountOpStatus.Success : AccountOpStatus.Failure
-
-                  // set the original txn ID once we have it from the bundler
-                  if (accountOp.userOpHash) {
-                    this.#accountsOps[this.filters!.account][network][accountOpIndex].txnId =
-                      receipt.receipt.transactionHash
-                  }
-
                   return
                 }
               } catch {
@@ -430,6 +442,11 @@ export class ActivityController extends EventEmitter {
         network,
         this.#accountStates[accountOp.accountAddr][accountOp.networkId]
       )
+      const url =
+        is4337 && accountOp.txnId === accountOp.userOpHash
+          ? `https://jiffyscan.xyz/userOpHash/${accountOp.userOpHash}?network=${network.id}`
+          : `${network.explorerUrl}/tx/${accountOp.txnId}`
+
       return {
         id: accountOp.txnId,
         type: 'success',
@@ -439,11 +456,7 @@ export class ActivityController extends EventEmitter {
           {
             label: 'Check',
             actionName: 'open-external-url',
-            meta: {
-              url: is4337
-                ? `${this.#relayerUrl}/userOp/${accountOp.networkId}/${accountOp.txnId}`
-                : `${network.explorerUrl}/tx/${accountOp.txnId}`
-            }
+            meta: { url }
           }
         ]
       } as Banner
