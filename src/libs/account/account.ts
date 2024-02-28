@@ -174,25 +174,25 @@ export const getDefaultSelectedAccount = (accounts: Account[]) => {
   return accounts[0]
 }
 
-export const getAccountOnPageImportStatus = ({
+export const getAccountImportStatus = ({
   account,
   alreadyImportedAccounts,
   keys,
-  accountsOnPage,
+  accountsOnPage = [],
   keyIteratorType
 }: {
   account: Account
   alreadyImportedAccounts: Account[]
   keys: Key[]
-  accountsOnPage: Omit<AccountOnPage, 'importStatus'>[]
+  accountsOnPage?: Omit<AccountOnPage, 'importStatus'>[]
   keyIteratorType?: KeyIterator['type']
-}): { importStatus: ImportStatus } => {
+}): ImportStatus => {
   const isAlreadyImported = alreadyImportedAccounts.some(({ addr }) => addr === account.addr)
-  if (!isAlreadyImported) return { importStatus: ImportStatus.NotImported }
+  if (!isAlreadyImported) return ImportStatus.NotImported
 
   const importedKeysForThisAcc = keys.filter((key) => account.associatedKeys.includes(key.addr))
   // Could be imported as a view only account (and therefore, without a key)
-  if (!importedKeysForThisAcc.length) return { importStatus: ImportStatus.ImportedWithoutKey }
+  if (!importedKeysForThisAcc.length) return ImportStatus.ImportedWithoutKey
 
   // Same key in this context means not only the same key address, but the
   // same type too. Because user can opt in to import same key address with
@@ -210,12 +210,10 @@ export const getAccountOnPageImportStatus = ({
       associatedKeysNotImportedYet.includes(x.account.addr)
     )
 
-    return {
-      importStatus: notImportedYetKeysExistInPage
-        ? ImportStatus.ImportedWithSomeOfTheKeys
-        : ImportStatus.ImportedWithTheSameKeys
-    }
+    return notImportedYetKeysExistInPage
+      ? ImportStatus.ImportedWithSomeOfTheKeys
+      : ImportStatus.ImportedWithTheSameKeys
   }
 
-  return { importStatus: ImportStatus.NotImported }
+  return ImportStatus.NotImported
 }

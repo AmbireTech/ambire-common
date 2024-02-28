@@ -20,7 +20,7 @@ import { dedicatedToOneSAPriv, ReadyToAddKeys } from '../../interfaces/keystore'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
 import { AccountPreferences, KeyPreferences } from '../../interfaces/settings'
 import {
-  getAccountOnPageImportStatus,
+  getAccountImportStatus,
   getBasicAccount,
   getEmailAccount,
   getSmartAccount,
@@ -201,7 +201,7 @@ export class AccountAdderController extends EventEmitter {
 
     return mergedAccounts.map((acc) => ({
       ...acc,
-      ...getAccountOnPageImportStatus({
+      importStatus: getAccountImportStatus({
         account: acc.account,
         alreadyImportedAccounts: this.#alreadyImportedAccounts,
         keys: this.#keystore.keys,
