@@ -14,7 +14,7 @@ import {
   DerivedAccount,
   DerivedAccountWithoutNetworkMeta,
   ImportStatus,
-  SelectedAccount
+  SelectedAccountForImport
 } from '../../interfaces/account'
 import { KeyIterator } from '../../interfaces/keyIterator'
 import { dedicatedToOneSAPriv, ReadyToAddKeys } from '../../interfaces/keystore'
@@ -62,7 +62,7 @@ export class AccountAdderController extends EventEmitter {
 
   pageSize: number = DEFAULT_PAGE_SIZE
 
-  selectedAccounts: SelectedAccount[] = []
+  selectedAccounts: SelectedAccountForImport[] = []
 
   // Accounts which identity is created on the Relayer (if needed), and are ready
   // to be added to the user's account list by the Main Controller
@@ -467,7 +467,7 @@ export class AccountAdderController extends EventEmitter {
    * the newly added accounts data (like preferences, keys and others)
    */
   async addAccounts(
-    accounts: SelectedAccount[] = [],
+    accounts: SelectedAccountForImport[] = [],
     readyToAddAccountPreferences: AccountPreferences = {},
     readyToAddKeys: ReadyToAddKeys = { internal: [], external: [] },
     readyToAddKeyPreferences: KeyPreferences = []
@@ -490,14 +490,14 @@ export class AccountAdderController extends EventEmitter {
     this.emitUpdate()
 
     let newlyCreatedAccounts: Account['addr'][] = []
-    const accountsToAddOnRelayer: SelectedAccount[] = accounts
+    const accountsToAddOnRelayer: SelectedAccountForImport[] = accounts
       // Identity only for the smart accounts must be created on the Relayer
       .filter((x) => isSmartAccount(x.account))
       // Skip creating identity for Ambire v1 smart accounts
       .filter((x) => !isAmbireV1LinkedAccount(x.account.creation?.factoryAddr))
 
     if (accountsToAddOnRelayer.length) {
-      const body = accountsToAddOnRelayer.map(({ account }: SelectedAccount) => ({
+      const body = accountsToAddOnRelayer.map(({ account }: SelectedAccountForImport) => ({
         addr: account.addr,
         ...(account.email ? { email: account.email } : {}),
         associatedKeys: account.initialPrivileges,
@@ -564,7 +564,7 @@ export class AccountAdderController extends EventEmitter {
     this.emitUpdate()
   }
 
-  async createAndAddEmailAccount(selectedAccount: SelectedAccount) {
+  async createAndAddEmailAccount(selectedAccount: SelectedAccountForImport) {
     const {
       account: { email },
       accountKeys: [recoveryKey]

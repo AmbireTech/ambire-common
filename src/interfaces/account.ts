@@ -89,9 +89,8 @@ export type AccountOnPage = DerivedAccount & { importStatus: ImportStatus }
  * It's always one of the visible accounts returned by the accountsOnPage().
  * Could be either a basic (EOA) account, a smart account or a linked account.
  */
-export type SelectedAccount = {
+export type SelectedAccountForImport = {
   account: Account
   isLinked: AccountDerivationMeta['isLinked']
-  importStatus: ImportStatus
   accountKeys: (Omit<AccountDerivationMeta, 'isLinked'> & { addr: Account['addr'] })[]
 }

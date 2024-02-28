@@ -6,7 +6,7 @@ import { describe, expect, test } from '@jest/globals'
 import { produceMemoryStore } from '../../../test/helpers'
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'
-import { SelectedAccount } from '../../interfaces/account'
+import { SelectedAccountForImport } from '../../interfaces/account'
 import { UserRequest } from '../../interfaces/userRequest'
 import { KeyIterator } from '../../libs/keyIterator/keyIterator'
 import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
@@ -177,7 +177,7 @@ describe('Main Controller ', () => {
 
     // Same mechanism to generating this one as used for the
     // `accountNotDeployed` in accountState.test.ts
-    const accountPendingCreation: SelectedAccount = {
+    const accountPendingCreation: SelectedAccountForImport = {
       account: {
         addr: getAmbireAccountAddress(AMBIRE_ACCOUNT_FACTORY, bytecode),
         associatedKeys: [signerAddr],
