@@ -1,4 +1,12 @@
-import { AbiCoder, encodeRlp, Interface, JsonRpcProvider, Provider, toBeHex } from 'ethers'
+import {
+  AbiCoder,
+  encodeRlp,
+  Interface,
+  JsonRpcProvider,
+  Provider,
+  toBeHex,
+  ZeroAddress
+} from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFactory.json'
@@ -423,19 +431,35 @@ export async function estimate(
     finalNativeTokenOptions = []
   }
 
-  const feeTokenOptions = finalFeeTokenOptions.map((token: any, key: number) => ({
-    address: feeTokens[key].address,
-    paidBy: account.addr,
-    availableAmount: feeTokens[key].isGasTank ? feeTokens[key].amount : token.amount,
-    gasUsed: token.gasUsed,
-    addedNative:
+  const feeTokenOptions = finalFeeTokenOptions.map((token: any, key: number) => {
+    const address = feeTokens[key].address
+
+    // the l1 fee without any form of payment to relayer/paymaster
+    let addedNative = l1GasEstimation.fee
+
+    if (
       !is4337Broadcast || // relayer
       (userOp && shouldUsePaymaster(network))
-        ? l1GasEstimation.feeWithPayment
-        : l1GasEstimation.fee,
-    isGasTank: feeTokens[key].isGasTank
-  }))
+    ) {
+      // add the l1fee with the feeCall according to the type of feeCall
+      addedNative =
+        address === ZeroAddress
+          ? l1GasEstimation.feeWithNativePayment
+          : l1GasEstimation.feeWithTransferPayment
+    }
 
+    return {
+      address,
+      paidBy: account.addr,
+      availableAmount: feeTokens[key].isGasTank ? feeTokens[key].amount : token.amount,
+      gasUsed: token.gasUsed,
+      addedNative,
+      isGasTank: feeTokens[key].isGasTank
+    }
+  })
+
+  // this is for EOAs paying for SA in native
+  // or the current address if it's an EOA
   const nativeTokenOptions = finalNativeTokenOptions.map((balance: bigint, key: number) => ({
     address: nativeAddr,
     paidBy: nativeToCheck[key],
