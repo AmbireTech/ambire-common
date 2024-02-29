@@ -5,15 +5,13 @@ import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFacto
 import EntryPoint from '../../../contracts/compiled/EntryPoint.json'
 import { AccountOnchainState } from '../../interfaces/account'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
-import bundler from '../../services/bundlers'
 import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
 import { UserOperation } from '../userOperation/types'
 import {
   getCleanUserOp,
   getOneTimeNonce,
   getPaymasterSpoof,
-  getSigForCalculations,
-  isErc4337Broadcast
+  getSigForCalculations
 } from '../userOperation/userOperation'
 
 // https://eips.ethereum.org/EIPS/eip-1559
@@ -119,21 +117,11 @@ async function refetchBlock(
 export async function getGasPriceRecommendations(
   provider: Provider,
   network: NetworkDescriptor,
-  blockTag: string | number = -1,
-  selectedAccountState: AccountOnchainState | null = null
+  blockTag: string | number = -1
 ): Promise<GasRecommendation[]> {
   const lastBlock = await refetchBlock(provider, blockTag)
   // https://github.com/ethers-io/ethers.js/issues/3683#issuecomment-1436554995
   const txns = lastBlock.prefetchedTransactions
-
-  // Call the bundler to fetch the correct userOp prices for the time being.
-  // We want someday to estimate these ourselves as we don't want to rely
-  // on the bundler. But estimation is pretty difficult and each network
-  // comes with its caveats. Also, the bundlers will start disallowing soon
-  // user ops with low fees, making our estimation riskier
-  if (selectedAccountState && isErc4337Broadcast(network, selectedAccountState)) {
-    return bundler.pollGetUserOpGasPrice(network)
-  }
 
   if (network.feeOptions.is1559 && lastBlock.baseFeePerGas != null) {
     // https://eips.ethereum.org/EIPS/eip-1559
@@ -161,12 +149,28 @@ export async function getGasPriceRecommendations(
     }
 
     const tips = filterOutliers(txns.map((x) => x.maxPriorityFeePerGas!).filter((x) => x > 0))
-    return speeds.map(({ name, baseFeeAddBps }, i) => ({
-      name,
-      baseFeePerGas: expectedBaseFee + (expectedBaseFee * baseFeeAddBps) / 10000n,
-      maxPriorityFeePerGas:
-        network.id === 'arbitrum' ? 0n : average(nthGroup(tips, i, speeds.length))
-    }))
+    return speeds.map(({ name, baseFeeAddBps }, i) => {
+      const baseFee = expectedBaseFee + (expectedBaseFee * baseFeeAddBps) / 10000n
+
+      // instead of an average, calculate the maxPriorityFeePerGas in
+      // base fee percentage if so specified in the network fee options.
+      // This is for networks like optimism that have block transactions with
+      // too random maxPriorityFeePerGas fees included in a block. The average
+      // can differ greatly, causing a large gap between what we expect at the
+      // end. Additionally, we may set this as the userOp maxPriorityFee, making
+      // it even worse as it may radically change what the bundle receives in the end.
+      // A small percentage (<1%) is enough for the transaction to pass
+      const maxPriorityFeePerGas =
+        network.feeOptions.maxPriorityFeePerGasCalc === 'baseFeePercentage'
+          ? baseFee / (160n - BigInt(i) * 35n)
+          : average(nthGroup(tips, i, speeds.length))
+
+      return {
+        name,
+        baseFeePerGas: baseFee,
+        maxPriorityFeePerGas: network.id === 'arbitrum' ? 0n : maxPriorityFeePerGas
+      }
+    })
   }
   const prices = filterOutliers(txns.map((x) => x.gasPrice!).filter((x) => x > 0))
   return speeds.map(({ name }, i) => ({

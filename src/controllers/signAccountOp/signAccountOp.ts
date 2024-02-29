@@ -670,6 +670,7 @@ export class SignAccountOpController extends EventEmitter {
 
     if ('maxPriorityFeePerGas' in chosenSpeed) {
       gasFeePayment.maxPriorityFeePerGas = chosenSpeed.maxPriorityFeePerGas
+      gasFeePayment.baseFeePerGas = chosenSpeed.baseFeePerGas
     }
 
     return gasFeePayment
@@ -861,10 +862,8 @@ export class SignAccountOpController extends EventEmitter {
         // TODO: ARBITRUM 4337 IMPLEMENTATION
         // TODO: Not working for networks that do not support EIP-1559 and demand a L1 fee
         // Set the real preVerificationGas
-        if (feeTokenEstimation.addedNative > 0n) {
-          const l1FeeAsL2Gas =
-            feeTokenEstimation.addedNative /
-            BigInt(this.feeSpeeds.find((speed) => speed.type === 'fast')?.baseFeePerGas!)
+        if (feeTokenEstimation.addedNative > 0n && gasFeePayment.baseFeePerGas) {
+          const l1FeeAsL2Gas = feeTokenEstimation.addedNative / gasFeePayment.baseFeePerGas
 
           userOperation.preVerificationGas = getPreVerificationGas(
             userOperation,

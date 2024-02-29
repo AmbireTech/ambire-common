@@ -414,9 +414,7 @@ export class MainController extends EventEmitter {
         try {
           this.gasPrices[network] = await getGasPriceRecommendations(
             this.settings.providers[network],
-            this.settings.networks.find((net) => net.id === network)!,
-            -1,
-            this.selectedAccount ? this.accountStates[this.selectedAccount][network] : null
+            this.settings.networks.find((net) => net.id === network)!
           )
         } catch (e: any) {
           this.emitError({
