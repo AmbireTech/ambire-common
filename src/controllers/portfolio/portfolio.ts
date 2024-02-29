@@ -1,6 +1,7 @@
 /* eslint-disable import/no-extraneous-dependencies */
 /* eslint-disable @typescript-eslint/no-use-before-define */
 /* eslint-disable @typescript-eslint/no-shadow */
+import { CustomToken } from 'libs/portfolio/customToken'
 /* eslint-disable no-param-reassign */
 import fetch from 'node-fetch'
 
@@ -128,12 +129,12 @@ export class PortfolioController extends EventEmitter {
     this.emitUpdate()
   }
 
-  updateLocalTokenPreferences(tokens: any[]) {
-    this.#additionalHints = [...this.#additionalHints, ...tokens]
+  updateAdditionalHints(tokenIds: TokenResult['address'][]) {
+    const filteredTokenIds = tokenIds.filter((tokenId) => !this.#additionalHints?.includes(tokenId))
+    this.#additionalHints = [...(this.#additionalHints ?? []), ...filteredTokenIds]
   }
 
-  async updateTokenPreferences(tokens: any[]) {
-    this.resetAdditionalHints()
+  async updateTokenPreferences(tokens: CustomToken[]) {
     this.tokenPreferences = tokens
     await this.#storage.set('tokenPreferences', tokens)
   }
