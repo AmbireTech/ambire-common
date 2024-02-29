@@ -427,7 +427,16 @@ export async function estimate(
     address: feeTokens[key].address,
     paidBy: account.addr,
     availableAmount: feeTokens[key].isGasTank ? feeTokens[key].amount : token.amount,
-    gasUsed: token.gasUsed,
+    // gasUsed for the gas tank tokens is smaller because of the commitment:
+    // ['gasTank', amount, symbol]
+    // and this commitment costs onchain:
+    // - 1535, if the broadcasting addr is the relayer
+    // - 4035, if the broadcasting addr is different
+    // currently, there are more than 1 relayer addresses and we cannot
+    // be sure which is the one that will broadcast this txn; also, ERC-4337
+    // broadcasts will always consume at least 4035.
+    // setting it to 5000n just be sure
+    gasUsed: feeTokens[key].isGasTank ? 5000n : token.gasUsed,
     addedNative:
       !is4337Broadcast || // relayer
       (userOp && shouldUsePaymaster(userOp, feeTokens[key].address))
