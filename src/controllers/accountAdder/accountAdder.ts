@@ -311,6 +311,10 @@ export class AccountAdderController extends EventEmitter {
     this.emitUpdate()
   }
 
+  get type() {
+    return this.#keyIterator?.type
+  }
+
   reset() {
     this.#keyIterator = null
     this.selectedAccounts = []
@@ -950,7 +954,9 @@ export class AccountAdderController extends EventEmitter {
     return {
       ...this,
       ...super.toJSON(),
-      accountsOnPage: this.accountsOnPage // includes the getter in the stringified instance
+      // includes the getter in the stringified instance
+      accountsOnPage: this.accountsOnPage,
+      type: this.type
     }
   }
 }
