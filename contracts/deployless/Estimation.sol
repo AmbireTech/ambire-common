@@ -50,6 +50,7 @@ contract Estimation is Spoof {
     uint256 fee;
     uint256 feeWithNativePayment;
     uint256 feeWithTransferPayment;
+    uint256 feeWithGasTankPayment;
     address gasOracle;
   }
 
@@ -301,6 +302,7 @@ contract Estimation is Spoof {
     l1Oracles[8453] = address(0x420000000000000000000000000000000000000F);
 
     bytes memory nativeFeeCall = abi.encode(feeCollector, 1, '0x');
+    bytes memory gasTankFeeCall = abi.encode(feeCollector, 0, abi.encode('gasTank', 1, 'USDT'));
     bytes memory transferFeeCall = abi.encode(
       feeCollector,
       0,
@@ -312,6 +314,9 @@ contract Estimation is Spoof {
       l1GasEstimation.fee = IGasPriceOracle(l1Oracles[block.chainid]).getL1Fee(data);
       l1GasEstimation.feeWithNativePayment = IGasPriceOracle(l1Oracles[block.chainid]).getL1Fee(
         bytes.concat(data, nativeFeeCall)
+      );
+      l1GasEstimation.feeWithGasTankPayment = IGasPriceOracle(l1Oracles[block.chainid]).getL1Fee(
+        bytes.concat(data, gasTankFeeCall)
       );
       l1GasEstimation.feeWithTransferPayment = IGasPriceOracle(l1Oracles[block.chainid]).getL1Fee(
         bytes.concat(data, transferFeeCall)

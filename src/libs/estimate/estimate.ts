@@ -429,7 +429,9 @@ export async function estimate(
     // the l1 fee without any form of payment to relayer/paymaster
     let addedNative = l1GasEstimation.fee
 
-    if (
+    if (feeTokens[key].isGasTank) {
+      addedNative = l1GasEstimation.feeWithGasTankPayment
+    } else if (
       !is4337Broadcast || // relayer
       (userOp && shouldUsePaymaster(network))
     ) {
