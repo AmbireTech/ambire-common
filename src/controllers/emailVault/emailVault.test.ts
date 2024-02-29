@@ -155,7 +155,7 @@ describe('happy cases', () => {
       keys.map((k) => k.address),
       'password'
     )
-    expect(await keystore2.getKeys().then((d) => d.length)).toBe(2)
+    expect(keystore2.keys.length).toBe(2)
   })
 
   test('cancel login attempt', (done) => {
