@@ -1,3 +1,4 @@
+// TODO: Update import when the AccountAdder types refactoring gets merged
 import { SelectedAccount } from 'controllers/accountAdder/accountAdder'
 /* eslint-disable new-cap */
 import { ethers, HDNodeWallet, Mnemonic, Wallet } from 'ethers'
