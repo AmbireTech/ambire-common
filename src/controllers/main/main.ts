@@ -649,13 +649,7 @@ export class MainController extends EventEmitter {
         this.accountOpsToBeSigned[accountAddr] ||= {}
         this.accountOpsToBeSigned[accountAddr][networkId] = { accountOp, estimation: null }
         if (this.signAccountOp) this.signAccountOp.update({ accountOp })
-
-        try {
-          await this.#estimateAccountOp(accountOp)
-        } catch (e) {
-          // @TODO: unified wrapper for controller errors
-          console.error(e)
-        }
+        this.#estimateAccountOp(accountOp)
       }
     } else {
       if (!this.messagesToBeSigned[accountAddr]) this.messagesToBeSigned[accountAddr] = []
