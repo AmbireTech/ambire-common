@@ -50,7 +50,7 @@ const networks: NetworkDescriptor[] = [
       is1559: true,
       elasticityMultiplier: 6n,
       baseFeeMaxChangeDenominator: 50n,
-      feeIncrease: 2n // %
+      maxPriorityFeePerGasCalc: 'baseFeePercentange'
     },
     reestimateOn: 6000
   },
