@@ -686,12 +686,7 @@ export class MainController extends EventEmitter {
         this.accountOpsToBeSigned[accountAddr][networkId] = { accountOp, estimation: null }
         if (this.signAccountOp) this.signAccountOp.update({ accountOp, estimation: null })
 
-        try {
-          await this.#estimateAccountOp(accountOp)
-        } catch (e) {
-          // @TODO: unified wrapper for controller errors
-          console.error(e)
-        }
+        this.#estimateAccountOp(accountOp)
       } else {
         delete this.accountOpsToBeSigned[accountAddr]?.[networkId]
         if (!Object.keys(this.accountOpsToBeSigned[accountAddr] || {}).length)
@@ -738,128 +733,136 @@ export class MainController extends EventEmitter {
 
   // @TODO: protect this from race conditions/simultanous executions
   async #estimateAccountOp(accountOp: AccountOp) {
-    // make a local copy to avoid updating the main reference
-    const localAccountOp: AccountOp = { ...accountOp }
+    try {
+      // make a local copy to avoid updating the main reference
+      const localAccountOp: AccountOp = { ...accountOp }
 
-    await this.#initialLoadPromise
-    // new accountOps should have spoof signatures so that they can be easily simulated
-    // this is not used by the Estimator, because it iterates through all associatedKeys and
-    // it knows which ones are authenticated, and it can generate it's own spoofSig
-    // @TODO
-    // accountOp.signature = `${}03`
+      await this.#initialLoadPromise
+      // new accountOps should have spoof signatures so that they can be easily simulated
+      // this is not used by the Estimator, because it iterates through all associatedKeys and
+      // it knows which ones are authenticated, and it can generate it's own spoofSig
+      // @TODO
+      // accountOp.signature = `${}03`
 
-    // TODO check if needed data in accountStates are available
-    // this.accountStates[accountOp.accountAddr][accountOp.networkId].
-    const account = this.accounts.find((x) => x.addr === localAccountOp.accountAddr)
+      // TODO check if needed data in accountStates are available
+      // this.accountStates[accountOp.accountAddr][accountOp.networkId].
+      const account = this.accounts.find((x) => x.addr === localAccountOp.accountAddr)
 
-    // Here, we list EOA accounts for which you can also obtain an estimation of the AccountOp payment.
-    // In the case of operating with a smart account (an account with creation code), all other EOAs can pay the fee.
-    //
-    // If the current account is an EOA, only this account can pay the fee,
-    // and there's no need for checking other EOA accounts native balances.
-    // This is already handled and estimated as a fee option in the estimate library, which is why we pass an empty array here.
-    const EOAaccounts = account?.creation ? this.accounts.filter((acc) => !acc.creation) : []
+      // Here, we list EOA accounts for which you can also obtain an estimation of the AccountOp payment.
+      // In the case of operating with a smart account (an account with creation code), all other EOAs can pay the fee.
+      //
+      // If the current account is an EOA, only this account can pay the fee,
+      // and there's no need for checking other EOA accounts native balances.
+      // This is already handled and estimated as a fee option in the estimate library, which is why we pass an empty array here.
+      const EOAaccounts = account?.creation ? this.accounts.filter((acc) => !acc.creation) : []
 
-    // Take the fee tokens from two places: the user's tokens and his gasTank
-    // The gastTank tokens participate on each network as they belong everywhere
-    // NOTE: at some point we should check all the "?" signs below and if
-    // an error pops out, we should notify the user about it
-    const networkFeeTokens =
-      this.portfolio.latest?.[localAccountOp.accountAddr]?.[localAccountOp.networkId]?.result
-        ?.tokens ?? []
-    const gasTankFeeTokens =
-      this.portfolio.latest?.[localAccountOp.accountAddr]?.gasTank?.result?.tokens ?? []
+      // Take the fee tokens from two places: the user's tokens and his gasTank
+      // The gastTank tokens participate on each network as they belong everywhere
+      // NOTE: at some point we should check all the "?" signs below and if
+      // an error pops out, we should notify the user about it
+      const networkFeeTokens =
+        this.portfolio.latest?.[localAccountOp.accountAddr]?.[localAccountOp.networkId]?.result
+          ?.tokens ?? []
+      const gasTankFeeTokens =
+        this.portfolio.latest?.[localAccountOp.accountAddr]?.gasTank?.result?.tokens ?? []
 
-    const feeTokens =
-      [...networkFeeTokens, ...gasTankFeeTokens]
-        .filter((t) => t.flags.isFeeToken)
-        .map((token) => ({
-          address: token.address,
-          isGasTank: token.flags.onGasTank,
-          amount: BigInt(token.amount)
-        })) || []
+      const feeTokens =
+        [...networkFeeTokens, ...gasTankFeeTokens]
+          .filter((t) => t.flags.isFeeToken)
+          .map((token) => ({
+            address: token.address,
+            isGasTank: token.flags.onGasTank,
+            amount: BigInt(token.amount)
+          })) || []
 
-    if (!account)
-      throw new Error(`estimateAccountOp: ${localAccountOp.accountAddr}: account does not exist`)
-    const network = this.settings.networks.find((x) => x.id === localAccountOp.networkId)
-    if (!network)
-      throw new Error(`estimateAccountOp: ${localAccountOp.networkId}: network does not exist`)
+      if (!account)
+        throw new Error(`estimateAccountOp: ${localAccountOp.accountAddr}: account does not exist`)
+      const network = this.settings.networks.find((x) => x.id === localAccountOp.networkId)
+      if (!network)
+        throw new Error(`estimateAccountOp: ${localAccountOp.networkId}: network does not exist`)
 
-    const humanization = await humanizeAccountOp(
-      this.#storage,
-      localAccountOp,
-      this.#fetch,
-      this.emitError
-    )
-    const additionalHints: GetOptions['additionalHints'] = humanization
-      .map((call) =>
-        !call.fullVisualization
-          ? []
-          : call.fullVisualization.map((vis) =>
-              vis.address && isAddress(vis.address) ? getAddress(vis.address) : ''
-            )
-      )
-      .flat()
-      .filter((x) => isAddress(x))
-
-    const [, , estimation] = await Promise.all([
-      // NOTE: we are not emitting an update here because the portfolio controller will do that
-      // NOTE: the portfolio controller has it's own logic of constructing/caching providers, this is intentional, as
-      // it may have different needs
-      this.portfolio.updateSelectedAccount(
-        this.accounts,
-        this.settings.networks,
-        localAccountOp.accountAddr,
-        Object.fromEntries(
-          Object.entries(this.accountOpsToBeSigned[localAccountOp.accountAddr])
-            .filter(([, accOp]) => accOp)
-            .map(([networkId, x]) => [networkId, [x!.accountOp]])
-        ),
-        {
-          forceUpdate: true,
-          additionalHints
-        }
-      ),
-      shouldGetAdditionalPortfolio(account) &&
-        this.portfolio.getAdditionalPortfolio(localAccountOp.accountAddr),
-      estimate(
-        this.settings.providers[localAccountOp.networkId],
-        network,
-        account,
+      const humanization = await humanizeAccountOp(
+        this.#storage,
         localAccountOp,
-        this.accountStates[localAccountOp.accountAddr][localAccountOp.networkId],
-        EOAaccounts,
-        // @TODO - first time calling this, portfolio is still not loaded.
-        feeTokens,
-        {
-          is4337Broadcast: isErc4337Broadcast(
-            network,
-            this.accountStates[localAccountOp.accountAddr][localAccountOp.networkId]
-          )
-        }
-      ).catch((e) => {
-        this.emitError({
-          level: 'major',
-          message: `Failed to estimate account op for ${localAccountOp.accountAddr} on ${localAccountOp.networkId}`,
-          error: e
+        this.#fetch,
+        this.emitError
+      )
+      const additionalHints: GetOptions['additionalHints'] = humanization
+        .map((call) =>
+          !call.fullVisualization
+            ? []
+            : call.fullVisualization.map((vis) =>
+                vis.address && isAddress(vis.address) ? getAddress(vis.address) : ''
+              )
+        )
+        .flat()
+        .filter((x) => isAddress(x))
+
+      const [, , estimation] = await Promise.all([
+        // NOTE: we are not emitting an update here because the portfolio controller will do that
+        // NOTE: the portfolio controller has it's own logic of constructing/caching providers, this is intentional, as
+        // it may have different needs
+        this.portfolio.updateSelectedAccount(
+          this.accounts,
+          this.settings.networks,
+          localAccountOp.accountAddr,
+          Object.fromEntries(
+            Object.entries(this.accountOpsToBeSigned[localAccountOp.accountAddr])
+              .filter(([, accOp]) => accOp)
+              .map(([networkId, x]) => [networkId, [x!.accountOp]])
+          ),
+          {
+            forceUpdate: true,
+            additionalHints
+          }
+        ),
+        shouldGetAdditionalPortfolio(account) &&
+          this.portfolio.getAdditionalPortfolio(localAccountOp.accountAddr),
+        estimate(
+          this.settings.providers[localAccountOp.networkId],
+          network,
+          account,
+          localAccountOp,
+          this.accountStates[localAccountOp.accountAddr][localAccountOp.networkId],
+          EOAaccounts,
+          // @TODO - first time calling this, portfolio is still not loaded.
+          feeTokens,
+          {
+            is4337Broadcast: isErc4337Broadcast(
+              network,
+              this.accountStates[localAccountOp.accountAddr][localAccountOp.networkId]
+            )
+          }
+        ).catch((e) => {
+          this.emitError({
+            level: 'major',
+            message: `Failed to estimate account op for ${localAccountOp.accountAddr} on ${localAccountOp.networkId}`,
+            error: e
+          })
+          return null
         })
-        return null
+      ])
+
+      this.accountOpsToBeSigned[localAccountOp.accountAddr] ||= {}
+      this.accountOpsToBeSigned[localAccountOp.accountAddr][localAccountOp.networkId] ||= {
+        accountOp: localAccountOp,
+        estimation
+      }
+      // @TODO compare intent between accountOp and this.accountOpsToBeSigned[accountOp.accountAddr][accountOp.networkId].accountOp
+      this.accountOpsToBeSigned[localAccountOp.accountAddr][localAccountOp.networkId]!.estimation =
+        estimation
+
+      // update the signAccountOp controller once estimation finishes;
+      // this eliminates the infinite loading bug if the estimation comes slower
+      if (this.signAccountOp && estimation) {
+        this.signAccountOp.update({ estimation })
+      }
+    } catch (error: any) {
+      this.emitError({
+        level: 'silent',
+        message: 'Estimation error',
+        error
       })
-    ])
-
-    this.accountOpsToBeSigned[localAccountOp.accountAddr] ||= {}
-    this.accountOpsToBeSigned[localAccountOp.accountAddr][localAccountOp.networkId] ||= {
-      accountOp: localAccountOp,
-      estimation
-    }
-    // @TODO compare intent between accountOp and this.accountOpsToBeSigned[accountOp.accountAddr][accountOp.networkId].accountOp
-    this.accountOpsToBeSigned[localAccountOp.accountAddr][localAccountOp.networkId]!.estimation =
-      estimation
-
-    // update the signAccountOp controller once estimation finishes;
-    // this eliminates the infinite loading bug if the estimation comes slower
-    if (this.signAccountOp && estimation) {
-      this.signAccountOp.update({ estimation })
     }
   }
 
