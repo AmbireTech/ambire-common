@@ -3,6 +3,7 @@ import { Key } from './keystore'
 
 export interface KeyIterator {
   type: Key['type']
+  subType?: 'seed' | 'private-key'
   /** The wallet native SDK instance, if any exists */
   walletSDK?: any
   retrieve: (
