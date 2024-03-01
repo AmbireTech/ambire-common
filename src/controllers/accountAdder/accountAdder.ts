@@ -6,12 +6,21 @@ import {
   HD_PATH_TEMPLATE_TYPE,
   SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
 } from '../../consts/derivation'
-import { Account, AccountOnchainState } from '../../interfaces/account'
+import {
+  Account,
+  AccountOnchainState,
+  AccountOnPage,
+  AccountWithNetworkMeta,
+  DerivedAccount,
+  DerivedAccountWithoutNetworkMeta,
+  SelectedAccountForImport
+} from '../../interfaces/account'
 import { KeyIterator } from '../../interfaces/keyIterator'
-import { dedicatedToOneSAPriv, ExternalKey, Key } from '../../interfaces/keystore'
+import { dedicatedToOneSAPriv, ReadyToAddKeys } from '../../interfaces/keystore'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
 import { AccountPreferences, KeyPreferences } from '../../interfaces/settings'
 import {
+  getAccountImportStatus,
   getBasicAccount,
   getEmailAccount,
   getSmartAccount,
@@ -27,62 +36,6 @@ import { KeystoreController } from '../keystore/keystore'
 
 export const DEFAULT_PAGE = 1
 export const DEFAULT_PAGE_SIZE = 5
-
-type AccountWithNetworkMeta = Account & { usedOnNetworks: NetworkDescriptor[] }
-
-type AccountDerivationMeta = {
-  slot: number // the iteration on which the account is derived, starting from 1
-  index: number // the derivation index of the <account> in the slot, starting from 0
-  isLinked: boolean // linked accounts are also smart accounts, so use a flag to differentiate
-}
-
-/**
- * The account that the user has actively chosen (selected) via the app UI.
- * It's always one of the visible accounts returned by the accountsOnPage().
- * Could be either a basic (EOA) account, a smart account or a linked account.
- */
-export type SelectedAccount = {
-  account: Account
-  isLinked: AccountDerivationMeta['isLinked']
-  accountKeys: (Omit<AccountDerivationMeta, 'isLinked'> & { addr: Account['addr'] })[]
-}
-
-/**
- * The account that is derived programmatically and internally by Ambire.
- * Could be either a basic (EOA) account, a derived with custom derivation
- * basic (EOA) account (used for smart account key only) or a smart account.
- */
-type DerivedAccount = AccountDerivationMeta & { account: AccountWithNetworkMeta }
-// Sub-type, used during intermediate step during the deriving accounts process
-type DerivedAccountWithoutNetworkMeta = Omit<DerivedAccount, 'account'> & { account: Account }
-
-export enum ImportStatus {
-  NotImported = 'not-imported',
-  ImportedWithoutKey = 'imported-without-key', // as a view only account
-  ImportedWithSomeOfTheKeys = 'imported-with-some-of-the-keys', // imported with
-  // some of the keys (having the same key type), but not all found on the current page
-  ImportedWithTheSameKeys = 'imported-with-the-same-keys', // imported with all
-  // keys (having the same key type) found on the current page
-  ImportedWithDifferentKeys = 'imported-with-different-keys' // different key
-  // meaning that could be a key with the same address but different type,
-  // or a key with different address altogether.
-}
-/**
- * All the accounts that should be visible on the current page - the Basic
- * Accounts, Smart Accounts and the linked accounts. Excludes the derived
- * EOA (basic) accounts used for smart account keys only.
- */
-export type AccountOnPage = DerivedAccount & { importStatus: ImportStatus }
-
-export type ReadyToAddKeys = {
-  internal: { privateKey: string; dedicatedToOneSA: boolean }[]
-  external: {
-    addr: Key['addr']
-    type: Key['type']
-    dedicatedToOneSA: boolean
-    meta: ExternalKey['meta']
-  }[]
-}
 
 /**
  * Account Adder Controller
@@ -109,7 +62,7 @@ export class AccountAdderController extends EventEmitter {
 
   pageSize: number = DEFAULT_PAGE_SIZE
 
-  selectedAccounts: SelectedAccount[] = []
+  selectedAccounts: SelectedAccountForImport[] = []
 
   // Accounts which identity is created on the Relayer (if needed), and are ready
   // to be added to the user's account list by the Main Controller
@@ -154,48 +107,6 @@ export class AccountAdderController extends EventEmitter {
     this.#alreadyImportedAccounts = alreadyImportedAccounts
     this.#keystore = keystore
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
-  }
-
-  #getAccountOnPageImportStatus(
-    account: Account,
-    _accountsOnPage: Omit<AccountOnPage, 'importStatus'>[]
-  ): { importStatus: ImportStatus } {
-    const isAlreadyImported = this.#alreadyImportedAccounts.some(
-      ({ addr }) => addr === account.addr
-    )
-    if (!isAlreadyImported) return { importStatus: ImportStatus.NotImported }
-
-    const importedAccountKeystoreKeys = this.#keystore.keys.filter((key) =>
-      account.associatedKeys.includes(key.addr)
-    )
-    // Could be imported as a view only account (and therefore, without a key)
-    if (!importedAccountKeystoreKeys.length)
-      return { importStatus: ImportStatus.ImportedWithoutKey }
-
-    // Same key in this context means not only the same key address, but the
-    // same type too. Because user can opt in to import same key address with
-    // many different hardware wallets (Trezor, Ledger, GridPlus, etc.) or
-    // the same address with seed (private key).
-    const associatedKeysAlreadyImported = importedAccountKeystoreKeys.filter(
-      (key) => account.associatedKeys.includes(key.addr) && key.type === this.#keyIterator?.type
-    )
-    if (associatedKeysAlreadyImported.length) {
-      const associatedKeysNotImportedYet = account.associatedKeys.filter((keyAddr) =>
-        associatedKeysAlreadyImported.some((x) => x.addr !== keyAddr)
-      )
-
-      const notImportedYetKeysExistInPage = _accountsOnPage.some((x) =>
-        associatedKeysNotImportedYet.includes(x.account.addr)
-      )
-
-      return {
-        importStatus: notImportedYetKeysExistInPage
-          ? ImportStatus.ImportedWithSomeOfTheKeys
-          : ImportStatus.ImportedWithTheSameKeys
-      }
-    }
-
-    return { importStatus: ImportStatus.NotImported }
   }
 
   get accountsOnPage(): AccountOnPage[] {
@@ -290,7 +201,13 @@ export class AccountAdderController extends EventEmitter {
 
     return mergedAccounts.map((acc) => ({
       ...acc,
-      ...this.#getAccountOnPageImportStatus(acc.account, mergedAccounts)
+      importStatus: getAccountImportStatus({
+        account: acc.account,
+        alreadyImportedAccounts: this.#alreadyImportedAccounts,
+        keys: this.#keystore.keys,
+        accountsOnPage: mergedAccounts,
+        keyIteratorType: this.#keyIterator?.type
+      })
     }))
   }
 
@@ -522,7 +439,7 @@ export class AccountAdderController extends EventEmitter {
    * the newly added accounts data (like preferences, keys and others)
    */
   async addAccounts(
-    accounts: SelectedAccount[] = [],
+    accounts: SelectedAccountForImport[] = [],
     readyToAddAccountPreferences: AccountPreferences = {},
     readyToAddKeys: ReadyToAddKeys = { internal: [], external: [] },
     readyToAddKeyPreferences: KeyPreferences = []
@@ -545,14 +462,14 @@ export class AccountAdderController extends EventEmitter {
     this.emitUpdate()
 
     let newlyCreatedAccounts: Account['addr'][] = []
-    const accountsToAddOnRelayer: SelectedAccount[] = accounts
+    const accountsToAddOnRelayer: SelectedAccountForImport[] = accounts
       // Identity only for the smart accounts must be created on the Relayer
       .filter((x) => isSmartAccount(x.account))
       // Skip creating identity for Ambire v1 smart accounts
       .filter((x) => !isAmbireV1LinkedAccount(x.account.creation?.factoryAddr))
 
     if (accountsToAddOnRelayer.length) {
-      const body = accountsToAddOnRelayer.map(({ account }: SelectedAccount) => ({
+      const body = accountsToAddOnRelayer.map(({ account }: SelectedAccountForImport) => ({
         addr: account.addr,
         ...(account.email ? { email: account.email } : {}),
         associatedKeys: account.initialPrivileges,
@@ -619,7 +536,7 @@ export class AccountAdderController extends EventEmitter {
     this.emitUpdate()
   }
 
-  async createAndAddEmailAccount(selectedAccount: SelectedAccount) {
+  async createAndAddEmailAccount(selectedAccount: SelectedAccountForImport) {
     const {
       account: { email },
       accountKeys: [recoveryKey]
