@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/brace-style */
-import { ethers, getAddress, isAddress, TransactionResponse } from 'ethers'
+import { ethers, getAddress, isAddress, TransactionResponse, ZeroAddress } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFactory.json'
@@ -756,6 +756,12 @@ export class MainController extends EventEmitter {
     // this.accountStates[accountOp.accountAddr][accountOp.networkId].
     const account = this.accounts.find((x) => x.addr === localAccountOp.accountAddr)
 
+    if (!account)
+      throw new Error(`estimateAccountOp: ${localAccountOp.accountAddr}: account does not exist`)
+    const network = this.settings.networks.find((x) => x.id === localAccountOp.networkId)
+    if (!network)
+      throw new Error(`estimateAccountOp: ${localAccountOp.networkId}: network does not exist`)
+
     // Here, we list EOA accounts for which you can also obtain an estimation of the AccountOp payment.
     // In the case of operating with a smart account (an account with creation code), all other EOAs can pay the fee.
     //
@@ -773,21 +779,23 @@ export class MainController extends EventEmitter {
         ?.tokens ?? []
     const gasTankFeeTokens =
       this.portfolio.latest?.[localAccountOp.accountAddr]?.gasTank?.result?.tokens ?? []
+    const filteredGasToken = gasTankFeeTokens.filter((t) => {
+      if (t.address === ZeroAddress)
+        return (
+          t.networkId === network.id ||
+          (t.networkId === 'ethereum' && network.nativeAssetSymbol === 'ETH')
+        )
+      return t.networkId === 'ethereum' || t.networkId === network.id
+    })
 
     const feeTokens =
-      [...networkFeeTokens, ...gasTankFeeTokens]
+      [...networkFeeTokens, ...filteredGasToken]
         .filter((t) => t.flags.isFeeToken)
         .map((token) => ({
           address: token.address,
           isGasTank: token.flags.onGasTank,
           amount: BigInt(token.amount)
         })) || []
-
-    if (!account)
-      throw new Error(`estimateAccountOp: ${localAccountOp.accountAddr}: account does not exist`)
-    const network = this.settings.networks.find((x) => x.id === localAccountOp.networkId)
-    if (!network)
-      throw new Error(`estimateAccountOp: ${localAccountOp.networkId}: network does not exist`)
 
     const humanization = await humanizeAccountOp(
       this.#storage,
