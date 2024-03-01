@@ -12,6 +12,7 @@ interface FeeOptions {
   baseFeeMaxChangeDenominator?: bigint
   // should we increase the relayer fee in %
   feeIncrease?: bigint
+  maxPriorityFeePerGasCalc?: string
 }
 
 // NetworkId is a string: this is our internal identifier for the network
