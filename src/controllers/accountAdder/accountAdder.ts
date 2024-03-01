@@ -460,6 +460,21 @@ export class AccountAdderController extends EventEmitter {
     }
   }
 
+  retrievePrivateKeysOfSelectedAccounts() {
+    if (!this.hdPathTemplate) {
+      this.emitError({
+        level: 'major',
+        message:
+          'The HD path template is missing. Please try to start the process of selecting accounts again. If the problem persist, please contact support.',
+        error: new Error('accountAdder: missing hdPathTemplate')
+      })
+
+      return []
+    }
+
+    return this.#keyIterator?.retrievePrivateKeys(this.selectedAccounts, this.hdPathTemplate) || []
+  }
+
   async setPage({
     page = this.page,
     networks,

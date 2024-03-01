@@ -1,3 +1,4 @@
+import { SelectedAccount } from 'controllers/accountAdder/accountAdder'
 /* eslint-disable new-cap */
 import { ethers, HDNodeWallet, Mnemonic, Wallet } from 'ethers'
 
@@ -113,5 +114,61 @@ export class KeyIterator implements KeyIteratorInterface {
     })
 
     return keys
+  }
+
+  // TODO: Figure out a more generic name?
+  retrievePrivateKeys(
+    selectedAccountsForImport: SelectedAccount[],
+    hdPathTemplate: HD_PATH_TEMPLATE_TYPE
+  ) {
+    return selectedAccountsForImport.flatMap((acc) => {
+      // Should never happen
+      if (!['seed', 'private-key'].includes(this.subType)) {
+        console.error('keyIterator: invalid subType', this.subType)
+        return []
+      }
+
+      return acc.accountKeys.flatMap(({ index }) => {
+        const dedicatedToOneSA = !acc.isLinked
+
+        // In case it is a seed, the private keys have to be extracted
+        if (this.subType === 'seed') {
+          if (!this.#seedPhrase) {
+            // Should never happen
+            console.error('keyIterator: no seed phrase provided')
+            return []
+          }
+
+          return [
+            {
+              privateKey: getPrivateKeyFromSeed(this.#seedPhrase, index, hdPathTemplate),
+              dedicatedToOneSA
+            }
+          ]
+        }
+
+        // So the subType is 'private-key' then
+        if (!this.#privateKey) {
+          // Should never happen
+          console.error('keyIterator: no private key provided')
+          return []
+        }
+
+        // Private keys for accounts used as smart account keys should be derived
+        const isPrivateKeyThatShouldBeDerived =
+          this.#privateKey &&
+          isValidPrivateKey(this.#privateKey) &&
+          index >= SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
+
+        return [
+          {
+            privateKey: isPrivateKeyThatShouldBeDerived
+              ? derivePrivateKeyFromAnotherPrivateKey(this.#privateKey)
+              : this.#privateKey,
+            dedicatedToOneSA
+          }
+        ]
+      })
+    })
   }
 }
