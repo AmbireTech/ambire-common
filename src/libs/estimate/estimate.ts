@@ -1,4 +1,4 @@
-import { AbiCoder, encodeRlp, Interface, JsonRpcProvider, Provider, toBeHex } from 'ethers'
+import { AbiCoder, Interface, JsonRpcProvider, Provider, toBeHex, ZeroAddress } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFactory.json'
@@ -169,7 +169,7 @@ export async function estimate(
         .catch(catchEstimationFailure),
       provider.getBalance(account.addr).catch(catchEstimationFailure),
       deploylessEstimator
-        .call('getL1GasEstimation', [encodeRlp(encodedCallData), '0x'], {
+        .call('getL1GasEstimation', [encodedCallData, FEE_COLLECTOR], {
           from: blockFrom,
           blockTag
         })
@@ -218,7 +218,7 @@ export async function estimate(
       getProbableCallData(op, accountState, userOp),
       op.accountAddr,
       FEE_COLLECTOR,
-      100000000,
+      100000,
       2,
       op.nonce,
       100000
@@ -235,7 +235,7 @@ export async function estimate(
       op.accountOpToExecuteBefore?.signature || '0x'
     ],
     [account.addr, op.nonce || 1, op.calls, '0x'],
-    encodeRlp(encodedCallData),
+    encodedCallData,
     account.associatedKeys,
     feeTokens.map((token) => token.address),
     FEE_COLLECTOR,
@@ -423,28 +423,44 @@ export async function estimate(
     finalNativeTokenOptions = []
   }
 
-  const feeTokenOptions = finalFeeTokenOptions.map((token: any, key: number) => ({
-    address: feeTokens[key].address,
-    paidBy: account.addr,
-    availableAmount: feeTokens[key].isGasTank ? feeTokens[key].amount : token.amount,
-    // gasUsed for the gas tank tokens is smaller because of the commitment:
-    // ['gasTank', amount, symbol]
-    // and this commitment costs onchain:
-    // - 1535, if the broadcasting addr is the relayer
-    // - 4035, if the broadcasting addr is different
-    // currently, there are more than 1 relayer addresses and we cannot
-    // be sure which is the one that will broadcast this txn; also, ERC-4337
-    // broadcasts will always consume at least 4035.
-    // setting it to 5000n just be sure
-    gasUsed: feeTokens[key].isGasTank ? 5000n : token.gasUsed,
-    addedNative:
-      !is4337Broadcast || // relayer
-      (userOp && shouldUsePaymaster(userOp, feeTokens[key].address))
-        ? l1GasEstimation.feeWithPayment
-        : l1GasEstimation.fee,
-    isGasTank: feeTokens[key].isGasTank
-  }))
+  const feeTokenOptions = finalFeeTokenOptions.map((token: any, key: number) => {
+    const address = feeTokens[key].address
 
+    // the l1 fee without any form of payment to relayer/paymaster
+    let addedNative = l1GasEstimation.fee
+
+    if (
+      !is4337Broadcast || // relayer
+      (userOp && shouldUsePaymaster(network))
+    ) {
+      // add the l1fee with the feeCall according to the type of feeCall
+      addedNative =
+        address === ZeroAddress
+          ? l1GasEstimation.feeWithNativePayment
+          : l1GasEstimation.feeWithTransferPayment
+    }
+
+    return {
+      address,
+      paidBy: account.addr,
+      availableAmount: feeTokens[key].isGasTank ? feeTokens[key].amount : token.amount,
+      // gasUsed for the gas tank tokens is smaller because of the commitment:
+      // ['gasTank', amount, symbol]
+      // and this commitment costs onchain:
+      // - 1535, if the broadcasting addr is the relayer
+      // - 4035, if the broadcasting addr is different
+      // currently, there are more than 1 relayer addresses and we cannot
+      // be sure which is the one that will broadcast this txn; also, ERC-4337
+      // broadcasts will always consume at least 4035.
+      // setting it to 5000n just be sure
+      gasUsed: feeTokens[key].isGasTank ? 5000n : token.gasUsed,
+      addedNative,
+      isGasTank: feeTokens[key].isGasTank
+    }
+  })
+
+  // this is for EOAs paying for SA in native
+  // or the current address if it's an EOA
   const nativeTokenOptions = finalNativeTokenOptions.map((balance: bigint, key: number) => ({
     address: nativeAddr,
     paidBy: nativeToCheck[key],
