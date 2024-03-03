@@ -26,6 +26,10 @@ export default [
     networkId: 'arbitrum'
   },
   {
+    address: '0x0000000000000000000000000000000000000000',
+    networkId: 'mantle'
+  },
+  {
     // wrapped eth
     address: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
     networkId: 'ethereum'
