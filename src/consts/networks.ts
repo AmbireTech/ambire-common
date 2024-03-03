@@ -91,6 +91,24 @@ const networks: NetworkDescriptor[] = [
       minBaseFee: 100000000n // 1 gwei
     },
     reestimateOn: 6000
+  },
+  {
+    id: 'mantle',
+    name: 'Mantle',
+    nativeAssetSymbol: 'MNT',
+    rpcUrl: 'https://rpc.mantle.xyz	',
+    rpcNoStateOverride: false,
+    chainId: 5000n,
+    explorerUrl: 'https://explorer.mantle.xyz',
+    erc4337: {
+      enabled: false,
+      hasPaymaster: false
+    },
+    unstoppableDomainsChain: 'ERC20',
+    feeOptions: {
+      is1559: false
+    },
+    reestimateOn: 6000
   }
 ]
 

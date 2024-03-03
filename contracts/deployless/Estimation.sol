@@ -299,6 +299,7 @@ contract Estimation is Spoof {
   ) external returns (L1GasEstimation memory l1GasEstimation) {
     l1Oracles[10] = address(0x420000000000000000000000000000000000000F);
     l1Oracles[8453] = address(0x420000000000000000000000000000000000000F);
+    l1Oracles[5000] = address(0x420000000000000000000000000000000000000F);
 
     bytes memory nativeFeeCall = abi.encode(feeCollector, 1, '0x');
     bytes memory transferFeeCall = abi.encode(
