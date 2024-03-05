@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-floating-promises */
+
 import { describe, expect, test } from '@jest/globals'
 
 import { produceMemoryStore } from '../../../test/helpers'
@@ -196,5 +198,24 @@ describe('Settings Controller', () => {
       },
       'ethereum'
     )
+  })
+  test('should add the mantle network as a custom network', (done) => {
+    settingsController.onUpdate(() => {
+      const mantleNetwork = settingsController.networks.find(({ id }) => id === 'mantle')
+      expect(mantleNetwork).not.toBe(undefined)
+      expect(mantleNetwork?.chainId).toBe(5000n)
+      expect(mantleNetwork?.name).toBe('Mantle')
+      expect(mantleNetwork?.id).toBe('mantle')
+      expect(mantleNetwork?.nativeAssetSymbol).toBe('MNT')
+      done()
+    })
+
+    settingsController.addCustomNetwork({
+      name: 'Mantle',
+      chainId: 5000n,
+      explorerUrl: 'https://explorer.mantle.xyz/',
+      nativeAssetSymbol: 'MNT',
+      rpcUrl: 'https://eth-mainnet.alchemyapi.io/v2/123abc123abc123abc123abc123abcde'
+    })
   })
 })

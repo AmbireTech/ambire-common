@@ -2,9 +2,10 @@ import { JsonRpcProvider } from 'ethers'
 
 import { networks } from '../../consts/networks'
 import { Key } from '../../interfaces/keystore'
-import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
+import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
 import {
   AccountPreferences,
+  CustomNetwork,
   KeyPreferences,
   NetworkPreference,
   NetworkPreferences,
@@ -33,16 +34,14 @@ export class SettingsController extends EventEmitter {
   }
 
   get networks(): NetworkDescriptor[] {
-    return networks.map((network) => {
-      const networkPreferences = this.#networkPreferences[network.id]
-      const provider = this.providers[network.id]
-      const newRpcUrl = networkPreferences?.rpcUrl || network.rpcUrl
+    const setProvider = (networkId: NetworkId, newRpcUrl: string) => {
+      const provider = this.providers[networkId]
 
       // Only update the RPC if the new RPC is different from the current one
       // or if there is no RPC for this network yet.
       // eslint-disable-next-line no-underscore-dangle
       if (!provider || provider?._getConnection().url !== newRpcUrl) {
-        const oldRPC = this.providers[network.id]
+        const oldRPC = this.providers[networkId]
 
         if (oldRPC) {
           // If an RPC fails once it will try to reconnect every second. If we don't destroy the old RPC
@@ -50,8 +49,37 @@ export class SettingsController extends EventEmitter {
           oldRPC.destroy()
         }
 
-        this.providers[network.id] = new JsonRpcProvider(newRpcUrl)
+        this.providers[networkId] = new JsonRpcProvider(newRpcUrl)
       }
+    }
+
+    // set the custom networks that do not exist in ambire-common networks
+    const customPrefIds = Object.keys(this.#networkPreferences)
+    const predefinedNetworkIds = networks.map((net) => net.id)
+    const customNetworkIds = customPrefIds.filter((x) => !predefinedNetworkIds.includes(x))
+    const customNetworks = customNetworkIds.map((id: NetworkId) => {
+      const customNetwork: NetworkDescriptor = {
+        name: this.#networkPreferences[id].name ?? '',
+        nativeAssetSymbol: this.#networkPreferences[id].nativeAssetSymbol ?? '',
+        rpcUrl: this.#networkPreferences[id].rpcUrl ?? '',
+        chainId: this.#networkPreferences[id].chainId ?? 0n,
+        explorerUrl: this.#networkPreferences[id].explorerUrl ?? '',
+        id,
+        erc4337: null,
+        rpcNoStateOverride: false,
+        unstoppableDomainsChain: 'ERC20',
+        feeOptions: {
+          is1559: false
+        }
+      }
+      setProvider(id, customNetwork.rpcUrl)
+      return customNetwork
+    })
+
+    // configure the main networks
+    const mainNetworks = networks.map((network) => {
+      const networkPreferences = this.#networkPreferences[network.id]
+      setProvider(network.id, networkPreferences?.rpcUrl || network.rpcUrl)
 
       if (networkPreferences) {
         return {
@@ -61,6 +89,8 @@ export class SettingsController extends EventEmitter {
       }
       return network
     })
+
+    return [...mainNetworks, ...customNetworks]
   }
 
   updateProviderIsWorking(networkId: NetworkDescriptor['id'], isWorking: boolean) {
@@ -195,8 +225,27 @@ export class SettingsController extends EventEmitter {
     this.emitUpdate()
   }
 
+  // NOTE: used only for adding a new network. We add it to the user's
+  // this.#networkPreferences as one day the custom network can be a part of
+  // Ambire's main networks => the options in it will become a preference
+  async addCustomNetwork(customNetwork: CustomNetwork) {
+    // make sure the network has not been added already
+    const chainIds = this.networks.map((net) => net.chainId)
+    if (chainIds.indexOf(BigInt(customNetwork.chainId)) !== -1) {
+      return this.emitError({
+        message: `A chain with a chain id of ${customNetwork.chainId} has already been added`,
+        level: 'major',
+        error: new Error('settings: addCustomNetwork chain already added')
+      })
+    }
+
+    this.#networkPreferences[customNetwork.name.toLowerCase()] = customNetwork
+    await this.#storePreferences()
+    this.emitUpdate()
+  }
+
   async updateNetworkPreferences(
-    networkPreferences: NetworkPreference,
+    networkPreferences: NetworkPreference | CustomNetwork,
     networkId: NetworkDescriptor['id']
   ) {
     if (!Object.keys(networkPreferences).length) return
@@ -227,6 +276,7 @@ export class SettingsController extends EventEmitter {
     this.emitUpdate()
   }
 
+  // NOTE: use this method only for predefined networks
   async resetNetworkPreference(key: keyof NetworkPreference, networkId: NetworkDescriptor['id']) {
     if (
       !networkId ||

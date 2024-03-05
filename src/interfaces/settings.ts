@@ -19,12 +19,23 @@ export type KeyPreferences = {
 }[]
 
 export type NetworkPreference = {
+  name?: string
   rpcUrl?: string
+  chainId?: bigint
+  nativeAssetSymbol?: string
   explorerUrl?: string
 }
 
+export type CustomNetwork = {
+  name: string
+  rpcUrl: string
+  chainId: bigint
+  nativeAssetSymbol: string
+  explorerUrl: string
+}
+
 export type NetworkPreferences = {
-  [key in NetworkDescriptor['id']]: NetworkPreference
+  [key in NetworkDescriptor['id']]: NetworkPreference | CustomNetwork
 }
 
 export type RPCProvider = JsonRpcProvider & { isWorking?: boolean }
