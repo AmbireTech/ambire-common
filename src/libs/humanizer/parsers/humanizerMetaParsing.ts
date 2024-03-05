@@ -35,7 +35,7 @@ export const humanizerMetaParsing: HumanizerParsingModule = (
         }
       }
 
-      if (v.type === 'token' && !v.humanizerMeta) {
+      if (v.type === 'token' && !v.humanizerMeta && !v.isHidden) {
         asyncOps.push(getTokenInfo(humanizerSettings, v.address, options))
         humanizerWarnings.push({
           content: `Unknown token ${v.address}`,

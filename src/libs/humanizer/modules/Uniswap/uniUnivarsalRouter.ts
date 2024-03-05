@@ -176,6 +176,7 @@ export const uniUniversalRouter = (
               parsed.push({
                 ...call,
                 fullVisualization: [
+                  // @TODO extract args (first we have to add them to the COMMANDS_DESCRIPTIONS object)
                   getLabel('Approved Uniswap to use the following token via signed message.')
                 ]
               })

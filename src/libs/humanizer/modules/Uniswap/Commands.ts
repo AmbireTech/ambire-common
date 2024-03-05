@@ -106,6 +106,20 @@ export const COMMANDS_DESCRIPTIONS = {
   },
   PERMIT2_PERMIT: {
     command: '0x0a',
+    // @TODO input details
+    /*
+    struct PermitSingle {
+        // the permit data for a single token allowance
+        PermitDetails details;
+        // address permissioned on the allowed tokens
+        address spender;
+        // deadline on the permit signature
+        uint256 sigDeadline;
+    }
+
+    IAllowanceTransfer.PermitSingle A PermitSingle struct outlining the Permit2 permit to execute
+    bytes The signature to provide to Permit2
+    */
     inputsDetails: []
   },
   WRAP_ETH: {

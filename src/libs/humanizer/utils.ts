@@ -74,8 +74,8 @@ export function getDeadlineText(deadline: bigint): string {
   return `valid until ${new Date(Number(deadline)).toLocaleString()}`
 }
 
-export function getDeadline(deadlineSecs: bigint): HumanizerVisualization {
-  const deadline = deadlineSecs * 1000n
+export function getDeadline(deadlineSecs: bigint | number): HumanizerVisualization {
+  const deadline = BigInt(deadlineSecs) * 1000n
   return {
     type: 'deadline',
     amount: deadline
@@ -141,14 +141,14 @@ export async function getTokenInfo(
       return null
     }
     options.emitError({
-      message: 'getTokenInfo: something is wrong goingecko reponse format or 404',
+      message: 'getTokenInfo: something is wrong cena.ambire.com reponse format or 404',
       error: new Error('unexpected response format or 404'),
       level: 'silent'
     })
     return null
   } catch (e: any) {
     options.emitError({
-      message: `getTokenInfo: something is wrong with coingecko api ${e.message}`,
+      message: `getTokenInfo: something is wrong with cena.ambire.com api ${e.message}`,
       error: e,
       level: 'silent'
     })
