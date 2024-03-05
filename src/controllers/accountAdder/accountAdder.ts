@@ -433,7 +433,15 @@ export class AccountAdderController extends EventEmitter {
     this.#linkedAccounts = []
     this.accountsLoading = true
     this.emitUpdate()
-    this.#derivedAccounts = await this.#deriveAccounts({ networks, providers })
+    try {
+      this.#derivedAccounts = await this.#deriveAccounts({ networks, providers })
+    } catch (e: any) {
+      this.emitError({
+        message: 'Retrieving accounts was canceled or failed.',
+        error: e?.message || 'accountAdder: failed to derive accounts',
+        level: 'major'
+      })
+    }
     this.accountsLoading = false
     this.emitUpdate()
     this.#findAndSetLinkedAccounts({
