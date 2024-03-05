@@ -16,6 +16,7 @@ export type HumanizerVisualization = {
   warning?: boolean
   // humanizerMeta?: HumanizerMetaAddress
   id?: bigint
+  isHidden?: boolean
 }
 export interface IrCall extends Call {
   fullVisualization?: HumanizerVisualization[]

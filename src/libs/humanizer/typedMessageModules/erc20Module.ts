@@ -2,22 +2,6 @@ import { TypedMessage } from '../../../interfaces/userRequest'
 import { HumanizerTypedMessaageModule, HumanizerVisualization } from '../interfaces'
 import { getAction, getDeadline, getAddressVisualization, getLabel, getToken } from '../utils'
 
-const visualizePermit = (
-  spender: string,
-  value: bigint,
-  deadline: bigint,
-  token: string
-): HumanizerVisualization[] => {
-  const res = [
-    getAction('Send'),
-    getToken(token, value),
-    getLabel('to'),
-    getAddressVisualization(spender)
-  ]
-  if (getDeadline(deadline)) res.push(getDeadline(deadline) as HumanizerVisualization)
-  return res
-}
-
 export const erc20Module: HumanizerTypedMessaageModule = (tm: TypedMessage) => {
   if (tm.types.Permit && tm.primaryType === 'Permit') {
     if (
@@ -25,17 +9,39 @@ export const erc20Module: HumanizerTypedMessaageModule = (tm: TypedMessage) => {
       tm.message.spender &&
       tm.message.value &&
       tm.message.nonce &&
-      tm.message.deadline
+      tm.message.deadline &&
+      tm.domain.verifyingContract
     ) {
       return {
-        fullVisualization: visualizePermit(
-          tm.message.spender,
-          tm.message.value,
-          tm.message.deadline,
-          tm.domain.verifyingContract as string
-        )
+        fullVisualization: [
+          getAction('Send'),
+          getToken(tm.domain.verifyingContract!, tm.message.value),
+          getLabel('to'),
+          getAddressVisualization(tm.message.spender),
+          tm.message.deadline ? getDeadline(tm.message.deadline) : null
+        ].filter((x) => x) as HumanizerVisualization[]
       }
     }
+    // @TODO should we add humanization here?
+  }
+  if (tm.types.PermitSingle && tm.primaryType === 'PermitSingle') {
+    if (
+      tm?.message?.spender &&
+      tm?.message?.details?.token &&
+      tm?.message?.details?.amount &&
+      tm?.message?.details?.expiration
+    ) {
+      return {
+        fullVisualization: [
+          getLabel('Approve'),
+          getAddressVisualization(tm.message.spender),
+          getLabel('to use'),
+          getToken(tm.message.details.token, BigInt(tm.message.details.amount)),
+          getDeadline(tm.message.details.expiration)
+        ]
+      }
+    }
+    // @TODO should we add humanization here?
   }
   return { fullVisualization: [] }
 }
