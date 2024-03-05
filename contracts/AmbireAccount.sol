@@ -198,11 +198,22 @@ contract AmbireAccount {
 	/**
 	 * @notice  allows the contract itself to execute a batch of calls
 	 * self-calling is useful in cases like wanting to do multiple things in a tryCatchLimit
-	 * @param   calls  the transaction we're executing
+	 * @param   calls  the calls we're executing
 	 */
 	function executeBySelf(Transaction[] calldata calls) external payable {
 		require(msg.sender == address(this), 'ONLY_ACCOUNT_CAN_CALL');
 		executeBatch(calls);
+	}
+
+	/**
+	 * @notice  allows the contract itself to execute a single calls
+	 * self-calling is useful when you want to workaround the executeBatch()
+	 * protection of not being able to call address(0)
+	 * @param   call  the call we're executing
+	 */
+	function executeBySelfSingle(Transaction calldata call) external payable {
+		require(msg.sender == address(this), 'ONLY_ACCOUNT_CAN_CALL');
+		executeCall(call.to, call.value, call.data);
 	}
 
 	/**
