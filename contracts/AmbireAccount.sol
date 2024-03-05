@@ -224,7 +224,7 @@ contract AmbireAccount {
 		uint256 len = calls.length;
 		for (uint256 i = 0; i < len; i++) {
 			Transaction memory call = calls[i];
-			executeCall(call.to, call.value, call.data);
+			if (call.to != address(0)) executeCall(call.to, call.value, call.data);
 		}
 	}
 
