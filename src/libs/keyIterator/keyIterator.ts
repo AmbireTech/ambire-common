@@ -117,8 +117,7 @@ export class KeyIterator implements KeyIteratorInterface {
     return keys
   }
 
-  // TODO: Figure out a more generic name?
-  retrievePrivateKeys(
+  retrieveInternalKeys(
     selectedAccountsForImport: SelectedAccount[],
     hdPathTemplate: HD_PATH_TEMPLATE_TYPE
   ) {
@@ -129,7 +128,7 @@ export class KeyIterator implements KeyIteratorInterface {
         return []
       }
 
-      return acc.accountKeys.flatMap(({ index }) => {
+      return acc.accountKeys.flatMap(({ index }: { index: number }) => {
         const dedicatedToOneSA = !acc.isLinked
 
         // In case it is a seed, the private keys have to be extracted

@@ -382,7 +382,7 @@ export class AccountAdderController extends EventEmitter {
     }
   }
 
-  retrievePrivateKeysOfSelectedAccounts() {
+  retrieveInternalKeysOfSelectedAccounts() {
     if (!this.hdPathTemplate) {
       this.emitError({
         level: 'major',
@@ -394,7 +394,17 @@ export class AccountAdderController extends EventEmitter {
       return []
     }
 
-    return this.#keyIterator?.retrievePrivateKeys(this.selectedAccounts, this.hdPathTemplate) || []
+    if (!this.#keyIterator?.retrieveInternalKeys) {
+      this.emitError({
+        level: 'major',
+        message:
+          'Retrieving keys failed. Please try to start the process of selecting accounts again. If the problem persist, please contact support.',
+        error: new Error('accountAdder: missing retrieveInternalKeys method')
+      })
+      return []
+    }
+
+    return this.#keyIterator?.retrieveInternalKeys(this.selectedAccounts, this.hdPathTemplate)
   }
 
   async setPage({
