@@ -96,7 +96,7 @@ const networks: NetworkDescriptor[] = [
     id: 'mantle',
     name: 'Mantle',
     nativeAssetSymbol: 'MNT',
-    rpcUrl: 'https://rpc.mantle.xyz	',
+    rpcUrl: 'https://rpc.ankr.com/mantle',
     rpcNoStateOverride: false,
     chainId: 5000n,
     explorerUrl: 'https://explorer.mantle.xyz',

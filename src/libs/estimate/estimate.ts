@@ -155,7 +155,7 @@ export async function estimate(
         'uint256', // nonce
         'uint256' // gasLimit
       ],
-      [call.data, call.to, account.addr, 100000000, 2, nonce, 100000]
+      [call.data, call.to, account.addr, 100000, 2, nonce, 100000]
     )
     const initializeRequests = () => [
       provider
