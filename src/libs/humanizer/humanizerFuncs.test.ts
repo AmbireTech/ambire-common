@@ -337,11 +337,11 @@ describe('module tests', () => {
     expect(asyncOps.length).toBe(1)
     expect(asyncOps[0]).toMatchObject({ key: '0x095ea7b3' })
 
-    accountOp.humanizerMeta = await combineKnownHumanizerInfo(
-      storage,
+    accountOp.humanizerMeta = combineKnownHumanizerInfo(
+      await storage.get(HUMANIZER_META_KEY, { knownAddresses: {}, abis: { NO_ABI: {} } }),
       { abis: { NO_ABI: {} }, knownAddresses: {} },
       asyncOps
-    )
+    ).toStore
 
     // @TODO finish the leraning funvtion
     asyncOps.forEach((a) => {
