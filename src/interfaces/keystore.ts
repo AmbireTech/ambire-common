@@ -116,3 +116,18 @@ export type StoredKey = (InternalKey & { privKey: string }) | (ExternalKey & { p
 export type KeystoreSignerType = {
   new (key: Key, privateKey?: string): KeystoreSigner
 }
+
+/**
+ * The keys that are ready to be added to the user's keystore (by the Main Controller).
+ * They are needed as an intermediate step during the accounts import flow
+ * (for the accounts that were just imported by the AccountAdder Controller).
+ */
+export type ReadyToAddKeys = {
+  internal: { privateKey: string; dedicatedToOneSA: boolean }[]
+  external: {
+    addr: Key['addr']
+    type: Key['type']
+    dedicatedToOneSA: boolean
+    meta: ExternalKey['meta']
+  }[]
+}

@@ -55,6 +55,8 @@ export function derivePrivateKeyFromAnotherPrivateKey(privateKey: string) {
 export class KeyIterator implements KeyIteratorInterface {
   type = 'internal'
 
+  subType: 'seed' | 'private-key'
+
   #privateKey: string | null = null
 
   #seedPhrase: string | null = null
@@ -64,11 +66,13 @@ export class KeyIterator implements KeyIteratorInterface {
 
     if (isValidPrivateKey(_privKeyOrSeed)) {
       this.#privateKey = _privKeyOrSeed
+      this.subType = 'private-key'
       return
     }
 
     if (Mnemonic.isValidMnemonic(_privKeyOrSeed)) {
       this.#seedPhrase = _privKeyOrSeed
+      this.subType = 'seed'
       return
     }
 
