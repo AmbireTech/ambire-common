@@ -12,7 +12,7 @@ export interface KeyIterator {
     fromToArr: { from: number; to: number }[],
     derivation?: HD_PATH_TEMPLATE_TYPE
   ) => Promise<string[]>
-  /** Retrieves the private keys (optional, for hot wallets only÷) */
+  /** Retrieves the private keys (optional, for hot wallets only) */
   retrieveInternalKeys?: (
     selectedAccountsForImport: SelectedAccountForImport[],
     hdPathTemplate: HD_PATH_TEMPLATE_TYPE
