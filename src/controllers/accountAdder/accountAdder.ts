@@ -382,6 +382,10 @@ export class AccountAdderController extends EventEmitter {
     }
   }
 
+  /**
+   * For internal keys only! Returns the ready to be added internal (private)
+   * keys of the currently selected accounts.
+   */
   retrieveInternalKeysOfSelectedAccounts() {
     if (!this.hdPathTemplate) {
       this.#throwMissingHdPath()
@@ -902,7 +906,7 @@ export class AccountAdderController extends EventEmitter {
     this.emitError({
       level: 'major',
       message:
-        'Retrieving keys failed. Please try to start the process of selecting accounts again. If the problem persist, please contact support.',
+        'Retrieving internal keys failed. Please try to start the process of selecting accounts again. If the problem persist, please contact support.',
       error: new Error('accountAdder: missing retrieveInternalKeys method')
     })
   }
