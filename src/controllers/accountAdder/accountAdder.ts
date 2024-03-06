@@ -384,23 +384,12 @@ export class AccountAdderController extends EventEmitter {
 
   retrieveInternalKeysOfSelectedAccounts() {
     if (!this.hdPathTemplate) {
-      this.emitError({
-        level: 'major',
-        message:
-          'The HD path template is missing. Please try to start the process of selecting accounts again. If the problem persist, please contact support.',
-        error: new Error('accountAdder: missing hdPathTemplate')
-      })
-
+      this.#throwMissingHdPath()
       return []
     }
 
     if (!this.#keyIterator?.retrieveInternalKeys) {
-      this.emitError({
-        level: 'major',
-        message:
-          'Retrieving keys failed. Please try to start the process of selecting accounts again. If the problem persist, please contact support.',
-        error: new Error('accountAdder: missing retrieveInternalKeys method')
-      })
+      this.#throwMissingKeyIteratorRetrieveInternalKeysMethod()
       return []
     }
 
@@ -906,6 +895,24 @@ export class AccountAdderController extends EventEmitter {
       message:
         'Something went wrong with deriving the accounts. Please start the process again. If the problem persists, contact support.',
       error: new Error('accountAdder: missing keyIterator')
+    })
+  }
+
+  #throwMissingKeyIteratorRetrieveInternalKeysMethod() {
+    this.emitError({
+      level: 'major',
+      message:
+        'Retrieving keys failed. Please try to start the process of selecting accounts again. If the problem persist, please contact support.',
+      error: new Error('accountAdder: missing retrieveInternalKeys method')
+    })
+  }
+
+  #throwMissingHdPath() {
+    this.emitError({
+      level: 'major',
+      message:
+        'The HD path template is missing. Please try to start the process of selecting accounts again. If the problem persist, please contact support.',
+      error: new Error('accountAdder: missing hdPathTemplate')
     })
   }
 
