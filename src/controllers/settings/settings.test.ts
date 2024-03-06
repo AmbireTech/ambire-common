@@ -200,22 +200,50 @@ describe('Settings Controller', () => {
     )
   })
   test('should add the mantle network as a custom network', (done) => {
+    let emitCounter = 0
     settingsController.onUpdate(() => {
-      const mantleNetwork = settingsController.networks.find(({ id }) => id === 'mantle')
-      expect(mantleNetwork).not.toBe(undefined)
-      expect(mantleNetwork?.chainId).toBe(5000n)
-      expect(mantleNetwork?.name).toBe('Mantle')
-      expect(mantleNetwork?.id).toBe('mantle')
-      expect(mantleNetwork?.nativeAssetSymbol).toBe('MNT')
-      done()
+      if (emitCounter === 0) {
+        const mantleNetwork = settingsController.networks.find(({ id }) => id === 'mantle')
+        expect(mantleNetwork).not.toBe(undefined)
+        expect(mantleNetwork?.chainId).toBe(5000n)
+        expect(mantleNetwork?.name).toBe('Mantle')
+        expect(mantleNetwork?.id).toBe('mantle')
+        expect(mantleNetwork?.nativeAssetSymbol).toBe('MNT')
+
+        // mantle has the entry point uploaded
+        expect(mantleNetwork?.erc4337?.enabled).toBe(true)
+        expect(mantleNetwork?.erc4337?.hasPaymaster).toBe(false)
+      }
+
+      if (emitCounter === 1) {
+        const errors = settingsController.emittedErrors
+        expect(errors.length).toEqual(1)
+        expect(errors[0].message).toEqual('A chain with a chain id of 5000 has already been added')
+      }
+
+      emitCounter++
+      if (emitCounter === 2) {
+        done()
+      }
     })
 
-    settingsController.addCustomNetwork({
-      name: 'Mantle',
-      chainId: 5000n,
-      explorerUrl: 'https://explorer.mantle.xyz/',
-      nativeAssetSymbol: 'MNT',
-      rpcUrl: 'https://eth-mainnet.alchemyapi.io/v2/123abc123abc123abc123abc123abcde'
-    })
+    settingsController
+      .addCustomNetwork({
+        name: 'Mantle',
+        chainId: 5000n,
+        explorerUrl: 'https://explorer.mantle.xyz/',
+        nativeAssetSymbol: 'MNT',
+        rpcUrl: 'https://rpc.mantle.xyz'
+      })
+      .then(() => {
+        // try to add the network again, it should fail the second time
+        settingsController.addCustomNetwork({
+          name: 'Mantle',
+          chainId: 5000n,
+          explorerUrl: 'https://explorer.mantle.xyz/',
+          nativeAssetSymbol: 'MNT',
+          rpcUrl: 'https://rpc.mantle.xyz'
+        })
+      })
   })
 })

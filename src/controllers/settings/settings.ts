@@ -1,5 +1,7 @@
-import { JsonRpcProvider } from 'ethers'
+import { Contract, JsonRpcProvider } from 'ethers'
 
+import EntryPointAbi from '../../../contracts/compiled/EntryPoint.json'
+import { AMBIRE_PAYMASTER, ERC_4337_ENTRYPOINT } from '../../consts/deploy'
 import { networks } from '../../consts/networks'
 import { Key } from '../../interfaces/keystore'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
@@ -64,8 +66,8 @@ export class SettingsController extends EventEmitter {
         rpcUrl: this.#networkPreferences[id].rpcUrl ?? '',
         chainId: this.#networkPreferences[id].chainId ?? 0n,
         explorerUrl: this.#networkPreferences[id].explorerUrl ?? '',
+        erc4337: this.#networkPreferences[id].erc4337 ?? null,
         id,
-        erc4337: null,
         rpcNoStateOverride: false,
         unstoppableDomainsChain: 'ERC20',
         feeOptions: {
@@ -232,14 +234,43 @@ export class SettingsController extends EventEmitter {
     // make sure the network has not been added already
     const chainIds = this.networks.map((net) => net.chainId)
     if (chainIds.indexOf(BigInt(customNetwork.chainId)) !== -1) {
-      return this.emitError({
+      this.emitError({
         message: `A chain with a chain id of ${customNetwork.chainId} has already been added`,
         level: 'major',
         error: new Error('settings: addCustomNetwork chain already added')
       })
+      this.emitUpdate()
+      return
     }
 
-    this.#networkPreferences[customNetwork.name.toLowerCase()] = customNetwork
+    // call the network and check if there's a deployed entry point
+    // there. If there is, check if there's balance for our paymaster
+    // and set them as network properties
+    try {
+      const provider = new JsonRpcProvider(customNetwork.rpcUrl)
+      const entryPointCode = await provider.getCode(ERC_4337_ENTRYPOINT)
+      const has4337 = entryPointCode !== '0x'
+      let hasPaymaster = false
+      if (has4337) {
+        const entryPoint = new Contract(ERC_4337_ENTRYPOINT, EntryPointAbi, provider)
+        const paymasterBalance = await entryPoint.balanceOf(AMBIRE_PAYMASTER)
+        hasPaymaster = paymasterBalance.toString() > 0
+      }
+      const erc4337 = { erc4337: { enabled: has4337, hasPaymaster } }
+      const addCustomNetwork = { ...customNetwork, ...erc4337 }
+
+      this.#networkPreferences[customNetwork.name.toLowerCase()] = addCustomNetwork
+    } catch (e: any) {
+      this.emitError({
+        message:
+          'Failed to detect network, perhaps an RPC issue. Please change the RPC and try again',
+        level: 'major',
+        error: new Error('settings: addCustomNetwork chain already added')
+      })
+      this.emitUpdate()
+      return
+    }
+
     await this.#storePreferences()
     this.emitUpdate()
   }

@@ -24,6 +24,10 @@ export type NetworkPreference = {
   chainId?: bigint
   nativeAssetSymbol?: string
   explorerUrl?: string
+  erc4337?: {
+    enabled: boolean
+    hasPaymaster: boolean
+  }
 }
 
 export type CustomNetwork = {
@@ -32,6 +36,10 @@ export type CustomNetwork = {
   chainId: bigint
   nativeAssetSymbol: string
   explorerUrl: string
+  erc4337?: {
+    enabled: boolean
+    hasPaymaster: boolean
+  }
 }
 
 export type NetworkPreferences = {

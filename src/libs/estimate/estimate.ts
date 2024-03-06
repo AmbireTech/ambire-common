@@ -6,6 +6,7 @@ import Estimation from '../../../contracts/compiled/Estimation.json'
 import Estimation4337 from '../../../contracts/compiled/Estimation4337.json'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { AMBIRE_PAYMASTER, ERC_4337_ENTRYPOINT, SINGLETON } from '../../consts/deploy'
+import { networks as predefinedNetworks } from '../../consts/networks'
 import { SPOOF_SIGTYPE } from '../../consts/signatures'
 import { Account, AccountOnchainState } from '../../interfaces/account'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
@@ -423,6 +424,7 @@ export async function estimate(
     if (estimatedRefund <= gasUsed / 5n && estimatedRefund > 0n) gasUsed = estimatedGas
   }
 
+  const isCustomNetwork = !predefinedNetworks.find((net) => net.id === network.id)
   let finalFeeTokenOptions = feeTokenOutcomes
   let finalNativeTokenOptions = nativeAssetBalances
   if (is4337Broadcast) {
@@ -435,6 +437,11 @@ export async function estimate(
 
     // native from other accounts are not allowed
     finalNativeTokenOptions = []
+  } else if (isCustomNetwork) {
+    // if the network is custom and it's not a 4337Broadcast, we cannot pay with
+    // the SA as the relayer does not support the network. Our only option becomes
+    // basic account paying the fee
+    finalFeeTokenOptions = []
   }
 
   const feeTokenOptions = finalFeeTokenOptions.map((token: any, key: number) => {
