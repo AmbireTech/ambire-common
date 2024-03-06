@@ -129,14 +129,10 @@ export class PortfolioController extends EventEmitter {
     this.emitUpdate()
   }
 
-  updateAdditionalHints(tokenIds: TokenResult['address'][]) {
-    const filteredTokenIds = tokenIds.filter((tokenId) => !this.#additionalHints?.includes(tokenId))
-    this.#additionalHints = [...(this.#additionalHints ?? []), ...filteredTokenIds]
-  }
-
-  async updateTokenPreferences(tokens: CustomToken[]) {
-    this.tokenPreferences = tokens
-    await this.#storage.set('tokenPreferences', tokens)
+  async updateTokenPreferences(tokenPreferences: CustomToken[]) {
+    this.tokenPreferences = tokenPreferences
+    await this.#storage.set('tokenPreferences', tokenPreferences)
+    this.emitUpdate()
   }
 
   async #updateNetworksWithAssets(

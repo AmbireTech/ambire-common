@@ -611,12 +611,17 @@ export class MainController extends EventEmitter {
     }
   }
 
-  async updateSelectedAccount(selectedAccount: string | null = null, forceUpdate: boolean = false) {
+  async updateSelectedAccount(
+    selectedAccount: string | null = null,
+    forceUpdate: boolean = false,
+    additionalHints: string[] = []
+  ) {
     if (!selectedAccount) return
 
     this.portfolio
       .updateSelectedAccount(this.accounts, this.settings.networks, selectedAccount, undefined, {
-        forceUpdate
+        forceUpdate,
+        additionalHints
       })
       .then(() => {
         const account = this.accounts.find(({ addr }) => addr === selectedAccount)
