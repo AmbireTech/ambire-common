@@ -1,5 +1,3 @@
-// TODO: Update import when the AccountAdder types refactoring gets merged
-import { SelectedAccount } from 'controllers/accountAdder/accountAdder'
 /* eslint-disable new-cap */
 import { ethers, HDNodeWallet, Mnemonic, Wallet } from 'ethers'
 
@@ -8,6 +6,7 @@ import {
   PRIVATE_KEY_DERIVATION_SALT,
   SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
 } from '../../consts/derivation'
+import { SelectedAccountForImport } from '../../interfaces/account'
 import { KeyIterator as KeyIteratorInterface } from '../../interfaces/keyIterator'
 import { getHdPathFromTemplate } from '../../utils/hdPath'
 
@@ -118,7 +117,7 @@ export class KeyIterator implements KeyIteratorInterface {
   }
 
   retrieveInternalKeys(
-    selectedAccountsForImport: SelectedAccount[],
+    selectedAccountsForImport: SelectedAccountForImport[],
     hdPathTemplate: HD_PATH_TEMPLATE_TYPE
   ) {
     return selectedAccountsForImport.flatMap((acc) => {
