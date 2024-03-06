@@ -48,6 +48,11 @@ const key1PrivateKey = getPrivateKeyFromSeed(
   0,
   BIP44_STANDARD_DERIVATION_TEMPLATE
 )
+const key1UsedForSmartAccKeysOnlyPrivateKey = getPrivateKeyFromSeed(
+  process.env.SEED,
+  SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET,
+  BIP44_STANDARD_DERIVATION_TEMPLATE
+)
 const key2UsedForSmartAccKeysOnlyPrivateKey = getPrivateKeyFromSeed(
   process.env.SEED,
   1 + SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET,
@@ -382,7 +387,7 @@ describe('AccountAdder', () => {
     accountAdder.setPage({ page: 1, networks, providers })
   })
 
-  test('should retrieve all internal keys selected 1) basic account and 2) smart account', (done) => {
+  test('should retrieve all internal keys selected 1) basic accounts and 2) smart accounts', (done) => {
     // Subscription to select accounts
     let emitCounter1 = 0
     const unsubscribe1 = accountAdder.onUpdate(() => {
@@ -391,9 +396,13 @@ describe('AccountAdder', () => {
       // First - init, second - start deriving, third - deriving done
       if (emitCounter1 === 3) {
         accountAdder.selectAccount(basicAccount)
+        const firstSmartAccount = accountAdder.accountsOnPage.find(
+          (x) => x.slot === 1 && isSmartAccount(x.account)
+        )
         const secondSmartAccount = accountAdder.accountsOnPage.find(
           (x) => x.slot === 2 && isSmartAccount(x.account)
         )
+        if (firstSmartAccount) accountAdder.selectAccount(firstSmartAccount.account)
         if (secondSmartAccount) accountAdder.selectAccount(secondSmartAccount.account)
       }
     })
@@ -406,9 +415,13 @@ describe('AccountAdder', () => {
       if (emitCounter2 === 5) {
         const internalKeys = accountAdder.retrieveInternalKeysOfSelectedAccounts()
 
-        expect(internalKeys).toHaveLength(2)
+        expect(internalKeys).toHaveLength(3)
         expect(internalKeys).toContainEqual({
           privateKey: key1PrivateKey,
+          dedicatedToOneSA: true
+        })
+        expect(internalKeys).toContainEqual({
+          privateKey: key1UsedForSmartAccKeysOnlyPrivateKey,
           dedicatedToOneSA: true
         })
         expect(internalKeys).toContainEqual({
