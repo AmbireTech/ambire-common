@@ -18,9 +18,11 @@ import { Price, TokenResult } from '../../libs/portfolio'
 import { getExecuteSignature, getTypedData, wrapStandard } from '../../libs/signMessage/signMessage'
 import { UserOperation } from '../../libs/userOperation/types'
 import {
+  getActivatorCall,
   getOneTimeNonce,
   getPreVerificationGas,
   isErc4337Broadcast,
+  shouldIncludeActivatorCall,
   shouldUseOneTimeNonce,
   shouldUsePaymaster
 } from '../../libs/userOperation/userOperation'
@@ -785,6 +787,9 @@ export class SignAccountOpController extends EventEmitter {
     // - the fee call stays, causing a low gas limit revert
     delete this.accountOp.feeCall
 
+    // delete the activatorCall as a precaution that it won't be added twice
+    delete this.accountOp.activatorCall
+
     try {
       // In case of EOA account
       if (!this.#account.creation) {
@@ -800,6 +805,15 @@ export class SignAccountOpController extends EventEmitter {
       } else if (this.accountOp.gasFeePayment.paidBy !== this.#account.addr) {
         // Smart account, but EOA pays the fee
         // EOA pays for execute() - relayerless
+
+        // @EntryPoint activation
+        // if the account is v2 without the entry point signer being a signer
+        // and the network is 4337 but doesn't have a paymaster, we should activate
+        // the entry point and therefore do so here
+        if (shouldIncludeActivatorCall(this.#network, accountState)) {
+          this.accountOp.activatorCall = getActivatorCall(this.accountOp.accountAddr)
+        }
+
         this.accountOp.signature = await getExecuteSignature(
           this.#network,
           this.accountOp,
@@ -839,6 +853,10 @@ export class SignAccountOpController extends EventEmitter {
 
         if (usesPaymaster) {
           this.#addFeePayment()
+        }
+
+        if (userOperation.requestType === 'activator') {
+          this.accountOp.activatorCall = getActivatorCall(this.accountOp.accountAddr)
         }
 
         const ambireAccount = new ethers.Interface(AmbireAccount.abi)

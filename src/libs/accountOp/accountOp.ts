@@ -51,6 +51,10 @@ export interface AccountOp {
   // relayer/paymaster transaction so that the relayer/paymaster
   // can authorize the payment
   feeCall?: Call
+  // the activator call is for cases where we want to activate the EntryPoint
+  // it existed previously in the UserOperation type but now it is no longer
+  // limited to it as we can broadcast none ERC-4337 txn with an activatorCall
+  activatorCall?: Call
   gasLimit: number | null
   signature: string | null
   gasFeePayment: GasFeePayment | null
@@ -117,8 +121,7 @@ export function isAccountOpsIntentEqual(
 
 export function getSignableCalls(op: AccountOp) {
   const callsToSign = op.calls.map((call: Call) => callToTuple(call))
-  if (op.asUserOperation && op.asUserOperation.activatorCall)
-    callsToSign.push(callToTuple(op.asUserOperation.activatorCall))
+  if (op.activatorCall) callsToSign.push(callToTuple(op.activatorCall))
   if (op.feeCall) callsToSign.push(callToTuple(op.feeCall))
   return callsToSign
 }

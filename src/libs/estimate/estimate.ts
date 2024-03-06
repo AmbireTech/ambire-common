@@ -16,8 +16,10 @@ import { fromDescriptor } from '../deployless/deployless'
 import { getProbableCallData } from '../gasPrice/gasPrice'
 import { UserOperation } from '../userOperation/types'
 import {
+  getActivatorCall,
   getOneTimeNonce,
   getPaymasterSpoof,
+  shouldIncludeActivatorCall,
   shouldUseOneTimeNonce,
   shouldUsePaymaster,
   toUserOperation
@@ -230,7 +232,7 @@ export async function estimate(
       'uint256' // gasLimit
     ],
     [
-      getProbableCallData(op, accountState, userOp),
+      getProbableCallData(op, accountState, network, userOp),
       op.accountAddr,
       FEE_COLLECTOR,
       100000,
@@ -239,6 +241,16 @@ export async function estimate(
       100000
     ]
   )
+
+  // @EntryPoint activation
+  // if the account is v2 without the entry point signer being a signer
+  // and the network is 4337 but doesn't have a paymaster, we should activate
+  // the entry point and therefore estimate the activator call here
+  const calls = [...op.calls]
+  if (shouldIncludeActivatorCall(network, accountState)) {
+    calls.push(getActivatorCall(op.accountAddr))
+  }
+
   const args = [
     account.addr,
     ...getAccountDeployParams(account),
@@ -249,7 +261,7 @@ export async function estimate(
       op.accountOpToExecuteBefore?.calls || [],
       op.accountOpToExecuteBefore?.signature || '0x'
     ],
-    [account.addr, op.nonce || 1, op.calls, '0x'],
+    [account.addr, op.nonce || 1, calls, '0x'],
     encodedCallData,
     account.associatedKeys,
     feeTokens.map((token) => token.address),
@@ -269,9 +281,11 @@ export async function estimate(
 
     // add the activatorCall to the estimation
     if (estimateUserOp.activatorCall) {
+      const localAccOp = { ...op }
+      localAccOp.activatorCall = estimateUserOp.activatorCall
       const spoofSig = abiCoder.encode(['address'], [account.associatedKeys[0]]) + SPOOF_SIGTYPE
       estimateUserOp.callData = IAmbireAccount.encodeFunctionData('executeMultiple', [
-        [[getSignableCalls(op), spoofSig]]
+        [[getSignableCalls(localAccOp), spoofSig]]
       ])
     }
 
