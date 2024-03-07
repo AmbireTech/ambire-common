@@ -15,6 +15,7 @@ import {
 } from '../../interfaces/settings'
 import { Storage } from '../../interfaces/storage'
 import { isValidAddress } from '../../services/address'
+import { Bundler } from '../../services/bundlers/bundler'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 export class SettingsController extends EventEmitter {
@@ -249,11 +250,12 @@ export class SettingsController extends EventEmitter {
     // and set them as network properties
     try {
       const provider = new JsonRpcProvider(customNetwork.rpcUrl)
-      const [entryPointCode, singletonCode] = await Promise.all([
+      const [entryPointCode, singletonCode, hasBundler] = await Promise.all([
         provider.getCode(ERC_4337_ENTRYPOINT),
-        provider.getCode(SINGLETON)
+        provider.getCode(SINGLETON),
+        Bundler.isNetworkSupported(customNetwork.name.toLowerCase())
       ])
-      const has4337 = entryPointCode !== '0x'
+      const has4337 = entryPointCode !== '0x' && hasBundler
       const isSAEnabled = singletonCode !== '0x'
       let hasPaymaster = false
       if (has4337) {

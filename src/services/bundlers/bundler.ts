@@ -113,4 +113,12 @@ export class Bundler {
 
     return gasPrices
   }
+
+  // use this request to check if the bundler supports the network
+  static async isNetworkSupported(networkName: NetworkDescriptor['id']) {
+    const url = `https://api.pimlico.io/v1/${networkName}/rpc?apikey=${process.env.REACT_APP_PIMLICO_API_KEY}`
+    const provider = new StaticJsonRpcProvider(url)
+    const result = await provider.send('eth_supportedEntryPoints', []).catch(() => null)
+    return !!result
+  }
 }
