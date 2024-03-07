@@ -5,7 +5,7 @@ import { describe, expect, test } from '@jest/globals'
 import { Bundler } from './bundler'
 
 describe('Settings Controller', () => {
-  test('should check if the network is supported on the bundle', async () => {
+  test('should check if the network is supported by the bundler', async () => {
     // it supports mantle
     const mantleShouldBeSupported = await Bundler.isNetworkSupported(5000n)
     expect(mantleShouldBeSupported).toBe(true)
