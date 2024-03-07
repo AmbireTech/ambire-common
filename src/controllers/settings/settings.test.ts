@@ -213,6 +213,9 @@ describe('Settings Controller', () => {
         // mantle has the entry point uploaded
         expect(mantleNetwork?.erc4337?.enabled).toBe(true)
         expect(mantleNetwork?.erc4337?.hasPaymaster).toBe(false)
+
+        // make sure SA are available
+        expect(mantleNetwork?.isSAEnabled).toBe(true)
       }
 
       if (emitCounter === 1) {

@@ -856,7 +856,7 @@ export class SignAccountOpController extends EventEmitter {
         }
 
         if (userOperation.requestType === 'activator') {
-          this.accountOp.activatorCall = getActivatorCall(this.accountOp.accountAddr)
+          this.accountOp.activatorCall = userOperation.activatorCall
         }
 
         const ambireAccount = new ethers.Interface(AmbireAccount.abi)
