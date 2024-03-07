@@ -64,7 +64,7 @@ type FanSpeed = {
   amountFormatted: string
   amountUsd: string
   maxPriorityFeePerGas?: bigint
-  baseFeePerGas?: bigint
+  baseFeePerGas: bigint
 }
 
 // declare the statuses we don't want state updates on
@@ -600,8 +600,15 @@ export class SignAccountOpController extends EventEmitter {
 
       if ('maxPriorityFeePerGas' in gasRecommendation) {
         fee.maxPriorityFeePerGas = gasRecommendation.maxPriorityFeePerGas
-        fee.baseFeePerGas = gasRecommendation.baseFeePerGas
       }
+
+      // for networks that don't have the baseFeePerGas label,
+      // we set the baseFee to the gasPrice as the average is kind of
+      // the minimum to enter the next block... kind of
+      fee.baseFeePerGas =
+        'baseFeePerGas' in gasRecommendation
+          ? gasRecommendation.baseFeePerGas
+          : gasRecommendation.gasPrice
 
       return fee
     })
@@ -667,12 +674,12 @@ export class SignAccountOpController extends EventEmitter {
       isGasTank: this.feeTokenResult.flags.onGasTank,
       inToken: this.feeTokenResult.address,
       amount: chosenSpeed.amount,
-      simulatedGasLimit: chosenSpeed.simulatedGasLimit
+      simulatedGasLimit: chosenSpeed.simulatedGasLimit,
+      baseFeePerGas: chosenSpeed.baseFeePerGas
     }
 
     if ('maxPriorityFeePerGas' in chosenSpeed) {
       gasFeePayment.maxPriorityFeePerGas = chosenSpeed.maxPriorityFeePerGas
-      gasFeePayment.baseFeePerGas = chosenSpeed.baseFeePerGas
     }
 
     return gasFeePayment
@@ -877,10 +884,7 @@ export class SignAccountOpController extends EventEmitter {
           ])
         }
 
-        // TODO: ARBITRUM 4337 IMPLEMENTATION
-        // TODO: Not working for networks that do not support EIP-1559 and demand a L1 fee
-        // Set the real preVerificationGas
-        if (feeTokenEstimation.addedNative > 0n && gasFeePayment.baseFeePerGas) {
+        if (feeTokenEstimation.addedNative > 0n) {
           const l1FeeAsL2Gas = feeTokenEstimation.addedNative / gasFeePayment.baseFeePerGas
 
           userOperation.preVerificationGas = getPreVerificationGas(

@@ -22,7 +22,7 @@ export interface GasFeePayment {
   amount: bigint
   simulatedGasLimit: bigint
   maxPriorityFeePerGas?: bigint
-  baseFeePerGas?: bigint
+  baseFeePerGas: bigint
 }
 
 export enum AccountOpStatus {
