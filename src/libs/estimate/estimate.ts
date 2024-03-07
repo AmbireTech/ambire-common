@@ -5,7 +5,12 @@ import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFacto
 import Estimation from '../../../contracts/compiled/Estimation.json'
 import Estimation4337 from '../../../contracts/compiled/Estimation4337.json'
 import { FEE_COLLECTOR } from '../../consts/addresses'
-import { AMBIRE_PAYMASTER, ERC_4337_ENTRYPOINT, SINGLETON } from '../../consts/deploy'
+import {
+  AMBIRE_PAYMASTER,
+  ERC_4337_ENTRYPOINT,
+  OPTIMISTIC_ORACLE,
+  SINGLETON
+} from '../../consts/deploy'
 import { networks as predefinedNetworks } from '../../consts/networks'
 import { SPOOF_SIGTYPE } from '../../consts/signatures'
 import { Account, AccountOnchainState } from '../../interfaces/account'
@@ -131,6 +136,7 @@ export async function estimate(
   const nativeAddr = '0x0000000000000000000000000000000000000000'
   const deploylessEstimator = fromDescriptor(provider, Estimation, !network.rpcNoStateOverride)
   const abiCoder = new AbiCoder()
+  const optimisticOracle = network.isOptimistic ? OPTIMISTIC_ORACLE : ZeroAddress
 
   if (!account.creation) {
     if (op.calls.length !== 1) {
@@ -172,7 +178,7 @@ export async function estimate(
         .catch(catchEstimationFailure),
       provider.getBalance(account.addr).catch(catchEstimationFailure),
       deploylessEstimator
-        .call('getL1GasEstimation', [encodedCallData, FEE_COLLECTOR], {
+        .call('getL1GasEstimation', [encodedCallData, FEE_COLLECTOR, optimisticOracle], {
           from: blockFrom,
           blockTag
         })
@@ -266,7 +272,8 @@ export async function estimate(
     account.associatedKeys,
     feeTokens.map((token) => token.address),
     FEE_COLLECTOR,
-    nativeToCheck
+    nativeToCheck,
+    optimisticOracle
   ]
 
   // estimate 4337

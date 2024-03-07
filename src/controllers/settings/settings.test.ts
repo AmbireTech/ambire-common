@@ -205,6 +205,7 @@ describe('Settings Controller', () => {
       if (emitCounter === 0) {
         const mantleNetwork = settingsController.networks.find(({ id }) => id === 'mantle')
         expect(mantleNetwork).not.toBe(undefined)
+        expect(mantleNetwork).not.toBe(null)
         expect(mantleNetwork?.chainId).toBe(5000n)
         expect(mantleNetwork?.name).toBe('Mantle')
         expect(mantleNetwork?.id).toBe('mantle')
@@ -214,8 +215,14 @@ describe('Settings Controller', () => {
         expect(mantleNetwork?.erc4337?.enabled).toBe(true)
         expect(mantleNetwork?.erc4337?.hasPaymaster).toBe(false)
 
-        // make sure SA are available
+        // has smart accounts
         expect(mantleNetwork?.isSAEnabled).toBe(true)
+
+        // is not 1559
+        expect(mantleNetwork?.feeOptions.is1559).toBe(false)
+
+        // mantle is optimistic
+        expect(mantleNetwork?.isOptimistic).toBe(true)
       }
 
       if (emitCounter === 1) {

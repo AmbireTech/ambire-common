@@ -1,7 +1,12 @@
 import { Contract, JsonRpcProvider } from 'ethers'
 
 import EntryPointAbi from '../../../contracts/compiled/EntryPoint.json'
-import { AMBIRE_PAYMASTER, ERC_4337_ENTRYPOINT, SINGLETON } from '../../consts/deploy'
+import {
+  AMBIRE_PAYMASTER,
+  ERC_4337_ENTRYPOINT,
+  OPTIMISTIC_ORACLE,
+  SINGLETON
+} from '../../consts/deploy'
 import { networks } from '../../consts/networks'
 import { Key } from '../../interfaces/keystore'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
@@ -69,10 +74,11 @@ export class SettingsController extends EventEmitter {
         explorerUrl: this.#networkPreferences[id].explorerUrl ?? '',
         erc4337: this.#networkPreferences[id].erc4337 ?? null,
         isSAEnabled: this.#networkPreferences[id].isSAEnabled ?? false,
+        isOptimistic: this.#networkPreferences[id].isOptimistic ?? false,
         id,
         rpcNoStateOverride: false,
         unstoppableDomainsChain: 'ERC20',
-        feeOptions: {
+        feeOptions: this.#networkPreferences[id].feeOptions ?? {
           is1559: false
         }
       }
@@ -250,13 +256,14 @@ export class SettingsController extends EventEmitter {
     // and set them as network properties
     try {
       const provider = new JsonRpcProvider(customNetwork.rpcUrl)
-      const [entryPointCode, singletonCode, hasBundler] = await Promise.all([
+      const [entryPointCode, singletonCode, oracleCode, hasBundler, block] = await Promise.all([
         provider.getCode(ERC_4337_ENTRYPOINT),
         provider.getCode(SINGLETON),
-        Bundler.isNetworkSupported(customNetwork.chainId)
+        provider.getCode(OPTIMISTIC_ORACLE),
+        Bundler.isNetworkSupported(customNetwork.chainId),
+        provider.getBlock('latest')
       ])
       const has4337 = entryPointCode !== '0x' && hasBundler
-      const isSAEnabled = singletonCode !== '0x'
       let hasPaymaster = false
       if (has4337) {
         const entryPoint = new Contract(ERC_4337_ENTRYPOINT, EntryPointAbi, provider)
@@ -264,7 +271,14 @@ export class SettingsController extends EventEmitter {
         hasPaymaster = paymasterBalance.toString() > 0
       }
       const erc4337 = { erc4337: { enabled: has4337, hasPaymaster } }
-      const addCustomNetwork = { ...customNetwork, ...erc4337, isSAEnabled }
+      const feeOptions = { feeOptions: { is1559: block?.baseFeePerGas !== null } }
+      const addCustomNetwork = {
+        ...customNetwork,
+        ...erc4337,
+        ...feeOptions,
+        isSAEnabled: singletonCode !== '0x',
+        isOptimistic: oracleCode !== '0x'
+      }
 
       this.#networkPreferences[customNetwork.name.toLowerCase()] = addCustomNetwork
     } catch (e: any) {

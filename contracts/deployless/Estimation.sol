@@ -50,7 +50,6 @@ contract Estimation is Spoof {
     uint256 fee;
     uint256 feeWithNativePayment;
     uint256 feeWithTransferPayment;
-    address gasOracle;
   }
 
   struct EstimationOutcome {
@@ -64,8 +63,6 @@ contract Estimation is Spoof {
     uint gasUsed;
     L1GasEstimation l1GasEstimation;
   }
-
-  mapping(uint256 => address) l1Oracles;
 
   // `estimate` takes the `accountOpToExecuteBefore` parameters separately because it's simulated via `simulateSigned`
   // vs the regular accountOp for which we use simulateUnsigned
@@ -82,7 +79,8 @@ contract Estimation is Spoof {
     // @TODO: perhaps we can wrap this in a struct
     address[] memory feeTokens,
     address relayer,
-    address[] memory checkNativeAssetOn
+    address[] memory checkNativeAssetOn,
+    address oracle
   ) external returns (EstimationOutcome memory outcome) {
     // This has two purposes: 1) when we're about to send a txn via an EOA, we need to know the native asset balances
     // 2) sometimes we need to check the balance of the simulation `from` addr in order to calculate
@@ -111,12 +109,12 @@ contract Estimation is Spoof {
       );
       outcome.nonce = op.account.nonce();
       // Get fee tokens amounts after the simulation, and simulate their gas cost for transfer
-      // TODO<Bobby>: make the feeTokenOutcomes pass even without a valid spoofSig
       if (feeTokens.length != 0 && spoofSig.length > 0) {
         outcome.feeTokenOutcomes = simulateFeePayments(account, feeTokens, spoofSig, relayer);
       }
 
-      outcome.l1GasEstimation = this.getL1GasEstimation(probableCallData, relayer);
+      // if an optimistic oracle is passed, simulate the L1 fee
+      outcome.l1GasEstimation = this.getL1GasEstimation(probableCallData, relayer, oracle);
     }
 
     // if there are associatedKeys and a valid spoofSig was generated, check if the account
@@ -295,11 +293,14 @@ contract Estimation is Spoof {
 
   function getL1GasEstimation(
     bytes calldata data,
-    address feeCollector
-  ) external returns (L1GasEstimation memory l1GasEstimation) {
-    l1Oracles[10] = address(0x420000000000000000000000000000000000000F);
-    l1Oracles[8453] = address(0x420000000000000000000000000000000000000F);
+    address feeCollector,
+    address oracleAddr
+  ) external view returns (L1GasEstimation memory l1GasEstimation) {
+    if (oracleAddr == address(0)) {
+      return l1GasEstimation;
+    }
 
+    IGasPriceOracle oracle = IGasPriceOracle(oracleAddr);
     bytes memory nativeFeeCall = abi.encode(feeCollector, 1, '0x');
     bytes memory transferFeeCall = abi.encode(
       feeCollector,
@@ -307,18 +308,11 @@ contract Estimation is Spoof {
       abi.encodeWithSelector(IERC20Subset.transfer.selector, feeCollector, 1)
     );
 
-    if (l1Oracles[block.chainid] != address(0)) {
-      l1GasEstimation.gasUsed = IGasPriceOracle(l1Oracles[block.chainid]).getL1GasUsed(data);
-      l1GasEstimation.fee = IGasPriceOracle(l1Oracles[block.chainid]).getL1Fee(data);
-      l1GasEstimation.feeWithNativePayment = IGasPriceOracle(l1Oracles[block.chainid]).getL1Fee(
-        bytes.concat(data, nativeFeeCall)
-      );
-      l1GasEstimation.feeWithTransferPayment = IGasPriceOracle(l1Oracles[block.chainid]).getL1Fee(
-        bytes.concat(data, transferFeeCall)
-      );
-      l1GasEstimation.baseFee = IGasPriceOracle(l1Oracles[block.chainid]).l1BaseFee();
-      l1GasEstimation.gasOracle = l1Oracles[block.chainid];
-    }
+    l1GasEstimation.gasUsed = oracle.getL1GasUsed(data);
+    l1GasEstimation.fee = oracle.getL1Fee(data);
+    l1GasEstimation.feeWithNativePayment = oracle.getL1Fee(bytes.concat(data, nativeFeeCall));
+    l1GasEstimation.feeWithTransferPayment = oracle.getL1Fee(bytes.concat(data, transferFeeCall));
+    l1GasEstimation.baseFee = oracle.l1BaseFee();
   }
 
   // We need this function so that we can try-catch the parsing of the return value as well

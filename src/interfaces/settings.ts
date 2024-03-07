@@ -29,6 +29,10 @@ export type NetworkPreference = {
     enabled: boolean
     hasPaymaster: boolean
   }
+  feeOptions?: {
+    is1559: boolean
+  }
+  isOptimistic?: boolean
 }
 
 export type CustomNetwork = {
@@ -42,6 +46,10 @@ export type CustomNetwork = {
     enabled: boolean
     hasPaymaster: boolean
   }
+  feeOptions?: {
+    is1559: boolean
+  }
+  isOptimistic?: boolean
 }
 
 export type NetworkPreferences = {
