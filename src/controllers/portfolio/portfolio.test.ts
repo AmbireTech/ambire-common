@@ -37,13 +37,6 @@ describe('Portfolio Controller ', () => {
     }
   }
 
-  const EOA = {
-    addr: '0x16c81367c30c71d6B712355255A07FCe8fd3b5bB',
-    associatedKeys: ['0x16c81367c30c71d6B712355255A07FCe8fd3b5bB'],
-    initialPrivileges: [],
-    creation: null
-  }
-
   async function getAccountOp() {
     const ABI = ['function transferFrom(address from, address to, uint256 tokenId)']
     const iface = new ethers.Interface(ABI)
@@ -407,7 +400,7 @@ describe('Portfolio Controller ', () => {
     })
 
     const token = controller.latest[account.addr].ethereum?.result?.tokens.find(
-      (token) => token.address === BANANA_TOKEN_ADDR
+      (tk) => tk.address === BANANA_TOKEN_ADDR
     )
 
     expect(token).toBeTruthy()
@@ -419,7 +412,7 @@ describe('Portfolio Controller ', () => {
     })
 
     const tokenAgain = controller.latest[account.addr].ethereum?.result?.tokens.find(
-      (token) => token.address === BANANA_TOKEN_ADDR
+      (tk) => tk.address === BANANA_TOKEN_ADDR
     )
 
     expect(tokenAgain).toBeUndefined()

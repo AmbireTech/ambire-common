@@ -211,7 +211,7 @@ describe('Settings Controller', () => {
         expect(mantleNetwork?.nativeAssetSymbol).toBe('MNT')
 
         // mantle has the entry point uploaded
-        expect(mantleNetwork?.erc4337?.enabled).toBe(false)
+        expect(mantleNetwork?.erc4337?.enabled).toBe(true)
         expect(mantleNetwork?.erc4337?.hasPaymaster).toBe(false)
 
         // make sure SA are available
