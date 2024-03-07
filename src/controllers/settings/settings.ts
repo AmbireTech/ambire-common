@@ -253,7 +253,7 @@ export class SettingsController extends EventEmitter {
       const [entryPointCode, singletonCode, hasBundler] = await Promise.all([
         provider.getCode(ERC_4337_ENTRYPOINT),
         provider.getCode(SINGLETON),
-        Bundler.isNetworkSupported(customNetwork.name.toLowerCase())
+        Bundler.isNetworkSupported(customNetwork.chainId)
       ])
       const has4337 = entryPointCode !== '0x' && hasBundler
       const isSAEnabled = singletonCode !== '0x'

@@ -1,7 +1,8 @@
 /* eslint-disable no-restricted-syntax */
-/* eslint-disable guard-for-in */
+/* eslint-disable import/no-extraneous-dependencies */
 
 import { Gas1559Recommendation } from 'libs/gasPrice/gasPrice'
+import fetch from 'node-fetch'
 
 import { StaticJsonRpcProvider } from '@ethersproject/providers'
 
@@ -115,10 +116,9 @@ export class Bundler {
   }
 
   // use this request to check if the bundler supports the network
-  static async isNetworkSupported(networkName: NetworkDescriptor['id']) {
-    const url = `https://api.pimlico.io/v1/${networkName}/rpc?apikey=${process.env.REACT_APP_PIMLICO_API_KEY}`
-    const provider = new StaticJsonRpcProvider(url)
-    const result = await provider.send('eth_supportedEntryPoints', []).catch(() => null)
-    return !!result
+  static async isNetworkSupported(chainId: bigint) {
+    const url = `https://api.pimlico.io/health?apikey=${process.env.REACT_APP_PIMLICO_API_KEY}&chain-id=${chainId}`
+    const result = await fetch(url)
+    return result.status === 200
   }
 }
