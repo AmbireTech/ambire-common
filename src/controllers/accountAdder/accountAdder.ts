@@ -382,6 +382,24 @@ export class AccountAdderController extends EventEmitter {
     }
   }
 
+  /**
+   * For internal keys only! Returns the ready to be added internal (private)
+   * keys of the currently selected accounts.
+   */
+  retrieveInternalKeysOfSelectedAccounts() {
+    if (!this.hdPathTemplate) {
+      this.#throwMissingHdPath()
+      return []
+    }
+
+    if (!this.#keyIterator?.retrieveInternalKeys) {
+      this.#throwMissingKeyIteratorRetrieveInternalKeysMethod()
+      return []
+    }
+
+    return this.#keyIterator?.retrieveInternalKeys(this.selectedAccounts, this.hdPathTemplate)
+  }
+
   async setPage({
     page = this.page,
     networks,
@@ -408,7 +426,15 @@ export class AccountAdderController extends EventEmitter {
     this.#linkedAccounts = []
     this.accountsLoading = true
     this.emitUpdate()
-    this.#derivedAccounts = await this.#deriveAccounts({ networks, providers })
+    try {
+      this.#derivedAccounts = await this.#deriveAccounts({ networks, providers })
+    } catch (e: any) {
+      this.emitError({
+        message: 'Retrieving accounts was canceled or failed.',
+        error: e?.message || 'accountAdder: failed to derive accounts',
+        level: 'major'
+      })
+    }
     this.accountsLoading = false
     this.emitUpdate()
     this.#findAndSetLinkedAccounts({
@@ -873,6 +899,24 @@ export class AccountAdderController extends EventEmitter {
       message:
         'Something went wrong with deriving the accounts. Please start the process again. If the problem persists, contact support.',
       error: new Error('accountAdder: missing keyIterator')
+    })
+  }
+
+  #throwMissingKeyIteratorRetrieveInternalKeysMethod() {
+    this.emitError({
+      level: 'major',
+      message:
+        'Retrieving internal keys failed. Please try to start the process of selecting accounts again. If the problem persist, please contact support.',
+      error: new Error('accountAdder: missing retrieveInternalKeys method')
+    })
+  }
+
+  #throwMissingHdPath() {
+    this.emitError({
+      level: 'major',
+      message:
+        'The HD path template is missing. Please try to start the process of selecting accounts again. If the problem persist, please contact support.',
+      error: new Error('accountAdder: missing hdPathTemplate')
     })
   }
 
