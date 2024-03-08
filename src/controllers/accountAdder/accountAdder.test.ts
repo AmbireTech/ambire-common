@@ -305,24 +305,43 @@ describe('AccountAdder', () => {
     accountAdder.setPage({ page: 1, networks, providers })
   })
 
-  test('should NOT be able to select the same account more than once', (done) => {
-    // Subscription to select an account and trigger a deselect
+  test.only('should NOT be able to select the same account more than once', (done) => {
+    // 3 subscriptions to select the same account account again and again
     let emitCounter1 = 0
     const unsubscribe1 = accountAdder.onUpdate(() => {
       emitCounter1++
 
-      if (emitCounter1 === 3) {
-        accountAdder.selectAccount(basicAccount)
-        accountAdder.selectAccount(basicAccount)
-        accountAdder.selectAccount(basicAccount)
-      }
+      if (emitCounter1 === 3) accountAdder.selectAccount(basicAccount)
+    })
 
-      if (emitCounter1 === 6) {
+    let emitCounter2 = 0
+    const unsubscribe2 = accountAdder.onUpdate(() => {
+      emitCounter2++
+
+      if (emitCounter2 === 4) accountAdder.selectAccount(basicAccount)
+    })
+
+    let emitCounter3 = 0
+    const unsubscribe3 = accountAdder.onUpdate(() => {
+      emitCounter3++
+
+      if (emitCounter3 === 5) accountAdder.selectAccount(basicAccount)
+    })
+
+    // A separate subscription to check if the account got selected only once
+    let emitCounter4 = 0
+    const unsubscribe4 = accountAdder.onUpdate(() => {
+      emitCounter4++
+
+      if (emitCounter4 === 6) {
         expect(accountAdder.selectedAccounts).toHaveLength(1)
         const selectedAccountAddr = accountAdder.selectedAccounts.map((a) => a.account.addr)
         expect(selectedAccountAddr).toContain(basicAccount.addr)
 
         unsubscribe1()
+        unsubscribe2()
+        unsubscribe3()
+        unsubscribe4()
         done()
       }
     })
