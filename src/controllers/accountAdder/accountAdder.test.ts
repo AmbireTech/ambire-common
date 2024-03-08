@@ -305,7 +305,7 @@ describe('AccountAdder', () => {
     accountAdder.setPage({ page: 1, networks, providers })
   })
 
-  test.only('should NOT be able to select the same account more than once', (done) => {
+  test('should NOT be able to select the same account more than once', (done) => {
     // 3 subscriptions to select the same account account again and again
     let emitCounter1 = 0
     const unsubscribe1 = accountAdder.onUpdate(() => {
