@@ -305,6 +305,37 @@ describe('AccountAdder', () => {
     accountAdder.setPage({ page: 1, networks, providers })
   })
 
+  test('should NOT be able to select the same account more than once', (done) => {
+    // Subscription to select an account and trigger a deselect
+    let emitCounter1 = 0
+    const unsubscribe1 = accountAdder.onUpdate(() => {
+      emitCounter1++
+
+      if (emitCounter1 === 3) {
+        accountAdder.selectAccount(basicAccount)
+        accountAdder.selectAccount(basicAccount)
+        accountAdder.selectAccount(basicAccount)
+      }
+
+      if (emitCounter1 === 6) {
+        expect(accountAdder.selectedAccounts).toHaveLength(1)
+        const selectedAccountAddr = accountAdder.selectedAccounts.map((a) => a.account.addr)
+        expect(selectedAccountAddr).toContain(basicAccount.addr)
+
+        unsubscribe1()
+        done()
+      }
+    })
+
+    const keyIterator = new KeyIterator(process.env.SEED)
+    accountAdder.init({
+      keyIterator,
+      pageSize: 1,
+      hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
+    })
+    accountAdder.setPage({ page: 1, networks, providers })
+  })
+
   test('should be able to select all the keys of a selected basic account (always one key)', (done) => {
     // Subscription to select an account
     let emitCounter1 = 0
