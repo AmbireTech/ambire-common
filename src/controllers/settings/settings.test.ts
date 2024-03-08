@@ -200,39 +200,40 @@ describe('Settings Controller', () => {
     )
   })
   test('should add the mantle network as a custom network', (done) => {
-    let emitCounter = 0
+    let checks = 0
     settingsController.onUpdate(() => {
-      if (emitCounter === 0) {
-        const mantleNetwork = settingsController.networks.find(({ id }) => id === 'mantle')
-        expect(mantleNetwork).not.toBe(undefined)
-        expect(mantleNetwork).not.toBe(null)
-        expect(mantleNetwork?.chainId).toBe(5000n)
-        expect(mantleNetwork?.name).toBe('Mantle')
-        expect(mantleNetwork?.id).toBe('mantle')
-        expect(mantleNetwork?.nativeAssetSymbol).toBe('MNT')
+      const mantleNetwork = settingsController.networks.find(({ id }) => id === 'mantle')
+      expect(mantleNetwork).not.toBe(undefined)
+      expect(mantleNetwork).not.toBe(null)
+      expect(mantleNetwork?.chainId).toBe(5000n)
+      expect(mantleNetwork?.name).toBe('Mantle')
+      expect(mantleNetwork?.id).toBe('mantle')
+      expect(mantleNetwork?.nativeAssetSymbol).toBe('MNT')
 
-        // mantle has the entry point uploaded
-        expect(mantleNetwork?.erc4337?.enabled).toBe(true)
-        expect(mantleNetwork?.erc4337?.hasPaymaster).toBe(false)
+      // mantle has the entry point uploaded
+      expect(mantleNetwork?.erc4337?.enabled).toBe(true)
+      expect(mantleNetwork?.erc4337?.hasPaymaster).toBe(false)
 
-        // has smart accounts
-        expect(mantleNetwork?.isSAEnabled).toBe(true)
+      // has smart accounts
+      expect(mantleNetwork?.isSAEnabled).toBe(true)
 
-        // is not 1559
-        expect(mantleNetwork?.feeOptions.is1559).toBe(false)
+      // is not 1559
+      expect(mantleNetwork?.feeOptions.is1559).toBe(false)
 
-        // mantle is optimistic
-        expect(mantleNetwork?.isOptimistic).toBe(true)
+      // mantle is optimistic
+      expect(mantleNetwork?.isOptimistic).toBe(true)
+      checks++
+      if (checks === 2) {
+        done()
       }
+    })
 
-      if (emitCounter === 1) {
-        const errors = settingsController.emittedErrors
-        expect(errors.length).toEqual(1)
-        expect(errors[0].message).toEqual('A chain with a chain id of 5000 has already been added')
-      }
-
-      emitCounter++
-      if (emitCounter === 2) {
+    settingsController.onError(() => {
+      const errors = settingsController.emittedErrors
+      expect(errors.length).toEqual(1)
+      expect(errors[0].message).toEqual('A chain with a chain id of 5000 has already been added')
+      checks++
+      if (checks === 2) {
         done()
       }
     })

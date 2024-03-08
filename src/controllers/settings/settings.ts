@@ -248,7 +248,6 @@ export class SettingsController extends EventEmitter {
         level: 'major',
         error: new Error('settings: addCustomNetwork chain already added')
       })
-      this.emitUpdate()
       return
     }
 
@@ -288,7 +287,6 @@ export class SettingsController extends EventEmitter {
         level: 'major',
         error: new Error('settings: addCustomNetwork chain already added')
       })
-      this.emitUpdate()
       return
     }
 
