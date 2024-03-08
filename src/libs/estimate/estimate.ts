@@ -448,12 +448,14 @@ export async function estimate(
   const isCustomNetwork = !predefinedNetworks.find((net) => net.id === network.id)
   let finalFeeTokenOptions = feeTokenOutcomes
   let finalNativeTokenOptions = nativeAssetBalances
+  let filteredFeeTokens = feeTokens
   if (is4337Broadcast) {
     // if there's no paymaster, we can pay only in native
     if (!network.erc4337?.hasPaymaster) {
       finalFeeTokenOptions = finalFeeTokenOptions.filter((token: any, key: number) => {
-        return feeTokens[key].address === '0x0000000000000000000000000000000000000000'
+        return feeTokens[key].address === ZeroAddress
       })
+      filteredFeeTokens = filteredFeeTokens.filter((feeToken) => feeToken.address === ZeroAddress)
     }
 
     // native from other accounts are not allowed
@@ -466,7 +468,7 @@ export async function estimate(
   }
 
   const feeTokenOptions = finalFeeTokenOptions.map((token: any, key: number) => {
-    const address = feeTokens[key].address
+    const address = filteredFeeTokens[key].address
 
     // the l1 fee without any form of payment to relayer/paymaster
     let addedNative = l1GasEstimation.fee
@@ -485,7 +487,9 @@ export async function estimate(
     return {
       address,
       paidBy: account.addr,
-      availableAmount: feeTokens[key].isGasTank ? feeTokens[key].amount : token.amount,
+      availableAmount: filteredFeeTokens[key].isGasTank
+        ? filteredFeeTokens[key].amount
+        : token.amount,
       // gasUsed for the gas tank tokens is smaller because of the commitment:
       // ['gasTank', amount, symbol]
       // and this commitment costs onchain:
@@ -495,9 +499,9 @@ export async function estimate(
       // be sure which is the one that will broadcast this txn; also, ERC-4337
       // broadcasts will always consume at least 4035.
       // setting it to 5000n just be sure
-      gasUsed: feeTokens[key].isGasTank ? 5000n : token.gasUsed,
+      gasUsed: filteredFeeTokens[key].isGasTank ? 5000n : token.gasUsed,
       addedNative,
-      isGasTank: feeTokens[key].isGasTank
+      isGasTank: filteredFeeTokens[key].isGasTank
     }
   })
 
