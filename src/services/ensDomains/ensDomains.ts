@@ -1,6 +1,7 @@
 // @ts-nocheck
+
 import constants from 'bip44-constants'
-import { isAddress } from 'ethers'
+import { ethers } from 'ethers'
 
 import { normalize } from '@ensdomains/eth-ens-namehash'
 
@@ -31,30 +32,19 @@ async function resolveForCoin(resolver, bip44Item) {
   return resolver.getAddress()
 }
 
-export function isCorrectAddress(address) {
-  return !(ADDRESS_ZERO === address) && isAddress(address)
+function isCorrectAddress(address) {
+  return !(ADDRESS_ZERO === address) && ethers.utils.isAddress(address)
 }
 
-// @TODO: Get RPC provider url from settings controller
-async function resolveENSDomain(domain, bip44Item?: any): Promise<string> {
+async function resolveENSDomain(domain, bip44Item) {
   const normalizedDomainName = normalizeDomain(domain)
-  if (!normalizedDomainName) return ''
+  if (!normalizedDomainName) return null
   const provider = getProvider(ETH_ID)
   const resolver = await provider.getResolver(normalizedDomainName)
-  if (!resolver) return ''
-  try {
-    const ethAddress = await resolver.getAddress()
-    const addressForCoin = await resolveForCoin(resolver, bip44Item).catch(() => null)
-    return isCorrectAddress(addressForCoin) ? addressForCoin : ethAddress
-  } catch (e) {
-    // If the error comes from an internal server error don't
-    // show it to the user, because it happens when a domain
-    // doesn't exist and we already show a message for that.
-    // https://dnssec-oracle.ens.domains/ 500 (ISE)
-    if (e.message?.includes('500_SERVER_ERROR')) return ''
-
-    throw e
-  }
+  if (!resolver) return null
+  const ethAddress = await resolver.getAddress()
+  const addressForCoin = await resolveForCoin(resolver, bip44Item).catch((e) => null)
+  return isCorrectAddress(addressForCoin) ? addressForCoin : ethAddress
 }
 
 function getBip44Items(coinTicker) {

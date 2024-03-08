@@ -1,25 +1,23 @@
+// @ts-nocheck
 // TODO: add types
 import { Resolution } from '@unstoppabledomains/resolution'
 
-import { networks } from '../../consts/networks'
+import { NETWORKS } from '../../constants/networks'
 
-// @TODO: Get RPC urls from settings controller
-const resolution = new Resolution({
-  sourceConfig: {
-    uns: {
-      locations: {
-        Layer1: {
-          url: networks.find((x) => x.id === 'ethereum')?.rpcUrl || '',
-          network: 'mainnet'
-        },
-        Layer2: {
-          url: networks.find((x) => x.id === 'polygon')?.rpcUrl || '',
-          network: 'polygon-mainnet'
+let resolution: Resolution
+
+export const initUnstoppableDomainsResolution = (rpcUrls: { [key in NETWORKS]: string }) => {
+  resolution = new Resolution({
+    sourceConfig: {
+      uns: {
+        locations: {
+          Layer1: { url: rpcUrls.ethereum, network: 'mainnet' },
+          Layer2: { url: rpcUrls.polygon, network: 'polygon-mainnet' }
         }
       }
     }
-  }
-})
+  })
+}
 
 function getMessage(e?: string) {
   if (e === 'UnregisteredDomain') return 'Domain is not registered'
@@ -29,11 +27,11 @@ function getMessage(e?: string) {
   return 'Domain is not registered'
 }
 
-async function resolveAddress(domain:any) {
+async function resolveAddress(domain) {
   return resolution
     .addr(domain, 'ETH')
-    .then((addr:string) => ({ success: true, address: addr }))
-    .catch((e:any) => ({ success: false, code: e.code, message: getMessage(e.code) }))
+    .then((addr) => ({ success: true, address: addr }))
+    .catch((e) => ({ success: false, code: e.code, message: getMessage(e.code) }))
 }
 
 async function resolveAddressMultiChain(domain, currency, chain) {
@@ -43,7 +41,7 @@ async function resolveAddressMultiChain(domain, currency, chain) {
     .catch((e) => ({ success: false, code: e.code, message: getMessage(e.code) }))
 }
 
-async function resolveUDomain(domain, currency?: any, chain?: any): Promise<string> {
+async function resolveUDomain(domain, currency, chain) {
   const [nativeUDAddress, customUDAddress] = await Promise.all([
     resolveAddress(domain),
     resolveAddressMultiChain(domain, currency, chain)
@@ -53,7 +51,7 @@ async function resolveUDomain(domain, currency?: any, chain?: any): Promise<stri
     ? customUDAddress.address
     : nativeUDAddress.success
     ? nativeUDAddress.address
-    : ''
+    : null
 }
 
 export { resolveUDomain }

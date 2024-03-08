@@ -1,9 +1,8 @@
-import { formatUnits, getAddress } from 'ethers'
+import { parseUnits } from 'ethers/lib/utils'
 import isEmail from 'validator/es/lib/isEmail'
 
-import { isValidAddress } from '../address'
-import { TransferControllerState } from '../../interfaces/transfer'
-import { TokenResult } from '../../libs/portfolio'
+import { ConstantsType } from '../../hooks/useConstants'
+import { isKnownTokenOrContract, isValidAddress } from '../address'
 
 const validateAddress = (address: string) => {
   if (!(address && address.length)) {
@@ -20,16 +19,7 @@ const validateAddress = (address: string) => {
     }
   }
 
-  try {
-    getAddress(address)
-  } catch {
-    return {
-      success: false,
-      message: 'Invalid checksum. Verify the address and try again.'
-    }
-  }
-
-  return { success: true, message: '' }
+  return { success: true }
 }
 
 const validateAddAuthSignerAddress = (address: string, selectedAcc: any) => {
@@ -46,46 +36,33 @@ const validateAddAuthSignerAddress = (address: string, selectedAcc: any) => {
   return { success: true }
 }
 
-// @WARNING updated
 const validateSendTransferAddress = (
-  address: string,
-  selectedAcc: string,
+  address: any,
+  selectedAcc: any,
   addressConfirmed: any,
-  isRecipientAddressUnknown: TransferControllerState['isRecipientAddressUnknown'],
-  isRecipientHumanizerKnownTokenOrSmartContract: TransferControllerState['isRecipientHumanizerKnownTokenOrSmartContract'],
-  isUDAddress: boolean,
-  isEnsAddress: boolean,
-  isRecipientDomainResolving: boolean
+  isKnownAddress: any,
+  humanizerInfo: ConstantsType['humanizerInfo'],
+  isUDAddress?: boolean,
+  isEnsAddress?: boolean
 ) => {
-  // Basic validation is handled in the AddressInput component and we don't want to overwrite it.
-  if (!isValidAddress(address) || isRecipientDomainResolving) {
-    return {
-      success: true,
-      message: ''
-    }
-  }
+  const isValidAddr = validateAddress(address)
+  if (!isValidAddr.success) return isValidAddr
 
-  if (selectedAcc && address === selectedAcc) {
+  if (address && selectedAcc && address === selectedAcc) {
     return {
       success: false,
       message: 'The entered address should be different than the your own account address.'
     }
   }
 
-  if (isRecipientHumanizerKnownTokenOrSmartContract) {
+  if (address && isKnownTokenOrContract(humanizerInfo, address)) {
     return {
       success: false,
       message: 'You are trying to send tokens to a smart contract. Doing so would burn them.'
     }
   }
 
-  if (
-    isRecipientAddressUnknown &&
-    !addressConfirmed &&
-    !isUDAddress &&
-    !isEnsAddress &&
-    !isRecipientDomainResolving
-  ) {
+  if (address && !isKnownAddress(address) && !addressConfirmed && !isUDAddress && !isEnsAddress) {
     return {
       success: false,
       message:
@@ -93,12 +70,7 @@ const validateSendTransferAddress = (
     }
   }
 
-  if (
-    isRecipientAddressUnknown &&
-    !addressConfirmed &&
-    (isUDAddress || isEnsAddress) &&
-    !isRecipientDomainResolving
-  ) {
+  if (address && !isKnownAddress(address) && !addressConfirmed && (isUDAddress || isEnsAddress)) {
     const name = isUDAddress ? 'Unstoppable domain' : 'Ethereum Name Service'
     return {
       success: false,
@@ -106,10 +78,10 @@ const validateSendTransferAddress = (
     }
   }
 
-  return { success: true, message: '' }
+  return { success: true }
 }
 
-const validateSendTransferAmount = (amount: string, selectedAsset: TokenResult) => {
+const validateSendTransferAmount = (amount: any, selectedAsset: any) => {
   if (!(amount && amount.length)) {
     return {
       success: false,
@@ -117,7 +89,7 @@ const validateSendTransferAmount = (amount: string, selectedAsset: TokenResult) 
     }
   }
 
-  if (!(amount && Number(amount) > 0)) {
+  if (!(amount && amount > 0)) {
     return {
       success: false,
       message: 'The amount must be greater than 0.'
@@ -126,15 +98,16 @@ const validateSendTransferAmount = (amount: string, selectedAsset: TokenResult) 
 
   try {
     if (amount && selectedAsset && selectedAsset.decimals) {
-      const selectedAssetMaxAmount = Number(
-        formatUnits(selectedAsset.amount, Number(selectedAsset.decimals))
-      )
-      const currentAmount = Number(amount)
-
-      if (currentAmount > selectedAssetMaxAmount) {
+      const parsedAmount = amount.slice(0, amount.indexOf('.') + selectedAsset.decimals + 1) // Fixed decimals in case amount is bigger than selectedAsset.decimals, otherwise would cause overflow error
+      const bigNumberAmount = parseUnits(parsedAmount, selectedAsset.decimals)
+      if (
+        bigNumberAmount &&
+        selectedAsset.balanceRaw &&
+        bigNumberAmount.gt(selectedAsset.balanceRaw)
+      ) {
         return {
           success: false,
-          message: `The amount is greater than the asset's balance: ${selectedAssetMaxAmount} ${selectedAsset?.symbol}.`
+          message: `The amount is greater than the asset's balance: ${selectedAsset?.balance} ${selectedAsset?.symbol}.`
         }
       }
     }
@@ -142,32 +115,29 @@ const validateSendTransferAmount = (amount: string, selectedAsset: TokenResult) 
     console.error(e)
   }
 
-  return { success: true, message: '' }
+  return { success: true }
 }
 
-// @WARNING updated
 const validateSendNftAddress = (
   address: string,
   selectedAcc: any,
   addressConfirmed: any,
-  isRecipientAddressUnknown: TransferControllerState['isRecipientAddressUnknown'],
-  isRecipientHumanizerKnownTokenOrSmartContract: TransferControllerState['isRecipientHumanizerKnownTokenOrSmartContract'],
+  isKnownAddress: any,
   metadata: any,
   selectedNetwork: any,
   network: any,
-  isUDAddress: boolean,
-  isEnsAddress: boolean,
-  isRecipientDomainResolving: boolean
+  humanizerInfo: ConstantsType['humanizerInfo'],
+  isUDAddress?: boolean,
+  isEnsAddress?: boolean
 ) => {
   const isValidAddr = validateSendTransferAddress(
     address,
     selectedAcc,
     addressConfirmed,
-    isRecipientAddressUnknown,
-    isRecipientHumanizerKnownTokenOrSmartContract,
+    isKnownAddress,
+    humanizerInfo,
     isUDAddress,
-    isEnsAddress,
-    isRecipientDomainResolving
+    isEnsAddress
   )
   if (!isValidAddr.success) return isValidAddr
 
