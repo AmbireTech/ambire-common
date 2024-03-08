@@ -797,6 +797,14 @@ export class SignAccountOpController extends EventEmitter {
     // delete the activatorCall as a precaution that it won't be added twice
     delete this.accountOp.activatorCall
 
+    // @EntryPoint activation
+    // if the account is v2 without the entry point signer being a signer
+    // and the network is 4337 but doesn't have a paymaster, we should activate
+    // the entry point and therefore do so here
+    if (shouldIncludeActivatorCall(this.#network, accountState)) {
+      this.accountOp.activatorCall = getActivatorCall(this.accountOp.accountAddr)
+    }
+
     try {
       // In case of EOA account
       if (!this.#account.creation) {
@@ -812,14 +820,6 @@ export class SignAccountOpController extends EventEmitter {
       } else if (this.accountOp.gasFeePayment.paidBy !== this.#account.addr) {
         // Smart account, but EOA pays the fee
         // EOA pays for execute() - relayerless
-
-        // @EntryPoint activation
-        // if the account is v2 without the entry point signer being a signer
-        // and the network is 4337 but doesn't have a paymaster, we should activate
-        // the entry point and therefore do so here
-        if (shouldIncludeActivatorCall(this.#network, accountState)) {
-          this.accountOp.activatorCall = getActivatorCall(this.accountOp.accountAddr)
-        }
 
         this.accountOp.signature = await getExecuteSignature(
           this.#network,
@@ -860,10 +860,6 @@ export class SignAccountOpController extends EventEmitter {
 
         if (usesPaymaster) {
           this.#addFeePayment()
-        }
-
-        if (userOperation.requestType === 'activator') {
-          this.accountOp.activatorCall = userOperation.activatorCall
         }
 
         const ambireAccount = new ethers.Interface(AmbireAccount.abi)
@@ -936,6 +932,7 @@ export class SignAccountOpController extends EventEmitter {
       } else {
         // Relayer
         this.#addFeePayment()
+
         this.accountOp.signature = await getExecuteSignature(
           this.#network,
           this.accountOp,
