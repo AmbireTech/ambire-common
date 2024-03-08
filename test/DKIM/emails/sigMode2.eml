@@ -1,0 +1,87 @@
+Delivered-To: adamcrein@gmail.com
+Received: by 2002:ab3:61a7:0:b0:239:31c:fff8 with SMTP id s7csp4688603ltd;
+        Fri, 22 Sep 2023 07:05:01 -0700 (PDT)
+X-Received: by 2002:a05:651c:1543:b0:2c1:3d9f:1f4d with SMTP id y3-20020a05651c154300b002c13d9f1f4dmr2385239ljp.9.1695391501211;
+        Fri, 22 Sep 2023 07:05:01 -0700 (PDT)
+ARC-Seal: i=1; a=rsa-sha256; t=1695391501; cv=none;
+        d=google.com; s=arc-20160816;
+        b=s3mDeFuThRsgpUbscn3ryhlMJeHf/jP67YCb7zenLufFcQAX9nWrh619LYK+U7CDVM
+         1fV7LlOJ6cbeXTvpw+G1APlCvVOsHNoYM50YDP3BXeoSdbLrETN7whr45thAvqAK8D+3
+         F10RsharmYVBO1Y9N5SyxbWS/izWDcuqMWqH2yuRBi5xdnIqp5gqS1h4JXDSqsUmblqa
+         TzoHIbyW0fj5laHWmUGxifC4xX/az5BbbkC4eICYdvguh30iBiH/m5XK6wx+t4SNvqC4
+         MEKGKOTK4o6w/n1T0EOUUZ8xKxUQB49pdU9G2mqDugvCd3yzLj1aaPZ+4/LTfwqikCrn
+         Jvqw==
+ARC-Message-Signature: i=1; a=rsa-sha256; c=relaxed/relaxed; d=google.com; s=arc-20160816;
+        h=to:subject:message-id:date:from:mime-version:dkim-signature;
+        bh=NX4sX43X7GCmzV227cVJfA9SCaM6GZJWrNTyZIgVQ8M=;
+        fh=hs9BkMgmE3Cr8znVmH5APSPVuJ0ukqRKBjYz5Yeln/0=;
+        b=wtEwAv5PNJUCEM+QNxrmyCZvjnL4wht/idsuLNvu/9o6NpPMjb8ikuVZtQurjuw6Bf
+         NfpuF06sGd2UpnSPO9TZ2rgBq7XOXOE92UlvWD6O9rBRdMofN0FtEz7AFUSI8WOfobXo
+         aSVd0PyRGepyE2DvuahArlA70cSeTg8SWOLjoR69sdKVbi9IV6Fv3EvK6Ik25RJqtVXS
+         rTgkhH9fZ7vE1DF7TVP9svHVhlcvtT72qXydbjyBPFhGRK8ZRTgDA8q1SmBSa51tXMjN
+         acdn79e5AcEcAGhI0dkolagFZDdhKIyStTWbm/keBE3hiouDOeZR1xHCis8t95n2BmxZ
+         fnIg==
+ARC-Authentication-Results: i=1; mx.google.com;
+       dkim=pass header.i=@gmail.com header.s=20230601 header.b=ffMbQybX;
+       spf=pass (google.com: domain of tt469695@gmail.com designates 209.85.220.41 as permitted sender) smtp.mailfrom=tt469695@gmail.com;
+       dmarc=pass (p=NONE sp=QUARANTINE dis=NONE) header.from=gmail.com
+Return-Path: <tt469695@gmail.com>
+Received: from mail-sor-f41.google.com (mail-sor-f41.google.com. [209.85.220.41])
+        by mx.google.com with SMTPS id f7-20020a05651c02c700b002ba71a18da9sor1313007ljo.5.2023.09.22.07.05.01
+        for <adamcrein@gmail.com>
+        (Google Transport Security);
+        Fri, 22 Sep 2023 07:05:01 -0700 (PDT)
+Received-SPF: pass (google.com: domain of tt469695@gmail.com designates 209.85.220.41 as permitted sender) client-ip=209.85.220.41;
+Authentication-Results: mx.google.com;
+       dkim=pass header.i=@gmail.com header.s=20230601 header.b=ffMbQybX;
+       spf=pass (google.com: domain of tt469695@gmail.com designates 209.85.220.41 as permitted sender) smtp.mailfrom=tt469695@gmail.com;
+       dmarc=pass (p=NONE sp=QUARANTINE dis=NONE) header.from=gmail.com
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20230601; t=1695391501; x=1695996301; dara=google.com;
+        h=to:subject:message-id:date:from:mime-version:from:to:cc:subject
+         :date:message-id:reply-to;
+        bh=NX4sX43X7GCmzV227cVJfA9SCaM6GZJWrNTyZIgVQ8M=;
+        b=ffMbQybXgCp48e37BbUpPevbpiYk2VSyGP0jtzfS6UgZOtK3EyYYNB/4/PSiK6m2cd
+         7pou4REUFqi0LWbrGao1EQLFMaf/ocgvR/baypPkJK4MjQrXjQyHX939nT5iID4GabWU
+         EiiU8g5FmhmywOP6WfSdCyb275AJEHgzTvE1tWMneluolPYCNW1IK9I5SOxZHpslik4b
+         eQ+BF8KmfrzHhYtJlHzqt3JG1PxXvPVt8+uCRH9AIG/eSKIkWMmFQ6YRWBfsT4WVTTEA
+         /+myxj/CCV8nIjpokGSh8aIGZkhcj/YlV1oG/VqLqpsDZqmQpL0g9Uu4+Ne1UZVaHr46
+         HTOg==
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=1e100.net; s=20230601; t=1695391501; x=1695996301;
+        h=to:subject:message-id:date:from:mime-version:x-gm-message-state
+         :from:to:cc:subject:date:message-id:reply-to;
+        bh=NX4sX43X7GCmzV227cVJfA9SCaM6GZJWrNTyZIgVQ8M=;
+        b=iWNlBrIqtqPcLNy5s/4fvzW2FuvJThejDBij4/RxQvbOtcMT/5hoHoQfia/tYlQQJz
+         HKUjVf15FZNTa39FmZQ5a4krqpqrye+uYhgst9x/UtRCjhZr3cZAAx8B/AQvZdHvNsgK
+         31Br/+kbbS300R7fjY3cZVpx9ULPp2Khf1fCIUJOxPMUIWIRTQnDpiDPVuI0XnqbgeZd
+         ccF82zUD/+4z9wDbF+Oa0JkyCbKyV8qPGn3spfE+ow9cVKycmLyuk7TaK6ZNrayX5hNr
+         NGAcp8Av4y08Nye73wh6VJd32ku2sCf20lr5LkilMyJY5c345EMzi/L4U07wvMsYGfiN
+         nU4Q==
+X-Gm-Message-State: AOJu0Ywyp0iD/QytGvDI+LLnkuohtgucG9GD1GiIJ9TkVMNz/o9KWGYz
+	KFazrC6kpS/Iz/gFd9MJDdreD/ntH0O6xgvW84owkMqY3vM=
+X-Google-Smtp-Source: AGHT+IG7Bu/bV5mJ3GiMSeXRr6szPnqSGXJybHuyQQbOA6YDWLU/F8AzlDG/yaR+0bMKEe6Bf8wNPnNkceYU6Ye3P3I=
+X-Received: by 2002:a2e:9b86:0:b0:2bf:fb49:6619 with SMTP id
+ z6-20020a2e9b86000000b002bffb496619mr7311649lji.23.1695391500631; Fri, 22 Sep
+ 2023 07:05:00 -0700 (PDT)
+MIME-Version: 1.0
+From: test testov <tt469695@gmail.com>
+Date: Fri, 22 Sep 2023 17:04:49 +0300
+Message-ID: <CAKXuq_VAFVm+59F6ZVK9jSnMAZqvVPkxu_70Y+D7byveU6vfoQ@mail.gmail.com>
+Subject: Give 0xfe564763e6c69427036277e09f47a1063bcc76422a8d215852ec20cbbf5753fb
+ permissions to 0x70997970c51812dc3a010c7d01b50e0d17dc79c8 SigMode 2
+To: adamcrein@gmail.com
+Content-Type: multipart/alternative; boundary="0000000000002684340605f318e2"
+
+--0000000000002684340605f318e2
+Content-Type: text/plain; charset="UTF-8"
+
+Give 0xfe564763e6c69427036277e09f47a1063bcc76422a8d215852ec20cbbf5753fb
+permissions to 0x70997970c51812dc3a010c7d01b50e0d17dc79c8 SigMode 2
+
+--0000000000002684340605f318e2
+Content-Type: text/html; charset="UTF-8"
+
+<div dir="ltr">Give 0xfe564763e6c69427036277e09f47a1063bcc76422a8d215852ec20cbbf5753fb permissions to 0x70997970c51812dc3a010c7d01b50e0d17dc79c8 SigMode 2<br></div>
+
+--0000000000002684340605f318e2--

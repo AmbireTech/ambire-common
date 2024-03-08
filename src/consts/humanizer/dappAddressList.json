@@ -1,0 +1,1153 @@
+{
+	"1":
+		{
+		"0x0000000000004946c0e9F43F4Dee607b0eF1fA1c": {
+			"appName": "1inch CHI",
+			"label": "1inch CHI Token"
+		},
+		"0x000000000000541E251335090AC5B47176AF4f7E": {
+			"appName": "dex.blue",
+			"label": "dex.blue"
+		},
+		"0x00000000000111AbE46ff893f3B2fdF1F759a8A8": {
+			"appName": "Blur",
+			"label": "Blur: Marketplace"
+		},
+		"0x000000000022D473030F116dDEE9F6B43aC78BA3": {
+			"appName": "Permit2",
+			"label": "Permit2"
+		},
+		"0x0034Ea9808E620A0EF79261c51AF20614B742B24": {
+			"appName": "PoolTogether",
+			"label": "PoolTogether: USDC"
+		},
+		"0x006B6e89eE1531cfE5b6d32da0d80CC30506A339": {
+			"appName": "Uniswap",
+			"label": "Uniswap: MET"
+		},
+		"0x01621C6180d8AdFad5B0c8f69d7D4ABf49c7868F": {
+			"appName": "Killabears",
+			"label": "Kilton Hotel Staking"
+		},
+		"0x03c341408d0EDF502E702b9b24Ec305819357C56": {
+			"appName": "Uniswap",
+			"label": "Uniswap: SXP"
+		},
+		"0x044b75f554b886A065b9567891e45c79542d7357": {
+			"appName": "SushiSwap",
+			"label": "SushiSwap: RouterProcessor 2"
+		},
+		"0x04Aa51bbcB46541455cCF1B8bef2ebc5d3787EC9": {
+			"appName": "Yearn",
+			"label": "iearn: WBTC v2"
+		},
+		"0x04EF8121aD039ff41d10029c91EA1694432514e9": {
+			"appName": "Yearn",
+			"label": "iearn: WBTC v1"
+		},
+		"0x069C97DBA948175D10af4b2414969e0B88d44669": {
+			"appName": "Uniswap",
+			"label": "Uniswap: NEXO"
+		},
+		"0x06AF07097C9Eeb7fD685c692751D5C66dB49c215": {
+			"appName": "CHAI",
+			"label": "CHAI"
+		},
+		"0x06a5Bf70BfF314177488864Fe03576ff608e6aec": {
+			"appName": "Staked.us",
+			"label": "Staked.us"
+		},
+		"0x077d52B047735976dfdA76feF74d4d988AC25196": {
+			"appName": "Uniswap",
+			"label": "Uniswap: ANT"
+		},
+		"0x0836222F2B2B24A3F36f98668Ed8F0B38D1a872f": {
+			"appName": "Tornado.cash",
+			"label": "Tornado.cash: 1000 USDT"
+		},
+		"0x086d4daab14741b195deE65aFF050ba184B65045": {
+			"appName": "IPOR",
+			"label": "IPOR Liquidity Pool"
+		},
+		"0x0890FBf0f9b3d55A7E3F251b6AFCbE691A29873B": {
+			"appName": "DeversiFi",
+			"label": "DeversiFi: USDC"
+		},
+		"0x09F448C70C99124024CD9E8dCae6C2F51c0896DB": {
+			"appName": "Uniswap",
+			"label": "Uniswap: MFT"
+		},
+		"0x09cabEC1eAd1c0Ba254B09efb3EE13841712bE14": {
+			"appName": "Uniswap",
+			"label": "Uniswap: SAI"
+		},
+		"0x0F88A6CbEB3BD153c0584C7136fbCC86c2dD657F": {
+			"appName": "Uniswap",
+			"label": "Uniswap: CYFM"
+		},
+		"0x0E6A53B13688018A3df8C69f99aFB19A3068D04f": {
+			"appName": "Uniswap",
+			"label": "Uniswap: BLT"
+		},
+		"0x0a1730279B86a00C7214Abc624f19261F8Fd9a88": {
+			"appName": "Killabears",
+			"label": "KillaLabs Staking"
+		},
+		"0x0eB7177b30D8415d36ed5cA71fAa7673c4FBE187": {
+			"appName": "X Marketplace",
+			"label": "X Marketplace: ERC1155 token exchange"
+		},
+		"0x0eEe3E3828A45f7601D5F54bF49bB01d1A9dF5ea": {
+			"appName": "Lendf",
+			"label": "Lendf"
+		},
+		"0x1055bE4bf7338C7606d9EFDCf80593F180BA043e": {
+			"appName": "Compound",
+			"label": "Compound: Liquidator"
+		},
+		"0x10eC0D497824e342bCB0EDcE00959142aAa766dD": {
+			"appName": "Idle",
+			"label": "Idle"
+		},
+		"0x11111112542D85B3EF69AE05771c2dCCff4fAa26": {
+			"appName": "1inch",
+			"label": "1inch v3"
+		},
+		"0x111111125434b319222CdBf8C261674aDB56F3ae": {
+			"appName": "1inch",
+			"label": "1inch v2"
+		},
+		"0x1111111254EEB25477B68fb85Ed929f73A960582": {
+			"appName": "1inch",
+			"label": "1inch v5: Aggregation Router"
+		},
+		"0x1111111254fb6c44bAC0beD2854e76F90643097d": {
+			"appName": "1inch",
+			"label": "1inch v4"
+		},
+		"0x11111254369792b2Ca5d084aB5eEA397cA8fa48B": {
+			"appName": "1inch",
+			"label": "1inch v1"
+		},
+		"0x119c71D3BbAC22029622cbaEc24854d3D32D2828": {
+			"appName": "1inch",
+			"label": "Limit Orders Protocol"
+		},
+		"0x1231DEB6f5749EF6cE6943a275A1D3E7486F4EaE": {
+			"appName": "LI.FI",
+			"label": "LI.FI: LiFi Diamond"
+		},
+		"0x12D66f87A04A9E220743712cE6d9bB1B5616B8Fc": {
+			"appName": "Tornado.cash",
+			"label": "Tornado.cash: 0.1 ETH"
+		},
+		"0x134c16bE1E0f19ce41855B71E0E29fbA539728e9": {
+			"appName": "DeversiFi",
+			"label": "DeversiFi: XAUT"
+		},
+		"0x1356c899D8C9467C7f71C195612F8A395aBf2f0a": {
+			"appName": "Tornado.cash",
+			"label": "Tornado.cash: 50000 cUSDC"
+		},
+		"0x137000352B4ed784e8fa8815d225c713AB2e7Dc9": {
+			"appName": "IPOR",
+			"label": "IPOR Interest Rate Swaps AMM"
+		},
+		"0x158079Ee67Fce2f58472A96584A73C7Ab9AC95c1": {
+			"appName": "Compound",
+			"label": "Compound: REP"
+		},
+		"0x169AD27A470D064DEDE56a2D3ff727986b15D52B": {
+			"appName": "Tornado.cash",
+			"label": "Tornado.cash: 100 USDT"
+		},
+		"0x16de59092dAE5CcF4A1E6439D611fd0653f0Bd01": {
+			"appName": "Yearn",
+			"label": "iearn: DAI v2"
+		},
+		"0x17e8Ca1b4798B97602895f63206afCd1Fc90Ca5f": {
+			"appName": "Furucombo",
+			"label": "Furucombo: Proxy v1.0.0"
+		},
+		"0x181Aea6936B407514ebFC0754A37704eB8d98F91": {
+			"appName": "yinsure",
+			"label": "yinsure NFT"
+		},
+		"0x19D97D8fA813EE2f51aD4B4e04EA08bAf4DFfC28": {
+			"appName": "Badger",
+			"label": "Badger: Vault"
+		},
+		"0x1C6c712b1F4a7c263B1DBd8F97fb447c945d3b9a": {
+			"appName": "Uniswap",
+			"label": "Uniswap: CVC"
+		},
+		"0x1C70D0A86475CC707b48aA79F112857e7957274f": {
+			"appName": "Sappy Seals",
+			"label": "Sappy Seals Staking V2"
+		},
+		"0x1E0049783F008A0085193E00003D00cd54003c71": {
+			"appName": "OpenSea",
+			"label": "OpenSea: Conduit"
+		},
+		"0x1E0447b19BB6EcFdAe1e4AE1694b0C3659614e4e": {
+			"appName": "dYdX",
+			"label": "dYdX: Solo Margin"
+		},
+		"0x1aEC8F11A7E78dC22477e91Ed924Fab46e3A88Fd": {
+			"appName": "Uniswap",
+			"label": "Uniswap: SNT"
+		},
+		"0x1c0F17436740bFB92C1070Ee86322dE890837c6a": {
+			"appName": "DeversiFi",
+			"label": "DeversiFi: BAT"
+		},
+		"0x20F780A973856B93f63670377900C1d2a50a77c4": {
+			"appName": "Element",
+			"label": "Element: Marketplace"
+		},
+		"0x216B4B4Ba9F3e719726886d34a177484278Bfcae": {
+			"appName": "ParaSwap",
+			"label": "Paraswap v5: Token Transfer Proxy Mainnet"
+		},
+		"0x22aaA7720ddd5388A3c0A3333430953C68f1849b": {
+			"appName": "Tornado.cash",
+			"label": "Tornado.cash: 5000 cDAI"
+		},
+		"0x241e82C79452F51fbfc89Fac6d912e021dB1a3B7": {
+			"appName": "DDEX",
+			"label": "DDEX: Margin"
+		},
+		"0x243318cb80785aB92F2C39543Cb58958320e64b2": {
+			"appName": "DeversiFi",
+			"label": "DeversiFi: TSD"
+		},
+		"0x261b45D85cCFeAbb11F022eBa346ee8D1cd488c0": {
+			"appName": "rDAI",
+			"label": "rDAI"
+		},
+		"0x26Cc0EAb6Cb650B0Db4D0d0dA8cB5BF69F4ad692": {
+			"appName": "Uniswap",
+			"label": "Uniswap: GEN"
+		},
+		"0x28BC58e600eF718B9E97d294098abecb8c96b687": {
+			"appName": "IPOR",
+			"label": "IPOR Interest Rate Swaps AMM"
+		},
+		"0x28d9353611C5A0d5a026A648c05E5d6523e41CBf": {
+			"appName": "Uniswap",
+			"label": "Uniswap: ULT"
+		},
+		"0x28de5C5f56B6216441eE114e832808D5B9d4A775": {
+			"appName": "AirSwap",
+			"label": "AirSwap: Wrapper"
+		},
+		"0x29E240CFD7946BA20895a7a02eDb25C210f9f324": {
+			"appName": "Yearn",
+			"label": "Yearn: aLINK"
+		},
+		"0x29fe7D60DdF151E5b52e5FAB4f1325da6b2bD958": {
+			"appName": "PoolTogether",
+			"label": "PoolTogether: DAI"
+		},
+		"0x2Bf5A5bA29E60682fC56B2Fcf9cE07Bef4F6196f": {
+			"appName": "Uniswap",
+			"label": "Uniswap: NMR"
+		},
+		"0x2C4Bd064b998838076fa341A83d007FC2FA50957": {
+			"appName": "Uniswap",
+			"label": "Uniswap: MKR"
+		},
+		"0x2Cd04bb68786834F199CE12074Da7B8832129FE1": {
+			"appName": "DeversiFi",
+			"label": "DeversiFi: DAI"
+		},
+		"0x2E642b8D59B45a1D8c5aEf716A84FF44ea665914": {
+			"appName": "Uniswap",
+			"label": "Uniswap: BAT"
+		},
+		"0x2a0c0DBEcC7E4D658f48E01e3fA353F44050c208": {
+			"appName": "IDEX",
+			"label": "IDEX 1"
+		},
+		"0x2a1530C4C41db0B0b2bB646CB5Eb1A67b7158667": {
+			"appName": "Uniswap",
+			"label": "Uniswap: DAI"
+		},
+		"0x2aFc64cD5E64a32A363EA84b8CaD1ce5239a1A3D": {
+			"appName": "Uniswap",
+			"label": "Uniswap: STX"
+		},
+		"0x2e60CF74d81ac34eB21eEff58Db4D385920ef419": {
+			"appName": "Curve.fi",
+			"label": "Curve.fi: Old Contract"
+		},
+		"0x317625234562B1526Ea2FaC4030Ea499C5291de4": {
+			"appName": "Aave",
+			"label": "Aave: LEND to AAVE Migration"
+		},
+		"0x2f08119C6f07c006695E079AAFc638b8789FAf18": {
+			"appName": "Yearn",
+			"label": "Yearn: USDT"
+		},
+		"0x33C5A44fd6E76Fc2b50a9187CfeaC336A74324AC": {
+			"appName": "IPOR",
+			"label": "IPOR Liquidity Pool"
+		},
+		"0x33D019eB137b853F0Cdf555a5D5bD2749135Ac31": {
+			"appName": "DeversiFi",
+			"label": "DeversiFi: USDT"
+		},
+		"0x34c3f58058E2ad098ef437Ee5Ea1ff1fE2fe4214": {
+			"appName": "Predomain",
+			"label": "Predomain: Marketplace"
+		},
+		"0x36324b8168f960A12a8fD01406C9C78143d41380": {
+			"appName": "Yearn",
+			"label": "iearn: SUSD v1"
+		},
+		"0x394e524b47A3AB3D3327f7fF6629dC378c1494a3": {
+			"appName": "Uniswap",
+			"label": "Uniswap: RHOC"
+		},
+		"0x3958B4eC427F8fa24eB60F42821760e88d485f7F": {
+			"appName": "Uniswap",
+			"label": "Uniswap: SNX"
+		},
+		"0x39AA39c021dfbaE8faC545936693aC917d5E7563": {
+			"appName": "Compound",
+			"label": "Compound: USDC"
+		},
+		"0x3Ab6564d5c214bc416EE8421E05219960504eeAD": {
+			"appName": "Bancor",
+			"label": "Bancor"
+		},
+		"0x3BC26582062Fd8aaa084EE874f6764718C398203": {
+			"appName": "DeversiFi",
+			"label": "DeversiFi: SAN"
+		},
+		"0x3E66B66Fd1d0b02fDa6C811Da9E0547970DB2f21": {
+			"appName": "Balancer",
+			"label": "Balancer: Exchange Proxy 2"
+		},
+		"0x3aD9539C143B335794bAc9211aA5491DAEDa85Bf": {
+			"appName": "DeversiFi",
+			"label": "DeversiFi: PNK"
+		},
+		"0x3d4Cc8A61c7528Fd86C55cfe061a78dCBA48EDd1": {
+			"appName": "Hop",
+			"label": "DAI Bridge"
+		},
+		"0x3dfd23A6c5E8BbcFc9581d2E864a68feb6a076d3": {
+			"appName": "Aave",
+			"label": "Aave: Lending Pool Core"
+		},
+		"0x401F6c983eA34274ec46f84D70b31C151321188b": {
+			"appName": "Polygon Bridge",
+			"label": "Polygon: Plasma Bridge"
+		},
+		"0x3f46E145dFcD84230C8E0684eFb8BcE3F0965fBa": {
+			"appName": "DeversiFi",
+			"label": "DeversiFi: ENJ"
+		},
+		"0x40ec5B33f54e0E8A33A975908C5BA1c14e5BbbDf": {
+			"appName": "Polygon Bridge",
+			"label": "Polygon: ERC20 Bridge"
+		},
+		"0x417CB32bc991fBbDCaE230C7c4771CC0D69daA6b": {
+			"appName": "Uniswap",
+			"label": "Uniswap: LOOM"
+		},
+		"0x43892992B0b102459E895B88601Bb2C76736942c": {
+			"appName": "Uniswap",
+			"label": "Uniswap: REN"
+		},
+		"0x4572f2554421Bd64Bef1c22c8a81840E8D496BeA": {
+			"appName": "AirSwap",
+			"label": "AirSwap"
+		},
+		"0x45A2FDfED7F7a2c791fb1bdF6075b83faD821ddE": {
+			"appName": "Uniswap",
+			"label": "Uniswap: cSAI"
+		},
+		"0x45F783CCE6B7FF23B2ab2D70e416cdb7D6055f51": {
+			"appName": "Curve.fi",
+			"label": "Curve.fi: Y Swap"
+		},
+		"0x4736dCf1b7A3d580672CcE6E7c65cd5cc9cFBa9D": {
+			"appName": "Tornado.cash",
+			"label": "Tornado.cash: 1000 USDC"
+		},
+		"0x47CE0C6eD5B0Ce3d3A51fdb1C52DC66a7c3c2936": {
+			"appName": "Tornado.cash",
+			"label": "Tornado.cash: 1 ETH"
+		},
+		"0x48B04d2A05B6B604d8d5223Fd1984f191DED51af": {
+			"appName": "Uniswap",
+			"label": "Uniswap: REP"
+		},
+		"0x49c4f9bc14884f6210F28342ceD592A633801a8b": {
+			"appName": "Uniswap",
+			"label": "Uniswap: KNC"
+		},
+		"0x4B17685b330307C751B47f33890c8398dF4Fe407": {
+			"appName": "Uniswap",
+			"label": "Uniswap: GRID"
+		},
+		"0x4D9079Bb4165aeb4084c526a32695dCfd2F77381": {
+			"appName": "Across Protocol",
+			"label": "Across Protocol: Ethereum Spoke Pool V2"
+		},
+		"0x4Ddc2D193948926D02f9B1fE9e1daa0718270ED5": {
+			"appName": "Compound",
+			"label": "Compound: ETH"
+		},
+		"0x4F0d6E2179938828CfF93dA40a8BA1Df7519Ca8C": {
+			"appName": "Uniswap",
+			"label": "Uniswap: DATA"
+		},
+		"0x4F30E682D0541eAC91748bd38A648d759261b8f3": {
+			"appName": "Uniswap",
+			"label": "Uniswap: TUSD (old)"
+		},
+		"0x4aa42145Aa6Ebf72e164C9bBC74fbD3788045016": {
+			"appName": "xDAI Bridge",
+			"label": "xDAI Bridge"
+		},
+		"0x4d2f5cFbA55AE412221182D8475bC85799A5644b": {
+			"appName": "Uniswap",
+			"label": "Uniswap: WBTC"
+		},
+		"0x4e395304655F0796bc3bc63709DB72173b9DdF98": {
+			"appName": "Uniswap",
+			"label": "Uniswap: SPANK"
+		},
+		"0x5048b9d01097498Fd72F3F14bC9Bc74A5aAc8fA7": {
+			"appName": "Uniswap",
+			"label": "Uniswap: TUSD"
+		},
+		"0x4feE7B061C97C9c496b01DbcE9CDb10c02f0a0Be": {
+			"appName": "Rarible",
+			"label": "Rarible: Transfer Proxy"
+		},
+		"0x505C02B4aa1286375FBDF0c390AC0fe9209DCB05": {
+			"appName": "Uniswap",
+			"label": "Uniswap: THKD"
+		},
+		"0x50cB61AfA3F023d17276DCFb35AbF85c710d1cfF": {
+			"appName": "DeversiFi",
+			"label": "DeversiFi: ETH"
+		},
+		"0x52EA46506B9CC5Ef470C5bf89f17Dc28bB35D85C": {
+			"appName": "Curve.fi",
+			"label": "Curve.fi: USDT Swap"
+		},
+		"0x5542abc7DC05fA2C8142804bDbcC0da8a0DC98Ad": {
+			"appName": "NFTX",
+			"label": "NFTX: Marketplace Zap"
+		},
+		"0x57805e5a227937BAc2B0FdaCaA30413ddac6B8E1": {
+			"appName": "Furucombo",
+			"label": "Furucombo: Proxy v0.4.1"
+		},
+		"0x5954aB967Bc958940b7EB73ee84797Dc8a2AFbb9": {
+			"appName": "ApeCoin",
+			"label": "ApeCoin Staking"
+		},
+		"0x59728544B08AB483533076417FbBB2fD0B17CE3a": {
+			"appName": "LooksRare",
+			"label": "LooksRare: Exchange"
+		},
+		"0x597aD1e0c13Bfe8025993D9e79C69E1c0233522e": {
+			"appName": "Yearn",
+			"label": "Yearn: USDC"
+		},
+		"0x5Ee39beFFcdA53c5Fa2890c2161247582e2210bb": {
+			"appName": "DeversiFi",
+			"label": "DeversiFi: REP"
+		},
+		"0x5abfbE56553a5d794330EACCF556Ca1d2a55647C": {
+			"appName": "Zapper",
+			"label": "ZapIn"
+		},
+		"0x5d22045DAcEAB03B158031eCB7D9d06Fad24609b": {
+			"appName": "DeversiFi",
+			"label": "DeversiFi v2"
+		},
+		"0x5d3a536E4D6DbD6114cc1Ead35777bAB948E3643": {
+			"appName": "Compound",
+			"label": "Compound: DAI"
+		},
+		"0x60a87cC7Fca7E53867facB79DA73181B1bB4238B": {
+			"appName": "Uniswap",
+			"label": "Uniswap: FUN"
+		},
+		"0x634e27269A029EdB2b70b5EF43273F5eEd9Ebcc2": {
+			"appName": "Uniswap",
+			"label": "Uniswap: JRT"
+		},
+		"0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45": {
+			"appName": "Uniswap",
+			"label": "Uniswap v3: Router 2"
+		},
+		"0x6C8c6b02E7b2BE14d4fA6022Dfd6d75921D90E4E": {
+			"appName": "Compound",
+			"label": "Compound: BAT"
+		},
+		"0x6D987Dda4358a9Ba4F695Ca4e6AA3933D7Bc1B08": {
+			"appName": "Alchemix Finance",
+			"label": "Olympus Pro WETH Bond"
+		},
+		"0x6b4540F5ee32DDD5616c792F713435E6ee4f24Ab": {
+			"appName": "Uniswap",
+			"label": "Uniswap: THETA"
+		},
+		"0x6bFa119a191576Ba26Bc5e711432aCA0cFda04DE": {
+			"appName": "Uniswap",
+			"label": "Uniswap: TGBP"
+		},
+		"0x6eb211CAF6d304A76efE37D9AbDFAdDC2d4363d1": {
+			"appName": "Rabby",
+			"label": "Rabby: Swaps Router"
+		},
+		"0x700520B1E2cCC5bF5fA89a5F7B8fd9BebA3F04b0": {
+			"appName": "Uniswap",
+			"label": "Uniswap: ST"
+		},
+		"0x701564Aa6E26816147D4fa211a0779F1B774Bb9B": {
+			"appName": "Uniswap",
+			"label": "Uniswap: 0xBTC"
+		},
+		"0x73555A153d301d95A3f90919e645D301F1f9E219": {
+			"appName": "Psychedelics Anonymous",
+			"label": "Psychedelics Anonymous Staking"
+		},
+		"0x73a052500105205d34Daf004eAb301916DA8190f": {
+			"appName": "Yearn",
+			"label": "iearn: TUSD v2"
+		},
+		"0x74758AcFcE059f503a7E6B0fC2c8737600f9F2c4": {
+			"appName": "Totle",
+			"label": "Totle"
+		},
+		"0x755160062e3e09D34AF0A00Ff8CaB8500e81e0d7": {
+			"appName": "Uniswap",
+			"label": "Uniswap: SWT"
+		},
+		"0x755899F0540c3548b99E68C59AdB0f15d2695188": {
+			"appName": "Uniswap",
+			"label": "Uniswap: QCH"
+		},
+		"0x794e6e91555438aFc3ccF1c5076A74F42133d08D": {
+			"appName": "Oasis",
+			"label": "Oasis: Trade"
+		},
+		"0x7D03CeCb36820b4666F45E1b4cA2538724Db271C": {
+			"appName": "Uniswap",
+			"label": "Uniswap: RDN"
+		},
+		"0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D": {
+			"appName": "Uniswap",
+			"label": "Uniswap v2: Router"
+		},
+		"0x7bECBc91DB4eB3c5E9A6Cda1Db391ee648E53779": {
+			"appName": "DeversiFi",
+			"label": "DeversiFi: SNT"
+		},
+		"0x7bc8b1B5AbA4dF3Be9f9A32daE501214dC0E4f3f": {
+			"appName": "tofuNFT",
+			"label": "tofuNFT: Marketplace"
+		},
+		"0x7d2768dE32b0b80b7a3454c06BdAc94A69DDc7A9": {
+			"appName": "Aave",
+			"label": "Aave: Lending Pool v2"
+		},
+		"0x7d655c57f71464B6f83811C55D84009Cd9f5221C": {
+			"appName": "Gitcoin",
+			"label": "Gitcoin Bulk Checkout"
+		},
+		"0x7dc095A5CF7D6208CC680fA9866F80a53911041a": {
+			"appName": "Uniswap",
+			"label": "Uniswap: ZIL"
+		},
+		"0x7eA7134Ed6C41d9e35dAe7e7e1fF0FCC406224CA": {
+			"appName": "Uniswap",
+			"label": "Uniswap: DPP"
+		},
+		"0x80C5e6908368CB9db503bA968d7ec5A565BFb389": {
+			"appName": "Zapper.Fi",
+			"label": "Zapper.Fi: Uniswap v2 Zap In"
+		},
+		"0x80f0f3E1482bAB7fb6ED70185476f2FCDB596fa9": {
+			"appName": "Uniswap",
+			"label": "Uniswap: FTX"
+		},
+		"0x818E6FECD516Ecc3849DAf6845e3EC868087B755": {
+			"appName": "Kyber",
+			"label": "Kyber: Proxy"
+		},
+		"0x828b154032950C8ff7CF8085D841723Db2696056": {
+			"appName": "Curvefi",
+			"label": "stETH-WETH"
+		},
+		"0x8301AE4fc9c624d1D396cbDAa1ed877821D7C511": {
+			"appName": "Curvefi",
+			"label": "CRV-ETH"
+		},
+		"0x83f798e925BcD4017Eb265844FDDAbb448f1707D": {
+			"appName": "Yearn",
+			"label": "iearn: USDT v2"
+		},
+		"0x8589427373D6D84E98730D7795D8f6f8731FDA16": {
+			"appName": "Tornado.cash",
+			"label": "Tornado.cash: Donate"
+		},
+		"0x862916F9709E499a94fbca7A8f451eb443d34caD": {
+			"appName": "DeversiFi",
+			"label": "DeversiFi: ZRX"
+		},
+		"0x87d80DBD37E551F58680B4217b23aF6a752DA83F": {
+			"appName": "Uniswap",
+			"label": "Uniswap: BNT"
+		},
+		"0x881D40237659C251811CEC9c364ef91dC08D300C": {
+			"appName": "MetaMask",
+			"label": "MetaMask: Swap Router"
+		},
+		"0x882d80D3a191859d64477eb78Cca46599307ec1C": {
+			"appName": "Set Protocol",
+			"label": "Set Protocol: Transfer Protocol"
+		},
+		"0x884715e2dCE8757C9EE19739C366b2C7C65f05b1": {
+			"appName": "Uniswap",
+			"label": "Uniswap: ENG"
+		},
+		"0x88ad09518695c6c3712AC10a214bE5109a655671": {
+			"appName": "Gnosis Bridge",
+			"label": "Omni Bridge"
+		},
+		"0x88dF13889E20EFa93Ff9a0C08f101F431bD9DDD7": {
+			"appName": "Uniswap",
+			"label": "Uniswap: TAUD"
+		},
+		"0x8B3d70d628Ebd30D4A2ea82DB95bA2e906c71633": {
+			"appName": "bZx",
+			"label": "bZx: Vault"
+		},
+		"0x8a8D7aD4b89D91983cd069C58C4AA9F2f4166298": {
+			"appName": "Uniswap",
+			"label": "Uniswap: SAN"
+		},
+		"0x8c871606331caff597Ef08f59d6Fd6B97d70bA7B": {
+			"appName": "Uniswap",
+			"label": "Uniswap: UNI"
+		},
+		"0x8d12A197cB00D4747a1fe03395095ce2A5CC6819": {
+			"appName": "ForkDelta",
+			"label": "ForkDelta"
+		},
+		"0x8dE0d002DC83478f479dC31F76cB0a8aa7CcEa17": {
+			"appName": "Uniswap",
+			"label": "Uniswap: XCHF"
+		},
+		"0x8e8bd01b5A9eb272CC3892a2E40E64A716aa2A40": {
+			"appName": "dYdX",
+			"label": "CurrencyConvertor"
+		},
+		"0x910Cbd523D972eb0a6f4cAe4618aD62622b39DbF": {
+			"appName": "Tornado.cash",
+			"label": "Tornado.cash: 10 ETH"
+		},
+		"0x91CF769A44e9d09B8E249886d0dE4DBe0aa998f9": {
+			"appName": "DeversiFi",
+			"label": "DeversiFi: MKR"
+		},
+		"0x93ff6375e9ba6e8fbA84b322944b237D7deCc2D8": {
+			"appName": "SwapKiwi",
+			"label": "SwapKiwi"
+		},
+		"0x94A1B5CdB22c43faab4AbEb5c74999895464Ddaf": {
+			"appName": "Tornado.cash",
+			"label": "Tornado.cash: Mixer 1"
+		},
+		"0x95E4649F5209dD292cAF1F087b8F1Db3bE24927f": {
+			"appName": "Uniswap",
+			"label": "Uniswap: TRST"
+		},
+		"0x95E6F48254609A6ee006F7D493c8e5fB97094ceF": {
+			"appName": "0x",
+			"label": "0x: ERC20 Proxy"
+		},
+		"0x97deC872013f6B5fB443861090ad931542878126": {
+			"appName": "Uniswap",
+			"label": "Uniswap: USDC"
+		},
+		"0x9AD122c22B14202B4490eDAf288FDb3C7cb3ff5E": {
+			"appName": "Tornado.cash",
+			"label": "Tornado.cash: 100000 USDT"
+		},
+		"0x9Ce551A9D2B1A4Ec0cc6eB0E0CC12977F6ED306C": {
+			"appName": "Yearn",
+			"label": "iearn: CRV v1"
+		},
+		"0x9D0464996170c6B9e75eED71c68B99dDEDf279e8": {
+			"appName": "Curvefi",
+			"label": "cvxCRV-CRV"
+		},
+		"0x9D25057e62939D3408406975aD75Ffe834DA4cDd": {
+			"appName": "Yearn",
+			"label": "iearn: DAI v1"
+		},
+		"0xA0446D8804611944F1B527eCD37d7dcbE442caba": {
+			"appName": "1inch",
+			"label": "1inch governance staking"
+		},
+		"0xA160cdAB225685dA1d56aa342Ad8841c3b53f291": {
+			"appName": "Tornado.cash",
+			"label": "Tornado.cash: 100 ETH"
+		},
+		"0xA2881A90Bf33F03E7a3f803765Cd2ED5c8928dFb": {
+			"appName": "Uniswap",
+			"label": "Uniswap: WETH"
+		},
+		"0xA42f6cADa809Bcf417DeefbdD69C5C5A909249C0": {
+			"appName": "NFT20",
+			"label": "NFT20"
+		},
+		"0xA4fc358455Febe425536fd1878bE67FfDBDEC59a": {
+			"appName": "Sablier",
+			"label": "Sablier"
+		},
+		"0xA60C772958a3eD56c1F15dD055bA37AC8e523a0D": {
+			"appName": "Tornado.cash",
+			"label": "Tornado.cash: 500000 cUSDC"
+		},
+		"0xA7a7899d944fE658c4B0a1803BAB2F490bd3849e": {
+			"appName": "IDEX",
+			"label": "IDEX 2"
+		},
+		"0xA825CAE02B310E9901b4776806CE25db520c8642": {
+			"appName": "Uniswap",
+			"label": "Uniswap: RLC"
+		},
+		"0xA931F4eB165AC307fD7431b5EC6eADde53E14b0C": {
+			"appName": "Uniswap",
+			"label": "Uniswap: MLN"
+		},
+		"0xACd43E627e64355f1861cEC6d3a6688B31a6F952": {
+			"appName": "Yearn",
+			"label": "Yearn: DAI"
+		},
+		"0xAb0cd9FAbcD3487cf22eB0B6A8C3Ec1C0e00E643": {
+			"appName": "DeversiFi",
+			"label": "DeversiFi: SPK"
+		},
+		"0xB3319f5D18Bc0D84dD1b4825Dcde5d5f7266d407": {
+			"appName": "Compound",
+			"label": "Compound: ZRX"
+		},
+		"0xB576491F1E6e5E62f1d8F26062Ee822B40B0E0d4": {
+			"appName": "Curvefi",
+			"label": "CVX-ETH"
+		},
+		"0xB5Dfdfb2A1C97b329361D261239C51e5F88D035D": {
+			"appName": "DeversiFi",
+			"label": "DeversiFi: OMG"
+		},
+		"0xB944d13b2f4047fc7bd3F7013bcf01b115fb260d": {
+			"appName": "Uniswap",
+			"label": "Uniswap: sUSD"
+		},
+		"0xBA12222222228d8Ba445958a75a0704d566BF2C8": {
+			"appName": "Balancer",
+			"label": "Balancer: Vault"
+		},
+		"0xBA214C1c1928a32Bffe790263E38B4Af9bFCD659": {
+			"appName": "Tornado.cash",
+			"label": "Tornado.cash: 50000 cDAI"
+		},
+		"0xBA2E7Fed597fd0E3e70f5130BcDbbFE06bB94fe1": {
+			"appName": "Yearn",
+			"label": "Yearn: YFI"
+		},
+		"0xBCdF538581F7167EC8228EC2C9b1Cfc2F74788c7": {
+			"appName": "Uniswap",
+			"label": "Uniswap: REQ"
+		},
+		"0xBcD7254A1D759EFA08eC7c3291B2E85c5dCC12ce": {
+			"appName": "LooksRare",
+			"label": "LooksRare: Fee Sharing"
+		},
+		"0xBeb09beB09e95E6FEBf0d6EEb1d0D46d1013CC3C": {
+			"appName": "Bebop",
+			"label": "Bebop: Settlement"
+		},
+		"0xBf06EA47C2Cc300dA596767024F87777D7e41D72": {
+			"appName": "DeversiFi",
+			"label": "DeversiFi: FUN"
+		},
+		"0xBf86f56CD4592Fed0D7893E12461e19fcBBf0cD5": {
+			"appName": "DeversiFi",
+			"label": "DeversiFi: TKN"
+		},
+		"0xC040d51b07Aea5d94a89Bc21E8078B77366Fc6C7": {
+			"appName": "Uniswap",
+			"label": "Uniswap: PAX"
+		},
+		"0xC0C59cDe851bfcbdddD3377EC10ea54A18Efb937": {
+			"appName": "Uniswap",
+			"label": "Uniswap: SALT"
+		},
+		"0xC11b1268C1A384e55C48c2391d8d480264A3A7F4": {
+			"appName": "Compound",
+			"label": "Compound: WBTC"
+		},
+		"0xC36442b4a4522E871399CD717aBDD847Ab11FE88": {
+			"appName": "Uniswap",
+			"label": "Uniswap V3: Positions NFT"
+		},
+		"0xC3c028721F854BC75967Cbe432fB0e221908Baa1": {
+			"appName": "Uniswap",
+			"label": "Uniswap: SWM"
+		},
+		"0xC52569b5A349A7055E9192dBdd271F1Bd8133277": {
+			"appName": "IPOR",
+			"label": "IPOR Liquidity Pool"
+		},
+		"0xC6581Ce3A005e2801c1e0903281BBd318eC5B5C2": {
+			"appName": "Uniswap",
+			"label": "Uniswap: MANA"
+		},
+		"0xC79764398a159Ea8E61AF98d7dA6f2C8CaE4c3A9": {
+			"appName": "Idle",
+			"label": "Idle: SAI"
+		},
+		"0xC92E8bdf79f0507f65a392b0ab4667716BFE0110": {
+			"appName": "Gnosis Protocol",
+			"label": "Gnosis Protocol: GPv2VaultRelayer"
+		},
+		"0xCB6E4B9B7403ec4F2f6aBD20bEEC457Ae22ecCf1": {
+			"appName": "RooTroop",
+			"label": "RooTroop Staking"
+		},
+		"0xD01590BF566D070d4ce04743705e835f81fF77Ca": {
+			"appName": "Uniswap",
+			"label": "Uniswap: VLDY"
+		},
+		"0xD1f3e9B413f5c9Fd56F044699c64ff710E7e5A9A": {
+			"appName": "Uniswap",
+			"label": "Uniswap: BNTY"
+		},
+		"0xD37BbE5744D730a1d98d8DC97c42F0Ca46aD7146": {
+			"appName": "THORChain",
+			"label": "Router"
+		},
+		"0xD4B88Df4D29F5CedD6857912842cff3b20C8Cfa3": {
+			"appName": "Tornado.cash",
+			"label": "Tornado.cash: 100 DAI"
+		},
+		"0xD55C1cA9F5992A2e5E379DCe49Abf24294ABe055": {
+			"appName": "Uniswap",
+			"label": "Uniswap: DGD"
+		},
+		"0xD691F27f38B395864Ea86CfC7253969B409c362d": {
+			"appName": "Tornado.cash",
+			"label": "Tornado.cash: 10000 USDC"
+		},
+		"0xD883264737Ed969d2696eE4B4cAF529c2Fc2A141": {
+			"appName": "Uniswap",
+			"label": "Uniswap: GUSD"
+		},
+		"0xD91FF16Ef92568fC27F466C3c5613e43313Ab1dc": {
+			"appName": "Uniswap",
+			"label": "Uniswap: RCN"
+		},
+		"0xDef1C0ded9bec7F1a1670819833240f027b25EfF": {
+			"appName": "0x",
+			"label": "0x: Exchange Proxy v4"
+		},
+		"0xE2e3441004E7D377A2D97142e75d465e0dD36aF9": {
+			"appName": "Hashflow",
+			"label": "Hashflow Bridge"
+		},
+		"0xE499657190D515119077aF5D64F44b6f850BaEa5": {
+			"appName": "Uniswap",
+			"label": "Uniswap: HUM"
+		},
+		"0xE4C9194962532fEB467DCe8b3d42419641c6eD2E": {
+			"appName": "1inch.exchange",
+			"label": "1inch.exchange"
+		},
+		"0xE592427A0AEce92De3Edee1F18E0157C05861564": {
+			"appName": "Uniswap",
+			"label": "Uniswap v3: Router"
+		},
+		"0xE5c783EE536cf5E63E792988335c4255169be4E1": {
+			"appName": "OpenSea (old)",
+			"label": "OpenSea: WyvernTokenTransferProxy"
+		},
+		"0xEd7d74AA7eB1f12F83dA36DFaC1de2257b4e7523": {
+			"appName": "IPOR",
+			"label": "IPOR Interest Rate Swaps AMM"
+		},
+		"0xEd9D5aA6124A3310B80a2468c67763627653887d": {
+			"appName": "Uniswap",
+			"label": "Uniswap: Donut"
+		},
+		"0xEf1c6E67703c7BD7107eed8303Fbe6EC2554BF6B": {
+			"appName": "Uniswap",
+			"label": "Uniswap: Universal Router"
+		},
+		"0xF173214C720f58E03e194085B1DB28B50aCDeeaD": {
+			"appName": "Uniswap",
+			"label": "Uniswap: LINK"
+		},
+		"0xF506828B166de88cA2EDb2A98D960aBba0D2402A": {
+			"appName": "Uniswap",
+			"label": "Uniswap: PNK"
+		},
+		"0xF53bBFBff01c50F2D42D542b09637DcA97935fF7": {
+			"appName": "Uniswap",
+			"label": "Uniswap: PAN"
+		},
+		"0xF5DCe57282A584D2746FaF1593d3121Fcac444dC": {
+			"appName": "Compound",
+			"label": "Compound: SAI"
+		},
+		"0xF5bb20E73c59e0f643aE4bcd89d761eBDeC83B73": {
+			"appName": "Uniswap",
+			"label": "Uniswap: FT"
+		},
+		"0xF60dD140cFf0706bAE9Cd734Ac3ae76AD9eBC32A": {
+			"appName": "Tornado.cash",
+			"label": "Tornado.cash: 10000 DAI"
+		},
+		"0xF67721A2D8F736E75a49FdD7FAd2e31D8676542a": {
+			"appName": "Tornado.cash",
+			"label": "Tornado.cash: 10000 USDT"
+		},
+		"0xF6D7E24fF16195a9F5c5Df431Ef4B3f78C23bf6d": {
+			"appName": "DeversiFi",
+			"label": "DeversiFi: EDO"
+		},
+		"0xF740B67dA229f2f10bcBd38A7979992fCC71B8Eb": {
+			"appName": "0x",
+			"label": "0x: Exchange Proxy Allowance Target"
+		},
+		"0xF849de01B080aDC3A814FaBE1E2087475cF2E354": {
+			"appName": "X2Y2",
+			"label": "X2Y2: ERC721 Delegate"
+		},
+		"0xF78765bd14B4E8527d9E4E5c5a5c11A44ad12F47": {
+			"appName": "Biconomy",
+			"label": "Biconomy: Hyphen Bridge"
+		},
+		"0xFED24eC7E22f573c2e08AEF55aA6797Ca2b3A051": {
+			"appName": "LooksRare",
+			"label": "LooksRare: Transfer Manager (ERC1155)"
+		},
+		"0xFD8610d20aA15b7B2E3Be39B396a1bC3516c7144": {
+			"appName": "Tornado.cash",
+			"label": "Tornado.cash: 1000 DAI"
+		},
+		"0xFa71B63935cF9878E009ba6595Da08f6d75C4Aa1": {
+			"appName": "Kyber",
+			"label": "KyberPay Widget"
+		},
+		"0xF996D7d9BaCb9217ca64BBce1b1cD72E0E886Be6": {
+			"appName": "Uniswap",
+			"label": "Uniswap: TCAD"
+		},
+		"0xa1787206d5b1bE0f432C4c4f96Dc4D1257A1Dd14": {
+			"appName": "Yearn",
+			"label": "iearn: USDT v1"
+		},
+		"0xa2609B2b43AC0F5EbE27deB944d2a399C201E3dA": {
+			"appName": "Yearn",
+			"label": "iearn USDC v1"
+		},
+		"0xa3A7B6F88361F48403514059F1F16C8E78d60EeC": {
+			"appName": "Arbitrum Bridge",
+			"label": "Arbitrum One L1 ERC20 Gateway"
+		},
+		"0xa9429271a28F8543eFFfa136994c0839E7d7bF77": {
+			"appName": "Badger",
+			"label": "Badger: Staking Badger setts"
+		},
+		"0xaE76c84C9262Cdb9abc0C2c8888e62Db8E22A0bF": {
+			"appName": "Uniswap",
+			"label": "Uniswap: ZRX"
+		},
+		"0xaEaaC358560e11f52454D997AAFF2c5731B6f8a6": {
+			"appName": "Tornado.cash",
+			"label": "Tornado.cash: 5000 cUSDC"
+		},
+		"0xaF7ADb208aC7D5A548cF9AA5B4141818190A41AA": {
+			"appName": "1inch",
+			"label": "Pool 1INCH-renDGB"
+		},
+		"0xaf8aE6955d07776aB690e565Ba6Fbc79B8dE3a5d": {
+			"appName": "DeversiFi",
+			"label": "DeversiFi"
+		},
+		"0xb16c1342E617A5B6E4b631EB114483FDB289c0A4": {
+			"appName": "Sudoswap",
+			"label": "Sudoswap: Pair Factory"
+		},
+		"0xb1C8094B234DcE6e03f10a5b673c1d8C69739A00": {
+			"appName": "Tornado.cash",
+			"label": "Tornado.cash: 500000 cDAI"
+		},
+		"0xb4a2E49818dd8a5CdD818f22aB99263b62DDEB6c": {
+			"appName": "X Marketplace",
+			"label": "X Marketplace: ERC20 token exchange"
+		},
+		"0xb4dB55a20E0624eDD82A0Cf356e3488B4669BD27": {
+			"appName": "1inch",
+			"label": "Pool ETH-USDC"
+		},
+		"0xb541fc07bC7619fD4062A54d96268525cBC6FfEF": {
+			"appName": "Tornado.cash",
+			"label": "Tornado.cash: Mixer 2"
+		},
+		"0xb5E96c3AD1cCC79e7ab13433471bAf785BB4977E": {
+			"appName": "Uniswap",
+			"label": "Uniswap: DOS"
+		},
+		"0xb6cFBf322db47D39331E306005DC7E5e6549942B": {
+			"appName": "Uniswap",
+			"label": "Uniswap: TKN"
+		},
+		"0xb70Bc06D2c9Bf03b3373799606dc7d39346c06B3": {
+			"appName": "Paraswap",
+			"label": "TokenTransferProxy OLD"
+		},
+		"0xb7520a5F8c832c573d6BD0Df955fC5c9b72400F7": {
+			"appName": "Uniswap",
+			"label": "Uniswap: KIN"
+		},
+		"0xb7896fce748396EcFC240F5a0d3Cc92ca42D7d84": {
+			"appName": "PoolTogether",
+			"label": "PoolTogether: SAI"
+		},
+		"0xb92dE8B30584392Af27726D5ce04Ef3c4e5c9924": {
+			"appName": "Uniswap",
+			"label": "Uniswap: DGX"
+		},
+		"0xb9812E2fA995EC53B5b6DF34d21f9304762C5497": {
+			"appName": "DutchX",
+			"label": "DutchX: Exchange Proxy"
+		},
+		"0xb99A23b1a4585fc56d0EC3B76528C27cAd427473": {
+			"appName": "Uniswap",
+			"label": "Uniswap: ENJ"
+		},
+		"0xbcC4371cc40592794bF5b727C17cf7DE37Ac180A": {
+			"appName": "Aave",
+			"label": "Aave: Migration to v2"
+		},
+		"0xbd6a40Bb904aEa5a49c59050B5395f7484A4203d": {
+			"appName": "Sablier",
+			"label": "Sablier: Proxy"
+		},
+		"0xc21D353FF4ee73C572425697f4F5aaD2109fe35b": {
+			"appName": "Alchemix",
+			"label": "Alchemix: alDAI"
+		},
+		"0xc4a1C45D5546029Fd57128483aE65b56124BFA6A": {
+			"appName": "Uniswap",
+			"label": "Uniswap: LPT"
+		},
+		"0xc73e0383F3Aff3215E6f04B0331D58CeCf0Ab849": {
+			"appName": "MakerDAO",
+			"label": "MakerDAO: Migration"
+		},
+		"0xc7EB739E2651484DAA1717433dE1736A6529cFcC": {
+			"appName": "Uniswap",
+			"label": "Uniswap: QNT"
+		},
+		"0xcEe284F754E854890e311e3280b767F80797180d": {
+			"appName": "Arbitrum Bridge",
+			"label": "Arbitrum One L1 Arb Custom Gateway"
+		},
+		"0xd4777E164c6C683E10593E08760B803D58529a8E": {
+			"appName": "Uniswap",
+			"label": "Uniswap: HOT"
+		},
+		"0xd6aD7a6750A7593E092a9B218d66C0A814a3436e": {
+			"appName": "Yearn",
+			"label": "iearn: USDC v2"
+		},
+		"0xd96f2B1c14Db8458374d9Aca76E26c3D18364307": {
+			"appName": "Tornado.cash",
+			"label": "Tornado.cash: 100 USDC"
+		},
+		"0xd9e1cE17f2641f24aE83637ab66a2cca9C378B9F": {
+			"appName": "SushiSwap",
+			"label": "SushiSwap: Router"
+		},
+		"0xdF02FFeaFdB79e564ae9fdaC6545C5f4c2178400": {
+			"appName": "Uniswap",
+			"label": "Uniswap: AGI"
+		},
+		"0xdf869FAD6dB91f437B59F1EdEFab319493D4C4cE": {
+			"appName": "Gitcoin",
+			"label": "Gitcoin: Grants"
+		},
+		"0xdF5e0e81Dff6FAF3A7e52BA697820c5e32D806A8": {
+			"appName": "Curve.fi",
+			"label": "Curve.fi: yCRV"
+		},
+		"0xe89a6D0509faF730BD707bf868d9A2A744a363C7": {
+			"appName": "C.R.E.A.M",
+			"label": "C.R.E.A.M: UNI"
+		},
+		"0xe28ffAC44B0c430aa3e62a9bC211f7d825D6c1f9": {
+			"appName": "Uniswap",
+			"label": "Uniswap: TRB"
+		},
+		"0xe8e45431b93215566BA923a7E611B7342Ea954DF": {
+			"appName": "Uniswap",
+			"label": "Uniswap: GNO"
+		},
+		"0xe9078a97EEf2bB502A9F792169f9c03626649248": {
+			"appName": "Uniswap",
+			"label": "Uniswap: BEE"
+		},
+		"0xeB66ACc3d011056B00ea521F8203580C2E5d3991": {
+			"appName": "Idle",
+			"label": "Idle: USDC"
+		},
+		"0xe9Cf7887b93150D4F2Da7dFc6D502B216438F244": {
+			"appName": "Uniswap",
+			"label": "Uniswap: sETH"
+		},
+		"0xeFc70A1B18C432bdc64b596838B4D138f6bC6cad": {
+			"appName": "0x",
+			"label": "0x: ERC721 Proxy"
+		},
+		"0xf13D9F380cfEfe97b1FB52fb279655962fca47aF": {
+			"appName": "X Marketplace",
+			"label": "X Marketplace: ERC721 token exchange"
+		},
+		"0xf42aa99F011A1fA7CDA90E5E98b277E306BcA83e": {
+			"appName": "LooksRare",
+			"label": "LooksRare: Transfer Manager (ERC721)"
+		},
+		"0xf79cb3BEA83BD502737586A6E8B133c378FD1fF2": {
+			"appName": "Uniswap",
+			"label": "Uniswap: FOAM"
+		},
+		"0xff33b21BC54AeE753891A15e72B7a152A5A782dc": {
+			"appName": "DeversiFi",
+			"label": "DeversiFi: WBTC"
+		},
+		"0xfe65d1ba9a745b131DaD1A066861bB5D9ce4767B": {
+			"appName": "DeversiFi",
+			"label": "DeversiFi: NEC"
+		},
+		"0xF61718057901F84C4eEC4339EF8f0D86D2B45600": {
+			"appName": "Yearn",
+			"label": "iearn SUSD v2"
+		}
+	}
+}
