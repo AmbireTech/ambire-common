@@ -38,6 +38,7 @@ export type CallOptions = {
   // Note: some RPCs don't seem to like numbers, we can use hex strings for them
   blockTag: string | number
   from?: string
+  to?: string
   gasPrice?: string
   gasLimit?: string
   stateToOverride: object | null
@@ -46,6 +47,7 @@ const defaultOptions: CallOptions = {
   mode: DeploylessMode.Detect,
   blockTag: 'latest',
   from: undefined,
+  to: arbitraryAddr,
   stateToOverride: null
 }
 
@@ -134,18 +136,22 @@ export class Deployless {
     }
 
     const callData = this.iface.encodeFunctionData(methodName, args)
+    const toAddr = opts.to ?? arbitraryAddr
     const callPromise =
       !!this.stateOverrideSupported && !forceProxy
         ? (this.provider as JsonRpcProvider).send('eth_call', [
             {
-              to: arbitraryAddr,
+              to: toAddr,
               data: callData,
               from: opts.from,
               gasPrice: opts?.gasPrice,
               gas: opts?.gasLimit
             },
             opts.blockTag,
-            { [arbitraryAddr]: { code: this.contractRuntimeCode }, ...(opts.stateToOverride || {}) }
+            {
+              [toAddr]: { code: this.contractRuntimeCode },
+              ...(opts.stateToOverride || {})
+            }
           ])
         : this.provider.call({
             blockTag: opts.blockTag,

@@ -1,8 +1,11 @@
-import { Contract, JsonRpcProvider } from 'ethers'
+import { Contract, JsonRpcProvider, ZeroAddress } from 'ethers'
 
+import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFactory.json'
 import EntryPointAbi from '../../../contracts/compiled/EntryPoint.json'
 import {
+  AMBIRE_ACCOUNT_FACTORY,
   AMBIRE_PAYMASTER,
+  DEPLOYLESS_SIMULATION_FROM,
   ERC_4337_ENTRYPOINT,
   OPTIMISTIC_ORACLE,
   SINGLETON
@@ -19,6 +22,10 @@ import {
   RPCProviders
 } from '../../interfaces/settings'
 import { Storage } from '../../interfaces/storage'
+import { getSmartAccount, getSpoof } from '../../libs/account/account'
+import { callToTuple } from '../../libs/accountOp/accountOp'
+import { DeploylessMode, fromDescriptor } from '../../libs/deployless/deployless'
+import { getActivatorCall } from '../../libs/userOperation/userOperation'
 import { isValidAddress } from '../../services/address'
 import { Bundler } from '../../services/bundlers/bundler'
 import EventEmitter from '../eventEmitter/eventEmitter'
@@ -251,18 +258,48 @@ export class SettingsController extends EventEmitter {
       return
     }
 
-    // call the network and check if there's a deployed entry point
-    // there. If there is, check if there's balance for our paymaster
-    // and set them as network properties
     try {
       const provider = new JsonRpcProvider(customNetwork.rpcUrl)
-      const [entryPointCode, singletonCode, oracleCode, hasBundler, block] = await Promise.all([
-        provider.getCode(ERC_4337_ENTRYPOINT),
-        provider.getCode(SINGLETON),
-        provider.getCode(OPTIMISTIC_ORACLE),
-        Bundler.isNetworkSupported(customNetwork.chainId),
-        provider.getBlock('latest')
+      const deploylessOptions = {
+        blockTag: 'latest',
+        from: DEPLOYLESS_SIMULATION_FROM,
+        // very important to send to the AMBIRE_ACCOUNT_FACTORY
+        // or else the SA address won't match
+        to: AMBIRE_ACCOUNT_FACTORY,
+        mode: DeploylessMode.StateOverride
+      }
+      const deployless = fromDescriptor(provider, AmbireAccountFactory, true)
+      const smartAccount = await getSmartAccount([
+        {
+          addr: DEPLOYLESS_SIMULATION_FROM,
+          hash: '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'
+        }
       ])
+      const [entryPointCode, singletonCode, oracleCode, hasBundler, block, deploylessRes] =
+        await Promise.all([
+          provider.getCode(ERC_4337_ENTRYPOINT),
+          provider.getCode(SINGLETON),
+          provider.getCode(OPTIMISTIC_ORACLE),
+          Bundler.isNetworkSupported(customNetwork.chainId),
+          provider.getBlock('latest'),
+          deployless
+            .call(
+              'deployAndExecute',
+              [
+                smartAccount.creation!.bytecode,
+                smartAccount.creation!.salt,
+                [callToTuple(getActivatorCall(smartAccount.addr))],
+                getSpoof(smartAccount)
+              ],
+              deploylessOptions
+            )
+            .catch(() => {
+              // if there's an error, return the zero address indicating that
+              // our smart accounts will most likely not work on this chain
+              return [ZeroAddress]
+            })
+        ])
+      const deploylessSuccess = deploylessRes[0] === smartAccount.addr
       const has4337 = entryPointCode !== '0x' && hasBundler
       let hasPaymaster = false
       if (has4337) {
@@ -276,7 +313,7 @@ export class SettingsController extends EventEmitter {
         ...customNetwork,
         ...erc4337,
         ...feeOptions,
-        isSAEnabled: singletonCode !== '0x',
+        isSAEnabled: deploylessSuccess && singletonCode !== '0x',
         isOptimistic: oracleCode !== '0x'
       }
 
