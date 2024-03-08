@@ -451,11 +451,14 @@ export async function estimate(
   let filteredFeeTokens = feeTokens
   if (is4337Broadcast) {
     // if there's no paymaster, we can pay only in native
+    // filter out the gas tank tokens as well
     if (!network.erc4337?.hasPaymaster) {
       finalFeeTokenOptions = finalFeeTokenOptions.filter((token: any, key: number) => {
-        return feeTokens[key].address === ZeroAddress
+        return feeTokens[key].address === ZeroAddress && !feeTokens[key].isGasTank
       })
-      filteredFeeTokens = filteredFeeTokens.filter((feeToken) => feeToken.address === ZeroAddress)
+      filteredFeeTokens = filteredFeeTokens.filter(
+        (feeToken) => feeToken.address === ZeroAddress && !feeToken.isGasTank
+      )
     }
 
     // native from other accounts are not allowed
