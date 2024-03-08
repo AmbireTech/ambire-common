@@ -349,7 +349,7 @@ export class AccountAdderController extends EventEmitter {
         )
       })
 
-    this.selectedAccounts.push({
+    const nextSelectedAccount = {
       account: _account,
       // If the account has more than 1 key, it is for sure linked account,
       // since Basic accounts have only 1 key and smart accounts with more than
@@ -360,7 +360,22 @@ export class AccountAdderController extends EventEmitter {
         slot: a.slot,
         index: a.index
       }))
-    })
+    }
+
+    const accountExists = this.selectedAccounts.some(
+      (x) => x.account.addr === nextSelectedAccount.account.addr
+    )
+    if (accountExists) {
+      // If the account exists, replace it with the new one, to make sure
+      // the latest data is used. We could add one more sub-step to skip this,
+      // if we do a deep comparison, but that would probably be an overkill.
+      this.selectedAccounts = this.selectedAccounts.map((x) =>
+        x.account.addr === nextSelectedAccount.account.addr ? nextSelectedAccount : x
+      )
+    } else {
+      this.selectedAccounts.push(nextSelectedAccount)
+    }
+
     this.emitUpdate()
   }
 
