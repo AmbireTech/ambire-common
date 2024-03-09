@@ -125,14 +125,6 @@ export async function estimate(
   blockFrom: string = '0x0000000000000000000000000000000000000001',
   blockTag: string | number = 'latest'
 ): Promise<EstimateResult> {
-  // we're excluding the view only accounts from the natives to check
-  // in all cases EXCEPT the case where we're making an estimation for
-  // the view only account itself. In all other, view only accounts options
-  // should not be present as the user cannot pay the fee with them (no key)
-  const nativeToCheck = EOAaccounts.filter(
-    (acc) => acc.addr === op.accountAddr || acc.associatedKeys.length
-  ).map((acc) => acc.addr)
-
   const nativeAddr = '0x0000000000000000000000000000000000000000'
   const deploylessEstimator = fromDescriptor(provider, Estimation, !network.rpcNoStateOverride)
   const abiCoder = new AbiCoder()
@@ -220,8 +212,37 @@ export async function estimate(
     }
   }
 
-  // is the estimation a 4337 one
   const is4337Broadcast = opts && opts.is4337Broadcast
+  const isCustomNetwork = !predefinedNetworks.find((net) => net.id === network.id)
+
+  // we're excluding the view only accounts from the natives to check
+  // in all cases EXCEPT the case where we're making an estimation for
+  // the view only account itself. In all other, view only accounts options
+  // should not be present as the user cannot pay the fee with them (no key)
+  let nativeToCheck = EOAaccounts.filter(
+    (acc) => acc.addr === op.accountAddr || acc.associatedKeys.length
+  ).map((acc) => acc.addr)
+
+  // filter out the fee tokens that are not valid for:
+  // - erc4337 without a paymaster - we cannot pay in tokens
+  // - non erc4337 custom network - we can only pay in native from EOA
+  let filteredFeeTokens = feeTokens
+  if (is4337Broadcast) {
+    if (!network.erc4337?.hasPaymaster) {
+      filteredFeeTokens = filteredFeeTokens.filter(
+        (feeToken) => feeToken.address === ZeroAddress && !feeToken.isGasTank
+      )
+    }
+
+    // native from other accounts are not allowed in ERC-4337
+    nativeToCheck = []
+  } else if (isCustomNetwork) {
+    // if the network is custom and it's not a 4337Broadcast, we cannot pay with
+    // the SA as the relayer does not support the network. Our only option becomes
+    // basic account paying the fee
+    filteredFeeTokens = []
+  }
+
   const userOp = is4337Broadcast ? toUserOperation(account, accountState, op) : null
 
   // @L2s
@@ -445,32 +466,7 @@ export async function estimate(
     if (estimatedRefund <= gasUsed / 5n && estimatedRefund > 0n) gasUsed = estimatedGas
   }
 
-  const isCustomNetwork = !predefinedNetworks.find((net) => net.id === network.id)
-  let finalFeeTokenOptions = feeTokenOutcomes
-  let finalNativeTokenOptions = nativeAssetBalances
-  let filteredFeeTokens = feeTokens
-  if (is4337Broadcast) {
-    // if there's no paymaster, we can pay only in native
-    // filter out the gas tank tokens as well
-    if (!network.erc4337?.hasPaymaster) {
-      finalFeeTokenOptions = finalFeeTokenOptions.filter((token: any, key: number) => {
-        return feeTokens[key].address === ZeroAddress && !feeTokens[key].isGasTank
-      })
-      filteredFeeTokens = filteredFeeTokens.filter(
-        (feeToken) => feeToken.address === ZeroAddress && !feeToken.isGasTank
-      )
-    }
-
-    // native from other accounts are not allowed
-    finalNativeTokenOptions = []
-  } else if (isCustomNetwork) {
-    // if the network is custom and it's not a 4337Broadcast, we cannot pay with
-    // the SA as the relayer does not support the network. Our only option becomes
-    // basic account paying the fee
-    finalFeeTokenOptions = []
-  }
-
-  const feeTokenOptions = finalFeeTokenOptions.map((token: any, key: number) => {
+  const feeTokenOptions = feeTokenOutcomes.map((token: any, key: number) => {
     const address = filteredFeeTokens[key].address
 
     // the l1 fee without any form of payment to relayer/paymaster
@@ -510,7 +506,7 @@ export async function estimate(
 
   // this is for EOAs paying for SA in native
   // or the current address if it's an EOA
-  const nativeTokenOptions = finalNativeTokenOptions.map((balance: bigint, key: number) => ({
+  const nativeTokenOptions = nativeAssetBalances.map((balance: bigint, key: number) => ({
     address: nativeAddr,
     paidBy: nativeToCheck[key],
     availableAmount: balance,
