@@ -19,7 +19,7 @@ import {
   getNetworksWithPortfolioErrorBanners
 } from '../../libs/banners/banners'
 import getAccountNetworksWithAssets from '../../libs/portfolio/getNetworksWithAssets'
-import { getFlags } from '../../libs/portfolio/helpers'
+import { checkTokenEligibility, getFlags } from '../../libs/portfolio/helpers'
 import {
   AccountState,
   AdditionalAccountState,
@@ -182,6 +182,15 @@ export class PortfolioController extends EventEmitter {
 
   resetAdditionalHints() {
     this.#additionalHints = []
+  }
+
+  async checkToken(token: any, accountId: AccountId) {
+    const isEligible = await checkTokenEligibility(
+      token,
+      accountId,
+      this.#providers[token.networkId]
+    )
+    return isEligible
   }
 
   async getAdditionalPortfolio(accountId: AccountId) {
