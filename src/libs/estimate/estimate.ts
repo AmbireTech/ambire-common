@@ -291,7 +291,7 @@ export async function estimate(
     [account.addr, op.nonce || 1, calls, '0x'],
     encodedCallData,
     account.associatedKeys,
-    feeTokens.map((token) => token.address),
+    filteredFeeTokens.map((token) => token.address),
     FEE_COLLECTOR,
     nativeToCheck,
     optimisticOracle
