@@ -12,6 +12,7 @@ const networks: NetworkDescriptor[] = [
     erc4337: null,
     unstoppableDomainsChain: 'ERC20',
     isSAEnabled: true,
+    areContractsDeployed: true,
     feeOptions: {
       is1559: true
     }
@@ -30,6 +31,7 @@ const networks: NetworkDescriptor[] = [
     },
     unstoppableDomainsChain: 'MATIC',
     isSAEnabled: true,
+    areContractsDeployed: true,
     feeOptions: {
       is1559: false,
       feeIncrease: 10n // %
@@ -49,6 +51,7 @@ const networks: NetworkDescriptor[] = [
     },
     unstoppableDomainsChain: 'ERC20',
     isSAEnabled: true,
+    areContractsDeployed: true,
     feeOptions: {
       is1559: true,
       elasticityMultiplier: 6n,
@@ -72,6 +75,7 @@ const networks: NetworkDescriptor[] = [
     },
     unstoppableDomainsChain: 'ERC20',
     isSAEnabled: true,
+    areContractsDeployed: true,
     feeOptions: {
       is1559: true,
       minBaseFee: 25000000000n, // 25 gwei
@@ -92,6 +96,7 @@ const networks: NetworkDescriptor[] = [
     },
     unstoppableDomainsChain: 'ERC20',
     isSAEnabled: true,
+    areContractsDeployed: true,
     feeOptions: {
       is1559: true,
       minBaseFee: 100000000n // 1 gwei

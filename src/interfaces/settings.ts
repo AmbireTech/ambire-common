@@ -25,6 +25,7 @@ export type NetworkPreference = {
   nativeAssetSymbol?: string
   explorerUrl?: string
   isSAEnabled?: boolean
+  areContractsDeployed?: boolean
   erc4337?: {
     enabled: boolean
     hasPaymaster: boolean
@@ -42,6 +43,7 @@ export type CustomNetwork = {
   nativeAssetSymbol: string
   explorerUrl: string
   isSAEnabled?: boolean
+  areContractsDeployed?: boolean
   erc4337?: {
     enabled: boolean
     hasPaymaster: boolean

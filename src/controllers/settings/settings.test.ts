@@ -217,23 +217,37 @@ describe('Settings Controller', () => {
       // has smart accounts
       expect(mantleNetwork?.isSAEnabled).toBe(true)
 
+      // contracts are not deployed
+      expect(mantleNetwork?.areContractsDeployed).toBe(false)
+
       // is not 1559
       expect(mantleNetwork?.feeOptions.is1559).toBe(false)
 
       // mantle is optimistic
       expect(mantleNetwork?.isOptimistic).toBe(true)
       checks++
-      if (checks === 2) {
+      if (checks === 3) {
         done()
       }
     })
 
+    let errorEmits = 0
     settingsController.onError(() => {
-      const errors = settingsController.emittedErrors
-      expect(errors.length).toEqual(1)
-      expect(errors[0].message).toEqual('A chain with a chain id of 5000 has already been added')
+      if (errorEmits === 0) {
+        const errors = settingsController.emittedErrors
+        expect(errors.length).toEqual(1)
+        expect(errors[0].message).toEqual('A chain with a chain id of 5000 has already been added')
+      }
+      if (errorEmits === 1) {
+        const errors = settingsController.emittedErrors
+        expect(errors.length).toEqual(2)
+        expect(errors[1].message).toEqual(
+          'A chain with the name of Mantle has already been added. Please change the name and try again'
+        )
+      }
+      errorEmits++
       checks++
-      if (checks === 2) {
+      if (checks === 3) {
         done()
       }
     })
@@ -248,13 +262,26 @@ describe('Settings Controller', () => {
       })
       .then(() => {
         // try to add the network again, it should fail the second time
-        settingsController.addCustomNetwork({
-          name: 'Mantle',
-          chainId: 5000n,
-          explorerUrl: 'https://explorer.mantle.xyz/',
-          nativeAssetSymbol: 'MNT',
-          rpcUrl: 'https://rpc.mantle.xyz'
-        })
+        // because of unique id
+        settingsController
+          .addCustomNetwork({
+            name: 'Mantle',
+            chainId: 5000n,
+            explorerUrl: 'https://explorer.mantle.xyz/',
+            nativeAssetSymbol: 'MNT',
+            rpcUrl: 'https://rpc.mantle.xyz'
+          })
+          .then(() => {
+            // try to add the network again, it should fail because of
+            // unique network id
+            settingsController.addCustomNetwork({
+              name: 'Mantle',
+              chainId: 5001n,
+              explorerUrl: 'https://explorer.mantle.xyz/',
+              nativeAssetSymbol: 'MNT',
+              rpcUrl: 'https://rpc.mantle.xyz'
+            })
+          })
       })
   })
 })

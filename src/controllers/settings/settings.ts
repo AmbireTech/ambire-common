@@ -2,6 +2,7 @@ import { Contract, JsonRpcProvider } from 'ethers'
 
 import EntryPointAbi from '../../../contracts/compiled/EntryPoint.json'
 import {
+  AMBIRE_ACCOUNT_FACTORY,
   AMBIRE_PAYMASTER,
   ERC_4337_ENTRYPOINT,
   OPTIMISTIC_ORACLE,
@@ -75,6 +76,7 @@ export class SettingsController extends EventEmitter {
         explorerUrl: this.#networkPreferences[id].explorerUrl ?? '',
         erc4337: this.#networkPreferences[id].erc4337 ?? null,
         isSAEnabled: this.#networkPreferences[id].isSAEnabled ?? false,
+        areContractsDeployed: this.#networkPreferences[id].areContractsDeployed ?? false,
         isOptimistic: this.#networkPreferences[id].isOptimistic ?? false,
         id,
         rpcNoStateOverride: false,
@@ -251,17 +253,37 @@ export class SettingsController extends EventEmitter {
       return
     }
 
+    // make sure the id of the network is unique
+    const customNetworkId = customNetwork.name.toLowerCase()
+    const ids = this.networks.map((net) => net.id)
+    if (ids.indexOf(customNetworkId) !== -1) {
+      this.emitError({
+        message: `A chain with the name of ${customNetwork.name} has already been added. Please change the name and try again`,
+        level: 'major',
+        error: new Error('settings: addCustomNetwork chain already added')
+      })
+      return
+    }
+
     try {
       const provider = new JsonRpcProvider(customNetwork.rpcUrl)
-      const [entryPointCode, singletonCode, oracleCode, hasBundler, block, supportsAmbire] =
-        await Promise.all([
-          provider.getCode(ERC_4337_ENTRYPOINT),
-          provider.getCode(SINGLETON),
-          provider.getCode(OPTIMISTIC_ORACLE),
-          Bundler.isNetworkSupported(customNetwork.chainId),
-          provider.getBlock('latest'),
-          simulateDeployCall(provider)
-        ])
+      const [
+        entryPointCode,
+        singletonCode,
+        oracleCode,
+        factoryCode,
+        hasBundler,
+        block,
+        supportsAmbire
+      ] = await Promise.all([
+        provider.getCode(ERC_4337_ENTRYPOINT),
+        provider.getCode(SINGLETON),
+        provider.getCode(OPTIMISTIC_ORACLE),
+        provider.getCode(AMBIRE_ACCOUNT_FACTORY),
+        Bundler.isNetworkSupported(customNetwork.chainId),
+        provider.getBlock('latest'),
+        simulateDeployCall(provider)
+      ])
       const has4337 = entryPointCode !== '0x' && hasBundler
       let hasPaymaster = false
       if (has4337) {
@@ -276,10 +298,11 @@ export class SettingsController extends EventEmitter {
         ...erc4337,
         ...feeOptions,
         isSAEnabled: supportsAmbire && singletonCode !== '0x',
+        areContractsDeployed: factoryCode !== '0x',
         isOptimistic: oracleCode !== '0x'
       }
 
-      this.#networkPreferences[customNetwork.name.toLowerCase()] = addCustomNetwork
+      this.#networkPreferences[customNetworkId] = addCustomNetwork
     } catch (e: any) {
       this.emitError({
         message:
