@@ -1,13 +1,11 @@
 /* eslint-disable import/no-extraneous-dependencies */
 /* eslint-disable @typescript-eslint/no-use-before-define */
-/* eslint-disable @typescript-eslint/no-shadow */
 /* eslint-disable no-param-reassign */
 import fetch from 'node-fetch'
 
 import { PINNED_TOKENS } from '../../consts/pinnedTokens'
 import { Account, AccountId } from '../../interfaces/account'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
-import { RPCProviders } from '../../interfaces/settings'
 import { Storage } from '../../interfaces/storage'
 import { isSmartAccount } from '../../libs/account/account'
 import { AccountOp, isAccountOpsIntentEqual } from '../../libs/accountOp/accountOp'
@@ -31,6 +29,8 @@ import {
 import { Portfolio } from '../../libs/portfolio/portfolio'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import EventEmitter from '../eventEmitter/eventEmitter'
+/* eslint-disable @typescript-eslint/no-shadow */
+import { SettingsController } from '../settings/settings'
 
 // We already know that `results.tokens` and `result.collections` tokens have a balance (this is handled by the portfolio lib).
 // Based on that, we can easily find out which hint tokens also have a balance.
@@ -79,10 +79,6 @@ export class PortfolioController extends EventEmitter {
 
   #storage: Storage
 
-  #providers: RPCProviders = {}
-
-  #networks: NetworkDescriptor[] = []
-
   #callRelayer: Function
 
   #networksWithAssetsByAccounts: {
@@ -93,20 +89,16 @@ export class PortfolioController extends EventEmitter {
 
   #additionalHints: GetOptions['additionalHints'] = []
 
-  constructor(
-    storage: Storage,
-    providers: RPCProviders,
-    networks: NetworkDescriptor[],
-    relayerUrl: string
-  ) {
+  #settings: SettingsController
+
+  constructor(storage: Storage, settings: SettingsController, relayerUrl: string) {
     super()
     this.latest = {}
     this.pending = {}
-    this.#providers = providers
-    this.#networks = networks
     this.#portfolioLibs = new Map()
     this.#storage = storage
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
+    this.#settings = settings
   }
 
   async #updateNetworksWithAssets(
@@ -135,7 +127,7 @@ export class PortfolioController extends EventEmitter {
       accountId,
       accountState,
       storageStateByAccount,
-      this.#providers
+      this.#settings.providers
     )
 
     this.emitUpdate()
@@ -381,6 +373,7 @@ export class PortfolioController extends EventEmitter {
 
     await Promise.all(
       networks.map(async (network) => {
+        const providers = this.#settings.providers
         const key = `${network.id}:${accountId}`
         // Initialize a new Portfolio lib if:
         // 1. It does not exist in the portfolioLibs map
@@ -389,9 +382,9 @@ export class PortfolioController extends EventEmitter {
           !this.#portfolioLibs.has(key) ||
           this.#portfolioLibs.get(key)?.network?.rpcUrl !==
             // eslint-disable-next-line no-underscore-dangle
-            this.#providers[network.id]?._getConnection().url
+            providers[network.id]?._getConnection().url
         ) {
-          this.#portfolioLibs.set(key, new Portfolio(fetch, this.#providers[network.id], network))
+          this.#portfolioLibs.set(key, new Portfolio(fetch, providers[network.id], network))
         }
         const portfolioLib = this.#portfolioLibs.get(key)!
 
@@ -481,13 +474,16 @@ export class PortfolioController extends EventEmitter {
   }
 
   get banners() {
+    const networks = this.#settings.networks
+    const providers = this.#settings.providers
+
     const networksWithFailedRPCBanners = getNetworksWithFailedRPCBanners({
-      providers: this.#providers,
-      networks: this.#networks,
+      providers,
+      networks,
       networksWithAssets: this.networksWithAssets
     })
     const networksWithPortfolioErrorBanners = getNetworksWithPortfolioErrorBanners({
-      networks: this.#networks,
+      networks,
       portfolioLatest: this.latest
     })
 

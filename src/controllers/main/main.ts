@@ -180,12 +180,7 @@ export class MainController extends EventEmitter {
     this.keystore = new KeystoreController(this.#storage, keystoreSigners)
     this.#externalSignerControllers = externalSignerControllers
     this.settings = new SettingsController(this.#storage)
-    this.portfolio = new PortfolioController(
-      this.#storage,
-      this.settings.providers,
-      this.settings.networks,
-      relayerUrl
-    )
+    this.portfolio = new PortfolioController(this.#storage, this.settings, relayerUrl)
     this.#initialLoadPromise = this.#load()
     this.emailVault = new EmailVaultController(
       this.#storage,

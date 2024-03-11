@@ -301,12 +301,9 @@ const init = async (
       feeTokens
     ))
 
-  const portfolio = new PortfolioController(
-    storage,
-    providers,
-    networks,
-    'https://staging-relayer.ambire.com'
-  )
+  const settings = new SettingsController(storage)
+  settings.providers = { [op.networkId]: provider }
+  const portfolio = new PortfolioController(storage, settings, 'https://staging-relayer.ambire.com')
   await portfolio.updateSelectedAccount(accounts, networks, account.addr)
 
   if (portfolio.latest?.[account.addr][op.networkId]!.result) {
@@ -343,8 +340,6 @@ const init = async (
   }
 
   const callRelayer = relayerCall.bind({ url: '', fetch })
-  const settings = new SettingsController(storage)
-  settings.providers = { [op.networkId]: provider }
   const controller = new SignAccountOpController(
     keystore,
     portfolio,
