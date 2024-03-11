@@ -617,12 +617,18 @@ export class MainController extends EventEmitter {
     additionalHints: string[] = []
   ) {
     if (!selectedAccount) return
+    const updateOptions = additionalHints.length
+      ? { forceUpdate, additionalHints }
+      : { forceUpdate }
 
     this.portfolio
-      .updateSelectedAccount(this.accounts, this.settings.networks, selectedAccount, undefined, {
-        forceUpdate,
-        additionalHints
-      })
+      .updateSelectedAccount(
+        this.accounts,
+        this.settings.networks,
+        selectedAccount,
+        undefined,
+        updateOptions
+      )
       .then(() => {
         const account = this.accounts.find(({ addr }) => addr === selectedAccount)
         if (shouldGetAdditionalPortfolio(account))

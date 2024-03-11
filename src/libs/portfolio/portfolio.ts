@@ -189,8 +189,9 @@ export class Portfolio {
       if (error !== '0x' || result.symbol === '') return false
 
       const isTokenPreference = localOpts.tokenPreferences?.find((tokenPreference) => {
-        return tokenPreference.address === result.address
+        return tokenPreference.address === result.address && tokenPreference.networkId === networkId
       })
+
       if (isTokenPreference) {
         result.isHidden = isTokenPreference.isHidden
       }
