@@ -20,7 +20,7 @@ import {
   RPCProviders
 } from '../../interfaces/settings'
 import { Storage } from '../../interfaces/storage'
-import { simulateDeployCall } from '../../libs/deployless/simulateDeployCall'
+import { getSASupport } from '../../libs/deployless/simulateDeployCall'
 import { isValidAddress } from '../../services/address'
 import { Bundler } from '../../services/bundlers/bundler'
 import EventEmitter from '../eventEmitter/eventEmitter'
@@ -267,24 +267,18 @@ export class SettingsController extends EventEmitter {
 
     try {
       const provider = new JsonRpcProvider(customNetwork.rpcUrl)
-      const [
-        entryPointCode,
-        singletonCode,
-        oracleCode,
-        factoryCode,
-        hasBundler,
-        block,
-        supportsAmbire
-      ] = await Promise.all([
-        provider.getCode(ERC_4337_ENTRYPOINT),
-        provider.getCode(SINGLETON),
-        provider.getCode(OPTIMISTIC_ORACLE),
-        provider.getCode(AMBIRE_ACCOUNT_FACTORY),
-        Bundler.isNetworkSupported(customNetwork.chainId),
-        provider.getBlock('latest'),
-        simulateDeployCall(provider)
-      ])
+      const [entryPointCode, singletonCode, oracleCode, factoryCode, hasBundler, block, saSupport] =
+        await Promise.all([
+          provider.getCode(ERC_4337_ENTRYPOINT),
+          provider.getCode(SINGLETON),
+          provider.getCode(OPTIMISTIC_ORACLE),
+          provider.getCode(AMBIRE_ACCOUNT_FACTORY),
+          Bundler.isNetworkSupported(customNetwork.chainId),
+          provider.getBlock('latest'),
+          getSASupport(provider)
+        ])
       const has4337 = entryPointCode !== '0x' && hasBundler
+      const areContractsDeployed = factoryCode !== '0x'
       let hasPaymaster = false
       if (has4337) {
         const entryPoint = new Contract(ERC_4337_ENTRYPOINT, EntryPointAbi, provider)
@@ -293,12 +287,20 @@ export class SettingsController extends EventEmitter {
       }
       const erc4337 = { erc4337: { enabled: has4337, hasPaymaster } }
       const feeOptions = { feeOptions: { is1559: block?.baseFeePerGas !== null } }
+
+      // Ambire support is as follows:
+      // - either the addresses match after simulation, that's perfect
+      // - or we can't do the simulation with this RPC but we have the factory
+      // deployed on the network
+      const supportsAmbire =
+        saSupport.addressMatches || (!saSupport.supportsStateOverride && areContractsDeployed)
+
       const addCustomNetwork = {
         ...customNetwork,
         ...erc4337,
         ...feeOptions,
         isSAEnabled: supportsAmbire && singletonCode !== '0x',
-        areContractsDeployed: factoryCode !== '0x',
+        areContractsDeployed,
         isOptimistic: oracleCode !== '0x'
       }
 

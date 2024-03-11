@@ -10,7 +10,15 @@ import { DeploylessMode, fromDescriptor } from './deployless'
 // simulate a deployless call to the given provider.
 // if the call is successful, it means Ambire smart accounts are supported
 // on the given network
-export async function simulateDeployCall(provider: JsonRpcProvider): Promise<boolean> {
+export async function getSASupport(
+  provider: JsonRpcProvider
+): Promise<{ addressMatches: boolean; supportsStateOverride: boolean }> {
+  const smartAccount = await getSmartAccount([
+    {
+      addr: DEPLOYLESS_SIMULATION_FROM,
+      hash: '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'
+    }
+  ])
   const deploylessOptions = {
     blockTag: 'latest',
     from: DEPLOYLESS_SIMULATION_FROM,
@@ -20,12 +28,7 @@ export async function simulateDeployCall(provider: JsonRpcProvider): Promise<boo
     mode: DeploylessMode.StateOverride
   }
   const deployless = fromDescriptor(provider, AmbireAccountFactory, true)
-  const smartAccount = await getSmartAccount([
-    {
-      addr: DEPLOYLESS_SIMULATION_FROM,
-      hash: '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'
-    }
-  ])
+  let supportsStateOverride = true
   const result = await deployless
     .call(
       'deployAndExecute',
@@ -37,11 +40,15 @@ export async function simulateDeployCall(provider: JsonRpcProvider): Promise<boo
       ],
       deploylessOptions
     )
-    .catch(() => {
+    .catch((e: any) => {
       // if there's an error, return the zero address indicating that
       // our smart accounts will most likely not work on this chain
+      supportsStateOverride = !e.info.error.message.includes('too many arguments')
       return [ZeroAddress]
     })
 
-  return result[0] === smartAccount.addr
+  return {
+    addressMatches: result[0] === smartAccount.addr,
+    supportsStateOverride
+  }
 }

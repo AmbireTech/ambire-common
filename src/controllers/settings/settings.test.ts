@@ -284,4 +284,41 @@ describe('Settings Controller', () => {
           })
       })
   })
+
+  test('should add the fantom network as a custom network', (done) => {
+    settingsController.onUpdate(() => {
+      const fantomNetwork = settingsController.networks.find(({ id }) => id === 'fantom')
+      expect(fantomNetwork).not.toBe(undefined)
+      expect(fantomNetwork).not.toBe(null)
+      expect(fantomNetwork?.chainId).toBe(250n)
+      expect(fantomNetwork?.name).toBe('Fantom')
+      expect(fantomNetwork?.id).toBe('fantom')
+      expect(fantomNetwork?.nativeAssetSymbol).toBe('FTM')
+
+      // fantom does not have the entry point
+      expect(fantomNetwork?.erc4337?.enabled).toBe(false)
+      expect(fantomNetwork?.erc4337?.hasPaymaster).toBe(false)
+
+      // ...nor does it have the singleton
+      expect(fantomNetwork?.isSAEnabled).toBe(false)
+
+      // so contracts are not deployed
+      expect(fantomNetwork?.areContractsDeployed).toBe(false)
+
+      // it is 1559
+      expect(fantomNetwork?.feeOptions.is1559).toBe(true)
+
+      // it is not optimistic
+      expect(fantomNetwork?.isOptimistic).toBe(false)
+      done()
+    })
+
+    settingsController.addCustomNetwork({
+      name: 'Fantom',
+      chainId: 250n,
+      explorerUrl: 'https://ftmscan.com/',
+      nativeAssetSymbol: 'FTM',
+      rpcUrl: 'https://rpcapi.fantom.network'
+    })
+  })
 })
