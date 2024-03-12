@@ -199,6 +199,7 @@ describe('Settings Controller', () => {
       'ethereum'
     )
   })
+
   test('should add the mantle network as a custom network', (done) => {
     let checks = 0
     settingsController.onUpdate(() => {
@@ -225,6 +226,16 @@ describe('Settings Controller', () => {
 
       // mantle is optimistic
       expect(mantleNetwork?.isOptimistic).toBe(true)
+
+      expect(mantleNetwork?.warnings).not.toBe(undefined)
+      expect(mantleNetwork?.warnings.length).toBe(2)
+      const noContracts = mantleNetwork?.warnings.filter((war) => war.id === 'noContracts')
+      expect(noContracts).not.toBe(null)
+      expect(noContracts).not.toBe(undefined)
+
+      const noFeeTokens = mantleNetwork?.warnings.filter((war) => war.id === 'noFeeTokens')
+      expect(noFeeTokens).not.toBe(null)
+      expect(noFeeTokens).not.toBe(undefined)
       checks++
       if (checks === 3) {
         done()
@@ -300,7 +311,7 @@ describe('Settings Controller', () => {
       expect(fantomNetwork?.erc4337?.hasPaymaster).toBe(false)
 
       // ...nor does it have the singleton
-      expect(fantomNetwork?.isSAEnabled).toBe(false)
+      expect(fantomNetwork?.isSAEnabled).toBe(true)
 
       // so contracts are not deployed
       expect(fantomNetwork?.areContractsDeployed).toBe(false)
@@ -310,6 +321,17 @@ describe('Settings Controller', () => {
 
       // it is not optimistic
       expect(fantomNetwork?.isOptimistic).toBe(false)
+
+      expect(fantomNetwork?.warnings).not.toBe(undefined)
+      expect(fantomNetwork?.warnings.length).toBe(2)
+      const noContracts = fantomNetwork?.warnings.filter((war) => war.id === 'noContracts')
+      expect(noContracts).not.toBe(null)
+      expect(noContracts).not.toBe(undefined)
+
+      const noFeeTokens = fantomNetwork?.warnings.filter((war) => war.id === 'noFeeTokens')
+      expect(noFeeTokens).not.toBe(null)
+      expect(noFeeTokens).not.toBe(undefined)
+
       done()
     })
 
@@ -318,7 +340,7 @@ describe('Settings Controller', () => {
       chainId: 250n,
       explorerUrl: 'https://ftmscan.com/',
       nativeAssetSymbol: 'FTM',
-      rpcUrl: 'https://rpcapi.fantom.network'
+      rpcUrl: 'https://fantom-pokt.nodies.app'
     })
   })
 })

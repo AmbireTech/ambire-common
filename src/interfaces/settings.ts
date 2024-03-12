@@ -2,7 +2,7 @@ import { JsonRpcProvider } from 'ethers'
 
 import { Account } from './account'
 import { Key } from './keystore'
-import { NetworkDescriptor } from './networkDescriptor'
+import { NetworkDescriptor, NetworkWarning } from './networkDescriptor'
 
 export type AccountPreferences = {
   [key in Account['addr']]: {
@@ -24,16 +24,7 @@ export type NetworkPreference = {
   chainId?: bigint
   nativeAssetSymbol?: string
   explorerUrl?: string
-  isSAEnabled?: boolean
-  areContractsDeployed?: boolean
-  erc4337?: {
-    enabled: boolean
-    hasPaymaster: boolean
-  }
-  feeOptions?: {
-    is1559: boolean
-  }
-  isOptimistic?: boolean
+  warnings?: NetworkWarning[]
 }
 
 export type CustomNetwork = {
@@ -52,6 +43,7 @@ export type CustomNetwork = {
     is1559: boolean
   }
   isOptimistic?: boolean
+  warnings?: NetworkWarning[]
 }
 
 export type NetworkPreferences = {
