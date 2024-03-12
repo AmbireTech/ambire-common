@@ -36,6 +36,10 @@ export interface GasPriceRecommendation {
 export interface Gas1559Recommendation {
   name: string
   baseFeePerGas: bigint
+  // in l2s, to calculate correctly the preVerificationGas,
+  // we use the baseFee for each speed in reverse order as dividing
+  // by a greater baseFee gives smaller gas fee. That's why we need this
+  baseFeeToDivide: bigint
   maxPriorityFeePerGas: bigint
 }
 export type GasRecommendation = GasPriceRecommendation | Gas1559Recommendation
@@ -153,24 +157,20 @@ export async function getGasPriceRecommendations(
     const tips = filterOutliers(txns.map((x) => x.maxPriorityFeePerGas!).filter((x) => x > 0))
     return speeds.map(({ name, baseFeeAddBps }, i) => {
       const baseFee = expectedBaseFee + (expectedBaseFee * baseFeeAddBps) / 10000n
+      const baseFeeToDivide =
+        expectedBaseFee + (expectedBaseFee * speeds[speeds.length - (i + 1)].baseFeeAddBps) / 10000n
 
-      // instead of an average, calculate the maxPriorityFeePerGas in
-      // base fee percentage if so specified in the network fee options.
-      // This is for networks like optimism that have block transactions with
-      // too random maxPriorityFeePerGas fees included in a block. The average
-      // can differ greatly, causing a large gap between what we expect at the
-      // end. Additionally, we may set this as the userOp maxPriorityFee, making
-      // it even worse as it may radically change what the bundle receives in the end.
-      // A small percentage (<1%) is enough for the transaction to pass
+      // maxPriorityFeePerGas is important for networks with longer block time
+      // like Ethereum (12s) but not at all for L2s with instant block creation.
+      // For L2s we hardcode the maxPriorityFee to 100n
       const maxPriorityFeePerGas =
-        network.feeOptions.maxPriorityFeePerGasCalc === 'baseFeePercentage'
-          ? baseFee / (160n - BigInt(i) * 35n)
-          : average(nthGroup(tips, i, speeds.length))
+        network.feeOptions.maxPriorityFee ?? average(nthGroup(tips, i, speeds.length))
 
       return {
         name,
         baseFeePerGas: baseFee,
-        maxPriorityFeePerGas: network.id === 'arbitrum' ? 0n : maxPriorityFeePerGas
+        baseFeeToDivide,
+        maxPriorityFeePerGas
       }
     })
   }

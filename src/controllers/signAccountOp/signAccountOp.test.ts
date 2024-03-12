@@ -404,22 +404,26 @@ describe('SignAccountOp Controller ', () => {
         {
           name: 'slow',
           baseFeePerGas: 100n,
-          maxPriorityFeePerGas: 100n
+          maxPriorityFeePerGas: 100n,
+          baseFeeToDivide: 100n
         },
         {
           name: 'medium',
           baseFeePerGas: 200n,
-          maxPriorityFeePerGas: 200n
+          maxPriorityFeePerGas: 200n,
+          baseFeeToDivide: 200n
         },
         {
           name: 'fast',
           baseFeePerGas: 300n,
-          maxPriorityFeePerGas: 300n
+          maxPriorityFeePerGas: 300n,
+          baseFeeToDivide: 300n
         },
         {
           name: 'ape',
           baseFeePerGas: 400n,
-          maxPriorityFeePerGas: 400n
+          maxPriorityFeePerGas: 400n,
+          baseFeeToDivide: 400n
         }
       ]
     )
@@ -448,7 +452,7 @@ describe('SignAccountOp Controller ', () => {
       amount: 6005000n, // ((300 + 300) × 10000) + 10000, i.e. ((baseFee + priorityFee) * gasUsed) + addedNative
       simulatedGasLimit: 10000n, // 10000, i.e. gasUsed,
       maxPriorityFeePerGas: 300n,
-      baseFeePerGas: 300n
+      baseFeeToDivide: 300n
     })
 
     expect(controller.accountOp.signature).toEqual('0x') // broadcasting and signRawTransaction is handled in main controller
@@ -499,22 +503,26 @@ describe('SignAccountOp Controller ', () => {
         {
           name: 'slow',
           baseFeePerGas: 1000000000n,
-          maxPriorityFeePerGas: 1000000000n
+          maxPriorityFeePerGas: 1000000000n,
+          baseFeeToDivide: 1000000000n
         },
         {
           name: 'medium',
           baseFeePerGas: 2000000000n,
-          maxPriorityFeePerGas: 2000000000n
+          maxPriorityFeePerGas: 2000000000n,
+          baseFeeToDivide: 2000000000n
         },
         {
           name: 'fast',
           baseFeePerGas: 5000000000n,
-          maxPriorityFeePerGas: 5000000000n
+          maxPriorityFeePerGas: 5000000000n,
+          baseFeeToDivide: 5000000000n
         },
         {
           name: 'ape',
           baseFeePerGas: 7000000000n,
-          maxPriorityFeePerGas: 7000000000n
+          maxPriorityFeePerGas: 7000000000n,
+          baseFeeToDivide: 7000000000n
         }
       ]
     )
@@ -622,22 +630,26 @@ describe('SignAccountOp Controller ', () => {
         {
           name: 'slow',
           baseFeePerGas: 1000000000n,
-          maxPriorityFeePerGas: 1000000000n
+          maxPriorityFeePerGas: 1000000000n,
+          baseFeeToDivide: 1000000000n
         },
         {
           name: 'medium',
           baseFeePerGas: 2000000000n,
-          maxPriorityFeePerGas: 2000000000n
+          maxPriorityFeePerGas: 2000000000n,
+          baseFeeToDivide: 2000000000n
         },
         {
           name: 'fast',
           baseFeePerGas: 5000000000n,
-          maxPriorityFeePerGas: 5000000000n
+          maxPriorityFeePerGas: 5000000000n,
+          baseFeeToDivide: 5000000000n
         },
         {
           name: 'ape',
           baseFeePerGas: 7000000000n,
-          maxPriorityFeePerGas: 7000000000n
+          maxPriorityFeePerGas: 7000000000n,
+          baseFeeToDivide: 7000000000n
         }
       ]
     )
@@ -726,22 +738,26 @@ describe('SignAccountOp Controller ', () => {
         {
           name: 'slow',
           baseFeePerGas: 100n,
-          maxPriorityFeePerGas: 100n
+          maxPriorityFeePerGas: 100n,
+          baseFeeToDivide: 100n
         },
         {
           name: 'medium',
           baseFeePerGas: 200n,
-          maxPriorityFeePerGas: 200n
+          maxPriorityFeePerGas: 200n,
+          baseFeeToDivide: 200n
         },
         {
           name: 'fast',
           baseFeePerGas: 300n,
-          maxPriorityFeePerGas: 300n
+          maxPriorityFeePerGas: 300n,
+          baseFeeToDivide: 300n
         },
         {
           name: 'ape',
           baseFeePerGas: 400n,
-          maxPriorityFeePerGas: 400n
+          maxPriorityFeePerGas: 400n,
+          baseFeeToDivide: 400n
         }
       ]
     )
@@ -774,7 +790,7 @@ describe('SignAccountOp Controller ', () => {
       amount: 9005000n, // (300 + 300) × (10000+5000) + 10000, i.e. (baseFee + priorityFee) * (gasUsed + additionalCall) + addedNative
       simulatedGasLimit: 15000n, // 10000 + 5000, i.e. gasUsed + additionalCall
       maxPriorityFeePerGas: 300n,
-      baseFeePerGas: 300n
+      baseFeeToDivide: 300n
     })
 
     const typedData = getTypedData(
@@ -827,22 +843,26 @@ describe('SignAccountOp Controller ', () => {
         {
           name: 'slow',
           baseFeePerGas: 100n,
-          maxPriorityFeePerGas: 100n
+          maxPriorityFeePerGas: 100n,
+          baseFeeToDivide: 100n
         },
         {
           name: 'medium',
           baseFeePerGas: 200n,
-          maxPriorityFeePerGas: 200n
+          maxPriorityFeePerGas: 200n,
+          baseFeeToDivide: 200n
         },
         {
           name: 'fast',
           baseFeePerGas: 300n,
-          maxPriorityFeePerGas: 300n
+          maxPriorityFeePerGas: 300n,
+          baseFeeToDivide: 300n
         },
         {
           name: 'ape',
           baseFeePerGas: 400n,
-          maxPriorityFeePerGas: 400n
+          maxPriorityFeePerGas: 400n,
+          baseFeeToDivide: 400n
         }
       ]
     )

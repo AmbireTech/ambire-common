@@ -64,7 +64,7 @@ type FanSpeed = {
   amountFormatted: string
   amountUsd: string
   maxPriorityFeePerGas?: bigint
-  baseFeePerGas: bigint
+  baseFeeToDivide: bigint
 }
 
 // declare the statuses we don't want state updates on
@@ -537,6 +537,9 @@ export class SignAccountOpController extends EventEmitter {
       if ('baseFeePerGas' in gasRecommendation)
         gasPrice = gasRecommendation.baseFeePerGas + gasRecommendation.maxPriorityFeePerGas
 
+      const baseFeeToDivide =
+        'baseFeeToDivide' in gasRecommendation ? gasRecommendation.baseFeeToDivide : gasPrice
+
       // EOA
       if (!this.#account || !this.#account?.creation) {
         simulatedGasLimit = gasUsed
@@ -549,12 +552,23 @@ export class SignAccountOpController extends EventEmitter {
         simulatedGasLimit += usesPaymaster
           ? this.#estimation!.arbitrumL1FeeIfArbitrum.withFee
           : this.#estimation!.arbitrumL1FeeIfArbitrum.noFee
+
+        // add preVerificationGas to simulated gas so we could get the correct
+        // fee the user should pay
+        const l1FeeAsL2Gas = feeTokenEstimation.addedNative / baseFeeToDivide
+        const preVerificationGas = getPreVerificationGas(
+          this.#userOperation,
+          usesPaymaster,
+          l1FeeAsL2Gas
+        )
+        simulatedGasLimit += BigInt(preVerificationGas)
+
         amount = SignAccountOpController.getAmountAfterFeeTokenConvert(
           simulatedGasLimit,
           gasPrice,
           nativeRatio,
           this.feeTokenResult!.decimals,
-          feeTokenEstimation.addedNative
+          0n
         )
         if (usesPaymaster) {
           amount = this.#increaseFee(amount)
@@ -595,7 +609,8 @@ export class SignAccountOpController extends EventEmitter {
         simulatedGasLimit,
         amount,
         amountFormatted: ethers.formatUnits(amount, Number(this.feeTokenResult!.decimals)),
-        amountUsd: getTokenUsdAmount(this.feeTokenResult!, amount)
+        amountUsd: getTokenUsdAmount(this.feeTokenResult!, amount),
+        baseFeeToDivide
       }
 
       if ('maxPriorityFeePerGas' in gasRecommendation) {
@@ -675,7 +690,7 @@ export class SignAccountOpController extends EventEmitter {
       inToken: this.feeTokenResult.address,
       amount: chosenSpeed.amount,
       simulatedGasLimit: chosenSpeed.simulatedGasLimit,
-      baseFeePerGas: chosenSpeed.baseFeePerGas
+      baseFeeToDivide: chosenSpeed.baseFeeToDivide
     }
 
     if ('maxPriorityFeePerGas' in chosenSpeed) {
@@ -850,10 +865,13 @@ export class SignAccountOpController extends EventEmitter {
             (gasFeePayment.amount * BigInt(10 ** (18 + 18 - this.feeTokenResult!.decimals))) /
             nativeRatio
         }
-        const gasPrice =
-          (amountInWei - feeTokenEstimation.addedNative) / gasFeePayment.simulatedGasLimit
+        // NOTE: we do not subtract the addedNative from here as we put it
+        // in preVerificationGas
+        const gasPrice = amountInWei / gasFeePayment.simulatedGasLimit
         userOperation.maxFeePerGas = ethers.toBeHex(gasPrice)
-        userOperation.maxPriorityFeePerGas = ethers.toBeHex(gasFeePayment.maxPriorityFeePerGas!)
+        userOperation.maxPriorityFeePerGas = ethers.toBeHex(
+          gasFeePayment.maxPriorityFeePerGas ?? userOperation.maxFeePerGas
+        )
 
         const usesOneTimeNonce = shouldUseOneTimeNonce(userOperation)
         const usesPaymaster = shouldUsePaymaster(this.#network)
@@ -881,7 +899,7 @@ export class SignAccountOpController extends EventEmitter {
         }
 
         if (feeTokenEstimation.addedNative > 0n) {
-          const l1FeeAsL2Gas = feeTokenEstimation.addedNative / gasFeePayment.baseFeePerGas
+          const l1FeeAsL2Gas = feeTokenEstimation.addedNative / gasFeePayment.baseFeeToDivide
 
           userOperation.preVerificationGas = getPreVerificationGas(
             userOperation,
