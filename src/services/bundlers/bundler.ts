@@ -104,9 +104,12 @@ export class Bundler {
     // transfrom to bigint
     const gasPrices = []
     for (const [key] of Object.entries(prices)) {
+      const baseFeePerGas =
+        BigInt(prices[key].maxFeePerGas) - BigInt(prices[key].maxPriorityFeePerGas)
       gasPrices.push({
         name: key,
-        baseFeePerGas: BigInt(prices[key].maxFeePerGas) - BigInt(prices[key].maxPriorityFeePerGas),
+        baseFeePerGas,
+        baseFeeToDivide: baseFeePerGas,
         maxPriorityFeePerGas: BigInt(prices[key].maxPriorityFeePerGas)
       })
     }
