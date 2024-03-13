@@ -244,7 +244,7 @@ const networks: NetworkType[] = [
     id: NETWORKS.andromeda,
     chainId: 1088,
     nativeAssetSymbol: 'METIS',
-    name: 'Andromeda',
+    name: 'Metis',
     explorerUrl: 'https://andromeda-explorer.metis.io',
     unstoppableDomainsChain: 'ERC20',
     isGasTankAvailable: true,
