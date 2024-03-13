@@ -15,8 +15,6 @@ import {
 } from 'ethers'
 import fetch from 'node-fetch'
 
-import { StaticJsonRpcProvider } from '@ethersproject/providers'
-
 import AMBIRE_ACCOUNT from '../../contracts/compiled/AmbireAccount.json'
 import { AMBIRE_ACCOUNT_FACTORY } from '../../src/consts/deploy'
 import { networks } from '../../src/consts/networks'
@@ -35,7 +33,24 @@ const ENTRY_POINT_ADDR = '0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789'
 // const apiKey = 'c6eabeca-dd7c-49b5-afa6-50ff36cfc5be'
 const apiKey = '2b56fcf6-7796-4a89-90ac-f80d5dcf6192'
 const pimlicoEndpoint = `https://api.pimlico.io/v1/polygon/rpc?apikey=${apiKey}`
-const pimlicoProvider = new StaticJsonRpcProvider(pimlicoEndpoint)
+// TODO: Consider refactoring this to:
+//
+// 1. If you know the network ahead of time and wish
+// to avoid even a single eth_chainId call:
+//
+//    provider = new JsonRpcProvider(url, network, {
+//      staticNetwork: network
+//    });
+//
+//    or
+//
+// 2. If you want the network automatically detected,
+// this will query eth_chainId only once
+//
+//    provider = new JsonRpcProvider(url, undefined, {
+//       staticNetwork: true
+//     });
+const pimlicoProvider = new JsonRpcProvider(pimlicoEndpoint)
 const abiCoder = new AbiCoder()
 
 const salt = '0x0'
