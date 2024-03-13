@@ -1,7 +1,6 @@
-import { Contract, Interface } from 'ethers'
+import { Contract } from 'ethers'
 
 import IERC20 from '../../../contracts/compiled/IERC20.json'
-import IERC721 from '../../../contracts/compiled/IERC721.json'
 import feeTokens from '../../consts/feeTokens'
 import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
 import { Account } from '../../interfaces/account'
@@ -41,25 +40,37 @@ export function getFlags(
   }
 }
 
-// TODO: better naming
-export const checkTokenEligibility = async (token, accountId, provider) => {
-  const ERC20Interface = new Interface(IERC20.abi)
-  const ERC721Interface = new Interface(IERC721.abi)
+export const validateERC20Token = async (token, accountId, provider) => {
+  const erc20 = new Contract(token?.address, IERC20.abi, provider)
 
-  const erc20 = new Contract(token?.address, ERC20Interface, provider)
-  const erc721 = new Contract(token?.address, ERC721Interface, provider)
+  let isValid = true
+  let hasError = false
 
-  const response = await Promise.all([
-    erc20.balanceOf(accountId).catch((e) => e),
-    erc20.symbol().catch((e) => e),
-    erc20.decimals().catch((e) => e)
-  ]).catch((e) => e)
+  const [balance, symbol, decimals] = (await Promise.all([
+    erc20.balanceOf(accountId).catch(() => {
+      hasError = true
+    }),
+    erc20.symbol().catch(() => {
+      hasError = true
+    }),
+    erc20.decimals().catch(() => {
+      hasError = true
+    })
+  ]).catch(() => {
+    hasError = true
+    isValid = false
+  })) || [undefined, undefined, undefined]
 
-  const isNotEligible =
-    response[0] instanceof Error && response[1] instanceof Error && response[2] instanceof Error
-  console.log(response, isNotEligible)
+  if (
+    typeof balance === 'undefined' ||
+    typeof symbol === 'undefined' ||
+    typeof decimals === 'undefined'
+  ) {
+    isValid = false
+  }
 
-  return !isNotEligible
+  isValid = isValid && !hasError
+  return [isValid, 'erc20']
 }
 
 export const shouldGetAdditionalPortfolio = (account?: Account) => {

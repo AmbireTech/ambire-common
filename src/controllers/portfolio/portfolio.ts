@@ -78,6 +78,8 @@ export class PortfolioController extends EventEmitter {
 
   tokenPreferences: any[] = []
 
+  eligibleTokens: any = { erc20: {}, erc721: {} }
+
   #portfolioLibs: Map<string, Portfolio>
 
   #storage: Storage
@@ -184,13 +186,18 @@ export class PortfolioController extends EventEmitter {
     this.#additionalHints = []
   }
 
-  async checkToken(token: any, accountId: AccountId) {
-    const isEligible = await checkTokenEligibility(
+  async checkTokenStandardEligibility(token: any, accountId: AccountId) {
+    const [isEligible, standard] = await checkTokenEligibility(
       token,
       accountId,
       this.#providers[token.networkId]
     )
-    return isEligible
+    this.eligibleTokens[standard] = {
+      ...this.eligibleTokens[standard],
+      [`${token.address}-${token.networkId}`]: isEligible
+    }
+
+    this.emitUpdate()
   }
 
   async getAdditionalPortfolio(accountId: AccountId) {
