@@ -15,6 +15,7 @@ export interface Collectible {
 export interface GetOptionsSimulation {
   accountOps: AccountOp[]
   account: Account
+  gasPrice?: bigint
 }
 
 export interface TokenResult {

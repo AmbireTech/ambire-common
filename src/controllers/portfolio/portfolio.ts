@@ -292,6 +292,7 @@ export class PortfolioController extends EventEmitter {
     opts?: {
       forceUpdate: boolean
       additionalHints?: GetOptions['additionalHints']
+      gasPrice?: bigint
     }
   ) {
     if (opts?.additionalHints) this.#additionalHints = opts.additionalHints
@@ -430,7 +431,8 @@ export class PortfolioController extends EventEmitter {
                   ...(currentAccountOps && {
                     simulation: {
                       account: selectedAccount,
-                      accountOps: currentAccountOps
+                      accountOps: currentAccountOps,
+                      gasPrice: opts?.gasPrice ?? 0n
                     }
                   }),
                   isEOA: !isSmartAccount(selectedAccount),

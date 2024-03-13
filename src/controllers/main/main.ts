@@ -791,6 +791,16 @@ export class MainController extends EventEmitter {
         .flat()
         .filter((x) => isAddress(x))
 
+      // calculate the medium gas price to use in simulation
+      let gasPrice = 0n
+      if (this.gasPrices[accountOp.networkId] && this.gasPrices[accountOp.networkId].length) {
+        const medium = this.gasPrices[accountOp.networkId][0]
+        gasPrice =
+          'gasPrice' in medium
+            ? medium.gasPrice
+            : medium.baseFeePerGas + medium.maxPriorityFeePerGas
+      }
+
       const [, , estimation] = await Promise.all([
         // NOTE: we are not emitting an update here because the portfolio controller will do that
         // NOTE: the portfolio controller has it's own logic of constructing/caching providers, this is intentional, as
@@ -806,7 +816,8 @@ export class MainController extends EventEmitter {
           ),
           {
             forceUpdate: true,
-            additionalHints
+            additionalHints,
+            gasPrice
           }
         ),
         shouldGetAdditionalPortfolio(account) &&
