@@ -200,6 +200,27 @@ describe('Settings Controller', () => {
     )
   })
 
+  test('should check if network features get displayed correctly for ethereum', () => {
+    const eth = settingsController.networks.find((net) => net.id === 'ethereum')
+    expect(eth).not.toBe(null)
+    expect(eth?.features.length).toBe(3)
+
+    const saSupport = eth?.features.find((feat) => feat.id === 'saSupport')
+    expect(saSupport).not.toBe(null)
+    expect(saSupport).not.toBe(undefined)
+    expect(saSupport!.level).toBe('success')
+
+    const noFeeTokens = eth?.features.find((feat) => feat.id === 'feeTokens')
+    expect(noFeeTokens).not.toBe(null)
+    expect(noFeeTokens).not.toBe(undefined)
+    expect(noFeeTokens!.level).toBe('success')
+
+    const simulation = eth?.features.find((feat) => feat.id === 'simulation')
+    expect(simulation).not.toBe(null)
+    expect(simulation).not.toBe(undefined)
+    expect(simulation!.level).toBe('success')
+  })
+
   test('should add the mantle network as a custom network', (done) => {
     let checks = 0
     settingsController.onUpdate(() => {
@@ -227,15 +248,26 @@ describe('Settings Controller', () => {
       // mantle is optimistic
       expect(mantleNetwork?.isOptimistic).toBe(true)
 
-      expect(mantleNetwork?.warnings).not.toBe(undefined)
-      expect(mantleNetwork?.warnings.length).toBe(2)
-      const noContracts = mantleNetwork?.warnings.filter((war) => war.id === 'noContracts')
-      expect(noContracts).not.toBe(null)
-      expect(noContracts).not.toBe(undefined)
+      expect(mantleNetwork?.features.length).toBe(3)
 
-      const noFeeTokens = mantleNetwork?.warnings.filter((war) => war.id === 'noFeeTokens')
+      // contracts are not deployed
+      const saSupport = mantleNetwork?.features.find((feat) => feat.id === 'saSupport')
+      expect(saSupport).not.toBe(null)
+      expect(saSupport).not.toBe(undefined)
+      expect(saSupport!.level).toBe('warning')
+
+      // no fee tokens
+      const noFeeTokens = mantleNetwork?.features.find((feat) => feat.id === 'feeTokens')
       expect(noFeeTokens).not.toBe(null)
       expect(noFeeTokens).not.toBe(undefined)
+      expect(noFeeTokens!.level).toBe('warning')
+
+      // no fee tokens
+      const simulation = mantleNetwork?.features.find((feat) => feat.id === 'simulation')
+      expect(simulation).not.toBe(null)
+      expect(simulation).not.toBe(undefined)
+      expect(simulation!.level).toBe('success')
+
       checks++
       if (checks === 3) {
         done()
@@ -322,15 +354,23 @@ describe('Settings Controller', () => {
       // it is not optimistic
       expect(fantomNetwork?.isOptimistic).toBe(false)
 
-      expect(fantomNetwork?.warnings).not.toBe(undefined)
-      expect(fantomNetwork?.warnings.length).toBe(2)
-      const noContracts = fantomNetwork?.warnings.filter((war) => war.id === 'noContracts')
-      expect(noContracts).not.toBe(null)
-      expect(noContracts).not.toBe(undefined)
+      // contracts are not deployed
+      const saSupport = fantomNetwork?.features.find((feat) => feat.id === 'saSupport')
+      expect(saSupport).not.toBe(null)
+      expect(saSupport).not.toBe(undefined)
+      expect(saSupport!.level).toBe('warning')
 
-      const noFeeTokens = fantomNetwork?.warnings.filter((war) => war.id === 'noFeeTokens')
+      // no fee tokens
+      const noFeeTokens = fantomNetwork?.features.find((feat) => feat.id === 'feeTokens')
       expect(noFeeTokens).not.toBe(null)
       expect(noFeeTokens).not.toBe(undefined)
+      expect(noFeeTokens!.level).toBe('warning')
+
+      // no fee tokens
+      const simulation = fantomNetwork?.features.find((feat) => feat.id === 'simulation')
+      expect(simulation).not.toBe(null)
+      expect(simulation).not.toBe(undefined)
+      expect(simulation!.level).toBe('success')
 
       done()
     })

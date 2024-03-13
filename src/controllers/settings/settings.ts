@@ -10,7 +10,7 @@ import {
 } from '../../consts/deploy'
 import { networks } from '../../consts/networks'
 import { Key } from '../../interfaces/keystore'
-import { NetworkDescriptor, NetworkId, NetworkWarning } from '../../interfaces/networkDescriptor'
+import { AvailableFeature, NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
 import {
   AccountPreferences,
   CustomNetwork,
@@ -43,26 +43,26 @@ export class SettingsController extends EventEmitter {
     this.#load()
   }
 
-  get networks(): NetworkDescriptor[] {
-    const setProvider = (networkId: NetworkId, newRpcUrl: string) => {
-      const provider = this.providers[networkId]
+  #setProvider(networkId: NetworkId, newRpcUrl: string) {
+    const provider = this.providers[networkId]
 
-      // Only update the RPC if the new RPC is different from the current one
-      // or if there is no RPC for this network yet.
-      // eslint-disable-next-line no-underscore-dangle
-      if (!provider || provider?._getConnection().url !== newRpcUrl) {
-        const oldRPC = this.providers[networkId]
+    // Only update the RPC if the new RPC is different from the current one
+    // or if there is no RPC for this network yet.
+    // eslint-disable-next-line no-underscore-dangle
+    if (!provider || provider?._getConnection().url !== newRpcUrl) {
+      const oldRPC = this.providers[networkId]
 
-        if (oldRPC) {
-          // If an RPC fails once it will try to reconnect every second. If we don't destroy the old RPC
-          // it will keep trying to reconnect forever.
-          oldRPC.destroy()
-        }
-
-        this.providers[networkId] = new JsonRpcProvider(newRpcUrl)
+      if (oldRPC) {
+        // If an RPC fails once it will try to reconnect every second. If we don't destroy the old RPC
+        // it will keep trying to reconnect forever.
+        oldRPC.destroy()
       }
-    }
 
+      this.providers[networkId] = new JsonRpcProvider(newRpcUrl)
+    }
+  }
+
+  get networks(): NetworkDescriptor[] {
     // set the custom networks that do not exist in ambire-common networks
     const customPrefIds = Object.keys(this.#networkPreferences)
     const predefinedNetworkIds = networks.map((net) => net.id)
@@ -71,8 +71,9 @@ export class SettingsController extends EventEmitter {
       // @ts-ignore
       // checked with the logic for customNetworkIds
       const customNetwork: CustomNetwork = this.#networkPreferences[id]
+      const features: AvailableFeature[] = []
 
-      const network: NetworkDescriptor = {
+      return {
         id,
         rpcNoStateOverride: false,
         unstoppableDomainsChain: 'ERC20',
@@ -81,57 +82,75 @@ export class SettingsController extends EventEmitter {
         rpcUrl: customNetwork.rpcUrl,
         chainId: customNetwork.chainId,
         explorerUrl: customNetwork.explorerUrl,
-        erc4337: customNetwork.erc4337 ?? null,
+        erc4337: customNetwork.erc4337 ?? { enabled: false, hasPaymaster: false },
         isSAEnabled: customNetwork.isSAEnabled ?? false,
         areContractsDeployed: customNetwork.areContractsDeployed ?? false,
         isOptimistic: 'isOptimistic' in customNetwork ? customNetwork.isOptimistic : false,
         feeOptions: customNetwork.feeOptions ?? {
           is1559: false
         },
-        warnings: customNetwork.warnings ?? []
+        features,
+        hasSimulations: customNetwork.hasSimulations ?? false,
+        hasRelayer: false
       }
-      setProvider(id, network.rpcUrl)
-
-      if (!network.isSAEnabled) {
-        network.warnings.push({
-          id: 'noSmartAccounts',
-          level: 'danger',
-          msg: 'Smart accounts are not available for this network. Please do not send funds to your smart account or they may be lost forever'
-        })
-      }
-      if (network.isSAEnabled && !network.areContractsDeployed) {
-        network.warnings.push({
-          id: 'noContractsDeployed',
-          level: 'warning',
-          msg: "Ambire's smart contracts are not deployed on this network. To use a smart account, please deploy them by using a Basic account"
-        })
-      }
-      if (network.isSAEnabled && network.erc4337 && !network.erc4337.hasPaymaster) {
-        network.warnings.push({
-          id: 'noFeeTokens',
-          level: 'warning',
-          msg: "Only the network's native token can be used as a fee with smart accounts for this network"
-        })
-      }
-
-      return network
     })
+
+    const allNetworks = [...networks, ...customNetworks]
 
     // configure the main networks
-    const mainNetworks = networks.map((network) => {
+    return allNetworks.map((network) => {
       const networkPreferences = this.#networkPreferences[network.id]
-      setProvider(network.id, networkPreferences?.rpcUrl || network.rpcUrl)
+      this.#setProvider(network.id, networkPreferences?.rpcUrl || network.rpcUrl)
+      const finalNetwork = networkPreferences
+        ? {
+            ...network,
+            ...networkPreferences
+          }
+        : network
 
-      if (networkPreferences) {
-        return {
-          ...network,
-          ...networkPreferences
-        }
+      finalNetwork.features = []
+      if (!finalNetwork.isSAEnabled) {
+        finalNetwork.features.push({
+          id: 'saSupport',
+          level: 'danger',
+          msg: 'Smart accounts are not available on this network. Please do not send funds to your smart account or they may be lost forever'
+        })
       }
-      return network
-    })
 
-    return [...mainNetworks, ...customNetworks]
+      if (finalNetwork.isSAEnabled && finalNetwork.areContractsDeployed) {
+        finalNetwork.features.push({
+          id: 'saSupport',
+          level: 'success',
+          msg: 'Smart accounts are available on this network'
+        })
+      } else if (finalNetwork.isSAEnabled && !finalNetwork.areContractsDeployed) {
+        finalNetwork.features.push({
+          id: 'saSupport',
+          level: 'warning',
+          msg: "Ambire's smart contracts are not deployed on this network. To use a smart account, please deploy them from network settings using a Basic account"
+        })
+      }
+
+      const supportsFeeTokens =
+        finalNetwork.isSAEnabled && (finalNetwork.hasRelayer || finalNetwork.erc4337.hasPaymaster)
+      finalNetwork.features.push({
+        id: 'feeTokens',
+        level: supportsFeeTokens ? 'success' : 'warning',
+        msg: supportsFeeTokens
+          ? 'You can pay network fees for smart accounts in tokens'
+          : "Only the network's native token can be used as a fee with smart accounts for this network"
+      })
+
+      finalNetwork.features.push({
+        id: 'simulation',
+        level: finalNetwork.hasSimulations ? 'success' : 'danger',
+        msg: finalNetwork.hasSimulations
+          ? 'Transaction simulation is supported by the selected network RPC'
+          : 'Transaction simulation is not supported by the selected network RPC. Please change it to use simulations'
+      })
+
+      return finalNetwork
+    })
   }
 
   updateProviderIsWorking(networkId: NetworkDescriptor['id'], isWorking: boolean) {
@@ -323,7 +342,6 @@ export class SettingsController extends EventEmitter {
       const supportsAmbire =
         saSupport.addressMatches || (!saSupport.supportsStateOverride && areContractsDeployed)
 
-      const warnings: NetworkWarning[] = []
       const addCustomNetwork: CustomNetwork = {
         ...customNetwork,
         ...erc4337,
@@ -331,16 +349,7 @@ export class SettingsController extends EventEmitter {
         isSAEnabled: supportsAmbire && singletonCode !== '0x',
         areContractsDeployed,
         isOptimistic: oracleCode !== '0x',
-        warnings
-      }
-
-      // add RPC specific warnings here
-      if (!saSupport.supportsStateOverride) {
-        addCustomNetwork.warnings!.push({
-          id: 'noSimulation',
-          level: 'warning',
-          msg: 'The provided RPC does not support transaction simulations. Please change it to enable them'
-        })
+        hasSimulations: saSupport.supportsStateOverride
       }
 
       this.#networkPreferences[customNetworkId] = addCustomNetwork
@@ -386,22 +395,9 @@ export class SettingsController extends EventEmitter {
     // if the rpcUrl has changed, call the RPC and check whether it supports
     // state overrided. If it doesn't, add a warning
     if (changedNetworkPreferences.rpcUrl) {
-      // remove the noSimulation warning
-      changedNetworkPreferences.warnings = changedNetworkPreferences.warnings
-        ? changedNetworkPreferences.warnings.filter((war) => {
-            return war.id !== 'noSimulation'
-          })
-        : []
-
       const provider = new JsonRpcProvider(changedNetworkPreferences.rpcUrl as string)
       const saSupport = await getSASupport(provider).catch(() => ({ supportsStateOverride: false }))
-      if (!saSupport.supportsStateOverride) {
-        changedNetworkPreferences.warnings.push({
-          id: 'noSimulation',
-          level: 'warning',
-          msg: 'The provided RPC does not support transaction simulations. Please change it to enable them'
-        })
-      }
+      changedNetworkPreferences.hasSimulations = saSupport.supportsStateOverride
     }
 
     // Update the network preferences with the incoming new values

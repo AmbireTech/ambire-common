@@ -15,7 +15,7 @@ interface FeeOptions {
   maxPriorityFee?: bigint
 }
 
-export interface NetworkWarning {
+export interface AvailableFeature {
   id: string
   level: string
   msg: string
@@ -33,7 +33,7 @@ export interface NetworkDescriptor {
   chainId: bigint
   rpcUrl: string
   explorerUrl: string
-  erc4337: Erc4337settings | null
+  erc4337: Erc4337settings
   rpcNoStateOverride: boolean
   unstoppableDomainsChain: string
   feeOptions: FeeOptions
@@ -41,7 +41,9 @@ export interface NetworkDescriptor {
   areContractsDeployed: boolean
   reestimateOn?: number
   isOptimistic?: boolean
-  warnings: NetworkWarning[]
+  features: AvailableFeature[]
+  hasRelayer: boolean
+  hasSimulations: boolean
   // NOTE: should this be here? keep in mind networks can be user-inputted, so it's prob better to have
   // a separate mapping somewhere
   // @TODO remove this, add a separate mapping
