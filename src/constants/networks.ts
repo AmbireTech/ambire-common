@@ -374,7 +374,7 @@ export const coingeckoNets = {
   'kucoin-community-chain': 'kucoin',
   kucoin: 'kucoin-community-chain',
   'metis-andromeda': 'andromeda',
-  metis: 'metis-andromeda',
+  andromeda: 'metis-andromeda',
   cronos: 'cronos',
   aurora: 'aurora',
   optimism: 'optimistic-ethereum',
