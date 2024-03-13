@@ -8,6 +8,7 @@ import {
   OPTIMISTIC_ORACLE,
   SINGLETON
 } from '../../consts/deploy'
+import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { RPCProviders } from '../../interfaces/settings'
 import { Bundler } from '../../services/bundlers/bundler'
 import { getSASupport } from '../deployless/simulateDeployCall'
@@ -59,4 +60,72 @@ export async function getNetworkInfo(rpcUrl: string, chainId: bigint) {
     areContractsDeployed,
     feeOptions
   }
+}
+
+// call this if you have the network props already calculated
+export function getFeaturesByNetworkProperties(
+  isSAEnabled: boolean,
+  hasSimulations: boolean,
+  erc4337: NetworkDescriptor['erc4337'],
+  areContractsDeployed: boolean,
+  hasRelayer: boolean
+) {
+  const features = []
+  if (!isSAEnabled) {
+    features.push({
+      id: 'saSupport',
+      level: 'danger',
+      msg: 'Smart accounts are not available on this network. Please do not send funds to your smart account or they may be lost forever'
+    })
+  }
+
+  if (isSAEnabled && areContractsDeployed) {
+    features.push({
+      id: 'saSupport',
+      level: 'success',
+      msg: 'Smart accounts are available on this network'
+    })
+  } else if (isSAEnabled && !areContractsDeployed) {
+    features.push({
+      id: 'saSupport',
+      level: 'warning',
+      msg: "Ambire's smart contracts are not deployed on this network. To use a smart account, please deploy them from network settings using a Basic account"
+    })
+  }
+
+  const supportsFeeTokens = isSAEnabled && (hasRelayer || erc4337.hasPaymaster)
+  features.push({
+    id: 'feeTokens',
+    level: supportsFeeTokens ? 'success' : 'warning',
+    msg: supportsFeeTokens
+      ? 'You can pay network fees for smart accounts in tokens'
+      : "Only the network's native token can be used as a fee with smart accounts for this network"
+  })
+
+  features.push({
+    id: 'simulation',
+    level: hasSimulations ? 'success' : 'danger',
+    msg: hasSimulations
+      ? 'Transaction simulation is supported by the selected network RPC'
+      : 'Transaction simulation is not supported by the selected network RPC. Please change it to use simulations'
+  })
+
+  return features
+}
+
+// call this if you have only the rpcUrl and chainId
+// this method makes an RPC request, calculates the network info and returns the features
+export async function getFeatures(rpcUrl: string, chainId: bigint, hasRelayer: boolean) {
+  const { isSAEnabled, hasSimulations, erc4337, areContractsDeployed } = await getNetworkInfo(
+    rpcUrl,
+    chainId
+  )
+
+  return getFeaturesByNetworkProperties(
+    isSAEnabled,
+    hasSimulations,
+    erc4337.erc4337,
+    areContractsDeployed,
+    hasRelayer
+  )
 }

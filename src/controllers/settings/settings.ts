@@ -13,7 +13,7 @@ import {
 } from '../../interfaces/settings'
 import { Storage } from '../../interfaces/storage'
 import { getSASupport } from '../../libs/deployless/simulateDeployCall'
-import { getNetworkInfo } from '../../libs/settings/settings'
+import { getFeaturesByNetworkProperties, getNetworkInfo } from '../../libs/settings/settings'
 import { isValidAddress } from '../../services/address'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
@@ -100,47 +100,13 @@ export class SettingsController extends EventEmitter {
           }
         : network
 
-      finalNetwork.features = []
-      if (!finalNetwork.isSAEnabled) {
-        finalNetwork.features.push({
-          id: 'saSupport',
-          level: 'danger',
-          msg: 'Smart accounts are not available on this network. Please do not send funds to your smart account or they may be lost forever'
-        })
-      }
-
-      if (finalNetwork.isSAEnabled && finalNetwork.areContractsDeployed) {
-        finalNetwork.features.push({
-          id: 'saSupport',
-          level: 'success',
-          msg: 'Smart accounts are available on this network'
-        })
-      } else if (finalNetwork.isSAEnabled && !finalNetwork.areContractsDeployed) {
-        finalNetwork.features.push({
-          id: 'saSupport',
-          level: 'warning',
-          msg: "Ambire's smart contracts are not deployed on this network. To use a smart account, please deploy them from network settings using a Basic account"
-        })
-      }
-
-      const supportsFeeTokens =
-        finalNetwork.isSAEnabled && (finalNetwork.hasRelayer || finalNetwork.erc4337.hasPaymaster)
-      finalNetwork.features.push({
-        id: 'feeTokens',
-        level: supportsFeeTokens ? 'success' : 'warning',
-        msg: supportsFeeTokens
-          ? 'You can pay network fees for smart accounts in tokens'
-          : "Only the network's native token can be used as a fee with smart accounts for this network"
-      })
-
-      finalNetwork.features.push({
-        id: 'simulation',
-        level: finalNetwork.hasSimulations ? 'success' : 'danger',
-        msg: finalNetwork.hasSimulations
-          ? 'Transaction simulation is supported by the selected network RPC'
-          : 'Transaction simulation is not supported by the selected network RPC. Please change it to use simulations'
-      })
-
+      finalNetwork.features = getFeaturesByNetworkProperties(
+        finalNetwork.isSAEnabled,
+        finalNetwork.hasSimulations,
+        finalNetwork.erc4337,
+        finalNetwork.areContractsDeployed,
+        finalNetwork.hasRelayer
+      )
       return finalNetwork
     })
   }
