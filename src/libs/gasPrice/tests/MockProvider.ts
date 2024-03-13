@@ -4,10 +4,13 @@ import {
   FetchRequest,
   JsonRpcApiProviderOptions,
   JsonRpcProvider,
+  keccak256,
   Networkish,
-  ethers
+  parseUnits
 } from 'ethers'
+
 import { abiCoder, addressOne, localhost } from '../../../../test/config'
+
 const ELASTICITY_MULTIPLIER = 2n
 const gasLimit = 30000000n
 const gasTarget = gasLimit / ELASTICITY_MULTIPLIER
@@ -35,8 +38,7 @@ export default class MockProvider extends JsonRpcProvider {
       number: this.blockParams.number ?? 0,
       timestamp: this.blockParams.timestamp ?? 30000000,
       parentHash:
-        this.blockParams.parentHash ??
-        ethers.keccak256(abiCoder.encode(['string'], ['random hash'])),
+        this.blockParams.parentHash ?? keccak256(abiCoder.encode(['string'], ['random hash'])),
       nonce: this.blockParams.nonce ?? '0',
       difficulty: this.blockParams.difficulty ?? 1n,
       gasLimit: this.blockParams.gasLimit ?? gasLimit,
@@ -45,7 +47,7 @@ export default class MockProvider extends JsonRpcProvider {
       extraData: this.blockParams.extraData ?? 'extra data',
       baseFeePerGas: this.blockParams.hasOwnProperty('baseFeePerGas')
         ? this.blockParams.baseFeePerGas
-        : ethers.parseUnits('1', 'gwei'),
+        : parseUnits('1', 'gwei'),
       transactions: this.blockParams.transactions ?? []
     }
     return new Block(params, this)

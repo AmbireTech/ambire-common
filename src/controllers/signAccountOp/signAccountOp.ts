@@ -1,4 +1,4 @@
-import { ethers } from 'ethers'
+import { AbiCoder, BaseContract, formatUnits, Interface, toBeHex } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import EntryPointAbi from '../../../contracts/compiled/EntryPoint.json'
@@ -77,7 +77,7 @@ function getTokenUsdAmount(token: TokenResult, gasAmount: bigint): string | null
   const usdPriceFormatted = BigInt(usdPrice * 1e18)
 
   // 18 it's because we multiply usdPrice * 1e18 and here we need to deduct it
-  return ethers.formatUnits(gasAmount * usdPriceFormatted, 18 + token.decimals)
+  return formatUnits(gasAmount * usdPriceFormatted, 18 + token.decimals)
 }
 
 const NON_CRITICAL_ERRORS = {
@@ -592,7 +592,7 @@ export class SignAccountOpController extends EventEmitter {
         type: gasRecommendation.name,
         simulatedGasLimit,
         amount,
-        amountFormatted: ethers.formatUnits(amount, Number(this.feeTokenResult!.decimals)),
+        amountFormatted: formatUnits(amount, Number(this.feeTokenResult!.decimals)),
         amountUsd: getTokenUsdAmount(this.feeTokenResult!, amount)
       }
 
@@ -707,7 +707,7 @@ export class SignAccountOpController extends EventEmitter {
 
   #addFeePayment() {
     // In case of gas tank token fee payment, we need to include one more call to account op
-    const abiCoder = new ethers.AbiCoder()
+    const abiCoder = new AbiCoder()
 
     if (this.accountOp!.gasFeePayment!.isGasTank) {
       this.accountOp!.feeCall = {
@@ -731,7 +731,7 @@ export class SignAccountOpController extends EventEmitter {
       }
     } else {
       // token payment
-      const ERC20Interface = new ethers.Interface(ERC20.abi)
+      const ERC20Interface = new Interface(ERC20.abi)
       this.accountOp!.feeCall = {
         to: this.accountOp!.gasFeePayment!.inToken,
         value: 0n,
@@ -831,8 +831,8 @@ export class SignAccountOpController extends EventEmitter {
         }
         const gasPrice =
           (amountInWei - feeTokenEstimation.addedNative) / gasFeePayment.simulatedGasLimit
-        userOperation.maxFeePerGas = ethers.toBeHex(gasPrice)
-        userOperation.maxPriorityFeePerGas = ethers.toBeHex(gasFeePayment.maxPriorityFeePerGas!)
+        userOperation.maxFeePerGas = toBeHex(gasPrice)
+        userOperation.maxPriorityFeePerGas = toBeHex(gasFeePayment.maxPriorityFeePerGas!)
 
         const usesOneTimeNonce = shouldUseOneTimeNonce(userOperation)
         const usesPaymaster = shouldUsePaymaster(this.#network)
@@ -841,7 +841,7 @@ export class SignAccountOpController extends EventEmitter {
           this.#addFeePayment()
         }
 
-        const ambireAccount = new ethers.Interface(AmbireAccount.abi)
+        const ambireAccount = new Interface(AmbireAccount.abi)
         if (usesOneTimeNonce) {
           const signature = await getExecuteSignature(
             this.#network,
@@ -896,11 +896,7 @@ export class SignAccountOpController extends EventEmitter {
 
         if (userOperation.requestType === 'standard') {
           const provider = this.#settings.providers[this.accountOp.networkId]
-          const entryPoint: any = new ethers.BaseContract(
-            ERC_4337_ENTRYPOINT,
-            EntryPointAbi,
-            provider
-          )
+          const entryPoint: any = new BaseContract(ERC_4337_ENTRYPOINT, EntryPointAbi, provider)
           const typedData = getTypedData(
             this.#network.chainId,
             this.accountOp.accountAddr,

@@ -1,22 +1,22 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import { ethers } from 'ethers'
-import {
-  getAction,
-  getLabel,
-  getToken,
-  getRecipientText,
-  getDeadline,
-  getKnownAbi
-} from '../../utils'
+import { Interface, ZeroAddress } from 'ethers'
 
 import { AccountOp } from '../../../accountOp/accountOp'
 import { HumanizerMeta, IrCall } from '../../interfaces'
+import {
+  getAction,
+  getDeadline,
+  getKnownAbi,
+  getLabel,
+  getRecipientText,
+  getToken
+} from '../../utils'
 
 const uniV2Mapping = (
   humanizerInfo: HumanizerMeta,
   _options?: any
 ): { [key: string]: (a: AccountOp, c: IrCall) => IrCall[] } => {
-  const iface = new ethers.Interface(getKnownAbi(humanizerInfo, 'UniV2Router'))
+  const iface = new Interface(getKnownAbi(humanizerInfo, 'UniV2Router'))
   return {
     // ordered in the same order as the router
     [iface.getFunction('swapExactTokensForTokens')?.selector!]: (
@@ -72,7 +72,7 @@ const uniV2Mapping = (
           ...call,
           fullVisualization: [
             getAction('Swap'),
-            getToken(ethers.ZeroAddress, value),
+            getToken(ZeroAddress, value),
             getLabel('for at least'),
             getToken(outputAsset, amountOutMin),
             ...getRecipientText(accountOp.accountAddr, to),
@@ -94,7 +94,7 @@ const uniV2Mapping = (
             getLabel('up to'),
             getToken(path[0], amountInMax),
             getLabel('for at least'),
-            getToken(ethers.ZeroAddress, amountOut),
+            getToken(ZeroAddress, amountOut),
             ...getRecipientText(accountOp.accountAddr, to),
             getDeadline(deadline)
           ]
@@ -113,7 +113,7 @@ const uniV2Mapping = (
             getAction('Swap'),
             getToken(path[0], amountIn),
             getLabel('for at least'),
-            getToken(ethers.ZeroAddress, amountOutMin),
+            getToken(ZeroAddress, amountOutMin),
             ...getRecipientText(accountOp.accountAddr, to),
             getDeadline(deadline)
           ]
@@ -133,7 +133,7 @@ const uniV2Mapping = (
           fullVisualization: [
             getAction('Swap'),
             getLabel('up to'),
-            getToken(ethers.ZeroAddress, value),
+            getToken(ZeroAddress, value),
             getLabel('for at least'),
             getToken(outputAsset, amountOut),
             ...getRecipientText(accountOp.accountAddr, to),
@@ -185,7 +185,7 @@ const uniV2Mapping = (
             getAction('Add liquidity'),
             getToken(token, amountTokenDesired),
             getLabel('and'),
-            getToken(ethers.ZeroAddress, value),
+            getToken(ZeroAddress, value),
             ...getRecipientText(accountOp.accountAddr, to),
             getDeadline(deadline)
           ]
@@ -227,7 +227,7 @@ const uniV2Mapping = (
             getLabel('at least'),
             getToken(token, amountTokenMin),
             getLabel('and'),
-            getToken(ethers.ZeroAddress, amountETHMin),
+            getToken(ZeroAddress, amountETHMin),
             ...getRecipientText(accountOp.accountAddr, to),
             getDeadline(deadline)
           ]

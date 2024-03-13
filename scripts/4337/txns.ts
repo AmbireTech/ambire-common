@@ -1,9 +1,11 @@
-import { Wallet, Contract, keccak256, AbiCoder, getBytes, JsonRpcProvider, ethers } from 'ethers'
+import { Contract, getBytes, JsonRpcProvider, toBeHex, Wallet } from 'ethers'
 import fetch from 'node-fetch'
-import { wrapEthSign } from '../../test/ambireSign'
-import AMBIRE_ACCOUNT from '../../contracts/compiled/AmbireAccount.json'
-import ENTRY_POINT_ABI from './ENTRY_POINT.json'
+
 import { StaticJsonRpcProvider } from '@ethersproject/providers'
+
+import AMBIRE_ACCOUNT from '../../contracts/compiled/AmbireAccount.json'
+import { wrapEthSign } from '../../test/ambireSign'
+import ENTRY_POINT_ABI from './ENTRY_POINT.json'
 
 const AMBIRE_ACCOUNT_ADDR = '0xD1cE5E6AE56693D2D3D52b2EBDf969C1D7901971'
 const SIGNER_PRIV_KEY = '0x574f261b776b26b1ad75a991173d0e8ca2ca1d481bd7822b2b58b2ef8a969f12'
@@ -32,12 +34,12 @@ async function test() {
 
   const userOperation = {
     sender: AMBIRE_ACCOUNT_ADDR,
-    nonce: ethers.toBeHex(newNonce, 1),
+    nonce: toBeHex(newNonce, 1),
     initCode: '0x',
     callData,
-    callGasLimit: ethers.toBeHex(100000), // hardcode it for now at a high value
-    verificationGasLimit: ethers.toBeHex(500000), // hardcode it for now at a high value
-    preVerificationGas: ethers.toBeHex(50000), // hardcode it for now at a high value
+    callGasLimit: toBeHex(100000), // hardcode it for now at a high value
+    verificationGasLimit: toBeHex(500000), // hardcode it for now at a high value
+    preVerificationGas: toBeHex(50000), // hardcode it for now at a high value
     maxFeePerGas: gasPrice,
     maxPriorityFeePerGas: gasPrice,
     paymasterAndData: '0x',
@@ -61,26 +63,29 @@ async function test() {
 
   userOperation.paymasterAndData = paymasterAndData
 
-  const signature = wrapEthSign(await signer.signMessage(
-    getBytes(await entryPoint.getUserOpHash(userOperation))
-  ))
+  const signature = wrapEthSign(
+    await signer.signMessage(getBytes(await entryPoint.getUserOpHash(userOperation)))
+  )
   userOperation.signature = signature
 
-  const userOperationHash = await pimlicoProvider.send("eth_sendUserOperation", [userOperation, ENTRY_POINT_ADDR])
-  console.log("UserOperation hash:", userOperationHash)
+  const userOperationHash = await pimlicoProvider.send('eth_sendUserOperation', [
+    userOperation,
+    ENTRY_POINT_ADDR
+  ])
+  console.log('UserOperation hash:', userOperationHash)
 
   // let's also wait for the userOperation to be included, by continually querying for the receipts
-  console.log("Querying for receipts...")
+  console.log('Querying for receipts...')
   let receipt = null
   let counter = 0
   while (receipt === null) {
     try {
-      await new Promise((r) => setTimeout(r, 1000)) //sleep
+      await new Promise((r) => setTimeout(r, 1000)) // sleep
       counter++
-      receipt = await pimlicoProvider.send("eth_getUserOperationReceipt", [userOperationHash])
+      receipt = await pimlicoProvider.send('eth_getUserOperationReceipt', [userOperationHash])
       console.log(receipt)
     } catch (e) {
-      console.log('error throwed, retry counter ' + counter)
+      console.log(`error throwed, retry counter ${counter}`)
     }
   }
 }

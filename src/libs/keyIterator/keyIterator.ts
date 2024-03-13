@@ -1,5 +1,5 @@
 /* eslint-disable new-cap */
-import { ethers, HDNodeWallet, Mnemonic, Wallet } from 'ethers'
+import { HDNodeWallet, keccak256, Mnemonic, Wallet } from 'ethers'
 
 import {
   HD_PATH_TEMPLATE_TYPE,
@@ -47,7 +47,7 @@ export function derivePrivateKeyFromAnotherPrivateKey(privateKey: string) {
 
   // Hash the buffer, and convert to a hex string
   // that ultimately represents a derived (second) private key
-  return ethers.keccak256(buffer)
+  return keccak256(buffer)
 }
 
 /**
