@@ -307,17 +307,18 @@ export class EmailVaultController extends EventEmitter {
     let result: Boolean | null = false
     let magicKey = await this.#getMagicLinkKey(email)
 
-    if (!this.#shouldStopConfirmationPolling) {
+    if (!magicKey?.key && !this.#shouldStopConfirmationPolling) {
+      await this.handleMagicLinkKey(email, async () => {
+        magicKey = await this.#getMagicLinkKey(email)
+      })
+    }
+
+    if (this.#shouldStopConfirmationPolling) {
       this.#isUploadingSecret = false
       this.emitUpdate()
       return
     }
 
-    if (!magicKey?.key) {
-      await this.handleMagicLinkKey(email, async () => {
-        magicKey = await this.#getMagicLinkKey(email)
-      })
-    }
     if (magicKey?.key) {
       this.#isUploadingSecret = true
       const randomBytes = crypto.randomBytes(32)
@@ -326,13 +327,12 @@ export class EmailVaultController extends EventEmitter {
       await this.#keyStore.addSecret(RECOVERY_SECRET_ID, newSecret, '', false)
       const keyStoreUid = await this.#keyStore.getKeyStoreUid()
       result = await this.#emailVault.addKeyStoreSecret(email, magicKey.key, keyStoreUid, newSecret)
-    } else {
+    } else
       this.emitError({
         message: 'Email key not confirmed',
         level: 'minor',
         error: new Error('uploadKeyStoreSecret: not confirmed magic link key')
       })
-    }
 
     if (result) {
       await this.#getEmailVaultInfo(email)
@@ -343,6 +343,9 @@ export class EmailVaultController extends EventEmitter {
         error: new Error('error upload keyStore to email vault')
       })
     }
+
+    this.#isUploadingSecret = false
+    this.emitUpdate()
   }
 
   async recoverKeyStore(email: string, newPassword: string) {
