@@ -22,7 +22,10 @@ export interface GasFeePayment {
   amount: bigint
   simulatedGasLimit: bigint
   maxPriorityFeePerGas?: bigint
-  baseFeePerGas?: bigint
+  // in l2s, to calculate correctly the preVerificationGas,
+  // we use the baseFee for each speed in reverse order as dividing
+  // by a greater baseFee gives smaller gas fee. That's why we need this
+  baseFeeToDivide: bigint
 }
 
 export enum AccountOpStatus {

@@ -125,6 +125,24 @@ async function fetchFunc4bytes(selector: string, options: any): Promise<Humanize
   return null
 }
 
+function extractAddresses(data: string, _selector: string): string[] {
+  const selector = _selector.startsWith('function') ? _selector : `function ${_selector}`
+  const iface = new ethers.Interface([selector])
+  const args = iface.decodeFunctionData(selector, data)
+  const deepSearchForAddress = (obj: { [prop: string]: any }): string[] => {
+    return (
+      Object.values(obj)
+        .map((o: any): string[] | undefined => {
+          if (typeof o === 'string' && ethers.isAddress(o)) return [o] as string[]
+          if (typeof o === 'object') return deepSearchForAddress(o).filter((x) => x) as string[]
+          return undefined
+        })
+        .filter((x) => x) as string[][]
+    ).flat() as string[]
+  }
+  return deepSearchForAddress(args)
+}
+
 export const fallbackHumanizer: HumanizerCallModule = (
   accountOp: AccountOp,
   currentIrCalls: IrCall[],
@@ -140,6 +158,22 @@ export const fallbackHumanizer: HumanizerCallModule = (
 
     const visualization: Array<HumanizerVisualization> = []
     if (call.data !== '0x') {
+      let extractedAddresses: string[] = []
+      try {
+        if (knownSigHashes[call.data.slice(0, 10)]?.signature)
+          extractedAddresses = extractAddresses(
+            call.data,
+            knownSigHashes[call.data.slice(0, 10)].signature
+          )
+      } catch (e) {
+        options.emitError({
+          message: 'Failed to extract addresses and token from this txn',
+          level: 'minor',
+          error: new Error(
+            `Internal error fallback module: Failed to extract addresses and token from this txn ${e}`
+          )
+        })
+      }
       if (knownSigHashes[call.data.slice(0, 10)]) {
         visualization.push(
           getAction(
@@ -153,7 +187,10 @@ export const fallbackHumanizer: HumanizerCallModule = (
             }`
           ),
           getLabel('from'),
-          getAddressVisualization(call.to)
+          getAddressVisualization(call.to),
+          ...extractedAddresses.map(
+            (a): HumanizerVisualization => ({ ...getToken(a, 0n), isHidden: true })
+          )
         )
       } else {
         // const promise = fetchFuncEtherface(call.data.slice(0, 10), options)

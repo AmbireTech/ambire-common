@@ -43,6 +43,21 @@ const key1to11BasicAccUsedForSmartAccKeysOnlyPublicAddresses = Array.from(
 )
 
 const key1PublicAddress = key1to11BasicAccPublicAddresses[0]
+const key1PrivateKey = getPrivateKeyFromSeed(
+  process.env.SEED,
+  0,
+  BIP44_STANDARD_DERIVATION_TEMPLATE
+)
+const key1UsedForSmartAccKeysOnlyPrivateKey = getPrivateKeyFromSeed(
+  process.env.SEED,
+  SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET,
+  BIP44_STANDARD_DERIVATION_TEMPLATE
+)
+const key2UsedForSmartAccKeysOnlyPrivateKey = getPrivateKeyFromSeed(
+  process.env.SEED,
+  1 + SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET,
+  BIP44_STANDARD_DERIVATION_TEMPLATE
+)
 
 const basicAccount: Account = {
   addr: key1PublicAddress,
@@ -290,6 +305,56 @@ describe('AccountAdder', () => {
     accountAdder.setPage({ page: 1, networks, providers })
   })
 
+  test('should NOT be able to select the same account more than once', (done) => {
+    // 3 subscriptions to select the same account account again and again
+    let emitCounter1 = 0
+    const unsubscribe1 = accountAdder.onUpdate(() => {
+      emitCounter1++
+
+      if (emitCounter1 === 3) accountAdder.selectAccount(basicAccount)
+    })
+
+    let emitCounter2 = 0
+    const unsubscribe2 = accountAdder.onUpdate(() => {
+      emitCounter2++
+
+      if (emitCounter2 === 4) accountAdder.selectAccount(basicAccount)
+    })
+
+    let emitCounter3 = 0
+    const unsubscribe3 = accountAdder.onUpdate(() => {
+      emitCounter3++
+
+      if (emitCounter3 === 5) accountAdder.selectAccount(basicAccount)
+    })
+
+    // A separate subscription to check if the account got selected only once
+    let emitCounter4 = 0
+    const unsubscribe4 = accountAdder.onUpdate(() => {
+      emitCounter4++
+
+      if (emitCounter4 === 6) {
+        expect(accountAdder.selectedAccounts).toHaveLength(1)
+        const selectedAccountAddr = accountAdder.selectedAccounts.map((a) => a.account.addr)
+        expect(selectedAccountAddr).toContain(basicAccount.addr)
+
+        unsubscribe1()
+        unsubscribe2()
+        unsubscribe3()
+        unsubscribe4()
+        done()
+      }
+    })
+
+    const keyIterator = new KeyIterator(process.env.SEED)
+    accountAdder.init({
+      keyIterator,
+      pageSize: 1,
+      hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
+    })
+    accountAdder.setPage({ page: 1, networks, providers })
+  })
+
   test('should be able to select all the keys of a selected basic account (always one key)', (done) => {
     // Subscription to select an account
     let emitCounter1 = 0
@@ -357,6 +422,62 @@ describe('AccountAdder', () => {
             index: SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET,
             slot: 1
           })
+
+        unsubscribe1()
+        unsubscribe2()
+        done()
+      }
+    })
+
+    const keyIterator = new KeyIterator(process.env.SEED)
+    accountAdder.init({
+      keyIterator,
+      hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
+    })
+    accountAdder.setPage({ page: 1, networks, providers })
+  })
+
+  test('should retrieve all internal keys selected 1) basic accounts and 2) smart accounts', (done) => {
+    // Subscription to select accounts
+    let emitCounter1 = 0
+    const unsubscribe1 = accountAdder.onUpdate(() => {
+      emitCounter1++
+
+      // First - init, second - start deriving, third - deriving done
+      if (emitCounter1 === 3) {
+        accountAdder.selectAccount(basicAccount)
+        const firstSmartAccount = accountAdder.accountsOnPage.find(
+          (x) => x.slot === 1 && isSmartAccount(x.account)
+        )
+        const secondSmartAccount = accountAdder.accountsOnPage.find(
+          (x) => x.slot === 2 && isSmartAccount(x.account)
+        )
+        if (firstSmartAccount) accountAdder.selectAccount(firstSmartAccount.account)
+        if (secondSmartAccount) accountAdder.selectAccount(secondSmartAccount.account)
+      }
+    })
+
+    let emitCounter2 = 0
+    const unsubscribe2 = accountAdder.onUpdate(() => {
+      emitCounter2++
+
+      // Select account emit is triggered
+      if (emitCounter2 === 5) {
+        const internalKeys = accountAdder.retrieveInternalKeysOfSelectedAccounts()
+
+        expect(internalKeys).toHaveLength(3)
+        expect(internalKeys).toContainEqual({
+          privateKey: key1PrivateKey,
+          dedicatedToOneSA: true
+        })
+        expect(internalKeys).toContainEqual({
+          privateKey: key1UsedForSmartAccKeysOnlyPrivateKey,
+          dedicatedToOneSA: true
+        })
+        expect(internalKeys).toContainEqual({
+          privateKey: key2UsedForSmartAccKeysOnlyPrivateKey,
+          dedicatedToOneSA: true
+        })
 
         unsubscribe1()
         unsubscribe2()

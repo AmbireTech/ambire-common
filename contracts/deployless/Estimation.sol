@@ -48,7 +48,8 @@ contract Estimation is Spoof {
     uint256 gasUsed;
     uint256 baseFee;
     uint256 fee;
-    uint256 feeWithPayment;
+    uint256 feeWithNativePayment;
+    uint256 feeWithTransferPayment;
     address gasOracle;
   }
 
@@ -115,12 +116,7 @@ contract Estimation is Spoof {
         outcome.feeTokenOutcomes = simulateFeePayments(account, feeTokens, spoofSig, relayer);
       }
 
-      bytes memory fakeFeeCall = abi.encode(
-        relayer,
-        0,
-        abi.encodeWithSelector(IERC20Subset.transfer.selector, relayer, 1)
-      );
-      outcome.l1GasEstimation = this.getL1GasEstimation(probableCallData, fakeFeeCall);
+      outcome.l1GasEstimation = this.getL1GasEstimation(probableCallData, relayer);
     }
 
     // if there are associatedKeys and a valid spoofSig was generated, check if the account
@@ -299,16 +295,26 @@ contract Estimation is Spoof {
 
   function getL1GasEstimation(
     bytes calldata data,
-    bytes calldata feeCall
+    address feeCollector
   ) external returns (L1GasEstimation memory l1GasEstimation) {
     l1Oracles[10] = address(0x420000000000000000000000000000000000000F);
     l1Oracles[8453] = address(0x420000000000000000000000000000000000000F);
 
+    bytes memory nativeFeeCall = abi.encode(feeCollector, 1, '0x');
+    bytes memory transferFeeCall = abi.encode(
+      feeCollector,
+      0,
+      abi.encodeWithSelector(IERC20Subset.transfer.selector, feeCollector, 1)
+    );
+
     if (l1Oracles[block.chainid] != address(0)) {
       l1GasEstimation.gasUsed = IGasPriceOracle(l1Oracles[block.chainid]).getL1GasUsed(data);
       l1GasEstimation.fee = IGasPriceOracle(l1Oracles[block.chainid]).getL1Fee(data);
-      l1GasEstimation.feeWithPayment = IGasPriceOracle(l1Oracles[block.chainid]).getL1Fee(
-        bytes.concat(data, feeCall)
+      l1GasEstimation.feeWithNativePayment = IGasPriceOracle(l1Oracles[block.chainid]).getL1Fee(
+        bytes.concat(data, nativeFeeCall)
+      );
+      l1GasEstimation.feeWithTransferPayment = IGasPriceOracle(l1Oracles[block.chainid]).getL1Fee(
+        bytes.concat(data, transferFeeCall)
       );
       l1GasEstimation.baseFee = IGasPriceOracle(l1Oracles[block.chainid]).l1BaseFee();
       l1GasEstimation.gasOracle = l1Oracles[block.chainid];

@@ -5,15 +5,13 @@ import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFacto
 import EntryPoint from '../../../contracts/compiled/EntryPoint.json'
 import { AccountOnchainState } from '../../interfaces/account'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
-import bundler from '../../services/bundlers'
 import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
 import { UserOperation } from '../userOperation/types'
 import {
   getCleanUserOp,
   getOneTimeNonce,
   getPaymasterSpoof,
-  getSigForCalculations,
-  isErc4337Broadcast
+  getSigForCalculations
 } from '../userOperation/userOperation'
 
 // https://eips.ethereum.org/EIPS/eip-1559
@@ -36,6 +34,10 @@ export interface GasPriceRecommendation {
 export interface Gas1559Recommendation {
   name: string
   baseFeePerGas: bigint
+  // in l2s, to calculate correctly the preVerificationGas,
+  // we use the baseFee for each speed in reverse order as dividing
+  // by a greater baseFee gives smaller gas fee. That's why we need this
+  baseFeeToDivide: bigint
   maxPriorityFeePerGas: bigint
 }
 export type GasRecommendation = GasPriceRecommendation | Gas1559Recommendation
@@ -119,21 +121,11 @@ async function refetchBlock(
 export async function getGasPriceRecommendations(
   provider: Provider,
   network: NetworkDescriptor,
-  blockTag: string | number = -1,
-  selectedAccountState: AccountOnchainState | null = null
+  blockTag: string | number = -1
 ): Promise<GasRecommendation[]> {
   const lastBlock = await refetchBlock(provider, blockTag)
   // https://github.com/ethers-io/ethers.js/issues/3683#issuecomment-1436554995
   const txns = lastBlock.prefetchedTransactions
-
-  // Call the bundler to fetch the correct userOp prices for the time being.
-  // We want someday to estimate these ourselves as we don't want to rely
-  // on the bundler. But estimation is pretty difficult and each network
-  // comes with its caveats. Also, the bundlers will start disallowing soon
-  // user ops with low fees, making our estimation riskier
-  if (selectedAccountState && isErc4337Broadcast(network, selectedAccountState)) {
-    return bundler.pollGetUserOpGasPrice(network)
-  }
 
   if (network.feeOptions.is1559 && lastBlock.baseFeePerGas != null) {
     // https://eips.ethereum.org/EIPS/eip-1559
@@ -161,12 +153,24 @@ export async function getGasPriceRecommendations(
     }
 
     const tips = filterOutliers(txns.map((x) => x.maxPriorityFeePerGas!).filter((x) => x > 0))
-    return speeds.map(({ name, baseFeeAddBps }, i) => ({
-      name,
-      baseFeePerGas: expectedBaseFee + (expectedBaseFee * baseFeeAddBps) / 10000n,
-      maxPriorityFeePerGas:
-        network.id === 'arbitrum' ? 0n : average(nthGroup(tips, i, speeds.length))
-    }))
+    return speeds.map(({ name, baseFeeAddBps }, i) => {
+      const baseFee = expectedBaseFee + (expectedBaseFee * baseFeeAddBps) / 10000n
+      const baseFeeToDivide =
+        expectedBaseFee + (expectedBaseFee * speeds[speeds.length - (i + 1)].baseFeeAddBps) / 10000n
+
+      // maxPriorityFeePerGas is important for networks with longer block time
+      // like Ethereum (12s) but not at all for L2s with instant block creation.
+      // For L2s we hardcode the maxPriorityFee to 100n
+      const maxPriorityFeePerGas =
+        network.feeOptions.maxPriorityFee ?? average(nthGroup(tips, i, speeds.length))
+
+      return {
+        name,
+        baseFeePerGas: baseFee,
+        baseFeeToDivide,
+        maxPriorityFeePerGas
+      }
+    })
   }
   const prices = filterOutliers(txns.map((x) => x.gasPrice!).filter((x) => x > 0))
   return speeds.map(({ name }, i) => ({
@@ -198,9 +202,8 @@ export function getProbableCallData(
       localOp.nonce = getOneTimeNonce(localOp)
     }
 
-    // include the paymaster as a fee commitment always as we can't detect at
-    // this stage whether we're using a fee token (should use paymaster)
-    // and it's better to overestimate instead of under
+    // TODO: if the network doesn't have a paymaster, do not include
+    // the paymaster in the l1 fee calculations
     localOp.paymasterAndData = getPaymasterSpoof()
 
     const entryPoint = new Interface(EntryPoint)

@@ -1,12 +1,13 @@
 import erc20Abi from 'adex-protocol-eth/abi/ERC20.json'
-import { formatUnits, Interface, parseUnits } from 'ethers'
+import { formatUnits, Interface, isAddress, parseUnits } from 'ethers'
 
-import { HumanizerMeta } from '../../libs/humanizer/interfaces'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { networks } from '../../consts/networks'
+import { Account } from '../../interfaces/account'
 import { AddressState } from '../../interfaces/domains'
 import { TransferUpdate } from '../../interfaces/transfer'
 import { UserRequest } from '../../interfaces/userRequest'
+import { HumanizerMeta } from '../../libs/humanizer/interfaces'
 import { TokenResult } from '../../libs/portfolio'
 import { validateSendTransferAddress, validateSendTransferAmount } from '../../services/validations'
 import EventEmitter from '../eventEmitter/eventEmitter'
@@ -59,6 +60,8 @@ export class TransferController extends EventEmitter {
     id: string
     unstoppableDomainsChain: string
   } | null = null
+
+  #accounts: Account[] = []
 
   #selectedAccount: string | null = null
 
@@ -191,6 +194,7 @@ export class TransferController extends EventEmitter {
   }
 
   update({
+    accounts,
     selectedAccount,
     humanizerInfo,
     tokens,
@@ -201,6 +205,9 @@ export class TransferController extends EventEmitter {
     isRecipientAddressUnknownAgreed,
     isTopUp
   }: TransferUpdate) {
+    if (accounts) {
+      this.#accounts = accounts
+    }
     if (humanizerInfo) {
       this.#humanizerInfo = humanizerInfo
     }
@@ -301,9 +308,16 @@ export class TransferController extends EventEmitter {
         !!this.#humanizerInfo.knownAddresses[this.recipientAddress.toLowerCase()]?.isSC
     }
 
+    const isAddressInWallet = this.#accounts.some(
+      ({ addr }) => addr.toLowerCase() === this.recipientAddress.toLowerCase()
+    )
+
     // @TODO: isValidAddress & check from the address book
     this.isRecipientAddressUnknown =
+      isAddress(this.recipientAddress) &&
+      !isAddressInWallet &&
       this.recipientAddress.toLowerCase() !== FEE_COLLECTOR.toLowerCase()
+    this.isRecipientAddressUnknownAgreed = false
 
     this.emitUpdate()
   }
