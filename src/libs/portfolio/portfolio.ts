@@ -231,10 +231,10 @@ export class Portfolio {
         try {
           const priceData = await this.batchedGecko({
             ...token,
-            networkId,
+            network: this.network,
             baseCurrency,
             // this is what to look for in the coingecko response object
-            responseIdentifier: geckoResponseIdentifier(token.address, networkId)
+            responseIdentifier: geckoResponseIdentifier(token.address, this.network)
           })
           const priceIn: Price[] = Object.entries(priceData || {}).map(([baseCurr, price]) => ({
             baseCurrency: baseCurr,
