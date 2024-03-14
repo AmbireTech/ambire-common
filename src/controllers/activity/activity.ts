@@ -1,9 +1,9 @@
 /* eslint-disable import/no-extraneous-dependencies */
 
+import { SettingsController } from 'controllers/settings/settings'
 import { JsonRpcProvider } from 'ethers'
 import fetch from 'node-fetch'
 
-import { networks } from '../../consts/networks'
 import { AccountStates } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
 import { Storage } from '../../interfaces/storage'
@@ -125,14 +125,14 @@ export class ActivityController extends EventEmitter {
 
   isInitialized: boolean = false
 
-  #relayerUrl: string
+  #settings: SettingsController
 
-  constructor(storage: Storage, accountStates: AccountStates, relayerUrl: string) {
+  constructor(storage: Storage, accountStates: AccountStates, settings: SettingsController) {
     super()
     this.#storage = storage
     this.#accountStates = accountStates
+    this.#settings = settings
     this.#initialLoadPromise = this.#load()
-    this.#relayerUrl = relayerUrl
   }
 
   async #load(): Promise<void> {
@@ -268,7 +268,7 @@ export class ActivityController extends EventEmitter {
 
     await Promise.all(
       Object.keys(this.#accountsOps[this.filters.account]).map(async (network) => {
-        const networkConfig = networks.find((x) => x.id === network)
+        const networkConfig = this.#settings.networks.find((x) => x.id === network)
         const provider = new JsonRpcProvider(networkConfig!.rpcUrl)
 
         return Promise.all(
@@ -436,7 +436,7 @@ export class ActivityController extends EventEmitter {
 
   get banners(): Banner[] {
     return this.broadcastedButNotConfirmed.map((accountOp) => {
-      const network = networks.find((x) => x.id === accountOp.networkId)!
+      const network = this.#settings.networks.find((x) => x.id === accountOp.networkId)!
 
       const is4337 = isErc4337Broadcast(
         network,
