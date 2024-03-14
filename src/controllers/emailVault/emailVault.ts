@@ -204,6 +204,11 @@ export class EmailVaultController extends EventEmitter {
       1000
     )
 
+    if (this.#shouldStopConfirmationPolling) {
+      this.emitUpdate()
+      return
+    }
+
     if (ev && !ev.error) {
       this.#isWaitingEmailConfirmation = false
       this.#magicLinkKeys[email] = {
@@ -214,12 +219,13 @@ export class EmailVaultController extends EventEmitter {
       fn && (await fn())
       this.storage.set(MAGIC_LINK_STORAGE_KEY, this.#magicLinkKeys)
       this.#requestSessionKey(email)
-    } else if (!this.#shouldStopConfirmationPolling)
+    } else {
       this.emitError({
         message: `Unexpected error getting email vault for ${email}`,
         level: 'major',
         error: new Error(`Unexpected error getting email vault for ${email}`)
       })
+    }
     this.emitUpdate()
   }
 
