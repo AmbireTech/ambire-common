@@ -17,7 +17,7 @@ const networks: NetworkDescriptor[] = [
     isSAEnabled: true,
     areContractsDeployed: true,
     hasRelayer: true,
-    hasSimulations: true,
+    hasDebugTraceCall: true,
     features: [],
     feeOptions: {
       is1559: true
@@ -39,7 +39,7 @@ const networks: NetworkDescriptor[] = [
     isSAEnabled: true,
     areContractsDeployed: true,
     hasRelayer: true,
-    hasSimulations: true,
+    hasDebugTraceCall: true,
     features: [],
     feeOptions: {
       is1559: false,
@@ -62,7 +62,7 @@ const networks: NetworkDescriptor[] = [
     isSAEnabled: true,
     areContractsDeployed: true,
     hasRelayer: true,
-    hasSimulations: true,
+    hasDebugTraceCall: true,
     features: [],
     feeOptions: {
       is1559: true,
@@ -90,7 +90,7 @@ const networks: NetworkDescriptor[] = [
     isSAEnabled: true,
     areContractsDeployed: true,
     hasRelayer: true,
-    hasSimulations: true,
+    hasDebugTraceCall: true,
     features: [],
     feeOptions: {
       is1559: true,
@@ -114,7 +114,7 @@ const networks: NetworkDescriptor[] = [
     isSAEnabled: true,
     areContractsDeployed: true,
     hasRelayer: true,
-    hasSimulations: true,
+    hasDebugTraceCall: true,
     features: [],
     feeOptions: {
       is1559: true,

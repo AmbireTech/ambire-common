@@ -250,6 +250,10 @@ describe('Settings Controller', () => {
 
       expect(mantleNetwork?.features.length).toBe(3)
 
+      // simulation is somewhat supported
+      expect(mantleNetwork?.rpcNoStateOverride).toBe(false)
+      expect(mantleNetwork?.hasDebugTraceCall).toBe(false)
+
       // contracts are not deployed
       const saSupport = mantleNetwork?.features.find((feat) => feat.id === 'saSupport')
       expect(saSupport).not.toBe(null)
@@ -262,11 +266,11 @@ describe('Settings Controller', () => {
       expect(noFeeTokens).not.toBe(undefined)
       expect(noFeeTokens!.level).toBe('warning')
 
-      // no fee tokens
+      // somewhat simulation
       const simulation = mantleNetwork?.features.find((feat) => feat.id === 'simulation')
       expect(simulation).not.toBe(null)
       expect(simulation).not.toBe(undefined)
-      expect(simulation!.level).toBe('success')
+      expect(simulation!.level).toBe('warning')
 
       checks++
       if (checks === 3) {
@@ -354,6 +358,10 @@ describe('Settings Controller', () => {
       // it is not optimistic
       expect(fantomNetwork?.isOptimistic).toBe(false)
 
+      // simulation is somewhat supported
+      expect(fantomNetwork?.rpcNoStateOverride).toBe(false)
+      expect(fantomNetwork?.hasDebugTraceCall).toBe(false)
+
       // contracts are not deployed
       const saSupport = fantomNetwork?.features.find((feat) => feat.id === 'saSupport')
       expect(saSupport).not.toBe(null)
@@ -366,11 +374,11 @@ describe('Settings Controller', () => {
       expect(noFeeTokens).not.toBe(undefined)
       expect(noFeeTokens!.level).toBe('warning')
 
-      // no fee tokens
+      // somewhat simulation
       const simulation = fantomNetwork?.features.find((feat) => feat.id === 'simulation')
       expect(simulation).not.toBe(null)
       expect(simulation).not.toBe(undefined)
-      expect(simulation!.level).toBe('success')
+      expect(simulation!.level).toBe('warning')
 
       done()
     })

@@ -12,7 +12,7 @@ import {
   RPCProviders
 } from '../../interfaces/settings'
 import { Storage } from '../../interfaces/storage'
-import { getSASupport } from '../../libs/deployless/simulateDeployCall'
+import { getSASupport, simulateDebugTraceCall } from '../../libs/deployless/simulateDeployCall'
 import { getFeaturesByNetworkProperties, getNetworkInfo } from '../../libs/settings/settings'
 import { isValidAddress } from '../../services/address'
 import EventEmitter from '../eventEmitter/eventEmitter'
@@ -78,7 +78,6 @@ export class SettingsController extends EventEmitter {
 
       return {
         id,
-        rpcNoStateOverride: false,
         unstoppableDomainsChain: 'ERC20',
         name: customNetwork.name,
         nativeAssetSymbol: customNetwork.nativeAssetSymbol,
@@ -89,11 +88,12 @@ export class SettingsController extends EventEmitter {
         isSAEnabled: customNetwork.isSAEnabled ?? false,
         areContractsDeployed: customNetwork.areContractsDeployed ?? false,
         isOptimistic: 'isOptimistic' in customNetwork ? customNetwork.isOptimistic : false,
+        rpcNoStateOverride: customNetwork.rpcNoStateOverride ?? true,
+        hasDebugTraceCall: customNetwork.hasDebugTraceCall ?? false,
         feeOptions: customNetwork.feeOptions ?? {
           is1559: false
         },
         features,
-        hasSimulations: customNetwork.hasSimulations ?? false,
         hasRelayer: false
       }
     })
@@ -117,10 +117,11 @@ export class SettingsController extends EventEmitter {
 
       finalNetwork.features = getFeaturesByNetworkProperties(
         finalNetwork.isSAEnabled,
-        finalNetwork.hasSimulations,
+        finalNetwork.rpcNoStateOverride,
         finalNetwork.erc4337,
         finalNetwork.areContractsDeployed,
-        finalNetwork.hasRelayer
+        finalNetwork.hasRelayer,
+        finalNetwork.hasDebugTraceCall
       )
       return finalNetwork
     })
@@ -289,7 +290,8 @@ export class SettingsController extends EventEmitter {
       const {
         isSAEnabled,
         isOptimistic,
-        hasSimulations,
+        rpcNoStateOverride,
+        hasDebugTraceCall,
         erc4337,
         areContractsDeployed,
         feeOptions
@@ -302,7 +304,8 @@ export class SettingsController extends EventEmitter {
         isSAEnabled,
         areContractsDeployed,
         isOptimistic,
-        hasSimulations
+        rpcNoStateOverride,
+        hasDebugTraceCall
       }
     } catch (e: any) {
       this.emitError({
@@ -347,8 +350,12 @@ export class SettingsController extends EventEmitter {
     // state overrided. If it doesn't, add a warning
     if (changedNetworkPreferences.rpcUrl) {
       const provider = new JsonRpcProvider(changedNetworkPreferences.rpcUrl as string)
-      const saSupport = await getSASupport(provider).catch(() => ({ supportsStateOverride: false }))
-      changedNetworkPreferences.hasSimulations = saSupport.supportsStateOverride
+      const [saSupport, hasDebugTraceCall] = await Promise.all([
+        getSASupport(provider).catch(() => ({ supportsStateOverride: false })),
+        simulateDebugTraceCall(provider)
+      ])
+      changedNetworkPreferences.rpcNoStateOverride = !saSupport.supportsStateOverride
+      changedNetworkPreferences.hasDebugTraceCall = hasDebugTraceCall
     }
 
     // Update the network preferences with the incoming new values

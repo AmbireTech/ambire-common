@@ -24,7 +24,8 @@ export type NetworkPreference = {
   chainId?: bigint
   nativeAssetSymbol?: string
   explorerUrl?: string
-  hasSimulations?: boolean
+  rpcNoStateOverride?: boolean
+  hasDebugTraceCall?: boolean
 }
 
 export type CustomNetwork = {
@@ -43,7 +44,8 @@ export type CustomNetwork = {
     is1559: boolean
   }
   isOptimistic?: boolean
-  hasSimulations?: boolean
+  rpcNoStateOverride?: boolean
+  hasDebugTraceCall?: boolean
 }
 
 export type NetworkPreferences = {

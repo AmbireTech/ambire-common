@@ -52,3 +52,42 @@ export async function getSASupport(
     supportsStateOverride
   }
 }
+
+export async function simulateDebugTraceCall(
+  provider: JsonRpcProvider /* as Provider does not have .send */
+): Promise<boolean> {
+  let supportsDebugTraceCall = true
+
+  await provider
+    .send('debug_traceCall', [
+      {
+        to: DEPLOYLESS_SIMULATION_FROM,
+        value: '0x01',
+        data: '0x',
+        from: ZeroAddress,
+        gasPrice: '0x104240',
+        gas: '0x104240'
+      },
+      'latest',
+      {
+        tracer:
+          "{data: [], fault: function (log) {}, step: function (log) { if (log.op.toString() === 'LOG3') { this.data.push([ toHex(log.contract.getAddress()), '0x' + ('0000000000000000000000000000000000000000' + log.stack.peek(4).toString(16)).slice(-40)])}}, result: function () { return this.data }}",
+        enableMemory: false,
+        enableReturnData: true,
+        disableStorage: true
+      }
+    ])
+    .catch((e: any) => {
+      if (
+        e.message.includes('not whitelisted') ||
+        e.message.includes('not exist') ||
+        e.message.includes("doesn't exist") ||
+        e.message.includes('not available') ||
+        e.code === 'UNSUPPORTED_OPERATION'
+      ) {
+        supportsDebugTraceCall = false
+      }
+    })
+
+  return supportsDebugTraceCall
+}
