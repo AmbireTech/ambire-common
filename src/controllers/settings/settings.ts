@@ -1,4 +1,4 @@
-import { JsonRpcProvider } from 'ethers'
+import { JsonRpcProvider, Network } from 'ethers'
 
 import { networks } from '../../consts/networks'
 import { Key } from '../../interfaces/keystore'
@@ -35,14 +35,14 @@ export class SettingsController extends EventEmitter {
     this.#load()
   }
 
-  #setProvider(networkId: NetworkId, newRpcUrl: string) {
-    const provider = this.providers[networkId]
+  #setProvider(network: NetworkDescriptor, newRpcUrl: string, isCustom: boolean) {
+    const provider = this.providers[network.id]
 
     // Only update the RPC if the new RPC is different from the current one
     // or if there is no RPC for this network yet.
     // eslint-disable-next-line no-underscore-dangle
     if (!provider || provider?._getConnection().url !== newRpcUrl) {
-      const oldRPC = this.providers[networkId]
+      const oldRPC = this.providers[network.id]
 
       if (oldRPC) {
         // If an RPC fails once it will try to reconnect every second. If we don't destroy the old RPC
@@ -50,7 +50,18 @@ export class SettingsController extends EventEmitter {
         oldRPC.destroy()
       }
 
-      this.providers[networkId] = new JsonRpcProvider(newRpcUrl)
+      // when setting the provider for a custom network, we set it with
+      // a batchMaxSize of 2 as some custom networks don't support bigger
+      // batching
+      if (isCustom) {
+        const staticNetwork = Network.from(Number(network.chainId))
+        this.providers[network.id] = new JsonRpcProvider(newRpcUrl, undefined, {
+          batchMaxSize: 2,
+          staticNetwork
+        })
+      } else {
+        this.providers[network.id] = new JsonRpcProvider(newRpcUrl)
+      }
     }
   }
 
@@ -92,7 +103,11 @@ export class SettingsController extends EventEmitter {
     // configure the main networks
     return allNetworks.map((network) => {
       const networkPreferences = this.#networkPreferences[network.id]
-      this.#setProvider(network.id, networkPreferences?.rpcUrl || network.rpcUrl)
+      this.#setProvider(
+        network,
+        networkPreferences?.rpcUrl || network.rpcUrl,
+        customNetworkIds.includes(network.id)
+      )
       const finalNetwork = networkPreferences
         ? {
             ...network,
