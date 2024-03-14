@@ -86,7 +86,7 @@ export class EmailVaultController extends EventEmitter {
 
   lastUpdate: Date = new Date()
 
-  latestMethodStatus: 'INITIAL' | 'LOADING' | 'DONE' = 'INITIAL'
+  latestMethodStatus: 'INITIAL' | 'LOADING' | 'SUCCESS' | 'DONE' = 'INITIAL'
 
   latestMethodCall: string | null = null
 
@@ -573,6 +573,17 @@ export class EmailVaultController extends EventEmitter {
     this.emitUpdate()
     try {
       await fn()
+
+      const isKeyStoreSecretUploadingCanceled =
+        this.#shouldStopConfirmationPolling && callName === 'uploadKeyStoreSecret'
+
+      // In case of a canceled verification and, respectively, a canceled keystore secret upload,
+      // we should not change the status to SUCCESS, as the method was simply canceled.
+      // Adding this check here will prevent any success modal from being shown on the FE when the user cancels their upload attempt.
+      if (!isKeyStoreSecretUploadingCanceled) {
+        this.latestMethodStatus = 'SUCCESS'
+        this.emitUpdate()
+      }
     } catch (error: any) {
       this.emitError({
         message: 'Email vault unexpected error. If the problem persists, please contact support.',
@@ -580,10 +591,16 @@ export class EmailVaultController extends EventEmitter {
         error
       })
     }
+
+    // set status in the next tick to ensure the FE receives the 'SUCCESS' status
+    await wait(1)
+
     this.latestMethodStatus = 'DONE'
     this.emitUpdate()
 
+    // reset the status in the next tick to ensure the FE receives the 'DONE' status
     await wait(1)
+
     if (this.latestMethodCall === callName) {
       this.latestMethodStatus = 'INITIAL'
       this.emitUpdate()
