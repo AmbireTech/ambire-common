@@ -248,6 +248,10 @@ describe('Settings Controller', () => {
       // mantle is optimistic
       expect(mantleNetwork?.isOptimistic).toBe(true)
 
+      // coingecko
+      expect(mantleNetwork?.platformId).toBe('mantle')
+      expect(mantleNetwork?.nativeAssetId).toBe('mantle')
+
       expect(mantleNetwork?.features.length).toBe(3)
 
       // simulation is somewhat supported
@@ -361,6 +365,10 @@ describe('Settings Controller', () => {
       // simulation is somewhat supported
       expect(fantomNetwork?.rpcNoStateOverride).toBe(false)
       expect(fantomNetwork?.hasDebugTraceCall).toBe(false)
+
+      // coingecko
+      expect(fantomNetwork?.platformId).toBe('fantom')
+      expect(fantomNetwork?.nativeAssetId).toBe('fantom')
 
       // contracts are not deployed
       const saSupport = fantomNetwork?.features.find((feat) => feat.id === 'saSupport')

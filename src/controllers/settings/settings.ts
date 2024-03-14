@@ -90,6 +90,8 @@ export class SettingsController extends EventEmitter {
         isOptimistic: 'isOptimistic' in customNetwork ? customNetwork.isOptimistic : false,
         rpcNoStateOverride: customNetwork.rpcNoStateOverride ?? true,
         hasDebugTraceCall: customNetwork.hasDebugTraceCall ?? false,
+        platformId: customNetwork.platformId ?? '',
+        nativeAssetId: customNetwork.nativeAssetId ?? '',
         feeOptions: customNetwork.feeOptions ?? {
           is1559: false
         },
@@ -294,7 +296,9 @@ export class SettingsController extends EventEmitter {
         hasDebugTraceCall,
         erc4337,
         areContractsDeployed,
-        feeOptions
+        feeOptions,
+        platformId,
+        nativeAssetId
       } = await getNetworkInfo(customNetwork.rpcUrl, customNetwork.chainId)
 
       this.#networkPreferences[customNetworkId] = {
@@ -305,7 +309,9 @@ export class SettingsController extends EventEmitter {
         areContractsDeployed,
         isOptimistic,
         rpcNoStateOverride,
-        hasDebugTraceCall
+        hasDebugTraceCall,
+        platformId,
+        nativeAssetId
       }
     } catch (e: any) {
       this.emitError({

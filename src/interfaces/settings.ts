@@ -26,6 +26,8 @@ export type NetworkPreference = {
   explorerUrl?: string
   rpcNoStateOverride?: boolean
   hasDebugTraceCall?: boolean
+  platformId?: string
+  nativeAssetId?: string
 }
 
 export type CustomNetwork = {
@@ -46,6 +48,8 @@ export type CustomNetwork = {
   isOptimistic?: boolean
   rpcNoStateOverride?: boolean
   hasDebugTraceCall?: boolean
+  platformId?: string
+  nativeAssetId?: string
 }
 
 export type NetworkPreferences = {

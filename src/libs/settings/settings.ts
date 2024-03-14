@@ -1,4 +1,7 @@
+/* eslint-disable import/no-extraneous-dependencies */
+
 import { Contract, JsonRpcProvider } from 'ethers'
+import fetch from 'node-fetch'
 
 import EntryPointAbi from '../../../contracts/compiled/EntryPoint.json'
 import {
@@ -27,7 +30,8 @@ export async function getNetworkInfo(rpcUrl: string, chainId: bigint) {
     hasBundler,
     block,
     saSupport,
-    hasDebugTraceCall
+    hasDebugTraceCall,
+    coingeckoRequest
   ] = await Promise.all([
     provider.getCode(ERC_4337_ENTRYPOINT),
     provider.getCode(SINGLETON),
@@ -36,7 +40,10 @@ export async function getNetworkInfo(rpcUrl: string, chainId: bigint) {
     Bundler.isNetworkSupported(chainId),
     provider.getBlock('latest'),
     getSASupport(provider),
-    simulateDebugTraceCall(provider)
+    simulateDebugTraceCall(provider),
+    fetch(`https://cena.ambire.com/api/v3/platform/${Number(chainId)}`).catch(() => ({
+      error: 'currently, we cannot fetch the coingecko information'
+    }))
   ])
 
   const has4337 = entryPointCode !== '0x' && hasBundler
@@ -60,6 +67,17 @@ export async function getNetworkInfo(rpcUrl: string, chainId: bigint) {
   const isSAEnabled = supportsAmbire && singletonCode !== '0x'
   const isOptimistic = oracleCode !== '0x'
 
+  // set the coingecko info
+  let platformId = null
+  let nativeAssetId = null
+  if (!('error' in coingeckoRequest)) {
+    const coingeckoInfo = await coingeckoRequest.json()
+    if (!coingeckoInfo.error) {
+      platformId = coingeckoInfo.platformId
+      nativeAssetId = coingeckoInfo.nativeAssetId
+    }
+  }
+
   return {
     isSAEnabled,
     isOptimistic,
@@ -67,7 +85,9 @@ export async function getNetworkInfo(rpcUrl: string, chainId: bigint) {
     erc4337,
     areContractsDeployed,
     feeOptions,
-    hasDebugTraceCall
+    hasDebugTraceCall,
+    platformId,
+    nativeAssetId
   }
 }
 
