@@ -19,7 +19,7 @@ import {
   getNetworksWithPortfolioErrorBanners
 } from '../../libs/banners/banners'
 import getAccountNetworksWithAssets from '../../libs/portfolio/getNetworksWithAssets'
-import { checkTokenEligibility, getFlags } from '../../libs/portfolio/helpers'
+import { getFlags, validateERC20Token } from '../../libs/portfolio/helpers'
 import {
   AccountState,
   AdditionalAccountState,
@@ -78,7 +78,7 @@ export class PortfolioController extends EventEmitter {
 
   tokenPreferences: any[] = []
 
-  eligibleTokens: any = { erc20: {}, erc721: {} }
+  validTokens: any = { erc20: {}, erc721: {} }
 
   #portfolioLibs: Map<string, Portfolio>
 
@@ -98,6 +98,9 @@ export class PortfolioController extends EventEmitter {
 
   #additionalHints: GetOptions['additionalHints'] = []
 
+  // Holds the initial load promise, so that one can wait until it completes
+  #initialLoadPromise: Promise<void>
+
   constructor(
     storage: Storage,
     providers: RPCProviders,
@@ -113,7 +116,7 @@ export class PortfolioController extends EventEmitter {
     this.#storage = storage
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
 
-    this.#load()
+    this.#initialLoadPromise = this.#load()
   }
 
   async #load() {
@@ -186,15 +189,15 @@ export class PortfolioController extends EventEmitter {
     this.#additionalHints = []
   }
 
-  async checkTokenStandardEligibility(token: any, accountId: AccountId) {
-    const [isEligible, standard] = await checkTokenEligibility(
+  async updateTokenValidationByStandard(token: any, accountId: AccountId) {
+    const [isValid, standard] = await validateERC20Token(
       token,
       accountId,
       this.#providers[token.networkId]
     )
-    this.eligibleTokens[standard] = {
-      ...this.eligibleTokens[standard],
-      [`${token.address}-${token.networkId}`]: isEligible
+    this.validTokens[standard] = {
+      ...this.validTokens[standard],
+      [`${token.address}-${token.networkId}`]: isValid
     }
 
     this.emitUpdate()
@@ -344,6 +347,8 @@ export class PortfolioController extends EventEmitter {
       additionalHints?: GetOptions['additionalHints']
     }
   ) {
+    await this.#initialLoadPromise
+
     if (opts?.additionalHints) this.#additionalHints = opts.additionalHints
     const hasNonZeroTokens = !!this.#networksWithAssetsByAccounts?.[accountId]?.length
     // Load storage cached hints
