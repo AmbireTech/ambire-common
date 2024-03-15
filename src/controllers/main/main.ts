@@ -776,50 +776,56 @@ export class MainController extends EventEmitter {
 
       // if the network's chosen RPC supports debug_traceCall, we
       // make an additional simulation for each call in the accountOp
-      const promises = []
+      let promises: any[] = []
       if (network.hasDebugTraceCall) {
-        // calculate the medium gas price to use in simulation
-        let gasPrice = 0n
+        // 65gwei, try to make it work most of the times on ethereum
+        let gasPrice = 65000000000n
+        // calculate the fast gas price to use in simulation
         if (this.gasPrices[accountOp.networkId] && this.gasPrices[accountOp.networkId].length) {
-          const medium = this.gasPrices[accountOp.networkId][0]
+          const fast = this.gasPrices[accountOp.networkId][2]
           gasPrice =
-            'gasPrice' in medium
-              ? medium.gasPrice
-              : medium.baseFeePerGas + medium.maxPriorityFeePerGas
-        } else {
-          // 65gwei, try to make it always work most of the times on ethereum
-          gasPrice = 65000000000n
+            'gasPrice' in fast ? fast.gasPrice : fast.baseFeePerGas + fast.maxPriorityFeePerGas
+          // increase the gas price with 10% to try to get above the min baseFee
+          gasPrice += gasPrice / 10n
         }
-        if (gasPrice) {
-          const provider = this.settings.providers[localAccountOp.networkId]
-          promises.push(
-            localAccountOp.calls.map((call) => {
-              return provider
-                .send('debug_traceCall', [
-                  {
-                    to: call.to,
-                    value: toQuantity(call.value.toString()),
-                    data: call.data,
-                    from: localAccountOp.accountAddr,
-                    gasPrice: toQuantity(gasPrice.toString()),
-                    gas: '0x104240'
-                  },
-                  'latest',
-                  {
-                    tracer:
-                      "{data: [], fault: function (log) {}, step: function (log) { if (log.op.toString() === 'LOG3') { this.data.push([ toHex(log.contract.getAddress()), '0x' + ('0000000000000000000000000000000000000000' + log.stack.peek(4).toString(16)).slice(-40)])}}, result: function () { return this.data }}",
-                    enableMemory: false,
-                    enableReturnData: true,
-                    disableStorage: true
-                  }
-                ])
-                .catch((e: any) => {
-                  console.log(e)
-                  return [ZeroAddress]
-                })
+        // 200k, try to make it work most of the times on ethereum
+        let gas = 200000n
+        if (
+          this.accountOpsToBeSigned[localAccountOp.accountAddr] &&
+          this.accountOpsToBeSigned[localAccountOp.accountAddr][localAccountOp.networkId] &&
+          this.accountOpsToBeSigned[localAccountOp.accountAddr][localAccountOp.networkId]!
+            .estimation
+        ) {
+          gas =
+            this.accountOpsToBeSigned[localAccountOp.accountAddr][localAccountOp.networkId]!
+              .estimation!.gasUsed
+        }
+        const provider = this.settings.providers[localAccountOp.networkId]
+        promises = localAccountOp.calls.map((call) => {
+          return provider
+            .send('debug_traceCall', [
+              {
+                to: call.to,
+                value: toQuantity(call.value.toString()),
+                data: call.data,
+                from: localAccountOp.accountAddr,
+                gasPrice: toQuantity(gasPrice.toString()),
+                gas: toQuantity(gas.toString())
+              },
+              'latest',
+              {
+                tracer:
+                  "{data: [], fault: function (log) {}, step: function (log) { if (log.op.toString() === 'LOG3') { this.data.push([ toHex(log.contract.getAddress()), '0x' + ('0000000000000000000000000000000000000000' + log.stack.peek(4).toString(16)).slice(-40)])}}, result: function () { return this.data }}",
+                enableMemory: false,
+                enableReturnData: true,
+                disableStorage: true
+              }
+            ])
+            .catch((e: any) => {
+              console.log(e)
+              return [ZeroAddress]
             })
-          )
-        }
+        })
       }
       const result = await Promise.all([
         ...promises,
@@ -834,10 +840,10 @@ export class MainController extends EventEmitter {
               )
         )
         .flat()
-        .filter((x) => isAddress(x))
+        .filter((x: any) => isAddress(x))
       result.pop()
-      const stringAddr: any = result
-      additionalHints.push(...stringAddr.flat())
+      const stringAddr: any = result.length ? result.flat(Infinity) : []
+      additionalHints!.push(...stringAddr)
 
       const [, , estimation] = await Promise.all([
         // NOTE: we are not emitting an update here because the portfolio controller will do that
