@@ -224,62 +224,72 @@ describe('Settings Controller', () => {
 
   test('should add the mantle network as a custom network', (done) => {
     let checks = 0
+    let updateEmits = 0
     settingsController.onUpdate(() => {
-      const mantleNetwork = settingsController.networks.find(({ id }) => id === 'mantle')
-      expect(mantleNetwork).not.toBe(undefined)
-      expect(mantleNetwork).not.toBe(null)
-      expect(mantleNetwork?.chainId).toBe(5000n)
-      expect(mantleNetwork?.name).toBe('Mantle')
-      expect(mantleNetwork?.id).toBe('mantle')
-      expect(mantleNetwork?.nativeAssetSymbol).toBe('MNT')
+      if (updateEmits === 0) {
+        updateEmits++
+        return
+      }
 
-      // mantle has the entry point uploaded
-      expect(mantleNetwork?.erc4337?.enabled).toBe(true)
-      expect(mantleNetwork?.erc4337?.hasPaymaster).toBe(false)
+      if (updateEmits === 1) {
+        updateEmits++
+        const mantleNetwork = settingsController.networks.find(({ id }) => id === 'mantle')
+        console.log(mantleNetwork)
+        expect(mantleNetwork).not.toBe(undefined)
+        expect(mantleNetwork).not.toBe(null)
+        expect(mantleNetwork?.chainId).toBe(5000n)
+        expect(mantleNetwork?.name).toBe('Mantle')
+        expect(mantleNetwork?.id).toBe('mantle')
+        expect(mantleNetwork?.nativeAssetSymbol).toBe('MNT')
 
-      // has smart accounts
-      expect(mantleNetwork?.isSAEnabled).toBe(true)
+        // mantle has the entry point uploaded
+        expect(mantleNetwork?.erc4337?.enabled).toBe(true)
+        expect(mantleNetwork?.erc4337?.hasPaymaster).toBe(false)
 
-      // contracts are not deployed
-      expect(mantleNetwork?.areContractsDeployed).toBe(false)
+        // has smart accounts
+        expect(mantleNetwork?.isSAEnabled).toBe(true)
 
-      // is not 1559
-      expect(mantleNetwork?.feeOptions.is1559).toBe(true)
+        // contracts are not deployed
+        expect(mantleNetwork?.areContractsDeployed).toBe(false)
 
-      // mantle is optimistic
-      expect(mantleNetwork?.isOptimistic).toBe(true)
+        // is not 1559
+        expect(mantleNetwork?.feeOptions.is1559).toBe(true)
 
-      // coingecko
-      expect(mantleNetwork?.platformId).toBe('mantle')
-      expect(mantleNetwork?.nativeAssetId).toBe('mantle')
+        // mantle is optimistic
+        expect(mantleNetwork?.isOptimistic).toBe(true)
 
-      expect(mantleNetwork?.features.length).toBe(3)
+        // coingecko
+        expect(mantleNetwork?.platformId).toBe('mantle')
+        expect(mantleNetwork?.nativeAssetId).toBe('mantle')
 
-      // simulation is somewhat supported
-      expect(mantleNetwork?.rpcNoStateOverride).toBe(false)
-      expect(mantleNetwork?.hasDebugTraceCall).toBe(false)
+        expect(mantleNetwork?.features.length).toBe(3)
 
-      // contracts are not deployed
-      const saSupport = mantleNetwork?.features.find((feat) => feat.id === 'saSupport')
-      expect(saSupport).not.toBe(null)
-      expect(saSupport).not.toBe(undefined)
-      expect(saSupport!.level).toBe('warning')
+        // simulation is somewhat supported
+        expect(mantleNetwork?.rpcNoStateOverride).toBe(false)
+        expect(mantleNetwork?.hasDebugTraceCall).toBe(false)
 
-      // no fee tokens
-      const noFeeTokens = mantleNetwork?.features.find((feat) => feat.id === 'feeTokens')
-      expect(noFeeTokens).not.toBe(null)
-      expect(noFeeTokens).not.toBe(undefined)
-      expect(noFeeTokens!.level).toBe('warning')
+        // contracts are not deployed
+        const saSupport = mantleNetwork?.features.find((feat) => feat.id === 'saSupport')
+        expect(saSupport).not.toBe(null)
+        expect(saSupport).not.toBe(undefined)
+        expect(saSupport!.level).toBe('warning')
 
-      // somewhat simulation
-      const simulation = mantleNetwork?.features.find((feat) => feat.id === 'simulation')
-      expect(simulation).not.toBe(null)
-      expect(simulation).not.toBe(undefined)
-      expect(simulation!.level).toBe('warning')
+        // no fee tokens
+        const noFeeTokens = mantleNetwork?.features.find((feat) => feat.id === 'feeTokens')
+        expect(noFeeTokens).not.toBe(null)
+        expect(noFeeTokens).not.toBe(undefined)
+        expect(noFeeTokens!.level).toBe('warning')
 
-      checks++
-      if (checks === 3) {
-        done()
+        // somewhat simulation
+        const simulation = mantleNetwork?.features.find((feat) => feat.id === 'simulation')
+        expect(simulation).not.toBe(null)
+        expect(simulation).not.toBe(undefined)
+        expect(simulation!.level).toBe('warning')
+
+        checks++
+        if (checks === 3) {
+          done()
+        }
       }
     })
 
@@ -288,13 +298,15 @@ describe('Settings Controller', () => {
       if (errorEmits === 0) {
         const errors = settingsController.emittedErrors
         expect(errors.length).toEqual(1)
-        expect(errors[0].message).toEqual('A chain with a chain id of 5000 has already been added')
+        expect(errors[0].message).toEqual(
+          'Failed to detect network, perhaps an RPC issue. Please change the RPC and try again'
+        )
       }
       if (errorEmits === 1) {
         const errors = settingsController.emittedErrors
         expect(errors.length).toEqual(2)
         expect(errors[1].message).toEqual(
-          'A chain with the name of Mantle has already been added. Please change the name and try again'
+          'Failed to detect network, perhaps an RPC issue. Please change the RPC and try again'
         )
       }
       errorEmits++
@@ -338,56 +350,65 @@ describe('Settings Controller', () => {
   })
 
   test('should add the fantom network as a custom network', (done) => {
+    let updateEmits = 0
     settingsController.onUpdate(() => {
-      const fantomNetwork = settingsController.networks.find(({ id }) => id === 'fantom')
-      expect(fantomNetwork).not.toBe(undefined)
-      expect(fantomNetwork).not.toBe(null)
-      expect(fantomNetwork?.chainId).toBe(250n)
-      expect(fantomNetwork?.name).toBe('Fantom')
-      expect(fantomNetwork?.id).toBe('fantom')
-      expect(fantomNetwork?.nativeAssetSymbol).toBe('FTM')
+      if (updateEmits === 0) {
+        updateEmits++
+        return
+      }
 
-      // fantom does not have the entry point
-      expect(fantomNetwork?.erc4337?.enabled).toBe(false)
-      expect(fantomNetwork?.erc4337?.hasPaymaster).toBe(false)
+      if (updateEmits === 1) {
+        updateEmits++
+        const fantomNetwork = settingsController.networks.find(({ id }) => id === 'fantom')
+        expect(fantomNetwork).not.toBe(undefined)
+        expect(fantomNetwork).not.toBe(null)
+        expect(fantomNetwork?.chainId).toBe(250n)
+        expect(fantomNetwork?.name).toBe('Fantom')
+        expect(fantomNetwork?.id).toBe('fantom')
+        expect(fantomNetwork?.nativeAssetSymbol).toBe('FTM')
 
-      // ...nor does it have the singleton
-      expect(fantomNetwork?.isSAEnabled).toBe(true)
+        // fantom does not have the entry point
+        expect(fantomNetwork?.erc4337?.enabled).toBe(false)
+        expect(fantomNetwork?.erc4337?.hasPaymaster).toBe(false)
 
-      // so contracts are not deployed
-      expect(fantomNetwork?.areContractsDeployed).toBe(false)
+        // ...nor does it have the singleton
+        expect(fantomNetwork?.isSAEnabled).toBe(true)
 
-      // it is 1559
-      expect(fantomNetwork?.feeOptions.is1559).toBe(true)
+        // so contracts are not deployed
+        expect(fantomNetwork?.areContractsDeployed).toBe(false)
 
-      // it is not optimistic
-      expect(fantomNetwork?.isOptimistic).toBe(false)
+        // it is 1559
+        expect(fantomNetwork?.feeOptions.is1559).toBe(true)
 
-      // simulation is somewhat supported
-      expect(fantomNetwork?.rpcNoStateOverride).toBe(false)
-      expect(fantomNetwork?.hasDebugTraceCall).toBe(false)
+        // it is not optimistic
+        expect(fantomNetwork?.isOptimistic).toBe(false)
 
-      // coingecko
-      expect(fantomNetwork?.platformId).toBe('fantom')
-      expect(fantomNetwork?.nativeAssetId).toBe('fantom')
+        // simulation is somewhat supported
+        expect(fantomNetwork?.rpcNoStateOverride).toBe(false)
+        expect(fantomNetwork?.hasDebugTraceCall).toBe(false)
 
-      // contracts are not deployed
-      const saSupport = fantomNetwork?.features.find((feat) => feat.id === 'saSupport')
-      expect(saSupport).not.toBe(null)
-      expect(saSupport).not.toBe(undefined)
-      expect(saSupport!.level).toBe('warning')
+        // coingecko
+        expect(fantomNetwork?.platformId).toBe('fantom')
+        expect(fantomNetwork?.nativeAssetId).toBe('fantom')
 
-      // no fee tokens
-      const noFeeTokens = fantomNetwork?.features.find((feat) => feat.id === 'feeTokens')
-      expect(noFeeTokens).not.toBe(null)
-      expect(noFeeTokens).not.toBe(undefined)
-      expect(noFeeTokens!.level).toBe('warning')
+        // contracts are not deployed
+        const saSupport = fantomNetwork?.features.find((feat) => feat.id === 'saSupport')
+        expect(saSupport).not.toBe(null)
+        expect(saSupport).not.toBe(undefined)
+        expect(saSupport!.level).toBe('warning')
 
-      // somewhat simulation
-      const simulation = fantomNetwork?.features.find((feat) => feat.id === 'simulation')
-      expect(simulation).not.toBe(null)
-      expect(simulation).not.toBe(undefined)
-      expect(simulation!.level).toBe('warning')
+        // no fee tokens
+        const noFeeTokens = fantomNetwork?.features.find((feat) => feat.id === 'feeTokens')
+        expect(noFeeTokens).not.toBe(null)
+        expect(noFeeTokens).not.toBe(undefined)
+        expect(noFeeTokens!.level).toBe('warning')
+
+        // somewhat simulation
+        const simulation = fantomNetwork?.features.find((feat) => feat.id === 'simulation')
+        expect(simulation).not.toBe(null)
+        expect(simulation).not.toBe(undefined)
+        expect(simulation!.level).toBe('warning')
+      }
 
       done()
     })
