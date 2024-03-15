@@ -111,6 +111,9 @@ export async function getNetworkInfo(rpcUrl: string, chainId: bigint) {
     }
   }
 
+  // clear the provider after being used
+  provider.destroy()
+
   return {
     isSAEnabled,
     isOptimistic,

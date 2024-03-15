@@ -354,6 +354,7 @@ export class SettingsController extends EventEmitter {
         getSASupport(provider).catch(() => ({ supportsStateOverride: false })),
         simulateDebugTraceCall(provider)
       ])
+      provider.destroy()
       changedNetworkPreferences.rpcNoStateOverride = !saSupport.supportsStateOverride
       changedNetworkPreferences.hasDebugTraceCall = hasDebugTraceCall
     }
