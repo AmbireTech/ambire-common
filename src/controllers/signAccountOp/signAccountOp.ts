@@ -24,6 +24,7 @@ import {
   shouldUseOneTimeNonce,
   shouldUsePaymaster
 } from '../../libs/userOperation/userOperation'
+import { getIsViewOnly } from '../../utils/accounts'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
 import { PortfolioController } from '../portfolio/portfolio'
@@ -701,8 +702,12 @@ export class SignAccountOpController extends EventEmitter {
   get availableFeeOptions(): EstimateResult['feePaymentOptions'] {
     if (!this.isInitialized) return []
 
-    // FeeOptions having amount
-    return this.#estimation!.feePaymentOptions.filter((feeOption) => feeOption.availableAmount)
+    return this.#estimation!.feePaymentOptions.filter((feeOption) => {
+      const account = this.#accounts.find(({ addr }) => addr === feeOption.paidBy)
+      const isViewOnly = getIsViewOnly(this.#keystore.keys, account?.associatedKeys || [])
+
+      return feeOption.availableAmount > 0n && !isViewOnly
+    })
   }
 
   get accountKeyStoreKeys(): Key[] {
