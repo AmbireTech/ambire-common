@@ -295,6 +295,7 @@ const init = async (
       provider,
       network,
       account,
+      keystore.keys,
       op,
       accountStates[account.addr][network.id],
       nativeToCheck,
