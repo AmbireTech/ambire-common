@@ -28,6 +28,45 @@ export const getNetworksWithFailedRPC = ({ providers }: { providers: RPCProvider
 
 export async function getNetworkInfo(rpcUrl: string, chainId: bigint) {
   const provider = new JsonRpcProvider(rpcUrl)
+  const timeout = () => {
+    return new Promise((resolve) => {
+      setTimeout(resolve, 20000, 'timeout reached')
+    })
+  }
+  const networkRequests = await Promise.race([
+    Promise.all([
+      provider.getCode(ERC_4337_ENTRYPOINT).catch(() => '0x'),
+      provider.getCode(SINGLETON).catch(() => '0x'),
+      provider.getCode(OPTIMISTIC_ORACLE).catch(() => '0x'),
+      provider.getCode(AMBIRE_ACCOUNT_FACTORY).catch(() => '0x'),
+      Bundler.isNetworkSupported(chainId).catch(() => false),
+      provider.getBlock('latest').catch(() => null),
+      getSASupport(provider),
+      simulateDebugTraceCall(provider),
+      fetch(`https://cena.ambire.com/api/v3/platform/${Number(chainId)}`).catch(() => ({
+        error: 'currently, we cannot fetch the coingecko information'
+      }))
+    ]),
+    timeout()
+  ])
+
+  // if it can't execute the requests for 20 seconds, we flag the RPC
+  if (typeof networkRequests === 'string' && networkRequests === 'timeout reached') {
+    return {
+      isSAEnabled: false,
+      isOptimistic: false,
+      rpcNoStateOverride: true,
+      erc4337: { erc4337: { enabled: false, hasPaymaster: false } },
+      areContractsDeployed: false,
+      feeOptions: null,
+      hasDebugTraceCall: false,
+      platformId: '',
+      nativeAssetId: '',
+      flagged: true
+    }
+  }
+
+  // @ts-ignore
   const [
     entryPointCode,
     singletonCode,
@@ -38,19 +77,7 @@ export async function getNetworkInfo(rpcUrl: string, chainId: bigint) {
     saSupport,
     hasDebugTraceCall,
     coingeckoRequest
-  ] = await Promise.all([
-    provider.getCode(ERC_4337_ENTRYPOINT),
-    provider.getCode(SINGLETON),
-    provider.getCode(OPTIMISTIC_ORACLE),
-    provider.getCode(AMBIRE_ACCOUNT_FACTORY),
-    Bundler.isNetworkSupported(chainId),
-    provider.getBlock('latest'),
-    getSASupport(provider),
-    simulateDebugTraceCall(provider),
-    fetch(`https://cena.ambire.com/api/v3/platform/${Number(chainId)}`).catch(() => ({
-      error: 'currently, we cannot fetch the coingecko information'
-    }))
-  ])
+  ] = networkRequests
 
   const has4337 = entryPointCode !== '0x' && hasBundler
   const areContractsDeployed = factoryCode !== '0x'
@@ -93,7 +120,8 @@ export async function getNetworkInfo(rpcUrl: string, chainId: bigint) {
     feeOptions,
     hasDebugTraceCall,
     platformId,
-    nativeAssetId
+    nativeAssetId,
+    flagged: false
   }
 }
 
@@ -104,9 +132,19 @@ export function getFeaturesByNetworkProperties(
   erc4337: NetworkDescriptor['erc4337'],
   areContractsDeployed: boolean,
   hasRelayer: boolean,
-  hasDebugTraceCall: boolean
+  hasDebugTraceCall: boolean,
+  flagged: boolean
 ) {
   const features: NetworkFeature[] = []
+  if (flagged) {
+    features.push({
+      id: 'flagged',
+      level: 'danger',
+      msg: 'We were unable to fetch the network information with the provided RPC. Please choose another RPC or try again later'
+    })
+    return features
+  }
+
   if (!isSAEnabled) {
     features.push({
       id: 'saSupport',
@@ -164,8 +202,14 @@ export function getFeaturesByNetworkProperties(
 // call this if you have only the rpcUrl and chainId
 // this method makes an RPC request, calculates the network info and returns the features
 export async function getFeatures(rpcUrl: string, chainId: bigint, hasRelayer: boolean) {
-  const { isSAEnabled, rpcNoStateOverride, erc4337, areContractsDeployed, hasDebugTraceCall } =
-    await getNetworkInfo(rpcUrl, chainId)
+  const {
+    isSAEnabled,
+    rpcNoStateOverride,
+    erc4337,
+    areContractsDeployed,
+    hasDebugTraceCall,
+    flagged
+  } = await getNetworkInfo(rpcUrl, chainId)
 
   return getFeaturesByNetworkProperties(
     isSAEnabled,
@@ -173,6 +217,7 @@ export async function getFeatures(rpcUrl: string, chainId: bigint, hasRelayer: b
     erc4337.erc4337,
     areContractsDeployed,
     hasRelayer,
-    hasDebugTraceCall
+    hasDebugTraceCall,
+    flagged
   )
 }

@@ -50,6 +50,7 @@ export type CustomNetwork = {
   hasDebugTraceCall?: boolean
   platformId?: string
   nativeAssetId?: string
+  flagged?: boolean
 }
 
 export type NetworkPreferences = {

@@ -92,6 +92,7 @@ export class SettingsController extends EventEmitter {
         hasDebugTraceCall: customNetwork.hasDebugTraceCall ?? false,
         platformId: customNetwork.platformId ?? '',
         nativeAssetId: customNetwork.nativeAssetId ?? '',
+        flagged: customNetwork.flagged ?? false,
         feeOptions: customNetwork.feeOptions ?? {
           is1559: false
         },
@@ -123,7 +124,8 @@ export class SettingsController extends EventEmitter {
         finalNetwork.erc4337,
         finalNetwork.areContractsDeployed,
         finalNetwork.hasRelayer,
-        finalNetwork.hasDebugTraceCall
+        finalNetwork.hasDebugTraceCall,
+        finalNetwork.flagged ?? false
       )
       return finalNetwork
     })
@@ -288,39 +290,31 @@ export class SettingsController extends EventEmitter {
       return
     }
 
-    try {
-      const {
-        isSAEnabled,
-        isOptimistic,
-        rpcNoStateOverride,
-        hasDebugTraceCall,
-        erc4337,
-        areContractsDeployed,
-        feeOptions,
-        platformId,
-        nativeAssetId
-      } = await getNetworkInfo(customNetwork.rpcUrl, customNetwork.chainId)
+    const {
+      isSAEnabled,
+      isOptimistic,
+      rpcNoStateOverride,
+      hasDebugTraceCall,
+      erc4337,
+      areContractsDeployed,
+      feeOptions,
+      platformId,
+      nativeAssetId,
+      flagged
+    } = await getNetworkInfo(customNetwork.rpcUrl, customNetwork.chainId)
 
-      this.#networkPreferences[customNetworkId] = {
-        ...customNetwork,
-        ...erc4337,
-        ...feeOptions,
-        isSAEnabled,
-        areContractsDeployed,
-        isOptimistic,
-        rpcNoStateOverride,
-        hasDebugTraceCall,
-        platformId,
-        nativeAssetId
-      }
-    } catch (e: any) {
-      this.emitError({
-        message:
-          'Failed to detect network, perhaps an RPC issue. Please change the RPC and try again',
-        level: 'major',
-        error: new Error('settings: addCustomNetwork chain already added')
-      })
-      return
+    this.#networkPreferences[customNetworkId] = {
+      ...customNetwork,
+      ...erc4337,
+      ...feeOptions,
+      isSAEnabled,
+      areContractsDeployed,
+      isOptimistic,
+      rpcNoStateOverride,
+      hasDebugTraceCall,
+      platformId,
+      nativeAssetId,
+      flagged
     }
 
     await this.#storePreferences()

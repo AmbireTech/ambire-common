@@ -61,11 +61,11 @@ export async function simulateDebugTraceCall(
   await provider
     .send('debug_traceCall', [
       {
-        to: DEPLOYLESS_SIMULATION_FROM,
-        value: '0x01',
-        data: '0x',
-        from: ZeroAddress,
-        gasPrice: '0x104240',
+        to: '0x888888888889c00c67689029d7856aac1065ec11',
+        value: '0x0',
+        data: '0x095ea7b300000000000000000000000068b3465833fb72a70ecdf485e0e4c7bd8665fc450000000000000000000000000000000000000000000000e3bbe78839d3dea68069481369',
+        from: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+        gasPrice: '0x354c533c00',
         gas: '0x104240'
       },
       'latest',
