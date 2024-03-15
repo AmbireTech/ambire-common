@@ -234,7 +234,6 @@ describe('Settings Controller', () => {
       if (updateEmits === 1) {
         updateEmits++
         const mantleNetwork = settingsController.networks.find(({ id }) => id === 'mantle')
-        console.log(mantleNetwork)
         expect(mantleNetwork).not.toBe(undefined)
         expect(mantleNetwork).not.toBe(null)
         expect(mantleNetwork?.chainId).toBe(5000n)
