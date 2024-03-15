@@ -12,6 +12,7 @@ import { FEE_COLLECTOR } from '../../consts/addresses'
 import { AMBIRE_PAYMASTER } from '../../consts/deploy'
 import { networks } from '../../consts/networks'
 import { Account, AccountStates } from '../../interfaces/account'
+import { Key } from '../../interfaces/keystore'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { getAccountState } from '../accountState/accountState'
 import { Portfolio } from '../portfolio/portfolio'
@@ -28,6 +29,44 @@ const providerOptimism = new JsonRpcProvider(optimism.rpcUrl)
 const providerArbitrum = new JsonRpcProvider(arbitrum.rpcUrl)
 const providerAvalanche = new JsonRpcProvider(avalanche.rpcUrl)
 const providerPolygon = new JsonRpcProvider(polygon.rpcUrl)
+
+// Used to determine if an account is view-only or not
+// and subsequently if it should be included in the fee payment options
+const MOCK_KEYSTORE_KEYS: Key[] = [
+  {
+    addr: '0x71c3D24a627f0416db45107353d8d0A5ae0401ae',
+    type: 'trezor',
+    dedicatedToOneSA: true,
+    isExternallyStored: true,
+    meta: {
+      deviceId: 'doesnt-matter',
+      deviceModel: 'doesnt-matter',
+      hdPathTemplate: "m/44'/60'/0'/0/<account>",
+      index: 2
+    }
+  },
+  {
+    type: 'internal',
+    addr: '0xd6e371526cdaeE04cd8AF225D42e37Bc14688D9E',
+    dedicatedToOneSA: false,
+    meta: null,
+    isExternallyStored: false
+  },
+  {
+    type: 'internal',
+    addr: '0x141A14B5C4dbA2aC7a7943E02eDFE2E7eDfdA28F',
+    dedicatedToOneSA: false,
+    meta: null,
+    isExternallyStored: false
+  },
+  {
+    type: 'internal',
+    addr: '0x0000000000000000000000000000000000000001',
+    dedicatedToOneSA: false,
+    meta: null,
+    isExternallyStored: false
+  }
+]
 
 const account: Account = {
   addr: '0xa07D75aacEFd11b425AF7181958F0F85c312f143',
@@ -64,11 +103,12 @@ const SPOOF_SIGTYPE = '03'
 const spoofSig =
   new AbiCoder().encode(['address'], ['0xd6e371526cdaeE04cd8AF225D42e37Bc14688D9E']) + SPOOF_SIGTYPE
 
+// View only, because its key isn't in MOCK_KEYSTORE_KEYS
 const viewOnlyAcc = {
   addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
   creation: null,
   initialPrivileges: [],
-  associatedKeys: [] // this means it's a view only acc
+  associatedKeys: ['0x77777777789A8BBEE6C64381e5E89E501fb0e4c8']
 }
 const nativeToCheck: Account[] = [
   {
@@ -180,6 +220,7 @@ describe('estimate', () => {
       provider,
       ethereum,
       EOAAccount,
+      MOCK_KEYSTORE_KEYS,
       op,
       accountStates[EOAAccount.addr][ethereum.id],
       [],
@@ -219,6 +260,7 @@ describe('estimate', () => {
       provider,
       ethereum,
       account,
+      MOCK_KEYSTORE_KEYS,
       op,
       accountStates[account.addr][ethereum.id],
       nativeToCheck,
@@ -280,6 +322,7 @@ describe('estimate', () => {
       provider,
       ethereum,
       account,
+      MOCK_KEYSTORE_KEYS,
       op,
       accountStates[account.addr][ethereum.id],
       nativeToCheck,
@@ -312,6 +355,7 @@ describe('estimate', () => {
       provider,
       ethereum,
       viewOnlyAcc,
+      MOCK_KEYSTORE_KEYS,
       op,
       accountStates[viewOnlyAcc.addr][ethereum.id],
       nativeToCheck,
@@ -368,6 +412,7 @@ describe('estimate', () => {
       provider,
       ethereum,
       account,
+      MOCK_KEYSTORE_KEYS,
       op,
       accountStates[account.addr][ethereum.id],
       nativeToCheck,
@@ -377,6 +422,7 @@ describe('estimate', () => {
       provider,
       ethereum,
       account,
+      MOCK_KEYSTORE_KEYS,
       opWithExecuteBefore,
       accountStates[account.addr][ethereum.id],
       nativeToCheck,
@@ -429,6 +475,7 @@ describe('estimate', () => {
       providerOptimism,
       optimism,
       accountOptimism,
+      MOCK_KEYSTORE_KEYS,
       opOptimism,
       accountStates[accountOptimism.addr][optimism.id],
       nativeToCheck,
@@ -462,6 +509,7 @@ describe('estimate', () => {
       providerArbitrum,
       arbitrum,
       smartAccountv2eip712,
+      MOCK_KEYSTORE_KEYS,
       opArbitrum,
       accountStates[smartAccountv2eip712.addr][arbitrum.id],
       nativeToCheck,
@@ -490,6 +538,7 @@ describe('estimate', () => {
       providerArbitrum,
       arbitrum,
       trezorSlot6v2NotDeployed,
+      MOCK_KEYSTORE_KEYS,
       opArbitrum,
       accountStates[trezorSlot6v2NotDeployed.addr][arbitrum.id],
       nativeToCheck,
@@ -522,6 +571,7 @@ describe('estimate', () => {
       providerAvalanche,
       avalanche,
       trezorSlot6v2NotDeployed,
+      MOCK_KEYSTORE_KEYS,
       opAvalanche,
       accountState,
       nativeToCheck,
@@ -573,6 +623,7 @@ describe('estimate', () => {
       providerAvalanche,
       avalanche,
       trezorSlot7v24337Deployed,
+      MOCK_KEYSTORE_KEYS,
       opAvalanche,
       accountState,
       nativeToCheck,
@@ -618,6 +669,7 @@ describe('estimate', () => {
       providerPolygon,
       polygon,
       smartAccountv2eip712,
+      MOCK_KEYSTORE_KEYS,
       opPolygonFailBzNoFunds,
       accountStates[smartAccountv2eip712.addr][polygon.id],
       nativeToCheck,
@@ -648,6 +700,7 @@ describe('estimate', () => {
       providerPolygon,
       polygon,
       { ...smartAccountv2eip712, associatedKeys: [trezorSlot6v2NotDeployed.associatedKeys[0]] },
+      MOCK_KEYSTORE_KEYS,
       opPolygonFailBzNoFunds,
       accountStates[smartAccountv2eip712.addr][polygon.id],
       nativeToCheck,
@@ -676,6 +729,7 @@ describe('estimate', () => {
       provider,
       ethereum,
       account,
+      MOCK_KEYSTORE_KEYS,
       op,
       accountStates[account.addr][ethereum.id],
       nativeToCheck,
