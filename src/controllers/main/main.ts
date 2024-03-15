@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/brace-style */
-import { ethers, getAddress, isAddress, TransactionResponse } from 'ethers'
+import { ethers, getAddress, isAddress, toQuantity, TransactionResponse, ZeroAddress } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFactory.json'
@@ -774,32 +774,70 @@ export class MainController extends EventEmitter {
       if (!network)
         throw new Error(`estimateAccountOp: ${localAccountOp.networkId}: network does not exist`)
 
-      const humanization = await humanizeAccountOp(
-        this.#storage,
-        localAccountOp,
-        this.#fetch,
-        this.emitError
-      )
-      const additionalHints: GetOptions['additionalHints'] = humanization
-        .map((call) =>
+      // if the network's chosen RPC supports debug_traceCall, we
+      // make an additional simulation for each call in the accountOp
+      const promises = []
+      if (network.hasDebugTraceCall) {
+        // calculate the medium gas price to use in simulation
+        let gasPrice = 0n
+        if (this.gasPrices[accountOp.networkId] && this.gasPrices[accountOp.networkId].length) {
+          const medium = this.gasPrices[accountOp.networkId][0]
+          gasPrice =
+            'gasPrice' in medium
+              ? medium.gasPrice
+              : medium.baseFeePerGas + medium.maxPriorityFeePerGas
+        } else {
+          // 65gwei, try to make it always work most of the times on ethereum
+          gasPrice = 65000000000n
+        }
+        if (gasPrice) {
+          const provider = this.settings.providers[localAccountOp.networkId]
+          promises.push(
+            localAccountOp.calls.map((call) => {
+              return provider
+                .send('debug_traceCall', [
+                  {
+                    to: call.to,
+                    value: toQuantity(call.value.toString()),
+                    data: call.data,
+                    from: localAccountOp.accountAddr,
+                    gasPrice: toQuantity(gasPrice.toString()),
+                    gas: '0x104240'
+                  },
+                  'latest',
+                  {
+                    tracer:
+                      "{data: [], fault: function (log) {}, step: function (log) { if (log.op.toString() === 'LOG3') { this.data.push([ toHex(log.contract.getAddress()), '0x' + ('0000000000000000000000000000000000000000' + log.stack.peek(4).toString(16)).slice(-40)])}}, result: function () { return this.data }}",
+                    enableMemory: false,
+                    enableReturnData: true,
+                    disableStorage: true
+                  }
+                ])
+                .catch((e: any) => {
+                  console.log(e)
+                  return [ZeroAddress]
+                })
+            })
+          )
+        }
+      }
+      const result = await Promise.all([
+        ...promises,
+        humanizeAccountOp(this.#storage, localAccountOp, this.#fetch, this.emitError)
+      ])
+      const additionalHints: GetOptions['additionalHints'] = result[result.length - 1]
+        .map((call: any) =>
           !call.fullVisualization
             ? []
-            : call.fullVisualization.map((vis) =>
+            : call.fullVisualization.map((vis: any) =>
                 vis.address && isAddress(vis.address) ? getAddress(vis.address) : ''
               )
         )
         .flat()
         .filter((x) => isAddress(x))
-
-      // calculate the medium gas price to use in simulation
-      let gasPrice = 0n
-      if (this.gasPrices[accountOp.networkId] && this.gasPrices[accountOp.networkId].length) {
-        const medium = this.gasPrices[accountOp.networkId][0]
-        gasPrice =
-          'gasPrice' in medium
-            ? medium.gasPrice
-            : medium.baseFeePerGas + medium.maxPriorityFeePerGas
-      }
+      result.pop()
+      const stringAddr: any = result
+      additionalHints.push(...stringAddr.flat())
 
       const [, , estimation] = await Promise.all([
         // NOTE: we are not emitting an update here because the portfolio controller will do that
@@ -816,8 +854,7 @@ export class MainController extends EventEmitter {
           ),
           {
             forceUpdate: true,
-            additionalHints,
-            gasPrice
+            additionalHints
           }
         ),
         shouldGetAdditionalPortfolio(account) &&

@@ -1,4 +1,4 @@
-import { JsonRpcProvider, toBeHex, toQuantity, ZeroAddress } from 'ethers'
+import { toBeHex } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import { DEPLOYLESS_SIMULATION_FROM } from '../../consts/deploy'
@@ -203,48 +203,12 @@ export async function getTokens(
     calls: calls.map(callToTuple)
   }))
   const [factory, factoryCalldata] = getAccountDeployParams(account)
-
-  let traceCallAddresses: string[] = []
-  if (opts.simulation.gasPrice) {
-    const provider = new JsonRpcProvider(network.rpcUrl)
-    const calls = accountOps.map((accOp) => accOp.calls).flat()
-    const result = await Promise.all(
-      calls.map((call) => {
-        return provider
-          .send('debug_traceCall', [
-            {
-              to: call.to,
-              value: toQuantity(call.value.toString()),
-              data: call.data,
-              from: accountOps[0].accountAddr,
-              gasPrice: toQuantity(opts.simulation!.gasPrice!.toString()),
-              gas: '0x104240'
-            },
-            'latest',
-            {
-              tracer:
-                "{data: [], fault: function (log) {}, step: function (log) { if (log.op.toString() === 'LOG3') { this.data.push([ toHex(log.contract.getAddress()), '0x' + ('0000000000000000000000000000000000000000' + log.stack.peek(4).toString(16)).slice(-40)])}}, result: function () { return this.data }}",
-              enableMemory: false,
-              enableReturnData: true,
-              disableStorage: true
-            }
-          ])
-          .catch((e: any) => {
-            console.log(e)
-            return [ZeroAddress]
-          })
-      })
-    )
-    traceCallAddresses = result.flat(Infinity)
-  }
-
-  const tokensForSimulation = [...new Set([...tokenAddrs, ...traceCallAddresses])]
   const [before, after, simulationErr] = await deployless.call(
     'simulateAndGetBalances',
     [
       accountAddr,
       account.associatedKeys,
-      tokensForSimulation,
+      tokenAddrs,
       factory,
       factoryCalldata,
       simulationOps.map((op) => Object.values(op))
@@ -262,7 +226,7 @@ export async function getTokens(
   return before[0].map((token: any, i: number) => [
     token.error,
     {
-      ...mapToken(token, tokensForSimulation[i]),
+      ...mapToken(token, tokenAddrs[i]),
       amountPostSimulation: postSimulationAmounts[i].amount
     }
   ])
