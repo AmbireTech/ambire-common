@@ -16,6 +16,12 @@ import { RPCProviders } from '../../interfaces/settings'
 import { Bundler } from '../../services/bundlers/bundler'
 import { getSASupport, simulateDebugTraceCall } from '../deployless/simulateDeployCall'
 
+export type NetworkFeature = {
+  id: string
+  level: 'success' | 'danger' | 'warning'
+  msg: string
+}
+
 export const getNetworksWithFailedRPC = ({ providers }: { providers: RPCProviders }): string[] => {
   return Object.keys(providers).filter((networkId) => !providers[networkId].isWorking)
 }
@@ -100,12 +106,12 @@ export function getFeaturesByNetworkProperties(
   hasRelayer: boolean,
   hasDebugTraceCall: boolean
 ) {
-  const features = []
+  const features: NetworkFeature[] = []
   if (!isSAEnabled) {
     features.push({
       id: 'saSupport',
       level: 'danger',
-      msg: 'Smart accounts are not available on this network. Please do not send funds to your smart account or they may be lost forever'
+      msg: 'Smart accounts are not available on this network. Please do not send funds to your smart account or they may be lost forever.'
     })
   }
 
@@ -113,13 +119,13 @@ export function getFeaturesByNetworkProperties(
     features.push({
       id: 'saSupport',
       level: 'success',
-      msg: 'Smart accounts are available on this network'
+      msg: 'Smart accounts are available on this network.'
     })
   } else if (isSAEnabled && !areContractsDeployed) {
     features.push({
       id: 'saSupport',
       level: 'warning',
-      msg: "Ambire's smart contracts are not deployed on this network. To use a smart account, please deploy them from network settings using a Basic account"
+      msg: "Ambire's smart contracts are not deployed on this network. To use a smart account, please deploy them from network settings using a Basic account."
     })
   }
 
@@ -128,27 +134,27 @@ export function getFeaturesByNetworkProperties(
     id: 'feeTokens',
     level: supportsFeeTokens ? 'success' : 'warning',
     msg: supportsFeeTokens
-      ? 'You can pay network fees for smart accounts in tokens'
-      : "Only the network's native token can be used as a fee with smart accounts for this network"
+      ? 'You can pay network fees for smart accounts in tokens.'
+      : "Only the network's native token can be used as a fee with smart accounts for this network."
   })
 
   if (!rpcNoStateOverride && hasDebugTraceCall) {
     features.push({
       id: 'simulation',
       level: 'success',
-      msg: 'Transaction simulation is fully supported'
+      msg: 'Transaction simulation is fully supported.'
     })
   } else if (!rpcNoStateOverride && !hasDebugTraceCall) {
     features.push({
       id: 'simulation',
       level: 'warning',
-      msg: 'Transaction simulation is somewhat supported. You can try changing the RPC to resolve this issue'
+      msg: 'Transaction simulation is somewhat supported. You can try changing the RPC to resolve this issue.'
     })
   } else {
     features.push({
       id: 'simulation',
       level: 'danger',
-      msg: 'Transaction simulation is not supported. Please change the RPC to use simulations'
+      msg: 'Transaction simulation is not supported. Please change the RPC to use simulations.'
     })
   }
 
