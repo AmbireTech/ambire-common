@@ -36,6 +36,7 @@ export type CustomNetwork = {
   chainId: bigint
   nativeAssetSymbol: string
   explorerUrl: string
+  iconUrls?: string[]
   isSAEnabled?: boolean
   areContractsDeployed?: boolean
   erc4337?: {

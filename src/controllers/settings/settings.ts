@@ -15,6 +15,7 @@ import { Storage } from '../../interfaces/storage'
 import { getSASupport, simulateDebugTraceCall } from '../../libs/deployless/simulateDeployCall'
 import { getFeaturesByNetworkProperties, getNetworkInfo } from '../../libs/settings/settings'
 import { isValidAddress } from '../../services/address'
+import wait from '../../utils/wait'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 export class SettingsController extends EventEmitter {
@@ -27,6 +28,10 @@ export class SettingsController extends EventEmitter {
   #networkPreferences: NetworkPreferences = {}
 
   #storage: Storage
+
+  status: 'INITIAL' | 'LOADING' | 'SUCCESS' | 'DONE' = 'INITIAL'
+
+  latestMethodCall: string | null = null
 
   constructor(storage: Storage) {
     super()
@@ -264,28 +269,18 @@ export class SettingsController extends EventEmitter {
   // NOTE: used only for adding a new network. We add it to the user's
   // this.#networkPreferences as one day the custom network can be a part of
   // Ambire's main networks => the options in it will become a preference
-  async addCustomNetwork(customNetwork: CustomNetwork) {
+  async #addCustomNetwork(customNetwork: CustomNetwork) {
     // make sure the network has not been added already
     const chainIds = this.networks.map((net) => net.chainId)
     if (chainIds.indexOf(BigInt(customNetwork.chainId)) !== -1) {
-      this.emitError({
-        message: `A chain with a chain id of ${customNetwork.chainId} has already been added`,
-        level: 'major',
-        error: new Error('settings: addCustomNetwork chain already added')
-      })
-      return
+      throw new Error('settings: addCustomNetwork chain already added')
     }
 
     // make sure the id of the network is unique
     const customNetworkId = customNetwork.name.toLowerCase()
     const ids = this.networks.map((net) => net.id)
     if (ids.indexOf(customNetworkId) !== -1) {
-      this.emitError({
-        message: `A chain with the name of ${customNetwork.name} has already been added. Please change the name and try again`,
-        level: 'major',
-        error: new Error('settings: addCustomNetwork chain already added')
-      })
-      return
+      throw new Error('settings: addCustomNetwork chain already added')
     }
 
     try {
@@ -314,17 +309,15 @@ export class SettingsController extends EventEmitter {
         nativeAssetId
       }
     } catch (e: any) {
-      this.emitError({
-        message:
-          'Failed to detect network, perhaps an RPC issue. Please change the RPC and try again',
-        level: 'major',
-        error: new Error('settings: addCustomNetwork chain already added')
-      })
-      return
+      throw new Error('settings: failed to detect network')
     }
 
     await this.#storePreferences()
     this.emitUpdate()
+  }
+
+  async addCustomNetwork(customNetwork: CustomNetwork) {
+    await this.#wrapSettingsAction('addCustomNetwork', () => this.#addCustomNetwork(customNetwork))
   }
 
   async updateNetworkPreferences(
@@ -387,6 +380,46 @@ export class SettingsController extends EventEmitter {
 
     await this.#storePreferences()
     this.emitUpdate()
+  }
+
+  async #wrapSettingsAction(callName: string, fn: Function) {
+    if (this.status === 'LOADING') return
+    this.latestMethodCall = callName
+    this.status = 'LOADING'
+    this.emitUpdate()
+    try {
+      await fn()
+      this.status = 'SUCCESS'
+      this.emitUpdate()
+    } catch (error: any) {
+      if (error?.message === 'settings: addCustomNetwork chain already added') {
+        this.emitError({
+          message:
+            'Failed to detect network, perhaps an RPC issue. Please change the RPC and try again',
+          level: 'major',
+          error
+        })
+      } else if (error?.message === 'settings: failed to detect network') {
+        this.emitError({
+          message:
+            'Failed to detect network, perhaps an RPC issue. Please change the RPC and try again',
+          level: 'major',
+          error
+        })
+      }
+    }
+
+    // set status in the next tick to ensure the FE receives the 'SUCCESS' status
+    await wait(1)
+    this.status = 'DONE'
+    this.emitUpdate()
+
+    // reset the status in the next tick to ensure the FE receives the 'DONE' status
+    await wait(1)
+    if (this.latestMethodCall === callName) {
+      this.status = 'INITIAL'
+      this.emitUpdate()
+    }
   }
 
   #throwInvalidAddress(addresses: string[]) {
