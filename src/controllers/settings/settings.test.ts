@@ -4,6 +4,7 @@ import { describe, expect, test } from '@jest/globals'
 
 import { produceMemoryStore } from '../../../test/helpers'
 import { networks } from '../../consts/networks'
+import { getNetworkInfo } from '../../libs/settings/settings'
 import { SettingsController } from './settings'
 
 describe('Settings Controller', () => {

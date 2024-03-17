@@ -99,7 +99,11 @@ export class Portfolio {
     // Because of this, we fall back to Velcro default response.
     let hints: Hints
     try {
-      hints = await this.batchedVelcroDiscovery({ networkId, accountAddr, baseCurrency })
+      // if the network doesn't have a relayer, velcro will not work
+      // but we should not record an error if such is the case
+      hints = this.network.hasRelayer
+        ? await this.batchedVelcroDiscovery({ networkId, accountAddr, baseCurrency })
+        : getEmptyHints(networkId, accountAddr)
     } catch (error: any) {
       hints = {
         ...getEmptyHints(networkId, accountAddr),

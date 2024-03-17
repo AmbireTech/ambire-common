@@ -43,7 +43,7 @@ export async function getSASupport(
     .catch((e: any) => {
       // if there's an error, return the zero address indicating that
       // our smart accounts will most likely not work on this chain
-      supportsStateOverride = !e.info.error.message.includes('too many arguments')
+      supportsStateOverride = e.info && !e.info.error.message.includes('too many arguments')
       return [ZeroAddress]
     })
 
@@ -83,6 +83,7 @@ export async function simulateDebugTraceCall(
         e.message.includes('not exist') ||
         e.message.includes("doesn't exist") ||
         e.message.includes('not available') ||
+        e.message.includes('400 Bad Request') ||
         e.code === 'UNSUPPORTED_OPERATION'
       ) {
         supportsDebugTraceCall = false
