@@ -15,10 +15,28 @@ interface FeeOptions {
   maxPriorityFee?: bigint
 }
 
-export interface AvailableFeature {
+export type NetworkInfo = {
+  isSAEnabled: boolean
+  isOptimistic: boolean
+  rpcNoStateOverride: boolean
+  erc4337: { enabled: boolean; hasPaymaster: boolean }
+  areContractsDeployed: boolean
+  feeOptions: { is1559: boolean } | null
+  hasDebugTraceCall: boolean
+  platformId: string
+  nativeAssetId: string
+  flagged: boolean
+}
+
+export type NetworkInfoLoading<T> = {
+  [K in keyof T]: T[K] | 'LOADING'
+}
+
+export type NetworkFeature = {
   id: string
-  level: string
-  msg: string
+  title: string
+  msg?: string
+  level: 'success' | 'danger' | 'warning' | 'loading'
 }
 
 // NetworkId is a string: this is our internal identifier for the network
