@@ -435,11 +435,15 @@ describe('Portfolio Controller ', () => {
       forceUpdate: true
     })
 
+    // we're chaging how the portfolio fetches tokens
+    // now, even though we're resetting additionalHints, we want the
+    // token to be available once fetched from the simulation.
+    // if we get close to the limit, all tokens with 0 balance will
+    // get flushed
     const tokenAgain = controller.latest[account.addr].ethereum?.result?.tokens.find(
       (tk) => tk.address === BANANA_TOKEN_ADDR
     )
-
-    expect(tokenAgain).toBeUndefined()
+    expect(tokenAgain).toBeTruthy()
   })
 
   test('Native tokens are fetched for all networks', async () => {

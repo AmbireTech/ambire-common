@@ -189,10 +189,13 @@ export class Portfolio {
       const isPinned = !!PINNED_TOKENS.find((pinnedToken) => {
         return pinnedToken.networkId === networkId && pinnedToken.address === result.address
       })
-      const isInAdditionalHints = localOpts.additionalHints?.includes(result.address)
-      const isNative = result.address === ZeroAddress
 
-      return isPinned || isInAdditionalHints || isNative
+      // if the amount is 0
+      // return the token if it's pinned and requested
+      // or if it's not pinned but under the limit
+      const pinnedRequested = isPinned && localOpts.fetchPinned
+      const underLimit = !isPinned && tokensWithErr.length <= limits.erc20
+      return pinnedRequested || underLimit
     }
 
     const tokens = tokensWithErr

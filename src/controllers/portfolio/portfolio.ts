@@ -35,26 +35,26 @@ import { SettingsController } from '../settings/settings'
 // We already know that `results.tokens` and `result.collections` tokens have a balance (this is handled by the portfolio lib).
 // Based on that, we can easily find out which hint tokens also have a balance.
 function getHintsWithBalance(
-  result: PortfolioGetResult,
-  keepPinned: boolean,
-  additionalHints: GetOptions['additionalHints'] = []
+  result: PortfolioGetResult
+  // keepPinned: boolean,
+  // additionalHints: GetOptions['additionalHints'] = []
 ): {
   erc20s: Hints['erc20s']
   erc721s: Hints['erc721s']
 } {
   const erc20s = result.tokens
-    .filter((token) => {
-      return (
-        token.amount > 0n ||
-        additionalHints.includes(token.address) ||
-        // Delete pinned tokens' hints if the user has > 1 non-zero tokens
-        (keepPinned &&
-          PINNED_TOKENS.find(
-            (pinnedToken) =>
-              pinnedToken.address === token.address && pinnedToken.networkId === token.networkId
-          ))
-      )
-    })
+    // .filter((token) => {
+    //   return (
+    //     token.amount > 0n ||
+    //     additionalHints.includes(token.address) ||
+    //     // Delete pinned tokens' hints if the user has > 1 non-zero tokens
+    //     (keepPinned &&
+    //       PINNED_TOKENS.find(
+    //         (pinnedToken) =>
+    //           pinnedToken.address === token.address && pinnedToken.networkId === token.networkId
+    //       ))
+    //   )
+    // })
     .map((token) => token.address)
 
   const erc721s = Object.fromEntries(
@@ -346,7 +346,6 @@ export class PortfolioController extends EventEmitter {
 
       state.isLoading = true
       this.emitUpdate()
-
       try {
         const result = await portfolioLib.get(accountId, {
           priceRecency: 60000,
@@ -445,9 +444,9 @@ export class PortfolioController extends EventEmitter {
         // latest state was updated successful and hints were fetched successful too (no hintsError from portfolio result)
         if (isSuccessfulLatestUpdate && !accountState[network.id]!.result!.hintsError) {
           storagePreviousHints[key] = getHintsWithBalance(
-            accountState[network.id]!.result!,
-            !hasNonZeroTokens,
-            this.#additionalHints
+            accountState[network.id]!.result!
+            // !hasNonZeroTokens,
+            // this.#additionalHints
           )
           await this.#storage.set('previousHints', storagePreviousHints)
         }
