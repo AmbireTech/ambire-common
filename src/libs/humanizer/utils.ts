@@ -42,12 +42,12 @@ export function getToken(_address: string, amount: bigint): HumanizerVisualizati
   return {
     type: 'token',
     address,
-    amount
+    amount: BigInt(amount)
   }
 }
 
 export function getNft(address: string, id: bigint): HumanizerVisualization {
-  return { type: 'nft', address, id }
+  return { type: 'nft', address, id: BigInt(id) }
 }
 
 export function getOnBehalfOf(onBehalfOf: string, sender: string): HumanizerVisualization[] {
@@ -65,7 +65,7 @@ export function getRecipientText(from: string, recipient: string): HumanizerVisu
 
 export function getDeadlineText(deadline: bigint): string {
   const minute = 60000n
-  const diff = deadline - BigInt(Date.now())
+  const diff = BigInt(deadline) - BigInt(Date.now())
 
   if (diff < 0 && diff > -minute * 2n) return 'expired just now'
   if (diff < 0) return 'already expired'
