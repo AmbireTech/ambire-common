@@ -1,4 +1,4 @@
-import { ethers, getAddress } from 'ethers'
+import { AbiCoder, getAddress, keccak256 } from 'ethers'
 
 // TODO: change to original address once deployed
 export const DKIM_VALIDATOR_ADDR = '0x0000000000000000000000000000000000000000'
@@ -38,10 +38,8 @@ export const frequentlyUsedSelectors = [
  * @returns {Address, bytes32}
  */
 export function getSignerKey(validatorAddr: string, validatorData: any) {
-  const abiCoder = new ethers.AbiCoder()
-  const hash = ethers.keccak256(
-    abiCoder.encode(['address', 'bytes'], [validatorAddr, validatorData])
-  )
+  const abiCoder = new AbiCoder()
+  const hash = keccak256(abiCoder.encode(['address', 'bytes'], [validatorAddr, validatorData]))
   const signerKey = getAddress(`0x${hash.slice(hash.length - 40, hash.length)}`)
   return { signerKey, hash }
 }

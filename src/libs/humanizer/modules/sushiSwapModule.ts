@@ -1,14 +1,15 @@
+import { Interface, ZeroAddress } from 'ethers'
 import { AccountOp } from 'libs/accountOp/accountOp'
-import { ethers } from 'ethers'
+
 import { HumanizerCallModule, IrCall } from '../interfaces'
 import {
-  getKnownAbi,
   getAction,
+  getKnownAbi,
+  getKnownName,
   getLabel,
   getRecipientText,
   getToken,
-  getUnknownVisualization,
-  getKnownName
+  getUnknownVisualization
 } from '../utils'
 
 export const sushiSwapModule: HumanizerCallModule = (
@@ -17,7 +18,7 @@ export const sushiSwapModule: HumanizerCallModule = (
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   options?: any
 ) => {
-  const routeProcessorIface = new ethers.Interface(
+  const routeProcessorIface = new Interface(
     Object.values(getKnownAbi(accountOp.humanizerMeta, 'RouteProcessor', options))
   )
   const matcher = {
@@ -28,8 +29,8 @@ export const sushiSwapModule: HumanizerCallModule = (
       const params = routeProcessorIface.parseTransaction(call)!.args
       let { tokenIn, tokenOut /* route */ } = params
       const { amountIn, amountOutMin, to } = params
-      if (tokenIn === '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee') tokenIn = ethers.ZeroAddress
-      if (tokenOut === '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee') tokenOut = ethers.ZeroAddress
+      if (tokenIn === '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee') tokenIn = ZeroAddress
+      if (tokenOut === '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee') tokenOut = ZeroAddress
 
       return {
         ...call,

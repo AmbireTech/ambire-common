@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/brace-style */
-import { ethers, getAddress, isAddress, TransactionResponse } from 'ethers'
+import { getAddress, Interface, isAddress, TransactionResponse } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFactory.json'
@@ -997,14 +997,14 @@ export class MainController extends EventEmitter {
       let data
       let to
       if (accountState.isDeployed) {
-        const ambireAccount = new ethers.Interface(AmbireAccount.abi)
+        const ambireAccount = new Interface(AmbireAccount.abi)
         to = accountOp.accountAddr
         data = ambireAccount.encodeFunctionData('execute', [
           getSignableCalls(accountOp),
           accountOp.signature
         ])
       } else {
-        const ambireFactory = new ethers.Interface(AmbireAccountFactory.abi)
+        const ambireFactory = new Interface(AmbireAccountFactory.abi)
         to = account.creation.factoryAddr
         data = ambireFactory.encodeFunctionData('deployAndExecute', [
           account.creation.bytecode,
