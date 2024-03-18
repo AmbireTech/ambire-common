@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-floating-promises */
-import { ethers, JsonRpcProvider } from 'ethers'
+import { getCreate2Address, JsonRpcProvider, keccak256 } from 'ethers'
 
 import { PROXY_AMBIRE_ACCOUNT } from '../../consts/deploy'
 import {
@@ -830,7 +830,7 @@ export class AccountAdderController extends EventEmitter {
       // Checks whether the account.addr matches the addr generated from the
       // factory. Should never happen, but could be a possible attack vector.
       const isInvalidAddress =
-        ethers.getCreate2Address(factoryAddr, salt, ethers.keccak256(bytecode)).toLowerCase() !==
+        getCreate2Address(factoryAddr, salt, keccak256(bytecode)).toLowerCase() !==
         addr.toLowerCase()
       if (isInvalidAddress) {
         const message = `The address ${addr} can't be verified to be a smart account address.`

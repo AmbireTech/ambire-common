@@ -1,4 +1,4 @@
-import { ethers, Interface } from 'ethers'
+import { AbiCoder, hexlify, Interface, toBeHex, toUtf8Bytes, ZeroAddress } from 'ethers'
 
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET } from '../../consts/derivation'
@@ -39,7 +39,7 @@ interface DKIMRecoveryAccInfo {
 export function getAccountDeployParams(account: Account): [string, string] {
   // for EOAs, we do not throw an error anymore as we need fake
   // values for the simulation
-  if (account.creation === null) return [ethers.ZeroAddress, '0x']
+  if (account.creation === null) return [ZeroAddress, '0x']
 
   const factory = new Interface(['function deploy(bytes calldata code, uint256 salt) external'])
   return [
@@ -67,13 +67,13 @@ export async function getSmartAccount(privileges: PrivLevels[]): Promise<Account
     creation: {
       factoryAddr: AMBIRE_ACCOUNT_FACTORY,
       bytecode,
-      salt: ethers.toBeHex(0, 32)
+      salt: toBeHex(0, 32)
     }
   }
 }
 
 export function getSpoof(account: Account) {
-  const abiCoder = new ethers.AbiCoder()
+  const abiCoder = new AbiCoder()
   return abiCoder.encode(['address'], [account.associatedKeys[0]]) + SPOOF_SIGTYPE
 }
 
@@ -112,13 +112,13 @@ export async function getEmailAccount(
   // if there's no dkimKey, standard DKIM recovery is not possible
   // we leave the defaults empty and the user will have to rely on
   // keys added through DNSSEC
-  const selector = ethers.hexlify(ethers.toUtf8Bytes(''))
-  const modulus = ethers.hexlify(ethers.toUtf8Bytes(''))
-  const exponent = ethers.hexlify(ethers.toUtf8Bytes(''))
+  const selector = hexlify(toUtf8Bytes(''))
+  const modulus = hexlify(toUtf8Bytes(''))
+  const exponent = hexlify(toUtf8Bytes(''))
   // if (dkimKey) {
   //   const key = publicKeyToComponents(dkimKey.publicKey)
-  //   modulus = ethers.hexlify(key.modulus)
-  //   exponent = ethers.hexlify(ethers.toBeHex(key.exponent))
+  //   modulus = hexlify(key.modulus)
+  //   exponent = hexlify(toBeHex(key.exponent))
   // }
 
   // acceptUnknownSelectors should be always true
@@ -133,7 +133,7 @@ export async function getEmailAccount(
     recoveryInfo.acceptEmptySecondSig ?? RECOVERY_DEFAULTS.acceptEmptySecondSig
   const onlyOneSigTimelock = recoveryInfo.onlyOneSigTimelock ?? RECOVERY_DEFAULTS.onlyOneSigTimelock
 
-  const abiCoder = new ethers.AbiCoder()
+  const abiCoder = new AbiCoder()
   const validatorAddr = DKIM_VALIDATOR_ADDR
   const validatorData = abiCoder.encode(
     ['tuple(string,string,string,bytes,bytes,address,bool,uint32,uint32,bool,bool,uint32)'],

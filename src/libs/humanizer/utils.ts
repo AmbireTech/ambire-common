@@ -1,6 +1,6 @@
 import { ErrorRef } from 'controllers/eventEmitter/eventEmitter'
 import dotenv from 'dotenv'
-import { ethers } from 'ethers'
+import { ZeroAddress } from 'ethers'
 
 import { geckoIdMapper } from '../../consts/coingecko'
 import { networks } from '../../consts/networks'
@@ -92,7 +92,7 @@ export function shortenAddress(addr: string): string {
  */
 // @TODO this shouldn't be here, a more suitable place would be portfolio/gecko
 export async function getNativePrice(network: NetworkDescriptor, fetch: Function): Promise<number> {
-  const platformId = geckoIdMapper(ethers.ZeroAddress, network)
+  const platformId = geckoIdMapper(ZeroAddress, network)
   if (!platformId) {
     throw new Error(`getNativePrice: ${network.name} is not supported`)
   }
@@ -172,7 +172,7 @@ export function getUnknownVisualization(name: string, call: IrCall): HumanizerVi
   ]
   if (call.value)
     unknownVisualization.push(
-      ...[getLabel('and'), getAction('Send'), getToken(ethers.ZeroAddress, call.value)]
+      ...[getLabel('and'), getAction('Send'), getToken(ZeroAddress, call.value)]
     )
   return unknownVisualization
 }

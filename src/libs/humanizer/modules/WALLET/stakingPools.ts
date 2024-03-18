@@ -1,7 +1,8 @@
-import { ethers } from 'ethers'
-import { getAction, getLabel, getToken, getAddressVisualization, getKnownAbi } from '../../utils'
+import { Interface } from 'ethers'
+
 import { AccountOp } from '../../../accountOp/accountOp'
 import { IrCall } from '../../interfaces'
+import { getAction, getAddressVisualization, getKnownAbi, getLabel, getToken } from '../../utils'
 
 const STAKING_POOLS: { [key: string]: { [key: string]: string } } = {
   '0x47cd7e91c3cbaaf266369fe8518345fc4fc12935': {
@@ -21,7 +22,7 @@ const STAKING_POOLS: { [key: string]: { [key: string]: string } } = {
 // const WALLET_TOKEN_ADDR = '0x88800092ff476844f74dc2fc427974bbee2794ae'
 
 export const StakingPools = (humanizerInfo: any) => {
-  const iface = new ethers.Interface(getKnownAbi(humanizerInfo, 'StakingPool'))
+  const iface = new Interface(getKnownAbi(humanizerInfo, 'StakingPool'))
   return {
     [iface.getFunction('enter')?.selector!]: (accountOp: AccountOp, call: IrCall) => {
       const { amount } = iface.parseTransaction(call)!.args

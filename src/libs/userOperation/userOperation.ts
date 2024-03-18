@@ -1,4 +1,4 @@
-import { ethers } from 'ethers'
+import { AbiCoder, BaseContract, concat, hexlify, Interface, keccak256, toBeHex } from 'ethers'
 import { NetworkDescriptor } from 'interfaces/networkDescriptor'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
@@ -23,10 +23,10 @@ export function calculateCallDataCost(callData: string): bigint {
 }
 
 export function getPaymasterSpoof() {
-  const abiCoder = new ethers.AbiCoder()
+  const abiCoder = new AbiCoder()
   const spoofSig = abiCoder.encode(['address'], [AMBIRE_PAYMASTER_SIGNER]) + SPOOF_SIGTYPE
   const simulationData = abiCoder.encode(['uint48', 'uint48', 'bytes'], [0, 0, spoofSig])
-  return ethers.hexlify(ethers.concat([AMBIRE_PAYMASTER, simulationData]))
+  return hexlify(concat([AMBIRE_PAYMASTER, simulationData]))
 }
 
 export function getSigForCalculations() {
@@ -35,7 +35,7 @@ export function getSigForCalculations() {
 
 // get the call to give privileges to the entry point
 export function getActivatorCall(addr: AccountId) {
-  const saAbi = new ethers.Interface(AmbireAccount.abi)
+  const saAbi = new Interface(AmbireAccount.abi)
   const givePermsToEntryPointData = saAbi.encodeFunctionData('setAddrPrivilege', [
     ERC_4337_ENTRYPOINT,
     ENTRY_POINT_MARKER
@@ -66,24 +66,22 @@ export function getCleanUserOp(userOp: UserOperation) {
  * @returns hex string
  */
 export function getOneTimeNonce(userOperation: UserOperation) {
-  const abiCoder = new ethers.AbiCoder()
-  return `0x${ethers
-    .keccak256(
-      abiCoder.encode(
-        ['bytes', 'bytes', 'uint256', 'uint256', 'uint256', 'uint256', 'uint256', 'bytes'],
-        [
-          userOperation.initCode,
-          userOperation.callData,
-          userOperation.callGasLimit,
-          userOperation.verificationGasLimit,
-          userOperation.preVerificationGas,
-          userOperation.maxFeePerGas,
-          userOperation.maxPriorityFeePerGas,
-          userOperation.paymasterAndData
-        ]
-      )
+  const abiCoder = new AbiCoder()
+  return `0x${keccak256(
+    abiCoder.encode(
+      ['bytes', 'bytes', 'uint256', 'uint256', 'uint256', 'uint256', 'uint256', 'bytes'],
+      [
+        userOperation.initCode,
+        userOperation.callData,
+        userOperation.callGasLimit,
+        userOperation.verificationGasLimit,
+        userOperation.preVerificationGas,
+        userOperation.maxFeePerGas,
+        userOperation.maxPriorityFeePerGas,
+        userOperation.paymasterAndData
+      ]
     )
-    .substring(18)}${ethers.toBeHex(0, 8).substring(2)}`
+  ).substring(18)}${toBeHex(0, 8).substring(2)}`
 }
 
 export function shouldUseOneTimeNonce(userOp: UserOperation) {
@@ -95,7 +93,7 @@ export function getPreVerificationGas(
   usesPaymaster: boolean,
   l1FeeAsL2Gas: bigint = 0n
 ): string {
-  const abiCoder = new ethers.AbiCoder()
+  const abiCoder = new AbiCoder()
   const localUserOp = { ...userOperation }
 
   // set fake properties for better estimation
@@ -114,7 +112,7 @@ export function getPreVerificationGas(
     ],
     [Object.values(getCleanUserOp(localUserOp)[0])]
   )
-  return ethers.toBeHex(21000n + calculateCallDataCost(packed) + l1FeeAsL2Gas)
+  return toBeHex(21000n + calculateCallDataCost(packed) + l1FeeAsL2Gas)
 }
 
 export function toUserOperation(
@@ -129,12 +127,12 @@ export function toUserOperation(
   if (!accountState.isDeployed) {
     if (!account.creation) throw new Error('Account creation properties are missing')
 
-    const ambireAccountFactory = new ethers.BaseContract(
+    const ambireAccountFactory = new BaseContract(
       account.creation.factoryAddr,
       AmbireAccountFactory.abi
     )
-    initCode = ethers.hexlify(
-      ethers.concat([
+    initCode = hexlify(
+      concat([
         account.creation.factoryAddr,
         ambireAccountFactory.interface.encodeFunctionData('deploy', [
           account.creation.bytecode,
@@ -148,14 +146,14 @@ export function toUserOperation(
 
   const userOperation: any = {
     sender: accountOp.accountAddr,
-    nonce: ethers.toBeHex(accountState.erc4337Nonce),
+    nonce: toBeHex(accountState.erc4337Nonce),
     initCode,
     callData: '0x',
-    preVerificationGas: ethers.toBeHex(0),
+    preVerificationGas: toBeHex(0),
     callGasLimit: 20000000n,
     verificationGasLimit: '0x',
-    maxFeePerGas: ethers.toBeHex(1),
-    maxPriorityFeePerGas: ethers.toBeHex(1),
+    maxFeePerGas: toBeHex(1),
+    maxPriorityFeePerGas: toBeHex(1),
     paymasterAndData: getPaymasterSpoof(),
     signature:
       '0x0dc2d37f7b285a2243b2e1e6ba7195c578c72b395c0f76556f8961b0bca97ddc44e2d7a249598f56081a375837d2b82414c3c94940db3c1e64110108021161ca1c01'
@@ -163,7 +161,7 @@ export function toUserOperation(
 
   // give permissions to the entry if there aren't nay
   const localAccOp = { ...accountOp }
-  const ambireAccount = new ethers.BaseContract(accountOp.accountAddr, AmbireAccount.abi)
+  const ambireAccount = new BaseContract(accountOp.accountAddr, AmbireAccount.abi)
   if (!accountState.isErc4337Enabled) {
     const activatorCall = getActivatorCall(accountOp.accountAddr)
     userOperation.activatorCall = activatorCall
@@ -173,7 +171,7 @@ export function toUserOperation(
 
   // get estimation calldata
   if (requestType !== 'standard') {
-    const abiCoder = new ethers.AbiCoder()
+    const abiCoder = new AbiCoder()
     const spoofSig = abiCoder.encode(['address'], [account.associatedKeys[0]]) + SPOOF_SIGTYPE
     userOperation.callData = ambireAccount.interface.encodeFunctionData('executeMultiple', [
       [[getSignableCalls(localAccOp), spoofSig]]

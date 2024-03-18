@@ -1,7 +1,7 @@
-import { ethers } from 'ethers'
+import { formatUnits } from 'ethers'
+
 import { MAX_UINT256 } from '../../consts/deploy'
 import { ErrorRef } from '../../controllers/eventEmitter/eventEmitter'
-
 import { Message, PlainTextMessage, TypedMessage } from '../../interfaces/userRequest'
 import { AccountOp } from '../accountOp/accountOp'
 import {
@@ -12,7 +12,7 @@ import {
   IrCall,
   IrMessage
 } from './interfaces'
-import { getAction, getLabel, getDeadlineText } from './utils'
+import { getAction, getDeadlineText, getLabel } from './utils'
 
 export function humanizeCalls(
   _accountOp: AccountOp,
@@ -58,7 +58,7 @@ export const visualizationToText = (call: IrCall, options: any): string => {
             v.humanizerMeta.token?.symbol ? v.humanizerMeta.token?.symbol : `${v.address} token`
           }`
         } else {
-          text += `${ethers.formatUnits(v.amount!, v.humanizerMeta.token.decimals)} ${
+          text += `${formatUnits(v.amount!, v.humanizerMeta.token.decimals)} ${
             v.humanizerMeta.token?.symbol ? v.humanizerMeta.token?.symbol : `${v.address} token`
           }`
         }

@@ -1,19 +1,19 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable no-console */
-import { ethers } from 'ethers'
-import {
-  getAction,
-  getLabel,
-  getToken,
-  getRecipientText,
-  getAddressVisualization,
-  getDeadline,
-  getUnknownVisualization,
-  getKnownAbi
-} from '../../utils'
+import { Interface, ZeroAddress } from 'ethers'
 
 import { AccountOp } from '../../../accountOp/accountOp'
 import { HumanizerMeta, IrCall } from '../../interfaces'
+import {
+  getAction,
+  getAddressVisualization,
+  getDeadline,
+  getKnownAbi,
+  getLabel,
+  getRecipientText,
+  getToken,
+  getUnknownVisualization
+} from '../../utils'
 import { parsePath } from './utils'
 
 // Stolen from ambire-wallet
@@ -21,7 +21,7 @@ const uniV32Mapping = (
   humanizerInfo: HumanizerMeta,
   _options?: any
 ): { [key: string]: (a: AccountOp, c: IrCall) => IrCall[] } => {
-  const ifaceV32 = new ethers.Interface(getKnownAbi(humanizerInfo, 'UniV3Router2'))
+  const ifaceV32 = new Interface(getKnownAbi(humanizerInfo, 'UniV3Router2'))
   return {
     // uint256 is deadline
     // 0x5ae401dc
@@ -233,7 +233,7 @@ const uniV32Mapping = (
       return [
         {
           ...call,
-          fullVisualization: [getAction('Unwrap'), getToken(ethers.ZeroAddress, amountMin)]
+          fullVisualization: [getAction('Unwrap'), getToken(ZeroAddress, amountMin)]
         }
       ]
     },
@@ -249,7 +249,7 @@ const uniV32Mapping = (
           ...call,
           fullVisualization: [
             getAction('Unwrap'),
-            getToken(ethers.ZeroAddress, amountMin),
+            getToken(ZeroAddress, amountMin),
             ...getRecipientText(accountOp.accountAddr, recipient)
           ]
         }
@@ -341,7 +341,7 @@ const uniV3Mapping = (
   humanizerInfo: HumanizerMeta,
   _options?: any
 ): { [key: string]: (a: AccountOp, c: IrCall) => IrCall[] } => {
-  const ifaceV3 = new ethers.Interface(getKnownAbi(humanizerInfo, 'UniV3Router'))
+  const ifaceV3 = new Interface(getKnownAbi(humanizerInfo, 'UniV3Router'))
   return {
     // 0xac9650d8
     [ifaceV3.getFunction('multicall')?.selector!]: (
@@ -458,7 +458,7 @@ const uniV3Mapping = (
           ...call,
           fullVisualization: [
             getAction('Unwrap'),
-            getToken(ethers.ZeroAddress, amountMin),
+            getToken(ZeroAddress, amountMin),
             ...getRecipientText(accountOp.accountAddr, recipient)
           ]
         }
@@ -476,9 +476,9 @@ const uniV3Mapping = (
           ...call,
           fullVisualization: [
             getAction('Unwrap'),
-            getToken(ethers.ZeroAddress, amountMin),
+            getToken(ZeroAddress, amountMin),
             getLabel('with fee'),
-            getToken(ethers.ZeroAddress, feeBips),
+            getToken(ZeroAddress, feeBips),
             getLabel('to'),
             getAddressVisualization(feeRecipient),
             ...getRecipientText(accountOp.accountAddr, recipient)

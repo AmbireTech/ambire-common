@@ -1,4 +1,18 @@
-import { Contract, ethers, getBytes, JsonRpcProvider, Wallet } from 'ethers'
+import {
+  AbiCoder,
+  computeAddress,
+  concat,
+  Contract,
+  getBytes,
+  getCreate2Address,
+  hexlify,
+  Interface,
+  JsonRpcProvider,
+  keccak256,
+  randomBytes,
+  toBeHex,
+  Wallet
+} from 'ethers'
 import fetch from 'node-fetch'
 
 import { StaticJsonRpcProvider } from '@ethersproject/providers'
@@ -22,29 +36,25 @@ const ENTRY_POINT_ADDR = '0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789'
 const apiKey = '2b56fcf6-7796-4a89-90ac-f80d5dcf6192'
 const pimlicoEndpoint = `https://api.pimlico.io/v1/polygon/rpc?apikey=${apiKey}`
 const pimlicoProvider = new StaticJsonRpcProvider(pimlicoEndpoint)
-const abiCoder = new ethers.AbiCoder()
+const abiCoder = new AbiCoder()
 
 const salt = '0x0'
 
 function getAmbireAccountAddress(factoryAddress: string, bytecode: string) {
-  return ethers.getCreate2Address(
-    factoryAddress,
-    ethers.toBeHex(salt, 32),
-    ethers.keccak256(bytecode)
-  )
+  return getCreate2Address(factoryAddress, toBeHex(salt, 32), keccak256(bytecode))
 }
 
 function getDeployCalldata(bytecodeWithArgs: string, txns: any, sig: string) {
   const abi = [
     'function deployAndExecute(bytes calldata code, uint256 salt, tuple(address, uint256, bytes)[] calldata txns, bytes calldata signature) external returns (address)'
   ]
-  const iface = new ethers.Interface(abi)
+  const iface = new Interface(abi)
   return iface.encodeFunctionData('deployAndExecute', [bytecodeWithArgs, salt, txns, sig])
 }
 
 function getPriviledgeTxn(ambireAccountAddr: string, privAddress: string, privHash: string) {
   const setAddrPrivilegeABI = ['function setAddrPrivilege(address addr, bytes32 priv)']
-  const iface = new ethers.Interface(setAddrPrivilegeABI)
+  const iface = new Interface(setAddrPrivilegeABI)
   const calldata = iface.encodeFunctionData('setAddrPrivilege', [privAddress, privHash])
   return [ambireAccountAddr, 0, calldata]
 }
@@ -53,7 +63,7 @@ async function test() {
   const signer = new Wallet(SIGNER_PRIV_KEY)
   const polygon = networks.find((x) => x.id === 'polygon')
   if (!polygon) throw new Error('unable to find polygon network in consts')
-  const secondKeyAddr = ethers.computeAddress(ethers.hexlify(ethers.randomBytes(32)))
+  const secondKeyAddr = computeAddress(hexlify(randomBytes(32)))
   const privs = [
     { addr: signer.address, hash: true },
     { addr: secondKeyAddr, hash: true }
@@ -73,8 +83,8 @@ async function test() {
     '0x42144640c7cb5ff8aa9595ae175ffcb6dd152db6e737c13cc2d5d07576967020'
   )
   const gasPrice = await provider.send('eth_gasPrice', [])
-  const msg = ethers.getBytes(
-    ethers.keccak256(
+  const msg = getBytes(
+    keccak256(
       abiCoder.encode(
         ['address', 'uint', 'uint', 'tuple(address, uint, bytes)[]'],
         [senderAddress, polygon.chainId, 0, [txn]]
@@ -82,18 +92,18 @@ async function test() {
     )
   )
   const s = wrapEthSign(await signer.signMessage(msg))
-  const initCode = ethers.hexlify(
-    ethers.concat([AMBIRE_ACCOUNT_FACTORY, getDeployCalldata(bytecodeWithArgs, [txn], s)])
+  const initCode = hexlify(
+    concat([AMBIRE_ACCOUNT_FACTORY, getDeployCalldata(bytecodeWithArgs, [txn], s)])
   )
 
   const userOperation = {
     sender: senderAddress,
-    nonce: ethers.toBeHex(0, 1),
+    nonce: toBeHex(0, 1),
     initCode,
     callData,
-    callGasLimit: ethers.toBeHex(100000), // hardcode it for now at a high value
-    verificationGasLimit: ethers.toBeHex(500000), // hardcode it for now at a high value
-    preVerificationGas: ethers.toBeHex(50000), // hardcode it for now at a high value
+    callGasLimit: toBeHex(100000), // hardcode it for now at a high value
+    verificationGasLimit: toBeHex(500000), // hardcode it for now at a high value
+    preVerificationGas: toBeHex(50000), // hardcode it for now at a high value
     maxFeePerGas: gasPrice,
     maxPriorityFeePerGas: gasPrice,
     paymasterAndData: '0x',

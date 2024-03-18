@@ -1,21 +1,22 @@
-import { ethers } from 'ethers'
+import { AbiCoder, Interface, ZeroAddress } from 'ethers'
+
+import { AccountOp } from '../../../accountOp/accountOp'
+import { HumanizerMeta, IrCall } from '../../interfaces'
 import {
   getAction,
+  getAddressVisualization,
   getDeadline,
+  getKnownAbi,
   getLabel,
   getRecipientText,
   getToken,
-  getWraping,
-  getAddressVisualization,
   getUnknownVisualization,
-  getKnownAbi
+  getWraping
 } from '../../utils'
-import { AccountOp } from '../../../accountOp/accountOp'
-import { HumanizerMeta, IrCall } from '../../interfaces'
 import { COMMANDS, COMMANDS_DESCRIPTIONS } from './Commands'
 import { parsePath } from './utils'
 
-const coder = new ethers.AbiCoder()
+const coder = new AbiCoder()
 
 const extractParams = (inputsDetails: any, input: any) => {
   const types = inputsDetails.map((i: any) => i.type)
@@ -53,9 +54,7 @@ export const uniUniversalRouter = (
   humanizerInfo: HumanizerMeta,
   options?: any
 ): { [x: string]: (a: AccountOp, c: IrCall) => IrCall[] } => {
-  const ifaceUniversalRouter = new ethers.Interface(
-    getKnownAbi(humanizerInfo, 'UniswapUniversalRouter')
-  )
+  const ifaceUniversalRouter = new Interface(getKnownAbi(humanizerInfo, 'UniswapUniversalRouter'))
   return {
     [`${
       ifaceUniversalRouter.getFunction(
@@ -186,7 +185,7 @@ export const uniUniversalRouter = (
               params.amountMin &&
                 parsed.push({
                   ...call,
-                  fullVisualization: getWraping(ethers.ZeroAddress, params.amountMin)
+                  fullVisualization: getWraping(ZeroAddress, params.amountMin)
                 })
             } else if (command === COMMANDS.UNWRAP_WETH) {
               const { inputsDetails } = COMMANDS_DESCRIPTIONS.UNWRAP_WETH
@@ -197,7 +196,7 @@ export const uniUniversalRouter = (
                   ...call,
                   fullVisualization: [
                     getAction('Unwrap'),
-                    getToken(ethers.ZeroAddress, params.amountMin),
+                    getToken(ZeroAddress, params.amountMin),
                     ...getRecipientText(accountOp.accountAddr, params.recipient)
                   ]
                 })
