@@ -162,12 +162,22 @@ export function getFeaturesByNetworkProperties(
     },
     {
       id: 'feeTokens',
-      title: 'Pay network fees for smart accounts',
+      title: 'Gas abstraction',
       level: 'loading'
     },
     {
       id: 'simulation',
       title: 'Transaction simulation',
+      level: 'loading'
+    },
+    {
+      id: 'erc4337',
+      title: 'ERC-4337 Account Abstraction',
+      level: 'loading'
+    },
+    {
+      id: 'prices',
+      title: "Token's prices",
       level: 'loading'
     }
   ]
@@ -180,7 +190,8 @@ export function getFeaturesByNetworkProperties(
     areContractsDeployed,
     erc4337,
     rpcNoStateOverride,
-    hasDebugTraceCall
+    hasDebugTraceCall,
+    nativeAssetId
   } = networkInfo
 
   const updateFeature = (
@@ -201,7 +212,7 @@ export function getFeaturesByNetworkProperties(
     return [
       {
         id: 'flagged',
-        title: 'Bad RPC',
+        title: 'RPC error',
         level: 'danger',
         msg: 'We were unable to fetch the network information with the provided RPC. Please choose another RPC or try again later'
       }
@@ -235,11 +246,21 @@ export function getFeaturesByNetworkProperties(
     updateFeature('feeTokens', {
       level: supportsFeeTokens ? 'success' : 'warning',
       title: supportsFeeTokens
-        ? 'Pay network fees for smart accounts in multiple tokens'
-        : 'Pay network fees for smart accounts only with the native token',
+        ? 'Gas abstraction is supported'
+        : 'Gas abstraction is not available',
       msg: supportsFeeTokens
-        ? 'Smart accounts on this network can pay gas fees with multiple tokens.'
-        : "Only the network's native token can be used as a fee with smart accounts for this network."
+        ? 'This feature allows you to pay gas fees in a variety of ERC-20 tokens, in addition to the native one, making transaction fees a more flexible and effortless experience.'
+        : 'This feature is not supported by the network and you can pay the gas fees only with the native token.'
+    })
+
+    updateFeature('erc4337', {
+      level: (erc4337 as any).enabled ? 'success' : 'warning',
+      title: (erc4337 as any).enabled
+        ? 'ERC-4337 Account Abstraction is supported'
+        : 'ERC-4337 Account Abstraction is not supported',
+      msg: (erc4337 as any).enabled
+        ? 'ERC-4337 simplifies the logic used by smart contract wallets, and allows wallets to focus primarily on the core smart account functionalities (a.k.a. Account Abstraction)'
+        : 'Unfortunately, ERC-4337 is not supported on this network. '
     })
   }
 
@@ -263,6 +284,16 @@ export function getFeaturesByNetworkProperties(
         msg: 'Unfortunately, the feature of predicting the outcome of a transaction before it is broadcasted to the blockchain is not yet available for this network or RPC. You can try a different RPC.'
       })
     }
+  }
+
+  if (nativeAssetId && nativeAssetId !== 'LOADING') {
+    const hasNativeAssetId = nativeAssetId !== ''
+    updateFeature('prices', {
+      level: hasNativeAssetId ? 'success' : 'danger',
+      msg: hasNativeAssetId
+        ? 'We are using third-party providers in order to present you with information about current token prices, and it supports most of the popular tokens.'
+        : "Our third-party providers don't support this blockchain network yet and we cannot present you with information of current token prices on this network."
+    })
   }
 
   return features

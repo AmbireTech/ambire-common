@@ -206,7 +206,7 @@ describe('Settings Controller', () => {
   test('should check if network features get displayed correctly for ethereum', () => {
     const eth = settingsController.networks.find((net) => net.id === 'ethereum')
     expect(eth).not.toBe(null)
-    expect(eth?.features.length).toBe(3)
+    expect(eth?.features.length).toBe(5)
 
     const saSupport = eth?.features.find((feat) => feat.id === 'saSupport')
     expect(saSupport).not.toBe(null)
@@ -222,6 +222,16 @@ describe('Settings Controller', () => {
     expect(simulation).not.toBe(null)
     expect(simulation).not.toBe(undefined)
     expect(simulation!.level).toBe('success')
+
+    const erc4337 = eth?.features.find((feat) => feat.id === 'erc4337')
+    expect(erc4337).not.toBe(null)
+    expect(erc4337).not.toBe(undefined)
+    expect(erc4337!.level).toBe('warning')
+
+    const prices = eth?.features.find((feat) => feat.id === 'prices')
+    expect(prices).not.toBe(null)
+    expect(prices).not.toBe(undefined)
+    expect(prices!.level).toBe('success')
   })
 
   test('should add the mantle network as a custom network', (done) => {
@@ -311,6 +321,18 @@ describe('Settings Controller', () => {
         expect(simulation).not.toBe(null)
         expect(simulation).not.toBe(undefined)
         expect(simulation!.level).toBe('warning')
+
+        // has token prices
+        const prices = mantle?.features.find((feat) => feat.id === 'prices')
+        expect(prices).not.toBe(null)
+        expect(prices).not.toBe(undefined)
+        expect(prices!.level).toBe('success')
+
+        // has erc-4337
+        const erc4337 = mantle?.features.find((feat) => feat.id === 'erc4337')
+        expect(erc4337).not.toBe(null)
+        expect(erc4337).not.toBe(undefined)
+        expect(erc4337!.level).toBe('success')
 
         done()
       }
