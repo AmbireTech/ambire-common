@@ -869,6 +869,7 @@ export class MainController extends EventEmitter {
           this.settings.providers[localAccountOp.networkId],
           network,
           account,
+          this.keystore.keys,
           localAccountOp,
           this.accountStates[localAccountOp.accountAddr][localAccountOp.networkId],
           EOAaccounts,

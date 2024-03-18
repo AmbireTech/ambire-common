@@ -14,7 +14,9 @@ import {
 import { networks as predefinedNetworks } from '../../consts/networks'
 import { SPOOF_SIGTYPE } from '../../consts/signatures'
 import { Account, AccountOnchainState } from '../../interfaces/account'
+import { Key } from '../../interfaces/keystore'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
+import { getIsViewOnly } from '../../utils/accounts'
 import { getAccountDeployParams } from '../account/account'
 import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
 import { fromDescriptor } from '../deployless/deployless'
@@ -114,6 +116,7 @@ export async function estimate(
   provider: Provider | JsonRpcProvider,
   network: NetworkDescriptor,
   account: Account,
+  keystoreKeys: Key[],
   op: AccountOp,
   accountState: AccountOnchainState,
   EOAaccounts: Account[],
@@ -246,7 +249,7 @@ export async function estimate(
   // the view only account itself. In all other, view only accounts options
   // should not be present as the user cannot pay the fee with them (no key)
   let nativeToCheck = EOAaccounts.filter(
-    (acc) => acc.addr === op.accountAddr || acc.associatedKeys.length
+    (acc) => acc.addr === op.accountAddr || !getIsViewOnly(keystoreKeys, acc.associatedKeys)
   ).map((acc) => acc.addr)
 
   // filter out the fee tokens that are not valid for:
