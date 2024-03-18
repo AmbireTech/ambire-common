@@ -14,7 +14,6 @@ import {
 import { NetworkFeature, NetworkInfo, NetworkInfoLoading } from '../../interfaces/networkDescriptor'
 import { RPCProviders } from '../../interfaces/settings'
 import { Bundler } from '../../services/bundlers/bundler'
-import wait from '../../utils/wait'
 import { getSASupport, simulateDebugTraceCall } from '../deployless/simulateDeployCall'
 
 export const getNetworksWithFailedRPC = ({ providers }: { providers: RPCProviders }): string[] => {
@@ -70,7 +69,6 @@ export async function getNetworkInfo(
         callback(networkInfo)
       })(),
       (async () => {
-        await wait(1000)
         const responses = await Promise.all([
           provider.getCode(SINGLETON).catch(() => '0x'),
           provider.getCode(AMBIRE_ACCOUNT_FACTORY).catch(() => '0x'),
@@ -94,7 +92,6 @@ export async function getNetworkInfo(
         callback(networkInfo)
       })(),
       (async () => {
-        await wait(1500)
         const oracleCode = await provider.getCode(OPTIMISTIC_ORACLE).catch(() => '0x')
         const isOptimistic = oracleCode !== '0x'
 
@@ -103,7 +100,6 @@ export async function getNetworkInfo(
         callback(networkInfo)
       })(),
       (async () => {
-        await wait(2000)
         const block = await provider.getBlock('latest').catch(() => null)
         const feeOptions = { is1559: block?.baseFeePerGas !== null }
 
@@ -112,14 +108,12 @@ export async function getNetworkInfo(
         callback(networkInfo)
       })(),
       (async () => {
-        await wait(2500)
         const hasDebugTraceCall = await simulateDebugTraceCall(provider)
         networkInfo = { ...networkInfo, hasDebugTraceCall }
 
         callback(networkInfo)
       })(),
       (async () => {
-        await wait(3000)
         const coingeckoRequest = await fetch(
           `https://cena.ambire.com/api/v3/platform/${Number(chainId)}`
         ).catch(() => ({
