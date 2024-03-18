@@ -244,7 +244,7 @@ export function getFeaturesByNetworkProperties(
   if ([isSAEnabled, erc4337].every((p) => p !== 'LOADING')) {
     const supportsFeeTokens = isSAEnabled && (hasRelayer || (erc4337 as any).hasPaymaster)
     updateFeature('feeTokens', {
-      level: supportsFeeTokens ? 'success' : 'warning',
+      level: supportsFeeTokens ? 'success' : 'danger',
       title: supportsFeeTokens
         ? 'Gas abstraction is supported'
         : 'Gas abstraction is not available',
@@ -260,7 +260,7 @@ export function getFeaturesByNetworkProperties(
         : 'ERC-4337 Account Abstraction is not supported',
       msg: (erc4337 as any).enabled
         ? 'ERC-4337 simplifies the logic used by smart contract wallets, and allows wallets to focus primarily on the core smart account functionalities (a.k.a. Account Abstraction)'
-        : 'Unfortunately, ERC-4337 is not supported on this network. '
+        : 'Unfortunately, ERC-4337 is not supported on this network.'
     })
   }
 

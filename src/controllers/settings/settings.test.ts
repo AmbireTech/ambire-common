@@ -314,7 +314,7 @@ describe('Settings Controller', () => {
         const noFeeTokens = mantle?.features.find((feat) => feat.id === 'feeTokens')
         expect(noFeeTokens).not.toBe(null)
         expect(noFeeTokens).not.toBe(undefined)
-        expect(noFeeTokens!.level).toBe('warning')
+        expect(noFeeTokens!.level).toBe('danger')
 
         // somewhat simulation
         const simulation = mantle?.features.find((feat) => feat.id === 'simulation')
