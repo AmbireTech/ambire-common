@@ -37,6 +37,7 @@ import generateSpoofSig from '../../utils/generateSpoofSig'
 import wait from '../../utils/wait'
 import { AccountAdderController } from '../accountAdder/accountAdder'
 import { ActivityController, SignedMessage, SubmittedAccountOp } from '../activity/activity'
+import { DomainsController } from '../domains/domains'
 import { EmailVaultController } from '../emailVault/emailVault'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
@@ -96,6 +97,8 @@ export class MainController extends EventEmitter {
   activity!: ActivityController
 
   settings: SettingsController
+
+  domains: DomainsController
 
   // @TODO read networks from settings
   accounts: (Account & { newlyCreated?: boolean })[] = []
@@ -200,6 +203,7 @@ export class MainController extends EventEmitter {
       fetch: this.#fetch
     })
     this.transfer = new TransferController()
+    this.domains = new DomainsController(this.settings.providers, this.#fetch)
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch: this.#fetch })
     this.onResolveDappRequest = onResolveDappRequest
     this.onRejectDappRequest = onRejectDappRequest
@@ -785,6 +789,19 @@ export class MainController extends EventEmitter {
         this.#fetch,
         this.emitError
       )
+
+      // Reverse lookup addresses and save them in memory so they
+      // can be read from the UI
+      humanization.forEach((call) => {
+        if (!call.fullVisualization) return
+
+        call.fullVisualization.forEach(async (visualization) => {
+          if (visualization.type !== 'address' || !visualization.address) return
+
+          await this.domains.reverseLookup(visualization.address)
+        })
+      })
+
       const additionalHints: GetOptions['additionalHints'] = humanization
         .map((call) =>
           !call.fullVisualization
