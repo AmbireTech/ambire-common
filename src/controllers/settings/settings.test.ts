@@ -212,7 +212,7 @@ describe('Settings Controller', () => {
     expect(saSupport).not.toBe(null)
     expect(saSupport).not.toBe(undefined)
     expect(saSupport.level).toBe('success')
-    expect(saSupport.title).toBe("Ambire's smart wallets support")
+    expect(saSupport.title).toBe("Ambire's smart wallets")
 
     const simulation = eth?.features.find((feat) => feat.id === 'simulation')
     expect(simulation).not.toBe(null)
@@ -300,9 +300,7 @@ describe('Settings Controller', () => {
         expect(saSupport).not.toBe(null)
         expect(saSupport).not.toBe(undefined)
         expect(saSupport!.level).toBe('warning')
-        expect(saSupport!.title).toBe(
-          "Ambire's smart wallets support via ERC-4337 Account Abstraction"
-        )
+        expect(saSupport!.title).toBe("Ambire's smart wallets via ERC-4337 Account Abstraction")
 
         // somewhat simulation
         const simulation = mantle?.features.find((feat) => feat.id === 'simulation')

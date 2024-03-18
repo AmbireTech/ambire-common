@@ -156,7 +156,7 @@ export function getFeaturesByNetworkProperties(
   const features: NetworkFeature[] = [
     {
       id: 'saSupport',
-      title: "Ambire's smart wallets support",
+      title: "Ambire's smart wallets",
       level: 'loading'
     },
     {
@@ -218,8 +218,8 @@ export function getFeaturesByNetworkProperties(
     }
 
     const title = (erc4337 as any).enabled
-      ? "Ambire's smart wallets support via ERC-4337 Account Abstraction"
-      : "Ambire's smart wallets support"
+      ? "Ambire's smart wallets via ERC-4337 Account Abstraction"
+      : "Ambire's smart wallets"
 
     if (isSAEnabled && areContractsDeployed) {
       updateFeature('saSupport', {
