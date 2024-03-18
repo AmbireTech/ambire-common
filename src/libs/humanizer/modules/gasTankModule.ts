@@ -1,4 +1,5 @@
-import { ethers } from 'ethers'
+import { ZeroAddress } from 'ethers'
+
 import { AccountOp } from '../../accountOp/accountOp'
 import { HumanizerCallModule, IrCall } from '../interfaces'
 import { getAction, getKnownName, getToken } from '../utils'
@@ -14,10 +15,7 @@ export const gasTankModule: HumanizerCallModule = (
     if (getKnownName(accountOp.humanizerMeta, call.to) === 'Gas Tank')
       return {
         ...call,
-        fullVisualization: [
-          getAction('Fuel gas tank with'),
-          getToken(ethers.ZeroAddress, call.value)
-        ]
+        fullVisualization: [getAction('Fuel gas tank with'), getToken(ZeroAddress, call.value)]
       }
     if (
       call.fullVisualization?.[0]?.content === 'Send' &&

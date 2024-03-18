@@ -1,16 +1,16 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import { ethers } from 'ethers'
+import { Interface } from 'ethers'
 
+import WALLETSupplyControllerABI from '../../../../../contracts/compiled/WALLETSupplyController.json'
+import { AccountOp } from '../../../accountOp/accountOp'
 import { HumanizerVisualization, IrCall } from '../../interfaces'
 import { getAction, getLabel } from '../../utils'
-import { AccountOp } from '../../../accountOp/accountOp'
-import WALLETSupplyControllerABI from '../../../../../contracts/compiled/WALLETSupplyController.json'
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 export const WALLETSupplyControllerMapping = (
   humanizerMeta: any
 ): { [key: string]: (arg0: AccountOp, arg1: IrCall) => HumanizerVisualization[] } => {
-  const iface = new ethers.Interface(WALLETSupplyControllerABI)
+  const iface = new Interface(WALLETSupplyControllerABI)
 
   return {
     [iface.getFunction('claim')?.selector!]: (

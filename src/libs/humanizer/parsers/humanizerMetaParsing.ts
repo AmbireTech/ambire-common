@@ -1,4 +1,5 @@
-import { ethers } from 'ethers'
+import { ZeroAddress } from 'ethers'
+
 import { networks } from '../../../consts/networks'
 import {
   HumanizerFragment,
@@ -17,7 +18,7 @@ export const humanizerMetaParsing: HumanizerParsingModule = (
   const asyncOps: Promise<HumanizerFragment | null>[] = []
   const res: HumanizerVisualization[] = visualization.map((v) => {
     if (v.address) {
-      if (v.address === ethers.ZeroAddress) {
+      if (v.address === ZeroAddress) {
         if (v.type === 'token') {
           const symbol = networks.find(
             ({ id }) => id === humanizerSettings.networkId

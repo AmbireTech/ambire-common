@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-floating-promises */
-import { ethers, JsonRpcProvider } from 'ethers'
+import { getCreate2Address, JsonRpcProvider, keccak256 } from 'ethers'
 
 import { PROXY_AMBIRE_ACCOUNT } from '../../consts/deploy'
 import {
@@ -349,7 +349,7 @@ export class AccountAdderController extends EventEmitter {
         )
       })
 
-    this.selectedAccounts.push({
+    const nextSelectedAccount = {
       account: _account,
       // If the account has more than 1 key, it is for sure linked account,
       // since Basic accounts have only 1 key and smart accounts with more than
@@ -360,7 +360,22 @@ export class AccountAdderController extends EventEmitter {
         slot: a.slot,
         index: a.index
       }))
-    })
+    }
+
+    const accountExists = this.selectedAccounts.some(
+      (x) => x.account.addr === nextSelectedAccount.account.addr
+    )
+    if (accountExists) {
+      // If the account exists, replace it with the new one, to make sure
+      // the latest data is used. We could add one more sub-step to skip this,
+      // if we do a deep comparison, but that would probably be an overkill.
+      this.selectedAccounts = this.selectedAccounts.map((x) =>
+        x.account.addr === nextSelectedAccount.account.addr ? nextSelectedAccount : x
+      )
+    } else {
+      this.selectedAccounts.push(nextSelectedAccount)
+    }
+
     this.emitUpdate()
   }
 
@@ -380,6 +395,24 @@ export class AccountAdderController extends EventEmitter {
         error: new Error('accountAdder: account not found. Cannot deselect.')
       })
     }
+  }
+
+  /**
+   * For internal keys only! Returns the ready to be added internal (private)
+   * keys of the currently selected accounts.
+   */
+  retrieveInternalKeysOfSelectedAccounts() {
+    if (!this.hdPathTemplate) {
+      this.#throwMissingHdPath()
+      return []
+    }
+
+    if (!this.#keyIterator?.retrieveInternalKeys) {
+      this.#throwMissingKeyIteratorRetrieveInternalKeysMethod()
+      return []
+    }
+
+    return this.#keyIterator?.retrieveInternalKeys(this.selectedAccounts, this.hdPathTemplate)
   }
 
   async setPage({
@@ -408,7 +441,15 @@ export class AccountAdderController extends EventEmitter {
     this.#linkedAccounts = []
     this.accountsLoading = true
     this.emitUpdate()
-    this.#derivedAccounts = await this.#deriveAccounts({ networks, providers })
+    try {
+      this.#derivedAccounts = await this.#deriveAccounts({ networks, providers })
+    } catch (e: any) {
+      this.emitError({
+        message: 'Retrieving accounts was canceled or failed.',
+        error: e?.message || 'accountAdder: failed to derive accounts',
+        level: 'major'
+      })
+    }
     this.accountsLoading = false
     this.emitUpdate()
     this.#findAndSetLinkedAccounts({
@@ -789,7 +830,7 @@ export class AccountAdderController extends EventEmitter {
       // Checks whether the account.addr matches the addr generated from the
       // factory. Should never happen, but could be a possible attack vector.
       const isInvalidAddress =
-        ethers.getCreate2Address(factoryAddr, salt, ethers.keccak256(bytecode)).toLowerCase() !==
+        getCreate2Address(factoryAddr, salt, keccak256(bytecode)).toLowerCase() !==
         addr.toLowerCase()
       if (isInvalidAddress) {
         const message = `The address ${addr} can't be verified to be a smart account address.`
@@ -873,6 +914,24 @@ export class AccountAdderController extends EventEmitter {
       message:
         'Something went wrong with deriving the accounts. Please start the process again. If the problem persists, contact support.',
       error: new Error('accountAdder: missing keyIterator')
+    })
+  }
+
+  #throwMissingKeyIteratorRetrieveInternalKeysMethod() {
+    this.emitError({
+      level: 'major',
+      message:
+        'Retrieving internal keys failed. Please try to start the process of selecting accounts again. If the problem persist, please contact support.',
+      error: new Error('accountAdder: missing retrieveInternalKeys method')
+    })
+  }
+
+  #throwMissingHdPath() {
+    this.emitError({
+      level: 'major',
+      message:
+        'The HD path template is missing. Please try to start the process of selecting accounts again. If the problem persist, please contact support.',
+      error: new Error('accountAdder: missing hdPathTemplate')
     })
   }
 

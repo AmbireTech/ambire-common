@@ -1,11 +1,12 @@
 /* eslint-disable new-cap */
-import { ethers, HDNodeWallet, Mnemonic, Wallet } from 'ethers'
+import { HDNodeWallet, keccak256, Mnemonic, Wallet } from 'ethers'
 
 import {
   HD_PATH_TEMPLATE_TYPE,
   PRIVATE_KEY_DERIVATION_SALT,
   SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
 } from '../../consts/derivation'
+import { SelectedAccountForImport } from '../../interfaces/account'
 import { KeyIterator as KeyIteratorInterface } from '../../interfaces/keyIterator'
 import { getHdPathFromTemplate } from '../../utils/hdPath'
 
@@ -46,7 +47,7 @@ export function derivePrivateKeyFromAnotherPrivateKey(privateKey: string) {
 
   // Hash the buffer, and convert to a hex string
   // that ultimately represents a derived (second) private key
-  return ethers.keccak256(buffer)
+  return keccak256(buffer)
 }
 
 /**
@@ -113,5 +114,60 @@ export class KeyIterator implements KeyIteratorInterface {
     })
 
     return keys
+  }
+
+  retrieveInternalKeys(
+    selectedAccountsForImport: SelectedAccountForImport[],
+    hdPathTemplate: HD_PATH_TEMPLATE_TYPE
+  ) {
+    return selectedAccountsForImport.flatMap((acc) => {
+      // Should never happen
+      if (!['seed', 'private-key'].includes(this.subType)) {
+        console.error('keyIterator: invalid subType', this.subType)
+        return []
+      }
+
+      return acc.accountKeys.flatMap(({ index }: { index: number }) => {
+        const dedicatedToOneSA = !acc.isLinked
+
+        // In case it is a seed, the private keys have to be extracted
+        if (this.subType === 'seed') {
+          if (!this.#seedPhrase) {
+            // Should never happen
+            console.error('keyIterator: no seed phrase provided')
+            return []
+          }
+
+          return [
+            {
+              privateKey: getPrivateKeyFromSeed(this.#seedPhrase, index, hdPathTemplate),
+              dedicatedToOneSA
+            }
+          ]
+        }
+
+        // So the subType is 'private-key' then
+        if (!this.#privateKey) {
+          // Should never happen
+          console.error('keyIterator: no private key provided')
+          return []
+        }
+
+        // Private keys for accounts used as smart account keys should be derived
+        const isPrivateKeyThatShouldBeDerived =
+          this.#privateKey &&
+          isValidPrivateKey(this.#privateKey) &&
+          index >= SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
+
+        return [
+          {
+            privateKey: isPrivateKeyThatShouldBeDerived
+              ? derivePrivateKeyFromAnotherPrivateKey(this.#privateKey)
+              : this.#privateKey,
+            dedicatedToOneSA
+          }
+        ]
+      })
+    })
   }
 }

@@ -1,4 +1,4 @@
-import { ethers } from 'ethers'
+import { AbiCoder, getBytes, keccak256 } from 'ethers'
 import { Key } from 'interfaces/keystore'
 import { HumanizerMeta } from 'libs/humanizer/interfaces'
 
@@ -22,7 +22,10 @@ export interface GasFeePayment {
   amount: bigint
   simulatedGasLimit: bigint
   maxPriorityFeePerGas?: bigint
-  baseFeePerGas?: bigint
+  // in l2s, to calculate correctly the preVerificationGas,
+  // we use the baseFee for each speed in reverse order as dividing
+  // by a greater baseFee gives smaller gas fee. That's why we need this
+  baseFeeToDivide: bigint
 }
 
 export enum AccountOpStatus {
@@ -152,9 +155,9 @@ export function accountOpSignableHash(op: AccountOp): Uint8Array {
   const opNetworks = networks.filter((network: NetworkDescriptor) => op.networkId === network.id)
   if (!opNetworks.length) throw new Error('unsupported network')
 
-  const abiCoder = new ethers.AbiCoder()
-  return ethers.getBytes(
-    ethers.keccak256(
+  const abiCoder = new AbiCoder()
+  return getBytes(
+    keccak256(
       abiCoder.encode(
         ['address', 'uint', 'uint', 'tuple(address, uint, bytes)[]'],
         [op.accountAddr, opNetworks[0].chainId, op.nonce ?? 0n, getSignableCalls(op)]
