@@ -41,7 +41,7 @@ export class SettingsController extends EventEmitter {
   latestMethodCall: string | null = null
 
   networkToAddOrUpdate: {
-    chianId: NetworkDescriptor['chainId']
+    chainId: NetworkDescriptor['chainId']
     rpcUrl: NetworkDescriptor['rpcUrl']
     info?: NetworkInfoLoading<NetworkInfo>
   } | null = null
@@ -105,7 +105,7 @@ export class SettingsController extends EventEmitter {
         erc4337: customNetwork.erc4337 ?? { enabled: false, hasPaymaster: false },
         isSAEnabled: customNetwork.isSAEnabled ?? false,
         areContractsDeployed: customNetwork.areContractsDeployed ?? false,
-        isOptimistic: 'isOptimistic' in customNetwork ? customNetwork.isOptimistic : false,
+        isOptimistic: customNetwork.isOptimistic ?? false,
         rpcNoStateOverride: customNetwork.rpcNoStateOverride ?? true,
         hasDebugTraceCall: customNetwork.hasDebugTraceCall ?? false,
         platformId: customNetwork.platformId ?? '',
@@ -138,7 +138,7 @@ export class SettingsController extends EventEmitter {
 
       const info: NetworkInfo = {
         isSAEnabled: finalNetwork.isSAEnabled,
-        isOptimistic: finalNetwork.isOptimistic,
+        isOptimistic: finalNetwork.isOptimistic ?? false,
         rpcNoStateOverride: finalNetwork.rpcNoStateOverride,
         erc4337: finalNetwork.erc4337,
         areContractsDeployed: finalNetwork.areContractsDeployed,
@@ -146,7 +146,7 @@ export class SettingsController extends EventEmitter {
         hasDebugTraceCall: finalNetwork.hasDebugTraceCall,
         platformId: finalNetwork.platformId,
         nativeAssetId: finalNetwork.nativeAssetId,
-        flagged: finalNetwork.flagged
+        flagged: finalNetwork.flagged ?? false
       }
 
       finalNetwork.features = getFeaturesByNetworkProperties(info, finalNetwork.hasRelayer)
@@ -287,14 +287,14 @@ export class SettingsController extends EventEmitter {
   }
 
   setNetworkToAddOrUpdate(networkToAddOrUpdate: {
-    chianId: NetworkDescriptor['chainId']
+    chainId: NetworkDescriptor['chainId']
     rpcUrl: NetworkDescriptor['rpcUrl']
   }) {
     this.networkToAddOrUpdate = networkToAddOrUpdate
     this.emitUpdate()
 
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    getNetworkInfo(networkToAddOrUpdate.rpcUrl, networkToAddOrUpdate.chianId, (info) => {
+    getNetworkInfo(networkToAddOrUpdate.rpcUrl, networkToAddOrUpdate.chainId, (info) => {
       if (this.networkToAddOrUpdate) {
         this.networkToAddOrUpdate = { ...this.networkToAddOrUpdate, info }
         this.emitUpdate()
@@ -306,6 +306,7 @@ export class SettingsController extends EventEmitter {
   // this.#networkPreferences as one day the custom network can be a part of
   // Ambire's main networks => the options in it will become a preference
   async #addCustomNetwork(customNetwork: CustomNetwork) {
+    // mainCtrl.settings.setNetworkToAddOrUpdate
     if (
       !this.networkToAddOrUpdate?.info ||
       Object.values(this.networkToAddOrUpdate.info).some((prop) => prop === 'LOADING')

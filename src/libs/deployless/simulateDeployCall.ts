@@ -84,6 +84,7 @@ export async function simulateDebugTraceCall(
         e.message.includes("doesn't exist") ||
         e.message.includes('not available') ||
         e.message.includes('400 Bad Request') ||
+        e.message.includes('Forbidden') ||
         e.code === 'UNSUPPORTED_OPERATION'
       ) {
         supportsDebugTraceCall = false
