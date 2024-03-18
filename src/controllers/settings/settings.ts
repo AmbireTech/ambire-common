@@ -149,7 +149,7 @@ export class SettingsController extends EventEmitter {
         flagged: finalNetwork.flagged ?? false
       }
 
-      finalNetwork.features = getFeaturesByNetworkProperties(info, finalNetwork.hasRelayer)
+      finalNetwork.features = getFeaturesByNetworkProperties(info)
       return finalNetwork
     })
   }

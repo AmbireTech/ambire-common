@@ -206,27 +206,18 @@ describe('Settings Controller', () => {
   test('should check if network features get displayed correctly for ethereum', () => {
     const eth = settingsController.networks.find((net) => net.id === 'ethereum')
     expect(eth).not.toBe(null)
-    expect(eth?.features.length).toBe(5)
+    expect(eth?.features.length).toBe(3)
 
     const saSupport = eth?.features.find((feat) => feat.id === 'saSupport')
     expect(saSupport).not.toBe(null)
     expect(saSupport).not.toBe(undefined)
-    expect(saSupport!.level).toBe('success')
-
-    const noFeeTokens = eth?.features.find((feat) => feat.id === 'feeTokens')
-    expect(noFeeTokens).not.toBe(null)
-    expect(noFeeTokens).not.toBe(undefined)
-    expect(noFeeTokens!.level).toBe('success')
+    expect(saSupport.level).toBe('success')
+    expect(saSupport.title).toBe("Ambire's smart wallets support")
 
     const simulation = eth?.features.find((feat) => feat.id === 'simulation')
     expect(simulation).not.toBe(null)
     expect(simulation).not.toBe(undefined)
     expect(simulation!.level).toBe('success')
-
-    const erc4337 = eth?.features.find((feat) => feat.id === 'erc4337')
-    expect(erc4337).not.toBe(null)
-    expect(erc4337).not.toBe(undefined)
-    expect(erc4337!.level).toBe('warning')
 
     const prices = eth?.features.find((feat) => feat.id === 'prices')
     expect(prices).not.toBe(null)
@@ -309,12 +300,9 @@ describe('Settings Controller', () => {
         expect(saSupport).not.toBe(null)
         expect(saSupport).not.toBe(undefined)
         expect(saSupport!.level).toBe('warning')
-
-        // no fee tokens
-        const noFeeTokens = mantle?.features.find((feat) => feat.id === 'feeTokens')
-        expect(noFeeTokens).not.toBe(null)
-        expect(noFeeTokens).not.toBe(undefined)
-        expect(noFeeTokens!.level).toBe('danger')
+        expect(saSupport!.title).toBe(
+          "Ambire's smart wallets support via ERC-4337 Account Abstraction"
+        )
 
         // somewhat simulation
         const simulation = mantle?.features.find((feat) => feat.id === 'simulation')
@@ -327,12 +315,6 @@ describe('Settings Controller', () => {
         expect(prices).not.toBe(null)
         expect(prices).not.toBe(undefined)
         expect(prices!.level).toBe('success')
-
-        // has erc-4337
-        const erc4337 = mantle?.features.find((feat) => feat.id === 'erc4337')
-        expect(erc4337).not.toBe(null)
-        expect(erc4337).not.toBe(undefined)
-        expect(erc4337!.level).toBe('success')
 
         done()
       }

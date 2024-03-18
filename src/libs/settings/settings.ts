@@ -151,28 +151,17 @@ export async function getNetworkInfo(
 
 // call this if you have the network props already calculated
 export function getFeaturesByNetworkProperties(
-  networkInfo: NetworkInfo | NetworkInfoLoading<NetworkInfo> | undefined,
-  hasRelayer: boolean
+  networkInfo: NetworkInfo | NetworkInfoLoading<NetworkInfo> | undefined
 ): NetworkFeature[] {
   const features: NetworkFeature[] = [
     {
       id: 'saSupport',
-      title: "Support Ambire's smart wallets",
-      level: 'loading'
-    },
-    {
-      id: 'feeTokens',
-      title: 'Gas abstraction',
+      title: "Ambire's smart wallets support",
       level: 'loading'
     },
     {
       id: 'simulation',
       title: 'Transaction simulation',
-      level: 'loading'
-    },
-    {
-      id: 'erc4337',
-      title: 'ERC-4337 Account Abstraction',
       level: 'loading'
     },
     {
@@ -219,7 +208,7 @@ export function getFeaturesByNetworkProperties(
     ]
   }
 
-  if ([isSAEnabled, areContractsDeployed].every((p) => p !== 'LOADING')) {
+  if ([isSAEnabled, areContractsDeployed, erc4337].every((p) => p !== 'LOADING')) {
     if (!isSAEnabled) {
       updateFeature('saSupport', {
         level: 'danger',
@@ -228,40 +217,23 @@ export function getFeaturesByNetworkProperties(
       })
     }
 
+    const title = (erc4337 as any).enabled
+      ? "Ambire's smart wallets support via ERC-4337 Account Abstraction"
+      : "Ambire's smart wallets support"
+
     if (isSAEnabled && areContractsDeployed) {
       updateFeature('saSupport', {
+        title,
         level: 'success',
         msg: "This blockchain network support smart accounts and Ambire Wallet's contacts are deployed."
       })
     } else if (isSAEnabled && !areContractsDeployed) {
       updateFeature('saSupport', {
+        title,
         level: 'warning',
-        msg: "This network support smart contract wallets, but Ambire Wallet's contracts are not yet deployed. You can deploy them by using a Basic account and Deploy contracts option and unlock Smart accounts feature. If not, it can be used only with Basic accounts (EOAs)."
+        msg: "This network supports smart contract wallets, but Ambire Wallet's contracts are not yet deployed. You can deploy them by using a Basic account and the Deploy contracts option to unlock the Smart accounts feature. If not, only Basic accounts (EOAs) can be used on this network."
       })
     }
-  }
-
-  if ([isSAEnabled, erc4337].every((p) => p !== 'LOADING')) {
-    const supportsFeeTokens = isSAEnabled && (hasRelayer || (erc4337 as any).hasPaymaster)
-    updateFeature('feeTokens', {
-      level: supportsFeeTokens ? 'success' : 'danger',
-      title: supportsFeeTokens
-        ? 'Gas abstraction is supported'
-        : 'Gas abstraction is not available',
-      msg: supportsFeeTokens
-        ? 'This feature allows you to pay gas fees in a variety of ERC-20 tokens, in addition to the native one, making transaction fees a more flexible and effortless experience.'
-        : 'This feature is not supported by the network and you can pay the gas fees only with the native token.'
-    })
-
-    updateFeature('erc4337', {
-      level: (erc4337 as any).enabled ? 'success' : 'warning',
-      title: (erc4337 as any).enabled
-        ? 'ERC-4337 Account Abstraction is supported'
-        : 'ERC-4337 Account Abstraction is not supported',
-      msg: (erc4337 as any).enabled
-        ? 'ERC-4337 simplifies the logic used by smart contract wallets, and allows wallets to focus primarily on the core smart account functionalities (a.k.a. Account Abstraction)'
-        : 'Unfortunately, ERC-4337 is not supported on this network.'
-    })
   }
 
   if ([rpcNoStateOverride, hasDebugTraceCall].every((p) => p !== 'LOADING')) {
@@ -302,8 +274,7 @@ export function getFeaturesByNetworkProperties(
 // call this if you have only the rpcUrl and chainId
 // this method makes an RPC request, calculates the network info and returns the features
 export function getFeatures(
-  networkInfo: NetworkInfoLoading<NetworkInfo> | undefined,
-  hasRelayer: boolean
+  networkInfo: NetworkInfoLoading<NetworkInfo> | undefined
 ): NetworkFeature[] {
-  return getFeaturesByNetworkProperties(networkInfo, hasRelayer)
+  return getFeaturesByNetworkProperties(networkInfo)
 }
