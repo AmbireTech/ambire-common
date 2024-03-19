@@ -228,19 +228,6 @@ export async function estimate(
     }
   }
 
-  if (!network.areContractsDeployed) {
-    return {
-      gasUsed: 0n,
-      nonce: 0,
-      feePaymentOptions: [],
-      erc4337estimation: null,
-      arbitrumL1FeeIfArbitrum: { noFee: 0n, withFee: 0n },
-      error: new Error(
-        'The Ambire smart contracts are not deployed on this network. To use a smart account, please deploy the contracts from Settings -> Networks'
-      )
-    }
-  }
-
   const is4337Broadcast = opts && opts.is4337Broadcast
   const isCustomNetwork = !predefinedNetworks.find((net) => net.id === network.id)
 
