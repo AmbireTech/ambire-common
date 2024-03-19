@@ -286,20 +286,27 @@ export class SettingsController extends EventEmitter {
     this.emitUpdate()
   }
 
-  setNetworkToAddOrUpdate(networkToAddOrUpdate: {
-    chainId: NetworkDescriptor['chainId']
-    rpcUrl: NetworkDescriptor['rpcUrl']
-  }) {
-    this.networkToAddOrUpdate = networkToAddOrUpdate
-    this.emitUpdate()
+  setNetworkToAddOrUpdate(
+    networkToAddOrUpdate: {
+      chainId: NetworkDescriptor['chainId']
+      rpcUrl: NetworkDescriptor['rpcUrl']
+    } | null = null
+  ) {
+    if (networkToAddOrUpdate) {
+      this.networkToAddOrUpdate = networkToAddOrUpdate
+      this.emitUpdate()
 
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    getNetworkInfo(networkToAddOrUpdate.rpcUrl, networkToAddOrUpdate.chainId, (info) => {
-      if (this.networkToAddOrUpdate) {
-        this.networkToAddOrUpdate = { ...this.networkToAddOrUpdate, info }
-        this.emitUpdate()
-      }
-    })
+      // eslint-disable-next-line @typescript-eslint/no-floating-promises
+      getNetworkInfo(networkToAddOrUpdate.rpcUrl, networkToAddOrUpdate.chainId, (info) => {
+        if (this.networkToAddOrUpdate) {
+          this.networkToAddOrUpdate = { ...this.networkToAddOrUpdate, info }
+          this.emitUpdate()
+        }
+      })
+    } else {
+      this.networkToAddOrUpdate = null
+      this.emitUpdate()
+    }
   }
 
   // NOTE: used only for adding a new network. We add it to the user's
