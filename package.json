@@ -28,7 +28,7 @@
     "@ethersproject/abstract-signer": "^5.7.0",
     "@ethersproject/providers": "^5.7.2",
     "@types/validator": "^13.7.0",
-    "@unstoppabledomains/resolution": "^7.1.4",
+    "@unstoppabledomains/resolution": "^9.2.1",
     "@walletconnect/client": "^1.7.1",
     "adex-protocol-eth": "git+https://git@github.com/AmbireTech/adex-protocol-eth.git",
     "bip44-constants": "^128.0.0",
