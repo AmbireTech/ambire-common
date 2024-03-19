@@ -476,7 +476,7 @@ describe('Portfolio Controller ', () => {
   //   })
 
   //   controller.onUpdate(() => {
-  //     if (controller.tokenIcons.length) {
+  //     if (Object.values(controller.tokenIcons).length) {
   //       console.log(controller.tokenIcons)
   //       done()
   //     }

@@ -170,7 +170,5 @@ export interface GetOptions {
 }
 
 export interface TokenIcon {
-  [networkId: string]: {
-    [address: string]: string
-  }
+  [networdIdAndAddress: string]: string
 }

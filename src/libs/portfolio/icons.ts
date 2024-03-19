@@ -4,7 +4,6 @@ import { ZeroAddress } from 'ethers'
 import fetch from 'node-fetch'
 
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
-import { TokenIcon } from './interfaces'
 
 const customIcons: any = {
   '0xb468a1e5596cfbcdf561f21a10490d99b4bb7b68':
@@ -28,7 +27,7 @@ const customIcons: any = {
 const zapperStorageTokenIcons = 'https://storage.googleapis.com/zapper-fi-assets/tokens'
 
 export function getIconId(networkId: string, address: string) {
-  return `${networkId.toLowerCase()}-${address.toLowerCase()}`
+  return `${networkId.toLowerCase()}:${address.toLowerCase()}`
 }
 
 export function getHardcodedIcon(address: string): string | null {
@@ -56,22 +55,14 @@ export async function checkIfImageExists(uri: string) {
     .catch(() => Promise.resolve(false))
 }
 
-function inTokenIconFormat(networkId: string, addr: string, icon: string): TokenIcon {
-  return {
-    [networkId]: {
-      [addr]: icon
-    }
-  }
-}
-
 export async function getIcon(
   network: NetworkDescriptor,
   addr: string,
   storageIcons: string | null
-): Promise<TokenIcon | null> {
+): Promise<string | null> {
   // if it's a hardcoded token, return it
   const hardcodedIcon = getHardcodedIcon(addr)
-  if (hardcodedIcon) return inTokenIconFormat(network.id, addr, hardcodedIcon)
+  if (hardcodedIcon) return hardcodedIcon
 
   // try to take the icon from the storage first
   if (storageIcons) {
@@ -82,7 +73,7 @@ export async function getIcon(
 
   // try to find the icon without making a request
   const image = getZapperIcon(network.id, addr)
-  if (await checkIfImageExists(image)) return inTokenIconFormat(network.id, addr, image)
+  if (await checkIfImageExists(image)) return image
 
   // make a request to cena to fetch the icon
   const baseUrlCena = 'https://cena.ambire.com/api/v3'
@@ -97,5 +88,5 @@ export async function getIcon(
   const json = await response.json()
   if (!json || !json.image || !json.image.small) return null
 
-  return inTokenIconFormat(network.id, addr, json.image.small)
+  return json.image.small
 }

@@ -16,7 +16,7 @@ import {
 } from '../../libs/banners/banners'
 import getAccountNetworksWithAssets from '../../libs/portfolio/getNetworksWithAssets'
 import { getFlags } from '../../libs/portfolio/helpers'
-import { getIcon } from '../../libs/portfolio/icons'
+import { getIcon, getIconId } from '../../libs/portfolio/icons'
 /* eslint-disable @typescript-eslint/no-use-before-define */
 import {
   AccountState,
@@ -93,7 +93,7 @@ export class PortfolioController extends EventEmitter {
 
   #settings: SettingsController
 
-  tokenIcons: TokenIcon[]
+  tokenIcons: TokenIcon
 
   constructor(storage: Storage, settings: SettingsController, relayerUrl: string) {
     super()
@@ -103,7 +103,7 @@ export class PortfolioController extends EventEmitter {
     this.#storage = storage
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
     this.#settings = settings
-    this.tokenIcons = []
+    this.tokenIcons = {}
   }
 
   async #updateNetworksWithAssets(
@@ -495,18 +495,24 @@ export class PortfolioController extends EventEmitter {
     const storage = await this.#storage.get('tokenIcons', null)
     const settingsNetworks = this.#settings.networks
 
-    const promises = tokens.map((token) => {
-      return getIcon(
+    const promises = tokens.map(async (token) => {
+      const icon = await getIcon(
         settingsNetworks.find((net) => net.id === token.networkId)!,
         token.address,
         storage
       )
+      if (!icon) return null
+      return { [getIconId(token.networkId, token.address)]: icon }
     })
-    const icons = (await Promise.all(promises))
-      // remove nulls
-      .filter((icon) => icon)
-    this.tokenIcons = icons as TokenIcon[]
-    await this.#storage.set('tokenIcons', JSON.stringify(icons))
+
+    const result = await Promise.all(promises)
+    result
+      .filter((icon) => icon) // remove nulls
+      .forEach((icon: any) => {
+        this.tokenIcons[Object.keys(icon)[0] as string] = Object.values(icon)[0] as string
+      })
+
+    await this.#storage.set('tokenIcons', JSON.stringify(this.tokenIcons))
     this.emitUpdate()
   }
 
