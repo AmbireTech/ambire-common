@@ -252,8 +252,8 @@ export function getFeaturesByNetworkProperties(
     }
   }
 
-  if (nativeAssetId && nativeAssetId !== 'LOADING') {
-    const hasNativeAssetId = nativeAssetId !== ''
+  if (nativeAssetId !== 'LOADING') {
+    const hasNativeAssetId = nativeAssetId && nativeAssetId !== ''
     updateFeature('prices', {
       level: hasNativeAssetId ? 'success' : 'danger',
       msg: hasNativeAssetId
