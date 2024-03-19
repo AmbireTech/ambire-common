@@ -463,4 +463,23 @@ describe('Portfolio Controller ', () => {
       expect(nativeToken).toBeTruthy()
     })
   })
+
+  // test('token icons are fetched', (done) => {
+  //   const storage = produceMemoryStore()
+
+  //   const settings = new SettingsController(storage)
+  //   settings.providers = providers
+  //   const controller = new PortfolioController(storage, settings, relayerUrl)
+
+  //   controller.updateSelectedAccount([account], networks, account.addr, undefined).catch(() => {
+  //     throw new Error('update failed')
+  //   })
+
+  //   controller.onUpdate(() => {
+  //     if (controller.tokenIcons.length) {
+  //       console.log(controller.tokenIcons)
+  //       done()
+  //     }
+  //   })
+  // })
 })

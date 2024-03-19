@@ -168,3 +168,9 @@ export interface GetOptions {
   fetchPinned: boolean
   additionalHints?: Hints['erc20s']
 }
+
+export interface TokenIcon {
+  [networkId: string]: {
+    [address: string]: string
+  }
+}

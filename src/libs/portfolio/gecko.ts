@@ -16,6 +16,7 @@ export function geckoResponseIdentifier(tokenAddr: string, network: NetworkDescr
 
 export function geckoRequestBatcher(queue: QueueElement[]): Request[] {
   const segments: { [key: string]: any[] } = {}
+  // eslint-disable-next-line no-restricted-syntax
   for (const queueItem of queue) {
     let segmentId: string = queueItem.data.baseCurrency
     const geckoId = geckoIdMapper(queueItem.data.address, queueItem.data.network)
