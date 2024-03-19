@@ -1,17 +1,17 @@
-import { ethers } from 'ethers'
+import { Interface, ZeroAddress } from 'ethers'
 
 import { AccountOp } from '../../accountOp/accountOp'
 import { HumanizerCallModule, HumanizerFragment, IrCall } from '../interfaces'
 import {
-  getKnownAbi,
   getAction,
   getAddressVisualization,
+  getKnownAbi,
+  getKnownToken,
   getLabel,
   getNft,
   getToken,
   getTokenInfo,
-  getUnknownVisualization,
-  getKnownToken
+  getUnknownVisualization
 } from '../utils'
 
 export const genericErc721Humanizer: HumanizerCallModule = (
@@ -20,7 +20,7 @@ export const genericErc721Humanizer: HumanizerCallModule = (
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   options?: any
 ) => {
-  const iface = new ethers.Interface(getKnownAbi(accountOp.humanizerMeta, 'ERC721', options))
+  const iface = new Interface(getKnownAbi(accountOp.humanizerMeta, 'ERC721', options))
   const nftTransferVisualization = (call: IrCall) => {
     const args = iface.parseTransaction(call)?.args.toArray() || []
     return args[0] === accountOp.accountAddr
@@ -42,7 +42,7 @@ export const genericErc721Humanizer: HumanizerCallModule = (
   const matcher = {
     [iface.getFunction('approve')?.selector!]: (call: IrCall) => {
       const args = iface.parseTransaction(call)?.args.toArray() || []
-      return args[0] === ethers.ZeroAddress
+      return args[0] === ZeroAddress
         ? [getAction('Revoke approval'), getLabel('for'), getNft(call.to, args[1])]
         : [
             getAction('Grant approval'),
@@ -102,7 +102,7 @@ export const genericErc20Humanizer: HumanizerCallModule = (
   options?: any
 ) => {
   const asyncOps: Promise<HumanizerFragment | null>[] = []
-  const iface = new ethers.Interface(getKnownAbi(accountOp.humanizerMeta, 'ERC20', options))
+  const iface = new Interface(getKnownAbi(accountOp.humanizerMeta, 'ERC20', options))
   const matcher = {
     [iface.getFunction('approve')?.selector!]: (call: IrCall) => {
       const args = iface.parseTransaction(call)?.args.toArray() || []

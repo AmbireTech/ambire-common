@@ -1,7 +1,7 @@
-import dotenv from 'dotenv'
-import { ethers } from 'ethers'
-
 import { ErrorRef } from 'controllers/eventEmitter/eventEmitter'
+import dotenv from 'dotenv'
+import { ZeroAddress } from 'ethers'
+
 import { geckoIdMapper, geckoNetworkIdMapper } from '../../consts/coingecko'
 import { networks } from '../../consts/networks'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
@@ -42,12 +42,12 @@ export function getToken(_address: string, amount: bigint): HumanizerVisualizati
   return {
     type: 'token',
     address,
-    amount
+    amount: BigInt(amount)
   }
 }
 
 export function getNft(address: string, id: bigint): HumanizerVisualization {
-  return { type: 'nft', address, id }
+  return { type: 'nft', address, id: BigInt(id) }
 }
 
 export function getOnBehalfOf(onBehalfOf: string, sender: string): HumanizerVisualization[] {
@@ -65,7 +65,7 @@ export function getRecipientText(from: string, recipient: string): HumanizerVisu
 
 export function getDeadlineText(deadline: bigint): string {
   const minute = 60000n
-  const diff = deadline - BigInt(Date.now())
+  const diff = BigInt(deadline) - BigInt(Date.now())
 
   if (diff < 0 && diff > -minute * 2n) return 'expired just now'
   if (diff < 0) return 'already expired'
@@ -92,7 +92,7 @@ export function shortenAddress(addr: string): string {
  */
 // @TODO this shouldn't be here, a more suitable place would be portfolio/gecko
 export async function getNativePrice(network: NetworkDescriptor, fetch: Function): Promise<number> {
-  const platformId = geckoIdMapper(ethers.ZeroAddress, network.id)
+  const platformId = geckoIdMapper(ZeroAddress, network.id)
   if (!platformId) {
     throw new Error(`getNativePrice: ${network.name} is not supported`)
   }
@@ -172,7 +172,7 @@ export function getUnknownVisualization(name: string, call: IrCall): HumanizerVi
   ]
   if (call.value)
     unknownVisualization.push(
-      ...[getLabel('and'), getAction('Send'), getToken(ethers.ZeroAddress, call.value)]
+      ...[getLabel('and'), getAction('Send'), getToken(ZeroAddress, call.value)]
     )
   return unknownVisualization
 }
