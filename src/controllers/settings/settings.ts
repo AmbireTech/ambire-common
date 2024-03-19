@@ -370,6 +370,13 @@ export class SettingsController extends EventEmitter {
     await this.#wrapSettingsAction('addCustomNetwork', () => this.#addCustomNetwork(customNetwork))
   }
 
+  removeCustomNetwork(id: NetworkDescriptor['id']) {
+    if (networks.find((n) => n.id === id)) return
+
+    delete this.#networkPreferences[id]
+    this.emitUpdate()
+  }
+
   async updateNetworkPreferences(
     networkPreferences: NetworkPreference,
     networkId: NetworkDescriptor['id']
