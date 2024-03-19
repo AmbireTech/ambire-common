@@ -26,7 +26,7 @@ const customIcons: any = {
 
 const zapperStorageTokenIcons = 'https://storage.googleapis.com/zapper-fi-assets/tokens'
 
-export function getIconId(networkId: string, address: string) {
+export function getIconId(networkId: string, address: string): string {
   return `${networkId.toLowerCase()}:${address.toLowerCase()}`
 }
 
@@ -47,7 +47,7 @@ export async function checkIfImageExists(uri: string) {
     // Only retrieves headers, which is enough to check the image existence.
     method: 'HEAD'
   })
-    .then((res) => {
+    .then((res: any) => {
       if (res.ok) return Promise.resolve(true)
 
       return Promise.resolve(false)
@@ -58,7 +58,7 @@ export async function checkIfImageExists(uri: string) {
 export async function getIcon(
   network: NetworkDescriptor,
   addr: string,
-  storageIcons: string | null
+  storageIcons: any
 ): Promise<string | null> {
   // if it's a hardcoded token, return it
   const hardcodedIcon = getHardcodedIcon(addr)
@@ -66,8 +66,7 @@ export async function getIcon(
 
   // try to take the icon from the storage first
   if (storageIcons) {
-    const jsonStorage = JSON.parse(storageIcons)
-    const storageImage = jsonStorage[network.id] ? jsonStorage[network.id][addr] : null
+    const storageImage = storageIcons[getIconId(network.id, addr)] ?? null
     if (storageImage) return storageImage
   }
 

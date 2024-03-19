@@ -1,5 +1,5 @@
-/* eslint-disable import/no-extraneous-dependencies */
 /* eslint-disable no-param-reassign */
+/* eslint-disable import/no-extraneous-dependencies */
 import fetch from 'node-fetch'
 
 import { PINNED_TOKENS } from '../../consts/pinnedTokens'
@@ -492,7 +492,7 @@ export class PortfolioController extends EventEmitter {
   }
 
   async getTokenIcons(tokens: PortfolioGetResult['tokens']) {
-    const storage = await this.#storage.get('tokenIcons', null)
+    const storage = await this.#storage.get('tokenIcons', {})
     const settingsNetworks = this.#settings.networks
 
     const promises = tokens.map(async (token) => {
@@ -512,7 +512,7 @@ export class PortfolioController extends EventEmitter {
         this.tokenIcons[Object.keys(icon)[0] as string] = Object.values(icon)[0] as string
       })
 
-    await this.#storage.set('tokenIcons', JSON.stringify(this.tokenIcons))
+    await this.#storage.set('tokenIcons', this.tokenIcons)
     this.emitUpdate()
   }
 
