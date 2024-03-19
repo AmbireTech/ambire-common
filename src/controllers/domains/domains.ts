@@ -70,7 +70,7 @@ export class DomainsController extends EventEmitter {
     }
 
     try {
-      udName = (await reverseLookupUD(this.#providers.ethereum, checksummedAddress)) || null
+      udName = (await reverseLookupUD(checksummedAddress)) || null
     } catch (e) {
       console.error('UD reverse lookup unexpected error', e)
     }
@@ -83,12 +83,7 @@ export class DomainsController extends EventEmitter {
     this.loadingAddresses = this.loadingAddresses.filter(
       (loadingAddress) => loadingAddress !== checksummedAddress
     )
-    this.emitUpdate()
-  }
 
-  toJSON() {
-    return {
-      ...this
-    }
+    this.emitUpdate()
   }
 }

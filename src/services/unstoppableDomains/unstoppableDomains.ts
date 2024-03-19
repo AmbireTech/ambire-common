@@ -1,11 +1,8 @@
 // @ts-nocheck
-import { Contract } from 'ethers'
-
 // TODO: add types
 import { Resolution } from '@unstoppabledomains/resolution'
 
 import { networks } from '../../consts/networks'
-import { RPCProvider } from '../../interfaces/settings'
 
 // @TODO: Get RPC urls from settings controller
 const resolution = new Resolution({
@@ -24,12 +21,6 @@ const resolution = new Resolution({
     }
   }
 })
-
-const PROXY_READER_ADDRESS = '0x049aba7510f45BA5b64ea9E658E342F904DB358D'
-
-const PROXY_READER_PARTIAL_ABI = [
-  'function reverseNameOf(address addr) external view returns (string)'
-]
 
 function getMessage(e?: string) {
   if (e === 'UnregisteredDomain') return 'Domain is not registered'
@@ -66,14 +57,8 @@ async function resolveUDomain(domain, currency?: any, chain?: any): Promise<stri
     : ''
 }
 
-async function reverseLookupUD(ethereumProvider: RPCProvider, address: string): Promise<string> {
-  const proxyReaderContract = new Contract(
-    PROXY_READER_ADDRESS,
-    PROXY_READER_PARTIAL_ABI,
-    ethereumProvider
-  )
-
-  return proxyReaderContract.reverseNameOf(address)
+async function reverseLookupUD(address: string): Promise<string | null> {
+  return resolution.reverse(address)
 }
 
 export { resolveUDomain, reverseLookupUD }
