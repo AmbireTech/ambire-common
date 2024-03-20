@@ -11,7 +11,7 @@
 // Then come networks with wild gas estimations above 10m (Arbitrum, Mantle)
 // Because of the blob updates, networks fees on this networks have lowered
 // dramatically. But no RPC can estimate correctly how much gas is need to
-// correctly deploy on the network. That's why we do a multiplication by 10
+// correctly deploy on the network. That's why we do a multiplication by 5
 // and hope for the best.
 //
 // The backside to this is that txns to the singleton can overestimate.
@@ -20,7 +20,7 @@
 export function getGasUsed(gasUsed: bigint): bigint {
   if (gasUsed < 4500000n) return 4500000n
 
-  if (gasUsed > 10000000n) return gasUsed * 10n
+  if (gasUsed > 10000000n) return gasUsed * 5n
 
   return gasUsed
 }
