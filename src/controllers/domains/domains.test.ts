@@ -26,6 +26,8 @@ const UD = {
   name: 'brad.x'
 }
 
+const NO_DOMAINS_ADDRESS = '0x1b9B9813C5805A60184091956F8b36E752272a93'
+
 describe('Domains', () => {
   const domainsController = new DomainsController(providers, fetch)
 
@@ -61,5 +63,24 @@ describe('Domains', () => {
     await domainsController.reverseLookup(address)
 
     expect(domainsController.domains[address].savedAt).toBe(timestampForwardInTime)
+  })
+  it('should not reverse lookup if already resolved', async () => {
+    const { address } = ENS2
+
+    await domainsController.reverseLookup(address)
+
+    const savedAtFirstCall = domainsController.domains[address].savedAt
+
+    expect(domainsController.domains[address].savedAt).toBe(savedAtFirstCall)
+
+    await domainsController.reverseLookup(address)
+
+    expect(domainsController.domains[address].savedAt).toBe(savedAtFirstCall)
+  })
+  it('should set both ens and ud to null if no domain is found', async () => {
+    await domainsController.reverseLookup(NO_DOMAINS_ADDRESS)
+
+    expect(domainsController.domains[NO_DOMAINS_ADDRESS].ens).toBe(null)
+    expect(domainsController.domains[NO_DOMAINS_ADDRESS].ud).toBe(null)
   })
 })
