@@ -272,8 +272,8 @@ describe('Settings Controller', () => {
         // has smart accounts
         expect(mantleNetworkInfo?.isSAEnabled).toBe(true)
 
-        // contracts are not deployed
-        expect(mantleNetworkInfo?.areContractsDeployed).toBe(false)
+        // contracts are deployed
+        expect(mantleNetworkInfo?.areContractsDeployed).toBe(true)
 
         // is not 1559
         expect(mantleNetworkInfo?.feeOptions!.is1559).toBe(true)
