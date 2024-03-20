@@ -84,7 +84,7 @@ export class SettingsController extends EventEmitter {
     }
   }
 
-  get networks(): NetworkDescriptor[] {
+  get networks(): (NetworkDescriptor & (NetworkPreference | CustomNetwork))[] {
     // set the custom networks that do not exist in ambire-common networks
     const customPrefIds = Object.keys(this.#networkPreferences)
     const predefinedNetworkIds = networks.map((net) => net.id)
