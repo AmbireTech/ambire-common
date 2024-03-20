@@ -1,14 +1,15 @@
-import { AbiCoder, BaseContract, formatUnits, Interface, toBeHex } from 'ethers'
+import { AbiCoder, BaseContract, formatUnits, getAddress, Interface, toBeHex } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import EntryPointAbi from '../../../contracts/compiled/EntryPoint.json'
 import ERC20 from '../../../contracts/compiled/IERC20.json'
 import { FEE_COLLECTOR } from '../../consts/addresses'
-import { AMBIRE_PAYMASTER, ERC_4337_ENTRYPOINT } from '../../consts/deploy'
+import { AMBIRE_PAYMASTER, ERC_4337_ENTRYPOINT, SINGLETON } from '../../consts/deploy'
 import { Account, AccountStates } from '../../interfaces/account'
 import { ExternalSignerControllers, Key } from '../../interfaces/keystore'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { Storage } from '../../interfaces/storage'
+import { isSmartAccount } from '../../libs/account/account'
 import { AccountOp, GasFeePayment, getSignableCalls } from '../../libs/accountOp/accountOp'
 import { EstimateResult } from '../../libs/estimate/estimate'
 import { GasRecommendation, getCallDataAdditionalByNetwork } from '../../libs/gasPrice/gasPrice'
@@ -16,6 +17,7 @@ import { callsHumanizer } from '../../libs/humanizer'
 import { IrCall } from '../../libs/humanizer/interfaces'
 import { Price, TokenResult } from '../../libs/portfolio'
 import { getExecuteSignature, getTypedData, wrapStandard } from '../../libs/signMessage/signMessage'
+import { getGasUsed } from '../../libs/singleton/singleton'
 import { UserOperation } from '../../libs/userOperation/types'
 import {
   getActivatorCall,
@@ -541,8 +543,14 @@ export class SignAccountOpController extends EventEmitter {
         'baseFeeToDivide' in gasRecommendation ? gasRecommendation.baseFeeToDivide : gasPrice
 
       // EOA
-      if (!this.#account || !this.#account?.creation) {
+      if (!isSmartAccount(this.#account)) {
         simulatedGasLimit = gasUsed
+
+        // special gas rules for the singleton
+        if (getAddress(this.accountOp.calls[0].to) === SINGLETON) {
+          simulatedGasLimit = getGasUsed(simulatedGasLimit)
+        }
+
         amount = simulatedGasLimit * gasPrice + feeTokenEstimation.addedNative
       } else if (this.#userOperation) {
         // ERC 4337

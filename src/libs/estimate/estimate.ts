@@ -5,12 +5,7 @@ import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFacto
 import Estimation from '../../../contracts/compiled/Estimation.json'
 import Estimation4337 from '../../../contracts/compiled/Estimation4337.json'
 import { FEE_COLLECTOR } from '../../consts/addresses'
-import {
-  AMBIRE_PAYMASTER,
-  ERC_4337_ENTRYPOINT,
-  OPTIMISTIC_ORACLE,
-  SINGLETON
-} from '../../consts/deploy'
+import { AMBIRE_PAYMASTER, ERC_4337_ENTRYPOINT, OPTIMISTIC_ORACLE } from '../../consts/deploy'
 import { networks as predefinedNetworks } from '../../consts/networks'
 import { SPOOF_SIGTYPE } from '../../consts/signatures'
 import { Account, AccountOnchainState } from '../../interfaces/account'
@@ -183,22 +178,8 @@ export async function estimate(
     const [gasUsed, balance, [l1GasEstimation]] =
       result instanceof Error ? [0n, 0n, [{ fee: 0n }]] : result
 
-    // Special exception for the singleton deployer:
-    // Estimation on various networks depends entirely on the RPC
-    // implementation of eth_estimateGas. On ethereum, the RPC tends
-    // to return ~6kk for our deploy contracts call, which is great as
-    // the txn will pass (it needs about 4kk). On polygon though, it returns ~600k,
-    // meaning the txn will fail with out of gas without any warnings to the user.
-    // That's why we need to manually up the gasUsed to at least 4500000n,
-    // ensuring that our deploy transaction will pass.
-    // The backside to this is that custom txns to the singleton may overestimate.
-    // Overestimation is now so bad, though. If the real gas is lower, the funds
-    // will not be taken from the user. Underestimation is bad as txn fails.
-    const finalGasUsed =
-      !(result instanceof Error) && call.to === SINGLETON && gasUsed < 4500000n ? 4500000n : gasUsed
-
     return {
-      gasUsed: finalGasUsed,
+      gasUsed,
       nonce,
       feePaymentOptions: [
         {
