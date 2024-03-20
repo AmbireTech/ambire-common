@@ -350,8 +350,8 @@ export class SettingsController extends EventEmitter {
 
     this.#networkPreferences[customNetworkId] = {
       ...customNetwork,
-      ...erc4337,
       ...feeOptions,
+      erc4337,
       isSAEnabled,
       areContractsDeployed,
       isOptimistic,
