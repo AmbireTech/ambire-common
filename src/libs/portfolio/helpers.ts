@@ -5,6 +5,7 @@ import feeTokens from '../../consts/feeTokens'
 import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
 import { Account } from '../../interfaces/account'
 import { NetworkId } from '../../interfaces/networkDescriptor'
+import { RPCProvider } from '../../interfaces/settings'
 
 export function getFlags(
   networkData: any,
@@ -40,10 +41,15 @@ export function getFlags(
   }
 }
 
-export const validateERC20Token = async (token, accountId, provider) => {
+export const validateERC20Token = async (
+  token: { address: string; networkId: NetworkId },
+  accountId: string,
+  provider: RPCProvider
+) => {
   const erc20 = new Contract(token?.address, IERC20.abi, provider)
 
-  let isValid = true
+  const type: string = 'erc20'
+  let isValid: boolean = true
   let hasError = false
 
   const [balance, symbol, decimals] = (await Promise.all([
@@ -70,7 +76,7 @@ export const validateERC20Token = async (token, accountId, provider) => {
   }
 
   isValid = isValid && !hasError
-  return [isValid, 'erc20']
+  return [isValid, type]
 }
 
 export const shouldGetAdditionalPortfolio = (account?: Account) => {
