@@ -237,4 +237,63 @@ describe('Main Controller ', () => {
       })
     })
   })
+
+  test('should add accounts and merge the associated keys of the already added accounts', (done) => {
+    controller = new MainController({
+      storage,
+      fetch,
+      relayerUrl,
+      keystoreSigners: { internal: KeystoreSigner },
+      externalSignerControllers: {},
+      onResolveDappRequest: () => {},
+      onRejectDappRequest: () => {},
+      onUpdateDappSelectedAccount: () => {}
+    })
+
+    controller.accounts = [
+      {
+        addr: '0x0af4DF1eBE058F424F7995BbE02D50C5e74bf033',
+        associatedKeys: ['0x699380c785819B2f400cb646b12C4C60b4dc7fcA'],
+        initialPrivileges: [
+          [
+            '0x699380c785819B2f400cb646b12C4C60b4dc7fcA',
+            '0x0000000000000000000000000000000000000000000000000000000000000001'
+          ]
+        ],
+        creation: accounts[0].creation
+      }
+    ]
+
+    let emitCounter = 0
+    const unsubscribe = controller.onUpdate(() => {
+      emitCounter++
+
+      if (emitCounter === 4) {
+        expect(controller.accounts[0].associatedKeys.length).toEqual(2)
+        expect(controller.accounts[0].associatedKeys).toContain(
+          '0x699380c785819B2f400cb646b12C4C60b4dc7fcA'
+        )
+        expect(controller.accounts[0].associatedKeys).toContain(
+          '0xb1b2d032AA2F52347fbcfd08E5C3Cc55216E8404'
+        )
+        unsubscribe()
+        done()
+      }
+    })
+
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+    controller.addAccounts([
+      {
+        addr: '0x0af4DF1eBE058F424F7995BbE02D50C5e74bf033',
+        associatedKeys: ['0xb1b2d032AA2F52347fbcfd08E5C3Cc55216E8404'],
+        initialPrivileges: [
+          [
+            '0x699380c785819B2f400cb646b12C4C60b4dc7fcA',
+            '0x0000000000000000000000000000000000000000000000000000000000000001'
+          ]
+        ],
+        creation: accounts[0].creation
+      }
+    ])
+  })
 })
