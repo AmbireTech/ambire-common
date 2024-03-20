@@ -43,7 +43,11 @@ export async function getSASupport(
     .catch((e: any) => {
       // if there's an error, return the zero address indicating that
       // our smart accounts will most likely not work on this chain
-      supportsStateOverride = e.info && !e.info.error.message.includes('too many arguments')
+      supportsStateOverride =
+        e.info &&
+        e.info.error &&
+        e.info.error.message &&
+        !e.info.error.message.includes('too many arguments')
       return [ZeroAddress]
     })
 
