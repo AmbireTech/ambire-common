@@ -76,7 +76,7 @@ export class PortfolioController extends EventEmitter {
 
   pending: PortfolioControllerState
 
-  tokenPreferences: any[] = []
+  tokenPreferences: CustomToken[] = []
 
   validTokens: any = { erc20: {}, erc721: {} }
 
