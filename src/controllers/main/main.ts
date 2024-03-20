@@ -530,9 +530,8 @@ export class MainController extends EventEmitter {
   async addAccounts(accounts: (Account & { newlyCreated?: boolean })[] = []) {
     if (!accounts.length) return
     const alreadyAddedAddressSet = new Set(this.accounts.map((account) => account.addr))
-    const newAccounts = accounts.filter((account) => !alreadyAddedAddressSet.has(account.addr))
-
-    if (!newAccounts.length) return
+    const newAccountsNotAddedYet = accounts.filter((acc) => !alreadyAddedAddressSet.has(acc.addr))
+    const newAccountsAlreadyAdded = accounts.filter((acc) => alreadyAddedAddressSet.has(acc.addr))
 
     const nextAccounts = [
       ...this.accounts.map((acc) => ({
@@ -547,11 +546,11 @@ export class MainController extends EventEmitter {
         associatedKeys: Array.from(
           new Set([
             ...acc.associatedKeys,
-            ...(newAccounts.find((x) => x.addr === acc.addr)?.associatedKeys || [])
+            ...(newAccountsAlreadyAdded.find((x) => x.addr === acc.addr)?.associatedKeys || [])
           ])
         )
       })),
-      ...newAccounts
+      ...newAccountsNotAddedYet
     ]
     await this.#storage.set('accounts', nextAccounts)
     // Clean the existing array ref and use `push` instead of re-assigning
