@@ -243,7 +243,8 @@ describe('Main Controller ', () => {
     })
   })
 
-  // TODO: Figure out why this test is messed up (throws an error)
+  // FIXME: This test works when fired standalone, but it throws an error when
+  // run with the rest of the tests. Figure out wtf.
   test.skip('should add accounts and merge the associated keys of the already added accounts', (done) => {
     const mainCtrl = new MainController({
       storage,
