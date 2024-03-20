@@ -10,6 +10,7 @@ import {
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFactory.json'
+import { SINGLETON } from '../../consts/deploy'
 import { Account, AccountId, AccountOnchainState, AccountStates } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
 import {
@@ -1163,7 +1164,8 @@ export class MainController extends EventEmitter {
         status: AccountOpStatus.BroadcastedButNotConfirmed,
         txnId: transactionRes.hash,
         nonce: BigInt(transactionRes.nonce),
-        timestamp: new Date().getTime()
+        timestamp: new Date().getTime(),
+        isSingletonDeploy: !!accountOp.calls.find((call) => getAddress(call.to) === SINGLETON)
       }
       if (accountOp.gasFeePayment?.isERC4337) {
         submittedAccountOp.userOpHash = transactionRes.hash

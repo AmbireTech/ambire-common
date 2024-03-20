@@ -28,6 +28,7 @@ export type NetworkPreference = {
   hasDebugTraceCall?: boolean
   platformId?: string
   nativeAssetId?: string
+  areContractsDeployed?: boolean
 }
 
 export type CustomNetwork = {

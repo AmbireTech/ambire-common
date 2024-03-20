@@ -1,7 +1,6 @@
 /* eslint-disable import/no-extraneous-dependencies */
 
 import { SettingsController } from 'controllers/settings/settings'
-import { JsonRpcProvider } from 'ethers'
 import fetch from 'node-fetch'
 
 import { AccountStates } from '../../interfaces/account'
@@ -31,6 +30,7 @@ export interface SubmittedAccountOp extends AccountOp {
   success?: boolean
   userOpHash?: string
   timestamp: number
+  isSingletonDeploy?: boolean
 }
 
 export interface SignedMessage extends Message {
@@ -268,8 +268,8 @@ export class ActivityController extends EventEmitter {
 
     await Promise.all(
       Object.keys(this.#accountsOps[this.filters.account]).map(async (network) => {
-        const networkConfig = this.#settings.networks.find((x) => x.id === network)
-        const provider = new JsonRpcProvider(networkConfig!.rpcUrl)
+        const networkConfig = this.#settings.networks.find((x) => x.id === network)!
+        const provider = this.#settings.providers[networkConfig.id]
 
         return Promise.all(
           this.#accountsOps[this.filters!.account][network].map(
@@ -303,6 +303,12 @@ export class ActivityController extends EventEmitter {
                 if (receipt) {
                   this.#accountsOps[this.filters!.account][network][accountOpIndex].status =
                     receipt.status ? AccountOpStatus.Success : AccountOpStatus.Failure
+
+                  if (accountOp.isSingletonDeploy && receipt.status) {
+                    // the below promise has a catch() inside
+                    /* eslint-disable @typescript-eslint/no-floating-promises */
+                    this.#settings.setContractsDeployedToTrueIfDeployed(networkConfig)
+                  }
                   return
                 }
               } catch {

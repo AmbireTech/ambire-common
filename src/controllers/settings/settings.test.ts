@@ -203,9 +203,25 @@ describe('Settings Controller', () => {
     )
   })
 
-  test('should check if network features get displayed correctly for ethereum', () => {
-    const eth = settingsController.networks.find((net) => net.id === 'ethereum')
-    expect(eth).not.toBe(null)
+  test('should check if network features get displayed correctly for ethereum', (done) => {
+    let checks = 0
+    settingsController.onUpdate(() => {
+      if (checks === 1) {
+        checks++
+        const eth = settingsController.networks.find((net) => net.id === 'ethereum')!
+        expect(eth.areContractsDeployed).toBe(true)
+        done()
+      }
+
+      if (checks === 0) {
+        checks++
+        const eth = settingsController.networks.find((net) => net.id === 'ethereum')!
+        expect(eth.areContractsDeployed).toBe(false)
+        settingsController.setContractsDeployedToTrueIfDeployed(eth)
+      }
+    })
+
+    const eth = settingsController.networks.find((net) => net.id === 'ethereum')!
     expect(eth?.features.length).toBe(3)
 
     const saSupport = eth?.features.find((feat) => feat.id === 'saSupport')
@@ -223,6 +239,9 @@ describe('Settings Controller', () => {
     expect(prices).not.toBe(null)
     expect(prices).not.toBe(undefined)
     expect(prices!.level).toBe('success')
+
+    // set first to false so we could test setContractsDeployedToTrueIfDeployed
+    settingsController.updateNetworkPreferences({ areContractsDeployed: false }, 'ethereum')
   })
 
   test('should add the mantle network as a custom network', (done) => {
@@ -314,6 +333,14 @@ describe('Settings Controller', () => {
         expect(prices).not.toBe(undefined)
         expect(prices!.level).toBe('success')
 
+        settingsController.updateNetworkPreferences({ areContractsDeployed: true }, 'mantle')
+      }
+
+      // test to see if updateNetworkPreferences is working
+      if (checks === 2) {
+        checks++
+        const mantle = settingsController.networks.find((net) => net.id === 'mantle')
+        expect(mantle?.areContractsDeployed).toBe(true)
         done()
       }
     })
