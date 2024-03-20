@@ -239,7 +239,7 @@ describe('Main Controller ', () => {
   })
 
   test('should add accounts and merge the associated keys of the already added accounts', (done) => {
-    controller = new MainController({
+    const mainCtrl = new MainController({
       storage,
       fetch,
       relayerUrl,
@@ -250,7 +250,7 @@ describe('Main Controller ', () => {
       onUpdateDappSelectedAccount: () => {}
     })
 
-    controller.accounts = [
+    mainCtrl.accounts = [
       {
         addr: '0x0af4DF1eBE058F424F7995BbE02D50C5e74bf033',
         associatedKeys: ['0x699380c785819B2f400cb646b12C4C60b4dc7fcA'],
@@ -265,15 +265,15 @@ describe('Main Controller ', () => {
     ]
 
     let emitCounter = 0
-    const unsubscribe = controller.onUpdate(() => {
+    const unsubscribe = mainCtrl.onUpdate(() => {
       emitCounter++
 
-      if (emitCounter === 4) {
-        expect(controller.accounts[0].associatedKeys.length).toEqual(2)
-        expect(controller.accounts[0].associatedKeys).toContain(
+      if (emitCounter === 3) {
+        expect(mainCtrl.accounts[0].associatedKeys.length).toEqual(2)
+        expect(mainCtrl.accounts[0].associatedKeys).toContain(
           '0x699380c785819B2f400cb646b12C4C60b4dc7fcA'
         )
-        expect(controller.accounts[0].associatedKeys).toContain(
+        expect(mainCtrl.accounts[0].associatedKeys).toContain(
           '0xb1b2d032AA2F52347fbcfd08E5C3Cc55216E8404'
         )
         unsubscribe()
@@ -282,7 +282,7 @@ describe('Main Controller ', () => {
     })
 
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    controller.addAccounts([
+    mainCtrl.addAccounts([
       {
         addr: '0x0af4DF1eBE058F424F7995BbE02D50C5e74bf033',
         associatedKeys: ['0xb1b2d032AA2F52347fbcfd08E5C3Cc55216E8404'],
