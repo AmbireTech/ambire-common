@@ -9,8 +9,11 @@ interface Domains {
   [address: string]: {
     ens: string | null
     ud: string | null
+    savedAt: number
   }
 }
+
+const DAY_IN_MS = 24 * 60 * 60 * 1000
 
 /**
  * Domains controller
@@ -43,18 +46,27 @@ export class DomainsController extends EventEmitter {
     const checksummedAddress = getAddress(address)
     this.domains[checksummedAddress] = {
       ens: type === 'ens' ? name : null,
-      ud: type === 'ud' ? name : null
+      ud: type === 'ud' ? name : null,
+      savedAt: Date.now()
     }
     this.emitUpdate()
   }
 
   async reverseLookup(address: string) {
-    if (!('ethereum' in this.#providers)) return
+    if (!('ethereum' in this.#providers)) {
+      this.emitError({
+        error: new Error('domains.reverseLookup: Ethereum provider is not available'),
+        message: 'The RPC provider for Ethereum is not available.',
+        level: 'major'
+      })
+      return
+    }
     const checksummedAddress = getAddress(address)
+    const isExpired = Date.now() - this.domains[checksummedAddress]?.savedAt > DAY_IN_MS
+    const isAlreadyResolved = !!this.domains[checksummedAddress]
 
-    const isAlreadyResolved = this.domains[checksummedAddress]
-
-    if (isAlreadyResolved || this.loadingAddresses.includes(checksummedAddress)) return
+    if ((isAlreadyResolved && !isExpired) || this.loadingAddresses.includes(checksummedAddress))
+      return
 
     this.loadingAddresses.push(checksummedAddress)
     this.emitUpdate()
@@ -71,13 +83,16 @@ export class DomainsController extends EventEmitter {
 
     try {
       udName = (await reverseLookupUD(checksummedAddress)) || null
-    } catch (e) {
-      console.error('UD reverse lookup unexpected error', e)
+    } catch (e: any) {
+      if (!e?.message?.includes('Only absolute URLs are supported')) {
+        console.error('UD reverse lookup unexpected error', e)
+      }
     }
 
     this.domains[checksummedAddress] = {
       ens: ensName,
-      ud: udName
+      ud: udName,
+      savedAt: Date.now()
     }
 
     this.loadingAddresses = this.loadingAddresses.filter(

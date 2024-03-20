@@ -2,6 +2,8 @@ import { JsonRpcProvider } from 'ethers'
 // @ts-ignore
 import fetch from 'node-fetch'
 
+import { jest } from '@jest/globals'
+
 import { networks } from '../../consts/networks'
 import { DomainsController } from './domains'
 
@@ -44,5 +46,20 @@ describe('Domains', () => {
     domainsController.saveResolvedReverseLookup({ address, name, type })
 
     expect(domainsController.domains[address].ens).toBe(name)
+  })
+  it('reverse lookup should expire after 24 hours', async () => {
+    const { address, name } = ENS2
+
+    await domainsController.reverseLookup(address)
+
+    expect(domainsController.domains[address].ens).toBe(name)
+
+    const timestampForwardInTime = new Date(Date.UTC(2028, 1, 1)).valueOf()
+
+    Date.now = jest.fn(() => timestampForwardInTime)
+
+    await domainsController.reverseLookup(address)
+
+    expect(domainsController.domains[address].savedAt).toBe(timestampForwardInTime)
   })
 })
