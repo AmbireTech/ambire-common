@@ -139,7 +139,12 @@ describe('Main Controller ', () => {
     // )
     controller.emailVault.uploadKeyStoreSecret(email)
     // eslint-disable-next-line no-promise-executor-return
-    await new Promise((resolve) => controller.emailVault.onUpdate(() => resolve(null)))
+    await new Promise((resolve) => {
+      const unsubscribe = controller.emailVault.onUpdate(() => {
+        unsubscribe()
+        resolve(null)
+      })
+    })
     // console.log(JSON.stringify(controller.emailVault, null, 2))
   })
 
