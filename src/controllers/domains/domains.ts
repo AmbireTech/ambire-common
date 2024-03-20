@@ -44,9 +44,11 @@ export class DomainsController extends EventEmitter {
     type: 'ens' | 'ud'
   }) {
     const checksummedAddress = getAddress(address)
+    const { ens: oldEns, ud: oldUd } = this.domains[checksummedAddress] || { ens: null, ud: null }
+
     this.domains[checksummedAddress] = {
-      ens: type === 'ens' ? name : null,
-      ud: type === 'ud' ? name : null,
+      ens: type === 'ens' ? name : oldEns,
+      ud: type === 'ud' ? name : oldUd,
       savedAt: Date.now()
     }
     this.emitUpdate()
