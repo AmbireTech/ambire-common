@@ -2,8 +2,7 @@ import { AbiCoder, getBytes, keccak256 } from 'ethers'
 import { Key } from 'interfaces/keystore'
 import { HumanizerMeta } from 'libs/humanizer/interfaces'
 
-import { networks } from '../../consts/networks'
-import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
+import { NetworkId } from '../../interfaces/networkDescriptor'
 import { stringify } from '../richJson/richJson'
 import { UserOperation } from '../userOperation/types'
 import { Call } from './types'
@@ -154,16 +153,13 @@ export function getSignableCalls(op: AccountOp) {
  * @param op AccountOp
  * @returns Uint8Array
  */
-export function accountOpSignableHash(op: AccountOp): Uint8Array {
-  const opNetworks = networks.filter((network: NetworkDescriptor) => op.networkId === network.id)
-  if (!opNetworks.length) throw new Error('unsupported network')
-
+export function accountOpSignableHash(op: AccountOp, chainId: bigint): Uint8Array {
   const abiCoder = new AbiCoder()
   return getBytes(
     keccak256(
       abiCoder.encode(
         ['address', 'uint', 'uint', 'tuple(address, uint, bytes)[]'],
-        [op.accountAddr, opNetworks[0].chainId, op.nonce ?? 0n, getSignableCalls(op)]
+        [op.accountAddr, chainId, op.nonce ?? 0n, getSignableCalls(op)]
       )
     )
   )

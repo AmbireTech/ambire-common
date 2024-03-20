@@ -557,7 +557,7 @@ describe('SignAccountOp Controller ', () => {
     const typedData = getTypedData(
       network.chainId,
       controller.accountOp.accountAddr,
-      ethers.hexlify(accountOpSignableHash(controller.accountOp))
+      ethers.hexlify(accountOpSignableHash(controller.accountOp, network.chainId))
     )
     delete typedData.types.EIP712Domain
     const unwrappedSig = controller.accountOp.signature.slice(0, -2)
@@ -681,7 +681,7 @@ describe('SignAccountOp Controller ', () => {
     const typedData = getTypedData(
       network.chainId,
       controller.accountOp.accountAddr,
-      ethers.hexlify(accountOpSignableHash(controller.accountOp))
+      ethers.hexlify(accountOpSignableHash(controller.accountOp, network.chainId))
     )
     delete typedData.types.EIP712Domain
     const unwrappedSig = controller.accountOp.signature.slice(0, -2)
@@ -797,7 +797,7 @@ describe('SignAccountOp Controller ', () => {
     const typedData = getTypedData(
       network.chainId,
       controller.accountOp.accountAddr,
-      ethers.hexlify(accountOpSignableHash(controller.accountOp))
+      ethers.hexlify(accountOpSignableHash(controller.accountOp, network.chainId))
     )
     const unwrappedSig = controller.accountOp.signature.slice(0, -2)
     delete typedData.types.EIP712Domain
@@ -884,7 +884,7 @@ describe('SignAccountOp Controller ', () => {
       throw new Error('Signing failed!')
     }
 
-    const message = accountOpSignableHash(controller.accountOp)
+    const message = accountOpSignableHash(controller.accountOp, 1n)
     const unwrappedSig = controller.accountOp.signature.slice(0, -2)
     const signerAddr = ethers.verifyMessage(message, unwrappedSig)
 
