@@ -18,7 +18,7 @@ export interface GetOptionsSimulation {
   account: Account
 }
 
-export interface TokenResult extends CustomToken {
+export interface TokenResult extends Partial<CustomToken> {
   address: string
   symbol: string
   amount: bigint

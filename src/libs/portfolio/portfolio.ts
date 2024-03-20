@@ -201,7 +201,13 @@ export class Portfolio {
       const isInAdditionalHints = localOpts.additionalHints?.includes(result.address)
       const isNative = result.address === ZeroAddress
 
-      return isPinned || isInAdditionalHints || isNative || isTokenPreference || result.amount > 0
+      return !!(
+        isPinned ||
+        isInAdditionalHints ||
+        isNative ||
+        isTokenPreference ||
+        (result.amount && result.amount > 0)
+      )
     }
 
     const tokens = tokensWithErr
