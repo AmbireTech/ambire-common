@@ -190,7 +190,7 @@ export class SignMessageController extends EventEmitter {
           const message = this.messageToSign.content.message
           this.messageToSign.content.message = isHexString(message)
             ? message
-            : hexlify(toUtf8Bytes(message as string))
+            : hexlify(toUtf8Bytes(message.toString()))
 
           signature = await getPlainTextSignature(
             this.messageToSign.content.message,
