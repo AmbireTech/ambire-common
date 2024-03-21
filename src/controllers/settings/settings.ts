@@ -232,7 +232,7 @@ export class SettingsController extends EventEmitter {
     const nextKeyPreferences = [...this.keyPreferences]
     newKeyPreferences.forEach((newKey) => {
       const existingKeyPref = nextKeyPreferences.find(
-        ({ addr, label }) => addr === newKey.addr && label === newKey.label
+        ({ addr, type }) => addr === newKey.addr && type === newKey.type
       )
 
       if (existingKeyPref) {
