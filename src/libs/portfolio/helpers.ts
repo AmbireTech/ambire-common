@@ -15,24 +15,20 @@ export function getFlags(
   if (networkData?.walletClaimableBalance?.address.toLowerCase() === address.toLowerCase())
     rewardsType = 'wallet-vesting'
 
-  const isFeeToken = gasTankFeeTokens.some(
+  const foundFeeToken = gasTankFeeTokens.find(
     (t) =>
       t.address.toLowerCase() === address.toLowerCase() &&
       (onGasTank || networkId === 'rewards'
         ? t.networkId === tokenNetwork
         : t.networkId === networkId)
   )
-  const canTopUpGasTank =
-    isFeeToken &&
-    gasTankFeeTokens.some(
-      (t) => !t.disableGasTankDeposit && t.address.toLowerCase() === address.toLocaleLowerCase()
-    )
+  const canTopUpGasTank = foundFeeToken && !foundFeeToken?.disableGasTankDeposit
 
   return {
     onGasTank,
     rewardsType,
     canTopUpGasTank,
-    isFeeToken
+    isFeeToken: !!foundFeeToken
   }
 }
 
