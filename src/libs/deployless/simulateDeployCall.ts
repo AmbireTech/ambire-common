@@ -41,6 +41,10 @@ export async function getSASupport(
       deploylessOptions
     )
     .catch((e: any) => {
+      if (e.message.includes('no response')) {
+        throw new Error('no response')
+      }
+
       // if there's an error, return the zero address indicating that
       // our smart accounts will most likely not work on this chain
       supportsStateOverride =
@@ -82,6 +86,10 @@ export async function simulateDebugTraceCall(
       }
     ])
     .catch((e: any) => {
+      if (e.message.includes('no response')) {
+        throw new Error('no response')
+      }
+
       if (
         e.message.includes('not whitelisted') ||
         e.message.includes('not exist') ||

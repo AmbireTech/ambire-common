@@ -1,6 +1,6 @@
 /* eslint-disable import/no-extraneous-dependencies */
 
-import { Contract, JsonRpcProvider } from 'ethers'
+import { Contract, JsonRpcProvider, Network } from 'ethers'
 import fetch from 'node-fetch'
 
 import EntryPointAbi from '../../../contracts/compiled/EntryPoint.json'
@@ -18,6 +18,22 @@ import { getSASupport, simulateDebugTraceCall } from '../deployless/simulateDepl
 
 export const getNetworksWithFailedRPC = ({ providers }: { providers: RPCProviders }): string[] => {
   return Object.keys(providers).filter((networkId) => !providers[networkId].isWorking)
+}
+
+async function retryRequest(init: Function, counter = 0): Promise<any> {
+  if (counter >= 2) {
+    throw new Error('flagged')
+  }
+
+  const promise: Promise<any> = init()
+  const result = await promise.catch(async (e) => {
+    if (e.message.includes('no response')) {
+      const retryRes = await retryRequest(init, counter + 1)
+      return retryRes
+    }
+  })
+
+  return result
 }
 
 export async function getNetworkInfo(
@@ -39,20 +55,31 @@ export async function getNetworkInfo(
   }
   callback(networkInfo)
 
-  const provider = new JsonRpcProvider(rpcUrl)
+  const staticNetwork = Network.from(Number(chainId))
+  const provider = new JsonRpcProvider(rpcUrl, undefined, {
+    batchMaxCount: 1,
+    staticNetwork
+  })
   const timeout = (): Promise<'timeout reached'> => {
     return new Promise((resolve) => {
       setTimeout(resolve, 30000, 'timeout reached')
     }) as unknown as Promise<'timeout reached'>
+  }
+  let flagged = false
+  const raiseFlagged = (e: Error, returnData: any): any => {
+    if (e.message === 'flagged') {
+      flagged = true
+    }
+    return returnData
   }
 
   const info = await Promise.race([
     Promise.all([
       (async () => {
         const responses = await Promise.all([
-          provider.getCode(ERC_4337_ENTRYPOINT).catch(() => '0x'),
+          retryRequest(() => provider.getCode(ERC_4337_ENTRYPOINT)),
           Bundler.isNetworkSupported(chainId).catch(() => false)
-        ])
+        ]).catch((e: Error) => raiseFlagged(e, ['0x', false]))
         const [entryPointCode, hasBundler] = responses
         const has4337 = entryPointCode !== '0x' && hasBundler
         let hasPaymaster = false
@@ -70,10 +97,12 @@ export async function getNetworkInfo(
       })(),
       (async () => {
         const responses = await Promise.all([
-          provider.getCode(SINGLETON).catch(() => '0x'),
-          provider.getCode(AMBIRE_ACCOUNT_FACTORY).catch(() => '0x'),
-          getSASupport(provider)
-        ])
+          retryRequest(() => provider.getCode(SINGLETON)),
+          retryRequest(() => provider.getCode(AMBIRE_ACCOUNT_FACTORY)),
+          retryRequest(() => getSASupport(provider))
+        ]).catch((e: Error) =>
+          raiseFlagged(e, ['0x', '0x', { addressMatches: false, supportsStateOverride: false }])
+        )
         const [singletonCode, factoryCode, saSupport] = responses
         const areContractsDeployed = factoryCode !== '0x'
         // Ambire support is as follows:
@@ -92,7 +121,9 @@ export async function getNetworkInfo(
         callback(networkInfo)
       })(),
       (async () => {
-        const oracleCode = await provider.getCode(OPTIMISTIC_ORACLE).catch(() => '0x')
+        const oracleCode = await retryRequest(() => provider.getCode(OPTIMISTIC_ORACLE)).catch(
+          (e: Error) => raiseFlagged(e, '0x')
+        )
         const isOptimistic = oracleCode !== '0x'
 
         networkInfo = { ...networkInfo, isOptimistic }
@@ -100,7 +131,9 @@ export async function getNetworkInfo(
         callback(networkInfo)
       })(),
       (async () => {
-        const block = await provider.getBlock('latest').catch(() => null)
+        const block = await retryRequest(() => provider.getBlock('latest')).catch((e: Error) =>
+          raiseFlagged(e, null)
+        )
         const feeOptions = { is1559: block?.baseFeePerGas !== null }
 
         networkInfo = { ...networkInfo, feeOptions }
@@ -108,7 +141,9 @@ export async function getNetworkInfo(
         callback(networkInfo)
       })(),
       (async () => {
-        const hasDebugTraceCall = await simulateDebugTraceCall(provider)
+        const hasDebugTraceCall = await retryRequest(() => simulateDebugTraceCall(provider)).catch(
+          () => false
+        )
         networkInfo = { ...networkInfo, hasDebugTraceCall }
 
         callback(networkInfo)
@@ -137,7 +172,7 @@ export async function getNetworkInfo(
     timeout()
   ])
 
-  networkInfo = { ...networkInfo, flagged: info === 'timeout reached' }
+  networkInfo = { ...networkInfo, flagged: flagged || info === 'timeout reached' }
   callback(networkInfo)
 
   provider.destroy()

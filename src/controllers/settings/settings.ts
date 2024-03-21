@@ -70,12 +70,12 @@ export class SettingsController extends EventEmitter {
       }
 
       // when setting the provider for a custom network, we set it with
-      // a batchMaxSize of 2 as some custom networks don't support bigger
+      // a batchMaxCount of 1 as some custom networks don't support bigger
       // batching
       if (isCustom) {
         const staticNetwork = Network.from(Number(network.chainId))
         this.providers[network.id] = new JsonRpcProvider(newRpcUrl, undefined, {
-          batchMaxSize: 1,
+          batchMaxCount: 1,
           staticNetwork
         })
       } else {
