@@ -15,14 +15,14 @@ export function getFlags(
 
   const canTopUpGasTank = gasTankFeeTokens.some(
     (t) =>
-      t.address === address &&
+      t.address.toLowerCase() === address.toLowerCase() &&
       (onGasTank || networkId === 'rewards'
         ? t.networkId === tokenNetwork
         : t.networkId === networkId)
   )
   const isFeeToken = gasTankFeeTokens.some(
     (t) =>
-      t.address === address &&
+      t.address.toLowerCase() === address.toLowerCase() &&
       (onGasTank || networkId === 'rewards'
         ? t.networkId === tokenNetwork
         : t.networkId === networkId)
