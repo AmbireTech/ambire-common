@@ -9,29 +9,20 @@ export function getFlags(
   address: string
 ) {
   const onGasTank = networkId === 'gasTank'
+  const isFromRewards = networkId === 'rewards'
   let rewardsType = null
   if (networkData?.xWalletClaimableBalance?.address === address) rewardsType = 'wallet-rewards'
   if (networkData?.walletClaimableBalance?.address === address) rewardsType = 'wallet-vesting'
 
-  const canTopUpGasTank = gasTankFeeTokens.some(
-    (t) =>
-      t.address.toLowerCase() === address.toLowerCase() &&
-      (onGasTank || networkId === 'rewards'
-        ? t.networkId === tokenNetwork
-        : t.networkId === networkId)
-  )
   const isFeeToken = gasTankFeeTokens.some(
     (t) =>
       t.address.toLowerCase() === address.toLowerCase() &&
-      (onGasTank || networkId === 'rewards'
-        ? t.networkId === tokenNetwork
-        : t.networkId === networkId)
+      (onGasTank || isFromRewards ? t.networkId === tokenNetwork : t.networkId === networkId)
   )
 
   return {
     onGasTank,
     rewardsType,
-    canTopUpGasTank,
     isFeeToken
   }
 }

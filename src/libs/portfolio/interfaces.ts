@@ -28,7 +28,6 @@ export interface TokenResult {
   flags: {
     onGasTank: boolean
     rewardsType: string | null
-    canTopUpGasTank: boolean
     isFeeToken: boolean
   }
 }
