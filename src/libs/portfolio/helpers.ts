@@ -22,13 +22,11 @@ export function getFlags(
         ? t.networkId === tokenNetwork
         : t.networkId === networkId)
   )
-  const canTopUpGasTank = gasTankFeeTokens.some(
-    (t) =>
-      t.address.toLowerCase() === address.toLowerCase() &&
-      (onGasTank || networkId === 'rewards'
-        ? t.networkId === tokenNetwork
-        : t.networkId === networkId)
-  )
+  const canTopUpGasTank =
+    isFeeToken &&
+    gasTankFeeTokens.some(
+      (t) => !t.disableGasTankDeposit && t.address.toLowerCase() === address.toLocaleLowerCase()
+    )
 
   return {
     onGasTank,
