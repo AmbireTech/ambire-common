@@ -219,8 +219,10 @@ export class TransferController extends EventEmitter {
       this.#humanizerInfo = humanizerInfo
     }
     if (selectedAccount) {
+      if (this.#selectedAccount !== selectedAccount) {
+        this.amount = ''
+      }
       this.#selectedAccount = selectedAccount
-      this.amount = ''
     }
     if (tokens) {
       this.tokens = tokens
