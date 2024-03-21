@@ -257,6 +257,7 @@ export class PortfolioController extends EventEmitter {
             ],
             flags: {
               rewardsType: null,
+              canTopUpGasTank: true,
               isFeeToken: true,
               onGasTank: true
             }

@@ -196,6 +196,7 @@ const nativeFeeToken: TokenResult = {
   flags: {
     onGasTank: false,
     rewardsType: null,
+    canTopUpGasTank: true,
     isFeeToken: true
   }
 }
@@ -210,6 +211,7 @@ const nativeFeeToken: TokenResult = {
 //   flags: {
 //     onGasTank: false,
 //     rewardsType: null,
+//     canTopUpGasTank: true,
 //     isFeeToken: true
 //   }
 // }
@@ -224,6 +226,7 @@ const nativeFeeTokenPolygon: TokenResult = {
   flags: {
     onGasTank: false,
     rewardsType: null,
+    canTopUpGasTank: true,
     isFeeToken: true
   }
 }
@@ -238,6 +241,7 @@ const gasTankToken: TokenResult = {
   flags: {
     onGasTank: true,
     rewardsType: null,
+    canTopUpGasTank: true,
     isFeeToken: true
   }
 }
@@ -252,6 +256,7 @@ const usdcFeeToken: TokenResult = {
   flags: {
     onGasTank: false,
     rewardsType: null,
+    canTopUpGasTank: true,
     isFeeToken: true
   }
 }
@@ -316,6 +321,7 @@ const init = async (
         flags: {
           onGasTank: false,
           rewardsType: null,
+          canTopUpGasTank: true,
           isFeeToken: true
         },
         priceIn: [{ baseCurrency: 'usd', price: 1000.0 }] //  For the sake of simplicity we mocked 1 ETH = 1000 USD
@@ -329,6 +335,7 @@ const init = async (
         flags: {
           onGasTank: false,
           rewardsType: null,
+          canTopUpGasTank: true,
           isFeeToken: true
         },
         priceIn: [{ baseCurrency: 'usd', price: 1.0 }]

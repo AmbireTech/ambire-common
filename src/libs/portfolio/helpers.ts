@@ -18,7 +18,14 @@ export function getFlags(
   const isFeeToken = gasTankFeeTokens.some(
     (t) =>
       t.address.toLowerCase() === address.toLowerCase() &&
-      (['gasTank', 'rewards'].includes(networkId)
+      (onGasTank || networkId === 'rewards'
+        ? t.networkId === tokenNetwork
+        : t.networkId === networkId)
+  )
+  const canTopUpGasTank = gasTankFeeTokens.some(
+    (t) =>
+      t.address.toLowerCase() === address.toLowerCase() &&
+      (onGasTank || networkId === 'rewards'
         ? t.networkId === tokenNetwork
         : t.networkId === networkId)
   )
@@ -26,6 +33,7 @@ export function getFlags(
   return {
     onGasTank,
     rewardsType,
+    canTopUpGasTank,
     isFeeToken
   }
 }
