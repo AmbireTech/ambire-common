@@ -533,14 +533,27 @@ export class MainController extends EventEmitter {
   async addAccounts(accounts: (Account & { newlyCreated?: boolean })[] = []) {
     if (!accounts.length) return
     const alreadyAddedAddressSet = new Set(this.accounts.map((account) => account.addr))
-    const newAccounts = accounts.filter((account) => !alreadyAddedAddressSet.has(account.addr))
-
-    if (!newAccounts.length) return
+    const newAccountsNotAddedYet = accounts.filter((acc) => !alreadyAddedAddressSet.has(acc.addr))
+    const newAccountsAlreadyAdded = accounts.filter((acc) => alreadyAddedAddressSet.has(acc.addr))
 
     const nextAccounts = [
-      // when adding accounts for a second time reset the newlyCreated state for the previously added accounts
-      ...this.accounts.map((acc) => ({ ...acc, newlyCreated: false })),
-      ...newAccounts
+      ...this.accounts.map((acc) => ({
+        ...acc,
+        // reset the `newlyCreated` state for all already added accounts
+        newlyCreated: false,
+        // Merge the existing and new associated keys for the account (if the
+        // account was already imported). This ensures up-to-date keys,
+        // considering changes post-import (associated keys of the smart
+        // accounts can change) or incomplete initial data (during the initial
+        // import, not all associated keys could have been fetched (for privacy).
+        associatedKeys: Array.from(
+          new Set([
+            ...acc.associatedKeys,
+            ...(newAccountsAlreadyAdded.find((x) => x.addr === acc.addr)?.associatedKeys || [])
+          ])
+        )
+      })),
+      ...newAccountsNotAddedYet
     ]
     await this.#storage.set('accounts', nextAccounts)
     // Clean the existing array ref and use `push` instead of re-assigning
