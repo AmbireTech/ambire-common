@@ -64,8 +64,9 @@ export class DomainsController extends EventEmitter {
       return
     }
     const checksummedAddress = getAddress(address)
-    const isExpired = Date.now() - this.domains[checksummedAddress]?.savedAt > DAY_IN_MS
     const isAlreadyResolved = !!this.domains[checksummedAddress]
+    const isExpired =
+      isAlreadyResolved && Date.now() - this.domains[checksummedAddress].savedAt > DAY_IN_MS
 
     if ((isAlreadyResolved && !isExpired) || this.loadingAddresses.includes(checksummedAddress))
       return
