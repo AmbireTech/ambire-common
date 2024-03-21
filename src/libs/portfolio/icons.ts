@@ -38,23 +38,6 @@ export function getZapperIcon(networkId: string, address: string) {
   return `${zapperStorageTokenIcons}/${networkId.toLowerCase()}/${address.toLowerCase()}.png`
 }
 
-/**
- * Check if an image exists or not using the ES6 Fetch API
- * {@link https://stackoverflow.com/a/56196999/1333836}
- */
-export async function checkIfImageExists(uri: string) {
-  return fetch(uri, {
-    // Only retrieves headers, which is enough to check the image existence.
-    method: 'HEAD'
-  })
-    .then((res: any) => {
-      if (res.ok) return Promise.resolve(true)
-
-      return Promise.resolve(false)
-    })
-    .catch(() => Promise.resolve(false))
-}
-
 export async function getIcon(
   network: NetworkDescriptor,
   addr: string,
@@ -70,10 +53,6 @@ export async function getIcon(
     if (storageImage) return storageImage
   }
 
-  // try to find the icon without making a request
-  const image = getZapperIcon(network.id, addr)
-  if (await checkIfImageExists(image)) return image
-
   // make a request to cena to fetch the icon
   const baseUrlCena = 'https://cena.ambire.com/api/v3'
   const url =
@@ -82,10 +61,11 @@ export async function getIcon(
       : `${baseUrlCena}/coins/${network.platformId}/contract/${addr}`
 
   const response = await fetch(url)
-  if (response.status !== 200) return null
+  if (response.status === 200) {
+    const json = await response.json()
+    if (json && json.image && json.image.small) return json.image.small
+  }
 
-  const json = await response.json()
-  if (!json || !json.image || !json.image.small) return null
-
-  return json.image.small
+  // try to find the icon without making a request
+  return getZapperIcon(network.id, addr)
 }
