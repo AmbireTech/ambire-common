@@ -879,7 +879,7 @@ export class MainController extends EventEmitter {
           account,
           this.keystore.keys,
           localAccountOp,
-          this.accountStates[localAccountOp.accountAddr][localAccountOp.networkId],
+          this.accountStates,
           EOAaccounts,
           // @TODO - first time calling this, portfolio is still not loaded.
           feeTokens,
