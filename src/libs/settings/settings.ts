@@ -1,6 +1,6 @@
 /* eslint-disable import/no-extraneous-dependencies */
 
-import { Contract, JsonRpcProvider, Network } from 'ethers'
+import { Contract, JsonRpcProvider } from 'ethers'
 import fetch from 'node-fetch'
 
 import EntryPointAbi from '../../../contracts/compiled/EntryPoint.json'
@@ -55,11 +55,7 @@ export async function getNetworkInfo(
   }
   callback(networkInfo)
 
-  const staticNetwork = Network.from(Number(chainId))
-  const provider = new JsonRpcProvider(rpcUrl, undefined, {
-    batchMaxCount: 1,
-    staticNetwork
-  })
+  const provider = new JsonRpcProvider(rpcUrl)
   const timeout = (): Promise<'timeout reached'> => {
     return new Promise((resolve) => {
       setTimeout(resolve, 30000, 'timeout reached')

@@ -75,7 +75,7 @@ export class SettingsController extends EventEmitter {
       if (isCustom) {
         const staticNetwork = Network.from(Number(network.chainId))
         this.providers[network.id] = new JsonRpcProvider(newRpcUrl, undefined, {
-          batchMaxCount: 1,
+          batchMaxSize: 1,
           staticNetwork
         })
       } else {
