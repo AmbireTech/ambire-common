@@ -1,4 +1,3 @@
-import feeTokens from '../../consts/feeTokens'
 import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
 import { Account } from '../../interfaces/account'
 import { NetworkId } from '../../interfaces/networkDescriptor'
@@ -21,7 +20,7 @@ export function getFlags(
         ? t.networkId === tokenNetwork
         : t.networkId === networkId)
   )
-  const isFeeToken = feeTokens.some(
+  const isFeeToken = gasTankFeeTokens.some(
     (t) =>
       t.address === address &&
       (onGasTank || networkId === 'rewards'
