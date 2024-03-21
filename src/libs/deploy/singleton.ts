@@ -1,7 +1,14 @@
 // this script is used to deploy the proxy, factory and paymaster
 // contract via EIP-2470, singleton pattern:
 // https://eips.ethereum.org/EIPS/eip-2470
-import { ethers, JsonRpcProvider } from 'ethers'
+import {
+  BaseContract,
+  getAddress,
+  getCreate2Address,
+  JsonRpcProvider,
+  keccak256,
+  Wallet
+} from 'ethers'
 
 import DeployHelper from '../../../contracts/compiled/DeployHelper.json'
 import { networks } from '../../consts/networks'
@@ -28,11 +35,8 @@ export async function deploy(network: NetworkDescriptor) {
   const singletonAddr = '0xce0042B868300000d44A59004Da54A005ffdcf9f'
 
   // run a simulation, take the contract addresses and verify there's no code there
-  const helperAddr = ethers.getCreate2Address(singletonAddr, salt, ethers.keccak256(bytecode))
-  if (
-    ethers.getAddress(helperAddr) !==
-    ethers.getAddress('0x1F8D50d09C019C26518AA859b07C8888d0eB9576')
-  ) {
+  const helperAddr = getCreate2Address(singletonAddr, salt, keccak256(bytecode))
+  if (getAddress(helperAddr) !== getAddress('0x1F8D50d09C019C26518AA859b07C8888d0eB9576')) {
     throw new Error('Helper address different. Comment out this error if you think it is correct')
   }
 
@@ -43,8 +47,8 @@ export async function deploy(network: NetworkDescriptor) {
   }
 
   const pk = process.env.DEPLOY_PRIVATE_KEY!
-  const wallet = new ethers.Wallet(pk, provider)
-  const singletonContract: any = new ethers.BaseContract(singletonAddr, singletonABI, wallet)
+  const wallet = new Wallet(pk, provider)
+  const singletonContract: any = new BaseContract(singletonAddr, singletonABI, wallet)
   const result = await singletonContract.deploy(bytecode, salt)
   console.log(result)
 }

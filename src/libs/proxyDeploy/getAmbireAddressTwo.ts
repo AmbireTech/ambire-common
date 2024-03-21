@@ -1,5 +1,5 @@
-import { ethers } from 'ethers'
+import { getCreate2Address, keccak256, toBeHex } from 'ethers'
 
 export function getAmbireAccountAddress(factoryAddress: string, bytecode: string) {
-  return ethers.getCreate2Address(factoryAddress, ethers.toBeHex(0, 32), ethers.keccak256(bytecode))
+  return getCreate2Address(factoryAddress, toBeHex(0, 32), keccak256(bytecode))
 }

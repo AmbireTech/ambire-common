@@ -1,4 +1,4 @@
-import { ethers } from 'ethers'
+import { Interface, ZeroHash } from 'ethers'
 
 import AmbireAccount from '../../../../contracts/compiled/AmbireAccount.json'
 import { ENTRY_POINT_MARKER } from '../../../consts/deploy'
@@ -6,7 +6,7 @@ import { AccountOp } from '../../accountOp/accountOp'
 import { HumanizerCallModule, HumanizerVisualization, IrCall } from '../interfaces'
 import { getAction, getAddressVisualization, getKnownName, getLabel } from '../utils'
 
-const iface = new ethers.Interface(AmbireAccount.abi)
+const iface = new Interface(AmbireAccount.abi)
 
 const parsePriviligeCall = (accountOp: AccountOp, call: IrCall): HumanizerVisualization[] => {
   const { addr, priv } = iface.parseTransaction(call)!.args
@@ -15,7 +15,7 @@ const parsePriviligeCall = (accountOp: AccountOp, call: IrCall): HumanizerVisual
     priv === ENTRY_POINT_MARKER
   )
     return [getAction('Enable'), getAddressVisualization(addr)]
-  if (priv === ethers.ZeroHash)
+  if (priv === ZeroHash)
     return [getAction('Revoke access'), getLabel('of'), getAddressVisualization(addr)]
   return [
     getAction('Update access status'),

@@ -64,7 +64,7 @@ const validateSendTransferAddress = (
     }
   }
 
-  if (selectedAcc && address === selectedAcc) {
+  if (selectedAcc && address.toLowerCase() === selectedAcc.toLowerCase()) {
     return {
       success: false,
       message: 'The entered address should be different than the your own account address.'
