@@ -55,13 +55,22 @@ export async function getNetworkInfo(
   }
   callback(networkInfo)
 
+  let flagged = false
   const provider = new JsonRpcProvider(rpcUrl)
+  // eslint-disable-next-line no-underscore-dangle
+  await provider._detectNetwork().catch(() => {
+    flagged = true
+    networkInfo = { ...networkInfo, flagged }
+    callback(networkInfo)
+  })
+  if (flagged) return
+
   const timeout = (): Promise<'timeout reached'> => {
     return new Promise((resolve) => {
       setTimeout(resolve, 30000, 'timeout reached')
     }) as unknown as Promise<'timeout reached'>
   }
-  let flagged = false
+
   const raiseFlagged = (e: Error, returnData: any): any => {
     if (e.message === 'flagged') {
       flagged = true
