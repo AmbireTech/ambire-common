@@ -1,5 +1,5 @@
 /* eslint-disable no-underscore-dangle */
-import { JsonRpcProvider, Network } from 'ethers'
+import { JsonRpcProvider } from 'ethers'
 
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { networks } from '../../consts/networks'
@@ -54,7 +54,7 @@ export class SettingsController extends EventEmitter {
     this.#load()
   }
 
-  #setProvider(network: NetworkDescriptor, newRpcUrl: string, isCustom: boolean) {
+  #setProvider(network: NetworkDescriptor, newRpcUrl: string) {
     const provider = this.providers[network.id]
 
     // Only update the RPC if the new RPC is different from the current one
@@ -69,18 +69,7 @@ export class SettingsController extends EventEmitter {
         oldRPC.destroy()
       }
 
-      // when setting the provider for a custom network, we set it with
-      // a batchMaxCount of 1 as some custom networks don't support bigger
-      // batching
-      if (isCustom) {
-        const staticNetwork = Network.from(Number(network.chainId))
-        this.providers[network.id] = new JsonRpcProvider(newRpcUrl, undefined, {
-          batchMaxSize: 1,
-          staticNetwork
-        })
-      } else {
-        this.providers[network.id] = new JsonRpcProvider(newRpcUrl)
-      }
+      this.providers[network.id] = new JsonRpcProvider(newRpcUrl)
     }
   }
 
@@ -125,11 +114,7 @@ export class SettingsController extends EventEmitter {
     // configure the main networks
     return allNetworks.map((network) => {
       const networkPreferences = this.#networkPreferences[network.id]
-      this.#setProvider(
-        network,
-        networkPreferences?.rpcUrl || network.rpcUrl,
-        customNetworkIds.includes(network.id)
-      )
+      this.#setProvider(network, networkPreferences?.rpcUrl || network.rpcUrl)
       const finalNetwork = networkPreferences
         ? {
             ...network,
