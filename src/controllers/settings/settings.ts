@@ -69,7 +69,7 @@ export class SettingsController extends EventEmitter {
         oldRPC.destroy()
       }
 
-      this.providers[network.id] = new JsonRpcProvider(newRpcUrl)
+      this.providers[network.id] = new JsonRpcProvider(newRpcUrl, Number(network.chainId))
     }
   }
 

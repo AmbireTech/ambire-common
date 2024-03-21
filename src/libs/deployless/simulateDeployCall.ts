@@ -47,11 +47,7 @@ export async function getSASupport(
 
       // if there's an error, return the zero address indicating that
       // our smart accounts will most likely not work on this chain
-      supportsStateOverride =
-        e.info &&
-        e.info.error &&
-        e.info.error.message &&
-        !e.info.error.message.includes('too many arguments')
+      supportsStateOverride = false
       return [ZeroAddress]
     })
 
@@ -97,6 +93,7 @@ export async function simulateDebugTraceCall(
         e.message.includes('not available') ||
         e.message.includes('400 Bad Request') ||
         e.message.includes('Forbidden') ||
+        e.message.includes('disabled') ||
         e.code === 'UNSUPPORTED_OPERATION'
       ) {
         supportsDebugTraceCall = false
