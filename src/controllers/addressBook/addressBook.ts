@@ -1,7 +1,7 @@
 import { Storage } from '../../interfaces/storage'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
-type Contacts = Array<{
+export type Contacts = Array<{
   name: string
   address: string
 }>
@@ -29,6 +29,7 @@ export class AddressBookController extends EventEmitter {
 
   set accountsInWalletContacts(accountsInWalletContacts: Contacts) {
     this.#accountsInWalletContacts = accountsInWalletContacts
+    this.emitUpdate()
   }
 
   get contacts() {
@@ -48,7 +49,7 @@ export class AddressBookController extends EventEmitter {
     }
   }
 
-  #handleContactsUpdate() {
+  #handleManuallyAddedContactsChange() {
     this.emitUpdate()
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.#storage.set('contacts', this.#manuallyAddedContacts)
@@ -85,7 +86,7 @@ export class AddressBookController extends EventEmitter {
 
     this.#manuallyAddedContacts.push({ name, address })
 
-    this.#handleContactsUpdate()
+    this.#handleManuallyAddedContactsChange()
   }
 
   renameManuallyAddedContact(oldName: string, newName: string) {
@@ -116,7 +117,7 @@ export class AddressBookController extends EventEmitter {
       return contact
     })
 
-    this.#handleContactsUpdate()
+    this.#handleManuallyAddedContactsChange()
   }
 
   removeManuallyAddedContact(name: string) {
@@ -135,7 +136,7 @@ export class AddressBookController extends EventEmitter {
       (contact) => contact.name !== name
     )
 
-    this.#handleContactsUpdate()
+    this.#handleManuallyAddedContactsChange()
   }
 
   toJSON() {
