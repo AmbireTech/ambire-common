@@ -17,6 +17,13 @@ const DAY_IN_MS = 24 * 60 * 60 * 1000
 
 /**
  * Domains controller
+ * @class DomainsController
+ * @extends EventEmitter
+ * @description This controller is responsible for handling the reverse lookup of addresses to ENS and UD names.
+ * @property domains - The domains object that contains the resolved ENS and UD names for each address.
+ * @property loadingAddresses - The list of addresses that are currently being resolved. This is used to prevent multiple requests for the same address.
+ * @method saveResolvedReverseLookup - Saves an already resolved ENS or UD name for an address.
+ * @method reverseLookup - Resolves the ENS and UD names for an address if such exist.
  */
 
 export class DomainsController extends EventEmitter {
@@ -34,6 +41,9 @@ export class DomainsController extends EventEmitter {
     this.#fetch = fetch
   }
 
+  /**
+   *Saves an already resolved ENS or UD name for an address.
+   */
   saveResolvedReverseLookup({
     address,
     name,
@@ -54,6 +64,9 @@ export class DomainsController extends EventEmitter {
     this.emitUpdate()
   }
 
+  /**
+   * Resolves the ENS and UD names for an address if such exist.
+   */
   async reverseLookup(address: string) {
     if (!('ethereum' in this.#providers)) {
       this.emitError({
