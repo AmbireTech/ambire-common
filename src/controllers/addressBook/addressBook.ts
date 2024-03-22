@@ -1,16 +1,17 @@
 import { Storage } from '../../interfaces/storage'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
-interface Contacts {
-  [key: string]: string
-}
+type Contacts = Array<{
+  name: string
+  address: string
+}>
 
 /**
  * Address Book controller
  */
 
 export class AddressBookController extends EventEmitter {
-  contacts: Contacts = {}
+  contacts: Contacts = []
 
   #storage: Storage
 
@@ -40,21 +41,58 @@ export class AddressBookController extends EventEmitter {
     this.#storage.set('contacts', this.contacts)
   }
 
+  #getContactFromName(name: string) {
+    return this.contacts.find((contact) => contact.name === name)
+  }
+
   addContact(name: string, address: string) {
-    this.contacts[name] = address
+    if (this.#getContactFromName(name)) {
+      this.emitError({
+        message: 'Contact with this name already exists in the Address Book',
+        level: 'minor',
+        error: new Error('Address Book: contact with this name already exists in the Address Book')
+      })
+      return
+    }
+
+    this.contacts.push({ name, address })
+
     this.#saveContactsInStorage()
   }
 
   renameContact(oldName: string, newName: string) {
-    if (!this.contacts[oldName]) return
+    if (!this.#getContactFromName(oldName)) {
+      this.emitError({
+        message: "Can't rename contact that doesn't exist in the Address Book",
+        level: 'minor',
+        error: new Error(
+          "Address Book: can't rename contact that doesn't exist in the Address Book"
+        )
+      })
+      return
+    }
 
-    this.contacts[newName] = this.contacts[oldName]
-    delete this.contacts[oldName]
+    if (this.#getContactFromName(newName)) {
+      this.emitError({
+        message: 'Contact with this name already exists in the Address Book',
+        level: 'minor',
+        error: new Error('Address Book: contact with this name already exists in the Address Book')
+      })
+      return
+    }
+
+    this.contacts = this.contacts.map((contact) => {
+      if (contact.name === oldName) {
+        return { name: newName, address: contact.address }
+      }
+      return contact
+    })
+
     this.#saveContactsInStorage()
   }
 
   removeContact(name: string) {
-    if (!this.contacts[name]) {
+    if (!this.#getContactFromName(name)) {
       this.emitError({
         message: "Can't remove contact that doesn't exist in the Address Book",
         level: 'minor',
@@ -65,7 +103,8 @@ export class AddressBookController extends EventEmitter {
       return
     }
 
-    delete this.contacts[name]
+    this.contacts = this.contacts.filter((contact) => contact.name !== name)
+
     this.#saveContactsInStorage()
   }
 }
