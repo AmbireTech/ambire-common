@@ -220,5 +220,5 @@ export function shouldIncludeActivatorCall(
   network: NetworkDescriptor,
   accountState: AccountOnchainState
 ) {
-  return accountState.isV2 && !accountState.isErc4337Enabled && !network.erc4337?.hasPaymaster
+  return accountState.isV2 && network.erc4337.enabled && !accountState.isErc4337Enabled
 }

@@ -8,11 +8,11 @@ import { FEE_COLLECTOR } from '../../consts/addresses'
 import { AMBIRE_PAYMASTER, ERC_4337_ENTRYPOINT, OPTIMISTIC_ORACLE } from '../../consts/deploy'
 import { networks as predefinedNetworks } from '../../consts/networks'
 import { SPOOF_SIGTYPE } from '../../consts/signatures'
-import { Account, AccountOnchainState } from '../../interfaces/account'
+import { Account, AccountStates } from '../../interfaces/account'
 import { Key } from '../../interfaces/keystore'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { getIsViewOnly } from '../../utils/accounts'
-import { getAccountDeployParams } from '../account/account'
+import { getAccountDeployParams, isSmartAccount } from '../account/account'
 import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
 import { fromDescriptor } from '../deployless/deployless'
 import { getProbableCallData } from '../gasPrice/gasPrice'
@@ -26,53 +26,15 @@ import {
   shouldUsePaymaster,
   toUserOperation
 } from '../userOperation/userOperation'
-import { mapTxnErrMsg } from './errors'
+import { estimateCustomNetwork } from './customNetworks'
+import { catchEstimationFailure, estimationErrorFormatted, mapTxnErrMsg } from './errors'
 import { estimateArbitrumL1GasUsed } from './estimateArbitrum'
-
-interface Erc4337estimation {
-  userOp: UserOperation
-  gasUsed: bigint
-}
+import { Erc4337estimation, EstimateResult } from './interfaces'
 
 export interface FeeToken {
   address: string
   isGasTank: boolean
   amount: bigint // how much the user has (from portfolio)
-}
-
-export interface EstimateResult {
-  gasUsed: bigint
-  nonce: number
-  feePaymentOptions: {
-    availableAmount: bigint
-    paidBy: string
-    address: string
-    gasUsed?: bigint
-    addedNative: bigint
-    isGasTank: boolean
-  }[]
-  erc4337estimation: Erc4337estimation | null
-  arbitrumL1FeeIfArbitrum: { noFee: bigint; withFee: bigint }
-  error: Error | null
-}
-
-function catchEstimationFailure(e: Error | string | null) {
-  let message = null
-
-  if (e instanceof Error) {
-    message = e.message
-  } else if (typeof e === 'string') {
-    message = e
-  }
-
-  if (message) {
-    message = mapTxnErrMsg(message)
-    if (message) return new Error(message)
-  }
-
-  return new Error(
-    'Estimation failed with unknown reason. Please try again to initialize your request or contact Ambire support'
-  )
 }
 
 async function reestimate(fetchRequests: Function, counter: number = 0): Promise<any> {
@@ -113,7 +75,7 @@ export async function estimate(
   account: Account,
   keystoreKeys: Key[],
   op: AccountOp,
-  accountState: AccountOnchainState,
+  accountStates: AccountStates,
   EOAaccounts: Account[],
   feeTokens: FeeToken[],
   opts?: {
@@ -123,24 +85,30 @@ export async function estimate(
   blockFrom: string = '0x0000000000000000000000000000000000000001',
   blockTag: string | number = 'latest'
 ): Promise<EstimateResult> {
-  const nativeAddr = '0x0000000000000000000000000000000000000000'
   const deploylessEstimator = fromDescriptor(provider, Estimation, !network.rpcNoStateOverride)
   const abiCoder = new AbiCoder()
   const optimisticOracle = network.isOptimistic ? OPTIMISTIC_ORACLE : ZeroAddress
+  const accountState = accountStates[op.accountAddr][op.networkId]
+  const is4337Broadcast = opts && opts.is4337Broadcast
+  const isCustomNetwork = !predefinedNetworks.find((net) => net.id === network.id)
+  const isLimitedCustomNetwork = isCustomNetwork && !network.hasRelayer && !is4337Broadcast
+  const isSA = isSmartAccount(account)
 
-  if (!account.creation) {
-    if (op.calls.length !== 1) {
-      return {
-        gasUsed: 0n,
-        nonce: 0,
-        feePaymentOptions: [],
-        erc4337estimation: null,
-        arbitrumL1FeeIfArbitrum: { noFee: 0n, withFee: 0n },
-        error: new Error(
+  // we're excluding the view only accounts from the natives to check
+  // in all cases EXCEPT the case where we're making an estimation for
+  // the view only account itself. In all other, view only accounts options
+  // should not be present as the user cannot pay the fee with them (no key)
+  let nativeToCheck = EOAaccounts.filter(
+    (acc) => acc.addr === op.accountAddr || !getIsViewOnly(keystoreKeys, acc.associatedKeys)
+  ).map((acc) => acc.addr)
+
+  if (!isSA) {
+    if (op.calls.length !== 1)
+      return estimationErrorFormatted(
+        new Error(
           "Trying to make multiple calls with a Basic Account which shouldn't happen. Please try again or contact support."
         )
-      }
-    }
+      )
 
     const call = op.calls[0]
     const nonce = await provider.getTransactionCount(account.addr)
@@ -183,7 +151,7 @@ export async function estimate(
       nonce,
       feePaymentOptions: [
         {
-          address: nativeAddr,
+          address: ZeroAddress,
           paidBy: account.addr,
           availableAmount: balance,
           addedNative: l1GasEstimation.fee,
@@ -196,29 +164,10 @@ export async function estimate(
     }
   }
 
-  if (!network.isSAEnabled) {
-    return {
-      gasUsed: 0n,
-      nonce: 0,
-      feePaymentOptions: [],
-      erc4337estimation: null,
-      arbitrumL1FeeIfArbitrum: { noFee: 0n, withFee: 0n },
-      error: new Error(
-        'Smart accounts are not available for this network. Please use a Basic Account'
-      )
-    }
-  }
-
-  const is4337Broadcast = opts && opts.is4337Broadcast
-  const isCustomNetwork = !predefinedNetworks.find((net) => net.id === network.id)
-
-  // we're excluding the view only accounts from the natives to check
-  // in all cases EXCEPT the case where we're making an estimation for
-  // the view only account itself. In all other, view only accounts options
-  // should not be present as the user cannot pay the fee with them (no key)
-  let nativeToCheck = EOAaccounts.filter(
-    (acc) => acc.addr === op.accountAddr || !getIsViewOnly(keystoreKeys, acc.associatedKeys)
-  ).map((acc) => acc.addr)
+  if (!network.isSAEnabled)
+    return estimationErrorFormatted(
+      new Error('Smart accounts are not available for this network. Please use a Basic Account')
+    )
 
   // filter out the fee tokens that are not valid for:
   // - erc4337 without a paymaster - we cannot pay in tokens
@@ -345,22 +294,18 @@ export async function estimate(
         }),
     estimateArbitrumL1GasUsed(op, account, accountState, provider, estimateUserOp).catch(
       catchEstimationFailure
-    )
+    ),
+    isLimitedCustomNetwork
+      ? estimateCustomNetwork(account, op, accountStates, network, provider)
+      : new Promise((resolve) => {
+          resolve(0n)
+        })
   ]
   const estimations = await reestimate(initializeRequests)
 
   // this error usually means there's an RPC issue and we cannot make
   // the estimation at the moment. Say so to the user
-  if (estimations instanceof Error) {
-    return {
-      gasUsed: 0n,
-      nonce: 0,
-      feePaymentOptions: [],
-      erc4337estimation: null,
-      arbitrumL1FeeIfArbitrum: { noFee: 0n, withFee: 0n },
-      error: estimations
-    }
-  }
+  if (estimations instanceof Error) return estimationErrorFormatted(estimations)
 
   const arbitrumL1FeeIfArbitrum = estimations[2]
 
@@ -432,6 +377,12 @@ export async function estimate(
     ? erc4337estimation.gasUsed
     : deployment.gasUsed + accountOpToExecuteBefore.gasUsed + accountOp.gasUsed
 
+  // for custom networks, we also use estimateGas() to determine the end gasUsed
+  // If it's more than the one calculated from our contracts, we use it instead
+  if (gasUsed < estimations[3]) gasUsed = estimations[3]
+
+  // WARNING: calculateRefund will 100% NOT work in all cases we have
+  // So a warning not to assume this is working
   if (opts?.calculateRefund) {
     const IAmbireAccountFactory = new Interface(AmbireAccountFactory.abi)
 
@@ -445,15 +396,15 @@ export async function estimate(
       : IAmbireAccount.encodeFunctionData('execute', [op.calls, op.signature])
 
     const factoryCalldata = IAmbireAccountFactory.encodeFunctionData('deployAndExecute', [
-      account.creation.bytecode,
-      account.creation.salt,
+      account.creation!.bytecode,
+      account.creation!.salt,
       [[account.addr, 0, accountCalldata]],
       op.signature
     ])
 
     const estimatedGas = await provider.estimateGas({
       from: '0x0000000000000000000000000000000000000001',
-      to: account.creation.factoryAddr,
+      to: account.creation!.factoryAddr,
       data: factoryCalldata
     })
 
@@ -504,7 +455,7 @@ export async function estimate(
   // this is for EOAs paying for SA in native
   // or the current address if it's an EOA
   const nativeTokenOptions = nativeAssetBalances.map((balance: bigint, key: number) => ({
-    address: nativeAddr,
+    address: ZeroAddress,
     paidBy: nativeToCheck[key],
     availableAmount: balance,
     addedNative: l1GasEstimation.fee,

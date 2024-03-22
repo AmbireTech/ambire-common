@@ -2,6 +2,8 @@
 
 import { AbiCoder } from 'ethers'
 
+import { EstimateResult } from './interfaces'
+
 const contractErrors = [
   'caller is a contract',
   'contract not allowed',
@@ -42,4 +44,34 @@ export function mapTxnErrMsg(contractError: string): string | null {
     return 'This dApp does not support smart wallets'
 
   return null
+}
+
+export function catchEstimationFailure(e: Error | string | null) {
+  let message = null
+
+  if (e instanceof Error) {
+    message = e.message
+  } else if (typeof e === 'string') {
+    message = e
+  }
+
+  if (message) {
+    message = mapTxnErrMsg(message)
+    if (message) return new Error(message)
+  }
+
+  return new Error(
+    'Estimation failed with unknown reason. Please try again to initialize your request or contact Ambire support'
+  )
+}
+
+export function estimationErrorFormatted(error: Error): EstimateResult {
+  return {
+    gasUsed: 0n,
+    nonce: 0,
+    feePaymentOptions: [],
+    erc4337estimation: null,
+    arbitrumL1FeeIfArbitrum: { noFee: 0n, withFee: 0n },
+    error
+  }
 }

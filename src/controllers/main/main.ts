@@ -33,7 +33,8 @@ import {
   getMessageBanners,
   getPendingAccountOpBannersForEOA
 } from '../../libs/banners/banners'
-import { estimate, EstimateResult } from '../../libs/estimate/estimate'
+import { estimate } from '../../libs/estimate/estimate'
+import { EstimateResult } from '../../libs/estimate/interfaces'
 import { GasRecommendation, getGasPriceRecommendations } from '../../libs/gasPrice/gasPrice'
 import { humanizeAccountOp } from '../../libs/humanizer'
 import { shouldGetAdditionalPortfolio } from '../../libs/portfolio/helpers'
@@ -892,7 +893,7 @@ export class MainController extends EventEmitter {
           account,
           this.keystore.keys,
           localAccountOp,
-          this.accountStates[localAccountOp.accountAddr][localAccountOp.networkId],
+          this.accountStates,
           EOAaccounts,
           // @TODO - first time calling this, portfolio is still not loaded.
           feeTokens,

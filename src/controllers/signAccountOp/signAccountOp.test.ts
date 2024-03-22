@@ -16,7 +16,8 @@ import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor
 import { Storage } from '../../interfaces/storage'
 import { AccountOp, accountOpSignableHash } from '../../libs/accountOp/accountOp'
 import { getAccountState } from '../../libs/accountState/accountState'
-import { estimate, EstimateResult, FeeToken } from '../../libs/estimate/estimate'
+import { estimate, FeeToken } from '../../libs/estimate/estimate'
+import { EstimateResult } from '../../libs/estimate/interfaces'
 import * as gasPricesLib from '../../libs/gasPrice/gasPrice'
 import { HUMANIZER_META_KEY } from '../../libs/humanizer'
 import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
@@ -297,7 +298,7 @@ const init = async (
       account,
       keystore.keys,
       op,
-      accountStates[account.addr][network.id],
+      accountStates,
       nativeToCheck,
       feeTokens
     ))
