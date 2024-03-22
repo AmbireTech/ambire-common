@@ -4,12 +4,14 @@ import { ethers, ZeroAddress } from 'ethers'
 import { describe, expect, test } from '@jest/globals'
 
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
-import { Account, AccountCreation } from '../../interfaces/account'
-import { dedicatedToOneSAPriv } from '../../interfaces/keystore'
+import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'
+import { Account, AccountCreation, AccountOnPage, ImportStatus } from '../../interfaces/account'
+import { dedicatedToOneSAPriv, Key } from '../../interfaces/keystore'
 import { getBytecode } from '../proxyDeploy/bytecode'
 import { getAmbireAccountAddress } from '../proxyDeploy/getAmbireAddressTwo'
 import {
   getAccountDeployParams,
+  getAccountImportStatus,
   getBasicAccount,
   getEmailAccount,
   getSmartAccount
@@ -116,5 +118,184 @@ describe('Account', () => {
 
     expect(newSmartAccount.associatedKeys.length).toBe(1)
     expect(newSmartAccount.associatedKeys[0]).toBe(keyPublicAddress)
+  })
+  test('Should resolve Basic account import status to ImportStatus.ImportedWithTheSameKeys or ImportStatus.ImportedWithDifferentKeys', () => {
+    const key: Key = {
+      addr: basicAccount.addr,
+      type: 'internal',
+      dedicatedToOneSA: true,
+      meta: null,
+      isExternallyStored: false
+    }
+    const accountsOnPage: Omit<AccountOnPage, 'importStatus'>[] = [
+      {
+        account: {
+          ...basicAccount,
+          usedOnNetworks: []
+        },
+        slot: 1,
+        index: 0,
+        isLinked: false
+      }
+    ]
+
+    expect(
+      getAccountImportStatus({
+        account: basicAccount,
+        alreadyImportedAccounts: [basicAccount],
+        keys: [key],
+        accountsOnPage,
+        keyIteratorType: 'internal'
+      })
+    ).toBe(ImportStatus.ImportedWithTheSameKeys)
+
+    expect(
+      getAccountImportStatus({
+        account: basicAccount,
+        alreadyImportedAccounts: [basicAccount],
+        keys: [key],
+        accountsOnPage,
+        keyIteratorType: 'ledger'
+      })
+    ).toBe(ImportStatus.ImportedWithDifferentKeys)
+  })
+  test('Should resolve Smart account import status to either ImportStatus.ImportedWithTheSameKeys, ImportStatus.ImportedWithDifferentKeys or ImportStatus.ImportedWithSomeOfTheKeys', async () => {
+    const priv = {
+      addr: keyPublicAddress,
+      hash: dedicatedToOneSAPriv
+    }
+    const smartAccount = await getSmartAccount([priv])
+    const key: Key = {
+      addr: basicAccount.addr,
+      type: 'trezor',
+      dedicatedToOneSA: true,
+      meta: {
+        deviceId: '123',
+        deviceModel: '1',
+        hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
+        index: 0
+      },
+      isExternallyStored: false
+    }
+    const accountsOnPage: Omit<AccountOnPage, 'importStatus'>[] = [
+      {
+        account: {
+          ...basicAccount,
+          usedOnNetworks: []
+        },
+        slot: 1,
+        index: 0,
+        isLinked: false
+      },
+      {
+        account: {
+          ...smartAccount,
+          usedOnNetworks: []
+        },
+        slot: 1,
+        index: 0,
+        isLinked: false
+      }
+    ]
+
+    expect(
+      getAccountImportStatus({
+        account: smartAccount,
+        alreadyImportedAccounts: [smartAccount],
+        keys: [key],
+        accountsOnPage,
+        keyIteratorType: 'trezor'
+      })
+    ).toBe(ImportStatus.ImportedWithTheSameKeys)
+
+    expect(
+      getAccountImportStatus({
+        account: smartAccount,
+        alreadyImportedAccounts: [smartAccount],
+        keys: [key],
+        accountsOnPage,
+        keyIteratorType: 'internal'
+      })
+    ).toBe(ImportStatus.ImportedWithDifferentKeys)
+
+    const anotherBasicAccount: Account = {
+      // random ethereum address
+      addr: '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045',
+      associatedKeys: ['0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'],
+      initialPrivileges: [],
+      creation: null
+    }
+
+    expect(
+      getAccountImportStatus({
+        account: {
+          ...smartAccount,
+          associatedKeys: [...smartAccount.associatedKeys, anotherBasicAccount.addr]
+        },
+        alreadyImportedAccounts: [smartAccount],
+        keys: [key],
+        accountsOnPage: [
+          ...accountsOnPage,
+          {
+            account: {
+              ...anotherBasicAccount,
+              usedOnNetworks: []
+            },
+            slot: 2,
+            index: 1,
+            isLinked: false
+          }
+        ],
+        keyIteratorType: 'trezor'
+      })
+    ).toBe(ImportStatus.ImportedWithSomeOfTheKeys)
+  })
+
+  test('Should resolve view only account import status to ImportStatus.ImportedWithoutKey', () => {
+    const accountsOnPage: Omit<AccountOnPage, 'importStatus'>[] = [
+      {
+        account: {
+          ...basicAccount,
+          usedOnNetworks: []
+        },
+        slot: 1,
+        index: 0,
+        isLinked: false
+      }
+    ]
+
+    expect(
+      getAccountImportStatus({
+        account: basicAccount,
+        alreadyImportedAccounts: [basicAccount],
+        keys: [],
+        accountsOnPage,
+        keyIteratorType: 'internal'
+      })
+    ).toBe(ImportStatus.ImportedWithoutKey)
+  })
+
+  test('Should resolve the import status of an account that has not been imported yet to ImportStatus.NotImported', () => {
+    const accountsOnPage: Omit<AccountOnPage, 'importStatus'>[] = [
+      {
+        account: {
+          ...basicAccount,
+          usedOnNetworks: []
+        },
+        slot: 1,
+        index: 0,
+        isLinked: false
+      }
+    ]
+
+    expect(
+      getAccountImportStatus({
+        account: basicAccount,
+        alreadyImportedAccounts: [],
+        keys: [],
+        accountsOnPage,
+        keyIteratorType: 'internal'
+      })
+    ).toBe(ImportStatus.NotImported)
   })
 })

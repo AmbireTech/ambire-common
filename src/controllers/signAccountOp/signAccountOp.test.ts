@@ -400,7 +400,8 @@ describe('SignAccountOp Controller ', () => {
         ],
         erc4337estimation: null,
         arbitrumL1FeeIfArbitrum: { noFee: 0n, withFee: 0n },
-        error: null
+        error: null,
+        l1FeeAsL2Gas: 0n
       },
       [
         {
@@ -499,7 +500,8 @@ describe('SignAccountOp Controller ', () => {
           }
         ],
         arbitrumL1FeeIfArbitrum: { noFee: 0n, withFee: 0n },
-        error: null
+        error: null,
+        l1FeeAsL2Gas: 0n
       },
       [
         {
@@ -626,7 +628,8 @@ describe('SignAccountOp Controller ', () => {
           }
         ],
         arbitrumL1FeeIfArbitrum: { noFee: 0n, withFee: 0n },
-        error: null
+        error: null,
+        l1FeeAsL2Gas: 0n
       },
       [
         {
@@ -734,7 +737,8 @@ describe('SignAccountOp Controller ', () => {
         ],
         erc4337estimation: null,
         arbitrumL1FeeIfArbitrum: { noFee: 0n, withFee: 0n },
-        error: null
+        error: null,
+        l1FeeAsL2Gas: 0n
       },
       [
         {
@@ -839,7 +843,8 @@ describe('SignAccountOp Controller ', () => {
         ],
         erc4337estimation: null,
         arbitrumL1FeeIfArbitrum: { noFee: 0n, withFee: 0n },
-        error: null
+        error: null,
+        l1FeeAsL2Gas: 0n
       },
       [
         {
@@ -933,7 +938,7 @@ describe('SignAccountOp Controller ', () => {
   //         }
   //       ],
   //       arbitrumL1FeeIfArbitrum: { noFee: 0n, withFee: 0n },
-  //       error: null
+  //       error: null,
   //     },
   //     [
   //       {

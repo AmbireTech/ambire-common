@@ -46,6 +46,7 @@ import generateSpoofSig from '../../utils/generateSpoofSig'
 import wait from '../../utils/wait'
 import { AccountAdderController } from '../accountAdder/accountAdder'
 import { ActivityController, SignedMessage, SubmittedAccountOp } from '../activity/activity'
+import { DomainsController } from '../domains/domains'
 import { EmailVaultController } from '../emailVault/emailVault'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
@@ -105,6 +106,8 @@ export class MainController extends EventEmitter {
   activity!: ActivityController
 
   settings: SettingsController
+
+  domains: DomainsController
 
   // @TODO read networks from settings
   accounts: (Account & { newlyCreated?: boolean })[] = []
@@ -203,7 +206,6 @@ export class MainController extends EventEmitter {
       relayerUrl,
       fetch: this.#fetch
     })
-    this.transfer = new TransferController(this.settings)
     this.signMessage = new SignMessageController(
       this.keystore,
       this.settings,
@@ -211,6 +213,8 @@ export class MainController extends EventEmitter {
       this.#storage,
       this.#fetch
     )
+    this.transfer = new TransferController(this.settings)
+    this.domains = new DomainsController(this.settings.providers, this.#fetch)
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch: this.#fetch })
     this.onResolveDappRequest = onResolveDappRequest
     this.onRejectDappRequest = onRejectDappRequest
@@ -864,7 +868,21 @@ export class MainController extends EventEmitter {
         ...promises,
         humanizeAccountOp(this.#storage, localAccountOp, this.#fetch, this.emitError)
       ])
-      const additionalHints: GetOptions['additionalHints'] = result[result.length - 1]
+      const humanization = result[result.length - 1]
+
+      // Reverse lookup addresses and save them in memory so they
+      // can be read from the UI
+      humanization.forEach((call: any) => {
+        if (!call.fullVisualization) return
+
+        call.fullVisualization.forEach(async (visualization: any) => {
+          if (visualization.type !== 'address' || !visualization.address) return
+
+          await this.domains.reverseLookup(visualization.address)
+        })
+      })
+
+      const additionalHints: GetOptions['additionalHints'] = humanization
         .map((call: any) =>
           !call.fullVisualization
             ? []
