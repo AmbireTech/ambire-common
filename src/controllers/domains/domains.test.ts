@@ -2,7 +2,7 @@ import { JsonRpcProvider } from 'ethers'
 // @ts-ignore
 import fetch from 'node-fetch'
 
-import { jest } from '@jest/globals'
+import { expect, jest } from '@jest/globals'
 
 import { networks } from '../../consts/networks'
 import { DomainsController } from './domains'
