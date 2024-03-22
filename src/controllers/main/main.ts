@@ -204,6 +204,14 @@ export class MainController extends EventEmitter {
       fetch: this.#fetch
     })
     this.transfer = new TransferController(this.settings)
+    this.signMessage = new SignMessageController(
+      this.keystore,
+      this.settings,
+      this.#externalSignerControllers,
+      this.#storage,
+      this.#fetch
+    )
+    this.activity = new ActivityController(this.#storage, this.accountStates, this.settings)
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch: this.#fetch })
     this.onResolveDappRequest = onResolveDappRequest
     this.onRejectDappRequest = onRejectDappRequest
@@ -232,14 +240,6 @@ export class MainController extends EventEmitter {
     // @TODO reload those
     // @TODO error handling here
     this.accountStates = await this.#getAccountsInfo(this.accounts)
-    this.signMessage = new SignMessageController(
-      this.keystore,
-      this.settings,
-      this.#externalSignerControllers,
-      this.#storage,
-      this.#fetch
-    )
-    this.activity = new ActivityController(this.#storage, this.accountStates, this.settings)
     if (this.selectedAccount) {
       this.activity.init({ filters: { account: this.selectedAccount } })
     }
