@@ -20,7 +20,7 @@ import {
   TxnRequest
 } from '../../interfaces/keystore'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
-import { NetworkPreference, NetworkPreferences } from '../../interfaces/settings'
+import { CustomNetwork, NetworkPreference, NetworkPreferences } from '../../interfaces/settings'
 import { Storage } from '../../interfaces/storage'
 import { Message, UserRequest } from '../../interfaces/userRequest'
 import { getDefaultSelectedAccount, isSmartAccount } from '../../libs/account/account'
@@ -679,6 +679,16 @@ export class MainController extends EventEmitter {
       })
     }
     this.emitUpdate()
+  }
+
+  async addCustomNetwork(customNetwork: CustomNetwork) {
+    await this.settings.addCustomNetwork(customNetwork)
+    await this.updateSelectedAccount(this.selectedAccount, true)
+  }
+
+  async removeCustomNetwork(id: NetworkDescriptor['id']) {
+    await this.settings.removeCustomNetwork(id)
+    await this.updateSelectedAccount(this.selectedAccount, true)
   }
 
   // @TODO allow this to remove multiple OR figure out a way to debounce re-estimations
