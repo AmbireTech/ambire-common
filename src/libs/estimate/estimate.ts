@@ -159,6 +159,7 @@ export async function estimate(
       ],
       erc4337estimation: null,
       arbitrumL1FeeIfArbitrum: { noFee: 0n, withFee: 0n },
+      l1FeeAsL2Gas: 0n,
       error: result instanceof Error ? result : null
     }
   }
@@ -378,9 +379,20 @@ export async function estimate(
     ? erc4337estimation.gasUsed
     : deployment.gasUsed + accountOpToExecuteBefore.gasUsed + accountOp.gasUsed
 
-  // for custom networks, we also use estimateGas() to determine the end gasUsed
-  // If it's more than the one calculated from our contracts, we use it instead
-  if (gasUsed < estimations[3]) gasUsed = estimations[3]
+  // we're touching the calculations for custom networks only
+  // customlyEstimatedGas is 0 when the network is not custom
+  const customlyEstimatedGas = estimations[3]
+  let l1FeeAsL2Gas = 0n
+  if (
+    isCustomNetwork &&
+    is4337Broadcast &&
+    network.isOptimistic &&
+    gasUsed < customlyEstimatedGas
+  ) {
+    l1FeeAsL2Gas = customlyEstimatedGas + l1GasEstimation.gasUsed
+  } else if (gasUsed < customlyEstimatedGas) {
+    gasUsed = customlyEstimatedGas
+  }
 
   // WARNING: calculateRefund will 100% NOT work in all cases we have
   // So a warning not to assume this is working
@@ -469,6 +481,7 @@ export async function estimate(
     feePaymentOptions: [...feeTokenOptions, ...nativeTokenOptions],
     erc4337estimation,
     arbitrumL1FeeIfArbitrum,
-    error: estimationError
+    error: estimationError,
+    l1FeeAsL2Gas
   }
 }

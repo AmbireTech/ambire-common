@@ -8,7 +8,6 @@ import { Banner } from '../../interfaces/banner'
 import { Storage } from '../../interfaces/storage'
 import { Message } from '../../interfaces/userRequest'
 import { AccountOp, AccountOpStatus } from '../../libs/accountOp/accountOp'
-import { isErc4337Broadcast } from '../../libs/userOperation/userOperation'
 import { Bundler } from '../../services/bundlers/bundler'
 import { fetchUserOp } from '../../services/explorers/jiffyscan'
 import EventEmitter from '../eventEmitter/eventEmitter'
@@ -463,12 +462,8 @@ export class ActivityController extends EventEmitter {
     return this.broadcastedButNotConfirmed.map((accountOp) => {
       const network = this.#settings.networks.find((x) => x.id === accountOp.networkId)!
 
-      const is4337 = isErc4337Broadcast(
-        network,
-        this.#accountStates[accountOp.accountAddr][accountOp.networkId]
-      )
       const url =
-        is4337 && accountOp.txnId === accountOp.userOpHash
+        accountOp.userOpHash && accountOp.txnId === accountOp.userOpHash
           ? `https://jiffyscan.xyz/userOpHash/${accountOp.userOpHash}?network=${network.id}`
           : `${network.explorerUrl}/tx/${accountOp.txnId}`
 
