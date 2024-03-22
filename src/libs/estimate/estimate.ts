@@ -1,4 +1,5 @@
 import { AbiCoder, Interface, JsonRpcProvider, Provider, toBeHex, ZeroAddress } from 'ethers'
+import { Call } from 'libs/accountOp/types'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFactory.json'
@@ -162,10 +163,12 @@ export async function estimate(
 
     // TODO: maybe we need to add the fee payment here
     // and if it's erc-4337, the activator call
-    const call = op.calls[0]
+    const call: Call = {
+      to: '',
+      value: 0n,
+      data: '0x'
+    }
     if (isSA) {
-      call.value = 0n
-
       if (accountState.isDeployed) {
         const ambireAccount = new Interface(AmbireAccount.abi)
         call.to = op.accountAddr
@@ -183,6 +186,10 @@ export async function estimate(
           getSpoof(account)
         ])
       }
+    } else {
+      call.to = op.calls[0].to
+      call.data = op.calls[0].data
+      call.value = op.calls[0].value
     }
 
     let nonce = Number(accountState.nonce)
