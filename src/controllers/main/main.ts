@@ -37,6 +37,7 @@ import generateSpoofSig from '../../utils/generateSpoofSig'
 import wait from '../../utils/wait'
 import { AccountAdderController } from '../accountAdder/accountAdder'
 import { ActivityController, SignedMessage, SubmittedAccountOp } from '../activity/activity'
+import { AddressBookController } from '../addressBook/addressBook'
 import { EmailVaultController } from '../emailVault/emailVault'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
@@ -96,6 +97,8 @@ export class MainController extends EventEmitter {
   activity!: ActivityController
 
   settings: SettingsController
+
+  addressBook: AddressBookController
 
   // @TODO read networks from settings
   accounts: (Account & { newlyCreated?: boolean })[] = []
@@ -200,6 +203,7 @@ export class MainController extends EventEmitter {
       fetch: this.#fetch
     })
     this.transfer = new TransferController()
+    this.addressBook = new AddressBookController(this.#storage)
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch: this.#fetch })
     this.onResolveDappRequest = onResolveDappRequest
     this.onRejectDappRequest = onRejectDappRequest
