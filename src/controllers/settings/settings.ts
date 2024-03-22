@@ -360,6 +360,8 @@ export class SettingsController extends EventEmitter {
     if (networks.find((n) => n.id === id)) return
 
     delete this.#networkPreferences[id]
+    this.providers?.[id]?.destroy()
+    delete this.providers?.[id]
     await this.#storePreferences()
     this.emitUpdate()
   }
