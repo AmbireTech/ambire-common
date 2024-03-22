@@ -553,8 +553,7 @@ export class SignAccountOpController extends EventEmitter {
       } else if (this.#userOperation) {
         // ERC 4337
         const usesPaymaster = shouldUsePaymaster(this.#network)
-        simulatedGasLimit =
-          this.#estimation!.erc4337estimation!.gasUsed + feeTokenEstimation.gasUsed!
+        simulatedGasLimit = gasUsed + feeTokenEstimation.gasUsed!
         simulatedGasLimit += usesPaymaster
           ? this.#estimation!.arbitrumL1FeeIfArbitrum.withFee
           : this.#estimation!.arbitrumL1FeeIfArbitrum.noFee

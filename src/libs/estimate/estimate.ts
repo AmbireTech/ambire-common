@@ -91,7 +91,6 @@ export async function estimate(
   const accountState = accountStates[op.accountAddr][op.networkId]
   const is4337Broadcast = opts && opts.is4337Broadcast
   const isCustomNetwork = !predefinedNetworks.find((net) => net.id === network.id)
-  const isLimitedCustomNetwork = isCustomNetwork && !network.hasRelayer && !is4337Broadcast
   const isSA = isSmartAccount(account)
 
   // we're excluding the view only accounts from the natives to check
@@ -251,7 +250,9 @@ export async function estimate(
   let estimateUserOp: UserOperation | null = null
   if (userOp) {
     estimateUserOp = { ...userOp }
-    estimateUserOp.paymasterAndData = getPaymasterSpoof()
+    if (shouldUsePaymaster(network)) {
+      estimateUserOp.paymasterAndData = getPaymasterSpoof()
+    }
 
     // add the activatorCall to the estimation
     if (estimateUserOp.activatorCall) {
@@ -295,7 +296,7 @@ export async function estimate(
     estimateArbitrumL1GasUsed(op, account, accountState, provider, estimateUserOp).catch(
       catchEstimationFailure
     ),
-    isLimitedCustomNetwork
+    isCustomNetwork
       ? estimateCustomNetwork(account, op, accountStates, network, provider)
       : new Promise((resolve) => {
           resolve(0n)
