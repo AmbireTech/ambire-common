@@ -4,6 +4,7 @@ import { isAddress } from 'ethers'
 
 import { normalize } from '@ensdomains/eth-ens-namehash'
 
+import { RPCProvider } from '../../interfaces/settings'
 import { getProvider } from '../provider'
 
 const ETH_ID = 'ethereum'
@@ -62,4 +63,42 @@ function getBip44Items(coinTicker) {
   return constants.filter((item) => item[1] === coinTicker)
 }
 
-export { resolveENSDomain, getBip44Items }
+async function queryGraph(endpoint: string, query: string, fetch: Function): Promise<any> {
+  const resp = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json'
+    },
+    body: JSON.stringify({ query })
+  })
+
+  return resp.json()
+}
+
+async function getAllEnsDomains(address: string, fetch: Function): Promise<Array<string>> {
+  const endpoint = 'https://api.thegraph.com/subgraphs/name/ensdomains/ens'
+  const query = `{
+    domains(where:{owner:"${address.toLowerCase()}"}) {
+      name
+    }
+  }`
+
+  const res = await queryGraph(endpoint, query, fetch)
+
+  return res.data.domains.map((d: any) => d.name)
+}
+
+async function getPrimaryEnsDomain(ethereumProvider: RPCProvider, address: string) {
+  return ethereumProvider.lookupAddress(address)
+}
+
+async function reverseLookupEns(address: string, provider: RPCProvider, fetch: Function) {
+  const primaryEnsDomain = await getPrimaryEnsDomain(provider, address)
+
+  if (primaryEnsDomain) return primaryEnsDomain
+
+  return (await getAllEnsDomains(address, fetch))[0] || null
+}
+
+export { resolveENSDomain, getBip44Items, reverseLookupEns }
