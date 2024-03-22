@@ -11,7 +11,11 @@ type Contacts = Array<{
  */
 
 export class AddressBookController extends EventEmitter {
-  contacts: Contacts = []
+  // Manually added contact (stored in storage)
+  #manuallyAddedContacts: Contacts = []
+
+  // Contacts, generated on the fly from the accounts in the wallet (not stored in storage)
+  #accountsInWalletContacts: Contacts = []
 
   #storage: Storage
 
@@ -23,9 +27,17 @@ export class AddressBookController extends EventEmitter {
     this.#load()
   }
 
+  set accountsInWalletContacts(accountsInWalletContacts: Contacts) {
+    this.#accountsInWalletContacts = accountsInWalletContacts
+  }
+
+  get contacts() {
+    return [...this.#accountsInWalletContacts, ...this.#manuallyAddedContacts]
+  }
+
   async #load() {
     try {
-      this.contacts = await this.#storage.get('contacts', [])
+      this.#manuallyAddedContacts = await this.#storage.get('contacts', [])
     } catch (e) {
       this.emitError({
         message:
@@ -36,21 +48,22 @@ export class AddressBookController extends EventEmitter {
     }
   }
 
-  #saveContactsInStorage() {
+  #handleContactsUpdate() {
+    this.emitUpdate()
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    this.#storage.set('contacts', this.contacts)
+    this.#storage.set('contacts', this.#manuallyAddedContacts)
   }
 
-  #getContactFromName(name: string) {
-    return this.contacts.find((contact) => contact.name === name)
+  #getManuallyAddedContactFromName(name: string) {
+    return this.#manuallyAddedContacts.find((contact) => contact.name === name)
   }
 
-  #getContactFromAddress(address: string) {
-    return this.contacts.find((contact) => contact.address === address)
+  #getIsUnique(key: 'name' | 'address', value: string) {
+    return !this.contacts.some((contact) => contact[key] === value)
   }
 
   addContact(name: string, address: string) {
-    if (this.#getContactFromName(name)) {
+    if (!this.#getIsUnique('name', name)) {
       this.emitError({
         message: 'Contact with this name already exists in the Address Book',
         level: 'minor',
@@ -59,7 +72,7 @@ export class AddressBookController extends EventEmitter {
       return
     }
 
-    if (this.#getContactFromAddress(address)) {
+    if (!this.#getIsUnique('address', address)) {
       this.emitError({
         message: 'Contact with this address already exists in the Address Book',
         level: 'minor',
@@ -70,13 +83,13 @@ export class AddressBookController extends EventEmitter {
       return
     }
 
-    this.contacts.push({ name, address })
+    this.#manuallyAddedContacts.push({ name, address })
 
-    this.#saveContactsInStorage()
+    this.#handleContactsUpdate()
   }
 
-  renameContact(oldName: string, newName: string) {
-    if (!this.#getContactFromName(oldName)) {
+  renameManuallyAddedContact(oldName: string, newName: string) {
+    if (!this.#getManuallyAddedContactFromName(oldName)) {
       this.emitError({
         message: "Can't rename contact that doesn't exist in the Address Book",
         level: 'minor',
@@ -87,7 +100,7 @@ export class AddressBookController extends EventEmitter {
       return
     }
 
-    if (this.#getContactFromName(newName)) {
+    if (this.#getManuallyAddedContactFromName(newName)) {
       this.emitError({
         message: 'Contact with this name already exists in the Address Book',
         level: 'minor',
@@ -96,18 +109,18 @@ export class AddressBookController extends EventEmitter {
       return
     }
 
-    this.contacts = this.contacts.map((contact) => {
+    this.#manuallyAddedContacts = this.#manuallyAddedContacts.map((contact) => {
       if (contact.name === oldName) {
         return { name: newName, address: contact.address }
       }
       return contact
     })
 
-    this.#saveContactsInStorage()
+    this.#handleContactsUpdate()
   }
 
-  removeContact(name: string) {
-    if (!this.#getContactFromName(name)) {
+  removeManuallyAddedContact(name: string) {
+    if (!this.#getManuallyAddedContactFromName(name)) {
       this.emitError({
         message: "Can't remove contact that doesn't exist in the Address Book",
         level: 'minor',
@@ -118,8 +131,17 @@ export class AddressBookController extends EventEmitter {
       return
     }
 
-    this.contacts = this.contacts.filter((contact) => contact.name !== name)
+    this.#manuallyAddedContacts = this.#manuallyAddedContacts.filter(
+      (contact) => contact.name !== name
+    )
 
-    this.#saveContactsInStorage()
+    this.#handleContactsUpdate()
+  }
+
+  toJSON() {
+    return {
+      ...this,
+      contacts: this.contacts
+    }
   }
 }
