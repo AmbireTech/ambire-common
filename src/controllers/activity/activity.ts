@@ -9,6 +9,7 @@ import { Storage } from '../../interfaces/storage'
 import { Message } from '../../interfaces/userRequest'
 import { AccountOp, AccountOpStatus } from '../../libs/accountOp/accountOp'
 import { isErc4337Broadcast } from '../../libs/userOperation/userOperation'
+import { Bundler } from '../../services/bundlers/bundler'
 import { fetchUserOp } from '../../services/explorers/jiffyscan'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
@@ -283,20 +284,38 @@ export class ActivityController extends EventEmitter {
               try {
                 let txnId = accountOp.txnId
                 if (accountOp.userOpHash) {
-                  const response = await fetchUserOp(accountOp.userOpHash, fetch)
+                  const [response, bundlerResult] = await Promise.all([
+                    fetchUserOp(accountOp.userOpHash, fetch),
+                    Bundler.getStatusAndTxnId(accountOp.userOpHash, networkConfig)
+                  ])
 
-                  // nothing we can do if we don't have information
-                  if (response.status !== 200) return
+                  if (bundlerResult.transactionHash) {
+                    txnId = bundlerResult.transactionHash
+                    this.#accountsOps[this.filters!.account][network][accountOpIndex].txnId = txnId
+                  } else {
+                    // nothing we can do if we don't have information
+                    if (response.status !== 200) return
 
-                  const data = await response.json()
-                  const userOps = data.userOps
+                    const data = await response.json()
+                    const userOps = data.userOps
 
-                  // if there are not user ops, it means the userOpHash is not
-                  // indexed, yet, so we wait
-                  if (!userOps.length) return
-
-                  txnId = userOps[0].transactionHash
-                  this.#accountsOps[this.filters!.account][network][accountOpIndex].txnId = txnId
+                    // if there are not user ops, it means the userOpHash is not
+                    // indexed, yet, so we wait
+                    if (userOps.length) {
+                      txnId = userOps[0].transactionHash
+                      this.#accountsOps[this.filters!.account][network][accountOpIndex].txnId =
+                        txnId
+                    } else {
+                      const accountOpDate = new Date(accountOp.timestamp)
+                      accountOpDate.setMinutes(accountOpDate.getMinutes() + 15)
+                      const aQuaterHasPassed = accountOpDate < new Date()
+                      if (aQuaterHasPassed) {
+                        this.#accountsOps[this.filters!.account][network][accountOpIndex].status =
+                          AccountOpStatus.Failure
+                      }
+                      return
+                    }
+                  }
                 }
 
                 const receipt = await provider.getTransactionReceipt(txnId)
