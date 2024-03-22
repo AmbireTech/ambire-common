@@ -218,5 +218,7 @@ export const getAccountImportStatus = ({
       : ImportStatus.ImportedWithTheSameKeys
   }
 
+  // Since there are `importedKeysForThisAcc`, as a fallback -
+  // for all other scenarios this account has been imported with different keys.
   return ImportStatus.ImportedWithDifferentKeys
 }
