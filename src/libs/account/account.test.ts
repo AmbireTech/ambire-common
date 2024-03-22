@@ -159,7 +159,7 @@ describe('Account', () => {
       })
     ).toBe(ImportStatus.ImportedWithDifferentKeys)
   })
-  test('Should resolve Smart account import status to either ImportStatus.ImportedWithTheSameKeys or ImportStatus.ImportedWithDifferentKeys', async () => {
+  test('Should resolve Smart account import status to either ImportStatus.ImportedWithTheSameKeys, ImportStatus.ImportedWithDifferentKeys or ImportStatus.ImportedWithSomeOfTheKeys', async () => {
     const priv = {
       addr: keyPublicAddress,
       hash: dedicatedToOneSAPriv
@@ -217,6 +217,38 @@ describe('Account', () => {
         keyIteratorType: 'internal'
       })
     ).toBe(ImportStatus.ImportedWithDifferentKeys)
+
+    const anotherBasicAccount: Account = {
+      // random ethereum address
+      addr: '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045',
+      associatedKeys: ['0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'],
+      initialPrivileges: [],
+      creation: null
+    }
+
+    expect(
+      getAccountImportStatus({
+        account: {
+          ...smartAccount,
+          associatedKeys: [...smartAccount.associatedKeys, anotherBasicAccount.addr]
+        },
+        alreadyImportedAccounts: [smartAccount],
+        keys: [key],
+        accountsOnPage: [
+          ...accountsOnPage,
+          {
+            account: {
+              ...anotherBasicAccount,
+              usedOnNetworks: []
+            },
+            slot: 2,
+            index: 1,
+            isLinked: false
+          }
+        ],
+        keyIteratorType: 'trezor'
+      })
+    ).toBe(ImportStatus.ImportedWithSomeOfTheKeys)
   })
 
   test('Should resolve view only account import status to ImportStatus.ImportedWithoutKey', () => {
