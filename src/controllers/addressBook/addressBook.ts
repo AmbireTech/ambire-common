@@ -45,12 +45,27 @@ export class AddressBookController extends EventEmitter {
     return this.contacts.find((contact) => contact.name === name)
   }
 
+  #getContactFromAddress(address: string) {
+    return this.contacts.find((contact) => contact.address === address)
+  }
+
   addContact(name: string, address: string) {
     if (this.#getContactFromName(name)) {
       this.emitError({
         message: 'Contact with this name already exists in the Address Book',
         level: 'minor',
         error: new Error('Address Book: contact with this name already exists in the Address Book')
+      })
+      return
+    }
+
+    if (this.#getContactFromAddress(address)) {
+      this.emitError({
+        message: 'Contact with this address already exists in the Address Book',
+        level: 'minor',
+        error: new Error(
+          'Address Book: contact with this address already exists in the Address Book'
+        )
       })
       return
     }

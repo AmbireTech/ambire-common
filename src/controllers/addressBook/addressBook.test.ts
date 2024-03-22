@@ -44,4 +44,17 @@ describe('AddressBookController', () => {
 
     expect(mockEmitError).toHaveBeenCalledTimes(1)
   })
+  it('error when renaming contact to already existing name', () => {
+    addressBookController.addContact('vitaly', '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045')
+    addressBookController.addContact('johnny', '0x31800a810A2d9C3315dc714e1Eb988bd6A641eF0')
+
+    addressBookController.renameContact('vitaly', 'johnny')
+    expect(mockEmitError).toHaveBeenCalledTimes(2)
+  })
+  it('error when adding contact with already existing name/address', () => {
+    addressBookController.addContact('tony', '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045')
+    addressBookController.addContact('tony', '0x31800a810A2d9C3315dc714e1Eb988bd6A641eF0')
+
+    expect(mockEmitError).toHaveBeenCalledTimes(4)
+  })
 })
