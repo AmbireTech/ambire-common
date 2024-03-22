@@ -13,7 +13,8 @@ interface Domains {
   }
 }
 
-const DAY_IN_MS = 24 * 60 * 60 * 1000
+// 15 minutes
+const PERSIST_DOMAIN_FOR_IN_MS = 15 * 60 * 1000
 
 /**
  * Domains controller
@@ -79,7 +80,8 @@ export class DomainsController extends EventEmitter {
     const checksummedAddress = getAddress(address)
     const isAlreadyResolved = !!this.domains[checksummedAddress]
     const isExpired =
-      isAlreadyResolved && Date.now() - this.domains[checksummedAddress].savedAt > DAY_IN_MS
+      isAlreadyResolved &&
+      Date.now() - this.domains[checksummedAddress].savedAt > PERSIST_DOMAIN_FOR_IN_MS
 
     if ((isAlreadyResolved && !isExpired) || this.loadingAddresses.includes(checksummedAddress))
       return
