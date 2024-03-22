@@ -218,5 +218,5 @@ export const getAccountImportStatus = ({
       : ImportStatus.ImportedWithTheSameKeys
   }
 
-  return ImportStatus.NotImported
+  return ImportStatus.ImportedWithDifferentKeys
 }
