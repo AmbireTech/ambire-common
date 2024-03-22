@@ -5,14 +5,19 @@ import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFacto
 import Estimation from '../../../contracts/compiled/Estimation.json'
 import Estimation4337 from '../../../contracts/compiled/Estimation4337.json'
 import { FEE_COLLECTOR } from '../../consts/addresses'
-import { AMBIRE_PAYMASTER, ERC_4337_ENTRYPOINT, OPTIMISTIC_ORACLE } from '../../consts/deploy'
+import {
+  AMBIRE_PAYMASTER,
+  DEPLOYLESS_SIMULATION_FROM,
+  ERC_4337_ENTRYPOINT,
+  OPTIMISTIC_ORACLE
+} from '../../consts/deploy'
 import { networks as predefinedNetworks } from '../../consts/networks'
 import { SPOOF_SIGTYPE } from '../../consts/signatures'
-import { Account, AccountOnchainState } from '../../interfaces/account'
+import { Account, AccountStates } from '../../interfaces/account'
 import { Key } from '../../interfaces/keystore'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { getIsViewOnly } from '../../utils/accounts'
-import { getAccountDeployParams } from '../account/account'
+import { getAccountDeployParams, getSpoof, isSmartAccount } from '../account/account'
 import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
 import { fromDescriptor } from '../deployless/deployless'
 import { getProbableCallData } from '../gasPrice/gasPrice'
@@ -113,7 +118,7 @@ export async function estimate(
   account: Account,
   keystoreKeys: Key[],
   op: AccountOp,
-  accountState: AccountOnchainState,
+  accountStates: AccountStates,
   EOAaccounts: Account[],
   feeTokens: FeeToken[],
   opts?: {
@@ -127,9 +132,22 @@ export async function estimate(
   const deploylessEstimator = fromDescriptor(provider, Estimation, !network.rpcNoStateOverride)
   const abiCoder = new AbiCoder()
   const optimisticOracle = network.isOptimistic ? OPTIMISTIC_ORACLE : ZeroAddress
+  const accountState = accountStates[op.accountAddr][op.networkId]
+  const is4337Broadcast = opts && opts.is4337Broadcast
+  const isCustomNetwork = !predefinedNetworks.find((net) => net.id === network.id)
+  const isLimitedCustomNetwork = isCustomNetwork && !network.hasRelayer && !is4337Broadcast
+  const isSA = isSmartAccount(account)
 
-  if (!account.creation) {
-    if (op.calls.length !== 1) {
+  // we're excluding the view only accounts from the natives to check
+  // in all cases EXCEPT the case where we're making an estimation for
+  // the view only account itself. In all other, view only accounts options
+  // should not be present as the user cannot pay the fee with them (no key)
+  let nativeToCheck = EOAaccounts.filter(
+    (acc) => acc.addr === op.accountAddr || !getIsViewOnly(keystoreKeys, acc.associatedKeys)
+  ).map((acc) => acc.addr)
+
+  if (!isSA || isLimitedCustomNetwork) {
+    if (!isSA && op.calls.length !== 1) {
       return {
         gasUsed: 0n,
         nonce: 0,
@@ -142,8 +160,49 @@ export async function estimate(
       }
     }
 
+    // TODO: maybe we need to add the fee payment here
+    // and if it's erc-4337, the activator call
     const call = op.calls[0]
-    const nonce = await provider.getTransactionCount(account.addr)
+    if (isSA) {
+      call.value = 0n
+
+      if (accountState.isDeployed) {
+        const ambireAccount = new Interface(AmbireAccount.abi)
+        call.to = op.accountAddr
+        call.data = ambireAccount.encodeFunctionData('execute', [
+          getSignableCalls(op),
+          getSpoof(account)
+        ])
+      } else {
+        const ambireFactory = new Interface(AmbireAccountFactory.abi)
+        call.to = account.creation!.factoryAddr
+        call.data = ambireFactory.encodeFunctionData('deployAndExecute', [
+          account.creation!.bytecode,
+          account.creation!.salt,
+          getSignableCalls(op),
+          getSpoof(account)
+        ])
+      }
+    }
+
+    let nonce = Number(accountState.nonce)
+    let estimationAccountAddr = account.addr
+    let balanceEst = 0n
+    if (isSA) {
+      const natives = nativeToCheck.map((addr: string) => {
+        return {
+          address: addr,
+          balance: accountStates[addr][op.networkId].balance,
+          nonce: accountStates[addr][op.networkId].nonce
+        }
+      })
+      // eslint-disable-next-line no-nested-ternary
+      natives.sort((a, b) => (a.balance < b.balance ? -1 : a.balance > b.balance ? 1 : 0))
+      estimationAccountAddr = natives[natives.length - 1].address
+      nonce = Number(natives[natives.length - 1].nonce)
+      balanceEst = natives[natives.length - 1].balance
+    }
+
     const encodedCallData = abiCoder.encode(
       [
         'bytes', // data
@@ -154,19 +213,43 @@ export async function estimate(
         'uint256', // nonce
         'uint256' // gasLimit
       ],
-      [call.data, call.to, account.addr, 100000000, 2, nonce, 100000]
+      [call.data, call.to, estimationAccountAddr, 100000000, 2, nonce, 100000]
     )
+
+    const jsonRpcProvider = provider as JsonRpcProvider
+    await jsonRpcProvider
+      .send('eth_estimateGas', [
+        {
+          from: DEPLOYLESS_SIMULATION_FROM,
+          to: call.to,
+          value: 0,
+          data: call.data,
+          nonce,
+          gas: '0x37615DE34'
+        },
+        'latest',
+        {
+          [DEPLOYLESS_SIMULATION_FROM]: { balance: Number(balanceEst) }
+        }
+      ])
+      .catch((e) => {
+        console.log('THE ERROR')
+        console.log('THE ERROR')
+        console.log('THE ERROR')
+        console.log(e)
+      })
+
     const initializeRequests = () => [
       provider
         .estimateGas({
-          from: account.addr,
+          from: DEPLOYLESS_SIMULATION_FROM,
           to: call.to,
           value: call.value,
           data: call.data,
           nonce
         })
         .catch(catchEstimationFailure),
-      provider.getBalance(account.addr).catch(catchEstimationFailure),
+      provider.getBalance(estimationAccountAddr).catch(catchEstimationFailure),
       deploylessEstimator
         .call('getL1GasEstimation', [encodedCallData, FEE_COLLECTOR, optimisticOracle], {
           from: blockFrom,
@@ -178,18 +261,29 @@ export async function estimate(
     const [gasUsed, balance, [l1GasEstimation]] =
       result instanceof Error ? [0n, 0n, [{ fee: 0n }]] : result
 
+    let feePaymentOptions = [
+      {
+        address: nativeAddr,
+        paidBy: account.addr,
+        availableAmount: balance,
+        addedNative: l1GasEstimation.fee,
+        isGasTank: false
+      }
+    ]
+    if (isSA) {
+      feePaymentOptions = nativeToCheck.map((paidBy: string) => ({
+        address: nativeAddr,
+        paidBy,
+        availableAmount: accountStates[paidBy][op.networkId].balance,
+        addedNative: l1GasEstimation.fee,
+        isGasTank: false
+      }))
+    }
+
     return {
       gasUsed,
       nonce,
-      feePaymentOptions: [
-        {
-          address: nativeAddr,
-          paidBy: account.addr,
-          availableAmount: balance,
-          addedNative: l1GasEstimation.fee,
-          isGasTank: false
-        }
-      ],
+      feePaymentOptions,
       erc4337estimation: null,
       arbitrumL1FeeIfArbitrum: { noFee: 0n, withFee: 0n },
       error: result instanceof Error ? result : null
@@ -208,17 +302,6 @@ export async function estimate(
       )
     }
   }
-
-  const is4337Broadcast = opts && opts.is4337Broadcast
-  const isCustomNetwork = !predefinedNetworks.find((net) => net.id === network.id)
-
-  // we're excluding the view only accounts from the natives to check
-  // in all cases EXCEPT the case where we're making an estimation for
-  // the view only account itself. In all other, view only accounts options
-  // should not be present as the user cannot pay the fee with them (no key)
-  let nativeToCheck = EOAaccounts.filter(
-    (acc) => acc.addr === op.accountAddr || !getIsViewOnly(keystoreKeys, acc.associatedKeys)
-  ).map((acc) => acc.addr)
 
   // filter out the fee tokens that are not valid for:
   // - erc4337 without a paymaster - we cannot pay in tokens
@@ -445,15 +528,15 @@ export async function estimate(
       : IAmbireAccount.encodeFunctionData('execute', [op.calls, op.signature])
 
     const factoryCalldata = IAmbireAccountFactory.encodeFunctionData('deployAndExecute', [
-      account.creation.bytecode,
-      account.creation.salt,
+      account.creation!.bytecode,
+      account.creation!.salt,
       [[account.addr, 0, accountCalldata]],
       op.signature
     ])
 
     const estimatedGas = await provider.estimateGas({
       from: '0x0000000000000000000000000000000000000001',
-      to: account.creation.factoryAddr,
+      to: account.creation!.factoryAddr,
       data: factoryCalldata
     })
 

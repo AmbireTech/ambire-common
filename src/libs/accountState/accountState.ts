@@ -4,7 +4,7 @@ import AmbireAccountState from '../../../contracts/compiled/AmbireAccountState.j
 import { ENTRY_POINT_MARKER, ERC_4337_ENTRYPOINT, MAX_UINT256 } from '../../consts/deploy'
 import { Account, AccountOnchainState } from '../../interfaces/account'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
-import { getAccountDeployParams } from '../account/account'
+import { getAccountDeployParams, isSmartAccount } from '../account/account'
 import { fromDescriptor } from '../deployless/deployless'
 
 export async function getAccountState(
@@ -35,7 +35,7 @@ export async function getAccountState(
     ]
   })
 
-  async function getEOAsNonce(eoaAccounts: any[]): Promise<{ [addr: string]: number }> {
+  async function getEOAsNonce(eoaAccounts: string[]): Promise<{ [addr: string]: number }> {
     const nonces: any = await Promise.all(
       eoaAccounts.map((addr: string) => provider.getTransactionCount(addr))
     )
@@ -52,9 +52,7 @@ export async function getAccountState(
       blockTag
     }),
     getEOAsNonce(
-      accounts
-        .filter((account) => account.creation?.bytecode === '0x00')
-        .map((account) => account.addr)
+      accounts.filter((account) => !isSmartAccount(account)).map((account) => account.addr)
     )
   ])
 
