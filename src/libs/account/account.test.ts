@@ -4,12 +4,13 @@ import { ethers, ZeroAddress } from 'ethers'
 import { describe, expect, test } from '@jest/globals'
 
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
-import { Account, AccountCreation } from '../../interfaces/account'
-import { dedicatedToOneSAPriv } from '../../interfaces/keystore'
+import { Account, AccountCreation, AccountOnPage, ImportStatus } from '../../interfaces/account'
+import { dedicatedToOneSAPriv, Key } from '../../interfaces/keystore'
 import { getBytecode } from '../proxyDeploy/bytecode'
 import { getAmbireAccountAddress } from '../proxyDeploy/getAmbireAddressTwo'
 import {
   getAccountDeployParams,
+  getAccountImportStatus,
   getBasicAccount,
   getEmailAccount,
   getSmartAccount
@@ -116,5 +117,35 @@ describe('Account', () => {
 
     expect(newSmartAccount.associatedKeys.length).toBe(1)
     expect(newSmartAccount.associatedKeys[0]).toBe(keyPublicAddress)
+  })
+  test('Should resolve import status to ImportStatus.ImportedWithTheSameKeys', () => {
+    const key: Key = {
+      addr: basicAccount.addr,
+      type: 'internal',
+      dedicatedToOneSA: true,
+      meta: null,
+      isExternallyStored: false
+    }
+
+    const accountsOnPage: Omit<AccountOnPage, 'importStatus'>[] = [
+      {
+        account: {
+          ...basicAccount,
+          usedOnNetworks: []
+        },
+        slot: 1,
+        index: 0,
+        isLinked: false
+      }
+    ]
+
+    const importStatus = getAccountImportStatus({
+      account: basicAccount,
+      alreadyImportedAccounts: [basicAccount],
+      keys: [key],
+      accountsOnPage,
+      keyIteratorType: 'internal'
+    })
+    expect(importStatus).toBe(ImportStatus.ImportedWithTheSameKeys)
   })
 })
