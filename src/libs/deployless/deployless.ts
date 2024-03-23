@@ -124,10 +124,10 @@ export class Deployless {
     // First, start by detecting which modes are available, unless we're forcing the proxy mode
     // if we use state override, we do need detection to run still so it can populate contractRuntimeCode
     if (
+      this.stateOverrideSupported &&
       !this.detectionPromise &&
       !forceProxy &&
-      this.contractRuntimeCode === undefined &&
-      this.stateOverrideSupported
+      this.contractRuntimeCode === undefined
     ) {
       this.detectionPromise = this.detectStateOverride()
     }

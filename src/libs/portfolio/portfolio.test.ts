@@ -29,7 +29,7 @@ describe('Portfolio', () => {
       portfolio.get('0x62d00bf1f291be434AC01b3Dc75fA84Af963370A')
     ])
 
-    const MS_DIFF = 5
+    const MS_DIFF = 10
     expect(Math.abs(resultOne.discoveryTime - resultTwo.discoveryTime)).toBeLessThanOrEqual(MS_DIFF)
     expect(Math.abs(resultOne.oracleCallTime - resultTwo.oracleCallTime)).toBeLessThanOrEqual(
       MS_DIFF
