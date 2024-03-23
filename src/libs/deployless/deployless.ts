@@ -119,13 +119,6 @@ export class Deployless {
     opts = { ...defaultOptions, ...opts }
     const forceProxy = opts.mode === DeploylessMode.ProxyContract
 
-    // First, start by detecting which modes are available, unless we're forcing the proxy mode
-    // if we use state override, we do need detection to run still so it can populate contractRuntimeCode
-    if (!this.detectionPromise && !forceProxy && this.contractRuntimeCode === undefined) {
-      this.detectionPromise = this.detectStateOverride()
-    }
-    await this.detectionPromise
-
     if (opts.stateToOverride !== null && opts.mode !== DeploylessMode.StateOverride) {
       throw new Error('state override passed but not requested')
     }
