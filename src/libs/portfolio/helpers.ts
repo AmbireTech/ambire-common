@@ -1,3 +1,5 @@
+import { ZeroAddress } from 'ethers'
+
 import feeTokens from '../../consts/feeTokens'
 import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
 import { Account } from '../../interfaces/account'
@@ -21,13 +23,18 @@ export function getFlags(
         ? t.networkId === tokenNetwork
         : t.networkId === networkId)
   )
-  const isFeeToken = feeTokens.some(
-    (t) =>
-      t.address === address &&
-      (onGasTank || networkId === 'rewards'
-        ? t.networkId === tokenNetwork
-        : t.networkId === networkId)
-  )
+
+  // if the address is 0, it's always a fee token
+  const isFeeToken =
+    address !== ZeroAddress
+      ? feeTokens.some(
+          (t) =>
+            t.address === address &&
+            (onGasTank || networkId === 'rewards'
+              ? t.networkId === tokenNetwork
+              : t.networkId === networkId)
+        )
+      : true
 
   return {
     onGasTank,

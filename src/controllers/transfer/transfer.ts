@@ -1,8 +1,8 @@
 import erc20Abi from 'adex-protocol-eth/abi/ERC20.json'
+import { SettingsController } from 'controllers/settings/settings'
 import { formatUnits, Interface, isAddress, parseUnits } from 'ethers'
 
 import { FEE_COLLECTOR } from '../../consts/addresses'
-import { networks } from '../../consts/networks'
 import { Account } from '../../interfaces/account'
 import { AddressState } from '../../interfaces/domains'
 import { TransferUpdate } from '../../interfaces/transfer'
@@ -34,6 +34,8 @@ const DEFAULT_VALIDATION_FORM_MSGS = {
 
 export class TransferController extends EventEmitter {
   // State
+  #settings: SettingsController
+
   #tokens: TokenResult[] = []
 
   #selectedToken: TokenResult | null = null
@@ -68,6 +70,11 @@ export class TransferController extends EventEmitter {
   #humanizerInfo: HumanizerMeta | null = null
 
   isTopUp: boolean = false
+
+  constructor(settings: SettingsController) {
+    super()
+    this.#settings = settings
+  }
 
   // every time when updating selectedToken update the amount and maxAmount of the form
   set selectedToken(token: TokenResult | null) {
@@ -212,8 +219,10 @@ export class TransferController extends EventEmitter {
       this.#humanizerInfo = humanizerInfo
     }
     if (selectedAccount) {
+      if (this.#selectedAccount !== selectedAccount) {
+        this.amount = ''
+      }
       this.#selectedAccount = selectedAccount
-      this.amount = ''
     }
     if (tokens) {
       this.tokens = tokens
@@ -337,13 +346,13 @@ export class TransferController extends EventEmitter {
 
   #setSWWarningVisibleIfNeeded() {
     this.#selectedTokenNetworkData =
-      networks.find(({ id }) => id === this.selectedToken?.networkId) || null
+      this.#settings.networks.find(({ id }) => id === this.selectedToken?.networkId) || null
 
     this.isSWWarningVisible =
       !this.isTopUp &&
       !!this.selectedToken?.address &&
       Number(this.selectedToken?.address) === 0 &&
-      networks
+      this.#settings.networks
         .filter((n) => n.id !== 'ethereum')
         .map(({ id }) => id)
         .includes(this.#selectedTokenNetworkData?.id || 'ethereum')

@@ -1,4 +1,4 @@
-import { AbiCoder, BaseContract, concat, hexlify, keccak256, toBeHex } from 'ethers'
+import { AbiCoder, BaseContract, concat, hexlify, Interface, keccak256, toBeHex } from 'ethers'
 import { NetworkDescriptor } from 'interfaces/networkDescriptor'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
@@ -10,7 +10,7 @@ import {
   ERC_4337_ENTRYPOINT
 } from '../../consts/deploy'
 import { SPOOF_SIGTYPE } from '../../consts/signatures'
-import { Account, AccountOnchainState } from '../../interfaces/account'
+import { Account, AccountId, AccountOnchainState } from '../../interfaces/account'
 import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
 import { UserOperation } from './types'
 
@@ -31,6 +31,20 @@ export function getPaymasterSpoof() {
 
 export function getSigForCalculations() {
   return '0x0dc2d37f7b285a2243b2e1e6ba7195c578c72b395c0f76556f8961b0bca97ddc44e2d7a249598f56081a375837d2b82414c3c94940db3c1e64110108021161ca1c01'
+}
+
+// get the call to give privileges to the entry point
+export function getActivatorCall(addr: AccountId) {
+  const saAbi = new Interface(AmbireAccount.abi)
+  const givePermsToEntryPointData = saAbi.encodeFunctionData('setAddrPrivilege', [
+    ERC_4337_ENTRYPOINT,
+    ENTRY_POINT_MARKER
+  ])
+  return {
+    to: addr,
+    value: 0n,
+    data: givePermsToEntryPointData
+  }
 }
 
 /**
@@ -146,24 +160,16 @@ export function toUserOperation(
   }
 
   // give permissions to the entry if there aren't nay
+  const localAccOp = { ...accountOp }
   const ambireAccount = new BaseContract(accountOp.accountAddr, AmbireAccount.abi)
   if (!accountState.isErc4337Enabled) {
-    const givePermsToEntryPointData = ambireAccount.interface.encodeFunctionData(
-      'setAddrPrivilege',
-      [ERC_4337_ENTRYPOINT, ENTRY_POINT_MARKER]
-    )
-    userOperation.activatorCall = {
-      to: accountOp.accountAddr,
-      value: 0n,
-      data: givePermsToEntryPointData
-    }
-
+    const activatorCall = getActivatorCall(accountOp.accountAddr)
+    userOperation.activatorCall = activatorCall
+    localAccOp.activatorCall = activatorCall
     requestType = 'activator'
   }
 
   // get estimation calldata
-  const localAccOp = { ...accountOp }
-  localAccOp.asUserOperation = userOperation
   if (requestType !== 'standard') {
     const abiCoder = new AbiCoder()
     const spoofSig = abiCoder.encode(['address'], [account.associatedKeys[0]]) + SPOOF_SIGTYPE
@@ -185,6 +191,11 @@ export function toUserOperation(
   return userOperation
 }
 
+export function shouldUsePaymaster(network: NetworkDescriptor): boolean {
+  // if there's a paymaster on the network, we pay with it. Simple
+  return !!network.erc4337?.hasPaymaster
+}
+
 export function isErc4337Broadcast(
   network: NetworkDescriptor,
   accountState: AccountOnchainState
@@ -192,10 +203,22 @@ export function isErc4337Broadcast(
   // write long to fix typescript issues
   const isEnabled = network && network.erc4337 ? network.erc4337.enabled : false
 
-  return isEnabled && accountState.isV2
+  // if the entry point is not a signer in the account and we don't have a paymaster,
+  // we cannot do an ERC-4337 broadcast as that happens either through
+  // the entry point or the paymaster
+  const isEntryPointSignerOrNetworkHasPaymaster =
+    accountState.isErc4337Enabled || shouldUsePaymaster(network)
+
+  return isEnabled && isEntryPointSignerOrNetworkHasPaymaster && accountState.isV2
 }
 
-export function shouldUsePaymaster(network: NetworkDescriptor): boolean {
-  // if there's a paymaster on the network, we pay with it. Simple
-  return !!network.erc4337?.hasPaymaster
+// if the account is v2 account that does not have the entry point as a signer
+// and the network is a 4337 one without a paymaster, the only way to broadcast
+// a txn is through EOA pays for SA. That's why we need this check to include
+// the activator call and the next txn to be ERC-4337
+export function shouldIncludeActivatorCall(
+  network: NetworkDescriptor,
+  accountState: AccountOnchainState
+) {
+  return accountState.isV2 && network.erc4337.enabled && !accountState.isErc4337Enabled
 }
