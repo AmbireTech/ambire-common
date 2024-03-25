@@ -2,25 +2,16 @@ import { AbiCoder, Contract, Interface, JsonRpcProvider, Provider } from 'ethers
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFactory.json'
-import EntryPointAbi from '../../../contracts/compiled/EntryPoint.json'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import ArbitrumFactoryAbi from '../../consts/arbitrumFactoryAbi.json'
 import { Account, AccountOnchainState } from '../../interfaces/account'
 import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
-import { UserOperation } from '../userOperation/types'
-import { getCleanUserOp } from '../userOperation/userOperation'
 
 function getTxnData(
   accountState: AccountOnchainState,
   account: Account,
-  calls: [string, string, string][],
-  userOp: UserOperation | null
+  calls: [string, string, string][]
 ) {
-  if (userOp) {
-    const EntryPoint = new Interface(EntryPointAbi)
-    return EntryPoint.encodeFunctionData('handleOps', [getCleanUserOp(userOp), account.addr])
-  }
-
   const IAmbireAccountFactory = new Interface(AmbireAccountFactory.abi)
   const IAmbireAccount = new Interface(AmbireAccount.abi)
   return accountState.isDeployed
@@ -52,8 +43,7 @@ export async function estimateArbitrumL1GasUsed(
   accountOp: AccountOp,
   account: Account,
   accountState: AccountOnchainState,
-  provider: Provider | JsonRpcProvider,
-  userOp: UserOperation | null
+  provider: Provider | JsonRpcProvider
 ): Promise<{ noFee: bigint; withFee: bigint }> {
   // if network is not arbitrum, just return a 0n
   // additional l1 gas estimation is only needed when the account is a smart one
@@ -81,12 +71,12 @@ export async function estimateArbitrumL1GasUsed(
     nodeInterface.gasEstimateL1Component.staticCall(
       op.accountAddr,
       accountState.isDeployed,
-      getTxnData(accountState, account, callsWithoutFee, userOp)
+      getTxnData(accountState, account, callsWithoutFee)
     ),
     nodeInterface.gasEstimateL1Component.staticCall(
       op.accountAddr,
       accountState.isDeployed,
-      getTxnData(accountState, account, callsWithFee, userOp)
+      getTxnData(accountState, account, callsWithFee)
     )
   ])
   return {

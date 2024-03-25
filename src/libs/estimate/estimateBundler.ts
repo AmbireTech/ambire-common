@@ -2,6 +2,7 @@ import { Interface, toBeHex, ZeroAddress } from 'ethers'
 import { NetworkDescriptor } from 'interfaces/networkDescriptor'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
+import { AMBIRE_PAYMASTER } from '../../consts/deploy'
 import { Account, AccountStates } from '../../interfaces/account'
 import { Bundler } from '../../services/bundlers/bundler'
 import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
@@ -65,6 +66,17 @@ function getFeeTokenForEstimate(feeTokens: FeeToken[]): FeeToken | null {
   return gasTankToken ?? null
 }
 
+// try to humanize a bit more the error message
+function mapError(e: Error) {
+  if (e.message.includes('paymaster deposit too low')) {
+    return new Error(
+      `Paymaster with address ${AMBIRE_PAYMASTER} does not have enough funds to execute this request. Please contact support`
+    )
+  }
+
+  return e
+}
+
 export async function bundlerEstimate(
   account: Account,
   accountStates: AccountStates,
@@ -84,8 +96,12 @@ export async function bundlerEstimate(
   if (userOp.activatorCall) localOp.activatorCall = userOp.activatorCall
   const userOps = getUserOpsForEstimate(userOp, localOp, accountState.isDeployed)
   const estimations = userOps.map((uOp) =>
-    Bundler.estimate(uOp, network, accountState.isDeployed).catch(
-      (e: any) => new Error(e.error && e.error.message ? e.error.message : 'Estimation failed')
+    Bundler.estimate(uOp, network, accountState.isDeployed).catch((e: any) =>
+      mapError(
+        new Error(
+          e.error && e.error.message ? e.error.message : 'Estimation failed with unknown reason'
+        )
+      )
     )
   )
   const results = await Promise.all(estimations)
