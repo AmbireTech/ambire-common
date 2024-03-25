@@ -57,4 +57,8 @@ async function resolveUDomain(domain, currency?: any, chain?: any): Promise<stri
     : ''
 }
 
-export { resolveUDomain }
+async function reverseLookupUD(address: string): Promise<string | null> {
+  return resolution.reverse(address)
+}
+
+export { resolveUDomain, reverseLookupUD }

@@ -1,8 +1,16 @@
 /* eslint-disable @typescript-eslint/brace-style */
-import { getAddress, Interface, isAddress, TransactionResponse } from 'ethers'
+import {
+  getAddress,
+  Interface,
+  isAddress,
+  toQuantity,
+  TransactionResponse,
+  ZeroAddress
+} from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFactory.json'
+import { SINGLETON } from '../../consts/deploy'
 import { Account, AccountId, AccountOnchainState, AccountStates } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
 import {
@@ -12,7 +20,7 @@ import {
   TxnRequest
 } from '../../interfaces/keystore'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
-import { NetworkPreference, NetworkPreferences } from '../../interfaces/settings'
+import { CustomNetwork, NetworkPreference, NetworkPreferences } from '../../interfaces/settings'
 import { Storage } from '../../interfaces/storage'
 import { Message, UserRequest } from '../../interfaces/userRequest'
 import { getDefaultSelectedAccount, isSmartAccount } from '../../libs/account/account'
@@ -25,7 +33,8 @@ import {
   getMessageBanners,
   getPendingAccountOpBannersForEOA
 } from '../../libs/banners/banners'
-import { estimate, EstimateResult } from '../../libs/estimate/estimate'
+import { estimate } from '../../libs/estimate/estimate'
+import { EstimateResult } from '../../libs/estimate/interfaces'
 import { GasRecommendation, getGasPriceRecommendations } from '../../libs/gasPrice/gasPrice'
 import { humanizeAccountOp } from '../../libs/humanizer'
 import { shouldGetAdditionalPortfolio } from '../../libs/portfolio/helpers'
@@ -37,6 +46,7 @@ import generateSpoofSig from '../../utils/generateSpoofSig'
 import wait from '../../utils/wait'
 import { AccountAdderController } from '../accountAdder/accountAdder'
 import { ActivityController, SignedMessage, SubmittedAccountOp } from '../activity/activity'
+import { DomainsController } from '../domains/domains'
 import { EmailVaultController } from '../emailVault/emailVault'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
@@ -96,6 +106,8 @@ export class MainController extends EventEmitter {
   activity!: ActivityController
 
   settings: SettingsController
+
+  domains: DomainsController
 
   // @TODO read networks from settings
   accounts: (Account & { newlyCreated?: boolean })[] = []
@@ -180,12 +192,7 @@ export class MainController extends EventEmitter {
     this.keystore = new KeystoreController(this.#storage, keystoreSigners)
     this.#externalSignerControllers = externalSignerControllers
     this.settings = new SettingsController(this.#storage)
-    this.portfolio = new PortfolioController(
-      this.#storage,
-      this.settings.providers,
-      this.settings.networks,
-      relayerUrl
-    )
+    this.portfolio = new PortfolioController(this.#storage, this.settings, relayerUrl)
     this.#initialLoadPromise = this.#load()
     this.emailVault = new EmailVaultController(
       this.#storage,
@@ -199,7 +206,15 @@ export class MainController extends EventEmitter {
       relayerUrl,
       fetch: this.#fetch
     })
-    this.transfer = new TransferController()
+    this.signMessage = new SignMessageController(
+      this.keystore,
+      this.settings,
+      this.#externalSignerControllers,
+      this.#storage,
+      this.#fetch
+    )
+    this.transfer = new TransferController(this.settings)
+    this.domains = new DomainsController(this.settings.providers, this.#fetch)
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch: this.#fetch })
     this.onResolveDappRequest = onResolveDappRequest
     this.onRejectDappRequest = onRejectDappRequest
@@ -228,14 +243,8 @@ export class MainController extends EventEmitter {
     // @TODO reload those
     // @TODO error handling here
     this.accountStates = await this.#getAccountsInfo(this.accounts)
-    this.signMessage = new SignMessageController(
-      this.keystore,
-      this.settings,
-      this.#externalSignerControllers,
-      this.#storage,
-      this.#fetch
-    )
-    this.activity = new ActivityController(this.#storage, this.accountStates, this.#relayerUrl)
+    this.activity = new ActivityController(this.#storage, this.accountStates, this.settings)
+
     if (this.selectedAccount) {
       this.activity.init({ filters: { account: this.selectedAccount } })
     }
@@ -530,14 +539,27 @@ export class MainController extends EventEmitter {
   async addAccounts(accounts: (Account & { newlyCreated?: boolean })[] = []) {
     if (!accounts.length) return
     const alreadyAddedAddressSet = new Set(this.accounts.map((account) => account.addr))
-    const newAccounts = accounts.filter((account) => !alreadyAddedAddressSet.has(account.addr))
-
-    if (!newAccounts.length) return
+    const newAccountsNotAddedYet = accounts.filter((acc) => !alreadyAddedAddressSet.has(acc.addr))
+    const newAccountsAlreadyAdded = accounts.filter((acc) => alreadyAddedAddressSet.has(acc.addr))
 
     const nextAccounts = [
-      // when adding accounts for a second time reset the newlyCreated state for the previously added accounts
-      ...this.accounts.map((acc) => ({ ...acc, newlyCreated: false })),
-      ...newAccounts
+      ...this.accounts.map((acc) => ({
+        ...acc,
+        // reset the `newlyCreated` state for all already added accounts
+        newlyCreated: false,
+        // Merge the existing and new associated keys for the account (if the
+        // account was already imported). This ensures up-to-date keys,
+        // considering changes post-import (associated keys of the smart
+        // accounts can change) or incomplete initial data (during the initial
+        // import, not all associated keys could have been fetched (for privacy).
+        associatedKeys: Array.from(
+          new Set([
+            ...acc.associatedKeys,
+            ...(newAccountsAlreadyAdded.find((x) => x.addr === acc.addr)?.associatedKeys || [])
+          ])
+        )
+      })),
+      ...newAccountsNotAddedYet
     ]
     await this.#storage.set('accounts', nextAccounts)
     // Clean the existing array ref and use `push` instead of re-assigning
@@ -664,6 +686,16 @@ export class MainController extends EventEmitter {
     this.emitUpdate()
   }
 
+  async addCustomNetwork(customNetwork: CustomNetwork) {
+    await this.settings.addCustomNetwork(customNetwork)
+    await this.updateSelectedAccount(this.selectedAccount, true)
+  }
+
+  async removeCustomNetwork(id: NetworkDescriptor['id']) {
+    await this.settings.removeCustomNetwork(id)
+    await this.updateSelectedAccount(this.selectedAccount, true)
+  }
+
   // @TODO allow this to remove multiple OR figure out a way to debounce re-estimations
   // first one sounds more reasonble
   // although the second one can't hurt and can help (or no debounce, just a one-at-a-time queue)
@@ -779,22 +811,90 @@ export class MainController extends EventEmitter {
       if (!network)
         throw new Error(`estimateAccountOp: ${localAccountOp.networkId}: network does not exist`)
 
-      const humanization = await humanizeAccountOp(
-        this.#storage,
-        localAccountOp,
-        this.#fetch,
-        this.emitError
-      )
+      // if the network's chosen RPC supports debug_traceCall, we
+      // make an additional simulation for each call in the accountOp
+      let promises: any[] = []
+      if (network.hasDebugTraceCall) {
+        // 65gwei, try to make it work most of the times on ethereum
+        let gasPrice = 65000000000n
+        // calculate the fast gas price to use in simulation
+        if (this.gasPrices[accountOp.networkId] && this.gasPrices[accountOp.networkId].length) {
+          const fast = this.gasPrices[accountOp.networkId][2]
+          gasPrice =
+            'gasPrice' in fast ? fast.gasPrice : fast.baseFeePerGas + fast.maxPriorityFeePerGas
+          // increase the gas price with 10% to try to get above the min baseFee
+          gasPrice += gasPrice / 10n
+        }
+        // 200k, try to make it work most of the times on ethereum
+        let gas = 200000n
+        if (
+          this.accountOpsToBeSigned[localAccountOp.accountAddr] &&
+          this.accountOpsToBeSigned[localAccountOp.accountAddr][localAccountOp.networkId] &&
+          this.accountOpsToBeSigned[localAccountOp.accountAddr][localAccountOp.networkId]!
+            .estimation
+        ) {
+          gas =
+            this.accountOpsToBeSigned[localAccountOp.accountAddr][localAccountOp.networkId]!
+              .estimation!.gasUsed
+        }
+        const provider = this.settings.providers[localAccountOp.networkId]
+        promises = localAccountOp.calls.map((call) => {
+          return provider
+            .send('debug_traceCall', [
+              {
+                to: call.to,
+                value: toQuantity(call.value.toString()),
+                data: call.data,
+                from: localAccountOp.accountAddr,
+                gasPrice: toQuantity(gasPrice.toString()),
+                gas: toQuantity(gas.toString())
+              },
+              'latest',
+              {
+                tracer:
+                  "{data: [], fault: function (log) {}, step: function (log) { if (log.op.toString() === 'LOG3') { this.data.push([ toHex(log.contract.getAddress()), '0x' + ('0000000000000000000000000000000000000000' + log.stack.peek(4).toString(16)).slice(-40)])}}, result: function () { return this.data }}",
+                enableMemory: false,
+                enableReturnData: true,
+                disableStorage: true
+              }
+            ])
+            .catch((e: any) => {
+              console.log(e)
+              return [ZeroAddress]
+            })
+        })
+      }
+      const result = await Promise.all([
+        ...promises,
+        humanizeAccountOp(this.#storage, localAccountOp, this.#fetch, this.emitError)
+      ])
+      const humanization = result[result.length - 1]
+
+      // Reverse lookup addresses and save them in memory so they
+      // can be read from the UI
+      humanization.forEach((call: any) => {
+        if (!call.fullVisualization) return
+
+        call.fullVisualization.forEach(async (visualization: any) => {
+          if (visualization.type !== 'address' || !visualization.address) return
+
+          await this.domains.reverseLookup(visualization.address)
+        })
+      })
+
       const additionalHints: GetOptions['additionalHints'] = humanization
-        .map((call) =>
+        .map((call: any) =>
           !call.fullVisualization
             ? []
-            : call.fullVisualization.map((vis) =>
+            : call.fullVisualization.map((vis: any) =>
                 vis.address && isAddress(vis.address) ? getAddress(vis.address) : ''
               )
         )
         .flat()
-        .filter((x) => isAddress(x))
+        .filter((x: any) => isAddress(x))
+      result.pop()
+      const stringAddr: any = result.length ? result.flat(Infinity) : []
+      additionalHints!.push(...stringAddr)
 
       const [, , estimation] = await Promise.all([
         // NOTE: we are not emitting an update here because the portfolio controller will do that
@@ -822,7 +922,7 @@ export class MainController extends EventEmitter {
           account,
           this.keystore.keys,
           localAccountOp,
-          this.accountStates[localAccountOp.accountAddr][localAccountOp.networkId],
+          this.accountStates,
           EOAaccounts,
           // @TODO - first time calling this, portfolio is still not loaded.
           feeTokens,
@@ -1107,7 +1207,8 @@ export class MainController extends EventEmitter {
         status: AccountOpStatus.BroadcastedButNotConfirmed,
         txnId: transactionRes.hash,
         nonce: BigInt(transactionRes.nonce),
-        timestamp: new Date().getTime()
+        timestamp: new Date().getTime(),
+        isSingletonDeploy: !!accountOp.calls.find((call) => getAddress(call.to) === SINGLETON)
       }
       if (accountOp.gasFeePayment?.isERC4337) {
         submittedAccountOp.userOpHash = transactionRes.hash

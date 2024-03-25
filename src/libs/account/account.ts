@@ -2,6 +2,7 @@ import { AbiCoder, hexlify, Interface, toBeHex, toUtf8Bytes, ZeroAddress } from 
 
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET } from '../../consts/derivation'
+import { SPOOF_SIGTYPE } from '../../consts/signatures'
 import { Account, AccountOnPage, ImportStatus } from '../../interfaces/account'
 import { Key } from '../../interfaces/keystore'
 import { DKIM_VALIDATOR_ADDR, getSignerKey, RECOVERY_DEFAULTS } from '../dkim/recovery'
@@ -69,6 +70,11 @@ export async function getSmartAccount(privileges: PrivLevels[]): Promise<Account
       salt: toBeHex(0, 32)
     }
   }
+}
+
+export function getSpoof(account: Account) {
+  const abiCoder = new AbiCoder()
+  return abiCoder.encode(['address'], [account.associatedKeys[0]]) + SPOOF_SIGTYPE
 }
 
 /**
@@ -218,5 +224,7 @@ export const getAccountImportStatus = ({
       : ImportStatus.ImportedWithTheSameKeys
   }
 
-  return ImportStatus.NotImported
+  // Since there are `importedKeysForThisAcc`, as a fallback -
+  // for all other scenarios this account has been imported with different keys.
+  return ImportStatus.ImportedWithDifferentKeys
 }

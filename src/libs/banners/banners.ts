@@ -193,19 +193,31 @@ export const getNetworksWithFailedRPCBanners = ({
   networks: NetworkDescriptor[]
   networksWithAssets: NetworkDescriptor['id'][]
 }): Banner[] => {
-  return getNetworksWithFailedRPC({ providers })
-    .filter((networkId) => networksWithAssets.includes(networkId))
-    .map((network) => {
-      const networkData = networks.find((n: NetworkDescriptor) => n.id === network)!
+  const networksToShowBannersFor = getNetworksWithFailedRPC({ providers }).filter((networkId) =>
+    networksWithAssets.includes(networkId)
+  )
 
-      return {
-        id: `${networkData.id}-rpc-down`,
-        type: 'warning',
-        title: `Failed to retrieve network data for ${networkData?.name} (RPC is down)`,
-        text: 'Affected features: visible tokens, sign message/transaction, ENS/UD domain resolving, add account. Please try again later or contact support.',
-        actions: []
-      }
+  const networkNamesToShowBannersFor = networksToShowBannersFor
+    .map((networkId) => {
+      const networkData = networks.find((n: NetworkDescriptor) => n.id === networkId)!
+
+      return networkData.name
     })
+    .filter(Boolean)
+
+  if (!networkNamesToShowBannersFor.length) return []
+
+  return [
+    {
+      id: 'rpcs-down',
+      type: 'warning',
+      title: `Failed to retrieve network data for ${networkNamesToShowBannersFor.join(
+        ', '
+      )} (RPC malfunction)`,
+      text: 'Affected features: visible tokens, sign message/transaction, ENS/UD domain resolving, add account. Please try again later or contact support.',
+      actions: []
+    }
+  ]
 }
 
 export const getNetworksWithPortfolioErrorBanners = ({
@@ -222,14 +234,14 @@ export const getNetworksWithPortfolioErrorBanners = ({
 
     if (!accPortfolio) return
 
+    const networkNamesToShowBannersFor: string[] = []
+
     // @ts-expect-error
     Object.keys(accPortfolio).forEach((network) => {
       if (['rewards', 'gasTank'].includes(network)) return []
 
       const portfolioForNetwork = accPortfolio[network]
-
       const criticalError = portfolioForNetwork?.criticalError
-
       const networkData = networks.find((n: NetworkDescriptor) => n.id === network)
 
       if (!networkData) {
@@ -247,27 +259,25 @@ export const getNetworksWithPortfolioErrorBanners = ({
           .filter((t) => !t.symbol.includes('WALLET'))
           .every((token) => !token.priceIn.length)
 
-        if (priceMissingForAllTokens && portfolioForNetwork?.result.tokens.length > 0)
-          banners.push({
-            accountAddr: accId,
-            id: `${networkData.id}-portfolio-prices-error`,
-            type: 'error',
-            title: `Failed to retrieve token prices for ${networkData.name}`,
-            text: 'Affected features: token prices, account balances. Please try again later or contact support.',
-            actions: []
-          })
+        if (priceMissingForAllTokens && portfolioForNetwork?.result.tokens.length > 0) {
+          networkNamesToShowBannersFor.push(networkData.name)
+        }
 
         return
       }
 
-      banners.push({
-        accountAddr: accId,
-        id: `${networkData.id}-portfolio-critical-error`,
-        type: 'error',
-        title: `Failed to retrieve the portfolio data for ${networkData.name}`,
-        text: 'Affected features: account balances, assets. Please try again later or contact support.',
-        actions: []
-      })
+      networkNamesToShowBannersFor.push(networkData.name)
+    })
+
+    if (!networkNamesToShowBannersFor.length) return
+
+    banners.push({
+      accountAddr: accId,
+      id: `${accId}-portfolio-critical-error`,
+      type: 'error',
+      title: `Failed to retrieve the portfolio data for ${networkNamesToShowBannersFor.join(', ')}`,
+      text: 'Affected features: account balances, assets. Please try again later or contact support.',
+      actions: []
     })
   })
 

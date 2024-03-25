@@ -16,7 +16,8 @@ import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor
 import { Storage } from '../../interfaces/storage'
 import { AccountOp, accountOpSignableHash } from '../../libs/accountOp/accountOp'
 import { getAccountState } from '../../libs/accountState/accountState'
-import { estimate, EstimateResult, FeeToken } from '../../libs/estimate/estimate'
+import { estimate, FeeToken } from '../../libs/estimate/estimate'
+import { EstimateResult } from '../../libs/estimate/interfaces'
 import * as gasPricesLib from '../../libs/gasPrice/gasPrice'
 import { HUMANIZER_META_KEY } from '../../libs/humanizer'
 import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
@@ -297,17 +298,14 @@ const init = async (
       account,
       keystore.keys,
       op,
-      accountStates[account.addr][network.id],
+      accountStates,
       nativeToCheck,
       feeTokens
     ))
 
-  const portfolio = new PortfolioController(
-    storage,
-    providers,
-    networks,
-    'https://staging-relayer.ambire.com'
-  )
+  const settings = new SettingsController(storage)
+  settings.providers = { [op.networkId]: provider }
+  const portfolio = new PortfolioController(storage, settings, 'https://staging-relayer.ambire.com')
   await portfolio.updateSelectedAccount(accounts, networks, account.addr)
 
   if (portfolio.latest?.[account.addr][op.networkId]!.result) {
@@ -344,8 +342,6 @@ const init = async (
   }
 
   const callRelayer = relayerCall.bind({ url: '', fetch })
-  const settings = new SettingsController(storage)
-  settings.providers = { [op.networkId]: provider }
   const controller = new SignAccountOpController(
     keystore,
     portfolio,
@@ -404,7 +400,8 @@ describe('SignAccountOp Controller ', () => {
         ],
         erc4337estimation: null,
         arbitrumL1FeeIfArbitrum: { noFee: 0n, withFee: 0n },
-        error: null
+        error: null,
+        l1FeeAsL2Gas: 0n
       },
       [
         {
@@ -503,7 +500,8 @@ describe('SignAccountOp Controller ', () => {
           }
         ],
         arbitrumL1FeeIfArbitrum: { noFee: 0n, withFee: 0n },
-        error: null
+        error: null,
+        l1FeeAsL2Gas: 0n
       },
       [
         {
@@ -562,7 +560,7 @@ describe('SignAccountOp Controller ', () => {
     const typedData = getTypedData(
       network.chainId,
       controller.accountOp.accountAddr,
-      ethers.hexlify(accountOpSignableHash(controller.accountOp))
+      ethers.hexlify(accountOpSignableHash(controller.accountOp, network.chainId))
     )
     delete typedData.types.EIP712Domain
     const unwrappedSig = controller.accountOp.signature.slice(0, -2)
@@ -630,7 +628,8 @@ describe('SignAccountOp Controller ', () => {
           }
         ],
         arbitrumL1FeeIfArbitrum: { noFee: 0n, withFee: 0n },
-        error: null
+        error: null,
+        l1FeeAsL2Gas: 0n
       },
       [
         {
@@ -686,7 +685,7 @@ describe('SignAccountOp Controller ', () => {
     const typedData = getTypedData(
       network.chainId,
       controller.accountOp.accountAddr,
-      ethers.hexlify(accountOpSignableHash(controller.accountOp))
+      ethers.hexlify(accountOpSignableHash(controller.accountOp, network.chainId))
     )
     delete typedData.types.EIP712Domain
     const unwrappedSig = controller.accountOp.signature.slice(0, -2)
@@ -738,7 +737,8 @@ describe('SignAccountOp Controller ', () => {
         ],
         erc4337estimation: null,
         arbitrumL1FeeIfArbitrum: { noFee: 0n, withFee: 0n },
-        error: null
+        error: null,
+        l1FeeAsL2Gas: 0n
       },
       [
         {
@@ -802,7 +802,7 @@ describe('SignAccountOp Controller ', () => {
     const typedData = getTypedData(
       network.chainId,
       controller.accountOp.accountAddr,
-      ethers.hexlify(accountOpSignableHash(controller.accountOp))
+      ethers.hexlify(accountOpSignableHash(controller.accountOp, network.chainId))
     )
     const unwrappedSig = controller.accountOp.signature.slice(0, -2)
     delete typedData.types.EIP712Domain
@@ -843,7 +843,8 @@ describe('SignAccountOp Controller ', () => {
         ],
         erc4337estimation: null,
         arbitrumL1FeeIfArbitrum: { noFee: 0n, withFee: 0n },
-        error: null
+        error: null,
+        l1FeeAsL2Gas: 0n
       },
       [
         {
@@ -889,7 +890,7 @@ describe('SignAccountOp Controller ', () => {
       throw new Error('Signing failed!')
     }
 
-    const message = accountOpSignableHash(controller.accountOp)
+    const message = accountOpSignableHash(controller.accountOp, 1n)
     const unwrappedSig = controller.accountOp.signature.slice(0, -2)
     const signerAddr = ethers.verifyMessage(message, unwrappedSig)
 
@@ -937,7 +938,7 @@ describe('SignAccountOp Controller ', () => {
   //         }
   //       ],
   //       arbitrumL1FeeIfArbitrum: { noFee: 0n, withFee: 0n },
-  //       error: null
+  //       error: null,
   //     },
   //     [
   //       {
