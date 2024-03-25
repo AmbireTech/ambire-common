@@ -25,7 +25,8 @@ export function getFlags(
       (isRewardsOrGasTank ? t.networkId === tokenNetwork : t.networkId === networkId)
   )
 
-  const canTopUpGasTank = foundFeeToken && !foundFeeToken?.disableGasTankDeposit
+  const canTopUpGasTank =
+    address === ZeroAddress || (foundFeeToken && !foundFeeToken?.disableGasTankDeposit)
   const isFeeToken = address === ZeroAddress || !!foundFeeToken
 
   return {
