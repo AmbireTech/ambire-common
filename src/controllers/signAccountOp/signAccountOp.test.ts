@@ -16,8 +16,8 @@ import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor
 import { Storage } from '../../interfaces/storage'
 import { AccountOp, accountOpSignableHash } from '../../libs/accountOp/accountOp'
 import { getAccountState } from '../../libs/accountState/accountState'
-import { estimate, FeeToken } from '../../libs/estimate/estimate'
-import { EstimateResult } from '../../libs/estimate/interfaces'
+import { estimate } from '../../libs/estimate/estimate'
+import { EstimateResult, FeeToken } from '../../libs/estimate/interfaces'
 import * as gasPricesLib from '../../libs/gasPrice/gasPrice'
 import { HUMANIZER_META_KEY } from '../../libs/humanizer'
 import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
@@ -83,7 +83,8 @@ const createAccountOp = (
     {
       address: '0x0000000000000000000000000000000000000000',
       isGasTank: false,
-      amount: 1n
+      amount: 1n,
+      symbol: 'ETH'
     }
   ]
 
@@ -120,7 +121,8 @@ const createEOAAccountOp = (account: Account) => {
     {
       address: '0x0000000000000000000000000000000000000000',
       isGasTank: false,
-      amount: 1n
+      amount: 1n,
+      symbol: 'ETH'
     }
   ]
 
@@ -398,7 +400,6 @@ describe('SignAccountOp Controller ', () => {
             isGasTank: false
           }
         ],
-        erc4337estimation: null,
         arbitrumL1FeeIfArbitrum: { noFee: 0n, withFee: 0n },
         error: null
       },
@@ -471,7 +472,6 @@ describe('SignAccountOp Controller ', () => {
       {
         gasUsed: 50000n,
         nonce: 0,
-        erc4337estimation: null,
         feePaymentOptions: [
           {
             address: '0x0000000000000000000000000000000000000000',
@@ -598,7 +598,6 @@ describe('SignAccountOp Controller ', () => {
       {
         gasUsed: 50000n,
         nonce: 0,
-        erc4337estimation: null,
         feePaymentOptions: [
           {
             address: '0x0000000000000000000000000000000000000000',
@@ -732,7 +731,6 @@ describe('SignAccountOp Controller ', () => {
             isGasTank: false
           }
         ],
-        erc4337estimation: null,
         arbitrumL1FeeIfArbitrum: { noFee: 0n, withFee: 0n },
         error: null
       },
@@ -837,7 +835,6 @@ describe('SignAccountOp Controller ', () => {
             isGasTank: false
           }
         ],
-        erc4337estimation: null,
         arbitrumL1FeeIfArbitrum: { noFee: 0n, withFee: 0n },
         error: null
       },

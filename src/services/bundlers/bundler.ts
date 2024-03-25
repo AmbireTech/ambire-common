@@ -9,6 +9,7 @@ import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import { ERC_4337_ENTRYPOINT } from '../../../dist/src/consts/deploy'
 import { ENTRY_POINT_MARKER } from '../../consts/deploy'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
+import { Erc4337GasLimits } from '../../libs/estimate/interfaces'
 import { Gas1559Recommendation } from '../../libs/gasPrice/gasPrice'
 import { privSlot } from '../../libs/proxyDeploy/deploy'
 import { UserOperation } from '../../libs/userOperation/types'
@@ -133,11 +134,7 @@ export class Bundler {
     userOperation: UserOperation,
     network: NetworkDescriptor,
     isDeployed: boolean
-  ): Promise<{
-    preVerificationGas: string
-    verificationGasLimit: string
-    callGasLimit: string
-  }> {
+  ): Promise<Erc4337GasLimits> {
     const url = `https://api.pimlico.io/v1/${network.id}/rpc?apikey=${process.env.REACT_APP_PIMLICO_API_KEY}`
     const provider = new StaticJsonRpcProvider(url)
 

@@ -11,6 +11,7 @@ import { networks } from '../../consts/networks'
 import { getSpoof } from '../../libs/account/account'
 import { AccountOp, getSignableCalls } from '../../libs/accountOp/accountOp'
 import {
+  getOneTimeNonce,
   getPaymasterDataForEstimate,
   getSigForCalculations,
   getUserOperation
@@ -32,7 +33,7 @@ describe('Bundler tests', () => {
   })
 
   describe('Estimation tests: optimism', () => {
-    test('should estimate an userOp for an undeployed account', async () => {
+    test('should estimate an userOp for an undeployed account with initCode 0x', async () => {
       const opOptimism: AccountOp = {
         accountAddr: optyNotDeployed.addr,
         signingKeyAddr: optyNotDeployed.associatedKeys[0],
@@ -62,14 +63,47 @@ describe('Bundler tests', () => {
         getSignableCalls(opOptimism)
       ])
       userOp.signature = getSigForCalculations()
-
       const bundlerEstimate = await Bundler.estimate(userOp, optimism, false)
       expect(bundlerEstimate).toHaveProperty('preVerificationGas')
       expect(bundlerEstimate).toHaveProperty('verificationGasLimit')
       expect(bundlerEstimate).toHaveProperty('callGasLimit')
     })
   })
+  test('should estimate an userOp for an undeployed account with real initCode and empty executeMultiple', async () => {
+    const opOptimism: AccountOp = {
+      accountAddr: optyNotDeployed.addr,
+      signingKeyAddr: optyNotDeployed.associatedKeys[0],
+      signingKeyType: null,
+      gasLimit: null,
+      gasFeePayment: null,
+      networkId: 'optimism',
+      nonce: 0n,
+      signature: '0x',
+      calls: [{ to, value: parseEther('10000000'), data: '0x' }],
+      accountOpToExecuteBefore: null
+    }
+    const optimism = networks.find((net) => net.id === 'optimism')!
+    const usedNetworks = [optimism]
+    const providers = {
+      [optimism.id]: new JsonRpcProvider(optimism.rpcUrl)
+    }
+    const accountStates = await getAccountsInfo(usedNetworks, providers, [optyNotDeployed])
+    const accountState = accountStates[opOptimism.accountAddr][opOptimism.networkId]
+    const userOp = getUserOperation(optyNotDeployed, accountState, opOptimism)
+    // just use af fake paymasterAndData, no need to be the spoof exactly
+    const ambireInterface = new Interface(AmbireAccount.abi)
+    userOp.callData = ambireInterface.encodeFunctionData('executeMultiple', [[]])
+    userOp.paymasterAndData = getPaymasterDataForEstimate()
+    userOp.nonce = getOneTimeNonce(userOp)
+
+    const bundlerEstimate = await Bundler.estimate(userOp, optimism, false)
+    expect(bundlerEstimate).toHaveProperty('preVerificationGas')
+    expect(bundlerEstimate).toHaveProperty('verificationGasLimit')
+    expect(bundlerEstimate).toHaveProperty('callGasLimit')
+  })
   test('should revert because a wrongly formatted signature is passed', async () => {
+    expect.assertions(2)
+
     const opOptimism: AccountOp = {
       accountAddr: optyNotDeployed.addr,
       signingKeyAddr: optyNotDeployed.associatedKeys[0],
@@ -102,7 +136,8 @@ describe('Bundler tests', () => {
     userOp.signature = getSpoof(optyNotDeployed)
 
     await Bundler.estimate(userOp, optimism, false).catch((e) => {
-      console.log(e.body.error)
+      expect(e).toHaveProperty('error')
+      expect(e.error).toHaveProperty('message')
     })
   })
 })

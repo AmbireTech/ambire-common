@@ -581,11 +581,10 @@ describe('estimate', () => {
     expect(response.arbitrumL1FeeIfArbitrum.noFee).toEqual(0n)
     expect(response.arbitrumL1FeeIfArbitrum.withFee).toEqual(0n)
 
-    expect(response.erc4337estimation).not.toBe(null)
-    expect(response.erc4337estimation?.gasUsed).toBeGreaterThan(0n)
-    expect(response.erc4337estimation!.userOp.paymasterAndData).toEqual('0x')
-    expect(BigInt(response.erc4337estimation!.userOp.verificationGasLimit)).toBeGreaterThan(5000n)
-    expect(BigInt(response.erc4337estimation!.userOp.callGasLimit)).toBeGreaterThan(10000n)
+    expect(response.erc4337GasLimits).not.toBe(null)
+    expect(response.erc4337GasLimits!.callGasLimit).toBeGreaterThan(0n)
+    expect(response.erc4337GasLimits!.verificationGasLimit).toBeGreaterThan(0n)
+    expect(response.erc4337GasLimits!.preVerificationGas).toBeGreaterThan(0n)
 
     expect(response.feePaymentOptions.length).toBeGreaterThan(0)
     response.feePaymentOptions.forEach((opt) => {
@@ -632,11 +631,11 @@ describe('estimate', () => {
     expect(response.arbitrumL1FeeIfArbitrum.noFee).toEqual(0n)
     expect(response.arbitrumL1FeeIfArbitrum.withFee).toEqual(0n)
 
-    expect(response.erc4337estimation).not.toBe(null)
-    expect(response.erc4337estimation?.gasUsed).toBeGreaterThan(0n)
-    expect(response.erc4337estimation!.userOp.paymasterAndData).toEqual('0x')
-    expect(BigInt(response.erc4337estimation!.userOp.verificationGasLimit)).toBeGreaterThan(5000n)
-    expect(BigInt(response.erc4337estimation!.userOp.callGasLimit)).toBeGreaterThan(10000n)
+    expect(response.erc4337GasLimits).not.toBe(null)
+    expect(response.erc4337GasLimits).not.toBe(null)
+    expect(response.erc4337GasLimits!.callGasLimit).toBeGreaterThan(0n)
+    expect(response.erc4337GasLimits!.verificationGasLimit).toBeGreaterThan(0n)
+    expect(response.erc4337GasLimits!.preVerificationGas).toBeGreaterThan(0n)
 
     expect(response.feePaymentOptions.length).toBeGreaterThan(0)
     response.feePaymentOptions.forEach((opt) => {

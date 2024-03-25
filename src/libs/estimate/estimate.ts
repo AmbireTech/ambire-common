@@ -20,8 +20,6 @@ import { UserOperation } from '../userOperation/types'
 import {
   getActivatorCall,
   getOneTimeNonce,
-  getPaymasterSpoof,
-  getUserOperation,
   shouldIncludeActivatorCall,
   shouldUseOneTimeNonce,
   shouldUsePaymaster
@@ -29,13 +27,7 @@ import {
 import { estimateCustomNetwork } from './customNetworks'
 import { catchEstimationFailure, estimationErrorFormatted, mapTxnErrMsg } from './errors'
 import { estimateArbitrumL1GasUsed } from './estimateArbitrum'
-import { Erc4337estimation, EstimateResult } from './interfaces'
-
-export interface FeeToken {
-  address: string
-  isGasTank: boolean
-  amount: bigint // how much the user has (from portfolio)
-}
+import { EstimateResult, FeeToken } from './interfaces'
 
 async function reestimate(fetchRequests: Function, counter: number = 0): Promise<any> {
   // stop the execution on 5 fails;
@@ -157,7 +149,6 @@ export async function estimate(
           isGasTank: false
         }
       ],
-      erc4337estimation: null,
       arbitrumL1FeeIfArbitrum: { noFee: 0n, withFee: 0n },
       error: result instanceof Error ? result : null
     }
@@ -188,8 +179,6 @@ export async function estimate(
     filteredFeeTokens = []
   }
 
-  const userOp = is4337Broadcast ? getUserOperation(account, accountState, op) : null
-
   // @L2s
   // craft the probableTxn that's going to be saved on the L1
   // so we could do proper estimation
@@ -204,7 +193,7 @@ export async function estimate(
       'uint256' // gasLimit
     ],
     [
-      getProbableCallData(op, accountState, network, userOp),
+      getProbableCallData(op, accountState, network),
       op.accountAddr,
       FEE_COLLECTOR,
       100000,
@@ -250,9 +239,6 @@ export async function estimate(
   let estimateUserOp: UserOperation | null = null
   if (userOp) {
     estimateUserOp = { ...userOp }
-    if (shouldUsePaymaster(network)) {
-      estimateUserOp.paymasterAndData = getPaymasterSpoof()
-    }
 
     // add the activatorCall to the estimation
     if (estimateUserOp.activatorCall) {

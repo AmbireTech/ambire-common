@@ -1,20 +1,11 @@
-import { Block, Interface, Provider, toBeHex } from 'ethers'
+import { Block, Interface, Provider } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFactory.json'
-import EntryPoint from '../../../contracts/compiled/EntryPoint.json'
 import { AccountOnchainState } from '../../interfaces/account'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
-import { UserOperation } from '../userOperation/types'
-import {
-  getActivatorCall,
-  getCleanUserOp,
-  getOneTimeNonce,
-  getPaymasterSpoof,
-  getSigForCalculations,
-  shouldIncludeActivatorCall
-} from '../userOperation/userOperation'
+import { getActivatorCall, shouldIncludeActivatorCall } from '../userOperation/userOperation'
 
 // https://eips.ethereum.org/EIPS/eip-1559
 const DEFAULT_BASE_FEE_MAX_CHANGE_DENOMINATOR = 8n
@@ -184,37 +175,9 @@ export async function getGasPriceRecommendations(
 export function getProbableCallData(
   accountOp: AccountOp,
   accountState: AccountOnchainState,
-  network: NetworkDescriptor,
-  // the userOp should be passed during estimation only as we strictly
-  // use it to determine the extra L1 fee that the user should pay
-  userOp: UserOperation | null = null
+  network: NetworkDescriptor
 ): string {
   let estimationCallData
-
-  if (userOp) {
-    // fake most of the user op properties to get a better
-    // callData estimation for the l1 fee
-    const localOp = { ...userOp }
-    localOp.maxFeePerGas = toBeHex(100000n)
-    localOp.maxPriorityFeePerGas = toBeHex(100000n)
-    localOp.verificationGasLimit = toBeHex(100000n)
-    localOp.callGasLimit = toBeHex(100000n)
-    localOp.signature = getSigForCalculations()
-
-    if (localOp.requestType !== 'standard') {
-      localOp.nonce = getOneTimeNonce(localOp)
-    }
-
-    if (network.erc4337?.hasPaymaster) {
-      localOp.paymasterAndData = getPaymasterSpoof()
-    }
-
-    const entryPoint = new Interface(EntryPoint)
-    return entryPoint.encodeFunctionData('handleOps', [
-      getCleanUserOp(localOp),
-      accountOp.accountAddr
-    ])
-  }
 
   // include the activator call for estimation if any
   const localOp = { ...accountOp }

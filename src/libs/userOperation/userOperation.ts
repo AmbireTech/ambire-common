@@ -129,7 +129,7 @@ export function getUserOperation(
   accountState: AccountOnchainState,
   accountOp: AccountOp
 ): UserOperation {
-  const userOp: any = {
+  const userOp: UserOperation = {
     sender: accountOp.accountAddr,
     nonce: toBeHex(accountState.erc4337Nonce),
     initCode: '0x',
