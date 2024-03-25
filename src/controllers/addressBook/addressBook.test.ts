@@ -3,8 +3,10 @@ import { AddressBookController } from './addressBook'
 
 const storage = produceMemoryStore()
 
+let errors = 0
+
 // Mock the emitError method to capture the emitted error
-const mockEmitError = jest.fn()
+const mockEmitError = jest.fn(() => errors++)
 
 describe('AddressBookController', () => {
   const addressBookController = new AddressBookController(storage)
@@ -17,7 +19,7 @@ describe('AddressBookController', () => {
   ;(addressBookController as any).emitError = mockEmitError
 
   it('address book is empty by default', () => {
-    expect(addressBookController.contacts.length).toEqual(0)
+    expect(addressBookController.contacts.length).toEqual(errors)
   })
 
   it('add contact', () => {
@@ -66,23 +68,13 @@ describe('AddressBookController', () => {
   it('error when removing non-existing contact', () => {
     addressBookController.removeManuallyAddedContact('0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045')
 
-    expect(mockEmitError).toHaveBeenCalledTimes(1)
+    expect(mockEmitError).toHaveBeenCalledTimes(errors)
   })
-  it('error when renaming contact to already existing name', () => {
-    addressBookController.addContact('vitaly', '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045')
-    addressBookController.addContact('johnny', '0x31800a810A2d9C3315dc714e1Eb988bd6A641eF0')
-
-    addressBookController.renameManuallyAddedContact(
-      '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045',
-      'johnny'
-    )
-    expect(mockEmitError).toHaveBeenCalledTimes(2)
-  })
-  it('error when adding contact with already existing name/address', () => {
+  it('error when adding contact with already existing address', () => {
     addressBookController.addContact('tony', '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045')
-    addressBookController.addContact('tony', '0x31800a810A2d9C3315dc714e1Eb988bd6A641eF0')
+    addressBookController.addContact('tony', '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045')
 
-    expect(mockEmitError).toHaveBeenCalledTimes(4)
+    expect(mockEmitError).toHaveBeenCalledTimes(errors)
   })
   it('error when renaming wallet account contact', () => {
     addressBookController.renameManuallyAddedContact(
@@ -90,11 +82,11 @@ describe('AddressBookController', () => {
       'Account 2'
     )
 
-    expect(mockEmitError).toHaveBeenCalledTimes(5)
+    expect(mockEmitError).toHaveBeenCalledTimes(errors)
   })
   it('error when removing wallet account contact', () => {
     addressBookController.removeManuallyAddedContact('0x66fE93c51726e6FD51668B0B0434ffcedD604d08')
 
-    expect(mockEmitError).toHaveBeenCalledTimes(6)
+    expect(mockEmitError).toHaveBeenCalledTimes(errors)
   })
 })

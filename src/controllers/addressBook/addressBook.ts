@@ -63,23 +63,14 @@ export class AddressBookController extends EventEmitter {
     return this.#manuallyAddedContacts.find((contact) => contact[key] === value)
   }
 
-  #getIsUnique(key: 'name' | 'address', value: string) {
-    return !this.contacts.some((contact) => contact[key] === value)
+  #findContactWithAddress(address: string) {
+    return !this.contacts.some((contact) => contact.address === address)
   }
 
   addContact(name: string, address: string) {
     const trimmedName = name.trim()
 
-    if (!this.#getIsUnique('name', trimmedName)) {
-      this.emitError({
-        message: 'Contact with this name already exists in the Address Book',
-        level: 'minor',
-        error: new Error('Address Book: contact with this name already exists in the Address Book')
-      })
-      return
-    }
-
-    if (!this.#getIsUnique('address', address)) {
+    if (!this.#findContactWithAddress(address)) {
       this.emitError({
         message: 'Contact with this address already exists in the Address Book',
         level: 'minor',
@@ -105,15 +96,6 @@ export class AddressBookController extends EventEmitter {
         error: new Error(
           "Address Book: can't rename contact that doesn't exist in the Address Book"
         )
-      })
-      return
-    }
-
-    if (!this.#getIsUnique('name', trimmedNewName)) {
-      this.emitError({
-        message: 'Contact with this name already exists in the Address Book',
-        level: 'minor',
-        error: new Error('Address Book: contact with this name already exists in the Address Book')
       })
       return
     }
