@@ -48,8 +48,8 @@ export const validateERC20Token = async (
 ) => {
   const erc20 = new Contract(token?.address, IERC20.abi, provider)
 
-  const type: string = 'erc20'
-  let isValid: boolean = true
+  const type = 'erc20'
+  let isValid = true
   let hasError = false
 
   const [balance, symbol, decimals] = (await Promise.all([

@@ -189,7 +189,10 @@ export class PortfolioController extends EventEmitter {
     this.#additionalHints = []
   }
 
-  async updateTokenValidationByStandard(token: any, accountId: AccountId) {
+  async updateTokenValidationByStandard(
+    token: { address: TokenResult['address']; networkId: TokenResult['networkId'] },
+    accountId: AccountId
+  ) {
     const [isValid, standard]: [boolean, string] = (await validateERC20Token(
       token,
       accountId,
