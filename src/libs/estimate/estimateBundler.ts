@@ -104,22 +104,6 @@ export async function bundlerEstimate(
       )
     )
   )
-  const results = await Promise.all(estimations)
-  for (let i = 0; i < results.length; i++) {
-    if (results[i] instanceof Error) return estimationErrorFormatted(results[i] as Error)
-  }
-
-  const gasData = {
-    preVerificationGas: 0n,
-    verificationGasLimit: 0n,
-    callGasLimit: 0n
-  }
-  for (let i = 0; i < results.length; i++) {
-    const estimate = results[i] as Erc4337GasLimits
-    gasData.preVerificationGas += BigInt(estimate.preVerificationGas)
-    gasData.callGasLimit += BigInt(estimate.callGasLimit)
-    gasData.verificationGasLimit += BigInt(estimate.verificationGasLimit)
-  }
 
   const feePaymentOptions = feeTokens.map((token: FeeToken) => {
     return {
@@ -139,6 +123,24 @@ export async function bundlerEstimate(
       isGasTank: token.isGasTank
     }
   })
+
+  const results = await Promise.all(estimations)
+  for (let i = 0; i < results.length; i++) {
+    if (results[i] instanceof Error)
+      return estimationErrorFormatted(results[i] as Error, feePaymentOptions)
+  }
+
+  const gasData = {
+    preVerificationGas: 0n,
+    verificationGasLimit: 0n,
+    callGasLimit: 0n
+  }
+  for (let i = 0; i < results.length; i++) {
+    const estimate = results[i] as Erc4337GasLimits
+    gasData.preVerificationGas += BigInt(estimate.preVerificationGas)
+    gasData.callGasLimit += BigInt(estimate.callGasLimit)
+    gasData.verificationGasLimit += BigInt(estimate.verificationGasLimit)
+  }
 
   const erc4337GasLimits = {
     preVerificationGas: toBeHex(gasData.preVerificationGas),

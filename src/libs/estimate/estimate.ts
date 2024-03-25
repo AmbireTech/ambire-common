@@ -323,7 +323,7 @@ export async function estimate(
 
   // WARNING: calculateRefund will 100% NOT work in all cases we have
   // So a warning not to assume this is working
-  if (opts?.calculateRefund) gasUsed = refund(account, op, provider, gasUsed)
+  if (opts?.calculateRefund) gasUsed = await refund(account, op, provider, gasUsed)
 
   const feeTokenOptions = feeTokenOutcomes.map((token: any, key: number) => {
     const address = filteredFeeTokens[key].address
