@@ -27,10 +27,6 @@ export interface GasPriceRecommendation {
 export interface Gas1559Recommendation {
   name: string
   baseFeePerGas: bigint
-  // in l2s, to calculate correctly the preVerificationGas,
-  // we use the baseFee for each speed in reverse order as dividing
-  // by a greater baseFee gives smaller gas fee. That's why we need this
-  baseFeeToDivide: bigint
   maxPriorityFeePerGas: bigint
 }
 export type GasRecommendation = GasPriceRecommendation | Gas1559Recommendation
@@ -148,8 +144,6 @@ export async function getGasPriceRecommendations(
     const tips = filterOutliers(txns.map((x) => x.maxPriorityFeePerGas!).filter((x) => x > 0))
     return speeds.map(({ name, baseFeeAddBps }, i) => {
       const baseFee = expectedBaseFee + (expectedBaseFee * baseFeeAddBps) / 10000n
-      const baseFeeToDivide =
-        expectedBaseFee + (expectedBaseFee * speeds[speeds.length - (i + 1)].baseFeeAddBps) / 10000n
 
       // maxPriorityFeePerGas is important for networks with longer block time
       // like Ethereum (12s) but not at all for L2s with instant block creation.
@@ -160,7 +154,6 @@ export async function getGasPriceRecommendations(
       return {
         name,
         baseFeePerGas: baseFee,
-        baseFeeToDivide,
         maxPriorityFeePerGas
       }
     })

@@ -1,4 +1,4 @@
-import { AbiCoder, BaseContract, formatUnits, getAddress, Interface, toBeHex } from 'ethers'
+import { AbiCoder, Contract, formatUnits, getAddress, Interface, toBeHex } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import EntryPointAbi from '../../../contracts/compiled/EntryPoint.json'
@@ -18,11 +18,10 @@ import { IrCall } from '../../libs/humanizer/interfaces'
 import { Price, TokenResult } from '../../libs/portfolio'
 import { getExecuteSignature, getTypedData, wrapStandard } from '../../libs/signMessage/signMessage'
 import { getGasUsed } from '../../libs/singleton/singleton'
-import { UserOperation } from '../../libs/userOperation/types'
 import {
   getActivatorCall,
   getOneTimeNonce,
-  getPreVerificationGas,
+  getUserOperation,
   isErc4337Broadcast,
   shouldIncludeActivatorCall,
   shouldUseOneTimeNonce,
@@ -65,8 +64,8 @@ type FanSpeed = {
   simulatedGasLimit: bigint
   amountFormatted: string
   amountUsd: string
+  gasPrice: bigint
   maxPriorityFeePerGas?: bigint
-  baseFeeToDivide: bigint
 }
 
 // declare the statuses we don't want state updates on
@@ -110,8 +109,6 @@ export class SignAccountOpController extends EventEmitter {
   #network: NetworkDescriptor
 
   accountOp: AccountOp
-
-  #userOperation: UserOperation | null
 
   gasPrices: GasRecommendation[] | null = null
 
@@ -160,8 +157,6 @@ export class SignAccountOpController extends EventEmitter {
     this.#storage = storage
     this.#fetch = fetch
     this.#callRelayer = callRelayer
-    // it's real value is set on update()
-    this.#userOperation = null
 
     this.#humanizeAccountOp()
     this.gasUsedTooHigh = false
@@ -338,14 +333,6 @@ export class SignAccountOpController extends EventEmitter {
     if (gasPrices) this.gasPrices = gasPrices
 
     if (estimation) {
-      if (estimation.erc4337estimation) {
-        // set a new copy of the user op if 4337
-        this.#userOperation = structuredClone(estimation.erc4337estimation.userOp)
-        // set the accountOp user op as a reference to this.#userOperation
-        // it's overriden during sign() to it's safe
-        this.accountOp.asUserOperation = this.#userOperation
-      }
-
       this.gasUsedTooHigh = estimation.gasUsed > 10000000n
       this.#estimation = estimation
     }
@@ -537,9 +524,6 @@ export class SignAccountOpController extends EventEmitter {
       if ('baseFeePerGas' in gasRecommendation)
         gasPrice = gasRecommendation.baseFeePerGas + gasRecommendation.maxPriorityFeePerGas
 
-      const baseFeeToDivide =
-        'baseFeeToDivide' in gasRecommendation ? gasRecommendation.baseFeeToDivide : gasPrice
-
       // EOA
       if (!isSmartAccount(this.#account)) {
         simulatedGasLimit = gasUsed
@@ -550,21 +534,11 @@ export class SignAccountOpController extends EventEmitter {
         }
 
         amount = simulatedGasLimit * gasPrice + feeTokenEstimation.addedNative
-      } else if (this.#userOperation) {
+      } else if (this.#estimation?.erc4337GasLimits) {
         // ERC 4337
-        const usesPaymaster = shouldUsePaymaster(this.#network)
-        simulatedGasLimit = gasUsed + feeTokenEstimation.gasUsed!
-        simulatedGasLimit += usesPaymaster
-          ? this.#estimation!.arbitrumL1FeeIfArbitrum.withFee
-          : this.#estimation!.arbitrumL1FeeIfArbitrum.noFee
-
-        const l1FeeAsL2Gas = feeTokenEstimation.addedNative / baseFeeToDivide
-        const preVerificationGas = getPreVerificationGas(
-          this.#userOperation,
-          usesPaymaster,
-          l1FeeAsL2Gas
-        )
-        simulatedGasLimit += BigInt(preVerificationGas)
+        // TODO<Bobby>: we should consider whether to include verificationGasLimit as well
+        simulatedGasLimit = BigInt(this.#estimation?.erc4337GasLimits.callGasLimit)
+        simulatedGasLimit += BigInt(this.#estimation?.erc4337GasLimits.preVerificationGas)
 
         amount = SignAccountOpController.getAmountAfterFeeTokenConvert(
           simulatedGasLimit,
@@ -573,7 +547,7 @@ export class SignAccountOpController extends EventEmitter {
           this.feeTokenResult!.decimals,
           0n
         )
-        if (usesPaymaster) {
+        if (shouldUsePaymaster(this.#network)) {
           amount = this.#increaseFee(amount)
         }
       } else if (this.paidBy !== this.accountOp!.accountAddr) {
@@ -613,20 +587,12 @@ export class SignAccountOpController extends EventEmitter {
         amount,
         amountFormatted: formatUnits(amount, Number(this.feeTokenResult!.decimals)),
         amountUsd: getTokenUsdAmount(this.feeTokenResult!, amount),
-        baseFeeToDivide
+        gasPrice
       }
 
       if ('maxPriorityFeePerGas' in gasRecommendation) {
         fee.maxPriorityFeePerGas = gasRecommendation.maxPriorityFeePerGas
       }
-
-      // for networks that don't have the baseFeePerGas label,
-      // we set the baseFee to the gasPrice as the average is kind of
-      // the minimum to enter the next block... kind of
-      fee.baseFeePerGas =
-        'baseFeePerGas' in gasRecommendation
-          ? gasRecommendation.baseFeePerGas
-          : gasRecommendation.gasPrice
 
       return fee
     })
@@ -693,7 +659,7 @@ export class SignAccountOpController extends EventEmitter {
       inToken: this.feeTokenResult.address,
       amount: chosenSpeed.amount,
       simulatedGasLimit: chosenSpeed.simulatedGasLimit,
-      baseFeeToDivide: chosenSpeed.baseFeeToDivide
+      gasPrice: chosenSpeed.gasPrice
     }
 
     if ('maxPriorityFeePerGas' in chosenSpeed) {
@@ -846,36 +812,15 @@ export class SignAccountOpController extends EventEmitter {
           signer
         )
       } else if (this.accountOp.gasFeePayment.isERC4337) {
-        const userOperation = this.#userOperation
-        if (!userOperation) {
-          return this.#setSigningError(
-            `Cannot sign as no user operation is present for account op ${this.accountOp.accountAddr}`
-          )
-        }
-
-        // set as maxFeePerGas only the L2 gas price
-        const feeTokenEstimation = this.#estimation!.feePaymentOptions.find(
-          (option) =>
-            option.address === this.feeTokenResult?.address &&
-            this.paidBy === option.paidBy &&
-            this.feeTokenResult?.flags.onGasTank === option.isGasTank
-        )!
-        let amountInWei = gasFeePayment.amount
-        if (this.feeTokenResult?.address !== '0x0000000000000000000000000000000000000000') {
-          const nativeRatio = this.#getNativeToFeeTokenRatio(this.feeTokenResult!)
-          if (!nativeRatio) throw new Error('Could not retrieve the native token price.')
-          amountInWei =
-            (gasFeePayment.amount * BigInt(10 ** (18 + 18 - this.feeTokenResult!.decimals))) /
-            nativeRatio
-        }
-        // NOTE: we do not subtract the addedNative from here as we put it
-        // in preVerificationGas
-        const gasPrice = amountInWei / gasFeePayment.simulatedGasLimit
-        userOperation.maxFeePerGas = toBeHex(gasPrice)
+        const userOperation = getUserOperation(this.#account, accountState, this.accountOp)
+        userOperation.preVerificationGas = this.#estimation!.erc4337GasLimits!.preVerificationGas
+        userOperation.callGasLimit = this.#estimation!.erc4337GasLimits!.callGasLimit
+        userOperation.verificationGasLimit =
+          this.#estimation!.erc4337GasLimits!.verificationGasLimit
+        userOperation.maxFeePerGas = toBeHex(gasFeePayment.gasPrice)
         userOperation.maxPriorityFeePerGas = toBeHex(
-          gasFeePayment.maxPriorityFeePerGas ?? userOperation.maxFeePerGas
+          gasFeePayment.maxPriorityFeePerGas ?? gasFeePayment.gasPrice
         )
-
         const usesOneTimeNonce = shouldUseOneTimeNonce(userOperation)
         const usesPaymaster = shouldUsePaymaster(this.#network)
 
@@ -901,17 +846,6 @@ export class SignAccountOpController extends EventEmitter {
           ])
         }
 
-        if (feeTokenEstimation.addedNative > 0n) {
-          const l1FeeAsL2Gas = feeTokenEstimation.addedNative / gasFeePayment.baseFeeToDivide
-          userOperation.preVerificationGas = getPreVerificationGas(
-            userOperation,
-            usesPaymaster,
-            l1FeeAsL2Gas
-          )
-        } else {
-          userOperation.preVerificationGas = getPreVerificationGas(userOperation, usesPaymaster)
-        }
-
         if (usesPaymaster) {
           try {
             const response = await this.#callRelayer(
@@ -934,7 +868,7 @@ export class SignAccountOpController extends EventEmitter {
 
         if (userOperation.requestType === 'standard') {
           const provider = this.#settings.providers[this.accountOp.networkId]
-          const entryPoint: any = new BaseContract(ERC_4337_ENTRYPOINT, EntryPointAbi, provider)
+          const entryPoint = new Contract(ERC_4337_ENTRYPOINT, EntryPointAbi, provider)
           const typedData = getTypedData(
             this.#network.chainId,
             this.accountOp.accountAddr,

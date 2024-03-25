@@ -97,33 +97,6 @@ export function shouldUseOneTimeNonce(userOp: UserOperation) {
   return userOp.requestType !== 'standard'
 }
 
-export function getPreVerificationGas(
-  userOperation: UserOperation,
-  usesPaymaster: boolean,
-  l1FeeAsL2Gas: bigint = 0n
-): string {
-  const abiCoder = new AbiCoder()
-  const localUserOp = { ...userOperation }
-
-  // set fake properties for better estimation
-  localUserOp.signature = getSigForCalculations()
-
-  if (usesPaymaster) {
-    localUserOp.paymasterAndData = getPaymasterSpoof()
-  }
-  if (shouldUseOneTimeNonce(localUserOp)) {
-    localUserOp.nonce = getOneTimeNonce(localUserOp)
-  }
-
-  const packed = abiCoder.encode(
-    [
-      'tuple(address, uint256, bytes, bytes, uint256, uint256, uint256, uint256, uint256, bytes, bytes)'
-    ],
-    [Object.values(getCleanUserOp(localUserOp)[0])]
-  )
-  return toBeHex(21000n + calculateCallDataCost(packed) + l1FeeAsL2Gas)
-}
-
 export function getUserOperation(
   account: Account,
   accountState: AccountOnchainState,
