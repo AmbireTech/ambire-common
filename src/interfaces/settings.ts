@@ -19,12 +19,44 @@ export type KeyPreferences = {
 }[]
 
 export type NetworkPreference = {
+  name?: string
   rpcUrl?: string
+  chainId?: bigint
+  nativeAssetSymbol?: string
   explorerUrl?: string
+  rpcNoStateOverride?: boolean
+  hasDebugTraceCall?: boolean
+  platformId?: string
+  nativeAssetId?: string
+  areContractsDeployed?: boolean
+}
+
+export type CustomNetwork = {
+  name: string
+  rpcUrl: string
+  chainId: bigint
+  nativeAssetSymbol: string
+  explorerUrl: string
+  iconUrls?: string[]
+  isSAEnabled?: boolean
+  areContractsDeployed?: boolean
+  erc4337?: {
+    enabled: boolean
+    hasPaymaster: boolean
+  }
+  feeOptions?: {
+    is1559: boolean
+  }
+  isOptimistic?: boolean
+  rpcNoStateOverride?: boolean
+  hasDebugTraceCall?: boolean
+  platformId?: string
+  nativeAssetId?: string
+  flagged?: boolean
 }
 
 export type NetworkPreferences = {
-  [key in NetworkDescriptor['id']]: NetworkPreference
+  [key in NetworkDescriptor['id']]: NetworkPreference | CustomNetwork
 }
 
 export type RPCProvider = JsonRpcProvider & { isWorking?: boolean }

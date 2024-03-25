@@ -3,12 +3,14 @@ import fetch from 'node-fetch'
 
 import { expect } from '@jest/globals'
 
-import { HumanizerMeta } from '../../libs/humanizer/interfaces'
+import { produceMemoryStore } from '../../../test/helpers'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import humanizerInfo from '../../consts/humanizer/humanizerInfo.json'
 import { networks } from '../../consts/networks'
+import { HumanizerMeta } from '../../libs/humanizer/interfaces'
 import { Portfolio } from '../../libs/portfolio'
 import { initRpcProviders } from '../../services/provider'
+import { SettingsController } from '../settings/settings'
 import { TransferController } from './transfer'
 
 const ethereum = networks.find((x) => x.id === 'ethereum')
@@ -34,6 +36,7 @@ const polygonPortfolio = new Portfolio(fetch, polygonProvider, polygon)
 
 let transferController: TransferController
 let errorCount = 0
+const settingsController = new SettingsController(produceMemoryStore())
 
 const getTokens = async () => {
   const ethAccPortfolio = await ethPortfolio.get(PLACEHOLDER_SELECTED_ACCOUNT)
@@ -44,7 +47,7 @@ const getTokens = async () => {
 
 describe('Transfer Controller', () => {
   test('should emit not initialized error', () => {
-    transferController = new TransferController()
+    transferController = new TransferController(settingsController)
 
     transferController.buildUserRequest()
     errorCount++
@@ -64,7 +67,7 @@ describe('Transfer Controller', () => {
   })
   test('should initialize', async () => {
     const tokens = await getTokens()
-    transferController = new TransferController()
+    transferController = new TransferController(settingsController)
     await transferController.update({
       selectedAccount: PLACEHOLDER_SELECTED_ACCOUNT,
       tokens,
