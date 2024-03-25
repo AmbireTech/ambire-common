@@ -196,12 +196,20 @@ export const getAccountImportStatus = ({
   const isAlreadyImported = alreadyImportedAccounts.some(({ addr }) => addr === account.addr)
   if (!isAlreadyImported) return ImportStatus.NotImported
 
-  const associatedKeys =
-    // Prioritize taking the `associatedKeys` from the account found on the page,
-    // because the `associatedKeys` of the account from the extension storage
-    // could be incomplete or outdated (e.g. the user has added a new signer key)
-    accountsOnPage.find((x) => x.account.addr === account.addr)?.account.associatedKeys ||
-    account.associatedKeys
+  // Merge the `associatedKeys` from the account instances found on the page,
+  // with the `associatedKeys` of the account from the extension storage. This
+  // ensures up-to-date keys, considering the account existing associatedKeys
+  // could be outdated  (associated keys of the smart accounts can change) or
+  // incomplete initial data (during the initial import, not all associatedKeys
+  // could have been fetched (for privacy).
+  const associatedKeys = Array.from(
+    new Set([
+      ...accountsOnPage
+        .filter((x) => x.account.addr === account.addr)
+        .flatMap((x) => x.account.associatedKeys),
+      ...account.associatedKeys
+    ])
+  )
 
   const importedKeysForThisAcc = keys.filter((key) => associatedKeys.includes(key.addr))
   // Could be imported as a view only account (and therefore, without a key)
