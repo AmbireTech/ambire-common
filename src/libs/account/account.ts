@@ -196,7 +196,22 @@ export const getAccountImportStatus = ({
   const isAlreadyImported = alreadyImportedAccounts.some(({ addr }) => addr === account.addr)
   if (!isAlreadyImported) return ImportStatus.NotImported
 
-  const importedKeysForThisAcc = keys.filter((key) => account.associatedKeys.includes(key.addr))
+  // Merge the `associatedKeys` from the account instances found on the page,
+  // with the `associatedKeys` of the account from the extension storage. This
+  // ensures up-to-date keys, considering the account existing associatedKeys
+  // could be outdated  (associated keys of the smart accounts can change) or
+  // incomplete initial data (during the initial import, not all associatedKeys
+  // could have been fetched (for privacy).
+  const associatedKeys = Array.from(
+    new Set([
+      ...accountsOnPage
+        .filter((x) => x.account.addr === account.addr)
+        .flatMap((x) => x.account.associatedKeys),
+      ...account.associatedKeys
+    ])
+  )
+
+  const importedKeysForThisAcc = keys.filter((key) => associatedKeys.includes(key.addr))
   // Could be imported as a view only account (and therefore, without a key)
   if (!importedKeysForThisAcc.length) return ImportStatus.ImportedWithoutKey
 
@@ -206,12 +221,12 @@ export const getAccountImportStatus = ({
   // the same address with seed (private key).
   const associatedKeysAlreadyImported = importedKeysForThisAcc.filter(
     (key) =>
-      account.associatedKeys.includes(key.addr) &&
+      associatedKeys.includes(key.addr) &&
       // if key type is not provided, skip this part of the check on purpose
       (keyIteratorType ? key.type === keyIteratorType : true)
   )
   if (associatedKeysAlreadyImported.length) {
-    const associatedKeysNotImportedYet = account.associatedKeys.filter((keyAddr) =>
+    const associatedKeysNotImportedYet = associatedKeys.filter((keyAddr) =>
       associatedKeysAlreadyImported.some((x) => x.addr !== keyAddr)
     )
 
