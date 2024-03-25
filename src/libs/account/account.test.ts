@@ -217,7 +217,26 @@ describe('Account', () => {
         keyIteratorType: 'internal'
       })
     ).toBe(ImportStatus.ImportedWithDifferentKeys)
+  })
 
+  test('Should use the up-to-date associatedKeys from the the account found on page (not from the one in the extensions storage)', async () => {
+    const priv = {
+      addr: keyPublicAddress,
+      hash: dedicatedToOneSAPriv
+    }
+    const smartAccountWithOldAssociatedKeys = await getSmartAccount([priv])
+    const key: Key = {
+      addr: basicAccount.addr,
+      type: 'trezor',
+      dedicatedToOneSA: true,
+      meta: {
+        deviceId: '123',
+        deviceModel: '1',
+        hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
+        index: 0
+      },
+      isExternallyStored: false
+    }
     const anotherBasicAccount: Account = {
       // random ethereum address
       addr: '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045',
@@ -226,26 +245,35 @@ describe('Account', () => {
       creation: null
     }
 
+    const accountsOnPage: Omit<AccountOnPage, 'importStatus'>[] = [
+      {
+        account: { ...anotherBasicAccount, usedOnNetworks: [] },
+        slot: 1,
+        index: 0,
+        isLinked: false
+      },
+      {
+        account: {
+          ...smartAccountWithOldAssociatedKeys,
+          associatedKeys: [
+            ...smartAccountWithOldAssociatedKeys.associatedKeys,
+            // Include another associated key!
+            '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'
+          ],
+          usedOnNetworks: []
+        },
+        slot: 1,
+        index: 0,
+        isLinked: true
+      }
+    ]
+
     expect(
       getAccountImportStatus({
-        account: {
-          ...smartAccount,
-          associatedKeys: [...smartAccount.associatedKeys, anotherBasicAccount.addr]
-        },
-        alreadyImportedAccounts: [smartAccount],
+        account: smartAccountWithOldAssociatedKeys,
+        alreadyImportedAccounts: [smartAccountWithOldAssociatedKeys],
         keys: [key],
-        accountsOnPage: [
-          ...accountsOnPage,
-          {
-            account: {
-              ...anotherBasicAccount,
-              usedOnNetworks: []
-            },
-            slot: 2,
-            index: 1,
-            isLinked: false
-          }
-        ],
+        accountsOnPage,
         keyIteratorType: 'trezor'
       })
     ).toBe(ImportStatus.ImportedWithSomeOfTheKeys)
