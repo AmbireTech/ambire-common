@@ -4,6 +4,7 @@ import { isAddress } from 'ethers'
 
 import { normalize } from '@ensdomains/eth-ens-namehash'
 
+import { RPCProvider } from '../../interfaces/settings'
 import { getProvider } from '../provider'
 
 const ETH_ID = 'ethereum'
@@ -62,4 +63,8 @@ function getBip44Items(coinTicker) {
   return constants.filter((item) => item[1] === coinTicker)
 }
 
-export { resolveENSDomain, getBip44Items }
+async function reverseLookupEns(address: string, provider: RPCProvider) {
+  return provider.lookupAddress(address)
+}
+
+export { resolveENSDomain, getBip44Items, reverseLookupEns }

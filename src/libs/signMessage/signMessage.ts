@@ -240,7 +240,7 @@ export async function getExecuteSignature(
   // if we're authorizing calls for a v1 contract, we do a sign message
   // on the hash of the calls
   if (!accountState.isV2) {
-    const message = hexlify(accountOpSignableHash(accountOp))
+    const message = hexlify(accountOpSignableHash(accountOp, network.chainId))
     return wrapStandard(await signer.signMessage(message))
   }
 
@@ -249,7 +249,7 @@ export async function getExecuteSignature(
   const typedData = getTypedData(
     network.chainId,
     accountState.accountAddr,
-    hexlify(accountOpSignableHash(accountOp))
+    hexlify(accountOpSignableHash(accountOp, network.chainId))
   )
   return wrapStandard(await signer.signTypedData(typedData))
 }

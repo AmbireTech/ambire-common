@@ -2,7 +2,7 @@ import { ErrorRef } from 'controllers/eventEmitter/eventEmitter'
 import dotenv from 'dotenv'
 import { ZeroAddress } from 'ethers'
 
-import { geckoIdMapper, geckoNetworkIdMapper } from '../../consts/coingecko'
+import { geckoIdMapper } from '../../consts/coingecko'
 import { networks } from '../../consts/networks'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import {
@@ -92,7 +92,7 @@ export function shortenAddress(addr: string): string {
  */
 // @TODO this shouldn't be here, a more suitable place would be portfolio/gecko
 export async function getNativePrice(network: NetworkDescriptor, fetch: Function): Promise<number> {
-  const platformId = geckoIdMapper(ZeroAddress, network.id)
+  const platformId = geckoIdMapper(ZeroAddress, network)
   if (!platformId) {
     throw new Error(`getNativePrice: ${network.name} is not supported`)
   }
@@ -115,7 +115,7 @@ export async function getTokenInfo(
   options: any
 ): Promise<HumanizerFragment | null> {
   const network = networks.find((n: NetworkDescriptor) => n.id === humanizerSettings.networkId)
-  const platformId = geckoNetworkIdMapper(network!.id)
+  const platformId = network?.platformId
   try {
     const queryUrl = `${baseUrlCena}/coins/${platformId || network?.chainId}/contract/${address}`
     let response = await options.fetch(queryUrl)
