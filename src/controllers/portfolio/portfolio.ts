@@ -136,8 +136,8 @@ export class PortfolioController extends EventEmitter {
 
   async updateTokenPreferences(tokenPreferences: CustomToken[]) {
     this.tokenPreferences = tokenPreferences
-    await this.#storage.set('tokenPreferences', tokenPreferences)
     this.emitUpdate()
+    await this.#storage.set('tokenPreferences', tokenPreferences)
   }
 
   async #updateNetworksWithAssets(
