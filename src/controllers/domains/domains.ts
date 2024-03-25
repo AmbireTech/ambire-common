@@ -93,8 +93,7 @@ export class DomainsController extends EventEmitter {
     let udName = null
 
     try {
-      ensName =
-        (await reverseLookupEns(checksummedAddress, this.#providers.ethereum, this.#fetch)) || null
+      ensName = (await reverseLookupEns(checksummedAddress, this.#providers.ethereum)) || null
     } catch (e) {
       console.error('ENS reverse lookup unexpected error', e)
     }
