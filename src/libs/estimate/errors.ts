@@ -72,7 +72,6 @@ export function estimationErrorFormatted(error: Error): EstimateResult {
     feePaymentOptions: [],
     erc4337estimation: null,
     arbitrumL1FeeIfArbitrum: { noFee: 0n, withFee: 0n },
-    l1FeeAsL2Gas: 0n,
     error
   }
 }

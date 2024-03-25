@@ -1,6 +1,7 @@
 import chai, { expect } from 'chai'
 import chaiAssertionsCount from 'chai-assertions-count'
 import { ethers } from 'hardhat'
+
 import { Account } from '../src/interfaces/account'
 
 chai.use(chaiAssertionsCount)
@@ -44,6 +45,23 @@ const trezorSlot7v24337Deployed: Account = {
   initialPrivileges: []
 }
 
+const optyNotDeployed: Account = {
+  addr: '0x8519734ACE1fDD4BB500a82C207097b20c903ae8',
+  associatedKeys: ['0x3be4D4BdCE21A520cC5Fbf1AcaD6Cdc6ab0892e8'],
+  creation: {
+    factoryAddr: '0xa8202f888b9b2dfa5ceb2204865018133f6f179a',
+    bytecode:
+      '0x7f00000000000000000000000000000000000000000000000000000000000000027f7cb885ad24404f70d794383a888273b070f483f24ee0bb99b8a42a9cbe1315a0553d602d80604d3d3981f3363d3d373d3d3d363d730e370942ebe4d026d05d2cf477ff386338fc415a5af43d82803e903d91602b57fd5bf3',
+    salt: '0x0000000000000000000000000000000000000000000000000000000000000000'
+  },
+  initialPrivileges: [
+    [
+      '0x3be4D4BdCE21A520cC5Fbf1AcaD6Cdc6ab0892e8',
+      '0x0000000000000000000000000000000000000000000000000000000000000002'
+    ]
+  ]
+}
+
 export {
   pk1,
   pk2,
@@ -68,5 +86,6 @@ export {
   deploySalt,
   deployGasLimit,
   assertion,
-  trezorSlot7v24337Deployed
+  trezorSlot7v24337Deployed,
+  optyNotDeployed
 }

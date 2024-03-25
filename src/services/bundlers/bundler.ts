@@ -1,14 +1,18 @@
 /* eslint-disable no-restricted-syntax */
 /* eslint-disable import/no-extraneous-dependencies */
 
-import { Gas1559Recommendation } from 'libs/gasPrice/gasPrice'
 import fetch from 'node-fetch'
 
 import { StaticJsonRpcProvider } from '@ethersproject/providers'
 
+import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import { ERC_4337_ENTRYPOINT } from '../../../dist/src/consts/deploy'
+import { ENTRY_POINT_MARKER } from '../../consts/deploy'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
+import { Gas1559Recommendation } from '../../libs/gasPrice/gasPrice'
+import { privSlot } from '../../libs/proxyDeploy/deploy'
 import { UserOperation } from '../../libs/userOperation/types'
+import { getCleanUserOp } from '../../libs/userOperation/userOperation'
 
 require('dotenv').config()
 
@@ -123,5 +127,49 @@ export class Bundler {
     const url = `https://api.pimlico.io/health?apikey=${process.env.REACT_APP_PIMLICO_API_KEY}&chain-id=${chainId}`
     const result = await fetch(url)
     return result.status === 200
+  }
+
+  static async estimate(
+    userOperation: UserOperation,
+    network: NetworkDescriptor,
+    isDeployed: boolean
+  ): Promise<{
+    preVerificationGas: string
+    verificationGasLimit: string
+    callGasLimit: string
+  }> {
+    const url = `https://api.pimlico.io/v1/${network.id}/rpc?apikey=${process.env.REACT_APP_PIMLICO_API_KEY}`
+    const provider = new StaticJsonRpcProvider(url)
+
+    // we do state override to give the entry point permissions so we're
+    // able to perform an executeBySender estimation on the first call.
+    // We don't have another choice as:
+    // - we can't do spoof simulations as we can't control FROM
+    // - we can't rely on executeMultiple() as we need a valid signature
+    // to have the correct callData estimation
+    let stateOverride = {}
+    if (userOperation.requestType === 'activator' && userOperation.initCode === '0x') {
+      const stateDiff = {
+        [`0x${privSlot(0, 'address', ERC_4337_ENTRYPOINT, 'bytes32')}`]: ENTRY_POINT_MARKER
+      }
+      stateOverride = !isDeployed
+        ? {
+            [userOperation.sender]: {
+              code: AmbireAccount.binRuntime,
+              stateDiff
+            }
+          }
+        : {
+            [userOperation.sender]: {
+              stateDiff
+            }
+          }
+    }
+
+    return provider.send('eth_estimateUserOperationGas', [
+      getCleanUserOp(userOperation)[0],
+      ERC_4337_ENTRYPOINT,
+      stateOverride
+    ])
   }
 }

@@ -400,8 +400,7 @@ describe('SignAccountOp Controller ', () => {
         ],
         erc4337estimation: null,
         arbitrumL1FeeIfArbitrum: { noFee: 0n, withFee: 0n },
-        error: null,
-        l1FeeAsL2Gas: 0n
+        error: null
       },
       [
         {
@@ -500,8 +499,7 @@ describe('SignAccountOp Controller ', () => {
           }
         ],
         arbitrumL1FeeIfArbitrum: { noFee: 0n, withFee: 0n },
-        error: null,
-        l1FeeAsL2Gas: 0n
+        error: null
       },
       [
         {
@@ -628,8 +626,7 @@ describe('SignAccountOp Controller ', () => {
           }
         ],
         arbitrumL1FeeIfArbitrum: { noFee: 0n, withFee: 0n },
-        error: null,
-        l1FeeAsL2Gas: 0n
+        error: null
       },
       [
         {
@@ -737,8 +734,7 @@ describe('SignAccountOp Controller ', () => {
         ],
         erc4337estimation: null,
         arbitrumL1FeeIfArbitrum: { noFee: 0n, withFee: 0n },
-        error: null,
-        l1FeeAsL2Gas: 0n
+        error: null
       },
       [
         {
@@ -843,8 +839,7 @@ describe('SignAccountOp Controller ', () => {
         ],
         erc4337estimation: null,
         arbitrumL1FeeIfArbitrum: { noFee: 0n, withFee: 0n },
-        error: null,
-        l1FeeAsL2Gas: 0n
+        error: null
       },
       [
         {
@@ -912,7 +907,7 @@ describe('SignAccountOp Controller ', () => {
   //   const accOpInfo = createAccountOp(trezorSlot7v24337Deployed, 'avalanche')
   //   const accOp = accOpInfo.op
   //   const accountStates = await getAccountsInfo([trezorSlot7v24337Deployed])
-  //   const userOp = toUserOperation(
+  //   const userOp = getUserOperation(
   //     trezorSlot7v24337Deployed,
   //     accountStates[accOp.accountAddr][accOp.networkId],
   //     accOp

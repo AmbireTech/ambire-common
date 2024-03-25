@@ -558,11 +558,7 @@ export class SignAccountOpController extends EventEmitter {
           ? this.#estimation!.arbitrumL1FeeIfArbitrum.withFee
           : this.#estimation!.arbitrumL1FeeIfArbitrum.noFee
 
-        const l1FeeAsL2Gas =
-          this.#estimation!.l1FeeAsL2Gas > 0n
-            ? this.#estimation!.l1FeeAsL2Gas
-            : feeTokenEstimation.addedNative / baseFeeToDivide
-
+        const l1FeeAsL2Gas = feeTokenEstimation.addedNative / baseFeeToDivide
         const preVerificationGas = getPreVerificationGas(
           this.#userOperation,
           usesPaymaster,
@@ -906,11 +902,7 @@ export class SignAccountOpController extends EventEmitter {
         }
 
         if (feeTokenEstimation.addedNative > 0n) {
-          const l1FeeAsL2Gas =
-            this.#estimation!.l1FeeAsL2Gas > 0n
-              ? this.#estimation!.l1FeeAsL2Gas
-              : feeTokenEstimation.addedNative / gasFeePayment.baseFeeToDivide
-
+          const l1FeeAsL2Gas = feeTokenEstimation.addedNative / gasFeePayment.baseFeeToDivide
           userOperation.preVerificationGas = getPreVerificationGas(
             userOperation,
             usesPaymaster,

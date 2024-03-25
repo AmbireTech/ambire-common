@@ -18,6 +18,5 @@ export interface EstimateResult {
   }[]
   erc4337estimation: Erc4337estimation | null
   arbitrumL1FeeIfArbitrum: { noFee: bigint; withFee: bigint }
-  l1FeeAsL2Gas: bigint
   error: Error | null
 }

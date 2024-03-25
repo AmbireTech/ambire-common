@@ -21,10 +21,10 @@ import {
   getActivatorCall,
   getOneTimeNonce,
   getPaymasterSpoof,
+  getUserOperation,
   shouldIncludeActivatorCall,
   shouldUseOneTimeNonce,
-  shouldUsePaymaster,
-  toUserOperation
+  shouldUsePaymaster
 } from '../userOperation/userOperation'
 import { estimateCustomNetwork } from './customNetworks'
 import { catchEstimationFailure, estimationErrorFormatted, mapTxnErrMsg } from './errors'
@@ -159,7 +159,6 @@ export async function estimate(
       ],
       erc4337estimation: null,
       arbitrumL1FeeIfArbitrum: { noFee: 0n, withFee: 0n },
-      l1FeeAsL2Gas: 0n,
       error: result instanceof Error ? result : null
     }
   }
@@ -189,7 +188,7 @@ export async function estimate(
     filteredFeeTokens = []
   }
 
-  const userOp = is4337Broadcast ? toUserOperation(account, accountState, op) : null
+  const userOp = is4337Broadcast ? getUserOperation(account, accountState, op) : null
 
   // @L2s
   // craft the probableTxn that's going to be saved on the L1
@@ -382,17 +381,7 @@ export async function estimate(
   // we're touching the calculations for custom networks only
   // customlyEstimatedGas is 0 when the network is not custom
   const customlyEstimatedGas = estimations[3]
-  let l1FeeAsL2Gas = 0n
-  if (
-    isCustomNetwork &&
-    is4337Broadcast &&
-    network.isOptimistic &&
-    gasUsed < customlyEstimatedGas
-  ) {
-    l1FeeAsL2Gas = customlyEstimatedGas + l1GasEstimation.gasUsed
-  } else if (gasUsed < customlyEstimatedGas) {
-    gasUsed = customlyEstimatedGas
-  }
+  if (gasUsed < customlyEstimatedGas) gasUsed = customlyEstimatedGas
 
   // WARNING: calculateRefund will 100% NOT work in all cases we have
   // So a warning not to assume this is working
@@ -481,7 +470,6 @@ export async function estimate(
     feePaymentOptions: [...feeTokenOptions, ...nativeTokenOptions],
     erc4337estimation,
     arbitrumL1FeeIfArbitrum,
-    error: estimationError,
-    l1FeeAsL2Gas
+    error: estimationError
   }
 }
