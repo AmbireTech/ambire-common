@@ -1,3 +1,4 @@
+/* eslint-disable no-restricted-syntax */
 import { AbiCoder, Contract, formatUnits, getAddress, Interface, toBeHex } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
@@ -510,6 +511,37 @@ export class SignAccountOpController extends EventEmitter {
       this.#accountStates![this.accountOp!.accountAddr][this.accountOp!.networkId]
     )
 
+    const erc4337GasLimits = this.#estimation?.erc4337GasLimits
+    if (erc4337GasLimits) {
+      const speeds: FanSpeed[] = []
+      const usesPaymaster = shouldUsePaymaster(this.#network)
+
+      for (const [speed, speedValue] of Object.entries(erc4337GasLimits.gasPrice)) {
+        const simulatedGasLimit =
+          BigInt(erc4337GasLimits.callGasLimit) + BigInt(erc4337GasLimits.preVerificationGas)
+        const gasPrice = BigInt(speedValue.maxFeePerGas)
+        let amount = SignAccountOpController.getAmountAfterFeeTokenConvert(
+          simulatedGasLimit,
+          gasPrice,
+          nativeRatio,
+          this.feeTokenResult!.decimals,
+          0n
+        )
+        if (usesPaymaster) amount = this.#increaseFee(amount)
+
+        speeds.push({
+          type: speed as FeeSpeed,
+          simulatedGasLimit,
+          amount,
+          amountFormatted: formatUnits(amount, Number(this.feeTokenResult!.decimals)),
+          amountUsd: getTokenUsdAmount(this.feeTokenResult!, amount) ?? '',
+          gasPrice,
+          maxPriorityFeePerGas: BigInt(speedValue.maxPriorityFeePerGas)
+        })
+      }
+      return speeds
+    }
+
     return (this.gasPrices || []).map((gasRecommendation) => {
       let amount
       let simulatedGasLimit
@@ -534,22 +566,6 @@ export class SignAccountOpController extends EventEmitter {
         }
 
         amount = simulatedGasLimit * gasPrice + feeTokenEstimation.addedNative
-      } else if (this.#estimation?.erc4337GasLimits) {
-        // ERC 4337
-        // TODO<Bobby>: we should consider whether to include verificationGasLimit as well
-        simulatedGasLimit = BigInt(this.#estimation?.erc4337GasLimits.callGasLimit)
-        simulatedGasLimit += BigInt(this.#estimation?.erc4337GasLimits.preVerificationGas)
-
-        amount = SignAccountOpController.getAmountAfterFeeTokenConvert(
-          simulatedGasLimit,
-          gasPrice,
-          nativeRatio,
-          this.feeTokenResult!.decimals,
-          0n
-        )
-        if (shouldUsePaymaster(this.#network)) {
-          amount = this.#increaseFee(amount)
-        }
       } else if (this.paidBy !== this.accountOp!.accountAddr) {
         // Smart account, but EOA pays the fee
         simulatedGasLimit =
@@ -818,9 +834,7 @@ export class SignAccountOpController extends EventEmitter {
         userOperation.verificationGasLimit =
           this.#estimation!.erc4337GasLimits!.verificationGasLimit
         userOperation.maxFeePerGas = toBeHex(gasFeePayment.gasPrice)
-        userOperation.maxPriorityFeePerGas = toBeHex(
-          gasFeePayment.maxPriorityFeePerGas ?? gasFeePayment.gasPrice
-        )
+        userOperation.maxPriorityFeePerGas = toBeHex(gasFeePayment.maxPriorityFeePerGas!)
         const usesOneTimeNonce = shouldUseOneTimeNonce(userOperation)
         const usesPaymaster = shouldUsePaymaster(this.#network)
 

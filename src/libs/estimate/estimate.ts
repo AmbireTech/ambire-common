@@ -30,7 +30,7 @@ function getInnerCallFailure(
   if (estimationOp.success) return null
 
   let error = mapTxnErrMsg(estimationOp.err)
-  if (!error) error = `Estimation failed for ${op.accountAddr} on ${op.networkId}`
+  if (!error) error = 'Transaction reverted: invalid call in the bundle'
   return new Error(error, {
     cause: 'CALLS_FAILURE'
   })
