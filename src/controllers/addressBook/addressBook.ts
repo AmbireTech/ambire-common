@@ -61,8 +61,10 @@ export class AddressBookController extends EventEmitter {
     this.#storage.set('contacts', this.#manuallyAddedContacts)
   }
 
-  #getManuallyAddedContact(key: 'name' | 'address', value: string) {
-    return this.#manuallyAddedContacts.find((contact) => contact[key] === value)
+  #findManuallyAddedContactWithAddress(address: string) {
+    return this.#manuallyAddedContacts.find(
+      (contact) => contact.address.toLowerCase() === address.toLowerCase()
+    )
   }
 
   #findContactWithAddress(address: string) {
@@ -106,7 +108,7 @@ export class AddressBookController extends EventEmitter {
     const checksummedAddress = this.#getChecksummedAddress(address)
     const trimmedNewName = newName.trim()
 
-    if (!this.#getManuallyAddedContact('address', checksummedAddress)) {
+    if (!this.#findManuallyAddedContactWithAddress(checksummedAddress)) {
       this.emitError({
         message: "Can't rename contact that doesn't exist in the Address Book",
         level: 'minor',
@@ -131,7 +133,7 @@ export class AddressBookController extends EventEmitter {
   removeManuallyAddedContact(address: string) {
     const checksummedAddress = this.#getChecksummedAddress(address)
 
-    if (!this.#getManuallyAddedContact('address', checksummedAddress)) {
+    if (!this.#findManuallyAddedContactWithAddress(checksummedAddress)) {
       this.emitError({
         message: "Can't remove contact that doesn't exist in the Address Book",
         level: 'minor',
