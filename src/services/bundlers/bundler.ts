@@ -169,4 +169,17 @@ export class Bundler {
       stateOverride
     ])
   }
+
+  static async fetchGasPrices(network: NetworkDescriptor): Promise<{
+    slow: { maxFeePerGas: string; maxPriorityFeePerGas: string }
+    medium: { maxFeePerGas: string; maxPriorityFeePerGas: string }
+    fast: { maxFeePerGas: string; maxPriorityFeePerGas: string }
+  }> {
+    const url = `https://api.pimlico.io/v1/${network.id}/rpc?apikey=${process.env.REACT_APP_PIMLICO_API_KEY}`
+    const provider = new StaticJsonRpcProvider(url)
+    const results = await provider.send('pimlico_getUserOperationGasPrice', [])
+    results.medium = { ...results.standard }
+    delete results.standard
+    return results
+  }
 }

@@ -2,6 +2,12 @@ export interface Erc4337GasLimits {
   preVerificationGas: string
   verificationGasLimit: string
   callGasLimit: string
+  gasPrice: {
+    slow: { maxFeePerGas: string; maxPriorityFeePerGas: string }
+    medium: { maxFeePerGas: string; maxPriorityFeePerGas: string }
+    fast: { maxFeePerGas: string; maxPriorityFeePerGas: string }
+    ape: { maxFeePerGas: string; maxPriorityFeePerGas: string }
+  }
 }
 
 export interface EstimateResult {

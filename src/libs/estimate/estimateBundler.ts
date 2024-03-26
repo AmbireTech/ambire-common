@@ -95,27 +95,7 @@ export async function bundlerEstimate(
   network: NetworkDescriptor,
   feeTokens: FeeToken[]
 ): Promise<EstimateResult> {
-  const localOp = { ...op }
-  const feeToken = getFeeTokenForEstimate(feeTokens)
-  if (feeToken) localOp.feeCall = getFeeCall(feeToken, 1n)
-  const accountState = accountStates[localOp.accountAddr][localOp.networkId]
-  const userOp = getUserOperation(account, accountState, localOp)
-
-  // add fake data so simulation works
-  if (network.erc4337.hasPaymaster) userOp.paymasterAndData = getPaymasterDataForEstimate()
-
-  if (userOp.activatorCall) localOp.activatorCall = userOp.activatorCall
-  const userOps = getUserOpsForEstimate(userOp, localOp, accountState.isDeployed)
-  const estimations = userOps.map((uOp) =>
-    Bundler.estimate(uOp, network, accountState.isDeployed).catch((e: any) =>
-      mapError(
-        new Error(
-          e.error && e.error.message ? e.error.message : 'Estimation failed with unknown reason'
-        )
-      )
-    )
-  )
-
+  // build the fee payment options as we'll return them even if there's an error
   const feePaymentOptions = feeTokens.map((token: FeeToken) => {
     return {
       address: token.address,
@@ -135,6 +115,35 @@ export async function bundlerEstimate(
     }
   })
 
+  const localOp = { ...op }
+  const feeToken = getFeeTokenForEstimate(feeTokens)
+  if (feeToken) localOp.feeCall = getFeeCall(feeToken, 1n)
+  const accountState = accountStates[localOp.accountAddr][localOp.networkId]
+  const userOp = getUserOperation(account, accountState, localOp)
+  const gasPrices = await Bundler.fetchGasPrices(network).catch(
+    () => new Error('Could not fetch gas prices, retrying...')
+  )
+  if (gasPrices instanceof Error) return estimationErrorFormatted(gasPrices, feePaymentOptions)
+
+  // use medium for the gas limit estimation
+  userOp.maxFeePerGas = gasPrices.medium.maxFeePerGas
+  userOp.maxPriorityFeePerGas = gasPrices.medium.maxPriorityFeePerGas
+
+  // add fake data so simulation works
+  if (network.erc4337.hasPaymaster) userOp.paymasterAndData = getPaymasterDataForEstimate()
+
+  if (userOp.activatorCall) localOp.activatorCall = userOp.activatorCall
+  const userOps = getUserOpsForEstimate(userOp, localOp, accountState.isDeployed)
+  const estimations = userOps.map((uOp) =>
+    Bundler.estimate(uOp, network, accountState.isDeployed).catch((e: any) =>
+      mapError(
+        new Error(
+          e.error && e.error.message ? e.error.message : 'Estimation failed with unknown reason'
+        )
+      )
+    )
+  )
+
   const results = await Promise.all(estimations)
   for (let i = 0; i < results.length; i++) {
     if (results[i] instanceof Error)
@@ -153,10 +162,12 @@ export async function bundlerEstimate(
     gasData.verificationGasLimit += BigInt(estimate.verificationGasLimit)
   }
 
-  const erc4337GasLimits = {
-    preVerificationGas: toBeHex(gasData.preVerificationGas),
-    verificationGasLimit: toBeHex(gasData.verificationGasLimit),
-    callGasLimit: toBeHex(gasData.callGasLimit)
+  const apeMaxFee = BigInt(gasPrices.fast.maxFeePerGas) + BigInt(gasPrices.fast.maxFeePerGas) / 5n
+  const apePriority =
+    BigInt(gasPrices.fast.maxPriorityFeePerGas) + BigInt(gasPrices.fast.maxPriorityFeePerGas) / 5n
+  const ape = {
+    maxFeePerGas: toBeHex(apeMaxFee),
+    maxPriorityFeePerGas: toBeHex(apePriority)
   }
 
   return {
@@ -165,7 +176,12 @@ export async function bundlerEstimate(
     // if the request type is not standard, it will completely change
     nonce: Number(BigInt(userOp.nonce).toString()),
     feePaymentOptions,
-    erc4337GasLimits,
+    erc4337GasLimits: {
+      preVerificationGas: toBeHex(gasData.preVerificationGas),
+      verificationGasLimit: toBeHex(gasData.verificationGasLimit),
+      callGasLimit: toBeHex(gasData.callGasLimit),
+      gasPrice: { ...gasPrices, ape }
+    },
     // the bundler handles this
     arbitrumL1FeeIfArbitrum: { noFee: 0n, withFee: 0n },
     error: null
