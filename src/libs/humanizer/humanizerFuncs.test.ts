@@ -13,7 +13,7 @@ import { uniswapHumanizer } from './modules/Uniswap'
 import { parseCalls } from './parsers'
 
 import humanizerInfo from '../../consts/humanizer/humanizerInfo.json'
-import { combineKnownHumanizerInfo, HUMANIZER_META_KEY } from '.'
+import { HUMANIZER_META_KEY, integrateFragments } from '.'
 import { produceMemoryStore } from '../../../test/helpers'
 import { humanizerMetaParsing } from './parsers/humanizerMetaParsing'
 
@@ -337,11 +337,10 @@ describe('module tests', () => {
     expect(asyncOps.length).toBe(1)
     expect(asyncOps[0]).toMatchObject({ key: '0x095ea7b3' })
 
-    accountOp.humanizerMeta = combineKnownHumanizerInfo(
-      await storage.get(HUMANIZER_META_KEY, { knownAddresses: {}, abis: { NO_ABI: {} } }),
+    accountOp.humanizerMeta = integrateFragments(
       { abis: { NO_ABI: {} }, knownAddresses: {} },
       asyncOps
-    ).toStore
+    )
 
     // @TODO finish the leraning funvtion
     asyncOps.forEach((a) => {

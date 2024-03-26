@@ -19,6 +19,8 @@ dotenv.config()
 
 const baseUrlCena = 'https://cena.ambire.com/api/v3'
 
+export const HUMANIZER_META_KEY = 'HumanizerMetaV2'
+
 export function getWarning(
   content: string,
   level: HumanizerWarning['level'] = 'caution'
@@ -214,4 +216,25 @@ export function getKnownToken(
   address: string
 ): { decimals: number; symbol: string } | undefined {
   return humanizerMeta?.knownAddresses?.[address.toLowerCase()]?.token
+}
+
+export const integrateFragments = (
+  _humanizerMeta: HumanizerMeta,
+  fragments: HumanizerFragment[]
+): HumanizerMeta => {
+  const humanizerMeta = _humanizerMeta
+  fragments.forEach((f) => {
+    // @TODO rename types to singular  also add enum
+    if (f.type === 'abis') humanizerMeta.abis[f.key] = f.value
+    if (f.type === 'selector') humanizerMeta.abis.NO_ABI[f.key] = f.value
+    if (f.type === 'knownAddresses')
+      humanizerMeta.knownAddresses[f.key] = { ...humanizerMeta.knownAddresses[f.key], ...f.value }
+    if (f.type === 'token') {
+      humanizerMeta.knownAddresses[f.key] = {
+        ...humanizerMeta.knownAddresses?.[f.key],
+        token: f.value
+      }
+    }
+  })
+  return humanizerMeta
 }
