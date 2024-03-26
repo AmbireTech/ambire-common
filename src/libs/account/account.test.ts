@@ -238,17 +238,29 @@ describe('Account', () => {
       },
       isExternallyStored: false
     }
-    const anotherOfTheSmartAccountKeys: Account = {
+    const anotherBasicAccount: Account = {
       // random ethereum address
       addr: '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045',
       associatedKeys: ['0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'],
       initialPrivileges: [],
       creation: null
     }
+    const anotherBasicAccountKey: Key = {
+      addr: anotherBasicAccount.addr,
+      type: 'trezor',
+      dedicatedToOneSA: true,
+      meta: {
+        deviceId: '123',
+        deviceModel: '1',
+        hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
+        index: 1
+      },
+      isExternallyStored: false
+    }
 
     const accountsOnPageWithUpToDateAssociatedKeys: Omit<AccountOnPage, 'importStatus'>[] = [
       {
-        account: { ...anotherOfTheSmartAccountKeys, usedOnNetworks: [] },
+        account: { ...anotherBasicAccount, usedOnNetworks: [] },
         slot: 1,
         index: 0,
         isLinked: false
@@ -259,7 +271,7 @@ describe('Account', () => {
           associatedKeys: [
             ...smartAccountWithIncompleteAssociatedKeys.associatedKeys,
             // Include another (a new one) associated key!
-            anotherOfTheSmartAccountKeys.addr
+            anotherBasicAccountKey.addr
           ],
           usedOnNetworks: []
         },
@@ -274,6 +286,19 @@ describe('Account', () => {
         account: smartAccountWithIncompleteAssociatedKeys,
         alreadyImportedAccounts: [smartAccountWithIncompleteAssociatedKeys],
         keys: [oneOfTheSmartAccountKeys],
+        accountsOnPage: accountsOnPageWithUpToDateAssociatedKeys,
+        keyIteratorType: 'trezor'
+      })
+    ).toBe(ImportStatus.ImportedWithSomeOfTheKeys)
+
+    expect(
+      getAccountImportStatus({
+        account: smartAccountWithIncompleteAssociatedKeys,
+        alreadyImportedAccounts: [smartAccountWithIncompleteAssociatedKeys],
+        // Similar scenario, but both keys already previously imported!
+        // Should still return ImportedWithSomeOfTheKeys,
+        // because the associated keys are not up-to-date.
+        keys: [oneOfTheSmartAccountKeys, anotherBasicAccountKey],
         accountsOnPage: accountsOnPageWithUpToDateAssociatedKeys,
         keyIteratorType: 'trezor'
       })
