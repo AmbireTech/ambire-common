@@ -1,12 +1,15 @@
-import { Interface, toBeHex, ZeroAddress } from 'ethers'
+import { concat, hexlify, Interface, toBeHex, ZeroAddress } from 'ethers'
 import { NetworkDescriptor } from 'interfaces/networkDescriptor'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
-import { AMBIRE_PAYMASTER } from '../../consts/deploy'
+import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFactory.json'
+import AmbireAccountNoRevert from '../../../contracts/compiled/AmbireAccountNoRevert.json'
+import { AMBIRE_ACCOUNT_FACTORY, AMBIRE_PAYMASTER } from '../../consts/deploy'
 import { Account, AccountStates } from '../../interfaces/account'
 import { Bundler } from '../../services/bundlers/bundler'
 import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
 import { getFeeCall } from '../calls/calls'
+import { getAmbireAccountAddress } from '../proxyDeploy/getAmbireAddressTwo'
 import { UserOperation } from '../userOperation/types'
 import {
   getOneTimeNonce,
@@ -36,6 +39,14 @@ function getUserOpsForEstimate(
     userOps.push(copy)
 
     // this one will have initCode but empty callData. Goal: deploy estimate
+    const factoryInterface = new Interface(AmbireAccountFactory.abi)
+    uOp.sender = getAmbireAccountAddress(AMBIRE_ACCOUNT_FACTORY, AmbireAccountNoRevert.bin)
+    uOp.initCode = hexlify(
+      concat([
+        AMBIRE_ACCOUNT_FACTORY,
+        factoryInterface.encodeFunctionData('deploy', [AmbireAccountNoRevert.bin, toBeHex(0, 32)])
+      ])
+    )
     uOp.callData = ambireAccount.encodeFunctionData('executeMultiple', [[]])
     uOp.nonce = getOneTimeNonce(uOp)
   } else {

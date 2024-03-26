@@ -5,7 +5,7 @@ import fetch from 'node-fetch'
 
 import { StaticJsonRpcProvider } from '@ethersproject/providers'
 
-import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
+import AmbireAccountNoReverts from '../../../contracts/compiled/AmbireAccountNoRevert.json'
 import { ERC_4337_ENTRYPOINT } from '../../../dist/src/consts/deploy'
 import { ENTRY_POINT_MARKER } from '../../consts/deploy'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
@@ -152,7 +152,7 @@ export class Bundler {
       stateOverride = !isDeployed
         ? {
             [userOperation.sender]: {
-              code: AmbireAccount.binRuntime,
+              code: AmbireAccountNoReverts.binRuntime,
               stateDiff
             }
           }

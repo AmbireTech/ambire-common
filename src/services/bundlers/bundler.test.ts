@@ -1,15 +1,19 @@
 /* eslint-disable @typescript-eslint/no-floating-promises */
 
-import { Interface, JsonRpcProvider, parseEther } from 'ethers'
+import { concat, hexlify, Interface, JsonRpcProvider, parseEther, toBeHex } from 'ethers'
 
 import { describe, expect, test } from '@jest/globals'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
+import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFactory.json'
+import AmbireAccountNoRevert from '../../../contracts/compiled/AmbireAccountNoRevert.json'
 import { optyNotDeployed } from '../../../test/config'
 import { getAccountsInfo } from '../../../test/helpers'
+import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { networks } from '../../consts/networks'
 import { getSpoof } from '../../libs/account/account'
 import { AccountOp, getSignableCalls } from '../../libs/accountOp/accountOp'
+import { getAmbireAccountAddress } from '../../libs/proxyDeploy/getAmbireAddressTwo'
 import {
   getOneTimeNonce,
   getPaymasterDataForEstimate,
@@ -90,8 +94,17 @@ describe('Bundler tests', () => {
     const accountStates = await getAccountsInfo(usedNetworks, providers, [optyNotDeployed])
     const accountState = accountStates[opOptimism.accountAddr][opOptimism.networkId]
     const userOp = getUserOperation(optyNotDeployed, accountState, opOptimism)
-    // just use af fake paymasterAndData, no need to be the spoof exactly
+    const factoryInterface = new Interface(AmbireAccountFactory.abi)
+    // put a sender with initCode that don't revert
+    userOp.sender = getAmbireAccountAddress(AMBIRE_ACCOUNT_FACTORY, AmbireAccountNoRevert.bin)
+    userOp.initCode = hexlify(
+      concat([
+        AMBIRE_ACCOUNT_FACTORY,
+        factoryInterface.encodeFunctionData('deploy', [AmbireAccountNoRevert.bin, toBeHex(0, 32)])
+      ])
+    )
     const ambireInterface = new Interface(AmbireAccount.abi)
+    // empty calldata as we're targeting deploy estimate only
     userOp.callData = ambireInterface.encodeFunctionData('executeMultiple', [[]])
     userOp.paymasterAndData = getPaymasterDataForEstimate()
     userOp.nonce = getOneTimeNonce(userOp)
