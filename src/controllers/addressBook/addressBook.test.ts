@@ -65,6 +65,16 @@ describe('AddressBookController', () => {
       '0x31800a810A2d9C3315dc714e1Eb988bd6A641eF0'
     )
   })
+  it('contact address is checksummed when added', () => {
+    addressBookController.addContact(
+      'Jeff',
+      '0x64c5f3c58E024170166F85aFE6e291088a2c2968'.toLowerCase()
+    )
+
+    expect(getContactFromName('Jeff')?.address).toEqual(
+      '0x64c5f3c58E024170166F85aFE6e291088a2c2968'
+    )
+  })
   it('error when removing non-existing contact', () => {
     addressBookController.removeManuallyAddedContact('0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045')
 
@@ -73,6 +83,12 @@ describe('AddressBookController', () => {
   it('error when adding contact with already existing address', () => {
     addressBookController.addContact('tony', '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045')
     addressBookController.addContact('tony', '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045')
+
+    expect(mockEmitError).toHaveBeenCalledTimes(errors)
+  })
+  it('error when adding contact with already existing address but lowercased', () => {
+    addressBookController.addContact('tony', '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045')
+    addressBookController.addContact('tony', '0xd8da6bf26964af9d7eed9e03e53415d37aa96045')
 
     expect(mockEmitError).toHaveBeenCalledTimes(errors)
   })
