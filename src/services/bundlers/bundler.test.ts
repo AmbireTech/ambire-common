@@ -67,7 +67,7 @@ describe('Bundler tests', () => {
         getSignableCalls(opOptimism)
       ])
       userOp.signature = getSigForCalculations()
-      const bundlerEstimate = await Bundler.estimate(userOp, optimism, false)
+      const bundlerEstimate = await Bundler.estimate(userOp, optimism)
       expect(bundlerEstimate).toHaveProperty('preVerificationGas')
       expect(bundlerEstimate).toHaveProperty('verificationGasLimit')
       expect(bundlerEstimate).toHaveProperty('callGasLimit')
@@ -109,7 +109,7 @@ describe('Bundler tests', () => {
     userOp.paymasterAndData = getPaymasterDataForEstimate()
     userOp.nonce = getOneTimeNonce(userOp)
 
-    const bundlerEstimate = await Bundler.estimate(userOp, optimism, false)
+    const bundlerEstimate = await Bundler.estimate(userOp, optimism)
     expect(bundlerEstimate).toHaveProperty('preVerificationGas')
     expect(bundlerEstimate).toHaveProperty('verificationGasLimit')
     expect(bundlerEstimate).toHaveProperty('callGasLimit')
@@ -148,7 +148,7 @@ describe('Bundler tests', () => {
     // this signature is invalid and estimation will fail because of it
     userOp.signature = getSpoof(optyNotDeployed)
 
-    await Bundler.estimate(userOp, optimism, false).catch((e) => {
+    await Bundler.estimate(userOp, optimism).catch((e) => {
       expect(e).toHaveProperty('error')
       expect(e.error).toHaveProperty('message')
     })

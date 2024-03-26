@@ -132,8 +132,7 @@ export class Bundler {
 
   static async estimate(
     userOperation: UserOperation,
-    network: NetworkDescriptor,
-    isDeployed: boolean
+    network: NetworkDescriptor
   ): Promise<Erc4337GasLimits> {
     const url = `https://api.pimlico.io/v1/${network.id}/rpc?apikey=${process.env.REACT_APP_PIMLICO_API_KEY}`
     const provider = new StaticJsonRpcProvider(url)
@@ -149,18 +148,12 @@ export class Bundler {
       const stateDiff = {
         [`0x${privSlot(0, 'address', ERC_4337_ENTRYPOINT, 'bytes32')}`]: ENTRY_POINT_MARKER
       }
-      stateOverride = !isDeployed
-        ? {
-            [userOperation.sender]: {
-              code: AmbireAccountNoReverts.binRuntime,
-              stateDiff
-            }
-          }
-        : {
-            [userOperation.sender]: {
-              stateDiff
-            }
-          }
+      stateOverride = {
+        [userOperation.sender]: {
+          code: AmbireAccountNoReverts.binRuntime,
+          stateDiff
+        }
+      }
     }
 
     return provider.send('eth_estimateUserOperationGas', [

@@ -135,7 +135,7 @@ export async function bundlerEstimate(
   if (userOp.activatorCall) localOp.activatorCall = userOp.activatorCall
   const userOps = getUserOpsForEstimate(userOp, localOp, accountState.isDeployed)
   const estimations = userOps.map((uOp) =>
-    Bundler.estimate(uOp, network, accountState.isDeployed).catch((e: any) =>
+    Bundler.estimate(uOp, network).catch((e: any) =>
       mapError(
         new Error(
           e.error && e.error.message ? e.error.message : 'Estimation failed with unknown reason'
