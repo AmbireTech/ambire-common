@@ -196,13 +196,19 @@ export const getAccountImportStatus = ({
   const isAlreadyImported = alreadyImportedAccounts.some(({ addr }) => addr === account.addr)
   if (!isAlreadyImported) return ImportStatus.NotImported
 
+  // Check if the account has been imported with at least one of the keys
+  // that the account was originally associated with, when it was imported.
+  const importedKeysForThisAcc = keys.filter((key) => account.associatedKeys.includes(key.addr))
+  // Could be imported as a view only account (and therefore, without a key)
+  if (!importedKeysForThisAcc.length) return ImportStatus.ImportedWithoutKey
+
   // Merge the `associatedKeys` from the account instances found on the page,
   // with the `associatedKeys` of the account from the extension storage. This
   // ensures up-to-date keys, considering the account existing associatedKeys
   // could be outdated  (associated keys of the smart accounts can change) or
   // incomplete initial data (during the initial import, not all associatedKeys
   // could have been fetched (for privacy).
-  const associatedKeys = Array.from(
+  const mergedAssociatedKeys = Array.from(
     new Set([
       ...accountsOnPage
         .filter((x) => x.account.addr === account.addr)
@@ -211,22 +217,18 @@ export const getAccountImportStatus = ({
     ])
   )
 
-  const importedKeysForThisAcc = keys.filter((key) => associatedKeys.includes(key.addr))
-  // Could be imported as a view only account (and therefore, without a key)
-  if (!importedKeysForThisAcc.length) return ImportStatus.ImportedWithoutKey
-
   // Same key in this context means not only the same key address, but the
   // same type too. Because user can opt in to import same key address with
   // many different hardware wallets (Trezor, Ledger, GridPlus, etc.) or
   // the same address with seed (private key).
   const associatedKeysAlreadyImported = importedKeysForThisAcc.filter(
     (key) =>
-      associatedKeys.includes(key.addr) &&
+      mergedAssociatedKeys.includes(key.addr) &&
       // if key type is not provided, skip this part of the check on purpose
       (keyIteratorType ? key.type === keyIteratorType : true)
   )
   if (associatedKeysAlreadyImported.length) {
-    const associatedKeysNotImportedYet = associatedKeys.filter((keyAddr) =>
+    const associatedKeysNotImportedYet = mergedAssociatedKeys.filter((keyAddr) =>
       associatedKeysAlreadyImported.some((x) => x.addr !== keyAddr)
     )
 
@@ -234,7 +236,22 @@ export const getAccountImportStatus = ({
       associatedKeysNotImportedYet.includes(x.account.addr)
     )
 
-    return notImportedYetKeysExistInPage
+    if (notImportedYetKeysExistInPage) return ImportStatus.ImportedWithSomeOfTheKeys
+
+    // Could happen when user imports a smart account with one associated key.
+    // Then imports an Basic account. Then makes the Basic account a second key
+    // for the smart account. In this case, both associated keys of the smart
+    // account are imported, but the smart account's `associatedKeys` are incomplete.
+    const associatedKeysFoundOnPageAreDifferent = accountsOnPage
+      .filter((x) => x.account.addr === account.addr)
+      .some((x) => {
+        const pageKeysSet = new Set(x.account.associatedKeys)
+        const accountKeysSet = new Set(account.associatedKeys)
+
+        return [...pageKeysSet].every((k) => accountKeysSet.has(k))
+      })
+
+    return associatedKeysFoundOnPageAreDifferent
       ? ImportStatus.ImportedWithSomeOfTheKeys
       : ImportStatus.ImportedWithTheSameKeys
   }
