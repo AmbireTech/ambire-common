@@ -217,8 +217,28 @@ describe('Account', () => {
         keyIteratorType: 'internal'
       })
     ).toBe(ImportStatus.ImportedWithDifferentKeys)
+  })
 
-    const anotherBasicAccount: Account = {
+  test('Should use the up-to-date associatedKeys from the the account found on page (not from the one in the extensions storage)', async () => {
+    const priv = {
+      addr: keyPublicAddress,
+      hash: dedicatedToOneSAPriv
+    }
+    const smartAccountWithIncompleteAssociatedKeys = await getSmartAccount([priv])
+
+    const oneOfTheSmartAccountKeys: Key = {
+      addr: basicAccount.addr,
+      type: 'trezor',
+      dedicatedToOneSA: true,
+      meta: {
+        deviceId: '123',
+        deviceModel: '1',
+        hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
+        index: 0
+      },
+      isExternallyStored: false
+    }
+    const anotherOfTheSmartAccountKeys: Account = {
       // random ethereum address
       addr: '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045',
       associatedKeys: ['0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'],
@@ -226,26 +246,35 @@ describe('Account', () => {
       creation: null
     }
 
+    const accountsOnPageWithUpToDateAssociatedKeys: Omit<AccountOnPage, 'importStatus'>[] = [
+      {
+        account: { ...anotherOfTheSmartAccountKeys, usedOnNetworks: [] },
+        slot: 1,
+        index: 0,
+        isLinked: false
+      },
+      {
+        account: {
+          ...smartAccountWithIncompleteAssociatedKeys,
+          associatedKeys: [
+            ...smartAccountWithIncompleteAssociatedKeys.associatedKeys,
+            // Include another (a new one) associated key!
+            anotherOfTheSmartAccountKeys.addr
+          ],
+          usedOnNetworks: []
+        },
+        slot: 1,
+        index: 0,
+        isLinked: true
+      }
+    ]
+
     expect(
       getAccountImportStatus({
-        account: {
-          ...smartAccount,
-          associatedKeys: [...smartAccount.associatedKeys, anotherBasicAccount.addr]
-        },
-        alreadyImportedAccounts: [smartAccount],
-        keys: [key],
-        accountsOnPage: [
-          ...accountsOnPage,
-          {
-            account: {
-              ...anotherBasicAccount,
-              usedOnNetworks: []
-            },
-            slot: 2,
-            index: 1,
-            isLinked: false
-          }
-        ],
+        account: smartAccountWithIncompleteAssociatedKeys,
+        alreadyImportedAccounts: [smartAccountWithIncompleteAssociatedKeys],
+        keys: [oneOfTheSmartAccountKeys],
+        accountsOnPage: accountsOnPageWithUpToDateAssociatedKeys,
         keyIteratorType: 'trezor'
       })
     ).toBe(ImportStatus.ImportedWithSomeOfTheKeys)
