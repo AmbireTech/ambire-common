@@ -150,16 +150,12 @@ export async function bundlerEstimate(
       return estimationErrorFormatted(results[i] as Error, feePaymentOptions)
   }
 
+  const callDataRes = results[0] as Erc4337GasLimits
+  const verificationRes = results[results.length - 1] as Erc4337GasLimits
   const gasData = {
-    preVerificationGas: 0n,
-    verificationGasLimit: 0n,
-    callGasLimit: 0n
-  }
-  for (let i = 0; i < results.length; i++) {
-    const estimate = results[i] as Erc4337GasLimits
-    gasData.preVerificationGas += BigInt(estimate.preVerificationGas)
-    gasData.callGasLimit += BigInt(estimate.callGasLimit)
-    gasData.verificationGasLimit += BigInt(estimate.verificationGasLimit)
+    preVerificationGas: BigInt(verificationRes.preVerificationGas),
+    verificationGasLimit: BigInt(verificationRes.verificationGasLimit),
+    callGasLimit: BigInt(callDataRes.callGasLimit)
   }
 
   const apeMaxFee = BigInt(gasPrices.fast.maxFeePerGas) + BigInt(gasPrices.fast.maxFeePerGas) / 5n

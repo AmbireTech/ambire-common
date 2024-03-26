@@ -178,8 +178,10 @@ export class Bundler {
     const url = `https://api.pimlico.io/v1/${network.id}/rpc?apikey=${process.env.REACT_APP_PIMLICO_API_KEY}`
     const provider = new StaticJsonRpcProvider(url)
     const results = await provider.send('pimlico_getUserOperationGasPrice', [])
-    results.medium = { ...results.standard }
-    delete results.standard
-    return results
+    return {
+      slow: results.slow,
+      medium: results.standard,
+      fast: results.fast
+    }
   }
 }
