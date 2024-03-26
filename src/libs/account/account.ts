@@ -248,7 +248,7 @@ export const getAccountImportStatus = ({
         const pageKeysSet = new Set(x.account.associatedKeys)
         const accountKeysSet = new Set(account.associatedKeys)
 
-        return [...pageKeysSet].every((k) => accountKeysSet.has(k))
+        return ![...pageKeysSet].every((k) => accountKeysSet.has(k))
       })
 
     return associatedKeysFoundOnPageAreDifferent
