@@ -16,7 +16,15 @@ type Contact = {
 export type Contacts = Array<Contact>
 
 /**
- * Address Book controller
+ * AddressBook controller
+ * @class AddressBookController
+ * @extends EventEmitter
+ * @description Responsible for handling the Address Book.
+ * @property contacts- The list of contacts in the Address Book. (including accounts imported in the wallet, excluding the selected account)
+ * @method update- Currently only updates the selected account.
+ * @method addContact- Adds a new contact to the Address Book.
+ * @method renameManuallyAddedContact- Renames a manually added contact in the Address Book.
+ * @method removeManuallyAddedContact- Removes a manually added contact from the Address Book.
  */
 
 export class AddressBookController extends EventEmitter {
