@@ -33,6 +33,7 @@ import {
   permit2Module
 } from './typedMessageModules'
 import { addFragsToLazyStore, lazyReadHumanizerMeta } from './lazyStorage'
+import { HUMANIZER_META_KEY, integrateFragments } from './utils'
 
 // from most generic to least generic
 // the final humanization is the final triggered module
@@ -80,6 +81,7 @@ const sharedHumanization = async <InputDataType extends AccountOp | Message>(
   callback: ((response: IrCall[]) => void) | ((response: IrMessage) => void),
   emitError: (err: ErrorRef) => void
 ) => {
+  const nonGlobalFragments: HumanizerFragment[] = []
   let humanizerFragments: HumanizerFragment[] = []
   let op: AccountOp
   let irCalls
@@ -88,12 +90,9 @@ const sharedHumanization = async <InputDataType extends AccountOp | Message>(
   if ('calls' in data) {
     op = parse(stringify(data))
   }
-
   for (let i = 0; i <= 3; i++) {
-    // @TODO should we always do this
-
-    await addFragsToLazyStore(storage, humanizerFragments)
-    const toBeUsed = await lazyReadHumanizerMeta(storage, { nocache: i === 0 })
+    let toBeUsed = await lazyReadHumanizerMeta(storage)
+    toBeUsed = integrateFragments(toBeUsed, nonGlobalFragments)
 
     if ('calls' in data) {
       op!.humanizerMeta = toBeUsed
@@ -128,8 +127,8 @@ const sharedHumanization = async <InputDataType extends AccountOp | Message>(
       (frags) => frags.filter((x) => x) as HumanizerFragment[]
     )
     const globalFragments = humanizerFragments.filter((f) => f.isGlobal)
+    nonGlobalFragments.push(...humanizerFragments.filter((f) => !f.isGlobal))
     await addFragsToLazyStore(storage, globalFragments)
-    // await storage.set(HUMANIZER_META_KEY, toStore)
     if (!humanizerFragments.length) return
   }
 }
