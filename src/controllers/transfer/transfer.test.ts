@@ -1,4 +1,3 @@
-import { JsonRpcProvider } from 'ethers'
 import fetch from 'node-fetch'
 
 import { expect } from '@jest/globals'
@@ -9,7 +8,7 @@ import humanizerInfo from '../../consts/humanizer/humanizerInfo.json'
 import { networks } from '../../consts/networks'
 import { HumanizerMeta } from '../../libs/humanizer/interfaces'
 import { Portfolio } from '../../libs/portfolio'
-import { initRpcProviders } from '../../services/provider'
+import { getRpcProvider, initRpcProviders } from '../../services/provider'
 import { SettingsController } from '../settings/settings'
 import { TransferController } from './transfer'
 
@@ -18,8 +17,8 @@ const polygon = networks.find((x) => x.id === 'polygon')
 
 if (!ethereum || !polygon) throw new Error('Failed to find ethereum in networks')
 
-const provider = new JsonRpcProvider(ethereum.rpcUrl)
-const polygonProvider = new JsonRpcProvider(polygon.rpcUrl)
+const provider = getRpcProvider(ethereum.rpcUrls, ethereum.chainId)
+const polygonProvider = getRpcProvider(polygon.rpcUrls, polygon.chainId)
 // Required for ENS resolution
 initRpcProviders({
   [ethereum.id]: provider,

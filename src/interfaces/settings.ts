@@ -1,4 +1,4 @@
-import { JsonRpcProvider } from 'ethers'
+import { FallbackProvider, JsonRpcProvider } from 'ethers'
 
 import { Account } from './account'
 import { Key } from './keystore'
@@ -20,7 +20,7 @@ export type KeyPreferences = {
 
 export type NetworkPreference = {
   name?: string
-  rpcUrl?: string
+  rpcUrls?: string[]
   chainId?: bigint
   nativeAssetSymbol?: string
   explorerUrl?: string
@@ -33,7 +33,7 @@ export type NetworkPreference = {
 
 export type CustomNetwork = {
   name: string
-  rpcUrl: string
+  rpcUrls: string[]
   chainId: bigint
   nativeAssetSymbol: string
   explorerUrl: string
@@ -59,6 +59,6 @@ export type NetworkPreferences = {
   [key in NetworkDescriptor['id']]: NetworkPreference | CustomNetwork
 }
 
-export type RPCProvider = JsonRpcProvider & { isWorking?: boolean }
+export type RPCProvider = (JsonRpcProvider | FallbackProvider) & { isWorking?: boolean }
 
 export type RPCProviders = { [networkId: NetworkDescriptor['id']]: RPCProvider }

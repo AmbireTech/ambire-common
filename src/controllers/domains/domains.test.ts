@@ -1,14 +1,14 @@
-import { JsonRpcProvider } from 'ethers'
 // @ts-ignore
 import fetch from 'node-fetch'
 
 import { expect, jest } from '@jest/globals'
 
 import { networks } from '../../consts/networks'
+import { getRpcProvider } from '../../services/provider'
 import { DomainsController } from './domains'
 
 const providers = Object.fromEntries(
-  networks.map((network) => [network.id, new JsonRpcProvider(network.rpcUrl)])
+  networks.map((network) => [network.id, getRpcProvider(network.rpcUrls, network.chainId)])
 )
 
 const ENS = {

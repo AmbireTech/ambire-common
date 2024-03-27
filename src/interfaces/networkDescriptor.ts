@@ -49,7 +49,7 @@ export interface NetworkDescriptor {
   name: string
   nativeAssetSymbol: string
   chainId: bigint
-  rpcUrl: string
+  rpcUrls: string[]
   explorerUrl: string
   erc4337: Erc4337settings
   rpcNoStateOverride: boolean
@@ -59,7 +59,7 @@ export interface NetworkDescriptor {
   areContractsDeployed: boolean
   reestimateOn?: number
   isOptimistic?: boolean
-  features: AvailableFeature[]
+  features: NetworkFeature[]
   hasRelayer: boolean
   hasDebugTraceCall: boolean
   platformId: string

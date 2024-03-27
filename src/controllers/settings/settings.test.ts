@@ -154,7 +154,7 @@ describe('Settings Controller', () => {
 
   test('should update network preferences', (done) => {
     const preferences = {
-      rpcUrl: 'https://eth-mainnet.alchemyapi.io/v2/123abc123abc123abc123abc123abcde',
+      rpcUrls: ['https://eth-mainnet.alchemyapi.io/v2/123abc123abc123abc123abc123abcde'],
       explorerUrl: 'https://etherscan.io/custom'
     }
 
@@ -165,9 +165,9 @@ describe('Settings Controller', () => {
       if (emitCounter === 1) {
         const modifiedNetwork = settingsController.networks.find(({ id }) => id === 'ethereum')
         expect(modifiedNetwork?.explorerUrl).toEqual('https://etherscan.io/custom')
-        expect(modifiedNetwork?.rpcUrl).toEqual(
+        expect(modifiedNetwork?.rpcUrls).toEqual([
           'https://eth-mainnet.alchemyapi.io/v2/123abc123abc123abc123abc123abcde'
-        )
+        ])
         settingsController.providers.ethereum.destroy()
         done()
       }
@@ -185,10 +185,10 @@ describe('Settings Controller', () => {
       emitCounter++
 
       if (emitCounter === 1) {
-        settingsController.resetNetworkPreference('rpcUrl', 'ethereum')
+        settingsController.resetNetworkPreference('rpcUrls', 'ethereum')
       }
       if (emitCounter === 3) {
-        expect(modifiedNetwork?.rpcUrl).toEqual(ethereumStatic?.rpcUrl)
+        expect(modifiedNetwork?.rpcUrls).toEqual(ethereumStatic?.rpcUrls)
         expect(modifiedNetwork?.explorerUrl).toEqual('https://etherscan.io/custom') // Should remain the same
       }
       done()
@@ -196,7 +196,7 @@ describe('Settings Controller', () => {
 
     settingsController.updateNetworkPreferences(
       {
-        rpcUrl: 'https://eth-mainnet.alchemyapi.io/v2/123abc123abc123abc123abc123abcde',
+        rpcUrls: ['https://eth-mainnet.alchemyapi.io/v2/123abc123abc123abc123abc123abcde'],
         explorerUrl: 'https://etherscan.io/custom'
       },
       'ethereum'
@@ -291,7 +291,7 @@ describe('Settings Controller', () => {
 
         mantleNetwork = {
           name: 'Mantle',
-          rpcUrl: settingsController.networkToAddOrUpdate?.rpcUrl!,
+          rpcUrls: settingsController.networkToAddOrUpdate?.rpcUrls!,
           chainId: settingsController.networkToAddOrUpdate?.chainId!,
           nativeAssetSymbol: 'MNT',
           explorerUrl: 'https://explorer.mantle.xyz/',
@@ -370,7 +370,7 @@ describe('Settings Controller', () => {
     // })
 
     settingsController.setNetworkToAddOrUpdate({
-      rpcUrl: 'https://rpc.mantle.xyz',
+      rpcUrls: ['https://rpc.mantle.xyz'],
       chainId: 5000n
     })
   })
@@ -445,7 +445,7 @@ describe('Settings Controller', () => {
   //     chainId: 250n,
   //     explorerUrl: 'https://ftmscan.com/',
   //     nativeAssetSymbol: 'FTM',
-  //     rpcUrl: 'https://fantom-pokt.nodies.app'
+  //     rpcUrls: ['https://fantom-pokt.nodies.app']
   //   })
   // })
 })

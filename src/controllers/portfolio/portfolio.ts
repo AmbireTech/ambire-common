@@ -384,7 +384,7 @@ export class PortfolioController extends EventEmitter {
         // 2. The network RPC URL has changed
         if (
           !this.#portfolioLibs.has(key) ||
-          this.#portfolioLibs.get(key)?.network?.rpcUrl !==
+          this.#portfolioLibs.get(key)?.network?.rpcUrls[0] !==
             // eslint-disable-next-line no-underscore-dangle
             providers[network.id]?._getConnection().url
         ) {
