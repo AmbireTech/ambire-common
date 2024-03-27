@@ -115,7 +115,7 @@ const networks: NetworkDescriptor[] = [
     chainId: 42161n,
     explorerUrl: 'https://arbiscan.io',
     erc4337: {
-      enabled: false,
+      enabled: true,
       hasPaymaster: true
     },
     unstoppableDomainsChain: 'ERC20',

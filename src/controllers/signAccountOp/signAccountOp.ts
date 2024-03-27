@@ -568,25 +568,19 @@ export class SignAccountOpController extends EventEmitter {
         amount = simulatedGasLimit * gasPrice + feeTokenEstimation.addedNative
       } else if (this.paidBy !== this.accountOp!.accountAddr) {
         // Smart account, but EOA pays the fee
-        simulatedGasLimit =
-          gasUsed + callDataAdditionalGasCost + this.#estimation!.arbitrumL1FeeIfArbitrum.noFee
+        simulatedGasLimit = gasUsed + callDataAdditionalGasCost
         amount = simulatedGasLimit * gasPrice + feeTokenEstimation.addedNative
       } else {
         // Relayer.
         // relayer or 4337, we need to add feeTokenOutome.gasUsed
+        // use feePaymentOptions here as fee can be payed in other than native
         const feeTokenGasUsed = this.#estimation!.feePaymentOptions.find(
           (option) =>
             option.address === this.feeTokenResult?.address &&
             this.paidBy === option.paidBy &&
             this.feeTokenResult?.flags.onGasTank === option.isGasTank
         )!.gasUsed!
-        // @TODO - add comment why here we use `feePaymentOptions`, but we don't use it in EOA
-        simulatedGasLimit =
-          gasUsed +
-          callDataAdditionalGasCost +
-          feeTokenGasUsed +
-          this.#estimation!.arbitrumL1FeeIfArbitrum.withFee
-
+        simulatedGasLimit = gasUsed + callDataAdditionalGasCost + feeTokenGasUsed
         amount = SignAccountOpController.getAmountAfterFeeTokenConvert(
           simulatedGasLimit,
           gasPrice,

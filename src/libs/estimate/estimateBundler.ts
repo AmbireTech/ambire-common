@@ -178,8 +178,6 @@ export async function bundlerEstimate(
       callGasLimit: toBeHex(gasData.callGasLimit),
       gasPrice: { ...gasPrices, ape }
     },
-    // the bundler handles this
-    arbitrumL1FeeIfArbitrum: { noFee: 0n, withFee: 0n },
     error: null
   }
 }

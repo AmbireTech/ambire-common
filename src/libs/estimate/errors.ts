@@ -73,7 +73,6 @@ export function estimationErrorFormatted(
     gasUsed: 0n,
     nonce: 0,
     feePaymentOptions,
-    arbitrumL1FeeIfArbitrum: { noFee: 0n, withFee: 0n },
     error
   }
 }

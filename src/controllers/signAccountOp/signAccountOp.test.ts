@@ -400,7 +400,6 @@ describe('SignAccountOp Controller ', () => {
             isGasTank: false
           }
         ],
-        arbitrumL1FeeIfArbitrum: { noFee: 0n, withFee: 0n },
         error: null
       },
       [
@@ -494,7 +493,6 @@ describe('SignAccountOp Controller ', () => {
             isGasTank: false
           }
         ],
-        arbitrumL1FeeIfArbitrum: { noFee: 0n, withFee: 0n },
         error: null
       },
       [
@@ -616,7 +614,6 @@ describe('SignAccountOp Controller ', () => {
             isGasTank: false
           }
         ],
-        arbitrumL1FeeIfArbitrum: { noFee: 0n, withFee: 0n },
         error: null
       },
       [
@@ -719,7 +716,6 @@ describe('SignAccountOp Controller ', () => {
             isGasTank: false
           }
         ],
-        arbitrumL1FeeIfArbitrum: { noFee: 0n, withFee: 0n },
         error: null
       },
       [
@@ -819,7 +815,6 @@ describe('SignAccountOp Controller ', () => {
             isGasTank: false
           }
         ],
-        arbitrumL1FeeIfArbitrum: { noFee: 0n, withFee: 0n },
         error: null
       },
       [
@@ -909,7 +904,6 @@ describe('SignAccountOp Controller ', () => {
   //           isGasTank: false
   //         }
   //       ],
-  //       arbitrumL1FeeIfArbitrum: { noFee: 0n, withFee: 0n },
   //       error: null,
   //     },
   //     [

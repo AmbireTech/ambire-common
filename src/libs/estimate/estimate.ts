@@ -18,7 +18,7 @@ import { estimateCustomNetwork } from './customNetworks'
 import { catchEstimationFailure, estimationErrorFormatted, mapTxnErrMsg } from './errors'
 import { estimateArbitrumL1GasUsed } from './estimateArbitrum'
 import { bundlerEstimate } from './estimateBundler'
-import { EstimateResult, FeeToken } from './interfaces'
+import { ArbitrumL1Fee, EstimateResult, FeeToken } from './interfaces'
 import { refund } from './refund'
 
 const abiCoder = new AbiCoder()
@@ -203,7 +203,6 @@ export async function estimate(
           isGasTank: false
         }
       ],
-      arbitrumL1FeeIfArbitrum: { noFee: 0n, withFee: 0n },
       error: result instanceof Error ? result : null
     }
   }
@@ -325,13 +324,19 @@ export async function estimate(
   // So a warning not to assume this is working
   if (opts?.calculateRefund) gasUsed = await refund(account, op, provider, gasUsed)
 
+  // if the network is arbitrum, we get the addedNative from the arbitrum
+  // estimation. Otherwise, we get it from the OP stack oracle
+  // if the network is not an L2, all these will default to 0n
+  const arbitrumEstimation: ArbitrumL1Fee = estimations[1]
+  const l1Fee = network.id !== 'arbitrum' ? l1GasEstimation.fee : arbitrumEstimation.noFee
+  const l1FeeWithNativePayment =
+    network.id !== 'arbitrum' ? l1GasEstimation.feeWithNativePayment : arbitrumEstimation.withFee
+  const l1FeeWithTransferPayment =
+    network.id !== 'arbitrum' ? l1GasEstimation.feeWithTransferPayment : arbitrumEstimation.withFee
+
   const feeTokenOptions = feeTokenOutcomes.map((token: any, key: number) => {
     const address = filteredFeeTokens[key].address
-
-    const addedNative =
-      address === ZeroAddress
-        ? l1GasEstimation.feeWithNativePayment
-        : l1GasEstimation.feeWithTransferPayment
+    const addedNative = address === ZeroAddress ? l1FeeWithNativePayment : l1FeeWithTransferPayment
 
     return {
       address,
@@ -360,7 +365,7 @@ export async function estimate(
     address: ZeroAddress,
     paidBy: nativeToCheck[key],
     availableAmount: balance,
-    addedNative: l1GasEstimation.fee,
+    addedNative: l1Fee,
     isGasTank: false
   }))
 
@@ -368,7 +373,6 @@ export async function estimate(
     gasUsed,
     nonce,
     feePaymentOptions: [...feeTokenOptions, ...nativeTokenOptions],
-    arbitrumL1FeeIfArbitrum: estimations[1],
     error: getInnerCallFailure(op, accountOp)
   }
 }

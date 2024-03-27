@@ -6,6 +6,7 @@ import { FEE_COLLECTOR } from '../../consts/addresses'
 import ArbitrumFactoryAbi from '../../consts/arbitrumFactoryAbi.json'
 import { Account, AccountOnchainState } from '../../interfaces/account'
 import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
+import { ArbitrumL1Fee } from './interfaces'
 
 function getTxnData(
   accountState: AccountOnchainState,
@@ -27,24 +28,29 @@ function getTxnData(
       ])
 }
 
-function getL1GasUsed(gasEstimateComponents: {
-  baseFee: bigint
-  l1BaseFeeEstimate: bigint
-  gasEstimateForL1: bigint
-}) {
-  const l2EstimatedPrice = gasEstimateComponents.baseFee
-  const l1EstimatedPrice = gasEstimateComponents.l1BaseFeeEstimate * 16n
-  const l1Cost = BigInt(gasEstimateComponents.gasEstimateForL1 * l2EstimatedPrice)
-  const l1Size = l1Cost / l1EstimatedPrice
-  return (l1EstimatedPrice * l1Size) / l2EstimatedPrice
+function getL1Fee(gasEstimateComponents: { baseFee: bigint; gasEstimateForL1: bigint }) {
+  return BigInt(gasEstimateComponents.gasEstimateForL1 * gasEstimateComponents.baseFee)
 }
+
+// Leaving the formula for fetching the l1 gas used
+// function getL1GasUsed(gasEstimateComponents: {
+//   baseFee: bigint
+//   l1BaseFeeEstimate: bigint
+//   gasEstimateForL1: bigint
+// }) {
+//   const l2EstimatedPrice = gasEstimateComponents.baseFee
+//   const l1EstimatedPrice = gasEstimateComponents.l1BaseFeeEstimate * 16n
+//   const l1Cost = getL1Fee(gasEstimateComponents)
+//   const l1Size = l1Cost / l1EstimatedPrice
+//   return (l1EstimatedPrice * l1Size) / l2EstimatedPrice
+// }
 
 export async function estimateArbitrumL1GasUsed(
   accountOp: AccountOp,
   account: Account,
   accountState: AccountOnchainState,
   provider: Provider | JsonRpcProvider
-): Promise<{ noFee: bigint; withFee: bigint }> {
+): Promise<ArbitrumL1Fee> {
   // if network is not arbitrum, just return a 0n
   // additional l1 gas estimation is only needed when the account is a smart one
   if (accountOp.networkId !== 'arbitrum' || !account.creation) {
@@ -80,7 +86,7 @@ export async function estimateArbitrumL1GasUsed(
     )
   ])
   return {
-    noFee: getL1GasUsed(gasEstimateComponentsNoFee),
-    withFee: getL1GasUsed(gasEstimateComponentsWithFee)
+    noFee: getL1Fee(gasEstimateComponentsNoFee),
+    withFee: getL1Fee(gasEstimateComponentsWithFee)
   }
 }

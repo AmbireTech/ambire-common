@@ -455,9 +455,6 @@ describe('estimate', () => {
 
     // Gas used in case of `accountOpToExecuteBefore` should be greater, because more AccountOps are simulated
     expect(responseWithExecuteBefore.gasUsed).toBeGreaterThan(response.gasUsed)
-
-    expect(response.arbitrumL1FeeIfArbitrum.noFee).toEqual(0n)
-    expect(response.arbitrumL1FeeIfArbitrum.withFee).toEqual(0n)
   })
 
   it('estimates with `addedNative`', async () => {
@@ -508,9 +505,6 @@ describe('estimate', () => {
     response.feePaymentOptions.forEach((feeToken) => {
       expect(feeToken.addedNative).toBeGreaterThan(0n)
     })
-
-    expect(response.arbitrumL1FeeIfArbitrum.noFee).toEqual(0n)
-    expect(response.arbitrumL1FeeIfArbitrum.withFee).toEqual(0n)
   })
 
   it('estimates an arbitrum request', async () => {
@@ -539,8 +533,7 @@ describe('estimate', () => {
       feeTokens
     )
 
-    expect(response.arbitrumL1FeeIfArbitrum.noFee).toBeGreaterThan(0n)
-    expect(response.arbitrumL1FeeIfArbitrum.withFee).toBeGreaterThan(0n)
+    response.feePaymentOptions.map((option) => expect(option.addedNative).toBeGreaterThan(0n))
   })
 
   it('estimates an arbitrum 4337 request that should fail with an inner call failure but otherwise estimation should work', async () => {
@@ -570,9 +563,6 @@ describe('estimate', () => {
       feeTokens,
       { is4337Broadcast: true }
     )
-
-    expect(response.arbitrumL1FeeIfArbitrum.noFee).toEqual(0n)
-    expect(response.arbitrumL1FeeIfArbitrum.withFee).toEqual(0n)
 
     expect(response.erc4337GasLimits).not.toBe(undefined)
     expect(BigInt(response.erc4337GasLimits!.callGasLimit)).toBeGreaterThan(0n)
@@ -609,9 +599,6 @@ describe('estimate', () => {
       feeTokensAvalanche,
       { is4337Broadcast: true }
     )
-
-    expect(response.arbitrumL1FeeIfArbitrum.noFee).toEqual(0n)
-    expect(response.arbitrumL1FeeIfArbitrum.withFee).toEqual(0n)
 
     expect(response.erc4337GasLimits).toBe(undefined)
 
@@ -659,9 +646,6 @@ describe('estimate', () => {
   //   )
 
   //   console.log(response)
-
-  //   expect(response.arbitrumL1FeeIfArbitrum.noFee).toEqual(0n)
-  //   expect(response.arbitrumL1FeeIfArbitrum.withFee).toEqual(0n)
 
   //   expect(response.erc4337GasLimits).not.toBe(undefined)
   //   expect(BigInt(response.erc4337GasLimits!.callGasLimit)).toBeGreaterThan(0n)
