@@ -74,8 +74,7 @@ const networks: NetworkDescriptor[] = [
       is1559: true,
       elasticityMultiplier: 6n,
       baseFeeMaxChangeDenominator: 50n,
-      maxPriorityFee: 100n,
-      feeIncrease: 2n // %
+      maxPriorityFee: 100n
     },
     isOptimistic: true,
     reestimateOn: 6000
@@ -102,8 +101,7 @@ const networks: NetworkDescriptor[] = [
     features: [],
     feeOptions: {
       is1559: true,
-      minBaseFee: 25000000000n, // 25 gwei
-      feeIncrease: 5n // %
+      minBaseFee: 25000000000n // 25 gwei
     }
   },
   {
