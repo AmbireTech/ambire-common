@@ -1,14 +1,19 @@
+import { SettingsController } from 'controllers/settings/settings'
 import { getAddress } from 'ethers'
 
 import { Account } from '../../interfaces/account'
 import { Storage } from '../../interfaces/storage'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
-export type Contacts = Array<{
+type Contact = {
   name: string
   address: Account['addr']
   isWalletAccount?: boolean
-}>
+  createdAt?: number
+  updatedAt?: number
+}
+
+export type Contacts = Array<Contact>
 
 /**
  * Address Book controller
@@ -18,30 +23,39 @@ export class AddressBookController extends EventEmitter {
   // Manually added contact (stored in storage)
   #manuallyAddedContacts: Contacts = []
 
-  // Contacts, generated on the fly from the accounts in the wallet (not stored in storage)
-  #walletAccountSourcedContacts: Contacts = []
-
   #storage: Storage
 
   #initialLoadPromise: Promise<void>
 
-  constructor(storage: Storage) {
+  #accounts: Account[] = []
+
+  #settings: SettingsController
+
+  #selectedAccount: Account['addr'] = ''
+
+  constructor(storage: Storage, accounts: Account[], settings: SettingsController) {
     super()
 
     this.#storage = storage
+    this.#accounts = accounts
+    this.#settings = settings
+
     this.#initialLoadPromise = this.#load()
   }
 
-  set accountsInWalletContacts(accountsInWalletContacts: Contacts) {
-    this.#walletAccountSourcedContacts = accountsInWalletContacts.map((contact) => ({
-      ...contact,
+  // Contacts, generated on the fly from the accounts in the wallet (not stored in storage)
+  get #walletAccountsSourcedContacts() {
+    return this.#accounts.map((account) => ({
+      name: this.#settings.accountPreferences[account.addr]?.label || '',
+      address: account.addr,
       isWalletAccount: true
     }))
-    this.emitUpdate()
   }
 
   get contacts() {
-    return [...this.#manuallyAddedContacts, ...this.#walletAccountSourcedContacts]
+    return [...this.#manuallyAddedContacts, ...this.#walletAccountsSourcedContacts].filter(
+      ({ address }) => address.toLowerCase() !== this.#selectedAccount.toLowerCase()
+    )
   }
 
   async #load() {
@@ -87,6 +101,14 @@ export class AddressBookController extends EventEmitter {
     }
   }
 
+  update({ selectedAccount }: { selectedAccount: Account['addr'] }) {
+    if (selectedAccount) {
+      this.#selectedAccount = selectedAccount
+    }
+
+    this.emitUpdate()
+  }
+
   async addContact(name: string, address: string) {
     await this.#initialLoadPromise
     const checksummedAddress = this.#getChecksummedAddress(address)
@@ -103,7 +125,12 @@ export class AddressBookController extends EventEmitter {
       return
     }
 
-    this.#manuallyAddedContacts.push({ name: trimmedName, address: checksummedAddress })
+    this.#manuallyAddedContacts.push({
+      name: trimmedName,
+      address: checksummedAddress,
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    })
 
     this.#handleManuallyAddedContactsChange()
   }
@@ -126,7 +153,7 @@ export class AddressBookController extends EventEmitter {
 
     this.#manuallyAddedContacts = this.#manuallyAddedContacts.map((contact) => {
       if (contact.address.toLowerCase() === address.toLowerCase()) {
-        return { name: trimmedNewName, address: contact.address }
+        return { ...contact, name: trimmedNewName, updatedAt: Date.now() }
       }
 
       return contact

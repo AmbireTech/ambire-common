@@ -1,4 +1,7 @@
 import { produceMemoryStore } from '../../../test/helpers'
+import { Account } from '../../interfaces/account'
+import { AccountPreferences } from '../../interfaces/settings'
+import { SettingsController } from '../settings/settings'
 import { AddressBookController } from './addressBook'
 
 const storage = produceMemoryStore()
@@ -8,8 +11,42 @@ let errors = 0
 // Mock the emitError method to capture the emitted error
 const mockEmitError = jest.fn(() => errors++)
 
+const MOCK_ACCOUNTS: Account[] = [
+  {
+    addr: '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045',
+    associatedKeys: [],
+    initialPrivileges: [],
+    creation: null
+  },
+  {
+    addr: '0x66fE93c51726e6FD51668B0B0434ffcedD604d08',
+    associatedKeys: [],
+    initialPrivileges: [],
+    creation: null
+  },
+  {
+    addr: '0x31800a810A2d9C3315dc714e1Eb988bd6A641eF0',
+    associatedKeys: [],
+    initialPrivileges: [],
+    creation: null
+  }
+]
+
+const MOCK_ACCOUNT_PREFERENCES: AccountPreferences = {
+  '0x66fE93c51726e6FD51668B0B0434ffcedD604d08': {
+    label: 'Account 1',
+    pfp: '0x66fE93c51726e6FD51668B0B0434ffcedD604d08'
+  },
+  '0x31800a810A2d9C3315dc714e1Eb988bd6A641eF0': {
+    label: 'Account 2',
+    pfp: '0x31800a810A2d9C3315dc714e1Eb988bd6A641eF0'
+  }
+}
+
 describe('AddressBookController', () => {
-  const addressBookController = new AddressBookController(storage)
+  const addressBookController = new AddressBookController(storage, MOCK_ACCOUNTS, {
+    accountPreferences: MOCK_ACCOUNT_PREFERENCES
+  } as SettingsController)
 
   const getContactFromName = (name: string) => {
     return addressBookController.contacts.find((contact) => contact.name === name)
@@ -46,18 +83,10 @@ describe('AddressBookController', () => {
 
     expect(getContactFromName('vitalik')).toBeUndefined()
   })
-  it('add wallet accounts to contacts', () => {
-    addressBookController.accountsInWalletContacts = [
-      {
-        address: '0x66fE93c51726e6FD51668B0B0434ffcedD604d08',
-        name: 'Account 1'
-      },
-      {
-        address: '0x31800a810A2d9C3315dc714e1Eb988bd6A641eF0',
-        name: 'Account 2'
-      }
-    ]
-
+  it('wallet accounts are in contacts', () => {
+    addressBookController.update({
+      selectedAccount: '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'
+    })
     expect(getContactFromName('Account 1')?.isWalletAccount).toBeTruthy()
     expect(getContactFromName('Account 1')?.address).toEqual(
       '0x66fE93c51726e6FD51668B0B0434ffcedD604d08'

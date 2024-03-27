@@ -209,7 +209,7 @@ export class MainController extends EventEmitter {
       relayerUrl,
       fetch: this.#fetch
     })
-    this.addressBook = new AddressBookController(this.#storage)
+    this.addressBook = new AddressBookController(this.#storage, this.accounts, this.settings)
     this.signMessage = new SignMessageController(
       this.keystore,
       this.settings,
