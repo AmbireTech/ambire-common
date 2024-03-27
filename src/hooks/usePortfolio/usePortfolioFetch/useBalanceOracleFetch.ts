@@ -743,7 +743,7 @@ export default function useBalanceOracleFetch({
       .filter((token) => token.coingeckoId)
       .filter(
         (token) =>
-          !token?.priceUpdate || new Date().valueOf() - token.priceUpdate >= minutesToCheckForUpdate
+         !token?.price === 0 || !token?.priceUpdate || new Date().valueOf() - token.priceUpdate >= minutesToCheckForUpdate
       )
     const customTokens = constants?.customTokens?.filter((ct) => {
       const tokenToUpdate = tokens.find(
