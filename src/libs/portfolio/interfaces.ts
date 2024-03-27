@@ -1,6 +1,7 @@
 import { Account, AccountId } from '../../interfaces/account'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
 import { AccountOp } from '../accountOp/accountOp'
+import { CustomToken } from './customToken'
 
 export interface Price {
   baseCurrency: string
@@ -17,7 +18,7 @@ export interface GetOptionsSimulation {
   account: Account
 }
 
-export interface TokenResult {
+export interface TokenResult extends Partial<CustomToken> {
   address: string
   symbol: string
   amount: bigint
@@ -166,6 +167,7 @@ export interface GetOptions {
   }
   isEOA: boolean
   fetchPinned: boolean
+  tokenPreferences: CustomToken[]
   additionalHints?: Hints['erc20s']
 }
 
