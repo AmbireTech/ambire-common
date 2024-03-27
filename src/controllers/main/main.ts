@@ -1264,7 +1264,7 @@ export class MainController extends EventEmitter {
   ) {
     await this.settings.updateNetworkPreferences(networkPreferences, networkId)
 
-    if (networkPreferences?.rpcUrl) {
+    if (networkPreferences?.rpcUrls) {
       await this.updateAccountStates('latest', [networkId])
       await this.updateSelectedAccount(this.selectedAccount, true)
     }
@@ -1276,7 +1276,7 @@ export class MainController extends EventEmitter {
   ) {
     await this.settings.resetNetworkPreference(preferenceKey, networkId)
 
-    if (preferenceKey === 'rpcUrl') {
+    if (preferenceKey === 'rpcUrls') {
       await this.updateAccountStates('latest', [networkId])
       await this.updateSelectedAccount(this.selectedAccount, true)
     }

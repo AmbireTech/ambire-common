@@ -1,5 +1,4 @@
-import { ethers, JsonRpcProvider } from 'ethers'
-import { Account } from 'interfaces/account'
+import { ethers } from 'ethers'
 
 import { describe, expect, test } from '@jest/globals'
 
@@ -9,14 +8,17 @@ import {
   ERC_4337_ENTRYPOINT
 } from '../../consts/deploy'
 import { networks } from '../../consts/networks'
-import { getBytecode, get4437Bytecode } from '../proxyDeploy/bytecode'
+import { Account } from '../../interfaces/account'
+import { getRpcProvider } from '../../services/provider'
+import { get4437Bytecode, getBytecode } from '../proxyDeploy/bytecode'
 import { getAmbireAccountAddress } from '../proxyDeploy/getAmbireAddressTwo'
 import { getAccountState } from './accountState'
+
 // import { get4437Bytecode } from ''
 
 const polygon = networks.find((x) => x.id === 'polygon')
 if (!polygon) throw new Error('unable to find polygon network in consts')
-const provider = new JsonRpcProvider(polygon.rpcUrl)
+const provider = getRpcProvider(polygon.rpcUrls, polygon.chainId)
 
 describe('AccountState', () => {
   test('should get the account state and check if a v1 address and v2 address (not deployed) are returned correctly', async () => {

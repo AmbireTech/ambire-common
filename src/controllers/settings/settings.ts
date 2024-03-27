@@ -1,6 +1,4 @@
 /* eslint-disable no-underscore-dangle */
-import { JsonRpcProvider } from 'ethers'
-
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { networks } from '../../consts/networks'
 import { Key } from '../../interfaces/keystore'
@@ -23,6 +21,7 @@ import { Storage } from '../../interfaces/storage'
 import { getSASupport, simulateDebugTraceCall } from '../../libs/deployless/simulateDeployCall'
 import { getFeaturesByNetworkProperties, getNetworkInfo } from '../../libs/settings/settings'
 import { isValidAddress } from '../../services/address'
+import { getRpcProvider } from '../../services/provider'
 import wait from '../../utils/wait'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
@@ -43,7 +42,7 @@ export class SettingsController extends EventEmitter {
 
   networkToAddOrUpdate: {
     chainId: NetworkDescriptor['chainId']
-    rpcUrl: NetworkDescriptor['rpcUrl']
+    rpcUrls: NetworkDescriptor['rpcUrls']
     info?: NetworkInfoLoading<NetworkInfo>
   } | null = null
 
@@ -54,13 +53,13 @@ export class SettingsController extends EventEmitter {
     this.#load()
   }
 
-  #setProvider(network: NetworkDescriptor, newRpcUrl: string) {
+  #setProvider(network: NetworkDescriptor, newRpcUrls: string[]) {
     const provider = this.providers[network.id]
 
     // Only update the RPC if the new RPC is different from the current one
     // or if there is no RPC for this network yet.
     // eslint-disable-next-line no-underscore-dangle
-    if (!provider || provider?._getConnection().url !== newRpcUrl) {
+    if (!provider || provider?._getConnection().url !== newRpcUrls[0]) {
       const oldRPC = this.providers[network.id]
 
       if (oldRPC) {
@@ -69,7 +68,7 @@ export class SettingsController extends EventEmitter {
         oldRPC.destroy()
       }
 
-      this.providers[network.id] = new JsonRpcProvider(newRpcUrl, Number(network.chainId))
+      this.providers[network.id] = getRpcProvider(newRpcUrls, network.chainId)
     }
   }
 
@@ -89,7 +88,7 @@ export class SettingsController extends EventEmitter {
         unstoppableDomainsChain: 'ERC20',
         name: customNetwork.name,
         nativeAssetSymbol: customNetwork.nativeAssetSymbol,
-        rpcUrl: customNetwork.rpcUrl,
+        rpcUrls: customNetwork.rpcUrls,
         chainId: customNetwork.chainId,
         explorerUrl: customNetwork.explorerUrl,
         erc4337: customNetwork.erc4337 ?? { enabled: false, hasPaymaster: false },
@@ -114,7 +113,7 @@ export class SettingsController extends EventEmitter {
     // configure the main networks
     return allNetworks.map((network) => {
       const networkPreferences = this.#networkPreferences[network.id]
-      this.#setProvider(network, networkPreferences?.rpcUrl || network.rpcUrl)
+      this.#setProvider(network, networkPreferences?.rpcUrls || network.rpcUrls)
       const finalNetwork = networkPreferences
         ? {
             ...network,
@@ -275,7 +274,7 @@ export class SettingsController extends EventEmitter {
   setNetworkToAddOrUpdate(
     networkToAddOrUpdate: {
       chainId: NetworkDescriptor['chainId']
-      rpcUrl: NetworkDescriptor['rpcUrl']
+      rpcUrls: NetworkDescriptor['rpcUrls']
     } | null = null
   ) {
     if (networkToAddOrUpdate) {
@@ -283,7 +282,7 @@ export class SettingsController extends EventEmitter {
       this.emitUpdate()
 
       // eslint-disable-next-line @typescript-eslint/no-floating-promises
-      getNetworkInfo(networkToAddOrUpdate.rpcUrl, networkToAddOrUpdate.chainId, (info) => {
+      getNetworkInfo(networkToAddOrUpdate.rpcUrls, networkToAddOrUpdate.chainId, (info) => {
         if (this.networkToAddOrUpdate) {
           this.networkToAddOrUpdate = { ...this.networkToAddOrUpdate, info }
           this.emitUpdate()
@@ -391,10 +390,10 @@ export class SettingsController extends EventEmitter {
       {}
     )
 
-    // if the rpcUrl has changed, call the RPC and check whether it supports
+    // if the rpcUrls have changed, call the RPC and check whether it supports
     // state overrided. If it doesn't, add a warning
-    if (changedNetworkPreferences.rpcUrl) {
-      const provider = new JsonRpcProvider(changedNetworkPreferences.rpcUrl as string)
+    if (changedNetworkPreferences.rpcUrls) {
+      const provider = getRpcProvider(changedNetworkPreferences.rpcUrls)
       const [saSupport, hasDebugTraceCall] = await Promise.all([
         getSASupport(provider).catch(() => ({ supportsStateOverride: false })),
         simulateDebugTraceCall(provider)

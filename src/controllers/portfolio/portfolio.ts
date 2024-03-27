@@ -382,12 +382,19 @@ export class PortfolioController extends EventEmitter {
         // Initialize a new Portfolio lib if:
         // 1. It does not exist in the portfolioLibs map
         // 2. The network RPC URL has changed
-        if (
-          !this.#portfolioLibs.has(key) ||
-          this.#portfolioLibs.get(key)?.network?.rpcUrl !==
-            // eslint-disable-next-line no-underscore-dangle
-            providers[network.id]?._getConnection().url
-        ) {
+        let shouldInitNewPortfolio = false
+
+        if (!this.#portfolioLibs.has(key)) {
+          shouldInitNewPortfolio = true
+        }
+
+        const provider = providers[network.id]
+
+        shouldInitNewPortfolio =
+          // eslint-disable-next-line no-underscore-dangle
+          this.#portfolioLibs.get(key)?.network?.rpcUrls[0] !== provider?._getConnection().url
+
+        if (shouldInitNewPortfolio) {
           this.#portfolioLibs.set(key, new Portfolio(fetch, providers[network.id], network))
         }
         const portfolioLib = this.#portfolioLibs.get(key)!
