@@ -1,11 +1,12 @@
 import { getAddress } from 'ethers'
 
+import { Account } from '../../interfaces/account'
 import { Storage } from '../../interfaces/storage'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 export type Contacts = Array<{
   name: string
-  address: string
+  address: Account['addr']
   isWalletAccount?: boolean
 }>
 
