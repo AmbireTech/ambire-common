@@ -222,7 +222,7 @@ describe('estimate', () => {
       EOAAccount,
       MOCK_KEYSTORE_KEYS,
       op,
-      accountStates[EOAAccount.addr][ethereum.id],
+      accountStates,
       [],
       []
     )
@@ -262,7 +262,7 @@ describe('estimate', () => {
       account,
       MOCK_KEYSTORE_KEYS,
       op,
-      accountStates[account.addr][ethereum.id],
+      accountStates,
       nativeToCheck,
       feeTokens
     )
@@ -324,7 +324,7 @@ describe('estimate', () => {
       account,
       MOCK_KEYSTORE_KEYS,
       op,
-      accountStates[account.addr][ethereum.id],
+      accountStates,
       nativeToCheck,
       feeTokens
     )
@@ -357,7 +357,7 @@ describe('estimate', () => {
       viewOnlyAcc,
       MOCK_KEYSTORE_KEYS,
       op,
-      accountStates[viewOnlyAcc.addr][ethereum.id],
+      accountStates,
       nativeToCheck,
       feeTokens
     )
@@ -414,7 +414,7 @@ describe('estimate', () => {
       account,
       MOCK_KEYSTORE_KEYS,
       op,
-      accountStates[account.addr][ethereum.id],
+      accountStates,
       nativeToCheck,
       feeTokens
     )
@@ -424,7 +424,7 @@ describe('estimate', () => {
       account,
       MOCK_KEYSTORE_KEYS,
       opWithExecuteBefore,
-      accountStates[account.addr][ethereum.id],
+      accountStates,
       nativeToCheck,
       feeTokens,
       { calculateRefund: true }
@@ -477,7 +477,7 @@ describe('estimate', () => {
       accountOptimism,
       MOCK_KEYSTORE_KEYS,
       opOptimism,
-      accountStates[accountOptimism.addr][optimism.id],
+      accountStates,
       nativeToCheck,
       feeTokens
     )
@@ -511,7 +511,7 @@ describe('estimate', () => {
       smartAccountv2eip712,
       MOCK_KEYSTORE_KEYS,
       opArbitrum,
-      accountStates[smartAccountv2eip712.addr][arbitrum.id],
+      accountStates,
       nativeToCheck,
       feeTokens
     )
@@ -540,7 +540,7 @@ describe('estimate', () => {
       trezorSlot6v2NotDeployed,
       MOCK_KEYSTORE_KEYS,
       opArbitrum,
-      accountStates[trezorSlot6v2NotDeployed.addr][arbitrum.id],
+      accountStates,
       nativeToCheck,
       feeTokens,
       { is4337Broadcast: true }
@@ -565,7 +565,6 @@ describe('estimate', () => {
       accountOpToExecuteBefore: null
     }
     const accountStates = await getAccountsInfo([trezorSlot6v2NotDeployed])
-    const accountState = accountStates[trezorSlot6v2NotDeployed.addr][avalanche.id]
 
     const response = await estimate(
       providerAvalanche,
@@ -573,7 +572,7 @@ describe('estimate', () => {
       trezorSlot6v2NotDeployed,
       MOCK_KEYSTORE_KEYS,
       opAvalanche,
-      accountState,
+      accountStates,
       nativeToCheck,
       feeTokensAvalanche,
       { is4337Broadcast: true }
@@ -617,7 +616,6 @@ describe('estimate', () => {
       accountOpToExecuteBefore: null
     }
     const accountStates = await getAccountsInfo([trezorSlot7v24337Deployed])
-    const accountState = accountStates[trezorSlot7v24337Deployed.addr][avalanche.id]
 
     const response = await estimate(
       providerAvalanche,
@@ -625,7 +623,7 @@ describe('estimate', () => {
       trezorSlot7v24337Deployed,
       MOCK_KEYSTORE_KEYS,
       opAvalanche,
-      accountState,
+      accountStates,
       nativeToCheck,
       feeTokensAvalanche,
       { is4337Broadcast: true }
@@ -671,7 +669,7 @@ describe('estimate', () => {
       smartAccountv2eip712,
       MOCK_KEYSTORE_KEYS,
       opPolygonFailBzNoFunds,
-      accountStates[smartAccountv2eip712.addr][polygon.id],
+      accountStates,
       nativeToCheck,
       feeTokens
     )
@@ -702,7 +700,7 @@ describe('estimate', () => {
       { ...smartAccountv2eip712, associatedKeys: [trezorSlot6v2NotDeployed.associatedKeys[0]] },
       MOCK_KEYSTORE_KEYS,
       opPolygonFailBzNoFunds,
-      accountStates[smartAccountv2eip712.addr][polygon.id],
+      accountStates,
       nativeToCheck,
       feeTokens
     )
@@ -731,7 +729,7 @@ describe('estimate', () => {
       account,
       MOCK_KEYSTORE_KEYS,
       op,
-      accountStates[account.addr][ethereum.id],
+      accountStates,
       nativeToCheck,
       feeTokens
     )

@@ -170,3 +170,7 @@ export interface GetOptions {
   tokenPreferences: CustomToken[]
   additionalHints?: Hints['erc20s']
 }
+
+export interface TokenIcon {
+  [networdIdAndAddress: string]: string
+}

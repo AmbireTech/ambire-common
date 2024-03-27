@@ -1,5 +1,7 @@
 import dotenv from 'dotenv'
-import { geckoIdMapper, geckoNetworkIdMapper } from '../../consts/coingecko'
+
+import { geckoIdMapper } from '../../consts/coingecko'
+import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { QueueElement, Request } from './batcher'
 import { paginate } from './pagination'
 
@@ -8,17 +10,18 @@ dotenv.config()
 // max tokens per request; we seem to have faster results when it's lower
 const BATCH_LIMIT = 40
 
-export function geckoResponseIdentifier(tokenAddr: string, networkId: string): string {
-  return geckoIdMapper(tokenAddr, networkId) || tokenAddr.toLowerCase()
+export function geckoResponseIdentifier(tokenAddr: string, network: NetworkDescriptor): string {
+  return geckoIdMapper(tokenAddr, network) || tokenAddr.toLowerCase()
 }
 
 export function geckoRequestBatcher(queue: QueueElement[]): Request[] {
   const segments: { [key: string]: any[] } = {}
+  // eslint-disable-next-line no-restricted-syntax
   for (const queueItem of queue) {
     let segmentId: string = queueItem.data.baseCurrency
-    const geckoId = geckoIdMapper(queueItem.data.address, queueItem.data.networkId)
+    const geckoId = geckoIdMapper(queueItem.data.address, queueItem.data.network)
     if (geckoId) segmentId += ':natives'
-    else segmentId += `:${queueItem.data.networkId}`
+    else segmentId += `:${queueItem.data.network.id}`
     if (!segments[segmentId]) segments[segmentId] = []
     segments[segmentId].push(queueItem)
   }
@@ -33,14 +36,14 @@ export function geckoRequestBatcher(queue: QueueElement[]): Request[] {
   return pages.map(({ key, queueSegment }) => {
     // This is OK because we're segmented by baseCurrency
     const baseCurrency = queueSegment[0]!.data.baseCurrency
-    const geckoPlatform = geckoNetworkIdMapper(queueSegment[0]!.data.networkId)
+    const geckoPlatform = queueSegment[0]!.data.network.platformId
 
     const mainApiUrl = 'https://cena.ambire.com'
 
     let url
     if (key.endsWith('natives'))
       url = `${mainApiUrl}/api/v3/simple/price?ids=${dedup(
-        queueSegment.map((x) => geckoIdMapper(x.data.address, x.data.networkId))
+        queueSegment.map((x) => geckoIdMapper(x.data.address, x.data.network))
       ).join('%2C')}&vs_currencies=${baseCurrency}`
     else
       url = `${mainApiUrl}/api/v3/simple/token_price/${geckoPlatform}?contract_addresses=${dedup(

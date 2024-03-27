@@ -8,10 +8,12 @@ import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
 import { UserOperation } from '../userOperation/types'
 import {
+  getActivatorCall,
   getCleanUserOp,
   getOneTimeNonce,
   getPaymasterSpoof,
-  getSigForCalculations
+  getSigForCalculations,
+  shouldIncludeActivatorCall
 } from '../userOperation/userOperation'
 
 // https://eips.ethereum.org/EIPS/eip-1559
@@ -182,6 +184,7 @@ export async function getGasPriceRecommendations(
 export function getProbableCallData(
   accountOp: AccountOp,
   accountState: AccountOnchainState,
+  network: NetworkDescriptor,
   // the userOp should be passed during estimation only as we strictly
   // use it to determine the extra L1 fee that the user should pay
   userOp: UserOperation | null = null
@@ -202,15 +205,21 @@ export function getProbableCallData(
       localOp.nonce = getOneTimeNonce(localOp)
     }
 
-    // TODO: if the network doesn't have a paymaster, do not include
-    // the paymaster in the l1 fee calculations
-    localOp.paymasterAndData = getPaymasterSpoof()
+    if (network.erc4337?.hasPaymaster) {
+      localOp.paymasterAndData = getPaymasterSpoof()
+    }
 
     const entryPoint = new Interface(EntryPoint)
     return entryPoint.encodeFunctionData('handleOps', [
       getCleanUserOp(localOp),
       accountOp.accountAddr
     ])
+  }
+
+  // include the activator call for estimation if any
+  const localOp = { ...accountOp }
+  if (shouldIncludeActivatorCall(network, accountState)) {
+    localOp.activatorCall = getActivatorCall(localOp.accountAddr)
   }
 
   // always call executeMultiple as the worts case scenario
@@ -220,7 +229,7 @@ export function getProbableCallData(
     estimationCallData = ambireAccount.encodeFunctionData('executeMultiple', [
       [
         [
-          getSignableCalls(accountOp),
+          getSignableCalls(localOp),
           '0x0dc2d37f7b285a2243b2e1e6ba7195c578c72b395c0f76556f8961b0bca97ddc44e2d7a249598f56081a375837d2b82414c3c94940db3c1e64110108021161ca1c01'
         ]
       ]
@@ -233,7 +242,7 @@ export function getProbableCallData(
       '0x0000000000000000000000000000000000000000000000000000000000000000',
       [
         [
-          getSignableCalls(accountOp),
+          getSignableCalls(localOp),
           '0x0dc2d37f7b285a2243b2e1e6ba7195c578c72b395c0f76556f8961b0bca97ddc44e2d7a249598f56081a375837d2b82414c3c94940db3c1e64110108021161ca1c01'
         ]
       ]
@@ -241,19 +250,6 @@ export function getProbableCallData(
   }
 
   return estimationCallData
-}
-
-export function getCallDataAdditional(
-  accountOp: AccountOp,
-  accountState: AccountOnchainState
-): bigint {
-  const estimationCallData = getProbableCallData(accountOp, accountState)
-  const FIXED_OVERHEAD = 21000n
-  const bytes = Buffer.from(estimationCallData.substring(2))
-  const nonZeroBytes = BigInt(bytes.filter((b) => b).length)
-  const zeroBytes = BigInt(BigInt(bytes.length) - nonZeroBytes)
-  const txDataGas = zeroBytes * 4n + nonZeroBytes * 16n
-  return txDataGas + FIXED_OVERHEAD
 }
 
 export function getCallDataAdditionalByNetwork(
@@ -265,5 +261,11 @@ export function getCallDataAdditionalByNetwork(
   // added in the calculation for the L1 fee
   if (network.id === 'arbitrum') return 0n
 
-  return getCallDataAdditional(accountOp, accountState)
+  const estimationCallData = getProbableCallData(accountOp, accountState, network)
+  const FIXED_OVERHEAD = 21000n
+  const bytes = Buffer.from(estimationCallData.substring(2))
+  const nonZeroBytes = BigInt(bytes.filter((b) => b).length)
+  const zeroBytes = BigInt(BigInt(bytes.length) - nonZeroBytes)
+  const txDataGas = zeroBytes * 4n + nonZeroBytes * 16n
+  return txDataGas + FIXED_OVERHEAD
 }

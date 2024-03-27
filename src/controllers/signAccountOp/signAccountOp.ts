@@ -1,26 +1,30 @@
-import { AbiCoder, BaseContract, formatUnits, Interface, toBeHex } from 'ethers'
+import { AbiCoder, BaseContract, formatUnits, getAddress, Interface, toBeHex } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import EntryPointAbi from '../../../contracts/compiled/EntryPoint.json'
 import ERC20 from '../../../contracts/compiled/IERC20.json'
 import { FEE_COLLECTOR } from '../../consts/addresses'
-import { AMBIRE_PAYMASTER, ERC_4337_ENTRYPOINT } from '../../consts/deploy'
+import { AMBIRE_PAYMASTER, ERC_4337_ENTRYPOINT, SINGLETON } from '../../consts/deploy'
 import { Account, AccountStates } from '../../interfaces/account'
 import { ExternalSignerControllers, Key } from '../../interfaces/keystore'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { Storage } from '../../interfaces/storage'
+import { isSmartAccount } from '../../libs/account/account'
 import { AccountOp, GasFeePayment, getSignableCalls } from '../../libs/accountOp/accountOp'
-import { EstimateResult } from '../../libs/estimate/estimate'
+import { EstimateResult } from '../../libs/estimate/interfaces'
 import { GasRecommendation, getCallDataAdditionalByNetwork } from '../../libs/gasPrice/gasPrice'
 import { callsHumanizer } from '../../libs/humanizer'
 import { IrCall } from '../../libs/humanizer/interfaces'
 import { Price, TokenResult } from '../../libs/portfolio'
 import { getExecuteSignature, getTypedData, wrapStandard } from '../../libs/signMessage/signMessage'
+import { getGasUsed } from '../../libs/singleton/singleton'
 import { UserOperation } from '../../libs/userOperation/types'
 import {
+  getActivatorCall,
   getOneTimeNonce,
   getPreVerificationGas,
   isErc4337Broadcast,
+  shouldIncludeActivatorCall,
   shouldUseOneTimeNonce,
   shouldUsePaymaster
 } from '../../libs/userOperation/userOperation'
@@ -537,21 +541,28 @@ export class SignAccountOpController extends EventEmitter {
         'baseFeeToDivide' in gasRecommendation ? gasRecommendation.baseFeeToDivide : gasPrice
 
       // EOA
-      if (!this.#account || !this.#account?.creation) {
+      if (!isSmartAccount(this.#account)) {
         simulatedGasLimit = gasUsed
+
+        // special gas rules for the singleton
+        if (getAddress(this.accountOp.calls[0].to) === SINGLETON) {
+          simulatedGasLimit = getGasUsed(simulatedGasLimit)
+        }
+
         amount = simulatedGasLimit * gasPrice + feeTokenEstimation.addedNative
       } else if (this.#userOperation) {
         // ERC 4337
         const usesPaymaster = shouldUsePaymaster(this.#network)
-        simulatedGasLimit =
-          this.#estimation!.erc4337estimation!.gasUsed + feeTokenEstimation.gasUsed!
+        simulatedGasLimit = gasUsed + feeTokenEstimation.gasUsed!
         simulatedGasLimit += usesPaymaster
           ? this.#estimation!.arbitrumL1FeeIfArbitrum.withFee
           : this.#estimation!.arbitrumL1FeeIfArbitrum.noFee
 
-        // add preVerificationGas to simulated gas so we could get the correct
-        // fee the user should pay
-        const l1FeeAsL2Gas = feeTokenEstimation.addedNative / baseFeeToDivide
+        const l1FeeAsL2Gas =
+          this.#estimation!.l1FeeAsL2Gas > 0n
+            ? this.#estimation!.l1FeeAsL2Gas
+            : feeTokenEstimation.addedNative / baseFeeToDivide
+
         const preVerificationGas = getPreVerificationGas(
           this.#userOperation,
           usesPaymaster,
@@ -612,6 +623,14 @@ export class SignAccountOpController extends EventEmitter {
       if ('maxPriorityFeePerGas' in gasRecommendation) {
         fee.maxPriorityFeePerGas = gasRecommendation.maxPriorityFeePerGas
       }
+
+      // for networks that don't have the baseFeePerGas label,
+      // we set the baseFee to the gasPrice as the average is kind of
+      // the minimum to enter the next block... kind of
+      fee.baseFeePerGas =
+        'baseFeePerGas' in gasRecommendation
+          ? gasRecommendation.baseFeePerGas
+          : gasRecommendation.gasPrice
 
       return fee
     })
@@ -797,6 +816,17 @@ export class SignAccountOpController extends EventEmitter {
     // - the fee call stays, causing a low gas limit revert
     delete this.accountOp.feeCall
 
+    // delete the activatorCall as a precaution that it won't be added twice
+    delete this.accountOp.activatorCall
+
+    // @EntryPoint activation
+    // if the account is v2 without the entry point signer being a signer
+    // and the network is 4337 but doesn't have a paymaster, we should activate
+    // the entry point and therefore do so here
+    if (shouldIncludeActivatorCall(this.#network, accountState)) {
+      this.accountOp.activatorCall = getActivatorCall(this.accountOp.accountAddr)
+    }
+
     try {
       // In case of EOA account
       if (!this.#account.creation) {
@@ -812,6 +842,7 @@ export class SignAccountOpController extends EventEmitter {
       } else if (this.accountOp.gasFeePayment.paidBy !== this.#account.addr) {
         // Smart account, but EOA pays the fee
         // EOA pays for execute() - relayerless
+
         this.accountOp.signature = await getExecuteSignature(
           this.#network,
           this.accountOp,
@@ -875,7 +906,10 @@ export class SignAccountOpController extends EventEmitter {
         }
 
         if (feeTokenEstimation.addedNative > 0n) {
-          const l1FeeAsL2Gas = feeTokenEstimation.addedNative / gasFeePayment.baseFeeToDivide
+          const l1FeeAsL2Gas =
+            this.#estimation!.l1FeeAsL2Gas > 0n
+              ? this.#estimation!.l1FeeAsL2Gas
+              : feeTokenEstimation.addedNative / gasFeePayment.baseFeeToDivide
 
           userOperation.preVerificationGas = getPreVerificationGas(
             userOperation,
@@ -922,6 +956,7 @@ export class SignAccountOpController extends EventEmitter {
       } else {
         // Relayer
         this.#addFeePayment()
+
         this.accountOp.signature = await getExecuteSignature(
           this.#network,
           this.accountOp,

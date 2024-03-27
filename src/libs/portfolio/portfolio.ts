@@ -100,7 +100,11 @@ export class Portfolio {
     // Because of this, we fall back to Velcro default response.
     let hints: Hints
     try {
-      hints = await this.batchedVelcroDiscovery({ networkId, accountAddr, baseCurrency })
+      // if the network doesn't have a relayer, velcro will not work
+      // but we should not record an error if such is the case
+      hints = this.network.hasRelayer
+        ? await this.batchedVelcroDiscovery({ networkId, accountAddr, baseCurrency })
+        : getEmptyHints(networkId, accountAddr)
     } catch (error: any) {
       hints = {
         ...getEmptyHints(networkId, accountAddr),
@@ -188,6 +192,8 @@ export class Portfolio {
     const tokenFilter = ([error, result]: [string, TokenResult]): boolean => {
       if (error !== '0x' || result.symbol === '') return false
 
+      if (result.amount > 0) return true
+
       const isTokenPreference = localOpts.tokenPreferences?.find((tokenPreference) => {
         return tokenPreference.address === result.address && tokenPreference.networkId === networkId
       })
@@ -198,16 +204,16 @@ export class Portfolio {
       const isPinned = !!PINNED_TOKENS.find((pinnedToken) => {
         return pinnedToken.networkId === networkId && pinnedToken.address === result.address
       })
-      const isInAdditionalHints = localOpts.additionalHints?.includes(result.address)
-      const isNative = result.address === ZeroAddress
 
-      return !!(
-        isPinned ||
-        isInAdditionalHints ||
-        isNative ||
-        isTokenPreference ||
-        (result.amount && result.amount > 0)
-      )
+      const isInAdditionalHints = localOpts.additionalHints?.includes(result.address)
+
+      // if the amount is 0
+      // return the token if it's pinned and requested
+      // or if it's not pinned but under the limit
+      const pinnedRequested = isPinned && localOpts.fetchPinned
+      const underLimit = !isPinned && tokensWithErr.length <= limits.erc20 / 2
+
+      return !!isTokenPreference || isInAdditionalHints || pinnedRequested || underLimit
     }
 
     const tokens = tokensWithErr
@@ -250,10 +256,10 @@ export class Portfolio {
         try {
           const priceData = await this.batchedGecko({
             ...token,
-            networkId,
+            network: this.network,
             baseCurrency,
             // this is what to look for in the coingecko response object
-            responseIdentifier: geckoResponseIdentifier(token.address, networkId)
+            responseIdentifier: geckoResponseIdentifier(token.address, this.network)
           })
           const priceIn: Price[] = Object.entries(priceData || {}).map(([baseCurr, price]) => ({
             baseCurrency: baseCurr,
