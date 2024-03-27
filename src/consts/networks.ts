@@ -116,7 +116,8 @@ const networks: NetworkDescriptor[] = [
     explorerUrl: 'https://arbiscan.io',
     erc4337: {
       enabled: true,
-      hasPaymaster: true
+      hasPaymaster: true,
+      explorerId: 'arbitrum-one'
     },
     unstoppableDomainsChain: 'ERC20',
     isSAEnabled: true,

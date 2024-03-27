@@ -175,3 +175,7 @@ export function shouldIncludeActivatorCall(
 ) {
   return accountState.isV2 && network.erc4337.enabled && !accountState.isErc4337Enabled
 }
+
+export function getExplorerId(network: NetworkDescriptor) {
+  return network.erc4337.explorerId ?? network.id
+}

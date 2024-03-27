@@ -8,6 +8,7 @@ import { Banner } from '../../interfaces/banner'
 import { Storage } from '../../interfaces/storage'
 import { Message } from '../../interfaces/userRequest'
 import { AccountOp, AccountOpStatus } from '../../libs/accountOp/accountOp'
+import { getExplorerId } from '../../libs/userOperation/userOperation'
 import { Bundler } from '../../services/bundlers/bundler'
 import { fetchUserOp } from '../../services/explorers/jiffyscan'
 import EventEmitter from '../eventEmitter/eventEmitter'
@@ -284,7 +285,7 @@ export class ActivityController extends EventEmitter {
                 let txnId = accountOp.txnId
                 if (accountOp.userOpHash) {
                   const [response, bundlerResult] = await Promise.all([
-                    fetchUserOp(accountOp.userOpHash, fetch),
+                    fetchUserOp(accountOp.userOpHash, fetch, getExplorerId(networkConfig)),
                     Bundler.getStatusAndTxnId(accountOp.userOpHash, networkConfig)
                   ])
 
@@ -464,7 +465,9 @@ export class ActivityController extends EventEmitter {
 
       const url =
         accountOp.userOpHash && accountOp.txnId === accountOp.userOpHash
-          ? `https://jiffyscan.xyz/userOpHash/${accountOp.userOpHash}?network=${network.id}`
+          ? `https://jiffyscan.xyz/userOpHash/${accountOp.userOpHash}?network=${getExplorerId(
+              network
+            )}`
           : `${network.explorerUrl}/tx/${accountOp.txnId}`
 
       return {
