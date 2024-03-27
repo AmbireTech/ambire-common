@@ -198,7 +198,9 @@ export const getAccountImportStatus = ({
 
   // Check if the account has been imported with at least one of the keys
   // that the account was originally associated with, when it was imported.
-  const importedKeysForThisAcc = keys.filter((key) => account.associatedKeys.includes(key.addr))
+  const storedAssociatedKeys =
+    alreadyImportedAccounts.find((x) => x.addr === account.addr)?.associatedKeys || []
+  const importedKeysForThisAcc = keys.filter((key) => storedAssociatedKeys.includes(key.addr))
   // Could be imported as a view only account (and therefore, without a key)
   if (!importedKeysForThisAcc.length) return ImportStatus.ImportedWithoutKey
 
@@ -213,7 +215,7 @@ export const getAccountImportStatus = ({
       ...accountsOnPage
         .filter((x) => x.account.addr === account.addr)
         .flatMap((x) => x.account.associatedKeys),
-      ...account.associatedKeys
+      ...storedAssociatedKeys
     ])
   )
 
@@ -245,10 +247,10 @@ export const getAccountImportStatus = ({
     const associatedKeysFoundOnPageAreDifferent = accountsOnPage
       .filter((x) => x.account.addr === account.addr)
       .some((x) => {
-        const pageKeysSet = new Set(x.account.associatedKeys)
-        const accountKeysSet = new Set(account.associatedKeys)
+        const incomingAssociatedKeysSet = new Set(x.account.associatedKeys)
+        const storedAssociatedKeysSet = new Set(storedAssociatedKeys)
 
-        return ![...pageKeysSet].every((k) => accountKeysSet.has(k))
+        return ![...incomingAssociatedKeysSet].every((k) => storedAssociatedKeysSet.has(k))
       })
 
     return associatedKeysFoundOnPageAreDifferent
