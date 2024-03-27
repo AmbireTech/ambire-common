@@ -3,16 +3,21 @@ import { HUMANIZER_META_KEY, integrateFragments } from './utils'
 import { HumanizerFragment, HumanizerMeta } from './interfaces'
 // @TODO to more usable place
 const EMPTY_HUMANIZER_META = { abis: { NO_ABI: {} }, knownAddresses: {} }
+const LAZY_STORE_DELAY = 1 * 1000
+const LAZY_READ_DELAY = 30 * 1000
+
 let memoryHumanizerMeta: HumanizerMeta = EMPTY_HUMANIZER_META
-const LAZY_STORE_DELAY = 1000
 let hasTimeout = false
+let lastTimeRead = 0
 
 export async function lazyReadHumanizerMeta(
   storage: Storage,
-  options?: any
+  options?: { nocache?: boolean }
 ): Promise<HumanizerMeta> {
-  if (options.nocache)
+  if (Date.now() - lastTimeRead > LAZY_READ_DELAY || options?.nocache) {
     memoryHumanizerMeta = await storage.get(HUMANIZER_META_KEY, EMPTY_HUMANIZER_META)
+    lastTimeRead = Date.now()
+  }
   return memoryHumanizerMeta
 }
 
