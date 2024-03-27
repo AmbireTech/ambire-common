@@ -224,7 +224,7 @@ describe('Settings Controller', () => {
     const eth = settingsController.networks.find((net) => net.id === 'ethereum')!
     expect(eth?.features.length).toBe(3)
 
-    const saSupport = eth?.features.find((feat) => feat.id === 'saSupport')
+    const saSupport = eth?.features.find((feat) => feat.id === 'saSupport')!
     expect(saSupport).not.toBe(null)
     expect(saSupport).not.toBe(undefined)
     expect(saSupport.level).toBe('success')
