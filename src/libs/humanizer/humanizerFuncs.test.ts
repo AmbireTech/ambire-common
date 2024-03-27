@@ -13,7 +13,7 @@ import { uniswapHumanizer } from './modules/Uniswap'
 import { parseCalls } from './parsers'
 
 import humanizerInfo from '../../consts/humanizer/humanizerInfo.json'
-import { HUMANIZER_META_KEY, integrateFragments } from '.'
+import { HUMANIZER_META_KEY, integrateFragments } from './utils'
 import { produceMemoryStore } from '../../../test/helpers'
 import { humanizerMetaParsing } from './parsers/humanizerMetaParsing'
 

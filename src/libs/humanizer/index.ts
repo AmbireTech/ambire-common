@@ -34,7 +34,6 @@ import {
 } from './typedMessageModules'
 import { addFragsToLazyStore, lazyReadHumanizerMeta } from './lazyStorage'
 import { HUMANIZER_META_KEY, integrateFragments } from './utils'
-
 // from most generic to least generic
 // the final humanization is the final triggered module
 export const humanizerCallModules: HumanizerCallModule[] = [

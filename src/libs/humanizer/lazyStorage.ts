@@ -28,7 +28,7 @@ export async function addFragsToLazyStore(
 ): Promise<void> {
   if (!frags.length) return
   memoryHumanizerMeta = integrateFragments(memoryHumanizerMeta, frags)
-  if (options.urgent) {
+  if (options?.urgent) {
     await storage.set(HUMANIZER_META_KEY, memoryHumanizerMeta)
   } else if (!hasTimeout) {
     hasTimeout = true
