@@ -21,7 +21,7 @@ import {
 import { estimationErrorFormatted } from './errors'
 import { EstimateResult, FeeToken } from './interfaces'
 
-function getUserOpsForEstimate(
+function getUserOpForEstimate(
   userOp: UserOperation,
   op: AccountOp,
   isDeployed: boolean
@@ -122,15 +122,20 @@ export async function bundlerEstimate(
   )
   if (gasPrices instanceof Error) return estimationErrorFormatted(gasPrices, feePaymentOptions)
 
-  // use medium for the gas limit estimation
-  userOp.maxFeePerGas = gasPrices.medium.maxFeePerGas
-  userOp.maxPriorityFeePerGas = gasPrices.medium.maxPriorityFeePerGas
+  // add the maxFeePerGas and maxPriorityFeePerGas only if the network
+  // is optimistic as the bundler uses these values to determine the
+  // preVerificationGas.
+  if (network.isOptimistic) {
+    // use medium for the gas limit estimation
+    userOp.maxFeePerGas = gasPrices.medium.maxFeePerGas
+    userOp.maxPriorityFeePerGas = gasPrices.medium.maxPriorityFeePerGas
+  }
 
   // add fake data so simulation works
   if (network.erc4337.hasPaymaster) userOp.paymasterAndData = getPaymasterDataForEstimate()
 
   if (userOp.activatorCall) localOp.activatorCall = userOp.activatorCall
-  const uOp = getUserOpsForEstimate(userOp, localOp, accountState.isDeployed)
+  const uOp = getUserOpForEstimate(userOp, localOp, accountState.isDeployed)
   const gasData = await Bundler.estimate(uOp, network).catch((e: any) =>
     mapError(
       new Error(
