@@ -1,4 +1,4 @@
-import { FallbackProvider, JsonRpcProvider } from 'ethers'
+import { JsonRpcProvider } from 'ethers'
 
 import { Account } from './account'
 import { Key } from './keystore'
@@ -59,6 +59,6 @@ export type NetworkPreferences = {
   [key in NetworkDescriptor['id']]: NetworkPreference | CustomNetwork
 }
 
-export type RPCProvider = (JsonRpcProvider | FallbackProvider) & { isWorking?: boolean }
+export type RPCProvider = JsonRpcProvider & { isWorking?: boolean }
 
 export type RPCProviders = { [networkId: NetworkDescriptor['id']]: RPCProvider }

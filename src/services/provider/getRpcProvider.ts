@@ -1,22 +1,24 @@
-import { FallbackProvider, JsonRpcProvider, Networkish } from 'ethers'
+import { JsonRpcProvider, Networkish } from 'ethers'
 
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 
-const getRpcProvider = (rpcUrls: NetworkDescriptor['rpcUrls'], network?: Networkish) => {
+const getRpcProvider = (
+  rpcUrls: NetworkDescriptor['rpcUrls'],
+  network?: Networkish,
+  preferredRpcUrl?: string
+) => {
   if (!rpcUrls.length) {
     throw new Error('rpcUrls must be a non-empty array')
   }
 
-  if (rpcUrls.length === 1) {
-    return new JsonRpcProvider(rpcUrls[0], network)
+  let rpcUrl = rpcUrls[0]
+
+  if (preferredRpcUrl) {
+    const prefUrl = rpcUrls.find((u) => u === preferredRpcUrl)
+    if (prefUrl) rpcUrl = prefUrl
   }
 
-  const providers = rpcUrls.map((url) => new JsonRpcProvider(url))
-  const quorumProvider = new FallbackProvider(providers, network, {
-    quorum: providers.length <= 2 ? 1 : 2
-  })
-
-  return quorumProvider
+  return new JsonRpcProvider(rpcUrl, network)
 }
 
 export { getRpcProvider }

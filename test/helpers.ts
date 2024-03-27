@@ -1,4 +1,4 @@
-import { BaseContract, FallbackProvider, JsonRpcProvider } from 'ethers'
+import { BaseContract, JsonRpcProvider } from 'ethers'
 import { ethers } from 'hardhat'
 
 import { Storage } from '../src/interfaces/storage'
@@ -44,7 +44,7 @@ function getTimelockData(recoveryInfo = defaultRecoveryInfo) {
   return { hash, timelockAddress }
 }
 
-async function getNonce(ambireAccountAddr: string, provider: JsonRpcProvider | FallbackProvider) {
+async function getNonce(ambireAccountAddr: string, provider: JsonRpcProvider) {
   const accountContract = new ethers.Contract(ambireAccountAddr, AmbireAccount.abi, provider)
   return accountContract.nonce()
 }

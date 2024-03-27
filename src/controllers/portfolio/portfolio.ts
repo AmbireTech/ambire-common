@@ -1,6 +1,5 @@
 /* eslint-disable no-param-reassign */
 /* eslint-disable import/no-extraneous-dependencies */
-import { FallbackProvider, JsonRpcProvider } from 'ethers'
 import fetch from 'node-fetch'
 
 import { PINNED_TOKENS } from '../../consts/pinnedTokens'
@@ -390,22 +389,11 @@ export class PortfolioController extends EventEmitter {
         }
 
         const provider = providers[network.id]
-        if (provider instanceof JsonRpcProvider) {
-          shouldInitNewPortfolio =
-            // eslint-disable-next-line no-underscore-dangle
-            this.#portfolioLibs.get(key)?.network?.rpcUrls[0] !== provider?._getConnection().url
-        }
 
-        if (provider instanceof FallbackProvider) {
-          const oldRpcUrls =
-            provider?.providerConfigs?.map(
-              // eslint-disable-next-line no-underscore-dangle
-              (config) => (config.provider as JsonRpcProvider)._getConnection().url
-            ) || []
-          shouldInitNewPortfolio =
-            oldRpcUrls.length !== this.#portfolioLibs.get(key)?.network?.rpcUrls.length ||
-            oldRpcUrls.some((u) => !this.#portfolioLibs.get(key)?.network?.rpcUrls.includes(u))
-        }
+        shouldInitNewPortfolio =
+          // eslint-disable-next-line no-underscore-dangle
+          this.#portfolioLibs.get(key)?.network?.rpcUrls[0] !== provider?._getConnection().url
+
         if (shouldInitNewPortfolio) {
           this.#portfolioLibs.set(key, new Portfolio(fetch, providers[network.id], network))
         }

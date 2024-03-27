@@ -1,4 +1,4 @@
-import { FallbackProvider, JsonRpcProvider, ZeroAddress } from 'ethers'
+import { JsonRpcProvider, ZeroAddress } from 'ethers'
 
 import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFactory.json'
 import { AMBIRE_ACCOUNT_FACTORY, DEPLOYLESS_SIMULATION_FROM } from '../../consts/deploy'
@@ -11,7 +11,7 @@ import { DeploylessMode, fromDescriptor } from './deployless'
 // if the call is successful, it means Ambire smart accounts are supported
 // on the given network
 export async function getSASupport(
-  provider: JsonRpcProvider | FallbackProvider
+  provider: JsonRpcProvider
 ): Promise<{ addressMatches: boolean; supportsStateOverride: boolean }> {
   const smartAccount = await getSmartAccount([
     {
@@ -58,7 +58,7 @@ export async function getSASupport(
 }
 
 export async function simulateDebugTraceCall(
-  provider: JsonRpcProvider | FallbackProvider /* as Provider does not have .send */
+  provider: JsonRpcProvider /* as Provider does not have .send */
 ): Promise<boolean> {
   let supportsDebugTraceCall = true
 

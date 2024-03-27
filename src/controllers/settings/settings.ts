@@ -1,6 +1,4 @@
 /* eslint-disable no-underscore-dangle */
-import { FallbackProvider, JsonRpcProvider } from 'ethers'
-
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { networks } from '../../consts/networks'
 import { Key } from '../../interfaces/keystore'
@@ -57,25 +55,11 @@ export class SettingsController extends EventEmitter {
 
   #setProvider(network: NetworkDescriptor, newRpcUrls: string[]) {
     const provider = this.providers[network.id]
-    let hasNewRpcUrls = false
-
-    if (provider instanceof JsonRpcProvider) {
-      hasNewRpcUrls = provider?._getConnection().url !== newRpcUrls[0]
-    }
-
-    if (provider instanceof FallbackProvider) {
-      const oldRpcUrls = provider.providerConfigs.map(
-        // eslint-disable-next-line no-underscore-dangle
-        (config) => (config.provider as JsonRpcProvider)._getConnection().url
-      )
-      hasNewRpcUrls =
-        oldRpcUrls.length !== newRpcUrls.length || oldRpcUrls.some((u) => !newRpcUrls.includes(u))
-    }
 
     // Only update the RPC if the new RPC is different from the current one
     // or if there is no RPC for this network yet.
     // eslint-disable-next-line no-underscore-dangle
-    if (!provider || hasNewRpcUrls) {
+    if (!provider || provider?._getConnection().url !== newRpcUrls[0]) {
       const oldRPC = this.providers[network.id]
 
       if (oldRPC) {
