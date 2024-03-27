@@ -7,11 +7,10 @@ import { StaticJsonRpcProvider } from '@ethersproject/providers'
 
 import AmbireAccountNoReverts from '../../../contracts/compiled/AmbireAccountNoRevert.json'
 import { ERC_4337_ENTRYPOINT } from '../../../dist/src/consts/deploy'
-import { ENTRY_POINT_MARKER } from '../../consts/deploy'
+import { PROXY_NO_REVERTS } from '../../consts/deploy'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { Erc4337GasLimits } from '../../libs/estimate/interfaces'
 import { Gas1559Recommendation } from '../../libs/gasPrice/gasPrice'
-import { privSlot } from '../../libs/proxyDeploy/deploy'
 import { UserOperation } from '../../libs/userOperation/types'
 import { getCleanUserOp } from '../../libs/userOperation/userOperation'
 
@@ -137,24 +136,24 @@ export class Bundler {
     const url = `https://api.pimlico.io/v1/${network.id}/rpc?apikey=${process.env.REACT_APP_PIMLICO_API_KEY}`
     const provider = new StaticJsonRpcProvider(url)
 
-    // we do state override to give the entry point permissions so we're
-    // able to perform an executeBySender estimation on the first call.
-    // We don't have another choice as:
-    // - we can't do spoof simulations as we can't control FROM
-    // - we can't rely on executeMultiple() as we need a valid signature
-    // to have the correct callData estimation
-    let stateOverride = {}
-    if (userOperation.requestType === 'activator' && userOperation.initCode === '0x') {
-      const stateDiff = {
-        [`0x${privSlot(0, 'address', ERC_4337_ENTRYPOINT, 'bytes32')}`]: ENTRY_POINT_MARKER
-      }
-      stateOverride = {
-        [userOperation.sender]: {
-          code: AmbireAccountNoReverts.binRuntime,
-          stateDiff
-        }
-      }
-    }
+    // stateOverride is needed as our main AmbireAccount.sol contract
+    // reverts when doing validateUserOp in certain cases and that's preventing
+    // the estimation to pass. That's why we replace the main code with one
+    // that doesn't revert in validateUserOp.
+    // when deploying, we replace the proxy; otherwise, we replace the
+    // code at the sender
+    const stateOverride =
+      userOperation.initCode !== '0x'
+        ? {
+            [PROXY_NO_REVERTS]: {
+              code: AmbireAccountNoReverts.binRuntime
+            }
+          }
+        : {
+            [userOperation.sender]: {
+              code: AmbireAccountNoReverts.binRuntime
+            }
+          }
 
     return provider.send('eth_estimateUserOperationGas', [
       getCleanUserOp(userOperation)[0],

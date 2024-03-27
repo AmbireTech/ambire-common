@@ -3,12 +3,13 @@ import { NetworkDescriptor } from 'interfaces/networkDescriptor'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFactory.json'
-import AmbireAccountNoRevert from '../../../contracts/compiled/AmbireAccountNoRevert.json'
-import { AMBIRE_ACCOUNT_FACTORY, AMBIRE_PAYMASTER } from '../../consts/deploy'
+import { AMBIRE_ACCOUNT_FACTORY, AMBIRE_PAYMASTER, PROXY_NO_REVERTS } from '../../consts/deploy'
 import { Account, AccountStates } from '../../interfaces/account'
+import { dedicatedToOneSAPriv } from '../../interfaces/keystore'
 import { Bundler } from '../../services/bundlers/bundler'
 import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
 import { getFeeCall } from '../calls/calls'
+import { getProxyDeployBytecode } from '../proxyDeploy/deploy'
 import { getAmbireAccountAddress } from '../proxyDeploy/getAmbireAddressTwo'
 import { UserOperation } from '../userOperation/types'
 import {
@@ -18,46 +19,42 @@ import {
   getUserOperation
 } from '../userOperation/userOperation'
 import { estimationErrorFormatted } from './errors'
-import { Erc4337GasLimits, EstimateResult, FeeToken } from './interfaces'
+import { EstimateResult, FeeToken } from './interfaces'
 
 function getUserOpsForEstimate(
   userOp: UserOperation,
   op: AccountOp,
   isDeployed: boolean
-): UserOperation[] {
+): UserOperation {
   const ambireAccount = new Interface(AmbireAccount.abi)
   const uOp = { ...userOp }
-  const userOps = []
 
   if (!isDeployed) {
-    // this one doesn't have the initCode and will get stateOverriden
-    // to have the code and entry point permissions. Goal: call data estimate
-    const copy = { ...userOp }
-    copy.initCode = '0x'
-    copy.callData = ambireAccount.encodeFunctionData('executeBySender', [getSignableCalls(op)])
-    copy.signature = getSigForCalculations()
-    userOps.push(copy)
-
-    // this one will have initCode but empty callData. Goal: deploy estimate
+    // replace the initCode with one that will not revert in estimation
     const factoryInterface = new Interface(AmbireAccountFactory.abi)
-    uOp.sender = getAmbireAccountAddress(AMBIRE_ACCOUNT_FACTORY, AmbireAccountNoRevert.bin)
+    const bytecode = getProxyDeployBytecode(
+      PROXY_NO_REVERTS,
+      [{ addr: AMBIRE_ACCOUNT_FACTORY, hash: dedicatedToOneSAPriv }],
+      { privSlot: 0 }
+    )
+    uOp.sender = getAmbireAccountAddress(AMBIRE_ACCOUNT_FACTORY, bytecode)
     uOp.initCode = hexlify(
       concat([
         AMBIRE_ACCOUNT_FACTORY,
-        factoryInterface.encodeFunctionData('deploy', [AmbireAccountNoRevert.bin, toBeHex(0, 32)])
+        factoryInterface.encodeFunctionData('deploy', [bytecode, toBeHex(0, 32)])
       ])
     )
-    uOp.callData = ambireAccount.encodeFunctionData('executeMultiple', [[]])
+    uOp.callData = ambireAccount.encodeFunctionData('executeMultiple', [
+      [[getSignableCalls(op), getSigForCalculations()]]
+    ])
     uOp.nonce = getOneTimeNonce(uOp)
   } else {
-    // executeBySender as contract is deployed. If entry point does not have
-    // permissions, we do a state override to make it have
+    // executeBySender as contract is deployed
     uOp.callData = ambireAccount.encodeFunctionData('executeBySender', [getSignableCalls(op)])
     uOp.signature = getSigForCalculations()
   }
 
-  userOps.push(uOp)
-  return userOps
+  return uOp
 }
 
 function getFeeTokenForEstimate(feeTokens: FeeToken[]): FeeToken | null {
@@ -133,30 +130,15 @@ export async function bundlerEstimate(
   if (network.erc4337.hasPaymaster) userOp.paymasterAndData = getPaymasterDataForEstimate()
 
   if (userOp.activatorCall) localOp.activatorCall = userOp.activatorCall
-  const userOps = getUserOpsForEstimate(userOp, localOp, accountState.isDeployed)
-  const estimations = userOps.map((uOp) =>
-    Bundler.estimate(uOp, network).catch((e: any) =>
-      mapError(
-        new Error(
-          e.error && e.error.message ? e.error.message : 'Estimation failed with unknown reason'
-        )
+  const uOp = getUserOpsForEstimate(userOp, localOp, accountState.isDeployed)
+  const gasData = await Bundler.estimate(uOp, network).catch((e: any) =>
+    mapError(
+      new Error(
+        e.error && e.error.message ? e.error.message : 'Estimation failed with unknown reason'
       )
     )
   )
-
-  const results = await Promise.all(estimations)
-  for (let i = 0; i < results.length; i++) {
-    if (results[i] instanceof Error)
-      return estimationErrorFormatted(results[i] as Error, feePaymentOptions)
-  }
-
-  const callDataRes = results[0] as Erc4337GasLimits
-  const verificationRes = results[results.length - 1] as Erc4337GasLimits
-  const gasData = {
-    preVerificationGas: BigInt(verificationRes.preVerificationGas),
-    verificationGasLimit: BigInt(verificationRes.verificationGasLimit),
-    callGasLimit: BigInt(callDataRes.callGasLimit)
-  }
+  if (gasData instanceof Error) return estimationErrorFormatted(gasData as Error, feePaymentOptions)
 
   const apeMaxFee = BigInt(gasPrices.fast.maxFeePerGas) + BigInt(gasPrices.fast.maxFeePerGas) / 5n
   const apePriority =
@@ -167,15 +149,15 @@ export async function bundlerEstimate(
   }
 
   return {
-    gasUsed: gasData.callGasLimit,
+    gasUsed: BigInt(gasData.callGasLimit),
     // the correct nonce for the userOp cannot be determined here as
     // if the request type is not standard, it will completely change
     nonce: Number(BigInt(userOp.nonce).toString()),
     feePaymentOptions,
     erc4337GasLimits: {
-      preVerificationGas: toBeHex(gasData.preVerificationGas),
-      verificationGasLimit: toBeHex(gasData.verificationGasLimit),
-      callGasLimit: toBeHex(gasData.callGasLimit),
+      preVerificationGas: gasData.preVerificationGas,
+      verificationGasLimit: gasData.verificationGasLimit,
+      callGasLimit: gasData.callGasLimit,
       gasPrice: { ...gasPrices, ape }
     },
     error: null
