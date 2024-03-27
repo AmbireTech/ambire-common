@@ -37,7 +37,7 @@ export function calculateAccountPortfolio(
   }
 
   // 1. On update latest is empty {} in the beginning
-  if (!state.latest || !state.latest[selectedAccount]) {
+  if (!state.latest) {
     return {
       tokens: accountPortfolio?.tokens || [],
       collections: accountPortfolio?.collections || [],
