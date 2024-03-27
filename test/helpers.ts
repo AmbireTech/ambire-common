@@ -1,7 +1,11 @@
 import { BaseContract, JsonRpcProvider } from 'ethers'
 import { ethers } from 'hardhat'
 
+import { Account, AccountStates } from '../src/interfaces/account'
+import { NetworkDescriptor } from '../src/interfaces/networkDescriptor'
+import { RPCProviders } from '../src/interfaces/settings'
 import { Storage } from '../src/interfaces/storage'
+import { getAccountState } from '../src/libs/accountState/accountState'
 import { parse, stringify } from '../src/libs/richJson/richJson'
 import { wrapEthSign, wrapTypedData } from './ambireSign'
 import { abiCoder, addressOne, addressTwo, AmbireAccount, chainId } from './config'
@@ -212,6 +216,27 @@ function getTargetNonce(userOperation: any) {
     .substring(18)}${ethers.toBeHex(0, 8).substring(2)}`
 }
 
+const getAccountsInfo = async (
+  networks: NetworkDescriptor[],
+  providers: RPCProviders,
+  accounts: Account[]
+): Promise<AccountStates> => {
+  const result = await Promise.all(
+    networks.map((network) => getAccountState(providers[network.id], network, accounts))
+  )
+  const states = accounts.map((acc: Account, accIndex: number) => {
+    return [
+      acc.addr,
+      Object.fromEntries(
+        networks.map((network: NetworkDescriptor, netIndex: number) => {
+          return [network.id, result[netIndex][accIndex]]
+        })
+      )
+    ]
+  })
+  return Object.fromEntries(states)
+}
+
 export {
   sendFunds,
   getPriviledgeTxn,
@@ -222,5 +247,6 @@ export {
   produceMemoryStore,
   getPriviledgeTxnWithCustomHash,
   buildUserOp,
-  getTargetNonce
+  getTargetNonce,
+  getAccountsInfo
 }

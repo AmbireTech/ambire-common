@@ -1,8 +1,18 @@
-import { UserOperation } from '../userOperation/types'
+export interface Erc4337GasLimits {
+  preVerificationGas: string
+  verificationGasLimit: string
+  callGasLimit: string
+  gasPrice: {
+    slow: { maxFeePerGas: string; maxPriorityFeePerGas: string }
+    medium: { maxFeePerGas: string; maxPriorityFeePerGas: string }
+    fast: { maxFeePerGas: string; maxPriorityFeePerGas: string }
+    ape: { maxFeePerGas: string; maxPriorityFeePerGas: string }
+  }
+}
 
-export interface Erc4337estimation {
-  userOp: UserOperation
-  gasUsed: bigint
+export interface ArbitrumL1Fee {
+  noFee: bigint
+  withFee: bigint
 }
 
 export interface EstimateResult {
@@ -16,8 +26,13 @@ export interface EstimateResult {
     addedNative: bigint
     isGasTank: boolean
   }[]
-  erc4337estimation: Erc4337estimation | null
-  arbitrumL1FeeIfArbitrum: { noFee: bigint; withFee: bigint }
-  l1FeeAsL2Gas: bigint
+  erc4337GasLimits?: Erc4337GasLimits
   error: Error | null
+}
+
+export interface FeeToken {
+  address: string
+  isGasTank: boolean
+  amount: bigint // how much the user has (from portfolio)
+  symbol: string
 }

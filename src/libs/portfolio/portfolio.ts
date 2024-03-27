@@ -184,7 +184,8 @@ export class Portfolio {
     const tokenFilter = ([error, result]: [string, TokenResult]): boolean => {
       if (error !== '0x' || result.symbol === '') return false
 
-      if (result.amount > 0) return true
+      // always include > 0 amount and native token
+      if (result.amount > 0 || result.address === ZeroAddress) return true
 
       const isPinned = !!PINNED_TOKENS.find((pinnedToken) => {
         return pinnedToken.networkId === networkId && pinnedToken.address === result.address
