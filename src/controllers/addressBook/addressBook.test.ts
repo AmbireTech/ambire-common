@@ -13,7 +13,7 @@ const mockEmitError = jest.fn(() => errors++)
 
 const MOCK_ACCOUNTS: Account[] = [
   {
-    addr: '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045',
+    addr: '0x598cD170E9b90e9c7E57e18B47D589ceC119744c',
     associatedKeys: [],
     initialPrivileges: [],
     creation: null
@@ -55,10 +55,19 @@ describe('AddressBookController', () => {
   // 'any' is on purpose, to override 'emitError' prop (which is protected)
   ;(addressBookController as any).emitError = mockEmitError
 
-  it('address book is empty by default', () => {
-    expect(addressBookController.contacts.length).toEqual(errors)
+  it('wallet accounts are in contacts', () => {
+    addressBookController.update({
+      selectedAccount: '0x598cD170E9b90e9c7E57e18B47D589ceC119744c'
+    })
+    expect(getContactFromName('Account 1')?.isWalletAccount).toBeTruthy()
+    expect(getContactFromName('Account 1')?.address).toEqual(
+      '0x66fE93c51726e6FD51668B0B0434ffcedD604d08'
+    )
+    expect(getContactFromName('Account 2')?.isWalletAccount).toBeTruthy()
+    expect(getContactFromName('Account 2')?.address).toEqual(
+      '0x31800a810A2d9C3315dc714e1Eb988bd6A641eF0'
+    )
   })
-
   it('add contact', async () => {
     await addressBookController.addContact('vitaly', '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045')
 
@@ -82,19 +91,6 @@ describe('AddressBookController', () => {
     )
 
     expect(getContactFromName('vitalik')).toBeUndefined()
-  })
-  it('wallet accounts are in contacts', () => {
-    addressBookController.update({
-      selectedAccount: '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'
-    })
-    expect(getContactFromName('Account 1')?.isWalletAccount).toBeTruthy()
-    expect(getContactFromName('Account 1')?.address).toEqual(
-      '0x66fE93c51726e6FD51668B0B0434ffcedD604d08'
-    )
-    expect(getContactFromName('Account 2')?.isWalletAccount).toBeTruthy()
-    expect(getContactFromName('Account 2')?.address).toEqual(
-      '0x31800a810A2d9C3315dc714e1Eb988bd6A641eF0'
-    )
   })
   it('contact address is checksummed when added', async () => {
     await addressBookController.addContact(
