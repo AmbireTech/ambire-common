@@ -18,20 +18,21 @@ export class AddressBookController extends EventEmitter {
   #manuallyAddedContacts: Contacts = []
 
   // Contacts, generated on the fly from the accounts in the wallet (not stored in storage)
-  #accountsInWalletContacts: Contacts = []
+  #walletAccountSourcedContacts: Contacts = []
 
   #storage: Storage
+
+  #initialLoadPromise: Promise<void>
 
   constructor(storage: Storage) {
     super()
 
     this.#storage = storage
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    this.#load()
+    this.#initialLoadPromise = this.#load()
   }
 
   set accountsInWalletContacts(accountsInWalletContacts: Contacts) {
-    this.#accountsInWalletContacts = accountsInWalletContacts.map((contact) => ({
+    this.#walletAccountSourcedContacts = accountsInWalletContacts.map((contact) => ({
       ...contact,
       isWalletAccount: true
     }))
@@ -39,12 +40,13 @@ export class AddressBookController extends EventEmitter {
   }
 
   get contacts() {
-    return [...this.#manuallyAddedContacts, ...this.#accountsInWalletContacts]
+    return [...this.#manuallyAddedContacts, ...this.#walletAccountSourcedContacts]
   }
 
   async #load() {
     try {
       this.#manuallyAddedContacts = await this.#storage.get('contacts', [])
+      this.emitUpdate()
     } catch (e) {
       this.emitError({
         message:
@@ -84,7 +86,8 @@ export class AddressBookController extends EventEmitter {
     }
   }
 
-  addContact(name: string, address: string) {
+  async addContact(name: string, address: string) {
+    await this.#initialLoadPromise
     const checksummedAddress = this.#getChecksummedAddress(address)
     const trimmedName = name.trim()
 
@@ -104,7 +107,8 @@ export class AddressBookController extends EventEmitter {
     this.#handleManuallyAddedContactsChange()
   }
 
-  renameManuallyAddedContact(address: string, newName: string) {
+  async renameManuallyAddedContact(address: string, newName: string) {
+    await this.#initialLoadPromise
     const checksummedAddress = this.#getChecksummedAddress(address)
     const trimmedNewName = newName.trim()
 
@@ -130,7 +134,8 @@ export class AddressBookController extends EventEmitter {
     this.#handleManuallyAddedContactsChange()
   }
 
-  removeManuallyAddedContact(address: string) {
+  async removeManuallyAddedContact(address: string) {
+    await this.#initialLoadPromise
     const checksummedAddress = this.#getChecksummedAddress(address)
 
     if (!this.#findManuallyAddedContactWithAddress(checksummedAddress)) {

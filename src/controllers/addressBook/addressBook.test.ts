@@ -22,15 +22,15 @@ describe('AddressBookController', () => {
     expect(addressBookController.contacts.length).toEqual(errors)
   })
 
-  it('add contact', () => {
-    addressBookController.addContact('vitaly', '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045')
+  it('add contact', async () => {
+    await addressBookController.addContact('vitaly', '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045')
 
     expect(getContactFromName('vitaly')?.address).toEqual(
       '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'
     )
   })
-  it('rename contact', () => {
-    addressBookController.renameManuallyAddedContact(
+  it('rename contact', async () => {
+    await addressBookController.renameManuallyAddedContact(
       '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045',
       'vitalik'
     )
@@ -39,8 +39,10 @@ describe('AddressBookController', () => {
       '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'
     )
   })
-  it('remove contact', () => {
-    addressBookController.removeManuallyAddedContact('0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045')
+  it('remove contact', async () => {
+    await addressBookController.removeManuallyAddedContact(
+      '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'
+    )
 
     expect(getContactFromName('vitalik')).toBeUndefined()
   })
@@ -65,8 +67,8 @@ describe('AddressBookController', () => {
       '0x31800a810A2d9C3315dc714e1Eb988bd6A641eF0'
     )
   })
-  it('contact address is checksummed when added', () => {
-    addressBookController.addContact(
+  it('contact address is checksummed when added', async () => {
+    await addressBookController.addContact(
       'Jeff',
       '0x64c5f3c58E024170166F85aFE6e291088a2c2968'.toLowerCase()
     )
@@ -75,33 +77,37 @@ describe('AddressBookController', () => {
       '0x64c5f3c58E024170166F85aFE6e291088a2c2968'
     )
   })
-  it('error when removing non-existing contact', () => {
-    addressBookController.removeManuallyAddedContact('0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045')
+  it('error when removing non-existing contact', async () => {
+    await addressBookController.removeManuallyAddedContact(
+      '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'
+    )
 
     expect(mockEmitError).toHaveBeenCalledTimes(errors)
   })
-  it('error when adding contact with already existing address', () => {
-    addressBookController.addContact('tony', '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045')
-    addressBookController.addContact('tony', '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045')
+  it('error when adding contact with already existing address', async () => {
+    await addressBookController.addContact('tony', '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045')
+    await addressBookController.addContact('tony', '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045')
 
     expect(mockEmitError).toHaveBeenCalledTimes(errors)
   })
-  it('error when adding contact with already existing address but lowercased', () => {
-    addressBookController.addContact('tony', '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045')
-    addressBookController.addContact('tony', '0xd8da6bf26964af9d7eed9e03e53415d37aa96045')
+  it('error when adding contact with already existing address but lowercased', async () => {
+    await addressBookController.addContact('tony', '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045')
+    await addressBookController.addContact('tony', '0xd8da6bf26964af9d7eed9e03e53415d37aa96045')
 
     expect(mockEmitError).toHaveBeenCalledTimes(errors)
   })
-  it('error when renaming wallet account contact', () => {
-    addressBookController.renameManuallyAddedContact(
+  it('error when renaming wallet account contact', async () => {
+    await addressBookController.renameManuallyAddedContact(
       '0x66fE93c51726e6FD51668B0B0434ffcedD604d08',
       'Account 2'
     )
 
     expect(mockEmitError).toHaveBeenCalledTimes(errors)
   })
-  it('error when removing wallet account contact', () => {
-    addressBookController.removeManuallyAddedContact('0x66fE93c51726e6FD51668B0B0434ffcedD604d08')
+  it('error when removing wallet account contact', async () => {
+    await addressBookController.removeManuallyAddedContact(
+      '0x66fE93c51726e6FD51668B0B0434ffcedD604d08'
+    )
 
     expect(mockEmitError).toHaveBeenCalledTimes(errors)
   })
