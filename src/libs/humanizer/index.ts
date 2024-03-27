@@ -83,18 +83,19 @@ const sharedHumanization = async <InputDataType extends AccountOp | Message>(
   const nonGlobalFragments: HumanizerFragment[] = []
   let humanizerFragments: HumanizerFragment[] = []
   let op: AccountOp
-  let irCalls
+  let irCalls: IrCall[] = []
   let asyncOps: Promise<HumanizerFragment | null>[] = []
   let parsedMessage: IrMessage
   if ('calls' in data) {
     op = parse(stringify(data))
   }
   for (let i = 0; i <= 3; i++) {
-    let toBeUsed = await lazyReadHumanizerMeta(storage)
-    toBeUsed = integrateFragments(toBeUsed, nonGlobalFragments)
+    let totalHumanizerMetaToBeUsed = await lazyReadHumanizerMeta(storage)
+    totalHumanizerMetaToBeUsed = integrateFragments(totalHumanizerMetaToBeUsed, nonGlobalFragments)
 
     if ('calls' in data) {
-      op!.humanizerMeta = toBeUsed
+      //
+      op!.humanizerMeta = totalHumanizerMetaToBeUsed
       ;[irCalls, asyncOps] = humanizeCalls(op!, humanizerCallModules, { fetch, emitError })
       const [parsedCalls, newAsyncOps] = parseCalls(op!, irCalls, parsingModules, {
         fetch,
@@ -102,11 +103,12 @@ const sharedHumanization = async <InputDataType extends AccountOp | Message>(
       })
       asyncOps.push(...newAsyncOps)
       ;(callback as (response: IrCall[]) => void)(parsedCalls)
+      //
     } else if ('content' in data) {
       const humanizerSettings: HumanizerSettings = {
         accountAddr: data.accountAddr,
         networkId: data?.networkId || 'ethereum',
-        humanizerMeta: toBeUsed
+        humanizerMeta: totalHumanizerMetaToBeUsed
       }
       const irMessage: IrMessage = {
         ...data,
