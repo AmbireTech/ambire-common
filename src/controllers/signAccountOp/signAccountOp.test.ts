@@ -1,6 +1,6 @@
 /* eslint no-console: "off" */
 
-import { ethers, JsonRpcProvider } from 'ethers'
+import { ethers } from 'ethers'
 import fetch from 'node-fetch'
 
 import { describe, expect, jest, test } from '@jest/globals'

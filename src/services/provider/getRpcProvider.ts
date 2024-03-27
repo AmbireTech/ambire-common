@@ -12,9 +12,11 @@ const getRpcProvider = (rpcUrls: NetworkDescriptor['rpcUrls'], network?: Network
   }
 
   const providers = rpcUrls.map((url) => new JsonRpcProvider(url))
-  return new FallbackProvider(providers, network, {
+  const quorumProvider = new FallbackProvider(providers, network, {
     quorum: providers.length <= 2 ? 1 : 2
   })
+
+  return quorumProvider
 }
 
 export { getRpcProvider }

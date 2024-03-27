@@ -1,4 +1,4 @@
-import { ethers, JsonRpcProvider, ZeroAddress } from 'ethers'
+import { ethers, ZeroAddress } from 'ethers'
 import { CollectionResult } from 'libs/portfolio/interfaces'
 
 import { describe, expect, jest } from '@jest/globals'

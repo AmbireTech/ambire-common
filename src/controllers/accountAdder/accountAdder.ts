@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-floating-promises */
-import { getCreate2Address, JsonRpcProvider, keccak256 } from 'ethers'
+import { FallbackProvider, getCreate2Address, JsonRpcProvider, keccak256 } from 'ethers'
 
 import { PROXY_AMBIRE_ACCOUNT } from '../../consts/deploy'
 import {
@@ -268,7 +268,7 @@ export class AccountAdderController extends EventEmitter {
   }: {
     path: HD_PATH_TEMPLATE_TYPE
     networks: NetworkDescriptor[]
-    providers: { [key: string]: JsonRpcProvider }
+    providers: { [key: string]: JsonRpcProvider | FallbackProvider }
   }): void {
     this.hdPathTemplate = path
     this.page = DEFAULT_PAGE
@@ -422,7 +422,7 @@ export class AccountAdderController extends EventEmitter {
   }: {
     page: number
     networks: NetworkDescriptor[]
-    providers: { [key: string]: JsonRpcProvider }
+    providers: { [key: string]: JsonRpcProvider | FallbackProvider }
   }): Promise<void> {
     if (!this.isInitialized) return this.#throwNotInitialized()
     if (!this.#keyIterator) return this.#throwMissingKeyIterator()
@@ -614,7 +614,7 @@ export class AccountAdderController extends EventEmitter {
     providers
   }: {
     networks: NetworkDescriptor[]
-    providers: { [key: string]: JsonRpcProvider }
+    providers: { [key: string]: JsonRpcProvider | FallbackProvider }
   }): Promise<DerivedAccount[]> {
     // Should never happen, because before the #deriveAccounts method gets
     // called - there is a check if the #keyIterator exists.
@@ -713,7 +713,7 @@ export class AccountAdderController extends EventEmitter {
   }: {
     accounts: DerivedAccountWithoutNetworkMeta[]
     networks: NetworkDescriptor[]
-    providers: { [key: string]: JsonRpcProvider }
+    providers: { [key: string]: JsonRpcProvider | FallbackProvider }
   }): Promise<DerivedAccount[]> {
     const accountsObj: { [key: Account['addr']]: DerivedAccount } = Object.fromEntries(
       accounts.map((a) => [a.account.addr, { ...a, account: { ...a.account, usedOnNetworks: [] } }])
@@ -795,7 +795,7 @@ export class AccountAdderController extends EventEmitter {
   }: {
     accounts: Account[]
     networks: NetworkDescriptor[]
-    providers: { [key: string]: JsonRpcProvider }
+    providers: { [key: string]: JsonRpcProvider | FallbackProvider }
   }) {
     if (accounts.length === 0) return
 

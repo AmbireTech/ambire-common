@@ -63,7 +63,14 @@ export class SettingsController extends EventEmitter {
       hasNewRpcUrls = provider?._getConnection().url !== newRpcUrls[0]
     }
 
-    // TODO: impl hasNewRpcUrls for the fallback provider
+    if (provider instanceof FallbackProvider) {
+      const oldRpcUrls = provider.providerConfigs.map(
+        // eslint-disable-next-line no-underscore-dangle
+        (config) => (config.provider as JsonRpcProvider)._getConnection().url
+      )
+      hasNewRpcUrls =
+        oldRpcUrls.length !== newRpcUrls.length || oldRpcUrls.some((u) => !newRpcUrls.includes(u))
+    }
 
     // Only update the RPC if the new RPC is different from the current one
     // or if there is no RPC for this network yet.
@@ -399,7 +406,7 @@ export class SettingsController extends EventEmitter {
       {}
     )
 
-    // if the rpcUrl has changed, call the RPC and check whether it supports
+    // if the rpcUrls have changed, call the RPC and check whether it supports
     // state overrided. If it doesn't, add a warning
     if (changedNetworkPreferences.rpcUrls) {
       const provider = getRpcProvider(changedNetworkPreferences.rpcUrls)
