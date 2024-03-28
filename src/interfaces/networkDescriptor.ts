@@ -20,6 +20,7 @@ interface FeeOptions {
 export type NetworkInfo = {
   chainId: bigint
   isSAEnabled: boolean
+  hasSingleton: boolean
   isOptimistic: boolean
   rpcNoStateOverride: boolean
   erc4337: { enabled: boolean; hasPaymaster: boolean }
@@ -64,6 +65,7 @@ export interface NetworkDescriptor {
   isOptimistic?: boolean
   features: NetworkFeature[]
   hasRelayer: boolean
+  hasSingleton: boolean
   hasDebugTraceCall: boolean
   platformId: string
   nativeAssetId: string

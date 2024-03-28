@@ -29,6 +29,7 @@ export type NetworkPreference = {
   platformId?: string
   nativeAssetId?: string
   areContractsDeployed?: boolean
+  hasSingleton?: boolean
 }
 
 export type CustomNetwork = {
@@ -53,6 +54,7 @@ export type CustomNetwork = {
   platformId?: string
   nativeAssetId?: string
   flagged?: boolean
+  hasSingleton?: boolean
 }
 
 export type NetworkPreferences = {

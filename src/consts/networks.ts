@@ -20,6 +20,7 @@ const networks: NetworkDescriptor[] = [
     hasDebugTraceCall: true,
     platformId: 'ethereum',
     nativeAssetId: 'ethereum',
+    hasSingleton: true,
     features: [],
     feeOptions: {
       is1559: true
@@ -44,6 +45,7 @@ const networks: NetworkDescriptor[] = [
     hasDebugTraceCall: true,
     platformId: 'polygon-pos',
     nativeAssetId: 'matic-network',
+    hasSingleton: true,
     features: [],
     feeOptions: {
       is1559: false,
@@ -69,6 +71,7 @@ const networks: NetworkDescriptor[] = [
     hasDebugTraceCall: true,
     platformId: 'optimistic-ethereum',
     nativeAssetId: 'ethereum',
+    hasSingleton: true,
     features: [],
     feeOptions: {
       is1559: true,
@@ -98,6 +101,7 @@ const networks: NetworkDescriptor[] = [
     hasDebugTraceCall: true,
     platformId: 'avalanche',
     nativeAssetId: 'avalanche-2',
+    hasSingleton: true,
     features: [],
     feeOptions: {
       is1559: true,
@@ -124,6 +128,7 @@ const networks: NetworkDescriptor[] = [
     hasDebugTraceCall: false,
     platformId: 'arbitrum-one',
     nativeAssetId: 'ethereum',
+    hasSingleton: true,
     features: [],
     feeOptions: {
       is1559: true,
