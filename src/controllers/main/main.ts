@@ -46,6 +46,7 @@ import generateSpoofSig from '../../utils/generateSpoofSig'
 import wait from '../../utils/wait'
 import { AccountAdderController } from '../accountAdder/accountAdder'
 import { ActivityController, SignedMessage, SubmittedAccountOp } from '../activity/activity'
+import { AddressBookController } from '../addressBook/addressBook'
 import { DomainsController } from '../domains/domains'
 import { EmailVaultController } from '../emailVault/emailVault'
 import EventEmitter from '../eventEmitter/eventEmitter'
@@ -106,6 +107,8 @@ export class MainController extends EventEmitter {
   activity!: ActivityController
 
   settings: SettingsController
+
+  addressBook: AddressBookController
 
   domains: DomainsController
 
@@ -206,6 +209,7 @@ export class MainController extends EventEmitter {
       relayerUrl,
       fetch: this.#fetch
     })
+    this.addressBook = new AddressBookController(this.#storage, this.accounts, this.settings)
     this.signMessage = new SignMessageController(
       this.keystore,
       this.settings,
@@ -527,6 +531,9 @@ export class MainController extends EventEmitter {
     this.selectedAccount = toAccountAddr
     await this.#storage.set('selectedAccount', toAccountAddr)
     this.activity.init({ filters: { account: toAccountAddr } })
+    this.addressBook.update({
+      selectedAccount: toAccountAddr
+    })
     this.updateSelectedAccount(toAccountAddr)
     this.onUpdateDappSelectedAccount(toAccountAddr)
     this.emitUpdate()
