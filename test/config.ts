@@ -1,6 +1,7 @@
 import chai, { expect } from 'chai'
 import chaiAssertionsCount from 'chai-assertions-count'
 import { ethers } from 'hardhat'
+
 import { Account } from '../src/interfaces/account'
 
 chai.use(chaiAssertionsCount)
@@ -44,6 +45,40 @@ const trezorSlot7v24337Deployed: Account = {
   initialPrivileges: []
 }
 
+const optyDeployed: Account = {
+  addr: '0xCE9B3DcdbE37867EAc9c2ebC24e4Fb2eEC8c5FFc',
+  associatedKeys: ['0xa2256eAFe1DBc474B05973213c86934418fdef22'],
+  creation: {
+    factoryAddr: '0xa8202f888b9b2dfa5ceb2204865018133f6f179a',
+    bytecode:
+      '0x7f00000000000000000000000000000000000000000000000000000000000000027fa9392f1f1009dfad9226b69ecc4e44c158f7c628f38b49eaad9e30082b72c3a9553d602d80604d3d3981f3363d3d373d3d3d363d730e370942ebe4d026d05d2cf477ff386338fc415a5af43d82803e903d91602b57fd5bf3',
+    salt: '0x0000000000000000000000000000000000000000000000000000000000000000'
+  },
+  initialPrivileges: [
+    [
+      '0xa2256eAFe1DBc474B05973213c86934418fdef22',
+      '0x0000000000000000000000000000000000000000000000000000000000000002'
+    ]
+  ]
+}
+
+const optyNotDeployed: Account = {
+  addr: '0x4E6AB66459bD13b9b30A5CbCF28723C7D08172e5',
+  associatedKeys: ['0x3884dD96Da6CDaEAf937301Ff5cC5b0a58478355'],
+  creation: {
+    factoryAddr: '0xa8202f888b9b2dfa5ceb2204865018133f6f179a',
+    bytecode:
+      '0x7f00000000000000000000000000000000000000000000000000000000000000027f78a07de92ae9961c37e3cf878fa0870168e35ed212cbe0bb8e4b99040792cbfa553d602d80604d3d3981f3363d3d373d3d3d363d730e370942ebe4d026d05d2cf477ff386338fc415a5af43d82803e903d91602b57fd5bf3',
+    salt: '0x0000000000000000000000000000000000000000000000000000000000000000'
+  },
+  initialPrivileges: [
+    [
+      '0x3884dD96Da6CDaEAf937301Ff5cC5b0a58478355',
+      '0x0000000000000000000000000000000000000000000000000000000000000002'
+    ]
+  ]
+}
+
 export {
   pk1,
   pk2,
@@ -68,5 +103,7 @@ export {
   deploySalt,
   deployGasLimit,
   assertion,
-  trezorSlot7v24337Deployed
+  trezorSlot7v24337Deployed,
+  optyDeployed,
+  optyNotDeployed
 }

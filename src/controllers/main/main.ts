@@ -809,7 +809,8 @@ export class MainController extends EventEmitter {
           .map((token) => ({
             address: token.address,
             isGasTank: token.flags.onGasTank,
-            amount: BigInt(token.amount)
+            amount: BigInt(token.amount),
+            symbol: token.symbol
           })) || []
 
       if (!account)

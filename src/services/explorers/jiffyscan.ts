@@ -1,5 +1,10 @@
-export async function fetchUserOp(userOpHash: string, fetchFn: Function) {
-  const url = `https://api.jiffyscan.xyz/v0/getUserOp?hash=${userOpHash}`
+export async function fetchUserOp(
+  userOpHash: string,
+  fetchFn: Function,
+  explorerNetworkId: string | null = null
+) {
+  let url = `https://api.jiffyscan.xyz/v0/getUserOp?hash=${userOpHash}`
+  if (explorerNetworkId) url += `&network=${explorerNetworkId}`
 
   return fetchFn(url, {
     method: 'GET',

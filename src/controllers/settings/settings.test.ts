@@ -227,8 +227,8 @@ describe('Settings Controller', () => {
     const saSupport = eth?.features.find((feat) => feat.id === 'saSupport')
     expect(saSupport).not.toBe(null)
     expect(saSupport).not.toBe(undefined)
-    expect(saSupport.level).toBe('success')
-    expect(saSupport.title).toBe("Ambire's smart wallets")
+    expect(saSupport!.level).toBe('success')
+    expect(saSupport!.title).toBe("Ambire's smart wallets")
 
     const simulation = eth?.features.find((feat) => feat.id === 'simulation')
     expect(simulation).not.toBe(null)
@@ -292,7 +292,6 @@ describe('Settings Controller', () => {
         mantleNetwork = {
           name: 'Mantle',
           rpcUrl: settingsController.networkToAddOrUpdate?.rpcUrl!,
-          chainId: settingsController.networkToAddOrUpdate?.chainId!,
           nativeAssetSymbol: 'MNT',
           explorerUrl: 'https://explorer.mantle.xyz/',
           ...mantleNetworkInfo,
