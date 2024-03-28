@@ -292,6 +292,7 @@ export class Portfolio {
       collections: collections.filter((x) => x.collectibles?.length),
       total: tokens.reduce((cur, token) => {
         const localCur = cur
+        if (token.isHidden) return localCur
         for (const x of token.priceIn) {
           localCur[x.baseCurrency] =
             (localCur[x.baseCurrency] || 0) +
