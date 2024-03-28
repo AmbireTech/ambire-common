@@ -1,9 +1,9 @@
 import { getAddress } from 'ethers'
 
-import { SettingsController } from '../settings/settings'
 import { Account } from '../../interfaces/account'
 import { Storage } from '../../interfaces/storage'
 import EventEmitter from '../eventEmitter/eventEmitter'
+import { SettingsController } from '../settings/settings'
 
 export type Contact = {
   name: string
@@ -16,15 +16,10 @@ export type Contact = {
 export type Contacts = Array<Contact>
 
 /**
- * AddressBook controller
- * @class AddressBookController
- * @extends EventEmitter
- * @description Responsible for handling the Address Book.
- * @property contacts- The list of contacts in the Address Book. (including accounts imported in the wallet, excluding the selected account)
- * @method update- Currently only updates the selected account.
- * @method addContact- Adds a new contact to the Address Book.
- * @method renameManuallyAddedContact- Renames a manually added contact in the Address Book.
- * @method removeManuallyAddedContact- Removes a manually added contact from the Address Book.
+ * AddressBook controller- responsible for managing contacts in the Address Book. There are two internal types of contacts in the Address Book:
+ * 1. Manually added contacts (stored in storage)- can be added, renamed and removed using this controller.
+ * 2. Contacts, generated on the fly from the accounts in the wallet (not stored in storage)- can be managed via other controllers and are read-only in this one.
+ * Both types of contacts are combined and returned as a single array of contacts.
  */
 
 export class AddressBookController extends EventEmitter {
