@@ -1,6 +1,6 @@
-import { SettingsController } from 'controllers/settings/settings'
 import { getAddress } from 'ethers'
 
+import { SettingsController } from '../settings/settings'
 import { Account } from '../../interfaces/account'
 import { Storage } from '../../interfaces/storage'
 import EventEmitter from '../eventEmitter/eventEmitter'
