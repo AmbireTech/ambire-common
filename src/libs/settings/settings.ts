@@ -11,6 +11,7 @@ import {
   OPTIMISTIC_ORACLE,
   SINGLETON
 } from '../../consts/deploy'
+import { networks as predefinedNetworks } from '../../consts/networks'
 import { NetworkFeature, NetworkInfo, NetworkInfoLoading } from '../../interfaces/networkDescriptor'
 import { RPCProviders } from '../../interfaces/settings'
 import { Bundler } from '../../services/bundlers/bundler'
@@ -43,6 +44,7 @@ export async function getNetworkInfo(
   callback: (networkInfo: NetworkInfoLoading<NetworkInfo>) => void
 ) {
   let networkInfo: NetworkInfoLoading<NetworkInfo> = {
+    chainId,
     isSAEnabled: 'LOADING',
     isOptimistic: 'LOADING',
     rpcNoStateOverride: 'LOADING',
@@ -215,7 +217,8 @@ export function getFeaturesByNetworkProperties(
     erc4337,
     rpcNoStateOverride,
     hasDebugTraceCall,
-    nativeAssetId
+    nativeAssetId,
+    chainId
   } = networkInfo
 
   const updateFeature = (
@@ -272,7 +275,8 @@ export function getFeaturesByNetworkProperties(
   }
 
   if ([rpcNoStateOverride, hasDebugTraceCall].every((p) => p !== 'LOADING')) {
-    if (!rpcNoStateOverride && hasDebugTraceCall) {
+    const isPredefinedNetwork = predefinedNetworks.find((net) => net.chainId === chainId)
+    if (!rpcNoStateOverride && (hasDebugTraceCall || isPredefinedNetwork)) {
       updateFeature('simulation', {
         level: 'success',
         title: 'Transaction simulation is fully supported',

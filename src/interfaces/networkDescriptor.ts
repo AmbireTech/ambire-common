@@ -18,6 +18,7 @@ interface FeeOptions {
 }
 
 export type NetworkInfo = {
+  chainId: bigint
   isSAEnabled: boolean
   isOptimistic: boolean
   rpcNoStateOverride: boolean

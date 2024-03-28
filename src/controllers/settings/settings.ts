@@ -131,7 +131,8 @@ export class SettingsController extends EventEmitter {
         hasDebugTraceCall: finalNetwork.hasDebugTraceCall,
         platformId: finalNetwork.platformId,
         nativeAssetId: finalNetwork.nativeAssetId,
-        flagged: finalNetwork.flagged ?? false
+        flagged: finalNetwork.flagged ?? false,
+        chainId: finalNetwork.chainId
       }
 
       finalNetwork.features = getFeaturesByNetworkProperties(info)
