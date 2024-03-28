@@ -1,11 +1,16 @@
 import { concat, hexlify, Interface, toBeHex, ZeroAddress } from 'ethers'
-import { NetworkDescriptor } from 'interfaces/networkDescriptor'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFactory.json'
-import { AMBIRE_ACCOUNT_FACTORY, AMBIRE_PAYMASTER, PROXY_NO_REVERTS } from '../../consts/deploy'
+import {
+  AMBIRE_ACCOUNT_FACTORY,
+  AMBIRE_PAYMASTER,
+  ENTRY_POINT_MARKER,
+  ERC_4337_ENTRYPOINT,
+  PROXY_NO_REVERTS
+} from '../../consts/deploy'
 import { Account, AccountStates } from '../../interfaces/account'
-import { dedicatedToOneSAPriv } from '../../interfaces/keystore'
+import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { Bundler } from '../../services/bundlers/bundler'
 import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
 import { getFeeCall } from '../calls/calls'
@@ -33,7 +38,7 @@ function getUserOpForEstimate(
     const factoryInterface = new Interface(AmbireAccountFactory.abi)
     const bytecode = getProxyDeployBytecode(
       PROXY_NO_REVERTS,
-      [{ addr: AMBIRE_ACCOUNT_FACTORY, hash: dedicatedToOneSAPriv }],
+      [{ addr: ERC_4337_ENTRYPOINT, hash: ENTRY_POINT_MARKER }],
       { privSlot: 0 }
     )
     uOp.sender = getAmbireAccountAddress(AMBIRE_ACCOUNT_FACTORY, bytecode)

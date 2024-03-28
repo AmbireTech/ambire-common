@@ -150,13 +150,11 @@ export class Bundler {
       userOperation.initCode !== '0x'
         ? {
             [PROXY_NO_REVERTS]: {
-              code: AmbireAccountNoReverts.binRuntime,
-              stateDiff
+              code: AmbireAccountNoReverts.binRuntime
             }
           }
         : {
             [userOperation.sender]: {
-              code: AmbireAccountNoReverts.binRuntime,
               stateDiff
             }
           }
