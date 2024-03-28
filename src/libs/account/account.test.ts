@@ -219,7 +219,7 @@ describe('Account', () => {
     ).toBe(ImportStatus.ImportedWithDifferentKeys)
   })
 
-  test('Should use the up-to-date associatedKeys from the the account found on page (not from the one in the extensions storage)', async () => {
+  test('Should use merged associatedKeys (one in storage and one incoming from the account found on page), should detect differences in the associatedKeys and should detect different scenarios with having associatedKeys and imported keys alongside', async () => {
     const priv = {
       addr: keyPublicAddress,
       hash: dedicatedToOneSAPriv
@@ -238,7 +238,7 @@ describe('Account', () => {
       },
       isExternallyStored: false
     }
-    const anotherOfTheSmartAccountKeys: Account = {
+    const anotherBasicAccount: Account = {
       // random ethereum address
       addr: '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045',
       associatedKeys: ['0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'],
@@ -246,9 +246,30 @@ describe('Account', () => {
       creation: null
     }
 
+    const anotherBasicAccountKeyWithTheSameKeyType: Key = {
+      addr: anotherBasicAccount.addr,
+      type: 'trezor',
+      dedicatedToOneSA: true,
+      meta: {
+        deviceId: '123',
+        deviceModel: '1',
+        hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
+        index: 1
+      },
+      isExternallyStored: false
+    }
+
+    const anotherBasicAccountKeyWithDifferentKeyType: Key = {
+      addr: anotherBasicAccount.addr,
+      type: 'internal',
+      dedicatedToOneSA: true,
+      meta: null,
+      isExternallyStored: false
+    }
+
     const accountsOnPageWithUpToDateAssociatedKeys: Omit<AccountOnPage, 'importStatus'>[] = [
       {
-        account: { ...anotherOfTheSmartAccountKeys, usedOnNetworks: [] },
+        account: { ...anotherBasicAccount, usedOnNetworks: [] },
         slot: 1,
         index: 0,
         isLinked: false
@@ -259,7 +280,7 @@ describe('Account', () => {
           associatedKeys: [
             ...smartAccountWithIncompleteAssociatedKeys.associatedKeys,
             // Include another (a new one) associated key!
-            anotherOfTheSmartAccountKeys.addr
+            anotherBasicAccountKeyWithTheSameKeyType.addr
           ],
           usedOnNetworks: []
         },
@@ -278,6 +299,63 @@ describe('Account', () => {
         keyIteratorType: 'trezor'
       })
     ).toBe(ImportStatus.ImportedWithSomeOfTheKeys)
+
+    expect(
+      getAccountImportStatus({
+        account: smartAccountWithIncompleteAssociatedKeys,
+        alreadyImportedAccounts: [smartAccountWithIncompleteAssociatedKeys],
+        // Similar scenario, but both keys already previously imported!
+        // Should still return ImportedWithSomeOfTheKeys,
+        // because the associated keys are not up-to-date.
+        keys: [oneOfTheSmartAccountKeys, anotherBasicAccountKeyWithTheSameKeyType],
+        accountsOnPage: accountsOnPageWithUpToDateAssociatedKeys,
+        // same key iterator type as the `oneOfTheSmartAccountKeys`
+        keyIteratorType: 'trezor'
+      })
+    ).toBe(ImportStatus.ImportedWithSomeOfTheKeys)
+
+    expect(
+      getAccountImportStatus({
+        account: smartAccountWithIncompleteAssociatedKeys,
+        alreadyImportedAccounts: [smartAccountWithIncompleteAssociatedKeys],
+        // Similar scenario, but both keys already previously imported!
+        // Should still return ImportedWithSomeOfTheKeys,
+        // because the associated keys are not up-to-date.
+        keys: [oneOfTheSmartAccountKeys, anotherBasicAccountKeyWithTheSameKeyType],
+        accountsOnPage: accountsOnPageWithUpToDateAssociatedKeys,
+        // Same key iterator type as `anotherBasicAccountKeyWithTheSameKeyType`
+        // (that is different from `oneOfTheSmartAccountKeys`)
+        keyIteratorType: 'internal'
+      })
+    ).toBe(ImportStatus.ImportedWithDifferentKeys)
+
+    expect(
+      getAccountImportStatus({
+        account: smartAccountWithIncompleteAssociatedKeys,
+        alreadyImportedAccounts: [smartAccountWithIncompleteAssociatedKeys],
+        // Similar scenario, but both keys already previously imported!
+        // Should still return ImportedWithSomeOfTheKeys,
+        // because the associated keys are not up-to-date.
+        keys: [oneOfTheSmartAccountKeys, anotherBasicAccountKeyWithDifferentKeyType],
+        accountsOnPage: accountsOnPageWithUpToDateAssociatedKeys,
+        // Different key iterator type as the `oneOfTheSmartAccountKeys`
+        keyIteratorType: 'internal'
+      })
+    ).toBe(ImportStatus.ImportedWithDifferentKeys)
+
+    expect(
+      getAccountImportStatus({
+        account: smartAccountWithIncompleteAssociatedKeys,
+        alreadyImportedAccounts: [smartAccountWithIncompleteAssociatedKeys],
+        // Similar scenario, but both keys already previously imported!
+        // Should still return ImportedWithSomeOfTheKeys,
+        // because the associated keys are not up-to-date.
+        keys: [oneOfTheSmartAccountKeys, anotherBasicAccountKeyWithDifferentKeyType],
+        accountsOnPage: accountsOnPageWithUpToDateAssociatedKeys,
+        // completely different key iterator than both keys found!
+        keyIteratorType: 'ledger'
+      })
+    ).toBe(ImportStatus.ImportedWithDifferentKeys)
   })
 
   test('Should resolve view only account import status to ImportStatus.ImportedWithoutKey', () => {

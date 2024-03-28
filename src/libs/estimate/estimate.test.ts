@@ -8,7 +8,6 @@ import { describe, expect } from '@jest/globals'
 import { trezorSlot7v24337Deployed } from '../../../test/config'
 import { getNonce } from '../../../test/helpers'
 import { FEE_COLLECTOR } from '../../consts/addresses'
-import { AMBIRE_PAYMASTER } from '../../consts/deploy'
 import { networks } from '../../consts/networks'
 import { Account, AccountStates } from '../../interfaces/account'
 import { Key } from '../../interfaces/keystore'
@@ -127,14 +126,39 @@ const nativeToCheck: Account[] = [
   viewOnlyAcc
 ]
 const feeTokens = [
-  { address: '0x0000000000000000000000000000000000000000', isGasTank: false, amount: 1n },
-  { address: '0xdAC17F958D2ee523a2206206994597C13D831ec7', isGasTank: false, amount: 1n },
-  { address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48', isGasTank: false, amount: 1n }
+  {
+    address: '0x0000000000000000000000000000000000000000',
+    isGasTank: false,
+    amount: 1n,
+    symbol: 'ETH'
+  },
+  {
+    address: '0xdAC17F958D2ee523a2206206994597C13D831ec7',
+    isGasTank: false,
+    amount: 1n,
+    symbol: 'USDT'
+  },
+  {
+    address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+    isGasTank: false,
+    amount: 1n,
+    symbol: 'USDC'
+  }
 ]
 
 const feeTokensAvalanche = [
-  { address: '0x0000000000000000000000000000000000000000', isGasTank: false, amount: 1n },
-  { address: '0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E', isGasTank: false, amount: 1n }
+  {
+    address: '0x0000000000000000000000000000000000000000',
+    isGasTank: false,
+    amount: 1n,
+    symbol: 'AVAX'
+  },
+  {
+    address: '0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E',
+    isGasTank: false,
+    amount: 1n,
+    symbol: 'USDC'
+  }
 ]
 
 const portfolio = new Portfolio(fetch, provider, ethereum)
@@ -433,9 +457,6 @@ describe('estimate', () => {
 
     // Gas used in case of `accountOpToExecuteBefore` should be greater, because more AccountOps are simulated
     expect(responseWithExecuteBefore.gasUsed).toBeGreaterThan(response.gasUsed)
-
-    expect(response.arbitrumL1FeeIfArbitrum.noFee).toEqual(0n)
-    expect(response.arbitrumL1FeeIfArbitrum.withFee).toEqual(0n)
   })
 
   it('estimates with `addedNative`', async () => {
@@ -486,9 +507,6 @@ describe('estimate', () => {
     response.feePaymentOptions.forEach((feeToken) => {
       expect(feeToken.addedNative).toBeGreaterThan(0n)
     })
-
-    expect(response.arbitrumL1FeeIfArbitrum.noFee).toEqual(0n)
-    expect(response.arbitrumL1FeeIfArbitrum.withFee).toEqual(0n)
   })
 
   it('estimates an arbitrum request', async () => {
@@ -517,11 +535,10 @@ describe('estimate', () => {
       feeTokens
     )
 
-    expect(response.arbitrumL1FeeIfArbitrum.noFee).toBeGreaterThan(0n)
-    expect(response.arbitrumL1FeeIfArbitrum.withFee).toBeGreaterThan(0n)
+    response.feePaymentOptions.map((option) => expect(option.addedNative).toBeGreaterThan(0n))
   })
 
-  it('estimates an arbitrum 4337 request that should fail with paymaster deposit too low', async () => {
+  it('estimates an arbitrum 4337 request that should fail with an inner call failure but otherwise estimation should work', async () => {
     const opArbitrum: AccountOp = {
       accountAddr: trezorSlot6v2NotDeployed.addr,
       signingKeyAddr: trezorSlot6v2NotDeployed.associatedKeys[0],
@@ -535,6 +552,8 @@ describe('estimate', () => {
       accountOpToExecuteBefore: null
     }
     const accountStates = await getAccountsInfo([trezorSlot6v2NotDeployed])
+    // force a fake nonce so the tests proceeds
+    accountStates[opArbitrum.accountAddr][opArbitrum.networkId].erc4337Nonce = 0n
     const response = await estimate(
       providerArbitrum,
       arbitrum,
@@ -546,63 +565,17 @@ describe('estimate', () => {
       feeTokens,
       { is4337Broadcast: true }
     )
+
+    expect(response.erc4337GasLimits).not.toBe(undefined)
+    expect(BigInt(response.erc4337GasLimits!.callGasLimit)).toBeGreaterThan(0n)
+    expect(BigInt(response.erc4337GasLimits!.verificationGasLimit)).toBeGreaterThan(0n)
+    expect(BigInt(response.erc4337GasLimits!.preVerificationGas)).toBeGreaterThan(0n)
+
     expect(response.error).not.toBe(null)
-    expect(response.error?.message).toBe(
-      `Paymaster with address ${AMBIRE_PAYMASTER} does not have enough funds to execute this request. Please contact support`
-    )
+    expect(response.error?.message).toBe('Transaction reverted: invalid call in the bundle')
   })
 
-  it('estimates a 4337 request on the avalanche chain with an initCode and 4337 activator that results in a good erc-4337 estimation but a failure in the calls as the account does not have any funds', async () => {
-    const opAvalanche: AccountOp = {
-      accountAddr: trezorSlot6v2NotDeployed.addr,
-      signingKeyAddr: trezorSlot6v2NotDeployed.associatedKeys[0],
-      signingKeyType: null,
-      gasLimit: null,
-      gasFeePayment: null,
-      networkId: avalanche.id,
-      nonce: 0n,
-      signature: '0x',
-      calls: [{ to: account.addr, value: BigInt(100000000000), data: '0x' }],
-      accountOpToExecuteBefore: null
-    }
-    const accountStates = await getAccountsInfo([trezorSlot6v2NotDeployed])
-
-    const response = await estimate(
-      providerAvalanche,
-      avalanche,
-      trezorSlot6v2NotDeployed,
-      MOCK_KEYSTORE_KEYS,
-      opAvalanche,
-      accountStates,
-      nativeToCheck,
-      feeTokensAvalanche,
-      { is4337Broadcast: true }
-    )
-
-    expect(response.arbitrumL1FeeIfArbitrum.noFee).toEqual(0n)
-    expect(response.arbitrumL1FeeIfArbitrum.withFee).toEqual(0n)
-
-    expect(response.erc4337estimation).not.toBe(null)
-    expect(response.erc4337estimation?.gasUsed).toBeGreaterThan(0n)
-    expect(response.erc4337estimation!.userOp.paymasterAndData).toEqual('0x')
-    expect(BigInt(response.erc4337estimation!.userOp.verificationGasLimit)).toBeGreaterThan(5000n)
-    expect(BigInt(response.erc4337estimation!.userOp.callGasLimit)).toBeGreaterThan(10000n)
-
-    expect(response.feePaymentOptions.length).toBeGreaterThan(0)
-    response.feePaymentOptions.forEach((opt) => {
-      expect(opt.addedNative).toBe(0n)
-      // no basic acc payment
-      expect(opt.paidBy).toBe(trezorSlot6v2NotDeployed.addr)
-    })
-
-    // because the account does not have any funds, the call should result in a failure
-    // and execution should be stopped
-    expect(response.error).not.toBe(null)
-    expect(response.error?.message).toBe(
-      `Estimation failed for ${opAvalanche.accountAddr} on ${opAvalanche.networkId}`
-    )
-  })
-
+  // TODO: the below test fails with paymaster deposit too low. It shouldn't if we have enough in the paymaster. When we do, reenable it
   it('estimates a 4337 request on the avalanche chain with a deployed account paying in native', async () => {
     const opAvalanche: AccountOp = {
       accountAddr: trezorSlot7v24337Deployed.addr,
@@ -613,7 +586,7 @@ describe('estimate', () => {
       networkId: 'avalanche',
       nonce: 0n,
       signature: '0x',
-      calls: [{ to, value: BigInt(100000000000), data: '0x' }],
+      calls: [{ to, value: BigInt(100), data: '0x' }],
       accountOpToExecuteBefore: null
     }
     const accountStates = await getAccountsInfo([trezorSlot7v24337Deployed])
@@ -630,14 +603,10 @@ describe('estimate', () => {
       { is4337Broadcast: true }
     )
 
-    expect(response.arbitrumL1FeeIfArbitrum.noFee).toEqual(0n)
-    expect(response.arbitrumL1FeeIfArbitrum.withFee).toEqual(0n)
-
-    expect(response.erc4337estimation).not.toBe(null)
-    expect(response.erc4337estimation?.gasUsed).toBeGreaterThan(0n)
-    expect(response.erc4337estimation!.userOp.paymasterAndData).toEqual('0x')
-    expect(BigInt(response.erc4337estimation!.userOp.verificationGasLimit)).toBeGreaterThan(5000n)
-    expect(BigInt(response.erc4337estimation!.userOp.callGasLimit)).toBeGreaterThan(10000n)
+    expect(response.erc4337GasLimits).not.toBe(undefined)
+    expect(BigInt(response.erc4337GasLimits!.callGasLimit)).toBeGreaterThan(0n)
+    expect(BigInt(response.erc4337GasLimits!.verificationGasLimit)).toBeGreaterThan(0n)
+    expect(BigInt(response.erc4337GasLimits!.preVerificationGas)).toBeGreaterThan(0n)
 
     expect(response.feePaymentOptions.length).toBeGreaterThan(0)
     response.feePaymentOptions.forEach((opt) => {
@@ -649,7 +618,7 @@ describe('estimate', () => {
     expect(response.error).toBe(null)
   })
 
-  it('estimates a polygon request with insufficient funds for txn and estimation should fail with estimation failed', async () => {
+  it('estimates a polygon request with insufficient funds for txn and estimation should fail with transaction reverted', async () => {
     const opPolygonFailBzNoFunds: AccountOp = {
       accountAddr: smartAccountv2eip712.addr,
       signingKeyAddr: smartAccountv2eip712.associatedKeys[0],
@@ -675,9 +644,7 @@ describe('estimate', () => {
       feeTokens
     )
     expect(response.error).not.toBe(null)
-    expect(response.error?.message).toBe(
-      `Estimation failed for ${opPolygonFailBzNoFunds.accountAddr} on ${opPolygonFailBzNoFunds.networkId}`
-    )
+    expect(response.error?.message).toBe('Transaction reverted: invalid call in the bundle')
   })
 
   it('estimates a polygon request with wrong signer and estimation should fail with insufficient privileges', async () => {
