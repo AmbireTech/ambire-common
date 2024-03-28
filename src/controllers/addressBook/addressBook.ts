@@ -5,7 +5,7 @@ import { Account } from '../../interfaces/account'
 import { Storage } from '../../interfaces/storage'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
-type Contact = {
+export type Contact = {
   name: string
   address: Account['addr']
   isWalletAccount?: boolean
