@@ -1,5 +1,5 @@
 import { AccountOp } from '../../../accountOp/accountOp'
-import { HumanizerCallModule, HumanizerWarning, IrCall } from '../../interfaces'
+import { HumanizerCallModule, HumanizerMeta, HumanizerWarning, IrCall } from '../../interfaces'
 import { getUnknownVisualization, getWarning } from '../../utils'
 import { uniUniversalRouter } from './uniUnivarsalRouter'
 import { uniV2Mapping } from './uniV2'
@@ -8,12 +8,13 @@ import { uniV32Mapping, uniV3Mapping } from './uniV3'
 export const uniswapHumanizer: HumanizerCallModule = (
   accountOp: AccountOp,
   currentIrCalls: IrCall[],
+  humanizerMeta: HumanizerMeta,
   options?: any
 ) => {
-  const uniV2MappingObj = uniV2Mapping(accountOp.humanizerMeta!, options)
-  const uniV3MappingObj = uniV3Mapping(accountOp.humanizerMeta!, options)
-  const uniV32MappingObj = uniV32Mapping(accountOp.humanizerMeta!, options)
-  const uniUniversalRouterObj = uniUniversalRouter(accountOp.humanizerMeta!, options)
+  const uniV2MappingObj = uniV2Mapping(humanizerMeta, options)
+  const uniV3MappingObj = uniV3Mapping(humanizerMeta, options)
+  const uniV32MappingObj = uniV32Mapping(humanizerMeta, options)
+  const uniUniversalRouterObj = uniUniversalRouter(humanizerMeta, options)
 
   const matcher: {
     [address: string]: {

@@ -238,3 +238,5 @@ export const integrateFragments = (
   })
   return humanizerMeta
 }
+
+export const EMPTY_HUMANIZER_META = { abis: { NO_ABI: {} }, knownAddresses: {} }

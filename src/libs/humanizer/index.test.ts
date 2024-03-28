@@ -13,7 +13,7 @@ import { Storage } from '../../interfaces/storage'
 import { Message, TypedMessage } from '../../interfaces/userRequest'
 import { AccountOp } from '../accountOp/accountOp'
 import { callsHumanizer, messageHumanizer } from './index'
-import { HumanizerMeta, HumanizerVisualization, IrCall, IrMessage } from './interfaces'
+import { HumanizerVisualization, IrCall, IrMessage } from './interfaces'
 import { HUMANIZER_META_KEY } from './utils'
 // const address1 = '0x6942069420694206942069420694206942069420'
 const address2 = '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
@@ -221,7 +221,6 @@ describe('Humanizer main function', () => {
     storage = produceMemoryStore()
     await storage.set(HUMANIZER_META_KEY, humanizerMeta)
     accountOp.calls = []
-    accountOp.humanizerMeta = { ...(humanizerJSON as HumanizerMeta) }
   })
 
   test('generic humanize', async () => {
@@ -438,7 +437,6 @@ describe('with (Account | Key)[] arg', () => {
     storage = produceMemoryStore()
     await storage.set(HUMANIZER_META_KEY, humanizerMeta)
     accountOp.calls = []
-    accountOp.humanizerMeta = { ...(humanizerJSON as HumanizerMeta) }
   })
   test('with calls', async () => {
     const expectedVisualizations = [
