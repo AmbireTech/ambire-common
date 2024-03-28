@@ -13,7 +13,6 @@ import { getProxyDeployBytecode } from '../proxyDeploy/deploy'
 import { getAmbireAccountAddress } from '../proxyDeploy/getAmbireAddressTwo'
 import { UserOperation } from '../userOperation/types'
 import {
-  getOneTimeNonce,
   getPaymasterDataForEstimate,
   getSigForCalculations,
   getUserOperation
@@ -44,16 +43,10 @@ function getUserOpForEstimate(
         factoryInterface.encodeFunctionData('deploy', [bytecode, toBeHex(0, 32)])
       ])
     )
-    uOp.callData = ambireAccount.encodeFunctionData('executeMultiple', [
-      [[getSignableCalls(op), getSigForCalculations()]]
-    ])
-    uOp.nonce = getOneTimeNonce(uOp)
-  } else {
-    // executeBySender as contract is deployed
-    uOp.callData = ambireAccount.encodeFunctionData('executeBySender', [getSignableCalls(op)])
-    uOp.signature = getSigForCalculations()
   }
 
+  uOp.callData = ambireAccount.encodeFunctionData('executeBySender', [getSignableCalls(op)])
+  uOp.signature = getSigForCalculations()
   return uOp
 }
 
