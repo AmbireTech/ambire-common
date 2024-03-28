@@ -192,15 +192,15 @@ export class Portfolio {
     const tokenFilter = ([error, result]: [string, TokenResult]): boolean => {
       if (error !== '0x' || result.symbol === '') return false
 
-      if (result.amount > 0) return true
-
       const isTokenPreference = localOpts.tokenPreferences?.find((tokenPreference) => {
         return tokenPreference.address === result.address && tokenPreference.networkId === networkId
       })
-
       if (isTokenPreference) {
         result.isHidden = isTokenPreference.isHidden
       }
+
+      if (result.amount > 0) return true
+
       const isPinned = !!PINNED_TOKENS.find((pinnedToken) => {
         return pinnedToken.networkId === networkId && pinnedToken.address === result.address
       })
