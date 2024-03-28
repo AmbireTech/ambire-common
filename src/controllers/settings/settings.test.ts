@@ -292,7 +292,6 @@ describe('Settings Controller', () => {
         mantleNetwork = {
           name: 'Mantle',
           rpcUrl: settingsController.networkToAddOrUpdate?.rpcUrl!,
-          chainId: settingsController.networkToAddOrUpdate?.chainId!,
           nativeAssetSymbol: 'MNT',
           explorerUrl: 'https://explorer.mantle.xyz/',
           ...mantleNetworkInfo,
