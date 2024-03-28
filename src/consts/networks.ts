@@ -121,7 +121,7 @@ const networks: NetworkDescriptor[] = [
     isSAEnabled: true,
     areContractsDeployed: true,
     hasRelayer: true,
-    hasDebugTraceCall: true,
+    hasDebugTraceCall: false,
     platformId: 'arbitrum-one',
     nativeAssetId: 'ethereum',
     features: [],
