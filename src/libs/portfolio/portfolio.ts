@@ -199,7 +199,8 @@ export class Portfolio {
         result.isHidden = isTokenPreference.isHidden
       }
 
-      if (result.amount > 0) return true
+      // always include > 0 amount and native token
+      if (result.amount > 0 || result.address === ZeroAddress) return true
 
       const isPinned = !!PINNED_TOKENS.find((pinnedToken) => {
         return pinnedToken.networkId === networkId && pinnedToken.address === result.address
