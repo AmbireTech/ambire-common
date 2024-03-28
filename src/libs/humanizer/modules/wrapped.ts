@@ -1,7 +1,7 @@
 import { Interface, ZeroAddress } from 'ethers'
 
 import { AccountOp } from '../../accountOp/accountOp'
-import { HumanizerCallModule, IrCall } from '../interfaces'
+import { HumanizerCallModule, HumanizerMeta, IrCall } from '../interfaces'
 import { getKnownAbi, getUnknownVisualization, getUnwraping, getWraping } from '../utils'
 
 const WRAPPEDISH_ADDRESSES: { [kjey: string]: string } = {
@@ -64,12 +64,13 @@ const wrapSwapReducer = (calls: IrCall[]) => {
 export const wrappingModule: HumanizerCallModule = (
   accountOp: AccountOp,
   irCalls: IrCall[],
+  humanizerMeta: HumanizerMeta,
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   options?: any
 ) => {
-  const iface = new Interface(getKnownAbi(accountOp.humanizerMeta, 'WETH', options))
+  const iface = new Interface(getKnownAbi(humanizerMeta, 'WETH', options))
   const newCalls = irCalls.map((call: IrCall) => {
-    const knownAddressData = accountOp.humanizerMeta?.knownAddresses[call.to.toLowerCase()]
+    const knownAddressData = humanizerMeta?.knownAddresses[call.to.toLowerCase()]
     if (
       knownAddressData?.name === 'Wrapped ETH' ||
       knownAddressData?.name === 'WETH' ||

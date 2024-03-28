@@ -45,7 +45,7 @@ export interface HumanizerFragment {
 
 // @TODO make humanizer options interface
 export interface HumanizerCallModule {
-  (AccountOp: AccountOp, calls: IrCall[], options?: any): [
+  (AccountOp: AccountOp, calls: IrCall[], humanizerMeta: HumanizerMeta, options?: any): [
     IrCall[],
     Promise<HumanizerFragment | null>[]
   ]
