@@ -531,6 +531,9 @@ export class MainController extends EventEmitter {
     this.selectedAccount = toAccountAddr
     await this.#storage.set('selectedAccount', toAccountAddr)
     this.activity.init({ filters: { account: toAccountAddr } })
+    this.addressBook.update({
+      selectedAccount: toAccountAddr
+    })
     this.updateSelectedAccount(toAccountAddr)
     this.onUpdateDappSelectedAccount(toAccountAddr)
     this.emitUpdate()
