@@ -1,20 +1,11 @@
-import { Block, Interface, Provider, toBeHex } from 'ethers'
+import { Block, Interface, Provider } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFactory.json'
-import EntryPoint from '../../../contracts/compiled/EntryPoint.json'
 import { AccountOnchainState } from '../../interfaces/account'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
-import { UserOperation } from '../userOperation/types'
-import {
-  getActivatorCall,
-  getCleanUserOp,
-  getOneTimeNonce,
-  getPaymasterSpoof,
-  getSigForCalculations,
-  shouldIncludeActivatorCall
-} from '../userOperation/userOperation'
+import { getActivatorCall, shouldIncludeActivatorCall } from '../userOperation/userOperation'
 
 // https://eips.ethereum.org/EIPS/eip-1559
 const DEFAULT_BASE_FEE_MAX_CHANGE_DENOMINATOR = 8n
@@ -36,10 +27,6 @@ export interface GasPriceRecommendation {
 export interface Gas1559Recommendation {
   name: string
   baseFeePerGas: bigint
-  // in l2s, to calculate correctly the preVerificationGas,
-  // we use the baseFee for each speed in reverse order as dividing
-  // by a greater baseFee gives smaller gas fee. That's why we need this
-  baseFeeToDivide: bigint
   maxPriorityFeePerGas: bigint
 }
 export type GasRecommendation = GasPriceRecommendation | Gas1559Recommendation
@@ -157,8 +144,6 @@ export async function getGasPriceRecommendations(
     const tips = filterOutliers(txns.map((x) => x.maxPriorityFeePerGas!).filter((x) => x > 0))
     return speeds.map(({ name, baseFeeAddBps }, i) => {
       const baseFee = expectedBaseFee + (expectedBaseFee * baseFeeAddBps) / 10000n
-      const baseFeeToDivide =
-        expectedBaseFee + (expectedBaseFee * speeds[speeds.length - (i + 1)].baseFeeAddBps) / 10000n
 
       // maxPriorityFeePerGas is important for networks with longer block time
       // like Ethereum (12s) but not at all for L2s with instant block creation.
@@ -169,7 +154,6 @@ export async function getGasPriceRecommendations(
       return {
         name,
         baseFeePerGas: baseFee,
-        baseFeeToDivide,
         maxPriorityFeePerGas
       }
     })
@@ -184,37 +168,9 @@ export async function getGasPriceRecommendations(
 export function getProbableCallData(
   accountOp: AccountOp,
   accountState: AccountOnchainState,
-  network: NetworkDescriptor,
-  // the userOp should be passed during estimation only as we strictly
-  // use it to determine the extra L1 fee that the user should pay
-  userOp: UserOperation | null = null
+  network: NetworkDescriptor
 ): string {
   let estimationCallData
-
-  if (userOp) {
-    // fake most of the user op properties to get a better
-    // callData estimation for the l1 fee
-    const localOp = { ...userOp }
-    localOp.maxFeePerGas = toBeHex(100000n)
-    localOp.maxPriorityFeePerGas = toBeHex(100000n)
-    localOp.verificationGasLimit = toBeHex(100000n)
-    localOp.callGasLimit = toBeHex(100000n)
-    localOp.signature = getSigForCalculations()
-
-    if (localOp.requestType !== 'standard') {
-      localOp.nonce = getOneTimeNonce(localOp)
-    }
-
-    if (network.erc4337?.hasPaymaster) {
-      localOp.paymasterAndData = getPaymasterSpoof()
-    }
-
-    const entryPoint = new Interface(EntryPoint)
-    return entryPoint.encodeFunctionData('handleOps', [
-      getCleanUserOp(localOp),
-      accountOp.accountAddr
-    ])
-  }
 
   // include the activator call for estimation if any
   const localOp = { ...accountOp }
