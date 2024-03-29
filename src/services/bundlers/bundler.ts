@@ -155,6 +155,7 @@ export class Bundler {
           }
         : {
             [userOperation.sender]: {
+              code: AmbireAccountNoReverts.binRuntime,
               stateDiff
             }
           }
