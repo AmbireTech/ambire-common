@@ -148,7 +148,6 @@ export class SettingsController extends EventEmitter {
 
   async #load() {
     try {
-      // @ts-ignore
       ;[this.accountPreferences, this.keyPreferences, this.#networkPreferences] = await Promise.all(
         [
           // Should get the storage data from all keys here
@@ -157,6 +156,8 @@ export class SettingsController extends EventEmitter {
           this.#storage.get('networkPreferences', {})
         ]
       )
+
+      this.emitUpdate()
     } catch (e) {
       this.emitError({
         message:
@@ -165,8 +166,6 @@ export class SettingsController extends EventEmitter {
         error: new Error('settings: failed to pull settings from storage')
       })
     }
-
-    this.emitUpdate()
   }
 
   async #storePreferences() {

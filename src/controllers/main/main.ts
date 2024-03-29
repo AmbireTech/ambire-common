@@ -20,7 +20,7 @@ import {
   TxnRequest
 } from '../../interfaces/keystore'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
-import { CustomNetwork, NetworkPreference, NetworkPreferences } from '../../interfaces/settings'
+import { CustomNetwork, NetworkPreference } from '../../interfaces/settings'
 import { Storage } from '../../interfaces/storage'
 import { Message, UserRequest } from '../../interfaces/userRequest'
 import { getDefaultSelectedAccount, isSmartAccount } from '../../libs/account/account'
@@ -1278,7 +1278,7 @@ export class MainController extends EventEmitter {
   }
 
   async updateNetworkPreferences(
-    networkPreferences: NetworkPreferences,
+    networkPreferences: NetworkPreference,
     networkId: NetworkDescriptor['id']
   ) {
     await this.settings.updateNetworkPreferences(networkPreferences, networkId)
