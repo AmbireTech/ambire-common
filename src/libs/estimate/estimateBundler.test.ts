@@ -31,7 +31,7 @@ describe('Bundler estimation tests', () => {
       const optimism = networks.find((net) => net.id === 'optimism')!
       const usedNetworks = [optimism]
       const providers = {
-        [optimism.id]: getRpcProvider(optimism.rpcUrl, optimism.chainId)
+        [optimism.id]: getRpcProvider(optimism.rpcUrls, optimism.chainId)
       }
       const accountStates = await getAccountsInfo(usedNetworks, providers, [optyNotDeployed])
       const feeTokens = [
