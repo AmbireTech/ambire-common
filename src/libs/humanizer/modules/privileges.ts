@@ -35,7 +35,6 @@ export const privilegeHumanizer: HumanizerCallModule = (
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   options?: any
 ) => {
-  console.log('a')
   const newCalls = irCalls.map((call) => {
     if (
       call.to === accountOp.accountAddr &&

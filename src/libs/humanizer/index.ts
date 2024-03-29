@@ -167,4 +167,5 @@ const messageHumanizer = async (
 }
 
 // those are supposed to be used by the app
-export { callsHumanizer, messageHumanizer }
+// those are supposed to be used by the app
+export { callsHumanizer, messageHumanizer, HUMANIZER_META_KEY }
