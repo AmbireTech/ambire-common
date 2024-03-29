@@ -166,6 +166,4 @@ const messageHumanizer = async (
   await sharedHumanization(message, storage, fetch, callback, emitError)
 }
 
-// those are supposed to be used by the app
-// those are supposed to be used by the app
 export { callsHumanizer, messageHumanizer, HUMANIZER_META_KEY }
