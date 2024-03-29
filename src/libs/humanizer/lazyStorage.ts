@@ -26,17 +26,21 @@ export async function addFragsToLazyStore(
   options?: any
 ): Promise<void> {
   if (!frags.length) return
+  if (!memoryHumanizerMeta) await lazyReadHumanizerMeta(storage, { nocache: true })
   memoryHumanizerMeta = integrateFragments(memoryHumanizerMeta, frags)
   if (options?.urgent) {
     await storage.set(HUMANIZER_META_KEY, memoryHumanizerMeta)
   } else if (!hasTimeout) {
     hasTimeout = true
     // @TODO should we clear this?
-    setTimeout(async () => {
-      // memoryHumanizerMeta is reference to the variables value,
-      // when the timeout executes it will use the latest value
-      await storage.set(HUMANIZER_META_KEY, memoryHumanizerMeta)
-      hasTimeout = false
-    }, LAZY_STORE_DELAY)
+    return new Promise((resolve, reject) => {
+      setTimeout(async () => {
+        // memoryHumanizerMeta is reference to the variables value,
+        // when the timeout executes it will use the latest value
+        await storage.set(HUMANIZER_META_KEY, memoryHumanizerMeta)
+        hasTimeout = false
+        resolve()
+      }, LAZY_STORE_DELAY)
+    })
   }
 }
