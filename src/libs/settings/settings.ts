@@ -32,6 +32,8 @@ async function retryRequest(init: Function, counter = 0): Promise<any> {
       const retryRes = await retryRequest(init, counter + 1)
       return retryRes
     }
+
+    throw new Error('flagged')
   })
 
   return result
@@ -58,21 +60,25 @@ export async function getNetworkInfo(
   }
   callback(networkInfo)
 
+  const timeout = (time: number = 30000): Promise<'timeout reached'> => {
+    return new Promise((resolve) => {
+      setTimeout(resolve, time, 'timeout reached')
+    }) as unknown as Promise<'timeout reached'>
+  }
+
   let flagged = false
   const provider = new JsonRpcProvider(rpcUrl)
-  // eslint-disable-next-line no-underscore-dangle
-  await provider._detectNetwork().catch(() => {
+  const detection = await Promise.race([
+    // eslint-disable-next-line no-underscore-dangle
+    provider._detectNetwork().catch((e: Error) => e),
+    timeout(3000)
+  ])
+  if (detection === 'timeout reached' || detection instanceof Error) {
     flagged = true
     networkInfo = { ...networkInfo, flagged }
     callback(networkInfo)
-  })
-  if (flagged) return
-
-  const timeout = (): Promise<'timeout reached'> => {
-    return new Promise((resolve) => {
-      setTimeout(resolve, 30000, 'timeout reached')
-    }) as unknown as Promise<'timeout reached'>
   }
+  if (flagged) return
 
   const raiseFlagged = (e: Error, returnData: any): any => {
     if (e.message === 'flagged') {
