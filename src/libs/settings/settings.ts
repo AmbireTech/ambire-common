@@ -46,6 +46,7 @@ export async function getNetworkInfo(
   let networkInfo: NetworkInfoLoading<NetworkInfo> = {
     chainId,
     isSAEnabled: 'LOADING',
+    hasSingleton: 'LOADING',
     isOptimistic: 'LOADING',
     rpcNoStateOverride: 'LOADING',
     erc4337: 'LOADING',
@@ -121,6 +122,7 @@ export async function getNetworkInfo(
           saSupport.addressMatches || (!saSupport.supportsStateOverride && areContractsDeployed)
         networkInfo = {
           ...networkInfo,
+          hasSingleton: singletonCode !== '0x',
           isSAEnabled: supportsAmbire && singletonCode !== '0x',
           areContractsDeployed,
           rpcNoStateOverride: !saSupport.supportsStateOverride
@@ -218,7 +220,8 @@ export function getFeaturesByNetworkProperties(
     rpcNoStateOverride,
     hasDebugTraceCall,
     nativeAssetId,
-    chainId
+    chainId,
+    hasSingleton
   } = networkInfo
 
   const updateFeature = (
@@ -246,12 +249,14 @@ export function getFeaturesByNetworkProperties(
     ]
   }
 
-  if ([isSAEnabled, areContractsDeployed, erc4337].every((p) => p !== 'LOADING')) {
+  if ([isSAEnabled, areContractsDeployed, erc4337, hasSingleton].every((p) => p !== 'LOADING')) {
     if (!isSAEnabled) {
       updateFeature('saSupport', {
         level: 'danger',
         title: 'Smart contract wallets are not supported',
-        msg: "Unfortunately this blockchain network don't support smart contract wallets. This network can be used only with Basic accounts (EOAs)."
+        msg: hasSingleton
+          ? 'We were unable to detect smart account support on the network with the provided RPC. Please choose another RPC or try again later.'
+          : "Unfortunately this network doesn't support smart contract wallets. It can be used only with Basic accounts (EOAs)."
       })
     }
 

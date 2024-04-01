@@ -1082,10 +1082,16 @@ export class MainController extends EventEmitter {
         const signedTxn = await signer.signRawTransaction(rawTxn)
         transactionRes = await provider.broadcastTransaction(signedTxn)
       } catch (e: any) {
-        const errorMsg =
-          e?.message || 'Please try again or contact support if the problem persists.'
-        const message = `Failed to broadcast transaction on ${accountOp.networkId}. ${errorMsg}`
+        let errorMsg = 'Please try again or contact support if the problem persists.'
+        if (e?.message) {
+          if (e.message.includes('insufficient funds')) {
+            errorMsg = 'Insufficient funds for intristic transaction cost'
+          } else {
+            errorMsg = e.message.length > 200 ? `${e.message.substring(0, 200)}...` : e.message
+          }
+        }
 
+        const message = `Failed to broadcast transaction on ${accountOp.networkId}: ${errorMsg}`
         return this.#throwAccountOpBroadcastError(new Error(message), message)
       }
     }
@@ -1162,9 +1168,16 @@ export class MainController extends EventEmitter {
         const signedTxn = await signer.signRawTransaction(rawTxn)
         transactionRes = await provider.broadcastTransaction(signedTxn)
       } catch (e: any) {
-        const errorMsg =
-          e?.message || 'Please try again or contact support if the problem persists.'
-        const message = `Failed to broadcast transaction on ${accountOp.networkId}. ${errorMsg}`
+        let errorMsg = 'Please try again or contact support if the problem persists.'
+        if (e?.message) {
+          if (e.message.includes('insufficient funds')) {
+            errorMsg = 'Insufficient funds for intristic transaction cost'
+          } else {
+            errorMsg = e.message.length > 200 ? `${e.message.substring(0, 200)}...` : e.message
+          }
+        }
+
+        const message = `Failed to broadcast transaction on ${accountOp.networkId}: ${errorMsg}`
         return this.#throwAccountOpBroadcastError(new Error(message), message)
       }
     }

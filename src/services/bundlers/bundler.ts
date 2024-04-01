@@ -7,10 +7,11 @@ import { StaticJsonRpcProvider } from '@ethersproject/providers'
 
 import AmbireAccountNoReverts from '../../../contracts/compiled/AmbireAccountNoRevert.json'
 import { ERC_4337_ENTRYPOINT } from '../../../dist/src/consts/deploy'
-import { PROXY_NO_REVERTS } from '../../consts/deploy'
+import { ENTRY_POINT_MARKER, PROXY_NO_REVERTS } from '../../consts/deploy'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { Erc4337GasLimits } from '../../libs/estimate/interfaces'
 import { Gas1559Recommendation } from '../../libs/gasPrice/gasPrice'
+import { privSlot } from '../../libs/proxyDeploy/deploy'
 import { UserOperation } from '../../libs/userOperation/types'
 import { getCleanUserOp } from '../../libs/userOperation/userOperation'
 
@@ -142,6 +143,9 @@ export class Bundler {
     // that doesn't revert in validateUserOp.
     // when deploying, we replace the proxy; otherwise, we replace the
     // code at the sender
+    const stateDiff = {
+      [`0x${privSlot(0, 'address', ERC_4337_ENTRYPOINT, 'bytes32')}`]: ENTRY_POINT_MARKER
+    }
     const stateOverride =
       userOperation.initCode !== '0x'
         ? {
@@ -151,7 +155,8 @@ export class Bundler {
           }
         : {
             [userOperation.sender]: {
-              code: AmbireAccountNoReverts.binRuntime
+              code: AmbireAccountNoReverts.binRuntime,
+              stateDiff
             }
           }
 

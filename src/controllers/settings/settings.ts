@@ -104,7 +104,8 @@ export class SettingsController extends EventEmitter {
           is1559: false
         },
         features,
-        hasRelayer: false
+        hasRelayer: false,
+        hasSingleton: customNetwork.hasSingleton ?? false
       }
     })
 
@@ -132,7 +133,8 @@ export class SettingsController extends EventEmitter {
         platformId: finalNetwork.platformId,
         nativeAssetId: finalNetwork.nativeAssetId,
         flagged: finalNetwork.flagged ?? false,
-        chainId: finalNetwork.chainId
+        chainId: finalNetwork.chainId,
+        hasSingleton: finalNetwork.hasSingleton
       }
 
       finalNetwork.features = getFeaturesByNetworkProperties(info)
@@ -329,7 +331,8 @@ export class SettingsController extends EventEmitter {
       feeOptions,
       platformId,
       nativeAssetId,
-      flagged
+      flagged,
+      hasSingleton
     } = this.networkToAddOrUpdate.info as NetworkInfo
 
     this.#networkPreferences[customNetworkId] = {
@@ -343,7 +346,8 @@ export class SettingsController extends EventEmitter {
       hasDebugTraceCall,
       platformId,
       nativeAssetId,
-      flagged
+      flagged,
+      hasSingleton
     }
 
     await this.#storePreferences()
