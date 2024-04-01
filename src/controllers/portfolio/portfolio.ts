@@ -193,15 +193,32 @@ export class PortfolioController extends EventEmitter {
     token: { address: TokenResult['address']; networkId: TokenResult['networkId'] },
     accountId: AccountId
   ) {
-    const [isValid, standard]: [boolean, string] = (await validateERC20Token(
+    const network = this.#settings.networks.find((net) => net.id === token.networkId)
+    if (!network) return
+
+    const [isValid, standard, symbol, amount, decimals, priceIn]: [
+      boolean,
+      string,
+      string,
+      number,
+      number,
+      { baseCurrency: string; price: number }[]
+    ] = await validateERC20Token(
       token,
       accountId,
-      this.#settings.providers[token.networkId]
-    )) as [boolean, string]
+      this.#settings.providers[token.networkId],
+      network
+    )
 
     this.validTokens[standard] = {
       ...this.validTokens[standard],
-      [`${token.address}-${token.networkId}`]: isValid
+      [`${token.address}-${token.networkId}`]: {
+        isValid,
+        symbol,
+        amount,
+        decimals,
+        priceIn
+      }
     }
 
     this.emitUpdate()
