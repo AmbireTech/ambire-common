@@ -153,9 +153,7 @@ export async function bundlerEstimate(
 
   return {
     gasUsed: BigInt(gasData.callGasLimit),
-    // the correct nonce for the userOp cannot be determined here as
-    // if the request type is not standard, it will completely change
-    nonce: Number(BigInt(userOp.nonce).toString()),
+    currentAccountNonce: Number(op.nonce),
     feePaymentOptions,
     erc4337GasLimits: {
       preVerificationGas: gasData.preVerificationGas,

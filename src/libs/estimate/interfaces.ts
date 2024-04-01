@@ -17,7 +17,10 @@ export interface ArbitrumL1Fee {
 
 export interface EstimateResult {
   gasUsed: bigint
-  nonce: number
+  // the nonce should always be the current value of account.nonce()
+  // even in ERC-4337 case, we might use the account.nonce() for
+  // signatures. We don't need the EntryPoint nonce
+  currentAccountNonce: number
   feePaymentOptions: {
     availableAmount: bigint
     paidBy: string
