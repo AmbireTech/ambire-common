@@ -210,7 +210,7 @@ export async function estimate(
           isGasTank: false
         }
       ],
-      error: result instanceof Error ? result : getNonceDiscrepancyFailure(op, nonce + 1)
+      error: result instanceof Error ? result : null
     }
   }
 
