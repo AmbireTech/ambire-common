@@ -1,3 +1,4 @@
+import { AddressBookController } from 'controllers/addressBook/addressBook'
 import { JsonRpcProvider } from 'ethers'
 import fetch from 'node-fetch'
 
@@ -31,6 +32,9 @@ const PLACEHOLDER_RECIPIENT_LOWERCASE = PLACEHOLDER_RECIPIENT.toLowerCase()
 const PLACEHOLDER_SELECTED_ACCOUNT = '0xc4A6bB5139123bD6ba0CF387828a9A3a73EF8D1e'
 const XWALLET_ADDRESS = '0x47Cd7E91C3CBaAF266369fe8518345fc4FC12935'
 
+const addressBook = {
+  contacts: []
+}
 const ethPortfolio = new Portfolio(fetch, provider, ethereum)
 const polygonPortfolio = new Portfolio(fetch, polygonProvider, polygon)
 
@@ -47,7 +51,10 @@ const getTokens = async () => {
 
 describe('Transfer Controller', () => {
   test('should emit not initialized error', () => {
-    transferController = new TransferController(settingsController)
+    transferController = new TransferController(
+      settingsController,
+      addressBook as unknown as AddressBookController
+    )
 
     transferController.buildUserRequest()
     errorCount++
@@ -67,7 +74,10 @@ describe('Transfer Controller', () => {
   })
   test('should initialize', async () => {
     const tokens = await getTokens()
-    transferController = new TransferController(settingsController)
+    transferController = new TransferController(
+      settingsController,
+      addressBook as unknown as AddressBookController
+    )
     await transferController.update({
       selectedAccount: PLACEHOLDER_SELECTED_ACCOUNT,
       tokens,

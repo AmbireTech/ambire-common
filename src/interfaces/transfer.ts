@@ -1,6 +1,5 @@
 import { HumanizerMeta } from '../libs/humanizer/interfaces'
 import { TokenResult } from '../libs/portfolio'
-import { Account } from './account'
 import { AddressState, AddressStateOptional } from './domains'
 import { UserRequest } from './userRequest'
 
@@ -46,7 +45,6 @@ export interface TransferControllerState {
 }
 
 export interface TransferUpdate {
-  accounts?: Account[]
   selectedAccount?: string
   preSelectedToken?: string
   humanizerInfo?: HumanizerMeta
