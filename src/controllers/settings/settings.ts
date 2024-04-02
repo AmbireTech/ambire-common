@@ -1,5 +1,5 @@
 /* eslint-disable no-underscore-dangle */
-import { JsonRpcProvider } from 'ethers'
+import { JsonRpcProvider, Network } from 'ethers'
 
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { networks } from '../../consts/networks'
@@ -69,7 +69,8 @@ export class SettingsController extends EventEmitter {
         oldRPC.destroy()
       }
 
-      this.providers[network.id] = new JsonRpcProvider(newRpcUrl, Number(network.chainId))
+      const staticNetwork = Network.from(Number(network.chainId))
+      this.providers[network.id] = new JsonRpcProvider(newRpcUrl, staticNetwork, { staticNetwork })
     }
   }
 
