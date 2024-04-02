@@ -306,7 +306,7 @@ const init = async (
     ))
 
   const settings = new SettingsController(storage)
-  settings.providers = { [op.networkId]: provider }
+  settings.providers = providers
   const portfolio = new PortfolioController(storage, settings, 'https://staging-relayer.ambire.com')
   await portfolio.updateSelectedAccount(accounts, networks, account.addr)
 
