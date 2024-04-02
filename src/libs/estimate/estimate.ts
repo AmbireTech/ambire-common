@@ -121,6 +121,7 @@ export async function estimate4337(
     estimationResult.error instanceof Error
       ? estimationResult.error
       : getInnerCallFailure(accountOp) || getNonceDiscrepancyFailure(op, outcomeNonce)
+  estimationResult.currentAccountNonce = Number(outcomeNonce - 1n)
   return estimationResult
 }
 
