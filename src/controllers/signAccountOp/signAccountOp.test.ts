@@ -389,7 +389,7 @@ describe('SignAccountOp Controller ', () => {
       eoaSigner,
       {
         gasUsed: 10000n,
-        nonce: 0,
+        currentAccountNonce: 0,
         feePaymentOptions: [
           {
             address: '0x0000000000000000000000000000000000000000',
@@ -466,7 +466,7 @@ describe('SignAccountOp Controller ', () => {
       eoaSigner,
       {
         gasUsed: 50000n,
-        nonce: 0,
+        currentAccountNonce: 0,
         feePaymentOptions: [
           {
             address: '0x0000000000000000000000000000000000000000',
@@ -587,7 +587,7 @@ describe('SignAccountOp Controller ', () => {
       eoaSigner,
       {
         gasUsed: 50000n,
-        nonce: 0,
+        currentAccountNonce: 0,
         feePaymentOptions: [
           {
             address: '0x0000000000000000000000000000000000000000',
@@ -705,7 +705,7 @@ describe('SignAccountOp Controller ', () => {
       eoaSigner,
       {
         gasUsed: 10000n,
-        nonce: 0,
+        currentAccountNonce: 0,
         feePaymentOptions: [
           {
             address: '0x0000000000000000000000000000000000000000',
@@ -804,7 +804,7 @@ describe('SignAccountOp Controller ', () => {
       eoaSigner,
       {
         gasUsed: 10000n,
-        nonce: 0,
+        currentAccountNonce: 0,
         feePaymentOptions: [
           {
             address: '0x0000000000000000000000000000000000000000',

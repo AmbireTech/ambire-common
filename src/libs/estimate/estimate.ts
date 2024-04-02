@@ -23,16 +23,23 @@ import { refund } from './refund'
 
 const abiCoder = new AbiCoder()
 
-function getInnerCallFailure(
-  op: AccountOp,
-  estimationOp: { success: boolean; err: string }
-): Error | null {
+function getInnerCallFailure(estimationOp: { success: boolean; err: string }): Error | null {
   if (estimationOp.success) return null
 
   let error = mapTxnErrMsg(estimationOp.err)
   if (!error) error = 'Transaction reverted: invalid call in the bundle'
   return new Error(error, {
     cause: 'CALLS_FAILURE'
+  })
+}
+
+// the outcomeNonce should always be equat to the nonce in accountOp + 1
+// that's an indication of transaction success
+function getNonceDiscrepancyFailure(op: AccountOp, outcomeNonce: number): Error | null {
+  if (op.nonce !== null && op.nonce + 1n === BigInt(outcomeNonce)) return null
+
+  return new Error("Nonce discrepancy, perhaps there's a pending transaction. Retrying...", {
+    cause: 'NONCE_FAILURE'
   })
 }
 
@@ -108,12 +115,13 @@ export async function estimate4337(
   ]
   const estimations = await reestimate(initializeRequests)
   if (estimations instanceof Error) return estimationErrorFormatted(estimations)
-  const [[, , accountOp]] = estimations[0]
+  const [[, , accountOp, outcomeNonce]] = estimations[0]
   const estimationResult: EstimateResult = estimations[1]
   estimationResult.error =
     estimationResult.error instanceof Error
       ? estimationResult.error
-      : getInnerCallFailure(op, accountOp)
+      : getInnerCallFailure(accountOp) || getNonceDiscrepancyFailure(op, outcomeNonce)
+  estimationResult.currentAccountNonce = Number(outcomeNonce - 1n)
   return estimationResult
 }
 
@@ -193,7 +201,7 @@ export async function estimate(
 
     return {
       gasUsed,
-      nonce,
+      currentAccountNonce: nonce,
       feePaymentOptions: [
         {
           address: ZeroAddress,
@@ -311,7 +319,6 @@ export async function estimate(
       l1GasEstimation // [gasUsed, baseFee, totalFee, gasOracle]
     ]
   ] = estimations[0]
-  /* eslint-enable prefer-const */
 
   let gasUsed = deployment.gasUsed + accountOpToExecuteBefore.gasUsed + accountOp.gasUsed
 
@@ -371,8 +378,10 @@ export async function estimate(
 
   return {
     gasUsed,
-    nonce,
+    // the nonce from EstimateResult is incremented but we always want
+    // to return the current nonce. That's why we subtract 1
+    currentAccountNonce: Number(nonce - 1n),
     feePaymentOptions: [...feeTokenOptions, ...nativeTokenOptions],
-    error: getInnerCallFailure(op, accountOp)
+    error: getInnerCallFailure(accountOp) || getNonceDiscrepancyFailure(op, nonce)
   }
 }

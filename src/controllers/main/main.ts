@@ -970,6 +970,16 @@ export class MainController extends EventEmitter {
       this.accountOpsToBeSigned[localAccountOp.accountAddr][localAccountOp.networkId]!.estimation =
         estimation
 
+      // if the nonce from the estimation is different than the one in localAccountOp,
+      // override localAccountOp.nonce and set it in this.accountOpsToBeSigned as
+      // the nonce from the estimation is the newest one
+      if (estimation && BigInt(estimation.currentAccountNonce) !== localAccountOp.nonce) {
+        localAccountOp.nonce = BigInt(estimation.currentAccountNonce)
+        this.accountOpsToBeSigned[localAccountOp.accountAddr][
+          localAccountOp.networkId
+        ]!.accountOp.nonce = localAccountOp.nonce
+      }
+
       // update the signAccountOp controller once estimation finishes;
       // this eliminates the infinite loading bug if the estimation comes slower
       if (this.signAccountOp && estimation) {
