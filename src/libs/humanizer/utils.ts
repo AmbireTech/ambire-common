@@ -141,28 +141,8 @@ export async function getTokenInfo(
         },
         isGlobal: true
       }
-
-    // @TODO: rething error levels
-    if (response.symbol && response.detail_platforms) {
-      options.emitError({
-        message: `getTokenInfo: token not supported on network ${network?.name} `,
-        error: new Error(`token not supported on network ${network?.name}`),
-        level: 'silent'
-      })
-      return null
-    }
-    options.emitError({
-      message: 'getTokenInfo: something is wrong price API reponse format or 404',
-      error: new Error('unexpected response format or 404'),
-      level: 'silent'
-    })
     return null
   } catch (e: any) {
-    options.emitError({
-      message: `getTokenInfo: something is wrong with price API ${e.message}`,
-      error: e,
-      level: 'silent'
-    })
     return null
   }
 }
