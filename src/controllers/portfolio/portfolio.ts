@@ -3,6 +3,7 @@
 /* eslint-disable @typescript-eslint/no-shadow */
 import { CustomToken } from 'libs/portfolio/customToken'
 import fetch from 'node-fetch'
+import { ExtendedError } from 'react-native/Libraries/Core/Devtools/parseErrorStack'
 
 import { PINNED_TOKENS } from '../../consts/pinnedTokens'
 import { Account, AccountId } from '../../interfaces/account'
@@ -87,10 +88,9 @@ export class PortfolioController extends EventEmitter {
 
   temporaryTokens: {
     [networkId: NetworkDescriptor['id']]: {
-      isReady: boolean
       isLoading: boolean
-      errors: any[]
-      tokens: PortfolioGetResult
+      errors: ExtendedError[]
+      result: { tokens: PortfolioGetResult['tokens'] }
     }
   } = {}
 
@@ -217,13 +217,8 @@ export class PortfolioController extends EventEmitter {
     this.emitUpdate()
   }
 
-  async getTemporaryTokens(
-    accountId: AccountId,
-    networkId: NetworkId,
-    additionalHint: string,
-    networks: NetworkDescriptor[]
-  ) {
-    const network = networks.find((x) => x.id === networkId)
+  async getTemporaryTokens(accountId: AccountId, networkId: NetworkId, additionalHint: string) {
+    const network = this.#settings.networks.find((x) => x.id === networkId)
 
     if (!network) throw new Error('network not found')
     const providers = this.#settings.providers
@@ -240,20 +235,33 @@ export class PortfolioController extends EventEmitter {
       this.#portfolioLibs.set(key, new Portfolio(fetch, providers[network.id], network))
     }
     const portfolioLib = this.#portfolioLibs.get(key)!
-    const temporaryTokensToFetch = this.temporaryTokens[network.id].tokens.filter(
-      (x) => x.address !== additionalHint && x.priceUpdateTime > Date.now() - 60000
-    )
+
+    const temporaryTokensToFetch =
+      (this.temporaryTokens[network.id] &&
+        this.temporaryTokens[network.id].result?.tokens.filter(
+          (x) => x.address !== additionalHint
+        )) ||
+      []
+
+    this.temporaryTokens[network.id] = {
+      isLoading: false,
+      errors: [],
+      result: this.temporaryTokens[network.id] && this.temporaryTokens[network.id].result
+    }
+    this.emitUpdate()
+
     try {
       const result = await portfolioLib.get(accountId, {
         priceRecency: 60000,
-        additionalHints: [additionalHint, ...temporaryTokensToFetch],
+        additionalHints: [additionalHint, ...temporaryTokensToFetch.map((x) => x.address)],
         disableAutoDiscovery: true
       })
       this.temporaryTokens[network.id] = {
-        isReady: true,
         isLoading: false,
         errors: [],
-        tokens: result.tokens
+        result: {
+          tokens: result.tokens
+        }
       }
       this.emitUpdate()
       return true
@@ -264,9 +272,7 @@ export class PortfolioController extends EventEmitter {
         error: e
       })
       this.temporaryTokens[network.id].isLoading = false
-      if (!this.temporaryTokens[network.id].isReady)
-        this.temporaryTokens[network.id].criticalError = e
-      else this.temporaryTokens[network.id].errors.push(e)
+      this.temporaryTokens[network.id].errors.push(e)
       this.emitUpdate()
       return false
     }
