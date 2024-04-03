@@ -117,18 +117,27 @@ export async function getTokenInfo(
   options: any
 ): Promise<HumanizerFragment | null> {
   const network = networks.find((n: NetworkDescriptor) => n.id === humanizerSettings.networkId)
-  const platformId = network?.platformId
+  let platformId = network?.platformId
+  if(!platformId){
+    options.emitError({
+      message: `getTokenInfo: could not find platform id for token info api`,
+      error: new Error(`could not find platform id for token info api ${humanizerSettings.networkId}`),
+      level: 'minor'
+    })
+    platformId = humanizerSettings.networkId
+  }
+
   try {
-    const queryUrl = `${baseUrlCena}/coins/${platformId || network?.chainId}/contract/${address}`
+    const queryUrl = `${baseUrlCena}/coins/${platformId}/contract/${address}`
     let response = await options.fetch(queryUrl)
     response = await response.json()
-    if (response.symbol && response.detail_platforms?.ethereum?.decimal_place)
+    if (response.symbol && response.detail_platforms?.[platformId]?.decimal_place)
       return {
         type: 'token',
         key: address.toLowerCase(),
         value: {
           symbol: response.symbol.toUpperCase(),
-          decimals: response.detail_platforms?.ethereum?.decimal_place
+          decimals: response.detail_platforms?.[platformId]?.decimal_place
         },
         isGlobal: true
       }
