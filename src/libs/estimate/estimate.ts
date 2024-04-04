@@ -1,5 +1,6 @@
-import { AbiCoder, JsonRpcProvider, Provider, ZeroAddress } from 'ethers'
+import { AbiCoder, JsonRpcProvider, Provider, toBeHex, ZeroAddress } from 'ethers'
 
+import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import Estimation from '../../../contracts/compiled/Estimation.json'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { DEPLOYLESS_SIMULATION_FROM, OPTIMISTIC_ORACLE } from '../../consts/deploy'
@@ -11,8 +12,10 @@ import { getIsViewOnly } from '../../utils/accounts'
 import { getAccountDeployParams, isSmartAccount } from '../account/account'
 import { AccountOp } from '../accountOp/accountOp'
 import { Call } from '../accountOp/types'
-import { fromDescriptor } from '../deployless/deployless'
+import { DeploylessMode, fromDescriptor } from '../deployless/deployless'
 import { getProbableCallData } from '../gasPrice/gasPrice'
+import { EOA_SIMULATION_NONCE } from '../portfolio/getOnchainBalances'
+import { privSlot } from '../proxyDeploy/deploy'
 import {
   getActivatorCall,
   shouldIncludeActivatorCall,
@@ -26,6 +29,23 @@ import { ArbitrumL1Fee, EstimateResult, FeeToken } from './interfaces'
 import { refund } from './refund'
 
 const abiCoder = new AbiCoder()
+
+// this is the state override we use for the EOA when
+// estimating through Estimation.sol
+function getEOAEstimationStateOverride(accountAddr: string) {
+  return {
+    [accountAddr]: {
+      code: AmbireAccount.binRuntime,
+      stateDiff: {
+        // if we use 0x00...01 we get a geth bug: "invalid argument 2: hex number with leading zero digits\" - on some RPC providers
+        [`0x${privSlot(0, 'address', accountAddr, 'bytes32')}`]:
+          '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
+        // any number with leading zeros is not supported on some RPCs
+        [toBeHex(1, 32)]: EOA_SIMULATION_NONCE
+      }
+    }
+  }
+}
 
 function getInnerCallFailure(estimationOp: { success: boolean; err: string }): Error | null {
   if (estimationOp.success) return null
@@ -215,30 +235,65 @@ export async function estimate(
           nonce
         })
         .catch(catchEstimationFailure),
-      provider.getBalance(account.addr).catch(catchEstimationFailure),
-      deploylessEstimator
-        .call('getL1GasEstimation', [encodedCallData, FEE_COLLECTOR, optimisticOracle], {
-          from: blockFrom,
-          blockTag
-        })
-        .catch(catchEstimationFailure)
+      !network.rpcNoStateOverride
+        ? deploylessEstimator
+            .call(
+              'estimateEoa',
+              [
+                account.addr,
+                [account.addr, EOA_SIMULATION_NONCE, op.calls, '0x'],
+                encodedCallData,
+                [account.addr],
+                FEE_COLLECTOR,
+                optimisticOracle
+              ],
+              {
+                from: blockFrom,
+                blockTag,
+                mode: DeploylessMode.StateOverride,
+                stateToOverride: getEOAEstimationStateOverride(account.addr)
+              }
+            )
+            .catch(catchEstimationFailure)
+        : deploylessEstimator
+            .call('getL1GasEstimation', [encodedCallData, FEE_COLLECTOR, optimisticOracle], {
+              from: blockFrom,
+              blockTag
+            })
+            .catch(catchEstimationFailure)
     ]
     const result = await reestimate(initializeRequests)
-    const [gasUsed, balance, [l1GasEstimation]] =
-      result instanceof Error ? [0n, 0n, [{ fee: 0n }]] : result
+    const feePaymentOptions = [
+      {
+        address: ZeroAddress,
+        paidBy: account.addr,
+        availableAmount: accountState.balance,
+        addedNative: 0n,
+        isGasTank: false
+      }
+    ]
+    if (result instanceof Error) return estimationErrorFormatted(result, feePaymentOptions)
+
+    let gasUsed = 0n
+    if (!network.rpcNoStateOverride) {
+      const [gasUsedEstimateGas, [gasUsedEstimationSol, feeTokenOutcomes, l1GasEstimation]] = result
+      console.log(gasUsedEstimationSol)
+      console.log(gasUsedEstimationSol)
+      console.log(l1GasEstimation)
+      feePaymentOptions[0].availableAmount = feeTokenOutcomes[0][1]
+      feePaymentOptions[0].addedNative = l1GasEstimation.fee
+      gasUsed =
+        gasUsedEstimateGas > gasUsedEstimationSol ? gasUsedEstimateGas : gasUsedEstimationSol
+    } else {
+      const [gasUsedEstimateGas, [l1GasEstimation]] = result
+      feePaymentOptions[0].addedNative = l1GasEstimation.fee
+      gasUsed = gasUsedEstimateGas
+    }
 
     return {
       gasUsed,
       currentAccountNonce: nonce,
-      feePaymentOptions: [
-        {
-          address: ZeroAddress,
-          paidBy: account.addr,
-          availableAmount: balance,
-          addedNative: l1GasEstimation.fee,
-          isGasTank: false
-        }
-      ],
+      feePaymentOptions,
       error: result instanceof Error ? result : null
     }
   }

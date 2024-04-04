@@ -47,6 +47,7 @@ export function mapTxnErrMsg(contractError: string): string | null {
 }
 
 export function catchEstimationFailure(e: Error | string | null) {
+  console.log(e)
   let message = null
 
   if (e instanceof Error) {

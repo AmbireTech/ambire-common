@@ -34,6 +34,12 @@ contract Estimation is FeeTokens, Spoof {
     L1GasEstimation l1GasEstimation;
   }
 
+  struct EoaEstimationOutcome {
+    uint gasUsed;
+    FeeTokenOutcome[] feeTokenOutcomes;
+    L1GasEstimation l1GasEstimation;
+  }
+
   // `estimate` takes the `accountOpToExecuteBefore` parameters separately because it's simulated via `simulateSigned`
   // vs the regular accountOp for which we use simulateUnsigned
   function estimate(
@@ -117,6 +123,28 @@ contract Estimation is FeeTokens, Spoof {
         'Anti-bricking check failed, this means that none of the passed associatedKeys has privileges after simulation'
       );
     }
+  }
+
+  function estimateEoa(
+    IAmbireAccount account,
+    AccountOp memory op,
+    bytes calldata probableCallData,
+    address[] memory associatedKeys,
+    address relayer,
+    address oracle
+  ) external returns (EoaEstimationOutcome memory outcome) {
+    // simulate the transactions
+    SimulationOutcome memory simulation;
+    (simulation, , ) = simulateUnsigned(op, associatedKeys);
+    outcome.gasUsed = simulation.gasUsed;
+
+    // record the native balance after the simulation
+    FeeTokenOutcome[] memory feeTokenOutcomes = new FeeTokenOutcome[](1);
+    feeTokenOutcomes[0].amount = address(account).balance;
+    outcome.feeTokenOutcomes = feeTokenOutcomes;
+
+    // if an optimistic oracle is passed, simulate the L1 fee
+    outcome.l1GasEstimation = this.getL1GasEstimation(probableCallData, relayer, oracle);
   }
 
   function simulateDeployment(
