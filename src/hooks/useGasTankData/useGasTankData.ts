@@ -99,8 +99,11 @@ export default function useGasTankData({
       gasTankTxns &&
       gasTankTxns.length &&
       gasTankTxns.map((item: any) => {
+        const txnFilled = gasTankFilledTxns && gasTankFilledTxns.length && gasTankFilledTxns.find((i: any) => i._id === item._id)
+        const feeToken = (item.feeToken && item.feeToken.symbol && item.feeToken.symbol.toLowerCase()) || item.feeToken || txnFilled && feeAssetsRes.find((i: any) => i.network === network?.id && i.address.toLowerCase() === txnFilled.address.toLowerCase())?.symbol 
+        
         const feeTokenDetails = feeAssetsRes
-          ? feeAssetsRes.find((i: any) => i.symbol === item.feeToken)
+          ? feeAssetsRes.find((i: any) => i.symbol === feeToken)
           : null
         const savedGas = feeTokenDetails ? getAddedGas(feeTokenDetails) : null
         return {

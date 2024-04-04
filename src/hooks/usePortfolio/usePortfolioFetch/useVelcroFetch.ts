@@ -26,7 +26,8 @@ export default function useVelcroFetch({
   removeDuplicatedAssets,
   requestPendingState,
   pendingTokens,
-  setPendingTokens
+  setPendingTokens,
+  constants
 }) {
   const formatTokensResponse = (tokens, assets, network, account, otherNetworksFetch) => {
     const extraTokens = getExtraTokensAssets(account, network)
@@ -35,6 +36,12 @@ export default function useVelcroFetch({
         .map((token: any) => {
           const prevToken =
             assets?.tokens?.length && assets?.tokens.find((t) => t.address === token.address)
+          
+          // Get the coingeckoId from constants if not present from velcro
+          if (token.coingeckoId === null || prevToken?.coingeckoId === null) {
+            const tokenInList = constants.tokenList[network] && constants.tokenList[network].find(t => t.address === token.address)
+            if (tokenInList) { token.coingeckoId = tokenInList.coingeckoId}
+          }
           let updatedData = {}
           if (!prevToken) return { ...token }
           const { balance, balanceUSD, balanceUpdate, price, priceUpdate, ...newData } = token

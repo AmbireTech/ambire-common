@@ -105,7 +105,8 @@ export default function useProtocolsFetch({
     removeDuplicatedAssets,
     requestPendingState,
     pendingTokens,
-    setPendingTokens
+    setPendingTokens,
+    constants
   })
 
   return {
