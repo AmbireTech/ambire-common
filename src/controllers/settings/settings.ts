@@ -1,5 +1,5 @@
 /* eslint-disable no-underscore-dangle */
-import { JsonRpcProvider } from 'ethers'
+import { JsonRpcProvider, Network } from 'ethers'
 
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { networks } from '../../consts/networks'
@@ -69,7 +69,8 @@ export class SettingsController extends EventEmitter {
         oldRPC.destroy()
       }
 
-      this.providers[network.id] = new JsonRpcProvider(newRpcUrl, Number(network.chainId))
+      const staticNetwork = Network.from(Number(network.chainId))
+      this.providers[network.id] = new JsonRpcProvider(newRpcUrl, staticNetwork, { staticNetwork })
     }
   }
 
@@ -105,7 +106,8 @@ export class SettingsController extends EventEmitter {
           is1559: false
         },
         features,
-        hasRelayer: false
+        hasRelayer: false,
+        hasSingleton: customNetwork.hasSingleton ?? false
       }
     })
 
@@ -132,7 +134,9 @@ export class SettingsController extends EventEmitter {
         hasDebugTraceCall: finalNetwork.hasDebugTraceCall,
         platformId: finalNetwork.platformId,
         nativeAssetId: finalNetwork.nativeAssetId,
-        flagged: finalNetwork.flagged ?? false
+        flagged: finalNetwork.flagged ?? false,
+        chainId: finalNetwork.chainId,
+        hasSingleton: finalNetwork.hasSingleton
       }
 
       finalNetwork.features = getFeaturesByNetworkProperties(info)
@@ -330,7 +334,8 @@ export class SettingsController extends EventEmitter {
       feeOptions,
       platformId,
       nativeAssetId,
-      flagged
+      flagged,
+      hasSingleton
     } = this.networkToAddOrUpdate.info as NetworkInfo
 
     this.#networkPreferences[customNetworkId] = {
@@ -344,7 +349,8 @@ export class SettingsController extends EventEmitter {
       hasDebugTraceCall,
       platformId,
       nativeAssetId,
-      flagged
+      flagged,
+      hasSingleton
     }
 
     await this.#storePreferences()

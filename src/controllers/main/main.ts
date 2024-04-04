@@ -46,6 +46,7 @@ import generateSpoofSig from '../../utils/generateSpoofSig'
 import wait from '../../utils/wait'
 import { AccountAdderController } from '../accountAdder/accountAdder'
 import { ActivityController, SignedMessage, SubmittedAccountOp } from '../activity/activity'
+import { AddressBookController } from '../addressBook/addressBook'
 import { DomainsController } from '../domains/domains'
 import { EmailVaultController } from '../emailVault/emailVault'
 import EventEmitter from '../eventEmitter/eventEmitter'
@@ -106,6 +107,8 @@ export class MainController extends EventEmitter {
   activity!: ActivityController
 
   settings: SettingsController
+
+  addressBook: AddressBookController
 
   domains: DomainsController
 
@@ -206,6 +209,7 @@ export class MainController extends EventEmitter {
       relayerUrl,
       fetch: this.#fetch
     })
+    this.addressBook = new AddressBookController(this.#storage, this.accounts, this.settings)
     this.signMessage = new SignMessageController(
       this.keystore,
       this.settings,
@@ -527,6 +531,9 @@ export class MainController extends EventEmitter {
     this.selectedAccount = toAccountAddr
     await this.#storage.set('selectedAccount', toAccountAddr)
     this.activity.init({ filters: { account: toAccountAddr } })
+    this.addressBook.update({
+      selectedAccount: toAccountAddr
+    })
     this.updateSelectedAccount(toAccountAddr)
     this.onUpdateDappSelectedAccount(toAccountAddr)
     this.emitUpdate()
@@ -631,13 +638,24 @@ export class MainController extends EventEmitter {
     }
   }
 
-  async updateSelectedAccount(selectedAccount: string | null = null, forceUpdate: boolean = false) {
+  async updateSelectedAccount(
+    selectedAccount: string | null = null,
+    forceUpdate: boolean = false,
+    additionalHints: string[] = []
+  ) {
     if (!selectedAccount) return
+    const updateOptions = additionalHints.length
+      ? { forceUpdate, additionalHints }
+      : { forceUpdate }
 
     this.portfolio
-      .updateSelectedAccount(this.accounts, this.settings.networks, selectedAccount, undefined, {
-        forceUpdate
-      })
+      .updateSelectedAccount(
+        this.accounts,
+        this.settings.networks,
+        selectedAccount,
+        undefined,
+        updateOptions
+      )
       .then(() => {
         const account = this.accounts.find(({ addr }) => addr === selectedAccount)
         if (shouldGetAdditionalPortfolio(account))
@@ -786,6 +804,12 @@ export class MainController extends EventEmitter {
       // This is already handled and estimated as a fee option in the estimate library, which is why we pass an empty array here.
       const EOAaccounts = account?.creation ? this.accounts.filter((acc) => !acc.creation) : []
 
+      if (!account)
+        throw new Error(`estimateAccountOp: ${localAccountOp.accountAddr}: account does not exist`)
+      const network = this.settings.networks.find((x) => x.id === localAccountOp.networkId)
+      if (!network)
+        throw new Error(`estimateAccountOp: ${localAccountOp.networkId}: network does not exist`)
+
       // Take the fee tokens from two places: the user's tokens and his gasTank
       // The gastTank tokens participate on each network as they belong everywhere
       // NOTE: at some point we should check all the "?" signs below and if
@@ -794,7 +818,14 @@ export class MainController extends EventEmitter {
         this.portfolio.latest?.[localAccountOp.accountAddr]?.[localAccountOp.networkId]?.result
           ?.tokens ?? []
       const gasTankFeeTokens =
-        this.portfolio.latest?.[localAccountOp.accountAddr]?.gasTank?.result?.tokens ?? []
+        this.portfolio.latest?.[localAccountOp.accountAddr]?.gasTank?.result?.tokens.filter(
+          (token) => {
+            return (
+              token.address !== ZeroAddress ||
+              token.symbol.toLowerCase() === network.nativeAssetSymbol.toLowerCase()
+            )
+          }
+        ) ?? []
 
       const feeTokens =
         [...networkFeeTokens, ...gasTankFeeTokens]
@@ -802,14 +833,9 @@ export class MainController extends EventEmitter {
           .map((token) => ({
             address: token.address,
             isGasTank: token.flags.onGasTank,
-            amount: BigInt(token.amount)
+            amount: BigInt(token.amount),
+            symbol: token.symbol
           })) || []
-
-      if (!account)
-        throw new Error(`estimateAccountOp: ${localAccountOp.accountAddr}: account does not exist`)
-      const network = this.settings.networks.find((x) => x.id === localAccountOp.networkId)
-      if (!network)
-        throw new Error(`estimateAccountOp: ${localAccountOp.networkId}: network does not exist`)
 
       // if the network's chosen RPC supports debug_traceCall, we
       // make an additional simulation for each call in the accountOp
@@ -951,6 +977,16 @@ export class MainController extends EventEmitter {
       this.accountOpsToBeSigned[localAccountOp.accountAddr][localAccountOp.networkId]!.estimation =
         estimation
 
+      // if the nonce from the estimation is different than the one in localAccountOp,
+      // override localAccountOp.nonce and set it in this.accountOpsToBeSigned as
+      // the nonce from the estimation is the newest one
+      if (estimation && BigInt(estimation.currentAccountNonce) !== localAccountOp.nonce) {
+        localAccountOp.nonce = BigInt(estimation.currentAccountNonce)
+        this.accountOpsToBeSigned[localAccountOp.accountAddr][
+          localAccountOp.networkId
+        ]!.accountOp.nonce = localAccountOp.nonce
+      }
+
       // update the signAccountOp controller once estimation finishes;
       // this eliminates the infinite loading bug if the estimation comes slower
       if (this.signAccountOp && estimation) {
@@ -1063,10 +1099,16 @@ export class MainController extends EventEmitter {
         const signedTxn = await signer.signRawTransaction(rawTxn)
         transactionRes = await provider.broadcastTransaction(signedTxn)
       } catch (e: any) {
-        const errorMsg =
-          e?.message || 'Please try again or contact support if the problem persists.'
-        const message = `Failed to broadcast transaction on ${accountOp.networkId}. ${errorMsg}`
+        let errorMsg = 'Please try again or contact support if the problem persists.'
+        if (e?.message) {
+          if (e.message.includes('insufficient funds')) {
+            errorMsg = 'Insufficient funds for intristic transaction cost'
+          } else {
+            errorMsg = e.message.length > 200 ? `${e.message.substring(0, 200)}...` : e.message
+          }
+        }
 
+        const message = `Failed to broadcast transaction on ${accountOp.networkId}: ${errorMsg}`
         return this.#throwAccountOpBroadcastError(new Error(message), message)
       }
     }
@@ -1143,9 +1185,16 @@ export class MainController extends EventEmitter {
         const signedTxn = await signer.signRawTransaction(rawTxn)
         transactionRes = await provider.broadcastTransaction(signedTxn)
       } catch (e: any) {
-        const errorMsg =
-          e?.message || 'Please try again or contact support if the problem persists.'
-        const message = `Failed to broadcast transaction on ${accountOp.networkId}. ${errorMsg}`
+        let errorMsg = 'Please try again or contact support if the problem persists.'
+        if (e?.message) {
+          if (e.message.includes('insufficient funds')) {
+            errorMsg = 'Insufficient funds for intristic transaction cost'
+          } else {
+            errorMsg = e.message.length > 200 ? `${e.message.substring(0, 200)}...` : e.message
+          }
+        }
+
+        const message = `Failed to broadcast transaction on ${accountOp.networkId}: ${errorMsg}`
         return this.#throwAccountOpBroadcastError(new Error(message), message)
       }
     }

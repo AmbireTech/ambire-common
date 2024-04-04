@@ -52,6 +52,7 @@ const defaultOptions: GetOptions = {
   priceRecency: 0,
   additionalHints: [],
   fetchPinned: true,
+  tokenPreferences: [],
   isEOA: false
 }
 
@@ -138,6 +139,13 @@ export class Portfolio {
       hints.erc20s = [...hints.erc20s, ...PINNED_TOKENS.map((x) => x.address)]
     }
 
+    if (localOpts.tokenPreferences) {
+      hints.erc20s = [
+        ...hints.erc20s,
+        ...localOpts.tokenPreferences.filter((x) => x.standard === 'ERC20').map((x) => x.address)
+      ]
+    }
+
     // Remove duplicates
     hints.erc20s = [...new Set(hints.erc20s.map((erc20) => getAddress(erc20)))]
 
@@ -184,18 +192,29 @@ export class Portfolio {
     const tokenFilter = ([error, result]: [string, TokenResult]): boolean => {
       if (error !== '0x' || result.symbol === '') return false
 
-      if (result.amount > 0) return true
+      const isTokenPreference = localOpts.tokenPreferences?.find((tokenPreference) => {
+        return tokenPreference.address === result.address && tokenPreference.networkId === networkId
+      })
+      if (isTokenPreference) {
+        result.isHidden = isTokenPreference.isHidden
+      }
+
+      // always include > 0 amount and native token
+      if (result.amount > 0 || result.address === ZeroAddress) return true
 
       const isPinned = !!PINNED_TOKENS.find((pinnedToken) => {
         return pinnedToken.networkId === networkId && pinnedToken.address === result.address
       })
+
+      const isInAdditionalHints = localOpts.additionalHints?.includes(result.address)
 
       // if the amount is 0
       // return the token if it's pinned and requested
       // or if it's not pinned but under the limit
       const pinnedRequested = isPinned && localOpts.fetchPinned
       const underLimit = !isPinned && tokensWithErr.length <= limits.erc20 / 2
-      return pinnedRequested || underLimit
+
+      return !!isTokenPreference || isInAdditionalHints || pinnedRequested || underLimit
     }
 
     const tokens = tokensWithErr
@@ -273,6 +292,7 @@ export class Portfolio {
       collections: collections.filter((x) => x.collectibles?.length),
       total: tokens.reduce((cur, token) => {
         const localCur = cur
+        if (token.isHidden) return localCur
         for (const x of token.priceIn) {
           localCur[x.baseCurrency] =
             (localCur[x.baseCurrency] || 0) +

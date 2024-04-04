@@ -11,6 +11,7 @@ import {
   OPTIMISTIC_ORACLE,
   SINGLETON
 } from '../../consts/deploy'
+import { networks as predefinedNetworks } from '../../consts/networks'
 import { NetworkFeature, NetworkInfo, NetworkInfoLoading } from '../../interfaces/networkDescriptor'
 import { RPCProviders } from '../../interfaces/settings'
 import { Bundler } from '../../services/bundlers/bundler'
@@ -31,6 +32,8 @@ async function retryRequest(init: Function, counter = 0): Promise<any> {
       const retryRes = await retryRequest(init, counter + 1)
       return retryRes
     }
+
+    throw new Error('flagged')
   })
 
   return result
@@ -42,7 +45,9 @@ export async function getNetworkInfo(
   callback: (networkInfo: NetworkInfoLoading<NetworkInfo>) => void
 ) {
   let networkInfo: NetworkInfoLoading<NetworkInfo> = {
+    chainId,
     isSAEnabled: 'LOADING',
+    hasSingleton: 'LOADING',
     isOptimistic: 'LOADING',
     rpcNoStateOverride: 'LOADING',
     erc4337: 'LOADING',
@@ -55,21 +60,25 @@ export async function getNetworkInfo(
   }
   callback(networkInfo)
 
+  const timeout = (time: number = 30000): Promise<'timeout reached'> => {
+    return new Promise((resolve) => {
+      setTimeout(resolve, time, 'timeout reached')
+    }) as unknown as Promise<'timeout reached'>
+  }
+
   let flagged = false
   const provider = new JsonRpcProvider(rpcUrl)
-  // eslint-disable-next-line no-underscore-dangle
-  await provider._detectNetwork().catch(() => {
+  const detection = await Promise.race([
+    // eslint-disable-next-line no-underscore-dangle
+    provider._detectNetwork().catch((e: Error) => e),
+    timeout(3000)
+  ])
+  if (detection === 'timeout reached' || detection instanceof Error) {
     flagged = true
     networkInfo = { ...networkInfo, flagged }
     callback(networkInfo)
-  })
-  if (flagged) return
-
-  const timeout = (): Promise<'timeout reached'> => {
-    return new Promise((resolve) => {
-      setTimeout(resolve, 30000, 'timeout reached')
-    }) as unknown as Promise<'timeout reached'>
   }
+  if (flagged) return
 
   const raiseFlagged = (e: Error, returnData: any): any => {
     if (e.message === 'flagged') {
@@ -118,6 +127,7 @@ export async function getNetworkInfo(
           saSupport.addressMatches || (!saSupport.supportsStateOverride && areContractsDeployed)
         networkInfo = {
           ...networkInfo,
+          hasSingleton: singletonCode !== '0x',
           isSAEnabled: supportsAmbire && singletonCode !== '0x',
           areContractsDeployed,
           rpcNoStateOverride: !saSupport.supportsStateOverride
@@ -214,7 +224,9 @@ export function getFeaturesByNetworkProperties(
     erc4337,
     rpcNoStateOverride,
     hasDebugTraceCall,
-    nativeAssetId
+    nativeAssetId,
+    chainId,
+    hasSingleton
   } = networkInfo
 
   const updateFeature = (
@@ -242,12 +254,14 @@ export function getFeaturesByNetworkProperties(
     ]
   }
 
-  if ([isSAEnabled, areContractsDeployed, erc4337].every((p) => p !== 'LOADING')) {
+  if ([isSAEnabled, areContractsDeployed, erc4337, hasSingleton].every((p) => p !== 'LOADING')) {
     if (!isSAEnabled) {
       updateFeature('saSupport', {
         level: 'danger',
         title: 'Smart contract wallets are not supported',
-        msg: "Unfortunately this blockchain network don't support smart contract wallets. This network can be used only with Basic accounts (EOAs)."
+        msg: hasSingleton
+          ? 'We were unable to detect smart account support on the network with the provided RPC. Please choose another RPC or try again later.'
+          : "Unfortunately this network doesn't support smart contract wallets. It can be used only with Basic accounts (EOAs)."
       })
     }
 
@@ -271,7 +285,8 @@ export function getFeaturesByNetworkProperties(
   }
 
   if ([rpcNoStateOverride, hasDebugTraceCall].every((p) => p !== 'LOADING')) {
-    if (!rpcNoStateOverride && hasDebugTraceCall) {
+    const isPredefinedNetwork = predefinedNetworks.find((net) => net.chainId === chainId)
+    if (!rpcNoStateOverride && (hasDebugTraceCall || isPredefinedNetwork)) {
       updateFeature('simulation', {
         level: 'success',
         title: 'Transaction simulation is fully supported',

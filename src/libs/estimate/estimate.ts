@@ -1,40 +1,50 @@
-import { AbiCoder, Interface, JsonRpcProvider, Provider, toBeHex, ZeroAddress } from 'ethers'
+import { AbiCoder, JsonRpcProvider, Provider, ZeroAddress } from 'ethers'
 
-import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
-import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFactory.json'
 import Estimation from '../../../contracts/compiled/Estimation.json'
-import Estimation4337 from '../../../contracts/compiled/Estimation4337.json'
 import { FEE_COLLECTOR } from '../../consts/addresses'
-import { AMBIRE_PAYMASTER, ERC_4337_ENTRYPOINT, OPTIMISTIC_ORACLE } from '../../consts/deploy'
+import { DEPLOYLESS_SIMULATION_FROM, OPTIMISTIC_ORACLE } from '../../consts/deploy'
 import { networks as predefinedNetworks } from '../../consts/networks'
-import { SPOOF_SIGTYPE } from '../../consts/signatures'
 import { Account, AccountStates } from '../../interfaces/account'
 import { Key } from '../../interfaces/keystore'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { getIsViewOnly } from '../../utils/accounts'
 import { getAccountDeployParams, isSmartAccount } from '../account/account'
-import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
+import { AccountOp } from '../accountOp/accountOp'
+import { Call } from '../accountOp/types'
 import { fromDescriptor } from '../deployless/deployless'
 import { getProbableCallData } from '../gasPrice/gasPrice'
-import { UserOperation } from '../userOperation/types'
 import {
   getActivatorCall,
-  getOneTimeNonce,
-  getPaymasterSpoof,
   shouldIncludeActivatorCall,
-  shouldUseOneTimeNonce,
-  shouldUsePaymaster,
-  toUserOperation
+  shouldUsePaymaster
 } from '../userOperation/userOperation'
 import { estimateCustomNetwork } from './customNetworks'
 import { catchEstimationFailure, estimationErrorFormatted, mapTxnErrMsg } from './errors'
 import { estimateArbitrumL1GasUsed } from './estimateArbitrum'
-import { Erc4337estimation, EstimateResult } from './interfaces'
+import { bundlerEstimate } from './estimateBundler'
+import { ArbitrumL1Fee, EstimateResult, FeeToken } from './interfaces'
+import { refund } from './refund'
 
-export interface FeeToken {
-  address: string
-  isGasTank: boolean
-  amount: bigint // how much the user has (from portfolio)
+const abiCoder = new AbiCoder()
+
+function getInnerCallFailure(estimationOp: { success: boolean; err: string }): Error | null {
+  if (estimationOp.success) return null
+
+  let error = mapTxnErrMsg(estimationOp.err)
+  if (!error) error = 'Transaction reverted: invalid call in the bundle'
+  return new Error(error, {
+    cause: 'CALLS_FAILURE'
+  })
+}
+
+// the outcomeNonce should always be equat to the nonce in accountOp + 1
+// that's an indication of transaction success
+function getNonceDiscrepancyFailure(op: AccountOp, outcomeNonce: number): Error | null {
+  if (op.nonce !== null && op.nonce + 1n === BigInt(outcomeNonce)) return null
+
+  return new Error("Nonce discrepancy, perhaps there's a pending transaction. Retrying...", {
+    cause: 'NONCE_FAILURE'
+  })
 }
 
 async function reestimate(fetchRequests: Function, counter: number = 0): Promise<any> {
@@ -69,6 +79,80 @@ async function reestimate(fetchRequests: Function, counter: number = 0): Promise
   return result
 }
 
+export async function estimate4337(
+  account: Account,
+  op: AccountOp,
+  calls: Call[],
+  accountStates: AccountStates,
+  network: NetworkDescriptor,
+  provider: JsonRpcProvider | Provider,
+  feeTokens: FeeToken[],
+  blockTag: string | number
+): Promise<EstimateResult> {
+  const deploylessEstimator = fromDescriptor(provider, Estimation, !network.rpcNoStateOverride)
+  // if no paymaster, user can only pay in native
+  const filteredFeeTokens = !shouldUsePaymaster(network)
+    ? feeTokens.filter((feeToken) => feeToken.address === ZeroAddress && !feeToken.isGasTank)
+    : feeTokens
+  const checkInnerCallsArgs = [
+    account.addr,
+    ...getAccountDeployParams(account),
+    [
+      account.addr,
+      op.accountOpToExecuteBefore?.nonce || 0,
+      op.accountOpToExecuteBefore?.calls || [],
+      op.accountOpToExecuteBefore?.signature || '0x'
+    ],
+    [account.addr, op.nonce || 1, calls, '0x'],
+    '0x',
+    account.associatedKeys,
+    filteredFeeTokens.map((feeToken) => feeToken.address),
+    ZeroAddress,
+    [],
+    ZeroAddress
+  ]
+
+  const initializeRequests = () => [
+    deploylessEstimator
+      .call('estimate', checkInnerCallsArgs, {
+        from: DEPLOYLESS_SIMULATION_FROM,
+        blockTag
+      })
+      .catch(catchEstimationFailure),
+    bundlerEstimate(account, accountStates, op, network, feeTokens)
+  ]
+  const estimations = await reestimate(initializeRequests)
+  if (estimations instanceof Error) return estimationErrorFormatted(estimations)
+  const [[, , accountOp, outcomeNonce, feeTokenOutcomes]] = estimations[0]
+  const estimationResult: EstimateResult = estimations[1]
+  estimationResult.error =
+    estimationResult.error instanceof Error
+      ? estimationResult.error
+      : getInnerCallFailure(accountOp) || getNonceDiscrepancyFailure(op, outcomeNonce)
+  estimationResult.currentAccountNonce = Number(outcomeNonce - 1n)
+
+  estimationResult.feePaymentOptions = filteredFeeTokens.map((token: FeeToken, index: number) => {
+    return {
+      address: token.address,
+      paidBy: account.addr,
+      availableAmount: feeTokenOutcomes[index][1],
+      // @relyOnBundler
+      // gasUsed goes to 0
+      // we add a transfer call or a native call when sending the uOp to the
+      // bundler and he estimates that. For different networks this gasUsed
+      // goes to different places (callGasLimit or preVerificationGas) and
+      // its calculated differently. So it's a wild bet to think we could
+      // calculate this on our own for each network.
+      gasUsed: 0n,
+      // addedNative gets calculated by the bundler & added to uOp gasData
+      addedNative: 0n,
+      isGasTank: token.isGasTank
+    }
+  })
+
+  return estimationResult
+}
+
 export async function estimate(
   provider: Provider | JsonRpcProvider,
   network: NetworkDescriptor,
@@ -86,10 +170,8 @@ export async function estimate(
   blockTag: string | number = 'latest'
 ): Promise<EstimateResult> {
   const deploylessEstimator = fromDescriptor(provider, Estimation, !network.rpcNoStateOverride)
-  const abiCoder = new AbiCoder()
   const optimisticOracle = network.isOptimistic ? OPTIMISTIC_ORACLE : ZeroAddress
   const accountState = accountStates[op.accountAddr][op.networkId]
-  const is4337Broadcast = opts && opts.is4337Broadcast
   const isCustomNetwork = !predefinedNetworks.find((net) => net.id === network.id)
   const isSA = isSmartAccount(account)
 
@@ -97,7 +179,7 @@ export async function estimate(
   // in all cases EXCEPT the case where we're making an estimation for
   // the view only account itself. In all other, view only accounts options
   // should not be present as the user cannot pay the fee with them (no key)
-  let nativeToCheck = EOAaccounts.filter(
+  const nativeToCheck = EOAaccounts.filter(
     (acc) => acc.addr === op.accountAddr || !getIsViewOnly(keystoreKeys, acc.associatedKeys)
   ).map((acc) => acc.addr)
 
@@ -147,7 +229,7 @@ export async function estimate(
 
     return {
       gasUsed,
-      nonce,
+      currentAccountNonce: nonce,
       feePaymentOptions: [
         {
           address: ZeroAddress,
@@ -157,9 +239,6 @@ export async function estimate(
           isGasTank: false
         }
       ],
-      erc4337estimation: null,
-      arbitrumL1FeeIfArbitrum: { noFee: 0n, withFee: 0n },
-      l1FeeAsL2Gas: 0n,
       error: result instanceof Error ? result : null
     }
   }
@@ -169,27 +248,31 @@ export async function estimate(
       new Error('Smart accounts are not available for this network. Please use a Basic Account')
     )
 
-  // filter out the fee tokens that are not valid for:
-  // - erc4337 without a paymaster - we cannot pay in tokens
-  // - non erc4337 custom network - we can only pay in native from EOA
-  let filteredFeeTokens = feeTokens
-  if (is4337Broadcast) {
-    if (!network.erc4337?.hasPaymaster) {
-      filteredFeeTokens = filteredFeeTokens.filter(
-        (feeToken) => feeToken.address === ZeroAddress && !feeToken.isGasTank
-      )
-    }
-
-    // native from other accounts are not allowed in ERC-4337
-    nativeToCheck = []
-  } else if (isCustomNetwork) {
-    // if the network is custom and it's not a 4337Broadcast, we cannot pay with
-    // the SA as the relayer does not support the network. Our only option becomes
-    // basic account paying the fee
-    filteredFeeTokens = []
+  // @EntryPoint activation
+  // if the account is v2 without the entry point signer being a signer
+  // and the network is 4337 but doesn't have a paymaster, we should activate
+  // the entry point and therefore estimate the activator call here
+  const calls = [...op.calls]
+  if (shouldIncludeActivatorCall(network, accountState)) {
+    calls.push(getActivatorCall(op.accountAddr))
   }
 
-  const userOp = is4337Broadcast ? toUserOperation(account, accountState, op) : null
+  if (opts && opts.is4337Broadcast) {
+    const estimationResult: EstimateResult = await estimate4337(
+      account,
+      op,
+      calls,
+      accountStates,
+      network,
+      provider,
+      feeTokens,
+      blockTag
+    )
+    return estimationResult
+  }
+
+  // if the network doesn't have a relayer, we can't pay in fee tokens
+  const filteredFeeTokens = network.hasRelayer ? feeTokens : []
 
   // @L2s
   // craft the probableTxn that's going to be saved on the L1
@@ -205,7 +288,7 @@ export async function estimate(
       'uint256' // gasLimit
     ],
     [
-      getProbableCallData(op, accountState, network, userOp),
+      getProbableCallData(op, accountState, network),
       op.accountAddr,
       FEE_COLLECTOR,
       100000,
@@ -214,15 +297,6 @@ export async function estimate(
       100000
     ]
   )
-
-  // @EntryPoint activation
-  // if the account is v2 without the entry point signer being a signer
-  // and the network is 4337 but doesn't have a paymaster, we should activate
-  // the entry point and therefore estimate the activator call here
-  const calls = [...op.calls]
-  if (shouldIncludeActivatorCall(network, accountState)) {
-    calls.push(getActivatorCall(op.accountAddr))
-  }
 
   const args = [
     account.addr,
@@ -243,40 +317,6 @@ export async function estimate(
     optimisticOracle
   ]
 
-  // estimate 4337
-  const IAmbireAccount = new Interface(AmbireAccount.abi)
-  let deployless4337Estimator: any = null
-  let functionArgs: any = null
-  // a variable with fake user op props for estimation
-  let estimateUserOp: UserOperation | null = null
-  if (userOp) {
-    estimateUserOp = { ...userOp }
-    if (shouldUsePaymaster(network)) {
-      estimateUserOp.paymasterAndData = getPaymasterSpoof()
-    }
-
-    // add the activatorCall to the estimation
-    if (estimateUserOp.activatorCall) {
-      const localAccOp = { ...op }
-      localAccOp.activatorCall = estimateUserOp.activatorCall
-      const spoofSig = abiCoder.encode(['address'], [account.associatedKeys[0]]) + SPOOF_SIGTYPE
-      estimateUserOp.callData = IAmbireAccount.encodeFunctionData('executeMultiple', [
-        [[getSignableCalls(localAccOp), spoofSig]]
-      ])
-    }
-
-    if (shouldUseOneTimeNonce(estimateUserOp)) {
-      estimateUserOp.nonce = getOneTimeNonce(estimateUserOp)
-    } else {
-      const spoofSig = abiCoder.encode(['address'], [account.associatedKeys[0]]) + SPOOF_SIGTYPE
-      estimateUserOp.signature = spoofSig
-    }
-
-    functionArgs = [estimateUserOp, ERC_4337_ENTRYPOINT]
-    deployless4337Estimator = fromDescriptor(provider, Estimation4337, !network.rpcNoStateOverride)
-  }
-
-  /* eslint-disable prefer-const */
   const initializeRequests = () => [
     deploylessEstimator
       .call('estimate', args, {
@@ -284,19 +324,7 @@ export async function estimate(
         blockTag
       })
       .catch(catchEstimationFailure),
-    is4337Broadcast
-      ? deployless4337Estimator
-          .call('estimate', functionArgs, {
-            from: blockFrom,
-            blockTag
-          })
-          .catch((e: any) => e)
-      : new Promise((resolve) => {
-          resolve(null)
-        }),
-    estimateArbitrumL1GasUsed(op, account, accountState, provider, estimateUserOp).catch(
-      catchEstimationFailure
-    ),
+    estimateArbitrumL1GasUsed(op, account, accountState, provider).catch(catchEstimationFailure),
     isCustomNetwork
       ? estimateCustomNetwork(account, op, accountStates, network, provider)
       : new Promise((resolve) => {
@@ -304,14 +332,9 @@ export async function estimate(
         })
   ]
   const estimations = await reestimate(initializeRequests)
-
-  // this error usually means there's an RPC issue and we cannot make
-  // the estimation at the moment. Say so to the user
   if (estimations instanceof Error) return estimationErrorFormatted(estimations)
 
-  const arbitrumL1FeeIfArbitrum = estimations[2]
-
-  let [
+  const [
     [
       deployment,
       accountOpToExecuteBefore,
@@ -324,125 +347,31 @@ export async function estimate(
       l1GasEstimation // [gasUsed, baseFee, totalFee, gasOracle]
     ]
   ] = estimations[0]
-  /* eslint-enable prefer-const */
 
-  // if the calls don't pass, we set a CALLS_FAILURE error but
-  // allow the execution to proceed.
-  // we should explain to the user that the calls don't pass and stop
-  // the re-estimation for this accountOp
-  let estimationError = null
-  if (!accountOp.success) {
-    let error = mapTxnErrMsg(accountOp.err)
-    if (!error) error = `Estimation failed for ${op.accountAddr} on ${op.networkId}`
-    estimationError = new Error(error, {
-      cause: 'CALLS_FAILURE'
-    })
-  }
-
-  let erc4337estimation: Erc4337estimation | null = null
-  if (userOp) {
-    const [[verificationGasLimit, gasUsed, failure]]: any = estimations[1]
-
-    // if there's an estimation failure, set default values, place the error
-    // and allow the code to move on
-    if (failure !== '0x') {
-      const errorMsg = Buffer.from(failure.substring(2), 'hex').toString()
-
-      let humanReadableMsg = `Failed to estimate a 4337 Request for ${op.accountAddr} on ${op.networkId}`
-      if (errorMsg.includes('paymaster deposit too low')) {
-        humanReadableMsg = `Paymaster with address ${AMBIRE_PAYMASTER} does not have enough funds to execute this request. Please contact support`
-      }
-      estimationError = new Error(humanReadableMsg, {
-        cause: 'ERC_4337'
-      })
-      erc4337estimation = {
-        userOp,
-        gasUsed: 0n
-      }
-    } else {
-      // set the callGasLimit buffer. We take 5% of the gasUsed
-      // and compare it with 10k. The bigger one gets added on as a buffer
-      const gasLimitBufferInPercentage = gasUsed / 20n // 5%
-      const gasLimitBuffer =
-        gasLimitBufferInPercentage > 10000n ? gasLimitBufferInPercentage : 10000n
-
-      userOp.verificationGasLimit = toBeHex(BigInt(verificationGasLimit) + 5000n)
-      userOp.callGasLimit = toBeHex(gasUsed + gasLimitBuffer)
-      erc4337estimation = {
-        userOp,
-        gasUsed: BigInt(gasUsed) // the minimum for payments
-      }
-    }
-  }
-
-  let gasUsed = erc4337estimation
-    ? erc4337estimation.gasUsed
-    : deployment.gasUsed + accountOpToExecuteBefore.gasUsed + accountOp.gasUsed
+  let gasUsed = deployment.gasUsed + accountOpToExecuteBefore.gasUsed + accountOp.gasUsed
 
   // we're touching the calculations for custom networks only
   // customlyEstimatedGas is 0 when the network is not custom
-  const customlyEstimatedGas = estimations[3]
-  let l1FeeAsL2Gas = 0n
-  if (
-    isCustomNetwork &&
-    is4337Broadcast &&
-    network.isOptimistic &&
-    gasUsed < customlyEstimatedGas
-  ) {
-    l1FeeAsL2Gas = customlyEstimatedGas + l1GasEstimation.gasUsed
-  } else if (gasUsed < customlyEstimatedGas) {
-    gasUsed = customlyEstimatedGas
-  }
+  const customlyEstimatedGas = estimations[2]
+  if (gasUsed < customlyEstimatedGas) gasUsed = customlyEstimatedGas
 
   // WARNING: calculateRefund will 100% NOT work in all cases we have
   // So a warning not to assume this is working
-  if (opts?.calculateRefund) {
-    const IAmbireAccountFactory = new Interface(AmbireAccountFactory.abi)
+  if (opts?.calculateRefund) gasUsed = await refund(account, op, provider, gasUsed)
 
-    const accountCalldata = op.accountOpToExecuteBefore
-      ? IAmbireAccount.encodeFunctionData('executeMultiple', [
-          [
-            [op.accountOpToExecuteBefore.calls, op.accountOpToExecuteBefore.signature],
-            [op.calls, op.signature]
-          ]
-        ])
-      : IAmbireAccount.encodeFunctionData('execute', [op.calls, op.signature])
-
-    const factoryCalldata = IAmbireAccountFactory.encodeFunctionData('deployAndExecute', [
-      account.creation!.bytecode,
-      account.creation!.salt,
-      [[account.addr, 0, accountCalldata]],
-      op.signature
-    ])
-
-    const estimatedGas = await provider.estimateGas({
-      from: '0x0000000000000000000000000000000000000001',
-      to: account.creation!.factoryAddr,
-      data: factoryCalldata
-    })
-
-    const estimatedRefund = gasUsed - estimatedGas
-
-    // As of EIP-3529, the max refund is 1/5th of the entire cost
-    if (estimatedRefund <= gasUsed / 5n && estimatedRefund > 0n) gasUsed = estimatedGas
-  }
+  // if the network is arbitrum, we get the addedNative from the arbitrum
+  // estimation. Otherwise, we get it from the OP stack oracle
+  // if the network is not an L2, all these will default to 0n
+  const arbitrumEstimation: ArbitrumL1Fee = estimations[1]
+  const l1Fee = network.id !== 'arbitrum' ? l1GasEstimation.fee : arbitrumEstimation.noFee
+  const l1FeeWithNativePayment =
+    network.id !== 'arbitrum' ? l1GasEstimation.feeWithNativePayment : arbitrumEstimation.withFee
+  const l1FeeWithTransferPayment =
+    network.id !== 'arbitrum' ? l1GasEstimation.feeWithTransferPayment : arbitrumEstimation.withFee
 
   const feeTokenOptions = feeTokenOutcomes.map((token: any, key: number) => {
     const address = filteredFeeTokens[key].address
-
-    // the l1 fee without any form of payment to relayer/paymaster
-    let addedNative = l1GasEstimation.fee
-
-    if (
-      !is4337Broadcast || // relayer
-      (userOp && shouldUsePaymaster(network))
-    ) {
-      // add the l1fee with the feeCall according to the type of feeCall
-      addedNative =
-        address === ZeroAddress
-          ? l1GasEstimation.feeWithNativePayment
-          : l1GasEstimation.feeWithTransferPayment
-    }
+    const addedNative = address === ZeroAddress ? l1FeeWithNativePayment : l1FeeWithTransferPayment
 
     return {
       address,
@@ -471,17 +400,16 @@ export async function estimate(
     address: ZeroAddress,
     paidBy: nativeToCheck[key],
     availableAmount: balance,
-    addedNative: l1GasEstimation.fee,
+    addedNative: l1Fee,
     isGasTank: false
   }))
 
   return {
     gasUsed,
-    nonce,
+    // the nonce from EstimateResult is incremented but we always want
+    // to return the current nonce. That's why we subtract 1
+    currentAccountNonce: Number(nonce - 1n),
     feePaymentOptions: [...feeTokenOptions, ...nativeTokenOptions],
-    erc4337estimation,
-    arbitrumL1FeeIfArbitrum,
-    error: estimationError,
-    l1FeeAsL2Gas
+    error: getInnerCallFailure(accountOp) || getNonceDiscrepancyFailure(op, nonce)
   }
 }
