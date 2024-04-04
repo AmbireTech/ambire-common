@@ -17,16 +17,9 @@ interface Domains {
 const PERSIST_DOMAIN_FOR_IN_MS = 15 * 60 * 1000
 
 /**
- * Domains controller
- * @class DomainsController
- * @extends EventEmitter
- * @description This controller is responsible for handling the reverse lookup of addresses to ENS and UD names.
- * @property domains - The domains object that contains the resolved ENS and UD names for each address.
- * @property loadingAddresses - The list of addresses that are currently being resolved. This is used to prevent multiple requests for the same address.
- * @method saveResolvedReverseLookup - Saves an already resolved ENS or UD name for an address.
- * @method reverseLookup - Resolves the ENS and UD names for an address if such exist.
+ * Domains controller- responsible for handling the reverse lookup of addresses to ENS and UD names.
+ * Resolved names are saved in `domains` for a short period of time(15 minutes) to avoid unnecessary lookups.
  */
-
 export class DomainsController extends EventEmitter {
   #providers: RPCProviders = {}
 

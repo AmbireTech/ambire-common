@@ -464,6 +464,93 @@ describe('Portfolio Controller ', () => {
     })
   })
 
+  test('Check Token Validity - erc20, erc1155', async () => {
+    const storage = produceMemoryStore()
+    const settings = new SettingsController(storage)
+    settings.providers = providers
+    const token = {
+      address: '0x95aD61b0a150d79219dCF64E1E6Cc01f0B64C4cE',
+      networkId: 'ethereum'
+    }
+    const tokenERC1155 = {
+      address: '0xEBba467eCB6b21239178033189CeAE27CA12EaDf',
+      networkId: 'arbitrum'
+    }
+    const controller = new PortfolioController(storage, settings, relayerUrl)
+
+    await controller.updateTokenValidationByStandard(token, account.addr)
+    await controller.updateTokenValidationByStandard(tokenERC1155, account.addr)
+
+    controller.onUpdate(() => {
+      const tokenIsValid =
+        controller.validTokens.erc20[`${token.address}-${token.networkId}`] === true
+      const tokenIsNotValid =
+        controller.validTokens.erc20[`${tokenERC1155.address}-${tokenERC1155.networkId}`] === false
+      expect(tokenIsNotValid).toBeFalsy()
+      expect(tokenIsValid).toBeTruthy()
+    })
+  })
+
+  test('Update Token Preferences', async () => {
+    const storage = produceMemoryStore()
+    const settings = new SettingsController(storage)
+    settings.providers = providers
+
+    const tokenInPreferences = {
+      address: '0x95aD61b0a150d79219dCF64E1E6Cc01f0B64C4cE',
+      networkId: 'ethereum',
+      standard: 'ERC20',
+      name: 'SHIB',
+      symbol: 'SHIB',
+      decimals: 18
+    }
+
+    const controller = new PortfolioController(storage, settings, relayerUrl)
+
+    await controller.updateTokenPreferences([tokenInPreferences])
+
+    controller.onUpdate(() => {
+      const tokenIsSet = controller.tokenPreferences.find(
+        (token) => token.address === tokenInPreferences.address && token.networkId === 'ethereum'
+      )
+
+      expect(tokenIsSet).toEqual(tokenInPreferences)
+    })
+  })
+
+  test('Update Token Preferences - hide a token and portfolio returns isHidden flag', async () => {
+    const storage = produceMemoryStore()
+    const settings = new SettingsController(storage)
+    settings.providers = providers
+
+    const tokenInPreferences = {
+      address: '0x95aD61b0a150d79219dCF64E1E6Cc01f0B64C4cE',
+      networkId: 'ethereum',
+      standard: 'ERC20',
+      name: 'SHIB',
+      symbol: 'SHIB',
+      decimals: 18,
+      isHidden: true
+    }
+
+    const controller = new PortfolioController(storage, settings, relayerUrl)
+
+    await controller.updateTokenPreferences([tokenInPreferences])
+
+    await controller.updateSelectedAccount([account], networks, account.addr, undefined)
+
+    controller.onUpdate(() => {
+      networks.forEach((network) => {
+        const hiddenToken = controller.latest[account.addr][network.id]?.result?.tokens.find(
+          (token) =>
+            token.address === tokenInPreferences.address &&
+            token.networkId === tokenInPreferences.networkId &&
+            token.isHidden
+        )
+        expect(hiddenToken).toBeTruthy()
+      })
+    })
+  })
   // test('token icons are fetched', (done) => {
   //   const storage = produceMemoryStore()
 

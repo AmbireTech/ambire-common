@@ -1,8 +1,10 @@
-import { ZeroAddress } from 'ethers'
+import { Contract, ZeroAddress } from 'ethers'
 
+import IERC20 from '../../../contracts/compiled/IERC20.json'
 import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
 import { Account } from '../../interfaces/account'
 import { NetworkId } from '../../interfaces/networkDescriptor'
+import { RPCProvider } from '../../interfaces/settings'
 
 export function getFlags(
   networkData: any,
@@ -34,6 +36,44 @@ export function getFlags(
     canTopUpGasTank,
     isFeeToken
   }
+}
+
+export const validateERC20Token = async (
+  token: { address: string; networkId: NetworkId },
+  accountId: string,
+  provider: RPCProvider
+) => {
+  const erc20 = new Contract(token?.address, IERC20.abi, provider)
+
+  const type = 'erc20'
+  let isValid = true
+  let hasError = false
+
+  const [balance, symbol, decimals] = (await Promise.all([
+    erc20.balanceOf(accountId).catch(() => {
+      hasError = true
+    }),
+    erc20.symbol().catch(() => {
+      hasError = true
+    }),
+    erc20.decimals().catch(() => {
+      hasError = true
+    })
+  ]).catch(() => {
+    hasError = true
+    isValid = false
+  })) || [undefined, undefined, undefined]
+
+  if (
+    typeof balance === 'undefined' ||
+    typeof symbol === 'undefined' ||
+    typeof decimals === 'undefined'
+  ) {
+    isValid = false
+  }
+
+  isValid = isValid && !hasError
+  return [isValid, type]
 }
 
 export const shouldGetAdditionalPortfolio = (account?: Account) => {

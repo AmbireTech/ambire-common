@@ -16,8 +16,8 @@ import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor
 import { Storage } from '../../interfaces/storage'
 import { AccountOp, accountOpSignableHash } from '../../libs/accountOp/accountOp'
 import { getAccountState } from '../../libs/accountState/accountState'
-import { estimate, FeeToken } from '../../libs/estimate/estimate'
-import { EstimateResult } from '../../libs/estimate/interfaces'
+import { estimate } from '../../libs/estimate/estimate'
+import { EstimateResult, FeeToken } from '../../libs/estimate/interfaces'
 import * as gasPricesLib from '../../libs/gasPrice/gasPrice'
 import { HUMANIZER_META_KEY } from '../../libs/humanizer'
 import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
@@ -83,7 +83,8 @@ const createAccountOp = (
     {
       address: '0x0000000000000000000000000000000000000000',
       isGasTank: false,
-      amount: 1n
+      amount: 1n,
+      symbol: 'ETH'
     }
   ]
 
@@ -120,7 +121,8 @@ const createEOAAccountOp = (account: Account) => {
     {
       address: '0x0000000000000000000000000000000000000000',
       isGasTank: false,
-      amount: 1n
+      amount: 1n,
+      symbol: 'ETH'
     }
   ]
 
@@ -304,7 +306,7 @@ const init = async (
     ))
 
   const settings = new SettingsController(storage)
-  settings.providers = { [op.networkId]: provider }
+  settings.providers = providers
   const portfolio = new PortfolioController(storage, settings, 'https://staging-relayer.ambire.com')
   await portfolio.updateSelectedAccount(accounts, networks, account.addr)
 
@@ -387,7 +389,7 @@ describe('SignAccountOp Controller ', () => {
       eoaSigner,
       {
         gasUsed: 10000n,
-        nonce: 0,
+        currentAccountNonce: 0,
         feePaymentOptions: [
           {
             address: '0x0000000000000000000000000000000000000000',
@@ -398,35 +400,28 @@ describe('SignAccountOp Controller ', () => {
             isGasTank: false
           }
         ],
-        erc4337estimation: null,
-        arbitrumL1FeeIfArbitrum: { noFee: 0n, withFee: 0n },
-        error: null,
-        l1FeeAsL2Gas: 0n
+        error: null
       },
       [
         {
           name: 'slow',
           baseFeePerGas: 100n,
-          maxPriorityFeePerGas: 100n,
-          baseFeeToDivide: 100n
+          maxPriorityFeePerGas: 100n
         },
         {
           name: 'medium',
           baseFeePerGas: 200n,
-          maxPriorityFeePerGas: 200n,
-          baseFeeToDivide: 200n
+          maxPriorityFeePerGas: 200n
         },
         {
           name: 'fast',
           baseFeePerGas: 300n,
-          maxPriorityFeePerGas: 300n,
-          baseFeeToDivide: 300n
+          maxPriorityFeePerGas: 300n
         },
         {
           name: 'ape',
           baseFeePerGas: 400n,
-          maxPriorityFeePerGas: 400n,
-          baseFeeToDivide: 400n
+          maxPriorityFeePerGas: 400n
         }
       ]
     )
@@ -455,7 +450,7 @@ describe('SignAccountOp Controller ', () => {
       amount: 6005000n, // ((300 + 300) × 10000) + 10000, i.e. ((baseFee + priorityFee) * gasUsed) + addedNative
       simulatedGasLimit: 10000n, // 10000, i.e. gasUsed,
       maxPriorityFeePerGas: 300n,
-      baseFeeToDivide: 300n
+      gasPrice: 600n
     })
 
     expect(controller.accountOp.signature).toEqual('0x') // broadcasting and signRawTransaction is handled in main controller
@@ -471,8 +466,7 @@ describe('SignAccountOp Controller ', () => {
       eoaSigner,
       {
         gasUsed: 50000n,
-        nonce: 0,
-        erc4337estimation: null,
+        currentAccountNonce: 0,
         feePaymentOptions: [
           {
             address: '0x0000000000000000000000000000000000000000',
@@ -499,34 +493,28 @@ describe('SignAccountOp Controller ', () => {
             isGasTank: false
           }
         ],
-        arbitrumL1FeeIfArbitrum: { noFee: 0n, withFee: 0n },
-        error: null,
-        l1FeeAsL2Gas: 0n
+        error: null
       },
       [
         {
           name: 'slow',
           baseFeePerGas: 1000000000n,
-          maxPriorityFeePerGas: 1000000000n,
-          baseFeeToDivide: 1000000000n
+          maxPriorityFeePerGas: 1000000000n
         },
         {
           name: 'medium',
           baseFeePerGas: 2000000000n,
-          maxPriorityFeePerGas: 2000000000n,
-          baseFeeToDivide: 2000000000n
+          maxPriorityFeePerGas: 2000000000n
         },
         {
           name: 'fast',
           baseFeePerGas: 5000000000n,
-          maxPriorityFeePerGas: 5000000000n,
-          baseFeeToDivide: 5000000000n
+          maxPriorityFeePerGas: 5000000000n
         },
         {
           name: 'ape',
           baseFeePerGas: 7000000000n,
-          maxPriorityFeePerGas: 7000000000n,
-          baseFeeToDivide: 7000000000n
+          maxPriorityFeePerGas: 7000000000n
         }
       ]
     )
@@ -599,8 +587,7 @@ describe('SignAccountOp Controller ', () => {
       eoaSigner,
       {
         gasUsed: 50000n,
-        nonce: 0,
-        erc4337estimation: null,
+        currentAccountNonce: 0,
         feePaymentOptions: [
           {
             address: '0x0000000000000000000000000000000000000000',
@@ -627,34 +614,28 @@ describe('SignAccountOp Controller ', () => {
             isGasTank: false
           }
         ],
-        arbitrumL1FeeIfArbitrum: { noFee: 0n, withFee: 0n },
-        error: null,
-        l1FeeAsL2Gas: 0n
+        error: null
       },
       [
         {
           name: 'slow',
           baseFeePerGas: 1000000000n,
-          maxPriorityFeePerGas: 1000000000n,
-          baseFeeToDivide: 1000000000n
+          maxPriorityFeePerGas: 1000000000n
         },
         {
           name: 'medium',
           baseFeePerGas: 2000000000n,
-          maxPriorityFeePerGas: 2000000000n,
-          baseFeeToDivide: 2000000000n
+          maxPriorityFeePerGas: 2000000000n
         },
         {
           name: 'fast',
           baseFeePerGas: 5000000000n,
-          maxPriorityFeePerGas: 5000000000n,
-          baseFeeToDivide: 5000000000n
+          maxPriorityFeePerGas: 5000000000n
         },
         {
           name: 'ape',
           baseFeePerGas: 7000000000n,
-          maxPriorityFeePerGas: 7000000000n,
-          baseFeeToDivide: 7000000000n
+          maxPriorityFeePerGas: 7000000000n
         }
       ]
     )
@@ -724,7 +705,7 @@ describe('SignAccountOp Controller ', () => {
       eoaSigner,
       {
         gasUsed: 10000n,
-        nonce: 0,
+        currentAccountNonce: 0,
         feePaymentOptions: [
           {
             address: '0x0000000000000000000000000000000000000000',
@@ -735,35 +716,28 @@ describe('SignAccountOp Controller ', () => {
             isGasTank: false
           }
         ],
-        erc4337estimation: null,
-        arbitrumL1FeeIfArbitrum: { noFee: 0n, withFee: 0n },
-        error: null,
-        l1FeeAsL2Gas: 0n
+        error: null
       },
       [
         {
           name: 'slow',
           baseFeePerGas: 100n,
-          maxPriorityFeePerGas: 100n,
-          baseFeeToDivide: 100n
+          maxPriorityFeePerGas: 100n
         },
         {
           name: 'medium',
           baseFeePerGas: 200n,
-          maxPriorityFeePerGas: 200n,
-          baseFeeToDivide: 200n
+          maxPriorityFeePerGas: 200n
         },
         {
           name: 'fast',
           baseFeePerGas: 300n,
-          maxPriorityFeePerGas: 300n,
-          baseFeeToDivide: 300n
+          maxPriorityFeePerGas: 300n
         },
         {
           name: 'ape',
           baseFeePerGas: 400n,
-          maxPriorityFeePerGas: 400n,
-          baseFeeToDivide: 400n
+          maxPriorityFeePerGas: 400n
         }
       ]
     )
@@ -796,7 +770,7 @@ describe('SignAccountOp Controller ', () => {
       amount: 9005000n, // (300 + 300) × (10000+5000) + 10000, i.e. (baseFee + priorityFee) * (gasUsed + additionalCall) + addedNative
       simulatedGasLimit: 15000n, // 10000 + 5000, i.e. gasUsed + additionalCall
       maxPriorityFeePerGas: 300n,
-      baseFeeToDivide: 300n
+      gasPrice: 600n
     })
 
     const typedData = getTypedData(
@@ -830,7 +804,7 @@ describe('SignAccountOp Controller ', () => {
       eoaSigner,
       {
         gasUsed: 10000n,
-        nonce: 0,
+        currentAccountNonce: 0,
         feePaymentOptions: [
           {
             address: '0x0000000000000000000000000000000000000000',
@@ -841,35 +815,28 @@ describe('SignAccountOp Controller ', () => {
             isGasTank: false
           }
         ],
-        erc4337estimation: null,
-        arbitrumL1FeeIfArbitrum: { noFee: 0n, withFee: 0n },
-        error: null,
-        l1FeeAsL2Gas: 0n
+        error: null
       },
       [
         {
           name: 'slow',
           baseFeePerGas: 100n,
-          maxPriorityFeePerGas: 100n,
-          baseFeeToDivide: 100n
+          maxPriorityFeePerGas: 100n
         },
         {
           name: 'medium',
           baseFeePerGas: 200n,
-          maxPriorityFeePerGas: 200n,
-          baseFeeToDivide: 200n
+          maxPriorityFeePerGas: 200n
         },
         {
           name: 'fast',
           baseFeePerGas: 300n,
-          maxPriorityFeePerGas: 300n,
-          baseFeeToDivide: 300n
+          maxPriorityFeePerGas: 300n
         },
         {
           name: 'ape',
           baseFeePerGas: 400n,
-          maxPriorityFeePerGas: 400n,
-          baseFeeToDivide: 400n
+          maxPriorityFeePerGas: 400n
         }
       ]
     )
@@ -912,7 +879,7 @@ describe('SignAccountOp Controller ', () => {
   //   const accOpInfo = createAccountOp(trezorSlot7v24337Deployed, 'avalanche')
   //   const accOp = accOpInfo.op
   //   const accountStates = await getAccountsInfo([trezorSlot7v24337Deployed])
-  //   const userOp = toUserOperation(
+  //   const userOp = getUserOperation(
   //     trezorSlot7v24337Deployed,
   //     accountStates[accOp.accountAddr][accOp.networkId],
   //     accOp
@@ -937,7 +904,6 @@ describe('SignAccountOp Controller ', () => {
   //           isGasTank: false
   //         }
   //       ],
-  //       arbitrumL1FeeIfArbitrum: { noFee: 0n, withFee: 0n },
   //       error: null,
   //     },
   //     [

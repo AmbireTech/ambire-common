@@ -1,5 +1,7 @@
-/* eslint-disable no-param-reassign */
 /* eslint-disable import/no-extraneous-dependencies */
+/* eslint-disable @typescript-eslint/no-use-before-define */
+/* eslint-disable @typescript-eslint/no-shadow */
+import { CustomToken } from 'libs/portfolio/customToken'
 import fetch from 'node-fetch'
 
 import { PINNED_TOKENS } from '../../consts/pinnedTokens'
@@ -15,9 +17,10 @@ import {
   getNetworksWithPortfolioErrorBanners
 } from '../../libs/banners/banners'
 import getAccountNetworksWithAssets from '../../libs/portfolio/getNetworksWithAssets'
-import { getFlags } from '../../libs/portfolio/helpers'
+import { getFlags, validateERC20Token } from '../../libs/portfolio/helpers'
+/* eslint-disable no-param-reassign */
+/* eslint-disable import/no-extraneous-dependencies */
 import { getIcon, getIconId } from '../../libs/portfolio/icons'
-/* eslint-disable @typescript-eslint/no-use-before-define */
 import {
   AccountState,
   AdditionalAccountState,
@@ -34,6 +37,7 @@ import EventEmitter from '../eventEmitter/eventEmitter'
 /* eslint-disable @typescript-eslint/no-shadow */
 import { SettingsController } from '../settings/settings'
 
+/* eslint-disable @typescript-eslint/no-use-before-define */
 // We already know that `results.tokens` and `result.collections` tokens have a balance (this is handled by the portfolio lib).
 // Based on that, we can easily find out which hint tokens also have a balance.
 function getHintsWithBalance(
@@ -77,6 +81,10 @@ export class PortfolioController extends EventEmitter {
 
   pending: PortfolioControllerState
 
+  tokenPreferences: CustomToken[] = []
+
+  validTokens: any = { erc20: {}, erc721: {} }
+
   #portfolioLibs: Map<string, Portfolio>
 
   #storage: Storage
@@ -95,6 +103,9 @@ export class PortfolioController extends EventEmitter {
 
   tokenIcons: TokenIcon
 
+  // Holds the initial load promise, so that one can wait until it completes
+  #initialLoadPromise: Promise<void>
+
   constructor(storage: Storage, settings: SettingsController, relayerUrl: string) {
     super()
     this.latest = {}
@@ -104,6 +115,29 @@ export class PortfolioController extends EventEmitter {
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
     this.#settings = settings
     this.tokenIcons = {}
+
+    this.#initialLoadPromise = this.#load()
+  }
+
+  async #load() {
+    try {
+      this.tokenPreferences = await this.#storage.get('tokenPreferences', [])
+    } catch (e) {
+      this.emitError({
+        message:
+          'Something went wrong when loading portfolio. Please try again or contact support if the problem persists.',
+        level: 'major',
+        error: new Error('portfolio: failed to pull keys from storage')
+      })
+    }
+
+    this.emitUpdate()
+  }
+
+  async updateTokenPreferences(tokenPreferences: CustomToken[]) {
+    this.tokenPreferences = tokenPreferences
+    this.emitUpdate()
+    await this.#storage.set('tokenPreferences', tokenPreferences)
   }
 
   async #updateNetworksWithAssets(
@@ -153,6 +187,24 @@ export class PortfolioController extends EventEmitter {
 
   resetAdditionalHints() {
     this.#additionalHints = []
+  }
+
+  async updateTokenValidationByStandard(
+    token: { address: TokenResult['address']; networkId: TokenResult['networkId'] },
+    accountId: AccountId
+  ) {
+    const [isValid, standard]: [boolean, string] = (await validateERC20Token(
+      token,
+      accountId,
+      this.#settings.providers[token.networkId]
+    )) as [boolean, string]
+
+    this.validTokens[standard] = {
+      ...this.validTokens[standard],
+      [`${token.address}-${token.networkId}`]: isValid
+    }
+
+    this.emitUpdate()
   }
 
   async getAdditionalPortfolio(accountId: AccountId) {
@@ -299,6 +351,8 @@ export class PortfolioController extends EventEmitter {
       additionalHints?: GetOptions['additionalHints']
     }
   ) {
+    await this.#initialLoadPromise
+
     if (opts?.additionalHints) this.#additionalHints = opts.additionalHints
     const hasNonZeroTokens = !!this.#networksWithAssetsByAccounts?.[accountId]?.length
     // Load storage cached hints
@@ -351,11 +405,15 @@ export class PortfolioController extends EventEmitter {
 
       state.isLoading = true
       this.emitUpdate()
+
+      const tokenPreferences = this.tokenPreferences
+
       try {
         const result = await portfolioLib.get(accountId, {
           priceRecency: 60000,
           priceCache: state.result?.priceCache,
           fetchPinned: !hasNonZeroTokens,
+          tokenPreferences,
           ...portfolioProps
         })
         _accountState[network.id] = { isReady: true, isLoading: false, errors: [], result }

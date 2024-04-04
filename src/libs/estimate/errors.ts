@@ -65,14 +65,14 @@ export function catchEstimationFailure(e: Error | string | null) {
   )
 }
 
-export function estimationErrorFormatted(error: Error): EstimateResult {
+export function estimationErrorFormatted(
+  error: Error,
+  feePaymentOptions: EstimateResult['feePaymentOptions'] = []
+): EstimateResult {
   return {
     gasUsed: 0n,
-    nonce: 0,
-    feePaymentOptions: [],
-    erc4337estimation: null,
-    arbitrumL1FeeIfArbitrum: { noFee: 0n, withFee: 0n },
-    l1FeeAsL2Gas: 0n,
+    currentAccountNonce: 0,
+    feePaymentOptions,
     error
   }
 }

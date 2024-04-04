@@ -27,8 +27,7 @@ export function calculateAccountPortfolio(
   let newTotalAmount: number = 0
   let allReady = true
 
-  // 1. On update latest is empty {} in the beginning
-  if (!selectedAccount || !state.latest || !state.latest[selectedAccount]) {
+  if (!selectedAccount) {
     return {
       tokens: accountPortfolio?.tokens || [],
       collections: accountPortfolio?.collections || [],
@@ -37,15 +36,16 @@ export function calculateAccountPortfolio(
     }
   }
 
-  const selectedAccountData = state.latest[selectedAccount] || undefined
-  if (!selectedAccountData) {
+  if (!state.latest || !state.latest[selectedAccount]) {
     return {
       tokens: accountPortfolio?.tokens || [],
       collections: accountPortfolio?.collections || [],
       totalAmount: accountPortfolio?.totalAmount || 0,
-      isAllReady: true
+      isAllReady: false
     }
   }
+
+  const selectedAccountData = state.latest[selectedAccount]
 
   const isNetworkReady = (networkData: AccountState | AdditionalAccountState | undefined) => {
     return (
