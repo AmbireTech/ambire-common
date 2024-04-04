@@ -80,7 +80,8 @@ const sharedHumanization = async <InputDataType extends AccountOp | Message>(
   callback:
     | ((response: IrCall[], nonGlobalFrags: HumanizerFragment[]) => void)
     | ((response: IrMessage) => void),
-  emitError: (err: ErrorRef) => void
+  emitError: (err: ErrorRef) => void,
+  options?: any
 ) => {
   let op: AccountOp
   let irCalls: IrCall[] = []
@@ -90,7 +91,9 @@ const sharedHumanization = async <InputDataType extends AccountOp | Message>(
     op = parse(stringify(data))
   }
   for (let i = 0; i <= 3; i++) {
-    const totalHumanizerMetaToBeUsed = await lazyReadHumanizerMeta(storage)
+    const totalHumanizerMetaToBeUsed = await lazyReadHumanizerMeta(storage, {
+      nocache: options && !options?.isExtension
+    })
     if ('calls' in data) {
       //
       ;[irCalls, asyncOps] = humanizeCalls(op!, humanizerCallModules, totalHumanizerMetaToBeUsed, {
@@ -141,7 +144,9 @@ const sharedHumanization = async <InputDataType extends AccountOp | Message>(
     if ('calls' in data)
       // @TODO we should store the non global frags in the op
       op!.humanizerMetaFragments = [...(op!.humanizerMetaFragments || []), ...nonGlobalFragments]
-    await addFragsToLazyStore(storage, globalFragments)
+    await addFragsToLazyStore(storage, globalFragments, {
+      urgent: options && !options?.isExtension
+    })
     if (!humanizerFragments.length) return
   }
 }
@@ -151,9 +156,10 @@ const callsHumanizer = async (
   storage: Storage,
   fetch: Function,
   callback: (irCalls: IrCall[], nonGlobalFrags: HumanizerFragment[]) => void,
-  emitError: (err: ErrorRef) => void
+  emitError: (err: ErrorRef) => void,
+  options?: any
 ) => {
-  await sharedHumanization(accountOp, storage, fetch, callback, emitError)
+  await sharedHumanization(accountOp, storage, fetch, callback, emitError, options)
 }
 
 const messageHumanizer = async (
@@ -161,9 +167,10 @@ const messageHumanizer = async (
   storage: Storage,
   fetch: Function,
   callback: (msgs: IrMessage) => void,
-  emitError: (err: ErrorRef) => void
+  emitError: (err: ErrorRef) => void,
+  options?: any
 ) => {
-  await sharedHumanization(message, storage, fetch, callback, emitError)
+  await sharedHumanization(message, storage, fetch, callback, emitError, options)
 }
 
 export { callsHumanizer, messageHumanizer, HUMANIZER_META_KEY }
