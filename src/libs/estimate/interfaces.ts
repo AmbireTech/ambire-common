@@ -15,17 +15,22 @@ export interface ArbitrumL1Fee {
   withFee: bigint
 }
 
+export interface FeePaymentOption {
+  availableAmount: bigint
+  paidBy: string
+  address: string
+  gasUsed?: bigint
+  addedNative: bigint
+  isGasTank: boolean
+}
+
 export interface EstimateResult {
   gasUsed: bigint
-  nonce: number
-  feePaymentOptions: {
-    availableAmount: bigint
-    paidBy: string
-    address: string
-    gasUsed?: bigint
-    addedNative: bigint
-    isGasTank: boolean
-  }[]
+  // the nonce should always be the current value of account.nonce()
+  // even in ERC-4337 case, we might use the account.nonce() for
+  // signatures. We don't need the EntryPoint nonce
+  currentAccountNonce: number
+  feePaymentOptions: FeePaymentOption[]
   erc4337GasLimits?: Erc4337GasLimits
   error: Error | null
 }
