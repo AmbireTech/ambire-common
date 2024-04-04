@@ -170,7 +170,7 @@ export default [
   },
   {
     address: '0x028171bCA77440897B824Ca71D1c56caC55b68A3',
-    baseToken: '0x6B175474E89094C44Da98b954EedeAC495271d0F',
+    baseToken: '0x6b175474e89094c44da98b954eedeac495271d0f',
     symbol: 'adai',
     networkId: 'ethereum',
     decimals: 18,
@@ -178,7 +178,7 @@ export default [
   },
   {
     address: '0xBcca60bB61934080951369a648Fb03DF4F96263C',
-    baseToken: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+    baseToken: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48',
     symbol: 'ausdc',
     networkId: 'ethereum',
     decimals: 6,
@@ -186,7 +186,7 @@ export default [
   },
   {
     address: '0x3Ed3B47Dd13EC9a98b44e6204A523E766B225811',
-    baseToken: '0xdAC17F958D2ee523a2206206994597C13D831ec7',
+    baseToken: '0xdac17f958d2ee523a2206206994597c13d831ec7',
     symbol: 'ausdt',
     networkId: 'ethereum',
     decimals: 6,
@@ -194,7 +194,7 @@ export default [
   },
   {
     address: '0x9ff58f4fFB29fA2266Ab25e75e2A8b3503311656',
-    baseToken: '0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599',
+    baseToken: '0x2260fac5e5542a773aa44fbcfedf7c193bc2c599',
     symbol: 'awbtc',
     networkId: 'ethereum',
     decimals: 8,
@@ -202,7 +202,7 @@ export default [
   },
   {
     address: '0x030bA81f1c18d280636F32af80b9AAd02Cf0854e',
-    baseToken: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
+    baseToken: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
     symbol: 'aweth',
     networkId: 'ethereum',
     decimals: 18,
@@ -259,7 +259,7 @@ export default [
   },
   {
     address: '0x8dF3aad3a84da6b69A4DA8aeC3eA40d9091B2Ac4',
-    baseToken: '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270',
+    baseToken: '0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270',
     symbol: 'ammatic',
     networkId: 'polygon',
     decimals: 18,
@@ -267,7 +267,7 @@ export default [
   },
   {
     address: '0x27F8D03b3a2196956ED754baDc28D73be8830A6e',
-    baseToken: '0x8f3Cf7ad23Cd3CaDbD9735AFf958023239c6A063',
+    baseToken: '0x8f3cf7ad23cd3cadbd9735aff958023239c6a063',
     symbol: 'amdai',
     networkId: 'polygon',
     decimals: 18,
@@ -291,7 +291,7 @@ export default [
   },
   {
     address: '0x5c2ed810328349100A66B82b78a1791B101C9D61',
-    baseToken: '0x1BFD67037B42Cf73acF2047067bd4F2C47D9BfD6',
+    baseToken: '0x1bfd67037b42cf73acf2047067bd4f2c47d9bfd6',
     symbol: 'amwbtc',
     networkId: 'polygon',
     decimals: 8,
@@ -299,7 +299,7 @@ export default [
   },
   {
     address: '0x28424507fefb6f7f8E9D3860F56504E4e5f5f390',
-    baseToken: '0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619',
+    baseToken: '0x7ceb23fd6bc0add59e62ac25578270cff1b9f619',
     symbol: 'amweth',
     networkId: 'polygon',
     decimals: 18,
@@ -398,7 +398,7 @@ export default [
   },
   {
     address: '0x82E64f49Ed5EC1bC6e43DAD4FC8Af9bb3A2312EE',
-    baseToken: '0xd586E7F844cEa2F87f50152665BCbc2C279D8d70',
+    baseToken: '0xd586e7f844cea2f87f50152665bcbc2c279d8d70',
     symbol: 'aavadai',
     networkId: 'avalanche',
     decimals: 18,
@@ -406,7 +406,7 @@ export default [
   },
   {
     address: '0x625E7708f30cA75bfd92586e17077590C60eb4cD',
-    baseToken: '0xA7D7079b0FEaD91F3e65f86E8915Cb59c1a4C664',
+    baseToken: '0xa7d7079b0fead91f3e65f86e8915cb59c1a4c664',
     symbol: 'aavausdc',
     networkId: 'avalanche',
     decimals: 6,
@@ -414,7 +414,7 @@ export default [
   },
   {
     address: '0x6ab707Aca953eDAeFBc4fD23bA73294241490620',
-    baseToken: '0xc7198437980c041c805A1EDcbA50c1Ce5db95118',
+    baseToken: '0xc7198437980c041c805a1edcba50c1ce5db95118',
     symbol: 'aavausdt',
     networkId: 'avalanche',
     decimals: 6,
@@ -422,7 +422,7 @@ export default [
   },
   {
     address: '0x078f358208685046a11C85e8ad32895DED33A249',
-    baseToken: '0x50b7545627a5162F82A992c33b87aDc75187B218',
+    baseToken: '0x50b7545627a5162f82a992c33b87adc75187b218',
     symbol: 'aavawbtc',
     networkId: 'avalanche',
     decimals: 8,
@@ -430,7 +430,7 @@ export default [
   },
   {
     address: '0xe50fA9b3c56FfB159cB0FCA61F5c9D750e8128c8',
-    baseToken: '0x49D5c2BdFfac6CE2BFdB6640F4F80f226bc10bAB',
+    baseToken: '0x49d5c2bdffac6ce2bfdb6640f4f80f226bc10bab',
     symbol: 'aavaweth',
     networkId: 'avalanche',
     decimals: 18,
