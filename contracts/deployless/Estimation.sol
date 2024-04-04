@@ -132,19 +132,20 @@ contract Estimation is FeeTokens, Spoof {
     address[] memory associatedKeys,
     address relayer,
     address oracle
-  ) external returns (EoaEstimationOutcome memory outcome) {
+  ) external returns (EoaEstimationOutcome memory eoa) {
     // simulate the transactions
     SimulationOutcome memory simulation;
     (simulation, , ) = simulateUnsigned(op, associatedKeys);
-    outcome.gasUsed = simulation.gasUsed;
+    uint256 baseGas = calculateBaseGas(account, makeSpoofSignature(address(account)));
+    eoa.gasUsed = simulation.gasUsed - baseGas;
 
     // record the native balance after the simulation
     FeeTokenOutcome[] memory feeTokenOutcomes = new FeeTokenOutcome[](1);
     feeTokenOutcomes[0].amount = address(account).balance;
-    outcome.feeTokenOutcomes = feeTokenOutcomes;
+    eoa.feeTokenOutcomes = feeTokenOutcomes;
 
     // if an optimistic oracle is passed, simulate the L1 fee
-    outcome.l1GasEstimation = this.getL1GasEstimation(probableCallData, relayer, oracle);
+    eoa.l1GasEstimation = this.getL1GasEstimation(probableCallData, relayer, oracle);
   }
 
   function simulateDeployment(

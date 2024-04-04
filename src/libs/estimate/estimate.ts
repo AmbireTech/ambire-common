@@ -276,10 +276,8 @@ export async function estimate(
 
     let gasUsed = 0n
     if (!network.rpcNoStateOverride) {
-      const [gasUsedEstimateGas, [gasUsedEstimationSol, feeTokenOutcomes, l1GasEstimation]] = result
-      console.log(gasUsedEstimationSol)
-      console.log(gasUsedEstimationSol)
-      console.log(l1GasEstimation)
+      const [gasUsedEstimateGas, [[gasUsedEstimationSol, feeTokenOutcomes, l1GasEstimation]]] =
+        result
       feePaymentOptions[0].availableAmount = feeTokenOutcomes[0][1]
       feePaymentOptions[0].addedNative = l1GasEstimation.fee
       gasUsed =
