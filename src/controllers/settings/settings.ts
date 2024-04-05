@@ -42,7 +42,7 @@ export class SettingsController extends EventEmitter {
 
   networkToAddOrUpdate: {
     chainId: NetworkDescriptor['chainId']
-    rpcUrls: NetworkDescriptor['rpcUrls']
+    rpcUrl: string
     info?: NetworkInfoLoading<NetworkInfo>
   } | null = null
 
@@ -118,9 +118,16 @@ export class SettingsController extends EventEmitter {
       const finalNetwork = networkPreferences
         ? {
             ...network,
-            ...networkPreferences
+            ...networkPreferences,
+            selectedRpcUrl:
+              networkPreferences.selectedRpcUrl ||
+              networkPreferences?.rpcUrls?.[0] ||
+              network.rpcUrls[0]
           }
-        : network
+        : {
+            ...network,
+            selectedRpcUrl: network.rpcUrls[0]
+          }
 
       const info: NetworkInfo = {
         isSAEnabled: finalNetwork.isSAEnabled,
@@ -276,7 +283,7 @@ export class SettingsController extends EventEmitter {
   setNetworkToAddOrUpdate(
     networkToAddOrUpdate: {
       chainId: NetworkDescriptor['chainId']
-      rpcUrls: NetworkDescriptor['rpcUrls']
+      rpcUrl: string
     } | null = null
   ) {
     if (networkToAddOrUpdate) {
@@ -284,7 +291,7 @@ export class SettingsController extends EventEmitter {
       this.emitUpdate()
 
       // eslint-disable-next-line @typescript-eslint/no-floating-promises
-      getNetworkInfo(networkToAddOrUpdate.rpcUrls, networkToAddOrUpdate.chainId, (info) => {
+      getNetworkInfo(networkToAddOrUpdate.rpcUrl, networkToAddOrUpdate.chainId, (info) => {
         if (this.networkToAddOrUpdate) {
           this.networkToAddOrUpdate = { ...this.networkToAddOrUpdate, info }
           this.emitUpdate()
@@ -391,7 +398,7 @@ export class SettingsController extends EventEmitter {
 
         return { ...acc, [key]: networkPreferences[key as keyof NetworkPreference] }
       },
-      {}
+      {} as NetworkPreference
     )
 
     // if the rpcUrls have changed, call the RPC and check whether it supports

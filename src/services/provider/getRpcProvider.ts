@@ -5,7 +5,7 @@ import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 const getRpcProvider = (
   rpcUrls: NetworkDescriptor['rpcUrls'],
   chainId?: bigint | number,
-  preferredRpcUrl?: string
+  selectedRpcUrl?: string
 ) => {
   if (!rpcUrls.length) {
     throw new Error('rpcUrls must be a non-empty array')
@@ -13,8 +13,8 @@ const getRpcProvider = (
 
   let rpcUrl = rpcUrls[0]
 
-  if (preferredRpcUrl) {
-    const prefUrl = rpcUrls.find((u) => u === preferredRpcUrl)
+  if (selectedRpcUrl) {
+    const prefUrl = rpcUrls.find((u) => u === selectedRpcUrl)
     if (prefUrl) rpcUrl = prefUrl
   }
 
@@ -26,6 +26,7 @@ const getRpcProvider = (
     }
   }
 
+  console.log('rpcUrl', rpcUrl)
   return new JsonRpcProvider(rpcUrl)
 }
 

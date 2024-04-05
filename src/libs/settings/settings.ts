@@ -41,7 +41,7 @@ async function retryRequest(init: Function, counter = 0): Promise<any> {
 }
 
 export async function getNetworkInfo(
-  rpcUrls: string[],
+  rpcUrl: string,
   chainId: bigint,
   callback: (networkInfo: NetworkInfoLoading<NetworkInfo>) => void
 ) {
@@ -61,20 +61,22 @@ export async function getNetworkInfo(
   }
   callback(networkInfo)
 
-  const timeout = (time: number = 30000): Promise<'timeout reached'> => {
+  const timeout = (time: number = 3000): Promise<'timeout reached'> => {
     return new Promise((resolve) => {
       setTimeout(resolve, time, 'timeout reached')
     }) as unknown as Promise<'timeout reached'>
   }
 
   let flagged = false
-  const provider = getRpcProvider(rpcUrls)
+  const provider = getRpcProvider([rpcUrl])
   // eslint-disable-next-line no-underscore-dangle
   const detection = await Promise.race([
     // eslint-disable-next-line no-underscore-dangle
     provider._detectNetwork().catch((e: Error) => e),
     timeout(3000)
   ])
+
+  console.log('detection', detection)
   if (detection === 'timeout reached' || detection instanceof Error) {
     flagged = true
     networkInfo = { ...networkInfo, flagged }
