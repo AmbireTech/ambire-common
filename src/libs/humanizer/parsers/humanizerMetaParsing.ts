@@ -19,21 +19,24 @@ export const humanizerMetaParsing: HumanizerParsingModule = (
   const res: HumanizerVisualization[] = visualization.map((v) => {
     if (v.address) {
       if (v.address === ZeroAddress) {
-          const symbol = networks.find(
-            ({ id }) => id === humanizerSettings.networkId
-          )?.nativeAssetSymbol
-          return symbol ? { ...v, warning:true, humanizerMeta: { name:`Blackhole`, token: { symbol, decimals: 18 } } } : v
+        const symbol = networks.find(
+          ({ id }) => id === humanizerSettings.networkId
+        )?.nativeAssetSymbol
+        return symbol
+          ? {
+              ...v,
+              humanizerMeta: { name: 'Blackhole', token: { symbol, decimals: 18 } }
+            }
+          : v
       }
 
       const humanizerMeta =
         humanizerSettings?.humanizerMeta?.knownAddresses[v.address.toLowerCase()]
-
-      if (v.type === 'token' && !v.humanizerMeta?.token && !v.isHidden) {
+      if (v.type === 'token' && !humanizerMeta?.token && !v.isHidden) {
         asyncOps.push(getTokenInfo(humanizerSettings, v.address, options))
         return {
           ...v,
-          humanizerMeta,
-          warning:true
+          humanizerMeta
         }
       }
       return {
