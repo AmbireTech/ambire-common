@@ -397,7 +397,8 @@ export class SettingsController extends EventEmitter {
     // if the rpcUrls have changed, call the RPC and check whether it supports
     // state overrided. If it doesn't, add a warning
     if (changedNetworkPreferences.rpcUrls) {
-      const provider = getRpcProvider(changedNetworkPreferences.rpcUrls)
+      const network = this.networks.find((n) => n.id === networkId)
+      const provider = getRpcProvider(changedNetworkPreferences.rpcUrls, network?.chainId)
       const [saSupport, hasDebugTraceCall] = await Promise.all([
         getSASupport(provider).catch(() => ({ supportsStateOverride: false })),
         simulateDebugTraceCall(provider)

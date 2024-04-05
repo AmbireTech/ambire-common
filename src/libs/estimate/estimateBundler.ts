@@ -23,7 +23,7 @@ import {
   getUserOperation
 } from '../userOperation/userOperation'
 import { estimationErrorFormatted } from './errors'
-import { EstimateResult, FeeToken } from './interfaces'
+import { EstimateResult, FeePaymentOption, FeeToken } from './interfaces'
 
 function getUserOpForEstimate(
   userOp: UserOperation,
@@ -90,26 +90,10 @@ export async function bundlerEstimate(
   network: NetworkDescriptor,
   feeTokens: FeeToken[]
 ): Promise<EstimateResult> {
-  // build the fee payment options as we'll return them even if there's an error
-  const feePaymentOptions = feeTokens.map((token: FeeToken) => {
-    return {
-      address: token.address,
-      paidBy: account.addr,
-      availableAmount: token.amount,
-      // @relyOnBundler
-      // gasUsed goes to 0
-      // we add a transfer call or a native call when sending the uOp to the
-      // bundler and he estimates that. For different networks this gasUsed
-      // goes to different places (callGasLimit or preVerificationGas) and
-      // its calculated differently. So it's a wild bet to think we could
-      // calculate this on our own for each network.
-      gasUsed: 0n,
-      // addedNative gets calculated by the bundler & added to uOp gasData
-      addedNative: 0n,
-      isGasTank: token.isGasTank
-    }
-  })
-
+  // we pass an empty array of feePaymentOptions as they are built
+  // in an upper level using the balances from Estimation.sol.
+  // balances from Estimation.sol reflect the balances after pending txn exec
+  const feePaymentOptions: FeePaymentOption[] = []
   const localOp = { ...op }
   const feeToken = getFeeTokenForEstimate(feeTokens)
   if (feeToken) localOp.feeCall = getFeeCall(feeToken, 1n)
@@ -153,9 +137,7 @@ export async function bundlerEstimate(
 
   return {
     gasUsed: BigInt(gasData.callGasLimit),
-    // the correct nonce for the userOp cannot be determined here as
-    // if the request type is not standard, it will completely change
-    nonce: Number(BigInt(userOp.nonce).toString()),
+    currentAccountNonce: Number(op.nonce),
     feePaymentOptions,
     erc4337GasLimits: {
       preVerificationGas: gasData.preVerificationGas,

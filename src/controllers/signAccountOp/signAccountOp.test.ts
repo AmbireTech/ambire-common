@@ -307,7 +307,7 @@ const init = async (
     ))
 
   const settings = new SettingsController(storage)
-  settings.providers = { [op.networkId]: provider }
+  settings.providers = providers
   const portfolio = new PortfolioController(storage, settings, 'https://staging-relayer.ambire.com')
   await portfolio.updateSelectedAccount(accounts, networks, account.addr)
 
@@ -390,7 +390,7 @@ describe('SignAccountOp Controller ', () => {
       eoaSigner,
       {
         gasUsed: 10000n,
-        nonce: 0,
+        currentAccountNonce: 0,
         feePaymentOptions: [
           {
             address: '0x0000000000000000000000000000000000000000',
@@ -467,7 +467,7 @@ describe('SignAccountOp Controller ', () => {
       eoaSigner,
       {
         gasUsed: 50000n,
-        nonce: 0,
+        currentAccountNonce: 0,
         feePaymentOptions: [
           {
             address: '0x0000000000000000000000000000000000000000',
@@ -588,7 +588,7 @@ describe('SignAccountOp Controller ', () => {
       eoaSigner,
       {
         gasUsed: 50000n,
-        nonce: 0,
+        currentAccountNonce: 0,
         feePaymentOptions: [
           {
             address: '0x0000000000000000000000000000000000000000',
@@ -706,7 +706,7 @@ describe('SignAccountOp Controller ', () => {
       eoaSigner,
       {
         gasUsed: 10000n,
-        nonce: 0,
+        currentAccountNonce: 0,
         feePaymentOptions: [
           {
             address: '0x0000000000000000000000000000000000000000',
@@ -805,7 +805,7 @@ describe('SignAccountOp Controller ', () => {
       eoaSigner,
       {
         gasUsed: 10000n,
-        nonce: 0,
+        currentAccountNonce: 0,
         feePaymentOptions: [
           {
             address: '0x0000000000000000000000000000000000000000',

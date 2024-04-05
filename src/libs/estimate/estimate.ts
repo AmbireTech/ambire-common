@@ -13,7 +13,11 @@ import { AccountOp } from '../accountOp/accountOp'
 import { Call } from '../accountOp/types'
 import { fromDescriptor } from '../deployless/deployless'
 import { getProbableCallData } from '../gasPrice/gasPrice'
-import { getActivatorCall, shouldIncludeActivatorCall } from '../userOperation/userOperation'
+import {
+  getActivatorCall,
+  shouldIncludeActivatorCall,
+  shouldUsePaymaster
+} from '../userOperation/userOperation'
 import { estimateCustomNetwork } from './customNetworks'
 import { catchEstimationFailure, estimationErrorFormatted, mapTxnErrMsg } from './errors'
 import { estimateArbitrumL1GasUsed } from './estimateArbitrum'
@@ -23,16 +27,23 @@ import { refund } from './refund'
 
 const abiCoder = new AbiCoder()
 
-function getInnerCallFailure(
-  op: AccountOp,
-  estimationOp: { success: boolean; err: string }
-): Error | null {
+function getInnerCallFailure(estimationOp: { success: boolean; err: string }): Error | null {
   if (estimationOp.success) return null
 
   let error = mapTxnErrMsg(estimationOp.err)
   if (!error) error = 'Transaction reverted: invalid call in the bundle'
   return new Error(error, {
     cause: 'CALLS_FAILURE'
+  })
+}
+
+// the outcomeNonce should always be equat to the nonce in accountOp + 1
+// that's an indication of transaction success
+function getNonceDiscrepancyFailure(op: AccountOp, outcomeNonce: number): Error | null {
+  if (op.nonce !== null && op.nonce + 1n === BigInt(outcomeNonce)) return null
+
+  return new Error("Nonce discrepancy, perhaps there's a pending transaction. Retrying...", {
+    cause: 'NONCE_FAILURE'
   })
 }
 
@@ -79,6 +90,10 @@ export async function estimate4337(
   blockTag: string | number
 ): Promise<EstimateResult> {
   const deploylessEstimator = fromDescriptor(provider, Estimation, !network.rpcNoStateOverride)
+  // if no paymaster, user can only pay in native
+  const filteredFeeTokens = !shouldUsePaymaster(network)
+    ? feeTokens.filter((feeToken) => feeToken.address === ZeroAddress && !feeToken.isGasTank)
+    : feeTokens
   const checkInnerCallsArgs = [
     account.addr,
     ...getAccountDeployParams(account),
@@ -91,7 +106,7 @@ export async function estimate4337(
     [account.addr, op.nonce || 1, calls, '0x'],
     '0x',
     account.associatedKeys,
-    [],
+    filteredFeeTokens.map((feeToken) => feeToken.address),
     ZeroAddress,
     [],
     ZeroAddress
@@ -108,12 +123,33 @@ export async function estimate4337(
   ]
   const estimations = await reestimate(initializeRequests)
   if (estimations instanceof Error) return estimationErrorFormatted(estimations)
-  const [[, , accountOp]] = estimations[0]
+  const [[, , accountOp, outcomeNonce, feeTokenOutcomes]] = estimations[0]
   const estimationResult: EstimateResult = estimations[1]
   estimationResult.error =
     estimationResult.error instanceof Error
       ? estimationResult.error
-      : getInnerCallFailure(op, accountOp)
+      : getInnerCallFailure(accountOp) || getNonceDiscrepancyFailure(op, outcomeNonce)
+  estimationResult.currentAccountNonce = Number(outcomeNonce - 1n)
+
+  estimationResult.feePaymentOptions = filteredFeeTokens.map((token: FeeToken, index: number) => {
+    return {
+      address: token.address,
+      paidBy: account.addr,
+      availableAmount: feeTokenOutcomes[index][1],
+      // @relyOnBundler
+      // gasUsed goes to 0
+      // we add a transfer call or a native call when sending the uOp to the
+      // bundler and he estimates that. For different networks this gasUsed
+      // goes to different places (callGasLimit or preVerificationGas) and
+      // its calculated differently. So it's a wild bet to think we could
+      // calculate this on our own for each network.
+      gasUsed: 0n,
+      // addedNative gets calculated by the bundler & added to uOp gasData
+      addedNative: 0n,
+      isGasTank: token.isGasTank
+    }
+  })
+
   return estimationResult
 }
 
@@ -193,7 +229,7 @@ export async function estimate(
 
     return {
       gasUsed,
-      nonce,
+      currentAccountNonce: nonce,
       feePaymentOptions: [
         {
           address: ZeroAddress,
@@ -311,7 +347,6 @@ export async function estimate(
       l1GasEstimation // [gasUsed, baseFee, totalFee, gasOracle]
     ]
   ] = estimations[0]
-  /* eslint-enable prefer-const */
 
   let gasUsed = deployment.gasUsed + accountOpToExecuteBefore.gasUsed + accountOp.gasUsed
 
@@ -371,8 +406,10 @@ export async function estimate(
 
   return {
     gasUsed,
-    nonce,
+    // the nonce from EstimateResult is incremented but we always want
+    // to return the current nonce. That's why we subtract 1
+    currentAccountNonce: Number(nonce - 1n),
     feePaymentOptions: [...feeTokenOptions, ...nativeTokenOptions],
-    error: getInnerCallFailure(op, accountOp)
+    error: getInnerCallFailure(accountOp) || getNonceDiscrepancyFailure(op, nonce)
   }
 }

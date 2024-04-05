@@ -71,7 +71,7 @@ export function estimationErrorFormatted(
 ): EstimateResult {
   return {
     gasUsed: 0n,
-    nonce: 0,
+    currentAccountNonce: 0,
     feePaymentOptions,
     error
   }

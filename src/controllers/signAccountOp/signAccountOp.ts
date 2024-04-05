@@ -336,6 +336,8 @@ export class SignAccountOpController extends EventEmitter {
     if (estimation) {
       this.gasUsedTooHigh = estimation.gasUsed > 10000000n
       this.#estimation = estimation
+      // on each estimation update, set the newest account nonce
+      this.accountOp.nonce = BigInt(estimation.currentAccountNonce)
     }
 
     // if estimation is undefined, do not clear the estimation.

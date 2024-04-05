@@ -30,6 +30,10 @@ const polygonPortfolio = new Portfolio(fetch, polygonProvider, polygon)
 let transferController: TransferController
 let errorCount = 0
 const settingsController = new SettingsController(produceMemoryStore())
+const providers = Object.fromEntries(
+  networks.map((network) => [network.id, getRpcProvider(network.rpcUrls, network.chainId)])
+)
+settingsController.providers = providers
 
 const getTokens = async () => {
   const ethAccPortfolio = await ethPortfolio.get(PLACEHOLDER_SELECTED_ACCOUNT)

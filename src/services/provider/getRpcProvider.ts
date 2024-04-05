@@ -1,10 +1,10 @@
-import { JsonRpcProvider, Networkish } from 'ethers'
+import { JsonRpcProvider, Network } from 'ethers'
 
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 
 const getRpcProvider = (
   rpcUrls: NetworkDescriptor['rpcUrls'],
-  network?: Networkish,
+  chainId?: bigint | number,
   preferredRpcUrl?: string
 ) => {
   if (!rpcUrls.length) {
@@ -18,7 +18,13 @@ const getRpcProvider = (
     if (prefUrl) rpcUrl = prefUrl
   }
 
-  return new JsonRpcProvider(rpcUrl, network)
+  const staticNetwork = Network.from(Number(chainId))
+
+  if (staticNetwork) {
+    return new JsonRpcProvider(rpcUrl, staticNetwork, { staticNetwork })
+  }
+
+  return new JsonRpcProvider(rpcUrl)
 }
 
 export { getRpcProvider }

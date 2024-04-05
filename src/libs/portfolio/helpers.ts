@@ -1,7 +1,6 @@
 import { Contract, ZeroAddress } from 'ethers'
 
 import IERC20 from '../../../contracts/compiled/IERC20.json'
-import feeTokens from '../../consts/feeTokens'
 import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
 import { Account } from '../../interfaces/account'
 import { NetworkId } from '../../interfaces/networkDescriptor'
@@ -13,30 +12,23 @@ export function getFlags(
   tokenNetwork: NetworkId,
   address: string
 ) {
+  const isRewardsOrGasTank = ['gasTank', 'rewards'].includes(networkId)
   const onGasTank = networkId === 'gasTank'
-  let rewardsType = null
-  if (networkData?.xWalletClaimableBalance?.address === address) rewardsType = 'wallet-rewards'
-  if (networkData?.walletClaimableBalance?.address === address) rewardsType = 'wallet-vesting'
 
-  const canTopUpGasTank = gasTankFeeTokens.some(
+  let rewardsType = null
+  if (networkData?.xWalletClaimableBalance?.address.toLowerCase() === address.toLowerCase())
+    rewardsType = 'wallet-rewards'
+  if (networkData?.walletClaimableBalance?.address.toLowerCase() === address.toLowerCase())
+    rewardsType = 'wallet-vesting'
+
+  const foundFeeToken = gasTankFeeTokens.find(
     (t) =>
-      t.address === address &&
-      (onGasTank || networkId === 'rewards'
-        ? t.networkId === tokenNetwork
-        : t.networkId === networkId)
+      t.address.toLowerCase() === address.toLowerCase() &&
+      (isRewardsOrGasTank ? t.networkId === tokenNetwork : t.networkId === networkId)
   )
 
-  // if the address is 0, it's always a fee token
-  const isFeeToken =
-    address !== ZeroAddress
-      ? feeTokens.some(
-          (t) =>
-            t.address === address &&
-            (onGasTank || networkId === 'rewards'
-              ? t.networkId === tokenNetwork
-              : t.networkId === networkId)
-        )
-      : true
+  const canTopUpGasTank = foundFeeToken && !foundFeeToken?.disableGasTankDeposit
+  const isFeeToken = address === ZeroAddress || !!foundFeeToken
 
   return {
     onGasTank,

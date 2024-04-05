@@ -3,8 +3,6 @@
 
 import fetch from 'node-fetch'
 
-import { StaticJsonRpcProvider } from '@ethersproject/providers'
-
 import AmbireAccountNoReverts from '../../../contracts/compiled/AmbireAccountNoRevert.json'
 import { ERC_4337_ENTRYPOINT } from '../../../dist/src/consts/deploy'
 import { ENTRY_POINT_MARKER, PROXY_NO_REVERTS } from '../../consts/deploy'
@@ -14,6 +12,7 @@ import { Gas1559Recommendation } from '../../libs/gasPrice/gasPrice'
 import { privSlot } from '../../libs/proxyDeploy/deploy'
 import { UserOperation } from '../../libs/userOperation/types'
 import { getCleanUserOp } from '../../libs/userOperation/userOperation'
+import { getRpcProvider } from '../provider'
 
 require('dotenv').config()
 
@@ -33,7 +32,7 @@ export class Bundler {
    */
   async getReceipt(userOperationHash: string, network: NetworkDescriptor) {
     const url = `https://api.pimlico.io/v1/${network.id}/rpc?apikey=${process.env.REACT_APP_PIMLICO_API_KEY}`
-    const provider = new StaticJsonRpcProvider(url)
+    const provider = getRpcProvider([url], network.chainId)
     return provider.send('eth_getUserOperationReceipt', [userOperationHash])
   }
 
@@ -65,7 +64,7 @@ export class Bundler {
    */
   async broadcast(userOperation: UserOperation, network: NetworkDescriptor): Promise<string> {
     const url = `https://api.pimlico.io/v1/${network.id}/rpc?apikey=${process.env.REACT_APP_PIMLICO_API_KEY}`
-    const provider = new StaticJsonRpcProvider(url)
+    const provider = getRpcProvider([url], network.chainId)
 
     return provider.send('eth_sendUserOperation', [
       (({ requestType, activatorCall, ...o }) => o)(userOperation),
@@ -75,13 +74,13 @@ export class Bundler {
 
   static async getStatusAndTxnId(userOperationHash: string, network: NetworkDescriptor) {
     const url = `https://api.pimlico.io/v1/${network.id}/rpc?apikey=${process.env.REACT_APP_PIMLICO_API_KEY}`
-    const provider = new StaticJsonRpcProvider(url)
+    const provider = getRpcProvider([url], network.chainId)
     return provider.send('pimlico_getUserOperationStatus', [userOperationHash])
   }
 
   static async getUserOpGasPrice(network: NetworkDescriptor) {
     const url = `https://api.pimlico.io/v1/${network.id}/rpc?apikey=${process.env.REACT_APP_PIMLICO_API_KEY}`
-    const provider = new StaticJsonRpcProvider(url)
+    const provider = getRpcProvider([url], network.chainId)
     return provider.send('pimlico_getUserOperationGasPrice', [])
   }
 
@@ -135,7 +134,7 @@ export class Bundler {
     network: NetworkDescriptor
   ): Promise<Erc4337GasLimits> {
     const url = `https://api.pimlico.io/v1/${network.id}/rpc?apikey=${process.env.REACT_APP_PIMLICO_API_KEY}`
-    const provider = new StaticJsonRpcProvider(url)
+    const provider = getRpcProvider([url], network.chainId)
 
     // stateOverride is needed as our main AmbireAccount.sol contract
     // reverts when doing validateUserOp in certain cases and that's preventing
@@ -173,7 +172,7 @@ export class Bundler {
     fast: { maxFeePerGas: string; maxPriorityFeePerGas: string }
   }> {
     const url = `https://api.pimlico.io/v1/${network.id}/rpc?apikey=${process.env.REACT_APP_PIMLICO_API_KEY}`
-    const provider = new StaticJsonRpcProvider(url)
+    const provider = getRpcProvider([url], network.chainId)
     const results = await provider.send('pimlico_getUserOperationGasPrice', [])
     return {
       slow: results.slow,

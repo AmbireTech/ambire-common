@@ -255,7 +255,7 @@ describe('estimate', () => {
     // This is the min gas unit we can spend
     expect(response.gasUsed).toBeGreaterThan(21000n)
     expect(response.feePaymentOptions![0].availableAmount).toBeGreaterThan(0)
-    expect(response.nonce).toBeGreaterThan(1)
+    expect(response.currentAccountNonce).toBeGreaterThan(1)
   })
 
   it('estimates gasUsage, fee and native tokens outcome', async () => {
@@ -303,7 +303,7 @@ describe('estimate', () => {
     // As we swap 1 USDC for 1 USDT, we expect the estimate (outcome) balance of USDT to be greater than before the estimate (portfolio value)
     expect(usdtOutcome!.availableAmount).toBeGreaterThan(usdt?.amount || 0n)
     expect(usdcOutcome!.availableAmount).toBeLessThan(usdc!.amount)
-    expect(response.nonce).toBeGreaterThan(1)
+    expect(response.currentAccountNonce).toBeGreaterThan(1)
 
     // make sure there's a native fee payment option in the same acc addr
     const noFeePaymentViewOnlyAcc = response.feePaymentOptions.find(
@@ -575,21 +575,22 @@ describe('estimate', () => {
     expect(response.error?.message).toBe('Transaction reverted: invalid call in the bundle')
   })
 
-  // TODO: the below test fails with paymaster deposit too low. It shouldn't if we have enough in the paymaster. When we do, reenable it
   it('estimates a 4337 request on the avalanche chain with a deployed account paying in native', async () => {
+    const accountStates = await getAccountsInfo([trezorSlot7v24337Deployed])
+    const networkId = 'avalanche'
+    const accountState = accountStates[trezorSlot7v24337Deployed.addr][networkId]
     const opAvalanche: AccountOp = {
       accountAddr: trezorSlot7v24337Deployed.addr,
       signingKeyAddr: trezorSlot7v24337Deployed.associatedKeys[0],
       signingKeyType: null,
       gasLimit: null,
       gasFeePayment: null,
-      networkId: 'avalanche',
-      nonce: 0n,
+      networkId,
+      nonce: accountState.nonce,
       signature: '0x',
       calls: [{ to, value: BigInt(100), data: '0x' }],
       accountOpToExecuteBefore: null
     }
-    const accountStates = await getAccountsInfo([trezorSlot7v24337Deployed])
 
     const response = await estimate(
       providerAvalanche,
