@@ -457,6 +457,132 @@ describe('SignAccountOp Controller ', () => {
     expect(controller.status).toEqual({ type: 'done' })
   })
 
+  test('Signing [EOA]: should return an error if the availableAmount is 0', async () => {
+    const { controller, estimation, prices } = await init(
+      eoaAccount,
+      createEOAAccountOp(eoaAccount),
+      eoaSigner,
+      {
+        gasUsed: 10000n,
+        currentAccountNonce: 0,
+        feePaymentOptions: [
+          {
+            address: '0x0000000000000000000000000000000000000000',
+            paidBy: eoaAccount.addr,
+            availableAmount: 0n,
+            gasUsed: 0n,
+            addedNative: 5000n,
+            isGasTank: false
+          }
+        ],
+        // even if availableAmount is 0, there is no error from the
+        // estimation. It is singAccountOp's responsibility to disable signing
+        error: null
+      },
+      [
+        {
+          name: 'slow',
+          baseFeePerGas: 100n,
+          maxPriorityFeePerGas: 100n
+        },
+        {
+          name: 'medium',
+          baseFeePerGas: 200n,
+          maxPriorityFeePerGas: 200n
+        },
+        {
+          name: 'fast',
+          baseFeePerGas: 300n,
+          maxPriorityFeePerGas: 300n
+        },
+        {
+          name: 'ape',
+          baseFeePerGas: 400n,
+          maxPriorityFeePerGas: 400n
+        }
+      ]
+    )
+
+    controller.update({
+      gasPrices: prices,
+      estimation,
+      signingKeyAddr: eoaSigner.keyPublicAddress,
+      signingKeyType: 'internal',
+      feeToken: nativeFeeToken,
+      paidBy: eoaAccount.addr
+    })
+
+    const errors = controller.errors
+    expect(errors.length).toBe(1)
+    expect(errors[0]).toBe('Insufficient funds to cover the fee.')
+
+    await controller.sign()
+    expect(controller.status?.type).toBe('unable-to-sign')
+  })
+
+  test('Signing [EOA]: should return an error if the availableAmount is lower than required', async () => {
+    const { controller, estimation, prices } = await init(
+      eoaAccount,
+      createEOAAccountOp(eoaAccount),
+      eoaSigner,
+      {
+        gasUsed: 10000n,
+        currentAccountNonce: 0,
+        feePaymentOptions: [
+          {
+            address: '0x0000000000000000000000000000000000000000',
+            paidBy: eoaAccount.addr,
+            availableAmount: 1n,
+            gasUsed: 0n,
+            addedNative: 5000n,
+            isGasTank: false
+          }
+        ],
+        // even if availableAmount is lower than required, there is no error in
+        // the estimation. SingAccountOp should disable signing
+        error: null
+      },
+      [
+        {
+          name: 'slow',
+          baseFeePerGas: 100n,
+          maxPriorityFeePerGas: 100n
+        },
+        {
+          name: 'medium',
+          baseFeePerGas: 200n,
+          maxPriorityFeePerGas: 200n
+        },
+        {
+          name: 'fast',
+          baseFeePerGas: 300n,
+          maxPriorityFeePerGas: 300n
+        },
+        {
+          name: 'ape',
+          baseFeePerGas: 400n,
+          maxPriorityFeePerGas: 400n
+        }
+      ]
+    )
+
+    controller.update({
+      gasPrices: prices,
+      estimation,
+      signingKeyAddr: eoaSigner.keyPublicAddress,
+      signingKeyType: 'internal',
+      feeToken: nativeFeeToken,
+      paidBy: eoaAccount.addr
+    })
+
+    const errors = controller.errors
+    expect(errors.length).toBe(1)
+    expect(errors[0]).toBe('Insufficient funds to cover the fee.')
+
+    await controller.sign()
+    expect(controller.status?.type).toBe('unable-to-sign')
+  })
+
   test('Signing [Relayer]: Smart account paying with ERC-20 token.', async () => {
     const networkId = 'polygon'
     const network = networks.find((net) => net.id === networkId)!

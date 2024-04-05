@@ -87,6 +87,9 @@ function getTokenUsdAmount(token: TokenResult, gasAmount: bigint): string | null
 const NON_CRITICAL_ERRORS = {
   feeUsdEstimation: 'Unable to estimate the transaction fee in USD.'
 }
+const CRITICAL_ERRORS = {
+  eoaInsufficientFunds: 'Insufficient funds to cover the fee.'
+}
 
 export class SignAccountOpController extends EventEmitter {
   #keystore: KeystoreController
@@ -215,10 +218,7 @@ export class SignAccountOpController extends EventEmitter {
       errors.push(this.#estimation.error.message)
     }
 
-    if (!this.availableFeeOptions.length)
-      errors.push(
-        "We are unable to estimate your transaction as you don't have tokens with balances to cover the fee."
-      )
+    if (!this.availableFeeOptions.length) errors.push(CRITICAL_ERRORS.eoaInsufficientFunds)
 
     // This error should not happen, as in the update method we are always setting a default signer.
     // It may occur, only if there are no available signer.
@@ -248,8 +248,11 @@ export class SignAccountOpController extends EventEmitter {
       )
 
       if (feeToken!.availableAmount < this.accountOp?.gasFeePayment.amount) {
+        // show a different error message depending on whether SA/EOA
         errors.push(
-          "Signing is not possible with the selected account's token as it doesn't have sufficient funds to cover the gas payment fee."
+          isSmartAccount(this.#account)
+            ? "Signing is not possible with the selected account's token as it doesn't have sufficient funds to cover the gas payment fee."
+            : CRITICAL_ERRORS.eoaInsufficientFunds
         )
       }
     }
