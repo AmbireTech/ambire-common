@@ -102,7 +102,7 @@ export async function bundlerEstimate(
   const gasPrices = await Bundler.fetchGasPrices(network).catch(
     () => new Error('Could not fetch gas prices, retrying...')
   )
-  if (gasPrices instanceof Error) return estimationErrorFormatted(gasPrices, feePaymentOptions)
+  if (gasPrices instanceof Error) return estimationErrorFormatted(gasPrices, { feePaymentOptions })
 
   // add the maxFeePerGas and maxPriorityFeePerGas only if the network
   // is optimistic as the bundler uses these values to determine the
@@ -125,7 +125,8 @@ export async function bundlerEstimate(
       )
     )
   )
-  if (gasData instanceof Error) return estimationErrorFormatted(gasData as Error, feePaymentOptions)
+  if (gasData instanceof Error)
+    return estimationErrorFormatted(gasData as Error, { feePaymentOptions })
 
   const apeMaxFee = BigInt(gasPrices.fast.maxFeePerGas) + BigInt(gasPrices.fast.maxFeePerGas) / 5n
   const apePriority =

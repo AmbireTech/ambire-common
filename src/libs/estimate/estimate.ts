@@ -1,4 +1,4 @@
-import { AbiCoder, JsonRpcProvider, Provider, ZeroAddress } from 'ethers'
+import { AbiCoder, JsonRpcProvider, Provider, toBeHex, ZeroAddress } from 'ethers'
 
 import Estimation from '../../../contracts/compiled/Estimation.json'
 import { FEE_COLLECTOR } from '../../consts/addresses'
@@ -23,8 +23,8 @@ import { catchEstimationFailure, estimationErrorFormatted, mapTxnErrMsg } from '
 import { estimateArbitrumL1GasUsed } from './estimateArbitrum'
 import { bundlerEstimate } from './estimateBundler'
 import { estimateEOA } from './estimateEOA'
-import { ArbitrumL1Fee, EstimateResult, FeeToken } from './interfaces'
-import { reestimate } from './reestimate'
+import { estimateWithRetries } from './estimateWithRetries'
+import { ArbitrumL1Fee, EstimateResult, FeePaymentOption, FeeToken } from './interfaces'
 import { refund } from './refund'
 
 const abiCoder = new AbiCoder()
@@ -64,6 +64,28 @@ export async function estimate4337(
   const filteredFeeTokens = !shouldUsePaymaster(network)
     ? feeTokens.filter((feeToken) => feeToken.address === ZeroAddress && !feeToken.isGasTank)
     : feeTokens
+
+  // build the feePaymentOptions with the available current amounts. We will
+  // change them after simulation passes
+  const feePaymentOptions = filteredFeeTokens.map((token: FeeToken) => {
+    return {
+      address: token.address,
+      paidBy: account.addr,
+      availableAmount: token.amount,
+      // @relyOnBundler
+      // gasUsed goes to 0
+      // we add a transfer call or a native call when sending the uOp to the
+      // bundler and he estimates that. For different networks this gasUsed
+      // goes to different places (callGasLimit or preVerificationGas) and
+      // its calculated differently. So it's a wild bet to think we could
+      // calculate this on our own for each network.
+      gasUsed: 0n,
+      // addedNative gets calculated by the bundler & added to uOp gasData
+      addedNative: 0n,
+      isGasTank: token.isGasTank
+    }
+  })
+
   const checkInnerCallsArgs = [
     account.addr,
     ...getAccountDeployParams(account),
@@ -81,7 +103,6 @@ export async function estimate4337(
     [],
     ZeroAddress
   ]
-
   const initializeRequests = () => [
     deploylessEstimator
       .call('estimate', checkInnerCallsArgs, {
@@ -91,8 +112,23 @@ export async function estimate4337(
       .catch(catchEstimationFailure),
     bundlerEstimate(account, accountStates, op, network, feeTokens)
   ]
-  const estimations = await reestimate(initializeRequests)
-  if (estimations instanceof Error) return estimationErrorFormatted(estimations)
+  const estimations = await estimateWithRetries(initializeRequests)
+  if (estimations instanceof Error)
+    return estimationErrorFormatted(estimations, {
+      feePaymentOptions,
+      erc4337GasLimits: {
+        preVerificationGas: toBeHex(0),
+        verificationGasLimit: toBeHex(0),
+        callGasLimit: toBeHex(0),
+        gasPrice: {
+          slow: { maxFeePerGas: toBeHex(0), maxPriorityFeePerGas: toBeHex(0) },
+          medium: { maxFeePerGas: toBeHex(0), maxPriorityFeePerGas: toBeHex(0) },
+          fast: { maxFeePerGas: toBeHex(0), maxPriorityFeePerGas: toBeHex(0) },
+          ape: { maxFeePerGas: toBeHex(0), maxPriorityFeePerGas: toBeHex(0) }
+        }
+      }
+    })
+
   const [[, , accountOp, outcomeNonce, feeTokenOutcomes]] = estimations[0]
   const estimationResult: EstimateResult = estimations[1]
   estimationResult.error =
@@ -101,24 +137,14 @@ export async function estimate4337(
       : getInnerCallFailure(accountOp) || getNonceDiscrepancyFailure(op, outcomeNonce)
   estimationResult.currentAccountNonce = Number(outcomeNonce - 1n)
 
-  estimationResult.feePaymentOptions = filteredFeeTokens.map((token: FeeToken, index: number) => {
-    return {
-      address: token.address,
-      paidBy: account.addr,
-      availableAmount: feeTokenOutcomes[index][1],
-      // @relyOnBundler
-      // gasUsed goes to 0
-      // we add a transfer call or a native call when sending the uOp to the
-      // bundler and he estimates that. For different networks this gasUsed
-      // goes to different places (callGasLimit or preVerificationGas) and
-      // its calculated differently. So it's a wild bet to think we could
-      // calculate this on our own for each network.
-      gasUsed: 0n,
-      // addedNative gets calculated by the bundler & added to uOp gasData
-      addedNative: 0n,
-      isGasTank: token.isGasTank
+  // add the availableAmount after the simulation
+  estimationResult.feePaymentOptions = feePaymentOptions.map(
+    (option: FeePaymentOption, index: number) => {
+      const localOp = { ...option }
+      localOp.availableAmount = feeTokenOutcomes[index][1]
+      return localOp
     }
-  })
+  )
 
   return estimationResult
 }
@@ -245,7 +271,7 @@ export async function estimate(
           resolve(0n)
         })
   ]
-  const estimations = await reestimate(initializeRequests)
+  const estimations = await estimateWithRetries(initializeRequests)
   if (estimations instanceof Error) return estimationErrorFormatted(estimations)
 
   const [
