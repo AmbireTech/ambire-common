@@ -68,21 +68,7 @@ export async function getNetworkInfo(
   }
 
   let flagged = false
-  const provider = getRpcProvider([rpcUrl])
-  // eslint-disable-next-line no-underscore-dangle
-  const detection = await Promise.race([
-    // eslint-disable-next-line no-underscore-dangle
-    provider._detectNetwork().catch((e: Error) => e),
-    timeout(3000)
-  ])
-
-  console.log('detection', detection)
-  if (detection === 'timeout reached' || detection instanceof Error) {
-    flagged = true
-    networkInfo = { ...networkInfo, flagged }
-    callback(networkInfo)
-  }
-  if (flagged) return
+  const provider = getRpcProvider([rpcUrl], chainId)
 
   const raiseFlagged = (e: Error, returnData: any): any => {
     if (e.message === 'flagged') {
