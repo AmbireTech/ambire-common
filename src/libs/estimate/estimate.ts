@@ -280,8 +280,13 @@ export async function estimate(
         result
       feePaymentOptions[0].availableAmount = feeTokenOutcomes[0][1]
       feePaymentOptions[0].addedNative = l1GasEstimation.fee
-      gasUsed =
-        gasUsedEstimateGas > gasUsedEstimationSol ? gasUsedEstimateGas : gasUsedEstimationSol
+
+      // if it's a simple transfer, trust estimateGas as it should be 21K
+      // if it's a contract call, trust whichever is higher
+      if (call.data === '0x') gasUsed = gasUsedEstimateGas
+      else
+        gasUsed =
+          gasUsedEstimateGas > gasUsedEstimationSol ? gasUsedEstimateGas : gasUsedEstimationSol
     } else {
       const [gasUsedEstimateGas, [l1GasEstimation]] = result
       feePaymentOptions[0].addedNative = l1GasEstimation.fee
