@@ -18,10 +18,12 @@ const getRpcProvider = (
     if (prefUrl) rpcUrl = prefUrl
   }
 
-  const staticNetwork = Network.from(Number(chainId))
+  if (chainId) {
+    const staticNetwork = Network.from(Number(chainId))
 
-  if (staticNetwork) {
-    return new JsonRpcProvider(rpcUrl, staticNetwork, { staticNetwork })
+    if (staticNetwork) {
+      return new JsonRpcProvider(rpcUrl, staticNetwork, { staticNetwork })
+    }
   }
 
   return new JsonRpcProvider(rpcUrl)
