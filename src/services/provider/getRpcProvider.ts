@@ -26,7 +26,6 @@ const getRpcProvider = (
     }
   }
 
-  console.log('rpcUrl', rpcUrl)
   return new JsonRpcProvider(rpcUrl)
 }
 

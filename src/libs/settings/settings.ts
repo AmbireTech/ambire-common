@@ -61,7 +61,7 @@ export async function getNetworkInfo(
   }
   callback(networkInfo)
 
-  const timeout = (time: number = 3000): Promise<'timeout reached'> => {
+  const timeout = (time: number = 30000): Promise<'timeout reached'> => {
     return new Promise((resolve) => {
       setTimeout(resolve, time, 'timeout reached')
     }) as unknown as Promise<'timeout reached'>
@@ -74,6 +74,7 @@ export async function getNetworkInfo(
     if (e.message === 'flagged') {
       flagged = true
     }
+
     return returnData
   }
 
