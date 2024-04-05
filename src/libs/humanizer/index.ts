@@ -84,11 +84,15 @@ const sharedHumanization = async <InputDataType extends AccountOp | Message>(
   options?: any
 ) => {
   let op: AccountOp
+  let message: Message | null = null
   let irCalls: IrCall[] = []
   let asyncOps: Promise<HumanizerFragment | null>[] = []
   let parsedMessage: IrMessage
   if ('calls' in data) {
     op = parse(stringify(data))
+  }
+  if ('content' in data) {
+    message = parse(stringify(data))
   }
   for (let i = 0; i <= 3; i++) {
     const totalHumanizerMetaToBeUsed = await lazyReadHumanizerMeta(storage, {
@@ -118,15 +122,15 @@ const sharedHumanization = async <InputDataType extends AccountOp | Message>(
       //
     } else if ('content' in data) {
       const humanizerSettings: HumanizerSettings = {
-        accountAddr: data.accountAddr,
-        networkId: data?.networkId || 'ethereum',
+        accountAddr: message!.accountAddr,
+        networkId: message?.networkId || 'ethereum',
         humanizerMeta: totalHumanizerMetaToBeUsed
       }
       const irMessage: IrMessage = {
-        ...data,
-        ...(data.content.kind === 'typedMessage'
-          ? humanizeTypedMessage(humanizerTMModules, data.content)
-          : humanizePlainTextMessage(data.content))
+        ...message!,
+        ...(message!.content.kind === 'typedMessage'
+          ? humanizeTypedMessage(humanizerTMModules, message!.content)
+          : humanizePlainTextMessage(message!.content))
       }
 
       ;[parsedMessage, asyncOps] = parseMessage(humanizerSettings, irMessage, parsingModules, {
@@ -144,6 +148,8 @@ const sharedHumanization = async <InputDataType extends AccountOp | Message>(
     if ('calls' in data)
       // @TODO we should store the non global frags in the op
       op!.humanizerMetaFragments = [...(op!.humanizerMetaFragments || []), ...nonGlobalFragments]
+    if ('content' in data)
+      message!.humanizerFragments = [...(message!.humanizerFragments || []), ...nonGlobalFragments]
     await addFragsToLazyStore(storage, globalFragments, {
       urgent: options && !options?.isExtension
     })

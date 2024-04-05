@@ -33,7 +33,7 @@ export async function addFragsToLazyStore(
   } else if (!hasTimeout) {
     hasTimeout = true
     // @TODO should we clear this?
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve) => {
       setTimeout(async () => {
         // memoryHumanizerMeta is reference to the variables value,
         // when the timeout executes it will use the latest value

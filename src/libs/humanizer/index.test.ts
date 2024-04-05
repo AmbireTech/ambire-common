@@ -14,7 +14,7 @@ import { Message, TypedMessage } from '../../interfaces/userRequest'
 import { AccountOp } from '../accountOp/accountOp'
 import { callsHumanizer, messageHumanizer } from './index'
 import { HumanizerVisualization, IrCall, IrMessage } from './interfaces'
-import { HUMANIZER_META_KEY } from './utils'
+import { EMPTY_HUMANIZER_META, HUMANIZER_META_KEY } from './utils'
 // const address1 = '0x6942069420694206942069420694206942069420'
 const address2 = '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
 const WETH_ADDRESS = '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2'
@@ -303,7 +303,7 @@ describe('TypedMessages', () => {
   let storage: Storage
   beforeEach(async () => {
     storage = produceMemoryStore()
-    await storage.set(HUMANIZER_META_KEY, { abis: { NO_ABI: {} }, knownAddresses: {} })
+    await storage.set(HUMANIZER_META_KEY, EMPTY_HUMANIZER_META)
   })
   test('simple humanization', async () => {
     const message = {

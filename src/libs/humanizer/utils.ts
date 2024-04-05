@@ -84,10 +84,6 @@ export function getDeadline(deadlineSecs: bigint | number): HumanizerVisualizati
   }
 }
 
-export function shortenAddress(addr: string): string {
-  return `${addr.slice(0, 5)}...${addr.slice(-3)}`
-}
-
 /**
  * Make a request to coingecko to fetch the latest price of the native token.
  * This is used by benzina and hence we cannot wrap the errors in emitError
@@ -118,10 +114,12 @@ export async function getTokenInfo(
 ): Promise<HumanizerFragment | null> {
   const network = networks.find((n: NetworkDescriptor) => n.id === humanizerSettings.networkId)
   let platformId = network?.platformId
-  if(!platformId){
+  if (!platformId) {
     options.emitError({
-      message: `getTokenInfo: could not find platform id for token info api`,
-      error: new Error(`could not find platform id for token info api ${humanizerSettings.networkId}`),
+      message: 'getTokenInfo: could not find platform id for token info api',
+      error: new Error(
+        `could not find platform id for token info api ${humanizerSettings.networkId}`
+      ),
       level: 'minor'
     })
     platformId = humanizerSettings.networkId
