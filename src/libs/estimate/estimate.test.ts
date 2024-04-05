@@ -1,11 +1,12 @@
 /* eslint no-console: "off" */
 
-import { AbiCoder, ethers, JsonRpcProvider } from 'ethers'
+import { AbiCoder, ethers, Interface, JsonRpcProvider } from 'ethers'
 import { AccountOp } from 'libs/accountOp/accountOp'
 import fetch from 'node-fetch'
 
 import { describe, expect } from '@jest/globals'
 
+import ERC20 from '../../../contracts/compiled/IERC20.json'
 import { trezorSlot7v24337Deployed } from '../../../test/config'
 import { getNonce } from '../../../test/helpers'
 import { FEE_COLLECTOR } from '../../consts/addresses'
@@ -13,6 +14,7 @@ import { networks } from '../../consts/networks'
 import { Account, AccountStates } from '../../interfaces/account'
 import { Key } from '../../interfaces/keystore'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
+import { Call } from '../accountOp/types'
 import { getAccountState } from '../accountState/accountState'
 import { Portfolio } from '../portfolio/portfolio'
 import { estimate } from './estimate'
@@ -61,6 +63,13 @@ const MOCK_KEYSTORE_KEYS: Key[] = [
   {
     type: 'internal',
     addr: '0x0000000000000000000000000000000000000001',
+    dedicatedToOneSA: false,
+    meta: null,
+    isExternallyStored: false
+  },
+  {
+    type: 'internal',
+    addr: '0xa8eEaC54343F94CfEEB3492e07a7De72bDFD118a',
     dedicatedToOneSA: false,
     meta: null,
     isExternallyStored: false
@@ -207,7 +216,7 @@ const trezorSlot6v2NotDeployed: Account = {
 }
 
 describe('estimate', () => {
-  it('estimates gasUsage and native balance for EOA', async () => {
+  it('EOA: gasUsage and native balance for a normal transfer', async () => {
     const EOAAccount: Account = {
       addr: '0x40b38765696e3d5d8d9d834d8aad4bb6e418e489',
       associatedKeys: ['0x40b38765696e3d5d8d9d834d8aad4bb6e418e489'],
@@ -220,10 +229,10 @@ describe('estimate', () => {
       creation: null
     }
 
-    const call = {
-      to: '0x40b38765696e3d5d8d9d834d8aad4bb6e418e489',
+    const call: Call = {
+      to: '0xf7bB3EEF4ffA13ce037E3E5b6a59340c7e0f3941',
       value: BigInt(1),
-      data: '0xabc5345e000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000020000000000000000000000000e750fff1aa867dfb52c9f98596a0fab5e05d30a60000000000000000000000000000000000000000000000000de0b6b3a764000000000000000000000000000000000000000000000000000000000000000000600000000000000000000000000000000000000000000000000000000000000000'
+      data: '0x'
     }
 
     const op = {
@@ -251,10 +260,158 @@ describe('estimate', () => {
       []
     )
 
-    // This is the min gas unit we can spend
-    expect(response.gasUsed).toBeGreaterThan(21000n)
+    expect(response.gasUsed).toBe(21000n)
     expect(response.feePaymentOptions![0].availableAmount).toBeGreaterThan(0)
     expect(response.currentAccountNonce).toBeGreaterThan(1)
+    expect(response.error).toBe(null)
+  })
+
+  it('EOA: sends all his available native and estimation should return a 0 balance available for fee but still a 21K gasUsed as we are doing a normal transfer', async () => {
+    const addr = '0xa8eEaC54343F94CfEEB3492e07a7De72bDFD118a'
+    const EOAAccount: Account = {
+      addr,
+      associatedKeys: [addr],
+      initialPrivileges: [],
+      creation: null
+    }
+
+    // send all the native balance the user has in a call
+    const nativeBalance = await providerPolygon.getBalance(addr)
+    const call = {
+      to: '0xf7bB3EEF4ffA13ce037E3E5b6a59340c7e0f3941',
+      value: nativeBalance,
+      data: '0x'
+    }
+
+    const op = {
+      accountAddr: EOAAccount.addr,
+      signingKeyAddr: null,
+      signingKeyType: null,
+      gasLimit: null,
+      gasFeePayment: null,
+      networkId: 'polygon',
+      nonce: null,
+      signature: null,
+      calls: [call],
+      accountOpToExecuteBefore: null
+    }
+
+    const accountStates = await getAccountsInfo([EOAAccount])
+    const response = await estimate(
+      providerPolygon,
+      polygon,
+      EOAAccount,
+      MOCK_KEYSTORE_KEYS,
+      op,
+      accountStates,
+      [],
+      []
+    )
+
+    expect(response.gasUsed).toBe(21000n)
+    expect(response.feePaymentOptions![0].availableAmount).toBe(0n)
+    expect(response.error).toBe(null)
+  })
+
+  it("EOA: shouldn't return an error if there is a valid txn but with no native to pay the fee as it is handled in signAccountOp", async () => {
+    const addr = '0x952064055eFE9dc8b261510869B032068c8699bB'
+    const EOAAccount: Account = {
+      addr,
+      associatedKeys: [addr],
+      initialPrivileges: [],
+      creation: null
+    }
+
+    // this should be a valid txn
+    // sending 0.00001 USDC to 0xf7bB3EEF4ffA13ce037E3E5b6a59340c7e0f3941
+    // so addr should posses that amount
+    const ERC20Interface = new Interface(ERC20.abi)
+    const call = {
+      to: '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174',
+      value: 0n,
+      data: ERC20Interface.encodeFunctionData('transfer', [
+        '0xf7bB3EEF4ffA13ce037E3E5b6a59340c7e0f3941',
+        1n
+      ])
+    }
+
+    const op = {
+      accountAddr: EOAAccount.addr,
+      signingKeyAddr: null,
+      signingKeyType: null,
+      gasLimit: null,
+      gasFeePayment: null,
+      networkId: 'polygon',
+      nonce: null,
+      signature: null,
+      calls: [call],
+      accountOpToExecuteBefore: null
+    }
+
+    const accountStates = await getAccountsInfo([EOAAccount])
+    const response = await estimate(
+      providerPolygon,
+      polygon,
+      EOAAccount,
+      MOCK_KEYSTORE_KEYS,
+      op,
+      accountStates,
+      [],
+      []
+    )
+
+    expect(response.gasUsed).toBeGreaterThan(0n)
+    expect(response.feePaymentOptions[0].availableAmount).toBe(0n)
+    expect(response.error).toBe(null)
+  })
+
+  it('EOA: should throw an error if there is an invalid txn and gasUsed should be 0', async () => {
+    const addr = '0x952064055eFE9dc8b261510869B032068c8699bB'
+    const EOAAccount: Account = {
+      addr,
+      associatedKeys: [addr],
+      initialPrivileges: [],
+      creation: null
+    }
+
+    // this should be an invalid txn
+    const ERC20Interface = new Interface(ERC20.abi)
+    const call = {
+      to: '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174',
+      value: 0n,
+      data: ERC20Interface.encodeFunctionData('transfer', [
+        '0xf7bB3EEF4ffA13ce037E3E5b6a59340c7e0f3941',
+        1000000000n // 10K USDC
+      ])
+    }
+
+    const op = {
+      accountAddr: EOAAccount.addr,
+      signingKeyAddr: null,
+      signingKeyType: null,
+      gasLimit: null,
+      gasFeePayment: null,
+      networkId: 'polygon',
+      nonce: null,
+      signature: null,
+      calls: [call],
+      accountOpToExecuteBefore: null
+    }
+
+    const accountStates = await getAccountsInfo([EOAAccount])
+    const response = await estimate(
+      providerPolygon,
+      polygon,
+      EOAAccount,
+      MOCK_KEYSTORE_KEYS,
+      op,
+      accountStates,
+      [],
+      []
+    )
+
+    expect(response.gasUsed).toBe(0n)
+    expect(response.error).not.toBe(null)
   })
 
   it('estimates gasUsage, fee and native tokens outcome', async () => {

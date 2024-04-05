@@ -22,7 +22,9 @@ import { estimateCustomNetwork } from './customNetworks'
 import { catchEstimationFailure, estimationErrorFormatted, mapTxnErrMsg } from './errors'
 import { estimateArbitrumL1GasUsed } from './estimateArbitrum'
 import { bundlerEstimate } from './estimateBundler'
+import { estimateEOA } from './estimateEOA'
 import { ArbitrumL1Fee, EstimateResult, FeeToken } from './interfaces'
+import { reestimate } from './reestimate'
 import { refund } from './refund'
 
 const abiCoder = new AbiCoder()
@@ -45,38 +47,6 @@ function getNonceDiscrepancyFailure(op: AccountOp, outcomeNonce: number): Error 
   return new Error("Nonce discrepancy, perhaps there's a pending transaction. Retrying...", {
     cause: 'NONCE_FAILURE'
   })
-}
-
-async function reestimate(fetchRequests: Function, counter: number = 0): Promise<any> {
-  // stop the execution on 5 fails;
-  // the below error message is not shown to the user so we are safe
-  if (counter >= 5)
-    return new Error(
-      'Estimation failure, retrying in a couple of seconds. If this issue persists, please change your RPC provider or contact Ambire support'
-    )
-
-  const estimationTimeout = new Promise((resolve) => {
-    setTimeout(() => {
-      resolve('Timeout reached')
-    }, 15000)
-  })
-
-  // try to estimate the request with a given timeout.
-  // if the request reaches the timeout, it cancels it and retries
-  let result = await Promise.race([Promise.all(fetchRequests()), estimationTimeout])
-
-  if (typeof result === 'string') {
-    const incremented = counter + 1
-    result = await reestimate(fetchRequests, incremented)
-  }
-
-  // if one of the calls returns an error, return it
-  if (Array.isArray(result)) {
-    const error = result.find((res) => res instanceof Error)
-    if (error) return error
-  }
-
-  return result
 }
 
 export async function estimate4337(
@@ -169,79 +139,9 @@ export async function estimate(
   blockFrom: string = '0x0000000000000000000000000000000000000001',
   blockTag: string | number = 'latest'
 ): Promise<EstimateResult> {
-  const deploylessEstimator = fromDescriptor(provider, Estimation, !network.rpcNoStateOverride)
-  const optimisticOracle = network.isOptimistic ? OPTIMISTIC_ORACLE : ZeroAddress
-  const accountState = accountStates[op.accountAddr][op.networkId]
-  const isCustomNetwork = !predefinedNetworks.find((net) => net.id === network.id)
-  const isSA = isSmartAccount(account)
-
-  // we're excluding the view only accounts from the natives to check
-  // in all cases EXCEPT the case where we're making an estimation for
-  // the view only account itself. In all other, view only accounts options
-  // should not be present as the user cannot pay the fee with them (no key)
-  const nativeToCheck = EOAaccounts.filter(
-    (acc) => acc.addr === op.accountAddr || !getIsViewOnly(keystoreKeys, acc.associatedKeys)
-  ).map((acc) => acc.addr)
-
-  if (!isSA) {
-    if (op.calls.length !== 1)
-      return estimationErrorFormatted(
-        new Error(
-          "Trying to make multiple calls with a Basic Account which shouldn't happen. Please try again or contact support."
-        )
-      )
-
-    const call = op.calls[0]
-    const nonce = await provider.getTransactionCount(account.addr)
-    const encodedCallData = abiCoder.encode(
-      [
-        'bytes', // data
-        'address', // to
-        'address', // from
-        'uint256', // gasPrice
-        'uint256', // type
-        'uint256', // nonce
-        'uint256' // gasLimit
-      ],
-      [call.data, call.to, account.addr, 100000000, 2, nonce, 100000]
-    )
-    const initializeRequests = () => [
-      provider
-        .estimateGas({
-          from: account.addr,
-          to: call.to,
-          value: call.value,
-          data: call.data,
-          nonce
-        })
-        .catch(catchEstimationFailure),
-      provider.getBalance(account.addr).catch(catchEstimationFailure),
-      deploylessEstimator
-        .call('getL1GasEstimation', [encodedCallData, FEE_COLLECTOR, optimisticOracle], {
-          from: blockFrom,
-          blockTag
-        })
-        .catch(catchEstimationFailure)
-    ]
-    const result = await reestimate(initializeRequests)
-    const [gasUsed, balance, [l1GasEstimation]] =
-      result instanceof Error ? [0n, 0n, [{ fee: 0n }]] : result
-
-    return {
-      gasUsed,
-      currentAccountNonce: nonce,
-      feePaymentOptions: [
-        {
-          address: ZeroAddress,
-          paidBy: account.addr,
-          availableAmount: balance,
-          addedNative: l1GasEstimation.fee,
-          isGasTank: false
-        }
-      ],
-      error: result instanceof Error ? result : null
-    }
-  }
+  // if EOA, delegate
+  if (!isSmartAccount(account))
+    return estimateEOA(account, op, accountStates, network, provider, blockFrom, blockTag)
 
   if (!network.isSAEnabled)
     return estimationErrorFormatted(
@@ -253,10 +153,12 @@ export async function estimate(
   // and the network is 4337 but doesn't have a paymaster, we should activate
   // the entry point and therefore estimate the activator call here
   const calls = [...op.calls]
+  const accountState = accountStates[op.accountAddr][op.networkId]
   if (shouldIncludeActivatorCall(network, accountState)) {
     calls.push(getActivatorCall(op.accountAddr))
   }
 
+  // if 4337, delegate
   if (opts && opts.is4337Broadcast) {
     const estimationResult: EstimateResult = await estimate4337(
       account,
@@ -270,6 +172,18 @@ export async function estimate(
     )
     return estimationResult
   }
+
+  const deploylessEstimator = fromDescriptor(provider, Estimation, !network.rpcNoStateOverride)
+  const optimisticOracle = network.isOptimistic ? OPTIMISTIC_ORACLE : ZeroAddress
+  const isCustomNetwork = !predefinedNetworks.find((net) => net.id === network.id)
+
+  // we're excluding the view only accounts from the natives to check
+  // in all cases EXCEPT the case where we're making an estimation for
+  // the view only account itself. In all other, view only accounts options
+  // should not be present as the user cannot pay the fee with them (no key)
+  const nativeToCheck = EOAaccounts.filter(
+    (acc) => acc.addr === op.accountAddr || !getIsViewOnly(keystoreKeys, acc.associatedKeys)
+  ).map((acc) => acc.addr)
 
   // if the network doesn't have a relayer, we can't pay in fee tokens
   const filteredFeeTokens = network.hasRelayer ? feeTokens : []
