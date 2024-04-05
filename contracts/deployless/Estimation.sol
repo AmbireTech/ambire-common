@@ -85,20 +85,24 @@ contract Estimation is FeeTokens, Spoof {
       );
       outcome.nonce = op.account.nonce();
       if (feeTokens.length != 0) {
-        // if we don't have a valid spoof, we cannot simulate the gas consumption
-        // of the fee payments; that's no problem as generally, the user cannot
-        // sign in such a situation so it probably is a view only account.
-        // If that is the case, return the balances of his fee tokens
-        try this.getSpoof(account, associatedKeys) returns (bytes memory realSpoof) {
+        // in general, we should posses a valid spoofSig for:
+        // - EOAs, we make a state override and add a valid spoofSig
+        // - SA, we have it from creation
+        // - viewOnly, we override for EOA and have it from the relayer for SA
+        // The only situation where we don't have a valid spoofSig is something
+        // like this: 1) use the extension on 2 PCs 2) remove the only key from one
+        // 3) use the other. In this extremely rare scenario instead of reverting,
+        // we return the user balances
+        if (spoofSig.length > 0) {
           // Get fee tokens amounts after the simulation, and simulate their gas cost for transfer
           outcome.feeTokenOutcomes = simulateFeePayments(
             account,
             feeTokens,
-            realSpoof,
+            spoofSig,
             relayer,
-            calculateBaseGas(account, realSpoof)
+            calculateBaseGas(account, spoofSig)
           );
-        } catch (bytes memory) {
+        } else {
           outcome.feeTokenOutcomes = getFeeTokenBalances(account, feeTokens);
         }
       }
