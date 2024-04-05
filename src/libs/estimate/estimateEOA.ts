@@ -11,8 +11,8 @@ import { DeploylessMode, fromDescriptor } from '../deployless/deployless'
 import { EOA_SIMULATION_NONCE } from '../portfolio/getOnchainBalances'
 import { privSlot } from '../proxyDeploy/deploy'
 import { catchEstimationFailure, estimationErrorFormatted } from './errors'
+import { estimateWithRetries } from './estimateWithRetries'
 import { EstimateResult } from './interfaces'
-import { reestimate } from './reestimate'
 
 const abiCoder = new AbiCoder()
 
@@ -104,7 +104,7 @@ export async function estimateEOA(
           })
           .catch(catchEstimationFailure)
   ]
-  const result = await reestimate(initializeRequests)
+  const result = await estimateWithRetries(initializeRequests)
   const feePaymentOptions = [
     {
       address: ZeroAddress,
@@ -114,7 +114,7 @@ export async function estimateEOA(
       isGasTank: false
     }
   ]
-  if (result instanceof Error) return estimationErrorFormatted(result, feePaymentOptions)
+  if (result instanceof Error) return estimationErrorFormatted(result, { feePaymentOptions })
 
   let gasUsed = 0n
   if (!network.rpcNoStateOverride) {

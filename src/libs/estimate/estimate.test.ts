@@ -17,7 +17,7 @@ import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { Call } from '../accountOp/types'
 import { getAccountState } from '../accountState/accountState'
 import { Portfolio } from '../portfolio/portfolio'
-import { estimate } from './estimate'
+import { estimate, estimate4337 } from './estimate'
 
 const ethereum = networks.find((x) => x.id === 'ethereum')
 const optimism = networks.find((x) => x.id === 'optimism')
@@ -216,7 +216,7 @@ const trezorSlot6v2NotDeployed: Account = {
 }
 
 describe('estimate', () => {
-  it('EOA: gasUsage and native balance for a normal transfer', async () => {
+  it('[EOA]:Ethereum | gasUsage and native balance for a normal transfer', async () => {
     const EOAAccount: Account = {
       addr: '0x40b38765696e3d5d8d9d834d8aad4bb6e418e489',
       associatedKeys: ['0x40b38765696e3d5d8d9d834d8aad4bb6e418e489'],
@@ -266,7 +266,7 @@ describe('estimate', () => {
     expect(response.error).toBe(null)
   })
 
-  it('EOA: sends all his available native and estimation should return a 0 balance available for fee but still a 21K gasUsed as we are doing a normal transfer', async () => {
+  it('[EOA]:Polygon | sends all his available native and estimation should return a 0 balance available for fee but still a 21K gasUsed as we are doing a normal transfer', async () => {
     const addr = '0xa8eEaC54343F94CfEEB3492e07a7De72bDFD118a'
     const EOAAccount: Account = {
       addr,
@@ -313,7 +313,7 @@ describe('estimate', () => {
     expect(response.error).toBe(null)
   })
 
-  it("EOA: shouldn't return an error if there is a valid txn but with no native to pay the fee as it is handled in signAccountOp", async () => {
+  it("[EOA]:Polygon | shouldn't return an error if there is a valid txn but with no native to pay the fee as it is handled in signAccountOp", async () => {
     const addr = '0x952064055eFE9dc8b261510869B032068c8699bB'
     const EOAAccount: Account = {
       addr,
@@ -365,7 +365,7 @@ describe('estimate', () => {
     expect(response.error).toBe(null)
   })
 
-  it('EOA: should throw an error if there is an invalid txn and gasUsed should be 0', async () => {
+  it('[EOA]:Polygon | should throw an error if there is an invalid txn and gasUsed should be 0', async () => {
     const addr = '0x952064055eFE9dc8b261510869B032068c8699bB'
     const EOAAccount: Account = {
       addr,
@@ -694,7 +694,7 @@ describe('estimate', () => {
     response.feePaymentOptions.map((option) => expect(option.addedNative).toBeGreaterThan(0n))
   })
 
-  it('estimates an arbitrum 4337 request that should fail with an inner call failure but otherwise estimation should work', async () => {
+  it('[ERC-4337]:Arbitrum | should fail with an inner call failure but otherwise estimation should work', async () => {
     const opArbitrum: AccountOp = {
       accountAddr: trezorSlot6v2NotDeployed.addr,
       signingKeyAddr: trezorSlot6v2NotDeployed.associatedKeys[0],
@@ -729,9 +729,56 @@ describe('estimate', () => {
 
     expect(response.error).not.toBe(null)
     expect(response.error?.message).toBe('Transaction reverted: invalid call in the bundle')
+
+    expect(response.feePaymentOptions.length).toBeGreaterThan(0)
   })
 
-  it('estimates a 4337 request on the avalanche chain with a deployed account paying in native', async () => {
+  it('[ERC-4337]:Arbitrum | should fail because of a broken provider but still return fee options', async () => {
+    const opArbitrum: AccountOp = {
+      accountAddr: trezorSlot6v2NotDeployed.addr,
+      signingKeyAddr: trezorSlot6v2NotDeployed.associatedKeys[0],
+      signingKeyType: null,
+      gasLimit: null,
+      gasFeePayment: null,
+      networkId: 'arbitrum',
+      nonce: 1n,
+      signature: spoofSig,
+      calls: [{ to, value: BigInt(100000000000), data: '0x' }],
+      accountOpToExecuteBefore: null
+    }
+    const accountStates = await getAccountsInfo([trezorSlot6v2NotDeployed])
+    const brokenProvider = new JsonRpcProvider(arbitrum.rpcUrl)
+    const handler2 = {
+      get(target: any, prop: any) {
+        if (prop === 'send') throw new Error('no sends')
+      }
+    }
+    const proxyProvider = new Proxy(brokenProvider, handler2)
+    const response = await estimate4337(
+      trezorSlot6v2NotDeployed,
+      opArbitrum,
+      opArbitrum.calls,
+      accountStates,
+      arbitrum,
+      proxyProvider,
+      feeTokens,
+      'latest'
+    )
+
+    expect(response.error).not.toBe(null)
+    expect(response.error?.message).toBe(
+      'Estimation failed with unknown reason. Please try again to initialize your request or contact Ambire support'
+    )
+
+    expect(response.feePaymentOptions.length).toBeGreaterThan(0)
+
+    expect(response.erc4337GasLimits).not.toBe(undefined)
+    expect(BigInt(response.erc4337GasLimits!.callGasLimit)).toBe(0n)
+    expect(BigInt(response.erc4337GasLimits!.verificationGasLimit)).toBe(0n)
+    expect(BigInt(response.erc4337GasLimits!.preVerificationGas)).toBe(0n)
+  })
+
+  it('[ERC-4337]:Avalanche | estimate a deployed account paying in native', async () => {
     const accountStates = await getAccountsInfo([trezorSlot7v24337Deployed])
     const networkId = 'avalanche'
     const accountState = accountStates[trezorSlot7v24337Deployed.addr][networkId]
