@@ -308,8 +308,16 @@ export class MainController extends EventEmitter {
     this.emitUpdate()
     try {
       await fn()
+      // ⚠️ To be discussed.
+      // When this code is executed in a testing environment,
+      // the SUCCESS status, for some reason, is not being received/applied on the frontend (FE).
+      // When we manually run it as a user, everything works as expected.
+      // It's peculiar because we previously resolved this timing issue by adding a wait(1)
+      // before updating the DONE status (check next lines), and it wasn't necessary to apply it here too.
+      await wait(1)
       this.status = 'SUCCESS'
       this.emitUpdate()
+      await wait(1)
     } catch (error: any) {
       this.emitError({
         level: 'major',
