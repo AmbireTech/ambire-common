@@ -39,12 +39,3 @@ export interface EstimateResult {
   erc4337GasLimits?: Erc4337GasLimits
   error: Error | null
 }
-
-export interface FeeToken {
-  address: string
-  isGasTank: boolean
-  amount: bigint // how much the user has (from portfolio)
-  // below: add additional meta to make FE logic way
-  symbol: string
-  networkId: NetworkDescriptor['id']
-}

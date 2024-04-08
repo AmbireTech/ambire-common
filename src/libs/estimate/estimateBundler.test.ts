@@ -36,24 +36,45 @@ describe('Bundler estimation tests', () => {
       const feeTokens = [
         {
           address: '0x0000000000000000000000000000000000000000',
-          isGasTank: false,
           amount: 1n,
           symbol: 'ETH',
-          networkId: 'optimism'
+          networkId: 'optimism',
+          decimals: 18,
+          priceIn: [],
+          flags: {
+            onGasTank: false,
+            rewardsType: null,
+            canTopUpGasTank: true,
+            isFeeToken: true
+          }
         },
         {
           address: '0xdAC17F958D2ee523a2206206994597C13D831ec7',
-          isGasTank: false,
           amount: 1n,
           symbol: 'USDT',
-          networkId: 'optimism'
+          networkId: 'optimism',
+          decimals: 18,
+          priceIn: [],
+          flags: {
+            onGasTank: false,
+            rewardsType: null,
+            canTopUpGasTank: true,
+            isFeeToken: true
+          }
         },
         {
           address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
-          isGasTank: false,
           amount: 1n,
           symbol: 'USDC',
-          networkId: 'optimism'
+          networkId: 'optimism',
+          decimals: 18,
+          priceIn: [],
+          flags: {
+            onGasTank: false,
+            rewardsType: null,
+            canTopUpGasTank: true,
+            isFeeToken: true
+          }
         }
       ]
       const result = await bundlerEstimate(

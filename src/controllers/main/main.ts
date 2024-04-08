@@ -828,15 +828,7 @@ export class MainController extends EventEmitter {
         ) ?? []
 
       const feeTokens =
-        [...networkFeeTokens, ...gasTankFeeTokens]
-          .filter((t) => t.flags.isFeeToken)
-          .map((token) => ({
-            address: token.address,
-            isGasTank: token.flags.onGasTank,
-            amount: BigInt(token.amount),
-            symbol: token.symbol,
-            networkId: token.networkId
-          })) || []
+        [...networkFeeTokens, ...gasTankFeeTokens].filter((t) => t.flags.isFeeToken) || []
 
       // if the network's chosen RPC supports debug_traceCall, we
       // make an additional simulation for each call in the accountOp

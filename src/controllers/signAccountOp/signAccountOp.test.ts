@@ -17,7 +17,7 @@ import { Storage } from '../../interfaces/storage'
 import { AccountOp, accountOpSignableHash } from '../../libs/accountOp/accountOp'
 import { getAccountState } from '../../libs/accountState/accountState'
 import { estimate } from '../../libs/estimate/estimate'
-import { EstimateResult, FeeToken } from '../../libs/estimate/interfaces'
+import { EstimateResult } from '../../libs/estimate/interfaces'
 import * as gasPricesLib from '../../libs/gasPrice/gasPrice'
 import { HUMANIZER_META_KEY } from '../../libs/humanizer'
 import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
@@ -58,7 +58,7 @@ const createAccountOp = (
 ): {
   op: AccountOp
   nativeToCheck: Account[]
-  feeTokens: FeeToken[]
+  feeTokens: TokenResult[]
 } => {
   const to = '0x68b3465833fb72a70ecdf485e0e4c7bd8665fc45'
 
@@ -82,10 +82,17 @@ const createAccountOp = (
   const feeTokens = [
     {
       address: '0x0000000000000000000000000000000000000000',
-      isGasTank: false,
       amount: 1n,
       symbol: 'ETH',
-      networkId: 'ethereum'
+      networkId: 'ethereum',
+      decimals: 18,
+      priceIn: [],
+      flags: {
+        onGasTank: false,
+        rewardsType: null,
+        canTopUpGasTank: true,
+        isFeeToken: true
+      }
     }
   ]
 
@@ -121,10 +128,17 @@ const createEOAAccountOp = (account: Account) => {
   const feeTokens = [
     {
       address: '0x0000000000000000000000000000000000000000',
-      isGasTank: false,
       amount: 1n,
       symbol: 'ETH',
-      networkId: 'ethereum'
+      networkId: 'ethereum',
+      decimals: 18,
+      priceIn: [],
+      flags: {
+        onGasTank: false,
+        rewardsType: null,
+        canTopUpGasTank: true,
+        isFeeToken: true
+      }
     }
   ]
 
@@ -271,7 +285,7 @@ const init = async (
   accountOp: {
     op: AccountOp
     nativeToCheck: Account[]
-    feeTokens: FeeToken[]
+    feeTokens: TokenResult[]
   },
   signer: any,
   estimationMock?: EstimateResult,

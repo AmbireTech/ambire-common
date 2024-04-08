@@ -13,6 +13,7 @@ import { AccountOp } from '../accountOp/accountOp'
 import { Call } from '../accountOp/types'
 import { fromDescriptor } from '../deployless/deployless'
 import { getProbableCallData } from '../gasPrice/gasPrice'
+import { TokenResult } from '../portfolio'
 import {
   getActivatorCall,
   shouldIncludeActivatorCall,
@@ -24,7 +25,7 @@ import { estimateArbitrumL1GasUsed } from './estimateArbitrum'
 import { bundlerEstimate } from './estimateBundler'
 import { estimateEOA } from './estimateEOA'
 import { estimateWithRetries } from './estimateWithRetries'
-import { ArbitrumL1Fee, EstimateResult, FeePaymentOption, FeeToken } from './interfaces'
+import { ArbitrumL1Fee, EstimateResult, FeePaymentOption } from './interfaces'
 import { refund } from './refund'
 
 const abiCoder = new AbiCoder()
@@ -56,18 +57,18 @@ export async function estimate4337(
   accountStates: AccountStates,
   network: NetworkDescriptor,
   provider: JsonRpcProvider | Provider,
-  feeTokens: FeeToken[],
+  feeTokens: TokenResult[],
   blockTag: string | number
 ): Promise<EstimateResult> {
   const deploylessEstimator = fromDescriptor(provider, Estimation, !network.rpcNoStateOverride)
   // if no paymaster, user can only pay in native
   const filteredFeeTokens = !shouldUsePaymaster(network)
-    ? feeTokens.filter((feeToken) => feeToken.address === ZeroAddress && !feeToken.isGasTank)
+    ? feeTokens.filter((feeToken) => feeToken.address === ZeroAddress && !feeToken.flags.onGasTank)
     : feeTokens
 
   // build the feePaymentOptions with the available current amounts. We will
   // change them after simulation passes
-  const feePaymentOptions = filteredFeeTokens.map((token: FeeToken) => {
+  const feePaymentOptions = filteredFeeTokens.map((token: TokenResult) => {
     return {
       address: token.address,
       paidBy: account.addr,
@@ -82,7 +83,7 @@ export async function estimate4337(
       gasUsed: 0n,
       // addedNative gets calculated by the bundler & added to uOp gasData
       addedNative: 0n,
-      isGasTank: token.isGasTank,
+      isGasTank: token.flags.onGasTank,
       symbol: token.symbol,
       networkId: token.networkId
     }
@@ -159,7 +160,7 @@ export async function estimate(
   op: AccountOp,
   accountStates: AccountStates,
   EOAaccounts: Account[],
-  feeTokens: FeeToken[],
+  feeTokens: TokenResult[],
   opts?: {
     calculateRefund?: boolean
     is4337Broadcast?: boolean
@@ -318,7 +319,7 @@ export async function estimate(
     return {
       address,
       paidBy: account.addr,
-      availableAmount: filteredFeeTokens[key].isGasTank
+      availableAmount: filteredFeeTokens[key].flags.onGasTank
         ? filteredFeeTokens[key].amount
         : token.amount,
       // gasUsed for the gas tank tokens is smaller because of the commitment:
@@ -330,9 +331,9 @@ export async function estimate(
       // be sure which is the one that will broadcast this txn; also, ERC-4337
       // broadcasts will always consume at least 4035.
       // setting it to 5000n just be sure
-      gasUsed: filteredFeeTokens[key].isGasTank ? 5000n : token.gasUsed,
+      gasUsed: filteredFeeTokens[key].flags.onGasTank ? 5000n : token.gasUsed,
       addedNative,
-      isGasTank: filteredFeeTokens[key].isGasTank,
+      isGasTank: filteredFeeTokens[key].flags.onGasTank,
       symbol: filteredFeeTokens[key].symbol,
       networkId: filteredFeeTokens[key].networkId
     }
