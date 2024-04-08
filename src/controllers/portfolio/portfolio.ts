@@ -202,7 +202,8 @@ export class PortfolioController extends EventEmitter {
     token: { address: TokenResult['address']; networkId: TokenResult['networkId'] },
     accountId: AccountId
   ) {
-    if (this.validTokens['erc20'][`${token.address}-${token.networkId}`]?.isValid) return
+    if (this.validTokens.erc20[`${token.address}-${token.networkId}`] === true) return
+
     const [isValid, standard]: [boolean, string] = (await validateERC20Token(
       token,
       accountId,
@@ -216,8 +217,12 @@ export class PortfolioController extends EventEmitter {
 
     this.emitUpdate()
   }
-  
-  initializePortfolioLibIfNeeded(accountId: AccountId, networkId: NetworkId, network: NetworkDescriptor) {
+
+  initializePortfolioLibIfNeeded(
+    accountId: AccountId,
+    networkId: NetworkId,
+    network: NetworkDescriptor
+  ) {
     const providers = this.#settings.providers
     const key = `${networkId}:${accountId}`
     // Initialize a new Portfolio lib if:
@@ -239,7 +244,7 @@ export class PortfolioController extends EventEmitter {
 
     if (!network) throw new Error('network not found')
 
-   const portfolioLib = this.initializePortfolioLibIfNeeded(accountId, networkId, network)
+    const portfolioLib = this.initializePortfolioLibIfNeeded(accountId, networkId, network)
 
     const temporaryTokensToFetch =
       (this.temporaryTokens[network.id] &&
