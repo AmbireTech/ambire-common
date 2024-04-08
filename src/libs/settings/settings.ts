@@ -1,6 +1,6 @@
 /* eslint-disable import/no-extraneous-dependencies */
 
-import { Contract, JsonRpcProvider } from 'ethers'
+import { Contract } from 'ethers'
 import fetch from 'node-fetch'
 
 import EntryPointAbi from '../../../contracts/compiled/EntryPoint.json'
@@ -15,6 +15,7 @@ import { networks as predefinedNetworks } from '../../consts/networks'
 import { NetworkFeature, NetworkInfo, NetworkInfoLoading } from '../../interfaces/networkDescriptor'
 import { RPCProviders } from '../../interfaces/settings'
 import { Bundler } from '../../services/bundlers/bundler'
+import { getRpcProvider } from '../../services/provider'
 import { getSASupport, simulateDebugTraceCall } from '../deployless/simulateDeployCall'
 
 export const getNetworksWithFailedRPC = ({ providers }: { providers: RPCProviders }): string[] => {
@@ -63,23 +64,13 @@ export async function getNetworkInfo(
   }
 
   let flagged = false
-  const provider = new JsonRpcProvider(rpcUrl)
-  const detection = await Promise.race([
-    // eslint-disable-next-line no-underscore-dangle
-    provider._detectNetwork().catch((e: Error) => e),
-    timeout(3000)
-  ])
-  if (detection === 'timeout reached' || detection instanceof Error) {
-    flagged = true
-    networkInfo = { ...networkInfo, flagged }
-    callback(networkInfo)
-  }
-  if (flagged) return
+  const provider = getRpcProvider([rpcUrl], chainId)
 
   const raiseFlagged = (e: Error, returnData: any): any => {
     if (e.message === 'flagged') {
       flagged = true
     }
+
     return returnData
   }
 
@@ -316,7 +307,7 @@ export function getFeaturesByNetworkProperties(
   return features
 }
 
-// call this if you have only the rpcUrl and chainId
+// call this if you have only the rpcUrls and chainId
 // this method makes an RPC request, calculates the network info and returns the features
 export function getFeatures(
   networkInfo: NetworkInfoLoading<NetworkInfo> | undefined
