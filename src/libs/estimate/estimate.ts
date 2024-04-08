@@ -140,6 +140,9 @@ export async function estimate4337(
   // add the availableAmount after the simulation
   estimationResult.feePaymentOptions = feePaymentOptions.map(
     (option: FeePaymentOption, index: number) => {
+      // we do not rewrite the availableAmount if it's gasTank
+      if (option.token.flags.onGasTank) return option
+
       const localOp = { ...option }
       localOp.availableAmount = feeTokenOutcomes[index][1]
       return localOp
