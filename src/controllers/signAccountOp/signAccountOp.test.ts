@@ -408,14 +408,24 @@ describe('SignAccountOp Controller ', () => {
         currentAccountNonce: 0,
         feePaymentOptions: [
           {
-            address: '0x0000000000000000000000000000000000000000',
             paidBy: eoaAccount.addr,
             availableAmount: 1000000000000000000n, // 1 ETH
             gasUsed: 0n,
             addedNative: 5000n,
-            isGasTank: false,
-            symbol: 'eth',
-            networkId: 'ethereum'
+            token: {
+              address: '0x0000000000000000000000000000000000000000',
+              amount: 1n,
+              symbol: 'ETH',
+              networkId: 'ethereum',
+              decimals: 18,
+              priceIn: [],
+              flags: {
+                onGasTank: false,
+                rewardsType: null,
+                canTopUpGasTank: true,
+                isFeeToken: true
+              }
+            }
           }
         ],
         error: null
@@ -485,14 +495,24 @@ describe('SignAccountOp Controller ', () => {
         currentAccountNonce: 0,
         feePaymentOptions: [
           {
-            address: '0x0000000000000000000000000000000000000000',
             paidBy: eoaAccount.addr,
             availableAmount: 0n,
             gasUsed: 0n,
             addedNative: 5000n,
-            isGasTank: false,
-            symbol: 'eth',
-            networkId: 'ethereum'
+            token: {
+              address: '0x0000000000000000000000000000000000000000',
+              amount: 1n,
+              symbol: 'ETH',
+              networkId: 'ethereum',
+              decimals: 18,
+              priceIn: [],
+              flags: {
+                onGasTank: false,
+                rewardsType: null,
+                canTopUpGasTank: true,
+                isFeeToken: true
+              }
+            }
           }
         ],
         // even if availableAmount is 0, there is no error from the
@@ -550,14 +570,24 @@ describe('SignAccountOp Controller ', () => {
         currentAccountNonce: 0,
         feePaymentOptions: [
           {
-            address: '0x0000000000000000000000000000000000000000',
             paidBy: eoaAccount.addr,
             availableAmount: 1n,
             gasUsed: 0n,
             addedNative: 5000n,
-            isGasTank: false,
-            symbol: 'eth',
-            networkId: 'ethereum'
+            token: {
+              address: '0x0000000000000000000000000000000000000000',
+              amount: 1n,
+              symbol: 'ETH',
+              networkId: 'ethereum',
+              decimals: 18,
+              priceIn: [],
+              flags: {
+                onGasTank: false,
+                rewardsType: null,
+                canTopUpGasTank: true,
+                isFeeToken: true
+              }
+            }
           }
         ],
         // even if availableAmount is lower than required, there is no error in
@@ -617,34 +647,64 @@ describe('SignAccountOp Controller ', () => {
         currentAccountNonce: 0,
         feePaymentOptions: [
           {
-            address: '0x0000000000000000000000000000000000000000',
             paidBy: smartAccount.addr,
             availableAmount: 500000000n,
             gasUsed: 25000n,
             addedNative: 0n,
-            isGasTank: false,
-            symbol: 'matic',
-            networkId: 'polygon'
+            token: {
+              address: '0x0000000000000000000000000000000000000000',
+              amount: 1n,
+              symbol: 'matic',
+              networkId: 'polygon',
+              decimals: 18,
+              priceIn: [],
+              flags: {
+                onGasTank: false,
+                rewardsType: null,
+                canTopUpGasTank: true,
+                isFeeToken: true
+              }
+            }
           },
           {
-            address: '0xdAC17F958D2ee523a2206206994597C13D831ec7',
             paidBy: smartAccount.addr,
             availableAmount: 500000000n,
             gasUsed: 50000n,
             addedNative: 0n,
-            isGasTank: false,
-            symbol: 'usdt',
-            networkId: 'polygon'
+            token: {
+              address: '0xdAC17F958D2ee523a2206206994597C13D831ec7',
+              amount: 1n,
+              symbol: 'usdt',
+              networkId: 'polygon',
+              decimals: 6,
+              priceIn: [],
+              flags: {
+                onGasTank: false,
+                rewardsType: null,
+                canTopUpGasTank: true,
+                isFeeToken: true
+              }
+            }
           },
           {
-            address: usdcFeeToken.address,
             paidBy: smartAccount.addr,
             availableAmount: 500000000n,
             gasUsed: 25000n,
             addedNative: 0n,
-            isGasTank: false,
-            symbol: 'usdc',
-            networkId: 'polygon'
+            token: {
+              address: usdcFeeToken.address,
+              amount: 1n,
+              symbol: 'usdc',
+              networkId: 'polygon',
+              decimals: 6,
+              priceIn: [],
+              flags: {
+                onGasTank: false,
+                rewardsType: null,
+                canTopUpGasTank: true,
+                isFeeToken: true
+              }
+            }
           }
         ],
         error: null
@@ -744,34 +804,64 @@ describe('SignAccountOp Controller ', () => {
         currentAccountNonce: 0,
         feePaymentOptions: [
           {
-            address: '0x0000000000000000000000000000000000000000',
             paidBy: smartAccount.addr,
             availableAmount: 5000000000000000000n,
             gasUsed: 25000n,
             addedNative: 0n,
-            isGasTank: true,
-            symbol: 'matic',
-            networkId: 'polygon'
+            token: {
+              address: '0x0000000000000000000000000000000000000000',
+              amount: 1n,
+              symbol: 'matic',
+              networkId: 'polygon',
+              decimals: 18,
+              priceIn: [],
+              flags: {
+                onGasTank: true,
+                rewardsType: null,
+                canTopUpGasTank: true,
+                isFeeToken: true
+              }
+            }
           },
           {
-            address: '0xdAC17F958D2ee523a2206206994597C13D831ec7',
             paidBy: smartAccount.addr,
             availableAmount: 500000000n,
             gasUsed: 50000n,
             addedNative: 0n,
-            isGasTank: false,
-            symbol: 'usdt',
-            networkId: 'polygon'
+            token: {
+              address: '0xdAC17F958D2ee523a2206206994597C13D831ec7',
+              amount: 1n,
+              symbol: 'usdt',
+              networkId: 'polygon',
+              decimals: 6,
+              priceIn: [],
+              flags: {
+                onGasTank: false,
+                rewardsType: null,
+                canTopUpGasTank: true,
+                isFeeToken: true
+              }
+            }
           },
           {
-            address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
             paidBy: smartAccount.addr,
             availableAmount: 500000000n,
             gasUsed: 25000n,
             addedNative: 0n,
-            isGasTank: false,
-            symbol: 'usdc',
-            networkId: 'polygon'
+            token: {
+              address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+              amount: 1n,
+              symbol: 'usdc',
+              networkId: 'polygon',
+              decimals: 6,
+              priceIn: [],
+              flags: {
+                onGasTank: false,
+                rewardsType: null,
+                canTopUpGasTank: true,
+                isFeeToken: true
+              }
+            }
           }
         ],
         error: null
@@ -868,14 +958,24 @@ describe('SignAccountOp Controller ', () => {
         currentAccountNonce: 0,
         feePaymentOptions: [
           {
-            address: '0x0000000000000000000000000000000000000000',
             paidBy: eoaAccount.addr,
             availableAmount: 1000000000000000000n, // 1 MATIC
             gasUsed: 0n,
             addedNative: 5000n,
-            isGasTank: false,
-            symbol: 'matic',
-            networkId: 'polygon'
+            token: {
+              address: '0x0000000000000000000000000000000000000000',
+              amount: 1n,
+              symbol: 'matic',
+              networkId: 'polygon',
+              decimals: 18,
+              priceIn: [],
+              flags: {
+                onGasTank: false,
+                rewardsType: null,
+                canTopUpGasTank: true,
+                isFeeToken: true
+              }
+            }
           }
         ],
         error: null
@@ -969,14 +1069,24 @@ describe('SignAccountOp Controller ', () => {
         currentAccountNonce: 0,
         feePaymentOptions: [
           {
-            address: '0x0000000000000000000000000000000000000000',
             paidBy: eoaAccount.addr,
             availableAmount: 1000000000000000000n, // 1 ETH
             gasUsed: 0n,
             addedNative: 5000n,
-            isGasTank: false,
-            symbol: 'eth',
-            networkId: 'ethereum'
+            token: {
+              address: '0x0000000000000000000000000000000000000000',
+              amount: 1n,
+              symbol: 'eth',
+              networkId: 'ethereum',
+              decimals: 18,
+              priceIn: [],
+              flags: {
+                onGasTank: false,
+                rewardsType: null,
+                canTopUpGasTank: true,
+                isFeeToken: true
+              }
+            }
           }
         ],
         error: null

@@ -298,15 +298,13 @@ describe('estimate', () => {
       op,
       accountStates,
       [],
-      []
+      feeTokens
     )
 
     expect(response.gasUsed).toBe(21000n)
     expect(response.feePaymentOptions![0].availableAmount).toBeGreaterThan(0)
-    expect(response.feePaymentOptions![0].symbol).not.toBe(undefined)
-    expect(response.feePaymentOptions![0].symbol).not.toBe(null)
-    expect(response.feePaymentOptions![0].networkId).not.toBe(undefined)
-    expect(response.feePaymentOptions![0].networkId).not.toBe(null)
+    expect(response.feePaymentOptions![0].token).not.toBe(undefined)
+    expect(response.feePaymentOptions![0].token).not.toBe(null)
     expect(response.currentAccountNonce).toBeGreaterThan(1)
     expect(response.error).toBe(null)
   })
@@ -350,7 +348,7 @@ describe('estimate', () => {
       op,
       accountStates,
       [],
-      []
+      feeTokens
     )
 
     expect(response.gasUsed).toBe(21000n)
@@ -402,7 +400,7 @@ describe('estimate', () => {
       op,
       accountStates,
       [],
-      []
+      feeTokens
     )
 
     expect(response.gasUsed).toBeGreaterThan(0n)
@@ -452,7 +450,7 @@ describe('estimate', () => {
       op,
       accountStates,
       [],
-      []
+      feeTokens
     )
 
     expect(response.gasUsed).toBe(0n)
@@ -493,10 +491,10 @@ describe('estimate', () => {
       feeTokens
     )
     const usdtOutcome = response.feePaymentOptions!.find(
-      (token) => token.address === '0xdAC17F958D2ee523a2206206994597C13D831ec7'
+      (option) => option.token.address === '0xdAC17F958D2ee523a2206206994597C13D831ec7'
     )
     const usdcOutcome = response.feePaymentOptions!.find(
-      (token) => token.address === '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'
+      (option) => option.token.address === '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'
     )
 
     // This is the min gas unit we can spend, but we expect more than that having in mind that multiple computations happens in the Contract
@@ -506,30 +504,28 @@ describe('estimate', () => {
     expect(usdcOutcome!.availableAmount).toBeLessThan(usdc!.amount)
     expect(response.currentAccountNonce).toBeGreaterThan(1)
 
-    expect(usdtOutcome!.symbol).not.toBe(undefined)
-    expect(usdtOutcome!.symbol).not.toBe(null)
-    expect(usdtOutcome!.networkId).not.toBe(undefined)
-    expect(usdtOutcome!.networkId).not.toBe(null)
+    expect(usdtOutcome!.token).not.toBe(undefined)
+    expect(usdtOutcome!.token).not.toBe(null)
 
     // make sure there's a native fee payment option in the same acc addr
     const noFeePaymentViewOnlyAcc = response.feePaymentOptions.find(
-      (opt) => opt.paidBy === account.addr && opt.address === ethers.ZeroAddress
+      (opt) => opt.paidBy === account.addr && opt.token.address === ethers.ZeroAddress
     )
     expect(noFeePaymentViewOnlyAcc).not.toBe(undefined)
 
     // make sure everything but the view only acc exists as a few option
     const feePaymentAddrOne = response.feePaymentOptions.find(
-      (opt) => opt.paidBy === nativeToCheck[0].addr && opt.address === ethers.ZeroAddress
+      (opt) => opt.paidBy === nativeToCheck[0].addr && opt.token.address === ethers.ZeroAddress
     )
     expect(feePaymentAddrOne).not.toBe(undefined)
     const feePaymentAddrTwo = response.feePaymentOptions.find(
-      (opt) => opt.paidBy === nativeToCheck[1].addr && opt.address === ethers.ZeroAddress
+      (opt) => opt.paidBy === nativeToCheck[1].addr && opt.token.address === ethers.ZeroAddress
     )
     expect(feePaymentAddrTwo).not.toBe(undefined)
 
     // the view only should be undefined
     const viewOnlyAccOption = response.feePaymentOptions.find(
-      (opt) => opt.paidBy === viewOnlyAcc.addr && opt.address === ethers.ZeroAddress
+      (opt) => opt.paidBy === viewOnlyAcc.addr && opt.token.address === ethers.ZeroAddress
     )
     expect(viewOnlyAccOption).toBe(undefined)
   })
@@ -782,10 +778,8 @@ describe('estimate', () => {
 
     expect(response.feePaymentOptions.length).toBeGreaterThan(0)
 
-    expect(response.feePaymentOptions![0].symbol).not.toBe(undefined)
-    expect(response.feePaymentOptions![0].symbol).not.toBe(null)
-    expect(response.feePaymentOptions![0].networkId).not.toBe(undefined)
-    expect(response.feePaymentOptions![0].networkId).not.toBe(null)
+    expect(response.feePaymentOptions![0].token).not.toBe(undefined)
+    expect(response.feePaymentOptions![0].token).not.toBe(null)
   })
 
   it('[ERC-4337]:Arbitrum | should fail because of a broken provider but still return fee options', async () => {

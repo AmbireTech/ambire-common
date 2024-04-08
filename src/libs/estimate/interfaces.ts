@@ -1,4 +1,4 @@
-import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
+import { TokenResult } from '../portfolio'
 
 export interface Erc4337GasLimits {
   preVerificationGas: string
@@ -20,13 +20,9 @@ export interface ArbitrumL1Fee {
 export interface FeePaymentOption {
   availableAmount: bigint
   paidBy: string
-  address: string
   gasUsed?: bigint
   addedNative: bigint
-  isGasTank: boolean
-  // below: add additional meta to make FE logic way
-  symbol: string
-  networkId: NetworkDescriptor['id']
+  token: TokenResult
 }
 
 export interface EstimateResult {

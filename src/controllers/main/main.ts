@@ -1042,7 +1042,7 @@ export class MainController extends EventEmitter {
       this.accountOpsToBeSigned[accountOp.accountAddr][accountOp.networkId]!.estimation!
     const feeTokenEstimation = estimation.feePaymentOptions.find(
       (option) =>
-        option.address === accountOp.gasFeePayment?.inToken &&
+        option.token.address === accountOp.gasFeePayment?.inToken &&
         option.paidBy === accountOp.gasFeePayment?.paidBy
     )!
 

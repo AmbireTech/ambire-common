@@ -243,8 +243,8 @@ export class SignAccountOpController extends EventEmitter {
       const feeToken = this.availableFeeOptions.find(
         (feeOption) =>
           feeOption.paidBy === this.accountOp?.gasFeePayment?.paidBy &&
-          feeOption.address === this.accountOp?.gasFeePayment?.inToken &&
-          feeOption.isGasTank === this.accountOp?.gasFeePayment?.isGasTank
+          feeOption.token.address === this.accountOp?.gasFeePayment?.inToken &&
+          feeOption.token.flags.onGasTank === this.accountOp?.gasFeePayment?.isGasTank
       )
 
       if (feeToken!.availableAmount < this.accountOp?.gasFeePayment.amount) {
@@ -500,9 +500,9 @@ export class SignAccountOpController extends EventEmitter {
     const gasUsed = this.#estimation!.gasUsed
     const feeTokenEstimation = this.#estimation!.feePaymentOptions.find(
       (option) =>
-        option.address === this.feeTokenResult?.address &&
+        option.token.address === this.feeTokenResult?.address &&
         this.paidBy === option.paidBy &&
-        this.feeTokenResult?.flags.onGasTank === option.isGasTank
+        this.feeTokenResult?.flags.onGasTank === option.token.flags.onGasTank
     )
 
     if (!feeTokenEstimation) return []
@@ -581,9 +581,9 @@ export class SignAccountOpController extends EventEmitter {
         // use feePaymentOptions here as fee can be payed in other than native
         const feeTokenGasUsed = this.#estimation!.feePaymentOptions.find(
           (option) =>
-            option.address === this.feeTokenResult?.address &&
+            option.token.address === this.feeTokenResult?.address &&
             this.paidBy === option.paidBy &&
-            this.feeTokenResult?.flags.onGasTank === option.isGasTank
+            this.feeTokenResult?.flags.onGasTank === option.token.flags.onGasTank
         )!.gasUsed!
         simulatedGasLimit = gasUsed + callDataAdditionalGasCost + feeTokenGasUsed
         amount = SignAccountOpController.getAmountAfterFeeTokenConvert(

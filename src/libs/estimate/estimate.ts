@@ -70,7 +70,6 @@ export async function estimate4337(
   // change them after simulation passes
   const feePaymentOptions = filteredFeeTokens.map((token: TokenResult) => {
     return {
-      address: token.address,
       paidBy: account.addr,
       availableAmount: token.amount,
       // @relyOnBundler
@@ -83,9 +82,7 @@ export async function estimate4337(
       gasUsed: 0n,
       // addedNative gets calculated by the bundler & added to uOp gasData
       addedNative: 0n,
-      isGasTank: token.flags.onGasTank,
-      symbol: token.symbol,
-      networkId: token.networkId
+      token
     }
   })
 
@@ -170,7 +167,16 @@ export async function estimate(
 ): Promise<EstimateResult> {
   // if EOA, delegate
   if (!isSmartAccount(account))
-    return estimateEOA(account, op, accountStates, network, provider, blockFrom, blockTag)
+    return estimateEOA(
+      account,
+      op,
+      accountStates,
+      network,
+      provider,
+      feeTokens,
+      blockFrom,
+      blockTag
+    )
 
   if (!network.isSAEnabled)
     return estimationErrorFormatted(
@@ -312,44 +318,38 @@ export async function estimate(
   const l1FeeWithTransferPayment =
     network.id !== 'arbitrum' ? l1GasEstimation.feeWithTransferPayment : arbitrumEstimation.withFee
 
-  const feeTokenOptions: FeePaymentOption[] = feeTokenOutcomes.map((token: any, key: number) => {
-    const address = filteredFeeTokens[key].address
-    const addedNative = address === ZeroAddress ? l1FeeWithNativePayment : l1FeeWithTransferPayment
-
-    return {
-      address,
-      paidBy: account.addr,
-      availableAmount: filteredFeeTokens[key].flags.onGasTank
-        ? filteredFeeTokens[key].amount
-        : token.amount,
-      // gasUsed for the gas tank tokens is smaller because of the commitment:
-      // ['gasTank', amount, symbol]
-      // and this commitment costs onchain:
-      // - 1535, if the broadcasting addr is the relayer
-      // - 4035, if the broadcasting addr is different
-      // currently, there are more than 1 relayer addresses and we cannot
-      // be sure which is the one that will broadcast this txn; also, ERC-4337
-      // broadcasts will always consume at least 4035.
-      // setting it to 5000n just be sure
-      gasUsed: filteredFeeTokens[key].flags.onGasTank ? 5000n : token.gasUsed,
-      addedNative,
-      isGasTank: filteredFeeTokens[key].flags.onGasTank,
-      symbol: filteredFeeTokens[key].symbol,
-      networkId: filteredFeeTokens[key].networkId
+  const feeTokenOptions: FeePaymentOption[] = filteredFeeTokens.map(
+    (token: TokenResult, key: number) => {
+      return {
+        paidBy: account.addr,
+        availableAmount: token.flags.onGasTank ? token.amount : feeTokenOutcomes[key].amount,
+        // gasUsed for the gas tank tokens is smaller because of the commitment:
+        // ['gasTank', amount, symbol]
+        // and this commitment costs onchain:
+        // - 1535, if the broadcasting addr is the relayer
+        // - 4035, if the broadcasting addr is different
+        // currently, there are more than 1 relayer addresses and we cannot
+        // be sure which is the one that will broadcast this txn; also, ERC-4337
+        // broadcasts will always consume at least 4035.
+        // setting it to 5000n just be sure
+        gasUsed: token.flags.onGasTank ? 5000n : feeTokenOutcomes[key].gasUsed,
+        addedNative:
+          token.address === ZeroAddress ? l1FeeWithNativePayment : l1FeeWithTransferPayment,
+        token
+      }
     }
-  })
+  )
 
   // this is for EOAs paying for SA in native
-  // or the current address if it's an EOA
+  const nativeToken = filteredFeeTokens.find(
+    (token) => token.address === ZeroAddress && !token.flags.onGasTank
+  )
   const nativeTokenOptions: FeePaymentOption[] = nativeAssetBalances.map(
     (balance: bigint, key: number) => ({
-      address: ZeroAddress,
       paidBy: nativeToCheck[key],
       availableAmount: balance,
       addedNative: l1Fee,
-      isGasTank: false,
-      symbol: network.nativeAssetSymbol.toLocaleLowerCase(),
-      networkId: network.id
+      token: nativeToken
     })
   )
 
