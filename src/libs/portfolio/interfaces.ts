@@ -169,6 +169,7 @@ export interface GetOptions {
   fetchPinned: boolean
   tokenPreferences: CustomToken[]
   additionalHints?: Hints['erc20s']
+  disableAutoDiscovery?: boolean
 }
 
 export interface TokenIcon {
