@@ -53,7 +53,7 @@ export class SettingsController extends EventEmitter {
     this.#load()
   }
 
-  #setProvider(network: NetworkDescriptor, newRpcUrls: string[]) {
+  #setProvider(network: NetworkDescriptor, newRpcUrls: string[], selectedRpcUrl?: string) {
     const provider = this.providers[network.id]
 
     // Only update the RPC if the new RPC is different from the current one
@@ -68,7 +68,7 @@ export class SettingsController extends EventEmitter {
         oldRPC.destroy()
       }
 
-      this.providers[network.id] = getRpcProvider(newRpcUrls, network.chainId)
+      this.providers[network.id] = getRpcProvider(newRpcUrls, network.chainId, selectedRpcUrl)
     }
   }
 
@@ -114,19 +114,18 @@ export class SettingsController extends EventEmitter {
     // configure the main networks
     return allNetworks.map((network) => {
       const networkPreferences = this.#networkPreferences[network.id]
-      this.#setProvider(network, networkPreferences?.rpcUrls || network.rpcUrls)
+      const selectedRpcUrl =
+        networkPreferences?.selectedRpcUrl || networkPreferences?.rpcUrls?.[0] || network.rpcUrls[0]
+      this.#setProvider(network, networkPreferences?.rpcUrls || network.rpcUrls, selectedRpcUrl)
       const finalNetwork = networkPreferences
         ? {
             ...network,
             ...networkPreferences,
-            selectedRpcUrl:
-              networkPreferences.selectedRpcUrl ||
-              networkPreferences?.rpcUrls?.[0] ||
-              network.rpcUrls[0]
+            selectedRpcUrl
           }
         : {
             ...network,
-            selectedRpcUrl: network.rpcUrls[0]
+            selectedRpcUrl
           }
 
       const info: NetworkInfo = {
