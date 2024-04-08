@@ -362,7 +362,6 @@ export class MainController extends EventEmitter {
       this.settings,
       this.#externalSignerControllers,
       account,
-      this.accounts,
       this.accountStates,
       network,
       accountOpToBeSigned,
