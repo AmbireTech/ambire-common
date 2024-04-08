@@ -1,3 +1,5 @@
+import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
+
 export interface Erc4337GasLimits {
   preVerificationGas: string
   verificationGasLimit: string
@@ -22,6 +24,9 @@ export interface FeePaymentOption {
   gasUsed?: bigint
   addedNative: bigint
   isGasTank: boolean
+  // below: add additional meta to make FE logic way
+  symbol: string
+  networkId: NetworkDescriptor['id']
 }
 
 export interface EstimateResult {
@@ -39,5 +44,7 @@ export interface FeeToken {
   address: string
   isGasTank: boolean
   amount: bigint // how much the user has (from portfolio)
+  // below: add additional meta to make FE logic way
   symbol: string
+  networkId: NetworkDescriptor['id']
 }

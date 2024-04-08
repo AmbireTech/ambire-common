@@ -84,7 +84,8 @@ const createAccountOp = (
       address: '0x0000000000000000000000000000000000000000',
       isGasTank: false,
       amount: 1n,
-      symbol: 'ETH'
+      symbol: 'ETH',
+      networkId: 'ethereum'
     }
   ]
 
@@ -122,7 +123,8 @@ const createEOAAccountOp = (account: Account) => {
       address: '0x0000000000000000000000000000000000000000',
       isGasTank: false,
       amount: 1n,
-      symbol: 'ETH'
+      symbol: 'ETH',
+      networkId: 'ethereum'
     }
   ]
 
@@ -397,7 +399,9 @@ describe('SignAccountOp Controller ', () => {
             availableAmount: 1000000000000000000n, // 1 ETH
             gasUsed: 0n,
             addedNative: 5000n,
-            isGasTank: false
+            isGasTank: false,
+            symbol: 'eth',
+            networkId: 'ethereum'
           }
         ],
         error: null
@@ -472,7 +476,9 @@ describe('SignAccountOp Controller ', () => {
             availableAmount: 0n,
             gasUsed: 0n,
             addedNative: 5000n,
-            isGasTank: false
+            isGasTank: false,
+            symbol: 'eth',
+            networkId: 'ethereum'
           }
         ],
         // even if availableAmount is 0, there is no error from the
@@ -535,7 +541,9 @@ describe('SignAccountOp Controller ', () => {
             availableAmount: 1n,
             gasUsed: 0n,
             addedNative: 5000n,
-            isGasTank: false
+            isGasTank: false,
+            symbol: 'eth',
+            networkId: 'ethereum'
           }
         ],
         // even if availableAmount is lower than required, there is no error in
@@ -600,7 +608,9 @@ describe('SignAccountOp Controller ', () => {
             availableAmount: 500000000n,
             gasUsed: 25000n,
             addedNative: 0n,
-            isGasTank: false
+            isGasTank: false,
+            symbol: 'matic',
+            networkId: 'polygon'
           },
           {
             address: '0xdAC17F958D2ee523a2206206994597C13D831ec7',
@@ -608,7 +618,9 @@ describe('SignAccountOp Controller ', () => {
             availableAmount: 500000000n,
             gasUsed: 50000n,
             addedNative: 0n,
-            isGasTank: false
+            isGasTank: false,
+            symbol: 'usdt',
+            networkId: 'polygon'
           },
           {
             address: usdcFeeToken.address,
@@ -616,7 +628,9 @@ describe('SignAccountOp Controller ', () => {
             availableAmount: 500000000n,
             gasUsed: 25000n,
             addedNative: 0n,
-            isGasTank: false
+            isGasTank: false,
+            symbol: 'usdc',
+            networkId: 'polygon'
           }
         ],
         error: null
@@ -721,7 +735,9 @@ describe('SignAccountOp Controller ', () => {
             availableAmount: 5000000000000000000n,
             gasUsed: 25000n,
             addedNative: 0n,
-            isGasTank: true
+            isGasTank: true,
+            symbol: 'matic',
+            networkId: 'polygon'
           },
           {
             address: '0xdAC17F958D2ee523a2206206994597C13D831ec7',
@@ -729,7 +745,9 @@ describe('SignAccountOp Controller ', () => {
             availableAmount: 500000000n,
             gasUsed: 50000n,
             addedNative: 0n,
-            isGasTank: false
+            isGasTank: false,
+            symbol: 'usdt',
+            networkId: 'polygon'
           },
           {
             address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
@@ -737,7 +755,9 @@ describe('SignAccountOp Controller ', () => {
             availableAmount: 500000000n,
             gasUsed: 25000n,
             addedNative: 0n,
-            isGasTank: false
+            isGasTank: false,
+            symbol: 'usdc',
+            networkId: 'polygon'
           }
         ],
         error: null
@@ -839,7 +859,9 @@ describe('SignAccountOp Controller ', () => {
             availableAmount: 1000000000000000000n, // 1 MATIC
             gasUsed: 0n,
             addedNative: 5000n,
-            isGasTank: false
+            isGasTank: false,
+            symbol: 'matic',
+            networkId: 'polygon'
           }
         ],
         error: null
@@ -938,7 +960,9 @@ describe('SignAccountOp Controller ', () => {
             availableAmount: 1000000000000000000n, // 1 ETH
             gasUsed: 0n,
             addedNative: 5000n,
-            isGasTank: false
+            isGasTank: false,
+            symbol: 'eth',
+            networkId: 'ethereum'
           }
         ],
         error: null

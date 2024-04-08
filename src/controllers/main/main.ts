@@ -834,7 +834,8 @@ export class MainController extends EventEmitter {
             address: token.address,
             isGasTank: token.flags.onGasTank,
             amount: BigInt(token.amount),
-            symbol: token.symbol
+            symbol: token.symbol,
+            networkId: token.networkId
           })) || []
 
       // if the network's chosen RPC supports debug_traceCall, we

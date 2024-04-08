@@ -138,19 +138,22 @@ const feeTokens = [
     address: '0x0000000000000000000000000000000000000000',
     isGasTank: false,
     amount: 1n,
-    symbol: 'ETH'
+    symbol: 'ETH',
+    networkId: 'ethereum'
   },
   {
     address: '0xdAC17F958D2ee523a2206206994597C13D831ec7',
     isGasTank: false,
     amount: 1n,
-    symbol: 'USDT'
+    symbol: 'USDT',
+    networkId: 'ethereum'
   },
   {
     address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
     isGasTank: false,
     amount: 1n,
-    symbol: 'USDC'
+    symbol: 'USDC',
+    networkId: 'ethereum'
   }
 ]
 
@@ -159,13 +162,15 @@ const feeTokensAvalanche = [
     address: '0x0000000000000000000000000000000000000000',
     isGasTank: false,
     amount: 1n,
-    symbol: 'AVAX'
+    symbol: 'AVAX',
+    networkId: 'avalanche'
   },
   {
     address: '0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E',
     isGasTank: false,
     amount: 1n,
-    symbol: 'USDC'
+    symbol: 'USDC',
+    networkId: 'avalanche'
   }
 ]
 
@@ -262,6 +267,10 @@ describe('estimate', () => {
 
     expect(response.gasUsed).toBe(21000n)
     expect(response.feePaymentOptions![0].availableAmount).toBeGreaterThan(0)
+    expect(response.feePaymentOptions![0].symbol).not.toBe(undefined)
+    expect(response.feePaymentOptions![0].symbol).not.toBe(null)
+    expect(response.feePaymentOptions![0].networkId).not.toBe(undefined)
+    expect(response.feePaymentOptions![0].networkId).not.toBe(null)
     expect(response.currentAccountNonce).toBeGreaterThan(1)
     expect(response.error).toBe(null)
   })
@@ -460,6 +469,11 @@ describe('estimate', () => {
     expect(usdtOutcome!.availableAmount).toBeGreaterThan(usdt?.amount || 0n)
     expect(usdcOutcome!.availableAmount).toBeLessThan(usdc!.amount)
     expect(response.currentAccountNonce).toBeGreaterThan(1)
+
+    expect(usdtOutcome!.symbol).not.toBe(undefined)
+    expect(usdtOutcome!.symbol).not.toBe(null)
+    expect(usdtOutcome!.networkId).not.toBe(undefined)
+    expect(usdtOutcome!.networkId).not.toBe(null)
 
     // make sure there's a native fee payment option in the same acc addr
     const noFeePaymentViewOnlyAcc = response.feePaymentOptions.find(
@@ -731,6 +745,11 @@ describe('estimate', () => {
     expect(response.error?.message).toBe('Transaction reverted: invalid call in the bundle')
 
     expect(response.feePaymentOptions.length).toBeGreaterThan(0)
+
+    expect(response.feePaymentOptions![0].symbol).not.toBe(undefined)
+    expect(response.feePaymentOptions![0].symbol).not.toBe(null)
+    expect(response.feePaymentOptions![0].networkId).not.toBe(undefined)
+    expect(response.feePaymentOptions![0].networkId).not.toBe(null)
   })
 
   it('[ERC-4337]:Arbitrum | should fail because of a broken provider but still return fee options', async () => {

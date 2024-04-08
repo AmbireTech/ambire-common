@@ -111,7 +111,9 @@ export async function estimateEOA(
       paidBy: account.addr,
       availableAmount: accountState.balance,
       addedNative: 0n,
-      isGasTank: false
+      isGasTank: false,
+      symbol: network.nativeAssetSymbol.toLowerCase(),
+      networkId: network.id
     }
   ]
   if (result instanceof Error) return estimationErrorFormatted(result, { feePaymentOptions })

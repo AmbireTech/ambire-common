@@ -82,7 +82,9 @@ export async function estimate4337(
       gasUsed: 0n,
       // addedNative gets calculated by the bundler & added to uOp gasData
       addedNative: 0n,
-      isGasTank: token.isGasTank
+      isGasTank: token.isGasTank,
+      symbol: token.symbol,
+      networkId: token.networkId
     }
   })
 
@@ -309,7 +311,7 @@ export async function estimate(
   const l1FeeWithTransferPayment =
     network.id !== 'arbitrum' ? l1GasEstimation.feeWithTransferPayment : arbitrumEstimation.withFee
 
-  const feeTokenOptions = feeTokenOutcomes.map((token: any, key: number) => {
+  const feeTokenOptions: FeePaymentOption[] = feeTokenOutcomes.map((token: any, key: number) => {
     const address = filteredFeeTokens[key].address
     const addedNative = address === ZeroAddress ? l1FeeWithNativePayment : l1FeeWithTransferPayment
 
@@ -330,19 +332,25 @@ export async function estimate(
       // setting it to 5000n just be sure
       gasUsed: filteredFeeTokens[key].isGasTank ? 5000n : token.gasUsed,
       addedNative,
-      isGasTank: filteredFeeTokens[key].isGasTank
+      isGasTank: filteredFeeTokens[key].isGasTank,
+      symbol: filteredFeeTokens[key].symbol,
+      networkId: filteredFeeTokens[key].networkId
     }
   })
 
   // this is for EOAs paying for SA in native
   // or the current address if it's an EOA
-  const nativeTokenOptions = nativeAssetBalances.map((balance: bigint, key: number) => ({
-    address: ZeroAddress,
-    paidBy: nativeToCheck[key],
-    availableAmount: balance,
-    addedNative: l1Fee,
-    isGasTank: false
-  }))
+  const nativeTokenOptions: FeePaymentOption[] = nativeAssetBalances.map(
+    (balance: bigint, key: number) => ({
+      address: ZeroAddress,
+      paidBy: nativeToCheck[key],
+      availableAmount: balance,
+      addedNative: l1Fee,
+      isGasTank: false,
+      symbol: network.nativeAssetSymbol.toLocaleLowerCase(),
+      networkId: network.id
+    })
+  )
 
   return {
     gasUsed,
