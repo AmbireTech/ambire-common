@@ -474,6 +474,7 @@ export class SettingsController extends EventEmitter {
     this.emitUpdate()
     try {
       await fn()
+      await wait(1)
       this.status = 'SUCCESS'
       this.emitUpdate()
     } catch (error: any) {
