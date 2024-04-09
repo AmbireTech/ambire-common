@@ -14,6 +14,7 @@ import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { Bundler } from '../../services/bundlers/bundler'
 import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
 import { getFeeCall } from '../calls/calls'
+import { TokenResult } from '../portfolio'
 import { getProxyDeployBytecode } from '../proxyDeploy/deploy'
 import { getAmbireAccountAddress } from '../proxyDeploy/getAmbireAddressTwo'
 import { UserOperation } from '../userOperation/types'
@@ -23,7 +24,7 @@ import {
   getUserOperation
 } from '../userOperation/userOperation'
 import { estimationErrorFormatted } from './errors'
-import { EstimateResult, FeeToken } from './interfaces'
+import { EstimateResult, FeePaymentOption } from './interfaces'
 
 function getUserOpForEstimate(
   userOp: UserOperation,
@@ -55,20 +56,24 @@ function getUserOpForEstimate(
   return uOp
 }
 
-function getFeeTokenForEstimate(feeTokens: FeeToken[]): FeeToken | null {
+function getFeeTokenForEstimate(feeTokens: TokenResult[]): TokenResult | null {
   if (!feeTokens.length) return null
 
   const erc20token = feeTokens.find(
-    (feeToken) => feeToken.address !== ZeroAddress && !feeToken.isGasTank && feeToken.amount > 0n
+    (feeToken) =>
+      feeToken.address !== ZeroAddress && !feeToken.flags.onGasTank && feeToken.amount > 0n
   )
   if (erc20token) return erc20token
 
   const nativeToken = feeTokens.find(
-    (feeToken) => feeToken.address === ZeroAddress && !feeToken.isGasTank && feeToken.amount > 0n
+    (feeToken) =>
+      feeToken.address === ZeroAddress && !feeToken.flags.onGasTank && feeToken.amount > 0n
   )
   if (nativeToken) return nativeToken
 
-  const gasTankToken = feeTokens.find((feeToken) => feeToken.isGasTank && feeToken.amount > 0n)
+  const gasTankToken = feeTokens.find(
+    (feeToken) => feeToken.flags.onGasTank && feeToken.amount > 0n
+  )
   return gasTankToken ?? null
 }
 
@@ -88,28 +93,12 @@ export async function bundlerEstimate(
   accountStates: AccountStates,
   op: AccountOp,
   network: NetworkDescriptor,
-  feeTokens: FeeToken[]
+  feeTokens: TokenResult[]
 ): Promise<EstimateResult> {
-  // build the fee payment options as we'll return them even if there's an error
-  const feePaymentOptions = feeTokens.map((token: FeeToken) => {
-    return {
-      address: token.address,
-      paidBy: account.addr,
-      availableAmount: token.amount,
-      // @relyOnBundler
-      // gasUsed goes to 0
-      // we add a transfer call or a native call when sending the uOp to the
-      // bundler and he estimates that. For different networks this gasUsed
-      // goes to different places (callGasLimit or preVerificationGas) and
-      // its calculated differently. So it's a wild bet to think we could
-      // calculate this on our own for each network.
-      gasUsed: 0n,
-      // addedNative gets calculated by the bundler & added to uOp gasData
-      addedNative: 0n,
-      isGasTank: token.isGasTank
-    }
-  })
-
+  // we pass an empty array of feePaymentOptions as they are built
+  // in an upper level using the balances from Estimation.sol.
+  // balances from Estimation.sol reflect the balances after pending txn exec
+  const feePaymentOptions: FeePaymentOption[] = []
   const localOp = { ...op }
   const feeToken = getFeeTokenForEstimate(feeTokens)
   if (feeToken) localOp.feeCall = getFeeCall(feeToken, 1n)
@@ -118,7 +107,7 @@ export async function bundlerEstimate(
   const gasPrices = await Bundler.fetchGasPrices(network).catch(
     () => new Error('Could not fetch gas prices, retrying...')
   )
-  if (gasPrices instanceof Error) return estimationErrorFormatted(gasPrices, feePaymentOptions)
+  if (gasPrices instanceof Error) return estimationErrorFormatted(gasPrices, { feePaymentOptions })
 
   // add the maxFeePerGas and maxPriorityFeePerGas only if the network
   // is optimistic as the bundler uses these values to determine the
@@ -141,7 +130,8 @@ export async function bundlerEstimate(
       )
     )
   )
-  if (gasData instanceof Error) return estimationErrorFormatted(gasData as Error, feePaymentOptions)
+  if (gasData instanceof Error)
+    return estimationErrorFormatted(gasData as Error, { feePaymentOptions })
 
   const apeMaxFee = BigInt(gasPrices.fast.maxFeePerGas) + BigInt(gasPrices.fast.maxFeePerGas) / 5n
   const apePriority =
@@ -153,9 +143,7 @@ export async function bundlerEstimate(
 
   return {
     gasUsed: BigInt(gasData.callGasLimit),
-    // the correct nonce for the userOp cannot be determined here as
-    // if the request type is not standard, it will completely change
-    nonce: Number(BigInt(userOp.nonce).toString()),
+    currentAccountNonce: Number(op.nonce),
     feePaymentOptions,
     erc4337GasLimits: {
       preVerificationGas: gasData.preVerificationGas,

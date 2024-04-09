@@ -362,7 +362,6 @@ export class MainController extends EventEmitter {
       this.settings,
       this.#externalSignerControllers,
       account,
-      this.accounts,
       this.accountStates,
       network,
       accountOpToBeSigned,
@@ -804,6 +803,12 @@ export class MainController extends EventEmitter {
       // This is already handled and estimated as a fee option in the estimate library, which is why we pass an empty array here.
       const EOAaccounts = account?.creation ? this.accounts.filter((acc) => !acc.creation) : []
 
+      if (!account)
+        throw new Error(`estimateAccountOp: ${localAccountOp.accountAddr}: account does not exist`)
+      const network = this.settings.networks.find((x) => x.id === localAccountOp.networkId)
+      if (!network)
+        throw new Error(`estimateAccountOp: ${localAccountOp.networkId}: network does not exist`)
+
       // Take the fee tokens from two places: the user's tokens and his gasTank
       // The gastTank tokens participate on each network as they belong everywhere
       // NOTE: at some point we should check all the "?" signs below and if
@@ -812,23 +817,17 @@ export class MainController extends EventEmitter {
         this.portfolio.latest?.[localAccountOp.accountAddr]?.[localAccountOp.networkId]?.result
           ?.tokens ?? []
       const gasTankFeeTokens =
-        this.portfolio.latest?.[localAccountOp.accountAddr]?.gasTank?.result?.tokens ?? []
+        this.portfolio.latest?.[localAccountOp.accountAddr]?.gasTank?.result?.tokens.filter(
+          (token) => {
+            return (
+              token.address !== ZeroAddress ||
+              token.symbol.toLowerCase() === network.nativeAssetSymbol.toLowerCase()
+            )
+          }
+        ) ?? []
 
       const feeTokens =
-        [...networkFeeTokens, ...gasTankFeeTokens]
-          .filter((t) => t.flags.isFeeToken)
-          .map((token) => ({
-            address: token.address,
-            isGasTank: token.flags.onGasTank,
-            amount: BigInt(token.amount),
-            symbol: token.symbol
-          })) || []
-
-      if (!account)
-        throw new Error(`estimateAccountOp: ${localAccountOp.accountAddr}: account does not exist`)
-      const network = this.settings.networks.find((x) => x.id === localAccountOp.networkId)
-      if (!network)
-        throw new Error(`estimateAccountOp: ${localAccountOp.networkId}: network does not exist`)
+        [...networkFeeTokens, ...gasTankFeeTokens].filter((t) => t.flags.isFeeToken) || []
 
       // if the network's chosen RPC supports debug_traceCall, we
       // make an additional simulation for each call in the accountOp
@@ -970,6 +969,16 @@ export class MainController extends EventEmitter {
       this.accountOpsToBeSigned[localAccountOp.accountAddr][localAccountOp.networkId]!.estimation =
         estimation
 
+      // if the nonce from the estimation is different than the one in localAccountOp,
+      // override localAccountOp.nonce and set it in this.accountOpsToBeSigned as
+      // the nonce from the estimation is the newest one
+      if (estimation && BigInt(estimation.currentAccountNonce) !== localAccountOp.nonce) {
+        localAccountOp.nonce = BigInt(estimation.currentAccountNonce)
+        this.accountOpsToBeSigned[localAccountOp.accountAddr][
+          localAccountOp.networkId
+        ]!.accountOp.nonce = localAccountOp.nonce
+      }
+
       // update the signAccountOp controller once estimation finishes;
       // this eliminates the infinite loading bug if the estimation comes slower
       if (this.signAccountOp && estimation) {
@@ -1032,7 +1041,7 @@ export class MainController extends EventEmitter {
       this.accountOpsToBeSigned[accountOp.accountAddr][accountOp.networkId]!.estimation!
     const feeTokenEstimation = estimation.feePaymentOptions.find(
       (option) =>
-        option.address === accountOp.gasFeePayment?.inToken &&
+        option.token.address === accountOp.gasFeePayment?.inToken &&
         option.paidBy === accountOp.gasFeePayment?.paidBy
     )!
 

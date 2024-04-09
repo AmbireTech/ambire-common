@@ -2,7 +2,7 @@
 
 import { AbiCoder } from 'ethers'
 
-import { EstimateResult } from './interfaces'
+import { Erc4337GasLimits, EstimateResult } from './interfaces'
 
 const contractErrors = [
   'caller is a contract',
@@ -67,12 +67,18 @@ export function catchEstimationFailure(e: Error | string | null) {
 
 export function estimationErrorFormatted(
   error: Error,
-  feePaymentOptions: EstimateResult['feePaymentOptions'] = []
+  opts?: {
+    feePaymentOptions?: EstimateResult['feePaymentOptions']
+    erc4337GasLimits?: Erc4337GasLimits
+  }
 ): EstimateResult {
+  const feePaymentOptions = opts?.feePaymentOptions ?? []
+  const finalsOps = { ...opts, feePaymentOptions }
+
   return {
     gasUsed: 0n,
-    nonce: 0,
-    feePaymentOptions,
-    error
+    currentAccountNonce: 0,
+    error,
+    ...finalsOps
   }
 }
