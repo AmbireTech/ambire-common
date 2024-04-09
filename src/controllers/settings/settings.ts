@@ -375,7 +375,7 @@ export class SettingsController extends EventEmitter {
     this.emitUpdate()
   }
 
-  async updateNetworkPreferences(
+  async #updateNetworkPreferences(
     networkPreferences: NetworkPreference,
     networkId: NetworkDescriptor['id']
   ) {
@@ -424,6 +424,15 @@ export class SettingsController extends EventEmitter {
     this.emitUpdate()
   }
 
+  async updateNetworkPreferences(
+    networkPreferences: NetworkPreference,
+    networkId: NetworkDescriptor['id']
+  ) {
+    await this.#wrapSettingsAction('updateNetworkPreferences', () =>
+      this.#updateNetworkPreferences(networkPreferences, networkId)
+    )
+  }
+
   // NOTE: use this method only for predefined networks
   async resetNetworkPreference(key: keyof NetworkPreference, networkId: NetworkDescriptor['id']) {
     if (
@@ -449,7 +458,7 @@ export class SettingsController extends EventEmitter {
     const factoryCode = await provider.getCode(AMBIRE_ACCOUNT_FACTORY)
     if (factoryCode === '0x') return
 
-    this.updateNetworkPreferences({ areContractsDeployed: true }, network.id).catch(() => {
+    this.#updateNetworkPreferences({ areContractsDeployed: true }, network.id).catch(() => {
       this.emitError({
         level: 'silent',
         message: 'Failed to update the network feature for supporting smart accounts',
