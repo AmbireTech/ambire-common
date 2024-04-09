@@ -2,10 +2,10 @@ import { AbiCoder, Interface, ZeroAddress } from 'ethers'
 
 import ERC20 from '../../../contracts/compiled/IERC20.json'
 import { FEE_COLLECTOR } from '../../consts/addresses'
-import { FeeToken } from '../estimate/interfaces'
+import { TokenResult } from '../portfolio'
 
-export function getFeeCall(feeToken: FeeToken, amountToSend: bigint) {
-  if (feeToken.isGasTank) {
+export function getFeeCall(feeToken: TokenResult, amountToSend: bigint) {
+  if (feeToken.flags.onGasTank) {
     const abiCoder = new AbiCoder()
     return {
       to: FEE_COLLECTOR,

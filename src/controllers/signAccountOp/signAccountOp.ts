@@ -106,8 +106,6 @@ export class SignAccountOpController extends EventEmitter {
 
   #account: Account
 
-  #accounts: Account[]
-
   #accountStates: AccountStates
 
   #network: NetworkDescriptor
@@ -140,7 +138,6 @@ export class SignAccountOpController extends EventEmitter {
     settings: SettingsController,
     externalSignerControllers: ExternalSignerControllers,
     account: Account,
-    accounts: Account[],
     accountStates: AccountStates,
     network: NetworkDescriptor,
     accountOp: AccountOp,
@@ -154,7 +151,6 @@ export class SignAccountOpController extends EventEmitter {
     this.#settings = settings
     this.#externalSignerControllers = externalSignerControllers
     this.#account = account
-    this.#accounts = accounts
     this.#accountStates = accountStates
     this.#network = network
     this.accountOp = structuredClone(accountOp)
@@ -243,8 +239,8 @@ export class SignAccountOpController extends EventEmitter {
       const feeToken = this.availableFeeOptions.find(
         (feeOption) =>
           feeOption.paidBy === this.accountOp?.gasFeePayment?.paidBy &&
-          feeOption.address === this.accountOp?.gasFeePayment?.inToken &&
-          feeOption.isGasTank === this.accountOp?.gasFeePayment?.isGasTank
+          feeOption.token.address === this.accountOp?.gasFeePayment?.inToken &&
+          feeOption.token.flags.onGasTank === this.accountOp?.gasFeePayment?.isGasTank
       )
 
       if (feeToken!.availableAmount < this.accountOp?.gasFeePayment.amount) {
@@ -449,7 +445,7 @@ export class SignAccountOpController extends EventEmitter {
 
     if (!nativePrice || !feeTokenPrice) return null
 
-    const ratio = nativePrice / feeTokenPrice
+    const ratio = parseFloat((nativePrice / feeTokenPrice).toFixed(18))
 
     // Here we multiply it by 1e18, in order to keep the decimal precision.
     // Otherwise, passing the ratio to the BigInt constructor, we will lose the numbers after the decimal point.
@@ -500,9 +496,9 @@ export class SignAccountOpController extends EventEmitter {
     const gasUsed = this.#estimation!.gasUsed
     const feeTokenEstimation = this.#estimation!.feePaymentOptions.find(
       (option) =>
-        option.address === this.feeTokenResult?.address &&
+        option.token.address === this.feeTokenResult?.address &&
         this.paidBy === option.paidBy &&
-        this.feeTokenResult?.flags.onGasTank === option.isGasTank
+        this.feeTokenResult?.flags.onGasTank === option.token.flags.onGasTank
     )
 
     if (!feeTokenEstimation) return []
@@ -581,9 +577,9 @@ export class SignAccountOpController extends EventEmitter {
         // use feePaymentOptions here as fee can be payed in other than native
         const feeTokenGasUsed = this.#estimation!.feePaymentOptions.find(
           (option) =>
-            option.address === this.feeTokenResult?.address &&
+            option.token.address === this.feeTokenResult?.address &&
             this.paidBy === option.paidBy &&
-            this.feeTokenResult?.flags.onGasTank === option.isGasTank
+            this.feeTokenResult?.flags.onGasTank === option.token.flags.onGasTank
         )!.gasUsed!
         simulatedGasLimit = gasUsed + callDataAdditionalGasCost + feeTokenGasUsed
         amount = SignAccountOpController.getAmountAfterFeeTokenConvert(

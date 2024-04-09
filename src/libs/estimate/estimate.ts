@@ -13,6 +13,7 @@ import { AccountOp } from '../accountOp/accountOp'
 import { Call } from '../accountOp/types'
 import { fromDescriptor } from '../deployless/deployless'
 import { getProbableCallData } from '../gasPrice/gasPrice'
+import { TokenResult } from '../portfolio'
 import {
   getActivatorCall,
   shouldIncludeActivatorCall,
@@ -24,7 +25,7 @@ import { estimateArbitrumL1GasUsed } from './estimateArbitrum'
 import { bundlerEstimate } from './estimateBundler'
 import { estimateEOA } from './estimateEOA'
 import { estimateWithRetries } from './estimateWithRetries'
-import { ArbitrumL1Fee, EstimateResult, FeePaymentOption, FeeToken } from './interfaces'
+import { ArbitrumL1Fee, EstimateResult, FeePaymentOption } from './interfaces'
 import { refund } from './refund'
 
 const abiCoder = new AbiCoder()
@@ -56,20 +57,19 @@ export async function estimate4337(
   accountStates: AccountStates,
   network: NetworkDescriptor,
   provider: JsonRpcProvider | Provider,
-  feeTokens: FeeToken[],
+  feeTokens: TokenResult[],
   blockTag: string | number
 ): Promise<EstimateResult> {
   const deploylessEstimator = fromDescriptor(provider, Estimation, !network.rpcNoStateOverride)
   // if no paymaster, user can only pay in native
   const filteredFeeTokens = !shouldUsePaymaster(network)
-    ? feeTokens.filter((feeToken) => feeToken.address === ZeroAddress && !feeToken.isGasTank)
+    ? feeTokens.filter((feeToken) => feeToken.address === ZeroAddress && !feeToken.flags.onGasTank)
     : feeTokens
 
   // build the feePaymentOptions with the available current amounts. We will
   // change them after simulation passes
-  const feePaymentOptions = filteredFeeTokens.map((token: FeeToken) => {
+  const feePaymentOptions = filteredFeeTokens.map((token: TokenResult) => {
     return {
-      address: token.address,
       paidBy: account.addr,
       availableAmount: token.amount,
       // @relyOnBundler
@@ -82,7 +82,7 @@ export async function estimate4337(
       gasUsed: 0n,
       // addedNative gets calculated by the bundler & added to uOp gasData
       addedNative: 0n,
-      isGasTank: token.isGasTank
+      token
     }
   })
 
@@ -140,6 +140,9 @@ export async function estimate4337(
   // add the availableAmount after the simulation
   estimationResult.feePaymentOptions = feePaymentOptions.map(
     (option: FeePaymentOption, index: number) => {
+      // we do not rewrite the availableAmount if it's gasTank
+      if (option.token.flags.onGasTank) return option
+
       const localOp = { ...option }
       localOp.availableAmount = feeTokenOutcomes[index][1]
       return localOp
@@ -157,7 +160,7 @@ export async function estimate(
   op: AccountOp,
   accountStates: AccountStates,
   EOAaccounts: Account[],
-  feeTokens: FeeToken[],
+  feeTokens: TokenResult[],
   opts?: {
     calculateRefund?: boolean
     is4337Broadcast?: boolean
@@ -167,7 +170,16 @@ export async function estimate(
 ): Promise<EstimateResult> {
   // if EOA, delegate
   if (!isSmartAccount(account))
-    return estimateEOA(account, op, accountStates, network, provider, blockFrom, blockTag)
+    return estimateEOA(
+      account,
+      op,
+      accountStates,
+      network,
+      provider,
+      feeTokens,
+      blockFrom,
+      blockTag
+    )
 
   if (!network.isSAEnabled)
     return estimationErrorFormatted(
@@ -309,40 +321,40 @@ export async function estimate(
   const l1FeeWithTransferPayment =
     network.id !== 'arbitrum' ? l1GasEstimation.feeWithTransferPayment : arbitrumEstimation.withFee
 
-  const feeTokenOptions = feeTokenOutcomes.map((token: any, key: number) => {
-    const address = filteredFeeTokens[key].address
-    const addedNative = address === ZeroAddress ? l1FeeWithNativePayment : l1FeeWithTransferPayment
-
-    return {
-      address,
-      paidBy: account.addr,
-      availableAmount: filteredFeeTokens[key].isGasTank
-        ? filteredFeeTokens[key].amount
-        : token.amount,
-      // gasUsed for the gas tank tokens is smaller because of the commitment:
-      // ['gasTank', amount, symbol]
-      // and this commitment costs onchain:
-      // - 1535, if the broadcasting addr is the relayer
-      // - 4035, if the broadcasting addr is different
-      // currently, there are more than 1 relayer addresses and we cannot
-      // be sure which is the one that will broadcast this txn; also, ERC-4337
-      // broadcasts will always consume at least 4035.
-      // setting it to 5000n just be sure
-      gasUsed: filteredFeeTokens[key].isGasTank ? 5000n : token.gasUsed,
-      addedNative,
-      isGasTank: filteredFeeTokens[key].isGasTank
+  const feeTokenOptions: FeePaymentOption[] = filteredFeeTokens.map(
+    (token: TokenResult, key: number) => {
+      return {
+        paidBy: account.addr,
+        availableAmount: token.flags.onGasTank ? token.amount : feeTokenOutcomes[key].amount,
+        // gasUsed for the gas tank tokens is smaller because of the commitment:
+        // ['gasTank', amount, symbol]
+        // and this commitment costs onchain:
+        // - 1535, if the broadcasting addr is the relayer
+        // - 4035, if the broadcasting addr is different
+        // currently, there are more than 1 relayer addresses and we cannot
+        // be sure which is the one that will broadcast this txn; also, ERC-4337
+        // broadcasts will always consume at least 4035.
+        // setting it to 5000n just be sure
+        gasUsed: token.flags.onGasTank ? 5000n : feeTokenOutcomes[key].gasUsed,
+        addedNative:
+          token.address === ZeroAddress ? l1FeeWithNativePayment : l1FeeWithTransferPayment,
+        token
+      }
     }
-  })
+  )
 
   // this is for EOAs paying for SA in native
-  // or the current address if it's an EOA
-  const nativeTokenOptions = nativeAssetBalances.map((balance: bigint, key: number) => ({
-    address: ZeroAddress,
-    paidBy: nativeToCheck[key],
-    availableAmount: balance,
-    addedNative: l1Fee,
-    isGasTank: false
-  }))
+  const nativeToken = filteredFeeTokens.find(
+    (token) => token.address === ZeroAddress && !token.flags.onGasTank
+  )
+  const nativeTokenOptions: FeePaymentOption[] = nativeAssetBalances.map(
+    (balance: bigint, key: number) => ({
+      paidBy: nativeToCheck[key],
+      availableAmount: balance,
+      addedNative: l1Fee,
+      token: nativeToken
+    })
+  )
 
   return {
     gasUsed,

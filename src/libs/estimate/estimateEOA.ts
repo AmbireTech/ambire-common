@@ -1,4 +1,5 @@
 import { AbiCoder, JsonRpcProvider, Provider, toBeHex, ZeroAddress } from 'ethers'
+import { TokenResult } from 'libs/portfolio'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import Estimation from '../../../contracts/compiled/Estimation.json'
@@ -39,6 +40,7 @@ export async function estimateEOA(
   accountStates: AccountStates,
   network: NetworkDescriptor,
   provider: JsonRpcProvider | Provider,
+  feeTokens: TokenResult[],
   blockFrom: string,
   blockTag: string | number
 ): Promise<EstimateResult> {
@@ -107,11 +109,10 @@ export async function estimateEOA(
   const result = await estimateWithRetries(initializeRequests)
   const feePaymentOptions = [
     {
-      address: ZeroAddress,
       paidBy: account.addr,
       availableAmount: accountState.balance,
       addedNative: 0n,
-      isGasTank: false
+      token: feeTokens.find((token) => token.address === ZeroAddress && !token.flags.onGasTank)!
     }
   ]
   if (result instanceof Error) return estimationErrorFormatted(result, { feePaymentOptions })

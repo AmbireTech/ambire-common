@@ -1,3 +1,5 @@
+import { TokenResult } from '../portfolio'
+
 export interface Erc4337GasLimits {
   preVerificationGas: string
   verificationGasLimit: string
@@ -18,10 +20,9 @@ export interface ArbitrumL1Fee {
 export interface FeePaymentOption {
   availableAmount: bigint
   paidBy: string
-  address: string
   gasUsed?: bigint
   addedNative: bigint
-  isGasTank: boolean
+  token: TokenResult
 }
 
 export interface EstimateResult {
@@ -33,11 +34,4 @@ export interface EstimateResult {
   feePaymentOptions: FeePaymentOption[]
   erc4337GasLimits?: Erc4337GasLimits
   error: Error | null
-}
-
-export interface FeeToken {
-  address: string
-  isGasTank: boolean
-  amount: bigint // how much the user has (from portfolio)
-  symbol: string
 }
