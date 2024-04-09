@@ -40,7 +40,7 @@ export type NetworkFeature = {
   id: string
   title: string
   msg?: string
-  level: 'success' | 'danger' | 'warning' | 'loading'
+  level: 'success' | 'danger' | 'warning' | 'loading' | 'initial'
 }
 
 // NetworkId is a string: this is our internal identifier for the network

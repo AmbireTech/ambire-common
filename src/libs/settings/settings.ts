@@ -202,7 +202,7 @@ export function getFeaturesByNetworkProperties(
     }
   ]
 
-  if (!networkInfo) return features
+  if (!networkInfo) return features.map((f) => ({ ...f, level: 'initial' }))
 
   const {
     flagged,
