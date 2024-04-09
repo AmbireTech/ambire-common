@@ -450,7 +450,7 @@ export class SignAccountOpController extends EventEmitter {
     // Here we multiply it by 1e18, in order to keep the decimal precision.
     // Otherwise, passing the ratio to the BigInt constructor, we will lose the numbers after the decimal point.
     // Later, once we need to normalize this ratio, we should not forget to divide it by 1e18.
-    return BigInt(ratio * 1e18)
+    return BigInt(Math.ceil(ratio * 1e18))
   }
 
   static getAmountAfterFeeTokenConvert(
