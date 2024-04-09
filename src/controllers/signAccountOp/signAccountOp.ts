@@ -116,6 +116,8 @@ export class SignAccountOpController extends EventEmitter {
 
   #estimation: EstimateResult | null = null
 
+  feeSpeeds: FanSpeed[] = []
+
   paidBy: string | null = null
 
   feeTokenResult: TokenResult | null = null
@@ -365,6 +367,13 @@ export class SignAccountOpController extends EventEmitter {
 
     // Set defaults, if some of the optional params are omitted
     this.#setDefaults()
+
+    // calculate the fee speeds if either there are no feeSpeeds
+    // or any of properties for update is requested
+    if (this.feeSpeeds.length || feeToken || paidBy || accountOp || gasPrices || estimation) {
+      this.#updateFeeSpeeds()
+    }
+
     // Here, we expect to have most of the fields set, so we can safely set GasFeePayment
     this.#setGasFeePayment()
     this.updateStatusToReadyToSign()
@@ -490,8 +499,8 @@ export class SignAccountOpController extends EventEmitter {
     return !this.isInitialized || !this.gasPrices || !this.paidBy || !this.feeTokenResult
   }
 
-  get feeSpeeds(): FanSpeed[] {
-    if (this.#feeSpeedsLoading) return []
+  #updateFeeSpeeds() {
+    if (this.#feeSpeedsLoading) return
 
     const gasUsed = this.#estimation!.gasUsed
     const feeTokenEstimation = this.#estimation!.feePaymentOptions.find(
@@ -501,10 +510,10 @@ export class SignAccountOpController extends EventEmitter {
         this.feeTokenResult?.flags.onGasTank === option.token.flags.onGasTank
     )
 
-    if (!feeTokenEstimation) return []
+    if (!feeTokenEstimation) return
 
     const nativeRatio = this.#getNativeToFeeTokenRatio(this.feeTokenResult as TokenResult)
-    if (!nativeRatio) return []
+    if (!nativeRatio) return
 
     const callDataAdditionalGasCost = getCallDataAdditionalByNetwork(
       this.accountOp!,
@@ -540,10 +549,11 @@ export class SignAccountOpController extends EventEmitter {
           maxPriorityFeePerGas: BigInt(speedValue.maxPriorityFeePerGas)
         })
       }
-      return speeds
+      this.feeSpeeds = speeds
+      return
     }
 
-    return (this.gasPrices || []).map((gasRecommendation) => {
+    this.feeSpeeds = (this.gasPrices || []).map((gasRecommendation) => {
       let amount
       let simulatedGasLimit
 
@@ -915,7 +925,6 @@ export class SignAccountOpController extends EventEmitter {
       readyToSign: this.readyToSign,
       availableFeeOptions: this.availableFeeOptions,
       accountKeyStoreKeys: this.accountKeyStoreKeys,
-      feeSpeeds: this.feeSpeeds,
       feeToken: this.feeToken,
       feePaidBy: this.feePaidBy,
       speedOptions: this.speedOptions,
