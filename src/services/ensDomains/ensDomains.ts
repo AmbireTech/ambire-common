@@ -4,10 +4,10 @@ import { isAddress } from 'ethers'
 
 import { normalize } from '@ensdomains/eth-ens-namehash'
 
+import { networks } from '../../consts/networks'
 import { RPCProvider } from '../../interfaces/settings'
-import { getProvider } from '../provider'
+import { getRpcProvider } from '../provider'
 
-const ETH_ID = 'ethereum'
 const BIP44_BASE_VALUE = 2147483648
 const ADDRESS_ZERO = '0x0000000000000000000000000000000000000000'
 
@@ -40,7 +40,8 @@ export function isCorrectAddress(address) {
 async function resolveENSDomain(domain, bip44Item?: any): Promise<string> {
   const normalizedDomainName = normalizeDomain(domain)
   if (!normalizedDomainName) return ''
-  const provider = getProvider(ETH_ID)
+  const ethereum = networks.find((x) => x.id === 'ethereum')!
+  const provider = getRpcProvider(ethereum.rpcUrls, ethereum.chainId)
   const resolver = await provider.getResolver(normalizedDomainName)
   if (!resolver) return ''
   try {
@@ -56,6 +57,7 @@ async function resolveENSDomain(domain, bip44Item?: any): Promise<string> {
 
     throw e
   }
+  provider?.destroy()
 }
 
 function getBip44Items(coinTicker) {

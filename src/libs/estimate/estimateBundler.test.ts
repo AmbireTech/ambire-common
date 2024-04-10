@@ -1,12 +1,13 @@
 /* eslint-disable @typescript-eslint/no-floating-promises */
 
-import { JsonRpcProvider, parseEther } from 'ethers'
+import { parseEther } from 'ethers'
 
 import { describe, expect, test } from '@jest/globals'
 
 import { optyNotDeployed } from '../../../test/config'
 import { getAccountsInfo } from '../../../test/helpers'
 import { networks } from '../../consts/networks'
+import { getRpcProvider } from '../../services/provider'
 import { AccountOp } from '../accountOp/accountOp'
 import { bundlerEstimate } from './estimateBundler'
 
@@ -30,7 +31,7 @@ describe('Bundler estimation tests', () => {
       const optimism = networks.find((net) => net.id === 'optimism')!
       const usedNetworks = [optimism]
       const providers = {
-        [optimism.id]: new JsonRpcProvider(optimism.rpcUrl)
+        [optimism.id]: getRpcProvider(optimism.rpcUrls, optimism.chainId)
       }
       const accountStates = await getAccountsInfo(usedNetworks, providers, [optyNotDeployed])
       const feeTokens = [

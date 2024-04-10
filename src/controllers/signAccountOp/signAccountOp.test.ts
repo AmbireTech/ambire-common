@@ -1,6 +1,6 @@
 /* eslint no-console: "off" */
 
-import { ethers, JsonRpcProvider } from 'ethers'
+import { ethers } from 'ethers'
 import fetch from 'node-fetch'
 
 import { describe, expect, jest, test } from '@jest/globals'
@@ -24,6 +24,7 @@ import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
 import { TokenResult } from '../../libs/portfolio'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { getTypedData } from '../../libs/signMessage/signMessage'
+import { getRpcProvider } from '../../services/provider'
 import { KeystoreController } from '../keystore/keystore'
 import { PortfolioController } from '../portfolio/portfolio'
 import { SettingsController } from '../settings/settings'
@@ -32,7 +33,7 @@ import { SignAccountOpController } from './signAccountOp'
 global.structuredClone = structuredClone as any
 
 const providers = Object.fromEntries(
-  networks.map((network) => [network.id, new JsonRpcProvider(network.rpcUrl)])
+  networks.map((network) => [network.id, getRpcProvider(network.rpcUrls, network.chainId)])
 )
 
 const getAccountsInfo = async (accounts: Account[]): Promise<AccountStates> => {
@@ -302,7 +303,7 @@ const init = async (
 
   const { op, nativeToCheck, feeTokens } = accountOp
   const network = networks.find((x) => x.id === op.networkId)!
-  const provider = new JsonRpcProvider(network.rpcUrl)
+  const provider = getRpcProvider(network.rpcUrls, network.chainId)
   const accounts = [account]
   const accountStates = await getAccountsInfo(accounts)
 

@@ -1,4 +1,3 @@
-import { JsonRpcProvider } from 'ethers'
 import fetch from 'node-fetch'
 
 import { beforeAll, describe, expect, jest, test } from '@jest/globals'
@@ -9,13 +8,14 @@ import { Account, AccountStates } from '../../interfaces/account'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { Message } from '../../interfaces/userRequest'
 import { getAccountState } from '../../libs/accountState/accountState'
+import { getRpcProvider } from '../../services/provider'
 import { KeystoreController } from '../keystore/keystore'
 import { InternalSigner } from '../keystore/keystore.test'
 import { SettingsController } from '../settings/settings'
 import { SignMessageController } from './signMessage'
 
 const providers = Object.fromEntries(
-  networks.map((network) => [network.id, new JsonRpcProvider(network.rpcUrl)])
+  networks.map((network) => [network.id, getRpcProvider(network.rpcUrls, network.chainId)])
 )
 
 const account: Account = {

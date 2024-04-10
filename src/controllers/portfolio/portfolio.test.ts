@@ -1,4 +1,4 @@
-import { ethers, JsonRpcProvider, ZeroAddress } from 'ethers'
+import { ethers, ZeroAddress } from 'ethers'
 import { CollectionResult } from 'libs/portfolio/interfaces'
 
 import { describe, expect, jest } from '@jest/globals'
@@ -9,6 +9,7 @@ import { PINNED_TOKENS } from '../../consts/pinnedTokens'
 import { Account } from '../../interfaces/account'
 import { RPCProviders } from '../../interfaces/settings'
 import { AccountOp } from '../../libs/accountOp/accountOp'
+import { getRpcProvider } from '../../services/provider'
 import { SettingsController } from '../settings/settings'
 import { PortfolioController } from './portfolio'
 
@@ -19,7 +20,7 @@ const EMPTY_ACCOUNT_ADDR = '0xA098B9BccaDd9BAEc311c07433e94C9d260CbC07'
 const providers: RPCProviders = {}
 
 networks.forEach((network) => {
-  providers[network.id] = new JsonRpcProvider(network.rpcUrl)
+  providers[network.id] = getRpcProvider(network.rpcUrls, network.chainId)
   providers[network.id].isWorking = true
 })
 

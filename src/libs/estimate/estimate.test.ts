@@ -1,7 +1,6 @@
 /* eslint no-console: "off" */
 
-import { AbiCoder, ethers, Interface, JsonRpcProvider } from 'ethers'
-import { AccountOp } from 'libs/accountOp/accountOp'
+import { AbiCoder, ethers, Interface } from 'ethers'
 import fetch from 'node-fetch'
 
 import { describe, expect } from '@jest/globals'
@@ -14,6 +13,8 @@ import { networks } from '../../consts/networks'
 import { Account, AccountStates } from '../../interfaces/account'
 import { Key } from '../../interfaces/keystore'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
+import { getRpcProvider } from '../../services/provider'
+import { AccountOp } from '../accountOp/accountOp'
 import { Call } from '../accountOp/types'
 import { getAccountState } from '../accountState/accountState'
 import { Portfolio } from '../portfolio/portfolio'
@@ -25,11 +26,11 @@ const arbitrum = networks.find((x) => x.id === 'arbitrum')
 const avalanche = networks.find((x) => x.id === 'avalanche')
 const polygon = networks.find((x) => x.id === 'polygon')
 if (!ethereum || !optimism || !arbitrum || !avalanche || !polygon) throw new Error('no network')
-const provider = new JsonRpcProvider(ethereum.rpcUrl)
-const providerOptimism = new JsonRpcProvider(optimism.rpcUrl)
-const providerArbitrum = new JsonRpcProvider(arbitrum.rpcUrl)
-const providerAvalanche = new JsonRpcProvider(avalanche.rpcUrl)
-const providerPolygon = new JsonRpcProvider(polygon.rpcUrl)
+const provider = getRpcProvider(ethereum.rpcUrls, ethereum.chainId)
+const providerOptimism = getRpcProvider(optimism.rpcUrls, optimism.chainId)
+const providerArbitrum = getRpcProvider(arbitrum.rpcUrls, arbitrum.chainId)
+const providerAvalanche = getRpcProvider(avalanche.rpcUrls, avalanche.chainId)
+const providerPolygon = getRpcProvider(polygon.rpcUrls, polygon.chainId)
 
 // Used to determine if an account is view-only or not
 // and subsequently if it should be included in the fee payment options
@@ -213,7 +214,7 @@ const feeTokensAvalanche = [
 const portfolio = new Portfolio(fetch, provider, ethereum)
 
 const providers = Object.fromEntries(
-  networks.map((network) => [network.id, new JsonRpcProvider(network.rpcUrl)])
+  networks.map((network) => [network.id, getRpcProvider(network.rpcUrls, network.chainId)])
 )
 const getAccountsInfo = async (accounts: Account[]): Promise<AccountStates> => {
   const result = await Promise.all(
@@ -796,7 +797,7 @@ describe('estimate', () => {
       accountOpToExecuteBefore: null
     }
     const accountStates = await getAccountsInfo([trezorSlot6v2NotDeployed])
-    const brokenProvider = new JsonRpcProvider(arbitrum.rpcUrl)
+    const brokenProvider = getRpcProvider(arbitrum.rpcUrls, arbitrum.chainId)
     const handler2 = {
       get(target: any, prop: any) {
         if (prop === 'send') throw new Error('no sends')
