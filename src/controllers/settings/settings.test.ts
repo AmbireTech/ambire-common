@@ -158,11 +158,11 @@ describe('Settings Controller', () => {
       explorerUrl: 'https://etherscan.io/custom'
     }
 
-    let emitCounter = 0
     settingsController.onUpdate(() => {
-      emitCounter++
-
-      if (emitCounter === 1) {
+      if (
+        settingsController.latestMethodCall === 'updateNetworkPreferences' &&
+        settingsController.status === 'SUCCESS'
+      ) {
         const modifiedNetwork = settingsController.networks.find(({ id }) => id === 'ethereum')
         expect(modifiedNetwork?.explorerUrl).toEqual('https://etherscan.io/custom')
         expect(modifiedNetwork?.rpcUrls).toEqual([
