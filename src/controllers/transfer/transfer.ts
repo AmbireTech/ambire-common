@@ -46,8 +46,6 @@ export class TransferController extends EventEmitter {
 
   amount = ''
 
-  maxAmount = '0'
-
   addressState: AddressState = { ...DEFAULT_ADDRESS_STATE }
 
   isRecipientAddressUnknown = false
@@ -81,25 +79,30 @@ export class TransferController extends EventEmitter {
     if (token?.amount && Number(token?.amount) === 0) {
       this.#selectedToken = null
       this.amount = ''
-      this.maxAmount = '0'
       return
     }
 
+    const prevSelectedToken = { ...this.selectedToken }
+
+    this.#selectedToken = token
+
     if (
-      this.selectedToken?.address !== token?.address ||
-      this.selectedToken?.networkId !== token?.networkId
+      prevSelectedToken?.address !== token?.address ||
+      prevSelectedToken?.networkId !== token?.networkId
     ) {
-      this.#selectedToken = token
       this.amount = ''
       this.#setSWWarningVisibleIfNeeded()
     }
-    // on portfolio update the max available amount can change for the selectedToken
-    // in that case don't update the selectedToken and amount in the form but only the maxAmount value
-    this.maxAmount = token ? formatUnits(token.amount, Number(token.decimals)) : '0'
   }
 
   get selectedToken() {
     return this.#selectedToken
+  }
+
+  get maxAmount() {
+    if (!this.selectedToken?.amount || !this.selectedToken?.decimals) return '0'
+
+    return formatUnits(this.selectedToken.amount, Number(this.selectedToken.decimals))
   }
 
   set tokens(tokenResults: TokenResult[]) {
@@ -116,7 +119,6 @@ export class TransferController extends EventEmitter {
 
   resetForm() {
     this.amount = ''
-    this.maxAmount = '0'
     this.addressState = { ...DEFAULT_ADDRESS_STATE }
     this.selectedToken = null
     this.#selectedTokenNetworkData = null
@@ -378,7 +380,8 @@ export class TransferController extends EventEmitter {
       isFormValid: this.isFormValid,
       isInitialized: this.isInitialized,
       selectedToken: this.selectedToken,
-      tokens: this.tokens
+      tokens: this.tokens,
+      maxAmount: this.maxAmount
     }
   }
 }
