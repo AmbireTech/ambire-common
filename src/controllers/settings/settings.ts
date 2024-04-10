@@ -463,7 +463,7 @@ export class SettingsController extends EventEmitter {
   }
 
   async updateNetworkPreferences(
-    networkPreferences: NetworkPreference,
+    networkPreferences: Partial<NetworkPreference>,
     networkId: NetworkDescriptor['id']
   ) {
     await this.#wrapSettingsAction('updateNetworkPreferences', () =>
