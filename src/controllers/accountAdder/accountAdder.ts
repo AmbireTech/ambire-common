@@ -443,6 +443,18 @@ export class AccountAdderController extends EventEmitter {
     this.emitUpdate()
     try {
       this.#derivedAccounts = await this.#deriveAccounts({ networks, providers })
+
+      // pageSize is 1 when importing private keys
+      if (this.pageSize === 1) {
+        const usedAccounts = this.accountsOnPage.filter((acc) => acc.account.usedOnNetworks.length)
+
+        // If at least one account is used preselect both accounts on the page
+        if (usedAccounts.length) {
+          this.accountsOnPage.forEach((acc) => {
+            this.selectAccount(acc.account)
+          })
+        }
+      }
     } catch (e: any) {
       this.emitError({
         message: 'Retrieving accounts was canceled or failed.',
