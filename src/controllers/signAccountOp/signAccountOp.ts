@@ -12,7 +12,7 @@ import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { Storage } from '../../interfaces/storage'
 import { isSmartAccount } from '../../libs/account/account'
 import { AccountOp, GasFeePayment, getSignableCalls } from '../../libs/accountOp/accountOp'
-import { EstimateResult } from '../../libs/estimate/interfaces'
+import { EstimateResult, FeePaymentOption } from '../../libs/estimate/interfaces'
 import { GasRecommendation, getCallDataAdditionalByNetwork } from '../../libs/gasPrice/gasPrice'
 import { callsHumanizer } from '../../libs/humanizer'
 import { IrCall } from '../../libs/humanizer/interfaces'
@@ -91,6 +91,12 @@ const CRITICAL_ERRORS = {
   eoaInsufficientFunds: 'Insufficient funds to cover the fee.'
 }
 
+function getFeeSpeedIdentifier(option: FeePaymentOption) {
+  return `${option.paidBy}:${option.token.address}:${
+    option.token.flags.onGasTank ? 'gasTank' : 'feeToken'
+  }`
+}
+
 export class SignAccountOpController extends EventEmitter {
   #keystore: KeystoreController
 
@@ -116,7 +122,9 @@ export class SignAccountOpController extends EventEmitter {
 
   #estimation: EstimateResult | null = null
 
-  feeSpeeds: FanSpeed[] = []
+  feeSpeeds: {
+    [identifier: string]: FanSpeed[]
+  } = {}
 
   paidBy: string | null = null
 
@@ -216,7 +224,8 @@ export class SignAccountOpController extends EventEmitter {
       errors.push(this.#estimation.error.message)
     }
 
-    if (!this.availableFeeOptions.length) errors.push(CRITICAL_ERRORS.eoaInsufficientFunds)
+    const availableFeeOptions = this.availableFeeOptions
+    if (!availableFeeOptions.length) errors.push(CRITICAL_ERRORS.eoaInsufficientFunds)
 
     // This error should not happen, as in the update method we are always setting a default signer.
     // It may occur, only if there are no available signer.
@@ -233,12 +242,12 @@ export class SignAccountOpController extends EventEmitter {
         'Unable to estimate the transaction fee as fetching the latest price update for the network native token failed. Please try again later.'
       )
 
-    if (!this.accountOp?.gasFeePayment && this.feeSpeeds.length) {
+    if (!this.accountOp?.gasFeePayment && Object.keys(this.feeSpeeds).length) {
       errors.push('Please select a token and an account for paying the gas fee.')
     }
 
-    if (this.accountOp?.gasFeePayment && this.availableFeeOptions.length) {
-      const feeToken = this.availableFeeOptions.find(
+    if (this.accountOp?.gasFeePayment && availableFeeOptions.length) {
+      const feeToken = availableFeeOptions.find(
         (feeOption) =>
           feeOption.paidBy === this.accountOp?.gasFeePayment?.paidBy &&
           feeOption.token.address === this.accountOp?.gasFeePayment?.inToken &&
@@ -268,7 +277,7 @@ export class SignAccountOpController extends EventEmitter {
       errors.push(this.status.error)
     }
 
-    if (!this.#feeSpeedsLoading && !this.feeSpeeds.length) {
+    if (!this.#feeSpeedsLoading && !Object.keys(this.feeSpeeds).length) {
       if (!this.feeTokenResult?.priceIn.length) {
         errors.push(
           `Currently, ${this.feeTokenResult?.symbol} is unavailable as a fee token as we're experiencing troubles fetching its price. Please select another or contact support`
@@ -280,8 +289,17 @@ export class SignAccountOpController extends EventEmitter {
       }
     }
 
-    if (this.feeSpeeds.some((speed) => speed.amountUsd === null)) {
-      errors.push(NON_CRITICAL_ERRORS.feeUsdEstimation)
+    const chosenOption = this.availableFeeOptions.find(
+      (option) =>
+        option.paidBy === this.paidBy &&
+        option.token.address === this.feeTokenResult?.address &&
+        option.token.flags.onGasTank === this.feeTokenResult.flags.onGasTank
+    )
+    if (chosenOption) {
+      const identifier = getFeeSpeedIdentifier(chosenOption)
+      if (this.feeSpeeds[identifier].some((speed) => speed.amountUsd === null)) {
+        errors.push(NON_CRITICAL_ERRORS.feeUsdEstimation)
+      }
     }
 
     return errors
@@ -370,7 +388,14 @@ export class SignAccountOpController extends EventEmitter {
 
     // calculate the fee speeds if either there are no feeSpeeds
     // or any of properties for update is requested
-    if (this.feeSpeeds.length || feeToken || paidBy || accountOp || gasPrices || estimation) {
+    if (
+      Object.keys(this.feeSpeeds).length ||
+      feeToken ||
+      paidBy ||
+      accountOp ||
+      gasPrices ||
+      estimation
+    ) {
       this.#updateFeeSpeeds()
     }
 
@@ -505,119 +530,106 @@ export class SignAccountOpController extends EventEmitter {
     if (this.#feeSpeedsLoading) return
 
     const gasUsed = this.#estimation!.gasUsed
-    const feeTokenEstimation = this.#estimation!.feePaymentOptions.find(
-      (option) =>
-        option.token.address === this.feeTokenResult?.address &&
-        this.paidBy === option.paidBy &&
-        this.feeTokenResult?.flags.onGasTank === option.token.flags.onGasTank
-    )
-
-    if (!feeTokenEstimation) return
-
-    const nativeRatio = this.#getNativeToFeeTokenRatio(this.feeTokenResult as TokenResult)
-    if (!nativeRatio) return
-
     const callDataAdditionalGasCost = getCallDataAdditionalByNetwork(
       this.accountOp!,
       this.#network,
       this.#accountStates![this.accountOp!.accountAddr][this.accountOp!.networkId]
     )
 
-    const erc4337GasLimits = this.#estimation?.erc4337GasLimits
-    if (erc4337GasLimits) {
-      const speeds: FanSpeed[] = []
-      const usesPaymaster = shouldUsePaymaster(this.#network)
-
-      for (const [speed, speedValue] of Object.entries(erc4337GasLimits.gasPrice)) {
-        const simulatedGasLimit =
-          BigInt(erc4337GasLimits.callGasLimit) + BigInt(erc4337GasLimits.preVerificationGas)
-        const gasPrice = BigInt(speedValue.maxFeePerGas)
-        let amount = SignAccountOpController.getAmountAfterFeeTokenConvert(
-          simulatedGasLimit,
-          gasPrice,
-          nativeRatio,
-          this.feeTokenResult!.decimals,
-          0n
-        )
-        if (usesPaymaster) amount = this.#increaseFee(amount)
-
-        speeds.push({
-          type: speed as FeeSpeed,
-          simulatedGasLimit,
-          amount,
-          amountFormatted: formatUnits(amount, Number(this.feeTokenResult!.decimals)),
-          amountUsd: getTokenUsdAmount(this.feeTokenResult!, amount) ?? '',
-          gasPrice,
-          maxPriorityFeePerGas: BigInt(speedValue.maxPriorityFeePerGas)
-        })
+    this.availableFeeOptions.forEach((option) => {
+      const identifier = getFeeSpeedIdentifier(option)
+      const nativeRatio = this.#getNativeToFeeTokenRatio(option.token)
+      if (!nativeRatio) {
+        this.feeSpeeds[identifier] = []
+        return
       }
-      this.feeSpeeds = speeds
-      return
-    }
 
-    this.feeSpeeds = (this.gasPrices || []).map((gasRecommendation) => {
-      let amount
-      let simulatedGasLimit
+      const erc4337GasLimits = this.#estimation?.erc4337GasLimits
+      if (erc4337GasLimits) {
+        const speeds: FanSpeed[] = []
+        const usesPaymaster = shouldUsePaymaster(this.#network)
 
-      let gasPrice = 0n
-      // As GasRecommendation type is a result of the union between GasPriceRecommendation and Gas1559Recommendation,
-      // then the both types don't have the same interface/props.
-      // Therefore, we need to check for a prop existence, before accessing it.
-      // GasPriceRecommendation
-      if ('gasPrice' in gasRecommendation) gasPrice = gasRecommendation.gasPrice
-      // Gas1559Recommendation
-      if ('baseFeePerGas' in gasRecommendation)
-        gasPrice = gasRecommendation.baseFeePerGas + gasRecommendation.maxPriorityFeePerGas
+        for (const [speed, speedValue] of Object.entries(erc4337GasLimits.gasPrice)) {
+          const simulatedGasLimit =
+            BigInt(erc4337GasLimits.callGasLimit) + BigInt(erc4337GasLimits.preVerificationGas)
+          const gasPrice = BigInt(speedValue.maxFeePerGas)
+          let amount = SignAccountOpController.getAmountAfterFeeTokenConvert(
+            simulatedGasLimit,
+            gasPrice,
+            nativeRatio,
+            option.token.decimals,
+            0n
+          )
+          if (usesPaymaster) amount = this.#increaseFee(amount)
 
-      // EOA
-      if (!isSmartAccount(this.#account)) {
-        simulatedGasLimit = gasUsed
-
-        // special gas rules for the singleton
-        if (getAddress(this.accountOp.calls[0].to) === SINGLETON) {
-          simulatedGasLimit = getGasUsed(simulatedGasLimit)
+          speeds.push({
+            type: speed as FeeSpeed,
+            simulatedGasLimit,
+            amount,
+            amountFormatted: formatUnits(amount, Number(option.token.decimals)),
+            amountUsd: getTokenUsdAmount(option.token, amount) ?? '',
+            gasPrice,
+            maxPriorityFeePerGas: BigInt(speedValue.maxPriorityFeePerGas)
+          })
         }
 
-        amount = simulatedGasLimit * gasPrice + feeTokenEstimation.addedNative
-      } else if (this.paidBy !== this.accountOp!.accountAddr) {
-        // Smart account, but EOA pays the fee
-        simulatedGasLimit = gasUsed + callDataAdditionalGasCost
-        amount = simulatedGasLimit * gasPrice + feeTokenEstimation.addedNative
-      } else {
-        // Relayer.
-        // relayer or 4337, we need to add feeTokenOutome.gasUsed
-        // use feePaymentOptions here as fee can be payed in other than native
-        const feeTokenGasUsed = this.#estimation!.feePaymentOptions.find(
-          (option) =>
-            option.token.address === this.feeTokenResult?.address &&
-            this.paidBy === option.paidBy &&
-            this.feeTokenResult?.flags.onGasTank === option.token.flags.onGasTank
-        )!.gasUsed!
-        simulatedGasLimit = gasUsed + callDataAdditionalGasCost + feeTokenGasUsed
-        amount = SignAccountOpController.getAmountAfterFeeTokenConvert(
+        this.feeSpeeds[identifier] = speeds
+        return
+      }
+
+      ;(this.gasPrices || []).map((gasRecommendation) => {
+        let amount
+        let simulatedGasLimit
+
+        let gasPrice = 0n
+        // As GasRecommendation type is a result of the union between GasPriceRecommendation and Gas1559Recommendation,
+        // then the both types don't have the same interface/props.
+        // Therefore, we need to check for a prop existence, before accessing it.
+        // GasPriceRecommendation
+        if ('gasPrice' in gasRecommendation) gasPrice = gasRecommendation.gasPrice
+        // Gas1559Recommendation
+        if ('baseFeePerGas' in gasRecommendation)
+          gasPrice = gasRecommendation.baseFeePerGas + gasRecommendation.maxPriorityFeePerGas
+
+        // EOA
+        if (!isSmartAccount(this.#account)) {
+          simulatedGasLimit = gasUsed
+
+          if (getAddress(this.accountOp.calls[0].to) === SINGLETON) {
+            simulatedGasLimit = getGasUsed(simulatedGasLimit)
+          }
+
+          amount = simulatedGasLimit * gasPrice + option.addedNative
+        } else if (this.paidBy !== this.accountOp!.accountAddr) {
+          // Smart account, but EOA pays the fee
+          simulatedGasLimit = gasUsed + callDataAdditionalGasCost
+          amount = simulatedGasLimit * gasPrice + option.addedNative
+        } else {
+          // Relayer
+          simulatedGasLimit = gasUsed + callDataAdditionalGasCost + option.gasUsed!
+          amount = SignAccountOpController.getAmountAfterFeeTokenConvert(
+            simulatedGasLimit,
+            gasPrice,
+            nativeRatio,
+            option.token.decimals,
+            option.addedNative
+          )
+          amount = this.#increaseFee(amount)
+        }
+
+        return {
+          type: gasRecommendation.name,
           simulatedGasLimit,
+          amount,
+          amountFormatted: formatUnits(amount, Number(option.token.decimals)),
+          amountUsd: getTokenUsdAmount(option.token, amount),
           gasPrice,
-          nativeRatio,
-          this.feeTokenResult!.decimals,
-          feeTokenEstimation.addedNative
-        )
-        amount = this.#increaseFee(amount)
-      }
-
-      const fee: any = {
-        type: gasRecommendation.name,
-        simulatedGasLimit,
-        amount,
-        amountFormatted: formatUnits(amount, Number(this.feeTokenResult!.decimals)),
-        amountUsd: getTokenUsdAmount(this.feeTokenResult!, amount),
-        gasPrice
-      }
-
-      if ('maxPriorityFeePerGas' in gasRecommendation) {
-        fee.maxPriorityFeePerGas = gasRecommendation.maxPriorityFeePerGas
-      }
-
-      return fee
+          maxPriorityFeePerGas:
+            'maxPriorityFeePerGas' in gasRecommendation
+              ? gasRecommendation.maxPriorityFeePerGas
+              : undefined
+        }
+      })
     })
   }
 
@@ -653,7 +665,7 @@ export class SignAccountOpController extends EventEmitter {
       return null
     }
 
-    if (!this.feeSpeeds.length) {
+    if (!Object.keys(this.feeSpeeds).length) {
       this.emitError({
         level: 'silent',
         message: '',
@@ -663,7 +675,28 @@ export class SignAccountOpController extends EventEmitter {
       return null
     }
 
-    const chosenSpeed = this.feeSpeeds.find((speed) => speed.type === this.selectedFeeSpeed)
+    // TODO: perhaps set the chosenOption as a property in singAccountOp
+    // find the chosen fee option
+    const chosenOption = this.availableFeeOptions.find(
+      (option) =>
+        option.paidBy === this.paidBy &&
+        option.token.address === this.feeTokenResult?.address &&
+        option.token.flags.onGasTank === this.feeTokenResult.flags.onGasTank
+    )
+    if (!chosenOption) {
+      this.emitError({
+        level: 'silent',
+        message: '',
+        error: new Error('SignAccountOpController: paying option not found')
+      })
+
+      return null
+    }
+
+    const identifier = getFeeSpeedIdentifier(chosenOption)
+    const chosenSpeed = this.feeSpeeds[identifier].find(
+      (speed) => speed.type === this.selectedFeeSpeed
+    )
     if (!chosenSpeed) {
       this.emitError({
         level: 'silent',
