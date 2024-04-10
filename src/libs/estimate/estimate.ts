@@ -1,4 +1,4 @@
-import { AbiCoder, JsonRpcProvider, Provider, ZeroAddress } from 'ethers'
+import { AbiCoder, JsonRpcProvider, Provider, toBeHex, ZeroAddress } from 'ethers'
 
 import Estimation from '../../../contracts/compiled/Estimation.json'
 import { FEE_COLLECTOR } from '../../consts/addresses'
@@ -13,6 +13,7 @@ import { AccountOp } from '../accountOp/accountOp'
 import { Call } from '../accountOp/types'
 import { fromDescriptor } from '../deployless/deployless'
 import { getProbableCallData } from '../gasPrice/gasPrice'
+import { TokenResult } from '../portfolio'
 import {
   getActivatorCall,
   shouldIncludeActivatorCall,
@@ -22,7 +23,9 @@ import { estimateCustomNetwork } from './customNetworks'
 import { catchEstimationFailure, estimationErrorFormatted, mapTxnErrMsg } from './errors'
 import { estimateArbitrumL1GasUsed } from './estimateArbitrum'
 import { bundlerEstimate } from './estimateBundler'
-import { ArbitrumL1Fee, EstimateResult, FeeToken } from './interfaces'
+import { estimateEOA } from './estimateEOA'
+import { estimateWithRetries } from './estimateWithRetries'
+import { ArbitrumL1Fee, EstimateResult, FeePaymentOption } from './interfaces'
 import { refund } from './refund'
 
 const abiCoder = new AbiCoder()
@@ -47,38 +50,6 @@ function getNonceDiscrepancyFailure(op: AccountOp, outcomeNonce: number): Error 
   })
 }
 
-async function reestimate(fetchRequests: Function, counter: number = 0): Promise<any> {
-  // stop the execution on 5 fails;
-  // the below error message is not shown to the user so we are safe
-  if (counter >= 5)
-    return new Error(
-      'Estimation failure, retrying in a couple of seconds. If this issue persists, please change your RPC provider or contact Ambire support'
-    )
-
-  const estimationTimeout = new Promise((resolve) => {
-    setTimeout(() => {
-      resolve('Timeout reached')
-    }, 15000)
-  })
-
-  // try to estimate the request with a given timeout.
-  // if the request reaches the timeout, it cancels it and retries
-  let result = await Promise.race([Promise.all(fetchRequests()), estimationTimeout])
-
-  if (typeof result === 'string') {
-    const incremented = counter + 1
-    result = await reestimate(fetchRequests, incremented)
-  }
-
-  // if one of the calls returns an error, return it
-  if (Array.isArray(result)) {
-    const error = result.find((res) => res instanceof Error)
-    if (error) return error
-  }
-
-  return result
-}
-
 export async function estimate4337(
   account: Account,
   op: AccountOp,
@@ -86,14 +57,35 @@ export async function estimate4337(
   accountStates: AccountStates,
   network: NetworkDescriptor,
   provider: JsonRpcProvider | Provider,
-  feeTokens: FeeToken[],
+  feeTokens: TokenResult[],
   blockTag: string | number
 ): Promise<EstimateResult> {
   const deploylessEstimator = fromDescriptor(provider, Estimation, !network.rpcNoStateOverride)
   // if no paymaster, user can only pay in native
   const filteredFeeTokens = !shouldUsePaymaster(network)
-    ? feeTokens.filter((feeToken) => feeToken.address === ZeroAddress && !feeToken.isGasTank)
+    ? feeTokens.filter((feeToken) => feeToken.address === ZeroAddress && !feeToken.flags.onGasTank)
     : feeTokens
+
+  // build the feePaymentOptions with the available current amounts. We will
+  // change them after simulation passes
+  const feePaymentOptions = filteredFeeTokens.map((token: TokenResult) => {
+    return {
+      paidBy: account.addr,
+      availableAmount: token.amount,
+      // @relyOnBundler
+      // gasUsed goes to 0
+      // we add a transfer call or a native call when sending the uOp to the
+      // bundler and he estimates that. For different networks this gasUsed
+      // goes to different places (callGasLimit or preVerificationGas) and
+      // its calculated differently. So it's a wild bet to think we could
+      // calculate this on our own for each network.
+      gasUsed: 0n,
+      // addedNative gets calculated by the bundler & added to uOp gasData
+      addedNative: 0n,
+      token
+    }
+  })
+
   const checkInnerCallsArgs = [
     account.addr,
     ...getAccountDeployParams(account),
@@ -111,7 +103,6 @@ export async function estimate4337(
     [],
     ZeroAddress
   ]
-
   const initializeRequests = () => [
     deploylessEstimator
       .call('estimate', checkInnerCallsArgs, {
@@ -121,8 +112,23 @@ export async function estimate4337(
       .catch(catchEstimationFailure),
     bundlerEstimate(account, accountStates, op, network, feeTokens)
   ]
-  const estimations = await reestimate(initializeRequests)
-  if (estimations instanceof Error) return estimationErrorFormatted(estimations)
+  const estimations = await estimateWithRetries(initializeRequests)
+  if (estimations instanceof Error)
+    return estimationErrorFormatted(estimations, {
+      feePaymentOptions,
+      erc4337GasLimits: {
+        preVerificationGas: toBeHex(0),
+        verificationGasLimit: toBeHex(0),
+        callGasLimit: toBeHex(0),
+        gasPrice: {
+          slow: { maxFeePerGas: toBeHex(0), maxPriorityFeePerGas: toBeHex(0) },
+          medium: { maxFeePerGas: toBeHex(0), maxPriorityFeePerGas: toBeHex(0) },
+          fast: { maxFeePerGas: toBeHex(0), maxPriorityFeePerGas: toBeHex(0) },
+          ape: { maxFeePerGas: toBeHex(0), maxPriorityFeePerGas: toBeHex(0) }
+        }
+      }
+    })
+
   const [[, , accountOp, outcomeNonce, feeTokenOutcomes]] = estimations[0]
   const estimationResult: EstimateResult = estimations[1]
   estimationResult.error =
@@ -131,24 +137,17 @@ export async function estimate4337(
       : getInnerCallFailure(accountOp) || getNonceDiscrepancyFailure(op, outcomeNonce)
   estimationResult.currentAccountNonce = Number(outcomeNonce - 1n)
 
-  estimationResult.feePaymentOptions = filteredFeeTokens.map((token: FeeToken, index: number) => {
-    return {
-      address: token.address,
-      paidBy: account.addr,
-      availableAmount: feeTokenOutcomes[index][1],
-      // @relyOnBundler
-      // gasUsed goes to 0
-      // we add a transfer call or a native call when sending the uOp to the
-      // bundler and he estimates that. For different networks this gasUsed
-      // goes to different places (callGasLimit or preVerificationGas) and
-      // its calculated differently. So it's a wild bet to think we could
-      // calculate this on our own for each network.
-      gasUsed: 0n,
-      // addedNative gets calculated by the bundler & added to uOp gasData
-      addedNative: 0n,
-      isGasTank: token.isGasTank
+  // add the availableAmount after the simulation
+  estimationResult.feePaymentOptions = feePaymentOptions.map(
+    (option: FeePaymentOption, index: number) => {
+      // we do not rewrite the availableAmount if it's gasTank
+      if (option.token.flags.onGasTank) return option
+
+      const localOp = { ...option }
+      localOp.availableAmount = feeTokenOutcomes[index][1]
+      return localOp
     }
-  })
+  )
 
   return estimationResult
 }
@@ -161,7 +160,7 @@ export async function estimate(
   op: AccountOp,
   accountStates: AccountStates,
   EOAaccounts: Account[],
-  feeTokens: FeeToken[],
+  feeTokens: TokenResult[],
   opts?: {
     calculateRefund?: boolean
     is4337Broadcast?: boolean
@@ -169,79 +168,18 @@ export async function estimate(
   blockFrom: string = '0x0000000000000000000000000000000000000001',
   blockTag: string | number = 'latest'
 ): Promise<EstimateResult> {
-  const deploylessEstimator = fromDescriptor(provider, Estimation, !network.rpcNoStateOverride)
-  const optimisticOracle = network.isOptimistic ? OPTIMISTIC_ORACLE : ZeroAddress
-  const accountState = accountStates[op.accountAddr][op.networkId]
-  const isCustomNetwork = !predefinedNetworks.find((net) => net.id === network.id)
-  const isSA = isSmartAccount(account)
-
-  // we're excluding the view only accounts from the natives to check
-  // in all cases EXCEPT the case where we're making an estimation for
-  // the view only account itself. In all other, view only accounts options
-  // should not be present as the user cannot pay the fee with them (no key)
-  const nativeToCheck = EOAaccounts.filter(
-    (acc) => acc.addr === op.accountAddr || !getIsViewOnly(keystoreKeys, acc.associatedKeys)
-  ).map((acc) => acc.addr)
-
-  if (!isSA) {
-    if (op.calls.length !== 1)
-      return estimationErrorFormatted(
-        new Error(
-          "Trying to make multiple calls with a Basic Account which shouldn't happen. Please try again or contact support."
-        )
-      )
-
-    const call = op.calls[0]
-    const nonce = await provider.getTransactionCount(account.addr)
-    const encodedCallData = abiCoder.encode(
-      [
-        'bytes', // data
-        'address', // to
-        'address', // from
-        'uint256', // gasPrice
-        'uint256', // type
-        'uint256', // nonce
-        'uint256' // gasLimit
-      ],
-      [call.data, call.to, account.addr, 100000000, 2, nonce, 100000]
+  // if EOA, delegate
+  if (!isSmartAccount(account))
+    return estimateEOA(
+      account,
+      op,
+      accountStates,
+      network,
+      provider,
+      feeTokens,
+      blockFrom,
+      blockTag
     )
-    const initializeRequests = () => [
-      provider
-        .estimateGas({
-          from: account.addr,
-          to: call.to,
-          value: call.value,
-          data: call.data,
-          nonce
-        })
-        .catch(catchEstimationFailure),
-      provider.getBalance(account.addr).catch(catchEstimationFailure),
-      deploylessEstimator
-        .call('getL1GasEstimation', [encodedCallData, FEE_COLLECTOR, optimisticOracle], {
-          from: blockFrom,
-          blockTag
-        })
-        .catch(catchEstimationFailure)
-    ]
-    const result = await reestimate(initializeRequests)
-    const [gasUsed, balance, [l1GasEstimation]] =
-      result instanceof Error ? [0n, 0n, [{ fee: 0n }]] : result
-
-    return {
-      gasUsed,
-      currentAccountNonce: nonce,
-      feePaymentOptions: [
-        {
-          address: ZeroAddress,
-          paidBy: account.addr,
-          availableAmount: balance,
-          addedNative: l1GasEstimation.fee,
-          isGasTank: false
-        }
-      ],
-      error: result instanceof Error ? result : null
-    }
-  }
 
   if (!network.isSAEnabled)
     return estimationErrorFormatted(
@@ -253,10 +191,12 @@ export async function estimate(
   // and the network is 4337 but doesn't have a paymaster, we should activate
   // the entry point and therefore estimate the activator call here
   const calls = [...op.calls]
+  const accountState = accountStates[op.accountAddr][op.networkId]
   if (shouldIncludeActivatorCall(network, accountState)) {
     calls.push(getActivatorCall(op.accountAddr))
   }
 
+  // if 4337, delegate
   if (opts && opts.is4337Broadcast) {
     const estimationResult: EstimateResult = await estimate4337(
       account,
@@ -270,6 +210,18 @@ export async function estimate(
     )
     return estimationResult
   }
+
+  const deploylessEstimator = fromDescriptor(provider, Estimation, !network.rpcNoStateOverride)
+  const optimisticOracle = network.isOptimistic ? OPTIMISTIC_ORACLE : ZeroAddress
+  const isCustomNetwork = !predefinedNetworks.find((net) => net.id === network.id)
+
+  // we're excluding the view only accounts from the natives to check
+  // in all cases EXCEPT the case where we're making an estimation for
+  // the view only account itself. In all other, view only accounts options
+  // should not be present as the user cannot pay the fee with them (no key)
+  const nativeToCheck = EOAaccounts.filter(
+    (acc) => acc.addr === op.accountAddr || !getIsViewOnly(keystoreKeys, acc.associatedKeys)
+  ).map((acc) => acc.addr)
 
   // if the network doesn't have a relayer, we can't pay in fee tokens
   const filteredFeeTokens = network.hasRelayer ? feeTokens : []
@@ -331,7 +283,7 @@ export async function estimate(
           resolve(0n)
         })
   ]
-  const estimations = await reestimate(initializeRequests)
+  const estimations = await estimateWithRetries(initializeRequests)
   if (estimations instanceof Error) return estimationErrorFormatted(estimations)
 
   const [
@@ -369,40 +321,40 @@ export async function estimate(
   const l1FeeWithTransferPayment =
     network.id !== 'arbitrum' ? l1GasEstimation.feeWithTransferPayment : arbitrumEstimation.withFee
 
-  const feeTokenOptions = feeTokenOutcomes.map((token: any, key: number) => {
-    const address = filteredFeeTokens[key].address
-    const addedNative = address === ZeroAddress ? l1FeeWithNativePayment : l1FeeWithTransferPayment
-
-    return {
-      address,
-      paidBy: account.addr,
-      availableAmount: filteredFeeTokens[key].isGasTank
-        ? filteredFeeTokens[key].amount
-        : token.amount,
-      // gasUsed for the gas tank tokens is smaller because of the commitment:
-      // ['gasTank', amount, symbol]
-      // and this commitment costs onchain:
-      // - 1535, if the broadcasting addr is the relayer
-      // - 4035, if the broadcasting addr is different
-      // currently, there are more than 1 relayer addresses and we cannot
-      // be sure which is the one that will broadcast this txn; also, ERC-4337
-      // broadcasts will always consume at least 4035.
-      // setting it to 5000n just be sure
-      gasUsed: filteredFeeTokens[key].isGasTank ? 5000n : token.gasUsed,
-      addedNative,
-      isGasTank: filteredFeeTokens[key].isGasTank
+  const feeTokenOptions: FeePaymentOption[] = filteredFeeTokens.map(
+    (token: TokenResult, key: number) => {
+      return {
+        paidBy: account.addr,
+        availableAmount: token.flags.onGasTank ? token.amount : feeTokenOutcomes[key].amount,
+        // gasUsed for the gas tank tokens is smaller because of the commitment:
+        // ['gasTank', amount, symbol]
+        // and this commitment costs onchain:
+        // - 1535, if the broadcasting addr is the relayer
+        // - 4035, if the broadcasting addr is different
+        // currently, there are more than 1 relayer addresses and we cannot
+        // be sure which is the one that will broadcast this txn; also, ERC-4337
+        // broadcasts will always consume at least 4035.
+        // setting it to 5000n just be sure
+        gasUsed: token.flags.onGasTank ? 5000n : feeTokenOutcomes[key].gasUsed,
+        addedNative:
+          token.address === ZeroAddress ? l1FeeWithNativePayment : l1FeeWithTransferPayment,
+        token
+      }
     }
-  })
+  )
 
   // this is for EOAs paying for SA in native
-  // or the current address if it's an EOA
-  const nativeTokenOptions = nativeAssetBalances.map((balance: bigint, key: number) => ({
-    address: ZeroAddress,
-    paidBy: nativeToCheck[key],
-    availableAmount: balance,
-    addedNative: l1Fee,
-    isGasTank: false
-  }))
+  const nativeToken = filteredFeeTokens.find(
+    (token) => token.address === ZeroAddress && !token.flags.onGasTank
+  )
+  const nativeTokenOptions: FeePaymentOption[] = nativeAssetBalances.map(
+    (balance: bigint, key: number) => ({
+      paidBy: nativeToCheck[key],
+      availableAmount: balance,
+      addedNative: l1Fee,
+      token: nativeToken
+    })
+  )
 
   return {
     gasUsed,

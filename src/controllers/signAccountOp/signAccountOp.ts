@@ -87,6 +87,9 @@ function getTokenUsdAmount(token: TokenResult, gasAmount: bigint): string | null
 const NON_CRITICAL_ERRORS = {
   feeUsdEstimation: 'Unable to estimate the transaction fee in USD.'
 }
+const CRITICAL_ERRORS = {
+  eoaInsufficientFunds: 'Insufficient funds to cover the fee.'
+}
 
 export class SignAccountOpController extends EventEmitter {
   #keystore: KeystoreController
@@ -102,8 +105,6 @@ export class SignAccountOpController extends EventEmitter {
   #fetch: Function
 
   #account: Account
-
-  #accounts: Account[]
 
   #accountStates: AccountStates
 
@@ -137,7 +138,6 @@ export class SignAccountOpController extends EventEmitter {
     settings: SettingsController,
     externalSignerControllers: ExternalSignerControllers,
     account: Account,
-    accounts: Account[],
     accountStates: AccountStates,
     network: NetworkDescriptor,
     accountOp: AccountOp,
@@ -151,7 +151,6 @@ export class SignAccountOpController extends EventEmitter {
     this.#settings = settings
     this.#externalSignerControllers = externalSignerControllers
     this.#account = account
-    this.#accounts = accounts
     this.#accountStates = accountStates
     this.#network = network
     this.accountOp = structuredClone(accountOp)
@@ -215,10 +214,7 @@ export class SignAccountOpController extends EventEmitter {
       errors.push(this.#estimation.error.message)
     }
 
-    if (!this.availableFeeOptions.length)
-      errors.push(
-        "We are unable to estimate your transaction as you don't have tokens with balances to cover the fee."
-      )
+    if (!this.availableFeeOptions.length) errors.push(CRITICAL_ERRORS.eoaInsufficientFunds)
 
     // This error should not happen, as in the update method we are always setting a default signer.
     // It may occur, only if there are no available signer.
@@ -243,13 +239,16 @@ export class SignAccountOpController extends EventEmitter {
       const feeToken = this.availableFeeOptions.find(
         (feeOption) =>
           feeOption.paidBy === this.accountOp?.gasFeePayment?.paidBy &&
-          feeOption.address === this.accountOp?.gasFeePayment?.inToken &&
-          feeOption.isGasTank === this.accountOp?.gasFeePayment?.isGasTank
+          feeOption.token.address === this.accountOp?.gasFeePayment?.inToken &&
+          feeOption.token.flags.onGasTank === this.accountOp?.gasFeePayment?.isGasTank
       )
 
       if (feeToken!.availableAmount < this.accountOp?.gasFeePayment.amount) {
+        // show a different error message depending on whether SA/EOA
         errors.push(
-          "Signing is not possible with the selected account's token as it doesn't have sufficient funds to cover the gas payment fee."
+          isSmartAccount(this.#account)
+            ? "Signing is not possible with the selected account's token as it doesn't have sufficient funds to cover the gas payment fee."
+            : CRITICAL_ERRORS.eoaInsufficientFunds
         )
       }
     }
@@ -451,7 +450,9 @@ export class SignAccountOpController extends EventEmitter {
     // Here we multiply it by 1e18, in order to keep the decimal precision.
     // Otherwise, passing the ratio to the BigInt constructor, we will lose the numbers after the decimal point.
     // Later, once we need to normalize this ratio, we should not forget to divide it by 1e18.
-    return BigInt(ratio * 1e18)
+    const ratio1e18 = ratio * 1e18
+    const toBigInt = ratio1e18 % 1 === 0 ? ratio1e18 : ratio1e18.toFixed(0)
+    return BigInt(toBigInt)
   }
 
   static getAmountAfterFeeTokenConvert(
@@ -497,9 +498,9 @@ export class SignAccountOpController extends EventEmitter {
     const gasUsed = this.#estimation!.gasUsed
     const feeTokenEstimation = this.#estimation!.feePaymentOptions.find(
       (option) =>
-        option.address === this.feeTokenResult?.address &&
+        option.token.address === this.feeTokenResult?.address &&
         this.paidBy === option.paidBy &&
-        this.feeTokenResult?.flags.onGasTank === option.isGasTank
+        this.feeTokenResult?.flags.onGasTank === option.token.flags.onGasTank
     )
 
     if (!feeTokenEstimation) return []
@@ -578,9 +579,9 @@ export class SignAccountOpController extends EventEmitter {
         // use feePaymentOptions here as fee can be payed in other than native
         const feeTokenGasUsed = this.#estimation!.feePaymentOptions.find(
           (option) =>
-            option.address === this.feeTokenResult?.address &&
+            option.token.address === this.feeTokenResult?.address &&
             this.paidBy === option.paidBy &&
-            this.feeTokenResult?.flags.onGasTank === option.isGasTank
+            this.feeTokenResult?.flags.onGasTank === option.token.flags.onGasTank
         )!.gasUsed!
         simulatedGasLimit = gasUsed + callDataAdditionalGasCost + feeTokenGasUsed
         amount = SignAccountOpController.getAmountAfterFeeTokenConvert(

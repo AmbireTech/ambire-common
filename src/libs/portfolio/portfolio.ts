@@ -88,6 +88,7 @@ export class Portfolio {
 
   async get(accountAddr: string, opts: Partial<GetOptions> = {}): Promise<PortfolioGetResult> {
     const localOpts = { ...defaultOptions, ...opts }
+    const disableAutoDiscovery = localOpts.disableAutoDiscovery || false
     const { baseCurrency } = localOpts
     if (localOpts.simulation && localOpts.simulation.account.addr !== accountAddr)
       throw new Error('wrong account passed')
@@ -102,9 +103,10 @@ export class Portfolio {
     try {
       // if the network doesn't have a relayer, velcro will not work
       // but we should not record an error if such is the case
-      hints = this.network.hasRelayer
-        ? await this.batchedVelcroDiscovery({ networkId, accountAddr, baseCurrency })
-        : getEmptyHints(networkId, accountAddr)
+      hints =
+        this.network.hasRelayer && !disableAutoDiscovery
+          ? await this.batchedVelcroDiscovery({ networkId, accountAddr, baseCurrency })
+          : getEmptyHints(networkId, accountAddr)
     } catch (error: any) {
       hints = {
         ...getEmptyHints(networkId, accountAddr),

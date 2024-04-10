@@ -362,7 +362,6 @@ export class MainController extends EventEmitter {
       this.settings,
       this.#externalSignerControllers,
       account,
-      this.accounts,
       this.accountStates,
       network,
       accountOpToBeSigned,
@@ -828,14 +827,7 @@ export class MainController extends EventEmitter {
         ) ?? []
 
       const feeTokens =
-        [...networkFeeTokens, ...gasTankFeeTokens]
-          .filter((t) => t.flags.isFeeToken)
-          .map((token) => ({
-            address: token.address,
-            isGasTank: token.flags.onGasTank,
-            amount: BigInt(token.amount),
-            symbol: token.symbol
-          })) || []
+        [...networkFeeTokens, ...gasTankFeeTokens].filter((t) => t.flags.isFeeToken) || []
 
       // if the network's chosen RPC supports debug_traceCall, we
       // make an additional simulation for each call in the accountOp
@@ -1049,7 +1041,7 @@ export class MainController extends EventEmitter {
       this.accountOpsToBeSigned[accountOp.accountAddr][accountOp.networkId]!.estimation!
     const feeTokenEstimation = estimation.feePaymentOptions.find(
       (option) =>
-        option.address === accountOp.gasFeePayment?.inToken &&
+        option.token.address === accountOp.gasFeePayment?.inToken &&
         option.paidBy === accountOp.gasFeePayment?.paidBy
     )!
 
