@@ -158,10 +158,12 @@ describe('Settings Controller', () => {
       explorerUrl: 'https://etherscan.io/custom'
     }
 
+    let checkComplete = false
     settingsController.onUpdate(() => {
       if (
         settingsController.latestMethodCall === 'updateNetworkPreferences' &&
-        settingsController.status === 'SUCCESS'
+        settingsController.status === 'SUCCESS' &&
+        !checkComplete
       ) {
         const modifiedNetwork = settingsController.networks.find(({ id }) => id === 'ethereum')
         expect(modifiedNetwork?.explorerUrl).toEqual('https://etherscan.io/custom')
@@ -169,6 +171,7 @@ describe('Settings Controller', () => {
           'https://eth-mainnet.alchemyapi.io/v2/123abc123abc123abc123abc123abcde'
         ])
         settingsController.providers.ethereum.destroy()
+        checkComplete = true
         done()
       }
     })
@@ -206,18 +209,28 @@ describe('Settings Controller', () => {
   test('should check if network features get displayed correctly for ethereum', (done) => {
     let checks = 0
     settingsController.onUpdate(() => {
-      if (checks === 1) {
+      if (checks === 5) {
         checks++
         const eth = settingsController.networks.find((net) => net.id === 'ethereum')!
         expect(eth.areContractsDeployed).toBe(true)
         done()
       }
 
-      if (checks === 0) {
+      // skip updates until the correct one comes
+      if (checks === 2 || checks === 3 || checks === 4) {
+        checks++
+      }
+
+      if (checks === 1) {
         checks++
         const eth = settingsController.networks.find((net) => net.id === 'ethereum')!
         expect(eth.areContractsDeployed).toBe(false)
         settingsController.setContractsDeployedToTrueIfDeployed(eth)
+      }
+
+      // skip the first update: LOADING
+      if (checks === 0) {
+        checks++
       }
     })
 
