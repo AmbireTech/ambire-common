@@ -18,7 +18,6 @@ import {
   RPCProviders
 } from '../../interfaces/settings'
 import { Storage } from '../../interfaces/storage'
-import { getSASupport, simulateDebugTraceCall } from '../../libs/deployless/simulateDeployCall'
 import { getFeaturesByNetworkProperties, getNetworkInfo } from '../../libs/settings/settings'
 import { isValidAddress } from '../../services/address'
 import { getRpcProvider } from '../../services/provider'
@@ -327,33 +326,16 @@ export class SettingsController extends EventEmitter {
       throw new Error('settings: addCustomNetwork chain already added')
     }
 
-    const {
-      isSAEnabled,
-      isOptimistic,
-      rpcNoStateOverride,
-      hasDebugTraceCall,
-      erc4337,
-      areContractsDeployed,
-      feeOptions,
-      platformId,
-      nativeAssetId,
-      flagged,
-      hasSingleton
-    } = this.networkToAddOrUpdate.info as NetworkInfo
+    const info = { ...(this.networkToAddOrUpdate.info as NetworkInfo) }
+    const { feeOptions } = info
+
+    // eslint-disable-next-line no-param-reassign
+    delete (info as any).feeOptions
 
     this.#networkPreferences[customNetworkId] = {
       ...customNetwork,
-      ...feeOptions,
-      erc4337,
-      isSAEnabled,
-      areContractsDeployed,
-      isOptimistic,
-      rpcNoStateOverride,
-      hasDebugTraceCall,
-      platformId,
-      nativeAssetId,
-      flagged,
-      hasSingleton
+      ...info,
+      ...feeOptions
     }
 
     await this.#storePreferences()
@@ -414,22 +396,50 @@ export class SettingsController extends EventEmitter {
     ;(async () => {
       // if the rpcUrls have changed, call the RPC and check whether it supports
       // state overrided. If it doesn't, add a warning
-      if (changedNetworkPreferences.rpcUrls) {
-        const network = this.networks.find((n) => n.id === networkId)
-        const provider = getRpcProvider(changedNetworkPreferences.rpcUrls, network?.chainId)
-        const [saSupport, hasDebugTraceCall] = await Promise.all([
-          getSASupport(provider).catch(() => ({ supportsStateOverride: false })),
-          simulateDebugTraceCall(provider)
-        ])
-        provider.destroy()
-        this.#networkPreferences[networkId] = {
-          ...this.#networkPreferences[networkId],
-          rpcNoStateOverride: !saSupport.supportsStateOverride,
-          hasDebugTraceCall
+      if (changedNetworkPreferences.selectedRpcUrl) {
+        if (
+          this.networkToAddOrUpdate?.info &&
+          Object.values(this.networkToAddOrUpdate.info).every((prop) => prop !== 'LOADING')
+        ) {
+          const info = { ...(this.networkToAddOrUpdate.info as NetworkInfo) }
+          const { feeOptions } = info
+
+          // eslint-disable-next-line no-param-reassign
+          delete (info as any).feeOptions
+          this.#networkPreferences[networkId] = {
+            ...this.#networkPreferences[networkId],
+            ...info,
+            ...feeOptions
+          }
+
+          await this.#storePreferences()
+          this.emitUpdate()
+          return
         }
 
-        await this.#storePreferences()
-        this.emitUpdate()
+        // eslint-disable-next-line @typescript-eslint/no-floating-promises
+        getNetworkInfo(
+          changedNetworkPreferences.selectedRpcUrl,
+          this.#networkPreferences[networkId].chainId!,
+          async (info) => {
+            if (Object.values(info).some((prop) => prop === 'LOADING')) {
+              return
+            }
+
+            const { feeOptions } = info as NetworkInfo
+
+            // eslint-disable-next-line no-param-reassign
+            delete (info as any).feeOptions
+            this.#networkPreferences[networkId] = {
+              ...this.#networkPreferences[networkId],
+              ...(info as NetworkInfo),
+              ...feeOptions
+            }
+
+            await this.#storePreferences()
+            this.emitUpdate()
+          }
+        )
       }
     })()
   }
