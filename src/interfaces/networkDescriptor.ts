@@ -54,6 +54,7 @@ export interface NetworkDescriptor {
   nativeAssetSymbol: string
   chainId: bigint
   rpcUrls: string[]
+  selectedRpcUrl?: string
   explorerUrl: string
   erc4337: Erc4337settings
   rpcNoStateOverride: boolean

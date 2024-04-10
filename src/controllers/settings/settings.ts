@@ -376,7 +376,7 @@ export class SettingsController extends EventEmitter {
   }
 
   async #updateNetworkPreferences(
-    networkPreferences: NetworkPreference,
+    networkPreferences: Partial<NetworkPreference>,
     networkId: NetworkDescriptor['id']
   ) {
     if (!Object.keys(networkPreferences).length) return
