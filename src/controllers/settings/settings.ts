@@ -155,14 +155,15 @@ export class SettingsController extends EventEmitter {
 
   async #load() {
     try {
-      ;[this.accountPreferences, this.keyPreferences, this.#networkPreferences] = await Promise.all(
-        [
-          // Should get the storage data from all keys here
-          this.#storage.get('accountPreferences', {}),
-          this.#storage.get('keyPreferences', []),
-          this.#storage.get('networkPreferences', {})
-        ]
-      )
+      let networkPreferences = {}
+      ;[this.accountPreferences, this.keyPreferences, networkPreferences] = await Promise.all([
+        // Should get the storage data from all keys here
+        this.#storage.get('accountPreferences', {}),
+        this.#storage.get('keyPreferences', []),
+        this.#storage.get('networkPreferences', {})
+      ])
+
+      this.#networkPreferences = this.#migrateNetworkPreferences(networkPreferences)
 
       this.emitUpdate()
     } catch (e) {
@@ -173,6 +174,23 @@ export class SettingsController extends EventEmitter {
         error: new Error('settings: failed to pull settings from storage')
       })
     }
+  }
+
+  // eslint-disable-next-line class-methods-use-this
+  #migrateNetworkPreferences(networkPreferencesOldFormat: {
+    [key in NetworkDescriptor['id']]: (NetworkPreference | CustomNetwork) & { rpcUrl?: string }
+  }) {
+    const modifiedNetworks: NetworkPreferences = {}
+    // eslint-disable-next-line no-restricted-syntax
+    for (const [networkId, network] of Object.entries(networkPreferencesOldFormat)) {
+      if (network.rpcUrl && !network.rpcUrls) {
+        modifiedNetworks[networkId] = { ...network, rpcUrls: [network.rpcUrl] }
+      } else {
+        modifiedNetworks[networkId] = network
+      }
+    }
+
+    return modifiedNetworks
   }
 
   async #storePreferences() {
