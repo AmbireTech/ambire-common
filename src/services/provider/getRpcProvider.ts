@@ -2,10 +2,15 @@ import { JsonRpcProvider, Network } from 'ethers'
 
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 
+interface ProviderOptions {
+  batchMaxCount: number
+}
+
 const getRpcProvider = (
   rpcUrls: NetworkDescriptor['rpcUrls'],
   chainId?: bigint | number,
-  selectedRpcUrl?: string
+  selectedRpcUrl?: string,
+  options?: ProviderOptions
 ) => {
   if (!rpcUrls.length) {
     throw new Error('rpcUrls must be a non-empty array')
@@ -22,7 +27,7 @@ const getRpcProvider = (
     const staticNetwork = Network.from(Number(chainId))
 
     if (staticNetwork) {
-      return new JsonRpcProvider(rpcUrl, staticNetwork, { staticNetwork })
+      return new JsonRpcProvider(rpcUrl, staticNetwork, { staticNetwork, ...options })
     }
   }
 
