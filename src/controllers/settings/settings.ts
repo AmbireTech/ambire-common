@@ -59,7 +59,7 @@ export class SettingsController extends EventEmitter {
     // Only update the RPC if the new RPC is different from the current one
     // or if there is no RPC for this network yet.
     // eslint-disable-next-line no-underscore-dangle
-    if (!provider || provider?._getConnection().url !== newRpcUrls[0]) {
+    if (!provider || provider?._getConnection().url !== selectedRpcUrl) {
       const oldRPC = this.providers[network.id]
 
       if (oldRPC) {
@@ -400,20 +400,6 @@ export class SettingsController extends EventEmitter {
       {} as NetworkPreference
     )
 
-    // if the rpcUrls have changed, call the RPC and check whether it supports
-    // state overrided. If it doesn't, add a warning
-    if (changedNetworkPreferences.rpcUrls) {
-      const network = this.networks.find((n) => n.id === networkId)
-      const provider = getRpcProvider(changedNetworkPreferences.rpcUrls, network?.chainId)
-      const [saSupport, hasDebugTraceCall] = await Promise.all([
-        getSASupport(provider).catch(() => ({ supportsStateOverride: false })),
-        simulateDebugTraceCall(provider)
-      ])
-      provider.destroy()
-      changedNetworkPreferences.rpcNoStateOverride = !saSupport.supportsStateOverride
-      changedNetworkPreferences.hasDebugTraceCall = hasDebugTraceCall
-    }
-
     // Update the network preferences with the incoming new values
     this.#networkPreferences[networkId] = {
       ...this.#networkPreferences[networkId],
@@ -422,6 +408,30 @@ export class SettingsController extends EventEmitter {
 
     await this.#storePreferences()
     this.emitUpdate()
+
+    // Do not wait the rpc validation in order to complete the execution of updateNetworkPreferences
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+    ;(async () => {
+      // if the rpcUrls have changed, call the RPC and check whether it supports
+      // state overrided. If it doesn't, add a warning
+      if (changedNetworkPreferences.rpcUrls) {
+        const network = this.networks.find((n) => n.id === networkId)
+        const provider = getRpcProvider(changedNetworkPreferences.rpcUrls, network?.chainId)
+        const [saSupport, hasDebugTraceCall] = await Promise.all([
+          getSASupport(provider).catch(() => ({ supportsStateOverride: false })),
+          simulateDebugTraceCall(provider)
+        ])
+        provider.destroy()
+        this.#networkPreferences[networkId] = {
+          ...this.#networkPreferences[networkId],
+          rpcNoStateOverride: !saSupport.supportsStateOverride,
+          hasDebugTraceCall
+        }
+
+        await this.#storePreferences()
+        this.emitUpdate()
+      }
+    })()
   }
 
   async updateNetworkPreferences(
