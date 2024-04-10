@@ -89,12 +89,12 @@ export class TransferController extends EventEmitter {
       this.selectedToken?.address !== token?.address ||
       this.selectedToken?.networkId !== token?.networkId
     ) {
-      this.#selectedToken = token
       this.amount = ''
       this.#setSWWarningVisibleIfNeeded()
     }
     // on portfolio update the max available amount can change for the selectedToken
     // in that case don't update the selectedToken and amount in the form but only the maxAmount value
+    this.#selectedToken = token
     this.maxAmount = token ? formatUnits(token.amount, Number(token.decimals)) : '0'
   }
 
