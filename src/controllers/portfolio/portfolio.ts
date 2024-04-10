@@ -273,6 +273,18 @@ export class PortfolioController extends EventEmitter {
           tokens: result.tokens
         }
       }
+
+      const tokenResults = result?.tokens
+
+      // start a request for fetching the token icons after a successful update
+      this.getTokenIcons(tokenResults).catch((e) => {
+        // Icons are not so important so they should not stop the execution
+        this.emitError({
+          level: 'silent',
+          message: 'Error while fetching the token icons',
+          error: e
+        })
+      })
       this.emitUpdate()
       return true
     } catch (e: any) {
