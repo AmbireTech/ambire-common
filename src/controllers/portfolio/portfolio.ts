@@ -1,12 +1,11 @@
 /* eslint-disable import/no-extraneous-dependencies */
-/* eslint-disable @typescript-eslint/no-use-before-define */
-/* eslint-disable @typescript-eslint/no-shadow */
-import { CustomToken } from 'libs/portfolio/customToken'
 import fetch from 'node-fetch'
 
 import { PINNED_TOKENS } from '../../consts/pinnedTokens'
 import { Account, AccountId } from '../../interfaces/account'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
+/* eslint-disable @typescript-eslint/no-shadow */
+import { CustomNetwork, NetworkPreference } from '../../interfaces/settings'
 import { Storage } from '../../interfaces/storage'
 import { isSmartAccount } from '../../libs/account/account'
 import { AccountOp, isAccountOpsIntentEqual } from '../../libs/accountOp/accountOp'
@@ -16,6 +15,8 @@ import {
   getNetworksWithFailedRPCBanners,
   getNetworksWithPortfolioErrorBanners
 } from '../../libs/banners/banners'
+/* eslint-disable @typescript-eslint/no-use-before-define */
+import { CustomToken } from '../../libs/portfolio/customToken'
 import getAccountNetworksWithAssets from '../../libs/portfolio/getNetworksWithAssets'
 import { getFlags, validateERC20Token } from '../../libs/portfolio/helpers'
 /* eslint-disable no-param-reassign */
@@ -230,7 +231,7 @@ export class PortfolioController extends EventEmitter {
     // 2. The network RPC URL has changed
     if (
       !this.#portfolioLibs.has(key) ||
-      this.#portfolioLibs.get(key)?.network?.rpcUrl !==
+      this.#portfolioLibs.get(key)?.network?.selectedRpcUrl !==
         // eslint-disable-next-line no-underscore-dangle
         providers[network.id]?._getConnection().url
     ) {

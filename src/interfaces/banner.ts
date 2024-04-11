@@ -1,3 +1,5 @@
+import { NetworkDescriptor } from './networkDescriptor'
+
 export type BannerType = 'error' | 'warning' | 'info' | 'success'
 
 export interface Banner {
@@ -48,4 +50,11 @@ export type Action =
       label: 'Switch'
       actionName: 'switch-default-wallet'
       meta: {}
+    }
+  | {
+      label: 'Select'
+      actionName: 'select-rpc-url'
+      meta: {
+        network: NetworkDescriptor
+      }
     }

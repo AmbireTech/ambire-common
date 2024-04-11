@@ -1,4 +1,3 @@
-import { JsonRpcProvider } from 'ethers'
 import fetch from 'node-fetch'
 
 import { expect } from '@jest/globals'
@@ -9,7 +8,7 @@ import humanizerInfo from '../../consts/humanizer/humanizerInfo.json'
 import { networks } from '../../consts/networks'
 import { HumanizerMeta } from '../../libs/humanizer/interfaces'
 import { Portfolio } from '../../libs/portfolio'
-import { initRpcProviders } from '../../services/provider'
+import { getRpcProvider } from '../../services/provider'
 import { SettingsController } from '../settings/settings'
 import { TransferController } from './transfer'
 
@@ -18,14 +17,8 @@ const polygon = networks.find((x) => x.id === 'polygon')
 
 if (!ethereum || !polygon) throw new Error('Failed to find ethereum in networks')
 
-const provider = new JsonRpcProvider(ethereum.rpcUrl)
-const polygonProvider = new JsonRpcProvider(polygon.rpcUrl)
-// Required for ENS resolution
-initRpcProviders({
-  [ethereum.id]: provider,
-  [polygon.id]: polygonProvider
-})
-
+const provider = getRpcProvider(ethereum.rpcUrls, ethereum.chainId)
+const polygonProvider = getRpcProvider(polygon.rpcUrls, polygon.chainId)
 const PLACEHOLDER_RECIPIENT = '0xC2E6dFcc2C6722866aD65F211D5757e1D2879337'
 const PLACEHOLDER_RECIPIENT_LOWERCASE = PLACEHOLDER_RECIPIENT.toLowerCase()
 const PLACEHOLDER_SELECTED_ACCOUNT = '0xc4A6bB5139123bD6ba0CF387828a9A3a73EF8D1e'
@@ -38,7 +31,7 @@ let transferController: TransferController
 let errorCount = 0
 const settingsController = new SettingsController(produceMemoryStore())
 const providers = Object.fromEntries(
-  networks.map((network) => [network.id, new JsonRpcProvider(network.rpcUrl)])
+  networks.map((network) => [network.id, getRpcProvider(network.rpcUrls, network.chainId)])
 )
 settingsController.providers = providers
 

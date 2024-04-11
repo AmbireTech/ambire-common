@@ -154,21 +154,24 @@ describe('Settings Controller', () => {
 
   test('should update network preferences', (done) => {
     const preferences = {
-      rpcUrl: 'https://eth-mainnet.alchemyapi.io/v2/123abc123abc123abc123abc123abcde',
+      rpcUrls: ['https://eth-mainnet.alchemyapi.io/v2/123abc123abc123abc123abc123abcde'],
       explorerUrl: 'https://etherscan.io/custom'
     }
 
-    let emitCounter = 0
+    let checkComplete = false
     settingsController.onUpdate(() => {
-      emitCounter++
-
-      if (emitCounter === 1) {
+      if (
+        settingsController.latestMethodCall === 'updateNetworkPreferences' &&
+        settingsController.status === 'SUCCESS' &&
+        !checkComplete
+      ) {
         const modifiedNetwork = settingsController.networks.find(({ id }) => id === 'ethereum')
         expect(modifiedNetwork?.explorerUrl).toEqual('https://etherscan.io/custom')
-        expect(modifiedNetwork?.rpcUrl).toEqual(
+        expect(modifiedNetwork?.rpcUrls).toEqual([
           'https://eth-mainnet.alchemyapi.io/v2/123abc123abc123abc123abc123abcde'
-        )
+        ])
         settingsController.providers.ethereum.destroy()
+        checkComplete = true
         done()
       }
     })
@@ -185,10 +188,10 @@ describe('Settings Controller', () => {
       emitCounter++
 
       if (emitCounter === 1) {
-        settingsController.resetNetworkPreference('rpcUrl', 'ethereum')
+        settingsController.resetNetworkPreference('rpcUrls', 'ethereum')
       }
       if (emitCounter === 3) {
-        expect(modifiedNetwork?.rpcUrl).toEqual(ethereumStatic?.rpcUrl)
+        expect(modifiedNetwork?.rpcUrls).toEqual(ethereumStatic?.rpcUrls)
         expect(modifiedNetwork?.explorerUrl).toEqual('https://etherscan.io/custom') // Should remain the same
       }
       done()
@@ -196,7 +199,7 @@ describe('Settings Controller', () => {
 
     settingsController.updateNetworkPreferences(
       {
-        rpcUrl: 'https://eth-mainnet.alchemyapi.io/v2/123abc123abc123abc123abc123abcde',
+        rpcUrls: ['https://eth-mainnet.alchemyapi.io/v2/123abc123abc123abc123abc123abcde'],
         explorerUrl: 'https://etherscan.io/custom'
       },
       'ethereum'
@@ -206,25 +209,35 @@ describe('Settings Controller', () => {
   test('should check if network features get displayed correctly for ethereum', (done) => {
     let checks = 0
     settingsController.onUpdate(() => {
-      if (checks === 1) {
+      if (checks === 5) {
         checks++
         const eth = settingsController.networks.find((net) => net.id === 'ethereum')!
         expect(eth.areContractsDeployed).toBe(true)
         done()
       }
 
-      if (checks === 0) {
+      // skip updates until the correct one comes
+      if (checks === 2 || checks === 3 || checks === 4) {
+        checks++
+      }
+
+      if (checks === 1) {
         checks++
         const eth = settingsController.networks.find((net) => net.id === 'ethereum')!
         expect(eth.areContractsDeployed).toBe(false)
         settingsController.setContractsDeployedToTrueIfDeployed(eth)
+      }
+
+      // skip the first update: LOADING
+      if (checks === 0) {
+        checks++
       }
     })
 
     const eth = settingsController.networks.find((net) => net.id === 'ethereum')!
     expect(eth?.features.length).toBe(3)
 
-    const saSupport = eth?.features.find((feat) => feat.id === 'saSupport')
+    const saSupport = eth?.features.find((feat) => feat.id === 'saSupport')!
     expect(saSupport).not.toBe(null)
     expect(saSupport).not.toBe(undefined)
     expect(saSupport!.level).toBe('success')
@@ -291,7 +304,7 @@ describe('Settings Controller', () => {
 
         mantleNetwork = {
           name: 'Mantle',
-          rpcUrl: settingsController.networkToAddOrUpdate?.rpcUrl!,
+          rpcUrls: [settingsController.networkToAddOrUpdate?.rpcUrl],
           nativeAssetSymbol: 'MNT',
           explorerUrl: 'https://explorer.mantle.xyz/',
           ...mantleNetworkInfo,
@@ -444,7 +457,7 @@ describe('Settings Controller', () => {
   //     chainId: 250n,
   //     explorerUrl: 'https://ftmscan.com/',
   //     nativeAssetSymbol: 'FTM',
-  //     rpcUrl: 'https://fantom-pokt.nodies.app'
+  //     rpcUrls: ['https://fantom-pokt.nodies.app']
   //   })
   // })
 })
