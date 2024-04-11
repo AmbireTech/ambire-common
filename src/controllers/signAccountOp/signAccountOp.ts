@@ -171,7 +171,7 @@ export class SignAccountOpController extends EventEmitter {
   }
 
   get isInitialized(): boolean {
-    return !!(this.#account && this.#network && this.accountOp && this.#estimation)
+    return !!this.#estimation
   }
 
   #setDefaults() {
@@ -517,7 +517,7 @@ export class SignAccountOpController extends EventEmitter {
   }
 
   get #feeSpeedsLoading() {
-    return !this.isInitialized || !this.gasPrices || !this.paidBy || !this.feeTokenResult
+    return !this.isInitialized || !this.gasPrices
   }
 
   #updateFeeSpeeds() {
