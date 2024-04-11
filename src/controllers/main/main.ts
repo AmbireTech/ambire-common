@@ -251,6 +251,9 @@ export class MainController extends EventEmitter {
 
     if (this.selectedAccount) {
       this.activity.init({ filters: { account: this.selectedAccount } })
+      this.addressBook.update({
+        selectedAccount
+      })
     }
 
     this.updateSelectedAccount(this.selectedAccount)
