@@ -12,7 +12,7 @@ import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { Storage } from '../../interfaces/storage'
 import { isSmartAccount } from '../../libs/account/account'
 import { AccountOp, GasFeePayment, getSignableCalls } from '../../libs/accountOp/accountOp'
-import { EstimateResult } from '../../libs/estimate/interfaces'
+import { EstimateResult, FeePaymentOption } from '../../libs/estimate/interfaces'
 import { GasRecommendation, getCallDataAdditionalByNetwork } from '../../libs/gasPrice/gasPrice'
 import { callsHumanizer } from '../../libs/humanizer'
 import { IrCall } from '../../libs/humanizer/interfaces'
@@ -127,6 +127,8 @@ export class SignAccountOpController extends EventEmitter {
 
   selectedFeeSpeed: FeeSpeed = FeeSpeed.Fast
 
+  #selectedOption: FeePaymentOption | undefined = undefined
+
   humanReadable: IrCall[] = []
 
   status: Status | null = null
@@ -237,26 +239,19 @@ export class SignAccountOpController extends EventEmitter {
         'Unable to estimate the transaction fee as fetching the latest price update for the network native token failed. Please try again later.'
       )
 
-    const chosenOption = this.availableFeeOptions.find(
-      (option) =>
-        option.paidBy === this.paidBy &&
-        option.token.address === this.feeTokenResult?.address &&
-        option.token.flags.onGasTank === this.feeTokenResult.flags.onGasTank
-    )
-
     // if there's no gasFeePayment calculate but there is: 1) feeTokenResult
-    // 2) chosenOption and 3) gasSpeeds for chosenOption => return an error
-    if (!this.accountOp.gasFeePayment && this.feeTokenResult && chosenOption) {
-      const identifier = getFeeSpeedIdentifier(chosenOption)
+    // 2) #selectedOption and 3) gasSpeeds for #selectedOption => return an error
+    if (!this.accountOp.gasFeePayment && this.feeTokenResult && this.#selectedOption) {
+      const identifier = getFeeSpeedIdentifier(this.#selectedOption)
       const hasSpeeds =
         this.feeSpeeds[identifier] !== undefined && this.feeSpeeds[identifier].length
       if (hasSpeeds) errors.push('Please select a token and an account for paying the gas fee.')
     }
 
     if (
-      chosenOption &&
+      this.#selectedOption &&
       this.accountOp.gasFeePayment &&
-      chosenOption.availableAmount < this.accountOp.gasFeePayment.amount
+      this.#selectedOption.availableAmount < this.accountOp.gasFeePayment.amount
     ) {
       // show a different error message depending on whether SA/EOA
       errors.push(
@@ -279,8 +274,8 @@ export class SignAccountOpController extends EventEmitter {
       errors.push(this.status.error)
     }
 
-    if (!this.#feeSpeedsLoading && chosenOption) {
-      const identifier = getFeeSpeedIdentifier(chosenOption)
+    if (!this.#feeSpeedsLoading && this.#selectedOption) {
+      const identifier = getFeeSpeedIdentifier(this.#selectedOption)
       const hasSpeeds =
         this.feeSpeeds[identifier] !== undefined && this.feeSpeeds[identifier].length
       if (!hasSpeeds) {
@@ -296,8 +291,8 @@ export class SignAccountOpController extends EventEmitter {
       }
     }
 
-    if (chosenOption) {
-      const identifier = getFeeSpeedIdentifier(chosenOption)
+    if (this.#selectedOption) {
+      const identifier = getFeeSpeedIdentifier(this.#selectedOption)
       if (this.feeSpeeds[identifier].some((speed) => speed.amountUsd === null)) {
         errors.push(NON_CRITICAL_ERRORS.feeUsdEstimation)
       }
@@ -382,6 +377,15 @@ export class SignAccountOpController extends EventEmitter {
 
     // Set defaults, if some of the optional params are omitted
     this.#setDefaults()
+
+    if (this.#estimation && this.paidBy && this.feeTokenResult) {
+      this.#selectedOption = this.availableFeeOptions.find(
+        (option) =>
+          option.paidBy === this.paidBy &&
+          option.token.address === this.feeTokenResult!.address &&
+          option.token.flags.onGasTank === this.feeTokenResult!.flags.onGasTank
+      )
+    }
 
     // calculate the fee speeds if either there are no feeSpeeds
     // or any of properties for update is requested
@@ -673,15 +677,7 @@ export class SignAccountOpController extends EventEmitter {
       return null
     }
 
-    // TODO: perhaps set the chosenOption as a property in singAccountOp
-    // find the chosen fee option
-    const chosenOption = this.availableFeeOptions.find(
-      (option) =>
-        option.paidBy === this.paidBy &&
-        option.token.address === this.feeTokenResult?.address &&
-        option.token.flags.onGasTank === this.feeTokenResult?.flags.onGasTank
-    )
-    if (!chosenOption) {
+    if (!this.#selectedOption) {
       this.emitError({
         level: 'silent',
         message: '',
@@ -696,7 +692,7 @@ export class SignAccountOpController extends EventEmitter {
     // emit an error here but proceed and show an explanation to the user
     // in get errors()
     // check test: Signing [Relayer]: ... priceIn | native/Ratio
-    const identifier = getFeeSpeedIdentifier(chosenOption)
+    const identifier = getFeeSpeedIdentifier(this.#selectedOption)
     if (!this.feeSpeeds[identifier].length) {
       return null
     }
