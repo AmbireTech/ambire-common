@@ -28,6 +28,7 @@ import { getRpcProvider } from '../../services/provider'
 import { KeystoreController } from '../keystore/keystore'
 import { PortfolioController } from '../portfolio/portfolio'
 import { SettingsController } from '../settings/settings'
+import { getFeeSpeedIdentifier } from './helper'
 import { SignAccountOpController } from './signAccountOp'
 
 global.structuredClone = structuredClone as any
@@ -677,7 +678,12 @@ describe('SignAccountOp Controller ', () => {
               symbol: 'usdt',
               networkId: 'polygon',
               decimals: 6,
-              priceIn: [],
+              priceIn: [
+                {
+                  baseCurrency: 'usd',
+                  price: 1
+                }
+              ],
               flags: {
                 onGasTank: false,
                 rewardsType: null,
@@ -697,7 +703,12 @@ describe('SignAccountOp Controller ', () => {
               symbol: 'usdc',
               networkId: 'polygon',
               decimals: 6,
-              priceIn: [],
+              priceIn: [
+                {
+                  baseCurrency: 'usd',
+                  price: 1
+                }
+              ],
               flags: {
                 onGasTank: false,
                 rewardsType: null,
@@ -747,6 +758,13 @@ describe('SignAccountOp Controller ', () => {
       paidBy: smartAccount.addr,
       signingKeyAddr: eoaSigner.keyPublicAddress,
       signingKeyType: 'internal'
+    })
+
+    expect(controller.availableFeeOptions.length).toBe(3)
+    controller.availableFeeOptions.forEach((option) => {
+      const identifier = getFeeSpeedIdentifier(option)
+      expect(controller.feeSpeeds[identifier]).not.toBe(undefined)
+      expect(controller.feeSpeeds[identifier].length).not.toBe(0)
     })
 
     await controller.sign()

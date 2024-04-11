@@ -12,7 +12,7 @@ import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { Storage } from '../../interfaces/storage'
 import { isSmartAccount } from '../../libs/account/account'
 import { AccountOp, GasFeePayment, getSignableCalls } from '../../libs/accountOp/accountOp'
-import { EstimateResult, FeePaymentOption } from '../../libs/estimate/interfaces'
+import { EstimateResult } from '../../libs/estimate/interfaces'
 import { GasRecommendation, getCallDataAdditionalByNetwork } from '../../libs/gasPrice/gasPrice'
 import { callsHumanizer } from '../../libs/humanizer'
 import { IrCall } from '../../libs/humanizer/interfaces'
@@ -32,6 +32,7 @@ import EventEmitter from '../eventEmitter/eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
 import { PortfolioController } from '../portfolio/portfolio'
 import { SettingsController } from '../settings/settings'
+import { getFeeSpeedIdentifier } from './helper'
 
 export enum SigningStatus {
   EstimationError = 'estimation-error',
@@ -72,11 +73,11 @@ type FanSpeed = {
 // declare the statuses we don't want state updates on
 const noStateUpdateStatuses = [SigningStatus.InProgress, SigningStatus.Done]
 
-function getTokenUsdAmount(token: TokenResult, gasAmount: bigint): string | null {
+function getTokenUsdAmount(token: TokenResult, gasAmount: bigint): string {
   const isUsd = (price: Price) => price.baseCurrency === 'usd'
   const usdPrice = token.priceIn.find(isUsd)?.price
 
-  if (!usdPrice) return null
+  if (!usdPrice) return ''
 
   const usdPriceFormatted = BigInt(usdPrice * 1e18)
 
@@ -89,12 +90,6 @@ const NON_CRITICAL_ERRORS = {
 }
 const CRITICAL_ERRORS = {
   eoaInsufficientFunds: 'Insufficient funds to cover the fee.'
-}
-
-function getFeeSpeedIdentifier(option: FeePaymentOption) {
-  return `${option.paidBy}:${option.token.address}:${
-    option.token.flags.onGasTank ? 'gasTank' : 'feeToken'
-  }`
 }
 
 export class SignAccountOpController extends EventEmitter {
@@ -242,7 +237,8 @@ export class SignAccountOpController extends EventEmitter {
         'Unable to estimate the transaction fee as fetching the latest price update for the network native token failed. Please try again later.'
       )
 
-    if (!this.accountOp?.gasFeePayment && Object.keys(this.feeSpeeds).length) {
+    const hasSpeeds = !!Object.keys(this.feeSpeeds).length
+    if (!this.accountOp?.gasFeePayment && hasSpeeds) {
       errors.push('Please select a token and an account for paying the gas fee.')
     }
 
@@ -277,7 +273,7 @@ export class SignAccountOpController extends EventEmitter {
       errors.push(this.status.error)
     }
 
-    if (!this.#feeSpeedsLoading && !Object.keys(this.feeSpeeds).length) {
+    if (!this.#feeSpeedsLoading && !hasSpeeds && availableFeeOptions.length) {
       if (!this.feeTokenResult?.priceIn.length) {
         errors.push(
           `Currently, ${this.feeTokenResult?.symbol} is unavailable as a fee token as we're experiencing troubles fetching its price. Please select another or contact support`
@@ -389,7 +385,7 @@ export class SignAccountOpController extends EventEmitter {
     // calculate the fee speeds if either there are no feeSpeeds
     // or any of properties for update is requested
     if (
-      Object.keys(this.feeSpeeds).length ||
+      !Object.keys(this.feeSpeeds).length ||
       feeToken ||
       paidBy ||
       accountOp ||
@@ -567,17 +563,18 @@ export class SignAccountOpController extends EventEmitter {
             simulatedGasLimit,
             amount,
             amountFormatted: formatUnits(amount, Number(option.token.decimals)),
-            amountUsd: getTokenUsdAmount(option.token, amount) ?? '',
+            amountUsd: getTokenUsdAmount(option.token, amount),
             gasPrice,
             maxPriorityFeePerGas: BigInt(speedValue.maxPriorityFeePerGas)
           })
         }
 
+        if (this.feeSpeeds[identifier] === undefined) this.feeSpeeds[identifier] = []
         this.feeSpeeds[identifier] = speeds
         return
       }
 
-      ;(this.gasPrices || []).map((gasRecommendation) => {
+      ;(this.gasPrices || []).forEach((gasRecommendation) => {
         let amount
         let simulatedGasLimit
 
@@ -617,8 +614,8 @@ export class SignAccountOpController extends EventEmitter {
           amount = this.#increaseFee(amount)
         }
 
-        return {
-          type: gasRecommendation.name,
+        const feeSpeed: FanSpeed = {
+          type: gasRecommendation.name as FeeSpeed,
           simulatedGasLimit,
           amount,
           amountFormatted: formatUnits(amount, Number(option.token.decimals)),
@@ -629,6 +626,8 @@ export class SignAccountOpController extends EventEmitter {
               ? gasRecommendation.maxPriorityFeePerGas
               : undefined
         }
+        if (this.feeSpeeds[identifier] === undefined) this.feeSpeeds[identifier] = []
+        this.feeSpeeds[identifier].push(feeSpeed)
       })
     })
   }
@@ -665,13 +664,11 @@ export class SignAccountOpController extends EventEmitter {
       return null
     }
 
-    if (!Object.keys(this.feeSpeeds).length) {
-      this.emitError({
-        level: 'silent',
-        message: '',
-        error: new Error('SignAccountOpController: fee speeds not available')
-      })
-
+    // if there are no availableFeeOptions, we don't have a gasFee
+    // this is normal though as there are such cases:
+    // - EOA paying in native but doesn't have any native
+    // so no error should pop out because of this
+    if (!this.availableFeeOptions.length) {
       return null
     }
 
