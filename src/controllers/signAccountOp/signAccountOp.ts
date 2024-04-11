@@ -389,14 +389,7 @@ export class SignAccountOpController extends EventEmitter {
 
     // calculate the fee speeds if either there are no feeSpeeds
     // or any of properties for update is requested
-    if (
-      !Object.keys(this.feeSpeeds).length ||
-      feeToken ||
-      paidBy ||
-      accountOp ||
-      gasPrices ||
-      estimation
-    ) {
+    if (!Object.keys(this.feeSpeeds).length || accountOp || gasPrices || estimation) {
       this.#updateFeeSpeeds()
     }
 
@@ -602,7 +595,7 @@ export class SignAccountOpController extends EventEmitter {
           }
 
           amount = simulatedGasLimit * gasPrice + option.addedNative
-        } else if (this.paidBy !== this.accountOp!.accountAddr) {
+        } else if (option.paidBy !== this.accountOp!.accountAddr) {
           // Smart account, but EOA pays the fee
           simulatedGasLimit = gasUsed + callDataAdditionalGasCost
           amount = simulatedGasLimit * gasPrice + option.addedNative
