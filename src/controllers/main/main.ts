@@ -217,7 +217,7 @@ export class MainController extends EventEmitter {
       this.#storage,
       this.#fetch
     )
-    this.transfer = new TransferController(this.settings)
+    this.transfer = new TransferController(this.settings, this.addressBook)
     this.domains = new DomainsController(this.settings.providers, this.#fetch)
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch: this.#fetch })
     this.onResolveDappRequest = onResolveDappRequest
@@ -251,6 +251,9 @@ export class MainController extends EventEmitter {
 
     if (this.selectedAccount) {
       this.activity.init({ filters: { account: this.selectedAccount } })
+      this.addressBook.update({
+        selectedAccount
+      })
     }
 
     this.updateSelectedAccount(this.selectedAccount)
