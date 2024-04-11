@@ -810,6 +810,94 @@ describe('SignAccountOp Controller ', () => {
     expect(controller.accountOp?.signature.slice(-2)).toEqual('01')
   })
 
+  test('Signing [Relayer]: should return an error if paying with ERC-20 token but no priceIn | nativeRatio available.', async () => {
+    const networkId = 'polygon'
+    const network = networks.find((net) => net.id === networkId)!
+    const feeTokenResult = {
+      address: usdcFeeToken.address,
+      amount: 1n,
+      symbol: 'usdc',
+      networkId: 'polygon',
+      decimals: 6,
+      // we make the priceIn empty for this test
+      priceIn: [],
+      flags: {
+        onGasTank: false,
+        rewardsType: null,
+        canTopUpGasTank: true,
+        isFeeToken: true
+      }
+    }
+    const { controller, estimation, prices } = await init(
+      smartAccount,
+      createAccountOp(smartAccount, network.id),
+      eoaSigner,
+      {
+        gasUsed: 50000n,
+        currentAccountNonce: 0,
+        feePaymentOptions: [
+          {
+            paidBy: smartAccount.addr,
+            availableAmount: 500000000n,
+            gasUsed: 50000n,
+            addedNative: 0n,
+            token: feeTokenResult
+          }
+        ],
+        error: null
+      },
+      [
+        {
+          name: 'slow',
+          baseFeePerGas: 1000000000n,
+          maxPriorityFeePerGas: 1000000000n
+        },
+        {
+          name: 'medium',
+          baseFeePerGas: 2000000000n,
+          maxPriorityFeePerGas: 2000000000n
+        },
+        {
+          name: 'fast',
+          baseFeePerGas: 5000000000n,
+          maxPriorityFeePerGas: 5000000000n
+        },
+        {
+          name: 'ape',
+          baseFeePerGas: 7000000000n,
+          maxPriorityFeePerGas: 7000000000n
+        }
+      ]
+    )
+
+    // We are mocking estimation and prices values, in order to validate the gas prices calculation in the test.
+    // Knowing the exact amount of estimation and gas prices, we can predict GasFeePayment values.
+    jest.spyOn(gasPricesLib, 'getCallDataAdditionalByNetwork').mockReturnValue(25000n)
+
+    controller.update({
+      gasPrices: prices,
+      estimation,
+      feeToken: feeTokenResult,
+      paidBy: smartAccount.addr,
+      signingKeyAddr: eoaSigner.keyPublicAddress,
+      signingKeyType: 'internal'
+    })
+
+    expect(controller.availableFeeOptions.length).toBe(1)
+    const identifier = getFeeSpeedIdentifier(controller.availableFeeOptions[0])
+    expect(controller.feeSpeeds[identifier]).not.toBe(undefined)
+    expect(controller.feeSpeeds[identifier].length).toBe(0)
+
+    const errors = controller.errors
+    expect(errors.length).toBe(1)
+    expect(errors[0]).toBe(
+      `Currently, ${controller.availableFeeOptions[0].token.symbol} is unavailable as a fee token as we're experiencing troubles fetching its price. Please select another or contact support`
+    )
+
+    await controller.sign()
+    expect(controller.accountOp?.signature).toBe(null)
+  })
+
   test('Signing [Relayer]: Smart account paying with gas tank.', async () => {
     const networkId = 'polygon'
     const network = networks.find((net) => net.id === networkId)!

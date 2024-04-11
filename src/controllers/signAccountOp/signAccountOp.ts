@@ -224,7 +224,7 @@ export class SignAccountOpController extends EventEmitter {
 
     // This error should not happen, as in the update method we are always setting a default signer.
     // It may occur, only if there are no available signer.
-    if (!this.accountOp?.signingKeyType || !this.accountOp?.signingKeyAddr)
+    if (!this.accountOp.signingKeyType || !this.accountOp.signingKeyAddr)
       errors.push('Please select a signer to sign the transaction.')
 
     const currentPortfolioNetwork =
@@ -237,27 +237,33 @@ export class SignAccountOpController extends EventEmitter {
         'Unable to estimate the transaction fee as fetching the latest price update for the network native token failed. Please try again later.'
       )
 
-    const hasSpeeds = !!Object.keys(this.feeSpeeds).length
-    if (!this.accountOp?.gasFeePayment && hasSpeeds) {
-      errors.push('Please select a token and an account for paying the gas fee.')
+    const chosenOption = this.availableFeeOptions.find(
+      (option) =>
+        option.paidBy === this.paidBy &&
+        option.token.address === this.feeTokenResult?.address &&
+        option.token.flags.onGasTank === this.feeTokenResult.flags.onGasTank
+    )
+
+    // if there's no gasFeePayment calculate but there is: 1) feeTokenResult
+    // 2) chosenOption and 3) gasSpeeds for chosenOption => return an error
+    if (!this.accountOp.gasFeePayment && this.feeTokenResult && chosenOption) {
+      const identifier = getFeeSpeedIdentifier(chosenOption)
+      const hasSpeeds =
+        this.feeSpeeds[identifier] !== undefined && this.feeSpeeds[identifier].length
+      if (hasSpeeds) errors.push('Please select a token and an account for paying the gas fee.')
     }
 
-    if (this.accountOp?.gasFeePayment && availableFeeOptions.length) {
-      const feeToken = availableFeeOptions.find(
-        (feeOption) =>
-          feeOption.paidBy === this.accountOp?.gasFeePayment?.paidBy &&
-          feeOption.token.address === this.accountOp?.gasFeePayment?.inToken &&
-          feeOption.token.flags.onGasTank === this.accountOp?.gasFeePayment?.isGasTank
+    if (
+      chosenOption &&
+      this.accountOp.gasFeePayment &&
+      chosenOption.availableAmount < this.accountOp.gasFeePayment.amount
+    ) {
+      // show a different error message depending on whether SA/EOA
+      errors.push(
+        isSmartAccount(this.#account)
+          ? "Signing is not possible with the selected account's token as it doesn't have sufficient funds to cover the gas payment fee."
+          : CRITICAL_ERRORS.eoaInsufficientFunds
       )
-
-      if (feeToken!.availableAmount < this.accountOp?.gasFeePayment.amount) {
-        // show a different error message depending on whether SA/EOA
-        errors.push(
-          isSmartAccount(this.#account)
-            ? "Signing is not possible with the selected account's token as it doesn't have sufficient funds to cover the gas payment fee."
-            : CRITICAL_ERRORS.eoaInsufficientFunds
-        )
-      }
     }
 
     // If signing fails, we know the exact error and aim to forward it to the remaining errors,
@@ -273,24 +279,23 @@ export class SignAccountOpController extends EventEmitter {
       errors.push(this.status.error)
     }
 
-    if (!this.#feeSpeedsLoading && !hasSpeeds && availableFeeOptions.length) {
-      if (!this.feeTokenResult?.priceIn.length) {
-        errors.push(
-          `Currently, ${this.feeTokenResult?.symbol} is unavailable as a fee token as we're experiencing troubles fetching its price. Please select another or contact support`
-        )
-      } else {
-        errors.push(
-          'Unable to estimate the transaction fee. Please try changing the fee token or contact support.'
-        )
+    if (!this.#feeSpeedsLoading && chosenOption) {
+      const identifier = getFeeSpeedIdentifier(chosenOption)
+      const hasSpeeds =
+        this.feeSpeeds[identifier] !== undefined && this.feeSpeeds[identifier].length
+      if (!hasSpeeds) {
+        if (!this.feeTokenResult?.priceIn.length) {
+          errors.push(
+            `Currently, ${this.feeTokenResult?.symbol} is unavailable as a fee token as we're experiencing troubles fetching its price. Please select another or contact support`
+          )
+        } else {
+          errors.push(
+            'Unable to estimate the transaction fee. Please try changing the fee token or contact support.'
+          )
+        }
       }
     }
 
-    const chosenOption = this.availableFeeOptions.find(
-      (option) =>
-        option.paidBy === this.paidBy &&
-        option.token.address === this.feeTokenResult?.address &&
-        option.token.flags.onGasTank === this.feeTokenResult.flags.onGasTank
-    )
     if (chosenOption) {
       const identifier = getFeeSpeedIdentifier(chosenOption)
       if (this.feeSpeeds[identifier].some((speed) => speed.amountUsd === null)) {
@@ -299,10 +304,6 @@ export class SignAccountOpController extends EventEmitter {
     }
 
     return errors
-  }
-
-  get hasSelectedAccountOp() {
-    return !!this.accountOp
   }
 
   get readyToSign() {
@@ -678,7 +679,7 @@ export class SignAccountOpController extends EventEmitter {
       (option) =>
         option.paidBy === this.paidBy &&
         option.token.address === this.feeTokenResult?.address &&
-        option.token.flags.onGasTank === this.feeTokenResult.flags.onGasTank
+        option.token.flags.onGasTank === this.feeTokenResult?.flags.onGasTank
     )
     if (!chosenOption) {
       this.emitError({
@@ -690,7 +691,16 @@ export class SignAccountOpController extends EventEmitter {
       return null
     }
 
+    // if there are no fee speeds available for the option, it means
+    // the nativeRatio could not be calculated. In that case, we do not
+    // emit an error here but proceed and show an explanation to the user
+    // in get errors()
+    // check test: Signing [Relayer]: ... priceIn | native/Ratio
     const identifier = getFeeSpeedIdentifier(chosenOption)
+    if (!this.feeSpeeds[identifier].length) {
+      return null
+    }
+
     const chosenSpeed = this.feeSpeeds[identifier].find(
       (speed) => speed.type === this.selectedFeeSpeed
     )
@@ -953,7 +963,6 @@ export class SignAccountOpController extends EventEmitter {
     return {
       ...this,
       isInitialized: this.isInitialized,
-      hasSelectedAccountOp: this.hasSelectedAccountOp,
       readyToSign: this.readyToSign,
       availableFeeOptions: this.availableFeeOptions,
       accountKeyStoreKeys: this.accountKeyStoreKeys,
