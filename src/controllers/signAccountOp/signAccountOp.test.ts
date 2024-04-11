@@ -178,6 +178,20 @@ const eoaAccount: Account = {
   creation: null
 }
 
+const trezorEoa: Account = {
+  addr: '0x71c3D24a627f0416db45107353d8d0A5ae0401ae',
+  associatedKeys: ['0x71c3D24a627f0416db45107353d8d0A5ae0401ae'],
+  initialPrivileges: [],
+  creation: null
+}
+
+const otherEoa: Account = {
+  addr: '0x71c3D24a627f0416db45107353d8d0A5ae0402ae',
+  associatedKeys: ['0x71c3D24a627f0416db45107353d8d0A5ae0401ae'],
+  initialPrivileges: [],
+  creation: null
+}
+
 const smartAccount: Account = {
   addr: '0x4AA524DDa82630cE769e5C9d7ec7a45B94a41bc6',
   associatedKeys: ['0x141A14B5C4dbA2aC7a7943E02eDFE2E7eDfdA28F', eoaSigner.keyPublicAddress],
@@ -762,7 +776,7 @@ describe('SignAccountOp Controller ', () => {
 
     expect(controller.availableFeeOptions.length).toBe(3)
     controller.availableFeeOptions.forEach((option) => {
-      const identifier = getFeeSpeedIdentifier(option)
+      const identifier = getFeeSpeedIdentifier(option, smartAccount.addr)
       expect(controller.feeSpeeds[identifier]).not.toBe(undefined)
       expect(controller.feeSpeeds[identifier].length).not.toBe(0)
     })
@@ -884,7 +898,7 @@ describe('SignAccountOp Controller ', () => {
     })
 
     expect(controller.availableFeeOptions.length).toBe(1)
-    const identifier = getFeeSpeedIdentifier(controller.availableFeeOptions[0])
+    const identifier = getFeeSpeedIdentifier(controller.availableFeeOptions[0], smartAccount.addr)
     expect(controller.feeSpeeds[identifier]).not.toBe(undefined)
     expect(controller.feeSpeeds[identifier].length).toBe(0)
 
@@ -1053,7 +1067,7 @@ describe('SignAccountOp Controller ', () => {
     expect(controller.accountOp?.signature.slice(-2)).toEqual('01')
   })
 
-  test('Signing: Smart account, but EOA pays the fee', async () => {
+  test('Signing [SA with EOA payment]: working case + 2 feePaymentOptions but 1 feeSpeed as both feePaymentOptions are EOA', async () => {
     const network = networks.find((net) => net.id === 'polygon')!
     const { controller, estimation, prices } = await init(
       smartAccount,
@@ -1066,6 +1080,46 @@ describe('SignAccountOp Controller ', () => {
           {
             paidBy: eoaAccount.addr,
             availableAmount: 1000000000000000000n, // 1 MATIC
+            gasUsed: 0n,
+            addedNative: 5000n,
+            token: {
+              address: '0x0000000000000000000000000000000000000000',
+              amount: 1n,
+              symbol: 'matic',
+              networkId: 'polygon',
+              decimals: 18,
+              priceIn: [],
+              flags: {
+                onGasTank: false,
+                rewardsType: null,
+                canTopUpGasTank: true,
+                isFeeToken: true
+              }
+            }
+          },
+          {
+            paidBy: trezorEoa.addr,
+            availableAmount: 2000000000000000000n, // 1 MATIC
+            gasUsed: 0n,
+            addedNative: 5000n,
+            token: {
+              address: '0x0000000000000000000000000000000000000000',
+              amount: 1n,
+              symbol: 'matic',
+              networkId: 'polygon',
+              decimals: 18,
+              priceIn: [],
+              flags: {
+                onGasTank: false,
+                rewardsType: null,
+                canTopUpGasTank: true,
+                isFeeToken: true
+              }
+            }
+          },
+          {
+            paidBy: otherEoa.addr,
+            availableAmount: 3000000000000000000n, // 1 MATIC
             gasUsed: 0n,
             addedNative: 5000n,
             token: {
@@ -1123,6 +1177,20 @@ describe('SignAccountOp Controller ', () => {
       signingKeyType: 'internal'
     })
 
+    expect(controller.availableFeeOptions.length).toBe(3)
+    const firstIdentity = getFeeSpeedIdentifier(
+      controller.availableFeeOptions[0],
+      smartAccount.addr
+    )
+    const secondIdentity = getFeeSpeedIdentifier(
+      controller.availableFeeOptions[1],
+      smartAccount.addr
+    )
+    expect(firstIdentity).toBe(secondIdentity)
+    expect(Object.keys(controller.feeSpeeds).length).toBe(1)
+    expect(controller.feeSpeeds[firstIdentity]).not.toBe(undefined)
+    expect(controller.feeSpeeds[firstIdentity].length).toBe(4)
+
     await controller.sign()
 
     if (!controller.accountOp?.signature) {
@@ -1165,7 +1233,87 @@ describe('SignAccountOp Controller ', () => {
     expect(controller.status).toEqual({ type: 'done' })
   })
 
-  test('Signing: V1 Smart account, but EOA pays the fee', async () => {
+  test('Signing [SA with EOA payment]: not enough funds to cover the fee', async () => {
+    const network = networks.find((net) => net.id === 'polygon')!
+    const { controller, estimation, prices } = await init(
+      smartAccount,
+      createAccountOp(smartAccount, network.id),
+      eoaSigner,
+      {
+        gasUsed: 10000n,
+        currentAccountNonce: 0,
+        feePaymentOptions: [
+          {
+            paidBy: eoaAccount.addr,
+            availableAmount: 100n, // not enough
+            gasUsed: 0n,
+            addedNative: 5000n,
+            token: {
+              address: '0x0000000000000000000000000000000000000000',
+              amount: 1n,
+              symbol: 'matic',
+              networkId: 'polygon',
+              decimals: 18,
+              priceIn: [],
+              flags: {
+                onGasTank: false,
+                rewardsType: null,
+                canTopUpGasTank: true,
+                isFeeToken: true
+              }
+            }
+          }
+        ],
+        error: null
+      },
+      [
+        {
+          name: 'slow',
+          baseFeePerGas: 100n,
+          maxPriorityFeePerGas: 100n
+        },
+        {
+          name: 'medium',
+          baseFeePerGas: 200n,
+          maxPriorityFeePerGas: 200n
+        },
+        {
+          name: 'fast',
+          baseFeePerGas: 300n,
+          maxPriorityFeePerGas: 300n
+        },
+        {
+          name: 'ape',
+          baseFeePerGas: 400n,
+          maxPriorityFeePerGas: 400n
+        }
+      ]
+    )
+
+    // We are mocking estimation and prices values, in order to validate the gas prices calculation in the test.
+    // Knowing the exact amount of estimation and gas prices, we can predict GasFeePayment values.
+    jest.spyOn(gasPricesLib, 'getCallDataAdditionalByNetwork').mockReturnValue(5000n)
+
+    controller.update({
+      gasPrices: prices,
+      estimation,
+      feeToken: nativeFeeTokenPolygon,
+      paidBy: eoaSigner.keyPublicAddress,
+      signingKeyAddr: eoaSigner.keyPublicAddress,
+      signingKeyType: 'internal'
+    })
+
+    const errors = controller.errors
+    expect(errors.length).toBe(1)
+    expect(errors[0]).toBe(
+      "Signing is not possible with the selected account's token as it doesn't have sufficient funds to cover the gas payment fee."
+    )
+
+    await controller.sign()
+    expect(controller.status?.type).toBe('unable-to-sign')
+  })
+
+  test('Signing [V1 with EOA payment]: working case', async () => {
     const { controller, estimation, prices } = await init(
       v1Account,
       createAccountOp(v1Account),

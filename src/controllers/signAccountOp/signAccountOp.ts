@@ -242,7 +242,7 @@ export class SignAccountOpController extends EventEmitter {
     // if there's no gasFeePayment calculate but there is: 1) feeTokenResult
     // 2) #selectedOption and 3) gasSpeeds for #selectedOption => return an error
     if (!this.accountOp.gasFeePayment && this.feeTokenResult && this.#selectedOption) {
-      const identifier = getFeeSpeedIdentifier(this.#selectedOption)
+      const identifier = getFeeSpeedIdentifier(this.#selectedOption, this.accountOp.accountAddr)
       const hasSpeeds =
         this.feeSpeeds[identifier] !== undefined && this.feeSpeeds[identifier].length
       if (hasSpeeds) errors.push('Please select a token and an account for paying the gas fee.')
@@ -275,7 +275,7 @@ export class SignAccountOpController extends EventEmitter {
     }
 
     if (!this.#feeSpeedsLoading && this.#selectedOption) {
-      const identifier = getFeeSpeedIdentifier(this.#selectedOption)
+      const identifier = getFeeSpeedIdentifier(this.#selectedOption, this.accountOp.accountAddr)
       const hasSpeeds =
         this.feeSpeeds[identifier] !== undefined && this.feeSpeeds[identifier].length
       if (!hasSpeeds) {
@@ -292,7 +292,7 @@ export class SignAccountOpController extends EventEmitter {
     }
 
     if (this.#selectedOption) {
-      const identifier = getFeeSpeedIdentifier(this.#selectedOption)
+      const identifier = getFeeSpeedIdentifier(this.#selectedOption, this.accountOp.accountAddr)
       if (this.feeSpeeds[identifier].some((speed) => speed.amountUsd === null)) {
         errors.push(NON_CRITICAL_ERRORS.feeUsdEstimation)
       }
@@ -523,6 +523,9 @@ export class SignAccountOpController extends EventEmitter {
   #updateFeeSpeeds() {
     if (this.#feeSpeedsLoading) return
 
+    // reset the fee speeds at the beginning to avoid duplications
+    this.feeSpeeds = {}
+
     const gasUsed = this.#estimation!.gasUsed
     const callDataAdditionalGasCost = getCallDataAdditionalByNetwork(
       this.accountOp!,
@@ -531,7 +534,13 @@ export class SignAccountOpController extends EventEmitter {
     )
 
     this.availableFeeOptions.forEach((option) => {
-      const identifier = getFeeSpeedIdentifier(option)
+      // if a calculation has been made, do not make it again
+      // EOA pays for SA is the most common case for this scenario
+      const identifier = getFeeSpeedIdentifier(option, this.accountOp.accountAddr)
+      if (this.feeSpeeds[identifier] !== undefined && this.feeSpeeds[identifier].length) {
+        return
+      }
+
       const nativeRatio = this.#getNativeToFeeTokenRatio(option.token)
       if (!nativeRatio) {
         this.feeSpeeds[identifier] = []
@@ -685,7 +694,7 @@ export class SignAccountOpController extends EventEmitter {
     // emit an error here but proceed and show an explanation to the user
     // in get errors()
     // check test: Signing [Relayer]: ... priceIn | native/Ratio
-    const identifier = getFeeSpeedIdentifier(this.#selectedOption)
+    const identifier = getFeeSpeedIdentifier(this.#selectedOption, this.accountOp.accountAddr)
     if (!this.feeSpeeds[identifier].length) {
       return null
     }
