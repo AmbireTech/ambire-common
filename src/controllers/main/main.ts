@@ -314,10 +314,9 @@ export class MainController extends EventEmitter {
       // When we manually run it as a user, everything works as expected.
       // It's peculiar because we previously resolved this timing issue by adding a wait(1)
       // before updating the DONE status (check next lines), and it wasn't necessary to apply it here too.
-      await wait(1)
+      // await wait(1)
       this.status = 'SUCCESS'
-      this.emitUpdate()
-      await wait(1)
+      await this.forceEmitUpdate()
     } catch (error: any) {
       this.emitError({
         level: 'major',
@@ -327,15 +326,15 @@ export class MainController extends EventEmitter {
     }
 
     // set status in the next tick to ensure the FE receives the 'SUCCESS' status
-    await wait(1)
+    // await wait(1)
     this.status = 'DONE'
-    this.emitUpdate()
+    await this.forceEmitUpdate()
 
     // reset the status in the next tick to ensure the FE receives the 'DONE' status
-    await wait(1)
+    // await wait(1)
     if (this.latestMethodCall === callName) {
       this.status = 'INITIAL'
-      this.emitUpdate()
+      await this.forceEmitUpdate()
     }
   }
 

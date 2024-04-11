@@ -1,4 +1,6 @@
 /* eslint-disable no-restricted-syntax */
+import wait from '../../utils/wait'
+
 const LIMIT_ON_THE_NUMBER_OF_ERRORS = 100
 
 export type ErrorRef = {
@@ -13,10 +15,10 @@ export type ErrorRef = {
 export default class EventEmitter {
   #callbacksWithId: {
     id: string | null
-    cb: () => void
+    cb: (forceEmit?: true) => void
   }[] = []
 
-  #callbacks: (() => void)[] = []
+  #callbacks: ((forceEmit?: true) => void)[] = []
 
   #errorCallbacksWithId: {
     id: string | null
@@ -39,6 +41,14 @@ export default class EventEmitter {
   // that extend this one have errors defined already
   get emittedErrors() {
     return this.#errors
+  }
+
+  protected async forceEmitUpdate() {
+    await wait(1)
+    // eslint-disable-next-line no-restricted-syntax
+    for (const i of this.#callbacksWithId) i.cb(true)
+    // eslint-disable-next-line no-restricted-syntax
+    for (const cb of this.#callbacks) cb(true)
   }
 
   protected emitUpdate() {
@@ -68,7 +78,7 @@ export default class EventEmitter {
   }
 
   // returns an unsub function
-  onUpdate(cb: () => void, id?: string): () => void {
+  onUpdate(cb: (forceUpdate?: boolean) => void, id?: string): () => void {
     if (id) {
       this.#callbacksWithId.push({ id, cb })
     } else {
