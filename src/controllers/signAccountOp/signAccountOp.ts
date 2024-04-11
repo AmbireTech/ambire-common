@@ -127,7 +127,7 @@ export class SignAccountOpController extends EventEmitter {
 
   selectedFeeSpeed: FeeSpeed = FeeSpeed.Fast
 
-  #selectedOption: FeePaymentOption | undefined = undefined
+  selectedOption: FeePaymentOption | undefined = undefined
 
   humanReadable: IrCall[] = []
 
@@ -240,18 +240,18 @@ export class SignAccountOpController extends EventEmitter {
       )
 
     // if there's no gasFeePayment calculate but there is: 1) feeTokenResult
-    // 2) #selectedOption and 3) gasSpeeds for #selectedOption => return an error
-    if (!this.accountOp.gasFeePayment && this.feeTokenResult && this.#selectedOption) {
-      const identifier = getFeeSpeedIdentifier(this.#selectedOption, this.accountOp.accountAddr)
+    // 2) selectedOption and 3) gasSpeeds for selectedOption => return an error
+    if (!this.accountOp.gasFeePayment && this.feeTokenResult && this.selectedOption) {
+      const identifier = getFeeSpeedIdentifier(this.selectedOption, this.accountOp.accountAddr)
       const hasSpeeds =
         this.feeSpeeds[identifier] !== undefined && this.feeSpeeds[identifier].length
       if (hasSpeeds) errors.push('Please select a token and an account for paying the gas fee.')
     }
 
     if (
-      this.#selectedOption &&
+      this.selectedOption &&
       this.accountOp.gasFeePayment &&
-      this.#selectedOption.availableAmount < this.accountOp.gasFeePayment.amount
+      this.selectedOption.availableAmount < this.accountOp.gasFeePayment.amount
     ) {
       // show a different error message depending on whether SA/EOA
       errors.push(
@@ -274,8 +274,8 @@ export class SignAccountOpController extends EventEmitter {
       errors.push(this.status.error)
     }
 
-    if (!this.#feeSpeedsLoading && this.#selectedOption) {
-      const identifier = getFeeSpeedIdentifier(this.#selectedOption, this.accountOp.accountAddr)
+    if (!this.#feeSpeedsLoading && this.selectedOption) {
+      const identifier = getFeeSpeedIdentifier(this.selectedOption, this.accountOp.accountAddr)
       const hasSpeeds =
         this.feeSpeeds[identifier] !== undefined && this.feeSpeeds[identifier].length
       if (!hasSpeeds) {
@@ -291,8 +291,8 @@ export class SignAccountOpController extends EventEmitter {
       }
     }
 
-    if (this.#selectedOption) {
-      const identifier = getFeeSpeedIdentifier(this.#selectedOption, this.accountOp.accountAddr)
+    if (this.selectedOption) {
+      const identifier = getFeeSpeedIdentifier(this.selectedOption, this.accountOp.accountAddr)
       if (this.feeSpeeds[identifier].some((speed) => speed.amountUsd === null)) {
         errors.push(NON_CRITICAL_ERRORS.feeUsdEstimation)
       }
@@ -379,7 +379,7 @@ export class SignAccountOpController extends EventEmitter {
     this.#setDefaults()
 
     if (this.#estimation && this.paidBy && this.feeTokenResult) {
-      this.#selectedOption = this.availableFeeOptions.find(
+      this.selectedOption = this.availableFeeOptions.find(
         (option) =>
           option.paidBy === this.paidBy &&
           option.token.address === this.feeTokenResult!.address &&
@@ -679,7 +679,7 @@ export class SignAccountOpController extends EventEmitter {
       return null
     }
 
-    if (!this.#selectedOption) {
+    if (!this.selectedOption) {
       this.emitError({
         level: 'silent',
         message: '',
@@ -694,7 +694,7 @@ export class SignAccountOpController extends EventEmitter {
     // emit an error here but proceed and show an explanation to the user
     // in get errors()
     // check test: Signing [Relayer]: ... priceIn | native/Ratio
-    const identifier = getFeeSpeedIdentifier(this.#selectedOption, this.accountOp.accountAddr)
+    const identifier = getFeeSpeedIdentifier(this.selectedOption, this.accountOp.accountAddr)
     if (!this.feeSpeeds[identifier].length) {
       return null
     }
@@ -967,6 +967,7 @@ export class SignAccountOpController extends EventEmitter {
       feeToken: this.feeToken,
       feePaidBy: this.feePaidBy,
       speedOptions: this.speedOptions,
+      selectedOption: this.selectedOption,
       errors: this.errors
     }
   }
