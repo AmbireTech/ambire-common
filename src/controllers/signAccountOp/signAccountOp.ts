@@ -445,12 +445,14 @@ export class SignAccountOpController extends EventEmitter {
 
     if (!nativePrice || !feeTokenPrice) return null
 
-    const ratio = parseFloat((nativePrice / feeTokenPrice).toFixed(18))
+    const ratio = nativePrice / feeTokenPrice
 
     // Here we multiply it by 1e18, in order to keep the decimal precision.
     // Otherwise, passing the ratio to the BigInt constructor, we will lose the numbers after the decimal point.
     // Later, once we need to normalize this ratio, we should not forget to divide it by 1e18.
-    return BigInt(ratio * 1e18)
+    const ratio1e18 = ratio * 1e18
+    const toBigInt = ratio1e18 % 1 === 0 ? ratio1e18 : ratio1e18.toFixed(0)
+    return BigInt(toBigInt)
   }
 
   static getAmountAfterFeeTokenConvert(

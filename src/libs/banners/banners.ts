@@ -193,31 +193,56 @@ export const getNetworksWithFailedRPCBanners = ({
   networks: NetworkDescriptor[]
   networksWithAssets: NetworkDescriptor['id'][]
 }): Banner[] => {
-  const networksToShowBannersFor = getNetworksWithFailedRPC({ providers }).filter((networkId) =>
+  const banners: Banner[] = []
+  const networkIds = getNetworksWithFailedRPC({ providers }).filter((networkId) =>
     networksWithAssets.includes(networkId)
   )
 
-  const networkNamesToShowBannersFor = networksToShowBannersFor
-    .map((networkId) => {
-      const networkData = networks.find((n: NetworkDescriptor) => n.id === networkId)!
+  const networksData = networkIds.map((id) => networks.find((n: NetworkDescriptor) => n.id === id)!)
 
-      return networkData.name
-    })
-    .filter(Boolean)
+  const allFailed = networksData.length === networks.length
 
-  if (!networkNamesToShowBannersFor.length) return []
+  const networksWithMultipleRpcUrls = allFailed
+    ? []
+    : networksData.filter((n) => n?.rpcUrls?.length > 1)
 
-  return [
-    {
+  const networksToGroupInSingleBanner = allFailed
+    ? networksData
+    : networksData.filter((n) => n?.rpcUrls?.length <= 1)
+
+  if (!networksData.length) return banners
+
+  networksWithMultipleRpcUrls.forEach((n) => {
+    banners.push({
       id: 'rpcs-down',
       type: 'warning',
-      title: `Failed to retrieve network data for ${networkNamesToShowBannersFor.join(
-        ', '
-      )} (RPC malfunction)`,
-      text: 'Affected features: visible tokens, sign message/transaction, ENS/UD domain resolving, add account. Please try again later or contact support.',
-      actions: []
-    }
-  ]
+      title: `Failed to retrieve network data for ${n.name}. You can try selecting another RPC URL`,
+      text: 'Affected features: visible tokens, sign message/transaction, ENS/UD domain resolving, add account.',
+      actions: [
+        {
+          label: 'Select',
+          actionName: 'select-rpc-url',
+          meta: {
+            network: n
+          }
+        }
+      ]
+    })
+  })
+
+  if (!networksToGroupInSingleBanner.length) return banners
+
+  banners.push({
+    id: 'rpcs-down',
+    type: 'warning',
+    title: `Failed to retrieve network data for ${networksToGroupInSingleBanner
+      .map((n) => n.name)
+      .join(', ')} (RPC malfunction)`,
+    text: 'Affected features: visible tokens, sign message/transaction, ENS/UD domain resolving, add account. Please try again later or contact support.',
+    actions: []
+  })
+
+  return banners
 }
 
 export const getNetworksWithPortfolioErrorBanners = ({
