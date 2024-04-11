@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-floating-promises */
 
-import { concat, hexlify, Interface, JsonRpcProvider, parseEther, toBeHex } from 'ethers'
+import { concat, hexlify, Interface, parseEther, toBeHex } from 'ethers'
 
 import { describe, expect, test } from '@jest/globals'
 
@@ -20,6 +20,7 @@ import {
   getSigForCalculations,
   getUserOperation
 } from '../../libs/userOperation/userOperation'
+import { getRpcProvider } from '../provider'
 import { Bundler } from './bundler'
 
 const to = '0x68b3465833fb72a70ecdf485e0e4c7bd8665fc45'
@@ -53,7 +54,7 @@ describe('Bundler tests', () => {
       const optimism = networks.find((net) => net.id === 'optimism')!
       const usedNetworks = [optimism]
       const providers = {
-        [optimism.id]: new JsonRpcProvider(optimism.rpcUrl)
+        [optimism.id]: getRpcProvider(optimism.rpcUrls, optimism.chainId)
       }
       const accountStates = await getAccountsInfo(usedNetworks, providers, [optyNotDeployed])
       const accountState = accountStates[opOptimism.accountAddr][opOptimism.networkId]
@@ -99,7 +100,7 @@ describe('Bundler tests', () => {
       const optimism = networks.find((net) => net.id === 'optimism')!
       const usedNetworks = [optimism]
       const providers = {
-        [optimism.id]: new JsonRpcProvider(optimism.rpcUrl)
+        [optimism.id]: getRpcProvider(optimism.rpcUrls, optimism.chainId)
       }
       const accountStates = await getAccountsInfo(usedNetworks, providers, [optyDeployed])
       const accountState = accountStates[opOptimism.accountAddr][opOptimism.networkId]
@@ -132,7 +133,7 @@ describe('Bundler tests', () => {
       const optimism = networks.find((net) => net.id === 'optimism')!
       const usedNetworks = [optimism]
       const providers = {
-        [optimism.id]: new JsonRpcProvider(optimism.rpcUrl)
+        [optimism.id]: getRpcProvider(optimism.rpcUrls, optimism.chainId)
       }
       const accountStates = await getAccountsInfo(usedNetworks, providers, [optyDeployed])
       const accountState = accountStates[opOptimism.accountAddr][opOptimism.networkId]

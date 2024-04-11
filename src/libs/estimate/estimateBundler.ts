@@ -14,6 +14,7 @@ import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { Bundler } from '../../services/bundlers/bundler'
 import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
 import { getFeeCall } from '../calls/calls'
+import { TokenResult } from '../portfolio'
 import { getProxyDeployBytecode } from '../proxyDeploy/deploy'
 import { getAmbireAccountAddress } from '../proxyDeploy/getAmbireAddressTwo'
 import { UserOperation } from '../userOperation/types'
@@ -23,7 +24,7 @@ import {
   getUserOperation
 } from '../userOperation/userOperation'
 import { estimationErrorFormatted } from './errors'
-import { EstimateResult, FeePaymentOption, FeeToken } from './interfaces'
+import { EstimateResult, FeePaymentOption } from './interfaces'
 
 function getUserOpForEstimate(
   userOp: UserOperation,
@@ -55,20 +56,24 @@ function getUserOpForEstimate(
   return uOp
 }
 
-function getFeeTokenForEstimate(feeTokens: FeeToken[]): FeeToken | null {
+function getFeeTokenForEstimate(feeTokens: TokenResult[]): TokenResult | null {
   if (!feeTokens.length) return null
 
   const erc20token = feeTokens.find(
-    (feeToken) => feeToken.address !== ZeroAddress && !feeToken.isGasTank && feeToken.amount > 0n
+    (feeToken) =>
+      feeToken.address !== ZeroAddress && !feeToken.flags.onGasTank && feeToken.amount > 0n
   )
   if (erc20token) return erc20token
 
   const nativeToken = feeTokens.find(
-    (feeToken) => feeToken.address === ZeroAddress && !feeToken.isGasTank && feeToken.amount > 0n
+    (feeToken) =>
+      feeToken.address === ZeroAddress && !feeToken.flags.onGasTank && feeToken.amount > 0n
   )
   if (nativeToken) return nativeToken
 
-  const gasTankToken = feeTokens.find((feeToken) => feeToken.isGasTank && feeToken.amount > 0n)
+  const gasTankToken = feeTokens.find(
+    (feeToken) => feeToken.flags.onGasTank && feeToken.amount > 0n
+  )
   return gasTankToken ?? null
 }
 
@@ -88,7 +93,7 @@ export async function bundlerEstimate(
   accountStates: AccountStates,
   op: AccountOp,
   network: NetworkDescriptor,
-  feeTokens: FeeToken[]
+  feeTokens: TokenResult[]
 ): Promise<EstimateResult> {
   // we pass an empty array of feePaymentOptions as they are built
   // in an upper level using the balances from Estimation.sol.
@@ -102,7 +107,7 @@ export async function bundlerEstimate(
   const gasPrices = await Bundler.fetchGasPrices(network).catch(
     () => new Error('Could not fetch gas prices, retrying...')
   )
-  if (gasPrices instanceof Error) return estimationErrorFormatted(gasPrices, feePaymentOptions)
+  if (gasPrices instanceof Error) return estimationErrorFormatted(gasPrices, { feePaymentOptions })
 
   // add the maxFeePerGas and maxPriorityFeePerGas only if the network
   // is optimistic as the bundler uses these values to determine the
@@ -125,7 +130,8 @@ export async function bundlerEstimate(
       )
     )
   )
-  if (gasData instanceof Error) return estimationErrorFormatted(gasData as Error, feePaymentOptions)
+  if (gasData instanceof Error)
+    return estimationErrorFormatted(gasData as Error, { feePaymentOptions })
 
   const apeMaxFee = BigInt(gasPrices.fast.maxFeePerGas) + BigInt(gasPrices.fast.maxFeePerGas) / 5n
   const apePriority =

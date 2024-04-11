@@ -1,6 +1,4 @@
 /* eslint-disable no-underscore-dangle */
-import { JsonRpcProvider, Network } from 'ethers'
-
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { networks } from '../../consts/networks'
 import { Key } from '../../interfaces/keystore'
@@ -20,9 +18,9 @@ import {
   RPCProviders
 } from '../../interfaces/settings'
 import { Storage } from '../../interfaces/storage'
-import { getSASupport, simulateDebugTraceCall } from '../../libs/deployless/simulateDeployCall'
 import { getFeaturesByNetworkProperties, getNetworkInfo } from '../../libs/settings/settings'
 import { isValidAddress } from '../../services/address'
+import { getRpcProvider } from '../../services/provider'
 import wait from '../../utils/wait'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
@@ -43,7 +41,7 @@ export class SettingsController extends EventEmitter {
 
   networkToAddOrUpdate: {
     chainId: NetworkDescriptor['chainId']
-    rpcUrl: NetworkDescriptor['rpcUrl']
+    rpcUrl: string
     info?: NetworkInfoLoading<NetworkInfo>
   } | null = null
 
@@ -54,13 +52,13 @@ export class SettingsController extends EventEmitter {
     this.#load()
   }
 
-  #setProvider(network: NetworkDescriptor, newRpcUrl: string) {
+  #setProvider(network: NetworkDescriptor, newRpcUrls: string[], selectedRpcUrl?: string) {
     const provider = this.providers[network.id]
 
     // Only update the RPC if the new RPC is different from the current one
     // or if there is no RPC for this network yet.
     // eslint-disable-next-line no-underscore-dangle
-    if (!provider || provider?._getConnection().url !== newRpcUrl) {
+    if (!provider || provider?._getConnection().url !== selectedRpcUrl) {
       const oldRPC = this.providers[network.id]
 
       if (oldRPC) {
@@ -69,8 +67,7 @@ export class SettingsController extends EventEmitter {
         oldRPC.destroy()
       }
 
-      const staticNetwork = Network.from(Number(network.chainId))
-      this.providers[network.id] = new JsonRpcProvider(newRpcUrl, staticNetwork, { staticNetwork })
+      this.providers[network.id] = getRpcProvider(newRpcUrls, network.chainId, selectedRpcUrl)
     }
   }
 
@@ -90,7 +87,7 @@ export class SettingsController extends EventEmitter {
         unstoppableDomainsChain: 'ERC20',
         name: customNetwork.name,
         nativeAssetSymbol: customNetwork.nativeAssetSymbol,
-        rpcUrl: customNetwork.rpcUrl,
+        rpcUrls: customNetwork.rpcUrls,
         chainId: customNetwork.chainId,
         explorerUrl: customNetwork.explorerUrl,
         erc4337: customNetwork.erc4337 ?? { enabled: false, hasPaymaster: false },
@@ -116,13 +113,19 @@ export class SettingsController extends EventEmitter {
     // configure the main networks
     return allNetworks.map((network) => {
       const networkPreferences = this.#networkPreferences[network.id]
-      this.#setProvider(network, networkPreferences?.rpcUrl || network.rpcUrl)
+      const selectedRpcUrl =
+        networkPreferences?.selectedRpcUrl || networkPreferences?.rpcUrls?.[0] || network.rpcUrls[0]
+      this.#setProvider(network, networkPreferences?.rpcUrls || network.rpcUrls, selectedRpcUrl)
       const finalNetwork = networkPreferences
         ? {
             ...network,
-            ...networkPreferences
+            ...networkPreferences,
+            selectedRpcUrl
           }
-        : network
+        : {
+            ...network,
+            selectedRpcUrl
+          }
 
       const info: NetworkInfo = {
         isSAEnabled: finalNetwork.isSAEnabled,
@@ -152,15 +155,17 @@ export class SettingsController extends EventEmitter {
 
   async #load() {
     try {
-      // @ts-ignore
-      ;[this.accountPreferences, this.keyPreferences, this.#networkPreferences] = await Promise.all(
-        [
-          // Should get the storage data from all keys here
-          this.#storage.get('accountPreferences', {}),
-          this.#storage.get('keyPreferences', []),
-          this.#storage.get('networkPreferences', {})
-        ]
-      )
+      let networkPreferences = {}
+      ;[this.accountPreferences, this.keyPreferences, networkPreferences] = await Promise.all([
+        // Should get the storage data from all keys here
+        this.#storage.get('accountPreferences', {}),
+        this.#storage.get('keyPreferences', []),
+        this.#storage.get('networkPreferences', {})
+      ])
+
+      this.#networkPreferences = this.#migrateNetworkPreferences(networkPreferences)
+
+      this.emitUpdate()
     } catch (e) {
       this.emitError({
         message:
@@ -169,8 +174,23 @@ export class SettingsController extends EventEmitter {
         error: new Error('settings: failed to pull settings from storage')
       })
     }
+  }
 
-    this.emitUpdate()
+  // eslint-disable-next-line class-methods-use-this
+  #migrateNetworkPreferences(networkPreferencesOldFormat: {
+    [key in NetworkDescriptor['id']]: (NetworkPreference | CustomNetwork) & { rpcUrl?: string }
+  }) {
+    const modifiedNetworks: NetworkPreferences = {}
+    // eslint-disable-next-line no-restricted-syntax
+    for (const [networkId, network] of Object.entries(networkPreferencesOldFormat)) {
+      if (network.rpcUrl && !network.rpcUrls) {
+        modifiedNetworks[networkId] = { ...network, rpcUrls: [network.rpcUrl] }
+      } else {
+        modifiedNetworks[networkId] = network
+      }
+    }
+
+    return modifiedNetworks
   }
 
   async #storePreferences() {
@@ -279,7 +299,7 @@ export class SettingsController extends EventEmitter {
   setNetworkToAddOrUpdate(
     networkToAddOrUpdate: {
       chainId: NetworkDescriptor['chainId']
-      rpcUrl: NetworkDescriptor['rpcUrl']
+      rpcUrl: string
     } | null = null
   ) {
     if (networkToAddOrUpdate) {
@@ -324,33 +344,16 @@ export class SettingsController extends EventEmitter {
       throw new Error('settings: addCustomNetwork chain already added')
     }
 
-    const {
-      isSAEnabled,
-      isOptimistic,
-      rpcNoStateOverride,
-      hasDebugTraceCall,
-      erc4337,
-      areContractsDeployed,
-      feeOptions,
-      platformId,
-      nativeAssetId,
-      flagged,
-      hasSingleton
-    } = this.networkToAddOrUpdate.info as NetworkInfo
+    const info = { ...(this.networkToAddOrUpdate.info as NetworkInfo) }
+    const { feeOptions } = info
+
+    // eslint-disable-next-line no-param-reassign
+    delete (info as any).feeOptions
 
     this.#networkPreferences[customNetworkId] = {
       ...customNetwork,
-      ...feeOptions,
-      erc4337,
-      isSAEnabled,
-      areContractsDeployed,
-      isOptimistic,
-      rpcNoStateOverride,
-      hasDebugTraceCall,
-      platformId,
-      nativeAssetId,
-      flagged,
-      hasSingleton
+      ...info,
+      ...feeOptions
     }
 
     await this.#storePreferences()
@@ -372,8 +375,8 @@ export class SettingsController extends EventEmitter {
     this.emitUpdate()
   }
 
-  async updateNetworkPreferences(
-    networkPreferences: NetworkPreference,
+  async #updateNetworkPreferences(
+    networkPreferences: Partial<NetworkPreference>,
     networkId: NetworkDescriptor['id']
   ) {
     if (!Object.keys(networkPreferences).length) return
@@ -394,21 +397,8 @@ export class SettingsController extends EventEmitter {
 
         return { ...acc, [key]: networkPreferences[key as keyof NetworkPreference] }
       },
-      {}
+      {} as NetworkPreference
     )
-
-    // if the rpcUrl has changed, call the RPC and check whether it supports
-    // state overrided. If it doesn't, add a warning
-    if (changedNetworkPreferences.rpcUrl) {
-      const provider = new JsonRpcProvider(changedNetworkPreferences.rpcUrl as string)
-      const [saSupport, hasDebugTraceCall] = await Promise.all([
-        getSASupport(provider).catch(() => ({ supportsStateOverride: false })),
-        simulateDebugTraceCall(provider)
-      ])
-      provider.destroy()
-      changedNetworkPreferences.rpcNoStateOverride = !saSupport.supportsStateOverride
-      changedNetworkPreferences.hasDebugTraceCall = hasDebugTraceCall
-    }
 
     // Update the network preferences with the incoming new values
     this.#networkPreferences[networkId] = {
@@ -418,6 +408,67 @@ export class SettingsController extends EventEmitter {
 
     await this.#storePreferences()
     this.emitUpdate()
+
+    // Do not wait the rpc validation in order to complete the execution of updateNetworkPreferences
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+    ;(async () => {
+      // if the rpcUrls have changed, call the RPC and check whether it supports
+      // state overrided. If it doesn't, add a warning
+      if (changedNetworkPreferences.selectedRpcUrl) {
+        if (
+          this.networkToAddOrUpdate?.info &&
+          Object.values(this.networkToAddOrUpdate.info).every((prop) => prop !== 'LOADING')
+        ) {
+          const info = { ...(this.networkToAddOrUpdate.info as NetworkInfo) }
+          const { feeOptions } = info
+
+          // eslint-disable-next-line no-param-reassign
+          delete (info as any).feeOptions
+          this.#networkPreferences[networkId] = {
+            ...this.#networkPreferences[networkId],
+            ...info,
+            ...feeOptions
+          }
+
+          await this.#storePreferences()
+          this.emitUpdate()
+          return
+        }
+
+        // eslint-disable-next-line @typescript-eslint/no-floating-promises
+        getNetworkInfo(
+          changedNetworkPreferences.selectedRpcUrl,
+          this.#networkPreferences[networkId].chainId!,
+          async (info) => {
+            if (Object.values(info).some((prop) => prop === 'LOADING')) {
+              return
+            }
+
+            const { feeOptions } = info as NetworkInfo
+
+            // eslint-disable-next-line no-param-reassign
+            delete (info as any).feeOptions
+            this.#networkPreferences[networkId] = {
+              ...this.#networkPreferences[networkId],
+              ...(info as NetworkInfo),
+              ...feeOptions
+            }
+
+            await this.#storePreferences()
+            this.emitUpdate()
+          }
+        )
+      }
+    })()
+  }
+
+  async updateNetworkPreferences(
+    networkPreferences: Partial<NetworkPreference>,
+    networkId: NetworkDescriptor['id']
+  ) {
+    await this.#wrapSettingsAction('updateNetworkPreferences', () =>
+      this.#updateNetworkPreferences(networkPreferences, networkId)
+    )
   }
 
   // NOTE: use this method only for predefined networks
@@ -445,7 +496,7 @@ export class SettingsController extends EventEmitter {
     const factoryCode = await provider.getCode(AMBIRE_ACCOUNT_FACTORY)
     if (factoryCode === '0x') return
 
-    this.updateNetworkPreferences({ areContractsDeployed: true }, network.id).catch(() => {
+    this.#updateNetworkPreferences({ areContractsDeployed: true }, network.id).catch(() => {
       this.emitError({
         level: 'silent',
         message: 'Failed to update the network feature for supporting smart accounts',
@@ -461,6 +512,7 @@ export class SettingsController extends EventEmitter {
     this.emitUpdate()
     try {
       await fn()
+      await wait(1)
       this.status = 'SUCCESS'
       this.emitUpdate()
     } catch (error: any) {

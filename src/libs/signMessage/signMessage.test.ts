@@ -17,6 +17,7 @@ import { KeystoreController } from '../../controllers/keystore/keystore'
 import { Account, AccountStates } from '../../interfaces/account'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { Storage } from '../../interfaces/storage'
+import { getRpcProvider } from '../../services/provider'
 import { getAccountState } from '../accountState/accountState'
 import { KeystoreSigner } from '../keystoreSigner/keystoreSigner'
 import { getEIP712Signature, getPlainTextSignature, getTypedData } from './signMessage'
@@ -67,7 +68,7 @@ const v1Account: Account = {
 }
 
 const providers = Object.fromEntries(
-  networks.map((network) => [network.id, new JsonRpcProvider(network.rpcUrl)])
+  networks.map((network) => [network.id, getRpcProvider(network.rpcUrls, network.chainId)])
 )
 
 const getAccountsInfo = async (accounts: Account[]): Promise<AccountStates> => {
@@ -149,7 +150,7 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
     const unwrappedSig = signatureForPlainText.slice(0, -2)
     expect(verifyMessage('test', unwrappedSig)).toBe(eoaSigner.keyPublicAddress)
 
-    const provider = new JsonRpcProvider(polygonNetwork.rpcUrl)
+    const provider = getRpcProvider(polygonNetwork.rpcUrls, polygonNetwork.chainId)
     const contract = new Contract(smartAccount.addr, AmbireAccount.abi, provider)
     const isValidSig = await contract.isValidSignature(hashMessage('test'), signatureForPlainText)
     expect(isValidSig).toBe(contractSuccess)
@@ -195,7 +196,7 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
   //   const unwrappedSig = signatureForPlainText.slice(0, -2)
   //   expect(verifyMessage('test', unwrappedSig)).toBe(v1siger.keyPublicAddress)
 
-  //   const provider = new JsonRpcProvider(polygonNetwork.rpcUrl)
+  //   const provider = getRpcProvider(polygonNetwork.rpcUrls, polygonNetwork.chainId)
   //   const contract = new Contract(v1Account.addr, AmbireAccount.abi, provider)
   //   const isValidSig = await contract.isValidSignature(hashMessage('test'), signatureForPlainText)
   //   expect(isValidSig).toBe(contractSuccess)
@@ -250,7 +251,7 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
       verifyTypedData(typedData.domain, typedData.types, typedData.message, unwrappedSig)
     ).toBe(eoaSigner.keyPublicAddress)
 
-    const provider = new JsonRpcProvider(polygonNetwork.rpcUrl)
+    const provider = getRpcProvider(polygonNetwork.rpcUrls, polygonNetwork.chainId)
     const contract = new Contract(smartAccount.addr, AmbireAccount.abi, provider)
     const isValidSig = await contract.isValidSignature(
       TypedDataEncoder.hash(typedData.domain, typedData.types, typedData.message),
@@ -309,7 +310,7 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: false', () => {
       verifyTypedData(typedData.domain, typedData.types, typedData.message, unwrappedSig)
     ).toBe(eoaSigner.keyPublicAddress)
 
-    const provider = new JsonRpcProvider(polygonNetwork.rpcUrl)
+    const provider = getRpcProvider(polygonNetwork.rpcUrls, polygonNetwork.chainId)
     const contract = new Contract(smartAccount.addr, AmbireAccount.abi, provider)
     const isValidSig = await contract.isValidSignature(hashMessage('test'), signatureForPlainText)
     expect(isValidSig).toBe(contractSuccess)

@@ -20,7 +20,8 @@ export type KeyPreferences = {
 
 export type NetworkPreference = {
   name?: string
-  rpcUrl?: string
+  rpcUrls?: string[]
+  selectedRpcUrl: string
   chainId?: bigint
   nativeAssetSymbol?: string
   explorerUrl?: string
@@ -34,7 +35,8 @@ export type NetworkPreference = {
 
 export type CustomNetwork = {
   name: string
-  rpcUrl: string
+  rpcUrls: string[]
+  selectedRpcUrl: string
   chainId: bigint
   nativeAssetSymbol: string
   explorerUrl: string

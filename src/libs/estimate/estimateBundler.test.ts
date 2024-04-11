@@ -1,12 +1,13 @@
 /* eslint-disable @typescript-eslint/no-floating-promises */
 
-import { JsonRpcProvider, parseEther } from 'ethers'
+import { parseEther } from 'ethers'
 
 import { describe, expect, test } from '@jest/globals'
 
 import { optyNotDeployed } from '../../../test/config'
 import { getAccountsInfo } from '../../../test/helpers'
 import { networks } from '../../consts/networks'
+import { getRpcProvider } from '../../services/provider'
 import { AccountOp } from '../accountOp/accountOp'
 import { bundlerEstimate } from './estimateBundler'
 
@@ -30,27 +31,51 @@ describe('Bundler estimation tests', () => {
       const optimism = networks.find((net) => net.id === 'optimism')!
       const usedNetworks = [optimism]
       const providers = {
-        [optimism.id]: new JsonRpcProvider(optimism.rpcUrl)
+        [optimism.id]: getRpcProvider(optimism.rpcUrls, optimism.chainId)
       }
       const accountStates = await getAccountsInfo(usedNetworks, providers, [optyNotDeployed])
       const feeTokens = [
         {
           address: '0x0000000000000000000000000000000000000000',
-          isGasTank: false,
           amount: 1n,
-          symbol: 'ETH'
+          symbol: 'ETH',
+          networkId: 'optimism',
+          decimals: 18,
+          priceIn: [],
+          flags: {
+            onGasTank: false,
+            rewardsType: null,
+            canTopUpGasTank: true,
+            isFeeToken: true
+          }
         },
         {
           address: '0xdAC17F958D2ee523a2206206994597C13D831ec7',
-          isGasTank: false,
           amount: 1n,
-          symbol: 'USDT'
+          symbol: 'USDT',
+          networkId: 'optimism',
+          decimals: 18,
+          priceIn: [],
+          flags: {
+            onGasTank: false,
+            rewardsType: null,
+            canTopUpGasTank: true,
+            isFeeToken: true
+          }
         },
         {
           address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
-          isGasTank: false,
           amount: 1n,
-          symbol: 'USDC'
+          symbol: 'USDC',
+          networkId: 'optimism',
+          decimals: 18,
+          priceIn: [],
+          flags: {
+            onGasTank: false,
+            rewardsType: null,
+            canTopUpGasTank: true,
+            isFeeToken: true
+          }
         }
       ]
       const result = await bundlerEstimate(

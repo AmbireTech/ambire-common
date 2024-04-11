@@ -1,12 +1,11 @@
 /* eslint-disable import/no-extraneous-dependencies */
-/* eslint-disable @typescript-eslint/no-use-before-define */
-/* eslint-disable @typescript-eslint/no-shadow */
-import { CustomToken } from 'libs/portfolio/customToken'
 import fetch from 'node-fetch'
 
 import { PINNED_TOKENS } from '../../consts/pinnedTokens'
 import { Account, AccountId } from '../../interfaces/account'
-import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
+import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
+/* eslint-disable @typescript-eslint/no-shadow */
+import { CustomNetwork, NetworkPreference } from '../../interfaces/settings'
 import { Storage } from '../../interfaces/storage'
 import { isSmartAccount } from '../../libs/account/account'
 import { AccountOp, isAccountOpsIntentEqual } from '../../libs/accountOp/accountOp'
@@ -16,6 +15,8 @@ import {
   getNetworksWithFailedRPCBanners,
   getNetworksWithPortfolioErrorBanners
 } from '../../libs/banners/banners'
+/* eslint-disable @typescript-eslint/no-use-before-define */
+import { CustomToken } from '../../libs/portfolio/customToken'
 import getAccountNetworksWithAssets from '../../libs/portfolio/getNetworksWithAssets'
 import { getFlags, validateERC20Token } from '../../libs/portfolio/helpers'
 /* eslint-disable no-param-reassign */
@@ -85,6 +86,14 @@ export class PortfolioController extends EventEmitter {
 
   validTokens: any = { erc20: {}, erc721: {} }
 
+  temporaryTokens: {
+    [networkId: NetworkDescriptor['id']]: {
+      isLoading: boolean
+      errors: { error: string; address: string }[]
+      result: { tokens: PortfolioGetResult['tokens'] }
+    }
+  } = {}
+
   #portfolioLibs: Map<string, Portfolio>
 
   #storage: Storage
@@ -115,6 +124,7 @@ export class PortfolioController extends EventEmitter {
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
     this.#settings = settings
     this.tokenIcons = {}
+    this.temporaryTokens = {}
 
     this.#initialLoadPromise = this.#load()
   }
@@ -193,6 +203,8 @@ export class PortfolioController extends EventEmitter {
     token: { address: TokenResult['address']; networkId: TokenResult['networkId'] },
     accountId: AccountId
   ) {
+    if (this.validTokens.erc20[`${token.address}-${token.networkId}`] === true) return
+
     const [isValid, standard]: [boolean, string] = (await validateERC20Token(
       token,
       accountId,
@@ -205,6 +217,76 @@ export class PortfolioController extends EventEmitter {
     }
 
     this.emitUpdate()
+  }
+
+  initializePortfolioLibIfNeeded(
+    accountId: AccountId,
+    networkId: NetworkId,
+    network: NetworkDescriptor
+  ) {
+    const providers = this.#settings.providers
+    const key = `${networkId}:${accountId}`
+    // Initialize a new Portfolio lib if:
+    // 1. It does not exist in the portfolioLibs map
+    // 2. The network RPC URL has changed
+    if (
+      !this.#portfolioLibs.has(key) ||
+      this.#portfolioLibs.get(key)?.network?.selectedRpcUrl !==
+        // eslint-disable-next-line no-underscore-dangle
+        providers[network.id]?._getConnection().url
+    ) {
+      this.#portfolioLibs.set(key, new Portfolio(fetch, providers[network.id], network))
+    }
+    return this.#portfolioLibs.get(key)!
+  }
+
+  async getTemporaryTokens(accountId: AccountId, networkId: NetworkId, additionalHint: string) {
+    const network = this.#settings.networks.find((x) => x.id === networkId)
+
+    if (!network) throw new Error('network not found')
+
+    const portfolioLib = this.initializePortfolioLibIfNeeded(accountId, networkId, network)
+
+    const temporaryTokensToFetch =
+      (this.temporaryTokens[network.id] &&
+        this.temporaryTokens[network.id].result?.tokens.filter(
+          (x) => x.address !== additionalHint
+        )) ||
+      []
+
+    this.temporaryTokens[network.id] = {
+      isLoading: false,
+      errors: [],
+      result: this.temporaryTokens[network.id] && this.temporaryTokens[network.id].result
+    }
+    this.emitUpdate()
+
+    try {
+      const result = await portfolioLib.get(accountId, {
+        priceRecency: 60000,
+        additionalHints: [additionalHint, ...temporaryTokensToFetch.map((x) => x.address)],
+        disableAutoDiscovery: true
+      })
+      this.temporaryTokens[network.id] = {
+        isLoading: false,
+        errors: [],
+        result: {
+          tokens: result.tokens
+        }
+      }
+      this.emitUpdate()
+      return true
+    } catch (e: any) {
+      this.emitError({
+        level: 'silent',
+        message: "Error while executing the 'get' function in the portfolio library.",
+        error: e
+      })
+      this.temporaryTokens[network.id].isLoading = false
+      this.temporaryTokens[network.id].errors.push(e)
+      this.emitUpdate()
+      return false
+    }
   }
 
   async getAdditionalPortfolio(accountId: AccountId) {
@@ -435,20 +517,9 @@ export class PortfolioController extends EventEmitter {
 
     await Promise.all(
       networks.map(async (network) => {
-        const providers = this.#settings.providers
         const key = `${network.id}:${accountId}`
-        // Initialize a new Portfolio lib if:
-        // 1. It does not exist in the portfolioLibs map
-        // 2. The network RPC URL has changed
-        if (
-          !this.#portfolioLibs.has(key) ||
-          this.#portfolioLibs.get(key)?.network?.rpcUrl !==
-            // eslint-disable-next-line no-underscore-dangle
-            providers[network.id]?._getConnection().url
-        ) {
-          this.#portfolioLibs.set(key, new Portfolio(fetch, providers[network.id], network))
-        }
-        const portfolioLib = this.#portfolioLibs.get(key)!
+
+        const portfolioLib = this.initializePortfolioLibIfNeeded(accountId, network.id, network)
 
         const currentAccountOps = accountOps?.[network.id]
         const simulatedAccountOps = pendingState[network.id]?.accountOps

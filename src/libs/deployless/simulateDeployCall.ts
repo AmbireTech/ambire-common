@@ -2,6 +2,7 @@ import { JsonRpcProvider, ZeroAddress } from 'ethers'
 
 import AmbireAccountFactory from '../../../contracts/compiled/AmbireAccountFactory.json'
 import { AMBIRE_ACCOUNT_FACTORY, DEPLOYLESS_SIMULATION_FROM } from '../../consts/deploy'
+import { getRpcProvider } from '../../services/provider'
 import { getSmartAccount, getSpoof } from '../account/account'
 import { callToTuple } from '../accountOp/accountOp'
 import { getActivatorCall } from '../userOperation/userOperation'
@@ -62,7 +63,15 @@ export async function simulateDebugTraceCall(
 ): Promise<boolean> {
   let supportsDebugTraceCall = true
 
-  await provider
+  // eslint-disable-next-line no-underscore-dangle
+  const url = provider._getConnection().url
+  // eslint-disable-next-line no-underscore-dangle
+  const chainId = provider._network ? provider._network.chainId : undefined
+  const noBatchingProvider = getRpcProvider([url], chainId, url, {
+    batchMaxCount: 1
+  })
+
+  await noBatchingProvider
     .send('debug_traceCall', [
       {
         to: '0x888888888889c00c67689029d7856aac1065ec11',
@@ -100,5 +109,6 @@ export async function simulateDebugTraceCall(
       }
     })
 
+  noBatchingProvider.destroy()
   return supportsDebugTraceCall
 }
