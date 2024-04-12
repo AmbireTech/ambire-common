@@ -23,10 +23,6 @@ export function getTokenUsdAmount(token: TokenResult, gasAmount: bigint): string
 
   const usdPriceFormatted = BigInt(usdPrice * 1e18)
 
-  console.log('THE GAS AMOUNT')
-  console.log(gasAmount)
-  console.log('THE GAS AMOUNT')
-
   // 18 it's because we multiply usdPrice * 1e18 and here we need to deduct it
-  return formatUnits(gasAmount * usdPriceFormatted, 18 + token.decimals)
+  return formatUnits(BigInt(gasAmount) * usdPriceFormatted, 18 + token.decimals)
 }
