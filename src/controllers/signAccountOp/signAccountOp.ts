@@ -32,7 +32,7 @@ import EventEmitter from '../eventEmitter/eventEmitter'
 import { KeystoreController } from '../keystore/keystore'
 import { PortfolioController } from '../portfolio/portfolio'
 import { SettingsController } from '../settings/settings'
-import { getFeeSpeedIdentifier } from './helper'
+import { getFeeSpeedIdentifier, getTokenUsdAmount } from './helper'
 
 export enum SigningStatus {
   EstimationError = 'estimation-error',
@@ -73,18 +73,6 @@ type FanSpeed = {
 // declare the statuses we don't want state updates on
 const noStateUpdateStatuses = [SigningStatus.InProgress, SigningStatus.Done]
 
-function getTokenUsdAmount(token: TokenResult, gasAmount: bigint): string {
-  const isUsd = (price: Price) => price.baseCurrency === 'usd'
-  const usdPrice = token.priceIn.find(isUsd)?.price
-
-  if (!usdPrice) return ''
-
-  const usdPriceFormatted = BigInt(usdPrice * 1e18)
-
-  // 18 it's because we multiply usdPrice * 1e18 and here we need to deduct it
-  return formatUnits(gasAmount * usdPriceFormatted, 18 + token.decimals)
-}
-
 const NON_CRITICAL_ERRORS = {
   feeUsdEstimation: 'Unable to estimate the transaction fee in USD.'
 }
@@ -105,7 +93,7 @@ export class SignAccountOpController extends EventEmitter {
 
   #fetch: Function
 
-  #account: Account
+  account: Account
 
   #accountStates: AccountStates
 
@@ -157,7 +145,7 @@ export class SignAccountOpController extends EventEmitter {
     this.#portfolio = portfolio
     this.#settings = settings
     this.#externalSignerControllers = externalSignerControllers
-    this.#account = account
+    this.account = account
     this.#accountStates = accountStates
     this.#network = network
     this.accountOp = structuredClone(accountOp)
@@ -255,7 +243,7 @@ export class SignAccountOpController extends EventEmitter {
     ) {
       // show a different error message depending on whether SA/EOA
       errors.push(
-        isSmartAccount(this.#account)
+        isSmartAccount(this.account)
           ? "Signing is not possible with the selected account's token as it doesn't have sufficient funds to cover the gas payment fee."
           : CRITICAL_ERRORS.eoaInsufficientFunds
       )
@@ -596,7 +584,7 @@ export class SignAccountOpController extends EventEmitter {
           gasPrice = gasRecommendation.baseFeePerGas + gasRecommendation.maxPriorityFeePerGas
 
         // EOA
-        if (!isSmartAccount(this.#account)) {
+        if (!isSmartAccount(this.account)) {
           simulatedGasLimit = gasUsed
 
           if (getAddress(this.accountOp.calls[0].to) === SINGLETON) {
@@ -742,7 +730,7 @@ export class SignAccountOpController extends EventEmitter {
   }
 
   get accountKeyStoreKeys(): Key[] {
-    return this.#keystore.keys.filter((key) => this.#account?.associatedKeys.includes(key.addr))
+    return this.#keystore.keys.filter((key) => this.account.associatedKeys.includes(key.addr))
   }
 
   // eslint-disable-next-line class-methods-use-this
@@ -848,7 +836,7 @@ export class SignAccountOpController extends EventEmitter {
 
     try {
       // In case of EOA account
-      if (!this.#account.creation) {
+      if (!this.account.creation) {
         if (this.accountOp.calls.length !== 1)
           return this.#setSigningError(
             'Tried to sign an EOA transaction with multiple or zero calls.'
@@ -858,7 +846,7 @@ export class SignAccountOpController extends EventEmitter {
         // that means the signing will happen on broadcast and here
         // checking whether the call is 1 and 1 only is enough
         this.accountOp.signature = '0x'
-      } else if (this.accountOp.gasFeePayment.paidBy !== this.#account.addr) {
+      } else if (this.accountOp.gasFeePayment.paidBy !== this.account.addr) {
         // Smart account, but EOA pays the fee
         // EOA pays for execute() - relayerless
 
@@ -869,7 +857,7 @@ export class SignAccountOpController extends EventEmitter {
           signer
         )
       } else if (this.accountOp.gasFeePayment.isERC4337) {
-        const userOperation = getUserOperation(this.#account, accountState, this.accountOp)
+        const userOperation = getUserOperation(this.account, accountState, this.accountOp)
         userOperation.preVerificationGas = this.#estimation!.erc4337GasLimits!.preVerificationGas
         userOperation.callGasLimit = this.#estimation!.erc4337GasLimits!.callGasLimit
         userOperation.verificationGasLimit =
@@ -964,6 +952,7 @@ export class SignAccountOpController extends EventEmitter {
       feePaidBy: this.feePaidBy,
       speedOptions: this.speedOptions,
       selectedOption: this.selectedOption,
+      account: this.account,
       errors: this.errors
     }
   }
