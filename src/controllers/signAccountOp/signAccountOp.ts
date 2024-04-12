@@ -713,21 +713,17 @@ export class SignAccountOpController extends EventEmitter {
     }
 
     const accountState = this.#accountStates[this.accountOp.accountAddr][this.accountOp.networkId]
-    const gasFeePayment: GasFeePayment = {
+    return {
       paidBy: this.paidBy,
       isERC4337: isErc4337Broadcast(this.#network, accountState),
       isGasTank: this.feeTokenResult.flags.onGasTank,
       inToken: this.feeTokenResult.address,
       amount: chosenSpeed.amount,
       simulatedGasLimit: chosenSpeed.simulatedGasLimit,
-      gasPrice: chosenSpeed.gasPrice
+      gasPrice: chosenSpeed.gasPrice,
+      maxPriorityFeePerGas:
+        'maxPriorityFeePerGas' in chosenSpeed ? chosenSpeed.maxPriorityFeePerGas : undefined
     }
-
-    if ('maxPriorityFeePerGas' in chosenSpeed) {
-      gasFeePayment.maxPriorityFeePerGas = chosenSpeed.maxPriorityFeePerGas
-    }
-
-    return gasFeePayment
   }
 
   get feeToken(): string | null {
