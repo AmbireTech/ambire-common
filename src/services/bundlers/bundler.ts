@@ -66,7 +66,7 @@ export class Bundler {
   async pollTxnHash(
     userOperationHash: string,
     network: NetworkDescriptor
-  ): Promise<{ transactionHash: string | null }> {
+  ): Promise<{ transactionHash: string }> {
     const result = await Bundler.getStatusAndTxnId(userOperationHash, network)
     if (!result || !result.transactionHash) {
       const delayPromise = (ms: number) =>
