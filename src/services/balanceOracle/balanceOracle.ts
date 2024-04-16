@@ -201,7 +201,7 @@ const removeDuplicatedAssets = (_tokens: Token[]) => {
   const lookup =
     tokens?.length &&
     tokens.reduce((a: Token, e: Token) => {
-      a[e.address] = ++a[e.address] || 0
+      a[e.address.toLowerCase()] = ++a[e.address.toLowerCase()] || 0
       return a
     }, {})
 
@@ -210,13 +210,13 @@ const removeDuplicatedAssets = (_tokens: Token[]) => {
     ? tokens
         .filter(
           (e) =>
-            !lookup[e.address] ||
-            (lookup[e.address] && e.price !== undefined) ||
-            (lookup[e.address] && e.price)
+            !lookup[e.address.toLowerCase()] ||
+            (lookup[e.address.toLowerCase()] && e.price !== undefined) ||
+            (lookup[e.address.toLowerCase()] && e.price)
         )
         // Actually remove if duplicated tokens are passed.
         .filter(function ({ address }) {
-          return !this.has(address) && this.add(address)
+          return !this.has(address.toLowerCase()) && this.add(address.toLowerCase())
         }, new Set())
     : []
 
