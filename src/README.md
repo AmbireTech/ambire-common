@@ -60,6 +60,7 @@ Here are some related design decisions:
   * the main controller can call or watch sub-controllers, but not vice versa, to maintain a directional relationship
   * for simplicity, we'll avoid passing data between sub-controllers internally and leave this to the app itself whenever possible; as a practical example, the `AccountAdder` will expose a list of accounts that can be added, but instead of internally having a method that will add those accounts on the main controller (which breaks the unidirectionality of the previous point), we'll just expose them - then, the app can call `mainController.addAccounts(mainController.accountAdder.selectedAccounts)`
 * Properties that are not meant to be exposed or serialized should start with `#` in order to [make them private](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Classes/Private_class_fields). The public/private modifiers in TypeScript do not achieve the same effect since they only serve as guidelines for the TS compiler itself, but they should be used alongside `#` anyway
+* Do not rely on interior mutability and internal cross-references
 
 Those controllers are essentially classic state containers: you can call them with some actions, those methods should never return anything, but they can result in one or more state changes, which will emit an `update` event, forcing the UI to re-render with the latest state.
 
@@ -250,7 +251,6 @@ ts-node src/libs/deployless/compileUtil.ts  > src/libs/estimate/estimator.json
 - no multiple components of private keys, one key is one private key; if it's part of a multisig, this should be reflected via meta
 - no need for separata methods to load from storage, we will always load on demand, since every method is async anyway
 - the keystore will only store single keys and will not concern itself with multisigs or recovery info, even if we use it in an identity as part of a multisig (like QuickAccs, even tho we won't use them in the extension); this will be handled by a separate mapping in the Account object
-
 
 ### Audits
 
