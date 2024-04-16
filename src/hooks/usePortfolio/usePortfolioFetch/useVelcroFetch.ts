@@ -35,11 +35,11 @@ export default function useVelcroFetch({
       ...tokens
         .map((token: any) => {
           const prevToken =
-            assets?.tokens?.length && assets?.tokens.find((t) => t.address === token.address)
+            assets?.tokens?.length && assets?.tokens.find((t) => t.address.toLowerCase() === token.address.toLowerCase())
           
           // Get the coingeckoId from constants if not present from velcro
           if (token.coingeckoId === null || prevToken?.coingeckoId === null) {
-            const tokenInList = constants.tokenList[network] && constants.tokenList[network].find(t => t.address === token.address)
+            const tokenInList = constants.tokenList[network] && constants.tokenList[network].find(t => t.address.toLowerCase() === token.address.toLowerCase())
             if (tokenInList) { token.coingeckoId = tokenInList.coingeckoId}
           }
           let updatedData = {}
@@ -79,6 +79,7 @@ export default function useVelcroFetch({
         })
         .map((token: any) => ({
           ...token,
+          address: token.address.toLowerCase(),
           // balanceOracle fixes the number to the 10 decimal places, so here we should also fix it
           balance: token?.balance
             ? Number(token?.balance?.toFixed(10))
