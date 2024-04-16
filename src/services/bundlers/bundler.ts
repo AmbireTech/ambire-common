@@ -57,6 +57,29 @@ export class Bundler {
   }
 
   /**
+   * Call getStatusAndTxnId until a result containing transactionHash is returned
+   *
+   * @param userOperationHash
+   * @param network
+   * @returns {transactionHash: string|null}
+   */
+  async pollTxnHash(
+    userOperationHash: string,
+    network: NetworkDescriptor
+  ): Promise<{ transactionHash: string | null }> {
+    const result = await Bundler.getStatusAndTxnId(userOperationHash, network)
+    if (!result || !result.transactionHash) {
+      const delayPromise = (ms: number) =>
+        new Promise((resolve) => {
+          setTimeout(resolve, ms)
+        })
+      await delayPromise(this.pollWaitTime)
+      return this.pollTxnHash(userOperationHash, network)
+    }
+    return result
+  }
+
+  /**
    * Broadcast a userOperation to the specified bundler and get a userOperationHash in return
    *
    * @param UserOperation userOperation
