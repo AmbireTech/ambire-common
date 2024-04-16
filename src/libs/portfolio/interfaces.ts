@@ -171,7 +171,3 @@ export interface GetOptions {
   additionalHints?: Hints['erc20s']
   disableAutoDiscovery?: boolean
 }
-
-export interface TokenIcon {
-  [networdIdAndAddress: string]: string
-}
