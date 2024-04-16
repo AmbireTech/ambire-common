@@ -2,29 +2,7 @@
 // 1. Open a block explorer and confirm the address is legit
 // 2. Check if the token address exists on the relayer side
 
-// <TODO>: Address 0 should always be a fee token and we shouldn't
-// have to add it explicitly for each network
 export default [
-  {
-    address: '0x0000000000000000000000000000000000000000',
-    networkId: 'ethereum'
-  },
-  {
-    address: '0x0000000000000000000000000000000000000000',
-    networkId: 'polygon'
-  },
-  {
-    address: '0x0000000000000000000000000000000000000000',
-    networkId: 'optimism'
-  },
-  {
-    address: '0x0000000000000000000000000000000000000000',
-    networkId: 'avalanche'
-  },
-  {
-    address: '0x0000000000000000000000000000000000000000',
-    networkId: 'arbitrum'
-  },
   {
     // wrapped eth
     address: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',

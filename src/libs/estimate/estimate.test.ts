@@ -1,21 +1,24 @@
 /* eslint no-console: "off" */
 
-import { AbiCoder, ethers, JsonRpcProvider } from 'ethers'
-import { AccountOp } from 'libs/accountOp/accountOp'
+import { AbiCoder, ethers, Interface } from 'ethers'
 import fetch from 'node-fetch'
 
 import { describe, expect } from '@jest/globals'
 
+import ERC20 from '../../../contracts/compiled/IERC20.json'
 import { trezorSlot7v24337Deployed } from '../../../test/config'
 import { getNonce } from '../../../test/helpers'
 import { FEE_COLLECTOR } from '../../consts/addresses'
-import { AMBIRE_PAYMASTER } from '../../consts/deploy'
 import { networks } from '../../consts/networks'
 import { Account, AccountStates } from '../../interfaces/account'
+import { Key } from '../../interfaces/keystore'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
+import { getRpcProvider } from '../../services/provider'
+import { AccountOp } from '../accountOp/accountOp'
+import { Call } from '../accountOp/types'
 import { getAccountState } from '../accountState/accountState'
 import { Portfolio } from '../portfolio/portfolio'
-import { estimate } from './estimate'
+import { estimate, estimate4337 } from './estimate'
 
 const ethereum = networks.find((x) => x.id === 'ethereum')
 const optimism = networks.find((x) => x.id === 'optimism')
@@ -23,11 +26,56 @@ const arbitrum = networks.find((x) => x.id === 'arbitrum')
 const avalanche = networks.find((x) => x.id === 'avalanche')
 const polygon = networks.find((x) => x.id === 'polygon')
 if (!ethereum || !optimism || !arbitrum || !avalanche || !polygon) throw new Error('no network')
-const provider = new JsonRpcProvider(ethereum.rpcUrl)
-const providerOptimism = new JsonRpcProvider(optimism.rpcUrl)
-const providerArbitrum = new JsonRpcProvider(arbitrum.rpcUrl)
-const providerAvalanche = new JsonRpcProvider(avalanche.rpcUrl)
-const providerPolygon = new JsonRpcProvider(polygon.rpcUrl)
+const provider = getRpcProvider(ethereum.rpcUrls, ethereum.chainId)
+const providerOptimism = getRpcProvider(optimism.rpcUrls, optimism.chainId)
+const providerArbitrum = getRpcProvider(arbitrum.rpcUrls, arbitrum.chainId)
+const providerAvalanche = getRpcProvider(avalanche.rpcUrls, avalanche.chainId)
+const providerPolygon = getRpcProvider(polygon.rpcUrls, polygon.chainId)
+
+// Used to determine if an account is view-only or not
+// and subsequently if it should be included in the fee payment options
+const MOCK_KEYSTORE_KEYS: Key[] = [
+  {
+    addr: '0x71c3D24a627f0416db45107353d8d0A5ae0401ae',
+    type: 'trezor',
+    dedicatedToOneSA: true,
+    isExternallyStored: true,
+    meta: {
+      deviceId: 'doesnt-matter',
+      deviceModel: 'doesnt-matter',
+      hdPathTemplate: "m/44'/60'/0'/0/<account>",
+      index: 2
+    }
+  },
+  {
+    type: 'internal',
+    addr: '0xd6e371526cdaeE04cd8AF225D42e37Bc14688D9E',
+    dedicatedToOneSA: false,
+    meta: null,
+    isExternallyStored: false
+  },
+  {
+    type: 'internal',
+    addr: '0x141A14B5C4dbA2aC7a7943E02eDFE2E7eDfdA28F',
+    dedicatedToOneSA: false,
+    meta: null,
+    isExternallyStored: false
+  },
+  {
+    type: 'internal',
+    addr: '0x0000000000000000000000000000000000000001',
+    dedicatedToOneSA: false,
+    meta: null,
+    isExternallyStored: false
+  },
+  {
+    type: 'internal',
+    addr: '0xa8eEaC54343F94CfEEB3492e07a7De72bDFD118a',
+    dedicatedToOneSA: false,
+    meta: null,
+    isExternallyStored: false
+  }
+]
 
 const account: Account = {
   addr: '0xa07D75aacEFd11b425AF7181958F0F85c312f143',
@@ -64,11 +112,12 @@ const SPOOF_SIGTYPE = '03'
 const spoofSig =
   new AbiCoder().encode(['address'], ['0xd6e371526cdaeE04cd8AF225D42e37Bc14688D9E']) + SPOOF_SIGTYPE
 
+// View only, because its key isn't in MOCK_KEYSTORE_KEYS
 const viewOnlyAcc = {
   addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
   creation: null,
   initialPrivileges: [],
-  associatedKeys: [] // this means it's a view only acc
+  associatedKeys: ['0x77777777789A8BBEE6C64381e5E89E501fb0e4c8']
 }
 const nativeToCheck: Account[] = [
   {
@@ -85,21 +134,87 @@ const nativeToCheck: Account[] = [
   },
   viewOnlyAcc
 ]
+
 const feeTokens = [
-  { address: '0x0000000000000000000000000000000000000000', isGasTank: false, amount: 1n },
-  { address: '0xdAC17F958D2ee523a2206206994597C13D831ec7', isGasTank: false, amount: 1n },
-  { address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48', isGasTank: false, amount: 1n }
+  {
+    address: '0x0000000000000000000000000000000000000000',
+    amount: 1n,
+    symbol: 'ETH',
+    networkId: 'ethereum',
+    decimals: 18,
+    priceIn: [],
+    flags: {
+      onGasTank: false,
+      rewardsType: null,
+      canTopUpGasTank: true,
+      isFeeToken: true
+    }
+  },
+  {
+    address: '0xdAC17F958D2ee523a2206206994597C13D831ec7',
+    amount: 1n,
+    symbol: 'USDT',
+    networkId: 'ethereum',
+    decimals: 6,
+    priceIn: [],
+    flags: {
+      onGasTank: false,
+      rewardsType: null,
+      canTopUpGasTank: true,
+      isFeeToken: true
+    }
+  },
+  {
+    address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+    amount: 1n,
+    symbol: 'USDC',
+    networkId: 'ethereum',
+    decimals: 6,
+    priceIn: [],
+    flags: {
+      onGasTank: false,
+      rewardsType: null,
+      canTopUpGasTank: true,
+      isFeeToken: true
+    }
+  }
 ]
 
 const feeTokensAvalanche = [
-  { address: '0x0000000000000000000000000000000000000000', isGasTank: false, amount: 1n },
-  { address: '0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E', isGasTank: false, amount: 1n }
+  {
+    address: '0x0000000000000000000000000000000000000000',
+    amount: 1n,
+    symbol: 'AVAX',
+    networkId: 'avalanche',
+    decimals: 18,
+    priceIn: [],
+    flags: {
+      onGasTank: false,
+      rewardsType: null,
+      canTopUpGasTank: true,
+      isFeeToken: true
+    }
+  },
+  {
+    address: '0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E',
+    amount: 1n,
+    symbol: 'USDC',
+    networkId: 'avalanche',
+    decimals: 6,
+    priceIn: [],
+    flags: {
+      onGasTank: false,
+      rewardsType: null,
+      canTopUpGasTank: true,
+      isFeeToken: true
+    }
+  }
 ]
 
 const portfolio = new Portfolio(fetch, provider, ethereum)
 
 const providers = Object.fromEntries(
-  networks.map((network) => [network.id, new JsonRpcProvider(network.rpcUrl)])
+  networks.map((network) => [network.id, getRpcProvider(network.rpcUrls, network.chainId)])
 )
 const getAccountsInfo = async (accounts: Account[]): Promise<AccountStates> => {
   const result = await Promise.all(
@@ -143,7 +258,7 @@ const trezorSlot6v2NotDeployed: Account = {
 }
 
 describe('estimate', () => {
-  it('estimates gasUsage and native balance for EOA', async () => {
+  it('[EOA]:Ethereum | gasUsage and native balance for a normal transfer', async () => {
     const EOAAccount: Account = {
       addr: '0x40b38765696e3d5d8d9d834d8aad4bb6e418e489',
       associatedKeys: ['0x40b38765696e3d5d8d9d834d8aad4bb6e418e489'],
@@ -156,10 +271,10 @@ describe('estimate', () => {
       creation: null
     }
 
-    const call = {
-      to: '0x40b38765696e3d5d8d9d834d8aad4bb6e418e489',
+    const call: Call = {
+      to: '0xf7bB3EEF4ffA13ce037E3E5b6a59340c7e0f3941',
       value: BigInt(1),
-      data: '0xabc5345e000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000020000000000000000000000000e750fff1aa867dfb52c9f98596a0fab5e05d30a60000000000000000000000000000000000000000000000000de0b6b3a764000000000000000000000000000000000000000000000000000000000000000000600000000000000000000000000000000000000000000000000000000000000000'
+      data: '0x'
     }
 
     const op = {
@@ -180,16 +295,167 @@ describe('estimate', () => {
       provider,
       ethereum,
       EOAAccount,
+      MOCK_KEYSTORE_KEYS,
       op,
-      accountStates[EOAAccount.addr][ethereum.id],
+      accountStates,
       [],
-      []
+      feeTokens
     )
 
-    // This is the min gas unit we can spend
-    expect(response.gasUsed).toBeGreaterThan(21000n)
+    expect(response.gasUsed).toBe(21000n)
     expect(response.feePaymentOptions![0].availableAmount).toBeGreaterThan(0)
-    expect(response.nonce).toBeGreaterThan(1)
+    expect(response.feePaymentOptions![0].token).not.toBe(undefined)
+    expect(response.feePaymentOptions![0].token).not.toBe(null)
+    expect(response.currentAccountNonce).toBeGreaterThan(1)
+    expect(response.error).toBe(null)
+  })
+
+  it('[EOA]:Polygon | sends all his available native and estimation should return a 0 balance available for fee but still a 21K gasUsed as we are doing a normal transfer', async () => {
+    const addr = '0xa8eEaC54343F94CfEEB3492e07a7De72bDFD118a'
+    const EOAAccount: Account = {
+      addr,
+      associatedKeys: [addr],
+      initialPrivileges: [],
+      creation: null
+    }
+
+    // send all the native balance the user has in a call
+    const nativeBalance = await providerPolygon.getBalance(addr)
+    const call = {
+      to: '0xf7bB3EEF4ffA13ce037E3E5b6a59340c7e0f3941',
+      value: nativeBalance,
+      data: '0x'
+    }
+
+    const op = {
+      accountAddr: EOAAccount.addr,
+      signingKeyAddr: null,
+      signingKeyType: null,
+      gasLimit: null,
+      gasFeePayment: null,
+      networkId: 'polygon',
+      nonce: null,
+      signature: null,
+      calls: [call],
+      accountOpToExecuteBefore: null
+    }
+
+    const accountStates = await getAccountsInfo([EOAAccount])
+    const response = await estimate(
+      providerPolygon,
+      polygon,
+      EOAAccount,
+      MOCK_KEYSTORE_KEYS,
+      op,
+      accountStates,
+      [],
+      feeTokens
+    )
+
+    expect(response.gasUsed).toBe(21000n)
+    expect(response.feePaymentOptions![0].availableAmount).toBe(0n)
+    expect(response.error).toBe(null)
+  })
+
+  it("[EOA]:Polygon | shouldn't return an error if there is a valid txn but with no native to pay the fee as it is handled in signAccountOp", async () => {
+    const addr = '0x952064055eFE9dc8b261510869B032068c8699bB'
+    const EOAAccount: Account = {
+      addr,
+      associatedKeys: [addr],
+      initialPrivileges: [],
+      creation: null
+    }
+
+    // this should be a valid txn
+    // sending 0.00001 USDC to 0xf7bB3EEF4ffA13ce037E3E5b6a59340c7e0f3941
+    // so addr should posses that amount
+    const ERC20Interface = new Interface(ERC20.abi)
+    const call = {
+      to: '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174',
+      value: 0n,
+      data: ERC20Interface.encodeFunctionData('transfer', [
+        '0xf7bB3EEF4ffA13ce037E3E5b6a59340c7e0f3941',
+        1n
+      ])
+    }
+
+    const op = {
+      accountAddr: EOAAccount.addr,
+      signingKeyAddr: null,
+      signingKeyType: null,
+      gasLimit: null,
+      gasFeePayment: null,
+      networkId: 'polygon',
+      nonce: null,
+      signature: null,
+      calls: [call],
+      accountOpToExecuteBefore: null
+    }
+
+    const accountStates = await getAccountsInfo([EOAAccount])
+    const response = await estimate(
+      providerPolygon,
+      polygon,
+      EOAAccount,
+      MOCK_KEYSTORE_KEYS,
+      op,
+      accountStates,
+      [],
+      feeTokens
+    )
+
+    expect(response.gasUsed).toBeGreaterThan(0n)
+    expect(response.feePaymentOptions[0].availableAmount).toBe(0n)
+    expect(response.error).toBe(null)
+  })
+
+  it('[EOA]:Polygon | should throw an error if there is an invalid txn and gasUsed should be 0', async () => {
+    const addr = '0x952064055eFE9dc8b261510869B032068c8699bB'
+    const EOAAccount: Account = {
+      addr,
+      associatedKeys: [addr],
+      initialPrivileges: [],
+      creation: null
+    }
+
+    // this should be an invalid txn
+    const ERC20Interface = new Interface(ERC20.abi)
+    const call = {
+      to: '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174',
+      value: 0n,
+      data: ERC20Interface.encodeFunctionData('transfer', [
+        '0xf7bB3EEF4ffA13ce037E3E5b6a59340c7e0f3941',
+        1000000000n // 10K USDC
+      ])
+    }
+
+    const op = {
+      accountAddr: EOAAccount.addr,
+      signingKeyAddr: null,
+      signingKeyType: null,
+      gasLimit: null,
+      gasFeePayment: null,
+      networkId: 'polygon',
+      nonce: null,
+      signature: null,
+      calls: [call],
+      accountOpToExecuteBefore: null
+    }
+
+    const accountStates = await getAccountsInfo([EOAAccount])
+    const response = await estimate(
+      providerPolygon,
+      polygon,
+      EOAAccount,
+      MOCK_KEYSTORE_KEYS,
+      op,
+      accountStates,
+      [],
+      feeTokens
+    )
+
+    expect(response.gasUsed).toBe(0n)
+    expect(response.error).not.toBe(null)
   })
 
   it('estimates gasUsage, fee and native tokens outcome', async () => {
@@ -219,16 +485,17 @@ describe('estimate', () => {
       provider,
       ethereum,
       account,
+      MOCK_KEYSTORE_KEYS,
       op,
-      accountStates[account.addr][ethereum.id],
+      accountStates,
       nativeToCheck,
       feeTokens
     )
     const usdtOutcome = response.feePaymentOptions!.find(
-      (token) => token.address === '0xdAC17F958D2ee523a2206206994597C13D831ec7'
+      (option) => option.token.address === '0xdAC17F958D2ee523a2206206994597C13D831ec7'
     )
     const usdcOutcome = response.feePaymentOptions!.find(
-      (token) => token.address === '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'
+      (option) => option.token.address === '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'
     )
 
     // This is the min gas unit we can spend, but we expect more than that having in mind that multiple computations happens in the Contract
@@ -236,27 +503,30 @@ describe('estimate', () => {
     // As we swap 1 USDC for 1 USDT, we expect the estimate (outcome) balance of USDT to be greater than before the estimate (portfolio value)
     expect(usdtOutcome!.availableAmount).toBeGreaterThan(usdt?.amount || 0n)
     expect(usdcOutcome!.availableAmount).toBeLessThan(usdc!.amount)
-    expect(response.nonce).toBeGreaterThan(1)
+    expect(response.currentAccountNonce).toBeGreaterThan(1)
+
+    expect(usdtOutcome!.token).not.toBe(undefined)
+    expect(usdtOutcome!.token).not.toBe(null)
 
     // make sure there's a native fee payment option in the same acc addr
     const noFeePaymentViewOnlyAcc = response.feePaymentOptions.find(
-      (opt) => opt.paidBy === account.addr && opt.address === ethers.ZeroAddress
+      (opt) => opt.paidBy === account.addr && opt.token.address === ethers.ZeroAddress
     )
     expect(noFeePaymentViewOnlyAcc).not.toBe(undefined)
 
     // make sure everything but the view only acc exists as a few option
     const feePaymentAddrOne = response.feePaymentOptions.find(
-      (opt) => opt.paidBy === nativeToCheck[0].addr && opt.address === ethers.ZeroAddress
+      (opt) => opt.paidBy === nativeToCheck[0].addr && opt.token.address === ethers.ZeroAddress
     )
     expect(feePaymentAddrOne).not.toBe(undefined)
     const feePaymentAddrTwo = response.feePaymentOptions.find(
-      (opt) => opt.paidBy === nativeToCheck[1].addr && opt.address === ethers.ZeroAddress
+      (opt) => opt.paidBy === nativeToCheck[1].addr && opt.token.address === ethers.ZeroAddress
     )
     expect(feePaymentAddrTwo).not.toBe(undefined)
 
     // the view only should be undefined
     const viewOnlyAccOption = response.feePaymentOptions.find(
-      (opt) => opt.paidBy === viewOnlyAcc.addr && opt.address === ethers.ZeroAddress
+      (opt) => opt.paidBy === viewOnlyAcc.addr && opt.token.address === ethers.ZeroAddress
     )
     expect(viewOnlyAccOption).toBe(undefined)
   })
@@ -280,8 +550,9 @@ describe('estimate', () => {
       provider,
       ethereum,
       account,
+      MOCK_KEYSTORE_KEYS,
       op,
-      accountStates[account.addr][ethereum.id],
+      accountStates,
       nativeToCheck,
       feeTokens
     )
@@ -312,8 +583,9 @@ describe('estimate', () => {
       provider,
       ethereum,
       viewOnlyAcc,
+      MOCK_KEYSTORE_KEYS,
       op,
-      accountStates[viewOnlyAcc.addr][ethereum.id],
+      accountStates,
       nativeToCheck,
       feeTokens
     )
@@ -368,8 +640,9 @@ describe('estimate', () => {
       provider,
       ethereum,
       account,
+      MOCK_KEYSTORE_KEYS,
       op,
-      accountStates[account.addr][ethereum.id],
+      accountStates,
       nativeToCheck,
       feeTokens
     )
@@ -377,8 +650,9 @@ describe('estimate', () => {
       provider,
       ethereum,
       account,
+      MOCK_KEYSTORE_KEYS,
       opWithExecuteBefore,
-      accountStates[account.addr][ethereum.id],
+      accountStates,
       nativeToCheck,
       feeTokens,
       { calculateRefund: true }
@@ -386,9 +660,6 @@ describe('estimate', () => {
 
     // Gas used in case of `accountOpToExecuteBefore` should be greater, because more AccountOps are simulated
     expect(responseWithExecuteBefore.gasUsed).toBeGreaterThan(response.gasUsed)
-
-    expect(response.arbitrumL1FeeIfArbitrum.noFee).toEqual(0n)
-    expect(response.arbitrumL1FeeIfArbitrum.withFee).toEqual(0n)
   })
 
   it('estimates with `addedNative`', async () => {
@@ -429,8 +700,9 @@ describe('estimate', () => {
       providerOptimism,
       optimism,
       accountOptimism,
+      MOCK_KEYSTORE_KEYS,
       opOptimism,
-      accountStates[accountOptimism.addr][optimism.id],
+      accountStates,
       nativeToCheck,
       feeTokens
     )
@@ -438,9 +710,6 @@ describe('estimate', () => {
     response.feePaymentOptions.forEach((feeToken) => {
       expect(feeToken.addedNative).toBeGreaterThan(0n)
     })
-
-    expect(response.arbitrumL1FeeIfArbitrum.noFee).toEqual(0n)
-    expect(response.arbitrumL1FeeIfArbitrum.withFee).toEqual(0n)
   })
 
   it('estimates an arbitrum request', async () => {
@@ -462,17 +731,17 @@ describe('estimate', () => {
       providerArbitrum,
       arbitrum,
       smartAccountv2eip712,
+      MOCK_KEYSTORE_KEYS,
       opArbitrum,
-      accountStates[smartAccountv2eip712.addr][arbitrum.id],
+      accountStates,
       nativeToCheck,
       feeTokens
     )
 
-    expect(response.arbitrumL1FeeIfArbitrum.noFee).toBeGreaterThan(0n)
-    expect(response.arbitrumL1FeeIfArbitrum.withFee).toBeGreaterThan(0n)
+    response.feePaymentOptions.map((option) => expect(option.addedNative).toBeGreaterThan(0n))
   })
 
-  it('estimates an arbitrum 4337 request that should fail with paymaster deposit too low', async () => {
+  it('[ERC-4337]:Arbitrum | should fail with an inner call failure but otherwise estimation should work', async () => {
     const opArbitrum: AccountOp = {
       accountAddr: trezorSlot6v2NotDeployed.addr,
       signingKeyAddr: trezorSlot6v2NotDeployed.associatedKeys[0],
@@ -486,108 +755,112 @@ describe('estimate', () => {
       accountOpToExecuteBefore: null
     }
     const accountStates = await getAccountsInfo([trezorSlot6v2NotDeployed])
+    // force a fake nonce so the tests proceeds
+    accountStates[opArbitrum.accountAddr][opArbitrum.networkId].erc4337Nonce = 0n
     const response = await estimate(
       providerArbitrum,
       arbitrum,
       trezorSlot6v2NotDeployed,
+      MOCK_KEYSTORE_KEYS,
       opArbitrum,
-      accountStates[trezorSlot6v2NotDeployed.addr][arbitrum.id],
+      accountStates,
       nativeToCheck,
       feeTokens,
       { is4337Broadcast: true }
     )
+
+    expect(response.erc4337GasLimits).not.toBe(undefined)
+    expect(BigInt(response.erc4337GasLimits!.callGasLimit)).toBeGreaterThan(0n)
+    expect(BigInt(response.erc4337GasLimits!.verificationGasLimit)).toBeGreaterThan(0n)
+    expect(BigInt(response.erc4337GasLimits!.preVerificationGas)).toBeGreaterThan(0n)
+
     expect(response.error).not.toBe(null)
-    expect(response.error?.message).toBe(
-      `Paymaster with address ${AMBIRE_PAYMASTER} does not have enough funds to execute this request. Please contact support`
-    )
+    expect(response.error?.message).toBe('Transaction reverted: invalid call in the bundle')
+
+    expect(response.feePaymentOptions.length).toBeGreaterThan(0)
+
+    expect(response.feePaymentOptions![0].token).not.toBe(undefined)
+    expect(response.feePaymentOptions![0].token).not.toBe(null)
   })
 
-  it('estimates a 4337 request on the avalanche chain with an initCode and 4337 activator that results in a good erc-4337 estimation but a failure in the calls as the account does not have any funds', async () => {
-    const opAvalanche: AccountOp = {
+  it('[ERC-4337]:Arbitrum | should fail because of a broken provider but still return fee options', async () => {
+    const opArbitrum: AccountOp = {
       accountAddr: trezorSlot6v2NotDeployed.addr,
       signingKeyAddr: trezorSlot6v2NotDeployed.associatedKeys[0],
       signingKeyType: null,
       gasLimit: null,
       gasFeePayment: null,
-      networkId: avalanche.id,
-      nonce: 0n,
-      signature: '0x',
-      calls: [{ to: account.addr, value: BigInt(100000000000), data: '0x' }],
+      networkId: 'arbitrum',
+      nonce: 1n,
+      signature: spoofSig,
+      calls: [{ to, value: BigInt(100000000000), data: '0x' }],
       accountOpToExecuteBefore: null
     }
     const accountStates = await getAccountsInfo([trezorSlot6v2NotDeployed])
-    const accountState = accountStates[trezorSlot6v2NotDeployed.addr][avalanche.id]
-
-    const response = await estimate(
-      providerAvalanche,
-      avalanche,
+    const brokenProvider = getRpcProvider(arbitrum.rpcUrls, arbitrum.chainId)
+    const handler2 = {
+      get(target: any, prop: any) {
+        if (prop === 'send') throw new Error('no sends')
+      }
+    }
+    const proxyProvider = new Proxy(brokenProvider, handler2)
+    const response = await estimate4337(
       trezorSlot6v2NotDeployed,
-      opAvalanche,
-      accountState,
-      nativeToCheck,
-      feeTokensAvalanche,
-      { is4337Broadcast: true }
+      opArbitrum,
+      opArbitrum.calls,
+      accountStates,
+      arbitrum,
+      proxyProvider,
+      feeTokens,
+      'latest'
     )
 
-    expect(response.arbitrumL1FeeIfArbitrum.noFee).toEqual(0n)
-    expect(response.arbitrumL1FeeIfArbitrum.withFee).toEqual(0n)
-
-    expect(response.erc4337estimation).not.toBe(null)
-    expect(response.erc4337estimation?.gasUsed).toBeGreaterThan(0n)
-    expect(response.erc4337estimation!.userOp.paymasterAndData).toEqual('0x')
-    expect(BigInt(response.erc4337estimation!.userOp.verificationGasLimit)).toBeGreaterThan(5000n)
-    expect(BigInt(response.erc4337estimation!.userOp.callGasLimit)).toBeGreaterThan(10000n)
-
-    expect(response.feePaymentOptions.length).toBeGreaterThan(0)
-    response.feePaymentOptions.forEach((opt) => {
-      expect(opt.addedNative).toBe(0n)
-      // no basic acc payment
-      expect(opt.paidBy).toBe(trezorSlot6v2NotDeployed.addr)
-    })
-
-    // because the account does not have any funds, the call should result in a failure
-    // and execution should be stopped
     expect(response.error).not.toBe(null)
     expect(response.error?.message).toBe(
-      `Estimation failed for ${opAvalanche.accountAddr} on ${opAvalanche.networkId}`
+      'Estimation failed with unknown reason. Please try again to initialize your request or contact Ambire support'
     )
+
+    expect(response.feePaymentOptions.length).toBeGreaterThan(0)
+
+    expect(response.erc4337GasLimits).not.toBe(undefined)
+    expect(BigInt(response.erc4337GasLimits!.callGasLimit)).toBe(0n)
+    expect(BigInt(response.erc4337GasLimits!.verificationGasLimit)).toBe(0n)
+    expect(BigInt(response.erc4337GasLimits!.preVerificationGas)).toBe(0n)
   })
 
-  it('estimates a 4337 request on the avalanche chain with a deployed account paying in native', async () => {
+  it('[ERC-4337]:Avalanche | estimate a deployed account paying in native', async () => {
+    const accountStates = await getAccountsInfo([trezorSlot7v24337Deployed])
+    const networkId = 'avalanche'
+    const accountState = accountStates[trezorSlot7v24337Deployed.addr][networkId]
     const opAvalanche: AccountOp = {
       accountAddr: trezorSlot7v24337Deployed.addr,
       signingKeyAddr: trezorSlot7v24337Deployed.associatedKeys[0],
       signingKeyType: null,
       gasLimit: null,
       gasFeePayment: null,
-      networkId: 'avalanche',
-      nonce: 0n,
+      networkId,
+      nonce: accountState.nonce,
       signature: '0x',
-      calls: [{ to, value: BigInt(100000000000), data: '0x' }],
+      calls: [{ to, value: BigInt(100), data: '0x' }],
       accountOpToExecuteBefore: null
     }
-    const accountStates = await getAccountsInfo([trezorSlot7v24337Deployed])
-    const accountState = accountStates[trezorSlot7v24337Deployed.addr][avalanche.id]
 
     const response = await estimate(
       providerAvalanche,
       avalanche,
       trezorSlot7v24337Deployed,
+      MOCK_KEYSTORE_KEYS,
       opAvalanche,
-      accountState,
+      accountStates,
       nativeToCheck,
       feeTokensAvalanche,
       { is4337Broadcast: true }
     )
 
-    expect(response.arbitrumL1FeeIfArbitrum.noFee).toEqual(0n)
-    expect(response.arbitrumL1FeeIfArbitrum.withFee).toEqual(0n)
-
-    expect(response.erc4337estimation).not.toBe(null)
-    expect(response.erc4337estimation?.gasUsed).toBeGreaterThan(0n)
-    expect(response.erc4337estimation!.userOp.paymasterAndData).toEqual('0x')
-    expect(BigInt(response.erc4337estimation!.userOp.verificationGasLimit)).toBeGreaterThan(5000n)
-    expect(BigInt(response.erc4337estimation!.userOp.callGasLimit)).toBeGreaterThan(10000n)
+    expect(response.erc4337GasLimits).not.toBe(undefined)
+    expect(BigInt(response.erc4337GasLimits!.callGasLimit)).toBeGreaterThan(0n)
+    expect(BigInt(response.erc4337GasLimits!.verificationGasLimit)).toBeGreaterThan(0n)
+    expect(BigInt(response.erc4337GasLimits!.preVerificationGas)).toBeGreaterThan(0n)
 
     expect(response.feePaymentOptions.length).toBeGreaterThan(0)
     response.feePaymentOptions.forEach((opt) => {
@@ -599,7 +872,7 @@ describe('estimate', () => {
     expect(response.error).toBe(null)
   })
 
-  it('estimates a polygon request with insufficient funds for txn and estimation should fail with estimation failed', async () => {
+  it('estimates a polygon request with insufficient funds for txn and estimation should fail with transaction reverted', async () => {
     const opPolygonFailBzNoFunds: AccountOp = {
       accountAddr: smartAccountv2eip712.addr,
       signingKeyAddr: smartAccountv2eip712.associatedKeys[0],
@@ -618,15 +891,14 @@ describe('estimate', () => {
       providerPolygon,
       polygon,
       smartAccountv2eip712,
+      MOCK_KEYSTORE_KEYS,
       opPolygonFailBzNoFunds,
-      accountStates[smartAccountv2eip712.addr][polygon.id],
+      accountStates,
       nativeToCheck,
       feeTokens
     )
     expect(response.error).not.toBe(null)
-    expect(response.error?.message).toBe(
-      `Estimation failed for ${opPolygonFailBzNoFunds.accountAddr} on ${opPolygonFailBzNoFunds.networkId}`
-    )
+    expect(response.error?.message).toBe('Transaction reverted: invalid call in the bundle')
   })
 
   it('estimates a polygon request with wrong signer and estimation should fail with insufficient privileges', async () => {
@@ -648,8 +920,9 @@ describe('estimate', () => {
       providerPolygon,
       polygon,
       { ...smartAccountv2eip712, associatedKeys: [trezorSlot6v2NotDeployed.associatedKeys[0]] },
+      MOCK_KEYSTORE_KEYS,
       opPolygonFailBzNoFunds,
-      accountStates[smartAccountv2eip712.addr][polygon.id],
+      accountStates,
       nativeToCheck,
       feeTokens
     )
@@ -676,8 +949,9 @@ describe('estimate', () => {
       provider,
       ethereum,
       account,
+      MOCK_KEYSTORE_KEYS,
       op,
-      accountStates[account.addr][ethereum.id],
+      accountStates,
       nativeToCheck,
       feeTokens
     )

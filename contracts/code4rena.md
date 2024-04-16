@@ -9,7 +9,7 @@ _The Web3 wallet that makes crypto self-custody easy and secure for everyone._
 - [ambire.com](https://www.ambire.com)
 - [Twitter](https://twitter.com/AmbireWallet)
 - [GitHub](https://github.com/AmbireTech/)
-- [Discord](https://discord.gg/QQb4xc4ksJ)
+- [Discord](https://www.ambire.com/discord)
 
 # Ambire contest details
 

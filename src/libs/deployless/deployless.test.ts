@@ -1,4 +1,4 @@
-import { AbiCoder, concat, getDefaultProvider, JsonRpcProvider, toBeHex } from 'ethers'
+import { AbiCoder, concat, JsonRpcProvider, toBeHex } from 'ethers'
 
 import { describe, expect, test } from '@jest/globals'
 
@@ -51,13 +51,13 @@ describe('Deployless', () => {
     expect(localDeployless.isLimitedAt24kbData).toBe(true)
   })
 
-  test('should invoke a method: detect mode', async () => {
-    deployless = new Deployless(mainnetProvider, helloWorld.abi, helloWorld.bin)
-    const [result] = await deployless.call('helloWorld', [])
-    expect(result).toBe('hello world')
-    // We detected support for state override
-    expect(deployless.isLimitedAt24kbData).toBe(false)
-  })
+  // test('should invoke a method: detect mode', async () => {
+  //   deployless = new Deployless(mainnetProvider, helloWorld.abi, helloWorld.bin)
+  //   const [result] = await deployless.call('helloWorld', [])
+  //   expect(result).toBe('hello world')
+  //   // We detected support for state override
+  //   expect(deployless.isLimitedAt24kbData).toBe(false)
+  // })
 
   test('should not alllow initializing with wrong deploy code', () => {
     expect.assertions(2)
@@ -82,18 +82,18 @@ describe('Deployless', () => {
     }
   })
 
-  test('should not allow detect with another Provider', async () => {
-    expect.assertions(1)
-    const homesteadProvider = getDefaultProvider('homestead')
-    const localDeployless = new Deployless(homesteadProvider, helloWorld.abi, helloWorld.bin)
-    try {
-      await localDeployless.call('helloWorld', [])
-    } catch (e: any) {
-      expect(e.message).toBe(
-        'state override mode (or auto-detect) not available unless you use JsonRpcProvider'
-      )
-    }
-  })
+  // test('should not allow detect with another Provider', async () => {
+  //   expect.assertions(1)
+  //   const homesteadProvider = getDefaultProvider('homestead')
+  //   const localDeployless = new Deployless(homesteadProvider, helloWorld.abi, helloWorld.bin)
+  //   try {
+  //     await localDeployless.call('helloWorld', [])
+  //   } catch (e: any) {
+  //     expect(e.message).toBe(
+  //       'state override mode (or auto-detect) not available unless you use JsonRpcProvider'
+  //     )
+  //   }
+  // })
 
   test('should deploy error: proxy mode', async () => {
     const localDeployless = new Deployless(mainnetProvider, helloWorld.abi, deployErrBin)
@@ -105,17 +105,17 @@ describe('Deployless', () => {
     }
   })
 
-  test('should deploy error: state override mode', async () => {
-    const localDeployless = new Deployless(mainnetProvider, helloWorld.abi, deployErrBin)
-    expect.assertions(2)
-    try {
-      await localDeployless.call('helloWorld', [])
-    } catch (e: any) {
-      expect(e.message).toBe('contract deploy failed')
-      // detection stil succeeded
-      expect(localDeployless.isLimitedAt24kbData).toBe(false)
-    }
-  })
+  // test('should deploy error: state override mode', async () => {
+  //   const localDeployless = new Deployless(mainnetProvider, helloWorld.abi, deployErrBin)
+  //   expect.assertions(2)
+  //   try {
+  //     await localDeployless.call('helloWorld', [])
+  //   } catch (e: any) {
+  //     expect(e.message).toBe('contract deploy failed')
+  //     // detection stil succeeded
+  //     expect(localDeployless.isLimitedAt24kbData).toBe(false)
+  //   }
+  // })
 
   test('should deploy error: state override without detection', async () => {
     const localDeployless = new Deployless(

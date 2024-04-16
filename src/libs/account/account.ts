@@ -1,7 +1,8 @@
-import { ethers, Interface } from 'ethers'
+import { AbiCoder, hexlify, Interface, toBeHex, toUtf8Bytes, ZeroAddress } from 'ethers'
 
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET } from '../../consts/derivation'
+import { SPOOF_SIGTYPE } from '../../consts/signatures'
 import { Account, AccountOnPage, ImportStatus } from '../../interfaces/account'
 import { Key } from '../../interfaces/keystore'
 import { DKIM_VALIDATOR_ADDR, getSignerKey, RECOVERY_DEFAULTS } from '../dkim/recovery'
@@ -38,7 +39,7 @@ interface DKIMRecoveryAccInfo {
 export function getAccountDeployParams(account: Account): [string, string] {
   // for EOAs, we do not throw an error anymore as we need fake
   // values for the simulation
-  if (account.creation === null) return [ethers.ZeroAddress, '0x']
+  if (account.creation === null) return [ZeroAddress, '0x']
 
   const factory = new Interface(['function deploy(bytes calldata code, uint256 salt) external'])
   return [
@@ -66,9 +67,14 @@ export async function getSmartAccount(privileges: PrivLevels[]): Promise<Account
     creation: {
       factoryAddr: AMBIRE_ACCOUNT_FACTORY,
       bytecode,
-      salt: ethers.toBeHex(0, 32)
+      salt: toBeHex(0, 32)
     }
   }
+}
+
+export function getSpoof(account: Account) {
+  const abiCoder = new AbiCoder()
+  return abiCoder.encode(['address'], [account.associatedKeys[0]]) + SPOOF_SIGTYPE
 }
 
 /**
@@ -106,13 +112,13 @@ export async function getEmailAccount(
   // if there's no dkimKey, standard DKIM recovery is not possible
   // we leave the defaults empty and the user will have to rely on
   // keys added through DNSSEC
-  const selector = ethers.hexlify(ethers.toUtf8Bytes(''))
-  const modulus = ethers.hexlify(ethers.toUtf8Bytes(''))
-  const exponent = ethers.hexlify(ethers.toUtf8Bytes(''))
+  const selector = hexlify(toUtf8Bytes(''))
+  const modulus = hexlify(toUtf8Bytes(''))
+  const exponent = hexlify(toUtf8Bytes(''))
   // if (dkimKey) {
   //   const key = publicKeyToComponents(dkimKey.publicKey)
-  //   modulus = ethers.hexlify(key.modulus)
-  //   exponent = ethers.hexlify(ethers.toBeHex(key.exponent))
+  //   modulus = hexlify(key.modulus)
+  //   exponent = hexlify(toBeHex(key.exponent))
   // }
 
   // acceptUnknownSelectors should be always true
@@ -127,7 +133,7 @@ export async function getEmailAccount(
     recoveryInfo.acceptEmptySecondSig ?? RECOVERY_DEFAULTS.acceptEmptySecondSig
   const onlyOneSigTimelock = recoveryInfo.onlyOneSigTimelock ?? RECOVERY_DEFAULTS.onlyOneSigTimelock
 
-  const abiCoder = new ethers.AbiCoder()
+  const abiCoder = new AbiCoder()
   const validatorAddr = DKIM_VALIDATOR_ADDR
   const validatorData = abiCoder.encode(
     ['tuple(string,string,string,bytes,bytes,address,bool,uint32,uint32,bool,bool,uint32)'],
@@ -190,9 +196,28 @@ export const getAccountImportStatus = ({
   const isAlreadyImported = alreadyImportedAccounts.some(({ addr }) => addr === account.addr)
   if (!isAlreadyImported) return ImportStatus.NotImported
 
-  const importedKeysForThisAcc = keys.filter((key) => account.associatedKeys.includes(key.addr))
+  // Check if the account has been imported with at least one of the keys
+  // that the account was originally associated with, when it was imported.
+  const storedAssociatedKeys =
+    alreadyImportedAccounts.find((x) => x.addr === account.addr)?.associatedKeys || []
+  const importedKeysForThisAcc = keys.filter((key) => storedAssociatedKeys.includes(key.addr))
   // Could be imported as a view only account (and therefore, without a key)
   if (!importedKeysForThisAcc.length) return ImportStatus.ImportedWithoutKey
+
+  // Merge the `associatedKeys` from the account instances found on the page,
+  // with the `associatedKeys` of the account from the extension storage. This
+  // ensures up-to-date keys, considering the account existing associatedKeys
+  // could be outdated  (associated keys of the smart accounts can change) or
+  // incomplete initial data (during the initial import, not all associatedKeys
+  // could have been fetched (for privacy).
+  const mergedAssociatedKeys = Array.from(
+    new Set([
+      ...accountsOnPage
+        .filter((x) => x.account.addr === account.addr)
+        .flatMap((x) => x.account.associatedKeys),
+      ...storedAssociatedKeys
+    ])
+  )
 
   // Same key in this context means not only the same key address, but the
   // same type too. Because user can opt in to import same key address with
@@ -200,12 +225,12 @@ export const getAccountImportStatus = ({
   // the same address with seed (private key).
   const associatedKeysAlreadyImported = importedKeysForThisAcc.filter(
     (key) =>
-      account.associatedKeys.includes(key.addr) &&
+      mergedAssociatedKeys.includes(key.addr) &&
       // if key type is not provided, skip this part of the check on purpose
       (keyIteratorType ? key.type === keyIteratorType : true)
   )
   if (associatedKeysAlreadyImported.length) {
-    const associatedKeysNotImportedYet = account.associatedKeys.filter((keyAddr) =>
+    const associatedKeysNotImportedYet = mergedAssociatedKeys.filter((keyAddr) =>
       associatedKeysAlreadyImported.some((x) => x.addr !== keyAddr)
     )
 
@@ -213,10 +238,27 @@ export const getAccountImportStatus = ({
       associatedKeysNotImportedYet.includes(x.account.addr)
     )
 
-    return notImportedYetKeysExistInPage
+    if (notImportedYetKeysExistInPage) return ImportStatus.ImportedWithSomeOfTheKeys
+
+    // Could happen when user imports a smart account with one associated key.
+    // Then imports an Basic account. Then makes the Basic account a second key
+    // for the smart account. In this case, both associated keys of the smart
+    // account are imported, but the smart account's `associatedKeys` are incomplete.
+    const associatedKeysFoundOnPageAreDifferent = accountsOnPage
+      .filter((x) => x.account.addr === account.addr)
+      .some((x) => {
+        const incomingAssociatedKeysSet = new Set(x.account.associatedKeys)
+        const storedAssociatedKeysSet = new Set(storedAssociatedKeys)
+
+        return ![...incomingAssociatedKeysSet].every((k) => storedAssociatedKeysSet.has(k))
+      })
+
+    return associatedKeysFoundOnPageAreDifferent
       ? ImportStatus.ImportedWithSomeOfTheKeys
       : ImportStatus.ImportedWithTheSameKeys
   }
 
-  return ImportStatus.NotImported
+  // Since there are `importedKeysForThisAcc`, as a fallback -
+  // for all other scenarios this account has been imported with different keys.
+  return ImportStatus.ImportedWithDifferentKeys
 }

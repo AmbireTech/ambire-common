@@ -1,4 +1,5 @@
-import { ethers } from 'ethers'
+import { Interface, ZeroAddress } from 'ethers'
+
 import { AccountOp } from '../../accountOp/accountOp'
 import { HumanizerCallModule, HumanizerMeta, IrCall } from '../interfaces'
 import { getAction, getLabel, getToken, getUnknownVisualization } from '../utils'
@@ -10,7 +11,7 @@ const parseZeroAddressIfNeeded = (address: string) => {
 }
 
 const OneInchMapping = (humanizerInfo: HumanizerMeta) => {
-  const iface = new ethers.Interface(Object.values(humanizerInfo?.abis.Swappin))
+  const iface = new Interface(Object.values(humanizerInfo?.abis.Swappin))
 
   return {
     [iface.getFunction('swap')?.selector!]: (_: any, call: IrCall) => {
@@ -30,7 +31,7 @@ const OneInchMapping = (humanizerInfo: HumanizerMeta) => {
         getToken(parseZeroAddressIfNeeded(srcToken), amount),
         getLabel('for at least'),
         // @TODO not correct look at next comment
-        getToken(parseZeroAddressIfNeeded(ethers.ZeroAddress), minReturn)
+        getToken(parseZeroAddressIfNeeded(ZeroAddress), minReturn)
         // @TODO no idea what this is, ask Lubo (taken from ambire wallet)
         // getToken(parseZeroAddressIfNeeded(dstToken), minReturn)
       ]

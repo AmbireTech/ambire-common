@@ -1,3 +1,4 @@
+import { hexlify, isHexString, toUtf8Bytes } from 'ethers'
 import { networks } from '../../consts/networks'
 import { Account, AccountStates } from '../../interfaces/account'
 import { ExternalSignerControllers, Key } from '../../interfaces/keystore'
@@ -186,6 +187,11 @@ export class SignMessageController extends EventEmitter {
       let signature
       try {
         if (this.messageToSign.content.kind === 'message') {
+          const message = this.messageToSign.content.message
+          this.messageToSign.content.message = isHexString(message)
+            ? message
+            : hexlify(toUtf8Bytes(message.toString()))
+
           signature = await getPlainTextSignature(
             this.messageToSign.content.message,
             network,

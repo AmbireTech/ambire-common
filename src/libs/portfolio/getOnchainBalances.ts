@@ -1,6 +1,7 @@
 import { toBeHex } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
+import { DEPLOYLESS_SIMULATION_FROM } from '../../consts/deploy'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
 import { getAccountDeployParams, isSmartAccount } from '../account/account'
 import { callToTuple } from '../accountOp/accountOp'
@@ -8,9 +9,6 @@ import { Deployless, DeploylessMode, parseErr } from '../deployless/deployless'
 import { privSlot } from '../proxyDeploy/deploy'
 import { getFlags } from './helpers'
 import { Collectible, CollectionResult, GetOptions, LimitsOptions, TokenResult } from './interfaces'
-
-// 0x00..01 is the address from which simulation signatures are valid
-const DEPLOYLESS_SIMULATION_FROM = '0x0000000000000000000000000000000000000001'
 
 // fake nonce for EOA simulation
 export const EOA_SIMULATION_NONCE =
@@ -227,6 +225,9 @@ export async function getTokens(
 
   return before[0].map((token: any, i: number) => [
     token.error,
-    { ...mapToken(token, tokenAddrs[i]), amountPostSimulation: postSimulationAmounts[i].amount }
+    {
+      ...mapToken(token, tokenAddrs[i]),
+      amountPostSimulation: postSimulationAmounts[i].amount
+    }
   ])
 }

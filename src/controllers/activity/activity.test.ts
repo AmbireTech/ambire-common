@@ -2,6 +2,7 @@ import { describe, expect } from '@jest/globals'
 
 import { produceMemoryStore } from '../../../test/helpers'
 import { AccountStates } from '../../interfaces/account'
+import { SettingsController } from '../settings/settings'
 import { ActivityController, SignedMessage, SubmittedAccountOp } from './activity'
 
 describe('Activity Controller ', () => {
@@ -37,7 +38,8 @@ describe('Activity Controller ', () => {
   describe('AccountsOps', () => {
     test('Retrieved from Controller and persisted in Storage', async () => {
       const storage = produceMemoryStore()
-      const controller = new ActivityController(storage, accounts, '')
+      const settings = new SettingsController(storage)
+      const controller = new ActivityController(storage, accounts, settings)
 
       controller.init({
         filters: {
@@ -82,7 +84,8 @@ describe('Activity Controller ', () => {
 
     test('Pagination and filtration handled correctly', async () => {
       const storage = produceMemoryStore()
-      const controller = new ActivityController(storage, accounts, '')
+      const settings = new SettingsController(storage)
+      const controller = new ActivityController(storage, accounts, settings)
 
       controller.init({
         filters: {
@@ -210,7 +213,8 @@ describe('Activity Controller ', () => {
 
     test('`success` status is set correctly', async () => {
       const storage = produceMemoryStore()
-      const controller = new ActivityController(storage, accounts, '')
+      const settings = new SettingsController(storage)
+      const controller = new ActivityController(storage, accounts, settings)
 
       controller.init({
         filters: {
@@ -253,7 +257,8 @@ describe('Activity Controller ', () => {
 
     test('`failed` status is set correctly', async () => {
       const storage = produceMemoryStore()
-      const controller = new ActivityController(storage, accounts, '')
+      const settings = new SettingsController(storage)
+      const controller = new ActivityController(storage, accounts, settings)
 
       controller.init({
         filters: {
@@ -296,7 +301,8 @@ describe('Activity Controller ', () => {
 
     test('`Unknown but past nonce` status is set correctly', async () => {
       const storage = produceMemoryStore()
-      const controller = new ActivityController(storage, accounts, '')
+      const settings = new SettingsController(storage)
+      const controller = new ActivityController(storage, accounts, settings)
 
       controller.init({
         filters: {
@@ -339,7 +345,8 @@ describe('Activity Controller ', () => {
 
     test('Keeps no more than 1000 items', async () => {
       const storage = produceMemoryStore()
-      const controller = new ActivityController(storage, accounts, '')
+      const settings = new SettingsController(storage)
+      const controller = new ActivityController(storage, accounts, settings)
 
       controller.init({
         filters: {
@@ -391,7 +398,8 @@ describe('Activity Controller ', () => {
   describe('SignedMessages', () => {
     test('Retrieved from Controller and persisted in Storage', async () => {
       const storage = produceMemoryStore()
-      const controller = new ActivityController(storage, accounts, '')
+      const settings = new SettingsController(storage)
+      const controller = new ActivityController(storage, accounts, settings)
 
       controller.init({
         filters: {
@@ -434,7 +442,8 @@ describe('Activity Controller ', () => {
 
     test('Pagination and filtration handled correctly', async () => {
       const storage = produceMemoryStore()
-      const controller = new ActivityController(storage, accounts, '')
+      const settings = new SettingsController(storage)
+      const controller = new ActivityController(storage, accounts, settings)
 
       controller.init({
         filters: {
@@ -483,7 +492,8 @@ describe('Activity Controller ', () => {
 
     test('Keeps no more than 1000 items', async () => {
       const storage = produceMemoryStore()
-      const controller = new ActivityController(storage, accounts, '')
+      const settings = new SettingsController(storage)
+      const controller = new ActivityController(storage, accounts, settings)
 
       controller.init({
         filters: {

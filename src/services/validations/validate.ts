@@ -64,7 +64,7 @@ const validateSendTransferAddress = (
     }
   }
 
-  if (selectedAcc && address === selectedAcc) {
+  if (selectedAcc && address.toLowerCase() === selectedAcc.toLowerCase()) {
     return {
       success: false,
       message: 'The entered address should be different than the your own account address.'
@@ -194,6 +194,13 @@ const isValidCode = (code: string) => code.length === 6
 
 const isValidPassword = (password: string) => password.length >= 8
 
+function isValidURL(url: string) {
+  const urlRegex =
+    /^(?:https?|ftp):\/\/(?:\w+:{0,1}\w*@)?(?:\S+)(?::\d+)?(?:\/|\/(?:[\w#!:.?+=&%@!\-\/]))?$/
+
+  return urlRegex.test(url)
+}
+
 export {
   isEmail,
   validateAddAuthSignerAddress,
@@ -201,5 +208,6 @@ export {
   validateSendTransferAmount,
   validateSendNftAddress,
   isValidCode,
-  isValidPassword
+  isValidPassword,
+  isValidURL
 }

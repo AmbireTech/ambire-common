@@ -1,9 +1,8 @@
-import { ethers } from 'ethers'
+import { AbiCoder, getBytes, keccak256 } from 'ethers'
 import { Key } from 'interfaces/keystore'
 import { HumanizerMeta } from 'libs/humanizer/interfaces'
 
-import { networks } from '../../consts/networks'
-import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
+import { NetworkId } from '../../interfaces/networkDescriptor'
 import { stringify } from '../richJson/richJson'
 import { UserOperation } from '../userOperation/types'
 import { Call } from './types'
@@ -21,8 +20,8 @@ export interface GasFeePayment {
   inToken: string
   amount: bigint
   simulatedGasLimit: bigint
+  gasPrice: bigint
   maxPriorityFeePerGas?: bigint
-  baseFeePerGas?: bigint
 }
 
 export enum AccountOpStatus {
@@ -51,6 +50,10 @@ export interface AccountOp {
   // relayer/paymaster transaction so that the relayer/paymaster
   // can authorize the payment
   feeCall?: Call
+  // the activator call is for cases where we want to activate the EntryPoint
+  // it existed previously in the UserOperation type but now it is no longer
+  // limited to it as we can broadcast none ERC-4337 txn with an activatorCall
+  activatorCall?: Call
   gasLimit: number | null
   signature: string | null
   gasFeePayment: GasFeePayment | null
@@ -117,8 +120,7 @@ export function isAccountOpsIntentEqual(
 
 export function getSignableCalls(op: AccountOp) {
   const callsToSign = op.calls.map((call: Call) => callToTuple(call))
-  if (op.asUserOperation && op.asUserOperation.activatorCall)
-    callsToSign.push(callToTuple(op.asUserOperation.activatorCall))
+  if (op.activatorCall) callsToSign.push(callToTuple(op.activatorCall))
   if (op.feeCall) callsToSign.push(callToTuple(op.feeCall))
   return callsToSign
 }
@@ -148,16 +150,13 @@ export function getSignableCalls(op: AccountOp) {
  * @param op AccountOp
  * @returns Uint8Array
  */
-export function accountOpSignableHash(op: AccountOp): Uint8Array {
-  const opNetworks = networks.filter((network: NetworkDescriptor) => op.networkId === network.id)
-  if (!opNetworks.length) throw new Error('unsupported network')
-
-  const abiCoder = new ethers.AbiCoder()
-  return ethers.getBytes(
-    ethers.keccak256(
+export function accountOpSignableHash(op: AccountOp, chainId: bigint): Uint8Array {
+  const abiCoder = new AbiCoder()
+  return getBytes(
+    keccak256(
       abiCoder.encode(
         ['address', 'uint', 'uint', 'tuple(address, uint, bytes)[]'],
-        [op.accountAddr, opNetworks[0].chainId, op.nonce ?? 0n, getSignableCalls(op)]
+        [op.accountAddr, chainId, op.nonce ?? 0n, getSignableCalls(op)]
       )
     )
   )

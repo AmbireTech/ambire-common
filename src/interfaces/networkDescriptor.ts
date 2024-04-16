@@ -3,6 +3,8 @@ export type NetworkId = string
 export interface Erc4337settings {
   enabled: boolean
   hasPaymaster: boolean
+  // what is the network id according to the explorer
+  explorerId?: string
 }
 
 interface FeeOptions {
@@ -12,7 +14,33 @@ interface FeeOptions {
   baseFeeMaxChangeDenominator?: bigint
   // should we increase the relayer fee in %
   feeIncrease?: bigint
-  maxPriorityFeePerGasCalc?: string
+  maxPriorityFee?: bigint
+}
+
+export type NetworkInfo = {
+  chainId: bigint
+  isSAEnabled: boolean
+  hasSingleton: boolean
+  isOptimistic: boolean
+  rpcNoStateOverride: boolean
+  erc4337: { enabled: boolean; hasPaymaster: boolean }
+  areContractsDeployed: boolean
+  feeOptions: { is1559: boolean } | null
+  hasDebugTraceCall: boolean
+  platformId: string
+  nativeAssetId: string
+  flagged: boolean
+}
+
+export type NetworkInfoLoading<T> = {
+  [K in keyof T]: T[K] | 'LOADING'
+}
+
+export type NetworkFeature = {
+  id: string
+  title: string
+  msg?: string
+  level: 'success' | 'danger' | 'warning' | 'loading' | 'initial'
 }
 
 // NetworkId is a string: this is our internal identifier for the network
@@ -25,13 +53,24 @@ export interface NetworkDescriptor {
   name: string
   nativeAssetSymbol: string
   chainId: bigint
-  rpcUrl: string
+  rpcUrls: string[]
+  selectedRpcUrl?: string
   explorerUrl: string
-  erc4337: Erc4337settings | null
+  erc4337: Erc4337settings
   rpcNoStateOverride: boolean
   unstoppableDomainsChain: string
   feeOptions: FeeOptions
+  isSAEnabled: boolean
+  areContractsDeployed: boolean
   reestimateOn?: number
+  isOptimistic?: boolean
+  features: NetworkFeature[]
+  hasRelayer: boolean
+  hasSingleton: boolean
+  hasDebugTraceCall: boolean
+  platformId: string
+  nativeAssetId: string
+  flagged?: boolean
   // NOTE: should this be here? keep in mind networks can be user-inputted, so it's prob better to have
   // a separate mapping somewhere
   // @TODO remove this, add a separate mapping

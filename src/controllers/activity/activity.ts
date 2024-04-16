@@ -1,15 +1,15 @@
 /* eslint-disable import/no-extraneous-dependencies */
 
-import { JsonRpcProvider } from 'ethers'
+import { SettingsController } from 'controllers/settings/settings'
 import fetch from 'node-fetch'
 
-import { networks } from '../../consts/networks'
 import { AccountStates } from '../../interfaces/account'
 import { Banner } from '../../interfaces/banner'
 import { Storage } from '../../interfaces/storage'
 import { Message } from '../../interfaces/userRequest'
 import { AccountOp, AccountOpStatus } from '../../libs/accountOp/accountOp'
-import { isErc4337Broadcast } from '../../libs/userOperation/userOperation'
+import { getExplorerId } from '../../libs/userOperation/userOperation'
+import { Bundler } from '../../services/bundlers/bundler'
 import { fetchUserOp } from '../../services/explorers/jiffyscan'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
@@ -31,6 +31,7 @@ export interface SubmittedAccountOp extends AccountOp {
   success?: boolean
   userOpHash?: string
   timestamp: number
+  isSingletonDeploy?: boolean
 }
 
 export interface SignedMessage extends Message {
@@ -125,14 +126,14 @@ export class ActivityController extends EventEmitter {
 
   isInitialized: boolean = false
 
-  #relayerUrl: string
+  #settings: SettingsController
 
-  constructor(storage: Storage, accountStates: AccountStates, relayerUrl: string) {
+  constructor(storage: Storage, accountStates: AccountStates, settings: SettingsController) {
     super()
     this.#storage = storage
     this.#accountStates = accountStates
+    this.#settings = settings
     this.#initialLoadPromise = this.#load()
-    this.#relayerUrl = relayerUrl
   }
 
   async #load(): Promise<void> {
@@ -268,8 +269,8 @@ export class ActivityController extends EventEmitter {
 
     await Promise.all(
       Object.keys(this.#accountsOps[this.filters.account]).map(async (network) => {
-        const networkConfig = networks.find((x) => x.id === network)
-        const provider = new JsonRpcProvider(networkConfig!.rpcUrl)
+        const networkConfig = this.#settings.networks.find((x) => x.id === network)!
+        const provider = this.#settings.providers[networkConfig.id]
 
         return Promise.all(
           this.#accountsOps[this.filters!.account][network].map(
@@ -283,26 +284,50 @@ export class ActivityController extends EventEmitter {
               try {
                 let txnId = accountOp.txnId
                 if (accountOp.userOpHash) {
-                  const response = await fetchUserOp(accountOp.userOpHash, fetch)
+                  const [response, bundlerResult] = await Promise.all([
+                    fetchUserOp(accountOp.userOpHash, fetch, getExplorerId(networkConfig)),
+                    Bundler.getStatusAndTxnId(accountOp.userOpHash, networkConfig)
+                  ])
 
-                  // nothing we can do if we don't have information
-                  if (response.status !== 200) return
+                  if (bundlerResult.transactionHash) {
+                    txnId = bundlerResult.transactionHash
+                    this.#accountsOps[this.filters!.account][network][accountOpIndex].txnId = txnId
+                  } else {
+                    // nothing we can do if we don't have information
+                    if (response.status !== 200) return
 
-                  const data = await response.json()
-                  const userOps = data.userOps
+                    const data = await response.json()
+                    const userOps = data.userOps
 
-                  // if there are not user ops, it means the userOpHash is not
-                  // indexed, yet, so we wait
-                  if (!userOps.length) return
-
-                  txnId = userOps[0].transactionHash
-                  this.#accountsOps[this.filters!.account][network][accountOpIndex].txnId = txnId
+                    // if there are not user ops, it means the userOpHash is not
+                    // indexed, yet, so we wait
+                    if (userOps.length) {
+                      txnId = userOps[0].transactionHash
+                      this.#accountsOps[this.filters!.account][network][accountOpIndex].txnId =
+                        txnId
+                    } else {
+                      const accountOpDate = new Date(accountOp.timestamp)
+                      accountOpDate.setMinutes(accountOpDate.getMinutes() + 15)
+                      const aQuaterHasPassed = accountOpDate < new Date()
+                      if (aQuaterHasPassed) {
+                        this.#accountsOps[this.filters!.account][network][accountOpIndex].status =
+                          AccountOpStatus.Failure
+                      }
+                      return
+                    }
+                  }
                 }
 
                 const receipt = await provider.getTransactionReceipt(txnId)
                 if (receipt) {
                   this.#accountsOps[this.filters!.account][network][accountOpIndex].status =
                     receipt.status ? AccountOpStatus.Success : AccountOpStatus.Failure
+
+                  if (accountOp.isSingletonDeploy && receipt.status) {
+                    // the below promise has a catch() inside
+                    /* eslint-disable @typescript-eslint/no-floating-promises */
+                    this.#settings.setContractsDeployedToTrueIfDeployed(networkConfig)
+                  }
                   return
                 }
               } catch {
@@ -436,15 +461,13 @@ export class ActivityController extends EventEmitter {
 
   get banners(): Banner[] {
     return this.broadcastedButNotConfirmed.map((accountOp) => {
-      const network = networks.find((x) => x.id === accountOp.networkId)!
+      const network = this.#settings.networks.find((x) => x.id === accountOp.networkId)!
 
-      const is4337 = isErc4337Broadcast(
-        network,
-        this.#accountStates[accountOp.accountAddr][accountOp.networkId]
-      )
       const url =
-        is4337 && accountOp.txnId === accountOp.userOpHash
-          ? `https://jiffyscan.xyz/userOpHash/${accountOp.userOpHash}?network=${network.id}`
+        accountOp.userOpHash && accountOp.txnId === accountOp.userOpHash
+          ? `https://jiffyscan.xyz/userOpHash/${accountOp.userOpHash}?network=${getExplorerId(
+              network
+            )}`
           : `${network.explorerUrl}/tx/${accountOp.txnId}`
 
       return {

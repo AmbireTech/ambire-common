@@ -1,12 +1,13 @@
 /* eslint-disable no-await-in-loop */
-import { ethers } from 'ethers'
+import { Interface, isAddress, ZeroAddress } from 'ethers'
+
 import { AccountOp } from '../../accountOp/accountOp'
 import {
-  HumanizerFragment,
   HumanizerCallModule,
+  HumanizerFragment,
+  HumanizerMeta,
   HumanizerVisualization,
-  IrCall,
-  HumanizerMeta
+  IrCall
 } from '../interfaces'
 import {
   checkIfUnknownAction,
@@ -127,13 +128,13 @@ async function fetchFunc4bytes(selector: string, options: any): Promise<Humanize
 
 function extractAddresses(data: string, _selector: string): string[] {
   const selector = _selector.startsWith('function') ? _selector : `function ${_selector}`
-  const iface = new ethers.Interface([selector])
+  const iface = new Interface([selector])
   const args = iface.decodeFunctionData(selector, data)
   const deepSearchForAddress = (obj: { [prop: string]: any }): string[] => {
     return (
       Object.values(obj)
         .map((o: any): string[] | undefined => {
-          if (typeof o === 'string' && ethers.isAddress(o)) return [o] as string[]
+          if (typeof o === 'string' && isAddress(o)) return [o] as string[]
           if (typeof o === 'object') return deepSearchForAddress(o).filter((x) => x) as string[]
           return undefined
         })
@@ -206,7 +207,7 @@ export const fallbackHumanizer: HumanizerCallModule = (
     }
     if (call.value) {
       if (call.data !== '0x') visualization.push(getLabel('and'))
-      visualization.push(getAction('Send'), getToken(ethers.ZeroAddress, call.value))
+      visualization.push(getAction('Send'), getToken(ZeroAddress, call.value))
       if (call.data === '0x') visualization.push(getLabel('to'), getAddressVisualization(call.to))
     }
     return {

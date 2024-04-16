@@ -86,7 +86,7 @@ export class EmailVaultController extends EventEmitter {
 
   lastUpdate: Date = new Date()
 
-  latestMethodStatus: 'INITIAL' | 'LOADING' | 'DONE' = 'INITIAL'
+  latestMethodStatus: 'INITIAL' | 'LOADING' | 'SUCCESS' | 'DONE' = 'INITIAL'
 
   latestMethodCall: string | null = null
 
@@ -204,6 +204,11 @@ export class EmailVaultController extends EventEmitter {
       1000
     )
 
+    if (this.#shouldStopConfirmationPolling) {
+      this.emitUpdate()
+      return
+    }
+
     if (ev && !ev.error) {
       this.#isWaitingEmailConfirmation = false
       this.#magicLinkKeys[email] = {
@@ -214,12 +219,13 @@ export class EmailVaultController extends EventEmitter {
       fn && (await fn())
       this.storage.set(MAGIC_LINK_STORAGE_KEY, this.#magicLinkKeys)
       this.#requestSessionKey(email)
-    } else if (this.#shouldStopConfirmationPolling)
+    } else {
       this.emitError({
         message: `Unexpected error getting email vault for ${email}`,
         level: 'major',
         error: new Error(`Unexpected error getting email vault for ${email}`)
       })
+    }
     this.emitUpdate()
   }
 
@@ -306,11 +312,19 @@ export class EmailVaultController extends EventEmitter {
 
     let result: Boolean | null = false
     let magicKey = await this.#getMagicLinkKey(email)
+
     if (!magicKey?.key && !this.#shouldStopConfirmationPolling) {
       await this.handleMagicLinkKey(email, async () => {
         magicKey = await this.#getMagicLinkKey(email)
       })
     }
+
+    if (this.#shouldStopConfirmationPolling) {
+      this.#isUploadingSecret = false
+      this.emitUpdate()
+      return
+    }
+
     if (magicKey?.key) {
       this.#isUploadingSecret = true
       const randomBytes = crypto.randomBytes(32)
@@ -319,12 +333,13 @@ export class EmailVaultController extends EventEmitter {
       await this.#keyStore.addSecret(RECOVERY_SECRET_ID, newSecret, '', false)
       const keyStoreUid = await this.#keyStore.getKeyStoreUid()
       result = await this.#emailVault.addKeyStoreSecret(email, magicKey.key, keyStoreUid, newSecret)
-    } else if (this.#shouldStopConfirmationPolling)
+    } else
       this.emitError({
         message: 'Email key not confirmed',
         level: 'minor',
         error: new Error('uploadKeyStoreSecret: not confirmed magic link key')
       })
+
     if (result) {
       await this.#getEmailVaultInfo(email)
     } else {
@@ -558,6 +573,17 @@ export class EmailVaultController extends EventEmitter {
     this.emitUpdate()
     try {
       await fn()
+
+      const isKeyStoreSecretUploadingCanceled =
+        this.#shouldStopConfirmationPolling && callName === 'uploadKeyStoreSecret'
+
+      // In case of a canceled verification and, respectively, a canceled keystore secret upload,
+      // we should not change the status to SUCCESS, as the method was simply canceled.
+      // Adding this check here will prevent any success modal from being shown on the FE when the user cancels their upload attempt.
+      if (!isKeyStoreSecretUploadingCanceled) {
+        this.latestMethodStatus = 'SUCCESS'
+        this.emitUpdate()
+      }
     } catch (error: any) {
       this.emitError({
         message: 'Email vault unexpected error. If the problem persists, please contact support.',
@@ -565,10 +591,16 @@ export class EmailVaultController extends EventEmitter {
         error
       })
     }
+
+    // set status in the next tick to ensure the FE receives the 'SUCCESS' status
+    await wait(1)
+
     this.latestMethodStatus = 'DONE'
     this.emitUpdate()
 
+    // reset the status in the next tick to ensure the FE receives the 'DONE' status
     await wait(1)
+
     if (this.latestMethodCall === callName) {
       this.latestMethodStatus = 'INITIAL'
       this.emitUpdate()

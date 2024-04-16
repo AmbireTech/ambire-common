@@ -1,10 +1,11 @@
-import { ethers } from 'ethers'
-import { HumanizerCallModule, IrCall } from '../interfaces'
+import { Interface, ZeroAddress } from 'ethers'
+
 import { AccountOp } from '../../accountOp/accountOp'
+import { HumanizerCallModule, IrCall } from '../interfaces'
 import { getKnownAbi, getUnknownVisualization, getUnwraping, getWraping } from '../utils'
 
 const WRAPPEDISH_ADDRESSES: { [kjey: string]: string } = {
-  [ethers.ZeroAddress]: 'native',
+  [ZeroAddress]: 'native',
   '0x4200000000000000000000000000000000000042': 'OP',
   '0x4200000000000000000000000000000000000006': 'WETHOptimism',
   '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2': 'WETH',
@@ -24,7 +25,7 @@ const wrapSwapReducer = (calls: IrCall[]) => {
       calls[i]?.fullVisualization?.[3].amount === calls[i + 1]?.fullVisualization?.[1]?.amount
     ) {
       const newVisualization = calls[i]?.fullVisualization!
-      newVisualization[3].address = ethers.ZeroAddress
+      newVisualization[3].address = ZeroAddress
 
       newCalls.push({
         to: calls[i].to,
@@ -43,7 +44,7 @@ const wrapSwapReducer = (calls: IrCall[]) => {
       WRAPPEDISH_ADDRESSES[calls[i + 1]?.fullVisualization?.[1].address!]
     ) {
       const newVisualization = calls[i + 1]?.fullVisualization!
-      newVisualization[1].address = ethers.ZeroAddress
+      newVisualization[1].address = ZeroAddress
       newCalls.push({
         to: calls[i + 1].to,
         value: calls[i].value + calls[i + 1].value,
@@ -66,7 +67,7 @@ export const wrappingModule: HumanizerCallModule = (
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   options?: any
 ) => {
-  const iface = new ethers.Interface(getKnownAbi(accountOp.humanizerMeta, 'WETH', options))
+  const iface = new Interface(getKnownAbi(accountOp.humanizerMeta, 'WETH', options))
   const newCalls = irCalls.map((call: IrCall) => {
     const knownAddressData = accountOp.humanizerMeta?.knownAddresses[call.to.toLowerCase()]
     if (
@@ -80,7 +81,7 @@ export const wrappingModule: HumanizerCallModule = (
       if (call.data.slice(0, 10) === iface.getFunction('deposit')?.selector) {
         return {
           ...call,
-          fullVisualization: getWraping(ethers.ZeroAddress, call.value)
+          fullVisualization: getWraping(ZeroAddress, call.value)
         }
       }
       // 0x2e1a7d4d
@@ -88,7 +89,7 @@ export const wrappingModule: HumanizerCallModule = (
         const [amount] = iface.parseTransaction(call)?.args || []
         return {
           ...call,
-          fullVisualization: getUnwraping(ethers.ZeroAddress, amount)
+          fullVisualization: getUnwraping(ZeroAddress, amount)
         }
       }
       if (!call?.fullVisualization)

@@ -1,14 +1,17 @@
-import { JsonRpcProvider } from 'ethers'
+// @ts-expect-error
 import fetch from 'node-fetch'
 
 import { expect } from '@jest/globals'
 
-import { HumanizerMeta } from '../../libs/humanizer/interfaces'
+import { produceMemoryStore } from '../../../test/helpers'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import humanizerInfo from '../../consts/humanizer/humanizerInfo.json'
 import { networks } from '../../consts/networks'
+import { HumanizerMeta } from '../../libs/humanizer/interfaces'
 import { Portfolio } from '../../libs/portfolio'
-import { initRpcProviders } from '../../services/provider'
+import { getRpcProvider } from '../../services/provider'
+import { AddressBookController } from '../addressBook/addressBook'
+import { SettingsController } from '../settings/settings'
 import { TransferController } from './transfer'
 
 const ethereum = networks.find((x) => x.id === 'ethereum')
@@ -16,24 +19,26 @@ const polygon = networks.find((x) => x.id === 'polygon')
 
 if (!ethereum || !polygon) throw new Error('Failed to find ethereum in networks')
 
-const provider = new JsonRpcProvider(ethereum.rpcUrl)
-const polygonProvider = new JsonRpcProvider(polygon.rpcUrl)
-// Required for ENS resolution
-initRpcProviders({
-  [ethereum.id]: provider,
-  [polygon.id]: polygonProvider
-})
-
+const provider = getRpcProvider(ethereum.rpcUrls, ethereum.chainId)
+const polygonProvider = getRpcProvider(polygon.rpcUrls, polygon.chainId)
 const PLACEHOLDER_RECIPIENT = '0xC2E6dFcc2C6722866aD65F211D5757e1D2879337'
 const PLACEHOLDER_RECIPIENT_LOWERCASE = PLACEHOLDER_RECIPIENT.toLowerCase()
 const PLACEHOLDER_SELECTED_ACCOUNT = '0xc4A6bB5139123bD6ba0CF387828a9A3a73EF8D1e'
 const XWALLET_ADDRESS = '0x47Cd7E91C3CBaAF266369fe8518345fc4FC12935'
 
+const addressBook = {
+  contacts: []
+}
 const ethPortfolio = new Portfolio(fetch, provider, ethereum)
 const polygonPortfolio = new Portfolio(fetch, polygonProvider, polygon)
 
 let transferController: TransferController
 let errorCount = 0
+const settingsController = new SettingsController(produceMemoryStore())
+const providers = Object.fromEntries(
+  networks.map((network) => [network.id, getRpcProvider(network.rpcUrls, network.chainId)])
+)
+settingsController.providers = providers
 
 const getTokens = async () => {
   const ethAccPortfolio = await ethPortfolio.get(PLACEHOLDER_SELECTED_ACCOUNT)
@@ -44,7 +49,10 @@ const getTokens = async () => {
 
 describe('Transfer Controller', () => {
   test('should emit not initialized error', () => {
-    transferController = new TransferController()
+    transferController = new TransferController(
+      settingsController,
+      addressBook as unknown as AddressBookController
+    )
 
     transferController.buildUserRequest()
     errorCount++
@@ -64,7 +72,10 @@ describe('Transfer Controller', () => {
   })
   test('should initialize', async () => {
     const tokens = await getTokens()
-    transferController = new TransferController()
+    transferController = new TransferController(
+      settingsController,
+      addressBook as unknown as AddressBookController
+    )
     await transferController.update({
       selectedAccount: PLACEHOLDER_SELECTED_ACCOUNT,
       tokens,
