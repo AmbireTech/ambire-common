@@ -18,7 +18,6 @@ import {
   Limits,
   LimitsOptions,
   PortfolioGetResult,
-  Price,
   PriceCache,
   TokenResult
 } from './interfaces'
@@ -219,7 +218,7 @@ export class Portfolio {
       return !!isTokenPreference || isInAdditionalHints || pinnedRequested || underLimit
     }
 
-    const tokens = tokensWithErr
+    const tokensWithoutPrices = tokensWithErr
       .filter((tokenWithErr) => tokenFilter(tokenWithErr))
       .map(([, result]) => result)
 
@@ -241,19 +240,22 @@ export class Portfolio {
 
     const oracleCallDone = Date.now()
 
+    const tokensWithPriceErrors: PortfolioGetResult['tokenErrors'] = []
+
     // Update prices and set the priceIn for each token by reference,
     // updating the final tokens array as a result
-    await Promise.all(
-      tokens.map(async (token) => {
+    const tokensWithPrices = await Promise.all(
+      tokensWithoutPrices.map(async (token) => {
+        let priceIn: TokenResult['priceIn'] = []
         const cachedPriceIn = getPriceFromCache(token.address)
+
         if (cachedPriceIn) {
-          // reassinging priceIn to the function param is not an ideal
-          // solution in this case as it's harder for reading but we're
-          // going along with it. Please understand that the final tokens
-          // array is updated with the edited token in this scope
-          /* eslint-disable-next-line no-param-reassign */
-          token.priceIn = cachedPriceIn
-          return
+          priceIn = cachedPriceIn
+
+          return {
+            ...token,
+            priceIn
+          }
         }
 
         try {
@@ -264,16 +266,25 @@ export class Portfolio {
             // this is what to look for in the coingecko response object
             responseIdentifier: geckoResponseIdentifier(token.address, this.network)
           })
-          const priceIn: Price[] = Object.entries(priceData || {}).map(([baseCurr, price]) => ({
+          priceIn = Object.entries(priceData || {}).map(([baseCurr, price]) => ({
             baseCurrency: baseCurr,
             price: price as number
           }))
           if (priceIn.length) priceCache.set(token.address, [Date.now(), priceIn])
-          /* eslint-disable-next-line no-param-reassign */
-          token.priceIn = priceIn
         } catch {
-          /* eslint-disable-next-line no-param-reassign */
-          token.priceIn = []
+          priceIn = []
+        }
+
+        if (!priceIn.length) {
+          tokensWithPriceErrors.push({
+            error: `Failed to fetch price data from Coingecko for ${token.symbol} on ${networkId}`,
+            address: token.address
+          })
+        }
+
+        return {
+          ...token,
+          priceIn
         }
       })
     )
@@ -287,12 +298,13 @@ export class Portfolio {
       oracleCallTime: oracleCallDone - discoveryDone,
       priceUpdateTime: priceUpdateDone - oracleCallDone,
       priceCache,
-      tokens,
+      tokens: tokensWithPrices,
       tokenErrors: tokensWithErr
         .filter(([error, result]) => error !== '0x' || result.symbol === '')
-        .map(([error, result]) => ({ error, address: result.address })),
+        .map(([error, result]) => ({ error, address: result.address }))
+        .concat(tokensWithPriceErrors),
       collections: collections.filter((x) => x.collectibles?.length),
-      total: tokens.reduce((cur, token) => {
+      total: tokensWithPrices.reduce((cur, token) => {
         const localCur = cur
         if (token.isHidden) return localCur
         for (const x of token.priceIn) {
