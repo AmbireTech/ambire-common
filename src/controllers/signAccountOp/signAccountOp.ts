@@ -60,7 +60,7 @@ export enum FeeSpeed {
   Ape = 'ape'
 }
 
-type FanSpeed = {
+type SpeedCalc = {
   type: FeeSpeed
   amount: bigint
   simulatedGasLimit: bigint
@@ -106,7 +106,7 @@ export class SignAccountOpController extends EventEmitter {
   #estimation: EstimateResult | null = null
 
   feeSpeeds: {
-    [identifier: string]: FanSpeed[]
+    [identifier: string]: SpeedCalc[]
   } = {}
 
   paidBy: string | null = null
@@ -186,6 +186,11 @@ export class SignAccountOpController extends EventEmitter {
     }
   }
 
+  // check if speeds are set for the given identifier
+  hasSpeeds(identifier: string) {
+    return this.feeSpeeds[identifier] !== undefined && this.feeSpeeds[identifier].length
+  }
+
   #humanizeAccountOp() {
     callsHumanizer(
       this.accountOp,
@@ -231,9 +236,8 @@ export class SignAccountOpController extends EventEmitter {
     // 2) selectedOption and 3) gasSpeeds for selectedOption => return an error
     if (!this.accountOp.gasFeePayment && this.feeTokenResult && this.selectedOption) {
       const identifier = getFeeSpeedIdentifier(this.selectedOption, this.accountOp.accountAddr)
-      const hasSpeeds =
-        this.feeSpeeds[identifier] !== undefined && this.feeSpeeds[identifier].length
-      if (hasSpeeds) errors.push('Please select a token and an account for paying the gas fee.')
+      if (this.hasSpeeds(identifier))
+        errors.push('Please select a token and an account for paying the gas fee.')
     }
 
     if (
@@ -264,9 +268,7 @@ export class SignAccountOpController extends EventEmitter {
 
     if (!this.#feeSpeedsLoading && this.selectedOption) {
       const identifier = getFeeSpeedIdentifier(this.selectedOption, this.accountOp.accountAddr)
-      const hasSpeeds =
-        this.feeSpeeds[identifier] !== undefined && this.feeSpeeds[identifier].length
-      if (!hasSpeeds) {
+      if (!this.hasSpeeds(identifier)) {
         if (!this.feeTokenResult?.priceIn.length) {
           errors.push(
             `Currently, ${this.feeTokenResult?.symbol} is unavailable as a fee token as we're experiencing troubles fetching its price. Please select another or contact support`
@@ -527,7 +529,7 @@ export class SignAccountOpController extends EventEmitter {
       // if a calculation has been made, do not make it again
       // EOA pays for SA is the most common case for this scenario
       const identifier = getFeeSpeedIdentifier(option, this.accountOp.accountAddr)
-      if (this.feeSpeeds[identifier] !== undefined && this.feeSpeeds[identifier].length) {
+      if (this.hasSpeeds(identifier)) {
         return
       }
 
@@ -539,7 +541,7 @@ export class SignAccountOpController extends EventEmitter {
 
       const erc4337GasLimits = this.#estimation?.erc4337GasLimits
       if (erc4337GasLimits) {
-        const speeds: FanSpeed[] = []
+        const speeds: SpeedCalc[] = []
         const usesPaymaster = shouldUsePaymaster(this.#network)
 
         for (const [speed, speedValue] of Object.entries(erc4337GasLimits.gasPrice)) {
@@ -611,7 +613,7 @@ export class SignAccountOpController extends EventEmitter {
           amount = this.#increaseFee(amount)
         }
 
-        const feeSpeed: FanSpeed = {
+        const feeSpeed: SpeedCalc = {
           type: gasRecommendation.name as FeeSpeed,
           simulatedGasLimit,
           amount,
