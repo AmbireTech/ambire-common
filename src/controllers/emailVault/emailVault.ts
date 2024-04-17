@@ -663,7 +663,7 @@ export class EmailVaultController extends EventEmitter {
         id: 'keystore-secret-backup',
         type: 'info',
         title: 'Enable device password reset via email',
-        text: "Email Vault recovers your Device Password. It is securely stored in Ambire's infrastructure cloud.",
+        text: "Email Vault recovers your device password. It is securely stored in Ambire's infrastructure cloud.",
         actions: [
           {
             label: 'Enable',
