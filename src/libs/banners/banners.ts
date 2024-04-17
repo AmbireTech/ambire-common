@@ -41,11 +41,13 @@ export const getMessageBanners = ({ userRequests }: { userRequests: UserRequest[
 export const getAccountOpBannersForEOA = ({
   userRequests,
   accounts,
-  networks
+  networks,
+  isSentToHw
 }: {
   userRequests: UserRequest[]
   accounts: Account[]
   networks: NetworkDescriptor[]
+  isSentToHw: boolean
 }): Banner[] => {
   if (!userRequests) return []
 
@@ -58,24 +60,28 @@ export const getAccountOpBannersForEOA = ({
 
   const networkName = networks.filter((n) => n.id === activeUserRequest.networkId)[0].name
 
+  // show the reject option only if request is not sent to HW
+  const actions = []
+  if (!isSentToHw) {
+    actions.push({
+      label: 'Reject',
+      actionName: 'reject',
+      meta: { ids: [activeUserRequest.id], err: 'User rejected the transaction request' }
+    })
+  }
+  actions.push({
+    label: 'Open',
+    actionName: 'open',
+    meta: { ids: [activeUserRequest.id] }
+  })
+
   return [
     {
       id: activeUserRequest.id,
       type: 'info',
       title: `Transaction waiting to be signed ${networkName ? `on ${networkName}` : ''}`,
       text: '', // TODO:
-      actions: [
-        {
-          label: 'Reject',
-          actionName: 'reject',
-          meta: { ids: [activeUserRequest.id], err: 'User rejected the transaction request' }
-        },
-        {
-          label: 'Open',
-          actionName: 'open',
-          meta: { ids: [activeUserRequest.id] }
-        }
-      ]
+      actions
     } as Banner
   ]
 }

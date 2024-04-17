@@ -1336,10 +1336,17 @@ export class MainController extends EventEmitter {
       this.userRequests.filter((req) => req.accountAddr === this.selectedAccount) || []
     const accounts = this.accounts
 
+    const isSentToHw =
+      this.signAccountOp?.accountOp.signingKeyType !== 'internal' &&
+      (this.signAccountOp?.status?.type === SigningStatus.InProgress ||
+        this.signAccountOp?.status?.type === SigningStatus.Done ||
+        this.broadcastStatus === 'LOADING')
+
     const accountOpEOABanners = getAccountOpBannersForEOA({
       userRequests,
       accounts,
-      networks: this.settings.networks
+      networks: this.settings.networks,
+      isSentToHw
     })
     const pendingAccountOpEOABanners = getPendingAccountOpBannersForEOA({ userRequests, accounts })
     const accountOpSmartAccountBanners = getAccountOpBannersForSmartAccount({
