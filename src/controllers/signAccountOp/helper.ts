@@ -10,7 +10,7 @@ export function getFeeSpeedIdentifier(option: FeePaymentOption, accountAddr: str
   const paidBy =
     option.token.address === ZeroAddress && option.paidBy !== accountAddr ? 'EOA' : option.paidBy
 
-  return `${paidBy}:${option.token.address}:${
+  return `${paidBy}:${option.token.address}:${option.token.symbol.toLowerCase()}:${
     option.token.flags.onGasTank ? 'gasTank' : 'feeToken'
   }`
 }

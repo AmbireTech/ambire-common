@@ -371,6 +371,8 @@ export class SignAccountOpController extends EventEmitter {
         (option) =>
           option.paidBy === this.paidBy &&
           option.token.address === this.feeTokenResult!.address &&
+          option.token.symbol.toLocaleLowerCase() ===
+            this.feeTokenResult!.symbol.toLocaleLowerCase() &&
           option.token.flags.onGasTank === this.feeTokenResult!.flags.onGasTank
       )
     }

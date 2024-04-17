@@ -820,14 +820,7 @@ export class MainController extends EventEmitter {
         this.portfolio.latest?.[localAccountOp.accountAddr]?.[localAccountOp.networkId]?.result
           ?.tokens ?? []
       const gasTankFeeTokens =
-        this.portfolio.latest?.[localAccountOp.accountAddr]?.gasTank?.result?.tokens.filter(
-          (token) => {
-            return (
-              token.address !== ZeroAddress ||
-              token.symbol.toLowerCase() === network.nativeAssetSymbol.toLowerCase()
-            )
-          }
-        ) ?? []
+        this.portfolio.latest?.[localAccountOp.accountAddr]?.gasTank?.result?.tokens ?? []
 
       const feeTokens =
         [...networkFeeTokens, ...gasTankFeeTokens].filter((t) => t.flags.isFeeToken) || []
