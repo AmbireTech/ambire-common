@@ -8,7 +8,18 @@ import { getName, nativeToken, token } from '../humanReadableTransactions'
 import { COMMANDS, COMMANDS_DESCRIPTIONS } from './Commands'
 
 const recipientText = (humanizerInfo, recipient, txnFrom, extended = false) => {
-  if (recipient.toLowerCase() === txnFrom.toLowerCase()) {
+  // address from uni V3's contract code
+  /// @dev Used as a flag for identifying msg.sender, saves gas by sending more 0 bytes
+  // address internal constant MSG_SENDER = address(1);
+  /// @dev Used as a flag for identifying address(this), saves gas by sending more 0 bytes
+  // address internal constant ADDRESS_THIS = address(2);
+  if (
+    [
+      txnFrom.toLowerCase(),
+      '0x0000000000000000000000000000000000000002',
+      '0x0000000000000000000000000000000000000001'
+    ].includes(recipient.toLowerCase())
+  ) {
     return !extended ? '' : []
   }
   return !extended
@@ -614,149 +625,150 @@ const uniV32Mapping = (humanizerInfo: HumanizerInfoType) => {
 
 const uniUniversalRouter = (humanizerInfo: HumanizerInfoType) => {
   const ifaceUniversalRouter = new Interface(humanizerInfo.abis.UniswapUniversalRouter)
+  const executeFunction = (txn, network, opts = {}) => {
+    const [commands, inputs, deadline] = ifaceUniversalRouter.parseTransaction(txn).args
+    const arrCommands = arrayify(commands)
+    const parsedCommands = []
+    arrCommands.forEach((item) => parsedCommands.push(hexlify([item])))
 
+    const parsed = []
+    parsedCommands.forEach((command, index) => {
+      if (command === COMMANDS.V3_SWAP_EXACT_IN) {
+        const { inputsDetails } = COMMANDS_DESCRIPTIONS.V3_SWAP_EXACT_IN
+        const params = extractParams(inputsDetails, inputs[index])
+        const path = parsePath(params.path)
+
+        parsed.push(
+          !opts.extended
+            ? [
+                `Swap ${token(humanizerInfo, path[0], params.amountIn)} for at least ${token(
+                  humanizerInfo,
+                  path[path.length - 1],
+                  params.amountOutMin
+                )}${recipientText(humanizerInfo, txn.from, txn.from)}${deadlineText(
+                  deadline,
+                  opts.mined
+                )}`
+              ]
+            : toExtended(
+                'Swap',
+                'for at least',
+                token(humanizerInfo, path[0], params.amountIn, true),
+                token(humanizerInfo, path[path.length - 1], params.amountOutMin, true),
+                recipientText(humanizerInfo, txn.from, txn.from, true),
+                deadlineText(deadline, opts.mined)
+              )
+        )
+      } else if (command === COMMANDS.V3_SWAP_EXACT_OUT) {
+        const { inputsDetails } = COMMANDS_DESCRIPTIONS.V3_SWAP_EXACT_OUT
+        const params = extractParams(inputsDetails, inputs[index])
+        const path = parsePath(params.path)
+
+        parsed.push(
+          !opts.extended
+            ? [
+                `Swap up to ${token(
+                  humanizerInfo,
+                  path[path.length - 1],
+                  params.amountInMax
+                )} for ${token(humanizerInfo, path[0], params.amountOut)}${recipientText(
+                  humanizerInfo,
+                  txn.from,
+                  txn.from
+                )}${deadlineText(deadline, opts.mined)}`
+              ]
+            : toExtended(
+                'Swap up to',
+                'for',
+                token(humanizerInfo, path[path.length - 1], params.amountInMax, true),
+                token(humanizerInfo, path[0], params.amountOut, true),
+                recipientText(humanizerInfo, txn.from, txn.from, true),
+                deadlineText(deadline, opts.mined)
+              )
+        )
+      } else if (command === COMMANDS.V2_SWAP_EXACT_IN) {
+        const { inputsDetails } = COMMANDS_DESCRIPTIONS.V2_SWAP_EXACT_IN
+        const params = extractParams(inputsDetails, inputs[index])
+        const path = params.path
+
+        parsed.push(
+          !opts.extended
+            ? [
+                `Swap ${token(humanizerInfo, path[0], params.amountIn)} for at least ${token(
+                  humanizerInfo,
+                  path[path.length - 1],
+                  params.amountOutMin
+                )}${recipientText(humanizerInfo, txn.from, txn.from)}${deadlineText(
+                  deadline,
+                  opts.mined
+                )}`
+              ]
+            : toExtended(
+                'Swap',
+                'for at least',
+                token(humanizerInfo, path[0], params.amountIn, true),
+                token(humanizerInfo, path[path.length - 1], params.amountOutMin, true),
+                recipientText(humanizerInfo, txn.from, txn.from, true),
+                deadlineText(deadline, opts.mined)
+              )
+        )
+      } else if (command === COMMANDS.V2_SWAP_EXACT_OUT) {
+        const { inputsDetails } = COMMANDS_DESCRIPTIONS.V2_SWAP_EXACT_OUT
+        const params = extractParams(inputsDetails, inputs[index])
+        const path = params.path
+
+        parsed.push(
+          !opts.extended
+            ? [
+                `Swap up to ${token(humanizerInfo, path[0], params.amountInMax)} for ${token(
+                  humanizerInfo,
+                  path[path.length - 1],
+                  params.amountOut
+                )}${recipientText(humanizerInfo, txn.from, txn.from)}${deadlineText(
+                  deadline,
+                  opts.mined
+                )}`
+              ]
+            : toExtended(
+                'Swap up to',
+                'for',
+                token(humanizerInfo, path[0], params.amountInMax, true),
+                token(humanizerInfo, path[path.length - 1], params.amountOut, true),
+                recipientText(humanizerInfo, txn.from, txn.from, true),
+                deadlineText(deadline, opts.mined)
+              )
+        )
+      } else if (command === COMMANDS.PERMIT2_PERMIT) {
+        const humanizerMsg = 'Approved Uniswap to use the following token via signed message.'
+        parsed.push(!opts.extended ? [humanizerMsg] : [[humanizerMsg]])
+      } else if (command === COMMANDS.WRAP_ETH) {
+        const { inputsDetails } = COMMANDS_DESCRIPTIONS.WRAP_ETH
+        const params = extractParams(inputsDetails, inputs[index])
+
+        parsed.push(
+          !opts.extended
+            ? [`Wrap ${nativeToken(network, params.amountMin)}`]
+            : toExtendedUnwrap('Wrap', network, params.amountMin)
+        )
+      } else if (command === COMMANDS.UNWRAP_WETH) {
+        const { inputsDetails } = COMMANDS_DESCRIPTIONS.UNWRAP_WETH
+        const params = extractParams(inputsDetails, inputs[index])
+
+        parsed.push(
+          !opts.extended
+            ? [`Unwrap at least ${nativeToken(network, params.amountMin)}`]
+            : toExtendedUnwrap('Unwrap at least', network, params.amountMin)
+        )
+      } else parsed.push(['Unknown Uni V3 interaction'])
+    })
+
+    return parsed.flat()
+  }
   return {
     [ifaceUniversalRouter.getSighash(
       'execute(bytes calldata commands, bytes[] calldata inputs, uint256 deadline)'
-    )]: (txn, network, opts = {}) => {
-      const [commands, inputs, deadline] = ifaceUniversalRouter.parseTransaction(txn).args
-      const arrCommands = arrayify(commands)
-      const parsedCommands = []
-      arrCommands.forEach((item) => parsedCommands.push(hexlify([item])))
-
-      const parsed = []
-      parsedCommands.forEach((command, index) => {
-        if (command === COMMANDS.V3_SWAP_EXACT_IN) {
-          const { inputsDetails } = COMMANDS_DESCRIPTIONS.V3_SWAP_EXACT_IN
-          const params = extractParams(inputsDetails, inputs[index])
-          const path = parsePath(params.path)
-
-          parsed.push(
-            !opts.extended
-              ? [
-                  `Swap ${token(humanizerInfo, path[0], params.amountIn)} for at least ${token(
-                    humanizerInfo,
-                    path[path.length - 1],
-                    params.amountOutMin
-                  )}${recipientText(humanizerInfo, txn.from, txn.from)}${deadlineText(
-                    deadline,
-                    opts.mined
-                  )}`
-                ]
-              : toExtended(
-                  'Swap',
-                  'for at least',
-                  token(humanizerInfo, path[0], params.amountIn, true),
-                  token(humanizerInfo, path[path.length - 1], params.amountOutMin, true),
-                  recipientText(humanizerInfo, txn.from, txn.from, true),
-                  deadlineText(deadline, opts.mined)
-                )
-          )
-        } else if (command === COMMANDS.V3_SWAP_EXACT_OUT) {
-          const { inputsDetails } = COMMANDS_DESCRIPTIONS.V3_SWAP_EXACT_OUT
-          const params = extractParams(inputsDetails, inputs[index])
-          const path = parsePath(params.path)
-
-          parsed.push(
-            !opts.extended
-              ? [
-                  `Swap up to ${token(
-                    humanizerInfo,
-                    path[path.length - 1],
-                    params.amountInMax
-                  )} for ${token(humanizerInfo, path[0], params.amountOut)}${recipientText(
-                    humanizerInfo,
-                    txn.from,
-                    txn.from
-                  )}${deadlineText(deadline, opts.mined)}`
-                ]
-              : toExtended(
-                  'Swap up to',
-                  'for',
-                  token(humanizerInfo, path[path.length - 1], params.amountInMax, true),
-                  token(humanizerInfo, path[0], params.amountOut, true),
-                  recipientText(humanizerInfo, txn.from, txn.from, true),
-                  deadlineText(deadline, opts.mined)
-                )
-          )
-        } else if (command === COMMANDS.V2_SWAP_EXACT_IN) {
-          const { inputsDetails } = COMMANDS_DESCRIPTIONS.V2_SWAP_EXACT_IN
-          const params = extractParams(inputsDetails, inputs[index])
-          const path = params.path
-
-          parsed.push(
-            !opts.extended
-              ? [
-                  `Swap ${token(humanizerInfo, path[0], params.amountIn)} for at least ${token(
-                    humanizerInfo,
-                    path[path.length - 1],
-                    params.amountOutMin
-                  )}${recipientText(humanizerInfo, txn.from, txn.from)}${deadlineText(
-                    deadline,
-                    opts.mined
-                  )}`
-                ]
-              : toExtended(
-                  'Swap',
-                  'for at least',
-                  token(humanizerInfo, path[0], params.amountIn, true),
-                  token(humanizerInfo, path[path.length - 1], params.amountOutMin, true),
-                  recipientText(humanizerInfo, txn.from, txn.from, true),
-                  deadlineText(deadline, opts.mined)
-                )
-          )
-        } else if (command === COMMANDS.V2_SWAP_EXACT_OUT) {
-          const { inputsDetails } = COMMANDS_DESCRIPTIONS.V2_SWAP_EXACT_OUT
-          const params = extractParams(inputsDetails, inputs[index])
-          const path = params.path
-
-          parsed.push(
-            !opts.extended
-              ? [
-                  `Swap up to ${token(humanizerInfo, path[0], params.amountInMax)} for ${token(
-                    humanizerInfo,
-                    path[path.length - 1],
-                    params.amountOut
-                  )}${recipientText(humanizerInfo, txn.from, txn.from)}${deadlineText(
-                    deadline,
-                    opts.mined
-                  )}`
-                ]
-              : toExtended(
-                  'Swap up to',
-                  'for',
-                  token(humanizerInfo, path[0], params.amountInMax, true),
-                  token(humanizerInfo, path[path.length - 1], params.amountOut, true),
-                  recipientText(humanizerInfo, txn.from, txn.from, true),
-                  deadlineText(deadline, opts.mined)
-                )
-          )
-        } else if (command === COMMANDS.PERMIT2_PERMIT) {
-          const humanizerMsg = 'Approved Uniswap to use the following token via signed message.'
-          parsed.push(!opts.extended ? [humanizerMsg] : [[humanizerMsg]])
-        } else if (command === COMMANDS.WRAP_ETH) {
-          const { inputsDetails } = COMMANDS_DESCRIPTIONS.WRAP_ETH
-          const params = extractParams(inputsDetails, inputs[index])
-
-          parsed.push(
-            !opts.extended
-              ? [`Wrap ${nativeToken(network, params.amountMin)}`]
-              : toExtendedUnwrap('Wrap', network, params.amountMin)
-          )
-        } else if (command === COMMANDS.UNWRAP_WETH) {
-          const { inputsDetails } = COMMANDS_DESCRIPTIONS.UNWRAP_WETH
-          const params = extractParams(inputsDetails, inputs[index])
-
-          parsed.push(
-            !opts.extended
-              ? [`Unwrap at least ${nativeToken(network, params.amountMin)}`]
-              : toExtendedUnwrap('Unwrap at least', network, params.amountMin)
-          )
-        } else parsed.push(['Unknown Uni V3 interaction'])
-      })
-
-      return parsed.flat()
-    }
+    )]: executeFunction,
+    [ifaceUniversalRouter.getSighash('execute(bytes,bytes[])')]: executeFunction
   }
 }
 
