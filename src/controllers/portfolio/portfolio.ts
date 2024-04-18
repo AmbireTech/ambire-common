@@ -5,7 +5,6 @@ import { PINNED_TOKENS } from '../../consts/pinnedTokens'
 import { Account, AccountId } from '../../interfaces/account'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
 /* eslint-disable @typescript-eslint/no-shadow */
-import { CustomNetwork, NetworkPreference } from '../../interfaces/settings'
 import { Storage } from '../../interfaces/storage'
 import { isSmartAccount } from '../../libs/account/account'
 import { AccountOp, isAccountOpsIntentEqual } from '../../libs/accountOp/accountOp'
@@ -21,7 +20,6 @@ import getAccountNetworksWithAssets from '../../libs/portfolio/getNetworksWithAs
 import { getFlags, validateERC20Token } from '../../libs/portfolio/helpers'
 /* eslint-disable no-param-reassign */
 /* eslint-disable import/no-extraneous-dependencies */
-import { getIcon, getIconId } from '../../libs/portfolio/icons'
 import {
   AccountState,
   AdditionalAccountState,
@@ -29,7 +27,6 @@ import {
   Hints,
   PortfolioControllerState,
   PortfolioGetResult,
-  TokenIcon,
   TokenResult
 } from '../../libs/portfolio/interfaces'
 import { Portfolio } from '../../libs/portfolio/portfolio'
@@ -110,8 +107,6 @@ export class PortfolioController extends EventEmitter {
 
   #settings: SettingsController
 
-  tokenIcons: TokenIcon
-
   // Holds the initial load promise, so that one can wait until it completes
   #initialLoadPromise: Promise<void>
 
@@ -123,7 +118,6 @@ export class PortfolioController extends EventEmitter {
     this.#storage = storage
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
     this.#settings = settings
-    this.tokenIcons = {}
     this.temporaryTokens = {}
 
     this.#initialLoadPromise = this.#load()
@@ -498,7 +492,12 @@ export class PortfolioController extends EventEmitter {
           tokenPreferences,
           ...portfolioProps
         })
-        _accountState[network.id] = { isReady: true, isLoading: false, errors: [], result }
+        _accountState[network.id] = {
+          isReady: true,
+          isLoading: false,
+          errors: result.errors,
+          result
+        }
         this.emitUpdate()
         return true
       } catch (e: any) {
@@ -575,8 +574,11 @@ export class PortfolioController extends EventEmitter {
         ])
 
         // Persist previousHints in the disk storage for further requests, when:
-        // latest state was updated successful and hints were fetched successful too (no hintsError from portfolio result)
-        if (isSuccessfulLatestUpdate && !accountState[network.id]!.result!.hintsError) {
+        // latest state was updated successful and hints were fetched successful too (no HintsError from portfolio result)
+        if (
+          isSuccessfulLatestUpdate &&
+          !(accountState[network.id]!.result?.errors || []).find((err) => err.name === 'HintsError')
+        ) {
           storagePreviousHints[key] = getHintsWithBalance(
             accountState[network.id]!.result!
             // !hasNonZeroTokens,
@@ -597,51 +599,8 @@ export class PortfolioController extends EventEmitter {
       })
     )
 
-    const tokenResults: TokenResult[] = []
-    for (const networkId of Object.keys(accountState)) {
-      const tokenResult = accountState[networkId]?.result?.tokens
-      if (tokenResult) {
-        tokenResults.push(...tokenResult)
-      }
-    }
-
-    // start a request for fetching the token icons after a successful update
-    this.getTokenIcons(tokenResults).catch((e) => {
-      // Icons are not so important so they should not stop the execution
-      this.emitError({
-        level: 'silent',
-        message: 'Error while fetching the token icons',
-        error: e
-      })
-    })
-
     await this.#updateNetworksWithAssets(accounts, accountId, accountState)
 
-    this.emitUpdate()
-  }
-
-  async getTokenIcons(tokens: PortfolioGetResult['tokens']) {
-    const storage = await this.#storage.get('tokenIcons', {})
-    const settingsNetworks = this.#settings.networks
-
-    const promises = tokens.map(async (token) => {
-      const icon = await getIcon(
-        settingsNetworks.find((net) => net.id === token.networkId)!,
-        token.address,
-        storage
-      )
-      if (!icon) return null
-      return { [getIconId(token.networkId, token.address)]: icon }
-    })
-
-    const result = await Promise.all(promises)
-    result
-      .filter((icon) => icon) // remove nulls
-      .forEach((icon: any) => {
-        this.tokenIcons[Object.keys(icon)[0] as string] = Object.values(icon)[0] as string
-      })
-
-    await this.#storage.set('tokenIcons', this.tokenIcons)
     this.emitUpdate()
   }
 

@@ -1,9 +1,10 @@
 /* eslint no-console: "off" */
 
-import { AbiCoder, ethers, Interface } from 'ethers'
+import { AbiCoder, ethers, Interface, ZeroAddress } from 'ethers'
 import fetch from 'node-fetch'
 
 import { describe, expect } from '@jest/globals'
+import structuredClone from '@ungap/structured-clone'
 
 import ERC20 from '../../../contracts/compiled/IERC20.json'
 import { trezorSlot7v24337Deployed } from '../../../test/config'
@@ -781,6 +782,42 @@ describe('estimate', () => {
 
     expect(response.feePaymentOptions![0].token).not.toBe(undefined)
     expect(response.feePaymentOptions![0].token).not.toBe(null)
+  })
+
+  it('[EOA-for-SA]:Arbitrum | should return native fee payment options even if hasRelayer = false', async () => {
+    const clonedArb = structuredClone(arbitrum)
+    clonedArb.hasRelayer = false
+    clonedArb.erc4337.enabled = false
+
+    const opArbitrum: AccountOp = {
+      accountAddr: trezorSlot6v2NotDeployed.addr,
+      signingKeyAddr: trezorSlot6v2NotDeployed.associatedKeys[0],
+      signingKeyType: null,
+      gasLimit: null,
+      gasFeePayment: null,
+      networkId: 'arbitrum',
+      nonce: 0n,
+      signature: spoofSig,
+      calls: [{ to, value: BigInt(100000000000), data: '0x' }],
+      accountOpToExecuteBefore: null
+    }
+    const accountStates = await getAccountsInfo([trezorSlot6v2NotDeployed])
+    const response = await estimate(
+      providerArbitrum,
+      clonedArb,
+      trezorSlot6v2NotDeployed,
+      MOCK_KEYSTORE_KEYS,
+      opArbitrum,
+      accountStates,
+      nativeToCheck,
+      feeTokens,
+      { is4337Broadcast: false }
+    )
+
+    expect(response.feePaymentOptions.length).toBeGreaterThan(0)
+    expect(response.feePaymentOptions[0].token).not.toBe(null)
+    expect(response.feePaymentOptions[0].token).not.toBe(undefined)
+    expect(response.feePaymentOptions[0].token.address).toBe(ZeroAddress)
   })
 
   it('[ERC-4337]:Arbitrum | should fail because of a broken provider but still return fee options', async () => {

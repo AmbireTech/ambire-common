@@ -256,16 +256,18 @@ export class ActivityController extends EventEmitter {
    * 2. If we don't manage to determine its status, we are comparing AccountOp and Account nonce.
    * If Account nonce is greater than AccountOp, then we know that AccountOp has past nonce (AccountOpStatus.UnknownButPastNonce).
    */
-  async updateAccountsOpsStatuses(): Promise<boolean> {
+  async updateAccountsOpsStatuses(): Promise<{ shouldEmitUpdate: boolean, shouldUpdatePortfolio: boolean }> {
     await this.#initialLoadPromise
 
     // Here we don't rely on `this.isInitialized` flag, as it checks for both `this.filters.account` and `this.filters.network` existence.
     // Banners are network agnostic, and that's the reason we check for `this.filters.account` only and having this.#accountsOps loaded.
-    if (!this.filters?.account || !this.#accountsOps[this.filters.account]) return false
+    if (!this.filters?.account || !this.#accountsOps[this.filters.account]) return { shouldEmitUpdate: false, shouldUpdatePortfolio: false }
 
     // This flag tracks the changes to AccountsOps statuses
     // and optimizes the number of the emitted updates and storage/state updates.
     let shouldEmitUpdate = false
+
+    let shouldUpdatePortfolio = false
 
     await Promise.all(
       Object.keys(this.#accountsOps[this.filters.account]).map(async (network) => {
@@ -323,6 +325,10 @@ export class ActivityController extends EventEmitter {
                   this.#accountsOps[this.filters!.account][network][accountOpIndex].status =
                     receipt.status ? AccountOpStatus.Success : AccountOpStatus.Failure
 
+                  if (receipt.status) {
+                    shouldUpdatePortfolio = true
+                  }
+            
                   if (accountOp.isSingletonDeploy && receipt.status) {
                     // the below promise has a catch() inside
                     /* eslint-disable @typescript-eslint/no-floating-promises */
@@ -350,6 +356,7 @@ export class ActivityController extends EventEmitter {
               ) {
                 this.#accountsOps[this.filters!.account][network][accountOpIndex].status =
                   AccountOpStatus.UnknownButPastNonce
+                shouldUpdatePortfolio = true
               }
             }
           )
@@ -366,7 +373,7 @@ export class ActivityController extends EventEmitter {
       this.emitUpdate()
     }
 
-    return shouldEmitUpdate
+    return { shouldEmitUpdate, shouldUpdatePortfolio }
   }
 
   async addSignedMessage(signedMessage: SignedMessage, account: string) {

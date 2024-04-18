@@ -1,10 +1,5 @@
 /* eslint-disable import/no-extraneous-dependencies */
 
-import { ZeroAddress } from 'ethers'
-import fetch from 'node-fetch'
-
-import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
-
 const customIcons: any = {
   '0xb468a1e5596cfbcdf561f21a10490d99b4bb7b68':
     'https://upload.wikimedia.org/wikipedia/commons/thumb/5/5a/Jeff_Sessions_with_Elmo_and_Rosita_%28cropped%29.jpg/220px-Jeff_Sessions_with_Elmo_and_Rosita_%28cropped%29.jpg', // TEST Polygon ELMO token,
@@ -36,36 +31,4 @@ export function getHardcodedIcon(address: string): string | null {
 
 export function getZapperIcon(networkId: string, address: string) {
   return `${zapperStorageTokenIcons}/${networkId.toLowerCase()}/${address.toLowerCase()}.png`
-}
-
-export async function getIcon(
-  network: NetworkDescriptor,
-  addr: string,
-  storageIcons: any
-): Promise<string | null> {
-  // if it's a hardcoded token, return it
-  const hardcodedIcon = getHardcodedIcon(addr)
-  if (hardcodedIcon) return hardcodedIcon
-
-  // try to take the icon from the storage first
-  if (storageIcons) {
-    const storageImage = storageIcons[getIconId(network.id, addr)] ?? null
-    if (storageImage) return storageImage
-  }
-
-  // make a request to cena to fetch the icon
-  const baseUrlCena = 'https://cena.ambire.com/api/v3'
-  const url =
-    addr === ZeroAddress
-      ? `${baseUrlCena}/coins/${network.platformId}`
-      : `${baseUrlCena}/coins/${network.platformId}/contract/${addr}`
-
-  const response = await fetch(url)
-  if (response.status === 200) {
-    const json = await response.json()
-    if (json && json.image && json.image.small) return json.image.small
-  }
-
-  // try to find the icon without making a request
-  return getZapperIcon(network.id, addr)
 }
