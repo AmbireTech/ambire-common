@@ -20,7 +20,7 @@ import {
   TxnRequest
 } from '../../interfaces/keystore'
 import { NetworkDescriptor, NetworkId } from '../../interfaces/networkDescriptor'
-import { CustomNetwork, NetworkPreference, NetworkPreferences } from '../../interfaces/settings'
+import { CustomNetwork, NetworkPreference } from '../../interfaces/settings'
 import { Storage } from '../../interfaces/storage'
 import { Message, UserRequest } from '../../interfaces/userRequest'
 import { getDefaultSelectedAccount, isSmartAccount } from '../../libs/account/account'
@@ -217,7 +217,7 @@ export class MainController extends EventEmitter {
       this.#storage,
       this.#fetch
     )
-    this.transfer = new TransferController(this.settings)
+    this.transfer = new TransferController(this.settings, this.addressBook)
     this.domains = new DomainsController(this.settings.providers, this.#fetch)
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch: this.#fetch })
     this.onResolveDappRequest = onResolveDappRequest
@@ -251,6 +251,9 @@ export class MainController extends EventEmitter {
 
     if (this.selectedAccount) {
       this.activity.init({ filters: { account: this.selectedAccount } })
+      this.addressBook.update({
+        selectedAccount
+      })
     }
 
     this.updateSelectedAccount(this.selectedAccount)
@@ -362,7 +365,6 @@ export class MainController extends EventEmitter {
       this.settings,
       this.#externalSignerControllers,
       account,
-      this.accounts,
       this.accountStates,
       network,
       accountOpToBeSigned,
@@ -400,10 +402,15 @@ export class MainController extends EventEmitter {
   async updateAccountsOpsStatuses() {
     await this.#initialLoadPromise
 
-    const hasUpdatedStatuses = await this.activity.updateAccountsOpsStatuses()
+    const { shouldEmitUpdate, shouldUpdatePortfolio } = await this.activity.updateAccountsOpsStatuses()
 
-    if (hasUpdatedStatuses) {
+    if (shouldEmitUpdate) {
       this.emitUpdate()
+
+      if (shouldUpdatePortfolio) {
+        this.updateSelectedAccount(this.selectedAccount, true)
+      }
+      
     }
   }
 
@@ -828,14 +835,7 @@ export class MainController extends EventEmitter {
         ) ?? []
 
       const feeTokens =
-        [...networkFeeTokens, ...gasTankFeeTokens]
-          .filter((t) => t.flags.isFeeToken)
-          .map((token) => ({
-            address: token.address,
-            isGasTank: token.flags.onGasTank,
-            amount: BigInt(token.amount),
-            symbol: token.symbol
-          })) || []
+        [...networkFeeTokens, ...gasTankFeeTokens].filter((t) => t.flags.isFeeToken) || []
 
       // if the network's chosen RPC supports debug_traceCall, we
       // make an additional simulation for each call in the accountOp
@@ -1049,7 +1049,7 @@ export class MainController extends EventEmitter {
       this.accountOpsToBeSigned[accountOp.accountAddr][accountOp.networkId]!.estimation!
     const feeTokenEstimation = estimation.feePaymentOptions.find(
       (option) =>
-        option.address === accountOp.gasFeePayment?.inToken &&
+        option.token.address === accountOp.gasFeePayment?.inToken &&
         option.paidBy === accountOp.gasFeePayment?.paidBy
     )!
 
@@ -1308,12 +1308,12 @@ export class MainController extends EventEmitter {
   }
 
   async updateNetworkPreferences(
-    networkPreferences: NetworkPreferences,
+    networkPreferences: NetworkPreference,
     networkId: NetworkDescriptor['id']
   ) {
     await this.settings.updateNetworkPreferences(networkPreferences, networkId)
 
-    if (networkPreferences?.rpcUrl) {
+    if (networkPreferences?.rpcUrls) {
       await this.updateAccountStates('latest', [networkId])
       await this.updateSelectedAccount(this.selectedAccount, true)
     }
@@ -1325,7 +1325,7 @@ export class MainController extends EventEmitter {
   ) {
     await this.settings.resetNetworkPreference(preferenceKey, networkId)
 
-    if (preferenceKey === 'rpcUrl') {
+    if (preferenceKey === 'rpcUrls') {
       await this.updateAccountStates('latest', [networkId])
       await this.updateSelectedAccount(this.selectedAccount, true)
     }

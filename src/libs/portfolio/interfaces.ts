@@ -169,8 +169,5 @@ export interface GetOptions {
   fetchPinned: boolean
   tokenPreferences: CustomToken[]
   additionalHints?: Hints['erc20s']
-}
-
-export interface TokenIcon {
-  [networdIdAndAddress: string]: string
+  disableAutoDiscovery?: boolean
 }

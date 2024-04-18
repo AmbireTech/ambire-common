@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-floating-promises */
-import { JsonRpcProvider, Wallet } from 'ethers'
+import { Wallet } from 'ethers'
 import fetch from 'node-fetch'
 
 /* eslint-disable no-new */
@@ -14,11 +14,12 @@ import { networks } from '../../consts/networks'
 import { Account } from '../../interfaces/account'
 import { isSmartAccount } from '../../libs/account/account'
 import { getPrivateKeyFromSeed, KeyIterator } from '../../libs/keyIterator/keyIterator'
+import { getRpcProvider } from '../../services/provider'
 import { KeystoreController } from '../keystore/keystore'
 import { AccountAdderController, DEFAULT_PAGE, DEFAULT_PAGE_SIZE } from './accountAdder'
 
 const providers = Object.fromEntries(
-  networks.map((network) => [network.id, new JsonRpcProvider(network.rpcUrl)])
+  networks.map((network) => [network.id, getRpcProvider(network.rpcUrls, network.chainId)])
 )
 
 const relayerUrl = 'https://staging-relayer.ambire.com'

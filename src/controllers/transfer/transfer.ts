@@ -1,9 +1,9 @@
 import erc20Abi from 'adex-protocol-eth/abi/ERC20.json'
+import { AddressBookController } from 'controllers/addressBook/addressBook'
 import { SettingsController } from 'controllers/settings/settings'
 import { formatUnits, Interface, isAddress, parseUnits } from 'ethers'
 
 import { FEE_COLLECTOR } from '../../consts/addresses'
-import { Account } from '../../interfaces/account'
 import { AddressState } from '../../interfaces/domains'
 import { TransferUpdate } from '../../interfaces/transfer'
 import { UserRequest } from '../../interfaces/userRequest'
@@ -36,6 +36,8 @@ export class TransferController extends EventEmitter {
   // State
   #settings: SettingsController
 
+  #addressBook: AddressBookController
+
   #tokens: TokenResult[] = []
 
   #selectedToken: TokenResult | null = null
@@ -45,8 +47,6 @@ export class TransferController extends EventEmitter {
   isSWWarningAgreed = false
 
   amount = ''
-
-  maxAmount = '0'
 
   addressState: AddressState = { ...DEFAULT_ADDRESS_STATE }
 
@@ -63,17 +63,16 @@ export class TransferController extends EventEmitter {
     unstoppableDomainsChain: string
   } | null = null
 
-  #accounts: Account[] = []
-
   #selectedAccount: string | null = null
 
   #humanizerInfo: HumanizerMeta | null = null
 
   isTopUp: boolean = false
 
-  constructor(settings: SettingsController) {
+  constructor(settings: SettingsController, addressBook: AddressBookController) {
     super()
     this.#settings = settings
+    this.#addressBook = addressBook
   }
 
   // every time when updating selectedToken update the amount and maxAmount of the form
@@ -81,25 +80,30 @@ export class TransferController extends EventEmitter {
     if (token?.amount && Number(token?.amount) === 0) {
       this.#selectedToken = null
       this.amount = ''
-      this.maxAmount = '0'
       return
     }
 
+    const prevSelectedToken = { ...this.selectedToken }
+
+    this.#selectedToken = token
+
     if (
-      this.selectedToken?.address !== token?.address ||
-      this.selectedToken?.networkId !== token?.networkId
+      prevSelectedToken?.address !== token?.address ||
+      prevSelectedToken?.networkId !== token?.networkId
     ) {
-      this.#selectedToken = token
       this.amount = ''
       this.#setSWWarningVisibleIfNeeded()
     }
-    // on portfolio update the max available amount can change for the selectedToken
-    // in that case don't update the selectedToken and amount in the form but only the maxAmount value
-    this.maxAmount = token ? formatUnits(token.amount, Number(token.decimals)) : '0'
   }
 
   get selectedToken() {
     return this.#selectedToken
+  }
+
+  get maxAmount() {
+    if (!this.selectedToken?.amount || !this.selectedToken?.decimals) return '0'
+
+    return formatUnits(this.selectedToken.amount, Number(this.selectedToken.decimals))
   }
 
   set tokens(tokenResults: TokenResult[]) {
@@ -116,7 +120,6 @@ export class TransferController extends EventEmitter {
 
   resetForm() {
     this.amount = ''
-    this.maxAmount = '0'
     this.addressState = { ...DEFAULT_ADDRESS_STATE }
     this.selectedToken = null
     this.#selectedTokenNetworkData = null
@@ -201,7 +204,6 @@ export class TransferController extends EventEmitter {
   }
 
   update({
-    accounts,
     selectedAccount,
     humanizerInfo,
     tokens,
@@ -212,9 +214,6 @@ export class TransferController extends EventEmitter {
     isRecipientAddressUnknownAgreed,
     isTopUp
   }: TransferUpdate) {
-    if (accounts) {
-      this.#accounts = accounts
-    }
     if (humanizerInfo) {
       this.#humanizerInfo = humanizerInfo
     }
@@ -304,6 +303,20 @@ export class TransferController extends EventEmitter {
     this.emitUpdate()
   }
 
+  checkIsRecipientAddressUnknown() {
+    const isAddressInAddressBook = this.#addressBook.contacts.some(
+      ({ address }) => address.toLowerCase() === this.recipientAddress.toLowerCase()
+    )
+
+    this.isRecipientAddressUnknown =
+      isAddress(this.recipientAddress) &&
+      !isAddressInAddressBook &&
+      this.recipientAddress.toLowerCase() !== FEE_COLLECTOR.toLowerCase()
+    this.isRecipientAddressUnknownAgreed = false
+
+    this.emitUpdate()
+  }
+
   // Allows for debounce implementation in the UI
   #onRecipientAddressChange() {
     if (!this.isInitialized) {
@@ -317,18 +330,7 @@ export class TransferController extends EventEmitter {
         !!this.#humanizerInfo.knownAddresses[this.recipientAddress.toLowerCase()]?.isSC
     }
 
-    const isAddressInWallet = this.#accounts.some(
-      ({ addr }) => addr.toLowerCase() === this.recipientAddress.toLowerCase()
-    )
-
-    // @TODO: isValidAddress & check from the address book
-    this.isRecipientAddressUnknown =
-      isAddress(this.recipientAddress) &&
-      !isAddressInWallet &&
-      this.recipientAddress.toLowerCase() !== FEE_COLLECTOR.toLowerCase()
-    this.isRecipientAddressUnknownAgreed = false
-
-    this.emitUpdate()
+    this.checkIsRecipientAddressUnknown()
   }
 
   #updateSelectedTokenIfNeeded(updatedTokens: TokenResult[]) {
@@ -378,7 +380,8 @@ export class TransferController extends EventEmitter {
       isFormValid: this.isFormValid,
       isInitialized: this.isInitialized,
       selectedToken: this.selectedToken,
-      tokens: this.tokens
+      tokens: this.tokens,
+      maxAmount: this.maxAmount
     }
   }
 }

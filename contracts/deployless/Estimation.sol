@@ -34,6 +34,12 @@ contract Estimation is FeeTokens, Spoof {
     L1GasEstimation l1GasEstimation;
   }
 
+  struct EoaEstimationOutcome {
+    uint gasUsed;
+    FeeTokenOutcome[] feeTokenOutcomes;
+    L1GasEstimation l1GasEstimation;
+  }
+
   // `estimate` takes the `accountOpToExecuteBefore` parameters separately because it's simulated via `simulateSigned`
   // vs the regular accountOp for which we use simulateUnsigned
   function estimate(
@@ -79,20 +85,24 @@ contract Estimation is FeeTokens, Spoof {
       );
       outcome.nonce = op.account.nonce();
       if (feeTokens.length != 0) {
-        // if we don't have a valid spoof, we cannot simulate the gas consumption
-        // of the fee payments; that's no problem as generally, the user cannot
-        // sign in such a situation so it probably is a view only account.
-        // If that is the case, return the balances of his fee tokens
-        try this.getSpoof(account, associatedKeys) returns (bytes memory realSpoof) {
+        // in general, we should posses a valid spoofSig for:
+        // - EOAs, we make a state override and add a valid spoofSig
+        // - SA, we have it from creation
+        // - viewOnly, we override for EOA and have it from the relayer for SA
+        // The only situation where we don't have a valid spoofSig is something
+        // like this: 1) use the extension on 2 PCs 2) remove the only key from one
+        // 3) use the other. In this extremely rare scenario instead of reverting,
+        // we return the user balances
+        if (spoofSig.length > 0) {
           // Get fee tokens amounts after the simulation, and simulate their gas cost for transfer
           outcome.feeTokenOutcomes = simulateFeePayments(
             account,
             feeTokens,
-            realSpoof,
+            spoofSig,
             relayer,
-            calculateBaseGas(account, realSpoof)
+            calculateBaseGas(account, spoofSig)
           );
-        } catch (bytes memory) {
+        } else {
           outcome.feeTokenOutcomes = getFeeTokenBalances(account, feeTokens);
         }
       }
@@ -117,6 +127,30 @@ contract Estimation is FeeTokens, Spoof {
         'Anti-bricking check failed, this means that none of the passed associatedKeys has privileges after simulation'
       );
     }
+  }
+
+  function estimateEoa(
+    IAmbireAccount account,
+    AccountOp memory op,
+    bytes calldata probableCallData,
+    address[] memory associatedKeys,
+    address relayer,
+    address oracle
+  ) external returns (EoaEstimationOutcome memory eoa) {
+    // simulate the transactions
+    SimulationOutcome memory simulation;
+    (simulation, , ) = simulateUnsigned(op, associatedKeys);
+    uint256 baseGas = calculateBaseGas(account, makeSpoofSignature(address(account)));
+    // the if statement is more of a precaution as we don't want the contract to revert
+    eoa.gasUsed = baseGas > simulation.gasUsed ? simulation.gasUsed : simulation.gasUsed - baseGas;
+
+    // record the native balance after the simulation
+    FeeTokenOutcome[] memory feeTokenOutcomes = new FeeTokenOutcome[](1);
+    feeTokenOutcomes[0].amount = address(account).balance;
+    eoa.feeTokenOutcomes = feeTokenOutcomes;
+
+    // if an optimistic oracle is passed, simulate the L1 fee
+    eoa.l1GasEstimation = this.getL1GasEstimation(probableCallData, relayer, oracle);
   }
 
   function simulateDeployment(
