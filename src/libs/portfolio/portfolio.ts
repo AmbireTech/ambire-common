@@ -36,6 +36,11 @@ const LIMITS: Limits = {
   }
 }
 
+export const PORTFOLIO_LIB_ERROR_NAMES = {
+  HintsError: 'HintsError',
+  PriceFetchError: 'PriceFetchError'
+}
+
 export const getEmptyHints = (networkId: string, accountAddr: string): Hints => ({
   networkId,
   accountAddr,
@@ -86,6 +91,7 @@ export class Portfolio {
   }
 
   async get(accountAddr: string, opts: Partial<GetOptions> = {}): Promise<PortfolioGetResult> {
+    const errors: PortfolioGetResult['errors'] = []
     const localOpts = { ...defaultOptions, ...opts }
     const disableAutoDiscovery = localOpts.disableAutoDiscovery || false
     const { baseCurrency } = localOpts
@@ -107,10 +113,11 @@ export class Portfolio {
           ? await this.batchedVelcroDiscovery({ networkId, accountAddr, baseCurrency })
           : getEmptyHints(networkId, accountAddr)
     } catch (error: any) {
-      hints = {
-        ...getEmptyHints(networkId, accountAddr),
-        error
-      }
+      errors.push({
+        name: PORTFOLIO_LIB_ERROR_NAMES.HintsError,
+        message: `Failed to fetch hints from Velcro for networkId (${networkId}): ${error.message}`
+      })
+      hints = getEmptyHints(networkId, accountAddr)
     }
 
     // Always add 0x00 to hints
@@ -271,13 +278,28 @@ export class Portfolio {
             price: price as number
           }))
           if (priceIn.length) priceCache.set(token.address, [Date.now(), priceIn])
-        } catch {
+        } catch (error: any) {
+          const errorMessage = error?.message || 'Unknown error'
           priceIn = []
+
+          // Avoid duplicate errors, because this.bachedGecko is called for each token and if
+          // there is an error it will most likely be the same for all tokens
+          if (
+            !errors.find(
+              (x) =>
+                x.name === PORTFOLIO_LIB_ERROR_NAMES.PriceFetchError && x.message === errorMessage
+            )
+          ) {
+            errors.push({
+              name: PORTFOLIO_LIB_ERROR_NAMES.PriceFetchError,
+              message: errorMessage
+            })
+          }
         }
 
         if (!priceIn.length) {
           tokensWithPriceErrors.push({
-            error: `Failed to fetch price data from Coingecko for ${token.symbol} on ${networkId}`,
+            error: `Failed to fetch price data from cena.ambire.com for ${token.symbol} on ${networkId}`,
             address: token.address
           })
         }
@@ -293,6 +315,7 @@ export class Portfolio {
     return {
       // Raw hints response
       hints,
+      errors,
       updateStarted: start,
       discoveryTime: discoveryDone - start,
       oracleCallTime: oracleCallDone - discoveryDone,
@@ -313,9 +336,7 @@ export class Portfolio {
             (Number(token.amount) / 10 ** token.decimals) * x.price
         }
         return localCur
-      }, {}),
-      // Add error field conditionally
-      ...(hints.error && { hintsError: hints.error })
+      }, {})
     }
   }
 }
