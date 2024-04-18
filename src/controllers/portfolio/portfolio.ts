@@ -492,7 +492,12 @@ export class PortfolioController extends EventEmitter {
           tokenPreferences,
           ...portfolioProps
         })
-        _accountState[network.id] = { isReady: true, isLoading: false, errors: [], result }
+        _accountState[network.id] = {
+          isReady: true,
+          isLoading: false,
+          errors: result.errors,
+          result
+        }
         this.emitUpdate()
         return true
       } catch (e: any) {
@@ -569,8 +574,11 @@ export class PortfolioController extends EventEmitter {
         ])
 
         // Persist previousHints in the disk storage for further requests, when:
-        // latest state was updated successful and hints were fetched successful too (no hintsError from portfolio result)
-        if (isSuccessfulLatestUpdate && !accountState[network.id]!.result!.hintsError) {
+        // latest state was updated successful and hints were fetched successful too (no HintsError from portfolio result)
+        if (
+          isSuccessfulLatestUpdate &&
+          !(accountState[network.id]!.result?.errors || []).find((err) => err.name === 'HintsError')
+        ) {
           storagePreviousHints[key] = getHintsWithBalance(
             accountState[network.id]!.result!
             // !hasNonZeroTokens,

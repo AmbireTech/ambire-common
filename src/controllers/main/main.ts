@@ -402,10 +402,15 @@ export class MainController extends EventEmitter {
   async updateAccountsOpsStatuses() {
     await this.#initialLoadPromise
 
-    const hasUpdatedStatuses = await this.activity.updateAccountsOpsStatuses()
+    const { shouldEmitUpdate, shouldUpdatePortfolio } = await this.activity.updateAccountsOpsStatuses()
 
-    if (hasUpdatedStatuses) {
+    if (shouldEmitUpdate) {
       this.emitUpdate()
+
+      if (shouldUpdatePortfolio) {
+        this.updateSelectedAccount(this.selectedAccount, true)
+      }
+      
     }
   }
 
