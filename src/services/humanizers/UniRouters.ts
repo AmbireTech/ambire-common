@@ -625,6 +625,7 @@ const uniV32Mapping = (humanizerInfo: HumanizerInfoType) => {
 
 const uniUniversalRouter = (humanizerInfo: HumanizerInfoType) => {
   const ifaceUniversalRouter = new Interface(humanizerInfo.abis.UniswapUniversalRouter)
+
   const executeFunction = (txn, network, opts = {}) => {
     const [commands, inputs, deadline] = ifaceUniversalRouter.parseTransaction(txn).args
     const arrCommands = arrayify(commands)
@@ -759,7 +760,80 @@ const uniUniversalRouter = (humanizerInfo: HumanizerInfoType) => {
             ? [`Unwrap at least ${nativeToken(network, params.amountMin)}`]
             : toExtendedUnwrap('Unwrap at least', network, params.amountMin)
         )
-      } else parsed.push(['Unknown Uni V3 interaction'])
+      } else if (command === COMMANDS.TRANSFER) {
+        const { inputsDetails } = COMMANDS_DESCRIPTIONS.TRANSFER
+        const params = extractParams(inputsDetails, inputs[index])
+        parsed.push(
+          !opts.extended
+            ? [`Send ${token(humanizerInfo, params.token, params.value)}`]
+            : [
+                [
+                  'Send',
+                  {
+                    type: 'token',
+                    ...token(humanizerInfo, params.token, params.value, true)
+                  },
+                  'to',
+                  {
+                    type: 'address',
+                    address: params.recipient,
+                    name: getName(humanizerInfo, params.recipient)
+                  }
+                ]
+              ]
+        )
+      } else if (command === COMMANDS.SWEEP) {
+        const { inputsDetails } = COMMANDS_DESCRIPTIONS.SWEEP
+        const params = extractParams(inputsDetails, inputs[index])
+        parsed.push(
+          !opts.extended
+            ? [
+                `Sweep ${token(humanizerInfo, params.token, params.amountMin)} ${recipientText(
+                  humanizerInfo,
+                  params.recipient,
+                  txn.from
+                )}`
+              ]
+            : [
+                [
+                  'Sweep',
+                  {
+                    type: 'token',
+                    ...token(humanizerInfo, params.token, params.amountMin, true)
+                  },
+                  ...recipientText(humanizerInfo, params.recipient, txn.from, true)
+                ]
+              ]
+        )
+      } else if (command === COMMANDS.PAY_PORTION) {
+        const { inputsDetails } = COMMANDS_DESCRIPTIONS.PAY_PORTION
+        const params = extractParams(inputsDetails, inputs[index])
+        parsed.push(
+          !opts.extended
+            ? [
+                `Pay ${parseInt(params.bips, 10) / 100}% of the ${token(
+                  humanizerInfo,
+                  params.token,
+                  0
+                )} to ${getName(humanizerInfo, params.recipient)}`
+              ]
+            : [
+                [
+                  'Pay',
+                  `${parseInt(params.bips, 10) / 100}% of the`,
+                  { type: 'token', ...token(humanizerInfo, params.token, 0, true) },
+                  'to',
+                  {
+                    type: 'address',
+                    name: getName(humanizerInfo, params.recipient),
+                    address: params.recipient
+                  }
+                ]
+              ]
+        )
+      } else {
+        parsed.push(['Unknown Uni V3 interaction'])
+      }
     })
 
     return parsed.flat()
