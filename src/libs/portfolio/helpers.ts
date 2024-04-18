@@ -5,6 +5,7 @@ import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
 import { Account } from '../../interfaces/account'
 import { NetworkId } from '../../interfaces/networkDescriptor'
 import { RPCProvider } from '../../interfaces/settings'
+import { TokenResult } from './interfaces'
 
 export function getFlags(
   networkData: any,
@@ -79,4 +80,12 @@ export const validateERC20Token = async (
 export const shouldGetAdditionalPortfolio = (account?: Account) => {
   // portfolio additional data is available only for smart accounts
   return !!account?.creation
+}
+
+// fetch the amountPostSimulation for the token if set
+// otherwise, the token.amount
+export const getTokenAmount = (token: TokenResult): bigint => {
+  return token.amountPostSimulation !== undefined && token.amountPostSimulation !== null
+    ? token.amountPostSimulation
+    : token.amount
 }
