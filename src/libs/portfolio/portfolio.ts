@@ -247,8 +247,6 @@ export class Portfolio {
 
     const oracleCallDone = Date.now()
 
-    const tokensWithPriceErrors: PortfolioGetResult['tokenErrors'] = []
-
     // Update prices and set the priceIn for each token by reference,
     // updating the final tokens array as a result
     const tokensWithPrices = await Promise.all(
@@ -297,13 +295,6 @@ export class Portfolio {
           }
         }
 
-        if (!priceIn.length) {
-          tokensWithPriceErrors.push({
-            error: `Failed to fetch price data from cena.ambire.com for ${token.symbol} on ${networkId}`,
-            address: token.address
-          })
-        }
-
         return {
           ...token,
           priceIn
@@ -324,8 +315,7 @@ export class Portfolio {
       tokens: tokensWithPrices,
       tokenErrors: tokensWithErr
         .filter(([error, result]) => error !== '0x' || result.symbol === '')
-        .map(([error, result]) => ({ error, address: result.address }))
-        .concat(tokensWithPriceErrors),
+        .map(([error, result]) => ({ error, address: result.address })),
       collections: collections.filter((x) => x.collectibles?.length),
       total: tokensWithPrices.reduce((cur, token) => {
         const localCur = cur
