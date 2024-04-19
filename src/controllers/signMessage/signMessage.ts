@@ -1,5 +1,5 @@
 import { hexlify, isHexString, toUtf8Bytes } from 'ethers'
-import { networks } from '../../consts/networks'
+
 import { Account, AccountStates } from '../../interfaces/account'
 import { ExternalSignerControllers, Key } from '../../interfaces/keystore'
 import { NetworkDescriptor } from '../../interfaces/networkDescriptor'
@@ -174,7 +174,7 @@ export class SignMessageController extends EventEmitter {
           'Account details needed for the signing mechanism are not found. Please try again, re-import your account or contact support if nothing else helps.'
         )
       }
-      const network = networks.find(
+      const network = this.#settings.networks.find(
         // @ts-ignore this.messageToSign is not null and it has a check
         // but typescript malfunctions here
         (n: NetworkDescriptor) => n.id === this.messageToSign.networkId
