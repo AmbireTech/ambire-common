@@ -10,10 +10,21 @@ import { HumanizerInfoType } from '../../hooks/useConstants'
 import { getName, nativeToken, token } from '../humanReadableTransactions'
 
 const recipientText = (humanizerInfo, recipient, txnFrom, extended = false) => {
-  if (recipient.toLowerCase() === txnFrom.toLowerCase()) {
+  // address from uni V3's contract code
+  /// @dev Used as a flag for identifying msg.sender, saves gas by sending more 0 bytes
+  // address internal constant MSG_SENDER = address(1);
+  /// @dev Used as a flag for identifying address(this), saves gas by sending more 0 bytes
+  // address internal constant ADDRESS_THIS = address(2);
+  if (
+    [
+      txnFrom.toLowerCase(),
+      '0x0000000000000000000000000000000000000002',
+      '0x0000000000000000000000000000000000000001'
+    ].includes(recipient.toLowerCase())
+  ) {
     return !extended ? '' : []
   }
-  return extended
+  return !extended
     ? ` and send it to ${recipient}`
     : [
         'and send it to',
@@ -116,18 +127,19 @@ const UniswapV3Pool = (humanizerInfo: HumanizerInfoType) => {
 
       return !opts.extended
         ? [
-            `Sweep token ${token(humanizerInfo, tokenA, amountMinimum)} ${recipientText(
+            `Sweep ${token(humanizerInfo, tokenA, amountMinimum)} ${recipientText(
               humanizerInfo,
               recipient,
               txn.from
             )}`
           ]
-        : toExtended(
-            'Sweep token',
-            '',
-            token(humanizerInfo, tokenA, amountMinimum, true),
-            recipientText(humanizerInfo, recipient, txn.from, true)
-          )
+        : [
+            [
+              'Sweep',
+              { type: 'token', ...token(humanizerInfo, tokenA, amountMinimum, true) },
+              ...recipientText(humanizerInfo, recipient, txn.from, true)
+            ]
+          ]
     },
     [exchangeRouter.getSighash('sendWnt')]: (txn, network, opts = { extended: true }) => {
       const args = exchangeRouter.parseTransaction(txn).args
@@ -427,7 +439,14 @@ const UniswapV3Pool = (humanizerInfo: HumanizerInfoType) => {
         _miscellaneous
       } = DCAHubCompanion.parseTransaction(txn).args
       return !opts.extended
-        ? ['watafak']
+        ? [
+            `and swap the resulting amount of 
+            ${token(humanizerInfo, _from, 0)} for 
+            ${token(humanizerInfo, _to, 0)} split into 
+            ${_amountOfSwaps} swaps over 
+            ${getInterval(swapInterval * _amountOfSwaps)} via
+            ${getName(humanizerInfo, _hub)}`
+          ]
         : [
             [
               'and swap',
