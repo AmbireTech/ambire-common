@@ -197,16 +197,20 @@ export class PortfolioController extends EventEmitter {
     const state = this.latest
     const accountId = selectedAccount.addr
 
-    if (!state[accountId])
+    if (!state[accountId]) {
       state[accountId] = networks.reduce((acc: AccountState, network) => {
         acc[network.id] = { isReady: false, isLoading: false, errors: [] }
 
         return acc
       }, {} as AccountState)
 
-    if (shouldGetAdditionalPortfolio(selectedAccount)) {
-      state[accountId]['gasTank'] = { isReady: false, isLoading: false, errors: [] }
-      state[accountId]['rewards'] = { isReady: false, isLoading: false, errors: [] }
+      if (shouldGetAdditionalPortfolio(selectedAccount)) {
+        state[accountId]['gasTank'] = { isReady: false, isLoading: false, errors: [] }
+        state[accountId]['rewards'] = { isReady: false, isLoading: false, errors: [] }
+      }
+
+      this.emitUpdate()
+      return
     }
 
     const accountState = state[accountId]
@@ -220,9 +224,21 @@ export class PortfolioController extends EventEmitter {
     this.emitUpdate()
   }
 
-  #preparePendingState(selectedAccountId: AccountId) {
-    if (!this.pending[selectedAccountId]) this.pending[selectedAccountId] = {}
+  #preparePendingState(selectedAccountId: AccountId, networks: NetworkDescriptor[]) {
+    if (!this.pending[selectedAccountId]) {
+      this.pending[selectedAccountId] = {}
+      this.emitUpdate()
+      return
+    }
 
+    const accountState = this.pending[selectedAccountId]
+    // Remove networks that are not in the list of networks. For example:
+    // If the user adds a custom network, the portfolio fetches assets for it but the user
+    // removes the network, the portfolio should remove the assets for that network.
+    for (const networkId of Object.keys(accountState)) {
+      if (![...networks, { id: 'gasTank' }, { id: 'rewards' }].find((x) => x.id === networkId))
+        delete accountState[networkId]
+    }
     this.emitUpdate()
   }
 
