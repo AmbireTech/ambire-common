@@ -5,6 +5,7 @@ import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
 import { Account } from '../../interfaces/account'
 import { NetworkId } from '../../interfaces/networkDescriptor'
 import { RPCProvider } from '../../interfaces/settings'
+import { isSmartAccount } from '../../libs/account/account'
 
 export function getFlags(
   networkData: any,
@@ -76,7 +77,6 @@ export const validateERC20Token = async (
   return [isValid, type]
 }
 
-export const shouldGetAdditionalPortfolio = (account?: Account) => {
-  // portfolio additional data is available only for smart accounts
-  return !!account?.creation
+export const shouldGetAdditionalPortfolio = (account: Account) => {
+  return isSmartAccount(account)
 }
