@@ -402,7 +402,8 @@ export class MainController extends EventEmitter {
   async updateAccountsOpsStatuses() {
     await this.#initialLoadPromise
 
-    const { shouldEmitUpdate, shouldUpdatePortfolio } = await this.activity.updateAccountsOpsStatuses()
+    const { shouldEmitUpdate, shouldUpdatePortfolio } =
+      await this.activity.updateAccountsOpsStatuses()
 
     if (shouldEmitUpdate) {
       this.emitUpdate()
@@ -410,7 +411,6 @@ export class MainController extends EventEmitter {
       if (shouldUpdatePortfolio) {
         this.updateSelectedAccount(this.selectedAccount, true)
       }
-      
     }
   }
 
@@ -527,6 +527,7 @@ export class MainController extends EventEmitter {
     this.emitUpdate()
   }
 
+  // All operations must be synchronous so the change is instantly reflected in the UI
   async selectAccount(toAccountAddr: string) {
     await this.#initialLoadPromise
 
@@ -536,11 +537,13 @@ export class MainController extends EventEmitter {
     }
 
     this.selectedAccount = toAccountAddr
-    await this.#storage.set('selectedAccount', toAccountAddr)
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+    this.#storage.set('selectedAccount', toAccountAddr)
     this.activity.init({ filters: { account: toAccountAddr } })
     this.addressBook.update({
       selectedAccount: toAccountAddr
     })
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.updateSelectedAccount(toAccountAddr)
     this.onUpdateDappSelectedAccount(toAccountAddr)
     this.emitUpdate()
@@ -655,19 +658,18 @@ export class MainController extends EventEmitter {
       ? { forceUpdate, additionalHints }
       : { forceUpdate }
 
-    this.portfolio
-      .updateSelectedAccount(
-        this.accounts,
-        this.settings.networks,
-        selectedAccount,
-        undefined,
-        updateOptions
-      )
-      .then(() => {
-        const account = this.accounts.find(({ addr }) => addr === selectedAccount)
-        if (shouldGetAdditionalPortfolio(account))
-          this.portfolio.getAdditionalPortfolio(selectedAccount)
-      })
+    // Additional portfolio is displayed first on the dashboard, so we need to fetch it first
+    const account = this.accounts.find(({ addr }) => addr === selectedAccount)
+    if (account && shouldGetAdditionalPortfolio(account))
+      this.portfolio.getAdditionalPortfolio(selectedAccount)
+
+    this.portfolio.updateSelectedAccount(
+      this.accounts,
+      this.settings.networks,
+      selectedAccount,
+      undefined,
+      updateOptions
+    )
   }
 
   async addUserRequest(req: UserRequest) {
