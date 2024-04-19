@@ -313,6 +313,7 @@ export class TransferController extends EventEmitter {
       !isAddressInAddressBook &&
       this.recipientAddress.toLowerCase() !== FEE_COLLECTOR.toLowerCase()
     this.isRecipientAddressUnknownAgreed = false
+    this.#setSWWarningVisibleIfNeeded()
 
     this.emitUpdate()
   }
@@ -351,6 +352,7 @@ export class TransferController extends EventEmitter {
       this.#settings.networks.find(({ id }) => id === this.selectedToken?.networkId) || null
 
     this.isSWWarningVisible =
+      this.isRecipientAddressUnknown &&
       !this.isTopUp &&
       !!this.selectedToken?.address &&
       Number(this.selectedToken?.address) === 0 &&
