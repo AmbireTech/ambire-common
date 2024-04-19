@@ -7,7 +7,7 @@ import { getAccountDeployParams, isSmartAccount } from '../account/account'
 import { callToTuple } from '../accountOp/accountOp'
 import { Deployless, DeploylessMode, parseErr } from '../deployless/deployless'
 import { privSlot } from '../proxyDeploy/deploy'
-import { getFlags } from './helpers'
+import { getFlags, overrideSymbol } from './helpers'
 import { Collectible, CollectionResult, GetOptions, LimitsOptions, TokenResult } from './interfaces'
 
 // fake nonce for EOA simulation
@@ -174,18 +174,19 @@ export async function getTokens(
   accountAddr: string,
   tokenAddrs: string[]
 ): Promise<[number, TokenResult][]> {
-  const mapToken = (token: any, address: string) =>
-    ({
+  const mapToken = (token: any, address: string) => {
+    return {
       amount: token.amount,
       networkId: network.id,
       decimals: Number(token.decimals),
       symbol:
         address === '0x0000000000000000000000000000000000000000'
           ? network.nativeAssetSymbol
-          : token.symbol,
+          : overrideSymbol(address, network.id, token.symbol),
       address,
       flags: getFlags({}, network.id, network.id, address)
-    } as TokenResult)
+    } as TokenResult
+  }
   const deploylessOpts = getDeploylessOpts(accountAddr, opts)
   if (!opts.simulation) {
     const [results] = await deployless.call(
