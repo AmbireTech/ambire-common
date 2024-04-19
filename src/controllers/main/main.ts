@@ -402,10 +402,15 @@ export class MainController extends EventEmitter {
   async updateAccountsOpsStatuses() {
     await this.#initialLoadPromise
 
-    const hasUpdatedStatuses = await this.activity.updateAccountsOpsStatuses()
+    const { shouldEmitUpdate, shouldUpdatePortfolio } = await this.activity.updateAccountsOpsStatuses()
 
-    if (hasUpdatedStatuses) {
+    if (shouldEmitUpdate) {
       this.emitUpdate()
+
+      if (shouldUpdatePortfolio) {
+        this.updateSelectedAccount(this.selectedAccount, true)
+      }
+      
     }
   }
 
@@ -820,14 +825,7 @@ export class MainController extends EventEmitter {
         this.portfolio.latest?.[localAccountOp.accountAddr]?.[localAccountOp.networkId]?.result
           ?.tokens ?? []
       const gasTankFeeTokens =
-        this.portfolio.latest?.[localAccountOp.accountAddr]?.gasTank?.result?.tokens.filter(
-          (token) => {
-            return (
-              token.address !== ZeroAddress ||
-              token.symbol.toLowerCase() === network.nativeAssetSymbol.toLowerCase()
-            )
-          }
-        ) ?? []
+        this.portfolio.latest?.[localAccountOp.accountAddr]?.gasTank?.result?.tokens ?? []
 
       const feeTokens =
         [...networkFeeTokens, ...gasTankFeeTokens].filter((t) => t.flags.isFeeToken) || []
@@ -1084,7 +1082,7 @@ export class MainController extends EventEmitter {
         // if it's eip1559, send it as such. If no, go to legacy
         const gasPrice =
           (gasFeePayment.amount - feeTokenEstimation.addedNative) / gasFeePayment.simulatedGasLimit
-        if ('maxPriorityFeePerGas' in gasFeePayment) {
+        if (gasFeePayment.maxPriorityFeePerGas !== undefined) {
           rawTxn.maxFeePerGas = gasPrice
           rawTxn.maxPriorityFeePerGas = gasFeePayment.maxPriorityFeePerGas
         } else {
@@ -1170,7 +1168,7 @@ export class MainController extends EventEmitter {
           gasLimit: accountOp.gasFeePayment.simulatedGasLimit
         }
 
-        if ('maxPriorityFeePerGas' in accountOp.gasFeePayment) {
+        if (accountOp.gasFeePayment.maxPriorityFeePerGas !== undefined) {
           rawTxn.maxFeePerGas = gasPrice
           rawTxn.maxPriorityFeePerGas = accountOp.gasFeePayment.maxPriorityFeePerGas
         } else {

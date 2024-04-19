@@ -72,21 +72,21 @@ interface ExtendedError extends Error {
   simulationErrorMsg?: string
 }
 
+export type NetworkState = {
+  isReady: boolean
+  isLoading: boolean
+  criticalError?: ExtendedError
+  errors: ExtendedError[]
+  result?: PortfolioGetResult
+  // We store the previously simulated AccountOps only for the pending state.
+  // Prior to triggering a pending state update, we compare the newly passed AccountOp[] (updateSelectedAccount) with the cached version.
+  // If there are no differences, the update is canceled unless the `forceUpdate` flag is set.
+  accountOps?: AccountOp[]
+}
+
 export type AccountState = {
   // network id
-  [key: string]:
-    | {
-        isReady: boolean
-        isLoading: boolean
-        criticalError?: ExtendedError
-        errors: ExtendedError[]
-        result?: PortfolioGetResult
-        // We store the previously simulated AccountOps only for the pending state.
-        // Prior to triggering a pending state update, we compare the newly passed AccountOp[] (updateSelectedAccount) with the cached version.
-        // If there are no differences, the update is canceled unless the `forceUpdate` flag is set.
-        accountOps?: AccountOp[]
-      }
-    | undefined
+  [key: string]: NetworkState | undefined
 }
 
 export type AdditionalAccountState = {
@@ -133,7 +133,7 @@ export interface PortfolioGetResult {
   collections: CollectionResult[]
   total: { [name: string]: bigint }
   hints: Hints
-  hintsError?: string
+  errors: ExtendedError[]
 }
 
 export interface LimitsOptions {
