@@ -529,23 +529,25 @@ export class MainController extends EventEmitter {
 
   // All operations must be synchronous so the change is instantly reflected in the UI
   async selectAccount(toAccountAddr: string) {
-    await this.#initialLoadPromise
+    this.#statusWrapper('selectAccount', async () => {
+      await this.#initialLoadPromise
 
-    if (!this.accounts.find((acc) => acc.addr === toAccountAddr)) {
-      // TODO: error handling, trying to switch to account that does not exist
-      return
-    }
+      if (!this.accounts.find((acc) => acc.addr === toAccountAddr)) {
+        // TODO: error handling, trying to switch to account that does not exist
+        return
+      }
 
-    this.selectedAccount = toAccountAddr
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    this.#storage.set('selectedAccount', toAccountAddr)
-    this.activity.init({ filters: { account: toAccountAddr } })
-    this.addressBook.update({
-      selectedAccount: toAccountAddr
+      this.selectedAccount = toAccountAddr
+      // eslint-disable-next-line @typescript-eslint/no-floating-promises
+      this.#storage.set('selectedAccount', toAccountAddr)
+      this.activity.init({ filters: { account: toAccountAddr } })
+      this.addressBook.update({
+        selectedAccount: toAccountAddr
+      })
+      // eslint-disable-next-line @typescript-eslint/no-floating-promises
+      this.updateSelectedAccount(toAccountAddr)
+      this.onUpdateDappSelectedAccount(toAccountAddr)
     })
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    this.updateSelectedAccount(toAccountAddr)
-    this.onUpdateDappSelectedAccount(toAccountAddr)
     this.emitUpdate()
   }
 
