@@ -85,7 +85,5 @@ export const shouldGetAdditionalPortfolio = (account: Account) => {
 // fetch the amountPostSimulation for the token if set
 // otherwise, the token.amount
 export const getTokenAmount = (token: TokenResult): bigint => {
-  return token.amountPostSimulation !== undefined && token.amountPostSimulation !== null
-    ? token.amountPostSimulation
-    : token.amount
+  return typeof token.amountPostSimulation === 'bigint' ? token.amountPostSimulation : token.amount
 }
