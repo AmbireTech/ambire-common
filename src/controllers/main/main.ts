@@ -660,11 +660,6 @@ export class MainController extends EventEmitter {
       ? { forceUpdate, additionalHints }
       : { forceUpdate }
 
-    // Additional portfolio is displayed first on the dashboard, so we need to fetch it first
-    const account = this.accounts.find(({ addr }) => addr === selectedAccount)
-    if (account && shouldGetAdditionalPortfolio(account))
-      this.portfolio.getAdditionalPortfolio(selectedAccount)
-
     this.portfolio.updateSelectedAccount(
       this.accounts,
       this.settings.networks,
@@ -919,7 +914,7 @@ export class MainController extends EventEmitter {
       const stringAddr: any = result.length ? result.flat(Infinity) : []
       additionalHints!.push(...stringAddr)
 
-      const [, , estimation] = await Promise.all([
+      const [, estimation] = await Promise.all([
         // NOTE: we are not emitting an update here because the portfolio controller will do that
         // NOTE: the portfolio controller has it's own logic of constructing/caching providers, this is intentional, as
         // it may have different needs
@@ -937,8 +932,6 @@ export class MainController extends EventEmitter {
             additionalHints
           }
         ),
-        shouldGetAdditionalPortfolio(account) &&
-          this.portfolio.getAdditionalPortfolio(localAccountOp.accountAddr),
         estimate(
           this.settings.providers[localAccountOp.networkId],
           network,
