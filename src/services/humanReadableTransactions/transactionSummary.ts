@@ -1,10 +1,71 @@
+/* eslint-disable no-continue */
 // TODO: add types
 // @ts-nocheck
 
+import { isZeroAddress } from 'ethereumjs-util'
 import networks from '../../constants/networks'
 import { HumanizerInfoType } from '../../hooks/useConstants'
 import humanizers from '../humanizers'
 import { getName, nativeToken } from './humanReadableTransactions'
+
+function parseActions(actions) {
+  const result = []
+  for (let i = 0; i < actions.length; i++) {
+    const notLast = i < actions.length - 1
+    if (!notLast) {
+      result.push(actions[i])
+      continue
+    }
+
+    if (
+      // are valid [obj]
+      actions[i].length >= 4 &&
+      actions[i + 1].length >= 2 &&
+      Array.isArray(actions[i]) &&
+      Array.isArray(actions[i + 1]) &&
+      // are actual swap and unwrap
+      actions[i][0] === 'Swap' &&
+      actions[i][3].type === 'token' &&
+      // isWrappedAsset(actions[i][3].address) &&
+      actions[i + 1][0].startsWith('Unwrap') &&
+      actions[i + 1][1].type === 'token' &&
+      // have proper values and addresses
+      actions[i][3].amount === actions[i + 1][1].amount &&
+      isZeroAddress(actions[i + 1][1].address)
+    ) {
+      // swap x for at least y
+      result.push(['Swap', actions[i][1], actions[i][2], actions[i + 1][1]])
+      // skip next ccall, since two were merged
+      i++
+      continue
+    }
+
+    if (
+      // are valid [obj]
+      actions[i].length >= 2 &&
+      actions[i + 1].length >= 4 &&
+      Array.isArray(actions[i]) &&
+      Array.isArray(actions[i + 1]) &&
+      // are actual Wrap and Swap
+      actions[i][0] === 'Wrap' &&
+      actions[i][1].type === 'token' &&
+      actions[i + 1][0].startsWith('Swap') &&
+      actions[i + 1][3].type === 'token' &&
+      // have proper values and addresses
+      actions[i + 1][1].amount === actions[i][1].amount &&
+      isZeroAddress(actions[i][1].address)
+    ) {
+      // swap x for at least y
+      result.push(['Swap', actions[i][1], actions[i + 1][2], actions[i + 1][3]])
+      // skip next ccall, since two were merged
+      i++
+      continue
+    }
+    result.push(actions[i])
+    continue
+  }
+  return result
+}
 
 // This function is moved away from the `humanReadableTransactions` main file,
 // because the `humanizers` import is causing a require cycle between
@@ -71,7 +132,9 @@ export function getTransactionSummary(
     const humanizer = humanizers(humanizerInfo)[sigHash]
     if (humanizer) {
       try {
-        const actions = humanizer({ to, value, data, from: accountAddr }, network, opts)
+        let actions = humanizer({ to, value, data, from: accountAddr }, network, opts)
+        actions = parseActions(actions)
+
         return opts.extended === true ? actions : actions.join(', ')
       } catch (e) {
         callSummary = opts.extended
