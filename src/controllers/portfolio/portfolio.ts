@@ -490,7 +490,7 @@ export class PortfolioController extends EventEmitter {
     if (!selectedAccount) throw new Error('selected account does not exist')
 
     this.#prepareLatestState(selectedAccount, networks)
-    this.#preparePendingState(selectedAccount.addr)
+    this.#preparePendingState(selectedAccount.addr, networks)
 
     const accountState = this.latest[accountId]
     const pendingState = this.pending[accountId]
