@@ -17,7 +17,11 @@ import {
 /* eslint-disable @typescript-eslint/no-use-before-define */
 import { CustomToken } from '../../libs/portfolio/customToken'
 import getAccountNetworksWithAssets from '../../libs/portfolio/getNetworksWithAssets'
-import { getFlags, validateERC20Token } from '../../libs/portfolio/helpers'
+import {
+  getFlags,
+  shouldGetAdditionalPortfolio,
+  validateERC20Token
+} from '../../libs/portfolio/helpers'
 /* eslint-disable no-param-reassign */
 /* eslint-disable import/no-extraneous-dependencies */
 import {
@@ -189,6 +193,55 @@ export class PortfolioController extends EventEmitter {
     }
   }
 
+  #prepareLatestState(selectedAccount: Account, networks: NetworkDescriptor[]) {
+    const state = this.latest
+    const accountId = selectedAccount.addr
+
+    if (!state[accountId]) {
+      state[accountId] = networks.reduce((acc: AccountState, network) => {
+        acc[network.id] = { isReady: false, isLoading: false, errors: [] }
+
+        return acc
+      }, {} as AccountState)
+
+      if (shouldGetAdditionalPortfolio(selectedAccount)) {
+        state[accountId]['gasTank'] = { isReady: false, isLoading: false, errors: [] }
+        state[accountId]['rewards'] = { isReady: false, isLoading: false, errors: [] }
+      }
+
+      this.emitUpdate()
+      return
+    }
+
+    const accountState = state[accountId]
+    // Remove networks that are not in the list of networks. For example:
+    // If the user adds a custom network, the portfolio fetches assets for it but the user
+    // removes the network, the portfolio should remove the assets for that network.
+    for (const networkId of Object.keys(accountState)) {
+      if (![...networks, { id: 'gasTank' }, { id: 'rewards' }].find((x) => x.id === networkId))
+        delete accountState[networkId]
+    }
+    this.emitUpdate()
+  }
+
+  #preparePendingState(selectedAccountId: AccountId, networks: NetworkDescriptor[]) {
+    if (!this.pending[selectedAccountId]) {
+      this.pending[selectedAccountId] = {}
+      this.emitUpdate()
+      return
+    }
+
+    const accountState = this.pending[selectedAccountId]
+    // Remove networks that are not in the list of networks. For example:
+    // If the user adds a custom network, the portfolio fetches assets for it but the user
+    // removes the network, the portfolio should remove the assets for that network.
+    for (const networkId of Object.keys(accountState)) {
+      if (![...networks, { id: 'gasTank' }, { id: 'rewards' }].find((x) => x.id === networkId))
+        delete accountState[networkId]
+    }
+    this.emitUpdate()
+  }
+
   resetAdditionalHints() {
     this.#additionalHints = []
   }
@@ -283,8 +336,7 @@ export class PortfolioController extends EventEmitter {
     }
   }
 
-  async getAdditionalPortfolio(accountId: AccountId) {
-    if (!this.latest[accountId]) this.latest[accountId] = {}
+  async #getAdditionalPortfolio(accountId: AccountId) {
     const hasNonZeroTokens = !!this.#networksWithAssetsByAccounts?.[accountId]?.length
 
     const start = Date.now()
@@ -437,21 +489,15 @@ export class PortfolioController extends EventEmitter {
     const selectedAccount = accounts.find((x) => x.addr === accountId)
     if (!selectedAccount) throw new Error('selected account does not exist')
 
-    const prepareState = (state: PortfolioControllerState): void => {
-      if (!state[accountId]) state[accountId] = {}
+    this.#prepareLatestState(selectedAccount, networks)
+    this.#preparePendingState(selectedAccount.addr, networks)
 
-      const accountState = state[accountId]
-      for (const networkId of Object.keys(accountState)) {
-        if (![...networks, { id: 'gasTank' }, { id: 'rewards' }].find((x) => x.id === networkId))
-          delete accountState[networkId]
-      }
-      this.emitUpdate()
-    }
-
-    prepareState(this.latest)
-    prepareState(this.pending)
     const accountState = this.latest[accountId]
     const pendingState = this.pending[accountId]
+
+    if (shouldGetAdditionalPortfolio(selectedAccount)) {
+      this.#getAdditionalPortfolio(accountId)
+    }
 
     const updatePortfolioState = async (
       _accountState: AccountState,

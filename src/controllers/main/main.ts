@@ -37,7 +37,6 @@ import { estimate } from '../../libs/estimate/estimate'
 import { EstimateResult } from '../../libs/estimate/interfaces'
 import { GasRecommendation, getGasPriceRecommendations } from '../../libs/gasPrice/gasPrice'
 import { humanizeAccountOp } from '../../libs/humanizer'
-import { shouldGetAdditionalPortfolio } from '../../libs/portfolio/helpers'
 import { GetOptions } from '../../libs/portfolio/interfaces'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import { isErc4337Broadcast } from '../../libs/userOperation/userOperation'
@@ -660,11 +659,6 @@ export class MainController extends EventEmitter {
       ? { forceUpdate, additionalHints }
       : { forceUpdate }
 
-    // Additional portfolio is displayed first on the dashboard, so we need to fetch it first
-    const account = this.accounts.find(({ addr }) => addr === selectedAccount)
-    if (account && shouldGetAdditionalPortfolio(account))
-      this.portfolio.getAdditionalPortfolio(selectedAccount)
-
     // pass the accountOps if any so we could reflect the pending state
     const accountOps = this.accountOpsToBeSigned[selectedAccount]
       ? Object.fromEntries(
@@ -931,7 +925,7 @@ export class MainController extends EventEmitter {
       const stringAddr: any = result.length ? result.flat(Infinity) : []
       additionalHints!.push(...stringAddr)
 
-      const [, , estimation] = await Promise.all([
+      const [, estimation] = await Promise.all([
         // NOTE: we are not emitting an update here because the portfolio controller will do that
         // NOTE: the portfolio controller has it's own logic of constructing/caching providers, this is intentional, as
         // it may have different needs
@@ -949,8 +943,6 @@ export class MainController extends EventEmitter {
             additionalHints
           }
         ),
-        shouldGetAdditionalPortfolio(account) &&
-          this.portfolio.getAdditionalPortfolio(localAccountOp.accountAddr),
         estimate(
           this.settings.providers[localAccountOp.networkId],
           network,
@@ -987,13 +979,20 @@ export class MainController extends EventEmitter {
         estimation
 
       // if the nonce from the estimation is different than the one in localAccountOp,
-      // override localAccountOp.nonce and set it in this.accountOpsToBeSigned as
-      // the nonce from the estimation is the newest one
+      // override all places that contain the old nonce with the correct one
       if (estimation && BigInt(estimation.currentAccountNonce) !== localAccountOp.nonce) {
         localAccountOp.nonce = BigInt(estimation.currentAccountNonce)
+
         this.accountOpsToBeSigned[localAccountOp.accountAddr][
           localAccountOp.networkId
         ]!.accountOp.nonce = localAccountOp.nonce
+
+        if (
+          this.accountStates[localAccountOp.accountAddr] &&
+          this.accountStates[localAccountOp.accountAddr][localAccountOp.networkId]
+        )
+          this.accountStates[localAccountOp.accountAddr][localAccountOp.networkId].nonce =
+            localAccountOp.nonce
       }
 
       // update the signAccountOp controller once estimation finishes;
