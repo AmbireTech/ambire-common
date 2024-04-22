@@ -100,7 +100,7 @@ export const getPendingAccountOpBannersForEOA = ({
 
   return [
     {
-      id: pendingUserRequests[0].id,
+      id: pendingUserRequests[1].id,
       type: 'info',
       title: `${numberOfPendingRequest} More pending transactions are waiting to be signed`,
       text: '' // TODO:
