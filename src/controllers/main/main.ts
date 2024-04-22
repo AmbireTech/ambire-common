@@ -665,11 +665,20 @@ export class MainController extends EventEmitter {
     if (account && shouldGetAdditionalPortfolio(account))
       this.portfolio.getAdditionalPortfolio(selectedAccount)
 
+    // pass the accountOps if any so we could reflect the pending state
+    const accountOps = this.accountOpsToBeSigned[selectedAccount]
+      ? Object.fromEntries(
+          Object.entries(this.accountOpsToBeSigned[selectedAccount])
+            .filter(([, accOp]) => accOp)
+            .map(([networkId, x]) => [networkId, [x!.accountOp]])
+        )
+      : undefined
+
     this.portfolio.updateSelectedAccount(
       this.accounts,
       this.settings.networks,
       selectedAccount,
-      undefined,
+      accountOps,
       updateOptions
     )
   }
@@ -750,6 +759,9 @@ export class MainController extends EventEmitter {
         delete this.accountOpsToBeSigned[accountAddr]?.[networkId]
         if (!Object.keys(this.accountOpsToBeSigned[accountAddr] || {}).length)
           delete this.accountOpsToBeSigned[accountAddr]
+
+        // remove the pending state
+        this.updateSelectedAccount(this.selectedAccount, true)
       }
     } else {
       this.messagesToBeSigned[accountAddr] = this.messagesToBeSigned[accountAddr].filter(
