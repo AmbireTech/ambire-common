@@ -19,6 +19,8 @@ dotenv.config()
 
 const baseUrlCena = 'https://cena.ambire.com/api/v3'
 
+export const HUMANIZER_META_KEY = 'HumanizerMetaV2'
+
 export function getWarning(
   content: string,
   level: HumanizerWarning['level'] = 'caution'
@@ -82,10 +84,6 @@ export function getDeadline(deadlineSecs: bigint | number): HumanizerVisualizati
   }
 }
 
-export function shortenAddress(addr: string): string {
-  return `${addr.slice(0, 5)}...${addr.slice(-3)}`
-}
-
 /**
  * Make a request to coingecko to fetch the latest price of the native token.
  * This is used by benzina and hence we cannot wrap the errors in emitError
@@ -115,43 +113,34 @@ export async function getTokenInfo(
   options: any
 ): Promise<HumanizerFragment | null> {
   const network = networks.find((n: NetworkDescriptor) => n.id === humanizerSettings.networkId)
-  const platformId = network?.platformId
+  let platformId = network?.platformId
+  if (!platformId) {
+    options.emitError({
+      message: 'getTokenInfo: could not find platform id for token info api',
+      error: new Error(
+        `could not find platform id for token info api ${humanizerSettings.networkId}`
+      ),
+      level: 'minor'
+    })
+    platformId = humanizerSettings.networkId
+  }
+
   try {
-    const queryUrl = `${baseUrlCena}/coins/${platformId || network?.chainId}/contract/${address}`
+    const queryUrl = `${baseUrlCena}/coins/${platformId}/contract/${address}`
     let response = await options.fetch(queryUrl)
     response = await response.json()
-    if (response.symbol && response.detail_platforms?.ethereum?.decimal_place)
+    if (response.symbol && response.detail_platforms?.[platformId]?.decimal_place)
       return {
         type: 'token',
         key: address.toLowerCase(),
         value: {
           symbol: response.symbol.toUpperCase(),
-          decimals: response.detail_platforms?.ethereum?.decimal_place
+          decimals: response.detail_platforms?.[platformId]?.decimal_place
         },
         isGlobal: true
       }
-
-    // @TODO: rething error levels
-    if (response.symbol && response.detail_platforms) {
-      options.emitError({
-        message: `getTokenInfo: token not supported on network ${network?.name} `,
-        error: new Error(`token not supported on network ${network?.name}`),
-        level: 'silent'
-      })
-      return null
-    }
-    options.emitError({
-      message: 'getTokenInfo: something is wrong cena.ambire.com reponse format or 404',
-      error: new Error('unexpected response format or 404'),
-      level: 'silent'
-    })
     return null
   } catch (e: any) {
-    options.emitError({
-      message: `getTokenInfo: something is wrong with cena.ambire.com api ${e.message}`,
-      error: e,
-      level: 'silent'
-    })
     return null
   }
 }
@@ -215,3 +204,26 @@ export function getKnownToken(
 ): { decimals: number; symbol: string } | undefined {
   return humanizerMeta?.knownAddresses?.[address.toLowerCase()]?.token
 }
+
+export const integrateFragments = (
+  _humanizerMeta: HumanizerMeta,
+  fragments: HumanizerFragment[]
+): HumanizerMeta => {
+  const humanizerMeta = _humanizerMeta
+  fragments.forEach((f) => {
+    // @TODO rename types to singular  also add enum
+    if (f.type === 'abis') humanizerMeta.abis[f.key] = f.value
+    if (f.type === 'selector') humanizerMeta.abis.NO_ABI[f.key] = f.value
+    if (f.type === 'knownAddresses')
+      humanizerMeta.knownAddresses[f.key] = { ...humanizerMeta.knownAddresses[f.key], ...f.value }
+    if (f.type === 'token') {
+      humanizerMeta.knownAddresses[f.key] = {
+        ...humanizerMeta.knownAddresses?.[f.key],
+        token: f.value
+      }
+    }
+  })
+  return humanizerMeta
+}
+
+export const EMPTY_HUMANIZER_META = { abis: { NO_ABI: {} }, knownAddresses: {} }

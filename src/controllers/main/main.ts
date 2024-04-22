@@ -523,22 +523,27 @@ export class MainController extends EventEmitter {
     this.emitUpdate()
   }
 
+  // All operations must be synchronous so the change is instantly reflected in the UI
   async selectAccount(toAccountAddr: string) {
-    await this.#initialLoadPromise
+    this.#statusWrapper('selectAccount', async () => {
+      await this.#initialLoadPromise
 
-    if (!this.accounts.find((acc) => acc.addr === toAccountAddr)) {
-      // TODO: error handling, trying to switch to account that does not exist
-      return
-    }
+      if (!this.accounts.find((acc) => acc.addr === toAccountAddr)) {
+        // TODO: error handling, trying to switch to account that does not exist
+        return
+      }
 
-    this.selectedAccount = toAccountAddr
-    await this.#storage.set('selectedAccount', toAccountAddr)
-    this.activity.init({ filters: { account: toAccountAddr } })
-    this.addressBook.update({
-      selectedAccount: toAccountAddr
+      this.selectedAccount = toAccountAddr
+      // eslint-disable-next-line @typescript-eslint/no-floating-promises
+      this.#storage.set('selectedAccount', toAccountAddr)
+      this.activity.init({ filters: { account: toAccountAddr } })
+      this.addressBook.update({
+        selectedAccount: toAccountAddr
+      })
+      // eslint-disable-next-line @typescript-eslint/no-floating-promises
+      this.updateSelectedAccount(toAccountAddr)
+      this.onUpdateDappSelectedAccount(toAccountAddr)
     })
-    this.updateSelectedAccount(toAccountAddr)
-    this.onUpdateDappSelectedAccount(toAccountAddr)
     this.emitUpdate()
   }
 
@@ -651,19 +656,13 @@ export class MainController extends EventEmitter {
       ? { forceUpdate, additionalHints }
       : { forceUpdate }
 
-    this.portfolio
-      .updateSelectedAccount(
-        this.accounts,
-        this.settings.networks,
-        selectedAccount,
-        undefined,
-        updateOptions
-      )
-      .then(() => {
-        const account = this.accounts.find(({ addr }) => addr === selectedAccount)
-        if (shouldGetAdditionalPortfolio(account))
-          this.portfolio.getAdditionalPortfolio(selectedAccount)
-      })
+    this.portfolio.updateSelectedAccount(
+      this.accounts,
+      this.settings.networks,
+      selectedAccount,
+      undefined,
+      updateOptions
+    )
   }
 
   async addUserRequest(req: UserRequest) {
@@ -911,7 +910,7 @@ export class MainController extends EventEmitter {
       const stringAddr: any = result.length ? result.flat(Infinity) : []
       additionalHints!.push(...stringAddr)
 
-      const [, , estimation] = await Promise.all([
+      const [, estimation] = await Promise.all([
         // NOTE: we are not emitting an update here because the portfolio controller will do that
         // NOTE: the portfolio controller has it's own logic of constructing/caching providers, this is intentional, as
         // it may have different needs
@@ -929,8 +928,6 @@ export class MainController extends EventEmitter {
             additionalHints
           }
         ),
-        shouldGetAdditionalPortfolio(account) &&
-          this.portfolio.getAdditionalPortfolio(localAccountOp.accountAddr),
         estimate(
           this.settings.providers[localAccountOp.networkId],
           network,
@@ -967,13 +964,20 @@ export class MainController extends EventEmitter {
         estimation
 
       // if the nonce from the estimation is different than the one in localAccountOp,
-      // override localAccountOp.nonce and set it in this.accountOpsToBeSigned as
-      // the nonce from the estimation is the newest one
+      // override all places that contain the old nonce with the correct one
       if (estimation && BigInt(estimation.currentAccountNonce) !== localAccountOp.nonce) {
         localAccountOp.nonce = BigInt(estimation.currentAccountNonce)
+
         this.accountOpsToBeSigned[localAccountOp.accountAddr][
           localAccountOp.networkId
         ]!.accountOp.nonce = localAccountOp.nonce
+
+        if (
+          this.accountStates[localAccountOp.accountAddr] &&
+          this.accountStates[localAccountOp.accountAddr][localAccountOp.networkId]
+        )
+          this.accountStates[localAccountOp.accountAddr][localAccountOp.networkId].nonce =
+            localAccountOp.nonce
       }
 
       // update the signAccountOp controller once estimation finishes;

@@ -17,6 +17,7 @@ import {
   getToken
 } from '../utils'
 
+// @TODO add again
 // etherface was down for some time and we replaced it with 4bytes
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 async function fetchFuncEtherface(
@@ -147,6 +148,7 @@ function extractAddresses(data: string, _selector: string): string[] {
 export const fallbackHumanizer: HumanizerCallModule = (
   accountOp: AccountOp,
   currentIrCalls: IrCall[],
+  humanizerMeta: HumanizerMeta,
   options?: any
 ) => {
   const asyncOps: Promise<HumanizerFragment | null>[] = []
@@ -154,7 +156,7 @@ export const fallbackHumanizer: HumanizerCallModule = (
     if (call.fullVisualization && !checkIfUnknownAction(call?.fullVisualization)) return call
 
     const knownSigHashes: HumanizerMeta['abis']['NO_ABI'] = Object.values(
-      accountOp.humanizerMeta?.abis as HumanizerMeta['abis']
+      humanizerMeta.abis as HumanizerMeta['abis']
     ).reduce((a, b) => ({ ...a, ...b }), {})
 
     const visualization: Array<HumanizerVisualization> = []

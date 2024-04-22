@@ -5,6 +5,24 @@ import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
 import { Account } from '../../interfaces/account'
 import { NetworkId } from '../../interfaces/networkDescriptor'
 import { RPCProvider } from '../../interfaces/settings'
+import { isSmartAccount } from '../account/account'
+
+const usdcEMapping: { [key: string]: string } = {
+  avalanche: '0xa7d7079b0fead91f3e65f86e8915cb59c1a4c664',
+  moonriver: '0x748134b5f553f2bcbd78c6826de99a70274bdeb3',
+  arbitrum: '0xFF970A61A04b1cA14834A43f5dE4533eBDDB5CC8',
+  polygon: '0x2791bca1f2de4661ed88a30c99a7a9449aa84174',
+  optimism: '0x7f5c764cbc14f9669b88837ca1490cca17c31607'
+}
+
+export function overrideSymbol(address: string, networkId: string, symbol: string) {
+  // Since deployless lib calls contract and USDC.e is returned as USDC, we need to override the symbol
+  if (usdcEMapping[networkId] && usdcEMapping[networkId].toLowerCase() === address.toLowerCase()) {
+    return 'USDC.E'
+  }
+
+  return symbol
+}
 
 export function getFlags(
   networkData: any,
@@ -76,7 +94,6 @@ export const validateERC20Token = async (
   return [isValid, type]
 }
 
-export const shouldGetAdditionalPortfolio = (account?: Account) => {
-  // portfolio additional data is available only for smart accounts
-  return !!account?.creation
+export const shouldGetAdditionalPortfolio = (account: Account) => {
+  return isSmartAccount(account)
 }
