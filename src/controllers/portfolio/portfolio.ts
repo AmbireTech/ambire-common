@@ -246,10 +246,16 @@ export class PortfolioController extends EventEmitter {
     this.#additionalHints = []
   }
 
-  // clear the pending state, if set
-  async clearPending(selectedAccountId: AccountId) {
-    if (this.pending[selectedAccountId]) {
-      this.pending[selectedAccountId] = {}
+  // clear the pending state for the given accountOp
+  async makePendingLatestFor(accountOp: AccountOp) {
+    if (
+      this.pending[accountOp.accountAddr] &&
+      this.pending[accountOp.accountAddr][accountOp.networkId] &&
+      this.latest[accountOp.accountAddr] &&
+      this.latest[accountOp.accountAddr][accountOp.networkId]
+    ) {
+      this.pending[accountOp.accountAddr][accountOp.networkId] =
+        this.latest[accountOp.accountAddr][accountOp.networkId]
       this.emitUpdate()
     }
   }

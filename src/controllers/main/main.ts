@@ -1004,7 +1004,7 @@ export class MainController extends EventEmitter {
 
       // if there's an estimation error, clear the pending state
       if (estimation && estimation.error) {
-        this.portfolio.clearPending(localAccountOp.accountAddr)
+        this.portfolio.makePendingLatestFor(localAccountOp)
       }
     } catch (error: any) {
       this.emitError({
